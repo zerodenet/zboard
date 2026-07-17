@@ -25,3 +25,4 @@ _Planned first public release. No `v0.1.0` release has been cut._
 - Encrypt node SSH passwords with AES-GCM, migrate legacy plaintext, and require pinned SHA256 host keys.
 - Authenticate traffic reports with per-node encrypted credentials, HMAC-SHA256 signatures, a five-minute time window, nonce replay protection, and idempotent report IDs.
 - Serialize order settlement and subscription renewal, enforce terminal paid-order transitions, reconcile expired/exhausted subscriptions, and require paired server/client JSON when publishing node protocol configuration.
+- Record sensitive user, order, protocol, and credential lifecycle changes in the audit log and expose a paginated admin-only audit view.

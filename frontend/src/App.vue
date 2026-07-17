@@ -12,6 +12,7 @@
         <RouterLink to="/plans" v-if="app.isAuthenticated">Plans</RouterLink>
         <RouterLink to="/billing" v-if="app.isAuthenticated">Billing</RouterLink>
         <RouterLink to="/users" v-if="app.isAdmin">Users</RouterLink>
+        <RouterLink to="/audit-logs" v-if="app.isAdmin">Audit Logs</RouterLink>
       </nav>
       <div v-if="app.isAuthenticated" class="actions">
         <button @click="logout">Logout</button>

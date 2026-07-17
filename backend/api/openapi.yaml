@@ -799,6 +799,51 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/DashboardMetrics"
+  /api/v1/admin/audit-logs:
+    get:
+      tags:
+        - admin
+      summary: List security and business audit events
+      description: Admin only. Results are newest first and never include credential plaintext or passwords.
+      parameters:
+        - name: actor
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: target
+          in: query
+          schema:
+            type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Paginated audit events
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/AuditLogPage"
+        "400":
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     bearerAuth:
@@ -1030,6 +1075,40 @@ components:
           type: integer
           format: int64
           description: Remaining bytes across active, unexpired subscriptions.
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        actor:
+          type: string
+        action:
+          type: string
+        target:
+          type: string
+        detail:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    AuditLogPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLog"
+        total:
+          type: integer
+          format: int64
+        offset:
+          type: integer
+        limit:
+          type: integer
     TrafficSummary:
       type: object
       properties:

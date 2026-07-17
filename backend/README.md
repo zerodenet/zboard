@@ -174,3 +174,7 @@ idempotent, paid orders cannot be moved back to failed/canceled, and expired or 
 are reconciled before list, manifest, summary, dashboard, renewal, and traffic-deduction operations.
 The current `pay-callback` route is an admin-authenticated internal operation; external payment-provider
 signature verification remains required before it can be exposed directly to a provider.
+
+Administrators can query paginated audit events through `GET /api/v1/admin/audit-logs` and the Audit
+Logs console page. Audit details identify changed fields or state transitions but intentionally omit
+passwords, credential plaintext, subscription tokens, and raw payment callback bodies.

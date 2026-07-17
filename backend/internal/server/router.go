@@ -183,6 +183,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		},
 		{
 			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/audit-logs",
+			Handler: http.HandlerFunc(h.AuditLogsHandler),
+		},
+		{
+			Method:  http.MethodGet,
 			Path:    "/api/v1/system/info",
 			Handler: http.HandlerFunc(h.SystemInfoHandler),
 		},

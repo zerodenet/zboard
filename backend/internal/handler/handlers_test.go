@@ -256,3 +256,33 @@ func TestValidateNodeProtocolConfigs(t *testing.T) {
 		})
 	}
 }
+
+func TestParsePagination(t *testing.T) {
+	tests := []struct {
+		name       string
+		offset     string
+		limit      string
+		wantOffset int
+		wantLimit  int
+		wantErr    bool
+	}{
+		{name: "defaults", wantOffset: 0, wantLimit: 50},
+		{name: "explicit", offset: "20", limit: "100", wantOffset: 20, wantLimit: 100},
+		{name: "trimmed", offset: " 1 ", limit: " 200 ", wantOffset: 1, wantLimit: 200},
+		{name: "negative offset", offset: "-1", wantErr: true},
+		{name: "invalid offset", offset: "nope", wantErr: true},
+		{name: "zero limit", limit: "0", wantErr: true},
+		{name: "limit too large", limit: "201", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			offset, limit, err := parsePagination(tt.offset, tt.limit)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parsePagination() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && (offset != tt.wantOffset || limit != tt.wantLimit) {
+				t.Fatalf("parsePagination() = (%d, %d), want (%d, %d)", offset, limit, tt.wantOffset, tt.wantLimit)
+			}
+		})
+	}
+}

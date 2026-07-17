@@ -5,6 +5,7 @@ import Nodes from '../views/Nodes.vue'
 import Plans from '../views/Plans.vue'
 import Billing from '../views/Billing.vue'
 import Users from '../views/Users.vue'
+import AuditLogs from '../views/AuditLogs.vue'
 
 export const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/dashboard' },
@@ -14,5 +15,6 @@ export const routes: RouteRecordRaw[] = [
   { path: '/plans', component: Plans, meta: { requiresAuth: true } },
   { path: '/billing', component: Billing, meta: { requiresAuth: true } },
   { path: '/users', component: Users, meta: { requiresAuth: true, requiresAdmin: true } },
+  { path: '/audit-logs', component: AuditLogs, meta: { requiresAuth: true, requiresAdmin: true } },
   { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
 ]

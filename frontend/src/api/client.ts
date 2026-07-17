@@ -196,6 +196,18 @@ export async function fetchDashboard() {
   return unwrap(response) || {}
 }
 
+export async function fetchAuditLogs(params: { actor?: string; action?: string; target?: string; offset?: number; limit?: number } = {}) {
+  const query = new URLSearchParams()
+  if (params.actor) query.set('actor', params.actor)
+  if (params.action) query.set('action', params.action)
+  if (params.target) query.set('target', params.target)
+  if (params.offset !== undefined) query.set('offset', String(params.offset))
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  const path = query.toString() ? `/admin/audit-logs?${query}` : '/admin/audit-logs'
+  const response = await api.get(path)
+  return unwrap(response) || { items: [], total: 0, offset: 0, limit: 50 }
+}
+
 export async function fetchUsers(params: { q?: string; status?: string; isAdmin?: boolean } = {}) {
   const query = new URLSearchParams()
   if (params.q) {

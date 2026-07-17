@@ -429,7 +429,7 @@ func (h *handlers) AdminUsersListHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *handlers) AdminUserCreateHandler(w http.ResponseWriter, r *http.Request) {
-	_, err := h.requireAdmin(w, r)
+	claims, err := h.requireAdmin(w, r)
 	if err != nil {
 		return
 	}
@@ -473,7 +473,12 @@ func (h *handlers) AdminUserCreateHandler(w http.ResponseWriter, r *http.Request
 		IsAdmin:  req.IsAdmin,
 		Status:   status,
 	}
-	if err := h.db.Create(&user).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		return createAuditLog(tx, claims, "user.create", fmt.Sprintf("user:%d", user.ID), fmt.Sprintf("status=%s admin=%t", user.Status, user.IsAdmin))
+	}); err != nil {
 		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "duplicate") {
 			BadRequest(w, "username or email already exists")
 			return
@@ -504,6 +509,7 @@ func (h *handlers) AdminUserUpdateHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	updates := make(map[string]interface{})
+	changedFields := make([]string, 0, 3)
 	if req.Status != nil {
 		status := strings.TrimSpace(*req.Status)
 		if !h.isValidUserStatus(status) {
@@ -511,9 +517,11 @@ func (h *handlers) AdminUserUpdateHandler(w http.ResponseWriter, r *http.Request
 			return
 		}
 		updates["status"] = status
+		changedFields = append(changedFields, "status")
 	}
 	if req.IsAdmin != nil {
 		updates["is_admin"] = *req.IsAdmin
+		changedFields = append(changedFields, "is_admin")
 	}
 	if req.Password != nil {
 		newPassword := strings.TrimSpace(*req.Password)
@@ -527,6 +535,7 @@ func (h *handlers) AdminUserUpdateHandler(w http.ResponseWriter, r *http.Request
 			return
 		}
 		updates["password"] = string(hash)
+		changedFields = append(changedFields, "password")
 	}
 
 	if len(updates) == 0 {
@@ -558,7 +567,12 @@ func (h *handlers) AdminUserUpdateHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.db.Model(&target).Updates(updates).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&target).Updates(updates).Error; err != nil {
+			return err
+		}
+		return createAuditLog(tx, claims, "user.update", fmt.Sprintf("user:%d", target.ID), "fields="+strings.Join(changedFields, ","))
+	}); err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -938,7 +952,8 @@ func (h *handlers) NodeReportCredentialRevokeHandler(w http.ResponseWriter, r *h
 }
 
 func (h *handlers) NodeProtocolConfigHandler(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.requireAdmin(w, r); err != nil {
+	claims, err := h.requireAdmin(w, r)
+	if err != nil {
 		return
 	}
 
@@ -1000,7 +1015,12 @@ func (h *handlers) NodeProtocolConfigHandler(w http.ResponseWriter, r *http.Requ
 	}
 	updates["client_config"] = req.ClientConfig
 	node.ClientConfig = req.ClientConfig
-	if saveErr := h.db.Model(&node).Updates(updates).Error; saveErr != nil {
+	if saveErr := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&node).Updates(updates).Error; err != nil {
+			return err
+		}
+		return createAuditLog(tx, claims, "node.protocol_config.publish", fmt.Sprintf("node:%d", node.ID), protocol)
+	}); saveErr != nil {
 		ServerError(w, saveErr)
 		return
 	}
@@ -1279,7 +1299,14 @@ func (h *handlers) OrderPayHandler(w http.ResponseWriter, r *http.Request) {
 		if !orderTransitionAllowed(order.Status, orderStatusPaid, force) {
 			return errOrderNotPayable
 		}
-		return h.setOrderPaid(tx, &order, time.Now().UTC())
+		previousStatus := order.Status
+		if err := h.setOrderPaid(tx, &order, time.Now().UTC()); err != nil {
+			return err
+		}
+		if previousStatus != order.Status {
+			return createAuditLog(tx, claims, "order.pay", fmt.Sprintf("order:%d", order.ID), previousStatus+"->"+order.Status)
+		}
+		return nil
 	})
 	if errors.Is(err, errOrderNotPayable) {
 		BadRequest(w, err.Error())
@@ -1335,12 +1362,16 @@ func (h *handlers) OrderCancelHandler(w http.ResponseWriter, r *http.Request) {
 		if order.Status == orderStatusCanceled {
 			return nil
 		}
+		previousStatus := order.Status
 		order.Status = orderStatusCanceled
 		order.UpdatedAt = time.Now().UTC()
-		return tx.Model(&order).Updates(map[string]interface{}{
+		if err := tx.Model(&order).Updates(map[string]interface{}{
 			"status":     order.Status,
 			"updated_at": order.UpdatedAt,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return createAuditLog(tx, claims, "order.cancel", fmt.Sprintf("order:%d", order.ID), previousStatus+"->"+order.Status)
 	})
 	if errors.Is(err, errOrderNotCancelable) {
 		BadRequest(w, err.Error())
@@ -1354,7 +1385,7 @@ func (h *handlers) OrderCancelHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) OrderPayCallbackHandler(w http.ResponseWriter, r *http.Request) {
-	_, err := h.requireAdmin(w, r)
+	claims, err := h.requireAdmin(w, r)
 	if err != nil {
 		return
 	}
@@ -1391,6 +1422,7 @@ func (h *handlers) OrderPayCallbackHandler(w http.ResponseWriter, r *http.Reques
 		if !orderTransitionAllowed(order.Status, status, false) {
 			return errOrderTransitionRejected
 		}
+		previousStatus := order.Status
 		now := time.Now().UTC()
 		if status == orderStatusPaid {
 			if err := h.setOrderPaid(tx, &order, now); err != nil {
@@ -1401,11 +1433,17 @@ func (h *handlers) OrderPayCallbackHandler(w http.ResponseWriter, r *http.Reques
 			order.UpdatedAt = now
 		}
 		order.RawCallback = req.RawCallback
-		return tx.Model(&order).Updates(map[string]interface{}{
+		if err := tx.Model(&order).Updates(map[string]interface{}{
 			"status":       order.Status,
 			"raw_callback": order.RawCallback,
 			"updated_at":   now,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		if previousStatus != order.Status {
+			return createAuditLog(tx, claims, "order.payment_result", fmt.Sprintf("order:%d", order.ID), previousStatus+"->"+order.Status)
+		}
+		return nil
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		BadRequest(w, "order not found")
@@ -1649,14 +1687,25 @@ func (h *handlers) SubscriptionAccessRevokeHandler(w http.ResponseWriter, r *htt
 		return
 	}
 	now := time.Now().UTC()
-	result := h.db.Model(&model.SubscriptionToken{}).
-		Where("user_id = ? AND revoked_at IS NULL", claims.UserID).
-		Update("revoked_at", now)
-	if result.Error != nil {
-		ServerError(w, result.Error)
+	revoked := false
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.SubscriptionToken{}).
+			Where("user_id = ? AND revoked_at IS NULL", claims.UserID).
+			Update("revoked_at", now)
+		if result.Error != nil {
+			return result.Error
+		}
+		revoked = result.RowsAffected > 0
+		if !revoked {
+			return nil
+		}
+		return createAuditLog(tx, claims, "subscription_token.revoke", fmt.Sprintf("user:%d", claims.UserID), "credential revoked")
+	})
+	if err != nil {
+		ServerError(w, err)
 		return
 	}
-	OK(w, map[string]interface{}{"configured": false, "revoked": result.RowsAffected > 0})
+	OK(w, map[string]interface{}{"configured": false, "revoked": revoked})
 }
 
 func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Request) {
@@ -1897,6 +1946,45 @@ func (h *handlers) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 		"subscriptions":        subscriptions,
 		"subscriptions_active": activeSubscriptions,
 		"traffic_pool_bytes":   trafficTotal,
+	})
+}
+
+func (h *handlers) AuditLogsHandler(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.requireAdmin(w, r); err != nil {
+		return
+	}
+	offset, limit, err := parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+
+	query := h.db.Model(&model.AuditLog{})
+	if actor := strings.TrimSpace(r.URL.Query().Get("actor")); actor != "" {
+		query = query.Where("actor = ?", actor)
+	}
+	if action := strings.TrimSpace(r.URL.Query().Get("action")); action != "" {
+		query = query.Where("action = ?", action)
+	}
+	if target := strings.TrimSpace(r.URL.Query().Get("target")); target != "" {
+		query = query.Where("target = ?", target)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	logs := make([]model.AuditLog, 0)
+	if err := query.Order("id desc").Offset(offset).Limit(limit).Find(&logs).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	OK(w, map[string]interface{}{
+		"items":  logs,
+		"total":  total,
+		"offset": offset,
+		"limit":  limit,
 	})
 }
 
@@ -2238,6 +2326,35 @@ func (h *handlers) requireAdmin(w http.ResponseWriter, r *http.Request) (authCla
 		return claims, errors.New("admin required")
 	}
 	return claims, nil
+}
+
+func createAuditLog(db *gorm.DB, claims authClaims, action, target, detail string) error {
+	return db.Create(&model.AuditLog{
+		UserID: claims.UserID,
+		Actor:  claims.Username,
+		Action: action,
+		Target: target,
+		Detail: detail,
+	}).Error
+}
+
+func parsePagination(offsetValue, limitValue string) (int, int, error) {
+	offset := 0
+	limit := 50
+	var err error
+	if value := strings.TrimSpace(offsetValue); value != "" {
+		offset, err = strconv.Atoi(value)
+		if err != nil || offset < 0 {
+			return 0, 0, errors.New("offset must be a non-negative integer")
+		}
+	}
+	if value := strings.TrimSpace(limitValue); value != "" {
+		limit, err = strconv.Atoi(value)
+		if err != nil || limit < 1 || limit > 200 {
+			return 0, 0, errors.New("limit must be an integer between 1 and 200")
+		}
+	}
+	return offset, limit, nil
 }
 
 func (h *handlers) loadNode(nodeID uint) (model.Node, error) {
