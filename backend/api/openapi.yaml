@@ -315,6 +315,49 @@ paths:
                         $ref: "#/components/schemas/Node"
         "400":
           $ref: "#/components/responses/Error"
+  /api/v1/nodes/{id}/report-credential:
+    post:
+      tags:
+        - nodes
+      summary: Create or rotate a node traffic-report credential
+      description: Admin only. The plaintext secret is returned once and the previous credential is immediately invalidated.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Credential created or rotated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/NodeReportCredential"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags:
+        - nodes
+      summary: Revoke a node traffic-report credential
+      description: Admin only. New traffic reports using this credential are rejected immediately.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Credential revoked
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/nodes/protocol/config:
     post:
       tags:
@@ -677,7 +720,45 @@ paths:
     post:
       tags:
         - traffic
-      summary: Report traffic usage (metered deduction)
+      summary: Submit a signed node traffic report
+      description: |
+        This endpoint is authenticated by a node report credential, not by a user bearer token.
+        Compute SHA-256 over the exact request body, then sign the following UTF-8 canonical string
+        with HMAC-SHA256 using the node secret:
+
+        `node_id + "\n" + unix_timestamp + "\n" + nonce + "\n" + lowercase_hex(body_sha256)`
+
+        Send the lowercase hexadecimal HMAC in `X-Zboard-Signature`. Timestamps must be within five
+        minutes of server time. A `(node_id, report_id)` pair is idempotent and a nonce may be used once.
+      security: []
+      parameters:
+        - name: X-Zboard-Node-ID
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Canonical positive decimal node ID.
+        - name: X-Zboard-Timestamp
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Canonical Unix timestamp in seconds.
+        - name: X-Zboard-Nonce
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 16
+            maxLength: 64
+          description: Per-request URL-safe nonce.
+        - name: X-Zboard-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9a-fA-F]{64}$"
+          description: Hexadecimal HMAC-SHA256 signature.
       requestBody:
         required: true
         content:
@@ -686,7 +767,7 @@ paths:
               $ref: "#/components/schemas/TrafficReportRequest"
       responses:
         "200":
-          description: Traffic report result
+          description: Traffic report result; duplicate is true when an earlier report was reused without another deduction.
           content:
             application/json:
               schema:
@@ -695,6 +776,8 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/TrafficReportResult"
+        "401":
+          $ref: "#/components/responses/Error"
   /api/v1/admin/dashboard:
     get:
       tags:
@@ -779,6 +862,13 @@ components:
         ssh_host_key_fingerprint:
           type: string
           description: Pinned OpenSSH SHA256 host key fingerprint.
+        traffic_secret_prefix:
+          type: string
+          description: Non-secret prefix used to identify the active report credential.
+        traffic_secret_revoked_at:
+          type: string
+          format: date-time
+          nullable: true
     Plan:
       type: object
       properties:
@@ -862,6 +952,8 @@ components:
         node_id:
           type: integer
           format: int64
+        report_id:
+          type: string
         used_bytes:
           type: integer
           format: int64
@@ -952,6 +1044,8 @@ components:
     TrafficReportResult:
       type: object
       properties:
+        report_id:
+          type: string
         subscription_id:
           type: integer
           format: int64
@@ -970,6 +1064,26 @@ components:
         flow_remaining:
           type: integer
           format: int64
+        duplicate:
+          type: boolean
+    NodeReportCredential:
+      type: object
+      required:
+        - node_id
+        - secret
+        - secret_prefix
+      properties:
+        node_id:
+          type: integer
+          format: int64
+        secret:
+          type: string
+          writeOnly: true
+          description: Plaintext node report secret returned only by this response.
+        secret_prefix:
+          type: string
+        notice:
+          type: string
     AuthRegisterRequest:
       type: object
       required:
@@ -1165,16 +1279,20 @@ components:
     TrafficReportRequest:
       type: object
       required:
+        - report_id
+        - user_id
         - used_bytes
       properties:
+        report_id:
+          type: string
+          minLength: 8
+          maxLength: 64
         user_id:
-          type: integer
-          format: int64
-        node_id:
           type: integer
           format: int64
         used_bytes:
           type: integer
           format: int64
+          minimum: 1
         meta:
           type: string

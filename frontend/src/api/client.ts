@@ -80,6 +80,16 @@ export async function updateNodeSSH(nodeId: number, payload: {
   return unwrap(response)
 }
 
+export async function rotateNodeReportCredential(nodeId: number) {
+  const response = await api.post(`/nodes/${nodeId}/report-credential`)
+  return unwrap(response)
+}
+
+export async function revokeNodeReportCredential(nodeId: number) {
+  const response = await api.delete(`/nodes/${nodeId}/report-credential`)
+  return unwrap(response)
+}
+
 export async function publishNodeProtocolConfig(nodeId: number, protocol: string, config: string, clientConfig: string) {
   const response = await api.post('/nodes/protocol/config', {
     node_id: nodeId,
@@ -179,16 +189,6 @@ export async function fetchTrafficRecords(params: { userId?: number; nodeId?: nu
   const path = query.toString() ? `/traffic/records?${query}` : '/traffic/records'
   const response = await api.get(path)
   return unwrap(response) || []
-}
-
-export async function reportTrafficUsage(payload: { userId?: number; nodeId?: number; usedBytes: number; meta?: string }) {
-  const response = await api.post('/traffic/report', {
-    user_id: payload.userId,
-    node_id: payload.nodeId,
-    used_bytes: payload.usedBytes,
-    meta: payload.meta
-  })
-  return unwrap(response)
 }
 
 export async function fetchDashboard() {

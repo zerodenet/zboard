@@ -21,15 +21,37 @@
         #{{ item.id }} {{ item.name }} - {{ item.region }} - {{ item.address }} - {{ item.protocol }} -
         online: {{ item.is_online ? 'yes' : 'no' }}
         <span v-if="item.ssh_host_key_fingerprint"> - host key pinned</span>
+        <span v-if="item.traffic_secret_prefix">
+          - report credential {{ item.traffic_secret_prefix }}...
+          {{ item.traffic_secret_revoked_at ? '(revoked)' : '(active)' }}
+        </span>
         <button v-if="app.isAdmin" class="small" type="button" @click="testNode(item.id)">SSH Test</button>
         <button v-if="app.isAdmin" class="small" type="button" @click="prepareSSH(item)">Configure SSH</button>
         <button v-if="app.isAdmin" class="small" type="button" @click="preparePublish(item)">Push Config</button>
+        <button v-if="app.isAdmin" class="small" type="button" @click="rotateReportCredential(item)">
+          {{ item.traffic_secret_prefix ? 'Rotate Report Credential' : 'Create Report Credential' }}
+        </button>
+        <button
+          v-if="app.isAdmin && item.traffic_secret_prefix && !item.traffic_secret_revoked_at"
+          class="small"
+          type="button"
+          @click="revokeReportCredential(item)"
+        >Revoke Report Credential</button>
         <div class="node-tip" v-if="testResult[item.id]">
           {{ testResult[item.id] }}
         </div>
       </li>
     </ul>
     <p class="error" v-if="error">{{ error }}</p>
+
+    <section class="credential-result" v-if="reportCredential.secret && app.isAdmin">
+      <h3>Node Report Credential</h3>
+      <p><strong>Copy this secret now. It will not be shown again.</strong></p>
+      <p class="muted">Node #{{ reportCredential.node_id }} / prefix {{ reportCredential.secret_prefix }}...</p>
+      <input :value="reportCredential.secret" readonly />
+      <button class="small" type="button" @click="copyReportCredential">Copy Secret</button>
+      <p class="muted" v-if="reportCredential.copyMessage">{{ reportCredential.copyMessage }}</p>
+    </section>
 
     <section v-if="sshEdit.node_id && app.isAdmin">
       <h3>Configure Node SSH</h3>
@@ -62,13 +84,27 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { createNode, fetchNodes, publishNodeProtocolConfig, testNodeSSH, updateNodeSSH } from '../api/client'
+import {
+  createNode,
+  fetchNodes,
+  publishNodeProtocolConfig,
+  revokeNodeReportCredential,
+  rotateNodeReportCredential,
+  testNodeSSH,
+  updateNodeSSH
+} from '../api/client'
 import { useAppStore } from '../stores/app'
 
 const nodes = ref<any[]>([])
 const app = useAppStore()
 const error = ref('')
 const testResult = ref<Record<number, string>>({})
+const reportCredential = reactive({
+  node_id: 0,
+  secret: '',
+  secret_prefix: '',
+  copyMessage: ''
+})
 const form = reactive({
   name: '',
   region: '',
@@ -164,6 +200,50 @@ const testNode = async (nodeId: number) => {
   }
 }
 
+const rotateReportCredential = async (node: any) => {
+  if (node.traffic_secret_prefix && !window.confirm('Rotating this credential immediately invalidates the previous secret. Continue?')) {
+    return
+  }
+  error.value = ''
+  reportCredential.secret = ''
+  reportCredential.copyMessage = ''
+  try {
+    const result = await rotateNodeReportCredential(node.id)
+    reportCredential.node_id = result.node_id
+    reportCredential.secret = result.secret
+    reportCredential.secret_prefix = result.secret_prefix
+    nodes.value = await fetchNodes()
+  } catch (e: any) {
+    error.value = e?.response?.data?.message || 'report credential rotation failed'
+  }
+}
+
+const revokeReportCredential = async (node: any) => {
+  if (!window.confirm('Revoke this node report credential? Traffic reports from this node will stop immediately.')) {
+    return
+  }
+  error.value = ''
+  try {
+    await revokeNodeReportCredential(node.id)
+    if (reportCredential.node_id === node.id) {
+      reportCredential.secret = ''
+    }
+    nodes.value = await fetchNodes()
+  } catch (e: any) {
+    error.value = e?.response?.data?.message || 'report credential revoke failed'
+  }
+}
+
+const copyReportCredential = async () => {
+  reportCredential.copyMessage = ''
+  try {
+    await navigator.clipboard.writeText(reportCredential.secret)
+    reportCredential.copyMessage = 'Copied.'
+  } catch {
+    reportCredential.copyMessage = 'Copy failed. Select and copy the secret manually.'
+  }
+}
+
 const preparePublish = (node: any) => {
   publish.node_id = node.id
   publish.protocol = node.protocol || 'vmess'
@@ -204,6 +284,13 @@ button {
 .error { color: #ff6b6b; }
 ul { padding-left: 20px; }
 .node-tip { color: var(--muted); font-size: 12px; }
+.credential-result {
+  border: 1px solid #f5b942;
+  border-radius: 8px;
+  margin: 12px 0;
+  padding: 12px;
+}
+.credential-result input { width: min(680px, 100%); }
 textarea {
   width: 100%;
   min-height: 120px;

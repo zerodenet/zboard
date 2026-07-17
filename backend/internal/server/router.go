@@ -83,6 +83,16 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		},
 		{
 			Method:  http.MethodPost,
+			Path:    "/api/v1/nodes/:id/report-credential",
+			Handler: http.HandlerFunc(h.NodeReportCredentialRotateHandler),
+		},
+		{
+			Method:  http.MethodDelete,
+			Path:    "/api/v1/nodes/:id/report-credential",
+			Handler: http.HandlerFunc(h.NodeReportCredentialRevokeHandler),
+		},
+		{
+			Method:  http.MethodPost,
 			Path:    "/api/v1/nodes/protocol/config",
 			Handler: http.HandlerFunc(h.NodeProtocolConfigHandler),
 		},

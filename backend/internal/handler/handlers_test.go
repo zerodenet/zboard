@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -138,6 +139,67 @@ func TestValidateSSHHostKeyFingerprint(t *testing.T) {
 	for _, value := range []string{"", "MD5:aa:bb", "SHA256:not-base64", "SHA256:YWJj"} {
 		if err := validateSSHHostKeyFingerprint(value); err == nil {
 			t.Fatalf("validateSSHHostKeyFingerprint(%q) error = nil, want rejection", value)
+		}
+	}
+}
+
+func TestNewNodeReportSecret(t *testing.T) {
+	secret, prefix, err := newNodeReportSecret()
+	if err != nil {
+		t.Fatalf("newNodeReportSecret() error = %v", err)
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(secret)
+	if err != nil {
+		t.Fatalf("decode secret: %v", err)
+	}
+	if len(decoded) != 32 {
+		t.Fatalf("decoded secret length = %d, want 32", len(decoded))
+	}
+	if prefix != secret[:12] {
+		t.Fatalf("prefix = %q, want first 12 secret characters", prefix)
+	}
+}
+
+func TestNodeReportSignature(t *testing.T) {
+	body := []byte(`{"report_id":"report-001","user_id":42,"used_bytes":1024}`)
+	signature := nodeReportSignature("node-secret", "7", "1721188800", "nonce-0123456789", body)
+	if len(signature) != sha256.Size {
+		t.Fatalf("signature length = %d, want %d", len(signature), sha256.Size)
+	}
+	if got := hex.EncodeToString(signature); got != "a91d3d7a3621bd205e5c3f0f7fd4612eaa8322f599b2b9ee501861d3014a26ee" {
+		t.Fatalf("signature = %s, want stable canonical signature", got)
+	}
+	if hmac.Equal(signature, nodeReportSignature("node-secret", "7", "1721188800", "nonce-0123456780", body)) {
+		t.Fatal("signature did not change when nonce changed")
+	}
+	if hmac.Equal(signature, nodeReportSignature("node-secret", "7", "1721188800", "nonce-0123456789", append(body, '\n'))) {
+		t.Fatal("signature did not change when body changed")
+	}
+}
+
+func TestValidateNodeReportTimestamp(t *testing.T) {
+	now := time.Unix(1721188800, 0).UTC()
+	for _, value := range []string{"1721188500", "1721188800", "1721189100"} {
+		if _, err := validateNodeReportTimestamp(value, now); err != nil {
+			t.Errorf("validateNodeReportTimestamp(%q) error = %v", value, err)
+		}
+	}
+	for _, value := range []string{"", "01721188800", "1721188499", "1721189101", "not-a-time"} {
+		if _, err := validateNodeReportTimestamp(value, now); err == nil {
+			t.Errorf("validateNodeReportTimestamp(%q) error = nil, want rejection", value)
+		}
+	}
+}
+
+func TestValidNodeReportIdentifier(t *testing.T) {
+	for _, value := range []string{"report-001", "nonce_0123456789", "uuid:1234.5678"} {
+		if !validNodeReportIdentifier(value, 8, 64) {
+			t.Errorf("validNodeReportIdentifier(%q) = false", value)
+		}
+	}
+	for _, value := range []string{"short", "contains space", "contains/slash", strings.Repeat("a", 65)} {
+		if validNodeReportIdentifier(value, 8, 64) {
+			t.Errorf("validNodeReportIdentifier(%q) = true, want rejection", value)
 		}
 	}
 }

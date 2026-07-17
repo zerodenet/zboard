@@ -59,22 +59,25 @@ type Order struct {
 }
 
 type Node struct {
-	ID                    uint       `json:"id" gorm:"primaryKey"`
-	Name                  string     `json:"name" gorm:"size:64;uniqueIndex"`
-	Region                string     `json:"region" gorm:"size:32"`
-	Address               string     `json:"address" gorm:"size:128"`
-	Protocol              string     `json:"protocol" gorm:"size:32"`
-	IsOnline              bool       `json:"is_online" gorm:"default:false"`
-	LastSeenAt            *time.Time `json:"last_seen_at"`
-	SSHHost               string     `json:"ssh_host" gorm:"size:64"`
-	SSHPort               int        `json:"ssh_port" gorm:"default:22"`
-	SSHUser               string     `json:"ssh_user" gorm:"size:64"`
-	SSHPwd                string     `json:"-" gorm:"column:ssh_pwd;type:text"`
-	SSHHostKeyFingerprint string     `json:"ssh_host_key_fingerprint" gorm:"size:128"`
-	ProtocolConfig        string     `json:"-" gorm:"type:text"`
-	ClientConfig          string     `json:"client_config,omitempty" gorm:"type:text"`
-	CreatedAt             time.Time  `json:"created_at"`
-	UpdatedAt             time.Time  `json:"updated_at"`
+	ID                     uint       `json:"id" gorm:"primaryKey"`
+	Name                   string     `json:"name" gorm:"size:64;uniqueIndex"`
+	Region                 string     `json:"region" gorm:"size:32"`
+	Address                string     `json:"address" gorm:"size:128"`
+	Protocol               string     `json:"protocol" gorm:"size:32"`
+	IsOnline               bool       `json:"is_online" gorm:"default:false"`
+	LastSeenAt             *time.Time `json:"last_seen_at"`
+	SSHHost                string     `json:"ssh_host" gorm:"size:64"`
+	SSHPort                int        `json:"ssh_port" gorm:"default:22"`
+	SSHUser                string     `json:"ssh_user" gorm:"size:64"`
+	SSHPwd                 string     `json:"-" gorm:"column:ssh_pwd;type:text"`
+	SSHHostKeyFingerprint  string     `json:"ssh_host_key_fingerprint" gorm:"size:128"`
+	TrafficSecret          string     `json:"-" gorm:"column:traffic_secret;type:text"`
+	TrafficSecretPrefix    string     `json:"traffic_secret_prefix,omitempty" gorm:"size:12"`
+	TrafficSecretRevokedAt *time.Time `json:"traffic_secret_revoked_at,omitempty"`
+	ProtocolConfig         string     `json:"-" gorm:"type:text"`
+	ClientConfig           string     `json:"client_config,omitempty" gorm:"type:text"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
 type SubscriptionToken struct {
@@ -91,7 +94,9 @@ type SubscriptionToken struct {
 type TrafficRecord struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
 	UserID    uint      `json:"user_id" gorm:"index"`
-	NodeID    uint      `json:"node_id" gorm:"index"`
+	NodeID    uint      `json:"node_id" gorm:"index;uniqueIndex:ux_traffic_node_report,priority:1;uniqueIndex:ux_traffic_node_nonce,priority:1"`
+	ReportID  string    `json:"report_id,omitempty" gorm:"size:64;uniqueIndex:ux_traffic_node_report,priority:2"`
+	Nonce     string    `json:"-" gorm:"size:64;uniqueIndex:ux_traffic_node_nonce,priority:2"`
 	UsedBytes int64     `json:"used_bytes"`
 	At        time.Time `json:"record_at" gorm:"index;column:record_at"`
 	Meta      string    `json:"meta" gorm:"type:text"`

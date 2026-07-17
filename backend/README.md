@@ -126,10 +126,10 @@ export ZBOARD_SMOKE_TIMEOUT=10
 ## Core feature set
 
 - Auth: register / login / user info, admin role control
-- Nodes: list/create/SSH test/protocol config push (all node APIs require login; node create/config operations require admin)
+- Nodes: list/create/SSH test/protocol config push and report-credential rotation (all node management APIs require login; mutation requires admin)
 - Plans: list and create
 - Orders: user order create, callback update
-- Flow metering: traffic report and remaining quota deduction
+- Flow metering: signed node traffic reports, replay-safe idempotency, and serialized remaining-quota deduction
 - Subscriptions: query
 - Traffic summary: usage statistics and remaining flow
 - Admin dashboard metrics
@@ -145,3 +145,26 @@ export ZBOARD_SMOKE_TIMEOUT=10
 - Version policy in this repo starts at `v0.0.1`, and first public release is `v0.1.0`.
 - Runtime version metadata is set via build tags and `VERSION`; release and build scripts inject release version/commit/time with ldflags.
 - Go build baseline in this repo is controlled by `backend/go.mod`; upgrades are reviewed repository changes.
+
+## Trusted node traffic reports
+
+An administrator creates or rotates a node credential with
+`POST /api/v1/nodes/{id}/report-credential`. The plaintext `secret` is returned once; only its
+encrypted value and non-secret prefix are stored. `DELETE` on the same path revokes it.
+
+Nodes submit `POST /api/v1/traffic/report` without a bearer token. The request must include:
+
+- `X-Zboard-Node-ID`: canonical positive decimal node ID
+- `X-Zboard-Timestamp`: canonical Unix seconds within five minutes of server time
+- `X-Zboard-Nonce`: unique 16-64 character URL-safe value
+- `X-Zboard-Signature`: hexadecimal HMAC-SHA256
+
+Hash the exact JSON request bytes with SHA-256. Sign this canonical UTF-8 value with the node secret:
+
+```text
+node_id + "\n" + unix_timestamp + "\n" + nonce + "\n" + lowercase_hex(body_sha256)
+```
+
+The JSON body contains `report_id`, `user_id`, `used_bytes`, and optional `meta`. Reusing the same
+`(node_id, report_id)` returns `duplicate: true` without another deduction; reusing a nonce for a
+different report is rejected. See `api/openapi.yaml` for field constraints and response schemas.

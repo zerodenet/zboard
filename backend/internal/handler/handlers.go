@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -21,6 +22,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	cfgpkg "github.com/zerodenet/zboard/backend/internal/config"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -29,16 +31,25 @@ import (
 )
 
 const (
-	orderStatusPending    = "pending"
-	orderStatusPaid       = "paid"
-	orderStatusFailed     = "failed"
-	orderStatusCanceled   = "canceled"
-	orderStatusSuccess    = "success"
-	subStatusActive       = "active"
-	subStatusExpired      = "expired"
-	userStatusActive      = "active"
-	userStatusSuspended   = "suspended"
-	userStatusDeactivated = "deactivated"
+	orderStatusPending     = "pending"
+	orderStatusPaid        = "paid"
+	orderStatusFailed      = "failed"
+	orderStatusCanceled    = "canceled"
+	orderStatusSuccess     = "success"
+	subStatusActive        = "active"
+	subStatusExpired       = "expired"
+	userStatusActive       = "active"
+	userStatusSuspended    = "suspended"
+	userStatusDeactivated  = "deactivated"
+	nodeReportMaxBodyBytes = 1 << 20
+	nodeReportTimeWindow   = 5 * time.Minute
+)
+
+var (
+	errNodeReportCredentialChanged = errors.New("node report credential changed")
+	errNodeReportNonceReplayed     = errors.New("node report nonce replayed")
+	errSubscriptionNotFound        = errors.New("no active subscription")
+	errSubscriptionQuotaExhausted  = errors.New("subscription quota exhausted")
 )
 
 var supportedProtocols = map[string]struct{}{
@@ -113,10 +124,16 @@ type orderActionReq struct {
 }
 
 type trafficReportReq struct {
+	ReportID  string `json:"report_id"`
 	UserID    uint   `json:"user_id"`
-	NodeID    uint   `json:"node_id"`
 	UsedBytes int64  `json:"used_bytes"`
 	Meta      string `json:"meta"`
+}
+
+type authenticatedNodeReport struct {
+	node      model.Node
+	timestamp time.Time
+	nonce     string
 }
 
 type nodeSSHTestReq struct {
@@ -805,6 +822,104 @@ func (h *handlers) NodeSSHConfigHandler(w http.ResponseWriter, r *http.Request) 
 	node.SSHHostKeyFingerprint = req.SSHHostKeyFingerprint
 	node.IsOnline = false
 	OK(w, node)
+}
+
+func (h *handlers) NodeReportCredentialRotateHandler(w http.ResponseWriter, r *http.Request) {
+	claims, err := h.requireAdmin(w, r)
+	if err != nil {
+		return
+	}
+	nodeID, err := parsePathID(r.URL.Path, "/api/v1/nodes/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	node, err := h.loadNode(nodeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			NotFound(w)
+			return
+		}
+		ServerError(w, err)
+		return
+	}
+	rawSecret, prefix, err := newNodeReportSecret()
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	encryptedSecret, err := h.credentialCipher.Encrypt(rawSecret)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&node).Updates(map[string]interface{}{
+			"traffic_secret":            encryptedSecret,
+			"traffic_secret_prefix":     prefix,
+			"traffic_secret_revoked_at": nil,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.AuditLog{
+			UserID: claims.UserID,
+			Actor:  claims.Username,
+			Action: "node.traffic_credential.rotate",
+			Target: fmt.Sprintf("node:%d", node.ID),
+			Detail: prefix,
+		}).Error
+	})
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	OK(w, map[string]interface{}{
+		"node_id":       node.ID,
+		"secret":        rawSecret,
+		"secret_prefix": prefix,
+		"notice":        "secret is shown once; rotating invalidates the previous credential",
+	})
+}
+
+func (h *handlers) NodeReportCredentialRevokeHandler(w http.ResponseWriter, r *http.Request) {
+	claims, err := h.requireAdmin(w, r)
+	if err != nil {
+		return
+	}
+	nodeID, err := parsePathID(r.URL.Path, "/api/v1/nodes/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	now := time.Now().UTC()
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.Node{}).
+			Where("id = ? AND traffic_secret <> '' AND traffic_secret_revoked_at IS NULL", nodeID).
+			Update("traffic_secret_revoked_at", now)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Create(&model.AuditLog{
+			UserID: claims.UserID,
+			Actor:  claims.Username,
+			Action: "node.traffic_credential.revoke",
+			Target: fmt.Sprintf("node:%d", nodeID),
+			Detail: "credential revoked",
+		}).Error
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		NotFound(w)
+		return
+	}
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	OK(w, map[string]interface{}{"node_id": nodeID, "revoked": true})
 }
 
 func (h *handlers) NodeProtocolConfigHandler(w http.ResponseWriter, r *http.Request) {
@@ -1787,125 +1902,235 @@ func (h *handlers) TrafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *handlers) TrafficReportHandler(w http.ResponseWriter, r *http.Request) {
-	claims, err := h.authFromRequest(r)
+	if r.Body == nil {
+		BadRequest(w, "request body is required")
+		return
+	}
+	rawBody, err := io.ReadAll(io.LimitReader(r.Body, nodeReportMaxBodyBytes+1))
 	if err != nil {
-		Unauthorized(w, err.Error())
+		BadRequest(w, "failed to read request body")
+		return
+	}
+	if len(rawBody) > nodeReportMaxBodyBytes {
+		BadRequest(w, "request body is too large")
+		return
+	}
+
+	authenticated, err := h.authenticateNodeReport(r, rawBody, time.Now().UTC())
+	if err != nil {
+		Unauthorized(w, "invalid node report authentication")
 		return
 	}
 
 	var req trafficReportReq
-	if err := decodeBody(r, &req); err != nil {
-		BadRequest(w, err.Error())
+	decoder := json.NewDecoder(bytes.NewReader(rawBody))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		BadRequest(w, "invalid request body")
 		return
 	}
-
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		BadRequest(w, "request body must contain one JSON object")
+		return
+	}
+	req.ReportID = strings.TrimSpace(req.ReportID)
+	if !validNodeReportIdentifier(req.ReportID, 8, 64) {
+		BadRequest(w, "report_id must be 8-64 URL-safe characters")
+		return
+	}
+	if req.UserID == 0 {
+		BadRequest(w, "user_id is required")
+		return
+	}
 	if req.UsedBytes <= 0 {
 		BadRequest(w, "used_bytes must be > 0")
 		return
 	}
 
-	targetUser := req.UserID
-	if targetUser == 0 {
-		targetUser = claims.UserID
-	}
-	if targetUser != claims.UserID && !claims.IsAdmin {
-		Unauthorized(w, "can only report traffic for your own account")
-		return
-	}
-
-	nodeID := req.NodeID
-
-	if nodeID != 0 {
-		if _, err := h.loadNode(nodeID); err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				BadRequest(w, "node_id not found")
-				return
-			}
-			ServerError(w, err)
-			return
-		}
-	}
-
-	tx := h.db.Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			_ = tx.Rollback()
-			ServerError(w, fmt.Errorf("internal server panic: %v", r))
-		}
-	}()
-
-	now := time.Now()
 	var sub model.Subscription
-	if err := tx.Where("user_id = ? AND status = ? AND end_at > ?", targetUser, subStatusActive, now).Order("end_at desc").First(&sub).Error; err != nil {
-		tx.Rollback()
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			BadRequest(w, "no active subscription")
-			return
+	var record model.TrafficRecord
+	duplicate := false
+	quotaExhausted := false
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		var lockedNode model.Node
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedNode, authenticated.node.ID).Error; err != nil {
+			return err
 		}
-		ServerError(w, err)
-		return
-	}
-
-	used := req.UsedBytes
-	remainBefore := sub.FlowTotal - sub.FlowUsed
-	if remainBefore <= 0 {
-		sub.Status = subStatusExpired
-		if err := tx.Model(&sub).Updates(map[string]interface{}{
-			"status":    sub.Status,
-			"flow_used": sub.FlowUsed,
-		}).Error; err != nil {
-			tx.Rollback()
-			ServerError(w, err)
-			return
+		if lockedNode.TrafficSecret == "" || lockedNode.TrafficSecretRevokedAt != nil || lockedNode.TrafficSecret != authenticated.node.TrafficSecret {
+			return errNodeReportCredentialChanged
 		}
-		if err := tx.Commit().Error; err != nil {
-			ServerError(w, err)
-			return
+
+		err := tx.Where("node_id = ? AND report_id = ?", lockedNode.ID, req.ReportID).First(&record).Error
+		if err == nil {
+			duplicate = true
+			return nil
 		}
-		BadRequest(w, "subscription quota exhausted")
-		return
-	}
-	if used > remainBefore {
-		used = remainBefore
-	}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
 
-	sub.FlowUsed = sub.FlowUsed + used
-	if sub.FlowUsed >= sub.FlowTotal {
-		sub.Status = subStatusExpired
-	}
+		var nonceRecord model.TrafficRecord
+		err = tx.Where("node_id = ? AND nonce = ?", lockedNode.ID, authenticated.nonce).First(&nonceRecord).Error
+		if err == nil {
+			return errNodeReportNonceReplayed
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
 
-	if err := tx.Save(&sub).Error; err != nil {
-		tx.Rollback()
-		ServerError(w, err)
-		return
-	}
+		now := time.Now().UTC()
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND status = ? AND end_at > ?", req.UserID, subStatusActive, now).
+			Order("end_at desc").First(&sub).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errSubscriptionNotFound
+			}
+			return err
+		}
 
-	record := model.TrafficRecord{
-		UserID:    targetUser,
-		NodeID:    nodeID,
-		UsedBytes: used,
-		At:        now,
-		Meta:      req.Meta,
-	}
-	if err := tx.Create(&record).Error; err != nil {
-		tx.Rollback()
-		ServerError(w, err)
-		return
-	}
-	if err := tx.Commit().Error; err != nil {
-		ServerError(w, err)
-		return
-	}
+		remaining := sub.FlowTotal - sub.FlowUsed
+		if remaining <= 0 {
+			if err := tx.Model(&sub).Update("status", subStatusExpired).Error; err != nil {
+				return err
+			}
+			quotaExhausted = true
+			return nil
+		}
+		used := req.UsedBytes
+		if used > remaining {
+			used = remaining
+		}
+		sub.FlowUsed += used
+		if sub.FlowUsed >= sub.FlowTotal {
+			sub.Status = subStatusExpired
+		}
+		if err := tx.Save(&sub).Error; err != nil {
+			return err
+		}
 
-	OK(w, map[string]interface{}{
-		"subscription_id":  sub.ID,
-		"node_id":          nodeID,
-		"used_bytes":       used,
-		"flow_used":        sub.FlowUsed,
-		"flow_total":       sub.FlowTotal,
-		"flow_remaining":   sub.FlowTotal - sub.FlowUsed,
-		"subscription_end": sub.EndAt.Format(time.RFC3339),
+		record = model.TrafficRecord{
+			UserID:    req.UserID,
+			NodeID:    lockedNode.ID,
+			ReportID:  req.ReportID,
+			Nonce:     authenticated.nonce,
+			UsedBytes: used,
+			At:        authenticated.timestamp,
+			Meta:      req.Meta,
+		}
+		return tx.Create(&record).Error
 	})
+	if err != nil {
+		switch {
+		case errors.Is(err, errNodeReportCredentialChanged):
+			Unauthorized(w, "invalid node report authentication")
+		case errors.Is(err, errNodeReportNonceReplayed):
+			BadRequest(w, "report nonce was already used")
+		case errors.Is(err, errSubscriptionNotFound):
+			BadRequest(w, err.Error())
+		case errors.Is(err, errSubscriptionQuotaExhausted):
+			BadRequest(w, err.Error())
+		default:
+			ServerError(w, err)
+		}
+		return
+	}
+	if quotaExhausted {
+		BadRequest(w, errSubscriptionQuotaExhausted.Error())
+		return
+	}
+
+	response := map[string]interface{}{
+		"report_id":  record.ReportID,
+		"node_id":    record.NodeID,
+		"used_bytes": record.UsedBytes,
+		"duplicate":  duplicate,
+	}
+	if !duplicate {
+		response["subscription_id"] = sub.ID
+		response["flow_used"] = sub.FlowUsed
+		response["flow_total"] = sub.FlowTotal
+		response["flow_remaining"] = sub.FlowTotal - sub.FlowUsed
+		response["subscription_end"] = sub.EndAt.Format(time.RFC3339)
+	}
+	OK(w, response)
+}
+
+func newNodeReportSecret() (string, string, error) {
+	random := make([]byte, 32)
+	if _, err := rand.Read(random); err != nil {
+		return "", "", err
+	}
+	secret := base64.RawURLEncoding.EncodeToString(random)
+	return secret, secret[:12], nil
+}
+
+func (h *handlers) authenticateNodeReport(r *http.Request, body []byte, now time.Time) (authenticatedNodeReport, error) {
+	nodeIDHeader := strings.TrimSpace(r.Header.Get("X-Zboard-Node-ID"))
+	nodeID, err := strconv.ParseUint(nodeIDHeader, 10, strconv.IntSize)
+	if err != nil || nodeID == 0 || strconv.FormatUint(nodeID, 10) != nodeIDHeader {
+		return authenticatedNodeReport{}, errors.New("invalid node id")
+	}
+	timestampHeader := strings.TrimSpace(r.Header.Get("X-Zboard-Timestamp"))
+	timestamp, err := validateNodeReportTimestamp(timestampHeader, now)
+	if err != nil {
+		return authenticatedNodeReport{}, err
+	}
+	nonce := strings.TrimSpace(r.Header.Get("X-Zboard-Nonce"))
+	if !validNodeReportIdentifier(nonce, 16, 64) {
+		return authenticatedNodeReport{}, errors.New("invalid nonce")
+	}
+	signature, err := hex.DecodeString(strings.TrimSpace(r.Header.Get("X-Zboard-Signature")))
+	if err != nil || len(signature) != sha256.Size {
+		return authenticatedNodeReport{}, errors.New("invalid signature")
+	}
+
+	node, err := h.loadNode(uint(nodeID))
+	if err != nil || node.TrafficSecret == "" || node.TrafficSecretRevokedAt != nil {
+		return authenticatedNodeReport{}, errors.New("invalid node credential")
+	}
+	secret, err := h.credentialCipher.Decrypt(node.TrafficSecret)
+	if err != nil {
+		return authenticatedNodeReport{}, errors.New("invalid node credential")
+	}
+	expected := nodeReportSignature(secret, nodeIDHeader, timestampHeader, nonce, body)
+	if !hmac.Equal(signature, expected) {
+		return authenticatedNodeReport{}, errors.New("invalid signature")
+	}
+	return authenticatedNodeReport{node: node, timestamp: timestamp, nonce: nonce}, nil
+}
+
+func validateNodeReportTimestamp(value string, now time.Time) (time.Time, error) {
+	unixSeconds, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || strconv.FormatInt(unixSeconds, 10) != value {
+		return time.Time{}, errors.New("invalid timestamp")
+	}
+	timestamp := time.Unix(unixSeconds, 0).UTC()
+	now = now.UTC().Truncate(time.Second)
+	if timestamp.Before(now.Add(-nodeReportTimeWindow)) || timestamp.After(now.Add(nodeReportTimeWindow)) {
+		return time.Time{}, errors.New("timestamp outside allowed window")
+	}
+	return timestamp, nil
+}
+
+func validNodeReportIdentifier(value string, minLength, maxLength int) bool {
+	if len(value) < minLength || len(value) > maxLength {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || strings.ContainsRune("-_.:", char) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func nodeReportSignature(secret, nodeID, timestamp, nonce string, body []byte) []byte {
+	bodyHash := sha256.Sum256(body)
+	canonical := nodeID + "\n" + timestamp + "\n" + nonce + "\n" + hex.EncodeToString(bodyHash[:])
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(canonical))
+	return mac.Sum(nil)
 }
 
 func (h *handlers) authFromRequest(r *http.Request) (authClaims, error) {

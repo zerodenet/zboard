@@ -84,28 +84,9 @@
     </div>
     <ul>
       <li v-for="record in trafficRecords" :key="record.id">
-        #{{ record.id }} node={{ record.node_id }} used={{ record.used_bytes }} bytes at {{ record.record_at }} {{ record.meta || '' }}
+        #{{ record.id }} report={{ record.report_id || 'legacy' }} node={{ record.node_id }} used={{ record.used_bytes }} bytes at {{ record.record_at }} {{ record.meta || '' }}
       </li>
     </ul>
-
-    <h3>Report traffic (simulate usage)</h3>
-    <div class="grid-form">
-      <label v-if="app.isAdmin">
-        User ID:
-        <input v-model.number="trafficReport.user_id" type="number" placeholder="user id" />
-      </label>
-      <label>
-        Node ID:
-        <input v-model.number="trafficReport.node_id" type="number" placeholder="node id" />
-      </label>
-      <label>
-        Used bytes:
-        <input v-model.number="trafficReport.used_bytes" type="number" placeholder="bytes" />
-      </label>
-      <input v-model="trafficReport.meta" placeholder="meta (optional)" />
-      <button class="small" :disabled="!canReportTraffic" @click="reportUsage">Report</button>
-    </div>
-    <p class="muted" v-if="trafficReportResult">{{ trafficReportResult }}</p>
 
     <p class="error" v-if="errorMsg">{{ errorMsg }}</p>
   </section>
@@ -124,7 +105,6 @@ import {
   fetchTrafficSummary,
   markOrderPaid,
   payOrder,
-  reportTrafficUsage,
   revokeSubscriptionAccess,
   rotateSubscriptionAccess
 } from '../api/client'
@@ -171,13 +151,6 @@ const plans = ref<PlanItem[]>([])
 const app = useAppStore()
 const recordFilterUserId = ref<number | undefined>()
 const recordFilterNodeId = ref<number | undefined>()
-const trafficReport = ref({
-  user_id: undefined as number | undefined,
-  node_id: undefined as number | undefined,
-  used_bytes: 0,
-  meta: ''
-})
-const trafficReportResult = ref('')
 const activeSubscriptions = computed(() => subscriptions.value.filter((item) => item.status === 'active'))
 
 const loadData = async () => {
@@ -319,35 +292,6 @@ const markPaid = async (id: number) => {
     errorMsg.value = e?.response?.data?.message || 'mark paid failed'
   }
 }
-
-const reportUsage = async () => {
-  errorMsg.value = ''
-  trafficReportResult.value = ''
-  if (trafficReport.value.used_bytes <= 0) {
-    errorMsg.value = 'used bytes must be greater than zero'
-    return
-  }
-
-  try {
-    const payload: any = {
-      usedBytes: trafficReport.value.used_bytes,
-      meta: trafficReport.value.meta
-    }
-    if (trafficReport.value.user_id) {
-      payload.userId = trafficReport.value.user_id
-    }
-    if (trafficReport.value.node_id) {
-      payload.nodeId = trafficReport.value.node_id
-    }
-    const result = await reportTrafficUsage(payload)
-    trafficReportResult.value = `report ok -> remain ${displayBytes(result.flow_remaining)}`
-    await loadData()
-  } catch (e: any) {
-    errorMsg.value = e?.response?.data?.message || 'report failed'
-  }
-}
-
-const canReportTraffic = computed(() => trafficReport.value.used_bytes > 0)
 
 onMounted(loadData)
 </script>

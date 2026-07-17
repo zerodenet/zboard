@@ -27,7 +27,7 @@ Repository: `https://github.com/zerodenet/zboard`
 - Node APIs (including list) are authenticated; public access is no longer allowed
 - Protocol template distribution to nodes
 - Plans, orders, subscriptions, and traffic usage summary
-- Traffic report endpoint for quota deduction and billing reconciliation
+- Per-node signed traffic report endpoint with replay-safe quota deduction and billing reconciliation
 - Admin user management: list/create/update users, ban/resume, admin role toggle, password reset
 - Order callback supports paid callback and subscription renew flow
 - Standard API namespace `/api/v1` with `/api/v1/system/info`
@@ -215,6 +215,7 @@ docker compose -f deploy/docker/docker-compose.yml up --build
 - Backend exposes `/api/v1` and serves frontend bundle when `ZBOARD_WEB_DIR` is configured by `deploy/docker/Dockerfile`.
 - Docker startup is production mode and refuses missing JWT, database, or bootstrap administrator secrets.
 - `ZBOARD_CREDENTIAL_ENCRYPTION_KEY` must remain stable and backed up; losing it makes stored node credentials unrecoverable.
+- Create each node's traffic-report credential in Node Management, copy the one-time secret directly to that node, and rotate or revoke it if exposure is suspected.
 
 ## v0.0.1 playbook
 
