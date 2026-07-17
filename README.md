@@ -13,8 +13,9 @@ Repository: `https://github.com/zerodenet/zboard`
 
 - Current development baseline: `v0.0.1`
 - First public release target: `v0.1.0`
-- `v0.0.x` versions are internal milestones; `v0.1.0-alpha.*`, `beta.*`, and `rc.*` are public-release validation stages.
-- Implementation milestones and exit criteria: [docs/roadmap.md](docs/roadmap.md)
+- All engineering, security, business-loop, operability, and release-readiness work before the first public release remains `v0.0.1`.
+- Internal phases are tracked by exit criteria and Git commits, not by incrementing `v0.0.x`; the version changes only when `v0.1.0` is ready to publish.
+- Implementation work stages and exit criteria: [docs/roadmap.md](docs/roadmap.md)
 - Then follow SemVer for maintenance versions
 - Reproducible builds use the checked-in `go`/`toolchain` directives and `frontend/package.json` `packageManager` value.
 - Toolchain upgrades are explicit repository changes; CI does not silently chase the latest release.

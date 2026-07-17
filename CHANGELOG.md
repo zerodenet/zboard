@@ -9,6 +9,7 @@ _Planned first public release. No `v0.1.0` release has been cut._
 
 ## v0.0.1
 
+- All implementation and hardening before the first public release continues to accumulate under this development version.
 - Establish working monorepo baseline with backend/frontend/deploy/docs.
 - Introduce initial backend flows that will be hardened before v0.1.0:
   - JWT token login/register

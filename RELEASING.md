@@ -4,6 +4,8 @@
 
 - `v0.0.1`: current internal engineering baseline
 - `v0.1.0`: first public release
+- Keep all pre-public implementation and hardening work on `v0.0.1`; internal phases are not version increments.
+- Identify candidate builds by Git commit and build metadata. Do not create intermediate `v0.0.x` versions merely to mark progress.
 
 ## Release checklist
 
