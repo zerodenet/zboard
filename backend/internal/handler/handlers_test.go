@@ -203,3 +203,56 @@ func TestValidNodeReportIdentifier(t *testing.T) {
 		}
 	}
 }
+
+func TestOrderTransitionAllowed(t *testing.T) {
+	tests := []struct {
+		name    string
+		current string
+		target  string
+		force   bool
+		want    bool
+	}{
+		{name: "pending to paid", current: orderStatusPending, target: orderStatusPaid, want: true},
+		{name: "pending to failed", current: orderStatusPending, target: orderStatusFailed, want: true},
+		{name: "pending to canceled", current: orderStatusPending, target: orderStatusCanceled, want: true},
+		{name: "paid idempotent", current: orderStatusPaid, target: orderStatusPaid, want: true},
+		{name: "paid cannot fail", current: orderStatusPaid, target: orderStatusFailed, want: false},
+		{name: "paid cannot cancel with force", current: orderStatusPaid, target: orderStatusCanceled, force: true, want: false},
+		{name: "failed can settle", current: orderStatusFailed, target: orderStatusPaid, want: true},
+		{name: "failed cannot cancel normally", current: orderStatusFailed, target: orderStatusCanceled, want: false},
+		{name: "failed can cancel by admin reconciliation", current: orderStatusFailed, target: orderStatusCanceled, force: true, want: true},
+		{name: "canceled cannot settle normally", current: orderStatusCanceled, target: orderStatusPaid, want: false},
+		{name: "canceled can settle by admin reconciliation", current: orderStatusCanceled, target: orderStatusPaid, force: true, want: true},
+		{name: "unknown target", current: orderStatusPending, target: "refunded", force: true, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := orderTransitionAllowed(tt.current, tt.target, tt.force); got != tt.want {
+				t.Fatalf("orderTransitionAllowed(%q, %q, %v) = %v, want %v", tt.current, tt.target, tt.force, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateNodeProtocolConfigs(t *testing.T) {
+	if err := validateNodeProtocolConfigs(`{"listen":"0.0.0.0:443"}`, `{"server":"node.example.com","port":443}`); err != nil {
+		t.Fatalf("validateNodeProtocolConfigs() error = %v", err)
+	}
+	for _, test := range []struct {
+		name   string
+		server string
+		client string
+	}{
+		{name: "missing server", client: `{}`},
+		{name: "invalid server", server: `{`, client: `{}`},
+		{name: "missing client", server: `{}`},
+		{name: "invalid client", server: `{}`, client: `{`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateNodeProtocolConfigs(test.server, test.client); err == nil {
+				t.Fatal("validateNodeProtocolConfigs() error = nil, want rejection")
+			}
+		})
+	}
+}

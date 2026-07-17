@@ -168,3 +168,9 @@ node_id + "\n" + unix_timestamp + "\n" + nonce + "\n" + lowercase_hex(body_sha25
 The JSON body contains `report_id`, `user_id`, `used_bytes`, and optional `meta`. Reusing the same
 `(node_id, report_id)` returns `duplicate: true` without another deduction; reusing a nonce for a
 different report is rejected. See `api/openapi.yaml` for field constraints and response schemas.
+
+Order settlement locks both the order and the subscriber renewal boundary. Repeated paid results are
+idempotent, paid orders cannot be moved back to failed/canceled, and expired or exhausted subscriptions
+are reconciled before list, manifest, summary, dashboard, renewal, and traffic-deduction operations.
+The current `pay-callback` route is an admin-authenticated internal operation; external payment-provider
+signature verification remains required before it can be exposed directly to a provider.

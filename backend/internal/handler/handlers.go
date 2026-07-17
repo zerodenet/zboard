@@ -50,6 +50,9 @@ var (
 	errNodeReportNonceReplayed     = errors.New("node report nonce replayed")
 	errSubscriptionNotFound        = errors.New("no active subscription")
 	errSubscriptionQuotaExhausted  = errors.New("subscription quota exhausted")
+	errOrderNotPayable             = errors.New("order not payable")
+	errOrderNotCancelable          = errors.New("order not cancelable")
+	errOrderTransitionRejected     = errors.New("order status transition rejected")
 )
 
 var supportedProtocols = map[string]struct{}{
@@ -117,10 +120,6 @@ type orderCreateReq struct {
 type orderCallbackReq struct {
 	Status      string `json:"status"`
 	RawCallback string `json:"raw_callback"`
-}
-
-type orderActionReq struct {
-	Force bool `json:"force"`
 }
 
 type trafficReportReq struct {
@@ -602,6 +601,22 @@ func (h *handlers) isValidOrderStatus(status string) bool {
 	}
 }
 
+func orderTransitionAllowed(current, target string, force bool) bool {
+	if current == target {
+		return true
+	}
+	switch target {
+	case orderStatusPaid:
+		return current == orderStatusPending || current == orderStatusFailed || (force && current == orderStatusCanceled)
+	case orderStatusFailed:
+		return current == orderStatusPending
+	case orderStatusCanceled:
+		return current == orderStatusPending || (force && current == orderStatusFailed)
+	default:
+		return false
+	}
+}
+
 func (h *handlers) isAdminActionAllowed(target model.User, actorID uint, nextStatus string, nextIsAdmin bool) error {
 	if actorID != target.ID {
 		return nil
@@ -944,12 +959,8 @@ func (h *handlers) NodeProtocolConfigHandler(w http.ResponseWriter, r *http.Requ
 		BadRequest(w, "node_id is required")
 		return
 	}
-	if strings.TrimSpace(req.Config) == "" {
-		BadRequest(w, "config is required")
-		return
-	}
-	if strings.TrimSpace(req.ClientConfig) != "" && !json.Valid([]byte(req.ClientConfig)) {
-		BadRequest(w, "client_config must be valid JSON")
+	if err := validateNodeProtocolConfigs(req.Config, req.ClientConfig); err != nil {
+		BadRequest(w, err.Error())
 		return
 	}
 
@@ -987,10 +998,8 @@ func (h *handlers) NodeProtocolConfigHandler(w http.ResponseWriter, r *http.Requ
 		"is_online":       true,
 		"last_seen_at":    now,
 	}
-	if strings.TrimSpace(req.ClientConfig) != "" {
-		updates["client_config"] = req.ClientConfig
-		node.ClientConfig = req.ClientConfig
-	}
+	updates["client_config"] = req.ClientConfig
+	node.ClientConfig = req.ClientConfig
 	if saveErr := h.db.Model(&node).Updates(updates).Error; saveErr != nil {
 		ServerError(w, saveErr)
 		return
@@ -1257,35 +1266,26 @@ func (h *handlers) OrderPayHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if order.Status == orderStatusPaid {
-		OK(w, order)
+	force := parseBoolQuery(r.URL.Query().Get("force"))
+	if force && !claims.IsAdmin {
+		Forbidden(w, "force payment requires admin")
 		return
 	}
 
-	if !parseBoolQuery(r.URL.Query().Get("force")) && order.Status != orderStatusPending {
-		BadRequest(w, "order not payable")
-		return
-	}
-
-	tx := h.db.Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			_ = tx.Rollback()
-			ServerError(w, fmt.Errorf("internal server panic: %v", r))
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, orderID).Error; err != nil {
+			return err
 		}
-	}()
-
-	if err := h.setOrderPaid(tx, &order); err != nil {
-		tx.Rollback()
-		ServerError(w, err)
+		if !orderTransitionAllowed(order.Status, orderStatusPaid, force) {
+			return errOrderNotPayable
+		}
+		return h.setOrderPaid(tx, &order, time.Now().UTC())
+	})
+	if errors.Is(err, errOrderNotPayable) {
+		BadRequest(w, err.Error())
 		return
 	}
-	if err := tx.Commit().Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-
-	if err := h.db.First(&order, orderID).Error; err != nil {
+	if err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -1320,23 +1320,33 @@ func (h *handlers) OrderCancelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if order.Status == orderStatusCanceled {
-		OK(w, order)
+	force := parseBoolQuery(r.URL.Query().Get("force"))
+	if force && !claims.IsAdmin {
+		Forbidden(w, "force cancellation requires admin")
 		return
 	}
-	if !parseBoolQuery(r.URL.Query().Get("force")) && order.Status != orderStatusPending {
-		BadRequest(w, "order not cancelable")
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, orderID).Error; err != nil {
+			return err
+		}
+		if !orderTransitionAllowed(order.Status, orderStatusCanceled, force) {
+			return errOrderNotCancelable
+		}
+		if order.Status == orderStatusCanceled {
+			return nil
+		}
+		order.Status = orderStatusCanceled
+		order.UpdatedAt = time.Now().UTC()
+		return tx.Model(&order).Updates(map[string]interface{}{
+			"status":     order.Status,
+			"updated_at": order.UpdatedAt,
+		}).Error
+	})
+	if errors.Is(err, errOrderNotCancelable) {
+		BadRequest(w, err.Error())
 		return
 	}
-
-	if err := h.db.Model(&order).Updates(map[string]interface{}{
-		"status":     orderStatusCanceled,
-		"updated_at": time.Now(),
-	}).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	if err := h.db.First(&order, orderID).Error; err != nil {
+	if err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -1370,65 +1380,49 @@ func (h *handlers) OrderPayCallbackHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var order model.Order
-	if err := h.db.First(&order, orderID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			BadRequest(w, "order not found")
-			return
-		}
-		ServerError(w, err)
-		return
-	}
-
 	if status == orderStatusSuccess {
 		status = orderStatusPaid
 	}
-	tx := h.db.Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			_ = tx.Rollback()
-			ServerError(w, fmt.Errorf("internal server panic: %v", r))
+	var order model.Order
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, orderID).Error; err != nil {
+			return err
 		}
-	}()
-
-	if status == orderStatusPaid {
-		if err := h.setOrderPaid(tx, &order); err != nil {
-			tx.Rollback()
-			ServerError(w, err)
-			return
+		if !orderTransitionAllowed(order.Status, status, false) {
+			return errOrderTransitionRejected
 		}
-		if err := tx.Model(&order).Updates(map[string]interface{}{
-			"raw_callback": req.RawCallback,
-		}).Error; err != nil {
-			tx.Rollback()
-			ServerError(w, err)
-			return
+		now := time.Now().UTC()
+		if status == orderStatusPaid {
+			if err := h.setOrderPaid(tx, &order, now); err != nil {
+				return err
+			}
+		} else if order.Status != status {
+			order.Status = status
+			order.UpdatedAt = now
 		}
-	} else {
-		if err := tx.Model(&order).Updates(map[string]interface{}{
-			"status":       status,
-			"raw_callback": req.RawCallback,
-			"updated_at":   time.Now(),
-		}).Error; err != nil {
-			tx.Rollback()
-			ServerError(w, err)
-			return
-		}
-	}
-
-	if err := tx.Commit().Error; err != nil {
-		ServerError(w, err)
+		order.RawCallback = req.RawCallback
+		return tx.Model(&order).Updates(map[string]interface{}{
+			"status":       order.Status,
+			"raw_callback": order.RawCallback,
+			"updated_at":   now,
+		}).Error
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		BadRequest(w, "order not found")
 		return
 	}
-
-	if err := h.db.First(&order, orderID).Error; err != nil {
+	if errors.Is(err, errOrderTransitionRejected) {
+		BadRequest(w, err.Error())
+		return
+	}
+	if err != nil {
 		ServerError(w, err)
 		return
 	}
 	OK(w, order)
 }
 
-func (h *handlers) setOrderPaid(tx *gorm.DB, order *model.Order) error {
+func (h *handlers) setOrderPaid(tx *gorm.DB, order *model.Order, now time.Time) error {
 	if tx == nil {
 		tx = h.db
 	}
@@ -1442,7 +1436,6 @@ func (h *handlers) setOrderPaid(tx *gorm.DB, order *model.Order) error {
 		return err
 	}
 
-	now := time.Now()
 	subscription, err := h.allocateOrRenewSubscription(tx, plan.ID, order.UserID, now)
 	if err != nil {
 		return err
@@ -1455,6 +1448,9 @@ func (h *handlers) setOrderPaid(tx *gorm.DB, order *model.Order) error {
 	}).Error; err != nil {
 		return err
 	}
+	order.Status = orderStatusPaid
+	order.SubscriptionID = subscription.ID
+	order.UpdatedAt = now
 	return nil
 }
 
@@ -1466,6 +1462,13 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, planID uint, userID 
 	if err := tx.First(&plan, planID).Error; err != nil {
 		return model.Subscription{}, err
 	}
+	var user model.User
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&user, userID).Error; err != nil {
+		return model.Subscription{}, err
+	}
+	if err := expireSubscriptions(tx, userID, now); err != nil {
+		return model.Subscription{}, err
+	}
 
 	duration := time.Duration(plan.DurationDay) * 24 * time.Hour
 	additionalFlow := plan.TrafficGB * 1024 * 1024 * 1024
@@ -1474,7 +1477,9 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, planID uint, userID 
 	}
 
 	var sub model.Subscription
-	err := tx.Where("user_id = ? AND plan_id = ? AND status = ?", userID, planID, subStatusActive).Order("end_at desc").First(&sub).Error
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("user_id = ? AND plan_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total", userID, planID, subStatusActive, now).
+		Order("end_at desc").First(&sub).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.Subscription{}, err
 	}
@@ -1495,22 +1500,26 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, planID uint, userID 
 		return sub, nil
 	}
 
-	if sub.EndAt.Before(now) {
-		sub.StartAt = now
-		sub.EndAt = now.Add(duration)
-		sub.FlowUsed = 0
-		sub.FlowTotal = additionalFlow
-		sub.Status = subStatusActive
-	} else {
-		sub.EndAt = sub.EndAt.Add(duration)
-		sub.FlowTotal += additionalFlow
-	}
+	sub.EndAt = sub.EndAt.Add(duration)
+	sub.FlowTotal += additionalFlow
 	sub.Status = subStatusActive
 
 	if err := tx.Save(&sub).Error; err != nil {
 		return model.Subscription{}, err
 	}
 	return sub, nil
+}
+
+func expireSubscriptions(db *gorm.DB, userID uint, now time.Time) error {
+	if db == nil {
+		return errors.New("database is required")
+	}
+	query := db.Model(&model.Subscription{}).
+		Where("status = ? AND (end_at <= ? OR flow_used >= flow_total)", subStatusActive, now)
+	if userID != 0 {
+		query = query.Where("user_id = ?", userID)
+	}
+	return query.Update("status", subStatusExpired).Error
 }
 
 func (h *handlers) SubscriptionsHandler(w http.ResponseWriter, r *http.Request) {
@@ -1520,17 +1529,28 @@ func (h *handlers) SubscriptionsHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	scopeUserID := claims.UserID
+	if claims.IsAdmin {
+		if target := strings.TrimSpace(r.URL.Query().Get("user_id")); target != "" {
+			if parsed, parseErr := strconv.ParseUint(target, 10, 64); parseErr == nil {
+				scopeUserID = uint(parsed)
+			} else {
+				BadRequest(w, "invalid user_id")
+				return
+			}
+		} else {
+			scopeUserID = 0
+		}
+	}
+	if err := expireSubscriptions(h.db, scopeUserID, time.Now().UTC()); err != nil {
+		ServerError(w, err)
+		return
+	}
+
 	var subs []model.Subscription
 	query := h.db.Order("id desc")
-	if !claims.IsAdmin {
-		query = query.Where("user_id = ?", claims.UserID)
-	} else if target := strings.TrimSpace(r.URL.Query().Get("user_id")); target != "" {
-		if parsed, parseErr := strconv.ParseUint(target, 10, 64); parseErr == nil {
-			query = query.Where("user_id = ?", parsed)
-		} else {
-			BadRequest(w, "invalid user_id")
-			return
-		}
+	if scopeUserID != 0 {
+		query = query.Where("user_id = ?", scopeUserID)
 	}
 	if status := strings.TrimSpace(r.URL.Query().Get("status")); status != "" {
 		query = query.Where("status = ?", status)
@@ -1658,6 +1678,10 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	now := time.Now().UTC()
+	if err := expireSubscriptions(h.db, access.UserID, now); err != nil {
+		ServerError(w, err)
+		return
+	}
 	subscriptions := make([]model.Subscription, 0)
 	if err := h.db.Where(
 		"user_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total",
@@ -1746,6 +1770,11 @@ func (h *handlers) TrafficSummaryHandler(w http.ResponseWriter, r *http.Request)
 			userFilter = 0
 		}
 	}
+	now := time.Now().UTC()
+	if err := expireSubscriptions(h.db, userFilter, now); err != nil {
+		ServerError(w, err)
+		return
+	}
 
 	var totalUsed int64
 	usedQuery := h.db.Model(&model.TrafficRecord{}).Select("COALESCE(SUM(used_bytes), 0)")
@@ -1762,13 +1791,14 @@ func (h *handlers) TrafficSummaryHandler(w http.ResponseWriter, r *http.Request)
 	if userFilter > 0 {
 		subQuery = subQuery.Where("user_id = ?", userFilter)
 	}
-	subQuery = subQuery.Where("status = ?", subStatusActive).Select("COALESCE(SUM(flow_total - flow_used), 0)")
+	subQuery = subQuery.Where("status = ? AND end_at > ? AND flow_used < flow_total", subStatusActive, now).
+		Select("COALESCE(SUM(flow_total - flow_used), 0)")
 	if err := subQuery.Scan(&currentRemain).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
 
-	todayStart := time.Now().Truncate(24 * time.Hour)
+	todayStart := now.Truncate(24 * time.Hour)
 	var usedToday int64
 	todayQuery := h.db.Model(&model.TrafficRecord{}).Where("record_at >= ?", todayStart).Select("COALESCE(SUM(used_bytes), 0)")
 	if userFilter > 0 {
@@ -1784,13 +1814,18 @@ func (h *handlers) TrafficSummaryHandler(w http.ResponseWriter, r *http.Request)
 		"remaining_bytes":  currentRemain,
 		"used_bytes_today": usedToday,
 		"scope_user":       userFilter,
-		"as_of":            time.Now().Format(time.RFC3339),
+		"as_of":            now.Format(time.RFC3339),
 	})
 }
 
 func (h *handlers) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 	_, err := h.requireAdmin(w, r)
 	if err != nil {
+		return
+	}
+	now := time.Now().UTC()
+	if err := expireSubscriptions(h.db, 0, now); err != nil {
+		ServerError(w, err)
 		return
 	}
 
@@ -1826,7 +1861,9 @@ func (h *handlers) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
-	if err := h.db.Model(&model.Subscription{}).Where("status = ?", subStatusActive).Count(&activeSubscriptions).Error; err != nil {
+	if err := h.db.Model(&model.Subscription{}).
+		Where("status = ? AND end_at > ? AND flow_used < flow_total", subStatusActive, now).
+		Count(&activeSubscriptions).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -1842,7 +1879,9 @@ func (h *handlers) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
-	if err := h.db.Model(&model.Subscription{}).Where("status = ?", subStatusActive).Select("COALESCE(SUM(flow_total), 0)").Scan(&trafficTotal).Error; err != nil {
+	if err := h.db.Model(&model.Subscription{}).
+		Where("status = ? AND end_at > ? AND flow_used < flow_total", subStatusActive, now).
+		Select("COALESCE(SUM(flow_total - flow_used), 0)").Scan(&trafficTotal).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -1979,6 +2018,9 @@ func (h *handlers) TrafficReportHandler(w http.ResponseWriter, r *http.Request) 
 		}
 
 		now := time.Now().UTC()
+		if err := expireSubscriptions(tx, req.UserID, now); err != nil {
+			return err
+		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_id = ? AND status = ? AND end_at > ?", req.UserID, subStatusActive, now).
 			Order("end_at desc").First(&sub).Error; err != nil {
@@ -2209,6 +2251,16 @@ func (h *handlers) loadNode(nodeID uint) (model.Node, error) {
 func (h *handlers) isProtocolSupported(proto string) bool {
 	_, ok := supportedProtocols[strings.ToLower(proto)]
 	return ok
+}
+
+func validateNodeProtocolConfigs(serverConfig, clientConfig string) error {
+	if strings.TrimSpace(serverConfig) == "" || !json.Valid([]byte(serverConfig)) {
+		return errors.New("config must be valid JSON")
+	}
+	if strings.TrimSpace(clientConfig) == "" || !json.Valid([]byte(clientConfig)) {
+		return errors.New("client_config must be valid JSON")
+	}
+	return nil
 }
 
 func (h *handlers) validateNodeSSH(node model.Node) error {
