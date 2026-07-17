@@ -286,3 +286,17 @@ func TestParsePagination(t *testing.T) {
 		})
 	}
 }
+
+func TestTrafficReconciliationResult(t *testing.T) {
+	tests := map[int64]string{
+		0:    "matched",
+		1:    "missing_records",
+		1024: "missing_records",
+		-1:   "over_recorded",
+	}
+	for difference, want := range tests {
+		if got := trafficReconciliationResult(difference); got != want {
+			t.Errorf("trafficReconciliationResult(%d) = %q, want %q", difference, got, want)
+		}
+	}
+}

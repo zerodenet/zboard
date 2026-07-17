@@ -178,3 +178,9 @@ signature verification remains required before it can be exposed directly to a p
 Administrators can query paginated audit events through `GET /api/v1/admin/audit-logs` and the Audit
 Logs console page. Audit details identify changed fields or state transitions but intentionally omit
 passwords, credential plaintext, subscription tokens, and raw payment callback bodies.
+
+Every newly accepted traffic report stores the exact `subscription_id` whose quota was deducted.
+`GET /api/v1/traffic/reconciliation` compares each subscription's `flow_used` counter with its
+attributed traffic records and reports `matched`, `missing_records`, or `over_recorded`. Pre-attribution
+records remain visible as legacy records and may intentionally produce `missing_records` for an older
+subscription.

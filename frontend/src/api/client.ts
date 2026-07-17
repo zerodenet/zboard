@@ -178,7 +178,7 @@ export async function fetchTrafficSummary() {
   return unwrap(response) || {}
 }
 
-export async function fetchTrafficRecords(params: { userId?: number; nodeId?: number } = {}) {
+export async function fetchTrafficRecords(params: { userId?: number; nodeId?: number; subscriptionId?: number } = {}) {
   const query = new URLSearchParams()
   if (params.userId) {
     query.set('user_id', String(params.userId))
@@ -186,7 +186,19 @@ export async function fetchTrafficRecords(params: { userId?: number; nodeId?: nu
   if (params.nodeId) {
     query.set('node_id', String(params.nodeId))
   }
+  if (params.subscriptionId) {
+    query.set('subscription_id', String(params.subscriptionId))
+  }
   const path = query.toString() ? `/traffic/records?${query}` : '/traffic/records'
+  const response = await api.get(path)
+  return unwrap(response) || []
+}
+
+export async function fetchTrafficReconciliation(params: { userId?: number; subscriptionId?: number } = {}) {
+  const query = new URLSearchParams()
+  if (params.userId) query.set('user_id', String(params.userId))
+  if (params.subscriptionId) query.set('subscription_id', String(params.subscriptionId))
+  const path = query.toString() ? `/traffic/reconciliation?${query}` : '/traffic/reconciliation'
   const response = await api.get(path)
   return unwrap(response) || []
 }

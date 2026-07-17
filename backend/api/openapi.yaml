@@ -708,6 +708,11 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: subscription_id
+          in: query
+          schema:
+            type: integer
+            format: int64
       responses:
         "200":
           description: Traffic record list
@@ -721,6 +726,37 @@ paths:
                         type: array
                         items:
                           $ref: "#/components/schemas/TrafficRecord"
+  /api/v1/traffic/reconciliation:
+    get:
+      tags:
+        - traffic
+      summary: Reconcile subscription counters against attributed traffic records
+      description: Normal users see their own subscriptions. Admins may query all users or filter by user_id.
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+            format: int64
+          description: Admin-only user filter.
+        - name: subscription_id
+          in: query
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Subscription reconciliation rows
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/TrafficReconciliationItem"
   /api/v1/traffic/report:
     post:
       tags:
@@ -999,6 +1035,10 @@ components:
         user_id:
           type: integer
           format: int64
+        subscription_id:
+          type: integer
+          format: int64
+          description: Subscription whose quota was deducted; absent on legacy records.
         node_id:
           type: integer
           format: int64
@@ -1011,6 +1051,36 @@ components:
           type: string
         meta:
           type: string
+    TrafficReconciliationItem:
+      type: object
+      properties:
+        subscription_id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        plan_id:
+          type: integer
+          format: int64
+        status:
+          type: string
+        flow_used:
+          type: integer
+          format: int64
+        recorded_bytes:
+          type: integer
+          format: int64
+        difference:
+          type: integer
+          format: int64
+          description: flow_used minus attributed traffic record bytes.
+        result:
+          type: string
+          enum:
+            - matched
+            - missing_records
+            - over_recorded
     VersionInfo:
       type: object
       properties:

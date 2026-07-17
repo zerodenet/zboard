@@ -80,11 +80,23 @@
       <input v-if="app.isAdmin" v-model.number="recordFilterUserId" type="number" placeholder="user id" />
       <label>node id</label>
       <input v-model.number="recordFilterNodeId" type="number" placeholder="node id" />
+      <label>subscription id</label>
+      <input v-model.number="recordFilterSubscriptionId" type="number" placeholder="subscription id" />
       <button class="small" @click="refreshRecords">query records</button>
     </div>
     <ul>
       <li v-for="record in trafficRecords" :key="record.id">
-        #{{ record.id }} report={{ record.report_id || 'legacy' }} node={{ record.node_id }} used={{ record.used_bytes }} bytes at {{ record.record_at }} {{ record.meta || '' }}
+        #{{ record.id }} report={{ record.report_id || 'legacy' }} subscription={{ record.subscription_id || 'legacy' }} node={{ record.node_id }} used={{ record.used_bytes }} bytes at {{ record.record_at }} {{ record.meta || '' }}
+      </li>
+    </ul>
+
+    <h3>Traffic reconciliation</h3>
+    <button class="small" @click="refreshReconciliation">refresh reconciliation</button>
+    <ul>
+      <li v-for="item in reconciliation" :key="item.subscription_id">
+        subscription={{ item.subscription_id }} user={{ item.user_id }} plan={{ item.plan_id }}
+        flow_used={{ item.flow_used }} recorded={{ item.recorded_bytes }} difference={{ item.difference }}
+        result={{ item.result }}
       </li>
     </ul>
 
@@ -102,6 +114,7 @@ import {
   fetchSubscriptions,
   fetchSubscriptionAccess,
   fetchTrafficRecords,
+  fetchTrafficReconciliation,
   fetchTrafficSummary,
   markOrderPaid,
   payOrder,
@@ -144,6 +157,7 @@ const subscriptions = ref<SubscriptionItem[]>([])
 const subscriptionAccess = ref<any>({ configured: false })
 const subscriptionUrl = ref('')
 const trafficRecords = ref<any[]>([])
+const reconciliation = ref<any[]>([])
 const summaryText = ref('{}')
 const errorMsg = ref('')
 const orderStatusFilter = ref('')
@@ -151,6 +165,7 @@ const plans = ref<PlanItem[]>([])
 const app = useAppStore()
 const recordFilterUserId = ref<number | undefined>()
 const recordFilterNodeId = ref<number | undefined>()
+const recordFilterSubscriptionId = ref<number | undefined>()
 const activeSubscriptions = computed(() => subscriptions.value.filter((item) => item.status === 'active'))
 
 const loadData = async () => {
@@ -164,6 +179,7 @@ const loadData = async () => {
     plans.value = await fetchPlans()
     summaryText.value = JSON.stringify(await fetchTrafficSummary(), null, 2)
     await refreshRecords()
+    await refreshReconciliation()
   } catch (e: any) {
     summaryText.value = JSON.stringify({ error: 'not available' }, null, 2)
     errorMsg.value = e?.response?.data?.message || 'load failed'
@@ -173,7 +189,15 @@ const loadData = async () => {
 const refreshRecords = async () => {
   trafficRecords.value = await fetchTrafficRecords({
     userId: app.isAdmin ? recordFilterUserId.value : undefined,
-    nodeId: recordFilterNodeId.value
+    nodeId: recordFilterNodeId.value,
+    subscriptionId: recordFilterSubscriptionId.value
+  })
+}
+
+const refreshReconciliation = async () => {
+  reconciliation.value = await fetchTrafficReconciliation({
+    userId: app.isAdmin ? recordFilterUserId.value : undefined,
+    subscriptionId: recordFilterSubscriptionId.value
   })
 }
 

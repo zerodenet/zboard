@@ -135,6 +135,17 @@ type authenticatedNodeReport struct {
 	nonce     string
 }
 
+type trafficReconciliationItem struct {
+	SubscriptionID uint   `json:"subscription_id"`
+	UserID         uint   `json:"user_id"`
+	PlanID         uint   `json:"plan_id"`
+	Status         string `json:"status"`
+	FlowUsed       int64  `json:"flow_used"`
+	RecordedBytes  int64  `json:"recorded_bytes"`
+	Difference     int64  `json:"difference"`
+	Result         string `json:"result"`
+}
+
 type nodeSSHTestReq struct {
 	NodeID uint `json:"node_id"`
 }
@@ -1997,28 +2008,31 @@ func (h *handlers) TrafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 
 	records := make([]model.TrafficRecord, 0)
 	query := h.db.Order("id desc")
-	if target := strings.TrimSpace(r.URL.Query().Get("user_id")); target != "" {
-		if !claims.IsAdmin {
-			BadRequest(w, "only admin can query other users")
-			return
-		}
+	if !claims.IsAdmin {
+		query = query.Where("user_id = ?", claims.UserID)
+	} else if target := strings.TrimSpace(r.URL.Query().Get("user_id")); target != "" {
 		parsed, parseErr := strconv.ParseUint(target, 10, 64)
-		if parseErr != nil {
+		if parseErr != nil || parsed == 0 {
 			BadRequest(w, "invalid user_id")
 			return
 		}
 		query = query.Where("user_id = ?", parsed)
-	} else if claims.IsAdmin {
-		if targetNode := strings.TrimSpace(r.URL.Query().Get("node_id")); targetNode != "" {
-			parsed, parseErr := strconv.ParseUint(targetNode, 10, 64)
-			if parseErr != nil {
-				BadRequest(w, "invalid node_id")
-				return
-			}
-			query = query.Where("node_id = ?", parsed)
+	}
+	if target := strings.TrimSpace(r.URL.Query().Get("node_id")); target != "" {
+		parsed, parseErr := strconv.ParseUint(target, 10, 64)
+		if parseErr != nil || parsed == 0 {
+			BadRequest(w, "invalid node_id")
+			return
 		}
-	} else {
-		query = query.Where("user_id = ?", claims.UserID)
+		query = query.Where("node_id = ?", parsed)
+	}
+	if target := strings.TrimSpace(r.URL.Query().Get("subscription_id")); target != "" {
+		parsed, parseErr := strconv.ParseUint(target, 10, 64)
+		if parseErr != nil || parsed == 0 {
+			BadRequest(w, "invalid subscription_id")
+			return
+		}
+		query = query.Where("subscription_id = ?", parsed)
 	}
 
 	if err := query.Find(&records).Error; err != nil {
@@ -2026,6 +2040,99 @@ func (h *handlers) TrafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	OK(w, records)
+}
+
+func (h *handlers) TrafficReconciliationHandler(w http.ResponseWriter, r *http.Request) {
+	claims, err := h.authFromRequest(r)
+	if err != nil {
+		Unauthorized(w, err.Error())
+		return
+	}
+
+	userID := claims.UserID
+	if claims.IsAdmin {
+		if target := strings.TrimSpace(r.URL.Query().Get("user_id")); target != "" {
+			parsed, parseErr := strconv.ParseUint(target, 10, 64)
+			if parseErr != nil || parsed == 0 {
+				BadRequest(w, "invalid user_id")
+				return
+			}
+			userID = uint(parsed)
+		} else {
+			userID = 0
+		}
+	}
+	if err := expireSubscriptions(h.db, userID, time.Now().UTC()); err != nil {
+		ServerError(w, err)
+		return
+	}
+
+	subscriptions := make([]model.Subscription, 0)
+	query := h.db.Order("id desc")
+	if userID != 0 {
+		query = query.Where("user_id = ?", userID)
+	}
+	if target := strings.TrimSpace(r.URL.Query().Get("subscription_id")); target != "" {
+		parsed, parseErr := strconv.ParseUint(target, 10, 64)
+		if parseErr != nil || parsed == 0 {
+			BadRequest(w, "invalid subscription_id")
+			return
+		}
+		query = query.Where("id = ?", parsed)
+	}
+	if err := query.Find(&subscriptions).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+
+	totals := make(map[uint]int64, len(subscriptions))
+	if len(subscriptions) > 0 {
+		ids := make([]uint, 0, len(subscriptions))
+		for _, subscription := range subscriptions {
+			ids = append(ids, subscription.ID)
+		}
+		var aggregates []struct {
+			SubscriptionID uint  `gorm:"column:subscription_id"`
+			RecordedBytes  int64 `gorm:"column:recorded_bytes"`
+		}
+		if err := h.db.Model(&model.TrafficRecord{}).
+			Select("subscription_id, COALESCE(SUM(used_bytes), 0) AS recorded_bytes").
+			Where("subscription_id IN ?", ids).
+			Group("subscription_id").Scan(&aggregates).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		for _, aggregate := range aggregates {
+			totals[aggregate.SubscriptionID] = aggregate.RecordedBytes
+		}
+	}
+
+	items := make([]trafficReconciliationItem, 0, len(subscriptions))
+	for _, subscription := range subscriptions {
+		recorded := totals[subscription.ID]
+		difference := subscription.FlowUsed - recorded
+		items = append(items, trafficReconciliationItem{
+			SubscriptionID: subscription.ID,
+			UserID:         subscription.UserID,
+			PlanID:         subscription.PlanID,
+			Status:         subscription.Status,
+			FlowUsed:       subscription.FlowUsed,
+			RecordedBytes:  recorded,
+			Difference:     difference,
+			Result:         trafficReconciliationResult(difference),
+		})
+	}
+	OK(w, items)
+}
+
+func trafficReconciliationResult(difference int64) string {
+	if difference > 0 {
+		return "missing_records"
+	}
+	if difference < 0 {
+		return "over_recorded"
+	}
+	return "matched"
 }
 
 func (h *handlers) TrafficReportHandler(w http.ResponseWriter, r *http.Request) {
@@ -2139,13 +2246,14 @@ func (h *handlers) TrafficReportHandler(w http.ResponseWriter, r *http.Request) 
 		}
 
 		record = model.TrafficRecord{
-			UserID:    req.UserID,
-			NodeID:    lockedNode.ID,
-			ReportID:  req.ReportID,
-			Nonce:     authenticated.nonce,
-			UsedBytes: used,
-			At:        authenticated.timestamp,
-			Meta:      req.Meta,
+			UserID:         req.UserID,
+			SubscriptionID: sub.ID,
+			NodeID:         lockedNode.ID,
+			ReportID:       req.ReportID,
+			Nonce:          authenticated.nonce,
+			UsedBytes:      used,
+			At:             authenticated.timestamp,
+			Meta:           req.Meta,
 		}
 		return tx.Create(&record).Error
 	})
@@ -2170,13 +2278,13 @@ func (h *handlers) TrafficReportHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	response := map[string]interface{}{
-		"report_id":  record.ReportID,
-		"node_id":    record.NodeID,
-		"used_bytes": record.UsedBytes,
-		"duplicate":  duplicate,
+		"report_id":       record.ReportID,
+		"subscription_id": record.SubscriptionID,
+		"node_id":         record.NodeID,
+		"used_bytes":      record.UsedBytes,
+		"duplicate":       duplicate,
 	}
 	if !duplicate {
-		response["subscription_id"] = sub.ID
 		response["flow_used"] = sub.FlowUsed
 		response["flow_total"] = sub.FlowTotal
 		response["flow_remaining"] = sub.FlowTotal - sub.FlowUsed

@@ -92,14 +92,15 @@ type SubscriptionToken struct {
 }
 
 type TrafficRecord struct {
-	ID        uint      `json:"id" gorm:"primaryKey"`
-	UserID    uint      `json:"user_id" gorm:"index"`
-	NodeID    uint      `json:"node_id" gorm:"index;uniqueIndex:ux_traffic_node_report,priority:1;uniqueIndex:ux_traffic_node_nonce,priority:1"`
-	ReportID  string    `json:"report_id,omitempty" gorm:"size:64;uniqueIndex:ux_traffic_node_report,priority:2"`
-	Nonce     string    `json:"-" gorm:"size:64;uniqueIndex:ux_traffic_node_nonce,priority:2"`
-	UsedBytes int64     `json:"used_bytes"`
-	At        time.Time `json:"record_at" gorm:"index;column:record_at"`
-	Meta      string    `json:"meta" gorm:"type:text"`
+	ID             uint      `json:"id" gorm:"primaryKey"`
+	UserID         uint      `json:"user_id" gorm:"index"`
+	SubscriptionID uint      `json:"subscription_id,omitempty" gorm:"index"`
+	NodeID         uint      `json:"node_id" gorm:"index;uniqueIndex:ux_traffic_node_report,priority:1;uniqueIndex:ux_traffic_node_nonce,priority:1"`
+	ReportID       string    `json:"report_id,omitempty" gorm:"size:64;uniqueIndex:ux_traffic_node_report,priority:2"`
+	Nonce          string    `json:"-" gorm:"size:64;uniqueIndex:ux_traffic_node_nonce,priority:2"`
+	UsedBytes      int64     `json:"used_bytes"`
+	At             time.Time `json:"record_at" gorm:"index;column:record_at"`
+	Meta           string    `json:"meta" gorm:"type:text"`
 }
 
 type AuditLog struct {

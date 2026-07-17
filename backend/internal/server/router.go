@@ -172,6 +172,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.TrafficRecordsHandler),
 		},
 		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/traffic/reconciliation",
+			Handler: http.HandlerFunc(h.TrafficReconciliationHandler),
+		},
+		{
 			Method:  http.MethodPost,
 			Path:    "/api/v1/traffic/report",
 			Handler: http.HandlerFunc(h.TrafficReportHandler),
