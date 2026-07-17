@@ -2,8 +2,10 @@ services:
   mysql:
     image: mysql:8.4
     environment:
-      MYSQL_ROOT_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: ${ZBOARD_MYSQL_ROOT_PASSWORD:?set ZBOARD_MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: zboard
+      MYSQL_USER: zboard
+      MYSQL_PASSWORD: ${ZBOARD_MYSQL_PASSWORD:?set ZBOARD_MYSQL_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
 
@@ -19,7 +21,13 @@ services:
       - redis
     container_name: zboard-blue
     environment:
-      - ZBOARD_DATA_SOURCE=root:password@tcp(mysql:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local
+      ZBOARD_ENVIRONMENT: production
+      ZBOARD_DATA_SOURCE: "zboard:${ZBOARD_MYSQL_PASSWORD:?set ZBOARD_MYSQL_PASSWORD}@tcp(mysql:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local"
+      ZBOARD_REDIS_ADDR: redis:6379
+      ZBOARD_JWT_SECRET: ${ZBOARD_JWT_SECRET:?set ZBOARD_JWT_SECRET}
+      ZBOARD_BOOTSTRAP_ADMIN_USERNAME: ${ZBOARD_BOOTSTRAP_ADMIN_USERNAME:?set ZBOARD_BOOTSTRAP_ADMIN_USERNAME}
+      ZBOARD_BOOTSTRAP_ADMIN_EMAIL: ${ZBOARD_BOOTSTRAP_ADMIN_EMAIL:?set ZBOARD_BOOTSTRAP_ADMIN_EMAIL}
+      ZBOARD_BOOTSTRAP_ADMIN_PASSWORD: ${ZBOARD_BOOTSTRAP_ADMIN_PASSWORD:?set ZBOARD_BOOTSTRAP_ADMIN_PASSWORD}
     volumes:
       - ../backend/etc/zboard.yaml.example:/app/etc/zboard.yaml:ro
     command: ["-f", "/app/etc/zboard.yaml"]
@@ -36,7 +44,13 @@ services:
       - redis
     container_name: zboard-green
     environment:
-      - ZBOARD_DATA_SOURCE=root:password@tcp(mysql:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local
+      ZBOARD_ENVIRONMENT: production
+      ZBOARD_DATA_SOURCE: "zboard:${ZBOARD_MYSQL_PASSWORD:?set ZBOARD_MYSQL_PASSWORD}@tcp(mysql:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local"
+      ZBOARD_REDIS_ADDR: redis:6379
+      ZBOARD_JWT_SECRET: ${ZBOARD_JWT_SECRET:?set ZBOARD_JWT_SECRET}
+      ZBOARD_BOOTSTRAP_ADMIN_USERNAME: ${ZBOARD_BOOTSTRAP_ADMIN_USERNAME:?set ZBOARD_BOOTSTRAP_ADMIN_USERNAME}
+      ZBOARD_BOOTSTRAP_ADMIN_EMAIL: ${ZBOARD_BOOTSTRAP_ADMIN_EMAIL:?set ZBOARD_BOOTSTRAP_ADMIN_EMAIL}
+      ZBOARD_BOOTSTRAP_ADMIN_PASSWORD: ${ZBOARD_BOOTSTRAP_ADMIN_PASSWORD:?set ZBOARD_BOOTSTRAP_ADMIN_PASSWORD}
     volumes:
       - ../backend/etc/zboard.yaml.example:/app/etc/zboard.yaml:ro
     command: ["-f", "/app/etc/zboard.yaml"]

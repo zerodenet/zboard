@@ -3,11 +3,15 @@ set -euo pipefail
 
 API_BASE="${API_BASE:-http://127.0.0.1:8080}"
 ACCOUNT="${ACCOUNT:-admin}"
-PASSWORD="${PASSWORD:-admin123}"
+PASSWORD="${PASSWORD:-${ZBOARD_BOOTSTRAP_ADMIN_PASSWORD:-}}"
 REQUEST_TIMEOUT="${ZBOARD_SMOKE_TIMEOUT:-10}"
 
 info() { echo "[INFO] $*"; }
 fatal() { echo "[ERROR] $*" >&2; exit 1; }
+
+if [[ -z "${PASSWORD}" ]]; then
+  fatal "PASSWORD or ZBOARD_BOOTSTRAP_ADMIN_PASSWORD is required"
+fi
 
 req() {
   local method="$1"

@@ -60,10 +60,19 @@ Repository: `https://github.com/zerodenet/zboard`
 
 ### Backend
 
+Manual backend startup requires an explicit datasource, a JWT secret of at least 32 bytes,
+and bootstrap administrator credentials when the database has no users:
+
 ```powershell
 cd scripts
 ./ensure-go-env.ps1
 cd ../backend
+$env:ZBOARD_ENVIRONMENT = "development"
+$env:ZBOARD_DATA_SOURCE = "zboard:<local-db-password>@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local"
+$env:ZBOARD_JWT_SECRET = "<at-least-32-random-bytes>"
+$env:ZBOARD_BOOTSTRAP_ADMIN_USERNAME = "<local-admin-name>"
+$env:ZBOARD_BOOTSTRAP_ADMIN_EMAIL = "<local-admin-email>"
+$env:ZBOARD_BOOTSTRAP_ADMIN_PASSWORD = "<at-least-12-random-bytes>"
 go run ./cmd/zboard -f ./etc/zboard.yaml.example
 ```
 
@@ -103,7 +112,7 @@ The one-command startup flow does:
 
 1. dependency check (`verify-env`)
 2. auto start mysql/redis with docker compose (can skip with `-SkipDependencies` / `--skip-deps`)
-3. generate runtime config with local `datasource`, `redis_addr`, and `Port` (from `BackendPort` / `--backend-port`)
+3. generate runtime config and random local JWT/bootstrap credentials when they were not supplied
 4. start backend
 5. when frontend is enabled, inject `VITE_API_BASE` automatically
 6. wait for `/healthz`
@@ -197,18 +206,21 @@ pnpm dev
 ### Single-binary deployment
 
 ```bash
+cp .env.example .env
+# Replace every generate-/choose- placeholder with an independent strong value.
 docker compose -f deploy/docker/docker-compose.yml up --build
 ```
 
 - Backend exposes `/api/v1` and serves frontend bundle when `ZBOARD_WEB_DIR` is configured by `deploy/docker/Dockerfile`.
+- Docker startup is production mode and refuses missing JWT, database, or bootstrap administrator secrets.
 
 ## v0.0.1 playbook
 
-1. Start dependencies:
+1. Start the development stack. The script generates a random local JWT secret and first-user password when needed:
 ```bash
-docker compose -f deploy/docker/docker-compose.yml up -d mysql redis
+./scripts/start-dev.sh --with-frontend
 ```
-2. Start backend (bootstrap admin created automatically):
+2. For manual backend startup, configure the security environment variables shown in the Backend section:
 ```bash
 cd backend
 go run ./cmd/zboard -f ./etc/zboard.yaml.example
@@ -220,7 +232,7 @@ pnpm install
 pnpm dev
 ```
 4. Basic smoke test:
-- Login default admin: `admin / admin123`
+- Login with the configured bootstrap administrator. There is no repository default password.
 - Create nodes, create plans, create order from plans
 - Run SSH test and protocol publish on node APIs when real SSH target exists
 

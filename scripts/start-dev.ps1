@@ -11,6 +11,10 @@ param(
     [int]$SmokeRequestTimeoutSec = 10,
     [string]$DataSource = "",
     [string]$RedisAddr = "",
+    [string]$JwtSecret = "",
+    [string]$AdminUsername = "",
+    [string]$AdminEmail = "",
+    [string]$AdminPassword = "",
     [switch]$WithFrontend,
     [switch]$NoSmoke,
     [switch]$SkipDependencies,
@@ -19,6 +23,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+
+function New-ZBoardRandomSecret {
+    param([int]$ByteLength = 32)
+    $bytes = New-Object byte[] $ByteLength
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    } finally {
+        $rng.Dispose()
+    }
+    return [Convert]::ToBase64String($bytes)
+}
 
 if (-not $PSBoundParameters.ContainsKey('ApiBase')) {
     $ApiBase = "http://127.0.0.1:$BackendPort"
@@ -87,9 +103,30 @@ try {
 if (-not $SkipDependencies) {
     if (Get-Command docker -ErrorAction SilentlyContinue) {
         Write-Output "Starting dependency services via docker compose (mysql, redis)..."
+        $oldMySqlRootPassword = $env:ZBOARD_MYSQL_ROOT_PASSWORD
+        $oldMySqlPassword = $env:ZBOARD_MYSQL_PASSWORD
+        if ([string]::IsNullOrWhiteSpace($env:ZBOARD_MYSQL_ROOT_PASSWORD)) {
+            $env:ZBOARD_MYSQL_ROOT_PASSWORD = "zboard-local-root-password"
+        }
+        if ([string]::IsNullOrWhiteSpace($env:ZBOARD_MYSQL_PASSWORD)) {
+            $env:ZBOARD_MYSQL_PASSWORD = "zboard-local-db-password"
+        }
         Push-Location (Join-Path $projectRoot "deploy\docker")
-        docker compose -f docker-compose.yml up -d mysql redis
-        Pop-Location
+        try {
+            docker compose -f docker-compose.yml up -d mysql redis
+        } finally {
+            Pop-Location
+            if ($null -eq $oldMySqlRootPassword) {
+                Remove-Item Env:ZBOARD_MYSQL_ROOT_PASSWORD -ErrorAction SilentlyContinue
+            } else {
+                $env:ZBOARD_MYSQL_ROOT_PASSWORD = $oldMySqlRootPassword
+            }
+            if ($null -eq $oldMySqlPassword) {
+                Remove-Item Env:ZBOARD_MYSQL_PASSWORD -ErrorAction SilentlyContinue
+            } else {
+                $env:ZBOARD_MYSQL_PASSWORD = $oldMySqlPassword
+            }
+        }
     } else {
         Write-Warning "docker not found, skipped mysql/redis bootstrap."
     }
@@ -97,7 +134,7 @@ if (-not $SkipDependencies) {
 
 if ([string]::IsNullOrWhiteSpace($DataSource)) {
     if ([string]::IsNullOrWhiteSpace($env:ZBOARD_LOCAL_DSN)) {
-        $DataSource = "root:password@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local"
+        $DataSource = "zboard:zboard-local-db-password@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local"
     } else {
         $DataSource = $env:ZBOARD_LOCAL_DSN
     }
@@ -111,12 +148,38 @@ if ([string]::IsNullOrWhiteSpace($RedisAddr)) {
     }
 }
 
+if ([string]::IsNullOrWhiteSpace($JwtSecret)) {
+    $JwtSecret = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_JWT_SECRET)) { New-ZBoardRandomSecret } else { $env:ZBOARD_JWT_SECRET }
+}
+if ([string]::IsNullOrWhiteSpace($AdminUsername)) {
+    $AdminUsername = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_BOOTSTRAP_ADMIN_USERNAME)) { "admin" } else { $env:ZBOARD_BOOTSTRAP_ADMIN_USERNAME }
+}
+if ([string]::IsNullOrWhiteSpace($AdminEmail)) {
+    $AdminEmail = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_BOOTSTRAP_ADMIN_EMAIL)) { "$AdminUsername@zboard.local" } else { $env:ZBOARD_BOOTSTRAP_ADMIN_EMAIL }
+}
+$generatedAdminPassword = $false
+if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
+    if ([string]::IsNullOrWhiteSpace($env:ZBOARD_BOOTSTRAP_ADMIN_PASSWORD)) {
+        $AdminPassword = New-ZBoardRandomSecret -ByteLength 24
+        $generatedAdminPassword = $true
+    } else {
+        $AdminPassword = $env:ZBOARD_BOOTSTRAP_ADMIN_PASSWORD
+    }
+}
+
 $sourceConfig = Join-Path $projectRoot "backend/etc/zboard.yaml.example"
 $configText = Get-Content -Raw $sourceConfig
+$configText = [regex]::Replace($configText, '(?m)^(\s*)environment:\s*.*$', '$1environment: development')
 $configText = [regex]::Replace($configText, '(?m)^(\s*)datasource:\s*".*?"', '$1datasource: "' + $DataSource + '"')
 $configText = [regex]::Replace($configText, '(?m)^(\s*)redis_addr:\s*".*?"', '$1redis_addr: "' + $RedisAddr + '"')
 $configText = [regex]::Replace($configText, '(?m)^(\s*)Port:\s*[0-9]+', '$1Port: ' + $BackendPort)
 Set-Content -NoNewline -Encoding UTF8 -Path $runtimeConfig -Value $configText
+
+Write-Output "Local bootstrap admin: $AdminUsername"
+if ($generatedAdminPassword) {
+    Write-Output "Generated local bootstrap password: $AdminPassword"
+    Write-Output "Save this value for subsequent runs against the same database."
+}
 
 function Stop-ZBoardProcess {
     param(
@@ -135,9 +198,27 @@ function Stop-ZBoardProcess {
 }
 
 Write-Output "Starting backend..."
-$backendProc = Start-Process -FilePath "go" -ArgumentList @(
-    "run", "./cmd/zboard", "-f", $runtimeConfig
-) -WorkingDirectory (Join-Path $projectRoot "backend") -RedirectStandardOutput $backendLog -RedirectStandardError $backendLog -PassThru
+$securityEnvironment = @{
+    ZBOARD_ENVIRONMENT = "development"
+    ZBOARD_JWT_SECRET = $JwtSecret
+    ZBOARD_BOOTSTRAP_ADMIN_USERNAME = $AdminUsername
+    ZBOARD_BOOTSTRAP_ADMIN_EMAIL = $AdminEmail
+    ZBOARD_BOOTSTRAP_ADMIN_PASSWORD = $AdminPassword
+}
+$previousSecurityEnvironment = @{}
+foreach ($name in $securityEnvironment.Keys) {
+    $previousSecurityEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+    [Environment]::SetEnvironmentVariable($name, $securityEnvironment[$name], "Process")
+}
+try {
+    $backendProc = Start-Process -FilePath "go" -ArgumentList @(
+        "run", "./cmd/zboard", "-f", $runtimeConfig
+    ) -WorkingDirectory (Join-Path $projectRoot "backend") -RedirectStandardOutput $backendLog -RedirectStandardError $backendLog -PassThru
+} finally {
+    foreach ($name in $previousSecurityEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable($name, $previousSecurityEnvironment[$name], "Process")
+    }
+}
 
 $deadline = (Get-Date).AddSeconds($StartupTimeoutSec)
 $ready = $false
@@ -182,7 +263,7 @@ if ($WithFrontend) {
 }
 
 if (-not $NoSmoke) {
-    & "$PSScriptRoot\smoke-test.ps1" -ApiBase $ApiBase -RequestTimeoutSec [Math]::Max(1,$SmokeRequestTimeoutSec)
+    & "$PSScriptRoot\smoke-test.ps1" -ApiBase $ApiBase -Account $AdminUsername -Password $AdminPassword -RequestTimeoutSec ([Math]::Max(1,$SmokeRequestTimeoutSec))
 }
 
 if ($StopWhenDone) {

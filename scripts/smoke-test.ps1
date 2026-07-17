@@ -1,9 +1,17 @@
 param(
     [string]$ApiBase = "http://127.0.0.1:8080",
     [string]$Account = "admin",
-    [string]$Password = "admin123",
+    [string]$Password = "",
     [int]$RequestTimeoutSec = 0
 )
+
+if ([string]::IsNullOrWhiteSpace($Password)) {
+    $Password = $env:ZBOARD_BOOTSTRAP_ADMIN_PASSWORD
+}
+if ([string]::IsNullOrWhiteSpace($Password)) {
+    Write-Error "Password is required. Pass -Password or set ZBOARD_BOOTSTRAP_ADMIN_PASSWORD."
+    exit 1
+}
 
 if ($RequestTimeoutSec -le 0) {
     if (-not [string]::IsNullOrWhiteSpace($env:ZBOARD_SMOKE_TIMEOUT)) {

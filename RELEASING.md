@@ -18,6 +18,7 @@
 7. API contract in `backend/api/openapi.yaml` is frozen for release.
 8. Release artifacts include version metadata in `/api/v1/version`
 9. Use `docs/release/v0.1.0-launch-checklist.md` for end-to-end release runbook.
+10. Confirm production startup rejects missing/weak JWT, database, and bootstrap administrator settings.
 
 ## Version lock
 

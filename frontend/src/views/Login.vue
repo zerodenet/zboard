@@ -27,8 +27,8 @@ import { login } from '../api/client'
 import { useAppStore } from '../stores/app'
 import { useRoute } from 'vue-router'
 
-const account = ref('admin')
-const password = ref('admin123')
+const account = ref('')
+const password = ref('')
 const loading = ref(false)
 const error = ref('')
 const msg = ref('')

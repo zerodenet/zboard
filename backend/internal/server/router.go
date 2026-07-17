@@ -8,8 +8,11 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string) {
-	h := handler.NewHandlers(db, jwtSecret)
+func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string) error {
+	h, err := handler.NewHandlers(db, jwtSecret)
+	if err != nil {
+		return err
+	}
 
 	srv.AddRoutes([]rest.Route{
 		{
@@ -168,4 +171,5 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string) {
 			Handler: http.HandlerFunc(h.SystemInfoHandler),
 		},
 	})
+	return nil
 }

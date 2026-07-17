@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -27,7 +29,13 @@ func main() {
 
 	var c cfgpkg.Config
 	conf.MustLoad(*configFile, &c)
-	c.DataSource = datastore.MustDSN(c.DataSource)
+	c.ApplyEnvironment(os.Getenv)
+	if err := c.Validate(); err != nil {
+		log.Fatalf("config validation failed: %v", err)
+	}
+	if err := datastore.ValidateDSN(c.DataSource, c.Environment == cfgpkg.EnvironmentProduction); err != nil {
+		log.Fatalf("config validation failed: %v", err)
+	}
 
 	db, err := datastore.Open(c.DataSource)
 	if err != nil {
@@ -44,10 +52,13 @@ func main() {
 		&model.Node{},
 		&model.TrafficRecord{},
 		&model.AuditLog{},
+		&model.SubscriptionToken{},
 	); err != nil {
 		log.Fatalf("database migrate failed: %v", err)
 	}
-	createBootstrapAdminIfNeeded(db)
+	if err := createBootstrapAdminIfNeeded(db, c.BootstrapAdmin(), c.Environment); err != nil {
+		log.Fatalf("bootstrap admin failed: %v", err)
+	}
 
 	srv := rest.MustNewServer(c.RestConf)
 	defer srv.Stop()
@@ -60,9 +71,12 @@ func main() {
 
 	log.Printf("starting zboard service")
 	log.Printf("version: %s", version.FullVersion())
+	log.Printf("environment: %s", c.Environment)
 	log.Printf("config datasource: %s", datastore.QuoteDSN(c.DataSource))
 
-	server.RegisterRoutes(srv, db, c.JwtSecret)
+	if err := server.RegisterRoutes(srv, db, c.JwtSecret); err != nil {
+		log.Fatalf("route registration failed: %v", err)
+	}
 	if webDir != "" {
 		// Keep static route fallback after api route registration for deterministic precedence.
 		srv.AddRoutes([]rest.Route{{
@@ -103,32 +117,43 @@ func fileExists(path string) bool {
 	return !info.IsDir()
 }
 
-func createBootstrapAdminIfNeeded(db *gorm.DB) {
+func createBootstrapAdminIfNeeded(db *gorm.DB, adminConfig cfgpkg.BootstrapAdmin, environment string) error {
 	var count int64
 	if err := db.Model(&model.User{}).Count(&count).Error; err != nil {
-		log.Printf("bootstrap check user count failed: %v", err)
-		return
+		return fmt.Errorf("check user count: %w", err)
 	}
 	if count > 0 {
-		return
+		return nil
 	}
-
-	hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+	if !adminConfig.Configured() {
+		return errors.New("database has no users; configure ZBOARD_BOOTSTRAP_ADMIN_USERNAME, ZBOARD_BOOTSTRAP_ADMIN_EMAIL, and ZBOARD_BOOTSTRAP_ADMIN_PASSWORD")
+	}
+	admin, err := buildBootstrapAdmin(adminConfig, environment)
 	if err != nil {
-		log.Printf("bootstrap admin hash failed: %v", err)
-		return
+		return err
+	}
+	if err := db.Create(&admin).Error; err != nil {
+		return fmt.Errorf("create bootstrap admin: %w", err)
+	}
+	log.Printf("bootstrap admin created: username=%s", admin.Username)
+	return nil
+}
+
+func buildBootstrapAdmin(adminConfig cfgpkg.BootstrapAdmin, environment string) (model.User, error) {
+	if err := adminConfig.Validate(environment); err != nil {
+		return model.User{}, err
 	}
 
-	admin := model.User{
-		Username: "admin",
-		Email:    "admin@zboard.local",
+	hash, err := bcrypt.GenerateFromPassword([]byte(adminConfig.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return model.User{}, fmt.Errorf("hash bootstrap admin password: %w", err)
+	}
+
+	return model.User{
+		Username: adminConfig.Username,
+		Email:    adminConfig.Email,
 		Password: string(hash),
 		IsAdmin:  true,
 		Status:   "active",
-	}
-	if err := db.Create(&admin).Error; err != nil {
-		log.Printf("bootstrap admin create failed: %v", err)
-		return
-	}
-	log.Printf("bootstrap admin created: admin / admin123")
+	}, nil
 }

@@ -10,7 +10,10 @@ import (
 )
 
 func TestIssueTokenSignsClaimsAndSetsExpiry(t *testing.T) {
-	h := NewHandlers(nil, "test-secret")
+	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef")
+	if err != nil {
+		t.Fatalf("NewHandlers() error = %v", err)
+	}
 	before := time.Now().Add(23*time.Hour + 59*time.Minute).Unix()
 
 	token, expiresAt, err := h.issueToken(authClaims{
@@ -93,7 +96,10 @@ func TestParseBoolQuery(t *testing.T) {
 }
 
 func TestSupportedProtocolsAreCaseInsensitive(t *testing.T) {
-	h := NewHandlers(nil, "test-secret")
+	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef")
+	if err != nil {
+		t.Fatalf("NewHandlers() error = %v", err)
+	}
 	for _, protocol := range []string{"vmess", "VLESS", "Trojan", "SHADOWSOCKS", "hysteria"} {
 		if !h.isProtocolSupported(protocol) {
 			t.Errorf("isProtocolSupported(%q) = false", protocol)
@@ -101,5 +107,11 @@ func TestSupportedProtocolsAreCaseInsensitive(t *testing.T) {
 	}
 	if h.isProtocolSupported("unknown") {
 		t.Fatal("isProtocolSupported(unknown) = true")
+	}
+}
+
+func TestNewHandlersRejectsWeakJWTSecret(t *testing.T) {
+	if _, err := NewHandlers(nil, "test-secret"); err == nil {
+		t.Fatal("NewHandlers() error = nil, want weak secret rejection")
 	}
 }

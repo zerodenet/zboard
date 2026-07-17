@@ -22,8 +22,12 @@ STOP_WHEN_DONE=0
 NO_SMOKE=0
 START_FRONTEND=0
 API_BASE_MANUALLY_SET=0
-DATA_SOURCE="${ZBOARD_LOCAL_DSN:-root:password@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local}"
+DATA_SOURCE="${ZBOARD_LOCAL_DSN:-zboard:zboard-local-db-password@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local}"
 REDIS_ADDR="${ZBOARD_LOCAL_REDIS:-127.0.0.1:6379}"
+JWT_SECRET="${ZBOARD_JWT_SECRET:-}"
+ADMIN_USERNAME="${ZBOARD_BOOTSTRAP_ADMIN_USERNAME:-admin}"
+ADMIN_EMAIL="${ZBOARD_BOOTSTRAP_ADMIN_EMAIL:-}"
+ADMIN_PASSWORD="${ZBOARD_BOOTSTRAP_ADMIN_PASSWORD:-}"
 
 usage() {
   cat <<EOF
@@ -203,6 +207,11 @@ fatal() {
   exit 1
 }
 
+generate_secret() {
+  local bytes="${1:-32}"
+  od -An -N"${bytes}" -tx1 /dev/urandom | tr -d ' \n'
+}
+
 resolve_frontend_api_base() {
   local base="$1"
   local normalized="${base%/}"
@@ -257,7 +266,26 @@ fi
 
 if [[ "${SKIP_DEPS}" == "0" ]] && command -v docker >/dev/null 2>&1; then
   info "Starting dependency services via docker compose (mysql, redis)..."
-  docker compose -f "${PROJECT_ROOT}/deploy/docker/docker-compose.yml" up -d mysql redis
+  ZBOARD_MYSQL_ROOT_PASSWORD="${ZBOARD_MYSQL_ROOT_PASSWORD:-zboard-local-root-password}" \
+    ZBOARD_MYSQL_PASSWORD="${ZBOARD_MYSQL_PASSWORD:-zboard-local-db-password}" \
+    docker compose -f "${PROJECT_ROOT}/deploy/docker/docker-compose.yml" up -d mysql redis
+fi
+
+if [[ -z "${JWT_SECRET}" ]]; then
+  JWT_SECRET="$(generate_secret 32)"
+fi
+if [[ -z "${ADMIN_EMAIL}" ]]; then
+  ADMIN_EMAIL="${ADMIN_USERNAME}@zboard.local"
+fi
+generated_admin_password=0
+if [[ -z "${ADMIN_PASSWORD}" ]]; then
+  ADMIN_PASSWORD="$(generate_secret 24)"
+  generated_admin_password=1
+fi
+info "Local bootstrap admin: ${ADMIN_USERNAME}"
+if [[ "${generated_admin_password}" == "1" ]]; then
+  info "Generated local bootstrap password: ${ADMIN_PASSWORD}"
+  info "Save this value for subsequent runs against the same database."
 fi
 
 source_config="${PROJECT_ROOT}/backend/etc/zboard.yaml.example"
@@ -265,6 +293,10 @@ runtime_config="${TMP_DIR}/zboard.local.yaml"
 
 awk -v dsn="${DATA_SOURCE}" -v redis_addr="${REDIS_ADDR}" -v backend_port="${BACKEND_PORT}" '
 {
+  if ($0 ~ /^[[:space:]]*environment:/) {
+    print "environment: development"
+    next
+  }
   if ($0 ~ /^[[:space:]]*datasource:/) {
     print "datasource: \"" dsn "\""
     next
@@ -286,7 +318,12 @@ frontend_log="${TMP_DIR}/zboard-frontend.log"
 info "Starting backend..."
 (
   cd "${PROJECT_ROOT}/backend"
-  go run ./cmd/zboard -f "${runtime_config}"
+  ZBOARD_ENVIRONMENT=development \
+    ZBOARD_JWT_SECRET="${JWT_SECRET}" \
+    ZBOARD_BOOTSTRAP_ADMIN_USERNAME="${ADMIN_USERNAME}" \
+    ZBOARD_BOOTSTRAP_ADMIN_EMAIL="${ADMIN_EMAIL}" \
+    ZBOARD_BOOTSTRAP_ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
+    go run ./cmd/zboard -f "${runtime_config}"
 ) >"${backend_log}" 2>&1 &
 BACKEND_PID=$!
 
@@ -330,7 +367,7 @@ else
 fi
 
 if [[ "${NO_SMOKE}" != "1" ]]; then
-  API_BASE="${API_BASE}" bash "${SCRIPT_DIR}/smoke-test.sh"
+  API_BASE="${API_BASE}" ACCOUNT="${ADMIN_USERNAME}" PASSWORD="${ADMIN_PASSWORD}" bash "${SCRIPT_DIR}/smoke-test.sh"
 fi
 
 if [[ "${STOP_WHEN_DONE}" == "1" ]]; then

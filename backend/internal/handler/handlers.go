@@ -20,6 +20,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm"
 
+	cfgpkg "github.com/zerodenet/zboard/backend/internal/config"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/version"
 )
@@ -153,14 +154,14 @@ type handlers struct {
 	jwtSecret string
 }
 
-func NewHandlers(db *gorm.DB, jwtSecret string) *handlers {
-	if jwtSecret == "" {
-		jwtSecret = "dev-jwt-secret"
+func NewHandlers(db *gorm.DB, jwtSecret string) (*handlers, error) {
+	if err := cfgpkg.ValidateJWTSecret(jwtSecret); err != nil {
+		return nil, err
 	}
 	return &handlers{
 		db:        db,
 		jwtSecret: jwtSecret,
-	}
+	}, nil
 }
 
 func (h *handlers) HealthHandler(w http.ResponseWriter, r *http.Request) {

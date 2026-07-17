@@ -20,3 +20,5 @@ _Planned first public release. No `v0.1.0` release has been cut._
 - Frontend session handling hardened: failed token state now clears session immediately.
 - Pin the Go, Node.js, and pnpm build baselines for reproducible validation.
 - Add frontend dependency locking, type checking, backend tests, and CI gates.
+- Remove the fixed `admin/admin123` bootstrap path and require explicit first-user credentials.
+- Reject weak JWT/database production settings and redact database passwords from startup logs.

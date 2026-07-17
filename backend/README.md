@@ -4,8 +4,17 @@
 
 ## Start backend
 
+The example config intentionally contains no datasource, JWT secret, or bootstrap password.
+Set them explicitly before first startup:
+
 ```bash
 cd backend
+export ZBOARD_ENVIRONMENT=development
+export ZBOARD_DATA_SOURCE='zboard:<local-db-password>@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local'
+export ZBOARD_JWT_SECRET='<at-least-32-random-bytes>'
+export ZBOARD_BOOTSTRAP_ADMIN_USERNAME='<local-admin-name>'
+export ZBOARD_BOOTSTRAP_ADMIN_EMAIL='<local-admin-email>'
+export ZBOARD_BOOTSTRAP_ADMIN_PASSWORD='<at-least-12-random-bytes>'
 go run ./cmd/zboard -f ./etc/zboard.yaml.example
 ```
 
@@ -74,9 +83,13 @@ Script behavior:
 - auto ensure Go environment
 - auto start `mysql` and `redis` via docker compose (optional)
 - rewrite runtime config datasource/redis to local addresses
+- generate a random local JWT secret and bootstrap password when not supplied
 - rewrite runtime config `Port` from `--backend-port`
 - wait `/healthz` ready and run smoke test
 - keep running until you stop the script (or use `-StopWhenDone` / `--stop-when-done`)
+
+The generated bootstrap password is printed once. Reuse it through
+`ZBOARD_BOOTSTRAP_ADMIN_PASSWORD` when starting against the same database; existing users are never overwritten.
 
 By default, start scripts enforce the checked-in baseline (`--check-only`) and use Go 1.26.5.
 To downgrade to non-failing mode for local/offline flows, set:

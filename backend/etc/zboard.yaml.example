@@ -5,6 +5,10 @@ MaxBytes: 1048576
 Timeout: 2000000000
 MaxConns: 10000
 
-datasource: "root:password@tcp(mysql:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local"
+environment: development
+datasource: ""
 redis_addr: "redis:6379"
-jwt_secret: "replace-with-strong-secret"
+jwt_secret: ""
+bootstrap_admin_username: ""
+bootstrap_admin_email: ""
+bootstrap_admin_password: ""
