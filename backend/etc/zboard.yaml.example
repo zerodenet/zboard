@@ -1,0 +1,10 @@
+Name: zboard
+Host: 0.0.0.0
+Port: 8080
+MaxBytes: 1048576
+Timeout: 2000000000
+MaxConns: 10000
+
+datasource: "root:password@tcp(mysql:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local"
+redis_addr: "redis:6379"
+jwt_secret: "replace-with-strong-secret"

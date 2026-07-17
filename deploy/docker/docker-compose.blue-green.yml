@@ -1,0 +1,59 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: zboard
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  redis:
+    image: redis:7
+
+  zboard-blue:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    depends_on:
+      - mysql
+      - redis
+    container_name: zboard-blue
+    environment:
+      - ZBOARD_DATA_SOURCE=root:password@tcp(mysql:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local
+    volumes:
+      - ../backend/etc/zboard.yaml.example:/app/etc/zboard.yaml:ro
+    command: ["-f", "/app/etc/zboard.yaml"]
+    restart: unless-stopped
+    expose:
+      - "8080"
+
+  zboard-green:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    depends_on:
+      - mysql
+      - redis
+    container_name: zboard-green
+    environment:
+      - ZBOARD_DATA_SOURCE=root:password@tcp(mysql:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local
+    volumes:
+      - ../backend/etc/zboard.yaml.example:/app/etc/zboard.yaml:ro
+    command: ["-f", "/app/etc/zboard.yaml"]
+    restart: unless-stopped
+    expose:
+      - "8080"
+    profiles:
+      - standby
+
+  nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx-blue-green.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8081:80"
+    depends_on:
+      - zboard-blue
+
+volumes:
+  mysql_data:

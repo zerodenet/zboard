@@ -1,0 +1,1119 @@
+openapi: 3.0.3
+info:
+  title: zboard API
+  version: v0.0.1
+  description: |
+    zboard single-binary operations console API for subscriber and operator workflows.
+    Root namespace for all APIs: /api/v1
+servers:
+  - url: http://localhost:8080
+  - url: https://api.example.com
+security:
+  - bearerAuth: []
+tags:
+  - name: system
+  - name: auth
+  - name: admin
+  - name: nodes
+  - name: plans
+  - name: orders
+  - name: subscriptions
+  - name: traffic
+paths:
+  /healthz:
+    get:
+      tags:
+        - system
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+  /readyz:
+    get:
+      tags:
+        - system
+      summary: Readiness check
+      security: []
+      responses:
+        "200":
+          description: Service and database are ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+  /api/v1/version:
+    get:
+      tags:
+        - system
+      summary: Service version
+      security: []
+      responses:
+        "200":
+          description: Version metadata
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/VersionInfo"
+  /api/v1/system/info:
+    get:
+      tags:
+        - system
+      summary: System capabilities
+      security: []
+      responses:
+        "200":
+          description: Service capability and deployment info
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/SystemInfo"
+  /api/v1/auth/register:
+    post:
+      tags:
+        - auth
+      summary: Register user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthRegisterRequest"
+      responses:
+        "200":
+          description: User created, token returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/AuthLoginResponse"
+  /api/v1/auth/login:
+    post:
+      tags:
+        - auth
+      summary: Login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthLoginRequest"
+      responses:
+        "200":
+          description: Login success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/AuthLoginResponse"
+  /api/v1/auth/me:
+    get:
+      tags:
+        - auth
+      summary: Current user profile
+      responses:
+        "200":
+          description: User info
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/User"
+  /api/v1/admin/users:
+    get:
+      tags:
+        - admin
+      summary: List users
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: is_admin
+          in: query
+          schema:
+            type: boolean
+        - name: q
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/User"
+    post:
+      tags:
+        - admin
+      summary: Create user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUserCreateRequest"
+      responses:
+        "200":
+          description: Created user
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/User"
+  /api/v1/admin/users/{id}:
+    put:
+      tags:
+        - admin
+      summary: Update user fields
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUserUpdateRequest"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/User"
+  /api/v1/nodes:
+    get:
+      tags:
+        - nodes
+      summary: List nodes
+      responses:
+        "200":
+          description: Node list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Node"
+    post:
+      tags:
+        - nodes
+      summary: Create node
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeCreateRequest"
+      responses:
+        "200":
+          description: Created node
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/Node"
+  /api/v1/nodes/ssh/test:
+    post:
+      tags:
+        - nodes
+      summary: Test node SSH and update status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeSSHTestRequest"
+      responses:
+        "200":
+          description: SSH test result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/Node"
+  /api/v1/nodes/protocol/config:
+    post:
+      tags:
+        - nodes
+      summary: Publish protocol config to node
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeProtocolConfigRequest"
+      responses:
+        "200":
+          description: Node updated with protocol template
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/Node"
+  /api/v1/plans:
+    get:
+      tags:
+        - plans
+      summary: List plans
+      parameters:
+        - name: include_inactive
+          in: query
+          schema:
+            type: boolean
+          description: |
+            Admin-only flag. When true, inactive plans are returned for management.
+      responses:
+        "200":
+          description: Plan list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Plan"
+    post:
+      tags:
+        - plans
+      summary: Create plan (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanCreateRequest"
+      responses:
+        "200":
+          description: Created plan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/Plan"
+  /api/v1/admin/plans/{id}:
+    put:
+      tags:
+        - plans
+      summary: Update plan fields and toggle active state
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanUpdateRequest"
+      responses:
+        "200":
+          description: Updated plan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/Plan"
+  /api/v1/orders:
+    get:
+      tags:
+        - orders
+      summary: List orders
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+            format: int64
+          description: Admin-only query to scope another user.
+      responses:
+        "200":
+          description: Order list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Order"
+    post:
+      tags:
+        - orders
+      summary: Create order for plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCreateRequest"
+      responses:
+        "200":
+          description: Created order
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/Order"
+  /api/v1/orders/{id}/pay-callback:
+    post:
+      tags:
+        - orders
+      summary: Payment callback (mark order as paid)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCallbackRequest"
+      responses:
+        "200":
+          description: Order + subscription state after callback
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/Order"
+  /api/v1/orders/{id}/pay:
+    post:
+      tags:
+        - orders
+      summary: Self-service pay action for pending order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: force
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Order paid and subscription applied
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/Order"
+  /api/v1/orders/{id}/cancel:
+    post:
+      tags:
+        - orders
+      summary: Cancel pending order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: force
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Order canceled
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/Order"
+  /api/v1/subscriptions:
+    get:
+      tags:
+        - subscriptions
+      summary: List subscriptions
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Subscription list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Subscription"
+  /api/v1/subscription/access:
+    get:
+      tags:
+        - subscriptions
+      summary: Get current subscription URL metadata
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Subscription access metadata
+    delete:
+      tags:
+        - subscriptions
+      summary: Revoke the current subscription URL
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Subscription URL revoked
+  /api/v1/subscription/access/rotate:
+    post:
+      tags:
+        - subscriptions
+      summary: Generate or rotate the subscription URL
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: New token returned once
+  /api/v1/client/subscription/{token}:
+    get:
+      tags:
+        - subscriptions
+      summary: Fetch the versioned ZeroDenet client subscription manifest
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Client subscription manifest and Subscription-Userinfo header
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/traffic/summary:
+    get:
+      tags:
+        - traffic
+      summary: Traffic summary
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Traffic summary
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/TrafficSummary"
+  /api/v1/traffic/records:
+    get:
+      tags:
+        - traffic
+      summary: Traffic records
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: node_id
+          in: query
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Traffic record list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/TrafficRecord"
+  /api/v1/traffic/report:
+    post:
+      tags:
+        - traffic
+      summary: Report traffic usage (metered deduction)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrafficReportRequest"
+      responses:
+        "200":
+          description: Traffic report result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/TrafficReportResult"
+  /api/v1/admin/dashboard:
+    get:
+      tags:
+        - admin
+      summary: Admin dashboard metrics
+      responses:
+        "200":
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/DashboardMetrics"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Error:
+      description: Request failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiResponse"
+  schemas:
+    ApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+          nullable: true
+        timestamp:
+          type: string
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        email:
+          type: string
+        is_admin:
+          type: boolean
+        status:
+          type: string
+    Node:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        region:
+          type: string
+        address:
+          type: string
+        protocol:
+          type: string
+        is_online:
+          type: boolean
+        last_seen_at:
+          type: string
+          nullable: true
+        ssh_host:
+          type: string
+        ssh_port:
+          type: integer
+        ssh_user:
+          type: string
+    Plan:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        price_cents:
+          type: integer
+          format: int64
+        traffic_gb:
+          type: integer
+          format: int64
+        duration_day:
+          type: integer
+        max_device:
+          type: integer
+        is_active:
+          type: boolean
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        subscription_id:
+          type: integer
+          format: int64
+          nullable: true
+        plan_id:
+          type: integer
+          format: int64
+        trade_no:
+          type: string
+        amount_cents:
+          type: integer
+          format: int64
+        status:
+          type: string
+        currency:
+          type: string
+        channel:
+          type: string
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        plan_id:
+          type: integer
+          format: int64
+        start_at:
+          type: string
+        end_at:
+          type: string
+        status:
+          type: string
+        flow_total:
+          type: integer
+          format: int64
+        flow_used:
+          type: integer
+          format: int64
+    TrafficRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        node_id:
+          type: integer
+          format: int64
+        used_bytes:
+          type: integer
+          format: int64
+        record_at:
+          type: string
+        meta:
+          type: string
+    VersionInfo:
+      type: object
+      properties:
+        version:
+          type: string
+        name:
+          type: string
+    SystemInfo:
+      type: object
+      properties:
+        service:
+          type: string
+        version:
+          type: string
+        name:
+          type: string
+        api_version:
+          type: string
+        docs:
+          type: object
+          properties:
+            kernel:
+              type: string
+        deployment:
+          type: object
+          properties:
+            docker:
+              type: boolean
+            kubernetes:
+              type: boolean
+    DashboardMetrics:
+      type: object
+      properties:
+        users:
+          type: integer
+          format: int64
+        users_active:
+          type: integer
+          format: int64
+        nodes:
+          type: integer
+          format: int64
+        plans:
+          type: integer
+          format: int64
+        orders:
+          type: integer
+          format: int64
+        orders_paid:
+          type: integer
+          format: int64
+        revenue_cents:
+          type: integer
+          format: int64
+        subscriptions:
+          type: integer
+          format: int64
+        subscriptions_active:
+          type: integer
+          format: int64
+        traffic_pool_bytes:
+          type: integer
+          format: int64
+    TrafficSummary:
+      type: object
+      properties:
+        total_used_bytes:
+          type: integer
+          format: int64
+        remaining_bytes:
+          type: integer
+          format: int64
+        used_bytes_today:
+          type: integer
+          format: int64
+        scope_user:
+          type: integer
+          format: int64
+        as_of:
+          type: string
+    TrafficReportResult:
+      type: object
+      properties:
+        subscription_id:
+          type: integer
+          format: int64
+        node_id:
+          type: integer
+          format: int64
+        used_bytes:
+          type: integer
+          format: int64
+        flow_used:
+          type: integer
+          format: int64
+        flow_total:
+          type: integer
+          format: int64
+        flow_remaining:
+          type: integer
+          format: int64
+    AuthRegisterRequest:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+    AuthLoginRequest:
+      type: object
+      required:
+        - account
+        - password
+      properties:
+        account:
+          type: string
+        password:
+          type: string
+    AuthLoginResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        auth:
+          $ref: "#/components/schemas/AuthToken"
+    AuthToken:
+      type: object
+      properties:
+        token:
+          type: string
+        expires_at:
+          type: integer
+          format: int64
+    AdminUserCreateRequest:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        is_admin:
+          type: boolean
+        status:
+          type: string
+    AdminUserUpdateRequest:
+      type: object
+      properties:
+        status:
+          type: string
+        is_admin:
+          type: boolean
+        password:
+          type: string
+    NodeCreateRequest:
+      type: object
+      required:
+        - name
+        - region
+        - address
+        - protocol
+      properties:
+        name:
+          type: string
+        region:
+          type: string
+        address:
+          type: string
+        protocol:
+          type: string
+        ssh_host:
+          type: string
+        ssh_port:
+          type: integer
+        ssh_user:
+          type: string
+        ssh_password:
+          type: string
+    NodeSSHTestRequest:
+      type: object
+      required:
+        - node_id
+      properties:
+        node_id:
+          type: integer
+          format: int64
+    NodeProtocolConfigRequest:
+      type: object
+      required:
+        - node_id
+        - protocol
+        - config
+      properties:
+        node_id:
+          type: integer
+          format: int64
+        protocol:
+          type: string
+        config:
+          type: string
+    PlanCreateRequest:
+      type: object
+      required:
+        - name
+        - price_cents
+        - traffic_gb
+        - duration_day
+        - max_device
+      properties:
+        name:
+          type: string
+        price_cents:
+          type: integer
+          format: int64
+        traffic_gb:
+          type: integer
+          format: int64
+        duration_day:
+          type: integer
+        max_device:
+          type: integer
+    PlanUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        price_cents:
+          type: integer
+          format: int64
+        traffic_gb:
+          type: integer
+          format: int64
+        duration_day:
+          type: integer
+        max_device:
+          type: integer
+        is_active:
+          type: boolean
+    OrderCreateRequest:
+      type: object
+      required:
+        - plan_id
+      properties:
+        plan_id:
+          type: integer
+          format: int64
+        channel:
+          type: string
+    OrderCallbackRequest:
+      type: object
+      properties:
+        status:
+          type: string
+        raw_callback:
+          type: string
+    TrafficReportRequest:
+      type: object
+      required:
+        - used_bytes
+      properties:
+        user_id:
+          type: integer
+          format: int64
+        node_id:
+          type: integer
+          format: int64
+        used_bytes:
+          type: integer
+          format: int64
+        meta:
+          type: string
