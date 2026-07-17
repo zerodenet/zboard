@@ -59,21 +59,22 @@ type Order struct {
 }
 
 type Node struct {
-	ID             uint       `json:"id" gorm:"primaryKey"`
-	Name           string     `json:"name" gorm:"size:64;uniqueIndex"`
-	Region         string     `json:"region" gorm:"size:32"`
-	Address        string     `json:"address" gorm:"size:128"`
-	Protocol       string     `json:"protocol" gorm:"size:32"`
-	IsOnline       bool       `json:"is_online" gorm:"default:false"`
-	LastSeenAt     *time.Time `json:"last_seen_at"`
-	SSHHost        string     `json:"ssh_host" gorm:"size:64"`
-	SSHPort        int        `json:"ssh_port" gorm:"default:22"`
-	SSHUser        string     `json:"ssh_user" gorm:"size:64"`
-	SSHPwd         string     `json:"-" gorm:"size:255"`
-	ProtocolConfig string     `json:"-" gorm:"type:text"`
-	ClientConfig   string     `json:"client_config,omitempty" gorm:"type:text"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID                    uint       `json:"id" gorm:"primaryKey"`
+	Name                  string     `json:"name" gorm:"size:64;uniqueIndex"`
+	Region                string     `json:"region" gorm:"size:32"`
+	Address               string     `json:"address" gorm:"size:128"`
+	Protocol              string     `json:"protocol" gorm:"size:32"`
+	IsOnline              bool       `json:"is_online" gorm:"default:false"`
+	LastSeenAt            *time.Time `json:"last_seen_at"`
+	SSHHost               string     `json:"ssh_host" gorm:"size:64"`
+	SSHPort               int        `json:"ssh_port" gorm:"default:22"`
+	SSHUser               string     `json:"ssh_user" gorm:"size:64"`
+	SSHPwd                string     `json:"-" gorm:"column:ssh_pwd;type:text"`
+	SSHHostKeyFingerprint string     `json:"ssh_host_key_fingerprint" gorm:"size:128"`
+	ProtocolConfig        string     `json:"-" gorm:"type:text"`
+	ClientConfig          string     `json:"client_config,omitempty" gorm:"type:text"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
 }
 
 type SubscriptionToken struct {

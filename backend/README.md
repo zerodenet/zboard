@@ -12,6 +12,7 @@ cd backend
 export ZBOARD_ENVIRONMENT=development
 export ZBOARD_DATA_SOURCE='zboard:<local-db-password>@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local'
 export ZBOARD_JWT_SECRET='<at-least-32-random-bytes>'
+export ZBOARD_CREDENTIAL_ENCRYPTION_KEY='<exactly-32-random-bytes-as-base64-or-hex>'
 export ZBOARD_BOOTSTRAP_ADMIN_USERNAME='<local-admin-name>'
 export ZBOARD_BOOTSTRAP_ADMIN_EMAIL='<local-admin-email>'
 export ZBOARD_BOOTSTRAP_ADMIN_PASSWORD='<at-least-12-random-bytes>'
@@ -83,13 +84,15 @@ Script behavior:
 - auto ensure Go environment
 - auto start `mysql` and `redis` via docker compose (optional)
 - rewrite runtime config datasource/redis to local addresses
-- generate a random local JWT secret and bootstrap password when not supplied
+- generate and cache random local JWT, bootstrap, and credential-encryption secrets when not supplied
 - rewrite runtime config `Port` from `--backend-port`
 - wait `/healthz` ready and run smoke test
 - keep running until you stop the script (or use `-StopWhenDone` / `--stop-when-done`)
 
 The generated bootstrap password is printed once. Reuse it through
 `ZBOARD_BOOTSTRAP_ADMIN_PASSWORD` when starting against the same database; existing users are never overwritten.
+Local generated secrets are cached in ignored `tmp/zboard.dev.secrets`.
+Back up the production credential-encryption key separately from the database.
 
 By default, start scripts enforce the checked-in baseline (`--check-only`) and use Go 1.26.5.
 To downgrade to non-failing mode for local/offline flows, set:

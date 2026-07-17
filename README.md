@@ -70,6 +70,7 @@ cd ../backend
 $env:ZBOARD_ENVIRONMENT = "development"
 $env:ZBOARD_DATA_SOURCE = "zboard:<local-db-password>@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local"
 $env:ZBOARD_JWT_SECRET = "<at-least-32-random-bytes>"
+$env:ZBOARD_CREDENTIAL_ENCRYPTION_KEY = "<exactly-32-random-bytes-as-base64-or-hex>"
 $env:ZBOARD_BOOTSTRAP_ADMIN_USERNAME = "<local-admin-name>"
 $env:ZBOARD_BOOTSTRAP_ADMIN_EMAIL = "<local-admin-email>"
 $env:ZBOARD_BOOTSTRAP_ADMIN_PASSWORD = "<at-least-12-random-bytes>"
@@ -112,7 +113,7 @@ The one-command startup flow does:
 
 1. dependency check (`verify-env`)
 2. auto start mysql/redis with docker compose (can skip with `-SkipDependencies` / `--skip-deps`)
-3. generate runtime config and random local JWT/bootstrap credentials when they were not supplied
+3. generate runtime config and persist random local JWT/bootstrap/encryption credentials under ignored `tmp/` when they were not supplied
 4. start backend
 5. when frontend is enabled, inject `VITE_API_BASE` automatically
 6. wait for `/healthz`
@@ -213,6 +214,7 @@ docker compose -f deploy/docker/docker-compose.yml up --build
 
 - Backend exposes `/api/v1` and serves frontend bundle when `ZBOARD_WEB_DIR` is configured by `deploy/docker/Dockerfile`.
 - Docker startup is production mode and refuses missing JWT, database, or bootstrap administrator secrets.
+- `ZBOARD_CREDENTIAL_ENCRYPTION_KEY` must remain stable and backed up; losing it makes stored node credentials unrecoverable.
 
 ## v0.0.1 playbook
 
@@ -235,6 +237,7 @@ pnpm dev
 - Login with the configured bootstrap administrator. There is no repository default password.
 - Create nodes, create plans, create order from plans
 - Run SSH test and protocol publish on node APIs when real SSH target exists
+- Pin each node's verified OpenSSH `SHA256:...` host-key fingerprint before testing or publishing.
 
 ## Quick smoke validation
 

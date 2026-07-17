@@ -12,6 +12,7 @@ param(
     [string]$DataSource = "",
     [string]$RedisAddr = "",
     [string]$JwtSecret = "",
+    [string]$CredentialEncryptionKey = "",
     [string]$AdminUsername = "",
     [string]$AdminEmail = "",
     [string]$AdminPassword = "",
@@ -148,8 +149,34 @@ if ([string]::IsNullOrWhiteSpace($RedisAddr)) {
     }
 }
 
+$devSecretsPath = Join-Path $tmpDir "zboard.dev.secrets"
+$storedSecrets = @{}
+if (Test-Path -LiteralPath $devSecretsPath) {
+    Get-Content -LiteralPath $devSecretsPath | ForEach-Object {
+        $parts = $_ -split '=', 2
+        if ($parts.Count -eq 2) {
+            $storedSecrets[$parts[0]] = $parts[1]
+        }
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($JwtSecret)) {
-    $JwtSecret = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_JWT_SECRET)) { New-ZBoardRandomSecret } else { $env:ZBOARD_JWT_SECRET }
+    if (-not [string]::IsNullOrWhiteSpace($env:ZBOARD_JWT_SECRET)) {
+        $JwtSecret = $env:ZBOARD_JWT_SECRET
+    } elseif ($storedSecrets.ContainsKey("ZBOARD_JWT_SECRET")) {
+        $JwtSecret = $storedSecrets["ZBOARD_JWT_SECRET"]
+    } else {
+        $JwtSecret = New-ZBoardRandomSecret
+    }
+}
+if ([string]::IsNullOrWhiteSpace($CredentialEncryptionKey)) {
+    if (-not [string]::IsNullOrWhiteSpace($env:ZBOARD_CREDENTIAL_ENCRYPTION_KEY)) {
+        $CredentialEncryptionKey = $env:ZBOARD_CREDENTIAL_ENCRYPTION_KEY
+    } elseif ($storedSecrets.ContainsKey("ZBOARD_CREDENTIAL_ENCRYPTION_KEY")) {
+        $CredentialEncryptionKey = $storedSecrets["ZBOARD_CREDENTIAL_ENCRYPTION_KEY"]
+    } else {
+        $CredentialEncryptionKey = New-ZBoardRandomSecret
+    }
 }
 if ([string]::IsNullOrWhiteSpace($AdminUsername)) {
     $AdminUsername = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_BOOTSTRAP_ADMIN_USERNAME)) { "admin" } else { $env:ZBOARD_BOOTSTRAP_ADMIN_USERNAME }
@@ -160,12 +187,22 @@ if ([string]::IsNullOrWhiteSpace($AdminEmail)) {
 $generatedAdminPassword = $false
 if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
     if ([string]::IsNullOrWhiteSpace($env:ZBOARD_BOOTSTRAP_ADMIN_PASSWORD)) {
-        $AdminPassword = New-ZBoardRandomSecret -ByteLength 24
-        $generatedAdminPassword = $true
+        if ($storedSecrets.ContainsKey("ZBOARD_BOOTSTRAP_ADMIN_PASSWORD")) {
+            $AdminPassword = $storedSecrets["ZBOARD_BOOTSTRAP_ADMIN_PASSWORD"]
+        } else {
+            $AdminPassword = New-ZBoardRandomSecret -ByteLength 24
+            $generatedAdminPassword = $true
+        }
     } else {
         $AdminPassword = $env:ZBOARD_BOOTSTRAP_ADMIN_PASSWORD
     }
 }
+
+@(
+    "ZBOARD_JWT_SECRET=$JwtSecret"
+    "ZBOARD_CREDENTIAL_ENCRYPTION_KEY=$CredentialEncryptionKey"
+    "ZBOARD_BOOTSTRAP_ADMIN_PASSWORD=$AdminPassword"
+) | Set-Content -Encoding ASCII -LiteralPath $devSecretsPath
 
 $sourceConfig = Join-Path $projectRoot "backend/etc/zboard.yaml.example"
 $configText = Get-Content -Raw $sourceConfig
@@ -201,6 +238,7 @@ Write-Output "Starting backend..."
 $securityEnvironment = @{
     ZBOARD_ENVIRONMENT = "development"
     ZBOARD_JWT_SECRET = $JwtSecret
+    ZBOARD_CREDENTIAL_ENCRYPTION_KEY = $CredentialEncryptionKey
     ZBOARD_BOOTSTRAP_ADMIN_USERNAME = $AdminUsername
     ZBOARD_BOOTSTRAP_ADMIN_EMAIL = $AdminEmail
     ZBOARD_BOOTSTRAP_ADMIN_PASSWORD = $AdminPassword

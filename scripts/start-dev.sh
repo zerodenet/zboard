@@ -25,6 +25,7 @@ API_BASE_MANUALLY_SET=0
 DATA_SOURCE="${ZBOARD_LOCAL_DSN:-zboard:zboard-local-db-password@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local}"
 REDIS_ADDR="${ZBOARD_LOCAL_REDIS:-127.0.0.1:6379}"
 JWT_SECRET="${ZBOARD_JWT_SECRET:-}"
+CREDENTIAL_ENCRYPTION_KEY="${ZBOARD_CREDENTIAL_ENCRYPTION_KEY:-}"
 ADMIN_USERNAME="${ZBOARD_BOOTSTRAP_ADMIN_USERNAME:-admin}"
 ADMIN_EMAIL="${ZBOARD_BOOTSTRAP_ADMIN_EMAIL:-}"
 ADMIN_PASSWORD="${ZBOARD_BOOTSTRAP_ADMIN_PASSWORD:-}"
@@ -212,6 +213,15 @@ generate_secret() {
   od -An -N"${bytes}" -tx1 /dev/urandom | tr -d ' \n'
 }
 
+read_stored_secret() {
+  local name="$1"
+  local file="$2"
+  if [[ ! -f "${file}" ]]; then
+    return 0
+  fi
+  awk -F= -v name="${name}" '$1 == name { sub(/^[^=]*=/, ""); print; exit }' "${file}"
+}
+
 resolve_frontend_api_base() {
   local base="$1"
   local normalized="${base%/}"
@@ -271,17 +281,36 @@ if [[ "${SKIP_DEPS}" == "0" ]] && command -v docker >/dev/null 2>&1; then
     docker compose -f "${PROJECT_ROOT}/deploy/docker/docker-compose.yml" up -d mysql redis
 fi
 
+dev_secrets_path="${TMP_DIR}/zboard.dev.secrets"
 if [[ -z "${JWT_SECRET}" ]]; then
-  JWT_SECRET="$(generate_secret 32)"
+  JWT_SECRET="$(read_stored_secret ZBOARD_JWT_SECRET "${dev_secrets_path}")"
+  if [[ -z "${JWT_SECRET}" ]]; then
+    JWT_SECRET="$(generate_secret 32)"
+  fi
+fi
+if [[ -z "${CREDENTIAL_ENCRYPTION_KEY}" ]]; then
+  CREDENTIAL_ENCRYPTION_KEY="$(read_stored_secret ZBOARD_CREDENTIAL_ENCRYPTION_KEY "${dev_secrets_path}")"
+  if [[ -z "${CREDENTIAL_ENCRYPTION_KEY}" ]]; then
+    CREDENTIAL_ENCRYPTION_KEY="$(generate_secret 32)"
+  fi
 fi
 if [[ -z "${ADMIN_EMAIL}" ]]; then
   ADMIN_EMAIL="${ADMIN_USERNAME}@zboard.local"
 fi
 generated_admin_password=0
 if [[ -z "${ADMIN_PASSWORD}" ]]; then
-  ADMIN_PASSWORD="$(generate_secret 24)"
-  generated_admin_password=1
+  ADMIN_PASSWORD="$(read_stored_secret ZBOARD_BOOTSTRAP_ADMIN_PASSWORD "${dev_secrets_path}")"
+  if [[ -z "${ADMIN_PASSWORD}" ]]; then
+    ADMIN_PASSWORD="$(generate_secret 24)"
+    generated_admin_password=1
+  fi
 fi
+umask 077
+{
+  printf 'ZBOARD_JWT_SECRET=%s\n' "${JWT_SECRET}"
+  printf 'ZBOARD_CREDENTIAL_ENCRYPTION_KEY=%s\n' "${CREDENTIAL_ENCRYPTION_KEY}"
+  printf 'ZBOARD_BOOTSTRAP_ADMIN_PASSWORD=%s\n' "${ADMIN_PASSWORD}"
+} > "${dev_secrets_path}"
 info "Local bootstrap admin: ${ADMIN_USERNAME}"
 if [[ "${generated_admin_password}" == "1" ]]; then
   info "Generated local bootstrap password: ${ADMIN_PASSWORD}"
@@ -320,6 +349,7 @@ info "Starting backend..."
   cd "${PROJECT_ROOT}/backend"
   ZBOARD_ENVIRONMENT=development \
     ZBOARD_JWT_SECRET="${JWT_SECRET}" \
+    ZBOARD_CREDENTIAL_ENCRYPTION_KEY="${CREDENTIAL_ENCRYPTION_KEY}" \
     ZBOARD_BOOTSTRAP_ADMIN_USERNAME="${ADMIN_USERNAME}" \
     ZBOARD_BOOTSTRAP_ADMIN_EMAIL="${ADMIN_EMAIL}" \
     ZBOARD_BOOTSTRAP_ADMIN_PASSWORD="${ADMIN_PASSWORD}" \

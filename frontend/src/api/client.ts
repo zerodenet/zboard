@@ -69,6 +69,17 @@ export async function testNodeSSH(nodeId: number) {
   return unwrap(response)
 }
 
+export async function updateNodeSSH(nodeId: number, payload: {
+  ssh_host: string
+  ssh_port: number
+  ssh_user: string
+  ssh_password?: string
+  ssh_host_key_fingerprint: string
+}) {
+  const response = await api.put(`/nodes/${nodeId}/ssh`, payload)
+  return unwrap(response)
+}
+
 export async function publishNodeProtocolConfig(nodeId: number, protocol: string, config: string, clientConfig: string) {
   const response = await api.post('/nodes/protocol/config', {
     node_id: nodeId,

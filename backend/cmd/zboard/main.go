@@ -18,6 +18,7 @@ import (
 	cfgpkg "github.com/zerodenet/zboard/backend/internal/config"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/internal/security"
 	"github.com/zerodenet/zboard/backend/internal/server"
 	"github.com/zerodenet/zboard/backend/internal/version"
 )
@@ -35,6 +36,10 @@ func main() {
 	}
 	if err := datastore.ValidateDSN(c.DataSource, c.Environment == cfgpkg.EnvironmentProduction); err != nil {
 		log.Fatalf("config validation failed: %v", err)
+	}
+	credentialCipher, err := security.NewCredentialCipher(c.CredentialEncryptionKey)
+	if err != nil {
+		log.Fatalf("credential encryption init failed: %v", err)
 	}
 
 	db, err := datastore.Open(c.DataSource)
@@ -56,6 +61,13 @@ func main() {
 	); err != nil {
 		log.Fatalf("database migrate failed: %v", err)
 	}
+	migratedCredentials, err := datastore.MigrateNodeCredentials(db, credentialCipher)
+	if err != nil {
+		log.Fatalf("node credential migration failed: %v", err)
+	}
+	if migratedCredentials > 0 {
+		log.Printf("encrypted legacy node credentials: count=%d", migratedCredentials)
+	}
 	if err := createBootstrapAdminIfNeeded(db, c.BootstrapAdmin(), c.Environment); err != nil {
 		log.Fatalf("bootstrap admin failed: %v", err)
 	}
@@ -74,7 +86,7 @@ func main() {
 	log.Printf("environment: %s", c.Environment)
 	log.Printf("config datasource: %s", datastore.QuoteDSN(c.DataSource))
 
-	if err := server.RegisterRoutes(srv, db, c.JwtSecret); err != nil {
+	if err := server.RegisterRoutes(srv, db, c.JwtSecret, credentialCipher); err != nil {
 		log.Fatalf("route registration failed: %v", err)
 	}
 	if webDir != "" {

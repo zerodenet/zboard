@@ -5,11 +5,12 @@ import (
 	"net/http"
 
 	"github.com/zerodenet/zboard/backend/internal/handler"
+	"github.com/zerodenet/zboard/backend/internal/security"
 	"gorm.io/gorm"
 )
 
-func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string) error {
-	h, err := handler.NewHandlers(db, jwtSecret)
+func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher) error {
+	h, err := handler.NewHandlers(db, jwtSecret, credentialCipher)
 	if err != nil {
 		return err
 	}
@@ -74,6 +75,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string) error {
 			Method:  http.MethodPost,
 			Path:    "/api/v1/nodes/ssh/test",
 			Handler: http.HandlerFunc(h.NodeSSHTestHandler),
+		},
+		{
+			Method:  http.MethodPut,
+			Path:    "/api/v1/nodes/:id/ssh",
+			Handler: http.HandlerFunc(h.NodeSSHConfigHandler),
 		},
 		{
 			Method:  http.MethodPost,

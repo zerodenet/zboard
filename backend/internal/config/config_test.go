@@ -6,16 +6,18 @@ import (
 )
 
 const testJWTSecret = "0123456789abcdef0123456789abcdef"
+const testCredentialEncryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func TestApplyEnvironmentOverridesSecuritySettings(t *testing.T) {
 	values := map[string]string{
-		"ZBOARD_ENVIRONMENT":              "production",
-		"ZBOARD_DATA_SOURCE":              "zboard:strong-db-password@tcp(mysql:3306)/zboard",
-		"ZBOARD_REDIS_ADDR":               "redis:6379",
-		"ZBOARD_JWT_SECRET":               testJWTSecret,
-		"ZBOARD_BOOTSTRAP_ADMIN_USERNAME": "operator",
-		"ZBOARD_BOOTSTRAP_ADMIN_EMAIL":    "operator@example.com",
-		"ZBOARD_BOOTSTRAP_ADMIN_PASSWORD": "strong-admin-password",
+		"ZBOARD_ENVIRONMENT":               "production",
+		"ZBOARD_DATA_SOURCE":               "zboard:strong-db-password@tcp(mysql:3306)/zboard",
+		"ZBOARD_REDIS_ADDR":                "redis:6379",
+		"ZBOARD_JWT_SECRET":                testJWTSecret,
+		"ZBOARD_BOOTSTRAP_ADMIN_USERNAME":  "operator",
+		"ZBOARD_BOOTSTRAP_ADMIN_EMAIL":     "operator@example.com",
+		"ZBOARD_BOOTSTRAP_ADMIN_PASSWORD":  "strong-admin-password",
+		"ZBOARD_CREDENTIAL_ENCRYPTION_KEY": testCredentialEncryptionKey,
 	}
 	c := Config{}
 	c.ApplyEnvironment(func(key string) string { return values[key] })
@@ -49,12 +51,13 @@ func TestValidateRejectsUnsafeConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := Config{
-				Environment:            EnvironmentProduction,
-				DataSource:             "zboard:strong-db-password@tcp(mysql:3306)/zboard",
-				JwtSecret:              testJWTSecret,
-				BootstrapAdminUsername: "operator",
-				BootstrapAdminEmail:    "operator@example.com",
-				BootstrapAdminPassword: "strong-admin-password",
+				Environment:             EnvironmentProduction,
+				DataSource:              "zboard:strong-db-password@tcp(mysql:3306)/zboard",
+				JwtSecret:               testJWTSecret,
+				BootstrapAdminUsername:  "operator",
+				BootstrapAdminEmail:     "operator@example.com",
+				BootstrapAdminPassword:  "strong-admin-password",
+				CredentialEncryptionKey: testCredentialEncryptionKey,
 			}
 			tt.edit(&c)
 			err := c.Validate()
@@ -67,9 +70,10 @@ func TestValidateRejectsUnsafeConfiguration(t *testing.T) {
 
 func TestBootstrapAdminMayBeOmittedForExistingDatabase(t *testing.T) {
 	c := Config{
-		Environment: EnvironmentProduction,
-		DataSource:  "zboard:strong-db-password@tcp(mysql:3306)/zboard",
-		JwtSecret:   testJWTSecret,
+		Environment:             EnvironmentProduction,
+		DataSource:              "zboard:strong-db-password@tcp(mysql:3306)/zboard",
+		JwtSecret:               testJWTSecret,
+		CredentialEncryptionKey: testCredentialEncryptionKey,
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)

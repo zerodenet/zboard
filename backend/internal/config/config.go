@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/zeromicro/go-zero/rest"
+
+	"github.com/zerodenet/zboard/backend/internal/security"
 )
 
 const (
@@ -17,13 +19,14 @@ const (
 
 type Config struct {
 	rest.RestConf
-	Environment            string `json:"environment,default=development"`
-	DataSource             string `json:"datasource"`
-	RedisAddr              string `json:"redis_addr,optional"`
-	JwtSecret              string `json:"jwt_secret"`
-	BootstrapAdminUsername string `json:"bootstrap_admin_username,optional"`
-	BootstrapAdminEmail    string `json:"bootstrap_admin_email,optional"`
-	BootstrapAdminPassword string `json:"bootstrap_admin_password,optional"`
+	Environment             string `json:"environment,default=development"`
+	DataSource              string `json:"datasource"`
+	RedisAddr               string `json:"redis_addr,optional"`
+	JwtSecret               string `json:"jwt_secret"`
+	BootstrapAdminUsername  string `json:"bootstrap_admin_username,optional"`
+	BootstrapAdminEmail     string `json:"bootstrap_admin_email,optional"`
+	BootstrapAdminPassword  string `json:"bootstrap_admin_password,optional"`
+	CredentialEncryptionKey string `json:"credential_encryption_key,optional"`
 }
 
 type BootstrapAdmin struct {
@@ -47,6 +50,7 @@ func (c *Config) ApplyEnvironment(getenv func(string) string) {
 	applyOverride(&c.BootstrapAdminUsername, getenv("ZBOARD_BOOTSTRAP_ADMIN_USERNAME"))
 	applyOverride(&c.BootstrapAdminEmail, getenv("ZBOARD_BOOTSTRAP_ADMIN_EMAIL"))
 	applyOverride(&c.BootstrapAdminPassword, getenv("ZBOARD_BOOTSTRAP_ADMIN_PASSWORD"))
+	applyOverride(&c.CredentialEncryptionKey, getenv("ZBOARD_CREDENTIAL_ENCRYPTION_KEY"))
 }
 
 func (c *Config) Validate() error {
@@ -59,6 +63,9 @@ func (c *Config) Validate() error {
 		return errors.New("datasource is required")
 	}
 	if err := ValidateJWTSecret(c.JwtSecret); err != nil {
+		return err
+	}
+	if err := security.ValidateCredentialKey(c.CredentialEncryptionKey); err != nil {
 		return err
 	}
 

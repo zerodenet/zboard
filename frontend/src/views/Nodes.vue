@@ -11,6 +11,7 @@
         <input v-model.number="form.ssh_port" type="number" placeholder="ssh port" />
         <input v-model="form.ssh_user" placeholder="ssh user" />
         <input v-model="form.ssh_password" type="password" placeholder="ssh password" />
+        <input v-model="form.ssh_host_key_fingerprint" placeholder="SSH host key fingerprint (SHA256:...)" />
       </div>
       <button type="submit">Create Node</button>
     </form>
@@ -19,7 +20,9 @@
       <li v-for="item in nodes" :key="item.id">
         #{{ item.id }} {{ item.name }} - {{ item.region }} - {{ item.address }} - {{ item.protocol }} -
         online: {{ item.is_online ? 'yes' : 'no' }}
+        <span v-if="item.ssh_host_key_fingerprint"> - host key pinned</span>
         <button v-if="app.isAdmin" class="small" type="button" @click="testNode(item.id)">SSH Test</button>
+        <button v-if="app.isAdmin" class="small" type="button" @click="prepareSSH(item)">Configure SSH</button>
         <button v-if="app.isAdmin" class="small" type="button" @click="preparePublish(item)">Push Config</button>
         <div class="node-tip" v-if="testResult[item.id]">
           {{ testResult[item.id] }}
@@ -27,6 +30,18 @@
       </li>
     </ul>
     <p class="error" v-if="error">{{ error }}</p>
+
+    <section v-if="sshEdit.node_id && app.isAdmin">
+      <h3>Configure Node SSH</h3>
+      <div class="grid-form">
+        <input v-model="sshEdit.ssh_host" placeholder="ssh host" />
+        <input v-model.number="sshEdit.ssh_port" type="number" placeholder="ssh port" />
+        <input v-model="sshEdit.ssh_user" placeholder="ssh user" />
+        <input v-model="sshEdit.ssh_password" type="password" placeholder="new password (leave blank to keep current)" />
+        <input v-model="sshEdit.ssh_host_key_fingerprint" placeholder="SSH host key fingerprint (SHA256:...)" />
+      </div>
+      <button type="button" @click="saveSSH">Save SSH Configuration</button>
+    </section>
 
     <section v-if="publish.node_id && app.isAdmin">
       <h3>Publish Protocol Config</h3>
@@ -47,7 +62,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { createNode, fetchNodes, publishNodeProtocolConfig, testNodeSSH } from '../api/client'
+import { createNode, fetchNodes, publishNodeProtocolConfig, testNodeSSH, updateNodeSSH } from '../api/client'
 import { useAppStore } from '../stores/app'
 
 const nodes = ref<any[]>([])
@@ -62,7 +77,16 @@ const form = reactive({
   ssh_host: '',
   ssh_port: 22,
   ssh_user: 'root',
-  ssh_password: ''
+  ssh_password: '',
+  ssh_host_key_fingerprint: ''
+})
+const sshEdit = reactive({
+  node_id: 0,
+  ssh_host: '',
+  ssh_port: 22,
+  ssh_user: '',
+  ssh_password: '',
+  ssh_host_key_fingerprint: ''
 })
 const publish = reactive({
   node_id: 0,
@@ -91,11 +115,39 @@ const create = async () => {
       ssh_host: form.ssh_host,
       ssh_port: form.ssh_port,
       ssh_user: form.ssh_user,
-      ssh_password: form.ssh_password
+      ssh_password: form.ssh_password,
+      ssh_host_key_fingerprint: form.ssh_host_key_fingerprint
     })
+    form.ssh_password = ''
     nodes.value = await fetchNodes()
   } catch (e: any) {
     error.value = e?.response?.data?.message || 'create failed'
+  }
+}
+
+const prepareSSH = (node: any) => {
+  sshEdit.node_id = node.id
+  sshEdit.ssh_host = node.ssh_host || ''
+  sshEdit.ssh_port = node.ssh_port || 22
+  sshEdit.ssh_user = node.ssh_user || ''
+  sshEdit.ssh_password = ''
+  sshEdit.ssh_host_key_fingerprint = node.ssh_host_key_fingerprint || ''
+}
+
+const saveSSH = async () => {
+  error.value = ''
+  try {
+    await updateNodeSSH(sshEdit.node_id, {
+      ssh_host: sshEdit.ssh_host,
+      ssh_port: sshEdit.ssh_port,
+      ssh_user: sshEdit.ssh_user,
+      ssh_password: sshEdit.ssh_password || undefined,
+      ssh_host_key_fingerprint: sshEdit.ssh_host_key_fingerprint
+    })
+    sshEdit.ssh_password = ''
+    nodes.value = await fetchNodes()
+  } catch (e: any) {
+    error.value = e?.response?.data?.message || 'SSH configuration update failed'
   }
 }
 

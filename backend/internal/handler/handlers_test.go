@@ -2,15 +2,29 @@ package handler
 
 import (
 	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/zerodenet/zboard/backend/internal/security"
 )
 
+const testCredentialKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+func newTestCredentialCipher(t *testing.T) *security.CredentialCipher {
+	t.Helper()
+	cipher, err := security.NewCredentialCipher(testCredentialKey)
+	if err != nil {
+		t.Fatalf("NewCredentialCipher() error = %v", err)
+	}
+	return cipher
+}
+
 func TestIssueTokenSignsClaimsAndSetsExpiry(t *testing.T) {
-	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef")
+	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t))
 	if err != nil {
 		t.Fatalf("NewHandlers() error = %v", err)
 	}
@@ -96,7 +110,7 @@ func TestParseBoolQuery(t *testing.T) {
 }
 
 func TestSupportedProtocolsAreCaseInsensitive(t *testing.T) {
-	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef")
+	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t))
 	if err != nil {
 		t.Fatalf("NewHandlers() error = %v", err)
 	}
@@ -111,7 +125,19 @@ func TestSupportedProtocolsAreCaseInsensitive(t *testing.T) {
 }
 
 func TestNewHandlersRejectsWeakJWTSecret(t *testing.T) {
-	if _, err := NewHandlers(nil, "test-secret"); err == nil {
+	if _, err := NewHandlers(nil, "test-secret", newTestCredentialCipher(t)); err == nil {
 		t.Fatal("NewHandlers() error = nil, want weak secret rejection")
+	}
+}
+
+func TestValidateSSHHostKeyFingerprint(t *testing.T) {
+	valid := "SHA256:" + base64.RawStdEncoding.EncodeToString(make([]byte, sha256.Size))
+	if err := validateSSHHostKeyFingerprint(valid); err != nil {
+		t.Fatalf("validateSSHHostKeyFingerprint() error = %v", err)
+	}
+	for _, value := range []string{"", "MD5:aa:bb", "SHA256:not-base64", "SHA256:YWJj"} {
+		if err := validateSSHHostKeyFingerprint(value); err == nil {
+			t.Fatalf("validateSSHHostKeyFingerprint(%q) error = nil, want rejection", value)
+		}
 	}
 }

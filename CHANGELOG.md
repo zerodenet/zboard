@@ -22,3 +22,4 @@ _Planned first public release. No `v0.1.0` release has been cut._
 - Add frontend dependency locking, type checking, backend tests, and CI gates.
 - Remove the fixed `admin/admin123` bootstrap path and require explicit first-user credentials.
 - Reject weak JWT/database production settings and redact database passwords from startup logs.
+- Encrypt node SSH passwords with AES-GCM, migrate legacy plaintext, and require pinned SHA256 host keys.

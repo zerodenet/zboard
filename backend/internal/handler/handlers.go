@@ -5,11 +5,13 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,6 +24,7 @@ import (
 
 	cfgpkg "github.com/zerodenet/zboard/backend/internal/config"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/internal/security"
 	"github.com/zerodenet/zboard/backend/internal/version"
 )
 
@@ -67,14 +70,15 @@ type userPublic struct {
 }
 
 type nodeCreateReq struct {
-	Name     string `json:"name"`
-	Region   string `json:"region"`
-	Address  string `json:"address"`
-	Protocol string `json:"protocol"`
-	SSHHost  string `json:"ssh_host"`
-	SSHPort  int    `json:"ssh_port"`
-	SSHUser  string `json:"ssh_user"`
-	SSHPwd   string `json:"ssh_password"`
+	Name                  string `json:"name"`
+	Region                string `json:"region"`
+	Address               string `json:"address"`
+	Protocol              string `json:"protocol"`
+	SSHHost               string `json:"ssh_host"`
+	SSHPort               int    `json:"ssh_port"`
+	SSHUser               string `json:"ssh_user"`
+	SSHPwd                string `json:"ssh_password"`
+	SSHHostKeyFingerprint string `json:"ssh_host_key_fingerprint"`
 }
 
 type planCreateReq struct {
@@ -119,6 +123,14 @@ type nodeSSHTestReq struct {
 	NodeID uint `json:"node_id"`
 }
 
+type nodeSSHConfigReq struct {
+	SSHHost               string `json:"ssh_host"`
+	SSHPort               int    `json:"ssh_port"`
+	SSHUser               string `json:"ssh_user"`
+	SSHPwd                string `json:"ssh_password"`
+	SSHHostKeyFingerprint string `json:"ssh_host_key_fingerprint"`
+}
+
 type nodeProtocolConfigReq struct {
 	NodeID       uint   `json:"node_id"`
 	Protocol     string `json:"protocol"`
@@ -150,17 +162,22 @@ type adminUserUpdateReq struct {
 }
 
 type handlers struct {
-	db        *gorm.DB
-	jwtSecret string
+	db               *gorm.DB
+	jwtSecret        string
+	credentialCipher *security.CredentialCipher
 }
 
-func NewHandlers(db *gorm.DB, jwtSecret string) (*handlers, error) {
+func NewHandlers(db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher) (*handlers, error) {
 	if err := cfgpkg.ValidateJWTSecret(jwtSecret); err != nil {
 		return nil, err
 	}
+	if credentialCipher == nil {
+		return nil, errors.New("credential cipher is required")
+	}
 	return &handlers{
-		db:        db,
-		jwtSecret: jwtSecret,
+		db:               db,
+		jwtSecret:        jwtSecret,
+		credentialCipher: credentialCipher,
 	}, nil
 }
 
@@ -625,17 +642,33 @@ func (h *handlers) NodeCreateHandler(w http.ResponseWriter, r *http.Request) {
 		req.SSHPort = 22
 	}
 	req.Protocol = protocol
+	req.SSHHost = strings.TrimSpace(req.SSHHost)
+	req.SSHUser = strings.TrimSpace(req.SSHUser)
+	req.SSHHostKeyFingerprint = strings.TrimSpace(req.SSHHostKeyFingerprint)
+	sshConfigured := req.SSHHost != "" || req.SSHUser != "" || req.SSHPwd != "" || req.SSHHostKeyFingerprint != ""
+	if sshConfigured {
+		if err := validateSSHFields(req.SSHHost, req.SSHPort, req.SSHUser, req.SSHPwd, req.SSHHostKeyFingerprint); err != nil {
+			BadRequest(w, err.Error())
+			return
+		}
+	}
+	encryptedPassword, err := h.credentialCipher.Encrypt(req.SSHPwd)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
 
 	node := model.Node{
-		Name:     req.Name,
-		Region:   req.Region,
-		Address:  req.Address,
-		Protocol: req.Protocol,
-		IsOnline: false,
-		SSHHost:  req.SSHHost,
-		SSHPort:  req.SSHPort,
-		SSHUser:  req.SSHUser,
-		SSHPwd:   req.SSHPwd,
+		Name:                  req.Name,
+		Region:                req.Region,
+		Address:               req.Address,
+		Protocol:              req.Protocol,
+		IsOnline:              false,
+		SSHHost:               req.SSHHost,
+		SSHPort:               req.SSHPort,
+		SSHUser:               req.SSHUser,
+		SSHPwd:                encryptedPassword,
+		SSHHostKeyFingerprint: req.SSHHostKeyFingerprint,
 	}
 	if err := h.db.Create(&node).Error; err != nil {
 		ServerError(w, err)
@@ -696,6 +729,82 @@ func (h *handlers) NodeSSHTestHandler(w http.ResponseWriter, r *http.Request) {
 		"output":     strings.TrimSpace(output),
 		"latency_ms": elapsed.Milliseconds(),
 	})
+}
+
+func (h *handlers) NodeSSHConfigHandler(w http.ResponseWriter, r *http.Request) {
+	claims, err := h.requireAdmin(w, r)
+	if err != nil {
+		return
+	}
+	nodeID, err := parsePathID(r.URL.Path, "/api/v1/nodes/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	var req nodeSSHConfigReq
+	if err := decodeBody(r, &req); err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	node, err := h.loadNode(nodeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			NotFound(w)
+			return
+		}
+		ServerError(w, err)
+		return
+	}
+
+	req.SSHHost = strings.TrimSpace(req.SSHHost)
+	req.SSHUser = strings.TrimSpace(req.SSHUser)
+	req.SSHHostKeyFingerprint = strings.TrimSpace(req.SSHHostKeyFingerprint)
+	if req.SSHPort == 0 {
+		req.SSHPort = 22
+	}
+	encryptedPassword := node.SSHPwd
+	if req.SSHPwd != "" {
+		encryptedPassword, err = h.credentialCipher.Encrypt(req.SSHPwd)
+		if err != nil {
+			ServerError(w, err)
+			return
+		}
+	}
+	if err := validateSSHFields(req.SSHHost, req.SSHPort, req.SSHUser, encryptedPassword, req.SSHHostKeyFingerprint); err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&node).Updates(map[string]interface{}{
+			"ssh_host":                 req.SSHHost,
+			"ssh_port":                 req.SSHPort,
+			"ssh_user":                 req.SSHUser,
+			"ssh_pwd":                  encryptedPassword,
+			"ssh_host_key_fingerprint": req.SSHHostKeyFingerprint,
+			"is_online":                false,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.AuditLog{
+			UserID: claims.UserID,
+			Actor:  claims.Username,
+			Action: "node.ssh_config.update",
+			Target: fmt.Sprintf("node:%d", node.ID),
+			Detail: "host key fingerprint and encrypted credential updated",
+		}).Error
+	})
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	node.SSHHost = req.SSHHost
+	node.SSHPort = req.SSHPort
+	node.SSHUser = req.SSHUser
+	node.SSHPwd = encryptedPassword
+	node.SSHHostKeyFingerprint = req.SSHHostKeyFingerprint
+	node.IsOnline = false
+	OK(w, node)
 }
 
 func (h *handlers) NodeProtocolConfigHandler(w http.ResponseWriter, r *http.Request) {
@@ -1878,29 +1987,27 @@ func (h *handlers) isProtocolSupported(proto string) bool {
 }
 
 func (h *handlers) validateNodeSSH(node model.Node) error {
-	if strings.TrimSpace(node.SSHHost) == "" {
-		return errors.New("node ssh_host is required")
+	if err := validateSSHFields(node.SSHHost, node.SSHPort, node.SSHUser, node.SSHPwd, node.SSHHostKeyFingerprint); err != nil {
+		return err
 	}
-	if strings.TrimSpace(node.SSHUser) == "" {
-		return errors.New("node ssh_user is required")
-	}
-	if node.SSHPort <= 0 {
-		return errors.New("node ssh_port is invalid")
-	}
-	if strings.TrimSpace(node.SSHPwd) == "" {
-		return errors.New("node ssh_password is required")
+	if _, err := h.credentialCipher.Decrypt(node.SSHPwd); err != nil {
+		return fmt.Errorf("node ssh credential is unavailable: %w", err)
 	}
 	return nil
 }
 
 func (h *handlers) execSSHCommand(node model.Node, command string) (string, time.Duration, error) {
 	start := time.Now()
+	password, err := h.credentialCipher.Decrypt(node.SSHPwd)
+	if err != nil {
+		return "", time.Since(start), fmt.Errorf("decrypt node ssh credential: %w", err)
+	}
 	addr := fmt.Sprintf("%s:%d", strings.TrimSpace(node.SSHHost), node.SSHPort)
 	conf := &ssh.ClientConfig{
 		User:            strings.TrimSpace(node.SSHUser),
-		Auth:            []ssh.AuthMethod{ssh.Password(node.SSHPwd)},
+		Auth:            []ssh.AuthMethod{ssh.Password(password)},
 		Timeout:         12 * time.Second,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: pinnedHostKeyCallback(node.SSHHostKeyFingerprint),
 	}
 	conn, err := ssh.Dial("tcp", addr, conf)
 	if err != nil {
@@ -1916,6 +2023,49 @@ func (h *handlers) execSSHCommand(node model.Node, command string) (string, time
 
 	out, err := session.CombinedOutput(command)
 	return string(bytes.TrimSpace(out)), time.Since(start), err
+}
+
+func validateSSHFields(host string, port int, user string, password string, fingerprint string) error {
+	if strings.TrimSpace(host) == "" {
+		return errors.New("node ssh_host is required")
+	}
+	if strings.TrimSpace(user) == "" {
+		return errors.New("node ssh_user is required")
+	}
+	if port <= 0 || port > 65535 {
+		return errors.New("node ssh_port is invalid")
+	}
+	if strings.TrimSpace(password) == "" {
+		return errors.New("node ssh_password is required")
+	}
+	return validateSSHHostKeyFingerprint(fingerprint)
+}
+
+func validateSSHHostKeyFingerprint(fingerprint string) error {
+	normalized := strings.TrimSpace(fingerprint)
+	if !strings.HasPrefix(normalized, "SHA256:") {
+		return errors.New("node ssh_host_key_fingerprint must use SHA256 format")
+	}
+	encoded := strings.TrimPrefix(normalized, "SHA256:")
+	decoded, err := base64.RawStdEncoding.DecodeString(encoded)
+	if err != nil {
+		decoded, err = base64.StdEncoding.DecodeString(encoded)
+	}
+	if err != nil || len(decoded) != sha256.Size {
+		return errors.New("node ssh_host_key_fingerprint is invalid")
+	}
+	return nil
+}
+
+func pinnedHostKeyCallback(expectedFingerprint string) ssh.HostKeyCallback {
+	expected := strings.TrimSpace(expectedFingerprint)
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		actual := ssh.FingerprintSHA256(key)
+		if subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) != 1 {
+			return errors.New("ssh host key fingerprint mismatch")
+		}
+		return nil
+	}
 }
 
 func (h *handlers) issueToken(claims authClaims) (string, int64, error) {

@@ -284,6 +284,37 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/Node"
+  /api/v1/nodes/{id}/ssh:
+    put:
+      tags:
+        - nodes
+      summary: Replace node SSH endpoint, encrypted password, and pinned host key
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeSSHConfigRequest"
+      responses:
+        "200":
+          description: SSH configuration updated and node marked offline until retested
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/Node"
+        "400":
+          $ref: "#/components/responses/Error"
   /api/v1/nodes/protocol/config:
     post:
       tags:
@@ -745,6 +776,9 @@ components:
           type: integer
         ssh_user:
           type: string
+        ssh_host_key_fingerprint:
+          type: string
+          description: Pinned OpenSSH SHA256 host key fingerprint.
     Plan:
       type: object
       properties:
@@ -1024,6 +1058,10 @@ components:
           type: string
         ssh_password:
           type: string
+          writeOnly: true
+        ssh_host_key_fingerprint:
+          type: string
+          description: OpenSSH SHA256 host key fingerprint, for example SHA256:base64.
     NodeSSHTestRequest:
       type: object
       required:
@@ -1032,6 +1070,29 @@ components:
         node_id:
           type: integer
           format: int64
+    NodeSSHConfigRequest:
+      type: object
+      required:
+        - ssh_host
+        - ssh_port
+        - ssh_user
+        - ssh_host_key_fingerprint
+      properties:
+        ssh_host:
+          type: string
+        ssh_port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        ssh_user:
+          type: string
+        ssh_password:
+          type: string
+          writeOnly: true
+          description: Required for first configuration; omit to retain the existing encrypted password.
+        ssh_host_key_fingerprint:
+          type: string
+          description: OpenSSH SHA256 host key fingerprint.
     NodeProtocolConfigRequest:
       type: object
       required:
