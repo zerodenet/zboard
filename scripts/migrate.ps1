@@ -1,6 +1,16 @@
 param(
-    [string]$File = "backend/migrations/0001_init.up.sql"
+    [string]$Config = "etc/zboard.yaml"
 )
 
-Write-Output "Database migration file hint: $File"
-Write-Output "Use goose/atlas/migrate as your SQL migration runner. This project only stores SQL templates."
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$backendDir = Join-Path $projectRoot "backend"
+
+Push-Location $backendDir
+try {
+    & go run ./cmd/zboard -f $Config -migrate-only
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+} finally {
+    Pop-Location
+}

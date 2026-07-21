@@ -9,11 +9,12 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher) error {
-	h, err := handler.NewHandlers(db, jwtSecret, credentialCipher)
+func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir string) error {
+	h, err := handler.NewHandlers(db, jwtSecret, credentialCipher, zeroArtifactDir)
 	if err != nil {
 		return err
 	}
+	srv.Use(h.InstallationMiddleware)
 
 	srv.AddRoutes([]rest.Route{
 		{
@@ -32,6 +33,16 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.VersionHandler),
 		},
 		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/setup/status",
+			Handler: http.HandlerFunc(h.SetupStatusHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/setup/install",
+			Handler: http.HandlerFunc(h.SetupInstallHandler),
+		},
+		{
 			Method:  http.MethodPost,
 			Path:    "/api/v1/auth/register",
 			Handler: http.HandlerFunc(h.RegisterAuthRoutes),
@@ -48,8 +59,93 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		},
 		{
 			Method:  http.MethodGet,
+			Path:    "/api/v1/tickets",
+			Handler: http.HandlerFunc(h.TicketListHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/tickets",
+			Handler: http.HandlerFunc(h.TicketListHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/tickets",
+			Handler: http.HandlerFunc(h.TicketCreateHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/tickets/:id",
+			Handler: http.HandlerFunc(h.TicketGetHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/tickets/:id",
+			Handler: http.HandlerFunc(h.TicketGetHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/tickets/:id/messages",
+			Handler: http.HandlerFunc(h.TicketReplyHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/tickets/:id/messages",
+			Handler: http.HandlerFunc(h.TicketReplyHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/tickets/:id/close",
+			Handler: http.HandlerFunc(h.TicketCloseHandler),
+		},
+		{
+			Method:  http.MethodPut,
+			Path:    "/api/v1/admin/tickets/:id/status",
+			Handler: http.HandlerFunc(h.AdminTicketStatusHandler),
+		},
+		{
+			Method:  http.MethodGet,
 			Path:    "/api/v1/admin/users",
 			Handler: http.HandlerFunc(h.AdminUsersListHandler),
+		},
+		{
+			Method:  http.MethodPut,
+			Path:    "/api/v1/admin/settings",
+			Handler: http.HandlerFunc(h.AdminSettingsUpdateHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/system/configs",
+			Handler: http.HandlerFunc(h.PublicSystemConfigsHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/system-configs",
+			Handler: http.HandlerFunc(h.AdminSystemConfigsListHandler),
+		},
+		{
+			Method:  http.MethodPut,
+			Path:    "/api/v1/admin/system-configs/:key",
+			Handler: http.HandlerFunc(h.AdminSystemConfigUpdateHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/tasks",
+			Handler: http.HandlerFunc(h.AdminTasksListHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/tasks",
+			Handler: http.HandlerFunc(h.AdminTaskCreateHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/tasks/:id",
+			Handler: http.HandlerFunc(h.AdminTaskGetHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/tasks/:id/run",
+			Handler: http.HandlerFunc(h.AdminTaskRunHandler),
 		},
 		{
 			Method:  http.MethodPost,
@@ -72,6 +168,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.NodeCreateHandler),
 		},
 		{
+			Method:  http.MethodPut,
+			Path:    "/api/v1/nodes/:id",
+			Handler: http.HandlerFunc(h.NodeUpdateHandler),
+		},
+		{
 			Method:  http.MethodPost,
 			Path:    "/api/v1/nodes/ssh/test",
 			Handler: http.HandlerFunc(h.NodeSSHTestHandler),
@@ -80,6 +181,61 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Method:  http.MethodPut,
 			Path:    "/api/v1/nodes/:id/ssh",
 			Handler: http.HandlerFunc(h.NodeSSHConfigHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/nodes/:id/ssh/host-key/reset",
+			Handler: http.HandlerFunc(h.NodeSSHHostKeyResetHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/nodes/:id/ssh/terminal-ticket",
+			Handler: http.HandlerFunc(h.NodeSSHTerminalTicketHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/nodes/:id/ssh/terminal",
+			Handler: http.HandlerFunc(h.NodeSSHTerminalHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/nodes/:id/kernel",
+			Handler: http.HandlerFunc(h.NodeKernelStateHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/nodes/:id/kernel/detect",
+			Handler: http.HandlerFunc(h.NodeKernelDetectHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/nodes/:id/kernel/reconcile",
+			Handler: http.HandlerFunc(h.NodeKernelReconcileHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/kernel/releases/latest",
+			Handler: http.HandlerFunc(h.LatestKernelReleaseHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/nodes/:id/connector-credential",
+			Handler: http.HandlerFunc(h.NodeConnectorCredentialRotateHandler),
+		},
+		{
+			Method:  http.MethodDelete,
+			Path:    "/api/v1/nodes/:id/connector-credential",
+			Handler: http.HandlerFunc(h.NodeConnectorCredentialRevokeHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/nodes/:id/heartbeat",
+			Handler: http.HandlerFunc(h.NodeConnectorHeartbeatHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/nodes/:id/commands",
+			Handler: http.HandlerFunc(h.NodeConnectorCommandsHandler),
 		},
 		{
 			Method:  http.MethodPost,
@@ -92,9 +248,49 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.NodeReportCredentialRevokeHandler),
 		},
 		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/protocol-endpoints",
+			Handler: http.HandlerFunc(h.ProtocolEndpointListHandler),
+		},
+		{
 			Method:  http.MethodPost,
-			Path:    "/api/v1/nodes/protocol/config",
-			Handler: http.HandlerFunc(h.NodeProtocolConfigHandler),
+			Path:    "/api/v1/admin/protocol-endpoints",
+			Handler: http.HandlerFunc(h.ProtocolEndpointCreateHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/protocol-endpoints/:id",
+			Handler: http.HandlerFunc(h.ProtocolEndpointDetailHandler),
+		},
+		{
+			Method:  http.MethodPut,
+			Path:    "/api/v1/admin/protocol-endpoints/:id",
+			Handler: http.HandlerFunc(h.ProtocolEndpointUpdateHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/protocol-endpoints/:id/deploy",
+			Handler: http.HandlerFunc(h.ProtocolEndpointDeployHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/protocol-deployments",
+			Handler: http.HandlerFunc(h.ProtocolDeploymentListHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/node-groups",
+			Handler: http.HandlerFunc(h.NodeGroupListHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/node-groups",
+			Handler: http.HandlerFunc(h.NodeGroupCreateHandler),
+		},
+		{
+			Method:  http.MethodPut,
+			Path:    "/api/v1/admin/node-groups/:id",
+			Handler: http.HandlerFunc(h.NodeGroupUpdateHandler),
 		},
 		{
 			Method:  http.MethodGet,
@@ -112,8 +308,23 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.PlanUpdateHandler),
 		},
 		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/plans/:id/skus",
+			Handler: http.HandlerFunc(h.PlanSKUCreateHandler),
+		},
+		{
+			Method:  http.MethodPut,
+			Path:    "/api/v1/admin/plan-skus/:id",
+			Handler: http.HandlerFunc(h.PlanSKUUpdateHandler),
+		},
+		{
 			Method:  http.MethodGet,
 			Path:    "/api/v1/orders",
+			Handler: http.HandlerFunc(h.OrderListHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/orders",
 			Handler: http.HandlerFunc(h.OrderListHandler),
 		},
 		{
@@ -128,7 +339,17 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		},
 		{
 			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/orders/:id/pay",
+			Handler: http.HandlerFunc(h.OrderPayHandler),
+		},
+		{
+			Method:  http.MethodPost,
 			Path:    "/api/v1/orders/:id/cancel",
+			Handler: http.HandlerFunc(h.OrderCancelHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/orders/:id/cancel",
 			Handler: http.HandlerFunc(h.OrderCancelHandler),
 		},
 		{
@@ -139,6 +360,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		{
 			Method:  http.MethodGet,
 			Path:    "/api/v1/subscriptions",
+			Handler: http.HandlerFunc(h.SubscriptionsHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/subscriptions",
 			Handler: http.HandlerFunc(h.SubscriptionsHandler),
 		},
 		{
@@ -168,12 +394,27 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		},
 		{
 			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/traffic/summary",
+			Handler: http.HandlerFunc(h.TrafficSummaryHandler),
+		},
+		{
+			Method:  http.MethodGet,
 			Path:    "/api/v1/traffic/records",
 			Handler: http.HandlerFunc(h.TrafficRecordsHandler),
 		},
 		{
 			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/traffic/records",
+			Handler: http.HandlerFunc(h.TrafficRecordsHandler),
+		},
+		{
+			Method:  http.MethodGet,
 			Path:    "/api/v1/traffic/reconciliation",
+			Handler: http.HandlerFunc(h.TrafficReconciliationHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/traffic/reconciliation",
 			Handler: http.HandlerFunc(h.TrafficReconciliationHandler),
 		},
 		{

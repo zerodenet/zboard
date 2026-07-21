@@ -1,4 +1,2 @@
 ALTER TABLE nodes
-  DROP COLUMN IF EXISTS protocol_config,
-  DROP COLUMN IF EXISTS ssh_user,
-  DROP COLUMN IF EXISTS ssh_pwd;
+  DROP COLUMN protocol_config;

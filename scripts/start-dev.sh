@@ -26,8 +26,7 @@ DATA_SOURCE="${ZBOARD_LOCAL_DSN:-zboard:zboard-local-db-password@tcp(127.0.0.1:3
 REDIS_ADDR="${ZBOARD_LOCAL_REDIS:-127.0.0.1:6379}"
 JWT_SECRET="${ZBOARD_JWT_SECRET:-}"
 CREDENTIAL_ENCRYPTION_KEY="${ZBOARD_CREDENTIAL_ENCRYPTION_KEY:-}"
-ADMIN_USERNAME="${ZBOARD_BOOTSTRAP_ADMIN_USERNAME:-admin}"
-ADMIN_EMAIL="${ZBOARD_BOOTSTRAP_ADMIN_EMAIL:-}"
+ADMIN_EMAIL="${ZBOARD_BOOTSTRAP_ADMIN_EMAIL:-admin@zboard.local}"
 ADMIN_PASSWORD="${ZBOARD_BOOTSTRAP_ADMIN_PASSWORD:-}"
 
 usage() {
@@ -294,9 +293,6 @@ if [[ -z "${CREDENTIAL_ENCRYPTION_KEY}" ]]; then
     CREDENTIAL_ENCRYPTION_KEY="$(generate_secret 32)"
   fi
 fi
-if [[ -z "${ADMIN_EMAIL}" ]]; then
-  ADMIN_EMAIL="${ADMIN_USERNAME}@zboard.local"
-fi
 generated_admin_password=0
 if [[ -z "${ADMIN_PASSWORD}" ]]; then
   ADMIN_PASSWORD="$(read_stored_secret ZBOARD_BOOTSTRAP_ADMIN_PASSWORD "${dev_secrets_path}")"
@@ -311,7 +307,7 @@ umask 077
   printf 'ZBOARD_CREDENTIAL_ENCRYPTION_KEY=%s\n' "${CREDENTIAL_ENCRYPTION_KEY}"
   printf 'ZBOARD_BOOTSTRAP_ADMIN_PASSWORD=%s\n' "${ADMIN_PASSWORD}"
 } > "${dev_secrets_path}"
-info "Local bootstrap admin: ${ADMIN_USERNAME}"
+info "Local bootstrap admin: ${ADMIN_EMAIL}"
 if [[ "${generated_admin_password}" == "1" ]]; then
   info "Generated local bootstrap password: ${ADMIN_PASSWORD}"
   info "Save this value for subsequent runs against the same database."
@@ -350,7 +346,6 @@ info "Starting backend..."
   ZBOARD_ENVIRONMENT=development \
     ZBOARD_JWT_SECRET="${JWT_SECRET}" \
     ZBOARD_CREDENTIAL_ENCRYPTION_KEY="${CREDENTIAL_ENCRYPTION_KEY}" \
-    ZBOARD_BOOTSTRAP_ADMIN_USERNAME="${ADMIN_USERNAME}" \
     ZBOARD_BOOTSTRAP_ADMIN_EMAIL="${ADMIN_EMAIL}" \
     ZBOARD_BOOTSTRAP_ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
     go run ./cmd/zboard -f "${runtime_config}"
@@ -397,7 +392,7 @@ else
 fi
 
 if [[ "${NO_SMOKE}" != "1" ]]; then
-  API_BASE="${API_BASE}" ACCOUNT="${ADMIN_USERNAME}" PASSWORD="${ADMIN_PASSWORD}" bash "${SCRIPT_DIR}/smoke-test.sh"
+	API_BASE="${API_BASE}" EMAIL="${ADMIN_EMAIL}" PASSWORD="${ADMIN_PASSWORD}" bash "${SCRIPT_DIR}/smoke-test.sh"
 fi
 
 if [[ "${STOP_WHEN_DONE}" == "1" ]]; then

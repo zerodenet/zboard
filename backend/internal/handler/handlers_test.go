@@ -1,16 +1,21 @@
 package handler
 
 import (
+	"crypto/ed25519"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/security"
+	"golang.org/x/crypto/ssh"
 )
 
 const testCredentialKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -25,16 +30,16 @@ func newTestCredentialCipher(t *testing.T) *security.CredentialCipher {
 }
 
 func TestIssueTokenSignsClaimsAndSetsExpiry(t *testing.T) {
-	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t))
+	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "")
 	if err != nil {
 		t.Fatalf("NewHandlers() error = %v", err)
 	}
 	before := time.Now().Add(23*time.Hour + 59*time.Minute).Unix()
 
 	token, expiresAt, err := h.issueToken(authClaims{
-		UserID:   42,
-		Username: "alice",
-		IsAdmin:  true,
+		UserID:  42,
+		Email:   "alice@example.com",
+		IsAdmin: true,
 	})
 	if err != nil {
 		t.Fatalf("issueToken() error = %v", err)
@@ -63,7 +68,7 @@ func TestIssueTokenSignsClaimsAndSetsExpiry(t *testing.T) {
 	if err := json.Unmarshal(payload, &claims); err != nil {
 		t.Fatalf("decode claims: %v", err)
 	}
-	if claims.UserID != 42 || claims.Username != "alice" || !claims.IsAdmin || claims.Expiry != expiresAt {
+	if claims.UserID != 42 || claims.Email != "alice@example.com" || !claims.IsAdmin || claims.Expiry != expiresAt {
 		t.Fatalf("claims = %+v, want requested identity and generated expiry", claims)
 	}
 }
@@ -111,11 +116,11 @@ func TestParseBoolQuery(t *testing.T) {
 }
 
 func TestSupportedProtocolsAreCaseInsensitive(t *testing.T) {
-	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t))
+	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "")
 	if err != nil {
 		t.Fatalf("NewHandlers() error = %v", err)
 	}
-	for _, protocol := range []string{"vmess", "VLESS", "Trojan", "SHADOWSOCKS", "hysteria"} {
+	for _, protocol := range []string{"vmess", "VLESS", "Trojan", "SHADOWSOCKS", "hysteria2", "Mieru"} {
 		if !h.isProtocolSupported(protocol) {
 			t.Errorf("isProtocolSupported(%q) = false", protocol)
 		}
@@ -126,8 +131,91 @@ func TestSupportedProtocolsAreCaseInsensitive(t *testing.T) {
 }
 
 func TestNewHandlersRejectsWeakJWTSecret(t *testing.T) {
-	if _, err := NewHandlers(nil, "test-secret", newTestCredentialCipher(t)); err == nil {
+	if _, err := NewHandlers(nil, "test-secret", newTestCredentialCipher(t), ""); err == nil {
 		t.Fatal("NewHandlers() error = nil, want weak secret rejection")
+	}
+}
+
+func TestValidateSetupRequestNormalizesValues(t *testing.T) {
+	body := setupRequest{
+		SiteName:      "  Example Panel  ",
+		SiteURL:       "https://panel.example.com/",
+		AdminEmail:    " operator@example.com ",
+		AdminPassword: "strong-admin-password",
+	}
+	if err := validateSetupRequest(&body); err != nil {
+		t.Fatalf("validateSetupRequest() error = %v", err)
+	}
+	if body.SiteName != "Example Panel" || body.SiteURL != "https://panel.example.com" || body.AdminEmail != "operator@example.com" {
+		t.Fatalf("normalized setup request = %+v", body)
+	}
+}
+
+func TestValidateSetupRequestRejectsUnsafeValues(t *testing.T) {
+	valid := setupRequest{
+		SiteName:      "Example Panel",
+		SiteURL:       "https://panel.example.com",
+		AdminEmail:    "operator@example.com",
+		AdminPassword: "strong-admin-password",
+	}
+	tests := []struct {
+		name string
+		edit func(*setupRequest)
+	}{
+		{name: "relative URL", edit: func(r *setupRequest) { r.SiteURL = "/panel" }},
+		{name: "URL credentials", edit: func(r *setupRequest) { r.SiteURL = "https://user:pass@example.com" }},
+		{name: "invalid email", edit: func(r *setupRequest) { r.AdminEmail = "operator" }},
+		{name: "short password", edit: func(r *setupRequest) { r.AdminPassword = "short" }},
+		{name: "bcrypt overflow", edit: func(r *setupRequest) { r.AdminPassword = strings.Repeat("x", 73) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := valid
+			tt.edit(&body)
+			if err := validateSetupRequest(&body); err == nil {
+				t.Fatal("validateSetupRequest() error = nil, want rejection")
+			}
+		})
+	}
+}
+
+func TestBuildPlanSKUValidatesCommercialSpecification(t *testing.T) {
+	sku, err := buildPlanSKU(7, planSKUReq{
+		Code: " Pro-Monthly ", Name: "Monthly", BillingUnit: "month", BillingValue: 1,
+		PriceCents: 1999, Currency: "cny", TrafficBytes: 100 << 30, DeviceLimit: 5,
+	})
+	if err != nil {
+		t.Fatalf("buildPlanSKU() error = %v", err)
+	}
+	if sku.PlanID != 7 || sku.Code != "pro-monthly" || sku.Currency != "CNY" || !sku.IsActive {
+		t.Fatalf("buildPlanSKU() = %+v", sku)
+	}
+	for _, unit := range []string{"", "week", "one_time"} {
+		_, err := buildPlanSKU(7, planSKUReq{Code: "x", Name: "x", BillingUnit: unit, BillingValue: 1, Currency: "CNY", TrafficBytes: 1, DeviceLimit: 1})
+		if err == nil {
+			t.Fatalf("buildPlanSKU() accepted billing unit %q", unit)
+		}
+	}
+}
+
+func TestAddBillingPeriodClampsCalendarEnd(t *testing.T) {
+	base := time.Date(2024, time.January, 31, 12, 30, 0, 0, time.UTC)
+	monthly, err := addBillingPeriod(base, "month", 1)
+	if err != nil || !monthly.Equal(time.Date(2024, time.February, 29, 12, 30, 0, 0, time.UTC)) {
+		t.Fatalf("monthly = %v, err = %v", monthly, err)
+	}
+	yearly, err := addBillingPeriod(monthly, "year", 1)
+	if err != nil || !yearly.Equal(time.Date(2025, time.February, 28, 12, 30, 0, 0, time.UTC)) {
+		t.Fatalf("yearly = %v, err = %v", yearly, err)
+	}
+}
+
+func TestBilledTrafficBytesRoundsUp(t *testing.T) {
+	if got := billedTrafficBytes(1001, 1500); got != 1502 {
+		t.Fatalf("billedTrafficBytes() = %d, want 1502", got)
+	}
+	if got := billedTrafficBytes(1024, 500); got != 512 {
+		t.Fatalf("billedTrafficBytes() = %d, want 512", got)
 	}
 }
 
@@ -140,6 +228,47 @@ func TestValidateSSHHostKeyFingerprint(t *testing.T) {
 		if err := validateSSHHostKeyFingerprint(value); err == nil {
 			t.Fatalf("validateSSHHostKeyFingerprint(%q) error = nil, want rejection", value)
 		}
+	}
+}
+
+func TestValidateSSHFieldsAllowsAutomaticHostKeyEnrollment(t *testing.T) {
+	validFingerprint := "SHA256:" + base64.RawStdEncoding.EncodeToString(make([]byte, sha256.Size))
+	if err := validateSSHFields("node.example.com", 22, "root", sshAuthPassword, "secret", ""); err != nil {
+		t.Fatalf("password authentication before host-key enrollment should be valid: %v", err)
+	}
+	if err := validateSSHFields("node.example.com", 22, "root", sshAuthPrivateKey, "private-key", validFingerprint); err != nil {
+		t.Fatalf("private-key authentication with a recorded host key should be valid: %v", err)
+	}
+	if err := validateSSHFields("node.example.com", 22, "root", "fingerprint", "secret", ""); err == nil {
+		t.Fatal("host fingerprint was accepted as an authentication method")
+	}
+	if err := validateSSHFields("node.example.com", 22, "root", sshAuthPassword, "secret", "SHA256:invalid"); err == nil {
+		t.Fatal("an invalid recorded host key was accepted")
+	}
+}
+
+func TestVerifiedHostKeyCallbackEnrollsThenChecksRecordedFingerprint(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicKey, err := ssh.NewPublicKey(privateKey.Public())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ssh.FingerprintSHA256(publicKey)
+	observed := ""
+	if err := verifiedHostKeyCallback("", &observed)("node.example.com", nil, publicKey); err != nil {
+		t.Fatalf("first host-key enrollment was rejected: %v", err)
+	}
+	if observed != want {
+		t.Fatalf("observed fingerprint = %q, want %q", observed, want)
+	}
+	if err := verifiedHostKeyCallback(want, nil)("node.example.com", nil, publicKey); err != nil {
+		t.Fatalf("verification rejected the recorded key: %v", err)
+	}
+	if err := verifiedHostKeyCallback("SHA256:"+base64.RawStdEncoding.EncodeToString(make([]byte, sha256.Size)), nil)("node.example.com", nil, publicKey); err == nil {
+		t.Fatal("verification accepted a different recorded key")
 	}
 }
 
@@ -157,6 +286,40 @@ func TestNewNodeReportSecret(t *testing.T) {
 	}
 	if prefix != secret[:12] {
 		t.Fatalf("prefix = %q, want first 12 secret characters", prefix)
+	}
+}
+
+func TestExtractBearerTokenRequiresConnectorScheme(t *testing.T) {
+	request := httptest.NewRequest("GET", "/api/v1/nodes/7/commands", nil)
+	request.Header.Set("Authorization", "Bearer connector-secret")
+	token, err := extractBearerToken(request)
+	if err != nil || token != "connector-secret" {
+		t.Fatalf("extractBearerToken() = %q, %v", token, err)
+	}
+	for _, value := range []string{"", "Basic connector-secret", "Bearer", "Bearer two tokens"} {
+		request.Header.Set("Authorization", value)
+		if _, err := extractBearerToken(request); err == nil {
+			t.Fatalf("extractBearerToken(%q) error = nil, want rejection", value)
+		}
+	}
+}
+
+func TestDecodeNodeConnectorHeartbeatUsesZeroContract(t *testing.T) {
+	request := httptest.NewRequest("POST", "/api/v1/nodes/7/heartbeat", strings.NewReader(`{
+		"node_id":"7","build_id":"zero-1.0","uptime_seconds":3600,
+		"active_flows":42,"bytes_up":1024,"bytes_down":4096,"future_field":true
+	}`))
+	heartbeat, err := decodeNodeConnectorHeartbeat(request)
+	if err != nil {
+		t.Fatalf("decodeNodeConnectorHeartbeat() error = %v", err)
+	}
+	if heartbeat.NodeID != "7" || heartbeat.BuildID != "zero-1.0" || heartbeat.UptimeSeconds != 3600 || heartbeat.ActiveFlows != 42 || heartbeat.BytesUp != 1024 || heartbeat.BytesDown != 4096 {
+		t.Fatalf("heartbeat = %+v", heartbeat)
+	}
+
+	request = httptest.NewRequest("POST", "/api/v1/nodes/7/heartbeat", strings.NewReader(`{"build_id":"zero-1.0"}`))
+	if _, err := decodeNodeConnectorHeartbeat(request); err == nil {
+		t.Fatal("missing node_id should be rejected")
 	}
 }
 
@@ -236,7 +399,7 @@ func TestOrderTransitionAllowed(t *testing.T) {
 }
 
 func TestValidateNodeProtocolConfigs(t *testing.T) {
-	if err := validateNodeProtocolConfigs(`{"listen":"0.0.0.0:443"}`, `{"server":"node.example.com","port":443}`); err != nil {
+	if err := validateNodeProtocolConfigs("vless", `{"type":"vless","users":[]}`, `{"server":"node.example.com","port":443}`); err != nil {
 		t.Fatalf("validateNodeProtocolConfigs() error = %v", err)
 	}
 	for _, test := range []struct {
@@ -246,11 +409,15 @@ func TestValidateNodeProtocolConfigs(t *testing.T) {
 	}{
 		{name: "missing server", client: `{}`},
 		{name: "invalid server", server: `{`, client: `{}`},
-		{name: "missing client", server: `{}`},
-		{name: "invalid client", server: `{}`, client: `{`},
+		{name: "server array", server: `[]`, client: `{}`},
+		{name: "missing protocol type", server: `{}`, client: `{}`},
+		{name: "mismatched protocol type", server: `{"type":"trojan"}`, client: `{}`},
+		{name: "missing client", server: `{"type":"vless"}`},
+		{name: "invalid client", server: `{"type":"vless"}`, client: `{`},
+		{name: "client array", server: `{"type":"vless"}`, client: `[]`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if err := validateNodeProtocolConfigs(test.server, test.client); err == nil {
+			if err := validateNodeProtocolConfigs("vless", test.server, test.client); err == nil {
 				t.Fatal("validateNodeProtocolConfigs() error = nil, want rejection")
 			}
 		})
@@ -298,5 +465,99 @@ func TestTrafficReconciliationResult(t *testing.T) {
 		if got := trafficReconciliationResult(difference); got != want {
 			t.Errorf("trafficReconciliationResult(%d) = %q, want %q", difference, got, want)
 		}
+	}
+}
+
+func TestNormalizePlanPolicyUsesSKUDefaults(t *testing.T) {
+	policy, err := normalizePlanPolicy(planCreateReq{}, planSKUReq{
+		TrafficBytes: 1024, DeviceLimit: 3, SpeedLimitMbps: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if policy.TrafficBytes != 1024 || policy.DeviceLimit != 3 || policy.SpeedLimitMbps != 20 {
+		t.Fatalf("unexpected policy: %#v", policy)
+	}
+	if !policy.IsRenewable {
+		t.Fatalf("unexpected policy defaults: %#v", policy)
+	}
+}
+
+func TestTrafficAccountingUsesDirectionAndEndpointMultiplier(t *testing.T) {
+	if got := trafficBytesForMode(100, 300, trafficCalcBoth); got != 400 {
+		t.Fatalf("both directions = %d, want 400", got)
+	}
+	if got := trafficBytesForMode(100, 300, trafficCalcUpload); got != 100 {
+		t.Fatalf("upload = %d, want 100", got)
+	}
+	if got := trafficBytesForMode(100, 300, trafficCalcDownload); got != 300 {
+		t.Fatalf("download = %d, want 300", got)
+	}
+	billed, err := billedTrafficBytesChecked(1000, 1500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if billed != 1500 {
+		t.Fatalf("billed = %d, want 1500", billed)
+	}
+}
+
+func TestNextTrafficReset(t *testing.T) {
+	base := time.Date(2026, time.January, 31, 12, 0, 0, 0, time.UTC)
+	monthly := nextTrafficReset(base, 2)
+	if monthly == nil || monthly.Year() != 2026 || monthly.Month() != time.February || monthly.Day() != 28 {
+		t.Fatalf("monthly reset = %v", monthly)
+	}
+	firstOfMonth := nextTrafficReset(base, 1)
+	if firstOfMonth == nil || firstOfMonth.Month() != time.February || firstOfMonth.Day() != 1 {
+		t.Fatalf("calendar reset = %v", firstOfMonth)
+	}
+	if got := nextTrafficReset(base, 5); got != nil {
+		t.Fatalf("no-reset policy = %v", got)
+	}
+}
+
+func TestValidateSSHPrivilege(t *testing.T) {
+	for _, test := range []struct {
+		mode     string
+		password string
+		wantErr  bool
+	}{
+		{mode: "none"},
+		{mode: "sudo"},
+		{mode: "sudo", password: "sudo-secret"},
+		{mode: "su", password: "root-secret"},
+		{mode: "su", wantErr: true},
+		{mode: "doas", wantErr: true},
+	} {
+		if err := validateSSHPrivilege(test.mode, test.password); (err != nil) != test.wantErr {
+			t.Fatalf("validateSSHPrivilege(%q) error = %v, wantErr %t", test.mode, err, test.wantErr)
+		}
+	}
+}
+
+func TestPrepareSSHCommandDoesNotExposePrivilegePassword(t *testing.T) {
+	cipher := newTestCredentialCipher(t)
+	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", cipher, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := cipher.Encrypt("root-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	command, stdin, pty, err := h.prepareSSHCommand(model.Node{SSHPrivilegeMode: "su", SSHPrivilegePassword: encrypted}, "id -u", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(command, "su root -c ") || strings.Contains(command, "root-secret") || stdin != "root-secret\n" || !pty {
+		t.Fatalf("unexpected su command=%q stdin=%q pty=%t", command, stdin, pty)
+	}
+	command, stdin, pty, err = h.prepareSSHCommand(model.Node{SSHPrivilegeMode: "sudo"}, "id -u", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(command, "sudo -n -- sh -c ") || stdin != "" || pty {
+		t.Fatalf("unexpected passwordless sudo command=%q stdin=%q pty=%t", command, stdin, pty)
 	}
 }

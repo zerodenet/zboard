@@ -20,13 +20,28 @@ const resolveMeta = (to: RouteLocationNormalized) => {
   return {
     requiresAuth: Boolean(to.meta.requiresAuth),
     requiresAdmin: Boolean(to.meta.requiresAdmin),
-    requiresGuest: Boolean(to.meta.requiresGuest)
+	requiresGuest: Boolean(to.meta.requiresGuest),
+	requiresRegistration: Boolean(to.meta.requiresRegistration)
   }
 }
 
+const roleLanding = (store: ReturnType<typeof useAppStore>) => store.isAdmin ? '/admin/dashboard' : '/account'
+
 router.beforeEach(async (to) => {
   const store = useAppStore(pinia)
-  if (store.token && !store.user.username) {
+  try {
+    await store.loadSetupStatus()
+  } catch (_) {
+    // Keep the requested route visible; API calls will surface connectivity errors.
+    return true
+  }
+  if (!store.isInstalled && to.path !== '/setup') {
+    return '/setup'
+  }
+  if (store.isInstalled && to.meta.setupOnly) {
+    return store.isAuthenticated ? roleLanding(store) : '/login'
+  }
+  if (store.token && !store.user.email) {
     await store.loadMe()
   }
 
@@ -35,11 +50,12 @@ router.beforeEach(async (to) => {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
   if (meta.requiresGuest && store.isAuthenticated) {
-    return '/dashboard'
+	return roleLanding(store)
   }
   if (meta.requiresAdmin && !store.isAdmin) {
-    return '/dashboard'
+	return '/account'
   }
+	if (meta.requiresRegistration && !store.installation?.allow_registration) return '/login'
 
   return true
 })

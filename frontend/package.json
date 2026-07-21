@@ -12,6 +12,8 @@
     "lint": "pnpm typecheck"
   },
   "dependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
     "axios": "^1.7.0",
     "pinia": "^2.2.0",
     "vue": "^3.4.0",

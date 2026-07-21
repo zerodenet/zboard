@@ -19,3 +19,5 @@ frontend/.DS_Store
 frontend/.nuxt
 .vscode
 /.cache
+/.codex-build-*
+/zboard-deploy-*.tar.gz

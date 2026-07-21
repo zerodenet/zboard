@@ -1,6 +1,6 @@
 param(
     [string]$ApiBase = "http://127.0.0.1:8080",
-    [string]$Account = "admin",
+	[string]$Email = "admin@zboard.local",
     [string]$Password = "",
     [int]$RequestTimeoutSec = 0
 )
@@ -55,9 +55,9 @@ try {
 }
 
 try {
-  $login = Invoke-ZBoardApi -method POST -path "/api/v1/auth/login" -body @{ account = $Account; password = $Password }
-  $token = $login.auth.token
-  Write-Output "2) login ok, user=$($login.user.username)"
+	$login = Invoke-ZBoardApi -method POST -path "/api/v1/auth/login" -body @{ email = $Email; password = $Password }
+	$token = $login.data.auth.token
+	Write-Output "2) login ok, user=$($login.data.user.email)"
 } catch {
   Write-Error "login failed: $($_.Exception.Message)"
   exit 1

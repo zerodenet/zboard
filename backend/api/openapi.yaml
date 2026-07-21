@@ -19,6 +19,7 @@ tags:
   - name: orders
   - name: subscriptions
   - name: traffic
+  - name: tickets
 paths:
   /healthz:
     get:
@@ -63,6 +64,38 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/VersionInfo"
+  /api/v1/setup/status:
+    get:
+      tags: [system]
+      summary: Read one-time installation status and public site settings
+      security: []
+      responses:
+        "200":
+          description: Installation status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/SetupStatus"
+  /api/v1/setup/install:
+    post:
+      tags: [system]
+      summary: Complete the one-time installation
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupInstallRequest"
+      responses:
+        "200":
+          description: Installation completed and administrator token returned
+        "409":
+          description: Installation has already completed
   /api/v1/system/info:
     get:
       tags:
@@ -103,6 +136,181 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/AuthLoginResponse"
+  /api/v1/admin/settings:
+    put:
+      tags: [admin]
+      summary: Update public site settings after installation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_name, site_url, allow_registration]
+              properties:
+                site_name:
+                  type: string
+                  maxLength: 80
+                site_url:
+                  type: string
+                  format: uri
+                allow_registration:
+                  type: boolean
+      responses:
+        "200":
+          description: Site settings updated
+  /api/v1/system/configs:
+    get:
+      tags: [system]
+      operationId: listPublicSystemConfigs
+      summary: List public non-secret runtime configuration
+      responses:
+        "200":
+          description: Public system configuration
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/SystemConfig" }
+        "400": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/system-configs:
+    get:
+      tags: [admin]
+      operationId: listAdminSystemConfigs
+      summary: List typed runtime configuration with secret values redacted
+      responses:
+        "200":
+          description: System configuration
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/SystemConfig" }
+        "401": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/system-configs/{key}:
+    put:
+      tags: [admin]
+      operationId: updateAdminSystemConfig
+      summary: Update one typed system configuration value
+      description: Existing keys only. Secret values are encrypted before storage and never returned. expected_revision enables optimistic concurrency control.
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[a-z0-9_]+$" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SystemConfigUpdateRequest" }
+      responses:
+        "200":
+          description: Updated system configuration
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/SystemConfig" }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/tasks:
+    get:
+      tags: [admin]
+      operationId: listAdminTasks
+      summary: List quota and email tasks
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string, enum: [quota, email] }
+        - name: status
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 3 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Tasks
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/AdminTask" }
+        "400": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      operationId: createAdminTask
+      summary: Create an auditable quota adjustment or email task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminTaskCreateRequest" }
+      responses:
+        "200":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/AdminTask" }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/tasks/{id}:
+    get:
+      tags: [admin]
+      operationId: getAdminTask
+      summary: Read one task and all of its item results
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Task detail
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/AdminTaskDetail" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/tasks/{id}/run:
+    post:
+      tags: [admin]
+      operationId: runAdminTask
+      summary: Start or retry a task asynchronously
+      description: Completed items are skipped. Quota items are idempotent through quota-event references; email delivery is at-least-once when a process fails after SMTP accepts a message.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "202": { description: Task execution started }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/auth/login:
     post:
       tags:
@@ -142,6 +350,126 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/User"
+  /api/v1/tickets:
+    get:
+      tags: [tickets]
+      summary: List tickets owned by the current user
+      description: This self-service route always keeps user scope, including when the signed-in user also has administrator permission.
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/TicketStatus" } }
+        - { name: category, in: query, schema: { $ref: "#/components/schemas/TicketCategory" } }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200": { description: Ticket list }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [tickets]
+      summary: Create a ticket and its first timeline message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TicketCreateRequest" }
+      responses:
+        "200": { description: Ticket detail }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+  /api/v1/tickets/{id}:
+    get:
+      tags: [tickets]
+      summary: Read a ticket and its complete timeline
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Ticket detail }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/tickets/{id}/messages:
+    post:
+      tags: [tickets]
+      summary: Reply to a ticket
+      description: A self-service reply moves the ticket to pending_admin. Closed tickets reject replies.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TicketReplyRequest" }
+      responses:
+        "200": { description: Updated ticket detail }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/tickets/{id}/close:
+    post:
+      tags: [tickets]
+      summary: Close a ticket owned by the current user
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Closed ticket detail }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/tickets:
+    get:
+      tags: [tickets, admin]
+      summary: List the global support queue
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/TicketStatus" } }
+        - { name: category, in: query, schema: { $ref: "#/components/schemas/TicketCategory" } }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200": { description: Global ticket list }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/tickets/{id}:
+    get:
+      tags: [tickets, admin]
+      summary: Read any ticket and its complete timeline
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Ticket detail }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/tickets/{id}/messages:
+    post:
+      tags: [tickets, admin]
+      summary: Reply to a ticket as an administrator
+      description: An administrator reply moves the ticket to pending_user. Closed tickets reject replies.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TicketReplyRequest" }
+      responses:
+        "200": { description: Updated ticket detail }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/tickets/{id}/status:
+    put:
+      tags: [tickets, admin]
+      summary: Change ticket status as an administrator
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TicketStatusRequest" }
+      responses:
+        "200": { description: Updated ticket detail }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v1/admin/users:
     get:
       tags:
@@ -262,6 +590,33 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/Node"
+  /api/v1/nodes/{id}:
+    put:
+      tags:
+        - nodes
+      summary: Update node asset metadata and lifecycle
+      description: Admin only. Nodes are independent VPS assets and do not require a protocol endpoint.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NodeUpdateRequest" }
+      responses:
+        "200":
+          description: Updated node asset
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/Node" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v1/nodes/ssh/test:
     post:
       tags:
@@ -288,7 +643,8 @@ paths:
     put:
       tags:
         - nodes
-      summary: Replace node SSH endpoint, encrypted password, and pinned host key
+      summary: Update node SSH authentication
+      description: Authentication chooses password or private key. The first successful SSH connection automatically records the server host key; later connections reject changes.
       parameters:
         - name: id
           in: path
@@ -304,7 +660,7 @@ paths:
               $ref: "#/components/schemas/NodeSSHConfigRequest"
       responses:
         "200":
-          description: SSH configuration updated and node marked offline until retested
+          description: SSH configuration updated and verification reset until retested
           content:
             application/json:
               schema:
@@ -315,6 +671,116 @@ paths:
                         $ref: "#/components/schemas/Node"
         "400":
           $ref: "#/components/responses/Error"
+  /api/v1/nodes/{id}/ssh/host-key/reset:
+    post:
+      tags:
+        - nodes
+      summary: Reset the recorded SSH host identity
+      description: Admin only. Use after independently confirming that a VPS was reinstalled or its SSH host key legitimately changed. The next successful connection records the new key.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200": { description: Recorded host identity cleared }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{id}/ssh/terminal-ticket:
+    post:
+      tags:
+        - nodes
+      summary: Create a one-time browser SSH terminal ticket
+      description: Admin only. The ticket is bound to the administrator and node, expires after 30 seconds, and can be consumed once. SSH credentials are never returned to the browser.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Short-lived terminal ticket
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: object
+                        required: [ticket, expires_at]
+                        properties:
+                          ticket:
+                            type: string
+                            description: One-time bearer value used only for the WebSocket upgrade.
+                          expires_at:
+                            type: integer
+                            format: int64
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{id}/ssh/terminal:
+    get:
+      tags:
+        - nodes
+      summary: Upgrade to an interactive SSH terminal WebSocket
+      description: Consumes a one-time terminal ticket and proxies an SSH PTY. Client text frames use JSON messages with type input, resize, or ping. Server terminal output uses binary frames; connection state and errors use JSON text frames. The request Origin must match the HTTP Host.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: ticket
+          in: query
+          required: true
+          description: One-time ticket returned by the terminal-ticket endpoint.
+          schema:
+            type: string
+      responses:
+        "101": { description: WebSocket connection established }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{id}/kernel:
+    get:
+      tags: [nodes, admin]
+      summary: Read the detected Zero kernel state and recent operations
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Kernel state and operation history }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{id}/kernel/detect:
+    post:
+      tags: [nodes, admin]
+      summary: Detect the installed Zero binary, systemd service, config and control socket
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Detection completed and persisted }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{id}/kernel/reconcile:
+    post:
+      tags: [nodes, admin]
+      summary: Reconcile a node to the latest stable Zero release and generated runtime config
+      description: Supports Linux x86_64 with systemd. The server resolves an exact official release, verifies the archive and binary SHA-256, validates the generated config, activates atomically, checks systemd and the local control socket, and rolls back on failure. Automatic downgrade is refused.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Reconciliation completed or no change was required }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/kernel/releases/latest:
+    get:
+      tags: [nodes, admin]
+      summary: Resolve the latest stable official Zero Linux x86_64 release
+      responses:
+        "200": { description: Immutable release tag, URL, size and artifact SHA-256 }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{id}/report-credential:
     post:
       tags:
@@ -358,28 +824,87 @@ paths:
           description: Credential revoked
         "404":
           $ref: "#/components/responses/Error"
-  /api/v1/nodes/protocol/config:
+  /api/v1/nodes/{id}/connector-credential:
     post:
       tags:
         - nodes
-      summary: Publish protocol config to node
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/NodeProtocolConfigRequest"
+      summary: Create or rotate the Zero push connector credential
+      description: Admin only. Returns the plaintext API key once; the previous connector credential is invalidated immediately.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
       responses:
         "200":
-          description: Node updated with protocol template
+          description: Connector credential created or rotated
           content:
             application/json:
               schema:
                 allOf:
                   - $ref: "#/components/schemas/ApiResponse"
                   - properties:
-                      data:
-                        $ref: "#/components/schemas/Node"
+                      data: { $ref: "#/components/schemas/NodeConnectorCredential" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags:
+        - nodes
+      summary: Revoke the Zero push connector credential
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200": { description: Connector credential revoked }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{id}/heartbeat:
+    post:
+      tags:
+        - node-connector
+      summary: Receive a Zero push connector heartbeat
+      description: Uses the native Zero connector contract and Bearer API-key authentication. This response is intentionally not wrapped in ApiResponse.
+      security:
+        - NodeConnectorBearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NodeConnectorHeartbeat" }
+      responses:
+        "200":
+          description: Heartbeat accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeConnectorHeartbeatResponse" }
+        "401": { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{id}/commands:
+    get:
+      tags:
+        - node-connector
+      summary: Poll pending Zero connector commands
+      description: Returns the native raw command array. Command delivery is reserved; the current implementation returns an empty array.
+      security:
+        - NodeConnectorBearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Pending commands
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Error" }
   /api/v1/plans:
     get:
       tags:
@@ -459,18 +984,13 @@ paths:
     get:
       tags:
         - orders
-      summary: List orders
+      summary: List orders owned by the current user
+      description: This self-service route remains user-scoped even when the current user also has administrator permission.
       parameters:
         - name: status
           in: query
           schema:
             type: string
-        - name: user_id
-          in: query
-          schema:
-            type: integer
-            format: int64
-          description: Admin-only query to scope another user.
       responses:
         "200":
           description: Order list
@@ -505,6 +1025,16 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/Order"
+  /api/v1/admin/orders:
+    get:
+      tags: [orders, admin]
+      summary: List orders across all users
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: user_id, in: query, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Global order list }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/orders/{id}/pay-callback:
     post:
       tags:
@@ -537,11 +1067,12 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/Order"
-  /api/v1/orders/{id}/pay:
+  /api/v1/admin/orders/{id}/pay:
     post:
       tags:
         - orders
-      summary: Self-service pay action for pending order
+      summary: Confirm a pending order as paid
+      description: Admin-only manual settlement endpoint. Normal users cannot mark their own orders as paid.
       parameters:
         - name: id
           in: path
@@ -554,7 +1085,7 @@ paths:
           required: false
           schema:
             type: boolean
-          description: Admin-only reconciliation flag; normal users may only pay pending or previously failed orders.
+          description: Admin-only reconciliation flag allowing recovery of a canceled order; this endpoint is never available to normal users.
       responses:
         "200":
           description: Order paid and subscription applied
@@ -578,12 +1109,6 @@ paths:
           schema:
             type: integer
             format: int64
-        - name: force
-          in: query
-          required: false
-          schema:
-            type: boolean
-          description: Admin-only reconciliation flag. Paid orders remain terminal and cannot be canceled.
       responses:
         "200":
           description: Order canceled
@@ -595,21 +1120,27 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/Order"
+  /api/v1/admin/orders/{id}/cancel:
+    post:
+      tags: [orders, admin]
+      summary: Cancel an order as an administrator
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: force, in: query, schema: { type: boolean }, description: Reconciliation flag. Paid orders remain terminal and cannot be canceled. }
+      responses:
+        "200": { description: Order canceled }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/subscriptions:
     get:
       tags:
         - subscriptions
-      summary: List subscriptions
+      summary: List subscriptions owned by the current user
+      description: This self-service route remains user-scoped even when the current user also has administrator permission.
       parameters:
         - name: status
           in: query
           schema:
             type: string
-        - name: user_id
-          in: query
-          schema:
-            type: integer
-            format: int64
       responses:
         "200":
           description: Subscription list
@@ -623,6 +1154,16 @@ paths:
                         type: array
                         items:
                           $ref: "#/components/schemas/Subscription"
+  /api/v1/admin/subscriptions:
+    get:
+      tags: [subscriptions, admin]
+      summary: List subscriptions across all users
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: user_id, in: query, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Global subscription list }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/subscription/access:
     get:
       tags:
@@ -668,19 +1209,169 @@ paths:
           description: Client subscription manifest and Subscription-Userinfo header
         "403":
           $ref: "#/components/responses/Error"
-        "404":
-          $ref: "#/components/responses/Error"
+  /api/v1/admin/protocol-endpoints:
+    get:
+      tags: [nodes]
+      summary: List protocol endpoints for administration
+      responses:
+        "200":
+          description: Protocol endpoint list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/ProtocolEndpoint" }
+    post:
+      tags: [nodes]
+      summary: Create a protocol endpoint without deploying it
+      description: Persists the encrypted server configuration. Deployment is an explicit separate action.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProtocolEndpointWriteRequest"
+      responses:
+        "200": { description: Protocol endpoint configuration saved }
+  /api/v1/admin/protocol-endpoints/{id}:
+    get:
+      tags: [nodes]
+      summary: Read an admin protocol endpoint including decrypted server configuration
+      description: Admin only. The server configuration is returned only to support safe editing and is never exposed by public endpoint lists.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200": { description: Protocol endpoint detail and latest deployment }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [nodes]
+      summary: Update a protocol endpoint without deploying it
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProtocolEndpointWriteRequest" }
+      responses:
+        "200": { description: Protocol endpoint configuration updated }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/protocol-endpoints/{id}/deploy:
+    post:
+      tags: [nodes]
+      summary: Deploy a saved protocol endpoint to its VPS over SSH
+      description: Requires valid node SSH authentication. The first successful connection automatically records the host key before the deployment command runs; later changes are rejected.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200": { description: Protocol endpoint deployed and deployment history recorded }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/protocol-deployments:
+    get:
+      tags: [nodes]
+      summary: List protocol configuration staging attempts
+      parameters:
+        - { in: query, name: node_id, schema: { type: integer, format: int64 } }
+        - { in: query, name: protocol_endpoint_id, schema: { type: integer, format: int64 } }
+        - { in: query, name: status, schema: { type: string, enum: [running, succeeded, failed] } }
+        - { in: query, name: offset, schema: { type: integer, minimum: 0 } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 200 } }
+      responses:
+        "200": { description: Paginated protocol deployment history }
+  /api/v1/admin/plans/{id}/skus:
+    post:
+      tags: [plans]
+      summary: Add a purchasable SKU to a plan
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlanSKU" }
+      responses:
+        "200": { description: SKU created }
+  /api/v1/admin/node-groups:
+    get:
+      tags: [plans]
+      summary: List reusable node groups
+      responses:
+        "200":
+          description: Node groups
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/NodeGroup" }
+    post:
+      tags: [plans]
+      summary: Create a node group and its endpoint membership
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NodeGroupCreateRequest" }
+      responses:
+        "200": { description: Node group created }
+  /api/v1/admin/node-groups/{id}:
+    put:
+      tags: [plans]
+      summary: Update a node group and optionally replace its protocol endpoint membership
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NodeGroupUpdateRequest" }
+      responses:
+        "200": { description: Node group updated }
+  /api/v1/admin/plan-skus/{id}:
+    put:
+      tags: [plans]
+      summary: Update pricing and service specification for a SKU
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlanSKU" }
+      responses:
+        "200": { description: SKU updated }
   /api/v1/traffic/summary:
     get:
       tags:
         - traffic
-      summary: Traffic summary
-      parameters:
-        - name: user_id
-          in: query
-          schema:
-            type: integer
-            format: int64
+      summary: Traffic summary for the current user
+      description: This self-service route remains user-scoped even when the current user also has administrator permission.
       responses:
         "200":
           description: Traffic summary
@@ -692,17 +1383,22 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/TrafficSummary"
+  /api/v1/admin/traffic/summary:
+    get:
+      tags: [traffic, admin]
+      summary: Traffic summary across all users or one selected user
+      parameters:
+        - { name: user_id, in: query, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Administrative traffic summary }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/traffic/records:
     get:
       tags:
         - traffic
-      summary: Traffic records
+      summary: Traffic records for the current user
+      description: All filters remain constrained to records owned by the current user.
       parameters:
-        - name: user_id
-          in: query
-          schema:
-            type: integer
-            format: int64
         - name: node_id
           in: query
           schema:
@@ -726,19 +1422,25 @@ paths:
                         type: array
                         items:
                           $ref: "#/components/schemas/TrafficRecord"
+  /api/v1/admin/traffic/records:
+    get:
+      tags: [traffic, admin]
+      summary: Traffic records across all users
+      parameters:
+        - { name: user_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: node_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: protocol_endpoint_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: subscription_id, in: query, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Global traffic record list }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/traffic/reconciliation:
     get:
       tags:
         - traffic
       summary: Reconcile subscription counters against attributed traffic records
-      description: Normal users see their own subscriptions. Admins may query all users or filter by user_id.
+      description: Reconciles only subscriptions owned by the current user, including when that user also has administrator permission.
       parameters:
-        - name: user_id
-          in: query
-          schema:
-            type: integer
-            format: int64
-          description: Admin-only user filter.
         - name: subscription_id
           in: query
           schema:
@@ -757,6 +1459,16 @@ paths:
                         type: array
                         items:
                           $ref: "#/components/schemas/TrafficReconciliationItem"
+  /api/v1/admin/traffic/reconciliation:
+    get:
+      tags: [traffic, admin]
+      summary: Reconcile subscriptions across all users
+      parameters:
+        - { name: user_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: subscription_id, in: query, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Global reconciliation rows }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/traffic/report:
     post:
       tags:
@@ -800,6 +1512,13 @@ paths:
             type: string
             pattern: "^[0-9a-fA-F]{64}$"
           description: Hexadecimal HMAC-SHA256 signature.
+        - name: X-Zboard-Node-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+          description: Optional node runtime version persisted with the synchronization heartbeat.
       requestBody:
         required: true
         content:
@@ -886,6 +1605,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    NodeConnectorBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: ZeroNodeAPIKey
   responses:
     Error:
       description: Request failed
@@ -912,14 +1635,180 @@ components:
         id:
           type: integer
           format: int64
-        username:
-          type: string
         email:
           type: string
         is_admin:
           type: boolean
         status:
           type: string
+    TicketStatus:
+      type: string
+      enum: [open, pending_admin, pending_user, resolved, closed]
+    TicketCategory:
+      type: string
+      enum: [connection, billing, account, other]
+    TicketCreateRequest:
+      type: object
+      required: [subject, category, body]
+      properties:
+        subject: { type: string, minLength: 1, maxLength: 160 }
+        category: { $ref: "#/components/schemas/TicketCategory" }
+        priority: { type: integer, enum: [1, 2], default: 1 }
+        body: { type: string, minLength: 1, maxLength: 5000 }
+    TicketReplyRequest:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 5000 }
+    TicketStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/TicketStatus" }
+    Ticket:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        ticket_no: { type: string }
+        user_id: { type: integer, format: int64 }
+        user_email: { type: string, format: email }
+        subject: { type: string }
+        category: { $ref: "#/components/schemas/TicketCategory" }
+        priority: { type: integer, enum: [1, 2] }
+        status: { $ref: "#/components/schemas/TicketStatus" }
+        message_count: { type: integer, format: int64 }
+        last_message_at: { type: string, format: date-time }
+        resolved_at: { type: string, format: date-time, nullable: true }
+        closed_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    TicketMessage:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        ticket_id: { type: integer, format: int64 }
+        author_id: { type: integer, format: int64, nullable: true }
+        author_role: { type: string, enum: [user, admin, system] }
+        author_email: { type: string }
+        type: { type: string, enum: [message, status] }
+        body: { type: string }
+        from_status: { type: string }
+        to_status: { type: string }
+        created_at: { type: string, format: date-time }
+    SystemConfig:
+      type: object
+      required: [id, config_key, name, value_type, is_public, is_secret, configured, revision]
+      properties:
+        id: { type: integer, format: int64 }
+        config_key: { type: string }
+        name: { type: string }
+        value:
+          description: Omitted for secret configuration.
+          oneOf:
+            - { type: string }
+            - { type: boolean }
+            - { type: integer, format: int64 }
+            - { type: object, additionalProperties: true }
+            - { type: array, items: {} }
+        value_type: { type: string, enum: [string, bool, int, json] }
+        description: { type: string }
+        is_public: { type: boolean }
+        is_secret: { type: boolean }
+        configured: { type: boolean }
+        revision: { type: integer, format: int64 }
+        updated_at: { type: string, format: date-time }
+    SystemConfigUpdateRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          description: Must match the existing configuration value_type.
+          oneOf:
+            - { type: string }
+            - { type: boolean }
+            - { type: integer, format: int64 }
+            - { type: object, additionalProperties: true }
+            - { type: array, items: {} }
+        expected_revision: { type: integer, format: int64, minimum: 1 }
+    AdminTaskScope:
+      type: object
+      properties:
+        user_ids:
+          type: array
+          items: { type: integer, format: int64, minimum: 1 }
+        subscription_ids:
+          type: array
+          items: { type: integer, format: int64, minimum: 1 }
+        all_active: { type: boolean, default: false }
+    AdminTaskCreateRequest:
+      type: object
+      required: [type, scope, content]
+      properties:
+        type: { type: string, enum: [quota, email] }
+        scope: { $ref: "#/components/schemas/AdminTaskScope" }
+        content:
+          oneOf:
+            - $ref: "#/components/schemas/QuotaTaskContent"
+            - $ref: "#/components/schemas/EmailTaskContent"
+        idempotency_key: { type: string, maxLength: 128 }
+        priority: { type: integer, minimum: -100, maximum: 100, default: 0 }
+        max_attempts: { type: integer, minimum: 1, maximum: 10, default: 3 }
+        auto_run: { type: boolean, default: false }
+    QuotaTaskContent:
+      type: object
+      required: [delta_mb, reason]
+      properties:
+        delta_mb: { type: integer, format: int64, minimum: -1000000000, maximum: 1000000000 }
+        reason: { type: string, minLength: 3, maxLength: 255 }
+    EmailTaskContent:
+      type: object
+      required: [subject, body]
+      properties:
+        subject: { type: string, minLength: 1, maxLength: 200 }
+        body: { type: string, minLength: 1, maxLength: 100000 }
+    AdminTask:
+      type: object
+      required: [id, type, status, total, current, attempts, max_attempts]
+      properties:
+        id: { type: integer, format: int64 }
+        type: { type: string, enum: [quota, email] }
+        scope: { type: string, description: Canonical JSON scope snapshot. }
+        content: { type: string, description: Canonical JSON content snapshot. }
+        status:
+          type: integer
+          enum: [0, 1, 2, 3]
+          description: Pending, running, completed, or failed.
+        errors: { type: string }
+        total: { type: integer, format: int64 }
+        current: { type: integer, format: int64 }
+        idempotency_key: { type: string }
+        priority: { type: integer }
+        attempts: { type: integer }
+        max_attempts: { type: integer }
+        started_at: { type: string, format: date-time, nullable: true }
+        finished_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AdminTaskItem:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        task_id: { type: integer, format: int64 }
+        target_type: { type: string, enum: [subscription, user] }
+        target_id: { type: string }
+        status: { type: integer, enum: [0, 1, 2, 3] }
+        attempts: { type: integer }
+        error: { type: string }
+        started_at: { type: string, format: date-time, nullable: true }
+        finished_at: { type: string, format: date-time, nullable: true }
+    AdminTaskDetail:
+      allOf:
+        - $ref: "#/components/schemas/AdminTask"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/AdminTaskItem" }
     Node:
       type: object
       properties:
@@ -932,8 +1821,14 @@ components:
           type: string
         address:
           type: string
-        protocol:
-          type: string
+        communication_protocol: { type: integer }
+        status: { type: integer, description: Runtime status enum; enabled state is represented separately. }
+        lifecycle_status: { type: string, enum: [active, maintenance, retired] }
+        config: { type: string, description: Node-level JSON configuration. }
+        is_enabled: { type: boolean }
+        remark: { type: string }
+        last_sync_at: { type: string, format: date-time, nullable: true }
+        version: { type: string }
         is_online:
           type: boolean
         last_seen_at:
@@ -945,9 +1840,16 @@ components:
           type: integer
         ssh_user:
           type: string
+        ssh_auth_method:
+          type: string
+          enum: [password, private_key]
+        ssh_privilege_mode:
+          type: string
+          enum: [none, sudo, su]
+          description: Privilege strategy for system changes. none requires the SSH user to be root; sudo supports passwordless or password-based sudo; su switches to root with a separate password.
         ssh_host_key_fingerprint:
           type: string
-          description: Pinned OpenSSH SHA256 host key fingerprint.
+          description: Automatically recorded OpenSSH SHA256 host key fingerprint. Empty before the first successful connection or after an explicit trust reset.
         traffic_secret_prefix:
           type: string
           description: Non-secret prefix used to identify the active report credential.
@@ -955,6 +1857,28 @@ components:
           type: string
           format: date-time
           nullable: true
+        node_credential_prefix:
+          type: string
+          description: Non-secret prefix identifying the active Zero connector API key.
+        node_credential_revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+        ssh_verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        connector_last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+        connector_online:
+          type: boolean
+          description: Derived from connector_last_seen_at using the panel's bounded online window.
+        uptime_seconds: { type: integer, format: int64, minimum: 0 }
+        active_flows: { type: integer, format: int64, minimum: 0 }
+        bytes_up: { type: integer, format: int64, minimum: 0 }
+        bytes_down: { type: integer, format: int64, minimum: 0 }
     Plan:
       type: object
       properties:
@@ -963,18 +1887,72 @@ components:
           format: int64
         name:
           type: string
-        price_cents:
-          type: integer
-          format: int64
-        traffic_gb:
-          type: integer
-          format: int64
-        duration_day:
-          type: integer
-        max_device:
-          type: integer
+        slug:
+          type: string
+        summary:
+          type: string
+        description:
+          type: string
+        node_group_id: { type: integer, format: int64 }
+        node_group: { $ref: "#/components/schemas/NodeGroup" }
+        traffic_bytes: { type: integer, format: int64 }
+        speed_limit_mbps: { type: integer }
+        max_active_subscriptions: { type: integer }
+        is_renewable: { type: boolean }
+        device_limit: { type: integer }
+        family_limit: { type: integer }
+        reset_policy: { type: integer, minimum: 0, maximum: 5 }
+        traffic_calc_mode: { type: integer, enum: [0, 1, 2] }
+        skus:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanSKU"
         is_active:
           type: boolean
+    PlanSKU:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        plan_id: { type: integer, format: int64 }
+        code: { type: string }
+        name: { type: string }
+        sku_type: { type: string, enum: [new, renewal, upgrade, traffic_pack] }
+        billing_unit: { type: string, enum: [day, month, year, once] }
+        billing_value: { type: integer, minimum: 1 }
+        price_cents: { type: integer, format: int64, minimum: 0 }
+        currency: { type: string }
+        traffic_bytes: { type: integer, format: int64, minimum: 1 }
+        device_limit: { type: integer, minimum: 1 }
+        speed_limit_mbps: { type: integer, minimum: 0 }
+        is_active: { type: boolean }
+    NodeGroup:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        code: { type: string }
+        description: { type: string }
+        is_enabled: { type: boolean }
+        protocol_endpoint_ids:
+          type: array
+          items: { type: integer, format: int64 }
+    ProtocolEndpoint:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        node_id: { type: integer, format: int64 }
+        name: { type: string }
+        protocol: { type: string }
+        address: { type: string }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        public_port: { type: integer, minimum: 1, maximum: 65535 }
+        cipher: { type: integer }
+        parent_protocol_id: { type: integer, format: int64, nullable: true }
+        multiplier_milli: { type: integer, minimum: 1, maximum: 100000 }
+        client_config: { type: string }
+        optional_config: { type: string, description: JSON object with protocol-specific optional values. }
+        tags: { type: string, description: JSON array of presentation and routing tags. }
+        is_active: { type: boolean }
     Order:
       type: object
       properties:
@@ -991,8 +1969,18 @@ components:
         plan_id:
           type: integer
           format: int64
+        plan_sku_id:
+          type: integer
+          format: int64
         trade_no:
           type: string
+        order_type:
+          type: string
+          enum: [new, renewal, upgrade, traffic_pack]
+        target_subscription_id:
+          type: integer
+          format: int64
+          nullable: true
         amount_cents:
           type: integer
           format: int64
@@ -1014,6 +2002,9 @@ components:
         plan_id:
           type: integer
           format: int64
+        plan_sku_id:
+          type: integer
+          format: int64
         start_at:
           type: string
         end_at:
@@ -1026,6 +2017,15 @@ components:
         flow_used:
           type: integer
           format: int64
+        node_group_id: { type: integer, format: int64 }
+        subscription_type: { type: integer }
+        speed_limit_mbps: { type: integer }
+        device_limit: { type: integer }
+        family_limit: { type: integer }
+        renewal_price_minor: { type: integer, format: int64 }
+        reset_policy: { type: integer, minimum: 0, maximum: 5 }
+        next_reset_at: { type: string, format: date-time, nullable: true }
+        traffic_calc_mode: { type: integer, enum: [0, 1, 2] }
     TrafficRecord:
       type: object
       properties:
@@ -1042,6 +2042,16 @@ components:
         node_id:
           type: integer
           format: int64
+        protocol_endpoint_id:
+          type: integer
+          format: int64
+        raw_bytes:
+          type: integer
+          format: int64
+        upload_bytes: { type: integer, format: int64 }
+        download_bytes: { type: integer, format: int64 }
+        traffic_calc_mode: { type: integer, enum: [0, 1, 2] }
+        protocol_multiplier_milli: { type: integer, format: int64 }
         report_id:
           type: string
         used_bytes:
@@ -1088,6 +2098,41 @@ components:
           type: string
         name:
           type: string
+    SetupStatus:
+      type: object
+      required: [installed, version]
+      properties:
+        installed:
+          type: boolean
+        site_name:
+          type: string
+        site_url:
+          type: string
+          format: uri
+        allow_registration:
+          type: boolean
+        version:
+          type: string
+    SetupInstallRequest:
+      type: object
+      required: [site_name, site_url, allow_registration, admin_email, admin_password]
+      properties:
+        site_name:
+          type: string
+          maxLength: 80
+        site_url:
+          type: string
+          format: uri
+        allow_registration:
+          type: boolean
+        admin_email:
+          type: string
+          format: email
+          maxLength: 128
+        admin_password:
+          type: string
+          format: password
+          minLength: 12
     SystemInfo:
       type: object
       properties:
@@ -1132,6 +2177,12 @@ components:
         orders_paid:
           type: integer
           format: int64
+        orders_pending:
+          type: integer
+          format: int64
+        orders_failed:
+          type: integer
+          format: int64
         revenue_cents:
           type: integer
           format: int64
@@ -1145,6 +2196,18 @@ components:
           type: integer
           format: int64
           description: Remaining bytes across active, unexpired subscriptions.
+        nodes_offline:
+          type: integer
+          format: int64
+        tickets_pending:
+          type: integer
+          format: int64
+        tasks_failed:
+          type: integer
+          format: int64
+        deployments_failed:
+          type: integer
+          format: int64
     AuditLog:
       type: object
       properties:
@@ -1239,27 +2302,55 @@ components:
           type: string
         notice:
           type: string
+    NodeConnectorCredential:
+      type: object
+      required: [node_id, api_key, api_key_prefix]
+      properties:
+        node_id:
+          type: string
+        api_key:
+          type: string
+          writeOnly: true
+          description: Plaintext Zero connector API key returned only by this response.
+        api_key_prefix:
+          type: string
+        notice:
+          type: string
+    NodeConnectorHeartbeat:
+      type: object
+      required: [node_id, build_id, uptime_seconds, active_flows, bytes_up, bytes_down]
+      properties:
+        node_id: { type: string }
+        build_id: { type: string, maxLength: 64 }
+        uptime_seconds: { type: integer, format: int64, minimum: 0 }
+        active_flows: { type: integer, format: int64, minimum: 0 }
+        bytes_up: { type: integer, format: int64, minimum: 0 }
+        bytes_down: { type: integer, format: int64, minimum: 0 }
+    NodeConnectorHeartbeatResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
     AuthRegisterRequest:
       type: object
       required:
-        - username
         - email
         - password
       properties:
-        username:
-          type: string
         email:
           type: string
+          format: email
         password:
           type: string
     AuthLoginRequest:
       type: object
       required:
-        - account
+        - email
         - password
       properties:
-        account:
+        email:
           type: string
+          format: email
         password:
           type: string
     AuthLoginResponse:
@@ -1280,12 +2371,9 @@ components:
     AdminUserCreateRequest:
       type: object
       required:
-        - username
         - email
         - password
       properties:
-        username:
-          type: string
         email:
           type: string
         password:
@@ -1307,9 +2395,6 @@ components:
       type: object
       required:
         - name
-        - region
-        - address
-        - protocol
       properties:
         name:
           type: string
@@ -1317,7 +2402,17 @@ components:
           type: string
         address:
           type: string
-        protocol:
+        node_credential:
+          type: string
+          writeOnly: true
+        communication_protocol:
+          type: integer
+        config:
+          type: string
+          description: Optional JSON object.
+        is_enabled:
+          type: boolean
+        remark:
           type: string
         ssh_host:
           type: string
@@ -1325,12 +2420,33 @@ components:
           type: integer
         ssh_user:
           type: string
+        ssh_auth_method:
+          type: string
+          enum: [password, private_key]
         ssh_password:
           type: string
           writeOnly: true
-        ssh_host_key_fingerprint:
+        ssh_private_key:
           type: string
-          description: OpenSSH SHA256 host key fingerprint, for example SHA256:base64.
+          writeOnly: true
+        ssh_private_key_passphrase:
+          type: string
+          writeOnly: true
+        ssh_privilege_mode:
+          type: string
+          enum: [none, sudo, su]
+        ssh_privilege_password:
+          type: string
+          writeOnly: true
+    NodeUpdateRequest:
+      type: object
+      properties:
+        name: { type: string }
+        region: { type: string }
+        address: { type: string }
+        remark: { type: string }
+        lifecycle_status: { type: string, enum: [active, maintenance, retired] }
+        is_enabled: { type: boolean }
     NodeSSHTestRequest:
       type: object
       required:
@@ -1345,7 +2461,7 @@ components:
         - ssh_host
         - ssh_port
         - ssh_user
-        - ssh_host_key_fingerprint
+        - ssh_auth_method
       properties:
         ssh_host:
           type: string
@@ -1355,76 +2471,167 @@ components:
           maximum: 65535
         ssh_user:
           type: string
+        ssh_auth_method:
+          type: string
+          enum: [password, private_key]
+          description: Chooses the client authentication credential and is independent from host identity verification.
         ssh_password:
           type: string
           writeOnly: true
-          description: Required for first configuration; omit to retain the existing encrypted password.
-        ssh_host_key_fingerprint:
+          description: Required when first configuring password authentication; omit to retain the current password.
+        ssh_private_key:
           type: string
-          description: OpenSSH SHA256 host key fingerprint.
-    NodeProtocolConfigRequest:
+          writeOnly: true
+          description: Required when first configuring private-key authentication; omit to retain the current key.
+        ssh_private_key_passphrase:
+          type: string
+          writeOnly: true
+          description: Optional private-key passphrase. Omit to retain it; send an empty string to clear it.
+        ssh_privilege_mode:
+          type: string
+          enum: [none, sudo, su]
+          description: Use none for root login, sudo for sudo elevation, or su for a root password flow.
+        ssh_privilege_password:
+          type: string
+          writeOnly: true
+          description: Required for su, optional for sudo, and omitted to retain the stored value. Send an empty string to select passwordless sudo or clear it for none.
+    ProtocolEndpointWriteRequest:
       type: object
       required:
         - node_id
+        - name
         - protocol
+        - address
+        - port
+        - multiplier_milli
         - config
         - client_config
       properties:
         node_id:
           type: integer
           format: int64
+        name:
+          type: string
         protocol:
           type: string
+          enum: [vmess, vless, trojan, shadowsocks, hysteria2, mieru]
+        address:
+          type: string
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        public_port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        cipher:
+          type: integer
+        parent_protocol_id:
+          type: integer
+          format: int64
+          nullable: true
+        multiplier_milli:
+          type: integer
+          minimum: 1
+          maximum: 100000
         config:
           type: string
-          description: Valid JSON written to the node runtime.
+          description: Zero inbound protocol JSON object. Its type field must match protocol. The current SSH flow stages this JSON but does not apply it to the Zero runtime.
         client_config:
           type: string
           description: Valid client JSON published through the subscription manifest.
+        optional_config:
+          type: string
+          description: Optional JSON object for protocol-specific settings.
+        tags:
+          type: string
+          description: Optional JSON array of endpoint tags.
+        is_active:
+          type: boolean
+        sort_order:
+          type: integer
     PlanCreateRequest:
       type: object
       required:
         - name
-        - price_cents
-        - traffic_gb
-        - duration_day
-        - max_device
+        - slug
+        - node_group_id
+        - skus
       properties:
         name:
           type: string
-        price_cents:
-          type: integer
-          format: int64
-        traffic_gb:
-          type: integer
-          format: int64
-        duration_day:
-          type: integer
-        max_device:
-          type: integer
+        slug: { type: string }
+        summary: { type: string }
+        description: { type: string }
+        node_group_id: { type: integer, format: int64, description: Required reusable node group. Plans never bind protocol endpoints directly. }
+        is_active: { type: boolean }
+        traffic_bytes: { type: integer, format: int64, minimum: 1 }
+        speed_limit_mbps: { type: integer, minimum: 0 }
+        max_active_subscriptions: { type: integer, minimum: 0 }
+        is_renewable: { type: boolean }
+        device_limit: { type: integer, minimum: 1 }
+        family_limit: { type: integer, minimum: 0 }
+        reset_policy: { type: integer, minimum: 0, maximum: 5 }
+        traffic_calc_mode: { type: integer, enum: [0, 1, 2] }
+        skus:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/PlanSKU"
+    NodeGroupCreateRequest:
+      type: object
+      required: [name, code]
+      properties:
+        name: { type: string }
+        code: { type: string }
+        description: { type: string }
+        is_enabled: { type: boolean }
+        protocol_endpoint_ids:
+          type: array
+          items: { type: integer, format: int64 }
+    NodeGroupUpdateRequest:
+      type: object
+      properties:
+        name: { type: string }
+        code: { type: string }
+        description: { type: string }
+        is_enabled: { type: boolean }
+        protocol_endpoint_ids:
+          type: array
+          items: { type: integer, format: int64 }
     PlanUpdateRequest:
       type: object
       properties:
         name:
           type: string
-        price_cents:
-          type: integer
-          format: int64
-        traffic_gb:
-          type: integer
-          format: int64
-        duration_day:
-          type: integer
-        max_device:
-          type: integer
+        slug: { type: string }
+        summary: { type: string }
+        description: { type: string }
+        sort_order: { type: integer }
         is_active:
           type: boolean
+        node_group_id: { type: integer, format: int64, description: Replaces the plan delivery boundary with another node group. }
+        traffic_bytes: { type: integer, format: int64, minimum: 1 }
+        speed_limit_mbps: { type: integer, minimum: 0 }
+        max_active_subscriptions: { type: integer, minimum: 0 }
+        is_renewable: { type: boolean }
+        device_limit: { type: integer, minimum: 1 }
+        family_limit: { type: integer, minimum: 0 }
+        reset_policy: { type: integer, minimum: 0, maximum: 5 }
+        traffic_calc_mode: { type: integer, enum: [0, 1, 2] }
     OrderCreateRequest:
       type: object
       required:
-        - plan_id
+        - plan_sku_id
       properties:
-        plan_id:
+        plan_sku_id:
+          type: integer
+          format: int64
+        order_type:
+          type: string
+          enum: [new, renewal, upgrade, traffic_pack]
+        target_subscription_id:
           type: integer
           format: int64
         channel:
@@ -1441,7 +2648,7 @@ components:
       required:
         - report_id
         - user_id
-        - used_bytes
+        - protocol_endpoint_id
       properties:
         report_id:
           type: string
@@ -1450,9 +2657,22 @@ components:
         user_id:
           type: integer
           format: int64
-        used_bytes:
+        protocol_endpoint_id:
           type: integer
           format: int64
-          minimum: 1
+        raw_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          deprecated: true
+          description: Legacy aggregate field; use upload_bytes and download_bytes for new reporters.
+        upload_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        download_bytes:
+          type: integer
+          format: int64
+          minimum: 0
         meta:
           type: string

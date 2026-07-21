@@ -4,8 +4,8 @@
 
 ## Start backend
 
-The example config intentionally contains no datasource, JWT secret, or bootstrap password.
-Set them explicitly before first startup:
+The example config intentionally contains no datasource, JWT secret, or credential-encryption key.
+Set those infrastructure secrets explicitly before first startup:
 
 ```bash
 cd backend
@@ -13,11 +13,15 @@ export ZBOARD_ENVIRONMENT=development
 export ZBOARD_DATA_SOURCE='zboard:<local-db-password>@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local'
 export ZBOARD_JWT_SECRET='<at-least-32-random-bytes>'
 export ZBOARD_CREDENTIAL_ENCRYPTION_KEY='<exactly-32-random-bytes-as-base64-or-hex>'
-export ZBOARD_BOOTSTRAP_ADMIN_USERNAME='<local-admin-name>'
-export ZBOARD_BOOTSTRAP_ADMIN_EMAIL='<local-admin-email>'
-export ZBOARD_BOOTSTRAP_ADMIN_PASSWORD='<at-least-12-random-bytes>'
+export ZBOARD_ZERO_ARTIFACT_DIR='/var/lib/zboard/artifacts'
 go run ./cmd/zboard -f ./etc/zboard.yaml.example
 ```
+
+With an empty database the backend remains available in installation mode. Open the
+frontend `/setup` route to configure the site and first administrator. The database,
+JWT, and credential-encryption values deliberately remain deployment-owned secrets and
+are never accepted from a browser. Bootstrap admin environment variables are optional
+and intended only for unattended or legacy deployment automation.
 
 If Go is not in PATH, use local fallback:
 
@@ -120,19 +124,23 @@ export ZBOARD_SMOKE_TIMEOUT=10
 - `internal/datastore/` DB connection helper
 - `internal/server/` route registration
 - `internal/version/` build time version metadata
-- `migrations/` SQL migration templates
+- `migrations/` embedded, ordered SQL migrations tracked in `schema_migrations`
 - `api/openapi.yaml` API contract
 
 ## Core feature set
 
 - Auth: register / login / user info, admin role control
-- Nodes: list/create/SSH test/protocol config push and report-credential rotation (all node management APIs require login; mutation requires admin)
-- Plans: list and create
+- Nodes: independent VPS asset lifecycle, Zero/report credentials, SSH connection verification, and an administrator-only interactive browser terminal using one-time tickets (all node management APIs require admin)
+- Protocol endpoints: separately saved node-bound service configuration, explicit SSH deployment, and endpoint-only traffic multiplier
+- Node groups: reusable endpoint membership boundaries selected by plans
+- Plans: list/create/update with one required node group; plans never bind endpoints or add another multiplier
 - Orders: user order create, callback update
 - Flow metering: signed node traffic reports, replay-safe idempotency, and serialized remaining-quota deduction
 - Subscriptions: query
 - Traffic summary: usage statistics and remaining flow
 - Admin dashboard metrics
+- Typed system configuration: revision-checked updates with encrypted secret values
+- Operational tasks: itemized quota adjustments and opt-in TLS-protected SMTP email batches
 
 ## Version and release baseline
 
@@ -165,7 +173,11 @@ Hash the exact JSON request bytes with SHA-256. Sign this canonical UTF-8 value 
 node_id + "\n" + unix_timestamp + "\n" + nonce + "\n" + lowercase_hex(body_sha256)
 ```
 
-The JSON body contains `report_id`, `user_id`, `used_bytes`, and optional `meta`. Reusing the same
+The JSON body contains `report_id`, `user_id`, `protocol_endpoint_id`, raw `upload_bytes` and
+`download_bytes`, and optional `meta`. `raw_bytes` remains a legacy aggregate fallback. The endpoint
+must belong to the authenticated node and the subscription's node group. Stored billed bytes apply
+the protocol endpoint multiplier after selecting both, upload-only, or download-only traffic
+according to the subscription policy. Reusing the same
 `(node_id, report_id)` returns `duplicate: true` without another deduction; reusing a nonce for a
 different report is rejected. See `api/openapi.yaml` for field constraints and response schemas.
 

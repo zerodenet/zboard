@@ -23,9 +23,13 @@ Repository: `https://github.com/zerodenet/zboard`
 ## v0.1.0 capability scope
 
 - Admin and normal users, admin can also be a normal subscriber
-- Node management with SSH operation tests
+- Independent VPS asset management with lifecycle state and SSH operation tests
 - Node APIs (including list) are authenticated; public access is no longer allowed
-- Protocol template distribution to nodes
+- Node-bound protocol endpoint management with separate save/deploy actions
+- Reusable node groups between plans and protocol endpoints; plans do not bind endpoints directly
+- Password/private-key SSH authentication with automatic host-key enrollment, pinned verification and explicit trust reset
+- Explicit per-node privilege mode for direct root, passwordless/password-based `sudo`, or password-based `su`; privilege secrets are encrypted separately from SSH login credentials
+- Administrator-only browser SSH terminal with one-time tickets, same-origin WebSocket transport, PTY resizing, bounded sessions and metadata-only audit logs
 - Plans, orders, subscriptions, and traffic usage summary
 - Per-node signed traffic report endpoint with replay-safe quota deduction and billing reconciliation
 - Admin user management: list/create/update users, ban/resume, admin role toggle, password reset
@@ -50,6 +54,8 @@ Repository: `https://github.com/zerodenet/zboard`
 - `docs/` operation and upgrade documentation
 - `.github/` CI and release workflows
 
+The core schema separates catalog plans, purchasable SKUs, operational nodes and sellable protocol endpoints. See [docs/data-model.md](docs/data-model.md).
+
 ## Quick start
 
 ### Prerequisites
@@ -61,7 +67,8 @@ Repository: `https://github.com/zerodenet/zboard`
 ### Backend
 
 Manual backend startup requires an explicit datasource, a JWT secret of at least 32 bytes,
-and bootstrap administrator credentials when the database has no users:
+and a stable node-credential encryption key. On an empty database, the service starts in
+installation mode and the browser is redirected to `/setup`:
 
 ```powershell
 cd scripts
@@ -71,11 +78,18 @@ $env:ZBOARD_ENVIRONMENT = "development"
 $env:ZBOARD_DATA_SOURCE = "zboard:<local-db-password>@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local"
 $env:ZBOARD_JWT_SECRET = "<at-least-32-random-bytes>"
 $env:ZBOARD_CREDENTIAL_ENCRYPTION_KEY = "<exactly-32-random-bytes-as-base64-or-hex>"
-$env:ZBOARD_BOOTSTRAP_ADMIN_USERNAME = "<local-admin-name>"
-$env:ZBOARD_BOOTSTRAP_ADMIN_EMAIL = "<local-admin-email>"
-$env:ZBOARD_BOOTSTRAP_ADMIN_PASSWORD = "<at-least-12-random-bytes>"
 go run ./cmd/zboard -f ./etc/zboard.yaml.example
 ```
+
+The setup wizard checks database readiness, collects the public site name and URL,
+chooses whether registration is open, and creates the first administrator. Installation
+is committed as one transaction and cannot be run again. Bootstrap administrator
+environment variables remain supported only for unattended and legacy deployments.
+
+The ordered SQL files in `backend/migrations` are embedded in the binary and applied at startup.
+Applied versions are recorded in `schema_migrations`; production startup no longer relies on
+GORM `AutoMigrate`. To migrate without starting the HTTP service, run `./scripts/migrate.ps1`
+or `./scripts/migrate.sh` with the same database and security environment variables.
 
 `ensure-go-env.ps1` supports auto-install (default on) to `C:\Users\higanbana\sdk\golang` when local Go is missing.
 Use `-AutoInstall:$false` to turn it off, or set `ZBOARD_AUTO_INSTALL_GO=0` in bash.
@@ -213,8 +227,9 @@ docker compose -f deploy/docker/docker-compose.yml up --build
 ```
 
 - Backend exposes `/api/v1` and serves frontend bundle when `ZBOARD_WEB_DIR` is configured by `deploy/docker/Dockerfile`.
-- Docker startup is production mode and refuses missing JWT, database, or bootstrap administrator secrets.
+- Docker startup is production mode and refuses missing JWT, database, or credential-encryption secrets. Open `/setup` after the first start to finish installation.
 - `ZBOARD_CREDENTIAL_ENCRYPTION_KEY` must remain stable and backed up; losing it makes stored node credentials unrecoverable.
+- `ZBOARD_ZERO_ARTIFACT_HOST_DIR` points to the host directory containing trusted musl archives and matching `.sha256` files for older-glibc nodes; the compose stack mounts it read-only.
 - Create each node's traffic-report credential in Node Management, copy the one-time secret directly to that node, and rotate or revoke it if exposure is suspected.
 
 ## v0.0.1 playbook
@@ -235,7 +250,7 @@ pnpm install
 pnpm dev
 ```
 4. Basic smoke test:
-- Login with the configured bootstrap administrator. There is no repository default password.
+- Complete `/setup` on a new database, then continue with the administrator created there. There is no repository default password.
 - Create nodes, create plans, create order from plans
 - Run SSH test and protocol publish on node APIs when real SSH target exists
 - Pin each node's verified OpenSSH `SHA256:...` host-key fingerprint before testing or publishing.

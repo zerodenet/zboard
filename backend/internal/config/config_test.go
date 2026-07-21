@@ -14,10 +14,10 @@ func TestApplyEnvironmentOverridesSecuritySettings(t *testing.T) {
 		"ZBOARD_DATA_SOURCE":               "zboard:strong-db-password@tcp(mysql:3306)/zboard",
 		"ZBOARD_REDIS_ADDR":                "redis:6379",
 		"ZBOARD_JWT_SECRET":                testJWTSecret,
-		"ZBOARD_BOOTSTRAP_ADMIN_USERNAME":  "operator",
 		"ZBOARD_BOOTSTRAP_ADMIN_EMAIL":     "operator@example.com",
 		"ZBOARD_BOOTSTRAP_ADMIN_PASSWORD":  "strong-admin-password",
 		"ZBOARD_CREDENTIAL_ENCRYPTION_KEY": testCredentialEncryptionKey,
+		"ZBOARD_ZERO_ARTIFACT_DIR":         "/var/lib/zboard/artifacts",
 	}
 	c := Config{}
 	c.ApplyEnvironment(func(key string) string { return values[key] })
@@ -25,10 +25,10 @@ func TestApplyEnvironmentOverridesSecuritySettings(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if c.Environment != EnvironmentProduction || c.RedisAddr != "redis:6379" {
+	if c.Environment != EnvironmentProduction || c.RedisAddr != "redis:6379" || c.ZeroArtifactDir != "/var/lib/zboard/artifacts" {
 		t.Fatalf("environment overrides not applied: %+v", c)
 	}
-	if admin := c.BootstrapAdmin(); admin.Username != "operator" || admin.Email != "operator@example.com" {
+	if admin := c.BootstrapAdmin(); admin.Email != "operator@example.com" {
 		t.Fatalf("bootstrap admin overrides not applied: %+v", admin)
 	}
 }
@@ -43,7 +43,7 @@ func TestValidateRejectsUnsafeConfiguration(t *testing.T) {
 		{name: "missing datasource", edit: func(c *Config) { c.DataSource = "" }, want: "datasource is required"},
 		{name: "weak jwt", edit: func(c *Config) { c.JwtSecret = "dev-jwt-secret" }, want: "jwt_secret"},
 		{name: "jwt placeholder", edit: func(c *Config) { c.JwtSecret = "generate-at-least-32-random-bytes" }, want: "placeholder"},
-		{name: "partial bootstrap", edit: func(c *Config) { c.BootstrapAdminPassword = "" }, want: "requires username"},
+		{name: "partial bootstrap", edit: func(c *Config) { c.BootstrapAdminPassword = "" }, want: "requires email"},
 		{name: "bootstrap placeholder", edit: func(c *Config) { c.BootstrapAdminPassword = "generate-at-least-16-random-bytes" }, want: "placeholder"},
 		{name: "short production bootstrap password", edit: func(c *Config) { c.BootstrapAdminPassword = "123456789012" }, want: "at least 16"},
 	}
@@ -54,7 +54,6 @@ func TestValidateRejectsUnsafeConfiguration(t *testing.T) {
 				Environment:             EnvironmentProduction,
 				DataSource:              "zboard:strong-db-password@tcp(mysql:3306)/zboard",
 				JwtSecret:               testJWTSecret,
-				BootstrapAdminUsername:  "operator",
 				BootstrapAdminEmail:     "operator@example.com",
 				BootstrapAdminPassword:  "strong-admin-password",
 				CredentialEncryptionKey: testCredentialEncryptionKey,

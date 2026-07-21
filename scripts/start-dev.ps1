@@ -13,8 +13,7 @@ param(
     [string]$RedisAddr = "",
     [string]$JwtSecret = "",
     [string]$CredentialEncryptionKey = "",
-    [string]$AdminUsername = "",
-    [string]$AdminEmail = "",
+	[string]$AdminEmail = "",
     [string]$AdminPassword = "",
     [switch]$WithFrontend,
     [switch]$NoSmoke,
@@ -178,11 +177,8 @@ if ([string]::IsNullOrWhiteSpace($CredentialEncryptionKey)) {
         $CredentialEncryptionKey = New-ZBoardRandomSecret
     }
 }
-if ([string]::IsNullOrWhiteSpace($AdminUsername)) {
-    $AdminUsername = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_BOOTSTRAP_ADMIN_USERNAME)) { "admin" } else { $env:ZBOARD_BOOTSTRAP_ADMIN_USERNAME }
-}
 if ([string]::IsNullOrWhiteSpace($AdminEmail)) {
-    $AdminEmail = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_BOOTSTRAP_ADMIN_EMAIL)) { "$AdminUsername@zboard.local" } else { $env:ZBOARD_BOOTSTRAP_ADMIN_EMAIL }
+	$AdminEmail = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_BOOTSTRAP_ADMIN_EMAIL)) { "admin@zboard.local" } else { $env:ZBOARD_BOOTSTRAP_ADMIN_EMAIL }
 }
 $generatedAdminPassword = $false
 if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
@@ -212,7 +208,7 @@ $configText = [regex]::Replace($configText, '(?m)^(\s*)redis_addr:\s*".*?"', '$1
 $configText = [regex]::Replace($configText, '(?m)^(\s*)Port:\s*[0-9]+', '$1Port: ' + $BackendPort)
 Set-Content -NoNewline -Encoding UTF8 -Path $runtimeConfig -Value $configText
 
-Write-Output "Local bootstrap admin: $AdminUsername"
+Write-Output "Local bootstrap admin: $AdminEmail"
 if ($generatedAdminPassword) {
     Write-Output "Generated local bootstrap password: $AdminPassword"
     Write-Output "Save this value for subsequent runs against the same database."
@@ -239,8 +235,7 @@ $securityEnvironment = @{
     ZBOARD_ENVIRONMENT = "development"
     ZBOARD_JWT_SECRET = $JwtSecret
     ZBOARD_CREDENTIAL_ENCRYPTION_KEY = $CredentialEncryptionKey
-    ZBOARD_BOOTSTRAP_ADMIN_USERNAME = $AdminUsername
-    ZBOARD_BOOTSTRAP_ADMIN_EMAIL = $AdminEmail
+	ZBOARD_BOOTSTRAP_ADMIN_EMAIL = $AdminEmail
     ZBOARD_BOOTSTRAP_ADMIN_PASSWORD = $AdminPassword
 }
 $previousSecurityEnvironment = @{}
@@ -301,7 +296,7 @@ if ($WithFrontend) {
 }
 
 if (-not $NoSmoke) {
-    & "$PSScriptRoot\smoke-test.ps1" -ApiBase $ApiBase -Account $AdminUsername -Password $AdminPassword -RequestTimeoutSec ([Math]::Max(1,$SmokeRequestTimeoutSec))
+	& "$PSScriptRoot\smoke-test.ps1" -ApiBase $ApiBase -Email $AdminEmail -Password $AdminPassword -RequestTimeoutSec ([Math]::Max(1,$SmokeRequestTimeoutSec))
 }
 
 if ($StopWhenDone) {

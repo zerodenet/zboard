@@ -23,14 +23,13 @@ type Config struct {
 	DataSource              string `json:"datasource"`
 	RedisAddr               string `json:"redis_addr,optional"`
 	JwtSecret               string `json:"jwt_secret"`
-	BootstrapAdminUsername  string `json:"bootstrap_admin_username,optional"`
 	BootstrapAdminEmail     string `json:"bootstrap_admin_email,optional"`
 	BootstrapAdminPassword  string `json:"bootstrap_admin_password,optional"`
 	CredentialEncryptionKey string `json:"credential_encryption_key,optional"`
+	ZeroArtifactDir         string `json:"zero_artifact_dir,optional"`
 }
 
 type BootstrapAdmin struct {
-	Username string
 	Email    string
 	Password string
 }
@@ -47,10 +46,10 @@ func (c *Config) ApplyEnvironment(getenv func(string) string) {
 		applyOverride(&c.RedisAddr, getenv("ZBOARD_REDIS"))
 	}
 	applyOverride(&c.JwtSecret, getenv("ZBOARD_JWT_SECRET"))
-	applyOverride(&c.BootstrapAdminUsername, getenv("ZBOARD_BOOTSTRAP_ADMIN_USERNAME"))
 	applyOverride(&c.BootstrapAdminEmail, getenv("ZBOARD_BOOTSTRAP_ADMIN_EMAIL"))
 	applyOverride(&c.BootstrapAdminPassword, getenv("ZBOARD_BOOTSTRAP_ADMIN_PASSWORD"))
 	applyOverride(&c.CredentialEncryptionKey, getenv("ZBOARD_CREDENTIAL_ENCRYPTION_KEY"))
+	applyOverride(&c.ZeroArtifactDir, getenv("ZBOARD_ZERO_ARTIFACT_DIR"))
 }
 
 func (c *Config) Validate() error {
@@ -78,7 +77,6 @@ func (c *Config) Validate() error {
 
 func (c Config) BootstrapAdmin() BootstrapAdmin {
 	return BootstrapAdmin{
-		Username: strings.TrimSpace(c.BootstrapAdminUsername),
 		Email:    strings.TrimSpace(c.BootstrapAdminEmail),
 		Password: c.BootstrapAdminPassword,
 	}
@@ -113,17 +111,17 @@ func ValidateJWTSecret(secret string) error {
 }
 
 func (a BootstrapAdmin) Configured() bool {
-	return a.Username != "" || a.Email != "" || a.Password != ""
+	return a.Email != "" || a.Password != ""
 }
 
 func (a BootstrapAdmin) Validate(environment string) error {
-	if a.Username == "" || a.Email == "" || a.Password == "" {
-		return errors.New("bootstrap admin requires username, email, and password")
+	if a.Email == "" || a.Password == "" {
+		return errors.New("bootstrap admin requires email and password")
 	}
 	if !strings.Contains(a.Email, "@") {
 		return errors.New("bootstrap admin email is invalid")
 	}
-	if isPlaceholder(a.Username) || isPlaceholder(a.Email) || isPlaceholder(a.Password) {
+	if isPlaceholder(a.Email) || isPlaceholder(a.Password) {
 		return errors.New("bootstrap admin contains an insecure placeholder")
 	}
 	minimumPasswordBytes := 12

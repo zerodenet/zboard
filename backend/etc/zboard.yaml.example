@@ -9,7 +9,7 @@ environment: development
 datasource: ""
 redis_addr: "redis:6379"
 jwt_secret: ""
-bootstrap_admin_username: ""
 bootstrap_admin_email: ""
 bootstrap_admin_password: ""
 credential_encryption_key: ""
+zero_artifact_dir: ""

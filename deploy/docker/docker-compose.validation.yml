@@ -1,0 +1,59 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${ZBOARD_MYSQL_ROOT_PASSWORD:?set ZBOARD_MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: zboard
+      MYSQL_USER: zboard
+      MYSQL_PASSWORD: ${ZBOARD_MYSQL_PASSWORD:?set ZBOARD_MYSQL_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  zboard:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        APP_VERSION: ${ZBOARD_VALIDATION_VERSION:-v0.0.1-validation}
+        APP_COMMIT: ${ZBOARD_VALIDATION_COMMIT:-working-tree}
+        APP_BUILD_TIME: ${ZBOARD_VALIDATION_BUILD_TIME:-1970-01-01T00:00:00Z}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ZBOARD_ENVIRONMENT: production
+      ZBOARD_DATA_SOURCE: "zboard:${ZBOARD_MYSQL_PASSWORD:?set ZBOARD_MYSQL_PASSWORD}@tcp(mysql:3306)/zboard?charset=utf8mb4&parseTime=true&loc=UTC"
+      ZBOARD_REDIS_ADDR: redis:6379
+      ZBOARD_JWT_SECRET: ${ZBOARD_JWT_SECRET:?set ZBOARD_JWT_SECRET}
+      ZBOARD_CREDENTIAL_ENCRYPTION_KEY: ${ZBOARD_CREDENTIAL_ENCRYPTION_KEY:?set ZBOARD_CREDENTIAL_ENCRYPTION_KEY}
+      ZBOARD_BOOTSTRAP_ADMIN_EMAIL: ${ZBOARD_BOOTSTRAP_ADMIN_EMAIL:?set ZBOARD_BOOTSTRAP_ADMIN_EMAIL}
+      ZBOARD_BOOTSTRAP_ADMIN_PASSWORD: ${ZBOARD_BOOTSTRAP_ADMIN_PASSWORD:?set ZBOARD_BOOTSTRAP_ADMIN_PASSWORD}
+      ZBOARD_ZERO_ARTIFACT_DIR: /var/lib/zboard/artifacts
+    volumes:
+      - ${ZBOARD_ZERO_ARTIFACT_HOST_DIR:-./artifacts}:/var/lib/zboard/artifacts:ro
+    ports:
+      - "127.0.0.1:${ZBOARD_VALIDATION_HTTP_PORT:-18080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    restart: "no"
+
+volumes:
+  mysql_data:
