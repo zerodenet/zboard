@@ -108,6 +108,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.AdminUsersListHandler),
 		},
 		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/users/:id",
+			Handler: http.HandlerFunc(h.AdminUserGetHandler),
+		},
+		{
 			Method:  http.MethodPut,
 			Path:    "/api/v1/admin/settings",
 			Handler: http.HandlerFunc(h.AdminSettingsUpdateHandler),
@@ -143,6 +148,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.AdminTaskGetHandler),
 		},
 		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/tasks/:id/items",
+			Handler: http.HandlerFunc(h.AdminTaskItemsHandler),
+		},
+		{
 			Method:  http.MethodPost,
 			Path:    "/api/v1/admin/tasks/:id/run",
 			Handler: http.HandlerFunc(h.AdminTaskRunHandler),
@@ -166,6 +176,16 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Method:  http.MethodPost,
 			Path:    "/api/v1/nodes",
 			Handler: http.HandlerFunc(h.NodeCreateHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/node-operations",
+			Handler: http.HandlerFunc(h.NodeBatchOperationHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/nodes/:id",
+			Handler: http.HandlerFunc(h.NodeDetailHandler),
 		},
 		{
 			Method:  http.MethodPut,
@@ -253,6 +273,21 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.ProtocolEndpointListHandler),
 		},
 		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/protocol-endpoints/selection",
+			Handler: http.HandlerFunc(h.ProtocolEndpointSelectionHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/protocol-deployments/batch",
+			Handler: http.HandlerFunc(h.ProtocolBatchDeployHandler),
+		},
+		{
+			Method:  http.MethodPatch,
+			Path:    "/api/v1/admin/protocol-endpoints/batch",
+			Handler: http.HandlerFunc(h.ProtocolBatchActiveHandler),
+		},
+		{
 			Method:  http.MethodPost,
 			Path:    "/api/v1/admin/protocol-endpoints",
 			Handler: http.HandlerFunc(h.ProtocolEndpointCreateHandler),
@@ -266,6 +301,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Method:  http.MethodPut,
 			Path:    "/api/v1/admin/protocol-endpoints/:id",
 			Handler: http.HandlerFunc(h.ProtocolEndpointUpdateHandler),
+		},
+		{
+			Method:  http.MethodPatch,
+			Path:    "/api/v1/admin/protocol-endpoints/:id/multiplier",
+			Handler: http.HandlerFunc(h.ProtocolEndpointMultiplierHandler),
 		},
 		{
 			Method:  http.MethodPost,
@@ -288,6 +328,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.NodeGroupCreateHandler),
 		},
 		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/node-groups/:id",
+			Handler: http.HandlerFunc(h.NodeGroupDetailHandler),
+		},
+		{
 			Method:  http.MethodPut,
 			Path:    "/api/v1/admin/node-groups/:id",
 			Handler: http.HandlerFunc(h.NodeGroupUpdateHandler),
@@ -303,14 +348,39 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.PlanCreateHandler),
 		},
 		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/plans/:id",
+			Handler: http.HandlerFunc(h.PublicPlanDetailHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/plans/:id/skus",
+			Handler: http.HandlerFunc(h.PublicPlanSKUListHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/plans/:id",
+			Handler: http.HandlerFunc(h.PlanDetailHandler),
+		},
+		{
 			Method:  http.MethodPut,
 			Path:    "/api/v1/admin/plans/:id",
 			Handler: http.HandlerFunc(h.PlanUpdateHandler),
 		},
 		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/plans/:id/skus",
+			Handler: http.HandlerFunc(h.PlanSKUListHandler),
+		},
+		{
 			Method:  http.MethodPost,
 			Path:    "/api/v1/admin/plans/:id/skus",
 			Handler: http.HandlerFunc(h.PlanSKUCreateHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/plan-skus/:id",
+			Handler: http.HandlerFunc(h.PlanSKUGetHandler),
 		},
 		{
 			Method:  http.MethodPut,
@@ -326,6 +396,16 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Method:  http.MethodGet,
 			Path:    "/api/v1/admin/orders",
 			Handler: http.HandlerFunc(h.OrderListHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/orders/:id",
+			Handler: http.HandlerFunc(h.AdminOrderGetHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/orders/:id/payment-events",
+			Handler: http.HandlerFunc(h.AdminOrderPaymentEventsHandler),
 		},
 		{
 			Method:  http.MethodPost,
@@ -366,6 +446,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Method:  http.MethodGet,
 			Path:    "/api/v1/admin/subscriptions",
 			Handler: http.HandlerFunc(h.SubscriptionsHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/subscriptions/:id",
+			Handler: http.HandlerFunc(h.AdminSubscriptionGetHandler),
 		},
 		{
 			Method:  http.MethodGet,
@@ -423,6 +508,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.TrafficReportHandler),
 		},
 		{
+			Method:  http.MethodPost,
+			Path:    "/api/zero/events",
+			Handler: http.HandlerFunc(h.ZeroEventHandler),
+		},
+		{
 			Method:  http.MethodGet,
 			Path:    "/api/v1/admin/dashboard",
 			Handler: http.HandlerFunc(h.DashboardHandler),
@@ -431,6 +521,81 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Method:  http.MethodGet,
 			Path:    "/api/v1/admin/audit-logs",
 			Handler: http.HandlerFunc(h.AuditLogsHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/audit-logs/:id",
+			Handler: http.HandlerFunc(h.AuditLogDetailHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/operation-logs",
+			Handler: http.HandlerFunc(h.OperationLogsHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/operation-logs/:source/:id",
+			Handler: http.HandlerFunc(h.OperationLogDetailHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/subscription-templates",
+			Handler: http.HandlerFunc(h.SubscriptionTemplateListHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/subscription-rule-sets",
+			Handler: http.HandlerFunc(h.AdminSubscriptionRuleSetListHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/subscription-rule-sets",
+			Handler: http.HandlerFunc(h.AdminSubscriptionRuleSetCreateHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/subscription-rule-sets/:id",
+			Handler: http.HandlerFunc(h.AdminSubscriptionRuleSetGetHandler),
+		},
+		{
+			Method:  http.MethodPut,
+			Path:    "/api/v1/admin/subscription-rule-sets/:id",
+			Handler: http.HandlerFunc(h.AdminSubscriptionRuleSetUpdateHandler),
+		},
+		{
+			Method:  http.MethodDelete,
+			Path:    "/api/v1/admin/subscription-rule-sets/:id",
+			Handler: http.HandlerFunc(h.AdminSubscriptionRuleSetDeleteHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/subscription-templates",
+			Handler: http.HandlerFunc(h.AdminSubscriptionTemplateListHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/subscription-templates",
+			Handler: http.HandlerFunc(h.AdminSubscriptionTemplateCreateHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/subscription-templates/preview",
+			Handler: http.HandlerFunc(h.AdminSubscriptionTemplatePreviewHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/subscription-templates/:id",
+			Handler: http.HandlerFunc(h.AdminSubscriptionTemplateGetHandler),
+		},
+		{
+			Method:  http.MethodPut,
+			Path:    "/api/v1/admin/subscription-templates/:id",
+			Handler: http.HandlerFunc(h.AdminSubscriptionTemplateUpdateHandler),
+		},
+		{
+			Method:  http.MethodDelete,
+			Path:    "/api/v1/admin/subscription-templates/:id",
+			Handler: http.HandlerFunc(h.AdminSubscriptionTemplateDeleteHandler),
 		},
 		{
 			Method:  http.MethodGet,

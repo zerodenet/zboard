@@ -1,16 +1,16 @@
 <template>
   <div class="app-shell" :class="{ 'nav-open': navigationOpen }">
-    <button v-if="navigationOpen" class="nav-scrim" aria-label="关闭导航" @click="navigationOpen = false"></button>
-    <aside class="app-sidebar">
+    <UiButton v-if="navigationOpen" variant="ghost" class="nav-scrim" aria-label="关闭导航" @click="navigationOpen = false"></UiButton>
+    <aside id="admin-navigation" class="app-sidebar">
       <div class="brand-block">
         <RouterLink class="admin-brand-home" to="/admin/dashboard"><span class="brand-mark">Z</span><div><strong>{{ app.siteName }}</strong><span>运营控制台</span></div></RouterLink>
-        <button class="icon-button sidebar-close" type="button" aria-label="关闭导航" @click="navigationOpen = false"><UiIcon name="close" /></button>
+        <UiButton variant="ghost" icon class="icon-button sidebar-close" type="button" aria-label="关闭导航" @click="navigationOpen = false"><UiIcon name="close" /></UiButton>
       </div>
 
       <nav class="primary-nav" aria-label="管理端主导航">
         <section v-for="group in navigationGroups" :key="group.label" class="nav-group">
           <p>{{ group.label }}</p>
-          <RouterLink v-for="item in group.items" :key="item.to" :to="item.to"><UiIcon :name="item.icon" /><span>{{ item.label }}</span></RouterLink>
+          <RouterLink v-for="item in group.items" :key="item.to" :to="item.to" :class="{ 'router-link-active': isNavigationItemActive(item.to) }"><UiIcon :name="item.icon" /><span>{{ item.label }}</span></RouterLink>
         </section>
       </nav>
 
@@ -18,7 +18,7 @@
         <div class="account-summary">
           <span class="avatar">{{ userInitial }}</span>
           <div><strong>{{ app.user.email }}</strong><span>用户 · 管理员权限</span></div>
-          <button class="icon-button" type="button" title="退出登录" aria-label="退出登录" @click="logout"><UiIcon name="logout" /></button>
+          <UiButton variant="ghost" icon class="icon-button" type="button" title="退出登录" aria-label="退出登录" @click="logout"><UiIcon name="logout" /></UiButton>
         </div>
         <p class="build-version" :title="fullVersion">{{ displayVersion }}</p>
       </div>
@@ -27,13 +27,18 @@
     <div class="app-workspace">
       <header class="topbar">
         <div class="topbar-leading">
-          <button class="icon-button menu-button" type="button" aria-label="打开导航" @click="navigationOpen = true"><UiIcon name="menu" /></button>
+          <UiButton variant="ghost" icon class="icon-button menu-button" type="button" :aria-label="navigationOpen ? '关闭导航' : '打开导航'" :aria-expanded="navigationOpen" aria-controls="admin-navigation" @click="navigationOpen = !navigationOpen"><UiIcon :name="navigationOpen ? 'close' : 'menu'" /></UiButton>
           <div><span class="topbar-context">{{ currentSection }}</span><strong>{{ currentTitle }}</strong></div>
         </div>
         <div class="topbar-status"><RouterLink class="topbar-link" to="/account">个人中心</RouterLink><span class="topbar-separator"></span><RouterLink class="topbar-link muted-link" to="/">查看站点</RouterLink></div>
       </header>
-      <main class="app-content"><RouterView /></main>
+      <nav v-if="returnTarget" class="context-return-bar" aria-label="跨资源返回">
+        <RouterLink :to="returnTarget"><UiIcon name="chevron" />返回来源</RouterLink>
+        <span>恢复上一个列表的筛选、页码和详情</span>
+      </nav>
+      <main class="app-content admin-stripe-surface"><RouterView /></main>
     </div>
+    <TaskTray />
   </div>
 </template>
 
@@ -41,9 +46,11 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getVersion } from '../api/client'
+import TaskTray from '../components/TaskTray.vue'
 import UiIcon from '../components/UiIcon.vue'
 import { useAppStore } from '../stores/app'
 import { shortVersion } from '../utils/format'
+import { normalizeAdminReturnTo } from '../utils/navigation'
 
 const app = useAppStore()
 const route = useRoute()
@@ -54,6 +61,7 @@ const fullVersion = computed(() => app.installation?.version || fetchedVersion.v
 const displayVersion = computed(() => shortVersion(fullVersion.value))
 const currentTitle = computed(() => String(route.meta.title || '管理后台'))
 const currentSection = computed(() => String(route.meta.section || 'zboard'))
+const returnTarget = computed(() => normalizeAdminReturnTo(route.query.return_to))
 const userInitial = computed(() => (app.user.email || 'Z').slice(0, 1).toUpperCase())
 const navigationGroups = [
   { label: '工作台', items: [{ to: '/admin/dashboard', label: '运营工作台', icon: 'dashboard' }] },
@@ -64,6 +72,7 @@ const navigationGroups = [
   ] },
   { label: '商业管理', items: [
     { to: '/admin/plans', label: '商品与套餐', icon: 'plans' },
+    { to: '/admin/subscription-templates', label: '订阅模板', icon: 'audit' },
     { to: '/admin/orders', label: '订单管理', icon: 'billing' }
   ] },
   { label: '基础设施', items: [
@@ -74,10 +83,15 @@ const navigationGroups = [
   ] },
   { label: '系统运营', items: [
     { to: '/admin/tasks', label: '运营任务', icon: 'tasks' },
+    { to: '/admin/operation-logs', label: '运行日志', icon: 'terminal' },
     { to: '/admin/audit-logs', label: '审计日志', icon: 'audit' },
     { to: '/admin/settings', label: '系统设置', icon: 'settings' }
   ] }
 ]
+
+function isNavigationItemActive(path: string) {
+  return route.path === path || route.path.startsWith(`${path}/`)
+}
 
 onMounted(async () => {
   try { fetchedVersion.value = (await getVersion())?.version || '' } catch { fetchedVersion.value = '' }
@@ -91,4 +105,12 @@ function logout() { app.clear(); router.push('/') }
 .admin-brand-home { min-width: 0; display: flex; align-items: center; gap: 12px; text-decoration: none; }
 .topbar-link { color: var(--primary); font-weight: 650; text-decoration: none; }
 .topbar-link.muted-link { color: var(--muted); }.topbar-separator { width: 1px; height: 13px; background: var(--line-strong); }
+.context-return-bar { min-height: 38px; display: flex; align-items: center; gap: 10px; padding: 6px 32px; border-bottom: 1px solid var(--line); background: var(--primary-soft); color: var(--muted); font-size: 10px; }
+.context-return-bar a { display: inline-flex; align-items: center; gap: 5px; color: var(--primary); font-size: 11px; font-weight: 750; text-decoration: none; }
+.context-return-bar a:hover { text-decoration: underline; }
+.context-return-bar .ui-icon { transform: rotate(180deg); }
+@media (max-width: 900px) {
+  .context-return-bar { padding-inline: 18px; }
+  .context-return-bar > span { display: none; }
+}
 </style>

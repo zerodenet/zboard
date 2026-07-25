@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -46,6 +47,44 @@ func TestSystemConfigSecretIsRedacted(t *testing.T) {
 	if view.Value != nil || !view.Configured || !view.IsSecret {
 		t.Fatalf("secret view = %+v, want redacted configured secret", view)
 	}
+	if view.Input.Control != "password" || view.Input.MaxBytes == nil || *view.Input.MaxBytes != 4096 {
+		t.Fatalf("secret input schema = %+v, want bounded password control", view.Input)
+	}
+}
+
+func TestSystemConfigInputSchemas(t *testing.T) {
+	tests := []struct {
+		key       string
+		valueType string
+		control   string
+		min       int64
+		max       int64
+		options   int
+	}{
+		{key: "task_email_enabled", valueType: "bool", control: "switch"},
+		{key: "smtp_port", valueType: "int", control: "port", min: 1, max: 65535},
+		{key: "smtp_tls_mode", valueType: "string", control: "select", options: 2},
+		{key: "smtp_from", valueType: "string", control: "email"},
+		{key: "site_desc", valueType: "string", control: "textarea"},
+		{key: "unknown_json", valueType: "json", control: "json"},
+	}
+	for _, test := range tests {
+		t.Run(test.key, func(t *testing.T) {
+			schema := systemConfigInputSchemaFor(model.SystemConfig{ConfigKey: test.key, ValueType: test.valueType})
+			if schema.Control != test.control {
+				t.Fatalf("schema control = %q, want %q", schema.Control, test.control)
+			}
+			if test.min != 0 && (schema.Min == nil || *schema.Min != test.min) {
+				t.Fatalf("schema min = %v, want %d", schema.Min, test.min)
+			}
+			if test.max != 0 && (schema.Max == nil || *schema.Max != test.max) {
+				t.Fatalf("schema max = %v, want %d", schema.Max, test.max)
+			}
+			if len(schema.Options) != test.options {
+				t.Fatalf("schema options = %d, want %d", len(schema.Options), test.options)
+			}
+		})
+	}
 }
 
 func TestValidateSystemConfigValue(t *testing.T) {
@@ -63,10 +102,11 @@ func TestValidateSystemConfigValue(t *testing.T) {
 	}
 	invalid := map[string]string{
 		"site_url":      "javascript:alert(1)",
-		"smtp_host":     "smtp.example.com:587",
+		"smtp_host":     "smtp..example.com",
 		"smtp_port":     "70000",
 		"smtp_from":     "not-an-email",
 		"smtp_tls_mode": "plain",
+		"site_logo":     "https://example.com/" + strings.Repeat("a", 2048),
 	}
 	for key, value := range invalid {
 		if err := validateSystemConfigValue(key, value); err == nil {
@@ -87,6 +127,32 @@ func TestValidateTaskContent(t *testing.T) {
 	}
 	if err := validateTaskContent(taskTypeEmail, json.RawMessage("{\"subject\":\"bad\\r\\nBcc: victim@example.com\",\"body\":\"x\"}")); err == nil {
 		t.Fatal("email header injection should fail")
+	}
+}
+
+func TestValidateTaskContentReturnsFieldErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		typeID string
+		raw    json.RawMessage
+		fields []string
+	}{
+		{name: "quota", typeID: taskTypeQuota, raw: json.RawMessage(`{"delta_mb":0,"reason":"x"}`), fields: []string{"content.delta_mb", "content.reason"}},
+		{name: "email", typeID: taskTypeEmail, raw: json.RawMessage(`{"subject":"bad\nsubject","body":""}`), fields: []string{"content.subject", "content.body"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateTaskContent(test.typeID, test.raw)
+			var validation *requestValidationError
+			if !errors.As(err, &validation) {
+				t.Fatalf("validateTaskContent() error = %#v, want requestValidationError", err)
+			}
+			for _, field := range test.fields {
+				if validation.fields[field] == "" {
+					t.Fatalf("validateTaskContent() fields = %#v, want %q", validation.fields, field)
+				}
+			}
+		})
 	}
 }
 

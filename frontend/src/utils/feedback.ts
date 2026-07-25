@@ -10,38 +10,53 @@ interface ConfirmOptions {
   tone?: 'primary' | 'danger'
 }
 
-interface ToastItem {
+export interface ToastItem {
   id: number
   title: string
   message?: string
   tone: FeedbackTone
 }
 
+type PendingConfirm = ConfirmOptions & { resolve: (accepted: boolean) => void }
+
 export const feedbackState = reactive({
-  confirm: null as (ConfirmOptions & { resolve: (accepted: boolean) => void }) | null,
+  confirm: null as PendingConfirm | null,
   toasts: [] as ToastItem[]
 })
 
+const confirmQueue: PendingConfirm[] = []
+
 let toastID = 0
+export const MAX_ACTIVE_TOASTS = 3
 
 export function confirmAction(options: ConfirmOptions) {
   return new Promise<boolean>((resolve) => {
-    feedbackState.confirm?.resolve(false)
-    feedbackState.confirm = { ...options, resolve }
+    const pending = { ...options, resolve }
+    if (feedbackState.confirm) {
+      confirmQueue.push(pending)
+      return
+    }
+    feedbackState.confirm = pending
   })
 }
 
 export function settleConfirm(accepted: boolean) {
   const pending = feedbackState.confirm
   if (!pending) return
-  feedbackState.confirm = null
+  feedbackState.confirm = confirmQueue.shift() || null
   pending.resolve(accepted)
 }
 
 export function notify(title: string, message = '', tone: FeedbackTone = 'info') {
+  const duplicate = feedbackState.toasts.find(item =>
+    item.title === title && item.message === message && item.tone === tone,
+  )
+  if (duplicate) return duplicate.id
+
   const id = ++toastID
+  while (feedbackState.toasts.length >= MAX_ACTIVE_TOASTS) feedbackState.toasts.shift()
   feedbackState.toasts.push({ id, title, message, tone })
-  window.setTimeout(() => dismissToast(id), tone === 'danger' ? 6500 : 4200)
+  return id
 }
 
 export function dismissToast(id: number) {

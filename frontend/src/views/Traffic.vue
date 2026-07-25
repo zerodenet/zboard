@@ -1,61 +1,153 @@
 <template>
-  <section>
-    <PageHeader title="流量与对账" description="按真实业务对象筛选流量记录，并将订阅累计与上报记录差异作为异常队列处理。" eyebrow="Usage Operations">
-      <template #actions><button class="button button-secondary" type="button" :disabled="loading" @click="load"><UiIcon name="refresh" />{{ loading ? '查询中…' : '刷新数据' }}</button></template>
+  <section class="standard-page">
+    <PageHeader title="流量与对账" description="按真实业务对象筛选上报记录，在服务端分页和聚合，避免随数据量增长而加载全量用户、节点或端点。" eyebrow="Usage Operations">
+      <template #actions><PageRefreshButton label="刷新流量与对账" :loading="loading" @click="load" /></template>
     </PageHeader>
-    <div v-if="error" class="alert alert-danger page-alert"><UiIcon name="alert" />{{ error }}</div>
+    <TransientFeedback :error="error" error-title="流量数据加载失败" />
 
-    <div class="metric-grid traffic-metrics">
-      <article v-for="metric in metrics" :key="metric.label" class="metric-card"><div class="metric-top"><span class="metric-icon"><UiIcon :name="metric.icon" /></span><StatusBadge :tone="metric.tone">{{ metric.status }}</StatusBadge></div><div><p class="metric-label">{{ metric.label }}</p><p class="metric-value">{{ metric.value }}</p><span class="metric-meta">{{ metric.meta }}</span></div></article>
-    </div>
+    <UiMetricStrip class="traffic-summary">
+      <MetricCard label="匹配记录" :value="formatNumber(recordTotal)" icon="activity" status="筛选结果" tone="info" meta="当前时间范围内的服务端总数" />
+      <MetricCard label="原始流量" :value="formatBytes(recordAggregates.raw_bytes || 0)" icon="database" status="上报汇总" tone="info" meta="不受当前游标页影响" />
+      <MetricCard label="计费流量" :value="formatBytes(recordAggregates.used_bytes || 0)" icon="billing" status="计费汇总" tone="info" icon-tone="warning" meta="已应用协议倍率" />
+      <MetricCard label="关联订阅" :value="formatNumber(recordAggregates.subscription_count || 0)" icon="plans" status="覆盖范围" tone="info" icon-tone="success" :meta="`${formatNumber(recordAggregates.user_count || 0)} 个用户 · ${formatNumber(recordAggregates.node_count || 0)} 个节点`" />
+    </UiMetricStrip>
 
-    <article class="panel filter-panel"><div class="panel-body filter-grid"><label class="field"><span>用户</span><select v-model="filters.userId"><option value="">全部用户</option><option v-for="user in users" :key="user.id" :value="String(user.id)">{{ user.email }}</option></select></label><label class="field"><span>节点</span><select v-model="filters.nodeId"><option value="">全部节点</option><option v-for="node in nodes" :key="node.id" :value="String(node.id)">{{ node.name }}</option></select></label><label class="field"><span>协议端点</span><select v-model="filters.endpointId"><option value="">全部端点</option><option v-for="endpoint in endpoints" :key="endpoint.id" :value="String(endpoint.id)">{{ endpoint.name }}</option></select></label><label class="field"><span>订阅 ID</span><input v-model="filters.subscriptionId" inputmode="numeric" placeholder="全部订阅" /></label><button class="button filter-button" type="button" @click="load"><UiIcon name="search" />应用筛选</button></div></article>
+    <DataWorkbench :total="recordTotal" :loading="recordLoading" :refreshing="recordRefreshing">
+      <template #filters>
+        <WorkbenchFilterBar :active="hasFilters" :loading="loading" @clear="clearFilters">
+          <WorkbenchFilterInput v-model="filters.userId" label="用户 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
+          <WorkbenchFilterInput v-model="filters.nodeId" label="节点 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
+          <WorkbenchFilterInput v-model="filters.endpointId" label="协议端点 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
+          <WorkbenchFilterInput v-model="filters.subscriptionId" label="订阅 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
+          <WorkbenchFilterDate v-model:from="from" v-model:to="to" label="记录日期" @apply="applyFilters" />
+        </WorkbenchFilterBar>
+      </template>
+      <template #actions><span class="workbench-note">流量数值统一为 MiB</span></template>
 
-    <div class="section-grid traffic-workspace">
-      <article class="panel span-7"><header class="panel-header"><div><h2>上报记录</h2><p>展示节点上报的原始流量、协议端点倍率快照和最终计费量。</p></div><span class="count-label">{{ records.length }} 条</span></header><div v-if="records.length" class="table-shell"><table class="data-table"><thead><tr><th>时间</th><th>用户 / 订阅</th><th>节点 / 端点</th><th>原始</th><th>端点倍率</th><th>计费</th></tr></thead><tbody><tr v-for="record in records" :key="record.id"><td>{{ formatDateTime(record.record_at) }}</td><td><div class="cell-title"><strong>{{ userName(record.user_id) }}</strong><span>订阅 #{{ record.subscription_id || '—' }}</span></div></td><td><div class="cell-title"><strong>{{ nodeName(record.node_id) }}</strong><span>{{ endpointName(record.protocol_endpoint_id) }}</span></div></td><td>{{ formatBytes(record.raw_bytes) }}</td><td>{{ ((record.protocol_multiplier_milli || 1000) / 1000).toFixed(2) }}×</td><td><strong>{{ formatBytes(record.used_bytes) }}</strong></td></tr></tbody></table></div><EmptyState v-else icon="activity" title="没有流量记录" description="当前筛选范围内尚未收到节点上报。" /></article>
+      <DataTable v-if="records.length" caption="流量上报记录列表" :row-count="recordTotal" :min-width="980" table-class="traffic-table">
+          <thead><tr><th class="table-primary-column">上报时间</th><th class="numeric-column" data-column-priority="3">用户 ID</th><th class="numeric-column">订阅 ID</th><th class="numeric-column" data-column-priority="2">节点 ID</th><th class="numeric-column" data-column-priority="2">端点 ID</th><th class="numeric-column" data-column-priority="3">原始 (MiB)</th><th class="numeric-column" data-column-priority="3">倍率 (×)</th><th class="numeric-column">计费 (MiB)</th></tr></thead>
+          <tbody><tr v-for="record in records" :key="record.id"><td class="table-primary-column"><TimeBadge :value="record.record_at" /></td><td class="numeric-column" data-column-priority="3">{{ record.user_id || '—' }}</td><td class="numeric-column">{{ record.subscription_id || '—' }}</td><td class="numeric-column" data-column-priority="2">{{ record.node_id || '—' }}</td><td class="numeric-column" data-column-priority="2">{{ record.protocol_endpoint_id || '—' }}</td><td class="numeric-column" data-column-priority="3">{{ formatMiB(record.raw_bytes) }}</td><td class="numeric-column" data-column-priority="3">{{ formatMultiplier(record.protocol_multiplier_milli) }}</td><td class="numeric-column"><strong>{{ formatMiB(record.used_bytes) }}</strong></td></tr></tbody>
+      </DataTable>
+      <EmptyState v-else icon="activity" title="没有流量记录" description="当前筛选范围内尚未收到节点上报。" />
+      <template #footer><CursorPager :count="records.length" :total="recordTotal" :limit="recordLimit" :loading="recordLoading" :has-previous="Boolean(recordPreviousCursor)" :has-next="Boolean(recordNextCursor)" @previous="changeRecordCursor(recordPreviousCursor)" @next="changeRecordCursor(recordNextCursor)" @limit="changeRecordLimit" /></template>
+    </DataWorkbench>
 
-      <article class="panel span-5"><header class="panel-header"><div><h2>对账异常</h2><p>只突出需要运营处理的缺失或超额记录。</p></div><StatusBadge :tone="issues.length ? 'danger' : 'success'">{{ issues.length ? `${issues.length} 项异常` : '全部一致' }}</StatusBadge></header><div v-if="issues.length" class="reconciliation-list"><article v-for="item in issues" :key="item.subscription_id"><div><strong>订阅 #{{ item.subscription_id }}</strong><StatusBadge :tone="resultTone(item.result)">{{ resultName(item.result) }}</StatusBadge></div><p>{{ userName(item.user_id) }} · {{ planName(item.plan_id) }}</p><dl><div><dt>订阅累计</dt><dd>{{ formatBytes(item.flow_used) }}</dd></div><div><dt>记录汇总</dt><dd>{{ formatBytes(item.recorded_bytes) }}</dd></div><div><dt>差异</dt><dd class="danger-text">{{ formatBytes(Math.abs(item.difference || 0)) }}</dd></div></dl><RouterLink class="button button-secondary button-sm" :to="`/admin/subscriptions?user_id=${item.user_id}`">查看用户订阅</RouterLink></article></div><EmptyState v-else icon="shield" title="当前没有对账异常" description="订阅累计用量与上报记录汇总一致。" /></article>
-    </div>
+    <UiMetricStrip class="reconciliation-summary">
+      <MetricCard label="对账订阅" :value="formatNumber(reconciliationAggregates.subscription_count || 0)" icon="plans" status="完整范围" tone="info" :meta="`订阅 ${formatBytes(reconciliationAggregates.flow_used || 0)} · 记录 ${formatBytes(reconciliationAggregates.recorded_bytes || 0)}`" />
+      <MetricCard label="一致" :value="formatNumber(reconciliationAggregates.matched_count || 0)" icon="check" status="已对平" tone="success" icon-tone="success" meta="订阅累计与记录汇总完全一致" />
+      <MetricCard label="缺少记录" :value="formatNumber(reconciliationAggregates.missing_records_count || 0)" icon="alert" status="需核查" tone="warning" icon-tone="warning" :meta="`差额 ${formatBytes(reconciliationAggregates.missing_bytes || 0)}`" />
+      <MetricCard label="记录超额" :value="formatNumber(reconciliationAggregates.over_recorded_count || 0)" icon="alert" status="需核查" tone="danger" icon-tone="danger" :meta="`超额 ${formatBytes(reconciliationAggregates.over_recorded_bytes || 0)}`" />
+    </UiMetricStrip>
+
+    <DataWorkbench class="reconciliation-workbench" :total="reconciliationTotal" :loading="reconciliationLoading" :refreshing="reconciliationRefreshing">
+      <template #filters><WorkbenchFilterBar :active="reconciliationMode !== 'issues'" @clear="reconciliationMode = 'issues'; applyReconciliationMode()"><WorkbenchFilterSelect v-model="reconciliationMode" label="对账范围" :options="reconciliationOptions" empty-value="issues" @apply="applyReconciliationMode" /></WorkbenchFilterBar></template>
+      <template #actions><span class="workbench-note">汇总不受“仅异常/全部结果”和当前页影响；节点、端点、日期只作用于上方记录表</span></template>
+      <DataTable v-if="reconciliation.length" caption="订阅流量对账结果" :row-count="reconciliationTotal" :min-width="1120" table-class="reconciliation-table">
+          <thead><tr><th class="numeric-column table-primary-column">订阅 ID</th><th class="numeric-column" data-column-priority="3">用户 ID</th><th class="numeric-column" data-column-priority="3">套餐 ID</th><th>订阅状态</th><th class="numeric-column" data-column-priority="2">订阅累计 (MiB)</th><th class="numeric-column" data-column-priority="2">记录汇总 (MiB)</th><th class="numeric-column">差异 (MiB)</th><th>对账结果</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
+          <tbody><tr v-for="item in reconciliation" :key="item.subscription_id"><td class="numeric-column table-primary-column">{{ item.subscription_id }}</td><td class="numeric-column" data-column-priority="3">{{ item.user_id }}</td><td class="numeric-column" data-column-priority="3">{{ item.plan_id }}</td><td><StatusBadge :tone="item.status === 'active' ? 'success' : 'neutral'">{{ subscriptionStatusName(item.status) }}</StatusBadge></td><td class="numeric-column" data-column-priority="2">{{ formatMiB(item.flow_used) }}</td><td class="numeric-column" data-column-priority="2">{{ formatMiB(item.recorded_bytes) }}</td><td class="numeric-column" :class="{ 'danger-text': item.difference }">{{ formatSignedMiB(item.difference) }}</td><td><StatusBadge :tone="resultTone(item.result)">{{ resultName(item.result) }}</StatusBadge></td><td class="table-action-column"><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(item.user_id), subscription: String(item.subscription_id) })">查看订阅</RouterLink></td></tr></tbody>
+      </DataTable>
+      <EmptyState v-else icon="shield" :title="reconciliationMode === 'issues' ? '当前没有对账异常' : '没有对账结果'" description="订阅累计用量与上报记录汇总一致。" />
+      <template #footer><TablePager :total="reconciliationTotal" :offset="reconciliationOffset" :limit="reconciliationLimit" :loading="reconciliationLoading" @change="changeReconciliationPage" /></template>
+    </DataWorkbench>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import { fetchNodes, fetchPlans, fetchProtocolEndpoints, fetchTrafficReconciliation, fetchTrafficRecords, fetchUsers } from '../api/client'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { fetchTrafficReconciliationPage, fetchTrafficRecordsPage, type TrafficReconciliationAggregates, type TrafficReconciliationItem, type TrafficRecordAggregates, type TrafficRecordSummary } from '../api/client'
+import CursorPager from '../components/CursorPager.vue'
+import DataTable from '../components/DataTable.vue'
+import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
+import MetricCard from '../components/MetricCard.vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
+import TablePager from '../components/TablePager.vue'
+import TransientFeedback from '../components/TransientFeedback.vue'
 import UiIcon from '../components/UiIcon.vue'
-import { formatBytes, formatDateTime } from '../utils/format'
+import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
+import WorkbenchFilterDate from '../components/WorkbenchFilterDate.vue'
+import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
+import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
+import UiMetricStrip from '../components/UiMetricStrip.vue'
+import { resolveHistoryRange } from '../composables/historyState'
+import { useCursorTable } from '../composables/useCursorTable'
+import { useRemoteTable } from '../composables/useRemoteTable'
+import { formatBytes, formatNumber, formatUnknownValue } from '../utils/format'
+import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 
 const route = useRoute()
-const records = ref<any[]>([])
-const reconciliation = ref<any[]>([])
-const users = ref<any[]>([])
-const nodes = ref<any[]>([])
-const endpoints = ref<any[]>([])
-const plans = ref<any[]>([])
+const router = useRouter()
 const filters = reactive({ userId: String(route.query.user_id || ''), nodeId: String(route.query.node_id || ''), endpointId: String(route.query.protocol_endpoint_id || ''), subscriptionId: String(route.query.subscription_id || '') })
-const loading = ref(false)
-const error = ref('')
-const issues = computed(() => reconciliation.value.filter(item => item.result !== 'matched'))
-const metrics = computed(() => [
-  { label: '原始流量', value: formatBytes(records.value.reduce((sum, item) => sum + (item.raw_bytes || 0), 0)), icon: 'activity', status: '上报', tone: 'info' as const, meta: '当前记录原始流量合计' },
-  { label: '计费流量', value: formatBytes(records.value.reduce((sum, item) => sum + (item.used_bytes || 0), 0)), icon: 'database', status: '扣减', tone: 'info' as const, meta: '应用协议端点倍率后' },
-  { label: '涉及订阅', value: new Set(records.value.map(item => item.subscription_id).filter(Boolean)).size, icon: 'plans', status: '范围', tone: 'neutral' as const, meta: '当前记录关联的订阅' },
-  { label: '对账异常', value: issues.value.length, icon: 'alert', status: issues.value.length ? '需处理' : '正常', tone: issues.value.length ? 'danger' as const : 'success' as const, meta: '缺失、超额或历史记录' }
-])
-function userName(id: number) { return users.value.find(item => item.id === id)?.email || `用户 #${id || '—'}` }
-function nodeName(id: number) { return nodes.value.find(item => item.id === id)?.name || `节点 #${id || '—'}` }
-function endpointName(id: number) { return endpoints.value.find(item => item.id === id)?.name || `端点 #${id || '—'}` }
-function planName(id: number) { return plans.value.find(item => item.id === id)?.name || `套餐 #${id}` }
-function resultName(result: string) { return ({ matched: '一致', missing_records: '缺少记录', over_recorded: '记录超额', legacy: '历史数据' } as Record<string, string>)[result] || result }
+const allowedPageSizes = [25, 50, 100]
+const initialRecordLimit = Number(route.query.limit)
+const recordLimit = ref(allowedPageSizes.includes(initialRecordLimit) ? initialRecordLimit : 50)
+const recordCursor = ref(String(route.query.cursor || ''))
+const initialRange = resolveHistoryRange(route.query, 7)
+const from = ref(initialRange.from)
+const to = ref(initialRange.to)
+const initialReconciliationLimit = Number(route.query.reconciliation_limit)
+const reconciliationLimit = ref(allowedPageSizes.includes(initialReconciliationLimit) ? initialReconciliationLimit : 25)
+const reconciliationOffset = ref((Math.max(1, Number(route.query.reconciliation_page) || 1) - 1) * reconciliationLimit.value)
+const reconciliationMode = ref(route.query.reconciliation === 'all' ? 'all' : 'issues')
+const hasFilters = computed(() => Boolean(filters.userId || filters.nodeId || filters.endpointId || filters.subscriptionId))
+const reconciliationOptions = [{ label: '仅异常', value: 'issues' }, { label: '全部结果', value: 'all' }]
+const { items: records, total: recordTotal, aggregates: recordAggregates, nextCursor: recordNextCursor, previousCursor: recordPreviousCursor, loading: recordLoading, refreshing: recordRefreshing, error: recordError, load: loadRecords } = useCursorTable<TrafficRecordSummary, TrafficRecordAggregates>({
+  fetchPage: ({ signal }) => fetchTrafficRecordsPage({ ...queryParams(), cursor: recordCursor.value || undefined, from: from.value, to: to.value, limit: recordLimit.value }, { signal }),
+  errorMessage: (cause: any) => cause?.response?.data?.message || '流量记录加载失败。',
+})
+const { items: reconciliation, total: reconciliationTotal, aggregates: reconciliationAggregates, loading: reconciliationLoading, refreshing: reconciliationRefreshing, error: reconciliationError, load: loadReconciliation } = useRemoteTable<TrafficReconciliationItem, TrafficReconciliationAggregates>({
+  offset: reconciliationOffset,
+  limit: reconciliationLimit,
+  fetchPage: ({ signal }) => {
+    const params = queryParams()
+    return fetchTrafficReconciliationPage({ userId: params.userId, subscriptionId: params.subscriptionId, issuesOnly: reconciliationMode.value === 'issues', offset: reconciliationOffset.value, limit: reconciliationLimit.value }, { signal })
+  },
+  errorMessage: (cause: any) => cause?.response?.data?.message || '流量对账加载失败。',
+  onOffsetCorrected: () => syncURL(true),
+})
+const loading = computed(() => recordLoading.value || reconciliationLoading.value)
+const error = computed(() => recordError.value || reconciliationError.value)
+
+function formatMiB(value: number) { return (Number(value || 0) / 1048576).toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) }
+function formatSignedMiB(value: number) { const number = Number(value || 0) / 1048576; return `${number > 0 ? '+' : ''}${number.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` }
+function formatMultiplier(value: number) { return (Number(value || 1000) / 1000).toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 3 }) }
+function resultName(result: string) { return ({ matched: '一致', missing_records: '缺少记录', over_recorded: '记录超额', legacy: '历史数据' } as Record<string, string>)[result] || formatUnknownValue('结果', result) }
 function resultTone(result: string): 'success' | 'warning' | 'danger' { return result === 'matched' ? 'success' : result === 'legacy' ? 'warning' : 'danger' }
-async function load() { loading.value = true; error.value = ''; const params = { userId: Number(filters.userId) || undefined, nodeId: Number(filters.nodeId) || undefined, protocolEndpointId: Number(filters.endpointId) || undefined, subscriptionId: Number(filters.subscriptionId) || undefined }; try { const [recordData, reconciliationData, userData, nodeData, endpointData, planData] = await Promise.all([fetchTrafficRecords(params, true), fetchTrafficReconciliation({ userId: params.userId, subscriptionId: params.subscriptionId }, true), fetchUsers(), fetchNodes(), fetchProtocolEndpoints(), fetchPlans()]); records.value = recordData; reconciliation.value = reconciliationData; users.value = userData; nodes.value = nodeData; endpoints.value = endpointData; plans.value = planData } catch (e: any) { error.value = e?.response?.data?.message || '流量与对账数据加载失败。' } finally { loading.value = false } }
-onMounted(load)
+function subscriptionStatusName(status: string) { return ({ active: '有效', expired: '已失效', canceled: '已取消' } as Record<string, string>)[status] || formatUnknownValue('状态', status) }
+function queryParams() { return { userId: Number(filters.userId) || undefined, nodeId: Number(filters.nodeId) || undefined, protocolEndpointId: Number(filters.endpointId) || undefined, subscriptionId: Number(filters.subscriptionId) || undefined } }
+function adminContextLink(path: string, query: Record<string, string>) { return withAdminReturnTo(path, route.fullPath, query) }
+
+async function load() { await Promise.all([loadRecords(), loadReconciliation()]) }
+async function syncURL(replace = false) {
+  const reconciliationPage = Math.floor(reconciliationOffset.value / reconciliationLimit.value) + 1
+  const location = { query: {
+    ...preserveAdminReturnTo(route.query.return_to),
+    ...(filters.userId ? { user_id: filters.userId } : {}), ...(filters.nodeId ? { node_id: filters.nodeId } : {}), ...(filters.endpointId ? { protocol_endpoint_id: filters.endpointId } : {}), ...(filters.subscriptionId ? { subscription_id: filters.subscriptionId } : {}),
+    from: from.value, to: to.value, ...(recordCursor.value ? { cursor: recordCursor.value } : {}), ...(recordLimit.value !== 50 ? { limit: String(recordLimit.value) } : {}), ...(reconciliationMode.value === 'all' ? { reconciliation: 'all' } : {}), ...(reconciliationPage > 1 ? { reconciliation_page: String(reconciliationPage) } : {}), ...(reconciliationLimit.value !== 25 ? { reconciliation_limit: String(reconciliationLimit.value) } : {})
+  } }
+  await (replace ? router.replace(location) : router.push(location))
+}
+function normalizeRange() { const range = resolveHistoryRange({ from: from.value, to: to.value }, 7); from.value = range.from; to.value = range.to }
+async function applyFilters() { normalizeRange(); recordCursor.value = ''; reconciliationOffset.value = 0; await syncURL(); await load() }
+async function clearFilters() { Object.assign(filters, { userId: '', nodeId: '', endpointId: '', subscriptionId: '' }); recordCursor.value = ''; reconciliationOffset.value = 0; await syncURL(); await load() }
+async function applyReconciliationMode() { reconciliationOffset.value = 0; await syncURL(); await loadReconciliation() }
+async function changeRecordCursor(value: string | null) { if (!value) return; recordCursor.value = value; await syncURL(); await loadRecords() }
+async function changeRecordLimit(value: number) { recordLimit.value = allowedPageSizes.includes(value) ? value : 50; recordCursor.value = ''; await syncURL(); await loadRecords() }
+async function changeReconciliationPage(value: { offset: number; limit: number }) { reconciliationOffset.value = value.offset; reconciliationLimit.value = value.limit; await syncURL(); await loadReconciliation() }
+watch(() => route.fullPath, async () => {
+  const nextFilters = { userId: String(route.query.user_id || ''), nodeId: String(route.query.node_id || ''), endpointId: String(route.query.protocol_endpoint_id || ''), subscriptionId: String(route.query.subscription_id || '') }
+  const rawRecordLimit = Number(route.query.limit), nextRecordLimit = allowedPageSizes.includes(rawRecordLimit) ? rawRecordLimit : 50, nextRecordCursor = String(route.query.cursor || ''), nextRange = resolveHistoryRange(route.query, 7)
+  const rawReconciliationLimit = Number(route.query.reconciliation_limit), nextReconciliationLimit = allowedPageSizes.includes(rawReconciliationLimit) ? rawReconciliationLimit : 25, nextReconciliationOffset = (Math.max(1, Number(route.query.reconciliation_page) || 1) - 1) * nextReconciliationLimit
+  const nextMode = route.query.reconciliation === 'all' ? 'all' : 'issues'
+  if (Object.keys(nextFilters).some(key => nextFilters[key as keyof typeof nextFilters] !== filters[key as keyof typeof filters]) || nextRecordLimit !== recordLimit.value || nextRecordCursor !== recordCursor.value || nextRange.from !== from.value || nextRange.to !== to.value || nextReconciliationLimit !== reconciliationLimit.value || nextReconciliationOffset !== reconciliationOffset.value || nextMode !== reconciliationMode.value) {
+    Object.assign(filters, nextFilters); recordLimit.value = nextRecordLimit; recordCursor.value = nextRecordCursor; from.value = nextRange.from; to.value = nextRange.to; reconciliationLimit.value = nextReconciliationLimit; reconciliationOffset.value = nextReconciliationOffset; reconciliationMode.value = nextMode; await load()
+  }
+})
+onMounted(async () => { if (!route.query.from || !route.query.to || route.query.page) await syncURL(true); await load() })
 </script>
 
 <style scoped>
-.page-alert,.traffic-metrics,.filter-panel { margin-bottom: 16px; }.filter-grid { display: grid; grid-template-columns: repeat(4,minmax(150px,1fr)) auto; align-items: end; gap: 10px; }.filter-button { margin-bottom: 0; }.traffic-workspace { align-items: start; }.count-label { color: var(--muted); font-size: 12px; }.reconciliation-list { display: grid; gap: 0; }.reconciliation-list article { padding: 16px 18px; }.reconciliation-list article + article { border-top: 1px solid var(--line); }.reconciliation-list article > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 10px; }.reconciliation-list p { margin: 5px 0 13px; color: var(--muted); font-size: 10px; }.reconciliation-list dl { display: grid; gap: 7px; margin: 0 0 13px; }.reconciliation-list dl div { display: flex; justify-content: space-between; gap: 12px; }.reconciliation-list dt { color: var(--muted); font-size: 10px; }.reconciliation-list dd { margin: 0; font-size: 10px; font-weight: 650; }.danger-text { color: var(--danger); } @media(max-width:1100px){.filter-grid{grid-template-columns:repeat(2,1fr)}.traffic-workspace>.span-7,.traffic-workspace>.span-5{grid-column:span 12}} @media(max-width:560px){.filter-grid{grid-template-columns:1fr}}
+.page-alert { margin-bottom: 16px; }.traffic-summary { margin-bottom: 16px; }.reconciliation-summary { margin-top: 16px; }.reconciliation-workbench { margin-top: 12px; }.workbench-note { color: var(--muted); font-size: 10px; }.danger-text { color: var(--danger) !important; font-weight: 700; }
 </style>

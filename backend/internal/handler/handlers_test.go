@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/rand"
@@ -8,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -115,6 +117,298 @@ func TestParseBoolQuery(t *testing.T) {
 	}
 }
 
+func TestWantsPagedListAppliesToSelfServiceAndAdministratorRoutes(t *testing.T) {
+	for _, path := range []string{
+		"/api/v1/orders?paged=true&limit=25",
+		"/api/v1/subscriptions?paged=true&limit=25",
+		"/api/v1/traffic/records?paged=true&limit=25",
+		"/api/v1/admin/orders?paged=true&limit=25",
+	} {
+		if !wantsPagedList(httptest.NewRequest("GET", path, nil)) {
+			t.Errorf("wantsPagedList(%q) = false, want true", path)
+		}
+	}
+	for _, path := range []string{
+		"/api/v1/orders",
+		"/api/v1/subscriptions?paged=false",
+		"/api/v1/traffic/records?paged=1",
+	} {
+		if wantsPagedList(httptest.NewRequest("GET", path, nil)) {
+			t.Errorf("wantsPagedList(%q) = true, want false", path)
+		}
+	}
+}
+
+func TestPagedDataProvidesCanonicalPageEnvelopeAndCompatibilityFields(t *testing.T) {
+	data := pagedData([]int{1, 2}, 5000, 50, 25)
+	page, ok := data["page"].(pageMetadata)
+	if !ok {
+		t.Fatalf("page = %#v, want pageMetadata", data["page"])
+	}
+	if page.Offset != 50 || page.Limit != 25 || page.Total != 5000 || page.NextCursor != nil {
+		t.Fatalf("page = %+v, want offset 50, limit 25, total 5000", page)
+	}
+	if data["total"] != int64(5000) || data["offset"] != 50 || data["limit"] != 25 {
+		t.Fatalf("compatibility fields = total %#v offset %#v limit %#v", data["total"], data["offset"], data["limit"])
+	}
+	if _, ok := data["aggregates"].(map[string]interface{}); !ok {
+		t.Fatalf("aggregates = %#v, want map", data["aggregates"])
+	}
+	if _, ok := data["facets"].(map[string]interface{}); !ok {
+		t.Fatalf("facets = %#v, want map", data["facets"])
+	}
+}
+
+func TestNodeGroupSummaryDoesNotEmbedMembershipIDs(t *testing.T) {
+	payload, err := json.Marshal(nodeGroupSummaryItem{
+		ID:                    7,
+		Name:                  "Primary",
+		Code:                  "primary",
+		Description:           "Primary delivery group",
+		IsEnabled:             true,
+		Revision:              9,
+		ProtocolEndpointCount: 5000,
+		PlanCount:             12,
+		CreatedAt:             time.Unix(1, 0).UTC(),
+		UpdatedAt:             time.Unix(2, 0).UTC(),
+	})
+	if err != nil {
+		t.Fatalf("marshal node-group summary: %v", err)
+	}
+	if !bytes.Contains(payload, []byte(`"protocol_endpoint_count":5000`)) {
+		t.Fatalf("node-group summary missing endpoint count: %s", payload)
+	}
+	if !bytes.Contains(payload, []byte(`"revision":9`)) {
+		t.Fatalf("node-group summary missing revision: %s", payload)
+	}
+	if bytes.Contains(payload, []byte("protocol_endpoint_ids")) {
+		t.Fatalf("node-group summary embedded membership IDs: %s", payload)
+	}
+}
+
+func TestPlanSummaryExposesOptimisticConcurrencyRevision(t *testing.T) {
+	item := newPlanSummaryItem(model.Plan{
+		ID: 11, Name: "Starter", Slug: "starter", Revision: 7,
+	}, planSKUCountRow{PlanID: 11, SKUCount: 3, ActiveSKUCount: 2})
+	payload, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal plan summary: %v", err)
+	}
+	for _, expected := range []string{`"id":11`, `"revision":7`, `"sku_count":3`, `"active_sku_count":2`} {
+		if !bytes.Contains(payload, []byte(expected)) {
+			t.Fatalf("plan summary missing %s: %s", expected, payload)
+		}
+	}
+}
+
+func TestProtocolEndpointSelectionSnapshotSupportsScaleWithoutEmbeddingEndpointDetails(t *testing.T) {
+	ids := make([]uint, 5000)
+	for index := range ids {
+		ids[index] = uint(index + 1)
+	}
+	payload, err := json.Marshal(protocolEndpointSelectionSnapshot{
+		IDs:        ids,
+		Total:      int64(len(ids)),
+		ResolvedAt: time.Unix(10, 0).UTC(),
+	})
+	if err != nil {
+		t.Fatalf("marshal endpoint selection snapshot: %v", err)
+	}
+	if maxEndpointSelection < len(ids) {
+		t.Fatalf("maxEndpointSelection = %d, must support at least %d endpoint IDs", maxEndpointSelection, len(ids))
+	}
+	for _, expected := range []string{`"ids":[1,2,3`, `"total":5000`, `"resolved_at":"1970-01-01T00:00:10Z"`} {
+		if !bytes.Contains(payload, []byte(expected)) {
+			t.Fatalf("endpoint selection snapshot missing %s", expected)
+		}
+	}
+	for _, forbidden := range []string{"name", "address", "config", "latest_deployment", "usage"} {
+		if bytes.Contains(payload, []byte(forbidden)) {
+			t.Fatalf("endpoint selection snapshot exposes %q: %s", forbidden, payload)
+		}
+	}
+}
+
+func TestTrafficRecordSummaryOmitsRawReportPayload(t *testing.T) {
+	records := []model.TrafficRecord{{
+		ID: 9, UserID: 3, SubscriptionID: 4, NodeID: 5, ProtocolEndpointID: 6,
+		RawBytes: 1024, ProtocolMultiplierMilli: 1500, UsedBytes: 1536,
+		ReportID: "report-private", FlowID: "flow-private", EventType: "flow.completed",
+		Meta: `{"source":"private"}`, UploadBytes: 400, DownloadBytes: 624,
+		At: time.Unix(10, 0).UTC(),
+	}}
+	payload, err := json.Marshal(trafficRecordSummaries(records))
+	if err != nil {
+		t.Fatalf("marshal traffic summary: %v", err)
+	}
+	text := string(payload)
+	for _, expected := range []string{
+		`"id":9`, `"subscription_id":4`, `"raw_bytes":1024`,
+		`"upload_bytes":400`, `"download_bytes":624`,
+		`"protocol_multiplier_milli":1500`, `"used_bytes":1536`,
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("traffic summary %s does not contain %s", text, expected)
+		}
+	}
+	for _, forbidden := range []string{
+		"report-private", "flow-private", "flow.completed", "private",
+		"report_id", "flow_id", "event_type", "meta",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("traffic summary exposes %q: %s", forbidden, text)
+		}
+	}
+}
+
+func TestTrafficRecordAggregatesUseStableJSONContract(t *testing.T) {
+	payload, err := json.Marshal(trafficRecordAggregates{
+		RawBytes: 1000, UsedBytes: 1500, UserCount: 2, SubscriptionCount: 3,
+		NodeCount: 4, ProtocolEndpointCount: 5,
+	})
+	if err != nil {
+		t.Fatalf("marshal traffic aggregates: %v", err)
+	}
+	for _, expected := range []string{
+		`"raw_bytes":1000`, `"used_bytes":1500`, `"user_count":2`,
+		`"subscription_count":3`, `"node_count":4`, `"protocol_endpoint_count":5`,
+	} {
+		if !strings.Contains(string(payload), expected) {
+			t.Fatalf("traffic aggregates %s do not contain %s", payload, expected)
+		}
+	}
+}
+
+func TestFirstMissingUintIDPreservesRequestedOrder(t *testing.T) {
+	if missing, ok := firstMissingUintID([]uint{9, 4, 7}, []uint{4, 9}); !ok || missing != 7 {
+		t.Fatalf("firstMissingUintID() = (%d, %v), want (7, true)", missing, ok)
+	}
+	if missing, ok := firstMissingUintID([]uint{9, 4}, []uint{4, 9, 12}); ok || missing != 0 {
+		t.Fatalf("firstMissingUintID() = (%d, %v), want (0, false)", missing, ok)
+	}
+	requested := make([]uint, 5000)
+	existing := make([]uint, 0, 4999)
+	for index := range requested {
+		requested[index] = uint(index + 1)
+		if requested[index] != 4096 {
+			existing = append(existing, requested[index])
+		}
+	}
+	if missing, ok := firstMissingUintID(requested, existing); !ok || missing != 4096 {
+		t.Fatalf("firstMissingUintID(5000 IDs) = (%d, %v), want (4096, true)", missing, ok)
+	}
+}
+
+func TestScalePageEnvelopesKeepFirstPageBounded(t *testing.T) {
+	nodePage := pagedData(make([]nodeListItem, 50), 1000, 0, 50)
+	endpointPage := pagedData(make([]protocolEndpointListItem, 50), 5000, 0, 50)
+	if got := len(nodePage["items"].([]nodeListItem)); got != 50 || nodePage["total"] != int64(1000) {
+		t.Fatalf("node page items=%d total=%v, want 50/1000", got, nodePage["total"])
+	}
+	if got := len(endpointPage["items"].([]protocolEndpointListItem)); got != 50 || endpointPage["total"] != int64(5000) {
+		t.Fatalf("endpoint page items=%d total=%v, want 50/5000", got, endpointPage["total"])
+	}
+}
+
+func TestNodeAndProtocolListItemsOmitDetailAndSecretFields(t *testing.T) {
+	node := model.Node{
+		ID: 1, Name: "edge", SSHHost: "root@example.invalid", SSHUser: "root", SSHPwd: "encrypted-password",
+		SSHPrivateKeyPassphrase: "encrypted-passphrase", SSHPrivilegePassword: "encrypted-privilege",
+		NodeCredential: "connector-secret", TrafficSecret: "traffic-secret", Config: `{"private":true}`,
+	}
+	nodePayload, err := json.Marshal(newNodeListItem(node, 3, time.Now().Add(-time.Minute)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{`"config":`, `"ssh_host":`, `"ssh_user":`, `"ssh_pwd":`, "passphrase", "privilege_password", "node_credential", "traffic_secret"} {
+		if strings.Contains(string(nodePayload), forbidden) {
+			t.Errorf("node summary contains forbidden field %q: %s", forbidden, nodePayload)
+		}
+	}
+
+	endpoint := model.ProtocolEndpoint{
+		ID: 2, NodeID: 1, Name: "VLESS", Protocol: "vless", Address: "edge.example.invalid", Port: 443, PublicPort: 443,
+		ServerConfig: "encrypted-server", ClientConfig: `{"id":"credential"}`, OptionalConfig: `{"private":true}`, Tags: `["internal"]`,
+	}
+	deployment := model.ProtocolDeployment{ID: 7, Status: "failed", Output: "private output", Error: "private error"}
+	endpointPayload, err := json.Marshal(newProtocolEndpointListItem(endpoint, "edge", &deployment, protocolEndpointUsage{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"server_config", "client_config", "optional_config", "tags", "private output", "private error", `"output":`, `"error":`} {
+		if strings.Contains(string(endpointPayload), forbidden) {
+			t.Errorf("protocol summary contains forbidden detail %q: %s", forbidden, endpointPayload)
+		}
+	}
+	if !strings.Contains(string(endpointPayload), `"has_error":true`) {
+		t.Fatalf("protocol summary does not preserve the actionable error indicator: %s", endpointPayload)
+	}
+}
+
+func TestAdminSubscriptionListItemIncludesDisplayNamesAndOmitsConfig(t *testing.T) {
+	payload, err := json.Marshal(adminSubscriptionListItem{
+		ID: 9, UserID: 4, UserEmail: "user@example.com", PlanID: 3,
+		PlanName: "Standard", PlanSKUID: 8, SKUName: "Monthly", Status: subStatusActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(payload)
+	for _, expected := range []string{`"user_email":"user@example.com"`, `"plan_name":"Standard"`, `"sku_name":"Monthly"`} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("subscription summary %s does not contain %s", text, expected)
+		}
+	}
+	if strings.Contains(text, `"config"`) {
+		t.Fatalf("subscription summary leaked config: %s", text)
+	}
+}
+
+func TestEffectiveSubscriptionStatusDoesNotRequirePersistence(t *testing.T) {
+	now := time.Unix(100, 0).UTC()
+	tests := []struct {
+		name         string
+		subscription model.Subscription
+		want         string
+	}{
+		{
+			name: "active",
+			subscription: model.Subscription{
+				Status: subStatusActive, EndAt: now.Add(time.Hour), FlowTotal: 100, FlowUsed: 50,
+			},
+			want: subStatusActive,
+		},
+		{
+			name: "expired by time",
+			subscription: model.Subscription{
+				Status: subStatusActive, EndAt: now, FlowTotal: 100, FlowUsed: 50,
+			},
+			want: subStatusExpired,
+		},
+		{
+			name: "expired by quota",
+			subscription: model.Subscription{
+				Status: subStatusActive, EndAt: now.Add(time.Hour), FlowTotal: 100, FlowUsed: 100,
+			},
+			want: subStatusExpired,
+		},
+		{
+			name: "canceled remains canceled",
+			subscription: model.Subscription{
+				Status: subStatusCanceled, EndAt: now.Add(-time.Hour), FlowTotal: 100, FlowUsed: 100,
+			},
+			want: subStatusCanceled,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := effectiveSubscriptionStatus(test.subscription, now); got != test.want {
+				t.Fatalf("effectiveSubscriptionStatus() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestSupportedProtocolsAreCaseInsensitive(t *testing.T) {
 	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "")
 	if err != nil {
@@ -195,6 +489,40 @@ func TestBuildPlanSKUValidatesCommercialSpecification(t *testing.T) {
 		if err == nil {
 			t.Fatalf("buildPlanSKU() accepted billing unit %q", unit)
 		}
+		var validation *requestValidationError
+		if !errors.As(err, &validation) || validation.fields["billing_unit"] == "" {
+			t.Fatalf("buildPlanSKU() error = %#v, want billing_unit field", err)
+		}
+	}
+}
+
+func TestBuildPlanSKUReportsAllInvalidFields(t *testing.T) {
+	_, err := buildPlanSKU(7, planSKUReq{SKUType: "new", BillingUnit: "month", BillingValue: 0, PriceCents: -1, SpeedLimitMbps: -1})
+	var validation *requestValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("buildPlanSKU() error = %#v, want requestValidationError", err)
+	}
+	for _, field := range []string{"code", "name", "currency", "billing_value", "price_cents", "traffic_bytes", "device_limit", "speed_limit_mbps"} {
+		if validation.fields[field] == "" {
+			t.Errorf("missing field error for %q: %#v", field, validation.fields)
+		}
+	}
+	prefixed := prefixValidationError(err, "skus.0.")
+	if !errors.As(prefixed, &validation) || validation.fields["skus.0.price_cents"] == "" {
+		t.Fatalf("prefixValidationError() = %#v", prefixed)
+	}
+}
+
+func TestValidateNodeProtocolConfigsReportsBothJSONFields(t *testing.T) {
+	err := validateNodeProtocolConfigs("vless", "[]", "not-json")
+	var validation *requestValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("validateNodeProtocolConfigs() error = %#v, want requestValidationError", err)
+	}
+	for _, field := range []string{"config", "client_config"} {
+		if validation.fields[field] == "" {
+			t.Errorf("missing field error for %q: %#v", field, validation.fields)
+		}
 	}
 }
 
@@ -244,6 +572,19 @@ func TestValidateSSHFieldsAllowsAutomaticHostKeyEnrollment(t *testing.T) {
 	}
 	if err := validateSSHFields("node.example.com", 22, "root", sshAuthPassword, "secret", "SHA256:invalid"); err == nil {
 		t.Fatal("an invalid recorded host key was accepted")
+	}
+}
+
+func TestValidateSSHFieldsReportsSpecificFields(t *testing.T) {
+	err := validateSSHFields("", 70000, "", sshAuthPrivateKey, "", "")
+	var validation *requestValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("validateSSHFields() error = %#v, want requestValidationError", err)
+	}
+	for _, field := range []string{"ssh_host", "ssh_port", "ssh_user", "ssh_private_key"} {
+		if validation.fields[field] == "" {
+			t.Errorf("missing field error for %q: %#v", field, validation.fields)
+		}
 	}
 }
 
@@ -398,6 +739,62 @@ func TestOrderTransitionAllowed(t *testing.T) {
 	}
 }
 
+func TestBusinessListFilterEnums(t *testing.T) {
+	h := &handlers{}
+	for _, test := range []struct {
+		status     string
+		adminScope bool
+		want       []string
+		valid      bool
+	}{
+		{status: adminAttentionStatus, adminScope: true, want: []string{orderStatusPending, orderStatusFailed}, valid: true},
+		{status: orderStatusPaid, adminScope: true, want: []string{orderStatusPaid}, valid: true},
+		{status: adminAttentionStatus, adminScope: false, valid: false},
+		{status: "processing", adminScope: true, valid: false},
+	} {
+		got, valid := h.orderListStatusValues(test.status, test.adminScope)
+		if valid != test.valid || len(got) != len(test.want) {
+			t.Errorf("orderListStatusValues(%q, %v) = %#v, %v; want %#v, %v", test.status, test.adminScope, got, valid, test.want, test.valid)
+			continue
+		}
+		for index := range got {
+			if got[index] != test.want[index] {
+				t.Errorf("orderListStatusValues(%q, %v)[%d] = %q, want %q", test.status, test.adminScope, index, got[index], test.want[index])
+			}
+		}
+	}
+	for _, value := range []string{"new", "renewal", "upgrade", "traffic_pack"} {
+		if !isValidOrderType(value) {
+			t.Errorf("isValidOrderType(%q) = false, want true", value)
+		}
+	}
+	for _, value := range []string{"", "trial", "new "} {
+		if isValidOrderType(value) {
+			t.Errorf("isValidOrderType(%q) = true, want false", value)
+		}
+	}
+	for _, value := range []string{subStatusActive, subStatusExpired, subStatusCanceled} {
+		if !isValidSubscriptionStatus(value) {
+			t.Errorf("isValidSubscriptionStatus(%q) = false, want true", value)
+		}
+	}
+	for _, value := range []string{"", "pending", "active "} {
+		if isValidSubscriptionStatus(value) {
+			t.Errorf("isValidSubscriptionStatus(%q) = true, want false", value)
+		}
+	}
+	for _, value := range []string{"available", "exhausted"} {
+		if !isValidSubscriptionQuotaFilter(value) {
+			t.Errorf("isValidSubscriptionQuotaFilter(%q) = false, want true", value)
+		}
+	}
+	for _, value := range []string{"", "low", "available "} {
+		if isValidSubscriptionQuotaFilter(value) {
+			t.Errorf("isValidSubscriptionQuotaFilter(%q) = true, want false", value)
+		}
+	}
+}
+
 func TestValidateNodeProtocolConfigs(t *testing.T) {
 	if err := validateNodeProtocolConfigs("vless", `{"type":"vless","users":[]}`, `{"server":"node.example.com","port":443}`); err != nil {
 		t.Fatalf("validateNodeProtocolConfigs() error = %v", err)
@@ -468,6 +865,36 @@ func TestTrafficReconciliationResult(t *testing.T) {
 	}
 }
 
+func TestTrafficReconciliationAggregatesJSONContract(t *testing.T) {
+	payload, err := json.Marshal(trafficReconciliationAggregates{
+		SubscriptionCount:   3,
+		MatchedCount:        1,
+		MissingRecordsCount: 1,
+		OverRecordedCount:   1,
+		FlowUsed:            11,
+		RecordedBytes:       13,
+		MissingBytes:        4,
+		OverRecordedBytes:   6,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{
+		`"subscription_count":3`,
+		`"matched_count":1`,
+		`"missing_records_count":1`,
+		`"over_recorded_count":1`,
+		`"flow_used":11`,
+		`"recorded_bytes":13`,
+		`"missing_bytes":4`,
+		`"over_recorded_bytes":6`,
+	} {
+		if !bytes.Contains(payload, []byte(field)) {
+			t.Errorf("traffic reconciliation aggregate payload %s is missing %s", payload, field)
+		}
+	}
+}
+
 func TestNormalizePlanPolicyUsesSKUDefaults(t *testing.T) {
 	policy, err := normalizePlanPolicy(planCreateReq{}, planSKUReq{
 		TrafficBytes: 1024, DeviceLimit: 3, SpeedLimitMbps: 20,
@@ -480,6 +907,19 @@ func TestNormalizePlanPolicyUsesSKUDefaults(t *testing.T) {
 	}
 	if !policy.IsRenewable {
 		t.Fatalf("unexpected policy defaults: %#v", policy)
+	}
+}
+
+func TestNormalizePlanPolicyReportsSpecificFields(t *testing.T) {
+	_, err := normalizePlanPolicy(planCreateReq{FamilyLimit: -1, ResetPolicy: 9, TrafficCalcMode: 9}, planSKUReq{})
+	var validation *requestValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("normalizePlanPolicy() error = %#v, want requestValidationError", err)
+	}
+	for _, field := range []string{"traffic_bytes", "device_limit", "family_limit", "reset_policy", "traffic_calc_mode"} {
+		if validation.fields[field] == "" {
+			t.Errorf("missing field error for %q: %#v", field, validation.fields)
+		}
 	}
 }
 
@@ -559,5 +999,92 @@ func TestPrepareSSHCommandDoesNotExposePrivilegePassword(t *testing.T) {
 	}
 	if !strings.HasPrefix(command, "sudo -n -- sh -c ") || stdin != "" || pty {
 		t.Fatalf("unexpected passwordless sudo command=%q stdin=%q pty=%t", command, stdin, pty)
+	}
+}
+
+func TestParseZeroFlowProjectionPrefersRecordAndAuth(t *testing.T) {
+	event := zeroEventEnvelope{
+		SchemaID:     "zero.event.v1",
+		EventID:      "flow.updated:42:2",
+		EventType:    "flow.updated",
+		PrincipalKey: "envelope-principal",
+		Payload: json.RawMessage(`{
+			"flow_id":"legacy-flow",
+			"record":{
+				"flow_id":"42",
+				"revision":2,
+				"auth":{"principal_key":"subscription:7:endpoint:3"},
+				"traffic":{"bytes_up":1024,"bytes_down":4096}
+			}
+		}`),
+	}
+	projection, err := parseZeroFlowProjection(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projection.FlowID != "42" || projection.Revision != 2 || projection.PrincipalKey != "subscription:7:endpoint:3" || projection.BytesUp != 1024 || projection.BytesDown != 4096 {
+		t.Fatalf("unexpected projection: %+v", projection)
+	}
+}
+
+func TestParseZeroFlowProjectionPreservesLargeTrafficCounters(t *testing.T) {
+	event := zeroEventEnvelope{
+		Payload: json.RawMessage(`{
+			"record":{
+				"flow_id":"large-counter",
+				"revision":9007199254740993,
+				"traffic":{"bytes_up":9007199254740993,"bytes_down":17}
+			}
+		}`),
+	}
+	projection, err := parseZeroFlowProjection(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projection.Revision != 9007199254740993 || projection.BytesUp != 9007199254740993 || projection.BytesDown != 17 {
+		t.Fatalf("large counters lost precision: %+v", projection)
+	}
+}
+
+func TestZeroConfigPublishScriptValidatesSwitchesAndChecksHealth(t *testing.T) {
+	script := buildZeroConfigPublishScript("/tmp/stage", strings.Repeat("a", 64), 91)
+	for _, required := range []string{
+		`zero validate "$stage/runtime.json"`,
+		`mv -Tf /etc/zerodenet/current.json.next /etc/zerodenet/current.json`,
+		`systemctl restart zero`,
+		`zero status --json --socket`,
+		`rollback()`,
+		`$backup/old_link`,
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("publish script is missing %q", required)
+		}
+	}
+	rollback := buildZeroConfigRollbackScript(91)
+	if !strings.Contains(rollback, "config-91.json") || !strings.Contains(rollback, "systemctl restart zero") {
+		t.Fatalf("unexpected rollback script: %s", rollback)
+	}
+}
+
+func TestShadowsocks2022CredentialUsesCipherKeyLength(t *testing.T) {
+	cipher := newTestCredentialCipher(t)
+	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", cipher, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	template, err := cipher.Encrypt(`{"type":"shadowsocks","cipher":"2022-blake3-aes-128-gcm","password":"placeholder"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, err := h.newProtocolCredentialSecret(model.ProtocolEndpoint{Protocol: "shadowsocks", ServerConfig: template})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(secret)
+	if err != nil {
+		t.Fatalf("credential is not standard base64: %v", err)
+	}
+	if len(decoded) != 16 {
+		t.Fatalf("decoded credential length = %d, want 16", len(decoded))
 	}
 }

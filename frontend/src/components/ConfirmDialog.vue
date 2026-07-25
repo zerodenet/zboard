@@ -5,10 +5,10 @@
       <p><slot>{{ message }}</slot></p>
     </div>
     <template #footer>
-      <button class="button button-secondary" type="button" :disabled="busy" @click="$emit('close')">取消</button>
-      <button class="button" :class="{ 'button-danger': tone === 'danger' }" type="button" :disabled="busy" @click="$emit('confirm')">
+      <UiButton variant="secondary" type="button" :disabled="busy" @click="$emit('close')">取消</UiButton>
+      <UiButton :variant="tone === 'danger' ? 'danger' : 'primary'" type="button" :loading="busy" @click="$emit('confirm')">
         {{ busy ? '处理中…' : confirmText }}
-      </button>
+      </UiButton>
     </template>
   </ModalDialog>
 </template>

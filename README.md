@@ -1,327 +1,120 @@
-﻿# zboard
+# Zboard
 
-Monolith operations platform for proxy panel management and subscription billing.
+Zboard 是一个面向代理服务运营的控制平面，将节点资产、协议服务、订阅交付、
+套餐订单、流量结算和日常运维放在同一套后台中管理。
 
-- Backend: `go-zero` + `gorm`
-- Frontend: `Vue 3 + Vite + Pinia + Vue Router`
-- Shared API: `RESTful /api/v1` by default
-- Optional UI components: `shadcn-vue`
+项目采用模块化单体架构：管理端与用户端由同一个服务交付，节点侧使用 Zero
+作为运行内核。当前版本为内部开发基线 `v0.0.1`，首个公开发布目标为
+`v0.1.0`。
 
-Repository: `https://github.com/zerodenet/zboard`
+## 解决什么问题
 
-## Version policy
+传统面板通常把 VPS、协议配置、销售套餐和客户端订阅混在同一层级，配置复用、
+节点迁移和故障定位都比较困难。Zboard 将它们拆分为职责明确的资源：
 
-- Current development baseline: `v0.0.1`
-- First public release target: `v0.1.0`
-- All engineering, security, business-loop, operability, and release-readiness work before the first public release remains `v0.0.1`.
-- Internal phases are tracked by exit criteria and Git commits, not by incrementing `v0.0.x`; the version changes only when `v0.1.0` is ready to publish.
-- Implementation work stages and exit criteria: [docs/roadmap.md](docs/roadmap.md)
-- Then follow SemVer for maintenance versions
-- Reproducible builds use the checked-in `go`/`toolchain` directives and `frontend/package.json` `packageManager` value.
-- Toolchain upgrades are explicit repository changes; CI does not silently chase the latest release.
-
-## v0.1.0 capability scope
-
-- Admin and normal users, admin can also be a normal subscriber
-- Independent VPS asset management with lifecycle state and SSH operation tests
-- Node APIs (including list) are authenticated; public access is no longer allowed
-- Node-bound protocol endpoint management with separate save/deploy actions
-- Reusable node groups between plans and protocol endpoints; plans do not bind endpoints directly
-- Password/private-key SSH authentication with automatic host-key enrollment, pinned verification and explicit trust reset
-- Explicit per-node privilege mode for direct root, passwordless/password-based `sudo`, or password-based `su`; privilege secrets are encrypted separately from SSH login credentials
-- Administrator-only browser SSH terminal with one-time tickets, same-origin WebSocket transport, PTY resizing, bounded sessions and metadata-only audit logs
-- Plans, orders, subscriptions, and traffic usage summary
-- Per-node signed traffic report endpoint with replay-safe quota deduction and billing reconciliation
-- Admin user management: list/create/update users, ban/resume, admin role toggle, password reset
-- Order callback supports paid callback and subscription renew flow
-- Standard API namespace `/api/v1` with `/api/v1/system/info`
-- API contract file: `backend/api/openapi.yaml`
-- Docker Compose deployment, health checks, backup, upgrade and rollback documentation
-- Kubernetes deployment and Kubernetes-driven upgrade APIs are outside the `v0.1.0` support scope.
-
-## v0.1.1 Planned
-
-- 订单体系 v0.1.1 计划补齐：
-  - 更多支付渠道接入（签名校验、异步回调、退款/关闭订单）
-  - 订阅计费模型增强（按流量包/并发设备/阶梯折扣）
-  - 节点上线质量采集与告警（离线、证书、端口检查）
-- 前后端体验优化：订阅续费提醒、管理员审计、回收站与分页筛选。
-## Repository structure
-
-- `backend/` service code, configuration, model, and SQL migrations
-- `frontend/` management console
-- `deploy/` Docker deployment assets
-- `docs/` operation and upgrade documentation
-- `.github/` CI and release workflows
-
-The core schema separates catalog plans, purchasable SKUs, operational nodes and sellable protocol endpoints. See [docs/data-model.md](docs/data-model.md).
-
-## Quick start
-
-### Prerequisites
-
-- Go toolchain: use the exact version declared by `backend/go.mod`.
-- If your local `go` is missing, `scripts/ensure-go-env.*` will install to `C:\Users\higanbana\sdk\golang` by default.
-- MySQL 8+ and Redis
-
-### Backend
-
-Manual backend startup requires an explicit datasource, a JWT secret of at least 32 bytes,
-and a stable node-credential encryption key. On an empty database, the service starts in
-installation mode and the browser is redirected to `/setup`:
-
-```powershell
-cd scripts
-./ensure-go-env.ps1
-cd ../backend
-$env:ZBOARD_ENVIRONMENT = "development"
-$env:ZBOARD_DATA_SOURCE = "zboard:<local-db-password>@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local"
-$env:ZBOARD_JWT_SECRET = "<at-least-32-random-bytes>"
-$env:ZBOARD_CREDENTIAL_ENCRYPTION_KEY = "<exactly-32-random-bytes-as-base64-or-hex>"
-go run ./cmd/zboard -f ./etc/zboard.yaml.example
+```text
+节点资产 → 协议服务 → 节点组 → 套餐 / SKU → 订单 → 订阅
+             │                              │
+             └── 运行配置与凭证              └── 客户端原生配置
 ```
 
-The setup wizard checks database readiness, collects the public site name and URL,
-chooses whether registration is open, and creates the first administrator. Installation
-is committed as one transaction and cannot be run again. Bootstrap administrator
-environment variables remain supported only for unattended and legacy deployments.
+- **节点资产**描述服务器、SSH 信任和 Zero 运行状态。
+- **协议服务**是可复制、可切换承载节点的服务配置，同时保存明确的运行实例。
+- **节点组**定义套餐实际能够交付的协议服务集合。
+- **套餐与 SKU**描述销售内容、价格、周期和流量额度。
+- **订阅模板与规则集**决定不同客户端最终获得的原生配置。
+- **流量与任务记录**将节点运行结果、用户用量和后台操作关联起来。
 
-The ordered SQL files in `backend/migrations` are embedded in the binary and applied at startup.
-Applied versions are recorded in `schema_migrations`; production startup no longer relies on
-GORM `AutoMigrate`. To migrate without starting the HTTP service, run `./scripts/migrate.ps1`
-or `./scripts/migrate.sh` with the same database and security environment variables.
+## 核心能力
 
-`ensure-go-env.ps1` supports auto-install (default on) to `C:\Users\higanbana\sdk\golang` when local Go is missing.
-Use `-AutoInstall:$false` to turn it off, or set `ZBOARD_AUTO_INSTALL_GO=0` in bash.
-如需配置下载镜像源，请设置 `ZBOARD_GO_DOWNLOAD_BASE`（默认 `https://go.dev/dl`），用于在受限网络下指向可用镜像。
+### 基础设施
 
-Quick environment verify:
-```powershell
-cd scripts
-./verify-env.ps1
-```
+- 统一管理 VPS 资产、SSH 凭证、主机密钥信任和节点运行状态。
+- 管理 VLESS、Shadowsocks 等协议服务，支持复制配置、切换承载节点和完整配置发布。
+- 使用节点组复用协议服务，并通过修订号保护并发编辑。
+- 安装、升级、校验和回滚节点上的 Zero 内核与运行配置。
 
-```bash
-cd scripts
-./verify-env.sh
-```
+### 订阅交付
 
-`verify-env` prints the active Go target so you can confirm it matches the repository baseline.
+- 面向 ZNet Sink、Clash / Mihomo 和 sing-box 生成客户端原生配置。
+- 根据客户端类型自动选择输出格式，同时允许用户手动选择。
+- 独立维护规则集，并在订阅模板中配置策略组、出站目标和节点名称正则过滤。
+- 提供可视化配置与高级源码编辑；最终输出在保存和交付前进行结构校验。
+- 订阅凭证独立存储、可撤销、可轮换，并在访问日志中隐藏敏感令牌。
 
-### Local one-command startup
+### 商业与用户
 
-PowerShell:
+- 管理用户、套餐、SKU、订单、订阅、续期和流量额度。
+- 记录订单与订阅快照，避免套餐后续修改影响既有权益。
+- 提供用户端套餐、订单、订阅地址、用量和到期信息。
+- 支持工单以及管理员对用户状态、角色和密码的管理。
 
-```powershell
-cd scripts
-./start-dev.ps1
-```
+### 运维与审计
 
-```bash
-./scripts/start-dev.sh
-chmod +x scripts/start-dev.sh
-./scripts/start-dev.sh
-```
+- 接收 Zero 运行事件并完成可重放、可对账的流量结算。
+- 统一展示后台任务、节点操作、配置发布和运行日志。
+- 对身份、商业数据和敏感基础设施操作保留审计记录。
+- 提供健康检查、数据库备份以及 Docker Compose 升级和回滚路径。
 
-The one-command startup flow does:
+## 技术架构
 
-1. dependency check (`verify-env`)
-2. auto start mysql/redis with docker compose (can skip with `-SkipDependencies` / `--skip-deps`)
-3. generate runtime config and persist random local JWT/bootstrap/encryption credentials under ignored `tmp/` when they were not supplied
-4. start backend
-5. when frontend is enabled, inject `VITE_API_BASE` automatically
-6. wait for `/healthz`
-7. smoke test (`smoke-test`)
+| 层级 | 实现 |
+| --- | --- |
+| 后端 | Go、go-zero、GORM |
+| 前端 | Vue 3、Vite、Pinia、Vue Router |
+| 数据 | MySQL 8、Redis |
+| 节点运行时 | Zero |
+| 接口 | RESTful `/api/v1`、OpenAPI |
+| 部署 | 单应用镜像 + Docker Compose |
 
-Use the version declared by `backend/go.mod`; explicit overrides are intended only for toolchain upgrade work.
+后端同时提供 API 与前端静态资源，因此正式环境不需要单独部署前端服务。
 
-You can also run a dedicated version check:
+## 快速体验
 
-```bash
-cd scripts
-./check-go-version.sh
-```
-
-```powershell
-cd scripts
-./check-go-version.ps1
-```
-
-Validate the checked-in baseline with:
-
-```powershell
-./scripts/sync-go-baseline.ps1 -RequiredVersion 1.26.5 -CheckOnly
-```
-
-```bash
-./scripts/sync-go-baseline.sh --check-only --target 1.26.5
-```
-
-Recommended flags:
-
-PowerShell:
-
-```powershell
-./start-dev.ps1 -WithFrontend -StopWhenDone
-./start-dev.ps1 -ApiBase "http://127.0.0.1:8080" -StopWhenDone
-./start-dev.ps1 -BackendPort 8080 -WithFrontend -StopWhenDone
-./start-dev.ps1 -GoVersion 1.26.5
-```
-
-```bash
-./scripts/start-dev.sh --with-frontend --stop-when-done
-./scripts/start-dev.sh --backend-port 8080 --skip-deps --with-frontend
-./scripts/start-dev.sh --backend-port 8080 --stop-when-done
-./scripts/start-dev.sh --go-version 1.26.5
-```
-
-可调超时参数（按你网络情况设置）：
-- PowerShell:
-  - `-GoQueryTimeoutSec`（默认 8）：go 稳定版本查询超时
-  - `-QueryTimeoutBudgetSec`（默认 30）：查询总预算时长
-  - `-QueryRetryLimit`（默认 3）：远端查询尝试上限
-  - `-GoDownloadTimeoutSec`（默认 120）：缺失 go 自动安装包下载超时
-  - `-SmokeRequestTimeoutSec`（默认 10）：启动冒烟检测接口超时
-- Bash:
-  - `--go-query-timeout`（默认 8）
-  - `--go-query-budget-sec`（默认 30）：查询总预算时长
-  - `--go-query-retry-limit`（默认 3）：远端查询尝试上限
-  - `--go-download-timeout`（默认 120）
-  - `--smoke-timeout`（默认 10）
-
-你也可以通过环境变量直接控制（脚本都读取）：
-- `ZBOARD_GO_QUERY_TIMEOUT`
-- `ZBOARD_GO_QUERY_BUDGET_SEC`
-- `ZBOARD_GO_QUERY_RETRY_LIMIT`
-- `ZBOARD_GO_DOWNLOAD_TIMEOUT`
-- `ZBOARD_SMOKE_TIMEOUT`
-- `ZBOARD_ENFORCE_GO_BASELINE=0`（可选）：默认关闭基线严格模式时使用 `--dry-run`，设置为 `1`/`true` 启用严格检查（bash/ps1 都适用），并在 `start-dev*` 检测到 `go.mod` 与官方最新不一致时直接退出。
-
-If you omit `-StopWhenDone` / `--stop-when-done`, the script keeps backend/frontend running and returns on `Ctrl+C`.
-
-### Frontend
-
-If you manually run frontend dev server, set backend API base explicitly:
-
-```bash
-cd frontend
-VITE_API_BASE=http://127.0.0.1:8080/api/v1 pnpm install
-VITE_API_BASE=http://127.0.0.1:8080/api/v1 pnpm dev
-```
-
-PowerShell:
-
-```powershell
-cd frontend
-$env:VITE_API_BASE = "http://127.0.0.1:8080/api/v1"
-pnpm install
-pnpm dev
-```
-
-### Single-binary deployment
+需要 Docker 和 Docker Compose。复制环境变量示例后，替换其中所有
+`generate-` / `choose-` 占位值；JWT、数据库密码和凭证加密密钥必须分别生成，
+凭证加密密钥需要长期稳定保存。
 
 ```bash
 cp .env.example .env
-# Replace every generate-/choose- placeholder with an independent strong value.
 docker compose -f deploy/docker/docker-compose.yml up --build
 ```
 
-- Backend exposes `/api/v1` and serves frontend bundle when `ZBOARD_WEB_DIR` is configured by `deploy/docker/Dockerfile`.
-- Docker startup is production mode and refuses missing JWT, database, or credential-encryption secrets. Open `/setup` after the first start to finish installation.
-- `ZBOARD_CREDENTIAL_ENCRYPTION_KEY` must remain stable and backed up; losing it makes stored node credentials unrecoverable.
-- `ZBOARD_ZERO_ARTIFACT_HOST_DIR` points to the host directory containing trusted musl archives and matching `.sha256` files for older-glibc nodes; the compose stack mounts it read-only.
-- Create each node's traffic-report credential in Node Management, copy the one-time secret directly to that node, and rotate or revoke it if exposure is suspected.
+服务就绪后打开 `http://127.0.0.1:8080/setup`，通过安装向导创建首个管理员并完成
+站点初始化。需要管理 Zero 节点时，再配置可信的内核归档目录。
 
-## v0.0.1 playbook
+> Zboard 当前仍是 `v0.0.1` 开发版本，不建议在没有备份、访问控制和 HTTPS 的
+> 公网环境中直接使用。
 
-1. Start the development stack. The script generates a random local JWT secret and first-user password when needed:
-```bash
-./scripts/start-dev.sh --with-frontend
-```
-2. For manual backend startup, configure the security environment variables shown in the Backend section:
-```bash
-cd backend
-go run ./cmd/zboard -f ./etc/zboard.yaml.example
-```
-3. Start frontend in dev mode:
-```bash
-cd frontend
-pnpm install
-pnpm dev
-```
-4. Basic smoke test:
-- Complete `/setup` on a new database, then continue with the administrator created there. There is no repository default password.
-- Create nodes, create plans, create order from plans
-- Run SSH test and protocol publish on node APIs when real SSH target exists
-- Pin each node's verified OpenSSH `SHA256:...` host-key fingerprint before testing or publishing.
+## 项目结构
 
-## Quick smoke validation
+- `backend/`：业务服务、API、数据模型和数据库基线。
+- `frontend/`：管理端、用户端和共享 UI 组件。
+- `deploy/`：Docker 镜像与 Compose 部署文件。
+- `docs/`：架构、数据模型、运维和发布文档。
+- `scripts/`：本地开发、验证、迁移和构建脚本。
 
-```powershell
-cd scripts
-./smoke-test.ps1
-```
+## 文档导航
 
-```bash
-cd scripts
-./smoke-test.sh
-```
+| 内容 | 文档 |
+| --- | --- |
+| 资源边界与数据关系 | [数据模型](docs/data-model.md) |
+| Zero 安装、配置发布与回滚 | [节点内核生命周期](docs/node-kernel-lifecycle.md) |
+| 数据库初始化、开发库升级与迁移策略 | [数据库迁移](docs/database-migrations.md) |
+| 当前开发范围与发布进度 | [项目路线图](docs/roadmap.md) |
+| 本地环境、启动与验证 | [开发指南](docs/development.md) |
+| 后端配置与接口开发 | [后端说明](backend/README.md) |
+| OpenAPI 契约 | [backend/api/openapi.yaml](backend/api/openapi.yaml) |
+| 贡献规范 | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| 安全策略 | [SECURITY.md](SECURITY.md) |
+| 发布流程 | [RELEASING.md](RELEASING.md) |
 
-```bash
-chmod +x scripts/smoke-test.sh
-```
+## 版本状态
 
-```bash
-cd scripts
-./verify-env.sh
-```
+- `v0.0.1`：当前内部开发基线；首发前的功能、交互和数据库调整均在此版本完成。
+- `v0.1.0`：首个公开发布版本，必须通过完整的
+  [发布检查清单](docs/release/v0.1.0-launch-checklist.md)。
 
-## Release
-
-- Binary and image build version comes from release tag or `VERSION` file.
-- v0.1.0 首发落地清单见 `docs/release/v0.1.0-launch-checklist.md`.
-- Kubernetes assets and Kubernetes-based rollout automation are not part of the supported v0.1.0 path.
-
-## Release notes
-
-- `RELEASING.md` + `CHANGELOG.md` are the source of release content.
-- For v0.1.0, use `docs/release/v0.1.0-launch-checklist.md` as the final execution checklist.
-
-## Go version strategy
-
-- `backend/go.mod` is the source of truth for the Go compatibility and toolchain versions.
-- CI reads that file through `actions/setup-go`; the Docker builder uses the matching pinned image.
-- Updating Go is a reviewed maintenance change that must pass tests and image builds before merging.
-
-PowerShell 环境的 `ensure-go-env.ps1` 也会读取 `ZBOARD_GOROOT_FALLBACK`（未设置则回退到 `C:\Users\higanbana\sdk\golang`）。
-
-### 离线/受限网络应急
-
-若启动时无法获取仓库锁定的 Go 版本，请按顺序处理：
-
-1. 先确认本机已有可用 `go`，并临时使用本地版本：
-   ```powershell
-   $env:ZBOARD_ALLOW_STALE_GO_VERSION = "1"
-   ./scripts/verify-env.ps1
-   ```
-   ```bash
-   export ZBOARD_ALLOW_STALE_GO_VERSION=1
-   ./scripts/verify-env.sh
-   ```
-2. 如需固定版本避免再次拉取，可设置 `ZBOARD_REQUIRED_GO_VERSION`（例如 `<version>`）：
-   ```powershell
-   $env:ZBOARD_REQUIRED_GO_VERSION = "<version>"
-   ```
-   ```bash
-   export ZBOARD_REQUIRED_GO_VERSION=<version>
-   ```
-3. 如需在企业镜像网络下下载 Go，请设置：
-   ```powershell
-   $env:ZBOARD_GO_DOWNLOAD_BASE = "<internal-golang-dl-url>"
-   ./scripts/verify-env.ps1
-   ```
-   ```bash
-   export ZBOARD_GO_DOWNLOAD_BASE=<internal-golang-dl-url>
-   ./scripts/verify-env.sh
-   ```
-4. 若需脱网构建且本地无可用 `go`，请先放置预装的 Go 到 `C:\Users\higanbana\sdk\golang\bin\go.exe`（或设置 `ZBOARD_GOROOT_FALLBACK` 到你的本机 Go 目录），再重跑脚本。
+数据库基线会在 `v0.1.0` 发布前持续收敛；公开发布后，已发布迁移保持不可修改，
+后续结构变化使用新的增量迁移。具体兼容和回滚规则不在项目介绍中展开，请参阅
+[数据库迁移文档](docs/database-migrations.md)。

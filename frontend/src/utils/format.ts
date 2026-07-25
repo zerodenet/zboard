@@ -1,6 +1,9 @@
-export function formatBytes(bytes: number | undefined | null) {
-  const value = Number(bytes) || 0
+export function formatBytes(bytes: number | undefined | null): string {
+  if (bytes === null || bytes === undefined) return '—'
+  const value = Number(bytes)
+  if (!Number.isFinite(value)) return '—'
   if (value === 0) return '0 B'
+  if (value < 0) return `-${formatBytes(Math.abs(value))}`
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
   const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1)
   const normalized = value / 1024 ** index
@@ -9,18 +12,69 @@ export function formatBytes(bytes: number | undefined | null) {
 }
 
 export function formatCurrency(cents: number | undefined | null, currency = 'CNY') {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency, minimumFractionDigits: 2 }).format((Number(cents) || 0) / 100)
+  if (cents === null || cents === undefined || !Number.isFinite(Number(cents))) return '—'
+  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency, minimumFractionDigits: 2 }).format(Number(cents) / 100)
 }
 
 export function formatDateTime(value?: string | null) {
   if (!value) return '—'
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
+  if (Number.isNaN(date.getTime())) return '无效时间'
   return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
+export function formatExactDateTime(value?: string | null) {
+  if (!value) return '未记录时间'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '无效时间'
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  }).format(date)
+}
+
+export function formatRelativeTime(value?: string | null, now = Date.now()) {
+  if (!value) return '未记录'
+  const date = new Date(value)
+  const timestamp = date.getTime()
+  if (Number.isNaN(timestamp)) return '无效时间'
+
+  const difference = timestamp - now
+  const absolute = Math.abs(difference)
+  const formatter = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ['year', 365 * 24 * 60 * 60 * 1000],
+    ['month', 30 * 24 * 60 * 60 * 1000],
+    ['day', 24 * 60 * 60 * 1000],
+    ['hour', 60 * 60 * 1000],
+    ['minute', 60 * 1000],
+  ]
+  const [unit, milliseconds] = units.find(([, threshold]) => absolute >= threshold) || ['second', 1000]
+  return formatter.format(Math.round(difference / milliseconds), unit)
+}
+
+export function formatCompactDateTime(value?: string | null, now = Date.now()) {
+  if (!value) return '未记录'
+  const date = new Date(value)
+  const timestamp = date.getTime()
+  if (Number.isNaN(timestamp)) return '无效时间'
+  if (Math.abs(timestamp - now) < 7 * 24 * 60 * 60 * 1000) return formatRelativeTime(value, now)
+  return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
+}
+
 export function formatNumber(value: number | undefined | null) {
-  return new Intl.NumberFormat('zh-CN').format(Number(value) || 0)
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—'
+  return new Intl.NumberFormat('zh-CN').format(Number(value))
+}
+
+export function formatUnknownValue(kind: string, value: unknown) {
+  const raw = value === null || value === undefined || value === '' ? '空' : String(value)
+  return `未知${kind}（${raw}）`
 }
 
 export function shortVersion(version?: string | null) {

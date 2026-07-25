@@ -1,7 +1,35 @@
-DROP TABLE IF EXISTS audit_logs;
-DROP TABLE IF EXISTS traffic_records;
-DROP TABLE IF EXISTS orders;
-DROP TABLE IF EXISTS subscriptions;
-DROP TABLE IF EXISTS nodes;
-DROP TABLE IF EXISTS plans;
-DROP TABLE IF EXISTS users;
+SET FOREIGN_KEY_CHECKS = 0;
+
+DROP TABLE IF EXISTS
+  subscription_template_rule_set_bindings,
+  subscription_rule_sets,
+  subscription_templates,
+  flow_usages,
+  protocol_credentials,
+  protocol_deployments,
+  node_kernel_states,
+  node_operations,
+  task_items,
+  tasks,
+  ticket_messages,
+  tickets,
+  quota_events,
+  payment_events,
+  traffic_records,
+  subscription_members,
+  subscription_tokens,
+  orders,
+  subscriptions,
+  plan_skus,
+  plans,
+  node_group_endpoints,
+  protocol_endpoints,
+  node_groups,
+  user_api_tokens,
+  audit_logs,
+  installations,
+  system_configs,
+  nodes,
+  users;
+
+SET FOREIGN_KEY_CHECKS = 1;

@@ -1,10 +1,28 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
+import PrimeVue from 'primevue/config'
+import ToastService from 'primevue/toastservice'
 import App from './App.vue'
 import { routes } from './router'
 import { useAppStore } from './stores/app'
+import { primeVueOptions } from './theme/primevue'
 import './styles.css'
+import './styles/auth.css'
+import './styles/public.css'
+import './styles/account.css'
+import MetricCard from './components/MetricCard.vue'
+import PageRefreshButton from './components/PageRefreshButton.vue'
+import UiButton from './components/UiButton.vue'
+import UiCheckbox from './components/UiCheckbox.vue'
+import UiInput from './components/UiInput.vue'
+import UiSelect from './components/UiSelect.vue'
+import UiTextarea from './components/UiTextarea.vue'
+import UiMetricStrip from './components/UiMetricStrip.vue'
+import UiSection from './components/UiSection.vue'
+import UiTabs from './components/UiTabs.vue'
+import FormField from './components/FormField.vue'
+import TimeBadge from './components/TimeBadge.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -12,7 +30,21 @@ const router = createRouter({
 })
 
 const app = createApp(App)
+app.component('MetricCard', MetricCard)
+app.component('PageRefreshButton', PageRefreshButton)
+app.component('UiButton', UiButton)
+app.component('UiCheckbox', UiCheckbox)
+app.component('UiInput', UiInput)
+app.component('UiSelect', UiSelect)
+app.component('UiTextarea', UiTextarea)
+app.component('UiMetricStrip', UiMetricStrip)
+app.component('UiSection', UiSection)
+app.component('UiTabs', UiTabs)
+app.component('FormField', FormField)
+app.component('TimeBadge', TimeBadge)
 const pinia = createPinia()
+app.use(PrimeVue, primeVueOptions)
+app.use(ToastService)
 app.use(pinia)
 app.use(router)
 

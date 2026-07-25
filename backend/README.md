@@ -124,8 +124,27 @@ export ZBOARD_SMOKE_TIMEOUT=10
 - `internal/datastore/` DB connection helper
 - `internal/server/` route registration
 - `internal/version/` build time version metadata
-- `migrations/` embedded, ordered SQL migrations tracked in `schema_migrations`
+- `migrations/` embedded v0.0.1 schema baseline and future release migrations tracked in `schema_migrations`
 - `api/openapi.yaml` API contract
+
+## Database schema
+
+Before the first public release, `0001_init.up.sql` is the only migration
+shipped by the repository and directly describes the complete current schema.
+Development-only `ALTER`, backfill and temporary compatibility steps are
+squashed into that file instead of becoming permanent migration history.
+
+Startup accepts either an empty database or a fully migrated earlier
+`v0.0.1` database. Earlier databases must contain the original baseline record
+and the terminal pre-squash migration record; the runner then verifies the
+final table, column and index signature. Existing applied rows are retained for
+rollback compatibility with the immediately previous development binary; only
+new databases contain a single baseline row. Partial histories and unversioned
+non-empty schemas fail startup with an explicit recovery message. Production
+startup does not call GORM `AutoMigrate`.
+
+See [`../docs/database-migrations.md`](../docs/database-migrations.md) for the
+upgrade, verification and post-`v0.1.0` append-only rules.
 
 ## Core feature set
 

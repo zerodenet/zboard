@@ -9,22 +9,22 @@
   >
     <div class="terminal-panel">
       <div class="terminal-toolbar">
-        <span class="terminal-status" :class="statusClass"><i></i>{{ statusLabel }}</span>
+        <StatusBadge :tone="statusTone" :icon="statusIcon" role="status" aria-live="polite" aria-atomic="true">{{ statusLabel }}</StatusBadge>
         <span v-if="node" class="terminal-target">{{ node.ssh_user || 'root' }}@{{ node.ssh_host }}:{{ node.ssh_port || 22 }}</span>
         <div class="terminal-actions">
-          <button v-if="status === 'closed' || status === 'error'" class="button button-secondary button-sm" type="button" @click="connect">重新连接</button>
-          <button class="button button-secondary button-sm" type="button" aria-label="终端全屏" @click="enterTerminalFullscreen">
+          <UiButton v-if="status === 'closed' || status === 'error'" variant="secondary" size="sm" type="button" @click="connect">重新连接</UiButton>
+          <UiButton variant="secondary" size="sm" type="button" aria-label="终端全屏" @click="enterTerminalFullscreen">
             <UiIcon name="maximize" />终端全屏
-          </button>
+          </UiButton>
         </div>
       </div>
       <div class="terminal-workspace">
         <div ref="terminalStage" class="terminal-stage" :class="{ 'terminal-stage-fullscreen': terminalFullscreenFallback }">
           <div ref="terminalHost" class="terminal-host" aria-label="SSH 交互终端"></div>
           <div v-if="terminalFullscreen" class="terminal-fullscreen-controls">
-            <button class="button button-secondary button-sm" type="button" aria-label="退出终端全屏" @click="exitTerminalFullscreen">
+            <UiButton variant="secondary" size="sm" type="button" aria-label="退出终端全屏" @click="exitTerminalFullscreen">
               <UiIcon name="minimize" />退出全屏
-            </button>
+            </UiButton>
           </div>
         </div>
         <aside class="terminal-shortcuts" aria-label="SSH 快捷指令">
@@ -32,7 +32,7 @@
             <strong>快捷指令</strong>
             <span>点击填入，按 Enter 执行</span>
           </div>
-          <button
+          <UiButton
             v-for="item in quickCommands"
             :key="item.command"
             class="shortcut-command"
@@ -43,14 +43,14 @@
           >
             <span>{{ item.label }}</span>
             <code>{{ item.command }}</code>
-          </button>
+          </UiButton>
         </aside>
       </div>
-      <p v-if="error" class="terminal-error">{{ error }}</p>
+      <p v-if="error" class="terminal-error" role="alert">{{ error }}</p>
       <p class="terminal-hint">空闲 15 分钟或连续使用 2 小时后自动断开。关闭窗口会立即结束远程 Shell。</p>
     </div>
     <template #footer>
-      <button class="button button-secondary" type="button" @click="requestClose">关闭终端</button>
+      <UiButton variant="secondary" type="button" @click="requestClose">关闭终端</UiButton>
     </template>
   </ModalDialog>
 </template>
@@ -61,7 +61,9 @@ import type { IDisposable, Terminal as XtermTerminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { buildNodeSSHTerminalURL, createNodeSSHTerminalTicket } from '../api/client'
+import { normalizeApiErrorMessage, normalizeApiMessage } from '../utils/apiError'
 import ModalDialog from './ModalDialog.vue'
+import StatusBadge from './StatusBadge.vue'
 import UiIcon from './UiIcon.vue'
 
 type TerminalStatus = 'idle' | 'connecting' | 'connected' | 'closed' | 'error'
@@ -104,7 +106,20 @@ const statusLabel = computed(() => ({
   closed: '连接已关闭',
   error: '连接失败'
 } as Record<TerminalStatus, string>)[status.value])
-const statusClass = computed(() => `status-${status.value}`)
+const statusTone = computed<'neutral' | 'warning' | 'success' | 'danger'>(() => ({
+  idle: 'neutral',
+  connecting: 'warning',
+  connected: 'success',
+  closed: 'neutral',
+  error: 'danger'
+})[status.value] as 'neutral' | 'warning' | 'success' | 'danger')
+const statusIcon = computed(() => status.value === 'connecting' ? 'refresh' : status.value === 'connected' ? 'check' : status.value === 'error' ? 'alert' : 'minus')
+
+function cssColor(token: string) {
+  const value = window.getComputedStyle(document.documentElement).getPropertyValue(token).trim()
+  if (!value) throw new Error(`缺少终端颜色令牌：${token}`)
+  return value
+}
 
 function send(message: Record<string, unknown>) {
   if (socket?.readyState === WebSocket.OPEN) {
@@ -217,10 +232,10 @@ async function connect() {
       lineHeight: 1.25,
       scrollback: 5000,
       theme: {
-        background: '#0b1020',
-        foreground: '#d7e0f0',
-        cursor: '#7dd3fc',
-        selectionBackground: '#334155'
+        background: cssColor('--terminal-bg'),
+        foreground: cssColor('--terminal-text'),
+        cursor: cssColor('--terminal-cursor'),
+        selectionBackground: cssColor('--terminal-border-strong')
       }
     })
     fitAddon = new FitAddon()
@@ -256,7 +271,7 @@ async function connect() {
           status.value = 'connecting'
         } else if (message.type === 'error') {
           status.value = 'error'
-          error.value = message.message || 'SSH 终端连接失败。'
+          error.value = normalizeApiMessage(message.message, 'SSH 终端连接失败。')
           terminal.writeln(`\r\n\x1b[31m${error.value}\x1b[0m`)
         }
       } catch (_) {
@@ -276,7 +291,7 @@ async function connect() {
   } catch (requestError: any) {
     if (generation !== connectionGeneration) return
     status.value = 'error'
-    error.value = requestError?.response?.data?.message || '无法创建 SSH 终端连接。'
+    error.value = normalizeApiErrorMessage(requestError, '无法创建 SSH 终端连接。')
     terminal?.writeln(`\r\n\x1b[31m${error.value}\x1b[0m`)
   }
 }
@@ -314,6 +329,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.terminal-panel{height:100%;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;gap:10px}.terminal-toolbar{min-height:34px;display:flex;align-items:center;gap:12px;padding:0 2px}.terminal-status{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700}.terminal-status i{width:8px;height:8px;border-radius:50%;background:#98a2b3}.status-connecting i{background:#f79009;box-shadow:0 0 0 4px rgba(247,144,9,.14)}.status-connected i{background:#12b76a;box-shadow:0 0 0 4px rgba(18,183,106,.14)}.status-error i{background:#f04438}.terminal-target{min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-family:Consolas,monospace;font-size:11px;white-space:nowrap}.terminal-actions{display:flex;gap:7px;margin-left:auto}.terminal-actions .button{gap:6px}.terminal-workspace{height:100%;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:10px}.terminal-stage{position:relative;min-width:0;min-height:0;height:100%;overflow:hidden;background:#0b1020}.terminal-host{box-sizing:border-box;width:100%;height:100%;min-height:0;overflow:hidden;padding:10px;border:1px solid #243149;border-radius:10px;background:#0b1020;box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)}.terminal-stage:fullscreen,.terminal-stage-fullscreen{width:100vw;height:100vh;background:#0b1020}.terminal-stage-fullscreen{position:fixed;inset:0;z-index:2000}.terminal-stage:fullscreen .terminal-host,.terminal-stage-fullscreen .terminal-host{padding:16px;border:0;border-radius:0}.terminal-fullscreen-controls{position:absolute;right:14px;top:14px;z-index:10;opacity:.2;transition:opacity .15s ease}.terminal-stage:hover .terminal-fullscreen-controls,.terminal-fullscreen-controls:focus-within{opacity:1}.terminal-fullscreen-controls .button{color:#e2e8f0;border-color:#475569;background:rgb(15 23 42/.88)}.terminal-shortcuts{height:100%;min-height:0;display:flex;flex-direction:column;gap:7px;overflow-y:auto;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}.shortcut-heading{display:grid;gap:2px;margin-bottom:2px}.shortcut-heading strong{font-size:12px}.shortcut-heading span{color:var(--muted);font-size:9px}.shortcut-command{display:grid;gap:4px;width:100%;padding:9px 10px;text-align:left;border:1px solid var(--line);border-radius:8px;color:var(--text);background:var(--surface);cursor:pointer}.shortcut-command:hover:not(:disabled){border-color:#93c5fd;background:#f8fbff}.shortcut-command:disabled{cursor:not-allowed;opacity:.5}.shortcut-command span{font-size:10px;font-weight:700}.shortcut-command code{overflow:hidden;color:var(--muted);font-size:9px;text-overflow:ellipsis;white-space:nowrap}.terminal-error{margin:0;padding:10px 12px;border-radius:8px;color:#b42318;background:#fef3f2;font-size:11px}.terminal-hint{margin:0;color:var(--subtle);font-size:10px}.terminal-host :deep(.xterm){height:100%}.terminal-host :deep(.xterm-viewport){border-radius:6px}@media(max-width:900px){.terminal-workspace{grid-template-columns:1fr;grid-template-rows:minmax(260px,1fr) auto}.terminal-shortcuts{height:auto;max-height:160px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.shortcut-heading{grid-column:1/-1}}@media(max-width:720px){.terminal-workspace{grid-template-rows:minmax(240px,1fr) auto}.terminal-target{display:none}.terminal-actions .button{padding-inline:9px}.terminal-shortcuts{max-height:145px;grid-template-columns:1fr}}
-.terminal-stage:fullscreen,.terminal-stage-fullscreen{box-sizing:border-box;position:fixed;inset:0 0 1px;width:auto;height:auto;max-width:none;max-height:calc(100dvh - 1px);margin:0;overflow:hidden;background:#0b1020}.terminal-stage-fullscreen{z-index:2000}.terminal-stage:fullscreen .terminal-host,.terminal-stage-fullscreen .terminal-host{position:absolute;inset:0;width:auto;height:auto;padding:12px max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));border:0;border-radius:0}
+.terminal-panel{height:100%;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;gap:10px}.terminal-toolbar{min-height:34px;display:flex;align-items:center;gap:12px;padding:0 2px}.terminal-target{min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-family:Consolas,monospace;font-size:11px;white-space:nowrap}.terminal-actions{display:flex;gap:7px;margin-left:auto}.terminal-actions .button{gap:6px}.terminal-workspace{height:100%;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:10px}.terminal-stage{position:relative;min-width:0;min-height:0;height:100%;overflow:hidden;background:var(--terminal-bg)}.terminal-host{box-sizing:border-box;width:100%;height:100%;min-height:0;overflow:hidden;padding:10px;border:1px solid var(--terminal-border);border-radius:10px;background:var(--terminal-bg);box-shadow:inset 0 0 0 1px var(--terminal-inset)}.terminal-stage:fullscreen,.terminal-stage-fullscreen{width:100vw;height:100vh;background:var(--terminal-bg)}.terminal-stage-fullscreen{position:fixed;inset:0;z-index:2000}.terminal-stage:fullscreen .terminal-host,.terminal-stage-fullscreen .terminal-host{padding:16px;border:0;border-radius:0}.terminal-fullscreen-controls{position:absolute;right:14px;top:14px;z-index:10;opacity:.2;transition:opacity .15s ease}.terminal-stage:hover .terminal-fullscreen-controls,.terminal-fullscreen-controls:focus-within{opacity:1}.terminal-fullscreen-controls .button{color:var(--terminal-text-strong);border-color:var(--terminal-border-muted);background:var(--terminal-control-bg)}.terminal-shortcuts{height:100%;min-height:0;display:flex;flex-direction:column;gap:7px;overflow-y:auto;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}.shortcut-heading{display:grid;gap:2px;margin-bottom:2px}.shortcut-heading strong{font-size:12px}.shortcut-heading span{color:var(--muted);font-size:9px}.shortcut-command{display:grid;gap:4px;width:100%;padding:9px 10px;text-align:left;border:1px solid var(--line);border-radius:8px;color:var(--text);background:var(--surface);cursor:pointer}.shortcut-command:hover:not(:disabled){border-color:var(--info-border-strong);background:var(--info-canvas)}.shortcut-command:disabled{cursor:not-allowed;opacity:.5}.shortcut-command span{font-size:10px;font-weight:700}.shortcut-command code{overflow:hidden;color:var(--muted);font-size:9px;text-overflow:ellipsis;white-space:nowrap}.terminal-error{margin:0;padding:10px 12px;border-radius:8px;color:var(--danger);background:var(--danger-soft);font-size:11px}.terminal-hint{margin:0;color:var(--subtle);font-size:10px}.terminal-host :deep(.xterm){height:100%}.terminal-host :deep(.xterm-viewport){border-radius:6px}@media(max-width:900px){.terminal-workspace{grid-template-columns:1fr;grid-template-rows:minmax(260px,1fr) auto}.terminal-shortcuts{height:auto;max-height:160px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.shortcut-heading{grid-column:1/-1}}@media(max-width:720px){.terminal-workspace{grid-template-rows:minmax(240px,1fr) auto}.terminal-target{display:none}.terminal-actions .button{padding-inline:9px}.terminal-shortcuts{max-height:145px;grid-template-columns:1fr}}
+.terminal-stage:fullscreen,.terminal-stage-fullscreen{box-sizing:border-box;position:fixed;inset:0 0 1px;width:auto;height:auto;max-width:none;max-height:calc(100dvh - 1px);margin:0;overflow:hidden;background:var(--terminal-bg)}.terminal-stage-fullscreen{z-index:2000}.terminal-stage:fullscreen .terminal-host,.terminal-stage-fullscreen .terminal-host{position:absolute;inset:0;width:auto;height:auto;padding:12px max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));border:0;border-radius:0}
 </style>

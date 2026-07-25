@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"time"
 
 	"gorm.io/gorm"
@@ -48,6 +49,7 @@ type Plan struct {
 	TrafficCalcMode        int16      `json:"traffic_calc_mode" gorm:"not null;default:0"`
 	IsActive               bool       `json:"is_active" gorm:"default:true"`
 	SortOrder              int        `json:"sort_order" gorm:"default:0"`
+	Revision               uint64     `json:"revision" gorm:"not null;default:1"`
 	SKUs                   []PlanSKU  `json:"skus,omitempty" gorm:"foreignKey:PlanID"`
 	NodeGroup              *NodeGroup `json:"node_group,omitempty" gorm:"foreignKey:NodeGroupID"`
 	CreatedAt              time.Time  `json:"created_at"`
@@ -79,7 +81,7 @@ type Subscription struct {
 	ID                uint       `json:"id" gorm:"primaryKey"`
 	UserID            uint       `json:"user_id" gorm:"index"`
 	PlanID            uint       `json:"plan_id" gorm:"index"`
-	PlanSKUID         uint       `json:"plan_sku_id" gorm:"index"`
+	PlanSKUID         uint       `json:"plan_sku_id" gorm:"column:plan_sku_id;index"`
 	NodeGroupID       uint       `json:"node_group_id" gorm:"index;not null"`
 	SubscriptionType  int16      `json:"subscription_type" gorm:"not null;default:1"`
 	StartAt           time.Time  `json:"start_at"`
@@ -104,7 +106,7 @@ type Order struct {
 	UserID               uint       `json:"user_id" gorm:"index"`
 	SubscriptionID       uint       `json:"subscription_id" gorm:"index"`
 	PlanID               uint       `json:"plan_id" gorm:"index"`
-	PlanSKUID            uint       `json:"plan_sku_id" gorm:"index"`
+	PlanSKUID            uint       `json:"plan_sku_id" gorm:"column:plan_sku_id;index"`
 	TradeNo              string     `json:"trade_no" gorm:"size:64;uniqueIndex"`
 	OrderType            string     `json:"order_type" gorm:"size:20;not null;default:new"`
 	TargetSubscriptionID *uint      `json:"target_subscription_id" gorm:"index"`
@@ -250,7 +252,9 @@ type NodeGroup struct {
 	Code                string    `json:"code" gorm:"size:80;uniqueIndex;not null"`
 	Description         string    `json:"description" gorm:"size:255"`
 	IsEnabled           bool      `json:"is_enabled" gorm:"not null;default:true"`
+	Revision            uint64    `json:"revision" gorm:"not null;default:1"`
 	ProtocolEndpointIDs []uint    `json:"protocol_endpoint_ids" gorm:"-"`
+	PlanCount           int64     `json:"plan_count" gorm:"-"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
 }
@@ -264,15 +268,109 @@ type NodeGroupEndpoint struct {
 }
 
 type SubscriptionToken struct {
-	ID             uint       `json:"id" gorm:"primaryKey"`
-	UserID         uint       `json:"user_id" gorm:"uniqueIndex;not null"`
-	SubscriptionID uint       `json:"subscription_id,omitempty" gorm:"index"`
-	TokenHash      string     `json:"-" gorm:"size:64;uniqueIndex;not null"`
-	TokenPrefix    string     `json:"token_prefix" gorm:"size:12;not null"`
-	LastUsedAt     *time.Time `json:"last_used_at"`
-	RevokedAt      *time.Time `json:"revoked_at"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID              uint       `json:"id" gorm:"primaryKey"`
+	UserID          uint       `json:"user_id" gorm:"uniqueIndex;not null"`
+	SubscriptionID  *uint      `json:"subscription_id,omitempty" gorm:"index"`
+	TokenHash       string     `json:"-" gorm:"size:64;uniqueIndex;not null"`
+	TokenCiphertext string     `json:"-" gorm:"column:token_ciphertext;type:text"`
+	TokenPrefix     string     `json:"token_prefix" gorm:"size:12;not null"`
+	LastUsedAt      *time.Time `json:"last_used_at"`
+	RevokedAt       *time.Time `json:"revoked_at"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// SubscriptionTemplate binds operator-managed metadata and declarative
+// customization to one system-owned renderer. Renderer code, credential
+// injection and response types remain backend-owned.
+type SubscriptionTemplate struct {
+	ID            uint            `json:"id" gorm:"primaryKey"`
+	Name          string          `json:"name" gorm:"size:80;not null"`
+	Slug          string          `json:"slug" gorm:"size:80;uniqueIndex;not null"`
+	Description   string          `json:"description" gorm:"size:255"`
+	Renderer      string          `json:"renderer" gorm:"size:32;index;not null"`
+	Customization json.RawMessage `json:"customization,omitempty" gorm:"type:json;not null"`
+	ContentType   string          `json:"content_type,omitempty" gorm:"-"`
+	IsActive      bool            `json:"is_active" gorm:"index;not null;default:true"`
+	SortOrder     int             `json:"sort_order" gorm:"not null;default:0"`
+	Revision      uint64          `json:"revision" gorm:"not null;default:1"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
+}
+
+// SubscriptionRuleSet is a reusable, renderer-specific remote rule source.
+// Templates reference it by ID and own only the match action and ordering.
+type SubscriptionRuleSet struct {
+	ID          uint      `json:"id" gorm:"primaryKey"`
+	Name        string    `json:"name" gorm:"size:80;not null"`
+	Description string    `json:"description" gorm:"size:255"`
+	Renderer    string    `json:"renderer" gorm:"size:32;uniqueIndex:ux_subscription_rule_set_renderer_tag,priority:1;index;not null"`
+	Tag         string    `json:"tag" gorm:"size:64;uniqueIndex:ux_subscription_rule_set_renderer_tag,priority:2;not null"`
+	URL         string    `json:"url" gorm:"size:2048;not null"`
+	Behavior    string    `json:"behavior,omitempty" gorm:"size:16;not null;default:''"`
+	Format      string    `json:"format" gorm:"size:32;not null"`
+	Interval    int       `json:"interval" gorm:"not null;default:86400"`
+	IsActive    bool      `json:"is_active" gorm:"index;not null;default:true"`
+	Revision    uint64    `json:"revision" gorm:"not null;default:1"`
+	UsageCount  int64     `json:"usage_count" gorm:"-"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// SubscriptionTemplateRuleSetBinding indexes reusable rule-set references
+// stored in a template customization. The foreign keys provide deletion
+// integrity while the customization retains the mixed library/quick order.
+type SubscriptionTemplateRuleSetBinding struct {
+	SubscriptionTemplateID uint   `json:"subscription_template_id" gorm:"primaryKey;autoIncrement:false"`
+	SubscriptionRuleSetID  uint   `json:"subscription_rule_set_id" gorm:"primaryKey;autoIncrement:false;index"`
+	Action                 string `json:"action" gorm:"size:96;not null"`
+	Position               int    `json:"position" gorm:"not null"`
+}
+
+// ProtocolCredential binds one sellable endpoint credential to one subscription.
+// Secrets are encrypted at rest; observable events carry only CredentialID and
+// PrincipalKey so a kernel event can be attributed without exposing the secret.
+type ProtocolCredential struct {
+	ID                 uint       `json:"id" gorm:"primaryKey"`
+	SubscriptionID     uint       `json:"subscription_id" gorm:"uniqueIndex:ux_protocol_credential_subscription_endpoint,priority:1;index;not null"`
+	UserID             uint       `json:"user_id" gorm:"index;not null"`
+	ProtocolEndpointID uint       `json:"protocol_endpoint_id" gorm:"uniqueIndex:ux_protocol_credential_subscription_endpoint,priority:2;index;not null"`
+	NodeID             uint       `json:"node_id" gorm:"index;not null"`
+	CredentialID       string     `json:"credential_id" gorm:"size:96;uniqueIndex;not null"`
+	PrincipalKey       string     `json:"principal_key" gorm:"size:128;uniqueIndex;not null"`
+	Secret             string     `json:"-" gorm:"type:text;not null"`
+	ListenPort         int        `json:"listen_port" gorm:"not null"`
+	PublicPort         int        `json:"public_port" gorm:"not null"`
+	Status             string     `json:"status" gorm:"size:20;index;not null;default:active"`
+	ExpiresAt          time.Time  `json:"expires_at" gorm:"index;not null"`
+	LastUsedAt         *time.Time `json:"last_used_at,omitempty"`
+	RevokedAt          *time.Time `json:"revoked_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+// FlowUsage is the idempotent cursor for Zero flow.updated/flow.completed
+// events. It lets the panel charge only the new cumulative byte delta while a
+// flow is active and settle any missing delta from the final completed event.
+type FlowUsage struct {
+	ID                   uint       `json:"id" gorm:"primaryKey"`
+	NodeID               uint       `json:"node_id" gorm:"uniqueIndex:ux_flow_usage_node_flow,priority:1;index;not null"`
+	FlowID               string     `json:"flow_id" gorm:"size:128;uniqueIndex:ux_flow_usage_node_flow,priority:2;not null"`
+	ProtocolCredentialID uint       `json:"protocol_credential_id" gorm:"index;not null"`
+	SubscriptionID       uint       `json:"subscription_id" gorm:"index;not null"`
+	ProtocolEndpointID   uint       `json:"protocol_endpoint_id" gorm:"index;not null"`
+	PrincipalKey         string     `json:"principal_key" gorm:"size:128;index;not null"`
+	Revision             uint64     `json:"revision" gorm:"not null;default:0"`
+	RawBytes             int64      `json:"raw_bytes" gorm:"not null;default:0"`
+	UploadBytes          int64      `json:"upload_bytes" gorm:"not null;default:0"`
+	DownloadBytes        int64      `json:"download_bytes" gorm:"not null;default:0"`
+	UsedBytes            int64      `json:"used_bytes" gorm:"not null;default:0"`
+	Status               string     `json:"status" gorm:"size:20;index;not null;default:active"`
+	LastEventID          string     `json:"last_event_id" gorm:"size:191;not null"`
+	LastSeenAt           time.Time  `json:"last_seen_at" gorm:"index;not null"`
+	CompletedAt          *time.Time `json:"completed_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 type TrafficRecord struct {
@@ -281,7 +379,10 @@ type TrafficRecord struct {
 	SubscriptionID          uint      `json:"subscription_id,omitempty" gorm:"index"`
 	NodeID                  uint      `json:"node_id" gorm:"index;uniqueIndex:ux_traffic_node_report,priority:1;uniqueIndex:ux_traffic_node_nonce,priority:1"`
 	ProtocolEndpointID      uint      `json:"protocol_endpoint_id" gorm:"index"`
-	ReportID                string    `json:"report_id,omitempty" gorm:"size:64;uniqueIndex:ux_traffic_node_report,priority:2"`
+	ReportID                string    `json:"report_id,omitempty" gorm:"size:191;uniqueIndex:ux_traffic_node_report,priority:2"`
+	FlowID                  string    `json:"flow_id,omitempty" gorm:"size:128;index"`
+	EventType               string    `json:"event_type,omitempty" gorm:"size:32;index"`
+	EventRevision           uint64    `json:"event_revision,omitempty"`
 	Nonce                   string    `json:"-" gorm:"size:64;uniqueIndex:ux_traffic_node_nonce,priority:2"`
 	RawBytes                int64     `json:"raw_bytes"`
 	UploadBytes             int64     `json:"upload_bytes"`
@@ -425,18 +526,20 @@ type SystemConfig struct {
 }
 
 type ProtocolDeployment struct {
-	ID                 uint       `json:"id" gorm:"primaryKey"`
-	ProtocolEndpointID uint       `json:"protocol_endpoint_id" gorm:"index;not null"`
-	NodeID             uint       `json:"node_id" gorm:"index;not null"`
-	ConfigRevision     uint64     `json:"config_revision" gorm:"not null"`
-	Status             string     `json:"status" gorm:"size:20;index;not null"`
-	RequestedBy        uint       `json:"requested_by" gorm:"index"`
-	Output             string     `json:"output" gorm:"type:text"`
-	Error              string     `json:"error" gorm:"type:text"`
-	StartedAt          *time.Time `json:"started_at"`
-	FinishedAt         *time.Time `json:"finished_at"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	ID                  uint       `json:"id" gorm:"primaryKey"`
+	ProtocolEndpointID  uint       `json:"protocol_endpoint_id" gorm:"index;not null"`
+	NodeID              uint       `json:"node_id" gorm:"index;not null"`
+	ConfigRevision      uint64     `json:"config_revision" gorm:"not null"`
+	DesiredConfigSHA256 string     `json:"desired_config_sha256" gorm:"size:64"`
+	AppliedConfigSHA256 string     `json:"applied_config_sha256" gorm:"size:64"`
+	Status              string     `json:"status" gorm:"size:20;index;not null"`
+	RequestedBy         uint       `json:"requested_by" gorm:"index"`
+	Output              string     `json:"output" gorm:"type:text"`
+	Error               string     `json:"error" gorm:"type:text"`
+	StartedAt           *time.Time `json:"started_at"`
+	FinishedAt          *time.Time `json:"finished_at"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 type QuotaEvent struct {

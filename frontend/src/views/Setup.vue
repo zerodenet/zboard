@@ -34,32 +34,33 @@
           <div class="alert"><UiIcon name="shield" />数据库密码、JWT 与加密密钥始终由部署环境管理，不会发送到浏览器。</div>
         </div>
 
-        <form v-else-if="step === 2" class="setup-content" @submit.prevent="next">
+        <form v-else-if="step === 2" id="setup-site-form" ref="formElement" class="setup-content" novalidate @submit.prevent="next">
           <p class="page-eyebrow">站点信息</p>
           <h2>配置你的控制台</h2>
           <p class="muted">这些信息可以在系统设置中随时修改。</p>
-          <label class="field"><span>站点名称</span><input v-model.trim="form.site_name" maxlength="80" required placeholder="我的 zboard" /></label>
-          <label class="field"><span>公开访问地址</span><input v-model.trim="form.site_url" type="url" required placeholder="https://panel.example.com" /><small class="field-hint">订阅链接和页面跳转将以此地址为基础。</small></label>
-          <label class="check-field"><input v-model="form.allow_registration" type="checkbox" /><span><strong>允许访客注册</strong><br /><small class="field-hint">关闭后，仅管理员可以创建用户。</small></span></label>
+          <PageAlert v-if="fieldErrors.formError.value" tone="danger" title="站点信息未完成">{{ fieldErrors.formError.value }}</PageAlert>
+          <FormField v-slot="{ controlAttrs }" label="站点名称" name="setup-site-name" :error="fieldErrors.fields.site_name" required full><UiInput v-model.trim="form.site_name" v-bind="controlAttrs" maxlength="80" placeholder="我的 zboard" /></FormField>
+          <FormField v-slot="{ controlAttrs }" label="公开访问地址" name="setup-site-url" hint="订阅链接和页面跳转将以此地址为基础。" :error="fieldErrors.fields.site_url" required full><UiInput v-model.trim="form.site_url" v-bind="controlAttrs" type="url" placeholder="https://panel.example.com" /></FormField>
+          <label class="check-field"><UiCheckbox v-model="form.allow_registration" /><span><strong>允许访客注册</strong><br /><small class="field-hint">关闭后，仅管理员可以创建用户。</small></span></label>
         </form>
 
-        <form v-else class="setup-content" @submit.prevent="submit">
+        <form v-else id="setup-admin-form" ref="formElement" class="setup-content" novalidate @submit.prevent="submit">
           <p class="page-eyebrow">首位用户</p>
           <h2>创建用户并授予管理员权限</h2>
           <p class="muted">这个用户拥有完整的用户中心，同时可以进入后台管理用户、商品、节点、任务与系统配置。</p>
-          <label class="field"><span>用户邮箱</span><input v-model.trim="form.admin_email" maxlength="128" type="email" autocomplete="email" required placeholder="admin@example.com" /></label>
+          <PageAlert v-if="fieldErrors.formError.value" tone="danger" title="管理员账户未完成">{{ fieldErrors.formError.value }}</PageAlert>
+          <FormField v-slot="{ controlAttrs }" label="用户邮箱" name="setup-admin-email" :error="fieldErrors.fields.admin_email" required full><UiInput v-model.trim="form.admin_email" v-bind="controlAttrs" maxlength="128" type="email" autocomplete="email" placeholder="admin@example.com" /></FormField>
           <div class="form-grid">
-            <label class="field"><span>密码</span><input v-model="form.admin_password" minlength="12" maxlength="72" type="password" autocomplete="new-password" required /></label>
-            <label class="field"><span>确认密码</span><input v-model="confirmPassword" minlength="12" maxlength="72" type="password" autocomplete="new-password" required /></label>
+            <FormField v-slot="{ controlAttrs }" label="密码" name="setup-admin-password" hint="长度为 12–72 个 UTF-8 字节。" :error="fieldErrors.fields.admin_password" required><UiInput v-model="form.admin_password" v-bind="controlAttrs" minlength="12" maxlength="72" type="password" autocomplete="new-password" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="确认密码" name="setup-confirm-password" hint="再次输入相同密码。" :error="fieldErrors.fields.confirm_password" required><UiInput v-model="confirmPassword" v-bind="controlAttrs" minlength="12" maxlength="72" type="password" autocomplete="new-password" /></FormField>
           </div>
-          <small class="field-hint">密码长度为 12–72 个 UTF-8 字节，服务端将只保存安全哈希。</small>
         </form>
 
-        <div v-if="error" class="alert alert-danger"><UiIcon name="alert" />{{ error }}</div>
         <footer>
-          <button v-if="step > 1" class="button button-secondary" type="button" :disabled="submitting" @click="step--">返回</button>
-          <button v-if="step < 3" class="button" type="button" @click="next">继续</button>
-          <button v-else class="button" type="button" :disabled="submitting" @click="submit">{{ submitting ? '正在初始化…' : '完成安装' }}</button>
+          <UiButton v-if="step > 1" variant="secondary" type="button" :disabled="submitting" @click="back">返回</UiButton>
+          <UiButton v-if="step === 1" type="button" @click="next">继续</UiButton>
+          <UiButton v-else-if="step === 2" form="setup-site-form" type="submit">继续</UiButton>
+          <UiButton v-else form="setup-admin-form" type="submit" :loading="submitting">完成安装</UiButton>
         </footer>
       </section>
     </main>
@@ -67,56 +68,90 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { installZboard } from '../api/client'
+import FormField from '../components/FormField.vue'
+import PageAlert from '../components/PageAlert.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import UiIcon from '../components/UiIcon.vue'
+import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import { useAppStore } from '../stores/app'
+import { collectFieldErrors, isEmail, isHttpUrl, isUtf8LengthInRange } from '../utils/validation'
 
 const app = useAppStore()
 const router = useRouter()
 const step = ref(1)
 const submitting = ref(false)
-const error = ref('')
 const confirmPassword = ref('')
+const formElement = ref<HTMLElement | null>(null)
 const titles = ['检查环境', '配置站点', '创建首位用户']
 const descriptions = ['确认服务与数据库连接', '设置站点名称和访问地址', '为首位用户授予管理员权限']
 const form = reactive({ site_name: 'zboard', site_url: window.location.origin, allow_registration: true, admin_email: '', admin_password: '' })
+const fieldErrors = useFormErrors()
+const formState = useDirtyForm(() => ({ ...form, confirm_password: confirmPassword.value }))
+useUnsavedChangesGuard(
+  () => formState.dirty.value,
+  () => formState.confirmDiscard({
+    title: '离开安装向导？',
+    message: '尚未完成的站点与管理员信息不会被保存。',
+    confirmText: '离开向导',
+  }),
+)
 
-function next() {
-  error.value = ''
-  if (step.value === 2 && (!form.site_name || !/^https?:\/\//.test(form.site_url))) {
-    error.value = '请输入站点名称和完整的 HTTP 或 HTTPS 地址。'
-    return
+watch(() => form.site_name, () => fieldErrors.clear('site_name'))
+watch(() => form.site_url, () => fieldErrors.clear('site_url'))
+watch(() => form.admin_email, () => fieldErrors.clear('admin_email'))
+watch(() => form.admin_password, () => fieldErrors.clear('admin_password'))
+watch(confirmPassword, () => fieldErrors.clear('confirm_password'))
+
+function back() {
+  fieldErrors.clear()
+  step.value = Math.max(1, step.value - 1)
+}
+
+async function next() {
+  if (step.value === 2) {
+    form.site_name = form.site_name.trim()
+    form.site_url = form.site_url.trim().replace(/\/+$/, '')
+    const valid = await fieldErrors.applyValidation(collectFieldErrors({
+      site_name: !isUtf8LengthInRange(form.site_name, 1, 80, true) && '站点名称必须为 1–80 个 UTF-8 字节。',
+      site_url: !isHttpUrl(form.site_url) && '请输入不含账号、密码或片段的完整 HTTP 或 HTTPS 地址。',
+    }), formElement, '请更正标记字段后再继续。')
+    if (!valid) return
   }
   step.value = Math.min(3, step.value + 1)
 }
 
 async function submit() {
-  error.value = ''
-  if (!/^\S+@\S+\.\S+$/.test(form.admin_email)) { error.value = '请输入有效的管理员邮箱。'; return }
-  const bytes = new TextEncoder().encode(form.admin_password).length
-  if (bytes < 12 || bytes > 72) { error.value = '管理员密码必须为 12–72 个 UTF-8 字节。'; return }
-  if (form.admin_password !== confirmPassword.value) { error.value = '两次输入的密码不一致。'; return }
+  form.admin_email = form.admin_email.trim().toLowerCase()
+  const valid = await fieldErrors.applyValidation(collectFieldErrors({
+    admin_email: !isEmail(form.admin_email) && '请输入不超过 128 个 UTF-8 字节的有效管理员邮箱。',
+    admin_password: !isUtf8LengthInRange(form.admin_password, 12, 72) && '管理员密码必须为 12–72 个 UTF-8 字节。',
+    confirm_password: form.admin_password !== confirmPassword.value && '两次输入的密码不一致。',
+  }), formElement, '请更正标记字段后再完成安装。')
+  if (!valid) return
   submitting.value = true
   try {
     const result = await installZboard(form)
     app.completeSetup(result)
+    formState.markClean()
     await router.replace('/admin/dashboard')
   } catch (e: any) {
-    error.value = e?.response?.data?.message || '安装失败，请检查服务日志后重试。'
-    if (e?.response?.status === 409) { await app.loadSetupStatus(true); await router.replace('/login') }
+    await fieldErrors.applyApiError(e, '安装失败，请检查服务日志后重试。', formElement, { site_name: 'site_name', site_url: 'site_url', admin_email: 'admin_email', admin_password: 'admin_password' })
+    if (e?.response?.status === 409) { formState.markClean(); await app.loadSetupStatus(true); await router.replace('/login') }
   } finally { submitting.value = false }
 }
+
 </script>
 
 <style scoped>
-.setup-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(300px, 38%) minmax(0, 1fr); background: #f8fafc; }
-.setup-aside { display: flex; flex-direction: column; justify-content: space-between; gap: 40px; padding: 46px; color: #cbd5e1; background: linear-gradient(150deg, #0d1729, #15325a); }
-.setup-aside h1 { margin: 0 0 14px; color: #fff; font-size: clamp(32px, 4vw, 48px); line-height: 1.12; }.setup-aside > div > p:last-child { max-width: 500px; color: #9fb0c8; line-height: 1.7; }
-.setup-steps { display: grid; gap: 18px; margin: 0; padding: 0; list-style: none; }.setup-steps li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; opacity: .48; }.setup-steps li > span { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #7890b2; border-radius: 50%; font-size: 12px; }.setup-steps li div { display: grid; gap: 2px; }.setup-steps strong { color: #eef4ff; font-size: 13px; }.setup-steps small { color: #8da0bb; }.setup-steps li.active, .setup-steps li.complete { opacity: 1; }.setup-steps li.active > span { border-color: #60a5fa; background: #2563eb; color: #fff; }.setup-steps li.complete > span { border-color: #34d399; color: #6ee7b7; }
-.setup-main { display: grid; place-items: center; padding: 40px; }.setup-card { width: min(720px, 100%); overflow: hidden; background: #fff; border: 1px solid var(--line); border-radius: 20px; box-shadow: 0 24px 70px rgb(16 24 40 / .1); }.setup-card > header { padding: 18px 30px 0; }.setup-card > header > span { color: var(--muted); font-size: 11px; font-weight: 700; }.progress { height: 4px; margin-top: 12px; overflow: hidden; border-radius: 999px; background: #eef2f6; }.progress i { display: block; height: 100%; background: linear-gradient(90deg, #2563eb, #06b6d4); transition: width .2s ease; }
+.setup-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(300px, 38%) minmax(0, 1fr); background: var(--page); }
+.setup-aside { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 40px; overflow: hidden; padding: 46px; color: var(--sidebar-text); background: var(--sidebar); }
+.setup-aside::before { content: ''; position: absolute; inset: 0; opacity: .25; background-image: linear-gradient(var(--auth-grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--auth-grid-line) 1px, transparent 1px); background-size: 44px 44px; mask-image: linear-gradient(to bottom right, var(--color-black), transparent 76%); pointer-events: none; }.setup-aside > * { position: relative; z-index: 1; }
+.setup-aside h1 { margin: 0 0 14px; color: var(--text-inverse); font-size: clamp(32px, 4vw, 48px); line-height: 1.12; }.setup-aside > div > p:last-child { max-width: 500px; color: var(--setup-muted-soft); line-height: 1.7; }
+.setup-steps { display: grid; gap: 18px; margin: 0; padding: 0; list-style: none; }.setup-steps li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; opacity: .48; }.setup-steps li > span { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--setup-muted-strong); border-radius: 50%; font-size: 12px; }.setup-steps li div { display: grid; gap: 2px; }.setup-steps strong { color: var(--info-soft); font-size: 13px; }.setup-steps small { color: var(--setup-muted); }.setup-steps li.active, .setup-steps li.complete { opacity: 1; }.setup-steps li.active > span { border-color: var(--focus-border); background: var(--primary); color: var(--text-inverse); }.setup-steps li.complete > span { border-color: var(--success-accent); color: var(--success-accent-soft); }
+.setup-main { display: grid; place-items: center; padding: 40px; }.setup-card { width: min(720px, 100%); overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: 0 24px 70px var(--card-shadow); }.setup-card > header { padding: 18px 30px 0; }.setup-card > header > span { color: var(--muted); font-size: 11px; font-weight: 700; }.progress { height: 4px; margin-top: 12px; overflow: hidden; border-radius: 999px; background: var(--surface-muted); }.progress i { display: block; height: 100%; background: var(--primary); transition: width .2s ease; }
 .setup-content { display: grid; gap: 18px; padding: 28px 30px; }.setup-content h2 { margin: -8px 0 0; font-size: 25px; }.setup-content > .muted { margin: -8px 0 4px; line-height: 1.6; }.check-list { display: grid; border: 1px solid var(--line); border-radius: 12px; }.check-list > div { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 14px; }.check-list > div + div { border-top: 1px solid var(--line); }.check-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: var(--primary); background: var(--primary-soft); }.check-list div > div { min-width: 0; display: grid; gap: 2px; }.check-list strong { font-size: 13px; }.check-list small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .setup-card footer { display: flex; justify-content: flex-end; gap: 9px; padding: 17px 30px; border-top: 1px solid var(--line); background: var(--surface-soft); }
 @media (max-width: 820px) { .setup-shell { grid-template-columns: 1fr; }.setup-aside { gap: 22px; padding: 28px; }.setup-steps { grid-template-columns: repeat(3, 1fr); gap: 8px; }.setup-steps li { grid-template-columns: 1fr; }.setup-steps small { display: none; }.setup-main { padding: 22px 14px; } }

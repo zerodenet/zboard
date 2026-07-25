@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -19,6 +20,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,6 +36,7 @@ import (
 )
 
 const (
+	adminAttentionStatus   = "attention"
 	orderStatusPending     = "pending"
 	orderStatusPaid        = "paid"
 	orderStatusFailed      = "failed"
@@ -41,6 +44,7 @@ const (
 	orderStatusSuccess     = "success"
 	subStatusActive        = "active"
 	subStatusExpired       = "expired"
+	subStatusCanceled      = "canceled"
 	userStatusActive       = "active"
 	userStatusSuspended    = "suspended"
 	userStatusDeactivated  = "deactivated"
@@ -55,6 +59,7 @@ const (
 	sshPrivilegeNone       = "none"
 	sshPrivilegeSudo       = "sudo"
 	sshPrivilegeSU         = "su"
+	maxEndpointSelection   = 10000
 )
 
 var (
@@ -96,6 +101,78 @@ type userPublic struct {
 	Email   string `json:"email"`
 	IsAdmin bool   `json:"is_admin"`
 	Status  string `json:"status"`
+}
+
+type adminUserListItem struct {
+	userPublic
+	ActiveSubscriptionCount int64     `json:"active_subscription_count"`
+	TotalSubscriptionCount  int64     `json:"total_subscription_count"`
+	PendingOrderCount       int64     `json:"pending_order_count"`
+	TotalOrderCount         int64     `json:"total_order_count"`
+	CreatedAt               time.Time `json:"created_at"`
+}
+
+type adminUserSubscriptionCountRow struct {
+	UserID                  uint  `gorm:"column:user_id"`
+	ActiveSubscriptionCount int64 `gorm:"column:active_subscription_count"`
+	TotalSubscriptionCount  int64 `gorm:"column:total_subscription_count"`
+}
+
+type adminUserOrderCountRow struct {
+	UserID            uint  `gorm:"column:user_id"`
+	PendingOrderCount int64 `gorm:"column:pending_order_count"`
+	TotalOrderCount   int64 `gorm:"column:total_order_count"`
+}
+
+type adminSubscriptionListItem struct {
+	ID                uint       `json:"id"`
+	UserID            uint       `json:"user_id"`
+	UserEmail         string     `json:"user_email"`
+	PlanID            uint       `json:"plan_id"`
+	PlanName          string     `json:"plan_name"`
+	PlanSKUID         uint       `json:"plan_sku_id"`
+	SKUName           string     `json:"sku_name"`
+	NodeGroupID       uint       `json:"node_group_id"`
+	SubscriptionType  int16      `json:"subscription_type"`
+	StartAt           time.Time  `json:"start_at"`
+	EndAt             time.Time  `json:"end_at"`
+	Status            string     `json:"status"`
+	FlowTotal         int64      `json:"flow_total"`
+	FlowUsed          int64      `json:"flow_used"`
+	SpeedLimitMbps    int        `json:"speed_limit_mbps"`
+	DeviceLimit       int        `json:"device_limit"`
+	FamilyLimit       int        `json:"family_limit"`
+	RenewalPriceMinor int64      `json:"renewal_price_minor"`
+	ResetPolicy       int16      `json:"reset_policy"`
+	NextResetAt       *time.Time `json:"next_reset_at"`
+	TrafficCalcMode   int16      `json:"traffic_calc_mode"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
+func applyEffectiveSubscriptionStatusFilter(query *gorm.DB, status string, now time.Time) *gorm.DB {
+	switch status {
+	case subStatusActive:
+		return query.Where(
+			"subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total",
+			subStatusActive, now,
+		)
+	case subStatusExpired:
+		return query.Where(
+			"(subscriptions.status = ? OR (subscriptions.status = ? AND (subscriptions.end_at <= ? OR subscriptions.flow_used >= subscriptions.flow_total)))",
+			subStatusExpired, subStatusActive, now,
+		)
+	default:
+		return query.Where("subscriptions.status = ?", status)
+	}
+}
+
+func effectiveSubscriptionStatus(subscription model.Subscription, now time.Time) string {
+	if subscription.Status == subStatusActive &&
+		(!subscription.EndAt.After(now) || subscription.FlowUsed >= subscription.FlowTotal) {
+		return subStatusExpired
+	}
+	return subscription.Status
 }
 
 type nodeCreateReq struct {
@@ -162,6 +239,7 @@ type planUpdateReq struct {
 	ResetPolicy            *int16  `json:"reset_policy"`
 	TrafficCalcMode        *int16  `json:"traffic_calc_mode"`
 	NodeGroupID            *uint   `json:"node_group_id"`
+	ExpectedRevision       *uint64 `json:"expected_revision"`
 }
 
 type nodeGroupCreateReq struct {
@@ -178,6 +256,7 @@ type nodeGroupUpdateReq struct {
 	Description         *string `json:"description"`
 	IsEnabled           *bool   `json:"is_enabled"`
 	ProtocolEndpointIDs *[]uint `json:"protocol_endpoint_ids"`
+	ExpectedRevision    *uint64 `json:"expected_revision"`
 }
 
 type planSKUReq struct {
@@ -243,6 +322,40 @@ type trafficReconciliationItem struct {
 	Result         string `json:"result"`
 }
 
+type trafficReconciliationAggregates struct {
+	SubscriptionCount   int64 `json:"subscription_count" gorm:"column:subscription_count"`
+	MatchedCount        int64 `json:"matched_count" gorm:"column:matched_count"`
+	MissingRecordsCount int64 `json:"missing_records_count" gorm:"column:missing_records_count"`
+	OverRecordedCount   int64 `json:"over_recorded_count" gorm:"column:over_recorded_count"`
+	FlowUsed            int64 `json:"flow_used" gorm:"column:flow_used"`
+	RecordedBytes       int64 `json:"recorded_bytes" gorm:"column:recorded_bytes"`
+	MissingBytes        int64 `json:"missing_bytes" gorm:"column:missing_bytes"`
+	OverRecordedBytes   int64 `json:"over_recorded_bytes" gorm:"column:over_recorded_bytes"`
+}
+
+type trafficRecordListItem struct {
+	ID                      uint      `json:"id"`
+	UserID                  uint      `json:"user_id"`
+	SubscriptionID          uint      `json:"subscription_id,omitempty"`
+	NodeID                  uint      `json:"node_id"`
+	ProtocolEndpointID      uint      `json:"protocol_endpoint_id"`
+	RawBytes                int64     `json:"raw_bytes"`
+	UploadBytes             int64     `json:"upload_bytes"`
+	DownloadBytes           int64     `json:"download_bytes"`
+	ProtocolMultiplierMilli int64     `json:"protocol_multiplier_milli"`
+	UsedBytes               int64     `json:"used_bytes"`
+	RecordAt                time.Time `json:"record_at"`
+}
+
+type trafficRecordAggregates struct {
+	RawBytes              int64 `json:"raw_bytes" gorm:"column:raw_bytes"`
+	UsedBytes             int64 `json:"used_bytes" gorm:"column:used_bytes"`
+	UserCount             int64 `json:"user_count" gorm:"column:user_count"`
+	SubscriptionCount     int64 `json:"subscription_count" gorm:"column:subscription_count"`
+	NodeCount             int64 `json:"node_count" gorm:"column:node_count"`
+	ProtocolEndpointCount int64 `json:"protocol_endpoint_count" gorm:"column:protocol_endpoint_count"`
+}
+
 type nodeSSHTestReq struct {
 	NodeID uint `json:"node_id"`
 }
@@ -277,9 +390,17 @@ type protocolEndpointWriteReq struct {
 	Tags             string `json:"tags"`
 }
 
+type protocolEndpointSelectionSnapshot struct {
+	IDs        []uint    `json:"ids"`
+	Total      int64     `json:"total"`
+	ResolvedAt time.Time `json:"resolved_at"`
+}
+
 type subscriptionManifestNode struct {
 	ID              uint            `json:"id"`
 	NodeID          uint            `json:"node_id"`
+	SubscriptionID  uint            `json:"subscription_id,omitempty"`
+	CredentialID    string          `json:"credential_id,omitempty"`
 	Name            string          `json:"name"`
 	Region          string          `json:"region"`
 	Address         string          `json:"address"`
@@ -318,11 +439,14 @@ type siteSettingsRequest struct {
 }
 
 type handlers struct {
-	db               *gorm.DB
-	jwtSecret        string
-	credentialCipher *security.CredentialCipher
-	zeroArtifactDir  string
-	sshTerminal      *sshTerminalRuntime
+	db                  *gorm.DB
+	jwtSecret           string
+	credentialCipher    *security.CredentialCipher
+	zeroArtifactDir     string
+	sshTerminal         *sshTerminalRuntime
+	nodePublishLocks    sync.Map
+	expiryReconcileMu   sync.Mutex
+	lastExpiryReconcile time.Time
 }
 
 func NewHandlers(db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir string) (*handlers, error) {
@@ -403,7 +527,7 @@ func (h *handlers) SetupInstallHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := validateSetupRequest(&body); err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 
@@ -479,7 +603,7 @@ func (h *handlers) AdminSettingsUpdateHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if err := normalizeAndValidateSiteSettings(&body.SiteName, &body.SiteURL); err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 
@@ -529,15 +653,18 @@ func (h *handlers) InstallationMiddleware(next http.HandlerFunc) http.HandlerFun
 }
 
 func validateSetupRequest(body *setupRequest) error {
-	if err := normalizeAndValidateSiteSettings(&body.SiteName, &body.SiteURL); err != nil {
-		return err
-	}
+	body.SiteName = strings.TrimSpace(body.SiteName)
+	body.SiteURL = strings.TrimRight(strings.TrimSpace(body.SiteURL), "/")
 	body.AdminEmail = normalizeEmail(body.AdminEmail)
+	fields := siteSettingsValidationFields(body.SiteName, body.SiteURL)
 	if !validEmail(body.AdminEmail) {
-		return errors.New("admin_email is invalid")
+		fields["admin_email"] = "请输入有效的管理员邮箱。"
 	}
 	if len(body.AdminPassword) < 12 || len(body.AdminPassword) > 72 {
-		return errors.New("admin_password must contain 12 to 72 bytes")
+		fields["admin_password"] = "管理员密码必须为 12–72 个 UTF-8 字节。"
+	}
+	if len(fields) > 0 {
+		return validationError("安装信息校验失败。", fields)
 	}
 	return nil
 }
@@ -545,17 +672,27 @@ func validateSetupRequest(body *setupRequest) error {
 func normalizeAndValidateSiteSettings(siteName, siteURL *string) error {
 	*siteName = strings.TrimSpace(*siteName)
 	*siteURL = strings.TrimRight(strings.TrimSpace(*siteURL), "/")
-	if *siteName == "" || len(*siteName) > 80 {
-		return errors.New("site_name must contain 1 to 80 bytes")
-	}
-	parsedURL, err := url.ParseRequestURI(*siteURL)
-	if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		return errors.New("site_url must be an absolute http or https URL")
-	}
-	if parsedURL.User != nil || parsedURL.Fragment != "" {
-		return errors.New("site_url must not contain credentials or a fragment")
+	fields := siteSettingsValidationFields(*siteName, *siteURL)
+	if len(fields) > 0 {
+		return validationError("站点设置校验失败。", fields)
 	}
 	return nil
+}
+
+func siteSettingsValidationFields(siteName, siteURL string) map[string]string {
+	fields := map[string]string{}
+	if siteName == "" || len(siteName) > 80 {
+		fields["site_name"] = "站点名称必须为 1–80 个 UTF-8 字节。"
+	}
+	parsedURL, err := url.ParseRequestURI(siteURL)
+	if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		fields["site_url"] = "请输入完整的 HTTP 或 HTTPS 地址。"
+		return fields
+	}
+	if parsedURL.User != nil || parsedURL.Fragment != "" {
+		fields["site_url"] = "公开访问地址不能包含账号、密码或 URL 片段。"
+	}
+	return fields
 }
 
 func upsertSiteConfigs(tx *gorm.DB, siteName, siteURL string, allowRegistration bool) error {
@@ -645,8 +782,15 @@ func (h *handlers) RegisterAuthRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body.Email = normalizeEmail(body.Email)
-	if !validEmail(body.Email) || !validPassword(body.Password) {
-		BadRequest(w, "a valid email and a 12 to 72 byte password are required")
+	registrationFields := map[string]string{}
+	if !validEmail(body.Email) {
+		registrationFields["email"] = "请输入有效邮箱。"
+	}
+	if !validPassword(body.Password) {
+		registrationFields["password"] = "密码必须为 12–72 个 UTF-8 字节。"
+	}
+	if len(registrationFields) > 0 {
+		BadRequestFields(w, "注册信息校验失败。", registrationFields)
 		return
 	}
 
@@ -664,7 +808,7 @@ func (h *handlers) RegisterAuthRoutes(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.db.Create(&user).Error; err != nil {
 		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "duplicate") {
-			BadRequest(w, "email already exists")
+			BadRequestFields(w, "注册信息校验失败。", map[string]string{"email": "该邮箱已存在。"})
 			return
 		}
 		ServerError(w, err)
@@ -701,8 +845,15 @@ func (h *handlers) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := normalizeEmail(body.Email)
-	if email == "" || body.Password == "" {
-		BadRequest(w, "email and password required")
+	loginFields := map[string]string{}
+	if email == "" {
+		loginFields["email"] = "请输入邮箱地址。"
+	}
+	if body.Password == "" {
+		loginFields["password"] = "请输入密码。"
+	}
+	if len(loginFields) > 0 {
+		BadRequestFields(w, "登录信息不完整。", loginFields)
 		return
 	}
 
@@ -768,7 +919,7 @@ func (h *handlers) AdminUsersListHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	users := make([]model.User, 0)
-	query := h.db.Order("id desc")
+	query := h.db.Model(&model.User{})
 
 	if status := strings.TrimSpace(r.URL.Query().Get("status")); status != "" {
 		if !h.isValidUserStatus(status) {
@@ -788,20 +939,122 @@ func (h *handlers) AdminUsersListHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
-		like := fmt.Sprintf("%%%s%%", q)
-		query = query.Where("email LIKE ?", like)
+		if len(q) > 128 {
+			BadRequest(w, "q must not exceed 128 bytes")
+			return
+		}
+		like := fmt.Sprintf("%%%s%%", strings.ToLower(q))
+		query = query.Where("LOWER(email) LIKE ? OR LOWER(account_name) LIKE ?", like, like)
 	}
 
-	if err := query.Find(&users).Error; err != nil {
+	paged := wantsPagedList(r)
+	offset, limit := 0, 50
+	var total int64
+	order := "id desc"
+	if paged {
+		offset, limit, err = parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
+		if err != nil {
+			BadRequest(w, err.Error())
+			return
+		}
+		if err := query.Count(&total).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		sortColumn := map[string]string{
+			"id":         "id",
+			"email":      "email",
+			"created_at": "created_at",
+		}[strings.TrimSpace(r.URL.Query().Get("sort"))]
+		if sortColumn == "" {
+			sortColumn = "created_at"
+		}
+		direction := "desc"
+		if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("direction")), "asc") {
+			direction = "asc"
+		}
+		order = sortColumn + " " + direction
+		if sortColumn != "id" {
+			order += ", id " + direction
+		}
+		query = query.Offset(offset).Limit(limit)
+	}
+	if err := query.Order(order).Find(&users).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
 
+	if paged {
+		items, loadErr := loadAdminUserListItems(h.db, users, time.Now().UTC())
+		if loadErr != nil {
+			ServerError(w, loadErr)
+			return
+		}
+		OK(w, pagedData(items, total, offset, limit))
+		return
+	}
 	publicUsers := make([]userPublic, 0, len(users))
 	for _, user := range users {
 		publicUsers = append(publicUsers, toPublicUser(user))
 	}
 	OK(w, publicUsers)
+}
+
+func loadAdminUserListItems(db *gorm.DB, users []model.User, now time.Time) ([]adminUserListItem, error) {
+	items := make([]adminUserListItem, 0, len(users))
+	if len(users) == 0 {
+		return items, nil
+	}
+	userIDs := make([]uint, 0, len(users))
+	for _, user := range users {
+		userIDs = append(userIDs, user.ID)
+	}
+
+	subscriptionRows := make([]adminUserSubscriptionCountRow, 0, len(users))
+	if err := db.Model(&model.Subscription{}).
+		Select(`user_id,
+			COUNT(*) AS total_subscription_count,
+			COALESCE(SUM(CASE WHEN status = ? AND end_at > ? AND flow_used < flow_total THEN 1 ELSE 0 END), 0) AS active_subscription_count`,
+			subStatusActive, now).
+		Where("user_id IN ?", userIDs).
+		Group("user_id").
+		Scan(&subscriptionRows).Error; err != nil {
+		return nil, err
+	}
+	subscriptionCounts := make(map[uint]adminUserSubscriptionCountRow, len(subscriptionRows))
+	for _, row := range subscriptionRows {
+		subscriptionCounts[row.UserID] = row
+	}
+
+	orderRows := make([]adminUserOrderCountRow, 0, len(users))
+	if err := db.Model(&model.Order{}).
+		Select(`user_id,
+			COUNT(*) AS total_order_count,
+			COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) AS pending_order_count`,
+			orderStatusPending).
+		Where("user_id IN ?", userIDs).
+		Group("user_id").
+		Scan(&orderRows).Error; err != nil {
+		return nil, err
+	}
+	orderCounts := make(map[uint]adminUserOrderCountRow, len(orderRows))
+	for _, row := range orderRows {
+		orderCounts[row.UserID] = row
+	}
+
+	for _, user := range users {
+		subscriptions := subscriptionCounts[user.ID]
+		orders := orderCounts[user.ID]
+		items = append(items, adminUserListItem{
+			userPublic:              toPublicUser(user),
+			ActiveSubscriptionCount: subscriptions.ActiveSubscriptionCount,
+			TotalSubscriptionCount:  subscriptions.TotalSubscriptionCount,
+			PendingOrderCount:       orders.PendingOrderCount,
+			TotalOrderCount:         orders.TotalOrderCount,
+			CreatedAt:               user.CreatedAt,
+		})
+	}
+	return items, nil
 }
 
 func (h *handlers) AdminUserCreateHandler(w http.ResponseWriter, r *http.Request) {
@@ -816,8 +1069,15 @@ func (h *handlers) AdminUserCreateHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	req.Email = normalizeEmail(req.Email)
-	if !validEmail(req.Email) || !validPassword(req.Password) {
-		BadRequest(w, "a valid email and a 12 to 72 byte password are required")
+	userFields := map[string]string{}
+	if !validEmail(req.Email) {
+		userFields["email"] = "请输入有效邮箱。"
+	}
+	if !validPassword(req.Password) {
+		userFields["password"] = "密码必须为 12–72 个 UTF-8 字节。"
+	}
+	if len(userFields) > 0 {
+		BadRequestFields(w, "用户信息校验失败。", userFields)
 		return
 	}
 
@@ -826,7 +1086,7 @@ func (h *handlers) AdminUserCreateHandler(w http.ResponseWriter, r *http.Request
 		status = userStatusActive
 	}
 	if !h.isValidUserStatus(status) {
-		BadRequest(w, "invalid status")
+		BadRequestFields(w, "用户信息校验失败。", map[string]string{"status": "账户状态无效。"})
 		return
 	}
 
@@ -846,7 +1106,7 @@ func (h *handlers) AdminUserCreateHandler(w http.ResponseWriter, r *http.Request
 		return createAuditLog(tx, claims, "user.create", fmt.Sprintf("user:%d", user.ID), fmt.Sprintf("status=%s admin=%t", user.Status, user.IsAdmin))
 	}); err != nil {
 		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "duplicate") {
-			BadRequest(w, "email already exists")
+			BadRequestFields(w, "用户信息校验失败。", map[string]string{"email": "该邮箱已存在。"})
 			return
 		}
 		ServerError(w, err)
@@ -879,7 +1139,7 @@ func (h *handlers) AdminUserUpdateHandler(w http.ResponseWriter, r *http.Request
 	if req.Status != nil {
 		status := strings.TrimSpace(*req.Status)
 		if !h.isValidUserStatus(status) {
-			BadRequest(w, "invalid user status")
+			BadRequestFields(w, "账户信息校验失败。", map[string]string{"status": "账户状态无效。"})
 			return
 		}
 		updates["status"] = status
@@ -892,7 +1152,7 @@ func (h *handlers) AdminUserUpdateHandler(w http.ResponseWriter, r *http.Request
 	if req.Password != nil {
 		newPassword := *req.Password
 		if !validPassword(newPassword) {
-			BadRequest(w, "password must contain 12 to 72 bytes")
+			BadRequestFields(w, "账户信息校验失败。", map[string]string{"password": "密码必须为 12–72 个 UTF-8 字节。"})
 			return
 		}
 		hash, hashErr := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
@@ -981,6 +1241,38 @@ func (h *handlers) isValidOrderStatus(status string) bool {
 	}
 }
 
+func (h *handlers) orderListStatusValues(status string, adminScope bool) ([]string, bool) {
+	if adminScope && status == adminAttentionStatus {
+		return []string{orderStatusPending, orderStatusFailed}, true
+	}
+	if !h.isValidOrderStatus(status) {
+		return nil, false
+	}
+	return []string{status}, true
+}
+
+func isValidOrderType(orderType string) bool {
+	switch orderType {
+	case "new", "renewal", "upgrade", "traffic_pack":
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidSubscriptionStatus(status string) bool {
+	switch status {
+	case subStatusActive, subStatusExpired, subStatusCanceled:
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidSubscriptionQuotaFilter(quota string) bool {
+	return quota == "available" || quota == "exhausted"
+}
+
 func orderTransitionAllowed(current, target string, force bool) bool {
 	if current == target {
 		return true
@@ -1018,6 +1310,10 @@ func (h *handlers) NodeListHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.requireAdmin(w, r); err != nil {
 		return
 	}
+	if r.URL.Query().Get("paged") == "true" {
+		h.nodePage(w, r)
+		return
+	}
 
 	nodes := make([]model.Node, 0)
 	if err := h.db.Preload("KernelState").Order("id desc").Find(&nodes).Error; err != nil {
@@ -1031,6 +1327,221 @@ func (h *handlers) NodeListHandler(w http.ResponseWriter, r *http.Request) {
 		nodes[index].SSHPrivilegeConfigured = nodes[index].SSHPrivilegePassword != ""
 	}
 	OK(w, nodes)
+}
+
+type nodeListItem struct {
+	ID                   uint                   `json:"id"`
+	Name                 string                 `json:"name"`
+	Region               string                 `json:"region"`
+	Address              string                 `json:"address"`
+	Status               int16                  `json:"status"`
+	LifecycleStatus      string                 `json:"lifecycle_status"`
+	IsEnabled            bool                   `json:"is_enabled"`
+	ConnectorLastSeenAt  *time.Time             `json:"connector_last_seen_at,omitempty"`
+	ConnectorOnline      bool                   `json:"connector_online"`
+	SSHConfigured        bool                   `json:"ssh_configured"`
+	SSHVerifiedAt        *time.Time             `json:"ssh_verified_at,omitempty"`
+	KernelState          *model.NodeKernelState `json:"kernel_state,omitempty"`
+	EnabledProtocolCount int64                  `json:"enabled_protocol_count"`
+	CreatedAt            time.Time              `json:"created_at"`
+	UpdatedAt            time.Time              `json:"updated_at"`
+}
+
+type nodeDetailItem struct {
+	nodeListItem
+	Remark                         string     `json:"remark"`
+	LastSeenAt                     *time.Time `json:"last_seen_at,omitempty"`
+	LastSyncAt                     *time.Time `json:"last_sync_at,omitempty"`
+	Version                        string     `json:"version"`
+	SSHHost                        string     `json:"ssh_host"`
+	SSHPort                        int        `json:"ssh_port"`
+	SSHUser                        string     `json:"ssh_user"`
+	SSHAuthMethod                  string     `json:"ssh_auth_method"`
+	SSHPrivilegeMode               string     `json:"ssh_privilege_mode"`
+	SSHPrivilegePasswordConfigured bool       `json:"ssh_privilege_password_configured"`
+	SSHHostKeyFingerprint          string     `json:"ssh_host_key_fingerprint"`
+	NodeCredentialPrefix           string     `json:"node_credential_prefix,omitempty"`
+	NodeCredentialRevokedAt        *time.Time `json:"node_credential_revoked_at,omitempty"`
+	TrafficSecretPrefix            string     `json:"traffic_secret_prefix,omitempty"`
+	TrafficSecretRevokedAt         *time.Time `json:"traffic_secret_revoked_at,omitempty"`
+	UptimeSeconds                  uint64     `json:"uptime_seconds"`
+	ActiveFlows                    uint64     `json:"active_flows"`
+	BytesUp                        uint64     `json:"bytes_up"`
+	BytesDown                      uint64     `json:"bytes_down"`
+}
+
+func newNodeListItem(node model.Node, enabledProtocolCount int64, cutoff time.Time) nodeListItem {
+	return nodeListItem{
+		ID: node.ID, Name: node.Name, Region: node.Region, Address: node.Address, Status: node.Status,
+		LifecycleStatus: node.LifecycleStatus, IsEnabled: node.IsEnabled,
+		ConnectorLastSeenAt:  node.ConnectorLastSeenAt,
+		ConnectorOnline:      node.ConnectorLastSeenAt != nil && node.ConnectorLastSeenAt.After(cutoff),
+		SSHConfigured:        node.SSHHost != "" && node.SSHUser != "",
+		SSHVerifiedAt:        node.SSHVerifiedAt,
+		KernelState:          node.KernelState,
+		EnabledProtocolCount: enabledProtocolCount,
+		CreatedAt:            node.CreatedAt, UpdatedAt: node.UpdatedAt,
+	}
+}
+
+func newNodeDetailItem(node model.Node, enabledProtocolCount int64, cutoff time.Time) nodeDetailItem {
+	return nodeDetailItem{
+		nodeListItem: newNodeListItem(node, enabledProtocolCount, cutoff),
+		Remark:       node.Remark, LastSeenAt: node.LastSeenAt, LastSyncAt: node.LastSyncAt, Version: node.Version,
+		SSHHost: node.SSHHost, SSHPort: node.SSHPort, SSHUser: node.SSHUser, SSHAuthMethod: node.SSHAuthMethod,
+		SSHPrivilegeMode: node.SSHPrivilegeMode, SSHPrivilegePasswordConfigured: node.SSHPrivilegePassword != "",
+		SSHHostKeyFingerprint: node.SSHHostKeyFingerprint,
+		NodeCredentialPrefix:  node.NodeCredentialPrefix, NodeCredentialRevokedAt: node.NodeCredentialRevokedAt,
+		TrafficSecretPrefix: node.TrafficSecretPrefix, TrafficSecretRevokedAt: node.TrafficSecretRevokedAt,
+		UptimeSeconds: node.UptimeSeconds, ActiveFlows: node.ActiveFlows, BytesUp: node.BytesUp, BytesDown: node.BytesDown,
+	}
+}
+
+func (h *handlers) nodePage(w http.ResponseWriter, r *http.Request) {
+	offset, limit, err := parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	query := h.db.Model(&model.Node{})
+	if rawID := strings.TrimSpace(r.URL.Query().Get("node_id")); rawID != "" {
+		nodeID, parseErr := strconv.ParseUint(rawID, 10, 64)
+		if parseErr != nil || nodeID == 0 {
+			BadRequest(w, "invalid node_id")
+			return
+		}
+		query = query.Where("nodes.id = ?", nodeID)
+	}
+	if search := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))); search != "" {
+		pattern := "%" + search + "%"
+		query = query.Where("LOWER(nodes.name) LIKE ? OR LOWER(nodes.address) LIKE ? OR LOWER(nodes.region) LIKE ?", pattern, pattern, pattern)
+	}
+	if region := strings.TrimSpace(r.URL.Query().Get("region")); region != "" {
+		query = query.Where("nodes.region = ?", region)
+	}
+	if lifecycle := strings.TrimSpace(r.URL.Query().Get("lifecycle_status")); lifecycle != "" {
+		switch lifecycle {
+		case "active", "maintenance", "retired":
+			query = query.Where("nodes.lifecycle_status = ?", lifecycle)
+		default:
+			BadRequest(w, "invalid lifecycle_status")
+			return
+		}
+	}
+	if rawEnabled := strings.TrimSpace(r.URL.Query().Get("enabled")); rawEnabled != "" {
+		enabled, parseErr := strconv.ParseBool(rawEnabled)
+		if parseErr != nil {
+			BadRequest(w, "invalid enabled")
+			return
+		}
+		query = query.Where("nodes.is_enabled = ?", enabled)
+	}
+	cutoff := time.Now().UTC().Add(-nodeOnlineWindow)
+	if online := strings.TrimSpace(r.URL.Query().Get("connector_online")); online != "" {
+		switch online {
+		case "true":
+			query = query.Where("nodes.connector_last_seen_at >= ?", cutoff)
+		case "false":
+			query = query.Where("nodes.connector_last_seen_at IS NULL OR nodes.connector_last_seen_at < ?", cutoff)
+		default:
+			BadRequest(w, "invalid connector_online")
+			return
+		}
+	}
+	if kernelStatus := strings.TrimSpace(r.URL.Query().Get("kernel_status")); kernelStatus != "" {
+		query = query.Joins("JOIN node_kernel_states ON node_kernel_states.node_id = nodes.id").Where("node_kernel_states.status = ?", kernelStatus)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	sortColumn := map[string]string{
+		"id": "nodes.id", "name": "nodes.name", "region": "nodes.region",
+		"updated_at": "nodes.updated_at", "last_seen_at": "nodes.connector_last_seen_at",
+	}[strings.TrimSpace(r.URL.Query().Get("sort"))]
+	if sortColumn == "" {
+		sortColumn = "nodes.id"
+	}
+	direction := "desc"
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("direction")), "asc") {
+		direction = "asc"
+	}
+	nodes := make([]model.Node, 0, limit)
+	if err := query.Order(sortColumn + " " + direction).Offset(offset).Limit(limit).Find(&nodes).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+
+	items := make([]nodeListItem, 0, len(nodes))
+	if len(nodes) == 0 {
+		OK(w, pagedData(items, total, offset, limit))
+		return
+	}
+	ids := make([]uint, 0, len(nodes))
+	for index := range nodes {
+		ids = append(ids, nodes[index].ID)
+		nodes[index].IsOnline = nodes[index].LastSeenAt != nil && nodes[index].LastSeenAt.After(cutoff)
+		nodes[index].ConnectorOnline = nodes[index].ConnectorLastSeenAt != nil && nodes[index].ConnectorLastSeenAt.After(cutoff)
+		nodes[index].SSHPrivilegeConfigured = nodes[index].SSHPrivilegePassword != ""
+	}
+	states := make([]model.NodeKernelState, 0, len(nodes))
+	if err := h.db.Where("node_id IN ?", ids).Find(&states).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	stateByNode := make(map[uint]*model.NodeKernelState, len(states))
+	for index := range states {
+		stateByNode[states[index].NodeID] = &states[index]
+	}
+	type nodeProtocolCount struct {
+		NodeID uint
+		Count  int64
+	}
+	counts := make([]nodeProtocolCount, 0, len(nodes))
+	if err := h.db.Model(&model.ProtocolEndpoint{}).
+		Select("node_id, COUNT(*) AS count").
+		Where("node_id IN ? AND is_active = ?", ids, true).
+		Group("node_id").Scan(&counts).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	countByNode := make(map[uint]int64, len(counts))
+	for _, count := range counts {
+		countByNode[count.NodeID] = count.Count
+	}
+	for index := range nodes {
+		nodes[index].KernelState = stateByNode[nodes[index].ID]
+		items = append(items, newNodeListItem(nodes[index], countByNode[nodes[index].ID], cutoff))
+	}
+	OK(w, pagedData(items, total, offset, limit))
+}
+
+func (h *handlers) NodeDetailHandler(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.requireAdmin(w, r); err != nil {
+		return
+	}
+	nodeID, err := parsePathID(r.URL.Path, "/api/v1/nodes/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	var node model.Node
+	if err := h.db.Preload("KernelState").First(&node, nodeID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			NotFound(w)
+			return
+		}
+		ServerError(w, err)
+		return
+	}
+	var enabledProtocolCount int64
+	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("node_id = ? AND is_active = ?", node.ID, true).Count(&enabledProtocolCount).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	OK(w, newNodeDetailItem(node, enabledProtocolCount, time.Now().UTC().Add(-nodeOnlineWindow)))
 }
 
 func (h *handlers) NodeCreateHandler(w http.ResponseWriter, r *http.Request) {
@@ -1047,7 +1558,7 @@ func (h *handlers) NodeCreateHandler(w http.ResponseWriter, r *http.Request) {
 	req.Address = strings.TrimSpace(req.Address)
 	req.Region = strings.TrimSpace(req.Region)
 	if req.Name == "" {
-		BadRequest(w, "node name is required")
+		BadRequestFields(w, "节点信息校验失败。", map[string]string{"name": "请输入主机名称。"})
 		return
 	}
 	if req.SSHPort == 0 {
@@ -1057,7 +1568,7 @@ func (h *handlers) NodeCreateHandler(w http.ResponseWriter, r *http.Request) {
 		req.CommunicationProtocol = 1
 	}
 	if err := validateOptionalJSONObject("config", req.Config); err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 	req.SSHHost = strings.TrimSpace(req.SSHHost)
@@ -1071,12 +1582,12 @@ func (h *handlers) NodeCreateHandler(w http.ResponseWriter, r *http.Request) {
 	sshConfigured := req.SSHHost != "" || req.SSHUser != "" || credential != ""
 	if sshConfigured {
 		if err := validateSSHFields(req.SSHHost, req.SSHPort, req.SSHUser, req.SSHAuthMethod, credential, ""); err != nil {
-			BadRequest(w, err.Error())
+			BadRequestError(w, err)
 			return
 		}
 		if req.SSHAuthMethod == sshAuthPrivateKey {
 			if _, err := parseSSHPrivateKey(credential, req.SSHPrivateKeyPassphrase); err != nil {
-				BadRequest(w, err.Error())
+				BadRequestError(w, err)
 				return
 			}
 		}
@@ -1092,7 +1603,7 @@ func (h *handlers) NodeCreateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := validateSSHPrivilege(req.SSHPrivilegeMode, req.SSHPrivilegePassword); err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 	encryptedPrivilegePassword, err := h.credentialCipher.Encrypt(req.SSHPrivilegePassword)
@@ -1114,7 +1625,7 @@ func (h *handlers) NodeCreateHandler(w http.ResponseWriter, r *http.Request) {
 	nodeCredentialPrefix := ""
 	if req.NodeCredential != "" {
 		if len(req.NodeCredential) < 12 {
-			BadRequest(w, "node_credential must be at least 12 characters")
+			BadRequestFields(w, "节点信息校验失败。", map[string]string{"node_credential": "节点连接凭证至少需要 12 个字符。"})
 			return
 		}
 		nodeCredentialPrefix = req.NodeCredential[:12]
@@ -1181,7 +1692,7 @@ func (h *handlers) NodeUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			BadRequest(w, "node name cannot be empty")
+			BadRequestFields(w, "节点信息校验失败。", map[string]string{"name": "请输入主机名称。"})
 			return
 		}
 		updates["name"] = name
@@ -1198,7 +1709,7 @@ func (h *handlers) NodeUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	if req.LifecycleStatus != nil {
 		status := strings.ToLower(strings.TrimSpace(*req.LifecycleStatus))
 		if status != "active" && status != "maintenance" && status != "retired" {
-			BadRequest(w, "lifecycle_status must be active, maintenance or retired")
+			BadRequestFields(w, "节点信息校验失败。", map[string]string{"lifecycle_status": "请选择有效的生命周期。"})
 			return
 		}
 		updates["lifecycle_status"] = status
@@ -1208,11 +1719,11 @@ func (h *handlers) NodeUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.IsEnabled != nil {
 		if lifecycle, ok := updates["lifecycle_status"].(string); ok && lifecycle != "active" && *req.IsEnabled {
-			BadRequest(w, "a maintenance or retired node cannot be enabled")
+			BadRequestFields(w, "节点信息校验失败。", map[string]string{"is_enabled": "维护或退役节点不能承载对外服务。"})
 			return
 		}
 		if node.LifecycleStatus != "" && node.LifecycleStatus != "active" && *req.IsEnabled && req.LifecycleStatus == nil {
-			BadRequest(w, "set lifecycle_status to active before enabling this node")
+			BadRequestFields(w, "节点信息校验失败。", map[string]string{"lifecycle_status": "请先将生命周期恢复为正常，再启用对外服务。"})
 			return
 		}
 		updates["is_enabled"] = *req.IsEnabled
@@ -1263,7 +1774,7 @@ func (h *handlers) NodeSSHTestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.validateNodeSSH(node); err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 
@@ -1346,7 +1857,11 @@ func (h *handlers) NodeSSHConfigHandler(w http.ResponseWriter, r *http.Request) 
 	plainCredential := credential
 	if credential == "" {
 		if authMethod != normalizeSSHAuthMethod(node.SSHAuthMethod) {
-			BadRequest(w, "a new credential is required when changing ssh_auth_method")
+			field := "ssh_password"
+			if authMethod == sshAuthPrivateKey {
+				field = "ssh_private_key"
+			}
+			BadRequestFields(w, "SSH 配置校验失败。", map[string]string{field: "切换认证方式时必须提供新的登录凭证。"})
 			return
 		}
 		plainCredential, err = h.credentialCipher.Decrypt(node.SSHPwd)
@@ -1379,7 +1894,7 @@ func (h *handlers) NodeSSHConfigHandler(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 		if _, err := parseSSHPrivateKey(plainCredential, plainPassphrase); err != nil {
-			BadRequest(w, err.Error())
+			BadRequestError(w, err)
 			return
 		}
 	} else {
@@ -1402,7 +1917,7 @@ func (h *handlers) NodeSSHConfigHandler(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if err := validateSSHPrivilege(privilegeMode, plainPrivilegePassword); err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 	targetChanged := !strings.EqualFold(req.SSHHost, strings.TrimSpace(node.SSHHost)) || req.SSHPort != node.SSHPort
@@ -1411,7 +1926,7 @@ func (h *handlers) NodeSSHConfigHandler(w http.ResponseWriter, r *http.Request) 
 		targetFingerprint = ""
 	}
 	if err := validateSSHFields(req.SSHHost, req.SSHPort, req.SSHUser, authMethod, encryptedCredential, targetFingerprint); err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 
@@ -1627,6 +2142,7 @@ func (h *handlers) NodeConnectorHeartbeatHandler(w http.ResponseWriter, r *http.
 		Unauthorized(w, "invalid node connector authentication")
 		return
 	}
+	go h.reconcileExpiredCredentials(now)
 	writeNodeConnectorJSON(w, http.StatusOK, map[string]interface{}{"ok": true})
 }
 
@@ -1770,54 +2286,64 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		protocol = "vmess"
 	}
 	if !h.isProtocolSupported(protocol) {
-		BadRequest(w, "unsupported protocol")
+		BadRequestFields(w, "协议服务校验失败。", map[string]string{"protocol": "请选择受支持的协议类型。"})
 		return
 	}
 	if req.NodeID == 0 {
-		BadRequest(w, "node_id is required")
+		BadRequestFields(w, "协议服务校验失败。", map[string]string{"node_id": "请选择承载节点。"})
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	req.Address = strings.TrimSpace(req.Address)
-	if req.Name == "" || req.Address == "" || req.Port <= 0 || req.Port > 65535 {
-		BadRequest(w, "name, address and a valid port are required")
+	fields := make(map[string]string)
+	if req.Name == "" {
+		fields["name"] = "请输入服务名称。"
+	}
+	if req.Address == "" {
+		fields["address"] = "请输入客户端可访问的对外地址。"
+	}
+	if req.Port <= 0 || req.Port > 65535 {
+		fields["port"] = "监听端口必须在 1–65535 之间。"
+	}
+	if len(fields) > 0 {
+		BadRequestFields(w, "协议服务校验失败。", fields)
 		return
 	}
 	if req.PublicPort == 0 {
 		req.PublicPort = req.Port
 	}
 	if req.PublicPort <= 0 || req.PublicPort > 65535 {
-		BadRequest(w, "public_port must be between 1 and 65535")
+		BadRequestFields(w, "协议服务校验失败。", map[string]string{"public_port": "客户端连接端口必须在 1–65535 之间。"})
 		return
 	}
 	if req.MultiplierMilli <= 0 || req.MultiplierMilli > 100000 {
-		BadRequest(w, "multiplier_milli must be between 1 and 100000 (1000 means 1x)")
+		BadRequestFields(w, "协议服务校验失败。", map[string]string{"multiplier_milli": "流量倍率必须大于 0 且不超过 100。"})
 		return
 	}
 	if err := validateNodeProtocolConfigs(protocol, req.Config, req.ClientConfig); err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 	if err := validateOptionalJSONObject("optional_config", req.OptionalConfig); err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 	if err := validateOptionalJSONArray("tags", req.Tags); err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 
 	node, err := h.loadNode(req.NodeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			NotFound(w)
+			BadRequestFields(w, "协议服务校验失败。", map[string]string{"node_id": "所选承载节点不存在。"})
 			return
 		}
 		ServerError(w, err)
 		return
 	}
 	if err := h.validateProtocolParent(endpointID, node.ID, req.ParentProtocolID); err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 	runtimeKey := uuid.NewString()
@@ -1826,14 +2352,23 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		isActive = *req.IsActive
 	}
 	var existing model.ProtocolEndpoint
+	var previousNodeID uint
 	if endpointID != 0 {
 		if err := h.db.First(&existing, endpointID).Error; err != nil {
 			NotFound(w)
 			return
 		}
-		if existing.NodeID != node.ID {
-			BadRequest(w, "protocol endpoint does not belong to node")
-			return
+		previousNodeID = existing.NodeID
+		if existing.Protocol != protocol || (strings.EqualFold(existing.Protocol, "shadowsocks") && (existing.Port != req.Port || existing.PublicPort != req.PublicPort)) {
+			var credentialCount int64
+			if err := h.db.Model(&model.ProtocolCredential{}).Where("protocol_endpoint_id = ?", existing.ID).Count(&credentialCount).Error; err != nil {
+				ServerError(w, err)
+				return
+			}
+			if credentialCount > 0 {
+				BadRequestFields(w, "协议服务校验失败。", map[string]string{"protocol": "该服务已有订阅凭证；请创建新服务后迁移，不能直接更换协议或 Shadowsocks 端口。"})
+				return
+			}
 		}
 		runtimeKey = existing.RuntimeKey
 		if req.IsActive == nil {
@@ -1845,7 +2380,7 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 				Joins("JOIN plans ON plans.node_group_id = node_group_endpoints.node_group_id").
 				Where("node_group_endpoints.protocol_endpoint_id = ? AND plans.is_active = ?", existing.ID, true).
 				Count(&activePlanCount).Error; err != nil || activePlanCount > 0 {
-				BadRequest(w, "unbind this endpoint from active plans before disabling it")
+				BadRequestFields(w, "协议服务校验失败。", map[string]string{"is_active": "停用前请先从所有已发布套餐中解绑该端点。"})
 				return
 			}
 		}
@@ -1885,15 +2420,33 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 			if err := tx.Create(&endpoint).Error; err != nil {
 				return err
 			}
-		} else if err := tx.Save(&endpoint).Error; err != nil {
-			return err
+		} else {
+			if err := tx.Save(&endpoint).Error; err != nil {
+				return err
+			}
+			if err := migrateProtocolEndpointCredentials(tx, existing, endpoint); err != nil {
+				return err
+			}
 		}
-		return createAuditLog(tx, claims, action, fmt.Sprintf("protocol_endpoint:%d", endpoint.ID), fmt.Sprintf("node=%d protocol=%s multiplier_milli=%d", node.ID, protocol, endpoint.MultiplierMilli))
+		detail := fmt.Sprintf("node=%d protocol=%s multiplier_milli=%d", node.ID, protocol, endpoint.MultiplierMilli)
+		if previousNodeID != 0 && previousNodeID != node.ID {
+			detail += fmt.Sprintf(" previous_node=%d", previousNodeID)
+		}
+		return createAuditLog(tx, claims, action, fmt.Sprintf("protocol_endpoint:%d", endpoint.ID), detail)
 	}); err != nil {
+		var validation *requestValidationError
+		if errors.As(err, &validation) {
+			BadRequestError(w, err)
+			return
+		}
 		BadRequest(w, err.Error())
 		return
 	}
-	OK(w, endpoint)
+	if previousNodeID != 0 && previousNodeID != node.ID {
+		h.scheduleNodeConfigPublish(previousNodeID, endpoint.ID, claims.UserID)
+	}
+	h.scheduleNodeConfigPublish(node.ID, endpoint.ID, claims.UserID)
+	OK(w, map[string]interface{}{"protocol_endpoint": endpoint, "publish_status": "queued"})
 }
 
 func (h *handlers) ProtocolEndpointDeployHandler(w http.ResponseWriter, r *http.Request) {
@@ -1906,82 +2459,74 @@ func (h *handlers) ProtocolEndpointDeployHandler(w http.ResponseWriter, r *http.
 		BadRequest(w, err.Error())
 		return
 	}
-	var endpoint model.ProtocolEndpoint
-	if err := h.db.First(&endpoint, endpointID).Error; err != nil {
-		NotFound(w)
-		return
-	}
-	node, err := h.loadNode(endpoint.NodeID)
+	ctx, cancel := context.WithTimeout(context.Background(), nodeConfigPublishTimeout)
+	defer cancel()
+	deployment, elapsed, err := h.publishNodeConfig(ctx, endpointID, claims.UserID)
 	if err != nil {
-		NotFound(w)
+		BadRequest(w, "protocol publish failed: "+err.Error())
 		return
 	}
-	if err := h.validateNodeSSH(node); err != nil {
-		BadRequest(w, err.Error())
-		return
-	}
-	serverConfig, err := h.credentialCipher.Decrypt(endpoint.ServerConfig)
-	if err != nil {
-		ServerError(w, fmt.Errorf("decrypt protocol endpoint config: %w", err))
-		return
-	}
-
-	startedAt := time.Now().UTC()
-	deployment := model.ProtocolDeployment{
-		ProtocolEndpointID: endpoint.ID, NodeID: node.ID,
-		ConfigRevision: uint64(startedAt.UnixNano()), Status: "running",
-		RequestedBy: claims.UserID, StartedAt: &startedAt,
-	}
-	if err := h.db.Create(&deployment).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-
-	encoded := base64.StdEncoding.EncodeToString([]byte(serverConfig))
-	remotePath := fmt.Sprintf("/etc/zerodenet/protocols/%s.json", endpoint.RuntimeKey)
-	temporaryPath := remotePath + ".tmp"
-	command := fmt.Sprintf("mkdir -p /etc/zerodenet/protocols && printf '%s' | base64 -d > %s && chmod 600 %s && mv %s %s", encoded, temporaryPath, temporaryPath, temporaryPath, remotePath)
-	output, elapsed, execErr := h.execSSHCommandWithPrivilege(node, command, true)
-	if execErr != nil {
-		finishedAt := time.Now().UTC()
-		_ = h.db.Model(&deployment).Updates(map[string]interface{}{
-			"status": "failed", "output": strings.TrimSpace(output), "error": execErr.Error(), "finished_at": finishedAt,
-		}).Error
-		BadRequest(w, "protocol deployment failed: "+execErr.Error())
-		return
-	}
-
-	now := time.Now().UTC()
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		nodeUpdates := map[string]interface{}{"last_sync_at": now, "ssh_verified_at": now}
-		if err := tx.Model(&node).Updates(nodeUpdates).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&deployment).Updates(map[string]interface{}{
-			"status": "succeeded", "output": strings.TrimSpace(output), "error": "", "finished_at": now,
-		}).Error; err != nil {
-			return err
-		}
-		return createAuditLog(tx, claims, "protocol_endpoint.deploy", fmt.Sprintf("protocol_endpoint:%d", endpoint.ID), fmt.Sprintf("node=%d deployment=%d", node.ID, deployment.ID))
-	}); err != nil {
-		ServerError(w, err)
-		return
-	}
-	deployment.Status = "succeeded"
-	deployment.Output = strings.TrimSpace(output)
-	deployment.FinishedAt = &now
-	OK(w, map[string]interface{}{
-		"protocol_endpoint": endpoint,
-		"deployment":        deployment,
-		"output":            strings.TrimSpace(output),
-		"latency_ms":        elapsed.Milliseconds(),
-	})
+	OK(w, map[string]interface{}{"deployment": deployment, "latency_ms": elapsed.Milliseconds()})
 }
 
 type protocolEndpointAdminDetail struct {
 	model.ProtocolEndpoint
 	Config           string                    `json:"config"`
 	LatestDeployment *model.ProtocolDeployment `json:"latest_deployment,omitempty"`
+	Usage            protocolEndpointUsage     `json:"usage"`
+}
+
+type protocolEndpointUsage struct {
+	ActiveFlows       int64      `json:"active_flows"`
+	ActiveCredentials int64      `json:"active_credentials"`
+	LastUsedAt        *time.Time `json:"last_used_at,omitempty"`
+	UsedBytesToday    int64      `json:"used_bytes_today"`
+	UsedBytesTotal    int64      `json:"used_bytes_total"`
+}
+
+type protocolDeploymentListItem struct {
+	ID         uint       `json:"id"`
+	Status     string     `json:"status"`
+	HasError   bool       `json:"has_error"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+type protocolEndpointListItem struct {
+	ID               uint                        `json:"id"`
+	NodeID           uint                        `json:"node_id"`
+	NodeName         string                      `json:"node_name"`
+	Name             string                      `json:"name"`
+	Protocol         string                      `json:"protocol"`
+	Address          string                      `json:"address"`
+	Port             int                         `json:"port"`
+	PublicPort       int                         `json:"public_port"`
+	ParentProtocolID *uint                       `json:"parent_protocol_id,omitempty"`
+	MultiplierMilli  int64                       `json:"multiplier_milli"`
+	IsActive         bool                        `json:"is_active"`
+	SortOrder        int                         `json:"sort_order"`
+	LatestDeployment *protocolDeploymentListItem `json:"latest_deployment,omitempty"`
+	Usage            protocolEndpointUsage       `json:"usage"`
+	CreatedAt        time.Time                   `json:"created_at"`
+	UpdatedAt        time.Time                   `json:"updated_at"`
+}
+
+func newProtocolEndpointListItem(endpoint model.ProtocolEndpoint, nodeName string, deployment *model.ProtocolDeployment, usage protocolEndpointUsage) protocolEndpointListItem {
+	item := protocolEndpointListItem{
+		ID: endpoint.ID, NodeID: endpoint.NodeID, NodeName: nodeName, Name: endpoint.Name,
+		Protocol: endpoint.Protocol, Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
+		ParentProtocolID: endpoint.ParentProtocolID, MultiplierMilli: endpoint.MultiplierMilli,
+		IsActive: endpoint.IsActive, SortOrder: endpoint.SortOrder, Usage: usage,
+		CreatedAt: endpoint.CreatedAt, UpdatedAt: endpoint.UpdatedAt,
+	}
+	if deployment != nil {
+		item.LatestDeployment = &protocolDeploymentListItem{
+			ID: deployment.ID, Status: deployment.Status, HasError: deployment.Error != "",
+			StartedAt: deployment.StartedAt, FinishedAt: deployment.FinishedAt, CreatedAt: deployment.CreatedAt,
+		}
+	}
+	return item
 }
 
 func (h *handlers) ProtocolEndpointDetailHandler(w http.ResponseWriter, r *http.Request) {
@@ -2007,7 +2552,12 @@ func (h *handlers) ProtocolEndpointDetailHandler(w http.ResponseWriter, r *http.
 		ServerError(w, fmt.Errorf("decrypt protocol endpoint config: %w", err))
 		return
 	}
-	detail := protocolEndpointAdminDetail{ProtocolEndpoint: endpoint, Config: serverConfig}
+	usage, err := h.loadProtocolEndpointUsage(endpoint.ID, time.Now().UTC())
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	detail := protocolEndpointAdminDetail{ProtocolEndpoint: endpoint, Config: serverConfig, Usage: usage}
 	var deployment model.ProtocolDeployment
 	if err := h.db.Where("protocol_endpoint_id = ?", endpoint.ID).Order("id desc").First(&deployment).Error; err == nil {
 		detail.LatestDeployment = &deployment
@@ -2055,41 +2605,457 @@ func (h *handlers) ProtocolDeploymentListHandler(w http.ResponseWriter, r *http.
 		ServerError(w, err)
 		return
 	}
-	OK(w, map[string]interface{}{"items": items, "total": total, "offset": offset, "limit": limit})
+	OK(w, pagedData(items, total, offset, limit))
+}
+
+func (h *handlers) applyProtocolEndpointFilters(query *gorm.DB, values url.Values) (*gorm.DB, error) {
+	if rawIDs := strings.TrimSpace(values.Get("ids")); rawIDs != "" {
+		parts := strings.Split(rawIDs, ",")
+		ids := make([]uint64, 0, len(parts))
+		for _, part := range parts {
+			parsed, err := strconv.ParseUint(strings.TrimSpace(part), 10, 64)
+			if err != nil || parsed == 0 {
+				return nil, errors.New("invalid ids")
+			}
+			ids = append(ids, parsed)
+		}
+		if len(ids) > 100 {
+			return nil, errors.New("ids cannot contain more than 100 values")
+		}
+		query = query.Where("protocol_endpoints.id IN ?", ids)
+	}
+	if nodeID := strings.TrimSpace(values.Get("node_id")); nodeID != "" {
+		parsed, err := strconv.ParseUint(nodeID, 10, 64)
+		if err != nil || parsed == 0 {
+			return nil, errors.New("invalid node_id")
+		}
+		query = query.Where("protocol_endpoints.node_id = ?", parsed)
+	}
+	if search := strings.ToLower(strings.TrimSpace(values.Get("q"))); search != "" {
+		if len([]byte(search)) > 100 {
+			return nil, validationError("协议端点筛选条件校验失败。", map[string]string{"q": "搜索内容不能超过 100 个 UTF-8 字节。"})
+		}
+		pattern := "%" + search + "%"
+		query = query.Where("LOWER(protocol_endpoints.name) LIKE ? OR LOWER(protocol_endpoints.address) LIKE ?", pattern, pattern)
+	}
+	if protocol := strings.ToLower(strings.TrimSpace(values.Get("protocol"))); protocol != "" {
+		if !h.isProtocolSupported(protocol) {
+			return nil, errors.New("invalid protocol")
+		}
+		query = query.Where("protocol_endpoints.protocol = ?", protocol)
+	}
+	if rawActive := strings.TrimSpace(values.Get("active")); rawActive != "" {
+		active, err := strconv.ParseBool(rawActive)
+		if err != nil {
+			return nil, errors.New("invalid active")
+		}
+		query = query.Where("protocol_endpoints.is_active = ?", active)
+	}
+	if deploymentStatus := strings.TrimSpace(values.Get("deployment_status")); deploymentStatus != "" {
+		if deploymentStatus != "running" && deploymentStatus != "succeeded" && deploymentStatus != "failed" && deploymentStatus != "never" {
+			return nil, errors.New("invalid deployment_status")
+		}
+		latestDeploymentIDs := h.db.Model(&model.ProtocolDeployment{}).Select("MAX(id)").Group("protocol_endpoint_id")
+		if deploymentStatus == "never" {
+			deployedEndpointIDs := h.db.Model(&model.ProtocolDeployment{}).Select("DISTINCT protocol_endpoint_id")
+			query = query.Where("protocol_endpoints.id NOT IN (?)", deployedEndpointIDs)
+		} else {
+			matchingEndpointIDs := h.db.Model(&model.ProtocolDeployment{}).
+				Select("protocol_endpoint_id").Where("id IN (?) AND status = ?", latestDeploymentIDs, deploymentStatus)
+			query = query.Where("protocol_endpoints.id IN (?)", matchingEndpointIDs)
+		}
+	}
+	return query, nil
+}
+
+func (h *handlers) ProtocolEndpointSelectionHandler(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.requireAdmin(w, r); err != nil {
+		return
+	}
+	query, err := h.applyProtocolEndpointFilters(h.db.Model(&model.ProtocolEndpoint{}), r.URL.Query())
+	if err != nil {
+		BadRequestError(w, err)
+		return
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	if total > maxEndpointSelection {
+		BadRequestFields(w, "协议端点筛选结果过多。", map[string]string{
+			"q": fmt.Sprintf("当前筛选匹配 %d 个端点，批量快照上限为 %d 个；请缩小搜索范围。", total, maxEndpointSelection),
+		})
+		return
+	}
+	ids := make([]uint, 0, int(total))
+	if err := query.Order("protocol_endpoints.id asc").Pluck("protocol_endpoints.id", &ids).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	OK(w, protocolEndpointSelectionSnapshot{
+		IDs:        ids,
+		Total:      total,
+		ResolvedAt: time.Now().UTC(),
+	})
 }
 
 func (h *handlers) ProtocolEndpointListHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.requireAdmin(w, r); err != nil {
 		return
 	}
+	paged := wantsPagedList(r)
+	offset, limit := 0, 50
+	var err error
+	if paged {
+		offset, limit, err = parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
+		if err != nil {
+			BadRequest(w, err.Error())
+			return
+		}
+	}
 	endpoints := make([]model.ProtocolEndpoint, 0)
-	query := h.db.Order("sort_order asc, id asc")
-	if nodeID := strings.TrimSpace(r.URL.Query().Get("node_id")); nodeID != "" {
-		query = query.Where("node_id = ?", nodeID)
+	query, err := h.applyProtocolEndpointFilters(h.db.Model(&model.ProtocolEndpoint{}), r.URL.Query())
+	if err != nil {
+		BadRequestError(w, err)
+		return
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	sortColumn := map[string]string{
+		"sort_order": "protocol_endpoints.sort_order", "id": "protocol_endpoints.id", "name": "protocol_endpoints.name", "protocol": "protocol_endpoints.protocol",
+		"node_id": "protocol_endpoints.node_id", "multiplier": "protocol_endpoints.multiplier_milli", "updated_at": "protocol_endpoints.updated_at",
+	}[strings.TrimSpace(r.URL.Query().Get("sort"))]
+	if sortColumn == "" {
+		sortColumn = "protocol_endpoints.sort_order"
+	}
+	direction := "asc"
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("direction")), "desc") {
+		direction = "desc"
+	}
+	query = query.Order(sortColumn + " " + direction + ", protocol_endpoints.id asc")
+	if paged {
+		query = query.Offset(offset).Limit(limit)
 	}
 	if err := query.Find(&endpoints).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
-	OK(w, endpoints)
+	items := make([]protocolEndpointListItem, 0, len(endpoints))
+	now := time.Now().UTC()
+	usageByEndpoint, err := h.loadProtocolEndpointUsageBatch(endpoints, now)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	deploymentByEndpoint, err := h.loadLatestProtocolDeployments(endpoints)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	nodeNames, err := h.loadProtocolEndpointNodeNames(endpoints)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	for _, endpoint := range endpoints {
+		items = append(items, newProtocolEndpointListItem(endpoint, nodeNames[endpoint.NodeID], deploymentByEndpoint[endpoint.ID], usageByEndpoint[endpoint.ID]))
+	}
+	if paged {
+		OK(w, pagedData(items, total, offset, limit))
+		return
+	}
+	OK(w, items)
+}
+
+func (h *handlers) loadProtocolEndpointUsage(endpointID uint, now time.Time) (protocolEndpointUsage, error) {
+	usageByEndpoint, err := h.loadProtocolEndpointUsageBatch([]model.ProtocolEndpoint{{ID: endpointID}}, now)
+	return usageByEndpoint[endpointID], err
+}
+
+func protocolEndpointIDs(endpoints []model.ProtocolEndpoint) []uint {
+	ids := make([]uint, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		ids = append(ids, endpoint.ID)
+	}
+	return ids
+}
+
+func (h *handlers) loadProtocolEndpointUsageBatch(endpoints []model.ProtocolEndpoint, now time.Time) (map[uint]protocolEndpointUsage, error) {
+	usageByEndpoint := make(map[uint]protocolEndpointUsage, len(endpoints))
+	ids := protocolEndpointIDs(endpoints)
+	if len(ids) == 0 {
+		return usageByEndpoint, nil
+	}
+	for _, id := range ids {
+		usageByEndpoint[id] = protocolEndpointUsage{}
+	}
+	type countRow struct {
+		ProtocolEndpointID uint
+		Count              int64
+	}
+	flowRows := make([]countRow, 0, len(ids))
+	if err := h.db.Model(&model.FlowUsage{}).
+		Select("protocol_endpoint_id, COUNT(*) AS count").
+		Where("protocol_endpoint_id IN ? AND status = ? AND last_seen_at >= ?", ids, "active", now.Add(-2*time.Minute)).
+		Group("protocol_endpoint_id").Scan(&flowRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range flowRows {
+		usage := usageByEndpoint[row.ProtocolEndpointID]
+		usage.ActiveFlows = row.Count
+		usageByEndpoint[row.ProtocolEndpointID] = usage
+	}
+	type credentialRow struct {
+		ProtocolEndpointID uint
+		ActiveCredentials  int64
+		LastUsedAt         *time.Time
+	}
+	credentialRows := make([]credentialRow, 0, len(ids))
+	if err := h.db.Model(&model.ProtocolCredential{}).
+		Select("protocol_endpoint_id, SUM(CASE WHEN status = ? AND revoked_at IS NULL AND expires_at > ? THEN 1 ELSE 0 END) AS active_credentials, MAX(last_used_at) AS last_used_at", protocolCredentialStatusActive, now).
+		Where("protocol_endpoint_id IN ?", ids).
+		Group("protocol_endpoint_id").Scan(&credentialRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range credentialRows {
+		usage := usageByEndpoint[row.ProtocolEndpointID]
+		usage.ActiveCredentials = row.ActiveCredentials
+		usage.LastUsedAt = row.LastUsedAt
+		usageByEndpoint[row.ProtocolEndpointID] = usage
+	}
+	type trafficRow struct {
+		ProtocolEndpointID uint
+		UsedBytesToday     int64
+		UsedBytesTotal     int64
+	}
+	trafficRows := make([]trafficRow, 0, len(ids))
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	if err := h.db.Model(&model.TrafficRecord{}).
+		Select("protocol_endpoint_id, COALESCE(SUM(used_bytes), 0) AS used_bytes_total, COALESCE(SUM(CASE WHEN record_at >= ? THEN used_bytes ELSE 0 END), 0) AS used_bytes_today", dayStart).
+		Where("protocol_endpoint_id IN ?", ids).
+		Group("protocol_endpoint_id").Scan(&trafficRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range trafficRows {
+		usage := usageByEndpoint[row.ProtocolEndpointID]
+		usage.UsedBytesToday = row.UsedBytesToday
+		usage.UsedBytesTotal = row.UsedBytesTotal
+		usageByEndpoint[row.ProtocolEndpointID] = usage
+	}
+	return usageByEndpoint, nil
+}
+
+func (h *handlers) loadLatestProtocolDeployments(endpoints []model.ProtocolEndpoint) (map[uint]*model.ProtocolDeployment, error) {
+	result := make(map[uint]*model.ProtocolDeployment, len(endpoints))
+	ids := protocolEndpointIDs(endpoints)
+	if len(ids) == 0 {
+		return result, nil
+	}
+	latestIDs := h.db.Model(&model.ProtocolDeployment{}).
+		Select("MAX(id)").Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id")
+	deployments := make([]model.ProtocolDeployment, 0, len(ids))
+	if err := h.db.Where("id IN (?)", latestIDs).Find(&deployments).Error; err != nil {
+		return nil, err
+	}
+	for index := range deployments {
+		result[deployments[index].ProtocolEndpointID] = &deployments[index]
+	}
+	return result, nil
+}
+
+func (h *handlers) loadProtocolEndpointNodeNames(endpoints []model.ProtocolEndpoint) (map[uint]string, error) {
+	result := make(map[uint]string)
+	nodeIDs := make([]uint, 0, len(endpoints))
+	seen := make(map[uint]struct{}, len(endpoints))
+	for _, endpoint := range endpoints {
+		if _, ok := seen[endpoint.NodeID]; ok {
+			continue
+		}
+		seen[endpoint.NodeID] = struct{}{}
+		nodeIDs = append(nodeIDs, endpoint.NodeID)
+	}
+	if len(nodeIDs) == 0 {
+		return result, nil
+	}
+	type nodeNameRow struct {
+		ID   uint
+		Name string
+	}
+	rows := make([]nodeNameRow, 0, len(nodeIDs))
+	if err := h.db.Model(&model.Node{}).Select("id, name").Where("id IN ?", nodeIDs).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		result[row.ID] = row.Name
+	}
+	return result, nil
 }
 
 func (h *handlers) NodeGroupListHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.requireAdmin(w, r); err != nil {
 		return
 	}
-	groups := make([]model.NodeGroup, 0)
-	if err := h.db.Order("name asc, id asc").Find(&groups).Error; err != nil {
+	paged := wantsPagedList(r)
+	offset, limit := 0, 50
+	var err error
+	if paged {
+		offset, limit, err = parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
+		if err != nil {
+			BadRequest(w, err.Error())
+			return
+		}
+	}
+	query := h.db.Model(&model.NodeGroup{})
+	if rawGroupID := strings.TrimSpace(r.URL.Query().Get("group_id")); rawGroupID != "" {
+		groupID, parseErr := strconv.ParseUint(rawGroupID, 10, 64)
+		if parseErr != nil || groupID == 0 {
+			BadRequest(w, "invalid group_id")
+			return
+		}
+		query = query.Where("id = ?", uint(groupID))
+	}
+	if search := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))); search != "" {
+		pattern := "%" + search + "%"
+		query = query.Where("LOWER(name) LIKE ? OR LOWER(code) LIKE ? OR LOWER(description) LIKE ?", pattern, pattern, pattern)
+	}
+	if rawEnabled := strings.TrimSpace(r.URL.Query().Get("enabled")); rawEnabled != "" {
+		enabled, parseErr := strconv.ParseBool(rawEnabled)
+		if parseErr != nil {
+			BadRequest(w, "invalid enabled")
+			return
+		}
+		query = query.Where("is_enabled = ?", enabled)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
+	groups := make([]model.NodeGroup, 0)
+	query = query.Order("name asc, id asc")
+	if paged {
+		query = query.Offset(offset).Limit(limit)
+	}
+	if err := query.Find(&groups).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	groupIDs := make([]uint, 0, len(groups))
+	groupByID := make(map[uint]*model.NodeGroup, len(groups))
 	for index := range groups {
-		_ = h.db.Model(&model.NodeGroupEndpoint{}).
-			Where("node_group_id = ?", groups[index].ID).
-			Order("sort_order asc, id asc").
-			Pluck("protocol_endpoint_id", &groups[index].ProtocolEndpointIDs).Error
+		groupIDs = append(groupIDs, groups[index].ID)
+		groupByID[groups[index].ID] = &groups[index]
+	}
+	endpointCounts := make(map[uint]int64, len(groupIDs))
+	if len(groupIDs) > 0 {
+		type endpointCountRow struct {
+			NodeGroupID uint
+			Count       int64
+		}
+		endpointRows := make([]endpointCountRow, 0, len(groupIDs))
+		if err := h.db.Model(&model.NodeGroupEndpoint{}).
+			Select("node_group_id, COUNT(*) AS count").
+			Where("node_group_id IN ?", groupIDs).
+			Group("node_group_id").
+			Scan(&endpointRows).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		for _, count := range endpointRows {
+			endpointCounts[count.NodeGroupID] = count.Count
+		}
+		if !paged {
+			links := make([]model.NodeGroupEndpoint, 0)
+			if err := h.db.Where("node_group_id IN ?", groupIDs).Order("node_group_id asc, sort_order asc, id asc").Find(&links).Error; err != nil {
+				ServerError(w, err)
+				return
+			}
+			for _, link := range links {
+				groupByID[link.NodeGroupID].ProtocolEndpointIDs = append(groupByID[link.NodeGroupID].ProtocolEndpointIDs, link.ProtocolEndpointID)
+			}
+		}
+		type planCountRow struct {
+			NodeGroupID uint
+			Count       int64
+		}
+		planRows := make([]planCountRow, 0, len(groupIDs))
+		if err := h.db.Model(&model.Plan{}).Select("node_group_id, COUNT(*) AS count").Where("node_group_id IN ?", groupIDs).Group("node_group_id").Scan(&planRows).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		for _, count := range planRows {
+			groupByID[count.NodeGroupID].PlanCount = count.Count
+		}
+	}
+	if paged {
+		items := make([]nodeGroupSummaryItem, 0, len(groups))
+		for _, group := range groups {
+			items = append(items, nodeGroupSummaryItem{
+				ID:                    group.ID,
+				Name:                  group.Name,
+				Code:                  group.Code,
+				Description:           group.Description,
+				IsEnabled:             group.IsEnabled,
+				Revision:              group.Revision,
+				ProtocolEndpointCount: endpointCounts[group.ID],
+				PlanCount:             group.PlanCount,
+				CreatedAt:             group.CreatedAt,
+				UpdatedAt:             group.UpdatedAt,
+			})
+		}
+		OK(w, pagedData(items, total, offset, limit))
+		return
 	}
 	OK(w, groups)
+}
+
+type nodeGroupSummaryItem struct {
+	ID                    uint      `json:"id"`
+	Name                  string    `json:"name"`
+	Code                  string    `json:"code"`
+	Description           string    `json:"description"`
+	IsEnabled             bool      `json:"is_enabled"`
+	Revision              uint64    `json:"revision"`
+	ProtocolEndpointCount int64     `json:"protocol_endpoint_count"`
+	PlanCount             int64     `json:"plan_count"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
+}
+
+func (h *handlers) NodeGroupDetailHandler(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.requireAdmin(w, r); err != nil {
+		return
+	}
+	id, err := parsePathID(r.URL.Path, "/api/v1/admin/node-groups/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	var group model.NodeGroup
+	if err := h.db.First(&group, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			NotFound(w)
+			return
+		}
+		ServerError(w, err)
+		return
+	}
+	if err := h.db.Model(&model.NodeGroupEndpoint{}).
+		Where("node_group_id = ?", group.ID).
+		Order("sort_order asc, id asc").
+		Pluck("protocol_endpoint_id", &group.ProtocolEndpointIDs).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	if err := h.db.Model(&model.Plan{}).Where("node_group_id = ?", group.ID).Count(&group.PlanCount).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	OK(w, group)
 }
 
 func (h *handlers) NodeGroupCreateHandler(w http.ResponseWriter, r *http.Request) {
@@ -2104,16 +3070,28 @@ func (h *handlers) NodeGroupCreateHandler(w http.ResponseWriter, r *http.Request
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	req.Code = strings.ToLower(strings.TrimSpace(req.Code))
-	if req.Name == "" || req.Code == "" {
-		BadRequest(w, "name and code are required")
+	fields := map[string]string{}
+	if req.Name == "" {
+		fields["name"] = "请输入节点组名称。"
+	}
+	if req.Code == "" {
+		fields["code"] = "请输入节点组代码。"
+	}
+	if len(fields) > 0 {
+		BadRequestFields(w, "节点组信息校验失败。", fields)
 		return
 	}
 	isEnabled := true
 	if req.IsEnabled != nil {
 		isEnabled = *req.IsEnabled
 	}
-	group := model.NodeGroup{Name: req.Name, Code: req.Code, Description: strings.TrimSpace(req.Description), IsEnabled: isEnabled}
+	group := model.NodeGroup{Name: req.Name, Code: req.Code, Description: strings.TrimSpace(req.Description), IsEnabled: isEnabled, Revision: 1}
+	var reconcileTask model.Task
 	endpointIDs := uniqueUintIDs(req.ProtocolEndpointIDs)
+	if isEnabled && len(endpointIDs) == 0 {
+		BadRequestFields(w, "节点组信息校验失败。", map[string]string{"protocol_endpoint_ids": "启用的节点组至少需要一个可用协议端点。"})
+		return
+	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&group).Error; err != nil {
 			return err
@@ -2121,13 +3099,35 @@ func (h *handlers) NodeGroupCreateHandler(w http.ResponseWriter, r *http.Request
 		if err := replaceNodeGroupEndpoints(tx, group.ID, endpointIDs); err != nil {
 			return err
 		}
-		return createAuditLog(tx, claims, "node_group.create", fmt.Sprintf("node_group:%d", group.ID), fmt.Sprintf("endpoints=%v", endpointIDs))
+		if err := createAuditLog(tx, claims, "node_group.create", fmt.Sprintf("node_group:%d", group.ID), fmt.Sprintf("endpoint_count=%d", len(endpointIDs))); err != nil {
+			return err
+		}
+		targets, err := nodeGroupPublishTargets(tx, group.ID)
+		if err != nil {
+			return err
+		}
+		task, items, err := prepareNodeGroupReconcileTask(claims, group.ID, group.Revision, targets)
+		if err != nil {
+			return err
+		}
+		reconcileTask = task
+		return persistAdminTaskRecords(tx, claims, &reconcileTask, items)
 	}); err != nil {
-		BadRequest(w, err.Error())
+		if isDuplicateError(err) {
+			BadRequestFields(w, "节点组信息校验失败。", map[string]string{"code": "节点组代码已存在，请更换后重试。"})
+			return
+		}
+		var validation *requestValidationError
+		if errors.As(err, &validation) {
+			BadRequestError(w, err)
+			return
+		}
+		ServerError(w, err)
 		return
 	}
 	group.ProtocolEndpointIDs = endpointIDs
-	OK(w, group)
+	_ = h.startPersistedAdminTask(&reconcileTask)
+	OK(w, nodeGroupMutationResponse{NodeGroup: group, ReconcileTask: &reconcileTask})
 }
 
 func (h *handlers) NodeGroupUpdateHandler(w http.ResponseWriter, r *http.Request) {
@@ -2147,114 +3147,402 @@ func (h *handlers) NodeGroupUpdateHandler(w http.ResponseWriter, r *http.Request
 	}
 	var group model.NodeGroup
 	if err := h.db.First(&group, id).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			ServerError(w, err)
+			return
+		}
 		NotFound(w)
 		return
 	}
+	if req.ExpectedRevision == nil {
+		writeJSON(w, http.StatusPreconditionRequired, "保存节点组前需要提供当前版本号。", map[string]interface{}{"current_revision": group.Revision})
+		return
+	}
 	updates := map[string]interface{}{}
+	fields := map[string]string{}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			BadRequest(w, "name cannot be empty")
-			return
+			fields["name"] = "请输入节点组名称。"
+		} else {
+			updates["name"] = name
 		}
-		updates["name"] = name
 	}
 	if req.Code != nil {
 		code := strings.ToLower(strings.TrimSpace(*req.Code))
 		if code == "" {
-			BadRequest(w, "code cannot be empty")
-			return
+			fields["code"] = "请输入节点组代码。"
+		} else {
+			updates["code"] = code
 		}
-		updates["code"] = code
 	}
 	if req.Description != nil {
 		updates["description"] = strings.TrimSpace(*req.Description)
 	}
 	if req.IsEnabled != nil {
-		if !*req.IsEnabled {
-			var activePlans int64
-			if err := h.db.Model(&model.Plan{}).Where("node_group_id = ? AND is_active = ?", group.ID, true).Count(&activePlans).Error; err != nil {
-				ServerError(w, err)
-				return
-			}
-			if activePlans > 0 {
-				BadRequest(w, "disable plans that use this node group first")
-				return
-			}
-		}
 		updates["is_enabled"] = *req.IsEnabled
 	}
 	if len(updates) == 0 && req.ProtocolEndpointIDs == nil {
+		if len(fields) > 0 {
+			BadRequestFields(w, "节点组信息校验失败。", fields)
+			return
+		}
 		BadRequest(w, "no valid update fields")
 		return
 	}
-	if req.ProtocolEndpointIDs != nil && len(uniqueUintIDs(*req.ProtocolEndpointIDs)) == 0 {
-		var activePlans int64
-		if err := h.db.Model(&model.Plan{}).Where("node_group_id = ? AND is_active = ?", group.ID, true).Count(&activePlans).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
-		if activePlans > 0 {
-			BadRequest(w, "an node group used by active plans must retain at least one protocol endpoint")
-			return
-		}
+	if len(fields) > 0 {
+		BadRequestFields(w, "节点组信息校验失败。", fields)
+		return
 	}
+	currentRevision := group.Revision
+	var reconcileTask model.Task
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		var locked model.NodeGroup
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, id).Error; err != nil {
+			return err
+		}
+		currentRevision = locked.Revision
+		if locked.Revision != *req.ExpectedRevision {
+			return errNodeGroupRevisionConflict
+		}
+		targetEnabled := locked.IsEnabled
+		if req.IsEnabled != nil {
+			targetEnabled = *req.IsEnabled
+			if !targetEnabled {
+				var activePlans int64
+				if err := tx.Model(&model.Plan{}).Where("node_group_id = ? AND is_active = ?", locked.ID, true).Count(&activePlans).Error; err != nil {
+					return err
+				}
+				if activePlans > 0 {
+					return validationError("节点组状态校验失败。", map[string]string{"is_enabled": "请先停用使用该节点组的已发布套餐。"})
+				}
+			}
+		}
+		endpointIDs := []uint(nil)
+		if req.ProtocolEndpointIDs != nil {
+			endpointIDs = uniqueUintIDs(*req.ProtocolEndpointIDs)
+			if len(endpointIDs) == 0 && targetEnabled {
+				return validationError("节点组成员校验失败。", map[string]string{"protocol_endpoint_ids": "启用的节点组至少需要一个可用协议端点。"})
+			}
+			if len(endpointIDs) == 0 {
+				var activePlans int64
+				if err := tx.Model(&model.Plan{}).Where("node_group_id = ? AND is_active = ?", locked.ID, true).Count(&activePlans).Error; err != nil {
+					return err
+				}
+				if activePlans > 0 {
+					return validationError("节点组成员校验失败。", map[string]string{"protocol_endpoint_ids": "已发布套餐使用的节点组必须保留至少一个可用协议端点。"})
+				}
+			}
+		} else if targetEnabled && !locked.IsEnabled {
+			var activeEndpoints int64
+			if err := tx.Model(&model.NodeGroupEndpoint{}).
+				Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
+				Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", locked.ID, true).
+				Count(&activeEndpoints).Error; err != nil {
+				return err
+			}
+			if activeEndpoints == 0 {
+				return validationError("节点组成员校验失败。", map[string]string{"protocol_endpoint_ids": "启用节点组前请至少加入一个可用协议端点。"})
+			}
+		}
+		updates["revision"] = locked.Revision + 1
 		if len(updates) > 0 {
-			if err := tx.Model(&group).Updates(updates).Error; err != nil {
+			if err := tx.Model(&locked).Updates(updates).Error; err != nil {
 				return err
 			}
 		}
 		if req.ProtocolEndpointIDs != nil {
-			if err := replaceNodeGroupEndpoints(tx, group.ID, uniqueUintIDs(*req.ProtocolEndpointIDs)); err != nil {
+			previousTargets, err := nodeGroupPublishTargets(tx, locked.ID)
+			if err != nil {
+				return err
+			}
+			if err := replaceNodeGroupEndpoints(tx, locked.ID, endpointIDs); err != nil {
+				return err
+			}
+			currentTargets, err := nodeGroupPublishTargets(tx, locked.ID)
+			if err != nil {
+				return err
+			}
+			task, items, err := prepareNodeGroupReconcileTask(claims, locked.ID, locked.Revision+1, mergeNodeGroupPublishTargets(previousTargets, currentTargets))
+			if err != nil {
+				return err
+			}
+			reconcileTask = task
+			if err := persistAdminTaskRecords(tx, claims, &reconcileTask, items); err != nil {
 				return err
 			}
 		}
-		return createAuditLog(tx, claims, "node_group.update", fmt.Sprintf("node_group:%d", group.ID), "updated")
+		detail := fmt.Sprintf("revision=%d membership_updated=%t", locked.Revision+1, req.ProtocolEndpointIDs != nil)
+		if req.ProtocolEndpointIDs != nil {
+			detail += fmt.Sprintf(" endpoint_count=%d", len(endpointIDs))
+		}
+		return createAuditLog(tx, claims, "node_group.update", fmt.Sprintf("node_group:%d", locked.ID), detail)
 	})
 	if err != nil {
-		BadRequest(w, err.Error())
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			NotFound(w)
+			return
+		}
+		if errors.Is(err, errNodeGroupRevisionConflict) {
+			writeJSON(w, http.StatusConflict, "节点组已被其他管理员更新，请重新加载最新版本。", map[string]interface{}{"current_revision": currentRevision})
+			return
+		}
+		if isDuplicateError(err) {
+			BadRequestFields(w, "节点组信息校验失败。", map[string]string{"code": "节点组代码已存在，请更换后重试。"})
+			return
+		}
+		var validation *requestValidationError
+		if errors.As(err, &validation) {
+			BadRequestError(w, err)
+			return
+		}
+		ServerError(w, err)
 		return
 	}
 	if err := h.db.First(&group, id).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
-	_ = h.db.Model(&model.NodeGroupEndpoint{}).Where("node_group_id = ?", group.ID).Order("sort_order asc, id asc").Pluck("protocol_endpoint_id", &group.ProtocolEndpointIDs).Error
-	OK(w, group)
+	if err := h.db.Model(&model.NodeGroupEndpoint{}).Where("node_group_id = ?", group.ID).Order("sort_order asc, id asc").Pluck("protocol_endpoint_id", &group.ProtocolEndpointIDs).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	var responseTask *model.Task
+	if reconcileTask.ID > 0 {
+		_ = h.startPersistedAdminTask(&reconcileTask)
+		responseTask = &reconcileTask
+	}
+	OK(w, nodeGroupMutationResponse{NodeGroup: group, ReconcileTask: responseTask})
 }
 
+var errNodeGroupRevisionConflict = errors.New("node group revision conflict")
+
 func replaceNodeGroupEndpoints(tx *gorm.DB, nodeGroupID uint, endpointIDs []uint) error {
-	for _, endpointID := range endpointIDs {
-		var count int64
-		if err := tx.Model(&model.ProtocolEndpoint{}).Where("id = ? AND is_active = ?", endpointID, true).Count(&count).Error; err != nil {
+	endpointIDs = uniqueUintIDs(endpointIDs)
+	activeIDs := make([]uint, 0, len(endpointIDs))
+	for start := 0; start < len(endpointIDs); start += 500 {
+		end := start + 500
+		if end > len(endpointIDs) {
+			end = len(endpointIDs)
+		}
+		var batch []uint
+		if err := tx.Model(&model.ProtocolEndpoint{}).
+			Where("id IN ? AND is_active = ?", endpointIDs[start:end], true).
+			Pluck("id", &batch).Error; err != nil {
 			return err
 		}
-		if count == 0 {
-			return fmt.Errorf("active protocol endpoint %d not found", endpointID)
-		}
+		activeIDs = append(activeIDs, batch...)
 	}
-	if err := tx.Where("node_group_id = ?", nodeGroupID).Delete(&model.NodeGroupEndpoint{}).Error; err != nil {
+	if missingID, missing := firstMissingUintID(endpointIDs, activeIDs); missing {
+		return validationError("节点组成员校验失败。", map[string]string{"protocol_endpoint_ids": fmt.Sprintf("协议端点 #%d 不存在或已停用，请重新选择。", missingID)})
+	}
+
+	var existing []model.NodeGroupEndpoint
+	if err := tx.Where("node_group_id = ?", nodeGroupID).Find(&existing).Error; err != nil {
 		return err
 	}
+	desired := make(map[uint]struct{}, len(endpointIDs))
+	for _, endpointID := range endpointIDs {
+		desired[endpointID] = struct{}{}
+	}
+	removed := make([]uint, 0)
+	for _, link := range existing {
+		if _, keep := desired[link.ProtocolEndpointID]; !keep {
+			removed = append(removed, link.ProtocolEndpointID)
+		}
+	}
+	for start := 0; start < len(removed); start += 500 {
+		end := start + 500
+		if end > len(removed) {
+			end = len(removed)
+		}
+		if err := tx.Where("node_group_id = ? AND protocol_endpoint_id IN ?", nodeGroupID, removed[start:end]).
+			Delete(&model.NodeGroupEndpoint{}).Error; err != nil {
+			return err
+		}
+	}
+	links := make([]model.NodeGroupEndpoint, 0, len(endpointIDs))
 	for index, endpointID := range endpointIDs {
-		if err := tx.Create(&model.NodeGroupEndpoint{NodeGroupID: nodeGroupID, ProtocolEndpointID: endpointID, SortOrder: index}).Error; err != nil {
+		links = append(links, model.NodeGroupEndpoint{NodeGroupID: nodeGroupID, ProtocolEndpointID: endpointID, SortOrder: index})
+	}
+	if len(links) > 0 {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "node_group_id"}, {Name: "protocol_endpoint_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"sort_order"}),
+		}).CreateInBatches(&links, 500).Error; err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+func firstMissingUintID(requested, existing []uint) (uint, bool) {
+	available := make(map[uint]struct{}, len(existing))
+	for _, id := range existing {
+		available[id] = struct{}{}
+	}
+	for _, id := range requested {
+		if _, ok := available[id]; !ok {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
+type planNodeGroupSummary struct {
+	ID        uint   `json:"id"`
+	Name      string `json:"name"`
+	Code      string `json:"code"`
+	IsEnabled bool   `json:"is_enabled"`
+}
+
+type planSummaryItem struct {
+	ID             uint                  `json:"id"`
+	Name           string                `json:"name"`
+	Slug           string                `json:"slug"`
+	Summary        string                `json:"summary"`
+	NodeGroupID    uint                  `json:"node_group_id"`
+	NodeGroup      *planNodeGroupSummary `json:"node_group,omitempty"`
+	IsActive       bool                  `json:"is_active"`
+	SortOrder      int                   `json:"sort_order"`
+	Revision       uint64                `json:"revision"`
+	SKUCount       int64                 `json:"sku_count"`
+	ActiveSKUCount int64                 `json:"active_sku_count"`
+	CreatedAt      time.Time             `json:"created_at"`
+	UpdatedAt      time.Time             `json:"updated_at"`
+}
+
+type planDetailItem struct {
+	planSummaryItem
+	Description            string `json:"description"`
+	TrafficBytes           int64  `json:"traffic_bytes"`
+	SpeedLimitMbps         int    `json:"speed_limit_mbps"`
+	MaxActiveSubscriptions int    `json:"max_active_subscriptions"`
+	IsRenewable            bool   `json:"is_renewable"`
+	DeviceLimit            int    `json:"device_limit"`
+	FamilyLimit            int    `json:"family_limit"`
+	ResetPolicy            int16  `json:"reset_policy"`
+	TrafficCalcMode        int16  `json:"traffic_calc_mode"`
+}
+
+type planCatalogItem struct {
+	planSummaryItem
+	PrimarySKU *model.PlanSKU `json:"primary_sku,omitempty"`
+}
+
+type planSKUCountRow struct {
+	PlanID         uint  `gorm:"column:plan_id"`
+	SKUCount       int64 `gorm:"column:sku_count"`
+	ActiveSKUCount int64 `gorm:"column:active_sku_count"`
+}
+
+func newPlanNodeGroupSummary(group *model.NodeGroup) *planNodeGroupSummary {
+	if group == nil {
+		return nil
+	}
+	return &planNodeGroupSummary{
+		ID: group.ID, Name: group.Name, Code: group.Code, IsEnabled: group.IsEnabled,
+	}
+}
+
+func newPlanSummaryItem(plan model.Plan, counts planSKUCountRow) planSummaryItem {
+	return planSummaryItem{
+		ID: plan.ID, Name: plan.Name, Slug: plan.Slug, Summary: plan.Summary,
+		NodeGroupID: plan.NodeGroupID, NodeGroup: newPlanNodeGroupSummary(plan.NodeGroup),
+		IsActive: plan.IsActive, SortOrder: plan.SortOrder, Revision: plan.Revision,
+		SKUCount: counts.SKUCount, ActiveSKUCount: counts.ActiveSKUCount,
+		CreatedAt: plan.CreatedAt, UpdatedAt: plan.UpdatedAt,
+	}
+}
+
+func newPlanDetailItem(plan model.Plan, counts planSKUCountRow) planDetailItem {
+	return planDetailItem{
+		planSummaryItem:        newPlanSummaryItem(plan, counts),
+		Description:            plan.Description,
+		TrafficBytes:           plan.TrafficBytes,
+		SpeedLimitMbps:         plan.SpeedLimitMbps,
+		MaxActiveSubscriptions: plan.MaxActiveSubscriptions,
+		IsRenewable:            plan.IsRenewable,
+		DeviceLimit:            plan.DeviceLimit,
+		FamilyLimit:            plan.FamilyLimit,
+		ResetPolicy:            plan.ResetPolicy,
+		TrafficCalcMode:        plan.TrafficCalcMode,
+	}
+}
+
+func newPlanCatalogItem(plan model.Plan, counts planSKUCountRow, primarySKU *model.PlanSKU) planCatalogItem {
+	return planCatalogItem{
+		planSummaryItem: newPlanSummaryItem(plan, counts),
+		PrimarySKU:      primarySKU,
+	}
+}
+
+func loadPlanSKUCounts(db *gorm.DB, planIDs []uint) (map[uint]planSKUCountRow, error) {
+	counts := make(map[uint]planSKUCountRow, len(planIDs))
+	if len(planIDs) == 0 {
+		return counts, nil
+	}
+	rows := make([]planSKUCountRow, 0, len(planIDs))
+	if err := db.Model(&model.PlanSKU{}).
+		Select("plan_id, COUNT(*) AS sku_count, SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_sku_count").
+		Where("plan_id IN ?", planIDs).
+		Group("plan_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		counts[row.PlanID] = row
+	}
+	return counts, nil
+}
+
+func loadPrimaryPlanSKUs(db *gorm.DB, planIDs []uint) (map[uint]model.PlanSKU, error) {
+	items := make(map[uint]model.PlanSKU, len(planIDs))
+	if len(planIDs) == 0 {
+		return items, nil
+	}
+	rows := make([]model.PlanSKU, 0, len(planIDs))
+	if err := db.Table("plan_skus AS candidate").
+		Where("candidate.plan_id IN ?", planIDs).
+		Where("candidate.is_active = ?", true).
+		Where("candidate.sku_type = ?", "new").
+		Where(`NOT EXISTS (
+			SELECT 1
+			FROM plan_skus AS earlier
+			WHERE earlier.plan_id = candidate.plan_id
+			  AND earlier.is_active = 1
+			  AND earlier.sku_type = 'new'
+			  AND (
+			    earlier.price_cents < candidate.price_cents
+			    OR (earlier.price_cents = candidate.price_cents AND earlier.sort_order < candidate.sort_order)
+			    OR (earlier.price_cents = candidate.price_cents AND earlier.sort_order = candidate.sort_order AND earlier.id < candidate.id)
+			  )
+		)`).
+		Order("candidate.plan_id asc").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		items[row.PlanID] = row
+	}
+	return items, nil
+}
+
 func (h *handlers) PlanListHandler(w http.ResponseWriter, r *http.Request) {
 	plans := make([]model.Plan, 0)
 	claims, claimErr := h.authFromRequest(r)
 	isAdmin := claimErr == nil && claims.IsAdmin
-	query := h.db.Preload("SKUs", func(db *gorm.DB) *gorm.DB {
-		if !isAdmin {
-			db = db.Where("is_active = ?", true)
+	paged := r.URL.Query().Get("paged") == "true"
+	offset, limit := 0, 50
+	var err error
+	if paged {
+		offset, limit, err = parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
+		if err != nil {
+			BadRequest(w, err.Error())
+			return
 		}
-		return db.Order("sort_order asc, id asc")
-	}).Order("sort_order asc, id desc")
+	}
+	query := h.db.Model(&model.Plan{}).Order("sort_order asc, id desc")
 
 	if !isAdmin {
 		query = query.Where("is_active = 1")
@@ -2263,18 +3551,149 @@ func (h *handlers) PlanListHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		query = query.Where("is_active = 1")
 	}
-
+	if paged {
+		if search := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))); search != "" {
+			if len(search) > 128 {
+				BadRequest(w, "q must not exceed 128 bytes")
+				return
+			}
+			pattern := "%" + search + "%"
+			query = query.Where("LOWER(plans.name) LIKE ? OR LOWER(plans.slug) LIKE ? OR LOWER(plans.summary) LIKE ?", pattern, pattern, pattern)
+		}
+	}
+	if isAdmin {
+		if rawActive := strings.TrimSpace(r.URL.Query().Get("active")); rawActive != "" {
+			active, parseErr := strconv.ParseBool(rawActive)
+			if parseErr != nil {
+				BadRequest(w, "invalid active")
+				return
+			}
+			query = query.Where("plans.is_active = ?", active)
+		}
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	if paged {
+		query = query.Offset(offset).Limit(limit)
+	}
+	if paged {
+		query = query.Preload("NodeGroup")
+	} else {
+		query = query.Preload("SKUs", func(db *gorm.DB) *gorm.DB {
+			if !isAdmin {
+				db = db.Where("is_active = ?", true)
+			}
+			return db.Order("sort_order asc, id asc")
+		}).Preload("NodeGroup")
+	}
 	if err := query.Find(&plans).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
-	for i := range plans {
-		var group model.NodeGroup
-		if err := h.db.Select("id", "name", "code", "is_enabled").First(&group, plans[i].NodeGroupID).Error; err == nil {
-			plans[i].NodeGroup = &group
+	if paged {
+		planIDs := make([]uint, 0, len(plans))
+		for _, plan := range plans {
+			planIDs = append(planIDs, plan.ID)
 		}
+		counts, err := loadPlanSKUCounts(h.db, planIDs)
+		if err != nil {
+			ServerError(w, err)
+			return
+		}
+		if isAdmin {
+			items := make([]planSummaryItem, 0, len(plans))
+			for _, plan := range plans {
+				items = append(items, newPlanSummaryItem(plan, counts[plan.ID]))
+			}
+			OK(w, pagedData(items, total, offset, limit))
+			return
+		}
+		primarySKUs, err := loadPrimaryPlanSKUs(h.db, planIDs)
+		if err != nil {
+			ServerError(w, err)
+			return
+		}
+		items := make([]planCatalogItem, 0, len(plans))
+		for _, plan := range plans {
+			count := counts[plan.ID]
+			count.SKUCount = count.ActiveSKUCount
+			var primarySKU *model.PlanSKU
+			if item, ok := primarySKUs[plan.ID]; ok {
+				itemCopy := item
+				primarySKU = &itemCopy
+			}
+			items = append(items, newPlanCatalogItem(plan, count, primarySKU))
+		}
+		OK(w, pagedData(items, total, offset, limit))
+		return
 	}
 	OK(w, plans)
+}
+
+func (h *handlers) PublicPlanDetailHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := parsePathID(r.URL.Path, "/api/v1/plans/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	var plan model.Plan
+	if err := h.db.Preload("NodeGroup").Where("is_active = ?", true).First(&plan, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			NotFound(w)
+			return
+		}
+		ServerError(w, err)
+		return
+	}
+	counts, err := loadPlanSKUCounts(h.db, []uint{plan.ID})
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	count := counts[plan.ID]
+	count.SKUCount = count.ActiveSKUCount
+	primarySKUs, err := loadPrimaryPlanSKUs(h.db, []uint{plan.ID})
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	var primarySKU *model.PlanSKU
+	if item, ok := primarySKUs[plan.ID]; ok {
+		itemCopy := item
+		primarySKU = &itemCopy
+	}
+	OK(w, newPlanCatalogItem(plan, count, primarySKU))
+}
+
+func (h *handlers) PlanDetailHandler(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.requireAdmin(w, r); err != nil {
+		return
+	}
+	id, err := parsePathID(r.URL.Path, "/api/v1/admin/plans/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	var plan model.Plan
+	if err := h.db.
+		Preload("NodeGroup").
+		First(&plan, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			NotFound(w)
+			return
+		}
+		ServerError(w, err)
+		return
+	}
+	counts, err := loadPlanSKUCounts(h.db, []uint{plan.ID})
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	OK(w, newPlanDetailItem(plan, counts[plan.ID]))
 }
 
 func (h *handlers) PlanCreateHandler(w http.ResponseWriter, r *http.Request) {
@@ -2290,23 +3709,32 @@ func (h *handlers) PlanCreateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	req.Slug = strings.ToLower(strings.TrimSpace(req.Slug))
-	if req.Name == "" || req.Slug == "" || len(req.SKUs) == 0 {
-		BadRequest(w, "name, slug and at least one sku are required")
-		return
+	fields := make(map[string]string)
+	if req.Name == "" {
+		fields["name"] = "请输入商品名称。"
+	}
+	if req.Slug == "" {
+		fields["slug"] = "请输入商品 Slug。"
+	}
+	if len(req.SKUs) == 0 {
+		fields["skus"] = "请至少配置一个销售规格。"
 	}
 	if req.NodeGroupID == 0 {
-		BadRequest(w, "node_group_id is required")
+		fields["node_group_id"] = "请选择节点组。"
+	}
+	if len(fields) > 0 {
+		BadRequestFields(w, "商品信息校验失败。", fields)
 		return
 	}
 
 	policy, err := normalizePlanPolicy(req, req.SKUs[0])
 	if err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 	plan := model.Plan{
 		Name: req.Name, Slug: req.Slug, Summary: strings.TrimSpace(req.Summary),
-		Description: strings.TrimSpace(req.Description), IsActive: req.IsActive, SortOrder: req.SortOrder,
+		Description: strings.TrimSpace(req.Description), IsActive: req.IsActive, SortOrder: req.SortOrder, Revision: 1,
 		TrafficBytes: policy.TrafficBytes, SpeedLimitMbps: policy.SpeedLimitMbps,
 		MaxActiveSubscriptions: policy.MaxActiveSubscriptions, IsRenewable: policy.IsRenewable,
 		DeviceLimit: policy.DeviceLimit, FamilyLimit: policy.FamilyLimit,
@@ -2315,19 +3743,19 @@ func (h *handlers) PlanCreateHandler(w http.ResponseWriter, r *http.Request) {
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		var group model.NodeGroup
 		if err := tx.First(&group, req.NodeGroupID).Error; err != nil {
-			return errors.New("node group not found")
+			return validationError("商品信息校验失败。", map[string]string{"node_group_id": "所选节点组不存在。"})
 		}
 		if plan.IsActive && !group.IsEnabled {
-			return errors.New("an active plan requires an enabled node group")
+			return validationError("商品信息校验失败。", map[string]string{"node_group_id": "已发布商品必须选择已启用的节点组。"})
 		}
 		plan.NodeGroupID = group.ID
 		if err := tx.Create(&plan).Error; err != nil {
 			return err
 		}
-		for _, skuReq := range req.SKUs {
+		for index, skuReq := range req.SKUs {
 			sku, err := buildPlanSKU(plan.ID, skuReq)
 			if err != nil {
-				return err
+				return prefixValidationError(err, fmt.Sprintf("skus.%d.", index))
 			}
 			if err := tx.Create(&sku).Error; err != nil {
 				return err
@@ -2336,7 +3764,7 @@ func (h *handlers) PlanCreateHandler(w http.ResponseWriter, r *http.Request) {
 		if req.IsActive {
 			var activeSKUCount int64
 			if err := tx.Model(&model.PlanSKU{}).Where("plan_id = ? AND is_active = ?", plan.ID, true).Count(&activeSKUCount).Error; err != nil || activeSKUCount == 0 {
-				return errors.New("an active plan must have at least one active sku")
+				return validationError("商品信息校验失败。", map[string]string{"skus": "已发布商品至少需要一个可售 SKU。"})
 			}
 		}
 		if plan.IsActive {
@@ -2345,13 +3773,13 @@ func (h *handlers) PlanCreateHandler(w http.ResponseWriter, r *http.Request) {
 				Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
 				Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", plan.NodeGroupID, true).
 				Count(&endpointCount).Error; err != nil || endpointCount == 0 {
-				return errors.New("an active plan requires a node group with at least one active protocol endpoint")
+				return validationError("商品信息校验失败。", map[string]string{"node_group_id": "已发布商品的节点组至少需要一个已启用协议端点。"})
 			}
 		}
 		return createAuditLog(tx, claims, "plan.create", fmt.Sprintf("plan:%d", plan.ID), fmt.Sprintf("skus=%d node_group=%d", len(req.SKUs), plan.NodeGroupID))
 	})
 	if err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 	_ = h.db.Preload("SKUs", func(db *gorm.DB) *gorm.DB { return db.Order("sort_order asc, id asc") }).First(&plan, plan.ID).Error
@@ -2384,12 +3812,16 @@ func (h *handlers) PlanUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
+	if req.ExpectedRevision == nil {
+		writeJSON(w, http.StatusPreconditionRequired, "保存商品前需要提供当前版本号。", map[string]interface{}{"current_revision": plan.Revision})
+		return
+	}
 
 	updates := make(map[string]interface{})
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			BadRequest(w, "name cannot be empty")
+			BadRequestFields(w, "商品信息校验失败。", map[string]string{"name": "请输入商品名称。"})
 			return
 		}
 		updates["name"] = name
@@ -2397,7 +3829,7 @@ func (h *handlers) PlanUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	if req.Slug != nil {
 		slug := strings.ToLower(strings.TrimSpace(*req.Slug))
 		if slug == "" {
-			BadRequest(w, "slug cannot be empty")
+			BadRequestFields(w, "商品信息校验失败。", map[string]string{"slug": "请输入商品 Slug。"})
 			return
 		}
 		updates["slug"] = slug
@@ -2413,33 +3845,33 @@ func (h *handlers) PlanUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.NodeGroupID != nil {
 		if *req.NodeGroupID == 0 {
-			BadRequest(w, "node_group_id must be positive")
+			BadRequestFields(w, "商品信息校验失败。", map[string]string{"node_group_id": "请选择节点组。"})
 			return
 		}
 		var group model.NodeGroup
 		if err := h.db.First(&group, *req.NodeGroupID).Error; err != nil {
-			BadRequest(w, "node group not found")
+			BadRequestFields(w, "商品信息校验失败。", map[string]string{"node_group_id": "所选节点组不存在。"})
 			return
 		}
 		updates["node_group_id"] = *req.NodeGroupID
 	}
 	if req.TrafficBytes != nil {
 		if *req.TrafficBytes <= 0 {
-			BadRequest(w, "traffic_bytes must be positive")
+			BadRequestFields(w, "套餐策略校验失败。", map[string]string{"traffic_bytes": "流量配额必须大于 0。"})
 			return
 		}
 		updates["traffic_bytes"] = *req.TrafficBytes
 	}
 	if req.SpeedLimitMbps != nil {
 		if *req.SpeedLimitMbps < 0 {
-			BadRequest(w, "speed_limit_mbps cannot be negative")
+			BadRequestFields(w, "套餐策略校验失败。", map[string]string{"speed_limit_mbps": "速率限制不能小于 0。"})
 			return
 		}
 		updates["speed_limit_mbps"] = *req.SpeedLimitMbps
 	}
 	if req.MaxActiveSubscriptions != nil {
 		if *req.MaxActiveSubscriptions < 0 {
-			BadRequest(w, "max_active_subscriptions cannot be negative")
+			BadRequestFields(w, "套餐策略校验失败。", map[string]string{"max_active_subscriptions": "最大有效订阅数不能小于 0。"})
 			return
 		}
 		updates["max_active_subscriptions"] = *req.MaxActiveSubscriptions
@@ -2449,28 +3881,28 @@ func (h *handlers) PlanUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.DeviceLimit != nil {
 		if *req.DeviceLimit <= 0 {
-			BadRequest(w, "device_limit must be positive")
+			BadRequestFields(w, "套餐策略校验失败。", map[string]string{"device_limit": "设备数必须大于 0。"})
 			return
 		}
 		updates["device_limit"] = *req.DeviceLimit
 	}
 	if req.FamilyLimit != nil {
 		if *req.FamilyLimit < 0 {
-			BadRequest(w, "family_limit cannot be negative")
+			BadRequestFields(w, "套餐策略校验失败。", map[string]string{"family_limit": "家庭共享人数不能小于 0。"})
 			return
 		}
 		updates["family_limit"] = *req.FamilyLimit
 	}
 	if req.ResetPolicy != nil {
 		if *req.ResetPolicy < 0 || *req.ResetPolicy > 5 {
-			BadRequest(w, "reset_policy must be between 0 and 5")
+			BadRequestFields(w, "套餐策略校验失败。", map[string]string{"reset_policy": "请选择有效的流量重置策略。"})
 			return
 		}
 		updates["reset_policy"] = *req.ResetPolicy
 	}
 	if req.TrafficCalcMode != nil {
 		if !validTrafficCalcMode(*req.TrafficCalcMode) {
-			BadRequest(w, "traffic_calc_mode must be 0, 1 or 2")
+			BadRequestFields(w, "套餐策略校验失败。", map[string]string{"traffic_calc_mode": "请选择有效的流量计算方式。"})
 			return
 		}
 		updates["traffic_calc_mode"] = *req.TrafficCalcMode
@@ -2494,7 +3926,7 @@ func (h *handlers) PlanUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	if targetActive && (req.IsActive != nil || req.NodeGroupID != nil) {
 		var group model.NodeGroup
 		if err := h.db.Where("id = ? AND is_enabled = ?", targetNodeGroupID, true).First(&group).Error; err != nil {
-			BadRequest(w, "an active plan requires an enabled node group")
+			BadRequestFields(w, "商品信息校验失败。", map[string]string{"node_group_id": "已发布商品必须选择已启用的节点组。"})
 			return
 		}
 		var endpointCount int64
@@ -2502,7 +3934,7 @@ func (h *handlers) PlanUpdateHandler(w http.ResponseWriter, r *http.Request) {
 			Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
 			Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", targetNodeGroupID, true).
 			Count(&endpointCount).Error; err != nil || endpointCount == 0 {
-			BadRequest(w, "an active plan requires a node group with at least one active protocol endpoint")
+			BadRequestFields(w, "商品信息校验失败。", map[string]string{"node_group_id": "已发布商品的节点组至少需要一个已启用协议端点。"})
 			return
 		}
 		var activeSKUCount int64
@@ -2512,12 +3944,28 @@ func (h *handlers) PlanUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	currentRevision := plan.Revision
+	updates["revision"] = gorm.Expr("revision + 1")
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&plan).Updates(updates).Error; err != nil {
-			return err
+		result := tx.Model(&model.Plan{}).Where("id = ? AND revision = ?", plan.ID, *req.ExpectedRevision).Updates(updates)
+		if result.Error != nil {
+			return result.Error
 		}
-		return createAuditLog(tx, claims, "plan.update", fmt.Sprintf("plan:%d", plan.ID), fmt.Sprintf("fields=%d node_group=%d", len(updates), targetNodeGroupID))
+		if result.RowsAffected == 0 {
+			var latest struct{ Revision uint64 }
+			if err := tx.Model(&model.Plan{}).Select("revision").Where("id = ?", plan.ID).Scan(&latest).Error; err != nil {
+				return err
+			}
+			currentRevision = latest.Revision
+			return errPlanRevisionConflict
+		}
+		currentRevision = *req.ExpectedRevision + 1
+		return createAuditLog(tx, claims, "plan.update", fmt.Sprintf("plan:%d", plan.ID), fmt.Sprintf("fields=%d node_group=%d revision=%d", len(updates)-1, targetNodeGroupID, currentRevision))
 	}); err != nil {
+		if errors.Is(err, errPlanRevisionConflict) {
+			writeJSON(w, http.StatusConflict, "商品已被其他会话更新，请重新加载最新版本。", map[string]interface{}{"current_revision": currentRevision})
+			return
+		}
 		BadRequest(w, err.Error())
 		return
 	}
@@ -2528,6 +3976,8 @@ func (h *handlers) PlanUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	OK(w, plan)
 }
+
+var errPlanRevisionConflict = errors.New("plan revision conflict")
 
 type normalizedPlanPolicy struct {
 	TrafficBytes           int64
@@ -2560,14 +4010,30 @@ func normalizePlanPolicy(req planCreateReq, firstSKU planSKUReq) (normalizedPlan
 	if req.IsRenewable != nil {
 		policy.IsRenewable = *req.IsRenewable
 	}
-	if policy.TrafficBytes <= 0 || policy.DeviceLimit <= 0 || policy.SpeedLimitMbps < 0 || policy.MaxActiveSubscriptions < 0 || policy.FamilyLimit < 0 {
-		return normalizedPlanPolicy{}, errors.New("plan traffic, device, speed, capacity or family policy is invalid")
+	fields := make(map[string]string)
+	if policy.TrafficBytes <= 0 {
+		fields["traffic_bytes"] = "流量配额必须大于 0。"
+	}
+	if policy.DeviceLimit <= 0 {
+		fields["device_limit"] = "设备数必须大于 0。"
+	}
+	if policy.SpeedLimitMbps < 0 {
+		fields["speed_limit_mbps"] = "速率限制不能小于 0。"
+	}
+	if policy.MaxActiveSubscriptions < 0 {
+		fields["max_active_subscriptions"] = "最大有效订阅数不能小于 0。"
+	}
+	if policy.FamilyLimit < 0 {
+		fields["family_limit"] = "家庭共享人数不能小于 0。"
 	}
 	if policy.ResetPolicy < 0 || policy.ResetPolicy > 5 {
-		return normalizedPlanPolicy{}, errors.New("reset_policy must be between 0 and 5")
+		fields["reset_policy"] = "请选择有效的流量重置策略。"
 	}
 	if !validTrafficCalcMode(policy.TrafficCalcMode) {
-		return normalizedPlanPolicy{}, errors.New("traffic_calc_mode must be 0, 1 or 2")
+		fields["traffic_calc_mode"] = "请选择有效的流量计算方式。"
+	}
+	if len(fields) > 0 {
+		return normalizedPlanPolicy{}, validationError("套餐策略校验失败。", fields)
 	}
 	return policy, nil
 }
@@ -2585,27 +4051,46 @@ func buildPlanSKU(planID uint, req planSKUReq) (model.PlanSKU, error) {
 	}
 	req.BillingUnit = strings.ToLower(strings.TrimSpace(req.BillingUnit))
 	req.Currency = strings.ToUpper(strings.TrimSpace(req.Currency))
-	if req.Code == "" || req.Name == "" || req.Currency == "" {
-		return model.PlanSKU{}, errors.New("sku code, name and currency are required")
+	fields := make(map[string]string)
+	if req.Code == "" {
+		fields["code"] = "请输入 SKU 编码。"
+	}
+	if req.Name == "" {
+		fields["name"] = "请输入规格名称。"
+	}
+	if req.Currency == "" {
+		fields["currency"] = "请输入币种。"
 	}
 	switch req.SKUType {
 	case "new", "renewal", "upgrade", "traffic_pack":
 	default:
-		return model.PlanSKU{}, errors.New("sku_type must be new, renewal, upgrade or traffic_pack")
+		fields["sku_type"] = "请选择有效的规格类型。"
 	}
 	switch req.BillingUnit {
 	case "day", "month", "year", "once":
 		if req.BillingValue <= 0 {
-			return model.PlanSKU{}, errors.New("billing_value must be positive")
+			fields["billing_value"] = "周期数量必须大于 0。"
 		}
 	default:
-		return model.PlanSKU{}, errors.New("billing_unit must be day, month, year or once")
+		fields["billing_unit"] = "请选择有效的计费单位。"
 	}
 	if req.BillingUnit == "once" && req.SKUType != "traffic_pack" {
-		return model.PlanSKU{}, errors.New("once billing is only valid for traffic_pack skus")
+		fields["billing_unit"] = "一次性计费仅适用于流量包。"
 	}
-	if req.PriceCents < 0 || req.TrafficBytes <= 0 || req.DeviceLimit <= 0 || req.SpeedLimitMbps < 0 {
-		return model.PlanSKU{}, errors.New("sku price, traffic, device or speed specification is invalid")
+	if req.PriceCents < 0 {
+		fields["price_cents"] = "价格不能小于 0。"
+	}
+	if req.TrafficBytes <= 0 {
+		fields["traffic_bytes"] = "流量配额必须大于 0。"
+	}
+	if req.DeviceLimit <= 0 {
+		fields["device_limit"] = "设备数必须大于 0。"
+	}
+	if req.SpeedLimitMbps < 0 {
+		fields["speed_limit_mbps"] = "速率限制不能小于 0。"
+	}
+	if len(fields) > 0 {
+		return model.PlanSKU{}, validationError("销售规格校验失败。", fields)
 	}
 	isActive := true
 	if req.IsActive != nil {
@@ -2618,6 +4103,18 @@ func buildPlanSKU(planID uint, req planSKUReq) (model.PlanSKU, error) {
 		DeviceLimit: req.DeviceLimit, SpeedLimitMbps: req.SpeedLimitMbps,
 		IsActive: isActive, SortOrder: req.SortOrder,
 	}, nil
+}
+
+func prefixValidationError(err error, prefix string) error {
+	var validation *requestValidationError
+	if !errors.As(err, &validation) {
+		return err
+	}
+	fields := make(map[string]string, len(validation.fields))
+	for name, message := range validation.fields {
+		fields[prefix+name] = message
+	}
+	return validationError(validation.message, fields)
 }
 
 func uniqueUintIDs(values []uint) []uint {
@@ -2634,6 +4131,131 @@ func uniqueUintIDs(values []uint) []uint {
 		result = append(result, value)
 	}
 	return result
+}
+
+func (h *handlers) PlanSKUListHandler(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.requireAdmin(w, r); err != nil {
+		return
+	}
+	planID, err := parsePathID(r.URL.Path, "/api/v1/admin/plans/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	var planCount int64
+	if err := h.db.Model(&model.Plan{}).Where("id = ?", planID).Count(&planCount).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	if planCount == 0 {
+		NotFound(w)
+		return
+	}
+	offset, limit, err := parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	query := h.db.Model(&model.PlanSKU{}).Where("plan_id = ?", planID)
+	if search := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))); search != "" {
+		if len(search) > 128 {
+			BadRequest(w, "q must not exceed 128 bytes")
+			return
+		}
+		pattern := "%" + search + "%"
+		query = query.Where("LOWER(name) LIKE ? OR LOWER(code) LIKE ? OR LOWER(currency) LIKE ?", pattern, pattern, pattern)
+	}
+	if rawActive := strings.TrimSpace(r.URL.Query().Get("active")); rawActive != "" {
+		active, parseErr := strconv.ParseBool(rawActive)
+		if parseErr != nil {
+			BadRequest(w, "invalid active")
+			return
+		}
+		query = query.Where("is_active = ?", active)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	items := make([]model.PlanSKU, 0)
+	if err := query.Order("sort_order asc, id asc").Offset(offset).Limit(limit).Find(&items).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	OK(w, pagedData(items, total, offset, limit))
+}
+
+func (h *handlers) PublicPlanSKUListHandler(w http.ResponseWriter, r *http.Request) {
+	planID, err := parsePathID(r.URL.Path, "/api/v1/plans/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	var planCount int64
+	if err := h.db.Model(&model.Plan{}).Where("id = ? AND is_active = ?", planID, true).Count(&planCount).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	if planCount == 0 {
+		NotFound(w)
+		return
+	}
+	offset, limit, err := parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	query := h.db.Model(&model.PlanSKU{}).Where("plan_id = ? AND is_active = ?", planID, true)
+	if search := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))); search != "" {
+		if len(search) > 128 {
+			BadRequest(w, "q must not exceed 128 bytes")
+			return
+		}
+		pattern := "%" + search + "%"
+		query = query.Where("LOWER(name) LIKE ? OR LOWER(code) LIKE ? OR LOWER(currency) LIKE ?", pattern, pattern, pattern)
+	}
+	if skuType := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sku_type"))); skuType != "" {
+		switch skuType {
+		case "new", "renewal", "upgrade", "traffic_pack":
+			query = query.Where("sku_type = ?", skuType)
+		default:
+			BadRequest(w, "invalid sku_type")
+			return
+		}
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	items := make([]model.PlanSKU, 0)
+	if err := query.Order("sort_order asc, id asc").Offset(offset).Limit(limit).Find(&items).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	OK(w, pagedData(items, total, offset, limit))
+}
+
+func (h *handlers) PlanSKUGetHandler(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.requireAdmin(w, r); err != nil {
+		return
+	}
+	id, err := parsePathID(r.URL.Path, "/api/v1/admin/plan-skus/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	var sku model.PlanSKU
+	if err := h.db.First(&sku, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			NotFound(w)
+			return
+		}
+		ServerError(w, err)
+		return
+	}
+	OK(w, sku)
 }
 
 func (h *handlers) PlanSKUCreateHandler(w http.ResponseWriter, r *http.Request) {
@@ -2653,7 +4275,7 @@ func (h *handlers) PlanSKUCreateHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	sku, err := buildPlanSKU(planID, req)
 	if err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -2694,7 +4316,7 @@ func (h *handlers) PlanSKUUpdateHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	sku, err := buildPlanSKU(existing.PlanID, req)
 	if err != nil {
-		BadRequest(w, err.Error())
+		BadRequestError(w, err)
 		return
 	}
 	sku.ID = existing.ID
@@ -2707,7 +4329,7 @@ func (h *handlers) PlanSKUUpdateHandler(w http.ResponseWriter, r *http.Request) 
 		if plan.IsActive {
 			var otherActive int64
 			if err := h.db.Model(&model.PlanSKU{}).Where("plan_id = ? AND id <> ? AND is_active = ?", existing.PlanID, existing.ID, true).Count(&otherActive).Error; err != nil || otherActive == 0 {
-				BadRequest(w, "an active plan must retain at least one active sku")
+				BadRequestFields(w, "销售规格校验失败。", map[string]string{"is_active": "已发布商品必须保留至少一个可售 SKU。"})
 				return
 			}
 		}
@@ -2748,34 +4370,87 @@ func (h *handlers) OrderListHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var orders []model.Order
-	query := h.db.Order("id desc")
+	query := h.db.Model(&model.Order{})
 
 	if adminScope {
 		if target := strings.TrimSpace(r.URL.Query().Get("user_id")); target != "" {
 			parsed, parseErr := strconv.ParseUint(target, 10, 64)
-			if parseErr != nil {
+			if parseErr != nil || parsed == 0 {
 				BadRequest(w, "invalid user_id")
 				return
 			}
-			query = query.Where("user_id = ?", parsed)
+			query = query.Where("orders.user_id = ?", parsed)
+		}
+		if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
+			if len(search) > 128 {
+				BadRequest(w, "q must not exceed 128 bytes")
+				return
+			}
+			pattern := "%" + strings.ToLower(search) + "%"
+			condition := `LOWER(orders.trade_no) LIKE ? OR LOWER(COALESCE(orders.provider_trade_no, '')) LIKE ?
+				OR LOWER(orders.plan_name) LIKE ? OR LOWER(orders.sku_name) LIKE ? OR LOWER(orders.channel) LIKE ?`
+			args := []interface{}{pattern, pattern, pattern, pattern, pattern}
+			if parsed, parseErr := strconv.ParseUint(search, 10, 64); parseErr == nil && parsed > 0 {
+				condition += " OR orders.id = ? OR orders.user_id = ? OR orders.subscription_id = ?"
+				args = append(args, parsed, parsed, parsed)
+			}
+			query = query.Where(condition, args...)
+		}
+		if orderType := strings.TrimSpace(r.URL.Query().Get("order_type")); orderType != "" {
+			if !isValidOrderType(orderType) {
+				BadRequest(w, "invalid order_type")
+				return
+			}
+			query = query.Where("orders.order_type = ?", orderType)
 		}
 	} else {
-		query = query.Where("user_id = ?", claims.UserID)
+		query = query.Where("orders.user_id = ?", claims.UserID)
 	}
 
 	if status := strings.TrimSpace(r.URL.Query().Get("status")); status != "" {
-		if !h.isValidOrderStatus(status) {
+		statuses, valid := h.orderListStatusValues(status, adminScope)
+		if !valid {
 			BadRequest(w, "invalid status")
 			return
 		}
-		query = query.Where("status = ?", status)
+		query = query.Where("orders.status IN ?", statuses)
+	}
+	if adminScope {
+		window, present, windowErr := parseOptionalDateWindow(r.URL.Query(), "created_from", "created_to", historyMaxWindowDays)
+		if windowErr != nil {
+			BadRequest(w, windowErr.Error())
+			return
+		}
+		if present {
+			query = applyHistoryWindow(query, "orders.created_at", window)
+		}
 	}
 
-	if err := query.Find(&orders).Error; err != nil {
+	paged := wantsPagedList(r)
+	offset, limit := 0, 50
+	var total int64
+	if paged {
+		offset, limit, err = parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
+		if err != nil {
+			BadRequest(w, err.Error())
+			return
+		}
+		if err := query.Count(&total).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		query = query.Offset(offset).Limit(limit)
+	}
+	if err := query.Order("orders.id desc").Find(&orders).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
-	OK(w, orders)
+	items := newAdminOrderList(orders)
+	if paged {
+		OK(w, pagedData(items, total, offset, limit))
+		return
+	}
+	OK(w, items)
 }
 
 func (h *handlers) OrderCreateHandler(w http.ResponseWriter, r *http.Request) {
@@ -2903,6 +4578,9 @@ func (h *handlers) OrderPayHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		ServerError(w, err)
 		return
+	}
+	if order.SubscriptionID != 0 && order.Status == orderStatusPaid {
+		h.scheduleSubscriptionConfigPublishes(order.SubscriptionID, claims.UserID)
 	}
 	OK(w, order)
 }
@@ -3057,6 +4735,9 @@ func (h *handlers) OrderPayCallbackHandler(w http.ResponseWriter, r *http.Reques
 		ServerError(w, err)
 		return
 	}
+	if order.SubscriptionID != 0 && order.Status == orderStatusPaid {
+		h.scheduleSubscriptionConfigPublishes(order.SubscriptionID, claims.UserID)
+	}
 	OK(w, order)
 }
 
@@ -3165,6 +4846,9 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 		if err := tx.Create(&sub).Error; err != nil {
 			return model.Subscription{}, err
 		}
+		if _, err := h.ensureSubscriptionCredentials(tx, sub); err != nil {
+			return model.Subscription{}, err
+		}
 		if err := createQuotaEvent(tx, sub, "purchase", order.TrafficBytes, 0, sub.FlowTotal, "order", strconv.FormatUint(uint64(order.ID), 10)); err != nil {
 			return model.Subscription{}, err
 		}
@@ -3201,6 +4885,9 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 	}
 
 	if err := tx.Save(&sub).Error; err != nil {
+		return model.Subscription{}, err
+	}
+	if _, err := h.ensureSubscriptionCredentials(tx, sub); err != nil {
 		return model.Subscription{}, err
 	}
 	if err := createQuotaEvent(tx, sub, order.OrderType, order.TrafficBytes, before, before+order.TrafficBytes, "order", strconv.FormatUint(uint64(order.ID), 10)); err != nil {
@@ -3279,7 +4966,16 @@ func expireSubscriptions(db *gorm.DB, userID uint, now time.Time) error {
 	if userID != 0 {
 		query = query.Where("user_id = ?", userID)
 	}
-	return query.Update("status", subStatusExpired).Error
+	if err := query.Update("status", subStatusExpired).Error; err != nil {
+		return err
+	}
+	credentialQuery := db.Model(&model.ProtocolCredential{}).
+		Where("status = ? AND subscription_id IN (?)", protocolCredentialStatusActive,
+			db.Model(&model.Subscription{}).Select("id").Where("status <> ?", subStatusActive))
+	if userID != 0 {
+		credentialQuery = credentialQuery.Where("user_id = ?", userID)
+	}
+	return credentialQuery.Updates(map[string]interface{}{"status": "expired", "updated_at": now}).Error
 }
 
 func (h *handlers) SubscriptionsHandler(w http.ResponseWriter, r *http.Request) {
@@ -3302,7 +4998,7 @@ func (h *handlers) SubscriptionsHandler(w http.ResponseWriter, r *http.Request) 
 	scopeUserID := claims.UserID
 	if adminScope {
 		if target := strings.TrimSpace(r.URL.Query().Get("user_id")); target != "" {
-			if parsed, parseErr := strconv.ParseUint(target, 10, 64); parseErr == nil {
+			if parsed, parseErr := strconv.ParseUint(target, 10, 64); parseErr == nil && parsed > 0 {
 				scopeUserID = uint(parsed)
 			} else {
 				BadRequest(w, "invalid user_id")
@@ -3312,22 +5008,106 @@ func (h *handlers) SubscriptionsHandler(w http.ResponseWriter, r *http.Request) 
 			scopeUserID = 0
 		}
 	}
-	if err := expireSubscriptions(h.db, scopeUserID, time.Now().UTC()); err != nil {
-		ServerError(w, err)
-		return
-	}
+	now := time.Now().UTC()
 
+	paged := wantsPagedList(r)
 	var subs []model.Subscription
-	query := h.db.Order("id desc")
+	query := h.db.Model(&model.Subscription{})
+	if adminScope || paged {
+		query = query.
+			Joins("LEFT JOIN users ON users.id = subscriptions.user_id").
+			Joins("LEFT JOIN plans ON plans.id = subscriptions.plan_id").
+			Joins("LEFT JOIN plan_skus ON plan_skus.id = subscriptions.plan_sku_id")
+	}
 	if scopeUserID != 0 {
-		query = query.Where("user_id = ?", scopeUserID)
+		query = query.Where("subscriptions.user_id = ?", scopeUserID)
 	}
 	if status := strings.TrimSpace(r.URL.Query().Get("status")); status != "" {
-		query = query.Where("status = ?", status)
+		if !isValidSubscriptionStatus(status) {
+			BadRequest(w, "invalid status")
+			return
+		}
+		query = applyEffectiveSubscriptionStatusFilter(query, status, now)
 	}
-	if err := query.Find(&subs).Error; err != nil {
+	if adminScope {
+		if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
+			if len(search) > 128 {
+				BadRequest(w, "q must not exceed 128 bytes")
+				return
+			}
+			pattern := "%" + strings.ToLower(search) + "%"
+			condition := `LOWER(users.email) LIKE ? OR LOWER(plans.name) LIKE ? OR LOWER(plan_skus.name) LIKE ?`
+			args := []interface{}{pattern, pattern, pattern}
+			if parsed, parseErr := strconv.ParseUint(search, 10, 64); parseErr == nil && parsed > 0 {
+				condition += " OR subscriptions.id = ? OR subscriptions.user_id = ? OR subscriptions.plan_id = ?"
+				args = append(args, parsed, parsed, parsed)
+			}
+			query = query.Where(condition, args...)
+		}
+		if quota := strings.TrimSpace(r.URL.Query().Get("quota")); quota != "" {
+			if !isValidSubscriptionQuotaFilter(quota) {
+				BadRequest(w, "invalid quota")
+				return
+			}
+			if quota == "available" {
+				query = query.Where("subscriptions.flow_used < subscriptions.flow_total")
+			} else {
+				query = query.Where("subscriptions.flow_used >= subscriptions.flow_total")
+			}
+		}
+		window, present, windowErr := parseOptionalDateWindow(r.URL.Query(), "expires_from", "expires_to", historyMaxWindowDays)
+		if windowErr != nil {
+			BadRequest(w, windowErr.Error())
+			return
+		}
+		if present {
+			query = applyHistoryWindow(query, "subscriptions.end_at", window)
+		}
+	}
+	offset, limit := 0, 50
+	var total int64
+	if paged {
+		offset, limit, err = parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
+		if err != nil {
+			BadRequest(w, err.Error())
+			return
+		}
+		if err := query.Count(&total).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		var items []adminSubscriptionListItem
+		if err := query.
+			Select(`subscriptions.id, subscriptions.user_id, users.email AS user_email,
+				subscriptions.plan_id, plans.name AS plan_name,
+				subscriptions.plan_sku_id, plan_skus.name AS sku_name,
+				subscriptions.node_group_id, subscriptions.subscription_type,
+				subscriptions.start_at, subscriptions.end_at,
+				CASE
+					WHEN subscriptions.status = 'active'
+						AND (subscriptions.end_at <= ? OR subscriptions.flow_used >= subscriptions.flow_total)
+					THEN 'expired'
+					ELSE subscriptions.status
+				END AS status,
+				subscriptions.flow_total, subscriptions.flow_used,
+				subscriptions.speed_limit_mbps, subscriptions.device_limit,
+				subscriptions.family_limit, subscriptions.renewal_price_minor,
+				subscriptions.reset_policy, subscriptions.next_reset_at,
+				subscriptions.traffic_calc_mode, subscriptions.created_at,
+				subscriptions.updated_at`, now).
+			Order("subscriptions.id desc").Offset(offset).Limit(limit).Scan(&items).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		OK(w, pagedData(items, total, offset, limit))
+		return
+	}
+	if err := query.Order("subscriptions.id desc").Find(&subs).Error; err != nil {
 		ServerError(w, err)
 		return
+	}
+	for index := range subs {
+		subs[index].Status = effectiveSubscriptionStatus(subs[index], now)
 	}
 	OK(w, subs)
 }
@@ -3349,13 +5129,40 @@ func (h *handlers) SubscriptionAccessHandler(w http.ResponseWriter, r *http.Requ
 		ServerError(w, err)
 		return
 	}
+	if token.RevokedAt != nil {
+		OK(w, map[string]interface{}{
+			"configured":   false,
+			"token_prefix": token.TokenPrefix,
+			"last_used_at": token.LastUsedAt,
+			"revoked_at":   token.RevokedAt,
+			"updated_at":   token.UpdatedAt,
+		})
+		return
+	}
+
+	if token.TokenCiphertext == "" {
+		OK(w, map[string]interface{}{
+			"configured":   false,
+			"token_prefix": token.TokenPrefix,
+			"last_used_at": token.LastUsedAt,
+			"updated_at":   token.UpdatedAt,
+		})
+		return
+	}
+	rawToken, err := h.readableSubscriptionToken(&token)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
 
 	OK(w, map[string]interface{}{
-		"configured":   token.RevokedAt == nil,
-		"token_prefix": token.TokenPrefix,
-		"last_used_at": token.LastUsedAt,
-		"revoked_at":   token.RevokedAt,
-		"updated_at":   token.UpdatedAt,
+		"configured":       true,
+		"token":            rawToken,
+		"token_prefix":     token.TokenPrefix,
+		"subscription_url": "/api/v1/client/subscription/" + rawToken,
+		"last_used_at":     token.LastUsedAt,
+		"revoked_at":       token.RevokedAt,
+		"updated_at":       token.UpdatedAt,
 	})
 }
 
@@ -3371,6 +5178,11 @@ func (h *handlers) SubscriptionAccessRotateHandler(w http.ResponseWriter, r *htt
 		ServerError(w, err)
 		return
 	}
+	encryptedToken, err := h.credentialCipher.Encrypt(rawToken)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
 
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		var token model.SubscriptionToken
@@ -3380,6 +5192,7 @@ func (h *handlers) SubscriptionAccessRotateHandler(w http.ResponseWriter, r *htt
 		}
 		token.UserID = claims.UserID
 		token.TokenHash = tokenHash
+		token.TokenCiphertext = encryptedToken
 		token.TokenPrefix = tokenPrefix
 		token.LastUsedAt = nil
 		token.RevokedAt = nil
@@ -3408,8 +5221,25 @@ func (h *handlers) SubscriptionAccessRotateHandler(w http.ResponseWriter, r *htt
 		"token":            rawToken,
 		"token_prefix":     tokenPrefix,
 		"subscription_url": "/api/v1/client/subscription/" + rawToken,
-		"notice":           "token is shown once; rotating invalidates the previous URL",
+		"notice":           "the link remains available in the account; rotating invalidates previous URLs",
 	})
+}
+
+func (h *handlers) readableSubscriptionToken(token *model.SubscriptionToken) (string, error) {
+	if token == nil || token.ID == 0 {
+		return "", errors.New("subscription token is required")
+	}
+	if token.TokenCiphertext == "" {
+		return "", errors.New("subscription token is not recoverable; rotate it to generate a new link")
+	}
+	raw, err := h.credentialCipher.Decrypt(token.TokenCiphertext)
+	if err != nil {
+		return "", fmt.Errorf("decrypt subscription token: %w", err)
+	}
+	if subtle.ConstantTimeCompare([]byte(hashSubscriptionToken(raw)), []byte(token.TokenHash)) != 1 {
+		return "", errors.New("subscription token integrity check failed")
+	}
+	return raw, nil
 }
 
 func (h *handlers) SubscriptionAccessRevokeHandler(w http.ResponseWriter, r *http.Request) {
@@ -3448,7 +5278,8 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	var access model.SubscriptionToken
-	if err := h.db.Where("token_hash = ? AND revoked_at IS NULL", hashSubscriptionToken(rawToken)).First(&access).Error; err != nil {
+	tokenHash := hashSubscriptionToken(rawToken)
+	if err := h.db.Where("token_hash = ? AND revoked_at IS NULL", tokenHash).First(&access).Error; err != nil {
 		NotFound(w)
 		return
 	}
@@ -3475,22 +5306,60 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 		Forbidden(w, "subscription is inactive, expired, or out of traffic")
 		return
 	}
+	if err := h.ensureCredentialsForSubscriptions(subscriptions); err != nil {
+		ServerError(w, err)
+		return
+	}
 
 	nodeGroupIDs := make([]uint, 0, len(subscriptions))
+	subscriptionIDs := make([]uint, 0, len(subscriptions))
 	for _, subscription := range subscriptions {
 		nodeGroupIDs = append(nodeGroupIDs, subscription.NodeGroupID)
+		subscriptionIDs = append(subscriptionIDs, subscription.ID)
 	}
+	manifestNodes := make([]subscriptionManifestNode, 0)
+	var credentials []model.ProtocolCredential
+	if err := h.db.Where("subscription_id IN ? AND status = ? AND revoked_at IS NULL AND expires_at > ?", uniqueUintIDs(subscriptionIDs), protocolCredentialStatusActive, now).
+		Order("protocol_endpoint_id asc, id asc").Find(&credentials).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	for _, credential := range credentials {
+		var endpoint model.ProtocolEndpoint
+		if err := h.db.Where("id = ? AND is_active = ?", credential.ProtocolEndpointID, true).First(&endpoint).Error; err != nil {
+			continue
+		}
+		var node model.Node
+		if err := h.db.Select("id", "region", "last_seen_at", "is_enabled").First(&node, endpoint.NodeID).Error; err != nil || !node.IsEnabled || node.LastSeenAt == nil || node.LastSeenAt.Before(now.Add(-nodeOnlineWindow)) {
+			continue
+		}
+		clientConfig, err := h.credentialClientConfig(endpoint, credential)
+		if err != nil {
+			continue
+		}
+		manifestNodes = append(manifestNodes, subscriptionManifestNode{
+			ID: endpoint.ID, NodeID: endpoint.NodeID, SubscriptionID: credential.SubscriptionID,
+			CredentialID: credential.CredentialID, Name: endpoint.Name, Region: node.Region,
+			Address: endpoint.Address, Port: credential.ListenPort, PublicPort: credential.PublicPort,
+			Protocol: endpoint.Protocol, MultiplierMilli: endpoint.MultiplierMilli, Config: clientConfig,
+		})
+	}
+
+	// Protocols without a native attributed-user contract remain available via
+	// their legacy endpoint template. They are deliberately kept separate from
+	// the credential-backed protocols above so the panel never pretends those
+	// flows have per-subscription attribution.
 	var endpoints []model.ProtocolEndpoint
 	if err := h.db.Model(&model.ProtocolEndpoint{}).
 		Select("DISTINCT protocol_endpoints.*").
 		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
 		Joins("JOIN nodes ON nodes.id = protocol_endpoints.node_id").
 		Where("node_group_endpoints.node_group_id IN ? AND protocol_endpoints.is_active = ? AND nodes.last_seen_at >= ? AND nodes.is_enabled = ? AND protocol_endpoints.client_config <> ''", uniqueUintIDs(nodeGroupIDs), true, now.Add(-nodeOnlineWindow), true).
+		Where("protocol_endpoints.protocol NOT IN ?", []string{"vless", "vmess", "shadowsocks"}).
 		Order("protocol_endpoints.sort_order asc, protocol_endpoints.id asc").Find(&endpoints).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
-	manifestNodes := make([]subscriptionManifestNode, 0, len(endpoints))
 	for _, endpoint := range endpoints {
 		if !json.Valid([]byte(endpoint.ClientConfig)) {
 			continue
@@ -3518,17 +5387,35 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 	_ = h.db.Model(&access).Update("last_used_at", now).Error
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Subscription-Userinfo", fmt.Sprintf("upload=0; download=%d; total=%d; expire=%d", used, total, expiresAt.Unix()))
-	OK(w, map[string]interface{}{
-		"version":      "zboard.subscription/v1",
-		"generated_at": now.Format(time.RFC3339),
-		"subscription": map[string]interface{}{
-			"expires_at":     expiresAt.Format(time.RFC3339),
-			"flow_total":     total,
-			"flow_used":      used,
-			"flow_remaining": total - used,
+	manifest := subscriptionManifest{
+		Version:     "zboard.subscription/v1",
+		GeneratedAt: now.Format(time.RFC3339),
+		Subscription: subscriptionManifestSummary{
+			ExpiresAt: expiresAt.Format(time.RFC3339), FlowTotal: total, FlowUsed: used, FlowRemaining: total - used,
 		},
-		"protocol_endpoints": manifestNodes,
-	})
+		ProtocolEndpoints: manifestNodes,
+	}
+	delivery := resolveSubscriptionDelivery(r.URL.Query().Get("template"), r.UserAgent())
+	if delivery.UsesUserAgent {
+		w.Header().Add("Vary", "User-Agent")
+	}
+	if delivery.TemplateSlug != "" {
+		if err := h.writeSubscriptionTemplate(w, delivery.TemplateSlug, manifest); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				if delivery.UsesUserAgent {
+					w.Header().Set("X-Zboard-Subscription-Format", subscriptionDeliveryNative)
+					OK(w, manifest)
+					return
+				}
+				NotFound(w)
+				return
+			}
+			ServerError(w, fmt.Errorf("render subscription template: %w", err))
+		}
+		return
+	}
+	w.Header().Set("X-Zboard-Subscription-Format", delivery.Format)
+	OK(w, manifest)
 }
 
 func newSubscriptionToken() (string, string, string, error) {
@@ -3576,10 +5463,6 @@ func (h *handlers) TrafficSummaryHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	now := time.Now().UTC()
-	if err := expireSubscriptions(h.db, userFilter, now); err != nil {
-		ServerError(w, err)
-		return
-	}
 
 	var totalUsed int64
 	usedQuery := h.db.Model(&model.TrafficRecord{}).Select("COALESCE(SUM(used_bytes), 0)")
@@ -3629,10 +5512,6 @@ func (h *handlers) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
-	if err := expireSubscriptions(h.db, 0, now); err != nil {
-		ServerError(w, err)
-		return
-	}
 
 	var users int64
 	var nodes int64
@@ -3648,6 +5527,11 @@ func (h *handlers) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 	var pendingTickets int64
 	var failedTasks int64
 	var failedDeployments int64
+	var connectorOnlineNodes int64
+	var sshVerifiedNodes int64
+	var trafficReadyNodes int64
+	var protocolEndpoints int64
+	var activeProtocolEndpoints int64
 
 	var activeUsers int64
 	var trafficTotal int64
@@ -3700,6 +5584,32 @@ func (h *handlers) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
+	if err := h.db.Model(&model.Node{}).
+		Where("is_enabled = ? AND connector_last_seen_at >= ?", true, now.Add(-nodeOnlineWindow)).
+		Count(&connectorOnlineNodes).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	if err := h.db.Model(&model.Node{}).
+		Where("ssh_verified_at IS NOT NULL AND ssh_host_key_fingerprint <> ''").
+		Count(&sshVerifiedNodes).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	if err := h.db.Model(&model.Node{}).
+		Where("traffic_secret_prefix <> '' AND traffic_secret_revoked_at IS NULL").
+		Count(&trafficReadyNodes).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	if err := h.db.Model(&model.ProtocolEndpoint{}).Count(&protocolEndpoints).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("is_active = ?", true).Count(&activeProtocolEndpoints).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
 	if err := h.db.Model(&model.Ticket{}).Where("status IN ?", []string{ticketStatusOpen, ticketStatusPendingAdmin}).Count(&pendingTickets).Error; err != nil {
 		ServerError(w, err)
 		return
@@ -3708,7 +5618,12 @@ func (h *handlers) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
-	if err := h.db.Model(&model.ProtocolDeployment{}).Where("status = ?", "failed").Count(&failedDeployments).Error; err != nil {
+	latestDeploymentIDs := h.db.Model(&model.ProtocolDeployment{}).
+		Select("MAX(id)").
+		Group("protocol_endpoint_id")
+	if err := h.db.Model(&model.ProtocolDeployment{}).
+		Where("id IN (?) AND status = ?", latestDeploymentIDs, "failed").
+		Count(&failedDeployments).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -3724,22 +5639,27 @@ func (h *handlers) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	OK(w, map[string]interface{}{
-		"users":                users,
-		"users_active":         activeUsers,
-		"nodes":                nodes,
-		"plans":                plans,
-		"orders":               orders,
-		"orders_paid":          paidOrders,
-		"orders_pending":       pendingOrders,
-		"orders_failed":        failedOrders,
-		"revenue_cents":        paidRevenue,
-		"subscriptions":        subscriptions,
-		"subscriptions_active": activeSubscriptions,
-		"traffic_pool_bytes":   trafficTotal,
-		"nodes_offline":        offlineNodes,
-		"tickets_pending":      pendingTickets,
-		"tasks_failed":         failedTasks,
-		"deployments_failed":   failedDeployments,
+		"users":                     users,
+		"users_active":              activeUsers,
+		"nodes":                     nodes,
+		"plans":                     plans,
+		"orders":                    orders,
+		"orders_paid":               paidOrders,
+		"orders_pending":            pendingOrders,
+		"orders_failed":             failedOrders,
+		"revenue_cents":             paidRevenue,
+		"subscriptions":             subscriptions,
+		"subscriptions_active":      activeSubscriptions,
+		"traffic_pool_bytes":        trafficTotal,
+		"nodes_offline":             offlineNodes,
+		"tickets_pending":           pendingTickets,
+		"tasks_failed":              failedTasks,
+		"deployments_failed":        failedDeployments,
+		"nodes_connector_online":    connectorOnlineNodes,
+		"nodes_ssh_verified":        sshVerifiedNodes,
+		"nodes_traffic_ready":       trafficReadyNodes,
+		"protocol_endpoints":        protocolEndpoints,
+		"protocol_endpoints_active": activeProtocolEndpoints,
 	})
 }
 
@@ -3752,8 +5672,18 @@ func (h *handlers) AuditLogsHandler(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, err.Error())
 		return
 	}
+	window, err := parseHistoryWindow(r.URL.Query(), 30)
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	cursor, err := decodeHistoryCursor(r.URL.Query().Get("cursor"), nil)
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
 
-	query := h.db.Model(&model.AuditLog{})
+	query := applyHistoryWindow(h.db.Model(&model.AuditLog{}), "created_at", window)
 	if actor := strings.TrimSpace(r.URL.Query().Get("actor")); actor != "" {
 		query = query.Where("actor = ?", actor)
 	}
@@ -3770,16 +5700,39 @@ func (h *handlers) AuditLogsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logs := make([]model.AuditLog, 0)
-	if err := query.Order("id desc").Offset(offset).Limit(limit).Find(&logs).Error; err != nil {
+	if cursor == nil && offset > 0 {
+		if err := query.Order("created_at desc, id desc").Offset(offset).Limit(limit).Find(&logs).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		OK(w, pagedData(auditLogSummaries(logs), total, offset, limit))
+		return
+	}
+	if err := applySimpleHistoryCursor(query, "created_at", cursor).Order(simpleHistoryOrder("created_at", cursor)).Limit(limit + 1).Find(&logs).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
-	OK(w, map[string]interface{}{
-		"items":  logs,
-		"total":  total,
-		"offset": offset,
-		"limit":  limit,
-	})
+	hasMore := len(logs) > limit
+	if hasMore {
+		logs = logs[:limit]
+	}
+	if cursor != nil && cursor.Direction == historyDirectionNewer {
+		reverseHistoryPage(logs)
+	}
+	var nextCursor, previousCursor *string
+	if len(logs) > 0 {
+		nextCursor, previousCursor, err = historyPageCursorValues(
+			historyKey{At: logs[0].CreatedAt, ID: logs[0].ID},
+			historyKey{At: logs[len(logs)-1].CreatedAt, ID: logs[len(logs)-1].ID},
+			cursor,
+			hasMore,
+		)
+		if err != nil {
+			ServerError(w, err)
+			return
+		}
+	}
+	OK(w, cursorPagedData(auditLogSummaries(logs), total, limit, nextCursor, previousCursor))
 }
 
 func (h *handlers) TrafficRecordsHandler(w http.ResponseWriter, r *http.Request) {
@@ -3799,17 +5752,16 @@ func (h *handlers) TrafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	records := make([]model.TrafficRecord, 0)
-	query := h.db.Order("id desc")
+	var userFilter, nodeFilter, protocolEndpointFilter, subscriptionFilter uint64
 	if !adminScope {
-		query = query.Where("user_id = ?", claims.UserID)
+		userFilter = uint64(claims.UserID)
 	} else if target := strings.TrimSpace(r.URL.Query().Get("user_id")); target != "" {
 		parsed, parseErr := strconv.ParseUint(target, 10, 64)
 		if parseErr != nil || parsed == 0 {
 			BadRequest(w, "invalid user_id")
 			return
 		}
-		query = query.Where("user_id = ?", parsed)
+		userFilter = parsed
 	}
 	if target := strings.TrimSpace(r.URL.Query().Get("node_id")); target != "" {
 		parsed, parseErr := strconv.ParseUint(target, 10, 64)
@@ -3817,7 +5769,7 @@ func (h *handlers) TrafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 			BadRequest(w, "invalid node_id")
 			return
 		}
-		query = query.Where("node_id = ?", parsed)
+		nodeFilter = parsed
 	}
 	if target := strings.TrimSpace(r.URL.Query().Get("protocol_endpoint_id")); target != "" {
 		parsed, parseErr := strconv.ParseUint(target, 10, 64)
@@ -3825,7 +5777,7 @@ func (h *handlers) TrafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 			BadRequest(w, "invalid protocol_endpoint_id")
 			return
 		}
-		query = query.Where("protocol_endpoint_id = ?", parsed)
+		protocolEndpointFilter = parsed
 	}
 	if target := strings.TrimSpace(r.URL.Query().Get("subscription_id")); target != "" {
 		parsed, parseErr := strconv.ParseUint(target, 10, 64)
@@ -3833,14 +5785,128 @@ func (h *handlers) TrafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 			BadRequest(w, "invalid subscription_id")
 			return
 		}
-		query = query.Where("subscription_id = ?", parsed)
+		subscriptionFilter = parsed
+	}
+	baseQuery := func() *gorm.DB {
+		query := h.db.Model(&model.TrafficRecord{})
+		if userFilter > 0 {
+			query = query.Where("user_id = ?", userFilter)
+		}
+		if nodeFilter > 0 {
+			query = query.Where("node_id = ?", nodeFilter)
+		}
+		if protocolEndpointFilter > 0 {
+			query = query.Where("protocol_endpoint_id = ?", protocolEndpointFilter)
+		}
+		if subscriptionFilter > 0 {
+			query = query.Where("subscription_id = ?", subscriptionFilter)
+		}
+		return query
 	}
 
-	if err := query.Find(&records).Error; err != nil {
+	paged := wantsPagedList(r)
+	offset, limit := 0, 50
+	var total int64
+	records := make([]model.TrafficRecord, 0)
+	if paged {
+		offset, limit, err = parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
+		if err != nil {
+			BadRequest(w, err.Error())
+			return
+		}
+		window, windowErr := parseHistoryWindow(r.URL.Query(), 7)
+		if windowErr != nil {
+			BadRequest(w, windowErr.Error())
+			return
+		}
+		cursor, cursorErr := decodeHistoryCursor(r.URL.Query().Get("cursor"), nil)
+		if cursorErr != nil {
+			BadRequest(w, cursorErr.Error())
+			return
+		}
+		windowedQuery := func() *gorm.DB {
+			return applyHistoryWindow(baseQuery(), "record_at", window)
+		}
+		var aggregates trafficRecordAggregates
+		if err := windowedQuery().Select(`
+			COALESCE(SUM(raw_bytes), 0) AS raw_bytes,
+			COALESCE(SUM(used_bytes), 0) AS used_bytes,
+			COUNT(DISTINCT user_id) AS user_count,
+			COUNT(DISTINCT NULLIF(subscription_id, 0)) AS subscription_count,
+			COUNT(DISTINCT node_id) AS node_count,
+			COUNT(DISTINCT protocol_endpoint_id) AS protocol_endpoint_count
+		`).Scan(&aggregates).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		if err := windowedQuery().Count(&total).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		if cursor == nil && offset > 0 {
+			if err := windowedQuery().Order("record_at desc, id desc").Offset(offset).Limit(limit).Find(&records).Error; err != nil {
+				ServerError(w, err)
+				return
+			}
+			data := pagedData(trafficRecordSummaries(records), total, offset, limit)
+			data["aggregates"] = aggregates
+			OK(w, data)
+			return
+		}
+		if err := applySimpleHistoryCursor(windowedQuery(), "record_at", cursor).Order(simpleHistoryOrder("record_at", cursor)).Limit(limit + 1).Find(&records).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		hasMore := len(records) > limit
+		if hasMore {
+			records = records[:limit]
+		}
+		if cursor != nil && cursor.Direction == historyDirectionNewer {
+			reverseHistoryPage(records)
+		}
+		var nextCursor, previousCursor *string
+		if len(records) > 0 {
+			nextCursor, previousCursor, err = historyPageCursorValues(
+				historyKey{At: records[0].At, ID: records[0].ID},
+				historyKey{At: records[len(records)-1].At, ID: records[len(records)-1].ID},
+				cursor,
+				hasMore,
+			)
+			if err != nil {
+				ServerError(w, err)
+				return
+			}
+		}
+		data := cursorPagedData(trafficRecordSummaries(records), total, limit, nextCursor, previousCursor)
+		data["aggregates"] = aggregates
+		OK(w, data)
+		return
+	}
+	if err := baseQuery().Order("id desc").Find(&records).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
 	OK(w, records)
+}
+
+func trafficRecordSummaries(records []model.TrafficRecord) []trafficRecordListItem {
+	items := make([]trafficRecordListItem, 0, len(records))
+	for _, record := range records {
+		items = append(items, trafficRecordListItem{
+			ID:                      record.ID,
+			UserID:                  record.UserID,
+			SubscriptionID:          record.SubscriptionID,
+			NodeID:                  record.NodeID,
+			ProtocolEndpointID:      record.ProtocolEndpointID,
+			RawBytes:                record.RawBytes,
+			UploadBytes:             record.UploadBytes,
+			DownloadBytes:           record.DownloadBytes,
+			ProtocolMultiplierMilli: record.ProtocolMultiplierMilli,
+			UsedBytes:               record.UsedBytes,
+			RecordAt:                record.At,
+		})
+	}
+	return items
 }
 
 func (h *handlers) TrafficReconciliationHandler(w http.ResponseWriter, r *http.Request) {
@@ -3873,24 +5939,81 @@ func (h *handlers) TrafficReconciliationHandler(w http.ResponseWriter, r *http.R
 			userID = 0
 		}
 	}
-	if err := expireSubscriptions(h.db, userID, time.Now().UTC()); err != nil {
-		ServerError(w, err)
-		return
-	}
+	now := time.Now().UTC()
 
-	subscriptions := make([]model.Subscription, 0)
-	query := h.db.Order("id desc")
-	if userID != 0 {
-		query = query.Where("user_id = ?", userID)
-	}
+	var subscriptionID uint
 	if target := strings.TrimSpace(r.URL.Query().Get("subscription_id")); target != "" {
 		parsed, parseErr := strconv.ParseUint(target, 10, 64)
 		if parseErr != nil || parsed == 0 {
 			BadRequest(w, "invalid subscription_id")
 			return
 		}
-		query = query.Where("id = ?", parsed)
+		subscriptionID = uint(parsed)
 	}
+	issuesOnly := false
+	if adminScope {
+		if rawIssuesOnly := strings.TrimSpace(r.URL.Query().Get("issues_only")); rawIssuesOnly != "" {
+			issuesOnly, err = strconv.ParseBool(rawIssuesOnly)
+			if err != nil {
+				BadRequest(w, "invalid issues_only")
+				return
+			}
+		}
+	}
+	baseQuery := func() *gorm.DB {
+		query := h.db.Model(&model.Subscription{})
+		if userID != 0 {
+			query = query.Where("subscriptions.user_id = ?", userID)
+		}
+		if subscriptionID != 0 {
+			query = query.Where("subscriptions.id = ?", subscriptionID)
+		}
+		return query
+	}
+	trafficTotalsQuery := func() *gorm.DB {
+		return h.db.Model(&model.TrafficRecord{}).
+			Select("subscription_id, COALESCE(SUM(used_bytes), 0) AS recorded_bytes").
+			Group("subscription_id")
+	}
+	paged := adminScope && r.URL.Query().Get("paged") == "true"
+	offset, limit := 0, 50
+	var total int64
+	aggregates := trafficReconciliationAggregates{}
+	query := baseQuery().Order("subscriptions.id desc")
+	if paged {
+		offset, limit, err = parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
+		if err != nil {
+			BadRequest(w, err.Error())
+			return
+		}
+		if err := baseQuery().
+			Joins("LEFT JOIN (?) AS reconciliation_totals ON reconciliation_totals.subscription_id = subscriptions.id", trafficTotalsQuery()).
+			Select(`
+				COUNT(*) AS subscription_count,
+				COALESCE(SUM(CASE WHEN subscriptions.flow_used = COALESCE(reconciliation_totals.recorded_bytes, 0) THEN 1 ELSE 0 END), 0) AS matched_count,
+				COALESCE(SUM(CASE WHEN subscriptions.flow_used > COALESCE(reconciliation_totals.recorded_bytes, 0) THEN 1 ELSE 0 END), 0) AS missing_records_count,
+				COALESCE(SUM(CASE WHEN subscriptions.flow_used < COALESCE(reconciliation_totals.recorded_bytes, 0) THEN 1 ELSE 0 END), 0) AS over_recorded_count,
+				COALESCE(SUM(subscriptions.flow_used), 0) AS flow_used,
+				COALESCE(SUM(COALESCE(reconciliation_totals.recorded_bytes, 0)), 0) AS recorded_bytes,
+				COALESCE(SUM(CASE WHEN subscriptions.flow_used > COALESCE(reconciliation_totals.recorded_bytes, 0) THEN subscriptions.flow_used - COALESCE(reconciliation_totals.recorded_bytes, 0) ELSE 0 END), 0) AS missing_bytes,
+				COALESCE(SUM(CASE WHEN subscriptions.flow_used < COALESCE(reconciliation_totals.recorded_bytes, 0) THEN COALESCE(reconciliation_totals.recorded_bytes, 0) - subscriptions.flow_used ELSE 0 END), 0) AS over_recorded_bytes
+			`).
+			Scan(&aggregates).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		if issuesOnly {
+			query = query.
+				Joins("LEFT JOIN (?) AS reconciliation_totals ON reconciliation_totals.subscription_id = subscriptions.id", trafficTotalsQuery()).
+				Where("subscriptions.flow_used <> COALESCE(reconciliation_totals.recorded_bytes, 0)")
+		}
+		if err := query.Count(&total).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		query = query.Offset(offset).Limit(limit)
+	}
+	subscriptions := make([]model.Subscription, 0)
 	if err := query.Find(&subscriptions).Error; err != nil {
 		ServerError(w, err)
 		return
@@ -3926,12 +6049,18 @@ func (h *handlers) TrafficReconciliationHandler(w http.ResponseWriter, r *http.R
 			SubscriptionID: subscription.ID,
 			UserID:         subscription.UserID,
 			PlanID:         subscription.PlanID,
-			Status:         subscription.Status,
+			Status:         effectiveSubscriptionStatus(subscription, now),
 			FlowUsed:       subscription.FlowUsed,
 			RecordedBytes:  recorded,
 			Difference:     difference,
 			Result:         trafficReconciliationResult(difference),
 		})
+	}
+	if paged {
+		data := pagedData(items, total, offset, limit)
+		data["aggregates"] = aggregates
+		OK(w, data)
+		return
 	}
 	OK(w, items)
 }
@@ -4427,6 +6556,31 @@ func parsePagination(offsetValue, limitValue string) (int, int, error) {
 	return offset, limit, nil
 }
 
+func wantsPagedList(r *http.Request) bool {
+	return r != nil && r.URL != nil && r.URL.Query().Get("paged") == "true"
+}
+
+type pageMetadata struct {
+	Offset         int     `json:"offset"`
+	Limit          int     `json:"limit"`
+	Total          int64   `json:"total"`
+	NextCursor     *string `json:"next_cursor"`
+	PreviousCursor *string `json:"previous_cursor"`
+}
+
+func pagedData(items interface{}, total int64, offset, limit int) map[string]interface{} {
+	return map[string]interface{}{
+		"items":      items,
+		"page":       pageMetadata{Offset: offset, Limit: limit, Total: total},
+		"aggregates": map[string]interface{}{},
+		"facets":     map[string]interface{}{},
+		// Compatibility fields remain until every shipped client consumes page.
+		"total":  total,
+		"offset": offset,
+		"limit":  limit,
+	}
+}
+
 func (h *handlers) loadNode(nodeID uint) (model.Node, error) {
 	var node model.Node
 	if err := h.db.First(&node, nodeID).Error; err != nil {
@@ -4442,17 +6596,22 @@ func (h *handlers) isProtocolSupported(proto string) bool {
 }
 
 func validateNodeProtocolConfigs(protocol, serverConfig, clientConfig string) error {
+	fields := make(map[string]string)
 	var serverObject map[string]interface{}
 	if strings.TrimSpace(serverConfig) == "" || json.Unmarshal([]byte(serverConfig), &serverObject) != nil || serverObject == nil {
-		return errors.New("config must be a JSON object")
-	}
-	serverType, ok := serverObject["type"].(string)
-	if !ok || !strings.EqualFold(strings.TrimSpace(serverType), strings.TrimSpace(protocol)) {
-		return errors.New("config.type must match protocol")
+		fields["config"] = "服务端配置必须是 JSON 对象。"
+	} else {
+		serverType, ok := serverObject["type"].(string)
+		if !ok || !strings.EqualFold(strings.TrimSpace(serverType), strings.TrimSpace(protocol)) {
+			fields["config"] = "服务端配置的 type 必须与协议类型一致。"
+		}
 	}
 	var clientObject map[string]interface{}
 	if strings.TrimSpace(clientConfig) == "" || json.Unmarshal([]byte(clientConfig), &clientObject) != nil || clientObject == nil {
-		return errors.New("client_config must be a JSON object")
+		fields["client_config"] = "客户端配置必须是 JSON 对象。"
+	}
+	if len(fields) > 0 {
+		return validationError("协议配置校验失败。", fields)
 	}
 	return nil
 }
@@ -4464,7 +6623,7 @@ func validateOptionalJSONObject(name, value string) error {
 	}
 	var decoded map[string]interface{}
 	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil || decoded == nil {
-		return fmt.Errorf("%s must be a JSON object", name)
+		return validationError("JSON 配置校验失败。", map[string]string{name: "请输入有效的 JSON 对象。"})
 	}
 	return nil
 }
@@ -4476,7 +6635,7 @@ func validateOptionalJSONArray(name, value string) error {
 	}
 	var decoded []interface{}
 	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil || decoded == nil {
-		return fmt.Errorf("%s must be a JSON array", name)
+		return validationError("JSON 配置校验失败。", map[string]string{name: "请输入有效的 JSON 数组。"})
 	}
 	return nil
 }
@@ -4493,7 +6652,7 @@ func (h *handlers) validateProtocolParent(endpointID, nodeID uint, parentID *uin
 		return nil
 	}
 	if endpointID != 0 && *parentID == endpointID {
-		return errors.New("protocol cannot be its own parent")
+		return validationError("协议服务校验失败。", map[string]string{"parent_protocol_id": "协议不能将自身设为父协议。"})
 	}
 	visited := map[uint]struct{}{}
 	if endpointID != 0 {
@@ -4502,15 +6661,15 @@ func (h *handlers) validateProtocolParent(endpointID, nodeID uint, parentID *uin
 	current := *parentID
 	for depth := 0; depth < 128 && current != 0; depth++ {
 		if _, exists := visited[current]; exists {
-			return errors.New("protocol parent relationship contains a cycle")
+			return validationError("协议服务校验失败。", map[string]string{"parent_protocol_id": "父协议关系不能形成循环。"})
 		}
 		visited[current] = struct{}{}
 		var parent model.ProtocolEndpoint
 		if err := h.db.Select("id", "node_id", "parent_protocol_id").First(&parent, current).Error; err != nil {
-			return errors.New("parent protocol not found")
+			return validationError("协议服务校验失败。", map[string]string{"parent_protocol_id": "所选父协议不存在。"})
 		}
 		if parent.NodeID != nodeID {
-			return errors.New("parent protocol must belong to the same node")
+			return validationError("协议服务校验失败。", map[string]string{"parent_protocol_id": "父协议必须与当前服务属于同一节点。"})
 		}
 		if parent.ParentProtocolID == nil {
 			return nil
@@ -4518,7 +6677,7 @@ func (h *handlers) validateProtocolParent(endpointID, nodeID uint, parentID *uin
 		current = *parent.ParentProtocolID
 	}
 	if current != 0 {
-		return errors.New("protocol parent chain is too deep")
+		return validationError("协议服务校验失败。", map[string]string{"parent_protocol_id": "父协议层级过深。"})
 	}
 	return nil
 }
@@ -4715,39 +6874,49 @@ func validateSSHPrivilege(mode string, password string) error {
 		return nil // An empty password explicitly selects passwordless sudo.
 	case sshPrivilegeSU:
 		if password == "" {
-			return errors.New("node ssh_privilege_password is required for su")
+			return validationError("SSH 配置校验失败。", map[string]string{"ssh_privilege_password": "使用 su 提权时必须提供 root 密码。"})
 		}
 		return nil
 	default:
-		return errors.New("node ssh_privilege_mode must be none, sudo, or su")
+		return validationError("SSH 配置校验失败。", map[string]string{"ssh_privilege_mode": "请选择有效的系统提权方式。"})
 	}
 }
 
 func validateSSHFields(host string, port int, user string, authMethod string, credential string, fingerprint string) error {
+	fields := make(map[string]string)
 	if strings.TrimSpace(host) == "" {
-		return errors.New("node ssh_host is required")
+		fields["ssh_host"] = "请输入 SSH 主机。"
 	}
 	if strings.TrimSpace(user) == "" {
-		return errors.New("node ssh_user is required")
+		fields["ssh_user"] = "请输入 SSH 用户。"
 	}
 	if port <= 0 || port > 65535 {
-		return errors.New("node ssh_port is invalid")
+		fields["ssh_port"] = "端口必须在 1–65535 之间。"
 	}
 	if authMethod != sshAuthPassword && authMethod != sshAuthPrivateKey {
-		return errors.New("node ssh_auth_method must be password or private_key")
+		fields["ssh_auth_method"] = "请选择密码或私钥认证。"
 	}
 	if strings.TrimSpace(credential) == "" {
-		return errors.New("node ssh credential is required")
+		field := "ssh_password"
+		if authMethod == sshAuthPrivateKey {
+			field = "ssh_private_key"
+		}
+		fields[field] = "请输入 SSH 登录凭证。"
 	}
 	if strings.TrimSpace(fingerprint) != "" {
-		return validateSSHHostKeyFingerprint(fingerprint)
+		if err := validateSSHHostKeyFingerprint(fingerprint); err != nil {
+			fields["ssh_host"] = "已保存的主机身份无效，请确认目标后重新信任主机。"
+		}
+	}
+	if len(fields) > 0 {
+		return validationError("SSH 配置校验失败。", fields)
 	}
 	return nil
 }
 
 func parseSSHPrivateKey(privateKey string, passphrase string) (ssh.Signer, error) {
 	if strings.TrimSpace(privateKey) == "" {
-		return nil, errors.New("node ssh_private_key is required")
+		return nil, validationError("SSH 配置校验失败。", map[string]string{"ssh_private_key": "请输入 SSH 私钥。"})
 	}
 	var (
 		signer ssh.Signer
@@ -4759,7 +6928,7 @@ func parseSSHPrivateKey(privateKey string, passphrase string) (ssh.Signer, error
 		signer, err = ssh.ParsePrivateKeyWithPassphrase([]byte(privateKey), []byte(passphrase))
 	}
 	if err != nil {
-		return nil, fmt.Errorf("node ssh_private_key is invalid: %w", err)
+		return nil, validationError("SSH 配置校验失败。", map[string]string{"ssh_private_key": "私钥格式或口令无效。"})
 	}
 	return signer, nil
 }

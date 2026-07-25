@@ -19,5 +19,9 @@ frontend/.DS_Store
 frontend/.nuxt
 .vscode
 /.cache
+/.codex-cache
+/.codex-local-artifacts
 /.codex-build-*
+/.pnpm-store
+/.tmp-go-build
 /zboard-deploy-*.tar.gz

@@ -1,36 +1,35 @@
 <template>
-  <Teleport to="body">
-    <Transition name="modal-fade">
-      <div v-if="open" class="modal-backdrop" @mousedown.self="requestClose">
-        <section
-          ref="dialog"
-          class="modal-dialog"
-          :class="[`modal-${size}`, { 'modal-fixed-body': fixedBody }]"
-          role="dialog"
-          aria-modal="true"
-          :aria-labelledby="titleId"
-          tabindex="-1"
-        >
-          <header class="modal-header">
-            <div>
-              <h2 :id="titleId">{{ title }}</h2>
-              <p v-if="description">{{ description }}</p>
-            </div>
-            <button class="icon-button" type="button" aria-label="关闭" :disabled="busy" @click="requestClose">
-              <UiIcon name="close" />
-            </button>
-          </header>
-          <div class="modal-body"><slot /></div>
-          <footer v-if="$slots.footer" class="modal-footer"><slot name="footer" /></footer>
-        </section>
+  <PrimeDialog
+    :visible="open"
+    modal
+    block-scroll
+    :closable="!busy"
+    :close-button-props="{ 'aria-label': '关闭弹窗' }"
+    :close-on-escape="!busy"
+    :dismissable-mask="!busy"
+    :draggable="false"
+    :style="dialogStyle"
+    :breakpoints="{ '700px': '100vw' }"
+    class="app-dialog"
+    :class="{ 'app-dialog-fixed': fixedBody }"
+    @update:visible="handleVisible"
+    @after-hide="restoreFocus"
+  >
+    <template #header>
+      <div class="app-dialog-heading">
+        <h2>{{ title }}</h2>
+        <p v-if="description">{{ description }}</p>
       </div>
-    </Transition>
-  </Teleport>
+    </template>
+    <div class="app-dialog-body"><slot /></div>
+    <template v-if="$slots.footer" #footer><slot name="footer" :request-close="requestClose" /></template>
+  </PrimeDialog>
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import UiIcon from './UiIcon.vue'
+import { computed, watch } from 'vue'
+import PrimeDialog from 'primevue/dialog'
+import { confirmAction } from '../utils/feedback'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -39,61 +38,46 @@ const props = withDefaults(defineProps<{
   size?: 'sm' | 'md' | 'lg' | 'xl'
   busy?: boolean
   fixedBody?: boolean
-}>(), { size: 'md', busy: false, fixedBody: false })
+  dirty?: boolean
+  discardTitle?: string
+  discardMessage?: string
+  returnFocusSelector?: string
+}>(), { size: 'md', busy: false, fixedBody: false, dirty: false, discardTitle: '放弃未保存的修改？', discardMessage: '当前表单包含尚未保存的内容，关闭后这些修改将丢失。', returnFocusSelector: '' })
 const emit = defineEmits<{ close: [] }>()
-const dialog = ref<HTMLElement | null>(null)
-const titleId = `dialog-${Math.random().toString(36).slice(2)}`
+const widths = { sm: '27.5rem', md: '40rem', lg: '51.25rem', xl: '65rem' }
+const dialogStyle = computed(() => ({ width: widths[props.size], maxHeight: '88vh' }))
 let previousFocus: HTMLElement | null = null
+let returnFocusSelector = ''
 
-const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+watch(() => props.open, (open, wasOpen) => {
+  if (open && !wasOpen) {
+    previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    returnFocusSelector = props.returnFocusSelector
+  }
+}, { immediate: true })
 
-function requestClose() {
-  if (!props.busy) emit('close')
+async function requestClose() {
+  if (props.busy) return
+  if (props.dirty && !await confirmAction({
+    title: props.discardTitle,
+    message: props.discardMessage,
+    confirmText: '放弃修改',
+    tone: 'danger',
+  })) return
+  emit('close')
 }
 
-function onKeydown(event: KeyboardEvent) {
-  if (!props.open) return
-  if (event.key === 'Escape') {
-    if (document.fullscreenElement) return
-    event.preventDefault()
-    requestClose()
-    return
-  }
-  if (event.key !== 'Tab' || !dialog.value) return
-  const focusable = Array.from(dialog.value.querySelectorAll<HTMLElement>(focusableSelector))
-  if (!focusable.length) {
-    event.preventDefault()
-    dialog.value.focus()
-    return
-  }
-  const first = focusable[0]
-  const last = focusable[focusable.length - 1]
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
-  }
+function handleVisible(visible: boolean) {
+  if (!visible) void requestClose()
 }
 
-watch(() => props.open, async (open) => {
-  if (open) {
-    previousFocus = document.activeElement as HTMLElement | null
-    document.body.classList.add('modal-open')
-    document.addEventListener('keydown', onKeydown)
-    await nextTick()
-    const first = dialog.value?.querySelector<HTMLElement>(focusableSelector)
-    ;(first || dialog.value)?.focus()
-  } else {
-    document.body.classList.remove('modal-open')
-    document.removeEventListener('keydown', onKeydown)
-    previousFocus?.focus()
-  }
-})
+function restoreFocus() {
+  const replacement = returnFocusSelector ? document.querySelector<HTMLElement>(returnFocusSelector) : null
+  const target = replacement || (previousFocus?.isConnected ? previousFocus : null)
+  target?.focus()
+  previousFocus = null
+  returnFocusSelector = ''
+}
 
-onBeforeUnmount(() => {
-  document.body.classList.remove('modal-open')
-  document.removeEventListener('keydown', onKeydown)
-})
+defineExpose({ requestClose, restoreFocus })
 </script>

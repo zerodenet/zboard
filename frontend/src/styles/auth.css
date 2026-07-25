@@ -1,0 +1,22 @@
+.auth-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(360px, .9fr) minmax(520px, 1.1fr); background: var(--surface); }
+.auth-aside { position: relative; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; padding: 48px; color: var(--info-soft-alt); background: var(--sidebar); }
+.auth-aside::before { content: ''; position: absolute; inset: 0; opacity: .28; background-image: linear-gradient(var(--auth-grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--auth-grid-line) 1px, transparent 1px); background-size: 44px 44px; mask-image: linear-gradient(to bottom right, var(--color-black), transparent 76%); }
+.auth-aside::after { content: ''; position: absolute; width: 420px; height: 420px; right: -180px; bottom: -160px; border: 1px solid var(--auth-ring); border-radius: 50%; box-shadow: 0 0 0 70px var(--auth-halo), 0 0 0 140px var(--auth-halo-soft); }
+.auth-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; color: var(--text-inverse); font-weight: 750; }
+.auth-copy { position: relative; z-index: 1; max-width: 540px; }
+.auth-copy h1 { color: var(--text-inverse); font-size: clamp(34px, 5vw, 56px); line-height: 1.08; }
+.auth-copy p { color: var(--auth-copy); font-size: 16px; line-height: 1.75; }
+.auth-main { display: grid; place-items: center; padding: 42px; background: var(--page); }
+.auth-card { width: min(440px, 100%); padding: 34px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: 0 24px 70px var(--card-shadow); }
+.auth-card h2 { margin-bottom: 8px; font-size: 25px; }.auth-card > p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+@media (max-width: 820px) {
+  .auth-shell { grid-template-columns: 1fr; }
+  .auth-aside { min-height: 260px; padding: 28px; }
+  .auth-copy h1 { margin-bottom: 10px; font-size: 32px; }.auth-copy p { font-size: 14px; }
+  .auth-main { padding: 24px 18px; }
+}
+@media (max-width: 560px) {
+  .auth-aside { min-height: 220px; }.auth-copy p { display: none; }
+  .auth-card { padding: 24px; }
+}

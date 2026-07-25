@@ -607,6 +607,19 @@ func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey string) ([]b
 	if apiKey == "" {
 		return nil, "", errors.New("Zero connector credential is unavailable")
 	}
+	now := time.Now().UTC()
+	var subscriptions []model.Subscription
+	if err := h.db.Model(&model.Subscription{}).
+		Select("DISTINCT subscriptions.*").
+		Joins("JOIN node_group_endpoints ON node_group_endpoints.node_group_id = subscriptions.node_group_id").
+		Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
+		Where("protocol_endpoints.node_id = ? AND subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", node.ID, subStatusActive, now).
+		Find(&subscriptions).Error; err != nil {
+		return nil, "", err
+	}
+	if err := h.ensureCredentialsForSubscriptions(subscriptions); err != nil {
+		return nil, "", fmt.Errorf("reconcile subscription credentials: %w", err)
+	}
 	var endpoints []model.ProtocolEndpoint
 	if err := h.db.Where("node_id = ? AND is_active = ?", node.ID, true).Order("sort_order asc, id asc").Find(&endpoints).Error; err != nil {
 		return nil, "", err
@@ -627,16 +640,30 @@ func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey string) ([]b
 		if endpoint.Port <= 0 || endpoint.Port > 65535 {
 			return nil, "", fmt.Errorf("protocol endpoint %d listen port is invalid", endpoint.ID)
 		}
-		inbounds = append(inbounds, map[string]interface{}{
-			"tag":      fmt.Sprintf("endpoint-%d", endpoint.ID),
-			"listen":   map[string]interface{}{"address": "0.0.0.0", "port": endpoint.Port},
-			"protocol": protocol,
-		})
+		endpointInbounds, err := h.runtimeInboundsForEndpoint(endpoint, protocol, now)
+		if err != nil {
+			return nil, "", fmt.Errorf("compile protocol endpoint %d: %w", endpoint.ID, err)
+		}
+		inbounds = append(inbounds, endpointInbounds...)
+	}
+	eventSink := map[string]interface{}{
+		"tag":         "zboard",
+		"type":        "webhook",
+		"url":         panelURL + "/api/zero/events",
+		"events":      []string{"flow.updated", "flow.completed"},
+		"source_id":   fmt.Sprintf("node-%d", node.ID),
+		"api_key_env": "ZERO_PANEL_API_KEY",
+	}
+	if parsedURL.Scheme == "http" {
+		eventSink["allow_insecure"] = true
 	}
 	config := map[string]interface{}{
 		"inbounds": inbounds,
 		"mode":     map[string]interface{}{"type": "rule"},
 		"route":    map[string]interface{}{"rules": []interface{}{}, "final": map[string]interface{}{"type": "direct"}},
+		"api": map[string]interface{}{
+			"event_sinks": []interface{}{eventSink},
+		},
 		"push": map[string]interface{}{
 			"url": panelURL, "node_id": strconv.FormatUint(uint64(node.ID), 10),
 			"api_key_env": "ZERO_PANEL_API_KEY", "heartbeat_interval_seconds": 30,
@@ -726,6 +753,9 @@ func (h *handlers) waitForNodeConnectorHeartbeat(parent context.Context, nodeID 
 		}
 		select {
 		case <-ctx.Done():
+			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return time.Time{}, fmt.Errorf("connector heartbeat verification canceled: %w", ctx.Err())
+			}
 			return time.Time{}, fmt.Errorf("no fresh connector heartbeat arrived within %s: %w", zeroHeartbeatTimeout, ctx.Err())
 		case <-ticker.C:
 		}

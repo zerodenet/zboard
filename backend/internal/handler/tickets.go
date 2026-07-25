@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -23,6 +24,7 @@ const (
 	ticketStatusClosed       = "closed"
 	ticketMessageReply       = "message"
 	ticketMessageStatus      = "status"
+	ticketMessagePageLimit   = 100
 )
 
 var ticketCategories = map[string]struct{}{
@@ -67,8 +69,10 @@ type ticketMessageView struct {
 }
 
 type ticketDetailView struct {
-	Ticket   ticketView          `json:"ticket"`
-	Messages []ticketMessageView `json:"messages"`
+	Ticket           ticketView          `json:"ticket"`
+	Messages         []ticketMessageView `json:"messages"`
+	HasOlderMessages bool                `json:"has_older_messages"`
+	OldestMessageID  uint                `json:"oldest_message_id,omitempty"`
 }
 
 func (h *handlers) TicketListHandler(w http.ResponseWriter, r *http.Request) {
@@ -99,11 +103,12 @@ func (h *handlers) TicketListHandler(w http.ResponseWriter, r *http.Request) {
 		query = query.Where("tickets.user_id = ?", claims.UserID)
 	}
 	if status := strings.TrimSpace(r.URL.Query().Get("status")); status != "" {
-		if !validTicketStatus(status) {
+		statuses, valid := ticketListStatusValues(status, adminScope)
+		if !valid {
 			BadRequest(w, "invalid ticket status")
 			return
 		}
-		query = query.Where("tickets.status = ?", status)
+		query = query.Where("tickets.status IN ?", statuses)
 	}
 	if category := strings.TrimSpace(r.URL.Query().Get("category")); category != "" {
 		if !validTicketCategory(category) {
@@ -137,7 +142,7 @@ func (h *handlers) TicketListHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
-	OK(w, map[string]interface{}{"items": views, "total": total, "offset": offset, "limit": limit})
+	OK(w, pagedData(views, total, offset, limit))
 }
 
 func (h *handlers) TicketCreateHandler(w http.ResponseWriter, r *http.Request) {
@@ -213,7 +218,17 @@ func (h *handlers) TicketGetHandler(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "invalid ticket id")
 		return
 	}
-	detail, err := h.ticketDetail(id, claims)
+	beforeID, err := optionalUintQuery(r, "before_id")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	messageLimit, err := parseTicketMessageLimit(r.URL.Query().Get("message_limit"))
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	detail, err := h.ticketDetailPage(id, claims, beforeID, messageLimit)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		NotFound(w)
 		return
@@ -422,6 +437,10 @@ func (h *handlers) changeTicketStatus(id uint, claims authClaims, status string,
 }
 
 func (h *handlers) ticketDetail(id uint, claims authClaims) (ticketDetailView, error) {
+	return h.ticketDetailPage(id, claims, 0, ticketMessagePageLimit)
+}
+
+func (h *handlers) ticketDetailPage(id uint, claims authClaims, beforeID uint, limit int) (ticketDetailView, error) {
 	var ticket model.Ticket
 	if err := h.db.First(&ticket, id).Error; err != nil {
 		return ticketDetailView{}, err
@@ -434,30 +453,91 @@ func (h *handlers) ticketDetail(id uint, claims authClaims) (ticketDetailView, e
 		return ticketDetailView{}, err
 	}
 	var messages []ticketMessageView
-	if err := h.db.Table("ticket_messages").
+	query := h.db.Table("ticket_messages").
 		Select("ticket_messages.*, COALESCE(users.email, '') AS author_email").
 		Joins("LEFT JOIN users ON users.id = ticket_messages.author_id").
-		Where("ticket_messages.ticket_id = ?", id).
-		Order("ticket_messages.created_at ASC, ticket_messages.id ASC").Scan(&messages).Error; err != nil {
+		Where("ticket_messages.ticket_id = ?", id)
+	if beforeID > 0 {
+		query = query.Where("ticket_messages.id < ?", beforeID)
+	}
+	if err := query.Order("ticket_messages.created_at DESC, ticket_messages.id DESC").Limit(limit + 1).Scan(&messages).Error; err != nil {
 		return ticketDetailView{}, err
 	}
-	return ticketDetailView{Ticket: views[0], Messages: messages}, nil
+	hasOlderMessages := len(messages) > limit
+	if hasOlderMessages {
+		messages = messages[:limit]
+	}
+	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
+		messages[left], messages[right] = messages[right], messages[left]
+	}
+	oldestMessageID := uint(0)
+	if len(messages) > 0 {
+		oldestMessageID = messages[0].ID
+	}
+	return ticketDetailView{
+		Ticket:           views[0],
+		Messages:         messages,
+		HasOlderMessages: hasOlderMessages,
+		OldestMessageID:  oldestMessageID,
+	}, nil
 }
 
 func (h *handlers) buildTicketViews(tickets []model.Ticket) ([]ticketView, error) {
+	if len(tickets) == 0 {
+		return []ticketView{}, nil
+	}
+	userIDs := make([]uint, 0, len(tickets))
+	ticketIDs := make([]uint, 0, len(tickets))
+	seenUsers := make(map[uint]struct{}, len(tickets))
+	for _, ticket := range tickets {
+		ticketIDs = append(ticketIDs, ticket.ID)
+		if _, ok := seenUsers[ticket.UserID]; !ok {
+			seenUsers[ticket.UserID] = struct{}{}
+			userIDs = append(userIDs, ticket.UserID)
+		}
+	}
+	var users []model.User
+	if err := h.db.Select("id", "email").Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	emails := make(map[uint]string, len(users))
+	for _, user := range users {
+		emails[user.ID] = user.Email
+	}
+	type ticketMessageCount struct {
+		TicketID uint  `gorm:"column:ticket_id"`
+		Count    int64 `gorm:"column:message_count"`
+	}
+	var countRows []ticketMessageCount
+	if err := h.db.Model(&model.TicketMessage{}).
+		Select("ticket_id, COUNT(*) AS message_count").
+		Where("ticket_id IN ?", ticketIDs).
+		Group("ticket_id").
+		Scan(&countRows).Error; err != nil {
+		return nil, err
+	}
+	counts := make(map[uint]int64, len(countRows))
+	for _, row := range countRows {
+		counts[row.TicketID] = row.Count
+	}
 	views := make([]ticketView, 0, len(tickets))
 	for _, ticket := range tickets {
-		var user model.User
-		if err := h.db.Select("email").First(&user, ticket.UserID).Error; err != nil {
-			return nil, err
-		}
-		var count int64
-		if err := h.db.Model(&model.TicketMessage{}).Where("ticket_id = ?", ticket.ID).Count(&count).Error; err != nil {
-			return nil, err
-		}
-		views = append(views, ticketView{Ticket: ticket, UserEmail: user.Email, MessageCount: count})
+		views = append(views, ticketView{
+			Ticket: ticket, UserEmail: emails[ticket.UserID], MessageCount: counts[ticket.ID],
+		})
 	}
 	return views, nil
+}
+
+func parseTicketMessageLimit(value string) (int, error) {
+	if strings.TrimSpace(value) == "" {
+		return ticketMessagePageLimit, nil
+	}
+	limit, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || limit < 20 || limit > ticketMessagePageLimit {
+		return 0, fmt.Errorf("message_limit must be an integer between 20 and %d", ticketMessagePageLimit)
+	}
+	return limit, nil
 }
 
 func createTicketStatusEvent(tx *gorm.DB, ticketID uint, authorID *uint, authorRole, fromStatus, toStatus string, at time.Time) error {
@@ -502,6 +582,16 @@ func validTicketCategory(category string) bool {
 func validTicketStatus(status string) bool {
 	_, ok := ticketStatuses[status]
 	return ok
+}
+
+func ticketListStatusValues(status string, adminScope bool) ([]string, bool) {
+	if adminScope && status == adminAttentionStatus {
+		return []string{ticketStatusOpen, ticketStatusPendingAdmin}, true
+	}
+	if !validTicketStatus(status) {
+		return nil, false
+	}
+	return []string{status}, true
 }
 
 func ticketAuthorRole(claims authClaims) string {
