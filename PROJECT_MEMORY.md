@@ -4692,6 +4692,53 @@ Remaining gap after synchronization:
   browser. The Codex built-in browser and its cleanup path were not used.
 - No Git staging, commit, push or release was performed.
 
+## 2026-07-28 - GitHub Actions gate repair
+
+Goal outcome:
+
+- Formatted the three Go sources rejected by the CI `gofmt` gate.
+- Rebuilt `frontend/pnpm-lock.yaml` with pnpm 11.9.0 against the official npm
+  registry, removing workstation-specific mirror tarball URLs rejected by the
+  active lockfile supply-chain policy.
+- Quoted comma-bearing inline OpenAPI descriptions so Redocly parses them as
+  scalar descriptions instead of unexpected object properties.
+- Rewrote the two one-line ticket wrapper scripts as standard multiline Vue
+  SFC script blocks; the refreshed supported transitive toolchain now parses
+  and type-checks them correctly.
+
+Verification:
+
+- The Go source tree is idempotent under `@wasm-fmt/gofmt` 0.7.3. The formatter
+  changed only `certificate_management.go`, `handlers.go` and `models.go`.
+- `pnpm install --frozen-lockfile --registry=https://registry.npmjs.org`
+  passed, and the lockfile contains no `npmmirror` or legacy Taobao registry
+  URLs.
+- `pnpm test -- --run` passed: 60 files and 132 tests.
+- `pnpm build` passed with TypeScript/Vue type checking and 532 transformed
+  modules.
+- Redocly CLI 1.34.3 reports the OpenAPI description valid with zero errors.
+  The existing 158 recommended-rule warnings remain non-blocking.
+- `git diff --check` passed with only the existing Windows LF-to-CRLF notices.
+
+Synchronization:
+
+- Not performed. The workstation has no Go installation, Docker Desktop is
+  unavailable, and both the repository installer and winget were unable to
+  download Go 1.26.5 from `go.dev`. Backend test/vet therefore remain
+  unverified locally, so deploying this backend working tree would violate the
+  repository completion protocol.
+
+Remaining gaps:
+
+- Push the repair through GitHub Actions so the runner's official Go 1.26.5
+  `gofmt`, test and vet gates confirm the formatter-compatible result.
+- After backend verification succeeds, synchronize with
+  `scripts/sync-intranet.ps1` and record the deployed version, database backup,
+  previous-source path, `/readyz`, container health and goal-specific evidence.
+- The 158 Redocly recommended-rule warnings, primarily missing operation IDs,
+  tag descriptions and explicit 4xx responses, should be reduced separately;
+  they are not the cause of the current contract job failure.
+
 ## 2026-07-28 - Managed certificates and commit preparation
 
 Goal outcome:

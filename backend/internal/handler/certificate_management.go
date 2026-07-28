@@ -32,7 +32,7 @@ const (
 
 	certificateEnvironmentProduction = "production"
 	certificateEnvironmentStaging    = "staging"
-	certificateChallengeHTTP01        = "http-01"
+	certificateChallengeHTTP01       = "http-01"
 
 	certificateOperationIssue = "issue"
 	certificateOperationRenew = "renew"
@@ -59,8 +59,8 @@ type certificateWriteRequest struct {
 }
 
 type certificateRenewalUpdateRequest struct {
-	AutoRenew       bool   `json:"auto_renew"`
-	RenewBeforeDays int    `json:"renew_before_days"`
+	AutoRenew        bool   `json:"auto_renew"`
+	RenewBeforeDays  int    `json:"renew_before_days"`
 	ExpectedRevision uint64 `json:"expected_revision"`
 }
 
@@ -835,9 +835,9 @@ func parseIssuedCertificateMetadata(output string, domains []string, now time.Ti
 	}
 	sum := sha256.Sum256(certificate.Raw)
 	return issuedCertificateMetadata{
-		SerialNumber:       strings.ToUpper(certificate.SerialNumber.Text(16)),
+		SerialNumber:      strings.ToUpper(certificate.SerialNumber.Text(16)),
 		FingerprintSHA256: fmt.Sprintf("%x", sum[:]),
-		NotBefore: certificate.NotBefore.UTC(), NotAfter: certificate.NotAfter.UTC(),
+		NotBefore:         certificate.NotBefore.UTC(), NotAfter: certificate.NotAfter.UTC(),
 	}, nil
 }
 

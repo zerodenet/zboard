@@ -973,7 +973,7 @@ paths:
       tags: [nodes, admin]
       summary: Resolve the latest stable official Zero Linux x86_64 release
       responses:
-        "200": { description: Immutable release tag, URL, size and artifact SHA-256 }
+        "200": { description: "Immutable release tag, URL, size and artifact SHA-256" }
         "403": { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{id}/report-credential:
     post:
@@ -1112,7 +1112,7 @@ paths:
           description: |
             Admin-only flag. When true, inactive plans are returned for management.
         - { name: paged, in: query, schema: { type: boolean }, description: Return a bounded page object. Public pages contain active plan summaries and one primary new-purchase SKU; administrators receive management summaries. }
-        - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: Search across name, slug and summary when paged=true. }
+        - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Search across name, slug and summary when paged=true." }
         - { name: active, in: query, schema: { type: boolean }, description: Admin-only exact publication-state filter. }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
@@ -1176,7 +1176,7 @@ paths:
       summary: List active purchasable SKUs for one active plan
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
-        - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: Search name, code or currency. }
+        - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Search name, code or currency." }
         - { name: sku_type, in: query, schema: { type: string, enum: [new, renewal, upgrade, traffic_pack] } }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
@@ -1301,7 +1301,7 @@ paths:
       tags: [orders, admin]
       summary: List orders across all users
       parameters:
-        - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: Match order/provider trade number, plan, SKU, channel or a numeric order/user/subscription ID. }
+        - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Match order/provider trade number, plan, SKU, channel or a numeric order/user/subscription ID." }
         - { name: status, in: query, schema: { type: string, enum: [attention, pending, paid, failed, canceled, success] }, description: "Use attention for the administrator work queue containing pending and failed orders." }
         - { name: order_type, in: query, schema: { type: string, enum: [new, renewal, upgrade, traffic_pack] } }
         - { name: user_id, in: query, schema: { type: integer, format: int64 } }
@@ -1494,7 +1494,7 @@ paths:
       tags: [subscriptions, admin]
       summary: List subscriptions across all users
       parameters:
-        - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: Match user email, plan, SKU or a numeric subscription/user/plan ID. }
+        - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Match user email, plan, SKU or a numeric subscription/user/plan ID." }
         - { name: status, in: query, schema: { type: string, enum: [active, expired, canceled] } }
         - { name: quota, in: query, schema: { type: string, enum: [available, exhausted] } }
         - { name: user_id, in: query, schema: { type: integer, format: int64 } }
@@ -1607,7 +1607,7 @@ paths:
       description: Set paged=true to search a bounded metadata page. The legacy array response remains available for compatibility.
       parameters:
         - { name: paged, in: query, schema: { type: boolean }, description: Return the canonical page envelope. }
-        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: Search name, slug or description. }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: "Search name, slug or description." }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
       responses:
@@ -1630,7 +1630,7 @@ paths:
       summary: List reusable subscription rule sets
       description: Returns a bounded metadata page. Templates reference these records by ID; inline remote entries remain available as a template-only shortcut.
       parameters:
-        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: Search name, tag, description or URL. }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: "Search name, tag, description or URL." }
         - { name: renderer, in: query, schema: { type: string, enum: [znet-sink, clash, sing-box] } }
         - { name: active, in: query, schema: { type: boolean } }
         - { name: id, in: query, schema: { type: integer, format: int64, minimum: 1 }, description: Resolve one selected item. }
@@ -1828,7 +1828,7 @@ paths:
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
         - { name: q, in: query, schema: { type: string } }
-        - { name: ids, in: query, schema: { type: string }, description: Comma-separated endpoint IDs, at most 100, used to hydrate remote multi-select state. }
+        - { name: ids, in: query, schema: { type: string }, description: "Comma-separated endpoint IDs, at most 100, used to hydrate remote multi-select state." }
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol, in: query, schema: { type: string } }
         - { name: active, in: query, schema: { type: boolean } }
@@ -1943,7 +1943,7 @@ paths:
       summary: List one plan's sales specifications
       parameters:
         - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
-        - { in: query, name: q, schema: { type: string, maxLength: 128 }, description: Match SKU name, code or currency. }
+        - { in: query, name: q, schema: { type: string, maxLength: 128 }, description: "Match SKU name, code or currency." }
         - { in: query, name: active, schema: { type: boolean } }
         - { in: query, name: offset, schema: { type: integer, minimum: 0, default: 0 } }
         - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
@@ -2260,7 +2260,7 @@ paths:
             schema:
               $ref: "#/components/schemas/ZeroEventEnvelope"
       responses:
-        "200": { description: Event accepted, deduplicated and charged when attributable }
+        "200": { description: "Event accepted, deduplicated and charged when attributable" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
   /api/v1/traffic/report:
@@ -3354,7 +3354,7 @@ components:
         url: { type: string, format: uri, maxLength: 2048 }
         behavior: { type: string, enum: [domain, ipcidr, classical], description: Clash-only provider behavior. }
         format: { type: string, enum: [domain_list, cidr_list, zero_rule_ir, zrs, yaml, text, mrs, source, binary] }
-        target: { type: string, pattern: "^(direct|reject|group:[a-z][a-z0-9-]{0,31})$", description: Policy-group ID, direct or reject target used when this rule set matches. }
+        target: { type: string, pattern: "^(direct|reject|group:[a-z][a-z0-9-]{0,31})$", description: "Policy-group ID, direct or reject target used when this rule set matches." }
         interval: { type: integer, minimum: 60, maximum: 604800 }
     SubscriptionTemplatePreview:
       type: object

@@ -2535,23 +2535,23 @@ type protocolDeploymentListItem struct {
 }
 
 type protocolEndpointListItem struct {
-	ID               uint                        `json:"id"`
-	NodeID           uint                        `json:"node_id"`
-	NodeName         string                      `json:"node_name"`
-	Name             string                      `json:"name"`
-	Protocol         string                      `json:"protocol"`
-	Address          string                      `json:"address"`
-	Port             int                         `json:"port"`
-	PublicPort       int                         `json:"public_port"`
-	ParentProtocolID *uint                       `json:"parent_protocol_id,omitempty"`
-	ManagedCertificateID *uint                  `json:"managed_certificate_id,omitempty"`
-	MultiplierMilli  int64                       `json:"multiplier_milli"`
-	IsActive         bool                        `json:"is_active"`
-	SortOrder        int                         `json:"sort_order"`
-	LatestDeployment *protocolDeploymentListItem `json:"latest_deployment,omitempty"`
-	Usage            protocolEndpointUsage       `json:"usage"`
-	CreatedAt        time.Time                   `json:"created_at"`
-	UpdatedAt        time.Time                   `json:"updated_at"`
+	ID                   uint                        `json:"id"`
+	NodeID               uint                        `json:"node_id"`
+	NodeName             string                      `json:"node_name"`
+	Name                 string                      `json:"name"`
+	Protocol             string                      `json:"protocol"`
+	Address              string                      `json:"address"`
+	Port                 int                         `json:"port"`
+	PublicPort           int                         `json:"public_port"`
+	ParentProtocolID     *uint                       `json:"parent_protocol_id,omitempty"`
+	ManagedCertificateID *uint                       `json:"managed_certificate_id,omitempty"`
+	MultiplierMilli      int64                       `json:"multiplier_milli"`
+	IsActive             bool                        `json:"is_active"`
+	SortOrder            int                         `json:"sort_order"`
+	LatestDeployment     *protocolDeploymentListItem `json:"latest_deployment,omitempty"`
+	Usage                protocolEndpointUsage       `json:"usage"`
+	CreatedAt            time.Time                   `json:"created_at"`
+	UpdatedAt            time.Time                   `json:"updated_at"`
 }
 
 func newProtocolEndpointListItem(endpoint model.ProtocolEndpoint, nodeName string, managedCertificateID *uint, deployment *model.ProtocolDeployment, usage protocolEndpointUsage) protocolEndpointListItem {

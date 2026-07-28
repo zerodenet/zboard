@@ -251,10 +251,10 @@ type ManagedCertificate struct {
 }
 
 type CertificateProtocolEndpoint struct {
-	ID                    uint      `json:"id" gorm:"primaryKey"`
-	ManagedCertificateID  uint      `json:"managed_certificate_id" gorm:"uniqueIndex:ux_certificate_endpoint,priority:1;index;not null"`
-	ProtocolEndpointID    uint      `json:"protocol_endpoint_id" gorm:"uniqueIndex:ux_certificate_endpoint,priority:2;uniqueIndex;not null"`
-	CreatedAt             time.Time `json:"created_at"`
+	ID                   uint      `json:"id" gorm:"primaryKey"`
+	ManagedCertificateID uint      `json:"managed_certificate_id" gorm:"uniqueIndex:ux_certificate_endpoint,priority:1;index;not null"`
+	ProtocolEndpointID   uint      `json:"protocol_endpoint_id" gorm:"uniqueIndex:ux_certificate_endpoint,priority:2;uniqueIndex;not null"`
+	CreatedAt            time.Time `json:"created_at"`
 }
 
 type CertificateOperation struct {
