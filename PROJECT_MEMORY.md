@@ -4705,6 +4705,8 @@ Goal outcome:
 - Rewrote the two one-line ticket wrapper scripts as standard multiline Vue
   SFC script blocks; the refreshed supported transitive toolchain now parses
   and type-checks them correctly.
+- After the first CI retry reached backend compilation, updated the protocol
+  summary test call for the new optional managed-certificate ID argument.
 
 Verification:
 
@@ -4719,6 +4721,8 @@ Verification:
 - Redocly CLI 1.34.3 reports the OpenAPI description valid with zero errors.
   The existing 158 recommended-rule warnings remain non-blocking.
 - `git diff --check` passed with only the existing Windows LF-to-CRLF notices.
+- The follow-up test change is idempotent under the same Go formatter and
+  passes `git diff --check`; the GitHub runner must rerun the full Go suite.
 
 Synchronization:
 

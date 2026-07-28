@@ -331,7 +331,7 @@ func TestNodeAndProtocolListItemsOmitDetailAndSecretFields(t *testing.T) {
 		ServerConfig: "encrypted-server", ClientConfig: `{"id":"credential"}`, OptionalConfig: `{"private":true}`, Tags: `["internal"]`,
 	}
 	deployment := model.ProtocolDeployment{ID: 7, Status: "failed", Output: "private output", Error: "private error"}
-	endpointPayload, err := json.Marshal(newProtocolEndpointListItem(endpoint, "edge", &deployment, protocolEndpointUsage{}))
+	endpointPayload, err := json.Marshal(newProtocolEndpointListItem(endpoint, "edge", nil, &deployment, protocolEndpointUsage{}))
 	if err != nil {
 		t.Fatal(err)
 	}
