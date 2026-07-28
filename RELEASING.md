@@ -74,11 +74,17 @@ bash scripts/release-tag.sh 0.1.0
 - GitHub Actions will build:
   - backend binary with `internal/version` ldflags
   - docker image with the same version metadata
+  - add OCI source metadata linking the image to `zerodenet/zboard`
   - upload the binary, Docker image archive and checksums as an Actions artifact
   - publish image to `ghcr.io/zerodenet/zboard`
   - attach a compressed Docker image archive to the GitHub Release
   - publish a GitHub Release with the binary archive, checksum file and
     commit-based notes covering commits since the previous tag
+
+GHCR package visibility is managed in the `zerodenet` organization package
+settings. Publishing metadata can link the package to this repository, but an
+organization owner must make the package public if anonymous `docker pull`
+access is required.
 
 ## Release notes artifact
 

@@ -26,6 +26,56 @@ remain outside this repository.
 
 ## Completed goals
 
+### 2026-07-28 - GHCR repository association metadata
+
+Outcome before synchronization:
+
+- Added OCI source metadata to the final Docker image so GHCR can associate the
+  `ghcr.io/zerodenet/zboard` package with the `zerodenet/zboard` repository.
+- Updated the release workflow to use `docker/metadata-action@v5` for tag
+  metadata and labels before `docker/build-push-action@v6` pushes the image.
+- Documented that GHCR package visibility is controlled in organization
+  package settings; repository metadata helps association, but public
+  anonymous pulls still require an organization owner to make the package
+  public.
+
+Local verification:
+
+- `git diff --check`
+- Workflow review confirmed `docker/metadata-action@v5`,
+  `steps.meta.outputs.tags`, `steps.meta.outputs.labels` and
+  `org.opencontainers.image.source` are present.
+- Dockerfile review confirmed the OCI source label is in the final Alpine image
+  stage.
+
+Remaining gaps:
+
+- A live tag run is still required to confirm GHCR package association and
+  whether organization package visibility has been changed to public.
+- Intranet synchronization still fails against the existing database baseline
+  mismatch, so this metadata-only change is not deployed to the intranet.
+
+Synchronization and deployment evidence:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` built and switched the intranet
+  source to `v0.0.1-20260728T122808Z-intranet`, created
+  `/data/zboard-next/backups/20260728T122808Z/zboard-before-sync.sql` and
+  `/data/zboard-next/releases/20260728T122808Z/source.tar.gz`, then failed
+  startup with `pre-release baseline schema is incomplete: found 30 of 33
+  required tables`.
+- The failed source was preserved as
+  `/data/zboard-next/app-failed-20260728T122808Z`. The previous source was
+  restored to `/data/zboard-next/app`, and the healthy older image
+  `fa44cab95b260a86a9e7fa48e735c676ce69c51abbe8ddef7c5bc6c58f756864` was
+  retagged to `zboard_next-zboard:latest`.
+- Post-restore verification returned HTTP 200 from `/api/v1/version` and
+  `/readyz`; `zboard_next-zboard-1`, `zboard_next-mysql-1` and
+  `zboard_next-redis-1` were healthy.
+- Removed only failed-build/candidate residue and Docker build cache after the
+  failed sync. Root filesystem free space recovered from 704 MiB to 2.5 GiB;
+  database backups, release archives and previous-source directories were
+  retained.
+
 ### 2026-07-28 - Actions artifact upload and commit-based release notes
 
 Outcome before synchronization:

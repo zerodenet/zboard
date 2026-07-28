@@ -29,6 +29,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -o /zboard ./cmd/zboard
 
 FROM alpine:3.20
+LABEL org.opencontainers.image.source="https://github.com/zerodenet/zboard"
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 RUN mkdir -p /app/etc
