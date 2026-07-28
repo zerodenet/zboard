@@ -79,6 +79,32 @@ jobs:
           docker pull "${IMAGE_NAME}:${GITHUB_REF_NAME}"
           docker save "${IMAGE_NAME}:${GITHUB_REF_NAME}" | gzip -9 > "dist/${IMAGE_ARCHIVE}"
           (cd dist && sha256sum "${IMAGE_ARCHIVE}" >> SHA256SUMS)
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.ref_name }}
+          path: |
+            dist/${{ env.BINARY_ARCHIVE }}
+            dist/${{ env.IMAGE_ARCHIVE }}
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+      - name: Generate release notes
+        shell: bash
+        run: |
+          previous_tag="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          if [ -n "${previous_tag}" ]; then
+            note_scope="${previous_tag}..${GITHUB_REF_NAME}"
+            note_title="Changes since ${previous_tag}"
+          else
+            note_scope="${GITHUB_REF_NAME}"
+            note_title="Changes in ${GITHUB_REF_NAME}"
+          fi
+
+          {
+            printf '%s\n\n' "${note_title}"
+            git log --no-merges --reverse --pretty=format:'- %s (%h)' "${note_scope}"
+          } > dist/RELEASE_NOTES.md
       - name: Publish GitHub release
         shell: bash
         env:
@@ -93,5 +119,5 @@ jobs:
             "dist/${IMAGE_ARCHIVE}" \
             "dist/SHA256SUMS" \
             --title "${GITHUB_REF_NAME}" \
-            --generate-notes \
+            --notes-file dist/RELEASE_NOTES.md \
             "${prerelease_args[@]}"

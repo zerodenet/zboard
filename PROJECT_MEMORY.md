@@ -26,6 +26,51 @@ remain outside this repository.
 
 ## Completed goals
 
+### 2026-07-28 - Actions artifact upload and commit-based release notes
+
+Outcome before synchronization:
+
+- Extended the release workflow so tag runs now upload the binary archive,
+  compressed Docker image archive and checksum file as an Actions artifact in
+  addition to publishing the GitHub Release assets.
+- Replaced the default GitHub `Full Changelog` release note generation with a
+  custom note file derived from `git log` between the previous tag and the
+  current tag. The first tagged release falls back to the full commit history
+  reachable from that tag.
+- Updated `RELEASING.md` to describe the Actions artifact and the
+  commit-based release notes.
+
+Local verification:
+
+- `git diff --check`
+- Workflow review confirmed `actions/upload-artifact` and `notes-file`
+  settings are present in `.github/workflows/release.yml`
+
+Remaining gaps:
+
+- The new artifact upload and commit-based release notes have not yet been
+  exercised in a live GitHub tag run.
+- Intranet synchronization reran and failed against the same existing database
+  baseline mismatch. The healthy previous image was restored afterward, so the
+  workflow change remains undeployed on the intranet.
+
+Synchronization and deployment evidence:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` built and switched the intranet
+  source to `v0.0.1-20260728T110417Z-intranet`, created
+  `/data/zboard-next/backups/20260728T110417Z/zboard-before-sync.sql` and
+  `/data/zboard-next/releases/20260728T110417Z/source.tar.gz`, then failed
+  startup with `pre-release baseline schema is incomplete: found 30 of 33
+  required tables`.
+- The failed source was preserved as
+  `/data/zboard-next/app-failed-20260728T110417Z`. The previous source was
+  restored to `/data/zboard-next/app`, and the healthy older image
+  `fa44cab95b260a86a9e7fa48e735c676ce69c51abbe8ddef7c5bc6c58f756864` was
+  retagged to `zboard_next-zboard:latest`.
+- Post-restore verification returned HTTP 200 from `/api/v1/version` and
+  `/readyz`; `zboard_next-zboard-1`, `zboard_next-mysql-1` and
+  `zboard_next-redis-1` were healthy.
+
 ### 2026-07-28 - Release Docker image archive attachment
 
 Outcome before synchronization:
