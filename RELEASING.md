@@ -33,7 +33,8 @@
 ## Version lock
 
 - Toolchain baseline: `backend/go.mod`, the Docker builder image, Node.js, and pnpm use reviewed pinned versions.
-- Keep `backend/internal/version/version.go` aligned with release tag.
+- Keep `VERSION`, `backend/internal/version/version.go` and
+  `frontend/package.json` aligned with the release tag.
 - When `v0.1.0`, keep `v0.1.x` backward-compatible as long as business requirements allow.
 
 ## Rollback requirements
@@ -58,14 +59,24 @@ The complete schema policy and verification queries are documented in
 ## Tag and release command
 
 ```bash
-git tag -a v0.1.0 -m "release v0.1.0"
-git push origin v0.1.0
+bash scripts/release-tag.sh 0.1.0
 ```
+
+- On `develop`, pass only numeric SemVer such as `0.1.0`. The script creates
+  `v0.1.0-dev`, or `v0.1.0-dev.1` when that local tag already exists.
+- On `main`, numeric and prerelease SemVer such as `0.1.0`, `0.1.0-rc` and
+  `0.1.0-rc.1` are allowed. Prerelease suffixes are intentionally rejected on
+  `develop`.
+- The script updates the internal version files, creates a release commit,
+  creates an annotated tag and pushes the branch plus tag to every configured
+  remote.
 
 - GitHub Actions will build:
   - backend binary with `internal/version` ldflags
-  - docker image with same version metadata
+  - docker image with the same version metadata
   - publish image to `ghcr.io/zerodenet/zboard`
+  - publish a GitHub Release with the binary archive, checksum file and
+    generated notes covering commits since the previous tag
 
 ## Release notes artifact
 

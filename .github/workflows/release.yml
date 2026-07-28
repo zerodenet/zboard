@@ -5,6 +5,9 @@ on:
     tags:
       - "v*"
 
+env:
+  IMAGE_NAME: ghcr.io/zerodenet/zboard
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
@@ -13,10 +16,24 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
+      - name: Prepare release metadata
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          prerelease=false
+          if [[ "${tag}" == *-* ]]; then
+            prerelease=true
+          fi
+          echo "APP_BUILD_TIME=${build_time}" >> "$GITHUB_ENV"
+          echo "RELEASE_PRERELEASE=${prerelease}" >> "$GITHUB_ENV"
+          echo "BINARY_ARCHIVE=zboard_${tag}_linux_amd64.tar.gz" >> "$GITHUB_ENV"
       - name: Test backend
         working-directory: backend
         run: |
@@ -27,25 +44,46 @@ jobs:
       - name: Build binary
         working-directory: backend
         run: |
+          mkdir -p bin
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-            -ldflags "-s -w -X github.com/zerodenet/zboard/backend/internal/version.Version=${{ github.ref_name }} -X github.com/zerodenet/zboard/backend/internal/version.Commit=${{ github.sha }} -X github.com/zerodenet/zboard/backend/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -ldflags "-s -w -X github.com/zerodenet/zboard/backend/internal/version.Version=${{ github.ref_name }} -X github.com/zerodenet/zboard/backend/internal/version.Commit=${{ github.sha }} -X github.com/zerodenet/zboard/backend/internal/version.BuildTime=${APP_BUILD_TIME}" \
             -o bin/zboard ./cmd/zboard
-      - name: Prepare image metadata
-        run: echo "APP_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
-      - uses: docker/setup-buildx-action@v3
-      - name: Build image
+      - name: Package binary
+        shell: bash
         run: |
-          docker build \
-            --build-arg APP_VERSION=${{ github.ref_name }} \
-            --build-arg APP_COMMIT=${{ github.sha }} \
-            --build-arg APP_BUILD_TIME=${APP_BUILD_TIME} \
-            -t ghcr.io/zerodenet/zboard:${{ github.ref_name }} \
-            -f deploy/docker/Dockerfile .
+          mkdir -p dist
+          tar -C backend/bin -czf "dist/${BINARY_ARCHIVE}" zboard
+          (cd dist && sha256sum "${BINARY_ARCHIVE}" > SHA256SUMS)
+      - uses: docker/setup-buildx-action@v3
       - name: Login GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Push image
-        run: docker push ghcr.io/zerodenet/zboard:${{ github.ref_name }}
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+            APP_COMMIT=${{ github.sha }}
+            APP_BUILD_TIME=${{ env.APP_BUILD_TIME }}
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          prerelease_args=()
+          if [ "${RELEASE_PRERELEASE}" = "true" ]; then
+            prerelease_args+=(--prerelease)
+          fi
+          gh release create "${GITHUB_REF_NAME}" \
+            "dist/${BINARY_ARCHIVE}" \
+            "dist/SHA256SUMS" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            "${prerelease_args[@]}"

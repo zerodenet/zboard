@@ -26,6 +26,76 @@ remain outside this repository.
 
 ## Completed goals
 
+### 2026-07-28 - Branch-aware release tags and GitHub release automation
+
+Outcome before synchronization:
+
+- Added `scripts/release-tag.sh` as the release entrypoint. It validates the
+  current branch, enforces numeric-only versions on `develop`, allows SemVer
+  prereleases on `main`, appends `-dev` on `develop`, and increments existing
+  local tags as `vX.Y.Z-dev.1`, `vX.Y.Z-dev.2`, and so on.
+- The script synchronizes `VERSION`, `backend/internal/version/version.go`
+  and `frontend/package.json`, creates a release commit and annotated tag, and
+  pushes the current branch plus tag to every configured remote.
+- Updated `.github/workflows/release.yml` so tag pushes build the backend
+  binary, package it, build and push the Docker image, and publish a GitHub
+  Release with generated notes and the binary checksum archive.
+- Updated `RELEASING.md` to point at the new release script and document the
+  branch/tag policy.
+
+Local verification:
+
+- `C:\Program Files\Git\bin\bash.exe -n scripts/release-tag.sh`
+- `C:\Program Files\Git\bin\bash.exe scripts/release-tag.sh --dry-run 0.0.1`
+- `C:\Program Files\Git\bin\bash.exe scripts/release-tag.sh --dry-run 0.0.1-rc.1`
+- `git tag v0.0.1-dev` followed by
+  `C:\Program Files\Git\bin\bash.exe scripts/release-tag.sh --dry-run 0.0.1`
+  to confirm the `v0.0.1-dev.1` suffix, then tag cleanup
+- `git diff --check`
+
+Synchronization and deployment evidence:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` was attempted three times. The
+  first two attempts failed during remote Docker build because the intranet
+  root filesystem was full (`no space left on device`).
+- To recover enough build space without deleting database backups, release
+  archives, previous application sources, native kernel artifacts or native
+  kernel source snapshots, removed stale `/data/zboard-next/candidates/*`,
+  Docker BuildKit cache, unused Docker images, unused Docker volumes, and the
+  reproducible native Zero musl build caches
+  `/data/zboard-next/rustup-musl` and `/data/zboard-next/cargo-musl-cache`.
+  The native kernel package directory remained at 19 MiB and
+  `/data/zboard-next/native-kernel-builds` remained at 138 MiB.
+- The third synchronization built image
+  `v0.0.1-20260728T082909Z-intranet` and created the pre-switch database
+  backup
+  `/data/zboard-next/backups/20260728T082909Z/zboard-before-sync.sql`
+  (84 KiB) plus source archive
+  `/data/zboard-next/releases/20260728T082909Z/source.tar.gz` (692 KiB), but
+  the new application failed health checks with
+  `pre-release baseline schema is incomplete: found 30 of 33 required tables`.
+- The failed source is preserved at
+  `/data/zboard-next/app-failed-20260728T082909Z`. The previous source was
+  restored to `/data/zboard-next/app`, and the previous healthy image
+  `fa44cab95b26` was retagged as `zboard_next-zboard:latest` to restore the
+  running service after the failed image had overwritten that tag.
+- Post-rollback verification succeeded: `/api/v1/version` returned
+  `v0.0.1-20260726T105144Z-intranet-working-tree@2026-07-26T10:51:44Z`,
+  `/readyz` returned HTTP/API 200 with `ready=true` and `db=true`, and
+  `zboard_next-zboard-1`, `zboard_next-mysql-1` and `zboard_next-redis-1`
+  were healthy. Root filesystem free space was restored to 2.9 GiB (94% used).
+
+Remaining gaps:
+
+- The branch-aware release management change is implemented and locally
+  verified, but it is not deployed to the intranet because synchronization
+  failed against the current intranet database schema.
+- The intranet database must be reconciled with the current baseline schema, or
+  the migration adoption path must be repaired, before this working tree can be
+  deployed.
+- The release workflow has not been exercised against a live GitHub tag push,
+  so GitHub Release creation and GHCR publication remain to be observed in CI.
+
 ### 2026-07-22 - Subscription templates, runtime logs and protocol editing
 
 Outcome:
