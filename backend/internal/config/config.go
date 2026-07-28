@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/zeromicro/go-zero/rest"
@@ -10,10 +11,14 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/security"
 )
 
+var zeroLocalVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$`)
+
 const (
 	EnvironmentDevelopment = "development"
 	EnvironmentProduction  = "production"
 	EnvironmentTest        = "test"
+	ZeroKernelLegacy       = "legacy"
+	ZeroKernelNativeLocal  = "native-local"
 	MinimumJWTSecretBytes  = 32
 )
 
@@ -27,6 +32,8 @@ type Config struct {
 	BootstrapAdminPassword  string `json:"bootstrap_admin_password,optional"`
 	CredentialEncryptionKey string `json:"credential_encryption_key,optional"`
 	ZeroArtifactDir         string `json:"zero_artifact_dir,optional"`
+	ZeroKernelContract      string `json:"zero_kernel_contract,default=legacy"`
+	ZeroLocalVersion        string `json:"zero_local_version,optional"`
 }
 
 type BootstrapAdmin struct {
@@ -50,6 +57,8 @@ func (c *Config) ApplyEnvironment(getenv func(string) string) {
 	applyOverride(&c.BootstrapAdminPassword, getenv("ZBOARD_BOOTSTRAP_ADMIN_PASSWORD"))
 	applyOverride(&c.CredentialEncryptionKey, getenv("ZBOARD_CREDENTIAL_ENCRYPTION_KEY"))
 	applyOverride(&c.ZeroArtifactDir, getenv("ZBOARD_ZERO_ARTIFACT_DIR"))
+	applyOverride(&c.ZeroKernelContract, getenv("ZBOARD_ZERO_KERNEL_CONTRACT"))
+	applyOverride(&c.ZeroLocalVersion, getenv("ZBOARD_ZERO_LOCAL_VERSION"))
 }
 
 func (c *Config) Validate() error {
@@ -58,6 +67,20 @@ func (c *Config) Validate() error {
 		return err
 	}
 	c.Environment = environment
+	c.ZeroKernelContract = strings.ToLower(strings.TrimSpace(c.ZeroKernelContract))
+	if c.ZeroKernelContract == "" {
+		c.ZeroKernelContract = ZeroKernelLegacy
+	}
+	if c.ZeroKernelContract != ZeroKernelLegacy && c.ZeroKernelContract != ZeroKernelNativeLocal {
+		return fmt.Errorf("unsupported zero_kernel_contract %q", c.ZeroKernelContract)
+	}
+	c.ZeroLocalVersion = strings.TrimSpace(c.ZeroLocalVersion)
+	if c.ZeroLocalVersion != "" && !zeroLocalVersionPattern.MatchString(c.ZeroLocalVersion) {
+		return fmt.Errorf("zero_local_version %q is not a supported semantic version", c.ZeroLocalVersion)
+	}
+	if c.ZeroKernelContract == ZeroKernelNativeLocal && c.ZeroLocalVersion == "" {
+		return errors.New("zero_local_version is required for the native-local kernel contract")
+	}
 	if strings.TrimSpace(c.DataSource) == "" {
 		return errors.New("datasource is required")
 	}

@@ -163,9 +163,11 @@
             <FormField v-if="form.protocol === 'shadowsocks'" v-slot="{ controlAttrs }" label="Shadowsocks 加密方式"><UiSelect v-model="structured.cipher" v-bind="controlAttrs" :options="shadowsocksCipherOptions" /></FormField>
             <FormField v-if="form.protocol === 'vless'" v-slot="{ controlAttrs }" label="传输安全"><UiSelect v-model="structured.security" v-bind="controlAttrs" :options="securityOptions" /></FormField>
             <template v-if="usesTLS">
-              <FormField v-slot="{ controlAttrs }" label="证书文件路径" name="protocol-cert-path" :error="editorErrors.fields['structured.cert_path']" :required="requiresTLSFiles"><UiInput v-model.trim="structured.cert_path" v-bind="controlAttrs" placeholder="/etc/zero/tls/cert.pem" /></FormField>
-              <FormField v-slot="{ controlAttrs }" label="私钥文件路径" name="protocol-key-path" :error="editorErrors.fields['structured.key_path']" :required="requiresTLSFiles"><UiInput v-model.trim="structured.key_path" v-bind="controlAttrs" placeholder="/etc/zero/tls/key.pem" /></FormField>
+              <FormField v-slot="{ controlAttrs }" label="TLS 证书来源" name="protocol-managed-certificate" :error="editorErrors.fields.managed_certificate_id" hint="选择本节点已签发证书；续期后会自动重新发布完整节点配置。" full><UiSelect v-model="form.managed_certificate_id" v-bind="controlAttrs" :options="managedCertificateOptions" /></FormField>
+              <FormField v-if="!form.managed_certificate_id" v-slot="{ controlAttrs }" label="证书文件路径" name="protocol-cert-path" :error="editorErrors.fields['structured.cert_path']" :required="requiresTLSFiles"><UiInput v-model.trim="structured.cert_path" v-bind="controlAttrs" placeholder="/etc/zero/tls/cert.pem" /></FormField>
+              <FormField v-if="!form.managed_certificate_id" v-slot="{ controlAttrs }" label="私钥文件路径" name="protocol-key-path" :error="editorErrors.fields['structured.key_path']" :required="requiresTLSFiles"><UiInput v-model.trim="structured.key_path" v-bind="controlAttrs" placeholder="/etc/zero/tls/key.pem" /></FormField>
               <FormField v-if="form.protocol !== 'hysteria2'" v-slot="{ controlAttrs }" :label="form.protocol === 'trojan' ? 'TLS 域名（SNI）' : '证书域名'" hint="通常与对外地址一致；使用 IP 连接时请填写证书对应域名。" full><UiInput v-model.trim="structured.server_name" v-bind="controlAttrs" :placeholder="form.address || 'edge.example.com'" /></FormField>
+              <div v-if="!managedCertificateOptions.length || (managedCertificateOptions.length === 1 && managedCertificateOptions[0].value === 0)" class="generated-config-note field-full"><UiIcon name="shield" /><div><strong>本节点暂无可用托管证书</strong><p>可先到 <RouterLink to="/admin/certificates">免费证书</RouterLink> 完成申请，再返回选择使用。</p></div></div>
             </template>
             <div class="generated-config-note field-full"><UiIcon name="check" /><div><strong>配置由系统生成</strong><p>系统会把服务参数转换为 Zero 配置，并在订阅开通、续费、到期时自动更新节点；原始 JSON 仅在最后一步的高级设置中提供。</p></div></div>
           </div>
@@ -210,7 +212,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createProtocolBatchDeployment, createProtocolEndpoint, deployProtocolEndpoint, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointsPage, updateProtocolEndpoint, updateProtocolEndpointsBatch, type AdminNodeListItem, type ProtocolEndpointListItem } from '../api/client'
+import { createProtocolBatchDeployment, createProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointsPage, updateProtocolEndpoint, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -273,6 +275,7 @@ const sortDirection = ref<'asc' | 'desc'>(resolveSortDirection(route.query.direc
 const density = ref<'compact' | 'comfortable'>(resolveTableDensity(route.query.density))
 const groupedByNode = ref(route.query.view === 'nodes')
 const selectedNode = ref<AdminNodeListItem | null>(null)
+const managedCertificates = ref<ManagedCertificate[]>([])
 const selectedEndpointDetail = ref<any | null>(null)
 const selectedEndpointSummary = ref<ProtocolEndpointListItem | null>(null)
 type ProtocolDeploymentStatus = '' | 'succeeded' | 'running' | 'failed' | 'never'
@@ -291,7 +294,7 @@ const copySourceID = ref(0)
 const originalNodeID = ref(0)
 const bulkBusy = ref<'' | 'deploy' | 'enable' | 'disable'>('')
 const message = ref(''), editorError = ref('')
-const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, is_active: true, config: '{}', client_config: '{}', optional_config: '{}', tags: '[]' })
+const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, is_active: true, config: '{}', client_config: '{}', optional_config: '{}', tags: '[]' })
 const emptyStructured = () => ({ credential: randomUUID(), username: 'subscriber', password: randomSecret(), cipher: 'aes-128-gcm', security: 'none', cert_path: '', key_path: '', server_name: '' })
 const form = reactive<any>(emptyForm())
 const structured = reactive<any>(emptyStructured())
@@ -299,7 +302,7 @@ const protocolFormElement = ref<HTMLElement | null>(null)
 const editorErrors = useFormErrors()
 const protocolFieldMap: Record<string, string> = {
   node_id: 'node_id', name: 'name', protocol: 'protocol', address: 'address', port: 'port', public_port: 'public_port',
-  multiplier_milli: 'multiplier_milli', sort_order: 'sort_order', parent_protocol_id: 'parent_protocol_id',
+  multiplier_milli: 'multiplier_milli', sort_order: 'sort_order', parent_protocol_id: 'parent_protocol_id', managed_certificate_id: 'managed_certificate_id',
   config: 'config', client_config: 'client_config', optional_config: 'optional_config', tags: 'tags', is_active: 'is_active',
 }
 const editorState = useDirtyForm(() => ({ form, structured }))
@@ -357,6 +360,12 @@ const { items: deployments, total: deploymentTotal, loading: deploymentLoading, 
 const usesManagedCredentials = computed(() => ['vless', 'vmess', 'shadowsocks'].includes(form.protocol))
 const usesTLS = computed(() => ['vmess', 'trojan', 'hysteria2'].includes(form.protocol) || (form.protocol === 'vless' && structured.security === 'tls'))
 const requiresTLSFiles = computed(() => ['vmess', 'trojan'].includes(form.protocol) || (form.protocol === 'vless' && structured.security === 'tls'))
+const managedCertificateOptions = computed(() => [
+  { label: '手动维护节点文件路径', value: 0 },
+  ...managedCertificates.value
+    .filter(item => item.not_after && new Date(item.not_after).getTime() > Date.now() && (item.status === 'active' || item.status === 'failed'))
+    .map(item => ({ label: `${item.name} · ${item.domains.join('、')}`, value: item.id })),
+])
 const hasConfigError = computed(() => ['config', 'client_config', 'optional_config', 'tags', 'parent_protocol_id', 'multiplier_milli', 'sort_order'].some(field => Boolean(editorErrors.fields[field])))
 
 for (const field of Object.keys(protocolFieldMap)) {
@@ -478,13 +487,19 @@ async function changeDeploymentPage(value: { offset: number; limit: number }) { 
 function handleNodeSelect(node: AdminNodeListItem | null) {
   const previousNodeID = selectedNode.value?.id || 0
   selectedNode.value = node
-  if (previousNodeID && node?.id !== previousNodeID) form.parent_protocol_id = 0
+  if (previousNodeID && node?.id !== previousNodeID) { form.parent_protocol_id = 0; form.managed_certificate_id = 0 }
+  void loadManagedCertificates(node?.id || 0)
   if (!form.id && !copySourceID.value && node?.address) form.address = node.address
   if (!form.id && !copySourceID.value) suggestName()
 }
 function useNodeAddress() { if (selectedNode.value?.address) form.address = selectedNode.value.address }
 function suggestName() { if (!selectedNode.value) return; form.name = `${selectedNode.value.name} ${protocolLabel(form.protocol)}` }
-function handleProtocolChange() { if (!form.id) suggestName(); structured.cipher = form.protocol === 'shadowsocks' ? 'chacha20-ietf-poly1305' : 'aes-128-gcm'; structured.security = form.protocol === 'vless' ? 'none' : 'tls' }
+function handleProtocolChange() { if (!form.id) suggestName(); structured.cipher = form.protocol === 'shadowsocks' ? 'chacha20-ietf-poly1305' : 'aes-128-gcm'; structured.security = form.protocol === 'vless' ? 'none' : 'tls'; if (!['vless', 'vmess', 'trojan', 'hysteria2'].includes(form.protocol)) form.managed_certificate_id = 0 }
+async function loadManagedCertificates(nodeID: number) {
+  if (!nodeID) { managedCertificates.value = []; return }
+  try { managedCertificates.value = (await fetchManagedCertificatesPage({ nodeId: nodeID, limit: 200 })).items }
+  catch { managedCertificates.value = [] }
+}
 function closeEditor() { if (!saving.value) editorOpen.value = false }
 async function openCreate() {
   copySourceID.value = 0
@@ -499,6 +514,7 @@ async function openCreate() {
     const node = (await fetchNodesPage({ enabled: true, limit: 1, sort: 'name', direction: 'asc' })).items[0] || null
     selectedNode.value = node
     Object.assign(form, { node_id: node?.id || 0, address: node?.address || '' })
+    await loadManagedCertificates(node?.id || 0)
     suggestName()
   } catch {
     editorError.value = '节点列表暂时无法加载；恢复连接后可在上方搜索并选择承载节点。'
@@ -509,7 +525,7 @@ async function openCreate() {
 async function openEdit(endpoint: any) {
   copySourceID.value = 0
   error.value = ''
-  try { const [detail, nodePage] = await Promise.all([fetchProtocolEndpoint(endpoint.id), fetchNodesPage({ nodeId: endpoint.node_id, limit: 1 })]); selectedNode.value = nodePage.items[0] || null; originalNodeID.value = detail.node_id; Object.assign(form, emptyForm(), detail, { parent_protocol_id: detail.parent_protocol_id || 0, config: detail.config || '{}', client_config: detail.client_config || '{}', optional_config: detail.optional_config || '{}', tags: detail.tags || '[]' }); readStructuredConfig(); editorState.markClean(); editorStep.value = 1; editorError.value = ''; editorErrors.clear(); editorOpen.value = true }
+  try { const [detail, nodePage] = await Promise.all([fetchProtocolEndpoint(endpoint.id), fetchNodesPage({ nodeId: endpoint.node_id, limit: 1 })]); selectedNode.value = nodePage.items[0] || null; originalNodeID.value = detail.node_id; Object.assign(form, emptyForm(), detail, { parent_protocol_id: detail.parent_protocol_id || 0, managed_certificate_id: detail.managed_certificate_id || 0, config: detail.config || '{}', client_config: detail.client_config || '{}', optional_config: detail.optional_config || '{}', tags: detail.tags || '[]' }); await loadManagedCertificates(detail.node_id); readStructuredConfig(); editorState.markClean(); editorStep.value = 1; editorError.value = ''; editorErrors.clear(); editorOpen.value = true }
   catch (e: any) { error.value = e?.response?.data?.message || '协议详情加载失败。' }
 }
 async function openCopy(endpoint: ProtocolEndpointListItem) {
@@ -522,6 +538,7 @@ async function openCopy(endpoint: ProtocolEndpointListItem) {
       fetchNodesPage({ nodeId: endpoint.node_id, limit: 1 }),
     ])
     selectedNode.value = nodePage.items[0] || null
+    await loadManagedCertificates(detail.node_id)
     Object.assign(form, emptyForm(), detail, {
       id: 0,
       name: `${detail.name} 副本`,
@@ -581,9 +598,9 @@ async function validateStep(step: number) {
   if (step === 2) {
     if (!usesManagedCredentials.value && !structured.password) fields['structured.password'] = '请输入连接密码。'
     if (form.protocol === 'mieru' && !structured.username.trim()) fields['structured.username'] = '请输入 Mieru 用户名。'
-    if (requiresTLSFiles.value && !structured.cert_path.trim()) fields['structured.cert_path'] = '请输入证书文件路径。'
-    if (requiresTLSFiles.value && !structured.key_path.trim()) fields['structured.key_path'] = '请输入私钥文件路径。'
-    if (form.protocol === 'hysteria2' && Boolean(structured.cert_path.trim()) !== Boolean(structured.key_path.trim())) {
+    if (!form.managed_certificate_id && requiresTLSFiles.value && !structured.cert_path.trim()) fields['structured.cert_path'] = '请选择托管证书或输入证书文件路径。'
+    if (!form.managed_certificate_id && requiresTLSFiles.value && !structured.key_path.trim()) fields['structured.key_path'] = '请选择托管证书或输入私钥文件路径。'
+    if (!form.managed_certificate_id && form.protocol === 'hysteria2' && Boolean(structured.cert_path.trim()) !== Boolean(structured.key_path.trim())) {
       fields['structured.cert_path'] = '证书和私钥路径需要同时填写，或同时留空。'
       fields['structured.key_path'] = '证书和私钥路径需要同时填写，或同时留空。'
     }
@@ -617,7 +634,7 @@ async function save() {
   saving.value = true; editorError.value = ''; editorErrors.clear(); error.value = ''; message.value = ''
   try {
     const creatingCopy = Boolean(copySourceID.value)
-    const payload = { node_id: form.node_id, name: form.name, protocol: form.protocol, address: form.address, port: form.port, public_port: form.public_port, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, parent_protocol_id: form.parent_protocol_id || null, is_active: Boolean(form.is_active), config: form.config, client_config: form.client_config, optional_config: form.optional_config || '{}', tags: form.tags || '[]' }
+    const payload = { node_id: form.node_id, name: form.name, protocol: form.protocol, address: form.address, port: form.port, public_port: form.public_port, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, parent_protocol_id: form.parent_protocol_id || null, managed_certificate_id: form.managed_certificate_id || null, is_active: Boolean(form.is_active), config: form.config, client_config: form.client_config, optional_config: form.optional_config || '{}', tags: form.tags || '[]' }
     if (form.id) await updateProtocolEndpoint(form.id, payload); else await createProtocolEndpoint(payload)
     editorOpen.value = false
     copySourceID.value = 0

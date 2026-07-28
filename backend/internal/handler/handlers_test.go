@@ -32,7 +32,7 @@ func newTestCredentialCipher(t *testing.T) *security.CredentialCipher {
 }
 
 func TestIssueTokenSignsClaimsAndSetsExpiry(t *testing.T) {
-	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "")
+	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
 	if err != nil {
 		t.Fatalf("NewHandlers() error = %v", err)
 	}
@@ -410,7 +410,7 @@ func TestEffectiveSubscriptionStatusDoesNotRequirePersistence(t *testing.T) {
 }
 
 func TestSupportedProtocolsAreCaseInsensitive(t *testing.T) {
-	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "")
+	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
 	if err != nil {
 		t.Fatalf("NewHandlers() error = %v", err)
 	}
@@ -425,7 +425,7 @@ func TestSupportedProtocolsAreCaseInsensitive(t *testing.T) {
 }
 
 func TestNewHandlersRejectsWeakJWTSecret(t *testing.T) {
-	if _, err := NewHandlers(nil, "test-secret", newTestCredentialCipher(t), ""); err == nil {
+	if _, err := NewHandlers(nil, "test-secret", newTestCredentialCipher(t), "", "legacy", ""); err == nil {
 		t.Fatal("NewHandlers() error = nil, want weak secret rejection")
 	}
 }
@@ -978,7 +978,7 @@ func TestValidateSSHPrivilege(t *testing.T) {
 
 func TestPrepareSSHCommandDoesNotExposePrivilegePassword(t *testing.T) {
 	cipher := newTestCredentialCipher(t)
-	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", cipher, "")
+	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", cipher, "", "legacy", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1046,6 +1046,78 @@ func TestParseZeroFlowProjectionPreservesLargeTrafficCounters(t *testing.T) {
 	}
 }
 
+func TestParseZeroStatsProjectionPreservesConnectorCounters(t *testing.T) {
+	stats, err := parseZeroStatsProjection(json.RawMessage(`{
+		"active_sessions":42,
+		"bytes_up":9007199254740993,
+		"bytes_down":17
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.ActiveSessions != 42 || stats.BytesUp != 9007199254740993 || stats.BytesDown != 17 {
+		t.Fatalf("unexpected stats projection: %+v", stats)
+	}
+}
+
+func TestManagedAccessUserFieldsMapsSafeSubscriptionPolicy(t *testing.T) {
+	now := time.UnixMilli(1_753_500_000_123).UTC()
+	context := runtimeCredentialContext{
+		Credential: model.ProtocolCredential{PrincipalKey: "subscription:7:endpoint:3"},
+		Subscription: model.Subscription{
+			ID: 7, FlowTotal: 10_000, FlowUsed: 2_500, SpeedLimitMbps: 80,
+			DeviceLimit: 3, TrafficCalcMode: trafficCalcBoth, UpdatedAt: now,
+		},
+		SoleActiveCredential: true,
+	}
+	user, err := managedAccessUserFields(context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]interface{}{
+		"principal_key":   "subscription:7:endpoint:3",
+		"policy_revision": uint64(now.UnixMilli()),
+		"up_bps":          uint64(10_000_000),
+		"down_bps":        uint64(10_000_000),
+		"device_limit":    uint32(3),
+	} {
+		if got := user[key]; got != want {
+			t.Errorf("%s = %#v, want %#v", key, got, want)
+		}
+	}
+}
+
+func TestProtocolCredentialContractIsExplicitlyStaged(t *testing.T) {
+	legacy := &handlers{}
+	native := &handlers{zeroNativeAccess: true}
+	if legacy.protocolUsesSubscriptionCredential("trojan") {
+		t.Fatal("legacy contract unexpectedly enabled Trojan managed users")
+	}
+	if !native.protocolUsesSubscriptionCredential("trojan") || !native.protocolUsesSubscriptionCredential("hysteria2") {
+		t.Fatal("native-local contract did not enable all managed-password protocols")
+	}
+}
+
+func TestManagedAccessUserFieldsOmitsUnsafeDistributedQuota(t *testing.T) {
+	context := runtimeCredentialContext{
+		Credential: model.ProtocolCredential{PrincipalKey: "subscription:7:endpoint:3"},
+		Subscription: model.Subscription{
+			ID: 7, FlowTotal: 10_000, FlowUsed: 2_500, DeviceLimit: 2,
+			TrafficCalcMode: trafficCalcUpload,
+		},
+		SoleActiveCredential: false,
+	}
+	user, err := managedAccessUserFields(context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"up_bps", "down_bps", "device_limit", "quota_remaining_bytes"} {
+		if _, exists := user[field]; exists {
+			t.Fatalf("unsafe distributed policy field %s was projected: %#v", field, user)
+		}
+	}
+}
+
 func TestZeroConfigPublishScriptValidatesSwitchesAndChecksHealth(t *testing.T) {
 	script := buildZeroConfigPublishScript("/tmp/stage", strings.Repeat("a", 64), 91)
 	for _, required := range []string{
@@ -1068,7 +1140,7 @@ func TestZeroConfigPublishScriptValidatesSwitchesAndChecksHealth(t *testing.T) {
 
 func TestShadowsocks2022CredentialUsesCipherKeyLength(t *testing.T) {
 	cipher := newTestCredentialCipher(t)
-	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", cipher, "")
+	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", cipher, "", "legacy", "")
 	if err != nil {
 		t.Fatal(err)
 	}

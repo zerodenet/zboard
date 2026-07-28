@@ -1074,7 +1074,7 @@ func (h *handlers) executeQuotaTaskItem(task model.Task, item model.TaskItem) er
 		return err
 	}
 	deltaBytes := content.DeltaMB * 1024 * 1024
-	return h.db.Transaction(func(tx *gorm.DB) error {
+	err = h.db.Transaction(func(tx *gorm.DB) error {
 		var existing int64
 		if err := tx.Model(&model.QuotaEvent{}).Where(
 			"subscription_id = ? AND event_type = ? AND reference_type = ? AND reference_id = ?",
@@ -1112,6 +1112,10 @@ func (h *handlers) executeQuotaTaskItem(task model.Task, item model.TaskItem) er
 			ReferenceType: "task_item", ReferenceID: strconv.FormatUint(uint64(item.ID), 10), Detail: string(detail),
 		}).Error
 	})
+	if err == nil {
+		h.scheduleSubscriptionConfigPublishes(uint(subscriptionID), 0)
+	}
+	return err
 }
 
 func (h *handlers) executeEmailTaskItem(task model.Task, item model.TaskItem) error {

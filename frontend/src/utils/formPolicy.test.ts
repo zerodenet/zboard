@@ -50,7 +50,7 @@ describe('form feedback policy', () => {
       ].filter((violation): violation is string => Boolean(violation))),
     )
 
-    expect(formCount).toBe(20)
+    expect(formCount).toBe(22)
     expect([...ownerViolations, ...formViolations]).toEqual([])
   })
 
@@ -65,6 +65,7 @@ describe('form feedback policy', () => {
   it('protects all persistent business forms from route changes and browser unload', () => {
     const expectedGuardedOwners = [
       'components/TicketCenter.vue',
+      'views/Certificates.vue',
       'views/NodeGroups.vue',
       'views/Nodes.vue',
       'views/Plans.vue',

@@ -90,7 +90,7 @@ func main() {
 	log.Printf("environment: %s", c.Environment)
 	log.Printf("config datasource: %s", datastore.QuoteDSN(c.DataSource))
 
-	if err := server.RegisterRoutes(srv, db, c.JwtSecret, credentialCipher, c.ZeroArtifactDir); err != nil {
+	if err := server.RegisterRoutes(srv, db, c.JwtSecret, credentialCipher, c.ZeroArtifactDir, c.ZeroKernelContract, c.ZeroLocalVersion); err != nil {
 		log.Fatalf("route registration failed: %v", err)
 	}
 

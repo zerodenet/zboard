@@ -373,21 +373,22 @@ type nodeSSHConfigReq struct {
 }
 
 type protocolEndpointWriteReq struct {
-	NodeID           uint   `json:"node_id"`
-	Name             string `json:"name"`
-	Protocol         string `json:"protocol"`
-	Address          string `json:"address"`
-	Port             int    `json:"port"`
-	PublicPort       int    `json:"public_port"`
-	Cipher           int16  `json:"cipher"`
-	ParentProtocolID *uint  `json:"parent_protocol_id"`
-	MultiplierMilli  int64  `json:"multiplier_milli"`
-	IsActive         *bool  `json:"is_active"`
-	SortOrder        int    `json:"sort_order"`
-	Config           string `json:"config"`
-	ClientConfig     string `json:"client_config"`
-	OptionalConfig   string `json:"optional_config"`
-	Tags             string `json:"tags"`
+	NodeID               uint   `json:"node_id"`
+	Name                 string `json:"name"`
+	Protocol             string `json:"protocol"`
+	Address              string `json:"address"`
+	Port                 int    `json:"port"`
+	PublicPort           int    `json:"public_port"`
+	Cipher               int16  `json:"cipher"`
+	ParentProtocolID     *uint  `json:"parent_protocol_id"`
+	ManagedCertificateID *uint  `json:"managed_certificate_id"`
+	MultiplierMilli      int64  `json:"multiplier_milli"`
+	IsActive             *bool  `json:"is_active"`
+	SortOrder            int    `json:"sort_order"`
+	Config               string `json:"config"`
+	ClientConfig         string `json:"client_config"`
+	OptionalConfig       string `json:"optional_config"`
+	Tags                 string `json:"tags"`
 }
 
 type protocolEndpointSelectionSnapshot struct {
@@ -443,13 +444,15 @@ type handlers struct {
 	jwtSecret           string
 	credentialCipher    *security.CredentialCipher
 	zeroArtifactDir     string
+	zeroNativeAccess    bool
+	zeroLocalVersion    string
 	sshTerminal         *sshTerminalRuntime
 	nodePublishLocks    sync.Map
 	expiryReconcileMu   sync.Mutex
 	lastExpiryReconcile time.Time
 }
 
-func NewHandlers(db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir string) (*handlers, error) {
+func NewHandlers(db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string) (*handlers, error) {
 	if err := cfgpkg.ValidateJWTSecret(jwtSecret); err != nil {
 		return nil, err
 	}
@@ -461,6 +464,8 @@ func NewHandlers(db *gorm.DB, jwtSecret string, credentialCipher *security.Crede
 		jwtSecret:        jwtSecret,
 		credentialCipher: credentialCipher,
 		zeroArtifactDir:  strings.TrimSpace(zeroArtifactDir),
+		zeroNativeAccess: strings.EqualFold(strings.TrimSpace(zeroKernelContract), cfgpkg.ZeroKernelNativeLocal),
+		zeroLocalVersion: strings.TrimSpace(zeroLocalVersion),
 		sshTerminal:      newSSHTerminalRuntime(),
 	}, nil
 }
@@ -491,10 +496,22 @@ func (h *handlers) ReadyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) VersionHandler(w http.ResponseWriter, r *http.Request) {
-	OK(w, map[string]interface{}{
-		"version": version.FullVersion(),
-		"name":    "zboard",
-	})
+	data := map[string]interface{}{
+		"version":              version.FullVersion(),
+		"name":                 "zboard",
+		"zero_kernel_contract": h.zeroKernelContract(),
+	}
+	if h.zeroNativeAccess {
+		data["zero_local_version"] = h.zeroLocalVersion
+	}
+	OK(w, data)
+}
+
+func (h *handlers) zeroKernelContract() string {
+	if h.zeroNativeAccess {
+		return cfgpkg.ZeroKernelNativeLocal
+	}
+	return cfgpkg.ZeroKernelLegacy
 }
 
 func (h *handlers) SetupStatusHandler(w http.ResponseWriter, r *http.Request) {
@@ -2342,6 +2359,15 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		ServerError(w, err)
 		return
 	}
+	var managedCertificate *model.ManagedCertificate
+	if req.ManagedCertificateID != nil && *req.ManagedCertificateID != 0 {
+		certificate, certificateErr := h.loadUsableManagedCertificate(*req.ManagedCertificateID, node.ID, protocol, time.Now().UTC())
+		if certificateErr != nil {
+			BadRequestFields(w, "协议服务校验失败。", map[string]string{"managed_certificate_id": certificateErr.Error()})
+			return
+		}
+		managedCertificate = &certificate
+	}
 	if err := h.validateProtocolParent(endpointID, node.ID, req.ParentProtocolID); err != nil {
 		BadRequestError(w, err)
 		return
@@ -2428,7 +2454,21 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 				return err
 			}
 		}
+		if err := tx.Where("protocol_endpoint_id = ?", endpoint.ID).Delete(&model.CertificateProtocolEndpoint{}).Error; err != nil {
+			return err
+		}
+		if managedCertificate != nil {
+			if err := tx.Create(&model.CertificateProtocolEndpoint{
+				ManagedCertificateID: managedCertificate.ID,
+				ProtocolEndpointID:   endpoint.ID,
+			}).Error; err != nil {
+				return err
+			}
+		}
 		detail := fmt.Sprintf("node=%d protocol=%s multiplier_milli=%d", node.ID, protocol, endpoint.MultiplierMilli)
+		if managedCertificate != nil {
+			detail += fmt.Sprintf(" managed_certificate=%d", managedCertificate.ID)
+		}
 		if previousNodeID != 0 && previousNodeID != node.ID {
 			detail += fmt.Sprintf(" previous_node=%d", previousNodeID)
 		}
@@ -2471,9 +2511,10 @@ func (h *handlers) ProtocolEndpointDeployHandler(w http.ResponseWriter, r *http.
 
 type protocolEndpointAdminDetail struct {
 	model.ProtocolEndpoint
-	Config           string                    `json:"config"`
-	LatestDeployment *model.ProtocolDeployment `json:"latest_deployment,omitempty"`
-	Usage            protocolEndpointUsage     `json:"usage"`
+	Config               string                    `json:"config"`
+	ManagedCertificateID *uint                     `json:"managed_certificate_id,omitempty"`
+	LatestDeployment     *model.ProtocolDeployment `json:"latest_deployment,omitempty"`
+	Usage                protocolEndpointUsage     `json:"usage"`
 }
 
 type protocolEndpointUsage struct {
@@ -2503,6 +2544,7 @@ type protocolEndpointListItem struct {
 	Port             int                         `json:"port"`
 	PublicPort       int                         `json:"public_port"`
 	ParentProtocolID *uint                       `json:"parent_protocol_id,omitempty"`
+	ManagedCertificateID *uint                  `json:"managed_certificate_id,omitempty"`
 	MultiplierMilli  int64                       `json:"multiplier_milli"`
 	IsActive         bool                        `json:"is_active"`
 	SortOrder        int                         `json:"sort_order"`
@@ -2512,11 +2554,11 @@ type protocolEndpointListItem struct {
 	UpdatedAt        time.Time                   `json:"updated_at"`
 }
 
-func newProtocolEndpointListItem(endpoint model.ProtocolEndpoint, nodeName string, deployment *model.ProtocolDeployment, usage protocolEndpointUsage) protocolEndpointListItem {
+func newProtocolEndpointListItem(endpoint model.ProtocolEndpoint, nodeName string, managedCertificateID *uint, deployment *model.ProtocolDeployment, usage protocolEndpointUsage) protocolEndpointListItem {
 	item := protocolEndpointListItem{
 		ID: endpoint.ID, NodeID: endpoint.NodeID, NodeName: nodeName, Name: endpoint.Name,
 		Protocol: endpoint.Protocol, Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
-		ParentProtocolID: endpoint.ParentProtocolID, MultiplierMilli: endpoint.MultiplierMilli,
+		ParentProtocolID: endpoint.ParentProtocolID, ManagedCertificateID: managedCertificateID, MultiplierMilli: endpoint.MultiplierMilli,
 		IsActive: endpoint.IsActive, SortOrder: endpoint.SortOrder, Usage: usage,
 		CreatedAt: endpoint.CreatedAt, UpdatedAt: endpoint.UpdatedAt,
 	}
@@ -2557,7 +2599,12 @@ func (h *handlers) ProtocolEndpointDetailHandler(w http.ResponseWriter, r *http.
 		ServerError(w, err)
 		return
 	}
-	detail := protocolEndpointAdminDetail{ProtocolEndpoint: endpoint, Config: serverConfig, Usage: usage}
+	managedCertificateIDs, err := h.loadManagedCertificateIDsForEndpoints([]uint{endpoint.ID})
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	detail := protocolEndpointAdminDetail{ProtocolEndpoint: endpoint, Config: serverConfig, ManagedCertificateID: managedCertificateIDs[endpoint.ID], Usage: usage}
 	var deployment model.ProtocolDeployment
 	if err := h.db.Where("protocol_endpoint_id = ?", endpoint.ID).Order("id desc").First(&deployment).Error; err == nil {
 		detail.LatestDeployment = &deployment
@@ -2761,8 +2808,13 @@ func (h *handlers) ProtocolEndpointListHandler(w http.ResponseWriter, r *http.Re
 		ServerError(w, err)
 		return
 	}
+	managedCertificateIDs, err := h.loadManagedCertificateIDsForEndpoints(protocolEndpointIDs(endpoints))
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
 	for _, endpoint := range endpoints {
-		items = append(items, newProtocolEndpointListItem(endpoint, nodeNames[endpoint.NodeID], deploymentByEndpoint[endpoint.ID], usageByEndpoint[endpoint.ID]))
+		items = append(items, newProtocolEndpointListItem(endpoint, nodeNames[endpoint.NodeID], managedCertificateIDs[endpoint.ID], deploymentByEndpoint[endpoint.ID], usageByEndpoint[endpoint.ID]))
 	}
 	if paged {
 		OK(w, pagedData(items, total, offset, limit))

@@ -29,12 +29,12 @@ import (
 )
 
 const (
-	zeroReleaseAPI       = "https://api.github.com/repos/zerodenet/zero/releases/latest"
-	zeroLinuxAsset       = "zero-linux-x86_64.tar.gz"
-	zeroBinaryMaxBytes   = 64 << 20
-	zeroArtifactMaxBytes = 128 << 20
-	zeroControlSocket    = "/run/zerodenet/control.sock"
-	zeroHeartbeatTimeout = 55 * time.Second
+	zeroReleaseAPI            = "https://api.github.com/repos/zerodenet/zero/releases/latest"
+	zeroLinuxAsset            = "zero-linux-x86_64.tar.gz"
+	zeroBinaryMaxBytes        = 64 << 20
+	zeroArtifactMaxBytes      = 128 << 20
+	zeroControlSocket         = "/run/zerodenet/control.sock"
+	zeroConnectorEventTimeout = 55 * time.Second
 )
 
 var (
@@ -42,6 +42,8 @@ var (
 	errKernelPlatformUnsupported = errors.New("the official Zero artifact is incompatible with this platform")
 	stableZeroTagPattern         = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 	managedZeroArtifactPattern   = regexp.MustCompile(`^zero-v[0-9]+\.[0-9]+\.[0-9]+-linux-x86_64-musl\.tar\.gz$`)
+	localZeroVersionPattern      = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$`)
+	localZeroArtifactPattern     = regexp.MustCompile(`^zero-v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?-linux-x86_64-musl\.tar\.gz$`)
 	sha256Pattern                = regexp.MustCompile(`^[a-f0-9]{64}$`)
 )
 
@@ -89,7 +91,13 @@ func (h *handlers) LatestKernelReleaseHandler(w http.ResponseWriter, r *http.Req
 	if _, err := h.requireAdmin(w, r); err != nil {
 		return
 	}
-	release, err := resolveLatestZeroRelease(r.Context())
+	var release zeroRelease
+	var err error
+	if h.zeroNativeAccess {
+		release, err = resolveLocalNativeZeroRelease(h.zeroArtifactDir, h.zeroLocalVersion)
+	} else {
+		release, err = resolveLatestZeroRelease(r.Context())
+	}
 	if err != nil {
 		ServerError(w, fmt.Errorf("resolve latest Zero release: %w", err))
 		return
@@ -318,21 +326,17 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 			return nil, rollbackAfterActivation(fmt.Errorf("activate generated connector credential: %w", err))
 		}
 	}
-	if err := h.setKernelOperationPhase(operation, "waiting_heartbeat"); err != nil {
+	if err := h.setKernelOperationPhase(operation, "waiting_connector_event"); err != nil {
 		return nil, rollbackAfterActivation(err)
 	}
-	heartbeatAt, err := h.waitForNodeConnectorHeartbeat(ctx, node.ID, activationStartedAt)
+	connectorEventAt, err := h.waitForNodeConnectorEvent(ctx, node.ID, activationStartedAt)
 	if err != nil {
-		return nil, rollbackAfterActivation(fmt.Errorf("panel heartbeat verification failed: %w", err))
+		return nil, rollbackAfterActivation(fmt.Errorf("connector event verification failed: %w", err))
 	}
-	state, err := h.finishKernelOperation(operation, verified, release, binarySHA, configSHA, fmt.Sprintf("Zero %s %s and passed systemd, control-socket, and panel-heartbeat health checks at %s", release.Version, action, heartbeatAt.Format(time.RFC3339)))
+	state, err := h.finishKernelOperation(operation, verified, release, binarySHA, configSHA, fmt.Sprintf("Zero %s %s and passed systemd, control-socket, and connector-event health checks at %s", release.Version, action, connectorEventAt.Format(time.RFC3339)))
 	if err != nil {
 		return nil, rollbackAfterActivation(fmt.Errorf("persist successful Zero operation: %w", err))
 	}
-	_ = h.db.Model(&model.Node{}).Where("id = ?", node.ID).Updates(map[string]interface{}{
-		"version":         verified.Version,
-		"ssh_verified_at": time.Now().UTC(),
-	}).Error
 	return map[string]interface{}{"state": state, "operation": operation, "changed": true, "action": action}, nil
 }
 
@@ -389,6 +393,9 @@ func resolveLatestZeroRelease(parent context.Context) (zeroRelease, error) {
 }
 
 func (h *handlers) resolveZeroRelease(ctx context.Context, probe kernelProbe) (zeroRelease, error) {
+	if h.zeroNativeAccess {
+		return resolveLocalNativeZeroRelease(h.zeroArtifactDir, h.zeroLocalVersion)
+	}
 	official, err := resolveLatestZeroRelease(ctx)
 	if err != nil {
 		return zeroRelease{}, err
@@ -418,6 +425,25 @@ func resolveManagedZeroRelease(artifactDir string, official zeroRelease) (zeroRe
 	name := fmt.Sprintf("zero-%s-linux-x86_64-musl.tar.gz", official.Tag)
 	if !managedZeroArtifactPattern.MatchString(name) {
 		return zeroRelease{}, errors.New("the managed artifact name is invalid")
+	}
+	return resolveManagedZeroArtifact(artifactDir, name, official.Version, official.Tag)
+}
+
+func resolveLocalNativeZeroRelease(artifactDir, version string) (zeroRelease, error) {
+	version = strings.TrimSpace(version)
+	if !localZeroVersionPattern.MatchString(version) {
+		return zeroRelease{}, errors.New("ZBOARD_ZERO_LOCAL_VERSION is not a supported semantic version")
+	}
+	name := fmt.Sprintf("zero-v%s-linux-x86_64-musl.tar.gz", version)
+	if !localZeroArtifactPattern.MatchString(name) {
+		return zeroRelease{}, errors.New("the local native artifact name is invalid")
+	}
+	return resolveManagedZeroArtifact(artifactDir, name, version, "v"+version)
+}
+
+func resolveManagedZeroArtifact(artifactDir, name, version, tag string) (zeroRelease, error) {
+	if strings.TrimSpace(artifactDir) == "" {
+		return zeroRelease{}, errors.New("ZBOARD_ZERO_ARTIFACT_DIR is not configured")
 	}
 	root, err := filepath.Abs(artifactDir)
 	if err != nil {
@@ -452,8 +478,8 @@ func resolveManagedZeroRelease(artifactDir string, official zeroRelease) (zeroRe
 		return zeroRelease{}, fmt.Errorf("%s.sha256 is invalid", name)
 	}
 	return zeroRelease{
-		Version:        official.Version,
-		Tag:            official.Tag,
+		Version:        version,
+		Tag:            tag,
 		ArtifactURL:    "managed://" + name,
 		ArtifactSHA256: strings.ToLower(fields[0]),
 		ArtifactSize:   info.Size(),
@@ -624,6 +650,10 @@ func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey string) ([]b
 	if err := h.db.Where("node_id = ? AND is_active = ?", node.ID, true).Order("sort_order asc, id asc").Find(&endpoints).Error; err != nil {
 		return nil, "", err
 	}
+	managedCertificates, err := h.loadManagedCertificatesForEndpoints(endpoints)
+	if err != nil {
+		return nil, "", err
+	}
 	inbounds := make([]map[string]interface{}, 0, len(endpoints))
 	for _, endpoint := range endpoints {
 		rawConfig, err := h.credentialCipher.Decrypt(endpoint.ServerConfig)
@@ -637,6 +667,11 @@ func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey string) ([]b
 		if kind, _ := protocol["type"].(string); !strings.EqualFold(strings.TrimSpace(kind), endpoint.Protocol) {
 			return nil, "", fmt.Errorf("protocol endpoint %d config type must be %s", endpoint.ID, endpoint.Protocol)
 		}
+		if certificate, exists := managedCertificates[endpoint.ID]; exists {
+			if err := applyManagedCertificateToProtocol(protocol, endpoint.Protocol, certificate, now); err != nil {
+				return nil, "", fmt.Errorf("protocol endpoint %d managed certificate: %w", endpoint.ID, err)
+			}
+		}
 		if endpoint.Port <= 0 || endpoint.Port > 65535 {
 			return nil, "", fmt.Errorf("protocol endpoint %d listen port is invalid", endpoint.ID)
 		}
@@ -646,29 +681,20 @@ func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey string) ([]b
 		}
 		inbounds = append(inbounds, endpointInbounds...)
 	}
-	eventSink := map[string]interface{}{
-		"tag":         "zboard",
-		"type":        "webhook",
-		"url":         panelURL + "/api/zero/events",
-		"events":      []string{"flow.updated", "flow.completed"},
-		"source_id":   fmt.Sprintf("node-%d", node.ID),
-		"api_key_env": "ZERO_PANEL_API_KEY",
-	}
-	if parsedURL.Scheme == "http" {
-		eventSink["allow_insecure"] = true
-	}
 	config := map[string]interface{}{
 		"inbounds": inbounds,
 		"mode":     map[string]interface{}{"type": "rule"},
 		"route":    map[string]interface{}{"rules": []interface{}{}, "final": map[string]interface{}{"type": "direct"}},
-		"api": map[string]interface{}{
-			"event_sinks": []interface{}{eventSink},
-		},
-		"push": map[string]interface{}{
+	}
+	if h.zeroNativeAccess {
+		config["api"] = zeroConnectorAPIConfig(panelURL, node.ID, apiKey, parsedURL.Scheme == "http")
+	} else {
+		config["api"] = zeroLegacyEventAPIConfig(panelURL, node.ID, parsedURL.Scheme == "http")
+		config["push"] = map[string]interface{}{
 			"url": panelURL, "node_id": strconv.FormatUint(uint64(node.ID), 10),
 			"api_key_env": "ZERO_PANEL_API_KEY", "heartbeat_interval_seconds": 30,
 			"pull_commands": true, "command_poll_interval_seconds": 10,
-		},
+		}
 	}
 	payload, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -677,6 +703,41 @@ func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey string) ([]b
 	payload = append(payload, '\n')
 	digest := sha256.Sum256(payload)
 	return payload, hex.EncodeToString(digest[:]), nil
+}
+
+func zeroConnectorAPIConfig(panelURL string, nodeID uint, apiKey string, allowInsecure bool) map[string]interface{} {
+	eventSink := map[string]interface{}{
+		"tag":       "zboard",
+		"type":      "webhook",
+		"url":       strings.TrimRight(panelURL, "/") + "/api/zero/events",
+		"events":    []string{"engine.started", "engine.stopped", "engine.warning", "config.changed", "stats.sampled", "flow.updated", "flow.completed"},
+		"source_id": fmt.Sprintf("node-%d", nodeID),
+		"headers": map[string]string{
+			"authorization": "Bearer " + apiKey,
+		},
+	}
+	if allowInsecure {
+		eventSink["allow_insecure"] = true
+	}
+	return map[string]interface{}{
+		"event_sinks": []interface{}{eventSink},
+		"outbox_path": "/var/lib/zerodenet/event-outbox.jsonl",
+	}
+}
+
+func zeroLegacyEventAPIConfig(panelURL string, nodeID uint, allowInsecure bool) map[string]interface{} {
+	eventSink := map[string]interface{}{
+		"tag":         "zboard",
+		"type":        "webhook",
+		"url":         strings.TrimRight(panelURL, "/") + "/api/zero/events",
+		"events":      []string{"flow.updated", "flow.completed"},
+		"source_id":   fmt.Sprintf("node-%d", nodeID),
+		"api_key_env": "ZERO_PANEL_API_KEY",
+	}
+	if allowInsecure {
+		eventSink["allow_insecure"] = true
+	}
+	return map[string]interface{}{"event_sinks": []interface{}{eventSink}}
 }
 
 func (h *handlers) nodeConnectorCredential(node model.Node) (pendingNodeCredential, error) {
@@ -736,27 +797,27 @@ func (h *handlers) installNodeKernel(node model.Node, operationID uint, binary [
 	return nil
 }
 
-func (h *handlers) waitForNodeConnectorHeartbeat(parent context.Context, nodeID uint, activatedAt time.Time) (time.Time, error) {
-	ctx, cancel := context.WithTimeout(parent, zeroHeartbeatTimeout)
+func (h *handlers) waitForNodeConnectorEvent(parent context.Context, nodeID uint, activatedAt time.Time) (time.Time, error) {
+	ctx, cancel := context.WithTimeout(parent, zeroConnectorEventTimeout)
 	defer cancel()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
-		var heartbeat struct {
+		var activity struct {
 			ConnectorLastSeenAt *time.Time
 		}
-		if err := h.db.Model(&model.Node{}).Select("connector_last_seen_at").Where("id = ?", nodeID).Take(&heartbeat).Error; err != nil {
+		if err := h.db.Model(&model.Node{}).Select("connector_last_seen_at").Where("id = ?", nodeID).Take(&activity).Error; err != nil {
 			return time.Time{}, err
 		}
-		if heartbeat.ConnectorLastSeenAt != nil && !heartbeat.ConnectorLastSeenAt.Before(activatedAt) {
-			return heartbeat.ConnectorLastSeenAt.UTC(), nil
+		if activity.ConnectorLastSeenAt != nil && !activity.ConnectorLastSeenAt.Before(activatedAt) {
+			return activity.ConnectorLastSeenAt.UTC(), nil
 		}
 		select {
 		case <-ctx.Done():
 			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return time.Time{}, fmt.Errorf("connector heartbeat verification canceled: %w", ctx.Err())
+				return time.Time{}, fmt.Errorf("connector event verification canceled: %w", ctx.Err())
 			}
-			return time.Time{}, fmt.Errorf("no fresh connector heartbeat arrived within %s: %w", zeroHeartbeatTimeout, ctx.Err())
+			return time.Time{}, fmt.Errorf("no fresh connector event arrived within %s: %w", zeroConnectorEventTimeout, ctx.Err())
 		case <-ticker.C:
 		}
 	}
@@ -852,7 +913,12 @@ printf '%%s\n' "$old_active" > "$backup/old_active"
 printf '%%s\n' "$old_enabled" > "$backup/old_enabled"
 printf '%%s\n' "$old_link" > "$backup/old_link"
 rollback() {
-  if [ "$had_bin" = "1" ]; then cp -a "$backup/zero" /usr/local/bin/zero; else rm -f /usr/local/bin/zero; fi
+  if [ "$had_bin" = "1" ]; then
+    install -m 0755 "$backup/zero" /usr/local/bin/zero.rollback
+    mv -f /usr/local/bin/zero.rollback /usr/local/bin/zero
+  else
+    rm -f /usr/local/bin/zero
+  fi
   if [ -n "$old_link" ]; then ln -sfn "$old_link" /etc/zerodenet/current.json; else rm -f /etc/zerodenet/current.json; fi
   if [ "$had_env" = "1" ]; then cp -a "$backup/zero.env" /etc/zerodenet/zero.env; else rm -f /etc/zerodenet/zero.env; fi
   if [ "$had_service" = "1" ]; then cp -a "$backup/zero.service" /etc/systemd/system/zero.service; else rm -f /etc/systemd/system/zero.service; fi
@@ -899,7 +965,12 @@ old_active="$(cat "$backup/old_active")"
 old_enabled="$(cat "$backup/old_enabled")"
 old_link="$(cat "$backup/old_link")"
 case "$had_bin$had_env$had_service$old_active$old_enabled" in *[!01]*) exit 1;; esac
-if [ "$had_bin" = "1" ]; then cp -a "$backup/zero" /usr/local/bin/zero; else rm -f /usr/local/bin/zero; fi
+if [ "$had_bin" = "1" ]; then
+  install -m 0755 "$backup/zero" /usr/local/bin/zero.rollback
+  mv -f /usr/local/bin/zero.rollback /usr/local/bin/zero
+else
+  rm -f /usr/local/bin/zero
+fi
 if [ -n "$old_link" ]; then ln -sfn "$old_link" /etc/zerodenet/current.json; else rm -f /etc/zerodenet/current.json; fi
 if [ "$had_env" = "1" ]; then cp -a "$backup/zero.env" /etc/zerodenet/zero.env; else rm -f /etc/zerodenet/zero.env; fi
 if [ "$had_service" = "1" ]; then cp -a "$backup/zero.service" /etc/systemd/system/zero.service; else rm -f /etc/systemd/system/zero.service; fi
@@ -1209,6 +1280,14 @@ func (h *handlers) finishKernelOperation(operation *model.NodeOperation, probe k
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.NodeKernelState{}).Where("node_id = ?", operation.NodeID).Updates(updates).Error; err != nil {
 			return err
+		}
+		if probe.Installed && strings.TrimSpace(probe.Version) != "" {
+			if err := tx.Model(&model.Node{}).Where("id = ?", operation.NodeID).Updates(map[string]interface{}{
+				"version":         probe.Version,
+				"ssh_verified_at": now,
+			}).Error; err != nil {
+				return err
+			}
 		}
 		operation.Status, operation.Phase, operation.ResultSummary, operation.FinishedAt = "succeeded", "completed", summary, &now
 		return tx.Save(operation).Error

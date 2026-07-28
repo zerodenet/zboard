@@ -4692,6 +4692,43 @@ Remaining gap after synchronization:
   browser. The Codex built-in browser and its cleanup path were not used.
 - No Git staging, commit, push or release was performed.
 
+## 2026-07-28 - Managed certificates and commit preparation
+
+Goal outcome:
+
+- Added panel-managed Let's Encrypt certificate resources bound to nodes and
+  protocol endpoints, with issue/renew operations, renewal policy, public
+  metadata only in the panel and private key material retained on each node.
+- Added the admin certificate workbench and API contracts, including bounded
+  paging, status filtering, operation state, protocol binding and Zero
+  configuration publication after certificate changes.
+- Integrated both certificate forms with the shared validation, API-error and
+  unsaved-change contracts, and updated the lazy-route policy inventory.
+
+Verification:
+
+- `pnpm test -- --run` passed: 60 files and 132 tests.
+- `pnpm typecheck` passed.
+- `pnpm build` passed with the certificate page emitted as a lazy chunk.
+- Targeted form and route policy tests passed: 2 files and 5 tests.
+- `git diff --check` passed with only the existing Windows LF-to-CRLF notices.
+
+Synchronization:
+
+- Not performed. The configured Go 1.26.5 fallback directory was empty, and
+  `scripts/ensure-go-env.ps1` could not download the pinned Windows archive
+  from `go.dev`. Deploying backend changes without a successful local backend
+  verification would violate the repository completion protocol.
+
+Remaining gaps:
+
+- `go test ./...` and `go vet ./...` must be rerun with the pinned Go 1.26.5
+  toolchain.
+- After backend verification succeeds, synchronize with
+  `scripts/sync-intranet.ps1` and record the deployed version, database backup,
+  previous-source path, `/readyz`, container health and certificate-specific
+  route/behavior evidence.
+
 ## 2026-07-25 - Squashed v0.0.1 database baseline
 
 Goal outcome before synchronization:
@@ -5693,4 +5730,231 @@ Remaining gaps:
 
 - No code or runtime behavior changed, so backend/frontend builds and runtime
   deployment checks were not repeated.
+- No Git staging, commit, push or release was performed.
+
+## 2026-07-26 - Staged native Zero access and Connector contract
+
+Goal outcome before synchronization:
+
+- Added an explicit `ZBOARD_ZERO_KERNEL_CONTRACT` deployment boundary.
+  `legacy` remains the default and preserves the contract of the currently
+  published kernel. `native-local` enables the contract implemented only in
+  the local Zero working tree; synchronizing zboard does not publish, upload or
+  activate that kernel.
+- The native-local compiler emits Zero managed users for VLESS, VMess,
+  Shadowsocks, Trojan and Hysteria2 with stable `principal_key` attribution.
+  It no longer emits the removed `credential_id` runtime field. Existing
+  Shadowsocks subscriptions keep their dedicated ports and PSKs; 2022 ciphers
+  preserve a stable server identity password and use each credential as a
+  separate user PSK.
+- A subscription with exactly one active protocol credential can project its
+  byte-per-second speed limit and device limit into Zero. Multi-credential or
+  multi-node subscriptions keep those policies panel-owned so the full
+  allowance is not duplicated in independent kernel processes. Remaining
+  quota is not projected because panel traffic direction, multipliers and
+  Connector/outbox acknowledgement are not yet a distributed quota protocol.
+- Native-local configuration replaces the removed fixed push/heartbeat/command
+  client with a generic Webhook event sink. It sends to the complete
+  `/api/zero/events` URL, uses an opaque Bearer header and a disk-backed outbox,
+  and subscribes lifecycle, statistics and flow events. Authenticated
+  non-flow events update Connector activity; `stats.sampled` updates bounded
+  node counters; flow events retain idempotent panel billing and server-side
+  principal lookup.
+- Kernel publication now waits for a fresh authenticated Connector event
+  instead of assuming the removed fixed heartbeat protocol. A real local run
+  showed that the dispatcher's initial cursor does not replay the
+  `engine.started` event created before dispatcher startup, so
+  `stats.sampled` is intentionally subscribed as the periodic remote
+  liveness signal. Local control-socket health remains a separate requirement.
+- Quota adjustment tasks now queue affected node configurations after the
+  database transaction succeeds. Runtime version metadata exposes the active
+  `zero_kernel_contract` so a synchronized instance can be checked without
+  reading its environment.
+- The GitHub release source remains the existing published
+  `zerodenet/zero` channel. The native contract was verified against the local
+  Zero `0.0.15-rc.1` debug binary only; no assumption was made that
+  `zerodenet/core`, a GitHub release or the online nodes already contain these
+  local changes.
+
+Local verification:
+
+- `go test ./...` passed with
+  `ZBOARD_ZERO_VALIDATE_BIN` set to the local Zero debug binary. The test
+  configuration covers managed VLESS, Shadowsocks, Trojan and Hysteria2 users,
+  native policy fields, opaque Connector headers and outbox configuration.
+- A spawned local Zero process delivered a real authenticated
+  `zero.event.v1` `stats.sampled` Webhook event to the receiver in about one
+  second. This verifies actual local Connector delivery in addition to schema
+  validation.
+- `go vet ./...` passed.
+- All 60 frontend Vitest files and 132 tests passed. Type checking and the
+  production build passed with 542 transformed modules.
+- All three Docker Compose variants rendered successfully with the default
+  `legacy` contract. `git diff --check` passed with only existing Windows
+  LF-to-CRLF notices.
+
+Synchronization and deployment evidence:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` completed successfully and
+  deployed
+  `v0.0.1-20260726T094103Z-intranet-working-tree@2026-07-26T09:41:03Z`.
+- The version endpoint returned `zero_kernel_contract=legacy`, and container
+  inspection confirmed `ZBOARD_ZERO_KERNEL_CONTRACT=legacy`. The matching
+  native Zero build was not uploaded, published or activated.
+- `/readyz` returned HTTP/API code 200 with `ready=true` and `db=true`.
+  `zboard_next-zboard-1`, `zboard_next-mysql-1` and
+  `zboard_next-redis-1` all reported healthy.
+- A credential-free `stats.sampled` request to `/api/zero/events` returned
+  HTTP 401, confirming that the synchronized receiver does not accept
+  unauthenticated Connector activity. The synchronized source contains the
+  native-local gate, `stats.sampled` Connector subscription and managed
+  `principal_key` compiler.
+- The pre-deployment database backup is
+  `/data/zboard-next/backups/20260726T094103Z/zboard-before-sync.sql`
+  (82,028 bytes); the previous source is
+  `/data/zboard-next/app-prev-20260726T094103Z`; and the synchronized source
+  archive is `/data/zboard-next/releases/20260726T094103Z/source.tar.gz`
+  (684,832 bytes). All paths were verified present.
+
+Remaining gaps:
+
+- Package and qualify the local Zero build for the target Linux/libc matrix,
+  then deploy it deliberately before changing the intranet environment to
+  `native-local`. After activation, run a real node flow and verify
+  `principal_key` attribution, outbox replay, final traffic settlement and
+  policy enforcement against the live panel.
+- The native configuration path still uses generation replacement plus a
+  controlled restart; acknowledged `config.apply` hot updates, distributed
+  speed/device aggregation and distributed quota enforcement remain future
+  work.
+- The current local Zero `MieruUserConfig` has no `principal_key` or managed
+  policy fields. Mieru therefore remains endpoint-level and is not part of
+  native per-subscription attribution in this stage.
+- The intranet root filesystem has only about 799 MiB free and is 99% used.
+  This is an immediate capacity risk before another image build, database
+  backup or source synchronization; cleanup must preserve verified backups and
+  rollback sources unless a separate retention decision authorizes removal.
+- No Git staging, commit, push or release was performed.
+
+## 2026-07-26 - Local Zero 0.0.15-rc.1 intranet rollout
+
+Goal outcome before synchronization:
+
+- Archived the current local Zero working tree and uploaded that exact source
+  snapshot to
+  `/data/zboard-next/native-kernel-builds/20260726T100453Z/source.tar.gz`.
+  Its SHA-256 is
+  `7f965e32b85dd9dce1abb0c1beb7e039873dd789cf62efdca9b122999e328f76`.
+  The build did not clone or download source from GitHub.
+- Built Zero `0.0.15-rc.1` with the `full,status-api,connector` feature set
+  for `x86_64-unknown-linux-musl`. The release binary reports build time
+  `2026-07-26T10:23:41.547709336Z`, has SHA-256
+  `451fa483449369f7f4dfa562d990b41bdf9eda248049ec407540085de5ced038`,
+  and executes successfully on the CentOS 7 intranet host.
+- Packaged the verified binary as
+  `/data/zboard-next/artifacts/zero-v0.0.15-rc.1-linux-x86_64-musl.tar.gz`
+  with SHA-256
+  `e9d8f5ca2e2debfe95c30889289e04904265fca2303f59bf4d1440d2c9aae500`.
+  The package has no ELF `INTERP` program header or `GLIBC_*` version
+  requirement. The existing `0.0.14` artifact was retained for rollback.
+- Extended the native-local deployment gate with an explicit
+  `ZBOARD_ZERO_LOCAL_VERSION`. In native-local mode both the release discovery
+  endpoint and node reconciliation resolve only the exact matching local musl
+  package and checksum; GitHub release discovery is not used.
+- Updated the node-operation UI and summary parser for the generic Connector
+  event verification phase while preserving display compatibility with older
+  panel-heartbeat operations.
+- Replaced both rollback paths' direct copy over `/usr/local/bin/zero` with
+  an installed temporary file plus atomic rename. This avoids Linux
+  `ETXTBSY` when the failed generation's executable is still running.
+- Unified successful reconciliation metadata so both changed and already
+  converged operations update the node's installed-version summary and SSH
+  verification timestamp in the same transaction as kernel state and
+  operation completion.
+
+Local verification:
+
+- With `ZBOARD_ZERO_VALIDATE_BIN` set to the local Zero `0.0.15-rc.1` debug
+  binary, `go test ./...` passed for every backend package. This includes
+  runtime configuration validation and a real local Connector Webhook
+  delivery test. `go vet ./...` passed.
+- The backend suite also covers both install-trap and post-activation rollback
+  scripts and rejects restoration that directly overwrites the running
+  executable.
+- All 60 frontend Vitest files and 132 tests passed. Type checking and the
+  production build passed with 542 transformed modules.
+- `git diff --check` passed with only existing Windows LF-to-CRLF notices.
+
+Synchronization state:
+
+- The pre-switch deployment environment was backed up to
+  `/data/zboard-next/backups/20260726T103239Z/env-before-native-local`.
+  Only `ZBOARD_ZERO_KERNEL_CONTRACT=native-local` and
+  `ZBOARD_ZERO_LOCAL_VERSION=0.0.15-rc.1` were changed.
+- The first synchronization deployed
+  `v0.0.1-20260726T103406Z-intranet-working-tree@2026-07-26T10:34:06Z`.
+  `/readyz` and all three zboard-next containers were healthy. Its database
+  backup is
+  `/data/zboard-next/backups/20260726T103406Z/zboard-before-sync.sql`, previous
+  source is `/data/zboard-next/app-prev-20260726T103406Z`, and source archive
+  is `/data/zboard-next/releases/20260726T103406Z/source.tar.gz`.
+- Node 1 activated Zero `0.0.15-rc.1` and passed systemd/control checks, but
+  its Connector event was paused because the durable outbox required about
+  2.41 GB of reserved free space while the root filesystem had about 1.1 GB.
+  The attempted rollback then exposed the direct-copy `ETXTBSY` defect.
+- Only reproducible build data was removed: 624.4 MB of Docker builder cache
+  and the 1.3 GB musl Cargo target directory. The verified local and rollback
+  artifacts, source snapshot, Rust toolchain, Cargo registry cache, databases,
+  volumes, deployment backups and previous sources were retained. Root free
+  space recovered to 3.4 GB. Node 1 then resumed outbox delivery and its
+  authenticated Connector activity advanced to `2026-07-26T10:45:04.114Z`.
+- The second synchronization deployed
+  `v0.0.1-20260726T104612Z-intranet-working-tree@2026-07-26T10:46:12Z`.
+  Its database backup is
+  `/data/zboard-next/backups/20260726T104612Z/zboard-before-sync.sql`
+  (82,996 bytes), previous source is
+  `/data/zboard-next/app-prev-20260726T104612Z`, and source archive is
+  `/data/zboard-next/releases/20260726T104612Z/source.tar.gz`
+  (688,088 bytes). Version, `/readyz` and all zboard-next container checks
+  passed.
+- Node operation 18 reconciled node 1 as already matching the expected binary
+  and configuration. Node operation 19 upgraded node 2 and passed systemd,
+  control-socket and Connector-event checks at
+  `2026-07-26T10:50:08Z`. Both authoritative kernel states report healthy
+  Zero `0.0.15-rc.1` with binary SHA-256
+  `451fa483449369f7f4dfa562d990b41bdf9eda248049ec407540085de5ced038`
+  and no recommended action.
+- The node 1 summary row still retained `0.0.14` after its no-change
+  reconciliation even though its authoritative kernel state was correct.
+  The unified success-metadata fix requires one final synchronization and a
+  no-change reconciliation to prove that summary converges.
+- The final synchronization deployed
+  `v0.0.1-20260726T105144Z-intranet-working-tree@2026-07-26T10:51:44Z`.
+  Its database backup is
+  `/data/zboard-next/backups/20260726T105144Z/zboard-before-sync.sql`
+  (83,669 bytes), previous source is
+  `/data/zboard-next/app-prev-20260726T105144Z`, and source archive is
+  `/data/zboard-next/releases/20260726T105144Z/source.tar.gz`
+  (688,397 bytes). Version, `/readyz` and all zboard-next container health
+  checks passed.
+- Node operation 20 completed a no-change reconcile for node 1. Both node
+  summary rows and authoritative kernel states now report Zero `0.0.15-rc.1`.
+  Both states are healthy, have matching desired/applied configuration
+  hashes, matching binary SHA-256, active systemd, healthy control sockets and
+  no recommended action.
+- Authenticated Connector activity remained fresh on both nodes at
+  `2026-07-26T10:54:01Z`. Node 1's release binary executed directly on the
+  target host, and its control socket returned a valid runtime status. There
+  were no Zero warnings after the final cleanup.
+- The final Docker builder cleanup reclaimed 648.4 MB. The root filesystem
+  retained 3.3 GB free (93% used), above the outbox's observed 2.41 GB reserve
+  threshold. Volumes, databases, local and rollback kernel artifacts, source
+  archives, deployment backups and previous sources were retained.
+
+Remaining gaps:
+
+- A real client flow is still required to qualify live `principal_key`
+  attribution, outbox replay and final traffic settlement. A successful
+  installation and periodic `stats.sampled` delivery do not prove those flow
+  semantics.
 - No Git staging, commit, push or release was performed.

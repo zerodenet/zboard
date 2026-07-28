@@ -221,6 +221,58 @@ type NodeOperation struct {
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
+// ManagedCertificate is a node-scoped ACME certificate asset. Certificate
+// material stays on the target node; zboard stores only public metadata and
+// the stable paths injected into bound protocol endpoints.
+type ManagedCertificate struct {
+	ID                   uint       `json:"id" gorm:"primaryKey"`
+	NodeID               uint       `json:"node_id" gorm:"index;not null"`
+	Name                 string     `json:"name" gorm:"size:80;not null"`
+	Domains              string     `json:"domains" gorm:"type:json;not null"`
+	ContactEmail         string     `json:"contact_email" gorm:"size:254;not null"`
+	Environment          string     `json:"environment" gorm:"size:16;not null;default:production"`
+	ChallengeType        string     `json:"challenge_type" gorm:"size:16;not null;default:http-01"`
+	Status               string     `json:"status" gorm:"size:24;index;not null;default:pending"`
+	CertPath             string     `json:"cert_path" gorm:"size:255"`
+	KeyPath              string     `json:"key_path" gorm:"size:255"`
+	SerialNumber         string     `json:"serial_number" gorm:"size:128"`
+	FingerprintSHA256    string     `json:"fingerprint_sha256" gorm:"size:64"`
+	NotBefore            *time.Time `json:"not_before,omitempty"`
+	NotAfter             *time.Time `json:"not_after,omitempty" gorm:"index"`
+	LastIssuedAt         *time.Time `json:"last_issued_at,omitempty"`
+	LastRenewalAttemptAt *time.Time `json:"last_renewal_attempt_at,omitempty"`
+	NextRenewalAt        *time.Time `json:"next_renewal_at,omitempty" gorm:"index"`
+	AutoRenew            bool       `json:"auto_renew" gorm:"not null;default:true"`
+	RenewBeforeDays      int        `json:"renew_before_days" gorm:"not null;default:30"`
+	LastError            string     `json:"last_error" gorm:"type:text"`
+	Revision             uint64     `json:"revision" gorm:"not null;default:1"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+}
+
+type CertificateProtocolEndpoint struct {
+	ID                    uint      `json:"id" gorm:"primaryKey"`
+	ManagedCertificateID  uint      `json:"managed_certificate_id" gorm:"uniqueIndex:ux_certificate_endpoint,priority:1;index;not null"`
+	ProtocolEndpointID    uint      `json:"protocol_endpoint_id" gorm:"uniqueIndex:ux_certificate_endpoint,priority:2;uniqueIndex;not null"`
+	CreatedAt             time.Time `json:"created_at"`
+}
+
+type CertificateOperation struct {
+	ID                   uint       `json:"id" gorm:"primaryKey"`
+	ManagedCertificateID uint       `json:"managed_certificate_id" gorm:"index;not null"`
+	NodeID               uint       `json:"node_id" gorm:"index;not null"`
+	OperationType        string     `json:"operation_type" gorm:"size:16;not null"`
+	Status               string     `json:"status" gorm:"size:24;index;not null"`
+	Phase                string     `json:"phase" gorm:"size:32;not null"`
+	RequestedBy          *uint      `json:"requested_by,omitempty"`
+	ResultSummary        string     `json:"result_summary" gorm:"type:text"`
+	Error                string     `json:"error" gorm:"type:text"`
+	StartedAt            *time.Time `json:"started_at,omitempty"`
+	FinishedAt           *time.Time `json:"finished_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+}
+
 // ProtocolEndpoint is the sellable network resource. A Node is only its
 // operational host; each host may publish multiple independently configured
 // protocols with different addresses, ports and billing multipliers.

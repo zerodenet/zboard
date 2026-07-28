@@ -1022,8 +1022,8 @@ paths:
     post:
       tags:
         - nodes
-      summary: Create or rotate the Zero push connector credential
-      description: Admin only. Returns the plaintext API key once; the previous connector credential is invalidated immediately.
+      summary: Create or rotate the Zero Webhook Connector credential
+      description: Admin only. Returns the plaintext API key once; the previous Connector credential is invalidated immediately.
       parameters:
         - name: id
           in: path
@@ -1043,7 +1043,7 @@ paths:
     delete:
       tags:
         - nodes
-      summary: Revoke the Zero push connector credential
+      summary: Revoke the Zero Webhook Connector credential
       parameters:
         - name: id
           in: path
@@ -1056,8 +1056,8 @@ paths:
     post:
       tags:
         - node-connector
-      summary: Receive a Zero push connector heartbeat
-      description: Uses the native Zero connector contract and Bearer API-key authentication. This response is intentionally not wrapped in ApiResponse.
+      summary: Receive a legacy Zero push-connector heartbeat
+      description: Compatibility-only route for older kernels. Current Zero nodes report activity through authenticated generic Webhook events. This response is intentionally not wrapped in ApiResponse.
       security:
         - NodeConnectorBearer: []
       parameters:
@@ -1081,8 +1081,8 @@ paths:
     get:
       tags:
         - node-connector
-      summary: Poll pending Zero connector commands
-      description: Returns the native raw command array. Command delivery is reserved; the current implementation returns an empty array.
+      summary: Poll legacy Zero push-connector commands
+      description: Compatibility-only route for older kernels. Current Zero configuration is applied through the node publish lifecycle; this implementation returns an empty array.
       security:
         - NodeConnectorBearer: []
       parameters:
@@ -1852,7 +1852,7 @@ paths:
     post:
       tags: [nodes]
       summary: Create a protocol endpoint and queue a full node configuration publish
-      description: Persists the encrypted server configuration, then automatically queues validation, atomic activation, restart, status and heartbeat checks for the node's complete current configuration.
+      description: Persists the encrypted server configuration, then automatically queues validation, atomic activation, restart, local status and authenticated Connector-event checks for the node's complete current configuration.
       requestBody:
         required: true
         content:
@@ -1895,7 +1895,7 @@ paths:
     post:
       tags: [nodes]
       summary: Retry publishing the node's complete saved protocol configuration
-      description: Requires valid node SSH authentication. The publish validates a full generated configuration, activates it atomically, restarts Zero, verifies local status and waits for a fresh heartbeat; failures restore the previous generation.
+      description: Requires valid node SSH authentication. The publish validates a full generated configuration, activates it atomically, restarts Zero, verifies local status and waits for a fresh authenticated Connector event; failures restore the previous generation.
       parameters:
         - in: path
           name: id
@@ -2244,11 +2244,12 @@ paths:
   /api/zero/events:
     post:
       tags: [traffic]
-      summary: Receive standard Zero flow lifecycle events
+      summary: Receive authenticated Zero Connector events
       description: |
         Accepts `zero.event.v1` envelopes emitted by Zero's webhook event sink. The node is identified by
-        `source_id` (`node-{id}`) and authenticated with its connector bearer credential. `flow.updated`
-        events apply only the new cumulative byte delta and `flow.completed` settles the final delta.
+        `source_id` (`node-{id}`) and authenticated with its Connector bearer credential. Lifecycle events
+        refresh the node's Connector activity; `flow.updated` events apply only the new cumulative byte
+        delta and `flow.completed` settles the final delta.
         Attribution is resolved from the credential principal on the server; request-supplied user IDs are ignored.
       security:
         - NodeConnectorBearer: []
@@ -2918,7 +2919,7 @@ components:
           nullable: true
         connector_online:
           type: boolean
-          description: Derived from connector_last_seen_at using the panel's bounded online window.
+          description: Derived from the latest authenticated Connector event using a bounded activity window; this is independent from process health.
         uptime_seconds: { type: integer, format: int64, minimum: 0 }
         active_flows: { type: integer, format: int64, minimum: 0 }
         bytes_up: { type: integer, format: int64, minimum: 0 }
@@ -3649,11 +3650,19 @@ components:
               $ref: "#/components/schemas/TrafficReconciliationAggregates"
     VersionInfo:
       type: object
+      required: [version, name, zero_kernel_contract]
       properties:
         version:
           type: string
         name:
           type: string
+        zero_kernel_contract:
+          type: string
+          enum: [legacy, native-local]
+          description: Active generated-config contract. native-local is an explicit local-kernel rollout gate, not a GitHub release channel.
+        zero_local_version:
+          type: string
+          description: Explicit locally managed Zero version when zero_kernel_contract is native-local.
     SetupStatus:
       type: object
       required: [installed, version]
@@ -4258,7 +4267,7 @@ components:
       properties:
         schema_id: { type: string, enum: [zero.event.v1] }
         event_id: { type: string, minLength: 1, maxLength: 191 }
-        event_type: { type: string, enum: [flow.updated, flow.completed] }
+        event_type: { type: string, enum: [engine.started, engine.stopped, engine.warning, config.changed, stats.sampled, flow.updated, flow.completed] }
         occurred_at_unix_ms: { type: integer, format: int64 }
         source_id: { type: string, pattern: '^node-[1-9][0-9]*$' }
         principal_key: { type: string }

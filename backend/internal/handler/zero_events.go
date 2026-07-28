@@ -60,6 +60,10 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if event.EventType != "flow.updated" && event.EventType != "flow.completed" {
+		if err := h.recordZeroConnectorActivity(node, event); err != nil {
+			ServerError(w, err)
+			return
+		}
 		OK(w, map[string]interface{}{"accepted": true, "ignored": true})
 		return
 	}
@@ -78,6 +82,10 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 			BadRequest(w, "flow principal is not active on this node")
 			return
 		}
+		ServerError(w, err)
+		return
+	}
+	if err := h.recordZeroConnectorActivity(node, event); err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -100,8 +108,8 @@ func (h *handlers) authenticateZeroEvent(r *http.Request, sourceID string) (mode
 	if err != nil || id == 0 {
 		return model.Node{}, errors.New("invalid Zero event source_id")
 	}
-	provided := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-	if provided == "" || provided == r.Header.Get("Authorization") {
+	provided, err := extractBearerToken(r)
+	if err != nil {
 		return model.Node{}, errors.New("missing Zero event bearer credential")
 	}
 	var node model.Node
@@ -116,6 +124,79 @@ func (h *handlers) authenticateZeroEvent(r *http.Request, sourceID string) (mode
 		return model.Node{}, errors.New("invalid Zero event credential")
 	}
 	return node, nil
+}
+
+func (h *handlers) recordZeroConnectorActivity(node model.Node, event zeroEventEnvelope) error {
+	now := time.Now().UTC()
+	updates := map[string]interface{}{
+		"last_seen_at":           now,
+		"connector_last_seen_at": now,
+		"is_online":              true,
+		"status":                 1,
+	}
+	switch event.EventType {
+	case "engine.started":
+		var payload struct {
+			BuildID string `json:"build_id"`
+		}
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			return errors.New("invalid Zero engine.started payload")
+		}
+		payload.BuildID = strings.TrimSpace(payload.BuildID)
+		if len(payload.BuildID) > 64 {
+			return errors.New("Zero engine build_id is too long")
+		}
+		if payload.BuildID != "" {
+			updates["version"] = payload.BuildID
+		}
+	case "engine.stopped":
+		updates["is_online"] = false
+		updates["status"] = 0
+		updates["connector_last_seen_at"] = nil
+	case "stats.sampled":
+		stats, err := parseZeroStatsProjection(event.Payload)
+		if err != nil {
+			return err
+		}
+		updates["active_flows"] = stats.ActiveSessions
+		updates["bytes_up"] = stats.BytesUp
+		updates["bytes_down"] = stats.BytesDown
+	}
+	result := h.db.Model(&model.Node{}).
+		Where("id = ? AND is_enabled = ? AND node_credential = ? AND node_credential_revoked_at IS NULL", node.ID, true, node.NodeCredential).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("Zero event credential is no longer active")
+	}
+	if event.EventType != "engine.stopped" {
+		go h.reconcileExpiredCredentials(now)
+	}
+	return nil
+}
+
+type zeroStatsProjection struct {
+	ActiveSessions uint64
+	BytesUp        uint64
+	BytesDown      uint64
+}
+
+func parseZeroStatsProjection(payload json.RawMessage) (zeroStatsProjection, error) {
+	var value map[string]interface{}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil || value == nil {
+		return zeroStatsProjection{}, errors.New("invalid Zero stats.sampled payload")
+	}
+	active, activeOK := uint64Value(value["active_sessions"])
+	bytesUp, upOK := uint64Value(value["bytes_up"])
+	bytesDown, downOK := uint64Value(value["bytes_down"])
+	if !activeOK || !upOK || !downOK {
+		return zeroStatsProjection{}, errors.New("Zero stats.sampled payload has invalid counters")
+	}
+	return zeroStatsProjection{ActiveSessions: active, BytesUp: bytesUp, BytesDown: bytesDown}, nil
 }
 
 func parseZeroFlowProjection(event zeroEventEnvelope) (zeroFlowProjection, error) {

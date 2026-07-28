@@ -24,8 +24,11 @@ const (
 
 var preReleaseBaselineTables = []string{
 	"audit_logs",
+	"certificate_operations",
+	"certificate_protocol_endpoints",
 	"flow_usages",
 	"installations",
+	"managed_certificates",
 	"node_group_endpoints",
 	"node_groups",
 	"node_kernel_states",

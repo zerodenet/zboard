@@ -46,9 +46,8 @@ func (h *handlers) scheduleSubscriptionConfigPublishes(subscriptionID, requested
 	}
 }
 
-// Heartbeats are already pushed by Zero every 30 seconds. Use that existing
-// signal to reconcile time-based credential expiry without adding another
-// polling channel between the panel and kernel.
+// Any authenticated Connector delivery is an opportunity to reconcile
+// time-based credential expiry without adding a second panel-specific channel.
 func (h *handlers) reconcileExpiredCredentials(now time.Time) {
 	h.expiryReconcileMu.Lock()
 	if !h.lastExpiryReconcile.IsZero() && now.Sub(h.lastExpiryReconcile) < 20*time.Second {
@@ -177,7 +176,7 @@ func (h *handlers) publishNodeConfigForNode(ctx context.Context, nodeID, trigger
 		return fail(fmt.Errorf("activate Zero config (rollback attempted): %w", err), output)
 	}
 	activatedAt := time.Now().UTC()
-	heartbeatAt, err := h.waitForNodeConnectorHeartbeat(ctx, node.ID, activatedAt)
+	connectorEventAt, err := h.waitForNodeConnectorEvent(ctx, node.ID, activatedAt)
 	if err != nil {
 		rollbackOutput, rollbackErr := h.runNodeSSHSession(conn, node, buildZeroConfigRollbackScript(deployment.ID), true)
 		if rollbackErr != nil {
@@ -204,7 +203,7 @@ func (h *handlers) publishNodeConfigForNode(ctx context.Context, nodeID, trigger
 		return tx.Model(&model.NodeKernelState{}).Where("node_id = ?", node.ID).Updates(map[string]interface{}{
 			"status": "healthy", "phase": "idle", "desired_config_sha256": configSHA,
 			"applied_config_sha256": configSHA, "service_status": "active", "control_status": "healthy",
-			"last_error": "", "last_healthy_at": heartbeatAt,
+			"last_error": "", "last_healthy_at": connectorEventAt,
 		}).Error
 	}); err != nil {
 		return fail(err, output)

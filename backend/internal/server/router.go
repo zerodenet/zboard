@@ -9,8 +9,8 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir string) error {
-	h, err := handler.NewHandlers(db, jwtSecret, credentialCipher, zeroArtifactDir)
+func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string) error {
+	h, err := handler.NewHandlers(db, jwtSecret, credentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion)
 	if err != nil {
 		return err
 	}
@@ -266,6 +266,36 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Method:  http.MethodDelete,
 			Path:    "/api/v1/nodes/:id/report-credential",
 			Handler: http.HandlerFunc(h.NodeReportCredentialRevokeHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/certificates",
+			Handler: http.HandlerFunc(h.ManagedCertificateListHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/certificates",
+			Handler: http.HandlerFunc(h.ManagedCertificateCreateHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/certificates/:id",
+			Handler: http.HandlerFunc(h.ManagedCertificateGetHandler),
+		},
+		{
+			Method:  http.MethodPut,
+			Path:    "/api/v1/admin/certificates/:id/renewal",
+			Handler: http.HandlerFunc(h.ManagedCertificateRenewalUpdateHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/certificates/:id/issue",
+			Handler: http.HandlerFunc(h.ManagedCertificateIssueHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/certificates/:id/renew",
+			Handler: http.HandlerFunc(h.ManagedCertificateRenewHandler),
 		},
 		{
 			Method:  http.MethodGet,
@@ -603,5 +633,6 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.SystemInfoHandler),
 		},
 	})
+	h.StartCertificateRenewalWorker()
 	return nil
 }

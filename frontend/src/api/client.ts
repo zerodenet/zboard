@@ -433,6 +433,7 @@ export interface ProtocolEndpointListItem {
 	port: number
 	public_port: number
 	parent_protocol_id?: number
+	managed_certificate_id?: number
 	multiplier_milli: number
 	is_active: boolean
 	sort_order: number
@@ -525,6 +526,96 @@ export type ProtocolDeployment = {
 export async function fetchProtocolEndpoint(id: number) {
   const response = await api.get(`/admin/protocol-endpoints/${id}`)
   return unwrap(response)
+}
+
+export interface CertificateOperation {
+	id: number
+	managed_certificate_id: number
+	node_id: number
+	operation_type: 'issue' | 'renew'
+	status: 'running' | 'succeeded' | 'failed'
+	phase: string
+	result_summary: string
+	error: string
+	started_at?: string
+	finished_at?: string
+	created_at: string
+}
+
+export interface ManagedCertificate {
+	id: number
+	node_id: number
+	node_name: string
+	name: string
+	domains: string[]
+	contact_email: string
+	environment: 'production' | 'staging'
+	challenge_type: 'http-01'
+	status: 'pending' | 'issuing' | 'active' | 'renewing' | 'failed' | 'expired'
+	cert_path: string
+	key_path: string
+	serial_number: string
+	fingerprint_sha256: string
+	not_before?: string
+	not_after?: string
+	last_issued_at?: string
+	last_renewal_attempt_at?: string
+	next_renewal_at?: string
+	auto_renew: boolean
+	renew_before_days: number
+	last_error: string
+	revision: number
+	usage_count: number
+	latest_operation?: CertificateOperation
+	created_at: string
+	updated_at: string
+}
+
+export async function fetchManagedCertificatesPage(params: {
+	offset?: number
+	limit?: number
+	q?: string
+	nodeId?: number
+	status?: string
+} = {}, options: ApiRequestOptions = {}): Promise<PageResult<ManagedCertificate>> {
+	const query = new URLSearchParams()
+	appendPageParams(query, params)
+	if (params.nodeId) query.set('node_id', String(params.nodeId))
+	if (params.status) query.set('status', params.status)
+	const response = await api.get(`/admin/certificates?${query}`, { signal: options.signal })
+	return normalizePageResult<ManagedCertificate>(unwrap(response), params.offset || 0, params.limit || 50)
+}
+
+export async function createManagedCertificate(payload: {
+	node_id: number
+	name: string
+	domains: string[]
+	contact_email: string
+	environment: 'production' | 'staging'
+	auto_renew: boolean
+	renew_before_days: number
+}): Promise<ManagedCertificate> {
+	const response = await api.post('/admin/certificates', payload)
+	return unwrap(response)
+}
+
+export async function issueManagedCertificate(id: number): Promise<CertificateOperation> {
+	const response = await api.post(`/admin/certificates/${id}/issue`)
+	return unwrap(response)
+}
+
+export async function renewManagedCertificate(id: number): Promise<CertificateOperation> {
+	const response = await api.post(`/admin/certificates/${id}/renew`)
+	return unwrap(response)
+}
+
+export async function updateManagedCertificateRenewal(id: number, payload: {
+	auto_renew: boolean
+	renew_before_days: number
+	expected_revision: number
+}) {
+	const response = await api.put(`/admin/certificates/${id}/renewal`, payload)
+	return unwrap(response)
 }
 
 export async function fetchProtocolDeployments(params: { nodeId?: number; protocolEndpointId?: number; status?: string; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}) {

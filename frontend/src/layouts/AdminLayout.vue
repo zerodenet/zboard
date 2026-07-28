@@ -77,6 +77,7 @@ const navigationGroups = [
   ] },
   { label: '基础设施', items: [
     { to: '/admin/nodes', label: '节点资产', icon: 'nodes' },
+    { to: '/admin/certificates', label: '免费证书', icon: 'shield' },
     { to: '/admin/protocols', label: '协议服务', icon: 'activity' },
     { to: '/admin/node-groups', label: '节点组', icon: 'plans' },
     { to: '/admin/traffic', label: '流量与对账', icon: 'activity' }

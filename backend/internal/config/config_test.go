@@ -18,6 +18,8 @@ func TestApplyEnvironmentOverridesSecuritySettings(t *testing.T) {
 		"ZBOARD_BOOTSTRAP_ADMIN_PASSWORD":  "strong-admin-password",
 		"ZBOARD_CREDENTIAL_ENCRYPTION_KEY": testCredentialEncryptionKey,
 		"ZBOARD_ZERO_ARTIFACT_DIR":         "/var/lib/zboard/artifacts",
+		"ZBOARD_ZERO_KERNEL_CONTRACT":      "native-local",
+		"ZBOARD_ZERO_LOCAL_VERSION":        "0.0.15-rc.1",
 	}
 	c := Config{}
 	c.ApplyEnvironment(func(key string) string { return values[key] })
@@ -25,7 +27,9 @@ func TestApplyEnvironmentOverridesSecuritySettings(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if c.Environment != EnvironmentProduction || c.RedisAddr != "redis:6379" || c.ZeroArtifactDir != "/var/lib/zboard/artifacts" {
+	if c.Environment != EnvironmentProduction || c.RedisAddr != "redis:6379" ||
+		c.ZeroArtifactDir != "/var/lib/zboard/artifacts" || c.ZeroKernelContract != ZeroKernelNativeLocal ||
+		c.ZeroLocalVersion != "0.0.15-rc.1" {
 		t.Fatalf("environment overrides not applied: %+v", c)
 	}
 	if admin := c.BootstrapAdmin(); admin.Email != "operator@example.com" {
@@ -40,6 +44,9 @@ func TestValidateRejectsUnsafeConfiguration(t *testing.T) {
 		want string
 	}{
 		{name: "unsupported environment", edit: func(c *Config) { c.Environment = "stage" }, want: "unsupported environment"},
+		{name: "unsupported Zero contract", edit: func(c *Config) { c.ZeroKernelContract = "github-next" }, want: "zero_kernel_contract"},
+		{name: "missing local Zero version", edit: func(c *Config) { c.ZeroKernelContract = ZeroKernelNativeLocal }, want: "zero_local_version"},
+		{name: "invalid local Zero version", edit: func(c *Config) { c.ZeroLocalVersion = "../zero" }, want: "zero_local_version"},
 		{name: "missing datasource", edit: func(c *Config) { c.DataSource = "" }, want: "datasource is required"},
 		{name: "weak jwt", edit: func(c *Config) { c.JwtSecret = "dev-jwt-secret" }, want: "jwt_secret"},
 		{name: "jwt placeholder", edit: func(c *Config) { c.JwtSecret = "generate-at-least-32-random-bytes" }, want: "placeholder"},

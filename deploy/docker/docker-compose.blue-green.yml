@@ -27,6 +27,8 @@ services:
       ZBOARD_JWT_SECRET: ${ZBOARD_JWT_SECRET:?set ZBOARD_JWT_SECRET}
       ZBOARD_CREDENTIAL_ENCRYPTION_KEY: ${ZBOARD_CREDENTIAL_ENCRYPTION_KEY:?set ZBOARD_CREDENTIAL_ENCRYPTION_KEY}
       ZBOARD_ZERO_ARTIFACT_DIR: /var/lib/zboard/artifacts
+      ZBOARD_ZERO_KERNEL_CONTRACT: ${ZBOARD_ZERO_KERNEL_CONTRACT:-legacy}
+      ZBOARD_ZERO_LOCAL_VERSION: ${ZBOARD_ZERO_LOCAL_VERSION:-}
     volumes:
       - ../backend/etc/zboard.yaml.example:/app/etc/zboard.yaml:ro
       - ${ZBOARD_ZERO_ARTIFACT_HOST_DIR:-./artifacts}:/var/lib/zboard/artifacts:ro
@@ -50,6 +52,8 @@ services:
       ZBOARD_JWT_SECRET: ${ZBOARD_JWT_SECRET:?set ZBOARD_JWT_SECRET}
       ZBOARD_CREDENTIAL_ENCRYPTION_KEY: ${ZBOARD_CREDENTIAL_ENCRYPTION_KEY:?set ZBOARD_CREDENTIAL_ENCRYPTION_KEY}
       ZBOARD_ZERO_ARTIFACT_DIR: /var/lib/zboard/artifacts
+      ZBOARD_ZERO_KERNEL_CONTRACT: ${ZBOARD_ZERO_KERNEL_CONTRACT:-legacy}
+      ZBOARD_ZERO_LOCAL_VERSION: ${ZBOARD_ZERO_LOCAL_VERSION:-}
     volumes:
       - ../backend/etc/zboard.yaml.example:/app/etc/zboard.yaml:ro
       - ${ZBOARD_ZERO_ARTIFACT_HOST_DIR:-./artifacts}:/var/lib/zboard/artifacts:ro

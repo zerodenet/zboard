@@ -175,6 +175,62 @@ CREATE TABLE `nodes` (
   KEY `idx_nodes_connector_last_seen` (`connector_last_seen_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `managed_certificates` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `node_id` bigint unsigned NOT NULL,
+  `name` varchar(80) NOT NULL,
+  `domains` json NOT NULL,
+  `contact_email` varchar(254) NOT NULL,
+  `environment` varchar(16) NOT NULL DEFAULT 'production',
+  `challenge_type` varchar(16) NOT NULL DEFAULT 'http-01',
+  `status` varchar(24) NOT NULL DEFAULT 'pending',
+  `cert_path` varchar(255) NOT NULL DEFAULT '',
+  `key_path` varchar(255) NOT NULL DEFAULT '',
+  `serial_number` varchar(128) NOT NULL DEFAULT '',
+  `fingerprint_sha256` char(64) NOT NULL DEFAULT '',
+  `not_before` datetime(3) DEFAULT NULL,
+  `not_after` datetime(3) DEFAULT NULL,
+  `last_issued_at` datetime(3) DEFAULT NULL,
+  `last_renewal_attempt_at` datetime(3) DEFAULT NULL,
+  `next_renewal_at` datetime(3) DEFAULT NULL,
+  `auto_renew` tinyint(1) NOT NULL DEFAULT '1',
+  `renew_before_days` int NOT NULL DEFAULT '30',
+  `last_error` text NOT NULL,
+  `revision` bigint unsigned NOT NULL DEFAULT '1',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  KEY `idx_managed_certificates_node` (`node_id`),
+  KEY `idx_managed_certificates_status` (`status`),
+  KEY `idx_managed_certificates_not_after` (`not_after`),
+  KEY `idx_managed_certificates_next_renewal` (`next_renewal_at`),
+  CONSTRAINT `fk_managed_certificates_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `certificate_operations` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `managed_certificate_id` bigint unsigned NOT NULL,
+  `node_id` bigint unsigned NOT NULL,
+  `operation_type` varchar(16) NOT NULL,
+  `status` varchar(24) NOT NULL DEFAULT 'running',
+  `phase` varchar(32) NOT NULL DEFAULT 'queued',
+  `requested_by` bigint unsigned DEFAULT NULL,
+  `result_summary` text NOT NULL,
+  `error` text NOT NULL,
+  `started_at` datetime(3) DEFAULT NULL,
+  `finished_at` datetime(3) DEFAULT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  KEY `idx_certificate_operations_certificate` (`managed_certificate_id`,`created_at`),
+  KEY `idx_certificate_operations_node` (`node_id`,`created_at`),
+  KEY `idx_certificate_operations_status` (`status`),
+  KEY `fk_certificate_operations_requester` (`requested_by`),
+  CONSTRAINT `fk_certificate_operations_certificate` FOREIGN KEY (`managed_certificate_id`) REFERENCES `managed_certificates` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_certificate_operations_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_certificate_operations_requester` FOREIGN KEY (`requested_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `orders` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `user_id` bigint unsigned NOT NULL,
@@ -365,6 +421,19 @@ CREATE TABLE `protocol_endpoints` (
   KEY `idx_protocol_parent` (`parent_protocol_id`),
   CONSTRAINT `fk_protocol_endpoints_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_protocol_parent` FOREIGN KEY (`parent_protocol_id`) REFERENCES `protocol_endpoints` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `certificate_protocol_endpoints` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `managed_certificate_id` bigint unsigned NOT NULL,
+  `protocol_endpoint_id` bigint unsigned NOT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_certificate_endpoint` (`managed_certificate_id`,`protocol_endpoint_id`),
+  UNIQUE KEY `uk_certificate_protocol_endpoint` (`protocol_endpoint_id`),
+  KEY `idx_certificate_endpoint_certificate` (`managed_certificate_id`),
+  CONSTRAINT `fk_certificate_endpoint_certificate` FOREIGN KEY (`managed_certificate_id`) REFERENCES `managed_certificates` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_certificate_endpoint_protocol` FOREIGN KEY (`protocol_endpoint_id`) REFERENCES `protocol_endpoints` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 CREATE TABLE `quota_events` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,

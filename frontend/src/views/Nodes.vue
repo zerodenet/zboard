@@ -81,7 +81,7 @@
 
         <article v-else-if="detailSection === 'kernel'" class="panel kernel-panel">
           <header class="panel-header">
-            <div><h2>Zero 内核自动化</h2><p>检测真实平台与服务状态，锁定匹配节点的受信任稳定制品后执行安装、升级或配置对齐；任一验收失败都会恢复上一版。</p></div>
+            <div><h2>Zero 内核自动化</h2><p>检测真实平台与服务状态，锁定当前部署契约指定的受信任制品后执行安装、升级或配置对齐；任一验收失败都会恢复上一版。</p></div>
             <StatusBadge :tone="kernelTone">{{ kernelStatusLabel }}</StatusBadge>
           </header>
           <div class="panel-body kernel-body">
@@ -423,7 +423,7 @@ async function runBatch(action: 'detect' | 'reconcile' | 'activate' | 'maintenan
   } catch (e: any) { error.value = e?.response?.data?.message || '批量节点任务创建失败。' }
   finally { bulkBusy.value = '' }
 }
-function kernelPhaseLabel(value?: string) { return ({ queued: '排队中…', detecting: '检测中…', resolving_release: '匹配制品…', downloading: '校验制品…', staging: '暂存并切换…', verifying: '本地健康检查…', waiting_heartbeat: '等待面板心跳…', completed: '已完成' } as Record<string, string>)[value || 'queued'] || '处理中…' }
+function kernelPhaseLabel(value?: string) { return ({ queued: '排队中…', detecting: '检测中…', resolving_release: '匹配制品…', downloading: '校验制品…', staging: '暂存并切换…', verifying: '本地健康检查…', waiting_connector_event: '等待 Connector 事件…', waiting_heartbeat: '等待兼容心跳…', completed: '已完成' } as Record<string, string>)[value || 'queued'] || '处理中…' }
 
 async function loadKernel(nodeID?: number) {
   const request = kernelRequests.begin()
@@ -475,7 +475,7 @@ function startKernelPolling(nodeID: number) {
     } catch { /* The reconcile request remains the source of the final error. */ }
   }, 1000)
 }
-async function reconcileKernel() { if (!selectedNode.value) return; const nodeID = selectedNode.value.id; const target = latestRelease.value?.tag || '最新稳定版'; if (!await confirmAction({ title: '对齐 Zero 内核', message: `将把这台 VPS 的 Zero 对齐到 ${target} 及当前启用协议配置。操作会校验制品、systemd、控制通道和面板心跳，失败自动回滚。`, confirmText: '开始对齐' })) return; kernelBusy.value = 'reconcile'; error.value = ''; message.value = ''; startKernelPolling(nodeID); try { const result = await reconcileNodeKernel(nodeID); message.value = result.changed ? `Zero 已完成${operationLabel(result.action)}并通过本地与面板健康验收。` : 'Zero 二进制与配置已是期望状态，无需变更。'; await Promise.all([refresh(), loadKernel(nodeID), loadLatestRelease(true)]) } catch (e: any) { error.value = e?.response?.data?.message || 'Zero 自动化操作失败；请查看操作记录中的阶段与错误。'; await loadKernel(nodeID) } finally { stopKernelPolling(); kernelBusy.value = '' } }
+async function reconcileKernel() { if (!selectedNode.value) return; const nodeID = selectedNode.value.id; const target = latestRelease.value?.tag || '当前指定版本'; if (!await confirmAction({ title: '对齐 Zero 内核', message: `将把这台 VPS 的 Zero 对齐到 ${target} 及当前启用协议配置。操作会校验制品、systemd、控制通道和已认证 Connector 事件，失败自动回滚。`, confirmText: '开始对齐' })) return; kernelBusy.value = 'reconcile'; error.value = ''; message.value = ''; startKernelPolling(nodeID); try { const result = await reconcileNodeKernel(nodeID); message.value = result.changed ? `Zero 已完成${operationLabel(result.action)}并通过本地健康与 Connector 验收。` : 'Zero 二进制与配置已是期望状态，无需变更。'; await Promise.all([refresh(), loadKernel(nodeID), loadLatestRelease(true)]) } catch (e: any) { error.value = e?.response?.data?.message || 'Zero 自动化操作失败；请查看操作记录中的阶段与错误。'; await loadKernel(nodeID) } finally { stopKernelPolling(); kernelBusy.value = '' } }
 function adminContextLink(path: string, query: Record<string, string>) { return withAdminReturnTo(path, route.fullPath, query) }
 
 async function syncURL(replace = false) {

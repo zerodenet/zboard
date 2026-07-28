@@ -21,5 +21,6 @@ describe('administrator semantic display labels', () => {
     expect(operationSummaryLabel({ source: 'protocol_publish', summary: 'config revision 12000' })).toBe('配置版本 12,000')
     expect(operationSummaryLabel({ source: 'task', summary: 'progress 2500/10000; attempt 2/3' })).toBe('进度 2,500 / 10,000 · 尝试 2 / 3')
     expect(operationSummaryLabel({ source: 'node_kernel', summary: 'Zero 1.2.3 upgrade and passed systemd, control-socket, and panel-heartbeat health checks at 2026-07-24T00:00:00Z' })).toBe('Zero 1.2.3 已完成升级节点内核并通过健康检查')
+    expect(operationSummaryLabel({ source: 'node_kernel', summary: 'Zero 0.0.15-rc.1 upgrade and passed systemd, control-socket, and connector-event health checks at 2026-07-26T00:00:00Z' })).toBe('Zero 0.0.15-rc.1 已完成升级节点内核并通过健康检查')
   })
 })

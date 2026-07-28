@@ -122,7 +122,7 @@ export function operationSummaryLabel(item: Pick<OperationLog, 'source' | 'summa
     return `进度 ${formatNumber(Number(task[1]))} / ${formatNumber(Number(task[2]))} · 尝试 ${formatNumber(Number(task[3]))} / ${formatNumber(Number(task[4]))}`
   }
   if (summary === 'Zero is already at the desired binary and configuration') return 'Zero 已达到目标版本与配置'
-  const kernel = /^Zero (\S+) (\S+) and passed systemd, control-socket, and panel-heartbeat health checks(?: at .+)?$/.exec(summary)
+  const kernel = /^Zero (\S+) (\S+) and passed systemd, control-socket, and (?:panel-heartbeat|connector-event) health checks(?: at .+)?$/.exec(summary)
   if (item.source === 'node_kernel' && kernel) {
     const action = kernelActions[kernel[2]] || formatUnknownValue('节点内核动作', kernel[2])
     return `Zero ${kernel[1]} 已完成${action}并通过健康检查`

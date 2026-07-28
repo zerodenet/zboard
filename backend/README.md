@@ -14,8 +14,17 @@ export ZBOARD_DATA_SOURCE='zboard:<local-db-password>@tcp(127.0.0.1:3306)/zboard
 export ZBOARD_JWT_SECRET='<at-least-32-random-bytes>'
 export ZBOARD_CREDENTIAL_ENCRYPTION_KEY='<exactly-32-random-bytes-as-base64-or-hex>'
 export ZBOARD_ZERO_ARTIFACT_DIR='/var/lib/zboard/artifacts'
+export ZBOARD_ZERO_KERNEL_CONTRACT='legacy'
 go run ./cmd/zboard -f ./etc/zboard.yaml.example
 ```
+
+`ZBOARD_ZERO_KERNEL_CONTRACT=native-local` enables the locally validated managed-user
+and generic Webhook Connector contract. Keep the default `legacy` value until that
+matching local Zero build has been packaged and deployed to the target nodes; this
+flag does not download or publish the local kernel. Native-local also requires an
+explicit `ZBOARD_ZERO_LOCAL_VERSION`; zboard reads
+`zero-v<version>-linux-x86_64-musl.tar.gz` and its matching `.sha256` only from
+`ZBOARD_ZERO_ARTIFACT_DIR`, without consulting GitHub.
 
 With an empty database the backend remains available in installation mode. Open the
 frontend `/setup` route to configure the site and first administrator. The database,
