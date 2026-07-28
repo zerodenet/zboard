@@ -26,6 +26,57 @@ remain outside this repository.
 
 ## Completed goals
 
+### 2026-07-28 - Release Docker image archive attachment
+
+Outcome before synchronization:
+
+- Added a compressed Docker image archive to the tag-driven release flow. The
+  workflow now saves the pushed GHCR image with `docker save`, compresses it,
+  computes a checksum and uploads it alongside the binary archive in the GitHub
+  Release.
+- The release notes and checksum list still come from the same tag run, so the
+  binary and image assets stay paired with one release record.
+- Updated `RELEASING.md` to document the attached Docker image archive.
+
+Local verification:
+
+- `git diff --check`
+- Workflow review confirmed the new `IMAGE_ARCHIVE`, `docker save` and
+  `gh release create` asset entries are present.
+
+Remaining gaps:
+
+- The attachment flow has not yet been exercised by a live GitHub tag run.
+- A synchronization attempt still hits the existing intranet database baseline
+  mismatch during application startup; the previous healthy image is restored
+  after each failed attempt.
+
+### 2026-07-28 - Release image archive attachment
+
+Outcome before synchronization:
+
+- Extended the tag-driven release workflow so it now publishes both the GHCR
+  image and a compressed Docker image archive (`docker save` + gzip) as a GitHub
+  Release asset.
+- The release asset set now includes the backend binary archive, the Docker
+  image archive and a shared SHA-256 checksum list, while still generating
+  release notes from commits since the previous tag.
+- Updated `RELEASING.md` to state that release artifacts include an attached
+  compressed Docker image archive.
+
+Local verification:
+
+- `git diff --check`
+- Manual workflow review of `.github/workflows/release.yml` for the image
+  archive export and release attachment steps
+
+Remaining gaps:
+
+- This change has not been exercised in a live GitHub tag run yet, so the
+  image archive upload still needs runtime confirmation from Actions.
+- Intranet synchronization was rerun and failed for the same existing database
+  baseline mismatch; the healthy previous image was restored afterward.
+
 ### 2026-07-28 - Branch-aware release tags and GitHub release automation
 
 Outcome before synchronization:

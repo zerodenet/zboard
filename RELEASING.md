@@ -75,6 +75,7 @@ bash scripts/release-tag.sh 0.1.0
   - backend binary with `internal/version` ldflags
   - docker image with the same version metadata
   - publish image to `ghcr.io/zerodenet/zboard`
+  - attach a compressed Docker image archive to the GitHub Release
   - publish a GitHub Release with the binary archive, checksum file and
     generated notes covering commits since the previous tag
 

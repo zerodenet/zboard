@@ -34,6 +34,7 @@ jobs:
           echo "APP_BUILD_TIME=${build_time}" >> "$GITHUB_ENV"
           echo "RELEASE_PRERELEASE=${prerelease}" >> "$GITHUB_ENV"
           echo "BINARY_ARCHIVE=zboard_${tag}_linux_amd64.tar.gz" >> "$GITHUB_ENV"
+          echo "IMAGE_ARCHIVE=zboard_${tag}_linux_amd64-image.tar.gz" >> "$GITHUB_ENV"
       - name: Test backend
         working-directory: backend
         run: |
@@ -72,6 +73,12 @@ jobs:
             APP_VERSION=${{ github.ref_name }}
             APP_COMMIT=${{ github.sha }}
             APP_BUILD_TIME=${{ env.APP_BUILD_TIME }}
+      - name: Export image archive
+        shell: bash
+        run: |
+          docker pull "${IMAGE_NAME}:${GITHUB_REF_NAME}"
+          docker save "${IMAGE_NAME}:${GITHUB_REF_NAME}" | gzip -9 > "dist/${IMAGE_ARCHIVE}"
+          (cd dist && sha256sum "${IMAGE_ARCHIVE}" >> SHA256SUMS)
       - name: Publish GitHub release
         shell: bash
         env:
@@ -83,6 +90,7 @@ jobs:
           fi
           gh release create "${GITHUB_REF_NAME}" \
             "dist/${BINARY_ARCHIVE}" \
+            "dist/${IMAGE_ARCHIVE}" \
             "dist/SHA256SUMS" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes \
