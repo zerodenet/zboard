@@ -1,12 +1,8 @@
 services:
   zboard:
-    build:
-      context: ../..
-      dockerfile: deploy/docker/Dockerfile
-      args:
-        APP_VERSION: ${ZBOARD_VERSION:-v0.0.1}
-        APP_COMMIT: ${ZBOARD_COMMIT:-working-tree}
-        APP_BUILD_TIME: ${ZBOARD_BUILD_TIME:-1970-01-01T00:00:00Z}
+    image: ${ZBOARD_IMAGE_REPOSITORY:-ghcr.io/zerodenet/zboard}:${ZBOARD_IMAGE_TAG:?set ZBOARD_IMAGE_TAG}
+    platform: linux/amd64
+    pull_policy: ${ZBOARD_PULL_POLICY:-missing}
     environment:
       ZBOARD_ENVIRONMENT: production
       ZBOARD_DATA_SOURCE: ${ZBOARD_DATA_SOURCE:?set ZBOARD_DATA_SOURCE}
@@ -14,13 +10,18 @@ services:
       ZBOARD_REDIS_PASSWORD: ${ZBOARD_REDIS_PASSWORD:-}
       ZBOARD_JWT_SECRET: ${ZBOARD_JWT_SECRET:?set ZBOARD_JWT_SECRET}
       ZBOARD_CREDENTIAL_ENCRYPTION_KEY: ${ZBOARD_CREDENTIAL_ENCRYPTION_KEY:?set ZBOARD_CREDENTIAL_ENCRYPTION_KEY}
+      ZBOARD_BOOTSTRAP_ADMIN_EMAIL: ${ZBOARD_BOOTSTRAP_ADMIN_EMAIL:-}
+      ZBOARD_BOOTSTRAP_ADMIN_PASSWORD: ${ZBOARD_BOOTSTRAP_ADMIN_PASSWORD:-}
       ZBOARD_ZERO_ARTIFACT_DIR: /var/lib/zboard/artifacts
       ZBOARD_ZERO_KERNEL_CONTRACT: ${ZBOARD_ZERO_KERNEL_CONTRACT:-legacy}
       ZBOARD_ZERO_LOCAL_VERSION: ${ZBOARD_ZERO_LOCAL_VERSION:-}
     volumes:
-      - ${ZBOARD_ZERO_ARTIFACT_HOST_DIR:-./artifacts}:/var/lib/zboard/artifacts:ro
+      - type: bind
+        source: ${ZBOARD_ZERO_ARTIFACT_HOST_DIR:-./artifacts}
+        target: /var/lib/zboard/artifacts
+        read_only: true
     ports:
-      - "${ZBOARD_HTTP_BIND:-0.0.0.0}:${ZBOARD_HTTP_PORT:-8080}:8080"
+      - "${ZBOARD_HTTP_BIND:-127.0.0.1}:${ZBOARD_HTTP_PORT:-8080}:8080"
     networks:
       - external_services
     healthcheck:
@@ -28,7 +29,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+      start_period: 20s
     restart: unless-stopped
+    stop_grace_period: 30s
 
 networks:
   external_services:

@@ -26,6 +26,536 @@ remain outside this repository.
 
 ## Completed goals
 
+### 2026-07-29 - Infrastructure navigation hierarchy and independent DNS workbench
+
+Outcome before synchronization:
+
+- Split the former combined external-provider workbench into two independent
+  administrator pages. `/admin/providers` now owns only provider accounts,
+  encrypted credentials, capabilities and verification; it no longer loads,
+  renders or operates managed DNS records.
+- Added `/admin/dns-records` as the dedicated managed-DNS workbench. It owns
+  record listing, pagination, creation, synchronization, propagation state and
+  certificate handoff. Its empty state links to provider-account management
+  without embedding that separate resource on the page.
+- Reworked the infrastructure sidebar into a three-level information
+  hierarchy. Under the `基础设施` domain, `资源与接入` groups node assets,
+  external providers and DNS records as separate leaf pages, while
+  `服务与交付` groups certificates, protocol services, node groups and
+  traffic reconciliation.
+- Added restrained nested-navigation styling with compact parent labels,
+  indented leaf links and leaf-only active state. Existing provider and node
+  URLs remain valid, and `/dns-records` redirects to the administrator route.
+- No backend resource ownership or API contract changed. Provider accounts,
+  managed DNS records and nodes remain separate typed resources linked only
+  through explicit identifiers.
+
+Local verification:
+
+- `pnpm typecheck`
+- `pnpm test` passed 60 files and 135 tests.
+- `pnpm build` passed with 538 transformed modules and separate lazy-loaded
+  provider and managed-DNS chunks.
+- Infrastructure detail and route-loading policy tests pin the independent
+  page boundary, nested navigation entries and lazy route count.
+- `git diff --check` passed with only existing Windows LF-to-CRLF notices.
+
+Synchronization and deployment evidence:
+
+- Final synchronization succeeded with version
+  `v0.0.1-20260729T125332Z-intranet-working-tree@2026-07-29T12:53:32Z`.
+- Database backup:
+  `/data/zboard-next/backups/20260729T125332Z/zboard-before-sync.sql`
+  (70,681 bytes).
+- Previous application source:
+  `/data/zboard-next/app-prev-20260729T125332Z`.
+- Source release archive:
+  `/data/zboard-next/releases/20260729T125332Z/source.tar.gz`
+  (739,124 bytes).
+- `/api/v1/version` and `/readyz` returned HTTP/API 200 with `ready=true` and
+  `db=true`. `/admin/providers`, `/admin/dns-records` and `/admin/nodes` each
+  returned the SPA with HTTP 200.
+- `zboard_next-zboard-1` is healthy on the external `redis_default` network.
+  The existing `db` and `cache` containers remain running; MySQL reported
+  `mysqld is alive` and an authenticated Redis ping returned `PONG`.
+- The active web bundle contains separate `Providers` and `ManagedDNS`
+  JavaScript chunks. The provider chunk contains its provider-only page copy,
+  the DNS chunk contains its provider-reference copy, and the active
+  `AdminLayout` chunk contains both nested infrastructure group labels.
+
+Remaining gaps:
+
+- No authenticated pixel screenshot was captured. Static page-boundary tests,
+  production build output, deployed route checks and active bundle inspection
+  passed.
+- No Git staging, commit, push or release was performed.
+
+### 2026-07-29 - Explicit Zero prerelease selection and historical GitHub musl compatibility
+
+Outcome before synchronization:
+
+- Removed stable-release preference from the single-node version picker.
+  Stable and prerelease tags are both ordinary published choices; the first
+  platform-compatible published release is selected by default. The latest
+  stable release remains only the unattended batch-reconcile default.
+- The UI now labels the release fact as the latest published version and no
+  longer reports that a stable version is required when no selection is
+  available.
+- GitHub musl resolution accepts both the current unversioned
+  `zero-linux-x86_64-musl.tar.gz` pair and the historical Release-owned
+  `zero-v<version>-linux-x86_64-musl.tar.gz` pair. Archive and checksum must
+  use the same naming generation and the checksum must name that exact archive.
+- This makes the currently published prerelease's historical musl artifact
+  visible and selectable on old-glibc nodes without weakening exact-tag,
+  checksum, platform or downgrade enforcement.
+
+Local verification:
+
+- The live published prerelease asset list was read and confirmed to contain
+  the historical versioned musl archive and checksum pair.
+- `go test ./...`
+- `go vet ./...`
+- `pnpm test` passed 60 files and 135 tests.
+- `pnpm typecheck`
+- `pnpm build`
+- `git diff --check` passed with only existing Windows LF-to-CRLF notices.
+
+Synchronization and deployment evidence:
+
+- Final synchronization succeeded with version
+  `v0.0.1-20260729T112447Z-intranet-working-tree@2026-07-29T11:24:47Z`.
+- Database backup:
+  `/data/zboard-next/backups/20260729T112447Z/zboard-before-sync.sql`
+  (70,681 bytes).
+- Previous application source:
+  `/data/zboard-next/app-prev-20260729T112447Z`.
+- Source release archive:
+  `/data/zboard-next/releases/20260729T112447Z/source.tar.gz`
+  (737,410 bytes).
+- `/api/v1/version` and `/readyz` returned HTTP/API 200 with `ready=true` and
+  `db=true`. The protected release-list route returned HTTP 401 without
+  credentials rather than 404.
+- `zboard_next-zboard-1` is healthy on the external `redis_default` network.
+  The existing `db` and `cache` containers remain running; MySQL reported
+  `mysqld is alive` and an authenticated Redis ping returned `PONG`.
+- The active node JavaScript contains both the latest-published label and the
+  platform-compatible published-version empty state. The old stable-only
+  empty-state text is absent. Synchronized backend source contains the
+  current-first, historical-versioned musl resolver and release-list matcher.
+
+Remaining gaps:
+
+- The authenticated release-list response was not invoked because no
+  administrator credential was invented or extracted. Backend regression
+  tests use the exact currently published historical prerelease filename, and
+  active route/source/frontend checks passed.
+- No node kernel operation was started as part of this correction.
+- No Git staging, commit, push or release was performed.
+
+### 2026-07-29 - Zero release artifact contract and explicit version selection
+
+Outcome before synchronization:
+
+- Legacy kernel resolution now recognizes the official release assets
+  `zero-linux-x86_64.tar.gz` and `zero-linux-x86_64-musl.tar.gz`, each with its
+  exact same-name `.sha256` file. Nodes with glibc below 2.34 prefer the
+  official musl asset from the selected Release instead of requiring a
+  versioned local filename.
+- Historical `zero-v<version>-linux-x86_64-musl.tar.gz` files remain a bounded
+  fallback for stable releases published before the official musl asset.
+  `native-local` retains its separate exact-version trusted-directory contract
+  and is not silently redirected to GitHub.
+- Added an administrator release-list endpoint. It returns published stable
+  and prerelease tags together with GNU/musl availability; the default UI
+  selection remains the newest compatible stable version.
+- Node reconciliation accepts an explicit version but never a client-supplied
+  URL. The backend fetches that exact GitHub tag again, rejects drafts or tag
+  mismatches, selects the artifact for the detected libc, verifies the
+  checksum filename/hash and records the resolved immutable artifact.
+- Selecting a version below the installed semantic version requires both a
+  danger confirmation in the node drawer and an explicit
+  `allow_downgrade=true` request paired with the target version. Semantic
+  ordering now handles prerelease identifiers such as `rc.2` and `rc.10`.
+- The node kernel drawer shows a version selector, prerelease labels and
+  GNU/musl compatibility. Incompatible versions are disabled. Single-node
+  operations can install, upgrade, repair, configure or explicitly downgrade;
+  batch reconcile retains the latest-stable, no-downgrade behavior.
+- Updated the OpenAPI contract and kernel lifecycle/data-boundary
+  documentation. No node kernel operation was started as part of this goal.
+
+Local verification:
+
+- `go test ./...`
+- `go vet ./...`
+- `pnpm test` passed 60 files and 135 tests.
+- `pnpm typecheck`
+- `pnpm build`
+- `git diff --check` passed with only existing Windows LF-to-CRLF notices.
+- The current GitHub release list was read successfully. Existing stable
+  releases expose GNU assets; the current prerelease still uses the historical
+  versioned musl name, while the inspected Zero release workflow now packages
+  the new unversioned musl contract for the next publication.
+
+Synchronization and deployment evidence:
+
+- Final synchronization succeeded with version
+  `v0.0.1-20260729T103727Z-intranet-working-tree@2026-07-29T10:37:27Z`.
+- Database backup:
+  `/data/zboard-next/backups/20260729T103727Z/zboard-before-sync.sql`
+  (70,681 bytes).
+- Previous application source:
+  `/data/zboard-next/app-prev-20260729T103727Z`.
+- Source release archive:
+  `/data/zboard-next/releases/20260729T103727Z/source.tar.gz`
+  (736,319 bytes).
+- `/api/v1/version` and `/readyz` returned HTTP/API 200 with `ready=true` and
+  `db=true`. The new administrator release-list route returned HTTP 401
+  without credentials, proving the protected deployed route exists rather
+  than falling through to 404.
+- `zboard_next-zboard-1` is healthy on the external `redis_default` network.
+  The existing `db` and `cache` containers remain running without restart;
+  an active MySQL ping reported `mysqld is alive` and an authenticated Redis
+  ping returned `PONG`.
+- The running backend binary contains
+  `zero-linux-x86_64-musl.tar.gz`. The active frontend assets contain both the
+  kernel-release request path and the explicit `allow_downgrade` request
+  field. An outbound request from the application container reached the
+  GitHub Releases API and observed the current published prerelease tag.
+
+Remaining gaps:
+
+- The authenticated release-list response was not invoked because no
+  administrator credential was invented or extracted for deployment
+  verification. Backend handler tests, the protected route check and active
+  artifact inspection passed.
+- A real install of a newly published unversioned musl Release cannot be
+  qualified until Zero publishes that asset. This goal does not publish Zero
+  and deliberately did not start a node kernel operation.
+- No Git staging, commit, push or release was performed.
+
+### 2026-07-29 - Provider workbench layout and node drawer feedback ownership
+
+Outcome before synchronization:
+
+- Reframed the provider-account and managed-DNS areas as two bounded panels.
+  Their empty states now use a compact height instead of stacking multiple
+  page-sized placeholders.
+- Kept the managed-DNS create action intrinsically sized and non-wrapping so
+  it cannot collapse into the narrow two-line button seen in the deployed
+  empty state. Mobile layout gives the action its own row.
+- Added drawer-local success and error state to the node asset detail drawer.
+  SSH verification, host-key reset, kernel discovery/reconciliation, protocol
+  multiplier updates and connector/report credential operations now report
+  beside the control that initiated them rather than above the main node list.
+- VPS create, edit and SSH configuration forms continue to use their existing
+  modal-local field and form errors.
+- Extended the infrastructure detail policy test to pin both the feedback
+  ownership boundary and the compact provider layout.
+
+Local verification:
+
+- `pnpm test -- infrastructureDetailPolicy.test.ts` passed 4 tests.
+- `pnpm test` passed 60 files and 134 tests.
+- `pnpm typecheck`
+- `pnpm build`
+- `git diff --check` passed with only existing Windows LF-to-CRLF notices.
+
+Synchronization and deployment evidence:
+
+- Final synchronization succeeded with version
+  `v0.0.1-20260729T092939Z-intranet-working-tree@2026-07-29T09:29:39Z`.
+- Database backup:
+  `/data/zboard-next/backups/20260729T092939Z/zboard-before-sync.sql`
+  (70,037 bytes).
+- Previous application source:
+  `/data/zboard-next/app-prev-20260729T092939Z`.
+- Source release archive:
+  `/data/zboard-next/releases/20260729T092939Z/source.tar.gz`
+  (730,532 bytes).
+- `/api/v1/version` and `/readyz` returned HTTP/API 200 with `ready=true` and
+  `db=true`. Both `/admin/providers` and `/admin/nodes` returned the SPA with
+  HTTP 200.
+- `zboard_next-zboard-1` is healthy on the existing `redis_default` network.
+  External `db` and `cache` containers remain running.
+- The active container's provider stylesheet contains the compact 150 px
+  empty-state rule, and its node JavaScript asset contains the drawer-local
+  SSH error path. This verifies that the goal-specific frontend assets are in
+  the running image.
+
+Remaining gap:
+
+- Browser control could not finish navigating the existing Chrome tab to the
+  intranet page before its connection timeout, so an automated screenshot of
+  the authenticated deployed workbench was unavailable. Static policy tests,
+  the production build and active-container asset inspection passed.
+
+### 2026-07-29 - External MySQL/Redis intranet deployment reset
+
+Outcome before final synchronization:
+
+- Changed both source-build and release-image Compose bundles to start only
+  Zboard and join an explicitly named external Docker network. They no longer
+  declare, create, restart or own MySQL, Redis, their volumes or a private
+  backend network.
+- Made the complete application DSN, Redis address/password and external
+  network deployment inputs. Added Redis-password environment parsing without
+  exposing it through configuration JSON.
+- Updated the intranet synchronization script to dump the explicitly
+  configured external MySQL container and to support a clean first deployment
+  with no previous application source.
+- The existing MySQL root account is used only for database backup and
+  provisioning. Production Zboard continues to reject a root runtime DSN, so a
+  database-scoped application account is used for the running service.
+
+Local verification:
+
+- `go test ./...`
+- `go vet ./...`
+- Both `deploy/docker/docker-compose.yml` and
+  `deploy/docker/docker-compose.release.yml` passed `docker compose config
+  --quiet` with non-secret validation inputs.
+- `git diff --check`
+
+Destructive reset authorized by the operator:
+
+- Confirmed `/data/zboard-next` resolved exactly to the requested target and
+  was not a mount point, then removed the old `zboard_next` application,
+  MySQL and Redis containers, its private network, its two Compose data volumes
+  and all historical contents below `/data/zboard-next`.
+- Existing external containers `db` and `cache`, their `redis_default` network
+  and their data were not removed or restarted. Root filesystem free space
+  increased from 4.2 GiB to 8.5 GiB after cleanup.
+- Recreated `/data/zboard-next` with an empty artifact directory and a
+  permission-restricted runtime environment file. No credential value is
+  recorded here.
+
+Pre-final deployment attempts:
+
+- Build `v0.0.1-20260729T090407Z-intranet` succeeded but stopped before backup
+  because the requested `zboard` database did not yet exist.
+- Created the empty `zboard` database in the existing MySQL container.
+- Build `v0.0.1-20260729T090520Z-intranet` reached application startup but
+  correctly failed because production mode rejects a root runtime DSN.
+- Provisioned a database-scoped application account in the existing MySQL
+  container and updated only the protected runtime environment file.
+- Build `v0.0.1-20260729T090755Z-intranet` then deployed successfully using
+  only the external services; a final synchronization follows the last
+  Redis-password configuration verification.
+
+Final synchronization and deployment evidence:
+
+- Final synchronization succeeded with version
+  `v0.0.1-20260729T091035Z-intranet-working-tree@2026-07-29T09:10:35Z`.
+- Database backup:
+  `/data/zboard-next/backups/20260729T091035Z/zboard-before-sync.sql`
+  (64 KiB).
+- Previous application source:
+  `/data/zboard-next/app-prev-20260729T091035Z`.
+- Source release archive:
+  `/data/zboard-next/releases/20260729T091035Z/source.tar.gz`
+  (716 KiB).
+- `/api/v1/version` and `/readyz` returned HTTP/API 200 with `ready=true` and
+  `db=true`. `/setup` and `/admin/providers` both returned the SPA with HTTP
+  200.
+- The `zboard_next` Compose project contains only
+  `zboard_next-zboard-1`; it is healthy and attached to `redis_default`.
+  Existing `db` and `cache` containers remained up for two months and were not
+  restarted. Authenticated Redis `PING` returned `PONG`.
+- The clean MySQL database contains 37 tables including
+  `schema_migrations`; one baseline migration is recorded, and
+  `provider_accounts`, `managed_dns_records` and `provider_operations` exist.
+- Root filesystem free space is 8.3 GiB (82% used).
+
+Remaining gap:
+
+- The database was intentionally initialized empty, so the operator must
+  complete the one-time `/setup` flow before authenticated administrator APIs
+  can be used. No bootstrap administrator credential was invented or stored.
+
+### 2026-07-29 - Generic external providers and Cloudflare DNS management
+
+Outcome before synchronization:
+
+- Added a reusable external-provider account boundary with namespaced
+  capabilities, encrypted/redacted credentials, verification state and
+  provider operations. Cloudflare exposes `dns.records` and
+  `certificate.origin`; Let's Encrypt remains cataloged separately as
+  `certificate.public`. DNS, certificates and future payment channels keep
+  their own typed resource models rather than sharing an opaque provider JSON
+  resource.
+- Added Cloudflare account creation and token verification. API tokens are
+  encrypted with the existing credential cipher, never returned by APIs and
+  represented only by a non-secret prefix in the administrator workbench.
+- Added panel-managed A/AAAA records with handwritten FQDNs, explicit node and
+  provider-account selection, optional node-address IP discovery, TTL and
+  Cloudflare proxy settings. The adapter discovers the longest matching active
+  Zone, refuses silent takeover of an existing remote record, upserts through
+  the Cloudflare v4 API and records desired/observed hashes.
+- Added asynchronous provider operations, synchronization phases, provider
+  error state and a separate public-DNS observation flag. Direct records are
+  verified against the desired IP; proxied records are verified by observing
+  any public address because Cloudflare returns edge addresses.
+- Added the `/admin/providers` workbench and linked a managed DNS record to the
+  existing certificate application page with its node and domain prefilled.
+  Certificate issuance remains a separate resource and provider workflow.
+
+Local verification:
+
+- Go 1.26.5 was installed from the configured regional mirror after the
+  default `go.dev` archive download failed.
+- `go test ./...`
+- `go vet ./...`
+- `pnpm test -- --run` passed: 60 files and 132 tests.
+- `pnpm typecheck`
+- `pnpm build`
+- `git diff --check`
+- Cloudflare adapter tests cover normalized desired-state hashing, longest
+  visible Zone discovery, bearer authentication and redacted API errors via a
+  mock HTTP server.
+
+Remaining gaps before synchronization:
+
+- No real Cloudflare API Token or public Zone was used during local
+  verification, so live account permissions, record creation and DNS
+  propagation still require authenticated intranet/browser evidence.
+- The first phase creates and verifies provider accounts but does not yet
+  expose credential rotation, account deletion or DNS record editing/deletion.
+  DNS-01 and Cloudflare Origin CA issuance remain future certificate-provider
+  work.
+
+Synchronization and deployment evidence:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` retained
+  `/data/zboard-next/releases/20260729T083026Z/source.tar.gz` (712 KiB), then
+  failed while Docker copied the build context with `no space left on device`.
+  The remote root filesystem was at 100% with only 280 KiB available.
+- Failure occurred before the database dump and source switch. The matching
+  `/data/zboard-next/backups/20260729T083026Z` directory is empty, and there is
+  no `app-prev-20260729T083026Z` or `app-failed-20260729T083026Z` source path.
+- Post-failure verification returned HTTP/API 200 from `/api/v1/version` and
+  `/readyz`, with `ready=true` and `db=true`.
+  `zboard_next-zboard-1`, `zboard_next-mysql-1` and
+  `zboard_next-redis-1` remain healthy. The active version remains
+  `v0.0.1-20260726T105144Z-intranet-working-tree@2026-07-26T10:51:44Z`.
+
+Remaining deployment gaps:
+
+- Intranet synchronization is incomplete. The generic-provider and Cloudflare
+  DNS changes are present only in the retained source archive, not the active
+  application.
+- Remote disk space must be recovered before another build. Even after that,
+  the existing pre-release database baseline mismatch documented by the
+  preceding deployment attempts may still block application startup.
+
+### 2026-07-29 - Release-image Docker Compose deployment bundle
+
+Outcome before synchronization:
+
+- Added `deploy/docker/docker-compose.release.yml` for deployment from the
+  release workflow's prebuilt `linux/amd64`
+  `ghcr.io/zerodenet/zboard:<tag>` image. It does not rebuild source and works
+  with either a registry pull or the compressed Docker image release asset.
+- The bundle includes persistent MySQL 8.4 and Redis 7 services, health-gated
+  application startup, private service networking, persistent data volumes,
+  application readiness checks and a read-only trusted Zero artifact mount.
+- Added `deploy/docker/.env.release.example` with the current
+  `v0.0.1-dev.3` image tag, safe loopback HTTP binding, all required runtime
+  secrets, optional bootstrap-admin settings, pull/archive modes and explicit
+  legacy versus native-local kernel settings. No real credential was stored.
+- Required secrets use Compose required-value guards. Empty example values
+  fail before container creation rather than starting with placeholders.
+
+Local verification:
+
+- `docker compose --env-file deploy/docker/.env.release.example -f
+  deploy/docker/docker-compose.release.yml config --quiet` passed with
+  temporary non-secret validation values supplied through the process
+  environment.
+- The same Compose render with empty required values failed as intended at
+  `ZBOARD_MYSQL_ROOT_PASSWORD`.
+- `git diff --check -- deploy/docker/docker-compose.release.yml
+  deploy/docker/.env.release.example`
+
+Synchronization and deployment evidence:
+
+- The first `scripts/sync-intranet.ps1 -SkipLocalChecks` attempt retained
+  `/data/zboard-next/releases/20260729T031900Z/source.tar.gz` but ended during
+  the remote image build before creating a database backup or switching source.
+- A second attempt built the candidate, created
+  `/data/zboard-next/backups/20260729T032135Z/zboard-before-sync.sql`
+  (84,114 bytes) and
+  `/data/zboard-next/releases/20260729T032135Z/source.tar.gz`
+  (714,529 bytes), then switched source. The application failed startup with
+  `pre-release baseline schema is incomplete: found 30 of 33 required tables`.
+- The failed source is preserved at
+  `/data/zboard-next/app-failed-20260729T032135Z`. The previous source was
+  restored to `/data/zboard-next/app`, so the temporary
+  `/data/zboard-next/app-prev-20260729T032135Z` path no longer exists.
+- Because the failed build overwrote `zboard_next-zboard:latest`, the automatic
+  source rollback initially left the application restarting. Retagged the
+  retained healthy image
+  `fa44cab95b260a86a9e7fa48e735c676ce69c51abbe8ddef7c5bc6c58f756864`
+  and recreated only the Zboard container. MySQL and Redis were not restarted.
+- Final verification returned HTTP/API 200 from `/api/v1/version` and
+  `/readyz`, with `ready=true` and `db=true`.
+  `zboard_next-zboard-1`, `zboard_next-mysql-1` and
+  `zboard_next-redis-1` are healthy. The active version remains
+  `v0.0.1-20260726T105144Z-intranet-working-tree@2026-07-26T10:51:44Z`.
+
+Remaining gaps:
+
+- Intranet synchronization is incomplete because the current database still
+  fails the pre-release baseline schema signature. The release Compose bundle
+  is present only in the retained failed source/archive, not the active source.
+- No release image was pulled or stack started locally; runtime deployment
+  remains subject to the selected published tag being present and the Docker
+  host having GHCR access when the package is not public.
+
+### 2026-07-29 - Release and GHCR prerelease history retention
+
+Outcome before synchronization:
+
+- Added a post-publication cleanup step to the tag-driven release workflow.
+  Publishing an `-rc` tag removes every historical `-dev` GitHub Release and
+  GHCR package version; publishing a stable numeric SemVer tag removes every
+  historical `-rc` Release and package version.
+- Git tags remain intact as source-history markers. Other prerelease families
+  do not trigger cleanup, and a GHCR version carrying any non-matching tag is
+  retained to avoid deleting a shared stable manifest.
+- Added a standalone cleanup script with pagination, dry-run support and
+  explicit repository/package configuration, plus mock-API behavior coverage.
+  The workflow token must have administrator access to the GHCR package.
+
+Local verification:
+
+- `C:\Program Files\Git\bin\bash.exe -n scripts/cleanup-release-history.sh`
+- `C:\Program Files\Git\bin\bash.exe -n scripts/tests/cleanup-release-history-test.sh`
+- `C:\Program Files\Git\bin\bash.exe scripts/tests/cleanup-release-history-test.sh`
+- `git diff --check`
+
+Synchronization and deployment evidence:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` created
+  `/data/zboard-next/releases/20260729T015806Z/source.tar.gz` (712,772 bytes)
+  and candidate source `/data/zboard-next/candidates/20260729T015806Z`, then
+  failed during the remote Docker build because Docker Hub TLS handshakes timed
+  out while resolving `alpine:3.20` and `golang:1.26.5-alpine`.
+- The build failed before the database dump and source switch. Consequently
+  `/data/zboard-next/backups/20260729T015806Z` contains no database backup and
+  no new previous-source path exists. The deployed application remains
+  `v0.0.1-20260726T105144Z-intranet-working-tree@2026-07-26T10:51:44Z`.
+- Post-failure checks returned HTTP/API 200 from `/api/v1/version` and
+  `/readyz`, with `ready=true` and `db=true`. `zboard_next-zboard-1`,
+  `zboard_next-mysql-1` and `zboard_next-redis-1` all remain healthy.
+
+Remaining gaps:
+
+- Intranet synchronization is incomplete. The retained candidate and release
+  archive contain the verified change, but the active intranet source was not
+  switched because the image build failed.
+- A live GitHub tag run is still required to confirm Release deletion and GHCR
+  package-version deletion with the package's current Actions access settings.
+
 ### 2026-07-28 - GHCR repository association metadata
 
 Outcome before synchronization:

@@ -53,6 +53,7 @@
 
     <DetailDrawer :open="Boolean(selectedNode)" :title="selectedNode?.name || '节点详情'" eyebrow="Node asset" :description="selectedNode ? `${selectedNode.region || '未设置区域'} · ${selectedNode.address || '未设置地址'}` : ''" @close="closeDetail">
       <main v-if="selectedNode" class="stack node-detail">
+        <TransientFeedback :success="detailMessage" :error="detailError" success-title="节点操作已完成" error-title="节点操作失败" />
         <article class="panel node-summary">
           <div class="node-summary-main">
             <span class="node-avatar"><UiIcon name="nodes" /></span>
@@ -87,7 +88,8 @@
           <div class="panel-body kernel-body">
             <div class="kernel-facts">
               <div><span>已安装版本</span><strong>{{ kernelState?.installed_version || '未检测' }}</strong></div>
-              <div><span>最新稳定版</span><strong>{{ latestRelease?.tag || (releaseLoading ? '查询中…' : '未查询') }}</strong></div>
+              <div><span>最新发布版</span><strong>{{ latestPublishedRelease?.tag || (releaseLoading ? '查询中…' : '未查询') }}</strong></div>
+              <div><span>本次目标版本</span><strong>{{ selectedRelease?.tag || '尚未选择' }}</strong></div>
               <div><span>平台</span><strong>{{ [kernelState?.platform_os, kernelState?.architecture].filter(Boolean).join(' · ') || '未检测' }}</strong></div>
               <div><span>运行库</span><strong>{{ kernelState?.libc || '未检测' }}</strong></div>
               <div><span>systemd / 进程</span><StatusBadge :tone="serviceTone(kernelState?.service_status)" :icon="kernelState?.service_status === 'active' ? 'check' : 'alert'">{{ serviceLabel(kernelState?.service_status) }}</StatusBadge></div>
@@ -96,9 +98,19 @@
               <div><span>建议动作</span><strong>{{ kernelActionLabel(kernelState?.recommended_action) }}</strong></div>
             </div>
             <OutputBlock v-if="kernelState?.last_error" :value="kernelState.last_error" label="内核错误" tone="danger" :max-length="360" />
+            <div class="kernel-release-picker">
+              <label for="node-kernel-release">安装版本</label>
+              <UiSelect id="node-kernel-release" v-model="selectedReleaseVersion" :options="releaseOptions" :disabled="releaseLoading || Boolean(kernelBusy)" />
+              <small v-if="selectedRelease">
+                {{ selectedRelease.gnu_available ? 'GNU/glibc' : '' }}{{ selectedRelease.gnu_available && selectedRelease.musl_available ? '、' : '' }}{{ selectedRelease.musl_available ? 'musl' : '' }} 制品可用
+                <template v-if="selectedIsDowngrade"> · 将执行显式降级</template>
+                <template v-if="!selectedReleaseCompatible"> · 与当前节点 libc 不兼容</template>
+              </small>
+              <small v-else>{{ releaseLoading ? '正在查询可安装版本…' : '没有与当前节点平台兼容的已发布版本。' }}</small>
+            </div>
             <div class="kernel-actions">
               <UiButton variant="secondary" size="sm" type="button" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at" @click="detectKernel"><UiIcon name="search" />{{ kernelBusy === 'detect' ? '检测中…' : '检测内核' }}</UiButton>
-              <UiButton size="sm" type="button" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at || releaseLoading || kernelState?.status === 'unsupported'" @click="reconcileKernel"><UiIcon name="play" />{{ kernelBusy === 'reconcile' ? kernelPhaseLabel(kernelState?.phase) : reconcileButtonLabel }}</UiButton>
+              <UiButton size="sm" type="button" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at || releaseLoading || !selectedReleaseVersion || !selectedReleaseCompatible || kernelState?.status === 'unsupported'" @click="reconcileKernel"><UiIcon name="play" />{{ kernelBusy === 'reconcile' ? kernelPhaseLabel(kernelState?.phase) : reconcileButtonLabel }}</UiButton>
               <RouterLink v-if="kernelState?.last_error" class="button button-secondary button-sm" :to="adminContextLink('/admin/operation-logs', { source: 'node_kernel', status: 'failed', node_id: String(selectedNode.id) })"><UiIcon name="terminal" />查看运行日志</RouterLink>
               <small v-if="!selectedNode.ssh_verified_at">请先完成 SSH 验证，自动化不会绕过运维通道校验。</small>
               <small v-else>现代 glibc 节点使用官方 GNU 制品，旧版 Linux 使用面板托管并校验 SHA-256 的 musl 制品；不会升级系统 libc，也不会自动降级内核。</small>
@@ -205,7 +217,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createNode, createNodeBatchOperation, detectNodeKernel, fetchLatestZeroRelease, fetchNode, fetchNodeKernel, fetchNodesPage, fetchProtocolEndpointsPage, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type ZeroRelease } from '../api/client'
+import { createNode, createNodeBatchOperation, detectNodeKernel, fetchNode, fetchNodeKernel, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type ZeroReleaseOption } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -272,10 +284,34 @@ const nodeDetailTabs = [
 const saving = ref(false), testingNode = ref(0), detailLoadingID = ref(0)
 const bulkBusy = ref<'' | 'detect' | 'reconcile' | 'activate' | 'maintenance' | 'retire'>('')
 const message = ref('')
+const detailMessage = ref('')
+const detailError = ref('')
 const createOpen = ref(false), editOpen = ref(false), sshOpen = ref(false)
 const terminalOpen = ref(false), terminalNode = ref<any>(null)
 const kernelState = ref<NodeKernelState | null>(null), kernelOperations = ref<NodeKernelOperation[]>([])
-const latestRelease = ref<ZeroRelease | null>(null), releaseLoading = ref(false)
+const zeroReleases = ref<ZeroReleaseOption[]>([]), releaseLoading = ref(false)
+const selectedReleaseVersion = ref('')
+const latestPublishedRelease = computed(() => zeroReleases.value[0] || null)
+const selectedRelease = computed(() => zeroReleases.value.find(item => item.version === selectedReleaseVersion.value) || null)
+const nodeRequiresMusl = computed(() => {
+  const libc = kernelState.value?.libc?.toLowerCase() || ''
+  if (libc.includes('musl')) return true
+  const match = libc.match(/glibc\s+(\d+)\.(\d+)/)
+  if (!match) return false
+  return Number(match[1]) < 2 || (Number(match[1]) === 2 && Number(match[2]) < 34)
+})
+const releaseCompatible = (release: ZeroReleaseOption) => nodeRequiresMusl.value ? release.musl_available : release.gnu_available
+const selectedReleaseCompatible = computed(() => Boolean(selectedRelease.value && releaseCompatible(selectedRelease.value)))
+const releaseOptions = computed(() => zeroReleases.value.map(item => ({
+  label: `${item.tag}${item.prerelease ? '（预发布）' : ''} · ${[item.gnu_available ? 'GNU' : '', item.musl_available ? 'musl' : ''].filter(Boolean).join(' / ')}`,
+  value: item.version,
+  disabled: !releaseCompatible(item),
+})))
+const selectedIsDowngrade = computed(() => Boolean(
+  selectedReleaseVersion.value
+  && kernelState.value?.installed_version
+  && compareKernelVersions(kernelState.value.installed_version, selectedReleaseVersion.value) > 0,
+))
 const kernelBusy = ref<'' | 'detect' | 'reconcile'>('')
 const nodeEndpoints = ref<any[]>([]), nodeProtocolsLoading = ref(false), savingMultiplierID = ref(0)
 const nodeProtocolLimit = ref(allowedPageSizes.includes(Number(route.query.protocol_limit)) ? Number(route.query.protocol_limit) : 25)
@@ -409,7 +445,34 @@ function controlTone(value?: string): 'success' | 'danger' | 'neutral' { return 
 function operationStatusLabel(value: string) { return ({ running: '执行中', succeeded: '已完成', failed: '执行失败' } as Record<string, string>)[value] || formatUnknownValue('状态', value) }
 function operationStatusTone(value: string): 'info' | 'success' | 'danger' { return value === 'running' ? 'info' : value === 'succeeded' ? 'success' : 'danger' }
 function kernelActionLabel(value?: string) { return ({ detect: '先检测', install: '安装', upgrade: '升级', repair: '修复', configure: '同步配置', check_release: '检查新版本', manual_review: '人工确认', none: '无需操作' } as Record<string, string>)[value || 'detect'] || formatUnknownValue('动作', value) }
-function operationLabel(value?: string) { return ({ detect: '环境检测', reconcile: '状态对齐', install: '安装', upgrade: '升级', repair: '修复', configure: '配置同步', none: '状态确认' } as Record<string, string>)[value || 'reconcile'] || formatUnknownValue('操作', value) }
+function compareKernelVersions(left: string, right: string) {
+  const parse = (value: string) => {
+    const [core, suffix = ''] = value.trim().replace(/^v/, '').split('-', 2)
+    return { numbers: core.split('.').map(item => Number(item) || 0), suffix }
+  }
+  const a = parse(left)
+  const b = parse(right)
+  for (let index = 0; index < Math.max(a.numbers.length, b.numbers.length); index += 1) {
+    const difference = (a.numbers[index] || 0) - (b.numbers[index] || 0)
+    if (difference) return difference > 0 ? 1 : -1
+  }
+  if (a.suffix === b.suffix) return 0
+  if (!a.suffix) return 1
+  if (!b.suffix) return -1
+  const leftIdentifiers = a.suffix.split('.')
+  const rightIdentifiers = b.suffix.split('.')
+  for (let index = 0; index < Math.min(leftIdentifiers.length, rightIdentifiers.length); index += 1) {
+    if (leftIdentifiers[index] === rightIdentifiers[index]) continue
+    const leftNumber = /^\d+$/.test(leftIdentifiers[index]) ? Number(leftIdentifiers[index]) : null
+    const rightNumber = /^\d+$/.test(rightIdentifiers[index]) ? Number(rightIdentifiers[index]) : null
+    if (leftNumber !== null && rightNumber !== null) return leftNumber > rightNumber ? 1 : -1
+    if (leftNumber !== null) return -1
+    if (rightNumber !== null) return 1
+    return leftIdentifiers[index].localeCompare(rightIdentifiers[index])
+  }
+  return leftIdentifiers.length === rightIdentifiers.length ? 0 : leftIdentifiers.length > rightIdentifiers.length ? 1 : -1
+}
+function operationLabel(value?: string) { return ({ detect: '环境检测', reconcile: '状态对齐', install: '安装', upgrade: '升级', downgrade: '降级', repair: '修复', configure: '配置同步', none: '状态确认' } as Record<string, string>)[value || 'reconcile'] || formatUnknownValue('操作', value) }
 function operationSummary(operation: NodeKernelOperation) { return truncateOutput(normalizeOutput(operation.result_summary || operation.error || kernelPhaseLabel(operation.phase)), 220) }
 async function runBatch(action: 'detect' | 'reconcile' | 'activate' | 'maintenance' | 'retire') {
   const labels = { detect: '检测节点状态', reconcile: '对齐 Zero 内核', activate: '恢复启用节点', maintenance: '将节点设为维护', retire: '退役节点' }
@@ -434,10 +497,23 @@ async function loadKernel(nodeID?: number) {
     kernelState.value = result.state
     kernelOperations.value = result.operations || []
   } catch (e: any) {
-    if (kernelRequests.isCurrent(request) && selectedNode.value?.id === nodeID) error.value = e?.response?.data?.message || '内核状态加载失败。'
+    if (kernelRequests.isCurrent(request) && selectedNode.value?.id === nodeID) detailError.value = e?.response?.data?.message || '内核状态加载失败。'
   }
 }
-async function loadLatestRelease(force = false) { if (latestRelease.value && !force) return; releaseLoading.value = true; try { latestRelease.value = await fetchLatestZeroRelease() } catch (e: any) { error.value = e?.response?.data?.message || 'Zero 稳定版本查询失败。' } finally { releaseLoading.value = false } }
+async function loadLatestRelease(force = false) {
+  if (zeroReleases.value.length && !force) return
+  releaseLoading.value = true
+  try {
+    zeroReleases.value = await fetchZeroReleases()
+    if (!zeroReleases.value.some(item => item.version === selectedReleaseVersion.value && releaseCompatible(item))) {
+      selectedReleaseVersion.value = zeroReleases.value.find(releaseCompatible)?.version || ''
+    }
+  } catch (e: any) {
+    detailError.value = e?.response?.data?.message || 'Zero 已发布版本查询失败。'
+  } finally {
+    releaseLoading.value = false
+  }
+}
 async function loadNodeProtocols(nodeID?: number) {
   const request = protocolRequests.begin()
   if (!nodeID) { nodeEndpoints.value = []; nodeProtocolTotal.value = 0; return }
@@ -454,13 +530,13 @@ async function loadNodeProtocols(nodeID?: number) {
     nodeEndpoints.value = page.items
     for (const endpoint of nodeEndpoints.value) multiplierDrafts[endpoint.id] = Number(endpoint.multiplier_milli || 1000)
   } catch (e: any) {
-    if (protocolRequests.isCurrent(request) && selectedNode.value?.id === nodeID) error.value = e?.response?.data?.message || '节点协议服务加载失败。'
+    if (protocolRequests.isCurrent(request) && selectedNode.value?.id === nodeID) detailError.value = e?.response?.data?.message || '节点协议服务加载失败。'
   } finally {
     if (protocolRequests.isCurrent(request)) nodeProtocolsLoading.value = false
   }
 }
-async function saveMultiplier(endpoint: any) { const milli = Math.round(Number(multiplierDrafts[endpoint.id])); if (!Number.isFinite(milli) || milli < 1 || milli > 100000) { error.value = '计费倍率必须在 0.001× 到 100× 之间。'; return }; savingMultiplierID.value = endpoint.id; error.value = ''; message.value = ''; try { const updated = await updateProtocolEndpointMultiplier(endpoint.id, milli); endpoint.multiplier_milli = updated.multiplier_milli; multiplierDrafts[endpoint.id] = updated.multiplier_milli; message.value = `${endpoint.name} 的计费倍率已更新为 ${updated.multiplier_milli / 1000}×。` } catch (e: any) { error.value = e?.response?.data?.message || '计费倍率保存失败。' } finally { savingMultiplierID.value = 0 } }
-async function detectKernel() { if (!selectedNode.value) return; kernelBusy.value = 'detect'; error.value = ''; message.value = ''; try { const result = await detectNodeKernel(selectedNode.value.id); kernelState.value = result.state; message.value = 'Zero 内核检测完成，页面显示的是服务器真实状态。'; await loadKernel(selectedNode.value.id) } catch (e: any) { error.value = e?.response?.data?.message || 'Zero 内核检测失败。'; await loadKernel(selectedNode.value.id) } finally { kernelBusy.value = '' } }
+async function saveMultiplier(endpoint: any) { const milli = Math.round(Number(multiplierDrafts[endpoint.id])); if (!Number.isFinite(milli) || milli < 1 || milli > 100000) { detailError.value = '计费倍率必须在 0.001× 到 100× 之间。'; return }; savingMultiplierID.value = endpoint.id; detailError.value = ''; detailMessage.value = ''; try { const updated = await updateProtocolEndpointMultiplier(endpoint.id, milli); endpoint.multiplier_milli = updated.multiplier_milli; multiplierDrafts[endpoint.id] = updated.multiplier_milli; detailMessage.value = `${endpoint.name} 的计费倍率已更新为 ${updated.multiplier_milli / 1000}×。` } catch (e: any) { detailError.value = e?.response?.data?.message || '计费倍率保存失败。' } finally { savingMultiplierID.value = 0 } }
+async function detectKernel() { if (!selectedNode.value) return; kernelBusy.value = 'detect'; detailError.value = ''; detailMessage.value = ''; try { const result = await detectNodeKernel(selectedNode.value.id); kernelState.value = result.state; detailMessage.value = 'Zero 内核检测完成，页面显示的是服务器真实状态。'; await loadKernel(selectedNode.value.id) } catch (e: any) { detailError.value = e?.response?.data?.message || 'Zero 内核检测失败。'; await loadKernel(selectedNode.value.id) } finally { kernelBusy.value = '' } }
 function stopKernelPolling() { if (kernelPollTimer !== undefined) { window.clearInterval(kernelPollTimer); kernelPollTimer = undefined } }
 function startKernelPolling(nodeID: number) {
   stopKernelPolling()
@@ -475,7 +551,30 @@ function startKernelPolling(nodeID: number) {
     } catch { /* The reconcile request remains the source of the final error. */ }
   }, 1000)
 }
-async function reconcileKernel() { if (!selectedNode.value) return; const nodeID = selectedNode.value.id; const target = latestRelease.value?.tag || '当前指定版本'; if (!await confirmAction({ title: '对齐 Zero 内核', message: `将把这台 VPS 的 Zero 对齐到 ${target} 及当前启用协议配置。操作会校验制品、systemd、控制通道和已认证 Connector 事件，失败自动回滚。`, confirmText: '开始对齐' })) return; kernelBusy.value = 'reconcile'; error.value = ''; message.value = ''; startKernelPolling(nodeID); try { const result = await reconcileNodeKernel(nodeID); message.value = result.changed ? `Zero 已完成${operationLabel(result.action)}并通过本地健康与 Connector 验收。` : 'Zero 二进制与配置已是期望状态，无需变更。'; await Promise.all([refresh(), loadKernel(nodeID), loadLatestRelease(true)]) } catch (e: any) { error.value = e?.response?.data?.message || 'Zero 自动化操作失败；请查看操作记录中的阶段与错误。'; await loadKernel(nodeID) } finally { stopKernelPolling(); kernelBusy.value = '' } }
+async function reconcileKernel() {
+  if (!selectedNode.value || !selectedRelease.value) return
+  const nodeID = selectedNode.value.id
+  const target = selectedRelease.value.tag
+  const downgrade = selectedIsDowngrade.value
+  const accepted = await confirmAction({
+    title: downgrade ? '确认降级 Zero 内核' : '对齐 Zero 内核',
+    message: `将把这台 VPS 的 Zero ${downgrade ? '显式降级' : '对齐'}到 ${target} 及当前启用协议配置。操作会校验制品、systemd、控制通道和已认证 Connector 事件，失败自动回滚。`,
+    confirmText: downgrade ? '确认降级' : '开始对齐',
+    tone: downgrade ? 'danger' : 'primary',
+  })
+  if (!accepted) return
+  kernelBusy.value = 'reconcile'; detailError.value = ''; detailMessage.value = ''; startKernelPolling(nodeID)
+  try {
+    const result = await reconcileNodeKernel(nodeID, { version: selectedRelease.value.version, allow_downgrade: downgrade })
+    detailMessage.value = result.changed ? `Zero 已完成${operationLabel(result.action)}到 ${target}，并通过本地健康与 Connector 验收。` : `Zero ${target} 二进制与配置已是期望状态，无需变更。`
+    await Promise.all([refresh(), loadKernel(nodeID), loadLatestRelease(true)])
+  } catch (e: any) {
+    detailError.value = e?.response?.data?.message || 'Zero 自动化操作失败；请查看操作记录中的阶段与错误。'
+    await loadKernel(nodeID)
+  } finally {
+    stopKernelPolling(); kernelBusy.value = ''
+  }
+}
 function adminContextLink(path: string, query: Record<string, string>) { return withAdminReturnTo(path, route.fullPath, query) }
 
 async function syncURL(replace = false) {
@@ -503,13 +602,14 @@ async function setSort(field: string) { const next = resolveSortField(field, nod
 async function setDensity(value: 'compact' | 'comfortable') { density.value = value; await syncURL(true) }
 async function selectNode(node: AdminNodeListItem) {
   detailLoadingID.value = node.id; error.value = ''
+  detailError.value = ''; detailMessage.value = ''
   try {
     const detail = await fetchNode(node.id)
     nodeProtocolOffset.value = 0; nodeProtocolLimit.value = 25; selectedNode.value = detail; detailSection.value = 'overview'; await syncURL()
   } catch (e: any) { error.value = e?.response?.data?.message || '节点详情加载失败。' }
   finally { detailLoadingID.value = 0 }
 }
-async function closeDetail() { selectedNode.value = null; nodeProtocolOffset.value = 0; await syncURL() }
+async function closeDetail() { selectedNode.value = null; detailError.value = ''; detailMessage.value = ''; nodeProtocolOffset.value = 0; await syncURL() }
 async function changeNodeProtocolPage(value: { offset: number; limit: number }) { nodeProtocolOffset.value = value.offset; nodeProtocolLimit.value = value.limit; await syncURL() }
 function openCreate() { Object.assign(createForm, { name: '', region: '', address: '', remark: '' }); createErrors.clear(); createState.markClean(); createOpen.value = true }
 async function create() {
@@ -552,12 +652,12 @@ async function saveSSH() {
   saving.value = true
   try { const payload: any = { ssh_host: sshForm.ssh_host, ssh_port: sshForm.ssh_port, ssh_user: sshForm.ssh_user, ssh_auth_method: sshForm.ssh_auth_method, ssh_privilege_mode: sshForm.ssh_privilege_mode }; if (sshForm.ssh_auth_method === 'password' && sshForm.ssh_password) payload.ssh_password = sshForm.ssh_password; if (sshForm.ssh_auth_method === 'private_key' && sshForm.ssh_private_key) payload.ssh_private_key = sshForm.ssh_private_key; if (sshForm.ssh_auth_method === 'private_key' && (sshForm.ssh_private_key_passphrase || sshForm.clearPassphrase)) payload.ssh_private_key_passphrase = sshForm.clearPassphrase ? '' : sshForm.ssh_private_key_passphrase; if (sshForm.ssh_privilege_mode === 'none' || (sshForm.ssh_privilege_mode === 'sudo' && sshForm.passwordlessSudo)) payload.ssh_privilege_password = ''; else if (sshForm.ssh_privilege_password) payload.ssh_privilege_password = sshForm.ssh_privilege_password; await updateNodeSSH(sshForm.node_id, payload); sshOpen.value = false; message.value = 'SSH 与提权配置已保存；验证 SSH 时会同时检查系统提权能力。'; await refresh() } catch (e: any) { await sshErrors.applyApiError(e, 'SSH 配置保存失败，请检查表单内容。', sshFormElement, sshFieldMap) } finally { saving.value = false }
 }
-async function testSSH(id: number) { testingNode.value = id; error.value = ''; try { const result = await testNodeSSH(id); message.value = `SSH 验证成功，耗时 ${result.latency_ms || 0}ms；主机身份已自动校验。`; await refresh() } catch (e: any) { error.value = e?.response?.data?.message || 'SSH 验证失败。' } finally { testingNode.value = 0 } }
-async function resetSSHHostKey(node: any) { if (!await confirmAction({ title: '重新信任主机', message: '仅当 VPS 已重装或主机密钥已确认更换时继续。重置后，下一次 SSH 连接会自动登记新的主机身份。', confirmText: '清除旧身份', tone: 'danger' })) return; error.value = ''; try { await resetNodeSSHHostKey(node.id); message.value = '已清除旧主机身份；下一次 SSH 连接将自动重新登记。'; await refresh() } catch (e: any) { error.value = e?.response?.data?.message || '重新信任主机失败。' } }
-async function rotateConnector(node: any) { if (node.node_credential_prefix && !await confirmAction({ title: '轮换 Zero 凭证', message: '轮换后旧 Zero 连接凭证会立即失效，节点需要应用新配置。', confirmText: '确认轮换', tone: 'danger' })) return; try { const result = await rotateNodeConnectorCredential(node.id); const config = JSON.stringify({ push: { url: window.location.origin, node_id: result.node_id, api_key: result.api_key, heartbeat_interval_seconds: 30, pull_commands: true, command_poll_interval_seconds: 10 } }, null, 2); Object.assign(secretModal, { title: 'Zero 主动连接配置', value: config, copied: false }); await refresh() } catch (e: any) { error.value = e?.response?.data?.message || 'Zero 连接凭证操作失败。' } }
-async function revokeConnector(node: any) { if (!await confirmAction({ title: '吊销 Zero 凭证', message: '吊销后节点将无法继续向面板发送心跳或领取命令。', confirmText: '确认吊销', tone: 'danger' })) return; try { await revokeNodeConnectorCredential(node.id); message.value = 'Zero 连接凭证已吊销。'; await refresh() } catch (e: any) { error.value = e?.response?.data?.message || '吊销失败。' } }
-async function rotateReport(node: any) { if (node.traffic_secret_prefix && !await confirmAction({ title: '轮换流量凭证', message: '轮换后旧流量上报凭证会立即失效。', confirmText: '确认轮换', tone: 'danger' })) return; try { const result = await rotateNodeReportCredential(node.id); Object.assign(secretModal, { title: '流量上报凭证', value: result.secret, copied: false }); await refresh() } catch (e: any) { error.value = e?.response?.data?.message || '流量上报凭证操作失败。' } }
-async function revokeReport(node: any) { if (!await confirmAction({ title: '吊销流量凭证', message: '吊销后节点将无法继续提交可信流量记录。', confirmText: '确认吊销', tone: 'danger' })) return; try { await revokeNodeReportCredential(node.id); message.value = '流量上报凭证已吊销。'; await refresh() } catch (e: any) { error.value = e?.response?.data?.message || '吊销失败。' } }
+async function testSSH(id: number) { testingNode.value = id; detailError.value = ''; detailMessage.value = ''; try { const result = await testNodeSSH(id); detailMessage.value = `SSH 验证成功，耗时 ${result.latency_ms || 0}ms；主机身份已自动校验。`; await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || 'SSH 验证失败。' } finally { testingNode.value = 0 } }
+async function resetSSHHostKey(node: any) { if (!await confirmAction({ title: '重新信任主机', message: '仅当 VPS 已重装或主机密钥已确认更换时继续。重置后，下一次 SSH 连接会自动登记新的主机身份。', confirmText: '清除旧身份', tone: 'danger' })) return; detailError.value = ''; detailMessage.value = ''; try { await resetNodeSSHHostKey(node.id); detailMessage.value = '已清除旧主机身份；下一次 SSH 连接将自动重新登记。'; await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || '重新信任主机失败。' } }
+async function rotateConnector(node: any) { if (node.node_credential_prefix && !await confirmAction({ title: '轮换 Zero 凭证', message: '轮换后旧 Zero 连接凭证会立即失效，节点需要应用新配置。', confirmText: '确认轮换', tone: 'danger' })) return; detailError.value = ''; try { const result = await rotateNodeConnectorCredential(node.id); const config = JSON.stringify({ push: { url: window.location.origin, node_id: result.node_id, api_key: result.api_key, heartbeat_interval_seconds: 30, pull_commands: true, command_poll_interval_seconds: 10 } }, null, 2); Object.assign(secretModal, { title: 'Zero 主动连接配置', value: config, copied: false }); await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || 'Zero 连接凭证操作失败。' } }
+async function revokeConnector(node: any) { if (!await confirmAction({ title: '吊销 Zero 凭证', message: '吊销后节点将无法继续向面板发送心跳或领取命令。', confirmText: '确认吊销', tone: 'danger' })) return; detailError.value = ''; detailMessage.value = ''; try { await revokeNodeConnectorCredential(node.id); detailMessage.value = 'Zero 连接凭证已吊销。'; await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || '吊销失败。' } }
+async function rotateReport(node: any) { if (node.traffic_secret_prefix && !await confirmAction({ title: '轮换流量凭证', message: '轮换后旧流量上报凭证会立即失效。', confirmText: '确认轮换', tone: 'danger' })) return; detailError.value = ''; try { const result = await rotateNodeReportCredential(node.id); Object.assign(secretModal, { title: '流量上报凭证', value: result.secret, copied: false }); await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || '流量上报凭证操作失败。' } }
+async function revokeReport(node: any) { if (!await confirmAction({ title: '吊销流量凭证', message: '吊销后节点将无法继续提交可信流量记录。', confirmText: '确认吊销', tone: 'danger' })) return; detailError.value = ''; detailMessage.value = ''; try { await revokeNodeReportCredential(node.id); detailMessage.value = '流量上报凭证已吊销。'; await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || '吊销失败。' } }
 async function copySecret() { try { await navigator.clipboard.writeText(secretModal.value); secretModal.copied = true } catch { secretModal.copied = false } }
 
 watch([() => selectedNode.value?.id, detailSection, nodeProtocolOffset, nodeProtocolLimit], ([id, section], [previousID]) => {
@@ -571,6 +671,11 @@ watch([() => selectedNode.value?.id, detailSection, nodeProtocolOffset, nodeProt
   if (section === 'protocols') void loadNodeProtocols(id); else { protocolRequests.invalidate(); nodeProtocolsLoading.value = false }
 }, { immediate: true })
 watch(detailSection, (section) => { if (selectedNode.value && String(route.query.tab || 'overview') !== section) void syncURL() })
+watch([zeroReleases, () => kernelState.value?.libc], () => {
+  if (!selectedRelease.value || !releaseCompatible(selectedRelease.value)) {
+    selectedReleaseVersion.value = zeroReleases.value.find(releaseCompatible)?.version || ''
+  }
+})
 watch(() => route.fullPath, async () => {
   const nextLimit = Number(route.query.limit)
   const resolvedLimit = allowedPageSizes.includes(nextLimit) ? nextLimit : 50
@@ -621,7 +726,7 @@ onBeforeUnmount(stopKernelPolling)
 <style scoped>
 :deep(.workbench-table th),:deep(.workbench-table td){height:40px;padding-block:7px}:deep(.workbench-table tbody tr.selected){background:var(--primary-soft)}.numeric-column{text-align:right!important;font-variant-numeric:tabular-nums}.node-detail{min-width:0}.detail-drawer-body .node-summary{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:14px;padding:0 0 16px;border:0;border-bottom:1px solid var(--line);border-radius:0}.detail-drawer-body .node-summary-main{min-width:0;align-items:flex-start}.detail-drawer-body .title-line{flex-wrap:wrap}.detail-drawer-body .node-actions{width:100%;justify-content:flex-start}.detail-drawer-body .node-health-strip{border:1px solid var(--line);border-radius:var(--radius-md);overflow:hidden}.detail-drawer-body .panel{border-radius:var(--radius-md)}
 .page-alert{margin-bottom:14px}.count-label{color:var(--muted);font-size:11px}.node-layout{display:grid;grid-template-columns:300px minmax(0,1fr);align-items:start;gap:16px}.node-list-panel{position:sticky;top:82px;overflow:hidden}.node-list{display:grid}.node-list>button{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:15px 16px;text-align:left;border:0;border-bottom:1px solid var(--line);background:var(--surface)}.node-list>button:hover,.node-list>button.active{background:var(--surface-selected)}.node-list>button.active{box-shadow:inset 3px 0 var(--primary)}.node-state{width:9px;height:9px;border-radius:50%;background:var(--warning-bright);box-shadow:0 0 0 4px var(--warning-soft)}.node-state.online{background:var(--success-bright);box-shadow:0 0 0 4px var(--success-soft)}.node-state.disabled{background:var(--subtle);box-shadow:0 0 0 4px var(--surface-neutral)}.node-list strong{font-size:12px}.node-list p,.node-list small{margin:3px 0 0;color:var(--muted);font-size:9px}.node-list small{color:var(--primary)}.node-detail{min-width:0}.node-summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px}.node-summary-main{display:flex;align-items:center;gap:14px}.node-avatar{width:46px;height:46px;display:grid;place-items:center;border-radius:12px;color:var(--primary);background:var(--primary-soft);font-size:21px}.title-line{display:flex;align-items:center;gap:10px}.title-line h2{margin:0;font-size:19px}.node-summary-main p{margin:5px 0 2px;color:var(--muted);font-size:11px}.node-summary-main small{color:var(--subtle);font-size:9px}.node-actions{display:flex;flex-wrap:wrap;gap:7px}.readiness-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.readiness-grid article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:11px;padding:15px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.readiness-grid article>span{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;color:var(--primary);background:var(--primary-soft)}.readiness-grid strong{font-size:11px}.readiness-grid p{margin:3px 0 0;color:var(--muted);font-size:9px}.action-card{display:grid;gap:14px}.action-card p{margin:0;color:var(--muted);font-size:11px}.action-card>div{display:flex;gap:7px}.node-empty{min-height:420px;display:grid;place-items:center}.secret-card{display:grid;gap:14px}.secret-card textarea{font-family:Consolas,monospace;font-size:11px}.secret-card .button{justify-self:start}@media(max-width:1100px){.node-layout{grid-template-columns:1fr}.node-list-panel{position:static}.node-list{grid-template-columns:repeat(2,1fr)}}@media(max-width:720px){.node-list,.readiness-grid{grid-template-columns:1fr}.node-summary{align-items:flex-start;flex-direction:column}.node-actions{display:grid;width:100%}}
-.kernel-panel{overflow:hidden}.kernel-body{display:grid;gap:16px}.kernel-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--line)}.kernel-facts>div{display:grid;gap:5px;padding:13px;background:var(--surface)}.kernel-facts span{color:var(--muted);font-size:9px}.kernel-facts strong{font-size:11px;overflow-wrap:anywhere}.kernel-error{display:flex;align-items:flex-start;gap:8px;margin:0;padding:11px;border-radius:8px;color:var(--danger);background:var(--danger-soft);font-size:10px;overflow-wrap:anywhere}.kernel-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.kernel-actions small{color:var(--muted);font-size:9px}.kernel-history{display:grid;border-top:1px solid var(--line)}.kernel-history>div{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 2px}.kernel-history>div+div{border-top:1px solid var(--line)}.kernel-history strong{font-size:10px}.kernel-history p{margin:3px 0 0;color:var(--muted);font-size:9px;overflow-wrap:anywhere}.kernel-history time{color:var(--subtle);font-size:9px}.operation-dot{width:8px;height:8px;border-radius:50%;background:var(--warning)}.operation-dot.succeeded{background:var(--success)}.operation-dot.failed{background:var(--danger)}@media(max-width:720px){.kernel-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.kernel-history>div{grid-template-columns:auto minmax(0,1fr)}.kernel-history time{grid-column:2}}
+.kernel-panel{overflow:hidden}.kernel-body{display:grid;gap:16px}.kernel-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--line)}.kernel-facts>div{display:grid;gap:5px;padding:13px;background:var(--surface)}.kernel-facts span{color:var(--muted);font-size:9px}.kernel-facts strong{font-size:11px;overflow-wrap:anywhere}.kernel-error{display:flex;align-items:flex-start;gap:8px;margin:0;padding:11px;border-radius:8px;color:var(--danger);background:var(--danger-soft);font-size:10px;overflow-wrap:anywhere}.kernel-release-picker{display:grid;grid-template-columns:minmax(110px,160px) minmax(220px,360px);align-items:center;gap:7px 12px;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-neutral)}.kernel-release-picker label{font-size:10px;font-weight:700}.kernel-release-picker small{grid-column:2;color:var(--muted);font-size:9px}.kernel-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.kernel-actions small{color:var(--muted);font-size:9px}.kernel-history{display:grid;border-top:1px solid var(--line)}.kernel-history>div{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 2px}.kernel-history>div+div{border-top:1px solid var(--line)}.kernel-history strong{font-size:10px}.kernel-history p{margin:3px 0 0;color:var(--muted);font-size:9px;overflow-wrap:anywhere}.kernel-history time{color:var(--subtle);font-size:9px}.operation-dot{width:8px;height:8px;border-radius:50%;background:var(--warning)}.operation-dot.succeeded{background:var(--success)}.operation-dot.failed{background:var(--danger)}@media(max-width:720px){.kernel-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.kernel-release-picker{grid-template-columns:1fr}.kernel-release-picker small{grid-column:1}.kernel-history>div{grid-template-columns:auto minmax(0,1fr)}.kernel-history time{grid-column:2}}
 .detail-tabs{display:flex;gap:18px;overflow-x:auto;border-bottom:1px solid var(--line)}.detail-tabs button{min-height:42px;display:inline-flex;align-items:center;gap:7px;padding:0 2px;border:0;border-bottom:2px solid transparent;color:var(--muted);background:transparent;font-size:12px;font-weight:650;white-space:nowrap}.detail-tabs button:hover{color:var(--text)}.detail-tabs button.active{color:var(--primary);border-bottom-color:var(--primary)}.node-health-strip{display:grid;border-block:1px solid var(--line);background:var(--surface)}.node-health-strip>*+*{border-top:1px solid var(--line)}.credential-workspace{overflow:hidden}.credential-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:13px;padding:17px 20px}.credential-row+.credential-row{border-top:1px solid var(--line)}.credential-icon{width:34px;height:34px;display:grid;place-items:center;color:var(--primary);background:var(--primary-soft);border-radius:9px}.credential-row strong{font-size:12px}.credential-row p{margin:3px 0 0;color:var(--muted);font-size:10px}.credential-actions{display:flex;gap:7px}@media(max-width:720px){.credential-row{grid-template-columns:auto minmax(0,1fr)}.credential-actions{grid-column:2;flex-wrap:wrap}}
 .node-list>button{color:var(--text)}.node-list>button:hover,.node-list>button.active{background:var(--primary-soft)}
 .node-protocols{overflow:hidden}.node-protocols :deep(.data-table-shell){border:0;border-radius:0}.node-protocols :deep(.p-inputnumber){min-width:110px;max-width:160px}

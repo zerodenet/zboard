@@ -354,6 +354,15 @@ export interface ZeroRelease {
   artifact_size: number
 }
 
+export interface ZeroReleaseOption {
+  version: string
+  tag: string
+  published_at?: string
+  prerelease: boolean
+  gnu_available: boolean
+  musl_available: boolean
+}
+
 export async function fetchNodeKernel(nodeId: number): Promise<{ state: NodeKernelState; operations: NodeKernelOperation[] }> {
   const response = await api.get(`/nodes/${nodeId}/kernel`)
   return unwrap(response)
@@ -364,13 +373,18 @@ export async function detectNodeKernel(nodeId: number) {
   return unwrap(response)
 }
 
-export async function reconcileNodeKernel(nodeId: number) {
-  const response = await api.post(`/nodes/${nodeId}/kernel/reconcile`, undefined, { timeout: 300_000 })
+export async function reconcileNodeKernel(nodeId: number, options?: { version?: string; allow_downgrade?: boolean }) {
+  const response = await api.post(`/nodes/${nodeId}/kernel/reconcile`, options || {}, { timeout: 300_000 })
   return unwrap(response)
 }
 
 export async function fetchLatestZeroRelease(): Promise<ZeroRelease> {
   const response = await api.get('/admin/kernel/releases/latest')
+  return unwrap(response)
+}
+
+export async function fetchZeroReleases(): Promise<ZeroReleaseOption[]> {
+  const response = await api.get('/admin/kernel/releases')
   return unwrap(response)
 }
 
@@ -616,6 +630,105 @@ export async function updateManagedCertificateRenewal(id: number, payload: {
 }) {
 	const response = await api.put(`/admin/certificates/${id}/renewal`, payload)
 	return unwrap(response)
+}
+
+export interface ProviderDefinition {
+	key: string
+	name: string
+	capabilities: string[]
+}
+
+export interface ProviderAccount {
+	id: number
+	provider_key: string
+	name: string
+	capabilities: string[]
+	credential_prefix: string
+	status: 'pending' | 'active' | 'invalid' | 'disabled'
+	last_verified_at?: string
+	last_error: string
+	revision: number
+	usage_count: number
+	created_at: string
+	updated_at: string
+}
+
+export interface ProviderOperation {
+	id: number
+	provider_account_id: number
+	resource_type: string
+	resource_id: number
+	operation_type: string
+	status: 'running' | 'succeeded' | 'failed'
+	phase: string
+	result_summary: string
+	error: string
+	created_at: string
+}
+
+export interface ManagedDNSRecord {
+	id: number
+	provider_account_id: number
+	provider_name: string
+	provider_key: string
+	node_id: number
+	node_name: string
+	domain_name: string
+	record_type: 'A' | 'AAAA'
+	record_value: string
+	provider_zone_id: string
+	provider_record_id: string
+	ttl: number
+	proxied: boolean
+	status: 'pending' | 'syncing' | 'active' | 'drifted' | 'failed'
+	public_resolved: boolean
+	last_synced_at?: string
+	last_public_check_at?: string
+	last_error: string
+	revision: number
+	latest_operation?: ProviderOperation
+	created_at: string
+	updated_at: string
+}
+
+export async function fetchProviderDefinitions(): Promise<ProviderDefinition[]> {
+	return unwrap(await api.get('/admin/provider-definitions'))
+}
+
+export async function fetchProviderAccounts(): Promise<ProviderAccount[]> {
+	return unwrap(await api.get('/admin/provider-accounts'))
+}
+
+export async function createProviderAccount(payload: { provider_key: string; name: string; api_token: string }): Promise<ProviderAccount> {
+	return unwrap(await api.post('/admin/provider-accounts', payload))
+}
+
+export async function verifyProviderAccount(id: number): Promise<ProviderAccount> {
+	return unwrap(await api.post(`/admin/provider-accounts/${id}/verify`))
+}
+
+export async function fetchManagedDNSRecordsPage(params: { offset?: number; limit?: number; q?: string; status?: string } = {}, options: ApiRequestOptions = {}): Promise<PageResult<ManagedDNSRecord>> {
+	const query = new URLSearchParams()
+	appendPageParams(query, params)
+	if (params.status) query.set('status', params.status)
+	return normalizePageResult<ManagedDNSRecord>(unwrap(await api.get(`/admin/dns-records?${query}`, { signal: options.signal })), params.offset || 0, params.limit || 50)
+}
+
+export async function createManagedDNSRecord(payload: {
+	provider_account_id: number
+	node_id: number
+	domain_name: string
+	record_type: 'A' | 'AAAA'
+	record_value: string
+	ttl: number
+	proxied: boolean
+	takeover_existing: boolean
+}) {
+	return unwrap(await api.post('/admin/dns-records', payload))
+}
+
+export async function syncManagedDNSRecord(id: number, takeover = false): Promise<ProviderOperation> {
+	return unwrap(await api.post(`/admin/dns-records/${id}/sync${takeover ? '?takeover=true' : ''}`))
 }
 
 export async function fetchProtocolDeployments(params: { nodeId?: number; protocolEndpointId?: number; status?: string; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}) {

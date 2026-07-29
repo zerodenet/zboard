@@ -27,6 +27,7 @@ type Config struct {
 	Environment             string `json:"environment,default=development"`
 	DataSource              string `json:"datasource"`
 	RedisAddr               string `json:"redis_addr,optional"`
+	RedisPassword           string `json:"-"`
 	JwtSecret               string `json:"jwt_secret"`
 	BootstrapAdminEmail     string `json:"bootstrap_admin_email,optional"`
 	BootstrapAdminPassword  string `json:"bootstrap_admin_password,optional"`
@@ -52,6 +53,7 @@ func (c *Config) ApplyEnvironment(getenv func(string) string) {
 	} else {
 		applyOverride(&c.RedisAddr, getenv("ZBOARD_REDIS"))
 	}
+	applyOverride(&c.RedisPassword, getenv("ZBOARD_REDIS_PASSWORD"))
 	applyOverride(&c.JwtSecret, getenv("ZBOARD_JWT_SECRET"))
 	applyOverride(&c.BootstrapAdminEmail, getenv("ZBOARD_BOOTSTRAP_ADMIN_EMAIL"))
 	applyOverride(&c.BootstrapAdminPassword, getenv("ZBOARD_BOOTSTRAP_ADMIN_PASSWORD"))

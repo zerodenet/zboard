@@ -10,7 +10,13 @@
       <nav class="primary-nav" aria-label="管理端主导航">
         <section v-for="group in navigationGroups" :key="group.label" class="nav-group">
           <p>{{ group.label }}</p>
-          <RouterLink v-for="item in group.items" :key="item.to" :to="item.to" :class="{ 'router-link-active': isNavigationItemActive(item.to) }"><UiIcon :name="item.icon" /><span>{{ item.label }}</span></RouterLink>
+          <template v-for="item in group.items" :key="item.to || item.label">
+            <div v-if="item.children?.length" class="nav-subgroup" :class="{ active: item.children.some(child => isNavigationItemActive(child.to)) }">
+              <div class="nav-subgroup-label"><UiIcon :name="item.icon" /><span>{{ item.label }}</span></div>
+              <RouterLink v-for="child in item.children" :key="child.to" class="nav-child" :to="child.to" :class="{ 'router-link-active': isNavigationItemActive(child.to) }"><span>{{ child.label }}</span></RouterLink>
+            </div>
+            <RouterLink v-else-if="item.to" :to="item.to" :class="{ 'router-link-active': isNavigationItemActive(item.to) }"><UiIcon :name="item.icon" /><span>{{ item.label }}</span></RouterLink>
+          </template>
         </section>
       </nav>
 
@@ -63,7 +69,10 @@ const currentTitle = computed(() => String(route.meta.title || '管理后台'))
 const currentSection = computed(() => String(route.meta.section || 'zboard'))
 const returnTarget = computed(() => normalizeAdminReturnTo(route.query.return_to))
 const userInitial = computed(() => (app.user.email || 'Z').slice(0, 1).toUpperCase())
-const navigationGroups = [
+type NavigationLeaf = { to: string; label: string; icon?: string }
+type NavigationItem = { to?: string; label: string; icon: string; children?: NavigationLeaf[] }
+type NavigationGroup = { label: string; items: NavigationItem[] }
+const navigationGroups: NavigationGroup[] = [
   { label: '工作台', items: [{ to: '/admin/dashboard', label: '运营工作台', icon: 'dashboard' }] },
   { label: '客户与支持', items: [
     { to: '/admin/users', label: '用户管理', icon: 'users' },
@@ -76,11 +85,17 @@ const navigationGroups = [
     { to: '/admin/orders', label: '订单管理', icon: 'billing' }
   ] },
   { label: '基础设施', items: [
-    { to: '/admin/nodes', label: '节点资产', icon: 'nodes' },
-    { to: '/admin/certificates', label: '免费证书', icon: 'shield' },
-    { to: '/admin/protocols', label: '协议服务', icon: 'activity' },
-    { to: '/admin/node-groups', label: '节点组', icon: 'plans' },
-    { to: '/admin/traffic', label: '流量与对账', icon: 'activity' }
+    { label: '资源与接入', icon: 'nodes', children: [
+      { to: '/admin/nodes', label: '节点资产' },
+      { to: '/admin/providers', label: '外部供应商' },
+      { to: '/admin/dns-records', label: 'DNS 解析' }
+    ] },
+    { label: '服务与交付', icon: 'activity', children: [
+      { to: '/admin/certificates', label: '免费证书' },
+      { to: '/admin/protocols', label: '协议服务' },
+      { to: '/admin/node-groups', label: '节点组' },
+      { to: '/admin/traffic', label: '流量与对账' }
+    ] }
   ] },
   { label: '系统运营', items: [
     { to: '/admin/tasks', label: '运营任务', icon: 'tasks' },

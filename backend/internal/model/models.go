@@ -250,6 +250,68 @@ type ManagedCertificate struct {
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
+// ProviderAccount is a reusable external-service account. Domain resources
+// reference it while credentials remain encrypted and redacted from APIs.
+type ProviderAccount struct {
+	ID                   uint       `json:"id" gorm:"primaryKey"`
+	ProviderKey          string     `json:"provider_key" gorm:"size:48;index;not null"`
+	Name                 string     `json:"name" gorm:"size:80;uniqueIndex;not null"`
+	Capabilities         string     `json:"capabilities" gorm:"type:json;not null"`
+	CredentialCiphertext string     `json:"-" gorm:"type:text;not null"`
+	CredentialPrefix     string     `json:"credential_prefix" gorm:"size:16;not null"`
+	Status               string     `json:"status" gorm:"size:24;index;not null;default:pending"`
+	LastVerifiedAt       *time.Time `json:"last_verified_at,omitempty"`
+	LastError            string     `json:"last_error" gorm:"type:text"`
+	Revision             uint64     `json:"revision" gorm:"not null;default:1"`
+	CreatedBy            uint       `json:"created_by" gorm:"index;not null"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+}
+
+// ManagedDNSRecord is the desired and observed state of one provider-backed
+// DNS record. The handwritten FQDN remains the operator input and NodeID is the
+// infrastructure target, not an ownership shortcut.
+type ManagedDNSRecord struct {
+	ID                uint       `json:"id" gorm:"primaryKey"`
+	ProviderAccountID uint       `json:"provider_account_id" gorm:"index;not null"`
+	NodeID            uint       `json:"node_id" gorm:"index;not null"`
+	DomainName        string     `json:"domain_name" gorm:"size:253;not null"`
+	RecordType        string     `json:"record_type" gorm:"size:8;not null"`
+	RecordValue       string     `json:"record_value" gorm:"size:255;not null"`
+	ProviderZoneID    string     `json:"provider_zone_id" gorm:"size:64"`
+	ProviderRecordID  string     `json:"provider_record_id" gorm:"size:64"`
+	TTL               int        `json:"ttl" gorm:"not null;default:1"`
+	Proxied           bool       `json:"proxied" gorm:"not null;default:false"`
+	Status            string     `json:"status" gorm:"size:24;index;not null;default:pending"`
+	DesiredHash       string     `json:"desired_hash" gorm:"size:64;not null"`
+	ObservedHash      string     `json:"observed_hash" gorm:"size:64"`
+	LastSyncedAt      *time.Time `json:"last_synced_at,omitempty"`
+	LastPublicCheckAt *time.Time `json:"last_public_check_at,omitempty"`
+	PublicResolved    bool       `json:"public_resolved" gorm:"not null;default:false"`
+	LastError         string     `json:"last_error" gorm:"type:text"`
+	Revision          uint64     `json:"revision" gorm:"not null;default:1"`
+	CreatedBy         uint       `json:"created_by" gorm:"index;not null"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
+type ProviderOperation struct {
+	ID                uint       `json:"id" gorm:"primaryKey"`
+	ProviderAccountID uint       `json:"provider_account_id" gorm:"index;not null"`
+	ResourceType      string     `json:"resource_type" gorm:"size:32;not null"`
+	ResourceID        uint       `json:"resource_id" gorm:"index;not null"`
+	OperationType     string     `json:"operation_type" gorm:"size:24;not null"`
+	Status            string     `json:"status" gorm:"size:24;index;not null"`
+	Phase             string     `json:"phase" gorm:"size:32;not null"`
+	RequestedBy       *uint      `json:"requested_by,omitempty"`
+	ResultSummary     string     `json:"result_summary" gorm:"type:text"`
+	Error             string     `json:"error" gorm:"type:text"`
+	StartedAt         *time.Time `json:"started_at,omitempty"`
+	FinishedAt        *time.Time `json:"finished_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
 type CertificateProtocolEndpoint struct {
 	ID                   uint      `json:"id" gorm:"primaryKey"`
 	ManagedCertificateID uint      `json:"managed_certificate_id" gorm:"uniqueIndex:ux_certificate_endpoint,priority:1;index;not null"`

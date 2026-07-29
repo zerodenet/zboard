@@ -216,7 +216,18 @@ watch(() => route.fullPath, async () => {
   const nextSearch = String(route.query.q || ''), nextStatus = String(route.query.status || ''), nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * limit.value
   if (nextSearch !== search.value || nextStatus !== statusFilter.value || nextOffset !== offset.value) { search.value = nextSearch; statusFilter.value = nextStatus; offset.value = nextOffset; await refresh() }
 })
-onMounted(async () => { await refresh(); updatePolling() })
+onMounted(async () => {
+  await refresh()
+  updatePolling()
+  const dnsDomain = String(route.query.dns_domain || '').trim()
+  const dnsNode = Number(route.query.dns_node || 0)
+  if (dnsDomain && dnsNode > 0) {
+    openCreate()
+    createForm.node_id = dnsNode
+    createForm.name = `${dnsDomain} 证书`
+    createForm.domains = dnsDomain
+  }
+})
 onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
 </script>
 

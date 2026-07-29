@@ -89,7 +89,6 @@ BACKUP_DIR="`$ROOT/backups/`$STAMP"
 PREVIOUS="`$ROOT/app-prev-`$STAMP"
 FAILED="`$ROOT/app-failed-`$STAMP"
 
-test -d "`$ROOT/app"
 test -f "`$ROOT/.env"
 test ! -e "`$CANDIDATE"
 test ! -e "`$PREVIOUS"
@@ -106,17 +105,19 @@ export ZBOARD_COMMIT=working-tree
 export ZBOARD_BUILD_TIME="`$BUILD_TIME"
 docker compose -p zboard_next -f deploy/docker/docker-compose.yml build zboard
 
-docker exec zboard_next-mysql-1 sh -c 'exec mysqldump -uroot -p"`$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers zboard' > "`$BACKUP_DIR/zboard-before-sync.sql"
+docker exec "`$ZBOARD_EXTERNAL_MYSQL_CONTAINER" sh -c 'exec mysqldump -uroot -p"`$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers zboard' > "`$BACKUP_DIR/zboard-before-sync.sql"
 test -s "`$BACKUP_DIR/zboard-before-sync.sql"
 
-mv "`$ROOT/app" "`$PREVIOUS"
+if [ -d "`$ROOT/app" ]; then mv "`$ROOT/app" "`$PREVIOUS"; fi
 cp -a "`$CANDIDATE" "`$ROOT/app"
 cd "`$ROOT/app"
 if ! docker compose -p zboard_next -f deploy/docker/docker-compose.yml up -d --no-deps zboard; then
     mv "`$ROOT/app" "`$FAILED"
-    mv "`$PREVIOUS" "`$ROOT/app"
-    cd "`$ROOT/app"
-    docker compose -p zboard_next -f deploy/docker/docker-compose.yml up -d --no-deps zboard
+    if [ -d "`$PREVIOUS" ]; then
+        mv "`$PREVIOUS" "`$ROOT/app"
+        cd "`$ROOT/app"
+        docker compose -p zboard_next -f deploy/docker/docker-compose.yml up -d --no-deps zboard
+    fi
     exit 1
 fi
 
@@ -129,9 +130,11 @@ done
 if [ "`$healthy" != true ]; then
     docker logs --tail 120 zboard_next-zboard-1 >&2 || true
     mv "`$ROOT/app" "`$FAILED"
-    mv "`$PREVIOUS" "`$ROOT/app"
-    cd "`$ROOT/app"
-    docker compose -p zboard_next -f deploy/docker/docker-compose.yml up -d --no-deps zboard
+    if [ -d "`$PREVIOUS" ]; then
+        mv "`$PREVIOUS" "`$ROOT/app"
+        cd "`$ROOT/app"
+        docker compose -p zboard_next -f deploy/docker/docker-compose.yml up -d --no-deps zboard
+    fi
     exit 1
 fi
 

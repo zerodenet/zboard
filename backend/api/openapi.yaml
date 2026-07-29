@@ -159,6 +159,63 @@ paths:
       responses:
         "200":
           description: Site settings updated
+  /api/v1/admin/provider-definitions:
+    get:
+      tags: [admin, providers]
+      summary: List built-in external supplier adapters and capabilities
+      responses:
+        "200":
+          description: Provider catalog
+  /api/v1/admin/provider-accounts:
+    get:
+      tags: [admin, providers]
+      summary: List configured external supplier accounts with redacted credentials
+      responses:
+        "200":
+          description: Provider accounts
+    post:
+      tags: [admin, providers]
+      summary: Save and verify a Cloudflare provider account
+      responses:
+        "201":
+          description: Provider account created
+  /api/v1/admin/provider-accounts/{id}/verify:
+    post:
+      tags: [admin, providers]
+      summary: Reverify an external supplier account
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: Provider account verified
+  /api/v1/admin/dns-records:
+    get:
+      tags: [admin, providers]
+      summary: List panel-managed DNS records
+      parameters:
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, syncing, active, drifted, failed] } }
+      responses:
+        "200":
+          description: Managed DNS record page
+    post:
+      tags: [admin, providers]
+      summary: Create and asynchronously synchronize a Cloudflare DNS record
+      responses:
+        "202":
+          description: DNS synchronization started
+  /api/v1/admin/dns-records/{id}/sync:
+    post:
+      tags: [admin, providers]
+      summary: Synchronize a managed DNS record
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: takeover, in: query, schema: { type: boolean, default: false } }
+      responses:
+        "202":
+          description: DNS synchronization started
   /api/v1/system/configs:
     get:
       tags: [system]
@@ -960,10 +1017,23 @@ paths:
   /api/v1/nodes/{id}/kernel/reconcile:
     post:
       tags: [nodes, admin]
-      summary: Reconcile a node to the latest stable Zero release and generated runtime config
-      description: Supports Linux x86_64 with systemd. The server resolves an exact official release, verifies the archive and binary SHA-256, validates the generated config, activates atomically, checks systemd and the local control socket, and rolls back on failure. Automatic downgrade is refused.
+      summary: Reconcile a node to a selected published Zero release and generated runtime config
+      description: Supports Linux x86_64 with systemd. The server resolves the selected version back to an exact official release, chooses the GNU or musl artifact for the detected platform, verifies the archive and binary SHA-256, validates the generated config, activates atomically, checks systemd and the local control socket, and rolls back on failure. Downgrade requires an exact version and explicit allow_downgrade confirmation.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                version:
+                  type: string
+                  pattern: '^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$'
+                allow_downgrade:
+                  type: boolean
       responses:
         "200": { description: Reconciliation completed or no change was required }
         "400": { $ref: "#/components/responses/Error" }
@@ -974,6 +1044,13 @@ paths:
       summary: Resolve the latest stable official Zero Linux x86_64 release
       responses:
         "200": { description: "Immutable release tag, URL, size and artifact SHA-256" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/kernel/releases:
+    get:
+      tags: [nodes, admin]
+      summary: List published Zero releases available for explicit version selection
+      responses:
+        "200": { description: "Stable and prerelease tags with GNU/musl artifact availability" }
         "403": { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{id}/report-credential:
     post:

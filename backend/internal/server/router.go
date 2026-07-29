@@ -238,6 +238,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.LatestKernelReleaseHandler),
 		},
 		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/kernel/releases",
+			Handler: http.HandlerFunc(h.KernelReleasesHandler),
+		},
+		{
 			Method:  http.MethodPost,
 			Path:    "/api/v1/nodes/:id/connector-credential",
 			Handler: http.HandlerFunc(h.NodeConnectorCredentialRotateHandler),
@@ -296,6 +301,41 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Method:  http.MethodPost,
 			Path:    "/api/v1/admin/certificates/:id/renew",
 			Handler: http.HandlerFunc(h.ManagedCertificateRenewHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/provider-definitions",
+			Handler: http.HandlerFunc(h.ProviderDefinitionListHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/provider-accounts",
+			Handler: http.HandlerFunc(h.ProviderAccountListHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/provider-accounts",
+			Handler: http.HandlerFunc(h.ProviderAccountCreateHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/provider-accounts/:id/verify",
+			Handler: http.HandlerFunc(h.ProviderAccountVerifyHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/admin/dns-records",
+			Handler: http.HandlerFunc(h.ManagedDNSListHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/dns-records",
+			Handler: http.HandlerFunc(h.ManagedDNSCreateHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/dns-records/:id/sync",
+			Handler: http.HandlerFunc(h.ManagedDNSSyncHandler),
 		},
 		{
 			Method:  http.MethodGet,

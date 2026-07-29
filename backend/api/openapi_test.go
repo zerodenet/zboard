@@ -24,6 +24,11 @@ func TestOpenAPIIsValidYAMLAndContainsCoreCommercialPaths(t *testing.T) {
 	for _, path := range []string{
 		"/api/v1/setup/install",
 		"/api/v1/admin/protocol-endpoints",
+		"/api/v1/admin/provider-definitions",
+		"/api/v1/admin/provider-accounts",
+		"/api/v1/admin/provider-accounts/{id}/verify",
+		"/api/v1/admin/dns-records",
+		"/api/v1/admin/dns-records/{id}/sync",
 		"/api/v1/admin/protocol-endpoints/selection",
 		"/api/v1/admin/protocol-endpoints/{id}",
 		"/api/v1/admin/protocol-endpoints/{id}/deploy",

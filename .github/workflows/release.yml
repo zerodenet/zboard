@@ -131,3 +131,8 @@ jobs:
             --title "${GITHUB_REF_NAME}" \
             --notes-file dist/RELEASE_NOTES.md \
             "${prerelease_args[@]}"
+      - name: Clean superseded prerelease history
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/cleanup-release-history.sh "${GITHUB_REF_NAME}"

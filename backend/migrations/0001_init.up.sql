@@ -207,6 +207,84 @@ CREATE TABLE `managed_certificates` (
   CONSTRAINT `fk_managed_certificates_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `provider_accounts` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `provider_key` varchar(48) NOT NULL,
+  `name` varchar(80) NOT NULL,
+  `capabilities` json NOT NULL,
+  `credential_ciphertext` text NOT NULL,
+  `credential_prefix` varchar(16) NOT NULL,
+  `status` varchar(24) NOT NULL DEFAULT 'pending',
+  `last_verified_at` datetime(3) DEFAULT NULL,
+  `last_error` text NOT NULL,
+  `revision` bigint unsigned NOT NULL DEFAULT '1',
+  `created_by` bigint unsigned NOT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_provider_accounts_name` (`name`),
+  KEY `idx_provider_accounts_provider` (`provider_key`),
+  KEY `idx_provider_accounts_status` (`status`),
+  KEY `idx_provider_accounts_creator` (`created_by`),
+  CONSTRAINT `fk_provider_accounts_creator` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `managed_dns_records` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `provider_account_id` bigint unsigned NOT NULL,
+  `node_id` bigint unsigned NOT NULL,
+  `domain_name` varchar(253) NOT NULL,
+  `record_type` varchar(8) NOT NULL,
+  `record_value` varchar(255) NOT NULL,
+  `provider_zone_id` varchar(64) NOT NULL DEFAULT '',
+  `provider_record_id` varchar(64) NOT NULL DEFAULT '',
+  `ttl` int NOT NULL DEFAULT '1',
+  `proxied` tinyint(1) NOT NULL DEFAULT '0',
+  `status` varchar(24) NOT NULL DEFAULT 'pending',
+  `desired_hash` char(64) NOT NULL,
+  `observed_hash` char(64) NOT NULL DEFAULT '',
+  `last_synced_at` datetime(3) DEFAULT NULL,
+  `last_public_check_at` datetime(3) DEFAULT NULL,
+  `public_resolved` tinyint(1) NOT NULL DEFAULT '0',
+  `last_error` text NOT NULL,
+  `revision` bigint unsigned NOT NULL DEFAULT '1',
+  `created_by` bigint unsigned NOT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_managed_dns_account_name_type` (`provider_account_id`,`domain_name`,`record_type`),
+  KEY `idx_managed_dns_node` (`node_id`),
+  KEY `idx_managed_dns_status` (`status`),
+  KEY `idx_managed_dns_creator` (`created_by`),
+  CONSTRAINT `fk_managed_dns_provider` FOREIGN KEY (`provider_account_id`) REFERENCES `provider_accounts` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_managed_dns_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_managed_dns_creator` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `provider_operations` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `provider_account_id` bigint unsigned NOT NULL,
+  `resource_type` varchar(32) NOT NULL,
+  `resource_id` bigint unsigned NOT NULL,
+  `operation_type` varchar(24) NOT NULL,
+  `status` varchar(24) NOT NULL,
+  `phase` varchar(32) NOT NULL,
+  `requested_by` bigint unsigned DEFAULT NULL,
+  `result_summary` text NOT NULL,
+  `error` text NOT NULL,
+  `started_at` datetime(3) DEFAULT NULL,
+  `finished_at` datetime(3) DEFAULT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  KEY `idx_provider_operations_account` (`provider_account_id`,`created_at`),
+  KEY `idx_provider_operations_resource` (`resource_type`,`resource_id`,`created_at`),
+  KEY `idx_provider_operations_status` (`status`),
+  KEY `idx_provider_operations_requester` (`requested_by`),
+  CONSTRAINT `fk_provider_operations_account` FOREIGN KEY (`provider_account_id`) REFERENCES `provider_accounts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_provider_operations_requester` FOREIGN KEY (`requested_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `certificate_operations` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `managed_certificate_id` bigint unsigned NOT NULL,

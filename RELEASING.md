@@ -53,6 +53,20 @@
 
 Kubernetes deployment and rollout automation are outside the supported v0.1.0 release path.
 
+## Docker service dependencies
+
+- The supported Compose bundles start only the Zboard application. MySQL and
+  Redis are externally managed services and must already be reachable through
+  `ZBOARD_EXTERNAL_NETWORK`.
+- Supply the complete application-account DSN in `ZBOARD_DATA_SOURCE`.
+  Production startup deliberately rejects the MySQL root account; use root
+  only to provision a database-scoped application account.
+- Supply the existing Redis address and password through
+  `ZBOARD_REDIS_ADDR` and `ZBOARD_REDIS_PASSWORD`. Compose does not create,
+  restart, remove or back up the external MySQL and Redis containers.
+- The intranet synchronization script uses
+  `ZBOARD_EXTERNAL_MYSQL_CONTAINER` only for the pre-switch database dump.
+
 The complete schema policy and verification queries are documented in
 [`docs/database-migrations.md`](docs/database-migrations.md).
 
@@ -70,6 +84,15 @@ bash scripts/release-tag.sh 0.1.0
 - The script updates the internal version files, creates a release commit,
   creates an annotated tag and pushes the branch plus tag to every configured
   remote.
+- After publishing an `-rc` release, GitHub Actions deletes all historical
+  `-dev` GitHub Release records and GHCR package versions. After publishing a
+  stable release with no suffix, it deletes all historical `-rc` Release
+  records and GHCR package versions. Git tags remain available as immutable
+  source-history markers; other prerelease suffixes do not trigger cleanup.
+- GHCR cleanup uses the workflow `GITHUB_TOKEN`. The repository must retain
+  administrator access to the `ghcr.io/zerodenet/zboard` package; GitHub grants
+  this automatically when the repository publishes or is explicitly connected
+  to the package.
 
 - GitHub Actions will build:
   - backend binary with `internal/version` ldflags

@@ -24,6 +24,19 @@ zboard is a modular monolith that combines subscription commerce with node opera
 
 ## Operations and node groups
 
+- `provider_accounts` is the reusable external-supplier boundary. A provider
+  key declares adapter capabilities such as `dns.records`,
+  `certificate.public` or `payment.checkout`; each configured account owns an
+  encrypted, redacted credential and verification lifecycle. Domain resources
+  reference the account, but DNS, certificates and future payment channels
+  retain separate typed tables and invariants rather than sharing an opaque
+  provider-resource JSON table.
+- `managed_dns_records` stores one handwritten FQDN, explicit A/AAAA target,
+  selected node and Cloudflare desired/observed state. Zboard discovers the
+  longest matching Zone, refuses to overwrite an unowned remote record unless
+  takeover was explicit, records provider operations, and distinguishes API
+  synchronization from public-DNS observation. A node remains an
+  infrastructure asset and does not acquire a single canonical domain.
 - `nodes` is an independent VPS asset. It can exist without a protocol and owns lifecycle state, encrypted management/report credentials, communication mode, runtime status, enablement, version and synchronization timestamps.
 - SSH client authentication selects password or private key. Server identity verification is automatic: an empty fingerprint is enrolled after the first successful SSH handshake, a recorded fingerprint is always enforced, and an administrator must explicitly reset trust after confirming a legitimate VPS reinstall or host-key change.
 - SSH login identity and system privilege are separate node settings. `ssh_privilege_mode=none` requires a root login for managed system changes; `sudo` supports passwordless or password-based sudo; `su` requires a separately encrypted root password. Privilege passwords are sent only on the SSH session stdin and are never embedded in remote commands, operation output or audit details.
@@ -44,7 +57,7 @@ zboard is a modular monolith that combines subscription commerce with node opera
 - Zero uses a generic Webhook event sink with a disk-backed outbox and an opaque authorization header. Every event is authenticated with the node Connector credential. Lifecycle events update Connector activity; flow events are mapped through the native `principal_key` and its protocol credential. Request-provided user IDs are never trusted for billing. The legacy signed node-report endpoint and the old heartbeat/command routes remain compatibility-only.
 - Native speed and device policies are projected only when a subscription has one active protocol credential. Copying a subscription-wide limit to multiple independent Zero processes would multiply its allowance. Cross-node speed/device aggregation, directional or weighted traffic calculation and quota balance therefore remain panel-owned until an acknowledged distributed policy protocol exists; `quota_remaining_bytes` is not emitted by zboard.
 - Mieru remains on its endpoint-level username/password configuration because the current local Zero `MieruUserConfig` has no `principal_key` or managed-policy fields. It is not represented as native per-subscription attribution in this stage.
-- The native contract is an explicit staged boundary: `ZBOARD_ZERO_KERNEL_CONTRACT=legacy` preserves the currently published kernel contract, while `native-local` enables managed users and the generic Connector only with an explicit `ZBOARD_ZERO_LOCAL_VERSION`. Native-local resolves the exact `zero-v<version>-linux-x86_64-musl.tar.gz` plus `.sha256` from the trusted artifact directory and never substitutes a GitHub release. Synchronizing zboard alone does not publish or upgrade the local kernel.
+- The native contract is an explicit staged boundary: `ZBOARD_ZERO_KERNEL_CONTRACT=legacy` keeps the latest stable GitHub tag only as the unattended batch default, while an operator may explicitly select any published stable or prerelease tag. The selected release uses its immutable `zero-linux-x86_64.tar.gz` GNU artifact or musl artifact plus exact same-name `.sha256`; musl resolution accepts both the current `zero-linux-x86_64-musl.tar.gz` contract and the historical release-owned `zero-v<version>-linux-x86_64-musl.tar.gz` contract. The backend re-resolves every selected version rather than accepting a client URL; an explicit older target also requires a separate downgrade confirmation. A trusted-directory historical versioned musl file remains a bounded fallback when the corresponding older GitHub Release has no usable musl pair. `native-local` enables managed users and the generic Connector only with an explicit `ZBOARD_ZERO_LOCAL_VERSION`; it still resolves the exact `zero-v<version>-linux-x86_64-musl.tar.gz` plus `.sha256` from the trusted artifact directory and never substitutes a GitHub release. Synchronizing zboard alone does not publish or upgrade the local kernel.
 - `traffic_calc_mode` selects upload plus download (`0`), upload only (`1`) or download only (`2`).
 - Billed traffic is calculated with integer thousandths: `selected_bytes * protocol_multiplier_milli / 1_000`, rounded up.
 - `traffic_records` stores the direction policy and protocol multiplier snapshot, so later endpoint changes never alter historical accounting.
@@ -64,6 +77,7 @@ zboard is a modular monolith that combines subscription commerce with node opera
 
 ```text
 nodes -> protocol_endpoints
+provider_accounts -> managed_dns_records -> nodes
 protocol_endpoints <-> node_group_endpoints <-> node_groups
 plans -> node_groups
 plans -> plan_skus

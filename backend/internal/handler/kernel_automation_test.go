@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,6 +17,12 @@ import (
 	"testing"
 	"time"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
+}
 
 func TestParseKernelProbe(t *testing.T) {
 	probe, err := parseKernelProbe(strings.Join([]string{
@@ -75,6 +82,9 @@ func TestClassifyKernelAction(t *testing.T) {
 func TestCompareZeroVersions(t *testing.T) {
 	if compareZeroVersions("0.0.13", "0.0.14") != -1 || compareZeroVersions("v0.1.0", "0.0.14") != 1 || compareZeroVersions("0.0.14", "0.0.14") != 0 {
 		t.Fatal("semantic version ordering is incorrect")
+	}
+	if compareZeroVersions("0.0.15-rc.2", "0.0.15-rc.10") != -1 || compareZeroVersions("0.0.15", "0.0.15-rc.10") != 1 {
+		t.Fatal("prerelease semantic version ordering is incorrect")
 	}
 }
 
@@ -286,6 +296,117 @@ func TestResolveManagedZeroRelease(t *testing.T) {
 	}
 	if release.ArtifactURL != "managed://"+name || release.ArtifactSHA256 != checksum || release.ArtifactSize != int64(len(payload)) {
 		t.Fatalf("unexpected managed release: %#v", release)
+	}
+}
+
+func TestResolveGitHubZeroReleaseMatchesUnversionedMuslAsset(t *testing.T) {
+	var payload githubRelease
+	if err := json.Unmarshal([]byte(`{
+		"tag_name":"v0.0.15",
+		"assets":[
+			{"name":"zero-linux-x86_64-musl.tar.gz","browser_download_url":"https://github.com/zerodenet/zero/releases/download/v0.0.15/zero-linux-x86_64-musl.tar.gz","size":1234},
+			{"name":"zero-linux-x86_64-musl.tar.gz.sha256","browser_download_url":"https://github.com/zerodenet/zero/releases/download/v0.0.15/zero-linux-x86_64-musl.tar.gz.sha256","size":96}
+		]
+	}`), &payload); err != nil {
+		t.Fatal(err)
+	}
+	checksum := strings.Repeat("a", 64)
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path != "/zerodenet/zero/releases/download/v0.0.15/zero-linux-x86_64-musl.tar.gz.sha256" {
+			t.Fatalf("unexpected checksum request: %s", request.URL)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(checksum + "  zero-linux-x86_64-musl.tar.gz\n")),
+		}, nil
+	})}
+	release, err := resolveGitHubZeroReleaseAsset(context.Background(), client, payload, zeroLinuxMuslAsset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.Version != "0.0.15" || release.Tag != "v0.0.15" || release.ArtifactSHA256 != checksum || release.ArtifactSize != 1234 {
+		t.Fatalf("unexpected musl release: %+v", release)
+	}
+}
+
+func TestResolveGitHubZeroReleaseMatchesHistoricalVersionedPrereleaseMuslAsset(t *testing.T) {
+	var payload githubRelease
+	if err := json.Unmarshal([]byte(`{
+		"tag_name":"v0.0.15-rc.2",
+		"prerelease":true,
+		"assets":[
+			{"name":"zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz","browser_download_url":"https://github.com/zerodenet/zero/releases/download/v0.0.15-rc.2/zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz","size":1234},
+			{"name":"zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz.sha256","browser_download_url":"https://github.com/zerodenet/zero/releases/download/v0.0.15-rc.2/zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz.sha256","size":96}
+		]
+	}`), &payload); err != nil {
+		t.Fatal(err)
+	}
+	checksum := strings.Repeat("b", 64)
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path != "/zerodenet/zero/releases/download/v0.0.15-rc.2/zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz.sha256" {
+			t.Fatalf("unexpected checksum request: %s", request.URL)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(checksum + "  zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz\n")),
+		}, nil
+	})}
+	release, err := resolveGitHubZeroMuslRelease(context.Background(), client, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.Version != "0.0.15-rc.2" || release.Tag != "v0.0.15-rc.2" || release.ArtifactSHA256 != checksum {
+		t.Fatalf("unexpected historical prerelease musl release: %+v", release)
+	}
+}
+
+func TestInstallableZeroReleaseOptionsExposeArtifactCompatibility(t *testing.T) {
+	var payload []githubRelease
+	if err := json.Unmarshal([]byte(`[
+		{"tag_name":"v0.0.15","assets":[{"name":"zero-linux-x86_64.tar.gz","size":100},{"name":"zero-linux-x86_64.tar.gz.sha256","size":96},{"name":"zero-linux-x86_64-musl.tar.gz","size":100},{"name":"zero-linux-x86_64-musl.tar.gz.sha256","size":96}]},
+		{"tag_name":"v0.0.14","assets":[{"name":"zero-linux-x86_64.tar.gz","size":100},{"name":"zero-linux-x86_64.tar.gz.sha256","size":96}]},
+		{"tag_name":"v0.0.16-rc.1","prerelease":true,"assets":[{"name":"zero-v0.0.16-rc.1-linux-x86_64-musl.tar.gz","size":100},{"name":"zero-v0.0.16-rc.1-linux-x86_64-musl.tar.gz.sha256","size":96}]}
+	]`), &payload); err != nil {
+		t.Fatal(err)
+	}
+	options := installableZeroReleaseOptions(payload)
+	if len(options) != 3 {
+		t.Fatalf("len(options) = %d, want 3", len(options))
+	}
+	if !options[0].GNUAvailable || !options[0].MuslAvailable || !options[1].GNUAvailable || options[1].MuslAvailable {
+		t.Fatalf("unexpected artifact availability: %+v", options)
+	}
+	if !options[2].Prerelease || !options[2].MuslAvailable {
+		t.Fatalf("published prerelease was not exposed correctly: %+v", options[2])
+	}
+}
+
+func TestDecodeKernelReconcileRequestRequiresExplicitVersionForDowngrade(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/1/kernel/reconcile", strings.NewReader(`{"version":"0.0.14","allow_downgrade":true}`))
+	decoded, err := decodeKernelReconcileRequest(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Version != "0.0.14" || !decoded.AllowDowngrade {
+		t.Fatalf("unexpected request: %+v", decoded)
+	}
+	invalid := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/1/kernel/reconcile", strings.NewReader(`{"allow_downgrade":true}`))
+	if _, err := decodeKernelReconcileRequest(invalid); err == nil {
+		t.Fatal("downgrade without an explicit version was accepted")
+	}
+}
+
+func TestKernelStatusTreatsOfficialMuslAsLegacyPlatformSupport(t *testing.T) {
+	probe := kernelProbe{Architecture: "x86_64", Libc: "glibc 2.17", Systemd: true}
+	if got := (&handlers{}).kernelStatus(probe); got != "not_installed" {
+		t.Fatalf("legacy kernelStatus() = %q, want not_installed", got)
+	}
+	if got := (&handlers{zeroNativeAccess: true, zeroArtifactDir: t.TempDir(), zeroLocalVersion: "0.0.15-rc.1"}).kernelStatus(probe); got != "unsupported" {
+		t.Fatalf("native-local kernelStatus() = %q, want unsupported without configured artifact", got)
 	}
 }
 

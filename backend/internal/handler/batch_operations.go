@@ -485,7 +485,7 @@ func (h *handlers) executeNodeReconcileTask(nodeID uint, claims authClaims) erro
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	_, err = h.reconcileNodeKernel(ctx, node, &operation)
+	_, err = h.reconcileNodeKernel(ctx, node, &operation, kernelReconcileRequest{})
 	if err != nil {
 		_ = h.failKernelOperation(operation.ID, node.ID, operation.Phase, err)
 	}

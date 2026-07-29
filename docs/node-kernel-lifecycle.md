@@ -28,7 +28,7 @@
 ## 安装与升级流程
 
 1. **预检**：通过已验证 SSH 探测操作系统、架构、libc、systemd、系统提权能力、现有 Zero 版本和服务状态。节点可以直接以 root 登录，也可以为普通登录用户显式配置免密/密码 `sudo` 或带独立 root 密码的 `su`；Linux x86_64 + systemd 节点按 libc 选择制品，禁止为了安装内核而升级系统 libc。
-2. **锁定制品**：`legacy` 先从当前已发布的 `zerodenet/zero` latest 通道解析明确稳定标签；glibc ≥ 2.34 使用该标签的 GNU 制品，旧 glibc 使用 `ZBOARD_ZERO_ARTIFACT_DIR` 中同标签的受信任 musl 制品。`native-local` 则要求显式 `ZBOARD_ZERO_LOCAL_VERSION`，只读取受信任目录内精确匹配的 `zero-v<version>-linux-x86_64-musl.tar.gz` 和 `.sha256`，不访问或替换为 GitHub release。所有制品都锁定大小和 SHA-256，不接受任意 URL、跨版本替代或未锁定下载。
+2. **锁定制品**：`legacy` 仅在无人值守批量任务中默认选择 `zerodenet/zero` 的最新稳定 Release；单节点操作允许管理员显式选择任意已发布的稳定版或预发布版。glibc ≥ 2.34 使用该标签的 `zero-linux-x86_64.tar.gz`；旧 glibc 优先使用同一 Release 的 `zero-linux-x86_64-musl.tar.gz`，并兼容历史 Release 已发布的 `zero-v<version>-linux-x86_64-musl.tar.gz`。每个压缩包都必须存在引用其精确文件名的同名 `.sha256`。前端只提交版本，后端重新按标签解析发布和固定下载地址，不接受任意 URL。GitHub Release 没有可用 musl 制品时，才回退到 `ZBOARD_ZERO_ARTIFACT_DIR` 中同标签的历史版本化制品。`native-local` 则要求显式 `ZBOARD_ZERO_LOCAL_VERSION`，只读取受信任目录内精确匹配的 `zero-v<version>-linux-x86_64-musl.tar.gz` 和 `.sha256`，不访问或替换为 GitHub Release。所有制品都锁定大小和 SHA-256，不接受跨版本替代或未锁定下载。
 3. **暂存与校验**：下载到节点临时目录，核对大小和 SHA-256，执行 `zero version` / `zero build_info`，不覆盖当前版本。
 4. **生成完整配置**：把通用 Webhook Connector、磁盘 outbox、控制 socket和全部启用协议端点及原生 managed users 编译为一个规范化 Zero 配置。配置写入版本化 generation 目录并以 `0600` 权限安装。
 5. **离线校验**：先运行 `zero validate <staged-config>`。校验失败时不修改二进制、配置软链接或服务。
@@ -55,9 +55,9 @@
 
 已落地 `node_kernel_states`、`node_operations`、节点检测、当前线上稳定版解析、按 libc 选择 official GNU/面板托管 musl 制品、发布包与二进制双重 SHA-256 校验、节点级完整配置生成、`zero validate`、systemd 原子切换、本地 control socket 与 Connector 事件验收和失败回滚。节点页面可以直接检测并执行“安装 / 升级 / 修复 / 配置同步”，同时展示最近操作的真实阶段与错误。
 
-升级判定使用已安装 build ID、实际二进制 SHA-256、期望配置 SHA-256 和本地健康状态：未安装执行安装；版本较旧执行升级；同版本摘要不同执行修复；配置摘要不同执行配置同步；服务或 control socket 异常执行修复；已安装版本更高时拒绝自动降级。管理员点击“对齐”时可以从 latest 通道发现版本，但后端必须先解析为明确稳定标签、不可变制品 URL 和 SHA-256，随后才允许执行。
+升级判定使用已安装 build ID、实际二进制 SHA-256、期望配置 SHA-256 和本地健康状态：未安装执行安装；版本较旧执行升级；同版本摘要不同执行修复；配置摘要不同执行配置同步；服务或 control socket 异常执行修复。管理员可从稳定发布列表选择精确版本；目标低于已安装版本时，界面必须显示降级语义并二次确认，后端还要求 `allow_downgrade` 与明确版本同时出现。无论选择最新还是历史稳定版，后端都必须重新解析为明确标签、不可变制品 URL 和 SHA-256，随后才允许执行。
 
-托管 musl 制品命名为 `zero-v<version>-linux-x86_64-musl.tar.gz`，同目录必须存在标准 `.sha256` 文件，且版本必须与解析出的最新线上稳定标签完全一致。旧 glibc 节点只检查该受信任目录；若制品或校验文件缺失则明确拒绝，不替换系统 libc。
+当前 musl 制品契约为 `zero-linux-x86_64-musl.tar.gz`，同一 Release 必须包含 `zero-linux-x86_64-musl.tar.gz.sha256`，校验文件内部也必须引用这个精确文件名。为确保已发布版本仍可由管理员指定安装，解析器也接受同一 Release 中历史命名的 `zero-v<version>-linux-x86_64-musl.tar.gz` 及其同名校验文件。旧 glibc 节点不会升级系统 libc；新发布不再依赖历史命名。
 
 节点 SSH 设置已经把登录认证与系统提权拆开：登录仍支持密码/私钥和固定主机指纹；系统命令根据节点配置使用直接 root、`sudo` 或 `su`。提权密码使用站点凭证密钥独立加密，只通过 SSH stdin 提供，不进入远程命令、任务输出和审计详情；普通交互终端仍保持登录用户身份，由管理员自行决定是否在终端内提权。
 

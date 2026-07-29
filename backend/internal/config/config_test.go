@@ -13,6 +13,7 @@ func TestApplyEnvironmentOverridesSecuritySettings(t *testing.T) {
 		"ZBOARD_ENVIRONMENT":               "production",
 		"ZBOARD_DATA_SOURCE":               "zboard:strong-db-password@tcp(mysql:3306)/zboard",
 		"ZBOARD_REDIS_ADDR":                "redis:6379",
+		"ZBOARD_REDIS_PASSWORD":            "redis-secret",
 		"ZBOARD_JWT_SECRET":                testJWTSecret,
 		"ZBOARD_BOOTSTRAP_ADMIN_EMAIL":     "operator@example.com",
 		"ZBOARD_BOOTSTRAP_ADMIN_PASSWORD":  "strong-admin-password",
@@ -27,7 +28,7 @@ func TestApplyEnvironmentOverridesSecuritySettings(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if c.Environment != EnvironmentProduction || c.RedisAddr != "redis:6379" ||
+	if c.Environment != EnvironmentProduction || c.RedisAddr != "redis:6379" || c.RedisPassword != "redis-secret" ||
 		c.ZeroArtifactDir != "/var/lib/zboard/artifacts" || c.ZeroKernelContract != ZeroKernelNativeLocal ||
 		c.ZeroLocalVersion != "0.0.15-rc.1" {
 		t.Fatalf("environment overrides not applied: %+v", c)

@@ -30,7 +30,10 @@ import (
 
 const (
 	zeroReleaseAPI            = "https://api.github.com/repos/zerodenet/zero/releases/latest"
-	zeroLinuxAsset            = "zero-linux-x86_64.tar.gz"
+	zeroReleasesAPI           = "https://api.github.com/repos/zerodenet/zero/releases?per_page=30"
+	zeroReleaseByTagAPI       = "https://api.github.com/repos/zerodenet/zero/releases/tags/"
+	zeroLinuxGNUAsset         = "zero-linux-x86_64.tar.gz"
+	zeroLinuxMuslAsset        = "zero-linux-x86_64-musl.tar.gz"
 	zeroBinaryMaxBytes        = 64 << 20
 	zeroArtifactMaxBytes      = 128 << 20
 	zeroControlSocket         = "/run/zerodenet/control.sock"
@@ -41,6 +44,7 @@ var (
 	errKernelOperationRunning    = errors.New("another kernel operation is already running for this node")
 	errKernelPlatformUnsupported = errors.New("the official Zero artifact is incompatible with this platform")
 	stableZeroTagPattern         = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+	publishedZeroTagPattern      = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$`)
 	managedZeroArtifactPattern   = regexp.MustCompile(`^zero-v[0-9]+\.[0-9]+\.[0-9]+-linux-x86_64-musl\.tar\.gz$`)
 	localZeroVersionPattern      = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$`)
 	localZeroArtifactPattern     = regexp.MustCompile(`^zero-v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?-linux-x86_64-musl\.tar\.gz$`)
@@ -57,14 +61,29 @@ type zeroRelease struct {
 }
 
 type githubRelease struct {
-	TagName    string `json:"tag_name"`
-	Prerelease bool   `json:"prerelease"`
-	Draft      bool   `json:"draft"`
-	Assets     []struct {
+	TagName     string    `json:"tag_name"`
+	Prerelease  bool      `json:"prerelease"`
+	Draft       bool      `json:"draft"`
+	PublishedAt time.Time `json:"published_at"`
+	Assets      []struct {
 		Name               string `json:"name"`
 		BrowserDownloadURL string `json:"browser_download_url"`
 		Size               int64  `json:"size"`
 	} `json:"assets"`
+}
+
+type zeroReleaseOption struct {
+	Version       string    `json:"version"`
+	Tag           string    `json:"tag"`
+	PublishedAt   time.Time `json:"published_at"`
+	Prerelease    bool      `json:"prerelease"`
+	GNUAvailable  bool      `json:"gnu_available"`
+	MuslAvailable bool      `json:"musl_available"`
+}
+
+type kernelReconcileRequest struct {
+	Version        string `json:"version"`
+	AllowDowngrade bool   `json:"allow_downgrade"`
 }
 
 type kernelProbe struct {
@@ -103,6 +122,40 @@ func (h *handlers) LatestKernelReleaseHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	OK(w, release)
+}
+
+func (h *handlers) KernelReleasesHandler(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.requireAdmin(w, r); err != nil {
+		return
+	}
+	if h.zeroNativeAccess {
+		release, err := resolveLocalNativeZeroRelease(h.zeroArtifactDir, h.zeroLocalVersion)
+		if err != nil {
+			ServerError(w, fmt.Errorf("resolve configured Zero release: %w", err))
+			return
+		}
+		OK(w, []zeroReleaseOption{{
+			Version: release.Version, Tag: release.Tag, GNUAvailable: false, MuslAvailable: true,
+		}})
+		return
+	}
+	releases, err := listInstallableZeroReleases(r.Context())
+	if err != nil {
+		ServerError(w, fmt.Errorf("list installable Zero releases: %w", err))
+		return
+	}
+	for index := range releases {
+		if releases[index].MuslAvailable {
+			continue
+		}
+		if _, err := resolveManagedZeroRelease(h.zeroArtifactDir, zeroRelease{
+			Version: releases[index].Version,
+			Tag:     releases[index].Tag,
+		}); err == nil {
+			releases[index].MuslAvailable = true
+		}
+	}
+	OK(w, releases)
 }
 
 func (h *handlers) NodeKernelStateHandler(w http.ResponseWriter, r *http.Request) {
@@ -200,13 +253,18 @@ func (h *handlers) NodeKernelReconcileHandler(w http.ResponseWriter, r *http.Req
 		BadRequest(w, err.Error())
 		return
 	}
+	request, err := decodeKernelReconcileRequest(r)
+	if err != nil {
+		BadRequestError(w, err)
+		return
+	}
 	operation, err := h.beginKernelOperation(node.ID, claims, "reconcile")
 	if err != nil {
 		BadRequest(w, err.Error())
 		return
 	}
 
-	result, reconcileErr := h.reconcileNodeKernel(r.Context(), node, &operation)
+	result, reconcileErr := h.reconcileNodeKernel(r.Context(), node, &operation, request)
 	if reconcileErr != nil {
 		_ = h.failKernelOperation(operation.ID, node.ID, operation.Phase, reconcileErr)
 		BadRequest(w, reconcileErr.Error())
@@ -215,7 +273,7 @@ func (h *handlers) NodeKernelReconcileHandler(w http.ResponseWriter, r *http.Req
 	OK(w, result)
 }
 
-func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, operation *model.NodeOperation) (map[string]interface{}, error) {
+func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, operation *model.NodeOperation, request kernelReconcileRequest) (map[string]interface{}, error) {
 	if err := h.setKernelOperationPhase(operation, "detecting"); err != nil {
 		return nil, err
 	}
@@ -237,7 +295,7 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 	if err := h.setKernelOperationPhase(operation, "resolving_release"); err != nil {
 		return nil, err
 	}
-	release, err := h.resolveZeroRelease(ctx, probe)
+	release, err := h.resolveZeroRelease(ctx, probe, request.Version)
 	if err != nil {
 		return nil, fmt.Errorf("resolve Zero release: %w", err)
 	}
@@ -261,7 +319,7 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 		return nil, err
 	}
 
-	if compareZeroVersions(probe.Version, release.Version) > 0 {
+	if compareZeroVersions(probe.Version, release.Version) > 0 && !request.AllowDowngrade {
 		_ = h.updateKernelState(node.ID, map[string]interface{}{
 			"status":                h.kernelStatus(probe),
 			"phase":                 "idle",
@@ -269,7 +327,7 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 			"desired_version":       release.Version,
 			"desired_config_sha256": configSHA,
 		})
-		return nil, fmt.Errorf("installed Zero %s is newer than the latest stable release %s; automatic downgrade is refused", probe.Version, release.Version)
+		return nil, fmt.Errorf("installed Zero %s is newer than selected release %s; set allow_downgrade only after explicit operator confirmation", probe.Version, release.Version)
 	}
 
 	if err := h.setKernelOperationPhase(operation, "downloading"); err != nil {
@@ -280,6 +338,9 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 		return nil, err
 	}
 	action := classifyKernelAction(probe, release.Version, binarySHA, configSHA)
+	if action == "manual_review" && request.AllowDowngrade {
+		action = "downgrade"
+	}
 	operation.OperationType = action
 	if err := h.db.Model(operation).Update("operation_type", action).Error; err != nil {
 		return nil, err
@@ -340,51 +401,108 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 	return map[string]interface{}{"state": state, "operation": operation, "changed": true, "action": action}, nil
 }
 
+func decodeKernelReconcileRequest(r *http.Request) (kernelReconcileRequest, error) {
+	var request kernelReconcileRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); err != nil {
+			return kernelReconcileRequest{}, validationError("invalid kernel reconcile request", map[string]string{"form": "请求内容不是有效 JSON。"})
+		}
+		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+			return kernelReconcileRequest{}, validationError("invalid kernel reconcile request", map[string]string{"form": "请求只能包含一个 JSON 对象。"})
+		}
+	}
+	request.Version = strings.TrimSpace(strings.TrimPrefix(request.Version, "v"))
+	if request.Version != "" && !localZeroVersionPattern.MatchString(request.Version) {
+		return kernelReconcileRequest{}, validationError("invalid kernel reconcile request", map[string]string{"version": "请选择有效的 Zero 版本。"})
+	}
+	if request.AllowDowngrade && request.Version == "" {
+		return kernelReconcileRequest{}, validationError("invalid kernel reconcile request", map[string]string{"allow_downgrade": "允许降级时必须明确指定目标版本。"})
+	}
+	return request, nil
+}
+
 func resolveLatestZeroRelease(parent context.Context) (zeroRelease, error) {
-	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
-	defer cancel()
-	client := zeroHTTPClient()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, zeroReleaseAPI, nil)
+	payload, ctx, client, cancel, err := fetchZeroRelease(parent, "")
+	if cancel != nil {
+		defer cancel()
+	}
 	if err != nil {
 		return zeroRelease{}, err
+	}
+	return resolveGitHubZeroReleaseAsset(ctx, client, payload, zeroLinuxGNUAsset)
+}
+
+func fetchZeroRelease(parent context.Context, version string) (githubRelease, context.Context, *http.Client, context.CancelFunc, error) {
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+	client := zeroHTTPClient()
+	endpoint := zeroReleaseAPI
+	if version != "" {
+		if !localZeroVersionPattern.MatchString(version) {
+			cancel()
+			return githubRelease{}, nil, nil, nil, errors.New("selected Zero version is not a supported semantic version")
+		}
+		endpoint = zeroReleaseByTagAPI + url.PathEscape("v"+version)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		cancel()
+		return githubRelease{}, nil, nil, nil, err
 	}
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("User-Agent", "zboard-kernel-automation")
 	response, err := client.Do(request)
 	if err != nil {
-		return zeroRelease{}, err
+		cancel()
+		return githubRelease{}, nil, nil, nil, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return zeroRelease{}, fmt.Errorf("GitHub release API returned %s", response.Status)
+		cancel()
+		return githubRelease{}, nil, nil, nil, fmt.Errorf("GitHub release API returned %s", response.Status)
 	}
 	var payload githubRelease
 	if err := json.NewDecoder(io.LimitReader(response.Body, 2<<20)).Decode(&payload); err != nil {
-		return zeroRelease{}, err
+		cancel()
+		return githubRelease{}, nil, nil, nil, err
 	}
-	if payload.Draft || payload.Prerelease || !stableZeroTagPattern.MatchString(payload.TagName) {
-		return zeroRelease{}, errors.New("latest Zero release is not a stable version")
+	if payload.Draft || !publishedZeroTagPattern.MatchString(payload.TagName) {
+		cancel()
+		return githubRelease{}, nil, nil, nil, errors.New("selected Zero release is not a published semantic version")
 	}
+	if version == "" && (payload.Prerelease || !stableZeroTagPattern.MatchString(payload.TagName)) {
+		cancel()
+		return githubRelease{}, nil, nil, nil, errors.New("latest Zero release is not a stable version")
+	}
+	if version != "" && payload.TagName != "v"+version {
+		cancel()
+		return githubRelease{}, nil, nil, nil, errors.New("GitHub returned a different Zero release than requested")
+	}
+	return payload, ctx, client, cancel, nil
+}
+
+func resolveGitHubZeroReleaseAsset(ctx context.Context, client *http.Client, payload githubRelease, assetName string) (zeroRelease, error) {
 	var archiveURL, checksumURL string
 	var archiveSize int64
 	for _, asset := range payload.Assets {
 		switch asset.Name {
-		case zeroLinuxAsset:
+		case assetName:
 			archiveURL, archiveSize = asset.BrowserDownloadURL, asset.Size
-		case zeroLinuxAsset + ".sha256":
+		case assetName + ".sha256":
 			checksumURL = asset.BrowserDownloadURL
 		}
 	}
 	if archiveURL == "" || checksumURL == "" || archiveSize <= 0 || archiveSize > zeroArtifactMaxBytes {
-		return zeroRelease{}, errors.New("stable release is missing a valid Linux x86_64 artifact or checksum")
+		return zeroRelease{}, fmt.Errorf("release is missing %s or its checksum", assetName)
 	}
 	checksum, err := fetchSmallText(ctx, client, checksumURL, 4096)
 	if err != nil {
 		return zeroRelease{}, fmt.Errorf("download release checksum: %w", err)
 	}
 	fields := strings.Fields(checksum)
-	if len(fields) < 2 || fields[1] != zeroLinuxAsset || !sha256Pattern.MatchString(strings.ToLower(fields[0])) {
-		return zeroRelease{}, errors.New("release checksum file is invalid")
+	if len(fields) < 2 || strings.TrimPrefix(fields[1], "*") != assetName || !sha256Pattern.MatchString(strings.ToLower(fields[0])) {
+		return zeroRelease{}, fmt.Errorf("%s checksum file is invalid", assetName)
 	}
 	return zeroRelease{
 		Version: strings.TrimPrefix(payload.TagName, "v"), Tag: payload.TagName,
@@ -392,23 +510,123 @@ func resolveLatestZeroRelease(parent context.Context) (zeroRelease, error) {
 	}, nil
 }
 
-func (h *handlers) resolveZeroRelease(ctx context.Context, probe kernelProbe) (zeroRelease, error) {
-	if h.zeroNativeAccess {
-		return resolveLocalNativeZeroRelease(h.zeroArtifactDir, h.zeroLocalVersion)
+func githubZeroMuslAssetNames(payload githubRelease) []string {
+	names := []string{zeroLinuxMuslAsset}
+	if publishedZeroTagPattern.MatchString(payload.TagName) {
+		names = append(names, fmt.Sprintf("zero-%s-linux-x86_64-musl.tar.gz", payload.TagName))
 	}
-	official, err := resolveLatestZeroRelease(ctx)
+	return names
+}
+
+func resolveGitHubZeroMuslRelease(ctx context.Context, client *http.Client, payload githubRelease) (zeroRelease, error) {
+	var lastErr error
+	for _, name := range githubZeroMuslAssetNames(payload) {
+		release, err := resolveGitHubZeroReleaseAsset(ctx, client, payload, name)
+		if err == nil {
+			return release, nil
+		}
+		lastErr = err
+	}
+	return zeroRelease{}, lastErr
+}
+
+func listInstallableZeroReleases(parent context.Context) ([]zeroReleaseOption, error) {
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, zeroReleasesAPI, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("User-Agent", "zboard-kernel-automation")
+	response, err := zeroHTTPClient().Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub releases API returned %s", response.Status)
+	}
+	var payload []githubRelease
+	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&payload); err != nil {
+		return nil, err
+	}
+	releases := installableZeroReleaseOptions(payload)
+	if len(releases) == 0 {
+		return nil, errors.New("no installable published Zero releases were found")
+	}
+	return releases, nil
+}
+
+func installableZeroReleaseOptions(payload []githubRelease) []zeroReleaseOption {
+	releases := make([]zeroReleaseOption, 0, len(payload))
+	for _, release := range payload {
+		if release.Draft || !publishedZeroTagPattern.MatchString(release.TagName) {
+			continue
+		}
+		option := zeroReleaseOption{
+			Version: strings.TrimPrefix(release.TagName, "v"),
+			Tag:     release.TagName, PublishedAt: release.PublishedAt, Prerelease: release.Prerelease,
+		}
+		legacyMuslAsset := fmt.Sprintf("zero-%s-linux-x86_64-musl.tar.gz", release.TagName)
+		var gnuArchive, gnuChecksum bool
+		muslArchives := map[string]bool{}
+		muslChecksums := map[string]bool{}
+		for _, asset := range release.Assets {
+			switch asset.Name {
+			case zeroLinuxGNUAsset:
+				gnuArchive = asset.Size > 0 && asset.Size <= zeroArtifactMaxBytes
+			case zeroLinuxGNUAsset + ".sha256":
+				gnuChecksum = asset.Size > 0 && asset.Size <= 4096
+			case zeroLinuxMuslAsset, legacyMuslAsset:
+				muslArchives[asset.Name] = asset.Size > 0 && asset.Size <= zeroArtifactMaxBytes
+			case zeroLinuxMuslAsset + ".sha256", legacyMuslAsset + ".sha256":
+				muslChecksums[strings.TrimSuffix(asset.Name, ".sha256")] = asset.Size > 0 && asset.Size <= 4096
+			}
+		}
+		option.GNUAvailable = gnuArchive && gnuChecksum
+		option.MuslAvailable = (muslArchives[zeroLinuxMuslAsset] && muslChecksums[zeroLinuxMuslAsset]) ||
+			(muslArchives[legacyMuslAsset] && muslChecksums[legacyMuslAsset])
+		if option.GNUAvailable || option.MuslAvailable {
+			releases = append(releases, option)
+		}
+	}
+	return releases
+}
+
+func (h *handlers) resolveZeroRelease(ctx context.Context, probe kernelProbe, version string) (zeroRelease, error) {
+	if h.zeroNativeAccess {
+		release, err := resolveLocalNativeZeroRelease(h.zeroArtifactDir, h.zeroLocalVersion)
+		if err != nil {
+			return zeroRelease{}, err
+		}
+		if version != "" && version != release.Version {
+			return zeroRelease{}, fmt.Errorf("native-local exposes only configured Zero %s", release.Version)
+		}
+		return release, nil
+	}
+	payload, releaseCtx, client, cancel, err := fetchZeroRelease(ctx, version)
+	if cancel != nil {
+		defer cancel()
+	}
 	if err != nil {
 		return zeroRelease{}, err
 	}
 	if supportsOfficialZeroArtifact(probe) {
-		return official, nil
+		return resolveGitHubZeroReleaseAsset(releaseCtx, client, payload, zeroLinuxGNUAsset)
 	}
+	musl, muslErr := resolveGitHubZeroMuslRelease(releaseCtx, client, payload)
+	if muslErr == nil {
+		return musl, nil
+	}
+	official := zeroRelease{Version: strings.TrimPrefix(payload.TagName, "v"), Tag: payload.TagName}
 	managed, err := resolveManagedZeroRelease(h.zeroArtifactDir, official)
 	if err != nil {
 		return zeroRelease{}, fmt.Errorf(
-			"%w: the official GNU artifact requires glibc >= 2.34, the node reports %s, and the matching managed musl artifact is unavailable: %v",
+			"%w: the GNU artifact requires glibc >= 2.34, the node reports %s, the release musl artifact is unavailable (%v), and the legacy managed fallback is unavailable: %v",
 			errKernelPlatformUnsupported,
 			probe.Libc,
+			muslErr,
 			err,
 		)
 	}
@@ -1109,9 +1327,14 @@ func classifyKernelAction(probe kernelProbe, desiredVersion, desiredBinarySHA, d
 }
 
 func compareZeroVersions(left, right string) int {
-	parse := func(raw string) ([3]int, bool) {
-		var result [3]int
-		parts := strings.Split(strings.SplitN(strings.TrimPrefix(strings.TrimSpace(raw), "v"), "-", 2)[0], ".")
+	type parsedVersion struct {
+		core       [3]int
+		prerelease []string
+	}
+	parse := func(raw string) (parsedVersion, bool) {
+		var result parsedVersion
+		versionParts := strings.SplitN(strings.TrimPrefix(strings.TrimSpace(raw), "v"), "-", 2)
+		parts := strings.Split(versionParts[0], ".")
 		if len(parts) != 3 {
 			return result, false
 		}
@@ -1120,7 +1343,10 @@ func compareZeroVersions(left, right string) int {
 			if err != nil || value < 0 {
 				return result, false
 			}
-			result[index] = value
+			result.core[index] = value
+		}
+		if len(versionParts) == 2 {
+			result.prerelease = strings.Split(versionParts[1], ".")
 		}
 		return result, true
 	}
@@ -1129,20 +1355,57 @@ func compareZeroVersions(left, right string) int {
 	if !lok || !rok {
 		return 0
 	}
-	for index := range l {
-		if l[index] < r[index] {
+	for index := range l.core {
+		if l.core[index] < r.core[index] {
 			return -1
 		}
-		if l[index] > r[index] {
+		if l.core[index] > r.core[index] {
 			return 1
 		}
+	}
+	if len(l.prerelease) == 0 && len(r.prerelease) == 0 {
+		return 0
+	}
+	if len(l.prerelease) == 0 {
+		return 1
+	}
+	if len(r.prerelease) == 0 {
+		return -1
+	}
+	for index := 0; index < len(l.prerelease) && index < len(r.prerelease); index++ {
+		if l.prerelease[index] == r.prerelease[index] {
+			continue
+		}
+		leftNumber, leftErr := strconv.Atoi(l.prerelease[index])
+		rightNumber, rightErr := strconv.Atoi(r.prerelease[index])
+		switch {
+		case leftErr == nil && rightErr == nil:
+			if leftNumber < rightNumber {
+				return -1
+			}
+			return 1
+		case leftErr == nil:
+			return -1
+		case rightErr == nil:
+			return 1
+		case l.prerelease[index] < r.prerelease[index]:
+			return -1
+		default:
+			return 1
+		}
+	}
+	if len(l.prerelease) < len(r.prerelease) {
+		return -1
+	}
+	if len(l.prerelease) > len(r.prerelease) {
+		return 1
 	}
 	return 0
 }
 
 func (h *handlers) kernelStatus(probe kernelProbe) string {
 	if !probe.Installed {
-		if probe.Architecture != "x86_64" || !probe.Systemd || (!supportsOfficialZeroArtifact(probe) && !h.hasManagedZeroArtifact()) {
+		if probe.Architecture != "x86_64" || !probe.Systemd || !h.hasConfiguredNativeZeroArtifact() {
 			return "unsupported"
 		}
 		return "not_installed"
@@ -1166,22 +1429,12 @@ func (h *handlers) kernelRecommendedAction(probe kernelProbe) string {
 	return "check_release"
 }
 
-func (h *handlers) hasManagedZeroArtifact() bool {
-	if strings.TrimSpace(h.zeroArtifactDir) == "" {
-		return false
+func (h *handlers) hasConfiguredNativeZeroArtifact() bool {
+	if !h.zeroNativeAccess {
+		return true
 	}
-	entries, err := os.ReadDir(h.zeroArtifactDir)
-	if err != nil {
-		return false
-	}
-	for _, entry := range entries {
-		if entry.Type().IsRegular() && managedZeroArtifactPattern.MatchString(entry.Name()) {
-			if checksum, err := os.Stat(filepath.Join(h.zeroArtifactDir, entry.Name()+".sha256")); err == nil && checksum.Mode().IsRegular() {
-				return true
-			}
-		}
-	}
-	return false
+	_, err := resolveLocalNativeZeroRelease(h.zeroArtifactDir, h.zeroLocalVersion)
+	return err == nil
 }
 
 func (h *handlers) ensureKernelState(nodeID uint) (model.NodeKernelState, error) {
