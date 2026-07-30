@@ -61,6 +61,6 @@
 
 节点 SSH 设置已经把登录认证与系统提权拆开：登录仍支持密码/私钥和固定主机指纹；系统命令根据节点配置使用直接 root、`sudo` 或 `su`。提权密码使用站点凭证密钥独立加密，只通过 SSH stdin 提供，不进入远程命令、任务输出和审计详情；普通交互终端仍保持登录用户身份，由管理员自行决定是否在终端内提权。
 
-协议页面保存后的自动 generation 已完成。`ZBOARD_ZERO_KERNEL_CONTRACT=native-local` 时，VLESS、VMess、Shadowsocks、Trojan 和 Hysteria2 凭证都会生成 Zero 原生 managed user，携带稳定 `principal_key`；通用 Webhook Connector 使用完整 URL、opaque authorization header 和磁盘 outbox 发送生命周期及流量事件。默认 `legacy` 保持已发布内核的旧契约，避免 zboard 先行同步后让线上节点收到尚不支持的配置。发布仍使用 `zero validate`、原子软链接、受控重启、control socket、Connector 事件确认和失败回滚。订阅开通、续费、额度调整、额度耗尽与 Connector 活动发现的到期变更都会触发同一发布链。当前 native 契约以本地 Zero 工作区和本地二进制验证，尚未同步到线上或 GitHub release，因此 zboard 发布不等于节点内核已经升级。
+协议页面保存后的自动 generation 已完成。`ZBOARD_ZERO_KERNEL_CONTRACT=native-local` 时，VLESS、VMess、Shadowsocks、Trojan 和 Hysteria2 凭证都会生成 Zero 原生 managed user，携带稳定 `principal_key`。Connector wire contract 不再由该全局开关推断，而是跟随目标或节点实际安装的 Zero 版本：`0.0.15-rc.1` 及更早版本使用历史 `api_key_env` 与 `push`，`0.0.15-rc.2` 及以后版本使用完整 URL、opaque authorization header 和磁盘 outbox。内核协调使用已解析的目标版本；普通配置发布先探测节点实际版本，避免选择 prerelease 后仍生成旧字段。发布仍使用 `zero validate`、原子软链接、受控重启、control socket、Connector 事件确认和失败回滚。订阅开通、续费、额度调整、额度耗尽与 Connector 活动发现的到期变更都会触发同一发布链。
 
 仍未完成的是可恢复的远程幂等键、批量/灰度调度和通过 `config.apply` 热更新替代受控重启。Zero 的策略计数按单进程 principal 执行，因此 zboard 只在订阅恰好有一个活跃凭证时下发本地限速和设备数；多节点/多凭证全局限速、设备数和剩余额度仍由面板统一计算，不能把完整额度复制给每个内核。zboard 订阅 `stats.sampled` 作为 Connector 活性信号并更新节点摘要，但它不替代 control socket 的进程健康判断。Shadowsocks 继续使用每凭证独立端口以保持现有订阅地址兼容，但运行态归因已经使用原生 `principal_key`。本地 Zero 的 `MieruUserConfig` 尚无 `principal_key` 或 managed-policy 字段，所以 Mieru 仍使用端点级账号配置，不在本阶段提供原生订阅归因。

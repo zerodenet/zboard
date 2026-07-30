@@ -34,6 +34,7 @@ const (
 	zeroReleaseByTagAPI       = "https://api.github.com/repos/zerodenet/zero/releases/tags/"
 	zeroLinuxGNUAsset         = "zero-linux-x86_64.tar.gz"
 	zeroLinuxMuslAsset        = "zero-linux-x86_64-musl.tar.gz"
+	zeroGenericConnectorSince = "0.0.15-rc.2"
 	zeroBinaryMaxBytes        = 64 << 20
 	zeroArtifactMaxBytes      = 128 << 20
 	zeroControlSocket         = "/run/zerodenet/control.sock"
@@ -314,7 +315,7 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 	if err != nil {
 		return nil, err
 	}
-	runtimeConfig, configSHA, err := h.compileNodeRuntimeConfig(node, credential.Raw)
+	runtimeConfig, configSHA, err := h.compileNodeRuntimeConfig(node, credential.Raw, release.Version)
 	if err != nil {
 		return nil, err
 	}
@@ -838,7 +839,7 @@ func fetchSmallText(ctx context.Context, client *http.Client, rawURL string, lim
 	return string(payload), nil
 }
 
-func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey string) ([]byte, string, error) {
+func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey, zeroVersion string) ([]byte, string, error) {
 	var installation model.Installation
 	if err := h.db.First(&installation, 1).Error; err != nil {
 		return nil, "", fmt.Errorf("load installation URL: %w", err)
@@ -904,7 +905,7 @@ func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey string) ([]b
 		"mode":     map[string]interface{}{"type": "rule"},
 		"route":    map[string]interface{}{"rules": []interface{}{}, "final": map[string]interface{}{"type": "direct"}},
 	}
-	if h.zeroNativeAccess {
+	if h.zeroNativeAccess || zeroUsesGenericConnector(zeroVersion) {
 		config["api"] = zeroConnectorAPIConfig(panelURL, node.ID, apiKey, parsedURL.Scheme == "http")
 	} else {
 		config["api"] = zeroLegacyEventAPIConfig(panelURL, node.ID, parsedURL.Scheme == "http")
@@ -921,6 +922,14 @@ func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey string) ([]b
 	payload = append(payload, '\n')
 	digest := sha256.Sum256(payload)
 	return payload, hex.EncodeToString(digest[:]), nil
+}
+
+func zeroUsesGenericConnector(version string) bool {
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if !localZeroVersionPattern.MatchString(version) {
+		return false
+	}
+	return compareZeroVersions(version, zeroGenericConnectorSince) >= 0
 }
 
 func zeroConnectorAPIConfig(panelURL string, nodeID uint, apiKey string, allowInsecure bool) map[string]interface{} {

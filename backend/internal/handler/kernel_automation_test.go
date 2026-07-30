@@ -88,6 +88,29 @@ func TestCompareZeroVersions(t *testing.T) {
 	}
 }
 
+func TestZeroConnectorContractFollowsKernelVersion(t *testing.T) {
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{version: "0.0.14", want: false},
+		{version: "0.0.15-rc.1", want: false},
+		{version: "v0.0.15-rc.2", want: true},
+		{version: "0.0.15-rc.3", want: true},
+		{version: "0.0.15", want: true},
+		{version: "0.0.16-dev.1", want: true},
+		{version: "", want: false},
+		{version: "not-a-version", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.version, func(t *testing.T) {
+			if got := zeroUsesGenericConnector(test.version); got != test.want {
+				t.Fatalf("zeroUsesGenericConnector(%q) = %t, want %t", test.version, got, test.want)
+			}
+		})
+	}
+}
+
 func TestValidateZeroReleaseURL(t *testing.T) {
 	allowed, _ := url.Parse("https://github.com/zerodenet/zero/releases/download/v0.0.14/zero-linux-x86_64.tar.gz")
 	if err := validateZeroReleaseURL(allowed); err != nil {
@@ -96,6 +119,39 @@ func TestValidateZeroReleaseURL(t *testing.T) {
 	blocked, _ := url.Parse("https://example.com/zero.tar.gz")
 	if err := validateZeroReleaseURL(blocked); err == nil {
 		t.Fatal("unexpectedly accepted an untrusted release host")
+	}
+}
+
+func TestZeroConnectorConfigMatchesPublishedContracts(t *testing.T) {
+	legacy := map[string]interface{}{
+		"api": zeroLegacyEventAPIConfig("https://panel.example.test", 17, false),
+		"push": map[string]interface{}{
+			"url": "https://panel.example.test", "node_id": "17",
+			"api_key_env": "ZERO_PANEL_API_KEY",
+		},
+	}
+	legacyPayload, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(legacyPayload), `"api_key_env":"ZERO_PANEL_API_KEY"`) ||
+		!strings.Contains(string(legacyPayload), `"push"`) ||
+		strings.Contains(string(legacyPayload), `"headers"`) {
+		t.Fatalf("legacy connector contract is incorrect: %s", legacyPayload)
+	}
+
+	generic := map[string]interface{}{
+		"api": zeroConnectorAPIConfig("https://panel.example.test", 17, "opaque-secret", false),
+	}
+	genericPayload, err := json.Marshal(generic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(genericPayload), `"authorization":"Bearer opaque-secret"`) ||
+		!strings.Contains(string(genericPayload), `"outbox_path"`) ||
+		strings.Contains(string(genericPayload), `"api_key_env"`) ||
+		strings.Contains(string(genericPayload), `"push"`) {
+		t.Fatalf("generic connector contract is incorrect: %s", genericPayload)
 	}
 }
 

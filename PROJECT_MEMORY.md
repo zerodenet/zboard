@@ -26,6 +26,74 @@ remain outside this repository.
 
 ## Completed goals
 
+### 2026-07-30 - Version-aware published Zero Connector contract
+
+Outcome before synchronization:
+
+- Corrected Zero runtime configuration selection so the Connector wire
+  contract follows the target or actually installed Zero version instead of
+  being inferred only from `ZBOARD_ZERO_KERNEL_CONTRACT`.
+- Published Zero releases through `0.0.15-rc.1` retain their historical
+  `api_key_env` event-sink authentication and top-level `push` configuration.
+  `0.0.15-rc.2` and later now receive the controller-neutral Webhook contract
+  documented by Zero: a complete receiver URL, opaque authorization
+  `headers`, subscribed events and a durable outbox, with no removed `push`
+  field.
+- Kernel reconciliation compiles against the release it has just resolved.
+  Configuration-only publication now probes the node and compiles against the
+  actual installed Zero version, preventing stale desired-version metadata
+  from selecting an incompatible schema.
+- The version boundary was verified against the official Zero documentation
+  and the `zerodenet/core` source/tag diff: `v0.0.15-rc.1` accepts
+  `api_key`/`api_key_env`, while `v0.0.15-rc.2` replaces those Webhook fields
+  with opaque `headers` and removes the fixed `push` contract.
+
+Local verification:
+
+- `go test ./...`
+- `go vet ./...`
+- Targeted Connector contract tests cover stable, prerelease and invalid
+  version selection plus both historical and controller-neutral serialized
+  shapes.
+- `TestNativeKernelAccessConfigValidatesWithCurrentZero` passed with the local
+  Zero `0.0.15-rc.2` debug binary, exercising its real `zero validate`
+  implementation against the generated generic Webhook contract.
+- `git diff --check` passed with only existing Windows LF-to-CRLF notices.
+
+Synchronization and deployment evidence:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` completed successfully and
+  deployed
+  `v0.0.1-20260730T120051Z-intranet-working-tree@2026-07-30T12:00:51Z`.
+- The pre-deployment database backup is
+  `/data/zboard-next/backups/20260730T120051Z/zboard-before-sync.sql`
+  (72,231 bytes), the previous source is
+  `/data/zboard-next/app-prev-20260730T120051Z`, and the synchronized source
+  archive is
+  `/data/zboard-next/releases/20260730T120051Z/source.tar.gz`
+  (741,265 bytes). All three paths were verified present.
+- `/api/v1/version` and `/readyz` returned HTTP/API 200 with `ready=true` and
+  `db=true`. `zboard_next-zboard-1` is running and healthy; the external `db`
+  and `cache` containers remain running. MySQL reported `mysqld is alive` and
+  an authenticated Redis ping returned `PONG`.
+- The active synchronized backend source contains the
+  `0.0.15-rc.2` Connector boundary, target-version selection during kernel
+  reconciliation and an installed-version probe before configuration-only
+  publication. No real node reconcile or configuration publication was
+  started during deployment verification.
+
+Remaining gaps:
+
+- The external Docker deployment under `/data/zboard` that exposed the error
+  is not the repository's configured intranet synchronization target. It
+  requires a newly built/published Zboard image before that operator-managed
+  stack can consume this correction.
+- A live `0.0.15-rc.2` or later node reconcile was deliberately not started
+  against the intranet. The real Zero validator, backend regression suite,
+  deployed source and service health checks passed without changing node
+  runtime state.
+- No Git staging, commit, push or release was performed.
+
 ### 2026-07-30 - Node credential drawer state convergence
 
 Outcome before synchronization:

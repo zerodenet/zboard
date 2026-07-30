@@ -124,6 +124,13 @@ func (h *handlers) publishNodeConfigForNode(ctx context.Context, nodeID, trigger
 	if err := h.validateNodeSSH(node); err != nil {
 		return fail(err, "")
 	}
+	probe, err := h.probeNodeKernel(node)
+	if err != nil {
+		return fail(fmt.Errorf("detect installed Zero before publishing config: %w", err), "")
+	}
+	if !probe.Installed || strings.TrimSpace(probe.Version) == "" {
+		return fail(fmt.Errorf("detect installed Zero before publishing config: Zero is not installed"), "")
+	}
 	credential, err := h.nodeConnectorCredential(node)
 	if err != nil {
 		return fail(err, "")
@@ -137,7 +144,7 @@ func (h *handlers) publishNodeConfigForNode(ctx context.Context, nodeID, trigger
 			return fail(err, "")
 		}
 	}
-	runtimeConfig, configSHA, err := h.compileNodeRuntimeConfig(node, credential.Raw)
+	runtimeConfig, configSHA, err := h.compileNodeRuntimeConfig(node, credential.Raw, probe.Version)
 	if err != nil {
 		if credential.IsNew {
 			_ = h.restoreGeneratedNodeCredential(node, credential)
