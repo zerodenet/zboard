@@ -206,8 +206,9 @@
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="ssh-form" type="submit" :loading="saving">保存连接配置</UiButton></template>
     </ModalDialog>
 
-    <ModalDialog :open="Boolean(secretModal.value)" :title="secretModal.title" description="完整凭证只显示一次，请立即复制并安全保存。" @close="secretModal.value = ''">
+    <ModalDialog :open="Boolean(secretModal.value)" :title="secretModal.title" description="完整凭证只显示一次，请立即复制并安全保存。" @close="closeSecretModal">
       <div class="secret-card"><UiTextarea :value="secretModal.value" rows="8" readonly></UiTextarea><UiButton variant="secondary" type="button" @click="copySecret"><UiIcon name="copy" />{{ secretModal.copied ? '已复制' : '复制' }}</UiButton></div>
+      <template #footer><UiButton type="button" @click="closeSecretModal">完成</UiButton></template>
     </ModalDialog>
 
     <SshTerminalDialog :open="terminalOpen" :node="terminalNode" @close="terminalOpen = false" />
@@ -379,7 +380,7 @@ for (const [source, field] of [
   [() => sshForm.ssh_privilege_mode, 'ssh_privilege_mode'], [() => sshForm.ssh_privilege_password, 'ssh_privilege_password'],
 ] as Array<[() => unknown, string]>) watch(source, () => sshErrors.clear(field))
 watch(() => sshForm.ssh_auth_method, () => { sshErrors.clear('ssh_auth_method'); sshErrors.clear('ssh_password'); sshErrors.clear('ssh_private_key') })
-const secretModal = reactive({ title: '', value: '', copied: false })
+const secretModal = reactive({ title: '', value: '', copied: false, nodeID: 0 })
 const { items: nodes, total, loading, initialLoading, refreshing, error, load: refresh } = useRemoteTable<AdminNodeListItem>({
   offset,
   limit,
@@ -654,10 +655,22 @@ async function saveSSH() {
 }
 async function testSSH(id: number) { testingNode.value = id; detailError.value = ''; detailMessage.value = ''; try { const result = await testNodeSSH(id); detailMessage.value = `SSH 验证成功，耗时 ${result.latency_ms || 0}ms；主机身份已自动校验。`; await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || 'SSH 验证失败。' } finally { testingNode.value = 0 } }
 async function resetSSHHostKey(node: any) { if (!await confirmAction({ title: '重新信任主机', message: '仅当 VPS 已重装或主机密钥已确认更换时继续。重置后，下一次 SSH 连接会自动登记新的主机身份。', confirmText: '清除旧身份', tone: 'danger' })) return; detailError.value = ''; detailMessage.value = ''; try { await resetNodeSSHHostKey(node.id); detailMessage.value = '已清除旧主机身份；下一次 SSH 连接将自动重新登记。'; await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || '重新信任主机失败。' } }
-async function rotateConnector(node: any) { if (node.node_credential_prefix && !await confirmAction({ title: '轮换 Zero 凭证', message: '轮换后旧 Zero 连接凭证会立即失效，节点需要应用新配置。', confirmText: '确认轮换', tone: 'danger' })) return; detailError.value = ''; try { const result = await rotateNodeConnectorCredential(node.id); const config = JSON.stringify({ push: { url: window.location.origin, node_id: result.node_id, api_key: result.api_key, heartbeat_interval_seconds: 30, pull_commands: true, command_poll_interval_seconds: 10 } }, null, 2); Object.assign(secretModal, { title: 'Zero 主动连接配置', value: config, copied: false }); await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || 'Zero 连接凭证操作失败。' } }
-async function revokeConnector(node: any) { if (!await confirmAction({ title: '吊销 Zero 凭证', message: '吊销后节点将无法继续向面板发送心跳或领取命令。', confirmText: '确认吊销', tone: 'danger' })) return; detailError.value = ''; detailMessage.value = ''; try { await revokeNodeConnectorCredential(node.id); detailMessage.value = 'Zero 连接凭证已吊销。'; await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || '吊销失败。' } }
-async function rotateReport(node: any) { if (node.traffic_secret_prefix && !await confirmAction({ title: '轮换流量凭证', message: '轮换后旧流量上报凭证会立即失效。', confirmText: '确认轮换', tone: 'danger' })) return; detailError.value = ''; try { const result = await rotateNodeReportCredential(node.id); Object.assign(secretModal, { title: '流量上报凭证', value: result.secret, copied: false }); await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || '流量上报凭证操作失败。' } }
-async function revokeReport(node: any) { if (!await confirmAction({ title: '吊销流量凭证', message: '吊销后节点将无法继续提交可信流量记录。', confirmText: '确认吊销', tone: 'danger' })) return; detailError.value = ''; detailMessage.value = ''; try { await revokeNodeReportCredential(node.id); detailMessage.value = '流量上报凭证已吊销。'; await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || '吊销失败。' } }
+async function refreshSelectedNodeAfterCredentialChange(nodeID: number, patch: Partial<AdminNodeDetail>) {
+  if (selectedNode.value?.id === nodeID) Object.assign(selectedNode.value, patch)
+  await refresh()
+  if (selectedNode.value?.id !== nodeID) return
+  try { selectedNode.value = await fetchNode(nodeID) } catch { /* Keep the successful response patch if detail refresh is temporarily unavailable. */ }
+}
+async function closeSecretModal() {
+  const nodeID = secretModal.nodeID
+  Object.assign(secretModal, { title: '', value: '', copied: false, nodeID: 0 })
+  if (!nodeID || selectedNode.value?.id !== nodeID) return
+  try { selectedNode.value = await fetchNode(nodeID) } catch { /* The successful response patch already keeps the drawer accurate. */ }
+}
+async function rotateConnector(node: any) { if (node.node_credential_prefix && !await confirmAction({ title: '轮换 Zero 凭证', message: '轮换后旧 Zero 连接凭证会立即失效，节点需要应用新配置。', confirmText: '确认轮换', tone: 'danger' })) return; detailError.value = ''; try { const result = await rotateNodeConnectorCredential(node.id); const config = JSON.stringify({ push: { url: window.location.origin, node_id: result.node_id, api_key: result.api_key, heartbeat_interval_seconds: 30, pull_commands: true, command_poll_interval_seconds: 10 } }, null, 2); Object.assign(secretModal, { title: 'Zero 主动连接配置', value: config, copied: false, nodeID: node.id }); await refreshSelectedNodeAfterCredentialChange(node.id, { node_credential_prefix: result.api_key_prefix, node_credential_revoked_at: undefined }) } catch (e: any) { detailError.value = e?.response?.data?.message || 'Zero 连接凭证操作失败。' } }
+async function revokeConnector(node: any) { if (!await confirmAction({ title: '吊销 Zero 凭证', message: '吊销后节点将无法继续向面板发送心跳或领取命令。', confirmText: '确认吊销', tone: 'danger' })) return; detailError.value = ''; detailMessage.value = ''; try { await revokeNodeConnectorCredential(node.id); detailMessage.value = 'Zero 连接凭证已吊销。'; await refreshSelectedNodeAfterCredentialChange(node.id, { node_credential_revoked_at: new Date().toISOString(), connector_online: false }) } catch (e: any) { detailError.value = e?.response?.data?.message || '吊销失败。' } }
+async function rotateReport(node: any) { if (node.traffic_secret_prefix && !await confirmAction({ title: '轮换流量凭证', message: '轮换后旧流量上报凭证会立即失效。', confirmText: '确认轮换', tone: 'danger' })) return; detailError.value = ''; try { const result = await rotateNodeReportCredential(node.id); Object.assign(secretModal, { title: '流量上报凭证', value: result.secret, copied: false, nodeID: node.id }); await refreshSelectedNodeAfterCredentialChange(node.id, { traffic_secret_prefix: result.secret_prefix, traffic_secret_revoked_at: undefined }) } catch (e: any) { detailError.value = e?.response?.data?.message || '流量上报凭证操作失败。' } }
+async function revokeReport(node: any) { if (!await confirmAction({ title: '吊销流量凭证', message: '吊销后节点将无法继续提交可信流量记录。', confirmText: '确认吊销', tone: 'danger' })) return; detailError.value = ''; detailMessage.value = ''; try { await revokeNodeReportCredential(node.id); detailMessage.value = '流量上报凭证已吊销。'; await refreshSelectedNodeAfterCredentialChange(node.id, { traffic_secret_revoked_at: new Date().toISOString() }) } catch (e: any) { detailError.value = e?.response?.data?.message || '吊销失败。' } }
 async function copySecret() { try { await navigator.clipboard.writeText(secretModal.value); secretModal.copied = true } catch { secretModal.copied = false } }
 
 watch([() => selectedNode.value?.id, detailSection, nodeProtocolOffset, nodeProtocolLimit], ([id, section], [previousID]) => {

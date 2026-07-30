@@ -65,4 +65,14 @@ describe('infrastructure detail density policy', () => {
     expect(nodes).toContain("title: downgrade ? '确认降级 Zero 内核' : '对齐 Zero 内核'")
     expect(nodes).toContain('reconcileNodeKernel(nodeID, { version: selectedRelease.value.version, allow_downgrade: downgrade })')
   })
+
+  it('refreshes drawer credential state when one-time secrets are created or closed', () => {
+    const nodes = readFileSync(join(views, 'Nodes.vue'), 'utf8')
+
+    expect(nodes).toContain('@close="closeSecretModal"')
+    expect(nodes).toContain('<template #footer><UiButton type="button" @click="closeSecretModal">完成</UiButton></template>')
+    expect(nodes).toContain('node_credential_prefix: result.api_key_prefix')
+    expect(nodes).toContain('traffic_secret_prefix: result.secret_prefix')
+    expect(nodes).toContain('selectedNode.value = await fetchNode(nodeID)')
+  })
 })

@@ -26,6 +26,61 @@ remain outside this repository.
 
 ## Completed goals
 
+### 2026-07-30 - Node credential drawer state convergence
+
+Outcome before synchronization:
+
+- Fixed the one-time Zero connector and traffic-report credential dialogs so
+  successful creation immediately patches the selected node with the returned
+  non-secret prefix and then reloads the canonical node detail.
+- Replaced the close icon's inline secret clearing with a shared close handler.
+  Both the icon and a new explicit `完成` footer action clear the one-time
+  secret and reload the selected node detail, so the underlying credential
+  controls no longer remain on `生成`.
+- Applied the same detail-refresh boundary to credential revocation. The
+  paged node list returns only summaries and therefore is no longer treated as
+  sufficient to refresh detail-only credential fields.
+- A failed follow-up detail read does not discard the successful API response
+  patch or expose the one-time secret outside its modal.
+
+Local verification:
+
+- `pnpm typecheck`
+- `pnpm test` passed 60 files and 136 tests.
+- `pnpm build` passed with 538 transformed modules.
+- The infrastructure detail policy test pins the shared close handler,
+  explicit completion action, returned-prefix patches and canonical detail
+  reload.
+- `git diff --check` passed with only existing Windows LF-to-CRLF notices.
+
+Synchronization and deployment evidence:
+
+- Final synchronization succeeded with version
+  `v0.0.1-20260729T162149Z-intranet-working-tree@2026-07-29T16:21:49Z`.
+- Database backup:
+  `/data/zboard-next/backups/20260729T162149Z/zboard-before-sync.sql`
+  (71,027 bytes).
+- Previous application source:
+  `/data/zboard-next/app-prev-20260729T162149Z`.
+- Source release archive:
+  `/data/zboard-next/releases/20260729T162149Z/source.tar.gz`
+  (740,002 bytes).
+- `/api/v1/version` and `/readyz` returned HTTP/API 200 with `ready=true` and
+  `db=true`; `/admin/nodes` returned the SPA with HTTP 200.
+- `zboard_next-zboard-1` is healthy on the external `redis_default` network.
+  The existing `db` and `cache` containers remain running; MySQL reported
+  `mysqld is alive` and an authenticated Redis ping returned `PONG`.
+- The active node JavaScript chunk contains the one-time credential dialog,
+  connector `api_key_prefix` handling and traffic `secret_prefix` handling,
+  confirming that both returned-prefix state paths are in the running asset.
+
+Remaining gaps:
+
+- No real credential was rotated during verification, deliberately avoiding
+  invalidation of active node credentials. Automated policy coverage and
+  active-asset inspection passed.
+- No Git staging, commit, push or release was performed.
+
 ### 2026-07-29 - Infrastructure navigation hierarchy and independent DNS workbench
 
 Outcome before synchronization:
