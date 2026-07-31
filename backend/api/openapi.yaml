@@ -288,6 +288,15 @@ paths:
       responses:
         "200":
           description: Managed certificate detail
+    delete:
+      tags: [admin, certificates]
+      summary: Delete an unbound managed certificate
+      description: Running issuance or renewal and protocol endpoint references block deletion. Remote certificate files are retained.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Managed certificate deleted }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/admin/certificates/{id}/renewal:
     put:
       tags: [admin, certificates]
@@ -967,6 +976,15 @@ paths:
                   - properties:
                       data: { $ref: "#/components/schemas/Node" }
         "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [nodes]
+      summary: Delete an empty node asset
+      description: Protocol endpoints, managed certificates, managed DNS records and running node operations block deletion. Remote Zero is not uninstalled.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Node asset deleted }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/nodes/ssh/test:
     post:
       tags:
@@ -2067,6 +2085,16 @@ paths:
       responses:
         "200": { description: Protocol endpoint configuration updated }
         "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [nodes, admin]
+      summary: Remove and delete a protocol endpoint
+      description: Active endpoints are first removed through a verified full node configuration publish. Active plan references and running deployments block deletion.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Protocol endpoint removed from runtime and deleted }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/admin/protocol-endpoints/{id}/deploy:
     post:
       tags: [nodes]
@@ -3850,7 +3878,7 @@ components:
         zero_kernel_contract:
           type: string
           enum: [legacy, native-local, native-local-mieru]
-          description: Active generated-config contract. native-local-mieru is reserved for a locally pinned Zero artifact that validates and propagates Mieru principal_key; subscription delivery switches only after a successful node publication.
+          description: Active generated-config contract. native-local-mieru remains a backwards-compatible alias; Zero 0.0.15-rc.4 or newer enables attributable Mieru users based on the concrete target or installed version.
         zero_local_version:
           type: string
           description: Explicit locally managed Zero version for native-local contracts.
@@ -3868,6 +3896,9 @@ components:
         reason:
           type: string
           description: Present when the protocol is unavailable.
+        minimum_zero_version:
+          type: string
+          description: Minimum Zero version required by this protocol when the capability is version-gated.
     SetupStatus:
       type: object
       required: [installed, version]
@@ -4334,7 +4365,7 @@ components:
         protocol:
           type: string
           enum: [vmess, vless, trojan, shadowsocks, hysteria2, mieru]
-          description: Mieru is rejected unless the explicit principal-aware Mieru kernel contract is active; retained legacy Mieru records may only be saved while being disabled.
+          description: Mieru requires Zero 0.0.15-rc.4 or newer on the selected node; older-node records may be disabled or deleted for recovery.
         address:
           type: string
         port:

@@ -71,7 +71,7 @@
               <td data-column-priority="3">{{ formatBytes(endpoint.usage?.used_bytes_today) }}</td>
               <td class="numeric-column" data-column-priority="3">{{ formatMultiplierNumber(endpoint.multiplier_milli) }}</td>
               <td data-column-priority="3"><TimeBadge :value="endpoint.usage?.last_used_at" /></td>
-              <td class="table-action-column"><RowActions :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><RouterLink v-if="endpoint.latest_deployment?.has_error" class="button button-ghost button-sm" :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', status: 'failed', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink><UiButton variant="secondary" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton></RowActions></td>
+              <td class="table-action-column"><RowActions :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><RouterLink v-if="endpoint.latest_deployment?.has_error" class="button button-ghost button-sm" :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', status: 'failed', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink><UiButton variant="secondary" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton><UiButton variant="danger" size="sm" type="button" :loading="deletingID === endpoint.id" @click="removeEndpoint(endpoint)"><UiIcon name="trash" />删除</UiButton></RowActions></td>
             </tr>
             </template>
           </tbody>
@@ -221,7 +221,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createProtocolBatchDeployment, createProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointsPage, getVersion, updateProtocolEndpoint, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolKernelCapability } from '../api/client'
+import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointsPage, getVersion, updateProtocolEndpoint, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolKernelCapability } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -257,7 +257,7 @@ import { trackAdminTask } from '../utils/taskTracker'
 import { isIntegerInRange } from '../utils/validation'
 
 const protocols = ['vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria2', 'mieru']
-const defaultMieruUnavailableReason = '当前 Zero 内核未实现 Mieru 的 principal_key 归属，面板已停用该协议；请改用其他受支持协议。'
+const defaultMieruUnavailableReason = 'Mieru 托管归属需要 Zero 0.0.15-rc.4 或更高版本；请先升级所选节点内核。'
 const protocolCapabilities = reactive<Record<string, ProtocolKernelCapability>>({
   vmess: { supported: true },
   vless: { supported: true },
@@ -311,7 +311,7 @@ const overviewCounts = reactive<Record<ProtocolDeploymentStatus, number>>({
 })
 const deploymentOffset = ref((Math.max(1, Number(route.query.deployment_page) || 1) - 1) * 25)
 const deploymentLimit = ref(allowedPageSizes.includes(Number(route.query.deployment_limit)) ? Number(route.query.deployment_limit) : 25)
-const saving = ref(false), deployingID = ref(0), detailLoadingID = ref(0), editorOpen = ref(false), editorStep = ref(1)
+const saving = ref(false), deployingID = ref(0), deletingID = ref(0), detailLoadingID = ref(0), editorOpen = ref(false), editorStep = ref(1)
 const copySourceID = ref(0)
 const originalNodeID = ref(0)
 const bulkBusy = ref<'' | 'deploy' | 'enable' | 'disable'>('')
@@ -389,7 +389,16 @@ const managedCertificateOptions = computed(() => [
     .map(item => ({ label: `${item.name} · ${item.domains.join('、')}`, value: item.id })),
 ])
 const hasConfigError = computed(() => ['config', 'client_config', 'optional_config', 'tags', 'parent_protocol_id', 'multiplier_milli', 'sort_order'].some(field => Boolean(editorErrors.fields[field])))
-const selectedProtocolCapability = computed(() => protocolCapabilities[form.protocol] || { supported: false, reason: '无法确认当前内核是否支持该协议。' })
+const selectedProtocolCapability = computed<ProtocolKernelCapability>(() => {
+  const capability = protocolCapabilities[form.protocol] || { supported: false, reason: '无法确认当前内核是否支持该协议。' }
+  if (form.protocol !== 'mieru' || !capability.supported) return capability
+  const minimum = capability.minimum_zero_version || '0.0.15-rc.4'
+  const installed = selectedNode.value?.kernel_state?.installed_version || ''
+  if (!installed || compareZeroVersions(installed, minimum) < 0) {
+    return { supported: false, minimum_zero_version: minimum, reason: defaultMieruUnavailableReason }
+  }
+  return capability
+})
 const canSaveSelectedProtocol = computed(() => selectedProtocolCapability.value.supported || (Boolean(form.id) && !form.is_active))
 const mieruUnavailableReason = computed(() => protocolCapabilities.mieru?.supported ? '' : protocolCapabilities.mieru?.reason || defaultMieruUnavailableReason)
 
@@ -411,6 +420,18 @@ const protocolStatusOverview = computed(() => [
 ] as const)
 
 function protocolLabel(protocol: string) { return ({ vmess: 'VMess', vless: 'VLESS', trojan: 'Trojan', shadowsocks: 'Shadowsocks', hysteria2: 'Hysteria 2', mieru: 'Mieru' } as Record<string, string>)[protocol] || protocol }
+function compareZeroVersions(left: string, right: string) {
+  const tokenize = (value: string) => value.replace(/^v/, '').split(/[.-]/).map(part => /^\d+$/.test(part) ? Number(part) : part)
+  const a = tokenize(left), b = tokenize(right)
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    const av = a[index] ?? Number.POSITIVE_INFINITY
+    const bv = b[index] ?? Number.POSITIVE_INFINITY
+    if (av === bv) continue
+    if (typeof av === 'number' && typeof bv === 'number') return av < bv ? -1 : 1
+    return String(av).localeCompare(String(bv), undefined, { numeric: true })
+  }
+  return 0
+}
 function formatMultiplier(value: number) { return `${Number(value || 1000) / 1000}×` }
 function formatMultiplierNumber(value: number) { return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(Number(value || 1000) / 1000) }
 function deploymentLabel(status?: string) { return !status ? '等待首次发布' : status === 'succeeded' ? '已生效' : status === 'failed' ? '发布失败' : status === 'running' ? '发布中' : formatUnknownValue('状态', status) }
@@ -705,6 +726,30 @@ async function deploy(endpoint: ProtocolEndpointListItem) {
   try { const result = await deployProtocolEndpoint(endpoint.id); message.value = `${endpoint.name} 的完整配置已在 ${endpoint.node_name || `VPS #${endpoint.node_id}`} 生效，耗时 ${result.latency_ms || 0}ms，并已通过 Zero 状态与心跳检查。`; await refresh() }
   catch (e: any) { error.value = e?.response?.data?.message || '配置发布失败，节点已尝试回滚；请检查发布记录、SSH 和 Zero 状态。'; await refresh() }
   finally { deployingID.value = 0 }
+}
+async function removeEndpoint(endpoint: ProtocolEndpointListItem) {
+  const accepted = await confirmAction({
+    title: '删除协议服务？',
+    message: endpoint.is_active
+      ? `系统会先从 ${endpoint.node_name || `VPS #${endpoint.node_id}`} 的完整 Zero 配置中移除“${endpoint.name}”，验证生效后再删除面板记录。`
+      : `将永久删除“${endpoint.name}”的服务记录并吊销其凭证；历史发布和流量记录会保留用于审计。`,
+    confirmText: '确认删除',
+    tone: 'danger',
+  })
+  if (!accepted) return
+  deletingID.value = endpoint.id
+  error.value = ''
+  message.value = ''
+  try {
+    await deleteProtocolEndpoint(endpoint.id)
+    if (selectedEndpointDetail.value?.id === endpoint.id) await closeDetail()
+    message.value = `协议服务“${endpoint.name}”已删除。`
+    await refresh()
+  } catch (e: any) {
+    error.value = e?.response?.data?.message || '协议服务删除失败。'
+  } finally {
+    deletingID.value = 0
+  }
 }
 watch(() => route.fullPath, async () => {
   const nextLimit = Number(route.query.limit)

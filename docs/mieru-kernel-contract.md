@@ -1,15 +1,14 @@
 # Mieru native principal attribution prerequisite
 
-Zboard does not modify the Zero kernel as part of the Mieru endpoint-credential
-repair. The current Zero contract accepts Mieru users by password but does not
-carry the matched user into the native principal/accounting path. Generating a
-different password per subscription in Zboard alone would therefore create
-credentials that can authenticate but cannot be billed to the correct
-subscription.
+Zboard does not modify the Zero kernel as part of Mieru endpoint-credential
+support. Zero `0.0.15-rc.4` implements the required matched-user
+`principal_key` propagation. Older releases accept Mieru users by password but
+cannot attribute their traffic to the correct subscription, so Zboard keeps
+Mieru disabled on those nodes.
 
-## Required Zero contract change
+## Required Zero contract
 
-Before Zboard can enable per-subscription Mieru credentials, Zero must:
+The rc.4-or-newer contract used by Zboard must:
 
 1. add a stable `principal_key` field to each `MieruUserConfig`;
 2. preserve the matched Mieru user identity after password authentication;
@@ -31,7 +30,7 @@ precondition for identity attribution.
 
 ## Zboard activation gate
 
-After a reviewed Zero release exposes and verifies that contract, Zboard may:
+For a target node running Zero rc.4 or newer, Zboard:
 
 - include Mieru in `protocol_credentials`;
 - generate one encrypted password and `principal_key` per active subscription;
@@ -40,20 +39,19 @@ After a reviewed Zero release exposes and verifies that contract, Zboard may:
 - migrate active subscriptions, validate with the installed Zero binary, and
   republish affected nodes.
 
-Until then, Zboard reports Mieru as unavailable through the public protocol
-capability contract. The backend rejects new Mieru endpoints, re-enabling and
-publication; subscription generation excludes retained Mieru records. The
-administrator UI keeps the disabled option visible with the kernel reason so
-operators do not mistake absence from the picker for a loading defect.
-Existing records are not deleted and may be saved only while being disabled,
-allowing the next full node publication to remove them safely.
+The public protocol capability contract advertises `0.0.15-rc.4` as the
+minimum Zero version. The backend checks the selected or actually installed
+version rather than a panel-wide flag. On older nodes it rejects new Mieru
+endpoints, re-enabling and publication; subscription generation excludes
+retained Mieru records. Existing records remain visible and can be disabled or
+deleted safely.
 
 ## Zboard rollout gate
 
-The explicit `native-local-mieru` contract may be selected only with a
-reviewed, locally pinned Zero artifact implementing the requirements above.
-Only that contract enables Mieru credential creation, subscription delivery
-and node runtime compilation.
+`native-local-mieru` remains a backwards-compatible contract name. A reviewed,
+locally pinned rc.4-or-newer artifact under the normal `native-local` contract
+enables the same Mieru behavior automatically. GitHub-managed nodes are gated
+by the selected or probed installed version.
 
 Under that contract Zboard compiles Mieru users with
 `username=password`, `password`, and `principal_key`. Template save and preview
@@ -74,3 +72,6 @@ fallback-free generation also passes validation, activation, health and
 Connector confirmation. If cleanup fails, Zero rolls back to the compatibility
 generation and the endpoint remains unready, so the shared credential cannot
 remain accepted behind a falsely ready state.
+
+`credential_id` is deliberately absent from every emitted Zero user object. It
+is a stable panel/database identifier, not part of the Zero runtime schema.

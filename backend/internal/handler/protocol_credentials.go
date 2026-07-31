@@ -33,8 +33,12 @@ func protocolUsesSubscriptionCredential(protocol string) bool {
 }
 
 func (h *handlers) protocolStoresSubscriptionCredential(protocol string) bool {
+	return protocolStoresSubscriptionCredentialWithMieru(protocol, h.zeroMieruAccess)
+}
+
+func protocolStoresSubscriptionCredentialWithMieru(protocol string, mieruAccess bool) bool {
 	return protocolUsesSubscriptionCredential(protocol) ||
-		(h.zeroMieruAccess && strings.EqualFold(strings.TrimSpace(protocol), "mieru"))
+		(mieruAccess && strings.EqualFold(strings.TrimSpace(protocol), "mieru"))
 }
 
 func (h *handlers) protocolUsesSubscriptionCredential(protocol string) bool {
@@ -63,8 +67,12 @@ func (h *handlers) runtimeCredentialProtocols() []string {
 }
 
 func (h *handlers) desiredProtocolCredentialStatus(endpoint model.ProtocolEndpoint) string {
+	return desiredProtocolCredentialStatusWithMieru(endpoint, h.zeroMieruAccess)
+}
+
+func desiredProtocolCredentialStatusWithMieru(endpoint model.ProtocolEndpoint, mieruAccess bool) string {
 	if strings.EqualFold(strings.TrimSpace(endpoint.Protocol), "mieru") &&
-		!h.zeroMieruAccess && !endpoint.MieruPrincipalReady {
+		!mieruAccess && !endpoint.MieruPrincipalReady {
 		return protocolCredentialStatusPrepared
 	}
 	return protocolCredentialStatusActive
@@ -75,6 +83,10 @@ func protocolUsesDedicatedCredentialPort(protocol string) bool {
 }
 
 func (h *handlers) ensureSubscriptionCredentials(tx *gorm.DB, subscription model.Subscription) ([]model.ProtocolCredential, error) {
+	return h.ensureSubscriptionCredentialsWithMieru(tx, subscription, h.zeroMieruAccess)
+}
+
+func (h *handlers) ensureSubscriptionCredentialsWithMieru(tx *gorm.DB, subscription model.Subscription, mieruAccess bool) ([]model.ProtocolCredential, error) {
 	if tx == nil {
 		tx = h.db
 	}
@@ -89,10 +101,10 @@ func (h *handlers) ensureSubscriptionCredentials(tx *gorm.DB, subscription model
 
 	credentials := make([]model.ProtocolCredential, 0, len(endpoints))
 	for _, endpoint := range endpoints {
-		if !h.protocolStoresSubscriptionCredential(endpoint.Protocol) {
+		if !protocolStoresSubscriptionCredentialWithMieru(endpoint.Protocol, mieruAccess) {
 			continue
 		}
-		targetStatus := h.desiredProtocolCredentialStatus(endpoint)
+		targetStatus := desiredProtocolCredentialStatusWithMieru(endpoint, mieruAccess)
 		var credential model.ProtocolCredential
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("subscription_id = ? AND protocol_endpoint_id = ?", subscription.ID, endpoint.ID).
@@ -154,9 +166,13 @@ func (h *handlers) ensureSubscriptionCredentials(tx *gorm.DB, subscription model
 }
 
 func (h *handlers) ensureCredentialsForSubscriptions(subscriptions []model.Subscription) error {
+	return h.ensureCredentialsForSubscriptionsWithMieru(subscriptions, h.zeroMieruAccess)
+}
+
+func (h *handlers) ensureCredentialsForSubscriptionsWithMieru(subscriptions []model.Subscription, mieruAccess bool) error {
 	return h.db.Transaction(func(tx *gorm.DB) error {
 		for _, subscription := range subscriptions {
-			if _, err := h.ensureSubscriptionCredentials(tx, subscription); err != nil {
+			if _, err := h.ensureSubscriptionCredentialsWithMieru(tx, subscription, mieruAccess); err != nil {
 				return err
 			}
 		}
@@ -563,8 +579,12 @@ func (h *handlers) activeEndpointCredentials(endpointID uint, now time.Time) ([]
 	return credentials, err
 }
 
-func (h *handlers) runtimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, protocol map[string]interface{}, now time.Time, suppressMieruFallback bool) ([]map[string]interface{}, error) {
-	if !h.protocolUsesSubscriptionCredential(endpoint.Protocol) {
+func (h *handlers) runtimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, protocol map[string]interface{}, now time.Time, suppressMieruFallback, nativeAccess, mieruAccess bool) ([]map[string]interface{}, error) {
+	usesCredential := protocolUsesSubscriptionCredential(endpoint.Protocol)
+	if strings.EqualFold(strings.TrimSpace(endpoint.Protocol), "mieru") {
+		usesCredential = mieruAccess
+	}
+	if !usesCredential {
 		return []map[string]interface{}{runtimeInbound(endpoint, fmt.Sprintf("endpoint-%d", endpoint.ID), endpoint.Port, protocol)}, nil
 	}
 	credentials, err := h.activeEndpointCredentials(endpoint.ID, now)
@@ -574,7 +594,7 @@ func (h *handlers) runtimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, p
 	if len(credentials) == 0 {
 		return nil, nil
 	}
-	if !h.zeroNativeAccess {
+	if !nativeAccess {
 		return h.legacyRuntimeInboundsForEndpoint(endpoint, protocol, credentials)
 	}
 	contexts, err := h.runtimeCredentialContexts(credentials, now)
@@ -745,7 +765,6 @@ func (h *handlers) legacyRuntimeInboundsForEndpoint(endpoint model.ProtocolEndpo
 			}
 			user := map[string]interface{}{
 				"id":            secret,
-				"credential_id": credential.CredentialID,
 				"principal_key": credential.PrincipalKey,
 			}
 			if strings.EqualFold(endpoint.Protocol, "vmess") {

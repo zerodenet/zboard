@@ -577,11 +577,15 @@ func (h *handlers) validateProtocolEndpointKernelSupport(endpointIDs []uint) err
 		return nil
 	}
 	var endpoints []model.ProtocolEndpoint
-	if err := h.db.Select("id", "protocol").Where("id IN ?", uniqueUintIDs(endpointIDs)).Find(&endpoints).Error; err != nil {
+	if err := h.db.Select("id", "node_id", "protocol").Where("id IN ?", uniqueUintIDs(endpointIDs)).Find(&endpoints).Error; err != nil {
+		return err
+	}
+	nodesByID, err := h.loadProtocolEndpointNodes(endpoints)
+	if err != nil {
 		return err
 	}
 	for _, endpoint := range endpoints {
-		if supported, reason := h.protocolKernelSupport(endpoint.Protocol); !supported {
+		if supported, reason := h.protocolKernelSupportForNode(endpoint.Protocol, nodesByID[endpoint.NodeID]); !supported {
 			return fmt.Errorf("protocol endpoint %d cannot be used: %s", endpoint.ID, reason)
 		}
 	}

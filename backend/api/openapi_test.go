@@ -107,6 +107,23 @@ func TestOpenAPIIsValidYAMLAndContainsCoreCommercialPaths(t *testing.T) {
 			t.Errorf("removed OpenAPI field %s is still present", removedField)
 		}
 	}
+	for _, path := range []string{
+		"/api/v1/nodes/{id}",
+		"/api/v1/admin/certificates/{id}",
+		"/api/v1/admin/protocol-endpoints/{id}",
+	} {
+		item := paths[path].(map[interface{}]interface{})
+		if _, ok := item["delete"]; !ok {
+			t.Errorf("OpenAPI path %s does not document DELETE", path)
+		}
+	}
+	components := document["components"].(map[interface{}]interface{})
+	schemas := components["schemas"].(map[interface{}]interface{})
+	capability := schemas["ProtocolKernelCapability"].(map[interface{}]interface{})
+	properties := capability["properties"].(map[interface{}]interface{})
+	if _, ok := properties["minimum_zero_version"]; !ok {
+		t.Error("OpenAPI ProtocolKernelCapability omits minimum_zero_version")
+	}
 }
 
 func TestOpenAPIDocumentsCanonicalAdminPageEnvelope(t *testing.T) {

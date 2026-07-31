@@ -88,6 +88,24 @@ func TestCompareZeroVersions(t *testing.T) {
 	}
 }
 
+func TestZeroManagedAccessCapabilitiesFollowReleaseVersion(t *testing.T) {
+	if zeroSupportsNativeManagedAccess("0.0.15-rc.2") {
+		t.Fatal("rc.2 must not enable the native managed-user contract")
+	}
+	if !zeroSupportsNativeManagedAccess("v0.0.15-rc.3") {
+		t.Fatal("rc.3 must enable the native managed-user contract")
+	}
+	if zeroSupportsMieruPrincipal("0.0.15-rc.3") {
+		t.Fatal("rc.3 must not enable attributable Mieru users")
+	}
+	if !zeroSupportsMieruPrincipal("v0.0.15-rc.4") || !zeroSupportsMieruPrincipal("0.0.15") {
+		t.Fatal("rc.4 and later must enable attributable Mieru users")
+	}
+	if zeroSupportsMieruPrincipal("development") {
+		t.Fatal("an unparseable version must fail closed")
+	}
+}
+
 func TestZeroConnectorContractFollowsKernelVersion(t *testing.T) {
 	tests := []struct {
 		version string

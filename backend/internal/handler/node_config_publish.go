@@ -98,13 +98,6 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 		return model.ProtocolDeployment{}, time.Since(started), err
 	}
 	var mieruFallbackCount int64
-	if h.zeroMieruAccess {
-		if err := h.db.Model(&model.ProtocolEndpoint{}).
-			Where("node_id = ? AND LOWER(protocol) = ? AND mieru_principal_ready = ?", node.ID, "mieru", false).
-			Count(&mieruFallbackCount).Error; err != nil {
-			return model.ProtocolDeployment{}, time.Since(started), err
-		}
-	}
 	startedAt := time.Now().UTC()
 	deployment := model.ProtocolDeployment{
 		ProtocolEndpointID: triggerEndpointID,
@@ -142,6 +135,14 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	}
 	if !probe.Installed || strings.TrimSpace(probe.Version) == "" {
 		return fail(fmt.Errorf("detect installed Zero before publishing config: Zero is not installed"), "")
+	}
+	mieruAccess := zeroSupportsMieruPrincipal(probe.Version)
+	if mieruAccess {
+		if err := h.db.Model(&model.ProtocolEndpoint{}).
+			Where("node_id = ? AND LOWER(protocol) = ? AND mieru_principal_ready = ?", node.ID, "mieru", false).
+			Count(&mieruFallbackCount).Error; err != nil {
+			return fail(err, "")
+		}
 	}
 	credential, err := h.nodeConnectorCredential(node)
 	if err != nil {
@@ -219,14 +220,14 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 		if err := tx.Model(&model.Node{}).Where("id = ?", node.ID).Updates(map[string]interface{}{"last_sync_at": finished, "ssh_verified_at": finished}).Error; err != nil {
 			return err
 		}
-		if mieruReadinessCanCommit(h.zeroMieruAccess, mieruFallbackCount, suppressMieruFallback) {
+		if mieruReadinessCanCommit(mieruAccess, mieruFallbackCount, suppressMieruFallback) {
 			if err := tx.Model(&model.ProtocolEndpoint{}).
 				Where("node_id = ? AND LOWER(protocol) = ?", node.ID, "mieru").
-				Update("mieru_principal_ready", h.zeroMieruAccess).Error; err != nil {
+				Update("mieru_principal_ready", mieruAccess).Error; err != nil {
 				return err
 			}
 			mieruCredentialStatus := protocolCredentialStatusPrepared
-			if h.zeroMieruAccess {
+			if mieruAccess {
 				mieruCredentialStatus = protocolCredentialStatusActive
 			}
 			mieruEndpointIDs := tx.Model(&model.ProtocolEndpoint{}).
@@ -251,7 +252,7 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	deployment.AppliedConfigSHA256 = configSHA
 	deployment.Output = strings.TrimSpace(output)
 	deployment.FinishedAt = &finished
-	if h.zeroMieruAccess && mieruFallbackCount > 0 && !suppressMieruFallback {
+	if mieruAccess && mieruFallbackCount > 0 && !suppressMieruFallback {
 		return h.publishNodeConfigForNodeLocked(ctx, node.ID, triggerEndpointID, requestedBy, true, started)
 	}
 	return deployment, time.Since(started), nil

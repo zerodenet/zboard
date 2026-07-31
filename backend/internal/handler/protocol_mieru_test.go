@@ -198,6 +198,38 @@ func TestMieruReadinessWaitsForFallbackCleanup(t *testing.T) {
 	}
 }
 
+func TestLegacyRuntimeUsersDoNotEmitPanelOnlyCredentialID(t *testing.T) {
+	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, err := h.credentialCipher.Encrypt("11111111-1111-4111-8111-111111111111")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inbounds, err := h.legacyRuntimeInboundsForEndpoint(
+		model.ProtocolEndpoint{ID: 2, Protocol: "vless", Port: 443},
+		map[string]interface{}{"type": "vless", "users": []interface{}{}},
+		[]model.ProtocolCredential{{
+			ID: 7, CredentialID: "subscription-3-endpoint-2",
+			PrincipalKey: "subscription:3:endpoint:2", Secret: secret,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(inbounds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), "credential_id") {
+		t.Fatalf("runtime config leaked panel-only credential_id: %s", payload)
+	}
+	if !strings.Contains(string(payload), `"principal_key":"subscription:3:endpoint:2"`) {
+		t.Fatalf("runtime config lost principal_key: %s", payload)
+	}
+}
+
 func TestMieruContractRequiresRealZeroPreviewValidation(t *testing.T) {
 	previous := managedZeroSubscriptionValidator
 	t.Cleanup(func() { managedZeroSubscriptionValidator = previous })

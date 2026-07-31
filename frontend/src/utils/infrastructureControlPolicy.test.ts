@@ -45,17 +45,29 @@ describe('infrastructure control policy', () => {
     expect(protocols).not.toContain(':disabled="Boolean(form.id)" @select="handleNodeSelect"')
   })
 
-  it('fails closed for protocols unsupported by the active kernel contract', () => {
+  it('gates protocols by the selected node kernel version', () => {
     const protocols = read('views', 'Protocols.vue')
     const client = read('api', 'client.ts')
 
     expect(client).toContain('protocol_capabilities: Record<string, ProtocolKernelCapability>')
+    expect(client).toContain('minimum_zero_version')
     expect(client).toContain('kernel_supported: boolean')
-    expect(protocols).toContain('Mieru（当前内核不支持）')
     expect(protocols).toContain('loadProtocolCapabilities')
     expect(protocols).toContain(':disabled="!endpoint.kernel_supported"')
-    expect(protocols).toContain('已有 Mieru 记录会保留供查看和停用')
+    expect(protocols).toContain('selectedNode.value?.kernel_state?.installed_version')
+    expect(protocols).toContain('compareZeroVersions')
     expect(protocols).toContain('canSaveSelectedProtocol')
+  })
+
+  it('exposes guarded deletion for operational resources', () => {
+    const client = read('api', 'client.ts')
+
+    expect(client).toContain('deleteNode(')
+    expect(client).toContain('deleteProtocolEndpoint(')
+    expect(client).toContain('deleteManagedCertificate(')
+    expect(read('views', 'Nodes.vue')).toContain('removeNode')
+    expect(read('views', 'Protocols.vue')).toContain('removeEndpoint')
+    expect(read('views', 'Certificates.vue')).toContain('removeCertificate')
   })
 
   it('preserves table-cell geometry for protocol node-group headings', () => {

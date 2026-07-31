@@ -26,6 +26,7 @@
           <td class="table-action-column"><RowActions :label="`${certificate.name} 的操作`" :trigger-key="`certificate-${certificate.id}`">
             <UiButton variant="secondary" size="sm" type="button" :disabled="operationRunning(certificate)" @click="openRenewal(certificate)"><UiIcon name="settings" />续期策略</UiButton>
             <UiButton size="sm" type="button" :loading="operatingID === certificate.id" :disabled="operationRunning(certificate)" @click="runCertificateOperation(certificate)"><UiIcon name="refresh" />{{ certificate.not_after ? '立即续期' : '开始申请' }}</UiButton>
+            <UiButton variant="danger" size="sm" type="button" :loading="deletingID === certificate.id" :disabled="operationRunning(certificate)" @click="removeCertificate(certificate)"><UiIcon name="trash" />删除</UiButton>
           </RowActions></td>
         </tr></tbody>
       </DataTable>
@@ -64,7 +65,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createManagedCertificate, fetchManagedCertificatesPage, fetchProviderAccounts, issueManagedCertificate, renewManagedCertificate, updateManagedCertificateRenewal, type CertificateOperation, type ManagedCertificate, type ProviderAccount } from '../api/client'
+import { createManagedCertificate, deleteManagedCertificate, fetchManagedCertificatesPage, fetchProviderAccounts, issueManagedCertificate, renewManagedCertificate, updateManagedCertificateRenewal, type CertificateOperation, type ManagedCertificate, type ProviderAccount } from '../api/client'
 import DataTable from '../components/DataTable.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -103,6 +104,7 @@ const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * 50)
 const limit = ref(50)
 const message = ref('')
 const operatingID = ref(0)
+const deletingID = ref(0)
 const saving = ref(false)
 const createOpen = ref(false)
 const createFormElement = ref<HTMLElement | null>(null)
@@ -200,6 +202,26 @@ async function runCertificateOperation(certificate: ManagedCertificate) {
     await refresh()
   } catch (cause: any) { error.value = cause?.response?.data?.message || '证书操作启动失败。' }
   finally { operatingID.value = 0 }
+}
+async function removeCertificate(certificate: ManagedCertificate) {
+  if (!await confirmAction({
+    title: '删除托管证书？',
+    message: `将删除“${certificate.name}”的面板记录；签发/续期历史和节点上的证书文件会保留，避免破坏审计记录或误删仍被其他服务使用的文件。`,
+    confirmText: '确认删除',
+    tone: 'danger',
+  })) return
+  deletingID.value = certificate.id
+  error.value = ''
+  message.value = ''
+  try {
+    await deleteManagedCertificate(certificate.id)
+    message.value = `证书“${certificate.name}”已删除；节点文件未被移除。`
+    await refresh()
+  } catch (cause: any) {
+    error.value = cause?.response?.data?.message || '证书删除失败。'
+  } finally {
+    deletingID.value = 0
+  }
 }
 function openRenewal(certificate: ManagedCertificate) { Object.assign(renewalForm, { id: certificate.id, auto_renew: certificate.auto_renew, renew_before_days: certificate.renew_before_days, revision: certificate.revision }); renewalOpen.value = true }
 async function saveRenewal() {

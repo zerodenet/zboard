@@ -36,6 +36,8 @@ const (
 	zeroLinuxGNUAsset         = "zero-linux-x86_64.tar.gz"
 	zeroLinuxMuslAsset        = "zero-linux-x86_64-musl.tar.gz"
 	zeroGenericConnectorSince = "0.0.15-rc.2"
+	zeroNativeAccessSince     = "0.0.15-rc.3"
+	zeroMieruPrincipalSince   = "0.0.15-rc.4"
 	zeroBinaryMaxBytes        = 64 << 20
 	zeroArtifactMaxBytes      = 128 << 20
 	zeroControlSocket         = "/run/zerodenet/control.sock"
@@ -352,6 +354,7 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 		if err != nil {
 			return nil, err
 		}
+		h.scheduleMieruReadinessPublish(node.ID, release.Version)
 		return map[string]interface{}{"state": state, "operation": operation, "changed": false}, nil
 	}
 
@@ -400,7 +403,20 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 	if err != nil {
 		return nil, rollbackAfterActivation(fmt.Errorf("persist successful Zero operation: %w", err))
 	}
+	h.scheduleMieruReadinessPublish(node.ID, release.Version)
 	return map[string]interface{}{"state": state, "operation": operation, "changed": true, "action": action}, nil
+}
+
+func (h *handlers) scheduleMieruReadinessPublish(nodeID uint, zeroVersion string) {
+	if !zeroSupportsMieruPrincipal(zeroVersion) {
+		return
+	}
+	var endpoint model.ProtocolEndpoint
+	if err := h.db.Where("node_id = ? AND LOWER(protocol) = ? AND is_active = ? AND mieru_principal_ready = ?",
+		nodeID, "mieru", true, false).Order("id asc").First(&endpoint).Error; err != nil {
+		return
+	}
+	h.scheduleNodeConfigPublish(nodeID, endpoint.ID, 0)
 }
 
 func decodeKernelReconcileRequest(r *http.Request) (kernelReconcileRequest, error) {
@@ -905,6 +921,8 @@ func (h *handlers) compileNodeRuntimeConfigWithOptions(node model.Node, apiKey, 
 		return nil, "", errors.New("Zero connector credential is unavailable")
 	}
 	now := time.Now().UTC()
+	nativeAccess := h.zeroNativeAccess || zeroSupportsNativeManagedAccess(zeroVersion)
+	mieruAccess := zeroSupportsMieruPrincipal(zeroVersion)
 	var subscriptions []model.Subscription
 	if err := h.db.Model(&model.Subscription{}).
 		Select("DISTINCT subscriptions.*").
@@ -914,7 +932,7 @@ func (h *handlers) compileNodeRuntimeConfigWithOptions(node model.Node, apiKey, 
 		Find(&subscriptions).Error; err != nil {
 		return nil, "", err
 	}
-	if err := h.ensureCredentialsForSubscriptions(subscriptions); err != nil {
+	if err := h.ensureCredentialsForSubscriptionsWithMieru(subscriptions, mieruAccess); err != nil {
 		return nil, "", fmt.Errorf("reconcile subscription credentials: %w", err)
 	}
 	var endpoints []model.ProtocolEndpoint
@@ -927,7 +945,7 @@ func (h *handlers) compileNodeRuntimeConfigWithOptions(node model.Node, apiKey, 
 	}
 	inbounds := make([]map[string]interface{}, 0, len(endpoints))
 	for _, endpoint := range endpoints {
-		if supported, reason := h.protocolKernelSupport(endpoint.Protocol); !supported {
+		if supported, reason := h.protocolKernelSupportForVersion(endpoint.Protocol, zeroVersion); !supported {
 			return nil, "", fmt.Errorf("protocol endpoint %d cannot be published: %s", endpoint.ID, reason)
 		}
 		rawConfig, err := h.credentialCipher.Decrypt(endpoint.ServerConfig)
@@ -949,7 +967,7 @@ func (h *handlers) compileNodeRuntimeConfigWithOptions(node model.Node, apiKey, 
 		if endpoint.Port <= 0 || endpoint.Port > 65535 {
 			return nil, "", fmt.Errorf("protocol endpoint %d listen port is invalid", endpoint.ID)
 		}
-		endpointInbounds, err := h.runtimeInboundsForEndpoint(endpoint, protocol, now, suppressMieruFallback)
+		endpointInbounds, err := h.runtimeInboundsForEndpoint(endpoint, protocol, now, suppressMieruFallback, nativeAccess, mieruAccess)
 		if err != nil {
 			return nil, "", fmt.Errorf("compile protocol endpoint %d: %w", endpoint.ID, err)
 		}
@@ -985,6 +1003,18 @@ func zeroUsesGenericConnector(version string) bool {
 		return false
 	}
 	return compareZeroVersions(version, zeroGenericConnectorSince) >= 0
+}
+
+func zeroSupportsNativeManagedAccess(version string) bool {
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	return localZeroVersionPattern.MatchString(version) &&
+		compareZeroVersions(version, zeroNativeAccessSince) >= 0
+}
+
+func zeroSupportsMieruPrincipal(version string) bool {
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	return localZeroVersionPattern.MatchString(version) &&
+		compareZeroVersions(version, zeroMieruPrincipalSince) >= 0
 }
 
 func zeroConnectorAPIConfig(panelURL string, nodeID uint, apiKey string, allowInsecure bool) map[string]interface{} {

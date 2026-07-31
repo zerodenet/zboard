@@ -185,6 +185,7 @@ export async function updateSystemConfig(key: string, value: unknown, expectedRe
 export interface ProtocolKernelCapability {
 	supported: boolean
 	reason?: string
+	minimum_zero_version?: string
 }
 
 export interface VersionInfo {
@@ -297,6 +298,11 @@ export async function createNode(payload: any) {
 
 export async function updateNode(nodeId: number, payload: any) {
   const response = await api.put(`/nodes/${nodeId}`, payload)
+  return unwrap(response)
+}
+
+export async function deleteNode(nodeId: number) {
+  const response = await api.delete(`/nodes/${nodeId}`)
   return unwrap(response)
 }
 
@@ -530,6 +536,11 @@ export async function updateProtocolEndpoint(id: number, payload: any) {
 	return unwrap(response)
 }
 
+export async function deleteProtocolEndpoint(id: number) {
+	const response = await api.delete(`/admin/protocol-endpoints/${id}`)
+	return unwrap(response)
+}
+
 export async function updateProtocolEndpointMultiplier(id: number, multiplierMilli: number) {
 	const response = await api.patch(`/admin/protocol-endpoints/${id}/multiplier`, { multiplier_milli: multiplierMilli })
 	return unwrap(response)
@@ -650,6 +661,11 @@ export async function updateManagedCertificateRenewal(id: number, payload: {
 	expected_revision: number
 }) {
 	const response = await api.put(`/admin/certificates/${id}/renewal`, payload)
+	return unwrap(response)
+}
+
+export async function deleteManagedCertificate(id: number) {
+	const response = await api.delete(`/admin/certificates/${id}`)
 	return unwrap(response)
 }
 

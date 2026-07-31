@@ -65,6 +65,7 @@
             <UiButton variant="secondary" size="sm" type="button" :disabled="testingNode === selectedNode.id" @click="testSSH(selectedNode.id)"><UiIcon name="activity" />{{ testingNode === selectedNode.id ? '验证中…' : '验证 SSH' }}</UiButton>
             <UiButton variant="secondary" size="sm" type="button" :disabled="!selectedNode.ssh_host || !selectedNode.ssh_user" @click="openTerminal(selectedNode)"><UiIcon name="terminal" />打开终端</UiButton>
             <UiButton v-if="selectedNode.ssh_host_key_fingerprint" variant="danger" size="sm" type="button" @click="resetSSHHostKey(selectedNode)">重新信任主机</UiButton>
+            <UiButton variant="danger" size="sm" type="button" :loading="deletingNode" @click="removeNode(selectedNode)"><UiIcon name="trash" />删除节点</UiButton>
           </div>
         </article>
 
@@ -218,7 +219,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createNode, createNodeBatchOperation, detectNodeKernel, fetchNode, fetchNodeKernel, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type ZeroReleaseOption } from '../api/client'
+import { createNode, createNodeBatchOperation, deleteNode, detectNodeKernel, fetchNode, fetchNodeKernel, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type ZeroReleaseOption } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -275,6 +276,7 @@ const connectorFilterOptions = [{ label: '全部连接状态', value: '' }, { la
 const sshAuthOptions = [{ label: '密码', value: 'password' }, { label: '私钥', value: 'private_key' }]
 const sshPrivilegeOptions = [{ label: '直接登录 root', value: 'none' }, { label: 'sudo 提权', value: 'sudo' }, { label: 'su 切换 root', value: 'su' }]
 const selectedNode = ref<AdminNodeDetail | null>(null)
+const deletingNode = ref(false)
 const detailSection = ref<'overview' | 'kernel' | 'protocols' | 'credentials'>('overview')
 const nodeDetailTabs = [
   { value: 'overview', label: '状态概览', icon: 'dashboard' },
@@ -611,6 +613,27 @@ async function selectNode(node: AdminNodeListItem) {
   finally { detailLoadingID.value = 0 }
 }
 async function closeDetail() { selectedNode.value = null; detailError.value = ''; detailMessage.value = ''; nodeProtocolOffset.value = 0; await syncURL() }
+async function removeNode(node: AdminNodeDetail) {
+  if (!await confirmAction({
+    title: '删除节点资产？',
+    message: `将永久删除“${node.name}”的面板登记和节点凭证。请先删除该节点的协议服务、证书和 DNS 解析；远端 Zero 与服务器文件不会被卸载。`,
+    confirmText: '确认删除',
+    tone: 'danger',
+  })) return
+  deletingNode.value = true
+  detailError.value = ''
+  detailMessage.value = ''
+  try {
+    await deleteNode(node.id)
+    await closeDetail()
+    message.value = `节点“${node.name}”已从面板删除；远端 Zero 未被卸载。`
+    await refresh()
+  } catch (e: any) {
+    detailError.value = e?.response?.data?.message || '节点删除失败。'
+  } finally {
+    deletingNode.value = false
+  }
+}
 async function changeNodeProtocolPage(value: { offset: number; limit: number }) { nodeProtocolOffset.value = value.offset; nodeProtocolLimit.value = value.limit; await syncURL() }
 function openCreate() { Object.assign(createForm, { name: '', region: '', address: '', remark: '' }); createErrors.clear(); createState.markClean(); createOpen.value = true }
 async function create() {

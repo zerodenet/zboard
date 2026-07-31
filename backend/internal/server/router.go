@@ -193,6 +193,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.NodeUpdateHandler),
 		},
 		{
+			Method:  http.MethodDelete,
+			Path:    "/api/v1/nodes/:id",
+			Handler: http.HandlerFunc(h.NodeDeleteHandler),
+		},
+		{
 			Method:  http.MethodPost,
 			Path:    "/api/v1/nodes/ssh/test",
 			Handler: http.HandlerFunc(h.NodeSSHTestHandler),
@@ -288,6 +293,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.ManagedCertificateGetHandler),
 		},
 		{
+			Method:  http.MethodDelete,
+			Path:    "/api/v1/admin/certificates/:id",
+			Handler: http.HandlerFunc(h.ManagedCertificateDeleteHandler),
+		},
+		{
 			Method:  http.MethodPut,
 			Path:    "/api/v1/admin/certificates/:id/renewal",
 			Handler: http.HandlerFunc(h.ManagedCertificateRenewalUpdateHandler),
@@ -371,6 +381,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Method:  http.MethodPut,
 			Path:    "/api/v1/admin/protocol-endpoints/:id",
 			Handler: http.HandlerFunc(h.ProtocolEndpointUpdateHandler),
+		},
+		{
+			Method:  http.MethodDelete,
+			Path:    "/api/v1/admin/protocol-endpoints/:id",
+			Handler: http.HandlerFunc(h.ProtocolEndpointDeleteHandler),
 		},
 		{
 			Method:  http.MethodPatch,

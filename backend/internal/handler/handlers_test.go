@@ -424,28 +424,34 @@ func TestSupportedProtocolsAreCaseInsensitive(t *testing.T) {
 	}
 }
 
-func TestProtocolKernelCapabilitiesDisableMieruUntilExplicitContract(t *testing.T) {
+func TestProtocolKernelCapabilitiesUseConcreteZeroVersionForMieru(t *testing.T) {
 	legacy, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
 	if err != nil {
 		t.Fatalf("NewHandlers(legacy) error = %v", err)
 	}
-	if supported, reason := legacy.protocolKernelSupport("mieru"); supported || reason != protocolKernelMieruUnavailableReason {
-		t.Fatalf("legacy Mieru support = %t %q", supported, reason)
+	if supported, reason := legacy.protocolKernelSupport("mieru"); !supported || reason != "" {
+		t.Fatalf("panel Mieru support = %t %q", supported, reason)
+	}
+	if supported, reason := legacy.protocolKernelSupportForVersion("mieru", "0.0.15-rc.3"); supported || reason != protocolKernelMieruUnavailableReason {
+		t.Fatalf("rc.3 Mieru support = %t %q", supported, reason)
+	}
+	if supported, reason := legacy.protocolKernelSupportForVersion("mieru", "0.0.15-rc.4"); !supported || reason != "" {
+		t.Fatalf("rc.4 Mieru support = %t %q", supported, reason)
 	}
 	if supported, reason := legacy.protocolKernelSupport("vless"); !supported || reason != "" {
 		t.Fatalf("legacy VLESS support = %t %q", supported, reason)
 	}
 	capabilities := legacy.protocolKernelCapabilities()
-	if capabilities["mieru"].Supported || capabilities["mieru"].Reason == "" {
-		t.Fatalf("legacy Mieru capability = %+v", capabilities["mieru"])
+	if !capabilities["mieru"].Supported || capabilities["mieru"].MinimumZeroVersion != zeroMieruPrincipalSince {
+		t.Fatalf("panel Mieru capability = %+v", capabilities["mieru"])
 	}
 
-	future, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "native-local-mieru", "0.0.16")
+	future, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "native-local", "0.0.15-rc.4")
 	if err != nil {
-		t.Fatalf("NewHandlers(native-local-mieru) error = %v", err)
+		t.Fatalf("NewHandlers(native-local rc.4) error = %v", err)
 	}
-	if supported, reason := future.protocolKernelSupport("Mieru"); !supported || reason != "" {
-		t.Fatalf("future Mieru support = %t %q", supported, reason)
+	if !future.zeroMieruAccess {
+		t.Fatal("native-local rc.4 did not enable Mieru managed access")
 	}
 
 	response := httptest.NewRecorder()
@@ -458,7 +464,7 @@ func TestProtocolKernelCapabilitiesDisableMieruUntilExplicitContract(t *testing.
 	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("decode version response: %v", err)
 	}
-	if capability := envelope.Data.ProtocolCapabilities["mieru"]; capability.Supported || capability.Reason == "" {
+	if capability := envelope.Data.ProtocolCapabilities["mieru"]; !capability.Supported || capability.MinimumZeroVersion != zeroMieruPrincipalSince {
 		t.Fatalf("version Mieru capability = %+v", capability)
 	}
 }

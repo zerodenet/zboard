@@ -84,7 +84,7 @@ var supportedProtocols = map[string]struct{}{
 	"mieru":       {},
 }
 
-const protocolKernelMieruUnavailableReason = "当前 Zero 内核未实现 Mieru 的 principal_key 归属，面板已停用该协议；请改用其他受支持协议。"
+const protocolKernelMieruUnavailableReason = "Mieru 托管归属需要 Zero 0.0.15-rc.4 或更高版本；请先升级所选节点内核。"
 
 type authClaims struct {
 	UserID  uint   `json:"uid"`
@@ -463,14 +463,17 @@ func NewHandlers(db *gorm.DB, jwtSecret string, credentialCipher *security.Crede
 		return nil, errors.New("credential cipher is required")
 	}
 	normalizedKernelContract := strings.ToLower(strings.TrimSpace(zeroKernelContract))
+	localVersion := strings.TrimSpace(zeroLocalVersion)
+	nativeContract := normalizedKernelContract == cfgpkg.ZeroKernelNativeLocal || normalizedKernelContract == cfgpkg.ZeroKernelNativeMieru
 	return &handlers{
 		db:               db,
 		jwtSecret:        jwtSecret,
 		credentialCipher: credentialCipher,
 		zeroArtifactDir:  strings.TrimSpace(zeroArtifactDir),
-		zeroNativeAccess: normalizedKernelContract == cfgpkg.ZeroKernelNativeLocal || normalizedKernelContract == cfgpkg.ZeroKernelNativeMieru,
-		zeroMieruAccess:  normalizedKernelContract == cfgpkg.ZeroKernelNativeMieru,
-		zeroLocalVersion: strings.TrimSpace(zeroLocalVersion),
+		zeroNativeAccess: nativeContract,
+		zeroMieruAccess: normalizedKernelContract == cfgpkg.ZeroKernelNativeMieru ||
+			(nativeContract && zeroSupportsMieruPrincipal(localVersion)),
+		zeroLocalVersion: localVersion,
 		sshTerminal:      newSSHTerminalRuntime(),
 	}, nil
 }
@@ -1774,6 +1777,60 @@ func (h *handlers) NodeUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	OK(w, node)
 }
 
+func (h *handlers) NodeDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	claims, err := h.requireAdmin(w, r)
+	if err != nil {
+		return
+	}
+	nodeID, err := parsePathID(r.URL.Path, "/api/v1/nodes/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	var node model.Node
+	if err := h.db.First(&node, nodeID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			NotFound(w)
+			return
+		}
+		ServerError(w, err)
+		return
+	}
+	blockers := map[string]int64{}
+	for name, query := range map[string]*gorm.DB{
+		"protocol_endpoints":   h.db.Model(&model.ProtocolEndpoint{}).Where("node_id = ?", node.ID),
+		"managed_certificates": h.db.Model(&model.ManagedCertificate{}).Where("node_id = ?", node.ID),
+		"managed_dns_records":  h.db.Model(&model.ManagedDNSRecord{}).Where("node_id = ?", node.ID),
+		"running_operations":   h.db.Model(&model.NodeOperation{}).Where("node_id = ? AND status = ?", node.ID, "running"),
+	} {
+		var count int64
+		if err := query.Count(&count).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		if count > 0 {
+			blockers[name] = count
+		}
+	}
+	if len(blockers) > 0 {
+		writeJSON(w, http.StatusConflict, "删除节点前请先删除其协议服务、证书和 DNS 解析，并等待正在运行的节点任务结束。", map[string]interface{}{"blockers": blockers})
+		return
+	}
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := createAuditLog(tx, claims, "node.delete", fmt.Sprintf("node:%d", node.ID), fmt.Sprintf("name=%s", node.Name)); err != nil {
+			return err
+		}
+		if err := tx.Delete(&model.NodeKernelState{}, "node_id = ?", node.ID).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&node).Error
+	}); err != nil {
+		ServerError(w, err)
+		return
+	}
+	OK(w, map[string]interface{}{"id": node.ID, "deleted": true, "remote_zero_retained": true})
+}
+
 func (h *handlers) NodeSSHTestHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.requireAdmin(w, r); err != nil {
 		return
@@ -2296,6 +2353,92 @@ func (h *handlers) ProtocolEndpointUpdateHandler(w http.ResponseWriter, r *http.
 	h.saveProtocolEndpoint(w, r, endpointID)
 }
 
+func (h *handlers) ProtocolEndpointDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	claims, err := h.requireAdmin(w, r)
+	if err != nil {
+		return
+	}
+	endpointID, err := parsePathID(r.URL.Path, "/api/v1/admin/protocol-endpoints/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	var endpoint model.ProtocolEndpoint
+	if err := h.db.First(&endpoint, endpointID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			NotFound(w)
+			return
+		}
+		ServerError(w, err)
+		return
+	}
+	var activePlanCount int64
+	if err := h.db.Table("node_group_endpoints").
+		Joins("JOIN plans ON plans.node_group_id = node_group_endpoints.node_group_id").
+		Where("node_group_endpoints.protocol_endpoint_id = ? AND plans.is_active = ?", endpoint.ID, true).
+		Count(&activePlanCount).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	if activePlanCount > 0 {
+		writeJSON(w, http.StatusConflict, "删除协议服务前请先从所有已发布套餐的节点组中解绑。", map[string]interface{}{"blockers": map[string]int64{"active_plans": activePlanCount}})
+		return
+	}
+	var runningDeployments int64
+	if err := h.db.Model(&model.ProtocolDeployment{}).
+		Where("protocol_endpoint_id = ? AND status = ?", endpoint.ID, "running").
+		Count(&runningDeployments).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	if runningDeployments > 0 {
+		writeJSON(w, http.StatusConflict, "该协议服务仍有发布任务运行，请等待任务结束后再删除。", nil)
+		return
+	}
+
+	wasActive := endpoint.IsActive
+	if wasActive {
+		if err := h.db.Model(&endpoint).Update("is_active", false).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), nodeConfigPublishTimeout)
+		_, _, publishErr := h.publishNodeConfigForNode(ctx, endpoint.NodeID, endpoint.ID, claims.UserID)
+		cancel()
+		if publishErr != nil {
+			if restoreErr := h.db.Model(&endpoint).Update("is_active", true).Error; restoreErr != nil {
+				ServerError(w, fmt.Errorf("remove protocol from node: %w; restore active state: %v", publishErr, restoreErr))
+				return
+			}
+			BadRequest(w, "删除前无法从节点运行配置移除该协议服务："+publishErr.Error())
+			return
+		}
+	}
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := createAuditLog(tx, claims, "protocol_endpoint.delete", fmt.Sprintf("protocol_endpoint:%d", endpoint.ID),
+			fmt.Sprintf("node=%d protocol=%s was_active=%t", endpoint.NodeID, endpoint.Protocol, wasActive)); err != nil {
+			return err
+		}
+		if err := tx.Delete(&model.NodeGroupEndpoint{}, "protocol_endpoint_id = ?", endpoint.ID).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&model.CertificateProtocolEndpoint{}, "protocol_endpoint_id = ?", endpoint.ID).Error; err != nil {
+			return err
+		}
+		revokedAt := time.Now().UTC()
+		if err := tx.Model(&model.ProtocolCredential{}).
+			Where("protocol_endpoint_id = ? AND revoked_at IS NULL", endpoint.ID).
+			Updates(map[string]interface{}{"status": protocolCredentialStatusRevoked, "revoked_at": revokedAt}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&endpoint).Error
+	}); err != nil {
+		ServerError(w, err)
+		return
+	}
+	OK(w, map[string]interface{}{"id": endpoint.ID, "deleted": true, "removed_from_runtime": wasActive})
+}
+
 func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, endpointID uint) {
 	claims, err := h.requireAdmin(w, r)
 	if err != nil {
@@ -2319,19 +2462,6 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 	if endpointID != 0 {
 		if err := h.db.First(&existing, endpointID).Error; err != nil {
 			NotFound(w)
-			return
-		}
-	}
-	if supported, reason := h.protocolKernelSupport(protocol); !supported {
-		// Existing unsupported records remain recoverable: an administrator may
-		// save them only while disabling the endpoint so the next full node
-		// publication removes it. Creation, re-enabling and ordinary edits stay
-		// closed until the selected kernel contract supports the protocol.
-		canDisableExisting := existing.ID != 0 &&
-			strings.EqualFold(existing.Protocol, protocol) &&
-			req.IsActive != nil && !*req.IsActive
-		if !canDisableExisting {
-			BadRequestFields(w, "协议服务校验失败。", map[string]string{"protocol": reason})
 			return
 		}
 	}
@@ -2403,6 +2533,18 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		}
 		ServerError(w, err)
 		return
+	}
+	if supported, reason := h.protocolKernelSupportForNode(protocol, node); !supported {
+		// Existing records on an older kernel remain recoverable: administrators
+		// may disable them, while creation, re-enabling and ordinary edits wait
+		// until that concrete node runs a compatible Zero release.
+		canDisableExisting := existing.ID != 0 &&
+			strings.EqualFold(existing.Protocol, protocol) &&
+			req.IsActive != nil && !*req.IsActive
+		if !canDisableExisting {
+			BadRequestFields(w, "协议服务校验失败。", map[string]string{"protocol": reason})
+			return
+		}
 	}
 	var managedCertificate *model.ManagedCertificate
 	if req.ManagedCertificateID != nil && *req.ManagedCertificateID != 0 {
@@ -2656,7 +2798,12 @@ func (h *handlers) ProtocolEndpointDetailHandler(w http.ResponseWriter, r *http.
 		ServerError(w, err)
 		return
 	}
-	kernelSupported, kernelUnsupportedReason := h.protocolKernelSupport(endpoint.Protocol)
+	node, err := h.loadNode(endpoint.NodeID)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	kernelSupported, kernelUnsupportedReason := h.protocolKernelSupportForNode(endpoint.Protocol, node)
 	detail := protocolEndpointAdminDetail{
 		ProtocolEndpoint: endpoint, Config: serverConfig, ManagedCertificateID: managedCertificateIDs[endpoint.ID],
 		Usage: usage, KernelSupported: kernelSupported, KernelUnsupportedReason: kernelUnsupportedReason,
@@ -2859,7 +3006,7 @@ func (h *handlers) ProtocolEndpointListHandler(w http.ResponseWriter, r *http.Re
 		ServerError(w, err)
 		return
 	}
-	nodeNames, err := h.loadProtocolEndpointNodeNames(endpoints)
+	nodesByID, err := h.loadProtocolEndpointNodes(endpoints)
 	if err != nil {
 		ServerError(w, err)
 		return
@@ -2870,8 +3017,9 @@ func (h *handlers) ProtocolEndpointListHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	for _, endpoint := range endpoints {
-		kernelSupported, kernelUnsupportedReason := h.protocolKernelSupport(endpoint.Protocol)
-		items = append(items, newProtocolEndpointListItem(endpoint, nodeNames[endpoint.NodeID], managedCertificateIDs[endpoint.ID], deploymentByEndpoint[endpoint.ID], usageByEndpoint[endpoint.ID], kernelSupported, kernelUnsupportedReason))
+		node := nodesByID[endpoint.NodeID]
+		kernelSupported, kernelUnsupportedReason := h.protocolKernelSupportForNode(endpoint.Protocol, node)
+		items = append(items, newProtocolEndpointListItem(endpoint, node.Name, managedCertificateIDs[endpoint.ID], deploymentByEndpoint[endpoint.ID], usageByEndpoint[endpoint.ID], kernelSupported, kernelUnsupportedReason))
 	}
 	if paged {
 		OK(w, pagedData(items, total, offset, limit))
@@ -3000,6 +3148,30 @@ func (h *handlers) loadProtocolEndpointNodeNames(endpoints []model.ProtocolEndpo
 	}
 	for _, row := range rows {
 		result[row.ID] = row.Name
+	}
+	return result, nil
+}
+
+func (h *handlers) loadProtocolEndpointNodes(endpoints []model.ProtocolEndpoint) (map[uint]model.Node, error) {
+	result := make(map[uint]model.Node)
+	nodeIDs := make([]uint, 0, len(endpoints))
+	seen := make(map[uint]struct{}, len(endpoints))
+	for _, endpoint := range endpoints {
+		if _, ok := seen[endpoint.NodeID]; ok {
+			continue
+		}
+		seen[endpoint.NodeID] = struct{}{}
+		nodeIDs = append(nodeIDs, endpoint.NodeID)
+	}
+	if len(nodeIDs) == 0 {
+		return result, nil
+	}
+	var nodes []model.Node
+	if err := h.db.Preload("KernelState").Where("id IN ?", nodeIDs).Find(&nodes).Error; err != nil {
+		return nil, err
+	}
+	for _, node := range nodes {
+		result[node.ID] = node
 	}
 	return result, nil
 }
@@ -5441,11 +5613,11 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 		if !h.endpointDeliversSubscriptionCredential(endpoint) {
 			continue
 		}
-		if supported, _ := h.protocolKernelSupport(endpoint.Protocol); !supported {
-			continue
-		}
 		var node model.Node
 		if err := h.db.Select("id", "region", "last_seen_at", "is_enabled").First(&node, endpoint.NodeID).Error; err != nil || !node.IsEnabled || node.LastSeenAt == nil || node.LastSeenAt.Before(now.Add(-nodeOnlineWindow)) {
+			continue
+		}
+		if supported, _ := h.protocolKernelSupportForNode(endpoint.Protocol, node); !supported {
 			continue
 		}
 		clientConfig, err := h.credentialClientConfig(endpoint, credential)
@@ -5475,14 +5647,14 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	for _, endpoint := range endpoints {
-		if supported, _ := h.protocolKernelSupport(endpoint.Protocol); !supported {
-			continue
-		}
 		if h.endpointDeliversSubscriptionCredential(endpoint) {
 			continue
 		}
 		var node model.Node
 		if err := h.db.Select("id", "region").First(&node, endpoint.NodeID).Error; err != nil {
+			continue
+		}
+		if supported, _ := h.protocolKernelSupportForNode(endpoint.Protocol, node); !supported {
 			continue
 		}
 		clientConfig, err := h.endpointSubscriptionClientConfig(endpoint)
@@ -6724,8 +6896,9 @@ func (h *handlers) isProtocolSupported(proto string) bool {
 }
 
 type protocolKernelCapability struct {
-	Supported bool   `json:"supported"`
-	Reason    string `json:"reason,omitempty"`
+	Supported          bool   `json:"supported"`
+	Reason             string `json:"reason,omitempty"`
+	MinimumZeroVersion string `json:"minimum_zero_version,omitempty"`
 }
 
 func (h *handlers) protocolKernelSupport(proto string) (bool, string) {
@@ -6733,17 +6906,50 @@ func (h *handlers) protocolKernelSupport(proto string) (bool, string) {
 	if !h.isProtocolSupported(protocol) {
 		return false, "面板无法识别该协议。"
 	}
-	if protocol == "mieru" && !h.zeroMieruAccess {
+	return true, ""
+}
+
+func (h *handlers) protocolKernelSupportForVersion(proto, zeroVersion string) (bool, string) {
+	supported, reason := h.protocolKernelSupport(proto)
+	if !supported {
+		return supported, reason
+	}
+	if strings.EqualFold(strings.TrimSpace(proto), "mieru") && !zeroSupportsMieruPrincipal(zeroVersion) {
 		return false, protocolKernelMieruUnavailableReason
 	}
 	return true, ""
+}
+
+func (h *handlers) nodeKernelVersion(node model.Node) string {
+	if node.KernelState != nil {
+		if installed := strings.TrimSpace(node.KernelState.InstalledVersion); installed != "" {
+			return installed
+		}
+	}
+	if h.db != nil {
+		var state model.NodeKernelState
+		if err := h.db.Select("installed_version").First(&state, "node_id = ?", node.ID).Error; err == nil {
+			if installed := strings.TrimSpace(state.InstalledVersion); installed != "" {
+				return installed
+			}
+		}
+	}
+	return strings.TrimSpace(node.Version)
+}
+
+func (h *handlers) protocolKernelSupportForNode(proto string, node model.Node) (bool, string) {
+	return h.protocolKernelSupportForVersion(proto, h.nodeKernelVersion(node))
 }
 
 func (h *handlers) protocolKernelCapabilities() map[string]protocolKernelCapability {
 	capabilities := make(map[string]protocolKernelCapability, len(supportedProtocols))
 	for protocol := range supportedProtocols {
 		supported, reason := h.protocolKernelSupport(protocol)
-		capabilities[protocol] = protocolKernelCapability{Supported: supported, Reason: reason}
+		capability := protocolKernelCapability{Supported: supported, Reason: reason}
+		if protocol == "mieru" {
+			capability.MinimumZeroVersion = zeroMieruPrincipalSince
+		}
+		capabilities[protocol] = capability
 	}
 	return capabilities
 }

@@ -291,6 +291,108 @@ Follow-up intranet synchronization and deployed evidence:
   startup-failure message. The contract remains `legacy`; live data still has
   zero managed DNS records, certificates and Mieru endpoints.
 
+### 2026-07-31 - Guarded resource deletion and Zero rc.4 Mieru activation
+
+Goal outcome before intranet synchronization:
+
+- Added authenticated DELETE routes and administrator controls for protocol
+  endpoints, managed certificates and nodes. These resources previously had
+  no delete implementation; the observed behavior was an absent capability,
+  not a failing delete request.
+- Protocol deletion rejects active-plan or running-publication references. An
+  active endpoint is first disabled and removed through the normal full-node
+  validate/activate/health/Connector publication boundary. Only then does the
+  transaction remove endpoint/group/certificate bindings, revoke its
+  credentials and delete the endpoint. Deployment, traffic and audit history
+  remain available.
+- Certificate deletion rejects endpoint references and running issuance or
+  renewal operations. It deletes panel ownership but retains operation history
+  and remote certificate files because those files may still be shared by
+  services outside Zboard.
+- Node deletion rejects protocol, certificate, DNS and running-operation
+  dependencies. It removes the node record and current kernel state but does
+  not remotely uninstall Zero or erase historical operations.
+- Zero `0.0.15-rc.4` is now the concrete Mieru attribution boundary. The panel
+  advertises that minimum version and gates endpoint creation, re-enabling,
+  batch publication and subscription output by the selected or probed
+  installed node version. Upgrading a node to rc.4 schedules the existing
+  two-stage fallback/removal publication; older nodes continue to fail closed.
+  `native-local-mieru` remains a compatible alias, while an rc.4-or-newer
+  ordinary `native-local` artifact enables the same behavior automatically.
+- Removed panel-only `credential_id` from all serialized legacy Zero managed
+  users. The value remains encrypted-resource metadata for event attribution
+  and audit, but the runtime emits only fields accepted by Zero, including the
+  stable `principal_key`.
+- The Zero repository source remained unmodified. Its checked-out official
+  rc.4 commit is `929250f13`; only ignored local build output was regenerated
+  to exercise the real validator and Connector.
+
+Local verification:
+
+- `go test ./...` passed for every backend package and `go vet ./...` passed.
+- The OpenAPI test covers all three DELETE operations and the Mieru minimum
+  Zero version. Runtime regression coverage proves that generated managed
+  users do not leak `credential_id`, rc.3 remains blocked and rc.4 unlocks
+  attributable Mieru users.
+- All 60 frontend Vitest files and 138 tests passed. Frontend type checking and
+  the production build passed with 538 transformed modules.
+- A connector-enabled Zero `0.0.15-rc.4` debug binary built from the clean
+  official checkout passed
+  `TestNativeKernelAccessConfigValidatesWithCurrentZero`,
+  `TestMieruPrincipalContractValidatesWithOptInZero` and
+  `TestCurrentZeroDeliversNativeConnectorEvent`.
+- `git diff --check` reported no whitespace error, only the repository's
+  existing Windows LF-to-CRLF notices. The Zero source worktree remained
+  clean.
+
+Remaining gaps before synchronization:
+
+- Destructive behavior will not be exercised against live administrator data
+  during deployment verification. Route registration, authentication,
+  deployed source and service health can be verified without deleting an
+  operator-owned resource.
+- Existing nodes must actually be upgraded to Zero rc.4 before their Mieru
+  endpoints can publish. Zboard synchronization alone does not authorize or
+  perform that kernel upgrade.
+- Business and immutable-history resources intentionally retain their existing
+  lifecycle semantics; this change addresses the reported operational node,
+  certificate and protocol assets rather than introducing indiscriminate
+  deletion of orders, traffic, audit or operation history.
+- No Git staging, commit, push or release was performed.
+
+Intranet synchronization and deployed evidence:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` successfully deployed
+  `v0.0.1-20260731T095009Z-intranet-working-tree@2026-07-31T09:50:09Z`.
+  `/api/v1/version` returned that exact version and advertises
+  `mieru.supported=true` with
+  `minimum_zero_version=0.0.15-rc.4`. `/readyz` returned `db=true` and
+  `ready=true`.
+- `zboard_next-zboard-1` is running and healthy. The external `db` and `cache`
+  containers are running; MySQL returned `mysqld is alive` and an
+  authenticated Redis check returned `PONG`. Recent Zboard logs contain no
+  panic, fatal, migration-startup or startup-failure message.
+- Unauthenticated DELETE requests for a nonexistent node, certificate and
+  protocol endpoint all returned HTTP 401. This verifies route registration
+  and the administrator boundary without deleting live data. The deployed
+  source contains all three handlers, the rc.4 Mieru version boundary and no
+  runtime managed-user `credential_id`.
+- The pre-switch database backup is
+  `/data/zboard-next/backups/20260731T095009Z/zboard-before-sync.sql`
+  (72,902 bytes), the previous source is
+  `/data/zboard-next/app-prev-20260731T095009Z`, and the synchronized source
+  archive is
+  `/data/zboard-next/releases/20260731T095009Z/source.tar.gz`
+  (769,022 bytes). All were verified present.
+- The live database currently has one node, one protocol endpoint, no managed
+  certificates and no Mieru endpoints. Node 1 remains healthy on Zero
+  `0.0.15-rc.3`, so the version-aware gate correctly continues to block Mieru
+  there until an operator explicitly upgrades that node to rc.4 or newer.
+  No live kernel reconcile, protocol publication or resource deletion was
+  performed.
+- The Zero source worktree remained clean. No kernel source was modified, and
+  no Git staging, commit, push or release was performed.
+
 ### 2026-07-31 - Kernel-aware Mieru availability gate
 
 Goal outcome before intranet synchronization:
