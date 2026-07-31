@@ -1,121 +1,101 @@
 # Zboard
 
-Zboard 是一个面向代理服务运营的控制平面，将节点资产、协议服务、订阅交付、
-套餐订单、流量结算和日常运维放在同一套后台中管理。
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-项目采用模块化单体架构：管理端与用户端由同一个服务交付，节点侧使用 Zero
-作为运行内核。当前版本为内部开发基线 `v0.0.1`，首个公开发布目标为
-`v0.1.0`。
+**An all-in-one management platform for proxy service providers.**
 
-## 解决什么问题
+Zboard connects VPS infrastructure, protocol nodes, subscription delivery, users, plans, orders, traffic accounting, and daily operations in one system.
 
-传统面板通常把 VPS、协议配置、销售套餐和客户端订阅混在同一层级，配置复用、
-节点迁移和故障定位都比较困难。Zboard 将它们拆分为职责明确的资源：
+It is not only a subscription panel. Zboard manages the complete lifecycle of a proxy service platform: from VPS onboarding and protocol service management to product sales, subscription delivery, traffic settlement, and operational auditing.
+
+> Zboard is under active development. The current development baseline is `v0.0.1`, with `v0.1.0` planned as the first public release.
+
+## Complete service lifecycle
 
 ```text
-节点资产 → 协议服务 → 节点组 → 套餐 / SKU → 订单 → 订阅
-             │                              │
-             └── 运行配置与凭证              └── 客户端原生配置
+VPS infrastructure
+        ↓
+Protocol services
+        ↓
+Node groups
+        ↓
+Plans / SKUs
+        ↓
+Orders / Subscriptions
+        ↓
+Client configuration delivery
+        ↓
+Traffic accounting
 ```
 
-- **节点资产**描述服务器、SSH 信任和 Zero 运行状态。
-- **协议服务**是可复制、可切换承载节点的服务配置，同时保存明确的运行实例。
-- **节点组**定义套餐实际能够交付的协议服务集合。
-- **套餐与 SKU**描述销售内容、价格、周期和流量额度。
-- **订阅模板与规则集**决定不同客户端最终获得的原生配置。
-- **流量与任务记录**将节点运行结果、用户用量和后台操作关联起来。
+## Core capabilities
 
-## 核心能力
+### Infrastructure management
 
-### 基础设施
+- Manage VPS assets, SSH credentials, host trust, and node status.
+- Install, validate, upgrade, and rollback Zero runtime components.
+- Publish node configurations and track operational results.
 
-- 统一管理 VPS 资产、SSH 凭证、主机密钥信任和节点运行状态。
-- 管理 VLESS、VMess、Shadowsocks、Trojan、Hysteria2 等协议服务，支持复制配置、切换承载节点和完整配置发布。
-- 使用节点组复用协议服务，并通过修订号保护并发编辑。
-- 安装、升级、校验和回滚节点上的 Zero 内核与运行配置。
-- 可分阶段将订阅凭证编译为 Zero 原生 `principal_key` 用户，并通过带磁盘 outbox 的通用 Webhook Connector 接收生命周期和流量事件；默认继续兼容当前已发布内核。
+### Protocol services
 
-### 订阅交付
+- Support VLESS, VMess, Shadowsocks, Trojan, and Hysteria2.
+- Separate protocol services from physical nodes.
+- Reuse, migrate, and organize services through node groups.
 
-- 面向 ZNet Sink、Clash / Mihomo 和 sing-box 生成客户端原生配置。
-- 根据客户端类型自动选择输出格式，同时允许用户手动选择。
-- 独立维护规则集，并在订阅模板中配置策略组、出站目标和节点名称正则过滤。
-- 提供可视化配置与高级源码编辑；最终输出在保存和交付前进行结构校验。
-- 订阅凭证独立存储、可撤销、可轮换，并在访问日志中隐藏敏感令牌。
+### Subscription delivery
 
-### 商业与用户
+- Generate client-native configurations for ZNet Sink, Clash/Mihomo, and sing-box.
+- Manage templates, rules, policy groups, outbound targets, and node filters.
+- Validate configurations before delivery.
+- Rotate and revoke subscription credentials securely.
 
-- 管理用户、套餐、SKU、订单、订阅、续期和流量额度。
-- 记录订单与订阅快照，避免套餐后续修改影响既有权益。
-- 提供用户端套餐、订单、订阅地址、用量和到期信息。
-- 支持工单以及管理员对用户状态、角色和密码的管理。
+### Business operations
 
-### 运维与审计
+- Manage users, plans, SKUs, orders, subscriptions, renewals, and quotas.
+- Preserve order and entitlement snapshots.
+- Provide user-facing subscription and usage information.
 
-- 接收 Zero 运行事件并完成可重放、可对账的流量结算。
-- 统一展示后台任务、节点操作、配置发布和运行日志。
-- 对身份、商业数据和敏感基础设施操作保留审计记录。
-- 提供健康检查、数据库备份以及 Docker Compose 升级和回滚路径。
+### Traffic and operations
 
-## 技术架构
+- Receive authenticated traffic events from nodes.
+- Attribute usage to subscriptions.
+- Provide operational logs, tasks, audit records, backups, upgrades, and rollback workflows.
 
-| 层级 | 实现 |
-| --- | --- |
-| 后端 | Go、go-zero、GORM |
-| 前端 | Vue 3、Vite、Pinia、Vue Router |
-| 数据 | MySQL 8、Redis |
-| 节点运行时 | Zero |
-| 接口 | RESTful `/api/v1`、OpenAPI |
-| 部署 | 单应用镜像 + Docker Compose |
+## Resource model
 
-后端同时提供 API 与前端静态资源，因此正式环境不需要单独部署前端服务。
-
-## 快速体验
-
-需要 Docker 和 Docker Compose。复制环境变量示例后，替换其中所有
-`generate-` / `choose-` 占位值；JWT、数据库密码和凭证加密密钥必须分别生成，
-凭证加密密钥需要长期稳定保存。
-
-```bash
-cp .env.example .env
-docker compose -f deploy/docker/docker-compose.yml up --build
+```text
+Node asset → Protocol service → Node group → Plan / SKU → Order → Subscription
 ```
 
-服务就绪后打开 `http://127.0.0.1:8080/setup`，通过安装向导创建首个管理员并完成
-站点初始化。需要管理 Zero 节点时，再配置可信的内核归档目录。
+Zboard separates infrastructure resources from commercial resources, allowing nodes and services to evolve without changing existing customer entitlements.
 
-> Zboard 当前仍是 `v0.0.1` 开发版本，不建议在没有备份、访问控制和 HTTPS 的
-> 公网环境中直接使用。
+## Why Zboard
 
-## 项目结构
+Traditional panels usually focus on subscriptions and products while leaving VPS management, protocol lifecycle, and operational workflows to external tools.
 
-- `backend/`：业务服务、API、数据模型和数据库基线。
-- `frontend/`：管理端、用户端和共享 UI 组件。
-- `deploy/`：Docker 镜像与 Compose 部署文件。
-- `docs/`：架构、数据模型、运维和发布文档。
-- `scripts/`：本地开发、验证、迁移和构建脚本。
+Zboard brings infrastructure, service delivery, and commercial operations together:
 
-## 文档导航
-
-| 内容 | 文档 |
+| Traditional approach | Zboard |
 | --- | --- |
-| 资源边界与数据关系 | [数据模型](docs/data-model.md) |
-| Zero 安装、配置发布与回滚 | [节点内核生命周期](docs/node-kernel-lifecycle.md) |
-| 数据库初始化、开发库升级与迁移策略 | [数据库迁移](docs/database-migrations.md) |
-| 当前开发范围与发布进度 | [项目路线图](docs/roadmap.md) |
-| 本地环境、启动与验证 | [开发指南](docs/development.md) |
-| 后端配置与接口开发 | [后端说明](backend/README.md) |
-| OpenAPI 契约 | [backend/api/openapi.yaml](backend/api/openapi.yaml) |
-| 贡献规范 | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| 安全策略 | [SECURITY.md](SECURITY.md) |
-| 发布流程 | [RELEASING.md](RELEASING.md) |
+| Manage nodes separately from products | Connect infrastructure and business resources |
+| Bind subscriptions directly to servers | Use reusable services and node groups |
+| Generate static subscriptions | Deliver validated client configurations |
+| Maintain isolated traffic counters | Associate runtime events with subscriptions |
 
-## 版本状态
+## Technology
 
-- `v0.0.1`：当前内部开发基线；首发前的功能、交互和数据库调整均在此版本完成。
-- `v0.1.0`：首个公开发布版本，必须通过完整的
-  [发布检查清单](docs/release/v0.1.0-launch-checklist.md)。
+| Component | Technology |
+| --- | --- |
+| Backend | Go, go-zero, GORM |
+| Frontend | Vue 3, Vite, Pinia, PrimeVue |
+| Data | MySQL 8, Redis |
+| Runtime | Zero |
+| API | RESTful `/api/v1`, OpenAPI |
 
-数据库基线会在 `v0.1.0` 发布前持续收敛；公开发布后，已发布迁移保持不可修改，
-后续结构变化使用新的增量迁移。具体兼容和回滚规则不在项目介绍中展开，请参阅
-[数据库迁移文档](docs/database-migrations.md)。
+## Documentation
+
+Development, deployment, API references, and operational guides are maintained in the [documentation](docs/).
+
+## License
+
+Zboard is licensed under the [Mozilla Public License 2.0](LICENSE).
