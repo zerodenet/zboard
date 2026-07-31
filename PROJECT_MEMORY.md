@@ -94,6 +94,282 @@ Remaining gaps:
   runtime state.
 - No Git staging, commit, push or release was performed.
 
+## 2026-07-31 - Dual-stack DNS, non-exclusive ACME and managed Mieru endpoint credentials
+
+Goal outcome before intranet synchronization:
+
+- Managed-DNS creation now accepts one IPv4 A value, one IPv6 AAAA value, or
+  both in one request. A and AAAA remain separate `managed_dns_records`,
+  provider operations and audit resources.
+- Public DNS visibility no longer depends on a second manual synchronization.
+  A bounded background observer queries Cloudflare-independent public
+  resolvers every 15 seconds for synchronized unresolved records and marks the
+  matching A/AAAA resource visible without repeating the provider write.
+- New managed certificates default to Cloudflare DNS-01 and explicitly own a
+  verified provider account. DNS credentials are decrypted only for
+  preflight/execution and are sent to the node over SSH stdin; they are not
+  embedded in commands or operation logs. HTTP-01 Webroot is also supported:
+  Certbot writes challenges below a canonical remote POSIX Webroot and does
+  not bind a second listener. It still preflights every public A/AAAA address
+  for TCP port 80 because HTTP-01 itself requires that public service.
+  Existing standalone HTTP-01 certificates remain renewal-compatible, while
+  new creation cannot select standalone mode.
+- The v0.0.1 schema remains one squashed `0001_init` migration. The baseline
+  now stores certificate provider ownership and Webroot path; the existing
+  pre-release compatibility finalizer adds the nullable column, path, index
+  and foreign key to older development databases.
+- Mieru creation no longer accepts administrator-entered usernames or
+  passwords. Zboard creates one high-entropy endpoint password, stores it only
+  inside the encrypted server configuration, redacts it from admin detail,
+  injects it transiently into authorized subscriptions and maps
+  `username=password` only for Clash compatibility. Startup normalizes legacy
+  Mieru endpoints and queues one full node publication per affected node.
+- Zero/ZNet Sink output validation now rejects Mieru outbounds without a
+  server, valid port or password. The template preview fixture contains a
+  valid Mieru endpoint, so advanced output replacement cannot silently reduce
+  it to `{type: mieru}`. Node publication continues to run the installed
+  `/usr/local/bin/zero validate` before activation.
+- The Zero kernel repository was not modified. The exact kernel prerequisite
+  for per-subscription Mieru attribution is recorded in
+  `docs/mieru-kernel-contract.md`: `MieruUserConfig.principal_key`, matched-user
+  propagation to session authentication and flow events, duplicate/empty-key
+  rejection and multi-user tests.
+
+Local verification:
+
+- `go test ./...` passed for every backend package, including new Mieru
+  credential/redaction/output checks, DNS/ACME helpers, migration inventory
+  and OpenAPI coverage.
+- `go vet ./...` passed.
+- All 60 frontend Vitest files and 136 tests passed.
+- Frontend type checking and the production build passed with 538 transformed
+  modules.
+- `git diff --check` reported no whitespace error; Git emitted only the
+  repository's existing Windows LF-to-CRLF notices.
+
+Remaining gaps before synchronization:
+
+- Per-subscription Mieru credentials and accurate flow attribution remain
+  intentionally disabled until the reviewed Zero kernel contract above is
+  implemented and released. Zboard does not infer identity from a password.
+- Template preview performs strict Zboard structural validation. A real Zero
+  binary validation remains authoritative during node publication; making
+  browser preview invoke a real Zero client validator requires an explicit
+  compatible validator artifact/runtime contract and is not fabricated by
+  this change.
+- Live Cloudflare DNS propagation, Let's Encrypt issuance and a real Mieru
+  client flow still require intranet/environment verification.
+- No Git staging, commit, push or release was performed.
+
+Intranet synchronization and deployed evidence:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` deployed
+  `v0.0.1-20260731T025508Z-intranet-working-tree@2026-07-31T02:55:08Z`.
+  The version endpoint returned that exact build, `/readyz` reported
+  `db=true` and `ready=true`, and `zboard_next-zboard-1` was healthy after the
+  switch.
+- The pre-switch database backup is
+  `/data/zboard-next/backups/20260731T025508Z/zboard-before-sync.sql`, the
+  previous source is `/data/zboard-next/app-prev-20260731T025508Z`, and the
+  synchronized source archive is
+  `/data/zboard-next/releases/20260731T025508Z/source.tar.gz`. All three paths
+  were verified to exist, with the backup and archive non-empty.
+- The deployed database retains one `0001_init.up.sql` migration record.
+  `managed_certificates.provider_account_id` is nullable `bigint unsigned`,
+  `webroot_path` is non-null `varchar(255)`, and
+  `fk_managed_certificates_provider` exists.
+- Unauthenticated requests to both `/api/v1/admin/dns-records` and
+  `/api/v1/admin/certificates` returned 401, proving the deployed routes are
+  registered behind the admin boundary. The active source contains the
+  DNS-01 certificate selector and automatic public-DNS observation UI.
+- The deployed database currently contains zero managed DNS records, zero
+  managed certificates and zero Mieru endpoints. Schema, route, startup and
+  artifact verification therefore passed, but a live dual-stack Cloudflare
+  write/propagation cycle, ACME issuance and legacy Mieru normalization could
+  not be truthfully qualified from existing production rows.
+- The local Zero repository remained clean after deployment; no kernel file
+  was changed. No Git staging, commit, push or release was performed.
+
+Follow-up Mieru readiness work before the next synchronization:
+
+- Added the opt-in `native-local-mieru` kernel contract without enabling it in
+  the intranet environment. Under the existing contract, Zboard now prepares
+  one encrypted Mieru secret and stable principal per active subscription but
+  keeps the credential in `prepared` status and continues delivering the
+  endpoint fallback credential.
+- A node enters principal-aware Mieru delivery only after a full configuration
+  publication passes the target Zero binary's `validate`, activation,
+  systemd/control health and authenticated Connector callback. The first
+  publication retains a bounded migration user; while holding the same node
+  lock, a second publication removes it. Readiness commits only after the
+  fallback-free generation succeeds. Cleanup failure rolls back to the
+  compatibility generation and leaves the endpoint unready. Reverting the
+  contract follows the same publication boundary before returning credentials
+  to `prepared`.
+- Principal-aware runtime users contain `username=password` for client/kernel
+  compatibility and the stable protocol-credential `principal_key`. The
+  temporary `migration:endpoint:<id>` principal is acknowledged without
+  billing only during the bounded transition.
+- Saving, previewing and serving a ZNet Sink template under the opt-in contract
+  now invokes the checksum-pinned managed Zero artifact's real `validate`
+  command. A type-only Mieru object can no longer pass through a preview or
+  live subscription merely because its JSON shape is valid.
+- The baseline schema now includes
+  `protocol_endpoints.mieru_principal_ready`; the pre-release finalizer adds it
+  to older development databases. Lifecycle expiry and revocation also cover
+  prepared credentials.
+- Current Zero commit `e918ee0ab` remains unmodified. Its
+  `MieruUserConfig` accepts only `username` and `password`; the opt-in contract
+  test with the current binary fails authoritatively on unknown field
+  `principal_key`. Therefore `native-local-mieru` must remain disabled until a
+  reviewed Zero release implements that contract.
+- A completion audit tightened the two-stage publication invariant. The first
+  compatibility generation no longer commits endpoint readiness or switches
+  subscription delivery. Zboard holds the node publication lock and performs
+  the fallback-free publication synchronously; only its successful validator,
+  activation, health and Connector checks may commit readiness. Cleanup
+  failure rolls back to the compatibility generation and leaves the endpoint
+  unready for a safe retry.
+
+Follow-up local verification:
+
+- `go test ./...` and `go vet ./...` passed.
+- All 60 frontend Vitest files and 136 tests passed; the production build
+  passed with 538 transformed modules.
+- The ordinary native Zero validation suite passed. The explicitly opt-in
+  Mieru principal contract probe failed exactly on unsupported
+  `principal_key`, which is the expected external prerequisite rather than a
+  Zboard fallback.
+- `git diff --check` passed. Both the Zboard and Zero repositories were
+  inspected; Zero remained clean.
+- The completion-audit rerun used the located Go SDK directly after the shell
+  PATH no longer exposed `go`; all backend packages and `go vet` passed. The
+  new readiness test proves that the compatibility publication cannot commit,
+  the fallback-free publication can commit, ready endpoints cannot reintroduce
+  the fallback and the reverse legacy transition remains allowed.
+
+Follow-up intranet synchronization and deployed evidence:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` deployed
+  `v0.0.1-20260731T031739Z-intranet-working-tree@2026-07-31T03:17:39Z`.
+  The version endpoint returned that exact build and the deliberately
+  unchanged `legacy` kernel contract. `/readyz` returned `db=true` and
+  `ready=true`.
+- `zboard_next-zboard-1` was running and healthy. The external `db` and
+  `cache` containers were running; neither defines a Docker healthcheck.
+- The pre-switch database backup is
+  `/data/zboard-next/backups/20260731T031739Z/zboard-before-sync.sql`
+  (72,841 bytes), the previous source is
+  `/data/zboard-next/app-prev-20260731T031739Z`, and the synchronized source
+  archive is `/data/zboard-next/releases/20260731T031739Z/source.tar.gz`
+  (757,460 bytes). All paths were verified present.
+- The deployed database still has one migration record.
+  `protocol_endpoints.mieru_principal_ready` exists as non-null
+  `tinyint(1)` with default `0`. The deployed source contains the opt-in
+  contract gate.
+- The live database contains zero managed DNS records, zero managed
+  certificates, zero Mieru endpoints and zero prepared Mieru credentials.
+  Consequently schema/startup/contract safety are verified, while a real
+  dual-stack propagation cycle, ACME issuance and Mieru flow attribution
+  remain environment-dependent gaps.
+- No Zero source, binary or node runtime was changed. No Git staging, commit,
+  push or release was performed.
+- After tightening the synchronous two-stage readiness invariant, a final
+  synchronization deployed
+  `v0.0.1-20260731T032925Z-intranet-working-tree@2026-07-31T03:29:25Z`.
+  `/readyz` again returned `db=true` and `ready=true`; Zboard was healthy and
+  the external `db` and `cache` containers were running.
+- The final pre-switch backup is
+  `/data/zboard-next/backups/20260731T032925Z/zboard-before-sync.sql`
+  (72,902 bytes), previous source is
+  `/data/zboard-next/app-prev-20260731T032925Z`, and source archive is
+  `/data/zboard-next/releases/20260731T032925Z/source.tar.gz`
+  (758,797 bytes). All were verified present.
+- The final deployed source contains the synchronous readiness gate, the
+  database retains one migration and the non-null/default-zero readiness
+  column, and recent Zboard logs contain no panic, fatal, migration-startup or
+  startup-failure message. The contract remains `legacy`; live data still has
+  zero managed DNS records, certificates and Mieru endpoints.
+
+### 2026-07-31 - Kernel-aware Mieru availability gate
+
+Goal outcome before intranet synchronization:
+
+- The public version response now exposes protocol-kernel capabilities with a
+  supported flag and operator-facing reason. Under the deployed `legacy` and
+  current `native-local` contracts, Mieru is explicitly unsupported because
+  Zero does not provide the required `principal_key` attribution contract.
+- The backend is authoritative: it rejects new Mieru endpoints, re-enabling
+  retained Mieru endpoints, batch enable/deploy and any runtime publication
+  containing an active unsupported Mieru endpoint. Subscription generation
+  excludes unsupported endpoints and legacy startup no longer prepares new
+  per-subscription Mieru credentials.
+- Historical Mieru records remain visible and searchable. They may be disabled
+  and removed from runtime, but cannot be copied, deployed or re-enabled. This
+  preserves an operational escape path without advertising a configuration
+  the current kernel cannot run correctly.
+- The protocol editor continues to show Mieru as a disabled option labelled
+  `Mieru（当前内核不支持）`, displays the backend reason in list, detail and
+  editor views, and fails closed for Mieru if capability discovery is
+  unavailable. Other established protocols remain available.
+- The future `native-local-mieru` contract remains the only explicit opt-in
+  path that can expose Mieru as supported after a reviewed kernel implements
+  and passes the existing contract probe. No Zero source, binary or runtime
+  state was modified.
+
+Local verification:
+
+- `go test ./...` and `go vet ./...` passed for every backend package.
+- All 60 frontend Vitest files and 137 tests passed. Frontend type checking and
+  the production build passed with 538 transformed modules.
+- OpenAPI coverage includes the protocol capability response and endpoint
+  support fields. Backend tests prove that current contracts disable Mieru,
+  ordinary protocols remain enabled and only the explicit future contract
+  opens the feature.
+- `git diff --check` reported no whitespace error, only the repository's
+  existing Windows LF-to-CRLF notices. The Zero repository remained clean.
+
+Remaining gaps before synchronization:
+
+- The live database previously contained zero Mieru endpoints, so the retained
+  historical-record disable flow cannot be exercised against existing
+  production data without fabricating a record. The public capability response
+  and deployed source/runtime gates can still be verified after synchronization.
+- No Git staging, commit, push or release was performed.
+
+Intranet synchronization and deployed evidence:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` successfully deployed
+  `v0.0.1-20260731T040044Z-intranet-working-tree@2026-07-31T04:00:44Z`.
+  The version endpoint returned that exact build and the unchanged `legacy`
+  kernel contract.
+- The deployed version response reports `mieru.supported=false` with the
+  operator-facing `principal_key` explanation while VLESS, VMess, Trojan,
+  Shadowsocks and Hysteria2 remain supported. `/readyz` returned `db=true` and
+  `ready=true`.
+- `zboard_next-zboard-1` was healthy. The external `db` and `cache` containers
+  were running. Recent Zboard logs contained no panic, fatal, migration-startup
+  or startup-failure message.
+- The pre-switch database backup is
+  `/data/zboard-next/backups/20260731T040044Z/zboard-before-sync.sql`
+  (72,902 bytes), the previous source is
+  `/data/zboard-next/app-prev-20260731T040044Z`, and the synchronized archive is
+  `/data/zboard-next/releases/20260731T040044Z/source.tar.gz`
+  (763,277 bytes). All were verified present.
+- The deployed database still contains zero Mieru endpoints. An unauthenticated
+  protocol-endpoint request returned 401, and the deployed source contains both
+  the backend kernel gate and frontend unsupported-state controls. The container
+  environment still reports `ZBOARD_ZERO_KERNEL_CONTRACT=legacy`.
+- An accidentally concurrent second synchronization attempt at
+  `20260731T040102Z` built the same working tree and created another non-empty
+  database backup, source archive and candidate directory, but exited before
+  copying or activating an application because the successful first attempt had
+  already moved the old `app` directory. It did not change the verified live
+  version. Those unused artifacts were retained rather than removed without a
+  separate retention decision.
+- No Zero source, binary or node runtime was changed. No Git staging, commit,
+  push or release was performed.
+
 ### 2026-07-30 - Node credential drawer state convergence
 
 Outcome before synchronization:

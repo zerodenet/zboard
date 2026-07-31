@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,9 +31,11 @@ const (
 	certificateStatusFailed   = "failed"
 	certificateStatusExpired  = "expired"
 
-	certificateEnvironmentProduction = "production"
-	certificateEnvironmentStaging    = "staging"
-	certificateChallengeHTTP01       = "http-01"
+	certificateEnvironmentProduction  = "production"
+	certificateEnvironmentStaging     = "staging"
+	certificateChallengeHTTP01        = "http-01"
+	certificateChallengeHTTP01Webroot = "http-01-webroot"
+	certificateChallengeDNS01         = "dns-01"
 
 	certificateOperationIssue = "issue"
 	certificateOperationRenew = "renew"
@@ -49,13 +52,16 @@ var (
 )
 
 type certificateWriteRequest struct {
-	NodeID          uint     `json:"node_id"`
-	Name            string   `json:"name"`
-	Domains         []string `json:"domains"`
-	ContactEmail    string   `json:"contact_email"`
-	Environment     string   `json:"environment"`
-	AutoRenew       *bool    `json:"auto_renew"`
-	RenewBeforeDays int      `json:"renew_before_days"`
+	NodeID            uint     `json:"node_id"`
+	ProviderAccountID uint     `json:"provider_account_id"`
+	Name              string   `json:"name"`
+	Domains           []string `json:"domains"`
+	ContactEmail      string   `json:"contact_email"`
+	Environment       string   `json:"environment"`
+	AutoRenew         *bool    `json:"auto_renew"`
+	RenewBeforeDays   int      `json:"renew_before_days"`
+	ChallengeType     string   `json:"challenge_type"`
+	WebrootPath       string   `json:"webroot_path"`
 }
 
 type certificateRenewalUpdateRequest struct {
@@ -67,12 +73,14 @@ type certificateRenewalUpdateRequest struct {
 type certificateListItem struct {
 	ID                   uint                        `json:"id"`
 	NodeID               uint                        `json:"node_id"`
+	ProviderAccountID    *uint                       `json:"provider_account_id,omitempty"`
 	NodeName             string                      `json:"node_name"`
 	Name                 string                      `json:"name"`
 	Domains              []string                    `json:"domains"`
 	ContactEmail         string                      `json:"contact_email"`
 	Environment          string                      `json:"environment"`
 	ChallengeType        string                      `json:"challenge_type"`
+	WebrootPath          string                      `json:"webroot_path"`
 	Status               string                      `json:"status"`
 	CertPath             string                      `json:"cert_path"`
 	KeyPath              string                      `json:"key_path"`
@@ -147,6 +155,11 @@ func validCertificateContactEmail(value string) bool {
 	value = strings.TrimSpace(value)
 	address, err := mail.ParseAddress(value)
 	return err == nil && address.Address == value && len(value) <= 254
+}
+
+func validNodeWebroot(value string) bool {
+	cleaned := path.Clean(value)
+	return strings.HasPrefix(cleaned, "/") && cleaned != "/" && cleaned == value
 }
 
 func decodeCertificateDomains(raw string) []string {
@@ -275,9 +288,9 @@ func effectiveCertificateStatus(certificate model.ManagedCertificate, now time.T
 
 func newCertificateListItem(certificate model.ManagedCertificate, nodeName string, usageCount int64, operation *model.CertificateOperation, now time.Time) certificateListItem {
 	return certificateListItem{
-		ID: certificate.ID, NodeID: certificate.NodeID, NodeName: nodeName, Name: certificate.Name,
+		ID: certificate.ID, NodeID: certificate.NodeID, ProviderAccountID: certificate.ProviderAccountID, NodeName: nodeName, Name: certificate.Name,
 		Domains: decodeCertificateDomains(certificate.Domains), ContactEmail: certificate.ContactEmail,
-		Environment: certificate.Environment, ChallengeType: certificate.ChallengeType,
+		Environment: certificate.Environment, ChallengeType: certificate.ChallengeType, WebrootPath: certificate.WebrootPath,
 		Status: effectiveCertificateStatus(certificate, now), CertPath: certificate.CertPath, KeyPath: certificate.KeyPath,
 		SerialNumber: certificate.SerialNumber, FingerprintSHA256: certificate.FingerprintSHA256,
 		NotBefore: certificate.NotBefore, NotAfter: certificate.NotAfter, LastIssuedAt: certificate.LastIssuedAt,
@@ -429,8 +442,13 @@ func (h *handlers) ManagedCertificateCreateHandler(w http.ResponseWriter, r *htt
 	request.Name = strings.TrimSpace(request.Name)
 	request.ContactEmail = strings.TrimSpace(request.ContactEmail)
 	request.Environment = strings.ToLower(strings.TrimSpace(request.Environment))
+	request.ChallengeType = strings.ToLower(strings.TrimSpace(request.ChallengeType))
+	request.WebrootPath = strings.TrimSpace(request.WebrootPath)
 	if request.Environment == "" {
 		request.Environment = certificateEnvironmentProduction
+	}
+	if request.ChallengeType == "" {
+		request.ChallengeType = certificateChallengeDNS01
 	}
 	if request.RenewBeforeDays == 0 {
 		request.RenewBeforeDays = 30
@@ -451,6 +469,16 @@ func (h *handlers) ManagedCertificateCreateHandler(w http.ResponseWriter, r *htt
 	if request.RenewBeforeDays < 1 || request.RenewBeforeDays > 60 {
 		fields["renew_before_days"] = "提前续期天数必须在 1–60 之间。"
 	}
+	if request.ChallengeType != certificateChallengeDNS01 && request.ChallengeType != certificateChallengeHTTP01Webroot {
+		fields["challenge_type"] = "请选择 Cloudflare DNS-01 或 HTTP-01 Webroot。"
+	}
+	if request.ChallengeType == certificateChallengeHTTP01Webroot {
+		if !validNodeWebroot(request.WebrootPath) {
+			fields["webroot_path"] = "Webroot 必须是节点上的规范绝对目录，且不能是根目录。"
+		}
+	} else if request.WebrootPath != "" {
+		fields["webroot_path"] = "DNS-01 不使用 Webroot 路径。"
+	}
 	if len(fields) > 0 {
 		BadRequestFields(w, "证书信息校验失败。", fields)
 		return
@@ -464,15 +492,28 @@ func (h *handlers) ManagedCertificateCreateHandler(w http.ResponseWriter, r *htt
 		ServerError(w, err)
 		return
 	}
+	var providerAccountID *uint
+	if request.ChallengeType == certificateChallengeDNS01 {
+		var account model.ProviderAccount
+		if request.ProviderAccountID == 0 || h.db.First(&account, request.ProviderAccountID).Error != nil ||
+			account.ProviderKey != providerCloudflare || account.Status != "active" {
+			BadRequestFields(w, "证书信息校验失败。", map[string]string{"provider_account_id": "请选择已验证的 Cloudflare DNS 账户。"})
+			return
+		}
+		providerAccountID = &account.ID
+	} else if request.ProviderAccountID != 0 {
+		BadRequestFields(w, "证书信息校验失败。", map[string]string{"provider_account_id": "HTTP-01 Webroot 不使用 DNS 供应商账户。"})
+		return
+	}
 	domainsJSON, _ := json.Marshal(domains)
 	autoRenew := true
 	if request.AutoRenew != nil {
 		autoRenew = *request.AutoRenew
 	}
 	certificate := model.ManagedCertificate{
-		NodeID: request.NodeID, Name: request.Name, Domains: string(domainsJSON),
+		NodeID: request.NodeID, ProviderAccountID: providerAccountID, Name: request.Name, Domains: string(domainsJSON),
 		ContactEmail: request.ContactEmail, Environment: request.Environment,
-		ChallengeType: certificateChallengeHTTP01, Status: certificateStatusPending,
+		ChallengeType: request.ChallengeType, WebrootPath: request.WebrootPath, Status: certificateStatusPending,
 		AutoRenew: autoRenew, RenewBeforeDays: request.RenewBeforeDays, Revision: 1,
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -480,7 +521,7 @@ func (h *handlers) ManagedCertificateCreateHandler(w http.ResponseWriter, r *htt
 			return err
 		}
 		return createAuditLog(tx, claims, "certificate.create", fmt.Sprintf("certificate:%d", certificate.ID),
-			fmt.Sprintf("node=%d environment=%s domains=%d", certificate.NodeID, certificate.Environment, len(domains)))
+			fmt.Sprintf("node=%d environment=%s challenge=%s domains=%d", certificate.NodeID, certificate.Environment, certificate.ChallengeType, len(domains)))
 	}); err != nil {
 		ServerError(w, err)
 		return
@@ -641,6 +682,46 @@ func (h *handlers) executeManagedCertificateOperation(operationID uint) {
 		h.finishCertificateOperationFailure(operation, certificate, "connecting", err, false)
 		return
 	}
+	domains := decodeCertificateDomains(certificate.Domains)
+	secretInput := ""
+	switch certificate.ChallengeType {
+	case certificateChallengeDNS01:
+		if certificate.ProviderAccountID == nil {
+			h.finishCertificateOperationFailure(operation, certificate, "preflight", errors.New("DNS-01 certificate has no provider account"), false)
+			return
+		}
+		var account model.ProviderAccount
+		if err := h.db.First(&account, *certificate.ProviderAccountID).Error; err != nil ||
+			account.ProviderKey != providerCloudflare || account.Status != "active" {
+			h.finishCertificateOperationFailure(operation, certificate, "preflight", errors.New("DNS-01 provider account is unavailable"), false)
+			return
+		}
+		token, err := h.credentialCipher.Decrypt(account.CredentialCiphertext)
+		if err != nil {
+			h.finishCertificateOperationFailure(operation, certificate, "preflight", errors.New("DNS-01 provider credential is unavailable"), false)
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		for _, domain := range domains {
+			if _, err := findCloudflareZone(ctx, token, domain); err != nil {
+				cancel()
+				h.finishCertificateOperationFailure(operation, certificate, "preflight", fmt.Errorf("DNS-01 cannot manage %s: %w", domain, err), false)
+				return
+			}
+		}
+		cancel()
+		secretInput = token + "\n"
+	case certificateChallengeHTTP01Webroot:
+		if err := preflightHTTP01Domains(domains); err != nil {
+			h.finishCertificateOperationFailure(operation, certificate, "preflight", err, false)
+			return
+		}
+	case certificateChallengeHTTP01:
+		// Existing certificates retain their legacy standalone renewal contract.
+	default:
+		h.finishCertificateOperationFailure(operation, certificate, "preflight", fmt.Errorf("unsupported certificate challenge %q", certificate.ChallengeType), false)
+		return
+	}
 	_ = h.db.Model(&operation).Update("phase", "requesting").Error
 	conn, _, err := h.dialNodeSSH(node)
 	if err != nil {
@@ -650,14 +731,14 @@ func (h *handlers) executeManagedCertificateOperation(operationID uint) {
 	defer conn.Close()
 	timeout := time.AfterFunc(certificateOperationTimeout, func() { _ = conn.Close() })
 	defer timeout.Stop()
-	script := buildCertbotCertificateScript(certificate, decodeCertificateDomains(certificate.Domains), operation.OperationType == certificateOperationRenew, uuid.NewString())
-	output, err := h.runNodeSSHSession(conn, node, script, true)
+	script := buildCertbotCertificateScript(certificate, domains, operation.OperationType == certificateOperationRenew, uuid.NewString())
+	output, err := h.runNodeSSHSessionWithInput(conn, node, script, true, secretInput)
 	if err != nil {
 		h.finishCertificateOperationFailure(operation, certificate, "requesting",
 			fmt.Errorf("ACME certificate request failed: %w: %s", err, truncateCertificateError(output)), false)
 		return
 	}
-	metadata, err := parseIssuedCertificateMetadata(output, decodeCertificateDomains(certificate.Domains), time.Now().UTC())
+	metadata, err := parseIssuedCertificateMetadata(output, domains, time.Now().UTC())
 	if err != nil {
 		h.finishCertificateOperationFailure(operation, certificate, "validating", err, false)
 		return
@@ -739,15 +820,69 @@ func managedCertificatePaths(certificateID uint) (string, string) {
 	return base + "/fullchain.pem", base + "/privkey.pem"
 }
 
+func preflightHTTP01Domains(domains []string) error {
+	for _, domain := range domains {
+		var addresses []net.IPAddr
+		var lookupErr error
+		for _, server := range []string{"1.1.1.1:53", "8.8.8.8:53"} {
+			resolver := &net.Resolver{
+				PreferGo: true,
+				Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+					dialer := net.Dialer{Timeout: 2 * time.Second}
+					return dialer.DialContext(ctx, network, server)
+				},
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+			addresses, lookupErr = resolver.LookupIPAddr(ctx, domain)
+			cancel()
+			if lookupErr == nil && len(addresses) > 0 {
+				break
+			}
+		}
+		if lookupErr != nil || len(addresses) == 0 {
+			return fmt.Errorf("HTTP-01 preflight could not resolve public A/AAAA records for %s", domain)
+		}
+		seen := make(map[string]struct{}, len(addresses))
+		for _, address := range addresses {
+			ip := address.IP.String()
+			if _, exists := seen[ip]; exists {
+				continue
+			}
+			seen[ip] = struct{}{}
+			network := "IPv6 AAAA"
+			if address.IP.To4() != nil {
+				network = "IPv4 A"
+			}
+			conn, err := net.DialTimeout("tcp", net.JoinHostPort(ip, "80"), 3*time.Second)
+			if err != nil {
+				return fmt.Errorf("HTTP-01 preflight: %s %s for %s cannot accept TCP port 80: %w", network, ip, domain, err)
+			}
+			_ = conn.Close()
+		}
+	}
+	return nil
+}
+
 func buildCertbotCertificateScript(certificate model.ManagedCertificate, domains []string, forceRenewal bool, stagingID string) string {
 	certName := fmt.Sprintf("zboard-%d", certificate.ID)
 	baseDir := fmt.Sprintf("/etc/zboard/certificates/%d", certificate.ID)
 	stageDir := baseDir + "/.staging-" + stagingID
 	args := []string{
-		"certbot", "certonly", "--standalone", "--non-interactive", "--agree-tos",
-		"--preferred-challenges", "http", "--http-01-port", "80",
+		"certbot", "certonly", "--non-interactive", "--agree-tos",
 		"--email", certificate.ContactEmail, "--cert-name", certName,
 		"--rsa-key-size", "2048",
+	}
+	switch certificate.ChallengeType {
+	case certificateChallengeDNS01:
+		args = append(args,
+			"--dns-cloudflare",
+			"--dns-cloudflare-credentials", stageDir+"/cloudflare.ini",
+			"--dns-cloudflare-propagation-seconds", "30",
+		)
+	case certificateChallengeHTTP01Webroot:
+		args = append(args, "--webroot", "--webroot-path", certificate.WebrootPath, "--preferred-challenges", "http")
+	default:
+		args = append(args, "--standalone", "--preferred-challenges", "http", "--http-01-port", "80")
 	}
 	if certificate.Environment == certificateEnvironmentStaging {
 		args = append(args, "--server", "https://acme-staging-v02.api.letsencrypt.org/directory")
@@ -783,13 +918,34 @@ install_certbot() {
 }
 install_certbot
 command -v openssl >/dev/null 2>&1
+stage_dir=%s
+install -d -m 0700 "$stage_dir"
+cleanup_challenge() { rm -f "$stage_dir/cloudflare.ini"; }
+trap cleanup_challenge EXIT HUP INT TERM
+if [ %s = dns-01 ]; then
+  IFS= read -r cloudflare_token
+  test -n "$cloudflare_token"
+  if command -v apt-get >/dev/null 2>&1; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y python3-certbot-dns-cloudflare
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y python3-certbot-dns-cloudflare
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y python3-certbot-dns-cloudflare
+  elif command -v apk >/dev/null 2>&1; then
+    apk add --no-cache certbot-dns-cloudflare
+  else
+    printf 'ZBOARD_CERT_ERROR=no supported package manager can install certbot-dns-cloudflare\n' >&2
+    exit 1
+  fi
+  printf 'dns_cloudflare_api_token = %%s\n' "$cloudflare_token" > "$stage_dir/cloudflare.ini"
+  chmod 0600 "$stage_dir/cloudflare.ini"
+fi
 %s
 source_dir=%s
 base_dir=%s
-stage_dir=%s
 test -s "$source_dir/fullchain.pem"
 test -s "$source_dir/privkey.pem"
-rm -rf "$stage_dir"
+rm -f "$stage_dir/cloudflare.ini"
 install -d -m 0700 "$stage_dir" "$base_dir/generations"
 install -m 0644 "$source_dir/fullchain.pem" "$stage_dir/fullchain.pem"
 install -m 0600 "$source_dir/privkey.pem" "$stage_dir/privkey.pem"
@@ -807,7 +963,7 @@ ln -sfn "$generation" "$base_dir/current.next"
 mv -Tf "$base_dir/current.next" "$base_dir/current"
 rm -rf "$stage_dir"
 printf 'ZBOARD_CERT_DER_BASE64=%%s\n' "$(openssl x509 -in "$base_dir/current/fullchain.pem" -outform DER | base64 | tr -d '\r\n')"
-`, strings.Join(quotedArgs, " "), shellQuote("/etc/letsencrypt/live/"+certName), shellQuote(baseDir), shellQuote(stageDir))
+`, shellQuote(stageDir), shellQuote(certificate.ChallengeType), strings.Join(quotedArgs, " "), shellQuote("/etc/letsencrypt/live/"+certName), shellQuote(baseDir))
 }
 
 func parseIssuedCertificateMetadata(output string, domains []string, now time.Time) (issuedCertificateMetadata, error) {

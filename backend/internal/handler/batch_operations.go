@@ -123,6 +123,10 @@ func (h *handlers) ProtocolBatchDeployHandler(w http.ResponseWriter, r *http.Req
 		BadRequest(w, err.Error())
 		return
 	}
+	if err := h.validateProtocolEndpointKernelSupport(ids); err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
 	nodeIDs, _, err := h.groupProtocolEndpointsByNode(ids)
 	if err != nil {
 		writeOperationTaskError(w, err)
@@ -160,6 +164,12 @@ func (h *handlers) ProtocolBatchActiveHandler(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		BadRequest(w, err.Error())
 		return
+	}
+	if *req.IsActive {
+		if err := h.validateProtocolEndpointKernelSupport(ids); err != nil {
+			BadRequest(w, err.Error())
+			return
+		}
 	}
 	nodeIDs, endpointIDsByNode, err := h.groupProtocolEndpointsByNode(ids)
 	if err != nil {
@@ -527,6 +537,11 @@ func (h *handlers) executeProtocolDeployTask(nodeID, requestedBy uint) error {
 }
 
 func (h *handlers) executeProtocolActiveTask(nodeID uint, endpointIDs []uint, active bool, claims authClaims, taskItemID uint) error {
+	if active {
+		if err := h.validateProtocolEndpointKernelSupport(endpointIDs); err != nil {
+			return err
+		}
+	}
 	if !active {
 		var activePlanCount int64
 		if err := h.db.Table("node_group_endpoints").
@@ -555,4 +570,20 @@ func (h *handlers) executeProtocolActiveTask(nodeID uint, endpointIDs []uint, ac
 		return err
 	}
 	return h.executeProtocolDeployTask(nodeID, claims.UserID)
+}
+
+func (h *handlers) validateProtocolEndpointKernelSupport(endpointIDs []uint) error {
+	if len(endpointIDs) == 0 {
+		return nil
+	}
+	var endpoints []model.ProtocolEndpoint
+	if err := h.db.Select("id", "protocol").Where("id IN ?", uniqueUintIDs(endpointIDs)).Find(&endpoints).Error; err != nil {
+		return err
+	}
+	for _, endpoint := range endpoints {
+		if supported, reason := h.protocolKernelSupport(endpoint.Protocol); !supported {
+			return fmt.Errorf("protocol endpoint %d cannot be used: %s", endpoint.ID, reason)
+		}
+	}
+	return nil
 }

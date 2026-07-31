@@ -227,11 +227,13 @@ type NodeOperation struct {
 type ManagedCertificate struct {
 	ID                   uint       `json:"id" gorm:"primaryKey"`
 	NodeID               uint       `json:"node_id" gorm:"index;not null"`
+	ProviderAccountID    *uint      `json:"provider_account_id,omitempty" gorm:"index"`
 	Name                 string     `json:"name" gorm:"size:80;not null"`
 	Domains              string     `json:"domains" gorm:"type:json;not null"`
 	ContactEmail         string     `json:"contact_email" gorm:"size:254;not null"`
 	Environment          string     `json:"environment" gorm:"size:16;not null;default:production"`
 	ChallengeType        string     `json:"challenge_type" gorm:"size:16;not null;default:http-01"`
+	WebrootPath          string     `json:"webroot_path" gorm:"size:255;not null;default:''"`
 	Status               string     `json:"status" gorm:"size:24;index;not null;default:pending"`
 	CertPath             string     `json:"cert_path" gorm:"size:255"`
 	KeyPath              string     `json:"key_path" gorm:"size:255"`
@@ -339,25 +341,26 @@ type CertificateOperation struct {
 // operational host; each host may publish multiple independently configured
 // protocols with different addresses, ports and billing multipliers.
 type ProtocolEndpoint struct {
-	ID               uint      `json:"id" gorm:"primaryKey"`
-	NodeID           uint      `json:"node_id" gorm:"index;not null"`
-	Name             string    `json:"name" gorm:"size:80;not null"`
-	RuntimeKey       string    `json:"-" gorm:"size:36;uniqueIndex;not null"`
-	Protocol         string    `json:"protocol" gorm:"size:32;not null"`
-	Address          string    `json:"address" gorm:"size:255;not null"`
-	Port             int       `json:"port" gorm:"not null"`
-	PublicPort       int       `json:"public_port" gorm:"not null"`
-	Cipher           int16     `json:"cipher" gorm:"not null;default:0"`
-	ParentProtocolID *uint     `json:"parent_protocol_id" gorm:"index"`
-	MultiplierMilli  int64     `json:"multiplier_milli" gorm:"not null;default:1000"`
-	ServerConfig     string    `json:"-" gorm:"type:text"`
-	ClientConfig     string    `json:"client_config" gorm:"type:text"`
-	OptionalConfig   string    `json:"optional_config" gorm:"type:json"`
-	Tags             string    `json:"tags" gorm:"type:json"`
-	IsActive         bool      `json:"is_active" gorm:"default:true"`
-	SortOrder        int       `json:"sort_order" gorm:"default:0"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID                  uint      `json:"id" gorm:"primaryKey"`
+	NodeID              uint      `json:"node_id" gorm:"index;not null"`
+	Name                string    `json:"name" gorm:"size:80;not null"`
+	RuntimeKey          string    `json:"-" gorm:"size:36;uniqueIndex;not null"`
+	Protocol            string    `json:"protocol" gorm:"size:32;not null"`
+	Address             string    `json:"address" gorm:"size:255;not null"`
+	Port                int       `json:"port" gorm:"not null"`
+	PublicPort          int       `json:"public_port" gorm:"not null"`
+	Cipher              int16     `json:"cipher" gorm:"not null;default:0"`
+	ParentProtocolID    *uint     `json:"parent_protocol_id" gorm:"index"`
+	MultiplierMilli     int64     `json:"multiplier_milli" gorm:"not null;default:1000"`
+	MieruPrincipalReady bool      `json:"mieru_principal_ready" gorm:"not null;default:false"`
+	ServerConfig        string    `json:"-" gorm:"type:text"`
+	ClientConfig        string    `json:"client_config" gorm:"type:text"`
+	OptionalConfig      string    `json:"optional_config" gorm:"type:json"`
+	Tags                string    `json:"tags" gorm:"type:json"`
+	IsActive            bool      `json:"is_active" gorm:"default:true"`
+	SortOrder           int       `json:"sort_order" gorm:"default:0"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 type NodeGroup struct {

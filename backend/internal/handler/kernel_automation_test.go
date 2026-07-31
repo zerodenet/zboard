@@ -253,6 +253,46 @@ func TestNativeKernelAccessConfigValidatesWithCurrentZero(t *testing.T) {
 	}
 }
 
+func TestMieruPrincipalContractValidatesWithOptInZero(t *testing.T) {
+	validator := strings.TrimSpace(os.Getenv("ZBOARD_ZERO_MIERU_VALIDATE_BIN"))
+	if validator == "" {
+		t.Skip("ZBOARD_ZERO_MIERU_VALIDATE_BIN is not configured")
+	}
+	config := map[string]interface{}{
+		"inbounds": []interface{}{map[string]interface{}{
+			"tag": "managed-mieru", "listen": map[string]interface{}{"address": "127.0.0.1", "port": 18447},
+			"protocol": map[string]interface{}{
+				"type": "mieru",
+				"users": []interface{}{
+					map[string]interface{}{
+						"username": "subscription-a", "password": "subscription-a",
+						"principal_key": "subscription:11:endpoint:7",
+					},
+					map[string]interface{}{
+						"username": "subscription-b", "password": "subscription-b",
+						"principal_key": "subscription:12:endpoint:7",
+					},
+				},
+			},
+		}},
+		"mode":  map[string]interface{}{"type": "rule"},
+		"route": map[string]interface{}{"rules": []interface{}{}, "final": map[string]interface{}{"type": "direct"}},
+		"api":   zeroConnectorAPIConfig("http://127.0.0.1:18080", 17, "opaque-secret", true),
+	}
+	payload, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "zboard-mieru-principal.json")
+	if err := os.WriteFile(configPath, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(validator, "validate", configPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("opt-in Zero rejected the Mieru principal contract: %v\n%s", err, output)
+	}
+}
+
 func TestCurrentZeroDeliversNativeConnectorEvent(t *testing.T) {
 	zeroBinary := strings.TrimSpace(os.Getenv("ZBOARD_ZERO_VALIDATE_BIN"))
 	if zeroBinary == "" {

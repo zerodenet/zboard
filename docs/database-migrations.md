@@ -56,7 +56,12 @@ On first startup with the squashed build, the runner:
    cursor/concurrency indexes;
 4. removes the empty legacy subscription-template archive table and renames
    the old node-group index to its final resource name;
-5. leaves the already-applied development rows in `schema_migrations` so the
+5. adds the nullable managed-certificate provider ownership, Webroot path,
+   provider index and provider foreign key when an earlier v0.0.1 development
+   database does not yet contain them;
+6. adds the non-null `protocol_endpoints.mieru_principal_ready` publication
+   gate when it is absent;
+7. leaves the already-applied development rows in `schema_migrations` so the
    immediately previous development binary remains usable for rollback.
 
 This path does not rerun the baseline and does not rewrite normal business

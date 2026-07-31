@@ -26,6 +26,19 @@ explicit `ZBOARD_ZERO_LOCAL_VERSION`; zboard reads
 `zero-v<version>-linux-x86_64-musl.tar.gz` and its matching `.sha256` only from
 `ZBOARD_ZERO_ARTIFACT_DIR`, without consulting GitHub.
 
+`native-local-mieru` is a separate opt-in contract for a future pinned Zero
+artifact that accepts and propagates Mieru `principal_key`. Only that contract
+creates or delivers per-subscription Mieru credentials, and it switches
+delivery only after the artifact passes `zero validate`, activation, health
+and Connector confirmation on the target node.
+
+Without that explicit contract, `/api/v1/version` reports Mieru as unsupported
+in `protocol_capabilities`. The backend rejects Mieru creation, re-enabling and
+publication, excludes retained records from subscriptions, and permits an
+existing Mieru record to be saved only while disabling it. The administrator
+protocol picker displays the unavailable option and the kernel reason rather
+than silently hiding it.
+
 With an empty database the backend remains available in installation mode. Open the
 frontend `/setup` route to configure the site and first administrator. The database,
 JWT, and credential-encryption values deliberately remain deployment-owned secrets and

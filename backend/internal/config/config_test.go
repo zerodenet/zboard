@@ -47,6 +47,7 @@ func TestValidateRejectsUnsafeConfiguration(t *testing.T) {
 		{name: "unsupported environment", edit: func(c *Config) { c.Environment = "stage" }, want: "unsupported environment"},
 		{name: "unsupported Zero contract", edit: func(c *Config) { c.ZeroKernelContract = "github-next" }, want: "zero_kernel_contract"},
 		{name: "missing local Zero version", edit: func(c *Config) { c.ZeroKernelContract = ZeroKernelNativeLocal }, want: "zero_local_version"},
+		{name: "missing Mieru local Zero version", edit: func(c *Config) { c.ZeroKernelContract = ZeroKernelNativeMieru }, want: "zero_local_version"},
 		{name: "invalid local Zero version", edit: func(c *Config) { c.ZeroLocalVersion = "../zero" }, want: "zero_local_version"},
 		{name: "missing datasource", edit: func(c *Config) { c.DataSource = "" }, want: "datasource is required"},
 		{name: "weak jwt", edit: func(c *Config) { c.JwtSecret = "dev-jwt-secret" }, want: "jwt_secret"},

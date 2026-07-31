@@ -673,6 +673,10 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.SystemInfoHandler),
 		},
 	})
+	if err := h.ReconcileMieruEndpointCredentials(); err != nil {
+		return err
+	}
 	h.StartCertificateRenewalWorker()
+	h.StartDNSPublicObservationWorker()
 	return nil
 }

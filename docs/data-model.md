@@ -35,8 +35,19 @@ zboard is a modular monolith that combines subscription commerce with node opera
   selected node and Cloudflare desired/observed state. Zboard discovers the
   longest matching Zone, refuses to overwrite an unowned remote record unless
   takeover was explicit, records provider operations, and distinguishes API
-  synchronization from public-DNS observation. A node remains an
+  synchronization from public-DNS observation. The create API may accept one A
+  and one AAAA value together, but persists them as two independently owned
+  records. A background observer retries public resolvers until each synced
+  record is visible; it never repeats the Cloudflare write merely because
+  propagation is pending. A node remains an
   infrastructure asset and does not acquire a single canonical domain.
+- `managed_certificates` explicitly owns either a verified Cloudflare provider
+  account for DNS-01 or a canonical node webroot for HTTP-01. DNS-01 does not
+  require public TCP port 80. HTTP-01 Webroot does not bind a second listener,
+  but every public A and AAAA target must resolve and accept TCP port 80 before
+  issuance because that is part of the ACME HTTP-01 contract. Legacy
+  standalone certificates remain renewal-compatible but cannot be newly
+  created.
 - `nodes` is an independent VPS asset. It can exist without a protocol and owns lifecycle state, encrypted management/report credentials, communication mode, runtime status, enablement, version and synchronization timestamps.
 - SSH client authentication selects password or private key. Server identity verification is automatic: an empty fingerprint is enrolled after the first successful SSH handshake, a recorded fingerprint is always enforced, and an administrator must explicitly reset trust after confirming a legitimate VPS reinstall or host-key change.
 - SSH login identity and system privilege are separate node settings. `ssh_privilege_mode=none` requires a root login for managed system changes; `sudo` supports passwordless or password-based sudo; `su` requires a separately encrypted root password. Privilege passwords are sent only on the SSH session stdin and are never embedded in remote commands, operation output or audit details.
@@ -56,7 +67,16 @@ zboard is a modular monolith that combines subscription commerce with node opera
 - `flow_usages` is the idempotent cursor for Connector-delivered `flow.updated` and `flow.completed` events. Live events charge only the new cumulative delta; the completed event settles any missing final delta.
 - Zero uses a generic Webhook event sink with a disk-backed outbox and an opaque authorization header. Every event is authenticated with the node Connector credential. Lifecycle events update Connector activity; flow events are mapped through the native `principal_key` and its protocol credential. Request-provided user IDs are never trusted for billing. The legacy signed node-report endpoint and the old heartbeat/command routes remain compatibility-only.
 - Native speed and device policies are projected only when a subscription has one active protocol credential. Copying a subscription-wide limit to multiple independent Zero processes would multiply its allowance. Cross-node speed/device aggregation, directional or weighted traffic calculation and quota balance therefore remain panel-owned until an acknowledged distributed policy protocol exists; `quota_remaining_bytes` is not emitted by zboard.
-- Mieru remains on its endpoint-level username/password configuration because the current local Zero `MieruUserConfig` has no `principal_key` or managed-policy fields. It is not represented as native per-subscription attribution in this stage.
+- The current Zero `MieruUserConfig` has no attributable `principal_key`.
+  Under `legacy` and `native-local`, Zboard therefore reports Mieru as
+  unsupported, rejects creation/re-enabling/publication, does not create new
+  Mieru subscription credentials and excludes retained records from
+  subscription output. Existing records remain visible and may only be saved
+  while being disabled so a complete node publication can remove them. A
+  separately pinned `native-local-mieru` artifact must pass real template
+  validation and a complete fallback-free node publication before
+  `mieru_principal_ready` switches delivery. The intentionally unimplemented
+  kernel contract is documented in `docs/mieru-kernel-contract.md`.
 - The native access contract is an explicit staged boundary: `ZBOARD_ZERO_KERNEL_CONTRACT=legacy` keeps the latest stable GitHub tag only as the unattended batch default, while an operator may explicitly select any published stable or prerelease tag. The selected release uses its immutable `zero-linux-x86_64.tar.gz` GNU artifact or musl artifact plus exact same-name `.sha256`; musl resolution accepts both the current `zero-linux-x86_64-musl.tar.gz` contract and the historical release-owned `zero-v<version>-linux-x86_64-musl.tar.gz` contract. The backend re-resolves every selected version rather than accepting a client URL; an explicit older target also requires a separate downgrade confirmation. Connector serialization follows the selected or actually installed Zero version independently of that access switch: releases through `0.0.15-rc.1` receive the historical `api_key_env` plus `push` contract, while `0.0.15-rc.2` and later receive the controller-neutral Webhook contract with opaque `headers`, the complete `/api/zero/events` URL and a durable outbox. Configuration-only publication probes the node first so it cannot reuse a stale desired-version contract. A trusted-directory historical versioned musl file remains a bounded fallback when the corresponding older GitHub Release has no usable musl pair. `native-local` enables managed users only with an explicit `ZBOARD_ZERO_LOCAL_VERSION`; it still resolves the exact `zero-v<version>-linux-x86_64-musl.tar.gz` plus `.sha256` from the trusted artifact directory and never substitutes a GitHub release. Synchronizing zboard alone does not publish or upgrade the local kernel.
 - `traffic_calc_mode` selects upload plus download (`0`), upload only (`1`) or download only (`2`).
 - Billed traffic is calculated with integer thousandths: `selected_bytes * protocol_multiplier_milli / 1_000`, rounded up.

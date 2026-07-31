@@ -331,7 +331,7 @@ func TestNodeAndProtocolListItemsOmitDetailAndSecretFields(t *testing.T) {
 		ServerConfig: "encrypted-server", ClientConfig: `{"id":"credential"}`, OptionalConfig: `{"private":true}`, Tags: `["internal"]`,
 	}
 	deployment := model.ProtocolDeployment{ID: 7, Status: "failed", Output: "private output", Error: "private error"}
-	endpointPayload, err := json.Marshal(newProtocolEndpointListItem(endpoint, "edge", nil, &deployment, protocolEndpointUsage{}))
+	endpointPayload, err := json.Marshal(newProtocolEndpointListItem(endpoint, "edge", nil, &deployment, protocolEndpointUsage{}, true, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,6 +421,45 @@ func TestSupportedProtocolsAreCaseInsensitive(t *testing.T) {
 	}
 	if h.isProtocolSupported("unknown") {
 		t.Fatal("isProtocolSupported(unknown) = true")
+	}
+}
+
+func TestProtocolKernelCapabilitiesDisableMieruUntilExplicitContract(t *testing.T) {
+	legacy, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
+	if err != nil {
+		t.Fatalf("NewHandlers(legacy) error = %v", err)
+	}
+	if supported, reason := legacy.protocolKernelSupport("mieru"); supported || reason != protocolKernelMieruUnavailableReason {
+		t.Fatalf("legacy Mieru support = %t %q", supported, reason)
+	}
+	if supported, reason := legacy.protocolKernelSupport("vless"); !supported || reason != "" {
+		t.Fatalf("legacy VLESS support = %t %q", supported, reason)
+	}
+	capabilities := legacy.protocolKernelCapabilities()
+	if capabilities["mieru"].Supported || capabilities["mieru"].Reason == "" {
+		t.Fatalf("legacy Mieru capability = %+v", capabilities["mieru"])
+	}
+
+	future, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "native-local-mieru", "0.0.16")
+	if err != nil {
+		t.Fatalf("NewHandlers(native-local-mieru) error = %v", err)
+	}
+	if supported, reason := future.protocolKernelSupport("Mieru"); !supported || reason != "" {
+		t.Fatalf("future Mieru support = %t %q", supported, reason)
+	}
+
+	response := httptest.NewRecorder()
+	legacy.VersionHandler(response, httptest.NewRequest("GET", "/api/v1/version", nil))
+	var envelope struct {
+		Data struct {
+			ProtocolCapabilities map[string]protocolKernelCapability `json:"protocol_capabilities"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode version response: %v", err)
+	}
+	if capability := envelope.Data.ProtocolCapabilities["mieru"]; capability.Supported || capability.Reason == "" {
+		t.Fatalf("version Mieru capability = %+v", capability)
 	}
 }
 
@@ -1090,11 +1129,39 @@ func TestManagedAccessUserFieldsMapsSafeSubscriptionPolicy(t *testing.T) {
 func TestProtocolCredentialContractIsExplicitlyStaged(t *testing.T) {
 	legacy := &handlers{}
 	native := &handlers{zeroNativeAccess: true}
+	mieruNative := &handlers{zeroNativeAccess: true, zeroMieruAccess: true}
 	if legacy.protocolUsesSubscriptionCredential("trojan") {
 		t.Fatal("legacy contract unexpectedly enabled Trojan managed users")
 	}
+	if native.protocolUsesSubscriptionCredential("mieru") {
+		t.Fatal("native-local contract unexpectedly enabled unsupported Mieru principals")
+	}
 	if !native.protocolUsesSubscriptionCredential("trojan") || !native.protocolUsesSubscriptionCredential("hysteria2") {
 		t.Fatal("native-local contract did not enable all managed-password protocols")
+	}
+	if legacy.protocolStoresSubscriptionCredential("mieru") {
+		t.Fatal("legacy contract prepared credentials for a panel-disabled protocol")
+	}
+	if !mieruNative.protocolStoresSubscriptionCredential("mieru") {
+		t.Fatal("native-local-mieru contract did not enable Mieru credential storage")
+	}
+	if !mieruNative.protocolUsesSubscriptionCredential("mieru") {
+		t.Fatal("native-local-mieru contract did not enable Mieru managed users")
+	}
+	if mieruNative.endpointDeliversSubscriptionCredential(model.ProtocolEndpoint{Protocol: "mieru"}) {
+		t.Fatal("Mieru subscription delivery switched before a successful node publication")
+	}
+	if !mieruNative.endpointDeliversSubscriptionCredential(model.ProtocolEndpoint{Protocol: "mieru", MieruPrincipalReady: true}) {
+		t.Fatal("Mieru subscription delivery did not switch after publication readiness")
+	}
+	if legacy.desiredProtocolCredentialStatus(model.ProtocolEndpoint{Protocol: "mieru"}) != protocolCredentialStatusPrepared {
+		t.Fatal("legacy Mieru credential was not kept in prepared state")
+	}
+	if legacy.desiredProtocolCredentialStatus(model.ProtocolEndpoint{Protocol: "mieru", MieruPrincipalReady: true}) != protocolCredentialStatusActive {
+		t.Fatal("Mieru credential was deactivated before a reverse publication completed")
+	}
+	if mieruNative.desiredProtocolCredentialStatus(model.ProtocolEndpoint{Protocol: "mieru"}) != protocolCredentialStatusActive {
+		t.Fatal("Mieru native rollout did not activate prepared credentials for compilation")
 	}
 }
 

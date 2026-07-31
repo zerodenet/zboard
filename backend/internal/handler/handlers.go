@@ -84,6 +84,8 @@ var supportedProtocols = map[string]struct{}{
 	"mieru":       {},
 }
 
+const protocolKernelMieruUnavailableReason = "当前 Zero 内核未实现 Mieru 的 principal_key 归属，面板已停用该协议；请改用其他受支持协议。"
+
 type authClaims struct {
 	UserID  uint   `json:"uid"`
 	Email   string `json:"e"`
@@ -445,6 +447,7 @@ type handlers struct {
 	credentialCipher    *security.CredentialCipher
 	zeroArtifactDir     string
 	zeroNativeAccess    bool
+	zeroMieruAccess     bool
 	zeroLocalVersion    string
 	sshTerminal         *sshTerminalRuntime
 	nodePublishLocks    sync.Map
@@ -459,12 +462,14 @@ func NewHandlers(db *gorm.DB, jwtSecret string, credentialCipher *security.Crede
 	if credentialCipher == nil {
 		return nil, errors.New("credential cipher is required")
 	}
+	normalizedKernelContract := strings.ToLower(strings.TrimSpace(zeroKernelContract))
 	return &handlers{
 		db:               db,
 		jwtSecret:        jwtSecret,
 		credentialCipher: credentialCipher,
 		zeroArtifactDir:  strings.TrimSpace(zeroArtifactDir),
-		zeroNativeAccess: strings.EqualFold(strings.TrimSpace(zeroKernelContract), cfgpkg.ZeroKernelNativeLocal),
+		zeroNativeAccess: normalizedKernelContract == cfgpkg.ZeroKernelNativeLocal || normalizedKernelContract == cfgpkg.ZeroKernelNativeMieru,
+		zeroMieruAccess:  normalizedKernelContract == cfgpkg.ZeroKernelNativeMieru,
 		zeroLocalVersion: strings.TrimSpace(zeroLocalVersion),
 		sshTerminal:      newSSHTerminalRuntime(),
 	}, nil
@@ -497,9 +502,10 @@ func (h *handlers) ReadyHandler(w http.ResponseWriter, r *http.Request) {
 
 func (h *handlers) VersionHandler(w http.ResponseWriter, r *http.Request) {
 	data := map[string]interface{}{
-		"version":              version.FullVersion(),
-		"name":                 "zboard",
-		"zero_kernel_contract": h.zeroKernelContract(),
+		"version":               version.FullVersion(),
+		"name":                  "zboard",
+		"zero_kernel_contract":  h.zeroKernelContract(),
+		"protocol_capabilities": h.protocolKernelCapabilities(),
 	}
 	if h.zeroNativeAccess {
 		data["zero_local_version"] = h.zeroLocalVersion
@@ -508,6 +514,9 @@ func (h *handlers) VersionHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) zeroKernelContract() string {
+	if h.zeroMieruAccess {
+		return cfgpkg.ZeroKernelNativeMieru
+	}
 	if h.zeroNativeAccess {
 		return cfgpkg.ZeroKernelNativeLocal
 	}
@@ -2306,6 +2315,26 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		BadRequestFields(w, "协议服务校验失败。", map[string]string{"protocol": "请选择受支持的协议类型。"})
 		return
 	}
+	var existing model.ProtocolEndpoint
+	if endpointID != 0 {
+		if err := h.db.First(&existing, endpointID).Error; err != nil {
+			NotFound(w)
+			return
+		}
+	}
+	if supported, reason := h.protocolKernelSupport(protocol); !supported {
+		// Existing unsupported records remain recoverable: an administrator may
+		// save them only while disabling the endpoint so the next full node
+		// publication removes it. Creation, re-enabling and ordinary edits stay
+		// closed until the selected kernel contract supports the protocol.
+		canDisableExisting := existing.ID != 0 &&
+			strings.EqualFold(existing.Protocol, protocol) &&
+			req.IsActive != nil && !*req.IsActive
+		if !canDisableExisting {
+			BadRequestFields(w, "协议服务校验失败。", map[string]string{"protocol": reason})
+			return
+		}
+	}
 	if req.NodeID == 0 {
 		BadRequestFields(w, "协议服务校验失败。", map[string]string{"node_id": "请选择承载节点。"})
 		return
@@ -2336,6 +2365,22 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 	if req.MultiplierMilli <= 0 || req.MultiplierMilli > 100000 {
 		BadRequestFields(w, "协议服务校验失败。", map[string]string{"multiplier_milli": "流量倍率必须大于 0 且不超过 100。"})
 		return
+	}
+	if protocol == "mieru" {
+		req.Config, req.ClientConfig, err = h.prepareMieruEndpointConfigs(endpointID, req.Config, req.ClientConfig)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			NotFound(w)
+			return
+		}
+		if err != nil {
+			var validationErr *requestValidationError
+			if errors.As(err, &validationErr) {
+				BadRequestError(w, err)
+			} else {
+				ServerError(w, err)
+			}
+			return
+		}
 	}
 	if err := validateNodeProtocolConfigs(protocol, req.Config, req.ClientConfig); err != nil {
 		BadRequestError(w, err)
@@ -2377,13 +2422,8 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 	if req.IsActive != nil {
 		isActive = *req.IsActive
 	}
-	var existing model.ProtocolEndpoint
 	var previousNodeID uint
 	if endpointID != 0 {
-		if err := h.db.First(&existing, endpointID).Error; err != nil {
-			NotFound(w)
-			return
-		}
 		previousNodeID = existing.NodeID
 		if existing.Protocol != protocol || (strings.EqualFold(existing.Protocol, "shadowsocks") && (existing.Port != req.Port || existing.PublicPort != req.PublicPort)) {
 			var credentialCount int64
@@ -2430,6 +2470,9 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 	endpoint.Cipher = req.Cipher
 	endpoint.ParentProtocolID = req.ParentProtocolID
 	endpoint.MultiplierMilli = req.MultiplierMilli
+	if protocol != "mieru" {
+		endpoint.MieruPrincipalReady = false
+	}
 	endpoint.ServerConfig = encryptedServerConfig
 	endpoint.ClientConfig = req.ClientConfig
 	endpoint.OptionalConfig = normalizeOptionalJSON(req.OptionalConfig, "{}")
@@ -2450,7 +2493,7 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 			if err := tx.Save(&endpoint).Error; err != nil {
 				return err
 			}
-			if err := migrateProtocolEndpointCredentials(tx, existing, endpoint); err != nil {
+			if err := h.migrateProtocolEndpointCredentials(tx, existing, endpoint); err != nil {
 				return err
 			}
 		}
@@ -2511,10 +2554,12 @@ func (h *handlers) ProtocolEndpointDeployHandler(w http.ResponseWriter, r *http.
 
 type protocolEndpointAdminDetail struct {
 	model.ProtocolEndpoint
-	Config               string                    `json:"config"`
-	ManagedCertificateID *uint                     `json:"managed_certificate_id,omitempty"`
-	LatestDeployment     *model.ProtocolDeployment `json:"latest_deployment,omitempty"`
-	Usage                protocolEndpointUsage     `json:"usage"`
+	Config                  string                    `json:"config"`
+	ManagedCertificateID    *uint                     `json:"managed_certificate_id,omitempty"`
+	LatestDeployment        *model.ProtocolDeployment `json:"latest_deployment,omitempty"`
+	Usage                   protocolEndpointUsage     `json:"usage"`
+	KernelSupported         bool                      `json:"kernel_supported"`
+	KernelUnsupportedReason string                    `json:"kernel_unsupported_reason,omitempty"`
 }
 
 type protocolEndpointUsage struct {
@@ -2535,31 +2580,35 @@ type protocolDeploymentListItem struct {
 }
 
 type protocolEndpointListItem struct {
-	ID                   uint                        `json:"id"`
-	NodeID               uint                        `json:"node_id"`
-	NodeName             string                      `json:"node_name"`
-	Name                 string                      `json:"name"`
-	Protocol             string                      `json:"protocol"`
-	Address              string                      `json:"address"`
-	Port                 int                         `json:"port"`
-	PublicPort           int                         `json:"public_port"`
-	ParentProtocolID     *uint                       `json:"parent_protocol_id,omitempty"`
-	ManagedCertificateID *uint                       `json:"managed_certificate_id,omitempty"`
-	MultiplierMilli      int64                       `json:"multiplier_milli"`
-	IsActive             bool                        `json:"is_active"`
-	SortOrder            int                         `json:"sort_order"`
-	LatestDeployment     *protocolDeploymentListItem `json:"latest_deployment,omitempty"`
-	Usage                protocolEndpointUsage       `json:"usage"`
-	CreatedAt            time.Time                   `json:"created_at"`
-	UpdatedAt            time.Time                   `json:"updated_at"`
+	ID                      uint                        `json:"id"`
+	NodeID                  uint                        `json:"node_id"`
+	NodeName                string                      `json:"node_name"`
+	Name                    string                      `json:"name"`
+	Protocol                string                      `json:"protocol"`
+	Address                 string                      `json:"address"`
+	Port                    int                         `json:"port"`
+	PublicPort              int                         `json:"public_port"`
+	ParentProtocolID        *uint                       `json:"parent_protocol_id,omitempty"`
+	ManagedCertificateID    *uint                       `json:"managed_certificate_id,omitempty"`
+	MultiplierMilli         int64                       `json:"multiplier_milli"`
+	MieruPrincipalReady     bool                        `json:"mieru_principal_ready"`
+	IsActive                bool                        `json:"is_active"`
+	SortOrder               int                         `json:"sort_order"`
+	LatestDeployment        *protocolDeploymentListItem `json:"latest_deployment,omitempty"`
+	Usage                   protocolEndpointUsage       `json:"usage"`
+	KernelSupported         bool                        `json:"kernel_supported"`
+	KernelUnsupportedReason string                      `json:"kernel_unsupported_reason,omitempty"`
+	CreatedAt               time.Time                   `json:"created_at"`
+	UpdatedAt               time.Time                   `json:"updated_at"`
 }
 
-func newProtocolEndpointListItem(endpoint model.ProtocolEndpoint, nodeName string, managedCertificateID *uint, deployment *model.ProtocolDeployment, usage protocolEndpointUsage) protocolEndpointListItem {
+func newProtocolEndpointListItem(endpoint model.ProtocolEndpoint, nodeName string, managedCertificateID *uint, deployment *model.ProtocolDeployment, usage protocolEndpointUsage, kernelSupported bool, kernelUnsupportedReason string) protocolEndpointListItem {
 	item := protocolEndpointListItem{
 		ID: endpoint.ID, NodeID: endpoint.NodeID, NodeName: nodeName, Name: endpoint.Name,
 		Protocol: endpoint.Protocol, Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
 		ParentProtocolID: endpoint.ParentProtocolID, ManagedCertificateID: managedCertificateID, MultiplierMilli: endpoint.MultiplierMilli,
-		IsActive: endpoint.IsActive, SortOrder: endpoint.SortOrder, Usage: usage,
+		MieruPrincipalReady: endpoint.MieruPrincipalReady, IsActive: endpoint.IsActive, SortOrder: endpoint.SortOrder, Usage: usage,
+		KernelSupported: kernelSupported, KernelUnsupportedReason: kernelUnsupportedReason,
 		CreatedAt: endpoint.CreatedAt, UpdatedAt: endpoint.UpdatedAt,
 	}
 	if deployment != nil {
@@ -2594,6 +2643,9 @@ func (h *handlers) ProtocolEndpointDetailHandler(w http.ResponseWriter, r *http.
 		ServerError(w, fmt.Errorf("decrypt protocol endpoint config: %w", err))
 		return
 	}
+	if strings.EqualFold(endpoint.Protocol, "mieru") {
+		serverConfig, endpoint.ClientConfig = redactMieruEndpointAdminConfigs(serverConfig, endpoint.ClientConfig)
+	}
 	usage, err := h.loadProtocolEndpointUsage(endpoint.ID, time.Now().UTC())
 	if err != nil {
 		ServerError(w, err)
@@ -2604,7 +2656,11 @@ func (h *handlers) ProtocolEndpointDetailHandler(w http.ResponseWriter, r *http.
 		ServerError(w, err)
 		return
 	}
-	detail := protocolEndpointAdminDetail{ProtocolEndpoint: endpoint, Config: serverConfig, ManagedCertificateID: managedCertificateIDs[endpoint.ID], Usage: usage}
+	kernelSupported, kernelUnsupportedReason := h.protocolKernelSupport(endpoint.Protocol)
+	detail := protocolEndpointAdminDetail{
+		ProtocolEndpoint: endpoint, Config: serverConfig, ManagedCertificateID: managedCertificateIDs[endpoint.ID],
+		Usage: usage, KernelSupported: kernelSupported, KernelUnsupportedReason: kernelUnsupportedReason,
+	}
 	var deployment model.ProtocolDeployment
 	if err := h.db.Where("protocol_endpoint_id = ?", endpoint.ID).Order("id desc").First(&deployment).Error; err == nil {
 		detail.LatestDeployment = &deployment
@@ -2814,7 +2870,8 @@ func (h *handlers) ProtocolEndpointListHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	for _, endpoint := range endpoints {
-		items = append(items, newProtocolEndpointListItem(endpoint, nodeNames[endpoint.NodeID], managedCertificateIDs[endpoint.ID], deploymentByEndpoint[endpoint.ID], usageByEndpoint[endpoint.ID]))
+		kernelSupported, kernelUnsupportedReason := h.protocolKernelSupport(endpoint.Protocol)
+		items = append(items, newProtocolEndpointListItem(endpoint, nodeNames[endpoint.NodeID], managedCertificateIDs[endpoint.ID], deploymentByEndpoint[endpoint.ID], usageByEndpoint[endpoint.ID], kernelSupported, kernelUnsupportedReason))
 	}
 	if paged {
 		OK(w, pagedData(items, total, offset, limit))
@@ -5022,7 +5079,7 @@ func expireSubscriptions(db *gorm.DB, userID uint, now time.Time) error {
 		return err
 	}
 	credentialQuery := db.Model(&model.ProtocolCredential{}).
-		Where("status = ? AND subscription_id IN (?)", protocolCredentialStatusActive,
+		Where("status IN ? AND subscription_id IN (?)", []string{protocolCredentialStatusActive, protocolCredentialStatusPrepared},
 			db.Model(&model.Subscription{}).Select("id").Where("status <> ?", subStatusActive))
 	if userID != 0 {
 		credentialQuery = credentialQuery.Where("user_id = ?", userID)
@@ -5381,6 +5438,12 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 		if err := h.db.Where("id = ? AND is_active = ?", credential.ProtocolEndpointID, true).First(&endpoint).Error; err != nil {
 			continue
 		}
+		if !h.endpointDeliversSubscriptionCredential(endpoint) {
+			continue
+		}
+		if supported, _ := h.protocolKernelSupport(endpoint.Protocol); !supported {
+			continue
+		}
 		var node model.Node
 		if err := h.db.Select("id", "region", "last_seen_at", "is_enabled").First(&node, endpoint.NodeID).Error; err != nil || !node.IsEnabled || node.LastSeenAt == nil || node.LastSeenAt.Before(now.Add(-nodeOnlineWindow)) {
 			continue
@@ -5407,23 +5470,29 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
 		Joins("JOIN nodes ON nodes.id = protocol_endpoints.node_id").
 		Where("node_group_endpoints.node_group_id IN ? AND protocol_endpoints.is_active = ? AND nodes.last_seen_at >= ? AND nodes.is_enabled = ? AND protocol_endpoints.client_config <> ''", uniqueUintIDs(nodeGroupIDs), true, now.Add(-nodeOnlineWindow), true).
-		Where("protocol_endpoints.protocol NOT IN ?", []string{"vless", "vmess", "shadowsocks"}).
 		Order("protocol_endpoints.sort_order asc, protocol_endpoints.id asc").Find(&endpoints).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
 	for _, endpoint := range endpoints {
-		if !json.Valid([]byte(endpoint.ClientConfig)) {
+		if supported, _ := h.protocolKernelSupport(endpoint.Protocol); !supported {
+			continue
+		}
+		if h.endpointDeliversSubscriptionCredential(endpoint) {
 			continue
 		}
 		var node model.Node
 		if err := h.db.Select("id", "region").First(&node, endpoint.NodeID).Error; err != nil {
 			continue
 		}
+		clientConfig, err := h.endpointSubscriptionClientConfig(endpoint)
+		if err != nil {
+			continue
+		}
 		manifestNodes = append(manifestNodes, subscriptionManifestNode{
 			ID: endpoint.ID, NodeID: endpoint.NodeID, Name: endpoint.Name, Region: node.Region,
 			Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort, Protocol: endpoint.Protocol,
-			MultiplierMilli: endpoint.MultiplierMilli, Config: json.RawMessage(endpoint.ClientConfig),
+			MultiplierMilli: endpoint.MultiplierMilli, Config: clientConfig,
 		})
 	}
 
@@ -5452,7 +5521,7 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 		w.Header().Add("Vary", "User-Agent")
 	}
 	if delivery.TemplateSlug != "" {
-		if err := h.writeSubscriptionTemplate(w, delivery.TemplateSlug, manifest); err != nil {
+		if err := h.writeSubscriptionTemplate(r.Context(), w, delivery.TemplateSlug, manifest); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				if delivery.UsesUserAgent {
 					w.Header().Set("X-Zboard-Subscription-Format", subscriptionDeliveryNative)
@@ -5468,6 +5537,13 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 	}
 	w.Header().Set("X-Zboard-Subscription-Format", delivery.Format)
 	OK(w, manifest)
+}
+
+func (h *handlers) endpointDeliversSubscriptionCredential(endpoint model.ProtocolEndpoint) bool {
+	if strings.EqualFold(strings.TrimSpace(endpoint.Protocol), "mieru") {
+		return endpoint.MieruPrincipalReady
+	}
+	return h.protocolUsesSubscriptionCredential(endpoint.Protocol)
 }
 
 func newSubscriptionToken() (string, string, string, error) {
@@ -6647,6 +6723,31 @@ func (h *handlers) isProtocolSupported(proto string) bool {
 	return ok
 }
 
+type protocolKernelCapability struct {
+	Supported bool   `json:"supported"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+func (h *handlers) protocolKernelSupport(proto string) (bool, string) {
+	protocol := strings.ToLower(strings.TrimSpace(proto))
+	if !h.isProtocolSupported(protocol) {
+		return false, "面板无法识别该协议。"
+	}
+	if protocol == "mieru" && !h.zeroMieruAccess {
+		return false, protocolKernelMieruUnavailableReason
+	}
+	return true, ""
+}
+
+func (h *handlers) protocolKernelCapabilities() map[string]protocolKernelCapability {
+	capabilities := make(map[string]protocolKernelCapability, len(supportedProtocols))
+	for protocol := range supportedProtocols {
+		supported, reason := h.protocolKernelSupport(protocol)
+		capabilities[protocol] = protocolKernelCapability{Supported: supported, Reason: reason}
+	}
+	return capabilities
+}
+
 func validateNodeProtocolConfigs(protocol, serverConfig, clientConfig string) error {
 	fields := make(map[string]string)
 	var serverObject map[string]interface{}
@@ -6656,11 +6757,17 @@ func validateNodeProtocolConfigs(protocol, serverConfig, clientConfig string) er
 		serverType, ok := serverObject["type"].(string)
 		if !ok || !strings.EqualFold(strings.TrimSpace(serverType), strings.TrimSpace(protocol)) {
 			fields["config"] = "服务端配置的 type 必须与协议类型一致。"
+		} else if strings.EqualFold(protocol, "mieru") && mieruEndpointPassword(serverObject) == "" {
+			fields["config"] = "Mieru 服务端配置必须包含系统生成的用户凭据。"
 		}
 	}
 	var clientObject map[string]interface{}
 	if strings.TrimSpace(clientConfig) == "" || json.Unmarshal([]byte(clientConfig), &clientObject) != nil || clientObject == nil {
 		fields["client_config"] = "客户端配置必须是 JSON 对象。"
+	} else if strings.EqualFold(protocol, "mieru") {
+		if clientType, _ := clientObject["type"].(string); !strings.EqualFold(strings.TrimSpace(clientType), "mieru") {
+			fields["client_config"] = "Mieru 客户端配置的 type 必须为 mieru。"
+		}
 	}
 	if len(fields) > 0 {
 		return validationError("协议配置校验失败。", fields)

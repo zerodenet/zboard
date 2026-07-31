@@ -67,9 +67,12 @@ var preReleaseBaselineColumns = []struct {
 	columnType string
 }{
 	{table: "flow_usages", column: "flow_id", columnType: "varchar(128)"},
+	{table: "managed_certificates", column: "provider_account_id", columnType: "bigint unsigned"},
+	{table: "managed_certificates", column: "webroot_path", columnType: "varchar(255)"},
 	{table: "node_groups", column: "revision", columnType: "bigint unsigned"},
 	{table: "plans", column: "revision", columnType: "bigint unsigned"},
 	{table: "protocol_credentials", column: "credential_id", columnType: "varchar(96)"},
+	{table: "protocol_endpoints", column: "mieru_principal_ready", columnType: "tinyint(1)"},
 	{table: "protocol_endpoints", column: "runtime_key", columnType: "varchar(36)"},
 	{table: "subscription_template_rule_set_bindings", column: "action", columnType: "varchar(96)"},
 	{table: "subscription_templates", column: "customization", columnType: "json"},
@@ -83,6 +86,7 @@ var preReleaseBaselineIndexes = []struct {
 	{table: "audit_logs", index: "idx_audit_logs_history_cursor"},
 	{table: "node_groups", index: "uk_node_groups_code"},
 	{table: "node_operations", index: "idx_node_operations_history_cursor"},
+	{table: "managed_certificates", index: "idx_managed_certificates_provider"},
 	{table: "orders", index: "idx_orders_created_at_id"},
 	{table: "protocol_deployments", index: "idx_protocol_deployments_history_cursor"},
 	{table: "subscriptions", index: "idx_subscriptions_end_at_id"},
@@ -262,6 +266,77 @@ func finalizePreReleaseBaselineSchema(db *sql.DB) error {
 	case oldIndex > 0 && finalIndex > 0:
 		if _, err := db.Exec("ALTER TABLE node_groups DROP INDEX uk_access_groups_code"); err != nil {
 			return fmt.Errorf("remove obsolete node group code index: %w", err)
+		}
+	}
+
+	var providerColumn, webrootColumn int
+	if err := db.QueryRow(
+		`SELECT COALESCE(SUM(column_name = 'provider_account_id'), 0),
+		        COALESCE(SUM(column_name = 'webroot_path'), 0)
+		   FROM information_schema.columns
+		  WHERE table_schema = DATABASE()
+		    AND table_name = 'managed_certificates'
+		    AND column_name IN ('provider_account_id', 'webroot_path')`,
+	).Scan(&providerColumn, &webrootColumn); err != nil {
+		return fmt.Errorf("inspect managed certificate challenge columns: %w", err)
+	}
+	if providerColumn == 0 {
+		if _, err := db.Exec("ALTER TABLE managed_certificates ADD COLUMN provider_account_id bigint unsigned DEFAULT NULL AFTER node_id"); err != nil {
+			return fmt.Errorf("add managed certificate provider ownership: %w", err)
+		}
+	}
+	if webrootColumn == 0 {
+		if _, err := db.Exec("ALTER TABLE managed_certificates ADD COLUMN webroot_path varchar(255) NOT NULL DEFAULT '' AFTER challenge_type"); err != nil {
+			return fmt.Errorf("add managed certificate webroot path: %w", err)
+		}
+	}
+
+	var providerIndex int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM information_schema.statistics
+		  WHERE table_schema = DATABASE()
+		    AND table_name = 'managed_certificates'
+		    AND index_name = 'idx_managed_certificates_provider'`,
+	).Scan(&providerIndex); err != nil {
+		return fmt.Errorf("inspect managed certificate provider index: %w", err)
+	}
+	if providerIndex == 0 {
+		if _, err := db.Exec("ALTER TABLE managed_certificates ADD KEY idx_managed_certificates_provider (provider_account_id)"); err != nil {
+			return fmt.Errorf("add managed certificate provider index: %w", err)
+		}
+	}
+
+	var providerConstraint int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM information_schema.referential_constraints
+		  WHERE constraint_schema = DATABASE()
+		    AND table_name = 'managed_certificates'
+		    AND constraint_name = 'fk_managed_certificates_provider'`,
+	).Scan(&providerConstraint); err != nil {
+		return fmt.Errorf("inspect managed certificate provider constraint: %w", err)
+	}
+	if providerConstraint == 0 {
+		if _, err := db.Exec(
+			"ALTER TABLE managed_certificates ADD CONSTRAINT fk_managed_certificates_provider FOREIGN KEY (provider_account_id) REFERENCES provider_accounts (id) ON DELETE RESTRICT",
+		); err != nil {
+			return fmt.Errorf("add managed certificate provider constraint: %w", err)
+		}
+	}
+
+	var mieruReadyColumn int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM information_schema.columns
+		  WHERE table_schema = DATABASE()
+		    AND table_name = 'protocol_endpoints'
+		    AND column_name = 'mieru_principal_ready'`,
+	).Scan(&mieruReadyColumn); err != nil {
+		return fmt.Errorf("inspect Mieru principal readiness column: %w", err)
+	}
+	if mieruReadyColumn == 0 {
+		if _, err := db.Exec(
+			"ALTER TABLE protocol_endpoints ADD COLUMN mieru_principal_ready tinyint(1) NOT NULL DEFAULT 0 AFTER multiplier_milli",
+		); err != nil {
+			return fmt.Errorf("add Mieru principal readiness column: %w", err)
 		}
 	}
 	return nil

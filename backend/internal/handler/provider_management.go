@@ -26,6 +26,9 @@ const (
 	dnsStatusActive    = "active"
 	dnsStatusDrifted   = "drifted"
 	dnsStatusFailed    = "failed"
+
+	dnsPublicCheckInterval = 15 * time.Second
+	dnsPublicCheckTimeout  = 8 * time.Second
 )
 
 var cloudflareAPIBaseURL = "https://api.cloudflare.com/client/v4"
@@ -48,15 +51,21 @@ type providerAccountWriteRequest struct {
 }
 
 type managedDNSWriteRequest struct {
-	ProviderAccountID uint   `json:"provider_account_id"`
-	NodeID            uint   `json:"node_id"`
-	DomainName        string `json:"domain_name"`
-	RecordType        string `json:"record_type"`
-	RecordValue       string `json:"record_value"`
-	TTL               int    `json:"ttl"`
-	Proxied           bool   `json:"proxied"`
-	TakeoverExisting  bool   `json:"takeover_existing"`
-	ExpectedRevision  uint64 `json:"expected_revision"`
+	ProviderAccountID uint                    `json:"provider_account_id"`
+	NodeID            uint                    `json:"node_id"`
+	DomainName        string                  `json:"domain_name"`
+	RecordType        string                  `json:"record_type"`
+	RecordValue       string                  `json:"record_value"`
+	TTL               int                     `json:"ttl"`
+	Proxied           bool                    `json:"proxied"`
+	TakeoverExisting  bool                    `json:"takeover_existing"`
+	ExpectedRevision  uint64                  `json:"expected_revision"`
+	Records           []managedDNSRecordInput `json:"records"`
+}
+
+type managedDNSRecordInput struct {
+	RecordType  string `json:"record_type"`
+	RecordValue string `json:"record_value"`
 }
 
 type providerAccountView struct {
@@ -294,18 +303,45 @@ func (h *handlers) ManagedDNSCreateHandler(w http.ResponseWriter, r *http.Reques
 		BadRequest(w, err.Error())
 		return
 	}
-	record, err := h.validateManagedDNSRequest(request)
-	if err != nil {
-		BadRequestError(w, err)
+	inputs := request.Records
+	if len(inputs) == 0 {
+		inputs = []managedDNSRecordInput{{RecordType: request.RecordType, RecordValue: request.RecordValue}}
+	}
+	if len(inputs) < 1 || len(inputs) > 2 {
+		BadRequestFields(w, "DNS 解析校验失败。", map[string]string{"records": "一次只能创建一条 A、一条 AAAA 记录。"})
 		return
 	}
-	record.CreatedBy = claims.UserID
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&record).Error; err != nil {
-			return err
+	records := make([]model.ManagedDNSRecord, 0, len(inputs))
+	seenTypes := make(map[string]struct{}, len(inputs))
+	for index, input := range inputs {
+		recordRequest := request
+		recordRequest.RecordType = input.RecordType
+		recordRequest.RecordValue = input.RecordValue
+		recordRequest.Records = nil
+		record, validateErr := h.validateManagedDNSRequest(recordRequest)
+		if validateErr != nil {
+			BadRequestError(w, prefixValidationError(validateErr, fmt.Sprintf("records.%d.", index)))
+			return
 		}
-		return createAuditLog(tx, claims, "dns_record.create", fmt.Sprintf("managed_dns_record:%d", record.ID),
-			fmt.Sprintf("domain=%s type=%s node=%d provider_account=%d", record.DomainName, record.RecordType, record.NodeID, record.ProviderAccountID))
+		if _, exists := seenTypes[record.RecordType]; exists {
+			BadRequestFields(w, "DNS 解析校验失败。", map[string]string{"records": "A 和 AAAA 各自最多提交一次。"})
+			return
+		}
+		seenTypes[record.RecordType] = struct{}{}
+		record.CreatedBy = claims.UserID
+		records = append(records, record)
+	}
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		for index := range records {
+			if err := tx.Create(&records[index]).Error; err != nil {
+				return err
+			}
+			if err := createAuditLog(tx, claims, "dns_record.create", fmt.Sprintf("managed_dns_record:%d", records[index].ID),
+				fmt.Sprintf("domain=%s type=%s node=%d provider_account=%d", records[index].DomainName, records[index].RecordType, records[index].NodeID, records[index].ProviderAccountID)); err != nil {
+				return err
+			}
+		}
+		return nil
 	}); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			BadRequestFields(w, "DNS 解析校验失败。", map[string]string{"domain_name": "该供应商账户下已管理相同域名和记录类型。"})
@@ -314,12 +350,16 @@ func (h *handlers) ManagedDNSCreateHandler(w http.ResponseWriter, r *http.Reques
 		ServerError(w, err)
 		return
 	}
-	operation, err := h.startDNSOperation(record.ID, request.TakeoverExisting, &claims.UserID)
-	if err != nil {
-		ServerError(w, err)
-		return
+	operations := make([]model.ProviderOperation, 0, len(records))
+	for _, record := range records {
+		operation, startErr := h.startDNSOperation(record.ID, request.TakeoverExisting, &claims.UserID)
+		if startErr != nil {
+			ServerError(w, startErr)
+			return
+		}
+		operations = append(operations, operation)
 	}
-	writeJSON(w, http.StatusAccepted, "dns synchronization started", map[string]interface{}{"record": record, "operation": operation})
+	writeJSON(w, http.StatusAccepted, "dns synchronization started", map[string]interface{}{"records": records, "operations": operations})
 }
 
 func (h *handlers) ManagedDNSSyncHandler(w http.ResponseWriter, r *http.Request) {
@@ -365,7 +405,8 @@ func (h *handlers) validateManagedDNSRequest(request managedDNSWriteRequest) (mo
 		fields["node_id"] = "请选择有效的目标节点。"
 	} else if request.RecordValue == "" {
 		for _, candidate := range []string{strings.TrimSpace(node.Address), strings.TrimSpace(node.SSHHost)} {
-			if net.ParseIP(candidate) != nil {
+			ip := net.ParseIP(candidate)
+			if ip != nil && ((request.RecordType == "A" && ip.To4() != nil) || (request.RecordType == "AAAA" && ip.To4() == nil)) {
 				request.RecordValue = candidate
 				break
 			}
@@ -593,20 +634,59 @@ func dnsRecordHash(recordType, name, value string, ttl int, proxied bool) string
 }
 
 func verifyPublicDNS(ctx context.Context, record model.ManagedDNSRecord) bool {
-	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, record.DomainName)
-	if err != nil || len(addresses) == 0 {
-		return false
-	}
-	if record.Proxied {
-		return true
-	}
-	expected := net.ParseIP(record.RecordValue)
-	for _, address := range addresses {
-		if address.IP.Equal(expected) {
-			return true
+	for _, server := range []string{"1.1.1.1:53", "8.8.8.8:53"} {
+		resolver := &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				dialer := net.Dialer{Timeout: 2 * time.Second}
+				return dialer.DialContext(ctx, network, server)
+			},
+		}
+		addresses, err := resolver.LookupIPAddr(ctx, record.DomainName)
+		if err != nil {
+			continue
+		}
+		expected := net.ParseIP(record.RecordValue)
+		for _, address := range addresses {
+			sameFamily := (record.RecordType == "A" && address.IP.To4() != nil) ||
+				(record.RecordType == "AAAA" && address.IP.To4() == nil)
+			if sameFamily && (record.Proxied || address.IP.Equal(expected)) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+func (h *handlers) StartDNSPublicObservationWorker() {
+	go func() {
+		h.scanDNSPublicObservations(time.Now().UTC())
+		ticker := time.NewTicker(dnsPublicCheckInterval)
+		defer ticker.Stop()
+		for now := range ticker.C {
+			h.scanDNSPublicObservations(now.UTC())
+		}
+	}()
+}
+
+func (h *handlers) scanDNSPublicObservations(now time.Time) {
+	var records []model.ManagedDNSRecord
+	if err := h.db.Where(
+		"public_resolved = ? AND last_synced_at IS NOT NULL AND status IN ? AND (last_public_check_at IS NULL OR last_public_check_at <= ?)",
+		false, []string{dnsStatusActive, dnsStatusDrifted}, now.Add(-dnsPublicCheckInterval),
+	).Order("last_public_check_at asc, id asc").Limit(50).Find(&records).Error; err != nil {
+		return
+	}
+	for _, record := range records {
+		ctx, cancel := context.WithTimeout(context.Background(), dnsPublicCheckTimeout)
+		resolved := verifyPublicDNS(ctx, record)
+		cancel()
+		updates := map[string]interface{}{"last_public_check_at": now}
+		if resolved {
+			updates["public_resolved"] = true
+		}
+		_ = h.db.Model(&model.ManagedDNSRecord{}).Where("id = ? AND public_resolved = ?", record.ID, false).Updates(updates).Error
+	}
 }
 
 func secretPrefix(value string) string {

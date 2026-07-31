@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 )
@@ -237,6 +238,19 @@ func validateGeneratedZeroDocument(document map[string]interface{}) error {
 			return fmt.Errorf("Zero outbound tag %q 重复", tag)
 		}
 		targets[tag] = struct{}{}
+		protocol, _ := outbound["protocol"].(map[string]interface{})
+		if strings.EqualFold(subscriptionOptionalString(protocol, "type"), "mieru") {
+			if strings.TrimSpace(subscriptionOptionalString(protocol, "server")) == "" {
+				return fmt.Errorf("Zero Mieru outbound %q 缺少 server", tag)
+			}
+			port, ok := protocol["port"].(float64)
+			if !ok || port < 1 || port > 65535 || port != math.Trunc(port) {
+				return fmt.Errorf("Zero Mieru outbound %q 缺少有效 port", tag)
+			}
+			if strings.TrimSpace(subscriptionOptionalString(protocol, "password")) == "" {
+				return fmt.Errorf("Zero Mieru outbound %q 缺少 password", tag)
+			}
+		}
 	}
 	groups, err := subscriptionObjectList(document["outbound_groups"], "Zero outbound_groups")
 	if err != nil {

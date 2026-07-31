@@ -16,9 +16,9 @@
           <td><RouterLink :to="`/admin/nodes?node=${record.node_id}`">{{ record.node_name }}</RouterLink></td>
           <td>{{ record.provider_name }}</td>
           <td><StatusBadge :tone="dnsTone(record.status)">{{ dnsStatus(record.status) }}</StatusBadge><small v-if="record.last_error" class="row-error">{{ record.last_error }}</small></td>
-          <td><StatusBadge :tone="record.public_resolved ? 'success' : 'warning'">{{ record.public_resolved ? '已观察到' : '等待传播' }}</StatusBadge></td>
+          <td><StatusBadge :tone="record.public_resolved ? 'success' : 'warning'">{{ record.public_resolved ? '已观察到' : '自动观察中' }}</StatusBadge></td>
           <td><TimeBadge v-if="record.last_synced_at" :value="record.last_synced_at" mode="relative" /><span v-else class="muted-value">尚未同步</span></td>
-          <td class="table-action-column"><div class="inline-actions"><UiButton size="sm" variant="secondary" :loading="operatingRecord === record.id" :disabled="record.status === 'syncing'" @click="syncRecord(record)">同步</UiButton><RouterLink class="ui-button ui-button-secondary ui-button-sm" :to="{ path: '/admin/certificates', query: { dns_domain: record.domain_name, dns_node: record.node_id } }">申请证书</RouterLink></div></td>
+          <td class="table-action-column"><div class="inline-actions"><UiButton size="sm" variant="secondary" :loading="operatingRecord === record.id" :disabled="record.status === 'syncing'" @click="syncRecord(record)">同步</UiButton><RouterLink class="ui-button ui-button-secondary ui-button-sm" :to="{ path: '/admin/certificates', query: { dns_domain: record.domain_name, dns_node: record.node_id, dns_provider: record.provider_account_id } }">申请证书</RouterLink></div></td>
         </tr></tbody>
       </DataTable>
       <EmptyState v-else class="dns-empty-state" icon="nodes" title="还没有托管 DNS 解析" description="先准备具备 DNS 能力的供应商账户，再把手填域名解析到选定节点。">
@@ -32,8 +32,8 @@
         <FormField label="供应商账户" required><UiSelect v-model.number="dnsForm.provider_account_id" :options="accountOptions" /></FormField>
         <FormField label="目标节点" required><NodeLookup v-model="dnsForm.node_id" /></FormField>
         <FormField label="完整域名" hint="例如 edge.example.com；域名必须手填。" required full><UiInput v-model.trim="dnsForm.domain_name" placeholder="edge.example.com" /></FormField>
-        <FormField label="记录类型" required><UiSelect v-model="dnsForm.record_type" :options="recordTypeOptions" /></FormField>
-        <FormField label="记录值" hint="可留空；系统会优先使用节点地址中的公网 IP，也可手工覆盖。"><UiInput v-model.trim="dnsForm.record_value" placeholder="自动读取节点地址" /></FormField>
+        <FormField label="IPv4 地址（A）" hint="IPv4、IPv6 至少填写一个。"><UiInput v-model.trim="dnsForm.ipv4_value" placeholder="例如 203.0.113.10" /></FormField>
+        <FormField label="IPv6 地址（AAAA）" hint="同时填写时会在一个请求中创建两条独立记录。"><UiInput v-model.trim="dnsForm.ipv6_value" placeholder="例如 2001:db8::10" /></FormField>
         <FormField label="TTL"><UiNumberInput v-model="dnsForm.ttl" :min="1" :max="86400" /></FormField>
         <FormField label="Cloudflare 代理"><label class="check-field"><UiCheckbox v-model="dnsForm.proxied" /><span>启用橙云代理</span></label></FormField>
         <FormField label="已有记录处理" full><label class="check-field"><UiCheckbox v-model="dnsForm.takeover_existing" /><span>若远端已有同名记录，明确接管并更新</span></label></FormField>
@@ -77,10 +77,9 @@ const message = ref('')
 const dnsOpen = ref(false)
 const savingDNS = ref(false)
 const operatingRecord = ref(0)
-const dnsForm = reactive({ provider_account_id: 0, node_id: 0, domain_name: '', record_type: 'A' as 'A' | 'AAAA', record_value: '', ttl: 1, proxied: false, takeover_existing: false })
+const dnsForm = reactive({ provider_account_id: 0, node_id: 0, domain_name: '', ipv4_value: '', ipv6_value: '', ttl: 1, proxied: false, takeover_existing: false })
 const activeDNSAccounts = computed(() => accounts.value.filter(item => item.status === 'active' && item.capabilities.includes('dns.records')))
 const accountOptions = computed(() => activeDNSAccounts.value.map(item => ({ label: item.name, value: item.id })))
-const recordTypeOptions = [{ label: 'A（IPv4）', value: 'A' }, { label: 'AAAA（IPv6）', value: 'AAAA' }]
 let pollTimer: ReturnType<typeof setInterval> | undefined
 
 function dnsStatus(status: string) { return ({ pending: '待同步', syncing: '同步中', active: '已同步', drifted: '存在漂移', failed: '同步失败' } as Record<string, string>)[status] || status }
@@ -106,10 +105,18 @@ async function createDNS() {
   error.value = ''
   message.value = ''
   try {
-    await createManagedDNSRecord(dnsForm)
+    const records = [
+      ...(dnsForm.ipv4_value ? [{ record_type: 'A' as const, record_value: dnsForm.ipv4_value }] : []),
+      ...(dnsForm.ipv6_value ? [{ record_type: 'AAAA' as const, record_value: dnsForm.ipv6_value }] : []),
+    ]
+    if (!records.length) {
+      error.value = '请至少填写一个 IPv4 或 IPv6 地址。'
+      return
+    }
+    await createManagedDNSRecord({ ...dnsForm, records })
     dnsOpen.value = false
-    Object.assign(dnsForm, { provider_account_id: 0, node_id: 0, domain_name: '', record_type: 'A', record_value: '', ttl: 1, proxied: false, takeover_existing: false })
-    message.value = 'DNS 记录已创建，Cloudflare 同步正在后台执行。'
+    Object.assign(dnsForm, { provider_account_id: 0, node_id: 0, domain_name: '', ipv4_value: '', ipv6_value: '', ttl: 1, proxied: false, takeover_existing: false })
+    message.value = 'DNS 记录已创建，Cloudflare 同步与公共传播观察正在后台执行。'
     await refreshAll()
   } catch (cause: any) {
     error.value = cause?.response?.data?.message || 'DNS 记录创建失败。'
@@ -140,7 +147,7 @@ async function changePage(next: { offset: number; limit: number }) {
 onMounted(async () => {
   loading.value = true
   await refreshAll()
-  pollTimer = setInterval(() => { if (records.value.some(item => item.status === 'syncing')) void refreshAll() }, 3000)
+  pollTimer = setInterval(() => { if (records.value.some(item => item.status === 'syncing' || !item.public_resolved)) void refreshAll() }, 5000)
 })
 onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
 </script>

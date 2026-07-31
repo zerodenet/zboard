@@ -19,6 +19,7 @@ const (
 	EnvironmentTest        = "test"
 	ZeroKernelLegacy       = "legacy"
 	ZeroKernelNativeLocal  = "native-local"
+	ZeroKernelNativeMieru  = "native-local-mieru"
 	MinimumJWTSecretBytes  = 32
 )
 
@@ -73,14 +74,16 @@ func (c *Config) Validate() error {
 	if c.ZeroKernelContract == "" {
 		c.ZeroKernelContract = ZeroKernelLegacy
 	}
-	if c.ZeroKernelContract != ZeroKernelLegacy && c.ZeroKernelContract != ZeroKernelNativeLocal {
+	if c.ZeroKernelContract != ZeroKernelLegacy &&
+		c.ZeroKernelContract != ZeroKernelNativeLocal &&
+		c.ZeroKernelContract != ZeroKernelNativeMieru {
 		return fmt.Errorf("unsupported zero_kernel_contract %q", c.ZeroKernelContract)
 	}
 	c.ZeroLocalVersion = strings.TrimSpace(c.ZeroLocalVersion)
 	if c.ZeroLocalVersion != "" && !zeroLocalVersionPattern.MatchString(c.ZeroLocalVersion) {
 		return fmt.Errorf("zero_local_version %q is not a supported semantic version", c.ZeroLocalVersion)
 	}
-	if c.ZeroKernelContract == ZeroKernelNativeLocal && c.ZeroLocalVersion == "" {
+	if (c.ZeroKernelContract == ZeroKernelNativeLocal || c.ZeroKernelContract == ZeroKernelNativeMieru) && c.ZeroLocalVersion == "" {
 		return errors.New("zero_local_version is required for the native-local kernel contract")
 	}
 	if strings.TrimSpace(c.DataSource) == "" {

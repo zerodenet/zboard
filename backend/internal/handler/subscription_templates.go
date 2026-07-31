@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -182,7 +183,7 @@ func validateSubscriptionTemplate(req *subscriptionTemplateWriteReq) error {
 	return nil
 }
 
-func validateSubscriptionTemplateWithRuleSets(db *gorm.DB, req *subscriptionTemplateWriteReq) error {
+func (h *handlers) validateSubscriptionTemplateWithRuleSets(db *gorm.DB, req *subscriptionTemplateWriteReq) error {
 	if err := normalizeSubscriptionTemplateRequest(req); err != nil {
 		return err
 	}
@@ -190,7 +191,11 @@ func validateSubscriptionTemplateWithRuleSets(db *gorm.DB, req *subscriptionTemp
 	if err != nil {
 		return validationError("订阅输出格式校验失败。", map[string]string{"customization": err.Error()})
 	}
-	if _, _, err := renderSubscriptionWithRenderer(req.Renderer, resolved, sampleSubscriptionTemplateData()); err != nil {
+	rendered, _, err := renderSubscriptionWithRenderer(req.Renderer, resolved, sampleSubscriptionTemplateData())
+	if err != nil {
+		return validationError("订阅输出格式校验失败。", map[string]string{"customization": err.Error()})
+	}
+	if err := h.validateZeroSubscriptionPreview(context.Background(), req.Renderer, rendered); err != nil {
 		return validationError("订阅输出格式校验失败。", map[string]string{"customization": err.Error()})
 	}
 	return nil
@@ -204,11 +209,18 @@ func sampleSubscriptionTemplateData() subscriptionTemplateData {
 		Subscription: subscriptionManifestSummary{
 			ExpiresAt: "2026-02-01T00:00:00Z", FlowTotal: 107374182400, FlowUsed: 1073741824, FlowRemaining: 106300440576,
 		},
-		ProtocolEndpoints: []subscriptionTemplateEndpoint{{
-			ID: 1, NodeID: 1, SubscriptionID: 1, CredentialID: "credential-example", Name: "Hong Kong VLESS", Region: "Hong Kong",
-			Address: "edge.example.com", Port: 443, PublicPort: 443, Protocol: "vless", MultiplierMilli: 1000,
-			Config: map[string]interface{}{"type": "vless", "id": "00000000-0000-4000-8000-000000000000"},
-		}},
+		ProtocolEndpoints: []subscriptionTemplateEndpoint{
+			{
+				ID: 1, NodeID: 1, SubscriptionID: 1, CredentialID: "credential-example", Name: "Hong Kong VLESS", Region: "Hong Kong",
+				Address: "edge.example.com", Port: 443, PublicPort: 443, Protocol: "vless", MultiplierMilli: 1000,
+				Config: map[string]interface{}{"type": "vless", "id": "00000000-0000-4000-8000-000000000000"},
+			},
+			{
+				ID: 2, NodeID: 2, Name: "Singapore Mieru", Region: "Singapore",
+				Address: "mieru.example.com", Port: 2999, PublicPort: 2999, Protocol: "mieru", MultiplierMilli: 1000,
+				Config: map[string]interface{}{"type": "mieru", "password": "generated-endpoint-secret", "transport": "tcp"},
+			},
+		},
 	}
 }
 
@@ -374,6 +386,10 @@ func (h *handlers) AdminSubscriptionTemplatePreviewHandler(w http.ResponseWriter
 		BadRequestFields(w, "订阅输出格式预览失败。", map[string]string{"customization": err.Error()})
 		return
 	}
+	if err := h.validateZeroSubscriptionPreview(r.Context(), req.Renderer, rendered); err != nil {
+		BadRequestFields(w, "订阅输出格式预览失败。", map[string]string{"customization": err.Error()})
+		return
+	}
 	content, truncated := truncateTemplatePreview(rendered)
 	OK(w, subscriptionTemplatePreview{
 		Content: content, ContentType: contentType, Bytes: len(rendered),
@@ -404,7 +420,7 @@ func (h *handlers) saveSubscriptionTemplate(w http.ResponseWriter, r *http.Reque
 		BadRequest(w, err.Error())
 		return
 	}
-	if err := validateSubscriptionTemplateWithRuleSets(h.db, &req); err != nil {
+	if err := h.validateSubscriptionTemplateWithRuleSets(h.db, &req); err != nil {
 		BadRequestError(w, err)
 		return
 	}
@@ -503,7 +519,7 @@ func (h *handlers) AdminSubscriptionTemplateDeleteHandler(w http.ResponseWriter,
 	OK(w, map[string]interface{}{"id": id, "deleted": true})
 }
 
-func (h *handlers) writeSubscriptionTemplate(w http.ResponseWriter, slug string, manifest subscriptionManifest) error {
+func (h *handlers) writeSubscriptionTemplate(ctx context.Context, w http.ResponseWriter, slug string, manifest subscriptionManifest) error {
 	var item model.SubscriptionTemplate
 	if err := h.db.Where("slug = ? AND is_active = ?", slug, true).First(&item).Error; err != nil {
 		return err
@@ -529,6 +545,9 @@ func (h *handlers) writeSubscriptionTemplate(w http.ResponseWriter, slug string,
 	}
 	rendered, contentType, err := renderSubscriptionWithStoredRuleSets(h.db, item.Renderer, item.Customization, data, false)
 	if err != nil {
+		return err
+	}
+	if err := h.validateZeroSubscriptionPreview(ctx, item.Renderer, rendered); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", contentType+"; charset=utf-8")

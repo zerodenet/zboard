@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	protocolCredentialStatusActive  = "active"
-	protocolCredentialStatusRevoked = "revoked"
+	protocolCredentialStatusActive   = "active"
+	protocolCredentialStatusPrepared = "prepared"
+	protocolCredentialStatusRevoked  = "revoked"
 )
 
 func protocolUsesSubscriptionCredential(protocol string) bool {
@@ -31,7 +32,15 @@ func protocolUsesSubscriptionCredential(protocol string) bool {
 	}
 }
 
+func (h *handlers) protocolStoresSubscriptionCredential(protocol string) bool {
+	return protocolUsesSubscriptionCredential(protocol) ||
+		(h.zeroMieruAccess && strings.EqualFold(strings.TrimSpace(protocol), "mieru"))
+}
+
 func (h *handlers) protocolUsesSubscriptionCredential(protocol string) bool {
+	if h.zeroMieruAccess && strings.EqualFold(strings.TrimSpace(protocol), "mieru") {
+		return true
+	}
 	if h.zeroNativeAccess {
 		return protocolUsesSubscriptionCredential(protocol)
 	}
@@ -41,6 +50,24 @@ func (h *handlers) protocolUsesSubscriptionCredential(protocol string) bool {
 	default:
 		return false
 	}
+}
+
+func (h *handlers) runtimeCredentialProtocols() []string {
+	if h.zeroMieruAccess {
+		return []string{"vless", "vmess", "shadowsocks", "trojan", "hysteria2", "mieru"}
+	}
+	if h.zeroNativeAccess {
+		return []string{"vless", "vmess", "shadowsocks", "trojan", "hysteria2"}
+	}
+	return []string{"vless", "vmess", "shadowsocks"}
+}
+
+func (h *handlers) desiredProtocolCredentialStatus(endpoint model.ProtocolEndpoint) string {
+	if strings.EqualFold(strings.TrimSpace(endpoint.Protocol), "mieru") &&
+		!h.zeroMieruAccess && !endpoint.MieruPrincipalReady {
+		return protocolCredentialStatusPrepared
+	}
+	return protocolCredentialStatusActive
 }
 
 func protocolUsesDedicatedCredentialPort(protocol string) bool {
@@ -62,9 +89,10 @@ func (h *handlers) ensureSubscriptionCredentials(tx *gorm.DB, subscription model
 
 	credentials := make([]model.ProtocolCredential, 0, len(endpoints))
 	for _, endpoint := range endpoints {
-		if !h.protocolUsesSubscriptionCredential(endpoint.Protocol) {
+		if !h.protocolStoresSubscriptionCredential(endpoint.Protocol) {
 			continue
 		}
+		targetStatus := h.desiredProtocolCredentialStatus(endpoint)
 		var credential model.ProtocolCredential
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("subscription_id = ? AND protocol_endpoint_id = ?", subscription.ID, endpoint.ID).
@@ -73,7 +101,7 @@ func (h *handlers) ensureSubscriptionCredentials(tx *gorm.DB, subscription model
 			updates := map[string]interface{}{
 				"user_id":    subscription.UserID,
 				"node_id":    endpoint.NodeID,
-				"status":     protocolCredentialStatusActive,
+				"status":     targetStatus,
 				"expires_at": subscription.EndAt,
 				"revoked_at": nil,
 			}
@@ -82,7 +110,7 @@ func (h *handlers) ensureSubscriptionCredentials(tx *gorm.DB, subscription model
 			}
 			credential.UserID = subscription.UserID
 			credential.NodeID = endpoint.NodeID
-			credential.Status = protocolCredentialStatusActive
+			credential.Status = targetStatus
 			credential.ExpiresAt = subscription.EndAt
 			credential.RevokedAt = nil
 			credentials = append(credentials, credential)
@@ -114,7 +142,7 @@ func (h *handlers) ensureSubscriptionCredentials(tx *gorm.DB, subscription model
 			Secret:             encryptedSecret,
 			ListenPort:         listenPort,
 			PublicPort:         publicPort,
-			Status:             protocolCredentialStatusActive,
+			Status:             targetStatus,
 			ExpiresAt:          subscription.EndAt,
 		}
 		if err := tx.Create(&credential).Error; err != nil {
@@ -148,7 +176,7 @@ func (h *handlers) reconcileNodeGroupCredentials(groupID uint) error {
 		if err := tx.Model(&model.ProtocolCredential{}).
 			Where("subscription_id IN (?)", activeSubscriptionIDs).
 			Where("protocol_endpoint_id NOT IN (?)", currentEndpointIDs).
-			Where("status = ? AND revoked_at IS NULL", protocolCredentialStatusActive).
+			Where("status IN ? AND revoked_at IS NULL", []string{protocolCredentialStatusActive, protocolCredentialStatusPrepared}).
 			Updates(map[string]interface{}{"status": protocolCredentialStatusRevoked, "revoked_at": now}).Error; err != nil {
 			return err
 		}
@@ -195,7 +223,7 @@ func (h *handlers) newProtocolCredentialSecret(endpoint model.ProtocolEndpoint) 
 			return base64.StdEncoding.EncodeToString(entropy), nil
 		}
 		return base64.RawURLEncoding.EncodeToString(entropy), nil
-	case "trojan", "hysteria2":
+	case "trojan", "hysteria2", "mieru":
 		entropy := make([]byte, 32)
 		if _, err := rand.Read(entropy); err != nil {
 			return "", err
@@ -204,6 +232,196 @@ func (h *handlers) newProtocolCredentialSecret(endpoint model.ProtocolEndpoint) 
 	default:
 		return "", fmt.Errorf("protocol %s does not support subscription credentials", endpoint.Protocol)
 	}
+}
+
+func (h *handlers) prepareMieruEndpointConfigs(endpointID uint, serverRaw, clientRaw string) (string, string, error) {
+	var server map[string]interface{}
+	if err := json.Unmarshal([]byte(serverRaw), &server); err != nil || server == nil {
+		return "", "", validationError("协议配置校验失败。", map[string]string{"config": "服务端配置必须是 JSON 对象。"})
+	}
+	var client map[string]interface{}
+	if err := json.Unmarshal([]byte(clientRaw), &client); err != nil || client == nil {
+		return "", "", validationError("协议配置校验失败。", map[string]string{"client_config": "客户端配置必须是 JSON 对象。"})
+	}
+
+	password := ""
+	if endpointID != 0 {
+		var endpoint model.ProtocolEndpoint
+		if err := h.db.First(&endpoint, endpointID).Error; err != nil {
+			return "", "", err
+		}
+		existingRaw, err := h.credentialCipher.Decrypt(endpoint.ServerConfig)
+		if err != nil {
+			return "", "", err
+		}
+		var existing map[string]interface{}
+		if json.Unmarshal([]byte(existingRaw), &existing) == nil {
+			password = mieruEndpointPassword(existing)
+		}
+	}
+	if password == "" {
+		entropy := make([]byte, 32)
+		if _, err := rand.Read(entropy); err != nil {
+			return "", "", err
+		}
+		password = base64.RawURLEncoding.EncodeToString(entropy)
+	}
+
+	server["type"] = "mieru"
+	server["users"] = []interface{}{map[string]interface{}{"password": password}}
+	client["type"] = "mieru"
+	delete(client, "username")
+	delete(client, "password")
+
+	normalizedServer, err := json.Marshal(server)
+	if err != nil {
+		return "", "", err
+	}
+	normalizedClient, err := json.Marshal(client)
+	if err != nil {
+		return "", "", err
+	}
+	return string(normalizedServer), string(normalizedClient), nil
+}
+
+func mieruEndpointPassword(server map[string]interface{}) string {
+	users, _ := server["users"].([]interface{})
+	if len(users) == 0 {
+		return ""
+	}
+	user, _ := users[0].(map[string]interface{})
+	password, _ := user["password"].(string)
+	return strings.TrimSpace(password)
+}
+
+func (h *handlers) endpointSubscriptionClientConfig(endpoint model.ProtocolEndpoint) (json.RawMessage, error) {
+	if !strings.EqualFold(endpoint.Protocol, "mieru") {
+		if !json.Valid([]byte(endpoint.ClientConfig)) {
+			return nil, errors.New("endpoint client config is invalid")
+		}
+		return json.RawMessage(endpoint.ClientConfig), nil
+	}
+
+	var client map[string]interface{}
+	if err := json.Unmarshal([]byte(endpoint.ClientConfig), &client); err != nil || client == nil {
+		return nil, errors.New("endpoint client config is invalid")
+	}
+	serverRaw, err := h.credentialCipher.Decrypt(endpoint.ServerConfig)
+	if err != nil {
+		return nil, err
+	}
+	var server map[string]interface{}
+	if err := json.Unmarshal([]byte(serverRaw), &server); err != nil || server == nil {
+		return nil, errors.New("endpoint server config is invalid")
+	}
+	password := mieruEndpointPassword(server)
+	if password == "" {
+		return nil, errors.New("Mieru endpoint credential is unavailable")
+	}
+	client["type"] = "mieru"
+	client["password"] = password
+	delete(client, "username")
+	payload, err := json.Marshal(client)
+	return json.RawMessage(payload), err
+}
+
+func redactMieruEndpointAdminConfigs(serverRaw, clientRaw string) (string, string) {
+	var server map[string]interface{}
+	if json.Unmarshal([]byte(serverRaw), &server) == nil && server != nil {
+		server["users"] = []interface{}{}
+		if payload, err := json.Marshal(server); err == nil {
+			serverRaw = string(payload)
+		}
+	}
+	var client map[string]interface{}
+	if json.Unmarshal([]byte(clientRaw), &client) == nil && client != nil {
+		delete(client, "username")
+		delete(client, "password")
+		if payload, err := json.Marshal(client); err == nil {
+			clientRaw = string(payload)
+		}
+	}
+	return serverRaw, clientRaw
+}
+
+// ReconcileMieruEndpointCredentials upgrades the fallback endpoint credential,
+// prepares per-subscription credentials, and republishes only when endpoint
+// readiness differs from the selected kernel contract. The subscription
+// credential remains undisclosed until a principal-aware publication succeeds.
+func (h *handlers) ReconcileMieruEndpointCredentials() error {
+	var endpoints []model.ProtocolEndpoint
+	if err := h.db.Where("LOWER(protocol) = ?", "mieru").Order("id asc").Find(&endpoints).Error; err != nil {
+		return err
+	}
+	changedNodes := make(map[uint]uint)
+	for _, endpoint := range endpoints {
+		serverRaw, err := h.credentialCipher.Decrypt(endpoint.ServerConfig)
+		if err != nil {
+			return fmt.Errorf("decrypt Mieru endpoint %d: %w", endpoint.ID, err)
+		}
+		normalizedServer, normalizedClient, err := h.prepareMieruEndpointConfigs(endpoint.ID, serverRaw, endpoint.ClientConfig)
+		if err != nil {
+			return fmt.Errorf("normalize Mieru endpoint %d: %w", endpoint.ID, err)
+		}
+		if normalizedServer == serverRaw && normalizedClient == endpoint.ClientConfig {
+			continue
+		}
+		encryptedServer, err := h.credentialCipher.Encrypt(normalizedServer)
+		if err != nil {
+			return fmt.Errorf("encrypt Mieru endpoint %d: %w", endpoint.ID, err)
+		}
+		if err := h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", endpoint.ID).Updates(map[string]interface{}{
+			"server_config": encryptedServer,
+			"client_config": normalizedClient,
+		}).Error; err != nil {
+			return fmt.Errorf("persist Mieru endpoint %d: %w", endpoint.ID, err)
+		}
+		if h.zeroMieruAccess || endpoint.MieruPrincipalReady {
+			if _, exists := changedNodes[endpoint.NodeID]; !exists {
+				changedNodes[endpoint.NodeID] = endpoint.ID
+			}
+		}
+	}
+	if !h.zeroMieruAccess {
+		for _, endpoint := range endpoints {
+			if !endpoint.MieruPrincipalReady {
+				continue
+			}
+			if _, exists := changedNodes[endpoint.NodeID]; !exists {
+				changedNodes[endpoint.NodeID] = endpoint.ID
+			}
+		}
+		for nodeID, endpointID := range changedNodes {
+			h.scheduleNodeConfigPublish(nodeID, endpointID, 0)
+		}
+		return nil
+	}
+	now := time.Now().UTC()
+	var subscriptions []model.Subscription
+	if err := h.db.Model(&model.Subscription{}).
+		Select("DISTINCT subscriptions.*").
+		Joins("JOIN node_group_endpoints ON node_group_endpoints.node_group_id = subscriptions.node_group_id").
+		Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
+		Where("LOWER(protocol_endpoints.protocol) = ? AND subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", "mieru", subStatusActive, now).
+		Order("subscriptions.id asc").
+		Find(&subscriptions).Error; err != nil {
+		return fmt.Errorf("load active Mieru subscriptions: %w", err)
+	}
+	if err := h.ensureCredentialsForSubscriptions(subscriptions); err != nil {
+		return fmt.Errorf("prepare per-subscription Mieru credentials: %w", err)
+	}
+	for _, endpoint := range endpoints {
+		if endpoint.MieruPrincipalReady == h.zeroMieruAccess {
+			continue
+		}
+		if _, exists := changedNodes[endpoint.NodeID]; !exists {
+			changedNodes[endpoint.NodeID] = endpoint.ID
+		}
+	}
+	for nodeID, endpointID := range changedNodes {
+		h.scheduleNodeConfigPublish(nodeID, endpointID, 0)
+	}
+	return nil
 }
 
 func allocateProtocolCredentialPort(tx *gorm.DB, endpoint model.ProtocolEndpoint) (int, int, error) {
@@ -248,7 +466,7 @@ func allocateProtocolCredentialPort(tx *gorm.DB, endpoint model.ProtocolEndpoint
 	return 0, 0, errors.New("no free Shadowsocks credential port is available")
 }
 
-func migrateProtocolEndpointCredentials(tx *gorm.DB, previous, next model.ProtocolEndpoint) error {
+func (h *handlers) migrateProtocolEndpointCredentials(tx *gorm.DB, previous, next model.ProtocolEndpoint) error {
 	if previous.ID == 0 || previous.ID != next.ID {
 		return nil
 	}
@@ -258,6 +476,21 @@ func migrateProtocolEndpointCredentials(tx *gorm.DB, previous, next model.Protoc
 	}
 	if len(credentials) == 0 {
 		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(previous.Protocol), strings.TrimSpace(next.Protocol)) {
+		for index := range credentials {
+			secret, err := h.newProtocolCredentialSecret(next)
+			if err != nil {
+				return err
+			}
+			encrypted, err := h.credentialCipher.Encrypt(secret)
+			if err != nil {
+				return err
+			}
+			if err := tx.Model(&credentials[index]).Update("secret", encrypted).Error; err != nil {
+				return err
+			}
+		}
 	}
 	if !protocolUsesDedicatedCredentialPort(next.Protocol) {
 		return tx.Model(&model.ProtocolCredential{}).
@@ -330,7 +563,7 @@ func (h *handlers) activeEndpointCredentials(endpointID uint, now time.Time) ([]
 	return credentials, err
 }
 
-func (h *handlers) runtimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, protocol map[string]interface{}, now time.Time) ([]map[string]interface{}, error) {
+func (h *handlers) runtimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, protocol map[string]interface{}, now time.Time, suppressMieruFallback bool) ([]map[string]interface{}, error) {
 	if !h.protocolUsesSubscriptionCredential(endpoint.Protocol) {
 		return []map[string]interface{}{runtimeInbound(endpoint, fmt.Sprintf("endpoint-%d", endpoint.ID), endpoint.Port, protocol)}, nil
 	}
@@ -404,6 +637,22 @@ func (h *handlers) runtimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, p
 		return []map[string]interface{}{runtimeInbound(endpoint, fmt.Sprintf("endpoint-%d", endpoint.ID), endpoint.Port, protocol)}, nil
 	}
 
+	if strings.EqualFold(endpoint.Protocol, "mieru") {
+		users, err := h.managedMieruUsers(contexts)
+		if err != nil {
+			return nil, err
+		}
+		if includeMieruMigrationFallback(endpoint, suppressMieruFallback) {
+			fallback, err := mieruMigrationFallbackUser(endpoint.ID, protocol)
+			if err != nil {
+				return nil, err
+			}
+			users = append(users, fallback)
+		}
+		protocol["users"] = users
+		return []map[string]interface{}{runtimeInbound(endpoint, fmt.Sprintf("endpoint-%d", endpoint.ID), endpoint.Port, protocol)}, nil
+	}
+
 	inbounds := make([]map[string]interface{}, 0, len(credentials))
 	for _, context := range contexts {
 		credential := context.Credential
@@ -441,6 +690,41 @@ func (h *handlers) runtimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, p
 		inbounds = append(inbounds, runtimeInbound(endpoint, tag, credential.ListenPort, credentialProtocol))
 	}
 	return inbounds, nil
+}
+
+func includeMieruMigrationFallback(endpoint model.ProtocolEndpoint, suppress bool) bool {
+	return !endpoint.MieruPrincipalReady && !suppress
+}
+
+func mieruMigrationFallbackUser(endpointID uint, protocol map[string]interface{}) (map[string]interface{}, error) {
+	password := mieruEndpointPassword(protocol)
+	if password == "" {
+		return nil, fmt.Errorf("Mieru endpoint %d fallback credential is unavailable", endpointID)
+	}
+	return map[string]interface{}{
+		"username":      password,
+		"password":      password,
+		"principal_key": fmt.Sprintf("migration:endpoint:%d", endpointID),
+	}, nil
+}
+
+func (h *handlers) managedMieruUsers(contexts []runtimeCredentialContext) ([]interface{}, error) {
+	users := make([]interface{}, 0, len(contexts))
+	for _, context := range contexts {
+		secret, err := h.credentialCipher.Decrypt(context.Credential.Secret)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt protocol credential %d: %w", context.Credential.ID, err)
+		}
+		principalKey := strings.TrimSpace(context.Credential.PrincipalKey)
+		if principalKey == "" {
+			return nil, fmt.Errorf("protocol credential %d has no principal_key", context.Credential.ID)
+		}
+		user := map[string]interface{}{"principal_key": principalKey}
+		user["username"] = secret
+		user["password"] = secret
+		users = append(users, user)
+	}
+	return users, nil
 }
 
 func (h *handlers) legacyRuntimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, protocol map[string]interface{}, credentials []model.ProtocolCredential) ([]map[string]interface{}, error) {
@@ -525,7 +809,9 @@ func (h *handlers) runtimeCredentialContexts(credentials []model.ProtocolCredent
 	counts := make([]countRow, 0, len(subscriptionIDs))
 	if err := h.db.Model(&model.ProtocolCredential{}).
 		Select("subscription_id, COUNT(*) AS count").
+		Joins("JOIN protocol_endpoints ON protocol_endpoints.id = protocol_credentials.protocol_endpoint_id").
 		Where("subscription_id IN ? AND status = ? AND revoked_at IS NULL AND expires_at > ?", subscriptionIDs, protocolCredentialStatusActive, now).
+		Where("LOWER(protocol_endpoints.protocol) IN ?", h.runtimeCredentialProtocols()).
 		Group("subscription_id").
 		Scan(&counts).Error; err != nil {
 		return nil, err
@@ -602,7 +888,7 @@ func (h *handlers) credentialClientConfig(endpoint model.ProtocolEndpoint, crede
 	switch strings.ToLower(endpoint.Protocol) {
 	case "vless", "vmess":
 		client["id"] = secret
-	case "shadowsocks", "trojan", "hysteria2":
+	case "shadowsocks", "trojan", "hysteria2", "mieru":
 		client["password"] = secret
 	}
 	payload, err := json.Marshal(client)

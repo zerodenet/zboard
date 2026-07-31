@@ -76,6 +76,14 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "flow event has no attributable principal_key")
 		return
 	}
+	if isMieruMigrationPrincipal(flow.PrincipalKey) {
+		if err := h.recordZeroConnectorActivity(node, event); err != nil {
+			ServerError(w, err)
+			return
+		}
+		OK(w, map[string]interface{}{"accepted": true, "ignored": true, "reason": "Mieru credential migration"})
+		return
+	}
 	result, exhausted, err := h.recordZeroFlowEvent(node, event, flow)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -98,6 +106,15 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 		"traffic_record_id": result.ID,
 		"charged_bytes":     result.UsedBytes,
 	})
+}
+
+func isMieruMigrationPrincipal(value string) bool {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "migration:endpoint:") {
+		return false
+	}
+	id, err := strconv.ParseUint(strings.TrimPrefix(value, "migration:endpoint:"), 10, 64)
+	return err == nil && id > 0
 }
 
 func (h *handlers) authenticateZeroEvent(r *http.Request, sourceID string) (model.Node, error) {
@@ -360,7 +377,8 @@ func (h *handlers) recordZeroFlowEvent(node model.Node, event zeroEventEnvelope,
 			return err
 		}
 		if exhausted {
-			if err := tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ? AND status = ?", subscription.ID, protocolCredentialStatusActive).
+			if err := tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ? AND status IN ?", subscription.ID,
+				[]string{protocolCredentialStatusActive, protocolCredentialStatusPrepared}).
 				Updates(map[string]interface{}{"status": "expired", "updated_at": now}).Error; err != nil {
 				return err
 			}

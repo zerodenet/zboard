@@ -8,6 +8,9 @@
     </PageHeader>
 
     <TransientFeedback :success="message" :error="error" success-title="协议操作已完成" error-title="协议操作失败" />
+    <PageAlert v-if="mieruUnavailableReason" tone="warning" title="Mieru 暂不可用">
+      {{ mieruUnavailableReason }} 已有 Mieru 记录会保留供查看和停用，但不会进入新订阅或节点发布。
+    </PageAlert>
 
     <section class="protocol-status-overview" aria-label="按发布状态查看协议服务">
       <OverviewCard
@@ -59,16 +62,16 @@
               <td class="selection-column"><UiCheckbox :model-value="isEndpointSelected(endpoint.id)" :disabled="selectionAllMatching" :aria-label="`选择协议服务 ${endpoint.name}`" @update:model-value="toggleEndpointSelection(endpoint.id, $event)" /></td>
               <td class="table-primary-column"><div class="cell-title"><strong>{{ endpoint.name }}</strong><span>#{{ endpoint.id }}</span></div></td>
               <td data-column-priority="2"><RouterLink :to="adminContextLink('/admin/nodes', { node: String(endpoint.node_id) })">{{ endpoint.node_name || `VPS #${endpoint.node_id}` }}</RouterLink></td>
-              <td data-column-priority="2"><StatusBadge tone="info" icon="activity">{{ protocolLabel(endpoint.protocol) }}</StatusBadge></td>
+              <td data-column-priority="2"><StatusBadge :tone="endpoint.kernel_supported ? 'info' : 'warning'" :icon="endpoint.kernel_supported ? 'activity' : 'alert'">{{ protocolLabel(endpoint.protocol) }}</StatusBadge></td>
               <td class="mono" data-column-priority="3">{{ endpoint.address }}:{{ endpoint.public_port || endpoint.port }}</td>
-              <td><StatusBadge :tone="endpoint.is_active ? 'success' : 'neutral'" :icon="endpoint.is_active ? 'check' : 'minus'">{{ endpoint.is_active ? '运行中' : '已停用' }}</StatusBadge></td>
+              <td><StatusBadge v-if="!endpoint.kernel_supported" tone="warning" icon="alert">内核不支持</StatusBadge><StatusBadge v-else :tone="endpoint.is_active ? 'success' : 'neutral'" :icon="endpoint.is_active ? 'check' : 'minus'">{{ endpoint.is_active ? '运行中' : '已停用' }}</StatusBadge></td>
               <td><StatusBadge :tone="deploymentTone(endpoint.latest_deployment?.status)" :icon="deploymentIcon(endpoint.latest_deployment?.status)">{{ deploymentLabel(endpoint.latest_deployment?.status) }}</StatusBadge></td>
               <td class="numeric-column" data-column-priority="3">{{ formatNumber(endpoint.usage?.active_flows) }}</td>
               <td class="numeric-column" data-column-priority="3">{{ formatNumber(endpoint.usage?.active_credentials) }}</td>
               <td data-column-priority="3">{{ formatBytes(endpoint.usage?.used_bytes_today) }}</td>
               <td class="numeric-column" data-column-priority="3">{{ formatMultiplierNumber(endpoint.multiplier_milli) }}</td>
               <td data-column-priority="3"><TimeBadge :value="endpoint.usage?.last_used_at" /></td>
-              <td class="table-action-column"><RowActions :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><RouterLink v-if="endpoint.latest_deployment?.has_error" class="button button-ghost button-sm" :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', status: 'failed', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink><UiButton variant="secondary" size="sm" type="button" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton></RowActions></td>
+              <td class="table-action-column"><RowActions :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><RouterLink v-if="endpoint.latest_deployment?.has_error" class="button button-ghost button-sm" :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', status: 'failed', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink><UiButton variant="secondary" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton></RowActions></td>
             </tr>
             </template>
           </tbody>
@@ -79,6 +82,9 @@
 
     <DetailDrawer :open="Boolean(selectedEndpointDetail)" :title="selectedEndpointDetail?.name || '协议服务详情'" eyebrow="Protocol endpoint" :description="selectedEndpointSummary ? `${selectedEndpointSummary.node_name || `VPS #${selectedEndpointSummary.node_id}`} · ${selectedEndpointSummary.address}:${selectedEndpointSummary.public_port || selectedEndpointSummary.port}` : ''" :return-focus-selector="selectedEndpointDetail ? `[data-row-action-trigger='protocol-${selectedEndpointDetail.id}']` : ''" @close="closeDetail">
       <main v-if="selectedEndpointDetail" class="stack protocol-detail">
+        <PageAlert v-if="!selectedEndpointDetail.kernel_supported" tone="warning" title="当前内核无法使用此协议">
+          {{ selectedEndpointDetail.kernel_unsupported_reason }} 该记录仅保留供查看；如仍处于启用状态，请编辑并将其停用。
+        </PageAlert>
         <section class="detail-status-strip" aria-label="协议服务状态">
           <StatusBadge :tone="selectedEndpointDetail.is_active ? 'success' : 'neutral'" :icon="selectedEndpointDetail.is_active ? 'check' : 'minus'">{{ selectedEndpointDetail.is_active ? '运行中' : '已停用' }}</StatusBadge>
           <StatusBadge :tone="deploymentTone(selectedEndpointDetail.latest_deployment?.status)" :icon="deploymentIcon(selectedEndpointDetail.latest_deployment?.status)">{{ deploymentLabel(selectedEndpointDetail.latest_deployment?.status) }}</StatusBadge>
@@ -86,9 +92,9 @@
         </section>
         <div v-if="selectedEndpointSummary" class="protocol-mobile-detail-actions" aria-label="协议服务操作">
           <UiButton variant="secondary" size="sm" type="button" @click="editSelectedEndpoint"><UiIcon name="edit" />编辑服务</UiButton>
-          <UiButton variant="secondary" size="sm" type="button" @click="copySelectedEndpoint"><UiIcon name="copy" />复制配置</UiButton>
+          <UiButton variant="secondary" size="sm" type="button" :disabled="!selectedEndpointDetail.kernel_supported" :title="selectedEndpointDetail.kernel_unsupported_reason" @click="copySelectedEndpoint"><UiIcon name="copy" />复制配置</UiButton>
           <RouterLink v-if="selectedEndpointSummary.latest_deployment?.has_error" class="button button-ghost button-sm" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', status: 'failed', protocol_endpoint_id: String(selectedEndpointSummary.id) })"><UiIcon name="terminal" />失败日志</RouterLink>
-          <UiButton variant="secondary" size="sm" type="button" :loading="deployingID === selectedEndpointSummary.id" @click="deploy(selectedEndpointSummary)"><UiIcon name="play" />发布配置</UiButton>
+          <UiButton variant="secondary" size="sm" type="button" :disabled="!selectedEndpointDetail.kernel_supported" :title="selectedEndpointDetail.kernel_unsupported_reason" :loading="deployingID === selectedEndpointSummary.id" @click="deploy(selectedEndpointSummary)"><UiIcon name="play" />发布配置</UiButton>
         </div>
         <section class="panel detail-facts">
           <div><span>承载节点</span><RouterLink :to="adminContextLink('/admin/nodes', { node: String(selectedEndpointDetail.node_id) })">{{ selectedEndpointSummary?.node_name || `VPS #${selectedEndpointDetail.node_id}` }}</RouterLink></div>
@@ -137,6 +143,9 @@
       <form id="protocol-form" ref="protocolFormElement" class="protocol-editor" novalidate @submit.prevent="save">
         <UiStepNav :steps="wizardSteps" :current="editorStep" :max-step="form.id ? 3 : editorStep" label="协议服务配置步骤" @select="goToStep" />
         <PageAlert v-if="editorErrors.formError.value || editorError" tone="danger" title="无法保存协议服务">{{ editorErrors.formError.value || editorError }}</PageAlert>
+        <PageAlert v-if="!selectedProtocolCapability.supported" tone="warning" title="当前内核不支持所选协议">
+          {{ selectedProtocolCapability.reason }}<template v-if="form.id"> 此历史记录只能在关闭“启用服务”后保存，以便从节点配置中移除。</template>
+        </PageAlert>
 
         <section v-if="editorStep === 1" class="wizard-panel">
           <header class="wizard-heading"><span><UiIcon name="nodes" /></span><div><h3>选择承载节点和对外入口</h3><p>选择 VPS 后会自动使用节点资产中维护的默认对外地址，仍可在这里改成域名或其他入口地址。</p></div></header>
@@ -155,10 +164,10 @@
           <header class="wizard-heading"><span><UiIcon name="key" /></span><div><h3>设置 {{ protocolLabel(form.protocol) }} 服务参数</h3><p>这里只设置服务能力；用户凭证由订阅开通流程自动生成并关联。</p></div></header>
           <div class="guided-grid">
             <div v-if="usesManagedCredentials" class="generated-config-note field-full"><UiIcon name="shield" /><div><strong>用户凭证按订阅生成</strong><p>每个订阅在这个服务上拥有独立凭证和稳定归属标识；Shadowsocks 同时分配独立 UDP/TCP 端口，客户端与服务端只共享该订阅自己的 PSK。</p></div></div>
-            <template v-else>
-              <FormField v-if="form.protocol === 'mieru'" v-slot="{ controlAttrs }" label="用户名" name="protocol-username" :error="editorErrors.fields['structured.username']" required><UiInput v-model.trim="structured.username" v-bind="controlAttrs" autocomplete="off" placeholder="例如：subscriber" /></FormField>
-              <FormField v-slot="{ controlAttrs }" label="连接密码" name="protocol-password" :error="editorErrors.fields['structured.password']" :full="form.protocol !== 'mieru'" required><div class="input-with-action"><UiInput v-model="structured.password" v-bind="controlAttrs" type="password" autocomplete="new-password" /><UiButton type="button" @click="structured.password = randomSecret()">重新生成</UiButton></div></FormField>
+            <template v-else-if="form.protocol !== 'mieru'">
+              <FormField v-slot="{ controlAttrs }" label="连接密码" name="protocol-password" :error="editorErrors.fields['structured.password']" full required><div class="input-with-action"><UiInput v-model="structured.password" v-bind="controlAttrs" type="password" autocomplete="new-password" /><UiButton type="button" @click="structured.password = randomSecret()">重新生成</UiButton></div></FormField>
             </template>
+            <div v-else class="generated-config-note field-full"><UiIcon name="shield" /><div><strong>Mieru 凭据由系统生成</strong><p>创建时自动生成端点凭据并加密保存；订阅输出会自动补齐连接参数，不需要手工维护用户名或密码。</p></div></div>
             <FormField v-if="form.protocol === 'vmess'" v-slot="{ controlAttrs }" label="VMess 加密方式"><UiSelect v-model="structured.cipher" v-bind="controlAttrs" :options="vmessCipherOptions" /></FormField>
             <FormField v-if="form.protocol === 'shadowsocks'" v-slot="{ controlAttrs }" label="Shadowsocks 加密方式"><UiSelect v-model="structured.cipher" v-bind="controlAttrs" :options="shadowsocksCipherOptions" /></FormField>
             <FormField v-if="form.protocol === 'vless'" v-slot="{ controlAttrs }" label="传输安全"><UiSelect v-model="structured.security" v-bind="controlAttrs" :options="securityOptions" /></FormField>
@@ -203,7 +212,7 @@
       <template #footer="{ requestClose }">
         <UiButton variant="secondary" type="button" :disabled="saving" @click="editorStep === 1 ? requestClose() : editorStep--">{{ editorStep === 1 ? '取消' : '上一步' }}</UiButton>
         <UiButton v-if="editorStep < 3" type="button" @click="nextStep">下一步</UiButton>
-        <UiButton v-else form="protocol-form" type="submit" :loading="saving">{{ copySourceID ? '保存为新服务' : '保存协议服务' }}</UiButton>
+        <UiButton v-else form="protocol-form" type="submit" :disabled="!canSaveSelectedProtocol" :title="!canSaveSelectedProtocol ? selectedProtocolCapability.reason : ''" :loading="saving">{{ copySourceID ? '保存为新服务' : '保存协议服务' }}</UiButton>
       </template>
     </ModalDialog>
   </section>
@@ -212,7 +221,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createProtocolBatchDeployment, createProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointsPage, updateProtocolEndpoint, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem } from '../api/client'
+import { createProtocolBatchDeployment, createProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointsPage, getVersion, updateProtocolEndpoint, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolKernelCapability } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -248,8 +257,21 @@ import { trackAdminTask } from '../utils/taskTracker'
 import { isIntegerInRange } from '../utils/validation'
 
 const protocols = ['vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria2', 'mieru']
-const protocolOptions = protocols.map(value => ({ label: protocolLabel(value), value }))
-const protocolFilterOptions = [{ label: '全部协议', value: '' }, ...protocolOptions]
+const defaultMieruUnavailableReason = '当前 Zero 内核未实现 Mieru 的 principal_key 归属，面板已停用该协议；请改用其他受支持协议。'
+const protocolCapabilities = reactive<Record<string, ProtocolKernelCapability>>({
+  vmess: { supported: true },
+  vless: { supported: true },
+  trojan: { supported: true },
+  shadowsocks: { supported: true },
+  hysteria2: { supported: true },
+  mieru: { supported: false, reason: defaultMieruUnavailableReason },
+})
+const protocolOptions = computed(() => protocols.map(value => ({
+  label: value === 'mieru' && !protocolCapabilities.mieru?.supported ? 'Mieru（当前内核不支持）' : protocolLabel(value),
+  value,
+  disabled: !protocolCapabilities[value]?.supported,
+})))
+const protocolFilterOptions = [{ label: '全部协议', value: '' }, ...protocols.map(value => ({ label: protocolLabel(value), value }))]
 const activeFilterOptions = [{ label: '全部服务状态', value: '' }, { label: '运行中', value: 'active' }, { label: '已停用', value: 'inactive' }]
 const deploymentFilterOptions = [{ label: '全部发布状态', value: '' }, { label: '已生效', value: 'succeeded' }, { label: '发布中', value: 'running' }, { label: '发布失败', value: 'failed' }, { label: '未发布', value: 'never' }]
 const vmessCipherOptions = [{ label: 'AES-128-GCM（推荐）', value: 'aes-128-gcm' }, { label: 'ChaCha20-Poly1305', value: 'chacha20-poly1305' }, { label: '不额外加密', value: 'none' }]
@@ -367,6 +389,9 @@ const managedCertificateOptions = computed(() => [
     .map(item => ({ label: `${item.name} · ${item.domains.join('、')}`, value: item.id })),
 ])
 const hasConfigError = computed(() => ['config', 'client_config', 'optional_config', 'tags', 'parent_protocol_id', 'multiplier_milli', 'sort_order'].some(field => Boolean(editorErrors.fields[field])))
+const selectedProtocolCapability = computed(() => protocolCapabilities[form.protocol] || { supported: false, reason: '无法确认当前内核是否支持该协议。' })
+const canSaveSelectedProtocol = computed(() => selectedProtocolCapability.value.supported || (Boolean(form.id) && !form.is_active))
+const mieruUnavailableReason = computed(() => protocolCapabilities.mieru?.supported ? '' : protocolCapabilities.mieru?.reason || defaultMieruUnavailableReason)
 
 for (const field of Object.keys(protocolFieldMap)) {
   watch(() => form[field], () => editorErrors.clear(field))
@@ -428,6 +453,18 @@ async function loadProtocolOverview() {
     // The overview is secondary navigation; a failed count request must not hide the service table.
   } finally {
     overviewLoading.value = false
+  }
+}
+async function loadProtocolCapabilities() {
+  try {
+    const version = await getVersion()
+    for (const protocol of protocols) {
+      const capability = version.protocol_capabilities?.[protocol]
+      if (capability) protocolCapabilities[protocol] = capability
+    }
+  } catch {
+    // Fail closed for Mieru. Other protocols retain their established panel
+    // defaults so a transient version request does not disable the page.
   }
 }
 async function refresh() { await Promise.all([loadEndpoints(), loadProtocolOverview()]) }
@@ -529,6 +566,10 @@ async function openEdit(endpoint: any) {
   catch (e: any) { error.value = e?.response?.data?.message || '协议详情加载失败。' }
 }
 async function openCopy(endpoint: ProtocolEndpointListItem) {
+  if (!endpoint.kernel_supported) {
+    error.value = endpoint.kernel_unsupported_reason || '当前内核不支持复制此协议。'
+    return
+  }
   copySourceID.value = endpoint.id
   originalNodeID.value = 0
   error.value = ''
@@ -581,7 +622,7 @@ function buildGeneratedConfigs() {
   else if (form.protocol === 'trojan') { Object.assign(server, { password: structured.password, sni: structured.server_name || form.address, tls: { ...(server.tls || {}), cert_path: structured.cert_path, key_path: structured.key_path } }); Object.assign(client, { password: structured.password, sni: structured.server_name || form.address }) }
   else if (form.protocol === 'shadowsocks') { Object.assign(server, { password: structured.password, cipher: structured.cipher }); Object.assign(client, { password: structured.password, cipher: structured.cipher }) }
   else if (form.protocol === 'hysteria2') { Object.assign(server, { password: structured.password }); if (structured.cert_path) server.cert_path = structured.cert_path; else delete server.cert_path; if (structured.key_path) server.key_path = structured.key_path; else delete server.key_path; Object.assign(client, { password: structured.password, insecure: false }) }
-  else if (form.protocol === 'mieru') { server.users = [{ ...(server.users?.[0] || {}), username: structured.username, password: structured.password }]; Object.assign(client, { username: structured.username, password: structured.password }) }
+  else if (form.protocol === 'mieru') { server.users = []; delete client.username; delete client.password }
   form.config = JSON.stringify(server, null, 2); form.client_config = JSON.stringify(client, null, 2)
 }
 async function validateStep(step: number) {
@@ -596,8 +637,7 @@ async function validateStep(step: number) {
     if (!isIntegerInRange(form.public_port, 1, 65535)) fields.public_port = '客户端连接端口必须为 1–65535 之间的整数。'
   }
   if (step === 2) {
-    if (!usesManagedCredentials.value && !structured.password) fields['structured.password'] = '请输入连接密码。'
-    if (form.protocol === 'mieru' && !structured.username.trim()) fields['structured.username'] = '请输入 Mieru 用户名。'
+    if (!usesManagedCredentials.value && form.protocol !== 'mieru' && !structured.password) fields['structured.password'] = '请输入连接密码。'
     if (!form.managed_certificate_id && requiresTLSFiles.value && !structured.cert_path.trim()) fields['structured.cert_path'] = '请选择托管证书或输入证书文件路径。'
     if (!form.managed_certificate_id && requiresTLSFiles.value && !structured.key_path.trim()) fields['structured.key_path'] = '请选择托管证书或输入私钥文件路径。'
     if (!form.managed_certificate_id && form.protocol === 'hysteria2' && Boolean(structured.cert_path.trim()) !== Boolean(structured.key_path.trim())) {
@@ -619,6 +659,10 @@ function validateJSONFields() {
   return fields
 }
 async function save() {
+  if (!canSaveSelectedProtocol.value) {
+    editorError.value = selectedProtocolCapability.value.reason || '当前内核不支持所选协议。'
+    return
+  }
   if (!await validateStep(1) || !await validateStep(2)) return
   const jsonFields = validateJSONFields()
   if (Object.keys(jsonFields).length) { editorStep.value = 3; await editorErrors.applyValidation(jsonFields, protocolFormElement, '高级配置格式不正确。'); return }
@@ -652,7 +696,16 @@ async function save() {
   }
   finally { saving.value = false }
 }
-async function deploy(endpoint: ProtocolEndpointListItem) { deployingID.value = endpoint.id; error.value = ''; message.value = ''; try { const result = await deployProtocolEndpoint(endpoint.id); message.value = `${endpoint.name} 的完整配置已在 ${endpoint.node_name || `VPS #${endpoint.node_id}`} 生效，耗时 ${result.latency_ms || 0}ms，并已通过 Zero 状态与心跳检查。`; await refresh() } catch (e: any) { error.value = e?.response?.data?.message || '配置发布失败，节点已尝试回滚；请检查发布记录、SSH 和 Zero 状态。'; await refresh() } finally { deployingID.value = 0 } }
+async function deploy(endpoint: ProtocolEndpointListItem) {
+  if (!endpoint.kernel_supported) {
+    error.value = endpoint.kernel_unsupported_reason || '当前内核不支持发布此协议。'
+    return
+  }
+  deployingID.value = endpoint.id; error.value = ''; message.value = ''
+  try { const result = await deployProtocolEndpoint(endpoint.id); message.value = `${endpoint.name} 的完整配置已在 ${endpoint.node_name || `VPS #${endpoint.node_id}`} 生效，耗时 ${result.latency_ms || 0}ms，并已通过 Zero 状态与心跳检查。`; await refresh() }
+  catch (e: any) { error.value = e?.response?.data?.message || '配置发布失败，节点已尝试回滚；请检查发布记录、SSH 和 Zero 状态。'; await refresh() }
+  finally { deployingID.value = 0 }
+}
 watch(() => route.fullPath, async () => {
   const nextLimit = Number(route.query.limit)
   const resolvedLimit = allowedPageSizes.includes(nextLimit) ? nextLimit : 50
@@ -686,7 +739,7 @@ watch(() => route.fullPath, async () => {
   else if (deploymentPageChanged) await loadDeployments()
 })
 onMounted(async () => {
-  await refresh()
+  await Promise.all([refresh(), loadProtocolCapabilities()])
   const endpointID = Number(route.query.endpoint) || 0
   if (endpointID) await loadDetail(endpointID)
 })

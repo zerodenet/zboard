@@ -175,38 +175,6 @@ CREATE TABLE `nodes` (
   KEY `idx_nodes_connector_last_seen` (`connector_last_seen_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `managed_certificates` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `node_id` bigint unsigned NOT NULL,
-  `name` varchar(80) NOT NULL,
-  `domains` json NOT NULL,
-  `contact_email` varchar(254) NOT NULL,
-  `environment` varchar(16) NOT NULL DEFAULT 'production',
-  `challenge_type` varchar(16) NOT NULL DEFAULT 'http-01',
-  `status` varchar(24) NOT NULL DEFAULT 'pending',
-  `cert_path` varchar(255) NOT NULL DEFAULT '',
-  `key_path` varchar(255) NOT NULL DEFAULT '',
-  `serial_number` varchar(128) NOT NULL DEFAULT '',
-  `fingerprint_sha256` char(64) NOT NULL DEFAULT '',
-  `not_before` datetime(3) DEFAULT NULL,
-  `not_after` datetime(3) DEFAULT NULL,
-  `last_issued_at` datetime(3) DEFAULT NULL,
-  `last_renewal_attempt_at` datetime(3) DEFAULT NULL,
-  `next_renewal_at` datetime(3) DEFAULT NULL,
-  `auto_renew` tinyint(1) NOT NULL DEFAULT '1',
-  `renew_before_days` int NOT NULL DEFAULT '30',
-  `last_error` text NOT NULL,
-  `revision` bigint unsigned NOT NULL DEFAULT '1',
-  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (`id`),
-  KEY `idx_managed_certificates_node` (`node_id`),
-  KEY `idx_managed_certificates_status` (`status`),
-  KEY `idx_managed_certificates_not_after` (`not_after`),
-  KEY `idx_managed_certificates_next_renewal` (`next_renewal_at`),
-  CONSTRAINT `fk_managed_certificates_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
 CREATE TABLE `provider_accounts` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `provider_key` varchar(48) NOT NULL,
@@ -227,6 +195,42 @@ CREATE TABLE `provider_accounts` (
   KEY `idx_provider_accounts_status` (`status`),
   KEY `idx_provider_accounts_creator` (`created_by`),
   CONSTRAINT `fk_provider_accounts_creator` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `managed_certificates` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `node_id` bigint unsigned NOT NULL,
+  `provider_account_id` bigint unsigned DEFAULT NULL,
+  `name` varchar(80) NOT NULL,
+  `domains` json NOT NULL,
+  `contact_email` varchar(254) NOT NULL,
+  `environment` varchar(16) NOT NULL DEFAULT 'production',
+  `challenge_type` varchar(16) NOT NULL DEFAULT 'http-01',
+  `webroot_path` varchar(255) NOT NULL DEFAULT '',
+  `status` varchar(24) NOT NULL DEFAULT 'pending',
+  `cert_path` varchar(255) NOT NULL DEFAULT '',
+  `key_path` varchar(255) NOT NULL DEFAULT '',
+  `serial_number` varchar(128) NOT NULL DEFAULT '',
+  `fingerprint_sha256` char(64) NOT NULL DEFAULT '',
+  `not_before` datetime(3) DEFAULT NULL,
+  `not_after` datetime(3) DEFAULT NULL,
+  `last_issued_at` datetime(3) DEFAULT NULL,
+  `last_renewal_attempt_at` datetime(3) DEFAULT NULL,
+  `next_renewal_at` datetime(3) DEFAULT NULL,
+  `auto_renew` tinyint(1) NOT NULL DEFAULT '1',
+  `renew_before_days` int NOT NULL DEFAULT '30',
+  `last_error` text NOT NULL,
+  `revision` bigint unsigned NOT NULL DEFAULT '1',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  KEY `idx_managed_certificates_node` (`node_id`),
+  KEY `idx_managed_certificates_provider` (`provider_account_id`),
+  KEY `idx_managed_certificates_status` (`status`),
+  KEY `idx_managed_certificates_not_after` (`not_after`),
+  KEY `idx_managed_certificates_next_renewal` (`next_renewal_at`),
+  CONSTRAINT `fk_managed_certificates_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_managed_certificates_provider` FOREIGN KEY (`provider_account_id`) REFERENCES `provider_accounts` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `managed_dns_records` (
@@ -485,6 +489,7 @@ CREATE TABLE `protocol_endpoints` (
   `cipher` smallint NOT NULL DEFAULT '0',
   `parent_protocol_id` bigint unsigned DEFAULT NULL,
   `multiplier_milli` bigint NOT NULL DEFAULT '1000',
+  `mieru_principal_ready` tinyint(1) NOT NULL DEFAULT '0',
   `server_config` text,
   `client_config` text,
   `optional_config` json DEFAULT NULL,

@@ -45,6 +45,19 @@ describe('infrastructure control policy', () => {
     expect(protocols).not.toContain(':disabled="Boolean(form.id)" @select="handleNodeSelect"')
   })
 
+  it('fails closed for protocols unsupported by the active kernel contract', () => {
+    const protocols = read('views', 'Protocols.vue')
+    const client = read('api', 'client.ts')
+
+    expect(client).toContain('protocol_capabilities: Record<string, ProtocolKernelCapability>')
+    expect(client).toContain('kernel_supported: boolean')
+    expect(protocols).toContain('Mieru（当前内核不支持）')
+    expect(protocols).toContain('loadProtocolCapabilities')
+    expect(protocols).toContain(':disabled="!endpoint.kernel_supported"')
+    expect(protocols).toContain('已有 Mieru 记录会保留供查看和停用')
+    expect(protocols).toContain('canSaveSelectedProtocol')
+  })
+
   it('preserves table-cell geometry for protocol node-group headings', () => {
     const protocols = read('views', 'Protocols.vue')
 

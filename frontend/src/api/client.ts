@@ -182,7 +182,20 @@ export async function updateSystemConfig(key: string, value: unknown, expectedRe
 	return unwrap(response)
 }
 
-export async function getVersion() {
+export interface ProtocolKernelCapability {
+	supported: boolean
+	reason?: string
+}
+
+export interface VersionInfo {
+	version: string
+	name: string
+	zero_kernel_contract: 'legacy' | 'native-local' | 'native-local-mieru'
+	zero_local_version?: string
+	protocol_capabilities: Record<string, ProtocolKernelCapability>
+}
+
+export async function getVersion(): Promise<VersionInfo> {
   const response = await api.get('/version')
   return unwrap(response)
 }
@@ -449,6 +462,9 @@ export interface ProtocolEndpointListItem {
 	parent_protocol_id?: number
 	managed_certificate_id?: number
 	multiplier_milli: number
+	mieru_principal_ready: boolean
+	kernel_supported: boolean
+	kernel_unsupported_reason?: string
 	is_active: boolean
 	sort_order: number
 	usage: {
@@ -559,12 +575,14 @@ export interface CertificateOperation {
 export interface ManagedCertificate {
 	id: number
 	node_id: number
+	provider_account_id?: number
 	node_name: string
 	name: string
 	domains: string[]
 	contact_email: string
 	environment: 'production' | 'staging'
-	challenge_type: 'http-01'
+	challenge_type: 'http-01' | 'http-01-webroot' | 'dns-01'
+	webroot_path: string
 	status: 'pending' | 'issuing' | 'active' | 'renewing' | 'failed' | 'expired'
 	cert_path: string
 	key_path: string
@@ -602,12 +620,15 @@ export async function fetchManagedCertificatesPage(params: {
 
 export async function createManagedCertificate(payload: {
 	node_id: number
+	provider_account_id: number
 	name: string
 	domains: string[]
 	contact_email: string
 	environment: 'production' | 'staging'
 	auto_renew: boolean
 	renew_before_days: number
+	challenge_type: 'http-01-webroot' | 'dns-01'
+	webroot_path: string
 }): Promise<ManagedCertificate> {
 	const response = await api.post('/admin/certificates', payload)
 	return unwrap(response)
@@ -718,8 +739,7 @@ export async function createManagedDNSRecord(payload: {
 	provider_account_id: number
 	node_id: number
 	domain_name: string
-	record_type: 'A' | 'AAAA'
-	record_value: string
+	records: Array<{ record_type: 'A' | 'AAAA'; record_value: string }>
 	ttl: number
 	proxied: boolean
 	takeover_existing: boolean

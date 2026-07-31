@@ -532,15 +532,11 @@ func clashProxy(endpoint subscriptionTemplateEndpoint) (map[string]interface{}, 
 		}
 		proxy["password"] = password
 	case "mieru":
-		username, err := requiredConfigString(endpoint, config, "username")
-		if err != nil {
-			return nil, err
-		}
 		password, err := requiredConfigString(endpoint, config, "password")
 		if err != nil {
 			return nil, err
 		}
-		proxy["username"] = username
+		proxy["username"] = configStringDefault(config, password, "username")
 		proxy["password"] = password
 		proxy["transport"] = strings.ToUpper(configStringDefault(config, "TCP", "transport"))
 		proxy["multiplexing"] = configStringDefault(config, "MULTIPLEXING_LOW", "multiplexing")

@@ -6,8 +6,8 @@
 
     <TransientFeedback :success="message" :error="error" success-title="证书操作已提交" error-title="证书操作失败" />
 
-    <PageAlert tone="info" title="HTTP-01 签发条件">
-      域名必须解析到所选节点，公网 TCP 80 端口必须可达且未被其他进程占用。首次申请会通过节点包管理器安装 Certbot；证书私钥始终留在节点上，不会回传到面板。
+    <PageAlert tone="info" title="ACME 验证方式">
+      默认通过 Cloudflare DNS-01 自动完成验证，不占用节点端口；已有 Web 服务时也可选择 HTTP-01 Webroot，由现有服务在公网 80 端口提供挑战文件。证书私钥始终留在节点上。
     </PageAlert>
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
@@ -33,13 +33,16 @@
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
-    <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="申请免费证书" description="创建资产后立即在所选节点发起 Let's Encrypt HTTP-01 签发。" size="lg" :busy="saving" @close="closeCreate">
+    <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="申请免费证书" description="创建资产后按所选 ACME 验证方式立即发起签发。" size="lg" :busy="saving" @close="closeCreate">
       <form id="certificate-create-form" ref="createFormElement" class="certificate-form" novalidate @submit.prevent="create">
         <PageAlert v-if="createErrors.formError.value" tone="danger" title="无法创建证书">{{ createErrors.formError.value }}</PageAlert>
         <FormField label="目标节点" name="certificate-node" :error="createErrors.fields.node_id" required full><template #default="{ controlAttrs }"><NodeLookup v-model="createForm.node_id" v-bind="controlAttrs" /></template></FormField>
         <FormField v-slot="{ controlAttrs }" label="证书名称" name="certificate-name" :error="createErrors.fields.name" required><UiInput v-model.trim="createForm.name" v-bind="controlAttrs" placeholder="例如：香港入口证书" maxlength="80" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="ACME 联系邮箱" name="certificate-email" :error="createErrors.fields.contact_email" required><UiInput v-model.trim="createForm.contact_email" v-bind="controlAttrs" type="email" placeholder="ops@example.com" maxlength="254" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="证书域名" name="certificate-domains" :error="createErrors.fields.domains" hint="每行或逗号分隔一个域名，最多 10 个；HTTP-01 不支持通配符和 IP。" required full><UiTextarea v-model="createForm.domains" v-bind="controlAttrs" rows="5" placeholder="edge.example.com&#10;cdn.example.com" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="验证方式" name="certificate-challenge" :error="createErrors.fields.challenge_type" required><UiSelect v-model="createForm.challenge_type" v-bind="controlAttrs" :options="challengeOptions" /></FormField>
+        <FormField v-if="createForm.challenge_type === 'dns-01'" v-slot="{ controlAttrs }" label="Cloudflare DNS 账户" name="certificate-provider" :error="createErrors.fields.provider_account_id" required><UiSelect v-model.number="createForm.provider_account_id" v-bind="controlAttrs" :options="providerOptions" /></FormField>
+        <FormField v-else v-slot="{ controlAttrs }" label="节点 Webroot" name="certificate-webroot" :error="createErrors.fields.webroot_path" hint="现有 Web 服务必须从该目录提供 /.well-known/acme-challenge/。" required><UiInput v-model.trim="createForm.webroot_path" v-bind="controlAttrs" placeholder="/var/www/html" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="签发环境" name="certificate-environment" :error="createErrors.fields.environment"><UiSelect v-model="createForm.environment" v-bind="controlAttrs" :options="environmentOptions" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="提前续期天数" name="certificate-renew-days" :error="createErrors.fields.renew_before_days"><UiNumberInput v-model="createForm.renew_before_days" v-bind="controlAttrs" :min="1" :max="60" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="自动续期" name="certificate-auto-renew"><label class="check-field"><UiCheckbox v-model="createForm.auto_renew" v-bind="controlAttrs" /><span>到达续期窗口后由面板自动执行</span></label></FormField>
@@ -61,7 +64,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createManagedCertificate, fetchManagedCertificatesPage, issueManagedCertificate, renewManagedCertificate, updateManagedCertificateRenewal, type CertificateOperation, type ManagedCertificate } from '../api/client'
+import { createManagedCertificate, fetchManagedCertificatesPage, fetchProviderAccounts, issueManagedCertificate, renewManagedCertificate, updateManagedCertificateRenewal, type CertificateOperation, type ManagedCertificate, type ProviderAccount } from '../api/client'
 import DataTable from '../components/DataTable.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -103,8 +106,9 @@ const operatingID = ref(0)
 const saving = ref(false)
 const createOpen = ref(false)
 const createFormElement = ref<HTMLElement | null>(null)
-const emptyCreateForm = () => ({ node_id: 0, name: '', domains: '', contact_email: '', environment: 'production' as 'production' | 'staging', auto_renew: true, renew_before_days: 30 })
+const emptyCreateForm = () => ({ node_id: 0, provider_account_id: 0, name: '', domains: '', contact_email: '', environment: 'production' as 'production' | 'staging', auto_renew: true, renew_before_days: 30, challenge_type: 'dns-01' as 'dns-01' | 'http-01-webroot', webroot_path: '/var/www/html' })
 const createForm = reactive(emptyCreateForm())
+const providerAccounts = ref<ProviderAccount[]>([])
 const createErrors = useFormErrors()
 const createState = useDirtyForm(() => createForm)
 const renewalOpen = ref(false)
@@ -118,6 +122,8 @@ const statusOptions = [
   { label: '有效', value: 'active' }, { label: '续期中', value: 'renewing' }, { label: '失败', value: 'failed' }, { label: '已过期', value: 'expired' },
 ]
 const environmentOptions = [{ label: '生产环境（受信任）', value: 'production' }, { label: '测试环境（不受信任）', value: 'staging' }]
+const challengeOptions = [{ label: 'Cloudflare DNS-01（推荐）', value: 'dns-01' }, { label: 'HTTP-01 Webroot', value: 'http-01-webroot' }]
+const providerOptions = computed(() => providerAccounts.value.filter(item => item.provider_key === 'cloudflare' && item.status === 'active' && item.capabilities.includes('dns.records')).map(item => ({ label: item.name, value: item.id })))
 const { items: certificates, total, loading, refreshing, error, load: refresh } = useRemoteTable<ManagedCertificate>({
   offset,
   limit,
@@ -132,7 +138,7 @@ useUnsavedChangesGuard(
   () => createOpen.value && createState.dirty.value,
   () => createState.confirmDiscard({ title: '放弃证书申请？', message: '尚未创建的证书信息将丢失。', confirmText: '放弃申请' }),
 )
-for (const field of ['node_id', 'name', 'domains', 'contact_email', 'environment', 'renew_before_days']) watch(() => (createForm as any)[field], () => createErrors.clear(field))
+for (const field of ['node_id', 'provider_account_id', 'name', 'domains', 'contact_email', 'environment', 'renew_before_days', 'challenge_type', 'webroot_path']) watch(() => (createForm as any)[field], () => createErrors.clear(field))
 watch(() => renewalForm.renew_before_days, () => renewalErrors.clear('renew_before_days'))
 watch(renewalOpen, open => { if (open) renewalState.markClean() })
 useUnsavedChangesGuard(
@@ -167,22 +173,25 @@ async function create() {
     domains: (!domains.length || domains.length > 10) && '请输入 1–10 个域名。',
     contact_email: !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(createForm.contact_email.trim()) && '请输入有效的 ACME 联系邮箱。',
     renew_before_days: !isIntegerInRange(createForm.renew_before_days, 1, 60) && '提前续期天数必须为 1–60 之间的整数。',
+    provider_account_id: createForm.challenge_type === 'dns-01' && !createForm.provider_account_id && '请选择已验证的 Cloudflare DNS 账户。',
+    webroot_path: createForm.challenge_type === 'http-01-webroot' && !createForm.webroot_path.startsWith('/') && '请输入节点上的绝对 Webroot 路径。',
   }), createFormElement, '请更正标记字段后再申请证书。')
   if (!valid) return
   saving.value = true; message.value = ''; error.value = ''
   try {
-    const certificate = await createManagedCertificate({ node_id: createForm.node_id, name: createForm.name.trim(), domains, contact_email: createForm.contact_email.trim(), environment: createForm.environment, auto_renew: createForm.auto_renew, renew_before_days: createForm.renew_before_days })
+    const certificate = await createManagedCertificate({ node_id: createForm.node_id, provider_account_id: createForm.challenge_type === 'dns-01' ? createForm.provider_account_id : 0, name: createForm.name.trim(), domains, contact_email: createForm.contact_email.trim(), environment: createForm.environment, auto_renew: createForm.auto_renew, renew_before_days: createForm.renew_before_days, challenge_type: createForm.challenge_type, webroot_path: createForm.challenge_type === 'http-01-webroot' ? createForm.webroot_path : '' })
     await issueManagedCertificate(certificate.id)
     createOpen.value = false
     message.value = `证书 #${certificate.id} 已创建，节点签发操作正在后台执行。`
     await refresh()
   } catch (cause: any) {
-    await createErrors.applyApiError(cause, '证书创建或签发启动失败；若资产已创建，可在列表中重试。', createFormElement, { node_id: 'node_id', name: 'name', domains: 'domains', contact_email: 'contact_email', environment: 'environment', renew_before_days: 'renew_before_days' })
+    await createErrors.applyApiError(cause, '证书创建或签发启动失败；若资产已创建，可在列表中重试。', createFormElement, { node_id: 'node_id', provider_account_id: 'provider_account_id', name: 'name', domains: 'domains', contact_email: 'contact_email', environment: 'environment', renew_before_days: 'renew_before_days', challenge_type: 'challenge_type', webroot_path: 'webroot_path' })
   } finally { saving.value = false }
 }
 async function runCertificateOperation(certificate: ManagedCertificate) {
   const renewing = Boolean(certificate.not_after)
-  if (!await confirmAction({ title: renewing ? '立即续期证书？' : '开始申请证书？', message: `节点 ${certificate.node_name || `#${certificate.node_id}`} 的公网 80 端口需要可用。成功后${certificate.usage_count ? '会重新发布绑定协议的完整 Zero 配置' : '可在协议服务中绑定使用'}。`, confirmText: renewing ? '开始续期' : '开始申请' })) return
+  const challengeNotice = certificate.challenge_type === 'dns-01' ? '将通过 Cloudflare DNS 自动验证，不占用节点端口。' : '将先检查域名全部 A/AAAA 地址的公网 80 端口，再由现有 Webroot 提供挑战文件。'
+  if (!await confirmAction({ title: renewing ? '立即续期证书？' : '开始申请证书？', message: `${challengeNotice} 成功后${certificate.usage_count ? '会重新发布绑定协议的完整 Zero 配置' : '可在协议服务中绑定使用'}。`, confirmText: renewing ? '开始续期' : '开始申请' })) return
   operatingID.value = certificate.id; error.value = ''; message.value = ''
   try {
     if (renewing) await renewManagedCertificate(certificate.id)
@@ -217,15 +226,18 @@ watch(() => route.fullPath, async () => {
   if (nextSearch !== search.value || nextStatus !== statusFilter.value || nextOffset !== offset.value) { search.value = nextSearch; statusFilter.value = nextStatus; offset.value = nextOffset; await refresh() }
 })
 onMounted(async () => {
-  await refresh()
+  const [accounts] = await Promise.all([fetchProviderAccounts(), refresh()])
+  providerAccounts.value = accounts
   updatePolling()
   const dnsDomain = String(route.query.dns_domain || '').trim()
   const dnsNode = Number(route.query.dns_node || 0)
+  const dnsProvider = Number(route.query.dns_provider || 0)
   if (dnsDomain && dnsNode > 0) {
     openCreate()
     createForm.node_id = dnsNode
     createForm.name = `${dnsDomain} 证书`
     createForm.domains = dnsDomain
+    createForm.provider_account_id = dnsProvider
   }
 })
 onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })

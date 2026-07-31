@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -784,6 +785,53 @@ func downloadZeroBinary(parent context.Context, release zeroRelease) ([]byte, st
 	return nil, "", errors.New("Zero release archive does not contain the zero binary")
 }
 
+var managedZeroSubscriptionValidator = validateSubscriptionWithManagedZero
+
+func (h *handlers) validateZeroSubscriptionPreview(ctx context.Context, renderer, rendered string) error {
+	if renderer != subscriptionRendererZnetSink || !h.zeroMieruAccess {
+		return nil
+	}
+	return managedZeroSubscriptionValidator(ctx, h.zeroArtifactDir, h.zeroLocalVersion, []byte(rendered))
+}
+
+func validateSubscriptionWithManagedZero(ctx context.Context, artifactDir, version string, config []byte) error {
+	release, err := resolveLocalNativeZeroRelease(artifactDir, version)
+	if err != nil {
+		return fmt.Errorf("resolve Zero preview validator: %w", err)
+	}
+	binary, _, err := downloadZeroBinary(ctx, release)
+	if err != nil {
+		return fmt.Errorf("load Zero preview validator: %w", err)
+	}
+	tempDir, err := os.MkdirTemp("", "zboard-zero-preview-*")
+	if err != nil {
+		return fmt.Errorf("create Zero preview validator directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+	binaryPath := filepath.Join(tempDir, "zero")
+	configPath := filepath.Join(tempDir, "subscription.json")
+	if err := os.WriteFile(binaryPath, binary, 0o700); err != nil {
+		return fmt.Errorf("write Zero preview validator: %w", err)
+	}
+	if err := os.WriteFile(configPath, config, 0o600); err != nil {
+		return fmt.Errorf("write Zero subscription preview: %w", err)
+	}
+	validateCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(validateCtx, binaryPath, "validate", configPath).CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if len(message) > 2048 {
+			message = message[:2048]
+		}
+		if message == "" {
+			message = err.Error()
+		}
+		return fmt.Errorf("Zero rejected subscription preview: %s", message)
+	}
+	return nil
+}
+
 func zeroHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: 2 * time.Minute,
@@ -840,6 +888,10 @@ func fetchSmallText(ctx context.Context, client *http.Client, rawURL string, lim
 }
 
 func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey, zeroVersion string) ([]byte, string, error) {
+	return h.compileNodeRuntimeConfigWithOptions(node, apiKey, zeroVersion, false)
+}
+
+func (h *handlers) compileNodeRuntimeConfigWithOptions(node model.Node, apiKey, zeroVersion string, suppressMieruFallback bool) ([]byte, string, error) {
 	var installation model.Installation
 	if err := h.db.First(&installation, 1).Error; err != nil {
 		return nil, "", fmt.Errorf("load installation URL: %w", err)
@@ -875,6 +927,9 @@ func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey, zeroVersion
 	}
 	inbounds := make([]map[string]interface{}, 0, len(endpoints))
 	for _, endpoint := range endpoints {
+		if supported, reason := h.protocolKernelSupport(endpoint.Protocol); !supported {
+			return nil, "", fmt.Errorf("protocol endpoint %d cannot be published: %s", endpoint.ID, reason)
+		}
 		rawConfig, err := h.credentialCipher.Decrypt(endpoint.ServerConfig)
 		if err != nil {
 			return nil, "", fmt.Errorf("decrypt protocol endpoint %d config: %w", endpoint.ID, err)
@@ -894,7 +949,7 @@ func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey, zeroVersion
 		if endpoint.Port <= 0 || endpoint.Port > 65535 {
 			return nil, "", fmt.Errorf("protocol endpoint %d listen port is invalid", endpoint.ID)
 		}
-		endpointInbounds, err := h.runtimeInboundsForEndpoint(endpoint, protocol, now)
+		endpointInbounds, err := h.runtimeInboundsForEndpoint(endpoint, protocol, now, suppressMieruFallback)
 		if err != nil {
 			return nil, "", fmt.Errorf("compile protocol endpoint %d: %w", endpoint.ID, err)
 		}
@@ -1228,6 +1283,10 @@ func uploadSSHFile(conn *ssh.Client, path, mode string, payload []byte) error {
 }
 
 func (h *handlers) runNodeSSHSession(conn *ssh.Client, node model.Node, command string, privileged bool) (string, error) {
+	return h.runNodeSSHSessionWithInput(conn, node, command, privileged, "")
+}
+
+func (h *handlers) runNodeSSHSessionWithInput(conn *ssh.Client, node model.Node, command string, privileged bool, input string) (string, error) {
 	session, err := conn.NewSession()
 	if err != nil {
 		return "", err
@@ -1244,7 +1303,10 @@ func (h *handlers) runNodeSSHSession(conn *ssh.Client, node model.Node, command 
 		}
 	}
 	if stdin != "" {
-		session.Stdin = strings.NewReader(stdin)
+		input = stdin + input
+	}
+	if input != "" {
+		session.Stdin = strings.NewReader(input)
 	}
 	output, err := session.CombinedOutput(command)
 	return strings.TrimSpace(string(output)), err
