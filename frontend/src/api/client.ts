@@ -709,6 +709,17 @@ export async function updateManagedCertificateRenewal(id: number, payload: {
 	return unwrap(response)
 }
 
+export async function updateManagedCertificate(id: number, payload: {
+	name: string
+	contact_email: string
+	webroot_path: string
+	auto_renew: boolean
+	renew_before_days: number
+	expected_revision: number
+}) {
+	return unwrap(await api.put(`/admin/certificates/${id}`, payload))
+}
+
 export async function deleteManagedCertificate(id: number) {
 	const response = await api.delete(`/admin/certificates/${id}`)
 	return unwrap(response)
@@ -806,6 +817,23 @@ export async function createManagedDNSRecord(payload: {
 	takeover_existing: boolean
 }) {
 	return unwrap(await api.post('/admin/dns-records', payload))
+}
+
+export async function updateManagedDNSRecord(id: number, payload: {
+	provider_account_id: number
+	node_id: number
+	domain_name: string
+	record_type: 'A' | 'AAAA'
+	record_value: string
+	ttl: number
+	proxied: boolean
+	expected_revision: number
+}): Promise<ProviderOperation> {
+	return unwrap(await api.put(`/admin/dns-records/${id}`, payload))
+}
+
+export async function deleteManagedDNSRecord(id: number): Promise<{ id: number; deleted: boolean; remote_record_deleted: boolean }> {
+	return unwrap(await api.delete(`/admin/dns-records/${id}`))
 }
 
 export async function syncManagedDNSRecord(id: number, takeover = false): Promise<ProviderOperation> {

@@ -230,6 +230,39 @@ paths:
       responses:
         "202":
           description: DNS synchronization started
+  /api/v1/admin/dns-records/{id}:
+    put:
+      tags: [admin, providers]
+      summary: Update a managed DNS record and synchronize it
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider_account_id, node_id, domain_name, record_type, record_value, ttl, proxied, expected_revision]
+              properties:
+                provider_account_id: { type: integer, format: int64, description: Immutable identity field. }
+                node_id: { type: integer, format: int64 }
+                domain_name: { type: string, description: Immutable identity field. }
+                record_type: { type: string, enum: [A, AAAA], description: Immutable identity field. }
+                record_value: { type: string }
+                ttl: { type: integer, minimum: 1 }
+                proxied: { type: boolean }
+                expected_revision: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "202": { description: DNS update synchronization started }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin, providers]
+      summary: Delete the exact owned Cloudflare record, then remove its panel record
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Remote and panel records deleted }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/admin/dns-records/{id}/sync:
     post:
       tags: [admin, providers]
@@ -288,6 +321,28 @@ paths:
       responses:
         "200":
           description: Managed certificate detail
+    put:
+      tags: [admin, certificates]
+      summary: Update mutable certificate metadata and renewal settings
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, contact_email, webroot_path, auto_renew, renew_before_days, expected_revision]
+              properties:
+                name: { type: string, maxLength: 80 }
+                contact_email: { type: string, format: email }
+                webroot_path: { type: string, description: Required only for HTTP-01 Webroot certificates. }
+                auto_renew: { type: boolean }
+                renew_before_days: { type: integer, minimum: 1, maximum: 60 }
+                expected_revision: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200": { description: Certificate updated }
+        "409": { $ref: "#/components/responses/Error" }
     delete:
       tags: [admin, certificates]
       summary: Delete an unbound managed certificate

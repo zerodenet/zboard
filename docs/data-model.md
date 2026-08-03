@@ -42,13 +42,24 @@ zboard is a modular monolith that combines subscription commerce with node opera
   and one AAAA value together, but persists them as two independently owned
   records. A background observer retries public resolvers until each synced
   record is visible; it never repeats the Cloudflare write merely because
-  propagation is pending. A node remains an
+  propagation is pending. Mutable target, address, TTL and proxy policy use
+  optimistic concurrency and resynchronize after editing. Deletion removes the
+  exact provider-owned record before deleting local desired state; identity
+  changes use explicit delete-and-recreate so old remote names cannot become
+  orphaned. A node remains an
   infrastructure asset and does not acquire a single canonical domain.
 - `managed_certificates` explicitly owns either a verified Cloudflare provider
   account for DNS-01 or a canonical node webroot for HTTP-01. DNS-01 does not
   require public TCP port 80. HTTP-01 Webroot does not bind a second listener,
-  but every public A and AAAA target must resolve and accept TCP port 80 before
-  issuance because that is part of the ACME HTTP-01 contract. Legacy
+  and verifies resolvable targets on TCP port 80 before issuance because that
+  is part of the ACME HTTP-01 contract. A missing IPv6 route on the control
+  plane is treated as an unobservable family rather than proof that the remote
+  node is down; concrete refusal and timeout errors still block issuance.
+  Certificate display name, ACME contact, Webroot and renewal policy are
+  revision-protected mutable fields; node, domains, environment and challenge
+  identity require a new certificate asset. DNS-01 first uses the operating
+  system plugin package and falls back to an isolated Certbot Python virtual
+  environment when the distribution does not publish that package. Legacy
   standalone certificates remain renewal-compatible but cannot be newly
   created.
 - `nodes` is an independent VPS asset. It can exist without a protocol and owns lifecycle state, encrypted management/report credentials, communication mode, runtime status, enablement, version and synchronization timestamps.

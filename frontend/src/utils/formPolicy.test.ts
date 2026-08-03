@@ -50,7 +50,7 @@ describe('form feedback policy', () => {
       ].filter((violation): violation is string => Boolean(violation))),
     )
 
-    expect(formCount).toBe(22)
+    expect(formCount).toBe(23)
     expect([...ownerViolations, ...formViolations]).toEqual([])
   })
 

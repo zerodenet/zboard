@@ -58,3 +58,36 @@ func TestCloudflareRequestRedactsTokenFromErrors(t *testing.T) {
 		t.Fatalf("cloudflareRequest() error = %v", err)
 	}
 }
+
+func TestDeleteCloudflareDNSRecordUsesExactOwnedIdentifier(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("method = %s", r.Method)
+		}
+		if r.URL.Path != "/zones/zone-1/dns_records/record-9" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("authorization header = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"errors":[],"result":{"id":"record-9"}}`))
+	}))
+	defer server.Close()
+	previous := cloudflareAPIBaseURL
+	cloudflareAPIBaseURL = server.URL
+	defer func() { cloudflareAPIBaseURL = previous }()
+
+	if err := deleteCloudflareDNSRecord(context.Background(), "token", "zone-1", "record-9"); err != nil {
+		t.Fatalf("deleteCloudflareDNSRecord() error = %v", err)
+	}
+}
+
+func TestCloudflareRecordAlreadyAbsentRecognizesOnlyNotFound(t *testing.T) {
+	if !cloudflareRecordAlreadyAbsent(&cloudflareRequestError{StatusCode: http.StatusNotFound, Message: "not found"}) {
+		t.Fatal("Cloudflare 404 was not recognized as an idempotent delete")
+	}
+	if cloudflareRecordAlreadyAbsent(&cloudflareRequestError{StatusCode: http.StatusForbidden, Message: "forbidden"}) {
+		t.Fatal("Cloudflare authorization failure was treated as an idempotent delete")
+	}
+}

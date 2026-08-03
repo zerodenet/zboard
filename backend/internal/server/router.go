@@ -298,6 +298,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.ManagedCertificateGetHandler),
 		},
 		{
+			Method:  http.MethodPut,
+			Path:    "/api/v1/admin/certificates/:id",
+			Handler: http.HandlerFunc(h.ManagedCertificateUpdateHandler),
+		},
+		{
 			Method:  http.MethodDelete,
 			Path:    "/api/v1/admin/certificates/:id",
 			Handler: http.HandlerFunc(h.ManagedCertificateDeleteHandler),
@@ -346,6 +351,16 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Method:  http.MethodPost,
 			Path:    "/api/v1/admin/dns-records",
 			Handler: http.HandlerFunc(h.ManagedDNSCreateHandler),
+		},
+		{
+			Method:  http.MethodPut,
+			Path:    "/api/v1/admin/dns-records/:id",
+			Handler: http.HandlerFunc(h.ManagedDNSUpdateHandler),
+		},
+		{
+			Method:  http.MethodDelete,
+			Path:    "/api/v1/admin/dns-records/:id",
+			Handler: http.HandlerFunc(h.ManagedDNSDeleteHandler),
 		},
 		{
 			Method:  http.MethodPost,

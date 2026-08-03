@@ -26,6 +26,76 @@ remain outside this repository.
 
 ## Completed goals
 
+### 2026-08-03 - Editable DNS/certificates and resilient ACME preflight/install
+
+Goal outcome before synchronization:
+
+- Added revision-protected editing for managed DNS target nodes, public IP
+  values, TTL and Cloudflare proxy policy. Saving immediately starts the
+  existing provider synchronization path. Provider account, FQDN and record
+  type remain explicit identity fields and require delete-and-recreate.
+- Added managed DNS deletion that blocks concurrent provider operations,
+  deletes only the stored Cloudflare Zone/record identifier, and removes local
+  desired state only after the remote deletion succeeds. Provider 404 is an
+  idempotent success for recovery after a partially completed prior deletion;
+  authorization and other provider failures retain the panel record.
+- Added revision-protected certificate editing for display name, ACME contact
+  email, HTTP-01 Webroot and renewal policy. Node, domains, environment,
+  challenge type and provider identity remain immutable certificate-asset
+  boundaries. Running issuance or renewal blocks edits.
+- HTTP-01 preflight no longer interprets a missing IPv6 route on the Zboard
+  control plane as proof that the remote AAAA target is unavailable. Concrete
+  connection refusal and timeout failures still block issuance.
+- DNS-01 Certbot setup first attempts the operating-system Cloudflare plugin
+  package, then falls back to an isolated `/opt/zboard-certbot` Python virtual
+  environment with Certbot and its Cloudflare plugin when the distribution
+  does not publish `python3-certbot-dns-cloudflare`.
+
+Local verification:
+
+- `go test ./...` and `go vet ./...` passed for all backend packages, including
+  exact Cloudflare deletion, idempotent provider 404, IPv6 route handling,
+  concrete TCP failure and Certbot fallback-script coverage.
+- All 63 frontend Vitest files and 147 tests passed. Frontend type checking and
+  the production build passed with the DNS and certificate editor assets.
+- `git diff --check` passed with only the repository's existing Windows
+  LF-to-CRLF notices.
+
+Synchronization and deployed verification:
+
+- The first `scripts/sync-intranet.ps1 -SkipLocalChecks` attempt stopped during
+  Docker linking because the intranet root filesystem had only 44 MB free. It
+  had not switched the application or created a database backup. Read-only
+  inspection identified 1.381 GB of reclaimable build cache; only rebuildable
+  Docker builder cache was pruned, without removing containers, images or
+  volumes.
+- A clean synchronization retry completed successfully and deployed
+  `v0.0.1-20260803T095440Z-intranet-working-tree@2026-08-03T09:54:40Z`.
+  `/api/v1/version` and `/readyz` returned HTTP 200 with database and readiness
+  true. The Zboard container was healthy and the external MySQL and Redis
+  containers were running.
+- The pre-sync database backup is
+  `/data/zboard-next/backups/20260803T095440Z/zboard-before-sync.sql` (82,257
+  bytes), the previous source is `/data/zboard-next/app-prev-20260803T095440Z`,
+  and the release archive is
+  `/data/zboard-next/releases/20260803T095440Z/source.tar.gz` (812,389 bytes).
+- Unauthenticated PUT DNS, DELETE DNS and PUT certificate requests each
+  returned HTTP 401, proving the deployed router owns the new protected
+  methods. Deployed source checks found DNS update/deletion, IPv6 preflight and
+  Certbot virtual-environment fallback paths; running frontend assets contain
+  both DNS and certificate editors.
+- The successful build left 947 MB free. A second builder-cache-only prune
+  reclaimed 604.2 MB and restored 1.9 GB free while retaining all active
+  containers, images and volumes.
+
+Remaining gaps:
+
+- No live Cloudflare record or production certificate was mutated merely to
+  verify destructive/external behavior. Provider request contracts and UI
+  paths are covered locally; one operator edit/delete and one retry of the
+  previously failed DNS-01 request remain the final external checks.
+- No Git staging, commit, push or release was performed.
+
 ### 2026-08-03 - Runnable subscription inbounds and concealed public delivery
 
 Goal outcome before synchronization:

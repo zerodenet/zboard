@@ -70,6 +70,15 @@ type certificateRenewalUpdateRequest struct {
 	ExpectedRevision uint64 `json:"expected_revision"`
 }
 
+type certificateUpdateRequest struct {
+	Name             string `json:"name"`
+	ContactEmail     string `json:"contact_email"`
+	WebrootPath      string `json:"webroot_path"`
+	AutoRenew        bool   `json:"auto_renew"`
+	RenewBeforeDays  int    `json:"renew_before_days"`
+	ExpectedRevision uint64 `json:"expected_revision"`
+}
+
 type certificateListItem struct {
 	ID                   uint                        `json:"id"`
 	NodeID               uint                        `json:"node_id"`
@@ -477,6 +486,97 @@ func (h *handlers) ManagedCertificateDeleteHandler(w http.ResponseWriter, r *htt
 	OK(w, map[string]interface{}{"id": certificate.ID, "deleted": true, "remote_files_retained": true})
 }
 
+func (h *handlers) ManagedCertificateUpdateHandler(w http.ResponseWriter, r *http.Request) {
+	claims, err := h.requireAdmin(w, r)
+	if err != nil {
+		return
+	}
+	id, err := parsePathID(r.URL.Path, "/api/v1/admin/certificates/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	var request certificateUpdateRequest
+	if err := decodeBody(r, &request); err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	request.Name = strings.TrimSpace(request.Name)
+	request.ContactEmail = strings.TrimSpace(request.ContactEmail)
+	request.WebrootPath = strings.TrimSpace(request.WebrootPath)
+	fields := map[string]string{}
+	if request.ExpectedRevision == 0 {
+		fields["expected_revision"] = "请刷新后再编辑该证书。"
+	}
+	if request.Name == "" || len([]byte(request.Name)) > 80 {
+		fields["name"] = "证书名称需包含 1 到 80 个 UTF-8 字节。"
+	}
+	if !validCertificateContactEmail(request.ContactEmail) {
+		fields["contact_email"] = "请输入有效的 ACME 联系邮箱。"
+	}
+	if request.RenewBeforeDays < 1 || request.RenewBeforeDays > 60 {
+		fields["renew_before_days"] = "提前续期天数必须在 1–60 之间。"
+	}
+	if len(fields) > 0 {
+		BadRequestFields(w, "证书信息校验失败。", fields)
+		return
+	}
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		var certificate model.ManagedCertificate
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&certificate, id).Error; err != nil {
+			return err
+		}
+		if certificate.Revision != request.ExpectedRevision {
+			return errCertificateRevisionConflict
+		}
+		if certificate.Status == certificateStatusIssuing || certificate.Status == certificateStatusRenewing {
+			return errCertificateOperationRunning
+		}
+		if certificate.ChallengeType == certificateChallengeHTTP01Webroot {
+			if !validNodeWebroot(request.WebrootPath) {
+				return validationError("证书信息校验失败。", map[string]string{"webroot_path": "Webroot 必须是节点上的规范绝对目录，且不能是根目录。"})
+			}
+		} else if request.WebrootPath != "" {
+			return validationError("证书信息校验失败。", map[string]string{"webroot_path": "DNS-01 不使用 Webroot 路径。"})
+		}
+		updates := map[string]interface{}{
+			"name": request.Name, "contact_email": request.ContactEmail, "webroot_path": request.WebrootPath,
+			"auto_renew": request.AutoRenew, "renew_before_days": request.RenewBeforeDays,
+			"revision": certificate.Revision + 1,
+		}
+		if certificate.NotAfter != nil {
+			updates["next_renewal_at"] = certificate.NotAfter.Add(-time.Duration(request.RenewBeforeDays) * 24 * time.Hour)
+		}
+		if err := tx.Model(&certificate).Updates(updates).Error; err != nil {
+			return err
+		}
+		return createAuditLog(tx, claims, "certificate.update", fmt.Sprintf("certificate:%d", certificate.ID),
+			fmt.Sprintf("name=%s auto_renew=%t renew_before_days=%d", request.Name, request.AutoRenew, request.RenewBeforeDays))
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		NotFound(w)
+		return
+	}
+	if errors.Is(err, errCertificateRevisionConflict) {
+		writeJSON(w, http.StatusConflict, "证书已被其他会话更新，请重新加载。", nil)
+		return
+	}
+	if errors.Is(err, errCertificateOperationRunning) {
+		writeJSON(w, http.StatusConflict, "证书正在签发或续期，请等待操作完成后再编辑。", nil)
+		return
+	}
+	if err != nil {
+		var validation *requestValidationError
+		if errors.As(err, &validation) {
+			BadRequestError(w, validation)
+			return
+		}
+		ServerError(w, err)
+		return
+	}
+	OK(w, map[string]interface{}{"id": id, "updated": true})
+}
+
 func (h *handlers) ManagedCertificateCreateHandler(w http.ResponseWriter, r *http.Request) {
 	claims, err := h.requireAdmin(w, r)
 	if err != nil {
@@ -868,6 +968,13 @@ func managedCertificatePaths(certificateID uint) (string, string) {
 	return base + "/fullchain.pem", base + "/privkey.pem"
 }
 
+var (
+	http01LookupIPAddrs = func(ctx context.Context, resolver *net.Resolver, domain string) ([]net.IPAddr, error) {
+		return resolver.LookupIPAddr(ctx, domain)
+	}
+	http01DialTimeout = net.DialTimeout
+)
+
 func preflightHTTP01Domains(domains []string) error {
 	for _, domain := range domains {
 		var addresses []net.IPAddr
@@ -881,7 +988,7 @@ func preflightHTTP01Domains(domains []string) error {
 				},
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-			addresses, lookupErr = resolver.LookupIPAddr(ctx, domain)
+			addresses, lookupErr = http01LookupIPAddrs(ctx, resolver, domain)
 			cancel()
 			if lookupErr == nil && len(addresses) > 0 {
 				break
@@ -891,6 +998,7 @@ func preflightHTTP01Domains(domains []string) error {
 			return fmt.Errorf("HTTP-01 preflight could not resolve public A/AAAA records for %s", domain)
 		}
 		seen := make(map[string]struct{}, len(addresses))
+		unobservable := 0
 		for _, address := range addresses {
 			ip := address.IP.String()
 			if _, exists := seen[ip]; exists {
@@ -901,14 +1009,25 @@ func preflightHTTP01Domains(domains []string) error {
 			if address.IP.To4() != nil {
 				network = "IPv4 A"
 			}
-			conn, err := net.DialTimeout("tcp", net.JoinHostPort(ip, "80"), 3*time.Second)
+			conn, err := http01DialTimeout("tcp", net.JoinHostPort(ip, "80"), 3*time.Second)
 			if err != nil {
+				if localNetworkUnreachable(err) {
+					unobservable++
+					continue
+				}
 				return fmt.Errorf("HTTP-01 preflight: %s %s for %s cannot accept TCP port 80: %w", network, ip, domain, err)
 			}
 			_ = conn.Close()
 		}
+		_ = unobservable // An absent local route is a control-plane limitation, not proof that the node is unreachable.
 	}
 	return nil
+}
+
+func localNetworkUnreachable(err error) bool {
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "network is unreachable") || strings.Contains(message, "no route to host") ||
+		strings.Contains(message, "network unreachable")
 }
 
 func buildCertbotCertificateScript(certificate model.ManagedCertificate, domains []string, forceRenewal bool, stagingID string) string {
@@ -916,7 +1035,7 @@ func buildCertbotCertificateScript(certificate model.ManagedCertificate, domains
 	baseDir := fmt.Sprintf("/etc/zboard/certificates/%d", certificate.ID)
 	stageDir := baseDir + "/.staging-" + stagingID
 	args := []string{
-		"certbot", "certonly", "--non-interactive", "--agree-tos",
+		"certonly", "--non-interactive", "--agree-tos",
 		"--email", certificate.ContactEmail, "--cert-name", certName,
 		"--rsa-key-size", "2048",
 	}
@@ -948,7 +1067,7 @@ func buildCertbotCertificateScript(certificate model.ManagedCertificate, domains
 	return fmt.Sprintf(`set -eu
 test "$(id -u)" = "0"
 install_certbot() {
-  if command -v certbot >/dev/null 2>&1; then return 0; fi
+  if command -v certbot >/dev/null 2>&1; then certbot_bin="$(command -v certbot)"; return 0; fi
   if command -v apt-get >/dev/null 2>&1; then
     DEBIAN_FRONTEND=noninteractive apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y certbot
@@ -963,6 +1082,7 @@ install_certbot() {
     return 1
   fi
   command -v certbot >/dev/null 2>&1
+  certbot_bin="$(command -v certbot)"
 }
 install_certbot
 command -v openssl >/dev/null 2>&1
@@ -973,22 +1093,36 @@ trap cleanup_challenge EXIT HUP INT TERM
 if [ %s = dns-01 ]; then
   IFS= read -r cloudflare_token
   test -n "$cloudflare_token"
+  plugin_installed=0
   if command -v apt-get >/dev/null 2>&1; then
-    DEBIAN_FRONTEND=noninteractive apt-get install -y python3-certbot-dns-cloudflare
+    if DEBIAN_FRONTEND=noninteractive apt-get install -y python3-certbot-dns-cloudflare; then plugin_installed=1; fi
   elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y python3-certbot-dns-cloudflare
+    if dnf install -y python3-certbot-dns-cloudflare; then plugin_installed=1; fi
   elif command -v yum >/dev/null 2>&1; then
-    yum install -y python3-certbot-dns-cloudflare
+    if yum install -y python3-certbot-dns-cloudflare; then plugin_installed=1; fi
   elif command -v apk >/dev/null 2>&1; then
-    apk add --no-cache certbot-dns-cloudflare
-  else
-    printf 'ZBOARD_CERT_ERROR=no supported package manager can install certbot-dns-cloudflare\n' >&2
-    exit 1
+    if apk add --no-cache certbot-dns-cloudflare; then plugin_installed=1; fi
+  fi
+  if [ "$plugin_installed" = 0 ]; then
+    if command -v apt-get >/dev/null 2>&1; then
+      DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf install -y python3
+    elif command -v yum >/dev/null 2>&1; then
+      yum install -y python3
+    elif command -v apk >/dev/null 2>&1; then
+      apk add --no-cache python3 py3-pip
+    fi
+    command -v python3 >/dev/null 2>&1
+    certbot_venv=/opt/zboard-certbot
+    python3 -m venv "$certbot_venv"
+    "$certbot_venv/bin/pip" install --disable-pip-version-check --upgrade certbot certbot-dns-cloudflare
+    certbot_bin="$certbot_venv/bin/certbot"
   fi
   printf 'dns_cloudflare_api_token = %%s\n' "$cloudflare_token" > "$stage_dir/cloudflare.ini"
   chmod 0600 "$stage_dir/cloudflare.ini"
 fi
-%s
+"$certbot_bin" %s
 source_dir=%s
 base_dir=%s
 test -s "$source_dir/fullchain.pem"

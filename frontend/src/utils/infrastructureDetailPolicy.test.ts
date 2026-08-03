@@ -47,11 +47,22 @@ describe('infrastructure detail density policy', () => {
     expect(providers).toContain('.provider-empty-state { min-height: 150px; padding: 24px; }')
     expect(dns).toContain('title="DNS 解析"')
     expect(dns).toContain('fetchManagedDNSRecordsPage')
+    expect(dns).toContain('updateManagedDNSRecord')
+    expect(dns).toContain('deleteManagedDNSRecord')
+    expect(dns).toContain('title="编辑 DNS 解析"')
     expect(dns).toContain('to="/admin/providers"')
     expect(layout).toContain("{ to: '/admin/providers', label: '外部供应商' }")
     expect(layout).toContain("{ to: '/admin/dns-records', label: 'DNS 解析' }")
     expect(layout).toContain("label: '资源与接入'")
     expect(router).toContain("path: 'dns-records'")
+  })
+
+  it('supports editing managed certificate metadata', () => {
+    const certificates = readFileSync(join(views, 'Certificates.vue'), 'utf8')
+
+    expect(certificates).toContain('updateManagedCertificate')
+    expect(certificates).toContain('title="编辑证书"')
+    expect(certificates).toContain('节点、域名、签发环境与验证方式保持不变')
   })
 
   it('requires an explicit release selection and downgrade confirmation for node kernel changes', () => {

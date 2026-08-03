@@ -24,6 +24,7 @@
           <td class="numeric-column" data-column-priority="3">{{ certificate.usage_count }}</td>
           <td data-column-priority="3"><div v-if="certificate.latest_operation" class="operation-cell"><StatusBadge :tone="operationTone(certificate.latest_operation.status)">{{ operationLabel(certificate.latest_operation) }}</StatusBadge><TimeBadge :value="certificate.latest_operation.created_at" mode="relative" /></div><span v-else class="muted-value">暂无操作</span></td>
           <td class="table-action-column"><RowActions :label="`${certificate.name} 的操作`" :trigger-key="`certificate-${certificate.id}`">
+            <UiButton variant="secondary" size="sm" type="button" :disabled="operationRunning(certificate)" @click="openEdit(certificate)"><UiIcon name="settings" />编辑</UiButton>
             <UiButton variant="secondary" size="sm" type="button" :disabled="operationRunning(certificate)" @click="openRenewal(certificate)"><UiIcon name="settings" />续期策略</UiButton>
             <UiButton size="sm" type="button" :loading="operatingID === certificate.id" :disabled="operationRunning(certificate)" @click="runCertificateOperation(certificate)"><UiIcon name="refresh" />{{ certificate.not_after ? '立即续期' : '开始申请' }}</UiButton>
             <UiButton variant="danger" size="sm" type="button" :loading="deletingID === certificate.id" :disabled="operationRunning(certificate)" @click="removeCertificate(certificate)"><UiIcon name="trash" />删除</UiButton>
@@ -51,6 +52,18 @@
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="certificate-create-form" type="submit" :loading="saving">创建并申请</UiButton></template>
     </ModalDialog>
 
+    <ModalDialog :open="editOpen" title="编辑证书" description="可修改展示名称、ACME 联系方式、Webroot 和续期设置；节点、域名、签发环境与验证方式保持不变。" :busy="savingEdit" @close="editOpen = false">
+      <form id="certificate-edit-form" ref="editFormElement" class="renewal-form" novalidate @submit.prevent="saveEdit">
+        <PageAlert v-if="editErrors.formError.value" tone="danger" title="无法保存证书">{{ editErrors.formError.value }}</PageAlert>
+        <FormField v-slot="{ controlAttrs }" label="证书名称" name="edit-certificate-name" :error="editErrors.fields.name" required><UiInput v-model.trim="editForm.name" v-bind="controlAttrs" maxlength="80" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="ACME 联系邮箱" name="edit-certificate-email" :error="editErrors.fields.contact_email" required><UiInput v-model.trim="editForm.contact_email" v-bind="controlAttrs" type="email" maxlength="254" /></FormField>
+        <FormField v-if="editForm.challenge_type === 'http-01-webroot'" v-slot="{ controlAttrs }" label="节点 Webroot" name="edit-certificate-webroot" :error="editErrors.fields.webroot_path" required><UiInput v-model.trim="editForm.webroot_path" v-bind="controlAttrs" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="自动续期" name="edit-certificate-renew"><label class="check-field"><UiCheckbox v-model="editForm.auto_renew" v-bind="controlAttrs" /><span>启用到期前自动续期</span></label></FormField>
+        <FormField v-slot="{ controlAttrs }" label="提前续期天数" name="edit-certificate-days" :error="editErrors.fields.renew_before_days"><UiNumberInput v-model="editForm.renew_before_days" v-bind="controlAttrs" :min="1" :max="60" /></FormField>
+      </form>
+      <template #footer><UiButton variant="secondary" type="button" :disabled="savingEdit" @click="editOpen = false">取消</UiButton><UiButton form="certificate-edit-form" type="submit" :loading="savingEdit">保存</UiButton></template>
+    </ModalDialog>
+
     <ModalDialog :open="renewalOpen" title="续期策略" description="修改自动续期窗口；运行中的签发或续期不会被中断。" :busy="savingPolicy" @close="renewalOpen = false">
       <form id="certificate-renewal-form" ref="renewalFormElement" class="renewal-form" novalidate @submit.prevent="saveRenewal">
         <PageAlert v-if="renewalErrors.formError.value" tone="danger" title="Unable to save renewal policy">{{ renewalErrors.formError.value }}</PageAlert>
@@ -65,7 +78,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createManagedCertificate, deleteManagedCertificate, fetchManagedCertificatesPage, fetchProviderAccounts, issueManagedCertificate, renewManagedCertificate, updateManagedCertificateRenewal, type CertificateOperation, type ManagedCertificate, type ProviderAccount } from '../api/client'
+import { createManagedCertificate, deleteManagedCertificate, fetchManagedCertificatesPage, fetchProviderAccounts, issueManagedCertificate, renewManagedCertificate, updateManagedCertificate, updateManagedCertificateRenewal, type CertificateOperation, type ManagedCertificate, type ProviderAccount } from '../api/client'
 import DataTable from '../components/DataTable.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -119,6 +132,11 @@ const renewalFormElement = ref<HTMLElement | null>(null)
 const renewalErrors = useFormErrors()
 const renewalForm = reactive({ id: 0, auto_renew: true, renew_before_days: 30, revision: 0 })
 const renewalState = useDirtyForm(() => renewalForm)
+const editOpen = ref(false)
+const savingEdit = ref(false)
+const editFormElement = ref<HTMLElement | null>(null)
+const editErrors = useFormErrors()
+const editForm = reactive({ id: 0, name: '', contact_email: '', challenge_type: 'dns-01' as ManagedCertificate['challenge_type'], webroot_path: '', auto_renew: true, renew_before_days: 30, revision: 0 })
 const statusOptions = [
   { label: '全部状态', value: '' }, { label: '待申请', value: 'pending' }, { label: '申请中', value: 'issuing' },
   { label: '有效', value: 'active' }, { label: '续期中', value: 'renewing' }, { label: '失败', value: 'failed' }, { label: '已过期', value: 'expired' },
@@ -224,6 +242,33 @@ async function removeCertificate(certificate: ManagedCertificate) {
   }
 }
 function openRenewal(certificate: ManagedCertificate) { Object.assign(renewalForm, { id: certificate.id, auto_renew: certificate.auto_renew, renew_before_days: certificate.renew_before_days, revision: certificate.revision }); renewalOpen.value = true }
+function openEdit(certificate: ManagedCertificate) {
+  editErrors.clear()
+  Object.assign(editForm, { id: certificate.id, name: certificate.name, contact_email: certificate.contact_email, challenge_type: certificate.challenge_type, webroot_path: certificate.webroot_path || '', auto_renew: certificate.auto_renew, renew_before_days: certificate.renew_before_days, revision: certificate.revision })
+  editOpen.value = true
+}
+async function saveEdit() {
+  const valid = await editErrors.applyValidation(collectFieldErrors({
+    name: !isUtf8LengthInRange(editForm.name.trim(), 1, 80, true) && '证书名称需包含 1 到 80 个 UTF-8 字节。',
+    contact_email: !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(editForm.contact_email.trim()) && '请输入有效的 ACME 联系邮箱。',
+    webroot_path: editForm.challenge_type === 'http-01-webroot' && !editForm.webroot_path.startsWith('/') && '请输入节点上的绝对 Webroot 路径。',
+    renew_before_days: !isIntegerInRange(editForm.renew_before_days, 1, 60) && '提前续期天数必须为 1–60 之间的整数。',
+  }), editFormElement, '请更正标记字段后再保存证书。')
+  if (!valid) return
+  savingEdit.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    await updateManagedCertificate(editForm.id, { name: editForm.name.trim(), contact_email: editForm.contact_email.trim(), webroot_path: editForm.challenge_type === 'http-01-webroot' ? editForm.webroot_path.trim() : '', auto_renew: editForm.auto_renew, renew_before_days: editForm.renew_before_days, expected_revision: editForm.revision })
+    editOpen.value = false
+    message.value = '证书信息已更新。'
+    await refresh()
+  } catch (cause: any) {
+    await editErrors.applyApiError(cause, '证书信息保存失败。', editFormElement, { name: 'name', contact_email: 'contact_email', webroot_path: 'webroot_path', renew_before_days: 'renew_before_days' })
+  } finally {
+    savingEdit.value = false
+  }
+}
 async function saveRenewal() {
   renewalErrors.clear()
   const valid = await renewalErrors.applyValidation(collectFieldErrors({

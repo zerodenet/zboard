@@ -18,7 +18,7 @@
           <td><StatusBadge :tone="dnsTone(record.status)">{{ dnsStatus(record.status) }}</StatusBadge><small v-if="record.last_error" class="row-error">{{ record.last_error }}</small></td>
           <td><StatusBadge :tone="record.public_resolved ? 'success' : 'warning'">{{ record.public_resolved ? '已观察到' : '自动观察中' }}</StatusBadge></td>
           <td><TimeBadge v-if="record.last_synced_at" :value="record.last_synced_at" mode="relative" /><span v-else class="muted-value">尚未同步</span></td>
-          <td class="table-action-column"><div class="inline-actions"><UiButton size="sm" variant="secondary" :loading="operatingRecord === record.id" :disabled="record.status === 'syncing'" @click="syncRecord(record)">同步</UiButton><RouterLink class="ui-button ui-button-secondary ui-button-sm" :to="{ path: '/admin/certificates', query: { dns_domain: record.domain_name, dns_node: record.node_id, dns_provider: record.provider_account_id } }">申请证书</RouterLink></div></td>
+          <td class="table-action-column"><div class="inline-actions"><UiButton size="sm" variant="secondary" :disabled="record.status === 'syncing'" @click="openEdit(record)"><UiIcon name="settings" />编辑</UiButton><UiButton size="sm" variant="secondary" :loading="operatingRecord === record.id" :disabled="record.status === 'syncing'" @click="syncRecord(record)">同步</UiButton><RouterLink class="ui-button ui-button-secondary ui-button-sm" :to="{ path: '/admin/certificates', query: { dns_domain: record.domain_name, dns_node: record.node_id, dns_provider: record.provider_account_id } }">申请证书</RouterLink><UiButton size="sm" variant="danger" :loading="deletingRecord === record.id" :disabled="record.status === 'syncing'" @click="removeRecord(record)"><UiIcon name="trash" />删除</UiButton></div></td>
         </tr></tbody>
       </DataTable>
       <EmptyState v-else class="dns-empty-state" icon="nodes" title="还没有托管 DNS 解析" description="先准备具备 DNS 能力的供应商账户，再把手填域名解析到选定节点。">
@@ -40,12 +40,23 @@
       </div>
       <template #footer><UiButton variant="secondary" @click="dnsOpen = false">取消</UiButton><UiButton type="button" :loading="savingDNS" @click="createDNS">创建并同步</UiButton></template>
     </ModalDialog>
+
+    <ModalDialog :open="editOpen" title="编辑 DNS 解析" description="保存后立即同步到 Cloudflare；供应商、域名和记录类型如需变更，请删除后重新创建。" :busy="savingEdit" @close="editOpen = false">
+      <div class="modal-form">
+        <FormField label="解析记录" full><UiInput :model-value="`${editForm.record_type} ${editForm.domain_name}`" disabled /></FormField>
+        <FormField label="目标节点" required><NodeLookup v-model="editForm.node_id" /></FormField>
+        <FormField :label="editForm.record_type === 'AAAA' ? 'IPv6 地址' : 'IPv4 地址'" required><UiInput v-model.trim="editForm.record_value" /></FormField>
+        <FormField label="TTL"><UiNumberInput v-model="editForm.ttl" :min="1" :max="86400" /></FormField>
+        <FormField label="Cloudflare 代理"><label class="check-field"><UiCheckbox v-model="editForm.proxied" /><span>启用橙云代理</span></label></FormField>
+      </div>
+      <template #footer><UiButton variant="secondary" @click="editOpen = false">取消</UiButton><UiButton type="button" :loading="savingEdit" @click="saveEdit">保存并同步</UiButton></template>
+    </ModalDialog>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { createManagedDNSRecord, fetchManagedDNSRecordsPage, fetchProviderAccounts, syncManagedDNSRecord, type ManagedDNSRecord, type ProviderAccount } from '../api/client'
+import { createManagedDNSRecord, deleteManagedDNSRecord, fetchManagedDNSRecordsPage, fetchProviderAccounts, syncManagedDNSRecord, updateManagedDNSRecord, type ManagedDNSRecord, type ProviderAccount } from '../api/client'
 import DataTable from '../components/DataTable.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -64,6 +75,7 @@ import UiIcon from '../components/UiIcon.vue'
 import UiInput from '../components/UiInput.vue'
 import UiNumberInput from '../components/UiNumberInput.vue'
 import UiSelect from '../components/UiSelect.vue'
+import { confirmAction } from '../utils/feedback'
 
 const accounts = ref<ProviderAccount[]>([])
 const records = ref<ManagedDNSRecord[]>([])
@@ -77,6 +89,10 @@ const message = ref('')
 const dnsOpen = ref(false)
 const savingDNS = ref(false)
 const operatingRecord = ref(0)
+const deletingRecord = ref(0)
+const editOpen = ref(false)
+const savingEdit = ref(false)
+const editForm = reactive({ id: 0, provider_account_id: 0, node_id: 0, domain_name: '', record_type: 'A' as 'A' | 'AAAA', record_value: '', ttl: 1, proxied: false, revision: 0 })
 const dnsForm = reactive({ provider_account_id: 0, node_id: 0, domain_name: '', ipv4_value: '', ipv6_value: '', ttl: 1, proxied: false, takeover_existing: false })
 const activeDNSAccounts = computed(() => accounts.value.filter(item => item.status === 'active' && item.capabilities.includes('dns.records')))
 const accountOptions = computed(() => activeDNSAccounts.value.map(item => ({ label: item.name, value: item.id })))
@@ -136,6 +152,41 @@ async function syncRecord(record: ManagedDNSRecord) {
     error.value = cause?.response?.data?.message || 'DNS 同步启动失败。'
   } finally {
     operatingRecord.value = 0
+  }
+}
+function openEdit(record: ManagedDNSRecord) {
+  Object.assign(editForm, { id: record.id, provider_account_id: record.provider_account_id, node_id: record.node_id, domain_name: record.domain_name, record_type: record.record_type, record_value: record.record_value, ttl: record.ttl, proxied: record.proxied, revision: record.revision })
+  editOpen.value = true
+}
+async function saveEdit() {
+  savingEdit.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    await updateManagedDNSRecord(editForm.id, { provider_account_id: editForm.provider_account_id, node_id: editForm.node_id, domain_name: editForm.domain_name, record_type: editForm.record_type, record_value: editForm.record_value, ttl: editForm.ttl, proxied: editForm.proxied, expected_revision: editForm.revision })
+    editOpen.value = false
+    message.value = `${editForm.domain_name} 已更新并开始同步。`
+    await refreshAll()
+  } catch (cause: any) {
+    error.value = cause?.response?.data?.message || 'DNS 记录更新失败。'
+  } finally {
+    savingEdit.value = false
+  }
+}
+async function removeRecord(record: ManagedDNSRecord) {
+  if (!await confirmAction({ title: '删除 DNS 解析？', message: `将先从 Cloudflare 删除 ${record.record_type} ${record.domain_name}，远端删除成功后才会移除面板记录。`, confirmText: '确认删除', tone: 'danger' })) return
+  deletingRecord.value = record.id
+  error.value = ''
+  message.value = ''
+  try {
+    await deleteManagedDNSRecord(record.id)
+    message.value = `${record.record_type} ${record.domain_name} 已从 Cloudflare 和面板删除。`
+    await refreshAll()
+  } catch (cause: any) {
+    error.value = cause?.response?.data?.message || 'DNS 记录删除失败。'
+    await refreshAll()
+  } finally {
+    deletingRecord.value = 0
   }
 }
 async function changePage(next: { offset: number; limit: number }) {

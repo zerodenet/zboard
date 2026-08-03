@@ -93,6 +93,13 @@ type cloudflareAPIError struct {
 	Message string `json:"message"`
 }
 
+type cloudflareRequestError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *cloudflareRequestError) Error() string { return e.Message }
+
 type cloudflareZone struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -362,6 +369,186 @@ func (h *handlers) ManagedDNSCreateHandler(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusAccepted, "dns synchronization started", map[string]interface{}{"records": records, "operations": operations})
 }
 
+func (h *handlers) ManagedDNSUpdateHandler(w http.ResponseWriter, r *http.Request) {
+	claims, err := h.requireAdmin(w, r)
+	if err != nil {
+		return
+	}
+	id, err := parsePathID(r.URL.Path, "/api/v1/admin/dns-records/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	var request managedDNSWriteRequest
+	if err := decodeBody(r, &request); err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	if request.ExpectedRevision == 0 {
+		BadRequestFields(w, "DNS 解析校验失败。", map[string]string{"expected_revision": "请刷新后再编辑该 DNS 记录。"})
+		return
+	}
+	updated, err := h.validateManagedDNSRequest(request)
+	if err != nil {
+		BadRequestError(w, err)
+		return
+	}
+	var currentRevision uint64
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		var existing model.ManagedDNSRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&existing, id).Error; err != nil {
+			return err
+		}
+		currentRevision = existing.Revision
+		if existing.Revision != request.ExpectedRevision {
+			return errManagedDNSRevisionConflict
+		}
+		if existing.ProviderAccountID != updated.ProviderAccountID || existing.DomainName != updated.DomainName || existing.RecordType != updated.RecordType {
+			return validationError("DNS 解析校验失败。", map[string]string{
+				"identity": "供应商、域名和记录类型不能直接修改；如需变更，请删除后重新创建。",
+			})
+		}
+		var running int64
+		if err := tx.Model(&model.ProviderOperation{}).Where("resource_type = ? AND resource_id = ? AND status = ?", "dns_record", existing.ID, "running").Count(&running).Error; err != nil {
+			return err
+		}
+		if running > 0 || existing.Status == dnsStatusSyncing {
+			return errManagedDNSOperationRunning
+		}
+		updates := map[string]interface{}{
+			"node_id": updated.NodeID, "record_value": updated.RecordValue, "ttl": updated.TTL,
+			"proxied": updated.Proxied, "desired_hash": updated.DesiredHash,
+			"status": dnsStatusPending, "public_resolved": false, "last_public_check_at": nil,
+			"last_error": "", "revision": existing.Revision + 1,
+		}
+		if err := tx.Model(&existing).Updates(updates).Error; err != nil {
+			return err
+		}
+		return createAuditLog(tx, claims, "dns_record.update", fmt.Sprintf("managed_dns_record:%d", existing.ID),
+			fmt.Sprintf("node=%d ttl=%d proxied=%t revision=%d", updated.NodeID, updated.TTL, updated.Proxied, existing.Revision+1))
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		NotFound(w)
+		return
+	}
+	if errors.Is(err, errManagedDNSRevisionConflict) {
+		writeJSON(w, http.StatusConflict, "DNS 记录已被其他管理员更新，请重新加载。", map[string]interface{}{"current_revision": currentRevision})
+		return
+	}
+	if errors.Is(err, errManagedDNSOperationRunning) {
+		writeJSON(w, http.StatusConflict, "DNS 记录正在执行供应商操作，请等待完成后再编辑。", nil)
+		return
+	}
+	if err != nil {
+		var validation *requestValidationError
+		if errors.As(err, &validation) {
+			BadRequestError(w, validation)
+			return
+		}
+		ServerError(w, err)
+		return
+	}
+	operation, err := h.startDNSOperation(id, false, &claims.UserID)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, "dns update synchronization started", operation)
+}
+
+var (
+	errManagedDNSRevisionConflict = errors.New("managed DNS revision conflict")
+	errManagedDNSOperationRunning = errors.New("managed DNS operation is running")
+)
+
+func (h *handlers) ManagedDNSDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	claims, err := h.requireAdmin(w, r)
+	if err != nil {
+		return
+	}
+	id, err := parsePathID(r.URL.Path, "/api/v1/admin/dns-records/")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	var record model.ManagedDNSRecord
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, id).Error; err != nil {
+			return err
+		}
+		var running int64
+		if err := tx.Model(&model.ProviderOperation{}).Where("resource_type = ? AND resource_id = ? AND status = ?", "dns_record", record.ID, "running").Count(&running).Error; err != nil {
+			return err
+		}
+		if running > 0 || record.Status == dnsStatusSyncing {
+			return errManagedDNSOperationRunning
+		}
+		return tx.Model(&record).Updates(map[string]interface{}{"status": dnsStatusSyncing, "last_error": ""}).Error
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		NotFound(w)
+		return
+	}
+	if errors.Is(err, errManagedDNSOperationRunning) {
+		writeJSON(w, http.StatusConflict, "DNS 记录正在执行供应商操作，请等待完成后再删除。", nil)
+		return
+	}
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	if record.ProviderZoneID != "" && record.ProviderRecordID != "" {
+		var account model.ProviderAccount
+		if err := h.db.First(&account, record.ProviderAccountID).Error; err != nil {
+			h.failManagedDNSDeletion(record.ID, err)
+			ServerError(w, err)
+			return
+		}
+		token, err := h.credentialCipher.Decrypt(account.CredentialCiphertext)
+		if err != nil {
+			h.failManagedDNSDeletion(record.ID, err)
+			ServerError(w, err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		defer cancel()
+		if err := deleteCloudflareDNSRecord(ctx, token, record.ProviderZoneID, record.ProviderRecordID); err != nil && !cloudflareRecordAlreadyAbsent(err) {
+			h.failManagedDNSDeletion(record.ID, err)
+			BadRequest(w, "Cloudflare 远端 DNS 记录删除失败；面板记录已保留，可稍后重试。")
+			return
+		}
+	}
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := createAuditLog(tx, claims, "dns_record.delete", fmt.Sprintf("managed_dns_record:%d", record.ID),
+			fmt.Sprintf("domain=%s type=%s node=%d provider_account=%d", record.DomainName, record.RecordType, record.NodeID, record.ProviderAccountID)); err != nil {
+			return err
+		}
+		return tx.Delete(&model.ManagedDNSRecord{}, record.ID).Error
+	}); err != nil {
+		h.failManagedDNSDeletion(record.ID, err)
+		ServerError(w, err)
+		return
+	}
+	OK(w, map[string]interface{}{"id": record.ID, "deleted": true, "remote_record_deleted": record.ProviderRecordID != ""})
+}
+
+func (h *handlers) failManagedDNSDeletion(recordID uint, err error) {
+	_ = h.db.Model(&model.ManagedDNSRecord{}).Where("id = ?", recordID).Updates(map[string]interface{}{
+		"status": dnsStatusFailed, "last_error": truncateCertificateError(err.Error()),
+	}).Error
+}
+
+func deleteCloudflareDNSRecord(ctx context.Context, token, zoneID, recordID string) error {
+	_, err := cloudflareRequest[json.RawMessage](ctx, http.MethodDelete,
+		fmt.Sprintf("/zones/%s/dns_records/%s", url.PathEscape(zoneID), url.PathEscape(recordID)), token, nil)
+	return err
+}
+
+func cloudflareRecordAlreadyAbsent(err error) bool {
+	var requestErr *cloudflareRequestError
+	return errors.As(err, &requestErr) && requestErr.StatusCode == http.StatusNotFound
+}
+
 func (h *handlers) ManagedDNSSyncHandler(w http.ResponseWriter, r *http.Request) {
 	claims, err := h.requireAdmin(w, r)
 	if err != nil {
@@ -588,7 +775,7 @@ func cloudflareRequest[T any](ctx context.Context, method, path, token string, p
 		if len(messages) == 0 {
 			messages = append(messages, response.Status)
 		}
-		return zero, errors.New(strings.Join(messages, "; "))
+		return zero, &cloudflareRequestError{StatusCode: response.StatusCode, Message: strings.Join(messages, "; ")}
 	}
 	return envelope.Result, nil
 }
