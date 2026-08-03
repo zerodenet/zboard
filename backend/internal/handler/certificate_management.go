@@ -1064,6 +1064,11 @@ func buildCertbotCertificateScript(certificate model.ManagedCertificate, domains
 	for _, argument := range args {
 		quotedArgs = append(quotedArgs, shellQuote(argument))
 	}
+	quotedDomains := make([]string, 0, len(domains))
+	for _, domain := range domains {
+		quotedDomains = append(quotedDomains, shellQuote(domain))
+	}
+	http01PreflightToken := "zboard-http01-preflight-" + stagingID
 	return fmt.Sprintf(`set -eu
 test "$(id -u)" = "0"
 install_certbot() {
@@ -1088,36 +1093,134 @@ install_certbot
 command -v openssl >/dev/null 2>&1
 stage_dir=%s
 install -d -m 0700 "$stage_dir"
-cleanup_challenge() { rm -f "$stage_dir/cloudflare.ini"; }
+http01_challenge_file=""
+cleanup_challenge() {
+  rm -f "$stage_dir/cloudflare.ini"
+  if [ -n "$http01_challenge_file" ]; then rm -f "$http01_challenge_file"; fi
+}
 trap cleanup_challenge EXIT HUP INT TERM
+if [ %s = http-01-webroot ]; then
+  webroot=%s
+  challenge_token=%s
+  challenge_dir="$webroot/.well-known/acme-challenge"
+  http01_challenge_file="$challenge_dir/$challenge_token"
+  install -d -m 0755 "$challenge_dir"
+  printf '%%s' "$challenge_token" > "$http01_challenge_file"
+  chmod 0644 "$http01_challenge_file"
+  fetch_http01_challenge() {
+    if command -v curl >/dev/null 2>&1; then
+      curl --fail --silent --show-error --insecure --location --proto '=http,https' --proto-redir '=http,https' --connect-timeout 5 --max-time 20 "$1"
+    elif command -v wget >/dev/null 2>&1; then
+      wget -qO- --no-check-certificate --timeout=20 "$1"
+    else
+      printf 'ZBOARD_CERT_ERROR=HTTP-01 Webroot preflight requires curl or wget on the node\n' >&2
+      return 1
+    fi
+  }
+  for domain in %s; do
+    challenge_url="http://$domain/.well-known/acme-challenge/$challenge_token"
+    if ! challenge_body="$(fetch_http01_challenge "$challenge_url")"; then
+      printf 'ZBOARD_CERT_ERROR=HTTP-01 Webroot preflight could not fetch %%s; verify that %%s serves %%s\n' "$challenge_url" "$domain" "$webroot" >&2
+      exit 1
+    fi
+    if [ "$challenge_body" != "$challenge_token" ]; then
+      printf 'ZBOARD_CERT_ERROR=HTTP-01 Webroot preflight returned unexpected content for %%s; verify that %%s maps to %%s\n' "$domain" "$challenge_url" "$webroot" >&2
+      exit 1
+    fi
+  done
+  rm -f "$http01_challenge_file"
+  http01_challenge_file=""
+fi
 if [ %s = dns-01 ]; then
   IFS= read -r cloudflare_token
   test -n "$cloudflare_token"
   plugin_installed=0
-  if command -v apt-get >/dev/null 2>&1; then
-    if DEBIAN_FRONTEND=noninteractive apt-get install -y python3-certbot-dns-cloudflare; then plugin_installed=1; fi
-  elif command -v dnf >/dev/null 2>&1; then
-    if dnf install -y python3-certbot-dns-cloudflare; then plugin_installed=1; fi
-  elif command -v yum >/dev/null 2>&1; then
-    if yum install -y python3-certbot-dns-cloudflare; then plugin_installed=1; fi
-  elif command -v apk >/dev/null 2>&1; then
-    if apk add --no-cache certbot-dns-cloudflare; then plugin_installed=1; fi
+  python_ready=0
+  if "$certbot_bin" plugins 2>/dev/null | grep -q 'dns-cloudflare'; then
+    plugin_installed=1
   fi
   if [ "$plugin_installed" = 0 ]; then
     if command -v apt-get >/dev/null 2>&1; then
-      DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv
+      DEBIAN_FRONTEND=noninteractive apt-get update >/dev/null 2>&1 || true
+      if DEBIAN_FRONTEND=noninteractive apt-get install -y python3-certbot-dns-cloudflare; then plugin_installed=1; fi
     elif command -v dnf >/dev/null 2>&1; then
-      dnf install -y python3
+      if dnf install -y python3-certbot-dns-cloudflare; then plugin_installed=1; fi
     elif command -v yum >/dev/null 2>&1; then
-      yum install -y python3
+      if yum install -y python3-certbot-dns-cloudflare; then plugin_installed=1; fi
     elif command -v apk >/dev/null 2>&1; then
-      apk add --no-cache python3 py3-pip
+      if apk add --no-cache certbot-dns-cloudflare; then plugin_installed=1; fi
     fi
-    command -v python3 >/dev/null 2>&1
+  fi
+  if [ "$plugin_installed" = 1 ] && ! "$certbot_bin" plugins 2>/dev/null | grep -q 'dns-cloudflare'; then
+    plugin_installed=0
+  fi
+  if [ "$plugin_installed" = 0 ]; then
+    if command -v python3 >/dev/null 2>&1; then
+      python_ready=1
+    elif command -v apt-get >/dev/null 2>&1; then
+      if DEBIAN_FRONTEND=noninteractive apt-get install -y python3; then python_ready=1; fi
+    elif command -v dnf >/dev/null 2>&1; then
+      if dnf install -y python3; then python_ready=1; fi
+    elif command -v yum >/dev/null 2>&1; then
+      if yum install -y python3; then python_ready=1; fi
+    elif command -v apk >/dev/null 2>&1; then
+      if apk add --no-cache python3; then python_ready=1; fi
+    fi
+  fi
+  if [ "$plugin_installed" = 0 ] && [ "$python_ready" = 1 ]; then
     certbot_venv=/opt/zboard-certbot
-    python3 -m venv "$certbot_venv"
-    "$certbot_venv/bin/pip" install --disable-pip-version-check --upgrade certbot certbot-dns-cloudflare
-    certbot_bin="$certbot_venv/bin/certbot"
+    venv_ready=0
+    if python3 -m venv "$certbot_venv" >/dev/null 2>&1; then
+      venv_ready=1
+    elif command -v apt-get >/dev/null 2>&1; then
+      if DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv && python3 -m venv "$certbot_venv"; then
+        venv_ready=1
+      elif python_version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" &&
+        DEBIAN_FRONTEND=noninteractive apt-get install -y "python${python_version}-venv" &&
+        python3 -m venv "$certbot_venv"; then
+        venv_ready=1
+      fi
+    fi
+    if [ "$venv_ready" = 1 ]; then
+      if "$certbot_venv/bin/pip" install --disable-pip-version-check --upgrade certbot certbot-dns-cloudflare; then
+        certbot_bin="$certbot_venv/bin/certbot"
+        plugin_installed=1
+      fi
+    fi
+  fi
+  if [ "$plugin_installed" = 0 ] && [ "$python_ready" = 1 ]; then
+    pip_ready=0
+    if python3 -m pip --version >/dev/null 2>&1; then
+      pip_ready=1
+    elif python3 -m ensurepip --upgrade >/dev/null 2>&1 && python3 -m pip --version >/dev/null 2>&1; then
+      pip_ready=1
+    elif command -v apt-get >/dev/null 2>&1; then
+      if DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip && python3 -m pip --version >/dev/null 2>&1; then pip_ready=1; fi
+    elif command -v dnf >/dev/null 2>&1; then
+      if dnf install -y python3-pip && python3 -m pip --version >/dev/null 2>&1; then pip_ready=1; fi
+    elif command -v yum >/dev/null 2>&1; then
+      if yum install -y python3-pip && python3 -m pip --version >/dev/null 2>&1; then pip_ready=1; fi
+    elif command -v apk >/dev/null 2>&1; then
+      if apk add --no-cache py3-pip && python3 -m pip --version >/dev/null 2>&1; then pip_ready=1; fi
+    fi
+    if [ "$pip_ready" = 1 ]; then
+      certbot_target=/opt/zboard-certbot-packages
+      certbot_wrapper=/opt/zboard-certbot-run
+      install -d -m 0755 "$certbot_target"
+      if python3 -m pip install --disable-pip-version-check --upgrade --target "$certbot_target" certbot certbot-dns-cloudflare; then
+        cat > "$certbot_wrapper" <<'ZBOARD_CERTBOT_WRAPPER'
+#!/bin/sh
+PYTHONPATH=/opt/zboard-certbot-packages exec python3 -m certbot "$@"
+ZBOARD_CERTBOT_WRAPPER
+        chmod 0755 "$certbot_wrapper"
+        certbot_bin="$certbot_wrapper"
+        plugin_installed=1
+      fi
+    fi
+  fi
+  if [ "$plugin_installed" = 0 ] || ! "$certbot_bin" plugins 2>/dev/null | grep -q 'dns-cloudflare'; then
+    printf 'ZBOARD_CERT_ERROR=unable to install Certbot Cloudflare DNS plugin; system package, Python venv, and pip target fallbacks failed\n' >&2
+    exit 1
   fi
   printf 'dns_cloudflare_api_token = %%s\n' "$cloudflare_token" > "$stage_dir/cloudflare.ini"
   chmod 0600 "$stage_dir/cloudflare.ini"
@@ -1145,7 +1248,9 @@ ln -sfn "$generation" "$base_dir/current.next"
 mv -Tf "$base_dir/current.next" "$base_dir/current"
 rm -rf "$stage_dir"
 printf 'ZBOARD_CERT_DER_BASE64=%%s\n' "$(openssl x509 -in "$base_dir/current/fullchain.pem" -outform DER | base64 | tr -d '\r\n')"
-`, shellQuote(stageDir), shellQuote(certificate.ChallengeType), strings.Join(quotedArgs, " "), shellQuote("/etc/letsencrypt/live/"+certName), shellQuote(baseDir))
+`, shellQuote(stageDir), shellQuote(certificate.ChallengeType), shellQuote(certificate.WebrootPath), shellQuote(http01PreflightToken),
+		strings.Join(quotedDomains, " "), shellQuote(certificate.ChallengeType), strings.Join(quotedArgs, " "),
+		shellQuote("/etc/letsencrypt/live/"+certName), shellQuote(baseDir))
 }
 
 func parseIssuedCertificateMetadata(output string, domains []string, now time.Time) (issuedCertificateMetadata, error) {
