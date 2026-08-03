@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +25,11 @@ func TestBuildCertbotCertificateScriptUsesDNS01WithoutStandalonePort(t *testing.
 			t.Fatalf("DNS-01 script does not contain %q", expected)
 		}
 	}
-	for _, expected := range []string{"python3-certbot-dns-cloudflare", "python3 -m venv", "certbot-dns-cloudflare", `"$certbot_bin"`} {
+	for _, expected := range []string{
+		"python3-certbot-dns-cloudflare", "plugins 2>/dev/null | grep -q 'dns-cloudflare'", "python3 -m venv",
+		"python3 -m ensurepip", "python3-pip", "--target", "certbot-dns-cloudflare", `"$certbot_bin"`,
+		"ZBOARD_CERT_ERROR=unable to install Certbot Cloudflare DNS plugin",
+	} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("DNS-01 fallback script does not contain %q", expected)
 		}
@@ -75,7 +80,11 @@ func TestBuildCertbotCertificateScriptUsesWebrootWithoutBindingPort(t *testing.T
 		WebrootPath:   "/var/www/acme",
 	}, []string{"edge.example.com"}, false, "stage-id")
 
-	for _, expected := range []string{"--webroot", "--webroot-path", "/var/www/acme"} {
+	for _, expected := range []string{
+		"--webroot", "--webroot-path", "/var/www/acme", "zboard-http01-preflight-stage-id",
+		".well-known/acme-challenge", "curl --fail", "wget -qO-", "edge.example.com",
+		"ZBOARD_CERT_ERROR=HTTP-01 Webroot preflight",
+	} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("webroot script does not contain %q", expected)
 		}
@@ -94,6 +103,25 @@ func TestValidNodeWebrootUsesRemotePOSIXSemantics(t *testing.T) {
 	for _, invalid := range []string{"", "/", "var/www/acme", "/var/www/../acme", `C:\www\acme`} {
 		if validNodeWebroot(invalid) {
 			t.Fatalf("invalid remote webroot %q was accepted", invalid)
+		}
+	}
+}
+
+func TestBuildCertbotCertificateScriptsHaveValidShellSyntax(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("POSIX shell is not available")
+	}
+	certificates := []model.ManagedCertificate{
+		{ID: 9, ContactEmail: "admin@example.com", Environment: certificateEnvironmentProduction, ChallengeType: certificateChallengeDNS01},
+		{ID: 10, ContactEmail: "admin@example.com", Environment: certificateEnvironmentProduction, ChallengeType: certificateChallengeHTTP01Webroot, WebrootPath: "/var/www/acme"},
+	}
+	for _, certificate := range certificates {
+		script := buildCertbotCertificateScript(certificate, []string{"edge.example.com"}, false, "stage-id")
+		command := exec.Command(sh, "-n")
+		command.Stdin = strings.NewReader(script)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("challenge %s generated invalid shell: %v: %s", certificate.ChallengeType, err, output)
 		}
 	}
 }
