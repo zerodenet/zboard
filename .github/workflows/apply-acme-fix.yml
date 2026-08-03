@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - agent/fix-acme-certificate-automation
+  pull_request:
+    branches:
+      - develop
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
