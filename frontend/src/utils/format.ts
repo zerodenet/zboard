@@ -1,3 +1,12 @@
+function byteFractionDigits(value: number): number {
+  let digits = value >= 100 ? 0 : value >= 10 ? 1 : 2
+  if (Number.isInteger(value)) return digits
+
+  const nearestWhole = Math.round(value)
+  while (digits < 4 && Number(value.toFixed(digits)) === nearestWhole) digits += 1
+  return digits
+}
+
 export function formatBytes(bytes: number | undefined | null): string {
   if (bytes === null || bytes === undefined) return '—'
   const value = Number(bytes)
@@ -7,8 +16,7 @@ export function formatBytes(bytes: number | undefined | null): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
   const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1)
   const normalized = value / 1024 ** index
-  const digits = normalized >= 100 ? 0 : normalized >= 10 ? 1 : 2
-  return `${normalized.toFixed(digits)} ${units[index]}`
+  return `${normalized.toFixed(byteFractionDigits(normalized))} ${units[index]}`
 }
 
 export function formatSignedBytes(bytes: number | undefined | null): string {
