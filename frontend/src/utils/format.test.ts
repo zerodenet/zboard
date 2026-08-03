@@ -16,6 +16,16 @@ describe('formatters', () => {
     expect(formatCurrency(undefined)).toBe('—')
   })
 
+  it('does not round remaining quota back to the full allowance', () => {
+    const gibibyte = 1024 ** 3
+    const mebibyte = 1024 ** 2
+    const remaining = 100 * gibibyte - Math.round(3.23 * mebibyte)
+
+    expect(formatBytes(100 * gibibyte)).toBe('100 GB')
+    expect(formatBytes(remaining)).toBe('99.997 GB')
+    expect(formatBytes(2 * mebibyte - 100)).toBe('1.9999 MB')
+  })
+
   it('never echoes invalid or missing timestamps', () => {
     expect(formatDateTime()).toBe('—')
     expect(formatDateTime('not-a-date')).toBe('无效时间')
