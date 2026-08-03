@@ -51,7 +51,7 @@
             <SortableHeader field="name" label="服务" :sort-field="effectiveSortField" :direction="effectiveSortDirection" pinned="start" @sort="setSort" />
             <SortableHeader field="node_id" label="承载节点" :sort-field="effectiveSortField" :direction="effectiveSortDirection" :priority="2" @sort="setSort" />
             <SortableHeader field="protocol" label="协议" :sort-field="effectiveSortField" :direction="effectiveSortDirection" :priority="2" @sort="setSort" />
-            <th data-column-priority="3">对外入口</th><th>服务状态</th><th>发布状态</th><th class="numeric-column" data-column-priority="3">连接数</th><th class="numeric-column" data-column-priority="3">凭证数</th><th data-column-priority="3">今日流量</th>
+            <th data-column-priority="3">对外入口</th><th>服务状态</th><th>发布状态</th><th class="numeric-column" data-column-priority="3">活跃用户</th><th class="numeric-column" data-column-priority="3">活跃连接</th><th data-column-priority="3">今日流量</th>
             <SortableHeader field="multiplier" label="倍率" :sort-field="effectiveSortField" :direction="effectiveSortDirection" numeric :priority="3" @sort="setSort" />
             <th data-column-priority="3">最近使用</th><th class="table-action-column"><span class="sr-only">操作</span></th>
           </tr></thead>
@@ -66,8 +66,8 @@
               <td class="mono" data-column-priority="3">{{ endpoint.address }}:{{ endpoint.public_port || endpoint.port }}</td>
               <td><StatusBadge v-if="!endpoint.kernel_supported" tone="warning" icon="alert">内核不支持</StatusBadge><StatusBadge v-else :tone="endpoint.is_active ? 'success' : 'neutral'" :icon="endpoint.is_active ? 'check' : 'minus'">{{ endpoint.is_active ? '运行中' : '已停用' }}</StatusBadge></td>
               <td><StatusBadge :tone="deploymentTone(endpoint.latest_deployment?.status)" :icon="deploymentIcon(endpoint.latest_deployment?.status)">{{ deploymentLabel(endpoint.latest_deployment?.status) }}</StatusBadge></td>
+              <td class="numeric-column" data-column-priority="3">{{ formatNumber(endpoint.usage?.active_users) }}</td>
               <td class="numeric-column" data-column-priority="3">{{ formatNumber(endpoint.usage?.active_flows) }}</td>
-              <td class="numeric-column" data-column-priority="3">{{ formatNumber(endpoint.usage?.active_credentials) }}</td>
               <td data-column-priority="3">{{ formatBytes(endpoint.usage?.used_bytes_today) }}</td>
               <td class="numeric-column" data-column-priority="3">{{ formatMultiplierNumber(endpoint.multiplier_milli) }}</td>
               <td data-column-priority="3"><TimeBadge :value="endpoint.usage?.last_used_at" /></td>
@@ -101,6 +101,7 @@
           <div><span>对外入口</span><strong class="mono">{{ selectedEndpointDetail.address }}:{{ selectedEndpointDetail.public_port || selectedEndpointDetail.port }}</strong></div>
           <div><span>监听端口</span><strong>{{ formatNumber(selectedEndpointDetail.port) }}</strong></div>
           <div><span>计费倍率</span><strong>{{ formatMultiplierNumber(selectedEndpointDetail.multiplier_milli) }}×</strong></div>
+          <div><span>活跃用户</span><strong>{{ formatNumber(selectedEndpointDetail.usage?.active_users) }}</strong></div>
           <div><span>活跃连接</span><strong>{{ formatNumber(selectedEndpointDetail.usage?.active_flows) }}</strong></div>
           <div><span>活跃凭证</span><strong>{{ formatNumber(selectedEndpointDetail.usage?.active_credentials) }}</strong></div>
           <div><span>今日流量</span><strong>{{ formatBytes(selectedEndpointDetail.usage?.used_bytes_today) }}</strong></div>
@@ -171,6 +172,15 @@
             <FormField v-if="form.protocol === 'vmess'" v-slot="{ controlAttrs }" label="VMess 加密方式"><UiSelect v-model="structured.cipher" v-bind="controlAttrs" :options="vmessCipherOptions" /></FormField>
             <FormField v-if="form.protocol === 'shadowsocks'" v-slot="{ controlAttrs }" label="Shadowsocks 加密方式"><UiSelect v-model="structured.cipher" v-bind="controlAttrs" :options="shadowsocksCipherOptions" /></FormField>
             <FormField v-if="form.protocol === 'vless'" v-slot="{ controlAttrs }" label="传输安全"><UiSelect v-model="structured.security" v-bind="controlAttrs" :options="securityOptions" /></FormField>
+            <template v-if="form.protocol === 'vless' && structured.security === 'reality'">
+              <div class="generated-config-note field-full"><UiIcon name="shield" /><div><strong>VLESS + Reality</strong><p>面板生成匹配的 X25519 密钥与 short ID；私钥仅进入加密保存的服务端配置，订阅只下发公钥。</p></div><UiButton variant="secondary" type="button" :loading="realityKeyBusy" @click="regenerateRealityKeys">重新生成密钥</UiButton></div>
+              <FormField v-slot="{ controlAttrs }" label="一键场景模板" hint="模板会一次填入推荐 SNI、客户端指纹、成对密钥和 Short ID；应用后仍可按实际网络调整。" full><div class="input-with-action"><UiSelect v-model="realityPreset" v-bind="controlAttrs" :options="realityPresetOptions" /><UiButton variant="secondary" type="button" :loading="realityTemplateBusy" @click="applyRealityTemplate">应用模板</UiButton></div></FormField>
+              <FormField v-slot="{ controlAttrs }" label="伪装域名（SNI）" name="protocol-reality-server-name" :error="editorErrors.fields['structured.reality_server_name']" required><UiInput v-model.trim="structured.reality_server_name" v-bind="controlAttrs" placeholder="www.microsoft.com" /></FormField>
+              <FormField v-slot="{ controlAttrs }" label="Short ID" name="protocol-reality-short-id" hint="2–16 位偶数长度十六进制字符串。" :error="editorErrors.fields['structured.reality_short_id']" required><UiInput v-model.trim="structured.reality_short_id" v-bind="controlAttrs" class="mono" /></FormField>
+              <FormField v-slot="{ controlAttrs }" label="客户端指纹"><UiSelect v-model="structured.reality_fingerprint" v-bind="controlAttrs" :options="realityFingerprintOptions" /></FormField>
+              <FormField v-slot="{ controlAttrs }" label="Reality 公钥" full><UiInput v-model.trim="structured.reality_public_key" v-bind="controlAttrs" class="mono" readonly /></FormField>
+              <FormField v-slot="{ controlAttrs }" label="Reality 私钥" full><UiInput v-model.trim="structured.reality_private_key" v-bind="controlAttrs" class="mono" type="password" readonly /></FormField>
+            </template>
             <template v-if="usesTLS">
               <FormField v-slot="{ controlAttrs }" label="TLS 证书来源" name="protocol-managed-certificate" :error="editorErrors.fields.managed_certificate_id" hint="选择本节点已签发证书；续期后会自动重新发布完整节点配置。" full><UiSelect v-model="form.managed_certificate_id" v-bind="controlAttrs" :options="managedCertificateOptions" /></FormField>
               <FormField v-if="!form.managed_certificate_id" v-slot="{ controlAttrs }" label="证书文件路径" name="protocol-cert-path" :error="editorErrors.fields['structured.cert_path']" :required="requiresTLSFiles"><UiInput v-model.trim="structured.cert_path" v-bind="controlAttrs" placeholder="/etc/zero/tls/cert.pem" /></FormField>
@@ -221,7 +231,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointsPage, getVersion, updateProtocolEndpoint, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolKernelCapability } from '../api/client'
+import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, updateProtocolEndpoint, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolKernelCapability } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -276,7 +286,9 @@ const activeFilterOptions = [{ label: '全部服务状态', value: '' }, { label
 const deploymentFilterOptions = [{ label: '全部发布状态', value: '' }, { label: '已生效', value: 'succeeded' }, { label: '发布中', value: 'running' }, { label: '发布失败', value: 'failed' }, { label: '未发布', value: 'never' }]
 const vmessCipherOptions = [{ label: 'AES-128-GCM（推荐）', value: 'aes-128-gcm' }, { label: 'ChaCha20-Poly1305', value: 'chacha20-poly1305' }, { label: '不额外加密', value: 'none' }]
 const shadowsocksCipherOptions = [{ label: 'AES-128-GCM', value: 'aes-128-gcm' }, { label: 'AES-256-GCM', value: 'aes-256-gcm' }, { label: 'ChaCha20-Poly1305（推荐）', value: 'chacha20-ietf-poly1305' }]
-const securityOptions = [{ label: '无 TLS（直接连接）', value: 'none' }, { label: 'TLS 证书', value: 'tls' }]
+const securityOptions = [{ label: '无 TLS（直接连接）', value: 'none' }, { label: 'TLS 证书', value: 'tls' }, { label: 'Reality', value: 'reality' }]
+const realityFingerprintOptions = [{ label: 'Chrome', value: 'chrome' }, { label: 'Firefox', value: 'firefox' }, { label: 'Safari', value: 'safari' }, { label: 'Edge', value: 'edge' }]
+const realityPresetOptions = [{ label: '通用兼容（推荐）', value: 'compatible' }, { label: '全球 CDN', value: 'cdn' }, { label: 'Apple 生态', value: 'apple' }]
 const wizardSteps = [{ id: 1, title: '节点与入口', caption: '选择 VPS' }, { id: 2, title: '服务参数', caption: '系统管凭证' }, { id: 3, title: '确认发布', caption: '检查配置' }]
 const route = useRoute()
 const router = useRouter()
@@ -311,13 +323,13 @@ const overviewCounts = reactive<Record<ProtocolDeploymentStatus, number>>({
 })
 const deploymentOffset = ref((Math.max(1, Number(route.query.deployment_page) || 1) - 1) * 25)
 const deploymentLimit = ref(allowedPageSizes.includes(Number(route.query.deployment_limit)) ? Number(route.query.deployment_limit) : 25)
-const saving = ref(false), deployingID = ref(0), deletingID = ref(0), detailLoadingID = ref(0), editorOpen = ref(false), editorStep = ref(1)
+const saving = ref(false), realityKeyBusy = ref(false), realityTemplateBusy = ref(false), realityPreset = ref('compatible'), deployingID = ref(0), deletingID = ref(0), detailLoadingID = ref(0), editorOpen = ref(false), editorStep = ref(1)
 const copySourceID = ref(0)
 const originalNodeID = ref(0)
 const bulkBusy = ref<'' | 'deploy' | 'enable' | 'disable'>('')
 const message = ref(''), editorError = ref('')
 const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, is_active: true, config: '{}', client_config: '{}', optional_config: '{}', tags: '[]' })
-const emptyStructured = () => ({ credential: randomUUID(), username: 'subscriber', password: randomSecret(), cipher: 'aes-128-gcm', security: 'none', cert_path: '', key_path: '', server_name: '' })
+const emptyStructured = () => ({ credential: randomUUID(), username: 'subscriber', password: randomSecret(), cipher: 'aes-128-gcm', security: 'none', cert_path: '', key_path: '', server_name: '', reality_private_key: '', reality_public_key: '', reality_short_id: '', reality_server_name: '', reality_fingerprint: 'chrome' })
 const form = reactive<any>(emptyForm())
 const structured = reactive<any>(emptyStructured())
 const protocolFormElement = ref<HTMLElement | null>(null)
@@ -408,7 +420,11 @@ for (const field of Object.keys(protocolFieldMap)) {
 for (const [source, field] of [
   [() => structured.username, 'structured.username'], [() => structured.password, 'structured.password'],
   [() => structured.cert_path, 'structured.cert_path'], [() => structured.key_path, 'structured.key_path'],
+  [() => structured.reality_server_name, 'structured.reality_server_name'], [() => structured.reality_short_id, 'structured.reality_short_id'],
 ] as Array<[() => unknown, string]>) watch(source, () => editorErrors.clear(field))
+watch(() => structured.security, value => {
+  if (form.protocol === 'vless' && value === 'reality' && !structured.reality_private_key) void regenerateRealityKeys()
+})
 const effectiveSortField = computed(() => groupedByNode.value ? 'node_id' : sortField.value)
 const effectiveSortDirection = computed<'asc' | 'desc'>(() => groupedByNode.value ? 'asc' : sortDirection.value)
 const protocolStatusOverview = computed(() => [
@@ -553,6 +569,41 @@ function handleNodeSelect(node: AdminNodeListItem | null) {
 function useNodeAddress() { if (selectedNode.value?.address) form.address = selectedNode.value.address }
 function suggestName() { if (!selectedNode.value) return; form.name = `${selectedNode.value.name} ${protocolLabel(form.protocol)}` }
 function handleProtocolChange() { if (!form.id) suggestName(); structured.cipher = form.protocol === 'shadowsocks' ? 'chacha20-ietf-poly1305' : 'aes-128-gcm'; structured.security = form.protocol === 'vless' ? 'none' : 'tls'; if (!['vless', 'vmess', 'trojan', 'hysteria2'].includes(form.protocol)) form.managed_certificate_id = 0 }
+async function regenerateRealityKeys() {
+  if (realityKeyBusy.value) return
+  realityKeyBusy.value = true
+  editorError.value = ''
+  try {
+    const pair = await generateRealityKeyPair()
+    structured.reality_private_key = pair.private_key
+    structured.reality_public_key = pair.public_key
+    structured.reality_short_id = pair.short_id
+    if (!structured.reality_server_name) structured.reality_server_name = form.address || ''
+  } catch (cause: any) {
+    editorError.value = cause?.response?.data?.message || 'Reality 密钥生成失败。'
+  } finally {
+    realityKeyBusy.value = false
+  }
+}
+
+async function applyRealityTemplate() {
+  if (realityTemplateBusy.value) return
+  realityTemplateBusy.value = true
+  editorError.value = ''
+  try {
+    const template = await generateRealityTemplate(realityPreset.value)
+    structured.security = 'reality'
+    structured.reality_private_key = template.private_key
+    structured.reality_public_key = template.public_key
+    structured.reality_short_id = template.short_id
+    structured.reality_server_name = template.server_name
+    structured.reality_fingerprint = template.client_fingerprint
+  } catch (cause: any) {
+    editorError.value = cause?.response?.data?.message || 'Reality 场景模板应用失败。'
+  } finally {
+    realityTemplateBusy.value = false
+  }
+}
 async function loadManagedCertificates(nodeID: number) {
   if (!nodeID) { managedCertificates.value = []; return }
   try { managedCertificates.value = (await fetchManagedCertificatesPage({ nodeId: nodeID, limit: 200 })).items }
@@ -628,17 +679,36 @@ function readStructuredConfig() {
   structured.username = server.users?.[0]?.username || client.username || 'subscriber'
   structured.password = server.password || server.users?.[0]?.password || client.password || randomSecret()
   structured.cipher = server.cipher || server.users?.[0]?.cipher || client.cipher || (form.protocol === 'shadowsocks' ? 'chacha20-ietf-poly1305' : 'aes-128-gcm')
-  structured.security = server.tls ? 'tls' : 'none'
+  structured.security = server.reality ? 'reality' : server.tls ? 'tls' : 'none'
   structured.cert_path = server.tls?.cert_path || server.cert_path || ''
   structured.key_path = server.tls?.key_path || server.key_path || ''
   structured.server_name = client.tls?.server_name || client.sni || server.sni || form.address || ''
+  structured.reality_private_key = server.reality?.private_key || ''
+  structured.reality_public_key = client.reality?.public_key || ''
+  structured.reality_short_id = client.reality?.short_id || server.reality?.short_ids?.[0] || ''
+  structured.reality_server_name = client.reality?.server_name || server.reality?.server_name || form.address || ''
+  structured.reality_fingerprint = client.reality?.client_fingerprint || 'chrome'
 }
 function buildGeneratedConfigs() {
   const existingServer: any = parseObject(form.config), existingClient: any = parseObject(form.client_config)
   const server: any = String(existingServer.type || '').toLowerCase() === form.protocol ? { ...existingServer, type: form.protocol } : { type: form.protocol }
   const client: any = String(existingClient.type || '').toLowerCase() === form.protocol ? { ...existingClient, type: form.protocol } : { type: form.protocol }
   client.server = form.address; client.port = Number(form.public_port)
-  if (form.protocol === 'vless') { server.users = [{ ...(server.users?.[0] || {}), id: structured.credential }]; client.id = structured.credential; if (structured.security === 'tls') { server.tls = { ...(server.tls || {}), cert_path: structured.cert_path, key_path: structured.key_path }; client.tls = { ...(client.tls || {}), server_name: structured.server_name || form.address } } else { delete server.tls; delete client.tls } }
+  if (form.protocol === 'vless') {
+    server.users = [{ ...(server.users?.[0] || {}), id: structured.credential }]
+    client.id = structured.credential
+    if (structured.security === 'tls') {
+      server.tls = { ...(server.tls || {}), cert_path: structured.cert_path, key_path: structured.key_path }
+      client.tls = { ...(client.tls || {}), server_name: structured.server_name || form.address }
+      delete server.reality; delete client.reality
+    } else if (structured.security === 'reality') {
+      server.reality = { ...(server.reality || {}), private_key: structured.reality_private_key, short_ids: [structured.reality_short_id], server_name: structured.reality_server_name }
+      client.reality = { ...(client.reality || {}), public_key: structured.reality_public_key, short_id: structured.reality_short_id, server_name: structured.reality_server_name, client_fingerprint: structured.reality_fingerprint }
+      delete server.tls; delete client.tls
+    } else {
+      delete server.tls; delete client.tls; delete server.reality; delete client.reality
+    }
+  }
   else if (form.protocol === 'vmess') { server.users = [{ ...(server.users?.[0] || {}), id: structured.credential, cipher: structured.cipher }]; server.tls = { ...(server.tls || {}), cert_path: structured.cert_path, key_path: structured.key_path }; Object.assign(client, { id: structured.credential, cipher: structured.cipher, tls: { ...(client.tls || {}), server_name: structured.server_name || form.address } }) }
   else if (form.protocol === 'trojan') { Object.assign(server, { password: structured.password, sni: structured.server_name || form.address, tls: { ...(server.tls || {}), cert_path: structured.cert_path, key_path: structured.key_path } }); Object.assign(client, { password: structured.password, sni: structured.server_name || form.address }) }
   else if (form.protocol === 'shadowsocks') { Object.assign(server, { password: structured.password, cipher: structured.cipher }); Object.assign(client, { password: structured.password, cipher: structured.cipher }) }
@@ -664,6 +734,11 @@ async function validateStep(step: number) {
     if (!form.managed_certificate_id && form.protocol === 'hysteria2' && Boolean(structured.cert_path.trim()) !== Boolean(structured.key_path.trim())) {
       fields['structured.cert_path'] = '证书和私钥路径需要同时填写，或同时留空。'
       fields['structured.key_path'] = '证书和私钥路径需要同时填写，或同时留空。'
+    }
+    if (form.protocol === 'vless' && structured.security === 'reality') {
+      if (!structured.reality_private_key || !structured.reality_public_key) fields['structured.reality_short_id'] = '请生成 Reality 密钥。'
+      if (!/^[0-9a-fA-F]{2,16}$/.test(structured.reality_short_id) || structured.reality_short_id.length % 2 !== 0) fields['structured.reality_short_id'] = 'Short ID 必须是 2–16 位偶数长度十六进制字符串。'
+      if (!structured.reality_server_name.trim()) fields['structured.reality_server_name'] = '请输入 Reality 伪装域名。'
     }
   }
   editorStep.value = step

@@ -2709,6 +2709,7 @@ type protocolEndpointAdminDetail struct {
 
 type protocolEndpointUsage struct {
 	ActiveFlows       int64      `json:"active_flows"`
+	ActiveUsers       int64      `json:"active_users"`
 	ActiveCredentials int64      `json:"active_credentials"`
 	LastUsedAt        *time.Time `json:"last_used_at,omitempty"`
 	UsedBytesToday    int64      `json:"used_bytes_today"`
@@ -3056,18 +3057,21 @@ func (h *handlers) loadProtocolEndpointUsageBatch(endpoints []model.ProtocolEndp
 	}
 	type countRow struct {
 		ProtocolEndpointID uint
-		Count              int64
+		ActiveFlows        int64
+		ActiveUsers        int64
 	}
 	flowRows := make([]countRow, 0, len(ids))
 	if err := h.db.Model(&model.FlowUsage{}).
-		Select("protocol_endpoint_id, COUNT(*) AS count").
-		Where("protocol_endpoint_id IN ? AND status = ? AND last_seen_at >= ?", ids, "active", now.Add(-2*time.Minute)).
-		Group("protocol_endpoint_id").Scan(&flowRows).Error; err != nil {
+		Select("flow_usages.protocol_endpoint_id, COUNT(*) AS active_flows, COUNT(DISTINCT subscriptions.user_id) AS active_users").
+		Joins("JOIN subscriptions ON subscriptions.id = flow_usages.subscription_id").
+		Where("flow_usages.protocol_endpoint_id IN ? AND flow_usages.status = ? AND flow_usages.last_seen_at >= ?", ids, "active", now.Add(-protocolActivityWindow)).
+		Group("flow_usages.protocol_endpoint_id").Scan(&flowRows).Error; err != nil {
 		return nil, err
 	}
 	for _, row := range flowRows {
 		usage := usageByEndpoint[row.ProtocolEndpointID]
-		usage.ActiveFlows = row.Count
+		usage.ActiveFlows = row.ActiveFlows
+		usage.ActiveUsers = row.ActiveUsers
 		usageByEndpoint[row.ProtocolEndpointID] = usage
 	}
 	type credentialRow struct {
@@ -6981,6 +6985,11 @@ func validateNodeProtocolConfigs(protocol, serverConfig, clientConfig string) er
 	} else if strings.EqualFold(protocol, "mieru") {
 		if clientType, _ := clientObject["type"].(string); !strings.EqualFold(strings.TrimSpace(clientType), "mieru") {
 			fields["client_config"] = "Mieru 客户端配置的 type 必须为 mieru。"
+		}
+	}
+	if len(fields) == 0 && strings.EqualFold(protocol, "vless") {
+		if err := validateVLESSRealityConfigs(serverObject, clientObject); err != nil {
+			return err
 		}
 	}
 	if len(fields) > 0 {

@@ -291,6 +291,26 @@ export async function fetchNode(id: number): Promise<AdminNodeDetail> {
 	return unwrap(response)
 }
 
+export interface NodeLoadSnapshot {
+	node_id: number
+	sampled_at: string
+	cpu_core_count: number
+	load_average_1: number
+	load_average_5: number
+	load_average_15: number
+	memory_total_bytes: number
+	memory_available_bytes: number
+	root_total_bytes: number
+	root_available_bytes: number
+	uptime_seconds: number
+	latency_ms: number
+}
+
+export async function fetchNodeLoad(id: number): Promise<NodeLoadSnapshot> {
+	const response = await api.get(`/nodes/${id}/load`)
+	return unwrap(response)
+}
+
 export async function createNode(payload: any) {
   const response = await api.post('/nodes', payload)
   return unwrap(response)
@@ -447,8 +467,31 @@ export async function revokeNodeReportCredential(nodeId: number) {
 }
 
 export async function createProtocolEndpoint(payload: any) {
-	const response = await api.post('/admin/protocol-endpoints', payload)
+  const response = await api.post('/admin/protocol-endpoints', payload)
   return unwrap(response)
+}
+
+export interface RealityKeyPair {
+	private_key: string
+	public_key: string
+	short_id: string
+}
+
+export async function generateRealityKeyPair(): Promise<RealityKeyPair> {
+	const response = await api.post('/admin/protocol-endpoints/reality-keypair')
+	return unwrap(response)
+}
+
+export interface RealityTemplate extends RealityKeyPair {
+	preset: string
+	label: string
+	server_name: string
+	client_fingerprint: string
+}
+
+export async function generateRealityTemplate(preset = 'compatible'): Promise<RealityTemplate> {
+	const response = await api.post('/admin/protocol-endpoints/reality-template', { preset })
+	return unwrap(response)
 }
 
 export async function fetchProtocolEndpoints(nodeId?: number) {
@@ -476,6 +519,7 @@ export interface ProtocolEndpointListItem {
 	sort_order: number
 	usage: {
 		active_flows: number
+		active_users: number
 		active_credentials: number
 		last_used_at?: string
 		used_bytes_today: number
@@ -1148,6 +1192,27 @@ export async function fetchAdminSubscriptionDetail(id: number, options: ApiReque
 export async function fetchSubscriptionAccess() {
   const response = await api.get('/subscription/access')
   return unwrap(response) || { configured: false }
+}
+
+export interface AccountProtocolLoadItem {
+	protocol_endpoint_id: number
+	name: string
+	region: string
+	protocol: string
+	active_users: number
+	active_flows: number
+	last_activity_at?: string
+}
+
+export interface AccountProtocolLoadSnapshot {
+	sampled_at: string
+	activity_window_seconds: number
+	items: AccountProtocolLoadItem[]
+}
+
+export async function fetchAccountProtocolLoads(): Promise<AccountProtocolLoadSnapshot> {
+	const response = await api.get('/subscription/protocol-loads')
+	return unwrap(response)
 }
 
 export async function rotateSubscriptionAccess() {

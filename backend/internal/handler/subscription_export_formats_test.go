@@ -132,6 +132,10 @@ func TestRenderZnetSinkSubscriptionProducesZeroConfig(t *testing.T) {
 	if document.Outbounds[4].Protocol["server"] != "vless.example.com" || document.Outbounds[4].Protocol["port"] != float64(443) {
 		t.Fatalf("VLESS server contract = %#v", document.Outbounds[4].Protocol)
 	}
+	zeroReality, ok := document.Outbounds[4].Protocol["reality"].(map[string]interface{})
+	if !ok || zeroReality["client_fingerprint"] != "firefox" {
+		t.Fatalf("Zero VLESS Reality = %#v", document.Outbounds[4].Protocol["reality"])
+	}
 	if len(document.OutboundGroups) != 2 || document.OutboundGroups[0].Type != "selector" || len(document.OutboundGroups[0].Outbounds) != 9 || document.OutboundGroups[1].Type != "url_test" {
 		t.Fatalf("outbound_groups = %#v", document.OutboundGroups)
 	}
@@ -165,6 +169,9 @@ func TestRenderClashSubscriptionConvertsProtocolFields(t *testing.T) {
 	vless := findExportByType(t, document.Proxies, "vless")
 	if vless["uuid"] != "11111111-1111-4111-8111-111111111111" || vless["tls"] != true {
 		t.Fatalf("Clash VLESS = %#v", vless)
+	}
+	if vless["client-fingerprint"] != "firefox" {
+		t.Fatalf("Clash VLESS Reality fingerprint = %#v", vless)
 	}
 	if _, leaked := vless["id"]; leaked {
 		t.Fatalf("Clash VLESS leaked Zero id field: %#v", vless)
@@ -222,7 +229,7 @@ func TestRenderSingBoxSubscriptionConvertsAndOmitsUnsupportedMieru(t *testing.T)
 		t.Fatalf("sing-box VLESS Reality = %#v", tls["reality"])
 	}
 	utls, ok := tls["utls"].(map[string]interface{})
-	if !ok || utls["enabled"] != true || utls["fingerprint"] != "chrome" {
+	if !ok || utls["enabled"] != true || utls["fingerprint"] != "firefox" {
 		t.Fatalf("sing-box VLESS Reality uTLS = %#v", tls["utls"])
 	}
 	vmess := findExportByType(t, document.Outbounds, "vmess")
@@ -497,7 +504,7 @@ func subscriptionExporterTestData() subscriptionTemplateData {
 				Port: 443, PublicPort: 443, Protocol: "vless",
 				Config: map[string]interface{}{
 					"type": "vless", "id": "11111111-1111-4111-8111-111111111111",
-					"reality": map[string]interface{}{"public_key": "9AwHi13y1rN6EWTSo8-HNCOhrzr251jNY7SSIxo0diA", "short_id": "0123456789abcdef", "server_name": "edge.example.com"},
+					"reality": map[string]interface{}{"public_key": "9AwHi13y1rN6EWTSo8-HNCOhrzr251jNY7SSIxo0diA", "short_id": "0123456789abcdef", "server_name": "edge.example.com", "client_fingerprint": "firefox"},
 				},
 			},
 			{

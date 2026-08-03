@@ -985,6 +985,28 @@ paths:
       responses:
         "200": { description: Node asset deleted }
         "409": { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{id}/load:
+    get:
+      tags: [nodes, admin]
+      summary: Sample current node host load through its verified SSH channel
+      description: Admin only. This is an on-demand host snapshot and remains separate from authenticated Zero runtime/session statistics.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Current Linux host load snapshot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/NodeLoadSnapshot" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v1/nodes/ssh/test:
     post:
       tags:
@@ -1760,6 +1782,23 @@ paths:
       responses:
         "200":
           description: New token and URL returned; the same URL remains available from the access endpoint
+  /api/v1/subscription/protocol-loads:
+    get:
+      tags: [subscriptions]
+      summary: List current protocol activity visible to the signed-in subscriber
+      description: Returns aggregate active-user and active-flow counts only for protocol endpoints covered by the caller's currently usable subscriptions. Activity uses a two-minute Zero flow-event window; identities, credentials, host details and traffic records are never exposed.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Subscriber-scoped protocol load snapshot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/AccountProtocolLoadSnapshot" }
   /api/v1/client/subscription/{token}:
     get:
       tags:
@@ -2055,6 +2094,44 @@ paths:
               $ref: "#/components/schemas/ProtocolEndpointWriteRequest"
       responses:
         "200": { description: Protocol endpoint configuration saved }
+  /api/v1/admin/protocol-endpoints/reality-keypair:
+    post:
+      tags: [nodes, admin]
+      summary: Generate an X25519 Reality key pair and short ID
+      description: Admin only. The private key is returned only to the editor and must be stored in the encrypted endpoint server configuration; subscription output receives only the public key.
+      responses:
+        "200":
+          description: Newly generated Reality material
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/RealityKeyPair" }
+  /api/v1/admin/protocol-endpoints/reality-template:
+    post:
+      tags: [nodes, admin]
+      summary: Generate a complete recommended VLESS Reality scenario template
+      description: Admin only. Selects a maintained SNI/fingerprint preset and generates a fresh matching X25519 key pair and short ID in one operation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                preset: { type: string, enum: [compatible, cdn, apple], default: compatible }
+      responses:
+        "200":
+          description: Generated Reality scenario values
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/RealityTemplate" }
   /api/v1/admin/protocol-endpoints/{id}:
     get:
       tags: [nodes]
@@ -3171,6 +3248,22 @@ components:
             active_flows: { type: integer, format: int64, minimum: 0 }
             bytes_up: { type: integer, format: int64, minimum: 0 }
             bytes_down: { type: integer, format: int64, minimum: 0 }
+    NodeLoadSnapshot:
+      type: object
+      required: [node_id, sampled_at, cpu_core_count, load_average_1, load_average_5, load_average_15, memory_total_bytes, memory_available_bytes, root_total_bytes, root_available_bytes, uptime_seconds, latency_ms]
+      properties:
+        node_id: { type: integer, format: int64 }
+        sampled_at: { type: string, format: date-time }
+        cpu_core_count: { type: integer, format: int64, minimum: 1 }
+        load_average_1: { type: number, format: double, minimum: 0 }
+        load_average_5: { type: number, format: double, minimum: 0 }
+        load_average_15: { type: number, format: double, minimum: 0 }
+        memory_total_bytes: { type: integer, format: int64, minimum: 0 }
+        memory_available_bytes: { type: integer, format: int64, minimum: 0 }
+        root_total_bytes: { type: integer, format: int64, minimum: 0 }
+        root_available_bytes: { type: integer, format: int64, minimum: 0 }
+        uptime_seconds: { type: integer, format: int64, minimum: 0 }
+        latency_ms: { type: integer, format: int64, minimum: 0 }
     NodePage:
       allOf:
         - $ref: "#/components/schemas/PageEnvelope"
@@ -3406,6 +3499,7 @@ components:
           type: object
           properties:
             active_flows: { type: integer, format: int64, minimum: 0 }
+            active_users: { type: integer, format: int64, minimum: 0, description: Distinct users with an active Zero flow seen during the two-minute activity window. }
             active_credentials: { type: integer, format: int64, minimum: 0 }
             last_used_at: { type: string, format: date-time, nullable: true }
             used_bytes_today: { type: integer, format: int64, minimum: 0 }
@@ -4405,6 +4499,42 @@ components:
           type: boolean
         sort_order:
           type: integer
+    RealityKeyPair:
+      type: object
+      required: [private_key, public_key, short_id]
+      properties:
+        private_key: { type: string, writeOnly: true, description: 32-byte X25519 private key encoded as unpadded Base64URL. }
+        public_key: { type: string, description: Matching X25519 public key encoded as unpadded Base64URL. }
+        short_id: { type: string, pattern: "^[0-9a-f]{16}$" }
+    RealityTemplate:
+      allOf:
+        - $ref: "#/components/schemas/RealityKeyPair"
+        - type: object
+          required: [preset, label, server_name, client_fingerprint]
+          properties:
+            preset: { type: string, enum: [compatible, cdn, apple] }
+            label: { type: string }
+            server_name: { type: string }
+            client_fingerprint: { type: string, enum: [chrome, safari] }
+    AccountProtocolLoadSnapshot:
+      type: object
+      required: [sampled_at, activity_window_seconds, items]
+      properties:
+        sampled_at: { type: string, format: date-time }
+        activity_window_seconds: { type: integer, format: int64, minimum: 1 }
+        items:
+          type: array
+          items:
+            type: object
+            required: [protocol_endpoint_id, name, region, protocol, active_users, active_flows]
+            properties:
+              protocol_endpoint_id: { type: integer, format: int64 }
+              name: { type: string }
+              region: { type: string }
+              protocol: { type: string }
+              active_users: { type: integer, format: int64, minimum: 0 }
+              active_flows: { type: integer, format: int64, minimum: 0 }
+              last_activity_at: { type: string, format: date-time, nullable: true }
     PlanCreateRequest:
       type: object
       required:

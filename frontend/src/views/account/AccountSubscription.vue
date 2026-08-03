@@ -75,6 +75,17 @@
       </template>
     </DataWorkbench>
 
+    <UiSection title="协议实时负载" description="仅显示当前有效套餐可使用的协议；活跃人数和连接数来自最近两分钟的 Zero 会话事件。">
+      <template #meta><TimeBadge :value="protocolLoads.sampled_at" /></template>
+      <div class="panel-body">
+        <DataTable v-if="protocolLoads.items.length" caption="可用协议实时负载" :row-count="protocolLoads.items.length" :min-width="720">
+          <thead><tr><th class="table-primary-column">使用位置</th><th>协议</th><th class="numeric-column">活跃用户</th><th class="numeric-column">活跃连接</th><th data-column-priority="2">最近活动</th></tr></thead>
+          <tbody><tr v-for="item in protocolLoads.items" :key="item.protocol_endpoint_id"><td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><span>{{ item.region || '未设置区域' }}</span></div></td><td><StatusBadge :tone="item.active_flows ? 'success' : 'neutral'" icon="activity">{{ item.protocol.toUpperCase() }}</StatusBadge></td><td class="numeric-column">{{ item.active_users }}</td><td class="numeric-column">{{ item.active_flows }}</td><td data-column-priority="2"><TimeBadge :value="item.last_activity_at" /></td></tr></tbody>
+        </DataTable>
+        <EmptyState v-else icon="activity" title="暂无可用协议" description="拥有有效套餐且节点在线后，会在这里显示对应协议的实时使用人数和连接数。" />
+      </div>
+    </UiSection>
+
     <UiSection title="专属订阅链接" description="将链接添加到受支持的客户端；凭证状态与订阅列表分页无关。">
       <template #meta>
         <StatusBadge :tone="access.configured ? 'success' : 'warning'">
@@ -172,10 +183,12 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchActiveSubscriptionTemplatesPage,
+  fetchAccountProtocolLoads,
   fetchAccountSubscriptionsPage,
   fetchSubscriptionAccess,
   revokeSubscriptionAccess,
   rotateSubscriptionAccess,
+  type AccountProtocolLoadSnapshot,
   type AdminSubscriptionListItem,
 } from '../../api/client'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
@@ -230,6 +243,7 @@ const baseSubscriptionUrl = ref('')
 const copyLabel = ref('复制链接')
 const metadataLoading = ref(false)
 const metadataError = ref('')
+const protocolLoads = ref<AccountProtocolLoadSnapshot>({ sampled_at: '', activity_window_seconds: 120, items: [] })
 const working = ref(false)
 const message = ref('')
 const confirmOpen = ref(false)
@@ -306,15 +320,17 @@ async function loadMetadata() {
   metadataLoading.value = true
   metadataError.value = ''
   try {
-    const [activePage, accessResult, templateResult] = await Promise.all([
+    const [activePage, accessResult, templateResult, protocolLoadResult] = await Promise.all([
       fetchAccountSubscriptionsPage({ status: 'active', offset: 0, limit: 1 }),
       fetchSubscriptionAccess(),
       fetchActiveSubscriptionTemplatesPage({ q: templateQuery.value || undefined, offset: 0, limit: 25 }),
+      fetchAccountProtocolLoads(),
     ])
     activeSubscriptionTotal.value = activePage.total
     access.value = accessResult
     templates.value = templateResult.items
     templateTotal.value = templateResult.total
+    protocolLoads.value = protocolLoadResult
     baseSubscriptionUrl.value = access.value.subscription_url ? `${window.location.origin}${access.value.subscription_url}` : ''
     if (!isBuiltInDeliveryMode(selectedTemplate.value) && !templates.value.some(item => item.slug === selectedTemplate.value)) {
       selectedTemplate.value = subscriptionDeliveryAuto

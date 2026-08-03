@@ -26,6 +26,221 @@ remain outside this repository.
 
 ## Completed goals
 
+### 2026-08-03 - SSH terminal final-row clipping
+
+Goal outcome before synchronization:
+
+- Corrected the SSH terminal canvas sizing in both dialog and fullscreen
+  layouts. Xterm's fit addon measures its immediate host element, but that host
+  previously also carried the terminal's visual padding and border. The fit
+  calculation therefore used more height than the host's actual content box
+  and could place the final prompt row inside the clipped area.
+- Moved the visual padding, border, radius and inset decoration to the outer
+  terminal stage. The measured xterm host is now an undecorated 100% content
+  box, so the calculated rows match the drawable height while the terminal
+  keeps the same visual spacing. Fullscreen safe-area padding follows the same
+  boundary.
+- Added a regression assertion that the measured host remains free of padding
+  and borders. No SSH session, PTY sizing protocol or backend behavior was
+  changed.
+
+Local verification:
+
+- The targeted SSH terminal component test passed with 2 tests.
+- All 62 frontend Vitest files and 142 tests passed. Frontend type checking and
+  the production build passed with 538 transformed modules.
+- `git diff --check` passed for the two changed terminal files with only the
+  repository's existing Windows LF-to-CRLF notices.
+
+Synchronization and deployed verification:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` completed successfully and
+  deployed
+  `v0.0.1-20260803T040204Z-intranet-working-tree@2026-08-03T04:02:04Z`.
+  Independent requests confirmed `/api/v1/version` and `/readyz` returned HTTP
+  200 with `db=true` and `ready=true`.
+- `zboard_next-zboard-1` was running and healthy. The external `db` and `cache`
+  containers were running (neither defines a Docker healthcheck), and an
+  authenticated-independent MySQL `mysqladmin ping --silent` succeeded. Redis
+  correctly rejected an unauthenticated diagnostic ping; no credential was
+  read or printed merely to turn that configured denial into `PONG`.
+- The pre-sync database backup is
+  `/data/zboard-next/backups/20260803T040204Z/zboard-before-sync.sql` (81,093
+  bytes), the previous source is
+  `/data/zboard-next/app-prev-20260803T040204Z`, and the release archive is
+  `/data/zboard-next/releases/20260803T040204Z/source.tar.gz` (795,696 bytes).
+- The running container's `Nodes-C5plwunu.css` asset contains the decorated
+  terminal stage and the undecorated full-size terminal host, confirming that
+  the deployed frontend uses the corrected fit boundary.
+
+Remaining gaps after synchronization:
+
+- The available Chrome tab for this intranet application is currently at the
+  login page, so an automated authenticated SSH session could not be opened.
+  Perform one operator-side check that the final prompt and cursor now retain
+  the bottom inset after refreshing the page.
+- No Git staging, commit, push or release was performed.
+
+### 2026-08-03 - Protocol business load and one-click Reality scenarios
+
+Goal outcome before synchronization:
+
+- Corrected the meaning of node/protocol load: business load now comes from
+  attributable Zero flow events rather than Linux CPU or memory. An active
+  flow is a `flow_usages` row still marked active and seen within the last two
+  minutes; active users are distinct subscription owners in that same window.
+  Allocated credentials are retained as an administrative capacity fact but
+  are no longer presented as currently connected people.
+- Added `active_users` beside `active_flows` to every administrative protocol
+  endpoint summary and detail. The primary protocol table now shows active
+  users and active connections for each endpoint; the earlier SSH projection
+  is explicitly labeled host resources to prevent another semantic collision.
+- Added the authenticated `/api/v1/subscription/protocol-loads` view for the
+  account subscription page. It exposes only endpoint name, region, protocol,
+  aggregate active-user/flow counts and last activity for endpoints reachable
+  through the caller's currently usable subscriptions. Other identities,
+  credentials, node host details and traffic records do not cross the
+  subscription/node-group boundary.
+- Added backend-maintained one-click VLESS Reality scenarios for general
+  compatibility, global-CDN and Apple-oriented clients. Applying a scenario
+  fills the recommended SNI and client fingerprint and generates a fresh
+  matching X25519 key pair and short ID in one operation; operators can still
+  adjust the filled result before saving. Existing advanced JSON remains
+  available without making basic Reality setup depend on it.
+- Updated the OpenAPI and data-model contracts. No database migration, public
+  unauthenticated load endpoint or new Zero event type was introduced.
+
+Local verification:
+
+- `go test ./...` and `go vet ./...` passed for every backend package.
+- Frontend type checking, all 62 Vitest files and 141 tests, and the production
+  build passed with 538 transformed modules.
+- The production MySQL-compatible aggregation query was executed read-only on
+  the intranet database and completed successfully. The sampled two-minute
+  window contained no active flows, which is a valid zero-load result.
+- `git diff --check` passed with only the repository's existing Windows
+  LF-to-CRLF notices.
+
+Synchronization and deployed verification:
+
+- The first synchronization attempt stopped during the Dockerfile frontend
+  resolver because Docker Hub's token endpoint returned an EOF. It had not
+  reached backup or application switching. A clean retry of
+  `scripts/sync-intranet.ps1 -SkipLocalChecks` completed successfully and
+  deployed
+  `v0.0.1-20260803T032139Z-intranet-working-tree@2026-08-03T03:21:39Z`.
+- Independent post-sync requests confirmed `/api/v1/version` and `/readyz`
+  returned HTTP 200 with `db=true` and `ready=true`.
+  `zboard_next-zboard-1` was healthy, MySQL returned `mysqld is alive`, and
+  Redis returned `PONG`.
+- The pre-sync database backup is
+  `/data/zboard-next/backups/20260803T032139Z/zboard-before-sync.sql` (80,743
+  bytes), the previous source is
+  `/data/zboard-next/app-prev-20260803T032139Z`, and the release archive is
+  `/data/zboard-next/releases/20260803T032139Z/source.tar.gz` (794,791 bytes).
+- The deployed admin endpoint returned one protocol endpoint and supplied both
+  `active_users` and `active_flows` for it. The subscriber load route returned
+  its 120-second activity contract and one endpoint for the authenticated
+  account; the same route returned HTTP 401 without authentication. Database
+  membership checks were prepared for an active non-admin subscription, but
+  production currently has no non-admin user fixture, so a positive
+  non-admin scoped sample could not be exercised without creating production
+  business data.
+- All three deployed Reality scenarios (`compatible`, `cdn`, and `apple`)
+  generated a 43-character private key, 43-character public key and
+  16-character short ID with non-empty SNI/fingerprint fields. No key value was
+  printed or persisted by verification.
+- The running frontend contains the subscriber protocol-load view in
+  `AccountSubscription-B69kIOCB.js`, one-click Reality scenarios in
+  `Protocols-VV1IHN9X.js`, and the corrected host-resource terminology in
+  `Nodes-DgQgwqKH.js`.
+
+Remaining gaps:
+
+- Exercise a positive non-admin subscriber scope when a real non-admin user
+  has an active subscription. Zero-flow windows legitimately return zero; no
+  synthetic production flow or user was created merely to force a non-zero
+  display.
+- No Git staging, commit, push or release was performed.
+
+### 2026-08-03 - VLESS Reality configuration and on-demand node load
+
+Goal outcome:
+
+- Added VLESS Reality as a first-class protocol-editor security mode. The
+  authenticated admin endpoint generates a matching X25519 key pair and
+  random 16-hex-character short ID; the private key enters only the encrypted
+  server configuration, while public subscription configuration receives the
+  public key, selected short ID, server name and client fingerprint.
+- Added local endpoint validation for Reality key encoding and key-pair
+  correspondence, short-ID syntax/membership and both server/client names.
+  Managed per-subscription VLESS UUID compilation continues to preserve all
+  endpoint transport fields rather than treating Reality as a separate
+  sellable resource.
+- Completed Reality delivery across ZNet Sink, Clash and sing-box. The
+  existing converters already mapped the core Reality fields; they now also
+  retain the operator-selected client fingerprint instead of omitting it or
+  falling back to Chrome.
+- Added an authenticated, on-demand node-load endpoint and node-detail view.
+  It requires a previously verified SSH channel with a pinned host key and
+  reports CPU cores and 1/5/15-minute load averages, memory, root-filesystem
+  capacity, host uptime, sample time and SSH latency. Host load remains an
+  ephemeral node-asset projection and is not mixed with Zero session stats,
+  Connector health or trusted traffic accounting.
+- Updated the OpenAPI and data-model contracts. No schema migration, public
+  unauthenticated metric surface or Zero event-contract change was introduced.
+
+Local verification:
+
+- `go test ./...` and `go vet ./...` passed for every backend package.
+- Targeted tests with `ZBOARD_ZERO_VALIDATE_BIN` set to the local Zero
+  `v0.0.15-rc.4`-derived debug binary passed: the real validator accepted both
+  a generated VLESS Reality inbound and the ZNet Sink Reality subscription.
+  The full Connector integration suite cannot use that particular debug build
+  because it lacks Zero's `event-dispatcher` Cargo feature, so the ordinary
+  full suite was also run without the optional validator override and passed.
+- All 61 frontend Vitest files and 139 tests passed. Frontend type checking and
+  the production build passed with 538 transformed modules.
+- `git diff --check` passed with only the repository's existing Windows
+  LF-to-CRLF notices.
+
+Synchronization and deployed verification:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` completed successfully. The
+  deployed version is
+  `v0.0.1-20260803T024810Z-intranet-working-tree@2026-08-03T02:48:10Z`.
+  An independent post-sync request confirmed `/api/v1/version` and `/readyz`
+  returned HTTP 200 with `db=true` and `ready=true`.
+- `zboard_next-zboard-1` was healthy, the external MySQL `mysqladmin ping`
+  returned `mysqld is alive`, and the external Redis `redis-cli ping` returned
+  `PONG`.
+- The pre-sync database backup is
+  `/data/zboard-next/backups/20260803T024810Z/zboard-before-sync.sql` (80,743
+  bytes), the previous source is
+  `/data/zboard-next/app-prev-20260803T024810Z`, and the synchronized release
+  archive is `/data/zboard-next/releases/20260803T024810Z/source.tar.gz`
+  (789,752 bytes).
+- Both new deployed routes returned HTTP 401 without authentication. With a
+  short-lived admin token generated only inside the remote verification
+  process, the Reality endpoint returned a 43-character private key,
+  43-character public key and 16-character short ID without printing their
+  values. The node-load endpoint exercised a previously SSH-verified node and
+  returned HTTP 200 with all required fields; the sample reported 4 cores,
+  load-1 of 0.62, 3,972,481,024 bytes of memory, 48,210,944,000 bytes on the
+  root filesystem, 6,507,350 seconds uptime and 404 ms SSH latency.
+- The running container's built frontend contains the Reality editor in
+  `Protocols-DeZNA8go.js` and the node-load view in `Nodes-BgMW5O1Q.js`.
+
+Remaining gaps:
+
+- This goal makes VLESS Reality first-class and preserves advanced raw JSON as
+  the escape hatch for other kernel fields; it does not claim a dedicated form
+  control for every present or future Zero option. The optional full Connector
+  integration suite still needs a Zero debug build with the
+  `event-dispatcher` Cargo feature if it is to run together with the external
+  validator override.
+- No Git staging, commit, push or release was performed.
+
 ### 2026-08-03 - Exact small-traffic display in admin records
 
 Goal outcome before synchronization:

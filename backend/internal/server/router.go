@@ -228,6 +228,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.NodeKernelStateHandler),
 		},
 		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/nodes/:id/load",
+			Handler: http.HandlerFunc(h.NodeLoadHandler),
+		},
+		{
 			Method:  http.MethodPost,
 			Path:    "/api/v1/nodes/:id/kernel/detect",
 			Handler: http.HandlerFunc(h.NodeKernelDetectHandler),
@@ -371,6 +376,16 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Method:  http.MethodPost,
 			Path:    "/api/v1/admin/protocol-endpoints",
 			Handler: http.HandlerFunc(h.ProtocolEndpointCreateHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/protocol-endpoints/reality-keypair",
+			Handler: http.HandlerFunc(h.ProtocolRealityKeyPairHandler),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/api/v1/admin/protocol-endpoints/reality-template",
+			Handler: http.HandlerFunc(h.ProtocolRealityTemplateHandler),
 		},
 		{
 			Method:  http.MethodGet,
@@ -541,6 +556,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Method:  http.MethodGet,
 			Path:    "/api/v1/subscription/access",
 			Handler: http.HandlerFunc(h.SubscriptionAccessHandler),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/subscription/protocol-loads",
+			Handler: http.HandlerFunc(h.AccountProtocolLoadHandler),
 		},
 		{
 			Method:  http.MethodPost,

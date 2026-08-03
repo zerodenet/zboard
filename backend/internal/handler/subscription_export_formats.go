@@ -443,7 +443,7 @@ func zeroOutboundProtocol(endpoint subscriptionTemplateEndpoint) (map[string]int
 		copySanitizedMap(outbound, config, "tls", []string{
 			"server_name", "disable_sni", "ca_cert_path", "insecure", "alpn", "client_fingerprint",
 		})
-		copySanitizedMap(outbound, config, "reality", []string{"public_key", "short_id", "server_name", "cipher_suites"})
+		copySanitizedMap(outbound, config, "reality", []string{"public_key", "short_id", "server_name", "cipher_suites", "client_fingerprint"})
 		copyZeroWebSocket(outbound, config)
 		copyZeroGrpc(outbound, config)
 		copySanitizedMap(outbound, config, "h2", []string{"host", "path"})
@@ -654,6 +654,7 @@ func addClashTLS(proxy, config map[string]interface{}, protocol string) {
 	fingerprint := firstConfigString(
 		configString(config, "client_fingerprint"),
 		configString(tls, "client_fingerprint"),
+		configString(reality, "client_fingerprint"),
 	)
 	if fingerprint != "" {
 		proxy["client-fingerprint"] = fingerprint
@@ -707,6 +708,7 @@ func singBoxTLS(config map[string]interface{}, protocol string) map[string]inter
 	fingerprint := firstConfigString(
 		configString(config, "client_fingerprint"),
 		configString(source, "client_fingerprint"),
+		configString(reality, "client_fingerprint"),
 	)
 	if fingerprint == "" && len(reality) > 0 {
 		// sing-box requires uTLS for a Reality client. "chrome" matches the

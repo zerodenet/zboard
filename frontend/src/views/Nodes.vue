@@ -79,6 +79,16 @@
           <StatusOverviewItem icon="shield" label="可信计量" :description="selectedNode.traffic_secret_prefix ? `凭证 ${selectedNode.traffic_secret_prefix}…` : '尚未创建凭证'" :tone="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at ? 'success' : 'warning'" :status="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at ? '已配置' : '未配置'" />
           <StatusOverviewItem icon="nodes" label="资产状态" :description="selectedNode.is_enabled ? '允许承载服务' : '已停止交付'" :tone="selectedNode.is_enabled ? 'success' : 'neutral'" :status="selectedNode.is_enabled ? '启用' : '停用'" />
           <StatusOverviewItem icon="activity" label="Zero 内核" :description="kernelDescription" :tone="kernelTone" :status="kernelStatusLabel" />
+          <article class="node-load-summary">
+            <header><div><strong>主机资源</strong><p>通过已验证的 SSH 通道按需读取；协议业务负载请在协议服务中查看活跃用户和连接。</p></div><UiButton variant="secondary" size="sm" type="button" :loading="nodeLoadLoading" :disabled="!selectedNode.ssh_host || !selectedNode.ssh_user" @click="loadNodeLoad(selectedNode.id)"><UiIcon name="refresh" />刷新资源</UiButton></header>
+            <PageAlert v-if="nodeLoadError" tone="warning" title="暂时无法读取负载">{{ nodeLoadError }}</PageAlert>
+            <div v-if="nodeLoad" class="node-load-grid">
+              <div><span>系统负载（1 / 5 / 15 分钟）</span><strong>{{ nodeLoad.load_average_1.toFixed(2) }} / {{ nodeLoad.load_average_5.toFixed(2) }} / {{ nodeLoad.load_average_15.toFixed(2) }}</strong><small>{{ formatNumber(nodeLoad.cpu_core_count) }} 核 · 1 分钟负载率 {{ formatLoadRatio(nodeLoad) }}</small></div>
+              <div><span>内存</span><strong>{{ formatBytes(nodeLoad.memory_total_bytes - nodeLoad.memory_available_bytes) }} / {{ formatBytes(nodeLoad.memory_total_bytes) }}</strong><small>可用 {{ formatBytes(nodeLoad.memory_available_bytes) }}</small></div>
+              <div><span>根文件系统</span><strong>{{ formatBytes(nodeLoad.root_total_bytes - nodeLoad.root_available_bytes) }} / {{ formatBytes(nodeLoad.root_total_bytes) }}</strong><small>可用 {{ formatBytes(nodeLoad.root_available_bytes) }}</small></div>
+              <div><span>主机运行时间</span><strong>{{ formatUptime(nodeLoad.uptime_seconds) }}</strong><small>采样 <TimeBadge :value="nodeLoad.sampled_at" mode="relative" /> · SSH {{ nodeLoad.latency_ms }} ms</small></div>
+            </div>
+          </article>
         </section>
 
         <article v-else-if="detailSection === 'kernel'" class="panel kernel-panel">
@@ -219,7 +229,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createNode, createNodeBatchOperation, deleteNode, detectNodeKernel, fetchNode, fetchNodeKernel, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type ZeroReleaseOption } from '../api/client'
+import { createNode, createNodeBatchOperation, deleteNode, detectNodeKernel, fetchNode, fetchNodeKernel, fetchNodeLoad, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type NodeLoadSnapshot, type ZeroReleaseOption } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -246,7 +256,7 @@ import { useRemoteTable } from '../composables/useRemoteTable'
 import { useSelectionScope } from '../composables/useSelectionScope'
 import { nextSortDirection, resolveSortDirection, resolveSortField, resolveTableDensity } from '../composables/tableState'
 import { confirmAction } from '../utils/feedback'
-import { formatNumber, formatUnknownValue } from '../utils/format'
+import { formatBytes, formatNumber, formatUnknownValue } from '../utils/format'
 import { normalizeOutput, truncateOutput } from '../utils/output'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 import { createRequestGuard } from '../utils/request'
@@ -277,6 +287,9 @@ const sshAuthOptions = [{ label: '密码', value: 'password' }, { label: '私钥
 const sshPrivilegeOptions = [{ label: '直接登录 root', value: 'none' }, { label: 'sudo 提权', value: 'sudo' }, { label: 'su 切换 root', value: 'su' }]
 const selectedNode = ref<AdminNodeDetail | null>(null)
 const deletingNode = ref(false)
+const nodeLoad = ref<NodeLoadSnapshot | null>(null)
+const nodeLoadLoading = ref(false)
+const nodeLoadError = ref('')
 const detailSection = ref<'overview' | 'kernel' | 'protocols' | 'credentials'>('overview')
 const nodeDetailTabs = [
   { value: 'overview', label: '状态概览', icon: 'dashboard' },
@@ -538,6 +551,21 @@ async function loadNodeProtocols(nodeID?: number) {
     if (protocolRequests.isCurrent(request)) nodeProtocolsLoading.value = false
   }
 }
+async function loadNodeLoad(nodeID?: number) {
+  if (!nodeID || nodeLoadLoading.value) return
+  nodeLoadLoading.value = true
+  nodeLoadError.value = ''
+  try {
+    const snapshot = await fetchNodeLoad(nodeID)
+    if (selectedNode.value?.id === nodeID) nodeLoad.value = snapshot
+  } catch (cause: any) {
+    if (selectedNode.value?.id === nodeID) nodeLoadError.value = cause?.response?.data?.message || '节点负载读取失败。'
+  } finally {
+    if (selectedNode.value?.id === nodeID) nodeLoadLoading.value = false
+  }
+}
+function formatLoadRatio(snapshot: NodeLoadSnapshot) { return snapshot.cpu_core_count > 0 ? `${(snapshot.load_average_1 / snapshot.cpu_core_count * 100).toFixed(0)}%` : '—' }
+function formatUptime(seconds: number) { const days = Math.floor(seconds / 86400); const hours = Math.floor(seconds % 86400 / 3600); const minutes = Math.floor(seconds % 3600 / 60); return days ? `${days} 天 ${hours} 小时` : hours ? `${hours} 小时 ${minutes} 分钟` : `${minutes} 分钟` }
 async function saveMultiplier(endpoint: any) { const milli = Math.round(Number(multiplierDrafts[endpoint.id])); if (!Number.isFinite(milli) || milli < 1 || milli > 100000) { detailError.value = '计费倍率必须在 0.001× 到 100× 之间。'; return }; savingMultiplierID.value = endpoint.id; detailError.value = ''; detailMessage.value = ''; try { const updated = await updateProtocolEndpointMultiplier(endpoint.id, milli); endpoint.multiplier_milli = updated.multiplier_milli; multiplierDrafts[endpoint.id] = updated.multiplier_milli; detailMessage.value = `${endpoint.name} 的计费倍率已更新为 ${updated.multiplier_milli / 1000}×。` } catch (e: any) { detailError.value = e?.response?.data?.message || '计费倍率保存失败。' } finally { savingMultiplierID.value = 0 } }
 async function detectKernel() { if (!selectedNode.value) return; kernelBusy.value = 'detect'; detailError.value = ''; detailMessage.value = ''; try { const result = await detectNodeKernel(selectedNode.value.id); kernelState.value = result.state; detailMessage.value = 'Zero 内核检测完成，页面显示的是服务器真实状态。'; await loadKernel(selectedNode.value.id) } catch (e: any) { detailError.value = e?.response?.data?.message || 'Zero 内核检测失败。'; await loadKernel(selectedNode.value.id) } finally { kernelBusy.value = '' } }
 function stopKernelPolling() { if (kernelPollTimer !== undefined) { window.clearInterval(kernelPollTimer); kernelPollTimer = undefined } }
@@ -701,9 +729,12 @@ watch([() => selectedNode.value?.id, detailSection, nodeProtocolOffset, nodeProt
     kernelState.value = null
     kernelOperations.value = []
     nodeEndpoints.value = []
+    nodeLoad.value = null
+    nodeLoadError.value = ''
     nodeProtocolTotal.value = 0
   }
   if (section === 'kernel') { void loadKernel(id); void loadLatestRelease() } else kernelRequests.invalidate()
+  if (section === 'overview' && id && selectedNode.value?.ssh_verified_at) void loadNodeLoad(id)
   if (section === 'protocols') void loadNodeProtocols(id); else { protocolRequests.invalidate(); nodeProtocolsLoading.value = false }
 }, { immediate: true })
 watch(detailSection, (section) => { if (selectedNode.value && String(route.query.tab || 'overview') !== section) void syncURL() })
@@ -764,6 +795,7 @@ onBeforeUnmount(stopKernelPolling)
 .page-alert{margin-bottom:14px}.count-label{color:var(--muted);font-size:11px}.node-layout{display:grid;grid-template-columns:300px minmax(0,1fr);align-items:start;gap:16px}.node-list-panel{position:sticky;top:82px;overflow:hidden}.node-list{display:grid}.node-list>button{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:15px 16px;text-align:left;border:0;border-bottom:1px solid var(--line);background:var(--surface)}.node-list>button:hover,.node-list>button.active{background:var(--surface-selected)}.node-list>button.active{box-shadow:inset 3px 0 var(--primary)}.node-state{width:9px;height:9px;border-radius:50%;background:var(--warning-bright);box-shadow:0 0 0 4px var(--warning-soft)}.node-state.online{background:var(--success-bright);box-shadow:0 0 0 4px var(--success-soft)}.node-state.disabled{background:var(--subtle);box-shadow:0 0 0 4px var(--surface-neutral)}.node-list strong{font-size:12px}.node-list p,.node-list small{margin:3px 0 0;color:var(--muted);font-size:9px}.node-list small{color:var(--primary)}.node-detail{min-width:0}.node-summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px}.node-summary-main{display:flex;align-items:center;gap:14px}.node-avatar{width:46px;height:46px;display:grid;place-items:center;border-radius:12px;color:var(--primary);background:var(--primary-soft);font-size:21px}.title-line{display:flex;align-items:center;gap:10px}.title-line h2{margin:0;font-size:19px}.node-summary-main p{margin:5px 0 2px;color:var(--muted);font-size:11px}.node-summary-main small{color:var(--subtle);font-size:9px}.node-actions{display:flex;flex-wrap:wrap;gap:7px}.readiness-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.readiness-grid article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:11px;padding:15px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.readiness-grid article>span{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;color:var(--primary);background:var(--primary-soft)}.readiness-grid strong{font-size:11px}.readiness-grid p{margin:3px 0 0;color:var(--muted);font-size:9px}.action-card{display:grid;gap:14px}.action-card p{margin:0;color:var(--muted);font-size:11px}.action-card>div{display:flex;gap:7px}.node-empty{min-height:420px;display:grid;place-items:center}.secret-card{display:grid;gap:14px}.secret-card textarea{font-family:Consolas,monospace;font-size:11px}.secret-card .button{justify-self:start}@media(max-width:1100px){.node-layout{grid-template-columns:1fr}.node-list-panel{position:static}.node-list{grid-template-columns:repeat(2,1fr)}}@media(max-width:720px){.node-list,.readiness-grid{grid-template-columns:1fr}.node-summary{align-items:flex-start;flex-direction:column}.node-actions{display:grid;width:100%}}
 .kernel-panel{overflow:hidden}.kernel-body{display:grid;gap:16px}.kernel-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--line)}.kernel-facts>div{display:grid;gap:5px;padding:13px;background:var(--surface)}.kernel-facts span{color:var(--muted);font-size:9px}.kernel-facts strong{font-size:11px;overflow-wrap:anywhere}.kernel-error{display:flex;align-items:flex-start;gap:8px;margin:0;padding:11px;border-radius:8px;color:var(--danger);background:var(--danger-soft);font-size:10px;overflow-wrap:anywhere}.kernel-release-picker{display:grid;grid-template-columns:minmax(110px,160px) minmax(220px,360px);align-items:center;gap:7px 12px;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-neutral)}.kernel-release-picker label{font-size:10px;font-weight:700}.kernel-release-picker small{grid-column:2;color:var(--muted);font-size:9px}.kernel-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.kernel-actions small{color:var(--muted);font-size:9px}.kernel-history{display:grid;border-top:1px solid var(--line)}.kernel-history>div{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 2px}.kernel-history>div+div{border-top:1px solid var(--line)}.kernel-history strong{font-size:10px}.kernel-history p{margin:3px 0 0;color:var(--muted);font-size:9px;overflow-wrap:anywhere}.kernel-history time{color:var(--subtle);font-size:9px}.operation-dot{width:8px;height:8px;border-radius:50%;background:var(--warning)}.operation-dot.succeeded{background:var(--success)}.operation-dot.failed{background:var(--danger)}@media(max-width:720px){.kernel-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.kernel-release-picker{grid-template-columns:1fr}.kernel-release-picker small{grid-column:1}.kernel-history>div{grid-template-columns:auto minmax(0,1fr)}.kernel-history time{grid-column:2}}
 .detail-tabs{display:flex;gap:18px;overflow-x:auto;border-bottom:1px solid var(--line)}.detail-tabs button{min-height:42px;display:inline-flex;align-items:center;gap:7px;padding:0 2px;border:0;border-bottom:2px solid transparent;color:var(--muted);background:transparent;font-size:12px;font-weight:650;white-space:nowrap}.detail-tabs button:hover{color:var(--text)}.detail-tabs button.active{color:var(--primary);border-bottom-color:var(--primary)}.node-health-strip{display:grid;border-block:1px solid var(--line);background:var(--surface)}.node-health-strip>*+*{border-top:1px solid var(--line)}.credential-workspace{overflow:hidden}.credential-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:13px;padding:17px 20px}.credential-row+.credential-row{border-top:1px solid var(--line)}.credential-icon{width:34px;height:34px;display:grid;place-items:center;color:var(--primary);background:var(--primary-soft);border-radius:9px}.credential-row strong{font-size:12px}.credential-row p{margin:3px 0 0;color:var(--muted);font-size:10px}.credential-actions{display:flex;gap:7px}@media(max-width:720px){.credential-row{grid-template-columns:auto minmax(0,1fr)}.credential-actions{grid-column:2;flex-wrap:wrap}}
+.node-load-summary{display:grid;gap:14px;padding:17px 20px}.node-load-summary>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.node-load-summary header p{margin:3px 0 0;color:var(--muted);font-size:9px}.node-load-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--line)}.node-load-grid>div{display:grid;gap:5px;padding:13px;background:var(--surface)}.node-load-grid span,.node-load-grid small{color:var(--muted);font-size:9px}.node-load-grid strong{font-size:12px}@media(max-width:720px){.node-load-summary>header{align-items:flex-start;flex-direction:column}.node-load-grid{grid-template-columns:1fr}}
 .node-list>button{color:var(--text)}.node-list>button:hover,.node-list>button.active{background:var(--primary-soft)}
 .node-protocols{overflow:hidden}.node-protocols :deep(.data-table-shell){border:0;border-radius:0}.node-protocols :deep(.p-inputnumber){min-width:110px;max-width:160px}
 </style>
