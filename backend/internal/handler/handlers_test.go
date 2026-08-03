@@ -445,6 +445,17 @@ func TestProtocolKernelCapabilitiesUseConcreteZeroVersionForMieru(t *testing.T) 
 	if !capabilities["mieru"].Supported || capabilities["mieru"].MinimumZeroVersion != zeroMieruPrincipalSince {
 		t.Fatalf("panel Mieru capability = %+v", capabilities["mieru"])
 	}
+	for _, protocol := range []string{"trojan", "hysteria2"} {
+		if supported, reason := legacy.protocolKernelSupportForVersion(protocol, "0.0.15-rc.2"); supported || reason != protocolKernelManagedUsersUnavailableReason {
+			t.Fatalf("rc.2 %s support = %t %q", protocol, supported, reason)
+		}
+		if supported, reason := legacy.protocolKernelSupportForVersion(protocol, "0.0.15"); !supported || reason != "" {
+			t.Fatalf("formal 0.0.15 %s support = %t %q", protocol, supported, reason)
+		}
+		if capabilities[protocol].MinimumZeroVersion != zeroNativeAccessSince {
+			t.Fatalf("panel %s capability = %+v", protocol, capabilities[protocol])
+		}
+	}
 
 	future, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "native-local", "0.0.15-rc.4")
 	if err != nil {
@@ -864,6 +875,93 @@ func TestValidateNodeProtocolConfigs(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if err := validateNodeProtocolConfigs("vless", test.server, test.client); err == nil {
 				t.Fatal("validateNodeProtocolConfigs() error = nil, want rejection")
+			}
+		})
+	}
+}
+
+func TestValidateNodeProtocolConfigsChecksSelectableTransports(t *testing.T) {
+	valid := []struct {
+		name     string
+		protocol string
+		server   string
+		client   string
+	}{
+		{name: "VLESS TCP", protocol: "vless", server: `{"type":"vless","users":[]}`, client: `{"type":"vless"}`},
+		{name: "VLESS WebSocket", protocol: "vless", server: `{"type":"vless","users":[],"ws":{"path":"/edge"}}`, client: `{"type":"vless","ws":{"path":"/edge"}}`},
+		{name: "VMess gRPC", protocol: "vmess", server: `{"type":"vmess","users":[],"grpc":{"service_names":["edge"]}}`, client: `{"type":"vmess","grpc":{"service_names":["edge"]}}`},
+	}
+	for _, test := range valid {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateNodeProtocolConfigs(test.protocol, test.server, test.client); err != nil {
+				t.Fatalf("validateNodeProtocolConfigs() error = %v", err)
+			}
+		})
+	}
+
+	invalid := []struct {
+		name     string
+		protocol string
+		server   string
+		client   string
+	}{
+		{name: "transport mismatch", protocol: "vless", server: `{"type":"vless","users":[],"ws":{"path":"/edge"}}`, client: `{"type":"vless"}`},
+		{name: "WebSocket path mismatch", protocol: "vmess", server: `{"type":"vmess","users":[],"ws":{"path":"/one"}}`, client: `{"type":"vmess","ws":{"path":"/two"}}`},
+		{name: "gRPC service mismatch", protocol: "vless", server: `{"type":"vless","users":[],"grpc":{"service_names":["one"]}}`, client: `{"type":"vless","grpc":{"service_names":["two"]}}`},
+	}
+	for _, test := range invalid {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateNodeProtocolConfigs(test.protocol, test.server, test.client); err == nil {
+				t.Fatal("validateNodeProtocolConfigs() error = nil, want rejection")
+			}
+		})
+	}
+	if err := validateProtocolTransportConfigs("vless",
+		map[string]interface{}{"reality": map[string]interface{}{}, "ws": map[string]interface{}{"path": "/edge"}},
+		map[string]interface{}{"reality": map[string]interface{}{}, "ws": map[string]interface{}{"path": "/edge"}},
+	); err == nil {
+		t.Fatal("validateProtocolTransportConfigs() accepted Reality over WebSocket")
+	}
+}
+
+func TestNormalizeManagedProtocolTemplatesRemovesSharedAccounts(t *testing.T) {
+	tests := []struct {
+		name       string
+		protocol   string
+		server     string
+		client     string
+		serverGone string
+		clientGone string
+	}{
+		{name: "VLESS placeholder UUID", protocol: "vless", server: `{"type":"vless","users":[{"id":"template-id","flow":"xtls-rprx-vision"}]}`, client: `{"type":"vless","id":"template-id"}`, serverGone: "id", clientGone: "id"},
+		{name: "Trojan shared password", protocol: "trojan", server: `{"type":"trojan","password":"shared"}`, client: `{"type":"trojan","password":"shared"}`, serverGone: "password", clientGone: "password"},
+		{name: "Hysteria2 shared password", protocol: "hysteria2", server: `{"type":"hysteria2","password":"shared"}`, client: `{"type":"hysteria2","password":"shared"}`, serverGone: "password", clientGone: "password"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			serverJSON, clientJSON, err := normalizeManagedProtocolTemplates(test.protocol, test.server, test.client)
+			if err != nil {
+				t.Fatalf("normalizeManagedProtocolTemplates() error = %v", err)
+			}
+			var server, client map[string]interface{}
+			if err := json.Unmarshal([]byte(serverJSON), &server); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal([]byte(clientJSON), &client); err != nil {
+				t.Fatal(err)
+			}
+			if _, exists := server[test.serverGone]; exists {
+				t.Fatalf("server retained %q: %s", test.serverGone, serverJSON)
+			}
+			if _, exists := client[test.clientGone]; exists {
+				t.Fatalf("client retained %q: %s", test.clientGone, clientJSON)
+			}
+			if strings.Contains(serverJSON+clientJSON, "template-id") || strings.Contains(serverJSON+clientJSON, "shared") {
+				t.Fatalf("normalized templates retained an account secret: server=%s client=%s", serverJSON, clientJSON)
+			}
+			users, ok := server["users"].([]interface{})
+			if !ok || (test.protocol != "vless" && len(users) != 0) {
+				t.Fatalf("server users = %#v", server["users"])
 			}
 		})
 	}

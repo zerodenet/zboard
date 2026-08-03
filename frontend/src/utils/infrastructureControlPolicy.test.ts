@@ -55,7 +55,11 @@ describe('infrastructure control policy', () => {
     expect(protocols).toContain('loadProtocolCapabilities')
     expect(protocols).toContain(':disabled="!endpoint.kernel_supported"')
     expect(protocols).toContain('selectedNode.value?.kernel_state?.installed_version')
-    expect(protocols).toContain('compareZeroVersions')
+    expect(protocols).toContain('zeroVersionAtLeast')
+    expect(protocols).toContain('effectiveTransportOptions')
+    expect(protocols).toContain("structured.security === 'reality'")
+    expect(protocols).toContain("structured.transport === 'ws'")
+    expect(protocols).toContain("structured.transport === 'grpc'")
     expect(protocols).toContain('canSaveSelectedProtocol')
   })
 

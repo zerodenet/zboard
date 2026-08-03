@@ -26,6 +26,112 @@ remain outside this repository.
 
 ## Completed goals
 
+### 2026-08-03 - Managed VLESS and VMess transport selection
+
+Goal outcome before synchronization:
+
+- Added first-class TCP, WebSocket and gRPC transport selection to the VLESS
+  and VMess protocol-service wizard. TCP is the raw default, WebSocket owns a
+  validated path, and gRPC owns one canonical service name.
+- Generated matching server and subscriber-client transport configuration and
+  preserved the same value through Zero, Clash and sing-box subscription
+  exports. Canonical gRPC `service_names` now converts correctly to the
+  singular field required by Clash and sing-box.
+- Matched the Zero `0.0.15` contract: VLESS Reality is automatically locked to
+  raw TCP, VMess retains mandatory TLS, and protocols without configurable
+  carrier fields do not show a misleading transport selector.
+- Added save-boundary validation for mutually exclusive carriers, mismatched
+  server/client transports, invalid WebSocket paths, mismatched gRPC service
+  names and Reality combined with a non-TCP carrier.
+
+Local verification:
+
+- `go test ./...` and `go vet ./...` passed for the backend.
+- All 63 frontend Vitest files and 146 tests passed. Frontend type checking and
+  the production build passed with 539 transformed modules.
+- `git diff --check` passed with only the repository's existing Windows
+  LF-to-CRLF notices.
+
+Synchronization and deployed verification:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` completed successfully and
+  deployed
+  `v0.0.1-20260803T051104Z-intranet-working-tree@2026-08-03T05:11:04Z`.
+  Independent requests confirmed `/api/v1/version` and `/readyz` returned HTTP
+  200 with `db=true` and `ready=true`.
+- `zboard_next-zboard-1` was running and healthy; the external `db` and
+  `cache` containers were running. The deployed `Protocols-Dti8C-vr.js` asset
+  contains the TCP, WebSocket and gRPC transport controls.
+- The pre-sync database backup is
+  `/data/zboard-next/backups/20260803T051104Z/zboard-before-sync.sql` (81,442
+  bytes), the previous source is
+  `/data/zboard-next/app-prev-20260803T051104Z`, and the release archive is
+  `/data/zboard-next/releases/20260803T051104Z/source.tar.gz` (802,300 bytes).
+
+Remaining gaps after synchronization:
+
+- No live VLESS/VMess WebSocket or gRPC client connection was created during
+  deployment. Config generation, validation and renderer conversion are
+  covered by local tests; a real client connection remains the final
+  end-to-end transport check.
+- No Git staging, commit, push or release was performed.
+
+### 2026-08-03 - Zero 0.0.15 protocol capability and managed-user templates
+
+Goal outcome before synchronization:
+
+- Corrected frontend Zero version precedence so the formal `0.0.15` release
+  sorts after `0.0.15-rc.*`; selecting a formal-release node no longer marks
+  Mieru unavailable.
+- Removed endpoint-level placeholder accounts from generated VLESS templates
+  and removed shared passwords from Trojan and Hysteria2 templates. These
+  protocols now store only service/transport defaults; subscriber credentials
+  are injected into runtime and client configurations per subscription.
+- Added backend normalization at save and admin-detail boundaries so direct API
+  writes and historical records cannot keep presenting placeholder VLESS IDs
+  or Trojan/Hysteria2 shared passwords as supported configuration.
+- Declared Trojan/Hysteria2 managed-user support as requiring Zero
+  `0.0.15-rc.3` or newer. Older kernels are rejected with an upgrade message
+  instead of silently falling back to a shared account.
+
+Local verification:
+
+- `go test ./...` and `go vet ./...` passed for the backend.
+- All 63 frontend Vitest files and 146 tests passed, including formal-release
+  versus prerelease ordering. Frontend type checking and the production build
+  passed with 539 transformed modules.
+- `git diff --check` passed with only the repository's existing Windows
+  LF-to-CRLF notices.
+
+Synchronization and deployed verification:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` completed successfully and
+  deployed
+  `v0.0.1-20260803T045808Z-intranet-working-tree@2026-08-03T04:58:08Z`.
+  Independent requests confirmed `/api/v1/version` and `/readyz` returned HTTP
+  200 with `db=true` and `ready=true`.
+- The public capability response advertises Mieru minimum Zero
+  `0.0.15-rc.4` and Trojan/Hysteria2 minimum Zero `0.0.15-rc.3`. The running
+  source hashes for the protocol editor, semantic version helper, endpoint
+  handler and credential compiler exactly match the locally verified files.
+- `zboard_next-zboard-1` was running and healthy; the external `db` and
+  `cache` containers were running. Both external services require
+  authentication, so no deployment credential was read merely to perform an
+  extra CLI login; application readiness independently confirmed database
+  connectivity.
+- The pre-sync database backup is
+  `/data/zboard-next/backups/20260803T045808Z/zboard-before-sync.sql` (81,442
+  bytes), the previous source is
+  `/data/zboard-next/app-prev-20260803T045808Z`, and the release archive is
+  `/data/zboard-next/releases/20260803T045808Z/source.tar.gz` (799,084 bytes).
+
+Remaining gaps after synchronization:
+
+- No live subscriber Trojan/Hysteria2 connection was created as part of this
+  deployment. Runtime injection is covered by backend tests; an operator-side
+  client connection remains the final end-to-end protocol check.
+- No Git staging, commit, push or release was performed.
+
 ### 2026-08-03 - SSH terminal final-row clipping
 
 Goal outcome before synchronization:

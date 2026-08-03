@@ -681,7 +681,9 @@ func addClashTransport(proxy, config map[string]interface{}) {
 	if grpc := configMap(config, "grpc"); len(grpc) > 0 {
 		proxy["network"] = "grpc"
 		options := map[string]interface{}{}
-		copyConfigValue(options, grpc, "grpc-service-name", "service_name")
+		if serviceName := firstGrpcServiceName(grpc); serviceName != "" {
+			options["grpc-service-name"] = serviceName
+		}
 		proxy["grpc-opts"] = options
 	}
 }
@@ -736,10 +738,27 @@ func singBoxTransport(config map[string]interface{}) map[string]interface{} {
 	}
 	if grpc := configMap(config, "grpc"); len(grpc) > 0 {
 		transport := map[string]interface{}{"type": "grpc"}
-		copyConfigValue(transport, grpc, "service_name", "service_name")
+		if serviceName := firstGrpcServiceName(grpc); serviceName != "" {
+			transport["service_name"] = serviceName
+		}
 		return transport
 	}
 	return nil
+}
+
+func firstGrpcServiceName(grpc map[string]interface{}) string {
+	if value := configString(grpc, "service_name"); value != "" {
+		return value
+	}
+	if values, ok := grpc["service_names"].([]interface{}); ok && len(values) > 0 {
+		if value, ok := values[0].(string); ok {
+			return strings.TrimSpace(value)
+		}
+	}
+	if value, ok := grpc["service_names"].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
 }
 
 func requiredConfigString(endpoint subscriptionTemplateEndpoint, config map[string]interface{}, keys ...string) (string, error) {

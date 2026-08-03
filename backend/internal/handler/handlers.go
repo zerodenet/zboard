@@ -85,6 +85,7 @@ var supportedProtocols = map[string]struct{}{
 }
 
 const protocolKernelMieruUnavailableReason = "Mieru 托管归属需要 Zero 0.0.15-rc.4 或更高版本；请先升级所选节点内核。"
+const protocolKernelManagedUsersUnavailableReason = "Trojan 和 Hysteria2 的订阅用户模式需要 Zero 0.0.15-rc.3 或更高版本；不支持退化为共享密码，请先升级所选节点内核。"
 
 type authClaims struct {
 	UserID  uint   `json:"uid"`
@@ -2546,6 +2547,10 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 	}
+	if req.Config, req.ClientConfig, err = normalizeManagedProtocolTemplates(protocol, req.Config, req.ClientConfig); err != nil {
+		BadRequestError(w, err)
+		return
+	}
 	var managedCertificate *model.ManagedCertificate
 	if req.ManagedCertificateID != nil && *req.ManagedCertificateID != 0 {
 		certificate, certificateErr := h.loadUsableManagedCertificate(*req.ManagedCertificateID, node.ID, protocol, time.Now().UTC())
@@ -2792,6 +2797,9 @@ func (h *handlers) ProtocolEndpointDetailHandler(w http.ResponseWriter, r *http.
 	}
 	if strings.EqualFold(endpoint.Protocol, "mieru") {
 		serverConfig, endpoint.ClientConfig = redactMieruEndpointAdminConfigs(serverConfig, endpoint.ClientConfig)
+	} else if serverConfig, endpoint.ClientConfig, err = normalizeManagedProtocolTemplates(endpoint.Protocol, serverConfig, endpoint.ClientConfig); err != nil {
+		ServerError(w, fmt.Errorf("normalize protocol endpoint template: %w", err))
+		return
 	}
 	usage, err := h.loadProtocolEndpointUsage(endpoint.ID, time.Now().UTC())
 	if err != nil {
@@ -6929,6 +6937,10 @@ func (h *handlers) protocolKernelSupportForVersion(proto, zeroVersion string) (b
 	if strings.EqualFold(strings.TrimSpace(proto), "mieru") && !zeroSupportsMieruPrincipal(zeroVersion) {
 		return false, protocolKernelMieruUnavailableReason
 	}
+	if (strings.EqualFold(strings.TrimSpace(proto), "trojan") || strings.EqualFold(strings.TrimSpace(proto), "hysteria2")) &&
+		!zeroSupportsNativeManagedAccess(zeroVersion) {
+		return false, protocolKernelManagedUsersUnavailableReason
+	}
 	return true, ""
 }
 
@@ -6960,6 +6972,8 @@ func (h *handlers) protocolKernelCapabilities() map[string]protocolKernelCapabil
 		capability := protocolKernelCapability{Supported: supported, Reason: reason}
 		if protocol == "mieru" {
 			capability.MinimumZeroVersion = zeroMieruPrincipalSince
+		} else if protocol == "trojan" || protocol == "hysteria2" {
+			capability.MinimumZeroVersion = zeroNativeAccessSince
 		}
 		capabilities[protocol] = capability
 	}
@@ -6992,10 +7006,141 @@ func validateNodeProtocolConfigs(protocol, serverConfig, clientConfig string) er
 			return err
 		}
 	}
+	if len(fields) == 0 {
+		if err := validateProtocolTransportConfigs(protocol, serverObject, clientObject); err != nil {
+			return err
+		}
+	}
 	if len(fields) > 0 {
 		return validationError("协议配置校验失败。", fields)
 	}
 	return nil
+}
+
+func validateProtocolTransportConfigs(protocol string, server, client map[string]interface{}) error {
+	protocol = strings.ToLower(strings.TrimSpace(protocol))
+	if protocol != "vless" && protocol != "vmess" {
+		return nil
+	}
+	serverKind, err := selectableTransportKind(server)
+	if err != nil {
+		return validationError("协议配置校验失败。", map[string]string{"config": err.Error()})
+	}
+	clientKind, err := selectableTransportKind(client)
+	if err != nil {
+		return validationError("协议配置校验失败。", map[string]string{"client_config": err.Error()})
+	}
+	if serverKind != clientKind {
+		return validationError("协议配置校验失败。", map[string]string{"client_config": "服务端与客户端必须使用相同的 TCP、WebSocket 或 gRPC 传输方式。"})
+	}
+	if protocol == "vless" && serverKind != "tcp" && (server["reality"] != nil || client["reality"] != nil) {
+		return validationError("协议配置校验失败。", map[string]string{"config": "Zero 0.0.15 的 VLESS Reality 仅支持原始 TCP。"})
+	}
+	switch serverKind {
+	case "ws":
+		serverPath, serverHeaders, err := websocketTransportFields(server["ws"])
+		if err != nil {
+			return validationError("协议配置校验失败。", map[string]string{"config": err.Error()})
+		}
+		clientPath, clientHeaders, err := websocketTransportFields(client["ws"])
+		if err != nil {
+			return validationError("协议配置校验失败。", map[string]string{"client_config": err.Error()})
+		}
+		if serverPath != clientPath || serverHeaders != clientHeaders {
+			return validationError("协议配置校验失败。", map[string]string{"client_config": "WebSocket 路径和请求头必须与服务端一致。"})
+		}
+	case "grpc":
+		serverNames, err := grpcTransportServiceNames(server["grpc"])
+		if err != nil {
+			return validationError("协议配置校验失败。", map[string]string{"config": err.Error()})
+		}
+		clientNames, err := grpcTransportServiceNames(client["grpc"])
+		if err != nil {
+			return validationError("协议配置校验失败。", map[string]string{"client_config": err.Error()})
+		}
+		if strings.Join(serverNames, "\x00") != strings.Join(clientNames, "\x00") {
+			return validationError("协议配置校验失败。", map[string]string{"client_config": "gRPC Service Name 必须与服务端一致。"})
+		}
+	}
+	return nil
+}
+
+func selectableTransportKind(config map[string]interface{}) (string, error) {
+	hasWS := config["ws"] != nil
+	hasGRPC := config["grpc"] != nil
+	if hasWS && hasGRPC {
+		return "", errors.New("WebSocket 与 gRPC 不能同时启用。")
+	}
+	if hasWS {
+		return "ws", nil
+	}
+	if hasGRPC {
+		return "grpc", nil
+	}
+	return "tcp", nil
+}
+
+func websocketTransportFields(value interface{}) (string, string, error) {
+	config, ok := value.(map[string]interface{})
+	if !ok {
+		return "", "", errors.New("WebSocket 配置必须是 JSON 对象。")
+	}
+	path := "/"
+	if configured, exists := config["path"]; exists {
+		path, ok = configured.(string)
+		if !ok || !strings.HasPrefix(strings.TrimSpace(path), "/") {
+			return "", "", errors.New("WebSocket 路径必须以 / 开头。")
+		}
+		path = strings.TrimSpace(path)
+	}
+	headers := map[string]interface{}{}
+	if configured, exists := config["headers"]; exists {
+		headers, ok = configured.(map[string]interface{})
+		if !ok {
+			return "", "", errors.New("WebSocket headers 必须是 JSON 对象。")
+		}
+	}
+	payload, _ := json.Marshal(headers)
+	return path, string(payload), nil
+}
+
+func grpcTransportServiceNames(value interface{}) ([]string, error) {
+	config, ok := value.(map[string]interface{})
+	if !ok {
+		return nil, errors.New("gRPC 配置必须是 JSON 对象。")
+	}
+	value, exists := config["service_names"]
+	if !exists {
+		value, exists = config["service_name"]
+	}
+	if !exists {
+		return nil, errors.New("gRPC 配置必须包含 service_names。")
+	}
+	var names []string
+	switch typed := value.(type) {
+	case string:
+		names = []string{typed}
+	case []interface{}:
+		for _, item := range typed {
+			name, ok := item.(string)
+			if !ok {
+				return nil, errors.New("gRPC service_names 必须是字符串或字符串数组。")
+			}
+			names = append(names, name)
+		}
+	default:
+		return nil, errors.New("gRPC service_names 必须是字符串或字符串数组。")
+	}
+	if len(names) == 0 {
+		return nil, errors.New("gRPC service_names 不能为空。")
+	}
+	for index := range names {
+		names[index] = strings.TrimSpace(names[index])
+		if names[index] == "" {
+			return nil, errors.New("gRPC Service Name 不能为空。")
+		}
+	}
+	return names, nil
 }
 
 func validateOptionalJSONObject(name, value string) error {

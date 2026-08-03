@@ -196,6 +196,20 @@ func TestRenderClashSubscriptionConvertsProtocolFields(t *testing.T) {
 	}
 }
 
+func TestCanonicalGrpcServiceNamesReachClashAndSingBox(t *testing.T) {
+	config := map[string]interface{}{"service_names": []interface{}{"managed-edge"}}
+	clash := map[string]interface{}{}
+	addClashTransport(clash, map[string]interface{}{"grpc": config})
+	options, ok := clash["grpc-opts"].(map[string]interface{})
+	if !ok || options["grpc-service-name"] != "managed-edge" {
+		t.Fatalf("Clash gRPC options = %#v", clash["grpc-opts"])
+	}
+	singBox := singBoxTransport(map[string]interface{}{"grpc": config})
+	if singBox["type"] != "grpc" || singBox["service_name"] != "managed-edge" {
+		t.Fatalf("sing-box gRPC transport = %#v", singBox)
+	}
+}
+
 func TestRenderSingBoxSubscriptionConvertsAndOmitsUnsupportedMieru(t *testing.T) {
 	rendered, err := renderSingBoxSubscription(subscriptionExporterTestData(), defaultSubscriptionCustomization(subscriptionRendererSingBox))
 	if err != nil {

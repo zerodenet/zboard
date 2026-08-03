@@ -32,6 +32,53 @@ func protocolUsesSubscriptionCredential(protocol string) bool {
 	}
 }
 
+// Endpoint templates describe transport defaults, not a shared account.
+// Subscriber secrets are injected only while compiling a node runtime or a
+// subscriber client configuration.
+func normalizeManagedProtocolTemplates(protocol, serverConfig, clientConfig string) (string, string, error) {
+	var server map[string]interface{}
+	var client map[string]interface{}
+	if err := json.Unmarshal([]byte(serverConfig), &server); err != nil || server == nil {
+		return "", "", validationError("协议配置校验失败。", map[string]string{"config": "服务端配置必须是 JSON 对象。"})
+	}
+	if err := json.Unmarshal([]byte(clientConfig), &client); err != nil || client == nil {
+		return "", "", validationError("协议配置校验失败。", map[string]string{"client_config": "客户端配置必须是 JSON 对象。"})
+	}
+
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "vless":
+		var defaults []interface{}
+		if configured, ok := server["users"].([]interface{}); ok && len(configured) > 0 {
+			if first, ok := configured[0].(map[string]interface{}); ok {
+				if flow, ok := first["flow"].(string); ok && strings.TrimSpace(flow) != "" {
+					defaults = []interface{}{map[string]interface{}{"flow": strings.TrimSpace(flow)}}
+				}
+			}
+		}
+		if defaults == nil {
+			defaults = []interface{}{}
+		}
+		server["users"] = defaults
+		delete(client, "id")
+	case "trojan", "hysteria2":
+		delete(server, "password")
+		server["users"] = []interface{}{}
+		delete(client, "password")
+	default:
+		return serverConfig, clientConfig, nil
+	}
+
+	normalizedServer, err := json.MarshalIndent(server, "", "  ")
+	if err != nil {
+		return "", "", err
+	}
+	normalizedClient, err := json.MarshalIndent(client, "", "  ")
+	if err != nil {
+		return "", "", err
+	}
+	return string(normalizedServer), string(normalizedClient), nil
+}
+
 func (h *handlers) protocolStoresSubscriptionCredential(protocol string) bool {
 	return protocolStoresSubscriptionCredentialWithMieru(protocol, h.zeroMieruAccess)
 }

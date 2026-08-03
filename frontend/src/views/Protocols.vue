@@ -172,6 +172,9 @@
             <FormField v-if="form.protocol === 'vmess'" v-slot="{ controlAttrs }" label="VMess 加密方式"><UiSelect v-model="structured.cipher" v-bind="controlAttrs" :options="vmessCipherOptions" /></FormField>
             <FormField v-if="form.protocol === 'shadowsocks'" v-slot="{ controlAttrs }" label="Shadowsocks 加密方式"><UiSelect v-model="structured.cipher" v-bind="controlAttrs" :options="shadowsocksCipherOptions" /></FormField>
             <FormField v-if="form.protocol === 'vless'" v-slot="{ controlAttrs }" label="传输安全"><UiSelect v-model="structured.security" v-bind="controlAttrs" :options="securityOptions" /></FormField>
+            <FormField v-if="supportsSelectableTransport" v-slot="{ controlAttrs }" label="传输方式" :hint="form.protocol === 'vless' && structured.security === 'reality' ? 'Zero 0.0.15 的 Reality 仅支持原始 TCP。' : 'TCP 不添加额外封装；WebSocket 和 gRPC 会同步写入服务端及订阅客户端。'"><UiSelect v-model="structured.transport" v-bind="controlAttrs" :options="effectiveTransportOptions" /></FormField>
+            <FormField v-if="supportsSelectableTransport && structured.transport === 'ws'" v-slot="{ controlAttrs }" label="WebSocket 路径" name="protocol-transport-path" :error="editorErrors.fields['structured.transport_path']" required><UiInput v-model.trim="structured.transport_path" v-bind="controlAttrs" placeholder="/proxy" /></FormField>
+            <FormField v-if="supportsSelectableTransport && structured.transport === 'grpc'" v-slot="{ controlAttrs }" label="gRPC Service Name" name="protocol-grpc-service-name" :error="editorErrors.fields['structured.grpc_service_name']" required><UiInput v-model.trim="structured.grpc_service_name" v-bind="controlAttrs" placeholder="zboard" /></FormField>
             <template v-if="form.protocol === 'vless' && structured.security === 'reality'">
               <div class="generated-config-note field-full"><UiIcon name="shield" /><div><strong>VLESS + Reality</strong><p>面板生成匹配的 X25519 密钥与 short ID；私钥仅进入加密保存的服务端配置，订阅只下发公钥。</p></div><UiButton variant="secondary" type="button" :loading="realityKeyBusy" @click="regenerateRealityKeys">重新生成密钥</UiButton></div>
               <FormField v-slot="{ controlAttrs }" label="一键场景模板" hint="模板会一次填入推荐 SNI、客户端指纹、成对密钥和 Short ID；应用后仍可按实际网络调整。" full><div class="input-with-action"><UiSelect v-model="realityPreset" v-bind="controlAttrs" :options="realityPresetOptions" /><UiButton variant="secondary" type="button" :loading="realityTemplateBusy" @click="applyRealityTemplate">应用模板</UiButton></div></FormField>
@@ -265,6 +268,7 @@ import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 import { normalizeOutput, truncateOutput } from '../utils/output'
 import { trackAdminTask } from '../utils/taskTracker'
 import { isIntegerInRange } from '../utils/validation'
+import { zeroVersionAtLeast } from '../utils/zeroVersion'
 
 const protocols = ['vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria2', 'mieru']
 const defaultMieruUnavailableReason = 'Mieru 托管归属需要 Zero 0.0.15-rc.4 或更高版本；请先升级所选节点内核。'
@@ -287,6 +291,11 @@ const deploymentFilterOptions = [{ label: '全部发布状态', value: '' }, { l
 const vmessCipherOptions = [{ label: 'AES-128-GCM（推荐）', value: 'aes-128-gcm' }, { label: 'ChaCha20-Poly1305', value: 'chacha20-poly1305' }, { label: '不额外加密', value: 'none' }]
 const shadowsocksCipherOptions = [{ label: 'AES-128-GCM', value: 'aes-128-gcm' }, { label: 'AES-256-GCM', value: 'aes-256-gcm' }, { label: 'ChaCha20-Poly1305（推荐）', value: 'chacha20-ietf-poly1305' }]
 const securityOptions = [{ label: '无 TLS（直接连接）', value: 'none' }, { label: 'TLS 证书', value: 'tls' }, { label: 'Reality', value: 'reality' }]
+const transportOptions = [
+  { label: 'TCP（原始传输）', value: 'tcp' },
+  { label: 'WebSocket', value: 'ws' },
+  { label: 'gRPC', value: 'grpc' },
+]
 const realityFingerprintOptions = [{ label: 'Chrome', value: 'chrome' }, { label: 'Firefox', value: 'firefox' }, { label: 'Safari', value: 'safari' }, { label: 'Edge', value: 'edge' }]
 const realityPresetOptions = [{ label: '通用兼容（推荐）', value: 'compatible' }, { label: '全球 CDN', value: 'cdn' }, { label: 'Apple 生态', value: 'apple' }]
 const wizardSteps = [{ id: 1, title: '节点与入口', caption: '选择 VPS' }, { id: 2, title: '服务参数', caption: '系统管凭证' }, { id: 3, title: '确认发布', caption: '检查配置' }]
@@ -328,8 +337,8 @@ const copySourceID = ref(0)
 const originalNodeID = ref(0)
 const bulkBusy = ref<'' | 'deploy' | 'enable' | 'disable'>('')
 const message = ref(''), editorError = ref('')
-const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, is_active: true, config: '{}', client_config: '{}', optional_config: '{}', tags: '[]' })
-const emptyStructured = () => ({ credential: randomUUID(), username: 'subscriber', password: randomSecret(), cipher: 'aes-128-gcm', security: 'none', cert_path: '', key_path: '', server_name: '', reality_private_key: '', reality_public_key: '', reality_short_id: '', reality_server_name: '', reality_fingerprint: 'chrome' })
+const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, managed_principal_ready: false, is_active: true, config: '{}', client_config: '{}', optional_config: '{}', tags: '[]' })
+const emptyStructured = () => ({ credential: randomUUID(), username: 'subscriber', password: randomSecret(), cipher: 'aes-128-gcm', security: 'none', transport: 'tcp', transport_path: '/', grpc_service_name: 'zboard', cert_path: '', key_path: '', server_name: '', reality_private_key: '', reality_public_key: '', reality_short_id: '', reality_server_name: '', reality_fingerprint: 'chrome' })
 const form = reactive<any>(emptyForm())
 const structured = reactive<any>(emptyStructured())
 const protocolFormElement = ref<HTMLElement | null>(null)
@@ -391,7 +400,11 @@ const { items: deployments, total: deploymentTotal, loading: deploymentLoading, 
   errorMessage: (cause: any) => cause?.response?.data?.message || '发布历史加载失败。',
   onOffsetCorrected: () => syncURL(true),
 })
-const usesManagedCredentials = computed(() => ['vless', 'vmess', 'shadowsocks'].includes(form.protocol))
+const usesManagedCredentials = computed(() => ['vless', 'vmess', 'shadowsocks', 'trojan', 'hysteria2'].includes(form.protocol))
+const supportsSelectableTransport = computed(() => ['vless', 'vmess'].includes(form.protocol))
+const effectiveTransportOptions = computed(() => form.protocol === 'vless' && structured.security === 'reality'
+  ? transportOptions.map(option => ({ ...option, disabled: option.value !== 'tcp' }))
+  : transportOptions)
 const usesTLS = computed(() => ['vmess', 'trojan', 'hysteria2'].includes(form.protocol) || (form.protocol === 'vless' && structured.security === 'tls'))
 const requiresTLSFiles = computed(() => ['vmess', 'trojan'].includes(form.protocol) || (form.protocol === 'vless' && structured.security === 'tls'))
 const managedCertificateOptions = computed(() => [
@@ -403,11 +416,12 @@ const managedCertificateOptions = computed(() => [
 const hasConfigError = computed(() => ['config', 'client_config', 'optional_config', 'tags', 'parent_protocol_id', 'multiplier_milli', 'sort_order'].some(field => Boolean(editorErrors.fields[field])))
 const selectedProtocolCapability = computed<ProtocolKernelCapability>(() => {
   const capability = protocolCapabilities[form.protocol] || { supported: false, reason: '无法确认当前内核是否支持该协议。' }
-  if (form.protocol !== 'mieru' || !capability.supported) return capability
-  const minimum = capability.minimum_zero_version || '0.0.15-rc.4'
+  if (!capability.supported) return capability
+  const minimum = capability.minimum_zero_version || ''
+  if (!minimum) return capability
   const installed = selectedNode.value?.kernel_state?.installed_version || ''
-  if (!installed || compareZeroVersions(installed, minimum) < 0) {
-    return { supported: false, minimum_zero_version: minimum, reason: defaultMieruUnavailableReason }
+  if (!zeroVersionAtLeast(installed, minimum)) {
+    return { supported: false, minimum_zero_version: minimum, reason: capability.reason || `该协议需要 Zero ${minimum} 或更高版本；请先升级所选节点内核。` }
   }
   return capability
 })
@@ -420,10 +434,14 @@ for (const field of Object.keys(protocolFieldMap)) {
 for (const [source, field] of [
   [() => structured.username, 'structured.username'], [() => structured.password, 'structured.password'],
   [() => structured.cert_path, 'structured.cert_path'], [() => structured.key_path, 'structured.key_path'],
+  [() => structured.transport_path, 'structured.transport_path'], [() => structured.grpc_service_name, 'structured.grpc_service_name'],
   [() => structured.reality_server_name, 'structured.reality_server_name'], [() => structured.reality_short_id, 'structured.reality_short_id'],
 ] as Array<[() => unknown, string]>) watch(source, () => editorErrors.clear(field))
 watch(() => structured.security, value => {
-  if (form.protocol === 'vless' && value === 'reality' && !structured.reality_private_key) void regenerateRealityKeys()
+  if (form.protocol === 'vless' && value === 'reality') {
+    structured.transport = 'tcp'
+    if (!structured.reality_private_key) void regenerateRealityKeys()
+  }
 })
 const effectiveSortField = computed(() => groupedByNode.value ? 'node_id' : sortField.value)
 const effectiveSortDirection = computed<'asc' | 'desc'>(() => groupedByNode.value ? 'asc' : sortDirection.value)
@@ -436,18 +454,6 @@ const protocolStatusOverview = computed(() => [
 ] as const)
 
 function protocolLabel(protocol: string) { return ({ vmess: 'VMess', vless: 'VLESS', trojan: 'Trojan', shadowsocks: 'Shadowsocks', hysteria2: 'Hysteria 2', mieru: 'Mieru' } as Record<string, string>)[protocol] || protocol }
-function compareZeroVersions(left: string, right: string) {
-  const tokenize = (value: string) => value.replace(/^v/, '').split(/[.-]/).map(part => /^\d+$/.test(part) ? Number(part) : part)
-  const a = tokenize(left), b = tokenize(right)
-  for (let index = 0; index < Math.max(a.length, b.length); index++) {
-    const av = a[index] ?? Number.POSITIVE_INFINITY
-    const bv = b[index] ?? Number.POSITIVE_INFINITY
-    if (av === bv) continue
-    if (typeof av === 'number' && typeof bv === 'number') return av < bv ? -1 : 1
-    return String(av).localeCompare(String(bv), undefined, { numeric: true })
-  }
-  return 0
-}
 function formatMultiplier(value: number) { return `${Number(value || 1000) / 1000}×` }
 function formatMultiplierNumber(value: number) { return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(Number(value || 1000) / 1000) }
 function deploymentLabel(status?: string) { return !status ? '等待首次发布' : status === 'succeeded' ? '已生效' : status === 'failed' ? '发布失败' : status === 'running' ? '发布中' : formatUnknownValue('状态', status) }
@@ -568,7 +574,7 @@ function handleNodeSelect(node: AdminNodeListItem | null) {
 }
 function useNodeAddress() { if (selectedNode.value?.address) form.address = selectedNode.value.address }
 function suggestName() { if (!selectedNode.value) return; form.name = `${selectedNode.value.name} ${protocolLabel(form.protocol)}` }
-function handleProtocolChange() { if (!form.id) suggestName(); structured.cipher = form.protocol === 'shadowsocks' ? 'chacha20-ietf-poly1305' : 'aes-128-gcm'; structured.security = form.protocol === 'vless' ? 'none' : 'tls'; if (!['vless', 'vmess', 'trojan', 'hysteria2'].includes(form.protocol)) form.managed_certificate_id = 0 }
+function handleProtocolChange() { if (!form.id) suggestName(); structured.cipher = form.protocol === 'shadowsocks' ? 'chacha20-ietf-poly1305' : 'aes-128-gcm'; structured.security = form.protocol === 'vless' ? 'none' : 'tls'; structured.transport = supportsSelectableTransport.value ? 'tcp' : ''; if (!['vless', 'vmess', 'trojan', 'hysteria2'].includes(form.protocol)) form.managed_certificate_id = 0 }
 async function regenerateRealityKeys() {
   if (realityKeyBusy.value) return
   realityKeyBusy.value = true
@@ -680,6 +686,10 @@ function readStructuredConfig() {
   structured.password = server.password || server.users?.[0]?.password || client.password || randomSecret()
   structured.cipher = server.cipher || server.users?.[0]?.cipher || client.cipher || (form.protocol === 'shadowsocks' ? 'chacha20-ietf-poly1305' : 'aes-128-gcm')
   structured.security = server.reality ? 'reality' : server.tls ? 'tls' : 'none'
+  structured.transport = server.ws || client.ws ? 'ws' : server.grpc || client.grpc ? 'grpc' : 'tcp'
+  structured.transport_path = server.ws?.path || client.ws?.path || '/'
+  const grpcNames = server.grpc?.service_names || client.grpc?.service_names || client.grpc?.service_name
+  structured.grpc_service_name = (Array.isArray(grpcNames) ? grpcNames[0] : grpcNames) || 'zboard'
   structured.cert_path = server.tls?.cert_path || server.cert_path || ''
   structured.key_path = server.tls?.key_path || server.key_path || ''
   structured.server_name = client.tls?.server_name || client.sni || server.sni || form.address || ''
@@ -694,9 +704,20 @@ function buildGeneratedConfigs() {
   const server: any = String(existingServer.type || '').toLowerCase() === form.protocol ? { ...existingServer, type: form.protocol } : { type: form.protocol }
   const client: any = String(existingClient.type || '').toLowerCase() === form.protocol ? { ...existingClient, type: form.protocol } : { type: form.protocol }
   client.server = form.address; client.port = Number(form.public_port)
+  if (supportsSelectableTransport.value) {
+    delete server.ws; delete server.grpc; delete client.ws; delete client.grpc
+    if (structured.transport === 'ws') {
+      const ws = { path: structured.transport_path || '/' }
+      server.ws = ws; client.ws = ws
+    } else if (structured.transport === 'grpc') {
+      const grpc = { service_names: [structured.grpc_service_name] }
+      server.grpc = grpc; client.grpc = grpc
+    }
+  }
   if (form.protocol === 'vless') {
-    server.users = [{ ...(server.users?.[0] || {}), id: structured.credential }]
-    client.id = structured.credential
+    const flow = String(server.users?.[0]?.flow || '').trim()
+    server.users = flow ? [{ flow }] : []
+    delete client.id
     if (structured.security === 'tls') {
       server.tls = { ...(server.tls || {}), cert_path: structured.cert_path, key_path: structured.key_path }
       client.tls = { ...(client.tls || {}), server_name: structured.server_name || form.address }
@@ -710,9 +731,9 @@ function buildGeneratedConfigs() {
     }
   }
   else if (form.protocol === 'vmess') { server.users = [{ ...(server.users?.[0] || {}), id: structured.credential, cipher: structured.cipher }]; server.tls = { ...(server.tls || {}), cert_path: structured.cert_path, key_path: structured.key_path }; Object.assign(client, { id: structured.credential, cipher: structured.cipher, tls: { ...(client.tls || {}), server_name: structured.server_name || form.address } }) }
-  else if (form.protocol === 'trojan') { Object.assign(server, { password: structured.password, sni: structured.server_name || form.address, tls: { ...(server.tls || {}), cert_path: structured.cert_path, key_path: structured.key_path } }); Object.assign(client, { password: structured.password, sni: structured.server_name || form.address }) }
+  else if (form.protocol === 'trojan') { delete server.password; server.users = []; Object.assign(server, { sni: structured.server_name || form.address, tls: { ...(server.tls || {}), cert_path: structured.cert_path, key_path: structured.key_path } }); delete client.password; Object.assign(client, { sni: structured.server_name || form.address }) }
   else if (form.protocol === 'shadowsocks') { Object.assign(server, { password: structured.password, cipher: structured.cipher }); Object.assign(client, { password: structured.password, cipher: structured.cipher }) }
-  else if (form.protocol === 'hysteria2') { Object.assign(server, { password: structured.password }); if (structured.cert_path) server.cert_path = structured.cert_path; else delete server.cert_path; if (structured.key_path) server.key_path = structured.key_path; else delete server.key_path; Object.assign(client, { password: structured.password, insecure: false }) }
+  else if (form.protocol === 'hysteria2') { delete server.password; server.users = []; if (structured.cert_path) server.cert_path = structured.cert_path; else delete server.cert_path; if (structured.key_path) server.key_path = structured.key_path; else delete server.key_path; delete client.password; Object.assign(client, { insecure: false }) }
   else if (form.protocol === 'mieru') { server.users = []; delete client.username; delete client.password }
   form.config = JSON.stringify(server, null, 2); form.client_config = JSON.stringify(client, null, 2)
 }
@@ -735,6 +756,8 @@ async function validateStep(step: number) {
       fields['structured.cert_path'] = '证书和私钥路径需要同时填写，或同时留空。'
       fields['structured.key_path'] = '证书和私钥路径需要同时填写，或同时留空。'
     }
+    if (supportsSelectableTransport.value && structured.transport === 'ws' && !String(structured.transport_path || '').trim().startsWith('/')) fields['structured.transport_path'] = 'WebSocket 路径必须以 / 开头。'
+    if (supportsSelectableTransport.value && structured.transport === 'grpc' && !String(structured.grpc_service_name || '').trim()) fields['structured.grpc_service_name'] = '请输入 gRPC Service Name。'
     if (form.protocol === 'vless' && structured.security === 'reality') {
       if (!structured.reality_private_key || !structured.reality_public_key) fields['structured.reality_short_id'] = '请生成 Reality 密钥。'
       if (!/^[0-9a-fA-F]{2,16}$/.test(structured.reality_short_id) || structured.reality_short_id.length % 2 !== 0) fields['structured.reality_short_id'] = 'Short ID 必须是 2–16 位偶数长度十六进制字符串。'
