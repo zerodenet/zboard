@@ -1,0 +1,53 @@
+name: Apply ACME automation fix
+
+on:
+  push:
+    branches:
+      - agent/fix-acme-certificate-automation
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v5
+        with:
+          ref: agent/fix-acme-certificate-automation
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Apply source changes
+        run: python3 scripts/apply-acme-fix.py
+
+      - name: Format source
+        run: gofmt -w backend/internal/handler/certificate_management.go backend/internal/handler/certificate_management_test.go
+
+      - name: Run backend tests
+        working-directory: backend
+        run: go test ./...
+
+      - name: Verify patch formatting
+        run: git diff --check
+
+      - name: Commit validated fix
+        env:
+          BRANCH: agent/fix-acme-certificate-automation
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/internal/handler/certificate_management.go backend/internal/handler/certificate_management_test.go
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git commit -m "fix: harden ACME certificate automation"
+          git push origin "HEAD:${BRANCH}"
