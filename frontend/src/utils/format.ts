@@ -11,6 +11,12 @@ export function formatBytes(bytes: number | undefined | null): string {
   return `${normalized.toFixed(digits)} ${units[index]}`
 }
 
+export function formatSignedBytes(bytes: number | undefined | null): string {
+  if (bytes === null || bytes === undefined || !Number.isFinite(Number(bytes))) return '—'
+  const value = Number(bytes)
+  return `${value > 0 ? '+' : ''}${formatBytes(value)}`
+}
+
 export function formatCurrency(cents: number | undefined | null, currency = 'CNY') {
   if (cents === null || cents === undefined || !Number.isFinite(Number(cents))) return '—'
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency, minimumFractionDigits: 2 }).format(Number(cents) / 100)

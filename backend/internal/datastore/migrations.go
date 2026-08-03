@@ -72,6 +72,7 @@ var preReleaseBaselineColumns = []struct {
 	{table: "node_groups", column: "revision", columnType: "bigint unsigned"},
 	{table: "plans", column: "revision", columnType: "bigint unsigned"},
 	{table: "protocol_credentials", column: "credential_id", columnType: "varchar(96)"},
+	{table: "protocol_endpoints", column: "managed_principal_ready", columnType: "tinyint(1)"},
 	{table: "protocol_endpoints", column: "mieru_principal_ready", columnType: "tinyint(1)"},
 	{table: "protocol_endpoints", column: "runtime_key", columnType: "varchar(36)"},
 	{table: "subscription_template_rule_set_bindings", column: "action", columnType: "varchar(96)"},
@@ -323,6 +324,23 @@ func finalizePreReleaseBaselineSchema(db *sql.DB) error {
 		}
 	}
 
+	var managedReadyColumn int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM information_schema.columns
+		  WHERE table_schema = DATABASE()
+		    AND table_name = 'protocol_endpoints'
+		    AND column_name = 'managed_principal_ready'`,
+	).Scan(&managedReadyColumn); err != nil {
+		return fmt.Errorf("inspect managed principal readiness column: %w", err)
+	}
+	if managedReadyColumn == 0 {
+		if _, err := db.Exec(
+			"ALTER TABLE protocol_endpoints ADD COLUMN managed_principal_ready tinyint(1) NOT NULL DEFAULT 0 AFTER multiplier_milli",
+		); err != nil {
+			return fmt.Errorf("add managed principal readiness column: %w", err)
+		}
+	}
+
 	var mieruReadyColumn int
 	if err := db.QueryRow(
 		`SELECT COUNT(*) FROM information_schema.columns
@@ -334,7 +352,7 @@ func finalizePreReleaseBaselineSchema(db *sql.DB) error {
 	}
 	if mieruReadyColumn == 0 {
 		if _, err := db.Exec(
-			"ALTER TABLE protocol_endpoints ADD COLUMN mieru_principal_ready tinyint(1) NOT NULL DEFAULT 0 AFTER multiplier_milli",
+			"ALTER TABLE protocol_endpoints ADD COLUMN mieru_principal_ready tinyint(1) NOT NULL DEFAULT 0 AFTER managed_principal_ready",
 		); err != nil {
 			return fmt.Errorf("add Mieru principal readiness column: %w", err)
 		}

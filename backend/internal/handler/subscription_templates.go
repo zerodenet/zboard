@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,26 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+func (h *handlers) ReconcileSubscriptionTemplateDefaults() error {
+	var templates []model.SubscriptionTemplate
+	if err := h.db.Select("id", "renderer", "customization").Order("id asc").Find(&templates).Error; err != nil {
+		return err
+	}
+	for _, template := range templates {
+		_, normalized, err := normalizeSubscriptionCustomization(template.Renderer, template.Customization)
+		if err != nil {
+			return fmt.Errorf("normalize subscription template %d: %w", template.ID, err)
+		}
+		if bytes.Equal(bytes.TrimSpace(template.Customization), bytes.TrimSpace(normalized)) {
+			continue
+		}
+		if err := h.db.Model(&model.SubscriptionTemplate{}).Where("id = ?", template.ID).Update("customization", normalized).Error; err != nil {
+			return fmt.Errorf("persist subscription template %d defaults: %w", template.ID, err)
+		}
+	}
+	return nil
+}
 
 const (
 	maxRenderedSubscriptionBytes = 2 << 20

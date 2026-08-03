@@ -26,6 +26,307 @@ remain outside this repository.
 
 ## Completed goals
 
+### 2026-08-03 - Exact small-traffic display in admin records
+
+Goal outcome before synchronization:
+
+- Confirmed that accounting and storage retain exact byte values. The live
+  database contains two completed flows with 219 raw bytes each, matching the
+  observed 438-byte raw total. Their 1.5x endpoint multiplier produced 329
+  charged bytes each and an exact 658-byte subscription total.
+- Located the apparent loss in the admin Traffic view only: record and
+  reconciliation values were divided by 1,048,576 and rendered with at most
+  two decimal places. Values below about 5 KiB therefore appeared as `0 MiB`
+  even though the API and database retained them.
+- Replaced the fixed-MiB record and reconciliation columns with the shared
+  adaptive byte formatter, so small values remain visible as bytes and larger
+  values scale through KB, MB and GB. Signed reconciliation differences keep
+  an explicit positive/negative sign. Column labels no longer claim a fixed
+  MiB unit.
+- Added formatter regression coverage for 438-byte positive, unsigned and
+  negative values. No database, API or billing calculation was changed.
+
+Local verification:
+
+- All 61 frontend Vitest files and 139 tests passed. Frontend type checking and
+  the production build passed with 538 transformed modules.
+- `go test ./...` and `go vet ./...` passed for every backend package.
+- `git diff --check` passed with only the repository's existing Windows
+  LF-to-CRLF notices. The obsolete fixed-MiB formatter and labels are absent
+  from the admin Traffic view.
+
+Synchronization and deployment evidence:
+
+- Three synchronization attempts under stamps `20260803T014621Z`,
+  `20260803T014641Z` and `20260803T014808Z` failed before image construction or application switching
+  because the target timed out during the TLS handshake with Docker Hub's
+  registry. A direct 15-second registry request also received no response, and
+  the Dockerfile frontend image was not cached after the prior deliberate
+  builder-cache cleanup.
+- The live application therefore remains on
+  `v0.0.1-20260802T154036Z-intranet-working-tree`; its `/readyz` endpoint still
+  reports `db=true` and `ready=true`. The failed attempts retained their
+  unactivated candidates/source archives and did not modify the running
+  application or database.
+
+Remaining gaps before synchronization:
+
+- Retry synchronization when Docker Hub connectivity is available, then
+  verify the deployed version, readiness, container health and deployed
+  adaptive traffic-formatting assets. Until that succeeds, the live admin page
+  still has the old fixed-MiB display.
+- No Git staging, commit, push or release was performed.
+
+### 2026-08-02 - Live latency billing diagnosis and SSH terminal scrolling
+
+Goal outcome before synchronization:
+
+- Traced the live latency-test path across the Zero event outbox, authenticated
+  `/api/zero/events` requests, `flow_usages`, `traffic_records` and the active
+  subscription counters. The reported test produced no server-side session:
+  node statistics remained at zero active/started sessions and zero bytes, and
+  neither a flow event nor a billing cursor existed. Requests from the local
+  client address were rejected with HTTP 401 and are intentionally not trusted
+  as billing authority.
+- Proved the authoritative path with two bounded live checks using the active
+  subscription credential without printing or persisting it. A proxied HTTP
+  HEAD request produced `flow.updated` and `flow.completed`; Zero's own
+  `url_test` probe then selected the same Shadowsocks outbound as healthy at
+  about 400 ms and produced another `flow.completed`. Zboard accepted both
+  completed flows and charged 329 bytes each, leaving the subscription at 658
+  bytes used. This establishes that the current Zero rc.4 kernel reports real
+  latency-probe traffic and that panel authentication, idempotent accounting
+  and subscription updates do not drop it. The panel must not synthesize a
+  charge when a client-side test never reaches the server node.
+- Corrected the SSH terminal's non-fullscreen layout. The terminal dialog no
+  longer opts into the shared fixed-body rule that forced its content region to
+  `overflow:hidden`. Its workspace now has an explicit responsive height so
+  xterm can still fit stable rows while the dialog body can scroll on short
+  viewports. The xterm viewport explicitly retains vertical history scrolling,
+  contained overscroll, touch panning and stable scrollbar space. Fullscreen
+  positioning remains unchanged.
+- Added a frontend regression test covering the independent dialog and xterm
+  scroll contracts. No billing receiver or accounting code was changed because
+  the live evidence proved that modifying that trusted boundary would be
+  incorrect.
+
+Local verification:
+
+- All 61 frontend Vitest files and 139 tests passed. Frontend type checking and
+  the production build passed with 538 transformed modules.
+- `go test ./...` and `go vet ./...` passed for every backend package.
+- `git diff --check` passed with only the repository's existing Windows
+  LF-to-CRLF notices.
+- Browser control reached the live public application but had no authenticated
+  admin session, so it could not open the real SSH terminal without bypassing
+  authentication. The deployed authenticated UI still needs an operator-side
+  wheel/touch confirmation after synchronization.
+
+Synchronization and deployment evidence:
+
+- The first synchronization attempt stopped during the image build when
+  Docker Hub returned EOF while resolving the Node base-image manifest. It did
+  not switch the application; the unactivated candidate and release archive
+  under stamp `20260802T154019Z` were retained.
+- A clean retry of `scripts/sync-intranet.ps1 -SkipLocalChecks` deployed
+  `v0.0.1-20260802T154036Z-intranet-working-tree@2026-08-02T15:40:36Z`.
+  Independent `/api/v1/version` and `/readyz` requests returned HTTP/API 200;
+  readiness reported `db=true` and `ready=true`.
+- `zboard_next-zboard-1` reported healthy. The external `db` and `cache`
+  containers remained running, and MySQL returned `mysqld is alive`.
+- The pre-switch database backup is
+  `/data/zboard-next/backups/20260802T154036Z/zboard-before-sync.sql`
+  (80,289 bytes), the previous source is
+  `/data/zboard-next/app-prev-20260802T154036Z`, and the synchronized archive
+  is `/data/zboard-next/releases/20260802T154036Z/source.tar.gz`
+  (781,868 bytes). All paths were verified present and non-empty where
+  applicable.
+- Deployed-source checks confirmed the explicit responsive terminal workspace
+  height and xterm scroll contract, and confirmed that the SSH dialog no
+  longer passes `fixed-body`. The live database retained the three diagnostic
+  traffic records and the expected 658 charged bytes after deployment.
+- Removing only reproducible Docker builder cache reclaimed 627.3 MB. Root
+  free space recovered from 2.2 GB to 3.1 GB (94% used), above the previously
+  observed Connector outbox reserve threshold. `/readyz` and all three
+  containers remained healthy/running after cleanup; databases, volumes,
+  backups and rollback sources were untouched.
+
+Remaining gaps after synchronization:
+
+- Repeat the non-fullscreen terminal wheel/touch check in an authenticated
+  admin browser session; this is not available to the automated browser
+  session.
+- The original client-side test's local runtime/configuration must be inspected
+  if it again reports latency without increasing the node counters. Server-side
+  evidence currently shows that particular attempt did not reach the node.
+- No Git staging, commit, push or release was performed.
+
+### 2026-08-02 - Permanent DIRECT/REJECT subscription choices
+
+Goal outcome before synchronization:
+
+- Corrected the subscription renderers so every manual selection group keeps
+  `DIRECT` and `REJECT` as permanent choices after node-name filtering and
+  nested-group expansion. URL-test and fallback groups intentionally exclude
+  both choices because they are not probe endpoints.
+- Clash uses its native `DIRECT` and `REJECT` targets. ZNet Sink/Zero emits
+  stable uppercase direct/block aliases while retaining the existing lowercase
+  compatibility outbounds. sing-box likewise retains its existing lowercase
+  direct outbound and adds uppercase direct/block aliases for selector use.
+  Final routes and rule-set actions retain their existing renderer-native
+  representation.
+- Exported node tags now preserve the original protocol-endpoint name. The
+  previous panel-generated `#<endpoint>-<subscription>` suffix is removed;
+  blank names still fall back to the uppercase protocol name.
+- The built-in latency probe default is consistently
+  `http://www.gstatic.com/generate_204`. Startup normalization rewrites only
+  the former exact HTTPS default in existing template customizations and
+  persists the normalized value; operator-defined custom probe URLs are left
+  unchanged.
+- Updated the data-model contract and added cross-renderer regression coverage
+  proving the permanent choices are present only in manual selectors.
+
+Local verification:
+
+- `go test ./...` and `go vet ./...` passed for every backend package.
+- With `ZBOARD_ZERO_VALIDATE_BIN` set to the local Zero rc.4 debug binary, the
+  real validator accepted the generated ZNet Sink subscription containing the
+  permanent aliases.
+- All 60 frontend Vitest files and 138 tests passed. Frontend type checking and
+  the production build passed with 538 transformed modules.
+- `git diff --check` passed with only the repository's existing Windows
+  LF-to-CRLF notices.
+
+Synchronization and deployment evidence:
+
+- The first synchronization was deliberately interrupted before activation
+  when the user added the original-name and HTTP-default requirements. The
+  background build was terminated and the live version remained
+  `v0.0.1-20260802T145229Z-intranet-working-tree`; its unactivated candidate
+  and source archive under stamp `20260802T150725Z` were retained. A later
+  attempt failed before build on a transient Docker Hub manifest EOF and did
+  not switch the application.
+- After a successful retry, `scripts/sync-intranet.ps1 -SkipLocalChecks`
+  deployed
+  `v0.0.1-20260802T151248Z-intranet-working-tree@2026-08-02T15:12:48Z`.
+  `/api/v1/version` returned that exact build, `/readyz` returned `db=true`
+  and `ready=true`, and `zboard_next-zboard-1` is healthy. The external `db`
+  and `cache` containers are running and MySQL returned `mysqld is alive`.
+- The pre-switch database backup is
+  `/data/zboard-next/backups/20260802T151248Z/zboard-before-sync.sql`
+  (78,595 bytes), the previous source is
+  `/data/zboard-next/app-prev-20260802T151248Z`, and the synchronized archive
+  is `/data/zboard-next/releases/20260802T151248Z/source.tar.gz`
+  (780,242 bytes). All were verified present and non-empty where applicable.
+- Startup normalization persisted the expected HTTP probe URL for all three
+  existing ZNet Sink, Clash and sing-box templates. The deployed source
+  contains `appendPermanentSelectionTargets` and returns the original endpoint
+  name without an ID suffix.
+- Final cleanup reclaimed 627.1 MB of reproducible Docker builder cache. Root
+  free space is 3.2 GB (93% used); Zboard remained healthy and ready after the
+  cleanup. Databases, volumes, deployment backups, previous sources and
+  operator data were untouched.
+
+Remaining gaps after synchronization:
+
+- Live user subscription output still requires an active subscription. The target
+  currently has no active subscription rows, so deployed source/preview output
+  was checked without fabricating operator subscription data.
+- No Git staging, commit, push or release was performed.
+
+### 2026-08-02 - Published-principal readiness for Trojan/Hysteria2 and latency billing audit
+
+Goal outcome before synchronization:
+
+- Confirmed against Zero `0.0.15-rc.4` (`929250f13`) that Trojan and
+  Hysteria2 already match the authenticated password to the correct managed
+  user and propagate that user's `principal_key`. The reported failure was a
+  Zboard contract split: runtime compilation followed the probed node version,
+  while subscription delivery followed only the process-wide legacy/native
+  switch. A legacy-configured panel could therefore publish managed users to
+  an rc.3-or-newer node but still advertise the endpoint fallback password.
+- Added `protocol_endpoints.managed_principal_ready` as the publication
+  boundary for Trojan and Hysteria2. A successful full-node publication now
+  commits readiness from the actually installed Zero version only after
+  validate, activation, service/control health and Connector confirmation.
+  Failed publications do not switch subscription delivery, and a successful
+  downgrade switches both runtime and subscription output back to the endpoint
+  fallback credential. Startup queues existing Trojan/Hysteria2 nodes for
+  reconciliation.
+- Corrected old-kernel runtime compilation so Trojan/Hysteria2 use one endpoint
+  fallback inbound. It no longer attempts multiple credential inbounds on the
+  same listen port when native managed-password support is unavailable.
+  Mieru retains its stricter existing two-generation readiness boundary.
+- Audited local Zero URL-test behavior and Zboard accounting. URL tests perform
+  a real proxied protocol handshake and HTTP HEAD exchange. Zboard bills every
+  positive attributed byte delta, including one byte; there is no latency-test
+  exemption or minimum threshold. Managed-protocol credential mismatch can
+  prevent an attributable server flow from being established; template
+  preview or endpoint-fallback configurations also have no subscription
+  principal to charge. The panel must not fabricate probe charges or trust a
+  local client as the billing authority.
+- Updated the squashed baseline, pre-release compatibility finalizer, data
+  model documentation, OpenAPI schema and frontend API type for the readiness
+  field. No credential, subscription URL or environment secret was recorded.
+
+Local verification:
+
+- `go test ./...` passed for every backend package with
+  `ZBOARD_ZERO_VALIDATE_BIN` pointing at the local Zero rc.4 debug binary; the
+  real validator accepted the managed Trojan and Hysteria2 user contract.
+- `go vet ./...` passed.
+- All 60 frontend Vitest files and 138 tests passed. Frontend type checking and
+  the production build passed with 538 transformed modules.
+- Regression tests cover publication-gated subscription delivery, actual-node
+  readiness overriding the global legacy switch, safe old-kernel fallback and
+  one-byte latency-probe billing. `git diff --check` passed with only existing
+  Windows LF-to-CRLF notices.
+
+Synchronization and deployment evidence:
+
+- The initial root filesystem had only 20 KB and 261 inodes free. Reclaiming
+  only reproducible Docker builder cache freed 2.2 GB and restored the inode
+  pool; no database, volume, source backup or operator data was removed.
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` successfully deployed
+  `v0.0.1-20260802T145229Z-intranet-working-tree@2026-08-02T14:52:29Z`.
+  `/api/v1/version` returned that exact build and `/readyz` returned
+  `db=true`, `ready=true`. `zboard_next-zboard-1` is healthy; the external
+  `db` and `cache` containers are running, and MySQL returned
+  `mysqld is alive`.
+- The pre-switch database backup is
+  `/data/zboard-next/backups/20260802T145229Z/zboard-before-sync.sql`
+  (73,968 bytes), the previous source is
+  `/data/zboard-next/app-prev-20260802T145229Z`, and the synchronized archive
+  is `/data/zboard-next/releases/20260802T145229Z/source.tar.gz`
+  (777,976 bytes). All three were verified present and non-empty where
+  applicable.
+- The deployed database contains non-null/default-zero
+  `managed_principal_ready` and `mieru_principal_ready` columns. The active
+  source contains the successful-publication readiness update, and an
+  unauthenticated traffic-history request returned 401. The live node remains
+  online and healthy on Zero `0.0.15-rc.4` with fresh authenticated Connector
+  activity.
+- The live database currently has one Shadowsocks endpoint but zero
+  subscriptions, protocol credentials, flow usages and traffic records.
+  Consequently this environment cannot contain a billable imported user
+  subscription: an import that works here must be a preview/endpoint fallback
+  or originate elsewhere, and it has no subscription principal to charge.
+- A final Docker builder-cache cleanup reclaimed another 627.1 MB. Root free
+  space is 3.3 GB (93% used), Zboard remains healthy and `/readyz` remains
+  ready after cleanup.
+
+Remaining gaps after synchronization:
+
+- A real imported-subscription URL test is still required after deployment to
+  prove live authentication, `flow.completed` delivery and traffic-record
+  visibility end to end. Local validator and accounting tests establish the
+  contract but do not manufacture operator traffic.
+- Live end-to-end billing still requires creating or using a real active
+  subscription and then observing its server-side `flow.completed` event. No
+  operator subscription or artificial traffic was created solely for
+  verification.
+- No Git staging, commit, push or release was performed.
+
 ### 2026-07-30 - Version-aware published Zero Connector contract
 
 Outcome before synchronization:

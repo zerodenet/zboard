@@ -48,6 +48,8 @@ func renderZnetSinkSubscription(data subscriptionTemplateData, customization sub
 	outbounds := []map[string]interface{}{
 		{"tag": "direct", "protocol": map[string]interface{}{"type": "direct"}},
 		{"tag": "block", "protocol": map[string]interface{}{"type": "block"}},
+		{"tag": "DIRECT", "protocol": map[string]interface{}{"type": "direct"}},
+		{"tag": "REJECT", "protocol": map[string]interface{}{"type": "block"}},
 	}
 	proxyTags := make([]string, 0, len(data.ProtocolEndpoints))
 	availableTags := make(map[string]struct{}, len(data.ProtocolEndpoints))
@@ -72,6 +74,7 @@ func renderZnetSinkSubscription(data subscriptionTemplateData, customization sub
 		if err != nil {
 			return "", err
 		}
+		members = appendPermanentSelectionTargets(group, members)
 		rendered := map[string]interface{}{
 			"tag": group.Name, "type": zeroSubscriptionPolicyGroupType(group.Type), "outbounds": members,
 		}
@@ -147,6 +150,7 @@ func renderClashSubscription(data subscriptionTemplateData, customization subscr
 		if err != nil {
 			return "", err
 		}
+		members = appendPermanentSelectionTargets(group, members)
 		rendered := clashSubscriptionGroup{
 			Name: group.Name, Type: clashSubscriptionPolicyGroupType(group.Type), Proxies: members,
 		}
@@ -212,13 +216,18 @@ func renderSingBoxSubscription(data subscriptionTemplateData, customization subs
 		proxyTags = append(proxyTags, tag)
 		availableTags[tag] = struct{}{}
 	}
-	outbounds = append(outbounds, map[string]interface{}{"type": "direct", "tag": "direct"})
+	outbounds = append(outbounds,
+		map[string]interface{}{"type": "direct", "tag": "direct"},
+		map[string]interface{}{"type": "direct", "tag": "DIRECT"},
+		map[string]interface{}{"type": "block", "tag": "REJECT"},
+	)
 	groupNames := subscriptionPolicyGroupNames(customization.PolicyGroups)
 	for _, group := range customization.PolicyGroups {
 		members, err := subscriptionPolicyGroupMembers(group, data.ProtocolEndpoints, availableTags, groupNames)
 		if err != nil {
 			return "", err
 		}
+		members = appendPermanentSelectionTargets(group, members)
 		rendered := map[string]interface{}{
 			"type": singBoxSubscriptionPolicyGroupType(group.Type), "tag": group.Name, "outbounds": members,
 		}
@@ -336,6 +345,13 @@ func uniqueSubscriptionTargets(items []string) []string {
 		result = append(result, item)
 	}
 	return result
+}
+
+func appendPermanentSelectionTargets(group subscriptionPolicyGroup, members []string) []string {
+	if group.Type != "select" {
+		return members
+	}
+	return uniqueSubscriptionTargets(append(members, "DIRECT", "REJECT"))
 }
 
 func zeroSubscriptionPolicyGroupType(groupType string) string {
@@ -738,10 +754,7 @@ func subscriptionEndpointTag(endpoint subscriptionTemplateEndpoint) string {
 	if name == "" {
 		name = strings.ToUpper(strings.TrimSpace(endpoint.Protocol))
 	}
-	if endpoint.SubscriptionID > 0 {
-		return fmt.Sprintf("%s #%d-%d", name, endpoint.ID, endpoint.SubscriptionID)
-	}
-	return fmt.Sprintf("%s #%d", name, endpoint.ID)
+	return name
 }
 
 func cloneStringMap(source map[string]interface{}) map[string]interface{} {

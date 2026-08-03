@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatBytes, formatCompactDateTime, formatCurrency, formatDateTime, formatNumber, formatRelativeTime, formatUnknownValue } from './format'
+import { formatBytes, formatCompactDateTime, formatCurrency, formatDateTime, formatNumber, formatRelativeTime, formatSignedBytes, formatUnknownValue } from './format'
 
 describe('formatters', () => {
   it('keeps zero distinct from missing and invalid numeric values', () => {
@@ -7,6 +7,9 @@ describe('formatters', () => {
     expect(formatBytes(null)).toBe('—')
     expect(formatBytes(Number.NaN)).toBe('—')
     expect(formatBytes(-1024)).toBe('-1.00 KB')
+    expect(formatBytes(438)).toBe('438 B')
+    expect(formatSignedBytes(438)).toBe('+438 B')
+    expect(formatSignedBytes(-438)).toBe('-438 B')
     expect(formatNumber(0)).toBe('0')
     expect(formatNumber(null)).toBe('—')
     expect(formatCurrency(0)).toContain('0.00')

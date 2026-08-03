@@ -584,6 +584,9 @@ func TestAddBillingPeriodClampsCalendarEnd(t *testing.T) {
 }
 
 func TestBilledTrafficBytesRoundsUp(t *testing.T) {
+	if got := billedTrafficBytes(1, 1000); got != 1 {
+		t.Fatalf("one-byte latency probe = %d, want 1", got)
+	}
 	if got := billedTrafficBytes(1001, 1500); got != 1502 {
 		t.Fatalf("billedTrafficBytes() = %d, want 1502", got)
 	}
@@ -1159,6 +1162,20 @@ func TestProtocolCredentialContractIsExplicitlyStaged(t *testing.T) {
 	}
 	if !mieruNative.endpointDeliversSubscriptionCredential(model.ProtocolEndpoint{Protocol: "mieru", MieruPrincipalReady: true}) {
 		t.Fatal("Mieru subscription delivery did not switch after publication readiness")
+	}
+	for _, protocol := range []string{"trojan", "hysteria2"} {
+		if native.endpointDeliversSubscriptionCredential(model.ProtocolEndpoint{Protocol: protocol}) {
+			t.Fatalf("%s subscription delivery switched before a successful node publication", protocol)
+		}
+		if !legacy.endpointDeliversSubscriptionCredential(model.ProtocolEndpoint{Protocol: protocol, ManagedPrincipalReady: true}) {
+			t.Fatalf("%s subscription delivery ignored the actual node publication readiness", protocol)
+		}
+		if endpointUsesRuntimeCredentials(protocol, false, false) {
+			t.Fatalf("legacy runtime attempted duplicate %s credential inbounds on one port", protocol)
+		}
+		if !endpointUsesRuntimeCredentials(protocol, true, false) {
+			t.Fatalf("native runtime did not compile %s managed users", protocol)
+		}
 	}
 	if legacy.desiredProtocolCredentialStatus(model.ProtocolEndpoint{Protocol: "mieru"}) != protocolCredentialStatusPrepared {
 		t.Fatal("legacy Mieru credential was not kept in prepared state")

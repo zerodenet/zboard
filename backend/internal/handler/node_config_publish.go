@@ -137,6 +137,7 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 		return fail(fmt.Errorf("detect installed Zero before publishing config: Zero is not installed"), "")
 	}
 	mieruAccess := zeroSupportsMieruPrincipal(probe.Version)
+	managedAccess := zeroSupportsNativeManagedAccess(probe.Version)
 	if mieruAccess {
 		if err := h.db.Model(&model.ProtocolEndpoint{}).
 			Where("node_id = ? AND LOWER(protocol) = ? AND mieru_principal_ready = ?", node.ID, "mieru", false).
@@ -239,6 +240,11 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 				Update("status", mieruCredentialStatus).Error; err != nil {
 				return err
 			}
+		}
+		if err := tx.Model(&model.ProtocolEndpoint{}).
+			Where("node_id = ? AND LOWER(protocol) IN ?", node.ID, []string{"trojan", "hysteria2"}).
+			Update("managed_principal_ready", managedAccess).Error; err != nil {
+			return err
 		}
 		return tx.Model(&model.NodeKernelState{}).Where("node_id = ?", node.ID).Updates(map[string]interface{}{
 			"status": "healthy", "phase": "idle", "desired_config_sha256": configSHA,

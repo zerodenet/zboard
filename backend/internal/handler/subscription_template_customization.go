@@ -27,6 +27,8 @@ const (
 	subscriptionAllNodesMarker           = "$zboard:all-nodes"
 	subscriptionGeneratedProxiesMarker   = "$zboard:generated-proxies"
 	subscriptionGeneratedOutboundsMarker = "generated-outbounds"
+	defaultSubscriptionProbeURL          = "http://www.gstatic.com/generate_204"
+	legacyDefaultSubscriptionProbeURL    = "https://www.gstatic.com/generate_204"
 )
 
 var (
@@ -92,7 +94,7 @@ func defaultSubscriptionCustomization(renderer string) subscriptionTemplateCusto
 	}
 	autoGroup := subscriptionPolicyGroup{
 		ID: "auto", Name: "自动选择", Type: "urltest",
-		ProbeURL: "http://www.gstatic.com/generate_204", Interval: 300, Tolerance: 50,
+		ProbeURL: defaultSubscriptionProbeURL, Interval: 300, Tolerance: 50,
 	}
 	return subscriptionTemplateCustomization{
 		Version:      subscriptionCustomizationVersion,
@@ -234,7 +236,7 @@ func migrateLegacySubscriptionCustomization(renderer string, legacy legacySubscr
 	if strings.EqualFold(strings.TrimSpace(legacy.Profile), "balanced") {
 		auto := subscriptionPolicyGroup{
 			ID: "auto", Name: "自动选择", Type: "urltest",
-			ProbeURL: "http://www.gstatic.com/generate_204", Interval: 300, Tolerance: 50,
+			ProbeURL: defaultSubscriptionProbeURL, Interval: 300, Tolerance: 50,
 		}
 		mainGroup.IncludeGroups = []string{"auto"}
 		mainGroup.DefaultGroup = "auto"
@@ -336,6 +338,9 @@ func normalizeSubscriptionPolicyGroups(renderer string, customization *subscript
 		group.IncludePattern = strings.TrimSpace(group.IncludePattern)
 		group.ExcludePattern = strings.TrimSpace(group.ExcludePattern)
 		group.ProbeURL = strings.TrimSpace(group.ProbeURL)
+		if group.ProbeURL == legacyDefaultSubscriptionProbeURL {
+			group.ProbeURL = defaultSubscriptionProbeURL
+		}
 		group.DefaultGroup = strings.ToLower(strings.TrimSpace(group.DefaultGroup))
 		if !subscriptionPolicyGroupIDPattern.MatchString(group.ID) {
 			return fmt.Errorf("第 %d 个策略组标识只能使用小写字母、数字和连字符", index+1)
@@ -383,7 +388,7 @@ func normalizeSubscriptionPolicyGroups(renderer string, customization *subscript
 		}
 		if group.Type == "urltest" || group.Type == "fallback" {
 			if group.ProbeURL == "" {
-				group.ProbeURL = "http://www.gstatic.com/generate_204"
+				group.ProbeURL = defaultSubscriptionProbeURL
 			}
 			if err := validateSubscriptionProbeURL(renderer, group.ProbeURL); err != nil {
 				return fmt.Errorf("策略组 %q: %w", group.Name, err)

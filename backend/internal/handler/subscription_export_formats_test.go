@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -20,6 +21,82 @@ func TestBuiltInSubscriptionExportersRenderTargetSchemas(t *testing.T) {
 		}
 		if strings.TrimSpace(rendered) == "" || contentType == "" {
 			t.Fatalf("renderSubscriptionWithRenderer(%q) returned content=%q contentType=%q", renderer, rendered, contentType)
+		}
+	}
+}
+
+func TestSubscriptionEndpointTagPreservesOriginalName(t *testing.T) {
+	endpoint := subscriptionTemplateEndpoint{ID: 1, SubscriptionID: 1, Name: "本机 Shadowsocks", Protocol: "shadowsocks"}
+	if got := subscriptionEndpointTag(endpoint); got != "本机 Shadowsocks" {
+		t.Fatalf("subscriptionEndpointTag() = %q, want original name", got)
+	}
+	endpoint.Name = ""
+	if got := subscriptionEndpointTag(endpoint); got != "SHADOWSOCKS" {
+		t.Fatalf("blank-name subscriptionEndpointTag() = %q, want protocol fallback", got)
+	}
+}
+
+func TestManualSelectionGroupsKeepDirectAndRejectPermanent(t *testing.T) {
+	data := subscriptionExporterTestData()
+
+	zeroRendered, err := renderZnetSinkSubscription(data, defaultSubscriptionCustomization(subscriptionRendererZnetSink))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var zeroDocument struct {
+		OutboundGroups []struct {
+			Type      string   `json:"type"`
+			Outbounds []string `json:"outbounds"`
+		} `json:"outbound_groups"`
+	}
+	if err := json.Unmarshal([]byte(zeroRendered), &zeroDocument); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(zeroDocument.OutboundGroups[0].Outbounds, "DIRECT") || !slices.Contains(zeroDocument.OutboundGroups[0].Outbounds, "REJECT") {
+		t.Fatalf("Zero selector permanent targets = %#v", zeroDocument.OutboundGroups[0].Outbounds)
+	}
+	if slices.Contains(zeroDocument.OutboundGroups[1].Outbounds, "DIRECT") || slices.Contains(zeroDocument.OutboundGroups[1].Outbounds, "REJECT") {
+		t.Fatalf("Zero url-test contains non-probe targets: %#v", zeroDocument.OutboundGroups[1].Outbounds)
+	}
+
+	clashRendered, err := renderClashSubscription(data, defaultSubscriptionCustomization(subscriptionRendererClash))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var clashDocument clashSubscriptionDocument
+	if err := yaml.Unmarshal([]byte(clashRendered), &clashDocument); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(clashDocument.ProxyGroups[0].Proxies, "DIRECT") || !slices.Contains(clashDocument.ProxyGroups[0].Proxies, "REJECT") {
+		t.Fatalf("Clash select permanent targets = %#v", clashDocument.ProxyGroups[0].Proxies)
+	}
+	if slices.Contains(clashDocument.ProxyGroups[1].Proxies, "DIRECT") || slices.Contains(clashDocument.ProxyGroups[1].Proxies, "REJECT") {
+		t.Fatalf("Clash url-test contains non-probe targets: %#v", clashDocument.ProxyGroups[1].Proxies)
+	}
+
+	singRendered, err := renderSingBoxSubscription(data, defaultSubscriptionCustomization(subscriptionRendererSingBox))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var singDocument struct {
+		Outbounds []struct {
+			Type      string   `json:"type"`
+			Outbounds []string `json:"outbounds"`
+		} `json:"outbounds"`
+	}
+	if err := json.Unmarshal([]byte(singRendered), &singDocument); err != nil {
+		t.Fatal(err)
+	}
+	for _, outbound := range singDocument.Outbounds {
+		switch outbound.Type {
+		case "selector":
+			if !slices.Contains(outbound.Outbounds, "DIRECT") || !slices.Contains(outbound.Outbounds, "REJECT") {
+				t.Fatalf("sing-box selector permanent targets = %#v", outbound.Outbounds)
+			}
+		case "urltest":
+			if slices.Contains(outbound.Outbounds, "DIRECT") || slices.Contains(outbound.Outbounds, "REJECT") {
+				t.Fatalf("sing-box urltest contains non-probe targets: %#v", outbound.Outbounds)
+			}
 		}
 	}
 }
@@ -46,16 +123,16 @@ func TestRenderZnetSinkSubscriptionProducesZeroConfig(t *testing.T) {
 	if err := json.Unmarshal([]byte(rendered), &document); err != nil {
 		t.Fatalf("rendered ZNet Sink output is not JSON: %v\n%s", err, rendered)
 	}
-	if len(document.Outbounds) != 8 {
-		t.Fatalf("outbounds count = %d, want 8", len(document.Outbounds))
+	if len(document.Outbounds) != 10 {
+		t.Fatalf("outbounds count = %d, want 10", len(document.Outbounds))
 	}
-	if document.Outbounds[0].Protocol["type"] != "direct" || document.Outbounds[2].Protocol["type"] != "vless" {
+	if document.Outbounds[0].Protocol["type"] != "direct" || document.Outbounds[4].Protocol["type"] != "vless" {
 		t.Fatalf("unexpected zero outbounds = %#v", document.Outbounds)
 	}
-	if document.Outbounds[2].Protocol["server"] != "vless.example.com" || document.Outbounds[2].Protocol["port"] != float64(443) {
-		t.Fatalf("VLESS server contract = %#v", document.Outbounds[2].Protocol)
+	if document.Outbounds[4].Protocol["server"] != "vless.example.com" || document.Outbounds[4].Protocol["port"] != float64(443) {
+		t.Fatalf("VLESS server contract = %#v", document.Outbounds[4].Protocol)
 	}
-	if len(document.OutboundGroups) != 2 || document.OutboundGroups[0].Type != "selector" || len(document.OutboundGroups[0].Outbounds) != 7 || document.OutboundGroups[1].Type != "url_test" {
+	if len(document.OutboundGroups) != 2 || document.OutboundGroups[0].Type != "selector" || len(document.OutboundGroups[0].Outbounds) != 9 || document.OutboundGroups[1].Type != "url_test" {
 		t.Fatalf("outbound_groups = %#v", document.OutboundGroups)
 	}
 	if document.Route.Final["outbound"] != "节点选择" {
@@ -104,7 +181,7 @@ func TestRenderClashSubscriptionConvertsProtocolFields(t *testing.T) {
 	if mieru["transport"] != "TCP" || mieru["username"] != "subscriber" {
 		t.Fatalf("Clash Mieru = %#v", mieru)
 	}
-	if len(document.ProxyGroups) != 2 || document.ProxyGroups[0].Type != "select" || len(document.ProxyGroups[0].Proxies) != 7 || document.ProxyGroups[1].Type != "url-test" {
+	if len(document.ProxyGroups) != 2 || document.ProxyGroups[0].Type != "select" || len(document.ProxyGroups[0].Proxies) != 9 || document.ProxyGroups[1].Type != "url-test" {
 		t.Fatalf("proxy-groups = %#v", document.ProxyGroups)
 	}
 	if len(document.Rules) != 1 || document.Rules[0] != "MATCH,节点选择" {
@@ -124,8 +201,8 @@ func TestRenderSingBoxSubscriptionConvertsAndOmitsUnsupportedMieru(t *testing.T)
 	if err := json.Unmarshal([]byte(rendered), &document); err != nil {
 		t.Fatalf("rendered sing-box output is not JSON: %v\n%s", err, rendered)
 	}
-	if len(document.Outbounds) != 8 {
-		t.Fatalf("outbounds count = %d, want 8", len(document.Outbounds))
+	if len(document.Outbounds) != 10 {
+		t.Fatalf("outbounds count = %d, want 10", len(document.Outbounds))
 	}
 	for _, outbound := range document.Outbounds {
 		if outbound["type"] == "mieru" {

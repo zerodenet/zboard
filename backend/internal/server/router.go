@@ -688,6 +688,9 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			Handler: http.HandlerFunc(h.SystemInfoHandler),
 		},
 	})
+	if err := h.ReconcileSubscriptionTemplateDefaults(); err != nil {
+		return err
+	}
 	if err := h.ReconcileMieruEndpointCredentials(); err != nil {
 		return err
 	}

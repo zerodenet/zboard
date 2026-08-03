@@ -489,6 +489,7 @@ CREATE TABLE `protocol_endpoints` (
   `cipher` smallint NOT NULL DEFAULT '0',
   `parent_protocol_id` bigint unsigned DEFAULT NULL,
   `multiplier_milli` bigint NOT NULL DEFAULT '1000',
+  `managed_principal_ready` tinyint(1) NOT NULL DEFAULT '0',
   `mieru_principal_ready` tinyint(1) NOT NULL DEFAULT '0',
   `server_config` text,
   `client_config` text,

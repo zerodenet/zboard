@@ -468,6 +468,7 @@ export interface ProtocolEndpointListItem {
 	parent_protocol_id?: number
 	managed_certificate_id?: number
 	multiplier_milli: number
+	managed_principal_ready: boolean
 	mieru_principal_ready: boolean
 	kernel_supported: boolean
 	kernel_unsupported_reason?: string

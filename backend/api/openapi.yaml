@@ -3375,7 +3375,7 @@ components:
         created_at: { type: string, format: date-time }
     ProtocolEndpointSummary:
       type: object
-      required: [id, node_id, name, protocol, address, port, public_port, multiplier_milli, kernel_supported, is_active, usage]
+      required: [id, node_id, name, protocol, address, port, public_port, multiplier_milli, managed_principal_ready, mieru_principal_ready, kernel_supported, is_active, usage]
       properties:
         id: { type: integer, format: int64 }
         node_id: { type: integer, format: int64 }
@@ -3387,6 +3387,9 @@ components:
         public_port: { type: integer, minimum: 1, maximum: 65535 }
         parent_protocol_id: { type: integer, format: int64, nullable: true }
         multiplier_milli: { type: integer, minimum: 1, maximum: 100000 }
+        managed_principal_ready:
+          type: boolean
+          description: True only after a Trojan or Hysteria2 managed-principal Zero generation has passed validation, activation, health and Connector confirmation.
         mieru_principal_ready:
           type: boolean
           description: True only after a Mieru principal-aware Zero generation has passed validation, activation, health and Connector confirmation.

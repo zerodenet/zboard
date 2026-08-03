@@ -2615,6 +2615,9 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 	if protocol != "mieru" {
 		endpoint.MieruPrincipalReady = false
 	}
+	if protocol != "trojan" && protocol != "hysteria2" || endpointID == 0 || existing.NodeID != node.ID || !strings.EqualFold(existing.Protocol, protocol) {
+		endpoint.ManagedPrincipalReady = false
+	}
 	endpoint.ServerConfig = encryptedServerConfig
 	endpoint.ClientConfig = req.ClientConfig
 	endpoint.OptionalConfig = normalizeOptionalJSON(req.OptionalConfig, "{}")
@@ -2733,6 +2736,7 @@ type protocolEndpointListItem struct {
 	ParentProtocolID        *uint                       `json:"parent_protocol_id,omitempty"`
 	ManagedCertificateID    *uint                       `json:"managed_certificate_id,omitempty"`
 	MultiplierMilli         int64                       `json:"multiplier_milli"`
+	ManagedPrincipalReady   bool                        `json:"managed_principal_ready"`
 	MieruPrincipalReady     bool                        `json:"mieru_principal_ready"`
 	IsActive                bool                        `json:"is_active"`
 	SortOrder               int                         `json:"sort_order"`
@@ -2749,7 +2753,7 @@ func newProtocolEndpointListItem(endpoint model.ProtocolEndpoint, nodeName strin
 		ID: endpoint.ID, NodeID: endpoint.NodeID, NodeName: nodeName, Name: endpoint.Name,
 		Protocol: endpoint.Protocol, Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
 		ParentProtocolID: endpoint.ParentProtocolID, ManagedCertificateID: managedCertificateID, MultiplierMilli: endpoint.MultiplierMilli,
-		MieruPrincipalReady: endpoint.MieruPrincipalReady, IsActive: endpoint.IsActive, SortOrder: endpoint.SortOrder, Usage: usage,
+		ManagedPrincipalReady: endpoint.ManagedPrincipalReady, MieruPrincipalReady: endpoint.MieruPrincipalReady, IsActive: endpoint.IsActive, SortOrder: endpoint.SortOrder, Usage: usage,
 		KernelSupported: kernelSupported, KernelUnsupportedReason: kernelUnsupportedReason,
 		CreatedAt: endpoint.CreatedAt, UpdatedAt: endpoint.UpdatedAt,
 	}
@@ -5712,10 +5716,14 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *handlers) endpointDeliversSubscriptionCredential(endpoint model.ProtocolEndpoint) bool {
-	if strings.EqualFold(strings.TrimSpace(endpoint.Protocol), "mieru") {
+	switch strings.ToLower(strings.TrimSpace(endpoint.Protocol)) {
+	case "mieru":
 		return endpoint.MieruPrincipalReady
+	case "trojan", "hysteria2":
+		return endpoint.ManagedPrincipalReady
+	default:
+		return h.protocolUsesSubscriptionCredential(endpoint.Protocol)
 	}
-	return h.protocolUsesSubscriptionCredential(endpoint.Protocol)
 }
 
 func newSubscriptionToken() (string, string, string, error) {

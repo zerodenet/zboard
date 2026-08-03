@@ -129,6 +129,22 @@ func TestNormalizeSubscriptionCustomizationMigratesLegacyShapeToPolicyGroups(t *
 	}
 }
 
+func TestNormalizeSubscriptionCustomizationMigratesLegacyHTTPSProbeDefault(t *testing.T) {
+	customization, normalized, err := normalizeSubscriptionCustomization(
+		subscriptionRendererClash,
+		json.RawMessage(`{"version":2,"main_group":"main","policy_groups":[{"id":"main","name":"Main","type":"select","include_groups":["auto"],"default_group":"auto"},{"id":"auto","name":"Auto","type":"urltest","probe_url":"https://www.gstatic.com/generate_204","interval":300}],"final":"group:main","rule_sets":[]}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := customization.PolicyGroups[1].ProbeURL; got != defaultSubscriptionProbeURL {
+		t.Fatalf("probe URL = %q, want %q", got, defaultSubscriptionProbeURL)
+	}
+	if strings.Contains(string(normalized), legacyDefaultSubscriptionProbeURL) || !strings.Contains(string(normalized), defaultSubscriptionProbeURL) {
+		t.Fatalf("normalized customization did not migrate HTTP probe default: %s", normalized)
+	}
+}
+
 func TestNormalizeSubscriptionCustomizationRejectsInvalidGroupRegexAndReferences(t *testing.T) {
 	tests := []string{
 		`{"version":2,"main_group":"main","policy_groups":[{"id":"main","name":"主策略","type":"select","include_pattern":"["}],"final":"group:main","rule_sets":[]}`,

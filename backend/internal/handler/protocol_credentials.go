@@ -398,6 +398,15 @@ func (h *handlers) ReconcileMieruEndpointCredentials() error {
 			}
 		}
 	}
+	var managedEndpoints []model.ProtocolEndpoint
+	if err := h.db.Where("LOWER(protocol) IN ?", []string{"trojan", "hysteria2"}).Order("id asc").Find(&managedEndpoints).Error; err != nil {
+		return err
+	}
+	for _, endpoint := range managedEndpoints {
+		if _, exists := changedNodes[endpoint.NodeID]; !exists {
+			changedNodes[endpoint.NodeID] = endpoint.ID
+		}
+	}
 	if !h.zeroMieruAccess {
 		for _, endpoint := range endpoints {
 			if !endpoint.MieruPrincipalReady {
@@ -580,10 +589,7 @@ func (h *handlers) activeEndpointCredentials(endpointID uint, now time.Time) ([]
 }
 
 func (h *handlers) runtimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, protocol map[string]interface{}, now time.Time, suppressMieruFallback, nativeAccess, mieruAccess bool) ([]map[string]interface{}, error) {
-	usesCredential := protocolUsesSubscriptionCredential(endpoint.Protocol)
-	if strings.EqualFold(strings.TrimSpace(endpoint.Protocol), "mieru") {
-		usesCredential = mieruAccess
-	}
+	usesCredential := endpointUsesRuntimeCredentials(endpoint.Protocol, nativeAccess, mieruAccess)
 	if !usesCredential {
 		return []map[string]interface{}{runtimeInbound(endpoint, fmt.Sprintf("endpoint-%d", endpoint.ID), endpoint.Port, protocol)}, nil
 	}
@@ -710,6 +716,19 @@ func (h *handlers) runtimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, p
 		inbounds = append(inbounds, runtimeInbound(endpoint, tag, credential.ListenPort, credentialProtocol))
 	}
 	return inbounds, nil
+}
+
+func endpointUsesRuntimeCredentials(protocol string, nativeAccess, mieruAccess bool) bool {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "vless", "vmess", "shadowsocks":
+		return true
+	case "trojan", "hysteria2":
+		return nativeAccess
+	case "mieru":
+		return mieruAccess
+	default:
+		return false
+	}
 }
 
 func includeMieruMigrationFallback(endpoint model.ProtocolEndpoint, suppress bool) bool {
