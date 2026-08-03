@@ -24,6 +24,7 @@ describe('subscription template editor policy', () => {
   it('provides renderer-specific rule defaults without exposing Go templates', () => {
     expect(defaultSubscriptionCustomization('clash')).toMatchObject({
       version: 2,
+      mixed_port: 7890,
       main_group: 'main',
       final: 'group:main',
       rule_sets: [],
@@ -34,6 +35,7 @@ describe('subscription template editor policy', () => {
     ])
     expect(normalizeSubscriptionCustomization('clash', { version: 1, group_name: 'Legacy', final: 'proxy', rule_sets: [] })).toMatchObject({
       version: 2,
+      mixed_port: 7890,
       main_group: 'main',
       policy_groups: [{ id: 'main', name: 'Legacy', type: 'select' }],
     })

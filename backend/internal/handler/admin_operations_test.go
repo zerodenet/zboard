@@ -66,6 +66,7 @@ func TestSystemConfigInputSchemas(t *testing.T) {
 		{key: "smtp_tls_mode", valueType: "string", control: "select", options: 2},
 		{key: "smtp_from", valueType: "string", control: "email"},
 		{key: "site_desc", valueType: "string", control: "textarea"},
+		{key: "subscription_camouflage_url", valueType: "string", control: "url"},
 		{key: "unknown_json", valueType: "json", control: "json"},
 	}
 	for _, test := range tests {
@@ -89,11 +90,12 @@ func TestSystemConfigInputSchemas(t *testing.T) {
 
 func TestValidateSystemConfigValue(t *testing.T) {
 	valid := map[string]string{
-		"site_url":      "https://panel.example.com",
-		"smtp_host":     "smtp.example.com",
-		"smtp_port":     "587",
-		"smtp_from":     "noreply@example.com",
-		"smtp_tls_mode": "starttls",
+		"site_url":                    "https://panel.example.com",
+		"subscription_camouflage_url": "https://www.example.com/cover",
+		"smtp_host":                   "smtp.example.com",
+		"smtp_port":                   "587",
+		"smtp_from":                   "noreply@example.com",
+		"smtp_tls_mode":               "starttls",
 	}
 	for key, value := range valid {
 		if err := validateSystemConfigValue(key, value); err != nil {
@@ -101,12 +103,13 @@ func TestValidateSystemConfigValue(t *testing.T) {
 		}
 	}
 	invalid := map[string]string{
-		"site_url":      "javascript:alert(1)",
-		"smtp_host":     "smtp..example.com",
-		"smtp_port":     "70000",
-		"smtp_from":     "not-an-email",
-		"smtp_tls_mode": "plain",
-		"site_logo":     "https://example.com/" + strings.Repeat("a", 2048),
+		"site_url":                    "javascript:alert(1)",
+		"subscription_camouflage_url": "https://example.com/#secret",
+		"smtp_host":                   "smtp..example.com",
+		"smtp_port":                   "70000",
+		"smtp_from":                   "not-an-email",
+		"smtp_tls_mode":               "plain",
+		"site_logo":                   "https://example.com/" + strings.Repeat("a", 2048),
 	}
 	for key, value := range invalid {
 		if err := validateSystemConfigValue(key, value); err == nil {

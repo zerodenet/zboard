@@ -824,6 +824,7 @@ VALUES
   ('site_logo', '站点 Logo', '', 'string', '网站的 Logo 地址', 1, 0),
   ('site_url', '站点网址', '', 'string', '当前站点的网址', 1, 0),
   ('subscribe_url', '订阅网址', '', 'string', '独立订阅地址；为空时由站点网址生成', 1, 0),
+  ('subscription_camouflage_url', '订阅伪装跳转地址', '', 'string', '无效或已撤销的公开订阅链接的跳转目标；留空时使用站点公开访问地址', 0, 0),
   ('task_email_enabled', '邮件任务开关', 'false', 'bool', '是否允许任务执行器发送邮件', 0, 0),
   ('smtp_host', 'SMTP 主机', '', 'string', '邮件服务器主机名', 0, 0),
   ('smtp_port', 'SMTP 端口', '587', 'int', '邮件服务器端口', 0, 0),

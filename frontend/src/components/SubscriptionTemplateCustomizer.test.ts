@@ -13,6 +13,8 @@ describe('SubscriptionTemplateCustomizer', () => {
     })
 
     expect(wrapper.text()).not.toContain('标准分流')
+    expect(wrapper.text()).toContain('本地混合入站端口')
+    expect(customization.mixed_port).toBe(7890)
     expect(wrapper.text()).toContain('策略组名称')
     expect(wrapper.text()).toContain('自动测速')
     expect(wrapper.text()).toContain('包含节点名称')

@@ -26,6 +26,72 @@ remain outside this repository.
 
 ## Completed goals
 
+### 2026-08-03 - Runnable subscription inbounds and concealed public delivery
+
+Goal outcome before synchronization:
+
+- Added one declarative `mixed_port` setting to every version-2 subscription
+  template, defaulting to 7890 and validated from 1 through 65535. Existing
+  version-2 and legacy records normalize to the default without a schema
+  migration.
+- ZNet Sink now emits a loopback Zero `mixed` inbound, Clash emits its native
+  `mixed-port` plus loopback bind address, and sing-box emits its native
+  loopback `mixed` inbound. Generated subscriptions are directly runnable and
+  no longer depend on a GUI conversion step to invent an inbound.
+- Public ZNet Sink and canonical native JSON delivery are Base64 text after
+  backend rendering and validation; administrative previews remain readable.
+  Clash and sing-box keep their required native representations. Base64 is
+  documented as representation concealment rather than an authorization or
+  encryption boundary.
+- Added the private `subscription_camouflage_url` system setting. Existing
+  installations reconcile the missing row at startup; a blank value falls
+  back to the installation public URL. Invalid and revoked public subscription
+  tokens now return a non-cacheable HTTP 302 redirect instead of the API 404
+  document, without changing unrelated API 404 behavior.
+
+Local verification:
+
+- `go test ./...` and `go vet ./...` passed for every backend package.
+- Targeted subscription renderer tests passed with the local Zero
+  `0.0.15-rc.4` debug binary as `ZBOARD_ZERO_VALIDATE_BIN`; the real validator
+  accepted the generated loopback mixed inbound. The known full Connector test
+  cannot run with that debug binary because it lacks the `event-dispatcher`
+  feature, so the ordinary full suite was run separately and passed.
+- All 63 frontend Vitest files and 146 tests passed. Frontend type checking and
+  the production build passed with 539 transformed modules.
+- `git diff --check` passed with only the repository's existing Windows
+  LF-to-CRLF notices.
+
+Synchronization and deployed verification:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` completed successfully. The
+  deployed working-tree version is
+  `v0.0.1-20260803T065503Z-intranet-working-tree@2026-08-03T06:55:03Z`.
+- The pre-sync database backup is
+  `/data/zboard-next/backups/20260803T065503Z/zboard-before-sync.sql` (81,954
+  bytes), the previous source is `/data/zboard-next/app-prev-20260803T065503Z`,
+  and the archived release source is
+  `/data/zboard-next/releases/20260803T065503Z/source.tar.gz` (806,333 bytes).
+- `/api/v1/version` returned the deployed version, `/readyz` returned HTTP 200
+  with database and readiness true, the Zboard container was healthy, and the
+  external MySQL and Redis containers were running.
+- A random invalid subscription token returned HTTP 302 with `Cache-Control:
+  no-store` and a camouflage `Location` instead of the structured API 404.
+  The deployed source contains the Base64-delivery, mixed-inbound and
+  camouflage paths.
+- The private `subscription_camouflage_url` configuration row exists and is
+  blank by default. All three existing subscription templates contain the
+  reconciled `mixed_port` customization.
+
+Remaining gaps:
+
+- Base64 does not prevent token guessing or traffic interception. The actual
+  controls remain the 256-bit subscription token, TLS, revocation and rotation.
+- A live valid subscription token was deliberately not extracted from the
+  deployment, so the deployed valid-token response was not decoded end to end;
+  local response tests and deployed-source checks cover that path.
+- No Git staging, commit, push or release was performed.
+
 ### 2026-08-03 - Managed VLESS and VMess transport selection
 
 Goal outcome before synchronization:

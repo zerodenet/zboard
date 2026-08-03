@@ -1275,6 +1275,7 @@ export type SubscriptionRuleSetWriteRequest = Omit<SubscriptionRuleSet, 'id' | '
 
 export interface SubscriptionTemplateCustomization {
 	version: 2
+	mixed_port: number
 	main_group: string
 	policy_groups: SubscriptionPolicyGroup[]
 	final: string

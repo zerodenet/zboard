@@ -384,6 +384,7 @@ function cloneCustomization(value: SubscriptionTemplateCustomization): Subscript
 
 function validateCustomizationDraft(renderer: SubscriptionRenderer, customization: SubscriptionTemplateCustomization) {
   if (customization.version !== 2) return '订阅模板配置版本无效。'
+  if (!isIntegerInRange(Number(customization.mixed_port), 1, 65535)) return '本地混合入站端口必须在 1 到 65535 之间。'
   if (!customization.policy_groups.length || customization.policy_groups.length > 16) return '策略组数量需在 1 到 16 个之间。'
   const supportedTypes = new Set(subscriptionPolicyGroupTypeOptions(renderer).map(option => option.value))
   const groupIDs = new Set<string>()

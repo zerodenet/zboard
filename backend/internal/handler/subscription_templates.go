@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -571,10 +572,18 @@ func (h *handlers) writeSubscriptionTemplate(ctx context.Context, w http.Respons
 	if err := h.validateZeroSubscriptionPreview(ctx, item.Renderer, rendered); err != nil {
 		return err
 	}
+	rendered, contentType, deliveryFormat := encodeSubscriptionTemplateDelivery(item.Renderer, rendered, contentType)
 	w.Header().Set("Content-Type", contentType+"; charset=utf-8")
 	w.Header().Set("X-Zboard-Subscription-Template", item.Slug)
-	w.Header().Set("X-Zboard-Subscription-Format", item.Renderer)
+	w.Header().Set("X-Zboard-Subscription-Format", deliveryFormat)
 	w.WriteHeader(http.StatusOK)
 	_, err = w.Write([]byte(rendered))
 	return err
+}
+
+func encodeSubscriptionTemplateDelivery(renderer, rendered, contentType string) (string, string, string) {
+	if renderer != subscriptionRendererZnetSink {
+		return rendered, contentType, renderer
+	}
+	return base64.StdEncoding.EncodeToString([]byte(rendered)), "text/plain", "znet-sink-base64"
 }

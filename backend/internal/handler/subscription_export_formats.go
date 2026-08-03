@@ -103,6 +103,15 @@ func renderZnetSinkSubscription(data subscriptionTemplateData, customization sub
 		})
 	}
 	document := map[string]interface{}{
+		"inbounds": []map[string]interface{}{
+			{
+				"tag":    "mixed-in",
+				"listen": map[string]interface{}{"address": "127.0.0.1", "port": customization.MixedPort},
+				"protocol": map[string]interface{}{
+					"type": "mixed",
+				},
+			},
+		},
 		"outbounds":       outbounds,
 		"outbound_groups": outboundGroups,
 		"route": map[string]interface{}{
@@ -162,6 +171,8 @@ func renderClashSubscription(data subscriptionTemplateData, customization subscr
 		policyGroups = append(policyGroups, rendered)
 	}
 	document := clashSubscriptionDocument{
+		MixedPort:     customization.MixedPort,
+		BindAddress:   "127.0.0.1",
 		Proxies:       proxies,
 		ProxyGroups:   policyGroups,
 		RuleProviders: ruleProviders,
@@ -259,6 +270,14 @@ func renderSingBoxSubscription(data subscriptionTemplateData, customization subs
 		rules = append(rules, rule)
 	}
 	document := map[string]interface{}{
+		"inbounds": []map[string]interface{}{
+			{
+				"type":        "mixed",
+				"tag":         "mixed-in",
+				"listen":      "127.0.0.1",
+				"listen_port": customization.MixedPort,
+			},
+		},
 		"outbounds": outbounds,
 		"route":     map[string]interface{}{"rules": rules, "rule_set": ruleSets, "final": finalTag},
 	}

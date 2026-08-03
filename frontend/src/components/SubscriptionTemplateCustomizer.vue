@@ -17,6 +17,10 @@
     <UiTabs v-model="activeTab" label="订阅模板配置方式" :items="tabs" />
 
     <div v-if="activeTab === 'basic'" class="customizer-basic">
+      <FormField label="本地混合入站端口" name="template-mixed-port" hint="订阅生成的完整客户端配置将在 127.0.0.1 的该端口同时提供 HTTP 和 SOCKS 代理。" required>
+        <template #default="{ controlAttrs }"><UiNumberInput v-model="model.mixed_port" v-bind="controlAttrs" :min="1" :max="65535" /></template>
+      </FormField>
+
       <div class="section-heading">
         <div>
           <strong>策略组</strong>

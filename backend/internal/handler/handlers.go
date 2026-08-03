@@ -5570,19 +5570,19 @@ func (h *handlers) SubscriptionAccessRevokeHandler(w http.ResponseWriter, r *htt
 func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Request) {
 	rawToken := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/client/subscription/"))
 	if rawToken == "" || strings.Contains(rawToken, "/") {
-		NotFound(w)
+		h.redirectSubscriptionCamouflage(w, r)
 		return
 	}
 
 	var access model.SubscriptionToken
 	tokenHash := hashSubscriptionToken(rawToken)
 	if err := h.db.Where("token_hash = ? AND revoked_at IS NULL", tokenHash).First(&access).Error; err != nil {
-		NotFound(w)
+		h.redirectSubscriptionCamouflage(w, r)
 		return
 	}
 	var user model.User
 	if err := h.db.Where("id = ? AND status = ?", access.UserID, userStatusActive).First(&user).Error; err != nil {
-		NotFound(w)
+		h.redirectSubscriptionCamouflage(w, r)
 		return
 	}
 
@@ -5712,8 +5712,9 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 		if err := h.writeSubscriptionTemplate(r.Context(), w, delivery.TemplateSlug, manifest); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				if delivery.UsesUserAgent {
-					w.Header().Set("X-Zboard-Subscription-Format", subscriptionDeliveryNative)
-					OK(w, manifest)
+					if err := writeBase64SubscriptionManifest(w, manifest, subscriptionDeliveryNative); err != nil {
+						ServerError(w, err)
+					}
 					return
 				}
 				NotFound(w)
@@ -5723,8 +5724,52 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 		}
 		return
 	}
-	w.Header().Set("X-Zboard-Subscription-Format", delivery.Format)
-	OK(w, manifest)
+	if err := writeBase64SubscriptionManifest(w, manifest, delivery.Format); err != nil {
+		ServerError(w, err)
+	}
+}
+
+func writeBase64SubscriptionManifest(w http.ResponseWriter, manifest subscriptionManifest, format string) error {
+	raw, err := json.Marshal(manifest)
+	if err != nil {
+		return fmt.Errorf("encode native subscription manifest: %w", err)
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Zboard-Subscription-Format", format+"-base64")
+	w.WriteHeader(http.StatusOK)
+	_, err = w.Write([]byte(base64.StdEncoding.EncodeToString(raw)))
+	return err
+}
+
+func (h *handlers) redirectSubscriptionCamouflage(w http.ResponseWriter, r *http.Request) {
+	configuredTarget := ""
+	var config model.SystemConfig
+	if err := h.db.Where("config_key = ?", "subscription_camouflage_url").First(&config).Error; err == nil {
+		configuredTarget = config.Value
+	}
+	siteURL := ""
+	if strings.TrimSpace(configuredTarget) == "" {
+		var installation model.Installation
+		if err := h.db.Select("site_url").First(&installation, 1).Error; err == nil {
+			siteURL = installation.SiteURL
+		}
+	}
+	writeSubscriptionCamouflageRedirect(w, r, subscriptionCamouflageTarget(configuredTarget, siteURL))
+}
+
+func subscriptionCamouflageTarget(configuredTarget, siteURL string) string {
+	if target := strings.TrimSpace(configuredTarget); target != "" {
+		return target
+	}
+	if target := strings.TrimSpace(siteURL); target != "" {
+		return target
+	}
+	return "/"
+}
+
+func writeSubscriptionCamouflageRedirect(w http.ResponseWriter, r *http.Request, target string) {
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 func (h *handlers) endpointDeliversSubscriptionCredential(endpoint model.ProtocolEndpoint) bool {

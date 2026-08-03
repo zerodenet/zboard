@@ -1804,7 +1804,7 @@ paths:
       tags:
         - subscriptions
       summary: Fetch a client-specific subscription response
-      description: When template is omitted or set to auto, the server selects the built-in ZNet Sink, Clash/Mihomo or sing-box template from User-Agent and falls back to the canonical zboard.subscription/v1 JSON. An explicit template slug or native always takes precedence over User-Agent.
+      description: When template is omitted or set to auto, the server selects the built-in ZNet Sink, Clash/Mihomo or sing-box template from User-Agent and falls back to the canonical zboard.subscription/v1 manifest. ZNet Sink and native JSON are delivered as Base64 text; Clash and sing-box retain their client-native representations. An explicit template slug or native always takes precedence over User-Agent.
       parameters:
         - in: path
           name: token
@@ -1814,7 +1814,7 @@ paths:
         - in: query
           name: template
           required: false
-          description: Active operator-managed template slug, auto, or native. Omit for User-Agent auto detection; use native to force the canonical zboard.subscription/v1 JSON response.
+          description: Active operator-managed template slug, auto, or native. Omit for User-Agent auto detection; use native to force the Base64-encoded canonical zboard.subscription/v1 manifest.
           schema: { type: string, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
       responses:
         "200":
@@ -1831,6 +1831,13 @@ paths:
               schema: { type: string }
         "403":
           $ref: "#/components/responses/Error"
+        "302":
+          description: Invalid or revoked public subscription token redirected to the configured camouflage target without caching.
+          headers:
+            Location:
+              schema: { type: string, format: uri-reference }
+            Cache-Control:
+              schema: { type: string, example: no-store }
         "404":
           $ref: "#/components/responses/Error"
   /api/v1/subscription-templates:
@@ -3620,6 +3627,7 @@ components:
       required: [version, main_group, policy_groups, final, rule_sets]
       properties:
         version: { type: integer, enum: [2] }
+        mixed_port: { type: integer, minimum: 1, maximum: 65535, default: 7890, description: Local loopback mixed HTTP and SOCKS inbound port emitted for every supported client renderer. Omission is accepted for older version-2 records and normalizes to 7890. }
         main_group: { type: string, pattern: "^[a-z][a-z0-9-]{0,31}$", description: ID of the policy group used as the primary client selector. }
         policy_groups:
           type: array

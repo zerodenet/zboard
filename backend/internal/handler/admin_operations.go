@@ -72,6 +72,27 @@ type systemConfigInputSchema struct {
 	Options     []systemConfigInputOption `json:"options,omitempty"`
 }
 
+func (h *handlers) ReconcileSystemConfigDefaults() error {
+	defaults := []model.SystemConfig{
+		{
+			ConfigKey:   "subscription_camouflage_url",
+			Name:        "订阅伪装跳转地址",
+			Value:       "",
+			ValueType:   "string",
+			Description: "无效或已撤销的公开订阅链接将跳转到该地址；留空时使用站点公开访问地址",
+			IsPublic:    false,
+			IsSecret:    false,
+		},
+	}
+	for index := range defaults {
+		item := defaults[index]
+		if err := h.db.Where("config_key = ?", item.ConfigKey).FirstOrCreate(&item).Error; err != nil {
+			return fmt.Errorf("reconcile system config %s: %w", item.ConfigKey, err)
+		}
+	}
+	return nil
+}
+
 type systemConfigUpdateReq struct {
 	Value            json.RawMessage `json:"value"`
 	ExpectedRevision *uint64         `json:"expected_revision"`
@@ -310,6 +331,9 @@ func systemConfigInputSchemaFor(config model.SystemConfig) systemConfigInputSche
 	case "subscribe_url":
 		maxBytes := 2048
 		schema = systemConfigInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "留空时使用站点地址生成"}
+	case "subscription_camouflage_url":
+		maxBytes := 2048
+		schema = systemConfigInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "留空时跳转到站点公开访问地址"}
 	case "task_email_enabled", "register_switch":
 		schema = systemConfigInputSchema{Control: "switch"}
 	case "smtp_host":
@@ -398,7 +422,7 @@ func validateSystemConfigValue(key, value string) error {
 		if value == "" || len(value) > 80 {
 			return errors.New("site_name must contain 1 to 80 bytes")
 		}
-	case "site_url", "subscribe_url", "site_logo":
+	case "site_url", "subscribe_url", "site_logo", "subscription_camouflage_url":
 		if value == "" && key != "site_url" {
 			return nil
 		}
@@ -406,7 +430,7 @@ func validateSystemConfigValue(key, value string) error {
 			return fmt.Errorf("%s must not exceed 2048 bytes", key)
 		}
 		parsed, err := url.ParseRequestURI(value)
-		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.Fragment != "" || strings.Contains(value, "#") {
 			return fmt.Errorf("%s must be an absolute http or https URL", key)
 		}
 	case "site_desc":

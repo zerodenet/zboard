@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +22,80 @@ func TestBuiltInSubscriptionExportersRenderTargetSchemas(t *testing.T) {
 		}
 		if strings.TrimSpace(rendered) == "" || contentType == "" {
 			t.Fatalf("renderSubscriptionWithRenderer(%q) returned content=%q contentType=%q", renderer, rendered, contentType)
+		}
+	}
+}
+
+func TestSubscriptionExportersRenderConfiguredMixedInboundPort(t *testing.T) {
+	const port = 15432
+	data := subscriptionExporterTestData()
+
+	zeroCustomization := defaultSubscriptionCustomization(subscriptionRendererZnetSink)
+	zeroCustomization.MixedPort = port
+	zeroRendered, err := renderZnetSinkSubscription(data, zeroCustomization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var zeroDocument struct {
+		Inbounds []struct {
+			Listen struct {
+				Address string `json:"address"`
+				Port    int    `json:"port"`
+			} `json:"listen"`
+			Protocol map[string]interface{} `json:"protocol"`
+		} `json:"inbounds"`
+	}
+	if err := json.Unmarshal([]byte(zeroRendered), &zeroDocument); err != nil {
+		t.Fatal(err)
+	}
+	if len(zeroDocument.Inbounds) != 1 || zeroDocument.Inbounds[0].Listen.Address != "127.0.0.1" || zeroDocument.Inbounds[0].Listen.Port != port || zeroDocument.Inbounds[0].Protocol["type"] != "mixed" {
+		t.Fatalf("Zero mixed inbound = %#v", zeroDocument.Inbounds)
+	}
+
+	clashCustomization := defaultSubscriptionCustomization(subscriptionRendererClash)
+	clashCustomization.MixedPort = port
+	clashRendered, err := renderClashSubscription(data, clashCustomization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var clashDocument map[string]interface{}
+	if err := yaml.Unmarshal([]byte(clashRendered), &clashDocument); err != nil {
+		t.Fatal(err)
+	}
+	if clashDocument["mixed-port"] != port || clashDocument["bind-address"] != "127.0.0.1" {
+		t.Fatalf("Clash mixed inbound = %#v", clashDocument)
+	}
+
+	singCustomization := defaultSubscriptionCustomization(subscriptionRendererSingBox)
+	singCustomization.MixedPort = port
+	singRendered, err := renderSingBoxSubscription(data, singCustomization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var singDocument struct {
+		Inbounds []map[string]interface{} `json:"inbounds"`
+	}
+	if err := json.Unmarshal([]byte(singRendered), &singDocument); err != nil {
+		t.Fatal(err)
+	}
+	if len(singDocument.Inbounds) != 1 || singDocument.Inbounds[0]["type"] != "mixed" || singDocument.Inbounds[0]["listen"] != "127.0.0.1" || singDocument.Inbounds[0]["listen_port"] != float64(port) {
+		t.Fatalf("sing-box mixed inbound = %#v", singDocument.Inbounds)
+	}
+}
+
+func TestSubscriptionCustomizationDefaultsAndValidatesMixedInboundPort(t *testing.T) {
+	customization, normalized, err := normalizeSubscriptionCustomization(subscriptionRendererZnetSink, json.RawMessage(`{"version":2,"main_group":"main","policy_groups":[{"id":"main","name":"Main","type":"select"}],"final":"group:main","rule_sets":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if customization.MixedPort != defaultSubscriptionMixedPort || !strings.Contains(string(normalized), `"mixed_port":7890`) {
+		t.Fatalf("normalized mixed port = %d, payload = %s", customization.MixedPort, normalized)
+	}
+
+	for _, port := range []int{-1, 65536} {
+		raw := json.RawMessage(fmt.Sprintf(`{"version":2,"mixed_port":%d,"main_group":"main","policy_groups":[{"id":"main","name":"Main","type":"select"}],"final":"group:main","rule_sets":[]}`, port))
+		if _, _, err := normalizeSubscriptionCustomization(subscriptionRendererZnetSink, raw); err == nil {
+			t.Fatalf("mixed port %d unexpectedly accepted", port)
 		}
 	}
 }

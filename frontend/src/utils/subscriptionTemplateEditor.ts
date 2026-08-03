@@ -20,7 +20,7 @@ export const subscriptionTemplateOutputOptions: SubscriptionTemplateOutputOption
   {
     value: 'znet-sink',
     label: 'ZNet Sink',
-    description: 'Zero 原生 JSON，适合 ZNet Sink 自动同步。',
+    description: 'Zero 原生 JSON，公开订阅以 Base64 封装，适合 ZNet Sink 自动同步。',
     contentType: 'application/json',
     icon: 'activity',
   },
@@ -102,6 +102,7 @@ export function defaultSubscriptionCustomization(
   const auto = defaultSubscriptionPolicyGroup('auto', '自动选择', 'urltest')
   return {
     version: 2,
+    mixed_port: 7890,
     main_group: 'main',
     policy_groups: [main, auto],
     final: 'group:main',
@@ -126,6 +127,7 @@ export function normalizeSubscriptionCustomization(
   const sourceRules = Array.isArray(value?.rule_sets) ? value.rule_sets : []
   return {
     version: 2,
+    mixed_port: Number(value?.mixed_port || 7890),
     main_group: mainGroup,
     policy_groups: policyGroups,
     final: normalizeSubscriptionTarget(String(value?.final || ''), mainGroup, false),

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -74,6 +75,23 @@ func TestSubscriptionRendererContentTypesAreBackendOwned(t *testing.T) {
 		if !ok || definition.contentType != expected {
 			t.Fatalf("subscriptionRenderer(%q) = %#v, %v; want content type %q", renderer, definition, ok, expected)
 		}
+	}
+}
+
+func TestZnetSinkDeliveryUsesBase64WithoutChangingOtherFormats(t *testing.T) {
+	raw := `{"outbounds":[]}`
+	encoded, contentType, format := encodeSubscriptionTemplateDelivery(subscriptionRendererZnetSink, raw, "application/json")
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(decoded) != raw || contentType != "text/plain" || format != "znet-sink-base64" {
+		t.Fatalf("encoded delivery = (%q, %q, %q)", decoded, contentType, format)
+	}
+
+	clash, clashType, clashFormat := encodeSubscriptionTemplateDelivery(subscriptionRendererClash, "proxies: []", "application/yaml")
+	if clash != "proxies: []" || clashType != "application/yaml" || clashFormat != subscriptionRendererClash {
+		t.Fatalf("Clash delivery unexpectedly changed: (%q, %q, %q)", clash, clashType, clashFormat)
 	}
 }
 

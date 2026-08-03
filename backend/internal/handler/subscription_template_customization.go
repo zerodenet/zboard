@@ -29,6 +29,7 @@ const (
 	subscriptionGeneratedOutboundsMarker = "generated-outbounds"
 	defaultSubscriptionProbeURL          = "http://www.gstatic.com/generate_204"
 	legacyDefaultSubscriptionProbeURL    = "https://www.gstatic.com/generate_204"
+	defaultSubscriptionMixedPort         = 7890
 )
 
 var (
@@ -38,6 +39,7 @@ var (
 
 type subscriptionTemplateCustomization struct {
 	Version        int                                `json:"version"`
+	MixedPort      int                                `json:"mixed_port"`
 	MainGroup      string                             `json:"main_group"`
 	PolicyGroups   []subscriptionPolicyGroup          `json:"policy_groups"`
 	Final          string                             `json:"final,omitempty"`
@@ -98,6 +100,7 @@ func defaultSubscriptionCustomization(renderer string) subscriptionTemplateCusto
 	}
 	return subscriptionTemplateCustomization{
 		Version:      subscriptionCustomizationVersion,
+		MixedPort:    defaultSubscriptionMixedPort,
 		MainGroup:    mainGroup.ID,
 		PolicyGroups: []subscriptionPolicyGroup{mainGroup, autoGroup},
 		Final:        subscriptionGroupTarget(mainGroup.ID),
@@ -143,6 +146,12 @@ func normalizeSubscriptionCustomization(renderer string, raw json.RawMessage) (s
 	}
 	if customization.Version != subscriptionCustomizationVersion {
 		return subscriptionTemplateCustomization{}, nil, fmt.Errorf("不支持配置版本 %d", customization.Version)
+	}
+	if customization.MixedPort == 0 {
+		customization.MixedPort = defaultSubscriptionMixedPort
+	}
+	if customization.MixedPort < 1 || customization.MixedPort > 65535 {
+		return subscriptionTemplateCustomization{}, nil, fmt.Errorf("本地混合入站端口必须在 1 到 65535 之间")
 	}
 	if err := normalizeSubscriptionPolicyGroups(renderer, &customization); err != nil {
 		return subscriptionTemplateCustomization{}, nil, err
@@ -259,7 +268,7 @@ func migrateLegacySubscriptionCustomization(renderer string, legacy legacySubscr
 		final = subscriptionGroupTarget(mainGroup.ID)
 	}
 	return subscriptionTemplateCustomization{
-		Version: subscriptionCustomizationVersion, MainGroup: mainGroup.ID,
+		Version: subscriptionCustomizationVersion, MixedPort: defaultSubscriptionMixedPort, MainGroup: mainGroup.ID,
 		PolicyGroups: groups, Final: final, RuleSets: ruleSets, AdvancedSource: legacy.AdvancedSource,
 	}
 }
