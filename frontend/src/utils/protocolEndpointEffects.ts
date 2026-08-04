@@ -1,6 +1,17 @@
 import type { ProtocolEndpointMutationResult } from '../api/client'
 
 export function protocolEndpointMutationMessage(result: ProtocolEndpointMutationResult, copied = false): string {
+  const membership = result.node_group_membership
+  const membershipChanges = (membership?.added_node_group_ids?.length || 0) + (membership?.removed_node_group_ids?.length || 0)
+  const taskIDs = membership?.reconcile_tasks?.map(task => `#${task.id}`).join('、') || ''
+  if (membershipChanges > 0) {
+    const endpointPublish = result.publish_status === 'queued'
+    const membershipPublish = membership?.publish_status === 'queued'
+    if (endpointPublish || membershipPublish) {
+      return `协议服务与 ${membershipChanges} 项节点组关联已保存；凭证协调任务 ${taskIDs || '已创建'}，受影响节点将在后台发布。`
+    }
+    return `协议服务与 ${membershipChanges} 项节点组关联已保存；凭证协调任务 ${taskIDs || '已创建'}，当前没有活跃订阅凭证需要发布节点。`
+  }
   if (result.publish_status === 'queued') {
     return copied
       ? '协议配置已复制为独立服务，受影响节点的运行配置正在后台发布。'

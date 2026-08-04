@@ -51,7 +51,9 @@ type protocolEndpointChangeEffects struct {
 }
 
 type protocolEndpointMutationResponse struct {
-	ProtocolEndpoint model.ProtocolEndpoint `json:"protocol_endpoint"`
+	ProtocolEndpoint     model.ProtocolEndpoint                   `json:"protocol_endpoint"`
+	NodeGroupMemberships []protocolEndpointNodeGroupMembership    `json:"node_group_memberships"`
+	NodeGroupMembership  *protocolEndpointNodeGroupMutationResult `json:"node_group_membership,omitempty"`
 	protocolEndpointChangeEffects
 }
 

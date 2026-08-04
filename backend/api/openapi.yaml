@@ -2207,7 +2207,7 @@ paths:
     post:
       tags: [nodes]
       summary: Create a protocol endpoint and apply its classified operational effect
-      description: Persists the endpoint, compares normalized plaintext configuration before encryption, and queues a complete node publish only when the active runtime changes.
+      description: Persists the endpoint, compares normalized plaintext configuration before encryption, applies revision-guarded incremental node-group membership commands in the same transaction, and queues node publication only for active runtime or credential-set changes.
       requestBody:
         required: true
         content:
@@ -2216,7 +2216,7 @@ paths:
               $ref: "#/components/schemas/ProtocolEndpointWriteRequest"
       responses:
         "200":
-          description: Protocol endpoint saved with classified change effects
+          description: Protocol endpoint saved with classified change effects and current node-group memberships
           content:
             application/json:
               schema:
@@ -2225,6 +2225,7 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/ProtocolEndpointMutationResult"
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/admin/protocol-endpoints/reality-keypair:
     post:
       tags: [nodes, admin]
@@ -2274,12 +2275,20 @@ paths:
           required: true
           schema: { type: integer, format: int64 }
       responses:
-        "200": { description: Protocol endpoint detail and latest deployment }
+        "200":
+          description: Protocol endpoint detail, latest deployment and revision-bearing node-group memberships
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/ProtocolEndpointAdminDetail" }
         "404": { $ref: "#/components/responses/Error" }
     put:
       tags: [nodes]
       summary: Update a protocol endpoint and apply its classified operational effect
-      description: Delivery, billing and management changes avoid node publication. Runtime changes publish the current node; carrier-node changes migrate credentials and publish only the previous and target nodes.
+      description: Delivery, billing and management changes avoid node publication. Runtime changes publish the current node; carrier-node changes migrate credentials and publish only the previous and target nodes. Node-group membership is changed incrementally with each group revision as an optimistic precondition.
       parameters:
         - in: path
           name: id
@@ -2302,6 +2311,7 @@ paths:
                       data:
                         $ref: "#/components/schemas/ProtocolEndpointMutationResult"
         "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
     delete:
       tags: [nodes, admin]
       summary: Remove and delete a protocol endpoint
@@ -3590,7 +3600,7 @@ components:
             reconcile_task:
               allOf:
                 - $ref: "#/components/schemas/AdminTask"
-              description: Persisted ordered task. It revokes credentials outside current membership before publishing current configuration to all previously or currently affected nodes.
+              description: Persisted ordered task. It reconciles active subscription credentials first, then publishes only nodes whose credential set can actually change.
     NodeGroupPage:
       allOf:
         - $ref: "#/components/schemas/PageEnvelope"
@@ -3624,6 +3634,55 @@ components:
           description: Operator-facing reason when the protocol is retained only as an unavailable legacy record.
         is_active: { type: boolean }
         sort_order: { type: integer, description: Global client-delivery position. Runtime compilation does not depend on this value. }
+    ProtocolEndpointNodeGroupMembership:
+      type: object
+      required: [node_group_id, name, code, is_enabled, revision, sort_order]
+      properties:
+        node_group_id: { type: integer, format: int64, minimum: 1 }
+        name: { type: string }
+        code: { type: string }
+        description: { type: string }
+        is_enabled: { type: boolean }
+        revision: { type: integer, format: int64, minimum: 1, description: Node-group optimistic concurrency version captured when the endpoint editor loaded the relationship. }
+        sort_order: { type: integer, minimum: 0, description: This endpoint's delivery position inside the node group. Endpoint-centric membership changes never rewrite existing positions. }
+    ProtocolEndpointNodeGroupMembershipChange:
+      type: object
+      required: [node_group_id, expected_revision, member]
+      properties:
+        node_group_id: { type: integer, format: int64, minimum: 1 }
+        expected_revision: { type: integer, format: int64, minimum: 1 }
+        member: { type: boolean, description: True appends the endpoint to the group; false removes only this endpoint relationship. }
+    ProtocolEndpointNodeGroupMutationResult:
+      type: object
+      required: [publish_status]
+      properties:
+        added_node_group_ids:
+          type: array
+          items: { type: integer, format: int64 }
+        removed_node_group_ids:
+          type: array
+          items: { type: integer, format: int64 }
+        affected_node_ids:
+          type: array
+          description: Nodes published after credential reconciliation. Empty when no active subscription credential set can change.
+          items: { type: integer, format: int64 }
+        publish_status: { type: string, enum: [queued, not_required] }
+        reconcile_tasks:
+          type: array
+          items: { $ref: "#/components/schemas/AdminTask" }
+    ProtocolEndpointAdminDetail:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolEndpoint"
+        - type: object
+          required: [config, usage, kernel_supported, node_group_memberships]
+          properties:
+            config: { type: string, description: Decrypted administrator-only server configuration. }
+            managed_certificate_id: { type: integer, format: int64, nullable: true }
+            latest_deployment: { $ref: "#/components/schemas/ProtocolDeploymentSummary" }
+            usage: { type: object }
+            node_group_memberships:
+              type: array
+              items: { $ref: "#/components/schemas/ProtocolEndpointNodeGroupMembership" }
     ProtocolDeploymentSummary:
       type: object
       properties:
@@ -3722,7 +3781,7 @@ components:
       enum: [none, management, billing, delivery, runtime, credential_placement]
     ProtocolEndpointMutationResult:
       type: object
-      required: [protocol_endpoint, effect, effects, publish_status]
+      required: [protocol_endpoint, effect, effects, publish_status, node_group_memberships]
       properties:
         protocol_endpoint:
           $ref: "#/components/schemas/ProtocolEndpoint"
@@ -3738,6 +3797,12 @@ components:
         affected_node_ids:
           type: array
           items: { type: integer, format: int64 }
+        node_group_memberships:
+          type: array
+          description: Current memberships after the mutation, including the latest revision of every related node group.
+          items: { $ref: "#/components/schemas/ProtocolEndpointNodeGroupMembership" }
+        node_group_membership:
+          $ref: "#/components/schemas/ProtocolEndpointNodeGroupMutationResult"
     ProtocolEndpointSelectionSnapshot:
       type: object
       required: [ids, total, resolved_at]
@@ -4734,6 +4799,11 @@ components:
           type: integer
           deprecated: true
           description: Compatibility field ignored by ordinary create/update operations. Use the complete-scope protocol-endpoints/order command to change delivery order; new endpoints are appended automatically.
+        node_group_membership_changes:
+          type: array
+          maxItems: 100
+          description: Incremental revision-guarded commands. Unchanged node groups are omitted; additions append this endpoint to the group's existing delivery order and removals delete only this relationship.
+          items: { $ref: "#/components/schemas/ProtocolEndpointNodeGroupMembershipChange" }
     RealityKeyPair:
       type: object
       required: [private_key, public_key, short_id]
