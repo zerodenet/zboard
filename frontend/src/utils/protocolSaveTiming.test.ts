@@ -22,8 +22,11 @@ describe('protocol save timing', () => {
       refresh_ms: 19,
       total_ms: 81,
     })
-    expect(formatProtocolSaveTiming(summary)).toContain('事务 20ms')
-    expect(formatProtocolSaveTiming(summary)).toContain('列表刷新 19ms')
+    const formatted = formatProtocolSaveTiming(summary)
+    expect(formatted).toContain('事务 20ms')
+    expect(formatted).toContain('任务入队 7ms')
+    expect(formatted).toContain('网络及调度约 17ms')
+    expect(formatted).toContain('列表刷新 19ms')
   })
 
   it('normalizes missing or invalid timing values', () => {
