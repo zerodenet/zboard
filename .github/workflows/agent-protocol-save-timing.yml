@@ -31,7 +31,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sed -i "s#protocolNodeGroupMembership' #protocolNodeGroupMembership'#g" scripts/agent_patch_protocol_save_timing.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/agent_patch_protocol_save_timing.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace("protocolNodeGroupMembership' ''',", "protocolNodeGroupMembership'\n''',")
+          path.write_text(text, encoding='utf-8')
+          PY
           python3 scripts/agent_patch_protocol_save_timing.py
           gofmt -w backend/internal/handler/protocol_endpoint_effects.go backend/internal/handler/protocol_endpoint_timing.go backend/internal/handler/protocol_endpoint_timing_test.go backend/internal/handler/handlers.go
       - name: Verify backend
