@@ -1,0 +1,84 @@
+name: Finalize protocol node group membership
+
+on:
+  pull_request:
+    branches:
+      - develop
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.event.pull_request.head.ref == 'agent/protocol-node-group-membership'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Record outcome and replace staging history
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('PROJECT_MEMORY.md')
+          text = path.read_text()
+          heading = '### 2026-08-04 - Protocol editor node-group membership\n'
+          if heading not in text:
+              marker = '## In-progress goals\n\n'
+              entry = '''### 2026-08-04 - Protocol editor node-group membership
+
+Goal outcome before synchronization:
+
+- Added a separate endpoint-centric membership command to protocol create and
+  edit flows. The command submits only added or removed node groups together
+  with each group's loaded revision; unchanged relationships are never
+  rewritten as a complete set.
+- The backend locks only affected groups, rejects stale revisions, appends new
+  endpoints after the group's current delivery order, removes only the exact
+  requested relationship and increments only groups whose membership changed.
+- Membership changes and their persisted `node_group_reconcile` tasks commit in
+  the same transaction. Reconciliation publishes only nodes whose active
+  subscription credential set can change, and direct runtime publication is
+  suppressed for nodes already sequenced behind credential reconciliation.
+- The protocol editor now exposes node-group association during create and
+  edit, preserves the form on revision conflict, supports explicit relationship
+  reload, blocks adding an inactive service and never inherits memberships
+  when copying a protocol service.
+
+Verification performed in this environment:
+
+- GitHub Actions apply run #17 passed backend module tidiness, formatting,
+  complete tests, vet and build.
+- The same run passed the complete frontend Vitest suite, TypeScript checking
+  and production build, including membership editor, incremental command and
+  reconciliation-feedback coverage.
+- OpenAPI schemas and handler contract tests cover revision-bearing membership
+  input, current membership output and HTTP 409 conflict responses.
+
+Remaining gaps:
+
+- `scripts/sync-intranet.ps1 -SkipLocalChecks` could not start because `pwsh`
+  is not installed in this execution environment. Intranet synchronization,
+  backup creation, `/readyz`, container health and live subscription behavior
+  were therefore not verified.
+- No deployment, database mutation, backup, Git release or production change
+  was made from this PR environment.
+
+'''
+              if marker not in text:
+                  raise SystemExit('PROJECT_MEMORY in-progress marker not found')
+              path.write_text(text.replace(marker, marker + entry, 1))
+          PY
+          git fetch origin develop
+          git reset --soft origin/develop
+          rm .github/workflows/agent-node-group-membership-snapshot.yml
+          rm -f .github/workflows/agent-protocol-node-group-membership-squash.yml
+          rm -f .github/agent-protocol-node-group-membership-squash-trigger
+          rm -f .github/agent-protocol-node-group-membership-finalize-trigger
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: manage node-group membership from protocol editor"
+          git push --force origin HEAD:agent/protocol-node-group-membership
