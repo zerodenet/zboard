@@ -2,6 +2,7 @@ package handler
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -147,5 +148,8 @@ func TestProtocolEndpointCreatePublishesOnlyWhenActive(t *testing.T) {
 func TestProtocolEndpointRuntimeOrderUsesStableIdentity(t *testing.T) {
 	if protocolEndpointRuntimeOrder != "id asc" {
 		t.Fatalf("runtime order = %q, want endpoint identity order", protocolEndpointRuntimeOrder)
+	}
+	if strings.Contains(protocolEndpointRuntimeOrder, "sort_order") {
+		t.Fatalf("runtime order must not depend on delivery sort: %q", protocolEndpointRuntimeOrder)
 	}
 }
