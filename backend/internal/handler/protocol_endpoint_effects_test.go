@@ -98,20 +98,58 @@ func TestProtocolEndpointRuntimeChangesPublishCurrentNode(t *testing.T) {
 	}
 }
 
-func TestProtocolEndpointNodeMovePublishesOnlyOldAndNewNodes(t *testing.T) {
+func TestInactiveProtocolRuntimeChangesDoNotPublish(t *testing.T) {
 	before := protocolEffectFixture()
+	before.IsActive = false
 	after := before
-	after.NodeID = 20
+	after.Port = 8443
+	after.ServerConfig = `{"type":"vless","users":[],"ws":{"path":"/proxy"}}`
 
 	result := classifyProtocolEndpointChange(&before, after)
-	if result.Effect != protocolEndpointEffectCredentialPlacement {
-		t.Fatalf("effect = %q, want credential placement", result.Effect)
+	if result.Effect != protocolEndpointEffectRuntime {
+		t.Fatalf("effect = %q, want runtime", result.Effect)
 	}
-	if result.PublishStatus != protocolEndpointPublishQueued {
-		t.Fatalf("publish status = %q, want queued", result.PublishStatus)
+	if result.PublishStatus != protocolEndpointPublishNotRequired {
+		t.Fatalf("publish status = %q, want not required", result.PublishStatus)
 	}
-	if !reflect.DeepEqual(result.AffectedNodeIDs, []uint{10, 20}) {
-		t.Fatalf("affected nodes = %v, want [10 20]", result.AffectedNodeIDs)
+	if len(result.AffectedNodeIDs) != 0 {
+		t.Fatalf("affected nodes = %v, want none", result.AffectedNodeIDs)
+	}
+}
+
+func TestProtocolEndpointNodeMovePublishesOnlyActiveSides(t *testing.T) {
+	tests := []struct {
+		name         string
+		beforeActive bool
+		afterActive  bool
+		wantNodes    []uint
+		wantStatus   string
+	}{
+		{name: "active to active", beforeActive: true, afterActive: true, wantNodes: []uint{10, 20}, wantStatus: protocolEndpointPublishQueued},
+		{name: "inactive to active", beforeActive: false, afterActive: true, wantNodes: []uint{20}, wantStatus: protocolEndpointPublishQueued},
+		{name: "active to inactive", beforeActive: true, afterActive: false, wantNodes: []uint{10}, wantStatus: protocolEndpointPublishQueued},
+		{name: "inactive to inactive", beforeActive: false, afterActive: false, wantNodes: nil, wantStatus: protocolEndpointPublishNotRequired},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			before := protocolEffectFixture()
+			before.IsActive = test.beforeActive
+			after := before
+			after.NodeID = 20
+			after.IsActive = test.afterActive
+
+			result := classifyProtocolEndpointChange(&before, after)
+			if result.Effect != protocolEndpointEffectCredentialPlacement {
+				t.Fatalf("effect = %q, want credential placement", result.Effect)
+			}
+			if result.PublishStatus != test.wantStatus {
+				t.Fatalf("publish status = %q, want %q", result.PublishStatus, test.wantStatus)
+			}
+			if !reflect.DeepEqual(result.AffectedNodeIDs, test.wantNodes) {
+				t.Fatalf("affected nodes = %v, want %v", result.AffectedNodeIDs, test.wantNodes)
+			}
+		})
 	}
 }
 
