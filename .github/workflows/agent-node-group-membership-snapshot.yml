@@ -1,0 +1,24 @@
+name: Agent protocol node group membership snapshot
+
+on:
+  push:
+    branches:
+      - agent/protocol-node-group-membership
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Archive repository
+        run: tar --exclude=.git -czf /tmp/zboard-protocol-node-group-source.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zboard-protocol-node-group-source
+          path: /tmp/zboard-protocol-node-group-source.tar.gz
+          retention-days: 1
