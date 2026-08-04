@@ -77,5 +77,12 @@ func ReconcileCommerceSchema(db *gorm.DB) error {
 		 )`); err != nil {
 		return fmt.Errorf("backfill plan sku operations: %w", err)
 	}
+
+	if _, err := sqlDB.Exec(`UPDATE plan_skus
+		SET traffic_bytes = CASE WHEN billing_mode = 'one_time' THEN traffic_bytes ELSE 0 END,
+		    device_limit = 0,
+		    speed_limit_mbps = 0`); err != nil {
+		return fmt.Errorf("remove duplicated plan sku entitlements: %w", err)
+	}
 	return nil
 }

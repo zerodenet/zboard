@@ -40,9 +40,10 @@ type commercePlanSKURequest struct {
 	BillingValue      int      `json:"billing_value"`
 	PriceCents        int64    `json:"price_cents"`
 	Currency          string   `json:"currency"`
-	TrafficBytes      int64    `json:"traffic_bytes"`
-	DeviceLimit       int      `json:"device_limit"`
-	SpeedLimitMbps    int      `json:"speed_limit_mbps"`
+	GrantTrafficBytes int64    `json:"grant_traffic_bytes"`
+	TrafficBytes      int64    `json:"traffic_bytes"`    // Deprecated alias for grant_traffic_bytes.
+	DeviceLimit       int      `json:"device_limit"`     // Deprecated compatibility input; must be zero.
+	SpeedLimitMbps    int      `json:"speed_limit_mbps"` // Deprecated compatibility input; must be zero.
 	IsActive          *bool    `json:"is_active"`
 	SortOrder         int      `json:"sort_order"`
 }
@@ -83,6 +84,7 @@ type commercePlanSKUItem struct {
 	model.PlanSKU
 	BillingMode       string   `json:"billing_mode"`
 	AllowedOperations []string `json:"allowed_operations"`
+	GrantTrafficBytes int64    `json:"grant_traffic_bytes"`
 }
 
 type planSKUBillingRow struct {
@@ -165,6 +167,10 @@ func normalizeCommercePlanSKU(planID uint, request commercePlanSKURequest) (norm
 		return normalizedCommerceSKU{}, err
 	}
 	fields := map[string]string{}
+	grantTrafficBytes := request.GrantTrafficBytes
+	if grantTrafficBytes == 0 {
+		grantTrafficBytes = request.TrafficBytes
+	}
 	billingUnit := strings.ToLower(strings.TrimSpace(request.BillingUnit))
 	if billingMode == skuBillingOneTime {
 		if billingUnit != "once" {
@@ -173,6 +179,12 @@ func normalizeCommercePlanSKU(planID uint, request commercePlanSKURequest) (norm
 		if len(operations) != 1 || operations[0] != skuOperationAddon {
 			fields["allowed_operations"] = "一次性规格当前仅用于附加权益购买。"
 		}
+		if grantTrafficBytes <= 0 {
+			fields["grant_traffic_bytes"] = "流量包的附加流量必须大于 0。"
+		}
+		if request.DeviceLimit != 0 || request.SpeedLimitMbps != 0 {
+			fields["entitlements"] = "流量包只能增加流量，不能修改设备数或限速。"
+		}
 	} else {
 		if billingUnit == "once" {
 			fields["billing_unit"] = "周期规格不能使用一次性计费单位。"
@@ -180,6 +192,10 @@ func normalizeCommercePlanSKU(planID uint, request commercePlanSKURequest) (norm
 		if containsSKUOperation(operations, skuOperationAddon) {
 			fields["allowed_operations"] = "附加权益请使用一次性规格。"
 		}
+		if request.GrantTrafficBytes != 0 || request.TrafficBytes != 0 || request.DeviceLimit != 0 || request.SpeedLimitMbps != 0 {
+			fields["entitlements"] = "周期规格继承商品权益，不能单独配置流量、设备数或限速。"
+		}
+		grantTrafficBytes = 0
 	}
 	if len(fields) > 0 {
 		return normalizedCommerceSKU{}, validationError("销售规格校验失败。", fields)
@@ -190,8 +206,8 @@ func normalizeCommercePlanSKU(planID uint, request commercePlanSKURequest) (norm
 		SKUType:     compatibilitySKUType(billingMode, operations),
 		BillingUnit: request.BillingUnit, BillingValue: request.BillingValue,
 		PriceCents: request.PriceCents, Currency: request.Currency,
-		TrafficBytes: request.TrafficBytes, DeviceLimit: request.DeviceLimit,
-		SpeedLimitMbps: request.SpeedLimitMbps, IsActive: request.IsActive,
+		TrafficBytes: grantTrafficBytes, DeviceLimit: 0,
+		SpeedLimitMbps: 0, IsActive: request.IsActive,
 		SortOrder: request.SortOrder,
 	}
 	sku, err := buildPlanSKU(planID, legacy)
@@ -273,8 +289,13 @@ func decoratePlanSKUs(db *gorm.DB, skus []model.PlanSKU) ([]commercePlanSKUItem,
 	}
 	items := make([]commercePlanSKUItem, 0, len(skus))
 	for _, sku := range skus {
+		grantTrafficBytes := int64(0)
+		if billingModes[sku.ID] == skuBillingOneTime || containsSKUOperation(operations[sku.ID], skuOperationAddon) {
+			grantTrafficBytes = sku.TrafficBytes
+		}
 		items = append(items, commercePlanSKUItem{
 			PlanSKU: sku, BillingMode: billingModes[sku.ID], AllowedOperations: operations[sku.ID],
+			GrantTrafficBytes: grantTrafficBytes,
 		})
 	}
 	return items, nil
@@ -501,7 +522,7 @@ func (h *handlers) PlanSKUCreateCommerceHandler(w http.ResponseWriter, r *http.R
 		BadRequest(w, err.Error())
 		return
 	}
-	OK(w, commercePlanSKUItem{PlanSKU: normalized.SKU, BillingMode: normalized.BillingMode, AllowedOperations: normalized.AllowedOperations})
+	OK(w, commercePlanSKUItem{PlanSKU: normalized.SKU, BillingMode: normalized.BillingMode, AllowedOperations: normalized.AllowedOperations, GrantTrafficBytes: normalized.SKU.TrafficBytes})
 }
 
 func (h *handlers) PlanSKUUpdateCommerceHandler(w http.ResponseWriter, r *http.Request) {
@@ -567,7 +588,7 @@ func (h *handlers) PlanSKUUpdateCommerceHandler(w http.ResponseWriter, r *http.R
 		BadRequest(w, err.Error())
 		return
 	}
-	OK(w, commercePlanSKUItem{PlanSKU: normalized.SKU, BillingMode: normalized.BillingMode, AllowedOperations: normalized.AllowedOperations})
+	OK(w, commercePlanSKUItem{PlanSKU: normalized.SKU, BillingMode: normalized.BillingMode, AllowedOperations: normalized.AllowedOperations, GrantTrafficBytes: normalized.SKU.TrafficBytes})
 }
 
 func (h *handlers) PlanCreateCommerceHandler(w http.ResponseWriter, r *http.Request) {
@@ -965,14 +986,22 @@ func (h *handlers) OrderCreateCommerceHandler(w http.ResponseWriter, r *http.Req
 	if channel == "" {
 		channel = "manual"
 	}
+	trafficBytes := plan.TrafficBytes
+	deviceLimit := plan.DeviceLimit
+	speedLimitMbps := plan.SpeedLimitMbps
+	if orderType == "traffic_pack" {
+		trafficBytes = sku.TrafficBytes
+		deviceLimit = 0
+		speedLimitMbps = 0
+	}
 	order := model.Order{
 		UserID: claims.UserID, PlanID: plan.ID, PlanSKUID: sku.ID,
 		TradeNo: uuid.NewString(), OrderType: orderType, TargetSubscriptionID: targetSubscriptionID,
 		AmountCents: sku.PriceCents, PayableAmount: sku.PriceCents, Currency: sku.Currency,
 		Channel: channel, Status: orderStatusPending,
 		PlanName: plan.Name, SKUName: sku.Name, BillingUnit: sku.BillingUnit,
-		BillingValue: sku.BillingValue, TrafficBytes: sku.TrafficBytes,
-		DeviceLimit: sku.DeviceLimit, SpeedLimitMbps: sku.SpeedLimitMbps,
+		BillingValue: sku.BillingValue, TrafficBytes: trafficBytes,
+		DeviceLimit: deviceLimit, SpeedLimitMbps: speedLimitMbps,
 	}
 	if err := h.db.Create(&order).Error; err != nil {
 		ServerError(w, err)

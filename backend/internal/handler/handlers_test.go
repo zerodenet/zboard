@@ -532,7 +532,7 @@ func TestValidateSetupRequestRejectsUnsafeValues(t *testing.T) {
 func TestBuildPlanSKUValidatesCommercialSpecification(t *testing.T) {
 	sku, err := buildPlanSKU(7, planSKUReq{
 		Code: " Pro-Monthly ", Name: "Monthly", BillingUnit: "month", BillingValue: 1,
-		PriceCents: 1999, Currency: "cny", TrafficBytes: 100 << 30, DeviceLimit: 5,
+		PriceCents: 1999, Currency: "cny",
 	})
 	if err != nil {
 		t.Fatalf("buildPlanSKU() error = %v", err)
@@ -541,7 +541,7 @@ func TestBuildPlanSKUValidatesCommercialSpecification(t *testing.T) {
 		t.Fatalf("buildPlanSKU() = %+v", sku)
 	}
 	for _, unit := range []string{"", "week", "one_time"} {
-		_, err := buildPlanSKU(7, planSKUReq{Code: "x", Name: "x", BillingUnit: unit, BillingValue: 1, Currency: "CNY", TrafficBytes: 1, DeviceLimit: 1})
+		_, err := buildPlanSKU(7, planSKUReq{Code: "x", Name: "x", BillingUnit: unit, BillingValue: 1, Currency: "CNY"})
 		if err == nil {
 			t.Fatalf("buildPlanSKU() accepted billing unit %q", unit)
 		}
@@ -558,7 +558,7 @@ func TestBuildPlanSKUReportsAllInvalidFields(t *testing.T) {
 	if !errors.As(err, &validation) {
 		t.Fatalf("buildPlanSKU() error = %#v, want requestValidationError", err)
 	}
-	for _, field := range []string{"code", "name", "currency", "billing_value", "price_cents", "traffic_bytes", "device_limit", "speed_limit_mbps"} {
+	for _, field := range []string{"code", "name", "currency", "billing_value", "price_cents", "entitlements"} {
 		if validation.fields[field] == "" {
 			t.Errorf("missing field error for %q: %#v", field, validation.fields)
 		}
@@ -1041,10 +1041,10 @@ func TestTrafficReconciliationAggregatesJSONContract(t *testing.T) {
 	}
 }
 
-func TestNormalizePlanPolicyUsesSKUDefaults(t *testing.T) {
-	policy, err := normalizePlanPolicy(planCreateReq{}, planSKUReq{
+func TestNormalizePlanPolicyUsesPlanEntitlements(t *testing.T) {
+	policy, err := normalizePlanPolicy(planCreateReq{
 		TrafficBytes: 1024, DeviceLimit: 3, SpeedLimitMbps: 20,
-	})
+	}, planSKUReq{TrafficBytes: 2048, DeviceLimit: 9, SpeedLimitMbps: 90})
 	if err != nil {
 		t.Fatal(err)
 	}

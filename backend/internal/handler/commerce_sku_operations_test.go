@@ -13,8 +13,7 @@ func validCommerceSKURequest() commercePlanSKURequest {
 		BillingMode: skuBillingPeriodic,
 		BillingUnit: "month", BillingValue: 1,
 		PriceCents: 1000, Currency: "CNY",
-		TrafficBytes: 100, DeviceLimit: 3,
-		SpeedLimitMbps: 0, IsActive: &active,
+		IsActive: &active,
 	}
 }
 
@@ -58,10 +57,44 @@ func TestNormalizeCommercePlanSKURejectsMixedOneTimeOperations(t *testing.T) {
 	request := validCommerceSKURequest()
 	request.BillingMode = skuBillingOneTime
 	request.BillingUnit = "once"
+	request.GrantTrafficBytes = 100
 	request.AllowedOperations = []string{skuOperationAddon, skuOperationPurchase}
 
 	if _, err := normalizeCommercePlanSKU(1, request); err == nil {
 		t.Fatal("expected one-time operation validation error")
+	}
+}
+
+func TestNormalizeCommercePlanSKURejectsPeriodicEntitlementOverrides(t *testing.T) {
+	request := validCommerceSKURequest()
+	request.TrafficBytes = 100
+
+	if _, err := normalizeCommercePlanSKU(1, request); err == nil {
+		t.Fatal("expected periodic entitlement override rejection")
+	}
+}
+
+func TestNormalizeCommercePlanSKUStoresOnlyAddonGrant(t *testing.T) {
+	request := validCommerceSKURequest()
+	request.SKUType = "traffic_pack"
+	request.BillingMode = skuBillingOneTime
+	request.BillingUnit = "once"
+	request.AllowedOperations = []string{skuOperationAddon}
+	request.GrantTrafficBytes = 512
+
+	normalized, err := normalizeCommercePlanSKU(1, request)
+	if err != nil {
+		t.Fatalf("normalize addon sku: %v", err)
+	}
+	if normalized.SKU.TrafficBytes != 512 || normalized.SKU.DeviceLimit != 0 || normalized.SKU.SpeedLimitMbps != 0 {
+		t.Fatalf("unexpected addon storage: %#v", normalized.SKU)
+	}
+}
+
+func TestNormalizePlanPolicyDoesNotInheritSKUEntitlements(t *testing.T) {
+	_, err := normalizePlanPolicy(planCreateReq{}, planSKUReq{TrafficBytes: 100, DeviceLimit: 3, SpeedLimitMbps: 50})
+	if err == nil {
+		t.Fatal("expected plan entitlement validation error")
 	}
 }
 
