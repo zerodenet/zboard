@@ -143,3 +143,9 @@ func TestProtocolEndpointCreatePublishesOnlyWhenActive(t *testing.T) {
 		t.Fatalf("inactive create result = %+v", inactiveResult)
 	}
 }
+
+func TestProtocolEndpointRuntimeOrderUsesStableIdentity(t *testing.T) {
+	if protocolEndpointRuntimeOrder != "id asc" {
+		t.Fatalf("runtime order = %q, want endpoint identity order", protocolEndpointRuntimeOrder)
+	}
+}

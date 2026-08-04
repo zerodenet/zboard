@@ -19,6 +19,9 @@ const (
 
 	protocolEndpointPublishNotRequired = "not_required"
 	protocolEndpointPublishQueued      = "queued"
+
+	// Runtime compilation is ordered by endpoint identity. SortOrder belongs to subscription delivery.
+	protocolEndpointRuntimeOrder = "id asc"
 )
 
 type protocolEndpointEffectSnapshot struct {

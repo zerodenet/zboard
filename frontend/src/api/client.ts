@@ -473,7 +473,7 @@ export interface ProtocolEndpointMutationResult {
 	effect: ProtocolEndpointChangeEffect
 	effects: ProtocolEndpointChangeEffect[]
 	publish_status: 'queued' | 'not_required'
-	affected_node_ids: number[]
+	affected_node_ids?: number[]
 }
 
 export async function createProtocolEndpoint(payload: any): Promise<ProtocolEndpointMutationResult> {
