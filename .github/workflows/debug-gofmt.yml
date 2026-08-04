@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feat/sku-operations
+  pull_request:
 
 permissions:
   contents: read
