@@ -29,7 +29,6 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import textwrap
 
           plans = Path('frontend/src/views/Plans.vue')
           source = plans.read_text()
@@ -39,14 +38,13 @@ jobs:
               raise SystemExit('create field map preparation not found')
           plans.write_text(source.replace(old, new, 1))
 
-          workflow = Path('.github/workflows/apply-plan-entitlement-frontend-v2.yml').read_text()
-          wrapper_start = workflow.index("          workflow = Path('.github/workflows/apply-plan-entitlement-frontend.yml').read_text()")
           original = Path('.github/workflows/apply-plan-entitlement-frontend.yml').read_text()
           start_marker = "          python - <<'PY'\n"
           end_marker = "\n          PY\n          cd frontend"
           start = original.index(start_marker) + len(start_marker)
           end = original.index(end_marker, start)
-          script = textwrap.dedent(original[start:end])
+          patch_lines = original[start:end].splitlines()
+          script = "\n".join(line[10:] if line.startswith('          ') else line for line in patch_lines) + "\n"
           Path('/tmp/frontend_patch.py').write_text(script)
           PY
           python /tmp/frontend_patch.py
