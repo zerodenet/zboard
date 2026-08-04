@@ -1,0 +1,64 @@
+name: Apply protocol node group membership
+
+on:
+  pull_request:
+    branches:
+      - develop
+    paths:
+      - .github/agent-protocol-node-group-membership-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'agent/protocol-node-group-membership'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.0"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Apply source patch
+        run: |
+          cat scripts/agent-protocol-node-group-membership.patch.b64.* | tr -d '\n' | base64 -d > /tmp/membership.patch
+          echo "a43b966bc1f1d297caf699fa62fd22235acf08b79b80b8b721cb5d0472080db2  /tmp/membership.patch" | sha256sum -c -
+          git apply --index /tmp/membership.patch
+          rm scripts/agent-protocol-node-group-membership.patch.b64.*
+          rm .github/workflows/agent-protocol-node-group-membership-apply.yml
+          rm .github/agent-protocol-node-group-membership-trigger
+      - name: Verify backend
+        run: |
+          test -z "$(gofmt -l backend)"
+          cd backend
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go test ./...
+          go vet ./...
+          go build ./cmd/zboard
+      - name: Verify frontend
+        run: |
+          cd frontend
+          pnpm install --frozen-lockfile
+          pnpm test
+          pnpm build
+      - name: Commit source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: manage node-group membership from protocol editor"
+          git push origin HEAD:agent/protocol-node-group-membership
