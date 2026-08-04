@@ -1,0 +1,45 @@
+name: Audit admin row actions
+
+on:
+  pull_request:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect administration row actions
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== action-slot locations ==='
+          grep -RInE '<template[^>]+#(cell\.)?(actions|operation|operations)|label="(操作|Actions)"|key="(actions|operation|operations)"' frontend/src/views frontend/src/components || true
+          echo '=== RowActions usage ==='
+          grep -RInE 'RowActions|RowActionMenu|inline-actions|action-buttons|table-actions|row-actions' frontend/src/views frontend/src/components || true
+          echo '=== button clusters near action labels ==='
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          roots = [Path('frontend/src/views'), Path('frontend/src/components')]
+          for root in roots:
+              for path in sorted(root.rglob('*.vue')):
+                  text = path.read_text(encoding='utf-8')
+                  lines = text.splitlines()
+                  hits = [i for i, line in enumerate(lines) if re.search(r'(操作|Actions|actions|operation|inline-actions|RowActions|RowActionMenu)', line)]
+                  if not hits:
+                      continue
+                  print(f'--- {path} ---')
+                  printed = set()
+                  for i in hits:
+                      start, end = max(0, i-5), min(len(lines), i+12)
+                      key = (start, end)
+                      if key in printed:
+                          continue
+                      printed.add(key)
+                      for n in range(start, end):
+                          print(f'{n+1:04d}: {lines[n]}')
+          PY
