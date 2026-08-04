@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const managedDNS = readFileSync(new URL('../views/ManagedDNS.vue', import.meta.url), 'utf8')
+const managedDNS = readFileSync(resolve(process.cwd(), 'src/views/ManagedDNS.vue'), 'utf8')
 
 describe('managed DNS row actions', () => {
   it('uses the shared row-action menu instead of a wrapping inline button group', () => {
