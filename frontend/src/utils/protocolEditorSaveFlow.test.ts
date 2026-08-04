@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const protocolsView = readFileSync(new URL('../views/Protocols.vue', import.meta.url), 'utf8')
+const protocolsView = readFileSync(resolve(process.cwd(), 'src/views/Protocols.vue'), 'utf8')
 
 describe('protocol editor save flow', () => {
   it('keeps the review step when earlier wizard steps validate successfully', () => {
