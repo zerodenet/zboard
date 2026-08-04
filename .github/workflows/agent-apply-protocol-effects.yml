@@ -23,6 +23,8 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Apply source changes
         run: |
+          grep -n -A80 -B5 '^  /api/v1/admin/protocol-endpoints:$' backend/api/openapi.yaml
+          grep -n -A80 -B5 '^  /api/v1/admin/protocol-endpoints/{id}:$' backend/api/openapi.yaml
           python3 scripts/fix-protocol-effects-script.py
           python3 scripts/apply-protocol-effects.py
       - name: Format and test backend classification
