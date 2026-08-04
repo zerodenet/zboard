@@ -137,7 +137,7 @@ func TestOpenAPIDocumentsCanonicalAdminPageEnvelope(t *testing.T) {
 	}
 	components := document["components"].(map[interface{}]interface{})
 	schemas := components["schemas"].(map[interface{}]interface{})
-	for _, name := range []string{"ApiErrorDetail", "PageMetadata", "PageEnvelope", "UserPage", "AdminUserListItem", "AdminUserDetail", "AdminTaskPage", "AdminTaskItemPage", "NodeBatchOperationRequest", "ProtocolBatchScopeRequest", "ProtocolBatchActiveRequest", "NodeSummary", "NodeDetail", "NodePage", "ProtocolEndpointSummary", "ProtocolEndpointSelectionSnapshot", "ProtocolEndpointPage", "RealityTemplate", "AccountProtocolLoadSnapshot", "PlanNodeGroupSummary", "PlanSummary", "PlanDetail", "PlanCatalogItem", "PlanPage", "PlanCatalogPage", "PlanSKUPage", "NodeGroupSummary", "NodeGroup", "NodeGroupMutationResponse", "NodeGroupPage", "OrderPage", "AdminOrderDetail", "PaymentEventSummary", "PaymentEventPage", "SubscriptionPage", "AdminSubscriptionDetail", "TicketPage", "TicketDetail", "SubscriptionTemplatePage", "SubscriptionTemplatePreviewRequest", "SubscriptionTemplatePreview", "TrafficRecordSummary", "TrafficRecordAggregates", "TrafficRecordPage", "TrafficReconciliationAggregates", "TrafficReconciliationPage", "AuditLogSummary", "AuditLogDetail", "AuditLogPage", "OperationLogPage", "OperationLogDetail"} {
+	for _, name := range []string{"ApiErrorDetail", "PageMetadata", "PageEnvelope", "UserPage", "AdminUserListItem", "AdminUserDetail", "AdminTaskPage", "AdminTaskItemPage", "NodeBatchOperationRequest", "ProtocolBatchScopeRequest", "ProtocolBatchActiveRequest", "NodeSummary", "NodeDetail", "NodePage", "ProtocolEndpointSummary", "ProtocolEndpointAdminDetail", "ProtocolEndpointNodeGroupMembership", "ProtocolEndpointNodeGroupMembershipChange", "ProtocolEndpointNodeGroupMutationResult", "ProtocolEndpointMutationResult", "ProtocolEndpointSelectionSnapshot", "ProtocolEndpointPage", "RealityTemplate", "AccountProtocolLoadSnapshot", "PlanNodeGroupSummary", "PlanSummary", "PlanDetail", "PlanCatalogItem", "PlanPage", "PlanCatalogPage", "PlanSKUPage", "NodeGroupSummary", "NodeGroup", "NodeGroupMutationResponse", "NodeGroupPage", "OrderPage", "AdminOrderDetail", "PaymentEventSummary", "PaymentEventPage", "SubscriptionPage", "AdminSubscriptionDetail", "TicketPage", "TicketDetail", "SubscriptionTemplatePage", "SubscriptionTemplatePreviewRequest", "SubscriptionTemplatePreview", "TrafficRecordSummary", "TrafficRecordAggregates", "TrafficRecordPage", "TrafficReconciliationAggregates", "TrafficReconciliationPage", "AuditLogSummary", "AuditLogDetail", "AuditLogPage", "OperationLogPage", "OperationLogDetail"} {
 		if _, ok := schemas[name]; !ok {
 			t.Errorf("OpenAPI schema %s is missing", name)
 		}
@@ -257,6 +257,23 @@ func TestOpenAPIDocumentsCanonicalAdminPageEnvelope(t *testing.T) {
 	}
 	if !expectedRevisionRequired {
 		t.Error("OpenAPI NodeGroupUpdateRequest does not require expected_revision")
+	}
+	protocolWrite := schemas["ProtocolEndpointWriteRequest"].(map[interface{}]interface{})
+	protocolWriteProperties := protocolWrite["properties"].(map[interface{}]interface{})
+	if _, ok := protocolWriteProperties["node_group_membership_changes"]; !ok {
+		t.Error("OpenAPI ProtocolEndpointWriteRequest omits incremental node-group membership changes")
+	}
+	protocolMutation := schemas["ProtocolEndpointMutationResult"].(map[interface{}]interface{})
+	protocolMutationProperties := protocolMutation["properties"].(map[interface{}]interface{})
+	for _, field := range []string{"node_group_memberships", "node_group_membership"} {
+		if _, ok := protocolMutationProperties[field]; !ok {
+			t.Errorf("OpenAPI ProtocolEndpointMutationResult omits %s", field)
+		}
+	}
+	protocolUpdate := paths["/api/v1/admin/protocol-endpoints/{id}"].(map[interface{}]interface{})["put"].(map[interface{}]interface{})
+	protocolUpdateResponses := protocolUpdate["responses"].(map[interface{}]interface{})
+	if _, ok := protocolUpdateResponses["409"]; !ok {
+		t.Error("OpenAPI protocol endpoint update does not document stale node-group revision conflicts")
 	}
 	nodeGroupSummarySchema := schemas["NodeGroupSummary"].(map[interface{}]interface{})
 	nodeGroupSummaryRequired := nodeGroupSummarySchema["required"].([]interface{})

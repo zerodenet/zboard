@@ -468,12 +468,38 @@ export async function revokeNodeReportCredential(nodeId: number) {
 
 export type ProtocolEndpointChangeEffect = 'none' | 'management' | 'billing' | 'delivery' | 'runtime' | 'credential_placement'
 
+export interface ProtocolEndpointNodeGroupMembership {
+	node_group_id: number
+	name: string
+	code: string
+	description: string
+	is_enabled: boolean
+	revision: number
+	sort_order: number
+}
+
+export interface ProtocolEndpointNodeGroupMembershipChange {
+	node_group_id: number
+	expected_revision: number
+	member: boolean
+}
+
+export interface ProtocolEndpointNodeGroupMutationResult {
+	added_node_group_ids?: number[]
+	removed_node_group_ids?: number[]
+	affected_node_ids?: number[]
+	publish_status: 'queued' | 'not_required'
+	reconcile_tasks?: AdminTask[]
+}
+
 export interface ProtocolEndpointMutationResult {
 	protocol_endpoint: Record<string, unknown>
 	effect: ProtocolEndpointChangeEffect
 	effects: ProtocolEndpointChangeEffect[]
 	publish_status: 'queued' | 'not_required'
 	affected_node_ids?: number[]
+	node_group_memberships: ProtocolEndpointNodeGroupMembership[]
+	node_group_membership?: ProtocolEndpointNodeGroupMutationResult
 }
 
 export async function createProtocolEndpoint(payload: any): Promise<ProtocolEndpointMutationResult> {

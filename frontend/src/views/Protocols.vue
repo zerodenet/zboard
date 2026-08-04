@@ -244,6 +244,17 @@
             <article><span>对外入口</span><strong class="mono">{{ form.address }}:{{ form.public_port }}</strong><small>VPS 监听 {{ form.port }}</small></article>
             <article><span>流量计费</span><strong>{{ formatMultiplier(form.multiplier_milli) }}</strong><small>前端自动换算，无需手动填写千分值</small></article>
           </div>
+          <section class="membership-section">
+            <header><div><strong>节点组关联</strong><small>节点组是套餐和订阅的交付授权边界；保存时只提交新增或移除的关系，不覆盖节点组完整成员顺序。</small></div><StatusBadge tone="neutral">{{ form.node_group_memberships.length }} 个节点组</StatusBadge></header>
+            <PageAlert v-if="copySourceID" tone="info" title="复制不会继承节点组关联">为避免无意扩大交付范围，副本默认不关联原服务的节点组；需要关联时，请先在高级设置中启用副本，再在这里显式选择。</PageAlert>
+            <PageAlert v-if="membershipRevisionConflict" tone="warning" title="节点组关联已在其他会话更新">
+              当前草稿携带的节点组版本已过期。重新加载关联不会覆盖协议参数，但会以最新关联作为新的比较基线。
+              <template #actions><UiButton variant="secondary" size="sm" type="button" :loading="membershipReloading" @click="reloadNodeGroupMemberships"><UiIcon name="refresh" />重新加载关联</UiButton></template>
+            </PageAlert>
+            <FormField label="关联节点组" name="protocol-node-groups" :error="editorErrors.fields.node_group_membership_changes" full>
+              <NodeGroupMembershipEditor v-model="form.node_group_memberships" :can-add="Boolean(form.is_active)" />
+            </FormField>
+          </section>
           <details class="advanced-settings" :open="hasConfigError">
             <summary><span><UiIcon name="settings" /></span><div><strong>高级设置</strong><small>仅在需要链式协议或自定义 Zero 参数时展开；交付顺序在列表页统一调整。</small></div><UiIcon name="chevron" /></summary>
             <div class="advanced-body">
@@ -265,7 +276,7 @@
       <template #footer="{ requestClose }">
         <UiButton variant="secondary" type="button" :disabled="saving" @click="editorStep === 1 ? requestClose() : editorStep--">{{ editorStep === 1 ? '取消' : '上一步' }}</UiButton>
         <UiButton v-if="editorStep < 3" type="button" @click="nextStep">下一步</UiButton>
-        <UiButton v-else form="protocol-form" type="submit" :disabled="!canSaveSelectedProtocol" :title="!canSaveSelectedProtocol ? selectedProtocolCapability.reason : ''" :loading="saving">{{ copySourceID ? '保存为新服务' : '保存协议服务' }}</UiButton>
+        <UiButton v-else form="protocol-form" type="submit" :disabled="!canSaveSelectedProtocol || membershipRevisionConflict" :title="!canSaveSelectedProtocol ? selectedProtocolCapability.reason : ''" :loading="saving">{{ copySourceID ? '保存为新服务' : '保存协议服务' }}</UiButton>
       </template>
     </ModalDialog>
   </section>
@@ -274,7 +285,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, updateProtocolEndpoint, updateProtocolEndpointOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointOrderItem, type ProtocolKernelCapability } from '../api/client'
+import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, updateProtocolEndpoint, updateProtocolEndpointOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointNodeGroupMembership, type ProtocolEndpointOrderItem, type ProtocolKernelCapability } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -283,6 +294,7 @@ import EmptyState from '../components/EmptyState.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import MultiplierInput from '../components/MultiplierInput.vue'
 import NodeLookup from '../components/NodeLookup.vue'
+import NodeGroupMembershipEditor from '../components/NodeGroupMembershipEditor.vue'
 import OverviewCard from '../components/OverviewCard.vue'
 import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
@@ -307,6 +319,7 @@ import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 import { normalizeOutput, truncateOutput } from '../utils/output'
 import { trackAdminTask } from '../utils/taskTracker'
 import { protocolEndpointMutationMessage } from '../utils/protocolEndpointEffects'
+import { buildProtocolNodeGroupMembershipChanges } from '../utils/protocolNodeGroupMembership'
 import { moveProtocolEndpointOrder, protocolEndpointOrderChanged } from '../utils/protocolEndpointOrdering'
 import { isIntegerInRange } from '../utils/validation'
 import { zeroVersionAtLeast } from '../utils/zeroVersion'
@@ -379,9 +392,12 @@ const orderingItems = ref<ProtocolEndpointOrderItem[]>([]), orderingOriginalIDs 
 const orderingDirty = computed(() => protocolEndpointOrderChanged(orderingItems.value, orderingOriginalIDs.value))
 const copySourceID = ref(0)
 const originalNodeID = ref(0)
+const originalNodeGroupMemberships = ref<ProtocolEndpointNodeGroupMembership[]>([])
+const membershipRevisionConflict = ref(false)
+const membershipReloading = ref(false)
 const bulkBusy = ref<'' | 'deploy' | 'enable' | 'disable'>('')
 const message = ref(''), editorError = ref('')
-const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, managed_principal_ready: false, is_active: true, config: '{}', client_config: '{}', optional_config: '{}', tags: '[]' })
+const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, managed_principal_ready: false, is_active: true, config: '{}', client_config: '{}', optional_config: '{}', tags: '[]', node_group_memberships: [] as ProtocolEndpointNodeGroupMembership[] })
 const emptyStructured = () => ({ credential: randomUUID(), username: 'subscriber', password: randomSecret(), cipher: 'aes-128-gcm', security: 'none', transport: 'tcp', transport_path: '/', grpc_service_name: 'zboard', cert_path: '', key_path: '', server_name: '', reality_private_key: '', reality_public_key: '', reality_short_id: '', reality_server_name: '', reality_fingerprint: 'chrome' })
 const form = reactive<any>(emptyForm())
 const structured = reactive<any>(emptyStructured())
@@ -391,6 +407,7 @@ const protocolFieldMap: Record<string, string> = {
   node_id: 'node_id', name: 'name', protocol: 'protocol', address: 'address', port: 'port', public_port: 'public_port',
   multiplier_milli: 'multiplier_milli', sort_order: 'sort_order', parent_protocol_id: 'parent_protocol_id', managed_certificate_id: 'managed_certificate_id',
   config: 'config', client_config: 'client_config', optional_config: 'optional_config', tags: 'tags', is_active: 'is_active',
+  node_group_membership_changes: 'node_group_membership_changes',
 }
 const editorState = useDirtyForm(() => ({ form, structured }))
 useUnsavedChangesGuard(
@@ -464,7 +481,7 @@ const managedCertificateOptions = computed(() => [
     .filter(item => item.not_after && new Date(item.not_after).getTime() > Date.now() && (item.status === 'active' || item.status === 'failed'))
     .map(item => ({ label: `${item.name} · ${item.domains.join('、')}`, value: item.id })),
 ])
-const hasConfigError = computed(() => ['config', 'client_config', 'optional_config', 'tags', 'parent_protocol_id', 'multiplier_milli', 'sort_order'].some(field => Boolean(editorErrors.fields[field])))
+const hasConfigError = computed(() => ['config', 'client_config', 'optional_config', 'tags', 'parent_protocol_id', 'multiplier_milli', 'sort_order', 'node_group_membership_changes'].some(field => Boolean(editorErrors.fields[field])))
 const selectedProtocolCapability = computed<ProtocolKernelCapability>(() => {
   const capability = protocolCapabilities[form.protocol] || { supported: false, reason: '无法确认当前内核是否支持该协议。' }
   if (!capability.supported) return capability
@@ -482,6 +499,9 @@ const mieruUnavailableReason = computed(() => protocolCapabilities.mieru?.suppor
 for (const field of Object.keys(protocolFieldMap)) {
   watch(() => form[field], () => editorErrors.clear(field))
 }
+watch(() => form.node_group_memberships.map((item: ProtocolEndpointNodeGroupMembership) => `${item.node_group_id}:${item.revision}`).join(','), () => {
+  editorErrors.clear('node_group_membership_changes')
+})
 for (const [source, field] of [
   [() => structured.username, 'structured.username'], [() => structured.password, 'structured.password'],
   [() => structured.cert_path, 'structured.cert_path'], [() => structured.key_path, 'structured.key_path'],
@@ -720,6 +740,8 @@ function closeEditor() { if (!saving.value) editorOpen.value = false }
 async function openCreate() {
   copySourceID.value = 0
   originalNodeID.value = 0
+  originalNodeGroupMemberships.value = []
+  membershipRevisionConflict.value = false
   selectedNode.value = null
   Object.assign(form, emptyForm())
   Object.assign(structured, emptyStructured())
@@ -740,10 +762,38 @@ async function openCreate() {
 }
 async function openEdit(endpoint: any) {
   copySourceID.value = 0
+  membershipRevisionConflict.value = false
   error.value = ''
-  try { const [detail, nodePage] = await Promise.all([fetchProtocolEndpoint(endpoint.id), fetchNodesPage({ nodeId: endpoint.node_id, limit: 1 })]); selectedNode.value = nodePage.items[0] || null; originalNodeID.value = detail.node_id; Object.assign(form, emptyForm(), detail, { parent_protocol_id: detail.parent_protocol_id || 0, managed_certificate_id: detail.managed_certificate_id || 0, config: detail.config || '{}', client_config: detail.client_config || '{}', optional_config: detail.optional_config || '{}', tags: detail.tags || '[]' }); await loadManagedCertificates(detail.node_id); readStructuredConfig(); editorState.markClean(); editorStep.value = 1; editorError.value = ''; editorErrors.clear(); editorOpen.value = true }
-  catch (e: any) { error.value = e?.response?.data?.message || '协议详情加载失败。' }
+  try {
+    const [detail, nodePage] = await Promise.all([
+      fetchProtocolEndpoint(endpoint.id),
+      fetchNodesPage({ nodeId: endpoint.node_id, limit: 1 }),
+    ])
+    selectedNode.value = nodePage.items[0] || null
+    originalNodeID.value = detail.node_id
+    const memberships = (detail.node_group_memberships || []).map((item: ProtocolEndpointNodeGroupMembership) => ({ ...item }))
+    originalNodeGroupMemberships.value = memberships.map((item: ProtocolEndpointNodeGroupMembership) => ({ ...item }))
+    Object.assign(form, emptyForm(), detail, {
+      parent_protocol_id: detail.parent_protocol_id || 0,
+      managed_certificate_id: detail.managed_certificate_id || 0,
+      config: detail.config || '{}',
+      client_config: detail.client_config || '{}',
+      optional_config: detail.optional_config || '{}',
+      tags: detail.tags || '[]',
+      node_group_memberships: memberships,
+    })
+    await loadManagedCertificates(detail.node_id)
+    readStructuredConfig()
+    editorState.markClean()
+    editorStep.value = 1
+    editorError.value = ''
+    editorErrors.clear()
+    editorOpen.value = true
+  } catch (e: any) {
+    error.value = e?.response?.data?.message || '协议详情加载失败。'
+  }
 }
+
 async function openCopy(endpoint: ProtocolEndpointListItem) {
   if (!endpoint.kernel_supported) {
     error.value = endpoint.kernel_unsupported_reason || '当前内核不支持复制此协议。'
@@ -751,6 +801,8 @@ async function openCopy(endpoint: ProtocolEndpointListItem) {
   }
   copySourceID.value = endpoint.id
   originalNodeID.value = 0
+  originalNodeGroupMemberships.value = []
+  membershipRevisionConflict.value = false
   error.value = ''
   try {
     const [detail, nodePage] = await Promise.all([
@@ -768,6 +820,7 @@ async function openCopy(endpoint: ProtocolEndpointListItem) {
       client_config: detail.client_config || '{}',
       optional_config: detail.optional_config || '{}',
       tags: detail.tags || '[]',
+      node_group_memberships: [],
     })
     readStructuredConfig()
     editorStep.value = 1
@@ -780,6 +833,23 @@ async function openCopy(endpoint: ProtocolEndpointListItem) {
     error.value = e?.response?.data?.message || '协议配置复制失败。'
   }
 }
+async function reloadNodeGroupMemberships() {
+  if (!form.id || membershipReloading.value) return
+  membershipReloading.value = true
+  try {
+    const detail = await fetchProtocolEndpoint(form.id)
+    const memberships = (detail.node_group_memberships || []).map((item: ProtocolEndpointNodeGroupMembership) => ({ ...item }))
+    form.node_group_memberships = memberships
+    originalNodeGroupMemberships.value = memberships.map((item: ProtocolEndpointNodeGroupMembership) => ({ ...item }))
+    membershipRevisionConflict.value = false
+    editorErrors.clear('node_group_membership_changes')
+  } catch (cause: any) {
+    editorErrors.formError.value = cause?.response?.data?.message || '节点组关联加载失败，请稍后重试。'
+  } finally {
+    membershipReloading.value = false
+  }
+}
+
 function readStructuredConfig() {
   const server: any = parseObject(form.config), client: any = parseObject(form.client_config)
   structured.credential = server.users?.[0]?.id || client.id || randomUUID()
@@ -886,6 +956,21 @@ async function save() {
   if (!await validateStep(1) || !await validateStep(2)) return
   const jsonFields = validateJSONFields()
   if (Object.keys(jsonFields).length) { editorStep.value = 3; await editorErrors.applyValidation(jsonFields, protocolFormElement, '高级配置格式不正确。'); return }
+  const membershipChanges = buildProtocolNodeGroupMembershipChanges(originalNodeGroupMemberships.value, form.node_group_memberships)
+  if (!form.is_active && membershipChanges.some(item => item.member)) {
+    editorStep.value = 3
+    await editorErrors.applyValidation({
+      node_group_membership_changes: '加入节点组前请先启用协议服务。',
+    }, protocolFormElement, '节点组关联无法保存。')
+    return
+  }
+  const removedMembershipCount = membershipChanges.filter(item => !item.member).length
+  if (removedMembershipCount > 0 && !await confirmAction({
+    title: `从 ${removedMembershipCount} 个节点组移除此服务？`,
+    message: '保存后，引用这些节点组的套餐和活跃订阅将停止交付该服务；系统会在同一事务中创建凭证协调任务，并仅在凭证集合实际变化时发布节点。',
+    confirmText: '确认移除并保存',
+    tone: 'danger',
+  })) return
   if (form.id && originalNodeID.value && form.node_id !== originalNodeID.value) {
     const accepted = await confirmAction({
       title: '切换协议服务的承载节点？',
@@ -898,14 +983,21 @@ async function save() {
   saving.value = true; editorError.value = ''; editorErrors.clear(); error.value = ''; message.value = ''
   try {
     const creatingCopy = Boolean(copySourceID.value)
-    const payload = { node_id: form.node_id, name: form.name, protocol: form.protocol, address: form.address, port: form.port, public_port: form.public_port, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, parent_protocol_id: form.parent_protocol_id || null, managed_certificate_id: form.managed_certificate_id || null, is_active: Boolean(form.is_active), config: form.config, client_config: form.client_config, optional_config: form.optional_config || '{}', tags: form.tags || '[]' }
+    const payload = { node_id: form.node_id, name: form.name, protocol: form.protocol, address: form.address, port: form.port, public_port: form.public_port, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, parent_protocol_id: form.parent_protocol_id || null, managed_certificate_id: form.managed_certificate_id || null, is_active: Boolean(form.is_active), config: form.config, client_config: form.client_config, optional_config: form.optional_config || '{}', tags: form.tags || '[]', node_group_membership_changes: membershipChanges }
     const result = form.id ? await updateProtocolEndpoint(form.id, payload) : await createProtocolEndpoint(payload)
+    for (const task of result.node_group_membership?.reconcile_tasks || []) trackAdminTask(task)
     editorOpen.value = false
     copySourceID.value = 0
     message.value = protocolEndpointMutationMessage(result, creatingCopy)
     await refresh()
   }
   catch (e: any) {
+    if (e?.response?.status === 409 && Array.isArray(e?.response?.data?.data?.conflicts || e?.response?.data?.conflicts)) {
+      membershipRevisionConflict.value = true
+      editorStep.value = 3
+      editorErrors.formError.value = e?.response?.data?.message || '节点组关联版本已过期，请重新加载关联。'
+      return
+    }
     if (e?.response?.data) {
       const normalized = await editorErrors.applyApiError(e, '协议服务保存失败，请检查表单内容。', null, protocolFieldMap)
       const fields = Object.keys(normalized.fields)
@@ -1017,6 +1109,8 @@ onMounted(async () => {
 .review-grid article{display:grid;gap:4px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
 .review-grid span,.review-grid small{color:var(--muted);font-size:9px}
 .review-grid strong{font-size:12px}
+.membership-section{display:grid;gap:12px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
+.membership-section>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.membership-section>header strong,.membership-section>header small{display:block}.membership-section>header strong{font-size:12px}.membership-section>header small{max-width:680px;margin-top:3px;color:var(--muted);font-size:9px;line-height:1.6}
 .advanced-settings{border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .advanced-settings summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:13px 14px;cursor:pointer;list-style:none}
 .advanced-settings summary::-webkit-details-marker{display:none}
