@@ -17,8 +17,12 @@ describe('protocol endpoint delivery ordering', () => {
   })
 
   it('does not move an endpoint beyond the complete scope', () => {
-    expect(moveProtocolEndpointOrder(items, 0, -1)).toBe(items)
-    expect(moveProtocolEndpointOrder(items, 2, 1)).toBe(items)
+    const beforeStart = moveProtocolEndpointOrder(items, 0, -1)
+    const afterEnd = moveProtocolEndpointOrder(items, 2, 1)
+    expect(beforeStart).toStrictEqual(items)
+    expect(afterEnd).toStrictEqual(items)
+    expect(beforeStart).not.toBe(items)
+    expect(afterEnd).not.toBe(items)
     expect(protocolEndpointOrderChanged(items, [1, 2, 3])).toBe(false)
   })
 })
