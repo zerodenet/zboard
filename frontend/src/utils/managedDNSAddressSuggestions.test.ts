@@ -19,7 +19,9 @@ describe('managed DNS address suggestions', () => {
   })
 
   it('uses stable human-readable source labels', () => {
-    expect(nodeAddressCandidateSourceLabel('ssh_global')).toBe('主机网卡')
+    expect(nodeAddressCandidateSourceLabel('node_address')).toBe('节点地址')
     expect(nodeAddressCandidateSourceLabel('node_address_dns')).toBe('节点地址 DNS')
+    expect(nodeAddressCandidateSourceLabel('ssh_host_dns')).toBe('SSH 主机 DNS')
+    expect(nodeAddressCandidateSourceLabel('ssh_global')).toBe('主机网卡')
   })
 })
