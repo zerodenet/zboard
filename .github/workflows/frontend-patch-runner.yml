@@ -48,6 +48,39 @@ jobs:
           Path('/tmp/frontend_patch.py').write_text(script)
           PY
           python /tmp/frontend_patch.py
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              return source.replace(old, new, 1)
+
+          path = Path('frontend/src/api/client.ts')
+          source = path.read_text()
+          source = replace_once(
+              source,
+              'export interface PlanCatalogItem extends PlanSummary {\n  primary_sku?: PlanSKU\n}',
+              'export interface PlanCatalogItem extends PlanSummary {\n  traffic_bytes: number\n  speed_limit_mbps: number\n  device_limit: number\n  primary_sku?: PlanSKU\n}',
+              'Plan catalog entitlements',
+          )
+          path.write_text(source)
+
+          path = Path('frontend/src/views/PublicPlans.vue')
+          source = path.read_text()
+          source = replace_once(source, 'formatBytes(plan.primary_sku.traffic_bytes)', 'formatBytes(plan.traffic_bytes)', 'public traffic')
+          source = replace_once(source, "plan.primary_sku.device_limit || '不限'", "plan.device_limit || '不限'", 'public device')
+          source = replace_once(source, 'plan.primary_sku.speed_limit_mbps ? `${plan.primary_sku.speed_limit_mbps} Mbps` : \'不限速\'', 'plan.speed_limit_mbps ? `${plan.speed_limit_mbps} Mbps` : \'不限速\'', 'public speed')
+          path.write_text(source)
+
+          path = Path('frontend/src/views/account/AccountPlans.vue')
+          source = path.read_text()
+          source = replace_once(source, 'formatBytes(sku.traffic_bytes)', 'formatBytes(selectedPlan?.traffic_bytes || 0)', 'account traffic')
+          source = replace_once(source, "sku.device_limit || '不限'", "selectedPlan?.device_limit || '不限'", 'account device')
+          source = replace_once(source, 'sku.speed_limit_mbps ? `${sku.speed_limit_mbps} Mbps` : \'不限速\'', 'selectedPlan?.speed_limit_mbps ? `${selectedPlan.speed_limit_mbps} Mbps` : \'不限速\'', 'account speed')
+          path.write_text(source)
+          PY
           cd frontend
           pnpm install --frozen-lockfile
           pnpm build
