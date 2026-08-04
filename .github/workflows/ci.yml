@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: ["main", "develop"]
+    branches: ["main", "develop", "feat/sku-operations"]
   pull_request:
 
 permissions:
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   apply-plan-entitlement-catalog:
-    if: github.event_name == 'pull_request' && github.head_ref == 'feat/sku-operations' && github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && (github.head_ref == 'feat/sku-operations' || github.ref_name == 'feat/sku-operations')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
