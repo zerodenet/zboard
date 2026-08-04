@@ -22,7 +22,9 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
       - name: Apply source changes
-        run: python3 scripts/apply-protocol-effects.py
+        run: |
+          python3 scripts/fix-protocol-effects-script.py
+          python3 scripts/apply-protocol-effects.py
       - name: Format and test backend classification
         run: |
           gofmt -w backend/internal/handler/protocol_endpoint_effects.go backend/internal/handler/protocol_endpoint_effects_test.go backend/internal/handler/handlers.go
@@ -31,6 +33,7 @@ jobs:
       - name: Commit applied patch
         run: |
           rm scripts/apply-protocol-effects.py
+          rm scripts/fix-protocol-effects-script.py
           rm .github/workflows/agent-apply-protocol-effects.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
