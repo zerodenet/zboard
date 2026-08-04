@@ -123,14 +123,30 @@ func classifyProtocolEndpointChange(before *protocolEndpointEffectSnapshot, afte
 		PublishStatus: protocolEndpointPublishNotRequired,
 	}
 	if changed[protocolEndpointEffectRuntime] || changed[protocolEndpointEffectCredentialPlacement] {
-		result.PublishStatus = protocolEndpointPublishQueued
-		if changed[protocolEndpointEffectCredentialPlacement] {
-			result.AffectedNodeIDs = uniqueNodeIDs(before.NodeID, after.NodeID)
-		} else {
-			result.AffectedNodeIDs = uniqueNodeIDs(after.NodeID)
+		result.AffectedNodeIDs = protocolEndpointRuntimeAffectedNodeIDs(*before, after)
+		if len(result.AffectedNodeIDs) > 0 {
+			result.PublishStatus = protocolEndpointPublishQueued
 		}
 	}
 	return result
+}
+
+func protocolEndpointRuntimeAffectedNodeIDs(before, after protocolEndpointEffectSnapshot) []uint {
+	if before.NodeID == after.NodeID {
+		if before.IsActive || after.IsActive {
+			return uniqueNodeIDs(after.NodeID)
+		}
+		return nil
+	}
+
+	affected := make([]uint, 0, 2)
+	if before.IsActive {
+		affected = append(affected, before.NodeID)
+	}
+	if after.IsActive {
+		affected = append(affected, after.NodeID)
+	}
+	return uniqueNodeIDs(affected...)
 }
 
 func canonicalJSON(value, fallback string) string {
