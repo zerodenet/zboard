@@ -1,0 +1,92 @@
+name: finalize-catalog-entitlements
+
+on:
+  push:
+    branches: [feat/sku-operations]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/sku-operations
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      - name: Move catalog entitlements into DTO
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              return source.replace(old, new, 1)
+
+          path = Path('backend/internal/handler/handlers.go')
+          source = path.read_text()
+          source = replace_once(
+              source,
+              '''type planCatalogItem struct {
+	planSummaryItem
+	PrimarySKU *model.PlanSKU `json:"primary_sku,omitempty"`
+}
+''',
+              '''type planCatalogItem struct {
+	planSummaryItem
+	TrafficBytes   int64          `json:"traffic_bytes"`
+	SpeedLimitMbps int            `json:"speed_limit_mbps"`
+	DeviceLimit    int            `json:"device_limit"`
+	PrimarySKU     *model.PlanSKU `json:"primary_sku,omitempty"`
+}
+''',
+              'catalog item type',
+          )
+          source = replace_once(
+              source,
+              '''func newPlanCatalogItem(plan model.Plan, counts planSKUCountRow, primarySKU *model.PlanSKU) planCatalogItem {
+	return planCatalogItem{
+		planSummaryItem: newPlanSummaryItem(plan, counts),
+		PrimarySKU:      primarySKU,
+	}
+}
+''',
+              '''func newPlanCatalogItem(plan model.Plan, counts planSKUCountRow, primarySKU *model.PlanSKU) planCatalogItem {
+	return planCatalogItem{
+		planSummaryItem: newPlanSummaryItem(plan, counts),
+		TrafficBytes:    plan.TrafficBytes,
+		SpeedLimitMbps:  plan.SpeedLimitMbps,
+		DeviceLimit:     plan.DeviceLimit,
+		PrimarySKU:      primarySKU,
+	}
+}
+''',
+              'catalog item constructor',
+          )
+          path.write_text(source)
+          PY
+          rm -f \
+            backend/internal/handler/commerce_catalog_json.go \
+            backend/internal/handler/commerce_catalog_json_test.go \
+            backend/internal/model/plan_sku_entitlement_hook.go
+          git rm .github/workflows/finalize-catalog-entitlements.yml
+          cd backend
+          gofmt -w internal/handler/handlers.go
+          test -z "$(gofmt -l .)"
+          go test ./...
+          go vet ./...
+          go build ./cmd/zboard
+      - name: Commit final DTO
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'refactor: expose plan entitlements through catalog DTO'
+          git push origin HEAD:feat/sku-operations
