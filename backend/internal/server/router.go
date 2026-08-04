@@ -96,6 +96,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodDelete, "/api/v1/admin/dns-records/:id", h.ManagedDNSDeleteHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/dns-records/:id/sync", h.ManagedDNSSyncHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/protocol-endpoints", h.ProtocolEndpointListHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/protocol-endpoints/order", h.ProtocolEndpointOrderHandler),
+		newRoute(http.MethodPut, "/api/v1/admin/protocol-endpoints/order", h.ProtocolEndpointOrderHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/protocol-endpoints/selection", h.ProtocolEndpointSelectionHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/protocol-deployments/batch", h.ProtocolBatchDeployHandler),
 		newRoute(http.MethodPatch, "/api/v1/admin/protocol-endpoints/batch", h.ProtocolBatchActiveHandler),

@@ -2636,6 +2636,9 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 	if managedCertificate != nil {
 		nextManagedCertificateID = managedCertificate.ID
 	}
+	// Business delivery order is changed only through the complete-scope ordering command.
+	// Ordinary endpoint edits preserve the current position; new endpoints are appended in the transaction below.
+	effectiveSortOrder := existing.SortOrder
 	changeEffects := classifyProtocolEndpointChange(existingEffectSnapshot, protocolEndpointEffectSnapshot{
 		NodeID: node.ID, Name: req.Name, Protocol: protocol, Address: req.Address,
 		Port: req.Port, PublicPort: req.PublicPort, Cipher: req.Cipher,
@@ -2643,7 +2646,7 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		ServerConfig: req.Config, ClientConfig: req.ClientConfig,
 		OptionalConfig: normalizeOptionalJSON(req.OptionalConfig, "{}"),
 		Tags:           normalizeOptionalJSON(req.Tags, "[]"), IsActive: isActive,
-		SortOrder: req.SortOrder, ManagedCertificateID: nextManagedCertificateID,
+		SortOrder: effectiveSortOrder, ManagedCertificateID: nextManagedCertificateID,
 	})
 
 	encryptedServerConfig, err := h.credentialCipher.Encrypt(req.Config)
@@ -2675,7 +2678,7 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 	endpoint.OptionalConfig = normalizeOptionalJSON(req.OptionalConfig, "{}")
 	endpoint.Tags = normalizeOptionalJSON(req.Tags, "[]")
 	endpoint.IsActive = isActive
-	endpoint.SortOrder = req.SortOrder
+	endpoint.SortOrder = effectiveSortOrder
 
 	action := "protocol_endpoint.create"
 	if endpointID != 0 {
@@ -2683,6 +2686,17 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if endpointID == 0 {
+			var last model.ProtocolEndpoint
+			lastResult := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Select("id", "sort_order").
+				Order("sort_order desc, id desc").
+				First(&last)
+			if lastResult.Error != nil && !errors.Is(lastResult.Error, gorm.ErrRecordNotFound) {
+				return lastResult.Error
+			}
+			if lastResult.Error == nil {
+				endpoint.SortOrder = last.SortOrder + 1
+			}
 			if err := tx.Create(&endpoint).Error; err != nil {
 				return err
 			}
@@ -5652,7 +5666,7 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 	if err := h.db.Where(
 		"user_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total",
 		access.UserID, subStatusActive, now,
-	).Order("end_at asc").Find(&subscriptions).Error; err != nil {
+	).Order("end_at asc, id asc").Find(&subscriptions).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -5739,6 +5753,10 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 			Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort, Protocol: endpoint.Protocol,
 			MultiplierMilli: endpoint.MultiplierMilli, Config: clientConfig,
 		})
+	}
+	if err := h.sortSubscriptionManifestNodes(subscriptions, manifestNodes); err != nil {
+		ServerError(w, fmt.Errorf("resolve subscription delivery order: %w", err))
+		return
 	}
 
 	var total, used int64

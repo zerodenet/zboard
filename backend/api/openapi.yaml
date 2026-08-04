@@ -2091,6 +2091,45 @@ paths:
       responses:
         "200": { description: Template deleted }
         "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/protocol-endpoints/order:
+    get:
+      tags: [nodes, subscriptions, admin]
+      operationId: getProtocolEndpointDeliveryOrder
+      summary: Load the complete global protocol delivery order
+      description: Returns every protocol endpoint in persisted business-delivery order. The snapshot is intentionally independent of list filters, pagination and display grouping, and includes an optimistic version for a later complete-scope update.
+      responses:
+        "200":
+          description: Complete protocol endpoint delivery-order snapshot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/ProtocolEndpointOrderSnapshot" }
+    put:
+      tags: [nodes, subscriptions, admin]
+      operationId: updateProtocolEndpointDeliveryOrder
+      summary: Replace the complete global protocol delivery order
+      description: Requires every current protocol endpoint exactly once and the version returned by GET. The change affects subsequent subscription rendering only; it does not publish or restart Zero. Node-group relationship order remains the higher-priority order for that group.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProtocolEndpointOrderRequest" }
+      responses:
+        "200":
+          description: Updated complete delivery order; no node publication was required
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/ProtocolEndpointOrderMutationResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "428": { $ref: "#/components/responses/Error" }
   /api/v1/admin/protocol-endpoints/selection:
     get:
       tags: [nodes, plans]
@@ -3537,6 +3576,7 @@ components:
           type: string
           description: Operator-facing reason when the protocol is retained only as an unavailable legacy record.
         is_active: { type: boolean }
+        sort_order: { type: integer, description: Global client-delivery position. Runtime compilation does not depend on this value. }
     ProtocolDeploymentSummary:
       type: object
       properties:
@@ -3586,6 +3626,50 @@ components:
             used_bytes_total: { type: integer, format: int64, minimum: 0 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    ProtocolEndpointOrderItem:
+      type: object
+      required: [id, node_id, name, protocol, is_active, sort_order]
+      properties:
+        id: { type: integer, format: int64 }
+        node_id: { type: integer, format: int64 }
+        name: { type: string }
+        protocol: { type: string }
+        is_active: { type: boolean }
+        sort_order: { type: integer }
+    ProtocolEndpointOrderSnapshot:
+      type: object
+      required: [items, version, total]
+      properties:
+        items:
+          type: array
+          description: Every current protocol endpoint in global delivery order. The list is never filtered or paginated.
+          items: { $ref: "#/components/schemas/ProtocolEndpointOrderItem" }
+        version:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+          description: Optimistic hash of endpoint membership and persisted delivery positions.
+        total: { type: integer, minimum: 0 }
+    ProtocolEndpointOrderRequest:
+      type: object
+      required: [ordered_ids, expected_version]
+      properties:
+        ordered_ids:
+          type: array
+          minItems: 0
+          uniqueItems: true
+          description: Every current protocol endpoint ID exactly once, in the desired global client-delivery order.
+          items: { type: integer, format: int64, minimum: 1 }
+        expected_version:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+    ProtocolEndpointOrderMutationResult:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolEndpointOrderSnapshot"
+        - type: object
+          required: [effect, publish_status]
+          properties:
+            effect: { type: string, enum: [delivery] }
+            publish_status: { type: string, enum: [not_required] }
     ProtocolEndpointChangeEffect:
       type: string
       enum: [none, management, billing, delivery, runtime, credential_placement]
@@ -4601,6 +4685,8 @@ components:
           type: boolean
         sort_order:
           type: integer
+          deprecated: true
+          description: Compatibility field ignored by ordinary create/update operations. Use the complete-scope protocol-endpoints/order command to change delivery order; new endpoints are appended automatically.
     RealityKeyPair:
       type: object
       required: [private_key, public_key, short_id]
