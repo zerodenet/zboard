@@ -4,20 +4,31 @@ on:
   push:
     branches:
       - feat/sku-operations
-  pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  diff:
+  format:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: feat/sku-operations
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
           cache: false
-      - name: Show gofmt diff
+      - name: Apply gofmt
         working-directory: backend
-        run: gofmt -d internal/handler/commerce_sku_operations.go internal/handler/commerce_sku_operations_test.go internal/model/commerce.go internal/server/router.go
+        run: gofmt -w internal/handler/commerce_sku_operations.go internal/handler/commerce_sku_operations_test.go internal/model/commerce.go internal/server/router.go
+      - name: Commit formatting
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/internal/handler/commerce_sku_operations.go backend/internal/handler/commerce_sku_operations_test.go backend/internal/model/commerce.go backend/internal/server/router.go
+          git commit -m "style: format commerce changes"
+          git push origin HEAD:feat/sku-operations
