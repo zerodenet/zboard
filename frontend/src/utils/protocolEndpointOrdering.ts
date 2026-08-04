@@ -1,5 +1,7 @@
 import type { ProtocolEndpointOrderItem } from '../api/client'
 
+// Reordering always returns a new array so dirty-state comparisons cannot be
+// invalidated by mutating the complete ordering snapshot in place.
 export function moveProtocolEndpointOrder(
   items: readonly ProtocolEndpointOrderItem[],
   index: number,
