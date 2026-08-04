@@ -39,9 +39,28 @@ jobs:
           end_marker = "      - name: Commit update\n"
           start = source.index(start_marker) + len(start_marker)
           end = source.index(end_marker, start)
-          lines = source[start:end].splitlines()
-          script = "\n".join(line[10:] if line.startswith("          ") else line for line in lines) + "\n"
-          Path('/tmp/apply-entitlement-authority.sh').write_text(script)
+          lines = [line[10:] if line.startswith("          ") else line for line in source[start:end].splitlines()]
+
+          # Restore indentation consumed by the YAML block for the literal Vue
+          # snippets in the frontend portion of the embedded Python patch.
+          marker_index = next(index for index, line in enumerate(lines) if '# Admin catalog UI:' in line)
+          in_triple = False
+          for index in range(marker_index, len(lines)):
+              line = lines[index]
+              token_count = line.count("'''")
+              if not in_triple and token_count:
+                  first = line.index("'''") + 3
+                  if line[first:] and token_count % 2 == 1:
+                      lines[index] = line[:first] + (' ' * 10) + line[first:]
+                  in_triple = token_count % 2 == 1
+                  continue
+              if in_triple:
+                  if token_count:
+                      in_triple = token_count % 2 == 0
+                  else:
+                      lines[index] = (' ' * 10) + line
+
+          Path('/tmp/apply-entitlement-authority.sh').write_text("\n".join(lines) + "\n")
           PY
           bash -euxo pipefail /tmp/apply-entitlement-authority.sh
       - name: Commit update
