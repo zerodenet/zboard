@@ -9,6 +9,7 @@ function result(overrides: Partial<ProtocolEndpointMutationResult> = {}): Protoc
     effects: [],
     publish_status: 'not_required',
     affected_node_ids: [],
+    node_group_memberships: [],
     ...overrides,
   }
 }
@@ -28,6 +29,15 @@ describe('protocolEndpointMutationMessage', () => {
       .toContain('服务当前未启用')
     expect(protocolEndpointMutationMessage(result({ effect: 'credential_placement', effects: ['credential_placement'] })))
       .toContain('承载节点已更新')
+  })
+
+  it('describes incremental node-group reconciliation and publication', () => {
+    expect(protocolEndpointMutationMessage(result({
+      node_group_membership: { added_node_group_ids: [2], publish_status: 'queued', affected_node_ids: [3], reconcile_tasks: [{ id: 9 } as any] },
+    }))).toContain('凭证协调任务 #9')
+    expect(protocolEndpointMutationMessage(result({
+      node_group_membership: { removed_node_group_ids: [2], publish_status: 'not_required', reconcile_tasks: [{ id: 10 } as any] },
+    }))).toContain('没有活跃订阅凭证')
   })
 
   it('keeps the inactive-copy confirmation explicit', () => {

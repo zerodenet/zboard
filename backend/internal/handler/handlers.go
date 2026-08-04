@@ -376,22 +376,23 @@ type nodeSSHConfigReq struct {
 }
 
 type protocolEndpointWriteReq struct {
-	NodeID               uint   `json:"node_id"`
-	Name                 string `json:"name"`
-	Protocol             string `json:"protocol"`
-	Address              string `json:"address"`
-	Port                 int    `json:"port"`
-	PublicPort           int    `json:"public_port"`
-	Cipher               int16  `json:"cipher"`
-	ParentProtocolID     *uint  `json:"parent_protocol_id"`
-	ManagedCertificateID *uint  `json:"managed_certificate_id"`
-	MultiplierMilli      int64  `json:"multiplier_milli"`
-	IsActive             *bool  `json:"is_active"`
-	SortOrder            int    `json:"sort_order"`
-	Config               string `json:"config"`
-	ClientConfig         string `json:"client_config"`
-	OptionalConfig       string `json:"optional_config"`
-	Tags                 string `json:"tags"`
+	NodeID                     uint                                        `json:"node_id"`
+	Name                       string                                      `json:"name"`
+	Protocol                   string                                      `json:"protocol"`
+	Address                    string                                      `json:"address"`
+	Port                       int                                         `json:"port"`
+	PublicPort                 int                                         `json:"public_port"`
+	Cipher                     int16                                       `json:"cipher"`
+	ParentProtocolID           *uint                                       `json:"parent_protocol_id"`
+	ManagedCertificateID       *uint                                       `json:"managed_certificate_id"`
+	MultiplierMilli            int64                                       `json:"multiplier_milli"`
+	IsActive                   *bool                                       `json:"is_active"`
+	SortOrder                  int                                         `json:"sort_order"`
+	Config                     string                                      `json:"config"`
+	ClientConfig               string                                      `json:"client_config"`
+	OptionalConfig             string                                      `json:"optional_config"`
+	Tags                       string                                      `json:"tags"`
+	NodeGroupMembershipChanges []protocolEndpointNodeGroupMembershipChange `json:"node_group_membership_changes"`
 }
 
 type protocolEndpointSelectionSnapshot struct {
@@ -2451,6 +2452,11 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		BadRequest(w, err.Error())
 		return
 	}
+	membershipChanges, err := normalizeProtocolEndpointNodeGroupMembershipChanges(req.NodeGroupMembershipChanges, endpointID == 0)
+	if err != nil {
+		BadRequestError(w, err)
+		return
+	}
 	protocol := strings.ToLower(strings.TrimSpace(req.Protocol))
 	if protocol == "" {
 		protocol = "vmess"
@@ -2620,16 +2626,6 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		if req.IsActive == nil {
 			isActive = existing.IsActive
 		}
-		if !isActive {
-			var activePlanCount int64
-			if err := h.db.Table("node_group_endpoints").
-				Joins("JOIN plans ON plans.node_group_id = node_group_endpoints.node_group_id").
-				Where("node_group_endpoints.protocol_endpoint_id = ? AND plans.is_active = ?", existing.ID, true).
-				Count(&activePlanCount).Error; err != nil || activePlanCount > 0 {
-				BadRequestFields(w, "协议服务校验失败。", map[string]string{"is_active": "停用前请先从所有已发布套餐中解绑该端点。"})
-				return
-			}
-		}
 	}
 
 	nextManagedCertificateID := uint(0)
@@ -2684,6 +2680,8 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 	if endpointID != 0 {
 		action = "protocol_endpoint.update"
 	}
+	var membershipMutation *protocolEndpointNodeGroupMutationResult
+	removedMemberships := protocolEndpointNodeGroupRemovalSet(membershipChanges)
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if endpointID == 0 {
 			var last model.ProtocolEndpoint
@@ -2708,6 +2706,16 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 				return err
 			}
 		}
+		if !endpoint.IsActive {
+			if err := h.validateProtocolEndpointDeactivationMemberships(tx, endpoint.ID, removedMemberships); err != nil {
+				return err
+			}
+		}
+		var membershipErr error
+		membershipMutation, membershipErr = h.applyProtocolEndpointNodeGroupMembershipChanges(tx, claims, endpoint, membershipChanges)
+		if membershipErr != nil {
+			return membershipErr
+		}
 		if err := tx.Where("protocol_endpoint_id = ?", endpoint.ID).Delete(&model.CertificateProtocolEndpoint{}).Error; err != nil {
 			return err
 		}
@@ -2727,8 +2735,16 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 			detail += fmt.Sprintf(" previous_node=%d", previousNodeID)
 		}
 		detail += fmt.Sprintf(" effect=%s publish_status=%s", changeEffects.Effect, changeEffects.PublishStatus)
+		if membershipMutation != nil {
+			detail += fmt.Sprintf(" node_groups_added=%d node_groups_removed=%d membership_publish_status=%s", len(membershipMutation.AddedNodeGroupIDs), len(membershipMutation.RemovedNodeGroupIDs), membershipMutation.PublishStatus)
+		}
 		return createAuditLog(tx, claims, action, fmt.Sprintf("protocol_endpoint:%d", endpoint.ID), detail)
 	}); err != nil {
+		var conflict *protocolEndpointNodeGroupRevisionConflictError
+		if errors.As(err, &conflict) {
+			writeJSON(w, http.StatusConflict, "节点组已被其他管理员更新，请重新加载协议服务后再保存。", map[string]interface{}{"conflicts": conflict.Conflicts})
+			return
+		}
 		var validation *requestValidationError
 		if errors.As(err, &validation) {
 			BadRequestError(w, err)
@@ -2737,12 +2753,28 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		BadRequest(w, err.Error())
 		return
 	}
-	for _, affectedNodeID := range changeEffects.AffectedNodeIDs {
+	if membershipMutation != nil {
+		for index := range membershipMutation.ReconcileTasks {
+			_ = h.startPersistedAdminTask(&membershipMutation.ReconcileTasks[index])
+		}
+	}
+	memberships, err := loadProtocolEndpointNodeGroupMemberships(h.db, endpoint.ID)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	membershipPublishedNodeIDs := []uint(nil)
+	if membershipMutation != nil {
+		membershipPublishedNodeIDs = membershipMutation.AffectedNodeIDs
+	}
+	for _, affectedNodeID := range protocolEndpointDirectPublishNodeIDs(changeEffects.AffectedNodeIDs, membershipPublishedNodeIDs) {
 		h.scheduleNodeConfigPublish(affectedNodeID, endpoint.ID, claims.UserID)
 	}
 	OK(w, protocolEndpointMutationResponse{
 		ProtocolEndpoint:              endpoint,
 		protocolEndpointChangeEffects: changeEffects,
+		NodeGroupMemberships:          memberships,
+		NodeGroupMembership:           membershipMutation,
 	})
 }
 
@@ -2768,12 +2800,13 @@ func (h *handlers) ProtocolEndpointDeployHandler(w http.ResponseWriter, r *http.
 
 type protocolEndpointAdminDetail struct {
 	model.ProtocolEndpoint
-	Config                  string                    `json:"config"`
-	ManagedCertificateID    *uint                     `json:"managed_certificate_id,omitempty"`
-	LatestDeployment        *model.ProtocolDeployment `json:"latest_deployment,omitempty"`
-	Usage                   protocolEndpointUsage     `json:"usage"`
-	KernelSupported         bool                      `json:"kernel_supported"`
-	KernelUnsupportedReason string                    `json:"kernel_unsupported_reason,omitempty"`
+	Config                  string                                `json:"config"`
+	ManagedCertificateID    *uint                                 `json:"managed_certificate_id,omitempty"`
+	LatestDeployment        *model.ProtocolDeployment             `json:"latest_deployment,omitempty"`
+	Usage                   protocolEndpointUsage                 `json:"usage"`
+	KernelSupported         bool                                  `json:"kernel_supported"`
+	KernelUnsupportedReason string                                `json:"kernel_unsupported_reason,omitempty"`
+	NodeGroupMemberships    []protocolEndpointNodeGroupMembership `json:"node_group_memberships"`
 }
 
 type protocolEndpointUsage struct {
@@ -2881,9 +2914,15 @@ func (h *handlers) ProtocolEndpointDetailHandler(w http.ResponseWriter, r *http.
 		return
 	}
 	kernelSupported, kernelUnsupportedReason := h.protocolKernelSupportForNode(endpoint.Protocol, node)
+	memberships, err := loadProtocolEndpointNodeGroupMemberships(h.db, endpoint.ID)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
 	detail := protocolEndpointAdminDetail{
 		ProtocolEndpoint: endpoint, Config: serverConfig, ManagedCertificateID: managedCertificateIDs[endpoint.ID],
 		Usage: usage, KernelSupported: kernelSupported, KernelUnsupportedReason: kernelUnsupportedReason,
+		NodeGroupMemberships: memberships,
 	}
 	var deployment model.ProtocolDeployment
 	if err := h.db.Where("protocol_endpoint_id = ?", endpoint.ID).Order("id desc").First(&deployment).Error; err == nil {
@@ -3463,7 +3502,7 @@ func (h *handlers) NodeGroupCreateHandler(w http.ResponseWriter, r *http.Request
 		if err := createAuditLog(tx, claims, "node_group.create", fmt.Sprintf("node_group:%d", group.ID), fmt.Sprintf("endpoint_count=%d", len(endpointIDs))); err != nil {
 			return err
 		}
-		targets, err := nodeGroupPublishTargets(tx, group.ID)
+		targets, err := h.nodeGroupCredentialPublishTargets(tx, group.ID, endpointIDs)
 		if err != nil {
 			return err
 		}
@@ -3613,18 +3652,19 @@ func (h *handlers) NodeGroupUpdateHandler(w http.ResponseWriter, r *http.Request
 			}
 		}
 		if req.ProtocolEndpointIDs != nil {
-			previousTargets, err := nodeGroupPublishTargets(tx, locked.ID)
-			if err != nil {
+			var existingLinks []model.NodeGroupEndpoint
+			if err := tx.Where("node_group_id = ?", locked.ID).Find(&existingLinks).Error; err != nil {
 				return err
 			}
+			changedEndpointIDs := nodeGroupMembershipChangedEndpointIDs(existingLinks, endpointIDs)
 			if err := replaceNodeGroupEndpoints(tx, locked.ID, endpointIDs); err != nil {
 				return err
 			}
-			currentTargets, err := nodeGroupPublishTargets(tx, locked.ID)
+			targets, err := h.nodeGroupCredentialPublishTargets(tx, locked.ID, changedEndpointIDs)
 			if err != nil {
 				return err
 			}
-			task, items, err := prepareNodeGroupReconcileTask(claims, locked.ID, locked.Revision+1, mergeNodeGroupPublishTargets(previousTargets, currentTargets))
+			task, items, err := prepareNodeGroupReconcileTask(claims, locked.ID, locked.Revision+1, targets)
 			if err != nil {
 				return err
 			}
