@@ -1,0 +1,56 @@
+name: trigger-entitlement-authority
+
+on:
+  pull_request:
+    branches:
+      - develop
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'feat/sku-operations'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/sku-operations
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.0"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Extract and run patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/apply-plan-entitlement-authority.yml').read_text()
+          start_marker = "      - name: Apply entitlement ownership changes\n        run: |\n"
+          end_marker = "      - name: Commit update\n"
+          start = source.index(start_marker) + len(start_marker)
+          end = source.index(end_marker, start)
+          lines = source[start:end].splitlines()
+          script = "\n".join(line[10:] if line.startswith("          ") else line for line in lines) + "\n"
+          Path('/tmp/apply-entitlement-authority.sh').write_text(script)
+          PY
+          bash -euxo pipefail /tmp/apply-entitlement-authority.sh
+      - name: Commit update
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend frontend
+          git commit -m "fix: make plan the entitlement authority"
+          git push origin HEAD:feat/sku-operations
