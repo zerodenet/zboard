@@ -2442,6 +2442,7 @@ func (h *handlers) ProtocolEndpointDeleteHandler(w http.ResponseWriter, r *http.
 }
 
 func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, endpointID uint) {
+	requestStartedAt := time.Now()
 	claims, err := h.requireAdmin(w, r)
 	if err != nil {
 		return
@@ -2682,7 +2683,8 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 	}
 	var membershipMutation *protocolEndpointNodeGroupMutationResult
 	removedMemberships := protocolEndpointNodeGroupRemovalSet(membershipChanges)
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	validationFinishedAt := time.Now()
+	transactionErr := h.db.Transaction(func(tx *gorm.DB) error {
 		if endpointID == 0 {
 			var last model.ProtocolEndpoint
 			lastResult := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -2739,7 +2741,9 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 			detail += fmt.Sprintf(" node_groups_added=%d node_groups_removed=%d membership_publish_status=%s", len(membershipMutation.AddedNodeGroupIDs), len(membershipMutation.RemovedNodeGroupIDs), membershipMutation.PublishStatus)
 		}
 		return createAuditLog(tx, claims, action, fmt.Sprintf("protocol_endpoint:%d", endpoint.ID), detail)
-	}); err != nil {
+	})
+	transactionFinishedAt := time.Now()
+	if err := transactionErr; err != nil {
 		var conflict *protocolEndpointNodeGroupRevisionConflictError
 		if errors.As(err, &conflict) {
 			writeJSON(w, http.StatusConflict, "节点组已被其他管理员更新，请重新加载协议服务后再保存。", map[string]interface{}{"conflicts": conflict.Conflicts})
@@ -2758,11 +2762,6 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 			_ = h.startPersistedAdminTask(&membershipMutation.ReconcileTasks[index])
 		}
 	}
-	memberships, err := loadProtocolEndpointNodeGroupMemberships(h.db, endpoint.ID)
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
 	membershipPublishedNodeIDs := []uint(nil)
 	if membershipMutation != nil {
 		membershipPublishedNodeIDs = membershipMutation.AffectedNodeIDs
@@ -2770,11 +2769,21 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 	for _, affectedNodeID := range protocolEndpointDirectPublishNodeIDs(changeEffects.AffectedNodeIDs, membershipPublishedNodeIDs) {
 		h.scheduleNodeConfigPublish(affectedNodeID, endpoint.ID, claims.UserID)
 	}
+	taskEnqueueFinishedAt := time.Now()
+	memberships, err := loadProtocolEndpointNodeGroupMemberships(h.db, endpoint.ID)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	responseFinishedAt := time.Now()
+	timing := newProtocolEndpointMutationTiming(requestStartedAt, validationFinishedAt, transactionFinishedAt, taskEnqueueFinishedAt, responseFinishedAt)
+	w.Header().Set("Server-Timing", fmt.Sprintf("validation;dur=%d, transaction;dur=%d, task_enqueue;dur=%d, response_preparation;dur=%d", timing.ValidationMS, timing.TransactionMS, timing.TaskEnqueueMS, timing.ResponsePreparationMS))
 	OK(w, protocolEndpointMutationResponse{
 		ProtocolEndpoint:              endpoint,
 		protocolEndpointChangeEffects: changeEffects,
 		NodeGroupMemberships:          memberships,
 		NodeGroupMembership:           membershipMutation,
+		Timing:                        timing,
 	})
 }
 

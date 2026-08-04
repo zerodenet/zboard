@@ -515,6 +515,14 @@ export interface ProtocolEndpointNodeGroupMutationResult {
 	reconcile_tasks?: AdminTask[]
 }
 
+export interface ProtocolEndpointMutationTiming {
+	validation_ms: number
+	transaction_ms: number
+	task_enqueue_ms: number
+	response_preparation_ms: number
+	server_total_ms: number
+}
+
 export interface ProtocolEndpointMutationResult {
 	protocol_endpoint: Record<string, unknown>
 	effect: ProtocolEndpointChangeEffect
@@ -523,6 +531,7 @@ export interface ProtocolEndpointMutationResult {
 	affected_node_ids?: number[]
 	node_group_memberships: ProtocolEndpointNodeGroupMembership[]
 	node_group_membership?: ProtocolEndpointNodeGroupMutationResult
+	timing: ProtocolEndpointMutationTiming
 }
 
 export async function createProtocolEndpoint(payload: any): Promise<ProtocolEndpointMutationResult> {

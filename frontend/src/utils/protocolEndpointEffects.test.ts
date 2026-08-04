@@ -10,6 +10,13 @@ function result(overrides: Partial<ProtocolEndpointMutationResult> = {}): Protoc
     publish_status: 'not_required',
     affected_node_ids: [],
     node_group_memberships: [],
+    timing: {
+      validation_ms: 0,
+      transaction_ms: 0,
+      task_enqueue_ms: 0,
+      response_preparation_ms: 0,
+      server_total_ms: 0,
+    },
     ...overrides,
   }
 }
