@@ -23,6 +23,13 @@ describe('protocolEndpointMutationMessage', () => {
       .toContain('后续流量计费')
   })
 
+  it('explains why inactive runtime and placement changes do not publish', () => {
+    expect(protocolEndpointMutationMessage(result({ effect: 'runtime', effects: ['runtime'] })))
+      .toContain('服务当前未启用')
+    expect(protocolEndpointMutationMessage(result({ effect: 'credential_placement', effects: ['credential_placement'] })))
+      .toContain('承载节点已更新')
+  })
+
   it('keeps the inactive-copy confirmation explicit', () => {
     expect(protocolEndpointMutationMessage(result({ effect: 'management', effects: ['management'] }), true))
       .toBe('协议配置已复制为独立服务；当前未启用，无需发布节点。')
