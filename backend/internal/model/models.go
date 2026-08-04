@@ -56,8 +56,9 @@ type Plan struct {
 	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
-// PlanSKU is the purchasable specification of a plan. Pricing, validity and
-// quota live here so a plan can offer monthly, yearly or other variants.
+// PlanSKU defines how a plan is sold. Subscription entitlements belong to
+// Plan and are snapshotted into Order. TrafficBytes remains as legacy storage
+// for a one-time traffic grant and is not exposed as a normal SKU entitlement.
 type PlanSKU struct {
 	ID             uint      `json:"id" gorm:"primaryKey"`
 	PlanID         uint      `json:"plan_id" gorm:"index;not null"`
@@ -68,9 +69,9 @@ type PlanSKU struct {
 	BillingValue   int       `json:"billing_value" gorm:"not null"`
 	PriceCents     int64     `json:"price_cents" gorm:"not null"`
 	Currency       string    `json:"currency" gorm:"size:8;not null"`
-	TrafficBytes   int64     `json:"traffic_bytes" gorm:"not null"`
-	DeviceLimit    int       `json:"device_limit" gorm:"not null"`
-	SpeedLimitMbps int       `json:"speed_limit_mbps" gorm:"not null;default:0"`
+	TrafficBytes   int64     `json:"-" gorm:"not null"`
+	DeviceLimit    int       `json:"-" gorm:"not null"`
+	SpeedLimitMbps int       `json:"-" gorm:"not null;default:0"`
 	IsActive       bool      `json:"is_active" gorm:"default:true"`
 	SortOrder      int       `json:"sort_order" gorm:"default:0"`
 	CreatedAt      time.Time `json:"created_at"`

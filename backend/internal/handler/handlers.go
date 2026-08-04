@@ -3724,7 +3724,10 @@ type planDetailItem struct {
 
 type planCatalogItem struct {
 	planSummaryItem
-	PrimarySKU *model.PlanSKU `json:"primary_sku,omitempty"`
+	TrafficBytes   int64          `json:"traffic_bytes"`
+	SpeedLimitMbps int            `json:"speed_limit_mbps"`
+	DeviceLimit    int            `json:"device_limit"`
+	PrimarySKU     *model.PlanSKU `json:"primary_sku,omitempty"`
 }
 
 type planSKUCountRow struct {
@@ -3770,6 +3773,9 @@ func newPlanDetailItem(plan model.Plan, counts planSKUCountRow) planDetailItem {
 func newPlanCatalogItem(plan model.Plan, counts planSKUCountRow, primarySKU *model.PlanSKU) planCatalogItem {
 	return planCatalogItem{
 		planSummaryItem: newPlanSummaryItem(plan, counts),
+		TrafficBytes:    plan.TrafficBytes,
+		SpeedLimitMbps:  plan.SpeedLimitMbps,
+		DeviceLimit:     plan.DeviceLimit,
 		PrimarySKU:      primarySKU,
 	}
 }
@@ -4288,21 +4294,13 @@ type normalizedPlanPolicy struct {
 }
 
 func normalizePlanPolicy(req planCreateReq, firstSKU planSKUReq) (normalizedPlanPolicy, error) {
+	_ = firstSKU // Kept in the compatibility signature; Plan is authoritative.
 	policy := normalizedPlanPolicy{
 		TrafficBytes: req.TrafficBytes, SpeedLimitMbps: req.SpeedLimitMbps,
 		MaxActiveSubscriptions: req.MaxActiveSubscriptions, DeviceLimit: req.DeviceLimit,
 		FamilyLimit: req.FamilyLimit, ResetPolicy: req.ResetPolicy,
 		TrafficCalcMode: req.TrafficCalcMode,
 		IsRenewable:     true,
-	}
-	if policy.TrafficBytes == 0 {
-		policy.TrafficBytes = firstSKU.TrafficBytes
-	}
-	if policy.SpeedLimitMbps == 0 {
-		policy.SpeedLimitMbps = firstSKU.SpeedLimitMbps
-	}
-	if policy.DeviceLimit == 0 {
-		policy.DeviceLimit = firstSKU.DeviceLimit
 	}
 	if req.IsRenewable != nil {
 		policy.IsRenewable = *req.IsRenewable
@@ -4377,14 +4375,15 @@ func buildPlanSKU(planID uint, req planSKUReq) (model.PlanSKU, error) {
 	if req.PriceCents < 0 {
 		fields["price_cents"] = "价格不能小于 0。"
 	}
-	if req.TrafficBytes <= 0 {
-		fields["traffic_bytes"] = "流量配额必须大于 0。"
-	}
-	if req.DeviceLimit <= 0 {
-		fields["device_limit"] = "设备数必须大于 0。"
-	}
-	if req.SpeedLimitMbps < 0 {
-		fields["speed_limit_mbps"] = "速率限制不能小于 0。"
+	if req.SKUType == "traffic_pack" {
+		if req.TrafficBytes <= 0 {
+			fields["grant_traffic_bytes"] = "流量包的附加流量必须大于 0。"
+		}
+		if req.DeviceLimit != 0 || req.SpeedLimitMbps != 0 {
+			fields["entitlements"] = "流量包只能增加流量，不能修改设备数或限速。"
+		}
+	} else if req.TrafficBytes != 0 || req.DeviceLimit != 0 || req.SpeedLimitMbps != 0 {
+		fields["entitlements"] = "周期规格继承商品权益，不能单独配置流量、设备数或限速。"
 	}
 	if len(fields) > 0 {
 		return model.PlanSKU{}, validationError("销售规格校验失败。", fields)
@@ -4812,14 +4811,22 @@ func (h *handlers) OrderCreateHandler(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "target_subscription_id is required for this order type")
 		return
 	}
+	trafficBytes := plan.TrafficBytes
+	deviceLimit := plan.DeviceLimit
+	speedLimitMbps := plan.SpeedLimitMbps
+	if orderType == "traffic_pack" {
+		trafficBytes = sku.TrafficBytes
+		deviceLimit = 0
+		speedLimitMbps = 0
+	}
 	order := model.Order{
 		UserID: claims.UserID, PlanID: plan.ID, PlanSKUID: sku.ID,
 		TradeNo: uuid.NewString(), OrderType: orderType, TargetSubscriptionID: targetSubscriptionID,
 		AmountCents: sku.PriceCents, PayableAmount: sku.PriceCents, Currency: sku.Currency,
 		Channel: channel, Status: orderStatusPending,
 		PlanName: plan.Name, SKUName: sku.Name, BillingUnit: sku.BillingUnit,
-		BillingValue: sku.BillingValue, TrafficBytes: sku.TrafficBytes,
-		DeviceLimit: sku.DeviceLimit, SpeedLimitMbps: sku.SpeedLimitMbps,
+		BillingValue: sku.BillingValue, TrafficBytes: trafficBytes,
+		DeviceLimit: deviceLimit, SpeedLimitMbps: speedLimitMbps,
 	}
 	if err := h.db.Create(&order).Error; err != nil {
 		ServerError(w, err)
@@ -5164,7 +5171,7 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 	before := sub.FlowTotal - sub.FlowUsed
 	sub.FlowTotal += order.TrafficBytes
 	sub.Status = subStatusActive
-	if order.OrderType == "upgrade" {
+	if order.OrderType != "traffic_pack" {
 		sub.PlanID = plan.ID
 		sub.PlanSKUID = sku.ID
 		sub.NodeGroupID = plan.NodeGroupID
@@ -5174,11 +5181,11 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 		sub.ResetPolicy = plan.ResetPolicy
 		sub.NextResetAt = nextTrafficReset(now, plan.ResetPolicy)
 		sub.TrafficCalcMode = plan.TrafficCalcMode
-	}
-	if plan.IsRenewable {
-		sub.RenewalPriceMinor = sku.PriceCents
-	} else {
-		sub.RenewalPriceMinor = 0
+		if plan.IsRenewable {
+			sub.RenewalPriceMinor = sku.PriceCents
+		} else {
+			sub.RenewalPriceMinor = 0
+		}
 	}
 
 	if err := tx.Save(&sub).Error; err != nil {

@@ -179,7 +179,7 @@
         <div class="detail-section-heading">
           <div>
             <h3>销售规格</h3>
-            <p>SKU 决定新订单的价格、周期、流量和设备限制。</p>
+            <p>商品统一定义流量、限速和设备数；SKU 只定义价格、周期和可用场景。</p>
           </div>
           <span>{{ detailPlan.sku_count }} 个</span>
         </div>
@@ -210,8 +210,7 @@
                 <th>状态</th>
                 <th>价格</th>
                 <th data-column-priority="2">周期</th>
-                <th data-column-priority="2">流量</th>
-                <th class="numeric-column" data-column-priority="3">设备数</th>
+                <th data-column-priority="2">权益来源</th>
                 <th class="table-action-column"><span class="sr-only">操作</span></th>
               </tr>
             </thead>
@@ -226,8 +225,7 @@
                 <td><StatusBadge :tone="sku.is_active ? 'success' : 'neutral'">{{ sku.is_active ? '可售' : '停用' }}</StatusBadge></td>
                 <td>{{ formatCurrency(sku.price_cents, sku.currency) }}</td>
                 <td data-column-priority="2">{{ billingLabel(sku) }}</td>
-                <td data-column-priority="2">{{ formatBytes(sku.traffic_bytes) }}</td>
-                <td class="numeric-column" data-column-priority="3">{{ sku.device_limit }}</td>
+                <td data-column-priority="2">{{ sku.sku_type === 'traffic_pack' ? `增加 ${formatBytes(sku.grant_traffic_bytes)}` : '继承商品权益' }}</td>
                 <td class="table-action-column">
                   <UiButton
                     v-if="app.isAdmin"
@@ -298,7 +296,7 @@
           </div>
         </section>
         <section class="form-section">
-          <div class="form-section-title"><span>2</span><div><h3>首个销售规格</h3><p>定义价格、计费周期和服务限制。</p></div></div>
+          <div class="form-section-title"><span>2</span><div><h3>首个销售规格</h3><p>定义价格和计费周期；套餐权益在下一步统一配置。</p></div></div>
           <div class="form-grid form-grid-3">
             <FormField v-slot="{ controlAttrs }" label="SKU 名称" name="create-plan-sku-name" :error="createErrors.fields['sku.name']" required><UiInput v-model.trim="form.sku.name" v-bind="controlAttrs" placeholder="月付" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="SKU 编码" name="create-plan-sku-code" :error="createErrors.fields['sku.code']" required><UiInput v-model.trim="form.sku.code" v-bind="controlAttrs" placeholder="starter-monthly" /></FormField>
@@ -307,16 +305,16 @@
             <FormField v-slot="{ controlAttrs }" label="周期数量" name="create-plan-billing-value" :error="createErrors.fields['sku.billing_value']" required><UiNumberInput v-model="form.sku.billing_value" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="价格" name="create-plan-price" hint="按所选币种的标准金额输入；系统以整数分保存。" :error="createErrors.fields['sku.price_cents']" required><MoneyInput v-model="form.sku.price_cents" v-bind="controlAttrs" :currency="form.sku.currency || 'CNY'" :min-cents="0" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="币种" name="create-plan-currency" :error="createErrors.fields['sku.currency']" required><UiInput v-model.trim="form.sku.currency" v-bind="controlAttrs" maxlength="8" /></FormField>
-            <FormField v-slot="{ controlAttrs }" label="流量配额" name="create-plan-traffic" hint="统一以 GiB 输入并换算为字节保存。" :error="createErrors.fields.traffic_bytes" required><ByteSizeInput v-model="form.traffic_bytes" v-bind="controlAttrs" :min-bytes="1024 ** 3" /></FormField>
-            <FormField v-slot="{ controlAttrs }" label="设备数" name="create-plan-device-limit" :error="createErrors.fields['sku.device_limit']" required><UiNumberInput v-model="form.sku.device_limit" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
-            <FormField v-slot="{ controlAttrs }" label="速率限制" name="create-plan-speed-limit" hint="0 表示不限速。" :error="createErrors.fields['sku.speed_limit_mbps']"><UiNumberInput v-model="form.sku.speed_limit_mbps" v-bind="controlAttrs" :min="0" suffix=" Mbps" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="最大有效订阅" name="create-plan-max-subscriptions" :error="createErrors.fields.max_active_subscriptions"><UiNumberInput v-model="form.max_active_subscriptions" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="家庭共享人数" name="create-plan-family-limit" :error="createErrors.fields.family_limit"><UiNumberInput v-model="form.family_limit" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
           </div>
         </section>
         <section class="form-section">
-          <div class="form-section-title"><span>3</span><div><h3>流量与交付边界</h3><p>套餐只关联节点组；协议端点及倍率由节点组和协议服务维护。</p></div></div>
+          <div class="form-section-title"><span>3</span><div><h3>套餐权益与交付边界</h3><p>这些权益由商品统一定义，所有周期 SKU 共享。</p></div></div>
           <div class="form-grid form-grid-3">
+            <FormField v-slot="{ controlAttrs }" label="流量配额" name="create-plan-traffic" hint="统一以 GiB 输入并换算为字节保存。" :error="createErrors.fields.traffic_bytes" required><ByteSizeInput v-model="form.traffic_bytes" v-bind="controlAttrs" :min-bytes="1024 ** 3" /></FormField>
+  <FormField v-slot="{ controlAttrs }" label="设备数" name="create-plan-device-limit" :error="createErrors.fields.device_limit" required><UiNumberInput v-model="form.device_limit" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
+  <FormField v-slot="{ controlAttrs }" label="速率限制" name="create-plan-speed-limit" hint="0 表示不限速。" :error="createErrors.fields.speed_limit_mbps"><UiNumberInput v-model="form.speed_limit_mbps" v-bind="controlAttrs" :min="0" suffix=" Mbps" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="节点组" name="create-plan-node-group" hint="按名称、代码或说明远程搜索，不预载全部节点组。" :error="createErrors.fields.node_group_id" required><NodeGroupLookup v-model="form.node_group_id" v-bind="controlAttrs" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="流量重置" name="create-plan-reset-policy" :error="createErrors.fields.reset_policy"><UiSelect v-model.number="form.reset_policy" v-bind="controlAttrs" :options="resetPolicyOptions" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="消耗计算" name="create-plan-traffic-mode" :error="createErrors.fields.traffic_calc_mode"><UiSelect v-model.number="form.traffic_calc_mode" v-bind="controlAttrs" :options="trafficCalcOptions" /></FormField>
@@ -403,9 +401,7 @@
         <FormField v-slot="{ controlAttrs }" label="周期数量" name="edit-sku-billing-value" :error="skuErrors.fields.billing_value" required><UiNumberInput v-model="skuDraft.billing_value" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="币种" name="edit-sku-currency" :error="skuErrors.fields.currency" required><UiInput v-model.trim="skuDraft.currency" v-bind="controlAttrs" maxlength="8" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="价格" name="edit-sku-price" hint="按币种标准金额输入；系统以整数分保存。" :error="skuErrors.fields.price_cents"><MoneyInput v-model="skuDraft.price_cents" v-bind="controlAttrs" :currency="skuDraft.currency || 'CNY'" :min-cents="0" /></FormField>
-        <FormField v-slot="{ controlAttrs }" label="流量配额" name="edit-sku-traffic" hint="统一以 GiB 输入并换算为字节保存。" :error="skuErrors.fields.traffic_bytes"><ByteSizeInput v-model="skuDraft.traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
-        <FormField v-slot="{ controlAttrs }" label="设备数" name="edit-sku-device-limit" :error="skuErrors.fields.device_limit"><UiNumberInput v-model="skuDraft.device_limit" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
-        <FormField v-slot="{ controlAttrs }" label="速率限制" name="edit-sku-speed-limit" :error="skuErrors.fields.speed_limit_mbps"><UiNumberInput v-model="skuDraft.speed_limit_mbps" v-bind="controlAttrs" :min="0" suffix=" Mbps" /></FormField>
+        <FormField v-if="skuDraft.sku_type === 'traffic_pack'" v-slot="{ controlAttrs }" label="附加流量" name="edit-sku-grant-traffic" hint="只增加目标订阅的可用流量，不修改套餐限速和设备数。" :error="skuErrors.fields.grant_traffic_bytes"><ByteSizeInput v-model="skuDraft.grant_traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="排序" name="edit-sku-sort-order" :error="skuErrors.fields.sort_order"><UiNumberInput v-model="skuDraft.sort_order" v-bind="controlAttrs" inputmode="numeric" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="销售状态" name="edit-sku-active" :error="skuErrors.fields.is_active" full>
           <div class="check-field"><UiCheckbox v-model="skuDraft.is_active" v-bind="controlAttrs" /><span>该 SKU 可用于创建新订单</span></div>
@@ -511,9 +507,7 @@ const emptySKU = (planID = 0) => ({
   billing_value: 1,
   price_cents: 0,
   currency: 'CNY',
-  traffic_bytes: 100 * 1024 ** 3,
-  device_limit: 3,
-  speed_limit_mbps: 0,
+  grant_traffic_bytes: 0,
   is_active: true,
   sort_order: 0,
   created_at: '',
@@ -526,6 +520,8 @@ const emptyPlanForm = () => ({
   description: '',
   is_active: false,
   traffic_bytes: 100 * 1024 ** 3,
+  speed_limit_mbps: 0,
+  device_limit: 3,
   node_group_id: 0,
   max_active_subscriptions: 0,
   is_renewable: true,
@@ -577,7 +573,7 @@ useUnsavedChangesGuard(
     })) return false
     if (skuOpen.value && !await skuState.confirmDiscard({
       title: '放弃 SKU 修改？',
-      message: '离开套餐管理后，尚未保存的价格、周期和配额修改将丢失。',
+      message: '离开套餐管理后，尚未保存的价格、周期和可用场景修改将丢失。',
       confirmText: '离开页面',
     })) return false
     return true
@@ -591,9 +587,9 @@ const createPlanFieldMap: Record<string, string> = {
   description: 'description',
   node_group_id: 'node_group_id',
   traffic_bytes: 'traffic_bytes',
-  device_limit: 'sku.device_limit',
-  speed_limit_mbps: 'sku.speed_limit_mbps',
+  device_limit: 'device_limit',
   max_active_subscriptions: 'max_active_subscriptions',
+  speed_limit_mbps: 'speed_limit_mbps',
   family_limit: 'family_limit',
   reset_policy: 'reset_policy',
   traffic_calc_mode: 'traffic_calc_mode',
@@ -604,9 +600,7 @@ const createPlanFieldMap: Record<string, string> = {
   'skus.0.billing_unit': 'sku.billing_unit',
   'skus.0.billing_value': 'sku.billing_value',
   'skus.0.price_cents': 'sku.price_cents',
-  'skus.0.traffic_bytes': 'traffic_bytes',
-  'skus.0.device_limit': 'sku.device_limit',
-  'skus.0.speed_limit_mbps': 'sku.speed_limit_mbps',
+  'skus.0.grant_traffic_bytes': 'sku.grant_traffic_bytes',
 }
 const planFieldMap: Record<string, string> = {
   name: 'name',
@@ -632,9 +626,7 @@ const skuFieldMap: Record<string, string> = {
   billing_unit: 'billing_unit',
   billing_value: 'billing_value',
   price_cents: 'price_cents',
-  traffic_bytes: 'traffic_bytes',
-  device_limit: 'device_limit',
-  speed_limit_mbps: 'speed_limit_mbps',
+  grant_traffic_bytes: 'grant_traffic_bytes',
   sort_order: 'sort_order',
   is_active: 'is_active',
 }
@@ -694,8 +686,9 @@ for (const [source, field] of [
   [() => form.sku.billing_unit, 'sku.billing_unit'],
   [() => form.sku.billing_value, 'sku.billing_value'],
   [() => form.sku.price_cents, 'sku.price_cents'],
-  [() => form.sku.device_limit, 'sku.device_limit'],
-  [() => form.sku.speed_limit_mbps, 'sku.speed_limit_mbps'],
+  [() => form.sku.grant_traffic_bytes, 'sku.grant_traffic_bytes'],
+  [() => form.device_limit, 'device_limit'],
+  [() => form.speed_limit_mbps, 'speed_limit_mbps'],
   [() => form.max_active_subscriptions, 'max_active_subscriptions'],
   [() => form.family_limit, 'family_limit'],
   [() => form.reset_policy, 'reset_policy'],
@@ -931,7 +924,7 @@ function normalizeSKUInput(sku: Pick<PlanSKU, 'name' | 'code' | 'currency'>) {
   sku.currency = String(sku.currency || '').trim().toUpperCase()
 }
 
-function skuValidation(sku: PlanSKU | ReturnType<typeof emptySKU>, prefix = '', trafficBytes = sku.traffic_bytes) {
+function skuValidation(sku: PlanSKU | ReturnType<typeof emptySKU>, prefix = '') {
   const field = (name: string) => `${prefix}${name}`
   const billingUnitValid = isOneOf(sku.billing_unit, billingUnits)
   return collectFieldErrors({
@@ -946,9 +939,7 @@ function skuValidation(sku: PlanSKU | ReturnType<typeof emptySKU>, prefix = '', 
         : false,
     [field('billing_value')]: !isIntegerInRange(sku.billing_value, 1, Number.MAX_SAFE_INTEGER) && '周期数量必须为大于 0 的整数。',
     [field('price_cents')]: !isIntegerInRange(sku.price_cents, 0, Number.MAX_SAFE_INTEGER) && '价格必须为不小于 0 的整数分。',
-    [field('traffic_bytes')]: !isIntegerInRange(trafficBytes, 1, Number.MAX_SAFE_INTEGER) && '流量配额必须大于 0。',
-    [field('device_limit')]: !isIntegerInRange(sku.device_limit, 1, Number.MAX_SAFE_INTEGER) && '设备数必须为大于 0 的整数。',
-    [field('speed_limit_mbps')]: !isIntegerInRange(sku.speed_limit_mbps, 0, Number.MAX_SAFE_INTEGER) && '速率限制必须为不小于 0 的整数。',
+    [field('grant_traffic_bytes')]: sku.sku_type === 'traffic_pack' && !isIntegerInRange(sku.grant_traffic_bytes, 1, Number.MAX_SAFE_INTEGER) && '流量包的附加流量必须大于 0。',
     [field('sort_order')]: !isIntegerInRange(sku.sort_order, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER) && '排序必须为整数。',
   })
 }
@@ -1025,8 +1016,7 @@ async function create() {
   form.summary = form.summary.trim()
   form.description = form.description.trim()
   normalizeSKUInput(form.sku)
-  const firstSKUValidation = skuValidation(form.sku, 'sku.', form.traffic_bytes)
-  delete firstSKUValidation['sku.traffic_bytes']
+  const firstSKUValidation = skuValidation(form.sku, 'sku.')
   delete firstSKUValidation['sku.sort_order']
   const valid = await createErrors.applyValidation({
     ...collectFieldErrors({
@@ -1036,6 +1026,8 @@ async function create() {
       description: !isUtf8LengthInRange(form.description, 0, 20_000) && '详细说明不能超过 20,000 个 UTF-8 字节。',
       node_group_id: !isIntegerInRange(form.node_group_id, 1, Number.MAX_SAFE_INTEGER) && '请选择节点组。',
       traffic_bytes: !isIntegerInRange(form.traffic_bytes, 1, Number.MAX_SAFE_INTEGER) && '流量配额必须大于 0。',
+      speed_limit_mbps: !isIntegerInRange(form.speed_limit_mbps, 0, Number.MAX_SAFE_INTEGER) && '速率限制必须为不小于 0 的整数。',
+      device_limit: !isIntegerInRange(form.device_limit, 1, Number.MAX_SAFE_INTEGER) && '设备数必须为大于 0 的整数。',
       max_active_subscriptions: !isIntegerInRange(form.max_active_subscriptions, 0, Number.MAX_SAFE_INTEGER) && '最大有效订阅数不能小于 0。',
       family_limit: !isIntegerInRange(form.family_limit, 0, Number.MAX_SAFE_INTEGER) && '家庭共享人数不能小于 0。',
       reset_policy: !isOneOf(form.reset_policy, resetPolicies) && '请选择有效的流量重置策略。',
@@ -1055,14 +1047,25 @@ async function create() {
       is_active: form.is_active,
       node_group_id: form.node_group_id,
       traffic_bytes: form.traffic_bytes,
-      speed_limit_mbps: form.sku.speed_limit_mbps,
-      device_limit: form.sku.device_limit,
+      speed_limit_mbps: form.speed_limit_mbps,
+      device_limit: form.device_limit,
       max_active_subscriptions: form.max_active_subscriptions,
       is_renewable: form.is_renewable,
       family_limit: form.family_limit,
       reset_policy: form.reset_policy,
       traffic_calc_mode: form.traffic_calc_mode,
-      skus: [{ ...form.sku, traffic_bytes: form.traffic_bytes, is_active: true }],
+      skus: [{
+        code: form.sku.code,
+        name: form.sku.name,
+        sku_type: form.sku.sku_type,
+        billing_unit: form.sku.billing_unit,
+        billing_value: form.sku.billing_value,
+        price_cents: form.sku.price_cents,
+        currency: form.sku.currency,
+        grant_traffic_bytes: form.sku.sku_type === 'traffic_pack' ? form.sku.grant_traffic_bytes : 0,
+        is_active: true,
+        sort_order: form.sku.sort_order,
+      }],
     })
     createState.markClean()
     createOpen.value = false
@@ -1207,9 +1210,7 @@ function skuPayload() {
     billing_value: skuDraft.billing_value,
     price_cents: skuDraft.price_cents,
     currency: skuDraft.currency,
-    traffic_bytes: skuDraft.traffic_bytes,
-    device_limit: skuDraft.device_limit,
-    speed_limit_mbps: skuDraft.speed_limit_mbps,
+    grant_traffic_bytes: skuDraft.sku_type === 'traffic_pack' ? skuDraft.grant_traffic_bytes : 0,
     is_active: skuDraft.is_active,
     sort_order: skuDraft.sort_order,
   }
