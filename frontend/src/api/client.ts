@@ -291,6 +291,29 @@ export async function fetchNode(id: number): Promise<AdminNodeDetail> {
 	return unwrap(response)
 }
 
+export type NodeAddressCandidateSource = 'node_address' | 'node_address_dns' | 'ssh_host' | 'ssh_host_dns' | 'ssh_global'
+
+export interface NodeAddressCandidate {
+	address: string
+	source: NodeAddressCandidateSource
+}
+
+export interface NodeAddressCandidates {
+	node_id: number
+	policy: 'public_only'
+	ipv4: NodeAddressCandidate[]
+	ipv6: NodeAddressCandidate[]
+	recommended_ipv4?: string
+	recommended_ipv6?: string
+	ssh_probe_status: 'not_configured' | 'not_verified' | 'succeeded' | 'failed'
+	warnings?: string[]
+}
+
+export async function fetchNodeAddressCandidates(nodeId: number, options: ApiRequestOptions = {}): Promise<NodeAddressCandidates> {
+	const response = await api.get(`/admin/nodes/${nodeId}/address-candidates`, { signal: options.signal })
+	return unwrap(response)
+}
+
 export interface NodeLoadSnapshot {
 	node_id: number
 	sampled_at: string

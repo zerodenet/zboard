@@ -3,7 +3,7 @@
     <PageHeader title="DNS 解析" description="管理域名到节点的解析关系；供应商凭据在外部供应商页面独立维护。" eyebrow="Infrastructure">
       <template #actions>
         <PageRefreshButton label="刷新 DNS 解析" :loading="loading || refreshing" @click="refreshAll" />
-        <UiButton type="button" :disabled="!activeDNSAccounts.length" @click="dnsOpen = true"><UiIcon name="plus" />添加解析</UiButton>
+        <UiButton type="button" :disabled="!activeDNSAccounts.length" @click="openCreateDNS"><UiIcon name="plus" />添加解析</UiButton>
       </template>
     </PageHeader>
     <TransientFeedback :success="message" :error="error" success-title="操作已提交" error-title="操作失败" />
@@ -34,36 +34,95 @@
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
-    <ModalDialog :open="dnsOpen" title="添加 DNS 解析" description="系统自动识别最长匹配的 Cloudflare Zone，并在后台创建或更新记录。" :busy="savingDNS" @close="dnsOpen = false">
+    <ModalDialog :open="dnsOpen" title="添加 DNS 解析" description="选择节点后自动读取可公开路由的 IPv4 / IPv6 候选；自动值仍可修改。" :busy="savingDNS" @close="closeCreateDNS">
       <div class="modal-form">
         <FormField label="供应商账户" required><UiSelect v-model.number="dnsForm.provider_account_id" :options="accountOptions" /></FormField>
-        <FormField label="目标节点" required><NodeLookup v-model="dnsForm.node_id" /></FormField>
+        <FormField label="目标节点" required>
+          <NodeLookup v-model="dnsForm.node_id" />
+          <div class="address-discovery-toolbar">
+            <UiButton type="button" size="sm" variant="ghost" :loading="createAddressLoading" :disabled="!dnsForm.node_id" @click="loadCreateAddressCandidates"><UiIcon name="refresh" />重新读取节点地址</UiButton>
+          </div>
+        </FormField>
         <FormField label="完整域名" hint="例如 edge.example.com；域名必须手填。" required full><UiInput v-model.trim="dnsForm.domain_name" placeholder="edge.example.com" /></FormField>
-        <FormField label="IPv4 地址（A）" hint="IPv4、IPv6 至少填写一个。"><UiInput v-model.trim="dnsForm.ipv4_value" placeholder="例如 203.0.113.10" /></FormField>
-        <FormField label="IPv6 地址（AAAA）" hint="同时填写时会在一个请求中创建两条独立记录。"><UiInput v-model.trim="dnsForm.ipv6_value" placeholder="例如 2001:db8::10" /></FormField>
+        <FormField label="IPv4 地址（A）" hint="IPv4、IPv6 至少填写一个。">
+          <UiInput v-model.trim="dnsForm.ipv4_value" placeholder="例如 1.1.1.1" @update:model-value="markCreateAddressEdited('ipv4')" />
+          <div v-if="createAddressCandidates?.ipv4.length" class="address-candidates" aria-label="IPv4 地址候选">
+            <button v-for="candidate in createAddressCandidates.ipv4" :key="candidate.address" type="button" class="address-candidate" @click="applyCreateCandidate('ipv4', candidate.address)">
+              <span>{{ candidate.address }}</span><small>{{ nodeAddressCandidateSourceLabel(candidate.source) }}</small>
+            </button>
+          </div>
+        </FormField>
+        <FormField label="IPv6 地址（AAAA）" hint="同时填写时会在一个请求中创建两条独立记录。">
+          <UiInput v-model.trim="dnsForm.ipv6_value" placeholder="例如 2606:4700:4700::1111" @update:model-value="markCreateAddressEdited('ipv6')" />
+          <div v-if="createAddressCandidates?.ipv6.length" class="address-candidates" aria-label="IPv6 地址候选">
+            <button v-for="candidate in createAddressCandidates.ipv6" :key="candidate.address" type="button" class="address-candidate" @click="applyCreateCandidate('ipv6', candidate.address)">
+              <span>{{ candidate.address }}</span><small>{{ nodeAddressCandidateSourceLabel(candidate.source) }}</small>
+            </button>
+          </div>
+        </FormField>
+        <div v-if="createAddressError || createAddressCandidates" class="address-discovery-feedback field-full" :class="{ 'is-error': createAddressError }" role="status">
+          <p v-if="createAddressError">{{ createAddressError }}</p>
+          <template v-else-if="createAddressCandidates">
+            <p v-if="!createAddressCandidates.ipv4.length && !createAddressCandidates.ipv6.length">未发现可公开路由的节点地址，请手动填写。</p>
+            <p v-else>已按节点字段、DNS 解析和已验证 SSH 网卡地址生成候选。点击候选可明确替换输入值。</p>
+            <ul v-if="createAddressCandidates.warnings?.length"><li v-for="warning in createAddressCandidates.warnings" :key="warning">{{ warning }}</li></ul>
+          </template>
+        </div>
         <FormField label="TTL"><UiNumberInput v-model="dnsForm.ttl" :min="1" :max="86400" /></FormField>
         <FormField label="Cloudflare 代理"><label class="check-field"><UiCheckbox v-model="dnsForm.proxied" /><span>启用橙云代理</span></label></FormField>
         <FormField label="已有记录处理" full><label class="check-field"><UiCheckbox v-model="dnsForm.takeover_existing" /><span>若远端已有同名记录，明确接管并更新</span></label></FormField>
       </div>
-      <template #footer><UiButton variant="secondary" @click="dnsOpen = false">取消</UiButton><UiButton type="button" :loading="savingDNS" @click="createDNS">创建并同步</UiButton></template>
+      <template #footer><UiButton variant="secondary" @click="closeCreateDNS">取消</UiButton><UiButton type="button" :loading="savingDNS" @click="createDNS">创建并同步</UiButton></template>
     </ModalDialog>
 
-    <ModalDialog :open="editOpen" title="编辑 DNS 解析" description="保存后立即同步到 Cloudflare；供应商、域名和记录类型如需变更，请删除后重新创建。" :busy="savingEdit" @close="editOpen = false">
+    <ModalDialog :open="editOpen" title="编辑 DNS 解析" description="现有记录值不会被自动覆盖；可按需读取节点候选并明确选择替换。" :busy="savingEdit" @close="closeEditDNS">
       <div class="modal-form">
         <FormField label="解析记录" full><UiInput :model-value="`${editForm.record_type} ${editForm.domain_name}`" disabled /></FormField>
-        <FormField label="目标节点" required><NodeLookup v-model="editForm.node_id" /></FormField>
-        <FormField :label="editForm.record_type === 'AAAA' ? 'IPv6 地址' : 'IPv4 地址'" required><UiInput v-model.trim="editForm.record_value" /></FormField>
+        <FormField label="目标节点" required>
+          <NodeLookup v-model="editForm.node_id" />
+          <div class="address-discovery-toolbar">
+            <UiButton type="button" size="sm" variant="ghost" :loading="editAddressLoading" :disabled="!editForm.node_id" @click="loadEditAddressCandidates"><UiIcon name="refresh" />读取节点地址</UiButton>
+          </div>
+        </FormField>
+        <FormField :label="editForm.record_type === 'AAAA' ? 'IPv6 地址' : 'IPv4 地址'" required>
+          <UiInput v-model.trim="editForm.record_value" />
+          <div v-if="editAddressCandidateItems.length" class="address-candidates" :aria-label="`${editForm.record_type} 地址候选`">
+            <button v-for="candidate in editAddressCandidateItems" :key="candidate.address" type="button" class="address-candidate" @click="editForm.record_value = candidate.address">
+              <span>{{ candidate.address }}</span><small>{{ nodeAddressCandidateSourceLabel(candidate.source) }}</small>
+            </button>
+          </div>
+        </FormField>
+        <div v-if="editAddressError || editAddressCandidates" class="address-discovery-feedback field-full" :class="{ 'is-error': editAddressError }" role="status">
+          <p v-if="editAddressError">{{ editAddressError }}</p>
+          <template v-else-if="editAddressCandidates">
+            <p v-if="!editAddressCandidateItems.length">未发现与 {{ editForm.record_type }} 匹配的公开地址候选，当前记录值保持不变。</p>
+            <p v-else>当前记录值保持不变；点击候选后才会替换。</p>
+            <ul v-if="editAddressCandidates.warnings?.length"><li v-for="warning in editAddressCandidates.warnings" :key="warning">{{ warning }}</li></ul>
+          </template>
+        </div>
         <FormField label="TTL"><UiNumberInput v-model="editForm.ttl" :min="1" :max="86400" /></FormField>
         <FormField label="Cloudflare 代理"><label class="check-field"><UiCheckbox v-model="editForm.proxied" /><span>启用橙云代理</span></label></FormField>
       </div>
-      <template #footer><UiButton variant="secondary" @click="editOpen = false">取消</UiButton><UiButton type="button" :loading="savingEdit" @click="saveEdit">保存并同步</UiButton></template>
+      <template #footer><UiButton variant="secondary" @click="closeEditDNS">取消</UiButton><UiButton type="button" :loading="savingEdit" @click="saveEdit">保存并同步</UiButton></template>
     </ModalDialog>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { createManagedDNSRecord, deleteManagedDNSRecord, fetchManagedDNSRecordsPage, fetchProviderAccounts, syncManagedDNSRecord, updateManagedDNSRecord, type ManagedDNSRecord, type ProviderAccount } from '../api/client'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import {
+  createManagedDNSRecord,
+  deleteManagedDNSRecord,
+  fetchManagedDNSRecordsPage,
+  fetchNodeAddressCandidates,
+  fetchProviderAccounts,
+  syncManagedDNSRecord,
+  updateManagedDNSRecord,
+  type ManagedDNSRecord,
+  type NodeAddressCandidate,
+  type NodeAddressCandidates,
+  type ProviderAccount,
+} from '../api/client'
 import DataTable from '../components/DataTable.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -84,6 +143,11 @@ import UiInput from '../components/UiInput.vue'
 import UiNumberInput from '../components/UiNumberInput.vue'
 import UiSelect from '../components/UiSelect.vue'
 import { confirmAction } from '../utils/feedback'
+import {
+  applyRecommendedNodeAddress,
+  clearPreviousSuggestedAddress,
+  nodeAddressCandidateSourceLabel,
+} from '../utils/managedDNSAddressSuggestions'
 
 const accounts = ref<ProviderAccount[]>([])
 const records = ref<ManagedDNSRecord[]>([])
@@ -104,10 +168,44 @@ const editForm = reactive({ id: 0, provider_account_id: 0, node_id: 0, domain_na
 const dnsForm = reactive({ provider_account_id: 0, node_id: 0, domain_name: '', ipv4_value: '', ipv6_value: '', ttl: 1, proxied: false, takeover_existing: false })
 const activeDNSAccounts = computed(() => accounts.value.filter(item => item.status === 'active' && item.capabilities.includes('dns.records')))
 const accountOptions = computed(() => activeDNSAccounts.value.map(item => ({ label: item.name, value: item.id })))
+const createAddressCandidates = ref<NodeAddressCandidates | null>(null)
+const createAddressLoading = ref(false)
+const createAddressError = ref('')
+const editAddressCandidates = ref<NodeAddressCandidates | null>(null)
+const editAddressLoading = ref(false)
+const editAddressError = ref('')
+const editAddressCandidateItems = computed<NodeAddressCandidate[]>(() => editForm.record_type === 'AAAA' ? editAddressCandidates.value?.ipv6 || [] : editAddressCandidates.value?.ipv4 || [])
+const createAddressState = reactive({ ipv4Manual: false, ipv6Manual: false, ipv4Suggested: '', ipv6Suggested: '' })
 let pollTimer: ReturnType<typeof setInterval> | undefined
+let createAddressController: AbortController | null = null
+let editAddressController: AbortController | null = null
+let createAddressRequest = 0
+let editAddressRequest = 0
 
 function dnsStatus(status: string) { return ({ pending: '待同步', syncing: '同步中', active: '已同步', drifted: '存在漂移', failed: '同步失败' } as Record<string, string>)[status] || status }
 function dnsTone(status: string): 'success' | 'warning' | 'danger' | 'neutral' { return status === 'active' ? 'success' : status === 'failed' ? 'danger' : status === 'syncing' || status === 'drifted' ? 'warning' : 'neutral' }
+function openCreateDNS() { dnsOpen.value = true; if (dnsForm.node_id) void loadCreateAddressCandidates() }
+function closeCreateDNS() { createAddressController?.abort(); dnsOpen.value = false }
+function closeEditDNS() { editAddressController?.abort(); editOpen.value = false }
+function resetCreateAddressState() {
+  createAddressController?.abort()
+  createAddressCandidates.value = null
+  createAddressError.value = ''
+  Object.assign(createAddressState, { ipv4Manual: false, ipv6Manual: false, ipv4Suggested: '', ipv6Suggested: '' })
+}
+function markCreateAddressEdited(family: 'ipv4' | 'ipv6') {
+  if (family === 'ipv4') Object.assign(createAddressState, { ipv4Manual: true, ipv4Suggested: '' })
+  else Object.assign(createAddressState, { ipv6Manual: true, ipv6Suggested: '' })
+}
+function applyCreateCandidate(family: 'ipv4' | 'ipv6', address: string) {
+  if (family === 'ipv4') {
+    dnsForm.ipv4_value = address
+    Object.assign(createAddressState, { ipv4Manual: true, ipv4Suggested: '' })
+  } else {
+    dnsForm.ipv6_value = address
+    Object.assign(createAddressState, { ipv6Manual: true, ipv6Suggested: '' })
+  }
+}
 
 async function refreshAll() {
   refreshing.value = true
@@ -122,6 +220,54 @@ async function refreshAll() {
   } finally {
     loading.value = false
     refreshing.value = false
+  }
+}
+async function loadCreateAddressCandidates() {
+  const nodeID = dnsForm.node_id
+  if (!nodeID) return
+  createAddressController?.abort()
+  const controller = new AbortController()
+  const request = ++createAddressRequest
+  createAddressController = controller
+  createAddressLoading.value = true
+  createAddressError.value = ''
+  try {
+    const result = await fetchNodeAddressCandidates(nodeID, { signal: controller.signal })
+    if (request !== createAddressRequest || nodeID !== dnsForm.node_id) return
+    createAddressCandidates.value = result
+    const nextIPv4 = applyRecommendedNodeAddress(dnsForm.ipv4_value, createAddressState.ipv4Manual, result.recommended_ipv4)
+    const nextIPv6 = applyRecommendedNodeAddress(dnsForm.ipv6_value, createAddressState.ipv6Manual, result.recommended_ipv6)
+    if (nextIPv4 !== dnsForm.ipv4_value) { dnsForm.ipv4_value = nextIPv4; createAddressState.ipv4Suggested = nextIPv4 }
+    if (nextIPv6 !== dnsForm.ipv6_value) { dnsForm.ipv6_value = nextIPv6; createAddressState.ipv6Suggested = nextIPv6 }
+  } catch (cause: any) {
+    if (request === createAddressRequest && !controller.signal.aborted) {
+      createAddressCandidates.value = null
+      createAddressError.value = cause?.response?.data?.message || '节点地址读取失败，请手动填写或稍后重试。'
+    }
+  } finally {
+    if (request === createAddressRequest) createAddressLoading.value = false
+  }
+}
+async function loadEditAddressCandidates() {
+  const nodeID = editForm.node_id
+  if (!nodeID) return
+  editAddressController?.abort()
+  const controller = new AbortController()
+  const request = ++editAddressRequest
+  editAddressController = controller
+  editAddressLoading.value = true
+  editAddressError.value = ''
+  try {
+    const result = await fetchNodeAddressCandidates(nodeID, { signal: controller.signal })
+    if (request !== editAddressRequest || nodeID !== editForm.node_id) return
+    editAddressCandidates.value = result
+  } catch (cause: any) {
+    if (request === editAddressRequest && !controller.signal.aborted) {
+      editAddressCandidates.value = null
+      editAddressError.value = cause?.response?.data?.message || '节点地址读取失败，当前记录值保持不变。'
+    }
+  } finally {
+    if (request === editAddressRequest) editAddressLoading.value = false
   }
 }
 async function createDNS() {
@@ -140,6 +286,7 @@ async function createDNS() {
     await createManagedDNSRecord({ ...dnsForm, records })
     dnsOpen.value = false
     Object.assign(dnsForm, { provider_account_id: 0, node_id: 0, domain_name: '', ipv4_value: '', ipv6_value: '', ttl: 1, proxied: false, takeover_existing: false })
+    resetCreateAddressState()
     message.value = 'DNS 记录已创建，Cloudflare 同步与公共传播观察正在后台执行。'
     await refreshAll()
   } catch (cause: any) {
@@ -163,6 +310,9 @@ async function syncRecord(record: ManagedDNSRecord) {
   }
 }
 function openEdit(record: ManagedDNSRecord) {
+  editAddressController?.abort()
+  editAddressCandidates.value = null
+  editAddressError.value = ''
   Object.assign(editForm, { id: record.id, provider_account_id: record.provider_account_id, node_id: record.node_id, domain_name: record.domain_name, record_type: record.record_type, record_value: record.record_value, ttl: record.ttl, proxied: record.proxied, revision: record.revision })
   editOpen.value = true
 }
@@ -203,12 +353,33 @@ async function changePage(next: { offset: number; limit: number }) {
   await refreshAll()
 }
 
+watch(() => dnsForm.node_id, (nodeID, previousNodeID) => {
+  if (nodeID === previousNodeID) return
+  createAddressCandidates.value = null
+  createAddressError.value = ''
+  dnsForm.ipv4_value = clearPreviousSuggestedAddress(dnsForm.ipv4_value, createAddressState.ipv4Suggested, createAddressState.ipv4Manual)
+  dnsForm.ipv6_value = clearPreviousSuggestedAddress(dnsForm.ipv6_value, createAddressState.ipv6Suggested, createAddressState.ipv6Manual)
+  createAddressState.ipv4Suggested = ''
+  createAddressState.ipv6Suggested = ''
+  if (dnsOpen.value && nodeID) void loadCreateAddressCandidates()
+})
+watch(() => editForm.node_id, (nodeID, previousNodeID) => {
+  if (nodeID === previousNodeID) return
+  editAddressController?.abort()
+  editAddressCandidates.value = null
+  editAddressError.value = ''
+})
+
 onMounted(async () => {
   loading.value = true
   await refreshAll()
   pollTimer = setInterval(() => { if (records.value.some(item => item.status === 'syncing' || !item.public_resolved)) void refreshAll() }, 5000)
 })
-onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
+onBeforeUnmount(() => {
+  if (pollTimer) clearInterval(pollTimer)
+  createAddressController?.abort()
+  editAddressController?.abort()
+})
 </script>
 
 <style scoped>
@@ -216,8 +387,18 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
 .row-error { display: block; max-width: 260px; margin-top: 4px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .muted-value { color: var(--muted); }
 .modal-form { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 20px; }
-.modal-form > :deep(.field-full) { grid-column: 1 / -1; }
+.modal-form > :deep(.field-full), .modal-form > .field-full { grid-column: 1 / -1; }
 .check-field { min-height: var(--control-height); display: flex; align-items: center; gap: 8px; }
+.address-discovery-toolbar { display: flex; justify-content: flex-end; margin-top: 7px; }
+.address-candidates { display: grid; gap: 6px; margin-top: 8px; }
+.address-candidate { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--surface-soft); cursor: pointer; text-align: left; }
+.address-candidate:hover { border-color: var(--primary); background: var(--primary-soft); }
+.address-candidate span { min-width: 0; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 11px; }
+.address-candidate small { flex: 0 0 auto; color: var(--muted); font-size: 9px; }
+.address-discovery-feedback { padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: var(--surface-soft); font-size: 11px; }
+.address-discovery-feedback.is-error { border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); color: var(--danger); background: var(--danger-soft); }
+.address-discovery-feedback p { margin: 0; }
+.address-discovery-feedback ul { display: grid; gap: 3px; margin: 6px 0 0; padding-left: 18px; }
 @media (max-width: 720px) {
   .modal-form { grid-template-columns: 1fr; }
   .modal-form > * { grid-column: 1; }

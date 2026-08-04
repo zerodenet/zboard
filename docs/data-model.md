@@ -35,19 +35,26 @@ zboard is a modular monolith that combines subscription commerce with node opera
   retain separate typed tables and invariants rather than sharing an opaque
   provider-resource JSON table.
 - `managed_dns_records` stores one handwritten FQDN, explicit A/AAAA target,
-  selected node and Cloudflare desired/observed state. Zboard discovers the
-  longest matching Zone, refuses to overwrite an unowned remote record unless
-  takeover was explicit, records provider operations, and distinguishes API
-  synchronization from public-DNS observation. The create API may accept one A
-  and one AAAA value together, but persists them as two independently owned
-  records. A background observer retries public resolvers until each synced
-  record is visible; it never repeats the Cloudflare write merely because
-  propagation is pending. Mutable target, address, TTL and proxy policy use
-  optimistic concurrency and resynchronize after editing. Deletion removes the
-  exact provider-owned record before deleting local desired state; identity
-  changes use explicit delete-and-recreate so old remote names cannot become
-  orphaned. A node remains an
-  infrastructure asset and does not acquire a single canonical domain.
+  selected node and Cloudflare desired/observed state. The target remains an
+  operator-owned value rather than a live pointer to the node. An on-demand,
+  admin-only address-candidate projection can read literal node fields, resolve
+  their hostnames and inspect global interface addresses through an already
+  verified SSH channel. It returns only publicly routable IPv4/IPv6 candidates,
+  never mutates a record and never enrolls SSH trust. The create UI may fill an
+  empty field from the first candidate, but operator edits and existing record
+  values are never replaced by refreshes; choosing another candidate is an
+  explicit action. Zboard discovers the longest matching Zone, refuses to
+  overwrite an unowned remote record unless takeover was explicit, records
+  provider operations, and distinguishes API synchronization from public-DNS
+  observation. The create API may accept one A and one AAAA value together, but
+  persists them as two independently owned records. A background observer
+  retries public resolvers until each synced record is visible; it never repeats
+  the Cloudflare write merely because propagation is pending. Mutable target,
+  address, TTL and proxy policy use optimistic concurrency and resynchronize
+  after editing. Deletion removes the exact provider-owned record before
+  deleting local desired state; identity changes use explicit
+  delete-and-recreate so old remote names cannot become orphaned. A node remains
+  an infrastructure asset and does not acquire a single canonical domain.
 - `managed_certificates` explicitly owns either a verified Cloudflare provider
   account for DNS-01 or a canonical node webroot for HTTP-01. DNS-01 does not
   require public TCP port 80. HTTP-01 Webroot does not bind a second listener,
