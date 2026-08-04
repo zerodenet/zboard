@@ -764,7 +764,7 @@ async function validateStep(step: number) {
       if (!structured.reality_server_name.trim()) fields['structured.reality_server_name'] = '请输入 Reality 伪装域名。'
     }
   }
-  editorStep.value = step
+  if (Object.keys(fields).length) editorStep.value = step
   return editorErrors.applyValidation(fields, protocolFormElement, '请修正标出的字段后继续。')
 }
 async function nextStep() { if (!await validateStep(editorStep.value)) return; if (editorStep.value === 2) buildGeneratedConfigs(); editorStep.value++ }
