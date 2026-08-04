@@ -1,9 +1,10 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="协议服务" description="协议配置可复用、复制并切换承载 VPS；保存为运行实例后，系统自动校验并发布完整 Zero 配置。" eyebrow="Infrastructure">
+    <PageHeader title="协议服务" description="协议配置可复用、复制并切换承载 VPS；运行参数变更才发布 Zero，名称、计费和交付顺序独立保存。" eyebrow="Infrastructure">
       <template #actions>
         <PageRefreshButton label="刷新协议服务" :loading="loading" @click="refresh" />
-        <UiButton  type="button" @click="openCreate"><UiIcon name="plus" />创建协议服务</UiButton>
+        <UiButton variant="secondary" type="button" data-testid="protocol-delivery-order" @click="openOrdering"><UiIcon name="sort" />调整交付顺序</UiButton>
+        <UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建协议服务</UiButton>
       </template>
     </PageHeader>
 
@@ -140,6 +141,46 @@
       </main>
     </DetailDrawer>
 
+    <ModalDialog
+      :open="orderingOpen"
+      :dirty="orderingDirty"
+      title="调整协议交付顺序"
+      description="这里加载全部协议服务，不受当前分页、筛选或节点分组视图影响。保存后会改变客户端订阅中的节点顺序，但不会发布或重启 Zero。"
+      size="lg"
+      :busy="orderingSaving"
+      return-focus-selector="[data-testid='protocol-delivery-order']"
+      @close="closeOrdering"
+    >
+      <section class="protocol-order-editor" aria-label="协议交付顺序编辑器">
+        <PageAlert v-if="orderingError" tone="danger" title="无法调整交付顺序">
+          {{ orderingError }}
+          <template #actions><UiButton variant="secondary" size="sm" type="button" :disabled="orderingSaving" @click="openOrdering">重新加载完整顺序</UiButton></template>
+        </PageAlert>
+        <PageAlert tone="info" title="完整交付范围">
+          当前共 {{ orderingItems.length }} 个协议服务。节点组设置了独立成员顺序时，组内顺序优先；未设置时使用这里的全局顺序。
+        </PageAlert>
+        <div v-if="orderingLoading" class="protocol-order-loading">正在加载完整协议范围…</div>
+        <ol v-else class="protocol-order-list">
+          <li v-for="(item, index) in orderingItems" :key="item.id" class="protocol-order-item">
+            <span class="protocol-order-position" aria-hidden="true">{{ index + 1 }}</span>
+            <div class="protocol-order-content">
+              <strong>{{ item.name }}</strong>
+              <span>#{{ item.id }} · {{ protocolLabel(item.protocol) }} · VPS #{{ item.node_id }}</span>
+            </div>
+            <StatusBadge :tone="item.is_active ? 'success' : 'neutral'">{{ item.is_active ? '运行中' : '已停用' }}</StatusBadge>
+            <div class="protocol-order-actions">
+              <UiButton variant="ghost" size="sm" type="button" :disabled="index === 0 || orderingSaving" :aria-label="`上移 ${item.name}`" @click="moveOrderingItem(index, -1)"><UiIcon name="arrow-up" /></UiButton>
+              <UiButton variant="ghost" size="sm" type="button" :disabled="index === orderingItems.length - 1 || orderingSaving" :aria-label="`下移 ${item.name}`" @click="moveOrderingItem(index, 1)"><UiIcon name="arrow-down" /></UiButton>
+            </div>
+          </li>
+        </ol>
+      </section>
+      <template #footer="{ requestClose }">
+        <UiButton variant="secondary" type="button" :disabled="orderingSaving" @click="requestClose">取消</UiButton>
+        <UiButton type="button" :loading="orderingSaving" :disabled="orderingLoading || !orderingDirty" @click="saveOrdering">保存交付顺序</UiButton>
+      </template>
+    </ModalDialog>
+
     <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑协议服务' : copySourceID ? '复制协议配置' : '创建协议服务'" :description="form.id ? '协议配置可切换承载 VPS；保存前会校验凭证、端口和完整配置。' : copySourceID ? '已复制原服务配置为独立草稿，可更换节点、入口和名称后保存。' : '跟随步骤完成节点、连接参数和配置确认。'" size="xl" :busy="saving" @close="closeEditor">
       <form id="protocol-form" ref="protocolFormElement" class="protocol-editor" novalidate @submit.prevent="save">
         <UiStepNav :steps="wizardSteps" :current="editorStep" :max-step="form.id ? 3 : editorStep" label="协议服务配置步骤" @select="goToStep" />
@@ -196,7 +237,7 @@
         </section>
 
         <section v-else class="wizard-panel review-panel">
-          <header class="wizard-heading"><span><UiIcon name="check" /></span><div><h3>确认服务信息</h3><p>保存后立即进入自动发布：校验完整配置、原子切换、重启并检查心跳，失败会回滚。</p></div></header>
+          <header class="wizard-heading"><span><UiIcon name="check" /></span><div><h3>确认服务信息</h3><p>系统会根据变更内容决定是否发布：运行参数影响活跃节点，名称、计费和交付配置仅保存到控制面。</p></div></header>
           <div class="review-grid">
             <article><span>承载节点</span><strong>{{ selectedNode?.name || '未选择' }}</strong><small>{{ selectedNode?.region || '未设置区域' }}</small></article>
             <article><span>协议服务</span><strong>{{ form.name }}</strong><small>{{ protocolLabel(form.protocol) }}</small></article>
@@ -204,12 +245,11 @@
             <article><span>流量计费</span><strong>{{ formatMultiplier(form.multiplier_milli) }}</strong><small>前端自动换算，无需手动填写千分值</small></article>
           </div>
           <details class="advanced-settings" :open="hasConfigError">
-            <summary><span><UiIcon name="settings" /></span><div><strong>高级设置</strong><small>仅在需要链式协议、排序或自定义 Zero 参数时展开。</small></div><UiIcon name="chevron" /></summary>
+            <summary><span><UiIcon name="settings" /></span><div><strong>高级设置</strong><small>仅在需要链式协议或自定义 Zero 参数时展开；交付顺序在列表页统一调整。</small></div><UiIcon name="chevron" /></summary>
             <div class="advanced-body">
               <div class="guided-grid compact-grid">
                 <FormField label="父协议" name="protocol-parent" hint="可选；只检索同一节点的协议端点。" :error="editorErrors.fields.parent_protocol_id"><template #default="{ controlAttrs }"><EndpointLookup v-model="form.parent_protocol_id" v-bind="controlAttrs" :node-id="form.node_id" :exclude-id="form.id" /></template></FormField>
                 <FormField v-slot="{ controlAttrs }" label="流量倍率" name="protocol-multiplier" hint="显示为倍数，接口保存千分值。" :error="editorErrors.fields.multiplier_milli"><MultiplierInput v-model="form.multiplier_milli" v-bind="controlAttrs" /></FormField>
-                <FormField v-slot="{ controlAttrs }" label="排序" name="protocol-sort" :error="editorErrors.fields.sort_order"><UiNumberInput v-model="form.sort_order" v-bind="controlAttrs" inputmode="numeric" /></FormField>
                 <FormField v-slot="{ controlAttrs }" label="运行状态" name="protocol-active" :error="editorErrors.fields.is_active"><div class="check-field"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /><span>保存后启用并发布该运行实例</span></div></FormField>
               </div>
               <div class="config-grid">
@@ -234,7 +274,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, updateProtocolEndpoint, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolKernelCapability } from '../api/client'
+import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, updateProtocolEndpoint, updateProtocolEndpointOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointOrderItem, type ProtocolKernelCapability } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -253,7 +293,6 @@ import SortableHeader from '../components/SortableHeader.vue'
 import TablePager from '../components/TablePager.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiIcon from '../components/UiIcon.vue'
-import UiNumberInput from '../components/UiNumberInput.vue'
 import UiStepNav from '../components/UiStepNav.vue'
 import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
@@ -268,6 +307,7 @@ import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 import { normalizeOutput, truncateOutput } from '../utils/output'
 import { trackAdminTask } from '../utils/taskTracker'
 import { protocolEndpointMutationMessage } from '../utils/protocolEndpointEffects'
+import { moveProtocolEndpointOrder, protocolEndpointOrderChanged } from '../utils/protocolEndpointOrdering'
 import { isIntegerInRange } from '../utils/validation'
 import { zeroVersionAtLeast } from '../utils/zeroVersion'
 
@@ -299,7 +339,7 @@ const transportOptions = [
 ]
 const realityFingerprintOptions = [{ label: 'Chrome', value: 'chrome' }, { label: 'Firefox', value: 'firefox' }, { label: 'Safari', value: 'safari' }, { label: 'Edge', value: 'edge' }]
 const realityPresetOptions = [{ label: '通用兼容（推荐）', value: 'compatible' }, { label: '全球 CDN', value: 'cdn' }, { label: 'Apple 生态', value: 'apple' }]
-const wizardSteps = [{ id: 1, title: '节点与入口', caption: '选择 VPS' }, { id: 2, title: '服务参数', caption: '系统管凭证' }, { id: 3, title: '确认发布', caption: '检查配置' }]
+const wizardSteps = [{ id: 1, title: '节点与入口', caption: '选择 VPS' }, { id: 2, title: '服务参数', caption: '系统管凭证' }, { id: 3, title: '确认保存', caption: '检查变更' }]
 const route = useRoute()
 const router = useRouter()
 const allowedPageSizes = [25, 50, 100]
@@ -334,6 +374,9 @@ const overviewCounts = reactive<Record<ProtocolDeploymentStatus, number>>({
 const deploymentOffset = ref((Math.max(1, Number(route.query.deployment_page) || 1) - 1) * 25)
 const deploymentLimit = ref(allowedPageSizes.includes(Number(route.query.deployment_limit)) ? Number(route.query.deployment_limit) : 25)
 const saving = ref(false), realityKeyBusy = ref(false), realityTemplateBusy = ref(false), realityPreset = ref('compatible'), deployingID = ref(0), deletingID = ref(0), detailLoadingID = ref(0), editorOpen = ref(false), editorStep = ref(1)
+const orderingOpen = ref(false), orderingLoading = ref(false), orderingSaving = ref(false), orderingError = ref(''), orderingVersion = ref('')
+const orderingItems = ref<ProtocolEndpointOrderItem[]>([]), orderingOriginalIDs = ref<number[]>([])
+const orderingDirty = computed(() => protocolEndpointOrderChanged(orderingItems.value, orderingOriginalIDs.value))
 const copySourceID = ref(0)
 const originalNodeID = ref(0)
 const bulkBusy = ref<'' | 'deploy' | 'enable' | 'disable'>('')
@@ -351,12 +394,19 @@ const protocolFieldMap: Record<string, string> = {
 }
 const editorState = useDirtyForm(() => ({ form, structured }))
 useUnsavedChangesGuard(
-  () => editorOpen.value && editorState.dirty.value,
-  () => editorState.confirmDiscard({
-    title: '放弃协议配置草稿？',
-    message: '离开协议管理后，向导中尚未保存的服务参数将丢失。',
-    confirmText: '离开页面',
-  }),
+  () => (editorOpen.value && editorState.dirty.value) || (orderingOpen.value && orderingDirty.value),
+  () => orderingOpen.value && orderingDirty.value
+    ? confirmAction({
+        title: '放弃未保存的交付顺序？',
+        message: '离开协议管理后，当前顺序调整将丢失。',
+        confirmText: '离开页面',
+        tone: 'danger',
+      })
+    : editorState.confirmDiscard({
+        title: '放弃协议配置草稿？',
+        message: '离开协议管理后，向导中尚未保存的服务参数将丢失。',
+        confirmText: '离开页面',
+      }),
 )
 const { items: endpoints, total, loading, initialLoading, refreshing, error, load: loadEndpoints } = useRemoteTable<ProtocolEndpointListItem>({
   offset,
@@ -616,6 +666,56 @@ async function loadManagedCertificates(nodeID: number) {
   try { managedCertificates.value = (await fetchManagedCertificatesPage({ nodeId: nodeID, limit: 200 })).items }
   catch { managedCertificates.value = [] }
 }
+async function openOrdering() {
+  orderingOpen.value = true
+  error.value = ''
+  message.value = ''
+  orderingLoading.value = true
+  orderingError.value = ''
+  orderingItems.value = []
+  orderingOriginalIDs.value = []
+  orderingVersion.value = ''
+  try {
+    const snapshot = await fetchProtocolEndpointOrder()
+    orderingItems.value = snapshot.items.slice()
+    orderingOriginalIDs.value = snapshot.items.map(item => item.id)
+    orderingVersion.value = snapshot.version
+  } catch (cause: any) {
+    orderingError.value = cause?.response?.data?.message || '完整协议交付顺序加载失败。'
+  } finally {
+    orderingLoading.value = false
+  }
+}
+function closeOrdering() {
+  if (orderingSaving.value) return
+  orderingOpen.value = false
+  orderingError.value = ''
+}
+function moveOrderingItem(index: number, delta: -1 | 1) {
+  orderingItems.value = moveProtocolEndpointOrder(orderingItems.value, index, delta)
+}
+async function saveOrdering() {
+  if (!orderingDirty.value || orderingSaving.value) return
+  orderingSaving.value = true
+  orderingError.value = ''
+  try {
+    const result = await updateProtocolEndpointOrder({
+      ordered_ids: orderingItems.value.map(item => item.id),
+      expected_version: orderingVersion.value,
+    })
+    orderingItems.value = result.items.slice()
+    orderingOriginalIDs.value = result.items.map(item => item.id)
+    orderingVersion.value = result.version
+    orderingOpen.value = false
+    message.value = '协议交付顺序已保存；后续客户端订阅将按新顺序渲染，无需发布节点。'
+    await refresh()
+  } catch (cause: any) {
+    orderingError.value = cause?.response?.data?.message || '协议交付顺序保存失败，请重新加载完整列表后重试。'
+  } finally {
+    orderingSaving.value = false
+  }
+}
+
 function closeEditor() { if (!saving.value) editorOpen.value = false }
 async function openCreate() {
   copySourceID.value = 0
@@ -894,6 +994,7 @@ onMounted(async () => {
 :deep(.protocol-table th),:deep(.protocol-table td){height:40px;padding-block:7px}:deep(.protocol-table .mono){font-size:11px}:deep(.protocol-table a){color:var(--primary);font-weight:650;text-decoration:none}:deep(.protocol-table a:hover){text-decoration:underline}.numeric-column{text-align:right!important;font-variant-numeric:tabular-nums}:deep(.protocol-table .cell-actions .button){min-height:30px}:deep(.protocol-table .time-badge){margin-left:auto}
 .protocol-group-row td{height:34px!important;padding:7px 12px!important;color:var(--text);background:var(--surface-soft)!important}.protocol-group-content{display:flex;align-items:center;gap:7px;min-width:0}.protocol-group-row .ui-icon{flex:0 0 auto;color:var(--primary)}.protocol-group-row strong{min-width:0;overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.protocol-group-row span{flex:0 0 auto;color:var(--muted);font-size:9px}
 .protocol-metrics{margin-bottom:16px}.protocol-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.protocol-card{display:grid;overflow:hidden}.protocol-header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px}.protocol-title{display:flex;gap:12px;min-width:0}.protocol-icon{width:40px;height:40px;display:grid;place-items:center;flex:0 0 auto;border-radius:10px;color:var(--primary);background:var(--primary-soft);font-size:19px}.title-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.title-line h2{margin:0;font-size:16px}.protocol-title p{margin:5px 0 0;color:var(--muted);font-family:var(--font-mono);font-size:11px;overflow-wrap:anywhere}.multiplier{color:var(--primary);font-size:18px}.protocol-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0;padding:14px 18px;border-block:1px solid var(--line);background:var(--surface-soft)}.protocol-meta div{display:grid;gap:4px}.protocol-meta dt{color:var(--muted);font-size:10px}.protocol-meta dd{margin:0;font-size:11px;font-weight:650}.usage-summary{display:flex;flex-wrap:wrap;gap:14px;padding:10px 18px;color:var(--muted);border-bottom:1px solid var(--line);font-size:9px}.deployment-error{margin:12px 18px 0;padding:9px;border-radius:8px;color:var(--danger);background:var(--danger-soft);font-size:11px;overflow-wrap:anywhere}.protocol-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px}
+.protocol-order-editor{display:grid;gap:14px}.protocol-order-loading{padding:32px;text-align:center;color:var(--muted);font-size:11px}.protocol-order-list{display:grid;gap:8px;max-height:55vh;margin:0;padding:0;overflow:auto;list-style:none}.protocol-order-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.protocol-order-position{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;color:var(--primary);background:var(--primary-soft);font-size:11px;font-weight:750;font-variant-numeric:tabular-nums}.protocol-order-content{display:grid;gap:3px;min-width:0}.protocol-order-content strong{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.protocol-order-content span{color:var(--muted);font-size:9px}.protocol-order-actions{display:flex;gap:3px}.protocol-order-actions :deep(.p-button){width:30px;min-width:30px;padding:0}
 .protocol-editor{display:grid;gap:20px}
 .wizard-panel{display:grid;gap:20px}
 .wizard-heading{display:flex;align-items:flex-start;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--line)}
@@ -929,7 +1030,7 @@ onMounted(async () => {
 .config-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .config-grid textarea{font-family:var(--font-mono);font-size:10px}
 @media(max-width:1080px){.protocol-status-overview{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:900px){.protocol-grid,.guided-grid,.config-grid{grid-template-columns:1fr}.protocol-meta,.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-meta{row-gap:12px}}@media(max-width:680px){.protocol-status-overview{display:flex;overflow-x:auto;padding:1px 1px 6px;scroll-snap-type:x proximity}.protocol-status-overview :deep(.overview-card){min-width:178px;scroll-snap-align:start}.protocol-grid{gap:8px}.protocol-card{border-inline:0;border-radius:0;box-shadow:none}.protocol-meta{background:transparent}.review-grid{grid-template-columns:1fr}.selected-node-card{grid-template-columns:auto minmax(0,1fr)}.selected-node-card .status-badge{grid-column:2}.input-with-action{grid-template-columns:1fr}.input-with-action input{border-radius:8px!important}.input-with-action button{min-height:36px;border:1px solid var(--line-strong);border-top:0;border-radius:0 0 8px 8px}}.protocol-mobile-detail-actions{display:none}@media(max-width:560px){:deep(.page-actions .p-button:last-child){flex:1}:deep(.protocol-table .table-primary-column){min-width:200px}.protocol-mobile-detail-actions{display:flex;flex-wrap:wrap;gap:7px}}
+@media(max-width:900px){.protocol-grid,.guided-grid,.config-grid{grid-template-columns:1fr}.protocol-meta,.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-meta{row-gap:12px}}@media(max-width:680px){.protocol-status-overview{display:flex;overflow-x:auto;padding:1px 1px 6px;scroll-snap-type:x proximity}.protocol-status-overview :deep(.overview-card){min-width:178px;scroll-snap-align:start}.protocol-grid{gap:8px}.protocol-card{border-inline:0;border-radius:0;box-shadow:none}.protocol-meta{background:transparent}.review-grid{grid-template-columns:1fr}.selected-node-card{grid-template-columns:auto minmax(0,1fr)}.selected-node-card .status-badge{grid-column:2}.input-with-action{grid-template-columns:1fr}.input-with-action input{border-radius:8px!important}.input-with-action button{min-height:36px;border:1px solid var(--line-strong);border-top:0;border-radius:0 0 8px 8px}}.protocol-mobile-detail-actions{display:none}@media(max-width:560px){.protocol-order-item{grid-template-columns:30px minmax(0,1fr) auto}.protocol-order-item>.status-badge{grid-column:2}.protocol-order-actions{grid-column:3;grid-row:1/3}:deep(.page-actions .p-button:last-child){flex:1}:deep(.protocol-table .table-primary-column){min-width:200px}.protocol-mobile-detail-actions{display:flex;flex-wrap:wrap;gap:7px}}
 .protocol-editor .p-select{min-height:var(--control-height)}
 .protocol-grid{grid-template-columns:1fr;gap:0;border-block:1px solid var(--line)}.protocol-card{border:0;border-radius:0}.protocol-card+.protocol-card{border-top:1px solid var(--line)}
 .selected-node-card{border-color:var(--primary-border);background:var(--primary-soft)}

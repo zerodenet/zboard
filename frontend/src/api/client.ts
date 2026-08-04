@@ -481,6 +481,39 @@ export async function createProtocolEndpoint(payload: any): Promise<ProtocolEndp
   return unwrap(response)
 }
 
+export interface ProtocolEndpointOrderItem {
+	id: number
+	node_id: number
+	name: string
+	protocol: string
+	is_active: boolean
+	sort_order: number
+}
+
+export interface ProtocolEndpointOrderSnapshot {
+	items: ProtocolEndpointOrderItem[]
+	version: string
+	total: number
+}
+
+export interface ProtocolEndpointOrderMutationResult extends ProtocolEndpointOrderSnapshot {
+	effect: 'delivery'
+	publish_status: 'not_required'
+}
+
+export async function fetchProtocolEndpointOrder(): Promise<ProtocolEndpointOrderSnapshot> {
+	const response = await api.get('/admin/protocol-endpoints/order')
+	return unwrap(response)
+}
+
+export async function updateProtocolEndpointOrder(payload: {
+	ordered_ids: number[]
+	expected_version: string
+}): Promise<ProtocolEndpointOrderMutationResult> {
+	const response = await api.put('/admin/protocol-endpoints/order', payload)
+	return unwrap(response)
+}
+
 export interface RealityKeyPair {
 	private_key: string
 	public_key: string

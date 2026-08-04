@@ -24,6 +24,43 @@ The intranet synchronization target is the SSH alias `gitlab`, remote root
 endpoint `http://192.168.50.20:18080`. Authentication and deployment secrets
 remain outside this repository.
 
+## In-progress goals
+
+### 2026-08-04 - Protocol delivery ordering
+
+Goal outcome before synchronization:
+
+- Added a dedicated complete-scope global protocol-order snapshot and batch
+  update command with optimistic version checking. Ordinary endpoint saves
+  preserve delivery position and new endpoints append to the end.
+- Kept node-group relationship order authoritative for that group, with the
+  global endpoint order as the fallback for legacy all-zero relationship rows.
+- Normalized the aggregated user subscription endpoint slice before all native
+  renderers so ZNet Sink, Clash / Mihomo and sing-box receive the same relative
+  endpoint order. Zero runtime compilation remains identity ordered and is not
+  published by a business reorder.
+- Added an administrator ordering dialog that always loads the complete scope,
+  independent of current filters, pagination or grouped display.
+
+Verification performed in this environment:
+
+- `gofmt` completed for the changed backend files.
+- `git diff --check` passed.
+- The OpenAPI document parsed successfully and exposes the new GET/PUT order
+  contract and schemas.
+- Focused backend and frontend tests were added for complete-scope validation,
+  global/group ordering, renderer order preservation and immutable UI moves.
+
+Remaining gaps:
+
+- Local backend execution is unavailable because the container has Go 1.23.2
+  while the repository requires Go 1.26.5, and outbound toolchain download is
+  blocked. Frontend dependencies are not installed. Repository CI remains the
+  authoritative test, vet, typecheck, build and contract validation.
+- Intranet synchronization and deployed `/readyz`, container-health and live
+  subscription checks have not been attempted from this PR environment. No
+  deployment, database backup, Git release or production mutation was made.
+
 ## Completed goals
 
 ### 2026-08-03 - Editable DNS/certificates and resilient ACME preflight/install
