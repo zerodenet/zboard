@@ -1,23 +1,22 @@
 name: Squash protocol node group membership
 
 on:
-  pull_request:
+  push:
     branches:
-      - develop
+      - agent/protocol-node-group-membership
     paths:
-      - .github/agent-protocol-node-group-membership-squash-trigger
+      - .github/workflows/agent-protocol-node-group-membership-squash.yml
 
 permissions:
   contents: write
 
 jobs:
   squash:
-    if: github.event.pull_request.head.ref == 'agent/protocol-node-group-membership'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: agent/protocol-node-group-membership
           fetch-depth: 0
       - name: Record outcome and replace staging history
         run: |
