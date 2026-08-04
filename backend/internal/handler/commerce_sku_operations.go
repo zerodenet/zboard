@@ -48,22 +48,22 @@ type commercePlanSKURequest struct {
 }
 
 type commercePlanCreateRequest struct {
-	Name                   string                     `json:"name"`
-	Slug                   string                     `json:"slug"`
-	Summary                string                     `json:"summary"`
-	Description            string                     `json:"description"`
-	SortOrder              int                        `json:"sort_order"`
-	IsActive               bool                       `json:"is_active"`
-	SKUs                   []commercePlanSKURequest   `json:"skus"`
-	NodeGroupID            uint                       `json:"node_group_id"`
-	TrafficBytes           int64                      `json:"traffic_bytes"`
-	SpeedLimitMbps         int                        `json:"speed_limit_mbps"`
-	MaxActiveSubscriptions int                        `json:"max_active_subscriptions"`
-	IsRenewable            *bool                      `json:"is_renewable"`
-	DeviceLimit            int                        `json:"device_limit"`
-	FamilyLimit            int                        `json:"family_limit"`
-	ResetPolicy            int16                      `json:"reset_policy"`
-	TrafficCalcMode        int16                      `json:"traffic_calc_mode"`
+	Name                   string                   `json:"name"`
+	Slug                   string                   `json:"slug"`
+	Summary                string                   `json:"summary"`
+	Description            string                   `json:"description"`
+	SortOrder              int                      `json:"sort_order"`
+	IsActive               bool                     `json:"is_active"`
+	SKUs                   []commercePlanSKURequest `json:"skus"`
+	NodeGroupID            uint                     `json:"node_group_id"`
+	TrafficBytes           int64                    `json:"traffic_bytes"`
+	SpeedLimitMbps         int                      `json:"speed_limit_mbps"`
+	MaxActiveSubscriptions int                      `json:"max_active_subscriptions"`
+	IsRenewable            *bool                    `json:"is_renewable"`
+	DeviceLimit            int                      `json:"device_limit"`
+	FamilyLimit            int                      `json:"family_limit"`
+	ResetPolicy            int16                    `json:"reset_policy"`
+	TrafficCalcMode        int16                    `json:"traffic_calc_mode"`
 }
 
 type commerceOrderCreateRequest struct {
@@ -187,7 +187,7 @@ func normalizeCommercePlanSKU(planID uint, request commercePlanSKURequest) (norm
 
 	legacy := planSKUReq{
 		Code: request.Code, Name: request.Name,
-		SKUType: compatibilitySKUType(billingMode, operations),
+		SKUType:     compatibilitySKUType(billingMode, operations),
 		BillingUnit: request.BillingUnit, BillingValue: request.BillingValue,
 		PriceCents: request.PriceCents, Currency: request.Currency,
 		TrafficBytes: request.TrafficBytes, DeviceLimit: request.DeviceLimit,
@@ -552,7 +552,7 @@ func (h *handlers) PlanSKUUpdateCommerceHandler(w http.ResponseWriter, r *http.R
 			"price_cents": normalized.SKU.PriceCents, "currency": normalized.SKU.Currency,
 			"traffic_bytes": normalized.SKU.TrafficBytes, "device_limit": normalized.SKU.DeviceLimit,
 			"speed_limit_mbps": normalized.SKU.SpeedLimitMbps,
-			"is_active": normalized.SKU.IsActive, "sort_order": normalized.SKU.SortOrder,
+			"is_active":        normalized.SKU.IsActive, "sort_order": normalized.SKU.SortOrder,
 		}
 		if err := tx.Model(&existing).Updates(updates).Error; err != nil {
 			return err

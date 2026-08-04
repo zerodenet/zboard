@@ -3,9 +3,9 @@ package server
 import (
 	"net/http"
 
-	"github.com/zeromicro/go-zero/rest"
 	"github.com/zerodenet/zboard/backend/internal/handler"
 	"github.com/zerodenet/zboard/backend/internal/security"
+	"github.com/zeromicro/go-zero/rest"
 	"gorm.io/gorm"
 )
 
