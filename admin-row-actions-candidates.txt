@@ -1,0 +1,3 @@
+
+=== inline action classes ===
+frontend/src/components/RowActions.vue:57: class: 'cell-actions row-actions',
