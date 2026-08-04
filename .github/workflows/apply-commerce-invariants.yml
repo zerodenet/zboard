@@ -1,0 +1,97 @@
+name: apply-commerce-invariants
+
+on:
+  push:
+    branches:
+      - feat/sku-operations
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/sku-operations
+      - name: Enforce purchasable SKU invariant
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          commerce = Path('backend/internal/handler/commerce_sku_operations.go')
+          source = commerce.read_text()
+          old = '''\tnormalized.SKU.ID = existing.ID
+\tif !normalized.SKU.IsActive {
+\t\tvar plan model.Plan
+\t\tif err := h.db.First(&plan, existing.PlanID).Error; err != nil {
+\t\t\tServerError(w, err)
+\t\t\treturn
+\t\t}
+\t\tif plan.IsActive {
+\t\t\tvar otherActive int64
+\t\t\tif err := h.db.Model(&model.PlanSKU{}).Where("plan_id = ? AND id <> ? AND is_active = ?", existing.PlanID, existing.ID, true).Count(&otherActive).Error; err != nil || otherActive == 0 {
+\t\t\t\tBadRequestFields(w, "销售规格校验失败。", map[string]string{"is_active": "已发布商品必须保留至少一个可售 SKU。"})
+\t\t\t\treturn
+\t\t\t}
+\t\t}
+\t}
+'''
+          new = '''\tnormalized.SKU.ID = existing.ID
+\tvar plan model.Plan
+\tif err := h.db.First(&plan, existing.PlanID).Error; err != nil {
+\t\tServerError(w, err)
+\t\treturn
+\t}
+\tif plan.IsActive && (!normalized.SKU.IsActive || !containsSKUOperation(normalized.AllowedOperations, skuOperationPurchase)) {
+\t\tvar otherPurchasable int64
+\t\tif err := h.db.Table("plan_skus").
+\t\t\tJoins("JOIN plan_sku_operations ON plan_sku_operations.plan_sku_id = plan_skus.id AND plan_sku_operations.operation = ?", skuOperationPurchase).
+\t\t\tWhere("plan_skus.plan_id = ? AND plan_skus.id <> ? AND plan_skus.is_active = ?", existing.PlanID, existing.ID, true).
+\t\t\tCount(&otherPurchasable).Error; err != nil {
+\t\t\tServerError(w, err)
+\t\t\treturn
+\t\t}
+\t\tif otherPurchasable == 0 {
+\t\t\tBadRequestFields(w, "销售规格校验失败。", map[string]string{"allowed_operations": "已发布商品必须保留至少一个允许新购的可售 SKU。"})
+\t\t\treturn
+\t\t}
+\t}
+'''
+          if old not in source:
+              raise SystemExit('commerce SKU invariant block not found')
+          commerce.write_text(source.replace(old, new, 1))
+
+          handlers = Path('backend/internal/handler/handlers.go')
+          source = handlers.read_text()
+          old = '''\t\tvar activeSKUCount int64
+\t\tif err := h.db.Model(&model.PlanSKU{}).Where("plan_id = ? AND is_active = ?", id, true).Count(&activeSKUCount).Error; err != nil || activeSKUCount == 0 {
+\t\t\tBadRequest(w, "an active plan must have at least one active sku")
+\t\t\treturn
+\t\t}
+'''
+          new = '''\t\tvar activePurchaseSKUCount int64
+\t\tif err := h.db.Table("plan_skus").
+\t\t\tJoins("JOIN plan_sku_operations ON plan_sku_operations.plan_sku_id = plan_skus.id AND plan_sku_operations.operation = ?", skuOperationPurchase).
+\t\t\tWhere("plan_skus.plan_id = ? AND plan_skus.is_active = ?", id, true).
+\t\t\tCount(&activePurchaseSKUCount).Error; err != nil || activePurchaseSKUCount == 0 {
+\t\t\tBadRequestFields(w, "商品信息校验失败。", map[string]string{"is_active": "已发布商品至少需要一个允许新购的可售 SKU。"})
+\t\t\treturn
+\t\t}
+'''
+          if old not in source:
+              raise SystemExit('plan publication invariant block not found')
+          handlers.write_text(source.replace(old, new, 1))
+          PY
+          cd backend && gofmt -w internal/handler/commerce_sku_operations.go internal/handler/handlers.go
+      - name: Commit update
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/internal/handler/commerce_sku_operations.go backend/internal/handler/handlers.go
+          git commit -m "fix: preserve purchasable SKU for published plans"
+          git push origin HEAD:feat/sku-operations
