@@ -33,7 +33,9 @@ func TestProtocolEndpointNonRuntimeChangesDoNotPublish(t *testing.T) {
 		{name: "name", mutate: func(item *protocolEndpointEffectSnapshot) { item.Name = "Tokyo Premium" }, effect: protocolEndpointEffectDelivery},
 		{name: "address", mutate: func(item *protocolEndpointEffectSnapshot) { item.Address = "new.example.com" }, effect: protocolEndpointEffectDelivery},
 		{name: "public port", mutate: func(item *protocolEndpointEffectSnapshot) { item.PublicPort = 8443 }, effect: protocolEndpointEffectDelivery},
-		{name: "client config", mutate: func(item *protocolEndpointEffectSnapshot) { item.ClientConfig = `{"type":"vless","server":"new.example.com","port":443}` }, effect: protocolEndpointEffectDelivery},
+		{name: "client config", mutate: func(item *protocolEndpointEffectSnapshot) {
+			item.ClientConfig = `{"type":"vless","server":"new.example.com","port":443}`
+		}, effect: protocolEndpointEffectDelivery},
 		{name: "sort order", mutate: func(item *protocolEndpointEffectSnapshot) { item.SortOrder = 20 }, effect: protocolEndpointEffectDelivery},
 		{name: "multiplier", mutate: func(item *protocolEndpointEffectSnapshot) { item.MultiplierMilli = 1500 }, effect: protocolEndpointEffectBilling},
 		{name: "tags", mutate: func(item *protocolEndpointEffectSnapshot) { item.Tags = `["premium"]` }, effect: protocolEndpointEffectManagement},
@@ -69,7 +71,9 @@ func TestProtocolEndpointRuntimeChangesPublishCurrentNode(t *testing.T) {
 		{name: "cipher", mutate: func(item *protocolEndpointEffectSnapshot) { item.Cipher = 1 }},
 		{name: "parent", mutate: func(item *protocolEndpointEffectSnapshot) { item.ParentProtocolID = &parentID }},
 		{name: "active", mutate: func(item *protocolEndpointEffectSnapshot) { item.IsActive = false }},
-		{name: "server config", mutate: func(item *protocolEndpointEffectSnapshot) { item.ServerConfig = `{"type":"vless","users":[],"ws":{"path":"/proxy"}}` }},
+		{name: "server config", mutate: func(item *protocolEndpointEffectSnapshot) {
+			item.ServerConfig = `{"type":"vless","users":[],"ws":{"path":"/proxy"}}`
+		}},
 		{name: "optional config", mutate: func(item *protocolEndpointEffectSnapshot) { item.OptionalConfig = `{"tcp_fast_open":true}` }},
 		{name: "certificate", mutate: func(item *protocolEndpointEffectSnapshot) { item.ManagedCertificateID = 8 }},
 	}

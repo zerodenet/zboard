@@ -48,7 +48,7 @@ type protocolEndpointChangeEffects struct {
 }
 
 type protocolEndpointMutationResponse struct {
-	ProtocolEndpoint model.ProtocolEndpoint         `json:"protocol_endpoint"`
+	ProtocolEndpoint model.ProtocolEndpoint `json:"protocol_endpoint"`
 	protocolEndpointChangeEffects
 }
 

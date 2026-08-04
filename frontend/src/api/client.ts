@@ -466,7 +466,17 @@ export async function revokeNodeReportCredential(nodeId: number) {
   return unwrap(response)
 }
 
-export async function createProtocolEndpoint(payload: any) {
+export type ProtocolEndpointChangeEffect = 'none' | 'management' | 'billing' | 'delivery' | 'runtime' | 'credential_placement'
+
+export interface ProtocolEndpointMutationResult {
+	protocol_endpoint: Record<string, unknown>
+	effect: ProtocolEndpointChangeEffect
+	effects: ProtocolEndpointChangeEffect[]
+	publish_status: 'queued' | 'not_required'
+	affected_node_ids: number[]
+}
+
+export async function createProtocolEndpoint(payload: any): Promise<ProtocolEndpointMutationResult> {
   const response = await api.post('/admin/protocol-endpoints', payload)
   return unwrap(response)
 }
@@ -576,7 +586,7 @@ export async function fetchProtocolEndpointSelection(params: {
 	return unwrap(response)
 }
 
-export async function updateProtocolEndpoint(id: number, payload: any) {
+export async function updateProtocolEndpoint(id: number, payload: any): Promise<ProtocolEndpointMutationResult> {
 	const response = await api.put(`/admin/protocol-endpoints/${id}`, payload)
 	return unwrap(response)
 }

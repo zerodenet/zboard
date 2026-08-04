@@ -267,6 +267,7 @@ import { formatBytes, formatNumber, formatUnknownValue } from '../utils/format'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 import { normalizeOutput, truncateOutput } from '../utils/output'
 import { trackAdminTask } from '../utils/taskTracker'
+import { protocolEndpointMutationMessage } from '../utils/protocolEndpointEffects'
 import { isIntegerInRange } from '../utils/validation'
 import { zeroVersionAtLeast } from '../utils/zeroVersion'
 
@@ -798,10 +799,10 @@ async function save() {
   try {
     const creatingCopy = Boolean(copySourceID.value)
     const payload = { node_id: form.node_id, name: form.name, protocol: form.protocol, address: form.address, port: form.port, public_port: form.public_port, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, parent_protocol_id: form.parent_protocol_id || null, managed_certificate_id: form.managed_certificate_id || null, is_active: Boolean(form.is_active), config: form.config, client_config: form.client_config, optional_config: form.optional_config || '{}', tags: form.tags || '[]' }
-    if (form.id) await updateProtocolEndpoint(form.id, payload); else await createProtocolEndpoint(payload)
+    const result = form.id ? await updateProtocolEndpoint(form.id, payload) : await createProtocolEndpoint(payload)
     editorOpen.value = false
     copySourceID.value = 0
-    message.value = creatingCopy ? '协议配置已复制为独立服务；可按需启用并发布。' : '协议服务已保存，完整配置正在自动发布；可在列表中查看结果。'
+    message.value = protocolEndpointMutationMessage(result, creatingCopy)
     await refresh()
   }
   catch (e: any) {

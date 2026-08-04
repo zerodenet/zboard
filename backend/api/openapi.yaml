@@ -2146,8 +2146,8 @@ paths:
                           - $ref: "#/components/schemas/ProtocolEndpointPage"
     post:
       tags: [nodes]
-      summary: Create a protocol endpoint and queue a full node configuration publish
-      description: Persists the encrypted server configuration, then automatically queues validation, atomic activation, restart, local status and authenticated Connector-event checks for the node's complete current configuration.
+      summary: Create a protocol endpoint and apply its classified operational effect
+      description: Persists the endpoint, compares normalized plaintext configuration before encryption, and queues a complete node publish only when the active runtime changes.
       requestBody:
         required: true
         content:
@@ -2155,7 +2155,16 @@ paths:
             schema:
               $ref: "#/components/schemas/ProtocolEndpointWriteRequest"
       responses:
-        "200": { description: Protocol endpoint configuration saved }
+        "200":
+          description: Protocol endpoint saved with classified change effects
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/ProtocolEndpointMutationResult"
   /api/v1/admin/protocol-endpoints/reality-keypair:
     post:
       tags: [nodes, admin]
@@ -2209,8 +2218,8 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
     put:
       tags: [nodes]
-      summary: Update a protocol endpoint and queue a full node configuration publish
-      description: The endpoint may switch carrier nodes. Existing credentials follow the endpoint, dedicated Shadowsocks ports are reallocated on the target node, and both previous and target node configurations are republished.
+      summary: Update a protocol endpoint and apply its classified operational effect
+      description: Delivery, billing and management changes avoid node publication. Runtime changes publish the current node; carrier-node changes migrate credentials and publish only the previous and target nodes.
       parameters:
         - in: path
           name: id
@@ -2222,7 +2231,16 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/ProtocolEndpointWriteRequest" }
       responses:
-        "200": { description: Protocol endpoint configuration updated }
+        "200":
+          description: Protocol endpoint updated with classified change effects
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        $ref: "#/components/schemas/ProtocolEndpointMutationResult"
         "404": { $ref: "#/components/responses/Error" }
     delete:
       tags: [nodes, admin]
@@ -3568,6 +3586,27 @@ components:
             used_bytes_total: { type: integer, format: int64, minimum: 0 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    ProtocolEndpointChangeEffect:
+      type: string
+      enum: [none, management, billing, delivery, runtime, credential_placement]
+    ProtocolEndpointMutationResult:
+      type: object
+      required: [protocol_endpoint, effect, effects, publish_status]
+      properties:
+        protocol_endpoint:
+          $ref: "#/components/schemas/ProtocolEndpoint"
+        effect:
+          $ref: "#/components/schemas/ProtocolEndpointChangeEffect"
+        effects:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProtocolEndpointChangeEffect"
+        publish_status:
+          type: string
+          enum: [queued, not_required]
+        affected_node_ids:
+          type: array
+          items: { type: integer, format: int64 }
     ProtocolEndpointSelectionSnapshot:
       type: object
       required: [ids, total, resolved_at]
