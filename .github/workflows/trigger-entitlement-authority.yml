@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   apply:
-    if: github.head_ref == 'feat/sku-operations'
+    if: github.head_ref == 'feat/sku-operations' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,15 +34,78 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          source = Path('.github/workflows/apply-plan-entitlement-authority.yml').read_text()
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              return source.replace(old, new, 1)
+
+          workflow = Path('.github/workflows/apply-plan-entitlement-authority.yml').read_text()
           start_marker = "      - name: Apply entitlement ownership changes\n        run: |\n"
           end_marker = "      - name: Commit update\n"
-          start = source.index(start_marker) + len(start_marker)
-          end = source.index(end_marker, start)
-          lines = [line[10:] if line.startswith("          ") else line for line in source[start:end].splitlines()]
+          start = workflow.index(start_marker) + len(start_marker)
+          end = workflow.index(end_marker, start)
+          lines = [line[10:] if line.startswith("          ") else line for line in workflow[start:end].splitlines()]
           frontend_index = next(index for index, line in enumerate(lines) if '# Frontend API contract.' in line)
           heredoc_end = next(index for index in range(frontend_index, len(lines)) if lines[index] == 'PY')
           lines = lines[:frontend_index] + lines[heredoc_end:]
+
+          tests_path = Path('backend/internal/handler/handlers_test.go')
+          tests = tests_path.read_text()
+          tests = replace_once(
+              tests,
+              '\t\tPriceCents: 1999, Currency: "cny", TrafficBytes: 100 << 30, DeviceLimit: 5,\n',
+              '\t\tPriceCents: 1999, Currency: "cny",\n',
+              'valid periodic sku test',
+          )
+          tests = replace_once(
+              tests,
+              'planSKUReq{Code: "x", Name: "x", BillingUnit: unit, BillingValue: 1, Currency: "CNY", TrafficBytes: 1, DeviceLimit: 1}',
+              'planSKUReq{Code: "x", Name: "x", BillingUnit: unit, BillingValue: 1, Currency: "CNY"}',
+              'invalid billing unit fixtures',
+          )
+          tests = replace_once(
+              tests,
+              'for _, field := range []string{"code", "name", "currency", "billing_value", "price_cents", "traffic_bytes", "device_limit", "speed_limit_mbps"} {',
+              'for _, field := range []string{"code", "name", "currency", "billing_value", "price_cents", "entitlements"} {',
+              'sku validation fields',
+          )
+          old_policy_test = (
+              'func TestNormalizePlanPolicyUsesSKUDefaults(t *testing.T) {\n'
+              '\tpolicy, err := normalizePlanPolicy(planCreateReq{}, planSKUReq{\n'
+              '\t\tTrafficBytes: 1024, DeviceLimit: 3, SpeedLimitMbps: 20,\n'
+              '\t})\n'
+              '\tif err != nil {\n'
+              '\t\tt.Fatal(err)\n'
+              '\t}\n'
+              '\tif policy.TrafficBytes != 1024 || policy.DeviceLimit != 3 || policy.SpeedLimitMbps != 20 {\n'
+              '\t\tt.Fatalf("unexpected policy: %#v", policy)\n'
+              '\t}\n'
+              '\tif !policy.IsRenewable {\n'
+              '\t\tt.Fatalf("unexpected policy defaults: %#v", policy)\n'
+              '\t}\n'
+              '}\n'
+          )
+          new_policy_test = (
+              'func TestNormalizePlanPolicyUsesPlanEntitlements(t *testing.T) {\n'
+              '\tpolicy, err := normalizePlanPolicy(planCreateReq{\n'
+              '\t\tTrafficBytes: 1024, DeviceLimit: 3, SpeedLimitMbps: 20,\n'
+              '\t}, planSKUReq{TrafficBytes: 2048, DeviceLimit: 9, SpeedLimitMbps: 90})\n'
+              '\tif err != nil {\n'
+              '\t\tt.Fatal(err)\n'
+              '\t}\n'
+              '\tif policy.TrafficBytes != 1024 || policy.DeviceLimit != 3 || policy.SpeedLimitMbps != 20 {\n'
+              '\t\tt.Fatalf("unexpected policy: %#v", policy)\n'
+              '\t}\n'
+              '\tif !policy.IsRenewable {\n'
+              '\t\tt.Fatalf("unexpected policy defaults: %#v", policy)\n'
+              '\t}\n'
+              '}\n'
+          )
+          tests = replace_once(tests, old_policy_test, new_policy_test, 'plan entitlement authority test')
+          tests_path.write_text(tests)
+
           Path('/tmp/apply-entitlement-authority.sh').write_text("\n".join(lines) + "\n")
           PY
           bash -euxo pipefail /tmp/apply-entitlement-authority.sh
