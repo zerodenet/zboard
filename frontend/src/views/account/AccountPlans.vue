@@ -112,9 +112,9 @@
                   <span>{{ billingLabel(sku) }}</span>
                 </div>
               </td>
-              <td>{{ formatBytes(sku.traffic_bytes) }}</td>
-              <td data-column-priority="2">{{ sku.device_limit || '不限' }}</td>
-              <td data-column-priority="2">{{ sku.speed_limit_mbps ? `${sku.speed_limit_mbps} Mbps` : '不限速' }}</td>
+              <td>{{ formatBytes(selectedPlan?.traffic_bytes || 0) }}</td>
+              <td data-column-priority="2">{{ selectedPlan?.device_limit || '不限' }}</td>
+              <td data-column-priority="2">{{ selectedPlan?.speed_limit_mbps ? `${selectedPlan.speed_limit_mbps} Mbps` : '不限速' }}</td>
               <td class="table-action-column">
                 <UiButton size="sm" type="button" @click="askOrder(sku)">选择此规格</UiButton>
               </td>

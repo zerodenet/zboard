@@ -915,13 +915,13 @@ export interface PlanSKU {
   code: string
   name: string
   sku_type: string
+  billing_mode?: 'periodic' | 'one_time'
+  allowed_operations?: Array<'purchase' | 'renew' | 'change' | 'addon'>
   billing_unit: string
   billing_value: number
   price_cents: number
   currency: string
-  traffic_bytes: number
-  device_limit: number
-  speed_limit_mbps: number
+  grant_traffic_bytes: number
   is_active: boolean
   sort_order: number
   created_at: string
@@ -957,6 +957,9 @@ export interface PlanDetail extends PlanSummary {
 }
 
 export interface PlanCatalogItem extends PlanSummary {
+  traffic_bytes: number
+  speed_limit_mbps: number
+  device_limit: number
   primary_sku?: PlanSKU
 }
 

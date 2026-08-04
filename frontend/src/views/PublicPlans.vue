@@ -28,9 +28,9 @@
             <span>起 / {{ billingLabel(plan.primary_sku) }}</span>
           </div>
           <ul v-if="plan.primary_sku">
-            <li><UiIcon name="check" />{{ formatBytes(plan.primary_sku.traffic_bytes) }} 套餐流量</li>
-            <li><UiIcon name="check" />{{ plan.primary_sku.device_limit || '不限' }} 台设备</li>
-            <li><UiIcon name="check" />{{ plan.primary_sku.speed_limit_mbps ? `${plan.primary_sku.speed_limit_mbps} Mbps` : '不限速' }}</li>
+            <li><UiIcon name="check" />{{ formatBytes(plan.traffic_bytes) }} 套餐流量</li>
+            <li><UiIcon name="check" />{{ plan.device_limit || '不限' }} 台设备</li>
+            <li><UiIcon name="check" />{{ plan.speed_limit_mbps ? `${plan.speed_limit_mbps} Mbps` : '不限速' }}</li>
             <li><UiIcon name="check" />{{ plan.active_sku_count }} 个可选规格</li>
           </ul>
           <p v-else class="field-hint">当前套餐暂时没有可购买的新购规格。</p>
