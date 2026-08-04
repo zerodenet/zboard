@@ -1,55 +1,29 @@
-name: Audit admin row actions
+name: Verify admin row actions
 
 on:
   pull_request:
     branches: [develop]
 
-permissions:
-  contents: write
-
 jobs:
-  audit:
+  frontend-tests:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
         with:
-          ref: ${{ github.head_ref }}
-      - name: Persist administration row-action candidates
-        shell: bash
-        run: |
-          set -euo pipefail
-          report=admin-row-actions-candidates.txt
-          if [[ -f "$report" ]]; then
-            echo "Candidate report already exists."
-            exit 0
-          fi
-          python3 - <<'PY' > "$report"
-          from pathlib import Path
-          import re
-
-          roots = [Path('frontend/src/views'), Path('frontend/src/components')]
-          action_re = re.compile(r'<td\b[^>]*class="[^"]*table-action-column[^"]*"[^>]*>(.*?)</td>', re.S)
-          controls_re = re.compile(r'<(?:UiButton|RouterLink|button)\b')
-          for root in roots:
-              for path in sorted(root.rglob('*.vue')):
-                  text = path.read_text(encoding='utf-8')
-                  for index, match in enumerate(action_re.finditer(text), 1):
-                      body = match.group(1)
-                      controls = len(controls_re.findall(body))
-                      if controls >= 2 and 'RowActions' not in body and 'RowActionMenu' not in body:
-                          line = text.count('\n', 0, match.start()) + 1
-                          compact = ' '.join(body.split())
-                          print(f'{path}:{line}: controls={controls}: {compact[:500]}')
-
-          print('\n=== inline action classes ===')
-          for root in roots:
-              for path in sorted(root.rglob('*.vue')):
-                  for line_no, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
-                      if re.search(r'inline-actions|action-buttons|table-actions|row-actions', line) and 'RowActions' not in line:
-                          print(f'{path}:{line_no}: {line.strip()}')
-          PY
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add "$report"
-          git commit -m 'chore: record admin row action candidates'
-          git push origin HEAD:${{ github.head_ref }}
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.0"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm build
