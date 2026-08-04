@@ -1040,6 +1040,27 @@ paths:
       responses:
         "200": { description: Node asset deleted }
         "409": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/nodes/{id}/address-candidates:
+    get:
+      tags: [nodes, admin]
+      summary: Discover public IPv4 and IPv6 candidates for a node
+      description: Admin only. Reads node address fields, resolves hostnames and, when SSH trust is already verified, inspects global interface addresses. The operation is read-only and never changes managed DNS records.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Public node address candidates and discovery warnings
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/NodeAddressCandidates" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{id}/load:
     get:
       tags: [nodes, admin]
@@ -3367,6 +3388,32 @@ components:
             active_flows: { type: integer, format: int64, minimum: 0 }
             bytes_up: { type: integer, format: int64, minimum: 0 }
             bytes_down: { type: integer, format: int64, minimum: 0 }
+    NodeAddressCandidate:
+      type: object
+      required: [address, source]
+      properties:
+        address: { type: string, description: Normalized public IPv4 or IPv6 address. }
+        source:
+          type: string
+          enum: [node_address, node_address_dns, ssh_host, ssh_host_dns, ssh_global]
+    NodeAddressCandidates:
+      type: object
+      required: [node_id, policy, ipv4, ipv6, ssh_probe_status]
+      properties:
+        node_id: { type: integer, format: int64 }
+        policy: { type: string, enum: [public_only] }
+        ipv4:
+          type: array
+          items: { $ref: "#/components/schemas/NodeAddressCandidate" }
+        ipv6:
+          type: array
+          items: { $ref: "#/components/schemas/NodeAddressCandidate" }
+        recommended_ipv4: { type: string }
+        recommended_ipv6: { type: string }
+        ssh_probe_status: { type: string, enum: [not_configured, not_verified, succeeded, failed] }
+        warnings:
+          type: array
+          items: { type: string }
     NodeLoadSnapshot:
       type: object
       required: [node_id, sampled_at, cpu_core_count, load_average_1, load_average_5, load_average_15, memory_total_bytes, memory_available_bytes, root_total_bytes, root_available_bytes, uptime_seconds, latency_ms]
