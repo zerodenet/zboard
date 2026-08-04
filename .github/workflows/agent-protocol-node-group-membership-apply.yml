@@ -13,6 +13,9 @@ permissions:
 jobs:
   apply:
     if: github.event.pull_request.head.ref == 'agent/protocol-node-group-membership'
+    concurrency:
+      group: protocol-node-group-membership-apply
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,10 +37,11 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Apply source patch
         run: |
-          cat scripts/agent-protocol-node-group-membership.patch.b64.* | tr -d '\n' | base64 -d > /tmp/membership.patch
+          cat scripts/agent-protocol-node-group-membership.patch.gz.b64.* | tr -d '\n' | base64 -d | gzip -dc > /tmp/membership.patch
           echo "a43b966bc1f1d297caf699fa62fd22235acf08b79b80b8b721cb5d0472080db2  /tmp/membership.patch" | sha256sum -c -
           git apply --index /tmp/membership.patch
           rm scripts/agent-protocol-node-group-membership.patch.b64.*
+          rm scripts/agent-protocol-node-group-membership.patch.gz.b64.*
           rm .github/workflows/agent-protocol-node-group-membership-apply.yml
           rm .github/agent-protocol-node-group-membership-trigger
       - name: Verify backend
