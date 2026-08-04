@@ -1,0 +1,62 @@
+name: Build protocol save timing
+
+on:
+  pull_request:
+    branches: [develop]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.0"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Apply implementation patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i "s#protocolNodeGroupMembership' #protocolNodeGroupMembership'#g" scripts/agent_patch_protocol_save_timing.py
+          python3 scripts/agent_patch_protocol_save_timing.py
+          gofmt -w backend/internal/handler/protocol_endpoint_effects.go backend/internal/handler/protocol_endpoint_timing.go backend/internal/handler/protocol_endpoint_timing_test.go backend/internal/handler/handlers.go
+      - name: Verify backend
+        working-directory: backend
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          test -z "$(gofmt -l .)"
+          go test ./...
+          go vet ./...
+          go build ./cmd/zboard
+      - name: Verify frontend
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test
+          pnpm build
+      - name: Commit final implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/agent_patch_protocol_save_timing.py
+          rm .github/workflows/agent-protocol-save-timing.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'feat: instrument protocol save latency'
+          git push origin HEAD:${{ github.head_ref }}
