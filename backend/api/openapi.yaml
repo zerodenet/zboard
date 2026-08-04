@@ -3631,7 +3631,7 @@ components:
           properties:
             config: { type: string, description: Decrypted administrator-only server configuration. }
             managed_certificate_id: { type: integer, format: int64, nullable: true }
-            latest_deployment: { $ref: "#/components/schemas/ProtocolDeployment" }
+            latest_deployment: { $ref: "#/components/schemas/ProtocolDeploymentSummary" }
             usage: { type: object }
             node_group_memberships:
               type: array
