@@ -18,7 +18,14 @@
           <td><StatusBadge :tone="dnsTone(record.status)">{{ dnsStatus(record.status) }}</StatusBadge><small v-if="record.last_error" class="row-error">{{ record.last_error }}</small></td>
           <td><StatusBadge :tone="record.public_resolved ? 'success' : 'warning'">{{ record.public_resolved ? '已观察到' : '自动观察中' }}</StatusBadge></td>
           <td><TimeBadge v-if="record.last_synced_at" :value="record.last_synced_at" mode="relative" /><span v-else class="muted-value">尚未同步</span></td>
-          <td class="table-action-column"><div class="inline-actions"><UiButton size="sm" variant="secondary" :disabled="record.status === 'syncing'" @click="openEdit(record)"><UiIcon name="settings" />编辑</UiButton><UiButton size="sm" variant="secondary" :loading="operatingRecord === record.id" :disabled="record.status === 'syncing'" @click="syncRecord(record)">同步</UiButton><RouterLink class="ui-button ui-button-secondary ui-button-sm" :to="{ path: '/admin/certificates', query: { dns_domain: record.domain_name, dns_node: record.node_id, dns_provider: record.provider_account_id } }">申请证书</RouterLink><UiButton size="sm" variant="danger" :loading="deletingRecord === record.id" :disabled="record.status === 'syncing'" @click="removeRecord(record)"><UiIcon name="trash" />删除</UiButton></div></td>
+          <td class="table-action-column">
+            <RowActions :label="`${record.record_type} ${record.domain_name} 的操作`" :trigger-key="`dns-${record.id}`">
+              <UiButton size="sm" variant="ghost" :disabled="record.status === 'syncing'" @click="openEdit(record)"><UiIcon name="settings" />编辑</UiButton>
+              <UiButton size="sm" variant="ghost" :loading="operatingRecord === record.id" :disabled="record.status === 'syncing'" @click="syncRecord(record)">同步</UiButton>
+              <RouterLink class="button button-ghost button-sm" :to="{ path: '/admin/certificates', query: { dns_domain: record.domain_name, dns_node: record.node_id, dns_provider: record.provider_account_id } }">申请证书</RouterLink>
+              <UiButton size="sm" variant="danger" :loading="deletingRecord === record.id" :disabled="record.status === 'syncing'" @click="removeRecord(record)"><UiIcon name="trash" />删除</UiButton>
+            </RowActions>
+          </td>
         </tr></tbody>
       </DataTable>
       <EmptyState v-else class="dns-empty-state" icon="nodes" title="还没有托管 DNS 解析" description="先准备具备 DNS 能力的供应商账户，再把手填域名解析到选定节点。">
@@ -65,6 +72,7 @@ import ModalDialog from '../components/ModalDialog.vue'
 import NodeLookup from '../components/NodeLookup.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PageRefreshButton from '../components/PageRefreshButton.vue'
+import RowActions from '../components/RowActions.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TablePager from '../components/TablePager.vue'
 import TimeBadge from '../components/TimeBadge.vue'
@@ -205,7 +213,6 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
 
 <style scoped>
 .dns-empty-state { min-height: 180px; padding: 28px; }
-.inline-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .row-error { display: block; max-width: 260px; margin-top: 4px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .muted-value { color: var(--muted); }
 .modal-form { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 20px; }
