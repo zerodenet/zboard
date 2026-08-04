@@ -1,0 +1,22 @@
+name: debug-gofmt
+
+on:
+  push:
+    branches:
+      - feat/sku-operations
+
+permissions:
+  contents: read
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      - name: Show gofmt diff
+        working-directory: backend
+        run: gofmt -d internal/handler/commerce_sku_operations.go internal/handler/commerce_sku_operations_test.go internal/model/commerce.go internal/server/router.go
