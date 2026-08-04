@@ -936,7 +936,7 @@ func (h *handlers) compileNodeRuntimeConfigWithOptions(node model.Node, apiKey, 
 		return nil, "", fmt.Errorf("reconcile subscription credentials: %w", err)
 	}
 	var endpoints []model.ProtocolEndpoint
-	if err := h.db.Where("node_id = ? AND is_active = ?", node.ID, true).Order("sort_order asc, id asc").Find(&endpoints).Error; err != nil {
+	if err := h.db.Where("node_id = ? AND is_active = ?", node.ID, true).Order(protocolEndpointRuntimeOrder).Find(&endpoints).Error; err != nil {
 		return nil, "", err
 	}
 	managedCertificates, err := h.loadManagedCertificatesForEndpoints(endpoints)

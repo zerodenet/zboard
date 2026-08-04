@@ -2460,11 +2460,44 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	var existing model.ProtocolEndpoint
+	var existingEffectSnapshot *protocolEndpointEffectSnapshot
+	var existingManagedCertificateID uint
 	if endpointID != 0 {
 		if err := h.db.First(&existing, endpointID).Error; err != nil {
 			NotFound(w)
 			return
 		}
+		existingServerConfig, decryptErr := h.credentialCipher.Decrypt(existing.ServerConfig)
+		if decryptErr != nil {
+			ServerError(w, decryptErr)
+			return
+		}
+		existingClientConfig := existing.ClientConfig
+		if !strings.EqualFold(existing.Protocol, "mieru") {
+			existingServerConfig, existingClientConfig, err = normalizeManagedProtocolTemplates(existing.Protocol, existingServerConfig, existingClientConfig)
+			if err != nil {
+				ServerError(w, err)
+				return
+			}
+		}
+		managedCertificateIDs, loadErr := h.loadManagedCertificateIDsForEndpoints([]uint{existing.ID})
+		if loadErr != nil {
+			ServerError(w, loadErr)
+			return
+		}
+		if managedCertificateID := managedCertificateIDs[existing.ID]; managedCertificateID != nil {
+			existingManagedCertificateID = *managedCertificateID
+		}
+		snapshot := protocolEndpointEffectSnapshot{
+			NodeID: existing.NodeID, Name: existing.Name, Protocol: existing.Protocol, Address: existing.Address,
+			Port: existing.Port, PublicPort: existing.PublicPort, Cipher: existing.Cipher,
+			ParentProtocolID: existing.ParentProtocolID, MultiplierMilli: existing.MultiplierMilli,
+			ServerConfig: existingServerConfig, ClientConfig: existingClientConfig,
+			OptionalConfig: existing.OptionalConfig, Tags: existing.Tags,
+			IsActive: existing.IsActive, SortOrder: existing.SortOrder,
+			ManagedCertificateID: existingManagedCertificateID,
+		}
+		existingEffectSnapshot = &snapshot
 	}
 	if req.NodeID == 0 {
 		BadRequestFields(w, "协议服务校验失败。", map[string]string{"node_id": "请选择承载节点。"})
@@ -2599,6 +2632,20 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
+	nextManagedCertificateID := uint(0)
+	if managedCertificate != nil {
+		nextManagedCertificateID = managedCertificate.ID
+	}
+	changeEffects := classifyProtocolEndpointChange(existingEffectSnapshot, protocolEndpointEffectSnapshot{
+		NodeID: node.ID, Name: req.Name, Protocol: protocol, Address: req.Address,
+		Port: req.Port, PublicPort: req.PublicPort, Cipher: req.Cipher,
+		ParentProtocolID: req.ParentProtocolID, MultiplierMilli: req.MultiplierMilli,
+		ServerConfig: req.Config, ClientConfig: req.ClientConfig,
+		OptionalConfig: normalizeOptionalJSON(req.OptionalConfig, "{}"),
+		Tags:           normalizeOptionalJSON(req.Tags, "[]"), IsActive: isActive,
+		SortOrder: req.SortOrder, ManagedCertificateID: nextManagedCertificateID,
+	})
+
 	encryptedServerConfig, err := h.credentialCipher.Encrypt(req.Config)
 	if err != nil {
 		ServerError(w, err)
@@ -2665,6 +2712,7 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		if previousNodeID != 0 && previousNodeID != node.ID {
 			detail += fmt.Sprintf(" previous_node=%d", previousNodeID)
 		}
+		detail += fmt.Sprintf(" effect=%s publish_status=%s", changeEffects.Effect, changeEffects.PublishStatus)
 		return createAuditLog(tx, claims, action, fmt.Sprintf("protocol_endpoint:%d", endpoint.ID), detail)
 	}); err != nil {
 		var validation *requestValidationError
@@ -2675,11 +2723,13 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		BadRequest(w, err.Error())
 		return
 	}
-	if previousNodeID != 0 && previousNodeID != node.ID {
-		h.scheduleNodeConfigPublish(previousNodeID, endpoint.ID, claims.UserID)
+	for _, affectedNodeID := range changeEffects.AffectedNodeIDs {
+		h.scheduleNodeConfigPublish(affectedNodeID, endpoint.ID, claims.UserID)
 	}
-	h.scheduleNodeConfigPublish(node.ID, endpoint.ID, claims.UserID)
-	OK(w, map[string]interface{}{"protocol_endpoint": endpoint, "publish_status": "queued"})
+	OK(w, protocolEndpointMutationResponse{
+		ProtocolEndpoint:              endpoint,
+		protocolEndpointChangeEffects: changeEffects,
+	})
 }
 
 func (h *handlers) ProtocolEndpointDeployHandler(w http.ResponseWriter, r *http.Request) {
