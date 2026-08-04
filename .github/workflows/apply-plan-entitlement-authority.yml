@@ -1,0 +1,629 @@
+name: apply-plan-entitlement-authority
+
+on:
+  push:
+    branches:
+      - feat/sku-operations
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/sku-operations
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.0"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Apply entitlement ownership changes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              return source.replace(old, new, 1)
+
+          def replace_count(source: str, old: str, new: str, expected: int, label: str) -> str:
+              count = source.count(old)
+              if count != expected:
+                  raise SystemExit(f'{label}: expected {expected} matches, found {count}')
+              return source.replace(old, new)
+
+          # Model: Plan owns subscription entitlements; SKU keeps only legacy storage
+          # for one-time traffic grants.
+          path = Path('backend/internal/model/models.go')
+          source = path.read_text()
+          source = replace_once(source,
+          '''// PlanSKU is the purchasable specification of a plan. Pricing, validity and
+// quota live here so a plan can offer monthly, yearly or other variants.
+''',
+          '''// PlanSKU defines how a plan is sold. Subscription entitlements belong to
+// Plan and are snapshotted into Order. TrafficBytes remains as legacy storage
+// for a one-time traffic grant and is not exposed as a normal SKU entitlement.
+''', 'plan sku comment')
+          source = replace_once(source,
+          '''\tTrafficBytes   int64     `json:"traffic_bytes" gorm:"not null"`
+\tDeviceLimit    int       `json:"device_limit" gorm:"not null"`
+\tSpeedLimitMbps int       `json:"speed_limit_mbps" gorm:"not null;default:0"`
+''',
+          '''\tTrafficBytes   int64     `json:"-" gorm:"not null"`
+\tDeviceLimit    int       `json:"-" gorm:"not null"`
+\tSpeedLimitMbps int       `json:"-" gorm:"not null;default:0"`
+''', 'hide legacy sku entitlements')
+          path.write_text(source)
+
+          # Schema reconciliation: erase periodic SKU entitlement copies after the
+          # Plan values have become authoritative. One-time SKU traffic is retained
+          # as the add-on grant.
+          path = Path('backend/internal/datastore/commerce_schema.go')
+          source = path.read_text()
+          source = replace_once(source,
+          '''\tif _, err := sqlDB.Exec(`INSERT INTO plan_sku_operations (plan_sku_id, operation)
+\t\tSELECT plan_skus.id,
+\t\t       CASE plan_skus.sku_type
+\t\t         WHEN 'renewal' THEN 'renew'
+\t\t         WHEN 'upgrade' THEN 'change'
+\t\t         WHEN 'traffic_pack' THEN 'addon'
+\t\t         ELSE 'purchase'
+\t\t       END
+\t\t  FROM plan_skus
+\t\t WHERE NOT EXISTS (
+\t\t       SELECT 1
+\t\t         FROM plan_sku_operations
+\t\t        WHERE plan_sku_operations.plan_sku_id = plan_skus.id
+\t\t )`); err != nil {
+\t\treturn fmt.Errorf("backfill plan sku operations: %w", err)
+\t}
+\treturn nil
+''',
+          '''\tif _, err := sqlDB.Exec(`INSERT INTO plan_sku_operations (plan_sku_id, operation)
+\t\tSELECT plan_skus.id,
+\t\t       CASE plan_skus.sku_type
+\t\t         WHEN 'renewal' THEN 'renew'
+\t\t         WHEN 'upgrade' THEN 'change'
+\t\t         WHEN 'traffic_pack' THEN 'addon'
+\t\t         ELSE 'purchase'
+\t\t       END
+\t\t  FROM plan_skus
+\t\t WHERE NOT EXISTS (
+\t\t       SELECT 1
+\t\t         FROM plan_sku_operations
+\t\t        WHERE plan_sku_operations.plan_sku_id = plan_skus.id
+\t\t )`); err != nil {
+\t\treturn fmt.Errorf("backfill plan sku operations: %w", err)
+\t}
+
+\tif _, err := sqlDB.Exec(`UPDATE plan_skus
+\t\tSET traffic_bytes = CASE WHEN billing_mode = 'one_time' THEN traffic_bytes ELSE 0 END,
+\t\t    device_limit = 0,
+\t\t    speed_limit_mbps = 0`); err != nil {
+\t\treturn fmt.Errorf("remove duplicated plan sku entitlements: %w", err)
+\t}
+\treturn nil
+''', 'schema entitlement cleanup')
+          path.write_text(source)
+
+          # Commerce API and order creation.
+          path = Path('backend/internal/handler/commerce_sku_operations.go')
+          source = path.read_text()
+          source = replace_once(source,
+          '''\tTrafficBytes      int64    `json:"traffic_bytes"`
+\tDeviceLimit       int      `json:"device_limit"`
+\tSpeedLimitMbps    int      `json:"speed_limit_mbps"`
+''',
+          '''\tGrantTrafficBytes int64    `json:"grant_traffic_bytes"`
+\tTrafficBytes      int64    `json:"traffic_bytes"`   // Deprecated alias for grant_traffic_bytes.
+\tDeviceLimit       int      `json:"device_limit"`    // Deprecated compatibility input; must be zero.
+\tSpeedLimitMbps    int      `json:"speed_limit_mbps"` // Deprecated compatibility input; must be zero.
+''', 'commerce sku request fields')
+          source = replace_once(source,
+          '''type commercePlanSKUItem struct {
+\tmodel.PlanSKU
+\tBillingMode       string   `json:"billing_mode"`
+\tAllowedOperations []string `json:"allowed_operations"`
+}
+''',
+          '''type commercePlanSKUItem struct {
+\tmodel.PlanSKU
+\tBillingMode       string   `json:"billing_mode"`
+\tAllowedOperations []string `json:"allowed_operations"`
+\tGrantTrafficBytes int64    `json:"grant_traffic_bytes"`
+}
+''', 'commerce sku response')
+          source = replace_once(source,
+          '''\tfields := map[string]string{}
+\tbillingUnit := strings.ToLower(strings.TrimSpace(request.BillingUnit))
+''',
+          '''\tfields := map[string]string{}
+\tgrantTrafficBytes := request.GrantTrafficBytes
+\tif grantTrafficBytes == 0 {
+\t\tgrantTrafficBytes = request.TrafficBytes
+\t}
+\tbillingUnit := strings.ToLower(strings.TrimSpace(request.BillingUnit))
+''', 'grant normalization')
+          source = replace_once(source,
+          '''\tif billingMode == skuBillingOneTime {
+\t\tif billingUnit != "once" {
+\t\t\tfields["billing_unit"] = "一次性规格必须使用一次性计费单位。"
+\t\t}
+\t\tif len(operations) != 1 || operations[0] != skuOperationAddon {
+\t\t\tfields["allowed_operations"] = "一次性规格当前仅用于附加权益购买。"
+\t\t}
+\t} else {
+\t\tif billingUnit == "once" {
+\t\t\tfields["billing_unit"] = "周期规格不能使用一次性计费单位。"
+\t\t}
+\t\tif containsSKUOperation(operations, skuOperationAddon) {
+\t\t\tfields["allowed_operations"] = "附加权益请使用一次性规格。"
+\t\t}
+\t}
+''',
+          '''\tif billingMode == skuBillingOneTime {
+\t\tif billingUnit != "once" {
+\t\t\tfields["billing_unit"] = "一次性规格必须使用一次性计费单位。"
+\t\t}
+\t\tif len(operations) != 1 || operations[0] != skuOperationAddon {
+\t\t\tfields["allowed_operations"] = "一次性规格当前仅用于附加权益购买。"
+\t\t}
+\t\tif grantTrafficBytes <= 0 {
+\t\t\tfields["grant_traffic_bytes"] = "流量包的附加流量必须大于 0。"
+\t\t}
+\t\tif request.DeviceLimit != 0 || request.SpeedLimitMbps != 0 {
+\t\t\tfields["entitlements"] = "流量包只能增加流量，不能修改设备数或限速。"
+\t\t}
+\t} else {
+\t\tif billingUnit == "once" {
+\t\t\tfields["billing_unit"] = "周期规格不能使用一次性计费单位。"
+\t\t}
+\t\tif containsSKUOperation(operations, skuOperationAddon) {
+\t\t\tfields["allowed_operations"] = "附加权益请使用一次性规格。"
+\t\t}
+\t\tif request.GrantTrafficBytes != 0 || request.TrafficBytes != 0 || request.DeviceLimit != 0 || request.SpeedLimitMbps != 0 {
+\t\t\tfields["entitlements"] = "周期规格继承商品权益，不能单独配置流量、设备数或限速。"
+\t\t}
+\t\tgrantTrafficBytes = 0
+\t}
+''', 'billing entitlement validation')
+          source = replace_once(source,
+          '''\t\tTrafficBytes: request.TrafficBytes, DeviceLimit: request.DeviceLimit,
+\t\tSpeedLimitMbps: request.SpeedLimitMbps, IsActive: request.IsActive,
+''',
+          '''\t\tTrafficBytes: grantTrafficBytes, DeviceLimit: 0,
+\t\tSpeedLimitMbps: 0, IsActive: request.IsActive,
+''', 'normalized sku legacy storage')
+          source = replace_once(source,
+          '''\tfor _, sku := range skus {
+\t\titems = append(items, commercePlanSKUItem{
+\t\t\tPlanSKU: sku, BillingMode: billingModes[sku.ID], AllowedOperations: operations[sku.ID],
+\t\t})
+\t}
+''',
+          '''\tfor _, sku := range skus {
+\t\tgrantTrafficBytes := int64(0)
+\t\tif billingModes[sku.ID] == skuBillingOneTime || containsSKUOperation(operations[sku.ID], skuOperationAddon) {
+\t\t\tgrantTrafficBytes = sku.TrafficBytes
+\t\t}
+\t\titems = append(items, commercePlanSKUItem{
+\t\t\tPlanSKU: sku, BillingMode: billingModes[sku.ID], AllowedOperations: operations[sku.ID],
+\t\t\tGrantTrafficBytes: grantTrafficBytes,
+\t\t})
+\t}
+''', 'decorate sku grant')
+          old_response = 'OK(w, commercePlanSKUItem{PlanSKU: normalized.SKU, BillingMode: normalized.BillingMode, AllowedOperations: normalized.AllowedOperations})'
+          new_response = 'OK(w, commercePlanSKUItem{PlanSKU: normalized.SKU, BillingMode: normalized.BillingMode, AllowedOperations: normalized.AllowedOperations, GrantTrafficBytes: normalized.SKU.TrafficBytes})'
+          source = replace_count(source, old_response, new_response, 2, 'direct sku responses')
+          source = replace_once(source,
+          '''\torder := model.Order{
+\t\tUserID: claims.UserID, PlanID: plan.ID, PlanSKUID: sku.ID,
+\t\tTradeNo: uuid.NewString(), OrderType: orderType, TargetSubscriptionID: targetSubscriptionID,
+\t\tAmountCents: sku.PriceCents, PayableAmount: sku.PriceCents, Currency: sku.Currency,
+\t\tChannel: channel, Status: orderStatusPending,
+\t\tPlanName: plan.Name, SKUName: sku.Name, BillingUnit: sku.BillingUnit,
+\t\tBillingValue: sku.BillingValue, TrafficBytes: sku.TrafficBytes,
+\t\tDeviceLimit: sku.DeviceLimit, SpeedLimitMbps: sku.SpeedLimitMbps,
+\t}
+''',
+          '''\ttrafficBytes := plan.TrafficBytes
+\tdeviceLimit := plan.DeviceLimit
+\tspeedLimitMbps := plan.SpeedLimitMbps
+\tif orderType == "traffic_pack" {
+\t\ttrafficBytes = sku.TrafficBytes
+\t\tdeviceLimit = 0
+\t\tspeedLimitMbps = 0
+\t}
+\torder := model.Order{
+\t\tUserID: claims.UserID, PlanID: plan.ID, PlanSKUID: sku.ID,
+\t\tTradeNo: uuid.NewString(), OrderType: orderType, TargetSubscriptionID: targetSubscriptionID,
+\t\tAmountCents: sku.PriceCents, PayableAmount: sku.PriceCents, Currency: sku.Currency,
+\t\tChannel: channel, Status: orderStatusPending,
+\t\tPlanName: plan.Name, SKUName: sku.Name, BillingUnit: sku.BillingUnit,
+\t\tBillingValue: sku.BillingValue, TrafficBytes: trafficBytes,
+\t\tDeviceLimit: deviceLimit, SpeedLimitMbps: speedLimitMbps,
+\t}
+''', 'commerce order entitlement snapshot')
+          path.write_text(source)
+
+          # Legacy helpers and fulfillment share the same authority rule.
+          path = Path('backend/internal/handler/handlers.go')
+          source = path.read_text()
+          source = replace_once(source,
+          '''func normalizePlanPolicy(req planCreateReq, firstSKU planSKUReq) (normalizedPlanPolicy, error) {
+\tpolicy := normalizedPlanPolicy{
+''',
+          '''func normalizePlanPolicy(req planCreateReq, firstSKU planSKUReq) (normalizedPlanPolicy, error) {
+\t_ = firstSKU // Kept in the compatibility signature; Plan is authoritative.
+\tpolicy := normalizedPlanPolicy{
+''', 'normalize plan policy signature')
+          source = replace_once(source,
+          '''\tif policy.TrafficBytes == 0 {
+\t\tpolicy.TrafficBytes = firstSKU.TrafficBytes
+\t}
+\tif policy.SpeedLimitMbps == 0 {
+\t\tpolicy.SpeedLimitMbps = firstSKU.SpeedLimitMbps
+\t}
+\tif policy.DeviceLimit == 0 {
+\t\tpolicy.DeviceLimit = firstSKU.DeviceLimit
+\t}
+''', '', 'remove sku policy fallback')
+          source = replace_once(source,
+          '''\tif req.TrafficBytes <= 0 {
+\t\tfields["traffic_bytes"] = "流量配额必须大于 0。"
+\t}
+\tif req.DeviceLimit <= 0 {
+\t\tfields["device_limit"] = "设备数必须大于 0。"
+\t}
+\tif req.SpeedLimitMbps < 0 {
+\t\tfields["speed_limit_mbps"] = "速率限制不能小于 0。"
+\t}
+''',
+          '''\tif req.SKUType == "traffic_pack" {
+\t\tif req.TrafficBytes <= 0 {
+\t\t\tfields["grant_traffic_bytes"] = "流量包的附加流量必须大于 0。"
+\t\t}
+\t\tif req.DeviceLimit != 0 || req.SpeedLimitMbps != 0 {
+\t\t\tfields["entitlements"] = "流量包只能增加流量，不能修改设备数或限速。"
+\t\t}
+\t} else if req.TrafficBytes != 0 || req.DeviceLimit != 0 || req.SpeedLimitMbps != 0 {
+\t\tfields["entitlements"] = "周期规格继承商品权益，不能单独配置流量、设备数或限速。"
+\t}
+''', 'build sku entitlement validation')
+          legacy_order = '''\torder := model.Order{
+\t\tUserID: claims.UserID, PlanID: plan.ID, PlanSKUID: sku.ID,
+\t\tTradeNo: uuid.NewString(), OrderType: orderType, TargetSubscriptionID: targetSubscriptionID,
+\t\tAmountCents: sku.PriceCents, PayableAmount: sku.PriceCents, Currency: sku.Currency,
+\t\tChannel: channel, Status: orderStatusPending,
+\t\tPlanName: plan.Name, SKUName: sku.Name, BillingUnit: sku.BillingUnit,
+\t\tBillingValue: sku.BillingValue, TrafficBytes: sku.TrafficBytes,
+\t\tDeviceLimit: sku.DeviceLimit, SpeedLimitMbps: sku.SpeedLimitMbps,
+\t}
+'''
+          legacy_order_new = '''\ttrafficBytes := plan.TrafficBytes
+\tdeviceLimit := plan.DeviceLimit
+\tspeedLimitMbps := plan.SpeedLimitMbps
+\tif orderType == "traffic_pack" {
+\t\ttrafficBytes = sku.TrafficBytes
+\t\tdeviceLimit = 0
+\t\tspeedLimitMbps = 0
+\t}
+\torder := model.Order{
+\t\tUserID: claims.UserID, PlanID: plan.ID, PlanSKUID: sku.ID,
+\t\tTradeNo: uuid.NewString(), OrderType: orderType, TargetSubscriptionID: targetSubscriptionID,
+\t\tAmountCents: sku.PriceCents, PayableAmount: sku.PriceCents, Currency: sku.Currency,
+\t\tChannel: channel, Status: orderStatusPending,
+\t\tPlanName: plan.Name, SKUName: sku.Name, BillingUnit: sku.BillingUnit,
+\t\tBillingValue: sku.BillingValue, TrafficBytes: trafficBytes,
+\t\tDeviceLimit: deviceLimit, SpeedLimitMbps: speedLimitMbps,
+\t}
+'''
+          source = replace_once(source, legacy_order, legacy_order_new, 'legacy order entitlement snapshot')
+          source = replace_once(source,
+          '''\tbefore := sub.FlowTotal - sub.FlowUsed
+\tsub.FlowTotal += order.TrafficBytes
+\tsub.Status = subStatusActive
+\tif order.OrderType == "upgrade" {
+\t\tsub.PlanID = plan.ID
+\t\tsub.PlanSKUID = sku.ID
+\t\tsub.NodeGroupID = plan.NodeGroupID
+\t\tsub.SpeedLimitMbps = order.SpeedLimitMbps
+\t\tsub.DeviceLimit = order.DeviceLimit
+\t\tsub.FamilyLimit = plan.FamilyLimit
+\t\tsub.ResetPolicy = plan.ResetPolicy
+\t\tsub.NextResetAt = nextTrafficReset(now, plan.ResetPolicy)
+\t\tsub.TrafficCalcMode = plan.TrafficCalcMode
+\t}
+\tif plan.IsRenewable {
+\t\tsub.RenewalPriceMinor = sku.PriceCents
+\t} else {
+\t\tsub.RenewalPriceMinor = 0
+\t}
+''',
+          '''\tbefore := sub.FlowTotal - sub.FlowUsed
+\tsub.FlowTotal += order.TrafficBytes
+\tsub.Status = subStatusActive
+\tif order.OrderType != "traffic_pack" {
+\t\tsub.PlanID = plan.ID
+\t\tsub.PlanSKUID = sku.ID
+\t\tsub.NodeGroupID = plan.NodeGroupID
+\t\tsub.SpeedLimitMbps = order.SpeedLimitMbps
+\t\tsub.DeviceLimit = order.DeviceLimit
+\t\tsub.FamilyLimit = plan.FamilyLimit
+\t\tsub.ResetPolicy = plan.ResetPolicy
+\t\tsub.NextResetAt = nextTrafficReset(now, plan.ResetPolicy)
+\t\tsub.TrafficCalcMode = plan.TrafficCalcMode
+\t\tif plan.IsRenewable {
+\t\t\tsub.RenewalPriceMinor = sku.PriceCents
+\t\t} else {
+\t\t\tsub.RenewalPriceMinor = 0
+\t\t}
+\t}
+''', 'renewal entitlement refresh')
+          path.write_text(source)
+
+          # Tests describe and enforce the ownership boundary.
+          path = Path('backend/internal/handler/commerce_sku_operations_test.go')
+          source = path.read_text()
+          source = replace_once(source,
+          '''\t\tPriceCents: 1000, Currency: "CNY",
+\t\tTrafficBytes: 100, DeviceLimit: 3,
+\t\tSpeedLimitMbps: 0, IsActive: &active,
+''',
+          '''\t\tPriceCents: 1000, Currency: "CNY",
+\t\tIsActive: &active,
+''', 'valid periodic sku fixture')
+          source = replace_once(source,
+          '''\trequest.BillingMode = skuBillingOneTime
+\trequest.BillingUnit = "once"
+\trequest.AllowedOperations = []string{skuOperationAddon, skuOperationPurchase}
+''',
+          '''\trequest.BillingMode = skuBillingOneTime
+\trequest.BillingUnit = "once"
+\trequest.GrantTrafficBytes = 100
+\trequest.AllowedOperations = []string{skuOperationAddon, skuOperationPurchase}
+''', 'one-time mixed operation fixture')
+          insert_after = '''func TestNormalizeCommercePlanSKURejectsMixedOneTimeOperations(t *testing.T) {
+\trequest := validCommerceSKURequest()
+\trequest.BillingMode = skuBillingOneTime
+\trequest.BillingUnit = "once"
+\trequest.GrantTrafficBytes = 100
+\trequest.AllowedOperations = []string{skuOperationAddon, skuOperationPurchase}
+
+\tif _, err := normalizeCommercePlanSKU(1, request); err == nil {
+\t\tt.Fatal("expected one-time operation validation error")
+\t}
+}
+'''
+          new_tests = insert_after + '''
+func TestNormalizeCommercePlanSKURejectsPeriodicEntitlementOverrides(t *testing.T) {
+\trequest := validCommerceSKURequest()
+\trequest.TrafficBytes = 100
+
+\tif _, err := normalizeCommercePlanSKU(1, request); err == nil {
+\t\tt.Fatal("expected periodic entitlement override rejection")
+\t}
+}
+
+func TestNormalizeCommercePlanSKUStoresOnlyAddonGrant(t *testing.T) {
+\trequest := validCommerceSKURequest()
+\trequest.SKUType = "traffic_pack"
+\trequest.BillingMode = skuBillingOneTime
+\trequest.BillingUnit = "once"
+\trequest.AllowedOperations = []string{skuOperationAddon}
+\trequest.GrantTrafficBytes = 512
+
+\tnormalized, err := normalizeCommercePlanSKU(1, request)
+\tif err != nil {
+\t\tt.Fatalf("normalize addon sku: %v", err)
+\t}
+\tif normalized.SKU.TrafficBytes != 512 || normalized.SKU.DeviceLimit != 0 || normalized.SKU.SpeedLimitMbps != 0 {
+\t\tt.Fatalf("unexpected addon storage: %#v", normalized.SKU)
+\t}
+}
+
+func TestNormalizePlanPolicyDoesNotInheritSKUEntitlements(t *testing.T) {
+\t_, err := normalizePlanPolicy(planCreateReq{}, planSKUReq{TrafficBytes: 100, DeviceLimit: 3, SpeedLimitMbps: 50})
+\tif err == nil {
+\t\tt.Fatal("expected plan entitlement validation error")
+\t}
+}
+'''
+          source = replace_once(source, insert_after, new_tests, 'entitlement ownership tests')
+          path.write_text(source)
+
+          # Frontend API contract.
+          path = Path('frontend/src/api/client.ts')
+          source = path.read_text()
+          source = replace_once(source,
+          '''  sku_type: string
+  billing_unit: string
+  billing_value: number
+  price_cents: number
+  currency: string
+  traffic_bytes: number
+  device_limit: number
+  speed_limit_mbps: number
+''',
+          '''  sku_type: string
+  billing_mode?: 'periodic' | 'one_time'
+  allowed_operations?: Array<'purchase' | 'renew' | 'change' | 'addon'>
+  billing_unit: string
+  billing_value: number
+  price_cents: number
+  currency: string
+  grant_traffic_bytes: number
+''', 'frontend plan sku contract')
+          path.write_text(source)
+
+          # Admin catalog UI: entitlements are edited only on Plan. SKU exposes an
+          # add-on traffic grant only for traffic packs.
+          path = Path('frontend/src/views/Plans.vue')
+          source = path.read_text()
+          source = source.replace('SKU 决定新订单的价格、周期、流量和设备限制。', '商品统一定义流量、限速和设备数；SKU 只定义价格、周期和可用场景。')
+          source = replace_once(source,
+          '''                <th data-column-priority="2">流量</th>
+                <th class="numeric-column" data-column-priority="3">设备数</th>
+''',
+          '''                <th data-column-priority="2">权益来源</th>
+''', 'sku table headers')
+          source = replace_once(source,
+          '''                <td data-column-priority="2">{{ formatBytes(sku.traffic_bytes) }}</td>
+                <td class="numeric-column" data-column-priority="3">{{ sku.device_limit }}</td>
+''',
+          '''                <td data-column-priority="2">{{ sku.sku_type === 'traffic_pack' ? `增加 ${formatBytes(sku.grant_traffic_bytes)}` : '继承商品权益' }}</td>
+''', 'sku table entitlement cells')
+          source = source.replace('定义价格、计费周期和服务限制。', '定义价格和计费周期；套餐权益在下一步统一配置。')
+          entitlement_fields = '''            <FormField v-slot="{ controlAttrs }" label="流量配额" name="create-plan-traffic" hint="统一以 GiB 输入并换算为字节保存。" :error="createErrors.fields.traffic_bytes" required><ByteSizeInput v-model="form.traffic_bytes" v-bind="controlAttrs" :min-bytes="1024 ** 3" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="设备数" name="create-plan-device-limit" :error="createErrors.fields['sku.device_limit']" required><UiNumberInput v-model="form.sku.device_limit" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="速率限制" name="create-plan-speed-limit" hint="0 表示不限速。" :error="createErrors.fields['sku.speed_limit_mbps']"><UiNumberInput v-model="form.sku.speed_limit_mbps" v-bind="controlAttrs" :min="0" suffix=" Mbps" /></FormField>
+'''
+          source = replace_once(source, entitlement_fields, '', 'remove entitlements from sku section')
+          source = source.replace('流量与交付边界</h3><p>套餐只关联节点组；协议端点及倍率由节点组和协议服务维护。', '套餐权益与交付边界</h3><p>这些权益由商品统一定义，所有周期 SKU 共享。')
+          source = replace_once(source,
+          '''          <div class="form-grid form-grid-3">
+            <FormField v-slot="{ controlAttrs }" label="节点组" name="create-plan-node-group"''',
+          '''          <div class="form-grid form-grid-3">
+            <FormField v-slot="{ controlAttrs }" label="流量配额" name="create-plan-traffic" hint="统一以 GiB 输入并换算为字节保存。" :error="createErrors.fields.traffic_bytes" required><ByteSizeInput v-model="form.traffic_bytes" v-bind="controlAttrs" :min-bytes="1024 ** 3" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="设备数" name="create-plan-device-limit" :error="createErrors.fields.device_limit" required><UiNumberInput v-model="form.device_limit" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="速率限制" name="create-plan-speed-limit" hint="0 表示不限速。" :error="createErrors.fields.speed_limit_mbps"><UiNumberInput v-model="form.speed_limit_mbps" v-bind="controlAttrs" :min="0" suffix=" Mbps" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="节点组" name="create-plan-node-group"''', 'insert plan entitlements')
+          source = replace_once(source,
+          '''        <FormField v-slot="{ controlAttrs }" label="流量配额" name="edit-sku-traffic" hint="统一以 GiB 输入并换算为字节保存。" :error="skuErrors.fields.traffic_bytes"><ByteSizeInput v-model="skuDraft.traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="设备数" name="edit-sku-device-limit" :error="skuErrors.fields.device_limit"><UiNumberInput v-model="skuDraft.device_limit" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="速率限制" name="edit-sku-speed-limit" :error="skuErrors.fields.speed_limit_mbps"><UiNumberInput v-model="skuDraft.speed_limit_mbps" v-bind="controlAttrs" :min="0" suffix=" Mbps" /></FormField>
+''',
+          '''        <FormField v-if="skuDraft.sku_type === 'traffic_pack'" v-slot="{ controlAttrs }" label="附加流量" name="edit-sku-grant-traffic" hint="仅增加目标订阅的可用流量，不修改套餐限速和设备数。" :error="skuErrors.fields.grant_traffic_bytes"><ByteSizeInput v-model="skuDraft.grant_traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
+''', 'sku addon grant field')
+          source = replace_once(source,
+          '''  traffic_bytes: 100 * 1024 ** 3,
+  device_limit: 3,
+  speed_limit_mbps: 0,
+''',
+          '''  grant_traffic_bytes: 0,
+''', 'empty sku entitlements')
+          source = replace_once(source,
+          '''  traffic_bytes: 100 * 1024 ** 3,
+  node_group_id: 0,
+''',
+          '''  traffic_bytes: 100 * 1024 ** 3,
+  speed_limit_mbps: 0,
+  device_limit: 3,
+  node_group_id: 0,
+''', 'empty plan entitlements')
+          source = replace_once(source,
+          '''  device_limit: 'sku.device_limit',
+  speed_limit_mbps: 'sku.speed_limit_mbps',
+''',
+          '''  device_limit: 'device_limit',
+  speed_limit_mbps: 'speed_limit_mbps',
+''', 'create plan field mapping')
+          source = replace_once(source,
+          '''  'skus.0.traffic_bytes': 'traffic_bytes',
+  'skus.0.device_limit': 'sku.device_limit',
+  'skus.0.speed_limit_mbps': 'sku.speed_limit_mbps',
+''',
+          '''  'skus.0.grant_traffic_bytes': 'sku.grant_traffic_bytes',
+''', 'create sku field mapping')
+          source = replace_once(source,
+          '''  traffic_bytes: 'traffic_bytes',
+  device_limit: 'device_limit',
+  speed_limit_mbps: 'speed_limit_mbps',
+''',
+          '''  grant_traffic_bytes: 'grant_traffic_bytes',
+''', 'sku field mapping')
+          source = replace_once(source,
+          '''  [() => form.sku.price_cents, 'sku.price_cents'],
+  [() => form.sku.device_limit, 'sku.device_limit'],
+  [() => form.sku.speed_limit_mbps, 'sku.speed_limit_mbps'],
+  [() => form.max_active_subscriptions, 'max_active_subscriptions'],
+''',
+          '''  [() => form.sku.price_cents, 'sku.price_cents'],
+  [() => form.sku.grant_traffic_bytes, 'sku.grant_traffic_bytes'],
+  [() => form.device_limit, 'device_limit'],
+  [() => form.speed_limit_mbps, 'speed_limit_mbps'],
+  [() => form.max_active_subscriptions, 'max_active_subscriptions'],
+''', 'create entitlement watchers')
+          source = replace_once(source,
+          '''function skuValidation(sku: PlanSKU | ReturnType<typeof emptySKU>, prefix = '', trafficBytes = sku.traffic_bytes) {
+''',
+          '''function skuValidation(sku: PlanSKU | ReturnType<typeof emptySKU>, prefix = '') {
+''', 'sku validation signature')
+          source = replace_once(source,
+          '''    [field('traffic_bytes')]: !isIntegerInRange(trafficBytes, 1, Number.MAX_SAFE_INTEGER) && '流量配额必须大于 0。',
+    [field('device_limit')]: !isIntegerInRange(sku.device_limit, 1, Number.MAX_SAFE_INTEGER) && '设备数必须为大于 0 的整数。',
+    [field('speed_limit_mbps')]: !isIntegerInRange(sku.speed_limit_mbps, 0, Number.MAX_SAFE_INTEGER) && '速率限制必须为不小于 0 的整数。',
+''',
+          '''    [field('grant_traffic_bytes')]: sku.sku_type === 'traffic_pack' && !isIntegerInRange(sku.grant_traffic_bytes, 1, Number.MAX_SAFE_INTEGER) && '流量包的附加流量必须大于 0。',
+''', 'sku entitlement validation')
+          source = replace_once(source,
+          '''  const firstSKUValidation = skuValidation(form.sku, 'sku.', form.traffic_bytes)
+  delete firstSKUValidation['sku.traffic_bytes']
+''',
+          '''  const firstSKUValidation = skuValidation(form.sku, 'sku.')
+''', 'create sku validation call')
+          source = replace_once(source,
+          '''      traffic_bytes: !isIntegerInRange(form.traffic_bytes, 1, Number.MAX_SAFE_INTEGER) && '流量配额必须大于 0。',
+      max_active_subscriptions:''',
+          '''      traffic_bytes: !isIntegerInRange(form.traffic_bytes, 1, Number.MAX_SAFE_INTEGER) && '流量配额必须大于 0。',
+      speed_limit_mbps: !isIntegerInRange(form.speed_limit_mbps, 0, Number.MAX_SAFE_INTEGER) && '速率限制必须为不小于 0 的整数。',
+      device_limit: !isIntegerInRange(form.device_limit, 1, Number.MAX_SAFE_INTEGER) && '设备数必须为大于 0 的整数。',
+      max_active_subscriptions:''', 'create plan validation')
+          source = replace_once(source,
+          '''      speed_limit_mbps: form.sku.speed_limit_mbps,
+      device_limit: form.sku.device_limit,
+''',
+          '''      speed_limit_mbps: form.speed_limit_mbps,
+      device_limit: form.device_limit,
+''', 'create plan payload entitlements')
+          source = replace_once(source,
+          '''      skus: [{ ...form.sku, traffic_bytes: form.traffic_bytes, is_active: true }],
+''',
+          '''      skus: [{
+        code: form.sku.code,
+        name: form.sku.name,
+        sku_type: form.sku.sku_type,
+        billing_unit: form.sku.billing_unit,
+        billing_value: form.sku.billing_value,
+        price_cents: form.sku.price_cents,
+        currency: form.sku.currency,
+        grant_traffic_bytes: form.sku.sku_type === 'traffic_pack' ? form.sku.grant_traffic_bytes : 0,
+        is_active: true,
+        sort_order: form.sku.sort_order,
+      }],
+''', 'explicit create sku payload')
+          source = replace_once(source,
+          '''    traffic_bytes: skuDraft.traffic_bytes,
+    device_limit: skuDraft.device_limit,
+    speed_limit_mbps: skuDraft.speed_limit_mbps,
+''',
+          '''    grant_traffic_bytes: skuDraft.sku_type === 'traffic_pack' ? skuDraft.grant_traffic_bytes : 0,
+''', 'sku payload grant')
+          path.write_text(source)
+          PY
+          cd backend && gofmt -w internal/model/models.go internal/datastore/commerce_schema.go internal/handler/commerce_sku_operations.go internal/handler/commerce_sku_operations_test.go internal/handler/handlers.go
+          cd ../frontend && pnpm install --frozen-lockfile && pnpm build
+          cd ../backend && go test ./... && go vet ./... && go build ./cmd/zboard
+      - name: Commit update
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend frontend
+          git commit -m "fix: make plan the entitlement authority"
+          git push origin HEAD:feat/sku-operations
