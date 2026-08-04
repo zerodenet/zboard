@@ -3724,7 +3724,10 @@ type planDetailItem struct {
 
 type planCatalogItem struct {
 	planSummaryItem
-	PrimarySKU *model.PlanSKU `json:"primary_sku,omitempty"`
+	TrafficBytes   int64          `json:"traffic_bytes"`
+	SpeedLimitMbps int            `json:"speed_limit_mbps"`
+	DeviceLimit    int            `json:"device_limit"`
+	PrimarySKU     *model.PlanSKU `json:"primary_sku,omitempty"`
 }
 
 type planSKUCountRow struct {
@@ -3770,6 +3773,9 @@ func newPlanDetailItem(plan model.Plan, counts planSKUCountRow) planDetailItem {
 func newPlanCatalogItem(plan model.Plan, counts planSKUCountRow, primarySKU *model.PlanSKU) planCatalogItem {
 	return planCatalogItem{
 		planSummaryItem: newPlanSummaryItem(plan, counts),
+		TrafficBytes:    plan.TrafficBytes,
+		SpeedLimitMbps:  plan.SpeedLimitMbps,
+		DeviceLimit:     plan.DeviceLimit,
 		PrimarySKU:      primarySKU,
 	}
 }
