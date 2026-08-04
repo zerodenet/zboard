@@ -18,27 +18,19 @@ jobs:
       - name: Enforce purchasable SKU invariant
         run: |
           python - <<'PY'
+          import re
           from pathlib import Path
 
           commerce = Path('backend/internal/handler/commerce_sku_operations.go')
           source = commerce.read_text()
-          old = '''\tnormalized.SKU.ID = existing.ID
-\tif !normalized.SKU.IsActive {
-\t\tvar plan model.Plan
-\t\tif err := h.db.First(&plan, existing.PlanID).Error; err != nil {
-\t\t\tServerError(w, err)
-\t\t\treturn
-\t\t}
-\t\tif plan.IsActive {
-\t\t\tvar otherActive int64
-\t\t\tif err := h.db.Model(&model.PlanSKU{}).Where("plan_id = ? AND id <> ? AND is_active = ?", existing.PlanID, existing.ID, true).Count(&otherActive).Error; err != nil || otherActive == 0 {
-\t\t\t\tBadRequestFields(w, "销售规格校验失败。", map[string]string{"is_active": "已发布商品必须保留至少一个可售 SKU。"})
-\t\t\t\treturn
-\t\t\t}
-\t\t}
-\t}
-'''
-          new = '''\tnormalized.SKU.ID = existing.ID
+          pattern = re.compile(
+              r'\tnormalized\.SKU\.ID = existing\.ID\n'
+              r'\tif !normalized\.SKU\.IsActive \{.*?'
+              r'\n\t\}\n'
+              r'\terr = h\.db\.Transaction',
+              re.S,
+          )
+          replacement = '''\tnormalized.SKU.ID = existing.ID
 \tvar plan model.Plan
 \tif err := h.db.First(&plan, existing.PlanID).Error; err != nil {
 \t\tServerError(w, err)
@@ -58,20 +50,22 @@ jobs:
 \t\t\treturn
 \t\t}
 \t}
-'''
-          if old not in source:
-              raise SystemExit('commerce SKU invariant block not found')
-          commerce.write_text(source.replace(old, new, 1))
+\terr = h.db.Transaction'''
+          source, count = pattern.subn(replacement, source, count=1)
+          if count != 1:
+              raise SystemExit(f'commerce SKU invariant replacement count = {count}')
+          commerce.write_text(source)
 
           handlers = Path('backend/internal/handler/handlers.go')
           source = handlers.read_text()
-          old = '''\t\tvar activeSKUCount int64
-\t\tif err := h.db.Model(&model.PlanSKU{}).Where("plan_id = ? AND is_active = ?", id, true).Count(&activeSKUCount).Error; err != nil || activeSKUCount == 0 {
-\t\t\tBadRequest(w, "an active plan must have at least one active sku")
-\t\t\treturn
-\t\t}
-'''
-          new = '''\t\tvar activePurchaseSKUCount int64
+          pattern = re.compile(
+              r'\t\tvar activeSKUCount int64\n'
+              r'\t\tif err := h\.db\.Model\(&model\.PlanSKU\{\}\)\.Where\("plan_id = \? AND is_active = \?", id, true\)\.Count\(&activeSKUCount\)\.Error; err != nil \|\| activeSKUCount == 0 \{\n'
+              r'\t\t\tBadRequest\(w, "an active plan must have at least one active sku"\)\n'
+              r'\t\t\treturn\n'
+              r'\t\t\}\n',
+          )
+          replacement = '''\t\tvar activePurchaseSKUCount int64
 \t\tif err := h.db.Table("plan_skus").
 \t\t\tJoins("JOIN plan_sku_operations ON plan_sku_operations.plan_sku_id = plan_skus.id AND plan_sku_operations.operation = ?", skuOperationPurchase).
 \t\t\tWhere("plan_skus.plan_id = ? AND plan_skus.is_active = ?", id, true).
@@ -80,9 +74,10 @@ jobs:
 \t\t\treturn
 \t\t}
 '''
-          if old not in source:
-              raise SystemExit('plan publication invariant block not found')
-          handlers.write_text(source.replace(old, new, 1))
+          source, count = pattern.subn(replacement, source, count=1)
+          if count != 1:
+              raise SystemExit(f'plan publication invariant replacement count = {count}')
+          handlers.write_text(source)
           PY
           cd backend && gofmt -w internal/handler/commerce_sku_operations.go internal/handler/handlers.go
       - name: Commit update
