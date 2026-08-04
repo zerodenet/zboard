@@ -146,6 +146,9 @@ func protocolEndpointRuntimeAffectedNodeIDs(before, after protocolEndpointEffect
 	if after.IsActive {
 		affected = append(affected, after.NodeID)
 	}
+	if len(affected) == 0 {
+		return nil
+	}
 	return uniqueNodeIDs(affected...)
 }
 
