@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/handler"
 	"github.com/zerodenet/zboard/backend/internal/security"
 	"github.com/zeromicro/go-zero/rest"
@@ -14,6 +15,9 @@ func newRoute(method, path string, fn func(http.ResponseWriter, *http.Request)) 
 }
 
 func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string) error {
+	if err := datastore.ReconcileCommerceSchema(db); err != nil {
+		return err
+	}
 	h, err := handler.NewHandlers(db, jwtSecret, credentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion)
 	if err != nil {
 		return err
