@@ -1,0 +1,39 @@
+name: Fix protocol membership OpenAPI
+
+on:
+  pull_request:
+    branches:
+      - develop
+    paths:
+      - .github/workflows/agent-protocol-membership-openapi-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.pull_request.head.ref == 'agent/protocol-node-group-membership'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Replace unresolved deployment schema reference
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('backend/api/openapi.yaml')
+          text = path.read_text()
+          old = 'latest_deployment: { $ref: "#/components/schemas/ProtocolDeployment" }'
+          new = 'latest_deployment: { $ref: "#/components/schemas/ProtocolDeploymentSummary" }'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one unresolved deployment reference, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          rm .github/workflows/agent-protocol-membership-openapi-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: reference protocol deployment summary schema"
+          git push origin HEAD:agent/protocol-node-group-membership
