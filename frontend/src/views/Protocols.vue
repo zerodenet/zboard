@@ -319,6 +319,7 @@ import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 import { normalizeOutput, truncateOutput } from '../utils/output'
 import { trackAdminTask } from '../utils/taskTracker'
 import { protocolEndpointMutationMessage } from '../utils/protocolEndpointEffects'
+import { formatProtocolSaveTiming, summarizeProtocolSaveTiming } from '../utils/protocolSaveTiming'
 import { buildProtocolNodeGroupMembershipChanges } from '../utils/protocolNodeGroupMembership'
 import { moveProtocolEndpointOrder, protocolEndpointOrderChanged } from '../utils/protocolEndpointOrdering'
 import { isIntegerInRange } from '../utils/validation'
@@ -981,15 +982,22 @@ async function save() {
     if (!accepted) return
   }
   saving.value = true; editorError.value = ''; editorErrors.clear(); error.value = ''; message.value = ''
+  const saveStartedAt = performance.now()
   try {
     const creatingCopy = Boolean(copySourceID.value)
     const payload = { node_id: form.node_id, name: form.name, protocol: form.protocol, address: form.address, port: form.port, public_port: form.public_port, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, parent_protocol_id: form.parent_protocol_id || null, managed_certificate_id: form.managed_certificate_id || null, is_active: Boolean(form.is_active), config: form.config, client_config: form.client_config, optional_config: form.optional_config || '{}', tags: form.tags || '[]', node_group_membership_changes: membershipChanges }
+    const requestStartedAt = performance.now()
     const result = form.id ? await updateProtocolEndpoint(form.id, payload) : await createProtocolEndpoint(payload)
+    const requestMS = performance.now() - requestStartedAt
     for (const task of result.node_group_membership?.reconcile_tasks || []) trackAdminTask(task)
     editorOpen.value = false
     copySourceID.value = 0
-    message.value = protocolEndpointMutationMessage(result, creatingCopy)
+    const refreshStartedAt = performance.now()
     await refresh()
+    const refreshMS = performance.now() - refreshStartedAt
+    const timing = summarizeProtocolSaveTiming(result.timing, requestMS, refreshMS, performance.now() - saveStartedAt)
+    message.value = `${protocolEndpointMutationMessage(result, creatingCopy)} ${formatProtocolSaveTiming(timing)}`
+    console.info('protocol endpoint save timing', { endpoint_id: result.protocol_endpoint?.id, effect: result.effect, publish_status: result.publish_status, ...timing })
   }
   catch (e: any) {
     if (e?.response?.status === 409 && Array.isArray(e?.response?.data?.data?.conflicts || e?.response?.data?.conflicts)) {

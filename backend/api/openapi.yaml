@@ -3779,9 +3779,19 @@ components:
     ProtocolEndpointChangeEffect:
       type: string
       enum: [none, management, billing, delivery, runtime, credential_placement]
+    ProtocolEndpointMutationTiming:
+      type: object
+      required: [validation_ms, transaction_ms, task_enqueue_ms, response_preparation_ms, server_total_ms]
+      description: Server-side save phase durations in milliseconds. Task enqueue measures scheduling only and never waits for node publication.
+      properties:
+        validation_ms: { type: integer, format: int64, minimum: 0 }
+        transaction_ms: { type: integer, format: int64, minimum: 0 }
+        task_enqueue_ms: { type: integer, format: int64, minimum: 0 }
+        response_preparation_ms: { type: integer, format: int64, minimum: 0 }
+        server_total_ms: { type: integer, format: int64, minimum: 0 }
     ProtocolEndpointMutationResult:
       type: object
-      required: [protocol_endpoint, effect, effects, publish_status, node_group_memberships]
+      required: [protocol_endpoint, effect, effects, publish_status, node_group_memberships, timing]
       properties:
         protocol_endpoint:
           $ref: "#/components/schemas/ProtocolEndpoint"
@@ -3803,6 +3813,7 @@ components:
           items: { $ref: "#/components/schemas/ProtocolEndpointNodeGroupMembership" }
         node_group_membership:
           $ref: "#/components/schemas/ProtocolEndpointNodeGroupMutationResult"
+        timing: { $ref: "#/components/schemas/ProtocolEndpointMutationTiming" }
     ProtocolEndpointSelectionSnapshot:
       type: object
       required: [ids, total, resolved_at]
