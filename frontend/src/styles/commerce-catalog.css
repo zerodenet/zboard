@@ -1,0 +1,475 @@
+/* Focused public pricing catalog and subscription-context purchase flow. */
+.commerce-catalog-page {
+  display: grid;
+  gap: 26px;
+}
+
+.commerce-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 18px;
+}
+
+.commerce-product-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+
+.commerce-product-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--line-tinted);
+  box-shadow: var(--shadow-md);
+}
+
+.commerce-product-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.commerce-product-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.commerce-product-head span {
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.commerce-product-head h2,
+.commerce-product-head h3 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.commerce-product-head small {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.commerce-product-summary {
+  min-height: 42px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.commerce-product-price {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.commerce-product-price strong {
+  font-size: clamp(28px, 3vw, 38px);
+  letter-spacing: -.04em;
+}
+
+.commerce-product-price span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.commerce-offer-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.commerce-offer-tabs > button {
+  min-width: 96px;
+  flex: 1 1 96px;
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--surface-soft);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+
+.commerce-offer-tabs > button:hover {
+  border-color: var(--primary-border);
+  background: var(--primary-soft);
+}
+
+.commerce-offer-tabs > button.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.commerce-offer-tabs span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commerce-offer-tabs strong {
+  font-size: 12px;
+}
+
+.commerce-entitlement-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 17px 0 0;
+  border-top: 1px solid var(--line);
+  color: var(--text-secondary);
+  font-size: 11px;
+  list-style: none;
+}
+
+.commerce-entitlement-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.commerce-entitlement-list .ui-icon {
+  color: var(--success);
+}
+
+.commerce-card-footer {
+  margin-top: auto;
+}
+
+.commerce-card-footer .button {
+  width: 100%;
+}
+
+.commerce-card-loading,
+.commerce-loading-state {
+  min-height: 92px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.commerce-card-loading .ui-icon,
+.commerce-loading-state .ui-icon {
+  color: var(--primary);
+  animation: commerce-catalog-spin 1s linear infinite;
+}
+
+@keyframes commerce-catalog-spin {
+  to { transform: rotate(360deg); }
+}
+
+.commerce-unavailable-price {
+  min-height: 72px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.commerce-unavailable-price strong {
+  font-size: 14px;
+}
+
+.commerce-unavailable-price span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.commerce-catalog-empty {
+  min-height: 280px;
+}
+
+.commerce-hub-page {
+  gap: 20px;
+}
+
+.commerce-hub-section {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.commerce-hub-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.commerce-hub-heading > div {
+  display: grid;
+  gap: 5px;
+}
+
+.commerce-hub-heading span {
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.commerce-hub-heading h2 {
+  margin: 0;
+  font-size: 21px;
+}
+
+.commerce-hub-heading p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.commerce-hub-heading > small {
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.commerce-subscription-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.commerce-subscription-card {
+  display: grid;
+  gap: 15px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.commerce-subscription-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.commerce-subscription-card header > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.commerce-subscription-card header span,
+.commerce-context-card > div > span,
+.commerce-target-grid span {
+  color: var(--primary);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.commerce-subscription-card h3,
+.commerce-context-card h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.commerce-subscription-card header p,
+.commerce-context-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.commerce-subscription-card header > strong {
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.commerce-subscription-card dl,
+.commerce-context-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.commerce-subscription-card dl > div,
+.commerce-context-card dl > div {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.commerce-subscription-card dt,
+.commerce-context-card dt {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.commerce-subscription-card dd,
+.commerce-context-card dd {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.commerce-subscription-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.commerce-subscription-actions .button {
+  min-width: 0;
+  padding-inline: 9px;
+}
+
+.commerce-target-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.commerce-target-grid > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  background: var(--surface-soft);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+
+.commerce-target-grid > button:hover {
+  border-color: var(--primary-border);
+  background: var(--primary-soft);
+}
+
+.commerce-target-grid > button > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.commerce-target-grid strong,
+.commerce-target-grid small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commerce-target-grid strong {
+  font-size: 13px;
+}
+
+.commerce-target-grid small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.commerce-target-grid .ui-icon {
+  color: var(--primary);
+}
+
+.commerce-context-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, .7fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 18px;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-md);
+  background: var(--primary-soft);
+}
+
+.commerce-context-card > div {
+  display: grid;
+  gap: 4px;
+}
+
+.commerce-account-catalog-grid {
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+}
+
+@media (max-width: 1080px) {
+  .commerce-catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .commerce-context-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .commerce-catalog-grid,
+  .commerce-subscription-cards,
+  .commerce-target-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .commerce-product-card,
+  .commerce-hub-section {
+    padding: 18px;
+    border-radius: var(--radius-md);
+  }
+
+  .commerce-product-head,
+  .commerce-hub-heading,
+  .commerce-subscription-card header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .commerce-subscription-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .commerce-subscription-card dl,
+  .commerce-context-card dl {
+    grid-template-columns: 1fr;
+  }
+}
