@@ -328,17 +328,17 @@ func orderSubscriptionManifestNodes(subscriptions []model.Subscription, relation
 	sort.SliceStable(nodes, func(left, right int) bool {
 		leftPosition := positionFor(nodes[left])
 		rightPosition := positionFor(nodes[right])
-		if leftPosition.GroupRank != rightPosition.GroupRank {
-			return leftPosition.GroupRank < rightPosition.GroupRank
-		}
-		if leftPosition.EndpointRank != rightPosition.EndpointRank {
-			return leftPosition.EndpointRank < rightPosition.EndpointRank
-		}
 		if leftPosition.GlobalOrder != rightPosition.GlobalOrder {
 			return leftPosition.GlobalOrder < rightPosition.GlobalOrder
 		}
 		if nodes[left].ID != nodes[right].ID {
 			return nodes[left].ID < nodes[right].ID
+		}
+		if leftPosition.GroupRank != rightPosition.GroupRank {
+			return leftPosition.GroupRank < rightPosition.GroupRank
+		}
+		if leftPosition.EndpointRank != rightPosition.EndpointRank {
+			return leftPosition.EndpointRank < rightPosition.EndpointRank
 		}
 		if nodes[left].SubscriptionID != nodes[right].SubscriptionID {
 			return nodes[left].SubscriptionID < nodes[right].SubscriptionID
