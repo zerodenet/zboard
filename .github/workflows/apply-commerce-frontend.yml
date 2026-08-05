@@ -27,6 +27,17 @@ jobs:
       - name: Complete commerce interactions
         run: |
           python .github/scripts/apply_commerce_frontend.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('frontend/src/views/Plans.vue')
+          source = path.read_text()
+          source = source.replace(
+              "billing_mode: 'periodic' as const,",
+              "billing_mode: 'periodic' as 'periodic' | 'one_time',",
+              1,
+          )
+          path.write_text(source)
+          PY
           cd frontend
           pnpm install --frozen-lockfile
           pnpm build
