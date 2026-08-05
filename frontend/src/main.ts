@@ -11,6 +11,7 @@ import './styles.css'
 import './styles/auth.css'
 import './styles/public.css'
 import './styles/account.css'
+// Product selection and checkout use a shared responsive interaction layer.
 import './styles/commerce.css'
 import MetricCard from './components/MetricCard.vue'
 import PageRefreshButton from './components/PageRefreshButton.vue'
