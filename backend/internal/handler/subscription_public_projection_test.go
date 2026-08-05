@@ -107,6 +107,18 @@ func TestFilterSubscriptionsForProjectionPreservesSourceOrder(t *testing.T) {
 	}
 }
 
+func TestProjectionWithUnknownStableCodeReturnsEmptySubset(t *testing.T) {
+	subscriptions := []model.Subscription{{ID: 1}, {ID: 2}}
+	sources := map[uint]subscriptionProjectionSource{
+		1: {PlanSlug: "starter"},
+		2: {PlanSlug: "pro"},
+	}
+	filtered := filterSubscriptionsForProjection(subscriptions, sources, subscriptionProjectionFilter{Plans: map[string]struct{}{"missing": {}}})
+	if len(filtered) != 0 {
+		t.Fatalf("filtered subscriptions = %#v, want a valid empty subset", filtered)
+	}
+}
+
 func TestEmptyProjectionRendersValidNativeFormats(t *testing.T) {
 	data := sampleSubscriptionTemplateData()
 	data.ProtocolEndpoints = []subscriptionTemplateEndpoint{}
@@ -117,7 +129,11 @@ func TestEmptyProjectionRendersValidNativeFormats(t *testing.T) {
 			customization.RuleSets = nil
 			customization.Final = subscriptionTargetDirect
 			customization.AdvancedSource = ""
-			rendered, _, err := renderSubscriptionWithRenderer(renderer, mustProjectionJSON(t, customization), data)
+			definition, ok := subscriptionRenderer(renderer)
+			if !ok {
+				t.Fatalf("renderer %q is not registered", renderer)
+			}
+			rendered, err := definition.render(data, customization)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -135,13 +151,4 @@ func TestEmptyProjectionRendersValidNativeFormats(t *testing.T) {
 			}
 		})
 	}
-}
-
-func mustProjectionJSON(t *testing.T, value interface{}) json.RawMessage {
-	t.Helper()
-	raw, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return raw
 }
