@@ -189,6 +189,7 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	if err := uploadSSHFile(conn, stage+"/zero.env", "0600", []byte("ZERO_PANEL_API_KEY="+credential.Raw+"\n")); err != nil {
 		return fail(err, "")
 	}
+	activationStartedAt := time.Now().UTC()
 	output, err := h.runNodeSSHSession(conn, node, buildZeroConfigPublishScript(stage, configSHA, deployment.ID), true)
 	if err != nil {
 		if credential.IsNew {
@@ -196,22 +197,9 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 		}
 		return fail(fmt.Errorf("activate Zero config (rollback attempted): %w", err), output)
 	}
-	activatedAt := time.Now().UTC()
-	connectorEventAt, err := h.waitForNodeConnectorEvent(ctx, node.ID, activatedAt)
-	if err != nil {
-		rollbackOutput, rollbackErr := h.runNodeSSHSession(conn, node, buildZeroConfigRollbackScript(deployment.ID), true)
-		if rollbackErr != nil {
-			err = fmt.Errorf("%w; config rollback failed: %v", err, rollbackErr)
-		}
-		if strings.TrimSpace(rollbackOutput) != "" {
-			output = strings.TrimSpace(output) + "\n" + strings.TrimSpace(rollbackOutput)
-		}
-		if credential.IsNew {
-			_ = h.restoreGeneratedNodeCredential(node, credential)
-		}
-		return fail(err, output)
-	}
+	connectorEventAt, connectorErr := h.waitForNodeConnectorEvent(ctx, node.ID, activationStartedAt)
 	finished := time.Now().UTC()
+	output, lastHealthyAt := finalizeConnectorConfirmation(output, connectorEventAt, connectorErr, finished)
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&deployment).Updates(map[string]interface{}{
 			"status": "succeeded", "applied_config_sha256": configSHA, "output": strings.TrimSpace(output), "error": "", "finished_at": finished,
@@ -249,7 +237,7 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 		return tx.Model(&model.NodeKernelState{}).Where("node_id = ?", node.ID).Updates(map[string]interface{}{
 			"status": "healthy", "phase": "idle", "desired_config_sha256": configSHA,
 			"applied_config_sha256": configSHA, "service_status": "active", "control_status": "healthy",
-			"last_error": "", "last_healthy_at": connectorEventAt,
+			"last_error": "", "last_healthy_at": lastHealthyAt,
 		}).Error
 	}); err != nil {
 		return fail(err, output)
@@ -262,6 +250,19 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 		return h.publishNodeConfigForNodeLocked(ctx, node.ID, triggerEndpointID, requestedBy, true, started)
 	}
 	return deployment, time.Since(started), nil
+}
+
+func finalizeConnectorConfirmation(output string, connectorEventAt time.Time, connectorErr error, fallback time.Time) (string, time.Time) {
+	output = strings.TrimSpace(output)
+	if connectorErr == nil {
+		return output, connectorEventAt
+	}
+	message := strings.ReplaceAll(strings.TrimSpace(connectorErr.Error()), "\n", " ")
+	warning := "ZBOARD_CONNECTOR_CONFIRMATION_PENDING=" + message
+	if output == "" {
+		return warning, fallback
+	}
+	return output + "\n" + warning, fallback
 }
 
 func mieruReadinessCanCommit(enabled bool, fallbackCount int64, suppressFallback bool) bool {
