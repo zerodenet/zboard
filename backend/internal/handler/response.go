@@ -91,7 +91,10 @@ func BadRequestError(w http.ResponseWriter, err error) {
 		BadRequestFields(w, validation.message, validation.fields)
 		return
 	}
-	BadRequest(w, err.Error())
+	// BadRequestError is also used around transactions whose inner callbacks can
+	// return database or infrastructure failures. Do not present those failures
+	// as invalid form input; preserve the server-error classification instead.
+	ServerError(w, err)
 }
 
 func OK(w http.ResponseWriter, data interface{}) {
