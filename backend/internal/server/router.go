@@ -142,7 +142,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/subscription/protocol-loads", h.AccountProtocolLoadHandler),
 		newRoute(http.MethodPost, "/api/v1/subscription/access/rotate", h.SubscriptionAccessRotateHandler),
 		newRoute(http.MethodDelete, "/api/v1/subscription/access", h.SubscriptionAccessRevokeHandler),
-		newRoute(http.MethodGet, "/api/v1/client/subscription/:token", h.ClientSubscriptionHandler),
+		newRoute(http.MethodGet, "/api/v1/client/subscription/:token", h.FilteredClientSubscriptionHandler),
 		newRoute(http.MethodGet, "/api/v1/traffic/summary", h.TrafficSummaryHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/traffic/summary", h.TrafficSummaryHandler),
 		newRoute(http.MethodGet, "/api/v1/traffic/records", h.TrafficRecordsHandler),
