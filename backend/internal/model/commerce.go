@@ -8,7 +8,7 @@ import "time"
 // entitlement definition.
 type PlanSKUOperation struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
-	PlanSKUID uint      `json:"plan_sku_id" gorm:"not null;index;uniqueIndex:uk_plan_sku_operations_sku_operation"`
+	PlanSKUID uint      `json:"plan_sku_id" gorm:"column:plan_sku_id;not null;index;uniqueIndex:uk_plan_sku_operations_sku_operation"`
 	Operation string    `json:"operation" gorm:"size:20;not null;uniqueIndex:uk_plan_sku_operations_sku_operation"`
 	CreatedAt time.Time `json:"created_at"`
 }
