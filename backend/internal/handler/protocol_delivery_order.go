@@ -283,19 +283,12 @@ func orderSubscriptionManifestNodes(subscriptions []model.Subscription, relation
 	}
 	groupEndpointRank := make(map[uint]map[uint]int, len(groupRelations))
 	for groupID, items := range groupRelations {
-		hasExplicitOrder := false
-		for _, item := range items {
-			if item.GroupSortOrder != 0 {
-				hasExplicitOrder = true
-				break
-			}
-		}
 		sort.SliceStable(items, func(left, right int) bool {
-			if hasExplicitOrder && items[left].GroupSortOrder != items[right].GroupSortOrder {
-				return items[left].GroupSortOrder < items[right].GroupSortOrder
-			}
-			if !hasExplicitOrder && items[left].GlobalSortOrder != items[right].GlobalSortOrder {
+			if items[left].GlobalSortOrder != items[right].GlobalSortOrder {
 				return items[left].GlobalSortOrder < items[right].GlobalSortOrder
+			}
+			if items[left].GroupSortOrder != items[right].GroupSortOrder {
+				return items[left].GroupSortOrder < items[right].GroupSortOrder
 			}
 			return items[left].ProtocolEndpointID < items[right].ProtocolEndpointID
 		})
@@ -335,17 +328,17 @@ func orderSubscriptionManifestNodes(subscriptions []model.Subscription, relation
 	sort.SliceStable(nodes, func(left, right int) bool {
 		leftPosition := positionFor(nodes[left])
 		rightPosition := positionFor(nodes[right])
-		if leftPosition.GroupRank != rightPosition.GroupRank {
-			return leftPosition.GroupRank < rightPosition.GroupRank
-		}
-		if leftPosition.EndpointRank != rightPosition.EndpointRank {
-			return leftPosition.EndpointRank < rightPosition.EndpointRank
-		}
 		if leftPosition.GlobalOrder != rightPosition.GlobalOrder {
 			return leftPosition.GlobalOrder < rightPosition.GlobalOrder
 		}
 		if nodes[left].ID != nodes[right].ID {
 			return nodes[left].ID < nodes[right].ID
+		}
+		if leftPosition.GroupRank != rightPosition.GroupRank {
+			return leftPosition.GroupRank < rightPosition.GroupRank
+		}
+		if leftPosition.EndpointRank != rightPosition.EndpointRank {
+			return leftPosition.EndpointRank < rightPosition.EndpointRank
 		}
 		if nodes[left].SubscriptionID != nodes[right].SubscriptionID {
 			return nodes[left].SubscriptionID < nodes[right].SubscriptionID
