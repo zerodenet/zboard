@@ -283,19 +283,12 @@ func orderSubscriptionManifestNodes(subscriptions []model.Subscription, relation
 	}
 	groupEndpointRank := make(map[uint]map[uint]int, len(groupRelations))
 	for groupID, items := range groupRelations {
-		hasExplicitOrder := false
-		for _, item := range items {
-			if item.GroupSortOrder != 0 {
-				hasExplicitOrder = true
-				break
-			}
-		}
 		sort.SliceStable(items, func(left, right int) bool {
-			if hasExplicitOrder && items[left].GroupSortOrder != items[right].GroupSortOrder {
-				return items[left].GroupSortOrder < items[right].GroupSortOrder
-			}
-			if !hasExplicitOrder && items[left].GlobalSortOrder != items[right].GlobalSortOrder {
+			if items[left].GlobalSortOrder != items[right].GlobalSortOrder {
 				return items[left].GlobalSortOrder < items[right].GlobalSortOrder
+			}
+			if items[left].GroupSortOrder != items[right].GroupSortOrder {
+				return items[left].GroupSortOrder < items[right].GroupSortOrder
 			}
 			return items[left].ProtocolEndpointID < items[right].ProtocolEndpointID
 		})
