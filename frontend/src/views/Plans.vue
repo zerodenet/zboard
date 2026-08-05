@@ -730,6 +730,16 @@ for (const field of Object.keys(planFieldMap)) {
 for (const field of Object.keys(skuFieldMap)) {
   watch(() => skuDraft[field as keyof PlanSKU], () => skuErrors.clear(field))
 }
+watch(() => form.sku.billing_mode, () => {
+  syncSKUCommerceFields(form.sku)
+  createErrors.clear('sku.billing_mode')
+  createErrors.clear('sku.allowed_operations')
+})
+watch(() => skuDraft.billing_mode, () => {
+  syncSKUCommerceFields(skuDraft)
+  skuErrors.clear('billing_mode')
+  skuErrors.clear('allowed_operations')
+})
 
 const {
   items: plans,

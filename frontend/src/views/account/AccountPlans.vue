@@ -413,8 +413,14 @@ async function loadPlans() {
     planTotal.value = operation.value === 'change' && result.items.some(plan => plan.id === currentPlanID)
       ? Math.max(0, result.total - 1)
       : result.total
-    const requestedPlan = plans.value.find(plan => plan.id === Number(route.query.plan))
-    if (requestedPlan) await selectPlan(requestedPlan, false)
+    const requestedPlanID = Number(route.query.plan) || 0
+    const requestedPlan = plans.value.find(plan => plan.id === requestedPlanID)
+    if (requestedPlan) {
+      await selectPlan(requestedPlan, false)
+    } else if (requestedPlanID && !(operation.value === 'change' && requestedPlanID === currentPlanID)) {
+      const directPlan = await fetchPlanCatalogItem(requestedPlanID)
+      await selectPlan(directPlan, false)
+    }
   } catch (cause: any) {
     planError.value = cause?.response?.data?.message || '套餐目录加载失败。'
   } finally {
