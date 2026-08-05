@@ -1,76 +1,99 @@
 <template>
-  <section class="account-page commerce-account-page stack">
+  <section class="account-page commerce-account-page commerce-hub-page stack">
     <PageHeader
-      title="购买与管理套餐"
-      description="选择购买方式、目标订阅、套餐和计费周期，最后在结算预览中确认订单。"
+      :title="pageTitle"
+      :description="pageDescription"
       eyebrow="PLANS"
     >
       <template #actions>
+        <UiButton v-if="operation !== 'purchase'" variant="secondary" type="button" @click="returnToOverview">
+          返回套餐中心
+        </UiButton>
         <UiButton variant="secondary" type="button" :disabled="loading" @click="refreshAll">
           <UiIcon name="refresh" />刷新
         </UiButton>
       </template>
     </PageHeader>
 
-    <TransientFeedback
-      :success="message"
-      :error="pageError"
-      success-title="订单已创建"
-      error-title="套餐操作失败"
-    />
+    <PageAlert v-if="actionError" tone="danger" title="套餐操作失败">{{ actionError }}</PageAlert>
+    <PageAlert v-if="subscriptionError" tone="danger" title="订阅加载失败">{{ subscriptionError }}</PageAlert>
+    <PageAlert v-if="planError" tone="danger" title="套餐目录加载失败">{{ planError }}</PageAlert>
 
-    <section class="commerce-mode-panel" aria-labelledby="commerce-mode-title">
-      <div class="commerce-mode-copy">
-        <span>第一步</span>
-        <h2 id="commerce-mode-title">这次要做什么？</h2>
-        <p>{{ currentOperation.description }}</p>
+    <section v-if="operation === 'purchase'" class="commerce-hub-section" aria-labelledby="active-subscriptions-title">
+      <div class="commerce-hub-heading">
+        <div>
+          <span>当前服务</span>
+          <h2 id="active-subscriptions-title">管理现有订阅</h2>
+          <p>续费、切换套餐和购买流量包都从具体订阅发起，不再混入新购流程。</p>
+        </div>
+        <small v-if="subscriptions.length">{{ subscriptions.length }} 个有效订阅</small>
       </div>
-      <div class="commerce-mode-tabs" role="tablist" aria-label="购买方式">
-        <button
-          v-for="item in operationOptions"
-          :key="item.value"
-          type="button"
-          role="tab"
-          :aria-selected="operation === item.value"
-          :disabled="item.value !== 'purchase' && subscriptionsLoaded && !subscriptions.length"
-          :class="{ active: operation === item.value }"
-          @click="setOperation(item.value)"
-        >
-          <UiIcon :name="item.icon" />
-          <span><strong>{{ item.label }}</strong><small>{{ item.short }}</small></span>
-        </button>
+
+      <div v-if="subscriptionLoading" class="commerce-loading-state"><UiIcon name="refresh" />正在加载订阅</div>
+      <div v-else-if="subscriptions.length" class="commerce-subscription-cards">
+        <article v-for="subscription in subscriptions" :key="subscription.id" class="commerce-subscription-card">
+          <header>
+            <div>
+              <span>订阅 #{{ subscription.id }}</span>
+              <h3>{{ subscription.plan_name }}</h3>
+              <p>{{ subscription.sku_name }}</p>
+            </div>
+            <strong>{{ formatDate(subscription.end_at) }}</strong>
+          </header>
+          <dl>
+            <div><dt>剩余流量</dt><dd>{{ formatBytes(Math.max(0, subscription.flow_total - subscription.flow_used)) }}</dd></div>
+            <div><dt>设备数</dt><dd>{{ subscription.device_limit > 0 ? subscription.device_limit : '不限' }}</dd></div>
+          </dl>
+          <div class="commerce-subscription-actions">
+            <UiButton variant="secondary" type="button" @click="startOperation('renew', subscription.id)">续费</UiButton>
+            <UiButton variant="secondary" type="button" @click="startOperation('change', subscription.id)">切换套餐</UiButton>
+            <UiButton variant="secondary" type="button" @click="startOperation('addon', subscription.id)">购买流量包</UiButton>
+          </div>
+        </article>
       </div>
+      <EmptyState
+        v-else-if="subscriptionsLoaded"
+        icon="plans"
+        title="当前没有有效订阅"
+        description="从下方选择套餐和计费周期即可创建新的订阅。"
+      />
     </section>
 
-    <PageAlert v-if="subscriptionError" tone="danger" title="订阅加载失败">{{ subscriptionError }}</PageAlert>
-
-    <section v-if="operation !== 'purchase'" class="commerce-step-panel" aria-labelledby="target-subscription-title">
-      <div class="commerce-section-heading">
+    <section v-else class="commerce-hub-section" aria-labelledby="target-subscription-title">
+      <div class="commerce-hub-heading">
         <div>
-          <span>第二步</span>
-          <h2 id="target-subscription-title">选择目标订阅</h2>
-          <p>续费、套餐切换和流量包必须明确作用于哪一个现有订阅。</p>
+          <span>操作对象</span>
+          <h2 id="target-subscription-title">{{ selectedSubscription ? '确认目标订阅' : '选择目标订阅' }}</h2>
+          <p>{{ selectedSubscription ? '本次操作只会作用于这一个订阅。' : '先选择需要处理的订阅，再进入对应商品目录。' }}</p>
         </div>
-        <StatusBadge v-if="subscriptions.length" tone="neutral">{{ subscriptions.length }} 个有效订阅</StatusBadge>
       </div>
 
-      <div v-if="subscriptions.length" class="commerce-subscription-grid">
+      <div v-if="subscriptionLoading" class="commerce-loading-state"><UiIcon name="refresh" />正在加载订阅</div>
+      <div v-else-if="selectedSubscription" class="commerce-context-card">
+        <div>
+          <span>订阅 #{{ selectedSubscription.id }}</span>
+          <h3>{{ selectedSubscription.plan_name }}</h3>
+          <p>{{ selectedSubscription.sku_name }} · 到期 {{ formatDate(selectedSubscription.end_at) }}</p>
+        </div>
+        <dl>
+          <div><dt>剩余流量</dt><dd>{{ formatBytes(Math.max(0, selectedSubscription.flow_total - selectedSubscription.flow_used)) }}</dd></div>
+          <div><dt>当前设备数</dt><dd>{{ selectedSubscription.device_limit > 0 ? selectedSubscription.device_limit : '不限' }}</dd></div>
+        </dl>
+        <UiButton variant="secondary" type="button" @click="changeTarget">更换目标订阅</UiButton>
+      </div>
+      <div v-else-if="subscriptions.length" class="commerce-target-grid">
         <button
           v-for="subscription in subscriptions"
           :key="subscription.id"
           type="button"
-          :class="{ selected: targetSubscriptionID === subscription.id }"
-          @click="selectSubscription(subscription.id)"
+          @click="selectTargetSubscription(subscription.id)"
         >
-          <span class="commerce-selection-marker"><UiIcon name="check" /></span>
           <div>
+            <span>订阅 #{{ subscription.id }}</span>
             <strong>{{ subscription.plan_name }}</strong>
-            <small>{{ subscription.sku_name }} · 订阅 #{{ subscription.id }}</small>
+            <small>{{ subscription.sku_name }}</small>
           </div>
-          <dl>
-            <div><dt>剩余流量</dt><dd>{{ formatBytes(Math.max(0, subscription.flow_total - subscription.flow_used)) }}</dd></div>
-            <div><dt>到期时间</dt><dd>{{ formatDate(subscription.end_at) }}</dd></div>
-          </dl>
+          <UiIcon name="chevron" />
         </button>
       </div>
       <EmptyState
@@ -79,128 +102,101 @@
         title="当前没有可操作的订阅"
         description="请先完成一次新购，之后才能续费、切换套餐或购买流量包。"
       >
-        <template #actions><UiButton type="button" @click="setOperation('purchase')">前往新购</UiButton></template>
+        <template #actions><UiButton type="button" @click="returnToOverview">前往新购</UiButton></template>
       </EmptyState>
     </section>
 
-    <section class="commerce-step-panel" aria-labelledby="plan-catalog-title">
-      <div class="commerce-section-heading">
+    <section v-if="catalogVisible" class="commerce-hub-section" aria-labelledby="commerce-catalog-title">
+      <div class="commerce-hub-heading">
         <div>
-          <span>{{ operation === 'purchase' ? '第二步' : '第三步' }}</span>
-          <h2 id="plan-catalog-title">{{ planStepTitle }}</h2>
-          <p>{{ planStepDescription }}</p>
+          <span>{{ operation === 'purchase' ? '购买新套餐' : currentOperation.label }}</span>
+          <h2 id="commerce-catalog-title">{{ catalogTitle }}</h2>
+          <p>{{ catalogDescription }}</p>
         </div>
       </div>
 
-      <WorkbenchFilterBar
-        v-if="operation === 'purchase' || operation === 'change'"
-        :active="Boolean(planQuery || planDraftQuery)"
-        @clear="clearPlanFilters"
-      >
-        <WorkbenchFilterInput v-model="planDraftQuery" label="搜索" placeholder="套餐名称或简介" @apply="applyPlanFilters" />
-      </WorkbenchFilterBar>
-
-      <PageAlert v-if="planError" tone="danger" title="套餐目录加载失败">{{ planError }}</PageAlert>
-      <div v-if="planLoading" class="commerce-loading" role="status"><UiIcon name="refresh" />正在加载套餐</div>
-      <div v-else-if="plans.length" class="account-commerce-plan-grid">
-        <article
-          v-for="plan in plans"
-          :key="plan.id"
-          :class="{ selected: selectedPlanID === plan.id }"
-        >
-          <span v-if="selectedPlanID === plan.id" class="commerce-selection-marker"><UiIcon name="check" /></span>
-          <header>
+      <div v-if="planLoading" class="commerce-loading-state"><UiIcon name="refresh" />正在加载套餐和价格</div>
+      <div v-else-if="plans.length" class="commerce-catalog-grid commerce-account-catalog-grid">
+        <article v-for="plan in plans" :key="plan.id" class="commerce-product-card">
+          <header class="commerce-product-head">
             <div>
-              <small>{{ plan.slug }}</small>
+              <span>{{ plan.slug }}</span>
               <h3>{{ plan.name }}</h3>
             </div>
-            <StatusBadge v-if="selectedPlanID === plan.id" tone="success">已选择</StatusBadge>
+            <small v-if="offersFor(plan.id).length">{{ offersFor(plan.id).length }} 个可用规格</small>
           </header>
-          <p>{{ plan.summary || '稳定、透明的订阅服务。' }}</p>
-          <div v-if="plan.primary_sku" class="commerce-plan-price">
-            <strong>{{ formatCurrency(plan.primary_sku.price_cents, plan.primary_sku.currency) }}</strong>
-            <span>起 / {{ billingLabel(plan.primary_sku) }}</span>
+
+          <p class="commerce-product-summary">{{ plan.summary || '稳定、透明的订阅服务。' }}</p>
+
+          <div v-if="offerState[plan.id]?.loading" class="commerce-card-loading"><UiIcon name="refresh" />正在加载价格</div>
+          <template v-else-if="selectedOffer(plan.id)">
+            <div class="commerce-product-price">
+              <strong>{{ formatCurrency(selectedOffer(plan.id)!.price_cents, selectedOffer(plan.id)!.currency) }}</strong>
+              <span>/ {{ billingLabel(selectedOffer(plan.id)!) }}</span>
+            </div>
+            <div class="commerce-offer-tabs" role="radiogroup" :aria-label="`${plan.name} 可用规格`">
+              <button
+                v-for="sku in offersFor(plan.id)"
+                :key="sku.id"
+                type="button"
+                role="radio"
+                :aria-checked="selectedOfferIDs[plan.id] === sku.id"
+                :class="{ active: selectedOfferIDs[plan.id] === sku.id }"
+                @click="selectOffer(plan, sku)"
+              >
+                <span>{{ sku.name }}</span>
+                <strong>{{ formatCurrency(sku.price_cents, sku.currency) }}</strong>
+              </button>
+            </div>
+          </template>
+          <PageAlert v-else-if="offerState[plan.id]?.error" tone="danger" title="价格加载失败">
+            {{ offerState[plan.id]?.error }}
+          </PageAlert>
+          <div v-else class="commerce-unavailable-price">
+            <strong>当前场景不可购买</strong>
+            <span>管理员尚未配置对应销售规格</span>
           </div>
-          <ul>
+
+          <ul v-if="operation !== 'addon'" class="commerce-entitlement-list">
             <li><UiIcon name="check" />{{ formatBytes(plan.traffic_bytes) }} 套餐流量</li>
-            <li><UiIcon name="check" />{{ plan.device_limit || '不限' }} 台设备</li>
+            <li><UiIcon name="check" />{{ plan.device_limit > 0 ? `${plan.device_limit} 台设备` : '不限设备' }}</li>
             <li><UiIcon name="check" />{{ plan.speed_limit_mbps ? `${plan.speed_limit_mbps} Mbps` : '不限速' }}</li>
           </ul>
-          <UiButton
-            :variant="selectedPlanID === plan.id ? 'primary' : 'secondary'"
-            type="button"
-            @click="selectPlan(plan)"
-          >
-            {{ selectedPlanID === plan.id ? '重新加载计费周期' : selectPlanLabel }}
-          </UiButton>
+          <ul v-else-if="selectedOffer(plan.id)" class="commerce-entitlement-list">
+            <li><UiIcon name="check" />增加 {{ formatBytes(selectedOffer(plan.id)!.grant_traffic_bytes) }} 可用流量</li>
+            <li><UiIcon name="check" />保持当前设备数和限速</li>
+            <li><UiIcon name="check" />不改变订阅到期时间</li>
+          </ul>
+
+          <div class="commerce-card-footer">
+            <UiButton type="button" :disabled="!selectedOffer(plan.id)" @click="openCheckout(plan)">
+              继续结算<UiIcon name="chevron" />
+            </UiButton>
+          </div>
         </article>
       </div>
       <EmptyState
         v-else-if="!planLoading"
         icon="plans"
-        :title="planQuery ? '没有匹配的套餐' : emptyPlanTitle"
-        :description="emptyPlanDescription"
+        :title="operation === 'change' ? '没有可切换的套餐' : '暂无可购买套餐'"
+        description="管理员发布对应商品和销售规格后会显示在这里。"
       />
 
       <TablePager
-        v-if="(operation === 'purchase' || operation === 'change') && planTotal > planLimit"
+        v-if="planTotal > planLimit && (operation === 'purchase' || operation === 'change')"
         :total="planTotal"
         :offset="planOffset"
         :limit="planLimit"
         :loading="planLoading"
-        :page-sizes="[6, 12, 24]"
+        :page-sizes="[6, 9, 12]"
         @change="changePlanPage"
       />
-    </section>
-
-    <section v-if="selectedPlan" class="commerce-step-panel commerce-offer-panel" aria-labelledby="offer-title">
-      <div class="commerce-section-heading">
-        <div>
-          <span>{{ operation === 'purchase' ? '第三步' : '第四步' }}</span>
-          <h2 id="offer-title">选择 {{ selectedPlan.name }} 的计费周期</h2>
-          <p>所有周期规格共享同一组套餐权益，仅价格和服务期限不同。</p>
-        </div>
-        <StatusBadge :tone="skus.length ? 'success' : 'warning'">{{ skus.length }} 个可用规格</StatusBadge>
-      </div>
-
-      <PageAlert v-if="skuError" tone="danger" title="销售规格加载失败">{{ skuError }}</PageAlert>
-      <div v-if="skuLoading" class="commerce-loading" role="status"><UiIcon name="refresh" />正在加载计费周期</div>
-      <div v-else-if="skus.length" class="commerce-sku-choice-grid">
-        <button
-          v-for="sku in skus"
-          :key="sku.id"
-          type="button"
-          :class="{ selected: selectedSKU?.id === sku.id }"
-          @click="selectSKU(sku)"
-        >
-          <span class="commerce-selection-marker"><UiIcon name="check" /></span>
-          <header>
-            <div><strong>{{ sku.name }}</strong><small>{{ sku.code }}</small></div>
-            <StatusBadge v-if="selectedSKU?.id === sku.id" tone="success">已选择</StatusBadge>
-          </header>
-          <div class="commerce-sku-price">
-            <strong>{{ formatCurrency(sku.price_cents, sku.currency) }}</strong>
-            <span>{{ billingLabel(sku) }}</span>
-          </div>
-          <p v-if="operation === 'addon'">增加 {{ formatBytes(sku.grant_traffic_bytes) }} 可用流量</p>
-          <p v-else>继承 {{ selectedPlan.name }} 的全部套餐权益</p>
-        </button>
-      </div>
-      <EmptyState v-else-if="!skuLoading" icon="plans" title="当前场景没有可用规格" description="管理员需要为该商品启用对应的购买场景。" />
-
-      <div v-if="selectedSKU" class="commerce-order-bar">
-        <div>
-          <span>{{ currentOperation.label }} · {{ selectedPlan.name }}</span>
-          <strong>{{ selectedSKU.name }}，{{ formatCurrency(selectedSKU.price_cents, selectedSKU.currency) }}</strong>
-        </div>
-        <UiButton type="button" @click="checkoutOpen = true">查看并确认订单<UiIcon name="chevron" /></UiButton>
-      </div>
     </section>
 
     <ModalDialog
       :open="checkoutOpen"
       :title="`确认${currentOperation.label}订单`"
-      description="请核对操作对象、套餐权益、计费周期和应付金额。"
+      description="请核对套餐、计费周期、权益和应付金额。"
       size="lg"
       :busy="creating"
       @close="checkoutOpen = false"
@@ -218,17 +214,17 @@
         <dl class="checkout-detail-list">
           <div v-if="selectedSubscription"><dt>目标订阅</dt><dd>{{ selectedSubscription.plan_name }} / #{{ selectedSubscription.id }}</dd></div>
           <div><dt>订单操作</dt><dd>{{ currentOperation.label }}</dd></div>
-          <div><dt>计费周期</dt><dd>{{ billingLabel(selectedSKU) }}</dd></div>
+          <div><dt>计费规格</dt><dd>{{ selectedSKU.name }}</dd></div>
+          <div><dt>服务周期</dt><dd>{{ billingLabel(selectedSKU) }}</dd></div>
           <template v-if="operation === 'addon'">
             <div><dt>附加流量</dt><dd>{{ formatBytes(selectedSKU.grant_traffic_bytes) }}</dd></div>
             <div><dt>其他权益</dt><dd>保持目标订阅现状</dd></div>
           </template>
           <template v-else>
             <div><dt>套餐流量</dt><dd>{{ formatBytes(selectedPlan.traffic_bytes) }}</dd></div>
-            <div><dt>设备数</dt><dd>{{ selectedPlan.device_limit || '不限' }}</dd></div>
+            <div><dt>设备数</dt><dd>{{ selectedPlan.device_limit > 0 ? selectedPlan.device_limit : '不限' }}</dd></div>
             <div><dt>速率限制</dt><dd>{{ selectedPlan.speed_limit_mbps ? `${selectedPlan.speed_limit_mbps} Mbps` : '不限速' }}</dd></div>
           </template>
-          <div><dt>支付方式</dt><dd>创建订单后等待支付或人工确认</dd></div>
         </dl>
 
         <PageAlert tone="info" title="订单快照">
@@ -244,7 +240,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   createOrder,
@@ -260,22 +256,31 @@ import EmptyState from '../../components/EmptyState.vue'
 import ModalDialog from '../../components/ModalDialog.vue'
 import PageAlert from '../../components/PageAlert.vue'
 import PageHeader from '../../components/PageHeader.vue'
-import StatusBadge from '../../components/StatusBadge.vue'
 import TablePager from '../../components/TablePager.vue'
-import TransientFeedback from '../../components/TransientFeedback.vue'
 import UiButton from '../../components/UiButton.vue'
 import UiIcon from '../../components/UiIcon.vue'
-import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
-import WorkbenchFilterInput from '../../components/WorkbenchFilterInput.vue'
 import { formatBytes, formatCurrency } from '../../utils/format'
 
 type PurchaseOperation = 'purchase' | 'renew' | 'change' | 'addon'
 
-const operationOptions: Array<{ value: PurchaseOperation; label: string; short: string; description: string; icon: string }> = [
-  { value: 'purchase', label: '新购', short: '创建新的独立订阅', description: '选择一个商品和计费周期，创建全新的订阅订单。', icon: 'plus' },
-  { value: 'renew', label: '续费', short: '延长当前订阅期限', description: '为现有订阅延长服务周期，并按订单快照刷新套餐权益。', icon: 'refresh' },
-  { value: 'change', label: '切换套餐', short: '迁移到其他商品', description: '选择目标订阅和新的商品，确认后创建套餐切换订单。', icon: 'plans' },
-  { value: 'addon', label: '流量包', short: '仅增加可用流量', description: '为目标订阅增加一次性流量，不修改限速、设备数或服务周期。', icon: 'billing' },
+interface OperationOption {
+  value: PurchaseOperation
+  label: string
+  title: string
+  description: string
+}
+
+interface OfferState {
+  loading: boolean
+  error: string
+  items: PlanSKU[]
+}
+
+const operationOptions: OperationOption[] = [
+  { value: 'purchase', label: '新购', title: '选择套餐', description: '比较套餐权益和计费周期，确认后创建新的独立订阅。' },
+  { value: 'renew', label: '续费', title: '续费订阅', description: '为指定订阅选择续费周期，并按订单快照延长服务期限。' },
+  { value: 'change', label: '切换套餐', title: '切换套餐', description: '为指定订阅选择其他套餐，确认新的权益和计费周期。' },
+  { value: 'addon', label: '流量包', title: '购买流量包', description: '为指定订阅增加一次性流量，不改变设备数、限速和到期时间。' },
 ]
 const validOperations = new Set<PurchaseOperation>(operationOptions.map(item => item.value))
 const skuTypeByOperation: Record<PurchaseOperation, PlanSKU['sku_type']> = {
@@ -296,9 +301,7 @@ const router = useRouter()
 const routeOperation = String(route.query.operation || 'purchase') as PurchaseOperation
 const operation = ref<PurchaseOperation>(validOperations.has(routeOperation) ? routeOperation : 'purchase')
 const targetSubscriptionID = ref(Math.max(0, Number(route.query.subscription) || 0))
-const selectedPlanID = ref(Math.max(0, Number(route.query.plan) || 0))
-const selectedPlan = ref<PlanCatalogItem | null>(null)
-const selectedSKU = ref<PlanSKU | null>(null)
+const requestedPlanID = ref(Math.max(0, Number(route.query.plan) || 0))
 const requestedSKUID = ref(Math.max(0, Number(route.query.sku) || 0))
 
 const subscriptions = ref<AdminSubscriptionListItem[]>([])
@@ -309,41 +312,34 @@ const plans = ref<PlanCatalogItem[]>([])
 const planTotal = ref(0)
 const planLoading = ref(false)
 const planError = ref('')
-const planQuery = ref(String(route.query.q || '').trim())
-const planDraftQuery = ref(planQuery.value)
-const allowedPageSizes = [6, 12, 24]
-const routeLimit = Number(route.query.limit)
-const planLimit = ref(allowedPageSizes.includes(routeLimit) ? routeLimit : 6)
-const planOffset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * planLimit.value)
-const skus = ref<PlanSKU[]>([])
-const skuLoading = ref(false)
-const skuError = ref('')
-const creating = ref(false)
+const planOffset = ref(0)
+const planLimit = ref(9)
+const offerState = reactive<Record<number, OfferState>>({})
+const selectedOfferIDs = reactive<Record<number, number>>({})
+const selectedPlan = ref<PlanCatalogItem | null>(null)
+const selectedSKU = ref<PlanSKU | null>(null)
 const checkoutOpen = ref(false)
-const message = ref('')
+const creating = ref(false)
 const actionError = ref('')
 
 const currentOperation = computed(() => operationOptions.find(item => item.value === operation.value) || operationOptions[0]!)
 const selectedSubscription = computed(() => subscriptions.value.find(item => item.id === targetSubscriptionID.value) || null)
-const loading = computed(() => subscriptionLoading.value || planLoading.value || skuLoading.value || creating.value)
-const pageError = computed(() => actionError.value)
-const planStepTitle = computed(() => ({
-  purchase: '选择一个套餐',
-  renew: '确认续费商品',
+const pageTitle = computed(() => currentOperation.value.title)
+const pageDescription = computed(() => currentOperation.value.description)
+const loading = computed(() => subscriptionLoading.value || planLoading.value || creating.value)
+const catalogVisible = computed(() => operation.value === 'purchase' || Boolean(selectedSubscription.value))
+const catalogTitle = computed(() => ({
+  purchase: '购买新的独立订阅',
+  renew: `选择 ${selectedSubscription.value?.plan_name || ''} 的续费周期`,
   change: '选择要切换到的套餐',
-  addon: '选择流量包所属商品',
+  addon: `选择 ${selectedSubscription.value?.plan_name || ''} 的流量包`,
 }[operation.value]))
-const planStepDescription = computed(() => ({
-  purchase: '套餐决定流量、设备数和限速，计费周期将在下一步选择。',
-  renew: '续费必须使用目标订阅当前所属的商品。',
-  change: '当前订阅所属商品会被排除，只显示可切换的其他套餐。',
-  addon: '流量包只作用于目标订阅，其他权益保持不变。',
+const catalogDescription = computed(() => ({
+  purchase: '每张卡片直接展示套餐权益和全部可购买周期。',
+  renew: '续费只显示当前商品允许续费的周期规格。',
+  change: '当前套餐已排除，只展示允许切换的其他商品。',
+  addon: '流量包只增加可用流量，其他订阅权益保持不变。',
 }[operation.value]))
-const selectPlanLabel = computed(() => operation.value === 'change' ? '切换到此套餐' : '选择此套餐')
-const emptyPlanTitle = computed(() => operation.value === 'change' ? '没有可切换的套餐' : '暂无可用套餐')
-const emptyPlanDescription = computed(() => operation.value === 'change'
-  ? '当前目录中没有其他可用于套餐切换的商品。'
-  : '管理员发布商品和对应销售规格后会显示在这里。')
 
 function billingLabel(sku: PlanSKU) {
   const unit = ({ day: '天', month: '个月', year: '年', once: '次' } as Record<string, string>)[sku.billing_unit] || sku.billing_unit
@@ -355,16 +351,28 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value))
 }
 
-async function syncURL(replace = true) {
+function offersFor(planID: number) {
+  return offerState[planID]?.items || []
+}
+
+function selectedOffer(planID: number) {
+  const offers = offersFor(planID)
+  return offers.find(item => item.id === selectedOfferIDs[planID]) || offers[0] || null
+}
+
+function clearOffers() {
+  for (const key of Object.keys(offerState)) delete offerState[Number(key)]
+  for (const key of Object.keys(selectedOfferIDs)) delete selectedOfferIDs[Number(key)]
+}
+
+async function syncURL() {
   const page = Math.floor(planOffset.value / planLimit.value) + 1
   const query: Record<string, string> = { operation: operation.value }
   if (targetSubscriptionID.value) query.subscription = String(targetSubscriptionID.value)
-  if (planQuery.value) query.q = planQuery.value
   if (page > 1) query.page = String(page)
-  if (planLimit.value !== 6) query.limit = String(planLimit.value)
-  if (selectedPlanID.value) query.plan = String(selectedPlanID.value)
-  if (selectedSKU.value?.id) query.sku = String(selectedSKU.value.id)
-  await (replace ? router.replace({ query }) : router.push({ query }))
+  if (selectedPlan.value) query.plan = String(selectedPlan.value.id)
+  if (selectedSKU.value) query.sku = String(selectedSKU.value.id)
+  await router.replace({ query })
 }
 
 async function loadSubscriptions() {
@@ -373,10 +381,8 @@ async function loadSubscriptions() {
   try {
     const result = await fetchAccountSubscriptionsPage({ status: 'active', offset: 0, limit: 100 })
     subscriptions.value = result.items
-    if (operation.value !== 'purchase') {
-      if (!subscriptions.value.some(item => item.id === targetSubscriptionID.value)) {
-        targetSubscriptionID.value = subscriptions.value[0]?.id || 0
-      }
+    if (targetSubscriptionID.value && !subscriptions.value.some(item => item.id === targetSubscriptionID.value)) {
+      targetSubscriptionID.value = 0
     }
   } catch (cause: any) {
     subscriptionError.value = cause?.response?.data?.message || '有效订阅加载失败。'
@@ -386,41 +392,60 @@ async function loadSubscriptions() {
   }
 }
 
+async function loadOffers(plan: PlanCatalogItem) {
+  offerState[plan.id] = { loading: true, error: '', items: [] }
+  try {
+    const result = await fetchPlanCatalogSKUs(plan.id, {
+      skuType: skuTypeByOperation[operation.value],
+      offset: 0,
+      limit: 100,
+    })
+    offerState[plan.id] = { loading: false, error: '', items: result.items }
+    const requested = plan.id === requestedPlanID.value
+      ? result.items.find(item => item.id === requestedSKUID.value)
+      : undefined
+    selectedOfferIDs[plan.id] = requested?.id || result.items[0]?.id || 0
+    if (requested) {
+      selectedPlan.value = plan
+      selectedSKU.value = requested
+    }
+  } catch (cause: any) {
+    offerState[plan.id] = {
+      loading: false,
+      error: cause?.response?.data?.message || '销售规格加载失败。',
+      items: [],
+    }
+    selectedOfferIDs[plan.id] = 0
+  }
+}
+
 async function loadPlans() {
   planLoading.value = true
   planError.value = ''
+  plans.value = []
+  planTotal.value = 0
   selectedPlan.value = null
-  selectedPlanID.value = 0
   selectedSKU.value = null
-  skus.value = []
+  clearOffers()
   try {
+    if (operation.value !== 'purchase' && !selectedSubscription.value) return
+
     if ((operation.value === 'renew' || operation.value === 'addon') && selectedSubscription.value) {
       const plan = await fetchPlanCatalogItem(selectedSubscription.value.plan_id)
       plans.value = [plan]
       planTotal.value = 1
-      await selectPlan(plan, false)
-      return
+    } else {
+      const result = await fetchPlanCatalogPage({ offset: planOffset.value, limit: planLimit.value })
+      if (operation.value === 'change') {
+        const currentPlanID = selectedSubscription.value?.plan_id || 0
+        plans.value = result.items.filter(plan => plan.id !== currentPlanID)
+        planTotal.value = result.items.some(plan => plan.id === currentPlanID) ? Math.max(0, result.total - 1) : result.total
+      } else {
+        plans.value = result.items
+        planTotal.value = result.total
+      }
     }
-    const result = await fetchPlanCatalogPage({
-      q: planQuery.value || undefined,
-      offset: planOffset.value,
-      limit: planLimit.value,
-    })
-    const currentPlanID = selectedSubscription.value?.plan_id || 0
-    plans.value = operation.value === 'change'
-      ? result.items.filter(plan => plan.id !== currentPlanID)
-      : result.items
-    planTotal.value = operation.value === 'change' && result.items.some(plan => plan.id === currentPlanID)
-      ? Math.max(0, result.total - 1)
-      : result.total
-    const requestedPlanID = Number(route.query.plan) || 0
-    const requestedPlan = plans.value.find(plan => plan.id === requestedPlanID)
-    if (requestedPlan) {
-      await selectPlan(requestedPlan, false)
-    } else if (requestedPlanID && !(operation.value === 'change' && requestedPlanID === currentPlanID)) {
-      const directPlan = await fetchPlanCatalogItem(requestedPlanID)
-      await selectPlan(directPlan, false)
-    }
+    await Promise.all(plans.value.map(loadOffers))
   } catch (cause: any) {
     planError.value = cause?.response?.data?.message || '套餐目录加载失败。'
   } finally {
@@ -428,84 +453,70 @@ async function loadPlans() {
   }
 }
 
-async function loadSKUs() {
-  if (!selectedPlan.value) return
-  skuLoading.value = true
-  skuError.value = ''
-  selectedSKU.value = null
-  try {
-    const result = await fetchPlanCatalogSKUs(selectedPlan.value.id, {
-      skuType: skuTypeByOperation[operation.value],
-      offset: 0,
-      limit: 100,
-    })
-    skus.value = result.items
-    const requested = skus.value.find(sku => sku.id === requestedSKUID.value)
-    if (requested) selectedSKU.value = requested
-  } catch (cause: any) {
-    skuError.value = cause?.response?.data?.message || '销售规格加载失败。'
-  } finally {
-    skuLoading.value = false
-  }
-}
-
-async function setOperation(next: PurchaseOperation) {
-  if (next !== 'purchase' && subscriptionsLoaded.value && !subscriptions.value.length) return
+async function startOperation(next: Exclude<PurchaseOperation, 'purchase'>, subscriptionID: number) {
   operation.value = next
-  actionError.value = ''
-  message.value = ''
-  planQuery.value = ''
-  planDraftQuery.value = ''
+  targetSubscriptionID.value = subscriptionID
+  requestedPlanID.value = 0
+  requestedSKUID.value = 0
   planOffset.value = 0
-  requestedSKUID.value = 0
-  if (next === 'purchase') {
-    targetSubscriptionID.value = 0
-  } else if (!subscriptions.value.some(item => item.id === targetSubscriptionID.value)) {
-    targetSubscriptionID.value = subscriptions.value[0]?.id || 0
-  }
+  actionError.value = ''
   await loadPlans()
   await syncURL()
 }
 
-async function selectSubscription(id: number) {
-  targetSubscriptionID.value = id
+async function selectTargetSubscription(subscriptionID: number) {
+  targetSubscriptionID.value = subscriptionID
+  requestedPlanID.value = 0
   requestedSKUID.value = 0
   await loadPlans()
   await syncURL()
 }
 
-async function selectPlan(plan: PlanCatalogItem, sync = true) {
+async function changeTarget() {
+  targetSubscriptionID.value = 0
+  plans.value = []
+  selectedPlan.value = null
+  selectedSKU.value = null
+  clearOffers()
+  await syncURL()
+}
+
+async function returnToOverview() {
+  operation.value = 'purchase'
+  targetSubscriptionID.value = 0
+  requestedPlanID.value = 0
+  requestedSKUID.value = 0
+  planOffset.value = 0
+  actionError.value = ''
+  await loadPlans()
+  await syncURL()
+}
+
+async function selectOffer(plan: PlanCatalogItem, sku: PlanSKU) {
+  selectedOfferIDs[plan.id] = sku.id
   selectedPlan.value = plan
-  selectedPlanID.value = plan.id
-  requestedSKUID.value = sync ? 0 : Number(route.query.sku) || 0
-  await loadSKUs()
-  if (sync) await syncURL()
-}
-
-async function selectSKU(sku: PlanSKU) {
   selectedSKU.value = sku
+  requestedPlanID.value = plan.id
   requestedSKUID.value = sku.id
   await syncURL()
 }
 
-async function applyPlanFilters() {
-  planQuery.value = planDraftQuery.value.trim()
-  planOffset.value = 0
-  await loadPlans()
-  await syncURL()
-}
-
-async function clearPlanFilters() {
-  planQuery.value = ''
-  planDraftQuery.value = ''
-  planOffset.value = 0
-  await loadPlans()
+async function openCheckout(plan: PlanCatalogItem) {
+  const sku = selectedOffer(plan.id)
+  if (!sku) return
+  selectedPlan.value = plan
+  selectedSKU.value = sku
+  requestedPlanID.value = plan.id
+  requestedSKUID.value = sku.id
+  checkoutOpen.value = true
   await syncURL()
 }
 
 async function changePlanPage(value: { offset: number; limit: number }) {
   planOffset.value = value.offset
   planLimit.value = value.limit
+  requestedPlanID.value = 0
+  requestedSKUID.value = 0
   await loadPlans()
   await syncURL()
 }
@@ -531,7 +542,6 @@ async function submitOrder() {
       targetSubscriptionId: operation.value === 'purchase' ? undefined : selectedSubscription.value?.id,
     })
     checkoutOpen.value = false
-    message.value = '订单已创建，正在前往订单页面。'
     await router.push('/account/orders')
   } catch (cause: any) {
     actionError.value = cause?.response?.data?.message || '订单创建失败。'
@@ -541,8 +551,9 @@ async function submitOrder() {
 }
 
 onMounted(async () => {
+  const page = Math.max(1, Number(route.query.page) || 1)
+  planOffset.value = (page - 1) * planLimit.value
   await loadSubscriptions()
-  if (operation.value !== 'purchase' && !subscriptions.value.length) operation.value = 'purchase'
   await loadPlans()
   await syncURL()
 })
