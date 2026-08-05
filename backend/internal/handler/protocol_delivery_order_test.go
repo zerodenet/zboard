@@ -46,7 +46,7 @@ func TestValidateCompleteProtocolEndpointOrderRejectsPartialUnknownAndDuplicateS
 	}
 }
 
-func TestOrderSubscriptionManifestNodesUsesGroupOrderBeforeGlobalOrder(t *testing.T) {
+func TestOrderSubscriptionManifestNodesUsesGlobalDeliveryOrderInsideNodeGroup(t *testing.T) {
 	subscriptions := []model.Subscription{{ID: 10, NodeGroupID: 100}}
 	relations := []subscriptionDeliveryRelation{
 		{NodeGroupID: 100, ProtocolEndpointID: 1, GroupSortOrder: 1, GlobalSortOrder: 0},
@@ -58,8 +58,8 @@ func TestOrderSubscriptionManifestNodesUsesGroupOrderBeforeGlobalOrder(t *testin
 	}
 
 	orderSubscriptionManifestNodes(subscriptions, relations, nodes)
-	if got := manifestEndpointIDs(nodes); !reflect.DeepEqual(got, []uint{2, 1}) {
-		t.Fatalf("ordered endpoints = %v, want group order [2 1]", got)
+	if got := manifestEndpointIDs(nodes); !reflect.DeepEqual(got, []uint{1, 2}) {
+		t.Fatalf("ordered endpoints = %v, want global delivery order [1 2]", got)
 	}
 }
 
@@ -97,7 +97,7 @@ func TestOrderSubscriptionManifestNodesAggregatesMultipleSubscriptionsDeterminis
 
 	orderSubscriptionManifestNodes(subscriptions, relations, nodes)
 	if got := manifestEndpointIDs(nodes); !reflect.DeepEqual(got, []uint{1, 2, 3, 4}) {
-		t.Fatalf("ordered endpoints = %v, want subscription then group order [1 2 3 4]", got)
+		t.Fatalf("ordered endpoints = %v, want subscription then global order [1 2 3 4]", got)
 	}
 }
 
