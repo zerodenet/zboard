@@ -96,8 +96,8 @@ func TestOrderSubscriptionManifestNodesAggregatesMultipleSubscriptionsDeterminis
 	}
 
 	orderSubscriptionManifestNodes(subscriptions, relations, nodes)
-	if got := manifestEndpointIDs(nodes); !reflect.DeepEqual(got, []uint{1, 2, 3, 4}) {
-		t.Fatalf("ordered endpoints = %v, want subscription then global order [1 2 3 4]", got)
+	if got := manifestEndpointIDs(nodes); !reflect.DeepEqual(got, []uint{3, 1, 2, 4}) {
+		t.Fatalf("ordered endpoints = %v, want global delivery order [3 1 2 4]", got)
 	}
 }
 
