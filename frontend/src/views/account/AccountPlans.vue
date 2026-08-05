@@ -193,7 +193,7 @@
           <span>{{ currentOperation.label }} · {{ selectedPlan.name }}</span>
           <strong>{{ selectedSKU.name }}，{{ formatCurrency(selectedSKU.price_cents, selectedSKU.currency) }}</strong>
         </div>
-        <UiButton type="button" @click="checkoutOpen = true">查看并确认订单<UiIcon name="arrow-right" /></UiButton>
+        <UiButton type="button" @click="checkoutOpen = true">查看并确认订单<UiIcon name="chevron" /></UiButton>
       </div>
     </section>
 
@@ -275,7 +275,7 @@ const operationOptions: Array<{ value: PurchaseOperation; label: string; short: 
   { value: 'purchase', label: '新购', short: '创建新的独立订阅', description: '选择一个商品和计费周期，创建全新的订阅订单。', icon: 'plus' },
   { value: 'renew', label: '续费', short: '延长当前订阅期限', description: '为现有订阅延长服务周期，并按订单快照刷新套餐权益。', icon: 'refresh' },
   { value: 'change', label: '切换套餐', short: '迁移到其他商品', description: '选择目标订阅和新的商品，确认后创建套餐切换订单。', icon: 'plans' },
-  { value: 'addon', label: '流量包', short: '仅增加可用流量', description: '为目标订阅增加一次性流量，不修改限速、设备数或服务周期。', icon: 'traffic' },
+  { value: 'addon', label: '流量包', short: '仅增加可用流量', description: '为目标订阅增加一次性流量，不修改限速、设备数或服务周期。', icon: 'billing' },
 ]
 const validOperations = new Set<PurchaseOperation>(operationOptions.map(item => item.value))
 const skuTypeByOperation: Record<PurchaseOperation, PlanSKU['sku_type']> = {
@@ -323,7 +323,7 @@ const checkoutOpen = ref(false)
 const message = ref('')
 const actionError = ref('')
 
-const currentOperation = computed(() => operationOptions.find(item => item.value === operation.value) || operationOptions[0])
+const currentOperation = computed(() => operationOptions.find(item => item.value === operation.value) || operationOptions[0]!)
 const selectedSubscription = computed(() => subscriptions.value.find(item => item.id === targetSubscriptionID.value) || null)
 const loading = computed(() => subscriptionLoading.value || planLoading.value || skuLoading.value || creating.value)
 const pageError = computed(() => actionError.value)
@@ -471,7 +471,7 @@ async function selectSubscription(id: number) {
 async function selectPlan(plan: PlanCatalogItem, sync = true) {
   selectedPlan.value = plan
   selectedPlanID.value = plan.id
-  requestedSKUID.value = Number(route.query.sku) || 0
+  requestedSKUID.value = sync ? 0 : Number(route.query.sku) || 0
   await loadSKUs()
   if (sync) await syncURL()
 }

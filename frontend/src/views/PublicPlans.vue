@@ -81,7 +81,7 @@
                   <small>{{ billingLabel(sku) }}</small>
                 </span>
                 <b>{{ formatCurrency(sku.price_cents, sku.currency) }}</b>
-                <UiIcon name="arrow-right" />
+                <UiIcon name="chevron" />
               </button>
             </div>
             <p v-else-if="!offerState[plan.id]?.loading" class="field-hint">当前套餐没有可购买的周期规格。</p>
