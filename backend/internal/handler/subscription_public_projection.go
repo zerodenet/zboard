@@ -205,29 +205,6 @@ func filterSubscriptionsForProjection(subscriptions []model.Subscription, source
 	return result
 }
 
-func validateSubscriptionProjectionSources(filter subscriptionProjectionFilter, sources map[uint]subscriptionProjectionSource) error {
-	availablePlans := make(map[string]struct{})
-	availableSKUs := make(map[string]struct{})
-	availableGroups := make(map[string]struct{})
-	for _, source := range sources {
-		availablePlans[strings.ToLower(source.PlanSlug)] = struct{}{}
-		availableSKUs[strings.ToLower(source.SKUCode)] = struct{}{}
-		availableGroups[strings.ToLower(source.NodeGroupCode)] = struct{}{}
-	}
-	for field, pair := range map[string][2]map[string]struct{}{
-		"plan":       {filter.Plans, availablePlans},
-		"sku":        {filter.SKUs, availableSKUs},
-		"node_group": {filter.NodeGroups, availableGroups},
-	} {
-		for requested := range pair[0] {
-			if _, exists := pair[1][requested]; !exists {
-				return validationError("订阅链接筛选条件无效。", map[string]string{field: "一个或多个筛选值不属于当前令牌的有效订阅范围。"})
-			}
-		}
-	}
-	return nil
-}
-
 func (h *handlers) loadSubscriptionProjectionSources(subscriptions []model.Subscription) (map[uint]subscriptionProjectionSource, error) {
 	result := make(map[uint]subscriptionProjectionSource, len(subscriptions))
 	ids := make([]uint, 0, len(subscriptions))
@@ -308,10 +285,6 @@ func (h *handlers) FilteredClientSubscriptionHandler(w http.ResponseWriter, r *h
 	sources, err := h.loadSubscriptionProjectionSources(allSubscriptions)
 	if err != nil {
 		ServerError(w, err)
-		return
-	}
-	if err := validateSubscriptionProjectionSources(filter, sources); err != nil {
-		BadRequestError(w, err)
 		return
 	}
 	subscriptions := filterSubscriptionsForProjection(allSubscriptions, sources, filter)
