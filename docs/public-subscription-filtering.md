@@ -1,9 +1,9 @@
 # Public subscription filtering
 
-The public subscription endpoint can derive multiple read-only client views from one existing user token:
+Every public subscription URL is bound to exactly one subscription. Query parameters can derive read-only client views from that subscription without changing its authorization boundary:
 
 ```text
-/api/v1/client/subscription/{token}
+/api/v1/client/subscription/{subscription-token}
   ?template=clash
   &protocol=vless,hysteria2
   &region=jp,hk
@@ -19,13 +19,28 @@ The public subscription endpoint can derive multiple read-only client views from
 
 Filtering is an output projection, not an authorization mechanism:
 
-1. Zboard loads the token owner's active subscriptions.
-2. `plan`, `sku`, and `node_group` reduce those subscription sources.
-3. Zboard resolves protocol endpoints and credentials only from the remaining authorized sources.
-4. Endpoint filters reduce that authorized endpoint set again.
-5. The result is deduplicated, ordered by the global protocol delivery order, and sent to the selected renderer.
+1. Zboard resolves the token to one `subscription_id` and verifies that the same user owns both records.
+2. Zboard verifies that exact subscription is active, unexpired, and has remaining traffic.
+3. `plan`, `sku`, and `node_group` may remove that source, but they cannot select a different subscription owned by the same account.
+4. Zboard resolves protocol endpoints and credentials only from the token-bound subscription.
+5. Endpoint filters reduce that authorized endpoint set again.
+6. The result is ordered by the configured protocol delivery order and sent to the selected renderer.
 
-A filter can only remove authorized endpoints. It cannot add a node group, endpoint, credential, plan, or SKU that the token owner does not already have.
+A filter can only remove endpoints authorized by the token-bound subscription. It cannot add a node group, endpoint, credential, plan, SKU, or another subscription.
+
+The `Subscription-Userinfo` response header and manifest quota metadata always describe the token-bound subscription only. Traffic totals and expiry are never accumulated across the account.
+
+## Account access API
+
+Authenticated users manage credentials from the target subscription:
+
+| Method | Path | Meaning |
+| --- | --- | --- |
+| `GET` | `/api/v1/account/subscriptions/{id}/access` | Read or lazily provision the link for one active subscription |
+| `POST` | `/api/v1/account/subscriptions/{id}/access/rotate` | Replace only that subscription's token |
+| `DELETE` | `/api/v1/account/subscriptions/{id}/access` | Revoke only that subscription's token |
+
+The legacy account-level `/api/v1/subscription/access` routes are removed. Existing aggregate tokens without a `subscription_id` are invalidated during schema reconciliation, and one independent token is provisioned for each usable subscription.
 
 ## Parameters
 
@@ -43,14 +58,10 @@ A filter can only remove authorized endpoints. It cannot add a node group, endpo
 
 Different dimensions use AND semantics. Values can be supplied as comma-separated items or repeated query parameters. Values are normalized, deduplicated, and bounded in count and length.
 
-Malformed stable codes, unsupported protocol values, overlong values, and control characters return HTTP 400. A valid filter that matches no authorized source or endpoint returns a valid empty subscription with unchanged quota metadata and `Cache-Control: no-store`.
+Malformed stable codes, unsupported protocol values, overlong values, and control characters return HTTP 400. A valid filter that removes the token-bound source or matches no endpoint returns a valid empty subscription while keeping that subscription's quota metadata and `Cache-Control: no-store`.
 
 ## Delivery order and service state
 
-All native renderers consume the same ordered manifest. The administrator's global protocol delivery order is authoritative across node groups and aggregated subscriptions. Endpoint identity is only a deterministic tie-breaker.
+All native renderers consume the same ordered manifest. The administrator's protocol delivery order remains authoritative within the token-bound subscription. Endpoint identity is only a deterministic tie-breaker.
 
-`ProtocolEndpoint.is_active` is the protocol-service delivery switch. Disabled services are removed from public subscription output and from node runtime publication; re-enabling the service restores both through the existing runtime publish flow. No schema migration is required.
-
-## Current delivery phase
-
-This phase implements the backend projection contract and renderer consistency required by Issue #13. The account-page visual filter builder and OpenAPI parameter presentation remain separate follow-up work; clients can already construct filtered links directly from the documented query parameters.
+`ProtocolEndpoint.is_active` is the protocol-service delivery switch. Disabled services are removed from public subscription output and from node runtime publication; re-enabling the service restores both through the existing runtime publish flow.
