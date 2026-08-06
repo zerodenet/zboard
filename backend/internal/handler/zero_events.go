@@ -131,7 +131,7 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 	result, exhausted, err := h.recordZeroFlowEvent(node, event, flow)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			BadRequest(w, "flow principal is not active on this node")
+			BadRequest(w, "flow principal is not known on this node")
 			return
 		}
 		ServerError(w, err)
@@ -312,13 +312,7 @@ func (h *handlers) recordZeroFlowEvent(node model.Node, event zeroEventEnvelope,
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		var credential model.ProtocolCredential
-		credentialErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("principal_key = ? AND node_id = ? AND status = ? AND revoked_at IS NULL", flow.PrincipalKey, node.ID, protocolCredentialStatusActive).
-			First(&credential).Error
-		if errors.Is(credentialErr, gorm.ErrRecordNotFound) {
-			credential, credentialErr = h.matchNodeCredentialSecret(tx, node.ID, flow.PrincipalKey)
-		}
+		credential, credentialErr := h.resolveZeroCompletionCredential(tx, node.ID, flow.PrincipalKey)
 		if credentialErr != nil {
 			return credentialErr
 		}
@@ -408,13 +402,29 @@ func (h *handlers) recordZeroFlowEvent(node model.Node, event zeroEventEnvelope,
 	return record, exhausted, err
 }
 
+// Completion facts remain attributable after a subscription or credential has
+// expired. The node event itself is authenticated, so historical credentials
+// can be used for final ownership resolution without re-enabling access.
+func (h *handlers) resolveZeroCompletionCredential(tx *gorm.DB, nodeID uint, principal string) (model.ProtocolCredential, error) {
+	var credential model.ProtocolCredential
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("principal_key = ? AND node_id = ?", principal, nodeID).
+		Order("id DESC").
+		First(&credential).Error
+	if err == nil || !errors.Is(err, gorm.ErrRecordNotFound) {
+		return credential, err
+	}
+	return h.matchNodeCredentialSecret(tx, nodeID, principal)
+}
+
 // Current Zero Shadowsocks events use the authenticated password as the
 // protocol principal. Match it only in memory, then immediately replace it
 // with the stable panel principal; the password is never persisted in traffic
-// records or logs.
+// records or logs. Completed flows may reference a credential that has already
+// expired, so ownership lookup intentionally includes historical credentials.
 func (h *handlers) matchNodeCredentialSecret(tx *gorm.DB, nodeID uint, provided string) (model.ProtocolCredential, error) {
 	var credentials []model.ProtocolCredential
-	if err := tx.Where("node_id = ? AND status = ? AND revoked_at IS NULL", nodeID, protocolCredentialStatusActive).Find(&credentials).Error; err != nil {
+	if err := tx.Where("node_id = ?", nodeID).Order("id DESC").Find(&credentials).Error; err != nil {
 		return model.ProtocolCredential{}, err
 	}
 	for _, credential := range credentials {
