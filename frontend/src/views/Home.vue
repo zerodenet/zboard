@@ -57,7 +57,7 @@
       <div class="section-heading">
         <span>套餐推荐</span>
         <h2>从清晰的套餐卡片开始</h2>
-        <p>首页只展示套餐核心信息，进入详情后再比较全部规格。</p>
+        <p>比较流量、速度与设备数，找到适合自己的套餐。</p>
       </div>
       <div class="commerce-catalog-grid">
         <CommercePlanCard
@@ -75,8 +75,8 @@
     <section class="feature-section">
       <div class="section-heading"><span>为购买与使用而设计</span><h2>重要信息保持在正确的位置</h2></div>
       <div class="feature-grid">
-        <article><span class="feature-icon"><UiIcon name="plans" /></span><h3>目录保持简洁</h3><p>套餐卡片聚焦名称、起始价格和核心权益，规格不会挤满首页。</p></article>
-        <article><span class="feature-icon"><UiIcon name="check" /></span><h3>详情完整比较</h3><p>进入商品详情后一次查看全部可用规格，再选择适合的周期。</p></article>
+        <article><span class="feature-icon"><UiIcon name="plans" /></span><h3>核心权益清晰</h3><p>流量、速度、设备数和起始价格集中展示。</p></article>
+        <article><span class="feature-icon"><UiIcon name="check" /></span><h3>规格选择完整</h3><p>月付、季付、年付等可用规格在详情中统一比较。</p></article>
         <article><span class="feature-icon"><UiIcon name="activity" /></span><h3>订单确认明确</h3><p>创建订单前核对套餐、规格、服务周期和应付金额。</p></article>
       </div>
     </section>

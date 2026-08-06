@@ -1,9 +1,11 @@
 <template>
   <div class="pricing-page commerce-pricing-page commerce-catalog-page">
-    <template v-if="selectedPlan">
-      <PageAlert v-if="detailError" tone="danger" title="套餐加载失败">{{ detailError }}</PageAlert>
+    <PageAlert v-if="detailError" tone="danger" title="套餐加载失败">{{ detailError }}</PageAlert>
+    <div v-if="detailLoading && !selectedPlan" class="commerce-loading-state" role="status">
+      <UiIcon name="refresh" />正在加载套餐详情
+    </div>
+    <template v-else-if="selectedPlan">
       <CommercePlanDetail
-        v-else
         :plan="selectedPlan"
         :skus="detailSKUs"
         :selected-sku-id="selectedSKUID"
