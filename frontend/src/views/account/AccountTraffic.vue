@@ -1,6 +1,6 @@
 <template>
   <section class="account-page stack">
-    <PageHeader title="流量明细" description="按时间范围查看总量、今日消耗和每条计费记录。" eyebrow="TRAFFIC">
+    <PageHeader title="流量明细" description="按时间范围查看使用趋势、最高连接数和每条计费记录。" eyebrow="TRAFFIC">
       <template #actions>
         <UiButton variant="secondary" type="button" :disabled="loading" @click="loadAll">
           <UiIcon name="refresh" />刷新
@@ -10,7 +10,7 @@
 
     <TransientFeedback :error="error" error-title="流量信息加载失败" />
 
-    <UiMetricStrip :columns="3">
+    <UiMetricStrip :columns="4">
       <MetricCard
         label="剩余可用"
         :value="formatBytes(summary.remaining_bytes)"
@@ -38,7 +38,23 @@
       >
         <template #meta><TimeBadge :value="summary.as_of" mode="relative" /></template>
       </MetricCard>
+      <MetricCard
+        label="最高连接数"
+        :value="observability.peak_connections === null ? '—' : observability.peak_connections.toLocaleString('zh-CN')"
+        icon="activity"
+        :status="observability.peak_connections === null ? '未采集' : '区间峰值'"
+        tone="info"
+        :meta="observability.peak_connections === null ? '等待内核提供用户级峰值采样' : '取筛选范围内的最高并发值'"
+      />
     </UiMetricStrip>
+
+    <TrafficObservabilityChart
+      :points="observability.points"
+      :loading="observabilityLoading"
+      :truncated="observability.truncated"
+      :record-count="observability.record_count"
+      :peak-connections="observability.peak_connections"
+    />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
@@ -98,15 +114,15 @@
     <aside class="account-notice">
       <UiIcon name="activity" />
       <div>
-        <strong>为什么计费流量可能不同？</strong>
-        <p>套餐可以按上行、下行或双向选择原始流量，随后只应用协议端点倍率；这里展示最终实际扣除量。</p>
+        <strong>图表数据如何计算？</strong>
+        <p>流量按日期求和；未来连接上报接入后，只取每个采样窗口以及筛选区间内的最高并发连接数，不使用平均值或累计值。套餐限速与连接限制仍以内核实际执行结果为准。</p>
       </div>
     </aside>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchAccountTrafficRecordsPage,
@@ -129,6 +145,12 @@ import WorkbenchFilterInput from '../../components/WorkbenchFilterInput.vue'
 import { resolveHistoryRange } from '../../composables/historyState'
 import { useCursorTable } from '../../composables/useCursorTable'
 import { formatBytes } from '../../utils/format'
+import TrafficObservabilityChart from './TrafficObservabilityChart.vue'
+import {
+  emptyTrafficObservabilityResult,
+  fetchTrafficObservability,
+  type TrafficObservabilityResult,
+} from './trafficObservability'
 
 const route = useRoute()
 const router = useRouter()
@@ -143,6 +165,10 @@ const subscriptionFilter = ref(String(route.query.subscription_id || ''))
 const summary = ref<Record<string, any>>({})
 const summaryLoading = ref(false)
 const summaryError = ref('')
+const observability = ref<TrafficObservabilityResult>(emptyTrafficObservabilityResult())
+const observabilityLoading = ref(false)
+const observabilityError = ref('')
+let observabilityController: AbortController | null = null
 
 const {
   items: records,
@@ -165,8 +191,8 @@ const {
   errorMessage: (cause: any) => cause?.response?.data?.message || '流量记录加载失败。',
 })
 
-const loading = computed(() => recordLoading.value || summaryLoading.value)
-const error = computed(() => recordError.value || summaryError.value)
+const loading = computed(() => recordLoading.value || summaryLoading.value || observabilityLoading.value)
+const error = computed(() => recordError.value || summaryError.value || observabilityError.value)
 
 function formatMultiplier(value: number) {
   return `${(Number(value || 1000) / 1000).toLocaleString('zh-CN', { maximumFractionDigits: 3 })}×`
@@ -184,8 +210,34 @@ async function loadSummary() {
   }
 }
 
+async function loadObservability() {
+  observabilityController?.abort()
+  const controller = new AbortController()
+  observabilityController = controller
+  observabilityLoading.value = true
+  observabilityError.value = ''
+
+  try {
+    observability.value = await fetchTrafficObservability({
+      subscriptionId: Number(subscriptionFilter.value) || undefined,
+      from: from.value,
+      to: to.value,
+      signal: controller.signal,
+    })
+  } catch (cause: any) {
+    if (cause?.code === 'ERR_CANCELED' || cause?.name === 'AbortError') return
+    observabilityError.value = cause?.response?.data?.message || '流量趋势加载失败。'
+    observability.value = emptyTrafficObservabilityResult()
+  } finally {
+    if (observabilityController === controller) {
+      observabilityController = null
+      observabilityLoading.value = false
+    }
+  }
+}
+
 async function loadAll() {
-  await Promise.all([loadSummary(), loadRecords()])
+  await Promise.all([loadSummary(), loadRecords(), loadObservability()])
 }
 
 async function syncURL(replace = false) {
@@ -211,14 +263,14 @@ async function applyFilters() {
   normalizeRange()
   cursor.value = ''
   await syncURL()
-  await loadRecords()
+  await Promise.all([loadRecords(), loadObservability()])
 }
 
 async function clearFilters() {
   subscriptionFilter.value = ''
   cursor.value = ''
   await syncURL()
-  await loadRecords()
+  await Promise.all([loadRecords(), loadObservability()])
 }
 
 async function changeCursor(value: string | null) {
@@ -253,7 +305,7 @@ watch(() => route.fullPath, async () => {
     from.value = nextRange.from
     to.value = nextRange.to
     limit.value = nextLimit
-    await loadRecords()
+    await Promise.all([loadRecords(), loadObservability()])
   }
 })
 
@@ -261,4 +313,6 @@ onMounted(async () => {
   if (!route.query.from || !route.query.to) await syncURL(true)
   await loadAll()
 })
+
+onBeforeUnmount(() => observabilityController?.abort())
 </script>
