@@ -192,14 +192,20 @@
           </div>
         </div>
 
-        <form v-if="operation === 'purchase' || operation === 'change'" class="storefront-catalog-toolbar" @submit.prevent="submitSearch">
-          <label>
-            <UiIcon name="search" />
-            <input v-model.trim="searchDraft" type="search" placeholder="搜索套餐名称或介绍" aria-label="搜索套餐" />
-          </label>
-          <UiButton type="submit" :disabled="planLoading">搜索</UiButton>
-          <UiButton v-if="query" variant="secondary" type="button" :disabled="planLoading" @click="clearSearch">清除</UiButton>
-        </form>
+        <WorkbenchFilterBar
+          v-if="operation === 'purchase' || operation === 'change'"
+          :active="Boolean(query)"
+          :loading="planLoading"
+          label="套餐筛选"
+          @clear="clearSearch"
+        >
+          <WorkbenchFilterInput
+            v-model="searchDraft"
+            label="搜索"
+            placeholder="搜索套餐名称或介绍"
+            @apply="submitSearch"
+          />
+        </WorkbenchFilterBar>
 
         <div v-if="planLoading" class="commerce-loading-state"><UiIcon name="refresh" />正在加载套餐</div>
         <div v-else-if="plans.length" class="commerce-catalog-grid commerce-account-catalog-grid">
@@ -236,7 +242,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   createOrder,
@@ -256,6 +262,8 @@ import PageHeader from '../../components/PageHeader.vue'
 import TablePager from '../../components/TablePager.vue'
 import UiButton from '../../components/UiButton.vue'
 import UiIcon from '../../components/UiIcon.vue'
+import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
+import WorkbenchFilterInput from '../../components/WorkbenchFilterInput.vue'
 import { formatBytes, formatCurrency } from '../../utils/format'
 
 type PurchaseOperation = 'purchase' | 'renew' | 'change' | 'addon'
@@ -547,7 +555,8 @@ async function returnToOverview() {
 }
 
 async function submitSearch() {
-  query.value = searchDraft.value
+  query.value = searchDraft.value.trim()
+  searchDraft.value = query.value
   planOffset.value = 0
   await loadCatalog()
   await syncURL()
@@ -595,6 +604,20 @@ async function submitOrder() {
     creating.value = false
   }
 }
+
+watch(
+  () => [route.query.q, route.query.page],
+  async () => {
+    if (selectedPlan.value || checkoutOpen.value) return
+    const nextQuery = String(route.query.q || '').trim()
+    const nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * planLimit.value
+    if (query.value === nextQuery && planOffset.value === nextOffset) return
+    query.value = nextQuery
+    searchDraft.value = nextQuery
+    planOffset.value = nextOffset
+    await loadCatalog()
+  },
+)
 
 onMounted(async () => {
   await loadSubscriptions()
