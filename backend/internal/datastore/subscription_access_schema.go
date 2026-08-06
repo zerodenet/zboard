@@ -35,6 +35,19 @@ func ReconcileSubscriptionAccessSchema(db *gorm.DB) error {
 		return fmt.Errorf("invalidate legacy aggregate subscription tokens: %w", err)
 	}
 
+	// InnoDB requires a usable index for every foreign key column. Install the
+	// non-unique replacement before removing the legacy user-level unique index,
+	// otherwise MySQL rejects the DROP INDEX with error 1553.
+	nonUniqueUserIndexes, err := singleColumnIndexes(sqlDB, subscriptionTokensTable, "user_id", false)
+	if err != nil {
+		return err
+	}
+	if len(nonUniqueUserIndexes) == 0 {
+		if _, err := sqlDB.Exec(`ALTER TABLE subscription_tokens ADD KEY idx_subscription_tokens_user (user_id)`); err != nil {
+			return fmt.Errorf("add subscription token user lookup index: %w", err)
+		}
+	}
+
 	uniqueUserIndexes, err := singleColumnIndexes(sqlDB, subscriptionTokensTable, "user_id", true)
 	if err != nil {
 		return err
@@ -49,16 +62,9 @@ func ReconcileSubscriptionAccessSchema(db *gorm.DB) error {
 		return fmt.Errorf("require subscription token ownership: %w", err)
 	}
 
-	nonUniqueSubscriptionIndexes, err := singleColumnIndexes(sqlDB, subscriptionTokensTable, "subscription_id", false)
-	if err != nil {
-		return err
-	}
-	for _, indexName := range nonUniqueSubscriptionIndexes {
-		if err := dropIndex(sqlDB, subscriptionTokensTable, indexName); err != nil {
-			return err
-		}
-	}
-
+	// Add the subscription-level unique index before dropping any existing
+	// non-unique foreign-key index. The new unique index can then satisfy the
+	// foreign key while redundant indexes are removed safely.
 	uniqueSubscriptionIndexes, err := singleColumnIndexes(sqlDB, subscriptionTokensTable, "subscription_id", true)
 	if err != nil {
 		return err
@@ -69,13 +75,13 @@ func ReconcileSubscriptionAccessSchema(db *gorm.DB) error {
 		}
 	}
 
-	userIndexes, err := allSingleColumnIndexes(sqlDB, subscriptionTokensTable, "user_id")
+	nonUniqueSubscriptionIndexes, err := singleColumnIndexes(sqlDB, subscriptionTokensTable, "subscription_id", false)
 	if err != nil {
 		return err
 	}
-	if len(userIndexes) == 0 {
-		if _, err := sqlDB.Exec(`ALTER TABLE subscription_tokens ADD KEY idx_subscription_tokens_user (user_id)`); err != nil {
-			return fmt.Errorf("add subscription token user lookup index: %w", err)
+	for _, indexName := range nonUniqueSubscriptionIndexes {
+		if err := dropIndex(sqlDB, subscriptionTokensTable, indexName); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -107,24 +113,6 @@ func singleColumnIndexes(sqlDB *sql.DB, table, column string, unique bool) ([]st
 		  GROUP BY index_name
 		 HAVING COUNT(*) = 1 AND MAX(column_name = ?) = 1`,
 		table, nonUnique, column,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("inspect %s.%s indexes: %w", table, column, err)
-	}
-	defer rows.Close()
-	return scanIndexNames(rows)
-}
-
-func allSingleColumnIndexes(sqlDB *sql.DB, table, column string) ([]string, error) {
-	rows, err := sqlDB.Query(
-		`SELECT index_name
-		   FROM information_schema.statistics
-		  WHERE table_schema = DATABASE()
-		    AND table_name = ?
-		    AND index_name <> 'PRIMARY'
-		  GROUP BY index_name
-		 HAVING COUNT(*) = 1 AND MAX(column_name = ?) = 1`,
-		table, column,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("inspect %s.%s indexes: %w", table, column, err)
