@@ -1,53 +1,127 @@
 <template>
   <div class="landing-page">
-    <section class="hero-section">
-      <div class="hero-copy">
-        <span class="hero-kicker"><i></i> 稳定、清晰、随时可用</span>
-        <h1>你的网络订阅，<br /><em>不该复杂。</em></h1>
+    <section class="storefront-hero">
+      <div class="storefront-hero__copy">
+        <span class="hero-kicker"><i></i> 套餐、订单与订阅统一管理</span>
+        <h1>从选择套餐到开始使用，<em>一步一步完成。</em></h1>
         <p>{{ siteDescription }}</p>
         <div class="hero-actions">
-          <RouterLink class="button hero-primary" :to="primaryPath">{{ primaryLabel }}<UiIcon name="chevron" /></RouterLink>
-          <RouterLink class="button button-secondary hero-secondary" to="/pricing">查看套餐</RouterLink>
+          <RouterLink class="button hero-primary" to="/pricing">浏览套餐<UiIcon name="chevron" /></RouterLink>
+          <RouterLink class="button button-secondary hero-secondary" :to="secondaryPath">{{ secondaryLabel }}</RouterLink>
         </div>
-        <ul class="hero-trust"><li><UiIcon name="check" />清晰的套餐规格</li><li><UiIcon name="check" />独立订阅链接</li><li><UiIcon name="check" />实时流量明细</li></ul>
+        <ul class="hero-trust">
+          <li><UiIcon name="check" />规格与价格清晰展示</li>
+          <li><UiIcon name="check" />购买前完整确认订单</li>
+          <li><UiIcon name="check" />每条订阅独立管理</li>
+        </ul>
       </div>
-      <div class="hero-visual" aria-label="用户中心预览">
-        <div class="preview-window">
-          <div class="preview-top"><span><i></i><i></i><i></i></span><strong>{{ app.siteName }} · 用户中心</strong></div>
-          <div class="preview-body">
-            <div class="preview-welcome"><div><small>下午好</small><h2>欢迎回来</h2></div><span class="preview-avatar">U</span></div>
-            <div class="preview-plan"><div class="preview-plan-head"><div><small>当前套餐</small><strong>个人标准版</strong></div><span>服务中</span></div><p><strong>72.6</strong> GB <small>/ 100 GB</small></p><div class="usage-track"><i style="width: 27.4%"></i></div><footer><span>本周期已使用 27.4 GB</span><span>剩余 18 天</span></footer></div>
-            <div class="preview-stats"><article><UiIcon name="activity" /><span>今日使用<strong>1.24 GB</strong></span></article><article><UiIcon name="clock" /><span>到期时间<strong>2026/08/06</strong></span></article></div>
+
+      <div class="storefront-hero__visual" aria-label="套餐选购预览">
+        <div class="storefront-preview">
+          <header>
+            <span><i></i><i></i><i></i></span>
+            <strong>{{ app.siteName }} · 套餐中心</strong>
+          </header>
+          <div v-if="featuredPlan" class="storefront-preview__body">
+            <div class="storefront-preview__title">
+              <div><small>{{ featuredPlan.slug }}</small><h2>{{ featuredPlan.name }}</h2></div>
+              <span>可购买</span>
+            </div>
+            <p>{{ featuredPlan.summary || '稳定、透明的订阅服务。' }}</p>
+            <div class="storefront-preview__price" v-if="featuredPlan.primary_sku">
+              <strong>{{ formatCurrency(featuredPlan.primary_sku.price_cents, featuredPlan.primary_sku.currency) }}</strong>
+              <span>/ {{ billingLabel(featuredPlan.primary_sku) }}</span>
+            </div>
+            <div class="storefront-preview__features">
+              <span>{{ formatBytes(featuredPlan.traffic_bytes) }} 流量</span>
+              <span>{{ featuredPlan.speed_limit_mbps > 0 ? `${featuredPlan.speed_limit_mbps} Mbps` : '不限速' }}</span>
+              <span>{{ featuredPlan.device_limit > 0 ? `${featuredPlan.device_limit} 台设备` : '不限设备' }}</span>
+            </div>
+            <RouterLink class="button" :to="`/pricing?plan=${featuredPlan.id}`">查看套餐详情<UiIcon name="chevron" /></RouterLink>
+          </div>
+          <div v-else class="storefront-preview__empty">
+            <UiIcon name="plans" />
+            <strong>套餐中心</strong>
+            <span>可购买套餐将在这里展示</span>
           </div>
         </div>
-        <div class="floating-card"><span><UiIcon name="shield" /></span><div><strong>订阅配置已就绪</strong><small>安全凭证 · 随时轮换</small></div></div>
       </div>
     </section>
 
-    <section class="value-strip"><p>一个清晰的账户空间，覆盖从购买到使用的完整过程</p><div><span>套餐选购</span><i></i><span>订单追踪</span><i></i><span>订阅交付</span><i></i><span>流量查看</span></div></section>
+    <section class="value-strip">
+      <p>一个连续的购买与服务流程</p>
+      <div><span>浏览套餐</span><i></i><span>选择规格</span><i></i><span>确认订单</span><i></i><span>管理订阅</span></div>
+    </section>
+
+    <section v-if="plans.length" class="storefront-home-plans">
+      <div class="section-heading">
+        <span>套餐推荐</span>
+        <h2>从清晰的套餐卡片开始</h2>
+        <p>首页只展示套餐核心信息，进入详情后再比较全部规格。</p>
+      </div>
+      <div class="commerce-catalog-grid">
+        <CommercePlanCard
+          v-for="plan in plans"
+          :key="plan.id"
+          :plan="plan"
+          :offer="plan.primary_sku || null"
+          :offer-count="plan.active_sku_count"
+          @select="openPlan(plan.id)"
+        />
+      </div>
+      <RouterLink class="storefront-home-plans__more" to="/pricing">查看全部套餐<UiIcon name="chevron" /></RouterLink>
+    </section>
 
     <section class="feature-section">
-      <div class="section-heading"><span>为日常使用而设计</span><h2>重要信息，一眼就懂</h2><p>不用理解节点、协议和后台术语，只关注与你有关的套餐、余额和连接。</p></div>
+      <div class="section-heading"><span>为购买与使用而设计</span><h2>重要信息保持在正确的位置</h2></div>
       <div class="feature-grid">
-        <article><span class="feature-icon"><UiIcon name="plans" /></span><h3>套餐规格透明</h3><p>价格、流量、速度和设备数放在同一张卡片里，购买前没有隐藏信息。</p></article>
-        <article><span class="feature-icon"><UiIcon name="key" /></span><h3>订阅链接可控</h3><p>生成、复制、轮换和吊销都由你自己完成，旧链接失效状态清晰可见。</p></article>
-        <article><span class="feature-icon"><UiIcon name="activity" /></span><h3>流量去向清楚</h3><p>查看剩余流量、今日消耗和每条使用记录，不再只看到一个模糊数字。</p></article>
+        <article><span class="feature-icon"><UiIcon name="plans" /></span><h3>目录保持简洁</h3><p>套餐卡片聚焦名称、起始价格和核心权益，规格不会挤满首页。</p></article>
+        <article><span class="feature-icon"><UiIcon name="check" /></span><h3>详情完整比较</h3><p>进入商品详情后一次查看全部可用规格，再选择适合的周期。</p></article>
+        <article><span class="feature-icon"><UiIcon name="activity" /></span><h3>订单确认明确</h3><p>创建订单前核对套餐、规格、服务周期和应付金额。</p></article>
       </div>
     </section>
 
-    <section class="landing-cta"><div><span>准备开始了吗？</span><h2>选择适合你的套餐，几分钟内完成配置。</h2></div><RouterLink class="button" :to="primaryPath">{{ primaryLabel }}<UiIcon name="chevron" /></RouterLink></section>
+    <section class="landing-cta">
+      <div><span>开始选购</span><h2>选择适合你的套餐，在确认无误后创建订单。</h2></div>
+      <RouterLink class="button" to="/pricing">查看套餐<UiIcon name="chevron" /></RouterLink>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { fetchPublicSystemConfigs, type SystemConfig } from '../api/client'
+import { useRouter } from 'vue-router'
+import { fetchPlanCatalogPage, fetchPublicSystemConfigs, type PlanCatalogItem, type PlanSKU, type SystemConfig } from '../api/client'
+import CommercePlanCard from '../components/CommercePlanCard.vue'
 import UiIcon from '../components/UiIcon.vue'
 import { useAppStore } from '../stores/app'
+import { formatBytes, formatCurrency } from '../utils/format'
+
 const app = useAppStore()
+const router = useRouter()
 const configs = ref<SystemConfig[]>([])
-const siteDescription = computed(() => String(configs.value.find(item => item.config_key === 'site_desc')?.value || '从选择套餐、管理订单到获取订阅配置，在一个简单的账户空间里完成。'))
-const primaryPath = computed(() => app.isAuthenticated ? (app.isAdmin ? '/admin/dashboard' : '/account') : (app.installation?.allow_registration ? '/register' : '/login'))
-const primaryLabel = computed(() => app.isAuthenticated ? (app.isAdmin ? '进入管理后台' : '进入用户中心') : (app.installation?.allow_registration ? '免费注册' : '立即登录'))
-onMounted(async () => { try { configs.value = await fetchPublicSystemConfigs() } catch { configs.value = [] } })
+const plans = ref<PlanCatalogItem[]>([])
+
+const siteDescription = computed(() => String(configs.value.find(item => item.config_key === 'site_desc')?.value || '浏览套餐、选择规格、确认订单，再在用户中心管理每一条独立订阅。'))
+const secondaryPath = computed(() => app.isAuthenticated ? (app.isAdmin ? '/admin/dashboard' : '/account') : (app.installation?.allow_registration ? '/register' : '/login'))
+const secondaryLabel = computed(() => app.isAuthenticated ? (app.isAdmin ? '进入管理后台' : '进入用户中心') : (app.installation?.allow_registration ? '注册账户' : '立即登录'))
+const featuredPlan = computed(() => plans.value[0] || null)
+
+function billingLabel(sku: PlanSKU) {
+  const unit = ({ day: '天', month: '个月', year: '年', once: '次' } as Record<string, string>)[sku.billing_unit] || sku.billing_unit
+  return sku.billing_unit === 'once' ? '一次性' : `${sku.billing_value} ${unit}`
+}
+
+function openPlan(id: number) {
+  router.push({ path: '/pricing', query: { plan: String(id) } })
+}
+
+onMounted(async () => {
+  const [configResult, planResult] = await Promise.allSettled([
+    fetchPublicSystemConfigs(),
+    fetchPlanCatalogPage({ offset: 0, limit: 3 }),
+  ])
+  configs.value = configResult.status === 'fulfilled' ? configResult.value : []
+  plans.value = planResult.status === 'fulfilled' ? planResult.value.items : []
+})
 </script>

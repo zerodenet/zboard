@@ -7,24 +7,50 @@ function readSource(relativePath: string) {
 }
 
 describe('commerce purchase experience source contract', () => {
-  it('keeps the public pricing page product-focused', () => {
-    const source = readSource('./PublicPlans.vue')
-    expect(source).toContain('commerce-catalog-grid')
-    expect(source).toContain('commerce-offer-tabs')
-    expect(source).toContain('fetchPlanCatalogSKUs')
-    expect(source).not.toContain('DataWorkbench')
-    expect(source).not.toContain('WorkbenchFilterBar')
-    expect(source).not.toContain('暂未定价')
-    expect(source).not.toContain('active_sku_count')
+  it('keeps the homepage backed by live catalog data', () => {
+    const source = readSource('./Home.vue')
+    expect(source).toContain('fetchPlanCatalogPage')
+    expect(source).toContain('CommercePlanCard')
+    expect(source).toContain('storefront-preview')
+    expect(source).not.toContain('72.6')
+    expect(source).not.toContain('2026/08/06')
+    expect(source).not.toContain('个人标准版')
   })
 
-  it('starts renewal, plan changes and add-ons from a subscription context', () => {
+  it('keeps the public catalog compact and moves specifications into product detail', () => {
+    const source = readSource('./PublicPlans.vue')
+    expect(source).toContain('storefront-catalog-toolbar')
+    expect(source).toContain('CommercePlanCard')
+    expect(source).toContain('CommercePlanDetail')
+    expect(source).toContain("fetchPlanCatalogSKUs(planID, { skuType: 'new', offset: 0, limit: 100 })")
+    expect(source).not.toContain('commerce-offer-tabs')
+    expect(source).not.toContain('skuPage')
+    expect(source).not.toContain('skuPager')
+    expect(source).not.toContain('暂未定价')
+  })
+
+  it('starts subscription operations from a target and confirms the order after product detail', () => {
     const source = readSource('./account/AccountPlans.vue')
     expect(source).toContain("startOperation('renew', subscription.id)")
     expect(source).toContain("startOperation('change', subscription.id)")
     expect(source).toContain("startOperation('addon', subscription.id)")
-    expect(source).toContain('确认目标订阅')
-    expect(source).not.toContain('commerce-mode-tabs')
-    expect(source).not.toContain('这次要做什么？')
+    expect(source).toContain('CommercePlanDetail')
+    expect(source).toContain('purchase-checkout__section')
+    expect(source).toContain('订单确认')
+    expect(source).toContain('确认创建订单')
+    expect(source.indexOf('订单确认')).toBeLessThan(source.indexOf('确认创建订单'))
+    expect(source).not.toContain('ModalDialog')
+    expect(source).not.toContain('commerce-offer-tabs')
+  })
+
+  it('does not ship prototype annotations as customer-facing copy', () => {
+    const sources = [
+      readSource('./Home.vue'),
+      readSource('./PublicPlans.vue'),
+      readSource('./account/AccountPlans.vue'),
+    ].join('\n')
+    for (const annotation of ['当前仓库能力', '目标能力', '接口依赖', '推荐方案', '原型说明', '验收重点']) {
+      expect(sources).not.toContain(annotation)
+    }
   })
 })
