@@ -1,6 +1,6 @@
 <template>
   <section class="account-page stack">
-    <PageHeader title="订阅配置" description="查看服务实例，并管理客户端使用的专属订阅链接。" eyebrow="SUBSCRIPTION">
+    <PageHeader title="订阅配置" description="每个服务实例拥有独立链接，分别管理客户端配置和访问凭证。" eyebrow="SUBSCRIPTION">
       <template #actions>
         <UiButton variant="secondary" type="button" :disabled="loading" @click="loadAll">
           <UiIcon name="refresh" />刷新
@@ -27,7 +27,7 @@
         </StatusBadge>
       </template>
 
-      <DataTable v-if="subscriptions.length" caption="我的订阅列表" :row-count="total" :min-width="820">
+      <DataTable v-if="subscriptions.length" caption="我的订阅列表" :row-count="total" :min-width="940">
         <thead>
           <tr>
             <th class="table-primary-column">订阅</th>
@@ -39,7 +39,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="sub in subscriptions" :key="sub.id">
+          <tr v-for="sub in subscriptions" :key="sub.id" :class="{ 'selected-subscription-row': sub.id === selectedSubscriptionID }">
             <td class="table-primary-column"><strong class="mono">#{{ sub.id }}</strong></td>
             <td><StatusBadge :tone="subTone(sub.status)">{{ subLabel(sub.status) }}</StatusBadge></td>
             <td data-column-priority="2">
@@ -57,7 +57,18 @@
             </td>
             <td data-column-priority="1"><TimeBadge :value="sub.end_at" /></td>
             <td class="table-action-column">
-              <RouterLink class="button button-secondary button-sm" to="/account/plans">续费套餐</RouterLink>
+              <div class="subscription-row-actions">
+                <UiButton
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  :disabled="sub.status !== 'active'"
+                  @click="selectSubscription(sub.id)"
+                >
+                  {{ sub.id === selectedSubscriptionID ? '正在管理' : '管理链接' }}
+                </UiButton>
+                <RouterLink class="button button-secondary button-sm" :to="`/account/plans?operation=renew&subscription=${sub.id}`">续费</RouterLink>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -86,23 +97,33 @@
       </div>
     </UiSection>
 
-    <UiSection title="专属订阅链接" description="将链接添加到受支持的客户端；凭证状态与订阅列表分页无关。">
+    <UiSection
+      :title="selectedSubscription ? `订阅 #${selectedSubscription.id} 的访问链接` : '订阅访问链接'"
+      :description="selectedSubscription ? `${selectedSubscription.plan_name} · ${selectedSubscription.sku_name}` : '从订阅列表选择需要管理的服务实例。'"
+    >
       <template #meta>
-        <StatusBadge :tone="access.configured ? 'success' : 'warning'">
+        <StatusBadge v-if="selectedSubscription" :tone="access.configured ? 'success' : 'warning'">
           {{ access.configured ? '已启用' : '未生成' }}
         </StatusBadge>
       </template>
-      <div class="panel-body access-panel">
+      <div v-if="selectedSubscription" class="panel-body access-panel">
         <span class="access-icon"><UiIcon name="key" /></span>
         <div v-if="access.configured" class="access-meta">
-          <strong>订阅凭证已启用</strong>
+          <strong>{{ selectedSubscription.plan_name }} 的链接已启用</strong>
           <p>凭证前缀 <code>{{ access.token_prefix }}…</code></p>
           <div class="access-time"><span>最近使用</span><TimeBadge :value="access.last_used_at" /></div>
         </div>
         <div v-else class="access-meta">
-          <strong>尚未生成订阅链接</strong>
-          <p>拥有有效订阅后再生成链接，可以直接导入客户端。</p>
+          <strong>此订阅尚未生成可用链接</strong>
+          <p>生成或轮换只会影响订阅 #{{ selectedSubscription.id }}。</p>
         </div>
+
+        <div class="subscription-access-context">
+          <div><span>套餐规格</span><strong>{{ selectedSubscription.plan_name }} · {{ selectedSubscription.sku_name }}</strong></div>
+          <div><span>剩余流量</span><strong>{{ formatBytes(Math.max(0, selectedSubscription.flow_total - selectedSubscription.flow_used)) }}</strong></div>
+          <div><span>到期时间</span><TimeBadge :value="selectedSubscription.end_at" /></div>
+        </div>
+
         <div v-if="baseSubscriptionUrl" class="access-template-picker">
           <FormField
             v-slot="{ controlAttrs }"
@@ -135,33 +156,27 @@
         <FormField v-if="subscriptionUrl" v-slot="{ controlAttrs }" class="access-url" label="完整订阅链接" full>
           <UiInput :value="subscriptionUrl" v-bind="controlAttrs" readonly />
         </FormField>
-        <PageAlert v-if="subscriptionUrl" title="客户端可读取订阅用量">
-          每次拉取都会通过 Subscription-Userinfo 响应头返回累计已用流量、总额和到期时间；支持该约定的客户端可以直接展示。模板只改变配置正文，不改变这些元信息。
+        <PageAlert v-if="subscriptionUrl" title="用量信息仅属于当前订阅">
+          Subscription-Userinfo 只返回订阅 #{{ selectedSubscription.id }} 的已用流量、总额和到期时间；其他订阅不会被合并到该链接。
         </PageAlert>
         <div class="access-actions">
           <UiButton v-if="subscriptionUrl" variant="secondary" size="sm" type="button" @click="copy">
             <UiIcon name="copy" />{{ copyLabel }}
           </UiButton>
-          <UiButton
-            variant="secondary"
-            size="sm"
-            type="button"
-            :disabled="!activeSubscriptionTotal"
-            @click="ask(access.configured ? 'rotate' : 'generate')"
-          >
-            {{ access.configured ? '轮换链接' : '生成链接' }}
+          <UiButton variant="secondary" size="sm" type="button" @click="ask(access.configured ? 'rotate' : 'generate')">
+            {{ access.configured ? '轮换此链接' : '生成此链接' }}
           </UiButton>
-          <UiButton v-if="access.configured" variant="danger" size="sm" type="button" @click="ask('revoke')">吊销</UiButton>
+          <UiButton v-if="access.configured" variant="danger" size="sm" type="button" @click="ask('revoke')">吊销此链接</UiButton>
         </div>
-        <p v-if="!activeSubscriptionTotal" class="field-hint">需要先拥有有效订阅。</p>
       </div>
+      <EmptyState v-else icon="key" title="请选择有效订阅" description="每条订阅分别生成和管理自己的客户端链接。" />
     </UiSection>
 
     <aside class="account-notice">
       <UiIcon name="shield" />
       <div>
-        <strong>链接就是访问凭证</strong>
-        <p>不要发送到公开群组或截图分享。怀疑泄露时立即轮换，旧链接会马上失效。</p>
+        <strong>每条链接都是独立访问凭证</strong>
+        <p>轮换或吊销只影响当前选择的订阅，不会改变同一账户下其他订阅的链接。</p>
       </div>
     </aside>
 
@@ -185,12 +200,15 @@ import {
   fetchActiveSubscriptionTemplatesPage,
   fetchAccountProtocolLoads,
   fetchAccountSubscriptionsPage,
-  fetchSubscriptionAccess,
-  revokeSubscriptionAccess,
-  rotateSubscriptionAccess,
   type AccountProtocolLoadSnapshot,
   type AdminSubscriptionListItem,
 } from '../../api/client'
+import {
+  fetchSubscriptionAccess,
+  revokeSubscriptionAccess,
+  rotateSubscriptionAccess,
+  type SubscriptionAccess,
+} from '../../api/subscriptionAccess'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import DataTable from '../../components/DataTable.vue'
 import DataWorkbench from '../../components/DataWorkbench.vue'
@@ -225,13 +243,15 @@ const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 25)
 const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
 const status = ref(String(route.query.status || ''))
+const selectedSubscriptionID = ref(Math.max(0, Number(route.query.subscription) || 0))
 const statusOptions = [
   { label: '全部状态', value: '' },
   { label: '有效', value: 'active' },
   { label: '已到期或耗尽', value: 'expired' },
   { label: '已取消', value: 'canceled' },
 ]
-const access = ref<any>({ configured: false })
+const access = ref<SubscriptionAccess>({ configured: false, subscription_id: 0 })
+const activeSubscriptions = ref<AdminSubscriptionListItem[]>([])
 const templates = ref<any[]>([])
 const templateTotal = ref(0)
 const templateQuery = ref('')
@@ -242,6 +262,7 @@ const selectedTemplate = ref(subscriptionDeliveryAuto)
 const baseSubscriptionUrl = ref('')
 const copyLabel = ref('复制链接')
 const metadataLoading = ref(false)
+const accessLoading = ref(false)
 const metadataError = ref('')
 const protocolLoads = ref<AccountProtocolLoadSnapshot>({ sampled_at: '', activity_window_seconds: 120, items: [] })
 const working = ref(false)
@@ -268,14 +289,17 @@ const {
   onOffsetCorrected: () => syncURL(true),
 })
 
-const loading = computed(() => listLoading.value || metadataLoading.value || templateLoading.value)
+const selectedSubscription = computed(() => {
+  return activeSubscriptions.value.find(item => item.id === selectedSubscriptionID.value)
+    || subscriptions.value.find(item => item.id === selectedSubscriptionID.value && item.status === 'active')
+    || null
+})
+const loading = computed(() => listLoading.value || metadataLoading.value || accessLoading.value || templateLoading.value)
 const error = computed({
   get: () => listError.value || metadataError.value,
   set: value => { metadataError.value = value },
 })
-const subscriptionUrl = computed(() => {
-  return buildSubscriptionURL(baseSubscriptionUrl.value, selectedTemplate.value)
-})
+const subscriptionUrl = computed(() => buildSubscriptionURL(baseSubscriptionUrl.value, selectedTemplate.value))
 const templateOptions = computed(() => [
   { label: '自动识别（推荐）', value: subscriptionDeliveryAuto },
   { label: 'Zboard 原生 JSON', value: subscriptionDeliveryNative },
@@ -293,15 +317,16 @@ const deliveryHint = computed(() => {
   if (selectedTemplate.value === subscriptionDeliveryNative) {
     return '始终返回 Zboard 原生 JSON，不受客户端 User-Agent 影响。'
   }
-  return '显式选择优先于 User-Agent；只改变配置正文，不改变凭证、节点范围或流量计费。'
+  return '显式选择只改变配置正文，不改变当前订阅的凭证、节点范围或流量计费。'
 })
-const confirmTitle = computed(() => kind.value === 'generate' ? '生成订阅链接？' : kind.value === 'rotate' ? '轮换订阅链接？' : '吊销订阅链接？')
+const selectedLabel = computed(() => selectedSubscription.value ? `订阅 #${selectedSubscription.value.id}` : '当前订阅')
+const confirmTitle = computed(() => kind.value === 'generate' ? `生成${selectedLabel.value}的链接？` : kind.value === 'rotate' ? `轮换${selectedLabel.value}的链接？` : `吊销${selectedLabel.value}的链接？`)
 const confirmText = computed(() => kind.value === 'generate' ? '生成链接' : kind.value === 'rotate' ? '确认轮换' : '确认吊销')
 const confirmMessage = computed(() => kind.value === 'generate'
-  ? '生成后可随时回到本页查看和复制完整链接。'
+  ? `生成后只有${selectedLabel.value}会使用这条链接。`
   : kind.value === 'rotate'
-    ? '旧链接会立即失效，已有客户端需要更新。'
-    : '吊销后所有客户端都无法继续拉取配置。')
+    ? '旧链接会立即失效，但不会影响账户下其他订阅。'
+    : `吊销后只有${selectedLabel.value}无法继续拉取配置。`)
 
 function percent(sub: AdminSubscriptionListItem) {
   return sub.flow_total ? Math.min(100, Math.round(sub.flow_used / sub.flow_total * 100)) : 0
@@ -316,22 +341,45 @@ function subLabel(value: string) {
     || formatUnknownValue('状态', value)
 }
 
+function selectDefaultSubscription() {
+  const requested = Math.max(0, Number(route.query.subscription) || selectedSubscriptionID.value)
+  const requestedItem = activeSubscriptions.value.find(item => item.id === requested)
+  const currentItem = activeSubscriptions.value.find(item => item.id === selectedSubscriptionID.value)
+  selectedSubscriptionID.value = requestedItem?.id || currentItem?.id || activeSubscriptions.value[0]?.id || 0
+}
+
+async function loadAccess() {
+  access.value = { configured: false, subscription_id: selectedSubscriptionID.value }
+  baseSubscriptionUrl.value = ''
+  copyLabel.value = '复制链接'
+  if (!selectedSubscriptionID.value || !selectedSubscription.value) return
+  accessLoading.value = true
+  metadataError.value = ''
+  try {
+    access.value = await fetchSubscriptionAccess(selectedSubscriptionID.value)
+    baseSubscriptionUrl.value = access.value.subscription_url ? `${window.location.origin}${access.value.subscription_url}` : ''
+  } catch (cause: any) {
+    metadataError.value = cause?.response?.data?.message || '订阅链接加载失败。'
+  } finally {
+    accessLoading.value = false
+  }
+}
+
 async function loadMetadata() {
   metadataLoading.value = true
   metadataError.value = ''
   try {
-    const [activePage, accessResult, templateResult, protocolLoadResult] = await Promise.all([
-      fetchAccountSubscriptionsPage({ status: 'active', offset: 0, limit: 1 }),
-      fetchSubscriptionAccess(),
+    const [activePage, templateResult, protocolLoadResult] = await Promise.all([
+      fetchAccountSubscriptionsPage({ status: 'active', offset: 0, limit: 100 }),
       fetchActiveSubscriptionTemplatesPage({ q: templateQuery.value || undefined, offset: 0, limit: 25 }),
       fetchAccountProtocolLoads(),
     ])
+    activeSubscriptions.value = activePage.items
     activeSubscriptionTotal.value = activePage.total
-    access.value = accessResult
     templates.value = templateResult.items
     templateTotal.value = templateResult.total
     protocolLoads.value = protocolLoadResult
-    baseSubscriptionUrl.value = access.value.subscription_url ? `${window.location.origin}${access.value.subscription_url}` : ''
+    selectDefaultSubscription()
     if (!isBuiltInDeliveryMode(selectedTemplate.value) && !templates.value.some(item => item.slug === selectedTemplate.value)) {
       selectedTemplate.value = subscriptionDeliveryAuto
     }
@@ -347,11 +395,7 @@ async function searchTemplates() {
   templateLoading.value = true
   metadataError.value = ''
   try {
-    const result = await fetchActiveSubscriptionTemplatesPage({
-      q: templateQuery.value || undefined,
-      offset: 0,
-      limit: 25,
-    })
+    const result = await fetchActiveSubscriptionTemplatesPage({ q: templateQuery.value || undefined, offset: 0, limit: 25 })
     templates.value = result.items
     templateTotal.value = result.total
     if (!isBuiltInDeliveryMode(selectedTemplate.value) && !templates.value.some(item => item.slug === selectedTemplate.value)) {
@@ -366,6 +410,8 @@ async function searchTemplates() {
 
 async function loadAll() {
   await Promise.all([load(), loadMetadata()])
+  await loadAccess()
+  await syncURL(true)
 }
 
 async function syncURL(replace = false) {
@@ -375,9 +421,18 @@ async function syncURL(replace = false) {
       ...(status.value ? { status: status.value } : {}),
       ...(page > 1 ? { page: String(page) } : {}),
       ...(limit.value !== 25 ? { limit: String(limit.value) } : {}),
+      ...(selectedSubscriptionID.value ? { subscription: String(selectedSubscriptionID.value) } : {}),
     },
   }
   await (replace ? router.replace(location) : router.push(location))
+}
+
+async function selectSubscription(subscriptionID: number) {
+  if (subscriptionID === selectedSubscriptionID.value) return
+  selectedSubscriptionID.value = subscriptionID
+  message.value = ''
+  await syncURL()
+  await loadAccess()
 }
 
 async function applyFilters() {
@@ -399,26 +454,31 @@ async function changePage(value: { offset: number; limit: number }) {
 }
 
 function ask(next: typeof kind.value) {
+  if (!selectedSubscription.value) return
   kind.value = next
   confirmOpen.value = true
 }
 
 async function execute() {
+  if (!selectedSubscription.value) return
   working.value = true
   metadataError.value = ''
   message.value = ''
   try {
+    const subscriptionID = selectedSubscription.value.id
     if (kind.value === 'revoke') {
-      await revokeSubscriptionAccess()
-      access.value = { configured: false }
+      await revokeSubscriptionAccess(subscriptionID)
+      access.value = { configured: false, subscription_id: subscriptionID }
       baseSubscriptionUrl.value = ''
-      message.value = '订阅链接已吊销。'
+      message.value = `订阅 #${subscriptionID} 的链接已吊销。`
     } else {
-      const result = await rotateSubscriptionAccess()
+      const result = await rotateSubscriptionAccess(subscriptionID)
       access.value = result
       baseSubscriptionUrl.value = `${window.location.origin}${result.subscription_url}`
       copyLabel.value = '复制链接'
-      message.value = kind.value === 'rotate' ? '订阅链接已轮换，可随时在本页复制新链接。' : '订阅链接已生成，可随时在本页查看。'
+      message.value = kind.value === 'rotate'
+        ? `订阅 #${subscriptionID} 的链接已轮换。`
+        : `订阅 #${subscriptionID} 的链接已生成。`
     }
     confirmOpen.value = false
   } catch (cause: any) {
@@ -442,11 +502,18 @@ watch(() => route.fullPath, async () => {
   const rawLimit = Number(route.query.limit)
   const nextLimit = allowedPageSizes.includes(rawLimit) ? rawLimit : 25
   const nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * nextLimit
-  if (nextStatus !== status.value || nextLimit !== limit.value || nextOffset !== offset.value) {
+  const nextSubscriptionID = Math.max(0, Number(route.query.subscription) || 0)
+  const listChanged = nextStatus !== status.value || nextLimit !== limit.value || nextOffset !== offset.value
+  const subscriptionChanged = nextSubscriptionID !== selectedSubscriptionID.value
+  if (listChanged) {
     status.value = nextStatus
     limit.value = nextLimit
     offset.value = nextOffset
     await load()
+  }
+  if (subscriptionChanged) {
+    selectedSubscriptionID.value = nextSubscriptionID
+    await loadAccess()
   }
 })
 
@@ -474,6 +541,40 @@ onMounted(loadAll)
   margin-top: 7px;
 }
 
+.subscription-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.selected-subscription-row td {
+  background: var(--primary-soft);
+}
+
+.subscription-access-context {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.subscription-access-context > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.subscription-access-context span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.subscription-access-context strong {
+  font-size: 12px;
+}
+
 .access-template-picker {
   display: grid;
   gap: 12px;
@@ -485,9 +586,15 @@ onMounted(loadAll)
   gap: 8px;
 }
 
-@media (max-width: 620px) {
+@media (max-width: 760px) {
+  .subscription-row-actions,
+  .subscription-access-context,
   .inline-filter {
     grid-template-columns: 1fr;
+  }
+
+  .subscription-row-actions {
+    display: grid;
   }
 }
 </style>
