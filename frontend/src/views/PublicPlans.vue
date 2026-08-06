@@ -25,14 +25,19 @@
         <p>先浏览套餐核心权益，再进入详情比较全部规格。</p>
       </section>
 
-      <form class="storefront-catalog-toolbar" @submit.prevent="submitSearch">
-        <label>
-          <UiIcon name="search" />
-          <input v-model.trim="searchDraft" type="search" placeholder="搜索套餐名称或介绍" aria-label="搜索套餐" />
-        </label>
-        <UiButton type="submit" :disabled="loading">搜索</UiButton>
-        <UiButton v-if="query" variant="secondary" type="button" :disabled="loading" @click="clearSearch">清除</UiButton>
-      </form>
+      <WorkbenchFilterBar
+        :active="Boolean(query)"
+        :loading="loading"
+        label="套餐筛选"
+        @clear="clearSearch"
+      >
+        <WorkbenchFilterInput
+          v-model="searchDraft"
+          label="搜索"
+          placeholder="搜索套餐名称或介绍"
+          @apply="submitSearch"
+        />
+      </WorkbenchFilterBar>
 
       <PageAlert v-if="error" class="pricing-alert" tone="danger" title="套餐加载失败">{{ error }}</PageAlert>
 
@@ -71,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchPlanCatalogItem,
@@ -84,8 +89,9 @@ import CommercePlanCard from '../components/CommercePlanCard.vue'
 import CommercePlanDetail from '../components/CommercePlanDetail.vue'
 import PageAlert from '../components/PageAlert.vue'
 import TablePager from '../components/TablePager.vue'
-import UiButton from '../components/UiButton.vue'
 import UiIcon from '../components/UiIcon.vue'
+import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
+import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import { useAppStore } from '../stores/app'
 
 const app = useAppStore()
@@ -148,7 +154,7 @@ async function loadCatalog() {
   }
 }
 
-async function openDetail(planID: number, preserveRequestedSKU = false) {
+async function openDetail(planID: number, preserveRequestedSKU = false, updateRoute = true) {
   detailLoading.value = true
   detailError.value = ''
   skuError.value = ''
@@ -165,7 +171,7 @@ async function openDetail(planID: number, preserveRequestedSKU = false) {
       ? skuResult.items.find(item => item.id === selectedSKUID.value)
       : undefined
     selectedSKUID.value = requested?.id || skuResult.items[0]?.id || 0
-    await syncDetailURL()
+    if (updateRoute) await syncDetailURL()
   } catch (cause: any) {
     detailError.value = cause?.response?.data?.message || '套餐详情加载失败。'
   } finally {
@@ -193,7 +199,8 @@ async function continuePurchase() {
 }
 
 async function submitSearch() {
-  query.value = searchDraft.value
+  query.value = searchDraft.value.trim()
+  searchDraft.value = query.value
   offset.value = 0
   await syncCatalogURL()
   await loadCatalog()
@@ -213,6 +220,42 @@ async function changePage(value: { offset: number; limit: number }) {
   await syncCatalogURL()
   await loadCatalog()
 }
+
+watch(
+  () => [route.query.q, route.query.page, route.query.limit, route.query.plan, route.query.sku],
+  async () => {
+    const nextLimitValue = Number(route.query.limit)
+    const nextLimit = allowedPageSizes.includes(nextLimitValue) ? nextLimitValue : 9
+    const nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * nextLimit
+    const nextQuery = String(route.query.q || '').trim()
+    const nextPlanID = Math.max(0, Number(route.query.plan) || 0)
+    const nextSKUID = Math.max(0, Number(route.query.sku) || 0)
+
+    const catalogChanged = query.value !== nextQuery || limit.value !== nextLimit || offset.value !== nextOffset
+    query.value = nextQuery
+    searchDraft.value = nextQuery
+    limit.value = nextLimit
+    offset.value = nextOffset
+
+    if (nextPlanID) {
+      if (selectedPlan.value?.id !== nextPlanID) {
+        selectedSKUID.value = nextSKUID
+        await openDetail(nextPlanID, true, false)
+      } else if (nextSKUID && detailSKUs.value.some(item => item.id === nextSKUID)) {
+        selectedSKUID.value = nextSKUID
+      }
+      return
+    }
+
+    const wasShowingDetail = Boolean(selectedPlan.value)
+    if (wasShowingDetail) {
+      selectedPlan.value = null
+      detailSKUs.value = []
+      selectedSKUID.value = 0
+    }
+    if (catalogChanged || wasShowingDetail) await loadCatalog()
+  },
+)
 
 onMounted(async () => {
   const requestedPlanID = Math.max(0, Number(route.query.plan) || 0)
