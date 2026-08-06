@@ -18,6 +18,9 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	if err := datastore.ReconcileCommerceSchema(db); err != nil {
 		return err
 	}
+	if err := datastore.ReconcileSubscriptionAccessSchema(db); err != nil {
+		return err
+	}
 	h, err := handler.NewHandlers(db, jwtSecret, credentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion)
 	if err != nil {
 		return err
@@ -138,11 +141,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/subscriptions", h.SubscriptionsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions", h.SubscriptionsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id", h.AdminSubscriptionGetHandler),
-		newRoute(http.MethodGet, "/api/v1/subscription/access", h.SubscriptionAccessHandler),
+		newRoute(http.MethodGet, "/api/v1/account/subscriptions/:id/access", h.AccountSubscriptionAccessHandler),
+		newRoute(http.MethodPost, "/api/v1/account/subscriptions/:id/access/rotate", h.AccountSubscriptionAccessRotateHandler),
+		newRoute(http.MethodDelete, "/api/v1/account/subscriptions/:id/access", h.AccountSubscriptionAccessRevokeHandler),
 		newRoute(http.MethodGet, "/api/v1/subscription/protocol-loads", h.AccountProtocolLoadHandler),
-		newRoute(http.MethodPost, "/api/v1/subscription/access/rotate", h.SubscriptionAccessRotateHandler),
-		newRoute(http.MethodDelete, "/api/v1/subscription/access", h.SubscriptionAccessRevokeHandler),
-		newRoute(http.MethodGet, "/api/v1/client/subscription/:token", h.FilteredClientSubscriptionHandler),
+		newRoute(http.MethodGet, "/api/v1/client/subscription/:token", h.ScopedClientSubscriptionHandler),
 		newRoute(http.MethodGet, "/api/v1/traffic/summary", h.TrafficSummaryHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/traffic/summary", h.TrafficSummaryHandler),
 		newRoute(http.MethodGet, "/api/v1/traffic/records", h.TrafficRecordsHandler),
@@ -177,6 +180,9 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		return err
 	}
 	if err := h.ReconcileMieruEndpointCredentials(); err != nil {
+		return err
+	}
+	if err := h.ReconcileSubscriptionAccessTokens(); err != nil {
 		return err
 	}
 	h.StartCertificateRenewalWorker()
