@@ -7,11 +7,16 @@ function readSource(relativePath: string) {
 }
 
 describe('commerce purchase experience source contract', () => {
-  it('keeps the homepage backed by live catalog data', () => {
+  it('keeps the homepage preview static while recommendations use live catalog data', () => {
     const source = readSource('./Home.vue')
     expect(source).toContain('fetchPlanCatalogPage')
     expect(source).toContain('CommercePlanCard')
-    expect(source).toContain('storefront-preview')
+    expect(source).toContain('storefront-home-plans')
+    expect(source).toContain('套餐选购流程介绍')
+    expect(source).toContain('找到适合你的服务方案')
+    expect(source).toContain('浏览全部套餐')
+    expect(source).not.toContain('featuredPlan')
+    expect(source).not.toContain('formatCurrency')
     expect(source).not.toContain('72.6')
     expect(source).not.toContain('2026/08/06')
     expect(source).not.toContain('个人标准版')
