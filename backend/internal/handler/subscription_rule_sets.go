@@ -17,24 +17,45 @@ import (
 type subscriptionRuleSetWriteReq struct {
 	Name             string  `json:"name"`
 	Description      string  `json:"description"`
-	Renderer         string  `json:"renderer"`
 	Tag              string  `json:"tag"`
-	URL              string  `json:"url"`
-	Behavior         string  `json:"behavior"`
-	Format           string  `json:"format"`
-	Interval         int     `json:"interval"`
+	SourceURL        string  `json:"source_url"`
+	SourceFormat     string  `json:"source_format"`
+	Content          *string `json:"content"`
+	SyncInterval     int     `json:"sync_interval"`
 	IsActive         *bool   `json:"is_active"`
 	ExpectedRevision *uint64 `json:"expected_revision"`
+
+	// Compatibility fields accepted from the previous remote-provider form.
+	Renderer string `json:"renderer"`
+	URL      string `json:"url"`
+	Behavior string `json:"behavior"`
+	Format   string `json:"format"`
+	Interval int    `json:"interval"`
 }
 
 func validateSubscriptionRuleSet(req *subscriptionRuleSetWriteReq) error {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Description = strings.TrimSpace(req.Description)
-	req.Renderer = strings.ToLower(strings.TrimSpace(req.Renderer))
 	req.Tag = strings.TrimSpace(req.Tag)
-	req.URL = strings.TrimSpace(req.URL)
-	req.Behavior = strings.ToLower(strings.TrimSpace(req.Behavior))
-	req.Format = strings.ToLower(strings.TrimSpace(req.Format))
+	req.SourceURL = strings.TrimSpace(req.SourceURL)
+	if req.SourceURL == "" {
+		req.SourceURL = strings.TrimSpace(req.URL)
+	}
+	req.SourceFormat = strings.ToLower(strings.TrimSpace(req.SourceFormat))
+	if req.SourceFormat == "" {
+		req.SourceFormat = inferManagedRuleSourceFormat(req)
+	}
+	format, formatErr := normalizeManagedRuleSourceFormat(req.SourceFormat)
+	if formatErr == nil {
+		req.SourceFormat = format
+	}
+	if req.SyncInterval == 0 {
+		req.SyncInterval = req.Interval
+	}
+	if req.SyncInterval == 0 {
+		req.SyncInterval = 86400
+	}
+
 	fields := map[string]string{}
 	if req.Name == "" {
 		fields["name"] = "请输入规则集名称。"
@@ -44,37 +65,51 @@ func validateSubscriptionRuleSet(req *subscriptionRuleSetWriteReq) error {
 	if utf8.RuneCountInString(req.Description) > 255 {
 		fields["description"] = "规则集说明不能超过 255 个字符。"
 	}
-	if _, ok := subscriptionRenderer(req.Renderer); !ok {
-		fields["renderer"] = "请选择系统支持的订阅输出格式。"
-	}
 	if !subscriptionRuleSetTagPattern.MatchString(req.Tag) {
 		fields["tag"] = "规则集标识仅允许字母、数字、点、下划线和连字符。"
 	}
-	if err := validateSubscriptionRuleSetURL(req.URL); err != nil {
-		fields["url"] = err.Error()
+	if formatErr != nil {
+		fields["source_format"] = formatErr.Error()
 	}
-	if req.Interval == 0 {
-		req.Interval = 86400
+	if req.SyncInterval < 60 || req.SyncInterval > 604800 {
+		fields["sync_interval"] = "同步间隔必须在 60 秒到 7 天之间。"
 	}
-	if req.Interval < 60 || req.Interval > 604800 {
-		fields["interval"] = "更新间隔必须在 60 秒到 7 天之间。"
+	if req.Content == nil && req.SourceURL == "" {
+		fields["content"] = "请输入规则内容或远端来源地址。"
 	}
-	if len(fields) == 0 {
-		candidate := subscriptionRuleSetCustomization{
-			Tag: req.Tag, URL: req.URL, Behavior: req.Behavior, Format: req.Format,
-			Target: subscriptionGroupTarget("main"), Interval: req.Interval,
+	if req.SourceURL != "" {
+		if _, err := validateManagedRuleImportURL(req.SourceURL); err != nil {
+			fields["source_url"] = err.Error()
 		}
-		if err := normalizeRendererRuleSet(req.Renderer, &candidate); err != nil {
-			fields["format"] = err.Error()
-		} else {
-			req.Behavior = candidate.Behavior
-			req.Format = candidate.Format
+	}
+	if req.Content != nil {
+		if _, err := parseManagedRuleSource([]byte(*req.Content), managedRuleSourceCanonical); err != nil {
+			fields["content"] = err.Error()
 		}
 	}
 	if len(fields) > 0 {
 		return validationError("规则集信息校验失败。", fields)
 	}
 	return nil
+}
+
+func inferManagedRuleSourceFormat(req *subscriptionRuleSetWriteReq) string {
+	format := strings.ToLower(strings.TrimSpace(req.Format))
+	behavior := strings.ToLower(strings.TrimSpace(req.Behavior))
+	switch format {
+	case managedRuleSourceDomainList, managedRuleSourceCIDRList:
+		return format
+	case "text", "yaml":
+		if behavior == "ipcidr" {
+			return managedRuleSourceCIDRList
+		}
+		if behavior == "classical" {
+			return managedRuleSourceClashClassical
+		}
+		return managedRuleSourceDomainList
+	default:
+		return managedRuleSourceCanonical
+	}
 }
 
 func subscriptionRuleSetUsageCounts(db *gorm.DB, ids []uint) (map[uint]int64, error) {
@@ -135,9 +170,11 @@ func (h *handlers) AdminSubscriptionRuleSetListHandler(w http.ResponseWriter, r 
 		query = query.Where("name LIKE ? OR tag LIKE ? OR description LIKE ? OR url LIKE ?", pattern, pattern, pattern, pattern)
 	}
 	if renderer := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("renderer"))); renderer != "" {
-		if _, ok := subscriptionRenderer(renderer); !ok {
-			BadRequest(w, "renderer is unsupported")
-			return
+		if renderer != managedRuleSetRenderer {
+			if _, ok := subscriptionRenderer(renderer); !ok {
+				BadRequest(w, "renderer is unsupported")
+				return
+			}
 		}
 		query = query.Where("renderer = ?", renderer)
 	}
@@ -188,7 +225,11 @@ func (h *handlers) AdminSubscriptionRuleSetListHandler(w http.ResponseWriter, r 
 		ServerError(w, err)
 		return
 	}
-	OK(w, pagedData(items, total, offset, limit))
+	presented := make([]managedRuleSetPresentation, 0, len(items))
+	for _, item := range items {
+		presented = append(presented, h.presentManagedRuleSet(item))
+	}
+	OK(w, pagedData(presented, total, offset, limit))
 }
 
 func (h *handlers) AdminSubscriptionRuleSetGetHandler(w http.ResponseWriter, r *http.Request) {
@@ -214,7 +255,7 @@ func (h *handlers) AdminSubscriptionRuleSetGetHandler(w http.ResponseWriter, r *
 		ServerError(w, err)
 		return
 	}
-	OK(w, items[0])
+	OK(w, h.presentManagedRuleSet(items[0]))
 }
 
 func (h *handlers) AdminSubscriptionRuleSetCreateHandler(w http.ResponseWriter, r *http.Request) {
@@ -244,23 +285,48 @@ func (h *handlers) saveSubscriptionRuleSet(w http.ResponseWriter, r *http.Reques
 		BadRequestError(w, err)
 		return
 	}
+
+	var normalized []byte
+	if req.Content != nil {
+		document, _ := parseManagedRuleSource([]byte(*req.Content), managedRuleSourceCanonical)
+		normalized = encodeManagedCanonicalSource(document)
+	} else if id == 0 {
+		raw, err := fetchManagedRuleSource(r.Context(), req.SourceURL)
+		if err != nil {
+			BadRequestFields(w, "远端规则导入失败。", map[string]string{"source_url": err.Error()})
+			return
+		}
+		document, err := parseManagedRuleSource(raw, req.SourceFormat)
+		if err != nil {
+			BadRequestFields(w, "远端规则导入失败。", map[string]string{"source_format": err.Error()})
+			return
+		}
+		normalized = encodeManagedCanonicalSource(document)
+	}
+
 	active := true
 	if req.IsActive != nil {
 		active = *req.IsActive
 	}
 	item := model.SubscriptionRuleSet{
-		ID: id, Name: req.Name, Description: req.Description, Renderer: req.Renderer,
-		Tag: req.Tag, URL: req.URL, Behavior: req.Behavior, Format: req.Format,
-		Interval: req.Interval, IsActive: active, Revision: 1,
+		ID: id, Name: req.Name, Description: req.Description,
+		Renderer: managedRuleSetRenderer, Tag: req.Tag, URL: req.SourceURL,
+		Behavior: req.SourceFormat, Format: managedRuleSetFormatCanonical,
+		Interval: req.SyncInterval, IsActive: active, Revision: 1,
 	}
 	action := "subscription_rule_set.create"
 	if id != 0 {
 		action = "subscription_rule_set.update"
 	}
 	var currentRevision uint64
+	var previousContent []byte
+	var previousContentExists bool
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		if id == 0 {
 			if err := tx.Create(&item).Error; err != nil {
+				return err
+			}
+			if err := h.writeManagedRuleSource(item.Tag, normalized); err != nil {
 				return err
 			}
 		} else {
@@ -268,37 +334,49 @@ func (h *handlers) saveSubscriptionRuleSet(w http.ResponseWriter, r *http.Reques
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&existing, id).Error; err != nil {
 				return err
 			}
+			if existing.Renderer != managedRuleSetRenderer {
+				return errSubscriptionRuleSetLegacyReadOnly
+			}
 			currentRevision = existing.Revision
 			if req.ExpectedRevision != nil && existing.Revision != *req.ExpectedRevision {
 				return errSubscriptionRuleSetRevisionConflict
 			}
-			if existing.Renderer != item.Renderer {
-				counts, err := subscriptionRuleSetUsageCounts(tx, []uint{id})
-				if err != nil {
-					return err
-				}
-				if counts[id] > 0 {
-					return errSubscriptionRuleSetRendererInUse
-				}
+			if existing.Tag != item.Tag {
+				return errSubscriptionRuleSetTagImmutable
 			}
 			item.CreatedAt = existing.CreatedAt
 			item.Revision = existing.Revision + 1
+			if normalized != nil {
+				if previous, readErr := h.readManagedRuleSource(existing.Tag); readErr == nil {
+					previousContent, previousContentExists = previous, true
+				}
+				if err := h.writeManagedRuleSource(existing.Tag, normalized); err != nil {
+					return err
+				}
+			}
 			if err := tx.Save(&item).Error; err != nil {
 				return err
 			}
 		}
-		return createAuditLog(tx, claims, action, fmt.Sprintf("subscription_rule_set:%d", item.ID), fmt.Sprintf("renderer=%s tag=%s revision=%d", item.Renderer, item.Tag, item.Revision))
+		return createAuditLog(tx, claims, action, fmt.Sprintf("subscription_rule_set:%d", item.ID), fmt.Sprintf("managed=true tag=%s revision=%d", item.Tag, item.Revision))
 	})
 	if err != nil {
+		if id == 0 {
+			_ = h.removeManagedRuleSetFiles(item.Tag)
+		} else if normalized != nil && previousContentExists {
+			_ = h.writeManagedRuleSource(item.Tag, previousContent)
+		}
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			NotFound(w)
 		case errors.Is(err, errSubscriptionRuleSetRevisionConflict):
 			writeJSON(w, http.StatusConflict, "规则集已被其他管理员更新，请重新加载最新版本。", map[string]interface{}{"current_revision": currentRevision})
-		case errors.Is(err, errSubscriptionRuleSetRendererInUse):
-			BadRequestFields(w, "规则集信息校验失败。", map[string]string{"renderer": "规则集已被模板引用，不能切换输出格式。"})
+		case errors.Is(err, errSubscriptionRuleSetTagImmutable):
+			BadRequestFields(w, "规则集信息校验失败。", map[string]string{"tag": "规则集标识用于公开地址，创建后不能修改。"})
+		case errors.Is(err, errSubscriptionRuleSetLegacyReadOnly):
+			BadRequest(w, "旧版外部规则声明仅保留兼容读取，请新建自有规则集后替换模板引用。")
 		case isDuplicateError(err):
-			BadRequestFields(w, "规则集信息校验失败。", map[string]string{"tag": "该输出格式已存在相同规则集标识。"})
+			BadRequestFields(w, "规则集信息校验失败。", map[string]string{"tag": "该规则集标识已存在。"})
 		default:
 			ServerError(w, err)
 		}
@@ -309,12 +387,13 @@ func (h *handlers) saveSubscriptionRuleSet(w http.ResponseWriter, r *http.Reques
 		ServerError(w, err)
 		return
 	}
-	OK(w, items[0])
+	OK(w, h.presentManagedRuleSet(items[0]))
 }
 
 var (
 	errSubscriptionRuleSetRevisionConflict = errors.New("subscription rule set revision conflict")
-	errSubscriptionRuleSetRendererInUse    = errors.New("subscription rule set renderer is in use")
+	errSubscriptionRuleSetTagImmutable     = errors.New("subscription rule set tag is immutable")
+	errSubscriptionRuleSetLegacyReadOnly   = errors.New("legacy subscription rule set is read only")
 )
 
 func (h *handlers) AdminSubscriptionRuleSetDeleteHandler(w http.ResponseWriter, r *http.Request) {
@@ -356,15 +435,22 @@ func (h *handlers) AdminSubscriptionRuleSetDeleteHandler(w http.ResponseWriter, 
 		}
 		return
 	}
+	if item.Renderer == managedRuleSetRenderer {
+		if err := h.removeManagedRuleSetFiles(item.Tag); err != nil {
+			ServerError(w, err)
+			return
+		}
+	}
 	OK(w, map[string]interface{}{"id": id, "deleted": true})
 }
 
 var errSubscriptionRuleSetInUse = errors.New("subscription rule set is in use")
 
-func resolveSubscriptionCustomizationWithRecords(
+func resolveSubscriptionCustomizationWithRecordsAt(
 	renderer string,
 	raw json.RawMessage,
 	records map[uint]model.SubscriptionRuleSet,
+	siteURL string,
 	requireActive bool,
 ) (json.RawMessage, error) {
 	customization, normalized, err := normalizeSubscriptionCustomization(renderer, raw)
@@ -381,11 +467,20 @@ func resolveSubscriptionCustomizationWithRecords(
 		if !ok {
 			return nil, fmt.Errorf("第 %d 个规则集引用不存在或已删除", index+1)
 		}
-		if record.Renderer != renderer {
-			return nil, fmt.Errorf("规则集 %q 仅适用于 %s", record.Name, record.Renderer)
-		}
 		if requireActive && !record.IsActive {
 			return nil, fmt.Errorf("规则集 %q 已停用，不能新增到模板", record.Name)
+		}
+		if record.Renderer == managedRuleSetRenderer {
+			resolved, err := managedRuleCustomizationForRenderer(renderer, siteURL, record, ruleSet.Target)
+			if err != nil {
+				return nil, err
+			}
+			customization.RuleSets[index] = resolved
+			continue
+		}
+		// Existing external provider declarations remain valid until administrators replace them.
+		if record.Renderer != renderer {
+			return nil, fmt.Errorf("规则集 %q 仅适用于 %s", record.Name, record.Renderer)
 		}
 		customization.RuleSets[index] = subscriptionRuleSetCustomization{
 			Tag: record.Tag, URL: record.URL, Behavior: record.Behavior,
@@ -401,6 +496,30 @@ func resolveSubscriptionCustomizationWithRecords(
 	}
 	_, normalizedResolved, err := normalizeSubscriptionCustomization(renderer, resolved)
 	return normalizedResolved, err
+}
+
+func managedRuleCustomizationForRenderer(renderer, siteURL string, record model.SubscriptionRuleSet, target subscriptionGroupTarget) (subscriptionRuleSetCustomization, error) {
+	resolved := subscriptionRuleSetCustomization{Tag: record.Tag, Target: target, Interval: record.Interval}
+	switch renderer {
+	case subscriptionRendererZNetSink:
+		resolved.URL = managedRulePublicURL(siteURL, record.Tag, managedRuleArtifactZRS)
+		resolved.Format = "zrs"
+	case subscriptionRendererClash:
+		resolved.URL = managedRulePublicURL(siteURL, record.Tag, managedRuleArtifactClashClassicalYAML)
+		resolved.Behavior = "classical"
+		resolved.Format = "yaml"
+	case subscriptionRendererSingBox:
+		resolved.URL = managedRulePublicURL(siteURL, record.Tag, managedRuleArtifactSingBoxSource)
+		resolved.Format = "source"
+	default:
+		return subscriptionRuleSetCustomization{}, fmt.Errorf("规则集 %q 不支持订阅输出格式 %s", record.Name, renderer)
+	}
+	return resolved, nil
+}
+
+// Kept for focused unit tests and compatibility with existing callers.
+func resolveSubscriptionCustomizationWithRecords(renderer string, raw json.RawMessage, records map[uint]model.SubscriptionRuleSet, requireActive bool) (json.RawMessage, error) {
+	return resolveSubscriptionCustomizationWithRecordsAt(renderer, raw, records, "https://panel.example.com", requireActive)
 }
 
 func resolveSubscriptionCustomization(db *gorm.DB, renderer string, raw json.RawMessage, requireActive bool) (json.RawMessage, error) {
@@ -424,7 +543,11 @@ func resolveSubscriptionCustomization(db *gorm.DB, renderer string, raw json.Raw
 			records[item.ID] = item
 		}
 	}
-	return resolveSubscriptionCustomizationWithRecords(renderer, raw, records, requireActive)
+	var installation model.Installation
+	if err := db.Select("site_url").First(&installation, 1).Error; err != nil {
+		return nil, fmt.Errorf("读取站点公开地址: %w", err)
+	}
+	return resolveSubscriptionCustomizationWithRecordsAt(renderer, raw, records, installation.SiteURL, requireActive)
 }
 
 func syncSubscriptionTemplateRuleSetBindings(db *gorm.DB, templateID uint, customizationRaw json.RawMessage) error {
