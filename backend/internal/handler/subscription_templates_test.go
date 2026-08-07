@@ -32,6 +32,22 @@ func TestValidateSubscriptionTemplateUsesSystemRenderer(t *testing.T) {
 	}
 }
 
+func TestValidateSubscriptionTemplateAcceptsCanonicalZeroAndStoresInternalRenderer(t *testing.T) {
+	active := true
+	req := subscriptionTemplateWriteReq{
+		Name:     "Zero export",
+		Slug:     "zero-export",
+		Renderer: "zero",
+		IsActive: &active,
+	}
+	if err := validateSubscriptionTemplate(&req); err != nil {
+		t.Fatalf("validateSubscriptionTemplate() error = %v", err)
+	}
+	if req.Renderer != subscriptionRendererZnetSink {
+		t.Fatalf("normalized renderer = %q, want internal %q", req.Renderer, subscriptionRendererZnetSink)
+	}
+}
+
 func TestValidateSubscriptionTemplateRejectsInvalidMetadataAndUnknownRenderer(t *testing.T) {
 	tests := []subscriptionTemplateWriteReq{
 		{Name: "Bad slug", Slug: "Bad Slug", Renderer: subscriptionRendererClash},
@@ -68,6 +84,7 @@ func TestValidateSubscriptionTemplateReturnsFieldErrors(t *testing.T) {
 func TestSubscriptionRendererContentTypesAreBackendOwned(t *testing.T) {
 	for renderer, expected := range map[string]string{
 		subscriptionRendererZnetSink: "application/json",
+		"zero":                      "application/json",
 		subscriptionRendererClash:    "application/yaml",
 		subscriptionRendererSingBox:  "application/json",
 	} {
@@ -78,21 +95,38 @@ func TestSubscriptionRendererContentTypesAreBackendOwned(t *testing.T) {
 	}
 }
 
-func TestZnetSinkDeliveryUsesBase64WithoutChangingOtherFormats(t *testing.T) {
+func TestZeroDeliveryUsesBase64WithoutChangingOtherFormats(t *testing.T) {
 	raw := `{"outbounds":[]}`
-	encoded, contentType, format := encodeSubscriptionTemplateDelivery(subscriptionRendererZnetSink, raw, "application/json")
-	decoded, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(decoded) != raw || contentType != "text/plain" || format != "znet-sink-base64" {
-		t.Fatalf("encoded delivery = (%q, %q, %q)", decoded, contentType, format)
+	for _, renderer := range []string{"zero", "znet-sink", "zero-json", "zero-base64-json"} {
+		encoded, contentType, format := encodeSubscriptionTemplateDelivery(renderer, raw, "application/json")
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			t.Fatalf("decode %q delivery: %v", renderer, err)
+		}
+		if string(decoded) != raw || contentType != "text/plain" || format != "zero" {
+			t.Fatalf("%q encoded delivery = (%q, %q, %q)", renderer, decoded, contentType, format)
+		}
+		if json.Valid([]byte(encoded)) {
+			t.Fatalf("%q delivery unexpectedly exposed plaintext JSON", renderer)
+		}
 	}
 
 	clash, clashType, clashFormat := encodeSubscriptionTemplateDelivery(subscriptionRendererClash, "proxies: []", "application/yaml")
 	if clash != "proxies: []" || clashType != "application/yaml" || clashFormat != subscriptionRendererClash {
 		t.Fatalf("Clash delivery unexpectedly changed: (%q, %q, %q)", clash, clashType, clashFormat)
 	}
+}
+
+func TestPresentSubscriptionTemplateUsesCanonicalZeroName(t *testing.T) {
+	item := modelSubscriptionTemplateForTest(subscriptionRendererZnetSink)
+	presentSubscriptionTemplate(&item)
+	if item.Renderer != "zero" || item.ContentType != "text/plain" {
+		t.Fatalf("presented template = renderer %q, content type %q", item.Renderer, item.ContentType)
+	}
+}
+
+func modelSubscriptionTemplateForTest(renderer string) model.SubscriptionTemplate {
+	return model.SubscriptionTemplate{Renderer: renderer}
 }
 
 func TestNormalizeSubscriptionCustomizationRejectsUnsafeOrIncompatibleRules(t *testing.T) {
