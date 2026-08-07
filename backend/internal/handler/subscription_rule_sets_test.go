@@ -89,9 +89,9 @@ func TestResolveManagedRuleSetUsesRendererSpecificArtifact(t *testing.T) {
 	tests := []struct {
 		renderer string
 		format   string
-		query    string
+		location string
 	}{
-		{subscriptionRendererZNetSink, "zero_rule_ir", "format=zero_rule_ir"},
+		{subscriptionRendererZNetSink, "zrs", "/api/v1/rules/reject-ads.zrs"},
 		{subscriptionRendererClash, "yaml", "format=clash-classical-yaml"},
 		{subscriptionRendererSingBox, "source", "format=sing-box-source"},
 	}
@@ -100,7 +100,7 @@ func TestResolveManagedRuleSetUsesRendererSpecificArtifact(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolve %s: %v", test.renderer, err)
 		}
-		if !strings.Contains(string(resolved), `"format":"`+test.format+`"`) || !strings.Contains(string(resolved), test.query) {
+		if !strings.Contains(string(resolved), `"format":"`+test.format+`"`) || !strings.Contains(string(resolved), test.location) {
 			t.Fatalf("resolved %s = %s", test.renderer, resolved)
 		}
 	}
