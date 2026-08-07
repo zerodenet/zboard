@@ -106,7 +106,7 @@ func TestManagedRuleDerivedArtifacts(t *testing.T) {
 	if !strings.Contains(string(singBox), `"domain_suffix"`) || !strings.Contains(string(singBox), `"ip_cidr"`) {
 		t.Fatalf("sing-box = %s", singBox)
 	}
-	if got := managedRuleFormatFromUserAgent("znet-sink/1.0"); got != managedRuleArtifactZeroRuleIR {
+	if got := managedRuleFormatFromUserAgent("znet-sink/1.0"); got != managedRuleArtifactZRS {
 		t.Fatalf("znet-sink format = %q", got)
 	}
 }
