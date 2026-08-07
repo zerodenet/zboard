@@ -16,33 +16,24 @@
         </ul>
       </div>
 
-      <div class="storefront-hero__visual" aria-label="套餐选购预览">
+      <div class="storefront-hero__visual" aria-label="套餐选购流程介绍">
         <div class="storefront-preview">
           <header>
             <span><i></i><i></i><i></i></span>
-            <strong>{{ app.siteName }} · 套餐中心</strong>
+            <strong>{{ app.siteName }} · 购买流程</strong>
           </header>
-          <div v-if="featuredPlan" class="storefront-preview__body">
+          <div class="storefront-preview__body">
             <div class="storefront-preview__title">
-              <div><small>{{ featuredPlan.slug }}</small><h2>{{ featuredPlan.name }}</h2></div>
-              <span>可购买</span>
+              <div><small>选择套餐</small><h2>找到适合你的服务方案</h2></div>
+              <span>简单清晰</span>
             </div>
-            <p>{{ featuredPlan.summary || '稳定、透明的订阅服务。' }}</p>
-            <div class="storefront-preview__price" v-if="featuredPlan.primary_sku">
-              <strong>{{ formatCurrency(featuredPlan.primary_sku.price_cents, featuredPlan.primary_sku.currency) }}</strong>
-              <span>/ {{ billingLabel(featuredPlan.primary_sku) }}</span>
-            </div>
+            <p>浏览套餐权益与可用规格，确认订单后，即可在用户中心独立管理每一条订阅。</p>
             <div class="storefront-preview__features">
-              <span>{{ formatBytes(featuredPlan.traffic_bytes) }} 流量</span>
-              <span>{{ featuredPlan.speed_limit_mbps > 0 ? `${featuredPlan.speed_limit_mbps} Mbps` : '不限速' }}</span>
-              <span>{{ featuredPlan.device_limit > 0 ? `${featuredPlan.device_limit} 台设备` : '不限设备' }}</span>
+              <span>比较套餐权益</span>
+              <span>选择可用规格</span>
+              <span>下单前完整确认</span>
             </div>
-            <RouterLink class="button" :to="`/pricing?plan=${featuredPlan.id}`">查看套餐详情<UiIcon name="chevron" /></RouterLink>
-          </div>
-          <div v-else class="storefront-preview__empty">
-            <UiIcon name="plans" />
-            <strong>套餐中心</strong>
-            <span>可购买套餐将在这里展示</span>
+            <RouterLink class="button" to="/pricing">浏览全部套餐<UiIcon name="chevron" /></RouterLink>
           </div>
         </div>
       </div>
@@ -91,11 +82,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchPlanCatalogPage, fetchPublicSystemConfigs, type PlanCatalogItem, type PlanSKU, type SystemConfig } from '../api/client'
+import { fetchPlanCatalogPage, fetchPublicSystemConfigs, type PlanCatalogItem, type SystemConfig } from '../api/client'
 import CommercePlanCard from '../components/CommercePlanCard.vue'
 import UiIcon from '../components/UiIcon.vue'
 import { useAppStore } from '../stores/app'
-import { formatBytes, formatCurrency } from '../utils/format'
 
 const app = useAppStore()
 const router = useRouter()
@@ -105,12 +95,6 @@ const plans = ref<PlanCatalogItem[]>([])
 const siteDescription = computed(() => String(configs.value.find(item => item.config_key === 'site_desc')?.value || '浏览套餐、选择规格、确认订单，再在用户中心管理每一条独立订阅。'))
 const secondaryPath = computed(() => app.isAuthenticated ? (app.isAdmin ? '/admin/dashboard' : '/account') : (app.installation?.allow_registration ? '/register' : '/login'))
 const secondaryLabel = computed(() => app.isAuthenticated ? (app.isAdmin ? '进入管理后台' : '进入用户中心') : (app.installation?.allow_registration ? '注册账户' : '立即登录'))
-const featuredPlan = computed(() => plans.value[0] || null)
-
-function billingLabel(sku: PlanSKU) {
-  const unit = ({ day: '天', month: '个月', year: '年', once: '次' } as Record<string, string>)[sku.billing_unit] || sku.billing_unit
-  return sku.billing_unit === 'once' ? '一次性' : `${sku.billing_value} ${unit}`
-}
 
 function openPlan(id: number) {
   router.push({ path: '/pricing', query: { plan: String(id) } })
