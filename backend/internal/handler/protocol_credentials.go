@@ -125,8 +125,10 @@ func desiredProtocolCredentialStatusWithMieru(endpoint model.ProtocolEndpoint, m
 	return protocolCredentialStatusActive
 }
 
+// A protocol endpoint owns exactly one configured listener. Per-subscription
+// credentials must not create implicit adjacent ports.
 func protocolUsesDedicatedCredentialPort(protocol string) bool {
-	return strings.EqualFold(strings.TrimSpace(protocol), "shadowsocks")
+	return false
 }
 
 func (h *handlers) ensureSubscriptionCredentials(tx *gorm.DB, subscription model.Subscription) ([]model.ProtocolCredential, error) {
@@ -158,17 +160,21 @@ func (h *handlers) ensureSubscriptionCredentialsWithMieru(tx *gorm.DB, subscript
 			First(&credential).Error
 		if err == nil {
 			updates := map[string]interface{}{
-				"user_id":    subscription.UserID,
-				"node_id":    endpoint.NodeID,
-				"status":     targetStatus,
-				"expires_at": subscription.EndAt,
-				"revoked_at": nil,
+				"user_id":     subscription.UserID,
+				"node_id":     endpoint.NodeID,
+				"listen_port": endpoint.Port,
+				"public_port": endpoint.PublicPort,
+				"status":      targetStatus,
+				"expires_at":  subscription.EndAt,
+				"revoked_at":  nil,
 			}
 			if err := tx.Model(&credential).Updates(updates).Error; err != nil {
 				return nil, err
 			}
 			credential.UserID = subscription.UserID
 			credential.NodeID = endpoint.NodeID
+			credential.ListenPort = endpoint.Port
+			credential.PublicPort = endpoint.PublicPort
 			credential.Status = targetStatus
 			credential.ExpiresAt = subscription.EndAt
 			credential.RevokedAt = nil
@@ -217,19 +223,22 @@ func (h *handlers) ensureCredentialsForSubscriptions(subscriptions []model.Subsc
 }
 
 func (h *handlers) ensureCredentialsForSubscriptionsWithMieru(subscriptions []model.Subscription, mieruAccess bool) error {
-	return h.db.Transaction(func(tx *gorm.DB) error {
-		for _, subscription := range subscriptions {
-			if _, err := h.ensureSubscriptionCredentialsWithMieru(tx, subscription, mieruAccess); err != nil {
-				return err
-			}
+	for _, subscription := range orderedProtocolCredentialSubscriptions(subscriptions) {
+		subscription := subscription
+		if err := h.runProtocolCredentialTransaction(func(tx *gorm.DB) error {
+			_, err := h.ensureSubscriptionCredentialsWithMieru(tx, subscription, mieruAccess)
+			return err
+		}); err != nil {
+			return err
 		}
-		return nil
-	})
+	}
+	return nil
 }
 
 func (h *handlers) reconcileNodeGroupCredentials(groupID uint) error {
 	now := time.Now().UTC()
-	return h.db.Transaction(func(tx *gorm.DB) error {
+	var subscriptions []model.Subscription
+	if err := h.runProtocolCredentialTransaction(func(tx *gorm.DB) error {
 		activeSubscriptionIDs := tx.Model(&model.Subscription{}).
 			Select("id").
 			Where("node_group_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total", groupID, subStatusActive, now)
@@ -244,19 +253,13 @@ func (h *handlers) reconcileNodeGroupCredentials(groupID uint) error {
 			return err
 		}
 
-		var subscriptions []model.Subscription
-		if err := tx.Where("node_group_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total", groupID, subStatusActive, now).
+		return tx.Where("node_group_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total", groupID, subStatusActive, now).
 			Order("id asc").
-			Find(&subscriptions).Error; err != nil {
-			return err
-		}
-		for _, subscription := range subscriptions {
-			if _, err := h.ensureSubscriptionCredentials(tx, subscription); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+			Find(&subscriptions).Error
+	}); err != nil {
+		return err
+	}
+	return h.ensureCredentialsForSubscriptions(subscriptions)
 }
 
 func (h *handlers) newProtocolCredentialSecret(endpoint model.ProtocolEndpoint) (string, error) {
@@ -655,6 +658,13 @@ func (h *handlers) runtimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, p
 		return nil, err
 	}
 
+	if strings.EqualFold(endpoint.Protocol, "shadowsocks") {
+		if err := h.managedShadowsocksRuntimeProtocol(protocol, contexts); err != nil {
+			return nil, err
+		}
+		return []map[string]interface{}{runtimeInbound(endpoint, fmt.Sprintf("endpoint-%d", endpoint.ID), endpoint.Port, protocol)}, nil
+	}
+
 	if strings.EqualFold(endpoint.Protocol, "vless") || strings.EqualFold(endpoint.Protocol, "vmess") {
 		users := make([]interface{}, 0, len(credentials))
 		defaultCipher := "aes-128-gcm"
@@ -814,6 +824,13 @@ func (h *handlers) managedMieruUsers(contexts []runtimeCredentialContext) ([]int
 }
 
 func (h *handlers) legacyRuntimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, protocol map[string]interface{}, credentials []model.ProtocolCredential) ([]map[string]interface{}, error) {
+	if strings.EqualFold(endpoint.Protocol, "shadowsocks") {
+		if err := h.legacyShadowsocksRuntimeProtocol(protocol, credentials); err != nil {
+			return nil, err
+		}
+		return []map[string]interface{}{runtimeInbound(endpoint, fmt.Sprintf("endpoint-%d", endpoint.ID), endpoint.Port, protocol)}, nil
+	}
+
 	if strings.EqualFold(endpoint.Protocol, "vless") || strings.EqualFold(endpoint.Protocol, "vmess") {
 		users := make([]interface{}, 0, len(credentials))
 		defaultCipher := "aes-128-gcm"
@@ -969,7 +986,7 @@ func (h *handlers) credentialClientConfig(endpoint model.ProtocolEndpoint, crede
 		return nil, err
 	}
 	client["server"] = endpoint.Address
-	client["port"] = credential.PublicPort
+	client["port"] = protocolCredentialClientPort(endpoint, credential)
 	switch strings.ToLower(endpoint.Protocol) {
 	case "vless", "vmess":
 		client["id"] = secret
