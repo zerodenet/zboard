@@ -15,8 +15,8 @@ import (
 const (
 	protocolCredentialTransactionMaxAttempts = 3
 	protocolCredentialTransactionBaseDelay   = 20 * time.Millisecond
-	protocolCredentialLockName                = "zboard:protocol-credentials"
-	protocolCredentialLockTimeoutSeconds      = 10
+	protocolCredentialLockName               = "zboard:protocol-credentials"
+	protocolCredentialLockTimeoutSeconds     = 10
 )
 
 var errProtocolCredentialLockTimeout = errors.New("protocol credential reconciliation lock timeout")
