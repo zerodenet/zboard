@@ -1,10 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader
-      title="规则集"
-      description="由 Zboard 保存和发布规则正文。远端地址只用于导入，订阅模板会写入平台自己的规则端点。"
-      eyebrow="订阅模板"
-    >
+    <PageHeader title="规则集" description="由 Zboard 维护、校验并发布 Zero Rule IR；订阅模板只引用稳定规则地址并选择命中后的路由动作。" eyebrow="订阅模板">
       <template #actions>
         <PageRefreshButton label="刷新规则集" :loading="loading" @click="load" />
         <UiButton type="button" @click="openCreate"><UiIcon name="plus" />新建规则集</UiButton>
@@ -14,10 +10,10 @@
     <SubscriptionTemplateSectionNav section="rule-sets" />
 
     <PageAlert tone="info" title="统一规则源">
-      规则正文使用 Zero Rule IR v1 保存。模板只关联规则集和命中动作，Zboard 会为 znet-sink、Clash 和 sing-box 下发各自可直接下载的地址。
+      正文固定保存为 Zero Rule IR v1。远端地址只用于导入，模板会收到 Zboard 为 znet-sink、Clash 或 sing-box 生成的规则地址。
     </PageAlert>
 
-    <TransientFeedback :success="message" :error="error" success-title="规则集操作已完成" error-title="规则集操作失败" />
+    <TransientFeedback :success="message" :error="feedbackError" success-title="规则集操作已完成" error-title="规则集操作失败" />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
@@ -27,13 +23,7 @@
         </WorkbenchFilterBar>
       </template>
 
-      <DataTable
-        v-if="ruleSets.length"
-        caption="Zboard 自有规则集列表"
-        :row-count="total"
-        :min-width="1080"
-        table-class="subscription-rule-set-table"
-      >
+      <DataTable v-if="ruleSets.length" caption="Zboard 自有规则集列表" :row-count="total" :min-width="1080" table-class="subscription-rule-set-table">
         <thead>
           <tr>
             <th class="table-primary-column">规则集</th>
@@ -51,17 +41,16 @@
             <td class="table-primary-column">
               <div class="cell-title">
                 <strong>{{ item.name }}</strong>
-                <span><code>{{ item.tag }}</code> · {{ item.managed ? 'Zero Rule IR v1' : '旧版外部引用' }}</span>
+                <span><code>{{ item.tag }}</code><template v-if="item.public_url"> · {{ sourceHost(item.public_url) }}</template></span>
               </div>
             </td>
             <td>
-              <div class="cell-title compact-cell">
-                <strong>{{ item.source_url ? sourceHost(item.source_url) : '本地维护' }}</strong>
-                <span>{{ sourceFormatLabel(item.source_format) }}</span>
-              </div>
+              <StatusBadge :tone="item.source_url ? 'info' : 'neutral'" :icon="item.source_url ? 'refresh' : 'edit'">
+                {{ item.source_url ? sourceFormatLabel(item.source_format) : '面板维护' }}
+              </StatusBadge>
             </td>
-            <td class="numeric-column">{{ item.managed ? formatNumber(item.rule_count) : '—' }}</td>
-            <td data-column-priority="2">{{ item.managed ? formatBytes(item.content_bytes) : '—' }}</td>
+            <td class="numeric-column">{{ formatNumber(item.rule_count) }}</td>
+            <td data-column-priority="2">{{ formatBytes(item.content_bytes) }}</td>
             <td>
               <StatusBadge :tone="item.is_active ? 'success' : 'neutral'" :icon="item.is_active ? 'check' : 'minus'">
                 {{ item.is_active ? '可供选择' : '已停用' }}
@@ -71,15 +60,13 @@
             <td data-column-priority="2"><TimeBadge :value="item.updated_at" /></td>
             <td class="table-action-column">
               <RowActions :label="`${item.name} 的操作`" :trigger-key="`subscription-rule-set-${item.id}`">
-                <UiButton v-if="item.managed" variant="secondary" size="sm" type="button" :loading="editingID === item.id" @click="openEdit(item)">
+                <UiButton variant="secondary" size="sm" type="button" :loading="editingID === item.id" @click="openEdit(item)">
                   <UiIcon name="edit" />编辑正文
                 </UiButton>
-                <UiButton v-if="item.managed && item.source_url" variant="secondary" size="sm" type="button" :loading="importingID === item.id" @click="reimport(item)">
-                  <UiIcon name="refresh" />重新导入
+                <UiButton v-if="item.source_url" variant="secondary" size="sm" type="button" :loading="syncingID === item.id" @click="syncRemote(item)">
+                  <UiIcon name="refresh" />同步远端
                 </UiButton>
-                <UiButton v-if="item.managed && item.public_url" variant="secondary" size="sm" type="button" @click="copyEndpoint(item)">
-                  复制地址
-                </UiButton>
+                <UiButton v-if="item.public_url" variant="secondary" size="sm" type="button" @click="copyPublicURL(item)">复制地址</UiButton>
                 <UiButton
                   variant="danger"
                   size="sm"
@@ -99,7 +86,7 @@
         v-else-if="!loading"
         icon="audit"
         :title="search || activeFilter ? '没有匹配规则集' : '还没有规则集'"
-        :description="search || activeFilter ? '调整或清除筛选条件后重试。' : '创建本地规则正文或从远端导入，之后即可在订阅模板中关联。'"
+        :description="search || activeFilter ? '调整或清除筛选条件后重试。' : '创建规则集后，Zboard 会保存规范化的 Zero Rule IR，并按客户端格式发布稳定地址。'"
       >
         <template v-if="!search && !activeFilter" #actions>
           <UiButton type="button" @click="openCreate"><UiIcon name="plus" />新建规则集</UiButton>
@@ -113,10 +100,10 @@
 
     <ModalDialog
       :open="editorOpen"
-      :dirty="editorState.dirty.value"
+      :dirty="editorDirty"
       :title="form.id ? '编辑规则集' : '新建规则集'"
-      description="规则正文由 Zboard 统一维护；模板中的代理、直连或拦截动作不写入规则正文。"
-      size="xl"
+      description="规则正文只描述匹配条件；代理、直连或拦截动作由订阅模板单独配置。"
+      size="lg"
       :busy="saving"
       :return-focus-selector="form.id ? `[data-row-action-trigger='subscription-rule-set-${form.id}']` : ''"
       @close="closeEditor"
@@ -126,55 +113,65 @@
           <StatusBadge tone="neutral" icon="history">版本 {{ form.revision }}</StatusBadge>
           <StatusBadge tone="info" icon="audit">{{ formatNumber(form.rule_count) }} 条规则</StatusBadge>
           <StatusBadge tone="neutral" icon="database">{{ formatBytes(form.content_bytes) }}</StatusBadge>
+          <TimeBadge :value="form.updated_at" />
         </div>
 
         <PageAlert v-if="revisionConflict" tone="warning" title="规则集已被其他管理员更新">
-          当前编辑内容基于旧版本，请重新加载后再继续修改。
+          当前草稿基于旧版本，请重新加载最新正文后继续编辑。
           <template #actions>
-            <UiButton variant="secondary" size="sm" type="button" :loading="editingID === form.id" @click="reloadEditor">重新加载</UiButton>
+            <UiButton variant="secondary" size="sm" type="button" :loading="editingID === form.id" @click="reloadEditor">
+              <UiIcon name="refresh" />重新加载
+            </UiButton>
           </template>
         </PageAlert>
-        <PageAlert v-if="formError" tone="danger" title="无法保存规则集">{{ formError }}</PageAlert>
+        <PageAlert v-if="editorError" tone="danger" title="无法保存规则集">{{ editorError }}</PageAlert>
 
         <div class="form-grid">
-          <FormField label="规则集名称" name="managed-rule-name" :error="fieldErrors.name" hint="用于后台检索和模板选择。" required>
+          <FormField label="规则集名称" name="managed-rule-set-name" :error="fieldErrors.name" hint="用于后台检索和模板选择。" required>
             <template #default="{ controlAttrs }"><UiInput v-model.trim="form.name" v-bind="controlAttrs" maxlength="80" placeholder="例如：广告拦截" /></template>
           </FormField>
 
-          <FormField label="规则标识" name="managed-rule-tag" :error="fieldErrors.tag" :hint="form.id ? '用于公开地址，创建后不能修改。' : '仅允许字母、数字、点、下划线和连字符。'" required>
+          <FormField label="规则标识" name="managed-rule-set-tag" :error="fieldErrors.tag" :hint="form.id ? '用于公开地址，创建后不能修改。' : '仅允许字母、数字、点、下划线和连字符。'" required>
             <template #default="{ controlAttrs }"><UiInput v-model.trim="form.tag" v-bind="controlAttrs" maxlength="64" :disabled="Boolean(form.id)" placeholder="例如：reject-ads" /></template>
           </FormField>
 
-          <FormField label="远端来源格式" name="managed-rule-source-format" :error="fieldErrors.source_format" hint="只影响远端导入；保存后的正文始终为 Zero Rule IR v1。">
-            <template #default="{ controlAttrs }"><UiSelect v-model="form.source_format" v-bind="controlAttrs" :options="sourceFormatOptions" /></template>
+          <FormField label="维护方式" name="managed-rule-set-mode" hint="远端内容会导入 Zboard，不会在模板中直接透传第三方地址。" required>
+            <template #default="{ controlAttrs }"><UiSelect v-model="form.mode" v-bind="controlAttrs" :options="modeOptions" /></template>
           </FormField>
 
-          <FormField label="客户端下载间隔" name="managed-rule-interval" :error="fieldErrors.sync_interval" hint="写入订阅配置，60 秒至 7 天。" required>
+          <FormField label="客户端下载间隔" name="managed-rule-set-interval" :error="fieldErrors.sync_interval" hint="写入订阅配置，60 秒至 7 天。" required>
             <template #default="{ controlAttrs }"><UiNumberInput v-model="form.sync_interval" v-bind="controlAttrs" :min="60" :max="604800" suffix=" 秒" /></template>
           </FormField>
 
-          <FormField label="远端来源地址" name="managed-rule-source-url" :error="fieldErrors.source_url" hint="可选。仅用于首次或手动重新导入，不会直接下发给客户端。" full>
-            <template #default="{ controlAttrs }"><UiInput v-model.trim="form.source_url" v-bind="controlAttrs" type="url" maxlength="2048" placeholder="https://example.com/rules/ads.txt" /></template>
+          <template v-if="form.mode === 'remote'">
+            <FormField label="远端来源格式" name="managed-rule-set-source-format" :error="fieldErrors.source_format" hint="导入后统一转换为 Zero Rule IR v1。" required>
+              <template #default="{ controlAttrs }"><UiSelect v-model="form.source_format" v-bind="controlAttrs" :options="sourceFormatOptions" /></template>
+            </FormField>
+
+            <FormField label="远端来源地址" name="managed-rule-set-source-url" :error="fieldErrors.source_url" hint="仅支持 HTTP(S)，并阻止内网、回环和链路本地地址。" required full>
+              <template #default="{ controlAttrs }"><UiInput v-model.trim="form.source_url" v-bind="controlAttrs" type="url" maxlength="2048" placeholder="https://example.com/rules/ads.json" /></template>
+            </FormField>
+          </template>
+
+          <FormField label="用途说明" name="managed-rule-set-description" :error="fieldErrors.description" full>
+            <template #default="{ controlAttrs }"><UiTextarea v-model.trim="form.description" v-bind="controlAttrs" rows="3" maxlength="255" placeholder="说明规则来源、覆盖范围或维护责任。" /></template>
           </FormField>
 
-          <FormField label="用途说明" name="managed-rule-description" :error="fieldErrors.description" full>
-            <template #default="{ controlAttrs }"><UiTextarea v-model.trim="form.description" v-bind="controlAttrs" rows="2" maxlength="255" placeholder="说明规则覆盖范围和维护用途。" /></template>
-          </FormField>
-
-          <FormField label="Zero Rule IR v1 正文" name="managed-rule-content" :error="fieldErrors.content" hint="新建时留空并填写远端地址，将由服务端导入并转换；填写正文时以正文为准。" required full>
+          <FormField
+            v-if="form.mode === 'manual'"
+            label="Zero Rule IR v1 正文"
+            name="managed-rule-set-content"
+            :error="fieldErrors.content"
+            hint="仅接受 version、可选 name 和 rules；规则项只包含 type 与 value。保存时会规范化、排序和去重。"
+            required
+            full
+          >
             <template #default="{ controlAttrs }">
-              <div class="rule-source-editor">
-                <div class="rule-source-toolbar">
-                  <span>{{ form.content ? formatBytes(contentByteLength(form.content)) : '尚未填写正文' }}</span>
-                  <UiButton variant="secondary" size="sm" type="button" @click="fillEmptyIR">填入空白 IR</UiButton>
-                  <UiButton v-if="form.id && form.source_url" variant="secondary" size="sm" type="button" :loading="importingID === form.id" @click="reimportCurrent">从远端覆盖</UiButton>
-                </div>
-                <UiTextarea v-model="form.content" v-bind="controlAttrs" rows="18" spellcheck="false" placeholder="{&#10;  &quot;version&quot;: 1,&#10;  &quot;rules&quot;: []&#10;}" />
-              </div>
+              <UiTextarea v-model="form.content" v-bind="controlAttrs" class="rule-source-editor" rows="18" spellcheck="false" />
             </template>
           </FormField>
 
-          <FormField label="可用状态" name="managed-rule-active" :error="fieldErrors.is_active" full>
+          <FormField label="可用状态" name="managed-rule-set-active" :error="fieldErrors.is_active" full>
             <label class="check-field">
               <UiCheckbox v-model="form.is_active" />
               <span><strong>允许模板选择</strong><br /><small class="field-hint">停用后不会出现在新选择结果中；已有模板引用仍继续生效。</small></span>
@@ -185,24 +182,28 @@
 
       <template #footer="{ requestClose }">
         <UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton>
-        <UiButton form="managed-rule-set-form" type="submit" :loading="saving" :disabled="revisionConflict">保存规则集</UiButton>
+        <UiButton form="managed-rule-set-form" type="submit" :loading="saving" :disabled="revisionConflict">
+          {{ form.mode === 'remote' ? '导入并保存' : '保存规则集' }}
+        </UiButton>
       </template>
     </ModalDialog>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeRouteUpdate, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
-  API_BASE,
-  createSubscriptionRuleSet,
-  deleteSubscriptionRuleSet,
-  fetchSubscriptionRuleSet,
-  fetchSubscriptionRuleSetsPage,
-  getAuthToken,
-  updateSubscriptionRuleSet,
-  type SubscriptionRuleSet,
-} from '../api/client'
+  createManagedRuleSet,
+  deleteManagedRuleSet,
+  fetchManagedRuleSet,
+  fetchManagedRuleSetContent,
+  fetchManagedRuleSetsPage,
+  importManagedRuleSet,
+  updateManagedRuleSet,
+  type ManagedRuleSet,
+  type ManagedRuleSourceFormat,
+} from '../api/managedRuleSets'
 import DataTable from '../components/DataTable.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -227,61 +228,20 @@ import UiTextarea from '../components/UiTextarea.vue'
 import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
-import { useDirtyForm, useUnsavedChangesGuard } from '../composables/useFormState'
+import { useRemoteTable } from '../composables/useRemoteTable'
 import { confirmAction } from '../utils/feedback'
 
-interface ManagedRuleSet extends Omit<SubscriptionRuleSet, 'renderer'> {
-  renderer: string
-  managed: boolean
-  source_url?: string
-  source_format?: string
-  rule_count: number
-  content_bytes: number
-  content_sha256?: string
-  public_url?: string
-}
-
-interface ManagedRuleContent {
-  id: number
-  tag: string
-  content: string
-  rule_count: number
-  content_bytes: number
-  content_sha256: string
-  revision: number
-}
-
-interface RuleSetForm {
-  id: number
-  name: string
-  description: string
-  tag: string
-  source_url: string
-  source_format: string
-  sync_interval: number
-  is_active: boolean
-  content: string
-  revision: number
-  usage_count: number
-  rule_count: number
-  content_bytes: number
-}
-
-class ManagedRequestError extends Error {
-  status: number
-  fields: Record<string, string>
-
-  constructor(message: string, status: number, fields: Record<string, string> = {}) {
-    super(message)
-    this.status = status
-    this.fields = fields
-  }
-}
-
+const route = useRoute()
+const router = useRouter()
+const allowedPageSizes = [25, 50, 100]
 const activeOptions = [
   { label: '全部状态', value: '' },
   { label: '可供选择', value: 'true' },
   { label: '已停用', value: 'false' },
+]
+const modeOptions = [
+  { label: '面板维护 Zero Rule IR', value: 'manual' },
+  { label: '从远端导入并同步', value: 'remote' },
 ]
 const sourceFormatOptions = [
   { label: 'Zero Rule IR v1', value: 'zero_rule_ir' },
@@ -289,163 +249,150 @@ const sourceFormatOptions = [
   { label: 'CIDR 列表', value: 'cidr_list' },
   { label: 'Clash classical', value: 'clash_classical' },
 ]
-const allowedPageSizes = [25, 50, 100]
-const search = ref('')
-const activeFilter = ref('')
-const limit = ref(50)
-const offset = ref(0)
-const total = ref(0)
-const ruleSets = ref<ManagedRuleSet[]>([])
-const loading = ref(false)
-const refreshing = ref(false)
-const error = ref('')
-const message = ref('')
-const editorOpen = ref(false)
-const saving = ref(false)
-const editingID = ref(0)
-const importingID = ref(0)
-const deletingID = ref(0)
-const revisionConflict = ref(false)
-const formError = ref('')
-const fieldErrors = ref<Record<string, string>>({})
+const defaultContent = `{
+  "version": 1,
+  "name": "example",
+  "rules": [
+    { "type": "domain_suffix", "value": "example.com" }
+  ]
+}\n`
 
-const emptyForm = (): RuleSetForm => ({
+function pageLimit(value: unknown) {
+  const parsed = Number(value)
+  return allowedPageSizes.includes(parsed) ? parsed : 50
+}
+
+const search = ref(String(route.query.q || ''))
+const activeFilter = ref(String(route.query.active || ''))
+const limit = ref(pageLimit(route.query.limit))
+const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
+const emptyForm = () => ({
   id: 0,
   name: '',
   description: '',
   tag: '',
+  mode: 'manual' as 'manual' | 'remote',
   source_url: '',
-  source_format: 'zero_rule_ir',
+  source_format: 'zero_rule_ir' as ManagedRuleSourceFormat,
+  content: defaultContent,
   sync_interval: 86400,
   is_active: true,
-  content: '',
   revision: 0,
-  usage_count: 0,
   rule_count: 0,
   content_bytes: 0,
+  usage_count: 0,
+  updated_at: '',
 })
-const form = reactive<RuleSetForm>(emptyForm())
-const editorState = useDirtyForm(() => form)
-useUnsavedChangesGuard(
-  () => editorOpen.value && editorState.dirty.value,
-  () => editorState.confirmDiscard({ title: '放弃规则集修改？', message: '尚未保存的规则正文和来源调整将丢失。', confirmText: '放弃修改' }),
-)
+const form = reactive(emptyForm())
+const initialSnapshot = ref('')
+const editorOpen = ref(false)
+const saving = ref(false)
+const editingID = ref(0)
+const syncingID = ref(0)
+const deletingID = ref(0)
+const message = ref('')
+const operationError = ref('')
+const editorError = ref('')
+const revisionConflict = ref(false)
+const fieldErrors = reactive<Record<string, string>>({})
+const editorDirty = computed(() => editorOpen.value && JSON.stringify(form) !== initialSnapshot.value)
 
-for (const [source, field] of [
-  [() => form.name, 'name'],
-  [() => form.description, 'description'],
-  [() => form.tag, 'tag'],
-  [() => form.source_url, 'source_url'],
-  [() => form.source_format, 'source_format'],
-  [() => form.sync_interval, 'sync_interval'],
-  [() => form.content, 'content'],
-] as Array<[() => unknown, string]>) {
-  watch(source, () => {
-    delete fieldErrors.value[field]
-    formError.value = ''
-  })
+const { items: ruleSets, total, loading, refreshing, error, load } = useRemoteTable<ManagedRuleSet>({
+  offset,
+  limit,
+  fetchPage: ({ signal }) => fetchManagedRuleSetsPage({
+    q: search.value || undefined,
+    active: activeFilter.value === '' ? undefined : activeFilter.value === 'true',
+    offset: offset.value,
+    limit: limit.value,
+  }, { signal }),
+  errorMessage: (cause: any) => cause?.response?.data?.message || '规则集加载失败。',
+  onOffsetCorrected: () => syncURL(true),
+})
+const feedbackError = computed(() => operationError.value || error.value)
+
+function setSnapshot() {
+  initialSnapshot.value = JSON.stringify(form)
 }
 
-async function managedRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers)
-  headers.set('Accept', 'application/json')
-  if (init.body !== undefined) headers.set('Content-Type', 'application/json')
-  const token = getAuthToken()
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-  const response = await fetch(`${API_BASE.replace(/\/$/, '')}${path}`, { ...init, headers })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    throw new ManagedRequestError(
-      payload?.message || `请求失败（HTTP ${response.status}）`,
-      response.status,
-      payload?.data?.fields || payload?.fields || {},
-    )
-  }
-  return payload?.data as T
+function clearEditorErrors() {
+  editorError.value = ''
+  revisionConflict.value = false
+  for (const key of Object.keys(fieldErrors)) delete fieldErrors[key]
 }
 
-async function load() {
-  const wasLoaded = ruleSets.value.length > 0
-  loading.value = !wasLoaded
-  refreshing.value = wasLoaded
-  error.value = ''
-  try {
-    const page = await fetchSubscriptionRuleSetsPage({
-      q: search.value || undefined,
-      active: activeFilter.value === '' ? undefined : activeFilter.value === 'true',
-      offset: offset.value,
-      limit: limit.value,
-    })
-    ruleSets.value = page.items as unknown as ManagedRuleSet[]
-    total.value = page.page.total
-    if (offset.value > 0 && !ruleSets.value.length && total.value > 0) {
-      offset.value = Math.max(0, Math.floor((total.value - 1) / limit.value) * limit.value)
-      await load()
-    }
-  } catch (cause: any) {
-    error.value = cause?.response?.data?.message || cause?.message || '规则集加载失败。'
-  } finally {
-    loading.value = false
-    refreshing.value = false
-  }
+function resetEditorState() {
+  Object.assign(form, emptyForm())
+  clearEditorErrors()
+  setSnapshot()
+}
+
+async function syncURL(replace = false) {
+  const query: Record<string, string> = {}
+  if (search.value) query.q = search.value
+  if (activeFilter.value) query.active = activeFilter.value
+  if (offset.value > 0) query.page = String(Math.floor(offset.value / limit.value) + 1)
+  if (limit.value !== 50) query.limit = String(limit.value)
+  if (replace) await router.replace({ query })
+  else await router.push({ query })
 }
 
 async function applyFilters() {
   offset.value = 0
+  await syncURL()
   await load()
 }
 
 async function resetFilters() {
   search.value = ''
   activeFilter.value = ''
-  await applyFilters()
+  offset.value = 0
+  await syncURL()
+  await load()
 }
 
-async function changePage(value: { offset: number; limit: number }) {
-  offset.value = value.offset
-  limit.value = allowedPageSizes.includes(value.limit) ? value.limit : 50
+async function changePage(next: { offset: number; limit: number }) {
+  offset.value = next.offset
+  limit.value = next.limit
+  await syncURL()
   await load()
 }
 
 function openCreate() {
-  Object.assign(form, emptyForm())
-  fieldErrors.value = {}
-  formError.value = ''
-  revisionConflict.value = false
+  resetEditorState()
   editorOpen.value = true
-  editorState.markClean()
 }
 
 async function openEdit(item: ManagedRuleSet) {
   editingID.value = item.id
-  error.value = ''
+  operationError.value = ''
   try {
-    const [metadata, content] = await Promise.all([
-      fetchSubscriptionRuleSet(item.id) as unknown as Promise<ManagedRuleSet>,
-      managedRequest<ManagedRuleContent>(`/admin/subscription-rule-sets/${item.id}/content`),
+    const [latest, source] = await Promise.all([
+      fetchManagedRuleSet(item.id),
+      fetchManagedRuleSetContent(item.id),
     ])
     Object.assign(form, {
-      id: metadata.id,
-      name: metadata.name,
-      description: metadata.description || '',
-      tag: metadata.tag,
-      source_url: metadata.source_url || '',
-      source_format: metadata.source_format || 'zero_rule_ir',
-      sync_interval: metadata.interval || 86400,
-      is_active: metadata.is_active,
-      content: content.content,
-      revision: content.revision,
-      usage_count: metadata.usage_count,
-      rule_count: content.rule_count,
-      content_bytes: content.content_bytes,
+      id: latest.id,
+      name: latest.name,
+      description: latest.description || '',
+      tag: latest.tag,
+      mode: latest.source_url ? 'remote' : 'manual',
+      source_url: latest.source_url || '',
+      source_format: latest.source_format || 'zero_rule_ir',
+      content: source.content || defaultContent,
+      sync_interval: latest.interval,
+      is_active: latest.is_active,
+      revision: source.revision,
+      rule_count: source.rule_count,
+      content_bytes: source.content_bytes,
+      usage_count: latest.usage_count,
+      updated_at: latest.updated_at,
     })
-    fieldErrors.value = {}
-    formError.value = ''
-    revisionConflict.value = false
+    clearEditorErrors()
+    setSnapshot()
     editorOpen.value = true
-    editorState.markClean()
   } catch (cause: any) {
-    error.value = cause?.message || cause?.response?.data?.message || '规则集内容加载失败。'
+    operationError.value = cause?.response?.data?.message || '规则集详情加载失败。'
   } finally {
     editingID.value = 0
   }
@@ -458,199 +405,189 @@ async function reloadEditor() {
 
 function closeEditor() {
   editorOpen.value = false
-  revisionConflict.value = false
-  fieldErrors.value = {}
-  formError.value = ''
-}
-
-function fillEmptyIR() {
-  if (form.content.trim() && !window.confirm('当前正文不为空，确认替换为空白 Zero Rule IR？')) return
-  form.content = JSON.stringify({ version: 1, rules: [] }, null, 2) + '\n'
+  resetEditorState()
 }
 
 function validateForm() {
-  const fields: Record<string, string> = {}
-  if (!form.name.trim()) fields.name = '请输入规则集名称。'
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(form.tag.trim())) fields.tag = '规则标识格式不正确。'
-  if (!Number.isInteger(form.sync_interval) || form.sync_interval < 60 || form.sync_interval > 604800) fields.sync_interval = '更新间隔必须在 60 秒到 7 天之间。'
-  if (form.source_url && !/^https?:\/\//i.test(form.source_url)) fields.source_url = '请输入完整的 HTTP 或 HTTPS 地址。'
-  if (!form.content.trim() && !form.source_url.trim()) fields.content = '请输入 Zero Rule IR 正文，或填写远端来源地址。'
-  if (form.content.trim()) {
-    try {
-      JSON.parse(form.content)
-    } catch {
-      fields.content = '正文不是有效 JSON。'
-    }
+  for (const key of Object.keys(fieldErrors)) delete fieldErrors[key]
+  if (!form.name.trim()) fieldErrors.name = '请输入规则集名称。'
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(form.tag)) fieldErrors.tag = '规则标识仅允许字母、数字、点、下划线和连字符。'
+  if (form.description.length > 255) fieldErrors.description = '用途说明不能超过 255 个字符。'
+  if (!Number.isInteger(form.sync_interval) || form.sync_interval < 60 || form.sync_interval > 604800) fieldErrors.sync_interval = '下载间隔必须在 60 秒到 7 天之间。'
+  if (form.mode === 'remote') {
+    if (!/^https?:\/\//i.test(form.source_url)) fieldErrors.source_url = '请输入完整的 HTTP 或 HTTPS 地址。'
+    if (!sourceFormatOptions.some(option => option.value === form.source_format)) fieldErrors.source_format = '请选择受支持的远端格式。'
+  } else if (!form.content.trim()) {
+    fieldErrors.content = '请输入 Zero Rule IR 正文。'
   }
-  fieldErrors.value = fields
-  return Object.keys(fields).length === 0
+  return Object.keys(fieldErrors).length === 0
 }
 
 async function save() {
   if (!validateForm()) return
   saving.value = true
-  formError.value = ''
+  operationError.value = ''
+  editorError.value = ''
   message.value = ''
-  revisionConflict.value = false
-  const payload = {
-    name: form.name.trim(),
-    description: form.description.trim(),
-    tag: form.tag.trim(),
-    source_url: form.source_url.trim(),
-    source_format: form.source_format,
-    sync_interval: form.sync_interval,
-    is_active: form.is_active,
-    content: form.content.trim() ? form.content : undefined,
-    expected_revision: form.id ? form.revision : undefined,
-  }
   try {
-    if (form.id) await updateSubscriptionRuleSet(form.id, payload as any)
-    else await createSubscriptionRuleSet(payload as any)
-    message.value = form.id ? '规则集及正文已更新。' : '规则集已创建。'
-    editorOpen.value = false
+    const base = {
+      name: form.name.trim(),
+      description: form.description.trim(),
+      tag: form.tag.trim(),
+      source_format: (form.mode === 'remote' ? form.source_format : 'zero_rule_ir') as ManagedRuleSourceFormat,
+      sync_interval: form.sync_interval,
+      is_active: form.is_active,
+    }
+    if (!form.id) {
+      await createManagedRuleSet(form.mode === 'remote'
+        ? { ...base, source_url: form.source_url.trim() }
+        : { ...base, content: form.content })
+    } else if (form.mode === 'remote') {
+      const imported = await importManagedRuleSet(form.id, form.source_url.trim(), form.source_format, form.revision)
+      await updateManagedRuleSet(form.id, {
+        ...base,
+        source_url: form.source_url.trim(),
+        expected_revision: imported.revision,
+      })
+    } else {
+      await updateManagedRuleSet(form.id, {
+        ...base,
+        content: form.content,
+        expected_revision: form.revision,
+      })
+    }
+    message.value = form.id ? '规则集已更新。' : '规则集已创建。'
+    closeEditor()
     await load()
   } catch (cause: any) {
-    const failure = cause instanceof ManagedRequestError ? cause : null
-    const status = failure?.status || cause?.response?.status
-    if (status === 409) revisionConflict.value = true
-    const fields = failure?.fields || cause?.response?.data?.data?.fields || cause?.response?.data?.fields
-    if (fields && typeof fields === 'object') fieldErrors.value = fields
-    formError.value = failure?.message || cause?.response?.data?.message || cause?.message || '规则集保存失败。'
+    const payload = cause?.response?.data
+    if (Number(cause?.response?.status || 0) === 409) revisionConflict.value = true
+    if (payload?.fields && typeof payload.fields === 'object') Object.assign(fieldErrors, payload.fields)
+    editorError.value = payload?.message || '规则集保存失败。'
   } finally {
     saving.value = false
   }
 }
 
-async function reimport(item: ManagedRuleSet) {
-  if (!item.source_url) return
-  if (!await confirmAction({
-    title: '重新导入远端规则？',
-    message: `将重新读取“${item.name}”的远端来源，并覆盖 Zboard 当前保存的规则正文。`,
-    confirmText: '重新导入',
-    tone: 'danger',
-  })) return
-  importingID.value = item.id
+async function syncRemote(item: ManagedRuleSet) {
+  if (!item.source_url || !item.source_format) return
+  syncingID.value = item.id
+  operationError.value = ''
   message.value = ''
-  error.value = ''
   try {
-    await managedRequest<ManagedRuleSet>(`/admin/subscription-rule-sets/${item.id}/import`, {
-      method: 'POST',
-      body: JSON.stringify({
-        source_url: item.source_url,
-        source_format: item.source_format || 'zero_rule_ir',
-        expected_revision: item.revision,
-      }),
-    })
-    message.value = '远端规则已重新导入并替换本地正文。'
+    await importManagedRuleSet(item.id, item.source_url, item.source_format, item.revision)
+    message.value = `${item.name} 已从远端同步。`
     await load()
   } catch (cause: any) {
-    error.value = cause?.message || '远端规则导入失败。'
+    operationError.value = cause?.response?.data?.message || '远端规则同步失败。'
   } finally {
-    importingID.value = 0
+    syncingID.value = 0
   }
 }
 
-async function reimportCurrent() {
-  const item = ruleSets.value.find(candidate => candidate.id === form.id)
-  if (!item) return
-  await reimport({ ...item, source_url: form.source_url, source_format: form.source_format, revision: form.revision })
-  if (editorOpen.value) await reloadEditor()
-}
-
-async function copyEndpoint(item: ManagedRuleSet) {
+async function copyPublicURL(item: ManagedRuleSet) {
   if (!item.public_url) return
   try {
     await navigator.clipboard.writeText(item.public_url)
-    message.value = '规则集公开地址已复制。'
+    message.value = '规则地址已复制。'
   } catch {
-    error.value = '无法访问剪贴板，请手动复制规则集地址。'
+    operationError.value = '无法写入剪贴板，请手动复制规则地址。'
   }
 }
 
 async function remove(item: ManagedRuleSet) {
-  if (item.usage_count > 0 || !await confirmAction({
-    title: '删除规则集',
-    message: `删除“${item.name}”后，规则正文和已生成产物都会被移除且无法恢复。`,
-    confirmText: '确认删除',
+  if (item.usage_count > 0) return
+  const confirmed = await confirmAction({
+    title: `删除规则集“${item.name}”？`,
+    message: 'Zboard 保存的正文和派生产物会一并删除，此操作无法撤销。',
+    confirmText: '删除规则集',
     tone: 'danger',
-  })) return
+  })
+  if (!confirmed) return
   deletingID.value = item.id
+  operationError.value = ''
   message.value = ''
   try {
-    await deleteSubscriptionRuleSet(item.id)
+    await deleteManagedRuleSet(item.id)
     message.value = '规则集已删除。'
     await load()
   } catch (cause: any) {
-    error.value = cause?.response?.data?.message || cause?.message || '规则集删除失败。'
+    operationError.value = cause?.response?.data?.message || '规则集删除失败。'
   } finally {
     deletingID.value = 0
   }
 }
 
 function sourceHost(value?: string) {
-  if (!value) return '本地维护'
-  try {
-    return new URL(value).host
-  } catch {
-    return value
-  }
+  if (!value) return '本地规则库'
+  try { return new URL(value).host }
+  catch { return value }
 }
 
 function sourceFormatLabel(value?: string) {
-  return sourceFormatOptions.find(option => option.value === value)?.label || (value ? value : '无远端来源')
-}
-
-function contentByteLength(value: string) {
-  return new TextEncoder().encode(value).byteLength
-}
-
-function formatBytes(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return '0 B'
-  const units = ['B', 'KiB', 'MiB', 'GiB']
-  let size = value
-  let index = 0
-  while (size >= 1024 && index < units.length - 1) {
-    size /= 1024
-    index += 1
-  }
-  return `${size >= 10 || index === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[index]}`
+  return sourceFormatOptions.find(option => option.value === value)?.label || value || '远端来源'
 }
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat('zh-CN').format(value || 0)
 }
 
+function formatBytes(value: number) {
+  if (!value) return '0 B'
+  const units = ['B', 'KiB', 'MiB', 'GiB']
+  let amount = value
+  let unit = 0
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024
+    unit++
+  }
+  return `${amount >= 10 || unit === 0 ? amount.toFixed(0) : amount.toFixed(1)} ${units[unit]}`
+}
+
+onBeforeRouteUpdate(async to => {
+  search.value = String(to.query.q || '')
+  activeFilter.value = String(to.query.active || '')
+  limit.value = pageLimit(to.query.limit)
+  offset.value = (Math.max(1, Number(to.query.page) || 1) - 1) * limit.value
+  await load()
+})
+
 onMounted(load)
 </script>
 
 <style scoped>
-.compact-cell {
-  gap: 0.2rem;
+.rule-set-editor {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.editor-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
 }
 
 .rule-source-editor {
-  display: grid;
-  gap: 0.65rem;
-}
-
-.rule-source-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-  color: var(--text-muted);
-  font-size: 0.82rem;
-}
-
-.rule-source-toolbar > span {
-  margin-right: auto;
-}
-
-.rule-source-editor :deep(textarea) {
-  min-height: 24rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-family: var(--font-mono);
   line-height: 1.55;
-  tab-size: 2;
+}
+
+.check-field {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+@media (max-width: 760px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
