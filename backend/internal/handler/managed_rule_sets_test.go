@@ -64,8 +64,8 @@ func TestNormalizeZeroRuleIRUsesCanonicalMatcherSemantics(t *testing.T) {
 
 func TestManagedRuleTemplateUsesPlatformEndpoint(t *testing.T) {
 	record := model.SubscriptionRuleSet{
-		Name: "Ads",
-		Tag: "reject-ads",
+		Name:     "Ads",
+		Tag:      "reject-ads",
 		Renderer: managedRuleSetRenderer,
 		Interval: 3600,
 	}
@@ -94,9 +94,9 @@ func TestManagedRuleTemplateUsesPlatformEndpoint(t *testing.T) {
 func TestManagedRuleArtifactNegotiation(t *testing.T) {
 	cases := map[string]string{
 		"znet-sink/0.0.16": managedRuleArtifactZeroRuleIR,
-		"Clash.Meta/1.19": managedRuleArtifactClashClassicalYAML,
-		"sing-box 1.12": managedRuleArtifactSingBoxSource,
-		"curl/8.0": managedRuleArtifactZeroRuleIR,
+		"Clash.Meta/1.19":  managedRuleArtifactClashClassicalYAML,
+		"sing-box 1.12":    managedRuleArtifactSingBoxSource,
+		"curl/8.0":         managedRuleArtifactZeroRuleIR,
 	}
 	for userAgent, expected := range cases {
 		if actual := managedRuleFormatFromUserAgent(userAgent); actual != expected {
