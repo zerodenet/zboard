@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"crypto/sha256"
+	"os"
 	"testing"
 )
 
@@ -25,7 +26,7 @@ func TestWriteManagedRuleSourcePublishesZRSBeforeSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("managedRuleArtifactPath() error = %v", err)
 	}
-	artifact, err := readFile(artifactPath)
+	artifact, err := os.ReadFile(artifactPath)
 	if err != nil {
 		t.Fatalf("read ZRS artifact: %v", err)
 	}
