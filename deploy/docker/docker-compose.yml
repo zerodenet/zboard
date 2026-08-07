@@ -18,7 +18,14 @@ services:
       ZBOARD_ZERO_KERNEL_CONTRACT: ${ZBOARD_ZERO_KERNEL_CONTRACT:-legacy}
       ZBOARD_ZERO_LOCAL_VERSION: ${ZBOARD_ZERO_LOCAL_VERSION:-}
     volumes:
-      - ${ZBOARD_ZERO_ARTIFACT_HOST_DIR:-./artifacts}:/var/lib/zboard/artifacts:ro
+      - type: bind
+        source: ${ZBOARD_ZERO_ARTIFACT_HOST_DIR:-./artifacts}
+        target: /var/lib/zboard/artifacts
+        read_only: true
+      - type: bind
+        source: ${ZBOARD_MANAGED_RULE_HOST_DIR:-./managed-rules}
+        target: /var/lib/zboard/artifacts/rules
+        read_only: false
     ports:
       - "${ZBOARD_HTTP_BIND:-0.0.0.0}:${ZBOARD_HTTP_PORT:-8080}:8080"
     networks:
