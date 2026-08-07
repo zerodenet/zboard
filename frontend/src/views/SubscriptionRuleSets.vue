@@ -165,7 +165,7 @@
             <template #default="{ controlAttrs }">
               <div class="rule-source-editor">
                 <div class="rule-source-toolbar">
-                  <span>{{ form.content ? `${formatBytes(new Blob([form.content]).size)}` : '尚未填写正文' }}</span>
+                  <span>{{ form.content ? formatBytes(contentByteLength(form.content)) : '尚未填写正文' }}</span>
                   <UiButton variant="secondary" size="sm" type="button" @click="fillEmptyIR">填入空白 IR</UiButton>
                   <UiButton v-if="form.id && form.source_url" variant="secondary" size="sm" type="button" :loading="importingID === form.id" @click="reimportCurrent">从远端覆盖</UiButton>
                 </div>
@@ -598,6 +598,10 @@ function sourceHost(value?: string) {
 
 function sourceFormatLabel(value?: string) {
   return sourceFormatOptions.find(option => option.value === value)?.label || (value ? value : '无远端来源')
+}
+
+function contentByteLength(value: string) {
+  return new TextEncoder().encode(value).byteLength
 }
 
 function formatBytes(value: number) {
