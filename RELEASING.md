@@ -21,7 +21,8 @@
      pre-squash migration and passes the final schema-signature check;
    - post-v0.1.0 changes have new `up` + `down` scripts without modifying a
      released migration.
-3. Docker backup, upgrade, and rollback flow rehearsed
+3. Docker backup, upgrade, and rollback flow rehearsed, including a matching
+   database backup and `ZBOARD_MANAGED_RULE_HOST_DIR` snapshot.
 4. Backend startup and readiness probes are passable
 5. Frontend can consume core APIs for dashboard, nodes, plans, billing
 6. Security review passed for auth, payment callback, and SSH operations
@@ -40,16 +41,22 @@
 ## Rollback requirements
 
 - Keep last stable image available.
-- Keep the database backup, previous source/image, encryption key and every
-  released migration rollback script available.
+- Keep the database backup, managed-rule directory snapshot, previous
+  source/image, encryption key and every released migration rollback script
+  available.
+- Treat the database and `ZBOARD_MANAGED_RULE_HOST_DIR` as one recovery unit.
+  Database rows contain rule metadata and revisions, while canonical IR and
+  compiled ZRS artifacts remain on the filesystem.
 - During v0.0.1 development, preserve the old database's applied migration
   rows so the immediately previous development binary can still be restored.
   A clean database created from the squashed baseline must not be opened by a
   pre-squash binary.
 - Rollback steps:
   - Switch traffic back to previous revision
+  - Restore the matching database and managed-rule snapshot when data rollback is required
   - Confirm health and dashboard pages are still readable
   - Confirm orders/subscriptions queries still work
+  - Confirm published managed-rule ZRS URLs remain readable
 
 Kubernetes deployment and rollout automation are outside the supported v0.1.0 release path.
 
@@ -64,6 +71,15 @@ Kubernetes deployment and rollout automation are outside the supported v0.1.0 re
 - Supply the existing Redis address and password through
   `ZBOARD_REDIS_ADDR` and `ZBOARD_REDIS_PASSWORD`. Compose does not create,
   restart, remove or back up the external MySQL and Redis containers.
+- Keep `ZBOARD_ZERO_ARTIFACT_HOST_DIR` read-only. It contains trusted Zero
+  binaries and checksum files.
+- Mount `ZBOARD_MANAGED_RULE_HOST_DIR` read-write at
+  `/var/lib/zboard/artifacts/rules`. It contains application-generated IR and
+  ZRS files, must persist across container replacement, and must be shared by
+  blue/green instances.
+- Run `sh deploy/docker/prepare-host-dirs.sh` before the first Compose start.
+  Detailed backup, restore and mount verification steps are documented in
+  [`deploy/docker/README.md`](deploy/docker/README.md).
 - The intranet synchronization script uses
   `ZBOARD_EXTERNAL_MYSQL_CONTAINER` only for the pre-switch database dump.
 

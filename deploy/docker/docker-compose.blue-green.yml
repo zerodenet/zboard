@@ -31,7 +31,14 @@ services:
       ZBOARD_ZERO_LOCAL_VERSION: ${ZBOARD_ZERO_LOCAL_VERSION:-}
     volumes:
       - ../backend/etc/zboard.yaml.example:/app/etc/zboard.yaml:ro
-      - ${ZBOARD_ZERO_ARTIFACT_HOST_DIR:-./artifacts}:/var/lib/zboard/artifacts:ro
+      - type: bind
+        source: ${ZBOARD_ZERO_ARTIFACT_HOST_DIR:-./artifacts}
+        target: /var/lib/zboard/artifacts
+        read_only: true
+      - type: bind
+        source: ${ZBOARD_MANAGED_RULE_HOST_DIR:-./managed-rules}
+        target: /var/lib/zboard/artifacts/rules
+        read_only: false
     command: ["-f", "/app/etc/zboard.yaml"]
     restart: unless-stopped
     expose:
@@ -56,7 +63,14 @@ services:
       ZBOARD_ZERO_LOCAL_VERSION: ${ZBOARD_ZERO_LOCAL_VERSION:-}
     volumes:
       - ../backend/etc/zboard.yaml.example:/app/etc/zboard.yaml:ro
-      - ${ZBOARD_ZERO_ARTIFACT_HOST_DIR:-./artifacts}:/var/lib/zboard/artifacts:ro
+      - type: bind
+        source: ${ZBOARD_ZERO_ARTIFACT_HOST_DIR:-./artifacts}
+        target: /var/lib/zboard/artifacts
+        read_only: true
+      - type: bind
+        source: ${ZBOARD_MANAGED_RULE_HOST_DIR:-./managed-rules}
+        target: /var/lib/zboard/artifacts/rules
+        read_only: false
     command: ["-f", "/app/etc/zboard.yaml"]
     restart: unless-stopped
     expose:

@@ -1,0 +1,13 @@
+[package]
+name = "zboard-zrs-compiler"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MPL-2.0"
+
+[[bin]]
+name = "zrs-compiler"
+path = "src/main.rs"
+
+[dependencies]
+zero-rule = { git = "https://github.com/zerodenet/core", rev = "bdcb1d6a311fbaad483b45cdd302994713bb871b" }

@@ -25,3 +25,5 @@ frontend/.nuxt
 /.pnpm-store
 /.tmp-go-build
 /zboard-deploy-*.tar.gz
+/deploy/docker/artifacts/
+/deploy/docker/managed-rules/
