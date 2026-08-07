@@ -21,6 +21,10 @@ const (
 
 var errProtocolCredentialLockTimeout = errors.New("protocol credential reconciliation lock timeout")
 
+type protocolCredentialLockRow interface {
+	Scan(dest ...interface{}) error
+}
+
 func (h *handlers) runProtocolCredentialTransaction(operation func(tx *gorm.DB) error) error {
 	return retryProtocolCredentialTransaction(func() error {
 		return h.db.Connection(func(connection *gorm.DB) (err error) {
@@ -43,12 +47,17 @@ func (h *handlers) runProtocolCredentialTransaction(operation func(tx *gorm.DB) 
 }
 
 func acquireProtocolCredentialLock(connection *gorm.DB) (bool, error) {
-	var result sql.NullInt64
-	if err := connection.Raw(
+	row := connection.Raw(
 		"SELECT GET_LOCK(?, ?)",
 		protocolCredentialLockName,
 		protocolCredentialLockTimeoutSeconds,
-	).Scan(&result).Error; err != nil {
+	).Row()
+	return scanProtocolCredentialLockResult(row)
+}
+
+func scanProtocolCredentialLockResult(row protocolCredentialLockRow) (bool, error) {
+	var result sql.NullInt64
+	if err := row.Scan(&result); err != nil {
 		return false, err
 	}
 	return result.Valid && result.Int64 == 1, nil
