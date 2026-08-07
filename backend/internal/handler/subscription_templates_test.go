@@ -86,7 +86,7 @@ func TestValidateSubscriptionTemplateReturnsFieldErrors(t *testing.T) {
 func TestSubscriptionRendererContentTypesAreBackendOwned(t *testing.T) {
 	for renderer, expected := range map[string]string{
 		subscriptionRendererZnetSink: "application/json",
-		"zero":                      "application/json",
+		"zero":                       "application/json",
 		subscriptionRendererClash:    "application/yaml",
 		subscriptionRendererSingBox:  "application/json",
 	} {
