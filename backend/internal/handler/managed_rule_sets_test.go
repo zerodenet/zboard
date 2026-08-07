@@ -83,20 +83,21 @@ func TestManagedRuleTemplateUsesPlatformEndpoint(t *testing.T) {
 		t.Fatalf("marshal resolved rule set: %v", err)
 	}
 	text := string(encoded)
-	if !strings.Contains(text, `"format":"zero_rule_ir"`) {
-		t.Fatalf("znet-sink must receive Zero Rule IR, got %s", text)
+	if !strings.Contains(text, `"format":"zrs"`) {
+		t.Fatalf("znet-sink must receive ZRS, got %s", text)
 	}
-	if !strings.Contains(text, `https://panel.example.com/api/v1/rules/reject-ads?format=zero_rule_ir`) {
-		t.Fatalf("template must use the Zboard public endpoint, got %s", text)
+	if !strings.Contains(text, `https://panel.example.com/api/v1/rules/reject-ads.zrs`) {
+		t.Fatalf("template must use the Zboard ZRS endpoint, got %s", text)
 	}
 }
 
 func TestManagedRuleArtifactNegotiation(t *testing.T) {
 	cases := map[string]string{
-		"znet-sink/0.0.16": managedRuleArtifactZeroRuleIR,
+		"znet-sink/0.0.16": managedRuleArtifactZRS,
 		"Clash.Meta/1.19":  managedRuleArtifactClashClassicalYAML,
+		"Mihomo/1.19":      managedRuleArtifactClashClassicalYAML,
 		"sing-box 1.12":    managedRuleArtifactSingBoxSource,
-		"curl/8.0":         managedRuleArtifactZeroRuleIR,
+		"curl/8.0":         managedRuleArtifactZRS,
 	}
 	for userAgent, expected := range cases {
 		if actual := managedRuleFormatFromUserAgent(userAgent); actual != expected {
