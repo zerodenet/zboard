@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="规则集" description="由 Zboard 维护、校验并发布 Zero Rule IR；订阅模板只引用稳定规则地址并选择命中后的路由动作。" eyebrow="订阅模板">
+    <PageHeader title="规则集" description="由 Zboard 维护统一规则源并发布适配客户端的规则产物；订阅模板只引用稳定规则地址并选择命中后的路由动作。" eyebrow="订阅模板">
       <template #actions>
         <PageRefreshButton label="刷新规则集" :loading="loading" @click="load" />
         <UiButton type="button" @click="openCreate"><UiIcon name="plus" />新建规则集</UiButton>
