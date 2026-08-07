@@ -192,7 +192,10 @@ func fetchManagedRuleSource(ctx context.Context, rawURL string) ([]byte, error) 
 		return nil, err
 	}
 	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
+		// Deliberately do not inherit HTTP(S)_PROXY. A proxy would resolve and
+		// access the destination outside this process, bypassing the private-IP
+		// checks enforced by DialContext.
+		Proxy: nil,
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(address)
 			if err != nil {
@@ -201,6 +204,9 @@ func fetchManagedRuleSource(ctx context.Context, rawURL string) ([]byte, error) 
 			addresses, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
 			if err != nil {
 				return nil, err
+			}
+			if len(addresses) == 0 {
+				return nil, errors.New("source URL did not resolve to an IP address")
 			}
 			for _, resolved := range addresses {
 				if !managedRuleImportAddressAllowed(resolved) {
