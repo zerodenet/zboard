@@ -328,6 +328,11 @@ func (h *handlers) ReconcileSubscriptionAccessTokens() error {
 }
 
 func (h *handlers) ScopedClientSubscriptionHandler(w http.ResponseWriter, r *http.Request) {
+	if !isSubscriptionClientUserAgent(r.UserAgent()) {
+		h.redirectSubscriptionCamouflage(w, r)
+		return
+	}
+
 	rawToken := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/client/subscription/"))
 	if rawToken == "" || strings.Contains(rawToken, "/") {
 		h.redirectSubscriptionCamouflage(w, r)
