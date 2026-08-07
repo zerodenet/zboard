@@ -43,7 +43,8 @@ FROM alpine:3.20
 LABEL org.opencontainers.image.source="https://github.com/zerodenet/zboard"
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
-RUN mkdir -p /app/etc
+RUN mkdir -p /app/etc /var/lib/zboard/artifacts/rules && \
+    chmod 0750 /var/lib/zboard/artifacts/rules
 COPY --from=backend-builder /zboard /usr/local/bin/zboard
 COPY --from=zrs-compiler-builder /zrs-compiler /usr/local/bin/zrs-compiler
 COPY backend/etc/zboard.yaml.example /app/etc/zboard.yaml
