@@ -58,7 +58,7 @@ func TestResolveSubscriptionDelivery(t *testing.T) {
 			wantUsesUA:   true,
 		},
 		{
-			name:       "unknown client falls back to native",
+			name:       "unknown client retains internal native fallback",
 			userAgent:  "curl/8.14.1",
 			wantFormat: "native",
 			wantUsesUA: true,
@@ -101,6 +101,39 @@ func TestResolveSubscriptionDelivery(t *testing.T) {
 					test.requestedTemplate, test.userAgent, got, test.wantTemplate, test.wantFormat, test.wantUsesUA)
 			}
 		})
+	}
+}
+
+func TestSubscriptionClientUserAgentRecognition(t *testing.T) {
+	accepted := []string{
+		"ZNet-Sink/0.3.0",
+		"ZNet-Sink/0.0.16-rc.4",
+		"ZNet-Sink/v0.1.0+build.7",
+		"Clash.Meta",
+		"Mihomo/1.19.0",
+		"sing-box/1.12.0",
+	}
+	for _, userAgent := range accepted {
+		if !isSubscriptionClientUserAgent(userAgent) {
+			t.Fatalf("isSubscriptionClientUserAgent(%q) = false, want true", userAgent)
+		}
+	}
+
+	rejected := []string{
+		"",
+		"curl/8.14.1",
+		"Mozilla/5.0",
+		"ZNet-Sink",
+		"ZNet-Sink/",
+		"znet-sink/0.3.0",
+		"Mozilla/5.0 ZNet-Sink/0.3.0",
+		"znetsink/0.3.0",
+		"ZNet-Sink/0.3.0 extra",
+	}
+	for _, userAgent := range rejected {
+		if isSubscriptionClientUserAgent(userAgent) {
+			t.Fatalf("isSubscriptionClientUserAgent(%q) = true, want false", userAgent)
+		}
 	}
 }
 
