@@ -7,11 +7,16 @@ function readSource(relativePath: string) {
 }
 
 describe('commerce purchase experience source contract', () => {
-  it('keeps the homepage backed by live catalog data', () => {
+  it('keeps the homepage preview static while recommendations use live catalog data', () => {
     const source = readSource('./Home.vue')
     expect(source).toContain('fetchPlanCatalogPage')
     expect(source).toContain('CommercePlanCard')
-    expect(source).toContain('storefront-preview')
+    expect(source).toContain('storefront-home-plans')
+    expect(source).toContain('套餐选购流程介绍')
+    expect(source).toContain('找到适合你的服务方案')
+    expect(source).toContain('浏览全部套餐')
+    expect(source).not.toContain('featuredPlan')
+    expect(source).not.toContain('formatCurrency')
     expect(source).not.toContain('72.6')
     expect(source).not.toContain('2026/08/06')
     expect(source).not.toContain('个人标准版')
@@ -29,7 +34,7 @@ describe('commerce purchase experience source contract', () => {
     expect(source).not.toContain('暂未定价')
   })
 
-  it('starts subscription operations from a target and confirms the order after product detail', () => {
+  it('starts subscription operations from a target and keeps order errors in checkout', () => {
     const source = readSource('./account/AccountPlans.vue')
     expect(source).toContain("startOperation('renew', subscription.id)")
     expect(source).toContain("startOperation('change', subscription.id)")
@@ -38,9 +43,20 @@ describe('commerce purchase experience source contract', () => {
     expect(source).toContain('purchase-checkout__section')
     expect(source).toContain('订单确认')
     expect(source).toContain('确认创建订单')
+    expect(source).toContain('checkoutError')
+    expect(source).toContain('commerceErrorMessage')
+    expect(source).toContain('无法创建订单')
     expect(source.indexOf('订单确认')).toBeLessThan(source.indexOf('确认创建订单'))
     expect(source).not.toContain('ModalDialog')
     expect(source).not.toContain('commerce-offer-tabs')
+  })
+
+  it('keeps administrator confirmation errors inside the confirmation dialog', () => {
+    const source = readSource('./Orders.vue')
+    expect(source).toContain(':error="actionError"')
+    expect(source).toContain('commerceErrorMessage')
+    expect(source).toContain('actionError.value = commerceErrorMessage')
+    expect(source).not.toContain("catch (e: any) { error.value = e?.response?.data?.message")
   })
 
   it('does not ship prototype annotations as customer-facing copy', () => {

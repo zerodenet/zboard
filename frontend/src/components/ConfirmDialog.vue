@@ -4,6 +4,7 @@
       <span><UiIcon :name="tone === 'danger' ? 'alert' : 'shield'" /></span>
       <p><slot>{{ message }}</slot></p>
     </div>
+    <PageAlert v-if="error" tone="danger" title="无法完成操作">{{ error }}</PageAlert>
     <template #footer>
       <UiButton variant="secondary" type="button" :disabled="busy" @click="$emit('close')">取消</UiButton>
       <UiButton :variant="tone === 'danger' ? 'danger' : 'primary'" type="button" :loading="busy" @click="$emit('confirm')">
@@ -15,10 +16,11 @@
 
 <script setup lang="ts">
 import ModalDialog from './ModalDialog.vue'
+import PageAlert from './PageAlert.vue'
 import UiIcon from './UiIcon.vue'
 
-withDefaults(defineProps<{ open: boolean; title: string; description?: string; message?: string; confirmText?: string; tone?: 'primary' | 'danger'; busy?: boolean }>(), {
-  confirmText: '确认', tone: 'primary', busy: false, message: ''
+withDefaults(defineProps<{ open: boolean; title: string; description?: string; message?: string; error?: string; confirmText?: string; tone?: 'primary' | 'danger'; busy?: boolean }>(), {
+  confirmText: '确认', tone: 'primary', busy: false, message: '', error: ''
 })
 defineEmits<{ close: []; confirm: [] }>()
 </script>
