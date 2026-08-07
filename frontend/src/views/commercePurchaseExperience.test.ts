@@ -34,7 +34,7 @@ describe('commerce purchase experience source contract', () => {
     expect(source).not.toContain('暂未定价')
   })
 
-  it('starts subscription operations from a target and confirms the order after product detail', () => {
+  it('starts subscription operations from a target and keeps order errors in checkout', () => {
     const source = readSource('./account/AccountPlans.vue')
     expect(source).toContain("startOperation('renew', subscription.id)")
     expect(source).toContain("startOperation('change', subscription.id)")
@@ -43,9 +43,20 @@ describe('commerce purchase experience source contract', () => {
     expect(source).toContain('purchase-checkout__section')
     expect(source).toContain('订单确认')
     expect(source).toContain('确认创建订单')
+    expect(source).toContain('checkoutError')
+    expect(source).toContain('commerceErrorMessage')
+    expect(source).toContain('无法创建订单')
     expect(source.indexOf('订单确认')).toBeLessThan(source.indexOf('确认创建订单'))
     expect(source).not.toContain('ModalDialog')
     expect(source).not.toContain('commerce-offer-tabs')
+  })
+
+  it('keeps administrator confirmation errors inside the confirmation dialog', () => {
+    const source = readSource('./Orders.vue')
+    expect(source).toContain(':error="actionError"')
+    expect(source).toContain('commerceErrorMessage')
+    expect(source).toContain('actionError.value = commerceErrorMessage')
+    expect(source).not.toContain("catch (e: any) { error.value = e?.response?.data?.message")
   })
 
   it('does not ship prototype annotations as customer-facing copy', () => {
