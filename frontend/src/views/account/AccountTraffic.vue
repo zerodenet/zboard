@@ -59,7 +59,13 @@
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
         <WorkbenchFilterBar :active="Boolean(subscriptionFilter || from || to)" @clear="clearFilters">
-          <WorkbenchFilterInput v-model="subscriptionFilter" label="订阅 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
+          <WorkbenchFilterSelect
+            v-model="subscriptionFilter"
+            label="订阅"
+            :options="subscriptionOptions"
+            empty-value=""
+            @apply="applyFilters"
+          />
           <WorkbenchFilterDate v-model:from="from" v-model:to="to" label="记录日期" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
@@ -67,7 +73,7 @@
         <span class="muted">范围内计费 {{ formatBytes(aggregates.used_bytes) }}</span>
       </template>
 
-      <DataTable v-if="records.length" caption="我的流量使用记录" :row-count="total" :min-width="760">
+      <DataTable v-if="records.length" caption="我的流量使用记录" :row-count="total" :min-width="820">
         <thead>
           <tr>
             <th class="table-primary-column">时间</th>
@@ -81,7 +87,15 @@
         <tbody>
           <tr v-for="record in records" :key="record.id">
             <td class="table-primary-column"><TimeBadge :value="record.record_at" /></td>
-            <td class="numeric-column">{{ record.subscription_id || '—' }}</td>
+            <td>
+              <EntityReference
+                v-if="record.subscription_id"
+                :reference="subscriptionReference(record.subscription_id)"
+                :fallback-id="record.subscription_id"
+                fallback-kind="subscription"
+              />
+              <span v-else>—</span>
+            </td>
             <td class="numeric-column" data-column-priority="2">{{ formatBytes(record.upload_bytes) }}</td>
             <td class="numeric-column" data-column-priority="2">{{ formatBytes(record.download_bytes) }}</td>
             <td class="numeric-column" data-column-priority="3">{{ formatMultiplier(record.protocol_multiplier_milli) }}</td>
@@ -115,7 +129,7 @@
       <UiIcon name="activity" />
       <div>
         <strong>图表数据如何计算？</strong>
-        <p>流量按日期求和；未来连接上报接入后，只取每个采样窗口以及筛选区间内的最高并发连接数，不使用平均值或累计值。套餐限速与连接限制仍以内核实际执行结果为准。</p>
+        <p>流量由服务端按日期求和；未来连接上报接入后，只取每个采样窗口以及筛选区间内的最高并发连接数，不使用平均值或累计值。套餐限速与连接限制仍以内核实际执行结果为准。</p>
       </div>
     </aside>
   </section>
@@ -130,10 +144,12 @@ import {
   type TrafficRecordAggregates,
   type TrafficRecordSummary,
 } from '../../api/client'
+import type { EntityReference as EntityReferenceData } from '../../api/readModels'
 import CursorPager from '../../components/CursorPager.vue'
 import DataTable from '../../components/DataTable.vue'
 import DataWorkbench from '../../components/DataWorkbench.vue'
 import EmptyState from '../../components/EmptyState.vue'
+import EntityReference from '../../components/EntityReference.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import TimeBadge from '../../components/TimeBadge.vue'
 import TransientFeedback from '../../components/TransientFeedback.vue'
@@ -141,7 +157,7 @@ import UiButton from '../../components/UiButton.vue'
 import UiIcon from '../../components/UiIcon.vue'
 import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterDate from '../../components/WorkbenchFilterDate.vue'
-import WorkbenchFilterInput from '../../components/WorkbenchFilterInput.vue'
+import WorkbenchFilterSelect from '../../components/WorkbenchFilterSelect.vue'
 import { resolveHistoryRange } from '../../composables/historyState'
 import { useCursorTable } from '../../composables/useCursorTable'
 import { formatBytes } from '../../utils/format'
@@ -193,6 +209,20 @@ const {
 
 const loading = computed(() => recordLoading.value || summaryLoading.value || observabilityLoading.value)
 const error = computed(() => recordError.value || summaryError.value || observabilityError.value)
+const subscriptionReferences = computed<Record<string, EntityReferenceData>>(() => Object.fromEntries(
+  observability.value.subscriptions.map(item => [String(item.id), item]),
+))
+const subscriptionOptions = computed(() => [
+  { label: '全部订阅', value: '' },
+  ...observability.value.subscriptions.map(item => ({
+    label: [item.display_name, item.secondary, `#${item.id}`].filter(Boolean).join(' · '),
+    value: String(item.id),
+  })),
+])
+
+function subscriptionReference(id: number) {
+  return subscriptionReferences.value[String(id)] || null
+}
 
 function formatMultiplier(value: number) {
   return `${(Number(value || 1000) / 1000).toLocaleString('zh-CN', { maximumFractionDigits: 3 })}×`
