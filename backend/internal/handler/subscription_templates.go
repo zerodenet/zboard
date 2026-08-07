@@ -24,14 +24,22 @@ func (h *handlers) ReconcileSubscriptionTemplateDefaults() error {
 		return err
 	}
 	for _, template := range templates {
-		_, normalized, err := normalizeSubscriptionCustomization(template.Renderer, template.Customization)
+		renderer := normalizeSubscriptionRenderer(template.Renderer)
+		_, normalized, err := normalizeSubscriptionCustomization(renderer, template.Customization)
 		if err != nil {
 			return fmt.Errorf("normalize subscription template %d: %w", template.ID, err)
 		}
-		if bytes.Equal(bytes.TrimSpace(template.Customization), bytes.TrimSpace(normalized)) {
+		updates := map[string]interface{}{}
+		if template.Renderer != renderer {
+			updates["renderer"] = renderer
+		}
+		if !bytes.Equal(bytes.TrimSpace(template.Customization), bytes.TrimSpace(normalized)) {
+			updates["customization"] = normalized
+		}
+		if len(updates) == 0 {
 			continue
 		}
-		if err := h.db.Model(&model.SubscriptionTemplate{}).Where("id = ?", template.ID).Update("customization", normalized).Error; err != nil {
+		if err := h.db.Model(&model.SubscriptionTemplate{}).Where("id = ?", template.ID).Updates(updates).Error; err != nil {
 			return fmt.Errorf("persist subscription template %d defaults: %w", template.ID, err)
 		}
 	}
@@ -120,12 +128,35 @@ var subscriptionRendererDefinitions = map[string]subscriptionRendererDefinition{
 	subscriptionRendererSingBox:  {contentType: "application/json", render: renderSingBoxSubscription},
 }
 
+func normalizeSubscriptionRenderer(renderer string) string {
+	normalized := strings.ToLower(strings.TrimSpace(renderer))
+	if isZeroSubscriptionAlias(normalized) {
+		return subscriptionRendererZnetSink
+	}
+	switch normalized {
+	case "clash-yaml":
+		return subscriptionRendererClash
+	case "singbox":
+		return subscriptionRendererSingBox
+	default:
+		return normalized
+	}
+}
+
+func presentSubscriptionRenderer(renderer string) string {
+	if normalizeSubscriptionRenderer(renderer) == subscriptionRendererZnetSink {
+		return subscriptionDeliveryZero
+	}
+	return canonicalSubscriptionFormat(renderer)
+}
+
 func subscriptionRenderer(renderer string) (subscriptionRendererDefinition, bool) {
-	definition, ok := subscriptionRendererDefinitions[strings.ToLower(strings.TrimSpace(renderer))]
+	definition, ok := subscriptionRendererDefinitions[normalizeSubscriptionRenderer(renderer)]
 	return definition, ok
 }
 
 func renderSubscriptionWithRenderer(renderer string, customizationRaw json.RawMessage, data subscriptionTemplateData) (string, string, error) {
+	renderer = normalizeSubscriptionRenderer(renderer)
 	definition, ok := subscriptionRenderer(renderer)
 	if !ok {
 		return "", "", fmt.Errorf("unsupported subscription renderer %q", renderer)
@@ -164,7 +195,7 @@ func normalizeSubscriptionTemplateRequest(req *subscriptionTemplateWriteReq) err
 	req.Name = strings.TrimSpace(req.Name)
 	req.Slug = strings.ToLower(strings.TrimSpace(req.Slug))
 	req.Description = strings.TrimSpace(req.Description)
-	req.Renderer = strings.ToLower(strings.TrimSpace(req.Renderer))
+	req.Renderer = normalizeSubscriptionRenderer(req.Renderer)
 	fields := map[string]string{}
 	if req.Name == "" {
 		fields["name"] = "请输入模板名称。"
@@ -248,7 +279,12 @@ func sampleSubscriptionTemplateData() subscriptionTemplateData {
 
 func presentSubscriptionTemplate(item *model.SubscriptionTemplate) {
 	if definition, ok := subscriptionRenderer(item.Renderer); ok {
-		item.ContentType = definition.contentType
+		item.Renderer = presentSubscriptionRenderer(item.Renderer)
+		if item.Renderer == subscriptionDeliveryZero {
+			item.ContentType = "text/plain"
+		} else {
+			item.ContentType = definition.contentType
+		}
 	} else {
 		item.ContentType = ""
 	}
@@ -388,7 +424,7 @@ func (h *handlers) AdminSubscriptionTemplatePreviewHandler(w http.ResponseWriter
 		BadRequest(w, err.Error())
 		return
 	}
-	req.Renderer = strings.ToLower(strings.TrimSpace(req.Renderer))
+	req.Renderer = normalizeSubscriptionRenderer(req.Renderer)
 	if _, ok := subscriptionRenderer(req.Renderer); !ok {
 		BadRequestFields(w, "订阅输出格式预览校验失败。", map[string]string{"renderer": "请选择系统支持的订阅输出格式。"})
 		return
@@ -412,6 +448,7 @@ func (h *handlers) AdminSubscriptionTemplatePreviewHandler(w http.ResponseWriter
 		BadRequestFields(w, "订阅输出格式预览失败。", map[string]string{"customization": err.Error()})
 		return
 	}
+	rendered, contentType, _ = encodeSubscriptionTemplateDelivery(req.Renderer, rendered, contentType)
 	content, truncated := truncateTemplatePreview(rendered)
 	OK(w, subscriptionTemplatePreview{
 		Content: content, ContentType: contentType, Bytes: len(rendered),
@@ -565,14 +602,15 @@ func (h *handlers) writeSubscriptionTemplate(ctx context.Context, w http.Respons
 			Protocol: endpoint.Protocol, MultiplierMilli: endpoint.MultiplierMilli, Config: config,
 		})
 	}
-	rendered, contentType, err := renderSubscriptionWithStoredRuleSets(h.db, item.Renderer, item.Customization, data, false)
+	renderer := normalizeSubscriptionRenderer(item.Renderer)
+	rendered, contentType, err := renderSubscriptionWithStoredRuleSets(h.db, renderer, item.Customization, data, false)
 	if err != nil {
 		return err
 	}
-	if err := h.validateZeroSubscriptionPreview(ctx, item.Renderer, rendered); err != nil {
+	if err := h.validateZeroSubscriptionPreview(ctx, renderer, rendered); err != nil {
 		return err
 	}
-	rendered, contentType, deliveryFormat := encodeSubscriptionTemplateDelivery(item.Renderer, rendered, contentType)
+	rendered, contentType, deliveryFormat := encodeSubscriptionTemplateDelivery(renderer, rendered, contentType)
 	w.Header().Set("Content-Type", contentType+"; charset=utf-8")
 	w.Header().Set("X-Zboard-Subscription-Template", item.Slug)
 	w.Header().Set("X-Zboard-Subscription-Format", deliveryFormat)
@@ -582,8 +620,9 @@ func (h *handlers) writeSubscriptionTemplate(ctx context.Context, w http.Respons
 }
 
 func encodeSubscriptionTemplateDelivery(renderer, rendered, contentType string) (string, string, string) {
+	renderer = normalizeSubscriptionRenderer(renderer)
 	if renderer != subscriptionRendererZnetSink {
-		return rendered, contentType, renderer
+		return rendered, contentType, presentSubscriptionRenderer(renderer)
 	}
-	return base64.StdEncoding.EncodeToString([]byte(rendered)), "text/plain", "znet-sink-base64"
+	return base64.StdEncoding.EncodeToString([]byte(rendered)), "text/plain", subscriptionDeliveryZero
 }

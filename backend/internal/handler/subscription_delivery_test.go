@@ -12,11 +12,29 @@ func TestResolveSubscriptionDelivery(t *testing.T) {
 		wantUsesUA        bool
 	}{
 		{
-			name:         "znet sink client",
+			name:         "znet sink client uses zero format",
 			userAgent:    "ZNet-Sink/0.3.0",
 			wantTemplate: "znet-sink",
-			wantFormat:   "znet-sink",
+			wantFormat:   "zero",
 			wantUsesUA:   true,
+		},
+		{
+			name:              "canonical zero uses legacy built in template",
+			requestedTemplate: "zero",
+			wantTemplate:      "znet-sink",
+			wantFormat:        "zero",
+		},
+		{
+			name:              "legacy plaintext name cannot request plaintext",
+			requestedTemplate: "zero-json",
+			wantTemplate:      "znet-sink",
+			wantFormat:        "zero",
+		},
+		{
+			name:              "legacy base64 name is canonicalized",
+			requestedTemplate: "zero-base64-json",
+			wantTemplate:      "znet-sink",
+			wantFormat:        "zero",
 		},
 		{
 			name:         "znet sink automatic clash import",
@@ -40,7 +58,7 @@ func TestResolveSubscriptionDelivery(t *testing.T) {
 			wantUsesUA:   true,
 		},
 		{
-			name:       "unknown client falls back to native",
+			name:       "unknown client retains internal native fallback",
 			userAgent:  "curl/8.14.1",
 			wantFormat: "native",
 			wantUsesUA: true,
@@ -83,5 +101,63 @@ func TestResolveSubscriptionDelivery(t *testing.T) {
 					test.requestedTemplate, test.userAgent, got, test.wantTemplate, test.wantFormat, test.wantUsesUA)
 			}
 		})
+	}
+}
+
+func TestSubscriptionClientUserAgentRecognition(t *testing.T) {
+	accepted := []string{
+		"ZNet-Sink/0.3.0",
+		"ZNet-Sink/0.0.16-rc.4",
+		"ZNet-Sink/v0.1.0+build.7",
+		"Clash.Meta",
+		"Mihomo/1.19.0",
+		"sing-box/1.12.0",
+	}
+	for _, userAgent := range accepted {
+		if !isSubscriptionClientUserAgent(userAgent) {
+			t.Fatalf("isSubscriptionClientUserAgent(%q) = false, want true", userAgent)
+		}
+	}
+
+	rejected := []string{
+		"",
+		"curl/8.14.1",
+		"Mozilla/5.0",
+		"ZNet-Sink",
+		"ZNet-Sink/",
+		"znet-sink/0.3.0",
+		"Mozilla/5.0 ZNet-Sink/0.3.0",
+		"znetsink/0.3.0",
+		"ZNet-Sink/0.3.0 extra",
+	}
+	for _, userAgent := range rejected {
+		if isSubscriptionClientUserAgent(userAgent) {
+			t.Fatalf("isSubscriptionClientUserAgent(%q) = true, want false", userAgent)
+		}
+	}
+}
+
+func TestCanonicalSubscriptionFormat(t *testing.T) {
+	for _, alias := range []string{"zero", "znet-sink", "zero-json", "zero-base64-json", "base64-json", "znet-sink-base64"} {
+		if got := canonicalSubscriptionFormat(alias); got != "zero" {
+			t.Fatalf("canonicalSubscriptionFormat(%q) = %q, want zero", alias, got)
+		}
+	}
+}
+
+func TestZeroSubscriptionAliasesAreRecognized(t *testing.T) {
+	for _, alias := range []string{
+		"zero",
+		"znet-sink",
+		"znet_sink",
+		"znetsink",
+		"zero-json",
+		"zero-base64-json",
+		"base64-json",
+		"znet-sink-base64",
+	} {
+		if !isZeroSubscriptionAlias(alias) {
+			t.Fatalf("isZeroSubscriptionAlias(%q) = false, want true", alias)
+		}
 	}
 }

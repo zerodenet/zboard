@@ -1,11 +1,17 @@
 package handler
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 const (
 	subscriptionDeliveryAuto   = "auto"
 	subscriptionDeliveryNative = "native"
+	subscriptionDeliveryZero   = "zero"
 )
+
+var znetSinkUserAgentPattern = regexp.MustCompile(`^ZNet-Sink/[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$`)
 
 type subscriptionDeliverySelection struct {
 	TemplateSlug  string
@@ -19,9 +25,15 @@ func resolveSubscriptionDelivery(requestedTemplate, userAgent string) subscripti
 		if strings.EqualFold(requestedTemplate, subscriptionDeliveryNative) {
 			return subscriptionDeliverySelection{Format: subscriptionDeliveryNative}
 		}
+		if isZeroSubscriptionAlias(requestedTemplate) {
+			return subscriptionDeliverySelection{
+				TemplateSlug: "znet-sink",
+				Format:       subscriptionDeliveryZero,
+			}
+		}
 		return subscriptionDeliverySelection{
 			TemplateSlug: requestedTemplate,
-			Format:       requestedTemplate,
+			Format:       canonicalSubscriptionFormat(requestedTemplate),
 		}
 	}
 
@@ -34,16 +46,49 @@ func resolveSubscriptionDelivery(requestedTemplate, userAgent string) subscripti
 	}
 	return subscriptionDeliverySelection{
 		TemplateSlug:  templateSlug,
-		Format:        templateSlug,
+		Format:        canonicalSubscriptionFormat(templateSlug),
 		UsesUserAgent: true,
 	}
 }
 
-func detectSubscriptionTemplate(userAgent string) string {
-	normalized := strings.ToLower(strings.TrimSpace(userAgent))
+func canonicalSubscriptionFormat(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
 	switch {
-	case containsAny(normalized, "znet-sink", "znet_sink", "znetsink"):
+	case isZeroSubscriptionAlias(normalized):
+		return subscriptionDeliveryZero
+	case normalized == "clash-yaml":
+		return "clash"
+	case normalized == "singbox":
+		return "sing-box"
+	default:
+		return normalized
+	}
+}
+
+func isZeroSubscriptionAlias(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "zero", "znet-sink", "znet_sink", "znetsink", "zero-json", "zero-base64-json", "base64-json", "znet-sink-base64":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSubscriptionClientUserAgent(userAgent string) bool {
+	return detectSubscriptionTemplate(userAgent) != ""
+}
+
+func detectSubscriptionTemplate(userAgent string) string {
+	trimmed := strings.TrimSpace(userAgent)
+	if znetSinkUserAgentPattern.MatchString(trimmed) {
+		// ZNet-Sink uses a strict product/version identifier. Do not accept
+		// aliases or substring matches here; those remain request-template
+		// compatibility aliases only.
 		return "znet-sink"
+	}
+
+	normalized := strings.ToLower(trimmed)
+	switch {
 	case containsAny(normalized, "sing-box", "singbox"):
 		return "sing-box"
 	case containsAny(normalized, "clash", "mihomo"):

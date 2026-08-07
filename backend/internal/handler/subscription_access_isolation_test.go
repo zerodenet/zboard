@@ -71,6 +71,22 @@ func TestProjectionFiltersCannotExpandSingleSubscriptionScope(t *testing.T) {
 	}
 }
 
+func TestScopedSubscriptionChecksClientUserAgentBeforeTokenLookup(t *testing.T) {
+	source, err := os.ReadFile("subscription_access_isolation.go")
+	if err != nil {
+		t.Fatalf("read scoped subscription source: %v", err)
+	}
+	text := string(source)
+	guard := strings.Index(text, "if !isSubscriptionClientUserAgent(r.UserAgent())")
+	tokenParse := strings.Index(text, "rawToken := strings.TrimSpace")
+	if guard < 0 || tokenParse < 0 || guard > tokenParse {
+		t.Fatalf("client User-Agent guard must run before token parsing: guard=%d token=%d", guard, tokenParse)
+	}
+	if !strings.Contains(text[guard:tokenParse], "h.redirectSubscriptionCamouflage(w, r)") {
+		t.Fatal("non-client User-Agent does not use the existing camouflage redirect")
+	}
+}
+
 func TestRouterRemovesAccountAggregateAccessRoutes(t *testing.T) {
 	source, err := os.ReadFile("../server/router.go")
 	if err != nil {

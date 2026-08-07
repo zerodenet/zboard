@@ -8,6 +8,8 @@ import type {
 
 export type SupportedSubscriptionRenderer = Exclude<SubscriptionRenderer, 'unsupported'>
 
+type RendererInput = SubscriptionRenderer | 'zero' | 'znet-sink'
+
 export interface SubscriptionTemplateOutputOption {
   value: SupportedSubscriptionRenderer
   label: string
@@ -16,12 +18,21 @@ export interface SubscriptionTemplateOutputOption {
   icon: string
 }
 
+function canonicalRenderer(renderer: RendererInput): 'zero' | 'clash' | 'sing-box' | 'unsupported' {
+  const normalized = String(renderer || '').trim().toLowerCase()
+  if (['zero', 'znet-sink', 'znet_sink', 'znetsink', 'zero-json', 'zero-base64-json'].includes(normalized)) return 'zero'
+  if (normalized === 'clash-yaml') return 'clash'
+  if (normalized === 'singbox') return 'sing-box'
+  if (normalized === 'clash' || normalized === 'sing-box') return normalized
+  return 'unsupported'
+}
+
 export const subscriptionTemplateOutputOptions: SubscriptionTemplateOutputOption[] = [
   {
-    value: 'znet-sink',
-    label: 'ZNet Sink',
-    description: 'Zero 原生 JSON，公开订阅以 Base64 封装，适合 ZNet Sink 自动同步。',
-    contentType: 'application/json',
+    value: 'zero' as SupportedSubscriptionRenderer,
+    label: 'Zero',
+    description: 'Base64 编码的 Zero JSON，适合 ZNet Sink 和其他 Zero 客户端。',
+    contentType: 'text/plain',
     icon: 'activity',
   },
   {
@@ -40,16 +51,18 @@ export const subscriptionTemplateOutputOptions: SubscriptionTemplateOutputOption
   },
 ]
 
-export function subscriptionTemplateOutput(renderer: SubscriptionRenderer) {
-  return subscriptionTemplateOutputOptions.find(option => option.value === renderer) || null
+export function subscriptionTemplateOutput(renderer: RendererInput) {
+  const canonical = canonicalRenderer(renderer)
+  return subscriptionTemplateOutputOptions.find(option => String(option.value) === canonical) || null
 }
 
-export function subscriptionPolicyGroupTypeOptions(renderer: SubscriptionRenderer) {
+export function subscriptionPolicyGroupTypeOptions(renderer: RendererInput) {
+  const canonical = canonicalRenderer(renderer)
   const options = [
     { label: '手动选择', value: 'select' as SubscriptionPolicyGroupType },
     { label: '自动测速', value: 'urltest' as SubscriptionPolicyGroupType },
   ]
-  if (renderer === 'clash' || renderer === 'znet-sink') {
+  if (canonical === 'clash' || canonical === 'zero') {
     options.push({ label: '故障转移', value: 'fallback' })
   }
   return options
@@ -61,8 +74,9 @@ export const clashRuleBehaviorOptions = [
   { label: 'IP/CIDR 集合', value: 'ipcidr' },
 ]
 
-export function subscriptionRuleFormatOptions(renderer: SubscriptionRenderer) {
-  if (renderer === 'znet-sink') {
+export function subscriptionRuleFormatOptions(renderer: RendererInput) {
+  const canonical = canonicalRenderer(renderer)
+  if (canonical === 'zero') {
     return [
       { label: '域名列表', value: 'domain_list' },
       { label: 'CIDR 列表', value: 'cidr_list' },
@@ -70,7 +84,7 @@ export function subscriptionRuleFormatOptions(renderer: SubscriptionRenderer) {
       { label: 'ZRS', value: 'zrs' },
     ]
   }
-  if (renderer === 'sing-box') {
+  if (canonical === 'sing-box') {
     return [
       { label: 'Source JSON', value: 'source' },
       { label: 'SRS Binary', value: 'binary' },
@@ -83,18 +97,19 @@ export function subscriptionRuleFormatOptions(renderer: SubscriptionRenderer) {
   ]
 }
 
-export function defaultSubscriptionRuleSet(renderer: SubscriptionRenderer): SubscriptionTemplateRuleSet {
-  if (renderer === 'znet-sink') {
+export function defaultSubscriptionRuleSet(renderer: RendererInput): SubscriptionTemplateRuleSet {
+  const canonical = canonicalRenderer(renderer)
+  if (canonical === 'zero') {
     return { tag: '', url: '', format: 'domain_list', target: 'group:main', interval: 86400 }
   }
-  if (renderer === 'sing-box') {
+  if (canonical === 'sing-box') {
     return { tag: '', url: '', format: 'source', target: 'group:main', interval: 86400 }
   }
   return { tag: '', url: '', behavior: 'classical', format: 'yaml', target: 'group:main', interval: 86400 }
 }
 
 export function defaultSubscriptionCustomization(
-  renderer: SubscriptionRenderer,
+  renderer: RendererInput,
 ): SubscriptionTemplateCustomization {
   const main = defaultSubscriptionPolicyGroup('main', '节点选择', 'select')
   main.include_groups = ['auto']
@@ -112,7 +127,7 @@ export function defaultSubscriptionCustomization(
 }
 
 export function normalizeSubscriptionCustomization(
-  renderer: SubscriptionRenderer,
+  renderer: RendererInput,
   value?: Record<string, any> | null,
 ): SubscriptionTemplateCustomization {
   if (Number(value?.version || 0) <= 1 && value && Object.keys(value).length) {
@@ -137,7 +152,7 @@ export function normalizeSubscriptionCustomization(
           ...defaultSubscriptionRuleSet(renderer),
           ...rule,
           target: normalizeSubscriptionTarget(String(rule.target || rule.action || ''), mainGroup, true),
-          behavior: renderer === 'clash' ? (rule.behavior || 'classical') : undefined,
+          behavior: canonicalRenderer(renderer) === 'clash' ? (rule.behavior || 'classical') : undefined,
         }),
     advanced_source: String(value?.advanced_source || ''),
   }
@@ -182,7 +197,7 @@ export function subscriptionTargetOptions(customization: SubscriptionTemplateCus
 }
 
 function normalizeLegacySubscriptionCustomization(
-  renderer: SubscriptionRenderer,
+  renderer: RendererInput,
   value: Record<string, any>,
 ): SubscriptionTemplateCustomization {
   const groupName = String(value.group_name || '节点选择')
@@ -193,7 +208,7 @@ function normalizeLegacySubscriptionCustomization(
     main.include_groups = ['auto']
     main.default_group = 'auto'
     groups.push(auto)
-    if (renderer === 'clash') {
+    if (canonicalRenderer(renderer) === 'clash') {
       main.include_groups.push('failover')
       groups.push(defaultSubscriptionPolicyGroup('failover', '故障转移', 'fallback'))
     }
@@ -240,6 +255,6 @@ function normalizeSubscriptionTarget(target: string, mainGroup: string, includeR
   return `group:${normalized}`
 }
 
-export function advancedSubscriptionLanguage(renderer: SubscriptionRenderer) {
-  return renderer === 'clash' ? 'YAML' : 'JSON'
+export function advancedSubscriptionLanguage(renderer: RendererInput) {
+  return canonicalRenderer(renderer) === 'clash' ? 'YAML' : 'JSON'
 }
