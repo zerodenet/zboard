@@ -5,6 +5,7 @@ import "strings"
 const (
 	subscriptionDeliveryAuto   = "auto"
 	subscriptionDeliveryNative = "native"
+	subscriptionDeliveryZero   = "zero"
 )
 
 type subscriptionDeliverySelection struct {
@@ -19,9 +20,15 @@ func resolveSubscriptionDelivery(requestedTemplate, userAgent string) subscripti
 		if strings.EqualFold(requestedTemplate, subscriptionDeliveryNative) {
 			return subscriptionDeliverySelection{Format: subscriptionDeliveryNative}
 		}
+		if isZeroSubscriptionAlias(requestedTemplate) {
+			return subscriptionDeliverySelection{
+				TemplateSlug: "znet-sink",
+				Format:       subscriptionDeliveryZero,
+			}
+		}
 		return subscriptionDeliverySelection{
 			TemplateSlug: requestedTemplate,
-			Format:       requestedTemplate,
+			Format:       canonicalSubscriptionFormat(requestedTemplate),
 		}
 	}
 
@@ -34,8 +41,31 @@ func resolveSubscriptionDelivery(requestedTemplate, userAgent string) subscripti
 	}
 	return subscriptionDeliverySelection{
 		TemplateSlug:  templateSlug,
-		Format:        templateSlug,
+		Format:        canonicalSubscriptionFormat(templateSlug),
 		UsesUserAgent: true,
+	}
+}
+
+func canonicalSubscriptionFormat(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch {
+	case isZeroSubscriptionAlias(normalized):
+		return subscriptionDeliveryZero
+	case normalized == "clash-yaml":
+		return "clash"
+	case normalized == "singbox":
+		return "sing-box"
+	default:
+		return normalized
+	}
+}
+
+func isZeroSubscriptionAlias(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "zero", "znet-sink", "znet_sink", "znetsink", "zero-json", "zero-base64-json", "base64-json", "znet-sink-base64":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -43,6 +73,8 @@ func detectSubscriptionTemplate(userAgent string) string {
 	normalized := strings.ToLower(strings.TrimSpace(userAgent))
 	switch {
 	case containsAny(normalized, "znet-sink", "znet_sink", "znetsink"):
+		// Keep the existing built-in template slug for stored installations;
+		// the externally visible format is canonicalized to "zero".
 		return "znet-sink"
 	case containsAny(normalized, "sing-box", "singbox"):
 		return "sing-box"
