@@ -22,7 +22,12 @@ jobs:
           go mod tidy
           git diff --exit-code -- go.mod go.sum
       - name: Format
-        run: test -z "$(gofmt -l .)"
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            printf '%s\n' "$files"
+            exit 1
+          fi
       - name: Test
         run: go test ./...
       - name: Vet
