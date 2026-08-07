@@ -1,160 +1,448 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="商品与规格" description="商品定义交付权益，销售规格只定义价格、周期和可用购买场景。" eyebrow="Commerce">
+    <PageHeader
+      title="商品与套餐"
+      description="列表只保留商品摘要；销售策略和 SKU 在按需详情中管理。"
+      eyebrow="Catalog"
+    >
       <template #actions>
-        <PageRefreshButton label="刷新商品" :loading="loading" @click="refresh" />
-        <UiButton type="button" @click="openCreate">新增商品</UiButton>
+        <PageRefreshButton label="刷新商品与套餐" :loading="loading" @click="refreshAll" />
+        <UiButton v-if="app.isAdmin" type="button" @click="openCreate">
+          <UiIcon name="plus" />创建商品
+        </UiButton>
       </template>
     </PageHeader>
 
-    <TransientFeedback :success="message" :error="error" success-title="商品已更新" error-title="商品加载失败" />
+    <TransientFeedback
+      :success="message"
+      :error="error"
+      success-title="商品配置已更新"
+      error-title="商品操作失败"
+    />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
-        <WorkbenchFilterBar :active="hasFilters" @clear="clearFilters">
-          <WorkbenchFilterInput v-model="search" label="搜索" maxlength="128" placeholder="商品名称、标识或简介" @apply="applyFilters" />
+        <WorkbenchFilterBar :active="Boolean(search || activeFilter)" @clear="clearFilters">
+          <WorkbenchFilterInput
+            v-model="search"
+            label="搜索"
+            placeholder="名称、Slug 或摘要"
+            @apply="applyFilters"
+          />
           <WorkbenchFilterSelect v-model="activeFilter" label="发布状态" :options="activeOptions" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
-      <template #actions><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders')">查看订单<UiIcon name="chevron" /></RouterLink></template>
-      <DataTable v-if="plans.length" caption="商品管理列表" :row-count="total" :min-width="980">
-        <thead><tr><th class="table-primary-column">商品</th><th data-column-priority="2">交付节点组</th><th data-column-priority="1">交付权益</th><th>发布状态</th><th data-column-priority="2">销售规格</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
+
+      <DataTable
+        v-if="plans.length"
+        caption="套餐商品列表"
+        :row-count="total"
+        :min-width="820"
+        table-class="plan-table"
+      >
+        <thead>
+          <tr>
+            <th class="table-primary-column">商品</th>
+            <th>状态</th>
+            <th data-column-priority="2">节点组</th>
+            <th class="numeric-column" data-column-priority="3">SKU</th>
+            <th class="numeric-column">可售 SKU</th>
+            <th data-column-priority="2">更新时间</th>
+            <th class="table-action-column"><span class="sr-only">操作</span></th>
+          </tr>
+        </thead>
         <tbody>
-          <tr v-for="item in plans" :key="item.id">
-            <td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><span>{{ item.slug }}</span></div></td>
-            <td data-column-priority="2"><EntityReference kind="node_group" :id="item.node_group_id" :label="item.node_group_name" :to="adminContextLink('/admin/node-groups', { group: String(item.node_group_id) })" /></td>
-            <td data-column-priority="1"><div class="cell-title"><strong>{{ formatBytes(item.traffic_bytes) }}</strong><span>{{ item.device_limit > 0 ? `${item.device_limit} 台设备` : '不限设备' }} · {{ item.speed_limit_mbps > 0 ? `${item.speed_limit_mbps} Mbps` : '不限速' }}</span></div></td>
-            <td><StatusBadge :tone="item.is_active ? 'success' : 'neutral'">{{ item.is_active ? '已发布' : '草稿' }}</StatusBadge></td>
-            <td data-column-priority="2"><div class="cell-title"><strong>{{ item.active_sku_count }} 个可售</strong><span>共 {{ item.sku_count }} 个 SKU</span></div></td>
-            <td class="table-action-column"><RowActions :label="`商品 ${item.name} 的操作`" :trigger-key="`plan-${item.id}`"><UiButton variant="secondary" size="sm" type="button" :data-plan-detail-trigger="item.id" @click="openDetail(item.id)">查看详情</UiButton><UiButton variant="ghost" size="sm" type="button" :data-plan-editor-trigger="item.id" @click="openPlanEditor(item)">编辑商品</UiButton><UiButton variant="ghost" size="sm" type="button" @click="togglePlanStatus(item)">{{ item.is_active ? '下架' : '发布' }}</UiButton></RowActions></td>
+          <tr v-for="plan in plans" :key="plan.id">
+            <td class="table-primary-column">
+              <div class="cell-title">
+                <strong>{{ plan.name }}</strong>
+                <span>{{ plan.slug }} · {{ plan.summary || '暂无摘要' }}</span>
+              </div>
+            </td>
+            <td>
+              <StatusBadge :tone="plan.is_active ? 'success' : 'neutral'">
+                {{ plan.is_active ? '已发布' : '草稿' }}
+              </StatusBadge>
+            </td>
+            <td data-column-priority="2">
+              {{ plan.node_group?.name || `节点组 #${plan.node_group_id}` }}
+            </td>
+            <td class="numeric-column" data-column-priority="3">{{ plan.sku_count }}</td>
+            <td class="numeric-column">{{ plan.active_sku_count }}</td>
+            <td data-column-priority="2"><TimeBadge :value="plan.updated_at" /></td>
+            <td class="table-action-column">
+              <UiButton
+                variant="secondary"
+                size="sm"
+                type="button"
+                :data-plan-detail-trigger="plan.id"
+                @click="openDetails(plan.id)"
+              >
+                查看
+              </UiButton>
+            </td>
           </tr>
         </tbody>
       </DataTable>
-      <EmptyState v-else icon="plans" title="没有匹配商品" description="调整搜索或发布状态筛选。" />
-      <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
+
+      <EmptyState
+        v-else
+        icon="plans"
+        title="没有匹配的商品"
+        description="调整筛选条件，或创建第一个商品。"
+      >
+        <template v-if="app.isAdmin" #actions>
+          <UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建商品</UiButton>
+        </template>
+      </EmptyState>
+
+      <template #footer>
+        <TablePager
+          :total="total"
+          :offset="offset"
+          :limit="limit"
+          :loading="loading"
+          @change="changePage"
+        />
+      </template>
     </DataWorkbench>
 
-    <DetailDrawer :open="Boolean(expandedPlanID)" :title="detailPlan?.name || '商品详情'" eyebrow="Product" :description="detailPlan?.slug || '查看交付权益和销售规格'" :return-focus-selector="detailReturnFocusSelector" @close="closeDetail">
-      <PageAlert v-if="detailError" tone="danger" title="商品详情加载失败">{{ detailError }}</PageAlert>
-      <div v-if="detailLoading" class="detail-loading" role="status">正在加载商品详情…</div>
-      <main v-else-if="detailPlan" class="business-detail stack">
-        <section class="detail-status-strip" aria-label="商品状态"><StatusBadge :tone="detailPlan.is_active ? 'success' : 'neutral'">{{ detailPlan.is_active ? '已发布' : '草稿' }}</StatusBadge><StatusBadge tone="info">修订 #{{ detailPlan.revision }}</StatusBadge></section>
-        <section class="detail-facts" aria-label="商品交付权益">
-          <div><span>商品标识</span><strong class="mono">{{ detailPlan.slug }}</strong></div>
-          <div><span>节点组</span><EntityReference kind="node_group" :id="detailPlan.node_group_id" :label="detailPlan.node_group_name" :to="adminContextLink('/admin/node-groups', { group: String(detailPlan.node_group_id) })" /></div>
-          <div><span>流量</span><strong>{{ formatBytes(detailPlan.traffic_bytes) }}</strong></div>
-          <div><span>设备数</span><strong>{{ detailPlan.device_limit > 0 ? detailPlan.device_limit : '不限' }}</strong></div>
-          <div><span>速率</span><strong>{{ detailPlan.speed_limit_mbps > 0 ? `${detailPlan.speed_limit_mbps} Mbps` : '不限速' }}</strong></div>
-          <div><span>有效订阅上限</span><strong>{{ detailPlan.max_active_subscriptions > 0 ? detailPlan.max_active_subscriptions : '不限' }}</strong></div>
-          <div><span>续费</span><strong>{{ detailPlan.is_renewable ? '允许' : '不允许' }}</strong></div>
-          <div><span>重置策略</span><strong>{{ resetPolicyName(detailPlan.reset_policy) }}</strong></div>
-          <div><span>流量计费</span><strong>{{ trafficCalcName(detailPlan.traffic_calc_mode) }}</strong></div>
-          <div><span>更新时间</span><TimeBadge :value="detailPlan.updated_at" /></div>
-        </section>
-        <section class="detail-copy"><h3>简介</h3><p>{{ detailPlan.summary || '未填写简介' }}</p></section>
-        <section class="detail-copy"><h3>完整说明</h3><p>{{ detailPlan.description || '未填写说明' }}</p></section>
-        <div class="detail-action-row"><UiButton variant="secondary" size="sm" type="button" @click="openPlanEditor(detailPlan)">编辑商品</UiButton><UiButton size="sm" type="button" data-plan-sku-create-trigger="detailPlan.id" @click="openSKUCreate">新增销售规格</UiButton></div>
+    <DetailDrawer
+      :open="Boolean(expandedPlanID)"
+      :title="detailPlan?.name || '商品详情'"
+      :description="detailPlan?.summary || '商品策略和销售规格按需加载'"
+      :return-focus-selector="detailReturnFocusSelector"
+      @close="closeDetails"
+    >
+      <div v-if="detailLoading" class="detail-loading" role="status" aria-live="polite">
+        <StatusBadge tone="info" icon="refresh">正在加载商品详情</StatusBadge>
+      </div>
+      <PageAlert v-else-if="detailError" tone="danger" title="商品详情加载失败">
+        {{ detailError }}
+        <template #actions>
+          <UiButton variant="secondary" size="sm" type="button" @click="retryDetail">重试</UiButton>
+        </template>
+      </PageAlert>
+      <template v-else-if="detailPlan">
+        <div class="detail-toolbar">
+          <UiButton
+            v-if="app.isAdmin"
+            variant="secondary"
+            size="sm"
+            type="button"
+            :data-plan-editor-trigger="detailPlan.id"
+            @click="openPlanEditor"
+          >
+            <UiIcon name="edit" />编辑商品
+          </UiButton>
+          <UiButton
+            v-if="app.isAdmin"
+            variant="secondary"
+            size="sm"
+            type="button"
+            :data-plan-sku-create-trigger="detailPlan.id"
+            @click="openCreateSKU"
+          >
+            <UiIcon name="plus" />新增 SKU
+          </UiButton>
+          <UiButton
+            v-if="app.isAdmin"
+            :variant="detailPlan.is_active ? 'danger' : 'primary'"
+            size="sm"
+            type="button"
+            :loading="statusUpdating"
+            @click="toggleActive(detailPlan)"
+          >
+            {{ detailPlan.is_active ? '转为草稿' : '发布商品' }}
+          </UiButton>
+        </div>
 
-        <section class="stack">
-          <header class="detail-section-header"><div><h3>销售规格</h3><p>价格、周期和购买场景独立维护，不覆盖商品交付权益。</p></div><span>{{ skuTotal }}</span></header>
+        <dl class="detail-kv">
+          <div><dt>商品状态</dt><dd><StatusBadge :tone="detailPlan.is_active ? 'success' : 'neutral'">{{ detailPlan.is_active ? '已发布' : '草稿' }}</StatusBadge></dd></div>
+          <div><dt>商品 Slug</dt><dd class="mono">{{ detailPlan.slug }}</dd></div>
+          <div><dt>节点组</dt><dd>{{ detailPlan.node_group?.name || `#${detailPlan.node_group_id}` }}</dd></div>
+          <div><dt>SKU 总数 / 可售</dt><dd>{{ detailPlan.sku_count }} / {{ detailPlan.active_sku_count }}</dd></div>
+          <div><dt>流量配额</dt><dd>{{ formatBytes(detailPlan.traffic_bytes) }}</dd></div>
+          <div><dt>速率限制</dt><dd>{{ detailPlan.speed_limit_mbps }} Mbps{{ detailPlan.speed_limit_mbps === 0 ? '（不限速）' : '' }}</dd></div>
+          <div><dt>设备数</dt><dd>{{ detailPlan.device_limit }}</dd></div>
+          <div><dt>最大有效订阅</dt><dd>{{ detailPlan.max_active_subscriptions }}</dd></div>
+          <div><dt>续费</dt><dd>{{ detailPlan.is_renewable ? '支持' : '不支持' }}</dd></div>
+          <div><dt>家庭共享人数</dt><dd>{{ detailPlan.family_limit }}</dd></div>
+          <div><dt>流量重置</dt><dd>{{ resetPolicyLabel(detailPlan.reset_policy) }}</dd></div>
+          <div><dt>消耗计算</dt><dd>{{ trafficModeLabel(detailPlan.traffic_calc_mode) }}</dd></div>
+          <div><dt>排序</dt><dd>{{ detailPlan.sort_order }}</dd></div>
+          <div><dt>更新时间</dt><dd><TimeBadge :value="detailPlan.updated_at" /></dd></div>
+        </dl>
+
+        <p v-if="detailPlan.description" class="plan-description">{{ detailPlan.description }}</p>
+
+        <div class="detail-section-heading">
+          <div>
+            <h3>销售规格</h3>
+            <p>商品统一定义流量、限速和设备数；SKU 只定义价格、周期和可用场景。</p>
+          </div>
+          <span>{{ detailPlan.sku_count }} 个</span>
+        </div>
+        <DataWorkbench :total="skuTotal" :loading="skuListLoading" :refreshing="skuRefreshing">
+          <template #filters>
+            <WorkbenchFilterBar :active="Boolean(skuSearch || skuActiveFilter)" @clear="clearSKUFilters">
+              <WorkbenchFilterInput
+                v-model="skuSearch"
+                label="搜索"
+                placeholder="SKU 名称、编码或币种"
+                @apply="applySKUFilters"
+              />
+              <WorkbenchFilterSelect v-model="skuActiveFilter" label="销售规格状态" :options="skuActiveOptions" @apply="applySKUFilters" />
+            </WorkbenchFilterBar>
+          </template>
+
           <PageAlert v-if="skuListError" tone="danger" title="销售规格加载失败">{{ skuListError }}</PageAlert>
-          <WorkbenchFilterBar :active="Boolean(skuSearch || skuActiveFilter)" :loading="skuListLoading" label="销售规格筛选" @clear="clearSKUFilters">
-            <WorkbenchFilterInput v-model="skuSearch" label="搜索" placeholder="SKU 名称、编码或币种" @apply="applySKUFilters" />
-            <WorkbenchFilterSelect v-model="skuActiveFilter" label="可售状态" :options="skuActiveOptions" @apply="applySKUFilters" />
-          </WorkbenchFilterBar>
-          <DataTable v-if="planSKUs.length" caption="商品销售规格" :row-count="skuTotal" :min-width="820"><thead><tr><th class="table-primary-column">SKU</th><th>购买场景</th><th>计费方式</th><th data-column-priority="1">价格</th><th>状态</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="sku in planSKUs" :key="sku.id"><td class="table-primary-column"><div class="cell-title"><strong>{{ sku.name }}</strong><span class="mono">{{ sku.code }}</span></div></td><td><div class="tag-list"><StatusBadge v-for="operation in sku.allowed_operations" :key="operation" tone="info">{{ skuOperationName(operation) }}</StatusBadge></div></td><td>{{ billingModeName(sku.billing_mode) }} · {{ billingLabel(sku) }}</td><td data-column-priority="1">{{ formatCurrency(sku.price_cents, sku.currency) }}</td><td><StatusBadge :tone="sku.is_active ? 'success' : 'neutral'">{{ sku.is_active ? '可售' : '停用' }}</StatusBadge></td><td class="table-action-column"><RowActions :label="`SKU ${sku.name} 的操作`" :trigger-key="`plan-sku-${sku.id}`"><UiButton variant="secondary" size="sm" type="button" :data-plan-sku-trigger="sku.id" @click="openSKUEditor(sku)">编辑 SKU</UiButton></RowActions></td></tr></tbody></DataTable>
-          <EmptyState v-else-if="!skuListLoading" icon="billing" title="暂无销售规格" description="创建月付、年付或附加权益等规格。" />
-          <TablePager v-if="skuTotal > skuLimit" :total="skuTotal" :offset="skuOffset" :limit="skuLimit" :loading="skuListLoading" @change="changeSKUPage" />
-        </section>
-      </main>
+          <DataTable
+            v-else-if="planSKUs.length"
+            caption="套餐销售规格列表"
+            :row-count="skuTotal"
+            :min-width="720"
+            table-class="sku-table"
+          >
+            <thead>
+              <tr>
+                <th class="table-primary-column">SKU</th>
+                <th>状态</th>
+                <th>价格</th>
+                <th data-column-priority="2">周期</th>
+                <th data-column-priority="2">可用场景</th>
+                <th data-column-priority="3">权益来源</th>
+                <th class="table-action-column"><span class="sr-only">操作</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="sku in planSKUs" :key="sku.id">
+                <td class="table-primary-column">
+                  <div class="cell-title">
+                    <strong>{{ sku.name }}</strong>
+                    <span>{{ sku.code }}</span>
+                  </div>
+                </td>
+                <td><StatusBadge :tone="sku.is_active ? 'success' : 'neutral'">{{ sku.is_active ? '可售' : '停用' }}</StatusBadge></td>
+                <td>{{ formatCurrency(sku.price_cents, sku.currency) }}</td>
+                <td data-column-priority="2">{{ billingLabel(sku) }}</td>
+                <td data-column-priority="2"><span class="sku-operation-summary">{{ operationSummary(sku.allowed_operations) }}</span></td>
+                <td data-column-priority="3">{{ sku.billing_mode === 'one_time' ? `增加 ${formatBytes(sku.grant_traffic_bytes)}` : '继承商品权益' }}</td>
+                <td class="table-action-column">
+                  <UiButton
+                    v-if="app.isAdmin"
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    :data-plan-sku-trigger="sku.id"
+                    @click="openSKU(sku)"
+                  >
+                    编辑
+                  </UiButton>
+                </td>
+              </tr>
+            </tbody>
+          </DataTable>
+          <EmptyState
+            v-else
+            icon="plans"
+            title="没有匹配销售规格"
+            description="调整筛选条件，或为商品新增 SKU。"
+          >
+            <template v-if="app.isAdmin" #actions>
+              <UiButton type="button" @click="openCreateSKU"><UiIcon name="plus" />新增 SKU</UiButton>
+            </template>
+          </EmptyState>
+
+          <template #footer>
+            <TablePager
+              :total="skuTotal"
+              :offset="skuOffset"
+              :limit="skuLimit"
+              :loading="skuListLoading"
+              @change="changeSKUPage"
+            />
+          </template>
+        </DataWorkbench>
+      </template>
     </DetailDrawer>
 
-    <ModalDialog :open="createOpen" title="新增商品" description="先定义商品权益和首个销售规格。" size="lg" :busy="saving" :return-focus-selector="'[data-create-plan-trigger]'" @close="closeCreate">
-      <form ref="createFormElement" class="modal-form form-layout" @submit.prevent="submitCreate">
-        <PageAlert v-if="createErrors.summary" tone="danger" title="无法创建商品">{{ createErrors.summary }}</PageAlert>
-        <div class="form-grid two-column">
-          <FormField label="商品名称" required :error="createErrors.errorFor('name')"><UiInput v-model="form.name" placeholder="例如：个人标准版" /></FormField>
-          <FormField label="商品标识（Slug）" required hint="用于系统识别和链接，创建后应保持稳定。" :error="createErrors.errorFor('slug')"><UiInput v-model="form.slug" placeholder="例如：personal-standard" /></FormField>
-        </div>
-        <FormField label="简介" :error="createErrors.errorFor('summary')"><UiInput v-model="form.summary" placeholder="列表中展示的简短说明" /></FormField>
-        <FormField label="完整说明" :error="createErrors.errorFor('description')"><UiTextarea v-model="form.description" rows="4" placeholder="商品详情和适用场景" /></FormField>
-        <FormField label="交付节点组" required :error="createErrors.errorFor('node_group_id')"><NodeGroupLookup v-model="form.node_group_id" /></FormField>
-        <div class="form-grid three-column">
-          <FormField label="流量额度" required :error="createErrors.errorFor('traffic_bytes')"><ByteSizeInput v-model="form.traffic_bytes" /></FormField>
-          <FormField label="设备数" required :error="createErrors.errorFor('device_limit')"><UiNumberInput v-model="form.device_limit" :min="0" /></FormField>
-          <FormField label="限速 Mbps" required :error="createErrors.errorFor('speed_limit_mbps')"><UiNumberInput v-model="form.speed_limit_mbps" :min="0" /></FormField>
-        </div>
-        <div class="form-grid three-column">
-          <FormField label="有效订阅上限" :error="createErrors.errorFor('max_active_subscriptions')"><UiNumberInput v-model="form.max_active_subscriptions" :min="0" /></FormField>
-          <FormField label="家庭组人数" :error="createErrors.errorFor('family_limit')"><UiNumberInput v-model="form.family_limit" :min="0" /></FormField>
-          <FormField label="流量重置" :error="createErrors.errorFor('reset_policy')"><UiSelect v-model="form.reset_policy" :options="resetPolicyOptions" /></FormField>
-        </div>
-        <FormField label="流量计费口径" :error="createErrors.errorFor('traffic_calc_mode')"><UiSelect v-model="form.traffic_calc_mode" :options="trafficCalcOptions" /></FormField>
-        <UiCheckbox v-model="form.is_renewable">允许续费</UiCheckbox>
-        <UiCheckbox v-model="form.is_active">创建后立即发布</UiCheckbox>
-        <section class="form-section stack">
-          <header><div><h3>首个销售规格</h3><p>销售规格只定义价格、周期和可用购买场景。</p></div></header>
-          <div class="form-grid two-column">
-            <FormField label="SKU 名称" required :error="createErrors.errorFor('sku.name')"><UiInput v-model="form.sku.name" placeholder="例如：月付" /></FormField>
-            <FormField label="SKU 编码" required hint="全站唯一，用于订单和接口识别。" :error="createErrors.errorFor('sku.code')"><UiInput v-model="form.sku.code" placeholder="例如：personal-standard-monthly" /></FormField>
+    <ModalDialog
+      :open="createOpen"
+      :dirty="createState.dirty.value"
+      title="创建商品与首个 SKU"
+      description="先建立商品边界和一个可售规格，后续 SKU 独立维护。"
+      size="xl"
+      :busy="saving"
+      @close="createOpen = false"
+    >
+      <form id="create-plan-form" ref="createFormElement" class="stack" novalidate @submit.prevent="create">
+        <PageAlert v-if="createErrors.formError.value" tone="danger" title="无法创建商品">
+          {{ createErrors.formError.value }}
+        </PageAlert>
+        <section class="form-section">
+          <div class="form-section-title"><span>1</span><div><h3>商品信息</h3><p>用于目录展示和内部识别。</p></div></div>
+          <div class="form-grid form-grid-3">
+            <FormField v-slot="{ controlAttrs }" label="商品名称" name="create-plan-name" :error="createErrors.fields.name" required>
+              <UiInput v-model.trim="form.name" v-bind="controlAttrs" placeholder="基础套餐" />
+            </FormField>
+            <FormField v-slot="{ controlAttrs }" label="Slug" name="create-plan-slug" :error="createErrors.fields.slug" required>
+              <UiInput v-model.trim="form.slug" v-bind="controlAttrs" placeholder="starter" />
+            </FormField>
+            <FormField v-slot="{ controlAttrs }" label="摘要" name="create-plan-summary" :error="createErrors.fields.summary">
+              <UiInput v-model.trim="form.summary" v-bind="controlAttrs" maxlength="255" placeholder="适合个人日常使用" />
+            </FormField>
+            <FormField v-slot="{ controlAttrs }" label="详细说明" name="create-plan-description" :error="createErrors.fields.description" full>
+              <UiTextarea v-model="form.description" v-bind="controlAttrs" rows="3" />
+            </FormField>
           </div>
-          <div class="form-grid three-column">
-            <FormField label="计费方式" required :error="createErrors.errorFor('sku.billing_mode')"><UiSelect v-model="form.sku.billing_mode" :options="billingModeOptions" /></FormField>
-            <FormField label="计费单位" required :error="createErrors.errorFor('sku.billing_unit')"><UiSelect v-model="form.sku.billing_unit" :options="billingUnitOptions" /></FormField>
-            <FormField label="周期数量" required :error="createErrors.errorFor('sku.billing_value')"><UiNumberInput v-model="form.sku.billing_value" :min="1" /></FormField>
+        </section>
+        <section class="form-section">
+          <div class="form-section-title"><span>2</span><div><h3>首个销售规格</h3><p>定义价格和计费周期；套餐权益在下一步统一配置。</p></div></div>
+          <div class="form-grid form-grid-3">
+            <FormField v-slot="{ controlAttrs }" label="SKU 名称" name="create-plan-sku-name" :error="createErrors.fields['sku.name']" required><UiInput v-model.trim="form.sku.name" v-bind="controlAttrs" placeholder="月付" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="SKU 编码" name="create-plan-sku-code" :error="createErrors.fields['sku.code']" required><UiInput v-model.trim="form.sku.code" v-bind="controlAttrs" placeholder="starter-monthly" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="计费方式" name="create-plan-billing-mode" :error="createErrors.fields['sku.billing_mode']"><UiSelect v-model="form.sku.billing_mode" v-bind="controlAttrs" :options="billingModeOptions" /></FormField>
+            <FormField label="可用场景" name="create-plan-operations" :error="createErrors.fields['sku.allowed_operations']" full>
+              <div class="sku-operation-grid">
+                <label v-for="option in skuOperationOptions" :key="option.value" class="sku-operation-option">
+                  <UiCheckbox :model-value="skuOperationsFor(form.sku).includes(option.value)" @update:model-value="toggleSKUOperation(form.sku, option.value, $event)" />
+                  <span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></span>
+                </label>
+              </div>
+            </FormField>
+            <FormField v-slot="{ controlAttrs }" label="计费单位" name="create-plan-billing-unit" :error="createErrors.fields['sku.billing_unit']"><UiSelect v-model="form.sku.billing_unit" v-bind="controlAttrs" :options="billingUnitOptions" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="周期数量" name="create-plan-billing-value" :error="createErrors.fields['sku.billing_value']" required><UiNumberInput v-model="form.sku.billing_value" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="价格" name="create-plan-price" hint="按所选币种的标准金额输入；系统以整数分保存。" :error="createErrors.fields['sku.price_cents']" required><MoneyInput v-model="form.sku.price_cents" v-bind="controlAttrs" :currency="form.sku.currency || 'CNY'" :min-cents="0" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="币种" name="create-plan-currency" :error="createErrors.fields['sku.currency']" required><UiInput v-model.trim="form.sku.currency" v-bind="controlAttrs" maxlength="8" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="最大有效订阅" name="create-plan-max-subscriptions" :error="createErrors.fields.max_active_subscriptions"><UiNumberInput v-model="form.max_active_subscriptions" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="家庭共享人数" name="create-plan-family-limit" :error="createErrors.fields.family_limit"><UiNumberInput v-model="form.family_limit" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
           </div>
-          <FormField label="可用购买场景" required :error="createErrors.errorFor('sku.allowed_operations')"><div class="operation-grid"><label v-for="option in skuOperationOptions" :key="option.value"><UiCheckbox :model-value="form.sku.allowed_operations.includes(option.value)" @update:model-value="toggleOperation(form.sku, option.value, $event)">{{ option.label }}</UiCheckbox><small>{{ option.description }}</small></label></div></FormField>
-          <div class="form-grid two-column">
-            <FormField label="销售价格" required :error="createErrors.errorFor('sku.price_cents')"><MoneyInput v-model="form.sku.price_cents" :currency="form.sku.currency" /></FormField>
-            <FormField label="币种" required :error="createErrors.errorFor('sku.currency')"><UiInput v-model="form.sku.currency" maxlength="3" /></FormField>
+        </section>
+        <section class="form-section">
+          <div class="form-section-title"><span>3</span><div><h3>套餐权益与交付边界</h3><p>这些权益由商品统一定义，所有周期 SKU 共享。</p></div></div>
+          <div class="form-grid form-grid-3">
+            <FormField v-slot="{ controlAttrs }" label="流量配额" name="create-plan-traffic" hint="统一以 GiB 输入并换算为字节保存。" :error="createErrors.fields.traffic_bytes" required><ByteSizeInput v-model="form.traffic_bytes" v-bind="controlAttrs" :min-bytes="1024 ** 3" /></FormField>
+  <FormField v-slot="{ controlAttrs }" label="设备数" name="create-plan-device-limit" :error="createErrors.fields.device_limit" required><UiNumberInput v-model="form.device_limit" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
+  <FormField v-slot="{ controlAttrs }" label="速率限制" name="create-plan-speed-limit" hint="0 表示不限速。" :error="createErrors.fields.speed_limit_mbps"><UiNumberInput v-model="form.speed_limit_mbps" v-bind="controlAttrs" :min="0" suffix=" Mbps" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="节点组" name="create-plan-node-group" hint="按名称、代码或说明远程搜索，不预载全部节点组。" :error="createErrors.fields.node_group_id" required><NodeGroupLookup v-model="form.node_group_id" v-bind="controlAttrs" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="流量重置" name="create-plan-reset-policy" :error="createErrors.fields.reset_policy"><UiSelect v-model.number="form.reset_policy" v-bind="controlAttrs" :options="resetPolicyOptions" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="消耗计算" name="create-plan-traffic-mode" :error="createErrors.fields.traffic_calc_mode"><UiSelect v-model.number="form.traffic_calc_mode" v-bind="controlAttrs" :options="trafficCalcOptions" /></FormField>
+            <label class="check-field"><UiCheckbox v-model="form.is_active" /><span>创建后立即发布商品</span></label>
+            <label class="check-field"><UiCheckbox v-model="form.is_renewable" /><span>允许用户续费</span></label>
           </div>
-          <FormField v-if="form.sku.billing_mode === 'one_time'" label="附加流量" required :error="createErrors.errorFor('sku.grant_traffic_bytes')"><ByteSizeInput v-model="form.sku.grant_traffic_bytes" /></FormField>
         </section>
       </form>
-      <template #footer><UiButton variant="secondary" type="button" :disabled="saving" @click="closeCreate">取消</UiButton><UiButton type="button" :loading="saving" @click="submitCreate">创建商品</UiButton></template>
+      <template #footer="{ requestClose }">
+        <UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton>
+        <UiButton form="create-plan-form" type="submit" :loading="saving">创建商品与 SKU</UiButton>
+      </template>
     </ModalDialog>
 
-    <ModalDialog :open="planEditorOpen" title="编辑商品" description="商品权益会成为新订单和续费订单的快照来源。" size="lg" :busy="saving" :return-focus-selector="planEditorReturnFocusSelector" @close="closePlanEditor">
-      <form ref="planFormElement" class="modal-form form-layout" @submit.prevent="submitPlanUpdate">
-        <PageAlert v-if="planErrors.summary" tone="danger" title="无法保存商品">{{ planErrors.summary }}</PageAlert>
-        <PageAlert v-if="planRevisionConflict" tone="warning" title="商品已被其他管理员修改">请关闭编辑器并重新打开，确认最新商品权益后再保存。</PageAlert>
-        <div class="form-grid two-column"><FormField label="商品名称" required :error="planErrors.errorFor('name')"><UiInput v-model="planDraft.name" /></FormField><FormField label="商品标识（Slug）" required hint="用于系统识别和链接，修改前请确认外部引用。" :error="planErrors.errorFor('slug')"><UiInput v-model="planDraft.slug" /></FormField></div>
-        <FormField label="简介" :error="planErrors.errorFor('summary')"><UiInput v-model="planDraft.summary" /></FormField>
-        <FormField label="完整说明" :error="planErrors.errorFor('description')"><UiTextarea v-model="planDraft.description" rows="4" /></FormField>
-        <FormField label="交付节点组" required :error="planErrors.errorFor('node_group_id')"><NodeGroupLookup v-model="planDraft.node_group_id" /></FormField>
-        <div class="form-grid three-column"><FormField label="流量额度" required :error="planErrors.errorFor('traffic_bytes')"><ByteSizeInput v-model="planDraft.traffic_bytes" /></FormField><FormField label="设备数" required :error="planErrors.errorFor('device_limit')"><UiNumberInput v-model="planDraft.device_limit" :min="0" /></FormField><FormField label="限速 Mbps" required :error="planErrors.errorFor('speed_limit_mbps')"><UiNumberInput v-model="planDraft.speed_limit_mbps" :min="0" /></FormField></div>
-        <div class="form-grid three-column"><FormField label="有效订阅上限" :error="planErrors.errorFor('max_active_subscriptions')"><UiNumberInput v-model="planDraft.max_active_subscriptions" :min="0" /></FormField><FormField label="家庭组人数" :error="planErrors.errorFor('family_limit')"><UiNumberInput v-model="planDraft.family_limit" :min="0" /></FormField><FormField label="流量重置" :error="planErrors.errorFor('reset_policy')"><UiSelect v-model="planDraft.reset_policy" :options="resetPolicyOptions" /></FormField></div>
-        <FormField label="流量计费口径" :error="planErrors.errorFor('traffic_calc_mode')"><UiSelect v-model="planDraft.traffic_calc_mode" :options="trafficCalcOptions" /></FormField>
-        <UiCheckbox v-model="planDraft.is_renewable">允许续费</UiCheckbox><UiCheckbox v-model="planDraft.is_active">已发布</UiCheckbox>
+    <ModalDialog
+      :open="planEditorOpen"
+      :dirty="planEditorState.dirty.value"
+      title="编辑商品"
+      description="商品展示、交付边界和套餐策略独立于 SKU 价格维护。"
+      size="xl"
+      :busy="saving"
+      :return-focus-selector="planEditorReturnFocusSelector"
+      @close="closePlanEditor"
+    >
+      <form id="edit-plan-form" ref="planFormElement" class="stack" novalidate @submit.prevent="savePlan">
+        <div class="editor-version-meta"><StatusBadge tone="neutral" icon="history">版本 {{ planDraft.revision }}</StatusBadge><TimeBadge :value="planDraft.updated_at" /></div>
+        <PageAlert v-if="planRevisionConflict" tone="warning" title="商品已在其他会话更新">
+          当前草稿基于旧版本。请重新加载最新商品信息后再继续，避免覆盖其他会话的修改。
+          <template #actions><UiButton variant="secondary" size="sm" type="button" :loading="detailLoading" @click="reloadPlanEditor"><UiIcon name="refresh" />重新加载最新版本</UiButton></template>
+        </PageAlert>
+        <PageAlert v-if="planErrors.formError.value" tone="danger" title="无法保存商品">
+          {{ planErrors.formError.value }}
+        </PageAlert>
+        <section class="form-section">
+          <div class="form-section-title"><span>1</span><div><h3>商品信息</h3><p>调整目录展示和内部排序。</p></div></div>
+          <div class="form-grid form-grid-3">
+            <FormField v-slot="{ controlAttrs }" label="商品名称" name="edit-plan-name" :error="planErrors.fields.name" required><UiInput v-model.trim="planDraft.name" v-bind="controlAttrs" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="Slug" name="edit-plan-slug" :error="planErrors.fields.slug" required><UiInput v-model.trim="planDraft.slug" v-bind="controlAttrs" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="排序" name="edit-plan-sort-order" :error="planErrors.fields.sort_order"><UiNumberInput v-model="planDraft.sort_order" v-bind="controlAttrs" inputmode="numeric" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="摘要" name="edit-plan-summary" :error="planErrors.fields.summary" full><UiInput v-model.trim="planDraft.summary" v-bind="controlAttrs" maxlength="255" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="详细说明" name="edit-plan-description" :error="planErrors.fields.description" full><UiTextarea v-model="planDraft.description" v-bind="controlAttrs" rows="4" /></FormField>
+          </div>
+        </section>
+        <section class="form-section">
+          <div class="form-section-title"><span>2</span><div><h3>套餐策略</h3><p>定义所有 SKU 共享的权限上限和流量口径。</p></div></div>
+          <div class="form-grid form-grid-3">
+            <FormField v-slot="{ controlAttrs }" label="节点组" name="edit-plan-node-group" hint="按需检索，不预载全部节点组。" :error="planErrors.fields.node_group_id" required><NodeGroupLookup v-model="planDraft.node_group_id" v-bind="controlAttrs" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="流量配额" name="edit-plan-traffic" :error="planErrors.fields.traffic_bytes" required><ByteSizeInput v-model="planDraft.traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="速率限制" name="edit-plan-speed" hint="0 表示不限速。" :error="planErrors.fields.speed_limit_mbps"><UiNumberInput v-model="planDraft.speed_limit_mbps" v-bind="controlAttrs" :min="0" suffix=" Mbps" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="设备数" name="edit-plan-device-limit" :error="planErrors.fields.device_limit" required><UiNumberInput v-model="planDraft.device_limit" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="最大有效订阅" name="edit-plan-max-subscriptions" :error="planErrors.fields.max_active_subscriptions"><UiNumberInput v-model="planDraft.max_active_subscriptions" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="家庭共享人数" name="edit-plan-family-limit" :error="planErrors.fields.family_limit"><UiNumberInput v-model="planDraft.family_limit" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="流量重置" name="edit-plan-reset-policy" :error="planErrors.fields.reset_policy"><UiSelect v-model.number="planDraft.reset_policy" v-bind="controlAttrs" :options="resetPolicyOptions" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="消耗计算" name="edit-plan-traffic-mode" :error="planErrors.fields.traffic_calc_mode"><UiSelect v-model.number="planDraft.traffic_calc_mode" v-bind="controlAttrs" :options="trafficCalcOptions" /></FormField>
+            <label class="check-field"><UiCheckbox v-model="planDraft.is_renewable" /><span>允许用户续费</span></label>
+            <label class="check-field"><UiCheckbox v-model="planDraft.is_active" /><span>商品已发布</span></label>
+          </div>
+        </section>
       </form>
-      <template #footer><UiButton variant="secondary" type="button" :disabled="saving" @click="closePlanEditor">取消</UiButton><UiButton type="button" :loading="saving" :disabled="planRevisionConflict" @click="submitPlanUpdate">保存商品</UiButton></template>
+      <template #footer="{ requestClose }">
+        <UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton>
+        <UiButton form="edit-plan-form" type="submit" :loading="saving" :disabled="planRevisionConflict">保存商品</UiButton>
+      </template>
     </ModalDialog>
 
-    <ModalDialog :open="skuOpen" :title="skuDraft.id ? '编辑销售规格' : '新增销售规格'" description="价格、周期和可用购买场景属于 SKU；商品权益不会在这里重复配置。" size="lg" :busy="saving" :return-focus-selector="skuReturnFocusSelector" @close="closeSKUEditor">
-      <form ref="skuFormElement" class="modal-form form-layout" @submit.prevent="submitSKU">
-        <PageAlert v-if="skuErrors.summary" tone="danger" title="无法保存 SKU">{{ skuErrors.summary }}</PageAlert>
-        <div class="form-grid two-column"><FormField label="SKU 名称" required :error="skuErrors.errorFor('name')"><UiInput v-model="skuDraft.name" /></FormField><FormField label="SKU 编码" required hint="全站唯一，用于订单和接口识别。" :error="skuErrors.errorFor('code')"><UiInput v-model="skuDraft.code" /></FormField></div>
-        <div class="form-grid three-column"><FormField label="计费方式" required :error="skuErrors.errorFor('billing_mode')"><UiSelect v-model="skuDraft.billing_mode" :options="billingModeOptions" /></FormField><FormField label="计费单位" required :error="skuErrors.errorFor('billing_unit')"><UiSelect v-model="skuDraft.billing_unit" :options="billingUnitOptions" /></FormField><FormField label="周期数量" required :error="skuErrors.errorFor('billing_value')"><UiNumberInput v-model="skuDraft.billing_value" :min="1" /></FormField></div>
-        <FormField label="可用购买场景" required :error="skuErrors.errorFor('allowed_operations')"><div class="operation-grid"><label v-for="option in skuOperationOptions" :key="option.value"><UiCheckbox :model-value="skuDraft.allowed_operations.includes(option.value)" @update:model-value="toggleOperation(skuDraft, option.value, $event)">{{ option.label }}</UiCheckbox><small>{{ option.description }}</small></label></div></FormField>
-        <div class="form-grid two-column"><FormField label="销售价格" required :error="skuErrors.errorFor('price_cents')"><MoneyInput v-model="skuDraft.price_cents" :currency="skuDraft.currency" /></FormField><FormField label="币种" required :error="skuErrors.errorFor('currency')"><UiInput v-model="skuDraft.currency" maxlength="3" /></FormField></div>
-        <FormField v-if="skuDraft.billing_mode === 'one_time'" label="附加流量" required :error="skuErrors.errorFor('grant_traffic_bytes')"><ByteSizeInput v-model="skuDraft.grant_traffic_bytes" /></FormField>
-        <div class="form-grid two-column"><FormField label="排序" :error="skuErrors.errorFor('sort_order')"><UiNumberInput v-model="skuDraft.sort_order" /></FormField><FormField label="销售状态" :error="skuErrors.errorFor('is_active')"><UiCheckbox v-model="skuDraft.is_active">可售</UiCheckbox></FormField></div>
+    <ModalDialog
+      :open="skuOpen"
+      :dirty="skuState.dirty.value"
+      :title="skuDraft.id ? '编辑销售规格' : '新增销售规格'"
+      description="修改只影响后续新订单；历史订单继续使用商业快照。"
+      size="lg"
+      :busy="saving"
+      :return-focus-selector="skuReturnFocusSelector"
+      @close="closeSKU"
+    >
+      <form id="sku-form" ref="skuFormElement" class="form-grid form-grid-3" novalidate @submit.prevent="saveSKU">
+        <PageAlert v-if="skuErrors.formError.value" class="field-full" tone="danger" title="无法保存规格">
+          {{ skuErrors.formError.value }}
+        </PageAlert>
+        <FormField v-slot="{ controlAttrs }" label="规格名称" name="edit-sku-name" :error="skuErrors.fields.name" required><UiInput v-model.trim="skuDraft.name" v-bind="controlAttrs" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="SKU 编码" name="edit-sku-code" :error="skuErrors.fields.code" required><UiInput v-model.trim="skuDraft.code" v-bind="controlAttrs" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="计费方式" name="edit-sku-billing-mode" :error="skuErrors.fields.billing_mode"><UiSelect v-model="skuDraft.billing_mode" v-bind="controlAttrs" :options="billingModeOptions" /></FormField>
+        <FormField label="可用场景" name="edit-sku-operations" :error="skuErrors.fields.allowed_operations" full>
+          <div class="sku-operation-grid">
+            <label v-for="option in skuOperationOptions" :key="option.value" class="sku-operation-option">
+              <UiCheckbox :model-value="skuOperationsFor(skuDraft).includes(option.value)" @update:model-value="toggleSKUOperation(skuDraft, option.value, $event)" />
+              <span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></span>
+            </label>
+          </div>
+        </FormField>
+        <FormField v-slot="{ controlAttrs }" label="计费单位" name="edit-sku-billing-unit" :error="skuErrors.fields.billing_unit"><UiSelect v-model="skuDraft.billing_unit" v-bind="controlAttrs" :options="billingUnitOptions" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="周期数量" name="edit-sku-billing-value" :error="skuErrors.fields.billing_value" required><UiNumberInput v-model="skuDraft.billing_value" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="币种" name="edit-sku-currency" :error="skuErrors.fields.currency" required><UiInput v-model.trim="skuDraft.currency" v-bind="controlAttrs" maxlength="8" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="价格" name="edit-sku-price" hint="按币种标准金额输入；系统以整数分保存。" :error="skuErrors.fields.price_cents"><MoneyInput v-model="skuDraft.price_cents" v-bind="controlAttrs" :currency="skuDraft.currency || 'CNY'" :min-cents="0" /></FormField>
+        <FormField v-if="skuDraft.billing_mode === 'one_time'" v-slot="{ controlAttrs }" label="附加流量" name="edit-sku-grant-traffic" hint="只增加目标订阅的可用流量，不修改套餐限速和设备数。" :error="skuErrors.fields.grant_traffic_bytes"><ByteSizeInput v-model="skuDraft.grant_traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="排序" name="edit-sku-sort-order" :error="skuErrors.fields.sort_order"><UiNumberInput v-model="skuDraft.sort_order" v-bind="controlAttrs" inputmode="numeric" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="销售状态" name="edit-sku-active" :error="skuErrors.fields.is_active" full>
+          <div class="check-field"><UiCheckbox v-model="skuDraft.is_active" v-bind="controlAttrs" /><span>该 SKU 可用于创建新订单</span></div>
+        </FormField>
       </form>
-      <template #footer><UiButton variant="secondary" type="button" :disabled="saving" @click="closeSKUEditor">取消</UiButton><UiButton type="button" :loading="saving" @click="submitSKU">保存 SKU</UiButton></template>
+      <template #footer="{ requestClose }">
+        <UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton>
+        <UiButton form="sku-form" type="submit" :loading="saving">{{ skuDraft.id ? '保存规格' : '创建规格' }}</UiButton>
+      </template>
     </ModalDialog>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import {
   createPlan,
   createPlanSKU,
   fetchPlanDetail,
   fetchPlanSKU,
-  fetchPlansPage,
   fetchPlanSKUs,
+  fetchPlansPage,
   updatePlan,
   updatePlanSKU,
   type PlanDetail,
@@ -166,48 +454,49 @@ import DataTable from '../components/DataTable.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
 import EmptyState from '../components/EmptyState.vue'
-import EntityReference from '../components/EntityReference.vue'
 import FormField from '../components/FormField.vue'
-import ModalDialog from '../components/ModalDialog.vue'
 import MoneyInput from '../components/MoneyInput.vue'
+import ModalDialog from '../components/ModalDialog.vue'
 import NodeGroupLookup from '../components/NodeGroupLookup.vue'
 import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
-import PageRefreshButton from '../components/PageRefreshButton.vue'
-import RowActions from '../components/RowActions.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TablePager from '../components/TablePager.vue'
 import TimeBadge from '../components/TimeBadge.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
-import UiButton from '../components/UiButton.vue'
-import UiCheckbox from '../components/UiCheckbox.vue'
 import UiIcon from '../components/UiIcon.vue'
-import UiInput from '../components/UiInput.vue'
-import UiNumberInput from '../components/UiNumberInput.vue'
-import UiSelect from '../components/UiSelect.vue'
-import UiTextarea from '../components/UiTextarea.vue'
 import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
-import { useFormErrors, useDirtyForm, useUnsavedChangesGuard } from '../composables/useFormState'
+import UiNumberInput from '../components/UiNumberInput.vue'
+import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import { useRemoteTable } from '../composables/useRemoteTable'
 import { useAppStore } from '../stores/app'
-import { formatBytes, formatCurrency } from '../utils/format'
-import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
+import { confirmAction } from '../utils/feedback'
+import { formatBytes, formatCurrency, formatUnknownValue } from '../utils/format'
+import {
+  collectFieldErrors,
+  isBlank,
+  isIntegerInRange,
+  isOneOf,
+  isSlug,
+  isUtf8LengthInRange,
+} from '../utils/validation'
 
 const app = useAppStore()
 const route = useRoute()
 const router = useRouter()
+const allowedPageSizes = [25, 50, 100]
 const search = ref(String(route.query.q || ''))
 const activeFilter = ref(String(route.query.active || ''))
-const allowedPageSizes = [25, 50, 100]
 const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 50)
 const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
-const expandedPlanID = ref<number | null>(null)
+const expandedPlanID = ref(parsePositiveID(route.query.plan))
 const skuSearch = ref(String(route.query.sku_q || ''))
 const skuActiveFilter = ref(String(route.query.sku_active || ''))
-const skuLimit = ref(allowedPageSizes.includes(Number(route.query.sku_limit)) ? Number(route.query.sku_limit) : 25)
+const initialSKULimit = Number(route.query.sku_limit)
+const skuLimit = ref(allowedPageSizes.includes(initialSKULimit) ? initialSKULimit : 25)
 const skuOffset = ref((Math.max(1, Number(route.query.sku_page) || 1) - 1) * skuLimit.value)
 const message = ref('')
 const saving = ref(false)
@@ -629,159 +918,709 @@ async function syncDetailAndEditorsFromRoute() {
         error.value = cause?.response?.data?.message || '销售规格详情加载失败。'
       }
     }
-    if (source) {
-      Object.assign(skuDraft, source)
+    if (source && source.plan_id !== nextPlanID) source = null
+    if (!source) {
+      await setRoute({ sku: null }, true)
+      return
+    }
+    if (!skuOpen.value || skuDraft.id !== source.id || (skuKey === 'new' && skuDraft.plan_id !== nextPlanID)) {
+      Object.assign(skuDraft, JSON.parse(JSON.stringify(source)))
+      skuDraft.allowed_operations = skuOperationsFor(skuDraft)
+      skuDraft.billing_mode = skuDraft.billing_mode || (skuDraft.billing_unit === 'once' ? 'one_time' : 'periodic')
       syncSKUCommerceFields(skuDraft)
       skuErrors.clear()
       skuState.markClean()
-      skuOpen.value = true
     }
+    skuOpen.value = true
   } else {
     skuOpen.value = false
   }
 }
 
-function resetPlanForm() { Object.assign(form, emptyPlanForm()); createErrors.clear(); createState.markClean() }
-function openCreate() { resetPlanForm(); createOpen.value = true }
-async function closeCreate() { if (!await createState.confirmDiscard()) return; createOpen.value = false; resetPlanForm() }
-function assignPlanDraft(source: PlanDetail | PlanSummary) { Object.assign(planDraft, source) }
-async function openDetail(id: number) { await setRoute({ plan: id, editor: null, sku: null }) }
-async function closeDetail() { if ((planEditorOpen.value && !await planEditorState.confirmDiscard()) || (skuOpen.value && !await skuState.confirmDiscard())) return; await setRoute({ plan: null, editor: null, sku: null }) }
-async function openPlanEditor(source: PlanDetail | PlanSummary) { if (expandedPlanID.value !== source.id) await setRoute({ plan: source.id, editor: 'plan', sku: null }); else await setRoute({ editor: 'plan', sku: null }) }
-async function closePlanEditor() { if (!await planEditorState.confirmDiscard()) return; await setRoute({ editor: null }) }
-async function openSKUCreate() { if (!expandedPlanID.value) return; await setRoute({ sku: 'new', editor: null }) }
-async function openSKUEditor(sku: PlanSKU) { await setRoute({ sku: String(sku.id), editor: null }) }
-async function closeSKUEditor() { if (!await skuState.confirmDiscard()) return; await setRoute({ sku: null }) }
+function skuOperationsFor(sku: Pick<PlanSKU, 'sku_type' | 'allowed_operations'>) {
+  if (sku.allowed_operations?.length) return sku.allowed_operations
+  const legacyOperation = ({ new: 'purchase', renewal: 'renew', upgrade: 'change', traffic_pack: 'addon' } as const)[sku.sku_type as 'new' | 'renewal' | 'upgrade' | 'traffic_pack']
+  return [legacyOperation || 'purchase'] as Array<'purchase' | 'renew' | 'change' | 'addon'>
+}
 
-function syncSKUCommerceFields(sku: ReturnType<typeof emptySKU> | PlanSKU) {
+function operationSummary(operations?: PlanSKU['allowed_operations']) {
+  const values = operations?.length ? operations : ['purchase']
+  const labels: Record<string, string> = { purchase: '新购', renew: '续费', change: '套餐切换', addon: '附加购买' }
+  return values.map(value => labels[value] || value).join('、')
+}
+
+function syncSKUCommerceFields(sku: PlanSKU | ReturnType<typeof emptySKU>) {
   if (sku.billing_mode === 'one_time') {
     sku.billing_unit = 'once'
-    sku.billing_value = Math.max(1, Number(sku.billing_value) || 1)
     sku.allowed_operations = ['addon']
-  } else {
-    if (sku.billing_unit === 'once') sku.billing_unit = 'month'
-    sku.grant_traffic_bytes = 0
-    sku.allowed_operations = sku.allowed_operations.filter(operation => operation !== 'addon')
-    if (!sku.allowed_operations.length) sku.allowed_operations = ['purchase', 'renew']
+    sku.sku_type = 'traffic_pack'
+    return
   }
-  sku.sku_type = compatibilitySKUType(sku.billing_mode, sku.allowed_operations)
+  sku.billing_mode = 'periodic'
+  if (sku.billing_unit === 'once') sku.billing_unit = 'month'
+  const operations = skuOperationsFor(sku).filter(operation => operation !== 'addon')
+  sku.allowed_operations = operations.length ? operations : ['purchase']
+  sku.sku_type = sku.allowed_operations.includes('purchase')
+    ? 'new'
+    : sku.allowed_operations.includes('renew')
+      ? 'renewal'
+      : 'upgrade'
+  sku.grant_traffic_bytes = 0
 }
-function compatibilitySKUType(billingMode: 'periodic' | 'one_time', operations: Array<'purchase' | 'renew' | 'change' | 'addon'>): PlanSKU['sku_type'] {
-  if (billingMode === 'one_time' || operations.includes('addon')) return 'traffic_pack'
-  if (operations.includes('purchase')) return 'new'
-  if (operations.includes('renew')) return 'renewal'
-  return 'upgrade'
-}
-function toggleOperation(sku: ReturnType<typeof emptySKU> | PlanSKU, operation: 'purchase' | 'renew' | 'change' | 'addon', enabled: boolean) {
-  const next = new Set(sku.allowed_operations)
-  if (enabled) next.add(operation); else next.delete(operation)
-  sku.allowed_operations = skuOperations.filter(item => next.has(item))
+
+function toggleSKUOperation(
+  sku: PlanSKU | ReturnType<typeof emptySKU>,
+  operation: 'purchase' | 'renew' | 'change' | 'addon',
+  enabled: boolean,
+) {
+  const operations = new Set(skuOperationsFor(sku))
+  if (enabled) operations.add(operation)
+  else operations.delete(operation)
+  sku.allowed_operations = Array.from(operations)
+  if (operation === 'addon' && enabled) sku.billing_mode = 'one_time'
   syncSKUCommerceFields(sku)
 }
-function resetPolicyName(value: number) { return resetPolicyOptions.find(item => item.value === value)?.label || `未知策略 ${value}` }
-function trafficCalcName(value: number) { return trafficCalcOptions.find(item => item.value === value)?.label || `未知口径 ${value}` }
-function skuOperationName(value: string) { return skuOperationOptions.find(item => item.value === value)?.label || value }
-function billingModeName(value: string) { return billingModeOptions.find(item => item.value === value)?.label || value }
-function billingLabel(sku: PlanSKU) { const unit = ({ day: '天', month: '个月', year: '年', once: '次' } as Record<string, string>)[sku.billing_unit] || sku.billing_unit; return sku.billing_unit === 'once' ? '一次性' : `${sku.billing_value} ${unit}` }
 
-function normalizePlanPayload(source: typeof planDraft) {
-  return {
-    name: source.name.trim(), slug: source.slug.trim().toLowerCase(), summary: source.summary.trim(), description: source.description.trim(),
-    node_group_id: Number(source.node_group_id), traffic_bytes: Number(source.traffic_bytes), speed_limit_mbps: Number(source.speed_limit_mbps),
-    max_active_subscriptions: Number(source.max_active_subscriptions), is_renewable: source.is_renewable, device_limit: Number(source.device_limit),
-    family_limit: Number(source.family_limit), reset_policy: Number(source.reset_policy), traffic_calc_mode: Number(source.traffic_calc_mode),
-    is_active: source.is_active, sort_order: Number(source.sort_order), expected_revision: Number(source.revision),
-  }
-}
-function normalizeSKUPayload(source: ReturnType<typeof emptySKU> | PlanSKU) {
-  syncSKUCommerceFields(source)
-  return {
-    code: source.code.trim().toLowerCase(), name: source.name.trim(), sku_type: compatibilitySKUType(source.billing_mode, source.allowed_operations),
-    billing_mode: source.billing_mode, allowed_operations: source.allowed_operations, billing_unit: source.billing_unit,
-    billing_value: Number(source.billing_value), price_cents: Number(source.price_cents), currency: source.currency.trim().toUpperCase(),
-    grant_traffic_bytes: source.billing_mode === 'one_time' ? Number(source.grant_traffic_bytes) : 0,
-    is_active: source.is_active, sort_order: Number(source.sort_order),
-  }
+function billingLabel(sku: PlanSKU) {
+  const unit = ({ day: '天', month: '月', year: '年', once: '次' } as Record<string, string>)[sku.billing_unit] || sku.billing_unit
+  return sku.billing_unit === 'once' ? '一次性' : `${sku.billing_value} ${unit}`
 }
 
-async function submitCreate() {
-  createErrors.clear(); saving.value = true
+function resetPolicyLabel(value: number) {
+  return resetPolicyOptions.find(option => option.value === value)?.label || formatUnknownValue('重置策略', value)
+}
+
+function trafficModeLabel(value: number) {
+  return trafficCalcOptions.find(option => option.value === value)?.label || formatUnknownValue('流量计算方式', value)
+}
+
+function normalizeSKUInput(sku: Pick<PlanSKU, 'name' | 'code' | 'currency'>) {
+  sku.name = String(sku.name || '').trim()
+  sku.code = String(sku.code || '').trim().toLowerCase()
+  sku.currency = String(sku.currency || '').trim().toUpperCase()
+}
+
+function skuValidation(sku: PlanSKU | ReturnType<typeof emptySKU>, prefix = '') {
+  const field = (name: string) => `${prefix}${name}`
+  const billingMode = sku.billing_mode || (sku.billing_unit === 'once' ? 'one_time' : 'periodic')
+  const operations = skuOperationsFor(sku)
+  const billingUnitValid = isOneOf(sku.billing_unit, billingUnits)
+  const operationsValid = operations.length > 0 && operations.every(operation => isOneOf(operation, skuOperations))
+  return collectFieldErrors({
+    [field('name')]: !isUtf8LengthInRange(sku.name, 1, 80, true) && '规格名称需包含 1–80 个 UTF-8 字节。',
+    [field('code')]: !isSlug(sku.code, 80) && 'SKU 编码只能包含小写字母、数字和单个连字符。',
+    [field('currency')]: !isUtf8LengthInRange(sku.currency, 1, 8, true) && '币种需包含 1–8 个 UTF-8 字节。',
+    [field('billing_mode')]: !isOneOf(billingMode, billingModes) && '请选择有效的计费方式。',
+    [field('allowed_operations')]: !operationsValid
+      ? '请至少选择一个有效的可用场景。'
+      : billingMode === 'one_time' && (operations.length !== 1 || operations[0] !== 'addon')
+        ? '一次性计费当前仅支持附加购买。'
+        : billingMode === 'periodic' && operations.includes('addon')
+          ? '附加购买必须使用一次性计费。'
+          : false,
+    [field('billing_unit')]: !billingUnitValid
+      ? '请选择有效的计费单位。'
+      : billingMode === 'one_time' && sku.billing_unit !== 'once'
+        ? '一次性计费必须使用一次性单位。'
+        : billingMode === 'periodic' && sku.billing_unit === 'once'
+          ? '周期计费不能使用一次性单位。'
+          : false,
+    [field('billing_value')]: !isIntegerInRange(sku.billing_value, 1, Number.MAX_SAFE_INTEGER) && '周期数量必须为大于 0 的整数。',
+    [field('price_cents')]: !isIntegerInRange(sku.price_cents, 0, Number.MAX_SAFE_INTEGER) && '价格必须为不小于 0 的整数分。',
+    [field('grant_traffic_bytes')]: billingMode === 'one_time' && !isIntegerInRange(sku.grant_traffic_bytes, 1, Number.MAX_SAFE_INTEGER) && '附加购买的流量必须大于 0。',
+    [field('sort_order')]: !isIntegerInRange(sku.sort_order, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER) && '排序必须为整数。',
+  })
+}
+
+async function openDetails(id: number) {
+  skuSearch.value = ''
+  skuActiveFilter.value = ''
+  skuOffset.value = 0
+  skuLimit.value = 25
+  await setRoute({ plan: id, editor: null, sku: null })
+}
+
+async function closeDetails() {
+  await setRoute({ plan: null, editor: null, sku: null })
+}
+
+async function retryDetail() {
+  if (expandedPlanID.value) await loadDetail(expandedPlanID.value)
+}
+
+async function applyFilters() {
+  offset.value = 0
+  await setRoute({ plan: null, editor: null, sku: null })
+  await refresh()
+}
+
+async function clearFilters() {
+  search.value = ''
+  activeFilter.value = ''
+  await applyFilters()
+}
+
+async function changePage(value: { offset: number; limit: number }) {
+  offset.value = value.offset
+  limit.value = value.limit
+  await setRoute({ plan: null, editor: null, sku: null })
+  await refresh()
+}
+
+async function applySKUFilters() {
+  skuOffset.value = 0
+  await setRoute()
+  await loadSKUs()
+}
+
+async function clearSKUFilters() {
+  skuSearch.value = ''
+  skuActiveFilter.value = ''
+  await applySKUFilters()
+}
+
+async function changeSKUPage(value: { offset: number; limit: number }) {
+  skuOffset.value = value.offset
+  skuLimit.value = value.limit
+  await setRoute()
+  await loadSKUs()
+}
+
+async function refreshAll() {
+  await refresh()
+  if (expandedPlanID.value) await Promise.all([loadDetail(expandedPlanID.value), loadSKUs()])
+}
+
+function openCreate() {
+  Object.assign(form, emptyPlanForm())
+  createErrors.clear()
+  createState.markClean()
+  createOpen.value = true
+}
+
+async function create() {
+  form.name = form.name.trim()
+  form.slug = form.slug.trim().toLowerCase()
+  form.summary = form.summary.trim()
+  form.description = form.description.trim()
+  normalizeSKUInput(form.sku)
+  syncSKUCommerceFields(form.sku)
+  const firstSKUValidation = skuValidation(form.sku, 'sku.')
+  delete firstSKUValidation['sku.sort_order']
+  const valid = await createErrors.applyValidation({
+    ...collectFieldErrors({
+      name: !isUtf8LengthInRange(form.name, 1, 80, true) && '商品名称需包含 1–80 个 UTF-8 字节。',
+      slug: !isSlug(form.slug, 80) && '商品 Slug 只能包含小写字母、数字和单个连字符。',
+      summary: !isUtf8LengthInRange(form.summary, 0, 255) && '摘要不能超过 255 个 UTF-8 字节。',
+      description: !isUtf8LengthInRange(form.description, 0, 20_000) && '详细说明不能超过 20,000 个 UTF-8 字节。',
+      node_group_id: !isIntegerInRange(form.node_group_id, 1, Number.MAX_SAFE_INTEGER) && '请选择节点组。',
+      traffic_bytes: !isIntegerInRange(form.traffic_bytes, 1, Number.MAX_SAFE_INTEGER) && '流量配额必须大于 0。',
+      speed_limit_mbps: !isIntegerInRange(form.speed_limit_mbps, 0, Number.MAX_SAFE_INTEGER) && '速率限制必须为不小于 0 的整数。',
+      device_limit: !isIntegerInRange(form.device_limit, 1, Number.MAX_SAFE_INTEGER) && '设备数必须为大于 0 的整数。',
+      max_active_subscriptions: !isIntegerInRange(form.max_active_subscriptions, 0, Number.MAX_SAFE_INTEGER) && '最大有效订阅数不能小于 0。',
+      family_limit: !isIntegerInRange(form.family_limit, 0, Number.MAX_SAFE_INTEGER) && '家庭共享人数不能小于 0。',
+      reset_policy: !isOneOf(form.reset_policy, resetPolicies) && '请选择有效的流量重置策略。',
+      traffic_calc_mode: !isOneOf(form.traffic_calc_mode, trafficCalcModes) && '请选择有效的流量计算方式。',
+    }),
+    ...firstSKUValidation,
+  }, createFormElement, '请更正标记字段后再创建商品。')
+  if (!valid) return
+  saving.value = true
+  message.value = ''
   try {
-    syncSKUCommerceFields(form.sku)
     const created = await createPlan({
-      name: form.name.trim(), slug: form.slug.trim().toLowerCase(), summary: form.summary.trim(), description: form.description.trim(),
-      node_group_id: Number(form.node_group_id), traffic_bytes: Number(form.traffic_bytes), speed_limit_mbps: Number(form.speed_limit_mbps),
-      max_active_subscriptions: Number(form.max_active_subscriptions), is_renewable: form.is_renewable, device_limit: Number(form.device_limit),
-      family_limit: Number(form.family_limit), reset_policy: Number(form.reset_policy), traffic_calc_mode: Number(form.traffic_calc_mode),
-      is_active: form.is_active, skus: [normalizeSKUPayload(form.sku)],
+      name: form.name,
+      slug: form.slug,
+      summary: form.summary,
+      description: form.description,
+      is_active: form.is_active,
+      node_group_id: form.node_group_id,
+      traffic_bytes: form.traffic_bytes,
+      speed_limit_mbps: form.speed_limit_mbps,
+      device_limit: form.device_limit,
+      max_active_subscriptions: form.max_active_subscriptions,
+      is_renewable: form.is_renewable,
+      family_limit: form.family_limit,
+      reset_policy: form.reset_policy,
+      traffic_calc_mode: form.traffic_calc_mode,
+      skus: [{
+        code: form.sku.code,
+        name: form.sku.name,
+        billing_mode: form.sku.billing_mode,
+        allowed_operations: skuOperationsFor(form.sku),
+        billing_unit: form.sku.billing_unit,
+        billing_value: form.sku.billing_value,
+        price_cents: form.sku.price_cents,
+        currency: form.sku.currency,
+        grant_traffic_bytes: form.sku.billing_mode === 'one_time' ? form.sku.grant_traffic_bytes : 0,
+        is_active: true,
+        sort_order: form.sku.sort_order,
+      }],
     })
-    createState.markClean(); createOpen.value = false; message.value = `商品 ${created.name} 已创建。`; resetPlanForm(); await refresh(); await openDetail(created.id)
-  } catch (cause: any) {
-    const result = createErrors.applyApiError(cause, '商品创建失败，请检查表单内容。', Object.keys(createPlanFieldMap), createPlanFieldMap)
-    await nextTick(); createErrors.focusFirstInvalid(createFormElement.value, result.firstField)
-  } finally { saving.value = false }
-}
-
-async function submitPlanUpdate() {
-  if (!planDraft.id) return
-  planErrors.clear(); planRevisionConflict.value = false; saving.value = true
-  try {
-    const updated = await updatePlan(planDraft.id, normalizePlanPayload(planDraft))
-    planEditorState.markClean(); planEditorOpen.value = false; message.value = `商品 ${updated.name} 已保存。`; await refresh(); await loadDetail(updated.id); await loadSKUs(); await setRoute({ editor: null }, true)
-  } catch (cause: any) {
-    if (cause?.response?.status === 409 || cause?.response?.status === 428) planRevisionConflict.value = true
-    const result = planErrors.applyApiError(cause, '商品保存失败，请检查表单内容。', Object.keys(planFieldMap), planFieldMap)
-    await nextTick(); planErrors.focusFirstInvalid(planFormElement.value, result.firstField)
-  } finally { saving.value = false }
-}
-
-async function submitSKU() {
-  if (!expandedPlanID.value) return
-  skuErrors.clear(); saving.value = true
-  try {
-    const payload = normalizeSKUPayload(skuDraft)
-    if (skuDraft.id) await updatePlanSKU(skuDraft.id, payload)
-    else await createPlanSKU(expandedPlanID.value, payload)
-    skuState.markClean(); skuOpen.value = false; message.value = `SKU ${payload.name} 已保存。`; invalidateSKUs(); await loadSKUs(); await loadDetail(expandedPlanID.value); await refresh(); await setRoute({ sku: null }, true)
-  } catch (cause: any) {
-    const result = skuErrors.applyApiError(cause, 'SKU 保存失败，请检查表单内容。', Object.keys(skuFieldMap), skuFieldMap)
-    await nextTick(); skuErrors.focusFirstInvalid(skuFormElement.value, result.firstField)
-  } finally { saving.value = false }
-}
-
-async function togglePlanStatus(item: PlanSummary) {
-  if (statusUpdating.value) return
-  statusUpdating.value = true
-  try {
-    await updatePlan(item.id, { is_active: !item.is_active, expected_revision: item.revision })
-    message.value = `商品 ${item.name} 已${item.is_active ? '下架' : '发布'}。`
+    createState.markClean()
+    createOpen.value = false
+    message.value = '商品和首个 SKU 已创建。'
     await refresh()
-    if (expandedPlanID.value === item.id) await loadDetail(item.id)
+    if (created?.id) await setRoute({ plan: Number(created.id), editor: null, sku: null }, true)
+  } catch (cause: any) {
+    await createErrors.applyApiError(cause, '商品创建失败，请检查表单内容。', createFormElement, createPlanFieldMap)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function openPlanEditor() {
+  if (!detailPlan.value) return
+  await setRoute({ editor: 'plan', sku: null })
+}
+
+async function closePlanEditor() {
+  planEditorState.markClean()
+  planRevisionConflict.value = false
+  planEditorOpen.value = false
+  await setRoute({ editor: null })
+}
+
+function assignPlanDraft(detail: PlanDetail) {
+  Object.assign(planDraft, {
+    id: detail.id,
+    name: detail.name,
+    slug: detail.slug,
+    summary: detail.summary,
+    description: detail.description,
+    node_group_id: detail.node_group_id,
+    traffic_bytes: detail.traffic_bytes,
+    speed_limit_mbps: detail.speed_limit_mbps,
+    max_active_subscriptions: detail.max_active_subscriptions,
+    is_renewable: detail.is_renewable,
+    device_limit: detail.device_limit,
+    family_limit: detail.family_limit,
+    reset_policy: detail.reset_policy,
+    traffic_calc_mode: detail.traffic_calc_mode,
+    is_active: detail.is_active,
+    sort_order: detail.sort_order,
+    revision: detail.revision,
+    updated_at: detail.updated_at,
+  })
+}
+
+async function reloadPlanEditor() {
+  if (!planDraft.id) return
+  await loadDetail(planDraft.id)
+  if (!detailPlan.value || detailPlan.value.id !== planDraft.id) return
+  assignPlanDraft(detailPlan.value)
+  planRevisionConflict.value = false
+  planErrors.clear()
+  planEditorState.markClean()
+}
+
+function planValidation() {
+  return collectFieldErrors({
+    name: !isUtf8LengthInRange(planDraft.name, 1, 80, true) && '商品名称需包含 1–80 个 UTF-8 字节。',
+    slug: !isSlug(planDraft.slug, 80) && '商品 Slug 只能包含小写字母、数字和单个连字符。',
+    summary: !isUtf8LengthInRange(planDraft.summary, 0, 255) && '摘要不能超过 255 个 UTF-8 字节。',
+    description: !isUtf8LengthInRange(planDraft.description, 0, 20_000) && '详细说明不能超过 20,000 个 UTF-8 字节。',
+    node_group_id: !isIntegerInRange(planDraft.node_group_id, 1, Number.MAX_SAFE_INTEGER) && '请选择节点组。',
+    traffic_bytes: !isIntegerInRange(planDraft.traffic_bytes, 1, Number.MAX_SAFE_INTEGER) && '流量配额必须大于 0。',
+    speed_limit_mbps: !isIntegerInRange(planDraft.speed_limit_mbps, 0, Number.MAX_SAFE_INTEGER) && '速率限制必须为不小于 0 的整数。',
+    max_active_subscriptions: !isIntegerInRange(planDraft.max_active_subscriptions, 0, Number.MAX_SAFE_INTEGER) && '最大有效订阅数不能小于 0。',
+    device_limit: !isIntegerInRange(planDraft.device_limit, 1, Number.MAX_SAFE_INTEGER) && '设备数必须为大于 0 的整数。',
+    family_limit: !isIntegerInRange(planDraft.family_limit, 0, Number.MAX_SAFE_INTEGER) && '家庭共享人数不能小于 0。',
+    reset_policy: !isOneOf(planDraft.reset_policy, resetPolicies) && '请选择有效的流量重置策略。',
+    traffic_calc_mode: !isOneOf(planDraft.traffic_calc_mode, trafficCalcModes) && '请选择有效的流量计算方式。',
+    sort_order: !isIntegerInRange(planDraft.sort_order, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER) && '排序必须为整数。',
+  })
+}
+
+async function savePlan() {
+  planDraft.name = planDraft.name.trim()
+  planDraft.slug = planDraft.slug.trim().toLowerCase()
+  planDraft.summary = planDraft.summary.trim()
+  planDraft.description = planDraft.description.trim()
+  const valid = await planErrors.applyValidation(planValidation(), planFormElement, '请更正标记字段后再保存商品。')
+  if (!valid) return
+  saving.value = true
+  try {
+    await updatePlan(planDraft.id, {
+      name: planDraft.name,
+      slug: planDraft.slug,
+      summary: planDraft.summary,
+      description: planDraft.description,
+      node_group_id: planDraft.node_group_id,
+      traffic_bytes: planDraft.traffic_bytes,
+      speed_limit_mbps: planDraft.speed_limit_mbps,
+      max_active_subscriptions: planDraft.max_active_subscriptions,
+      is_renewable: planDraft.is_renewable,
+      device_limit: planDraft.device_limit,
+      family_limit: planDraft.family_limit,
+      reset_policy: planDraft.reset_policy,
+      traffic_calc_mode: planDraft.traffic_calc_mode,
+      is_active: planDraft.is_active,
+      sort_order: planDraft.sort_order,
+      expected_revision: planDraft.revision,
+    })
+    planEditorState.markClean()
+    planEditorOpen.value = false
+    await setRoute({ editor: null }, true)
+    message.value = '商品信息和套餐策略已保存。'
+    await refreshAll()
+  } catch (cause: any) {
+    if (cause?.response?.status === 409 || cause?.response?.status === 428) {
+      planRevisionConflict.value = true
+      planErrors.formError.value = '服务器版本已变化。请重新加载最新商品信息后再保存。'
+    } else {
+      await planErrors.applyApiError(cause, '商品保存失败，请检查表单内容。', planFormElement, planFieldMap)
+    }
+  } finally {
+    saving.value = false
+  }
+}
+
+async function openCreateSKU() {
+  if (!detailPlan.value) return
+  await setRoute({ editor: null, sku: 'new' })
+}
+
+async function openSKU(sku: PlanSKU) {
+  await setRoute({ editor: null, sku: String(sku.id) })
+}
+
+async function closeSKU() {
+  skuState.markClean()
+  skuOpen.value = false
+  await setRoute({ sku: null })
+}
+
+function skuPayload() {
+  return {
+    code: skuDraft.code,
+    name: skuDraft.name,
+    billing_mode: skuDraft.billing_mode,
+    allowed_operations: skuOperationsFor(skuDraft),
+    billing_unit: skuDraft.billing_unit,
+    billing_value: skuDraft.billing_value,
+    price_cents: skuDraft.price_cents,
+    currency: skuDraft.currency,
+    grant_traffic_bytes: skuDraft.billing_mode === 'one_time' ? skuDraft.grant_traffic_bytes : 0,
+    is_active: skuDraft.is_active,
+    sort_order: skuDraft.sort_order,
+  }
+}
+
+async function saveSKU() {
+  normalizeSKUInput(skuDraft)
+  syncSKUCommerceFields(skuDraft)
+  const valid = await skuErrors.applyValidation(skuValidation(skuDraft), skuFormElement, '请更正标记字段后再保存 SKU。')
+  if (!valid || !expandedPlanID.value) return
+  saving.value = true
+  try {
+    if (skuDraft.id) {
+      await updatePlanSKU(skuDraft.id, skuPayload())
+    } else {
+      await createPlanSKU(expandedPlanID.value, skuPayload())
+    }
+    const action = skuDraft.id ? '保存' : '创建'
+    const code = skuDraft.code
+    skuState.markClean()
+    skuOpen.value = false
+    await setRoute({ sku: null }, true)
+    message.value = `SKU ${code} 已${action}。`
+    await refreshAll()
+  } catch (cause: any) {
+    await skuErrors.applyApiError(cause, 'SKU 保存失败，请检查表单内容。', skuFormElement, skuFieldMap)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function toggleActive(plan: PlanDetail) {
+  const publishing = !plan.is_active
+  const confirmed = await confirmAction({
+    title: publishing ? '发布商品？' : '将商品转为草稿？',
+    message: publishing
+      ? `发布“${plan.name}”后，所有可售 SKU 将进入用户可购买目录。`
+      : `转为草稿后，“${plan.name}”将立即从新购目录中移除，已有订单和订阅不受影响。`,
+    confirmText: publishing ? '确认发布' : '转为草稿',
+    tone: publishing ? 'primary' : 'danger',
+  })
+  if (!confirmed) return
+  statusUpdating.value = true
+  error.value = ''
+  try {
+    await updatePlan(plan.id, { is_active: publishing, expected_revision: plan.revision })
+    message.value = publishing ? '商品已发布。' : '商品已转为草稿。'
+    await refreshAll()
   } catch (cause: any) {
     error.value = cause?.response?.data?.message || '商品状态更新失败。'
-  } finally { statusUpdating.value = false }
+  } finally {
+    statusUpdating.value = false
+  }
 }
 
-function hasFiltersValue() { return Boolean(search.value || activeFilter.value) }
-const hasFilters = computed(hasFiltersValue)
-async function applyFilters() { offset.value = 0; await syncListURL(); await refresh() }
-async function clearFilters() { search.value = ''; activeFilter.value = ''; offset.value = 0; await syncListURL(); await refresh() }
-async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncListURL(); await refresh() }
-async function applySKUFilters() { skuOffset.value = 0; await setRoute({}, true); await loadSKUs() }
-async function clearSKUFilters() { skuSearch.value = ''; skuActiveFilter.value = ''; skuOffset.value = 0; await setRoute({}, true); await loadSKUs() }
-async function changeSKUPage(value: { offset: number; limit: number }) { skuOffset.value = value.offset; skuLimit.value = value.limit; await setRoute({}, true); await loadSKUs() }
-function adminContextLink(path: string, query: Record<string, string> = {}) { return withAdminReturnTo(path, route.fullPath, query) }
-
 watch(() => route.fullPath, async () => {
-  const nextSearch = String(route.query.q || ''), nextActive = String(route.query.active || '')
-  const nextLimit = allowedPageSizes.includes(Number(route.query.limit)) ? Number(route.query.limit) : 50
+  const nextSearch = String(route.query.q || '')
+  const nextActive = String(route.query.active || '')
+  const rawLimit = Number(route.query.limit)
+  const nextLimit = allowedPageSizes.includes(rawLimit) ? rawLimit : 50
   const nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * nextLimit
-  search.value = nextSearch; activeFilter.value = nextActive; limit.value = nextLimit; offset.value = nextOffset
-  skuSearch.value = String(route.query.sku_q || ''); skuActiveFilter.value = String(route.query.sku_active || '')
-  skuLimit.value = allowedPageSizes.includes(Number(route.query.sku_limit)) ? Number(route.query.sku_limit) : 25
-  skuOffset.value = (Math.max(1, Number(route.query.sku_page) || 1) - 1) * skuLimit.value
+  const listChanged = nextSearch !== search.value
+    || nextActive !== activeFilter.value
+    || nextLimit !== limit.value
+    || nextOffset !== offset.value
+  if (listChanged) {
+    search.value = nextSearch
+    activeFilter.value = nextActive
+    limit.value = nextLimit
+    offset.value = nextOffset
+    await refresh()
+  }
+  const nextSKUSearch = String(route.query.sku_q || '')
+  const nextSKUActive = String(route.query.sku_active || '')
+  const rawSKULimit = Number(route.query.sku_limit)
+  const nextSKULimit = allowedPageSizes.includes(rawSKULimit) ? rawSKULimit : 25
+  const nextSKUOffset = (Math.max(1, Number(route.query.sku_page) || 1) - 1) * nextSKULimit
+  const skuListChanged = nextSKUSearch !== skuSearch.value
+    || nextSKUActive !== skuActiveFilter.value
+    || nextSKULimit !== skuLimit.value
+    || nextSKUOffset !== skuOffset.value
+  if (skuListChanged) {
+    skuSearch.value = nextSKUSearch
+    skuActiveFilter.value = nextSKUActive
+    skuLimit.value = nextSKULimit
+    skuOffset.value = nextSKUOffset
+  }
+  const previousPlanID = expandedPlanID.value
+  await syncDetailAndEditorsFromRoute()
+  if (skuListChanged && expandedPlanID.value && previousPlanID === expandedPlanID.value) await loadSKUs()
+})
+
+onBeforeRouteUpdate(async (to, from) => {
+  const planEditorChanging = String(to.query.editor || '') !== String(from.query.editor || '')
+  const skuEditorChanging = String(to.query.sku || '') !== String(from.query.sku || '')
+  if (planEditorChanging && planEditorOpen.value && planEditorState.dirty.value) {
+    const confirmed = await confirmAction({
+      title: '放弃未保存的商品修改？',
+      message: '离开商品编辑器后，当前商品信息和套餐策略草稿将丢失。',
+      confirmText: '放弃修改',
+      tone: 'danger',
+    })
+    if (!confirmed) return false
+    planEditorState.markClean()
+  }
+  if (skuEditorChanging && skuOpen.value && skuState.dirty.value) {
+    const confirmed = await confirmAction({
+      title: '放弃未保存的 SKU 修改？',
+      message: '离开销售规格编辑器后，当前 SKU 草稿将丢失。',
+      confirmText: '放弃修改',
+      tone: 'danger',
+    })
+    if (!confirmed) return false
+    skuState.markClean()
+  }
+  return true
+})
+
+onMounted(async () => {
+  await refresh()
   await syncDetailAndEditorsFromRoute()
 })
 
-onMounted(async () => { await refresh(); await syncDetailAndEditorsFromRoute() })
+onBeforeUnmount(() => {
+  detailRequestSequence++
+  detailController?.abort()
+  skuDetailController?.abort()
+  invalidateSKUs()
+})
 </script>
+
+<style scoped>
+.detail-loading {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+}
+
+.detail-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.editor-version-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-kv {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0 0 14px;
+  border-block: 1px solid var(--line);
+}
+
+.detail-kv > div {
+  min-width: 0;
+  padding: 11px 4px;
+}
+
+.detail-kv > div:nth-child(even) {
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+
+.detail-kv > div:nth-child(n + 3) {
+  border-top: 1px solid var(--line);
+}
+
+.detail-kv dt {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.detail-kv dd {
+  min-width: 0;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.plan-description {
+  margin: 0 0 16px;
+  padding: 12px 0;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.detail-section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 10px;
+}
+
+.detail-section-heading h3,
+.detail-section-heading p {
+  margin: 0;
+}
+
+.detail-section-heading h3 {
+  font-size: 13px;
+}
+
+.detail-section-heading p,
+.detail-section-heading > span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.detail-section-heading p {
+  margin-top: 3px;
+}
+
+.form-section {
+  display: grid;
+  gap: 16px;
+  padding: 18px 0;
+  border-block: 1px solid var(--line);
+}
+
+.form-section + .form-section {
+  border-top: 0;
+}
+
+.form-section-title {
+  display: flex;
+  gap: 10px;
+}
+
+.form-section-title > span {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: var(--text-inverse);
+  background: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.form-section-title h3 {
+  margin: 1px 0 2px;
+  font-size: 14px;
+}
+
+.form-section-title p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+@media (max-width: 520px) {
+  :deep(.plan-table) {
+    width: 100%;
+    min-width: 100% !important;
+    table-layout: fixed;
+  }
+
+  :deep(.plan-table .table-primary-column) {
+    width: 150px;
+    min-width: 150px;
+    max-width: 150px;
+  }
+
+  :deep(.plan-table th:nth-child(2)),
+  :deep(.plan-table td:nth-child(2)) {
+    width: 64px;
+  }
+
+  :deep(.plan-table th:nth-child(5)),
+  :deep(.plan-table td:nth-child(5)) {
+    width: 44px;
+  }
+
+  :deep(.plan-table .table-action-column) {
+    width: 68px;
+    min-width: 68px;
+  }
+
+  :deep(.plan-table .cell-title strong),
+  :deep(.plan-table .cell-title span) {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :deep(.plan-table .table-action-column .ui-button) {
+    min-width: 0;
+    padding-inline: 9px;
+  }
+
+  .detail-kv {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-kv > div:nth-child(even) {
+    padding-left: 4px;
+    border-left: 0;
+  }
+
+  .detail-kv > div:nth-child(n + 2) {
+    border-top: 1px solid var(--line);
+  }
+
+  .detail-toolbar > :deep(.ui-button) {
+    flex: 1 1 auto;
+  }
+}
+</style>
