@@ -4,7 +4,7 @@
       <template #actions><PageRefreshButton label="刷新订单" :loading="loading" @click="load" /></template>
     </PageHeader>
 
-    <TransientFeedback :success="message" :error="error" success-title="订单状态已更新" error-title="订单操作失败" />
+    <TransientFeedback :success="message" :error="error" success-title="订单状态已更新" error-title="订单数据加载失败" />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
@@ -74,7 +74,7 @@
       </main>
     </DetailDrawer>
 
-    <ConfirmDialog :open="confirmOpen" :title="actionKind === 'pay' ? '确认订单已经收款？' : '取消这笔订单？'" :message="actionKind === 'pay' ? '确认后将立即进入订阅开通或续费流程，请先核对真实到账记录。' : '取消后用户需要重新创建订单。'" :confirm-text="actionKind === 'pay' ? '确认收款' : '确认取消'" :tone="actionKind === 'cancel' ? 'danger' : 'primary'" :busy="saving" @close="confirmOpen = false" @confirm="executeAction" />
+    <ConfirmDialog :open="confirmOpen" :title="actionKind === 'pay' ? '确认订单已经收款？' : '取消这笔订单？'" :message="actionKind === 'pay' ? '确认后将立即进入订阅开通或续费流程，请先核对真实到账记录。' : '取消后用户需要重新创建订单。'" :error="actionError" :confirm-text="actionKind === 'pay' ? '确认收款' : '确认取消'" :tone="actionKind === 'cancel' ? 'danger' : 'primary'" :busy="saving" @close="closeActionDialog" @confirm="executeAction" />
   </section>
 </template>
 
@@ -99,9 +99,10 @@ import WorkbenchFilterDate from '../components/WorkbenchFilterDate.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import { useRemoteTable } from '../composables/useRemoteTable'
+import { commerceErrorMessage } from '../utils/commerceErrors'
 import { formatBytes, formatCurrency, formatUnknownValue } from '../utils/format'
-import { normalizeOutput, truncateOutput } from '../utils/output'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
+import { normalizeOutput, truncateOutput } from '../utils/output'
 
 type OrderItem = AdminOrderListItem
 const route = useRoute()
@@ -119,6 +120,7 @@ const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.valu
 const saving = ref(false)
 const message = ref('')
 const confirmOpen = ref(false)
+const actionError = ref('')
 const actionKind = ref<'pay' | 'cancel'>('pay')
 const actionTarget = ref<OrderItem | null>(null)
 const selectedOrder = ref<AdminOrderDetail | null>(null)
@@ -173,8 +175,9 @@ async function syncURL(replace = false) { const page = Math.floor(offset.value /
 async function applyFilters() { offset.value = 0; await syncURL(); await load() }
 async function clearFilters() { queryFilter.value = ''; statusFilter.value = ''; orderTypeFilter.value = ''; userFilter.value = ''; createdFrom.value = ''; createdTo.value = ''; offset.value = 0; await syncURL(); await load() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await load() }
-function requestAction(kind: 'pay' | 'cancel', item: OrderItem) { actionKind.value = kind; actionTarget.value = item; confirmOpen.value = true }
-async function executeAction() { if (!actionTarget.value) return; saving.value = true; error.value = ''; message.value = ''; try { if (actionKind.value === 'pay') await markOrderPaid(actionTarget.value.id); else await cancelOrder(actionTarget.value.id, true); message.value = actionKind.value === 'pay' ? `订单 #${actionTarget.value.id} 已确认收款。` : `订单 #${actionTarget.value.id} 已取消。`; confirmOpen.value = false; await load(); if (detailID.value === actionTarget.value.id) { selectedOrder.value = null; await syncDetailFromRoute() } } catch (e: any) { error.value = e?.response?.data?.message || '订单操作失败。' } finally { saving.value = false } }
+function requestAction(kind: 'pay' | 'cancel', item: OrderItem) { actionKind.value = kind; actionTarget.value = item; actionError.value = ''; confirmOpen.value = true }
+function closeActionDialog() { if (saving.value) return; confirmOpen.value = false; actionError.value = ''; actionTarget.value = null }
+async function executeAction() { if (!actionTarget.value) return; saving.value = true; actionError.value = ''; message.value = ''; try { if (actionKind.value === 'pay') await markOrderPaid(actionTarget.value.id); else await cancelOrder(actionTarget.value.id, true); message.value = actionKind.value === 'pay' ? `订单 #${actionTarget.value.id} 已确认收款。` : `订单 #${actionTarget.value.id} 已取消。`; confirmOpen.value = false; await load(); if (detailID.value === actionTarget.value.id) { selectedOrder.value = null; await syncDetailFromRoute() } actionTarget.value = null } catch (cause: any) { actionError.value = commerceErrorMessage(cause, actionKind.value === 'pay' ? '无法确认收款，请检查订单当前状态。' : '无法取消订单，请检查订单当前状态。') } finally { saving.value = false } }
 async function openDetail(id: number) { const { event_page: _eventPage, event_limit: _eventLimit, ...query } = route.query; paymentEventOffset.value = 0; paymentEventLimit.value = 25; await router.push({ query: { ...query, order: String(id) } }) }
 async function closeDetail() { detailController?.abort(); detailID.value = 0; selectedOrder.value = null; detailError.value = ''; paymentEvents.value = []; const { order: _order, event_page: _eventPage, event_limit: _eventLimit, ...query } = route.query; await router.push({ query }) }
 async function changePaymentEventPage(value: { offset: number; limit: number }) { paymentEventOffset.value = value.offset; paymentEventLimit.value = value.limit; await syncURL(); await loadPaymentEvents() }
