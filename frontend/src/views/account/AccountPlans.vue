@@ -21,7 +21,7 @@
       </template>
     </PageHeader>
 
-    <PageAlert v-if="actionError" tone="danger" title="套餐操作失败">{{ actionError }}</PageAlert>
+    <PageAlert v-if="actionError && !checkoutOpen" tone="danger" title="套餐操作失败">{{ actionError }}</PageAlert>
     <PageAlert v-if="subscriptionError" tone="danger" title="订阅加载失败">{{ subscriptionError }}</PageAlert>
     <PageAlert v-if="planError" tone="danger" title="套餐目录加载失败">{{ planError }}</PageAlert>
 
@@ -74,6 +74,7 @@
             <div><dt>商品</dt><dd>{{ selectedPlan.name }}</dd></div>
             <div><dt>规格</dt><dd>{{ selectedSKU.name }}</dd></div>
           </dl>
+          <PageAlert v-if="checkoutError" tone="danger" title="无法创建订单">{{ checkoutError }}</PageAlert>
           <UiButton type="button" :loading="creating" @click="submitOrder">确认创建订单</UiButton>
           <p>订单创建后可在“我的订单”中查看状态。</p>
         </aside>
@@ -264,6 +265,7 @@ import UiButton from '../../components/UiButton.vue'
 import UiIcon from '../../components/UiIcon.vue'
 import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../../components/WorkbenchFilterInput.vue'
+import { commerceErrorMessage } from '../../utils/commerceErrors'
 import { formatBytes, formatCurrency } from '../../utils/format'
 
 type PurchaseOperation = 'purchase' | 'renew' | 'change' | 'addon'
@@ -333,6 +335,7 @@ const detailError = ref('')
 const checkoutOpen = ref(false)
 const creating = ref(false)
 const actionError = ref('')
+const checkoutError = ref('')
 
 const currentOperation = computed(() => operationOptions.find(item => item.value === operation.value) || operationOptions[0]!)
 const selectedSubscription = computed(() => subscriptions.value.find(item => item.id === targetSubscriptionID.value) || null)
@@ -456,6 +459,7 @@ async function openPlanDetail(planID: number, preserveRequestedSKU = false) {
   detailLoading.value = true
   detailError.value = ''
   actionError.value = ''
+  checkoutError.value = ''
   try {
     const [plan, skuResult] = await Promise.all([
       fetchPlanCatalogItem(planID),
@@ -482,21 +486,25 @@ async function openPlanDetail(planID: number, preserveRequestedSKU = false) {
 
 async function selectDetailSKU(sku: PlanSKU) {
   selectedSKUID.value = sku.id
+  checkoutError.value = ''
   await syncURL('detail')
 }
 
 async function openCheckout() {
   if (!selectedSKU.value) return
+  checkoutError.value = ''
   checkoutOpen.value = true
   await syncURL('checkout')
 }
 
 async function backToDetail() {
+  checkoutError.value = ''
   checkoutOpen.value = false
   await syncURL('detail')
 }
 
 async function backToCatalog() {
+  checkoutError.value = ''
   checkoutOpen.value = false
   selectedPlan.value = null
   detailSKUs.value = []
@@ -517,6 +525,7 @@ async function startOperation(next: Exclude<PurchaseOperation, 'purchase'>, subs
   detailSKUs.value = []
   selectedSKUID.value = 0
   checkoutOpen.value = false
+  checkoutError.value = ''
   await loadCatalog()
   if ((next === 'renew' || next === 'addon') && plans.value[0]) {
     await openPlanDetail(plans.value[0].id)
@@ -528,6 +537,7 @@ async function startOperation(next: Exclude<PurchaseOperation, 'purchase'>, subs
 async function selectTargetSubscription(subscriptionID: number) {
   targetSubscriptionID.value = subscriptionID
   planOffset.value = 0
+  checkoutError.value = ''
   await loadCatalog()
   await syncURL()
 }
@@ -536,6 +546,7 @@ async function changeTarget() {
   targetSubscriptionID.value = 0
   plans.value = []
   planTotal.value = 0
+  checkoutError.value = ''
   clearCardOffers()
   await syncURL()
 }
@@ -550,6 +561,7 @@ async function returnToOverview() {
   detailSKUs.value = []
   selectedSKUID.value = 0
   checkoutOpen.value = false
+  checkoutError.value = ''
   await loadCatalog()
   await syncURL()
 }
@@ -579,6 +591,7 @@ async function changePlanPage(value: { offset: number; limit: number }) {
 
 async function refreshAll() {
   actionError.value = ''
+  checkoutError.value = ''
   await loadSubscriptions()
   await loadCatalog()
 }
@@ -586,12 +599,11 @@ async function refreshAll() {
 async function submitOrder() {
   if (!selectedPlan.value || !selectedSKU.value) return
   if (operation.value !== 'purchase' && !selectedSubscription.value) {
-    actionError.value = '请选择目标订阅。'
-    checkoutOpen.value = false
+    checkoutError.value = '请选择目标订阅后再创建订单。'
     return
   }
   creating.value = true
-  actionError.value = ''
+  checkoutError.value = ''
   try {
     await createOrder(selectedSKU.value.id, {
       orderType: orderTypeByOperation[operation.value],
@@ -599,7 +611,7 @@ async function submitOrder() {
     })
     await router.push('/account/orders')
   } catch (cause: any) {
-    actionError.value = cause?.response?.data?.message || '订单创建失败。'
+    checkoutError.value = commerceErrorMessage(cause, '订单创建失败，请检查当前套餐和规格是否仍可购买。')
   } finally {
     creating.value = false
   }
