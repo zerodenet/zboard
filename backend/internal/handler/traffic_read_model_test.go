@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net/url"
 	"reflect"
 	"testing"
 	"time"
@@ -59,30 +60,8 @@ func TestMissingEntityReferencePreservesIdentityAsSecondaryMetadata(t *testing.T
 
 func TestParseTrafficTrendRangeRejectsUnboundedQueries(t *testing.T) {
 	now := time.Date(2026, time.August, 7, 12, 0, 0, 0, time.UTC)
-	values := mapValues("from", "2025-01-01", "to", "2026-08-07")
+	values := url.Values{"from": {"2025-01-01"}, "to": {"2026-08-07"}}
 	if _, _, _, err := parseTrafficTrendRange(values, now); err == nil {
 		t.Fatal("expected an oversized trend range to be rejected")
 	}
-}
-
-func mapValues(values ...string) mapStringValues {
-	result := make(mapStringValues)
-	for index := 0; index+1 < len(values); index += 2 {
-		result.Set(values[index], values[index+1])
-	}
-	return result
-}
-
-type mapStringValues map[string][]string
-
-func (values mapStringValues) Get(key string) string {
-	items := values[key]
-	if len(items) == 0 {
-		return ""
-	}
-	return items[0]
-}
-
-func (values mapStringValues) Set(key, value string) {
-	values[key] = []string{value}
 }
