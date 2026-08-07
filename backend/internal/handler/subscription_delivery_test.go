@@ -12,11 +12,29 @@ func TestResolveSubscriptionDelivery(t *testing.T) {
 		wantUsesUA        bool
 	}{
 		{
-			name:         "znet sink client",
+			name:         "znet sink client uses zero format",
 			userAgent:    "ZNet-Sink/0.3.0",
 			wantTemplate: "znet-sink",
-			wantFormat:   "znet-sink",
+			wantFormat:   "zero",
 			wantUsesUA:   true,
+		},
+		{
+			name:              "canonical zero uses legacy built in template",
+			requestedTemplate: "zero",
+			wantTemplate:      "znet-sink",
+			wantFormat:        "zero",
+		},
+		{
+			name:              "legacy plaintext name cannot request plaintext",
+			requestedTemplate: "zero-json",
+			wantTemplate:      "znet-sink",
+			wantFormat:        "zero",
+		},
+		{
+			name:              "legacy base64 name is canonicalized",
+			requestedTemplate: "zero-base64-json",
+			wantTemplate:      "znet-sink",
+			wantFormat:        "zero",
 		},
 		{
 			name:         "znet sink automatic clash import",
@@ -83,5 +101,13 @@ func TestResolveSubscriptionDelivery(t *testing.T) {
 					test.requestedTemplate, test.userAgent, got, test.wantTemplate, test.wantFormat, test.wantUsesUA)
 			}
 		})
+	}
+}
+
+func TestCanonicalSubscriptionFormat(t *testing.T) {
+	for _, alias := range []string{"zero", "znet-sink", "zero-json", "zero-base64-json", "base64-json", "znet-sink-base64"} {
+		if got := canonicalSubscriptionFormat(alias); got != "zero" {
+			t.Fatalf("canonicalSubscriptionFormat(%q) = %q, want zero", alias, got)
+		}
 	}
 }
