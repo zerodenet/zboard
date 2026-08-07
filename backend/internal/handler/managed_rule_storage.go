@@ -42,6 +42,7 @@ const (
 
 const (
 	managedRuleArtifactZeroRuleIR         = managedRuleSourceZeroRuleIR
+	managedRuleArtifactZRS                = "zrs"
 	managedRuleArtifactClashClassicalYAML = "clash-classical-yaml"
 	managedRuleArtifactClashClassicalText = "clash-classical-text"
 	managedRuleArtifactSingBoxSource      = "sing-box-source"
@@ -138,6 +139,14 @@ func (h *handlers) managedRuleSourcePath(tag string) (string, error) {
 	return filepath.Join(dir, managedRuleSourceFileName), nil
 }
 
+func (h *handlers) managedRuleArtifactPath(tag string, sourceDigest [32]byte, format string) (string, error) {
+	dir, err := h.managedRuleSetDir(tag)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "artifacts", hex.EncodeToString(sourceDigest[:]), format), nil
+}
+
 func (h *handlers) readManagedRuleSource(tag string) ([]byte, error) {
 	path, err := h.managedRuleSourcePath(tag)
 	if err != nil {
@@ -150,18 +159,11 @@ func (h *handlers) readManagedRuleSource(tag string) ([]byte, error) {
 	return content, err
 }
 
-func (h *handlers) writeManagedRuleSource(tag string, content []byte) error {
-	if len(content) > managedRuleMaxSourceBytes {
-		return fmt.Errorf("Zero Rule IR exceeds %d bytes", managedRuleMaxSourceBytes)
-	}
-	path, err := h.managedRuleSourcePath(tag)
-	if err != nil {
-		return err
-	}
+func writeManagedRuleFileAtomic(path string, content []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".source-*.tmp")
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".managed-rule-*.tmp")
 	if err != nil {
 		return err
 	}
@@ -182,10 +184,33 @@ func (h *handlers) writeManagedRuleSource(tag string, content []byte) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(temporaryName, path); err != nil {
+	return os.Rename(temporaryName, path)
+}
+
+func (h *handlers) writeManagedRuleSource(tag string, content []byte) error {
+	if len(content) > managedRuleMaxSourceBytes {
+		return fmt.Errorf("Zero Rule IR exceeds %d bytes", managedRuleMaxSourceBytes)
+	}
+	sourcePath, err := h.managedRuleSourcePath(tag)
+	if err != nil {
 		return err
 	}
-	return os.RemoveAll(filepath.Join(filepath.Dir(path), "artifacts"))
+	artifact, err := managedRuleZRSCompiler(content)
+	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256(content)
+	artifactPath, err := h.managedRuleArtifactPath(tag, digest, managedRuleArtifactZRS)
+	if err != nil {
+		return err
+	}
+	if err := writeManagedRuleFileAtomic(artifactPath, artifact); err != nil {
+		return fmt.Errorf("publish ZRS artifact: %w", err)
+	}
+	if err := writeManagedRuleFileAtomic(sourcePath, content); err != nil {
+		return fmt.Errorf("publish Zero Rule IR source: %w", err)
+	}
+	return nil
 }
 
 func (h *handlers) removeManagedRuleSetFiles(tag string) error {
@@ -222,7 +247,7 @@ func (h *handlers) presentManagedRuleSet(item model.SubscriptionRuleSet) managed
 		presentation.ContentSHA256, presentation.RuleCount = managedRuleContentMetadata(content)
 	}
 	if siteURL, err := h.managedRuleSiteURL(); err == nil {
-		presentation.PublicURL = managedRulePublicURL(siteURL, item.Tag, managedRuleArtifactZeroRuleIR)
+		presentation.PublicURL = managedRuleZRSURL(siteURL, item.Tag)
 	}
 	return presentation
 }
@@ -239,7 +264,14 @@ func (h *handlers) managedRuleSiteURL() (string, error) {
 	return siteURL, nil
 }
 
+func managedRuleZRSURL(siteURL, tag string) string {
+	return strings.TrimRight(strings.TrimSpace(siteURL), "/") + "/api/v1/rules/" + url.PathEscape(tag) + ".zrs"
+}
+
 func managedRulePublicURL(siteURL, tag, format string) string {
+	if strings.TrimSpace(format) == managedRuleArtifactZRS {
+		return managedRuleZRSURL(siteURL, tag)
+	}
 	base := strings.TrimRight(strings.TrimSpace(siteURL), "/") + "/api/v1/rules/" + url.PathEscape(tag)
 	if strings.TrimSpace(format) == "" {
 		return base
