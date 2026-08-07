@@ -57,15 +57,15 @@ type trafficTrendPoint struct {
 }
 
 type trafficTrendResponse struct {
-	From                  string            `json:"from"`
-	To                    string            `json:"to"`
+	From                  string              `json:"from"`
+	To                    string              `json:"to"`
 	Points                []trafficTrendPoint `json:"points"`
-	RecordCount           int64             `json:"record_count"`
-	ConnectionSampleCount int64             `json:"connection_sample_count"`
-	PeakConnections       *int64            `json:"peak_connections"`
-	Truncated             bool              `json:"truncated"`
-	Subscriptions         []entityReference `json:"subscriptions"`
-	AsOf                  time.Time         `json:"as_of"`
+	RecordCount           int64               `json:"record_count"`
+	ConnectionSampleCount int64               `json:"connection_sample_count"`
+	PeakConnections       *int64              `json:"peak_connections"`
+	Truncated             bool                `json:"truncated"`
+	Subscriptions         []entityReference   `json:"subscriptions"`
+	AsOf                  time.Time           `json:"as_of"`
 }
 
 type requestedAuditTarget struct {
