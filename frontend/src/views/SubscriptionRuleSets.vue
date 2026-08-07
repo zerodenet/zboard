@@ -191,7 +191,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeRouteUpdate, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   createManagedRuleSet,
@@ -543,14 +543,6 @@ function formatBytes(value: number) {
   }
   return `${amount >= 10 || unit === 0 ? amount.toFixed(0) : amount.toFixed(1)} ${units[unit]}`
 }
-
-onBeforeRouteUpdate(async to => {
-  search.value = String(to.query.q || '')
-  activeFilter.value = String(to.query.active || '')
-  limit.value = pageLimit(to.query.limit)
-  offset.value = (Math.max(1, Number(to.query.page) || 1) - 1) * limit.value
-  await load()
-})
 
 onMounted(load)
 </script>
