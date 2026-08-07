@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +14,70 @@ import (
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
+
+type protocolCredentialLockRowStub struct {
+	result sql.NullInt64
+	err    error
+}
+
+func (row protocolCredentialLockRowStub) Scan(dest ...interface{}) error {
+	if row.err != nil {
+		return row.err
+	}
+	if len(dest) != 1 {
+		return fmt.Errorf("scan destination count = %d, want 1", len(dest))
+	}
+	result, ok := dest[0].(*sql.NullInt64)
+	if !ok {
+		return fmt.Errorf("scan destination type = %T, want *sql.NullInt64", dest[0])
+	}
+	*result = row.result
+	return nil
+}
+
+func TestScanProtocolCredentialLockResult(t *testing.T) {
+	tests := []struct {
+		name   string
+		result sql.NullInt64
+		want   bool
+	}{
+		{name: "acquired", result: sql.NullInt64{Int64: 1, Valid: true}, want: true},
+		{name: "not acquired", result: sql.NullInt64{Int64: 0, Valid: true}, want: false},
+		{name: "null result", result: sql.NullInt64{}, want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := scanProtocolCredentialLockResult(protocolCredentialLockRowStub{result: test.result})
+			if err != nil {
+				t.Fatalf("scanProtocolCredentialLockResult() error = %v", err)
+			}
+			if got != test.want {
+				t.Fatalf("scanProtocolCredentialLockResult() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func TestScanProtocolCredentialLockResultReturnsScanError(t *testing.T) {
+	wantErr := errors.New("scan failed")
+	if _, err := scanProtocolCredentialLockResult(protocolCredentialLockRowStub{err: wantErr}); !errors.Is(err, wantErr) {
+		t.Fatalf("scanProtocolCredentialLockResult() error = %v, want %v", err, wantErr)
+	}
+}
+
+func TestAcquireProtocolCredentialLockUsesScalarRowScan(t *testing.T) {
+	source, err := os.ReadFile("protocol_credential_transaction.go")
+	if err != nil {
+		t.Fatalf("read protocol credential transaction source: %v", err)
+	}
+	text := string(source)
+	if !strings.Contains(text, ").Row()") || !strings.Contains(text, "return scanProtocolCredentialLockResult(row)") {
+		t.Fatal("GET_LOCK result is not passed through database/sql row scanning")
+	}
+	if strings.Contains(text, ").Scan(&result).Error") {
+		t.Fatal("GET_LOCK result regressed to GORM model scanning")
+	}
+}
 
 func TestRetryProtocolCredentialTransactionRetriesDeadlock(t *testing.T) {
 	attempts := 0
