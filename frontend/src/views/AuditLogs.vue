@@ -2,7 +2,7 @@
   <section class="standard-page">
     <PageHeader
       title="审计日志"
-      description="列表只保留事件摘要；经服务端脱敏的详情在抽屉中按需加载。"
+      description="列表以操作发生关联的业务对象为主；内部目标值仅作为辅助定位信息。"
       eyebrow="Audit Trail"
     >
       <template #actions>
@@ -26,14 +26,14 @@
         v-if="items.length"
         caption="安全与业务审计事件摘要；完整详情按需加载"
         :row-count="total"
-        :min-width="860"
+        :min-width="900"
         table-class="audit-table"
       >
         <thead>
           <tr>
             <th class="table-primary-column">动作</th>
             <th data-column-priority="2">执行者</th>
-            <th data-column-priority="1">目标</th>
+            <th data-column-priority="1">目标对象</th>
             <th>时间</th>
             <th data-column-priority="3">详情</th>
             <th class="table-action-column"><span class="sr-only">操作</span></th>
@@ -44,7 +44,7 @@
             <td class="table-primary-column">
               <div class="cell-title">
                 <strong>{{ adminActionLabel(item.action) }}</strong>
-                <span class="mono">{{ item.action }} · #{{ item.id }}</span>
+                <span class="mono">{{ item.action }} · 审计 #{{ item.id }}</span>
               </div>
             </td>
             <td data-column-priority="2">
@@ -53,7 +53,13 @@
                 <strong>{{ adminActorLabel(item.actor) }}</strong>
               </div>
             </td>
-            <td data-column-priority="1"><div class="cell-title"><strong>{{ auditTargetLabel(item.target) }}</strong><span class="mono">{{ item.target || '—' }}</span></div></td>
+            <td data-column-priority="1">
+              <EntityReference
+                :reference="targetReference(item.target)"
+                :fallback-id="targetID(item.target)"
+                :fallback-kind="targetKind(item.target)"
+              />
+            </td>
             <td><TimeBadge :value="item.created_at" /></td>
             <td data-column-priority="3">
               <StatusBadge :tone="item.has_detail ? 'info' : 'neutral'" :icon="item.has_detail ? 'info' : 'minus'">
@@ -101,7 +107,7 @@
     <DetailDrawer
       :open="Boolean(selectedAuditID)"
       :title="detail ? adminActionLabel(detail.action) : '审计详情'"
-      :description="detail ? auditTargetLabel(detail.target) : '经服务端脱敏和长度限制的事件详情'"
+      :description="detailTargetReference?.display_name || '经服务端脱敏和长度限制的事件详情'"
       :return-focus-selector="detailReturnFocusSelector"
       @close="closeDetail"
     >
@@ -125,20 +131,34 @@
             <dd>{{ adminActorLabel(detail.actor) }}</dd>
           </div>
           <div>
-            <dt>目标</dt>
-            <dd class="detail-semantic-value">{{ auditTargetLabel(detail.target) }}<code>{{ detail.target || '—' }}</code></dd>
+            <dt>目标对象</dt>
+            <dd>
+              <EntityReference
+                :reference="detailTargetReference"
+                :fallback-id="targetID(detail.target)"
+                :fallback-kind="targetKind(detail.target)"
+              />
+            </dd>
           </div>
           <div>
             <dt>时间</dt>
             <dd><TimeBadge :value="detail.created_at" mode="exact" /></dd>
           </div>
           <div>
-            <dt>审计 ID</dt>
-            <dd>#{{ detail.id }}</dd>
+            <dt>审计记录</dt>
+            <dd>审计 #{{ detail.id }}</dd>
           </div>
           <div>
             <dt>关联用户</dt>
-            <dd>{{ detail.user_id ? `#${detail.user_id}` : '系统事件' }}</dd>
+            <dd>
+              <EntityReference
+                v-if="detail.user_id"
+                :reference="detailUserReference"
+                :fallback-id="detail.user_id"
+                fallback-kind="user"
+              />
+              <span v-else>系统事件</span>
+            </dd>
           </div>
         </dl>
         <OutputBlock v-if="detail.detail" :value="detail.detail" label="脱敏详情" />
@@ -157,26 +177,26 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchAuditLog, fetchAuditLogs, type AuditLogDetail, type AuditLogSummary } from '../api/client'
+import { emptyEntityReferenceResponse, fetchAdminEntityReferences, type EntityKind, type EntityReferenceResponse } from '../api/readModels'
 import CursorPager from '../components/CursorPager.vue'
 import DataTable from '../components/DataTable.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
 import EmptyState from '../components/EmptyState.vue'
+import EntityReference from '../components/EntityReference.vue'
 import OutputBlock from '../components/OutputBlock.vue'
 import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiButton from '../components/UiButton.vue'
-import UiIcon from '../components/UiIcon.vue'
 import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterDate from '../components/WorkbenchFilterDate.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
-import UiInput from '../components/UiInput.vue'
 import TimeBadge from '../components/TimeBadge.vue'
 import { resolveHistoryRange } from '../composables/historyState'
 import { useCursorTable } from '../composables/useCursorTable'
-import { adminActionLabel, adminActorLabel, auditTargetLabel } from '../utils/adminDisplay'
+import { adminActionLabel, adminActorLabel } from '../utils/adminDisplay'
 import { preserveAdminReturnTo } from '../utils/navigation'
 
 const route = useRoute()
@@ -196,10 +216,23 @@ const detail = ref<AuditLogDetail | null>(null)
 const detailLoading = ref(false)
 const detailError = ref('')
 const detailReturnFocusSelector = ref('')
+const references = ref<EntityReferenceResponse>(emptyEntityReferenceResponse())
+const referenceLoading = ref(false)
+const referenceError = ref('')
 let detailController: AbortController | null = null
+let referenceController: AbortController | null = null
 
 const hasFilters = computed(() => Boolean(actor.value || action.value || target.value))
-const { items, total, nextCursor, previousCursor, loading, refreshing, error, load } = useCursorTable<AuditLogSummary>({
+const {
+  items,
+  total,
+  nextCursor,
+  previousCursor,
+  loading: listLoading,
+  refreshing,
+  error: listError,
+  load: loadList,
+} = useCursorTable<AuditLogSummary>({
   fetchPage: ({ signal }) => fetchAuditLogs({
     actor: actor.value || undefined,
     action: action.value || undefined,
@@ -211,6 +244,10 @@ const { items, total, nextCursor, previousCursor, loading, refreshing, error, lo
   }, { signal }),
   errorMessage: (cause: any) => cause?.response?.data?.message || '审计日志加载失败。',
 })
+const loading = computed(() => listLoading.value || referenceLoading.value)
+const error = computed(() => listError.value || referenceError.value)
+const detailTargetReference = computed(() => detail.value ? targetReference(detail.value.target) : null)
+const detailUserReference = computed(() => detail.value?.user_id ? references.value.users[String(detail.value.user_id)] || null : null)
 
 function validAuditID(value: unknown) {
   const parsed = Number(value)
@@ -219,6 +256,53 @@ function validAuditID(value: unknown) {
 
 function actorInitial(value: string) {
   return (value || 'S').slice(0, 1).toUpperCase()
+}
+
+function targetID(value: string) {
+  const parsed = Number(String(value || '').split(':', 2)[1])
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0
+}
+
+function targetKind(value: string): EntityKind {
+  const raw = String(value || '').split(':', 2)[0].trim().toLowerCase()
+  if (raw === 'endpoint') return 'protocol_endpoint'
+  if (raw === 'sku') return 'plan_sku'
+  return raw || 'entity'
+}
+
+function targetReference(value: string) {
+  return references.value.targets[value] || null
+}
+
+async function loadReferences() {
+  referenceController?.abort()
+  const controller = new AbortController()
+  referenceController = controller
+  referenceLoading.value = true
+  referenceError.value = ''
+  try {
+    const targets = items.value.map(item => item.target).filter(Boolean)
+    if (detail.value?.target) targets.push(detail.value.target)
+    references.value = await fetchAdminEntityReferences({
+      targets,
+      userIds: detail.value?.user_id ? [detail.value.user_id] : [],
+      signal: controller.signal,
+    })
+  } catch (cause: any) {
+    if (cause?.code === 'ERR_CANCELED' || cause?.name === 'AbortError') return
+    references.value = emptyEntityReferenceResponse()
+    referenceError.value = cause?.response?.data?.message || '审计关联对象名称加载失败。'
+  } finally {
+    if (referenceController === controller) {
+      referenceController = null
+      referenceLoading.value = false
+    }
+  }
+}
+
+async function load() {
+  await loadList()
+  await loadReferences()
 }
 
 async function syncURL(replace = false) {
@@ -297,7 +381,10 @@ async function loadDetail(id: number, summary?: AuditLogSummary) {
   detailError.value = ''
   try {
     const result = await fetchAuditLog(id, { signal: current.signal })
-    if (!current.signal.aborted && selectedAuditID.value === id) detail.value = result
+    if (!current.signal.aborted && selectedAuditID.value === id) {
+      detail.value = result
+      await loadReferences()
+    }
   } catch (cause: any) {
     if (!current.signal.aborted && selectedAuditID.value === id) {
       detailError.value = cause?.response?.data?.message || '审计详情加载失败。'
@@ -318,6 +405,7 @@ async function openDetail(item: AuditLogSummary) {
 async function closeDetail() {
   clearDetailState()
   await syncURL()
+  await loadReferences()
 }
 
 async function retryDetail() {
@@ -368,7 +456,10 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(() => detailController?.abort())
+onBeforeUnmount(() => {
+  detailController?.abort()
+  referenceController?.abort()
+})
 </script>
 
 <style scoped>
