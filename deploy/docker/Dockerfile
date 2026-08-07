@@ -12,6 +12,17 @@ RUN pnpm install --frozen-lockfile
 COPY frontend/ .
 RUN pnpm build
 
+FROM rust:1.88.0-alpine3.20 AS zrs-compiler-builder
+RUN apk add --no-cache git musl-dev
+WORKDIR /src/tools/zrs-compiler
+COPY tools/zrs-compiler/Cargo.toml ./
+COPY tools/zrs-compiler/src ./src
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/src/tools/zrs-compiler/target \
+    cargo build --release && \
+    cp target/release/zrs-compiler /zrs-compiler
+
 FROM golang:1.26.5-alpine AS backend-builder
 WORKDIR /src/backend
 ARG GOPROXY=https://goproxy.cn,direct
@@ -34,8 +45,10 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 RUN mkdir -p /app/etc
 COPY --from=backend-builder /zboard /usr/local/bin/zboard
+COPY --from=zrs-compiler-builder /zrs-compiler /usr/local/bin/zrs-compiler
 COPY backend/etc/zboard.yaml.example /app/etc/zboard.yaml
 COPY --from=frontend-builder /src/frontend/dist ./web
 ENV ZBOARD_WEB_DIR=/app/web
+ENV ZERO_RULE_COMPILER_PATH=/usr/local/bin/zrs-compiler
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/zboard", "-f", "/app/etc/zboard.yaml"]
