@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/zerodenet/zboard/backend/internal/model"
 )
 
 func TestValidateSubscriptionTemplateUsesSystemRenderer(t *testing.T) {
