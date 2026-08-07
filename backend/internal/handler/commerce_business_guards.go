@@ -63,7 +63,7 @@ func writeCommerceError(w http.ResponseWriter, status int, code, message string,
 }
 
 func writePlanSlugConflict(w http.ResponseWriter) {
-	writeCommerceError(w, http.StatusConflict, commerceErrorPlanSlugConflict, "商品标识已被使用。", map[string]string{
+	writeCommerceError(w, http.StatusBadRequest, commerceErrorPlanSlugConflict, "商品标识已被使用。", map[string]string{
 		"slug": "该商品标识已被其他商品使用，请更换后重试。",
 	})
 }
@@ -72,13 +72,13 @@ func writePlanSKUCodeConflict(w http.ResponseWriter, field string) {
 	if field == "" {
 		field = "code"
 	}
-	writeCommerceError(w, http.StatusConflict, commerceErrorPlanSKUCodeConflict, "SKU 编码已被使用。", map[string]string{
+	writeCommerceError(w, http.StatusBadRequest, commerceErrorPlanSKUCodeConflict, "SKU 编码已被使用。", map[string]string{
 		field: "该 SKU 编码已被其他销售规格使用，请更换后重试。",
 	})
 }
 
 func writeIdentifierConflict(w http.ResponseWriter) {
-	writeCommerceError(w, http.StatusConflict, commerceErrorIdentifierConflict, "商品或销售规格的标识已被使用，请检查商品标识和 SKU 编码。", nil)
+	writeCommerceError(w, http.StatusBadRequest, commerceErrorIdentifierConflict, "商品或销售规格的标识已被使用，请检查商品标识和 SKU 编码。", nil)
 }
 
 func writePlanSubscriptionLimitReached(w http.ResponseWriter) {
@@ -177,7 +177,7 @@ func (h *handlers) PlanCreateCommerceValidatedHandler(w http.ResponseWriter, r *
 		}
 	}
 	if len(fields) > 0 {
-		writeCommerceError(w, http.StatusConflict, commerceErrorIdentifierConflict, "商品或销售规格的标识已被使用。", fields)
+		writeCommerceError(w, http.StatusBadRequest, commerceErrorIdentifierConflict, "商品或销售规格的标识已被使用。", fields)
 		return
 	}
 
