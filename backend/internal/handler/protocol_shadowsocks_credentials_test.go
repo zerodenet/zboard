@@ -29,11 +29,11 @@ func TestManagedShadowsocksRuntimeProtocolSharesConfiguredPortUsers(t *testing.T
 	}
 	contexts := []runtimeCredentialContext{
 		{
-			Credential: model.ProtocolCredential{ID: 3, Secret: first, PrincipalKey: "subscription:1:endpoint:4"},
+			Credential:   model.ProtocolCredential{ID: 3, Secret: first, PrincipalKey: "subscription:1:endpoint:4"},
 			Subscription: model.Subscription{ID: 1, UpdatedAt: time.Unix(10, 0).UTC()},
 		},
 		{
-			Credential: model.ProtocolCredential{ID: 13, Secret: second, PrincipalKey: "subscription:2:endpoint:4"},
+			Credential:   model.ProtocolCredential{ID: 13, Secret: second, PrincipalKey: "subscription:2:endpoint:4"},
 			Subscription: model.Subscription{ID: 2, UpdatedAt: time.Unix(11, 0).UTC()},
 		},
 	}
