@@ -35,6 +35,23 @@ func TestRetryProtocolCredentialTransactionRetriesDeadlock(t *testing.T) {
 	}
 }
 
+func TestRetryProtocolCredentialTransactionRetriesSerializationTimeout(t *testing.T) {
+	attempts := 0
+	err := retryProtocolCredentialTransaction(func() error {
+		attempts++
+		if attempts == 1 {
+			return errProtocolCredentialLockTimeout
+		}
+		return nil
+	}, func(time.Duration) {})
+	if err != nil {
+		t.Fatalf("retry returned error: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
 func TestRetryProtocolCredentialTransactionStopsAfterLimit(t *testing.T) {
 	attempts := 0
 	var delays []time.Duration
