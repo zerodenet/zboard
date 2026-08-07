@@ -38,10 +38,13 @@ func (h *handlers) PublicManagedRuleSetHandler(w http.ResponseWriter, r *http.Re
 	if requestedFormat == "" {
 		requestedFormat = managedRuleFormatFromUserAgent(r.UserAgent())
 	}
-	format, err := normalizeManagedRuleArtifactFormat(requestedFormat)
-	if err != nil {
-		BadRequest(w, err.Error())
-		return
+	format := managedRuleArtifactZRS
+	if !strings.EqualFold(requestedFormat, managedRuleArtifactZRS) {
+		format, err = normalizeManagedRuleArtifactFormat(requestedFormat)
+		if err != nil {
+			BadRequest(w, err.Error())
+			return
+		}
 	}
 	if format == managedRuleArtifactZeroRuleIR {
 		BadRequest(w, "Zero Rule IR is an internal source format and is not publicly published")
