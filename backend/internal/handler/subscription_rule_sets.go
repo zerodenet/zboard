@@ -504,8 +504,8 @@ func managedRuleCustomizationForRenderer(renderer, siteURL string, record model.
 	resolved := subscriptionRuleSetCustomization{Tag: record.Tag, Target: target, Interval: record.Interval}
 	switch renderer {
 	case subscriptionRendererZNetSink:
-		resolved.URL = managedRulePublicURL(siteURL, record.Tag, managedRuleArtifactZeroRuleIR)
-		resolved.Format = managedRuleSourceZeroRuleIR
+		resolved.URL = managedRuleZRSURL(siteURL, record.Tag)
+		resolved.Format = managedRuleArtifactZRS
 	case subscriptionRendererClash:
 		resolved.URL = managedRulePublicURL(siteURL, record.Tag, managedRuleArtifactClashClassicalYAML)
 		resolved.Behavior = "classical"
