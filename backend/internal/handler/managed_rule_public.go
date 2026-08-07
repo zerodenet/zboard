@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -17,7 +16,7 @@ import (
 )
 
 func (h *handlers) PublicManagedRuleSetHandler(w http.ResponseWriter, r *http.Request) {
-	tag, err := publicManagedRuleSetTag(r.URL.Path)
+	tag, pathFormat, err := publicManagedRuleSetTarget(r.URL.Path)
 	if err != nil {
 		NotFound(w)
 		return
@@ -28,13 +27,24 @@ func (h *handlers) PublicManagedRuleSetHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	requestedFormat := strings.TrimSpace(r.URL.Query().Get("format"))
-	usesUserAgent := requestedFormat == ""
+	usesUserAgent := requestedFormat == "" && pathFormat == ""
+	if pathFormat != "" {
+		if requestedFormat != "" && !strings.EqualFold(requestedFormat, pathFormat) {
+			BadRequest(w, "rule path format conflicts with format query")
+			return
+		}
+		requestedFormat = pathFormat
+	}
 	if requestedFormat == "" {
 		requestedFormat = managedRuleFormatFromUserAgent(r.UserAgent())
 	}
 	format, err := normalizeManagedRuleArtifactFormat(requestedFormat)
 	if err != nil {
 		BadRequest(w, err.Error())
+		return
+	}
+	if format == managedRuleArtifactZeroRuleIR {
+		BadRequest(w, "Zero Rule IR is an internal source format and is not publicly published")
 		return
 	}
 	content, err := h.readManagedRuleSource(item.Tag)
@@ -48,14 +58,15 @@ func (h *handlers) PublicManagedRuleSetHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	digest := sha256.Sum256(content)
-	etag := `"` + hex.EncodeToString(digest[:]) + "-" + format + `"`
-	if r.Header.Get("If-None-Match") == etag {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
 	artifact, err := h.loadOrBuildManagedRuleArtifact(item, document, digest, format)
 	if err != nil {
-		BadRequest(w, err.Error())
+		ServerError(w, err)
+		return
+	}
+	artifactDigest := sha256.Sum256(artifact.Body)
+	etag := `"` + hex.EncodeToString(artifactDigest[:]) + `"`
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	if usesUserAgent {
@@ -71,43 +82,48 @@ func (h *handlers) PublicManagedRuleSetHandler(w http.ResponseWriter, r *http.Re
 	_, _ = w.Write(artifact.Body)
 }
 
-func publicManagedRuleSetTag(pathValue string) (string, error) {
+func publicManagedRuleSetTarget(pathValue string) (string, string, error) {
 	trimmed := strings.Trim(pathValue, "/")
 	const prefix = "api/v1/rules/"
 	if !strings.HasPrefix(trimmed, prefix) {
-		return "", errors.New("invalid rule path")
+		return "", "", errors.New("invalid rule path")
 	}
-	tag, err := url.PathUnescape(strings.TrimPrefix(trimmed, prefix))
+	rawTag := strings.TrimPrefix(trimmed, prefix)
+	pathFormat := ""
+	if strings.HasSuffix(rawTag, ".zrs") {
+		rawTag = strings.TrimSuffix(rawTag, ".zrs")
+		pathFormat = managedRuleArtifactZRS
+	}
+	tag, err := url.PathUnescape(rawTag)
 	if err != nil || strings.Contains(tag, "/") {
-		return "", errors.New("invalid rule tag")
+		return "", "", errors.New("invalid rule tag")
 	}
 	_, err = managedRuleTagPath(tag)
+	return tag, pathFormat, err
+}
+
+func publicManagedRuleSetTag(pathValue string) (string, error) {
+	tag, _, err := publicManagedRuleSetTarget(pathValue)
 	return tag, err
 }
 
 func managedRuleFormatFromUserAgent(userAgent string) string {
 	userAgent = strings.ToLower(userAgent)
 	switch {
-	case strings.Contains(userAgent, "clash"):
+	case strings.Contains(userAgent, "clash"), strings.Contains(userAgent, "mihomo"):
 		return managedRuleArtifactClashClassicalYAML
 	case strings.Contains(userAgent, "sing-box"), strings.Contains(userAgent, "singbox"):
 		return managedRuleArtifactSingBoxSource
 	default:
-		return managedRuleArtifactZeroRuleIR
+		return managedRuleArtifactZRS
 	}
 }
 
 func (h *handlers) loadOrBuildManagedRuleArtifact(item model.SubscriptionRuleSet, document managedRuleDocument, digest [32]byte, format string) (managedRuleArtifactResponse, error) {
-	if format == managedRuleArtifactZeroRuleIR {
-		return managedRuleArtifactResponse{Body: encodeManagedCanonicalSource(document), ContentType: "application/json; charset=utf-8", Extension: ".json"}, nil
-	}
-	artifactDir, err := h.managedRuleSetDir(item.Tag)
-	if err != nil {
-		return managedRuleArtifactResponse{}, err
-	}
-	artifactDir = filepath.Join(artifactDir, "artifacts", hex.EncodeToString(digest[:]))
 	response := managedRuleArtifactResponse{}
 	switch format {
+	case managedRuleArtifactZRS:
+		response.ContentType, response.Extension = "application/octet-stream", ".zrs"
 	case managedRuleArtifactClashClassicalYAML:
 		response.ContentType, response.Extension = "application/yaml; charset=utf-8", ".yaml"
 	case managedRuleArtifactClashClassicalText:
@@ -117,10 +133,15 @@ func (h *handlers) loadOrBuildManagedRuleArtifact(item model.SubscriptionRuleSet
 	default:
 		return managedRuleArtifactResponse{}, fmt.Errorf("unsupported rule artifact format %q", format)
 	}
-	pathValue := filepath.Join(artifactDir, format)
+	pathValue, err := h.managedRuleArtifactPath(item.Tag, digest, format)
+	if err != nil {
+		return managedRuleArtifactResponse{}, err
+	}
 	if body, err := os.ReadFile(pathValue); err == nil {
 		response.Body = body
 		return response, nil
+	} else if format == managedRuleArtifactZRS {
+		return managedRuleArtifactResponse{}, fmt.Errorf("read precompiled ZRS artifact: %w", err)
 	}
 	var body []byte
 	switch format {
@@ -134,10 +155,7 @@ func (h *handlers) loadOrBuildManagedRuleArtifact(item model.SubscriptionRuleSet
 	if err != nil {
 		return managedRuleArtifactResponse{}, err
 	}
-	if err := os.MkdirAll(artifactDir, 0o750); err != nil {
-		return managedRuleArtifactResponse{}, err
-	}
-	if err := os.WriteFile(pathValue, body, 0o640); err != nil {
+	if err := writeManagedRuleFileAtomic(pathValue, body); err != nil {
 		return managedRuleArtifactResponse{}, err
 	}
 	response.Body = body
