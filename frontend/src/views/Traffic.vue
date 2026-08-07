@@ -41,7 +41,16 @@
           <tr v-for="record in records" :key="record.id">
             <td class="table-primary-column"><TimeBadge :value="record.record_at" /></td>
             <td data-column-priority="3"><EntityReference :reference="userReference(record.user_id)" :fallback-id="record.user_id" fallback-kind="user" compact /></td>
-            <td><EntityReference :reference="subscriptionReference(record.subscription_id)" :fallback-id="record.subscription_id" fallback-kind="subscription" compact /></td>
+            <td>
+              <EntityReference
+                v-if="record.subscription_id"
+                :reference="subscriptionReference(record.subscription_id)"
+                :fallback-id="record.subscription_id || 0"
+                fallback-kind="subscription"
+                compact
+              />
+              <span v-else>—</span>
+            </td>
             <td data-column-priority="2"><EntityReference :reference="nodeReference(record.node_id)" :fallback-id="record.node_id" fallback-kind="node" compact /></td>
             <td data-column-priority="2"><EntityReference :reference="endpointReference(record.protocol_endpoint_id)" :fallback-id="record.protocol_endpoint_id" fallback-kind="protocol_endpoint" compact /></td>
             <td class="numeric-column" data-column-priority="3">{{ formatBytes(record.raw_bytes) }}</td>
@@ -167,7 +176,7 @@ function subscriptionStatusName(status: string) { return ({ active: '有效', ex
 function queryParams() { return { userId: Number(filters.userId) || undefined, nodeId: Number(filters.nodeId) || undefined, protocolEndpointId: Number(filters.endpointId) || undefined, subscriptionId: Number(filters.subscriptionId) || undefined } }
 function adminContextLink(path: string, query: Record<string, string>) { return withAdminReturnTo(path, route.fullPath, query) }
 function userReference(id: number) { return references.value.users[String(id)] || null }
-function subscriptionReference(id: number) { return references.value.subscriptions[String(id)] || null }
+function subscriptionReference(id?: number) { return id ? references.value.subscriptions[String(id)] || null : null }
 function nodeReference(id: number) { return references.value.nodes[String(id)] || null }
 function endpointReference(id: number) { return references.value.protocol_endpoints[String(id)] || null }
 function planReference(id: number) { return references.value.plans[String(id)] || null }
@@ -178,7 +187,8 @@ async function loadReferences() {
   try {
     references.value = await fetchAdminEntityReferences({
       userIds: [...records.value.map(item => item.user_id), ...reconciliation.value.map(item => item.user_id)],
-      subscriptionIds: [...records.value.map(item => item.subscription_id), ...reconciliation.value.map(item => item.subscription_id)],
+      subscriptionIds: [...records.value.map(item => item.subscription_id), ...reconciliation.value.map(item => item.subscription_id)]
+        .filter((id): id is number => Boolean(id)),
       nodeIds: records.value.map(item => item.node_id),
       protocolEndpointIds: records.value.map(item => item.protocol_endpoint_id),
       planIds: reconciliation.value.map(item => item.plan_id),
