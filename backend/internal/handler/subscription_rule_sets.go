@@ -83,7 +83,7 @@ func validateSubscriptionRuleSet(req *subscriptionRuleSetWriteReq) error {
 		}
 	}
 	if req.Content != nil {
-		if _, err := parseManagedRuleSource([]byte(*req.Content), managedRuleSourceCanonical); err != nil {
+		if _, err := parseManagedRuleSource([]byte(*req.Content), managedRuleSourceZeroRuleIR); err != nil {
 			fields["content"] = err.Error()
 		}
 	}
@@ -108,7 +108,7 @@ func inferManagedRuleSourceFormat(req *subscriptionRuleSetWriteReq) string {
 		}
 		return managedRuleSourceDomainList
 	default:
-		return managedRuleSourceCanonical
+		return managedRuleSourceZeroRuleIR
 	}
 }
 
@@ -175,8 +175,10 @@ func (h *handlers) AdminSubscriptionRuleSetListHandler(w http.ResponseWriter, r 
 				BadRequest(w, "renderer is unsupported")
 				return
 			}
+			query = query.Where("renderer IN ?", []string{renderer, managedRuleSetRenderer})
+		} else {
+			query = query.Where("renderer = ?", renderer)
 		}
-		query = query.Where("renderer = ?", renderer)
 	}
 	if activeValue := strings.TrimSpace(r.URL.Query().Get("active")); activeValue != "" {
 		active, err := strconv.ParseBool(activeValue)
@@ -288,7 +290,7 @@ func (h *handlers) saveSubscriptionRuleSet(w http.ResponseWriter, r *http.Reques
 
 	var normalized []byte
 	if req.Content != nil {
-		document, _ := parseManagedRuleSource([]byte(*req.Content), managedRuleSourceCanonical)
+		document, _ := parseManagedRuleSource([]byte(*req.Content), managedRuleSourceZeroRuleIR)
 		normalized = encodeManagedCanonicalSource(document)
 	} else if id == 0 {
 		raw, err := fetchManagedRuleSource(r.Context(), req.SourceURL)
@@ -498,12 +500,12 @@ func resolveSubscriptionCustomizationWithRecordsAt(
 	return normalizedResolved, err
 }
 
-func managedRuleCustomizationForRenderer(renderer, siteURL string, record model.SubscriptionRuleSet, target subscriptionGroupTarget) (subscriptionRuleSetCustomization, error) {
+func managedRuleCustomizationForRenderer(renderer, siteURL string, record model.SubscriptionRuleSet, target string) (subscriptionRuleSetCustomization, error) {
 	resolved := subscriptionRuleSetCustomization{Tag: record.Tag, Target: target, Interval: record.Interval}
 	switch renderer {
 	case subscriptionRendererZNetSink:
-		resolved.URL = managedRulePublicURL(siteURL, record.Tag, managedRuleArtifactZRS)
-		resolved.Format = "zrs"
+		resolved.URL = managedRulePublicURL(siteURL, record.Tag, managedRuleArtifactZeroRuleIR)
+		resolved.Format = managedRuleSourceZeroRuleIR
 	case subscriptionRendererClash:
 		resolved.URL = managedRulePublicURL(siteURL, record.Tag, managedRuleArtifactClashClassicalYAML)
 		resolved.Behavior = "classical"
