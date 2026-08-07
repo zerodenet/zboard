@@ -1,0 +1,39 @@
+name: format-subscription-pr
+
+on:
+  push:
+    branches:
+      - agent/secure-zero-subscription-format
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/secure-zero-subscription-format
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: Format changed Go files
+        run: |
+          gofmt -w \
+            backend/internal/handler/subscription_delivery.go \
+            backend/internal/handler/subscription_delivery_test.go \
+            backend/internal/handler/subscription_templates.go \
+            backend/internal/handler/subscription_templates_test.go
+          rm .github/workflows/format-subscription-pr.yml
+      - name: Commit formatting
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/internal/handler/subscription_delivery.go \
+            backend/internal/handler/subscription_delivery_test.go \
+            backend/internal/handler/subscription_templates.go \
+            backend/internal/handler/subscription_templates_test.go \
+            .github/workflows/format-subscription-pr.yml
+          git commit -m "style(subscription): format Go sources"
+          git push origin HEAD:agent/secure-zero-subscription-format
