@@ -1,12 +1,17 @@
 package handler
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 const (
 	subscriptionDeliveryAuto   = "auto"
 	subscriptionDeliveryNative = "native"
 	subscriptionDeliveryZero   = "zero"
 )
+
+var znetSinkUserAgentPattern = regexp.MustCompile(`^ZNet-Sink/[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$`)
 
 type subscriptionDeliverySelection struct {
 	TemplateSlug  string
@@ -69,13 +74,21 @@ func isZeroSubscriptionAlias(value string) bool {
 	}
 }
 
+func isSubscriptionClientUserAgent(userAgent string) bool {
+	return detectSubscriptionTemplate(userAgent) != ""
+}
+
 func detectSubscriptionTemplate(userAgent string) string {
-	normalized := strings.ToLower(strings.TrimSpace(userAgent))
-	switch {
-	case containsAny(normalized, "znet-sink", "znet_sink", "znetsink"):
-		// Keep the existing built-in template slug for stored installations;
-		// the externally visible format is canonicalized to "zero".
+	trimmed := strings.TrimSpace(userAgent)
+	if znetSinkUserAgentPattern.MatchString(trimmed) {
+		// ZNet-Sink uses a strict product/version identifier. Do not accept
+		// aliases or substring matches here; those remain request-template
+		// compatibility aliases only.
 		return "znet-sink"
+	}
+
+	normalized := strings.ToLower(trimmed)
+	switch {
 	case containsAny(normalized, "sing-box", "singbox"):
 		return "sing-box"
 	case containsAny(normalized, "clash", "mihomo"):
