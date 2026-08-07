@@ -68,6 +68,41 @@ jobs:
       - name: Typecheck and build
         run: pnpm build
 
+  compose:
+    runs-on: ubuntu-latest
+    env:
+      ZBOARD_IMAGE_TAG: v0.0.1-validation
+      ZBOARD_DATA_SOURCE: zboard:validation@tcp(mysql:3306)/zboard?charset=utf8mb4&parseTime=true&loc=UTC
+      ZBOARD_REDIS_ADDR: redis:6379
+      ZBOARD_JWT_SECRET: 0123456789abcdef0123456789abcdef
+      ZBOARD_CREDENTIAL_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
+      ZBOARD_BOOTSTRAP_ADMIN_EMAIL: admin@example.com
+      ZBOARD_BOOTSTRAP_ADMIN_PASSWORD: validation-password-1234
+      ZBOARD_EXTERNAL_NETWORK: validation-network
+      ZBOARD_MYSQL_ROOT_PASSWORD: validation-root-password
+      ZBOARD_MYSQL_PASSWORD: validation-db-password
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare host directories
+        run: sh deploy/docker/prepare-host-dirs.sh
+      - name: Validate Compose configurations
+        run: |
+          docker compose -f deploy/docker/docker-compose.yml config >/dev/null
+          docker compose -f deploy/docker/docker-compose.release.yml config >/dev/null
+          docker compose -f deploy/docker/docker-compose.validation.yml config >/dev/null
+          docker compose -f deploy/docker/docker-compose.blue-green.yml config >/dev/null
+      - name: Verify managed rule mount contract
+        run: |
+          for file in \
+            deploy/docker/docker-compose.yml \
+            deploy/docker/docker-compose.release.yml \
+            deploy/docker/docker-compose.validation.yml; do
+            grep -q 'target: /var/lib/zboard/artifacts$' "$file"
+            grep -q 'target: /var/lib/zboard/artifacts/rules$' "$file"
+            grep -q 'source: ${ZBOARD_MANAGED_RULE_HOST_DIR:-./managed-rules}' "$file"
+          done
+          test "$(grep -c 'target: /var/lib/zboard/artifacts/rules$' deploy/docker/docker-compose.blue-green.yml)" -eq 2
+
   contract:
     runs-on: ubuntu-latest
     steps:
