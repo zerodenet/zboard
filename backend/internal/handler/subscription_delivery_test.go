@@ -111,3 +111,20 @@ func TestCanonicalSubscriptionFormat(t *testing.T) {
 		}
 	}
 }
+
+func TestZeroSubscriptionAliasesAreRecognized(t *testing.T) {
+	for _, alias := range []string{
+		"zero",
+		"znet-sink",
+		"znet_sink",
+		"znetsink",
+		"zero-json",
+		"zero-base64-json",
+		"base64-json",
+		"znet-sink-base64",
+	} {
+		if !isZeroSubscriptionAlias(alias) {
+			t.Fatalf("isZeroSubscriptionAlias(%q) = false, want true", alias)
+		}
+	}
+}
