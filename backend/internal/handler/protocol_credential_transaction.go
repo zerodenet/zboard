@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"database/sql"
 	"errors"
 	"sort"
 	"time"
@@ -14,12 +15,43 @@ import (
 const (
 	protocolCredentialTransactionMaxAttempts = 3
 	protocolCredentialTransactionBaseDelay   = 20 * time.Millisecond
+	protocolCredentialLockName                = "zboard:protocol-credentials"
+	protocolCredentialLockTimeoutSeconds      = 10
 )
+
+var errProtocolCredentialLockTimeout = errors.New("protocol credential reconciliation lock timeout")
 
 func (h *handlers) runProtocolCredentialTransaction(operation func(tx *gorm.DB) error) error {
 	return retryProtocolCredentialTransaction(func() error {
-		return h.db.Transaction(operation)
+		return h.db.Connection(func(connection *gorm.DB) (err error) {
+			acquired, err := acquireProtocolCredentialLock(connection)
+			if err != nil {
+				return err
+			}
+			if !acquired {
+				return errProtocolCredentialLockTimeout
+			}
+			defer func() {
+				releaseErr := connection.Exec("SELECT RELEASE_LOCK(?)", protocolCredentialLockName).Error
+				if err == nil {
+					err = releaseErr
+				}
+			}()
+			return connection.Transaction(operation)
+		})
 	}, time.Sleep)
+}
+
+func acquireProtocolCredentialLock(connection *gorm.DB) (bool, error) {
+	var result sql.NullInt64
+	if err := connection.Raw(
+		"SELECT GET_LOCK(?, ?)",
+		protocolCredentialLockName,
+		protocolCredentialLockTimeoutSeconds,
+	).Scan(&result).Error; err != nil {
+		return false, err
+	}
+	return result.Valid && result.Int64 == 1, nil
 }
 
 func retryProtocolCredentialTransaction(run func() error, sleep func(time.Duration)) error {
@@ -37,6 +69,9 @@ func retryProtocolCredentialTransaction(run func() error, sleep func(time.Durati
 }
 
 func isRetryableProtocolCredentialTransactionError(err error) bool {
+	if errors.Is(err, errProtocolCredentialLockTimeout) {
+		return true
+	}
 	var mysqlErr *mysqlDriver.MySQLError
 	if !errors.As(err, &mysqlErr) {
 		return false
