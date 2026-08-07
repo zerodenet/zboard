@@ -217,19 +217,22 @@ func (h *handlers) ensureCredentialsForSubscriptions(subscriptions []model.Subsc
 }
 
 func (h *handlers) ensureCredentialsForSubscriptionsWithMieru(subscriptions []model.Subscription, mieruAccess bool) error {
-	return h.db.Transaction(func(tx *gorm.DB) error {
-		for _, subscription := range subscriptions {
-			if _, err := h.ensureSubscriptionCredentialsWithMieru(tx, subscription, mieruAccess); err != nil {
-				return err
-			}
+	for _, subscription := range orderedProtocolCredentialSubscriptions(subscriptions) {
+		subscription := subscription
+		if err := h.runProtocolCredentialTransaction(func(tx *gorm.DB) error {
+			_, err := h.ensureSubscriptionCredentialsWithMieru(tx, subscription, mieruAccess)
+			return err
+		}); err != nil {
+			return err
 		}
-		return nil
-	})
+	}
+	return nil
 }
 
 func (h *handlers) reconcileNodeGroupCredentials(groupID uint) error {
 	now := time.Now().UTC()
-	return h.db.Transaction(func(tx *gorm.DB) error {
+	var subscriptions []model.Subscription
+	if err := h.runProtocolCredentialTransaction(func(tx *gorm.DB) error {
 		activeSubscriptionIDs := tx.Model(&model.Subscription{}).
 			Select("id").
 			Where("node_group_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total", groupID, subStatusActive, now)
@@ -244,19 +247,13 @@ func (h *handlers) reconcileNodeGroupCredentials(groupID uint) error {
 			return err
 		}
 
-		var subscriptions []model.Subscription
-		if err := tx.Where("node_group_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total", groupID, subStatusActive, now).
+		return tx.Where("node_group_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total", groupID, subStatusActive, now).
 			Order("id asc").
-			Find(&subscriptions).Error; err != nil {
-			return err
-		}
-		for _, subscription := range subscriptions {
-			if _, err := h.ensureSubscriptionCredentials(tx, subscription); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+			Find(&subscriptions).Error
+	}); err != nil {
+		return err
+	}
+	return h.ensureCredentialsForSubscriptions(subscriptions)
 }
 
 func (h *handlers) newProtocolCredentialSecret(endpoint model.ProtocolEndpoint) (string, error) {
