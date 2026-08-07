@@ -30,6 +30,23 @@ jobs:
       - name: Build
         run: go build ./cmd/zboard
 
+  zrs-compiler:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/zrs-compiler
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt
+      - name: Format
+        run: cargo fmt --check
+      - name: Test
+        run: cargo test
+      - name: Build release binary
+        run: cargo build --release
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
