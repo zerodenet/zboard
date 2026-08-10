@@ -22,10 +22,16 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 	s.readMu.Lock()
 	defer s.readMu.Unlock()
 
+	// Ask the writer for its durable active offset before taking segmentMu. The
+	// writer may need segmentMu to seal a segment, so this ordering prevents a
+	// reader/writer lock inversion.
 	snapshot, err := s.snapshot(ctx)
 	if err != nil {
 		return Batch{}, err
 	}
+	s.segmentMu.RLock()
+	defer s.segmentMu.RUnlock()
+
 	segments, err := listSegments(s.cfg.Directory)
 	if err != nil {
 		return Batch{}, err
@@ -40,7 +46,7 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 			}
 		}
 		if !found {
-			segments = append(segments, segmentFile{sequence: snapshot.sequence, path: snapshot.path, active: true, size: snapshot.size})
+			segments = append(segments, segmentFile{sequence: snapshot.sequence, path: snapshot.path, active: true, codec: CompressionNone, size: snapshot.size})
 		}
 	}
 
@@ -55,11 +61,11 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 		if checkpoint.Segment != 0 && segment.sequence < checkpoint.Segment {
 			continue
 		}
-		startRecord := uint64(0)
+		start := Checkpoint{Segment: segment.sequence}
 		if segment.sequence == checkpoint.Segment {
-			startRecord = checkpoint.Record
+			start = checkpoint
 		}
-		events, nextRecord, err := readSegmentBatch(ctx, segment, startRecord, limit-len(batch.Events))
+		events, next, err := readSegmentBatch(ctx, segment, start, limit-len(batch.Events))
 		if err != nil {
 			return Batch{}, err
 		}
@@ -67,12 +73,26 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 			continue
 		}
 		batch.Events = append(batch.Events, events...)
-		batch.Next = Checkpoint{Segment: segment.sequence, Record: nextRecord}
+		batch.Next = next
 	}
 	return batch, nil
 }
 
-func readSegmentBatch(ctx context.Context, segment segmentFile, startRecord uint64, limit int) ([]Envelope, uint64, error) {
+func readSegmentBatch(ctx context.Context, segment segmentFile, checkpoint Checkpoint, limit int) ([]Envelope, Checkpoint, error) {
+	if segment.codec == CompressionZstd {
+		return readCompressedSegmentBatch(ctx, segment, checkpoint, limit)
+	}
+	if checkpoint.Block != 0 {
+		return nil, checkpoint, fmt.Errorf("raw segment %d cannot resume from compressed block %d", segment.sequence, checkpoint.Block)
+	}
+	events, nextRecord, err := readRawSegmentBatch(ctx, segment, checkpoint.Record, limit)
+	if err != nil {
+		return nil, checkpoint, err
+	}
+	return events, Checkpoint{Segment: segment.sequence, Record: nextRecord}, nil
+}
+
+func readRawSegmentBatch(ctx context.Context, segment segmentFile, startRecord uint64, limit int) ([]Envelope, uint64, error) {
 	file, err := os.Open(segment.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -137,7 +157,11 @@ func (s *FileSpool) Commit(ctx context.Context, checkpoint Checkpoint) error {
 	if checkpointLess(checkpoint, current) {
 		return fmt.Errorf("checkpoint regression from %+v to %+v", current, checkpoint)
 	}
-	if err := s.validateCheckpoint(checkpoint); err != nil {
+
+	s.segmentMu.RLock()
+	err := s.validateCheckpoint(checkpoint)
+	s.segmentMu.RUnlock()
+	if err != nil {
 		return err
 	}
 	if err := writeCheckpoint(s.cfg.Directory, checkpoint); err != nil {
@@ -150,12 +174,9 @@ func (s *FileSpool) Commit(ctx context.Context, checkpoint Checkpoint) error {
 }
 
 func (s *FileSpool) validateCheckpoint(checkpoint Checkpoint) error {
-	if checkpoint.Block != 0 {
-		return errors.New("file spool checkpoint block must be zero before compressed blocks are enabled")
-	}
 	if checkpoint.Segment == 0 {
-		if checkpoint.Record != 0 {
-			return errors.New("zero segment checkpoint cannot contain a record offset")
+		if checkpoint.Block != 0 || checkpoint.Record != 0 {
+			return errors.New("zero segment checkpoint cannot contain a block or record offset")
 		}
 		return nil
 	}
@@ -166,6 +187,16 @@ func (s *FileSpool) validateCheckpoint(checkpoint Checkpoint) error {
 	for _, segment := range segments {
 		if segment.sequence != checkpoint.Segment {
 			continue
+		}
+		if _, _, err := inspectSegment(segment.path, segment.size, segment.active); err != nil {
+			return err
+		}
+		if segment.codec == CompressionZstd {
+			_, _, err := compressedCheckpointRecordOffset(segment.path, checkpoint)
+			return err
+		}
+		if checkpoint.Block != 0 {
+			return fmt.Errorf("raw segment %d cannot use block checkpoint %d", checkpoint.Segment, checkpoint.Block)
 		}
 		records, _, err := inspectSegment(segment.path, segment.size, segment.active)
 		if err != nil {
@@ -180,21 +211,25 @@ func (s *FileSpool) validateCheckpoint(checkpoint Checkpoint) error {
 }
 
 func (s *FileSpool) cleanupCommittedSegments(checkpoint Checkpoint) error {
+	s.segmentMu.Lock()
+	defer s.segmentMu.Unlock()
+
 	segments, err := listSegments(s.cfg.Directory)
 	if err != nil {
 		return err
 	}
+	changed := false
 	for _, segment := range segments {
 		if segment.active || segment.sequence > checkpoint.Segment {
 			continue
 		}
 		deleteSegment := segment.sequence < checkpoint.Segment
 		if segment.sequence == checkpoint.Segment {
-			records, _, err := inspectSegment(segment.path, segment.size, false)
+			consumed, total, err := segmentCheckpointRecordOffset(segment, checkpoint)
 			if err != nil {
 				return err
 			}
-			deleteSegment = checkpoint.Record >= records
+			deleteSegment = consumed >= total
 		}
 		if deleteSegment && s.cfg.Retention.Consumed > 0 {
 			info, err := os.Stat(segment.path)
@@ -209,9 +244,30 @@ func (s *FileSpool) cleanupCommittedSegments(checkpoint Checkpoint) error {
 			if err := os.Remove(segment.path); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("remove committed segment %s: %w", filepath.Base(segment.path), err)
 			}
+			changed = true
 		}
 	}
-	return syncDirectory(s.cfg.Directory)
+	if changed {
+		return syncDirectory(s.cfg.Directory)
+	}
+	return nil
+}
+
+func segmentCheckpointRecordOffset(segment segmentFile, checkpoint Checkpoint) (uint64, uint64, error) {
+	if segment.codec == CompressionZstd {
+		return compressedCheckpointRecordOffset(segment.path, checkpoint)
+	}
+	if checkpoint.Block != 0 {
+		return 0, 0, fmt.Errorf("raw segment %d cannot use block checkpoint %d", segment.sequence, checkpoint.Block)
+	}
+	records, _, err := inspectSegment(segment.path, segment.size, segment.active)
+	if err != nil {
+		return 0, 0, err
+	}
+	if checkpoint.Record > records {
+		return 0, records, fmt.Errorf("checkpoint record %d exceeds segment %d record count %d", checkpoint.Record, segment.sequence, records)
+	}
+	return checkpoint.Record, records, nil
 }
 
 func (s *FileSpool) Status() Status {
@@ -224,6 +280,9 @@ func (s *FileSpool) Status() Status {
 	if !started {
 		return status
 	}
+
+	s.segmentMu.RLock()
+	defer s.segmentMu.RUnlock()
 	segments, err := listSegments(directory)
 	if err != nil {
 		return status
@@ -237,12 +296,19 @@ func (s *FileSpool) Status() Status {
 		if err != nil {
 			continue
 		}
-		if segment.sequence == checkpoint.Segment && checkpoint.Record < records {
-			records -= checkpoint.Record
-		} else if segment.sequence == checkpoint.Segment {
-			records = 0
+		pending := records
+		if segment.sequence == checkpoint.Segment {
+			consumed, total, err := segmentCheckpointRecordOffset(segment, checkpoint)
+			if err != nil {
+				continue
+			}
+			if consumed >= total {
+				pending = 0
+			} else {
+				pending = total - consumed
+			}
 		}
-		status.PendingEvents += int64(records)
+		status.PendingEvents += int64(pending)
 		status.PendingBytes += segment.size
 		info, err := os.Stat(segment.path)
 		if err == nil && (status.OldestEventAt == nil || info.ModTime().Before(*status.OldestEventAt)) {

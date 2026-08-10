@@ -38,6 +38,7 @@ type segmentFile struct {
 	sequence uint64
 	path     string
 	active   bool
+	codec    string
 	size     int64
 }
 
@@ -98,18 +99,37 @@ func segmentPath(directory string, sequence uint64, suffix string) string {
 	return filepath.Join(directory, fmt.Sprintf("%020d%s", sequence, suffix))
 }
 
-func parseSegmentName(name string) (uint64, bool, bool) {
-	active := strings.HasSuffix(name, segmentActiveSuffix)
-	ready := strings.HasSuffix(name, segmentReadySuffix)
-	if !active && !ready {
-		return 0, false, false
+func parseSegmentName(name string) (uint64, bool, string, bool) {
+	active := false
+	codec := CompressionNone
+	base := ""
+	switch {
+	case strings.HasSuffix(name, segmentActiveSuffix):
+		active = true
+		base = strings.TrimSuffix(name, segmentActiveSuffix)
+	case strings.HasSuffix(name, segmentZstdSuffix):
+		codec = CompressionZstd
+		base = strings.TrimSuffix(name, segmentZstdSuffix)
+	case strings.HasSuffix(name, segmentReadySuffix):
+		base = strings.TrimSuffix(name, segmentReadySuffix)
+	default:
+		return 0, false, "", false
 	}
-	base := strings.TrimSuffix(strings.TrimSuffix(name, segmentActiveSuffix), segmentReadySuffix)
 	sequence, err := strconv.ParseUint(base, 10, 64)
 	if err != nil {
-		return 0, false, false
+		return 0, false, "", false
 	}
-	return sequence, active, true
+	return sequence, active, codec, true
+}
+
+func segmentPreference(segment segmentFile) int {
+	if segment.active {
+		return 3
+	}
+	if segment.codec == CompressionNone {
+		return 2
+	}
+	return 1
 }
 
 func listSegments(directory string) ([]segmentFile, error) {
@@ -117,12 +137,12 @@ func listSegments(directory string) ([]segmentFile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list spool segments: %w", err)
 	}
-	segments := make([]segmentFile, 0, len(entries))
+	bySequence := make(map[uint64]segmentFile, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
-		sequence, active, ok := parseSegmentName(entry.Name())
+		sequence, active, codec, ok := parseSegmentName(entry.Name())
 		if !ok {
 			continue
 		}
@@ -130,12 +150,20 @@ func listSegments(directory string) ([]segmentFile, error) {
 		if err != nil {
 			return nil, fmt.Errorf("stat spool segment %s: %w", entry.Name(), err)
 		}
-		segments = append(segments, segmentFile{
+		candidate := segmentFile{
 			sequence: sequence,
 			path:     filepath.Join(directory, entry.Name()),
 			active:   active,
+			codec:    codec,
 			size:     info.Size(),
-		})
+		}
+		if current, exists := bySequence[sequence]; !exists || segmentPreference(candidate) > segmentPreference(current) {
+			bySequence[sequence] = candidate
+		}
+	}
+	segments := make([]segmentFile, 0, len(bySequence))
+	for _, segment := range bySequence {
+		segments = append(segments, segment)
 	}
 	sort.Slice(segments, func(i, j int) bool { return segments[i].sequence < segments[j].sequence })
 	return segments, nil
@@ -232,6 +260,16 @@ func recoverSegments(directory string) (*activeSegment, error) {
 // a partial final header or payload is treated as an interrupted append and the
 // last valid byte offset is returned for truncation.
 func inspectSegment(path string, limit int64, tolerateTrailing bool) (uint64, int64, error) {
+	if strings.HasSuffix(path, segmentZstdSuffix) {
+		if tolerateTrailing {
+			return 0, 0, errors.New("compressed segments cannot tolerate trailing data")
+		}
+		return inspectCompressedSegment(path)
+	}
+	return inspectRawSegment(path, limit, tolerateTrailing)
+}
+
+func inspectRawSegment(path string, limit int64, tolerateTrailing bool) (uint64, int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return 0, 0, err
