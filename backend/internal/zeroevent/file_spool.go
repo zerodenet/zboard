@@ -70,6 +70,16 @@ type FileSpool struct {
 
 	readMu     sync.Mutex
 	checkpoint Checkpoint
+
+	// segmentMu protects representation changes such as .active -> .ready,
+	// .ready -> .ready.zst, and deletion after a committed checkpoint. The
+	// actual compression work happens outside this lock so HTTP append traffic
+	// never waits on zstd CPU work.
+	segmentMu sync.RWMutex
+
+	compressionMu   sync.Mutex
+	compressionCh   chan struct{}
+	compressionDone chan struct{}
 }
 
 func NewFileSpool(cfg Config) (*FileSpool, error) {
@@ -83,11 +93,13 @@ func NewFileSpool(cfg Config) (*FileSpool, error) {
 		return nil, fmt.Errorf("file spool requires driver %q", DriverFile)
 	}
 	return &FileSpool{
-		cfg:        cfg,
-		appendCh:   make(chan appendRequest),
-		snapshotCh: make(chan snapshotRequest),
-		closeCh:    make(chan closeRequest),
-		writerDone: make(chan struct{}),
+		cfg:             cfg,
+		appendCh:        make(chan appendRequest),
+		snapshotCh:      make(chan snapshotRequest),
+		closeCh:         make(chan closeRequest),
+		writerDone:      make(chan struct{}),
+		compressionCh:   make(chan struct{}, 1),
+		compressionDone: make(chan struct{}),
 	}, nil
 }
 
@@ -119,6 +131,12 @@ func (s *FileSpool) Start(parent context.Context) error {
 	s.ctx, s.cancel = context.WithCancel(parent)
 	s.started = true
 	go s.writerLoop()
+	if s.compressionEnabled() {
+		go s.compressionLoop()
+		s.requestCompression()
+	} else {
+		close(s.compressionDone)
+	}
 	return nil
 }
 
@@ -174,14 +192,15 @@ func (s *FileSpool) Close() error {
 	request := closeRequest{done: make(chan error, 1)}
 	s.mu.Unlock()
 
+	var err error
 	select {
 	case s.closeCh <- request:
-		err := <-request.done
+		err = <-request.done
 		<-s.writerDone
-		return err
 	case <-s.writerDone:
-		return nil
 	}
+	<-s.compressionDone
+	return err
 }
 
 func (s *FileSpool) snapshot(ctx context.Context) (segmentSnapshot, error) {
@@ -351,6 +370,9 @@ func (s *FileSpool) sealActive() error {
 	if err := active.file.Sync(); err != nil {
 		return fmt.Errorf("sync active segment before seal: %w", err)
 	}
+
+	s.segmentMu.Lock()
+	defer s.segmentMu.Unlock()
 	if err := active.file.Close(); err != nil {
 		return fmt.Errorf("close active segment: %w", err)
 	}
@@ -362,6 +384,7 @@ func (s *FileSpool) sealActive() error {
 		return err
 	}
 	s.active = nil
+	go s.requestCompression()
 	return nil
 }
 
