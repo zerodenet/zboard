@@ -46,34 +46,9 @@ func (h *handlers) scheduleSubscriptionConfigPublishes(subscriptionID, requested
 	}
 }
 
-// Any authenticated Connector delivery is an opportunity to reconcile
-// time-based credential expiry without adding a second panel-specific channel.
-func (h *handlers) reconcileExpiredCredentials(now time.Time) {
-	h.expiryReconcileMu.Lock()
-	if !h.lastExpiryReconcile.IsZero() && now.Sub(h.lastExpiryReconcile) < 20*time.Second {
-		h.expiryReconcileMu.Unlock()
-		return
-	}
-	h.lastExpiryReconcile = now
-	h.expiryReconcileMu.Unlock()
-
-	started := time.Now().UTC()
-	if err := expireSubscriptions(h.db, 0, started); err != nil {
-		return
-	}
-	var expired []model.ProtocolCredential
-	if err := h.db.Where("status = ? AND updated_at >= ?", "expired", started).Find(&expired).Error; err != nil {
-		return
-	}
-	seen := map[uint]struct{}{}
-	for _, credential := range expired {
-		if _, exists := seen[credential.NodeID]; exists {
-			continue
-		}
-		seen[credential.NodeID] = struct{}{}
-		h.scheduleNodeConfigPublish(credential.NodeID, credential.ProtocolEndpointID, 0)
-	}
-}
+// Legacy request handlers still call this hook while their source is phased out.
+// Credential expiry is exclusively reconciled by StartCredentialExpiryWorker.
+func (h *handlers) reconcileExpiredCredentials(time.Time) {}
 
 func (h *handlers) publishNodeConfig(ctx context.Context, endpointID, requestedBy uint) (model.ProtocolDeployment, time.Duration, error) {
 	var endpoint model.ProtocolEndpoint

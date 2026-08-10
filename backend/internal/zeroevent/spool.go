@@ -21,6 +21,7 @@ type Envelope struct {
 	ID             string          `json:"id,omitempty"`
 	NodeID         uint64          `json:"node_id"`
 	SourceID       string          `json:"source_id,omitempty"`
+	PrincipalKey   string          `json:"principal_key,omitempty"`
 	Type           string          `json:"type"`
 	OccurredAt     time.Time       `json:"occurred_at"`
 	CoreInstanceID string          `json:"core_instance_id,omitempty"`

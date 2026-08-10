@@ -6,6 +6,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/handler"
 	"github.com/zerodenet/zboard/backend/internal/security"
+	"github.com/zerodenet/zboard/backend/internal/zeroevent"
 	"github.com/zeromicro/go-zero/rest"
 	"gorm.io/gorm"
 )
@@ -14,16 +15,19 @@ func newRoute(method, path string, fn func(http.ResponseWriter, *http.Request)) 
 	return rest.Route{Method: method, Path: path, Handler: http.HandlerFunc(fn)}
 }
 
-func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string) error {
+func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string, zeroEventSpoolConfig zeroevent.Config) (func() error, error) {
 	if err := datastore.ReconcileCommerceSchema(db); err != nil {
-		return err
+		return nil, err
 	}
 	if err := datastore.ReconcileSubscriptionAccessSchema(db); err != nil {
-		return err
+		return nil, err
+	}
+	if err := datastore.ReconcileZeroEventSchema(db); err != nil {
+		return nil, err
 	}
 	h, err := handler.NewHandlers(db, jwtSecret, credentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	srv.Use(h.InstallationMiddleware)
 
@@ -181,18 +185,21 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/system/info", h.SystemInfoHandler),
 	})
 	if err := h.ReconcileSystemConfigDefaults(); err != nil {
-		return err
+		return nil, err
 	}
 	if err := h.ReconcileSubscriptionTemplateDefaults(); err != nil {
-		return err
+		return nil, err
 	}
 	if err := h.ReconcileMieruEndpointCredentials(); err != nil {
-		return err
+		return nil, err
 	}
 	if err := h.ReconcileSubscriptionAccessTokens(); err != nil {
-		return err
+		return nil, err
+	}
+	if err := h.ConfigureZeroEventSpool(zeroEventSpoolConfig); err != nil {
+		return nil, err
 	}
 	h.StartCertificateRenewalWorker()
 	h.StartDNSPublicObservationWorker()
-	return nil
+	return h.CloseZeroEventSpool, nil
 }
