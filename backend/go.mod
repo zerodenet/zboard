@@ -9,6 +9,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/klauspost/compress v1.18.6
+	github.com/pierrec/lz4/v4 v4.1.27
 	github.com/zeromicro/go-zero v1.6.6
 	golang.org/x/crypto v0.33.0
 	golang.org/x/net v0.26.0

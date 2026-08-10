@@ -69,7 +69,7 @@ func (s *FileSpool) Compact(ctx context.Context) (result CompactionResult, err e
 	}
 
 	// The compression worker and semantic compactor both replace sealed segment
-	// representations. Serializing them avoids stale .ready/.ready.zst takeover.
+	// representations. Serializing them avoids stale compressed takeover.
 	s.compressionMu.Lock()
 	defer s.compressionMu.Unlock()
 
@@ -184,12 +184,15 @@ func (s *FileSpool) compactSealedSegment(ctx context.Context, segment segmentFil
 		return result, fmt.Errorf("publish compacted segment %s: %w", filepath.Base(segment.path), err)
 	}
 	if segment.codec == CompressionNone {
-		// A crash during an earlier representation switch can leave a valid zstd
-		// duplicate. The newly compacted raw file is authoritative; remove the old
-		// compressed duplicate before allowing the compression worker to run again.
-		duplicate := segmentPath(s.cfg.Directory, segment.sequence, segmentZstdSuffix)
-		if err := os.Remove(duplicate); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return result, fmt.Errorf("remove stale compressed duplicate: %w", err)
+		// A crash during an earlier representation switch can leave a valid
+		// compressed duplicate. The newly compacted raw file is authoritative;
+		// remove every known compressed representation before allowing the
+		// compression worker to run again.
+		for _, suffix := range []string{segmentZstdSuffix, segmentLZ4Suffix} {
+			duplicate := segmentPath(s.cfg.Directory, segment.sequence, suffix)
+			if err := os.Remove(duplicate); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return result, fmt.Errorf("remove stale compressed duplicate: %w", err)
+			}
 		}
 	}
 	if err := syncDirectory(s.cfg.Directory); err != nil {
@@ -228,7 +231,7 @@ func readWholeSegment(ctx context.Context, segment segmentFile) ([]Envelope, err
 }
 
 func (s *FileSpool) writeCompactedSegment(target *os.File, codec string, events []Envelope) error {
-	if codec == CompressionZstd {
+	if codec != CompressionNone {
 		var raw bytes.Buffer
 		for _, event := range events {
 			record, err := encodeRecord(event)
@@ -247,10 +250,7 @@ func (s *FileSpool) writeCompactedSegment(target *os.File, codec string, events 
 		if compression.Workers <= 0 {
 			compression.Workers = defaults.Workers
 		}
-		if compression.Level == 0 {
-			compression.Level = defaults.Level
-		}
-		return compressRawSegmentToZstdWithWorkers(bytes.NewReader(raw.Bytes()), target, compression.BlockSize, compression.Level, compression.Workers)
+		return compressRawSegmentWithCodec(bytes.NewReader(raw.Bytes()), target, compression.BlockSize, codec, compression.Level, compression.Workers)
 	}
 	for _, event := range events {
 		record, err := encodeRecord(event)
@@ -267,8 +267,8 @@ func (s *FileSpool) writeCompactedSegment(target *os.File, codec string, events 
 func validateCompactedRepresentation(path, codec string, records uint64, size int64) error {
 	var actual uint64
 	var err error
-	if codec == CompressionZstd {
-		actual, _, err = inspectCompressedSegment(path)
+	if codec != CompressionNone {
+		actual, _, err = inspectCompressedSegmentForCodec(path, codec)
 	} else {
 		actual, _, err = inspectRawSegment(path, size, false)
 	}

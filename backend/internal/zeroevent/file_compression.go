@@ -9,20 +9,24 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/pierrec/lz4/v4"
 )
 
 const (
 	compressedBlockMagic      uint32 = 0x5a454231 // ZEB1
 	compressedBlockVersion    uint16 = 1
 	compressedBlockCodecZstd  uint16 = 1
+	compressedBlockCodecLZ4   uint16 = 2
 	compressedBlockHeaderSize        = 24
 	segmentZstdSuffix                = ".ready.zst"
+	segmentLZ4Suffix                 = ".ready.lz4"
 	compressionRetryInterval         = 30 * time.Second
 )
 
@@ -43,9 +47,13 @@ func (s *FileSpool) compressionLoop() {
 	for {
 		select {
 		case <-s.compressionCh:
-			_ = s.compressReadySegments()
+			if err := s.compressReadySegments(); err != nil {
+				log.Printf("Zero event spool compression failed: codec=%s error=%v", strings.TrimSpace(s.cfg.Compression.Algorithm), err)
+			}
 		case <-ticker.C:
-			_ = s.compressReadySegments()
+			if err := s.compressReadySegments(); err != nil {
+				log.Printf("Zero event spool compression retry failed: codec=%s error=%v", strings.TrimSpace(s.cfg.Compression.Algorithm), err)
+			}
 		case <-s.ctx.Done():
 			return
 		}
@@ -63,7 +71,48 @@ func (s *FileSpool) requestCompression() {
 }
 
 func (s *FileSpool) compressionEnabled() bool {
-	return s.cfg.Compression.Enabled && strings.TrimSpace(s.cfg.Compression.Algorithm) == CompressionZstd
+	if !s.cfg.Compression.Enabled {
+		return false
+	}
+	switch strings.TrimSpace(s.cfg.Compression.Algorithm) {
+	case CompressionZstd, CompressionLZ4:
+		return true
+	default:
+		return false
+	}
+}
+
+func compressionCodec(algorithm string) (uint16, string, error) {
+	switch strings.TrimSpace(algorithm) {
+	case CompressionZstd:
+		return compressedBlockCodecZstd, segmentZstdSuffix, nil
+	case CompressionLZ4:
+		return compressedBlockCodecLZ4, segmentLZ4Suffix, nil
+	default:
+		return 0, "", fmt.Errorf("unsupported compression algorithm %q", algorithm)
+	}
+}
+
+func compressionCodecName(codec uint16) (string, error) {
+	switch codec {
+	case compressedBlockCodecZstd:
+		return CompressionZstd, nil
+	case compressedBlockCodecLZ4:
+		return CompressionLZ4, nil
+	default:
+		return "", fmt.Errorf("unsupported compressed block codec %d", codec)
+	}
+}
+
+func compressedCodecFromPath(path string) string {
+	switch {
+	case strings.HasSuffix(path, segmentZstdSuffix):
+		return CompressionZstd
+	case strings.HasSuffix(path, segmentLZ4Suffix):
+		return CompressionLZ4
+	default:
+		return ""
+	}
 }
 
 func (s *FileSpool) compressReadySegments() error {
@@ -94,7 +143,12 @@ func (s *FileSpool) compressReadySegment(segment segmentFile) error {
 	if segment.active || segment.codec != CompressionNone {
 		return nil
 	}
-	finalPath := segmentPath(s.cfg.Directory, segment.sequence, segmentZstdSuffix)
+	algorithm := strings.TrimSpace(s.cfg.Compression.Algorithm)
+	_, suffix, err := compressionCodec(algorithm)
+	if err != nil {
+		return err
+	}
+	finalPath := segmentPath(s.cfg.Directory, segment.sequence, suffix)
 	if _, err := os.Stat(finalPath); err == nil {
 		if _, _, inspectErr := inspectCompressedSegment(finalPath); inspectErr == nil {
 			return s.finalizeCompressedSegment(segment.path, finalPath, "")
@@ -125,7 +179,7 @@ func (s *FileSpool) compressReadySegment(segment segmentFile) error {
 		temporary.Close()
 		return err
 	}
-	if err := compressRawSegmentToZstdWithWorkers(source, temporary, s.cfg.Compression.BlockSize, s.cfg.Compression.Level, s.cfg.Compression.Workers); err != nil {
+	if err := compressRawSegmentWithCodec(source, temporary, s.cfg.Compression.BlockSize, algorithm, s.cfg.Compression.Level, s.cfg.Compression.Workers); err != nil {
 		temporary.Close()
 		return err
 	}
@@ -136,10 +190,17 @@ func (s *FileSpool) compressReadySegment(segment segmentFile) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	if _, _, err := inspectCompressedSegment(temporaryPath); err != nil {
+	if _, _, err := inspectCompressedSegmentForCodec(temporaryPath, algorithm); err != nil {
 		return fmt.Errorf("validate compressed segment: %w", err)
 	}
-	return s.finalizeCompressedSegment(segment.path, finalPath, temporaryPath)
+	if err := s.finalizeCompressedSegment(segment.path, finalPath, temporaryPath); err != nil {
+		return err
+	}
+	if info, err := os.Stat(finalPath); err == nil {
+		saved := segment.size - info.Size()
+		log.Printf("Zero event spool segment compressed: sequence=%d codec=%s before_bytes=%d after_bytes=%d saved_bytes=%d", segment.sequence, algorithm, segment.size, info.Size(), saved)
+	}
+	return nil
 }
 
 func (s *FileSpool) finalizeCompressedSegment(rawPath, finalPath, temporaryPath string) error {
@@ -181,20 +242,43 @@ func compressRawSegmentToZstd(source io.Reader, target io.Writer, blockSize int6
 }
 
 func compressRawSegmentToZstdWithWorkers(source io.Reader, target io.Writer, blockSize int64, level, workers int) error {
+	return compressRawSegmentWithCodec(source, target, blockSize, CompressionZstd, level, workers)
+}
+
+func compressRawSegmentWithCodec(source io.Reader, target io.Writer, blockSize int64, algorithm string, level, workers int) error {
 	if blockSize <= 0 {
 		return errors.New("compression block size must be greater than zero")
 	}
 	if workers <= 0 {
 		return errors.New("compression workers must be greater than zero")
 	}
-	encoder, err := zstd.NewWriter(nil,
-		zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(level)),
-		zstd.WithEncoderConcurrency(workers),
-	)
+	codec, _, err := compressionCodec(algorithm)
 	if err != nil {
-		return fmt.Errorf("create zstd encoder: %w", err)
+		return err
 	}
-	defer encoder.Close()
+
+	var zstdEncoder *zstd.Encoder
+	if algorithm == CompressionZstd {
+		zstdEncoder, err = zstd.NewWriter(nil,
+			zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(level)),
+			zstd.WithEncoderConcurrency(workers),
+		)
+		if err != nil {
+			return fmt.Errorf("create zstd encoder: %w", err)
+		}
+		defer zstdEncoder.Close()
+	}
+
+	compress := func(block []byte) ([]byte, error) {
+		switch algorithm {
+		case CompressionZstd:
+			return zstdEncoder.EncodeAll(block, nil), nil
+		case CompressionLZ4:
+			return encodeLZ4Frame(block, level, workers)
+		default:
+			return nil, fmt.Errorf("unsupported compression algorithm %q", algorithm)
+		}
+	}
 
 	reader := bufio.NewReader(source)
 	block := make([]byte, 0, blockSize)
@@ -203,14 +287,17 @@ func compressRawSegmentToZstdWithWorkers(source io.Reader, target io.Writer, blo
 		if records == 0 {
 			return nil
 		}
-		compressed := encoder.EncodeAll(block, nil)
+		compressed, err := compress(block)
+		if err != nil {
+			return err
+		}
 		if uint64(len(compressed)) > uint64(^uint32(0)) || uint64(len(block)) > uint64(^uint32(0)) {
 			return errors.New("compressed block exceeds format limit")
 		}
 		header := compressedBlockHeader{
 			Magic:            compressedBlockMagic,
 			Version:          compressedBlockVersion,
-			Codec:            compressedBlockCodecZstd,
+			Codec:            codec,
 			CompressedLength: uint32(len(compressed)),
 			OriginalLength:   uint32(len(block)),
 			RecordCount:      records,
@@ -250,6 +337,57 @@ func compressRawSegmentToZstdWithWorkers(source io.Reader, target io.Writer, blo
 	return flush()
 }
 
+func encodeLZ4Frame(block []byte, level, workers int) ([]byte, error) {
+	compressionLevel, err := lz4CompressionLevel(level)
+	if err != nil {
+		return nil, err
+	}
+	var buffer bytes.Buffer
+	writer := lz4.NewWriter(&buffer)
+	if err := writer.Apply(
+		lz4.BlockSizeOption(lz4.Block256Kb),
+		lz4.CompressionLevelOption(compressionLevel),
+		lz4.ConcurrencyOption(workers),
+		lz4.ChecksumOption(true),
+	); err != nil {
+		return nil, fmt.Errorf("configure lz4 encoder: %w", err)
+	}
+	if _, err := writer.Write(block); err != nil {
+		return nil, fmt.Errorf("encode lz4 block: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("close lz4 encoder: %w", err)
+	}
+	return buffer.Bytes(), nil
+}
+
+func lz4CompressionLevel(level int) (lz4.CompressionLevel, error) {
+	switch level {
+	case 0:
+		return lz4.Fast, nil
+	case 1:
+		return lz4.Level1, nil
+	case 2:
+		return lz4.Level2, nil
+	case 3:
+		return lz4.Level3, nil
+	case 4:
+		return lz4.Level4, nil
+	case 5:
+		return lz4.Level5, nil
+	case 6:
+		return lz4.Level6, nil
+	case 7:
+		return lz4.Level7, nil
+	case 8:
+		return lz4.Level8, nil
+	case 9:
+		return lz4.Level9, nil
+	default:
+		return 0, fmt.Errorf("lz4 compression level must be between 0 and 9, got %d", level)
+	}
+}
+
 func writeCompressedBlockHeader(writer io.Writer, header compressedBlockHeader) error {
 	buffer := make([]byte, compressedBlockHeaderSize)
 	binary.BigEndian.PutUint32(buffer[0:4], header.Magic)
@@ -286,8 +424,8 @@ func readCompressedBlockHeader(reader io.Reader) (compressedBlockHeader, error) 
 	if header.Version != compressedBlockVersion {
 		return header, fmt.Errorf("unsupported compressed block version %d", header.Version)
 	}
-	if header.Codec != compressedBlockCodecZstd {
-		return header, fmt.Errorf("unsupported compressed block codec %d", header.Codec)
+	if _, err := compressionCodecName(header.Codec); err != nil {
+		return header, err
 	}
 	if header.CompressedLength == 0 || header.OriginalLength == 0 || header.RecordCount == 0 {
 		return header, errors.New("compressed block has invalid empty metadata")
@@ -300,14 +438,27 @@ func decodeCompressedBlock(reader io.Reader, header compressedBlockHeader) ([]by
 	if _, err := io.ReadFull(reader, payload); err != nil {
 		return nil, err
 	}
-	decoder, err := zstd.NewReader(nil)
-	if err != nil {
-		return nil, fmt.Errorf("create zstd decoder: %w", err)
-	}
-	defer decoder.Close()
-	decoded, err := decoder.DecodeAll(payload, nil)
-	if err != nil {
-		return nil, fmt.Errorf("decode zstd block: %w", err)
+	var decoded []byte
+	switch header.Codec {
+	case compressedBlockCodecZstd:
+		decoder, err := zstd.NewReader(nil)
+		if err != nil {
+			return nil, fmt.Errorf("create zstd decoder: %w", err)
+		}
+		decoded, err = decoder.DecodeAll(payload, nil)
+		decoder.Close()
+		if err != nil {
+			return nil, fmt.Errorf("decode zstd block: %w", err)
+		}
+	case compressedBlockCodecLZ4:
+		reader := lz4.NewReader(bytes.NewReader(payload))
+		var err error
+		decoded, err = io.ReadAll(io.LimitReader(reader, int64(header.OriginalLength)+1))
+		if err != nil {
+			return nil, fmt.Errorf("decode lz4 block: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported compressed block codec %d", header.Codec)
 	}
 	if len(decoded) != int(header.OriginalLength) {
 		return nil, fmt.Errorf("compressed block length mismatch: got %d want %d", len(decoded), header.OriginalLength)
@@ -319,6 +470,10 @@ func decodeCompressedBlock(reader io.Reader, header compressedBlockHeader) ([]by
 }
 
 func inspectCompressedSegment(path string) (uint64, int64, error) {
+	return inspectCompressedSegmentForCodec(path, compressedCodecFromPath(path))
+}
+
+func inspectCompressedSegmentForCodec(path, expectedCodec string) (uint64, int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return 0, 0, err
@@ -335,6 +490,12 @@ func inspectCompressedSegment(path string) (uint64, int64, error) {
 		header, err := readCompressedBlockHeader(reader)
 		if err != nil {
 			return records, consumed, err
+		}
+		if expectedCodec != "" {
+			actualCodec, _ := compressionCodecName(header.Codec)
+			if actualCodec != expectedCodec {
+				return records, consumed, fmt.Errorf("compressed segment codec mismatch: got %s want %s", actualCodec, expectedCodec)
+			}
 		}
 		consumed += compressedBlockHeaderSize
 		decoded, err := decodeCompressedBlock(reader, header)
@@ -361,6 +522,32 @@ func inspectCompressedSegment(path string) (uint64, int64, error) {
 		return records, consumed, errors.New("compressed segment has trailing bytes")
 	}
 	return records, consumed, nil
+}
+
+func compressedSegmentOriginalBytes(path string) (int64, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+	reader := bufio.NewReader(file)
+	var total int64
+	for {
+		header, err := readCompressedBlockHeader(reader)
+		if errors.Is(err, io.EOF) {
+			return total, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		if total > int64(^uint64(0)>>1)-int64(header.OriginalLength) {
+			return 0, errors.New("compressed original byte count overflow")
+		}
+		total += int64(header.OriginalLength)
+		if _, err := io.CopyN(io.Discard, reader, int64(header.CompressedLength)); err != nil {
+			return 0, err
+		}
+	}
 }
 
 func readCompressedSegmentBatch(ctx context.Context, segment segmentFile, checkpoint Checkpoint, limit int) ([]Envelope, Checkpoint, error) {
@@ -392,6 +579,10 @@ func readCompressedSegmentBatch(ctx context.Context, segment segmentFile, checkp
 		}
 		if err != nil {
 			return nil, checkpoint, fmt.Errorf("read compressed block header from %s: %w", filepath.Base(segment.path), err)
+		}
+		actualCodec, _ := compressionCodecName(header.Codec)
+		if segment.codec != CompressionNone && actualCodec != segment.codec {
+			return nil, checkpoint, fmt.Errorf("compressed segment %s codec mismatch: got %s want %s", filepath.Base(segment.path), actualCodec, segment.codec)
 		}
 		blockIndex++
 
