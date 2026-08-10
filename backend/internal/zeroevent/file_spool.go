@@ -68,18 +68,26 @@ type FileSpool struct {
 	writerDone chan struct{}
 	active     *activeSegment // owned by the writer goroutine
 
-	readMu     sync.Mutex
-	checkpoint Checkpoint
+	readMu       sync.Mutex
+	checkpoint   Checkpoint
+	hasInflight  bool
+	inflightNext Checkpoint
 
 	// segmentMu protects representation changes such as .active -> .ready,
-	// .ready -> .ready.zst, and deletion after a committed checkpoint. The
-	// actual compression work happens outside this lock so HTTP append traffic
-	// never waits on zstd CPU work.
+	// .ready -> .ready.zst, semantic replacement, and deletion after a committed
+	// checkpoint. CPU-heavy compression/compaction work happens outside this lock.
 	segmentMu sync.RWMutex
 
+	// compressionMu serializes all sealed representation maintenance. Semantic
+	// compaction uses the same mutex so an old zstd representation can never win
+	// a race against a newly compacted raw/zstd segment.
 	compressionMu   sync.Mutex
 	compressionCh   chan struct{}
 	compressionDone chan struct{}
+
+	compactionStatsMu sync.RWMutex
+	compactionRuns    int64
+	compactionTotals  CompactionResult
 
 	storageMu   sync.Mutex
 	storageCh   chan struct{}

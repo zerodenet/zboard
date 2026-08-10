@@ -57,6 +57,10 @@ type Config struct {
 	zeroEventSpoolMinFreeBytesEnv          string
 	zeroEventSpoolEmergencyReserveBytesEnv string
 	zeroEventSpoolCriticalReserveBytesEnv  string
+	zeroEventSpoolCompactionEnabledEnv     string
+	zeroEventSpoolMergeFlowUpdatesEnv      string
+	zeroEventSpoolMergeNodeStatsEnv        string
+	zeroEventSpoolCompaction               *zeroevent.CompactionConfig
 }
 
 type BootstrapAdmin struct {
@@ -92,6 +96,9 @@ func (c *Config) ApplyEnvironment(getenv func(string) string) {
 	applyOverride(&c.zeroEventSpoolMinFreeBytesEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_MIN_FREE_BYTES"))
 	applyOverride(&c.zeroEventSpoolEmergencyReserveBytesEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_EMERGENCY_RESERVE_BYTES"))
 	applyOverride(&c.zeroEventSpoolCriticalReserveBytesEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_CRITICAL_RESERVE_BYTES"))
+	applyOverride(&c.zeroEventSpoolCompactionEnabledEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_COMPACTION_ENABLED"))
+	applyOverride(&c.zeroEventSpoolMergeFlowUpdatesEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_COMPACTION_FLOW_UPDATES"))
+	applyOverride(&c.zeroEventSpoolMergeNodeStatsEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_COMPACTION_NODE_STATS"))
 }
 
 func (c *Config) Validate() error {
@@ -130,6 +137,9 @@ func (c *Config) Validate() error {
 	if err := c.normalizeZeroEventSpoolStorage(); err != nil {
 		return err
 	}
+	if err := c.normalizeZeroEventSpoolCompaction(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(c.DataSource) == "" {
 		return errors.New("datasource is required")
 	}
@@ -154,6 +164,7 @@ func (c Config) ZeroEventSpoolConfig() zeroevent.Config {
 		cfg.Directory = directory
 	}
 	cfg.Storage = c.zeroEventSpoolStorageConfig()
+	cfg.Compaction = c.zeroEventSpoolCompactionConfig()
 	return cfg
 }
 
@@ -237,6 +248,37 @@ func (c Config) zeroEventSpoolStorageConfig() zeroevent.StorageConfig {
 	return storage
 }
 
+func (c *Config) normalizeZeroEventSpoolCompaction() error {
+	compaction := zeroevent.DefaultConfig().Compaction
+	if err := parseBoolConfigOverride(&compaction.Enabled, c.zeroEventSpoolCompactionEnabledEnv, "ZBOARD_ZERO_EVENT_SPOOL_COMPACTION_ENABLED"); err != nil {
+		return err
+	}
+	if err := parseBoolConfigOverride(&compaction.MergeFlowUpdates, c.zeroEventSpoolMergeFlowUpdatesEnv, "ZBOARD_ZERO_EVENT_SPOOL_COMPACTION_FLOW_UPDATES"); err != nil {
+		return err
+	}
+	if err := parseBoolConfigOverride(&compaction.MergeNodeStats, c.zeroEventSpoolMergeNodeStatsEnv, "ZBOARD_ZERO_EVENT_SPOOL_COMPACTION_NODE_STATS"); err != nil {
+		return err
+	}
+	validation := zeroevent.DefaultConfig()
+	validation.Compaction = compaction
+	if err := validation.Validate(); err != nil {
+		return fmt.Errorf("invalid Zero event spool compaction config: %w", err)
+	}
+	c.zeroEventSpoolCompaction = &compaction
+	return nil
+}
+
+func (c Config) zeroEventSpoolCompactionConfig() zeroevent.CompactionConfig {
+	if c.zeroEventSpoolCompaction != nil {
+		return *c.zeroEventSpoolCompaction
+	}
+	compaction := zeroevent.DefaultConfig().Compaction
+	_ = parseBoolConfigOverride(&compaction.Enabled, c.zeroEventSpoolCompactionEnabledEnv, "")
+	_ = parseBoolConfigOverride(&compaction.MergeFlowUpdates, c.zeroEventSpoolMergeFlowUpdatesEnv, "")
+	_ = parseBoolConfigOverride(&compaction.MergeNodeStats, c.zeroEventSpoolMergeNodeStatsEnv, "")
+	return compaction
+}
+
 func parseInt64ConfigOverride(target *int64, raw, name string) error {
 	value := strings.TrimSpace(raw)
 	if value == "" {
@@ -258,6 +300,22 @@ func parseFloat64ConfigOverride(target *float64, raw, name string) error {
 	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		return fmt.Errorf("%s must be a decimal ratio: %w", name, err)
+	}
+	*target = parsed
+	return nil
+}
+
+func parseBoolConfigOverride(target *bool, raw, name string) error {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		if name == "" {
+			return err
+		}
+		return fmt.Errorf("%s must be a boolean: %w", name, err)
 	}
 	*target = parsed
 	return nil

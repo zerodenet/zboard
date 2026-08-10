@@ -75,6 +75,10 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 		batch.Events = append(batch.Events, events...)
 		batch.Next = next
 	}
+	if len(batch.Events) > 0 && (!s.hasInflight || checkpointLess(s.inflightNext, batch.Next)) {
+		s.hasInflight = true
+		s.inflightNext = batch.Next
+	}
 	return batch, nil
 }
 
@@ -170,6 +174,10 @@ func (s *FileSpool) Commit(ctx context.Context, checkpoint Checkpoint) error {
 	s.mu.Lock()
 	s.checkpoint = checkpoint
 	s.mu.Unlock()
+	if s.hasInflight && !checkpointLess(checkpoint, s.inflightNext) {
+		s.hasInflight = false
+		s.inflightNext = Checkpoint{}
+	}
 	return s.cleanupCommittedSegments(checkpoint)
 }
 
@@ -286,6 +294,16 @@ func (s *FileSpool) Status() Status {
 		status.Emergency = storage.level >= storagePressureEmergency
 		status.EmergencyReserveAvailable = storage.reserveAvailable
 	}
+	runs, compaction := s.compactionStatus()
+	status.CompactionRuns = runs
+	status.CompactedSegments = int64(compaction.Segments)
+	status.CompactedEvents = compaction.EventsSaved()
+	status.CompactedFlowUpdates = compaction.FlowUpdatesSaved
+	status.CompactedNodeStats = compaction.NodeStatsSaved
+	if saved := compaction.BytesSaved(); saved > 0 {
+		status.CompactionBytesSaved = saved
+	}
+	status.CompactionUnsafeSkipped = compaction.UnsafeSkipped
 	return status
 }
 
