@@ -80,6 +80,10 @@ type FileSpool struct {
 	compressionMu   sync.Mutex
 	compressionCh   chan struct{}
 	compressionDone chan struct{}
+
+	storageMu   sync.Mutex
+	storageCh   chan struct{}
+	storageDone chan struct{}
 }
 
 func NewFileSpool(cfg Config) (*FileSpool, error) {
@@ -100,6 +104,8 @@ func NewFileSpool(cfg Config) (*FileSpool, error) {
 		writerDone:      make(chan struct{}),
 		compressionCh:   make(chan struct{}, 1),
 		compressionDone: make(chan struct{}),
+		storageCh:       make(chan struct{}, 1),
+		storageDone:     make(chan struct{}),
 	}, nil
 }
 
@@ -118,6 +124,9 @@ func (s *FileSpool) Start(parent context.Context) error {
 	if err := os.MkdirAll(s.cfg.Directory, 0o750); err != nil {
 		return fmt.Errorf("create spool directory: %w", err)
 	}
+	// Reserve creation is best-effort. A host that is already too full to create
+	// the reserve must still be allowed to recover and consume an existing spool.
+	_ = s.ensureEmergencyReserve()
 	checkpoint, err := loadCheckpoint(s.cfg.Directory)
 	if err != nil {
 		return err
@@ -131,6 +140,8 @@ func (s *FileSpool) Start(parent context.Context) error {
 	s.ctx, s.cancel = context.WithCancel(parent)
 	s.started = true
 	go s.writerLoop()
+	go s.storageLoop()
+	s.requestStorageMaintenance()
 	if s.compressionEnabled() {
 		go s.compressionLoop()
 		s.requestCompression()
@@ -200,6 +211,7 @@ func (s *FileSpool) Close() error {
 	case <-s.writerDone:
 	}
 	<-s.compressionDone
+	<-s.storageDone
 	return err
 }
 
@@ -312,6 +324,7 @@ func (s *FileSpool) writeBatch(batch []appendRequest) error {
 		return nil
 	}
 	records := make([][]byte, 0, len(batch))
+	var totalBytes int64
 	for _, request := range batch {
 		if err := request.ctx.Err(); err != nil {
 			return err
@@ -324,7 +337,13 @@ func (s *FileSpool) writeBatch(batch []appendRequest) error {
 			return fmt.Errorf("event record size %d exceeds segment max size %d", len(record), s.cfg.Segment.MaxSize)
 		}
 		records = append(records, record)
+		totalBytes += int64(len(record))
 	}
+
+	// This call never rejects because a soft threshold was crossed. It only
+	// performs reclamation before the writer attempts the actual durable append.
+	s.prepareAppend(totalBytes)
+
 	for _, record := range records {
 		if s.active != nil && s.active.records > 0 && s.active.size+int64(len(record)) > s.cfg.Segment.MaxSize {
 			if err := s.sealActive(); err != nil {
@@ -338,18 +357,13 @@ func (s *FileSpool) writeBatch(batch []appendRequest) error {
 			}
 			s.active = active
 		}
-		startSize := s.active.size
-		if _, err := s.active.file.Write(record); err != nil {
-			_ = s.active.file.Truncate(startSize)
-			_, _ = s.active.file.Seek(startSize, 0)
-			return fmt.Errorf("append event record: %w", err)
+		if err := s.writeRecordWithCapacityRecovery(record); err != nil {
+			return err
 		}
-		s.active.size += int64(len(record))
-		s.active.records++
 	}
 	if s.active != nil {
-		if err := s.active.file.Sync(); err != nil {
-			return fmt.Errorf("sync event segment: %w", err)
+		if err := s.syncActiveWithCapacityRecovery(); err != nil {
+			return err
 		}
 	}
 	return nil

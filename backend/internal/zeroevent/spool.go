@@ -59,12 +59,18 @@ type Batch struct {
 }
 
 type Status struct {
-	Driver        string     `json:"driver"`
-	PendingEvents int64      `json:"pending_events"`
-	PendingBytes  int64      `json:"pending_bytes"`
-	Segments      int        `json:"segments"`
-	OldestEventAt *time.Time `json:"oldest_event_at,omitempty"`
-	Emergency     bool       `json:"emergency"`
+	Driver                    string     `json:"driver"`
+	PendingEvents             int64      `json:"pending_events"`
+	PendingBytes              int64      `json:"pending_bytes"`
+	Segments                  int        `json:"segments"`
+	OldestEventAt             *time.Time `json:"oldest_event_at,omitempty"`
+	StorageBytes              int64      `json:"storage_bytes"`
+	DiskFreeBytes             int64      `json:"disk_free_bytes"`
+	StorageUsageRatio         float64    `json:"storage_usage_ratio"`
+	Warning                   bool       `json:"warning"`
+	Compact                   bool       `json:"compact"`
+	Emergency                 bool       `json:"emergency"`
+	EmergencyReserveAvailable bool       `json:"emergency_reserve_available"`
 }
 
 type EventAppender interface {

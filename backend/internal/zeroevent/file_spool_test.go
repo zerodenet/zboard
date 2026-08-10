@@ -19,6 +19,8 @@ func testFileConfig(t *testing.T) Config {
 	cfg.Segment.MaxAge = time.Hour
 	cfg.Compression.Enabled = false
 	cfg.Compression.Algorithm = CompressionNone
+	cfg.Storage.MinFreeSpace = 0
+	cfg.Storage.EmergencyReserve = 0
 	cfg.Retention.Consumed = 0
 	return cfg
 }

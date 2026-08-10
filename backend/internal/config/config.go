@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/zeromicro/go-zero/rest"
@@ -28,19 +29,34 @@ const (
 
 type Config struct {
 	rest.RestConf
-	Environment             string `json:"environment,default=development"`
-	DataSource              string `json:"datasource"`
-	RedisAddr               string `json:"redis_addr,optional"`
-	RedisPassword           string `json:"-"`
-	JwtSecret               string `json:"jwt_secret"`
-	BootstrapAdminEmail     string `json:"bootstrap_admin_email,optional"`
-	BootstrapAdminPassword  string `json:"bootstrap_admin_password,optional"`
-	CredentialEncryptionKey string `json:"credential_encryption_key,optional"`
-	ZeroArtifactDir         string `json:"zero_artifact_dir,optional"`
-	ZeroKernelContract      string `json:"zero_kernel_contract,default=legacy"`
-	ZeroLocalVersion        string `json:"zero_local_version,optional"`
-	ZeroEventSpoolMode      string `json:"zero_event_spool_mode,default=file"`
-	ZeroEventSpoolDir       string `json:"zero_event_spool_dir,default=/var/lib/zboard/zero-events"`
+	Environment                         string  `json:"environment,default=development"`
+	DataSource                          string  `json:"datasource"`
+	RedisAddr                           string  `json:"redis_addr,optional"`
+	RedisPassword                       string  `json:"-"`
+	JwtSecret                           string  `json:"jwt_secret"`
+	BootstrapAdminEmail                 string  `json:"bootstrap_admin_email,optional"`
+	BootstrapAdminPassword              string  `json:"bootstrap_admin_password,optional"`
+	CredentialEncryptionKey             string  `json:"credential_encryption_key,optional"`
+	ZeroArtifactDir                     string  `json:"zero_artifact_dir,optional"`
+	ZeroKernelContract                  string  `json:"zero_kernel_contract,default=legacy"`
+	ZeroLocalVersion                    string  `json:"zero_local_version,optional"`
+	ZeroEventSpoolMode                  string  `json:"zero_event_spool_mode,default=file"`
+	ZeroEventSpoolDir                   string  `json:"zero_event_spool_dir,default=/var/lib/zboard/zero-events"`
+	ZeroEventSpoolMaxBytes              int64   `json:"zero_event_spool_max_bytes,optional"`
+	ZeroEventSpoolWarningRatio          float64 `json:"zero_event_spool_warning_ratio,optional"`
+	ZeroEventSpoolCompactRatio          float64 `json:"zero_event_spool_compact_ratio,optional"`
+	ZeroEventSpoolEmergencyRatio        float64 `json:"zero_event_spool_emergency_ratio,optional"`
+	ZeroEventSpoolMinFreeBytes          int64   `json:"zero_event_spool_min_free_bytes,optional"`
+	ZeroEventSpoolEmergencyReserveBytes int64   `json:"zero_event_spool_emergency_reserve_bytes,optional"`
+	ZeroEventSpoolCriticalReserveBytes  int64   `json:"zero_event_spool_critical_reserve_bytes,optional"`
+
+	zeroEventSpoolMaxBytesEnv              string
+	zeroEventSpoolWarningRatioEnv          string
+	zeroEventSpoolCompactRatioEnv          string
+	zeroEventSpoolEmergencyRatioEnv        string
+	zeroEventSpoolMinFreeBytesEnv          string
+	zeroEventSpoolEmergencyReserveBytesEnv string
+	zeroEventSpoolCriticalReserveBytesEnv  string
 }
 
 type BootstrapAdmin struct {
@@ -69,6 +85,13 @@ func (c *Config) ApplyEnvironment(getenv func(string) string) {
 	applyOverride(&c.ZeroLocalVersion, getenv("ZBOARD_ZERO_LOCAL_VERSION"))
 	applyOverride(&c.ZeroEventSpoolMode, getenv("ZBOARD_ZERO_EVENT_SPOOL_MODE"))
 	applyOverride(&c.ZeroEventSpoolDir, getenv("ZBOARD_ZERO_EVENT_SPOOL_DIR"))
+	applyOverride(&c.zeroEventSpoolMaxBytesEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_MAX_BYTES"))
+	applyOverride(&c.zeroEventSpoolWarningRatioEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_WARNING_RATIO"))
+	applyOverride(&c.zeroEventSpoolCompactRatioEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_COMPACT_RATIO"))
+	applyOverride(&c.zeroEventSpoolEmergencyRatioEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_EMERGENCY_RATIO"))
+	applyOverride(&c.zeroEventSpoolMinFreeBytesEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_MIN_FREE_BYTES"))
+	applyOverride(&c.zeroEventSpoolEmergencyReserveBytesEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_EMERGENCY_RESERVE_BYTES"))
+	applyOverride(&c.zeroEventSpoolCriticalReserveBytesEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_CRITICAL_RESERVE_BYTES"))
 }
 
 func (c *Config) Validate() error {
@@ -104,6 +127,9 @@ func (c *Config) Validate() error {
 	if c.ZeroEventSpoolMode == ZeroEventSpoolFile && c.ZeroEventSpoolDir == "" {
 		c.ZeroEventSpoolDir = zeroevent.DefaultConfig().Directory
 	}
+	if err := c.normalizeZeroEventSpoolStorage(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(c.DataSource) == "" {
 		return errors.New("datasource is required")
 	}
@@ -127,7 +153,114 @@ func (c Config) ZeroEventSpoolConfig() zeroevent.Config {
 	if directory := strings.TrimSpace(c.ZeroEventSpoolDir); directory != "" {
 		cfg.Directory = directory
 	}
+	cfg.Storage = c.zeroEventSpoolStorageConfig()
 	return cfg
+}
+
+func (c *Config) normalizeZeroEventSpoolStorage() error {
+	defaults := zeroevent.DefaultConfig().Storage
+	if c.ZeroEventSpoolMaxBytes == 0 {
+		c.ZeroEventSpoolMaxBytes = defaults.MaxSize
+	}
+	if c.ZeroEventSpoolWarningRatio == 0 {
+		c.ZeroEventSpoolWarningRatio = defaults.WarningRatio
+	}
+	if c.ZeroEventSpoolCompactRatio == 0 {
+		c.ZeroEventSpoolCompactRatio = defaults.CompactRatio
+	}
+	if c.ZeroEventSpoolEmergencyRatio == 0 {
+		c.ZeroEventSpoolEmergencyRatio = defaults.EmergencyRatio
+	}
+	if c.ZeroEventSpoolMinFreeBytes == 0 {
+		c.ZeroEventSpoolMinFreeBytes = defaults.MinFreeSpace
+	}
+	if c.ZeroEventSpoolEmergencyReserveBytes == 0 {
+		c.ZeroEventSpoolEmergencyReserveBytes = defaults.EmergencyReserve
+	}
+	if c.ZeroEventSpoolCriticalReserveBytes == 0 {
+		c.ZeroEventSpoolCriticalReserveBytes = defaults.CriticalReserve
+	}
+
+	if err := parseInt64ConfigOverride(&c.ZeroEventSpoolMaxBytes, c.zeroEventSpoolMaxBytesEnv, "ZBOARD_ZERO_EVENT_SPOOL_MAX_BYTES"); err != nil {
+		return err
+	}
+	if err := parseFloat64ConfigOverride(&c.ZeroEventSpoolWarningRatio, c.zeroEventSpoolWarningRatioEnv, "ZBOARD_ZERO_EVENT_SPOOL_WARNING_RATIO"); err != nil {
+		return err
+	}
+	if err := parseFloat64ConfigOverride(&c.ZeroEventSpoolCompactRatio, c.zeroEventSpoolCompactRatioEnv, "ZBOARD_ZERO_EVENT_SPOOL_COMPACT_RATIO"); err != nil {
+		return err
+	}
+	if err := parseFloat64ConfigOverride(&c.ZeroEventSpoolEmergencyRatio, c.zeroEventSpoolEmergencyRatioEnv, "ZBOARD_ZERO_EVENT_SPOOL_EMERGENCY_RATIO"); err != nil {
+		return err
+	}
+	if err := parseInt64ConfigOverride(&c.ZeroEventSpoolMinFreeBytes, c.zeroEventSpoolMinFreeBytesEnv, "ZBOARD_ZERO_EVENT_SPOOL_MIN_FREE_BYTES"); err != nil {
+		return err
+	}
+	if err := parseInt64ConfigOverride(&c.ZeroEventSpoolEmergencyReserveBytes, c.zeroEventSpoolEmergencyReserveBytesEnv, "ZBOARD_ZERO_EVENT_SPOOL_EMERGENCY_RESERVE_BYTES"); err != nil {
+		return err
+	}
+	if err := parseInt64ConfigOverride(&c.ZeroEventSpoolCriticalReserveBytes, c.zeroEventSpoolCriticalReserveBytesEnv, "ZBOARD_ZERO_EVENT_SPOOL_CRITICAL_RESERVE_BYTES"); err != nil {
+		return err
+	}
+
+	validation := zeroevent.DefaultConfig()
+	validation.Storage = c.zeroEventSpoolStorageConfig()
+	if err := validation.Validate(); err != nil {
+		return fmt.Errorf("invalid Zero event spool storage config: %w", err)
+	}
+	return nil
+}
+
+func (c Config) zeroEventSpoolStorageConfig() zeroevent.StorageConfig {
+	storage := zeroevent.DefaultConfig().Storage
+	if c.ZeroEventSpoolMaxBytes != 0 || strings.TrimSpace(c.zeroEventSpoolMaxBytesEnv) != "" {
+		storage.MaxSize = c.ZeroEventSpoolMaxBytes
+	}
+	if c.ZeroEventSpoolWarningRatio != 0 || strings.TrimSpace(c.zeroEventSpoolWarningRatioEnv) != "" {
+		storage.WarningRatio = c.ZeroEventSpoolWarningRatio
+	}
+	if c.ZeroEventSpoolCompactRatio != 0 || strings.TrimSpace(c.zeroEventSpoolCompactRatioEnv) != "" {
+		storage.CompactRatio = c.ZeroEventSpoolCompactRatio
+	}
+	if c.ZeroEventSpoolEmergencyRatio != 0 || strings.TrimSpace(c.zeroEventSpoolEmergencyRatioEnv) != "" {
+		storage.EmergencyRatio = c.ZeroEventSpoolEmergencyRatio
+	}
+	if c.ZeroEventSpoolMinFreeBytes != 0 || strings.TrimSpace(c.zeroEventSpoolMinFreeBytesEnv) != "" {
+		storage.MinFreeSpace = c.ZeroEventSpoolMinFreeBytes
+	}
+	if c.ZeroEventSpoolEmergencyReserveBytes != 0 || strings.TrimSpace(c.zeroEventSpoolEmergencyReserveBytesEnv) != "" {
+		storage.EmergencyReserve = c.ZeroEventSpoolEmergencyReserveBytes
+	}
+	if c.ZeroEventSpoolCriticalReserveBytes != 0 || strings.TrimSpace(c.zeroEventSpoolCriticalReserveBytesEnv) != "" {
+		storage.CriticalReserve = c.ZeroEventSpoolCriticalReserveBytes
+	}
+	return storage
+}
+
+func parseInt64ConfigOverride(target *int64, raw, name string) error {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return fmt.Errorf("%s must be an integer number of bytes: %w", name, err)
+	}
+	*target = parsed
+	return nil
+}
+
+func parseFloat64ConfigOverride(target *float64, raw, name string) error {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return fmt.Errorf("%s must be a decimal ratio: %w", name, err)
+	}
+	*target = parsed
+	return nil
 }
 
 func (c Config) BootstrapAdmin() BootstrapAdmin {

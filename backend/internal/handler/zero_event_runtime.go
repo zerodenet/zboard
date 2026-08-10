@@ -18,7 +18,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const zeroEventConsumerBurstBatches = 8
+const (
+	zeroEventConsumerBurstBatches          = 8
+	zeroEventConsumerWarningBurstBatches   = 12
+	zeroEventConsumerCompactBurstBatches   = 16
+	zeroEventConsumerEmergencyBurstBatches = 32
+	zeroEventConsumerMinimumInterval       = 100 * time.Millisecond
+)
 
 var zeroEventRuntimeRegistry sync.Map
 
@@ -159,7 +165,8 @@ func zeroBufferedFlowID(payload json.RawMessage) string {
 func (h *handlers) runZeroEventConsumer(ctx context.Context, runtime *zeroEventRuntime) {
 	defer close(runtime.done)
 	consume := func() {
-		for index := 0; index < zeroEventConsumerBurstBatches; index++ {
+		burst := zeroEventConsumerBurst(runtime.spool.Status())
+		for index := 0; index < burst; index++ {
 			count, err := h.consumeZeroEventBatch(ctx, runtime.spool, runtime.config.MaxBatch)
 			if err != nil {
 				if ctx.Err() == nil {
@@ -173,16 +180,46 @@ func (h *handlers) runZeroEventConsumer(ctx context.Context, runtime *zeroEventR
 		}
 	}
 	consume()
-	ticker := time.NewTicker(runtime.config.CommitInterval)
-	defer ticker.Stop()
+	timer := time.NewTimer(zeroEventConsumerInterval(runtime.config.CommitInterval, runtime.spool.Status()))
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			consume()
+			timer.Reset(zeroEventConsumerInterval(runtime.config.CommitInterval, runtime.spool.Status()))
 		}
 	}
+}
+
+func zeroEventConsumerBurst(status zeroevent.Status) int {
+	switch {
+	case status.Emergency:
+		return zeroEventConsumerEmergencyBurstBatches
+	case status.Compact:
+		return zeroEventConsumerCompactBurstBatches
+	case status.Warning:
+		return zeroEventConsumerWarningBurstBatches
+	default:
+		return zeroEventConsumerBurstBatches
+	}
+}
+
+func zeroEventConsumerInterval(base time.Duration, status zeroevent.Status) time.Duration {
+	interval := base
+	switch {
+	case status.Emergency:
+		interval = base / 10
+	case status.Compact:
+		interval = base / 4
+	case status.Warning:
+		interval = base / 2
+	}
+	if interval < zeroEventConsumerMinimumInterval {
+		return zeroEventConsumerMinimumInterval
+	}
+	return interval
 }
 
 func (h *handlers) consumeZeroEventBatch(ctx context.Context, spool zeroevent.EventSpool, limit int) (int, error) {
