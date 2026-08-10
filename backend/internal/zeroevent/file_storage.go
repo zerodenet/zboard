@@ -63,10 +63,12 @@ func (s *FileSpool) maintainStorage() {
 	switch {
 	case snapshot.level >= storagePressureEmergency:
 		s.cleanupCommittedForPressure(true)
+		_, _ = s.Compact(s.ctx)
 		s.requestCompression()
 		_ = s.releaseEmergencyReserve()
 	case snapshot.level >= storagePressureCompact:
 		s.cleanupCommittedForPressure(true)
+		_, _ = s.Compact(s.ctx)
 		s.requestCompression()
 	case snapshot.level >= storagePressureWarning:
 		s.cleanupCommittedForPressure(false)
@@ -88,7 +90,10 @@ func (s *FileSpool) prepareAppend(requiredBytes int64) {
 		s.cleanupCommittedForPressure(snapshot.level >= storagePressureCompact)
 	}
 	if snapshot.level >= storagePressureCompact {
-		s.requestCompression()
+		// Semantic compaction is intentionally performed by the storage worker,
+		// never inline with the append request. This keeps HTTP durability latency
+		// independent from segment rewrite CPU/disk work.
+		s.requestStorageMaintenance()
 	}
 
 	// Re-check after cheap reclamation. Soft thresholds never reject an append;
@@ -107,9 +112,10 @@ func (s *FileSpool) prepareAppend(requiredBytes int64) {
 func (s *FileSpool) emergencyReclaim() {
 	_ = s.releaseEmergencyReserve()
 	s.cleanupCommittedForPressure(true)
-	// A real ENOSPC/EDQUOT is the narrow failure path where blocking on a
-	// synchronous compression attempt is preferable to immediately rejecting an
-	// event. Compression still happens only on sealed segments.
+	// A real ENOSPC/EDQUOT remains the narrow synchronous failure path. Semantic
+	// compaction stays off the writer path because ReadBatch obtains its durable
+	// active snapshot through the writer goroutine; waiting for readMu here could
+	// create lock inversion. Sealed compression is safe and still retried inline.
 	_ = s.compressReadySegments()
 }
 
@@ -173,9 +179,8 @@ func evaluateStoragePressure(cfg StorageConfig, contentBytes, freeBytes, require
 	}
 
 	// CriticalReserve is deliberately a reclamation headroom rather than a
-	// rejection threshold. Until semantic compaction can discard superseded
-	// non-critical snapshots safely, rejecting ordinary events here would violate
-	// the at-least-once/no-soft-rejection contract.
+	// rejection threshold. Semantic compaction may reclaim superseded cumulative
+	// snapshots in this band, but crossing it still never rejects an event.
 	if cfg.MaxSize > 0 && cfg.CriticalReserve > 0 {
 		criticalBoundary := cfg.MaxSize - cfg.CriticalReserve
 		if criticalBoundary < 0 {

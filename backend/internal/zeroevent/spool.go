@@ -58,6 +58,25 @@ type Batch struct {
 	Next   Checkpoint
 }
 
+type CompactionResult struct {
+	Segments         int   `json:"segments"`
+	EventsBefore     int64 `json:"events_before"`
+	EventsAfter      int64 `json:"events_after"`
+	FlowUpdatesSaved int64 `json:"flow_updates_saved"`
+	NodeStatsSaved   int64 `json:"node_stats_saved"`
+	BytesBefore      int64 `json:"bytes_before"`
+	BytesAfter       int64 `json:"bytes_after"`
+	UnsafeSkipped    int64 `json:"unsafe_skipped"`
+}
+
+func (r CompactionResult) EventsSaved() int64 {
+	return r.EventsBefore - r.EventsAfter
+}
+
+func (r CompactionResult) BytesSaved() int64 {
+	return r.BytesBefore - r.BytesAfter
+}
+
 type Status struct {
 	Driver                    string     `json:"driver"`
 	PendingEvents             int64      `json:"pending_events"`
@@ -71,6 +90,13 @@ type Status struct {
 	Compact                   bool       `json:"compact"`
 	Emergency                 bool       `json:"emergency"`
 	EmergencyReserveAvailable bool       `json:"emergency_reserve_available"`
+	CompactionRuns            int64      `json:"compaction_runs"`
+	CompactedSegments         int64      `json:"compacted_segments"`
+	CompactedEvents           int64      `json:"compacted_events"`
+	CompactedFlowUpdates      int64      `json:"compacted_flow_updates"`
+	CompactedNodeStats        int64      `json:"compacted_node_stats"`
+	CompactionBytesSaved      int64      `json:"compaction_bytes_saved"`
+	CompactionUnsafeSkipped   int64      `json:"compaction_unsafe_skipped"`
 }
 
 type EventAppender interface {
@@ -82,9 +108,14 @@ type EventConsumer interface {
 	Commit(context.Context, Checkpoint) error
 }
 
+type EventCompactor interface {
+	Compact(context.Context) (CompactionResult, error)
+}
+
 type EventSpool interface {
 	EventAppender
 	EventConsumer
+	EventCompactor
 	Start(context.Context) error
 	Status() Status
 	Close() error
@@ -98,6 +129,7 @@ type Config struct {
 	Flush       FlushConfig
 	Consumer    ConsumerConfig
 	Compression CompressionConfig
+	Compaction  CompactionConfig
 	Storage     StorageConfig
 	Retention   RetentionConfig
 }
@@ -123,6 +155,12 @@ type CompressionConfig struct {
 	Level     int
 	BlockSize int64
 	Workers   int
+}
+
+type CompactionConfig struct {
+	Enabled          bool
+	MergeFlowUpdates bool
+	MergeNodeStats   bool
 }
 
 type StorageConfig struct {
@@ -162,6 +200,11 @@ func DefaultConfig() Config {
 			Level:     1,
 			BlockSize: 2 << 20,
 			Workers:   1,
+		},
+		Compaction: CompactionConfig{
+			Enabled:          true,
+			MergeFlowUpdates: true,
+			MergeNodeStats:   true,
 		},
 		Storage: StorageConfig{
 			MaxSize:          5 << 30,
@@ -218,6 +261,9 @@ func (c Config) Validate() error {
 		if c.Compression.Workers <= 0 {
 			return errors.New("compression workers must be greater than zero")
 		}
+	}
+	if c.Compaction.Enabled && !c.Compaction.MergeFlowUpdates && !c.Compaction.MergeNodeStats {
+		return errors.New("semantic compaction requires at least one merge strategy")
 	}
 	if c.Storage.MaxSize <= 0 {
 		return errors.New("storage max size must be greater than zero")
