@@ -83,3 +83,35 @@ func TestZeroBufferedFlowIDReadsNestedRecord(t *testing.T) {
 		t.Fatalf("unexpected flow id %q", got)
 	}
 }
+
+func TestZeroEventConsumerPressureCadence(t *testing.T) {
+	base := 5 * time.Second
+	cases := []struct {
+		name     string
+		status   zeroevent.Status
+		interval time.Duration
+		burst    int
+	}{
+		{name: "normal", status: zeroevent.Status{}, interval: 5 * time.Second, burst: 8},
+		{name: "warning", status: zeroevent.Status{Warning: true}, interval: 2500 * time.Millisecond, burst: 12},
+		{name: "compact", status: zeroevent.Status{Warning: true, Compact: true}, interval: 1250 * time.Millisecond, burst: 16},
+		{name: "emergency", status: zeroevent.Status{Warning: true, Compact: true, Emergency: true}, interval: 500 * time.Millisecond, burst: 32},
+	}
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			if got := zeroEventConsumerInterval(base, item.status); got != item.interval {
+				t.Fatalf("interval = %s, want %s", got, item.interval)
+			}
+			if got := zeroEventConsumerBurst(item.status); got != item.burst {
+				t.Fatalf("burst = %d, want %d", got, item.burst)
+			}
+		})
+	}
+}
+
+func TestZeroEventConsumerIntervalHasFloor(t *testing.T) {
+	status := zeroevent.Status{Emergency: true}
+	if got := zeroEventConsumerInterval(200*time.Millisecond, status); got != zeroEventConsumerMinimumInterval {
+		t.Fatalf("interval = %s, want floor %s", got, zeroEventConsumerMinimumInterval)
+	}
+}

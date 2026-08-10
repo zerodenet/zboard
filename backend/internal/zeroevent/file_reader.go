@@ -211,46 +211,7 @@ func (s *FileSpool) validateCheckpoint(checkpoint Checkpoint) error {
 }
 
 func (s *FileSpool) cleanupCommittedSegments(checkpoint Checkpoint) error {
-	s.segmentMu.Lock()
-	defer s.segmentMu.Unlock()
-
-	segments, err := listSegments(s.cfg.Directory)
-	if err != nil {
-		return err
-	}
-	changed := false
-	for _, segment := range segments {
-		if segment.active || segment.sequence > checkpoint.Segment {
-			continue
-		}
-		deleteSegment := segment.sequence < checkpoint.Segment
-		if segment.sequence == checkpoint.Segment {
-			consumed, total, err := segmentCheckpointRecordOffset(segment, checkpoint)
-			if err != nil {
-				return err
-			}
-			deleteSegment = consumed >= total
-		}
-		if deleteSegment && s.cfg.Retention.Consumed > 0 {
-			info, err := os.Stat(segment.path)
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-			if err == nil && time.Since(info.ModTime()) < s.cfg.Retention.Consumed {
-				deleteSegment = false
-			}
-		}
-		if deleteSegment {
-			if err := os.Remove(segment.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("remove committed segment %s: %w", filepath.Base(segment.path), err)
-			}
-			changed = true
-		}
-	}
-	if changed {
-		return syncDirectory(s.cfg.Directory)
-	}
-	return nil
+	return s.cleanupCommittedSegmentsMode(checkpoint, false)
 }
 
 func segmentCheckpointRecordOffset(segment segmentFile, checkpoint Checkpoint) (uint64, uint64, error) {
@@ -282,42 +243,48 @@ func (s *FileSpool) Status() Status {
 	}
 
 	s.segmentMu.RLock()
-	defer s.segmentMu.RUnlock()
 	segments, err := listSegments(directory)
-	if err != nil {
-		return status
-	}
-	status.Segments = len(segments)
-	for _, segment := range segments {
-		if checkpoint.Segment != 0 && segment.sequence < checkpoint.Segment {
-			continue
-		}
-		records, _, err := inspectSegment(segment.path, segment.size, segment.active)
-		if err != nil {
-			continue
-		}
-		pending := records
-		if segment.sequence == checkpoint.Segment {
-			consumed, total, err := segmentCheckpointRecordOffset(segment, checkpoint)
-			if err != nil {
+	if err == nil {
+		status.Segments = len(segments)
+		for _, segment := range segments {
+			if checkpoint.Segment != 0 && segment.sequence < checkpoint.Segment {
 				continue
 			}
-			if consumed >= total {
-				pending = 0
-			} else {
-				pending = total - consumed
+			records, _, inspectErr := inspectSegment(segment.path, segment.size, segment.active)
+			if inspectErr != nil {
+				continue
+			}
+			pending := records
+			if segment.sequence == checkpoint.Segment {
+				consumed, total, offsetErr := segmentCheckpointRecordOffset(segment, checkpoint)
+				if offsetErr != nil {
+					continue
+				}
+				if consumed >= total {
+					pending = 0
+				} else {
+					pending = total - consumed
+				}
+			}
+			status.PendingEvents += int64(pending)
+			status.PendingBytes += segment.size
+			info, statErr := os.Stat(segment.path)
+			if statErr == nil && (status.OldestEventAt == nil || info.ModTime().Before(*status.OldestEventAt)) {
+				modified := info.ModTime()
+				status.OldestEventAt = &modified
 			}
 		}
-		status.PendingEvents += int64(pending)
-		status.PendingBytes += segment.size
-		info, err := os.Stat(segment.path)
-		if err == nil && (status.OldestEventAt == nil || info.ModTime().Before(*status.OldestEventAt)) {
-			modified := info.ModTime()
-			status.OldestEventAt = &modified
-		}
 	}
-	if s.cfg.Storage.MaxSize > 0 {
-		status.Emergency = float64(status.PendingBytes)/float64(s.cfg.Storage.MaxSize) >= s.cfg.Storage.EmergencyRatio
+	s.segmentMu.RUnlock()
+
+	if storage, storageErr := s.inspectStorage(0); storageErr == nil {
+		status.StorageBytes = storage.contentBytes
+		status.DiskFreeBytes = storage.freeBytes
+		status.StorageUsageRatio = storage.usageRatio
+		status.Warning = storage.level >= storagePressureWarning
+		status.Compact = storage.level >= storagePressureCompact
+		status.Emergency = storage.level >= storagePressureEmergency
+		status.EmergencyReserveAvailable = storage.reserveAvailable
 	}
 	return status
 }
