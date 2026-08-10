@@ -9,6 +9,7 @@ import (
 	"github.com/zeromicro/go-zero/rest"
 
 	"github.com/zerodenet/zboard/backend/internal/security"
+	"github.com/zerodenet/zboard/backend/internal/zeroevent"
 )
 
 var zeroLocalVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$`)
@@ -20,6 +21,8 @@ const (
 	ZeroKernelLegacy       = "legacy"
 	ZeroKernelNativeLocal  = "native-local"
 	ZeroKernelNativeMieru  = "native-local-mieru"
+	ZeroEventSpoolFile     = "file"
+	ZeroEventSpoolLegacy   = "legacy"
 	MinimumJWTSecretBytes  = 32
 )
 
@@ -36,6 +39,8 @@ type Config struct {
 	ZeroArtifactDir         string `json:"zero_artifact_dir,optional"`
 	ZeroKernelContract      string `json:"zero_kernel_contract,default=legacy"`
 	ZeroLocalVersion        string `json:"zero_local_version,optional"`
+	ZeroEventSpoolMode      string `json:"zero_event_spool_mode,default=file"`
+	ZeroEventSpoolDir       string `json:"zero_event_spool_dir,default=/var/lib/zboard/zero-events"`
 }
 
 type BootstrapAdmin struct {
@@ -62,6 +67,8 @@ func (c *Config) ApplyEnvironment(getenv func(string) string) {
 	applyOverride(&c.ZeroArtifactDir, getenv("ZBOARD_ZERO_ARTIFACT_DIR"))
 	applyOverride(&c.ZeroKernelContract, getenv("ZBOARD_ZERO_KERNEL_CONTRACT"))
 	applyOverride(&c.ZeroLocalVersion, getenv("ZBOARD_ZERO_LOCAL_VERSION"))
+	applyOverride(&c.ZeroEventSpoolMode, getenv("ZBOARD_ZERO_EVENT_SPOOL_MODE"))
+	applyOverride(&c.ZeroEventSpoolDir, getenv("ZBOARD_ZERO_EVENT_SPOOL_DIR"))
 }
 
 func (c *Config) Validate() error {
@@ -86,6 +93,17 @@ func (c *Config) Validate() error {
 	if (c.ZeroKernelContract == ZeroKernelNativeLocal || c.ZeroKernelContract == ZeroKernelNativeMieru) && c.ZeroLocalVersion == "" {
 		return errors.New("zero_local_version is required for the native-local kernel contract")
 	}
+	c.ZeroEventSpoolMode = strings.ToLower(strings.TrimSpace(c.ZeroEventSpoolMode))
+	if c.ZeroEventSpoolMode == "" {
+		c.ZeroEventSpoolMode = ZeroEventSpoolFile
+	}
+	if c.ZeroEventSpoolMode != ZeroEventSpoolFile && c.ZeroEventSpoolMode != ZeroEventSpoolLegacy {
+		return fmt.Errorf("unsupported zero_event_spool_mode %q", c.ZeroEventSpoolMode)
+	}
+	c.ZeroEventSpoolDir = strings.TrimSpace(c.ZeroEventSpoolDir)
+	if c.ZeroEventSpoolMode == ZeroEventSpoolFile && c.ZeroEventSpoolDir == "" {
+		c.ZeroEventSpoolDir = zeroevent.DefaultConfig().Directory
+	}
 	if strings.TrimSpace(c.DataSource) == "" {
 		return errors.New("datasource is required")
 	}
@@ -101,6 +119,15 @@ func (c *Config) Validate() error {
 		return admin.Validate(environment)
 	}
 	return nil
+}
+
+func (c Config) ZeroEventSpoolConfig() zeroevent.Config {
+	cfg := zeroevent.DefaultConfig()
+	cfg.Enabled = strings.ToLower(strings.TrimSpace(c.ZeroEventSpoolMode)) != ZeroEventSpoolLegacy
+	if directory := strings.TrimSpace(c.ZeroEventSpoolDir); directory != "" {
+		cfg.Directory = directory
+	}
+	return cfg
 }
 
 func (c Config) BootstrapAdmin() BootstrapAdmin {

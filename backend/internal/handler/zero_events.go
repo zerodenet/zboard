@@ -27,6 +27,8 @@ type zeroEventEnvelope struct {
 	OccurredAtUnixMillis int64           `json:"occurred_at_unix_ms"`
 	SourceID             string          `json:"source_id"`
 	PrincipalKey         string          `json:"principal_key"`
+	CoreInstanceID       string          `json:"core_instance_id"`
+	ConfigRevision       uint64          `json:"config_revision"`
 	Sequence             uint64          `json:"sequence"`
 	Payload              json.RawMessage `json:"payload"`
 }
@@ -50,9 +52,9 @@ func isZeroAccountingEvent(eventType string) bool {
 	return eventType == "flow.completed"
 }
 
-// zeroCompletionAccountingBaseline carries forward only an active, monotonic
-// cursor from the same credential. Completed, reset, reused, or regressed flow
-// identifiers are treated as a new connection and start from zero.
+// zeroCompletionAccountingBaseline remains the compatibility rule for legacy
+// raw flow cursors. Runtime-scoped cursors additionally use the event sequence
+// in recordZeroFlowEvent so a restarted engine cannot reuse the same position.
 func zeroCompletionAccountingBaseline(usage model.FlowUsage, found bool, credentialID uint, flow zeroFlowProjection, cumulativeRaw int64) zeroCompletionBaseline {
 	if !found || usage.Status != "active" || usage.ProtocolCredentialID != credentialID {
 		return zeroCompletionBaseline{}
@@ -91,6 +93,43 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 		Unauthorized(w, err.Error())
 		return
 	}
+
+	// High-frequency buffered events are fully validated before durable append.
+	// After validation, any Append error is a storage/service failure and must
+	// stay retryable instead of being misclassified as a client-side 400.
+	switch event.EventType {
+	case "stats.sampled":
+		if _, err := parseZeroStatsProjection(event.Payload); err != nil {
+			BadRequest(w, err.Error())
+			return
+		}
+	case "flow.updated":
+		flow, err := parseZeroFlowProjection(event)
+		if err != nil {
+			BadRequest(w, err.Error())
+			return
+		}
+		if flow.PrincipalKey == "" {
+			BadRequest(w, "flow event has no attributable principal_key")
+			return
+		}
+	}
+	if buffered, err := h.appendBufferedZeroEvent(r.Context(), node, event); buffered {
+		if err != nil {
+			ServerError(w, err)
+			return
+		}
+		OK(w, map[string]interface{}{
+			"accepted": true,
+			"buffered": true,
+			"event_id": event.EventID,
+		})
+		return
+	}
+
+	// Legacy mode intentionally keeps the old synchronous path as the migration
+	// rollback switch. Interim flow accounting is disabled there; completion is
+	// still authoritative and settles the final cumulative total.
 	if event.EventType == "flow.updated" {
 		if err := h.recordZeroConnectorActivity(node, event); err != nil {
 			ServerError(w, err)
@@ -99,7 +138,7 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 		OK(w, map[string]interface{}{
 			"accepted": true,
 			"ignored":  true,
-			"reason":   "flow.updated is an observability event",
+			"reason":   "flow.updated is an observability event in legacy mode",
 		})
 		return
 	}
@@ -232,9 +271,6 @@ func (h *handlers) recordZeroConnectorActivity(node model.Node, event zeroEventE
 	if result.RowsAffected == 0 {
 		return errors.New("Zero event credential is no longer active")
 	}
-	if event.EventType != "engine.stopped" {
-		go h.reconcileExpiredCredentials(now)
-	}
 	return nil
 }
 
@@ -325,17 +361,45 @@ func (h *handlers) recordZeroFlowEvent(node model.Node, event zeroEventEnvelope,
 		if err := tx.First(&endpoint, credential.ProtocolEndpointID).Error; err != nil {
 			return err
 		}
-		var usage model.FlowUsage
-		usageErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("node_id = ? AND flow_id = ?", node.ID, flow.FlowID).First(&usage).Error
-		if usageErr != nil && !errors.Is(usageErr, gorm.ErrRecordNotFound) {
-			return usageErr
-		}
+
 		cumulativeRaw := trafficBytesForMode(flow.BytesUp, flow.BytesDown, subscription.TrafficCalcMode)
-		baseline := zeroCompletionAccountingBaseline(usage, usageErr == nil, credential.ID, flow, cumulativeRaw)
-		deltaRaw := cumulativeRaw - baseline.RawBytes
-		deltaUpload := flow.BytesUp - baseline.UploadBytes
-		deltaDownload := flow.BytesDown - baseline.DownloadBytes
+		usage, usageExists, legacyUsage, err := loadZeroFlowUsage(tx, node.ID, event, flow, credential.ID, cumulativeRaw)
+		if err != nil {
+			return err
+		}
+		targetUsageKey := zeroFlowUsageKey(event.CoreInstanceID, flow.FlowID)
+		continues := false
+		previousRaw, previousUpload, previousDownload, previousUsed := int64(0), int64(0), int64(0), int64(0)
+		if usageExists {
+			if zeroFlowUsageRuntimeScoped(targetUsageKey) && !legacyUsage {
+				if usage.ProtocolCredentialID != credential.ID {
+					return errors.New("flow principal changed during its runtime generation")
+				}
+				if usage.Revision > 0 && event.Sequence > 0 && event.Sequence < usage.Revision {
+					return errors.New("Zero flow completion sequence is older than the persisted runtime cursor")
+				}
+				if zeroRuntimeFlowCountersRegress(usage, cumulativeRaw, flow) {
+					return errors.New("Zero flow completion counters regressed within one core instance")
+				}
+				continues = true
+			} else if usage.ProtocolCredentialID == credential.ID &&
+				usage.RawBytes <= cumulativeRaw && usage.UploadBytes <= flow.BytesUp && usage.DownloadBytes <= flow.BytesDown {
+				continues = true
+			}
+			if continues {
+				previousRaw = usage.RawBytes
+				previousUpload = usage.UploadBytes
+				previousDownload = usage.DownloadBytes
+				previousUsed = usage.UsedBytes
+			}
+		}
+
+		deltaRaw := cumulativeRaw - previousRaw
+		deltaUpload := flow.BytesUp - previousUpload
+		deltaDownload := flow.BytesDown - previousDownload
+		if deltaRaw < 0 || deltaUpload < 0 || deltaDownload < 0 {
+			return errors.New("Zero flow completion cannot produce a negative delta")
+		}
 		billedDelta, err := billedTrafficBytesChecked(deltaRaw, endpoint.MultiplierMilli)
 		if err != nil {
 			return err
@@ -349,6 +413,7 @@ func (h *handlers) recordZeroFlowEvent(node model.Node, event zeroEventEnvelope,
 			charged = remaining
 		}
 		now := time.Now().UTC()
+		recordAt := zeroEventTime(event, now)
 		record = model.TrafficRecord{
 			UserID:                  subscription.UserID,
 			SubscriptionID:          subscription.ID,
@@ -365,8 +430,8 @@ func (h *handlers) recordZeroFlowEvent(node model.Node, event zeroEventEnvelope,
 			TrafficCalcMode:         subscription.TrafficCalcMode,
 			ProtocolMultiplierMilli: endpoint.MultiplierMilli,
 			UsedBytes:               charged,
-			At:                      zeroEventTime(event, now),
-			Meta:                    fmt.Sprintf(`{"source_id":%q,"sequence":%d,"credential_id":%q,"continued_legacy_flow":%t}`, event.SourceID, event.Sequence, credential.CredentialID, baseline.ContinuesFlow),
+			At:                      recordAt,
+			Meta:                    fmt.Sprintf(`{"source_id":%q,"core_instance_id":%q,"sequence":%d,"credential_id":%q,"continued_flow":%t}`, event.SourceID, event.CoreInstanceID, event.Sequence, credential.CredentialID, continues),
 		}
 		if err := tx.Create(&record).Error; err != nil {
 			return err
@@ -378,15 +443,38 @@ func (h *handlers) recordZeroFlowEvent(node model.Node, event zeroEventEnvelope,
 				subscription.Status = subStatusExpired
 				exhausted = true
 			}
-			if err := tx.Model(&subscription).Updates(map[string]interface{}{"flow_used": subscription.FlowUsed, "status": subscription.Status, "updated_at": now}).Error; err != nil {
+			if err := tx.Model(&subscription).Updates(map[string]interface{}{
+				"flow_used":  subscription.FlowUsed,
+				"status":     subscription.Status,
+				"updated_at": now,
+			}).Error; err != nil {
 				return err
 			}
 		}
-		if usageErr == nil {
-			if err := tx.Delete(&usage).Error; err != nil {
+
+		usage.ProtocolCredentialID = credential.ID
+		usage.NodeID = node.ID
+		usage.FlowID = targetUsageKey
+		usage.SubscriptionID = subscription.ID
+		usage.ProtocolEndpointID = endpoint.ID
+		usage.PrincipalKey = credential.PrincipalKey
+		usage.Revision = zeroFlowUsageCursorSequence(event, flow)
+		usage.RawBytes = cumulativeRaw
+		usage.UploadBytes = flow.BytesUp
+		usage.DownloadBytes = flow.BytesDown
+		usage.UsedBytes = previousUsed + charged
+		usage.Status = "completed"
+		usage.LastEventID = event.EventID
+		usage.LastSeenAt = recordAt
+		usage.CompletedAt = &now
+		if usageExists {
+			if err := tx.Save(&usage).Error; err != nil {
 				return err
 			}
+		} else if err := tx.Create(&usage).Error; err != nil {
+			return err
 		}
+
 		if err := tx.Model(&credential).Updates(map[string]interface{}{"last_used_at": now, "updated_at": now}).Error; err != nil {
 			return err
 		}
@@ -402,9 +490,9 @@ func (h *handlers) recordZeroFlowEvent(node model.Node, event zeroEventEnvelope,
 	return record, exhausted, err
 }
 
-// Completion facts remain attributable after a subscription or credential has
-// expired. The node event itself is authenticated, so historical credentials
-// can be used for final ownership resolution without re-enabling access.
+// Completion and buffered updates remain attributable after a subscription or
+// credential has expired. The node event itself is authenticated, so historical
+// credentials can be used for ownership resolution without re-enabling access.
 func (h *handlers) resolveZeroCompletionCredential(tx *gorm.DB, nodeID uint, principal string) (model.ProtocolCredential, error) {
 	var credential model.ProtocolCredential
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).

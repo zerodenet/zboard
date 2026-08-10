@@ -90,8 +90,25 @@ func main() {
 	log.Printf("environment: %s", c.Environment)
 	log.Printf("config datasource: %s", datastore.QuoteDSN(c.DataSource))
 
-	if err := server.RegisterRoutes(srv, db, c.JwtSecret, credentialCipher, c.ZeroArtifactDir, c.ZeroKernelContract, c.ZeroLocalVersion); err != nil {
+	closeZeroEventSpool, err := server.RegisterRoutes(
+		srv,
+		db,
+		c.JwtSecret,
+		credentialCipher,
+		c.ZeroArtifactDir,
+		c.ZeroKernelContract,
+		c.ZeroLocalVersion,
+		c.ZeroEventSpoolConfig(),
+	)
+	if err != nil {
 		log.Fatalf("route registration failed: %v", err)
+	}
+	if closeZeroEventSpool != nil {
+		defer func() {
+			if err := closeZeroEventSpool(); err != nil {
+				log.Printf("Zero event spool shutdown failed: %v", err)
+			}
+		}()
 	}
 
 	srv.Start()

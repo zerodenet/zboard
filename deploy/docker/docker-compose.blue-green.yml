@@ -29,6 +29,8 @@ services:
       ZBOARD_ZERO_ARTIFACT_DIR: /var/lib/zboard/artifacts
       ZBOARD_ZERO_KERNEL_CONTRACT: ${ZBOARD_ZERO_KERNEL_CONTRACT:-legacy}
       ZBOARD_ZERO_LOCAL_VERSION: ${ZBOARD_ZERO_LOCAL_VERSION:-}
+      ZBOARD_ZERO_EVENT_SPOOL_MODE: ${ZBOARD_ZERO_EVENT_SPOOL_MODE:-file}
+      ZBOARD_ZERO_EVENT_SPOOL_DIR: /var/lib/zboard/zero-events
     volumes:
       - ../backend/etc/zboard.yaml.example:/app/etc/zboard.yaml:ro
       - type: bind
@@ -38,6 +40,10 @@ services:
       - type: bind
         source: ${ZBOARD_MANAGED_RULE_HOST_DIR:-./managed-rules}
         target: /var/lib/zboard/artifacts/rules
+        read_only: false
+      - type: bind
+        source: ${ZBOARD_ZERO_EVENT_SPOOL_BLUE_HOST_DIR:-./zero-events-blue}
+        target: /var/lib/zboard/zero-events
         read_only: false
     command: ["-f", "/app/etc/zboard.yaml"]
     restart: unless-stopped
@@ -61,6 +67,8 @@ services:
       ZBOARD_ZERO_ARTIFACT_DIR: /var/lib/zboard/artifacts
       ZBOARD_ZERO_KERNEL_CONTRACT: ${ZBOARD_ZERO_KERNEL_CONTRACT:-legacy}
       ZBOARD_ZERO_LOCAL_VERSION: ${ZBOARD_ZERO_LOCAL_VERSION:-}
+      ZBOARD_ZERO_EVENT_SPOOL_MODE: ${ZBOARD_ZERO_EVENT_SPOOL_MODE:-file}
+      ZBOARD_ZERO_EVENT_SPOOL_DIR: /var/lib/zboard/zero-events
     volumes:
       - ../backend/etc/zboard.yaml.example:/app/etc/zboard.yaml:ro
       - type: bind
@@ -70,6 +78,10 @@ services:
       - type: bind
         source: ${ZBOARD_MANAGED_RULE_HOST_DIR:-./managed-rules}
         target: /var/lib/zboard/artifacts/rules
+        read_only: false
+      - type: bind
+        source: ${ZBOARD_ZERO_EVENT_SPOOL_GREEN_HOST_DIR:-./zero-events-green}
+        target: /var/lib/zboard/zero-events
         read_only: false
     command: ["-f", "/app/etc/zboard.yaml"]
     restart: unless-stopped
