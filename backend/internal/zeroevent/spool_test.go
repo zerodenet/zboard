@@ -59,3 +59,32 @@ func TestDisabledConfigDoesNotRequireFileSettings(t *testing.T) {
 		t.Fatalf("Validate() error = %v", err)
 	}
 }
+
+func TestEnvelopeRuntimeCursorIsScopedToCoreInstance(t *testing.T) {
+	first := Envelope{CoreInstanceID: "core-a", Sequence: 17}
+	second := Envelope{CoreInstanceID: "core-b", Sequence: 17}
+
+	firstCursor, ok := first.RuntimeCursor()
+	if !ok {
+		t.Fatal("first RuntimeCursor() unavailable")
+	}
+	secondCursor, ok := second.RuntimeCursor()
+	if !ok {
+		t.Fatal("second RuntimeCursor() unavailable")
+	}
+	if firstCursor == secondCursor {
+		t.Fatalf("runtime cursors from different core instances must differ: %+v", firstCursor)
+	}
+	if firstCursor.Sequence != secondCursor.Sequence {
+		t.Fatalf("test requires reused sequence, got %d and %d", firstCursor.Sequence, secondCursor.Sequence)
+	}
+}
+
+func TestEnvelopeRuntimeCursorRequiresGenerationIdentity(t *testing.T) {
+	if _, ok := (Envelope{Sequence: 1}).RuntimeCursor(); ok {
+		t.Fatal("RuntimeCursor() should reject a sequence without core_instance_id")
+	}
+	if _, ok := (Envelope{CoreInstanceID: "core-a"}).RuntimeCursor(); ok {
+		t.Fatal("RuntimeCursor() should reject a core instance without sequence")
+	}
+}

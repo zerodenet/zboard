@@ -18,13 +18,32 @@ const (
 )
 
 type Envelope struct {
-	ID         string          `json:"id,omitempty"`
-	NodeID     uint64          `json:"node_id"`
-	Type       string          `json:"type"`
-	OccurredAt time.Time       `json:"occurred_at"`
-	FlowID     string          `json:"flow_id,omitempty"`
-	Sequence   uint64          `json:"sequence,omitempty"`
-	Payload    json.RawMessage `json:"payload"`
+	ID             string          `json:"id,omitempty"`
+	NodeID         uint64          `json:"node_id"`
+	SourceID       string          `json:"source_id,omitempty"`
+	Type           string          `json:"type"`
+	OccurredAt     time.Time       `json:"occurred_at"`
+	CoreInstanceID string          `json:"core_instance_id,omitempty"`
+	ConfigRevision uint64          `json:"config_revision,omitempty"`
+	FlowID         string          `json:"flow_id,omitempty"`
+	Sequence       uint64          `json:"sequence,omitempty"`
+	Payload        json.RawMessage `json:"payload"`
+}
+
+// RuntimeCursor identifies an event position within one Zero engine instance.
+// Sequence values are not comparable across different core instances because
+// the kernel resets its sequence after a real engine restart.
+type RuntimeCursor struct {
+	CoreInstanceID string `json:"core_instance_id"`
+	Sequence       uint64 `json:"sequence"`
+}
+
+func (e Envelope) RuntimeCursor() (RuntimeCursor, bool) {
+	instanceID := strings.TrimSpace(e.CoreInstanceID)
+	if instanceID == "" || e.Sequence == 0 {
+		return RuntimeCursor{}, false
+	}
+	return RuntimeCursor{CoreInstanceID: instanceID, Sequence: e.Sequence}, true
 }
 
 type Checkpoint struct {
