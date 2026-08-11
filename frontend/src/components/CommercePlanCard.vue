@@ -28,7 +28,7 @@
       <li><UiIcon name="check" />{{ plan.device_limit > 0 ? `${plan.device_limit} 台设备` : '不限设备' }}</li>
     </ul>
 
-    <UiButton type="button" :disabled="disabled" @click="$emit('select')">
+    <UiButton type="button" :disabled="loading || (disabled && Boolean(offer))" @click="$emit('select')">
       {{ actionLabel }}<UiIcon name="chevron" />
     </UiButton>
   </article>

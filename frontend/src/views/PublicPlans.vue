@@ -21,8 +21,8 @@
     <template v-else>
       <section class="pricing-hero">
         <span>套餐与价格</span>
-        <h1>选择适合你的套餐</h1>
-        <p>先浏览套餐核心权益，再进入详情比较全部规格。</p>
+        <h1>选择适合你的服务方案</h1>
+        <p>比较流量、速度、设备数与价格，按需求选择。</p>
       </section>
 
       <WorkbenchFilterBar
@@ -42,10 +42,10 @@
       <PageAlert v-if="error" class="pricing-alert" tone="danger" title="套餐加载失败">{{ error }}</PageAlert>
 
       <div v-if="loading" class="commerce-loading-state" role="status">
-        <UiIcon name="refresh" />正在加载可购买套餐
+        <UiIcon name="refresh" />正在加载套餐
       </div>
 
-      <section v-else-if="plans.length" class="commerce-catalog-grid" aria-label="可购买套餐">
+      <section v-else-if="plans.length" class="commerce-catalog-grid" aria-label="套餐列表">
         <CommercePlanCard
           v-for="plan in plans"
           :key="plan.id"
@@ -58,8 +58,8 @@
 
       <div v-else class="public-empty commerce-catalog-empty">
         <span><UiIcon name="plans" /></span>
-        <h2>{{ query ? '没有找到匹配的套餐' : '套餐正在准备中' }}</h2>
-        <p>{{ query ? '请尝试其他关键词。' : '可购买套餐发布后会显示在这里。' }}</p>
+        <h2>{{ query ? '没有找到匹配的套餐' : '暂时没有可用套餐' }}</h2>
+        <p>{{ query ? '请尝试其他关键词。' : '新的套餐上线后会在这里展示。' }}</p>
       </div>
 
       <TablePager

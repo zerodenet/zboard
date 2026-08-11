@@ -838,14 +838,9 @@ func (h *handlers) PlanListCommerceHandler(w http.ResponseWriter, r *http.Reques
 		ServerError(w, err)
 		return
 	}
-	if isAdmin {
-		items := make([]planSummaryItem, 0, len(plans))
-		for _, plan := range plans {
-			items = append(items, newPlanSummaryItem(plan, counts[plan.ID]))
-		}
-		OK(w, pagedData(items, total, offset, limit))
-		return
-	}
+	// Keep the paged catalog payload stable when the caller is an administrator.
+	// Admin authentication may widen filters/counts, but storefront entitlement
+	// fields must not disappear merely because the same public URL carries a JWT.
 	primarySKUs, err := loadPrimaryPlanSKUsCommerce(h.db, planIDs)
 	if err != nil {
 		ServerError(w, err)
