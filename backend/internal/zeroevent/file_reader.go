@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -83,7 +84,7 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 }
 
 func readSegmentBatch(ctx context.Context, segment segmentFile, checkpoint Checkpoint, limit int) ([]Envelope, Checkpoint, error) {
-	if segment.codec == CompressionZstd {
+	if segment.codec != CompressionNone {
 		return readCompressedSegmentBatch(ctx, segment, checkpoint, limit)
 	}
 	if checkpoint.Block != 0 {
@@ -199,7 +200,7 @@ func (s *FileSpool) validateCheckpoint(checkpoint Checkpoint) error {
 		if _, _, err := inspectSegment(segment.path, segment.size, segment.active); err != nil {
 			return err
 		}
-		if segment.codec == CompressionZstd {
+		if segment.codec != CompressionNone {
 			_, _, err := compressedCheckpointRecordOffset(segment.path, checkpoint)
 			return err
 		}
@@ -223,7 +224,7 @@ func (s *FileSpool) cleanupCommittedSegments(checkpoint Checkpoint) error {
 }
 
 func segmentCheckpointRecordOffset(segment segmentFile, checkpoint Checkpoint) (uint64, uint64, error) {
-	if segment.codec == CompressionZstd {
+	if segment.codec != CompressionNone {
 		return compressedCheckpointRecordOffset(segment.path, checkpoint)
 	}
 	if checkpoint.Block != 0 {
@@ -240,7 +241,11 @@ func segmentCheckpointRecordOffset(segment segmentFile, checkpoint Checkpoint) (
 }
 
 func (s *FileSpool) Status() Status {
-	status := Status{Driver: DriverFile}
+	status := Status{
+		Driver:               DriverFile,
+		PressureLevel:        "unknown",
+		CompressionAlgorithm: strings.TrimSpace(s.cfg.Compression.Algorithm),
+	}
 	s.mu.RLock()
 	started := s.started
 	checkpoint := s.checkpoint
@@ -255,6 +260,13 @@ func (s *FileSpool) Status() Status {
 	if err == nil {
 		status.Segments = len(segments)
 		for _, segment := range segments {
+			if segment.codec != CompressionNone {
+				status.CompressedSegments++
+				status.CompressedStoredBytes += segment.size
+				if original, originalErr := compressedSegmentOriginalBytes(segment.path); originalErr == nil {
+					status.CompressedOriginalBytes += original
+				}
+			}
 			if checkpoint.Segment != 0 && segment.sequence < checkpoint.Segment {
 				continue
 			}
@@ -275,20 +287,27 @@ func (s *FileSpool) Status() Status {
 				}
 			}
 			status.PendingEvents += int64(pending)
-			status.PendingBytes += segment.size
-			info, statErr := os.Stat(segment.path)
-			if statErr == nil && (status.OldestEventAt == nil || info.ModTime().Before(*status.OldestEventAt)) {
-				modified := info.ModTime()
-				status.OldestEventAt = &modified
+			if pending > 0 {
+				status.PendingBytes += segment.size
+				info, statErr := os.Stat(segment.path)
+				if statErr == nil && (status.OldestEventAt == nil || info.ModTime().Before(*status.OldestEventAt)) {
+					modified := info.ModTime()
+					status.OldestEventAt = &modified
+				}
 			}
 		}
 	}
 	s.segmentMu.RUnlock()
 
+	if status.CompressedOriginalBytes > 0 {
+		status.CompressionRatio = float64(status.CompressedStoredBytes) / float64(status.CompressedOriginalBytes)
+		status.CompressionSavingsRatio = 1 - status.CompressionRatio
+	}
 	if storage, storageErr := s.inspectStorage(0); storageErr == nil {
 		status.StorageBytes = storage.contentBytes
 		status.DiskFreeBytes = storage.freeBytes
 		status.StorageUsageRatio = storage.usageRatio
+		status.PressureLevel = storagePressureName(storage.level)
 		status.Warning = storage.level >= storagePressureWarning
 		status.Compact = storage.level >= storagePressureCompact
 		status.Emergency = storage.level >= storagePressureEmergency

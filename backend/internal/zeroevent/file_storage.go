@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -32,16 +33,49 @@ type storageSnapshot struct {
 	reserveAvailable bool
 }
 
+func storagePressureName(level storagePressureLevel) string {
+	switch level {
+	case storagePressureNormal:
+		return "normal"
+	case storagePressureWarning:
+		return "warning"
+	case storagePressureCompact:
+		return "compact"
+	case storagePressureEmergency:
+		return "emergency"
+	default:
+		return "unknown"
+	}
+}
+
 func (s *FileSpool) storageLoop() {
 	defer close(s.storageDone)
 	ticker := time.NewTicker(storageMaintenanceInterval)
 	defer ticker.Stop()
+	previousLevel := storagePressureLevel(255)
+	maintain := func() {
+		snapshot, err := s.maintainStorage()
+		if err != nil {
+			log.Printf("Zero event spool storage maintenance failed: error=%v", err)
+			return
+		}
+		if snapshot.level == previousLevel {
+			return
+		}
+		previousLevel = snapshot.level
+		status := s.Status()
+		oldest := ""
+		if status.OldestEventAt != nil {
+			oldest = status.OldestEventAt.UTC().Format(time.RFC3339Nano)
+		}
+		log.Printf("Zero event spool pressure changed: level=%s usage_ratio=%.6f storage_bytes=%d disk_free_bytes=%d pending_events=%d pending_bytes=%d oldest_event_at=%q emergency_reserve=%t compression_codec=%s compression_ratio=%.6f compaction_runs=%d compacted_events=%d", storagePressureName(snapshot.level), snapshot.usageRatio, snapshot.contentBytes, snapshot.freeBytes, status.PendingEvents, status.PendingBytes, oldest, snapshot.reserveAvailable, status.CompressionAlgorithm, status.CompressionRatio, status.CompactionRuns, status.CompactedEvents)
+	}
 	for {
 		select {
 		case <-s.storageCh:
-			s.maintainStorage()
+			maintain()
 		case <-ticker.C:
-			s.maintainStorage()
+			maintain()
 		case <-s.ctx.Done():
 			return
 		}
@@ -55,20 +89,32 @@ func (s *FileSpool) requestStorageMaintenance() {
 	}
 }
 
-func (s *FileSpool) maintainStorage() {
+func (s *FileSpool) maintainStorage() (storageSnapshot, error) {
 	snapshot, err := s.inspectStorage(0)
 	if err != nil {
-		return
+		return storageSnapshot{}, err
+	}
+	runCompaction := func() {
+		result, compactErr := s.Compact(s.ctx)
+		if compactErr != nil {
+			log.Printf("Zero event spool semantic compaction failed: pressure=%s error=%v", storagePressureName(snapshot.level), compactErr)
+			return
+		}
+		if result.Segments > 0 {
+			log.Printf("Zero event spool semantic compaction completed: pressure=%s segments=%d events_before=%d events_after=%d flow_updates_saved=%d node_stats_saved=%d bytes_before=%d bytes_after=%d unsafe_skipped=%d", storagePressureName(snapshot.level), result.Segments, result.EventsBefore, result.EventsAfter, result.FlowUpdatesSaved, result.NodeStatsSaved, result.BytesBefore, result.BytesAfter, result.UnsafeSkipped)
+		}
 	}
 	switch {
 	case snapshot.level >= storagePressureEmergency:
 		s.cleanupCommittedForPressure(true)
-		_, _ = s.Compact(s.ctx)
+		runCompaction()
 		s.requestCompression()
-		_ = s.releaseEmergencyReserve()
+		if err := s.releaseEmergencyReserve(); err != nil {
+			log.Printf("Zero event spool emergency reserve release failed: error=%v", err)
+		}
 	case snapshot.level >= storagePressureCompact:
 		s.cleanupCommittedForPressure(true)
-		_, _ = s.Compact(s.ctx)
+		runCompaction()
 		s.requestCompression()
 	case snapshot.level >= storagePressureWarning:
 		s.cleanupCommittedForPressure(false)
@@ -76,8 +122,11 @@ func (s *FileSpool) maintainStorage() {
 		// A normal pressure level already guarantees enough configured free-space
 		// headroom for min-free + emergency + critical reserves. Recreate the
 		// physical emergency reserve only from this background worker.
-		_ = s.ensureEmergencyReserve()
+		if err := s.ensureEmergencyReserve(); err != nil {
+			log.Printf("Zero event spool emergency reserve restore failed: error=%v", err)
+		}
 	}
+	return snapshot, nil
 }
 
 func (s *FileSpool) prepareAppend(requiredBytes int64) {

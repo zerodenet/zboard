@@ -42,6 +42,10 @@ type Config struct {
 	ZeroLocalVersion                    string  `json:"zero_local_version,optional"`
 	ZeroEventSpoolMode                  string  `json:"zero_event_spool_mode,default=file"`
 	ZeroEventSpoolDir                   string  `json:"zero_event_spool_dir,default=/var/lib/zboard/zero-events"`
+	ZeroEventSpoolCompressionAlgorithm  string  `json:"zero_event_spool_compression_algorithm,optional"`
+	ZeroEventSpoolCompressionLevel      int     `json:"zero_event_spool_compression_level,optional"`
+	ZeroEventSpoolCompressionBlockBytes int64   `json:"zero_event_spool_compression_block_bytes,optional"`
+	ZeroEventSpoolCompressionWorkers    int     `json:"zero_event_spool_compression_workers,optional"`
 	ZeroEventSpoolMaxBytes              int64   `json:"zero_event_spool_max_bytes,optional"`
 	ZeroEventSpoolWarningRatio          float64 `json:"zero_event_spool_warning_ratio,optional"`
 	ZeroEventSpoolCompactRatio          float64 `json:"zero_event_spool_compact_ratio,optional"`
@@ -50,6 +54,11 @@ type Config struct {
 	ZeroEventSpoolEmergencyReserveBytes int64   `json:"zero_event_spool_emergency_reserve_bytes,optional"`
 	ZeroEventSpoolCriticalReserveBytes  int64   `json:"zero_event_spool_critical_reserve_bytes,optional"`
 
+	zeroEventSpoolCompressionEnabledEnv    string
+	zeroEventSpoolCompressionAlgorithmEnv  string
+	zeroEventSpoolCompressionLevelEnv      string
+	zeroEventSpoolCompressionBlockBytesEnv string
+	zeroEventSpoolCompressionWorkersEnv    string
 	zeroEventSpoolMaxBytesEnv              string
 	zeroEventSpoolWarningRatioEnv          string
 	zeroEventSpoolCompactRatioEnv          string
@@ -60,6 +69,7 @@ type Config struct {
 	zeroEventSpoolCompactionEnabledEnv     string
 	zeroEventSpoolMergeFlowUpdatesEnv      string
 	zeroEventSpoolMergeNodeStatsEnv        string
+	zeroEventSpoolCompression              *zeroevent.CompressionConfig
 	zeroEventSpoolCompaction               *zeroevent.CompactionConfig
 }
 
@@ -89,6 +99,11 @@ func (c *Config) ApplyEnvironment(getenv func(string) string) {
 	applyOverride(&c.ZeroLocalVersion, getenv("ZBOARD_ZERO_LOCAL_VERSION"))
 	applyOverride(&c.ZeroEventSpoolMode, getenv("ZBOARD_ZERO_EVENT_SPOOL_MODE"))
 	applyOverride(&c.ZeroEventSpoolDir, getenv("ZBOARD_ZERO_EVENT_SPOOL_DIR"))
+	applyOverride(&c.zeroEventSpoolCompressionEnabledEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_COMPRESSION_ENABLED"))
+	applyOverride(&c.zeroEventSpoolCompressionAlgorithmEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_COMPRESSION_ALGORITHM"))
+	applyOverride(&c.zeroEventSpoolCompressionLevelEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_COMPRESSION_LEVEL"))
+	applyOverride(&c.zeroEventSpoolCompressionBlockBytesEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_COMPRESSION_BLOCK_BYTES"))
+	applyOverride(&c.zeroEventSpoolCompressionWorkersEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_COMPRESSION_WORKERS"))
 	applyOverride(&c.zeroEventSpoolMaxBytesEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_MAX_BYTES"))
 	applyOverride(&c.zeroEventSpoolWarningRatioEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_WARNING_RATIO"))
 	applyOverride(&c.zeroEventSpoolCompactRatioEnv, getenv("ZBOARD_ZERO_EVENT_SPOOL_COMPACT_RATIO"))
@@ -134,6 +149,9 @@ func (c *Config) Validate() error {
 	if c.ZeroEventSpoolMode == ZeroEventSpoolFile && c.ZeroEventSpoolDir == "" {
 		c.ZeroEventSpoolDir = zeroevent.DefaultConfig().Directory
 	}
+	if err := c.normalizeZeroEventSpoolCompression(); err != nil {
+		return err
+	}
 	if err := c.normalizeZeroEventSpoolStorage(); err != nil {
 		return err
 	}
@@ -163,9 +181,84 @@ func (c Config) ZeroEventSpoolConfig() zeroevent.Config {
 	if directory := strings.TrimSpace(c.ZeroEventSpoolDir); directory != "" {
 		cfg.Directory = directory
 	}
+	cfg.Compression = c.zeroEventSpoolCompressionConfig()
 	cfg.Storage = c.zeroEventSpoolStorageConfig()
 	cfg.Compaction = c.zeroEventSpoolCompactionConfig()
 	return cfg
+}
+
+func (c *Config) normalizeZeroEventSpoolCompression() error {
+	compression := zeroevent.DefaultConfig().Compression
+	algorithm := strings.ToLower(strings.TrimSpace(c.ZeroEventSpoolCompressionAlgorithm))
+	if algorithm != "" {
+		compression.Algorithm = algorithm
+	}
+	if c.ZeroEventSpoolCompressionLevel != 0 {
+		compression.Level = c.ZeroEventSpoolCompressionLevel
+	}
+	if c.ZeroEventSpoolCompressionBlockBytes != 0 {
+		compression.BlockSize = c.ZeroEventSpoolCompressionBlockBytes
+	}
+	if c.ZeroEventSpoolCompressionWorkers != 0 {
+		compression.Workers = c.ZeroEventSpoolCompressionWorkers
+	}
+	if err := parseBoolConfigOverride(&compression.Enabled, c.zeroEventSpoolCompressionEnabledEnv, "ZBOARD_ZERO_EVENT_SPOOL_COMPRESSION_ENABLED"); err != nil {
+		return err
+	}
+	if value := strings.ToLower(strings.TrimSpace(c.zeroEventSpoolCompressionAlgorithmEnv)); value != "" {
+		compression.Algorithm = value
+	}
+	if err := parseIntConfigOverride(&compression.Level, c.zeroEventSpoolCompressionLevelEnv, "ZBOARD_ZERO_EVENT_SPOOL_COMPRESSION_LEVEL"); err != nil {
+		return err
+	}
+	if err := parseInt64ConfigOverride(&compression.BlockSize, c.zeroEventSpoolCompressionBlockBytesEnv, "ZBOARD_ZERO_EVENT_SPOOL_COMPRESSION_BLOCK_BYTES"); err != nil {
+		return err
+	}
+	if err := parseIntConfigOverride(&compression.Workers, c.zeroEventSpoolCompressionWorkersEnv, "ZBOARD_ZERO_EVENT_SPOOL_COMPRESSION_WORKERS"); err != nil {
+		return err
+	}
+	if compression.Algorithm == zeroevent.CompressionNone {
+		compression.Enabled = false
+	} else if compression.Algorithm != zeroevent.CompressionZstd && compression.Algorithm != zeroevent.CompressionLZ4 {
+		return fmt.Errorf("unsupported Zero event spool compression algorithm %q", compression.Algorithm)
+	}
+	validation := zeroevent.DefaultConfig()
+	validation.Compression = compression
+	if err := validation.Validate(); err != nil {
+		return fmt.Errorf("invalid Zero event spool compression config: %w", err)
+	}
+	c.zeroEventSpoolCompression = &compression
+	return nil
+}
+
+func (c Config) zeroEventSpoolCompressionConfig() zeroevent.CompressionConfig {
+	if c.zeroEventSpoolCompression != nil {
+		return *c.zeroEventSpoolCompression
+	}
+	compression := zeroevent.DefaultConfig().Compression
+	if algorithm := strings.ToLower(strings.TrimSpace(c.ZeroEventSpoolCompressionAlgorithm)); algorithm != "" {
+		compression.Algorithm = algorithm
+	}
+	if c.ZeroEventSpoolCompressionLevel != 0 {
+		compression.Level = c.ZeroEventSpoolCompressionLevel
+	}
+	if c.ZeroEventSpoolCompressionBlockBytes != 0 {
+		compression.BlockSize = c.ZeroEventSpoolCompressionBlockBytes
+	}
+	if c.ZeroEventSpoolCompressionWorkers != 0 {
+		compression.Workers = c.ZeroEventSpoolCompressionWorkers
+	}
+	_ = parseBoolConfigOverride(&compression.Enabled, c.zeroEventSpoolCompressionEnabledEnv, "")
+	if value := strings.ToLower(strings.TrimSpace(c.zeroEventSpoolCompressionAlgorithmEnv)); value != "" {
+		compression.Algorithm = value
+	}
+	_ = parseIntConfigOverride(&compression.Level, c.zeroEventSpoolCompressionLevelEnv, "")
+	_ = parseInt64ConfigOverride(&compression.BlockSize, c.zeroEventSpoolCompressionBlockBytesEnv, "")
+	_ = parseIntConfigOverride(&compression.Workers, c.zeroEventSpoolCompressionWorkersEnv, "")
+	if compression.Algorithm == zeroevent.CompressionNone {
+		compression.Enabled = false
+	}
+	return compression
 }
 
 func (c *Config) normalizeZeroEventSpoolStorage() error {
@@ -277,6 +370,22 @@ func (c Config) zeroEventSpoolCompactionConfig() zeroevent.CompactionConfig {
 	_ = parseBoolConfigOverride(&compaction.MergeFlowUpdates, c.zeroEventSpoolMergeFlowUpdatesEnv, "")
 	_ = parseBoolConfigOverride(&compaction.MergeNodeStats, c.zeroEventSpoolMergeNodeStatsEnv, "")
 	return compaction
+}
+
+func parseIntConfigOverride(target *int, raw, name string) error {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		if name == "" {
+			return err
+		}
+		return fmt.Errorf("%s must be an integer: %w", name, err)
+	}
+	*target = parsed
+	return nil
 }
 
 func parseInt64ConfigOverride(target *int64, raw, name string) error {

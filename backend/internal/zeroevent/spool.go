@@ -86,10 +86,17 @@ type Status struct {
 	StorageBytes              int64      `json:"storage_bytes"`
 	DiskFreeBytes             int64      `json:"disk_free_bytes"`
 	StorageUsageRatio         float64    `json:"storage_usage_ratio"`
+	PressureLevel             string     `json:"pressure_level"`
 	Warning                   bool       `json:"warning"`
 	Compact                   bool       `json:"compact"`
 	Emergency                 bool       `json:"emergency"`
 	EmergencyReserveAvailable bool       `json:"emergency_reserve_available"`
+	CompressionAlgorithm      string     `json:"compression_algorithm"`
+	CompressedSegments        int64      `json:"compressed_segments"`
+	CompressedOriginalBytes   int64      `json:"compressed_original_bytes"`
+	CompressedStoredBytes     int64      `json:"compressed_stored_bytes"`
+	CompressionRatio          float64    `json:"compression_ratio"`
+	CompressionSavingsRatio   float64    `json:"compression_savings_ratio"`
 	CompactionRuns            int64      `json:"compaction_runs"`
 	CompactedSegments         int64      `json:"compacted_segments"`
 	CompactedEvents           int64      `json:"compacted_events"`
@@ -250,8 +257,13 @@ func (c Config) Validate() error {
 		return errors.New("consumer max batch must be greater than zero")
 	}
 	if c.Compression.Enabled {
-		switch strings.TrimSpace(c.Compression.Algorithm) {
-		case CompressionZstd, CompressionLZ4:
+		algorithm := strings.TrimSpace(c.Compression.Algorithm)
+		switch algorithm {
+		case CompressionZstd:
+		case CompressionLZ4:
+			if c.Compression.Level < 0 || c.Compression.Level > 9 {
+				return fmt.Errorf("lz4 compression level must be between 0 and 9, got %d", c.Compression.Level)
+			}
 		default:
 			return fmt.Errorf("unsupported compression algorithm %q", c.Compression.Algorithm)
 		}

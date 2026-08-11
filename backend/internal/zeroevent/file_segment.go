@@ -110,6 +110,9 @@ func parseSegmentName(name string) (uint64, bool, string, bool) {
 	case strings.HasSuffix(name, segmentZstdSuffix):
 		codec = CompressionZstd
 		base = strings.TrimSuffix(name, segmentZstdSuffix)
+	case strings.HasSuffix(name, segmentLZ4Suffix):
+		codec = CompressionLZ4
+		base = strings.TrimSuffix(name, segmentLZ4Suffix)
 	case strings.HasSuffix(name, segmentReadySuffix):
 		base = strings.TrimSuffix(name, segmentReadySuffix)
 	default:
@@ -260,7 +263,7 @@ func recoverSegments(directory string) (*activeSegment, error) {
 // a partial final header or payload is treated as an interrupted append and the
 // last valid byte offset is returned for truncation.
 func inspectSegment(path string, limit int64, tolerateTrailing bool) (uint64, int64, error) {
-	if strings.HasSuffix(path, segmentZstdSuffix) {
+	if strings.HasSuffix(path, segmentZstdSuffix) || strings.HasSuffix(path, segmentLZ4Suffix) {
 		if tolerateTrailing {
 			return 0, 0, errors.New("compressed segments cannot tolerate trailing data")
 		}

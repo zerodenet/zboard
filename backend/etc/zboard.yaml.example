@@ -17,6 +17,10 @@ zero_kernel_contract: "legacy"
 zero_local_version: ""
 zero_event_spool_mode: "file"
 zero_event_spool_dir: "/var/lib/zboard/zero-events"
+zero_event_spool_compression_algorithm: "zstd"
+zero_event_spool_compression_level: 1
+zero_event_spool_compression_block_bytes: 2097152
+zero_event_spool_compression_workers: 1
 zero_event_spool_max_bytes: 5368709120
 zero_event_spool_warning_ratio: 0.75
 zero_event_spool_compact_ratio: 0.85
