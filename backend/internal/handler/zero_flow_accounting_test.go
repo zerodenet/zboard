@@ -22,6 +22,35 @@ func TestZeroFlowUsageKeyScopesReusedFlowIDByCoreInstance(t *testing.T) {
 	}
 }
 
+func TestPickZeroFlowUsagePrefersRuntimeScopedCursor(t *testing.T) {
+	runtimeKey := zeroFlowUsageKey("core-a", "flow-1")
+	legacy := model.FlowUsage{ID: 1, FlowID: "flow-1"}
+	runtime := model.FlowUsage{ID: 2, FlowID: runtimeKey}
+
+	got, found, isLegacy := pickZeroFlowUsage([]model.FlowUsage{legacy, runtime}, runtimeKey, "flow-1")
+	if !found || isLegacy || got.ID != runtime.ID {
+		t.Fatalf("pickZeroFlowUsage() = %+v found=%v legacy=%v, want runtime cursor", got, found, isLegacy)
+	}
+}
+
+func TestPickZeroFlowUsageFallsBackToLegacyCursor(t *testing.T) {
+	runtimeKey := zeroFlowUsageKey("core-a", "flow-1")
+	legacy := model.FlowUsage{ID: 1, FlowID: "flow-1"}
+
+	got, found, isLegacy := pickZeroFlowUsage([]model.FlowUsage{legacy}, runtimeKey, "flow-1")
+	if !found || !isLegacy || got.ID != legacy.ID {
+		t.Fatalf("pickZeroFlowUsage() = %+v found=%v legacy=%v, want legacy cursor", got, found, isLegacy)
+	}
+}
+
+func TestPickZeroFlowUsageTreatsEmptyCandidatesAsNormalMiss(t *testing.T) {
+	runtimeKey := zeroFlowUsageKey("core-a", "flow-1")
+	got, found, isLegacy := pickZeroFlowUsage(nil, runtimeKey, "flow-1")
+	if found || isLegacy || got.ID != 0 {
+		t.Fatalf("empty candidates = %+v found=%v legacy=%v, want normal miss", got, found, isLegacy)
+	}
+}
+
 func TestAggregateZeroFlowEventsKeepsLatestPerRuntimeFlow(t *testing.T) {
 	base := time.Date(2026, 8, 10, 6, 0, 0, 0, time.UTC)
 	events := []zeroevent.Envelope{
