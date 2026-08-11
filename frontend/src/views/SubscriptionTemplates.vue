@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="订阅模板" description="管理用户可选的订阅格式、规则集和个性化配置；列表只读取摘要，编辑时再加载详细配置。" eyebrow="Delivery">
+    <PageHeader title="订阅模板" description="管理用户可选的订阅格式、规则集和输出配置；列表只读取摘要，编辑时再加载详细配置。" eyebrow="Delivery">
       <template #actions>
         <PageRefreshButton label="刷新订阅模板" :loading="loading" @click="load" />
         <UiButton type="button" @click="openCreate"><UiIcon name="plus" />新建模板</UiButton>
@@ -40,7 +40,7 @@
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
-    <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑订阅模板' : '新建订阅模板'" description="从系统格式开始，用可视化配置完成常见定制；高级配置仅在需要直接控制客户端字段时使用。" size="xl" :busy="saving || previewing" :return-focus-selector="form.id ? `[data-row-action-trigger='template-${form.id}']` : ''" @close="closeEditor">
+    <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑订阅模板' : '新建订阅模板'" description="选择目标客户端格式；完整配置格式支持策略与规则定制，节点订阅格式只负责安全生成节点。" size="xl" :busy="saving || previewing" :return-focus-selector="form.id ? `[data-row-action-trigger='template-${form.id}']` : ''" @close="closeEditor">
       <form id="subscription-template-form" ref="formElement" class="template-editor" novalidate @submit.prevent="save">
         <div v-if="form.id" class="editor-meta">
           <StatusBadge tone="neutral" icon="history">版本 {{ form.revision }}</StatusBadge>
@@ -82,23 +82,27 @@
             <span class="standard-output-icon"><UiIcon name="shield" /></span>
             <div>
               <strong>已绑定 {{ selectedOutput.label }} 渲染器</strong>
-              <span>协议和凭据由后端安全生成；规则集、路由策略及其他客户端字段可以继续定制，响应类型固定为 {{ selectedOutput.contentType }}。</span>
+              <span v-if="selectedOutput.mode === 'full'">协议和凭据由后端安全生成；策略组、规则集和客户端路由可以继续定制，响应类型固定为 {{ selectedOutput.contentType }}。</span>
+              <span v-else>协议和凭据由后端安全生成；该格式只输出客户端节点订阅，不隐式生成策略组或规则，响应类型固定为 {{ selectedOutput.contentType }}。</span>
             </div>
-            <StatusBadge tone="success" icon="check">系统能力</StatusBadge>
+            <StatusBadge tone="success" icon="check">{{ selectedOutput.mode === 'full' ? '完整配置' : '节点订阅' }}</StatusBadge>
           </div>
           <PageAlert v-else tone="warning" title="旧模板已停用">该记录来自无法自动转换的旧技术模板。请选择一个系统支持的输出格式后才能重新启用。</PageAlert>
-          <SubscriptionTemplateCustomizer v-if="selectedOutput" v-model="form.customization" :renderer="form.renderer" :error="editorErrors.fields['template-customization']" />
+          <SubscriptionTemplateCustomizer v-if="selectedOutput?.mode === 'full'" v-model="form.customization" :renderer="form.renderer" :error="editorErrors.fields['template-customization']" />
+          <PageAlert v-else-if="selectedOutput" tone="info" title="节点订阅由客户端管理策略">
+            {{ selectedOutput.label }} 模板只负责导出兼容节点与凭据。DIRECT、REJECT、策略组和规则集不会写入该节点订阅；相关分流策略由客户端侧配置。
+          </PageAlert>
         </section>
 
         <section class="template-preview" aria-labelledby="template-preview-title">
-          <header><div><strong id="template-preview-title">示例输出</strong><span>使用当前格式、规则集和高级配置生成，不会保存草稿。</span></div><UiButton variant="secondary" size="sm" type="button" :loading="previewing" @click="runPreview"><UiIcon name="search" />生成预览</UiButton></header>
+          <header><div><strong id="template-preview-title">示例输出</strong><span>使用当前输出格式生成，不会保存草稿。</span></div><UiButton variant="secondary" size="sm" type="button" :loading="previewing" @click="runPreview"><UiIcon name="search" />生成预览</UiButton></header>
           <div v-if="previewResult" class="preview-meta">
             <StatusBadge :tone="previewStale ? 'warning' : 'success'" :icon="previewStale ? 'edit' : 'check'">{{ previewStale ? '模板配置已修改，请重新生成' : '当前模板配置已验证' }}</StatusBadge>
             <span>{{ previewResult.line_count }} 行</span><span>{{ previewResult.bytes.toLocaleString('zh-CN') }} 字节</span>
           </div>
           <PageAlert v-if="previewResult?.truncated" tone="warning" title="预览已截断">渲染结果超过 256 KiB；这里显示可安全传输的前段内容，保存仍按完整 2 MiB 上限校验。</PageAlert>
           <OutputBlock v-if="previewResult" :value="previewResult.content" label="示例渲染结果" :max-length="262144" />
-          <div v-else class="preview-empty"><UiIcon name="audit" /><div><strong>尚未生成示例输出</strong><span>完成基础或高级配置后生成预览，确认客户端最终收到的内容。</span></div></div>
+          <div v-else class="preview-empty"><UiIcon name="audit" /><div><strong>尚未生成示例输出</strong><span>生成预览后可以确认客户端最终收到的内容。</span></div></div>
         </section>
       </form>
       <template #footer="{ requestClose }">
@@ -142,10 +146,14 @@ import {
   defaultSubscriptionCustomization,
   normalizeSubscriptionCustomization,
   subscriptionPolicyGroupTypeOptions,
+  subscriptionRendererSupportsPolicyConfig,
   subscriptionTemplateOutput,
   subscriptionTemplateOutputOptions,
+  type SupportedSubscriptionRenderer,
 } from '../utils/subscriptionTemplateEditor'
 import { collectFieldErrors, isHttpUrl, isIntegerInRange, isOneOf, isSlug, isUtf8LengthInRange } from '../utils/validation'
+
+type EditableRenderer = SubscriptionRenderer | SupportedSubscriptionRenderer
 
 const route = useRoute()
 const router = useRouter()
@@ -157,7 +165,7 @@ const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 50)
 const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
 const search = ref(typeof route.query.q === 'string' ? route.query.q : '')
 const activeFilter = ref(typeof route.query.active === 'string' ? route.query.active : '')
-const emptyForm = () => ({ id: 0, name: '', slug: '', description: '', renderer: 'clash' as SubscriptionRenderer, customization: defaultSubscriptionCustomization('clash'), content_type: 'application/yaml' as SubscriptionTemplate['content_type'], is_active: true, sort_order: 0, revision: 0, created_at: '', updated_at: '' })
+const emptyForm = () => ({ id: 0, name: '', slug: '', description: '', renderer: 'clash' as EditableRenderer, customization: defaultSubscriptionCustomization('clash'), content_type: 'application/yaml' as SubscriptionTemplate['content_type'], is_active: true, sort_order: 0, revision: 0, created_at: '', updated_at: '' })
 const saving = ref(false), previewing = ref(false), editorOpen = ref(false)
 const editingID = ref(0), deletingID = ref(0)
 const message = ref('')
@@ -167,7 +175,7 @@ const previewResult = ref<SubscriptionTemplatePreview | null>(null)
 const previewSource = ref('')
 const formElement = ref<HTMLElement | null>(null)
 const form = reactive(emptyForm())
-const rendererDrafts = new Map<SubscriptionRenderer, SubscriptionTemplateCustomization>()
+const rendererDrafts = new Map<EditableRenderer, SubscriptionTemplateCustomization>()
 let suppressRendererDraftSwitch = false
 const editorState = useDirtyForm(() => form)
 useUnsavedChangesGuard(
@@ -209,8 +217,8 @@ async function changePage(value: { offset: number; limit: number }) { offset.val
 async function openCreate() { await router.push({ query: { ...route.query, template: 'new' } }) }
 async function openEdit(item: SubscriptionTemplate) { await router.push({ query: { ...route.query, template: String(item.id) } }) }
 
-function rendererLabel(renderer: SubscriptionRenderer) {
-  return subscriptionTemplateOutput(renderer)?.label || '旧格式（需转换）'
+function rendererLabel(renderer: SubscriptionRenderer | string) {
+  return subscriptionTemplateOutput(renderer as EditableRenderer)?.label || '旧格式（需转换）'
 }
 
 async function loadEditor(id: number) {
@@ -223,7 +231,7 @@ async function loadEditor(id: number) {
     Object.assign(form, detail, { customization: normalizeSubscriptionCustomization(detail.renderer, detail.customization) })
     suppressRendererDraftSwitch = false
     rendererDrafts.clear()
-    rendererDrafts.set(form.renderer, cloneCustomization(form.customization))
+    rendererDrafts.set(form.renderer as EditableRenderer, cloneCustomization(form.customization))
     editorState.markClean(); editorErrors.clear(); revisionConflict.value = false
     previewResult.value = null; previewSource.value = ''; editorOpen.value = true
   } catch (e: any) {
@@ -247,7 +255,7 @@ async function syncEditorFromRoute() {
     Object.assign(form, emptyForm())
     suppressRendererDraftSwitch = false
     rendererDrafts.clear()
-    rendererDrafts.set(form.renderer, cloneCustomization(form.customization))
+    rendererDrafts.set(form.renderer as EditableRenderer, cloneCustomization(form.customization))
     editorState.markClean(); editorErrors.clear()
     revisionConflict.value = false; previewResult.value = null; previewSource.value = ''; editorOpen.value = true
     return
@@ -274,7 +282,7 @@ async function reloadEditor() {
 }
 
 async function runPreview() {
-  const customizationError = validateCustomizationDraft(form.renderer, form.customization)
+  const customizationError = validateCustomizationDraft(form.renderer as EditableRenderer, form.customization)
   const valid = await editorErrors.applyValidation(collectFieldErrors({
     renderer: !isOneOf(form.renderer, supportedRenderers) && '请选择系统支持的订阅输出格式。',
     'template-customization': customizationError,
@@ -282,7 +290,7 @@ async function runPreview() {
   if (!valid) return
   previewing.value = true
   try {
-    previewResult.value = await previewSubscriptionTemplate({ renderer: form.renderer, customization: form.customization })
+    previewResult.value = await previewSubscriptionTemplate({ renderer: form.renderer as SubscriptionRenderer, customization: form.customization })
     previewSource.value = currentPreviewSource.value
   } catch (e: any) {
     await editorErrors.applyApiError(e, '示例输出生成失败，请检查所选格式。', formElement, templateFieldMap)
@@ -295,20 +303,22 @@ async function save() {
   form.name = form.name.trim()
   form.slug = form.slug.trim().toLowerCase()
   form.description = form.description.trim()
-  for (const group of form.customization.policy_groups) {
-    group.id = group.id.trim().toLowerCase()
-    group.name = group.name.trim()
-    group.include_pattern = (group.include_pattern || '').trim()
-    group.exclude_pattern = (group.exclude_pattern || '').trim()
-    group.probe_url = (group.probe_url || '').trim()
-  }
-  for (const rule of form.customization.rule_sets) {
-    if (!rule.rule_set_id) {
-      rule.tag = (rule.tag || '').trim()
-      rule.url = (rule.url || '').trim()
+  if (subscriptionRendererSupportsPolicyConfig(form.renderer as EditableRenderer)) {
+    for (const group of form.customization.policy_groups) {
+      group.id = group.id.trim().toLowerCase()
+      group.name = group.name.trim()
+      group.include_pattern = (group.include_pattern || '').trim()
+      group.exclude_pattern = (group.exclude_pattern || '').trim()
+      group.probe_url = (group.probe_url || '').trim()
+    }
+    for (const rule of form.customization.rule_sets) {
+      if (!rule.rule_set_id) {
+        rule.tag = (rule.tag || '').trim()
+        rule.url = (rule.url || '').trim()
+      }
     }
   }
-  const customizationError = validateCustomizationDraft(form.renderer, form.customization)
+  const customizationError = validateCustomizationDraft(form.renderer as EditableRenderer, form.customization)
   const valid = await editorErrors.applyValidation(collectFieldErrors({
     name: !isUtf8LengthInRange(form.name, 1, 80, true) && '模板名称需包含 1 到 80 个 UTF-8 字节。',
     slug: !isSlug(form.slug, 80) && '链接标识只能包含小写字母、数字和单个连字符，且不能超过 80 个 UTF-8 字节。',
@@ -320,10 +330,10 @@ async function save() {
   if (!valid) return
   saving.value = true; message.value = ''
   try {
-    const payload = { name: form.name, slug: form.slug, description: form.description, renderer: form.renderer, customization: form.customization, is_active: form.is_active, sort_order: Number(form.sort_order || 0), ...(form.id ? { expected_revision: form.revision } : {}) }
+    const payload = { name: form.name, slug: form.slug, description: form.description, renderer: form.renderer as SubscriptionRenderer, customization: form.customization, is_active: form.is_active, sort_order: Number(form.sort_order || 0), ...(form.id ? { expected_revision: form.revision } : {}) }
     if (form.id) await updateSubscriptionTemplate(form.id, payload); else await createSubscriptionTemplate(payload)
     editorState.markClean(); editorOpen.value = false; editorRouteKey.value = ''; revisionConflict.value = false
-    message.value = '订阅模板格式和个性化配置已保存。'; await syncURL(true); await load()
+    message.value = '订阅模板格式和输出配置已保存。'; await syncURL(true); await load()
   } catch (e: any) {
     if (e?.response?.status === 409) {
       revisionConflict.value = true
@@ -357,9 +367,9 @@ watch(() => route.fullPath, async () => {
 
 watch(() => form.renderer, (next, previous) => {
   if (suppressRendererDraftSwitch || next === previous || !supportedRenderers.includes(next as any)) return
-  if (supportedRenderers.includes(previous as any)) rendererDrafts.set(previous, cloneCustomization(form.customization))
-  const nextDraft = rendererDrafts.get(next)
-  form.customization = nextDraft ? cloneCustomization(nextDraft) : defaultSubscriptionCustomization(next)
+  if (supportedRenderers.includes(previous as any)) rendererDrafts.set(previous as EditableRenderer, cloneCustomization(form.customization))
+  const nextDraft = rendererDrafts.get(next as EditableRenderer)
+  form.customization = nextDraft ? cloneCustomization(nextDraft) : defaultSubscriptionCustomization(next as EditableRenderer)
   previewResult.value = null
   previewSource.value = ''
 }, { flush: 'sync' })
@@ -382,7 +392,8 @@ function cloneCustomization(value: SubscriptionTemplateCustomization): Subscript
   return JSON.parse(JSON.stringify(value))
 }
 
-function validateCustomizationDraft(renderer: SubscriptionRenderer, customization: SubscriptionTemplateCustomization) {
+function validateCustomizationDraft(renderer: EditableRenderer, customization: SubscriptionTemplateCustomization) {
+  if (!subscriptionRendererSupportsPolicyConfig(renderer)) return ''
   if (customization.version !== 2) return '订阅模板配置版本无效。'
   if (!isIntegerInRange(Number(customization.mixed_port), 1, 65535)) return '本地混合入站端口必须在 1 到 65535 之间。'
   if (!customization.policy_groups.length || customization.policy_groups.length > 16) return '策略组数量需在 1 到 16 个之间。'

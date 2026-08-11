@@ -6,9 +6,13 @@ import type {
   SubscriptionTemplateRuleSet,
 } from '../api/client'
 
-export type SupportedSubscriptionRenderer = Exclude<SubscriptionRenderer, 'unsupported'>
+export type SupportedSubscriptionRenderer = Exclude<SubscriptionRenderer, 'unsupported'> | 'zero' | 'shadowrocket' | 'quantumult-x' | 'v2rayn'
 
-type RendererInput = SubscriptionRenderer | 'zero' | 'znet-sink'
+type RendererInput = SubscriptionRenderer | SupportedSubscriptionRenderer | 'znet-sink'
+type EditableSubscriptionPolicyGroup = SubscriptionPolicyGroup & {
+  include_direct?: boolean
+  include_reject?: boolean
+}
 
 export interface SubscriptionTemplateOutputOption {
   value: SupportedSubscriptionRenderer
@@ -16,48 +20,83 @@ export interface SubscriptionTemplateOutputOption {
   description: string
   contentType: string
   icon: string
+  mode: 'full' | 'nodes'
 }
 
-function canonicalRenderer(renderer: RendererInput): 'zero' | 'clash' | 'sing-box' | 'unsupported' {
+function canonicalRenderer(renderer: RendererInput): SupportedSubscriptionRenderer | 'unsupported' {
   const normalized = String(renderer || '').trim().toLowerCase()
   if (['zero', 'znet-sink', 'znet_sink', 'znetsink', 'zero-json', 'zero-base64-json'].includes(normalized)) return 'zero'
   if (normalized === 'clash-yaml') return 'clash'
   if (normalized === 'singbox') return 'sing-box'
-  if (normalized === 'clash' || normalized === 'sing-box') return normalized
+  if (normalized === 'quantumultx' || normalized === 'quantumult_x') return 'quantumult-x'
+  if (normalized === 'v2ray-n' || normalized === 'v2ray_n') return 'v2rayn'
+  if (['clash', 'sing-box', 'shadowrocket', 'quantumult-x', 'v2rayn'].includes(normalized)) return normalized as SupportedSubscriptionRenderer
   return 'unsupported'
 }
 
 export const subscriptionTemplateOutputOptions: SubscriptionTemplateOutputOption[] = [
   {
-    value: 'zero' as SupportedSubscriptionRenderer,
+    value: 'zero',
     label: 'Zero',
     description: 'Base64 编码的 Zero JSON，适合 ZNet Sink 和其他 Zero 客户端。',
     contentType: 'text/plain',
     icon: 'activity',
+    mode: 'full',
   },
   {
     value: 'clash',
     label: 'Clash / Mihomo',
-    description: '生成节点、选择组和默认规则的 YAML。',
+    description: '生成节点、策略组和规则的完整 YAML 配置。',
     contentType: 'application/yaml',
     icon: 'nodes',
+    mode: 'full',
   },
   {
     value: 'sing-box',
     label: 'sing-box',
-    description: '生成 outbounds、selector 和默认路由 JSON。',
+    description: '生成 outbounds、selector 和路由规则的完整 JSON 配置。',
     contentType: 'application/json',
     icon: 'database',
+    mode: 'full',
+  },
+  {
+    value: 'shadowrocket',
+    label: 'Shadowrocket',
+    description: '生成标准协议分享链接订阅；策略与分组由客户端侧管理。',
+    contentType: 'text/plain',
+    icon: 'activity',
+    mode: 'nodes',
+  },
+  {
+    value: 'quantumult-x',
+    label: 'Quantumult X',
+    description: '生成 Quantumult X server_remote 节点资源；策略与分流由客户端侧管理。',
+    contentType: 'text/plain',
+    icon: 'nodes',
+    mode: 'nodes',
+  },
+  {
+    value: 'v2rayn',
+    label: 'v2rayN',
+    description: '生成标准协议分享链接订阅；策略与分组由客户端侧管理。',
+    contentType: 'text/plain',
+    icon: 'activity',
+    mode: 'nodes',
   },
 ]
 
 export function subscriptionTemplateOutput(renderer: RendererInput) {
   const canonical = canonicalRenderer(renderer)
-  return subscriptionTemplateOutputOptions.find(option => String(option.value) === canonical) || null
+  return subscriptionTemplateOutputOptions.find(option => option.value === canonical) || null
+}
+
+export function subscriptionRendererSupportsPolicyConfig(renderer: RendererInput) {
+  return subscriptionTemplateOutput(renderer)?.mode === 'full'
 }
 
 export function subscriptionPolicyGroupTypeOptions(renderer: RendererInput) {
   const canonical = canonicalRenderer(renderer)
+  if (!subscriptionRendererSupportsPolicyConfig(renderer)) return []
   const options = [
     { label: '手动选择', value: 'select' as SubscriptionPolicyGroupType },
     { label: '自动测速', value: 'urltest' as SubscriptionPolicyGroupType },
@@ -163,7 +202,7 @@ export function defaultSubscriptionPolicyGroup(
   name: string,
   type: SubscriptionPolicyGroupType,
 ): SubscriptionPolicyGroup {
-  return {
+  const group: EditableSubscriptionPolicyGroup = {
     id,
     name,
     type,
@@ -175,6 +214,40 @@ export function defaultSubscriptionPolicyGroup(
     interval: 300,
     tolerance: type === 'urltest' ? 50 : 0,
   }
+  if (type === 'select') {
+    group.include_direct = true
+    group.include_reject = true
+  }
+  return group
+}
+
+export function subscriptionPolicyGroupIncludesDirect(group: SubscriptionPolicyGroup) {
+  return group.type === 'select' && (group as EditableSubscriptionPolicyGroup).include_direct !== false
+}
+
+export function subscriptionPolicyGroupIncludesReject(group: SubscriptionPolicyGroup) {
+  return group.type === 'select' && (group as EditableSubscriptionPolicyGroup).include_reject !== false
+}
+
+export function setSubscriptionPolicyGroupSpecialTarget(
+  group: SubscriptionPolicyGroup,
+  target: 'direct' | 'reject',
+  enabled: boolean,
+) {
+  const editable = group as EditableSubscriptionPolicyGroup
+  if (target === 'direct') editable.include_direct = enabled
+  else editable.include_reject = enabled
+}
+
+export function initializeSubscriptionPolicyGroupSpecialTargets(group: SubscriptionPolicyGroup) {
+  const editable = group as EditableSubscriptionPolicyGroup
+  if (group.type !== 'select') {
+    delete editable.include_direct
+    delete editable.include_reject
+    return
+  }
+  if (editable.include_direct === undefined) editable.include_direct = true
+  if (editable.include_reject === undefined) editable.include_reject = true
 }
 
 export function nextSubscriptionPolicyGroupID(groups: SubscriptionPolicyGroup[], prefix = 'group') {
@@ -230,7 +303,7 @@ function normalizeSubscriptionPolicyGroup(value: Record<string, any>, index: num
   const type: SubscriptionPolicyGroupType = ['select', 'urltest', 'fallback'].includes(value?.type)
     ? value.type
     : 'select'
-  return {
+  const group: EditableSubscriptionPolicyGroup = {
     ...defaultSubscriptionPolicyGroup(id, String(value?.name || `策略组 ${index + 1}`), type),
     ...value,
     id,
@@ -244,6 +317,14 @@ function normalizeSubscriptionPolicyGroup(value: Record<string, any>, index: num
     interval: Number(value?.interval || 300),
     tolerance: Number(value?.tolerance || 0),
   }
+  if (type === 'select') {
+    group.include_direct = value?.include_direct !== false
+    group.include_reject = value?.include_reject !== false
+  } else {
+    delete group.include_direct
+    delete group.include_reject
+  }
+  return group
 }
 
 function normalizeSubscriptionTarget(target: string, mainGroup: string, includeReject: boolean) {

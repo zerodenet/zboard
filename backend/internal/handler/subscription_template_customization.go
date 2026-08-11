@@ -54,6 +54,8 @@ type subscriptionPolicyGroup struct {
 	IncludePattern string   `json:"include_pattern,omitempty"`
 	ExcludePattern string   `json:"exclude_pattern,omitempty"`
 	IncludeGroups  []string `json:"include_groups,omitempty"`
+	IncludeDirect  *bool    `json:"include_direct,omitempty"`
+	IncludeReject  *bool    `json:"include_reject,omitempty"`
 	DefaultGroup   string   `json:"default_group,omitempty"`
 	ProbeURL       string   `json:"probe_url,omitempty"`
 	Interval       int      `json:"interval,omitempty"`
@@ -89,10 +91,22 @@ type legacySubscriptionRuleSetCustomization struct {
 	Interval  int    `json:"interval,omitempty"`
 }
 
+func subscriptionBool(value bool) *bool {
+	return &value
+}
+
+func subscriptionPolicyGroupIncludesDirect(group subscriptionPolicyGroup) bool {
+	return group.Type == "select" && (group.IncludeDirect == nil || *group.IncludeDirect)
+}
+
+func subscriptionPolicyGroupIncludesReject(group subscriptionPolicyGroup) bool {
+	return group.Type == "select" && (group.IncludeReject == nil || *group.IncludeReject)
+}
+
 func defaultSubscriptionCustomization(renderer string) subscriptionTemplateCustomization {
 	mainGroup := subscriptionPolicyGroup{
 		ID: "main", Name: "节点选择", Type: "select",
-		IncludeGroups: []string{"auto"}, DefaultGroup: "auto",
+		IncludeGroups: []string{"auto"}, IncludeDirect: subscriptionBool(true), IncludeReject: subscriptionBool(true), DefaultGroup: "auto",
 	}
 	autoGroup := subscriptionPolicyGroup{
 		ID: "auto", Name: "自动选择", Type: "urltest",
@@ -240,7 +254,7 @@ func migrateLegacySubscriptionCustomization(renderer string, legacy legacySubscr
 	if groupName == "" {
 		groupName = "节点选择"
 	}
-	mainGroup := subscriptionPolicyGroup{ID: "main", Name: groupName, Type: "select"}
+	mainGroup := subscriptionPolicyGroup{ID: "main", Name: groupName, Type: "select", IncludeDirect: subscriptionBool(true), IncludeReject: subscriptionBool(true)}
 	groups := []subscriptionPolicyGroup{mainGroup}
 	if strings.EqualFold(strings.TrimSpace(legacy.Profile), "balanced") {
 		auto := subscriptionPolicyGroup{
@@ -344,6 +358,17 @@ func normalizeSubscriptionPolicyGroups(renderer string, customization *subscript
 		group.ID = strings.ToLower(strings.TrimSpace(group.ID))
 		group.Name = strings.TrimSpace(group.Name)
 		group.Type = strings.ToLower(strings.TrimSpace(group.Type))
+		if group.Type == "select" {
+			if group.IncludeDirect == nil {
+				group.IncludeDirect = subscriptionBool(true)
+			}
+			if group.IncludeReject == nil {
+				group.IncludeReject = subscriptionBool(true)
+			}
+		} else {
+			group.IncludeDirect = nil
+			group.IncludeReject = nil
+		}
 		group.IncludePattern = strings.TrimSpace(group.IncludePattern)
 		group.ExcludePattern = strings.TrimSpace(group.ExcludePattern)
 		group.ProbeURL = strings.TrimSpace(group.ProbeURL)

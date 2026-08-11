@@ -22,12 +22,11 @@
 </template>
 
 <script setup lang="ts">
-import type { SubscriptionRenderer } from '../api/client'
-import { subscriptionTemplateOutputOptions } from '../utils/subscriptionTemplateEditor'
+import { subscriptionTemplateOutputOptions, type SupportedSubscriptionRenderer } from '../utils/subscriptionTemplateEditor'
 import UiButton from './UiButton.vue'
 import UiIcon from './UiIcon.vue'
 
-const model = defineModel<SubscriptionRenderer>({ required: true })
+const model = defineModel<SupportedSubscriptionRenderer | 'unsupported'>({ required: true })
 </script>
 
 <style scoped>

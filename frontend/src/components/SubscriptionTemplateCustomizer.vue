@@ -73,6 +73,27 @@
             </template>
           </div>
 
+          <div v-if="group.type === 'select'" class="group-special-target-editor">
+            <div>
+              <strong>特殊节点</strong>
+              <span>决定系统特殊节点是否作为该策略组成员导出。新建策略组默认全部选中。</span>
+            </div>
+            <label class="group-reference-option">
+              <UiCheckbox
+                :model-value="subscriptionPolicyGroupIncludesDirect(group)"
+                @update:model-value="setSubscriptionPolicyGroupSpecialTarget(group, 'direct', $event)"
+              />
+              <span><b>DIRECT</b> · 直连</span>
+            </label>
+            <label class="group-reference-option">
+              <UiCheckbox
+                :model-value="subscriptionPolicyGroupIncludesReject(group)"
+                @update:model-value="setSubscriptionPolicyGroupSpecialTarget(group, 'reject', $event)"
+              />
+              <span><b>REJECT</b> · 拒绝</span>
+            </label>
+          </div>
+
           <div v-if="otherGroups(group.id).length" class="group-reference-editor">
             <div>
               <strong>包含其他策略组</strong>
@@ -205,10 +226,15 @@ import {
   clashRuleBehaviorOptions,
   defaultSubscriptionPolicyGroup,
   defaultSubscriptionRuleSet,
+  initializeSubscriptionPolicyGroupSpecialTargets,
   nextSubscriptionPolicyGroupID,
+  setSubscriptionPolicyGroupSpecialTarget,
+  subscriptionPolicyGroupIncludesDirect,
+  subscriptionPolicyGroupIncludesReject,
   subscriptionPolicyGroupTypeOptions,
   subscriptionRuleFormatOptions,
   subscriptionTargetOptions,
+  type SupportedSubscriptionRenderer,
 } from '../utils/subscriptionTemplateEditor'
 import FormField from './FormField.vue'
 import PageAlert from './PageAlert.vue'
@@ -223,7 +249,7 @@ import UiNumberInput from './UiNumberInput.vue'
 import UiSelect from './UiSelect.vue'
 import UiTabs from './UiTabs.vue'
 
-const props = withDefaults(defineProps<{ renderer: SubscriptionRenderer; error?: string }>(), { error: '' })
+const props = withDefaults(defineProps<{ renderer: SubscriptionRenderer | SupportedSubscriptionRenderer; error?: string }>(), { error: '' })
 const model = defineModel<SubscriptionTemplateCustomization>({ required: true })
 const activeTab = ref('basic')
 const tabs = [
@@ -283,6 +309,7 @@ function removePolicyGroup(index: number) {
 }
 
 function normalizeGroupType(group: SubscriptionPolicyGroup) {
+  initializeSubscriptionPolicyGroupSpecialTargets(group)
   if (group.type === 'urltest' || group.type === 'fallback') {
     group.probe_url ||= 'http://www.gstatic.com/generate_204'
     group.interval ||= 300
@@ -408,10 +435,12 @@ onBeforeUnmount(() => detailController?.abort())
 .group-index{display:grid;width:20px;height:20px;place-items:center;border-radius:6px;background:var(--primary-soft);color:var(--primary);font-size:9px;font-weight:750}
 .policy-group-grid,.rule-set-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
 .policy-group-grid :deep(.form-field-full),.rule-set-grid :deep(.form-field-full){grid-column:1/-1}
+.group-special-target-editor{display:grid;grid-template-columns:minmax(180px,1fr) auto auto;align-items:center;gap:12px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-soft)}
+.group-special-target-editor>div{display:grid;gap:3px}.group-special-target-editor strong{font-size:10px;color:var(--text-strong)}.group-special-target-editor>div span{font-size:9px;color:var(--muted)}
 .group-reference-editor{display:grid;grid-template-columns:minmax(160px,.55fr) minmax(220px,1fr) minmax(190px,.55fr);align-items:end;gap:12px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-soft)}
 .group-reference-editor>div:first-child{align-self:center;display:grid;gap:3px}.group-reference-editor strong{font-size:10px;color:var(--text-strong)}.group-reference-editor span{font-size:9px;color:var(--muted)}
 .group-reference-options{align-self:center;display:flex;flex-wrap:wrap;gap:8px 12px}
-.group-reference-option{display:inline-flex;align-items:center;gap:6px;cursor:pointer}.group-reference-option span{color:var(--text);font-size:10px}
+.group-reference-option{display:inline-flex;align-items:center;gap:6px;cursor:pointer}.group-reference-option span{color:var(--text);font-size:10px}.group-reference-option b{font-size:9px;color:var(--text-strong)}
 .library-rule-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,.35fr);align-items:end;gap:12px}
 .library-rule-source{min-width:0;display:grid;gap:3px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface-soft)}
 .library-rule-source code{width:max-content;max-width:100%;overflow:hidden;text-overflow:ellipsis;color:var(--code-text);font-size:10px}
@@ -420,6 +449,6 @@ onBeforeUnmount(() => detailController?.abort())
 .rule-set-empty .ui-icon{width:20px;height:20px;color:var(--primary)}
 .rule-set-empty>div{display:grid;gap:2px}.rule-set-empty strong{color:var(--text-strong);font-size:10px}.rule-set-empty span{font-size:9px}
 .customizer-advanced code{padding:1px 4px;border-radius:4px;background:var(--code-soft);color:var(--code-text)}
-@media(max-width:900px){.group-reference-editor{grid-template-columns:1fr}}
+@media(max-width:900px){.group-reference-editor,.group-special-target-editor{grid-template-columns:1fr}}
 @media(max-width:700px){.customizer-header,.section-heading,.advanced-editor-heading,.policy-group-row>header,.rule-set-row>header{align-items:flex-start;flex-direction:column}.policy-group-grid,.rule-set-grid,.library-rule-grid{grid-template-columns:1fr}.policy-group-grid :deep(.form-field-full),.rule-set-grid :deep(.form-field-full){grid-column:auto}.customizer-counts,.group-actions{flex-wrap:wrap}}
 </style>
