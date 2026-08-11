@@ -63,6 +63,86 @@ Remaining gaps:
 
 ## Completed goals
 
+### 2026-08-08 - Workstation-local one-click intranet deployment
+
+Goal outcome:
+
+- Added the workstation-local `scripts/deploy-intranet.local.ps1` entry point
+  for a one-command verified working-tree deployment. It pins the real
+  intranet topology (`gitlab`, `/data/zboard-next`, Compose project
+  `zboard_next` and `http://192.168.50.20:18080`) while continuing to consume
+  database, Redis and application secrets only from the target's existing
+  `/data/zboard-next/.env`.
+- The wrapper delegates build, backup, switch and rollback behavior to the
+  maintained `scripts/sync-intranet.ps1`, supplies the workstation's Go 1.26.5
+  SDK when ordinary PowerShell sessions do not expose it on PATH, and
+  independently verifies the externally reachable version and `/readyz`
+  response plus application, external MySQL and external Redis container
+  state.
+- Kept the topology-specific entry point outside version control through the
+  repository-local `.git/info/exclude`; the shared `.gitignore` and tracked
+  deployment surface are unchanged.
+
+Local verification:
+
+- PowerShell AST parsing passed for the final local deployment script.
+  `git check-ignore -v scripts/deploy-intranet.local.ps1` resolves to the
+  repository-local exclude rule, `git ls-files` confirms it is untracked, and
+  `git status --short` does not expose it as an untracked file.
+- The wrapper's full verification path passed `go test ./...` and
+  `go vet ./...` for all backend packages, then completed the frontend
+  dependency check, typecheck and Vite production build with 564 transformed
+  modules.
+- Read-only execution of the wrapper's container-discovery checks against the
+  real intranet topology found the Zboard container running and healthy and
+  both external service containers running. Only environment key names were
+  inspected; no secret values were printed or persisted.
+
+Synchronization and deployed verification:
+
+- The first invocation stopped before upload because the maintained sync
+  script did not find the workstation's Go SDK on PATH. The local wrapper now
+  adds the actual `sdk/golang/bin` location when necessary. No remote mutation
+  occurred in that attempt.
+- After all local checks passed, the first remote build stopped before backup
+  or switch with only 308 MB free on the root filesystem. Read-only inspection
+  identified 9.8 GB of YUM package cache; `yum clean all` removed only
+  rebuildable package metadata and archives and restored 5.2 GB free without
+  touching containers, images, volumes, databases or GitLab data.
+- The next build and database backup succeeded, but Compose rejected the
+  switch because the real environment predated the managed-rule storage
+  boundary and lacked its host directory. Automatic rollback restored the
+  previous source and a healthy service. The non-secret
+  `ZBOARD_MANAGED_RULE_HOST_DIR=/data/zboard-next/managed-rules` setting was
+  added to the target environment and the repository preparation script
+  created that persistent directory with mode 0750.
+- A following synchronization deployed
+  `v0.0.1-20260808T102319Z-intranet-working-tree@2026-08-08T10:23:19Z` but the
+  local wrapper rejected its successful result because its version assertion
+  did not account for the build's `working-tree` commit suffix. The corrected
+  assertion was exercised by a final complete one-click run, which exited 0
+  and deployed
+  `v0.0.1-20260808T102357Z-intranet-working-tree@2026-08-08T10:23:58Z`.
+- The final pre-switch database backup is
+  `/data/zboard-next/backups/20260808T102358Z/zboard-before-sync.sql` (83,480
+  bytes), the previous source is
+  `/data/zboard-next/app-prev-20260808T102358Z`, and the release archive is
+  `/data/zboard-next/releases/20260808T102358Z/source.tar.gz` (930,847 bytes).
+- Independent workstation requests returned the final deployed version and
+  `/readyz` with `ready=true` and `db=true`. `zboard_next-zboard-1` is running
+  and healthy; external MySQL `db` and Redis `cache` are running. A container
+  write probe confirmed the trusted artifact parent is read-only and its
+  separately mounted managed-rule child is writable. The root filesystem
+  retained 3.3 GB free after the final build.
+
+Remaining gaps:
+
+- Failed-attempt candidate/release/backup and failed-source paths were retained
+  for deployment audit and possible diagnosis; they are not active runtime
+  state. The repository's existing bounded-history maintenance remains
+  responsible for later cleanup.
+- No Git staging, commit, push or release was performed.
+
 ### 2026-08-03 - Editable DNS/certificates and resilient ACME preflight/install
 
 Goal outcome before synchronization:
