@@ -109,41 +109,57 @@ func zeroBufferedEnvelopeAsEvent(event zeroevent.Envelope) zeroEventEnvelope {
 	}
 }
 
+func pickZeroFlowUsage(candidates []model.FlowUsage, usageKey, legacyKey string) (model.FlowUsage, bool, bool) {
+	for _, candidate := range candidates {
+		if candidate.FlowID == usageKey {
+			return candidate, true, false
+		}
+	}
+	if usageKey == legacyKey {
+		return model.FlowUsage{}, false, false
+	}
+	for _, candidate := range candidates {
+		if candidate.FlowID == legacyKey {
+			return candidate, true, true
+		}
+	}
+	return model.FlowUsage{}, false, false
+}
+
 func loadZeroFlowUsage(tx *gorm.DB, nodeID uint, event zeroEventEnvelope, flow zeroFlowProjection, credentialID uint, cumulativeRaw int64) (model.FlowUsage, bool, bool, error) {
 	usageKey := zeroFlowUsageKey(event.CoreInstanceID, flow.FlowID)
-	var usage model.FlowUsage
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("node_id = ? AND flow_id = ?", nodeID, usageKey).
-		First(&usage).Error
-	if err == nil {
-		return usage, true, false, nil
+	keys := []string{usageKey}
+	if usageKey != flow.FlowID {
+		keys = append(keys, flow.FlowID)
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+
+	// Runtime-scoped and legacy cursors are migration alternatives for the same
+	// flow. Lock them in one round trip so a normal first-seen flow does not pay
+	// two serial SELECT ... FOR UPDATE RTTs. Find intentionally treats an empty
+	// result as a normal miss instead of emitting GORM's record-not-found error.
+	var candidates []model.FlowUsage
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("node_id = ? AND flow_id IN ?", nodeID, keys).
+		Find(&candidates).Error; err != nil {
 		return model.FlowUsage{}, false, false, err
 	}
-	if usageKey == flow.FlowID {
+	usage, found, legacy := pickZeroFlowUsage(candidates, usageKey, flow.FlowID)
+	if !found {
 		return model.FlowUsage{}, false, false, nil
+	}
+	if !legacy {
+		return usage, true, false, nil
 	}
 
 	// Deploying the runtime-scoped cursor while a connection is already active
 	// must not charge the cumulative bytes again. Carry an old raw-flow cursor
 	// forward only when ownership and counters are clearly monotonic.
-	var legacy model.FlowUsage
-	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("node_id = ? AND flow_id = ?", nodeID, flow.FlowID).
-		First(&legacy).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if usage.Status != "active" || usage.ProtocolCredentialID != credentialID ||
+		usage.RawBytes > cumulativeRaw || usage.UploadBytes > flow.BytesUp || usage.DownloadBytes > flow.BytesDown ||
+		(flow.Revision > 0 && usage.Revision > flow.Revision) {
 		return model.FlowUsage{}, false, false, nil
 	}
-	if err != nil {
-		return model.FlowUsage{}, false, false, err
-	}
-	if legacy.Status != "active" || legacy.ProtocolCredentialID != credentialID ||
-		legacy.RawBytes > cumulativeRaw || legacy.UploadBytes > flow.BytesUp || legacy.DownloadBytes > flow.BytesDown ||
-		(flow.Revision > 0 && legacy.Revision > flow.Revision) {
-		return model.FlowUsage{}, false, false, nil
-	}
-	return legacy, true, true, nil
+	return usage, true, true, nil
 }
 
 func zeroFlowUsageCursorSequence(event zeroEventEnvelope, flow zeroFlowProjection) uint64 {
