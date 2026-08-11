@@ -3,22 +3,34 @@ import {
   defaultSubscriptionCustomization,
   defaultSubscriptionRuleSet,
   normalizeSubscriptionCustomization,
+  subscriptionPolicyGroupIncludesDirect,
+  subscriptionPolicyGroupIncludesReject,
+  subscriptionRendererSupportsPolicyConfig,
   subscriptionRuleFormatOptions,
   subscriptionTemplateOutput,
   subscriptionTemplateOutputOptions,
 } from './subscriptionTemplateEditor'
 
 describe('subscription template editor policy', () => {
-  it('maps only backend-owned renderers to their derived response metadata', () => {
+  it('maps backend-owned renderers to their derived response metadata', () => {
     expect(subscriptionTemplateOutput('clash')).toMatchObject({
       contentType: 'application/yaml',
+      mode: 'full',
     })
     expect(subscriptionTemplateOutput('unsupported')).toBeNull()
     expect(subscriptionTemplateOutputOptions.map(option => option.value)).toEqual([
-      'znet-sink',
+      'zero',
       'clash',
       'sing-box',
+      'shadowrocket',
+      'quantumult-x',
+      'v2rayn',
     ])
+    expect(subscriptionTemplateOutput('shadowrocket')).toMatchObject({ mode: 'nodes' })
+    expect(subscriptionTemplateOutput('quantumult-x')).toMatchObject({ mode: 'nodes' })
+    expect(subscriptionTemplateOutput('v2rayn')).toMatchObject({ mode: 'nodes' })
+    expect(subscriptionRendererSupportsPolicyConfig('clash')).toBe(true)
+    expect(subscriptionRendererSupportsPolicyConfig('shadowrocket')).toBe(false)
   })
 
   it('provides renderer-specific rule defaults without exposing Go templates', () => {
@@ -54,5 +66,35 @@ describe('subscription template editor policy', () => {
       'zero_rule_ir',
       'zrs',
     ])
+  })
+
+  it('defaults special select targets on and preserves explicit opt-out', () => {
+    const defaultMain = defaultSubscriptionCustomization('clash').policy_groups[0] as any
+    expect(defaultMain.include_direct).toBe(true)
+    expect(defaultMain.include_reject).toBe(true)
+    expect(subscriptionPolicyGroupIncludesDirect(defaultMain)).toBe(true)
+    expect(subscriptionPolicyGroupIncludesReject(defaultMain)).toBe(true)
+
+    const legacyV2 = normalizeSubscriptionCustomization('clash', {
+      version: 2,
+      mixed_port: 7890,
+      main_group: 'main',
+      policy_groups: [{ id: 'main', name: '节点选择', type: 'select' }],
+      final: 'group:main',
+      rule_sets: [],
+    })
+    expect((legacyV2.policy_groups[0] as any).include_direct).toBe(true)
+    expect((legacyV2.policy_groups[0] as any).include_reject).toBe(true)
+
+    const explicit = normalizeSubscriptionCustomization('clash', {
+      version: 2,
+      mixed_port: 7890,
+      main_group: 'main',
+      policy_groups: [{ id: 'main', name: '节点选择', type: 'select', include_direct: false, include_reject: true }],
+      final: 'group:main',
+      rule_sets: [],
+    })
+    expect((explicit.policy_groups[0] as any).include_direct).toBe(false)
+    expect((explicit.policy_groups[0] as any).include_reject).toBe(true)
   })
 })

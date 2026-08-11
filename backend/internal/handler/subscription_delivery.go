@@ -60,6 +60,10 @@ func canonicalSubscriptionFormat(value string) string {
 		return "clash"
 	case normalized == "singbox":
 		return "sing-box"
+	case normalized == "quantumultx" || normalized == "quantumult_x":
+		return subscriptionRendererQuantumultX
+	case normalized == "v2ray-n" || normalized == "v2ray_n":
+		return subscriptionRendererV2RayN
 	default:
 		return normalized
 	}
@@ -89,6 +93,12 @@ func detectSubscriptionTemplate(userAgent string) string {
 
 	normalized := strings.ToLower(trimmed)
 	switch {
+	case containsAny(normalized, "shadowrocket"):
+		return subscriptionRendererShadowrocket
+	case containsAny(normalized, "quantumult x", "quantumultx"):
+		return subscriptionRendererQuantumultX
+	case containsAny(normalized, "v2rayn"):
+		return subscriptionRendererV2RayN
 	case containsAny(normalized, "sing-box", "singbox"):
 		return "sing-box"
 	case containsAny(normalized, "clash", "mihomo"):

@@ -190,6 +190,9 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	if err := h.ReconcileSubscriptionTemplateDefaults(); err != nil {
 		return nil, err
 	}
+	if err := h.SeedSubscriptionClientTemplateDefaults(); err != nil {
+		return nil, err
+	}
 	if err := h.ReconcileMieruEndpointCredentials(); err != nil {
 		return nil, err
 	}
