@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { API_BASE, getAuthToken } from './client'
+import { API_BASE, getAuthToken, type AdminTask } from './client'
 import { normalizeApiErrorPayload } from '../utils/apiError'
 
 export interface NodeBBRState {
@@ -20,16 +20,17 @@ export interface NodeSystemActionsSnapshot {
   bbr: NodeBBRState
 }
 
-async function requestNodeSystemActions(nodeId: number, action?: 'enable_bbr'): Promise<NodeSystemActionsSnapshot> {
+function nodeSystemActionConfig() {
+  const token = getAuthToken()
+  return {
+    timeout: 30_000,
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  }
+}
+
+export async function fetchNodeSystemActions(nodeId: number): Promise<NodeSystemActionsSnapshot> {
   try {
-    const token = getAuthToken()
-    const config = {
-      timeout: 30_000,
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    }
-    const response = action
-      ? await axios.post(`${API_BASE}/nodes/${nodeId}/system-actions`, { action }, config)
-      : await axios.get(`${API_BASE}/nodes/${nodeId}/system-actions`, config)
+    const response = await axios.get(`${API_BASE}/nodes/${nodeId}/system-actions`, nodeSystemActionConfig())
     return response.data?.data as NodeSystemActionsSnapshot
   } catch (cause: any) {
     if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data)
@@ -37,10 +38,16 @@ async function requestNodeSystemActions(nodeId: number, action?: 'enable_bbr'): 
   }
 }
 
-export function fetchNodeSystemActions(nodeId: number): Promise<NodeSystemActionsSnapshot> {
-  return requestNodeSystemActions(nodeId)
-}
-
-export function enableNodeBBR(nodeId: number): Promise<NodeSystemActionsSnapshot> {
-  return requestNodeSystemActions(nodeId, 'enable_bbr')
+export async function enableNodeBBR(nodeId: number): Promise<AdminTask> {
+  try {
+    const response = await axios.post(
+      `${API_BASE}/nodes/${nodeId}/system-actions`,
+      { action: 'enable_bbr' },
+      nodeSystemActionConfig(),
+    )
+    return response.data?.data as AdminTask
+  } catch (cause: any) {
+    if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data)
+    throw cause
+  }
 }
