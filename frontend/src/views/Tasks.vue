@@ -106,7 +106,7 @@ const createErrors = useFormErrors()
 const writableTaskTypes = ['quota', 'email'] as const
 const scopeModes = ['all', 'subscriptions', 'users'] as const
 let detailPollTimer: number | undefined
-const taskTypeOptions = [{ label: '全部类型', value: '' }, { label: '配额调整', value: 'quota' }, { label: '邮件通知', value: 'email' }, { label: '节点状态检测', value: 'node_detect' }, { label: '节点内核对齐', value: 'node_reconcile' }, { label: '节点生命周期', value: 'node_lifecycle' }, { label: '协议批量发布', value: 'protocol_deploy' }, { label: '协议批量启停', value: 'protocol_active' }, { label: '节点组交付对齐', value: 'node_group_reconcile' }]
+const taskTypeOptions = [{ label: '全部类型', value: '' }, { label: '配额调整', value: 'quota' }, { label: '邮件通知', value: 'email' }, { label: '节点状态检测', value: 'node_detect' }, { label: '节点内核对齐', value: 'node_reconcile' }, { label: '节点生命周期', value: 'node_lifecycle' }, { label: '协议批量发布', value: 'protocol_deploy' }, { label: '协议批量启停', value: 'protocol_active' }, { label: '节点组交付对齐', value: 'node_group_reconcile' }, { label: 'VPS 系统自动化', value: 'node_system_action' }]
 const taskStatusOptions = [{ label: '全部状态', value: '' }, { label: '等待执行', value: '0' }, { label: '执行中', value: '1' }, { label: '已完成', value: '2' }, { label: '执行失败', value: '3' }]
 const createTaskTypeOptions = taskTypeOptions.filter(option => option.value === 'quota' || option.value === 'email')
 const scopeOptions = computed(() => [{ label: '全部有效目标', value: 'all' }, ...(form.type === 'quota' ? [{ label: '指定订阅 ID', value: 'subscriptions' }] : []), { label: '指定用户 ID', value: 'users' }])
@@ -149,7 +149,7 @@ for (const [source, field] of [
   [() => form.max_attempts, 'max_attempts'], [() => quota.delta_mb, 'quota.delta_mb'],
   [() => quota.reason, 'quota.reason'], [() => email.subject, 'email.subject'], [() => email.body, 'email.body'],
 ] as Array<[() => unknown, string]>) watch(source, () => createErrors.clear(field))
-function taskTypeLabel(type: AdminTask['type']) { return ({ quota: '配额调整', email: '邮件通知', node_detect: '节点状态检测', node_reconcile: '节点内核对齐', node_lifecycle: '节点生命周期', protocol_deploy: '协议批量发布', protocol_active: '协议批量启停', node_group_reconcile: '节点组交付对齐' } as Record<string, string>)[type] || formatUnknownValue('类型', type) }
+function taskTypeLabel(type: AdminTask['type'] | 'node_system_action') { return ({ quota: '配额调整', email: '邮件通知', node_detect: '节点状态检测', node_reconcile: '节点内核对齐', node_lifecycle: '节点生命周期', protocol_deploy: '协议批量发布', protocol_active: '协议批量启停', node_group_reconcile: '节点组交付对齐', node_system_action: 'VPS 系统自动化' } as Record<string, string>)[type] || formatUnknownValue('类型', type) }
 function statusName(task: AdminTask) { if (task.status === 0) return '等待执行'; if (task.status === 1) return '执行中'; if (task.status === 2) return '已完成'; if (task.status === 3) return Number(task.succeeded_count) > 0 && Number(task.failed_count) > 0 ? '部分失败' : '执行失败'; return formatUnknownValue('状态', task.status) }
 function statusTone(task: AdminTask): 'neutral' | 'info' | 'success' | 'danger' | 'warning' { return task.status === 0 ? 'neutral' : task.status === 1 ? 'info' : task.status === 2 ? 'success' : Number(task.succeeded_count) > 0 && Number(task.failed_count) > 0 ? 'warning' : 'danger' }
 function statusIcon(task: AdminTask) { return task.status === 0 ? 'minus' : task.status === 1 ? 'refresh' : task.status === 2 ? 'check' : 'alert' }
