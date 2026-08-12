@@ -1,6 +1,6 @@
 <template>
   <section class="account-page stack">
-    <PageHeader title="流量明细" description="按时间范围查看使用趋势、最高连接数和每条计费记录。" eyebrow="TRAFFIC">
+    <PageHeader title="流量明细" description="按时间范围查看使用趋势、最高连接数和按分钟聚合的计费使用。" eyebrow="TRAFFIC">
       <template #actions>
         <UiButton variant="secondary" type="button" :disabled="loading" @click="loadAll">
           <UiIcon name="refresh" />刷新
@@ -73,7 +73,7 @@
         <span class="muted">范围内计费 {{ formatBytes(aggregates.used_bytes) }}</span>
       </template>
 
-      <DataTable v-if="records.length" caption="我的流量使用记录" :row-count="total" :min-width="820">
+      <DataTable v-if="records.length" caption="我的流量使用明细（按分钟聚合）" :row-count="total" :min-width="820">
         <thead>
           <tr>
             <th class="table-primary-column">时间</th>
@@ -106,8 +106,8 @@
       <EmptyState
         v-else
         icon="activity"
-        title="还没有流量记录"
-        description="节点开始上报使用量后，明细会显示在这里。"
+        title="还没有流量使用明细"
+        description="节点开始产生计费记录后，按分钟聚合的使用明细会显示在这里。"
       />
 
       <template #footer>
@@ -128,8 +128,8 @@
     <aside class="account-notice">
       <UiIcon name="activity" />
       <div>
-        <strong>图表数据如何计算？</strong>
-        <p>流量由服务端按日期求和；未来连接上报接入后，只取每个采样窗口以及筛选区间内的最高并发连接数，不使用平均值或累计值。套餐限速与连接限制仍以内核实际执行结果为准。</p>
+        <strong>流量明细如何计算？</strong>
+        <p>明细由服务端按分钟和实际计费维度汇总，原始计费记录仍保留用于计费、审计与对账；趋势图按日期汇总，连接数仅取采样窗口和筛选区间内的峰值。</p>
       </div>
     </aside>
   </section>
