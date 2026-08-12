@@ -1,12 +1,12 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="流量与对账" description="按真实业务对象筛选上报记录，在服务端分页和聚合，避免随数据量增长而加载全量用户、节点或端点。" eyebrow="Usage Operations">
+    <PageHeader title="流量与对账" description="按真实业务对象筛选按分钟聚合的流量使用；原始计费记录仍保留用于审计与对账。" eyebrow="Usage Operations">
       <template #actions><PageRefreshButton label="刷新流量与对账" :loading="loading" @click="load" /></template>
     </PageHeader>
     <TransientFeedback :error="error" error-title="流量数据加载失败" />
 
     <UiMetricStrip class="traffic-summary">
-      <MetricCard label="匹配记录" :value="formatNumber(recordTotal)" icon="activity" status="筛选结果" tone="info" meta="当前时间范围内的服务端总数" />
+      <MetricCard label="聚合明细" :value="formatNumber(recordTotal)" icon="activity" status="筛选结果" tone="info" meta="当前时间范围内的分钟聚合结果" />
       <MetricCard label="原始流量" :value="formatBytes(recordAggregates.raw_bytes || 0)" icon="database" status="上报汇总" tone="info" meta="不受当前游标页影响" />
       <MetricCard label="计费流量" :value="formatBytes(recordAggregates.used_bytes || 0)" icon="billing" status="计费汇总" tone="info" icon-tone="warning" meta="已应用协议倍率" />
       <MetricCard label="关联订阅" :value="formatNumber(recordAggregates.subscription_count || 0)" icon="plans" status="覆盖范围" tone="info" icon-tone="success" :meta="`${formatNumber(recordAggregates.user_count || 0)} 个用户 · ${formatNumber(recordAggregates.node_count || 0)} 个节点`" />
@@ -22,12 +22,12 @@
           <WorkbenchFilterDate v-model:from="from" v-model:to="to" label="记录日期" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
-      <template #actions><span class="workbench-note">内部 ID 仅用于筛选和辅助定位，列表以业务名称为主</span></template>
+      <template #actions><span class="workbench-note">默认按分钟与计费维度聚合；内部 ID 仅用于筛选和辅助定位</span></template>
 
-      <DataTable v-if="records.length" caption="流量上报记录列表" :row-count="recordTotal" :min-width="1120" table-class="traffic-table">
+      <DataTable v-if="records.length" caption="流量使用明细（按分钟聚合）" :row-count="recordTotal" :min-width="1120" table-class="traffic-table">
         <thead>
           <tr>
-            <th class="table-primary-column">上报时间</th>
+            <th class="table-primary-column">时间</th>
             <th data-column-priority="3">用户</th>
             <th>订阅</th>
             <th data-column-priority="2">节点</th>
@@ -59,7 +59,7 @@
           </tr>
         </tbody>
       </DataTable>
-      <EmptyState v-else icon="activity" title="没有流量记录" description="当前筛选范围内尚未收到节点上报。" />
+      <EmptyState v-else icon="activity" title="没有流量使用明细" description="当前筛选范围内没有可汇总的计费记录。" />
       <template #footer><CursorPager :count="records.length" :total="recordTotal" :limit="recordLimit" :loading="recordLoading" :has-previous="Boolean(recordPreviousCursor)" :has-next="Boolean(recordNextCursor)" @previous="changeRecordCursor(recordPreviousCursor)" @next="changeRecordCursor(recordNextCursor)" @limit="changeRecordLimit" /></template>
     </DataWorkbench>
 
