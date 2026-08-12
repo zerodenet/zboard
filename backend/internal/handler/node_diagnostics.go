@@ -199,6 +199,7 @@ func parseNodeDiagnosticSnapshot(_ model.Node, output string) nodeDiagnosticSnap
 	snapshot.RecentZeroLogs = redactNodeDiagnosticText(extractNodeDiagnosticSection(output, "JOURNAL"), nodeDiagnosticJournalMaxBytes)
 	snapshot.RecentKernelLogs = redactNodeDiagnosticText(extractNodeDiagnosticSection(output, "KERNEL"), nodeDiagnosticKernelMaxBytes)
 	matchNodeExpectedListeners(snapshot.ExpectedListeners, snapshot.ActualListeners)
+	appendNodeDiagnosticBindingWarnings(&snapshot)
 	return snapshot
 }
 
@@ -306,7 +307,7 @@ func matchNodeExpectedListeners(expected []nodeDiagnosticExpectedListener, actua
 		for _, network := range expected[index].Networks {
 			found := false
 			for _, listener := range actual {
-				if listener.Network == network && listener.Port == expected[index].Port && listenerAddressMatches(expected[index].Address, listener.Address) {
+				if listener.Network == network && listener.Port == expected[index].Port && listenerAddressSatisfiesConfiguredBind(expected[index].Address, listener.Address) {
 					found = true
 					break
 				}
@@ -402,7 +403,7 @@ func parseNodeDiagnosticUint(value string) uint64 {
 
 func redactNodeDiagnosticText(value string, maxBytes int) string {
 	value = strings.TrimSpace(strings.ReplaceAll(value, "\x00", ""))
-	value = nodeDiagnosticSecretPattern.ReplaceAllString(value, "$1$2[REDACTED]")
+	value = nodeDiagnosticSecretPattern.ReplaceAllString(value, "$1[REDACTED]")
 	if len(value) > maxBytes {
 		value = value[len(value)-maxBytes:]
 		value = "[truncated]\n" + value
@@ -457,7 +458,7 @@ func classifyNodeDiagnostic(snapshot *nodeDiagnosticSnapshot) {
 		snapshot.Summary = "无法取得 Zero 配置期望，未将进程或控制面存活视为数据面健康。"
 	case missing > 0 || serviceDegraded:
 		snapshot.Classification = "data_plane_missing"
-		snapshot.Summary = fmt.Sprintf("发现 %d 个配置监听项缺失或 Zero 服务未处于 active。", missing)
+		snapshot.Summary = fmt.Sprintf("发现 %d 个配置监听项缺失或绑定不符合配置，或 Zero 服务未处于 active。", missing)
 	case snapshot.Resources.ResourcePressure:
 		snapshot.Classification = "resource_pressure"
 		snapshot.Summary = "本地监听完整，但文件描述符或 conntrack 使用率已达到 90% 压力阈值。"
