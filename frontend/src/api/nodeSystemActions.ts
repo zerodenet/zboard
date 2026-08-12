@@ -31,11 +31,16 @@ function nodeSystemActionConfig() {
   }
 }
 
+function asTrackedTask(task: NodeSystemActionTask): AdminTask {
+  return task as unknown as AdminTask
+}
+
 function normalizeNodeSystemActionError(cause: any): never {
   if (cause?.response) {
     cause.response.data = normalizeApiErrorPayload(cause.response.data)
   } else if (cause instanceof Error) {
-    cause.response = { data: { message: cause.message } }
+    const normalized = cause as any
+    normalized.response = { data: { message: cause.message } }
   }
   throw cause
 }
@@ -69,12 +74,12 @@ export async function enableNodeBBR(nodeId: number): Promise<NodeSystemActionsSn
       nodeSystemActionConfig(),
     )
     const task = response.data?.data as NodeSystemActionTask
-    trackAdminTask(task as AdminTask)
+    trackAdminTask(asTrackedTask(task))
 
     const deadline = Date.now() + 60_000
     while (Date.now() < deadline) {
       const current = await fetchSystemActionTask(task.id)
-      updateTrackedTask(current as AdminTask)
+      updateTrackedTask(asTrackedTask(current))
       if (current.status === 2) return fetchNodeSystemActions(nodeId)
       if (current.status === 3) throw taskFailure(current)
       await new Promise(resolve => setTimeout(resolve, 500))
