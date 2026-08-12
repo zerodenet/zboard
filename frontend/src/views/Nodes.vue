@@ -127,6 +127,18 @@
               <small v-if="!selectedNode.ssh_verified_at">请先完成 SSH 验证，自动化不会绕过运维通道校验。</small>
               <small v-else>现代 glibc 节点使用官方 GNU 制品，旧版 Linux 使用面板托管并校验 SHA-256 的 musl 制品；不会升级系统 libc，也不会自动降级内核。</small>
             </div>
+            <div class="action-card">
+              <div class="title-line"><strong>VPS 网络优化 · BBR</strong><StatusBadge :tone="bbrTone">{{ bbrStatusLabel }}</StatusBadge></div>
+              <p v-if="bbrState">当前拥塞控制 <code>{{ bbrState.congestion_control || '未知' }}</code> · qdisc <code>{{ bbrState.default_qdisc || '未知' }}</code> · Linux {{ bbrState.kernel_release || '未知' }}<template v-if="bbrState.persistent"> · 已持久化</template></p>
+              <p v-else-if="bbrLoading">正在通过已验证 SSH 读取 BBR 状态…</p>
+              <p v-else-if="!selectedNode.ssh_verified_at">完成 SSH 验证后可检测和启用 BBR。</p>
+              <p v-else>尚未读取 BBR 状态。</p>
+              <div class="kernel-actions">
+                <UiButton variant="secondary" size="sm" type="button" :loading="bbrLoading" :disabled="bbrBusy || !selectedNode.ssh_verified_at" @click="loadBBR(selectedNode.id)"><UiIcon name="refresh" />检测 BBR</UiButton>
+                <UiButton size="sm" type="button" :loading="bbrBusy" :disabled="bbrLoading || !selectedNode.ssh_verified_at" @click="applyBBR"><UiIcon name="play" />{{ bbrState?.active && bbrState?.persistent ? '重新应用 BBR' : '启用 BBR' }}</UiButton>
+                <small>只维护 <code>/etc/sysctl.d/99-zboard-bbr.conf</code>，不会执行全局 <code>sysctl --system</code>。</small>
+              </div>
+            </div>
             <div v-if="kernelOperations.length" class="kernel-history">
               <div v-for="operation in kernelOperations.slice(0, 5)" :key="operation.id">
                 <StatusBadge :tone="operationStatusTone(operation.status)" :icon="operation.status === 'succeeded' ? 'check' : operation.status === 'running' ? 'refresh' : 'alert'">{{ operationStatusLabel(operation.status) }}</StatusBadge>
@@ -176,13 +188,15 @@
       </main>
     </DetailDrawer>
 
-    <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="登记 VPS" description="这里只建立主机资产，不会自动创建或部署协议。" :busy="saving" @close="createOpen = false">
+    <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="登记 VPS" description="建立主机资产；可选择在 SSH 验证后执行受控的系统初始化。" :busy="saving" @close="createOpen = false">
       <form id="node-create-form" ref="createFormElement" class="form-grid" novalidate @submit.prevent="create">
         <PageAlert v-if="createErrors.formError.value" class="field-full" tone="danger" title="无法登记 VPS">{{ createErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="主机名称" name="create-node-name" :error="createErrors.fields.name" required><UiInput v-model.trim="createForm.name" v-bind="controlAttrs" placeholder="香港 VPS 01" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="区域" name="create-node-region" :error="createErrors.fields.region"><UiInput v-model.trim="createForm.region" v-bind="controlAttrs" placeholder="Hong Kong" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="默认业务地址" name="create-node-address" hint="可选；新建协议时用作对外地址的初始值。" :error="createErrors.fields.address" full><UiInput v-model.trim="createForm.address" v-bind="controlAttrs" placeholder="edge.example.com" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="备注" hint="记录供应商、机房、用途或到期时间；不填写也保持与其他字段对齐。" full><UiTextarea v-model.trim="createForm.remark" v-bind="controlAttrs" rows="3" placeholder="供应商、机房、用途、到期时间等"></UiTextarea></FormField>
+        <label class="check-field field-full"><UiCheckbox v-model="createForm.enable_bbr" /><span>创建后启用 BBR</span></label>
+        <p v-if="createForm.enable_bbr" class="field-hint field-full">保存 VPS 后会继续打开 SSH 配置；SSH 与提权验证通过后才会修改远端系统，并可在“内核与运维”中重新检测或应用。</p>
       </form>
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="node-create-form" type="submit" :loading="saving">保存 VPS</UiButton></template>
     </ModalDialog>
@@ -200,7 +214,7 @@
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="node-edit-form" type="submit" :loading="saving">保存</UiButton></template>
     </ModalDialog>
 
-    <ModalDialog :open="sshOpen" :dirty="sshState.dirty.value" title="SSH 与系统权限" description="登录凭证和系统提权分开管理；只有安装、systemd 与协议配置等系统操作会提权。" size="lg" :busy="saving" @close="sshOpen = false">
+    <ModalDialog :open="sshOpen" :dirty="sshState.dirty.value" title="SSH 与系统权限" :description="pendingBBRNodeID === sshForm.node_id ? '保存后会先验证 SSH 与提权能力，再执行 BBR 初始化；任何一步失败都会明确停止。' : '登录凭证和系统提权分开管理；只有安装、systemd 与协议配置等系统操作会提权。'" size="lg" :busy="saving" @close="sshOpen = false">
       <form id="ssh-form" ref="sshFormElement" class="form-grid" novalidate @submit.prevent="saveSSH">
         <PageAlert v-if="sshErrors.formError.value" class="field-full" tone="danger" title="无法保存 SSH 配置">{{ sshErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="SSH 主机" name="node-ssh-host" :error="sshErrors.fields.ssh_host" required><UiInput v-model.trim="sshForm.ssh_host" v-bind="controlAttrs" placeholder="192.0.2.10" /></FormField>
@@ -215,7 +229,7 @@
         <p v-if="sshForm.ssh_privilege_mode === 'su'" class="field-hint field-full">适用于可使用 <code>su root -c</code> 的主机；root 密码独立加密保存，不会写入命令、任务输出或审计日志。</p>
         <p class="field-hint field-full">首次验证会自动固定服务器身份；以后发现主机密钥变化时会停止连接。仅在确认 VPS 已重装或更换后，使用“重新信任主机”。</p>
       </form>
-      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="ssh-form" type="submit" :loading="saving">保存连接配置</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="ssh-form" type="submit" :loading="saving">{{ pendingBBRNodeID === sshForm.node_id ? '保存并初始化 BBR' : '保存连接配置' }}</UiButton></template>
     </ModalDialog>
 
     <ModalDialog :open="Boolean(secretModal.value)" :title="secretModal.title" description="完整凭证只显示一次，请立即复制并安全保存。" @close="closeSecretModal">
@@ -232,6 +246,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createNode, createNodeBatchOperation, deleteNode, detectNodeKernel, fetchNode, fetchNodeKernel, fetchNodeLoad, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type NodeLoadSnapshot, type ZeroReleaseOption } from '../api/client'
+import { enableNodeBBR, fetchNodeSystemActions, type NodeBBRState } from '../api/nodeSystemActions'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -309,6 +324,8 @@ const detailError = ref('')
 const createOpen = ref(false), editOpen = ref(false), sshOpen = ref(false)
 const terminalOpen = ref(false), terminalNode = ref<any>(null)
 const kernelState = ref<NodeKernelState | null>(null), kernelOperations = ref<NodeKernelOperation[]>([])
+const bbrState = ref<NodeBBRState | null>(null), bbrLoading = ref(false), bbrBusy = ref(false)
+const pendingBBRNodeID = ref(0)
 const zeroReleases = ref<ZeroReleaseOption[]>([]), releaseLoading = ref(false)
 const selectedReleaseVersion = ref('')
 const latestPublishedRelease = computed(() => zeroReleases.value[0] || null)
@@ -332,6 +349,14 @@ const selectedIsDowngrade = computed(() => Boolean(
   && kernelState.value?.installed_version
   && compareKernelVersions(kernelState.value.installed_version, selectedReleaseVersion.value) > 0,
 ))
+const bbrTone = computed<'success' | 'warning' | 'neutral'>(() => bbrState.value?.active && bbrState.value?.persistent ? 'success' : bbrState.value?.available ? 'warning' : 'neutral')
+const bbrStatusLabel = computed(() => {
+  if (bbrLoading.value) return '检测中'
+  if (!bbrState.value) return '未检测'
+  if (bbrState.value.active && bbrState.value.persistent && bbrState.value.default_qdisc === 'fq') return '已启用'
+  if (bbrState.value.active) return '已生效，未完整持久化'
+  return bbrState.value.available ? '可启用' : '当前未提供'
+})
 const kernelBusy = ref<'' | 'detect' | 'reconcile'>('')
 const nodeEndpoints = ref<any[]>([]), nodeProtocolsLoading = ref(false), savingMultiplierID = ref(0)
 const nodeProtocolLimit = ref(allowedPageSizes.includes(Number(route.query.protocol_limit)) ? Number(route.query.protocol_limit) : 25)
@@ -341,7 +366,7 @@ const multiplierDrafts = reactive<Record<number, number>>({})
 const kernelRequests = createRequestGuard()
 const protocolRequests = createRequestGuard()
 let kernelPollTimer: number | undefined
-const createForm = reactive({ name: '', region: '', address: '', remark: '' })
+const createForm = reactive({ name: '', region: '', address: '', remark: '', enable_bbr: false })
 const editForm = reactive({ id: 0, name: '', region: '', address: '', remark: '', lifecycle_status: 'active', is_enabled: true })
 const sshForm = reactive({ node_id: 0, ssh_host: '', ssh_port: 22, ssh_user: 'root', ssh_auth_method: 'password' as 'password' | 'private_key', original_auth_method: 'password' as 'password' | 'private_key', ssh_password: '', ssh_private_key: '', ssh_private_key_passphrase: '', clearPassphrase: false, hasCredential: false, ssh_privilege_mode: 'none' as 'none' | 'sudo' | 'su', ssh_privilege_password: '', hasPrivilegePassword: false, passwordlessSudo: false })
 const requiresSSHCredential = computed(() => !sshForm.hasCredential || sshForm.ssh_auth_method !== sshForm.original_auth_method)
@@ -520,6 +545,38 @@ async function loadKernel(nodeID?: number) {
     if (kernelRequests.isCurrent(request) && selectedNode.value?.id === nodeID) detailError.value = e?.response?.data?.message || '内核状态加载失败。'
   }
 }
+async function loadBBR(nodeID?: number) {
+  if (!nodeID || !selectedNode.value?.ssh_verified_at) { bbrState.value = null; return }
+  bbrLoading.value = true
+  try {
+    const snapshot = await fetchNodeSystemActions(nodeID)
+    if (selectedNode.value?.id === nodeID) bbrState.value = snapshot.bbr
+  } catch (e: any) {
+    if (selectedNode.value?.id === nodeID) detailError.value = e?.response?.data?.message || 'BBR 状态读取失败。'
+  } finally {
+    if (selectedNode.value?.id === nodeID) bbrLoading.value = false
+  }
+}
+async function applyBBR() {
+  if (!selectedNode.value?.ssh_verified_at) return
+  const nodeID = selectedNode.value.id
+  const accepted = await confirmAction({
+    title: bbrState.value?.active && bbrState.value?.persistent ? '重新应用 BBR？' : '启用 BBR？',
+    message: '将通过已验证的 SSH 与系统提权修改 TCP 拥塞控制和默认 qdisc，只维护 zboard 自己的 sysctl 配置；失败时恢复原值。',
+    confirmText: bbrState.value?.active && bbrState.value?.persistent ? '重新应用' : '启用 BBR',
+    tone: 'primary',
+  })
+  if (!accepted) return
+  bbrBusy.value = true; detailError.value = ''; detailMessage.value = ''
+  try {
+    const snapshot = await enableNodeBBR(nodeID)
+    bbrState.value = snapshot.bbr
+    detailMessage.value = 'BBR 已启用并通过运行时与持久化配置复核。'
+  } catch (e: any) {
+    detailError.value = e?.response?.data?.message || 'BBR 自动化操作失败。'
+    await loadBBR(nodeID)
+  } finally { bbrBusy.value = false }
+}
 async function loadLatestRelease(force = false) {
   if (zeroReleases.value.length && !force) return
   releaseLoading.value = true
@@ -645,7 +702,7 @@ async function selectNode(node: AdminNodeListItem) {
   } catch (e: any) { error.value = e?.response?.data?.message || '节点详情加载失败。' }
   finally { detailLoadingID.value = 0 }
 }
-async function closeDetail() { diagnosticsOpen.value = false; selectedNode.value = null; detailError.value = ''; detailMessage.value = ''; nodeProtocolOffset.value = 0; await syncURL() }
+async function closeDetail() { diagnosticsOpen.value = false; selectedNode.value = null; detailError.value = ''; detailMessage.value = ''; nodeProtocolOffset.value = 0; bbrState.value = null; await syncURL() }
 async function removeNode(node: AdminNodeDetail) {
   if (!await confirmAction({
     title: '删除节点资产？',
@@ -658,6 +715,7 @@ async function removeNode(node: AdminNodeDetail) {
   detailMessage.value = ''
   try {
     await deleteNode(node.id)
+    if (pendingBBRNodeID.value === node.id) pendingBBRNodeID.value = 0
     await closeDetail()
     message.value = `节点“${node.name}”已从面板删除；远端 Zero 未被卸载。`
     await refresh()
@@ -668,7 +726,7 @@ async function removeNode(node: AdminNodeDetail) {
   }
 }
 async function changeNodeProtocolPage(value: { offset: number; limit: number }) { nodeProtocolOffset.value = value.offset; nodeProtocolLimit.value = value.limit; await syncURL() }
-function openCreate() { Object.assign(createForm, { name: '', region: '', address: '', remark: '' }); createErrors.clear(); createState.markClean(); createOpen.value = true }
+function openCreate() { pendingBBRNodeID.value = 0; Object.assign(createForm, { name: '', region: '', address: '', remark: '', enable_bbr: false }); createErrors.clear(); createState.markClean(); createOpen.value = true }
 async function create() {
   createForm.name = createForm.name.trim()
   const valid = await createErrors.applyValidation(collectFieldErrors({
@@ -676,7 +734,17 @@ async function create() {
   }), createFormElement, '请更正标记字段后再登记 VPS。')
   if (!valid) return
   saving.value = true
-  try { const node = await createNode({ ...createForm }); Object.assign(createForm, { name: '', region: '', address: '', remark: '' }); createOpen.value = false; offset.value = 0; await refresh(); selectedNode.value = await fetchNode(node.id); await syncURL(true); message.value = 'VPS 已登记；协议服务可在协议页面单独创建。' } catch (e: any) { await createErrors.applyApiError(e, '节点登记失败，请检查表单内容。', createFormElement, nodeCreateFieldMap) } finally { saving.value = false }
+  try {
+    const wantsBBR = createForm.enable_bbr
+    const node = await createNode({ name: createForm.name, region: createForm.region, address: createForm.address, remark: createForm.remark })
+    Object.assign(createForm, { name: '', region: '', address: '', remark: '', enable_bbr: false })
+    createOpen.value = false; offset.value = 0; await refresh(); selectedNode.value = await fetchNode(node.id); await syncURL(true)
+    if (wantsBBR) {
+      pendingBBRNodeID.value = node.id
+      message.value = 'VPS 已登记；请完成 SSH 配置，验证通过后将自动启用 BBR。'
+      openSSH(selectedNode.value)
+    } else message.value = 'VPS 已登记；协议服务可在协议页面单独创建。'
+  } catch (e: any) { await createErrors.applyApiError(e, '节点登记失败，请检查表单内容。', createFormElement, nodeCreateFieldMap) } finally { saving.value = false }
 }
 function openEdit(node: any) { Object.assign(editForm, { id: node.id, name: node.name, region: node.region || '', address: node.address || '', remark: node.remark || '', lifecycle_status: node.lifecycle_status || 'active', is_enabled: Boolean(node.is_enabled) }); editErrors.clear(); editState.markClean(); editOpen.value = true }
 async function saveNode() {
@@ -691,6 +759,32 @@ async function saveNode() {
 }
 function openSSH(node: any) { const privilegeMode = node.ssh_privilege_mode || 'none'; const authMethod = node.ssh_auth_method || 'password'; Object.assign(sshForm, { node_id: node.id, ssh_host: node.ssh_host || '', ssh_port: node.ssh_port || 22, ssh_user: node.ssh_user || 'root', ssh_auth_method: authMethod, original_auth_method: authMethod, ssh_password: '', ssh_private_key: '', ssh_private_key_passphrase: '', clearPassphrase: false, hasCredential: Boolean(node.ssh_configured), ssh_privilege_mode: privilegeMode, ssh_privilege_password: '', hasPrivilegePassword: Boolean(node.ssh_privilege_password_configured), passwordlessSudo: privilegeMode === 'sudo' && !node.ssh_privilege_password_configured }); sshErrors.clear(); sshState.markClean(); sshOpen.value = true }
 function openTerminal(node: any) { terminalNode.value = node; terminalOpen.value = true }
+async function runPendingBBRInitialization(nodeID: number) {
+  testingNode.value = nodeID
+  try {
+    const result = await testNodeSSH(nodeID)
+    message.value = `SSH 验证成功（${result.latency_ms || 0}ms），正在应用 BBR…`
+    await refresh()
+    if (selectedNode.value?.id === nodeID) selectedNode.value = await fetchNode(nodeID)
+  } catch (e: any) {
+    detailError.value = e?.response?.data?.message || 'SSH 配置已保存，但验证失败；修正 SSH 后将继续 BBR 初始化。'
+    message.value = 'VPS 已登记，但 BBR 尚未执行：SSH 验证未通过。'
+    return
+  } finally { testingNode.value = 0 }
+
+  bbrBusy.value = true
+  try {
+    const snapshot = await enableNodeBBR(nodeID)
+    bbrState.value = snapshot.bbr
+    pendingBBRNodeID.value = 0
+    detailMessage.value = 'SSH 已验证，BBR 已启用并完成状态复核。'
+    message.value = 'VPS 已登记，SSH 已验证，BBR 初始化完成。'
+  } catch (e: any) {
+    pendingBBRNodeID.value = 0
+    detailError.value = e?.response?.data?.message || 'SSH 已验证，但 BBR 初始化失败；可在“内核与运维”中重试。'
+    message.value = 'VPS 与 SSH 已完成，但 BBR 初始化未成功。'
+  } finally { bbrBusy.value = false }
+}
 async function saveSSH() {
   sshForm.ssh_host = sshForm.ssh_host.trim()
   sshForm.ssh_user = sshForm.ssh_user.trim()
@@ -707,10 +801,23 @@ async function saveSSH() {
   }), sshFormElement, '请更正标记字段后再保存 SSH 配置。')
   if (!valid) return
   saving.value = true
-  try { const payload: any = { ssh_host: sshForm.ssh_host, ssh_port: sshForm.ssh_port, ssh_user: sshForm.ssh_user, ssh_auth_method: sshForm.ssh_auth_method, ssh_privilege_mode: sshForm.ssh_privilege_mode }; if (sshForm.ssh_auth_method === 'password' && sshForm.ssh_password) payload.ssh_password = sshForm.ssh_password; if (sshForm.ssh_auth_method === 'private_key' && sshForm.ssh_private_key) payload.ssh_private_key = sshForm.ssh_private_key; if (sshForm.ssh_auth_method === 'private_key' && (sshForm.ssh_private_key_passphrase || sshForm.clearPassphrase)) payload.ssh_private_key_passphrase = sshForm.clearPassphrase ? '' : sshForm.ssh_private_key_passphrase; if (sshForm.ssh_privilege_mode === 'none' || (sshForm.ssh_privilege_mode === 'sudo' && sshForm.passwordlessSudo)) payload.ssh_privilege_password = ''; else if (sshForm.ssh_privilege_password) payload.ssh_privilege_password = sshForm.ssh_privilege_password; await updateNodeSSH(sshForm.node_id, payload); sshOpen.value = false; message.value = 'SSH 与提权配置已保存；验证 SSH 时会同时检查系统提权能力。'; await refresh() } catch (e: any) { await sshErrors.applyApiError(e, 'SSH 配置保存失败，请检查表单内容。', sshFormElement, sshFieldMap) } finally { saving.value = false }
+  try {
+    const payload: any = { ssh_host: sshForm.ssh_host, ssh_port: sshForm.ssh_port, ssh_user: sshForm.ssh_user, ssh_auth_method: sshForm.ssh_auth_method, ssh_privilege_mode: sshForm.ssh_privilege_mode }
+    if (sshForm.ssh_auth_method === 'password' && sshForm.ssh_password) payload.ssh_password = sshForm.ssh_password
+    if (sshForm.ssh_auth_method === 'private_key' && sshForm.ssh_private_key) payload.ssh_private_key = sshForm.ssh_private_key
+    if (sshForm.ssh_auth_method === 'private_key' && (sshForm.ssh_private_key_passphrase || sshForm.clearPassphrase)) payload.ssh_private_key_passphrase = sshForm.clearPassphrase ? '' : sshForm.ssh_private_key_passphrase
+    if (sshForm.ssh_privilege_mode === 'none' || (sshForm.ssh_privilege_mode === 'sudo' && sshForm.passwordlessSudo)) payload.ssh_privilege_password = ''
+    else if (sshForm.ssh_privilege_password) payload.ssh_privilege_password = sshForm.ssh_privilege_password
+    const nodeID = sshForm.node_id
+    await updateNodeSSH(nodeID, payload)
+    sshOpen.value = false
+    await refresh()
+    if (pendingBBRNodeID.value === nodeID) await runPendingBBRInitialization(nodeID)
+    else message.value = 'SSH 与提权配置已保存；验证 SSH 时会同时检查系统提权能力。'
+  } catch (e: any) { await sshErrors.applyApiError(e, 'SSH 配置保存失败，请检查表单内容。', sshFormElement, sshFieldMap) } finally { saving.value = false }
 }
-async function testSSH(id: number) { testingNode.value = id; detailError.value = ''; detailMessage.value = ''; try { const result = await testNodeSSH(id); detailMessage.value = `SSH 验证成功，耗时 ${result.latency_ms || 0}ms；主机身份已自动校验。`; await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || 'SSH 验证失败。' } finally { testingNode.value = 0 } }
-async function resetSSHHostKey(node: any) { if (!await confirmAction({ title: '重新信任主机', message: '仅当 VPS 已重装或主机密钥已确认更换时继续。重置后，下一次 SSH 连接会自动登记新的主机身份。', confirmText: '清除旧身份', tone: 'danger' })) return; detailError.value = ''; detailMessage.value = ''; try { await resetNodeSSHHostKey(node.id); detailMessage.value = '已清除旧主机身份；下一次 SSH 连接将自动重新登记。'; await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || '重新信任主机失败。' } }
+async function testSSH(id: number) { testingNode.value = id; detailError.value = ''; detailMessage.value = ''; try { const result = await testNodeSSH(id); detailMessage.value = `SSH 验证成功，耗时 ${result.latency_ms || 0}ms；主机身份已自动校验。`; await refresh(); if (selectedNode.value?.id === id) selectedNode.value = await fetchNode(id); if (detailSection.value === 'kernel') await loadBBR(id) } catch (e: any) { detailError.value = e?.response?.data?.message || 'SSH 验证失败。' } finally { testingNode.value = 0 } }
+async function resetSSHHostKey(node: any) { if (!await confirmAction({ title: '重新信任主机', message: '仅当 VPS 已重装或主机密钥已确认更换时继续。重置后，下一次 SSH 连接会自动登记新的主机身份。', confirmText: '清除旧身份', tone: 'danger' })) return; detailError.value = ''; detailMessage.value = ''; try { await resetNodeSSHHostKey(node.id); detailMessage.value = '已清除旧主机身份；下一次 SSH 连接将自动重新登记。'; bbrState.value = null; await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || '重新信任主机失败。' } }
 async function refreshSelectedNodeAfterCredentialChange(nodeID: number, patch: Partial<AdminNodeDetail>) {
   if (selectedNode.value?.id === nodeID) Object.assign(selectedNode.value, patch)
   await refresh()
@@ -734,12 +841,13 @@ watch([() => selectedNode.value?.id, detailSection, nodeProtocolOffset, nodeProt
     diagnosticsOpen.value = false
     kernelState.value = null
     kernelOperations.value = []
+    bbrState.value = null
     nodeEndpoints.value = []
     nodeLoad.value = null
     nodeLoadError.value = ''
     nodeProtocolTotal.value = 0
   }
-  if (section === 'kernel') { void loadKernel(id); void loadLatestRelease() } else kernelRequests.invalidate()
+  if (section === 'kernel') { void loadKernel(id); void loadLatestRelease(); if (id && selectedNode.value?.ssh_verified_at) void loadBBR(id) } else kernelRequests.invalidate()
   if (section === 'overview' && id && selectedNode.value?.ssh_verified_at) void loadNodeLoad(id)
   if (section === 'protocols') void loadNodeProtocols(id); else { protocolRequests.invalidate(); nodeProtocolsLoading.value = false }
 }, { immediate: true })
