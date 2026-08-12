@@ -139,8 +139,12 @@ func (h *handlers) NodeSystemActionsHandler(w http.ResponseWriter, r *http.Reque
 		ServerError(w, err)
 		return
 	}
+	if node.SSHVerifiedAt == nil || strings.TrimSpace(node.SSHHostKeyFingerprint) == "" {
+		BadRequest(w, "节点尚未完成 SSH 与主机身份验证，无法执行 VPS 自动化")
+		return
+	}
 	if err := h.validateNodeSSH(node); err != nil {
-		BadRequest(w, "节点尚未完成 SSH 验证，无法执行 VPS 自动化："+err.Error())
+		BadRequest(w, "SSH 配置当前不可用，无法执行 VPS 自动化："+err.Error())
 		return
 	}
 
@@ -196,7 +200,7 @@ func (h *handlers) createNodeSystemActionTask(node model.Node, claims authClaims
 	}
 	task := model.Task{
 		Type: taskTypeNodeSystemAction, Scope: string(scope), Content: string(content), Status: taskStatusPending,
-		Total: 1, IdempotencyKey: idempotencyKey, MaxAttempts: 3,
+		Total: 1, IdempotencyKey: idempotencyKey, MaxAttempts: 1,
 	}
 	items := []model.TaskItem{newTaskItem("node", node.ID)}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
