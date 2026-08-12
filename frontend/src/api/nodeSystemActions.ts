@@ -32,7 +32,11 @@ function nodeSystemActionConfig() {
 }
 
 function normalizeNodeSystemActionError(cause: any): never {
-  if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data)
+  if (cause?.response) {
+    cause.response.data = normalizeApiErrorPayload(cause.response.data)
+  } else if (cause instanceof Error) {
+    cause.response = { data: { message: cause.message } }
+  }
   throw cause
 }
 
@@ -73,7 +77,7 @@ export async function enableNodeBBR(nodeId: number): Promise<NodeSystemActionsSn
       updateTrackedTask(current as AdminTask)
       if (current.status === 2) return fetchNodeSystemActions(nodeId)
       if (current.status === 3) throw taskFailure(current)
-      await new Promise(resolve => window.setTimeout(resolve, 500))
+      await new Promise(resolve => setTimeout(resolve, 500))
     }
     throw new Error(`BBR 任务 #${task.id} 仍在后台执行，可在任务托盘查看最终结果。`)
   } catch (cause: any) {
