@@ -76,6 +76,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/nodes/:id/ssh/terminal", h.NodeSSHTerminalHandler),
 		newRoute(http.MethodGet, "/api/v1/nodes/:id/kernel", h.NodeKernelStateHandler),
 		newRoute(http.MethodGet, "/api/v1/nodes/:id/load", h.NodeLoadHandler),
+		newRoute(http.MethodGet, "/api/v1/nodes/:id/system-actions", h.NodeSystemActionsHandler),
+		newRoute(http.MethodPost, "/api/v1/nodes/:id/system-actions", h.NodeSystemActionsHandler),
 		newRoute(http.MethodPost, "/api/v1/nodes/:id/diagnostics", h.NodeRuntimeDiagnosticsHandler),
 		newRoute(http.MethodPost, "/api/v1/nodes/:id/kernel/detect", h.NodeKernelDetectHandler),
 		newRoute(http.MethodPost, "/api/v1/nodes/:id/kernel/reconcile", h.NodeKernelReconcileHandler),
