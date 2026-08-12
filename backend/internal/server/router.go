@@ -68,7 +68,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/admin/nodes/:id/address-candidates", h.NodeAddressCandidatesHandler),
 		newRoute(http.MethodGet, "/api/v1/nodes/:id", h.NodeDetailHandler),
 		newRoute(http.MethodPut, "/api/v1/nodes/:id", h.NodeUpdateHandler),
-		newRoute(http.MethodDelete, "/api/v1/nodes/:id", h.NodeDeleteHandler),
+		newRoute(http.MethodDelete, "/api/v1/nodes/:id", h.NodeCascadeDeleteHandler),
 		newRoute(http.MethodPost, "/api/v1/nodes/ssh/test", h.NodeSSHTestHandler),
 		newRoute(http.MethodPut, "/api/v1/nodes/:id/ssh", h.NodeSSHConfigHandler),
 		newRoute(http.MethodPost, "/api/v1/nodes/:id/ssh/host-key/reset", h.NodeSSHHostKeyResetHandler),
