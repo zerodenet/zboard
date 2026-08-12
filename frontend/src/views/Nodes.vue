@@ -64,6 +64,7 @@
             <UiButton variant="secondary" size="sm" type="button" @click="openSSH(selectedNode)"><UiIcon name="key" />SSH 连接</UiButton>
             <UiButton variant="secondary" size="sm" type="button" :disabled="testingNode === selectedNode.id" @click="testSSH(selectedNode.id)"><UiIcon name="activity" />{{ testingNode === selectedNode.id ? '验证中…' : '验证 SSH' }}</UiButton>
             <UiButton variant="secondary" size="sm" type="button" :disabled="!selectedNode.ssh_host || !selectedNode.ssh_user" @click="openTerminal(selectedNode)"><UiIcon name="terminal" />打开终端</UiButton>
+            <UiButton variant="secondary" size="sm" type="button" :disabled="!selectedNode.ssh_verified_at" @click="diagnosticsOpen = true"><UiIcon name="search" />运行诊断</UiButton>
             <UiButton v-if="selectedNode.ssh_host_key_fingerprint" variant="danger" size="sm" type="button" @click="resetSSHHostKey(selectedNode)">重新信任主机</UiButton>
             <UiButton variant="danger" size="sm" type="button" :loading="deletingNode" @click="removeNode(selectedNode)"><UiIcon name="trash" />删除节点</UiButton>
           </div>
@@ -222,6 +223,7 @@
       <template #footer><UiButton type="button" @click="closeSecretModal">完成</UiButton></template>
     </ModalDialog>
 
+    <NodeRuntimeDiagnosticsModal :open="diagnosticsOpen" :node-id="selectedNode?.id || 0" :node-name="selectedNode?.name" :ssh-ready="Boolean(selectedNode?.ssh_verified_at)" @close="diagnosticsOpen = false" />
     <SshTerminalDialog :open="terminalOpen" :node="terminalNode" @close="terminalOpen = false" />
   </section>
 </template>
@@ -234,6 +236,7 @@ import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
 import MultiplierInput from '../components/MultiplierInput.vue'
+import NodeRuntimeDiagnosticsModal from '../components/NodeRuntimeDiagnosticsModal.vue'
 import OutputBlock from '../components/OutputBlock.vue'
 import PageAlert from '../components/PageAlert.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -290,6 +293,7 @@ const deletingNode = ref(false)
 const nodeLoad = ref<NodeLoadSnapshot | null>(null)
 const nodeLoadLoading = ref(false)
 const nodeLoadError = ref('')
+const diagnosticsOpen = ref(false)
 const detailSection = ref<'overview' | 'kernel' | 'protocols' | 'credentials'>('overview')
 const nodeDetailTabs = [
   { value: 'overview', label: '状态概览', icon: 'dashboard' },
@@ -632,6 +636,7 @@ async function changePage(value: { offset: number; limit: number }) { offset.val
 async function setSort(field: string) { const next = resolveSortField(field, nodeSortFields, 'id'); sortDirection.value = nextSortDirection(sortField.value, next, sortDirection.value, next === 'name' || next === 'region' ? 'asc' : 'desc'); sortField.value = next; offset.value = 0; clearSelection(); await syncURL(); await refresh() }
 async function setDensity(value: 'compact' | 'comfortable') { density.value = value; await syncURL(true) }
 async function selectNode(node: AdminNodeListItem) {
+  diagnosticsOpen.value = false
   detailLoadingID.value = node.id; error.value = ''
   detailError.value = ''; detailMessage.value = ''
   try {
@@ -640,7 +645,7 @@ async function selectNode(node: AdminNodeListItem) {
   } catch (e: any) { error.value = e?.response?.data?.message || '节点详情加载失败。' }
   finally { detailLoadingID.value = 0 }
 }
-async function closeDetail() { selectedNode.value = null; detailError.value = ''; detailMessage.value = ''; nodeProtocolOffset.value = 0; await syncURL() }
+async function closeDetail() { diagnosticsOpen.value = false; selectedNode.value = null; detailError.value = ''; detailMessage.value = ''; nodeProtocolOffset.value = 0; await syncURL() }
 async function removeNode(node: AdminNodeDetail) {
   if (!await confirmAction({
     title: '删除节点资产？',
@@ -726,6 +731,7 @@ async function copySecret() { try { await navigator.clipboard.writeText(secretMo
 
 watch([() => selectedNode.value?.id, detailSection, nodeProtocolOffset, nodeProtocolLimit], ([id, section], [previousID]) => {
   if (id !== previousID) {
+    diagnosticsOpen.value = false
     kernelState.value = null
     kernelOperations.value = []
     nodeEndpoints.value = []
