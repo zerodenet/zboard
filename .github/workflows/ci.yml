@@ -65,6 +65,8 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install
         run: pnpm install --frozen-lockfile --package-import-method=copy
+      - name: Normalize package permissions
+        run: chmod -R u+w node_modules/.pnpm
       - name: Test
         env:
           NODE_OPTIONS: --max-old-space-size=4096
