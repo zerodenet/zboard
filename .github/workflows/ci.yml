@@ -68,7 +68,7 @@ jobs:
       - name: Test
         env:
           NODE_OPTIONS: --max-old-space-size=4096
-        run: pnpm test -- --no-file-parallelism
+        run: pnpm test --no-file-parallelism
       - name: Typecheck and build
         run: pnpm build
 
