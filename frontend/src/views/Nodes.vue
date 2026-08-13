@@ -706,7 +706,7 @@ async function closeDetail() { diagnosticsOpen.value = false; selectedNode.value
 async function removeNode(node: AdminNodeDetail) {
   if (!await confirmAction({
     title: '删除节点资产？',
-    message: `将永久删除“${node.name}”的面板登记和节点凭证。请先删除该节点的协议服务、证书和 DNS 解析；远端 Zero 与服务器文件不会被卸载。`,
+    message: `将永久删除“${node.name}”以及 zboard 中由该节点承载的协议服务、证书、DNS 管理记录和运行状态。历史流量、任务与审计记录会保留；远端 Zero、证书文件和 DNS 服务商记录不会自动删除。`,
     confirmText: '确认删除',
     tone: 'danger',
   })) return
