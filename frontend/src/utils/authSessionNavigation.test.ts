@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
 
-const mainSource = readFileSync(fileURLToPath(new URL('../main.ts', import.meta.url)), 'utf8')
-const formStateSource = readFileSync(fileURLToPath(new URL('../composables/useFormState.ts', import.meta.url)), 'utf8')
+const mainSource = readFileSync(resolve(process.cwd(), 'src/main.ts'), 'utf8')
+const formStateSource = readFileSync(resolve(process.cwd(), 'src/composables/useFormState.ts'), 'utf8')
 
 describe('expired session navigation', () => {
   it('redirects mounted protected routes back to login with their current location', () => {
