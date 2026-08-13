@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
 
-const chartSource = readFileSync(fileURLToPath(new URL('./TrafficObservabilityChart.vue', import.meta.url)), 'utf8')
+const chartSource = readFileSync(resolve(process.cwd(), 'src/views/account/TrafficObservabilityChart.vue'), 'utf8')
 
 describe('TrafficObservabilityChart interactions', () => {
   it('exposes pointer and keyboard exploration', () => {
