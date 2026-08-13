@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { isAuthSessionExpired, resetAuthSessionExpired } from './authSession'
 import { normalizeApiErrorMessage, normalizeApiErrorPayload, normalizeApiFormError, normalizeApiMessage } from './apiError'
+
+beforeEach(() => resetAuthSessionExpired())
 
 describe('normalizeApiFormError', () => {
   it('accepts versioned field errors and maps only declared form fields', () => {
@@ -45,6 +48,26 @@ describe('normalizeApiFormError', () => {
       },
       data: { retained: true },
     })
+  })
+
+  it('marks the auth session expired for canonical 401 responses', () => {
+    expect(isAuthSessionExpired()).toBe(false)
+    normalizeApiErrorPayload({
+      code: 401,
+      message: '登录状态已失效。',
+      error: { version: 1, code: 'unauthenticated' },
+    })
+    expect(isAuthSessionExpired()).toBe(true)
+  })
+
+  it('also recognizes the stable unauthenticated code when the numeric envelope is absent', () => {
+    normalizeApiErrorPayload({ error: { version: 1, code: 'unauthenticated' } })
+    expect(isAuthSessionExpired()).toBe(true)
+  })
+
+  it('does not expire the session for validation or forbidden responses', () => {
+    normalizeApiErrorPayload({ code: 403, error: { version: 1, code: 'forbidden' } })
+    expect(isAuthSessionExpired()).toBe(false)
   })
 
   it('does not expose raw strings, non-localized messages or invalid error codes', () => {
