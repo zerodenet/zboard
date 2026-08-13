@@ -18,4 +18,12 @@ describe('TrafficObservabilityChart interactions', () => {
     expect(chartSource).toContain(':aria-pressed="seriesVisibility.upload"')
     expect(chartSource).toContain(':aria-pressed="seriesVisibility.download"')
   })
+
+  it('keeps edge tooltips inside the scrollable chart width', () => {
+    expect(chartSource).toContain('.chart-tooltip.from-left {\n  transform: translateX(0);')
+    expect(chartSource).toContain('.chart-tooltip.from-right {\n  transform: translateX(-100%);')
+    expect(chartSource).toContain('overflow-x: auto;')
+    expect(chartSource).not.toContain('transform: translateX(-90%);')
+    expect(chartSource).not.toContain('transform: translateX(-10%);')
+  })
 })
