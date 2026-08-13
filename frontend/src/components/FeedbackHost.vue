@@ -58,3 +58,7 @@ function onToastDismiss(event: ToastEvent) {
   dismissToast(id)
 }
 </script>
+
+<style scoped>
+:global(.p-toast) { z-index: var(--z-toast) !important; }
+</style>
