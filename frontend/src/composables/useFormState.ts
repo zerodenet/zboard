@@ -2,6 +2,7 @@ import { computed, isRef, nextTick, onBeforeUnmount, onMounted, reactive, ref, t
 import { onBeforeRouteLeave } from 'vue-router'
 import { confirmAction } from '../utils/feedback'
 import { normalizeApiFormError } from '../utils/apiError'
+import { isAuthSessionExpired } from '../utils/authSession'
 
 function snapshot(value: unknown): string {
   return JSON.stringify(value, (_key, item) => item === undefined ? null : item)
@@ -39,12 +40,13 @@ export function useUnsavedChangesGuard(
   const dirty = computed(isDirty)
 
   async function confirmNavigation() {
+    if (isAuthSessionExpired()) return true
     if (!dirty.value) return true
     return confirmLeave()
   }
 
   function handleBeforeUnload(event: BeforeUnloadEvent) {
-    if (!dirty.value) return
+    if (isAuthSessionExpired() || !dirty.value) return
     event.preventDefault()
     event.returnValue = true
   }
