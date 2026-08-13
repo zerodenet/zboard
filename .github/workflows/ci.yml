@@ -64,7 +64,22 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --package-import-method=copy
+      - name: Normalize package permissions
+        run: chmod -R u+w node_modules/.pnpm
+      - name: Test
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        # The excluded source-policy tests are the pre-existing baseline tracked by #57.
+        # Keep every other existing and future frontend test blocking CI.
+        run: |
+          pnpm test --no-file-parallelism \
+            --exclude src/theme/designTokens.test.ts \
+            --exclude src/views/commercePurchaseExperience.test.ts \
+            --exclude src/utils/adminRowActionsAudit.test.ts \
+            --exclude src/utils/catalogScalePolicy.test.ts \
+            --exclude src/utils/formPolicy.test.ts \
+            --exclude src/utils/frontendArchitecturePolicy.test.ts
       - name: Typecheck and build
         run: pnpm build
 

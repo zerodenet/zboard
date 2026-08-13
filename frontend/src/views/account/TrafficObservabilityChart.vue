@@ -678,11 +678,11 @@ function tooltipSideClass(index: number) {
 }
 
 .chart-tooltip.from-left {
-  transform: translateX(-10%);
+  transform: translateX(0);
 }
 
 .chart-tooltip.from-right {
-  transform: translateX(-90%);
+  transform: translateX(-100%);
 }
 
 .chart-tooltip.compact {

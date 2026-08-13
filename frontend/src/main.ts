@@ -7,6 +7,7 @@ import App from './App.vue'
 import { routes } from './router'
 import { useAppStore } from './stores/app'
 import { primeVueOptions } from './theme/primevue'
+import { AUTH_SESSION_EXPIRED_EVENT, resetAuthSessionExpired } from './utils/authSession'
 import './styles.css'
 import './styles/auth.css'
 import './styles/public.css'
@@ -62,6 +63,23 @@ const resolveMeta = (to: RouteLocationNormalized) => {
 }
 
 const roleLanding = (store: ReturnType<typeof useAppStore>) => store.isAdmin ? '/admin/dashboard' : '/account'
+
+window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, () => {
+  const store = useAppStore(pinia)
+  const current = router.currentRoute.value
+  store.clear()
+
+  // Initial navigation is still covered by the route guard below. For an already
+  // mounted protected route, move immediately instead of leaving a dead screen
+  // that only recovers after a manual refresh.
+  if (!current.meta.requiresAuth) {
+    resetAuthSessionExpired()
+    return
+  }
+
+  void router.replace({ path: '/login', query: { redirect: current.fullPath } })
+    .finally(resetAuthSessionExpired)
+})
 
 router.beforeEach(async (to) => {
   const store = useAppStore(pinia)
