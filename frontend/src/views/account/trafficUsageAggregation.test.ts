@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
 
-const routerSource = readFileSync(fileURLToPath(new URL('../../../../backend/internal/server/router.go', import.meta.url)), 'utf8')
+const routerSource = readFileSync(resolve(process.cwd(), '../backend/internal/server/router.go'), 'utf8')
 
 // This source-level guard keeps the shipped UI route bound to the aggregated
 // read model instead of accidentally reverting to raw accounting rows.
