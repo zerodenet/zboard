@@ -44,7 +44,7 @@
         icon="activity"
         :status="observability.peak_connections === null ? '未采集' : '区间峰值'"
         tone="info"
-        :meta="observability.peak_connections === null ? '等待内核提供用户级峰值采样' : '取筛选范围内的最高并发值'"
+        :meta="observability.peak_connections === null ? '当前范围暂无连接观测；旧版内核会保持未采集状态' : '取筛选范围内的最高并发值'"
       />
     </UiMetricStrip>
 
@@ -129,7 +129,7 @@
       <UiIcon name="activity" />
       <div>
         <strong>流量明细如何计算？</strong>
-        <p>明细由服务端按分钟和实际计费维度汇总，原始计费记录仍保留用于计费、审计与对账；趋势图按日期汇总，连接数仅取采样窗口和筛选区间内的峰值。</p>
+        <p>明细由服务端按分钟和实际计费维度汇总，原始计费记录仍保留用于计费、审计与对账；连接峰值由支持连接观测的内核上报绝对连接事实后，由 Zboard 按发生时间重放并聚合，旧版内核没有观测时保持未采集。</p>
       </div>
     </aside>
   </section>
