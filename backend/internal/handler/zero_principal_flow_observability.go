@@ -282,7 +282,7 @@ func (h *handlers) recordPrincipalFlowGenerationBoundary(nodeID uint, event zero
 		}
 
 		if err == nil {
-			if generation.CoreInstanceID == instanceID && generation.ClosedAt == nil {
+			if generation.CoreInstanceID == instanceID {
 				return nil
 			}
 			if !generation.StartedAt.IsZero() && observedAt.Before(generation.StartedAt) {
@@ -411,7 +411,7 @@ func ensurePrincipalFlowGeneration(tx *gorm.DB, nodeID uint, event zeroEventEnve
 		return false, err
 	}
 	if generation.CoreInstanceID == instanceID {
-		if generation.ClosedAt != nil && !observedAt.Before(*generation.ClosedAt) {
+		if generation.ClosedAt != nil {
 			return false, nil
 		}
 		return true, nil
