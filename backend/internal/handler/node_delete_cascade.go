@@ -6,23 +6,26 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 )
 
 type nodeDeleteCleanup struct {
-	ProtocolEndpoints     int64 `json:"protocol_endpoints"`
-	ProtocolDeployments   int64 `json:"protocol_deployments"`
-	ProtocolCredentials   int64 `json:"protocol_credentials"`
-	FlowUsage             int64 `json:"flow_usage"`
-	NodeGroupLinks        int64 `json:"node_group_links"`
-	CertificateLinks      int64 `json:"certificate_links"`
-	ManagedCertificates   int64 `json:"managed_certificates"`
-	CertificateOperations int64 `json:"certificate_operations"`
-	ManagedDNSRecords     int64 `json:"managed_dns_records"`
-	KernelOperations      int64 `json:"kernel_operations"`
-	KernelState           int64 `json:"kernel_state"`
+	ProtocolEndpoints       int64 `json:"protocol_endpoints"`
+	ProtocolDeployments     int64 `json:"protocol_deployments"`
+	ProtocolCredentials     int64 `json:"protocol_credentials"`
+	FlowUsage               int64 `json:"flow_usage"`
+	PrincipalFlowCurrents   int64 `json:"principal_flow_currents"`
+	PrincipalFlowGeneration int64 `json:"principal_flow_generation"`
+	NodeGroupLinks          int64 `json:"node_group_links"`
+	CertificateLinks        int64 `json:"certificate_links"`
+	ManagedCertificates     int64 `json:"managed_certificates"`
+	CertificateOperations   int64 `json:"certificate_operations"`
+	ManagedDNSRecords       int64 `json:"managed_dns_records"`
+	KernelOperations        int64 `json:"kernel_operations"`
+	KernelState             int64 `json:"kernel_state"`
 }
 
 type nodeCascadeDeleteResponse struct {
@@ -103,6 +106,19 @@ func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 				return err
 			}
 			cleanup.CertificateLinks += removed
+		}
+
+		if err := tx.Model(&principalFlowCurrent{}).Where("node_id = ?", node.ID).Count(&cleanup.PrincipalFlowCurrents).Error; err != nil {
+			return err
+		}
+		deletedAt := time.Now().UTC()
+		deleteEventID := fmt.Sprintf("node-delete-%d-%d", node.ID, deletedAt.UnixMilli())
+		if err := resetPrincipalFlowNodeProjection(tx, node.ID, "", deleteEventID, deletedAt, "node_deleted"); err != nil {
+			return err
+		}
+		cleanup.PrincipalFlowGeneration, err = deleteNodeScopedRows(tx, &principalFlowNodeGeneration{}, "node_id = ?", node.ID)
+		if err != nil {
+			return err
 		}
 
 		if cleanup.ProtocolCredentials, err = deleteNodeScopedRows(tx, &model.ProtocolCredential{}, "node_id = ?", node.ID); err != nil {
