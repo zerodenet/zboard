@@ -100,9 +100,15 @@ cd "`$CANDIDATE"
 set -a
 source "`$ROOT/.env"
 set +a
+export ZBOARD_ZERO_ARTIFACT_HOST_DIR="`${ZBOARD_ZERO_ARTIFACT_HOST_DIR:-`$ROOT/artifacts}"
+export ZBOARD_MANAGED_RULE_HOST_DIR="`${ZBOARD_MANAGED_RULE_HOST_DIR:-`$ROOT/managed-rules}"
+export ZBOARD_ZERO_EVENT_SPOOL_HOST_DIR="`${ZBOARD_ZERO_EVENT_SPOOL_HOST_DIR:-`$ROOT/zero-events}"
+export ZBOARD_ZERO_EVENT_SPOOL_BLUE_HOST_DIR="`${ZBOARD_ZERO_EVENT_SPOOL_BLUE_HOST_DIR:-`$ROOT/zero-events-blue}"
+export ZBOARD_ZERO_EVENT_SPOOL_GREEN_HOST_DIR="`${ZBOARD_ZERO_EVENT_SPOOL_GREEN_HOST_DIR:-`$ROOT/zero-events-green}"
 export ZBOARD_VERSION="`$VERSION"
 export ZBOARD_COMMIT=working-tree
 export ZBOARD_BUILD_TIME="`$BUILD_TIME"
+sh deploy/docker/prepare-host-dirs.sh
 docker compose -p zboard_next -f deploy/docker/docker-compose.yml build zboard
 
 docker exec "`$ZBOARD_EXTERNAL_MYSQL_CONTAINER" sh -c 'exec mysqldump -uroot -p"`$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers zboard' > "`$BACKUP_DIR/zboard-before-sync.sql"

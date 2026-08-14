@@ -31,8 +31,12 @@ type auditLogSummary struct {
 
 type auditLogDetail struct {
 	auditLogSummary
-	UserID uint   `json:"user_id,omitempty"`
+	UserID *uint  `json:"user_id,omitempty"`
 	Detail string `json:"detail,omitempty"`
+}
+
+func auditUserID(value uint) *uint {
+	return &value
 }
 
 func newAuditLogSummary(item model.AuditLog) auditLogSummary {

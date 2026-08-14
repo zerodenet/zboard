@@ -2034,7 +2034,7 @@ func (h *handlers) NodeSSHConfigHandler(w http.ResponseWriter, r *http.Request) 
 			return err
 		}
 		return tx.Create(&model.AuditLog{
-			UserID: claims.UserID,
+			UserID: auditUserID(claims.UserID),
 			Actor:  claims.Email,
 			Action: "node.ssh_config.update",
 			Target: fmt.Sprintf("node:%d", node.ID),
@@ -2283,7 +2283,7 @@ func (h *handlers) NodeReportCredentialRotateHandler(w http.ResponseWriter, r *h
 			return err
 		}
 		return tx.Create(&model.AuditLog{
-			UserID: claims.UserID,
+			UserID: auditUserID(claims.UserID),
 			Actor:  claims.Email,
 			Action: "node.traffic_credential.rotate",
 			Target: fmt.Sprintf("node:%d", node.ID),
@@ -2324,7 +2324,7 @@ func (h *handlers) NodeReportCredentialRevokeHandler(w http.ResponseWriter, r *h
 			return gorm.ErrRecordNotFound
 		}
 		return tx.Create(&model.AuditLog{
-			UserID: claims.UserID,
+			UserID: auditUserID(claims.UserID),
 			Actor:  claims.Email,
 			Action: "node.traffic_credential.revoke",
 			Target: fmt.Sprintf("node:%d", nodeID),
@@ -5621,7 +5621,7 @@ func (h *handlers) SubscriptionAccessRotateHandler(w http.ResponseWriter, r *htt
 			return err
 		}
 		return tx.Create(&model.AuditLog{
-			UserID: claims.UserID,
+			UserID: auditUserID(claims.UserID),
 			Actor:  claims.Email,
 			Action: "subscription_token.rotate",
 			Target: fmt.Sprintf("user:%d", claims.UserID),
@@ -7018,7 +7018,7 @@ func (h *handlers) requireAdmin(w http.ResponseWriter, r *http.Request) (authCla
 
 func createAuditLog(db *gorm.DB, claims authClaims, action, target, detail string) error {
 	return db.Create(&model.AuditLog{
-		UserID: claims.UserID,
+		UserID: auditUserID(claims.UserID),
 		Actor:  claims.Email,
 		Action: action,
 		Target: target,

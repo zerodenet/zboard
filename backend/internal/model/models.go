@@ -517,7 +517,7 @@ type TrafficRecord struct {
 
 type AuditLog struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
-	UserID    uint      `json:"user_id" gorm:"index"`
+	UserID    *uint     `json:"user_id,omitempty" gorm:"index"`
 	Actor     string    `json:"actor" gorm:"size:128"`
 	Action    string    `json:"action" gorm:"size:128"`
 	Target    string    `json:"target" gorm:"size:128"`

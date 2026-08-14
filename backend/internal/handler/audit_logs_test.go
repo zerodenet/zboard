@@ -12,7 +12,7 @@ import (
 
 func TestAuditLogSummaryOmitsDetailAndUserID(t *testing.T) {
 	item := model.AuditLog{
-		ID: 12, UserID: 9, Actor: "operator@example.invalid",
+		ID: 12, UserID: auditUserID(9), Actor: "operator@example.invalid",
 		Action: "order.pay", Target: "order:44",
 		Detail:    "provider_reference=visible-only-on-demand",
 		CreatedAt: time.Date(2026, 7, 23, 8, 0, 0, 0, time.UTC),
@@ -31,6 +31,20 @@ func TestAuditLogSummaryOmitsDetailAndUserID(t *testing.T) {
 		if !strings.Contains(text, required) {
 			t.Errorf("audit summary is missing %q: %s", required, text)
 		}
+	}
+}
+
+func TestAuditLogDetailOmitsNullableSystemUserID(t *testing.T) {
+	payload, err := json.Marshal(newAuditLogDetail(model.AuditLog{
+		ID:     14,
+		Actor:  "system",
+		Action: subscriptionClientTemplateSeedAction,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), `"user_id"`) {
+		t.Fatalf("system audit detail must keep the nullable user boundary: %s", payload)
 	}
 }
 
