@@ -63,6 +63,73 @@ Remaining gaps:
 
 ## Completed goals
 
+### 2026-08-11 - Zero event spool deployment recovery and nullable system audit
+
+Goal outcome:
+
+- Corrected the Go audit model to match the production schema's nullable
+  `audit_logs.user_id` foreign key. Authenticated administrator events retain
+  a concrete user pointer, while startup/system events persist SQL `NULL`
+  instead of the invalid synthetic user ID zero.
+- Added regression coverage that system audit detail omits the absent user
+  boundary without changing ordinary audit summaries or redaction.
+- Updated intranet synchronization to resolve every persistent artifact,
+  managed-rule and Zero event spool host directory below the stable remote
+  root when the target environment does not override it, and to run the
+  repository host-directory preparation step before building or switching.
+
+Verification:
+
+- `gofmt` completed for all changed Go files, `git diff --check` passed and
+  PowerShell AST parsing passed for `scripts/sync-intranet.ps1`.
+- Targeted Windows `go test` and `go vet` passed for `internal/model`,
+  `internal/handler` and `cmd/zboard`, including the nullable system-audit
+  regression. The complete backend `go test ./...` and `go vet ./...` then
+  passed in a Go 1.26.5 Alpine container against the deployed Linux source,
+  including every Zero event spool package test.
+
+Deployment incident and recovery:
+
+- The attempted `20260811T095229Z` deployment built the new image and created
+  a database backup, then Compose rejected the switch because the new Zero
+  event spool bind source did not exist. Automatic source rollback restarted
+  against the already-overwritten image tag.
+- The new image then failed startup because its built-in client-template seed
+  wrote an audit marker with `user_id=0`, violating the production foreign
+  key. Rebuilding the old source could not restore service because the newer
+  startup had already normalized template data with fields the old binary did
+  not recognize. No database rollback or manual data mutation was attempted.
+- Added non-secret stable main/blue/green spool paths to the real target
+  environment and prepared `/data/zboard-next/zero-events`,
+  `/data/zboard-next/zero-events-blue` and
+  `/data/zboard-next/zero-events-green` with mode 0750. The failed new image is
+  retained as `zboard_next-zboard:failed-20260811T095229Z` for diagnosis.
+
+Synchronization and deployed verification:
+
+- The corrected one-click synchronization exited successfully and deployed
+  `v0.0.1-20260811T131957Z-intranet-working-tree@2026-08-11T13:19:57Z`.
+  The final pre-switch database backup is
+  `/data/zboard-next/backups/20260811T131957Z/zboard-before-sync.sql` (86,684
+  bytes), previous source is
+  `/data/zboard-next/app-prev-20260811T131957Z`, and release archive is
+  `/data/zboard-next/releases/20260811T131957Z/source.tar.gz` (982,054 bytes).
+- Independent workstation requests returned the deployed version and
+  `/readyz` with `ready=true` and `db=true`. `zboard_next-zboard-1` is running
+  and healthy; external MySQL `db` and Redis `cache` are running.
+- The production seed marker exists exactly once with `user_id IS NULL`, and
+  recent application logs contain no route-registration failure. Docker
+  reports `/data/zboard-next/zero-events` as the spool mount source and a
+  bounded write/delete probe inside that mount succeeded. The root filesystem
+  retained 4.9 GB free immediately after deployment verification.
+
+Remaining gaps:
+
+- The failed deployment image and failed/candidate source paths remain for
+  bounded incident diagnosis and later history cleanup; they are not active
+  runtime state.
+- No Git staging, commit, push or release was performed.
+
 ### 2026-08-08 - Workstation-local one-click intranet deployment
 
 Goal outcome:
