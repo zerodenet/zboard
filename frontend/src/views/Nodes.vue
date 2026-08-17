@@ -847,7 +847,7 @@ watch([() => selectedNode.value?.id, detailSection, nodeProtocolOffset, nodeProt
     nodeLoadError.value = ''
     nodeProtocolTotal.value = 0
   }
-  if (section === 'kernel') { void loadKernel(id); void loadLatestRelease(); if (id && selectedNode.value?.ssh_verified_at) void loadBBR(id) } else kernelRequests.invalidate()
+  if (section === 'kernel') { void loadKernel(id); void loadLatestRelease() } else kernelRequests.invalidate()
   if (section === 'protocols') void loadNodeProtocols(id); else { protocolRequests.invalidate(); nodeProtocolsLoading.value = false }
 }, { immediate: true })
 watch(detailSection, (section) => { if (selectedNode.value && String(route.query.tab || 'overview') !== section) void syncURL() })
