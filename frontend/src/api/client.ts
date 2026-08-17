@@ -7,7 +7,7 @@ const tokenKey = 'zboard.auth.token'
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 8000
+  timeout: 30_000
 })
 
 api.interceptors.request.use((cfg) => {
@@ -1311,7 +1311,7 @@ export async function fetchSubscriptionsPage(params: { q?: string; userId?: numb
 export async function fetchAccountSubscriptionsPage(params: { status?: string; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminSubscriptionListItem>> {
   const query = new URLSearchParams()
   appendPageParams(query, params)
-  if (params.status) query.set('status', params.status)
+  if (params.status) query.set('status', String(params.status))
   const response = await api.get(`/subscriptions?${query}`, { signal: options.signal })
   return normalizePageResult<AdminSubscriptionListItem>(unwrap(response), params.offset || 0, params.limit || 25)
 }
