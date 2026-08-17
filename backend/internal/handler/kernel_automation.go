@@ -990,6 +990,9 @@ func (h *handlers) compileNodeRuntimeConfigWithOptions(node model.Node, apiKey, 
 		}
 		inbounds = append(inbounds, endpointInbounds...)
 	}
+	if len(inbounds) == 0 {
+		inbounds = append(inbounds, zeroBootstrapControlInbound())
+	}
 	config := map[string]interface{}{
 		"inbounds": inbounds,
 		"mode":     map[string]interface{}{"type": "rule"},
