@@ -213,7 +213,8 @@ func (h *handlers) authenticateZeroEvent(r *http.Request, sourceID string) (mode
 		return model.Node{}, errors.New("missing Zero event bearer credential")
 	}
 	var node model.Node
-	if err := h.db.First(&node, uint(id)).Error; err != nil || node.NodeCredentialRevokedAt != nil || node.NodeCredential == "" {
+	lookup := h.db.Where("id = ?", uint(id)).Limit(1).Find(&node)
+	if lookup.Error != nil || lookup.RowsAffected == 0 || node.NodeCredentialRevokedAt != nil || node.NodeCredential == "" {
 		return model.Node{}, errors.New("Zero event credential is unavailable")
 	}
 	expected, err := h.credentialCipher.Decrypt(node.NodeCredential)
