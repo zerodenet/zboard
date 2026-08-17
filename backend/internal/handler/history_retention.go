@@ -14,14 +14,14 @@ import (
 )
 
 const (
-	auditLogRetentionKey       = "audit_log_retention_days"
-	operationRetentionKey      = "operation_history_retention_days"
-	taskRetentionKey           = "task_history_retention_days"
-	defaultAuditRetentionDays  = 180
-	defaultOperationRetention  = 90
-	defaultTaskRetentionDays   = 90
-	historyRetentionMaxDays    = 3650
-	historyRetentionInterval   = 6 * time.Hour
+	auditLogRetentionKey      = "audit_log_retention_days"
+	operationRetentionKey     = "operation_history_retention_days"
+	taskRetentionKey          = "task_history_retention_days"
+	defaultAuditRetentionDays = 180
+	defaultOperationRetention = 90
+	defaultTaskRetentionDays  = 90
+	historyRetentionMaxDays   = 3650
+	historyRetentionInterval  = 6 * time.Hour
 )
 
 type historyRetentionRuntime struct {
@@ -43,41 +43,38 @@ var historyRetentionRegistry sync.Map
 func historyRetentionDefaults() []model.SystemConfig {
 	return []model.SystemConfig{
 		{
-			ConfigKey: auditLogRetentionKey,
-			Name: "审计日志保留天数",
-			Value: strconv.Itoa(defaultAuditRetentionDays),
-			ValueType: "int",
+			ConfigKey:   auditLogRetentionKey,
+			Name:        "审计日志保留天数",
+			Value:       strconv.Itoa(defaultAuditRetentionDays),
+			ValueType:   "int",
 			Description: "超过该天数的审计日志会自动清理；0 表示永久保留。",
-			IsPublic: false,
-			IsSecret: false,
-			Revision: 1,
+			IsPublic:    false,
+			IsSecret:    false,
+			Revision:    1,
 		},
 		{
-			ConfigKey: operationRetentionKey,
-			Name: "运行历史保留天数",
-			Value: strconv.Itoa(defaultOperationRetention),
-			ValueType: "int",
+			ConfigKey:   operationRetentionKey,
+			Name:        "运行历史保留天数",
+			Value:       strconv.Itoa(defaultOperationRetention),
+			ValueType:   "int",
 			Description: "超过该天数且已结束的节点操作、协议发布、证书与供应商操作会自动清理；0 表示永久保留。",
-			IsPublic: false,
-			IsSecret: false,
-			Revision: 1,
+			IsPublic:    false,
+			IsSecret:    false,
+			Revision:    1,
 		},
 		{
-			ConfigKey: taskRetentionKey,
-			Name: "运营任务保留天数",
-			Value: strconv.Itoa(defaultTaskRetentionDays),
-			ValueType: "int",
+			ConfigKey:   taskRetentionKey,
+			Name:        "运营任务保留天数",
+			Value:       strconv.Itoa(defaultTaskRetentionDays),
+			ValueType:   "int",
 			Description: "超过该天数且已完成的运营任务及任务项会自动清理；0 表示永久保留。",
-			IsPublic: false,
-			IsSecret: false,
-			Revision: 1,
+			IsPublic:    false,
+			IsSecret:    false,
+			Revision:    1,
 		},
 	}
 }
 
-// ReconcileHistoryRetentionDefaults seeds bounded retention for operational
-// history on both fresh and already-installed databases without overwriting an
-// operator's existing value.
 func (h *handlers) ReconcileHistoryRetentionDefaults() error {
 	for _, definition := range historyRetentionDefaults() {
 		var existing model.SystemConfig
@@ -90,14 +87,12 @@ func (h *handlers) ReconcileHistoryRetentionDefaults() error {
 		case err != nil:
 			return err
 		default:
-			// Keep the configured value/revision while allowing shipped metadata to
-			// describe the current behavior accurately after upgrades.
 			if err := h.db.Model(&existing).Updates(map[string]interface{}{
-				"name": definition.Name,
-				"value_type": definition.ValueType,
+				"name":        definition.Name,
+				"value_type":  definition.ValueType,
 				"description": definition.Description,
-				"is_public": false,
-				"is_secret": false,
+				"is_public":   false,
+				"is_secret":   false,
 			}).Error; err != nil {
 				return err
 			}
