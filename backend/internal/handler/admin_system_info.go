@@ -17,15 +17,15 @@ type adminProjectLink struct {
 }
 
 type adminSystemInfo struct {
-	Service       string             `json:"service"`
-	Version       string             `json:"version"`
-	ReleaseChannel string            `json:"release_channel"`
-	StartedAt     time.Time          `json:"started_at"`
-	UptimeSeconds int64              `json:"uptime_seconds"`
-	InstalledAt   time.Time          `json:"installed_at"`
-	License       map[string]string  `json:"license"`
-	Links         []adminProjectLink `json:"links"`
-	UpdateURL     string             `json:"update_url"`
+	Service        string             `json:"service"`
+	Version        string             `json:"version"`
+	ReleaseChannel string             `json:"release_channel"`
+	StartedAt      time.Time          `json:"started_at"`
+	UptimeSeconds  int64              `json:"uptime_seconds"`
+	InstalledAt    time.Time          `json:"installed_at"`
+	License        map[string]string  `json:"license"`
+	Links          []adminProjectLink `json:"links"`
+	UpdateURL      string             `json:"update_url"`
 }
 
 func (h *handlers) AdminSystemInfoHandler(w http.ResponseWriter, r *http.Request) {
@@ -53,8 +53,8 @@ func buildAdminSystemInfo(currentVersion string, installedAt, now time.Time) adm
 		UptimeSeconds:  int64(now.Sub(startedAt).Seconds()),
 		InstalledAt:    installedAt.UTC(),
 		License: map[string]string{
-			"spdx": "MPL-2.0",
-			"name": "Mozilla Public License 2.0",
+			"spdx":    "MPL-2.0",
+			"name":    "Mozilla Public License 2.0",
 			"edition": "open-source",
 		},
 		Links: []adminProjectLink{
@@ -63,6 +63,7 @@ func buildAdminSystemInfo(currentVersion string, installedAt, now time.Time) adm
 			{Label: "文档仓库", URL: "https://github.com/zerodenet/docs"},
 			{Label: "版本发布", URL: "https://github.com/zerodenet/zboard/releases"},
 			{Label: "问题反馈", URL: "https://github.com/zerodenet/zboard/issues"},
+			{Label: "Telegram 社区", URL: "https://t.me/zerodenet"},
 			{Label: "ZeroDeNet", URL: "https://github.com/zerodenet"},
 		},
 		UpdateURL: "https://github.com/zerodenet/zboard/releases",
