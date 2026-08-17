@@ -165,6 +165,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPost, "/api/v1/traffic/report", h.TrafficReportHandler),
 		newRoute(http.MethodPost, "/api/zero/events", h.ZeroEventObservabilityHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/dashboard", h.DashboardHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/dashboard/overview", h.DashboardOverviewHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/entity-references", h.AdminEntityReferencesHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/audit-logs", h.AuditLogsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/audit-logs/:id", h.AuditLogDetailHandler),
