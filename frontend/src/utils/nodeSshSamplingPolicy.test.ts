@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const nodesSource = readFileSync(
-  fileURLToPath(new URL('../views/Nodes.vue', import.meta.url)),
+  join(import.meta.dirname, '..', 'views', 'Nodes.vue'),
   'utf8',
 )
 
