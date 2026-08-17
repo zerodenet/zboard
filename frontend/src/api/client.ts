@@ -435,8 +435,8 @@ export async function detectNodeKernel(nodeId: number) {
   return unwrap(response)
 }
 
-export async function reconcileNodeKernel(nodeId: number, options?: { version?: string; allow_downgrade?: boolean }) {
-  const response = await api.post(`/nodes/${nodeId}/kernel/reconcile`, options || {}, { timeout: 300_000 })
+export async function reconcileNodeKernel(nodeId: number, options: { version: string; allow_downgrade?: boolean }): Promise<AdminTask> {
+  const response = await api.post(`/nodes/${nodeId}/kernel/reconcile`, options)
   return unwrap(response)
 }
 
@@ -1896,6 +1896,8 @@ export async function createNodeBatchOperation(payload: {
 	node_ids?: number[]
 	all_matching?: boolean
 	filters?: NodeBatchFilters
+	version?: string
+	allow_downgrade?: boolean
 	idempotency_key?: string
 }): Promise<AdminTask> {
 	const response = await api.post('/admin/node-operations', payload)
