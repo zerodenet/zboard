@@ -101,7 +101,8 @@ const navigationGroups: NavigationGroup[] = [
     { to: '/admin/tasks', label: '运营任务', icon: 'tasks' },
     { to: '/admin/operation-logs', label: '运行日志', icon: 'terminal' },
     { to: '/admin/audit-logs', label: '审计日志', icon: 'audit' },
-    { to: '/admin/settings', label: '系统设置', icon: 'settings' }
+    { to: '/admin/settings', label: '系统设置', icon: 'settings' },
+    { to: '/admin/about', label: '关于 Zboard', icon: 'info' }
   ] }
 ]
 
