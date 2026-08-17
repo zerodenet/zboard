@@ -13,18 +13,22 @@ import (
 // makes the managed systemd service unable to keep reporting after Zboard
 // removes the node identity and its Connector credential.
 func (h *handlers) stopManagedZeroBeforeNodeDelete(node model.Node) (bool, error) {
+	knownInstalled := false
 	var state model.NodeKernelState
 	if err := h.db.Where("node_id = ?", node.ID).First(&state).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, err
 		}
-		return false, err
+	} else {
+		knownInstalled = strings.TrimSpace(state.InstalledVersion) != ""
 	}
-	if strings.TrimSpace(state.InstalledVersion) == "" {
+	// Connector history is also evidence that a Zero process has been managed
+	// on this asset. This covers legacy/stale rows where kernel_state is absent.
+	if !knownInstalled && node.ConnectorLastSeenAt == nil {
 		return false, nil
 	}
 	if err := h.validateNodeSSH(node); err != nil {
-		return false, fmt.Errorf("Zero is installed but SSH is unavailable: %w", err)
+		return false, fmt.Errorf("managed Zero must be stopped but SSH is unavailable: %w", err)
 	}
 	conn, _, err := h.dialNodeSSH(node)
 	if err != nil {
