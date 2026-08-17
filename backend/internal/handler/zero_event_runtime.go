@@ -55,17 +55,24 @@ type zeroNodeProjection struct {
 
 func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 	h.StartCredentialExpiryWorker()
+	if err := h.ReconcileHistoryRetentionDefaults(); err != nil {
+		h.CloseCredentialExpiryWorker()
+		return err
+	}
+	h.StartHistoryRetentionWorker()
 	if !cfg.Enabled {
 		return nil
 	}
 	spool, err := zeroevent.NewFileSpool(cfg)
 	if err != nil {
+		h.CloseHistoryRetentionWorker()
 		h.CloseCredentialExpiryWorker()
 		return err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := spool.Start(ctx); err != nil {
 		cancel()
+		h.CloseHistoryRetentionWorker()
 		h.CloseCredentialExpiryWorker()
 		return err
 	}
@@ -78,6 +85,7 @@ func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 	if _, loaded := zeroEventRuntimeRegistry.LoadOrStore(h, runtime); loaded {
 		cancel()
 		_ = spool.Close()
+		h.CloseHistoryRetentionWorker()
 		h.CloseCredentialExpiryWorker()
 		return errors.New("Zero event spool is already configured")
 	}
@@ -87,6 +95,7 @@ func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 }
 
 func (h *handlers) CloseZeroEventSpool() error {
+	h.CloseHistoryRetentionWorker()
 	h.CloseCredentialExpiryWorker()
 	value, ok := zeroEventRuntimeRegistry.LoadAndDelete(h)
 	if !ok {
