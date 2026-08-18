@@ -17,6 +17,8 @@ const (
 	auditLogRetentionKey      = "audit_log_retention_days"
 	operationRetentionKey     = "operation_history_retention_days"
 	taskRetentionKey          = "task_history_retention_days"
+	systemTimezoneKey         = "system_timezone"
+	defaultSystemTimezone     = "UTC"
 	defaultAuditRetentionDays = 180
 	defaultOperationRetention = 90
 	defaultTaskRetentionDays  = 90
@@ -72,6 +74,16 @@ func historyRetentionDefaults() []model.SystemConfig {
 			IsSecret:    false,
 			Revision:    1,
 		},
+		{
+			ConfigKey:   systemTimezoneKey,
+			Name:        "系统时区",
+			Value:       defaultSystemTimezone,
+			ValueType:   "string",
+			Description: "系统级时间展示与日历语义使用的 IANA 时区，例如 Asia/Shanghai、UTC、America/Los_Angeles。历史时间戳仍以 UTC 存储，但会按该时区展示。",
+			IsPublic:    true,
+			IsSecret:    false,
+			Revision:    1,
+		},
 	}
 }
 
@@ -91,8 +103,8 @@ func (h *handlers) ReconcileHistoryRetentionDefaults() error {
 				"name":        definition.Name,
 				"value_type":  definition.ValueType,
 				"description": definition.Description,
-				"is_public":   false,
-				"is_secret":   false,
+				"is_public":   definition.IsPublic,
+				"is_secret":   definition.IsSecret,
 			}).Error; err != nil {
 				return err
 			}
