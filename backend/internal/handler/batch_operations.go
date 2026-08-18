@@ -37,6 +37,8 @@ type nodeBatchOperationRequest struct {
 	NodeIDs        []uint           `json:"node_ids,omitempty"`
 	AllMatching    bool             `json:"all_matching,omitempty"`
 	Filters        nodeBatchFilters `json:"filters,omitempty"`
+	Version        string           `json:"version,omitempty"`
+	AllowDowngrade bool             `json:"allow_downgrade,omitempty"`
 	IdempotencyKey string           `json:"idempotency_key,omitempty"`
 }
 
@@ -60,6 +62,8 @@ type operationTaskContent struct {
 	Actor             string            `json:"actor"`
 	NodeGroupID       uint              `json:"node_group_id,omitempty"`
 	LifecycleStatus   string            `json:"lifecycle_status,omitempty"`
+	KernelVersion     string            `json:"kernel_version,omitempty"`
+	AllowDowngrade    bool              `json:"allow_downgrade,omitempty"`
 	IsActive          *bool             `json:"is_active,omitempty"`
 	EndpointIDsByNode map[string][]uint `json:"endpoint_ids_by_node,omitempty"`
 }
@@ -82,6 +86,12 @@ func (h *handlers) NodeBatchOperationHandler(w http.ResponseWriter, r *http.Requ
 		taskType = taskTypeNodeDetect
 	case "reconcile":
 		taskType = taskTypeNodeReconcile
+		content.KernelVersion = strings.TrimSpace(req.Version)
+		content.AllowDowngrade = req.AllowDowngrade
+		if content.KernelVersion == "" {
+			BadRequest(w, "version is required for kernel reconcile")
+			return
+		}
 	case "activate":
 		taskType = taskTypeNodeLifecycle
 		content.LifecycleStatus = "active"
@@ -409,7 +419,13 @@ func (h *handlers) executeOperationTaskItem(task model.Task, item model.TaskItem
 	case taskTypeNodeDetect:
 		return h.executeNodeDetectTask(uint(targetID), claims)
 	case taskTypeNodeReconcile:
-		return h.executeNodeReconcileTask(uint(targetID), claims)
+		if strings.TrimSpace(content.KernelVersion) == "" {
+			return errors.New("node reconcile task is missing pinned kernel version")
+		}
+		return h.executeNodeReconcileTask(uint(targetID), claims, kernelReconcileRequest{
+			Version:        content.KernelVersion,
+			AllowDowngrade: content.AllowDowngrade,
+		})
 	case taskTypeNodeLifecycle:
 		return h.executeNodeLifecycleTask(uint(targetID), content.LifecycleStatus, claims, item.ID)
 	case taskTypeProtocolDeploy:
@@ -481,7 +497,7 @@ func (h *handlers) executeNodeDetectTask(nodeID uint, claims authClaims) error {
 	return err
 }
 
-func (h *handlers) executeNodeReconcileTask(nodeID uint, claims authClaims) error {
+func (h *handlers) executeNodeReconcileTask(nodeID uint, claims authClaims, request kernelReconcileRequest) error {
 	node, err := h.loadNode(nodeID)
 	if err != nil {
 		return err
@@ -495,7 +511,7 @@ func (h *handlers) executeNodeReconcileTask(nodeID uint, claims authClaims) erro
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	_, err = h.reconcileNodeKernel(ctx, node, &operation, kernelReconcileRequest{})
+	_, err = h.reconcileNodeKernel(ctx, node, &operation, request)
 	if err != nil {
 		_ = h.failKernelOperation(operation.ID, node.ID, operation.Phase, err)
 	}

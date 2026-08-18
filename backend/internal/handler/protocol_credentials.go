@@ -648,7 +648,9 @@ func (h *handlers) runtimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, p
 		return nil, err
 	}
 	if len(credentials) == 0 {
-		return nil, nil
+		if err := h.validateEndpointCredentialProjection(endpoint.ID, now); err != nil {
+			return nil, err
+		}
 	}
 	if !nativeAccess {
 		return h.legacyRuntimeInboundsForEndpoint(endpoint, protocol, credentials)

@@ -13,8 +13,8 @@ describe('admin API request deadline policy', () => {
     expect(clientSource).not.toContain('timeout: 8000')
   })
 
-  it('keeps explicit longer deadlines for long-running deployment operations', () => {
+  it('keeps explicit deadlines only for requests that still run synchronously', () => {
     expect(clientSource).toContain('{ timeout: 120_000 }')
-    expect(clientSource).toContain('{ timeout: 300_000 }')
+    expect(clientSource).not.toContain('`/nodes/${nodeId}/kernel/reconcile`, options, { timeout: 300_000 }')
   })
 })

@@ -8,13 +8,14 @@ const nodesSource = readFileSync(
 )
 
 describe('node SSH sampling policy', () => {
-  it('keeps host resource and BBR probes behind explicit operator actions', () => {
+  it('keeps host resource probes behind explicit operator actions', () => {
     expect(nodesSource).toContain('@click="loadNodeLoad(selectedNode.id)"')
-    expect(nodesSource).toContain('@click="loadBBR(selectedNode.id)"')
     expect(nodesSource).toContain('页面不会自动采样')
   })
 
-  it('does not bind SSH probes to node detail lifecycle watchers', () => {
+  it('loads BBR once when the operator enters kernel operations without introducing host-resource sampling', () => {
+    expect(nodesSource).toContain('@click="loadBBR(selectedNode.id)"')
+
     const watcherStart = nodesSource.indexOf(
       'watch([() => selectedNode.value?.id, detailSection, nodeProtocolOffset, nodeProtocolLimit]',
     )
@@ -25,6 +26,6 @@ describe('node SSH sampling policy', () => {
 
     const watcherSource = nodesSource.slice(watcherStart, watcherEnd)
     expect(watcherSource).not.toContain('loadNodeLoad(')
-    expect(watcherSource).not.toContain('loadBBR(')
+    expect(watcherSource).toContain('void loadBBR(id)')
   })
 })

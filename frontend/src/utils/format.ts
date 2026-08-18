@@ -1,3 +1,5 @@
+import { getDisplayTimeZone } from './timeZone'
+
 function byteFractionDigits(value: number): number {
   let digits = value >= 100 ? 0 : value >= 10 ? 1 : 2
   if (Number.isInteger(value)) return digits
@@ -34,7 +36,10 @@ export function formatDateTime(value?: string | null) {
   if (!value) return '—'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '无效时间'
-  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    timeZone: getDisplayTimeZone(),
+  }).format(date)
 }
 
 export function formatExactDateTime(value?: string | null) {
@@ -49,6 +54,7 @@ export function formatExactDateTime(value?: string | null) {
     minute: '2-digit',
     second: '2-digit',
     timeZoneName: 'short',
+    timeZone: getDisplayTimeZone(),
   }).format(date)
 }
 
@@ -78,7 +84,10 @@ export function formatCompactDateTime(value?: string | null, now = Date.now()) {
   const timestamp = date.getTime()
   if (Number.isNaN(timestamp)) return '无效时间'
   if (Math.abs(timestamp - now) < 7 * 24 * 60 * 60 * 1000) return formatRelativeTime(value, now)
-  return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    timeZone: getDisplayTimeZone(),
+  }).format(date)
 }
 
 export function formatNumber(value: number | undefined | null) {

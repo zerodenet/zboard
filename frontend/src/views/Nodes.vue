@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="节点资产" description="独立管理 VPS、运维通道、Zero 连接与计量凭证；协议服务在单独页面绑定节点。" eyebrow="Infrastructure">
+    <PageHeader title="节点资产" description="独立管理 VPS、运维通道、Connector、Zero 内核与计量凭证；协议服务在单独页面绑定节点。" eyebrow="Infrastructure">
       <template #actions>
         <PageRefreshButton label="刷新节点资产" :loading="loading" @click="refresh" />
         <UiButton  type="button" @click="openCreate"><UiIcon name="plus" />登记 VPS</UiButton>
@@ -14,13 +14,13 @@
         <WorkbenchFilterBar :active="Boolean(filters.q || filters.lifecycle || filters.connector)" @clear="resetFilters">
           <WorkbenchFilterInput v-model="filters.q" label="搜索" placeholder="名称、区域或地址" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="filters.lifecycle" label="生命周期" :options="lifecycleFilterOptions" @apply="applyFilters" />
-          <WorkbenchFilterSelect v-model="filters.connector" label="Zero 连接" :options="connectorFilterOptions" @apply="applyFilters" />
+          <WorkbenchFilterSelect v-model="filters.connector" label="Connector" :options="connectorFilterOptions" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
       <template #selection>
         <div v-if="selectedNodeIDs.length || selectionAllMatching" class="bulk-action-bar">
           <div><strong>已选择 {{ selectedNodeCount }} 个节点</strong><span v-if="selectionAllMatching">范围：当前全部筛选结果</span><span v-else>范围：已勾选行</span><UiButton v-if="canSelectAllMatching" variant="ghost" size="sm" type="button" @click="selectAllMatching">选择全部 {{ total }} 条筛选结果</UiButton></div>
-          <div><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'detect'" @click="runBatch('detect')"><UiIcon name="search" />批量检测</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'reconcile'" @click="runBatch('reconcile')"><UiIcon name="play" />批量对齐</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'maintenance'" @click="runBatch('maintenance')">设为维护</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'activate'" @click="runBatch('activate')">恢复启用</UiButton><UiButton variant="danger" size="sm" type="button" :loading="bulkBusy === 'retire'" @click="runBatch('retire')">批量退役</UiButton><UiButton variant="ghost" size="sm" type="button" @click="clearSelection">清除</UiButton></div>
+          <div><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'detect'" @click="runBatch('detect')"><UiIcon name="search" />批量检测</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'reconcile'" @click="openBatchKernelRollout"><UiIcon name="play" />批量升级 Zero</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'maintenance'" @click="runBatch('maintenance')">设为维护</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'activate'" @click="runBatch('activate')">恢复启用</UiButton><UiButton variant="danger" size="sm" type="button" :loading="bulkBusy === 'retire'" @click="runBatch('retire')">批量退役</UiButton><UiButton variant="ghost" size="sm" type="button" @click="clearSelection">清除</UiButton></div>
         </div>
       </template>
       <DataTable v-if="nodes.length" caption="节点资产列表；可按节点、区域和最近心跳排序，选择“查看”打开节点详情" :row-count="total" :density="density" :min-width="900" selectable table-class="workbench-table">
@@ -28,7 +28,7 @@
             <th class="selection-column"><UiCheckbox :model-value="allPageNodesSelected" :indeterminate="pageNodeSelectionIndeterminate" :disabled="selectionAllMatching" aria-label="选择当前页全部节点" @update:model-value="toggleCurrentNodePage" /></th>
             <SortableHeader field="name" label="节点" :sort-field="sortField" :direction="sortDirection" pinned="start" @sort="setSort" />
             <SortableHeader field="region" label="区域" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" />
-            <th data-column-priority="2">资产状态</th><th>Zero</th><th data-column-priority="3">SSH</th><th data-column-priority="2">内核</th><th class="numeric-column" data-column-priority="3">协议数</th>
+            <th data-column-priority="2">资产状态</th><th>Connector</th><th data-column-priority="3">SSH</th><th data-column-priority="2">内核</th><th class="numeric-column" data-column-priority="3">协议数</th>
             <SortableHeader field="last_seen_at" label="最近心跳" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" />
             <th class="table-action-column"><span class="sr-only">操作</span></th>
           </tr></thead>
@@ -38,9 +38,9 @@
               <td class="table-primary-column"><div class="cell-title"><strong>{{ node.name }}</strong><span class="mono">{{ node.address || '未设置地址' }}</span></div></td>
               <td data-column-priority="3">{{ node.region || '—' }}</td>
               <td data-column-priority="2"><StatusBadge :tone="lifecycleTone(node)" :icon="node.lifecycle_status === 'maintenance' ? 'settings' : undefined">{{ lifecycleLabel(node.lifecycle_status) }}</StatusBadge></td>
-              <td><StatusBadge :tone="node.connector_online ? 'success' : 'warning'" :icon="node.connector_online ? 'wifi' : 'alert'">{{ node.connector_online ? '在线' : '离线' }}</StatusBadge></td>
+              <td><StatusBadge :tone="node.connector_online ? 'success' : node.connector_last_seen_at ? 'warning' : 'neutral'" :icon="node.connector_online ? 'wifi' : node.connector_last_seen_at ? 'alert' : 'minus'">{{ node.connector_online ? '在线' : node.connector_last_seen_at ? '离线' : '未连接' }}</StatusBadge></td>
               <td data-column-priority="3"><StatusBadge :tone="node.ssh_verified_at ? 'success' : node.ssh_configured ? 'warning' : 'neutral'" icon="key">{{ node.ssh_verified_at ? '已验证' : node.ssh_configured ? '待验证' : '未配置' }}</StatusBadge></td>
-              <td data-column-priority="2"><StatusBadge :tone="kernelListTone(node.kernel_state?.status)" icon="activity">{{ kernelListLabel(node.kernel_state?.status) }}</StatusBadge></td>
+              <td data-column-priority="2"><div class="kernel-list-cell"><StatusBadge :tone="kernelListTone(node.kernel_state?.status)" icon="activity">{{ kernelListLabel(node.kernel_state?.status) }}</StatusBadge><span v-if="node.kernel_state?.installed_version" class="mono kernel-list-version" :title="node.kernel_state.installed_version">{{ compactZeroVersion(node.kernel_state.installed_version) }}</span></div></td>
               <td class="numeric-column" data-column-priority="3">{{ formatNumber(node.enabled_protocol_count) }}</td>
               <td data-column-priority="3"><TimeBadge :value="node.connector_last_seen_at" /></td>
               <td class="table-action-column"><UiButton variant="ghost" size="sm" type="button" :loading="detailLoadingID === node.id" :aria-label="`查看节点 ${node.name}`" @click="selectNode(node)">查看<UiIcon name="chevron" /></UiButton></td>
@@ -73,8 +73,8 @@
         <UiTabs v-model="detailSection" :items="nodeDetailTabs" label="节点详情分区" />
 
         <section v-if="detailSection === 'overview'" class="node-health-strip" aria-label="节点状态概览">
-          <StatusOverviewItem icon="activity" label="Zero 连接" :description="selectedNode.connector_last_seen_at ? '最近心跳' : '尚未连接'" :tone="selectedNode.connector_online ? 'success' : 'warning'" :status="selectedNode.connector_online ? '在线' : '离线'">
-            <template #description><template v-if="selectedNode.connector_last_seen_at">最近心跳 <TimeBadge :value="selectedNode.connector_last_seen_at" mode="relative" /></template><template v-else>尚未连接</template></template>
+          <StatusOverviewItem icon="activity" label="Connector" :description="selectedNode.connector_last_seen_at ? '最近事件' : '尚未连接'" :tone="selectedNode.connector_online ? 'success' : selectedNode.connector_last_seen_at ? 'warning' : 'neutral'" :status="selectedNode.connector_online ? '在线' : selectedNode.connector_last_seen_at ? '离线' : '未连接'">
+            <template #description><template v-if="selectedNode.connector_last_seen_at">最近事件 <TimeBadge :value="selectedNode.connector_last_seen_at" mode="relative" /></template><template v-else>尚未收到 Connector 事件</template></template>
           </StatusOverviewItem>
           <StatusOverviewItem icon="key" label="SSH 通道" :description="sshDescription(selectedNode)" :tone="selectedNode.ssh_verified_at ? 'success' : 'warning'" :status="selectedNode.ssh_verified_at ? '已验证' : '待验证'" />
           <StatusOverviewItem icon="shield" label="可信计量" :description="selectedNode.traffic_secret_prefix ? `凭证 ${selectedNode.traffic_secret_prefix}…` : '尚未创建凭证'" :tone="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at ? 'success' : 'warning'" :status="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at ? '已配置' : '未配置'" />
@@ -109,6 +109,10 @@
               <div><span>最后检测</span><strong><TimeBadge v-if="kernelState?.last_detected_at" :value="kernelState.last_detected_at" /><template v-else>从未</template></strong></div>
               <div><span>建议动作</span><strong>{{ kernelActionLabel(kernelState?.recommended_action) }}</strong></div>
             </div>
+            <PageAlert tone="info" :title="selectedNode.node_credential_prefix ? 'Zero 连接凭证已就绪' : '首次安装会自动准备连接凭证'">
+              <template v-if="selectedNode.node_credential_prefix">本次自动化将复用现有连接凭证 <code>{{ selectedNode.node_credential_prefix }}…</code>，不会自动轮换。</template>
+              <template v-else>Zboard 会在 Zero 启动前自动生成并激活连接凭证；如果安装或验收失败，该凭证会随本次 generation 一起回滚，无需先到“连接凭证”手工生成。</template>
+            </PageAlert>
             <OutputBlock v-if="kernelState?.last_error" :value="kernelState.last_error" label="内核错误" tone="danger" :max-length="360" />
             <div class="kernel-release-picker">
               <label for="node-kernel-release">安装版本</label>
@@ -136,7 +140,7 @@
               <div class="kernel-actions">
                 <UiButton variant="secondary" size="sm" type="button" :loading="bbrLoading" :disabled="bbrBusy || !selectedNode.ssh_verified_at" @click="loadBBR(selectedNode.id)"><UiIcon name="refresh" />检测 BBR</UiButton>
                 <UiButton size="sm" type="button" :loading="bbrBusy" :disabled="bbrLoading || !selectedNode.ssh_verified_at" @click="applyBBR"><UiIcon name="play" />{{ bbrState?.active && bbrState?.persistent ? '重新应用 BBR' : '启用 BBR' }}</UiButton>
-                <small>只维护 <code>/etc/sysctl.d/99-zboard-bbr.conf</code>，不会执行全局 <code>sysctl --system</code>。</small>
+                <small>进入“内核与运维”时会读取一次当前状态；也可以随时手动重新检测。只维护 <code>/etc/sysctl.d/99-zboard-bbr.conf</code>，不会执行全局 <code>sysctl --system</code>。</small>
               </div>
             </div>
             <div v-if="kernelOperations.length" class="kernel-history">
@@ -182,7 +186,7 @@
 
         <section v-else class="panel credential-workspace">
           <header class="panel-header"><div><h2>连接凭证</h2><p>凭证只在需要配置或轮换时操作，不与日常状态混排。</p></div></header>
-          <div class="credential-row"><span class="credential-icon"><UiIcon name="activity" /></span><div><strong>Zero 主动连接</strong><p v-if="selectedNode.node_credential_prefix">当前前缀 <code>{{ selectedNode.node_credential_prefix }}…</code></p><p v-else>用于心跳和命令领取，当前尚未生成。</p></div><div class="credential-actions"><UiButton variant="secondary" size="sm" type="button" @click="rotateConnector(selectedNode)">{{ selectedNode.node_credential_prefix ? '轮换' : '生成' }}</UiButton><UiButton v-if="selectedNode.node_credential_prefix && !selectedNode.node_credential_revoked_at" variant="danger" size="sm" type="button" @click="revokeConnector(selectedNode)">吊销</UiButton></div></div>
+          <div class="credential-row"><span class="credential-icon"><UiIcon name="activity" /></span><div><strong>Zero 主动连接</strong><p v-if="selectedNode.node_credential_prefix">当前前缀 <code>{{ selectedNode.node_credential_prefix }}…</code></p><p v-else>用于心跳和命令领取，当前尚未生成；首次 Zero 安装会自动生成并激活，无需提前手工创建。安装失败时会随本次 generation 一起回滚。</p></div><div class="credential-actions"><UiButton variant="secondary" size="sm" type="button" @click="rotateConnector(selectedNode)">{{ selectedNode.node_credential_prefix ? '轮换' : '手动生成' }}</UiButton><UiButton v-if="selectedNode.node_credential_prefix && !selectedNode.node_credential_revoked_at" variant="danger" size="sm" type="button" @click="revokeConnector(selectedNode)">吊销</UiButton></div></div>
           <div class="credential-row"><span class="credential-icon"><UiIcon name="shield" /></span><div><strong>流量上报</strong><p v-if="selectedNode.traffic_secret_prefix">当前前缀 <code>{{ selectedNode.traffic_secret_prefix }}…</code></p><p v-else>与 SSH、Zero 连接凭证独立，当前尚未生成。</p></div><div class="credential-actions"><UiButton variant="secondary" size="sm" type="button" @click="rotateReport(selectedNode)">{{ selectedNode.traffic_secret_prefix ? '轮换' : '生成' }}</UiButton><UiButton v-if="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at" variant="danger" size="sm" type="button" @click="revokeReport(selectedNode)">吊销</UiButton></div></div>
         </section>
       </main>
@@ -195,8 +199,8 @@
         <FormField v-slot="{ controlAttrs }" label="区域" name="create-node-region" :error="createErrors.fields.region"><UiInput v-model.trim="createForm.region" v-bind="controlAttrs" placeholder="Hong Kong" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="默认业务地址" name="create-node-address" hint="可选；新建协议时用作对外地址的初始值。" :error="createErrors.fields.address" full><UiInput v-model.trim="createForm.address" v-bind="controlAttrs" placeholder="edge.example.com" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="备注" hint="记录供应商、机房、用途或到期时间；不填写也保持与其他字段对齐。" full><UiTextarea v-model.trim="createForm.remark" v-bind="controlAttrs" rows="3" placeholder="供应商、机房、用途、到期时间等"></UiTextarea></FormField>
-        <label class="check-field field-full"><UiCheckbox v-model="createForm.enable_bbr" /><span>创建后启用 BBR</span></label>
-        <p v-if="createForm.enable_bbr" class="field-hint field-full">保存 VPS 后会继续打开 SSH 配置；SSH 与提权验证通过后才会修改远端系统，并可在“内核与运维”中重新检测或应用。</p>
+        <label class="check-field field-full"><UiCheckbox v-model="createForm.enable_bbr" /><span>节点接入后尝试启用 BBR（可选）</span></label>
+        <p class="field-hint field-full">保存 VPS 后会继续引导 SSH 验证与 Zero 初始化。BBR 仅在勾选时尝试启用，失败不会阻塞 Zero 安装，可稍后在“内核与运维”中重试。</p>
       </form>
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="node-create-form" type="submit" :loading="saving">保存 VPS</UiButton></template>
     </ModalDialog>
@@ -214,7 +218,19 @@
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="node-edit-form" type="submit" :loading="saving">保存</UiButton></template>
     </ModalDialog>
 
-    <ModalDialog :open="sshOpen" :dirty="sshState.dirty.value" title="SSH 与系统权限" :description="pendingBBRNodeID === sshForm.node_id ? '保存后会先验证 SSH 与提权能力，再执行 BBR 初始化；任何一步失败都会明确停止。' : '登录凭证和系统提权分开管理；只有安装、systemd 与协议配置等系统操作会提权。'" size="lg" :busy="saving" @close="sshOpen = false">
+    <ModalDialog :open="batchKernelOpen" title="批量升级 Zero" description="为所选 VPS 固定一个目标版本，并由 Zboard 后台任务并发执行；关闭或刷新浏览器不会取消已接受的升级。" :busy="bulkBusy === 'reconcile'" @close="batchKernelOpen = false">
+    <div class="form-grid">
+      <FormField label="目标版本" full>
+        <UiSelect v-model="batchReleaseVersion" :options="batchReleaseOptions" :disabled="releaseLoading || bulkBusy === 'reconcile'" />
+      </FormField>
+      <PageAlert class="field-full" tone="info" title="后台滚动执行">将对 {{ selectedNodeCount }} 台 VPS 创建一个持久化任务，服务端最多并发处理 4 台。单台失败只回滚该节点，其余节点继续。</PageAlert>
+      <label class="check-field field-full"><UiCheckbox v-model="batchAllowDowngrade" /><span>允许将高于目标版本的节点显式降级</span></label>
+      <p class="field-hint field-full">未勾选时，高于目标版本的节点会单独失败，不会自动降级。目标版本在任务创建时固定为 {{ batchSelectedRelease?.tag || '尚未选择' }}。</p>
+    </div>
+    <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="bulkBusy === 'reconcile'" @click="requestClose">取消</UiButton><UiButton type="button" :loading="bulkBusy === 'reconcile'" :disabled="!batchReleaseVersion" @click="submitBatchKernelRollout">创建升级任务</UiButton></template>
+  </ModalDialog>
+
+    <ModalDialog :open="sshOpen" :dirty="sshState.dirty.value" title="SSH 与系统权限" :description="pendingBBRNodeID === sshForm.node_id ? '保存后会先验证 SSH 与提权能力并继续 Zero 初始化；BBR 仅作为可选优化独立尝试，失败不会阻塞节点接入。' : '登录凭证和系统提权分开管理；只有安装、systemd 与协议配置等系统操作会提权。'" size="lg" :busy="saving" @close="sshOpen = false">
       <form id="ssh-form" ref="sshFormElement" class="form-grid" novalidate @submit.prevent="saveSSH">
         <PageAlert v-if="sshErrors.formError.value" class="field-full" tone="danger" title="无法保存 SSH 配置">{{ sshErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="SSH 主机" name="node-ssh-host" :error="sshErrors.fields.ssh_host" required><UiInput v-model.trim="sshForm.ssh_host" v-bind="controlAttrs" placeholder="192.0.2.10" /></FormField>
@@ -245,7 +261,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createNode, createNodeBatchOperation, deleteNode, detectNodeKernel, fetchNode, fetchNodeKernel, fetchNodeLoad, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type NodeLoadSnapshot, type ZeroReleaseOption } from '../api/client'
+import { createNode, createNodeBatchOperation, deleteNode, detectNodeKernel, fetchAdminTask, fetchNode, fetchNodeKernel, fetchNodeLoad, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type NodeLoadSnapshot, type ZeroReleaseOption } from '../api/client'
 import { enableNodeBBR, fetchNodeSystemActions, type NodeBBRState } from '../api/nodeSystemActions'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
@@ -278,8 +294,9 @@ import { formatBytes, formatNumber, formatUnknownValue } from '../utils/format'
 import { normalizeOutput, truncateOutput } from '../utils/output'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 import { createRequestGuard } from '../utils/request'
-import { trackAdminTask } from '../utils/taskTracker'
+import { trackAdminTask, updateTrackedTask } from '../utils/taskTracker'
 import { collectFieldErrors, isBlank, isIntegerInRange, isOneOf } from '../utils/validation'
+import { compactZeroVersion } from '../utils/zeroVersion'
 
 const route = useRoute()
 const router = useRouter()
@@ -300,7 +317,7 @@ const sortDirection = ref<'asc' | 'desc'>(resolveSortDirection(route.query.direc
 const density = ref<'compact' | 'comfortable'>(resolveTableDensity(route.query.density))
 const lifecycleOptions = [{ label: '正常', value: 'active' }, { label: '维护', value: 'maintenance' }, { label: '退役', value: 'retired' }]
 const lifecycleFilterOptions = [{ label: '全部生命周期', value: '' }, ...lifecycleOptions]
-const connectorFilterOptions = [{ label: '全部连接状态', value: '' }, { label: 'Zero 在线', value: 'online' }, { label: 'Zero 离线', value: 'offline' }]
+const connectorFilterOptions = [{ label: '全部连接状态', value: '' }, { label: 'Connector 在线', value: 'online' }, { label: 'Connector 离线', value: 'offline' }]
 const sshAuthOptions = [{ label: '密码', value: 'password' }, { label: '私钥', value: 'private_key' }]
 const sshPrivilegeOptions = [{ label: '直接登录 root', value: 'none' }, { label: 'sudo 提权', value: 'sudo' }, { label: 'su 切换 root', value: 'su' }]
 const selectedNode = ref<AdminNodeDetail | null>(null)
@@ -322,6 +339,7 @@ const message = ref('')
 const detailMessage = ref('')
 const detailError = ref('')
 const createOpen = ref(false), editOpen = ref(false), sshOpen = ref(false)
+const batchKernelOpen = ref(false), batchReleaseVersion = ref(''), batchAllowDowngrade = ref(false)
 const terminalOpen = ref(false), terminalNode = ref<any>(null)
 const kernelState = ref<NodeKernelState | null>(null), kernelOperations = ref<NodeKernelOperation[]>([])
 const bbrState = ref<NodeBBRState | null>(null), bbrLoading = ref(false), bbrBusy = ref(false)
@@ -344,6 +362,12 @@ const releaseOptions = computed(() => zeroReleases.value.map(item => ({
   value: item.version,
   disabled: !releaseCompatible(item),
 })))
+const batchReleaseOptions = computed(() => zeroReleases.value.map(item => ({
+  label: `${item.tag}${item.prerelease ? '（预发布）' : ''} · ${[item.gnu_available ? 'GNU' : '', item.musl_available ? 'musl' : ''].filter(Boolean).join(' / ')}`,
+  value: item.version,
+  disabled: !item.gnu_available && !item.musl_available,
+})))
+const batchSelectedRelease = computed(() => zeroReleases.value.find(item => item.version === batchReleaseVersion.value) || null)
 const selectedIsDowngrade = computed(() => Boolean(
   selectedReleaseVersion.value
   && kernelState.value?.installed_version
@@ -519,8 +543,8 @@ function compareKernelVersions(left: string, right: string) {
 }
 function operationLabel(value?: string) { return ({ detect: '环境检测', reconcile: '状态对齐', install: '安装', upgrade: '升级', downgrade: '降级', repair: '修复', configure: '配置同步', none: '状态确认' } as Record<string, string>)[value || 'reconcile'] || formatUnknownValue('操作', value) }
 function operationSummary(operation: NodeKernelOperation) { return truncateOutput(normalizeOutput(operation.result_summary || operation.error || kernelPhaseLabel(operation.phase)), 220) }
-async function runBatch(action: 'detect' | 'reconcile' | 'activate' | 'maintenance' | 'retire') {
-  const labels = { detect: '检测节点状态', reconcile: '对齐 Zero 内核', activate: '恢复启用节点', maintenance: '将节点设为维护', retire: '退役节点' }
+async function runBatch(action: 'detect' | 'activate' | 'maintenance' | 'retire') {
+  const labels = { detect: '检测节点状态', activate: '恢复启用节点', maintenance: '将节点设为维护', retire: '退役节点' }
   const count = selectedNodeCount.value
   const accepted = await confirmAction({ title: labels[action], message: `将对 ${count} 个节点创建后台任务。请求被接受后可以离开页面，最终成功、失败和部分失败会持续显示。`, confirmText: action === 'retire' ? '确认退役' : '创建任务', tone: action === 'retire' ? 'danger' : 'primary' })
   if (!accepted) return
@@ -531,7 +555,33 @@ async function runBatch(action: 'detect' | 'reconcile' | 'activate' | 'maintenan
   } catch (e: any) { error.value = e?.response?.data?.message || '批量节点任务创建失败。' }
   finally { bulkBusy.value = '' }
 }
-function kernelPhaseLabel(value?: string) { return ({ queued: '排队中…', detecting: '检测中…', resolving_release: '匹配制品…', downloading: '校验制品…', staging: '暂存并切换…', verifying: '本地健康检查…', waiting_connector_event: '等待 Connector 事件…', waiting_heartbeat: '等待兼容心跳…', completed: '已完成' } as Record<string, string>)[value || 'queued'] || '处理中…' }
+async function openBatchKernelRollout() {
+  bulkBusy.value = 'reconcile'; error.value = ''; message.value = ''
+  await loadLatestRelease()
+  bulkBusy.value = ''
+  batchReleaseVersion.value = zeroReleases.value[0]?.version || ''
+  batchAllowDowngrade.value = false
+  if (!batchReleaseVersion.value) { error.value = '没有可用于批量升级的 Zero 发布版本。'; return }
+  batchKernelOpen.value = true
+}
+async function submitBatchKernelRollout() {
+  if (!batchReleaseVersion.value) return
+  bulkBusy.value = 'reconcile'; error.value = ''; message.value = ''
+  try {
+    const task = await createNodeBatchOperation({
+      action: 'reconcile',
+      version: batchReleaseVersion.value,
+      allow_downgrade: batchAllowDowngrade.value,
+      ...(selectionAllMatching.value ? { all_matching: true, filters: { q: filters.q || undefined, lifecycle_status: filters.lifecycle || undefined, connector_online: filters.connector ? filters.connector === 'online' : undefined } } : { node_ids: selectedNodeIDs.value }),
+    })
+    trackAdminTask(task)
+    batchKernelOpen.value = false
+    clearSelection()
+    message.value = `Zero 批量升级任务 #${task.id} 已接受；目标 ${batchSelectedRelease.value?.tag || batchReleaseVersion.value}，浏览器可安全离开。`
+  } catch (e: any) { error.value = e?.response?.data?.message || 'Zero 批量升级任务创建失败。' }
+  finally { bulkBusy.value = '' }
+}
+function kernelPhaseLabel(value?: string) { return ({ queued: '排队中…', detecting: '检测中…', resolving_release: '匹配制品…', preparing_connector_credential: '准备连接凭证…', downloading: '校验制品…', staging: '暂存并切换…', verifying: '本地健康检查…', waiting_connector_event: '等待 Connector 事件…', waiting_heartbeat: '等待兼容心跳…', completed: '已完成' } as Record<string, string>)[value || 'queued'] || '处理中…' }
 
 async function loadKernel(nodeID?: number) {
   const request = kernelRequests.begin()
@@ -630,41 +680,51 @@ function formatUptime(seconds: number) { const days = Math.floor(seconds / 86400
 async function saveMultiplier(endpoint: any) { const milli = Math.round(Number(multiplierDrafts[endpoint.id])); if (!Number.isFinite(milli) || milli < 1 || milli > 100000) { detailError.value = '计费倍率必须在 0.001× 到 100× 之间。'; return }; savingMultiplierID.value = endpoint.id; detailError.value = ''; detailMessage.value = ''; try { const updated = await updateProtocolEndpointMultiplier(endpoint.id, milli); endpoint.multiplier_milli = updated.multiplier_milli; multiplierDrafts[endpoint.id] = updated.multiplier_milli; detailMessage.value = `${endpoint.name} 的计费倍率已更新为 ${updated.multiplier_milli / 1000}×。` } catch (e: any) { detailError.value = e?.response?.data?.message || '计费倍率保存失败。' } finally { savingMultiplierID.value = 0 } }
 async function detectKernel() { if (!selectedNode.value) return; kernelBusy.value = 'detect'; detailError.value = ''; detailMessage.value = ''; try { const result = await detectNodeKernel(selectedNode.value.id); kernelState.value = result.state; detailMessage.value = 'Zero 内核检测完成，页面显示的是服务器真实状态。'; await loadKernel(selectedNode.value.id) } catch (e: any) { detailError.value = e?.response?.data?.message || 'Zero 内核检测失败。'; await loadKernel(selectedNode.value.id) } finally { kernelBusy.value = '' } }
 function stopKernelPolling() { if (kernelPollTimer !== undefined) { window.clearInterval(kernelPollTimer); kernelPollTimer = undefined } }
-function startKernelPolling(nodeID: number) {
+function startKernelPolling(nodeID: number, taskID: number) {
   stopKernelPolling()
   kernelPollTimer = window.setInterval(async () => {
-    if (kernelBusy.value !== 'reconcile' || selectedNode.value?.id !== nodeID) return
     try {
-      const result = await fetchNodeKernel(nodeID)
-      if (kernelBusy.value === 'reconcile' && selectedNode.value?.id === nodeID) {
+      const [task, result] = await Promise.all([fetchAdminTask(taskID), fetchNodeKernel(nodeID)])
+      updateTrackedTask(task)
+      if (selectedNode.value?.id === nodeID) {
         kernelState.value = result.state
         kernelOperations.value = result.operations || []
       }
-    } catch { /* The reconcile request remains the source of the final error. */ }
-  }, 1000)
+      if (task.status >= 2) {
+        stopKernelPolling()
+        kernelBusy.value = ''
+        if (task.status === 2) detailMessage.value = `Zero 后台任务 #${taskID} 已完成并通过节点验收。`
+        else detailError.value = task.errors || `Zero 后台任务 #${taskID} 执行失败，请查看任务详情。`
+        await refresh()
+      }
+    } catch { /* TaskTray remains the durable progress surface if this page poll is interrupted. */ }
+  }, 1500)
 }
 async function reconcileKernel() {
   if (!selectedNode.value || !selectedRelease.value) return
   const nodeID = selectedNode.value.id
   const target = selectedRelease.value.tag
   const downgrade = selectedIsDowngrade.value
+  const credentialMessage = selectedNode.value.node_credential_prefix
+    ? `将复用现有 Zero 连接凭证 ${selectedNode.value.node_credential_prefix}…，自动化不会轮换。`
+    : '当前尚无 Zero 连接凭证；本次任务会在 Zero 启动前自动生成并激活，若安装或验收失败会自动回滚该凭证。'
   const accepted = await confirmAction({
     title: downgrade ? '确认降级 Zero 内核' : '对齐 Zero 内核',
-    message: `将把这台 VPS 的 Zero ${downgrade ? '显式降级' : '对齐'}到 ${target} 及当前启用协议配置。操作会校验制品、systemd、控制通道和已认证 Connector 事件，失败自动回滚。`,
-    confirmText: downgrade ? '确认降级' : '开始对齐',
+    message: `将把这台 VPS 的 Zero ${downgrade ? '显式降级' : '对齐'}到 ${target} 及当前启用协议配置。${credentialMessage} 提交后由 Zboard 后台执行，关闭或刷新浏览器不会取消任务；单机验收失败仍自动回滚。`,
+    confirmText: downgrade ? '确认降级' : '创建后台任务',
     tone: downgrade ? 'danger' : 'primary',
   })
   if (!accepted) return
-  kernelBusy.value = 'reconcile'; detailError.value = ''; detailMessage.value = ''; startKernelPolling(nodeID)
+  kernelBusy.value = 'reconcile'; detailError.value = ''; detailMessage.value = ''
   try {
-    const result = await reconcileNodeKernel(nodeID, { version: selectedRelease.value.version, allow_downgrade: downgrade })
-    detailMessage.value = result.changed ? `Zero 已完成${operationLabel(result.action)}到 ${target}，并通过本地健康与 Connector 验收。` : `Zero ${target} 二进制与配置已是期望状态，无需变更。`
-    await Promise.all([refresh(), loadKernel(nodeID), loadLatestRelease(true)])
+    const task = await reconcileNodeKernel(nodeID, { version: selectedRelease.value.version, allow_downgrade: downgrade })
+    trackAdminTask(task)
+    detailMessage.value = `Zero 后台任务 #${task.id} 已接受，目标 ${target}；可以安全离开或刷新页面。`
+    startKernelPolling(nodeID, task.id)
   } catch (e: any) {
-    detailError.value = e?.response?.data?.message || 'Zero 自动化操作失败；请查看操作记录中的阶段与错误。'
+    kernelBusy.value = ''
+    detailError.value = e?.response?.data?.message || 'Zero 后台任务创建失败。'
     await loadKernel(nodeID)
-  } finally {
-    stopKernelPolling(); kernelBusy.value = ''
   }
 }
 function adminContextLink(path: string, query: Record<string, string>) { return withAdminReturnTo(path, route.fullPath, query) }
@@ -739,11 +799,11 @@ async function create() {
     const node = await createNode({ name: createForm.name, region: createForm.region, address: createForm.address, remark: createForm.remark })
     Object.assign(createForm, { name: '', region: '', address: '', remark: '', enable_bbr: false })
     createOpen.value = false; offset.value = 0; await refresh(); selectedNode.value = await fetchNode(node.id); await syncURL(true)
-    if (wantsBBR) {
-      pendingBBRNodeID.value = node.id
-      message.value = 'VPS 已登记；请完成 SSH 配置，验证通过后将自动启用 BBR。'
-      openSSH(selectedNode.value)
-    } else message.value = 'VPS 已登记；协议服务可在协议页面单独创建。'
+    pendingBBRNodeID.value = wantsBBR ? node.id : 0
+    message.value = wantsBBR
+      ? 'VPS 已登记；请完成 SSH 配置。验证通过后将继续 Zero 初始化，并尝试启用 BBR。'
+      : 'VPS 已登记；请完成 SSH 配置。验证通过后将继续 Zero 初始化。'
+    openSSH(selectedNode.value)
   } catch (e: any) { await createErrors.applyApiError(e, '节点登记失败，请检查表单内容。', createFormElement, nodeCreateFieldMap) } finally { saving.value = false }
 }
 function openEdit(node: any) { Object.assign(editForm, { id: node.id, name: node.name, region: node.region || '', address: node.address || '', remark: node.remark || '', lifecycle_status: node.lifecycle_status || 'active', is_enabled: Boolean(node.is_enabled) }); editErrors.clear(); editState.markClean(); editOpen.value = true }
@@ -759,31 +819,45 @@ async function saveNode() {
 }
 function openSSH(node: any) { const privilegeMode = node.ssh_privilege_mode || 'none'; const authMethod = node.ssh_auth_method || 'password'; Object.assign(sshForm, { node_id: node.id, ssh_host: node.ssh_host || '', ssh_port: node.ssh_port || 22, ssh_user: node.ssh_user || 'root', ssh_auth_method: authMethod, original_auth_method: authMethod, ssh_password: '', ssh_private_key: '', ssh_private_key_passphrase: '', clearPassphrase: false, hasCredential: Boolean(node.ssh_configured), ssh_privilege_mode: privilegeMode, ssh_privilege_password: '', hasPrivilegePassword: Boolean(node.ssh_privilege_password_configured), passwordlessSudo: privilegeMode === 'sudo' && !node.ssh_privilege_password_configured }); sshErrors.clear(); sshState.markClean(); sshOpen.value = true }
 function openTerminal(node: any) { terminalNode.value = node; terminalOpen.value = true }
-async function runPendingBBRInitialization(nodeID: number) {
-  testingNode.value = nodeID
-  try {
-    const result = await testNodeSSH(nodeID)
-    message.value = `SSH 验证成功（${result.latency_ms || 0}ms），正在应用 BBR…`
-    await refresh()
-    if (selectedNode.value?.id === nodeID) selectedNode.value = await fetchNode(nodeID)
-  } catch (e: any) {
-    detailError.value = e?.response?.data?.message || 'SSH 配置已保存，但验证失败；修正 SSH 后将继续 BBR 初始化。'
-    message.value = 'VPS 已登记，但 BBR 尚未执行：SSH 验证未通过。'
-    return
-  } finally { testingNode.value = 0 }
-
+async function runOptionalBBRInitialization(nodeID: number) {
   bbrBusy.value = true
   try {
     const snapshot = await enableNodeBBR(nodeID)
-    bbrState.value = snapshot.bbr
-    pendingBBRNodeID.value = 0
-    detailMessage.value = 'SSH 已验证，BBR 已启用并完成状态复核。'
-    message.value = 'VPS 已登记，SSH 已验证，BBR 初始化完成。'
+    if (selectedNode.value?.id === nodeID) {
+      bbrState.value = snapshot.bbr
+      detailMessage.value = 'BBR 已启用并完成状态复核；Zero 初始化不受影响。'
+    }
   } catch (e: any) {
-    pendingBBRNodeID.value = 0
-    detailError.value = e?.response?.data?.message || 'SSH 已验证，但 BBR 初始化失败；可在“内核与运维”中重试。'
-    message.value = 'VPS 与 SSH 已完成，但 BBR 初始化未成功。'
+    const warning = e?.response?.data?.message || 'BBR 初始化失败，可稍后重试。'
+    if (selectedNode.value?.id === nodeID) detailError.value = `BBR 未完成：${warning} Zero 初始化不受影响。`
   } finally { bbrBusy.value = false }
+}
+async function runNodeOnboardingAfterSSHSave(nodeID: number) {
+  testingNode.value = nodeID
+  detailError.value = ''
+  detailMessage.value = ''
+  try {
+    const result = await testNodeSSH(nodeID)
+    message.value = `SSH 验证成功（${result.latency_ms || 0}ms），正在准备 Zero 初始化…`
+    await refresh()
+    if (selectedNode.value?.id === nodeID) selectedNode.value = await fetchNode(nodeID)
+  } catch (e: any) {
+    detailError.value = e?.response?.data?.message || 'SSH 配置已保存，但验证失败；修正 SSH 后再继续 Zero 初始化。'
+    message.value = 'VPS 已登记，但 SSH 尚未验证，Zero 初始化未开始。'
+    return
+  } finally { testingNode.value = 0 }
+
+  const enableBBRAfterBootstrap = pendingBBRNodeID.value === nodeID
+  pendingBBRNodeID.value = 0
+  if (selectedNode.value?.id === nodeID) {
+    detailSection.value = 'kernel'
+    await syncURL(true)
+    await Promise.all([loadKernel(nodeID), loadLatestRelease()])
+  }
+  message.value = enableBBRAfterBootstrap
+    ? 'SSH 已验证；请继续安装 Zero。首次安装会自动生成并激活连接凭证，无需提前创建；BBR 将独立尝试启用。'
+    : 'SSH 已验证；请继续安装 Zero 完成节点接入。首次安装会自动生成并激活连接凭证，无需提前创建。'
+  if (enableBBRAfterBootstrap) void runOptionalBBRInitialization(nodeID)
 }
 async function saveSSH() {
   sshForm.ssh_host = sshForm.ssh_host.trim()
@@ -812,8 +886,7 @@ async function saveSSH() {
     await updateNodeSSH(nodeID, payload)
     sshOpen.value = false
     await refresh()
-    if (pendingBBRNodeID.value === nodeID) await runPendingBBRInitialization(nodeID)
-    else message.value = 'SSH 与提权配置已保存；验证 SSH 时会同时检查系统提权能力。'
+    await runNodeOnboardingAfterSSHSave(nodeID)
   } catch (e: any) { await sshErrors.applyApiError(e, 'SSH 配置保存失败，请检查表单内容。', sshFormElement, sshFieldMap) } finally { saving.value = false }
 }
 async function testSSH(id: number) { testingNode.value = id; detailError.value = ''; detailMessage.value = ''; try { const result = await testNodeSSH(id); detailMessage.value = `SSH 验证成功，耗时 ${result.latency_ms || 0}ms；主机身份已自动校验。`; await refresh(); if (selectedNode.value?.id === id) selectedNode.value = await fetchNode(id); if (detailSection.value === 'kernel') await loadBBR(id) } catch (e: any) { detailError.value = e?.response?.data?.message || 'SSH 验证失败。' } finally { testingNode.value = 0 } }
@@ -847,7 +920,7 @@ watch([() => selectedNode.value?.id, detailSection, nodeProtocolOffset, nodeProt
     nodeLoadError.value = ''
     nodeProtocolTotal.value = 0
   }
-  if (section === 'kernel') { void loadKernel(id); void loadLatestRelease() } else kernelRequests.invalidate()
+  if (section === 'kernel') { void loadKernel(id); void loadLatestRelease(); void loadBBR(id) } else kernelRequests.invalidate()
   if (section === 'protocols') void loadNodeProtocols(id); else { protocolRequests.invalidate(); nodeProtocolsLoading.value = false }
 }, { immediate: true })
 watch(detailSection, (section) => { if (selectedNode.value && String(route.query.tab || 'overview') !== section) void syncURL() })
@@ -904,7 +977,7 @@ onBeforeUnmount(stopKernelPolling)
 </script>
 
 <style scoped>
-:deep(.workbench-table th),:deep(.workbench-table td){height:40px;padding-block:7px}:deep(.workbench-table tbody tr.selected){background:var(--primary-soft)}.numeric-column{text-align:right!important;font-variant-numeric:tabular-nums}.node-detail{min-width:0}.detail-drawer-body .node-summary{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:14px;padding:0 0 16px;border:0;border-bottom:1px solid var(--line);border-radius:0}.detail-drawer-body .node-summary-main{min-width:0;align-items:flex-start}.detail-drawer-body .title-line{flex-wrap:wrap}.detail-drawer-body .node-actions{width:100%;justify-content:flex-start}.detail-drawer-body .node-health-strip{border:1px solid var(--line);border-radius:var(--radius-md);overflow:hidden}.detail-drawer-body .panel{border-radius:var(--radius-md)}
+:deep(.workbench-table th),:deep(.workbench-table td){height:40px;padding-block:7px}:deep(.workbench-table tbody tr.selected){background:var(--primary-soft)}.numeric-column{text-align:right!important;font-variant-numeric:tabular-nums}.kernel-list-cell{display:flex;align-items:center;gap:7px;min-width:0}.kernel-list-version{display:inline-block;max-width:78px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:9px;line-height:1.2}.node-detail{min-width:0}.detail-drawer-body .node-summary{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:14px;padding:0 0 16px;border:0;border-bottom:1px solid var(--line);border-radius:0}.detail-drawer-body .node-summary-main{min-width:0;align-items:flex-start}.detail-drawer-body .title-line{flex-wrap:wrap}.detail-drawer-body .node-actions{width:100%;justify-content:flex-start}.detail-drawer-body .node-health-strip{border:1px solid var(--line);border-radius:var(--radius-md);overflow:hidden}.detail-drawer-body .panel{border-radius:var(--radius-md)}
 .page-alert{margin-bottom:14px}.count-label{color:var(--muted);font-size:11px}.node-layout{display:grid;grid-template-columns:300px minmax(0,1fr);align-items:start;gap:16px}.node-list-panel{position:sticky;top:82px;overflow:hidden}.node-list{display:grid}.node-list>button{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:15px 16px;text-align:left;border:0;border-bottom:1px solid var(--line);background:var(--surface)}.node-list>button:hover,.node-list>button.active{background:var(--surface-selected)}.node-list>button.active{box-shadow:inset 3px 0 var(--primary)}.node-list strong{font-size:12px}.node-list p,.node-list small{margin:3px 0 0;color:var(--muted);font-size:9px}.node-list small{color:var(--primary)}.node-state{width:9px;height:9px;border-radius:50%;background:var(--warning-bright);box-shadow:0 0 0 4px var(--warning-soft)}.node-state.online{background:var(--success-bright);box-shadow:0 0 0 4px var(--success-soft)}.node-state.disabled{background:var(--subtle);box-shadow:0 0 0 4px var(--surface-neutral)}.node-detail{min-width:0}.node-summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px}.node-summary-main{display:flex;align-items:center;gap:14px}.node-avatar{width:46px;height:46px;display:grid;place-items:center;border-radius:12px;color:var(--primary);background:var(--primary-soft);font-size:21px}.title-line{display:flex;align-items:center;gap:10px}.title-line h2{margin:0;font-size:19px}.node-summary-main p{margin:5px 0 2px;color:var(--muted);font-size:11px}.node-summary-main small{color:var(--subtle);font-size:9px}.node-actions{display:flex;flex-wrap:wrap;gap:7px}.readiness-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.readiness-grid article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:11px;padding:15px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.readiness-grid article>span{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;color:var(--primary);background:var(--primary-soft)}.readiness-grid strong{font-size:11px}.readiness-grid p{margin:3px 0 0;color:var(--muted);font-size:9px}.action-card{display:grid;gap:14px}.action-card p{margin:0;color:var(--muted);font-size:11px}.action-card>div{display:flex;gap:7px}.node-empty{min-height:420px;display:grid;place-items:center}.secret-card{display:grid;gap:14px}.secret-card textarea{font-family:Consolas,monospace;font-size:11px}.secret-card .button{justify-self:start}@media(max-width:1100px){.node-layout{grid-template-columns:1fr}.node-list-panel{position:static}.node-list{grid-template-columns:repeat(2,1fr)}}@media(max-width:720px){.node-list,.readiness-grid{grid-template-columns:1fr}.node-summary{align-items:flex-start;flex-direction:column}.node-actions{display:grid;width:100%}}
 .kernel-panel{overflow:hidden}.kernel-body{display:grid;gap:16px}.kernel-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--line)}.kernel-facts>div{display:grid;gap:5px;padding:13px;background:var(--surface)}.kernel-facts span{color:var(--muted);font-size:9px}.kernel-facts strong{font-size:11px;overflow-wrap:anywhere}.kernel-error{display:flex;align-items:flex-start;gap:8px;margin:0;padding:11px;border-radius:8px;color:var(--danger);background:var(--danger-soft);font-size:10px;overflow-wrap:anywhere}.kernel-release-picker{display:grid;grid-template-columns:minmax(110px,160px) minmax(220px,360px);align-items:center;gap:7px 12px;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-neutral)}.kernel-release-picker label{font-size:10px;font-weight:700}.kernel-release-picker small{grid-column:2;color:var(--muted);font-size:9px}.kernel-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.kernel-actions small{color:var(--muted);font-size:9px}.kernel-history{display:grid;border-top:1px solid var(--line)}.kernel-history>div{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 2px}.kernel-history>div+div{border-top:1px solid var(--line)}.kernel-history strong{font-size:10px}.kernel-history p{margin:3px 0 0;color:var(--muted);font-size:9px;overflow-wrap:anywhere}.kernel-history time{color:var(--subtle);font-size:9px}.operation-dot{width:8px;height:8px;border-radius:50%;background:var(--warning)}.operation-dot.succeeded{background:var(--success)}.operation-dot.failed{background:var(--danger)}@media(max-width:720px){.kernel-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.kernel-release-picker{grid-template-columns:1fr}.kernel-release-picker small{grid-column:1}.kernel-history>div{grid-template-columns:auto minmax(0,1fr)}.kernel-history time{grid-column:2}}
 .detail-tabs{display:flex;gap:18px;overflow-x:auto;border-bottom:1px solid var(--line)}.detail-tabs button{min-height:42px;display:inline-flex;align-items:center;gap:7px;padding:0 2px;border:0;border-bottom:2px solid transparent;color:var(--muted);background:transparent;font-size:12px;font-weight:650;white-space:nowrap}.detail-tabs button:hover{color:var(--text)}.detail-tabs button.active{color:var(--primary);border-bottom-color:var(--primary)}.node-health-strip{display:grid;border-block:1px solid var(--line);background:var(--surface)}.node-health-strip>*+*{border-top:1px solid var(--line)}.credential-workspace{overflow:hidden}.credential-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:13px;padding:17px 20px}.credential-row+.credential-row{border-top:1px solid var(--line)}.credential-icon{width:34px;height:34px;display:grid;place-items:center;color:var(--primary);background:var(--primary-soft);border-radius:9px}.credential-row strong{font-size:12px}.credential-row p{margin:3px 0 0;color:var(--muted);font-size:10px}.credential-actions{display:flex;gap:7px}@media(max-width:720px){.credential-row{grid-template-columns:auto minmax(0,1fr)}.credential-actions{grid-column:2;flex-wrap:wrap}}

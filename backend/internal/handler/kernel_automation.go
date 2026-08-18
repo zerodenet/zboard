@@ -41,7 +41,7 @@ const (
 	zeroBinaryMaxBytes        = 64 << 20
 	zeroArtifactMaxBytes      = 128 << 20
 	zeroControlSocket         = "/run/zerodenet/control.sock"
-	zeroConnectorEventTimeout = 55 * time.Second
+	zeroConnectorEventTimeout = 10 * time.Second
 )
 
 var (
@@ -314,6 +314,12 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 		return nil, err
 	}
 
+	if err := h.setKernelOperationPhase(operation, "preparing_connector_credential"); err != nil {
+		return nil, err
+	}
+	if err := h.ensureNodeTrafficReportCredential(node); err != nil {
+		return nil, err
+	}
 	credential, err := h.nodeConnectorCredential(node)
 	if err != nil {
 		return nil, err
@@ -361,50 +367,71 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 	if err := h.setKernelOperationPhase(operation, "staging"); err != nil {
 		return nil, err
 	}
-	activationStartedAt := time.Now().UTC()
-	if err := h.installNodeKernel(node, operation.ID, binary, binarySHA, runtimeConfig, credential.Raw); err != nil {
-		return nil, err
-	}
-	rollbackAfterActivation := func(cause error) error {
-		rollbackErr := h.rollbackNodeKernel(node, operation.ID)
-		credentialErr := h.restoreGeneratedNodeCredential(node, credential)
-		if rollbackErr != nil || credentialErr != nil {
-			return fmt.Errorf("%w; automatic rollback incomplete (kernel=%v credential=%v)", cause, rollbackErr, credentialErr)
-		}
-		return fmt.Errorf("%w; the activated generation was rolled back", cause)
-	}
-	if err := h.setKernelOperationPhase(operation, "verifying"); err != nil {
-		return nil, rollbackAfterActivation(err)
-	}
-	verified, err := h.probeNodeKernel(node)
-	if err != nil {
-		return nil, rollbackAfterActivation(fmt.Errorf("post-install probe failed: %w", err))
-	}
-	if !verified.Installed || verified.BinarySHA256 != binarySHA || verified.ServiceStatus != "active" || verified.ControlStatus != "healthy" {
-		return nil, rollbackAfterActivation(fmt.Errorf("post-install verification failed (installed=%t sha_match=%t service=%s control=%s)", verified.Installed, verified.BinarySHA256 == binarySHA, verified.ServiceStatus, verified.ControlStatus))
-	}
+	credentialActivated := false
 	if credential.IsNew {
 		if err := h.db.Model(&model.Node{}).Where("id = ?", node.ID).Updates(map[string]interface{}{
 			"node_credential":            credential.Encrypted,
 			"node_credential_prefix":     credential.Prefix,
 			"node_credential_revoked_at": nil,
 		}).Error; err != nil {
-			return nil, rollbackAfterActivation(fmt.Errorf("activate generated connector credential: %w", err))
+			return nil, fmt.Errorf("prepare generated connector credential before Zero startup: %w", err)
 		}
+		credentialActivated = true
+	}
+	restoreCredential := func() error {
+		if !credentialActivated {
+			return nil
+		}
+		return h.restoreGeneratedNodeCredential(node, credential)
+	}
+	activationStartedAt := time.Now().UTC()
+	if err := h.installNodeKernel(node, operation.ID, binary, binarySHA, runtimeConfig, credential.Raw); err != nil {
+		if credentialErr := restoreCredential(); credentialErr != nil {
+			return nil, fmt.Errorf("%w; generated connector credential rollback failed: %v", err, credentialErr)
+		}
+		if credentialActivated {
+			return nil, fmt.Errorf("%w; the generated connector credential was rolled back because Zero activation did not complete", err)
+		}
+		return nil, err
+	}
+	rollbackAfterActivation := func(cause error) error {
+		rollbackErr := h.rollbackNodeKernel(node, operation.ID)
+		credentialErr := restoreCredential()
+		if rollbackErr != nil || credentialErr != nil {
+			return fmt.Errorf("%w; automatic rollback incomplete (kernel=%v credential=%v)", cause, rollbackErr, credentialErr)
+		}
+		if credentialActivated {
+			return fmt.Errorf("%w; the activated generation and generated connector credential were rolled back", cause)
+		}
+		return fmt.Errorf("%w; the activated generation was rolled back", cause)
+	}
+	if err := h.setKernelOperationPhase(operation, "verifying"); err != nil {
+		return nil, rollbackAfterActivation(err)
+	}
+	verified, err := h.verifyNodeKernelStable(ctx, node, binarySHA)
+	if err != nil {
+		return nil, rollbackAfterActivation(fmt.Errorf("post-install verification failed: %w", err))
 	}
 	if err := h.setKernelOperationPhase(operation, "waiting_connector_event"); err != nil {
 		return nil, rollbackAfterActivation(err)
 	}
-	connectorEventAt, err := h.waitForNodeConnectorEvent(ctx, node.ID, activationStartedAt)
-	if err != nil {
-		return nil, rollbackAfterActivation(fmt.Errorf("connector event verification failed: %w", err))
+	connectorEventAt, connectorEventErr := h.waitForNodeConnectorEvent(ctx, node.ID, activationStartedAt)
+	summary := fmt.Sprintf("Zero %s %s and passed systemd and control-socket health checks", release.Version, action)
+	if connectorEventErr == nil {
+		summary += fmt.Sprintf("; Connector activity observed at %s", connectorEventAt.Format(time.RFC3339))
+	} else {
+		summary += fmt.Sprintf("; Connector activity is not yet observable (%s)", truncateKernelError(connectorEventErr.Error()))
 	}
-	state, err := h.finishKernelOperation(operation, verified, release, binarySHA, configSHA, fmt.Sprintf("Zero %s %s and passed systemd, control-socket, and connector-event health checks at %s", release.Version, action, connectorEventAt.Format(time.RFC3339)))
+	state, err := h.finishKernelOperation(operation, verified, release, binarySHA, configSHA, summary)
 	if err != nil {
 		return nil, rollbackAfterActivation(fmt.Errorf("persist successful Zero operation: %w", err))
 	}
 	h.scheduleMieruReadinessPublish(node.ID, release.Version)
-	return map[string]interface{}{"state": state, "operation": operation, "changed": true, "action": action}, nil
+	result := map[string]interface{}{"state": state, "operation": operation, "changed": true, "action": action, "connector_verified": connectorEventErr == nil}
+	if connectorEventErr != nil {
+		result["connector_warning"] = truncateKernelError(connectorEventErr.Error())
+	}
+	return result, nil
 }
 
 func (h *handlers) scheduleMieruReadinessPublish(nodeID uint, zeroVersion string) {
@@ -973,6 +1000,9 @@ func (h *handlers) compileNodeRuntimeConfigWithOptions(node model.Node, apiKey, 
 		}
 		inbounds = append(inbounds, endpointInbounds...)
 	}
+	if len(inbounds) == 0 {
+		inbounds = append(inbounds, zeroBootstrapControlInbound())
+	}
 	config := map[string]interface{}{
 		"inbounds": inbounds,
 		"mode":     map[string]interface{}{"type": "rule"},
@@ -1249,16 +1279,10 @@ mv -Tf /etc/zerodenet/current.json.next /etc/zerodenet/current.json
 systemctl daemon-reload
 systemctl enable zero >/dev/null
 systemctl restart zero
-healthy=0
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  if systemctl is-active --quiet zero && /usr/local/bin/zero status --json --socket %s >/dev/null 2>&1; then healthy=1; break; fi
-  sleep 1
-done
-test "$healthy" = "1"
 trap - EXIT
 rm -rf "$stage"
 printf 'ZBOARD_KERNEL_ACTIVATED=1\n'
-`, shellQuote(stage), shellQuote(generation), shellQuote(backup), shellQuote(binarySHA), shellQuote(zeroControlSocket))
+`, shellQuote(stage), shellQuote(generation), shellQuote(backup), shellQuote(binarySHA))
 }
 
 func buildZeroRollbackScript(operationID uint) string {

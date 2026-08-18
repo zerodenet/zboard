@@ -34,14 +34,16 @@ type nodeCascadeDeleteResponse struct {
 	Cleanup                        nodeDeleteCleanup `json:"cleanup"`
 	TrafficRecordsRetained         int64             `json:"traffic_records_retained"`
 	RemoteZeroRetained             bool              `json:"remote_zero_retained"`
+	RemoteZeroStopped              bool              `json:"remote_zero_stopped"`
 	RemoteCertificateFilesRetained bool              `json:"remote_certificate_files_retained"`
 	ProviderDNSRecordsRetained     bool              `json:"provider_dns_records_retained"`
 }
 
 // NodeCascadeDeleteHandler treats a registered VPS as the lifecycle root for
 // zboard-owned runtime/configuration resources. Historical billing, task and
-// audit facts deliberately survive the asset deletion, while external state on
-// the VPS/provider is never silently destroyed by deleting a panel record.
+// audit facts deliberately survive the asset deletion. Installed Zero artifacts
+// are retained on the VPS, but a managed Zero service is stopped and disabled
+// before its central identity is removed so it cannot become an orphan reporter.
 func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	claims, err := h.requireAdmin(w, r)
 	if err != nil {
@@ -79,6 +81,15 @@ func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 	var trafficRecords int64
 	if err := h.db.Model(&model.TrafficRecord{}).Where("node_id = ?", node.ID).Count(&trafficRecords).Error; err != nil {
 		ServerError(w, err)
+		return
+	}
+
+	remoteZeroStopped, err := h.stopManagedZeroBeforeNodeDelete(node)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, "无法安全删除节点：已安装的 Zero 未能在远端停止，请恢复 SSH 或服务控制后重试。", map[string]interface{}{
+			"remote_zero_stop_required": true,
+			"detail":                    err.Error(),
+		})
 		return
 	}
 
@@ -153,7 +164,7 @@ func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 			return err
 		}
 		encodedCleanup, _ := json.Marshal(cleanup)
-		return createAuditLog(tx, claims, "node.delete", fmt.Sprintf("node:%d", node.ID), fmt.Sprintf("name=%s cleanup=%s traffic_records_retained=%d external_state_retained=true", node.Name, encodedCleanup, trafficRecords))
+		return createAuditLog(tx, claims, "node.delete", fmt.Sprintf("node:%d", node.ID), fmt.Sprintf("name=%s cleanup=%s traffic_records_retained=%d remote_zero_stopped=%t external_artifacts_retained=true", node.Name, encodedCleanup, trafficRecords, remoteZeroStopped))
 	})
 	if err != nil {
 		ServerError(w, err)
@@ -166,6 +177,7 @@ func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 		Cleanup:                        cleanup,
 		TrafficRecordsRetained:         trafficRecords,
 		RemoteZeroRetained:             true,
+		RemoteZeroStopped:              remoteZeroStopped,
 		RemoteCertificateFilesRetained: true,
 		ProviderDNSRecordsRetained:     true,
 	})

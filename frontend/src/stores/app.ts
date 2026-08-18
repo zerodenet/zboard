@@ -1,11 +1,13 @@
 import { defineStore } from 'pinia'
-import { clearAuthToken, getAuthToken, getSetupStatus, setAuthToken, me as fetchMe, type SetupStatus } from '../api/client'
+import { clearAuthToken, fetchPublicSystemConfigs, getAuthToken, getSetupStatus, setAuthToken, me as fetchMe, type SetupStatus } from '../api/client'
+import { DEFAULT_SYSTEM_TIME_ZONE, setDisplayTimeZone } from '../utils/timeZone'
 
 export const useAppStore = defineStore('app', {
   state: () => ({
     token: getAuthToken(),
     installation: null as SetupStatus | null,
     setupChecked: false,
+    systemTimeZone: DEFAULT_SYSTEM_TIME_ZONE,
     user: {
       id: 0,
 	  email: '',
@@ -19,12 +21,27 @@ export const useAppStore = defineStore('app', {
     siteName: (state) => state.installation?.site_name || 'zboard'
   },
   actions: {
+    setSystemTimeZone(value: unknown) {
+      this.systemTimeZone = setDisplayTimeZone(value)
+      return this.systemTimeZone
+    },
+    async loadSystemTimeZone() {
+      try {
+        const configs = await fetchPublicSystemConfigs()
+        const config = configs.find(item => item.config_key === 'system_timezone')
+        return this.setSystemTimeZone(config?.value)
+      } catch (_) {
+        return this.setSystemTimeZone(DEFAULT_SYSTEM_TIME_ZONE)
+      }
+    },
     async loadSetupStatus(force = false) {
       if (this.setupChecked && !force) {
         return this.installation
       }
       this.installation = await getSetupStatus()
       this.setupChecked = true
+      if (this.installation?.installed) await this.loadSystemTimeZone()
+      else this.setSystemTimeZone(DEFAULT_SYSTEM_TIME_ZONE)
       return this.installation
     },
     completeSetup(result: any) {
@@ -34,6 +51,7 @@ export const useAppStore = defineStore('app', {
         version: ''
       }
       this.setupChecked = true
+      this.setSystemTimeZone(DEFAULT_SYSTEM_TIME_ZONE)
       if (result.auth?.token) {
         this.setToken(result.auth.token)
       }
