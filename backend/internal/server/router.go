@@ -25,6 +25,9 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	if err := datastore.ReconcileZeroEventSchema(db); err != nil {
 		return nil, err
 	}
+	if err := datastore.ReconcileFairUseTelemetrySchema(db); err != nil {
+		return nil, err
+	}
 	h, err := handler.NewHandlers(db, jwtSecret, credentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion)
 	if err != nil {
 		return nil, err
@@ -149,6 +152,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/subscriptions", h.SubscriptionsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions", h.SubscriptionsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id", h.AdminSubscriptionGetHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/metrics", h.AdminSubscriptionFairUseMetricsHandler),
 		newRoute(http.MethodGet, "/api/v1/account/subscriptions/:id/access", h.AccountSubscriptionAccessHandler),
 		newRoute(http.MethodPost, "/api/v1/account/subscriptions/:id/access/rotate", h.AccountSubscriptionAccessRotateHandler),
 		newRoute(http.MethodDelete, "/api/v1/account/subscriptions/:id/access", h.AccountSubscriptionAccessRevokeHandler),
@@ -164,7 +168,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/traffic/reconciliation", h.TrafficReconciliationHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/traffic/reconciliation", h.TrafficReconciliationHandler),
 		newRoute(http.MethodPost, "/api/v1/traffic/report", h.TrafficReportHandler),
-		newRoute(http.MethodPost, "/api/zero/events", h.ZeroEventObservabilityHandler),
+		newRoute(http.MethodPost, "/api/zero/events", h.ZeroEventFairUseTelemetryHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/dashboard", h.DashboardHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/dashboard/overview", h.DashboardOverviewSystemCalendarHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/entity-references", h.AdminEntityReferencesHandler),
