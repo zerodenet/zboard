@@ -41,7 +41,7 @@ const (
 	zeroBinaryMaxBytes        = 64 << 20
 	zeroArtifactMaxBytes      = 128 << 20
 	zeroControlSocket         = "/run/zerodenet/control.sock"
-	zeroConnectorEventTimeout = 55 * time.Second
+	zeroConnectorEventTimeout = 10 * time.Second
 )
 
 var (
@@ -317,6 +317,9 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 	if err := h.setKernelOperationPhase(operation, "preparing_connector_credential"); err != nil {
 		return nil, err
 	}
+	if err := h.ensureNodeTrafficReportCredential(node); err != nil {
+		return nil, err
+	}
 	credential, err := h.nodeConnectorCredential(node)
 	if err != nil {
 		return nil, err
@@ -412,16 +415,23 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 	if err := h.setKernelOperationPhase(operation, "waiting_connector_event"); err != nil {
 		return nil, rollbackAfterActivation(err)
 	}
-	connectorEventAt, err := h.waitForNodeConnectorEvent(ctx, node.ID, activationStartedAt)
-	if err != nil {
-		return nil, rollbackAfterActivation(fmt.Errorf("connector event verification failed: %w", err))
+	connectorEventAt, connectorEventErr := h.waitForNodeConnectorEvent(ctx, node.ID, activationStartedAt)
+	summary := fmt.Sprintf("Zero %s %s and passed systemd and control-socket health checks", release.Version, action)
+	if connectorEventErr == nil {
+		summary += fmt.Sprintf("; Connector activity observed at %s", connectorEventAt.Format(time.RFC3339))
+	} else {
+		summary += fmt.Sprintf("; Connector activity is not yet observable (%s)", truncateKernelError(connectorEventErr.Error()))
 	}
-	state, err := h.finishKernelOperation(operation, verified, release, binarySHA, configSHA, fmt.Sprintf("Zero %s %s and passed systemd, control-socket, and connector-event health checks at %s", release.Version, action, connectorEventAt.Format(time.RFC3339)))
+	state, err := h.finishKernelOperation(operation, verified, release, binarySHA, configSHA, summary)
 	if err != nil {
 		return nil, rollbackAfterActivation(fmt.Errorf("persist successful Zero operation: %w", err))
 	}
 	h.scheduleMieruReadinessPublish(node.ID, release.Version)
-	return map[string]interface{}{"state": state, "operation": operation, "changed": true, "action": action}, nil
+	result := map[string]interface{}{"state": state, "operation": operation, "changed": true, "action": action, "connector_verified": connectorEventErr == nil}
+	if connectorEventErr != nil {
+		result["connector_warning"] = truncateKernelError(connectorEventErr.Error())
+	}
+	return result, nil
 }
 
 func (h *handlers) scheduleMieruReadinessPublish(nodeID uint, zeroVersion string) {
