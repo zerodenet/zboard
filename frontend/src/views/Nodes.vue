@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="节点资产" description="独立管理 VPS、运维通道、Zero 连接与计量凭证；协议服务在单独页面绑定节点。" eyebrow="Infrastructure">
+    <PageHeader title="节点资产" description="独立管理 VPS、运维通道、Connector、Zero 内核与计量凭证；协议服务在单独页面绑定节点。" eyebrow="Infrastructure">
       <template #actions>
         <PageRefreshButton label="刷新节点资产" :loading="loading" @click="refresh" />
         <UiButton  type="button" @click="openCreate"><UiIcon name="plus" />登记 VPS</UiButton>
@@ -14,7 +14,7 @@
         <WorkbenchFilterBar :active="Boolean(filters.q || filters.lifecycle || filters.connector)" @clear="resetFilters">
           <WorkbenchFilterInput v-model="filters.q" label="搜索" placeholder="名称、区域或地址" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="filters.lifecycle" label="生命周期" :options="lifecycleFilterOptions" @apply="applyFilters" />
-          <WorkbenchFilterSelect v-model="filters.connector" label="Zero 连接" :options="connectorFilterOptions" @apply="applyFilters" />
+          <WorkbenchFilterSelect v-model="filters.connector" label="Connector" :options="connectorFilterOptions" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
       <template #selection>
@@ -28,7 +28,7 @@
             <th class="selection-column"><UiCheckbox :model-value="allPageNodesSelected" :indeterminate="pageNodeSelectionIndeterminate" :disabled="selectionAllMatching" aria-label="选择当前页全部节点" @update:model-value="toggleCurrentNodePage" /></th>
             <SortableHeader field="name" label="节点" :sort-field="sortField" :direction="sortDirection" pinned="start" @sort="setSort" />
             <SortableHeader field="region" label="区域" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" />
-            <th data-column-priority="2">资产状态</th><th>Zero</th><th data-column-priority="3">SSH</th><th data-column-priority="2">内核</th><th class="numeric-column" data-column-priority="3">协议数</th>
+            <th data-column-priority="2">资产状态</th><th>Connector</th><th data-column-priority="3">SSH</th><th data-column-priority="2">内核</th><th class="numeric-column" data-column-priority="3">协议数</th>
             <SortableHeader field="last_seen_at" label="最近心跳" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" />
             <th class="table-action-column"><span class="sr-only">操作</span></th>
           </tr></thead>
@@ -38,7 +38,7 @@
               <td class="table-primary-column"><div class="cell-title"><strong>{{ node.name }}</strong><span class="mono">{{ node.address || '未设置地址' }}</span></div></td>
               <td data-column-priority="3">{{ node.region || '—' }}</td>
               <td data-column-priority="2"><StatusBadge :tone="lifecycleTone(node)" :icon="node.lifecycle_status === 'maintenance' ? 'settings' : undefined">{{ lifecycleLabel(node.lifecycle_status) }}</StatusBadge></td>
-              <td><StatusBadge :tone="node.connector_online ? 'success' : 'warning'" :icon="node.connector_online ? 'wifi' : 'alert'">{{ node.connector_online ? '在线' : '离线' }}</StatusBadge></td>
+              <td><StatusBadge :tone="node.connector_online ? 'success' : node.connector_last_seen_at ? 'warning' : 'neutral'" :icon="node.connector_online ? 'wifi' : node.connector_last_seen_at ? 'alert' : 'minus'">{{ node.connector_online ? '在线' : node.connector_last_seen_at ? '离线' : '未连接' }}</StatusBadge></td>
               <td data-column-priority="3"><StatusBadge :tone="node.ssh_verified_at ? 'success' : node.ssh_configured ? 'warning' : 'neutral'" icon="key">{{ node.ssh_verified_at ? '已验证' : node.ssh_configured ? '待验证' : '未配置' }}</StatusBadge></td>
               <td data-column-priority="2"><div class="kernel-list-cell"><StatusBadge :tone="kernelListTone(node.kernel_state?.status)" icon="activity">{{ kernelListLabel(node.kernel_state?.status) }}</StatusBadge><span v-if="node.kernel_state?.installed_version" class="mono kernel-list-version" :title="node.kernel_state.installed_version">{{ compactZeroVersion(node.kernel_state.installed_version) }}</span></div></td>
               <td class="numeric-column" data-column-priority="3">{{ formatNumber(node.enabled_protocol_count) }}</td>
@@ -57,7 +57,7 @@
         <article class="panel node-summary">
           <div class="node-summary-main">
             <span class="node-avatar"><UiIcon name="nodes" /></span>
-            <div><div class="title-line"><h2>{{ selectedNode.name }}</h2><StatusBadge :tone="lifecycleTone(selectedNode)">{{ lifecycleLabel(selectedNode.lifecycle_status) }}</StatusBadge></div><p>{{ selectedNode.region || '未设置区域' }} · <span class="mono">{{ selectedNode.address || '未设置默认业务地址' }}</span></p><small>{{ selectedNode.remark || '暂无备注' }}</small></div>
+            <div><div class="title-line"><h2>{{ selectedNode.name }}</h2><StatusBadge :tone="lifecycleTone(selectedNode)">{{ lifecycleLabel(selectedNode.lifecycle_status) }}</StatusBadge></div><p>{{ selectedNode.region || '未设置区域' }} · <span class="mono">{{ selectedNode.address || '未设置地址' }}</span></p><small>{{ selectedNode.remark || '暂无备注' }}</small></div>
           </div>
           <div class="node-actions">
             <UiButton variant="secondary" size="sm" type="button" @click="openEdit(selectedNode)"><UiIcon name="edit" />编辑资产</UiButton>
@@ -73,8 +73,8 @@
         <UiTabs v-model="detailSection" :items="nodeDetailTabs" label="节点详情分区" />
 
         <section v-if="detailSection === 'overview'" class="node-health-strip" aria-label="节点状态概览">
-          <StatusOverviewItem icon="activity" label="Zero 连接" :description="selectedNode.connector_last_seen_at ? '最近心跳' : '尚未连接'" :tone="selectedNode.connector_online ? 'success' : 'warning'" :status="selectedNode.connector_online ? '在线' : '离线'">
-            <template #description><template v-if="selectedNode.connector_last_seen_at">最近心跳 <TimeBadge :value="selectedNode.connector_last_seen_at" mode="relative" /></template><template v-else>尚未连接</template></template>
+          <StatusOverviewItem icon="activity" label="Connector" :description="selectedNode.connector_last_seen_at ? '最近事件' : '尚未连接'" :tone="selectedNode.connector_online ? 'success' : selectedNode.connector_last_seen_at ? 'warning' : 'neutral'" :status="selectedNode.connector_online ? '在线' : selectedNode.connector_last_seen_at ? '离线' : '未连接'">
+            <template #description><template v-if="selectedNode.connector_last_seen_at">最近事件 <TimeBadge :value="selectedNode.connector_last_seen_at" mode="relative" /></template><template v-else>尚未收到 Connector 事件</template></template>
           </StatusOverviewItem>
           <StatusOverviewItem icon="key" label="SSH 通道" :description="sshDescription(selectedNode)" :tone="selectedNode.ssh_verified_at ? 'success' : 'warning'" :status="selectedNode.ssh_verified_at ? '已验证' : '待验证'" />
           <StatusOverviewItem icon="shield" label="可信计量" :description="selectedNode.traffic_secret_prefix ? `凭证 ${selectedNode.traffic_secret_prefix}…` : '尚未创建凭证'" :tone="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at ? 'success' : 'warning'" :status="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at ? '已配置' : '未配置'" />
@@ -317,7 +317,7 @@ const sortDirection = ref<'asc' | 'desc'>(resolveSortDirection(route.query.direc
 const density = ref<'compact' | 'comfortable'>(resolveTableDensity(route.query.density))
 const lifecycleOptions = [{ label: '正常', value: 'active' }, { label: '维护', value: 'maintenance' }, { label: '退役', value: 'retired' }]
 const lifecycleFilterOptions = [{ label: '全部生命周期', value: '' }, ...lifecycleOptions]
-const connectorFilterOptions = [{ label: '全部连接状态', value: '' }, { label: 'Zero 在线', value: 'online' }, { label: 'Zero 离线', value: 'offline' }]
+const connectorFilterOptions = [{ label: '全部连接状态', value: '' }, { label: 'Connector 在线', value: 'online' }, { label: 'Connector 离线', value: 'offline' }]
 const sshAuthOptions = [{ label: '密码', value: 'password' }, { label: '私钥', value: 'private_key' }]
 const sshPrivilegeOptions = [{ label: '直接登录 root', value: 'none' }, { label: 'sudo 提权', value: 'sudo' }, { label: 'su 切换 root', value: 'su' }]
 const selectedNode = ref<AdminNodeDetail | null>(null)
