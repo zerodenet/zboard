@@ -53,15 +53,15 @@ type fairUseTelemetryMetrics struct {
 	SubscriptionID           uint                `json:"subscription_id"`
 	UserID                   uint                `json:"user_id"`
 	SampledAt                time.Time           `json:"sampled_at"`
-	CurrentActiveFlows       *uint64              `json:"current_active_flows"`
+	CurrentActiveFlows       *uint64             `json:"current_active_flows"`
 	ConnectionStarts         fairUseWindowMetric `json:"connection_starts"`
 	ReceivedConnectionStarts fairUseWindowMetric `json:"received_connection_starts"`
 	WorkingNodes             fairUseWindowMetric `json:"working_nodes"`
-	LastActivityAt           *time.Time           `json:"last_activity_at"`
-	LastReceivedAt           *time.Time           `json:"last_received_at"`
-	TelemetryCompleteness    string               `json:"telemetry_completeness"`
-	EnforcementReady         bool                 `json:"enforcement_ready"`
-	EventTimeBasis           string               `json:"event_time_basis"`
+	LastActivityAt           *time.Time          `json:"last_activity_at"`
+	LastReceivedAt           *time.Time          `json:"last_received_at"`
+	TelemetryCompleteness    string              `json:"telemetry_completeness"`
+	EnforcementReady         bool                `json:"enforcement_ready"`
+	EventTimeBasis           string              `json:"event_time_basis"`
 }
 
 // ZeroEventFairUseTelemetryHandler decorates the existing observability path.
