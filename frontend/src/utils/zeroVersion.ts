@@ -15,6 +15,13 @@ function parseZeroVersion(value: string): ParsedZeroVersion | null {
   }
 }
 
+export function compactZeroVersion(value?: string | null): string {
+  const normalized = value?.trim() || ''
+  if (!normalized) return ''
+  const parsed = parseZeroVersion(normalized)
+  return parsed ? `v${parsed.core.join('.')}` : normalized
+}
+
 export function compareZeroVersions(left: string, right: string): number {
   const a = parseZeroVersion(left)
   const b = parseZeroVersion(right)
