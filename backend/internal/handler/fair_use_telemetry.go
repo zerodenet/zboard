@@ -50,18 +50,21 @@ type fairUseWindowMetric struct {
 }
 
 type fairUseTelemetryMetrics struct {
-	SubscriptionID           uint                `json:"subscription_id"`
-	UserID                   uint                `json:"user_id"`
-	SampledAt                time.Time           `json:"sampled_at"`
-	CurrentActiveFlows       *uint64             `json:"current_active_flows"`
-	ConnectionStarts         fairUseWindowMetric `json:"connection_starts"`
-	ReceivedConnectionStarts fairUseWindowMetric `json:"received_connection_starts"`
-	WorkingNodes             fairUseWindowMetric `json:"working_nodes"`
-	LastActivityAt           *time.Time          `json:"last_activity_at"`
-	LastReceivedAt           *time.Time          `json:"last_received_at"`
-	TelemetryCompleteness    string              `json:"telemetry_completeness"`
-	EnforcementReady         bool                `json:"enforcement_ready"`
-	EventTimeBasis           string              `json:"event_time_basis"`
+	SubscriptionID           uint                   `json:"subscription_id"`
+	UserID                   uint                   `json:"user_id"`
+	SampledAt                time.Time              `json:"sampled_at"`
+	CurrentActiveFlows       *uint64                `json:"current_active_flows"`
+	ConnectionStarts         fairUseWindowMetric    `json:"connection_starts"`
+	ReceivedConnectionStarts fairUseWindowMetric    `json:"received_connection_starts"`
+	WorkingNodes             fairUseWindowMetric    `json:"working_nodes"`
+	ReceivedWorkingNodes     fairUseWindowMetric    `json:"received_working_nodes"`
+	LastActivityAt           *time.Time             `json:"last_activity_at"`
+	LastReceivedAt           *time.Time             `json:"last_received_at"`
+	TelemetryCompleteness    string                 `json:"telemetry_completeness"`
+	EvaluationReady          bool                   `json:"evaluation_ready"`
+	EnforcementReady         bool                   `json:"enforcement_ready"`
+	EventTimeBasis           string                 `json:"event_time_basis"`
+	Coverage                 fairUseCoverageSummary `json:"coverage"`
 }
 
 // ZeroEventFairUseTelemetryHandler decorates the existing observability path.
@@ -85,10 +88,16 @@ func (h *handlers) ZeroEventFairUseTelemetryHandler(w http.ResponseWriter, r *ht
 	}
 
 	var event zeroEventEnvelope
-	if err := json.Unmarshal(body, &event); err == nil && event.EventType == "flow.started" {
+	if err := json.Unmarshal(body, &event); err == nil {
 		if nodeID, ok := zeroEventSourceNodeID(event.SourceID); ok {
-			if err := h.persistSubscriptionFlowStartEvent(nodeID, event); err != nil {
-				log.Printf("fair use flow-start telemetry persistence failed: node_id=%d event_id=%q error=%v", nodeID, event.EventID, err)
+			receivedAt := time.Now().UTC()
+			if err := h.observeFairUseEventCoverage(nodeID, event, receivedAt); err != nil {
+				log.Printf("fair use coverage persistence failed: node_id=%d event_id=%q error=%v", nodeID, event.EventID, err)
+			}
+			if event.EventType == "flow.started" {
+				if err := h.persistSubscriptionFlowStartEvent(nodeID, event); err != nil {
+					log.Printf("fair use flow-start telemetry persistence failed: node_id=%d event_id=%q error=%v", nodeID, event.EventID, err)
+				}
 			}
 		}
 	}
@@ -167,32 +176,103 @@ func parseFairUseWindow(raw string, fallback, minimum int) (int, error) {
 }
 
 func parseFairUseSubscriptionID(path string) (uint, error) {
-	const (
-		prefix = "/api/v1/admin/subscriptions/"
-		suffix = "/fair-use/metrics"
-	)
-	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
-		return 0, errors.New("invalid subscription fair-use metrics path")
-	}
-	raw := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
-	if raw == "" || strings.Contains(raw, "/") {
-		return 0, errors.New("invalid subscription id")
-	}
-	value, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil || value == 0 {
-		return 0, errors.New("invalid subscription id")
-	}
-	id := uint(value)
-	if uint64(id) != value {
-		return 0, errors.New("subscription id is out of range")
-	}
-	return id, nil
+	return parseFairUseResourceSubscriptionID(path, "/fair-use/metrics")
 }
 
-// AdminSubscriptionFairUseMetricsHandler exposes observation-only signals for
-// tuning #59 before any restriction policy exists. Completeness deliberately
-// remains unknown until event-gap detection/snapshot reconciliation lands; the
-// response therefore cannot be treated as an enforcement decision.
+func (h *handlers) loadFairUseTelemetryMetrics(subscriptionID uint, connectionWindow, workingNodeWindow int, now time.Time) (fairUseTelemetryMetrics, error) {
+	var subscription model.Subscription
+	if err := h.db.Select("id", "user_id").First(&subscription, subscriptionID).Error; err != nil {
+		return fairUseTelemetryMetrics{}, err
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	now = now.UTC()
+	metrics := fairUseTelemetryMetrics{
+		SubscriptionID: subscription.ID,
+		UserID:         subscription.UserID,
+		SampledAt:      now,
+		ConnectionStarts: fairUseWindowMetric{
+			WindowSeconds: connectionWindow,
+		},
+		ReceivedConnectionStarts: fairUseWindowMetric{
+			WindowSeconds: connectionWindow,
+		},
+		WorkingNodes: fairUseWindowMetric{
+			WindowSeconds: workingNodeWindow,
+		},
+		ReceivedWorkingNodes: fairUseWindowMetric{
+			WindowSeconds: workingNodeWindow,
+		},
+		TelemetryCompleteness: "unknown",
+		EvaluationReady:       false,
+		EnforcementReady:      false,
+		EventTimeBasis:        "core_event_time_diagnostic_receive_time_evaluation",
+	}
+
+	connectionCutoff := now.Add(-time.Duration(connectionWindow) * time.Second)
+	if err := h.db.Model(&subscriptionFlowStartEvent{}).
+		Where("subscription_id = ? AND occurred_at >= ? AND occurred_at <= ?", subscription.ID, connectionCutoff, now).
+		Count(&metrics.ConnectionStarts.Count).Error; err != nil {
+		return metrics, err
+	}
+	if err := h.db.Model(&subscriptionFlowStartEvent{}).
+		Where("subscription_id = ? AND received_at >= ? AND received_at <= ?", subscription.ID, connectionCutoff, now).
+		Count(&metrics.ReceivedConnectionStarts.Count).Error; err != nil {
+		return metrics, err
+	}
+
+	workingNodeCutoff := now.Add(-time.Duration(workingNodeWindow) * time.Second)
+	if err := h.db.Model(&subscriptionFlowStartEvent{}).
+		Where("subscription_id = ? AND occurred_at >= ? AND occurred_at <= ?", subscription.ID, workingNodeCutoff, now).
+		Distinct("node_id").Count(&metrics.WorkingNodes.Count).Error; err != nil {
+		return metrics, err
+	}
+	if err := h.db.Model(&subscriptionFlowStartEvent{}).
+		Where("subscription_id = ? AND received_at >= ? AND received_at <= ?", subscription.ID, workingNodeCutoff, now).
+		Distinct("node_id").Count(&metrics.ReceivedWorkingNodes.Count).Error; err != nil {
+		return metrics, err
+	}
+
+	var current principalFlowScopeCurrent
+	currentErr := h.db.Where("scope_type = ? AND scope_id = ?", principalFlowScopeSubscription, subscription.ID).First(&current).Error
+	switch {
+	case currentErr == nil:
+		value := current.ActiveFlows
+		metrics.CurrentActiveFlows = &value
+	case !errors.Is(currentErr, gorm.ErrRecordNotFound):
+		return metrics, currentErr
+	}
+
+	var latest subscriptionFlowStartEvent
+	latestErr := h.db.Where("subscription_id = ?", subscription.ID).Order("occurred_at desc, id desc").First(&latest).Error
+	switch {
+	case latestErr == nil:
+		occurred := latest.OccurredAt.UTC()
+		received := latest.ReceivedAt.UTC()
+		metrics.LastActivityAt = &occurred
+		metrics.LastReceivedAt = &received
+	case !errors.Is(latestErr, gorm.ErrRecordNotFound):
+		return metrics, latestErr
+	}
+
+	coverageWindow := connectionWindow
+	if workingNodeWindow > coverageWindow {
+		coverageWindow = workingNodeWindow
+	}
+	coverage, err := h.fairUseCoverageForSubscription(subscription.ID, coverageWindow, now)
+	if err != nil {
+		return metrics, err
+	}
+	metrics.Coverage = coverage
+	metrics.TelemetryCompleteness = coverage.State
+	metrics.EvaluationReady = coverage.State == "complete"
+	return metrics, nil
+}
+
+// AdminSubscriptionFairUseMetricsHandler exposes both diagnostic event-time
+// and receive-time signals. Business evaluation uses receive-time windows only:
+// Core clock skew or spool backlog must not look like subscriber behaviour.
 func (h *handlers) AdminSubscriptionFairUseMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.requireAdmin(w, r); err != nil {
 		return
@@ -221,80 +301,14 @@ func (h *handlers) AdminSubscriptionFairUseMetricsHandler(w http.ResponseWriter,
 		return
 	}
 
-	var subscription model.Subscription
-	if err := h.db.Select("id", "user_id").First(&subscription, subscriptionID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			NotFound(w)
-			return
-		}
+	metrics, err := h.loadFairUseTelemetryMetrics(subscriptionID, connectionWindow, workingNodeWindow, time.Now().UTC())
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		NotFound(w)
+		return
+	}
+	if err != nil {
 		ServerError(w, err)
 		return
 	}
-
-	now := time.Now().UTC()
-	metrics := fairUseTelemetryMetrics{
-		SubscriptionID: subscription.ID,
-		UserID:         subscription.UserID,
-		SampledAt:      now,
-		ConnectionStarts: fairUseWindowMetric{
-			WindowSeconds: connectionWindow,
-		},
-		ReceivedConnectionStarts: fairUseWindowMetric{
-			WindowSeconds: connectionWindow,
-		},
-		WorkingNodes: fairUseWindowMetric{
-			WindowSeconds: workingNodeWindow,
-		},
-		TelemetryCompleteness: "unknown",
-		EnforcementReady:      false,
-		EventTimeBasis:        "core_event_time_with_receive_time_retained",
-	}
-
-	connectionCutoff := now.Add(-time.Duration(connectionWindow) * time.Second)
-	if err := h.db.Model(&subscriptionFlowStartEvent{}).
-		Where("subscription_id = ? AND occurred_at >= ? AND occurred_at <= ?", subscription.ID, connectionCutoff, now).
-		Count(&metrics.ConnectionStarts.Count).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	if err := h.db.Model(&subscriptionFlowStartEvent{}).
-		Where("subscription_id = ? AND received_at >= ? AND received_at <= ?", subscription.ID, connectionCutoff, now).
-		Count(&metrics.ReceivedConnectionStarts.Count).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-
-	workingNodeCutoff := now.Add(-time.Duration(workingNodeWindow) * time.Second)
-	if err := h.db.Model(&subscriptionFlowStartEvent{}).
-		Where("subscription_id = ? AND occurred_at >= ? AND occurred_at <= ?", subscription.ID, workingNodeCutoff, now).
-		Distinct("node_id").Count(&metrics.WorkingNodes.Count).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-
-	var current principalFlowScopeCurrent
-	currentErr := h.db.Where("scope_type = ? AND scope_id = ?", principalFlowScopeSubscription, subscription.ID).First(&current).Error
-	switch {
-	case currentErr == nil:
-		value := current.ActiveFlows
-		metrics.CurrentActiveFlows = &value
-	case !errors.Is(currentErr, gorm.ErrRecordNotFound):
-		ServerError(w, currentErr)
-		return
-	}
-
-	var latest subscriptionFlowStartEvent
-	latestErr := h.db.Where("subscription_id = ?", subscription.ID).Order("occurred_at desc, id desc").First(&latest).Error
-	switch {
-	case latestErr == nil:
-		occurred := latest.OccurredAt.UTC()
-		received := latest.ReceivedAt.UTC()
-		metrics.LastActivityAt = &occurred
-		metrics.LastReceivedAt = &received
-	case !errors.Is(latestErr, gorm.ErrRecordNotFound):
-		ServerError(w, latestErr)
-		return
-	}
-
 	OK(w, metrics)
 }

@@ -133,8 +133,13 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPost, "/api/v1/plans", h.PlanCreateCommerceValidatedHandler),
 		newRoute(http.MethodGet, "/api/v1/plans/:id", h.PublicPlanDetailCommerceHandler),
 		newRoute(http.MethodGet, "/api/v1/plans/:id/skus", h.PublicPlanSKUListCommerceHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/fair-use/policy", h.AdminPlatformFairUsePolicyHandler),
+		newRoute(http.MethodPut, "/api/v1/admin/fair-use/policy", h.AdminPlatformFairUsePolicyHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/plans/:id", h.PlanDetailHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/plans/:id", h.PlanUpdateCommerceValidatedHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/plans/:id/fair-use/policy", h.AdminPlanFairUsePolicyHandler),
+		newRoute(http.MethodPut, "/api/v1/admin/plans/:id/fair-use/policy", h.AdminPlanFairUsePolicyHandler),
+		newRoute(http.MethodDelete, "/api/v1/admin/plans/:id/fair-use/policy", h.AdminPlanFairUsePolicyHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/plans/:id/skus", h.PlanSKUListCommerceHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/plans/:id/skus", h.PlanSKUCreateCommerceValidatedHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/plan-skus/:id", h.PlanSKUGetCommerceHandler),
@@ -153,6 +158,12 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions", h.SubscriptionsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id", h.AdminSubscriptionGetHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/metrics", h.AdminSubscriptionFairUseMetricsHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/policy", h.AdminSubscriptionFairUsePolicyHandler),
+		newRoute(http.MethodPut, "/api/v1/admin/subscriptions/:id/fair-use/policy", h.AdminSubscriptionFairUsePolicyHandler),
+		newRoute(http.MethodDelete, "/api/v1/admin/subscriptions/:id/fair-use/policy", h.AdminSubscriptionFairUsePolicyHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/state", h.AdminSubscriptionFairUseStateHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/events", h.AdminSubscriptionFairUseEventsHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/subscriptions/:id/fair-use/evaluate", h.AdminSubscriptionFairUseEvaluateHandler),
 		newRoute(http.MethodGet, "/api/v1/account/subscriptions/:id/access", h.AccountSubscriptionAccessHandler),
 		newRoute(http.MethodPost, "/api/v1/account/subscriptions/:id/access/rotate", h.AccountSubscriptionAccessRotateHandler),
 		newRoute(http.MethodDelete, "/api/v1/account/subscriptions/:id/access", h.AccountSubscriptionAccessRevokeHandler),
@@ -211,7 +222,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	if err := h.ConfigureZeroEventSpool(zeroEventSpoolConfig); err != nil {
 		return nil, err
 	}
+	h.StartFairUseEvaluationWorker()
 	h.StartCertificateRenewalWorker()
 	h.StartDNSPublicObservationWorker()
-	return h.CloseZeroEventSpool, nil
+	return func() error {
+		h.CloseFairUseEvaluationWorker()
+		return h.CloseZeroEventSpool()
+	}, nil
 }
