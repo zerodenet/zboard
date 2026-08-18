@@ -25,9 +25,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import type { SystemConfig } from '../api/client'
 import { resolveSystemConfigInput, systemConfigControlLabel } from '../utils/systemConfig'
+import { setDisplayTimeZone } from '../utils/timeZone'
 import PortInput from './PortInput.vue'
 import StatusBadge from './StatusBadge.vue'
 import TimeBadge from './TimeBadge.vue'
@@ -58,6 +59,10 @@ const controlAttrs = computed(() => ({
   'aria-invalid': props.error ? 'true' : undefined,
   required: input.value.required || undefined,
 }))
+
+watch(() => props.config.value, value => {
+  if (props.config.config_key === 'system_timezone') setDisplayTimeZone(value)
+}, { immediate: true })
 </script>
 
 <style scoped>
