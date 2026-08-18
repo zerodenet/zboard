@@ -633,6 +633,7 @@ func (h *handlers) activeEndpointCredentials(endpointID uint, now time.Time) ([]
 		Joins("JOIN node_group_endpoints ON node_group_endpoints.node_group_id = subscriptions.node_group_id AND node_group_endpoints.protocol_endpoint_id = protocol_credentials.protocol_endpoint_id").
 		Where("protocol_credentials.protocol_endpoint_id = ? AND protocol_credentials.status = ? AND protocol_credentials.revoked_at IS NULL AND protocol_credentials.expires_at > ?", endpointID, protocolCredentialStatusActive, now).
 		Where("subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", subStatusActive, now).
+		Where("NOT EXISTS (SELECT 1 FROM subscription_fair_use_restrictions fur WHERE fur.subscription_id = subscriptions.id AND fur.active = ? AND fur.restricted_until > ?)", true, now.UTC()).
 		Order("protocol_credentials.id asc").
 		Find(&credentials).Error
 	return credentials, err
@@ -979,6 +980,13 @@ func runtimeInbound(endpoint model.ProtocolEndpoint, tag string, port int, proto
 }
 
 func (h *handlers) credentialClientConfig(endpoint model.ProtocolEndpoint, credential model.ProtocolCredential) (json.RawMessage, error) {
+	restricted, err := h.isFairUseRestrictedSubscription(credential.SubscriptionID, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	if restricted {
+		return nil, errors.New("subscription is temporarily restricted by Fair Use policy")
+	}
 	var client map[string]interface{}
 	if err := json.Unmarshal([]byte(endpoint.ClientConfig), &client); err != nil || client == nil {
 		return nil, errors.New("endpoint client config is invalid")
