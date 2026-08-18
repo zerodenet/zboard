@@ -4,11 +4,17 @@ import "testing"
 
 func TestHistoryRetentionDefaultsAreBoundedAndPrivate(t *testing.T) {
 	defaults := historyRetentionDefaults()
-	if len(defaults) != 3 {
-		t.Fatalf("historyRetentionDefaults() returned %d configs, want 3", len(defaults))
+	if len(defaults) != 4 {
+		t.Fatalf("historyRetentionDefaults() returned %d configs, want 4", len(defaults))
 	}
 	values := map[string]string{}
 	for _, config := range defaults {
+		if config.ConfigKey == systemTimezoneKey {
+			if !config.IsPublic || config.IsSecret || config.ValueType != "string" || config.Value != defaultSystemTimezone {
+				t.Fatalf("unexpected system timezone metadata: %#v", config)
+			}
+			continue
+		}
 		if config.IsPublic || config.IsSecret || config.ValueType != "int" {
 			t.Fatalf("unexpected retention config metadata: %#v", config)
 		}
