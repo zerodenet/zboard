@@ -79,7 +79,7 @@ func historyRetentionDefaults() []model.SystemConfig {
 			Name:        "系统时区",
 			Value:       defaultSystemTimezone,
 			ValueType:   "string",
-			Description: "系统级时间展示与日历语义使用的 IANA 时区，例如 Asia/Shanghai、UTC、America/Los_Angeles。历史时间戳仍以 UTC 存储，但会按该时区展示。",
+			Description: "系统级时间展示使用的 IANA 时区，例如 Asia/Shanghai、UTC、America/Los_Angeles。历史时间戳仍以 UTC 存储，但会按该时区展示。",
 			IsPublic:    true,
 			IsSecret:    false,
 			Revision:    1,
