@@ -28,6 +28,9 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	if err := datastore.ReconcileFairUseTelemetrySchema(db); err != nil {
 		return nil, err
 	}
+	if err := datastore.ReconcileFairUseEnforcementSchema(db); err != nil {
+		return nil, err
+	}
 	h, err := handler.NewHandlers(db, jwtSecret, credentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion)
 	if err != nil {
 		return nil, err
@@ -164,6 +167,9 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/state", h.AdminSubscriptionFairUseStateHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/events", h.AdminSubscriptionFairUseEventsHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/subscriptions/:id/fair-use/evaluate", h.AdminSubscriptionFairUseEvaluateHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/restriction", h.AdminSubscriptionFairUseRestrictionHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/subscriptions/:id/fair-use/restriction", h.AdminSubscriptionFairUseRestrictionHandler),
+		newRoute(http.MethodDelete, "/api/v1/admin/subscriptions/:id/fair-use/restriction", h.AdminSubscriptionFairUseRestrictionHandler),
 		newRoute(http.MethodGet, "/api/v1/account/subscriptions/:id/access", h.AccountSubscriptionAccessHandler),
 		newRoute(http.MethodPost, "/api/v1/account/subscriptions/:id/access/rotate", h.AccountSubscriptionAccessRotateHandler),
 		newRoute(http.MethodDelete, "/api/v1/account/subscriptions/:id/access", h.AccountSubscriptionAccessRevokeHandler),
@@ -223,9 +229,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		return nil, err
 	}
 	h.StartFairUseEvaluationWorker()
+	h.StartFairUseRestrictionWorker()
 	h.StartCertificateRenewalWorker()
 	h.StartDNSPublicObservationWorker()
 	return func() error {
+		h.CloseFairUseRestrictionWorker()
 		h.CloseFairUseEvaluationWorker()
 		return h.CloseZeroEventSpool()
 	}, nil
