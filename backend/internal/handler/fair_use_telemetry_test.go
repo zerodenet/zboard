@@ -53,3 +53,24 @@ func TestParseFairUseWindowUsesSafeBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestParseFairUseSubscriptionIDRequiresExactMetricsPath(t *testing.T) {
+	id, err := parseFairUseSubscriptionID("/api/v1/admin/subscriptions/42/fair-use/metrics")
+	if err != nil {
+		t.Fatalf("parse subscription id: %v", err)
+	}
+	if id != 42 {
+		t.Fatalf("subscription id = %d, want 42", id)
+	}
+
+	for _, path := range []string{
+		"/api/v1/admin/subscriptions/42",
+		"/api/v1/admin/subscriptions/0/fair-use/metrics",
+		"/api/v1/admin/subscriptions/not-a-number/fair-use/metrics",
+		"/api/v1/admin/subscriptions/42/extra/fair-use/metrics",
+	} {
+		if _, err := parseFairUseSubscriptionID(path); err == nil {
+			t.Fatalf("path %q should be rejected", path)
+		}
+	}
+}
