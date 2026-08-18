@@ -1,4 +1,5 @@
 import type { SystemConfig } from '../api/client'
+import { isValidTimeZone } from './timeZone'
 import { isEmail, isHttpUrl, utf8ByteLength } from './validation'
 
 export type SystemConfigInput = NonNullable<SystemConfig['input']>
@@ -19,6 +20,7 @@ const controlLabels: Record<SystemConfigInput['control'], string> = {
 
 export function resolveSystemConfigInput(config: SystemConfig): SystemConfigInput {
   if (config.input?.control) return config.input
+  if (config.config_key === 'system_timezone') return { control: 'text', required: true, placeholder: 'Asia/Shanghai' }
   if (config.is_secret) return { control: 'password' }
   if (config.value_type === 'bool') return { control: 'switch' }
   if (config.value_type === 'int') return { control: 'integer', step: 1 }
@@ -69,6 +71,9 @@ export function normalizeSystemConfigDraft(
   }
   if (value === '') return { value }
 
+  if (config.config_key === 'system_timezone' && !isValidTimeZone(value)) {
+    return { error: '请输入有效的 IANA 时区，例如 Asia/Shanghai、UTC 或 America/Los_Angeles。' }
+  }
   if (input.control === 'url' && !isHttpUrl(value)) {
     return { error: '请输入不含账号、密码或片段的完整 HTTP 或 HTTPS 地址。' }
   }
