@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestFlowStartedPrincipalKeyUsesNestedAuthIdentity(t *testing.T) {
@@ -72,5 +73,17 @@ func TestParseFairUseSubscriptionIDRequiresExactMetricsPath(t *testing.T) {
 		if _, err := parseFairUseSubscriptionID(path); err == nil {
 			t.Fatalf("path %q should be rejected", path)
 		}
+	}
+}
+
+func TestFairUseRawActivityCutoffKeepsOnlyShortTelemetryHorizon(t *testing.T) {
+	now := time.Date(2026, 8, 18, 10, 0, 0, 0, time.FixedZone("test", 8*60*60))
+	got := fairUseRawActivityCutoff(now)
+	want := now.UTC().Add(-2 * time.Hour)
+	if !got.Equal(want) {
+		t.Fatalf("raw activity cutoff = %s, want %s", got, want)
+	}
+	if fairUseRawActivityRetention <= time.Hour {
+		t.Fatalf("raw retention %s must cover the maximum one-hour metrics window", fairUseRawActivityRetention)
 	}
 }
