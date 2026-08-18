@@ -24,15 +24,17 @@ const (
 	zeroEventConsumerCompactBurstBatches   = 16
 	zeroEventConsumerEmergencyBurstBatches = 32
 	zeroEventConsumerMinimumInterval       = 100 * time.Millisecond
+	zeroConnectorReceiptPersistInterval    = 30 * time.Second
 )
 
 var zeroEventRuntimeRegistry sync.Map
 
 type zeroEventRuntime struct {
-	spool  zeroevent.EventSpool
-	config zeroevent.ConsumerConfig
-	cancel context.CancelFunc
-	done   chan struct{}
+	spool       zeroevent.EventSpool
+	config      zeroevent.ConsumerConfig
+	cancel      context.CancelFunc
+	done        chan struct{}
+	lastReceipt sync.Map
 }
 
 type zeroEventNodeCursor struct {
@@ -119,6 +121,7 @@ func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node model.Node,
 	if !ok {
 		return false, nil
 	}
+	runtime := value.(*zeroEventRuntime)
 	flowID := ""
 	if event.EventType == "stats.sampled" {
 		if _, err := parseZeroStatsProjection(event.Payload); err != nil {
@@ -147,10 +150,41 @@ func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node model.Node,
 		Sequence:       event.Sequence,
 		Payload:        append(json.RawMessage(nil), event.Payload...),
 	}
-	if err := value.(*zeroEventRuntime).spool.Append(ctx, envelope); err != nil {
+	if err := runtime.spool.Append(ctx, envelope); err != nil {
 		return true, fmt.Errorf("persist Zero event %s: %w", event, err)
 	}
+	if err := h.recordBufferedZeroConnectorReceipt(node, runtime); err != nil {
+		// The durable event has already been accepted. Liveness projection is
+		// deliberately best-effort here so a transient metadata write cannot make
+		// Core retry an event that is safely stored in the spool.
+		log.Printf("Zero connector receipt projection failed for node %d: %v", node.ID, err)
+	}
 	return true, nil
+}
+
+func (h *handlers) recordBufferedZeroConnectorReceipt(node model.Node, runtime *zeroEventRuntime) error {
+	now := time.Now().UTC()
+	if previous, ok := runtime.lastReceipt.Load(node.ID); ok {
+		if last, ok := previous.(time.Time); ok && now.Sub(last) < zeroConnectorReceiptPersistInterval {
+			return nil
+		}
+	}
+	result := h.db.Model(&model.Node{}).
+		Where("id = ? AND is_enabled = ? AND node_credential = ? AND node_credential_revoked_at IS NULL", node.ID, true, node.NodeCredential).
+		Updates(map[string]interface{}{
+			"last_seen_at":           now,
+			"connector_last_seen_at": now,
+			"is_online":              true,
+			"status":                 1,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("Zero event credential is no longer active")
+	}
+	runtime.lastReceipt.Store(node.ID, now)
+	return nil
 }
 
 func zeroBufferedFlowID(payload json.RawMessage) string {
@@ -322,29 +356,22 @@ func projectZeroNode(tx *gorm.DB, projection zeroNodeProjection) error {
 		return nil
 	}
 
-	lastSeen := projection.Latest.OccurredAt.UTC()
-	if lastSeen.IsZero() {
-		lastSeen = time.Now().UTC()
+	eventOccurredAt := projection.Latest.OccurredAt.UTC()
+	if eventOccurredAt.IsZero() {
+		eventOccurredAt = time.Now().UTC()
 	}
 	now := time.Now().UTC()
-	online := !lastSeen.Add(nodeOnlineWindow).Before(now)
-	updates := map[string]interface{}{
-		"last_seen_at":           lastSeen,
-		"connector_last_seen_at": lastSeen,
-		"is_online":              online,
-		"status":                 map[bool]int16{true: 1, false: 0}[online],
-	}
 	if projection.StatsEvent != nil && (cursorErr != nil || zeroEnvelopeNewerThanCursor(*projection.StatsEvent, cursor)) {
-		updates["active_flows"] = projection.Stats.ActiveSessions
-		updates["bytes_up"] = projection.Stats.BytesUp
-		updates["bytes_down"] = projection.Stats.BytesDown
-	}
-	result := tx.Model(&model.Node{}).
-		Where("id = ? AND is_enabled = ? AND node_credential_revoked_at IS NULL", projection.NodeID, true).
-		Where("last_seen_at IS NULL OR last_seen_at <= ?", lastSeen).
-		Updates(updates)
-	if result.Error != nil {
-		return result.Error
+		result := tx.Model(&model.Node{}).
+			Where("id = ? AND is_enabled = ? AND node_credential_revoked_at IS NULL", projection.NodeID, true).
+			Updates(map[string]interface{}{
+				"active_flows": projection.Stats.ActiveSessions,
+				"bytes_up":     projection.Stats.BytesUp,
+				"bytes_down":   projection.Stats.BytesDown,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
 	}
 
 	next := zeroEventNodeCursor{
@@ -352,7 +379,7 @@ func projectZeroNode(tx *gorm.DB, projection zeroNodeProjection) error {
 		CoreInstanceID: strings.TrimSpace(projection.Latest.CoreInstanceID),
 		Sequence:       projection.Latest.Sequence,
 		ConfigRevision: projection.Latest.ConfigRevision,
-		OccurredAt:     lastSeen,
+		OccurredAt:     eventOccurredAt,
 		UpdatedAt:      now,
 	}
 	if errors.Is(cursorErr, gorm.ErrRecordNotFound) {
