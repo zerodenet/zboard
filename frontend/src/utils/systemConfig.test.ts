@@ -33,6 +33,15 @@ describe('system config schema', () => {
     expect(resolveSystemConfigInput(config({ value_type: 'json' })).control).toBe('json')
   })
 
+  it('provides a required IANA timezone input', () => {
+    const timezone = config({ config_key: 'system_timezone', name: '系统时区', value: 'UTC' })
+    expect(resolveSystemConfigInput(timezone)).toMatchObject({ control: 'text', required: true, placeholder: 'Asia/Shanghai' })
+    expect(normalizeSystemConfigDraft(timezone, 'Asia/Shanghai')).toEqual({ value: 'Asia/Shanghai' })
+    expect(normalizeSystemConfigDraft(timezone, 'Not/A_Real_Zone')).toEqual({
+      error: '请输入有效的 IANA 时区，例如 Asia/Shanghai、UTC 或 America/Los_Angeles。',
+    })
+  })
+
   it('formats JSON for editing and never exposes a configured secret value', () => {
     expect(formatSystemConfigDraft(config({ value_type: 'json', value: { enabled: true } }))).toBe('{\n  "enabled": true\n}')
     expect(formatSystemConfigDraft(config({ is_secret: true, configured: true, value: 'ciphertext' }))).toBe('')
