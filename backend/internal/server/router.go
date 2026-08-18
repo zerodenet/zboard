@@ -55,6 +55,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/system/configs", h.PublicSystemConfigsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/system-configs", h.AdminSystemConfigsListHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/system-configs/:key", h.AdminSystemConfigUpdateHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/system-info", h.AdminSystemInfoHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/tasks", h.AdminTasksListHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/tasks", h.AdminTaskCreateHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/tasks/:id", h.AdminTaskGetHandler),

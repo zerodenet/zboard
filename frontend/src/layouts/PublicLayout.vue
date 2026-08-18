@@ -10,7 +10,7 @@
       </div>
     </header>
     <main><RouterView /></main>
-    <footer class="public-footer"><div><RouterLink class="public-brand" to="/"><span class="brand-mark">Z</span><strong>{{ app.siteName }}</strong></RouterLink><p>简单、透明地管理你的网络订阅。</p></div><div><RouterLink to="/pricing">套餐</RouterLink><RouterLink to="/login">登录</RouterLink><span>{{ versionLabel }}</span></div></footer>
+    <footer class="public-footer"><div><RouterLink class="public-brand" to="/"><span class="brand-mark">Z</span><strong>{{ app.siteName }}</strong></RouterLink><p>简单、透明地管理你的网络订阅。</p></div><div><RouterLink to="/pricing">套餐</RouterLink><RouterLink v-if="app.isAuthenticated" :to="landingPath">进入{{ app.isAdmin ? '管理后台' : '用户中心' }}</RouterLink><RouterLink v-else to="/login">登录</RouterLink><span>{{ versionLabel }}</span></div></footer>
   </div>
 </template>
 

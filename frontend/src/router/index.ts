@@ -51,6 +51,7 @@ export const routes: RouteRecordRaw[] = [
       { path: 'operation-logs', component: () => import('../views/OperationLogs.vue'), meta: { title: '运行日志', section: '系统运营' } },
       { path: 'audit-logs', component: () => import('../views/AuditLogs.vue'), meta: { title: '审计日志', section: '系统运营' } },
       { path: 'settings', component: () => import('../views/Settings.vue'), meta: { title: '系统设置', section: '系统运营' } },
+      { path: 'about', component: () => import('../views/About.vue'), meta: { title: '关于 Zboard', section: '系统运营' } },
       { path: 'billing', redirect: '/admin/orders' }
     ]
   },
@@ -74,5 +75,6 @@ export const routes: RouteRecordRaw[] = [
   { path: '/subscription-rule-sets', redirect: '/admin/subscription-templates/rule-sets' },
   { path: '/audit-logs', redirect: '/admin/audit-logs' },
   { path: '/settings', redirect: '/admin/settings' },
+  { path: '/about', redirect: '/admin/about' },
   { path: '/:pathMatch(.*)*', redirect: '/' }
 ]
