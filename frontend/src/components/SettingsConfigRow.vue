@@ -25,9 +25,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import type { SystemConfig } from '../api/client'
-import { useAppStore } from '../stores/app'
 import { resolveSystemConfigInput, systemConfigControlLabel } from '../utils/systemConfig'
 import PortInput from './PortInput.vue'
 import StatusBadge from './StatusBadge.vue'
@@ -42,7 +41,6 @@ import UiTextarea from './UiTextarea.vue'
 
 const props = defineProps<{ config: SystemConfig; draft?: unknown; saving?: boolean; dirty?: boolean; error?: string; conflict?: boolean }>()
 const emit = defineEmits<{ 'update:draft': [value: unknown]; save: []; reload: [] }>()
-const app = useAppStore()
 const input = computed(() => resolveSystemConfigInput(props.config))
 const controlLabel = computed(() => systemConfigControlLabel(props.config))
 const labelID = computed(() => `${props.config.config_key}-label`)
@@ -60,10 +58,6 @@ const controlAttrs = computed(() => ({
   'aria-invalid': props.error ? 'true' : undefined,
   required: input.value.required || undefined,
 }))
-
-watch(() => props.config.value, value => {
-  if (props.config.config_key === 'system_timezone') app.setSystemTimeZone(value)
-}, { immediate: true })
 </script>
 
 <style scoped>
