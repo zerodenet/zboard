@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -21,7 +22,7 @@ const (
 	fairUseDefaultWorkingNodeWindowSeconds     = 300
 	fairUseMinConnectionStartWindowSeconds     = 10
 	fairUseMinWorkingNodeWindowSeconds         = 30
-	fairUseMaxTelemetryWindowSeconds            = 3600
+	fairUseMaxTelemetryWindowSeconds           = 3600
 )
 
 type subscriptionFlowStartEvent struct {
@@ -49,24 +50,26 @@ type fairUseWindowMetric struct {
 }
 
 type fairUseTelemetryMetrics struct {
-	SubscriptionID          uint                `json:"subscription_id"`
-	UserID                  uint                `json:"user_id"`
-	SampledAt               time.Time           `json:"sampled_at"`
-	CurrentActiveFlows      *uint64              `json:"current_active_flows"`
-	ConnectionStarts        fairUseWindowMetric `json:"connection_starts"`
+	SubscriptionID           uint                `json:"subscription_id"`
+	UserID                   uint                `json:"user_id"`
+	SampledAt                time.Time           `json:"sampled_at"`
+	CurrentActiveFlows       *uint64              `json:"current_active_flows"`
+	ConnectionStarts         fairUseWindowMetric `json:"connection_starts"`
 	ReceivedConnectionStarts fairUseWindowMetric `json:"received_connection_starts"`
-	WorkingNodes            fairUseWindowMetric `json:"working_nodes"`
-	LastActivityAt          *time.Time           `json:"last_activity_at"`
-	LastReceivedAt          *time.Time           `json:"last_received_at"`
-	TelemetryCompleteness   string               `json:"telemetry_completeness"`
-	EnforcementReady        bool                 `json:"enforcement_ready"`
-	EventTimeBasis          string               `json:"event_time_basis"`
+	WorkingNodes             fairUseWindowMetric `json:"working_nodes"`
+	LastActivityAt           *time.Time           `json:"last_activity_at"`
+	LastReceivedAt           *time.Time           `json:"last_received_at"`
+	TelemetryCompleteness    string               `json:"telemetry_completeness"`
+	EnforcementReady         bool                 `json:"enforcement_ready"`
+	EventTimeBasis           string               `json:"event_time_basis"`
 }
 
 // ZeroEventFairUseTelemetryHandler decorates the existing observability path.
 // Traffic settlement and Principal projections remain authoritative. Fair Use
 // collection only runs after that path accepts the event, so rejected or
-// unauthenticated events can never influence behavioural metrics.
+// unauthenticated events can never influence behavioural metrics. Fair Use is
+// also fail-open: auxiliary telemetry persistence cannot turn an accepted Zero
+// event into a failed delivery or interfere with traffic accounting.
 func (h *handlers) ZeroEventFairUseTelemetryHandler(w http.ResponseWriter, r *http.Request) {
 	body, readErr := io.ReadAll(io.LimitReader(r.Body, nodeReportMaxBodyBytes+1))
 	if readErr != nil {
@@ -85,8 +88,7 @@ func (h *handlers) ZeroEventFairUseTelemetryHandler(w http.ResponseWriter, r *ht
 	if err := json.Unmarshal(body, &event); err == nil && event.EventType == "flow.started" {
 		if nodeID, ok := zeroEventSourceNodeID(event.SourceID); ok {
 			if err := h.persistSubscriptionFlowStartEvent(nodeID, event); err != nil {
-				ServerError(w, err)
-				return
+				log.Printf("fair use flow-start telemetry persistence failed: node_id=%d event_id=%q error=%v", nodeID, event.EventID, err)
 			}
 		}
 	}
@@ -164,6 +166,29 @@ func parseFairUseWindow(raw string, fallback, minimum int) (int, error) {
 	return value, nil
 }
 
+func parseFairUseSubscriptionID(path string) (uint, error) {
+	const (
+		prefix = "/api/v1/admin/subscriptions/"
+		suffix = "/fair-use/metrics"
+	)
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return 0, errors.New("invalid subscription fair-use metrics path")
+	}
+	raw := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
+	if raw == "" || strings.Contains(raw, "/") {
+		return 0, errors.New("invalid subscription id")
+	}
+	value, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || value == 0 {
+		return 0, errors.New("invalid subscription id")
+	}
+	id := uint(value)
+	if uint64(id) != value {
+		return 0, errors.New("subscription id is out of range")
+	}
+	return id, nil
+}
+
 // AdminSubscriptionFairUseMetricsHandler exposes observation-only signals for
 // tuning #59 before any restriction policy exists. Completeness deliberately
 // remains unknown until event-gap detection/snapshot reconciliation lands; the
@@ -172,7 +197,7 @@ func (h *handlers) AdminSubscriptionFairUseMetricsHandler(w http.ResponseWriter,
 	if _, err := h.requireAdmin(w, r); err != nil {
 		return
 	}
-	subscriptionID, err := parsePathID(r.URL.Path, "/api/v1/admin/subscriptions/")
+	subscriptionID, err := parseFairUseSubscriptionID(r.URL.Path)
 	if err != nil {
 		BadRequest(w, err.Error())
 		return
