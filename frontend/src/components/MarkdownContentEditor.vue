@@ -38,8 +38,8 @@
     <div v-else class="markdown-editor__preview">
       <div v-if="remote" class="remote-preview">
         <UiIcon name="link" />
-        <div><strong>远端页面模式</strong><p>{{ source }}</p></div>
-        <a :href="source" target="_blank" rel="noreferrer">打开检查</a>
+        <div><strong>远端页面模式</strong><p>{{ remoteUrl }}</p></div>
+        <a :href="remoteUrl" target="_blank" rel="noreferrer">打开检查</a>
       </div>
       <div v-else class="policy-markdown" v-html="previewHtml"></div>
     </div>
@@ -76,9 +76,10 @@ const tabs = [
   { value: 'edit', label: '编辑', icon: 'edit' },
   { value: 'preview', label: '预览', icon: 'view' },
 ]
-const variableHint = '{{site_name}} · {{site_url}} · {{copyright}} · {{support_email}}'
+const variableHint = '{{site_name}} · {{site_url}} · {{copyright}} · {{support_contact}}'
 const source = computed(() => String(props.modelValue ?? ''))
 const remote = computed(() => isRemoteLegalContent(source.value))
+const remoteUrl = computed(() => remote.value ? source.value.trim() : '')
 const previewHtml = computed(() => renderSafeMarkdown(resolveLegalVariables(source.value, props.profile)))
 
 function restoreTemplate() {
