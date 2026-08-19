@@ -27,6 +27,11 @@ export interface SiteProfile {
   homeTitle: string
 }
 
+export interface SiteMetadataContext {
+  path?: string
+  pageTitle?: string
+}
+
 const defaultDescription = '按流量、速度和设备数选择服务方案，购买后可在用户中心独立管理每一条订阅。'
 
 function configValue(configs: SystemConfig[], key: string) {
@@ -108,16 +113,25 @@ function absoluteUrl(value: string, base: string) {
   try { return new URL(value, base || window.location.origin).toString() } catch { return '' }
 }
 
-export function applySiteMetadata(profile: SiteProfile) {
+function routeDocumentTitle(profile: SiteProfile, context: SiteMetadataContext) {
+  const path = context.path || (typeof window !== 'undefined' ? window.location.pathname : '/')
+  const pageTitle = context.pageTitle?.trim() || ''
+  if (path !== '/' && pageTitle) return `${pageTitle} · ${profile.name}`
+  return profile.metaTitle || profile.name
+}
+
+export function applySiteMetadata(profile: SiteProfile, context: SiteMetadataContext = {}) {
   if (typeof document === 'undefined') return
-  document.title = profile.metaTitle || profile.name
+  const title = routeDocumentTitle(profile, context)
+  document.title = title
   ensureMeta('meta[name="description"]', { name: 'description', content: profile.metaDescription })
   ensureMeta('meta[property="og:site_name"]', { property: 'og:site_name', content: profile.name })
-  ensureMeta('meta[property="og:title"]', { property: 'og:title', content: profile.metaTitle || profile.name })
+  ensureMeta('meta[property="og:title"]', { property: 'og:title', content: title })
   ensureMeta('meta[property="og:description"]', { property: 'og:description', content: profile.metaDescription })
 
   const canonicalBase = profile.siteUrl || window.location.origin
-  const canonical = absoluteUrl(window.location.pathname, canonicalBase)
+  const path = context.path || window.location.pathname
+  const canonical = absoluteUrl(path, canonicalBase)
   if (canonical) {
     ensureLink('canonical').href = canonical
     ensureMeta('meta[property="og:url"]', { property: 'og:url', content: canonical })
