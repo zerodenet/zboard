@@ -64,8 +64,10 @@ function parseLegalItems(value: unknown): SiteLegalItem[] {
   })
 }
 
-export function buildSiteProfile(configs: SystemConfig[], fallbackName = 'zboard'): SiteProfile {
-  const name = stringValue(configs, 'site_name', fallbackName || 'zboard')
+// preferredName is authoritative when supplied by Installation or an unsaved
+// settings draft. Public site_name remains the fallback for standalone callers.
+export function buildSiteProfile(configs: SystemConfig[], preferredName = ''): SiteProfile {
+  const name = preferredName.trim() || stringValue(configs, 'site_name', 'zboard')
   const description = stringValue(configs, 'site_desc', defaultDescription)
   return {
     name,
