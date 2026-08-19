@@ -2,12 +2,12 @@
   <ModalDialog :open="open" :title="title" size="xl" fixed-body @close="$emit('close')">
     <div v-if="remote" class="legal-remote">
       <div class="legal-remote__notice">
-        <span><UiIcon name="link" />内容来自外部页面</span>
-        <a :href="content" target="_blank" rel="noreferrer">新窗口打开</a>
+        <span><UiIcon name="info" />内容来自外部页面</span>
+        <a :href="remoteUrl" target="_blank" rel="noreferrer">新窗口打开</a>
       </div>
       <iframe
         class="legal-remote__frame"
-        :src="content"
+        :src="remoteUrl"
         :title="title"
         sandbox="allow-forms allow-popups allow-scripts"
         referrerpolicy="no-referrer"
@@ -34,6 +34,7 @@ const props = defineProps<{
 defineEmits<{ close: [] }>()
 
 const remote = computed(() => isRemoteLegalContent(props.content))
+const remoteUrl = computed(() => remote.value ? props.content.trim() : '')
 const html = computed(() => renderSafeMarkdown(resolveLegalVariables(props.content, props.profile)))
 </script>
 
