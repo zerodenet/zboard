@@ -76,14 +76,16 @@ func TestParseFairUseSubscriptionIDRequiresExactMetricsPath(t *testing.T) {
 	}
 }
 
-func TestFairUseRawActivityCutoffKeepsOnlyShortTelemetryHorizon(t *testing.T) {
+func TestFairUseObservationRetentionIsFifteenDays(t *testing.T) {
 	now := time.Date(2026, 8, 18, 10, 0, 0, 0, time.FixedZone("test", 8*60*60))
-	got := fairUseRawActivityCutoff(now)
-	want := now.UTC().Add(-2 * time.Hour)
-	if !got.Equal(want) {
+	want := now.UTC().Add(-15 * 24 * time.Hour)
+	if got := fairUseRawActivityCutoff(now); !got.Equal(want) {
 		t.Fatalf("raw activity cutoff = %s, want %s", got, want)
 	}
-	if fairUseRawActivityRetention <= time.Hour {
-		t.Fatalf("raw retention %s must cover the maximum one-hour metrics window", fairUseRawActivityRetention)
+	if got := fairUseEvaluationEventCutoff(now); !got.Equal(want) {
+		t.Fatalf("evaluation event cutoff = %s, want %s", got, want)
+	}
+	if fairUseObservationRetention != 15*24*time.Hour {
+		t.Fatalf("observation retention = %s, want 15d", fairUseObservationRetention)
 	}
 }
