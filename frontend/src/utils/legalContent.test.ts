@@ -11,7 +11,7 @@ const profile: SiteProfile = {
   favicon: '',
   copyright: '© 2026 Example Network',
   supportEmail: 'support@example.com',
-  supportUrl: '',
+  supportUrl: 'https://example.com/support',
   telegramUrl: '',
   termsContent: '',
   privacyContent: '',
@@ -26,6 +26,7 @@ const profile: SiteProfile = {
 describe('legal content utilities', () => {
   it('treats only a standalone http(s) URL as remote content', () => {
     expect(isRemoteLegalContent('https://example.com/terms')).toBe(true)
+    expect(isRemoteLegalContent('  https://example.com/terms  ')).toBe(true)
     expect(isRemoteLegalContent('http://example.com/privacy')).toBe(true)
     expect(isRemoteLegalContent('https://example.com\nextra')).toBe(false)
     expect(isRemoteLegalContent('# Terms')).toBe(false)
@@ -33,8 +34,15 @@ describe('legal content utilities', () => {
   })
 
   it('resolves site variables at display time', () => {
-    expect(resolveLegalVariables('{{site_name}} · {{copyright}} · {{support_email}}', profile))
-      .toBe('Example Network · © 2026 Example Network · support@example.com')
+    expect(resolveLegalVariables('{{site_name}} · {{copyright}} · {{support_email}} · {{support_contact}}', profile))
+      .toBe('Example Network · © 2026 Example Network · support@example.com · support@example.com')
+  })
+
+  it('falls back from support email to the configured support URL', () => {
+    expect(resolveLegalVariables('{{support_contact}}', { ...profile, supportEmail: '' }))
+      .toBe('https://example.com/support')
+    expect(resolveLegalVariables('{{support_contact}}', { ...profile, supportEmail: '', supportUrl: '' }))
+      .toBe('站点提供的客服入口')
   })
 
   it('renders a bounded markdown subset and escapes raw html', () => {
