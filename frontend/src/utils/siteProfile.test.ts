@@ -19,12 +19,12 @@ function config(config_key: string, value: unknown, value_type: SystemConfig['va
 }
 
 describe('buildSiteProfile', () => {
-  it('projects operator branding and legal metadata from public configs', () => {
+  it('projects operator branding, policy content and legal metadata from public configs', () => {
     const profile = buildSiteProfile([
       config('site_name', 'Example Network'),
       config('site_desc', 'Fast and predictable connectivity.'),
       config('site_logo', 'https://cdn.example.com/logo.svg'),
-      config('site_privacy_url', 'https://example.com/privacy'),
+      config('site_privacy_content', '# Privacy\n\n{{copyright}}'),
       config('site_legal_items', [
         { label: 'Company No.', value: '12345678', url: 'https://registry.example/12345678' },
         { label: '', value: 'ignored' },
@@ -34,10 +34,17 @@ describe('buildSiteProfile', () => {
     expect(profile.name).toBe('Example Network')
     expect(profile.description).toBe('Fast and predictable connectivity.')
     expect(profile.logo).toBe('https://cdn.example.com/logo.svg')
-    expect(profile.privacyUrl).toBe('https://example.com/privacy')
+    expect(profile.privacyContent).toBe('# Privacy\n\n{{copyright}}')
     expect(profile.legalItems).toEqual([
       { label: 'Company No.', value: '12345678', url: 'https://registry.example/12345678' },
     ])
+  })
+
+  it('keeps compatibility with URL-only policy values', () => {
+    const profile = buildSiteProfile([
+      config('site_terms_url', 'https://example.com/terms'),
+    ])
+    expect(profile.termsContent).toBe('https://example.com/terms')
   })
 
   it('keeps useful defaults when optional customization is empty', () => {
