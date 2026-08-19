@@ -17,15 +17,14 @@ export interface SiteProfile {
   supportEmail: string
   supportUrl: string
   telegramUrl: string
-  termsUrl: string
-  privacyUrl: string
-  refundUrl: string
+  termsContent: string
+  privacyContent: string
+  refundContent: string
   legalItems: SiteLegalItem[]
   metaTitle: string
   metaDescription: string
   homeKicker: string
   homeTitle: string
-  homePrimaryCta: string
 }
 
 const defaultDescription = '按流量、速度和设备数选择服务方案，购买后可在用户中心独立管理每一条订阅。'
@@ -37,6 +36,10 @@ function configValue(configs: SystemConfig[], key: string) {
 function stringValue(configs: SystemConfig[], key: string, fallback = '') {
   const value = configValue(configs, key)
   return typeof value === 'string' ? value.trim() || fallback : fallback
+}
+
+function contentValue(configs: SystemConfig[], key: string, legacyKey: string) {
+  return stringValue(configs, key, stringValue(configs, legacyKey))
 }
 
 function parseLegalItems(value: unknown): SiteLegalItem[] {
@@ -70,15 +73,14 @@ export function buildSiteProfile(configs: SystemConfig[], fallbackName = 'zboard
     supportEmail: stringValue(configs, 'site_support_email'),
     supportUrl: stringValue(configs, 'site_support_url'),
     telegramUrl: stringValue(configs, 'site_telegram_url'),
-    termsUrl: stringValue(configs, 'site_terms_url'),
-    privacyUrl: stringValue(configs, 'site_privacy_url'),
-    refundUrl: stringValue(configs, 'site_refund_url'),
+    termsContent: contentValue(configs, 'site_terms_content', 'site_terms_url'),
+    privacyContent: contentValue(configs, 'site_privacy_content', 'site_privacy_url'),
+    refundContent: contentValue(configs, 'site_refund_content', 'site_refund_url'),
     legalItems: parseLegalItems(configValue(configs, 'site_legal_items')),
     metaTitle: stringValue(configs, 'site_meta_title', name),
     metaDescription: stringValue(configs, 'site_meta_description', description),
     homeKicker: stringValue(configs, 'site_home_kicker', '灵活套餐 · 独立订阅 · 清晰计费'),
     homeTitle: stringValue(configs, 'site_home_title', '选择适合你的套餐，按需订阅，轻松管理。'),
-    homePrimaryCta: stringValue(configs, 'site_home_primary_cta', '浏览套餐'),
   }
 }
 
