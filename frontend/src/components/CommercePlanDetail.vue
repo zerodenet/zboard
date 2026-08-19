@@ -100,15 +100,31 @@
         <UiButton type="button" :disabled="!selectedSku" @click="$emit('continue')">
           继续结算<UiIcon name="chevron" />
         </UiButton>
+        <div v-if="hasPurchasePolicies" class="storefront-policy-links">
+          <span>购买前可查看</span>
+          <button v-if="profile.termsContent" type="button" @click="openPolicy('服务条款', profile.termsContent)">服务条款</button>
+          <i v-if="profile.termsContent && profile.refundContent">·</i>
+          <button v-if="profile.refundContent" type="button" @click="openPolicy('退款政策', profile.refundContent)">退款政策</button>
+        </div>
       </aside>
     </div>
+
+    <LegalContentDialog
+      :open="Boolean(activePolicyContent)"
+      :title="activePolicyTitle"
+      :content="activePolicyContent"
+      :profile="profile"
+      @close="closePolicy"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { PlanCatalogItem, PlanSKU } from '../api/client'
+import { useAppStore } from '../stores/app'
 import { formatBytes, formatCurrency } from '../utils/format'
+import LegalContentDialog from './LegalContentDialog.vue'
 import PageAlert from './PageAlert.vue'
 import UiButton from './UiButton.vue'
 import UiIcon from './UiIcon.vue'
@@ -137,10 +153,32 @@ defineEmits<{
   continue: []
 }>()
 
+const app = useAppStore()
+const profile = computed(() => app.siteProfile)
 const selectedSku = computed(() => props.skus.find(item => item.id === props.selectedSkuId) || null)
+const hasPurchasePolicies = computed(() => Boolean(profile.value.termsContent || profile.value.refundContent))
+const activePolicyTitle = ref('')
+const activePolicyContent = ref('')
+
+function openPolicy(title: string, content: string) {
+  activePolicyTitle.value = title
+  activePolicyContent.value = content
+}
+
+function closePolicy() {
+  activePolicyTitle.value = ''
+  activePolicyContent.value = ''
+}
 
 function billingLabel(sku: PlanSKU) {
   const unit = ({ day: '天', month: '个月', year: '年', once: '次' } as Record<string, string>)[sku.billing_unit] || sku.billing_unit
   return sku.billing_unit === 'once' ? '一次性' : `${sku.billing_value} ${unit}`
 }
 </script>
+
+<style scoped>
+.storefront-policy-links { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; margin-top: 10px; color: var(--muted); font-size: 9px; line-height: 1.45; text-align: center; }
+.storefront-policy-links button { padding: 0; border: 0; background: none; color: var(--primary); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.storefront-policy-links button:hover { text-decoration-thickness: 2px; }
+.storefront-policy-links i { font-style: normal; opacity: .65; }
+</style>
