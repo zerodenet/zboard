@@ -14,7 +14,7 @@
 
       <div v-if="loading" class="diagnostic-loading">
         <UiIcon name="activity" />
-        <div><strong>正在检查运行状态</strong><span>确认 SSH、Zero 和 Zboard 当前分配到该节点的协议服务。</span></div>
+        <div><strong>正在检查运行状态</strong><span>确认 SSH、Zero 和 ZBoard 当前分配到该节点的协议服务。</span></div>
       </div>
 
       <template v-else-if="snapshot">
@@ -36,7 +36,7 @@
         </section>
 
         <section class="diagnostic-section">
-          <header><div><strong>协议服务</strong><span>只检查 Zboard 当前启用并分配到该节点的协议，不展示主机端口或其他宿主机信息。</span></div></header>
+          <header><div><strong>协议服务</strong><span>只检查 ZBoard 当前启用并分配到该节点的协议，不展示主机端口或其他宿主机信息。</span></div></header>
           <DataTable v-if="snapshot.protocols.length" caption="当前分配协议的运行状态" :row-count="snapshot.protocols.length" :min-width="520">
             <thead><tr><th>服务</th><th>协议</th><th>状态</th><th>说明</th></tr></thead>
             <tbody>

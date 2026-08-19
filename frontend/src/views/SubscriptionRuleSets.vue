@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="规则集" description="由 Zboard 维护统一规则源并发布适配客户端的规则产物；订阅模板只引用稳定规则地址并选择命中后的路由动作。" eyebrow="订阅模板">
+    <PageHeader title="规则集" description="由 ZBoard 维护统一规则源并发布适配客户端的规则产物；订阅模板只引用稳定规则地址并选择命中后的路由动作。" eyebrow="订阅模板">
       <template #actions>
         <PageRefreshButton label="刷新规则集" :loading="loading" @click="load" />
         <UiButton type="button" @click="openCreate"><UiIcon name="plus" />新建规则集</UiButton>
@@ -10,7 +10,7 @@
     <SubscriptionTemplateSectionNav section="rule-sets" />
 
     <PageAlert tone="info" title="统一规则源">
-      正文固定保存为 Zero Rule IR v1。远端地址只用于导入，模板会收到 Zboard 为 znet-sink、Clash 或 sing-box 生成的规则地址。
+      正文固定保存为 Zero Rule IR v1。远端地址只用于导入，模板会收到 ZBoard 为 znet-sink、Clash 或 sing-box 生成的规则地址。
     </PageAlert>
 
     <TransientFeedback :success="message" :error="feedbackError" success-title="规则集操作已完成" error-title="规则集操作失败" />
@@ -23,7 +23,7 @@
         </WorkbenchFilterBar>
       </template>
 
-      <DataTable v-if="ruleSets.length" caption="Zboard 自有规则集列表" :row-count="total" :min-width="1080" table-class="subscription-rule-set-table">
+      <DataTable v-if="ruleSets.length" caption="ZBoard 自有规则集列表" :row-count="total" :min-width="1080" table-class="subscription-rule-set-table">
         <thead>
           <tr>
             <th class="table-primary-column">规则集</th>
@@ -86,7 +86,7 @@
         v-else-if="!loading"
         icon="audit"
         :title="search || activeFilter ? '没有匹配规则集' : '还没有规则集'"
-        :description="search || activeFilter ? '调整或清除筛选条件后重试。' : '创建规则集后，Zboard 会保存规范化的 Zero Rule IR，并按客户端格式发布稳定地址。'"
+        :description="search || activeFilter ? '调整或清除筛选条件后重试。' : '创建规则集后，ZBoard 会保存规范化的 Zero Rule IR，并按客户端格式发布稳定地址。'"
       >
         <template v-if="!search && !activeFilter" #actions>
           <UiButton type="button" @click="openCreate"><UiIcon name="plus" />新建规则集</UiButton>
@@ -135,7 +135,7 @@
             <template #default="{ controlAttrs }"><UiInput v-model.trim="form.tag" v-bind="controlAttrs" maxlength="64" :disabled="Boolean(form.id)" placeholder="例如：reject-ads" /></template>
           </FormField>
 
-          <FormField label="维护方式" name="managed-rule-set-mode" hint="远端内容会导入 Zboard，不会在模板中直接透传第三方地址。" required>
+          <FormField label="维护方式" name="managed-rule-set-mode" hint="远端内容会导入 ZBoard，不会在模板中直接透传第三方地址。" required>
             <template #default="{ controlAttrs }"><UiSelect v-model="form.mode" v-bind="controlAttrs" :options="modeOptions" /></template>
           </FormField>
 
@@ -499,7 +499,7 @@ async function remove(item: ManagedRuleSet) {
   if (item.usage_count > 0) return
   const confirmed = await confirmAction({
     title: `删除规则集“${item.name}”？`,
-    message: 'Zboard 保存的正文和派生产物会一并删除，此操作无法撤销。',
+    message: 'ZBoard 保存的正文和派生产物会一并删除，此操作无法撤销。',
     confirmText: '删除规则集',
     tone: 'danger',
   })

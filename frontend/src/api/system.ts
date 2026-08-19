@@ -8,6 +8,9 @@ export interface AdminProjectLink {
 export interface AdminSystemInfo {
   service: string
   version: string
+  release_version: string
+  commit: string
+  build_time: string
   release_channel: string
   started_at: string
   uptime_seconds: number

@@ -66,7 +66,7 @@ const fetchedVersion = ref('')
 const fullVersion = computed(() => app.installation?.version || fetchedVersion.value || '')
 const displayVersion = computed(() => shortVersion(fullVersion.value))
 const currentTitle = computed(() => String(route.meta.title || '管理后台'))
-const currentSection = computed(() => String(route.meta.section || 'zboard'))
+const currentSection = computed(() => String(route.meta.section || 'ZBoard'))
 const returnTarget = computed(() => normalizeAdminReturnTo(route.query.return_to))
 const userInitial = computed(() => (app.user.email || 'Z').slice(0, 1).toUpperCase())
 type NavigationLeaf = { to: string; label: string; icon?: string }
@@ -103,7 +103,7 @@ const navigationGroups: NavigationGroup[] = [
     { to: '/admin/operation-logs', label: '运行日志', icon: 'terminal' },
     { to: '/admin/audit-logs', label: '审计日志', icon: 'audit' },
     { to: '/admin/settings', label: '系统设置', icon: 'settings' },
-    { to: '/admin/about', label: '关于 Zboard', icon: 'info' }
+    { to: '/admin/about', label: '关于 ZBoard', icon: 'info' }
   ] }
 ]
 

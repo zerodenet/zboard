@@ -302,7 +302,7 @@ const error = computed({
 const subscriptionUrl = computed(() => buildSubscriptionURL(baseSubscriptionUrl.value, selectedTemplate.value))
 const templateOptions = computed(() => [
   { label: '自动识别（推荐）', value: subscriptionDeliveryAuto },
-  { label: 'Zboard 原生 JSON', value: subscriptionDeliveryNative },
+  { label: 'ZBoard 原生 JSON', value: subscriptionDeliveryNative },
   ...templates.value
     .filter(item => !isBuiltInDeliveryMode(item.slug))
     .map(item => ({ label: `${item.name} · ${item.content_type || '系统格式'}`, value: item.slug })),
@@ -315,7 +315,7 @@ const deliveryHint = computed(() => {
     return '服务端按 User-Agent 自动选择 ZNet Sink、Clash/Mihomo 或 sing-box；无法识别时返回原生 JSON。'
   }
   if (selectedTemplate.value === subscriptionDeliveryNative) {
-    return '始终返回 Zboard 原生 JSON，不受客户端 User-Agent 影响。'
+    return '始终返回 ZBoard 原生 JSON，不受客户端 User-Agent 影响。'
   }
   return '显式选择只改变配置正文，不改变当前订阅的凭证、节点范围或流量计费。'
 })

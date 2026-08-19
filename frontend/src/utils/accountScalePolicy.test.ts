@@ -28,10 +28,12 @@ describe('account list scale policy', () => {
   it('uses bounded cursor history with URL-restorable time filters for traffic', () => {
     const traffic = source('AccountTraffic.vue')
 
-    expect(traffic).toContain('fetchAccountTrafficRecordsPage')
+    expect(traffic).toContain('fetchTrafficUsagePage')
+    expect(traffic).toContain('fetchTrafficNodeSeries')
     expect(traffic).toContain('useCursorTable')
     expect(traffic).toContain('<CursorPager')
     expect(traffic).toContain('<WorkbenchFilterDate')
+    expect(traffic).toContain('TrafficUsageBucket')
     expect(traffic).not.toMatch(/\bfetchTrafficRecords\(/)
   })
 

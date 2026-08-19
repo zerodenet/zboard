@@ -111,7 +111,7 @@
             </div>
             <PageAlert tone="info" :title="selectedNode.node_credential_prefix ? 'Zero 连接凭证已就绪' : '首次安装会自动准备连接凭证'">
               <template v-if="selectedNode.node_credential_prefix">本次自动化将复用现有连接凭证 <code>{{ selectedNode.node_credential_prefix }}…</code>，不会自动轮换。</template>
-              <template v-else>Zboard 会在 Zero 启动前自动生成并激活连接凭证；如果安装或验收失败，该凭证会随本次 generation 一起回滚，无需先到“连接凭证”手工生成。</template>
+              <template v-else>ZBoard 会在 Zero 启动前自动生成并激活连接凭证；如果安装或验收失败，该凭证会随本次 generation 一起回滚，无需先到“连接凭证”手工生成。</template>
             </PageAlert>
             <OutputBlock v-if="kernelState?.last_error" :value="kernelState.last_error" label="内核错误" tone="danger" :max-length="360" />
             <div class="kernel-release-picker">
@@ -218,7 +218,7 @@
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="node-edit-form" type="submit" :loading="saving">保存</UiButton></template>
     </ModalDialog>
 
-    <ModalDialog :open="batchKernelOpen" title="批量升级 Zero" description="为所选 VPS 固定一个目标版本，并由 Zboard 后台任务并发执行；关闭或刷新浏览器不会取消已接受的升级。" :busy="bulkBusy === 'reconcile'" @close="batchKernelOpen = false">
+    <ModalDialog :open="batchKernelOpen" title="批量升级 Zero" description="为所选 VPS 固定一个目标版本，并由 ZBoard 后台任务并发执行；关闭或刷新浏览器不会取消已接受的升级。" :busy="bulkBusy === 'reconcile'" @close="batchKernelOpen = false">
     <div class="form-grid">
       <FormField label="目标版本" full>
         <UiSelect v-model="batchReleaseVersion" :options="batchReleaseOptions" :disabled="releaseLoading || bulkBusy === 'reconcile'" />
@@ -710,7 +710,7 @@ async function reconcileKernel() {
     : '当前尚无 Zero 连接凭证；本次任务会在 Zero 启动前自动生成并激活，若安装或验收失败会自动回滚该凭证。'
   const accepted = await confirmAction({
     title: downgrade ? '确认降级 Zero 内核' : '对齐 Zero 内核',
-    message: `将把这台 VPS 的 Zero ${downgrade ? '显式降级' : '对齐'}到 ${target} 及当前启用协议配置。${credentialMessage} 提交后由 Zboard 后台执行，关闭或刷新浏览器不会取消任务；单机验收失败仍自动回滚。`,
+    message: `将把这台 VPS 的 Zero ${downgrade ? '显式降级' : '对齐'}到 ${target} 及当前启用协议配置。${credentialMessage} 提交后由 ZBoard 后台执行，关闭或刷新浏览器不会取消任务；单机验收失败仍自动回滚。`,
     confirmText: downgrade ? '确认降级' : '创建后台任务',
     tone: downgrade ? 'danger' : 'primary',
   })

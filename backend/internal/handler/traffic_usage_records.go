@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -9,14 +10,38 @@ import (
 	"gorm.io/gorm"
 )
 
-const trafficUsageBucketExpression = "CAST(DATE_FORMAT(record_at, '%Y-%m-%d %H:%i:00') AS DATETIME)"
+const (
+	trafficUsageBucketMinute = "minute"
+	trafficUsageBucketHour   = "hour"
+)
+
+type trafficUsageBucketSpec struct {
+	Name       string
+	Expression string
+}
+
+func parseTrafficUsageBucket(raw string) (trafficUsageBucketSpec, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", trafficUsageBucketMinute:
+		return trafficUsageBucketSpec{
+			Name:       trafficUsageBucketMinute,
+			Expression: "CAST(DATE_FORMAT(record_at, '%Y-%m-%d %H:%i:00') AS DATETIME)",
+		}, nil
+	case trafficUsageBucketHour:
+		return trafficUsageBucketSpec{
+			Name:       trafficUsageBucketHour,
+			Expression: "CAST(DATE_FORMAT(record_at, '%Y-%m-%d %H:00:00') AS DATETIME)",
+		}, nil
+	default:
+		return trafficUsageBucketSpec{}, fmt.Errorf("bucket must be minute or hour")
+	}
+}
 
 type trafficUsageBucket struct {
 	ID                      uint      `json:"id" gorm:"column:id"`
 	UserID                  uint      `json:"user_id" gorm:"column:user_id"`
 	SubscriptionID          uint      `json:"subscription_id,omitempty" gorm:"column:subscription_id"`
 	NodeID                  uint      `json:"node_id" gorm:"column:node_id"`
-	ProtocolEndpointID      uint      `json:"protocol_endpoint_id" gorm:"column:protocol_endpoint_id"`
 	RawBytes                int64     `json:"raw_bytes" gorm:"column:raw_bytes"`
 	UploadBytes             int64     `json:"upload_bytes" gorm:"column:upload_bytes"`
 	DownloadBytes           int64     `json:"download_bytes" gorm:"column:download_bytes"`
@@ -29,11 +54,17 @@ type trafficUsageBucket struct {
 // TrafficUsageRecordsHandler is the human-facing read model for traffic history.
 //
 // Raw TrafficRecord rows remain the source of truth for accounting and auditing.
-// Paged list requests are collapsed into one-minute buckets while preserving the
-// dimensions that affect billing explanation: user, subscription, node, endpoint
-// and multiplier. Callers that explicitly need raw paged rows can request
-// ?view=raw. Unpaged legacy requests also keep the historical raw response.
+// Paged list requests are collapsed into minute/hour buckets while preserving
+// the business dimensions that explain charged usage: subscription, node and
+// multiplier (plus user in the administrative scope). Protocol endpoints remain
+// available as a pre-aggregation filter and through ?view=raw, but they are not
+// an aggregation dimension because multiple endpoints on one node with the same
+// multiplier describe the same user-facing usage slice.
 func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Request) {
+	if r != nil && r.URL != nil && strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("view")), "node_series") {
+		h.trafficNodeSeriesHandler(w, r)
+		return
+	}
 	if r == nil || r.URL == nil || !wantsPagedList(r) || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("view")), "raw") {
 		h.TrafficRecordsHandler(w, r)
 		return
@@ -50,6 +81,11 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	bucket, err := parseTrafficUsageBucket(r.URL.Query().Get("bucket"))
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
 	window, err := parseHistoryWindow(r.URL.Query(), 7)
 	if err != nil {
 		BadRequest(w, err.Error())
@@ -114,16 +150,15 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 			user_id,
 			COALESCE(subscription_id, 0) AS subscription_id,
 			node_id,
-			protocol_endpoint_id,
 			protocol_multiplier_milli,
 			COALESCE(SUM(raw_bytes), 0) AS raw_bytes,
 			COALESCE(SUM(upload_bytes), 0) AS upload_bytes,
 			COALESCE(SUM(download_bytes), 0) AS download_bytes,
 			COALESCE(SUM(used_bytes), 0) AS used_bytes,
-			` + trafficUsageBucketExpression + ` AS record_at,
+			` + bucket.Expression + ` AS record_at,
 			COUNT(*) AS record_count
 		`).
-		Group(trafficUsageBucketExpression + ", user_id, subscription_id, node_id, protocol_endpoint_id, protocol_multiplier_milli")
+		Group(bucket.Expression + ", user_id, subscription_id, node_id, protocol_multiplier_milli")
 
 	var total int64
 	if err := h.db.Table("(?) AS traffic_usage_buckets", grouped).Count(&total).Error; err != nil {
@@ -152,6 +187,7 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 		}
 		data := pagedData(buckets, total, offset, limit)
 		data["aggregates"] = aggregates
+		data["bucket"] = bucket.Name
 		OK(w, data)
 		return
 	}
@@ -182,5 +218,6 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 	}
 	data := cursorPagedData(buckets, total, limit, nextCursor, previousCursor)
 	data["aggregates"] = aggregates
+	data["bucket"] = bucket.Name
 	OK(w, data)
 }
