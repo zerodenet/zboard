@@ -6,7 +6,7 @@
         <h1>{{ profile.homeTitle }}</h1>
         <p>{{ profile.description }}</p>
         <div class="hero-actions">
-          <RouterLink class="button hero-primary" to="/pricing">{{ profile.homePrimaryCta }}<UiIcon name="chevron" /></RouterLink>
+          <RouterLink class="button hero-primary" to="/pricing">浏览套餐<UiIcon name="chevron" /></RouterLink>
           <RouterLink class="button button-secondary hero-secondary" :to="secondaryPath">{{ secondaryLabel }}</RouterLink>
         </div>
         <ul class="hero-trust">
