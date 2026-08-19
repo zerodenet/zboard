@@ -18,10 +18,9 @@ const controlLabels: Record<SystemConfigInput['control'], string> = {
   json: 'JSON',
 }
 
+const assetUrlConfigKeys = new Set(['site_logo', 'site_logo_dark', 'site_favicon'])
 const urlConfigKeys = new Set([
-  'site_logo',
-  'site_logo_dark',
-  'site_favicon',
+  ...assetUrlConfigKeys,
   'site_support_url',
   'site_telegram_url',
   'site_terms_url',
@@ -30,11 +29,30 @@ const urlConfigKeys = new Set([
 ])
 const textareaConfigKeys = new Set(['site_desc', 'site_footer_copyright', 'site_meta_description', 'site_home_title'])
 
+function isRootRelativeUrl(value: string) {
+  return /^\/(?!\/)[^\s]*$/.test(value)
+}
+
+function validateLegalItems(value: unknown) {
+  if (!Array.isArray(value)) return '法律与注册信息必须是 JSON 数组。'
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index]
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return `第 ${index + 1} 项必须是对象。`
+    const row = item as Record<string, unknown>
+    if (typeof row.label !== 'string' || !row.label.trim()) return `第 ${index + 1} 项缺少 label。`
+    if (typeof row.value !== 'string' || !row.value.trim()) return `第 ${index + 1} 项缺少 value。`
+    if (row.url !== undefined && row.url !== '' && (typeof row.url !== 'string' || !isHttpUrl(row.url.trim()))) {
+      return `第 ${index + 1} 项的 url 必须是完整 HTTP 或 HTTPS 地址。`
+    }
+  }
+  return ''
+}
+
 export function resolveSystemConfigInput(config: SystemConfig): SystemConfigInput {
   if (config.input?.control) return config.input
   if (config.config_key === 'system_timezone') return { control: 'text', required: true, placeholder: 'Asia/Shanghai' }
   if (config.config_key === 'site_support_email') return { control: 'email', max_bytes: 254, placeholder: 'support@example.com' }
-  if (urlConfigKeys.has(config.config_key)) return { control: 'url', placeholder: 'https://example.com/…' }
+  if (urlConfigKeys.has(config.config_key)) return { control: 'url', placeholder: assetUrlConfigKeys.has(config.config_key) ? 'https://cdn.example.com/logo.svg 或 /brand/logo.svg' : 'https://example.com/…' }
   if (textareaConfigKeys.has(config.config_key)) return { control: 'textarea', max_bytes: 1024 }
   if (config.config_key === 'site_meta_title') return { control: 'text', max_bytes: 180 }
   if (config.config_key === 'site_home_kicker' || config.config_key === 'site_home_primary_cta') return { control: 'text', max_bytes: 120 }
@@ -73,12 +91,19 @@ export function normalizeSystemConfigDraft(
   }
 
   if (input.control === 'json') {
-    if (typeof draft !== 'string') return { value: draft }
-    try {
-      return { value: JSON.parse(draft) }
-    } catch {
-      return { error: '请输入有效 JSON。' }
+    let value = draft
+    if (typeof draft === 'string') {
+      try {
+        value = JSON.parse(draft)
+      } catch {
+        return { error: '请输入有效 JSON。' }
+      }
     }
+    if (config.config_key === 'site_legal_items') {
+      const error = validateLegalItems(value)
+      if (error) return { error }
+    }
+    return { value }
   }
 
   const value = String(draft ?? '').trim()
@@ -91,8 +116,12 @@ export function normalizeSystemConfigDraft(
   if (config.config_key === 'system_timezone' && !isValidTimeZone(value)) {
     return { error: '请输入有效的 IANA 时区，例如 Asia/Shanghai、UTC 或 America/Los_Angeles。' }
   }
-  if (input.control === 'url' && !isHttpUrl(value)) {
-    return { error: '请输入不含账号、密码或片段的完整 HTTP 或 HTTPS 地址。' }
+  if (input.control === 'url') {
+    if (assetUrlConfigKeys.has(config.config_key)) {
+      if (!isHttpUrl(value) && !isRootRelativeUrl(value)) return { error: '请输入完整 HTTP/HTTPS 地址或以 / 开头的站点内资源路径。' }
+    } else if (!isHttpUrl(value)) {
+      return { error: '请输入不含账号、密码或片段的完整 HTTP 或 HTTPS 地址。' }
+    }
   }
   if (input.control === 'email' && !isEmail(value, input.max_bytes || 254)) {
     return { error: '请输入有效邮箱地址。' }
