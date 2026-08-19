@@ -29,7 +29,7 @@ export const defaultLegalTemplates: Record<LegalContentKey, string> = {
 
 ## 6. 联系方式
 
-如对本条款有疑问，请通过 {{support_email}} 或站点提供的客服入口联系我们。
+如对本条款有疑问，请通过 {{support_contact}} 联系我们。
 
 ---
 
@@ -60,7 +60,7 @@ export const defaultLegalTemplates: Record<LegalContentKey, string> = {
 
 ## 6. 联系方式
 
-隐私相关问题可通过 {{support_email}} 或站点提供的客服入口联系我们。
+隐私相关问题可通过 {{support_contact}} 联系我们。
 
 ---
 
@@ -87,7 +87,7 @@ export const defaultLegalTemplates: Record<LegalContentKey, string> = {
 
 ## 5. 联系方式
 
-退款或取消相关问题可通过 {{support_email}} 或站点提供的客服入口联系我们。
+退款或取消相关问题可通过 {{support_contact}} 联系我们。
 
 ---
 
@@ -106,13 +106,15 @@ export function isRemoteLegalContent(value: string) {
 }
 
 export function resolveLegalVariables(content: string, profile: SiteProfile) {
+  const supportContact = profile.supportEmail || profile.supportUrl || '站点提供的客服入口'
   const variables: Record<string, string> = {
     site_name: profile.name,
     site_url: profile.siteUrl || (typeof window !== 'undefined' ? window.location.origin : ''),
     copyright: profile.copyright,
     support_email: profile.supportEmail || '站点客服入口',
+    support_contact: supportContact,
   }
-  return content.replace(/\{\{\s*(site_name|site_url|copyright|support_email)\s*\}\}/g, (_, key: string) => variables[key] || '')
+  return content.replace(/\{\{\s*(site_name|site_url|copyright|support_email|support_contact)\s*\}\}/g, (_, key: string) => variables[key] || '')
 }
 
 function escapeHtml(value: string) {
