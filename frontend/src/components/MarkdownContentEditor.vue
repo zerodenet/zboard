@@ -37,7 +37,7 @@
 
     <div v-else class="markdown-editor__preview">
       <div v-if="remote" class="remote-preview">
-        <UiIcon name="link" />
+        <UiIcon name="info" />
         <div><strong>远端页面模式</strong><p>{{ remoteUrl }}</p></div>
         <a :href="remoteUrl" target="_blank" rel="noreferrer">打开检查</a>
       </div>
@@ -74,7 +74,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: string]; save: []; reloa
 const mode = ref('edit')
 const tabs = [
   { value: 'edit', label: '编辑', icon: 'edit' },
-  { value: 'preview', label: '预览', icon: 'view' },
+  { value: 'preview', label: '预览' },
 ]
 const variableHint = '{{site_name}} · {{site_url}} · {{copyright}} · {{support_contact}}'
 const source = computed(() => String(props.modelValue ?? ''))
