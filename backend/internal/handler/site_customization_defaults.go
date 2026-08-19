@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -33,7 +34,7 @@ const defaultTermsContent = `# 服务条款
 
 ## 6. 联系方式
 
-如对本条款有疑问，请通过 {{support_email}} 或站点提供的客服入口联系我们。
+如对本条款有疑问，请通过 {{support_contact}} 联系我们。
 
 ---
 
@@ -65,7 +66,7 @@ const defaultPrivacyContent = `# 隐私政策
 
 ## 6. 联系方式
 
-隐私相关问题可通过 {{support_email}} 或站点提供的客服入口联系我们。
+隐私相关问题可通过 {{support_contact}} 联系我们。
 
 ---
 
@@ -93,11 +94,17 @@ const defaultRefundContent = `# 退款与取消政策
 
 ## 5. 联系方式
 
-退款或取消相关问题可通过 {{support_email}} 或站点提供的客服入口联系我们。
+退款或取消相关问题可通过 {{support_contact}} 联系我们。
 
 ---
 
 {{copyright}}`
+
+var legacyPolicyKeys = map[string]string{
+	"site_terms_content":   "site_terms_url",
+	"site_privacy_content": "site_privacy_url",
+	"site_refund_content":  "site_refund_url",
+}
 
 func siteCustomizationDefaults() []model.SystemConfig {
 	return []model.SystemConfig{
@@ -230,17 +237,43 @@ func siteCustomizationDefaults() []model.SystemConfig {
 	}
 }
 
+func (h *handlers) legacyPolicyValue(configKey string) (string, error) {
+	legacyKey := legacyPolicyKeys[configKey]
+	if legacyKey == "" {
+		return "", nil
+	}
+	var legacy model.SystemConfig
+	err := h.db.Where("config_key = ?", legacyKey).First(&legacy).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(legacy.Value), nil
+}
+
 // ReconcileSiteCustomizationDefaults follows the existing runtime-default
 // pattern used by other SystemConfig-backed policies. Missing keys are added
 // for both fresh and existing prerelease databases, while operator values are
-// never overwritten when definitions evolve.
+// never overwritten when definitions evolve. Legacy URL-only policy values are
+// promoted into the new content keys on first upgrade so existing sites keep
+// their configured legal documents instead of silently switching to defaults.
 func (h *handlers) ReconcileSiteCustomizationDefaults() error {
 	for _, definition := range siteCustomizationDefaults() {
 		var existing model.SystemConfig
 		err := h.db.Where("config_key = ?", definition.ConfigKey).First(&existing).Error
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			if err := h.db.Create(&definition).Error; err != nil {
+			seed := definition
+			legacyValue, legacyErr := h.legacyPolicyValue(definition.ConfigKey)
+			if legacyErr != nil {
+				return legacyErr
+			}
+			if legacyValue != "" {
+				seed.Value = legacyValue
+			}
+			if err := h.db.Create(&seed).Error; err != nil {
 				return err
 			}
 		case err != nil:
