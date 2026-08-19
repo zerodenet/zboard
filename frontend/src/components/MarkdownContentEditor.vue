@@ -31,6 +31,7 @@
       <div :id="`${config.config_key}-help`" class="markdown-editor__help">
         <span>支持 Markdown：标题、粗体、列表、引用、链接和行内代码。</span>
         <span>变量：<code>{{ variableHint }}</code></span>
+        <span :class="{ 'size-warning': sourceBytes > policyMaxBytes }">{{ formatSize(sourceBytes) }} / 48 KiB</span>
         <span>若最终内容仅保留一行完整 HTTP/HTTPS URL，前台会自动按远端页面展示。</span>
       </div>
     </div>
@@ -53,6 +54,7 @@ import { computed, ref } from 'vue'
 import type { SystemConfig } from '../api/client'
 import type { SiteProfile } from '../utils/siteProfile'
 import { isRemoteLegalContent, renderSafeMarkdown, resolveLegalVariables } from '../utils/legalContent'
+import { utf8ByteLength } from '../utils/validation'
 import StatusBadge from './StatusBadge.vue'
 import UiButton from './UiButton.vue'
 import UiIcon from './UiIcon.vue'
@@ -71,6 +73,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string]; save: []; reload: [] }>()
 
+const policyMaxBytes = 48 * 1024
 const mode = ref('edit')
 const tabs = [
   { value: 'edit', label: '编辑', icon: 'edit' },
@@ -78,12 +81,17 @@ const tabs = [
 ]
 const variableHint = '{{site_name}} · {{site_url}} · {{copyright}} · {{support_contact}}'
 const source = computed(() => String(props.modelValue ?? ''))
+const sourceBytes = computed(() => utf8ByteLength(source.value))
 const remote = computed(() => isRemoteLegalContent(source.value))
 const remoteUrl = computed(() => remote.value ? source.value.trim() : '')
 const previewHtml = computed(() => renderSafeMarkdown(resolveLegalVariables(source.value, props.profile)))
 
 function restoreTemplate() {
   emit('update:modelValue', props.template)
+}
+
+function formatSize(bytes: number) {
+  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KiB`
 }
 </script>
 
@@ -98,7 +106,7 @@ function restoreTemplate() {
 .markdown-editor__workspace { padding: 16px 18px 18px; }
 .markdown-editor__textarea { width: 100%; min-height: 360px; font-family: var(--font-mono); font-size: 11px; line-height: 1.65; resize: vertical; }
 .markdown-editor__help { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 9px; color: var(--muted); font-size: 9px; line-height: 1.45; }
-.markdown-editor__help code { color: var(--code-text); }
+.markdown-editor__help code { color: var(--code-text); }.markdown-editor__help .size-warning { color: var(--danger); font-weight: 700; }
 .markdown-editor__preview { min-height: 360px; padding: 22px 24px; background: var(--surface-soft); }
 .remote-preview { min-height: 260px; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 20px; border: 1px dashed var(--line); border-radius: 10px; background: var(--surface); }
 .remote-preview p { margin: 4px 0 0; color: var(--muted); overflow-wrap: anywhere; }
