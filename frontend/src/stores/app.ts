@@ -20,8 +20,8 @@ export const useAppStore = defineStore('app', {
     isAuthenticated: (state) => Boolean(state.token),
     isAdmin: (state) => Boolean(state.user?.isAdmin),
     isInstalled: (state) => Boolean(state.installation?.installed),
-    siteName: (state) => buildSiteProfile(state.publicConfigs, state.installation?.site_name || 'zboard').name,
-    siteProfile: (state) => buildSiteProfile(state.publicConfigs, state.installation?.site_name || 'zboard'),
+    siteName: (state) => buildSiteProfile(state.publicConfigs, state.installation?.site_name || '').name,
+    siteProfile: (state) => buildSiteProfile(state.publicConfigs, state.installation?.site_name || ''),
   },
   actions: {
     setSystemTimeZone(value: unknown) {
@@ -33,12 +33,12 @@ export const useAppStore = defineStore('app', {
         this.publicConfigs = await fetchPublicSystemConfigs()
         const timezone = this.publicConfigs.find(item => item.config_key === 'system_timezone')
         this.setSystemTimeZone(timezone?.value)
-        applySiteMetadata(buildSiteProfile(this.publicConfigs, this.installation?.site_name || 'zboard'))
+        applySiteMetadata(buildSiteProfile(this.publicConfigs, this.installation?.site_name || ''))
         return this.publicConfigs
       } catch (_) {
         this.publicConfigs = []
         this.setSystemTimeZone(DEFAULT_SYSTEM_TIME_ZONE)
-        applySiteMetadata(buildSiteProfile([], this.installation?.site_name || 'zboard'))
+        applySiteMetadata(buildSiteProfile([], this.installation?.site_name || ''))
         return this.publicConfigs
       }
     },
