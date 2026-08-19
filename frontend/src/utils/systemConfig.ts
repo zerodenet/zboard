@@ -18,9 +18,26 @@ const controlLabels: Record<SystemConfigInput['control'], string> = {
   json: 'JSON',
 }
 
+const urlConfigKeys = new Set([
+  'site_logo',
+  'site_logo_dark',
+  'site_favicon',
+  'site_support_url',
+  'site_telegram_url',
+  'site_terms_url',
+  'site_privacy_url',
+  'site_refund_url',
+])
+const textareaConfigKeys = new Set(['site_desc', 'site_footer_copyright', 'site_meta_description', 'site_home_title'])
+
 export function resolveSystemConfigInput(config: SystemConfig): SystemConfigInput {
   if (config.input?.control) return config.input
   if (config.config_key === 'system_timezone') return { control: 'text', required: true, placeholder: 'Asia/Shanghai' }
+  if (config.config_key === 'site_support_email') return { control: 'email', max_bytes: 254, placeholder: 'support@example.com' }
+  if (urlConfigKeys.has(config.config_key)) return { control: 'url', placeholder: 'https://example.com/…' }
+  if (textareaConfigKeys.has(config.config_key)) return { control: 'textarea', max_bytes: 1024 }
+  if (config.config_key === 'site_meta_title') return { control: 'text', max_bytes: 180 }
+  if (config.config_key === 'site_home_kicker' || config.config_key === 'site_home_primary_cta') return { control: 'text', max_bytes: 120 }
   if (config.is_secret) return { control: 'password' }
   if (config.value_type === 'bool') return { control: 'switch' }
   if (config.value_type === 'int') return { control: 'integer', step: 1 }
