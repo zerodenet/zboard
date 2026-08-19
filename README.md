@@ -1,14 +1,14 @@
-# Zboard
+# ZBoard
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 **An all-in-one management platform for proxy service providers.**
 
-Zboard connects VPS infrastructure, protocol nodes, subscription delivery, users, plans, orders, traffic accounting, and daily operations in one system.
+ZBoard connects VPS infrastructure, protocol nodes, subscription delivery, users, plans, orders, traffic accounting, and daily operations in one system.
 
-It is not only a subscription panel. Zboard manages the complete lifecycle of a proxy service platform: from VPS onboarding and protocol service management to product sales, subscription delivery, traffic settlement, and operational auditing.
+It is not only a subscription panel. ZBoard manages the complete lifecycle of a proxy service platform: from VPS onboarding and protocol service management to product sales, subscription delivery, traffic settlement, and operational auditing.
 
-> Zboard is under active development. The current development baseline is `v0.0.1`, with `v0.1.0` planned as the first public release.
+> ZBoard is under active development. The current development baseline is `v0.0.1`, with `v0.1.0` planned as the first public release.
 
 ## Complete service lifecycle
 
@@ -67,15 +67,15 @@ Traffic accounting
 Node asset → Protocol service → Node group → Plan / SKU → Order → Subscription
 ```
 
-Zboard separates infrastructure resources from commercial resources, allowing nodes and services to evolve without changing existing customer entitlements.
+ZBoard separates infrastructure resources from commercial resources, allowing nodes and services to evolve without changing existing customer entitlements.
 
-## Why Zboard
+## Why ZBoard
 
 Traditional panels usually focus on subscriptions and products while leaving VPS management, protocol lifecycle, and operational workflows to external tools.
 
-Zboard brings infrastructure, service delivery, and commercial operations together:
+ZBoard brings infrastructure, service delivery, and commercial operations together:
 
-| Traditional approach | Zboard |
+| Traditional approach | ZBoard |
 | --- | --- |
 | Manage nodes separately from products | Connect infrastructure and business resources |
 | Bind subscriptions directly to servers | Use reusable services and node groups |
@@ -98,4 +98,4 @@ Development, deployment, API references, and operational guides are maintained i
 
 ## License
 
-Zboard is licensed under the [Mozilla Public License 2.0](LICENSE).
+ZBoard is licensed under the [Mozilla Public License 2.0](LICENSE).

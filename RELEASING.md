@@ -62,7 +62,7 @@ Kubernetes deployment and rollout automation are outside the supported v0.1.0 re
 
 ## Docker service dependencies
 
-- The supported Compose bundles start only the Zboard application. MySQL and
+- The supported Compose bundles start only the ZBoard application. MySQL and
   Redis are externally managed services and must already be reachable through
   `ZBOARD_EXTERNAL_NETWORK`.
 - Supply the complete application-account DSN in `ZBOARD_DATA_SOURCE`.

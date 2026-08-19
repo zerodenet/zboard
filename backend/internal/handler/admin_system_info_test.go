@@ -3,6 +3,8 @@ package handler
 import (
 	"testing"
 	"time"
+
+	"github.com/zerodenet/zboard/backend/internal/version"
 )
 
 func TestZboardReleaseChannel(t *testing.T) {
@@ -25,7 +27,13 @@ func TestBuildAdminSystemInfoPublishesOpenSourceResources(t *testing.T) {
 	zboardProcessStartedAt = now.Add(-2 * time.Hour)
 	defer func() { zboardProcessStartedAt = oldStartedAt }()
 
-	info := buildAdminSystemInfo("0.1.0-rc.2", now.Add(-24*time.Hour), now)
+	info := buildAdminSystemInfo("0.1.0-rc.2-deadbeef@2026-08-17T09:00:00Z", now.Add(-24*time.Hour), now)
+	if info.Service != "ZBoard" {
+		t.Fatalf("service = %q, want ZBoard", info.Service)
+	}
+	if info.ReleaseVersion != version.Version || info.Commit != version.Commit || info.BuildTime != version.BuildTime {
+		t.Fatalf("structured build metadata = %#v", info)
+	}
 	if info.UptimeSeconds != 7200 {
 		t.Fatalf("uptime_seconds = %d, want 7200", info.UptimeSeconds)
 	}

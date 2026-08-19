@@ -15,28 +15,82 @@
       原始行为事实最多保留 15 天。页面查询只做实时聚合，不生成新的分析记录；风险评分属于实验参考，不代表用户违规，也不会改变订阅服务状态。
     </PageAlert>
 
-    <UiSection class="observation-selector" title="观测对象" description="选择一个订阅和时间范围。最长只能查询原始数据保留窗口内的 15 天。">
-      <WorkbenchFilterBar :active="Boolean(subscriptionInput) || range !== '1d'" @clear="clearSelection">
+    <UiSection class="observation-selector" title="观测对象" description="按用户或套餐找到订阅后开始观测；订阅 ID 只作为内部定位信息，不需要手工记忆。">
+      <WorkbenchFilterBar :active="Boolean(searchQuery) || range !== '1d' || Boolean(subscriptionID)" @clear="clearSelection">
         <WorkbenchFilterInput
-          v-model="subscriptionInput"
-          label="订阅 ID"
-          value-prefix="#"
-          inputmode="numeric"
-          placeholder="例如 42"
-          @apply="applySelection"
+          v-model="searchQuery"
+          label="查找订阅"
+          maxlength="128"
+          placeholder="用户邮箱、订阅 ID、套餐或 SKU"
+          @apply="searchSubscriptions"
         />
-        <WorkbenchFilterSelect v-model="range" label="观测范围" :options="rangeOptions" @apply="applySelection" />
+        <WorkbenchFilterSelect v-model="range" label="观测范围" :options="rangeOptions" @apply="applyRange" />
       </WorkbenchFilterBar>
+
+      <PageAlert v-if="pickerError" tone="warning" title="订阅列表加载失败">{{ pickerError }}</PageAlert>
+
+      <div v-if="subscriptionID" class="selected-observation">
+        <div class="selected-observation-main">
+          <span class="selected-observation-label">当前观测</span>
+          <strong>{{ selectedSubscription?.user_email || `订阅 #${subscriptionID}` }}</strong>
+          <small v-if="selectedSubscription">
+            {{ selectedSubscription.plan_name || `套餐 #${selectedSubscription.plan_id}` }}
+            · {{ selectedSubscription.sku_name || `SKU #${selectedSubscription.plan_sku_id}` }}
+            · 订阅 #{{ selectedSubscription.id }}
+          </small>
+          <small v-else>正在读取订阅业务信息…</small>
+        </div>
+        <StatusBadge v-if="selectedSubscription" :tone="subscriptionStatusTone(selectedSubscription.status)">
+          {{ subscriptionStatusLabel(selectedSubscription.status) }}
+        </StatusBadge>
+        <UiButton variant="secondary" size="sm" type="button" @click="changeSelection">更换订阅</UiButton>
+      </div>
+
+      <div v-else class="subscription-picker">
+        <div class="subscription-picker-heading">
+          <div>
+            <strong>{{ searchQuery.trim() ? '匹配订阅' : '最近有效订阅' }}</strong>
+            <span>{{ searchQuery.trim() ? `共找到 ${pickerTotal} 条` : '可直接选择，无需输入订阅 ID' }}</span>
+          </div>
+          <span v-if="pickerLoading" class="section-note">正在查询…</span>
+        </div>
+
+        <DataTable v-if="pickerItems.length" caption="Fair Use 可选订阅" :row-count="pickerItems.length" :min-width="820">
+          <thead>
+            <tr>
+              <th class="table-primary-column">用户</th>
+              <th>订阅</th>
+              <th data-column-priority="2">套餐规格</th>
+              <th>状态</th>
+              <th data-column-priority="2">到期时间</th>
+              <th class="table-action-column"><span class="sr-only">操作</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="sub in pickerItems" :key="sub.id">
+              <td class="table-primary-column">
+                <div class="cell-title"><strong>{{ sub.user_email || `用户 #${sub.user_id}` }}</strong><span class="mono">#{{ sub.user_id }}</span></div>
+              </td>
+              <td><strong class="mono">#{{ sub.id }}</strong></td>
+              <td data-column-priority="2">
+                <div class="cell-title"><strong>{{ sub.plan_name || `套餐 #${sub.plan_id}` }}</strong><span>{{ sub.sku_name || `SKU #${sub.plan_sku_id}` }}</span></div>
+              </td>
+              <td><StatusBadge :tone="subscriptionStatusTone(sub.status)">{{ subscriptionStatusLabel(sub.status) }}</StatusBadge></td>
+              <td data-column-priority="2"><TimeBadge :value="sub.end_at" /></td>
+              <td class="table-action-column"><UiButton variant="secondary" size="sm" type="button" @click="selectSubscription(sub)">观测</UiButton></td>
+            </tr>
+          </tbody>
+        </DataTable>
+        <EmptyState
+          v-else-if="!pickerLoading"
+          icon="activity"
+          :title="searchQuery.trim() ? '没有匹配订阅' : '当前没有有效订阅'"
+          :description="searchQuery.trim() ? '可以按邮箱、订阅 ID、套餐名称或 SKU 继续搜索。' : '有有效订阅后会在这里直接显示可观测对象。'"
+        />
+      </div>
     </UiSection>
 
-    <EmptyState
-      v-if="!subscriptionID"
-      icon="activity"
-      title="选择一个订阅开始观测"
-      description="输入订阅 ID 后，可以查看连接启动频率、工作节点分布、coverage 和实验评分。"
-    />
-
-    <template v-else-if="observation && metrics && state && policy">
+    <template v-if="subscriptionID && observation && metrics && state && policy">
       <UiMetricStrip class="observation-summary">
         <MetricCard
           label="当前活动连接"
@@ -80,7 +134,7 @@
           <div class="fact-grid">
             <div><span>观测时间</span><strong>{{ rangeLabel }}</strong></div>
             <div><span>数据保留</span><strong>{{ observation.retention_days }} 天</strong></div>
-            <div><span>时间口径</span><strong>Zboard 接收时间</strong></div>
+            <div><span>时间口径</span><strong>ZBoard 接收时间</strong></div>
             <div><span>节点覆盖</span><strong>{{ observation.coverage.complete_nodes }} / {{ observation.coverage.required_nodes }}</strong></div>
             <div><span>最近行为</span><TimeBadge :value="metrics.last_received_at || null" /></div>
             <div><span>Coverage 原因</span><strong>{{ coverageReason(observation.coverage.reason) }}</strong></div>
@@ -165,6 +219,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { fetchAdminSubscriptionDetail, fetchSubscriptionsPage, type AdminSubscriptionListItem } from '../api/client'
 import {
   fetchFairUseEvents,
   fetchFairUseMetrics,
@@ -187,6 +242,7 @@ import PageRefreshButton from '../components/PageRefreshButton.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TimeBadge from '../components/TimeBadge.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
+import UiButton from '../components/UiButton.vue'
 import UiMetricStrip from '../components/UiMetricStrip.vue'
 import UiSection from '../components/UiSection.vue'
 import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
@@ -203,9 +259,14 @@ const rangeOptions = [
   { label: '最近 15 天', value: '15d' },
 ]
 const allowedRanges = new Set(rangeOptions.map(item => item.value))
-const subscriptionInput = ref(String(route.query.subscription || ''))
+const searchQuery = ref('')
 const range = ref<FairUseObservationRange>(allowedRanges.has(String(route.query.range)) ? String(route.query.range) as FairUseObservationRange : '1d')
-const subscriptionID = ref(validSubscriptionID(subscriptionInput.value))
+const subscriptionID = ref(validSubscriptionID(String(route.query.subscription || '')))
+const selectedSubscription = ref<AdminSubscriptionListItem | null>(null)
+const pickerItems = ref<AdminSubscriptionListItem[]>([])
+const pickerTotal = ref(0)
+const pickerLoading = ref(false)
+const pickerError = ref('')
 const metrics = ref<FairUseMetrics | null>(null)
 const observation = ref<FairUseObservationSeries | null>(null)
 const state = ref<FairUseState | null>(null)
@@ -214,6 +275,8 @@ const events = ref<FairUseEvent[]>([])
 const loading = ref(false)
 const error = ref('')
 let controller: AbortController | null = null
+let pickerController: AbortController | null = null
+let selectedController: AbortController | null = null
 
 const rangeLabel = computed(() => rangeOptions.find(item => item.value === range.value)?.label || range.value)
 const bucketLabel = computed(() => {
@@ -228,6 +291,17 @@ function validSubscriptionID(raw: string) {
   return Number.isInteger(value) && value > 0 ? value : 0
 }
 
+function subscriptionStatusLabel(value: string) {
+  return ({ active: '有效', expired: '已失效', exhausted: '流量耗尽', canceled: '已取消', inactive: '无效' } as Record<string, string>)[value] || value || '未知'
+}
+
+function subscriptionStatusTone(value: string): 'success' | 'warning' | 'danger' | 'neutral' {
+  if (value === 'active') return 'success'
+  if (value === 'expired') return 'warning'
+  if (value === 'exhausted') return 'danger'
+  return 'neutral'
+}
+
 async function syncURL() {
   const query: Record<string, string> = {}
   if (subscriptionID.value) query.subscription = String(subscriptionID.value)
@@ -235,25 +309,76 @@ async function syncURL() {
   await router.push({ query })
 }
 
-async function applySelection() {
-  subscriptionID.value = validSubscriptionID(subscriptionInput.value)
-  if (!subscriptionID.value) {
-    error.value = subscriptionInput.value.trim() ? '请输入有效的订阅 ID。' : ''
-    clearData()
-    await syncURL()
-    return
+async function searchSubscriptions() {
+  pickerController?.abort()
+  pickerController = new AbortController()
+  pickerLoading.value = true
+  pickerError.value = ''
+  try {
+    const q = searchQuery.value.trim()
+    const page = await fetchSubscriptionsPage({
+      q: q || undefined,
+      status: q ? undefined : 'active',
+      offset: 0,
+      limit: 10,
+    }, { signal: pickerController.signal })
+    pickerItems.value = page.items
+    pickerTotal.value = page.total
+  } catch (cause: any) {
+    if (cause?.name !== 'CanceledError' && cause?.name !== 'AbortError') {
+      pickerItems.value = []
+      pickerTotal.value = 0
+      pickerError.value = cause?.response?.data?.message || '订阅列表查询失败。'
+    }
+  } finally {
+    pickerLoading.value = false
   }
+}
+
+async function resolveSelectedSubscription(id: number) {
+  selectedController?.abort()
+  selectedController = new AbortController()
+  selectedSubscription.value = null
+  try {
+    selectedSubscription.value = await fetchAdminSubscriptionDetail(id, { signal: selectedController.signal })
+  } catch (cause: any) {
+    if (cause?.name !== 'CanceledError' && cause?.name !== 'AbortError') {
+      error.value = cause?.response?.data?.message || `订阅 #${id} 的业务信息加载失败。`
+    }
+  }
+}
+
+async function selectSubscription(sub: AdminSubscriptionListItem) {
+  selectedSubscription.value = sub
+  subscriptionID.value = sub.id
+  error.value = ''
+  clearData()
   await syncURL()
-  await load()
+}
+
+async function changeSelection() {
+  subscriptionID.value = 0
+  selectedSubscription.value = null
+  error.value = ''
+  clearData()
+  await syncURL()
+  await searchSubscriptions()
+}
+
+async function applyRange() {
+  await syncURL()
 }
 
 async function clearSelection() {
-  subscriptionInput.value = ''
+  searchQuery.value = ''
   subscriptionID.value = 0
+  selectedSubscription.value = null
   range.value = '1d'
   error.value = ''
+  pickerError.value = ''
   clearData()
   await router.push({ query: {} })
+  await searchSubscriptions()
 }
 
 function clearData() {
@@ -286,7 +411,8 @@ async function load() {
     events.value = nextEvents
   } catch (cause: any) {
     if (cause?.name !== 'AbortError') {
-      error.value = cause?.status === 404 ? `订阅 #${subscriptionID.value} 不存在。` : cause?.message || 'Fair Use 观测加载失败。'
+      const status = Number(cause?.status || cause?.response?.status || 0)
+      error.value = status === 404 ? `订阅 #${subscriptionID.value} 不存在。` : cause?.message || cause?.response?.data?.message || 'Fair Use 观测加载失败。'
       clearData()
     }
   } finally {
@@ -325,26 +451,43 @@ function eventTypeLabel(value: string) {
 function signed(value: number) { return value > 0 ? `+${value}` : String(value) }
 
 watch(() => route.query, async query => {
-  const nextInput = String(query.subscription || '')
   const nextRange = allowedRanges.has(String(query.range)) ? String(query.range) as FairUseObservationRange : '1d'
-  const nextID = validSubscriptionID(nextInput)
-  const changed = nextID !== subscriptionID.value || nextRange !== range.value
-  subscriptionInput.value = nextInput
+  const nextID = validSubscriptionID(String(query.subscription || ''))
+  const idChanged = nextID !== subscriptionID.value
+  const rangeChanged = nextRange !== range.value
   subscriptionID.value = nextID
   range.value = nextRange
-  if (changed) {
-    if (nextID) await load()
-    else clearData()
+
+  if (idChanged) {
+    clearData()
+    selectedSubscription.value = null
+    if (nextID) await Promise.all([resolveSelectedSubscription(nextID), load()])
+    else if (!pickerItems.value.length) await searchSubscriptions()
+    return
   }
+  if (rangeChanged && nextID) await load()
 })
 
 onMounted(async () => {
-  if (subscriptionID.value) await load()
+  if (subscriptionID.value) await Promise.all([resolveSelectedSubscription(subscriptionID.value), load()])
+  else await searchSubscriptions()
 })
 </script>
 
 <style scoped>
 .observation-selector { margin-bottom: 16px; }
+.observation-selector :deep(.page-alert) { margin-top: 12px; }
+.selected-observation { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; margin-top: 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-soft); }
+.selected-observation-main { min-width: 0; display: grid; gap: 4px; }
+.selected-observation-label { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.selected-observation-main strong { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.selected-observation-main small { color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+.subscription-picker { margin-top: 14px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-md); }
+.subscription-picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
+.subscription-picker-heading > div { display: grid; gap: 3px; }
+.subscription-picker-heading strong { font-size: 11px; }
+.subscription-picker-heading span { color: var(--muted); font-size: 9px; }
+.subscription-picker :deep(.data-table-shell) { border: 0; border-radius: 0; }
 .observation-summary { margin: 16px 0; }
 .observation-context { margin-bottom: 16px; }
 .fact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 0 0 14px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--line); }
@@ -358,5 +501,9 @@ onMounted(async () => {
 .section-note { color: var(--muted); font-size: 11px; }
 .reason-cell { max-width: 420px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .evaluation-events { margin-top: 16px; }
-@media (max-width: 760px) { .fact-grid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {
+  .selected-observation { grid-template-columns: 1fr; align-items: start; }
+  .selected-observation .button { justify-self: start; }
+  .fact-grid { grid-template-columns: 1fr; }
+}
 </style>

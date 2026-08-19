@@ -19,6 +19,9 @@ type adminProjectLink struct {
 type adminSystemInfo struct {
 	Service        string             `json:"service"`
 	Version        string             `json:"version"`
+	ReleaseVersion string             `json:"release_version"`
+	Commit         string             `json:"commit"`
+	BuildTime      string             `json:"build_time"`
 	ReleaseChannel string             `json:"release_channel"`
 	StartedAt      time.Time          `json:"started_at"`
 	UptimeSeconds  int64              `json:"uptime_seconds"`
@@ -46,8 +49,11 @@ func buildAdminSystemInfo(currentVersion string, installedAt, now time.Time) adm
 		startedAt = now
 	}
 	return adminSystemInfo{
-		Service:        "zboard",
+		Service:        "ZBoard",
 		Version:        currentVersion,
+		ReleaseVersion: version.Version,
+		Commit:         version.Commit,
+		BuildTime:      version.BuildTime,
 		ReleaseChannel: zboardReleaseChannel(currentVersion),
 		StartedAt:      startedAt,
 		UptimeSeconds:  int64(now.Sub(startedAt).Seconds()),
