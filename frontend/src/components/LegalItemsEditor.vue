@@ -7,10 +7,10 @@
           <UiButton variant="ghost" size="sm" type="button" :disabled="saving" @click="removeItem(index)"><UiIcon name="close" />移除</UiButton>
         </div>
         <div class="form-grid legal-item-fields">
-          <FormField label="标签" :name="`legal-item-${index}-label`" hint="访客看到的类型名称。" required>
+          <FormField label="标签" :name="`legal-item-${index}-label`" hint="访客看到的类型名称，最多 120 个 UTF-8 字节。" required>
             <template #default="{ controlAttrs }"><UiInput v-bind="controlAttrs" :model-value="item.label" placeholder="Company No." @update:model-value="updateItem(index, 'label', String($event ?? ''))" /></template>
           </FormField>
-          <FormField label="值" :name="`legal-item-${index}-value`" hint="注册号、许可号或其他公开值。" required>
+          <FormField label="值" :name="`legal-item-${index}-value`" hint="注册号、许可号或其他公开值，最多 512 个 UTF-8 字节。" required>
             <template #default="{ controlAttrs }"><UiInput v-bind="controlAttrs" :model-value="item.value" placeholder="12345678" @update:model-value="updateItem(index, 'value', String($event ?? ''))" /></template>
           </FormField>
           <FormField class="legal-item-url" label="查询或监管链接（可选）" :name="`legal-item-${index}-url`" hint="填写后 Footer 中该条目可以直接打开对应查询页面。" full>
@@ -26,7 +26,8 @@
     </div>
 
     <div class="legal-items-actions">
-      <UiButton variant="secondary" size="sm" type="button" :disabled="saving" @click="addItem"><UiIcon name="plus" />添加公开条目</UiButton>
+      <UiButton variant="secondary" size="sm" type="button" :disabled="saving || items.length >= maxItems" @click="addItem"><UiIcon name="plus" />添加公开条目</UiButton>
+      <small>{{ items.length }} / {{ maxItems }} 项</small>
       <span class="legal-items-spacer"></span>
       <UiButton v-if="conflict" variant="ghost" size="sm" type="button" :disabled="saving" @click="emit('reload')"><UiIcon name="refresh" />重新载入</UiButton>
       <UiButton type="button" :loading="saving" :disabled="!dirty" @click="emit('save')">保存法律信息</UiButton>
@@ -58,6 +59,7 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{ 'update:modelValue': [value: string]; save: []; reload: [] }>()
+const maxItems = 32
 const items = ref<SiteLegalItem[]>([])
 
 function parseItems(value: unknown): SiteLegalItem[] {
@@ -87,6 +89,7 @@ function publish() {
 }
 
 function addItem() {
+  if (items.value.length >= maxItems) return
   items.value.push({ label: '', value: '' })
   publish()
 }
@@ -121,7 +124,7 @@ function updateItem(index: number, key: 'label' | 'value' | 'url', value: string
 .legal-items-empty > :first-child { margin-top: 2px; color: var(--primary); font-size: 19px; }
 .legal-items-empty strong { color: var(--text); font-size: 12px; }
 .legal-items-empty p { margin: 4px 0 0; font-size: 10px; line-height: 1.5; }
-.legal-items-actions { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+.legal-items-actions { display: flex; align-items: center; gap: 8px; margin-top: 14px; }.legal-items-actions small { color: var(--muted); font-size: 9px; }
 .legal-items-spacer { flex: 1; }
 .legal-items-error { display: flex; align-items: flex-start; gap: 5px; margin: 12px 0 0; color: var(--danger); font-size: 10px; }
 @media (max-width: 700px) { .legal-item-card__header { flex-direction: column; }.legal-items-actions { flex-wrap: wrap; }.legal-items-spacer { display: none; width: 100%; } }
