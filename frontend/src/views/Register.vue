@@ -13,6 +13,7 @@
         <FormField v-slot="{ controlAttrs }" label="确认密码" name="register-confirm-password" hint="再次输入相同密码。" :error="formErrors.fields.confirm_password" required full><UiInput v-model="confirmPassword" v-bind="controlAttrs" type="password" minlength="12" maxlength="72" autocomplete="new-password" /></FormField>
         <PageAlert v-if="formErrors.formError.value" tone="danger" title="注册未完成">{{ formErrors.formError.value }}</PageAlert>
         <UiButton class="login-button" :loading="loading" type="submit">创建账户</UiButton>
+        <AuthLegalLinks context="register" />
         <RouterLink class="mode-switch" to="/login">已有账户？返回登录</RouterLink>
         <RouterLink class="back-home" to="/">返回首页</RouterLink>
       </form>
@@ -24,6 +25,7 @@
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { register } from '../api/client'
+import AuthLegalLinks from '../components/AuthLegalLinks.vue'
 import FormField from '../components/FormField.vue'
 import PageAlert from '../components/PageAlert.vue'
 import { useFormErrors } from '../composables/useFormState'
