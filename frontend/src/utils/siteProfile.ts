@@ -100,6 +100,10 @@ function ensureMeta(selector: string, attrs: Record<string, string>) {
   for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, value)
 }
 
+function removeMeta(selector: string) {
+  document.head.querySelector<HTMLMetaElement>(selector)?.remove()
+}
+
 function ensureLink(rel: string) {
   let element = document.head.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`)
   if (!element) {
@@ -108,6 +112,10 @@ function ensureLink(rel: string) {
     document.head.appendChild(element)
   }
   return element
+}
+
+function removeLink(rel: string) {
+  document.head.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`)?.remove()
 }
 
 function absoluteUrl(value: string, base: string) {
@@ -138,9 +146,13 @@ export function applySiteMetadata(profile: SiteProfile, context: SiteMetadataCon
     ensureLink('canonical').href = canonical
     ensureMeta('meta[property="og:url"]', { property: 'og:url', content: canonical })
   }
+
   if (profile.favicon) ensureLink('icon').href = absoluteUrl(profile.favicon, canonicalBase) || profile.favicon
+  else removeLink('icon')
+
   if (profile.logo) {
     const image = absoluteUrl(profile.logo, canonicalBase)
     if (image) ensureMeta('meta[property="og:image"]', { property: 'og:image', content: image })
-  }
+    else removeMeta('meta[property="og:image"]')
+  } else removeMeta('meta[property="og:image"]')
 }
