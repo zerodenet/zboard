@@ -158,6 +158,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions", h.SubscriptionsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id", h.AdminSubscriptionGetHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/metrics", h.AdminSubscriptionFairUseMetricsHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/observations", h.AdminSubscriptionFairUseObservationsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/policy", h.AdminSubscriptionFairUsePolicyHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/subscriptions/:id/fair-use/policy", h.AdminSubscriptionFairUsePolicyHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/subscriptions/:id/fair-use/policy", h.AdminSubscriptionFairUsePolicyHandler),

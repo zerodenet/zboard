@@ -77,6 +77,7 @@ const navigationGroups: NavigationGroup[] = [
   { label: '客户与支持', items: [
     { to: '/admin/users', label: '用户管理', icon: 'users' },
     { to: '/admin/subscriptions', label: '订阅管理', icon: 'plans' },
+    { to: '/admin/fair-use', label: 'Fair Use 观测', icon: 'activity' },
     { to: '/admin/tickets', label: '工单中心', icon: 'ticket' }
   ] },
   { label: '商业管理', items: [

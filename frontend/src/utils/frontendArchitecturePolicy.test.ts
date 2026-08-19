@@ -23,6 +23,7 @@ const adminRoutes = {
   dashboard: ['views/Dashboard.vue'],
   users: ['views/Users.vue'],
   subscriptions: ['views/Subscriptions.vue'],
+  'fair-use': ['views/FairUse.vue'],
   tickets: ['views/Tickets.vue', 'components/TicketCenter.vue'],
   plans: ['views/Plans.vue'],
   'subscription-templates': ['views/SubscriptionTemplates.vue'],
@@ -42,7 +43,7 @@ function surface(parts: readonly string[]) {
   return parts.map(part => read(...part.split('/'))).join('\n')
 }
 
-const adminListRoutes = Object.keys(adminRoutes).filter(route => !['dashboard', 'settings'].includes(route))
+const adminListRoutes = Object.keys(adminRoutes).filter(route => !['dashboard', 'settings', 'fair-use'].includes(route))
 const tabularAdminRoutes = adminListRoutes.filter(route => route !== 'tickets')
 
 describe('frontend architecture policy', () => {
@@ -52,7 +53,7 @@ describe('frontend architecture policy', () => {
         `{ path: '${route}', component: () => import('../${files[0].replace('views/', 'views/')}')`,
       )
     }
-    expect(Object.keys(adminRoutes)).toHaveLength(16)
+    expect(Object.keys(adminRoutes)).toHaveLength(17)
     expect(routerSource).toContain("{ path: 'billing', redirect: '/admin/orders' }")
     expect(routerSource).toContain("{ path: 'subscription-rule-sets', redirect: '/admin/subscription-templates/rule-sets' }")
   })
