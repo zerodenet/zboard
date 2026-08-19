@@ -12,6 +12,7 @@
         <FormField v-slot="{ controlAttrs }" label="密码" name="login-password" hint="密码长度为 12–72 个 UTF-8 字节。" :error="formErrors.fields.password" required full><UiInput v-model="password" v-bind="controlAttrs" type="password" minlength="12" maxlength="72" autocomplete="current-password" placeholder="请输入密码" /></FormField>
         <PageAlert v-if="formErrors.formError.value" tone="danger" title="登录未完成">{{ formErrors.formError.value }}</PageAlert>
         <UiButton class="login-button" :loading="loading" type="submit">登录</UiButton>
+        <AuthLegalLinks context="login" />
         <RouterLink v-if="store.installation?.allow_registration" class="mode-switch" to="/register">还没有账户？立即注册</RouterLink>
         <RouterLink class="back-home" to="/">返回首页</RouterLink>
       </form>
@@ -23,6 +24,7 @@
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { login } from '../api/client'
+import AuthLegalLinks from '../components/AuthLegalLinks.vue'
 import FormField from '../components/FormField.vue'
 import PageAlert from '../components/PageAlert.vue'
 import { useFormErrors } from '../composables/useFormState'
