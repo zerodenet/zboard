@@ -23,10 +23,8 @@ const urlConfigKeys = new Set([
   ...assetUrlConfigKeys,
   'site_support_url',
   'site_telegram_url',
-  'site_terms_url',
-  'site_privacy_url',
-  'site_refund_url',
 ])
+const policyContentKeys = new Set(['site_terms_content', 'site_privacy_content', 'site_refund_content'])
 const textareaConfigKeys = new Set(['site_desc', 'site_footer_copyright', 'site_meta_description', 'site_home_title'])
 
 function isRootRelativeUrl(value: string) {
@@ -53,9 +51,10 @@ export function resolveSystemConfigInput(config: SystemConfig): SystemConfigInpu
   if (config.config_key === 'system_timezone') return { control: 'text', required: true, placeholder: 'Asia/Shanghai' }
   if (config.config_key === 'site_support_email') return { control: 'email', max_bytes: 254, placeholder: 'support@example.com' }
   if (urlConfigKeys.has(config.config_key)) return { control: 'url', placeholder: assetUrlConfigKeys.has(config.config_key) ? 'https://cdn.example.com/logo.svg 或 /brand/logo.svg' : 'https://example.com/…' }
+  if (policyContentKeys.has(config.config_key)) return { control: 'textarea', max_bytes: 32768 }
   if (textareaConfigKeys.has(config.config_key)) return { control: 'textarea', max_bytes: 1024 }
   if (config.config_key === 'site_meta_title') return { control: 'text', max_bytes: 180 }
-  if (config.config_key === 'site_home_kicker' || config.config_key === 'site_home_primary_cta') return { control: 'text', max_bytes: 120 }
+  if (config.config_key === 'site_home_kicker') return { control: 'text', max_bytes: 120 }
   if (config.is_secret) return { control: 'password' }
   if (config.value_type === 'bool') return { control: 'switch' }
   if (config.value_type === 'int') return { control: 'integer', step: 1 }
