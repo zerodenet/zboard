@@ -7,7 +7,7 @@
     <TransientFeedback :success="message" :error="error" success-title="系统设置已保存" error-title="设置操作失败" />
 
     <div class="section-grid settings-top">
-      <UiSection class="span-7" title="站点信息" description="公开名称、访问地址和注册策略。">
+      <UiSection class="span-7" title="基础站点信息" description="公开名称、访问地址和注册策略。">
         <template #meta><StatusBadge :tone="siteState.dirty.value ? 'warning' : 'info'" :icon="siteState.dirty.value ? 'edit' : 'info'">{{ siteState.dirty.value ? '有未保存修改' : '公开配置' }}</StatusBadge></template>
         <form ref="siteFormElement" class="panel-body stack" novalidate @submit.prevent="saveSiteSettings">
           <div class="form-grid">
@@ -30,15 +30,19 @@
       </UiSection>
     </div>
 
-    <UiSection title="运行配置" description="修改后立即写入数据库；密钥类配置不会回显原值。">
+    <UiSection title="动态配置" description="修改后立即写入数据库；公开站点配置会同步刷新当前页面。密钥类配置不会回显原值。">
       <template #meta><span class="config-count">{{ operationalConfigs.length }} 项</span></template>
       <div v-if="operationalConfigs.length" class="config-groups">
+        <section v-if="siteCustomizationConfigs.length" class="config-section">
+          <header><span class="config-section-icon"><UiIcon name="info" /></span><div><h3>站点品牌与公开内容</h3><p>配置 Logo、描述、首页文案、页脚、联系方式、法律/注册信息和 SEO；可选项留空时使用默认展示。</p></div></header>
+          <div class="config-list"><ConfigRow v-for="config in siteCustomizationConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
+        </section>
         <section v-if="emailConfigs.length" class="config-section">
           <header><span class="config-section-icon"><UiIcon name="audit" /></span><div><h3>邮件与通知</h3><p>先完成 SMTP 配置，再启用邮件任务。</p></div></header>
           <div class="config-list"><ConfigRow v-for="config in emailConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
         </section>
         <section v-if="otherConfigs.length" class="config-section">
-          <header><span class="config-section-icon"><UiIcon name="settings" /></span><div><h3>其他运行参数</h3><p>系统行为和公开展示相关的动态配置。</p></div></header>
+          <header><span class="config-section-icon"><UiIcon name="settings" /></span><div><h3>其他运行参数</h3><p>系统时区、保留策略和其他运行行为配置。</p></div></header>
           <div class="config-list"><ConfigRow v-for="config in otherConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
         </section>
       </div>
@@ -79,9 +83,16 @@ const siteFormElement = ref<HTMLElement | null>(null)
 const siteErrors = useFormErrors()
 const siteState = useDirtyForm(() => form)
 const hiddenSiteKeys = new Set(['site_name', 'site_url', 'register_switch'])
+const siteCustomizationKeys = new Set([
+  'site_desc', 'site_logo', 'site_logo_dark', 'site_favicon', 'site_footer_copyright',
+  'site_support_email', 'site_support_url', 'site_telegram_url', 'site_terms_url',
+  'site_privacy_url', 'site_refund_url', 'site_legal_items', 'site_meta_title',
+  'site_meta_description', 'site_home_kicker', 'site_home_title', 'site_home_primary_cta',
+])
 const operationalConfigs = computed(() => configs.value.filter(item => !hiddenSiteKeys.has(item.config_key)).sort((a, b) => a.id - b.id))
-const emailConfigs = computed(() => operationalConfigs.value.filter(item => /smtp|email/i.test(item.config_key)))
-const otherConfigs = computed(() => operationalConfigs.value.filter(item => !/smtp|email/i.test(item.config_key)))
+const siteCustomizationConfigs = computed(() => operationalConfigs.value.filter(item => siteCustomizationKeys.has(item.config_key)))
+const emailConfigs = computed(() => operationalConfigs.value.filter(item => !siteCustomizationKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)))
+const otherConfigs = computed(() => operationalConfigs.value.filter(item => !siteCustomizationKeys.has(item.config_key) && !/smtp|email/i.test(item.config_key)))
 const configChanges = computed(() => operationalConfigs.value.filter(configDirty).length)
 const pageDirty = computed(() => siteState.dirty.value || configChanges.value > 0)
 useUnsavedChangesGuard(
@@ -184,6 +195,7 @@ async function saveConfig(config: SystemConfig) {
     if (index >= 0) configs.value[index] = updated
     drafts[key] = configValue(updated)
     delete configConflicts[key]
+    if (siteCustomizationKeys.has(key)) await app.loadPublicConfigs()
     message.value = `${config.name} 已保存。`
   } catch (e: any) {
     if (e?.response?.status === 409) {
