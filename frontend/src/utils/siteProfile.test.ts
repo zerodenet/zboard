@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SystemConfig } from '../api/client'
-import { buildSiteProfile } from './siteProfile'
+import { applySiteMetadata, buildSiteProfile } from './siteProfile'
 
 function config(config_key: string, value: unknown, value_type: SystemConfig['value_type'] = 'string'): SystemConfig {
   return {
@@ -56,5 +56,25 @@ describe('buildSiteProfile', () => {
     expect(profile.metaTitle).toBe('My Service')
     expect(profile.legalItems).toEqual([])
     vi.useRealTimers()
+  })
+})
+
+describe('applySiteMetadata', () => {
+  it('uses the configured SEO title on home and route-aware titles/canonical URLs elsewhere', () => {
+    const profile = buildSiteProfile([
+      config('site_name', 'Example Network'),
+      config('site_url', 'https://example.com'),
+      config('site_meta_title', 'Reliable Network Service'),
+    ])
+
+    applySiteMetadata(profile, { path: '/', pageTitle: '首页' })
+    expect(document.title).toBe('Reliable Network Service')
+    expect(document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href).toBe('https://example.com/')
+
+    applySiteMetadata(profile, { path: '/pricing', pageTitle: '套餐价格' })
+    expect(document.title).toBe('套餐价格 · Example Network')
+    expect(document.head.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content).toBe('套餐价格 · Example Network')
+    expect(document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href).toBe('https://example.com/pricing')
+    expect(document.head.querySelector<HTMLMetaElement>('meta[property="og:url"]')?.content).toBe('https://example.com/pricing')
   })
 })
