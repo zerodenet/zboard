@@ -11,8 +11,8 @@
       </div>
       <div class="markdown-editor__actions">
         <UiButton variant="ghost" size="sm" type="button" :disabled="saving || source === template" @click="restoreTemplate">恢复默认模板</UiButton>
-        <UiButton v-if="conflict" variant="ghost" size="sm" type="button" :disabled="saving" @click="$emit('reload')"><UiIcon name="refresh" />重新载入</UiButton>
-        <UiButton variant="secondary" size="sm" type="button" :loading="saving" :disabled="!dirty" @click="$emit('save')">保存</UiButton>
+        <UiButton v-if="conflict" variant="ghost" size="sm" type="button" :disabled="saving" @click="emit('reload')"><UiIcon name="refresh" />重新载入</UiButton>
+        <UiButton variant="secondary" size="sm" type="button" :loading="saving" :disabled="!dirty" @click="emit('save')">保存</UiButton>
       </div>
     </header>
 
@@ -26,7 +26,7 @@
         rows="18"
         spellcheck="false"
         :aria-describedby="`${config.config_key}-help`"
-        @update:model-value="$emit('update:modelValue', String($event ?? ''))"
+        @update:model-value="emit('update:modelValue', String($event ?? ''))"
       />
       <div :id="`${config.config_key}-help`" class="markdown-editor__help">
         <span>支持 Markdown：标题、粗体、列表、引用、链接和行内代码。</span>
@@ -69,7 +69,7 @@ const props = defineProps<{
   error?: string
   conflict?: boolean
 }>()
-defineEmits<{ 'update:modelValue': [value: string]; save: []; reload: [] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: string]; save: []; reload: [] }>()
 
 const mode = ref('edit')
 const tabs = [
@@ -82,8 +82,7 @@ const remote = computed(() => isRemoteLegalContent(source.value))
 const previewHtml = computed(() => renderSafeMarkdown(resolveLegalVariables(source.value, props.profile)))
 
 function restoreTemplate() {
-  const emit = defineEmits
-  void emit
+  emit('update:modelValue', props.template)
 }
 </script>
 
