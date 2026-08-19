@@ -103,8 +103,12 @@ func validateSiteLegalItems(value string) error {
 	if len(value) > 16*1024 {
 		return errors.New("site_legal_items must not exceed 16384 UTF-8 bytes")
 	}
+	trimmed := strings.TrimSpace(value)
+	if !strings.HasPrefix(trimmed, "[") {
+		return errors.New("site_legal_items must be a JSON array")
+	}
 	var items []siteLegalItem
-	if err := json.Unmarshal([]byte(value), &items); err != nil {
+	if err := json.Unmarshal([]byte(trimmed), &items); err != nil {
 		return errors.New("site_legal_items must be a JSON array")
 	}
 	if len(items) > 32 {
