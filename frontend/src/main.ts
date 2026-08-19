@@ -8,6 +8,7 @@ import { routes } from './router'
 import { useAppStore } from './stores/app'
 import { primeVueOptions } from './theme/primevue'
 import { AUTH_SESSION_EXPIRED_EVENT, resetAuthSessionExpired } from './utils/authSession'
+import { applySiteMetadata } from './utils/siteProfile'
 import './styles.css'
 import './styles/auth.css'
 import './styles/public.css'
@@ -112,6 +113,14 @@ router.beforeEach(async (to) => {
 	if (meta.requiresRegistration && !store.installation?.allow_registration) return '/login'
 
   return true
+})
+
+router.afterEach((to) => {
+  const store = useAppStore(pinia)
+  applySiteMetadata(store.siteProfile, {
+    path: to.path,
+    pageTitle: typeof to.meta.title === 'string' ? to.meta.title : '',
+  })
 })
 
 app.mount('#app')
