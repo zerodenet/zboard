@@ -1,7 +1,7 @@
 <template>
   <div class="auth-shell">
     <aside class="auth-aside">
-      <RouterLink class="auth-brand" to="/"><span class="brand-mark">Z</span><span>{{ store.siteName }}</span></RouterLink>
+      <RouterLink class="auth-brand" to="/"><img v-if="store.siteProfile.logoDark || store.siteProfile.logo" class="auth-logo" :src="store.siteProfile.logoDark || store.siteProfile.logo" :alt="store.siteName" /><span v-else class="brand-mark">{{ store.siteName.charAt(0).toUpperCase() || 'Z' }}</span><span>{{ store.siteName }}</span></RouterLink>
       <div class="auth-copy"><p class="page-eyebrow">WELCOME BACK</p><h1>继续管理你的<br />订阅与连接。</h1><p>登录后查看套餐、订单、订阅配置与流量使用，重要信息都在一个地方。</p></div>
       <p class="auth-footnote">套餐 · 订阅 · 流量，一站管理</p>
     </aside>
@@ -60,5 +60,5 @@ async function submit() {
 </script>
 
 <style scoped>
-.auth-brand { text-decoration: none; }.auth-footnote { position: relative; z-index: 1; margin: 0; color: var(--auth-footnote); font-size: 12px; }.login-button { width: 100%; min-height: 44px; }.mode-switch,.back-home { text-align: center; text-decoration: none; font-size: 13px; font-weight: 650; }.mode-switch { color: var(--primary); }.back-home { color: var(--muted); font-weight: 500; }
+.auth-brand { text-decoration: none; }.auth-logo { width: auto; max-width: 180px; height: 36px; object-fit: contain; }.auth-footnote { position: relative; z-index: 1; margin: 0; color: var(--auth-footnote); font-size: 12px; }.login-button { width: 100%; min-height: 44px; }.mode-switch,.back-home { text-align: center; text-decoration: none; font-size: 13px; font-weight: 650; }.mode-switch { color: var(--primary); }.back-home { color: var(--muted); font-weight: 500; }
 </style>
