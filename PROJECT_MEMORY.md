@@ -8198,3 +8198,37 @@ Remaining gaps:
   installation and periodic `stats.sampled` delivery do not prove those flow
   semantics.
 - No Git staging, commit, push or release was performed.
+
+## 2026-08-20: PR #73 public policy route data binding
+
+Goal outcome:
+
+- Audited PR #73 after its latest route-preservation changes. The public
+  `/terms`, `/privacy` and `/refund` records provided only route metadata,
+  while `LegalPolicy.vue` still required `title`, `content` and `profile`
+  component props that no route supplied.
+- Changed the policy page to resolve its title and policy kind from the active
+  route and its reactive site profile from the application store. Policy
+  content and legal-variable substitution now follow route changes and public
+  configuration updates without duplicating the configuration model.
+- Added a route-level component test covering local terms content, an external
+  privacy URL and local refund content while navigating through the same
+  component instance.
+
+Local verification:
+
+- `pnpm exec vitest run src/views/LegalPolicy.test.ts` passed.
+- `pnpm typecheck` passed.
+- `pnpm build` passed with 607 transformed modules.
+- The full frontend suite retained the same 10 failures present at the PR HEAD
+  before this change: 6 policy-test files fail against unrelated existing
+  source-contract drift; the new policy-route test passes.
+- `git diff --check` passed.
+
+Remaining gaps:
+
+- Intranet synchronization and deployment verification were not performed as
+  part of the GitHub PR update; no deployment target or authorization was
+  provided for this change.
+- The 10 pre-existing frontend policy-test failures remain outside this
+  focused public-policy-route repair.

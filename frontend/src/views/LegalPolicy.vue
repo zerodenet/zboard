@@ -13,13 +13,26 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+import { useAppStore } from '../stores/app'
 import { isRemoteLegalContent, renderSafeMarkdown, resolveLegalVariables } from '../utils/legalContent'
-import type { SiteProfile } from '../utils/siteProfile'
 
-const props = defineProps<{ title: string; content: string; profile: SiteProfile }>()
-const remote = computed(() => isRemoteLegalContent(props.content))
-const remoteUrl = computed(() => remote.value ? props.content.trim() : '')
-const html = computed(() => renderSafeMarkdown(resolveLegalVariables(props.content, props.profile)))
+type PolicyType = 'terms' | 'privacy' | 'refund'
+
+const app = useAppStore()
+const route = useRoute()
+const profile = computed(() => app.siteProfile)
+const policyType = computed(() => route.meta.policyType as PolicyType | undefined)
+const title = computed(() => typeof route.meta.title === 'string' ? route.meta.title : '政策说明')
+const content = computed(() => {
+  if (policyType.value === 'terms') return profile.value.termsContent
+  if (policyType.value === 'privacy') return profile.value.privacyContent
+  if (policyType.value === 'refund') return profile.value.refundContent
+  return ''
+})
+const remote = computed(() => isRemoteLegalContent(content.value))
+const remoteUrl = computed(() => remote.value ? content.value.trim() : '')
+const html = computed(() => renderSafeMarkdown(resolveLegalVariables(content.value, profile.value)))
 </script>
 
 <style scoped>
