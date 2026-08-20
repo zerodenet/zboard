@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isRemoteLegalContent, renderSafeMarkdown, resolveLegalVariables } from './legalContent'
+import { isRemoteLegalContent, renderSafeMarkdown, resolveLegalVariables, stripLeadingLegalTitle } from './legalContent'
 import type { SiteProfile } from './siteProfile'
 
 const profile: SiteProfile = {
@@ -16,6 +16,7 @@ const profile: SiteProfile = {
   termsContent: '',
   privacyContent: '',
   refundContent: '',
+  policyDocuments: [],
   legalItems: [],
   metaTitle: 'Example Network',
   metaDescription: 'Example description',
@@ -52,5 +53,11 @@ describe('legal content utilities', () => {
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(html).toContain('href="https://example.com/"')
     expect(html).not.toContain('href="javascript:')
+  })
+
+  it('removes only a matching leading markdown title', () => {
+    expect(stripLeadingLegalTitle('# 服务条款\n\n正文', '服务条款')).toBe('正文')
+    expect(stripLeadingLegalTitle('# 其他标题\n\n正文', '服务条款')).toBe('# 其他标题\n\n正文')
+    expect(stripLeadingLegalTitle('https://example.com/terms', '服务条款')).toBe('https://example.com/terms')
   })
 })

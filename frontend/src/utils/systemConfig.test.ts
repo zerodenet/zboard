@@ -65,6 +65,15 @@ describe('system config schema', () => {
     expect(normalizeSystemConfigDraft(legal, JSON.stringify(tooMany))).toEqual({ error: '法律与注册信息最多添加 32 项。' })
   })
 
+  it('validates the dynamic policy document collection before save', () => {
+    const documents = config({ config_key: 'site_policy_documents', name: '政策文档中心', value_type: 'json' })
+    const valid = [{ slug: 'fair-use', title: '公平使用政策', summary: '', content: '# 公平使用政策', published: true, placements: ['footer', 'purchase'] }]
+    expect(normalizeSystemConfigDraft(documents, JSON.stringify(valid))).toEqual({ value: valid })
+    expect(normalizeSystemConfigDraft(documents, 'null')).toEqual({ value: null })
+    expect(normalizeSystemConfigDraft(documents, JSON.stringify([...valid, { ...valid[0] }])).error).toContain('不能重复')
+    expect(normalizeSystemConfigDraft(documents, JSON.stringify([{ ...valid[0], placements: ['checkout'] }])).error).toContain('无效展示位置')
+  })
+
   it('provides a required IANA timezone input', () => {
     const timezone = config({ config_key: 'system_timezone', name: '系统时区', value: 'UTC' })
     expect(resolveSystemConfigInput(timezone)).toMatchObject({ control: 'text', required: true, placeholder: 'Asia/Shanghai' })

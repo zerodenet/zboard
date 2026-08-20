@@ -6,6 +6,17 @@ export interface SiteLegalItem {
   url?: string
 }
 
+export type PolicyDocumentPlacement = 'footer' | 'auth' | 'purchase'
+
+export interface SitePolicyDocument {
+  slug: string
+  title: string
+  summary: string
+  content: string
+  published: boolean
+  placements: PolicyDocumentPlacement[]
+}
+
 export interface SiteProfile {
   name: string
   description: string
@@ -20,6 +31,7 @@ export interface SiteProfile {
   termsContent: string
   privacyContent: string
   refundContent: string
+  policyDocuments: SitePolicyDocument[]
   legalItems: SiteLegalItem[]
   metaTitle: string
   metaDescription: string
@@ -64,11 +76,53 @@ function parseLegalItems(value: unknown): SiteLegalItem[] {
   })
 }
 
+const policyPlacements = new Set<PolicyDocumentPlacement>(['footer', 'auth', 'purchase'])
+
+function parsePolicyDocuments(value: unknown): SitePolicyDocument[] | null {
+  let source = value
+  if (typeof source === 'string') {
+    try { source = JSON.parse(source) } catch { return null }
+  }
+  if (source === null || source === undefined) return null
+  if (!Array.isArray(source)) return []
+  return source.flatMap(item => {
+    if (!item || typeof item !== 'object') return []
+    const row = item as Record<string, unknown>
+    const slug = typeof row.slug === 'string' ? row.slug.trim().toLowerCase() : ''
+    const title = typeof row.title === 'string' ? row.title.trim() : ''
+    const summary = typeof row.summary === 'string' ? row.summary.trim() : ''
+    const content = typeof row.content === 'string' ? row.content.trim() : ''
+    if (!slug || !title || !content || row.published === false) return []
+    const placements = Array.isArray(row.placements)
+      ? row.placements.filter((placement): placement is PolicyDocumentPlacement => policyPlacements.has(placement as PolicyDocumentPlacement))
+      : []
+    return [{ slug, title, summary, content, published: true, placements: [...new Set(placements)] }]
+  })
+}
+
+function legacyPolicyDocuments(termsContent: string, privacyContent: string, refundContent: string): SitePolicyDocument[] {
+  const documents: SitePolicyDocument[] = [
+    { slug: 'terms', title: '服务条款', summary: '服务范围、账户责任、计费与终止条件。', content: termsContent, published: true, placements: ['footer', 'auth', 'purchase'] },
+    { slug: 'privacy', title: '隐私政策', summary: '个人信息的处理目的、保存方式与用户选择。', content: privacyContent, published: true, placements: ['footer', 'auth'] },
+    { slug: 'refund', title: '退款政策', summary: '取消、退款资格、服务异常与退款方式。', content: refundContent, published: true, placements: ['footer', 'purchase'] },
+  ]
+  return documents.filter(document => document.content)
+}
+
+export function policyDocumentsFor(profile: SiteProfile, placement: PolicyDocumentPlacement) {
+  return profile.policyDocuments.filter(document => document.published && document.placements.includes(placement))
+}
+
 // preferredName is authoritative when supplied by Installation or an unsaved
 // settings draft. Public site_name remains the fallback for standalone callers.
 export function buildSiteProfile(configs: SystemConfig[], preferredName = ''): SiteProfile {
   const name = preferredName.trim() || stringValue(configs, 'site_name', 'zboard')
   const description = stringValue(configs, 'site_desc', defaultDescription)
+  const termsContent = contentValue(configs, 'site_terms_content', 'site_terms_url')
+  const privacyContent = contentValue(configs, 'site_privacy_content', 'site_privacy_url')
+  const refundContent = contentValue(configs, 'site_refund_content', 'site_refund_url')
+  const configuredDocuments = parsePolicyDocuments(configValue(configs, 'site_policy_documents'))
+  const policyDocuments = configuredDocuments ?? legacyPolicyDocuments(termsContent, privacyContent, refundContent)
   return {
     name,
     description,
@@ -80,9 +134,10 @@ export function buildSiteProfile(configs: SystemConfig[], preferredName = ''): S
     supportEmail: stringValue(configs, 'site_support_email'),
     supportUrl: stringValue(configs, 'site_support_url'),
     telegramUrl: stringValue(configs, 'site_telegram_url'),
-    termsContent: contentValue(configs, 'site_terms_content', 'site_terms_url'),
-    privacyContent: contentValue(configs, 'site_privacy_content', 'site_privacy_url'),
-    refundContent: contentValue(configs, 'site_refund_content', 'site_refund_url'),
+    termsContent,
+    privacyContent,
+    refundContent,
+    policyDocuments,
     legalItems: parseLegalItems(configValue(configs, 'site_legal_items')),
     metaTitle: stringValue(configs, 'site_meta_title', name),
     metaDescription: stringValue(configs, 'site_meta_description', description),

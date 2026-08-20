@@ -26,6 +26,32 @@ const urlConfigKeys = new Set([
 ])
 const policyContentKeys = new Set(['site_terms_content', 'site_privacy_content', 'site_refund_content'])
 const policyContentMaxBytes = 48 * 1024
+const policyDocumentsMaxBytes = 512 * 1024
+const policyDocumentPlacements = new Set(['footer', 'auth', 'purchase'])
+
+function validatePolicyDocuments(value: unknown) {
+  if (value === null) return ''
+  if (!Array.isArray(value)) return '政策文档必须是 JSON 数组。'
+  if (value.length > 32) return '政策文档最多添加 32 篇。'
+  const slugs = new Set<string>()
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index]
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return `第 ${index + 1} 篇文档必须是对象。`
+    const row = item as Record<string, unknown>
+    if (typeof row.slug !== 'string' || !/^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?$/.test(row.slug)) return `第 ${index + 1} 篇文档的路径无效。`
+    if (slugs.has(row.slug)) return `文档路径“${row.slug}”不能重复。`
+    slugs.add(row.slug)
+    if (typeof row.title !== 'string' || !row.title.trim() || utf8ByteLength(row.title) > 160) return `第 ${index + 1} 篇文档需要不超过 160 个 UTF-8 字节的标题。`
+    if (row.summary !== undefined && (typeof row.summary !== 'string' || utf8ByteLength(row.summary) > 512)) return `第 ${index + 1} 篇文档摘要不能超过 512 个 UTF-8 字节。`
+    if (typeof row.content !== 'string' || !row.content.trim() || utf8ByteLength(row.content) > policyContentMaxBytes) return `第 ${index + 1} 篇文档内容不能为空且不能超过 48 KiB。`
+    if (typeof row.published !== 'boolean') return `第 ${index + 1} 篇文档需要明确发布状态。`
+    if (!Array.isArray(row.placements)) return `第 ${index + 1} 篇文档的展示位置必须是数组。`
+    const placements = row.placements as unknown[]
+    if (placements.some(placement => typeof placement !== 'string' || !policyDocumentPlacements.has(placement))) return `第 ${index + 1} 篇文档包含无效展示位置。`
+    if (new Set(placements).size !== placements.length) return `第 ${index + 1} 篇文档的展示位置不能重复。`
+  }
+  return ''
+}
 
 function validateLegalItems(value: unknown) {
   if (!Array.isArray(value)) return '法律与注册信息必须是 JSON 数组。'
@@ -60,6 +86,7 @@ export function resolveSystemConfigInput(config: SystemConfig): SystemConfigInpu
   if (config.config_key === 'site_meta_title') return { control: 'text', max_bytes: 180 }
   if (config.config_key === 'site_home_kicker') return { control: 'text', max_bytes: 120 }
   if (config.config_key === 'site_legal_items') return { control: 'json', max_bytes: 16 * 1024 }
+  if (config.config_key === 'site_policy_documents') return { control: 'json', max_bytes: policyDocumentsMaxBytes }
 
   if (config.input?.control) return config.input
   if (config.config_key === 'system_timezone') return { control: 'text', required: true, placeholder: 'Asia/Shanghai' }
@@ -108,6 +135,10 @@ export function normalizeSystemConfigDraft(
     }
     if (config.config_key === 'site_legal_items') {
       const error = validateLegalItems(value)
+      if (error) return { error }
+    }
+    if (config.config_key === 'site_policy_documents') {
+      const error = validatePolicyDocuments(value)
       if (error) return { error }
     }
     if (input.max_bytes !== undefined && utf8ByteLength(JSON.stringify(value)) > input.max_bytes) {

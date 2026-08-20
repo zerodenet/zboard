@@ -105,6 +105,18 @@ export function isRemoteLegalContent(value: string) {
   }
 }
 
+export function stripLeadingLegalTitle(content: string, title: string) {
+  if (isRemoteLegalContent(content)) return content
+  const lines = content.split('\n')
+  const firstContentIndex = lines.findIndex(line => line.trim() !== '')
+  if (firstContentIndex < 0) return content
+  const heading = /^#\s+(.+?)\s*$/.exec(lines[firstContentIndex].trim())
+  if (!heading || heading[1].trim() !== title.trim()) return content
+  lines.splice(firstContentIndex, 1)
+  while (lines[firstContentIndex]?.trim() === '') lines.splice(firstContentIndex, 1)
+  return lines.join('\n')
+}
+
 export function resolveLegalVariables(content: string, profile: SiteProfile) {
   const supportContact = profile.supportEmail || profile.supportUrl || '站点提供的客服入口'
   const variables: Record<string, string> = {

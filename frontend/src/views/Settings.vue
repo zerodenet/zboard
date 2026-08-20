@@ -98,25 +98,20 @@
       </div>
 
       <div v-else-if="activeTab === 'legal'" class="settings-panel stack-lg">
-        <UiSection title="公开政策" description="默认模板会在展示时引用当前站点信息。可以直接编辑 Markdown；若内容仅为一个 HTTP/HTTPS URL，前台自动切换到远端页面模式。">
-          <div v-if="policyConfigs.length" class="policy-editors">
-            <MarkdownContentEditor
-              v-for="config in policyConfigs"
-              :key="config.config_key"
-              :config="config"
-              :model-value="drafts[config.config_key]"
-              :template="policyTemplate(config.config_key)"
-              :profile="previewProfile"
-              :dirty="configDirty(config)"
-              :saving="savingKey === config.config_key"
-              :error="configErrors[config.config_key]"
-              :conflict="Boolean(configConflicts[config.config_key])"
-              @update:model-value="updateDraft(config.config_key, $event)"
-              @reload="reloadConfig(config.config_key)"
-              @save="saveConfig(config)"
-            />
-          </div>
-          <EmptyState v-else icon="audit" title="没有政策配置" description="系统当前未返回服务条款、隐私政策或退款政策。" />
+        <UiSection title="公开政策" description="以文档站方式维护所有政策。可以动态创建链接、控制发布状态与展示位置；正文支持 Markdown，或使用完整 HTTP/HTTPS URL。">
+          <PolicyDocumentsEditor
+            v-if="policyDocumentsConfig"
+            :model-value="drafts[policyDocumentsConfig.config_key]"
+            :fallback-documents="previewProfile.policyDocuments"
+            :dirty="configDirty(policyDocumentsConfig)"
+            :saving="savingKey === policyDocumentsConfig.config_key"
+            :error="configErrors[policyDocumentsConfig.config_key]"
+            :conflict="Boolean(configConflicts[policyDocumentsConfig.config_key])"
+            @update:model-value="updateDraft(policyDocumentsConfig.config_key, $event)"
+            @reload="reloadConfig(policyDocumentsConfig.config_key)"
+            @save="saveConfig(policyDocumentsConfig)"
+          />
+          <EmptyState v-else icon="audit" title="没有政策文档配置" description="系统当前未返回政策文档中心配置。" />
         </UiSection>
 
         <UiSection title="法律与注册信息" description="可选的地区中立公开信息。没有注册号、税务编号或当地备案要求时可以完全留空。">
@@ -168,9 +163,9 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { fetchSystemConfigs, updateSiteSettings, updateSystemConfig, type SystemConfig } from '../api/client'
 import EmptyState from '../components/EmptyState.vue'
 import LegalItemsEditor from '../components/LegalItemsEditor.vue'
-import MarkdownContentEditor from '../components/MarkdownContentEditor.vue'
 import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
+import PolicyDocumentsEditor from '../components/PolicyDocumentsEditor.vue'
 import ConfigRow from '../components/SettingsConfigRow.vue'
 import SettingsPublicField from '../components/SettingsPublicField.vue'
 import StatusBadge from '../components/StatusBadge.vue'
@@ -181,7 +176,6 @@ import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composab
 import { useAppStore } from '../stores/app'
 import { normalizeApiErrorMessage } from '../utils/apiError'
 import { confirmAction } from '../utils/feedback'
-import { defaultLegalTemplates, type LegalContentKey } from '../utils/legalContent'
 import { buildSiteProfile } from '../utils/siteProfile'
 import { formatSystemConfigDraft, normalizeSystemConfigDraft } from '../utils/systemConfig'
 import { collectFieldErrors, isHttpUrl, isUtf8LengthInRange } from '../utils/validation'
@@ -205,15 +199,15 @@ const siteState = useDirtyForm(() => form)
 
 const hiddenSiteKeys = new Set(['site_name', 'site_url', 'register_switch'])
 const deprecatedSiteKeys = new Set(['site_terms_url', 'site_privacy_url', 'site_refund_url', 'site_home_primary_cta'])
-const policyKeyOrder: LegalContentKey[] = ['site_terms_content', 'site_privacy_content', 'site_refund_content']
-const policyKeys = new Set<string>(policyKeyOrder)
+const legacyPolicyKeys = new Set(['site_terms_content', 'site_privacy_content', 'site_refund_content'])
+const policyDocumentsKeys = new Set(['site_policy_documents'])
 const legalMetadataKeys = new Set(['site_legal_items'])
 const siteVisualKeys = ['site_logo', 'site_logo_dark', 'site_favicon']
 const siteContentKeys = ['site_desc', 'site_home_kicker', 'site_home_title']
 const siteContactKeys = ['site_footer_copyright', 'site_support_email', 'site_support_url', 'site_telegram_url']
 const siteSeoKeys = ['site_meta_title', 'site_meta_description']
 const sitePresentationKeys = new Set([...siteVisualKeys, ...siteContentKeys, ...siteContactKeys, ...siteSeoKeys])
-const publicSiteKeys = new Set([...sitePresentationKeys, ...policyKeys, ...legalMetadataKeys])
+const publicSiteKeys = new Set([...sitePresentationKeys, ...legacyPolicyKeys, ...policyDocumentsKeys, ...legalMetadataKeys])
 const tabItems = [
   { value: 'site', label: '站点与品牌', icon: 'info' },
   { value: 'legal', label: '法务与政策', icon: 'audit' },
@@ -224,9 +218,7 @@ const tabItems = [
 const operationalConfigs = computed(() => configs.value
   .filter(item => !hiddenSiteKeys.has(item.config_key) && !deprecatedSiteKeys.has(item.config_key))
   .sort((a, b) => a.id - b.id))
-const policyConfigs = computed(() => operationalConfigs.value
-  .filter(item => policyKeys.has(item.config_key))
-  .sort((a, b) => policyKeyOrder.indexOf(a.config_key as LegalContentKey) - policyKeyOrder.indexOf(b.config_key as LegalContentKey)))
+const policyDocumentsConfig = computed(() => operationalConfigs.value.find(item => policyDocumentsKeys.has(item.config_key)))
 const legalMetadataConfig = computed(() => operationalConfigs.value.find(item => legalMetadataKeys.has(item.config_key)))
 const emailConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)))
 const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !/smtp|email/i.test(item.config_key)))
@@ -267,10 +259,6 @@ useUnsavedChangesGuard(
 
 watch(() => form.site_name, () => siteErrors.clear('site_name'))
 watch(() => form.site_url, () => siteErrors.clear('site_url'))
-
-function policyTemplate(key: string) {
-  return defaultLegalTemplates[key as LegalContentKey] || ''
-}
 
 function configValue(config: SystemConfig) {
   return formatSystemConfigDraft(config)

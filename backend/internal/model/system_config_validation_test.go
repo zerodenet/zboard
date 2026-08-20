@@ -51,3 +51,23 @@ func TestSiteLegalItemsValidation(t *testing.T) {
 		t.Fatal("relative registry URL should be rejected")
 	}
 }
+
+func TestSitePolicyDocumentsValidation(t *testing.T) {
+	valid := `[{"slug":"fair-use","title":"公平使用政策","summary":"适用限制","content":"# 公平使用政策\n\n正文","published":true,"placements":["footer","purchase"]}]`
+	if err := validateSiteSystemConfig("site_policy_documents", valid); err != nil {
+		t.Fatalf("valid policy documents rejected: %v", err)
+	}
+	if err := validateSiteSystemConfig("site_policy_documents", "null"); err != nil {
+		t.Fatalf("legacy null sentinel rejected: %v", err)
+	}
+	for name, value := range map[string]string{
+		"duplicate slug": `[{"slug":"terms","title":"A","content":"A"},{"slug":"terms","title":"B","content":"B"}]`,
+		"invalid slug":   `[{"slug":"Fair Use","title":"A","content":"A"}]`,
+		"empty content":  `[{"slug":"terms","title":"A","content":""}]`,
+		"bad placement":  `[{"slug":"terms","title":"A","content":"A","placements":["checkout"]}]`,
+	} {
+		if err := validateSiteSystemConfig("site_policy_documents", value); err == nil {
+			t.Fatalf("%s should be rejected", name)
+		}
+	}
+}

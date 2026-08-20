@@ -190,6 +190,15 @@ func siteCustomizationDefaults() []model.SystemConfig {
 			Revision:    1,
 		},
 		{
+			ConfigKey:   "site_policy_documents",
+			Name:        "政策文档中心",
+			Value:       "null",
+			ValueType:   "json",
+			Description: "公开政策文档数组。支持动态创建文档、路径、发布状态，以及页脚、认证页和购买页展示位置；null 时兼容使用原有三份政策配置。",
+			IsPublic:    true,
+			Revision:    1,
+		},
+		{
 			ConfigKey:   "site_legal_items",
 			Name:        "法律与注册信息",
 			Value:       "[]",

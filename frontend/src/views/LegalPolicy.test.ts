@@ -29,35 +29,36 @@ describe('LegalPolicy', () => {
     const app = useAppStore(pinia)
     app.installation = { installed: true, site_name: 'Example Network', version: 'test' }
     app.publicConfigs = [
-      config('site_terms_content', '# Terms\n\nWelcome to {{site_name}}.'),
-      config('site_privacy_content', 'https://example.com/privacy'),
-      config('site_refund_content', '# Refunds\n\nContact {{support_email}}.'),
+      config('site_policy_documents', JSON.stringify([
+        { slug: 'terms', title: '服务条款', summary: '服务规则', content: '# 服务条款\n\nWelcome to {{site_name}}.', published: true, placements: ['footer', 'purchase'] },
+        { slug: 'privacy', title: '隐私政策', summary: '', content: 'https://example.com/privacy', published: true, placements: ['footer'] },
+        { slug: 'refund', title: '退款政策', summary: '', content: '# 退款政策\n\nContact {{support_email}}.', published: true, placements: ['purchase'] },
+      ])),
       config('site_support_email', 'support@example.com'),
     ]
 
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { path: '/terms', component: LegalPolicy, meta: { title: '服务条款', policyType: 'terms' } },
-        { path: '/privacy', component: LegalPolicy, meta: { title: '隐私政策', policyType: 'privacy' } },
-        { path: '/refund', component: LegalPolicy, meta: { title: '退款政策', policyType: 'refund' } },
+        { path: '/docs/:slug', component: LegalPolicy },
       ],
     })
-    await router.push('/terms')
+    await router.push('/docs/terms')
     await router.isReady()
     const wrapper = mount(defineComponent({ setup: () => () => h(RouterView) }), {
       global: { plugins: [pinia, router] },
     })
 
     expect(wrapper.get('h1').text()).toBe('服务条款')
+    expect(wrapper.findAll('h1')).toHaveLength(1)
     expect(wrapper.text()).toContain('Welcome to Example Network.')
 
-    await router.push('/privacy')
+    await router.push('/docs/privacy')
     await nextTick()
     expect(wrapper.get('h1').text()).toBe('隐私政策')
     expect(wrapper.get('iframe').attributes('src')).toBe('https://example.com/privacy')
 
-    await router.push('/refund')
+    await router.push('/docs/refund')
     await nextTick()
     expect(wrapper.get('h1').text()).toBe('退款政策')
     expect(wrapper.text()).toContain('Contact support@example.com.')

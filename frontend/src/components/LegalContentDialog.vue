@@ -23,7 +23,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { SiteProfile } from '../utils/siteProfile'
-import { isRemoteLegalContent, renderSafeMarkdown, resolveLegalVariables } from '../utils/legalContent'
+import { isRemoteLegalContent, renderSafeMarkdown, resolveLegalVariables, stripLeadingLegalTitle } from '../utils/legalContent'
 import ModalDialog from './ModalDialog.vue'
 import UiIcon from './UiIcon.vue'
 
@@ -37,7 +37,7 @@ defineEmits<{ close: [] }>()
 
 const remote = computed(() => isRemoteLegalContent(props.content))
 const remoteUrl = computed(() => remote.value ? props.content.trim() : '')
-const html = computed(() => renderSafeMarkdown(resolveLegalVariables(props.content, props.profile)))
+const html = computed(() => renderSafeMarkdown(resolveLegalVariables(stripLeadingLegalTitle(props.content, props.title), props.profile)))
 </script>
 
 <style scoped>

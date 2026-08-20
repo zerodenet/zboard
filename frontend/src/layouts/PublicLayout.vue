@@ -7,7 +7,7 @@
         <strong>{{ profile.name }}</strong>
       </RouterLink>
       <UiButton variant="ghost" icon class="icon-button public-menu" type="button" :aria-label="menuOpen ? '关闭站点导航' : '打开站点导航'" :aria-expanded="menuOpen" aria-controls="public-navigation" @click="menuOpen = !menuOpen"><UiIcon :name="menuOpen ? 'close' : 'menu'" /></UiButton>
-      <nav id="public-navigation" :class="{ open: menuOpen }" aria-label="站点导航"><RouterLink to="/" @click="menuOpen = false">首页</RouterLink><RouterLink to="/pricing" @click="menuOpen = false">套餐</RouterLink></nav>
+      <nav id="public-navigation" :class="{ open: menuOpen }" aria-label="站点导航"><RouterLink to="/" @click="menuOpen = false">首页</RouterLink><RouterLink to="/pricing" @click="menuOpen = false">套餐</RouterLink><RouterLink v-if="profile.policyDocuments.length" to="/docs" @click="menuOpen = false">文档</RouterLink></nav>
       <div class="public-actions">
         <RouterLink v-if="app.isAuthenticated" class="button button-secondary button-sm" :to="landingPath">进入{{ app.isAdmin ? '管理后台' : '用户中心' }}</RouterLink>
         <template v-else><RouterLink class="button button-ghost button-sm" to="/login">登录</RouterLink><RouterLink v-if="app.installation?.allow_registration" class="button button-sm" to="/register">免费注册</RouterLink></template>
@@ -31,9 +31,7 @@
         <a v-if="profile.supportUrl" :href="profile.supportUrl" target="_blank" rel="noreferrer">客服</a>
         <a v-if="profile.supportEmail" :href="`mailto:${profile.supportEmail}`">联系邮箱</a>
         <a v-if="profile.telegramUrl" :href="profile.telegramUrl" target="_blank" rel="noreferrer">Telegram</a>
-        <RouterLink v-if="profile.termsContent" to="/terms">服务条款</RouterLink>
-        <RouterLink v-if="profile.privacyContent" to="/privacy">隐私政策</RouterLink>
-        <RouterLink v-if="profile.refundContent" to="/refund">退款政策</RouterLink>
+        <RouterLink v-for="document in footerDocuments" :key="document.slug" :to="`/docs/${document.slug}`">{{ document.title }}</RouterLink>
         <template v-for="item in profile.legalItems" :key="`${item.label}:${item.value}`">
           <a v-if="item.url" :href="item.url" target="_blank" rel="noreferrer">{{ item.label }} · {{ item.value }}</a>
           <span v-else>{{ item.label }} · {{ item.value }}</span>
@@ -48,11 +46,13 @@ import { computed, ref } from 'vue'
 import UiIcon from '../components/UiIcon.vue'
 import UiButton from '../components/UiButton.vue'
 import { useAppStore } from '../stores/app'
+import { policyDocumentsFor } from '../utils/siteProfile'
 
 const app = useAppStore()
 const menuOpen = ref(false)
 const landingPath = computed(() => app.isAdmin ? '/admin/dashboard' : '/account')
 const profile = computed(() => app.siteProfile)
+const footerDocuments = computed(() => policyDocumentsFor(profile.value, 'footer'))
 const footerLogo = computed(() => profile.value.logoDark || profile.value.logo)
 const brandInitial = computed(() => Array.from(profile.value.name.trim())[0]?.toUpperCase() || 'Z')
 </script>

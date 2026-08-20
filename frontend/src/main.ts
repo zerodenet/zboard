@@ -32,7 +32,10 @@ import TimeBadge from './components/TimeBadge.vue'
 
 const router = createRouter({
   history: createWebHistory(),
-  routes
+  routes,
+  scrollBehavior(_to, _from, savedPosition) {
+    return savedPosition || { top: 0 }
+  },
 })
 
 const app = createApp(App)
@@ -117,9 +120,15 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to) => {
   const store = useAppStore(pinia)
+  const documentSlug = String(to.params.slug || '')
+  const documentTitle = to.meta.policyDocument
+    ? (documentSlug
+        ? store.siteProfile.policyDocuments.find(document => document.slug === documentSlug)
+        : store.siteProfile.policyDocuments[0])?.title
+    : ''
   applySiteMetadata(store.siteProfile, {
     path: to.path,
-    pageTitle: typeof to.meta.title === 'string' ? to.meta.title : '',
+    pageTitle: documentTitle || (typeof to.meta.title === 'string' ? to.meta.title : ''),
   })
 })
 

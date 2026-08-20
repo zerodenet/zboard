@@ -6,15 +6,19 @@ import (
 	"fmt"
 	"net/mail"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"gorm.io/gorm"
 )
 
 const (
-	maxSitePolicyContentBytes = 48 * 1024
-	maxSiteURLBytes           = 2048
+	maxSitePolicyContentBytes   = 48 * 1024
+	maxSitePolicyDocumentsBytes = 512 * 1024
+	maxSiteURLBytes             = 2048
 )
+
+var sitePolicySlugPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?$`)
 
 var sitePolicyContentKeys = map[string]struct{}{
 	"site_terms_content":   {},
@@ -75,6 +79,76 @@ func validateSiteSystemConfig(key, value string) error {
 		}
 	case "site_legal_items":
 		return validateSiteLegalItems(value)
+	case "site_policy_documents":
+		return validateSitePolicyDocuments(value)
+	}
+	return nil
+}
+
+type sitePolicyDocument struct {
+	Slug       string   `json:"slug"`
+	Title      string   `json:"title"`
+	Summary    string   `json:"summary"`
+	Content    string   `json:"content"`
+	Published  *bool    `json:"published"`
+	Placements []string `json:"placements"`
+}
+
+func validateSitePolicyDocuments(value string) error {
+	if len(value) > maxSitePolicyDocumentsBytes {
+		return fmt.Errorf("site_policy_documents must not exceed %d UTF-8 bytes", maxSitePolicyDocumentsBytes)
+	}
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "null" {
+		return nil
+	}
+	if !strings.HasPrefix(trimmed, "[") {
+		return errors.New("site_policy_documents must be a JSON array or null")
+	}
+	var documents []sitePolicyDocument
+	if err := json.Unmarshal([]byte(trimmed), &documents); err != nil {
+		return errors.New("site_policy_documents must be a JSON array or null")
+	}
+	if len(documents) > 32 {
+		return errors.New("site_policy_documents must not contain more than 32 documents")
+	}
+	seenSlugs := make(map[string]struct{}, len(documents))
+	allowedPlacements := map[string]struct{}{
+		"footer":   {},
+		"auth":     {},
+		"purchase": {},
+	}
+	for index, document := range documents {
+		slug := strings.TrimSpace(document.Slug)
+		if slug != document.Slug || !sitePolicySlugPattern.MatchString(slug) {
+			return fmt.Errorf("site_policy_documents document %d has an invalid slug", index+1)
+		}
+		if _, exists := seenSlugs[slug]; exists {
+			return fmt.Errorf("site_policy_documents document %d duplicates slug %q", index+1, slug)
+		}
+		seenSlugs[slug] = struct{}{}
+		if strings.TrimSpace(document.Title) == "" || len(document.Title) > 160 {
+			return fmt.Errorf("site_policy_documents document %d requires a title of at most 160 UTF-8 bytes", index+1)
+		}
+		if len(document.Summary) > 512 {
+			return fmt.Errorf("site_policy_documents document %d summary must not exceed 512 UTF-8 bytes", index+1)
+		}
+		if strings.TrimSpace(document.Content) == "" || len(document.Content) > maxSitePolicyContentBytes {
+			return fmt.Errorf("site_policy_documents document %d requires content of at most %d UTF-8 bytes", index+1, maxSitePolicyContentBytes)
+		}
+		if document.Published == nil {
+			return fmt.Errorf("site_policy_documents document %d requires a published state", index+1)
+		}
+		seenPlacements := map[string]struct{}{}
+		for _, placement := range document.Placements {
+			if _, allowed := allowedPlacements[placement]; !allowed {
+				return fmt.Errorf("site_policy_documents document %d has an invalid placement", index+1)
+			}
+			if _, duplicate := seenPlacements[placement]; duplicate {
+				return fmt.Errorf("site_policy_documents document %d repeats placement %q", index+1, placement)
+			}
+			seenPlacements[placement] = struct{}{}
+		}
 	}
 	return nil
 }

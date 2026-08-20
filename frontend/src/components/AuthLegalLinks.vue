@@ -1,9 +1,10 @@
 <template>
   <div v-if="hasPolicies" class="auth-legal-links">
     <span>{{ context === 'register' ? '创建账户前请阅读' : '站点政策' }}</span>
-    <button v-if="profile.termsContent" type="button" @click="openPolicy('服务条款', profile.termsContent)">服务条款</button>
-    <i v-if="profile.termsContent && profile.privacyContent">·</i>
-    <button v-if="profile.privacyContent" type="button" @click="openPolicy('隐私政策', profile.privacyContent)">隐私政策</button>
+    <template v-for="(document, index) in documents" :key="document.slug">
+      <i v-if="index">·</i>
+      <button type="button" @click="openPolicy(document.title, document.content)">{{ document.title }}</button>
+    </template>
   </div>
 
   <LegalContentDialog
@@ -18,6 +19,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useAppStore } from '../stores/app'
+import { policyDocumentsFor } from '../utils/siteProfile'
 import LegalContentDialog from './LegalContentDialog.vue'
 
 withDefaults(defineProps<{ context?: 'register' | 'login' }>(), { context: 'login' })
@@ -26,7 +28,8 @@ const app = useAppStore()
 const activeTitle = ref('')
 const activeContent = ref('')
 const profile = computed(() => app.siteProfile)
-const hasPolicies = computed(() => Boolean(profile.value.termsContent || profile.value.privacyContent))
+const documents = computed(() => policyDocumentsFor(profile.value, 'auth'))
+const hasPolicies = computed(() => documents.value.length > 0)
 
 function openPolicy(title: string, content: string) {
   activeTitle.value = title

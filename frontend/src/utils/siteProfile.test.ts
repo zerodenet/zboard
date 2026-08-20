@@ -35,9 +35,16 @@ describe('buildSiteProfile', () => {
     expect(profile.description).toBe('Fast and predictable connectivity.')
     expect(profile.logo).toBe('https://cdn.example.com/logo.svg')
     expect(profile.privacyContent).toBe('# Privacy\n\n{{copyright}}')
+    expect(profile.policyDocuments.find(document => document.slug === 'privacy')?.content).toBe('# Privacy\n\n{{copyright}}')
     expect(profile.legalItems).toEqual([
       { label: 'Company No.', value: '12345678', url: 'https://registry.example/12345678' },
     ])
+  })
+
+  it('uses the dynamic document collection when configured and preserves an explicitly empty collection', () => {
+    const documents = [{ slug: 'fair-use', title: '公平使用政策', summary: '资源使用边界', content: '# 公平使用政策', published: true, placements: ['footer', 'purchase'] }]
+    expect(buildSiteProfile([config('site_policy_documents', documents, 'json')]).policyDocuments).toEqual(documents)
+    expect(buildSiteProfile([config('site_policy_documents', [], 'json'), config('site_terms_content', '# Terms')]).policyDocuments).toEqual([])
   })
 
   it('keeps compatibility with URL-only policy values', () => {
