@@ -1,20 +1,22 @@
 <template>
   <ModalDialog :open="open" :title="title" size="xl" fixed-body @close="$emit('close')">
-    <div v-if="remote" class="legal-remote">
-      <div class="legal-remote__notice">
-        <span><UiIcon name="info" />内容来自外部页面</span>
-        <a :href="remoteUrl" target="_blank" rel="noreferrer">新窗口打开</a>
+    <div class="legal-dialog-content">
+      <div v-if="remote" class="legal-remote">
+        <div class="legal-remote__notice">
+          <span><UiIcon name="info" />内容来自外部页面</span>
+          <a :href="remoteUrl" target="_blank" rel="noreferrer">新窗口打开</a>
+        </div>
+        <iframe
+          class="legal-remote__frame"
+          :src="remoteUrl"
+          :title="title"
+          sandbox="allow-forms allow-popups allow-scripts"
+          referrerpolicy="no-referrer"
+        ></iframe>
+        <p class="legal-remote__fallback">若远端站点禁止嵌入页面，请使用“新窗口打开”。</p>
       </div>
-      <iframe
-        class="legal-remote__frame"
-        :src="remoteUrl"
-        :title="title"
-        sandbox="allow-forms allow-popups allow-scripts"
-        referrerpolicy="no-referrer"
-      ></iframe>
-      <p class="legal-remote__fallback">若远端站点禁止嵌入页面，请使用“新窗口打开”。</p>
+      <div v-else class="legal-markdown" v-html="html"></div>
     </div>
-    <div v-else class="legal-markdown" v-html="html"></div>
   </ModalDialog>
 </template>
 
@@ -39,6 +41,7 @@ const html = computed(() => renderSafeMarkdown(resolveLegalVariables(props.conte
 </script>
 
 <style scoped>
+.legal-dialog-content { max-height: min(70vh, 760px); overflow-y: auto; }
 .legal-markdown { max-width: 800px; margin: 0 auto; padding: 8px 6px 28px; color: var(--text); font-size: 13px; line-height: 1.8; }
 .legal-markdown :deep(h1) { margin: 0 0 24px; font-size: 27px; line-height: 1.3; }
 .legal-markdown :deep(h2) { margin: 27px 0 9px; font-size: 17px; }
