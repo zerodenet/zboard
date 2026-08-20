@@ -6,7 +6,10 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('../layouts/PublicLayout.vue'),
     children: [
       { path: '', component: () => import('../views/Home.vue'), meta: { title: '首页', layout: 'public' } },
-      { path: 'pricing', component: () => import('../views/PublicPlans.vue'), meta: { title: '套餐价格', layout: 'public' } }
+      { path: 'pricing', component: () => import('../views/PublicPlans.vue'), meta: { title: '套餐价格', layout: 'public' } },
+      { path: 'terms', component: () => import('../views/LegalPolicy.vue'), meta: { title: '服务条款', layout: 'public', policyType: 'terms' } },
+      { path: 'privacy', component: () => import('../views/LegalPolicy.vue'), meta: { title: '隐私政策', layout: 'public', policyType: 'privacy' } },
+      { path: 'refund', component: () => import('../views/LegalPolicy.vue'), meta: { title: '退款政策', layout: 'public', policyType: 'refund' } }
     ]
   },
   { path: '/setup', component: () => import('../views/Setup.vue'), meta: { setupOnly: true, title: '初始化', layout: 'auth' } },
