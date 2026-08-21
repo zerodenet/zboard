@@ -8282,3 +8282,26 @@ Remaining gaps:
   no deployment authorization was provided for this PR update.
 - The 10 pre-existing frontend source-contract failures remain outside this
   document-center change.
+
+## 2026-08-21: subscription delivery wording alignment
+
+Goal outcome:
+
+- Corrected the account subscription-format picker so the built-in `native`
+  option and User-Agent fallback explicitly say that ZBoard returns a Base64-
+  encoded native configuration, rather than implying raw JSON delivery.
+- Updated the fresh-install ZNet Sink template description to distinguish its
+  Zero JSON structure from its Base64 transport representation.
+- Kept the delivery implementation unchanged: Zero aliases and native output
+  were already encoded by the backend; this was a stale wording issue.
+
+Local verification:
+
+- Three focused Vitest files passed (7 tests), including a source contract that
+  rejects the old plaintext-implying labels.
+- `pnpm typecheck` passed.
+
+Remaining gaps:
+
+- Intranet synchronization was not performed because no deployment was
+  requested or authorized for this wording-only PR update.

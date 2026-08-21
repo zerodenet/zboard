@@ -23,4 +23,12 @@ describe('subscription access isolation source contract', () => {
     expect(source).toContain('其他订阅不会被合并到该链接')
     expect(source).not.toContain('累计已用流量、总额和到期时间')
   })
+
+  it('describes built-in native delivery as Base64 encoding instead of plaintext JSON', () => {
+    const source = readSource('./AccountSubscription.vue')
+    expect(source).toContain('ZBoard 原生格式（Base64）')
+    expect(source).toContain('Base64 编码的 ZBoard 原生配置')
+    expect(source).not.toContain("label: 'ZBoard 原生 JSON'")
+    expect(source).not.toContain('返回原生 JSON')
+  })
 })
