@@ -106,6 +106,7 @@ function cloneDocuments(value: SitePolicyDocument[]) {
 function parseDocuments(value: unknown): SitePolicyDocument[] {
   let source = value
   if (typeof source === 'string') {
+    if (!source.trim()) return cloneDocuments(props.fallbackDocuments)
     try { source = JSON.parse(source) } catch { return [] }
   }
   if (source === null || source === undefined) return cloneDocuments(props.fallbackDocuments)

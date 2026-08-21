@@ -8305,3 +8305,27 @@ Remaining gaps:
 
 - Intranet synchronization was not performed because no deployment was
   requested or authorized for this wording-only PR update.
+
+## 2026-08-21: restore default policy editing in the document CMS
+
+Goal outcome:
+
+- Fixed the document editor's unset-value projection. A JSON `null` system
+  configuration is omitted by the admin API's `omitempty` view and therefore
+  arrives as an empty draft string; the editor had incorrectly treated that as
+  an explicitly empty document collection.
+- Empty or `null` drafts now project the legacy terms, privacy and refund
+  documents into normal editable cards. An explicitly saved `[]` remains an
+  intentionally empty collection, so operators retain full removal control.
+- Added component coverage for omitted, string-null, null and explicit-empty
+  collection states.
+
+Local verification:
+
+- Three focused Vitest files passed (17 tests).
+- `pnpm typecheck` passed.
+
+Remaining gaps:
+
+- Intranet synchronization was not performed because no deployment was
+  requested or authorized for this PR update.
