@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/net/idna"
+	"gopkg.in/yaml.v2"
 )
 
 func normalizeManagedRuleSourceFormat(value string) (string, error) {
@@ -57,13 +58,28 @@ func parseManagedRuleSource(raw []byte, sourceFormat string) (managedRuleDocumen
 		return decodeAndNormalizeZeroRuleIR(raw)
 	}
 
-	rules := make([]managedRule, 0)
-	scanner := bufio.NewScanner(bytes.NewReader(raw))
-	scanner.Buffer(make([]byte, 64*1024), managedRuleMaxValueBytes+4096)
-	lineNumber := 0
-	for scanner.Scan() {
-		lineNumber++
-		line := strings.TrimSpace(strings.TrimSuffix(scanner.Text(), "\r"))
+	lines, wrapped, err := decodeManagedRuleProviderPayload(raw)
+	if err != nil {
+		return managedRuleDocument{}, err
+	}
+	if !wrapped {
+		scanner := bufio.NewScanner(bytes.NewReader(raw))
+		scanner.Buffer(make([]byte, 64*1024), managedRuleMaxValueBytes+4096)
+		for scanner.Scan() {
+			lines = append(lines, scanner.Text())
+		}
+		if err := scanner.Err(); err != nil {
+			return managedRuleDocument{}, err
+		}
+	}
+
+	rules := make([]managedRule, 0, len(lines))
+	location := "line"
+	if wrapped {
+		location = "payload item"
+	}
+	for index, sourceLine := range lines {
+		line := strings.TrimSpace(strings.TrimSuffix(sourceLine, "\r"))
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") || strings.HasPrefix(line, ";") {
 			continue
 		}
@@ -77,17 +93,52 @@ func parseManagedRuleSource(raw []byte, sourceFormat string) (managedRuleDocumen
 			rule, err = parseManagedCIDRListRule(line)
 		}
 		if err != nil {
-			return managedRuleDocument{}, fmt.Errorf("line %d: %w", lineNumber, err)
+			return managedRuleDocument{}, fmt.Errorf("%s %d: %w", location, index+1, err)
 		}
 		rules = append(rules, rule)
 		if len(rules) > managedRuleMaxRules {
 			return managedRuleDocument{}, fmt.Errorf("rule source exceeds %d rules", managedRuleMaxRules)
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return managedRuleDocument{}, err
-	}
 	return normalizeManagedRuleDocument(managedRuleDocument{Version: zeroRuleIRVersion, Rules: rules})
+}
+
+// Clash rule-provider sources wrap their entries in a YAML payload sequence.
+// Keep accepting the existing raw line-oriented formats, while unwrapping the
+// standard provider envelope before applying the selected rule semantics.
+func decodeManagedRuleProviderPayload(raw []byte) ([]string, bool, error) {
+	scanner := bufio.NewScanner(bytes.NewReader(raw))
+	scanner.Buffer(make([]byte, 64*1024), managedRuleMaxValueBytes+4096)
+	wrapped := false
+	for scanner.Scan() {
+		line := strings.TrimSpace(strings.TrimSuffix(scanner.Text(), "\r"))
+		if line == "" || strings.HasPrefix(line, "#") || line == "---" || strings.HasPrefix(line, "%YAML") {
+			continue
+		}
+		candidate := strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
+		wrapped = candidate == "payload:" || strings.HasPrefix(candidate, "payload: ")
+		break
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, false, err
+	}
+	if !wrapped {
+		return nil, false, nil
+	}
+
+	var source struct {
+		Payload []string `yaml:"payload"`
+	}
+	if err := yaml.UnmarshalStrict(raw, &source); err != nil {
+		return nil, true, fmt.Errorf("invalid Clash provider YAML: %w", err)
+	}
+	if source.Payload == nil {
+		return nil, true, errors.New("Clash provider YAML field payload must be a string sequence")
+	}
+	if len(source.Payload) == 0 {
+		return nil, true, errors.New("Clash provider YAML payload cannot be empty")
+	}
+	return source.Payload, true, nil
 }
 
 func decodeAndNormalizeZeroRuleIR(raw []byte) (managedRuleDocument, error) {
