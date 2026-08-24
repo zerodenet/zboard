@@ -191,6 +191,7 @@ func fetchManagedRuleSource(ctx context.Context, rawURL string) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
+	parsed = normalizeManagedRuleFetchURL(parsed)
 	transport := &http.Transport{
 		// Deliberately do not inherit HTTP(S)_PROXY. A proxy would resolve and
 		// access the destination outside this process, bypassing the private-IP
@@ -250,6 +251,25 @@ func fetchManagedRuleSource(ctx context.Context, rawURL string) ([]byte, error) 
 		return nil, fmt.Errorf("source exceeds %d bytes", managedRuleMaxSourceBytes)
 	}
 	return content, nil
+}
+
+// GitHub's ordinary /blob/ links return an HTML document. Administrators
+// commonly copy that address from the browser, so resolve it through GitHub's
+// raw route before downloading while retaining the original URL in Zboard.
+func normalizeManagedRuleFetchURL(parsed *url.URL) *url.URL {
+	if parsed == nil || !strings.EqualFold(parsed.Hostname(), "github.com") {
+		return parsed
+	}
+	segments := strings.Split(strings.TrimPrefix(parsed.Path, "/"), "/")
+	if len(segments) < 5 || segments[2] != "blob" {
+		return parsed
+	}
+	normalized := *parsed
+	segments[2] = "raw"
+	normalized.Path = "/" + strings.Join(segments, "/")
+	normalized.RawPath = ""
+	normalized.RawQuery = ""
+	return &normalized
 }
 
 func validateManagedRuleImportURL(raw string) (*url.URL, error) {

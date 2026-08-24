@@ -26,6 +26,37 @@ remain outside this repository.
 
 ## In-progress goals
 
+### 2026-08-21 - Clash Provider rule-set import compatibility
+
+Goal outcome before synchronization:
+
+- Rule-set remote imports now recognize the standard Clash Provider YAML
+  `payload` sequence and continue to accept the existing raw classical,
+  domain-list and CIDR-list line formats.
+- Browser-facing GitHub `/blob/` URLs are normalized to GitHub's raw download
+  route only for fetching. The administrator-provided source URL remains the
+  persisted source identity.
+- The reported Discord provider fixture converts into six canonical
+  `domain_suffix` rules. Invalid, empty and structurally unexpected provider
+  envelopes remain rejected instead of being interpreted permissively.
+
+Verification performed in this environment:
+
+- Go 1.26.5 was installed in a task-local temporary directory and used to run
+  `gofmt`, `go test ./...` and `go vet ./...`; all passed.
+- The normalized GitHub raw route returned the expected `payload` YAML for the
+  reported public source, and `git diff --check` passed.
+
+Remaining gaps:
+
+- Intranet synchronization could not start because this Linux task environment
+  provides neither `pwsh` nor Windows PowerShell, while the maintained entry
+  point is `scripts/sync-intranet.ps1`. No upload, backup, container switch or
+  deployment mutation occurred; deployed `/readyz`, container health and the
+  authenticated live import therefore remain unverified.
+- No database migration is required. No production data, credentials or
+  subscription source values were written by the local verification.
+
 ### 2026-08-04 - Protocol delivery ordering
 
 Goal outcome before synchronization:

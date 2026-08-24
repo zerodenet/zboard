@@ -90,6 +90,62 @@ func TestManagedRuleImportsConvertToZeroRuleIR(t *testing.T) {
 	}
 }
 
+func TestManagedRuleImportsClashProviderYAML(t *testing.T) {
+	raw := []byte(`payload:
+# > Discord
+  - DOMAIN-SUFFIX,discord.com
+  - DOMAIN-SUFFIX,discord.gg
+  - DOMAIN-SUFFIX,discord.media
+  - DOMAIN-SUFFIX,discordapp.com
+  - DOMAIN-SUFFIX,discordapp.net
+  - DOMAIN-SUFFIX,discordstatus.com
+`)
+	document, err := parseManagedRuleSource(raw, managedRuleSourceClashClassical)
+	if err != nil {
+		t.Fatalf("parse Clash provider YAML: %v", err)
+	}
+	if len(document.Rules) != 6 {
+		t.Fatalf("rules = %#v, want 6 Discord suffix rules", document.Rules)
+	}
+	for _, rule := range document.Rules {
+		if rule.Type != managedRuleTypeDomainSuffix || !strings.HasPrefix(rule.Value, "discord") {
+			t.Fatalf("unexpected Discord provider rule: %#v", rule)
+		}
+	}
+}
+
+func TestManagedRuleProviderYAMLRejectsInvalidEnvelope(t *testing.T) {
+	for _, raw := range []string{
+		"payload: []\n",
+		"payload: invalid\n",
+		"payload:\n  - DOMAIN-SUFFIX,example.com\nextra: true\n",
+	} {
+		if _, err := parseManagedRuleSource([]byte(raw), managedRuleSourceClashClassical); err == nil {
+			t.Fatalf("parseManagedRuleSource(%q) succeeded, want error", raw)
+		}
+	}
+}
+
+func TestNormalizeManagedRuleFetchURLConvertsGitHubBlobLink(t *testing.T) {
+	parsed, err := validateManagedRuleImportURL("https://github.com/dler-io/Rules/blob/main/Clash/Provider/Discord.yaml?plain=1")
+	if err != nil {
+		t.Fatalf("validate source URL: %v", err)
+	}
+	got := normalizeManagedRuleFetchURL(parsed).String()
+	want := "https://github.com/dler-io/Rules/raw/main/Clash/Provider/Discord.yaml"
+	if got != want {
+		t.Fatalf("normalized URL = %q, want %q", got, want)
+	}
+
+	rawURL, err := validateManagedRuleImportURL("https://raw.githubusercontent.com/dler-io/Rules/main/Clash/Provider/Discord.yaml")
+	if err != nil {
+		t.Fatalf("validate raw source URL: %v", err)
+	}
+	if got := normalizeManagedRuleFetchURL(rawURL).String(); got != rawURL.String() {
+		t.Fatalf("raw URL changed to %q", got)
+	}
+}
+
 func TestManagedRuleDerivedArtifacts(t *testing.T) {
 	document := managedRuleDocument{Version: 1, Rules: []managedRule{
 		{Type: managedRuleTypeDomainSuffix, Value: "example.com"},
