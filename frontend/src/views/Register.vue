@@ -1,7 +1,7 @@
 <template>
   <div class="auth-shell">
     <aside class="auth-aside">
-      <RouterLink class="auth-brand" to="/"><span class="brand-mark">Z</span><span>{{ store.siteName }}</span></RouterLink>
+      <RouterLink class="auth-brand" to="/"><img v-if="store.siteProfile.logoDark || store.siteProfile.logo" class="auth-logo" :src="store.siteProfile.logoDark || store.siteProfile.logo" :alt="store.siteName" /><span v-else class="brand-mark">{{ store.siteName.charAt(0).toUpperCase() || 'Z' }}</span><span>{{ store.siteName }}</span></RouterLink>
       <div class="auth-copy"><p class="page-eyebrow">GET STARTED</p><h1>一个账户，管理<br />所有订阅。</h1><p>注册后可以选购套餐、查看订单、生成订阅链接并追踪自己的流量使用。</p></div>
       <p class="auth-footnote">注册即用 · 独立用户空间</p>
     </aside>
@@ -13,6 +13,7 @@
         <FormField v-slot="{ controlAttrs }" label="确认密码" name="register-confirm-password" hint="再次输入相同密码。" :error="formErrors.fields.confirm_password" required full><UiInput v-model="confirmPassword" v-bind="controlAttrs" type="password" minlength="12" maxlength="72" autocomplete="new-password" /></FormField>
         <PageAlert v-if="formErrors.formError.value" tone="danger" title="注册未完成">{{ formErrors.formError.value }}</PageAlert>
         <UiButton class="login-button" :loading="loading" type="submit">创建账户</UiButton>
+        <AuthLegalLinks context="register" />
         <RouterLink class="mode-switch" to="/login">已有账户？返回登录</RouterLink>
         <RouterLink class="back-home" to="/">返回首页</RouterLink>
       </form>
@@ -24,6 +25,7 @@
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { register } from '../api/client'
+import AuthLegalLinks from '../components/AuthLegalLinks.vue'
 import FormField from '../components/FormField.vue'
 import PageAlert from '../components/PageAlert.vue'
 import { useFormErrors } from '../composables/useFormState'
@@ -49,5 +51,5 @@ async function submit() {
 </script>
 
 <style scoped>
-.auth-brand { text-decoration: none; }.auth-footnote { position: relative; z-index: 1; margin: 0; color: var(--auth-footnote); font-size: 12px; }.login-button { width: 100%; min-height: 44px; }.mode-switch,.back-home { text-align: center; text-decoration: none; font-size: 13px; font-weight: 650; }.mode-switch { color: var(--primary); }.back-home { color: var(--muted); font-weight: 500; }
+.auth-brand { text-decoration: none; }.auth-logo { width: auto; max-width: 180px; height: 36px; object-fit: contain; }.auth-footnote { position: relative; z-index: 1; margin: 0; color: var(--auth-footnote); font-size: 12px; }.login-button { width: 100%; min-height: 44px; }.mode-switch,.back-home { text-align: center; text-decoration: none; font-size: 13px; font-weight: 650; }.mode-switch { color: var(--primary); }.back-home { color: var(--muted); font-weight: 500; }
 </style>

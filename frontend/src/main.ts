@@ -8,6 +8,7 @@ import { routes } from './router'
 import { useAppStore } from './stores/app'
 import { primeVueOptions } from './theme/primevue'
 import { AUTH_SESSION_EXPIRED_EVENT, resetAuthSessionExpired } from './utils/authSession'
+import { applySiteMetadata } from './utils/siteProfile'
 import './styles.css'
 import './styles/auth.css'
 import './styles/public.css'
@@ -31,7 +32,10 @@ import TimeBadge from './components/TimeBadge.vue'
 
 const router = createRouter({
   history: createWebHistory(),
-  routes
+  routes,
+  scrollBehavior(_to, _from, savedPosition) {
+    return savedPosition || { top: 0 }
+  },
 })
 
 const app = createApp(App)
@@ -112,6 +116,20 @@ router.beforeEach(async (to) => {
 	if (meta.requiresRegistration && !store.installation?.allow_registration) return '/login'
 
   return true
+})
+
+router.afterEach((to) => {
+  const store = useAppStore(pinia)
+  const documentSlug = String(to.params.slug || '')
+  const documentTitle = to.meta.policyDocument
+    ? (documentSlug
+        ? store.siteProfile.policyDocuments.find(document => document.slug === documentSlug)
+        : store.siteProfile.policyDocuments[0])?.title
+    : ''
+  applySiteMetadata(store.siteProfile, {
+    path: to.path,
+    pageTitle: documentTitle || (typeof to.meta.title === 'string' ? to.meta.title : ''),
+  })
 })
 
 app.mount('#app')

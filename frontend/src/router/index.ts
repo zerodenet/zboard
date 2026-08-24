@@ -6,7 +6,11 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('../layouts/PublicLayout.vue'),
     children: [
       { path: '', component: () => import('../views/Home.vue'), meta: { title: '首页', layout: 'public' } },
-      { path: 'pricing', component: () => import('../views/PublicPlans.vue'), meta: { title: '套餐价格', layout: 'public' } }
+      { path: 'pricing', component: () => import('../views/PublicPlans.vue'), meta: { title: '套餐价格', layout: 'public' } },
+      { path: 'terms', redirect: '/docs/terms' },
+      { path: 'privacy', redirect: '/docs/privacy' },
+      { path: 'refund', redirect: '/docs/refund' },
+      { path: 'docs/:slug?', component: () => import('../views/LegalPolicy.vue'), meta: { title: '公开文档', layout: 'public', policyDocument: true } }
     ]
   },
   { path: '/setup', component: () => import('../views/Setup.vue'), meta: { setupOnly: true, title: '初始化', layout: 'auth' } },

@@ -2,9 +2,9 @@
   <div class="landing-page">
     <section class="storefront-hero">
       <div class="storefront-hero__copy">
-        <span class="hero-kicker"><i></i> 灵活套餐 · 独立订阅 · 清晰计费</span>
-        <h1>选择适合你的套餐，<em>按需订阅，轻松管理。</em></h1>
-        <p>{{ siteDescription }}</p>
+        <span class="hero-kicker"><i></i> {{ profile.homeKicker }}</span>
+        <h1>{{ profile.homeTitle }}</h1>
+        <p>{{ profile.description }}</p>
         <div class="hero-actions">
           <RouterLink class="button hero-primary" to="/pricing">浏览套餐<UiIcon name="chevron" /></RouterLink>
           <RouterLink class="button button-secondary hero-secondary" :to="secondaryPath">{{ secondaryLabel }}</RouterLink>
@@ -20,7 +20,7 @@
         <div class="storefront-preview">
           <header>
             <span><i></i><i></i><i></i></span>
-            <strong>{{ app.siteName }} · 套餐服务</strong>
+            <strong>{{ profile.name }} · 套餐服务</strong>
           </header>
           <div class="storefront-preview__body">
             <div class="storefront-preview__title">
@@ -82,17 +82,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchPlanCatalogPage, fetchPublicSystemConfigs, type PlanCatalogItem, type SystemConfig } from '../api/client'
+import { fetchPlanCatalogPage, type PlanCatalogItem } from '../api/client'
 import CommercePlanCard from '../components/CommercePlanCard.vue'
 import UiIcon from '../components/UiIcon.vue'
 import { useAppStore } from '../stores/app'
 
 const app = useAppStore()
 const router = useRouter()
-const configs = ref<SystemConfig[]>([])
 const plans = ref<PlanCatalogItem[]>([])
+const profile = computed(() => app.siteProfile)
 
-const siteDescription = computed(() => String(configs.value.find(item => item.config_key === 'site_desc')?.value || '按流量、速度和设备数选择服务方案，购买后可在用户中心独立管理每一条订阅。'))
 const secondaryPath = computed(() => app.isAuthenticated ? (app.isAdmin ? '/admin/dashboard' : '/account') : (app.installation?.allow_registration ? '/register' : '/login'))
 const secondaryLabel = computed(() => app.isAuthenticated ? (app.isAdmin ? '进入管理后台' : '进入用户中心') : (app.installation?.allow_registration ? '注册账户' : '立即登录'))
 
@@ -101,11 +100,10 @@ function openPlan(id: number) {
 }
 
 onMounted(async () => {
-  const [configResult, planResult] = await Promise.allSettled([
-    fetchPublicSystemConfigs(),
-    fetchPlanCatalogPage({ offset: 0, limit: 3 }),
-  ])
-  configs.value = configResult.status === 'fulfilled' ? configResult.value : []
-  plans.value = planResult.status === 'fulfilled' ? planResult.value.items : []
+  try {
+    plans.value = (await fetchPlanCatalogPage({ offset: 0, limit: 3 })).items
+  } catch {
+    plans.value = []
+  }
 })
 </script>

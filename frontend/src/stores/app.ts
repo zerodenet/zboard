@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
-import { clearAuthToken, fetchPublicSystemConfigs, getAuthToken, getSetupStatus, setAuthToken, me as fetchMe, type SetupStatus } from '../api/client'
+import { clearAuthToken, fetchPublicSystemConfigs, getAuthToken, getSetupStatus, setAuthToken, me as fetchMe, type SetupStatus, type SystemConfig } from '../api/client'
+import { applySiteMetadata, buildSiteProfile } from '../utils/siteProfile'
 import { DEFAULT_SYSTEM_TIME_ZONE, setDisplayTimeZone } from '../utils/timeZone'
 
 export const useAppStore = defineStore('app', {
@@ -7,10 +8,11 @@ export const useAppStore = defineStore('app', {
     token: getAuthToken(),
     installation: null as SetupStatus | null,
     setupChecked: false,
+    publicConfigs: [] as SystemConfig[],
     systemTimeZone: DEFAULT_SYSTEM_TIME_ZONE,
     user: {
       id: 0,
-	  email: '',
+      email: '',
       isAdmin: false,
     }
   }),
@@ -18,21 +20,32 @@ export const useAppStore = defineStore('app', {
     isAuthenticated: (state) => Boolean(state.token),
     isAdmin: (state) => Boolean(state.user?.isAdmin),
     isInstalled: (state) => Boolean(state.installation?.installed),
-    siteName: (state) => state.installation?.site_name || 'zboard'
+    siteName: (state) => buildSiteProfile(state.publicConfigs, state.installation?.site_name || '').name,
+    siteProfile: (state) => buildSiteProfile(state.publicConfigs, state.installation?.site_name || ''),
   },
   actions: {
     setSystemTimeZone(value: unknown) {
       this.systemTimeZone = setDisplayTimeZone(value)
       return this.systemTimeZone
     },
-    async loadSystemTimeZone() {
+    async loadPublicConfigs() {
       try {
-        const configs = await fetchPublicSystemConfigs()
-        const config = configs.find(item => item.config_key === 'system_timezone')
-        return this.setSystemTimeZone(config?.value)
+        this.publicConfigs = await fetchPublicSystemConfigs()
+        const timezone = this.publicConfigs.find(item => item.config_key === 'system_timezone')
+        this.setSystemTimeZone(timezone?.value)
+        applySiteMetadata(buildSiteProfile(this.publicConfigs, this.installation?.site_name || ''))
+        return this.publicConfigs
       } catch (_) {
-        return this.setSystemTimeZone(DEFAULT_SYSTEM_TIME_ZONE)
+        this.publicConfigs = []
+        this.setSystemTimeZone(DEFAULT_SYSTEM_TIME_ZONE)
+        applySiteMetadata(buildSiteProfile([], this.installation?.site_name || ''))
+        return this.publicConfigs
       }
+    },
+    async loadSystemTimeZone() {
+      if (!this.publicConfigs.length) await this.loadPublicConfigs()
+      const config = this.publicConfigs.find(item => item.config_key === 'system_timezone')
+      return this.setSystemTimeZone(config?.value)
     },
     async loadSetupStatus(force = false) {
       if (this.setupChecked && !force) {
@@ -40,8 +53,11 @@ export const useAppStore = defineStore('app', {
       }
       this.installation = await getSetupStatus()
       this.setupChecked = true
-      if (this.installation?.installed) await this.loadSystemTimeZone()
-      else this.setSystemTimeZone(DEFAULT_SYSTEM_TIME_ZONE)
+      if (this.installation?.installed) await this.loadPublicConfigs()
+      else {
+        this.publicConfigs = []
+        this.setSystemTimeZone(DEFAULT_SYSTEM_TIME_ZONE)
+      }
       return this.installation
     },
     completeSetup(result: any) {
@@ -51,7 +67,9 @@ export const useAppStore = defineStore('app', {
         version: ''
       }
       this.setupChecked = true
+      this.publicConfigs = []
       this.setSystemTimeZone(DEFAULT_SYSTEM_TIME_ZONE)
+      applySiteMetadata(buildSiteProfile([], this.installation.site_name))
       if (result.auth?.token) {
         this.setToken(result.auth.token)
       }
@@ -66,7 +84,7 @@ export const useAppStore = defineStore('app', {
     setUser(user: any) {
       this.user = {
         id: user.id,
-		email: user.email,
+        email: user.email,
         isAdmin: Boolean(user.is_admin ?? user.isAdmin)
       }
     },
@@ -87,7 +105,7 @@ export const useAppStore = defineStore('app', {
     },
     clear() {
       this.token = ''
-	  this.user = { id: 0, email: '', isAdmin: false }
+      this.user = { id: 0, email: '', isAdmin: false }
       clearAuthToken()
     }
   }

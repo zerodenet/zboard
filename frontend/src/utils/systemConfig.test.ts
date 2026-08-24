@@ -25,12 +25,53 @@ function config(overrides: Partial<SystemConfig>): SystemConfig {
 }
 
 describe('system config schema', () => {
-  it('uses the server control schema and keeps a compatibility fallback', () => {
+  it('uses the server control schema for generic settings and keeps a compatibility fallback', () => {
     const port = config({ input: { control: 'port', min: 1, max: 65535 } })
     expect(resolveSystemConfigInput(port).control).toBe('port')
     expect(systemConfigControlLabel(port)).toBe('端口')
     expect(resolveSystemConfigInput(config({ value_type: 'bool' })).control).toBe('switch')
     expect(resolveSystemConfigInput(config({ value_type: 'json' })).control).toBe('json')
+  })
+
+  it('keeps site policy limits authoritative over a legacy generic server schema', () => {
+    const policy = config({
+      config_key: 'site_terms_content',
+      name: '服务条款',
+      is_public: true,
+      input: { control: 'text', max_bytes: 100000 },
+    })
+    expect(resolveSystemConfigInput(policy)).toMatchObject({ control: 'textarea', max_bytes: 48 * 1024 })
+    expect(normalizeSystemConfigDraft(policy, 'a'.repeat(48 * 1024))).toEqual({ value: 'a'.repeat(48 * 1024) })
+    expect(normalizeSystemConfigDraft(policy, 'a'.repeat(48 * 1024 + 1)).error).toContain('48 KiB')
+  })
+
+  it('keeps site contact and asset controls typed over a legacy generic server schema', () => {
+    const email = config({ config_key: 'site_support_email', input: { control: 'text', max_bytes: 100000 } })
+    expect(resolveSystemConfigInput(email).control).toBe('email')
+    expect(normalizeSystemConfigDraft(email, 'support@example.com')).toEqual({ value: 'support@example.com' })
+    expect(normalizeSystemConfigDraft(email, 'not-an-email')).toEqual({ error: '请输入有效邮箱地址。' })
+
+    const logo = config({ config_key: 'site_logo_dark', input: { control: 'text', max_bytes: 100000 } })
+    expect(resolveSystemConfigInput(logo).control).toBe('url')
+    expect(normalizeSystemConfigDraft(logo, 'https://cdn.example.com/logo.svg')).toEqual({ value: 'https://cdn.example.com/logo.svg' })
+    expect(normalizeSystemConfigDraft(logo, '/brand/logo.svg')).toEqual({
+      error: '请输入不含账号、密码或片段的完整 HTTP 或 HTTPS 地址。',
+    })
+  })
+
+  it('validates structured legal item limits before save', () => {
+    const legal = config({ config_key: 'site_legal_items', value_type: 'json', input: { control: 'json' } })
+    const tooMany = Array.from({ length: 33 }, (_, index) => ({ label: 'ID', value: String(index) }))
+    expect(normalizeSystemConfigDraft(legal, JSON.stringify(tooMany))).toEqual({ error: '法律与注册信息最多添加 32 项。' })
+  })
+
+  it('validates the dynamic policy document collection before save', () => {
+    const documents = config({ config_key: 'site_policy_documents', name: '政策文档中心', value_type: 'json' })
+    const valid = [{ slug: 'fair-use', title: '公平使用政策', summary: '', content: '# 公平使用政策', published: true, placements: ['footer', 'purchase'] }]
+    expect(normalizeSystemConfigDraft(documents, JSON.stringify(valid))).toEqual({ value: valid })
+    expect(normalizeSystemConfigDraft(documents, 'null')).toEqual({ value: null })
+    expect(normalizeSystemConfigDraft(documents, JSON.stringify([...valid, { ...valid[0] }])).error).toContain('不能重复')
+    expect(normalizeSystemConfigDraft(documents, JSON.stringify([{ ...valid[0], placements: ['checkout'] }])).error).toContain('无效展示位置')
   })
 
   it('provides a required IANA timezone input', () => {

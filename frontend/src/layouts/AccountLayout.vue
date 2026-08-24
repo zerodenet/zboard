@@ -1,7 +1,7 @@
 <template>
   <div class="account-shell">
     <header class="account-header">
-      <RouterLink class="public-brand" to="/"><span class="brand-mark">Z</span><strong>{{ app.siteName }}</strong></RouterLink>
+      <RouterLink class="public-brand" to="/"><img v-if="app.siteProfile.logo" class="account-logo" :src="app.siteProfile.logo" :alt="app.siteName" /><span v-else class="brand-mark">{{ brandInitial }}</span><strong>{{ app.siteName }}</strong></RouterLink>
       <UiButton variant="ghost" icon class="icon-button account-menu" type="button" :aria-label="menuOpen ? '关闭用户导航' : '打开用户导航'" :aria-expanded="menuOpen" aria-controls="account-navigation" @click="menuOpen = !menuOpen"><UiIcon :name="menuOpen ? 'close' : 'menu'" /></UiButton>
       <nav id="account-navigation" :class="{ open: menuOpen }" aria-label="用户中心导航">
         <RouterLink to="/account"><UiIcon name="dashboard" />概览</RouterLink>
@@ -28,6 +28,11 @@ const route = useRoute()
 const router = useRouter()
 const menuOpen = ref(false)
 const userInitial = computed(() => (app.user.email || 'U').slice(0, 1).toUpperCase())
+const brandInitial = computed(() => Array.from(app.siteName.trim())[0]?.toUpperCase() || 'Z')
 watch(() => route.fullPath, () => { menuOpen.value = false })
 function logout() { app.clear(); router.push('/') }
 </script>
+
+<style scoped>
+.account-logo { display: block; width: auto; max-width: 150px; height: 32px; object-fit: contain; }
+</style>

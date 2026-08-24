@@ -8198,3 +8198,134 @@ Remaining gaps:
   installation and periodic `stats.sampled` delivery do not prove those flow
   semantics.
 - No Git staging, commit, push or release was performed.
+
+## 2026-08-20: PR #73 public policy route data binding
+
+Goal outcome:
+
+- Audited PR #73 after its latest route-preservation changes. The public
+  `/terms`, `/privacy` and `/refund` records provided only route metadata,
+  while `LegalPolicy.vue` still required `title`, `content` and `profile`
+  component props that no route supplied.
+- Changed the policy page to resolve its title and policy kind from the active
+  route and its reactive site profile from the application store. Policy
+  content and legal-variable substitution now follow route changes and public
+  configuration updates without duplicating the configuration model.
+- Added a route-level component test covering local terms content, an external
+  privacy URL and local refund content while navigating through the same
+  component instance.
+
+Local verification:
+
+- `pnpm exec vitest run src/views/LegalPolicy.test.ts` passed.
+- `pnpm typecheck` passed.
+- `pnpm build` passed with 607 transformed modules.
+- The full frontend suite retained the same 10 failures present at the PR HEAD
+  before this change: 6 policy-test files fail against unrelated existing
+  source-contract drift; the new policy-route test passes.
+- `git diff --check` passed.
+
+Remaining gaps:
+
+- Intranet synchronization and deployment verification were not performed as
+  part of the GitHub PR update; no deployment target or authorization was
+  provided for this change.
+- The 10 pre-existing frontend policy-test failures remain outside this
+  focused public-policy-route repair.
+
+## 2026-08-20: PR #73 dynamic public document center and purchase consent
+
+Goal outcome:
+
+- Replaced the three fixed public-policy presentation paths with a
+  SystemConfig-backed document collection that supports up to 32 dynamically
+  created documents, stable slugs, summaries, draft/published state, ordering
+  and independent footer, authentication and purchase placements.
+- Added the extensible `/docs/:slug?` public route and a responsive document
+  library with sidebar navigation. The legacy `/terms`, `/privacy` and
+  `/refund` URLs redirect to their `/docs/...` equivalents, and public route
+  navigation now restores saved browser positions or scrolls new pages to the
+  top.
+- Preserved existing installations through a `null` migration sentinel that
+  projects the legacy service-terms, privacy and refund configurations into
+  the document collection until an operator saves the new CMS value.
+- Added an admin document-center editor built from the shared UI controls. It
+  supports adding, removing and reordering documents, editing `/docs` slugs,
+  Markdown or external-URL content, publication state and placement.
+- Made purchase rules a prominent notice and explicit consent gate. A buyer
+  must acknowledge all documents assigned to the purchase placement before
+  continuing; no acknowledgement is required when no purchase documents are
+  configured.
+- Removed duplicate rendered headings when a document body begins with a
+  Markdown H1 matching its CMS title, while retaining unmatched source
+  headings and legacy content.
+- Added matching browser and backend validation for size limits, unique safe
+  slugs, required titles/content/publication state and allowed placements.
+
+Local verification:
+
+- `pnpm typecheck` passed.
+- `pnpm build` passed with 607 transformed modules.
+- Seven focused Vitest files passed: 23 tests covering public document routes,
+  scroll-to-top behavior, legacy projection, structured validation, duplicate
+  title removal and purchase consent.
+- The full frontend suite still has the same 10 unrelated source-contract
+  failures already present on the PR branch (catalog/workbench, form inventory,
+  row-action and design-token policies); all tests added or changed here pass.
+- `git diff --check` passed.
+- Go tests and gofmt could not run locally because this workspace has no Go
+  toolchain; GitHub CI remains the backend verification path.
+
+Remaining gaps:
+
+- Intranet synchronization and deployment verification were not performed;
+  no deployment authorization was provided for this PR update.
+- The 10 pre-existing frontend source-contract failures remain outside this
+  document-center change.
+
+## 2026-08-21: subscription delivery wording alignment
+
+Goal outcome:
+
+- Corrected the account subscription-format picker so the built-in `native`
+  option and User-Agent fallback explicitly say that ZBoard returns a Base64-
+  encoded native configuration, rather than implying raw JSON delivery.
+- Updated the fresh-install ZNet Sink template description to distinguish its
+  Zero JSON structure from its Base64 transport representation.
+- Kept the delivery implementation unchanged: Zero aliases and native output
+  were already encoded by the backend; this was a stale wording issue.
+
+Local verification:
+
+- Three focused Vitest files passed (7 tests), including a source contract that
+  rejects the old plaintext-implying labels.
+- `pnpm typecheck` passed.
+
+Remaining gaps:
+
+- Intranet synchronization was not performed because no deployment was
+  requested or authorized for this wording-only PR update.
+
+## 2026-08-21: restore default policy editing in the document CMS
+
+Goal outcome:
+
+- Fixed the document editor's unset-value projection. A JSON `null` system
+  configuration is omitted by the admin API's `omitempty` view and therefore
+  arrives as an empty draft string; the editor had incorrectly treated that as
+  an explicitly empty document collection.
+- Empty or `null` drafts now project the legacy terms, privacy and refund
+  documents into normal editable cards. An explicitly saved `[]` remains an
+  intentionally empty collection, so operators retain full removal control.
+- Added component coverage for omitted, string-null, null and explicit-empty
+  collection states.
+
+Local verification:
+
+- Three focused Vitest files passed (17 tests).
+- `pnpm typecheck` passed.
+
+Remaining gaps:
+
+- Intranet synchronization was not performed because no deployment was
+  requested or authorized for this PR update.
