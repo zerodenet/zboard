@@ -30,6 +30,7 @@
             <td data-column-priority="2"><TimeBadge :value="item.updated_at" /></td>
             <td class="table-action-column"><RowActions :label="`${item.name} 的操作`" :trigger-key="`template-${item.id}`">
               <UiButton variant="secondary" size="sm" type="button" :loading="editingID === item.id" :data-template-editor-trigger="item.id" @click="openEdit(item)"><UiIcon name="edit" />编辑</UiButton>
+              <UiButton variant="ghost" size="sm" type="button" :loading="statusChangingID === item.id" :disabled="item.renderer === 'unsupported'" @click="toggleActive(item)"><UiIcon :name="item.is_active ? 'minus' : 'check'" />{{ item.is_active ? '停用' : '启用' }}</UiButton>
               <UiButton variant="danger" size="sm" type="button" :loading="deletingID === item.id" @click="remove(item)">删除</UiButton>
             </RowActions></td>
           </tr></tbody>
@@ -167,7 +168,7 @@ const search = ref(typeof route.query.q === 'string' ? route.query.q : '')
 const activeFilter = ref(typeof route.query.active === 'string' ? route.query.active : '')
 const emptyForm = () => ({ id: 0, name: '', slug: '', description: '', renderer: 'clash' as EditableRenderer, customization: defaultSubscriptionCustomization('clash'), content_type: 'application/yaml' as SubscriptionTemplate['content_type'], is_active: true, sort_order: 0, revision: 0, created_at: '', updated_at: '' })
 const saving = ref(false), previewing = ref(false), editorOpen = ref(false)
-const editingID = ref(0), deletingID = ref(0)
+const editingID = ref(0), deletingID = ref(0), statusChangingID = ref(0)
 const message = ref('')
 const editorRouteKey = ref(typeof route.query.template === 'string' ? route.query.template : '')
 const revisionConflict = ref(false)
@@ -350,6 +351,32 @@ async function remove(item: SubscriptionTemplate) {
   try { await deleteSubscriptionTemplate(item.id); message.value = '订阅模板已删除。'; await load() }
   catch (e: any) { error.value = e?.response?.data?.message || '订阅模板删除失败。' }
   finally { deletingID.value = 0 }
+}
+
+async function toggleActive(item: SubscriptionTemplate) {
+  if (item.is_active && !await confirmAction({ title: '停用订阅模板', message: `停用“${item.name}”后，用户将不能再选择或使用 ?template=${item.slug}。`, confirmText: '确认停用', tone: 'danger' })) return
+  statusChangingID.value = item.id
+  error.value = ''
+  message.value = ''
+  try {
+    const detail = await fetchSubscriptionTemplate(item.id)
+    await updateSubscriptionTemplate(item.id, {
+      name: detail.name,
+      slug: detail.slug,
+      description: detail.description,
+      renderer: detail.renderer,
+      customization: detail.customization,
+      is_active: !detail.is_active,
+      sort_order: detail.sort_order,
+      expected_revision: detail.revision,
+    })
+    message.value = detail.is_active ? '订阅模板已停用。' : '订阅模板已启用。'
+    await load()
+  } catch (cause: any) {
+    error.value = cause?.response?.data?.message || '订阅模板状态更新失败。'
+  } finally {
+    statusChangingID.value = 0
+  }
 }
 
 watch(() => route.fullPath, async () => {

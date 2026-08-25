@@ -181,7 +181,7 @@ upgrade, verification and post-`v0.1.0` append-only rules.
 - Traffic summary: usage statistics and remaining flow
 - Admin dashboard metrics
 - Typed system configuration: revision-checked updates with encrypted secret values
-- Operational tasks: itemized quota adjustments and opt-in TLS-protected SMTP email batches
+- Operational tasks: itemized quota adjustments, reusable registration/operations email templates, opt-in TLS-protected SMTP batches, specified-recipient delivery tests, switchable registration email codes, and task/target progress summaries
 
 ## Version and release baseline
 

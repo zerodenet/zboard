@@ -1,6 +1,6 @@
 <template>
   <section class="account-page stack">
-    <PageHeader title="流量明细" description="按时间范围查看使用趋势、节点流量分布和按分钟或小时聚合的计费明细。" eyebrow="TRAFFIC">
+    <PageHeader title="流量明细" description="按时间范围查看使用趋势、节点流量分布和按分钟、小时或天聚合的计费明细。" eyebrow="TRAFFIC">
       <template #actions>
         <UiButton variant="secondary" type="button" :disabled="loading" @click="loadAll">
           <UiIcon name="refresh" />刷新
@@ -198,7 +198,7 @@ const initialRange = resolveHistoryRange(route.query, 7)
 const from = ref(initialRange.from)
 const to = ref(initialRange.to)
 const subscriptionFilter = ref(String(route.query.subscription_id || ''))
-const bucket = ref<TrafficUsageBucket>(route.query.bucket === 'minute' ? 'minute' : 'hour')
+const bucket = ref<TrafficUsageBucket>(normalizeBucket(route.query.bucket))
 const summary = ref<Record<string, any>>({})
 const summaryLoading = ref(false)
 const summaryError = ref('')
@@ -212,10 +212,11 @@ let observabilityController: AbortController | null = null
 let nodeSeriesController: AbortController | null = null
 
 const bucketOptions = [
+  { label: '按天', value: 'day' },
   { label: '按小时', value: 'hour' },
   { label: '按分钟', value: 'minute' },
 ]
-const bucketLabel = computed(() => bucket.value === 'minute' ? '分钟' : '小时')
+const bucketLabel = computed(() => bucket.value === 'minute' ? '分钟' : bucket.value === 'day' ? '天' : '小时')
 
 const {
   items: records,
@@ -265,6 +266,10 @@ function nodeReference(id: number) {
 
 function formatMultiplier(value: number) {
   return `${(Number(value || 1000) / 1000).toLocaleString('zh-CN', { maximumFractionDigits: 3 })}×`
+}
+
+function normalizeBucket(value: unknown): TrafficUsageBucket {
+  return value === 'minute' || value === 'day' ? value : 'hour'
 }
 
 function chartBucket(): TrafficUsageBucket {
@@ -393,7 +398,7 @@ async function changeLimit(value: number) {
 
 watch(() => route.fullPath, async () => {
   const nextSubscription = String(route.query.subscription_id || '')
-  const nextBucket: TrafficUsageBucket = route.query.bucket === 'minute' ? 'minute' : 'hour'
+  const nextBucket: TrafficUsageBucket = normalizeBucket(route.query.bucket)
   const nextCursorValue = String(route.query.cursor || '')
   const nextRange = resolveHistoryRange(route.query, 7)
   const rawLimit = Number(route.query.limit)

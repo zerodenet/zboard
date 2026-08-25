@@ -803,8 +803,9 @@ func (h *handlers) RegisterAuthRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type req struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email            string `json:"email"`
+		Password         string `json:"password"`
+		VerificationCode string `json:"verification_code"`
 	}
 
 	var body req
@@ -813,12 +814,20 @@ func (h *handlers) RegisterAuthRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body.Email = normalizeEmail(body.Email)
+	verificationEnabled, err := h.registrationEmailVerificationEnabled(h.db)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
 	registrationFields := map[string]string{}
 	if !validEmail(body.Email) {
 		registrationFields["email"] = "请输入有效邮箱。"
 	}
 	if !validPassword(body.Password) {
 		registrationFields["password"] = "密码必须为 12–72 个 UTF-8 字节。"
+	}
+	if verificationEnabled && !registrationCodePattern.MatchString(strings.TrimSpace(body.VerificationCode)) {
+		registrationFields["verification_code"] = "请输入 6 位邮箱验证码。"
 	}
 	if len(registrationFields) > 0 {
 		BadRequestFields(w, "注册信息校验失败。", registrationFields)
@@ -837,7 +846,17 @@ func (h *handlers) RegisterAuthRoutes(w http.ResponseWriter, r *http.Request) {
 		IsAdmin: false, Status: userStatusActive,
 	}
 
-	if err := h.db.Create(&user).Error; err != nil {
+	if verificationEnabled {
+		err = h.createVerifiedRegistrationUser(&user, strings.TrimSpace(body.VerificationCode))
+	} else {
+		err = h.db.Create(&user).Error
+	}
+	if err != nil {
+		var validation *requestValidationError
+		if errors.As(err, &validation) {
+			BadRequestError(w, validation)
+			return
+		}
 		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "duplicate") {
 			BadRequestFields(w, "注册信息校验失败。", map[string]string{"email": "该邮箱已存在。"})
 			return
@@ -857,6 +876,10 @@ func (h *handlers) RegisterAuthRoutes(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
+	// Registration succeeds independently from SMTP. When the operator has
+	// enabled both delivery and the registration template, enqueue a durable
+	// task so delivery failures remain visible and retryable in Operations.
+	_ = h.enqueueRegistrationWelcome(user)
 
 	OK(w, map[string]interface{}{
 		"user": toPublicUser(user),

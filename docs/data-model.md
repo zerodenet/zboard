@@ -7,6 +7,7 @@ zboard is a modular monolith that combines subscription commerce with node opera
 - `users.email` is the normalized unique login identifier; `account_name` is a display name.
 - Every login identity is a row in `users`. `is_admin` grants additional management capabilities to that user; it does not create a separate administrator identity or exclude the user from subscriptions, orders, traffic and tickets.
 - Passwords are bcrypt hashes. Reusable API credentials live in `user_api_tokens`, which stores only a SHA-256 digest, a non-secret prefix and lifecycle timestamps.
+- Optional registration email verification uses `registration_email_challenges` as a short-lived identity proof, not as a user or delivery record. Only a keyed digest of the code and requesting IP is persisted; successful user creation consumes the challenge and records `users.email_verified_at` in the same transaction. Disabling the public switch preserves the original direct-registration flow.
 - `installations` is the one-time installation marker. Editable site and operational settings are mirrored into typed `system_configs`. Values are validated by their declared type, revisions provide optimistic concurrency, and rows marked `is_secret` are encrypted and redacted from API responses.
 
 ## Commerce
@@ -110,6 +111,7 @@ zboard is a modular monolith that combines subscription commerce with node opera
 - `traffic_calc_mode` selects upload plus download (`0`), upload only (`1`) or download only (`2`).
 - Billed traffic is calculated with integer thousandths: `selected_bytes * protocol_multiplier_milli / 1_000`, rounded up.
 - `traffic_records` stores the direction policy and protocol multiplier snapshot, so later endpoint changes never alter historical accounting.
+- Human-facing traffic history is a read-only projection over `traffic_records`: details can group by minute, hour or UTC day while retaining user, subscription, node and multiplier dimensions. The node-series projection applies the same authorization and optional filters, then intentionally groups away user/subscription identity to answer node-capacity questions and produce a descending node-total ranking; it never creates a second accounting fact.
 - `(node_id, report_id)` provides retry idempotency and `(node_id, nonce)` prevents replay.
 - `quota_events` is the auditable allocation/usage ledger. Subscription counters remain the fast balance projection and can be reconciled against traffic and quota events.
 
@@ -120,6 +122,9 @@ zboard is a modular monolith that combines subscription commerce with node opera
 - Node-group membership mutations persist a `node_group_reconcile` task in the same database transaction. Its first item revokes active subscription credentials outside the current group membership and ensures credentials for current endpoints. Node items are included only for changed endpoints whose protocol stores per-subscription credentials and whose group currently has usable active subscriptions; an empty node scope still records the credential reconciliation without publishing unrelated runtime configuration. This keeps `Subscription -> NodeGroup -> ProtocolEndpoint` as the authorization boundary while making failed credential or node work visible and retryable.
 - Quota tasks lock each subscription, reject reductions below already-used traffic, write an idempotent `quota_events` adjustment and queue affected node configurations for reconciliation before completing the item.
 - Email tasks are disabled by default. They require encrypted SMTP credentials and either STARTTLS or implicit TLS. Completed recipients are skipped on retry; SMTP delivery remains at-least-once if the process stops after a remote server accepts a message but before the item status commits.
+- `email_templates` owns revisioned plain-text presentation content, not delivery state. The fixed `user.registered` template can be enabled or disabled but not deleted; operational templates are reusable drafts. Creating a task snapshots the subject, body, template provenance and current site identity into `tasks.content`, then recipient variables are resolved from the target `users` row at execution time. Template edits therefore cannot rewrite queued or historical messages.
+- SMTP verification has two explicit side-effect levels: connection mode completes DNS/TCP, TLS, optional authentication and `NOOP` without sending mail; delivery mode sends one test message to the administrator-specified recipient. Neither endpoint returns SMTP credentials.
+- The admin task summary is a read model derived from `tasks` and `task_items`: it exposes task-state counts plus active target progress without creating a second queue or duplicating task ownership.
 - Execution is initiated through the admin API or the management page. The lock expiry permits recovery of a task left running by a terminated process.
 
 ## Relationship summary
@@ -138,6 +143,7 @@ users -> subscription_tokens; subscription_templates -> export representation
 protocol_credentials -> flow_usages -> traffic_records
 subscriptions -> quota_events
 tasks -> task_items
+email_templates -> tasks (content snapshot only)
 ```
 
 ## Migration ownership

@@ -525,6 +525,42 @@ type AuditLog struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// EmailTemplate is operator-authored presentation content. Transactional
+// triggers and operational campaigns both copy a template into a durable Task
+// before delivery so later edits never rewrite an in-flight or historical
+// message.
+type EmailTemplate struct {
+	ID              uint      `json:"id" gorm:"primaryKey"`
+	Name            string    `json:"name" gorm:"size:80;not null"`
+	Slug            string    `json:"slug" gorm:"size:80;uniqueIndex;not null"`
+	Category        string    `json:"category" gorm:"size:24;index;not null"`
+	TriggerKey      *string   `json:"trigger_key,omitempty" gorm:"size:64;uniqueIndex"`
+	SubjectTemplate string    `json:"subject_template" gorm:"size:200;not null"`
+	BodyTemplate    string    `json:"body_template" gorm:"type:text;not null"`
+	IsActive        bool      `json:"is_active" gorm:"index;not null;default:true"`
+	SortOrder       int       `json:"sort_order" gorm:"not null;default:0"`
+	Revision        uint64    `json:"revision" gorm:"not null;default:1"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// RegistrationEmailChallenge is a short-lived identity proof. It stores only
+// a keyed digest of the one-time code; account creation consumes the challenge
+// in the same transaction that creates the user.
+type RegistrationEmailChallenge struct {
+	ID              uint       `json:"id" gorm:"primaryKey"`
+	Email           string     `json:"-" gorm:"size:128;uniqueIndex:ux_registration_email_challenge,priority:1;not null"`
+	Purpose         string     `json:"-" gorm:"size:32;uniqueIndex:ux_registration_email_challenge,priority:2;not null;default:register"`
+	CodeHash        string     `json:"-" gorm:"size:64;not null"`
+	RequestedIPHash string     `json:"-" gorm:"size:64;index"`
+	Attempts        int        `json:"attempts" gorm:"not null;default:0"`
+	LastSentAt      time.Time  `json:"last_sent_at" gorm:"not null"`
+	ExpiresAt       time.Time  `json:"expires_at" gorm:"index;not null"`
+	ConsumedAt      *time.Time `json:"consumed_at" gorm:"index"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
 // Ticket is the durable support conversation owned by one user. The current
 // status is denormalized here for queue queries; every transition is also
 // recorded in TicketMessage so the full history remains traceable.

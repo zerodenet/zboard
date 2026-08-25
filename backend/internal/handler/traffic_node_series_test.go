@@ -26,4 +26,12 @@ func TestTrafficNodeSeriesWindowBoundsMinuteAndHourBuckets(t *testing.T) {
 	if err := validateTrafficNodeSeriesWindow(hour, historyWindow{From: from, To: from.Add(90 * 24 * time.Hour)}); err != nil {
 		t.Fatalf("hour series should support long analysis windows: %v", err)
 	}
+
+	day, err := parseTrafficUsageBucket("day")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateTrafficNodeSeriesWindow(day, historyWindow{From: from, To: from.Add(366 * 24 * time.Hour)}); err != nil {
+		t.Fatalf("day series should support the complete history window: %v", err)
+	}
 }

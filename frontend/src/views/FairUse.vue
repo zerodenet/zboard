@@ -10,7 +10,7 @@
       </template>
     </PageHeader>
 
-    <TransientFeedback :error="error" error-title="Fair Use 观测加载失败" />
+    <TransientFeedback :success="message" :error="error" success-title="实验评估策略已更新" error-title="Fair Use 观测加载失败" />
     <PageAlert tone="info" title="当前阶段仅收集和分析数据">
       原始行为事实最多保留 15 天。页面查询只做实时聚合，不生成新的分析记录；风险评分属于实验参考，不代表用户违规，也不会改变订阅服务状态。
     </PageAlert>
@@ -160,6 +160,21 @@
             <div><span>上次评估</span><TimeBadge :value="state.last_evaluated_at || null" /></div>
             <div><span>评分数据</span><strong>{{ coverageLabel(state.telemetry_completeness) }}</strong></div>
           </div>
+          <div class="evaluation-policy-action">
+            <PageAlert :tone="policy.effective.enabled ? 'info' : 'warning'" :title="policy.effective.enabled ? '当前订阅正在进行只读实验评估' : '实验评估可在这里启用'">
+              策略按“订阅例外 → 套餐 → 平台默认”继承。这里的操作会为当前订阅保存一份仅观测策略，不通知、不限速，也不暂停服务。
+            </PageAlert>
+            <UiButton
+              :variant="policy.effective.enabled ? 'secondary' : 'primary'"
+              size="sm"
+              type="button"
+              :loading="policySaving"
+              :disabled="loading"
+              @click="setEvaluationEnabled(!policy.effective.enabled)"
+            >
+              {{ policy.effective.enabled ? '停用当前订阅评估' : '启用当前订阅评估' }}
+            </UiButton>
+          </div>
         </UiSection>
       </div>
 
@@ -226,6 +241,8 @@ import {
   fetchFairUseObservations,
   fetchFairUsePolicy,
   fetchFairUseState,
+  evaluateSubscriptionFairUse,
+  updateSubscriptionFairUsePolicy,
   type FairUseEvent,
   type FairUseMetrics,
   type FairUseObservationRange,
@@ -273,7 +290,9 @@ const state = ref<FairUseState | null>(null)
 const policy = ref<FairUsePolicyResolution | null>(null)
 const events = ref<FairUseEvent[]>([])
 const loading = ref(false)
+const policySaving = ref(false)
 const error = ref('')
+const message = ref('')
 let controller: AbortController | null = null
 let pickerController: AbortController | null = null
 let selectedController: AbortController | null = null
@@ -354,6 +373,7 @@ async function selectSubscription(sub: AdminSubscriptionListItem) {
   error.value = ''
   clearData()
   await syncURL()
+  await load()
 }
 
 async function changeSelection() {
@@ -417,6 +437,25 @@ async function load() {
     }
   } finally {
     loading.value = false
+  }
+}
+
+async function setEvaluationEnabled(enabled: boolean) {
+  if (!subscriptionID.value || !policy.value) return
+  policySaving.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    policy.value = await updateSubscriptionFairUsePolicy(subscriptionID.value, policy.value.effective, enabled)
+    if (enabled) await evaluateSubscriptionFairUse(subscriptionID.value)
+    message.value = enabled
+      ? `订阅 #${subscriptionID.value} 已启用只读实验评估。`
+      : `订阅 #${subscriptionID.value} 已停用实验评估。`
+    await load()
+  } catch (cause: any) {
+    error.value = cause?.message || cause?.response?.data?.message || '实验评估策略更新失败。'
+  } finally {
+    policySaving.value = false
   }
 }
 
@@ -501,6 +540,7 @@ onMounted(async () => {
 .section-note { color: var(--muted); font-size: 11px; }
 .reason-cell { max-width: 420px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .evaluation-events { margin-top: 16px; }
+.evaluation-policy-action { display: grid; justify-items: start; gap: 10px; margin-top: 12px; }
 @media (max-width: 760px) {
   .selected-observation { grid-template-columns: 1fr; align-items: start; }
   .selected-observation .button { justify-self: start; }

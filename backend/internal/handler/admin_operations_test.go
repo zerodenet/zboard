@@ -62,6 +62,7 @@ func TestSystemConfigInputSchemas(t *testing.T) {
 		options   int
 	}{
 		{key: "task_email_enabled", valueType: "bool", control: "switch"},
+		{key: "register_email_verification", valueType: "bool", control: "switch"},
 		{key: "smtp_port", valueType: "int", control: "port", min: 1, max: 65535},
 		{key: "smtp_tls_mode", valueType: "string", control: "select", options: 2},
 		{key: "smtp_from", valueType: "string", control: "email"},
@@ -185,5 +186,9 @@ func TestBuildSMTPMessage(t *testing.T) {
 		if !strings.Contains(message, expected) {
 			t.Fatalf("message does not contain %q: %q", expected, message)
 		}
+	}
+	injection := buildSMTPMessage("noreply@example.com", "user@example.com", "hello\r\nBcc: victim@example.com", "body", "<task-2@example.com>")
+	if strings.Contains(injection, "\r\nBcc:") {
+		t.Fatalf("rendered subject introduced a header: %q", injection)
 	}
 }

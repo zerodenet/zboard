@@ -94,7 +94,10 @@ func TestPreReleaseMigrationInventoryIsSquashed(t *testing.T) {
 	}
 	for _, key := range []string{
 		"'register_switch'",
+		"'register_email_verification'",
 		"'smtp_password'",
+		"'registration-welcome'",
+		"'maintenance-notice'",
 		"'znet-sink'",
 		"'clash'",
 		"'sing-box'",

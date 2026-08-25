@@ -119,6 +119,21 @@ func TestZeroDeliveryUsesBase64WithoutChangingOtherFormats(t *testing.T) {
 	}
 }
 
+func TestAdministrativeTemplatePreviewRemainsPlaintext(t *testing.T) {
+	rendered, contentType, err := renderSubscriptionWithRenderer(subscriptionRendererZnetSink, nil, sampleSubscriptionTemplateData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview := buildSubscriptionTemplatePreview(rendered, contentType)
+	if preview.ContentType != "application/json" || !json.Valid([]byte(preview.Content)) || preview.Bytes != len(rendered) {
+		t.Fatalf("administrative preview = %#v, want readable JSON", preview)
+	}
+	encoded, deliveryType, _ := encodeSubscriptionTemplateDelivery(subscriptionRendererZnetSink, rendered, contentType)
+	if encoded == rendered || deliveryType != "text/plain" {
+		t.Fatalf("public delivery must remain separately encoded")
+	}
+}
+
 func TestPresentSubscriptionTemplateUsesCanonicalZeroName(t *testing.T) {
 	item := modelSubscriptionTemplateForTest(subscriptionRendererZnetSink)
 	presentSubscriptionTemplate(&item)

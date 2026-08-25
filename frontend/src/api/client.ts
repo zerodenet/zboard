@@ -182,6 +182,78 @@ export async function updateSystemConfig(key: string, value: unknown, expectedRe
 	return unwrap(response)
 }
 
+export type EmailTemplateCategory = 'registration' | 'operational'
+
+export interface EmailTemplate {
+	id: number
+	name: string
+	slug: string
+	category: EmailTemplateCategory
+	trigger_key?: 'user.registered'
+	subject_template: string
+	body_template: string
+	is_active: boolean
+	sort_order: number
+	revision: number
+	created_at: string
+	updated_at: string
+}
+
+export interface EmailTemplateWriteRequest {
+	name: string
+	slug: string
+	category: EmailTemplateCategory
+	subject_template: string
+	body_template: string
+	is_active: boolean
+	sort_order: number
+	expected_revision?: number
+}
+
+export interface EmailTemplatePreview {
+	subject: string
+	body: string
+	variables: Record<string, string>
+}
+
+export async function fetchEmailTemplates(category?: EmailTemplateCategory): Promise<EmailTemplate[]> {
+	const query = category ? `?category=${encodeURIComponent(category)}` : ''
+	const response = await api.get(`/admin/email-templates${query}`)
+	return unwrap(response) || []
+}
+
+export async function createEmailTemplate(payload: EmailTemplateWriteRequest): Promise<EmailTemplate> {
+	const response = await api.post('/admin/email-templates', payload)
+	return unwrap(response)
+}
+
+export async function updateEmailTemplate(id: number, payload: EmailTemplateWriteRequest): Promise<EmailTemplate> {
+	const response = await api.put(`/admin/email-templates/${id}`, payload)
+	return unwrap(response)
+}
+
+export async function deleteEmailTemplate(id: number): Promise<void> {
+	await api.delete(`/admin/email-templates/${id}`)
+}
+
+export async function previewEmailTemplate(payload: Pick<EmailTemplateWriteRequest, 'category' | 'subject_template' | 'body_template'>): Promise<EmailTemplatePreview> {
+	const response = await api.post('/admin/email-templates/preview', payload)
+	return unwrap(response)
+}
+
+export interface SMTPTestResult {
+	mode: 'connection' | 'delivery'
+	tls_mode: 'starttls' | 'implicit'
+	authenticated: boolean
+	recipient?: string
+	duration_ms: number
+}
+
+export async function testSMTP(mode: 'connection' | 'delivery', recipient?: string): Promise<SMTPTestResult> {
+	const response = await api.post('/admin/smtp/test', { mode, ...(recipient ? { recipient } : {}) })
+	return unwrap(response)
+}
+
 export interface ProtocolKernelCapability {
 	supported: boolean
 	reason?: string
@@ -211,7 +283,18 @@ export async function login(email: string, password: string) {
   return unwrap(response)
 }
 
-export async function register(body: { email: string; password: string }) {
+export interface RegistrationCodeResult {
+	sent: boolean
+	expires_in: number
+	resend_after: number
+}
+
+export async function requestRegistrationCode(email: string): Promise<RegistrationCodeResult> {
+	const response = await api.post('/auth/register/code', { email })
+	return unwrap(response)
+}
+
+export async function register(body: { email: string; password: string; verification_code?: string }) {
   const response = await api.post('/auth/register', body)
   return unwrap(response)
 }
@@ -1826,6 +1909,20 @@ export interface AdminTaskCreateRequest {
 	auto_run?: boolean
 }
 
+export interface AdminTaskSummary {
+	total: number
+	pending: number
+	running: number
+	completed: number
+	failed: number
+	active_current: number
+	active_total: number
+	pending_targets: number
+	running_targets: number
+	succeeded_targets: number
+	failed_targets: number
+}
+
 export interface AdminTaskItem {
 	id: number
 	task_id: number
@@ -1858,6 +1955,11 @@ export async function fetchAdminTasksPage(params: { type?: string; status?: numb
 	if (params.status !== undefined) query.set('status', String(params.status))
 	const response = await api.get(`/admin/tasks?${query}`, { signal: options.signal })
 	return normalizePageResult<AdminTask>(unwrap(response), params.offset || 0, params.limit || 50)
+}
+
+export async function fetchAdminTaskSummary(): Promise<AdminTaskSummary> {
+	const response = await api.get('/admin/tasks/summary')
+	return unwrap(response)
 }
 
 export async function createAdminTask(payload: AdminTaskCreateRequest): Promise<AdminTask> {

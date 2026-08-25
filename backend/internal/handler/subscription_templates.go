@@ -191,6 +191,14 @@ func truncateTemplatePreview(content string) (string, bool) {
 	return content[:end], true
 }
 
+func buildSubscriptionTemplatePreview(content, contentType string) subscriptionTemplatePreview {
+	preview, truncated := truncateTemplatePreview(content)
+	return subscriptionTemplatePreview{
+		Content: preview, ContentType: contentType, Bytes: len(content),
+		LineCount: strings.Count(content, "\n") + 1, Truncated: truncated,
+	}
+}
+
 func normalizeSubscriptionTemplateRequest(req *subscriptionTemplateWriteReq) error {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Slug = strings.ToLower(strings.TrimSpace(req.Slug))
@@ -448,12 +456,7 @@ func (h *handlers) AdminSubscriptionTemplatePreviewHandler(w http.ResponseWriter
 		BadRequestFields(w, "订阅输出格式预览失败。", map[string]string{"customization": err.Error()})
 		return
 	}
-	rendered, contentType, _ = encodeSubscriptionTemplateDelivery(req.Renderer, rendered, contentType)
-	content, truncated := truncateTemplatePreview(rendered)
-	OK(w, subscriptionTemplatePreview{
-		Content: content, ContentType: contentType, Bytes: len(rendered),
-		LineCount: strings.Count(rendered, "\n") + 1, Truncated: truncated,
-	})
+	OK(w, buildSubscriptionTemplatePreview(rendered, contentType))
 }
 
 func (h *handlers) AdminSubscriptionTemplateCreateHandler(w http.ResponseWriter, r *http.Request) {

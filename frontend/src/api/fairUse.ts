@@ -99,6 +99,7 @@ export interface FairUsePolicy {
   warning_score: number
   violation_score: number
   enforcement_mode: string
+  restriction_duration_seconds: number
   revision: number
 }
 
@@ -122,11 +123,17 @@ export interface FairUseEvent {
   occurred_at: string
 }
 
-async function getFairUse<T>(path: string, signal?: AbortSignal): Promise<T> {
+async function requestFairUse<T>(path: string, options: { signal?: AbortSignal; method?: string; body?: unknown } = {}): Promise<T> {
   const headers = new Headers({ Accept: 'application/json' })
   const token = getAuthToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  const response = await fetch(`${API_BASE}${path}`, { headers, signal })
+  if (options.body !== undefined) headers.set('Content-Type', 'application/json')
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers,
+    signal: options.signal,
+    method: options.method || 'GET',
+    ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+  })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
     const error = new Error(payload?.message || `HTTP ${response.status}`) as Error & { status?: number }
@@ -137,21 +144,48 @@ async function getFairUse<T>(path: string, signal?: AbortSignal): Promise<T> {
 }
 
 export function fetchFairUseMetrics(subscriptionID: number, signal?: AbortSignal) {
-  return getFairUse<FairUseMetrics>(`/admin/subscriptions/${subscriptionID}/fair-use/metrics`, signal)
+  return requestFairUse<FairUseMetrics>(`/admin/subscriptions/${subscriptionID}/fair-use/metrics`, { signal })
 }
 
 export function fetchFairUseObservations(subscriptionID: number, range: FairUseObservationRange, signal?: AbortSignal) {
-  return getFairUse<FairUseObservationSeries>(`/admin/subscriptions/${subscriptionID}/fair-use/observations?range=${range}`, signal)
+  return requestFairUse<FairUseObservationSeries>(`/admin/subscriptions/${subscriptionID}/fair-use/observations?range=${range}`, { signal })
 }
 
 export function fetchFairUseState(subscriptionID: number, signal?: AbortSignal) {
-  return getFairUse<FairUseState>(`/admin/subscriptions/${subscriptionID}/fair-use/state`, signal)
+  return requestFairUse<FairUseState>(`/admin/subscriptions/${subscriptionID}/fair-use/state`, { signal })
 }
 
 export function fetchFairUsePolicy(subscriptionID: number, signal?: AbortSignal) {
-  return getFairUse<FairUsePolicyResolution>(`/admin/subscriptions/${subscriptionID}/fair-use/policy`, signal)
+  return requestFairUse<FairUsePolicyResolution>(`/admin/subscriptions/${subscriptionID}/fair-use/policy`, { signal })
 }
 
 export function fetchFairUseEvents(subscriptionID: number, signal?: AbortSignal) {
-  return getFairUse<FairUseEvent[]>(`/admin/subscriptions/${subscriptionID}/fair-use/events?limit=50`, signal)
+  return requestFairUse<FairUseEvent[]>(`/admin/subscriptions/${subscriptionID}/fair-use/events?limit=50`, { signal })
+}
+
+export function updateSubscriptionFairUsePolicy(subscriptionID: number, policy: FairUsePolicy, enabled: boolean) {
+  return requestFairUse<FairUsePolicyResolution>(`/admin/subscriptions/${subscriptionID}/fair-use/policy`, {
+    method: 'PUT',
+    body: {
+      enabled,
+      evaluation_interval_seconds: policy.evaluation_interval_seconds,
+      connection_start_threshold: policy.connection_start_threshold,
+      connection_start_window_seconds: policy.connection_start_window_seconds,
+      connection_start_penalty: policy.connection_start_penalty,
+      working_node_threshold: policy.working_node_threshold,
+      working_node_window_seconds: policy.working_node_window_seconds,
+      working_node_penalty: policy.working_node_penalty,
+      score_max: policy.score_max,
+      recovery_per_interval: policy.recovery_per_interval,
+      warning_score: policy.warning_score,
+      violation_score: policy.violation_score,
+      enforcement_mode: 'observe',
+      restriction_duration_seconds: policy.restriction_duration_seconds,
+      expected_revision: policy.scope_type === 'subscription' ? policy.revision : 0,
+    },
+  })
+}
+
+export function evaluateSubscriptionFairUse(subscriptionID: number) {
+  return requestFairUse<{ evaluated: boolean; skipped: boolean; reason: string }>(`/admin/subscriptions/${subscriptionID}/fair-use/evaluate`, { method: 'POST' })
 }

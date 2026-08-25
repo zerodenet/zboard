@@ -83,6 +83,15 @@ func (h *handlers) ReconcileSystemConfigDefaults() error {
 			IsPublic:    false,
 			IsSecret:    false,
 		},
+		{
+			ConfigKey:   "register_email_verification",
+			Name:        "注册邮箱验证码",
+			Value:       "false",
+			ValueType:   "bool",
+			Description: "注册时必须先通过邮箱验证码；启用前需完成 SMTP 配置",
+			IsPublic:    true,
+			IsSecret:    false,
+		},
 	}
 	for index := range defaults {
 		item := defaults[index]
@@ -120,8 +129,12 @@ type quotaTaskContent struct {
 }
 
 type emailTaskContent struct {
-	Subject string `json:"subject"`
-	Body    string `json:"body"`
+	Subject          string `json:"subject"`
+	Body             string `json:"body"`
+	TemplateID       uint   `json:"template_id,omitempty"`
+	TemplateRevision uint64 `json:"template_revision,omitempty"`
+	SiteName         string `json:"site_name,omitempty"`
+	SiteURL          string `json:"site_url,omitempty"`
 }
 
 type taskListItem struct {
@@ -135,6 +148,20 @@ type taskListItem struct {
 type taskDetail struct {
 	taskListItem
 	Items []model.TaskItem `json:"items,omitempty"`
+}
+
+type taskSummary struct {
+	Total            int64 `json:"total"`
+	Pending          int64 `json:"pending"`
+	Running          int64 `json:"running"`
+	Completed        int64 `json:"completed"`
+	Failed           int64 `json:"failed"`
+	ActiveCurrent    int64 `json:"active_current"`
+	ActiveTotal      int64 `json:"active_total"`
+	PendingTargets   int64 `json:"pending_targets"`
+	RunningTargets   int64 `json:"running_targets"`
+	SucceededTargets int64 `json:"succeeded_targets"`
+	FailedTargets    int64 `json:"failed_targets"`
 }
 
 type smtpSettings struct {
@@ -236,9 +263,15 @@ func (h *handlers) AdminSystemConfigUpdateHandler(w http.ResponseWriter, r *http
 		if err := syncInstallationConfig(tx, updated.ConfigKey, value); err != nil {
 			return err
 		}
-		if updated.ConfigKey == "task_email_enabled" || strings.HasPrefix(updated.ConfigKey, "smtp_") {
-			if _, err := h.loadSMTPSettings(tx, false); err != nil {
+		if updated.ConfigKey == "task_email_enabled" || updated.ConfigKey == "register_email_verification" || strings.HasPrefix(updated.ConfigKey, "smtp_") {
+			settings, err := h.loadSMTPSettings(tx, false)
+			if err != nil {
 				return err
+			}
+			if updated.ConfigKey == "register_email_verification" && value == "true" {
+				if err := validateSMTPDeliverySettings(settings, false); err != nil {
+					return fmt.Errorf("启用注册邮箱验证码前需要完整配置 SMTP：%w", err)
+				}
 			}
 		}
 		return createAuditLog(tx, claims, "system.config.update", "system_config:"+updated.ConfigKey, fmt.Sprintf("revision=%d", updated.Revision))
@@ -334,7 +367,7 @@ func systemConfigInputSchemaFor(config model.SystemConfig) systemConfigInputSche
 	case "subscription_camouflage_url":
 		maxBytes := 2048
 		schema = systemConfigInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "留空时跳转到站点公开访问地址"}
-	case "task_email_enabled", "register_switch":
+	case "task_email_enabled", "register_switch", "register_email_verification":
 		schema = systemConfigInputSchema{Control: "switch"}
 	case "smtp_host":
 		maxBytes := 255
@@ -533,6 +566,48 @@ func (h *handlers) AdminTasksListHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	OK(w, views)
+}
+
+func (h *handlers) AdminTaskSummaryHandler(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.requireAdmin(w, r); err != nil {
+		return
+	}
+	var summary taskSummary
+	if err := h.db.Model(&model.Task{}).Select(`
+		COUNT(*) AS total,
+		COALESCE(SUM(status = ?), 0) AS pending,
+		COALESCE(SUM(status = ?), 0) AS running,
+		COALESCE(SUM(status = ?), 0) AS completed,
+		COALESCE(SUM(status = ?), 0) AS failed,
+		COALESCE(SUM(CASE WHEN status IN (?, ?) THEN current ELSE 0 END), 0) AS active_current,
+		COALESCE(SUM(CASE WHEN status IN (?, ?) THEN total ELSE 0 END), 0) AS active_total`,
+		taskStatusPending, taskStatusRunning, taskStatusCompleted, taskStatusFailed,
+		taskStatusPending, taskStatusRunning, taskStatusPending, taskStatusRunning,
+	).Scan(&summary).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	targets := struct {
+		PendingTargets   int64
+		RunningTargets   int64
+		SucceededTargets int64
+		FailedTargets    int64
+	}{}
+	if err := h.db.Model(&model.TaskItem{}).Select(`
+		COALESCE(SUM(status = ?), 0) AS pending_targets,
+		COALESCE(SUM(status = ?), 0) AS running_targets,
+		COALESCE(SUM(status = ?), 0) AS succeeded_targets,
+		COALESCE(SUM(status = ?), 0) AS failed_targets`,
+		taskStatusPending, taskStatusRunning, taskStatusCompleted, taskStatusFailed,
+	).Scan(&targets).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	summary.PendingTargets = targets.PendingTargets
+	summary.RunningTargets = targets.RunningTargets
+	summary.SucceededTargets = targets.SucceededTargets
+	summary.FailedTargets = targets.FailedTargets
+	OK(w, summary)
 }
 
 func (h *handlers) AdminTaskGetHandler(w http.ResponseWriter, r *http.Request) {
@@ -767,6 +842,13 @@ func (h *handlers) prepareTask(req taskCreateReq) (model.Task, []model.TaskItem,
 	req.Scope.SubscriptionIDs = uniqueUintIDs(req.Scope.SubscriptionIDs)
 	if err := validateTaskContent(req.Type, req.Content); err != nil {
 		return model.Task{}, nil, err
+	}
+	if req.Type == taskTypeEmail {
+		content, err := h.snapshotEmailTaskContent(req.Content)
+		if err != nil {
+			return model.Task{}, nil, err
+		}
+		req.Content = content
 	}
 	items, err := h.resolveTaskItems(req.Type, req.Scope)
 	if err != nil {
@@ -1158,6 +1240,7 @@ func (h *handlers) executeEmailTaskItem(task model.Task, item model.TaskItem) er
 	if err := json.Unmarshal([]byte(task.Content), &content); err != nil {
 		return err
 	}
+	content.Subject, content.Body = renderEmailContent(content.Subject, content.Body, emailVariablesForUser(user, content.SiteName, content.SiteURL))
 	settings, err := h.loadSMTPSettings(h.db, true)
 	if err != nil {
 		return err
@@ -1199,22 +1282,29 @@ func (h *handlers) loadSMTPSettings(db *gorm.DB, requireEnabled bool) (smtpSetti
 	if !settings.Enabled && !requireEnabled {
 		return settings, nil
 	}
-	if requireEnabled && !settings.Enabled {
-		return smtpSettings{}, errors.New("email tasks are disabled")
-	}
-	if settings.Host == "" || settings.Port < 1 || settings.Port > 65535 || !validEmail(settings.From) {
-		return smtpSettings{}, errors.New("SMTP host, port and from address must be configured")
-	}
-	if settings.TLSMode != "starttls" && settings.TLSMode != "implicit" {
-		return smtpSettings{}, errors.New("smtp_tls_mode must be starttls or implicit")
-	}
-	if settings.Username != "" && settings.Password == "" {
-		return smtpSettings{}, errors.New("smtp_password is required when smtp_username is configured")
+	if err := validateSMTPDeliverySettings(settings, requireEnabled); err != nil {
+		return smtpSettings{}, err
 	}
 	return settings, nil
 }
 
-func sendSMTPMail(ctx context.Context, settings smtpSettings, recipient, subject, body, messageID string) error {
+func validateSMTPDeliverySettings(settings smtpSettings, requireEnabled bool) error {
+	if requireEnabled && !settings.Enabled {
+		return errors.New("email tasks are disabled")
+	}
+	if settings.Host == "" || settings.Port < 1 || settings.Port > 65535 || !validEmail(settings.From) {
+		return errors.New("SMTP host, port and from address must be configured")
+	}
+	if settings.TLSMode != "starttls" && settings.TLSMode != "implicit" {
+		return errors.New("smtp_tls_mode must be starttls or implicit")
+	}
+	if settings.Username != "" && settings.Password == "" {
+		return errors.New("smtp_password is required when smtp_username is configured")
+	}
+	return nil
+}
+
+func openSMTPClient(ctx context.Context, settings smtpSettings) (*smtp.Client, error) {
 	address := net.JoinHostPort(settings.Host, strconv.Itoa(settings.Port))
 	dialer := &net.Dialer{Timeout: 15 * time.Second}
 	var conn net.Conn
@@ -1226,28 +1316,54 @@ func sendSMTPMail(ctx context.Context, settings smtpSettings, recipient, subject
 		conn, err = dialer.DialContext(ctx, "tcp", address)
 	}
 	if err != nil {
-		return fmt.Errorf("connect SMTP server: %w", err)
+		return nil, fmt.Errorf("connect SMTP server: %w", err)
 	}
-	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(20 * time.Second))
 	client, err := smtp.NewClient(conn, settings.Host)
 	if err != nil {
-		return fmt.Errorf("create SMTP client: %w", err)
+		_ = conn.Close()
+		return nil, fmt.Errorf("create SMTP client: %w", err)
 	}
-	defer client.Close()
 	if settings.TLSMode == "starttls" {
 		if ok, _ := client.Extension("STARTTLS"); !ok {
-			return errors.New("SMTP server does not advertise STARTTLS")
+			_ = client.Close()
+			return nil, errors.New("SMTP server does not advertise STARTTLS")
 		}
 		if err := client.StartTLS(tlsConfig); err != nil {
-			return fmt.Errorf("start SMTP TLS: %w", err)
+			_ = client.Close()
+			return nil, fmt.Errorf("start SMTP TLS: %w", err)
 		}
 	}
 	if settings.Username != "" {
 		if err := client.Auth(smtp.PlainAuth("", settings.Username, settings.Password, settings.Host)); err != nil {
-			return fmt.Errorf("authenticate SMTP client: %w", err)
+			_ = client.Close()
+			return nil, fmt.Errorf("authenticate SMTP client: %w", err)
 		}
 	}
+	return client, nil
+}
+
+func verifySMTPConnection(ctx context.Context, settings smtpSettings) error {
+	client, err := openSMTPClient(ctx, settings)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	if err := client.Noop(); err != nil {
+		return fmt.Errorf("SMTP NOOP failed: %w", err)
+	}
+	if err := client.Quit(); err != nil {
+		return fmt.Errorf("quit SMTP session: %w", err)
+	}
+	return nil
+}
+
+func sendSMTPMail(ctx context.Context, settings smtpSettings, recipient, subject, body, messageID string) error {
+	client, err := openSMTPClient(ctx, settings)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
 	if err := client.Mail(settings.From); err != nil {
 		return fmt.Errorf("set SMTP sender: %w", err)
 	}
@@ -1273,7 +1389,8 @@ func sendSMTPMail(ctx context.Context, settings smtpSettings, recipient, subject
 }
 
 func buildSMTPMessage(from, recipient, subject, body, messageID string) string {
-	encodedSubject := mime.QEncoding.Encode("UTF-8", strings.TrimSpace(subject))
+	subject = strings.NewReplacer("\r", " ", "\n", " ").Replace(strings.TrimSpace(subject))
+	encodedSubject := mime.QEncoding.Encode("UTF-8", subject)
 	return "From: " + from + "\r\n" +
 		"To: " + recipient + "\r\n" +
 		"Subject: " + encodedSubject + "\r\n" +

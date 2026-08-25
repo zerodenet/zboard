@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestTrafficUsageBucketSupportsMinuteAndHourPrecision(t *testing.T) {
+func TestTrafficUsageBucketSupportsMinuteHourAndDayPrecision(t *testing.T) {
 	minute, err := parseTrafficUsageBucket("minute")
 	if err != nil {
 		t.Fatal(err)
@@ -22,7 +22,15 @@ func TestTrafficUsageBucketSupportsMinuteAndHourPrecision(t *testing.T) {
 		t.Fatalf("hour bucket = %#v", hour)
 	}
 
-	if _, err := parseTrafficUsageBucket("day"); err == nil {
+	day, err := parseTrafficUsageBucket("day")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if day.Name != trafficUsageBucketDay || !strings.Contains(day.Expression, "%Y-%m-%d 00:00:00") {
+		t.Fatalf("day bucket = %#v", day)
+	}
+
+	if _, err := parseTrafficUsageBucket("week"); err == nil {
 		t.Fatal("unsupported bucket should fail")
 	}
 }

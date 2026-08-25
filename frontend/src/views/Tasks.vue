@@ -1,14 +1,20 @@
 <template>
   <section class="standard-page">
     <PageHeader title="运营任务" description="追踪配额、通知、节点检测与协议发布等后台任务，保留每个目标的最终结果。" eyebrow="Operations">
-      <template #actions><PageRefreshButton label="刷新运营任务" :loading="loading" @click="load" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建任务</UiButton></template>
+      <template #actions><PageRefreshButton label="刷新运营任务" :loading="loading || summaryLoading" @click="refreshAll" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建任务</UiButton></template>
     </PageHeader>
 
     <TransientFeedback :success="message" :error="error" success-title="任务操作已完成" error-title="任务操作失败" />
 
+    <PageAlert v-if="summaryError" tone="danger" title="任务概览加载失败">{{ summaryError }}</PageAlert>
+    <section class="task-overview" aria-label="持久化任务状态概览">
+      <button v-for="card in summaryCards" :key="card.key" type="button" class="task-overview-card" :class="{ active: statusFilter === card.status }" @click="filterSummary(card.status)"><span>{{ card.label }}</span><strong>{{ formatNumber(card.value) }}</strong><small>{{ card.description }}</small></button>
+      <div class="task-overview-progress"><div><span>活动任务目标进度</span><strong>{{ formatNumber(summary?.active_current || 0) }} / {{ formatNumber(summary?.active_total || 0) }}</strong></div><div class="progress-track" role="progressbar" :aria-valuenow="activeProgress" aria-valuemin="0" aria-valuemax="100"><i :style="{ width: `${activeProgress}%` }" /></div><small>等待目标 {{ formatNumber(summary?.pending_targets || 0) }} · 执行中 {{ formatNumber(summary?.running_targets || 0) }} · 失败 {{ formatNumber(summary?.failed_targets || 0) }}</small></div>
+    </section>
+
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters><WorkbenchFilterBar :active="Boolean(typeFilter || statusFilter)" @clear="clearFilters"><WorkbenchFilterSelect v-model="typeFilter" label="任务类型" :options="taskTypeOptions" @apply="applyFilters" /><WorkbenchFilterSelect v-model="statusFilter" label="任务状态" :options="taskStatusOptions" @apply="applyFilters" /></WorkbenchFilterBar></template>
-      <DataTable v-if="tasks.length" caption="后台任务列表；数量直接显示数字，状态使用图标标签" :row-count="total" :min-width="1120" table-class="task-table"><thead><tr><th class="table-primary-column">任务</th><th data-column-priority="2">范围</th><th class="numeric-column">已处理</th><th class="numeric-column">总数</th><th class="numeric-column" data-column-priority="3">尝试次数</th><th data-column-priority="2">创建时间</th><th>状态</th><th class="numeric-column">失败数</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="task in tasks" :key="task.id"><td class="table-primary-column"><div class="cell-title"><strong>{{ taskTypeLabel(task.type) }}</strong><span>#{{ task.id }}</span></div></td><td data-column-priority="2">{{ scopeLabel(task.scope) }}</td><td class="numeric-column">{{ formatNumber(task.current) }}</td><td class="numeric-column">{{ formatNumber(task.total) }}</td><td class="numeric-column" data-column-priority="3">{{ task.attempts }} / {{ task.max_attempts }}</td><td data-column-priority="2"><TimeBadge :value="task.created_at" /></td><td><StatusBadge :tone="statusTone(task)" :icon="statusIcon(task)">{{ statusName(task) }}</StatusBadge></td><td class="numeric-column"><span v-if="task.failed_count || task.errors" class="error-count">{{ formatNumber(task.failed_count ?? errorCount(task.errors || '')) }}</span><span v-else>0</span></td><td class="table-action-column"><RowActions :label="`任务 #${task.id} 的操作`" :trigger-key="`task-${task.id}`"><UiButton variant="ghost" size="sm" type="button" @click="openTask(task)">查看结果</UiButton><UiButton v-if="task.status === 0 || task.status === 3" variant="secondary" size="sm" :loading="runningID === task.id" :disabled="task.attempts >= task.max_attempts" type="button" @click="run(task.id)"><UiIcon name="play" />{{ task.status === 3 ? '重试失败项' : '执行' }}</UiButton></RowActions></td></tr></tbody></DataTable>
+      <DataTable v-if="tasks.length" caption="后台任务列表；数量直接显示数字，状态使用图标标签" :row-count="total" :min-width="1120" table-class="task-table"><thead><tr><th class="table-primary-column">任务</th><th data-column-priority="2">范围</th><th class="numeric-column">已处理</th><th class="numeric-column">总数</th><th class="numeric-column" data-column-priority="3">尝试次数</th><th data-column-priority="2">创建时间</th><th>状态</th><th class="numeric-column">失败数</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="task in tasks" :key="task.id"><td class="table-primary-column"><div class="cell-title"><strong>{{ taskTypeLabel(task.type) }}</strong><span>#{{ task.id }} · {{ taskOriginLabel(task) }}</span></div></td><td data-column-priority="2">{{ scopeLabel(task.scope) }}</td><td class="numeric-column"><div class="row-progress"><strong>{{ formatNumber(task.current) }}</strong><span><i :style="{ width: `${taskProgress(task)}%` }" /></span></div></td><td class="numeric-column">{{ formatNumber(task.total) }}</td><td class="numeric-column" data-column-priority="3">{{ task.attempts }} / {{ task.max_attempts }}</td><td data-column-priority="2"><TimeBadge :value="task.created_at" /></td><td><StatusBadge :tone="statusTone(task)" :icon="statusIcon(task)">{{ statusName(task) }}</StatusBadge></td><td class="numeric-column"><span v-if="task.failed_count || task.errors" class="error-count">{{ formatNumber(task.failed_count ?? errorCount(task.errors || '')) }}</span><span v-else>0</span></td><td class="table-action-column"><RowActions :label="`任务 #${task.id} 的操作`" :trigger-key="`task-${task.id}`"><UiButton variant="ghost" size="sm" type="button" @click="openTask(task)">查看结果</UiButton><UiButton v-if="task.status === 0 || task.status === 3" variant="secondary" size="sm" :loading="runningID === task.id" :disabled="task.attempts >= task.max_attempts" type="button" @click="run(task.id)"><UiIcon name="play" />{{ task.status === 3 ? '重试失败项' : '执行' }}</UiButton></RowActions></td></tr></tbody></DataTable>
       <EmptyState v-else icon="tasks" title="暂无运营任务" description="创建配额调整或邮件任务后，执行进度会显示在这里。"><template #actions><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建任务</UiButton></template></EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
@@ -35,7 +41,7 @@
           <FormField v-if="scopeMode !== 'all'" v-slot="{ controlAttrs }" :label="scopeMode === 'users' ? '用户 ID' : '订阅 ID'" name="task-scope-ids" :error="createErrors.fields.scope_ids" hint="使用英文逗号分隔；仅接受正整数，重复 ID 会自动去除。" required full><UiInput v-model.trim="scopeIDs" v-bind="controlAttrs" placeholder="例如：1, 2, 3" /></FormField>
         </div>
         <div v-if="form.type === 'quota'" class="form-section"><div><strong>配额调整内容</strong><p>正数增加配额，负数扣减配额。</p></div><div class="form-grid"><FormField v-slot="{ controlAttrs }" label="调整量" name="task-quota-delta" :error="createErrors.fields['quota.delta_mb']" hint="统一以 MB 输入；允许负数。" required><UiNumberInput v-model="quota.delta_mb" v-bind="controlAttrs" suffix=" MB" /></FormField><FormField v-slot="{ controlAttrs }" label="调整原因" name="task-quota-reason" :error="createErrors.fields['quota.reason']" required><UiInput v-model.trim="quota.reason" v-bind="controlAttrs" minlength="3" maxlength="255" placeholder="运营补偿" /></FormField></div></div>
-        <div v-else class="form-section"><div><strong>邮件内容</strong><p>当前任务发送纯文本邮件。</p></div><div class="stack"><FormField v-slot="{ controlAttrs }" label="主题" name="task-email-subject" :error="createErrors.fields['email.subject']" required><UiInput v-model.trim="email.subject" v-bind="controlAttrs" maxlength="200" /></FormField><FormField v-slot="{ controlAttrs }" label="正文" name="task-email-body" :error="createErrors.fields['email.body']" required><UiTextarea v-model="email.body" v-bind="controlAttrs" maxlength="100000" rows="7" /></FormField></div></div>
+        <div v-else class="form-section"><div><strong>邮件内容</strong><p>选择运营模板后会复制为本次任务草稿；后续修改模板不会改写任务历史。</p></div><div class="stack"><FormField v-slot="{ controlAttrs }" label="运营模板" name="task-email-template" hint="仅显示已启用模板；也可以保留“自定义内容”从空白开始。"><UiSelect v-model="selectedEmailTemplateID" v-bind="controlAttrs" :options="emailTemplateOptions" @change="applyEmailTemplate" /></FormField><PageAlert tone="info" title="收件人变量">主题和正文支持 <span class="mono">{{emailTemplateVariables}}</span>，发送时按每位用户替换。</PageAlert><FormField v-slot="{ controlAttrs }" label="主题" name="task-email-subject" :error="createErrors.fields['email.subject']" required><UiInput v-model.trim="email.subject" v-bind="controlAttrs" maxlength="200" /></FormField><FormField v-slot="{ controlAttrs }" label="正文" name="task-email-body" :error="createErrors.fields['email.body']" required><UiTextarea v-model="email.body" v-bind="controlAttrs" maxlength="100000" rows="7" /></FormField></div></div>
         <div class="form-grid"><FormField v-slot="{ controlAttrs }" label="最大尝试次数" name="task-max-attempts" :error="createErrors.fields.max_attempts"><UiNumberInput v-model="form.max_attempts" v-bind="controlAttrs" :min="1" :max="10" inputmode="numeric" /></FormField><label class="check-field auto-run"><UiCheckbox v-model="form.auto_run" /><span><strong>创建后立即执行</strong><br /><small class="field-hint">关闭后任务保持等待状态。</small></span></label></div>
       </form>
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="creating" @click="requestClose">取消</UiButton><UiButton form="create-task-form" type="submit" :loading="creating">创建任务</UiButton></template>
@@ -46,7 +52,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createAdminTask, fetchAdminTask, fetchAdminTaskItems, fetchAdminTasksPage, runAdminTask, type AdminTask, type AdminTaskItem } from '../api/client'
+import { createAdminTask, fetchAdminTask, fetchAdminTaskItems, fetchAdminTasksPage, fetchAdminTaskSummary, fetchEmailTemplates, runAdminTask, type AdminTask, type AdminTaskItem, type AdminTaskSummary, type EmailTemplate } from '../api/client'
 import DataTable from '../components/DataTable.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -75,6 +81,9 @@ import { collectFieldErrors, isIntegerInRange, isOneOf, isUtf8LengthInRange } fr
 const selectedTask = ref<AdminTask | null>(null)
 const creating = ref(false)
 const runningID = ref(0)
+const summary = ref<AdminTaskSummary | null>(null)
+const summaryLoading = ref(false)
+const summaryError = ref('')
 const message = ref('')
 const route = useRoute()
 const router = useRouter()
@@ -93,6 +102,9 @@ const scopeIDs = ref('')
 const form = reactive({ type: 'quota' as 'quota' | 'email', max_attempts: 3, auto_run: false })
 const quota = reactive({ delta_mb: 1024, reason: '' })
 const email = reactive({ subject: '', body: '' })
+const emailTemplates = ref<EmailTemplate[]>([])
+const selectedEmailTemplateID = ref(0)
+const emailTemplateVariables = '{{site_name}}、{{site_url}}、{{user_email}}、{{account_name}}、{{registered_at}}、{{current_date}}'
 const createState = useDirtyForm(() => ({ form, quota, email, scope_mode: scopeMode.value, scope_ids: scopeIDs.value }))
 useUnsavedChangesGuard(
   () => createOpen.value && createState.dirty.value,
@@ -106,9 +118,22 @@ const createErrors = useFormErrors()
 const writableTaskTypes = ['quota', 'email'] as const
 const scopeModes = ['all', 'subscriptions', 'users'] as const
 let detailPollTimer: number | undefined
+let overviewPollTimer: number | undefined
 const taskTypeOptions = [{ label: '全部类型', value: '' }, { label: '配额调整', value: 'quota' }, { label: '邮件通知', value: 'email' }, { label: '节点状态检测', value: 'node_detect' }, { label: '节点内核对齐', value: 'node_reconcile' }, { label: '节点生命周期', value: 'node_lifecycle' }, { label: '协议批量发布', value: 'protocol_deploy' }, { label: '协议批量启停', value: 'protocol_active' }, { label: '节点组交付对齐', value: 'node_group_reconcile' }, { label: 'VPS 系统自动化', value: 'node_system_action' }]
 const taskStatusOptions = [{ label: '全部状态', value: '' }, { label: '等待执行', value: '0' }, { label: '执行中', value: '1' }, { label: '已完成', value: '2' }, { label: '执行失败', value: '3' }]
+const summaryCards = computed(() => [
+  { key: 'all', status: '', label: '全部任务', value: summary.value?.total || 0, description: '持久化记录' },
+  { key: 'pending', status: '0', label: '等待执行', value: summary.value?.pending || 0, description: '尚未消费' },
+  { key: 'running', status: '1', label: '正在执行', value: summary.value?.running || 0, description: '后台处理中' },
+  { key: 'completed', status: '2', label: '执行完成', value: summary.value?.completed || 0, description: '全部成功' },
+  { key: 'failed', status: '3', label: '执行失败', value: summary.value?.failed || 0, description: '可查看或重试' },
+])
+const activeProgress = computed(() => summary.value?.active_total ? Math.min(100, Math.round(summary.value.active_current * 100 / summary.value.active_total)) : 0)
 const createTaskTypeOptions = taskTypeOptions.filter(option => option.value === 'quota' || option.value === 'email')
+const emailTemplateOptions = computed(() => [
+  { label: '自定义内容', value: 0 },
+  ...emailTemplates.value.filter(item => item.is_active).map(item => ({ label: item.name, value: item.id })),
+])
 const scopeOptions = computed(() => [{ label: '全部有效目标', value: 'all' }, ...(form.type === 'quota' ? [{ label: '指定订阅 ID', value: 'subscriptions' }] : []), { label: '指定用户 ID', value: 'users' }])
 const { items: tasks, total, loading, refreshing, error, load } = useRemoteTable<AdminTask>({
   offset,
@@ -159,17 +184,32 @@ function targetTypeLabel(type: string) { return ({ user: '用户', subscription:
 function itemStatusName(status: number) { return ['等待执行', '执行中', '已完成', '执行失败'][status] || formatUnknownValue('状态', status) }
 function itemStatusTone(status: number): 'neutral' | 'info' | 'success' | 'danger' { return ['neutral', 'info', 'success', 'danger'][status] as any || 'neutral' }
 function itemStatusIcon(status: number) { return ['minus', 'refresh', 'check', 'alert'][status] || 'minus' }
+function taskProgress(task: AdminTask) { return task.total > 0 ? Math.min(100, Math.round(task.current * 100 / task.total)) : 0 }
+function taskOriginLabel(task: AdminTask) { if (task.idempotency_key?.startsWith('registration-welcome:')) return '系统注册通知'; if (task.idempotency_key?.startsWith('operation:') || task.idempotency_key?.startsWith('node-')) return '系统任务'; return '运营创建' }
+async function loadSummary() { summaryLoading.value = true; summaryError.value = ''; try { summary.value = await fetchAdminTaskSummary() } catch (cause: any) { summaryError.value = cause?.response?.data?.message || '持久化任务概览加载失败。' } finally { summaryLoading.value = false } }
+async function refreshAll() { await Promise.all([load(), loadSummary()]) }
+async function filterSummary(status: string) { statusFilter.value = status; await applyFilters() }
 
 async function syncURL(replace = false) { const page = Math.floor(offset.value / limit.value) + 1; const location = { query: { ...preserveAdminReturnTo(route.query.return_to), ...(typeFilter.value ? { type: typeFilter.value } : {}), ...(statusFilter.value ? { status: statusFilter.value } : {}), ...(page > 1 ? { page: String(page) } : {}), ...(limit.value !== 50 ? { limit: String(limit.value) } : {}), ...(selectedTask.value ? { task: String(selectedTask.value.id) } : {}) } }; await (replace ? router.replace(location) : router.push(location)) }
 async function applyFilters() { offset.value = 0; await syncURL(); await load() }
 async function clearFilters() { typeFilter.value = ''; statusFilter.value = ''; await applyFilters() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await load() }
-function openCreate() {
+async function openCreate() {
   Object.assign(form, { type: 'quota', max_attempts: 3, auto_run: false })
   Object.assign(quota, { delta_mb: 1024, reason: '' })
   Object.assign(email, { subject: '', body: '' })
+  selectedEmailTemplateID.value = 0
   scopeMode.value = 'all'; scopeIDs.value = ''; createErrors.clear()
   createState.markClean(); createOpen.value = true
+  try { emailTemplates.value = await fetchEmailTemplates('operational') }
+  catch (cause: any) { error.value = cause?.response?.data?.message || '运营邮件模板加载失败；仍可创建自定义邮件。' }
+}
+function applyEmailTemplate() {
+  const template = emailTemplates.value.find(item => item.id === Number(selectedEmailTemplateID.value))
+  if (!template) return
+  email.subject = template.subject_template
+  email.body = template.body_template
+  createErrors.clear('email.subject'); createErrors.clear('email.body')
 }
 async function createTask() {
   const parsed = parseIDs()
@@ -193,11 +233,11 @@ async function createTask() {
     if (scopeMode.value === 'subscriptions') scope.subscription_ids = ids
     const task = await createAdminTask({ type: form.type, scope, content: form.type === 'quota' ? { ...quota } : { ...email }, max_attempts: form.max_attempts, auto_run: form.auto_run })
     if (form.auto_run) trackAdminTask(task)
-    createOpen.value = false; message.value = '任务已创建。'; quota.reason = ''; email.subject = ''; email.body = ''; await load()
+    createOpen.value = false; message.value = '任务已创建。'; quota.reason = ''; email.subject = ''; email.body = ''; await refreshAll()
   } catch (e: any) { await createErrors.applyApiError(e, '任务创建失败，请检查表单内容。', createFormElement, createTaskFieldMap()) }
   finally { creating.value = false }
 }
-async function run(id: number) { runningID.value = id; error.value = ''; message.value = ''; try { await runAdminTask(id); const task = await fetchAdminTask(id); trackAdminTask(task); message.value = `任务 #${id} 已启动。`; await load(); if (selectedTask.value?.id === id) await refreshSelectedTask(id); window.setTimeout(load, 1200) } catch (e: any) { error.value = e?.response?.data?.message || '任务启动失败。' } finally { runningID.value = 0 } }
+async function run(id: number) { runningID.value = id; error.value = ''; message.value = ''; try { await runAdminTask(id); const task = await fetchAdminTask(id); trackAdminTask(task); message.value = `任务 #${id} 已启动。`; await refreshAll(); if (selectedTask.value?.id === id) await refreshSelectedTask(id); window.setTimeout(refreshAll, 1200) } catch (e: any) { error.value = e?.response?.data?.message || '任务启动失败。' } finally { runningID.value = 0 } }
 
 function stopDetailPolling() { if (detailPollTimer !== undefined) { window.clearTimeout(detailPollTimer); detailPollTimer = undefined } }
 function scheduleDetailPolling() { stopDetailPolling(); if (selectedTask.value && selectedTask.value.status < 2) detailPollTimer = window.setTimeout(() => void refreshSelectedTask(selectedTask.value?.id || 0), 2000) }
@@ -223,11 +263,12 @@ watch(() => route.fullPath, async () => {
   if (!taskID && selectedTask.value) { stopDetailPolling(); invalidateTaskItems(); selectedTask.value = null; taskItems.value = []; itemTotal.value = 0 }
   else if (taskID && selectedTask.value?.id !== taskID) await openTaskByID(taskID)
 })
-onMounted(async () => { await load(); const taskID = Number(route.query.task) || 0; if (taskID) await openTaskByID(taskID) })
-onBeforeUnmount(stopDetailPolling)
+onMounted(async () => { await refreshAll(); const taskID = Number(route.query.task) || 0; if (taskID) await openTaskByID(taskID); overviewPollTimer = window.setInterval(() => { if ((summary.value?.pending || 0) + (summary.value?.running || 0) > 0) void refreshAll() }, 5000) })
+onBeforeUnmount(() => { stopDetailPolling(); if (overviewPollTimer !== undefined) window.clearInterval(overviewPollTimer) })
 </script>
 
 <style scoped>
 .page-alert { margin-bottom: 14px; }.error-count{color:var(--danger);font-size:10px;font-weight:700}.form-section { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }.form-section > div:first-child strong { font-size: 13px; }.form-section > div:first-child p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }.auto-run { align-self: end; min-height: 40px; }.task-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.task-facts>div{display:grid;gap:5px;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft)}.task-facts span{color:var(--muted);font-size:9px}.task-facts strong{font-size:11px}.task-items-section{display:grid;gap:12px}.task-items-section>header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}.task-items-section h3{margin:0;font-size:13px}.task-items-section p{margin:3px 0 0;color:var(--muted);font-size:9px}:deep(.task-item-table .output-block){max-width:360px}@media(max-width:680px){.task-facts{grid-template-columns:1fr}.task-items-section>header{align-items:stretch;flex-direction:column}}
+.task-overview{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.task-overview-card,.task-overview-progress{display:grid;gap:5px;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface);text-align:left}.task-overview-card{color:inherit;font:inherit;cursor:pointer}.task-overview-card:hover,.task-overview-card.active{border-color:var(--primary);background:var(--primary-soft)}.task-overview-card span,.task-overview-progress span{color:var(--muted);font-size:9px}.task-overview-card strong{font-size:20px}.task-overview-card small,.task-overview-progress small{color:var(--muted);font-size:9px}.task-overview-progress{grid-column:1/-1}.task-overview-progress>div:first-child{display:flex;align-items:center;justify-content:space-between;gap:12px}.progress-track,.row-progress>span{height:6px;overflow:hidden;border-radius:999px;background:var(--surface-soft)}.progress-track i,.row-progress i{height:100%;display:block;border-radius:inherit;background:var(--primary)}.row-progress{min-width:72px;display:grid;gap:5px}.row-progress>span{width:72px}@media(max-width:900px){.task-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.task-overview{grid-template-columns:1fr}}
 .toolbar .p-select { width: 150px; min-height: 36px; }
 </style>

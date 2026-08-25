@@ -1,7 +1,7 @@
 import { API_BASE, getAuthToken, normalizePageResult, type PageResult } from './client'
 import { normalizeApiErrorPayload } from '../utils/apiError'
 
-export type TrafficUsageBucket = 'minute' | 'hour'
+export type TrafficUsageBucket = 'minute' | 'hour' | 'day'
 
 export interface TrafficUsageRecord {
   id: number
@@ -98,6 +98,11 @@ function appendUsageQuery(query: URLSearchParams, params: TrafficUsageQuery) {
   if (params.limit !== undefined) query.set('limit', String(params.limit))
 }
 
+function normalizeTrafficUsageBucket(value: unknown): TrafficUsageBucket {
+  if (value === 'minute' || value === 'day') return value
+  return 'hour'
+}
+
 export async function fetchTrafficUsagePage(
   params: TrafficUsageQuery = {},
   admin = false,
@@ -108,12 +113,12 @@ export async function fetchTrafficUsagePage(
   const data = await requestData<any>(`${admin ? '/admin' : ''}/traffic/records?${query}`, options.signal)
   return {
     ...normalizePageResult<TrafficUsageRecord, TrafficUsageAggregates>(data, 0, params.limit || (admin ? 50 : 25)),
-    bucket: data?.bucket === 'minute' ? 'minute' : 'hour',
+    bucket: normalizeTrafficUsageBucket(data?.bucket),
   }
 }
 
 export async function fetchTrafficNodeSeries(
-  params: Pick<TrafficUsageQuery, 'bucket' | 'userId' | 'subscriptionId' | 'from' | 'to'> = {},
+  params: Pick<TrafficUsageQuery, 'bucket' | 'userId' | 'nodeId' | 'subscriptionId' | 'from' | 'to'> = {},
   admin = false,
   options: { signal?: AbortSignal } = {},
 ): Promise<TrafficNodeSeries> {
@@ -121,6 +126,7 @@ export async function fetchTrafficNodeSeries(
   query.set('view', 'node_series')
   query.set('bucket', params.bucket || 'hour')
   if (params.userId) query.set('user_id', String(params.userId))
+  if (params.nodeId) query.set('node_id', String(params.nodeId))
   if (params.subscriptionId) query.set('subscription_id', String(params.subscriptionId))
   if (params.from) query.set('from', params.from)
   if (params.to) query.set('to', params.to)

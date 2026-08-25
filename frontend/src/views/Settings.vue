@@ -7,7 +7,7 @@
     <TransientFeedback :success="message" :error="error" success-title="系统设置已保存" error-title="设置操作失败" />
 
     <UiSection class="settings-shell">
-      <UiTabs v-model="activeTab" :items="tabItems" label="系统设置分类" />
+      <UiTabs :model-value="activeTab" :items="tabItems" label="系统设置分类" @update:model-value="changeTab" />
 
       <div v-if="activeTab === 'site'" class="settings-panel stack-lg">
         <UiSection title="站点身份" description="公开名称、访问地址和注册策略。">
@@ -130,11 +130,22 @@
         </UiSection>
       </div>
 
-      <div v-else-if="activeTab === 'notifications'" class="settings-panel">
-        <UiSection title="邮件与通知" description="先完成 SMTP 配置，再启用依赖邮件的通知任务。">
+      <div v-else-if="activeTab === 'notifications'" class="settings-panel stack-lg">
+        <UiSection title="SMTP 投递通道" description="保存配置后，可先验证连接与 TLS/认证，再向当前管理员邮箱投递一封完整测试邮件。">
           <template #meta><span class="config-count">{{ emailConfigs.length }} 项</span></template>
           <div v-if="emailConfigs.length" class="config-list"><ConfigRow v-for="config in emailConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
           <EmptyState v-else icon="audit" title="没有邮件配置" description="系统当前未返回可编辑的邮件或通知参数。" />
+          <PageAlert v-if="emailConfigDirty" tone="warning" title="先保存 SMTP 修改">连通性测试始终使用服务端已保存的配置，当前草稿不会被发送到测试接口。</PageAlert>
+          <div class="smtp-test-recipient"><FormField v-slot="{ controlAttrs }" label="测试邮件收件地址" name="smtp-test-recipient" hint="仅用于本次完整投递测试，不会保存为系统配置。" :error="smtpTestRecipientError"><UiInput v-model.trim="smtpTestRecipient" v-bind="controlAttrs" type="email" placeholder="recipient@example.com" /></FormField></div>
+          <div class="section-actions smtp-test-actions">
+            <span>连接测试不发送邮件；完整投递测试发送到上方地址。</span>
+            <UiButton variant="secondary" type="button" :loading="smtpTesting === 'connection'" :disabled="Boolean(smtpTesting) || emailConfigDirty" @click="runSMTPTest('connection')"><UiIcon name="refresh" />测试连接</UiButton>
+            <UiButton type="button" :loading="smtpTesting === 'delivery'" :disabled="Boolean(smtpTesting) || emailConfigDirty" @click="runSMTPTest('delivery')"><UiIcon name="audit" />发送测试邮件</UiButton>
+          </div>
+        </UiSection>
+
+        <UiSection title="通知与运营模板" description="注册通知使用系统触发器；运营模板用于批量邮件任务，并在创建任务时复制为不可变快照。">
+          <EmailTemplateManager @dirty="emailTemplateDirty = $event" />
         </UiSection>
       </div>
 
@@ -160,7 +171,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { fetchSystemConfigs, updateSiteSettings, updateSystemConfig, type SystemConfig } from '../api/client'
+import { fetchSystemConfigs, testSMTP, updateSiteSettings, updateSystemConfig, type SystemConfig } from '../api/client'
+import EmailTemplateManager from '../components/EmailTemplateManager.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LegalItemsEditor from '../components/LegalItemsEditor.vue'
 import PageAlert from '../components/PageAlert.vue'
@@ -178,7 +190,7 @@ import { normalizeApiErrorMessage } from '../utils/apiError'
 import { confirmAction } from '../utils/feedback'
 import { buildSiteProfile } from '../utils/siteProfile'
 import { formatSystemConfigDraft, normalizeSystemConfigDraft } from '../utils/systemConfig'
-import { collectFieldErrors, isHttpUrl, isUtf8LengthInRange } from '../utils/validation'
+import { collectFieldErrors, isEmail, isHttpUrl, isUtf8LengthInRange } from '../utils/validation'
 
 const app = useAppStore()
 const activeTab = ref('site')
@@ -186,6 +198,10 @@ const loading = ref(false)
 const savingSite = ref(false)
 const savingKey = ref('')
 const savingGroup = ref('')
+const smtpTesting = ref<'' | 'connection' | 'delivery'>('')
+const smtpTestRecipient = ref('')
+const smtpTestRecipientError = ref('')
+const emailTemplateDirty = ref(false)
 const message = ref('')
 const error = ref('')
 const configs = ref<SystemConfig[]>([])
@@ -221,13 +237,14 @@ const operationalConfigs = computed(() => configs.value
 const policyDocumentsConfig = computed(() => operationalConfigs.value.find(item => policyDocumentsKeys.has(item.config_key)))
 const legalMetadataConfig = computed(() => operationalConfigs.value.find(item => legalMetadataKeys.has(item.config_key)))
 const emailConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)))
+const emailConfigDirty = computed(() => emailConfigs.value.some(configDirty))
 const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !/smtp|email/i.test(item.config_key)))
 const visualConfigs = computed(() => configsForKeys(siteVisualKeys))
 const contentConfigs = computed(() => configsForKeys(siteContentKeys))
 const contactConfigs = computed(() => configsForKeys(siteContactKeys))
 const seoConfigs = computed(() => configsForKeys(siteSeoKeys))
 const configChanges = computed(() => operationalConfigs.value.filter(configDirty).length)
-const pageDirty = computed(() => siteState.dirty.value || configChanges.value > 0)
+const pageDirty = computed(() => siteState.dirty.value || configChanges.value > 0 || emailTemplateDirty.value)
 const previewProfile = computed(() => {
   const projected = configs.value.map(config => ({
     ...config,
@@ -251,7 +268,7 @@ useUnsavedChangesGuard(
   () => pageDirty.value,
   () => confirmAction({
     title: '离开系统设置？',
-    message: `当前有 ${configChanges.value + (siteState.dirty.value ? 1 : 0)} 组修改尚未保存。`,
+    message: `当前有 ${configChanges.value + (siteState.dirty.value ? 1 : 0) + (emailTemplateDirty.value ? 1 : 0)} 组修改尚未保存。`,
     confirmText: '放弃修改',
     tone: 'danger',
   }),
@@ -259,6 +276,17 @@ useUnsavedChangesGuard(
 
 watch(() => form.site_name, () => siteErrors.clear('site_name'))
 watch(() => form.site_url, () => siteErrors.clear('site_url'))
+watch(smtpTestRecipient, () => { smtpTestRecipientError.value = '' })
+
+async function changeTab(value: string) {
+  if (activeTab.value === 'notifications' && value !== activeTab.value && emailTemplateDirty.value && !await confirmAction({
+    title: '放弃邮件模板草稿？',
+    message: '当前邮件模板包含尚未保存的修改，切换设置分类后这些修改将丢失。',
+    confirmText: '放弃修改',
+    tone: 'danger',
+  })) return
+  activeTab.value = value
+}
 
 function configValue(config: SystemConfig) {
   return formatSystemConfigDraft(config)
@@ -454,7 +482,26 @@ async function reloadConfigGroup(keys: readonly string[]) {
   } finally { savingGroup.value = '' }
 }
 
-onMounted(loadAllData)
+async function runSMTPTest(mode: 'connection' | 'delivery') {
+	if (mode === 'delivery') {
+		smtpTestRecipient.value = smtpTestRecipient.value.trim().toLowerCase()
+		if (!isEmail(smtpTestRecipient.value)) {
+			smtpTestRecipientError.value = '请输入不超过 128 个 UTF-8 字节的有效邮箱。'
+			return
+		}
+	}
+  smtpTesting.value = mode; message.value = ''; error.value = ''
+  try {
+    const result = await testSMTP(mode, mode === 'delivery' ? smtpTestRecipient.value : undefined)
+    message.value = mode === 'connection'
+      ? `SMTP 连接、${result.tls_mode} 和${result.authenticated ? '身份认证' : '无认证会话'}已通过（${result.duration_ms}ms）。`
+      : `测试邮件已提交给 SMTP 服务器并发送到 ${result.recipient || app.user.email}（${result.duration_ms}ms）。`
+  } catch (cause: any) {
+    error.value = normalizeApiErrorMessage(cause, mode === 'connection' ? 'SMTP 连接测试失败。' : 'SMTP 测试邮件发送失败。')
+  } finally { smtpTesting.value = '' }
+}
+
+onMounted(async () => { smtpTestRecipient.value = app.user.email || ''; await loadAllData() })
 </script>
 
 <style scoped>
@@ -476,6 +523,8 @@ onMounted(loadAllData)
 .brand-preview__fallback { display: flex; align-items: center; gap: 9px; }.brand-preview__fallback span { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 9px; font-weight: 800; }.brand-preview__fallback strong { font-size: 13px; }
 .favicon-preview { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); color: var(--muted); font-size: 10px; }.favicon-preview img,.favicon-preview i { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 5px; object-fit: contain; background: var(--surface); color: var(--text); font-style: normal; font-weight: 800; }
 .section-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 16px 16px; }
+.smtp-test-actions{align-items:center;flex-wrap:wrap;padding-top:14px}.smtp-test-actions>span{margin-right:auto;color:var(--muted);font-size:10px}.smtp-test-actions strong{color:var(--text)}
+.smtp-test-recipient{max-width:520px;padding:14px 16px 0}
 .copy-preview { display: grid; gap: 7px; margin: 0 16px 16px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }.copy-preview span { color: var(--primary); font-size: 10px; font-weight: 700; }.copy-preview strong { max-width: 760px; font-size: 18px; line-height: 1.35; }.copy-preview p { max-width: 760px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .footer-preview { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin: 0 16px 16px; padding: 13px 15px; border-radius: 9px; background: #111827; color: #f8fafc; }.footer-preview strong { font-size: 12px; }.footer-preview span { color: #cbd5e1; font-size: 9px; }
 .site-config-layout-seo { grid-template-columns: minmax(0, 1fr) minmax(280px, .7fr); }

@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="流量与对账" description="按真实业务对象筛选按分钟或小时聚合的流量使用；原始计费记录仍保留用于审计与对账。" eyebrow="Usage Operations">
+    <PageHeader title="流量与对账" description="按真实业务对象查看按天、小时或分钟聚合的流量趋势、节点排行和计费明细；原始记录仍保留用于审计与对账。" eyebrow="Usage Operations">
       <template #actions><PageRefreshButton label="刷新流量与对账" :loading="loading" @click="load" /></template>
     </PageHeader>
     <TransientFeedback :error="error" error-title="流量数据加载失败" />
@@ -12,6 +12,16 @@
       <MetricCard label="关联订阅" :value="formatNumber(recordAggregates.subscription_count || 0)" icon="plans" status="覆盖范围" tone="info" icon-tone="success" :meta="`${formatNumber(recordAggregates.user_count || 0)} 个用户 · ${formatNumber(recordAggregates.node_count || 0)} 个节点`" />
     </UiMetricStrip>
 
+    <TrafficObservabilityChart
+      :points="trafficTrend.points"
+      :loading="trendLoading"
+      :truncated="trafficTrend.truncated"
+      :record-count="trafficTrend.record_count"
+      :peak-connections="trafficTrend.peak_connections"
+    />
+
+    <NodeTrafficChart :data="nodeSeries" :loading="nodeSeriesLoading" show-ranking />
+
     <DataWorkbench :total="recordTotal" :loading="recordLoading || referenceLoading" :refreshing="recordRefreshing">
       <template #filters>
         <WorkbenchFilterBar :active="hasFilters" :loading="loading" @clear="clearFilters">
@@ -22,7 +32,7 @@
           <WorkbenchFilterDate v-model:from="from" v-model:to="to" label="记录日期" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
-      <template #actions><span class="workbench-note">按时间 + 用户 + 订阅 + 节点 + 倍率汇总；协议端点仅保留在原始审计记录中</span></template>
+      <template #actions><div class="workbench-actions"><UiButton variant="ghost" size="sm" type="button" @click="showYesterday">查看昨日</UiButton><span class="workbench-note">默认跨全部用户按节点统计；用户筛选仅在需要下钻时使用</span></div></template>
 
       <DataTable v-if="records.length" :caption="`流量使用明细（按${bucketLabel}聚合）`" :row-count="recordTotal" :min-width="1020" table-class="traffic-table">
         <thead>
@@ -106,11 +116,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchTrafficReconciliationPage, type TrafficReconciliationAggregates, type TrafficReconciliationItem } from '../api/client'
-import { fetchTrafficUsagePage, type TrafficUsageAggregates, type TrafficUsageBucket, type TrafficUsageRecord } from '../api/trafficUsage'
-import { emptyEntityReferenceResponse, fetchAdminEntityReferences, type EntityReferenceResponse } from '../api/readModels'
+import { fetchTrafficNodeSeries, fetchTrafficUsagePage, type TrafficNodeSeries, type TrafficUsageAggregates, type TrafficUsageBucket, type TrafficUsageRecord } from '../api/trafficUsage'
+import { emptyEntityReferenceResponse, fetchAdminEntityReferences, fetchTrafficTrends, type EntityReferenceResponse, type TrafficTrendResult } from '../api/readModels'
 import CursorPager from '../components/CursorPager.vue'
 import DataTable from '../components/DataTable.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
@@ -126,6 +136,9 @@ import WorkbenchFilterDate from '../components/WorkbenchFilterDate.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import UiMetricStrip from '../components/UiMetricStrip.vue'
+import UiButton from '../components/UiButton.vue'
+import NodeTrafficChart from './account/NodeTrafficChart.vue'
+import TrafficObservabilityChart from './account/TrafficObservabilityChart.vue'
 import { resolveHistoryRange } from '../composables/historyState'
 import { useCursorTable } from '../composables/useCursorTable'
 import { useRemoteTable } from '../composables/useRemoteTable'
@@ -135,9 +148,9 @@ import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 const route = useRoute()
 const router = useRouter()
 const filters = reactive({ userId: String(route.query.user_id || ''), nodeId: String(route.query.node_id || ''), subscriptionId: String(route.query.subscription_id || '') })
-const bucket = ref<TrafficUsageBucket>(route.query.bucket === 'minute' ? 'minute' : 'hour')
-const bucketOptions = [{ label: '按小时', value: 'hour' }, { label: '按分钟', value: 'minute' }]
-const bucketLabel = computed(() => bucket.value === 'minute' ? '分钟' : '小时')
+const bucket = ref<TrafficUsageBucket>(normalizeBucket(route.query.bucket))
+const bucketOptions = [{ label: '按天', value: 'day' }, { label: '按小时', value: 'hour' }, { label: '按分钟', value: 'minute' }]
+const bucketLabel = computed(() => bucket.value === 'minute' ? '分钟' : bucket.value === 'day' ? '天' : '小时')
 const allowedPageSizes = [25, 50, 100]
 const initialRecordLimit = Number(route.query.limit)
 const recordLimit = ref(allowedPageSizes.includes(initialRecordLimit) ? initialRecordLimit : 50)
@@ -152,6 +165,14 @@ const reconciliationMode = ref(route.query.reconciliation === 'all' ? 'all' : 'i
 const references = ref<EntityReferenceResponse>(emptyEntityReferenceResponse())
 const referenceLoading = ref(false)
 const referenceError = ref('')
+const trafficTrend = ref<TrafficTrendResult>(emptyTrafficTrend())
+const trendLoading = ref(false)
+const trendError = ref('')
+const nodeSeries = ref<TrafficNodeSeries | null>(null)
+const nodeSeriesLoading = ref(false)
+const nodeSeriesError = ref('')
+let trendController: AbortController | null = null
+let nodeSeriesController: AbortController | null = null
 const hasFilters = computed(() => Boolean(filters.userId || filters.nodeId || filters.subscriptionId || bucket.value !== 'hour'))
 const reconciliationOptions = [{ label: '仅异常', value: 'issues' }, { label: '全部结果', value: 'all' }]
 const { items: records, total: recordTotal, aggregates: recordAggregates, nextCursor: recordNextCursor, previousCursor: recordPreviousCursor, loading: recordLoading, refreshing: recordRefreshing, error: recordError, load: loadRecords } = useCursorTable<TrafficUsageRecord, TrafficUsageAggregates>({
@@ -168,14 +189,21 @@ const { items: reconciliation, total: reconciliationTotal, aggregates: reconcili
   errorMessage: (cause: any) => cause?.response?.data?.message || '流量对账加载失败。',
   onOffsetCorrected: () => syncURL(true),
 })
-const loading = computed(() => recordLoading.value || reconciliationLoading.value || referenceLoading.value)
-const error = computed(() => recordError.value || reconciliationError.value || referenceError.value)
+const loading = computed(() => recordLoading.value || reconciliationLoading.value || referenceLoading.value || trendLoading.value || nodeSeriesLoading.value)
+const error = computed(() => recordError.value || reconciliationError.value || referenceError.value || trendError.value || nodeSeriesError.value)
 
 function formatMultiplier(value: number) { return (Number(value || 1000) / 1000).toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 3 }) }
 function resultName(result: string) { return ({ matched: '一致', missing_records: '缺少记录', over_recorded: '记录超额', legacy: '历史数据' } as Record<string, string>)[result] || formatUnknownValue('结果', result) }
 function resultTone(result: string): 'success' | 'warning' | 'danger' { return result === 'matched' ? 'success' : result === 'legacy' ? 'warning' : 'danger' }
 function subscriptionStatusName(status: string) { return ({ active: '有效', expired: '已失效', canceled: '已取消' } as Record<string, string>)[status] || formatUnknownValue('状态', status) }
 function queryParams() { return { userId: Number(filters.userId) || undefined, nodeId: Number(filters.nodeId) || undefined, subscriptionId: Number(filters.subscriptionId) || undefined } }
+function normalizeBucket(value: unknown): TrafficUsageBucket { return value === 'minute' || value === 'day' ? value : 'hour' }
+function emptyTrafficTrend(): TrafficTrendResult { return { from: '', to: '', points: [], record_count: 0, connection_sample_count: 0, peak_connections: null, truncated: false, subscriptions: [], as_of: '' } }
+function chartBucket(): TrafficUsageBucket {
+  if (bucket.value !== 'minute') return bucket.value
+  const duration = Date.parse(`${to.value}T00:00:00Z`) - Date.parse(`${from.value}T00:00:00Z`)
+  return Number.isFinite(duration) && duration <= 7 * 86400000 ? 'minute' : 'hour'
+}
 function adminContextLink(path: string, query: Record<string, string>) { return withAdminReturnTo(path, route.fullPath, query) }
 function userReference(id: number) { return references.value.users[String(id)] || null }
 function subscriptionReference(id?: number) { return id ? references.value.subscriptions[String(id)] || null : null }
@@ -201,7 +229,41 @@ async function loadReferences() {
   }
 }
 
-async function load() { await Promise.all([loadRecords(), loadReconciliation()]); await loadReferences() }
+async function loadTrend() {
+  trendController?.abort()
+  const controller = new AbortController()
+  trendController = controller
+  trendLoading.value = true
+  trendError.value = ''
+  try {
+    trafficTrend.value = await fetchTrafficTrends({ admin: true, ...queryParams(), from: from.value, to: to.value, signal: controller.signal })
+  } catch (cause: any) {
+    if (cause?.name === 'AbortError' || cause?.code === 'ERR_CANCELED') return
+    trafficTrend.value = emptyTrafficTrend()
+    trendError.value = cause?.response?.data?.message || '管理端流量趋势加载失败。'
+  } finally {
+    if (trendController === controller) { trendController = null; trendLoading.value = false }
+  }
+}
+
+async function loadNodeSeries() {
+  nodeSeriesController?.abort()
+  const controller = new AbortController()
+  nodeSeriesController = controller
+  nodeSeriesLoading.value = true
+  nodeSeriesError.value = ''
+  try {
+    nodeSeries.value = await fetchTrafficNodeSeries({ ...queryParams(), bucket: chartBucket(), from: from.value, to: to.value }, true, { signal: controller.signal })
+  } catch (cause: any) {
+    if (cause?.name === 'AbortError') return
+    nodeSeries.value = null
+    nodeSeriesError.value = cause?.message || '管理端节点流量排行加载失败。'
+  } finally {
+    if (nodeSeriesController === controller) { nodeSeriesController = null; nodeSeriesLoading.value = false }
+  }
+}
+
+async function load() { await Promise.all([loadRecords(), loadReconciliation(), loadTrend(), loadNodeSeries()]); await loadReferences() }
 async function syncURL(replace = false) {
   const reconciliationPage = Math.floor(reconciliationOffset.value / reconciliationLimit.value) + 1
   const location = { query: {
@@ -215,13 +277,25 @@ async function syncURL(replace = false) {
 function normalizeRange() { const range = resolveHistoryRange({ from: from.value, to: to.value }, 7); from.value = range.from; to.value = range.to }
 async function applyFilters() { normalizeRange(); recordCursor.value = ''; reconciliationOffset.value = 0; await syncURL(); await load() }
 async function clearFilters() { Object.assign(filters, { userId: '', nodeId: '', subscriptionId: '' }); bucket.value = 'hour'; recordCursor.value = ''; reconciliationOffset.value = 0; await syncURL(); await load() }
+async function showYesterday() {
+  const yesterday = new Date()
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+  const date = yesterday.toISOString().slice(0, 10)
+  from.value = date
+  to.value = date
+  bucket.value = 'day'
+  recordCursor.value = ''
+  reconciliationOffset.value = 0
+  await syncURL()
+  await load()
+}
 async function applyReconciliationMode() { reconciliationOffset.value = 0; await syncURL(); await loadReconciliation(); await loadReferences() }
 async function changeRecordCursor(value: string | null) { if (!value) return; recordCursor.value = value; await syncURL(); await loadRecords(); await loadReferences() }
 async function changeRecordLimit(value: number) { recordLimit.value = allowedPageSizes.includes(value) ? value : 50; recordCursor.value = ''; await syncURL(); await loadRecords(); await loadReferences() }
 async function changeReconciliationPage(value: { offset: number; limit: number }) { reconciliationOffset.value = value.offset; reconciliationLimit.value = value.limit; await syncURL(); await loadReconciliation(); await loadReferences() }
 watch(() => route.fullPath, async () => {
   const nextFilters = { userId: String(route.query.user_id || ''), nodeId: String(route.query.node_id || ''), subscriptionId: String(route.query.subscription_id || '') }
-  const nextBucket: TrafficUsageBucket = route.query.bucket === 'minute' ? 'minute' : 'hour'
+  const nextBucket: TrafficUsageBucket = normalizeBucket(route.query.bucket)
   const rawRecordLimit = Number(route.query.limit), nextRecordLimit = allowedPageSizes.includes(rawRecordLimit) ? rawRecordLimit : 50, nextRecordCursor = String(route.query.cursor || ''), nextRange = resolveHistoryRange(route.query, 7)
   const rawReconciliationLimit = Number(route.query.reconciliation_limit), nextReconciliationLimit = allowedPageSizes.includes(rawReconciliationLimit) ? rawReconciliationLimit : 25, nextReconciliationOffset = (Math.max(1, Number(route.query.reconciliation_page) || 1) - 1) * nextReconciliationLimit
   const nextMode = route.query.reconciliation === 'all' ? 'all' : 'issues'
@@ -230,13 +304,17 @@ watch(() => route.fullPath, async () => {
   }
 })
 onMounted(async () => { if (!route.query.from || !route.query.to || route.query.page) await syncURL(true); await load() })
+onBeforeUnmount(() => { trendController?.abort(); nodeSeriesController?.abort() })
 </script>
 
 <style scoped>
 .page-alert { margin-bottom: 16px; }
 .traffic-summary { margin-bottom: 16px; }
+.traffic-observability + .node-traffic { margin-top: 12px; }
+.node-traffic + .data-workbench { margin-top: 16px; }
 .reconciliation-summary { margin-top: 16px; }
 .reconciliation-workbench { margin-top: 12px; }
 .workbench-note { color: var(--muted); font-size: 10px; }
+.workbench-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .danger-text { color: var(--danger) !important; font-weight: 700; }
 </style>

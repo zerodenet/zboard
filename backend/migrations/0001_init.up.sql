@@ -18,6 +18,43 @@ CREATE TABLE `audit_logs` (
   KEY `idx_audit_logs_history_cursor` (`created_at`,`id`),
   CONSTRAINT `fk_audit_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+CREATE TABLE `email_templates` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(80) NOT NULL,
+  `slug` varchar(80) NOT NULL,
+  `category` varchar(24) NOT NULL,
+  `trigger_key` varchar(64) DEFAULT NULL,
+  `subject_template` varchar(200) NOT NULL,
+  `body_template` text NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `sort_order` int NOT NULL DEFAULT '0',
+  `revision` bigint unsigned NOT NULL DEFAULT '1',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_email_templates_slug` (`slug`),
+  UNIQUE KEY `uk_email_templates_trigger` (`trigger_key`),
+  KEY `idx_email_templates_category_order` (`category`,`sort_order`,`id`),
+  KEY `idx_email_templates_active` (`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+CREATE TABLE `registration_email_challenges` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `email` varchar(128) NOT NULL,
+  `purpose` varchar(32) NOT NULL DEFAULT 'register',
+  `code_hash` char(64) NOT NULL,
+  `requested_ip_hash` char(64) NOT NULL DEFAULT '',
+  `attempts` int NOT NULL DEFAULT '0',
+  `last_sent_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) DEFAULT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_registration_email_challenge` (`email`,`purpose`),
+  KEY `idx_registration_email_challenges_ip` (`requested_ip_hash`),
+  KEY `idx_registration_email_challenges_expires` (`expires_at`),
+  KEY `idx_registration_email_challenges_consumed` (`consumed_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 CREATE TABLE `flow_usages` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `node_id` bigint unsigned NOT NULL,
@@ -825,6 +862,7 @@ VALUES
   ('site_url', '站点网址', '', 'string', '当前站点的网址', 1, 0),
   ('subscribe_url', '订阅网址', '', 'string', '独立订阅地址；为空时由站点网址生成', 1, 0),
   ('subscription_camouflage_url', '订阅伪装跳转地址', '', 'string', '无效或已撤销的公开订阅链接的跳转目标；留空时使用站点公开访问地址', 0, 0),
+  ('register_email_verification', '注册邮箱验证码', 'false', 'bool', '注册时必须先通过邮箱验证码；启用前需完成 SMTP 配置', 1, 0),
   ('task_email_enabled', '邮件任务开关', 'false', 'bool', '是否允许任务执行器发送邮件', 0, 0),
   ('smtp_host', 'SMTP 主机', '', 'string', '邮件服务器主机名', 0, 0),
   ('smtp_port', 'SMTP 端口', '587', 'int', '邮件服务器端口', 0, 0),
@@ -832,6 +870,12 @@ VALUES
   ('smtp_password', 'SMTP 密码', '', 'string', 'SMTP 登录密码，使用凭证密钥加密保存', 0, 1),
   ('smtp_from', '发件地址', '', 'string', '邮件任务统一使用的发件邮箱', 0, 0),
   ('smtp_tls_mode', 'SMTP TLS 模式', 'starttls', 'string', '支持 starttls 或 implicit', 0, 0);
+
+INSERT INTO email_templates
+  (name, slug, category, trigger_key, subject_template, body_template, is_active, sort_order, revision, created_at, updated_at)
+VALUES
+  ('注册欢迎通知', 'registration-welcome', 'registration', 'user.registered', '欢迎加入 {{site_name}}', '你好，{{user_email}}：\n\n你的 {{site_name}} 账户已创建成功。\n\n访问地址：{{site_url}}\n注册时间：{{registered_at}}\n\n此邮件由系统自动发送，请勿直接回复。', 0, -100, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+  ('维护通知', 'maintenance-notice', 'operational', NULL, '{{site_name}} 服务维护通知', '你好，{{user_email}}：\n\n我们计划进行服务维护，请在发送前补充维护时间、影响范围和恢复计划。\n\n{{site_name}} 运营团队', 1, 0, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
 
 INSERT INTO subscription_templates
   (name, slug, description, renderer, customization, is_active, sort_order, revision, created_at, updated_at)

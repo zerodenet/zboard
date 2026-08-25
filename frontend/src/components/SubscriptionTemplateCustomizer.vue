@@ -41,6 +41,8 @@
               <StatusBadge v-else tone="neutral">{{ groupTypeLabel(group.type) }}</StatusBadge>
             </div>
             <div class="group-actions">
+              <UiButton type="button" variant="ghost" size="sm" :aria-label="`上移策略组 ${group.name || index + 1}`" title="上移" :disabled="index === 0" @click="movePolicyGroup(index, -1)"><UiIcon name="arrow-up" /></UiButton>
+              <UiButton type="button" variant="ghost" size="sm" :aria-label="`下移策略组 ${group.name || index + 1}`" title="下移" :disabled="index === model.policy_groups.length - 1" @click="movePolicyGroup(index, 1)"><UiIcon name="arrow-down" /></UiButton>
               <UiButton v-if="group.id !== model.main_group" type="button" variant="ghost" size="sm" @click="setMainGroup(group.id)">设为主策略组</UiButton>
               <UiButton type="button" variant="ghost" size="sm" :disabled="model.policy_groups.length <= 1" @click="removePolicyGroup(index)">删除</UiButton>
             </div>
@@ -283,6 +285,14 @@ const advancedPlaceholder = computed(() => {
 function addPolicyGroup() {
   const id = nextSubscriptionPolicyGroupID(model.value.policy_groups)
   model.value.policy_groups.push(defaultSubscriptionPolicyGroup(id, `策略组 ${model.value.policy_groups.length + 1}`, 'select'))
+}
+
+function movePolicyGroup(index: number, offset: number) {
+  const target = index + offset
+  if (target < 0 || target >= model.value.policy_groups.length) return
+  const groups = [...model.value.policy_groups]
+  ;[groups[index], groups[target]] = [groups[target], groups[index]]
+  model.value.policy_groups = groups
 }
 
 function setMainGroup(groupID: string) {

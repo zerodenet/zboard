@@ -93,6 +93,12 @@ func (h *handlers) trafficNodeSeriesHandler(w http.ResponseWriter, r *http.Reque
 	} else if subscriptionID > 0 {
 		query = query.Where("subscription_id = ?", subscriptionID)
 	}
+	if nodeID, parseErr := positiveQueryID(r.URL.Query(), "node_id"); parseErr != nil {
+		BadRequest(w, parseErr.Error())
+		return
+	} else if nodeID > 0 {
+		query = query.Where("node_id = ?", nodeID)
+	}
 
 	points := make([]trafficNodeSeriesPoint, 0)
 	if err := query.Session(&gorm.Session{}).

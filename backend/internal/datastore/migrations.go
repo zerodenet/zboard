@@ -26,6 +26,8 @@ var preReleaseBaselineTables = []string{
 	"audit_logs",
 	"certificate_operations",
 	"certificate_protocol_endpoints",
+	"email_templates",
+	"registration_email_challenges",
 	"provider_operations",
 	"managed_dns_records",
 	"provider_accounts",
@@ -67,6 +69,8 @@ var preReleaseBaselineColumns = []struct {
 	columnType string
 }{
 	{table: "flow_usages", column: "flow_id", columnType: "varchar(128)"},
+	{table: "email_templates", column: "subject_template", columnType: "varchar(200)"},
+	{table: "registration_email_challenges", column: "code_hash", columnType: "char(64)"},
 	{table: "managed_certificates", column: "provider_account_id", columnType: "bigint unsigned"},
 	{table: "managed_certificates", column: "webroot_path", columnType: "varchar(255)"},
 	{table: "node_groups", column: "revision", columnType: "bigint unsigned"},
@@ -85,6 +89,8 @@ var preReleaseBaselineIndexes = []struct {
 	index string
 }{
 	{table: "audit_logs", index: "idx_audit_logs_history_cursor"},
+	{table: "email_templates", index: "idx_email_templates_category_order"},
+	{table: "registration_email_challenges", index: "ux_registration_email_challenge"},
 	{table: "node_groups", index: "uk_node_groups_code"},
 	{table: "node_operations", index: "idx_node_operations_history_cursor"},
 	{table: "managed_certificates", index: "idx_managed_certificates_provider"},
@@ -231,6 +237,69 @@ func databaseTableExists(db *sql.DB, table string) (bool, error) {
 }
 
 func finalizePreReleaseBaselineSchema(db *sql.DB) error {
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS email_templates (
+		  id bigint unsigned NOT NULL AUTO_INCREMENT,
+		  name varchar(80) NOT NULL,
+		  slug varchar(80) NOT NULL,
+		  category varchar(24) NOT NULL,
+		  trigger_key varchar(64) DEFAULT NULL,
+		  subject_template varchar(200) NOT NULL,
+		  body_template text NOT NULL,
+		  is_active tinyint(1) NOT NULL DEFAULT '1',
+		  sort_order int NOT NULL DEFAULT '0',
+		  revision bigint unsigned NOT NULL DEFAULT '1',
+		  created_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+		  updated_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+		  PRIMARY KEY (id),
+		  UNIQUE KEY uk_email_templates_slug (slug),
+		  UNIQUE KEY uk_email_templates_trigger (trigger_key),
+		  KEY idx_email_templates_category_order (category, sort_order, id),
+		  KEY idx_email_templates_active (is_active)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+	`); err != nil {
+		return fmt.Errorf("create email template resource: %w", err)
+	}
+	if _, err := db.Exec(`
+		INSERT IGNORE INTO email_templates
+		  (name, slug, category, trigger_key, subject_template, body_template, is_active, sort_order, revision, created_at, updated_at)
+		VALUES
+		  ('注册欢迎通知', 'registration-welcome', 'registration', 'user.registered', '欢迎加入 {{site_name}}', '你好，{{user_email}}：\n\n你的 {{site_name}} 账户已创建成功。\n\n访问地址：{{site_url}}\n注册时间：{{registered_at}}\n\n此邮件由系统自动发送，请勿直接回复。', 0, -100, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+		  ('维护通知', 'maintenance-notice', 'operational', NULL, '{{site_name}} 服务维护通知', '你好，{{user_email}}：\n\n我们计划进行服务维护，请在发送前补充维护时间、影响范围和恢复计划。\n\n{{site_name}} 运营团队', 1, 0, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))
+	`); err != nil {
+		return fmt.Errorf("seed email templates: %w", err)
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS registration_email_challenges (
+		  id bigint unsigned NOT NULL AUTO_INCREMENT,
+		  email varchar(128) NOT NULL,
+		  purpose varchar(32) NOT NULL DEFAULT 'register',
+		  code_hash char(64) NOT NULL,
+		  requested_ip_hash char(64) NOT NULL DEFAULT '',
+		  attempts int NOT NULL DEFAULT 0,
+		  last_sent_at datetime(3) NOT NULL,
+		  expires_at datetime(3) NOT NULL,
+		  consumed_at datetime(3) DEFAULT NULL,
+		  created_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+		  updated_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+		  PRIMARY KEY (id),
+		  UNIQUE KEY ux_registration_email_challenge (email, purpose),
+		  KEY idx_registration_email_challenges_ip (requested_ip_hash),
+		  KEY idx_registration_email_challenges_expires (expires_at),
+		  KEY idx_registration_email_challenges_consumed (consumed_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+	`); err != nil {
+		return fmt.Errorf("create registration email challenge resource: %w", err)
+	}
+	if _, err := db.Exec(`
+		INSERT IGNORE INTO system_configs
+		  (config_key, name, value, value_type, description, is_public, is_secret, revision, created_at, updated_at)
+		VALUES
+		  ('register_email_verification', '注册邮箱验证码', 'false', 'bool', '注册时必须先通过邮箱验证码；启用前需完成 SMTP 配置', 1, 0, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))
+	`); err != nil {
+		return fmt.Errorf("seed registration email verification config: %w", err)
+	}
+
 	archiveExists, err := databaseTableExists(db, "subscription_template_legacy_archives")
 	if err != nil {
 		return fmt.Errorf("inspect legacy subscription template archive: %w", err)

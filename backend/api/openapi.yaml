@@ -136,6 +136,35 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/AuthLoginResponse"
+  /api/v1/auth/register/code:
+    post:
+      tags: [auth]
+      operationId: requestRegistrationEmailCode
+      summary: Send a short-lived registration verification code
+      description: Available only when public registration and register_email_verification are enabled. The code is sent synchronously through the saved SMTP channel; only its keyed digest is persisted.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email, maxLength: 128 }
+      responses:
+        "200":
+          description: Verification email accepted by SMTP
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/RegistrationCodeResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /api/v1/admin/settings:
     put:
       tags: [admin]
@@ -443,6 +472,125 @@ paths:
                       data: { $ref: "#/components/schemas/SystemConfig" }
         "400": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/smtp/test:
+    post:
+      tags: [admin]
+      operationId: testAdminSMTP
+      summary: Verify the saved SMTP TLS/authentication session or deliver one test message to a specified recipient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SMTPTestRequest" }
+      responses:
+        "200":
+          description: SMTP verification result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/SMTPTestResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/email-templates:
+    get:
+      tags: [admin]
+      operationId: listAdminEmailTemplates
+      summary: List registration and reusable operational email templates
+      parameters:
+        - name: category
+          in: query
+          schema: { type: string, enum: [registration, operational] }
+      responses:
+        "200":
+          description: Email templates
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/EmailTemplate" }
+    post:
+      tags: [admin]
+      operationId: createAdminEmailTemplate
+      summary: Create a reusable operational email template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailTemplateWriteRequest" }
+      responses:
+        "200":
+          description: Created template
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/EmailTemplate" }
+        "400": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/email-templates/preview:
+    post:
+      tags: [admin]
+      operationId: previewAdminEmailTemplate
+      summary: Render a template with safe sample variables
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailTemplatePreviewRequest" }
+      responses:
+        "200":
+          description: Rendered preview
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/EmailTemplatePreview" }
+        "400": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/email-templates/{id}:
+    put:
+      tags: [admin]
+      operationId: updateAdminEmailTemplate
+      summary: Update a registration or operational email template
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailTemplateWriteRequest" }
+      responses:
+        "200":
+          description: Updated template
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/EmailTemplate" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      operationId: deleteAdminEmailTemplate
+      summary: Delete an operational template; registration templates can only be disabled
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        "200": { description: Deleted }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v1/admin/tasks:
     get:
       tags: [admin]
@@ -498,6 +646,21 @@ paths:
                       data: { $ref: "#/components/schemas/AdminTask" }
         "400": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/tasks/summary:
+    get:
+      tags: [admin]
+      operationId: summarizeAdminTasks
+      summary: Summarize persisted task and target status counts
+      responses:
+        "200":
+          description: Lightweight task queue overview
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/AdminTaskSummary" }
   /api/v1/admin/tasks/{id}:
     get:
       tags: [admin]
@@ -2569,6 +2732,8 @@ paths:
           schema:
             type: integer
             format: int64
+        - { name: view, in: query, schema: { type: string, enum: [raw, node_series] }, description: Use node_series for the read-only time-by-node chart projection. }
+        - { name: bucket, in: query, schema: { type: string, enum: [minute, hour, day], default: hour }, description: Aggregation precision for paged records and node_series. }
         - { name: paged, in: query, schema: { type: boolean } }
         - { name: cursor, in: query, schema: { type: string }, description: Opaque bidirectional history cursor returned by page.next_cursor or page.previous_cursor. }
         - { name: from, in: query, schema: { type: string }, description: Inclusive start as YYYY-MM-DD or RFC3339. Defaults to the last 7 UTC days. }
@@ -2599,6 +2764,8 @@ paths:
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol_endpoint_id, in: query, schema: { type: integer, format: int64 } }
         - { name: subscription_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: view, in: query, schema: { type: string, enum: [raw, node_series] }, description: Use node_series for the read-only time-by-node chart and ranking projection. }
+        - { name: bucket, in: query, schema: { type: string, enum: [minute, hour, day], default: hour }, description: Aggregation precision for paged records and node_series. }
         - { name: paged, in: query, schema: { type: boolean } }
         - { name: cursor, in: query, schema: { type: string }, description: Opaque bidirectional history cursor returned by page.next_cursor or page.previous_cursor. }
         - { name: from, in: query, schema: { type: string }, description: Inclusive start as YYYY-MM-DD or RFC3339. Defaults to the last 7 UTC days. }
@@ -3137,6 +3304,65 @@ components:
             - { type: object, additionalProperties: true }
             - { type: array, items: {} }
         expected_revision: { type: integer, format: int64, minimum: 1 }
+    SMTPTestRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [connection, delivery], description: Connection performs TLS/authentication plus NOOP without a message; delivery sends one message to the specified recipient. }
+        recipient: { type: string, format: email, maxLength: 128, description: Optional delivery-test recipient. Defaults to the authenticated administrator for backward compatibility and is ignored by connection mode. }
+    SMTPTestResult:
+      type: object
+      required: [mode, tls_mode, authenticated, duration_ms]
+      properties:
+        mode: { type: string, enum: [connection, delivery] }
+        tls_mode: { type: string, enum: [starttls, implicit] }
+        authenticated: { type: boolean }
+        recipient: { type: string, format: email }
+        duration_ms: { type: integer, format: int64, minimum: 0 }
+    EmailTemplate:
+      type: object
+      required: [id, name, slug, category, subject_template, body_template, is_active, sort_order, revision, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        slug: { type: string, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$", maxLength: 80 }
+        category: { type: string, enum: [registration, operational] }
+        trigger_key: { type: string, enum: [user.registered], nullable: true }
+        subject_template: { type: string, minLength: 1, maxLength: 200 }
+        body_template: { type: string, minLength: 1, maxLength: 100000 }
+        is_active: { type: boolean }
+        sort_order: { type: integer }
+        revision: { type: integer, format: int64, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    EmailTemplateWriteRequest:
+      type: object
+      required: [name, slug, category, subject_template, body_template, is_active, sort_order]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        slug: { type: string, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$", maxLength: 80 }
+        category: { type: string, enum: [registration, operational] }
+        subject_template: { type: string, minLength: 1, maxLength: 200 }
+        body_template: { type: string, minLength: 1, maxLength: 100000 }
+        is_active: { type: boolean }
+        sort_order: { type: integer }
+        expected_revision: { type: integer, format: int64, minimum: 1 }
+    EmailTemplatePreviewRequest:
+      type: object
+      required: [category, subject_template, body_template]
+      properties:
+        category: { type: string, enum: [registration, operational] }
+        subject_template: { type: string, minLength: 1, maxLength: 200 }
+        body_template: { type: string, minLength: 1, maxLength: 100000 }
+    EmailTemplatePreview:
+      type: object
+      required: [subject, body, variables]
+      properties:
+        subject: { type: string }
+        body: { type: string }
+        variables:
+          type: object
+          additionalProperties: { type: string }
     AdminTaskScope:
       type: object
       properties:
@@ -3200,6 +3426,21 @@ components:
         finished_at: { type: string, format: date-time, nullable: true }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    AdminTaskSummary:
+      type: object
+      required: [total, pending, running, completed, failed, active_current, active_total, pending_targets, running_targets, succeeded_targets, failed_targets]
+      properties:
+        total: { type: integer, format: int64, minimum: 0 }
+        pending: { type: integer, format: int64, minimum: 0 }
+        running: { type: integer, format: int64, minimum: 0 }
+        completed: { type: integer, format: int64, minimum: 0 }
+        failed: { type: integer, format: int64, minimum: 0 }
+        active_current: { type: integer, format: int64, minimum: 0 }
+        active_total: { type: integer, format: int64, minimum: 0 }
+        pending_targets: { type: integer, format: int64, minimum: 0 }
+        running_targets: { type: integer, format: int64, minimum: 0 }
+        succeeded_targets: { type: integer, format: int64, minimum: 0 }
+        failed_targets: { type: integer, format: int64, minimum: 0 }
     AdminTaskPage:
       allOf:
         - $ref: "#/components/schemas/PageEnvelope"
@@ -4598,6 +4839,17 @@ components:
           format: email
         password:
           type: string
+        verification_code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          description: Required only when the public register_email_verification switch is enabled.
+    RegistrationCodeResult:
+      type: object
+      required: [sent, expires_in, resend_after]
+      properties:
+        sent: { type: boolean }
+        expires_in: { type: integer, minimum: 1 }
+        resend_after: { type: integer, minimum: 1 }
     AuthLoginRequest:
       type: object
       required:

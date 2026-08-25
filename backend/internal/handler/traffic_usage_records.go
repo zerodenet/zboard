@@ -13,6 +13,7 @@ import (
 const (
 	trafficUsageBucketMinute = "minute"
 	trafficUsageBucketHour   = "hour"
+	trafficUsageBucketDay    = "day"
 )
 
 type trafficUsageBucketSpec struct {
@@ -32,8 +33,13 @@ func parseTrafficUsageBucket(raw string) (trafficUsageBucketSpec, error) {
 			Name:       trafficUsageBucketHour,
 			Expression: "CAST(DATE_FORMAT(record_at, '%Y-%m-%d %H:00:00') AS DATETIME)",
 		}, nil
+	case trafficUsageBucketDay:
+		return trafficUsageBucketSpec{
+			Name:       trafficUsageBucketDay,
+			Expression: "CAST(DATE_FORMAT(record_at, '%Y-%m-%d 00:00:00') AS DATETIME)",
+		}, nil
 	default:
-		return trafficUsageBucketSpec{}, fmt.Errorf("bucket must be minute or hour")
+		return trafficUsageBucketSpec{}, fmt.Errorf("bucket must be minute, hour or day")
 	}
 }
 
@@ -54,7 +60,7 @@ type trafficUsageBucket struct {
 // TrafficUsageRecordsHandler is the human-facing read model for traffic history.
 //
 // Raw TrafficRecord rows remain the source of truth for accounting and auditing.
-// Paged list requests are collapsed into minute/hour buckets while preserving
+// Paged list requests are collapsed into minute/hour/day buckets while preserving
 // the business dimensions that explain charged usage: subscription, node and
 // multiplier (plus user in the administrative scope). Protocol endpoints remain
 // available as a pre-aggregation filter and through ?view=raw, but they are not

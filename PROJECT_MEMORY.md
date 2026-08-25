@@ -94,6 +94,251 @@ Remaining gaps:
 
 ## Completed goals
 
+### 2026-08-24 - Operational SMTP, registration notices and email templates
+
+Goal outcome:
+
+- Promoted the existing encrypted SMTP settings from passive configuration to
+  an operational mail channel. Administrators can validate connection,
+  TLS/authentication and SMTP `NOOP` without sending mail, or explicitly send
+  one delivery test to their own authenticated administrator address.
+- Added a revisioned `email_templates` presentation resource with one seeded,
+  disabled-by-default registration template and reusable operational
+  templates. Templates support activation, ordering, preview and the bounded
+  variables `site_name`, `site_url`, `user_email`, `account_name`,
+  `registered_at` and `current_date`.
+- Successful registration now enqueues the active registration template into
+  the existing retryable email task system without making account creation
+  depend on SMTP availability. Operational tasks copy the selected template
+  into an immutable task snapshot, so later template edits do not rewrite task
+  history. Rendered subjects strip CR/LF before RFC header encoding.
+- Added template management and both SMTP tests to **System settings > Email
+  and notifications**. The operational-task editor can apply active templates
+  and then edit the task-specific copy. Template forms use the shared field/API
+  error contract and protect dirty drafts on modal close, settings-tab changes,
+  route navigation and browser unload.
+- Preserved the resource boundary: templates own reusable presentation text;
+  users remain registration/account facts, and existing tasks/task items own
+  delivery snapshots and retry state. The pre-release baseline migration and
+  compatibility finalizer create and seed the resource for both fresh and
+  already-applied installations.
+
+Local verification:
+
+- Focused handler tests passed for SMTP validation/client construction,
+  registration enqueue behavior, template validation/rendering, system config
+  and email task content. Focused datastore/server pre-release migration tests
+  also passed. `go vet ./...` passed earlier in this working tree.
+- The complete backend `go test ./...` passed every package except the existing
+  18 Windows `internal/zeroevent` directory-fsync cases, where the Go temporary
+  directory returns `Access is denied`; all changed backend packages passed.
+- The five SMTP/template and feedback-policy frontend tests passed. `pnpm
+  typecheck` and the production build passed with 610 transformed modules.
+- The complete frontend run passed 92 files and 236 tests. Its remaining 11
+  failures in seven files are the same existing catalog/form, row-action,
+  design-token and CRLF-sensitive chart source-policy baseline; the new email
+  capability tests pass in the complete run.
+- `git diff --check` passed. OpenAPI path/schema changes are covered by source
+  review and server-route tests; an optional standalone YAML parser was not
+  available in the local frontend/Python runtime.
+
+Synchronization and deployed verification:
+
+- `scripts/deploy-intranet.local.ps1 -SkipLocalChecks` delegated the verified
+  tree to `scripts/sync-intranet.ps1` and completed successfully. Deployed
+  version: `v0.0.1-20260824T102337Z-intranet-working-tree@2026-08-24T10:23:41Z`.
+- `/readyz` returned HTTP 200 with `ready=true` and `db=true`.
+  `zboard_next-zboard-1` was running and healthy; external `db` and `cache`
+  containers were running.
+- Pre-switch database backup:
+  `/data/zboard-next/backups/20260824T102341Z/zboard-before-sync.sql`
+  (107,078 bytes). Previous source:
+  `/data/zboard-next/app-prev-20260824T102341Z`; both existed after deployment.
+- The compatibility migration created `email_templates` and seeded exactly two
+  rows: one inactive registration template and one active operational template.
+  An in-memory five-minute administrator token verified template list and
+  preview endpoints at HTTP 200; all sample variables rendered, while both
+  protected routes returned 401 without authentication.
+- The authenticated SMTP route rejected an invalid mode with HTTP 400 before
+  any connection or delivery attempt. The read-only verification left the task
+  count unchanged. Built frontend assets contained the SMTP test and both
+  template-management controls.
+
+Remaining gaps:
+
+- No live SMTP connection or delivery test was triggered during deployment,
+  and the registration template remains disabled. An administrator must save
+  the intended SMTP settings, run **Test connection**, optionally run **Send
+  test email**, review the registration content and then enable it.
+- The deployed registration-to-task path was not exercised with a synthetic
+  production account; local handler coverage proves the queue/idempotency path
+  without creating a live user or sending mail.
+- The existing 18 Windows `zeroevent` fsync failures and 11 frontend source-
+  policy failures remain. No Git staging, commit, push or release was performed.
+
+### 2026-08-24 - Registration verification and task visibility
+
+Goal outcome:
+
+- Changed SMTP delivery verification from an implicit administrator mailbox
+  to an explicitly entered recipient. Connection mode remains message-free;
+  delivery mode validates the recipient before opening the saved SMTP channel
+  and returns the normalized destination in its result.
+- Added optional registration email verification behind the public
+  `register_email_verification` switch. When enabled, registration requires a
+  six-digit code delivered synchronously through the saved SMTP channel; when
+  disabled, the original direct-registration behavior is unchanged.
+- Added a ten-minute, five-attempt registration challenge resource with a
+  one-minute resend cooldown and a per-request-network hourly limit. The
+  database stores only HMAC-SHA256 digests of codes and requester addresses,
+  never the plaintext values. User creation, `email_verified_at` and challenge
+  consumption commit in one transaction. Soft-deleted users are included in
+  the email-ownership check so an unusable code is not sent.
+- Added an authenticated task summary derived from the existing `tasks` and
+  `task_items` resources. The operations page now shows task-state counts,
+  active target progress, target-state counts, clickable state filters and
+  row-level progress, with a five-second refresh while work is pending or
+  running. Registration welcome jobs are labeled as system registration
+  notices; no second queue or task fact was introduced.
+
+Local verification:
+
+- Focused handler/datastore/server tests passed for secure code generation and
+  digest binding, requester-address hashing, SMTP/templates, typed system
+  configuration and the pre-release migration contract. All changed backend
+  packages also passed in the complete backend run, and `go vet ./...` passed.
+- `go test ./... -count=1` retained only the existing 18 Windows
+  `internal/zeroevent` directory-fsync failures (`Access is denied` below the
+  Go test temporary directory); every other backend package passed.
+- The four email capability tests, two feedback-policy tests, frontend type
+  checking and the production build passed with 610 transformed modules. The
+  complete frontend run passed 92 files and 237 tests. Its 11 failures in
+  seven files are the same existing catalog/form, row-action, design-token and
+  CRLF-sensitive chart source-policy baseline.
+- `git diff --check` passed. OpenAPI recipient, registration-code and task-
+  summary contracts were source-reviewed; no optional standalone YAML parser
+  was available in the local runtime.
+
+Synchronization and deployed verification:
+
+- `scripts/deploy-intranet.local.ps1 -SkipLocalChecks` delegated the verified
+  tree to `scripts/sync-intranet.ps1` and completed successfully. Deployed
+  version: `v0.0.1-20260824T111540Z-intranet-working-tree@2026-08-24T11:15:43Z`.
+- `/readyz` returned HTTP 200 with `ready=true` and `db=true`.
+  `zboard_next-zboard-1` was running and healthy; external `db` and `cache`
+  containers were running.
+- Pre-switch database backup:
+  `/data/zboard-next/backups/20260824T111543Z/zboard-before-sync.sql`
+  (108,798 bytes). Previous source:
+  `/data/zboard-next/app-prev-20260824T111543Z`; both paths existed after the
+  wrapper's post-deployment cleanup.
+- The compatibility finalizer created `registration_email_challenges` and the
+  public switch with its default `false` value. Information-schema acceptance
+  confirmed one `code_hash` column, no raw `code` column and zero challenge
+  rows; no registration email was sent.
+- A five-minute administrator token was generated only inside the target and
+  was not printed. The authenticated task summary returned HTTP 200 and its
+  task/target counts matched direct database aggregates field for field. The
+  empty current task tables correctly produced zero totals; the same route
+  returned HTTP 401 without authentication.
+- An authenticated delivery test with an invalid explicit recipient returned
+  HTTP 400 before SMTP access. A public registration-code request returned
+  HTTP 400 while the switch was disabled. Running frontend assets contained
+  the specified-recipient field, registration-code controls and active-task
+  progress overview.
+
+Remaining gaps:
+
+- No live SMTP delivery or registration-code email was sent. An administrator
+  should save the intended SMTP settings, send a test to an explicitly chosen
+  mailbox, and only then enable registration email verification.
+- The live task summary was verified against an empty task table. Local source
+  contracts and aggregate checks cover nonzero state mapping, but operational
+  progress should also be observed when the next real queued task runs.
+- The existing 18 Windows `zeroevent` fsync failures and 11 frontend source-
+  policy failures remain. No Git staging, commit, push or release was performed.
+
+### 2026-08-24 - Fair Use, subscription-template and node-traffic usability
+
+Goal outcome:
+
+- Fixed the Fair Use subscription picker so selecting an observation target
+  immediately loads metrics, observation buckets, state, effective policy and
+  explanation events instead of waiting for a later route/filter mutation.
+- Added an explicit current-subscription evaluation control on the Fair Use
+  page. It persists a revision-protected subscription override based on the
+  effective platform/plan/subscription values, always constrains the UI action
+  to observe-only mode, and runs one immediate evaluation after enablement.
+- Added policy-group up/down ordering controls to the subscription-template
+  editor and revision-protected list actions for enabling or disabling a
+  template. Administrative Zero previews now retain the validated readable
+  JSON representation; public Zero delivery remains Base64 text.
+- Extended human-facing traffic aggregation and node series with a daily
+  bucket. The administration page now reuses the daily traffic/connection
+  chart, shows time-by-node usage, ranks node totals from highest to lowest,
+  and provides a one-click UTC-yesterday view. The default unfiltered
+  projection spans all users and groups only by the existing node resource;
+  no second accounting fact or user-owned node model was introduced.
+
+Local verification:
+
+- Go formatting completed for all changed backend files. Focused handler tests
+  covering daily traffic buckets, node-series windows and readable template
+  preview passed. `go vet ./...` passed.
+- `go test ./...` passed every backend package except `internal/zeroevent`.
+  Its Windows-only run retained 18 existing file-spool failures because
+  directory `fsync` returns `Access is denied` below the Go test temporary
+  directory; the changed handler and API packages passed in that same run.
+- The three new frontend source-contract regressions and the three existing
+  subscription-template editor tests passed. `pnpm typecheck` and the Vite
+  production build passed with 607 transformed modules.
+- The complete frontend run passed 91 files and 233 tests. Eleven existing
+  source-policy assertions in seven files remain failing across catalog/form,
+  row-action, design-token and CRLF-sensitive chart contracts; the new
+  operations-usability tests pass in the complete run.
+- `git diff --check` passed before synchronization.
+
+Synchronization and deployed verification:
+
+- `scripts/deploy-intranet.local.ps1 -SkipLocalChecks` delegated the verified
+  working tree to `scripts/sync-intranet.ps1` and completed successfully. The
+  explicit skip avoided rerunning the known Windows `zeroevent` directory-
+  fsync failures after the relevant handler tests, full vet, frontend
+  typecheck and production build had passed.
+- Deployed version:
+  `v0.0.1-20260824T073232Z-intranet-working-tree@2026-08-24T07:32:34Z`.
+  `/readyz` returned HTTP 200 with `ready=true` and `db=true`.
+- `zboard_next-zboard-1` was running and healthy; the external `db` and
+  `cache` containers were running.
+- Pre-switch database backup:
+  `/data/zboard-next/backups/20260824T073234Z/zboard-before-sync.sql`
+  (104,980 bytes). Previous source:
+  `/data/zboard-next/app-prev-20260824T073234Z`. Both paths existed after the
+  wrapper's post-deployment cleanup.
+- The deployed source and built assets contained the day bucket, node ranking,
+  yesterday shortcut, Fair Use enable action and template policy-group order
+  controls. Unauthenticated probes of the three protected APIs returned 401.
+- A five-minute in-memory admin token, generated on the target without logging
+  credentials or token material, verified the protected read paths. The UTC-
+  yesterday node-series request returned HTTP 200 with `bucket=day` and an
+  empty series, matching the database's lack of traffic on 2026-08-23. The
+  latest non-empty day returned one daily node point totaling 658 charged
+  bytes and passed descending-rank validation.
+- The same authenticated check verified that the Zero template preview was a
+  1,620-byte `application/json` plaintext document which parsed as JSON, and
+  that an existing subscription's Fair Use metrics returned successfully with
+  `evaluation_ready=true` and complete telemetry.
+
+Remaining gaps:
+
+- The full frontend suite still contains the eleven pre-existing source-policy
+  failures, and the Windows full Go run still contains the eighteen existing
+  `internal/zeroevent` directory-fsync failures described above.
+- UTC yesterday contained no traffic rows, so the deployed yesterday view
+  correctly renders an empty ranking; non-empty descending ranking was
+  independently verified against the latest day that contained traffic.
+- No Git staging, commit, push or release was performed.
+
 ### 2026-08-11 - Zero event spool deployment recovery and nullable system audit
 
 Goal outcome:

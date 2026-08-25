@@ -1,6 +1,8 @@
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS
+  registration_email_challenges,
+  email_templates,
   subscription_template_rule_set_bindings,
   subscription_rule_sets,
   subscription_templates,
