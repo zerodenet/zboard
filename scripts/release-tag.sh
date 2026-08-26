@@ -10,13 +10,22 @@ every configured remote.
 
 Examples:
   bash scripts/release-tag.sh 0.0.1
+  bash scripts/release-tag.sh 0.1.0-rc
   bash scripts/release-tag.sh --dry-run 0.0.1
 
 Branch policy:
   develop: VERSION must be numeric SemVer, e.g. 0.0.1. The tag becomes
-           v0.0.1-dev, or v0.0.1-dev.1 when the base tag already exists.
-  main:    VERSION may be numeric or prerelease SemVer, e.g. 0.0.1,
-           0.0.1-rc, or 0.0.1-rc.1. The tag is used as vVERSION.
+           v0.0.1-dev.YYYYMMDDHHmm using the current UTC minute.
+  main:    VERSION may be a numeric SemVer for a formal release, e.g. 0.1.0,
+           or an RC base such as 0.1.0-rc. RC tags become
+           v0.1.0-rc.YYYYMMDDHHmm; formal tags remain exactly vVERSION.
+
+An existing tag is always an error. The script never infers or appends a
+numeric release suffix.
+
+Environment:
+  ZBOARD_RELEASE_TIMESTAMP  Override the dev/RC UTC timestamp for a replay or
+                            deterministic dry run; must be YYYYMMDDHHmm.
 EOF
 }
 
@@ -65,21 +74,32 @@ branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
 main_branch="${ZBOARD_RELEASE_MAIN_BRANCH:-main}"
 develop_branch="${ZBOARD_RELEASE_DEVELOP_BRANCH:-develop}"
 numeric_semver_re='^[0-9]+\.[0-9]+\.[0-9]+$'
-semver_re='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$'
+rc_semver_re='^[0-9]+\.[0-9]+\.[0-9]+-rc$'
 version="${version_input#v}"
+
+release_timestamp() {
+  local value="${ZBOARD_RELEASE_TIMESTAMP:-$(date -u +%Y%m%d%H%M)}"
+  if [[ ! "${value}" =~ ^[0-9]{12}$ ]]; then
+    die "release timestamp must use UTC YYYYMMDDHHmm format"
+  fi
+  printf '%s\n' "${value}"
+}
 
 case "${branch}" in
   "${develop_branch}")
     if [[ ! "${version}" =~ ${numeric_semver_re} ]]; then
       die "${develop_branch} only accepts numeric SemVer such as 0.0.1; prerelease suffixes must be created from ${main_branch}"
     fi
-    base_tag="v${version}-dev"
+    tag="v${version}-dev.$(release_timestamp)"
     ;;
   "${main_branch}")
-    if [[ ! "${version}" =~ ${semver_re} ]]; then
-      die "${main_branch} accepts SemVer such as 0.0.1, 0.0.1-rc, or 0.0.1-rc.1"
+    if [[ "${version}" =~ ${numeric_semver_re} ]]; then
+      tag="v${version}"
+    elif [[ "${version}" =~ ${rc_semver_re} ]]; then
+      tag="v${version}.$(release_timestamp)"
+    else
+      die "${main_branch} accepts a formal SemVer such as 0.1.0 or an RC base such as 0.1.0-rc"
     fi
-    base_tag="v${version}"
     ;;
   *)
     die "unsupported branch ${branch}; release tags may be created only from ${develop_branch} or ${main_branch}"
@@ -102,14 +122,7 @@ tag_exists() {
   git rev-parse --verify --quiet "refs/tags/$1" >/dev/null
 }
 
-tag="${base_tag}"
-if tag_exists "${tag}"; then
-  suffix=1
-  while tag_exists "${base_tag}.${suffix}"; do
-    suffix=$((suffix + 1))
-  done
-  tag="${base_tag}.${suffix}"
-fi
+tag_exists "${tag}" && die "tag ${tag} already exists; choose another explicit version or wait for the next UTC minute"
 
 package_version="${tag#v}"
 tracked_version_files=(

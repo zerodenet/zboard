@@ -18,10 +18,14 @@ describe('SMTP and email template capability', () => {
 
   it('provides registration and reusable operational template workflows', () => {
     const manager = read('frontend/src/components/EmailTemplateManager.vue')
+    const registrationSettings = read('frontend/src/views/RegistrationSettings.vue')
     const tasks = read('frontend/src/views/Tasks.vue')
     expect(manager).toContain('注册通知模板')
     expect(manager).toContain('运营模板')
     expect(manager).toContain('previewEmailTemplate')
+    expect(manager).toContain('模板保存、任务创建和实际发送是三个独立步骤')
+    expect(registrationSettings).toContain('EmailTemplateManager mode="registration"')
+    expect(registrationSettings).toContain('页面图形验证码')
     expect(tasks).toContain("fetchEmailTemplates('operational')")
     expect(tasks).toContain('applyEmailTemplate')
   })

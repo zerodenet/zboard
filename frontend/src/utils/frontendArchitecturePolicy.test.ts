@@ -36,14 +36,14 @@ const adminRoutes = {
   tasks: ['views/Tasks.vue'],
   'operation-logs': ['views/OperationLogs.vue'],
   'audit-logs': ['views/AuditLogs.vue'],
-  settings: ['views/Settings.vue', 'components/SettingsConfigRow.vue'],
+  'settings/site': ['views/Settings.vue', 'components/SettingsConfigRow.vue'],
 } as const
 
 function surface(parts: readonly string[]) {
   return parts.map(part => read(...part.split('/'))).join('\n')
 }
 
-const adminListRoutes = Object.keys(adminRoutes).filter(route => !['dashboard', 'settings', 'fair-use'].includes(route))
+const adminListRoutes = Object.keys(adminRoutes).filter(route => !['dashboard', 'settings/site', 'fair-use'].includes(route))
 const tabularAdminRoutes = adminListRoutes.filter(route => route !== 'tickets')
 
 describe('frontend architecture policy', () => {
@@ -56,6 +56,17 @@ describe('frontend architecture policy', () => {
     expect(Object.keys(adminRoutes)).toHaveLength(17)
     expect(routerSource).toContain("{ path: 'billing', redirect: '/admin/orders' }")
     expect(routerSource).toContain("{ path: 'subscription-rule-sets', redirect: '/admin/subscription-templates/rule-sets' }")
+  })
+
+  it('splits system settings into routable pages and keeps navigation subgroups collapsible', () => {
+    const layout = read('layouts', 'AdminLayout.vue')
+    expect(routerSource).toContain("{ path: 'settings', redirect: '/admin/settings/site' }")
+    expect(routerSource).toContain("{ path: 'settings/registration', component: () => import('../views/RegistrationSettings.vue')")
+    expect(routerSource).toContain("{ path: 'settings/email', component: () => import('../views/Settings.vue')")
+    expect(routerSource).toContain("{ path: 'settings/runtime', component: () => import('../views/Settings.vue')")
+    expect(layout).toContain(':aria-expanded="isSubgroupExpanded(item.label)"')
+    expect(layout).toContain("zboard.admin.expandedSubgroups")
+    expect(layout).toContain("to: '/admin/settings/registration'")
   })
 
   it('keeps rule sets inside the subscription-template information architecture', () => {

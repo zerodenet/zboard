@@ -70,6 +70,7 @@ describe('form feedback policy', () => {
       'views/Nodes.vue',
       'views/Plans.vue',
       'views/Protocols.vue',
+      'views/RegistrationSettings.vue',
       'views/Settings.vue',
       'views/Setup.vue',
       'views/SubscriptionRuleSets.vue',

@@ -11,9 +11,11 @@
         <section v-for="group in navigationGroups" :key="group.label" class="nav-group">
           <p>{{ group.label }}</p>
           <template v-for="item in group.items" :key="item.to || item.label">
-            <div v-if="item.children?.length" class="nav-subgroup" :class="{ active: item.children.some(child => isNavigationItemActive(child.to)) }">
-              <div class="nav-subgroup-label"><UiIcon :name="item.icon" /><span>{{ item.label }}</span></div>
-              <RouterLink v-for="child in item.children" :key="child.to" class="nav-child" :to="child.to" :class="{ 'router-link-active': isNavigationItemActive(child.to) }"><span>{{ child.label }}</span></RouterLink>
+            <div v-if="item.children?.length" class="nav-subgroup" :class="{ active: item.children.some(child => isNavigationItemActive(child.to)), collapsed: !isSubgroupExpanded(item.label) }">
+              <button class="nav-subgroup-label" type="button" :aria-expanded="isSubgroupExpanded(item.label)" :aria-controls="subgroupID(item.label)" @click="toggleSubgroup(item.label)"><UiIcon :name="item.icon" /><span>{{ item.label }}</span><UiIcon class="nav-subgroup-chevron" name="chevron" /></button>
+              <div v-show="isSubgroupExpanded(item.label)" :id="subgroupID(item.label)" class="nav-subgroup-items">
+                <RouterLink v-for="child in item.children" :key="child.to" class="nav-child" :to="child.to" :class="{ 'router-link-active': isNavigationItemActive(child.to) }"><span>{{ child.label }}</span></RouterLink>
+              </div>
             </div>
             <RouterLink v-else-if="item.to" :to="item.to" :class="{ 'router-link-active': isNavigationItemActive(item.to) }"><UiIcon :name="item.icon" /><span>{{ item.label }}</span></RouterLink>
           </template>
@@ -62,6 +64,7 @@ const app = useAppStore()
 const route = useRoute()
 const router = useRouter()
 const navigationOpen = ref(false)
+const expandedSubgroups = ref<Record<string, boolean>>(readExpandedSubgroups())
 const fetchedVersion = ref('')
 const fullVersion = computed(() => app.installation?.version || fetchedVersion.value || '')
 const displayVersion = computed(() => shortVersion(fullVersion.value))
@@ -102,14 +105,49 @@ const navigationGroups: NavigationGroup[] = [
     { to: '/admin/tasks', label: '运营任务', icon: 'tasks' },
     { to: '/admin/operation-logs', label: '运行日志', icon: 'terminal' },
     { to: '/admin/audit-logs', label: '审计日志', icon: 'audit' },
-    { to: '/admin/settings', label: '系统设置', icon: 'settings' },
+    { label: '系统设置', icon: 'settings', children: [
+      { to: '/admin/settings/site', label: '站点与品牌' },
+      { to: '/admin/settings/legal', label: '法务与政策' },
+      { to: '/admin/settings/registration', label: '注册与验证' },
+      { to: '/admin/settings/email', label: '邮件与运营模板' },
+      { to: '/admin/settings/runtime', label: '系统运行' }
+    ] },
     { to: '/admin/about', label: '关于 ZBoard', icon: 'info' }
   ] }
 ]
 
+function readExpandedSubgroups() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem('zboard.admin.expandedSubgroups') || '{}')
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch { return {} }
+}
+
+function isSubgroupExpanded(label: string) {
+  return expandedSubgroups.value[label] !== false
+}
+
+function toggleSubgroup(label: string) {
+  expandedSubgroups.value = { ...expandedSubgroups.value, [label]: !isSubgroupExpanded(label) }
+  window.localStorage.setItem('zboard.admin.expandedSubgroups', JSON.stringify(expandedSubgroups.value))
+}
+
+function expandActiveSubgroup() {
+  const active = navigationGroups
+    .flatMap(group => group.items)
+    .find(item => item.children?.some(child => isNavigationItemActive(child.to)))
+  if (!active || isSubgroupExpanded(active.label)) return
+  expandedSubgroups.value = { ...expandedSubgroups.value, [active.label]: true }
+  window.localStorage.setItem('zboard.admin.expandedSubgroups', JSON.stringify(expandedSubgroups.value))
+}
+
+function subgroupID(label: string) { return `admin-subgroup-${label.replace(/[^a-zA-Z0-9\u4e00-\u9fff]+/g, '-')}` }
+
 function isNavigationItemActive(path: string) {
   return route.path === path || route.path.startsWith(`${path}/`)
 }
+
+watch(() => route.path, expandActiveSubgroup, { immediate: true })
 
 onMounted(async () => {
   try { fetchedVersion.value = (await getVersion())?.version || '' } catch { fetchedVersion.value = '' }

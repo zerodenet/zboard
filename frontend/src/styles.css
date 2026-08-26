@@ -32,9 +32,13 @@ h1, h2, h3, h4 { color: var(--text-strong); letter-spacing: -.02em; }
 .nav-group a .ui-icon { color: var(--sidebar-icon); font-size: 17px; }
 .nav-group a.router-link-active .ui-icon { color: var(--primary-on-dark); }
 .nav-subgroup + .nav-subgroup { margin-top: 8px; }
-.nav-subgroup-label { min-height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 11px; color: var(--sidebar-muted); font-size: 11px; font-weight: 700; }
+.nav-subgroup-label { width: 100%; min-height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 11px; border: 0; color: var(--sidebar-muted); background: transparent; font: inherit; font-size: 11px; font-weight: 700; text-align: left; cursor: pointer; }
+.nav-subgroup-label:hover,.nav-subgroup-label:focus-visible { color: var(--sidebar-text); background: var(--sidebar-hover); outline: none; }
 .nav-subgroup-label .ui-icon { color: var(--sidebar-icon); font-size: 15px; }
 .nav-subgroup.active .nav-subgroup-label { color: var(--sidebar-text); }
+.nav-subgroup-label .nav-subgroup-chevron { margin-left: auto; font-size: 12px; transition: transform .15s ease; }
+.nav-subgroup.collapsed .nav-subgroup-chevron { transform: rotate(-90deg); }
+.nav-subgroup-items { display: grid; }
 .nav-group a.nav-child { min-height: 34px; margin-left: 28px; padding-left: 12px; border-left: 1px solid var(--sidebar-border); border-radius: 0 8px 8px 0; font-size: 12px; }
 .nav-group a.nav-child.router-link-active { border-left-color: var(--focus-border); box-shadow: none; }
 .nav-badge { margin-left: auto; padding: 1px 6px; border-radius: 999px; color: var(--sidebar-badge); background: var(--sidebar-badge-bg); font-size: 11px; }

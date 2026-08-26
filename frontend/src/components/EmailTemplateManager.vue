@@ -1,12 +1,12 @@
 <template>
   <div class="email-template-manager stack-lg">
-    <PageAlert tone="info" title="可用模板变量">
-      <span class="mono">{{ variableHelp }}</span>。发送运营任务时按每位收件人替换；注册通知在账户创建后进入可重试任务队列。
+    <PageAlert tone="info" title="模板负责内容，不会自行选择收件人">
+      <span class="mono">{{ variableHelp }}</span>。变量会在任务执行时按每位收件人替换；模板保存、任务创建和实际发送是三个独立步骤。
     </PageAlert>
 
     <PageAlert v-if="error" tone="danger" title="邮件模板操作失败">{{ error }}</PageAlert>
 
-    <section class="template-block" aria-labelledby="registration-email-title">
+    <section v-if="mode !== 'operational'" class="template-block" aria-labelledby="registration-email-title">
       <header>
         <div><h3 id="registration-email-title">注册通知模板</h3><p>系统固定触发器；启用后，新用户注册成功会自动创建一条邮件任务。</p></div>
       </header>
@@ -24,7 +24,19 @@
       <EmptyState v-else-if="!loading" icon="audit" title="注册通知模板不可用" description="系统尚未创建注册通知模板，请检查数据库迁移状态。" />
     </section>
 
-    <section class="template-block" aria-labelledby="operational-email-title">
+    <section v-if="mode !== 'registration'" class="template-workflow" aria-label="运营模板使用流程">
+      <div><span>1</span><strong>创建并启用模板</strong><small>这里只保存可复用主题和正文</small></div>
+      <UiIcon name="chevron" />
+      <div><span>2</span><strong>进入运营任务</strong><small>选择用户或订阅，不再手填 ID</small></div>
+      <UiIcon name="chevron" />
+      <div><span>3</span><strong>套用并检查快照</strong><small>本次内容仍可调整，不影响模板</small></div>
+      <UiIcon name="chevron" />
+      <div><span>4</span><strong>执行并看进度</strong><small>每位收件人的状态都会持久化</small></div>
+    </section>
+
+    <div v-if="mode !== 'registration'" class="template-cta"><span>模板准备好后，到运营任务选择收件人并创建发送任务。</span><RouterLink class="template-task-link" to="/admin/tasks?create=email">使用运营模板创建任务</RouterLink></div>
+
+    <section v-if="mode !== 'registration'" class="template-block" aria-labelledby="operational-email-title">
       <header>
         <div><h3 id="operational-email-title">运营模板</h3><p>维护公告、活动通知等可复用内容；在运营任务中选择后会复制为任务快照。</p></div>
         <UiButton type="button" @click="openCreate"><UiIcon name="plus" />新增运营模板</UiButton>
@@ -104,6 +116,7 @@ import UiNumberInput from './UiNumberInput.vue'
 import UiTextarea from './UiTextarea.vue'
 
 const variableHelp = '{{site_name}}、{{site_url}}、{{user_email}}、{{account_name}}、{{registered_at}}、{{current_date}}'
+const { mode = 'all' } = defineProps<{ mode?: 'all' | 'registration' | 'operational' }>()
 const emit = defineEmits<{ dirty: [value: boolean] }>()
 const emptyForm = () => ({ id: 0, name: '', slug: '', category: 'operational' as EmailTemplateCategory, subject_template: '', body_template: '', is_active: true, sort_order: 0, revision: 0 })
 const templates = ref<EmailTemplate[]>([])
@@ -202,5 +215,5 @@ onMounted(loadTemplates)
 </script>
 
 <style scoped>
-.email-template-manager{padding:16px}.template-block{display:grid;gap:12px}.template-block>header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}.template-block h3{margin:0;font-size:14px}.template-block header p{margin:4px 0 0;color:var(--muted);font-size:11px}.template-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.template-card{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}.template-card-registration{background:var(--surface)}.template-card-copy{min-width:0;display:grid;gap:6px}.template-title{display:flex;align-items:center;gap:8px}.template-card p,.template-card small{margin:0}.template-card p{font-size:12px}.template-card small{color:var(--muted);font-size:10px}.template-actions,.dialog-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}.template-switch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:9px}.template-switch span{display:grid;gap:2px}.template-switch small,.loading-copy{color:var(--muted);font-size:10px}.email-preview{display:grid;gap:8px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}.email-preview small{color:var(--muted)}.email-preview pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:12px;line-height:1.65}@media(max-width:760px){.template-grid{grid-template-columns:1fr}.template-block>header,.template-card{align-items:stretch;flex-direction:column}.template-actions{justify-content:flex-start}}
+.email-template-manager{padding:16px}.template-block{display:grid;gap:12px}.template-block>header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}.template-block h3{margin:0;font-size:14px}.template-block header p{margin:4px 0 0;color:var(--muted);font-size:11px}.template-workflow{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px}.template-workflow>div{min-height:86px;display:grid;align-content:start;gap:4px;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft)}.template-workflow>div span{width:22px;height:22px;display:grid;place-items:center;border-radius:999px;color:var(--primary);background:var(--primary-soft);font-size:9px;font-weight:800}.template-workflow strong{font-size:10px}.template-workflow small{color:var(--muted);font-size:9px;line-height:1.45}.template-workflow>.ui-icon{color:var(--muted)}.template-cta{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;border:1px solid var(--info-border);border-radius:9px;color:var(--info-strong);background:var(--info-soft);font-size:10px}.template-task-link{color:var(--primary);font-weight:750;text-decoration:none}.template-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.template-card{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}.template-card-registration{background:var(--surface)}.template-card-copy{min-width:0;display:grid;gap:6px}.template-title{display:flex;align-items:center;gap:8px}.template-card p,.template-card small{margin:0}.template-card p{font-size:12px}.template-card small{color:var(--muted);font-size:10px}.template-actions,.dialog-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}.template-switch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:9px}.template-switch span{display:grid;gap:2px}.template-switch small,.loading-copy{color:var(--muted);font-size:10px}.email-preview{display:grid;gap:8px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}.email-preview small{color:var(--muted)}.email-preview pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:12px;line-height:1.65}@media(max-width:900px){.template-workflow{grid-template-columns:1fr}.template-workflow>.ui-icon{justify-self:center;transform:rotate(90deg)}}@media(max-width:760px){.template-grid{grid-template-columns:1fr}.template-block>header,.template-card,.template-cta{align-items:stretch;flex-direction:column}.template-actions{justify-content:flex-start}}
 </style>

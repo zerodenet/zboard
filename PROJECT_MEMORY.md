@@ -339,6 +339,70 @@ Remaining gaps:
   independently verified against the latest day that contained traffic.
 - No Git staging, commit, push or release was performed.
 
+## 2026-08-26: timestamped development and RC release tags
+
+Goal outcome:
+
+- Changed development and RC release tags from inferred numeric suffixes to the
+  current UTC minute: `v0.0.1-dev.YYYYMMDDHHmm` on `develop` and
+  `v0.1.0-rc.YYYYMMDDHHmm` on `main`. Formal releases remain exact tags such as
+  `v0.1.0`.
+- Removed automatic collision suffixing for every branch. An existing dev, RC
+  or stable tag is now a hard error; the operator must wait for the next UTC
+  minute or provide another explicit main-branch version.
+- Retained an explicitly validated `ZBOARD_RELEASE_TIMESTAMP` override for
+  deterministic dry runs and controlled release replays. It accepts exactly 12
+  digits in `YYYYMMDDHHmm` shape.
+- Preserved release-workflow compatibility: timestamped dev and RC tags remain
+  SemVer prereleases, GitHub Release marks them as prerelease builds, and the
+  existing cleanup families still match and remove their release/package
+  history.
+
+Local verification:
+
+- Git Bash syntax checks passed for `scripts/release-tag.sh` and its new test.
+- `scripts/tests/release-tag-test.sh` passed deterministic develop dry-run,
+  actual isolated-repository commit/tag/version-file updates, duplicate-tag
+  rejection, timestamp-shape rejection, timestamped main RC tags, legacy
+  numbered-RC rejection, RC collision rejection and exact stable tags.
+- `scripts/tests/cleanup-release-history-test.sh` passed unchanged, proving the
+  RC/stable cleanup behavior remains compatible.
+- A repository dry run produced
+  `v0.0.1-dev.202608260410` without changing files, tags or remotes.
+- `git diff --check` passed.
+
+Deployment verification:
+
+- The first synchronization attempt as
+  `v0.0.1-20260826T041042Z-release-tag` failed during the image build before
+  database backup or source switching. Alpine package installation reported an
+  unexpected TLS EOF followed by a `ca-certificates` permission error.
+- A final synchronization attempt as
+  `v0.0.1-20260826T041809Z-release-tags` uploaded and extracted the verified
+  source, then was stopped before backup or source switching because Docker Hub
+  delivered the 259.43 MB Rust layer at approximately 1 MB/minute. The retained
+  source archive is
+  `/data/zboard-next/releases/20260826T041811Z/source.tar.gz` and its candidate
+  is `/data/zboard-next/candidates/20260826T041811Z`.
+- Candidate-source evidence contains the documented
+  `v0.1.0-rc.YYYYMMDDHHmm` rule, the no-inferred-suffix collision policy and the
+  release-tag test suite. This is source-transfer evidence only, not a completed
+  deployment.
+- The failed attempts created no database backup and no new previous-source
+  path. The currently deployed version remains
+  `v0.0.1-20260826T034958Z-settings-ia-working-tree@2026-08-26T03:50:28Z`;
+  `/readyz` returned `ready=true, db=true`, and the app, MySQL and Redis
+  containers reported `running/healthy`, `running` and `running` respectively.
+
+Remaining gaps:
+
+- Intranet synchronization remains incomplete because the target's image-source
+  connectivity could not complete the build. Retry the final verified working
+  tree when Docker Hub transfer is usable, then record the new database backup,
+  previous-source path and deployed-script evidence.
+- No real release commit, Git tag, push, GitHub Release or package publication
+  was performed.
+
 ### 2026-08-11 - Zero event spool deployment recovery and nullable system audit
 
 Goal outcome:
@@ -8605,3 +8669,81 @@ Remaining gaps:
 
 - Intranet synchronization was not performed because no deployment was
   requested or authorized for this PR update.
+
+## 2026-08-26: system settings information architecture and operational UX
+
+Goal outcome:
+
+- Replaced the single multi-tab System Settings surface with stable routes for
+  site and brand, legal policy, registration and verification, email and
+  operational templates, and runtime settings. The legacy settings URL now
+  redirects to the site page.
+- Made every nested administration navigation group, including Infrastructure
+  and System Settings, independently collapsible. The preference is retained
+  locally, the current route opens its owning group on navigation, and an
+  already-active group can still be manually collapsed.
+- Added a dedicated Registration and Verification page. Public registration
+  and registration email verification now have separate saved controls, SMTP
+  readiness follows the server's optional-auth rules, the registration welcome
+  template is managed beside the trigger, and the page reserves an explicit
+  future boundary for graphical CAPTCHA providers.
+- Added an operational-template workflow that explains the boundary between a
+  reusable template, a task snapshot, target selection and persisted delivery
+  progress, with a direct link into email task creation.
+- Replaced comma-separated user and subscription IDs in the task creation
+  dialog with bounded remote search and multi-select by user email, plan and
+  SKU. Existing task payloads still contain the selected resource IDs; no new
+  ownership or persistence boundary was introduced.
+- Replaced the Fair Use evaluation toggle-only interaction with a subscription-
+  scoped parameter editor for telemetry windows, trigger thresholds, score
+  increments, evaluation interval, recovery and risk thresholds. Saving keeps
+  enforcement in observe-only mode and immediately requests one evaluation.
+
+Local verification:
+
+- `pnpm build` passed with 616 transformed modules and no compiler warning.
+- Nine focused Vitest tests passed for settings routes, lazy route loading,
+  registration/email workflows, human-readable task targets and Fair Use
+  parameter editing; two focused architecture route tests also passed.
+- `git diff --check` passed.
+- The full frontend suite completed with 239 passing tests and 11 existing
+  source-contract failures across catalog/workbench, form inventory, design
+  token, row-action and traffic tooltip policies. None of the focused tests for
+  this goal failed.
+- `go test ./internal/handler` passed. `go test ./...` passed all packages except
+  `internal/zeroevent`, whose Windows file-spool tests could not sync temporary
+  directories because the host returned `Access is denied`; this goal does not
+  modify backend or zero-event code.
+- The local browser loaded without console errors, but the local instance is
+  uninitialized and redirects protected administration routes to `/setup`.
+  Interactive authenticated UI verification was therefore deferred without
+  creating test business data.
+
+Deployment verification:
+
+- Synchronized the verified working tree with
+  `scripts/deploy-intranet.local.ps1 -SkipLocalChecks` as
+  `v0.0.1-20260826T034958Z-settings-ia-working-tree@2026-08-26T03:50:28Z`.
+- The pre-deployment database backup is
+  `/data/zboard-next/backups/20260826T035028Z/zboard-before-sync.sql`; the
+  previous source is `/data/zboard-next/app-prev-20260826T035028Z`; and the
+  archived release source is
+  `/data/zboard-next/releases/20260826T035028Z/source.tar.gz`.
+- Workstation `/readyz` verification returned `ready=true, db=true`.
+  `zboard_next-zboard-1` reported `running/healthy`; MySQL container `db` and
+  Redis container `cache` both reported `running`.
+- A direct HTTP request to `/admin/settings/registration` returned 200. The
+  deployed main asset `index-DT423Dfp.js` contains the split settings routes;
+  `RegistrationSettings-BHp2F34p.js` contains the registration page;
+  `AdminLayout-BvK8Atcg.js` contains the persisted collapsible navigation;
+  `Tasks-Bqt-Nza2.js` contains human-readable target lookup; and
+  `FairUse-YbG_nEix.js` contains the parameter-first evaluation action.
+
+Remaining gaps:
+
+- The 11 unrelated frontend source-contract failures and the Windows-only
+  zero-event temporary-directory sync failures remain outside this goal.
+- Authenticated click-through verification was not possible without creating or
+  using an administrator session; deployment verification therefore stops at
+  healthy runtime, route delivery and compiled goal-specific asset evidence.
+- No Git staging, commit, push or release was performed.

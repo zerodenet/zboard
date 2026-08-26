@@ -161,22 +161,32 @@
             <div><span>评分数据</span><strong>{{ coverageLabel(state.telemetry_completeness) }}</strong></div>
           </div>
           <div class="evaluation-policy-action">
-            <PageAlert :tone="policy.effective.enabled ? 'info' : 'warning'" :title="policy.effective.enabled ? '当前订阅正在进行只读实验评估' : '实验评估可在这里启用'">
-              策略按“订阅例外 → 套餐 → 平台默认”继承。这里的操作会为当前订阅保存一份仅观测策略，不通知、不限速，也不暂停服务。
+            <PageAlert :tone="policy.effective.enabled ? 'info' : 'warning'" :title="policy.effective.enabled ? '当前订阅正在进行只读实验评估' : '实验评估需要先定义参数'">
+              策略按“订阅例外 → 套餐 → 平台默认”继承。为当前订阅配置连接频率、工作节点和评分参数后，才会保存一份仅观测策略。
             </PageAlert>
-            <UiButton
-              :variant="policy.effective.enabled ? 'secondary' : 'primary'"
-              size="sm"
-              type="button"
-              :loading="policySaving"
-              :disabled="loading"
-              @click="setEvaluationEnabled(!policy.effective.enabled)"
-            >
-              {{ policy.effective.enabled ? '停用当前订阅评估' : '启用当前订阅评估' }}
-            </UiButton>
+            <div class="evaluation-parameter-summary">
+              <div><span>连接启动</span><strong>{{ policy.effective.connection_start_window_seconds }} 秒内 &gt; {{ policy.effective.connection_start_threshold }}</strong></div>
+              <div><span>工作节点</span><strong>{{ policy.effective.working_node_window_seconds }} 秒内 &gt; {{ policy.effective.working_node_threshold }}</strong></div>
+              <div><span>评估周期</span><strong>每 {{ policy.effective.evaluation_interval_seconds }} 秒</strong></div>
+            </div>
+            <div class="evaluation-policy-buttons">
+              <UiButton type="button" size="sm" :variant="policy.effective.enabled ? 'secondary' : 'primary'" :disabled="loading" @click="openPolicyEditor">{{ policy.effective.enabled ? '调整评估参数' : '配置并启用评估' }}</UiButton>
+              <UiButton v-if="policy.effective.enabled" variant="danger" size="sm" type="button" :loading="policySaving" :disabled="loading" @click="setEvaluationEnabled(false)">停用当前订阅评估</UiButton>
+            </div>
           </div>
         </UiSection>
       </div>
+
+      <ModalDialog :open="policyEditorOpen" title="配置当前订阅的实验评估" description="保存后创建订阅级策略覆盖；仅生成实验评分和解释事件，不执行通知、限速或暂停。" size="lg" :busy="policySaving" :dirty="policyDraftDirty" @close="policyEditorOpen = false">
+        <div ref="policyFormElement" class="stack policy-editor">
+          <PageAlert tone="info" title="先定义要评估的行为">连接启动用于观察短时间重连或并发建立行为；工作节点用于观察同一订阅在多个节点同时活动。阈值应结合上方真实分布，而不是直接照搬默认值。</PageAlert>
+          <section class="policy-editor-group"><header><strong>连接启动信号</strong><small>窗口内连接启动次数超过阈值时增加评分。</small></header><div class="form-grid"><FormField v-slot="{ controlAttrs }" label="统计窗口" name="fair-use-connection-window" hint="10–3600 秒" :error="policyErrors.fields.connection_start_window_seconds"><UiNumberInput v-model="policyDraft.connection_start_window_seconds" v-bind="controlAttrs" :min="10" :max="3600" suffix=" 秒" /></FormField><FormField v-slot="{ controlAttrs }" label="触发阈值" name="fair-use-connection-threshold" hint="窗口内连接启动次数" :error="policyErrors.fields.connection_start_threshold"><UiNumberInput v-model="policyDraft.connection_start_threshold" v-bind="controlAttrs" :min="1" :max="1000000" /></FormField><FormField v-slot="{ controlAttrs }" label="评分增量" name="fair-use-connection-penalty" :error="policyErrors.fields.connection_start_penalty"><UiNumberInput v-model="policyDraft.connection_start_penalty" v-bind="controlAttrs" :min="1" :max="policyDraft.score_max" suffix=" 分" /></FormField></div></section>
+          <section class="policy-editor-group"><header><strong>跨节点信号</strong><small>窗口内工作节点数超过阈值时增加评分。</small></header><div class="form-grid"><FormField v-slot="{ controlAttrs }" label="统计窗口" name="fair-use-node-window" hint="30–3600 秒" :error="policyErrors.fields.working_node_window_seconds"><UiNumberInput v-model="policyDraft.working_node_window_seconds" v-bind="controlAttrs" :min="30" :max="3600" suffix=" 秒" /></FormField><FormField v-slot="{ controlAttrs }" label="节点阈值" name="fair-use-node-threshold" :error="policyErrors.fields.working_node_threshold"><UiNumberInput v-model="policyDraft.working_node_threshold" v-bind="controlAttrs" :min="1" :max="10000" suffix=" 个" /></FormField><FormField v-slot="{ controlAttrs }" label="评分增量" name="fair-use-node-penalty" :error="policyErrors.fields.working_node_penalty"><UiNumberInput v-model="policyDraft.working_node_penalty" v-bind="controlAttrs" :min="1" :max="policyDraft.score_max" suffix=" 分" /></FormField></div></section>
+          <section class="policy-editor-group"><header><strong>评分节奏</strong><small>决定多久评估一次、无异常时如何恢复，以及两个观察状态的分界。</small></header><div class="form-grid"><FormField v-slot="{ controlAttrs }" label="评估周期" name="fair-use-interval" hint="30–3600 秒" :error="policyErrors.fields.evaluation_interval_seconds"><UiNumberInput v-model="policyDraft.evaluation_interval_seconds" v-bind="controlAttrs" :min="30" :max="3600" suffix=" 秒" /></FormField><FormField v-slot="{ controlAttrs }" label="评分上限" name="fair-use-score-max" :error="policyErrors.fields.score_max"><UiNumberInput v-model="policyDraft.score_max" v-bind="controlAttrs" :min="10" :max="10000" suffix=" 分" /></FormField><FormField v-slot="{ controlAttrs }" label="每周期恢复" name="fair-use-recovery" :error="policyErrors.fields.recovery_per_interval"><UiNumberInput v-model="policyDraft.recovery_per_interval" v-bind="controlAttrs" :min="1" :max="policyDraft.score_max" suffix=" 分" /></FormField><FormField v-slot="{ controlAttrs }" label="关注阈值" name="fair-use-warning-score" :error="policyErrors.fields.warning_score"><UiNumberInput v-model="policyDraft.warning_score" v-bind="controlAttrs" :min="1" :max="policyDraft.score_max" suffix=" 分" /></FormField><FormField v-slot="{ controlAttrs }" label="高风险阈值" name="fair-use-violation-score" :error="policyErrors.fields.violation_score"><UiNumberInput v-model="policyDraft.violation_score" v-bind="controlAttrs" :min="1" :max="policyDraft.score_max" suffix=" 分" /></FormField></div></section>
+          <PageAlert v-if="policyErrors.formError.value" tone="danger" title="评估参数未保存">{{ policyErrors.formError.value }}</PageAlert>
+        </div>
+        <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="policySaving" @click="requestClose">取消</UiButton><UiButton type="button" :loading="policySaving" @click="savePolicyParameters">{{ policy?.effective.enabled ? '保存参数' : '保存并启用评估' }}</UiButton></template>
+      </ModalDialog>
 
       <UiSection
         title="连接行为分布"
@@ -232,7 +242,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchAdminSubscriptionDetail, fetchSubscriptionsPage, type AdminSubscriptionListItem } from '../api/client'
 import {
@@ -247,12 +257,15 @@ import {
   type FairUseMetrics,
   type FairUseObservationRange,
   type FairUseObservationSeries,
+  type FairUsePolicy,
   type FairUsePolicyResolution,
   type FairUseState,
 } from '../api/fairUse'
 import DataTable from '../components/DataTable.vue'
 import EmptyState from '../components/EmptyState.vue'
+import FormField from '../components/FormField.vue'
 import MetricCard from '../components/MetricCard.vue'
+import ModalDialog from '../components/ModalDialog.vue'
 import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PageRefreshButton from '../components/PageRefreshButton.vue'
@@ -261,11 +274,14 @@ import TimeBadge from '../components/TimeBadge.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiButton from '../components/UiButton.vue'
 import UiMetricStrip from '../components/UiMetricStrip.vue'
+import UiNumberInput from '../components/UiNumberInput.vue'
 import UiSection from '../components/UiSection.vue'
 import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
+import { useFormErrors } from '../composables/useFormState'
 import { formatNumber } from '../utils/format'
+import { collectFieldErrors, isIntegerInRange } from '../utils/validation'
 
 const route = useRoute()
 const router = useRouter()
@@ -291,6 +307,12 @@ const policy = ref<FairUsePolicyResolution | null>(null)
 const events = ref<FairUseEvent[]>([])
 const loading = ref(false)
 const policySaving = ref(false)
+const policyEditorOpen = ref(false)
+const policyFormElement = ref<HTMLElement | null>(null)
+const policyErrors = useFormErrors()
+const policyDraft = reactive({ evaluation_interval_seconds: 60, connection_start_threshold: 120, connection_start_window_seconds: 60, connection_start_penalty: 10, working_node_threshold: 3, working_node_window_seconds: 300, working_node_penalty: 15, score_max: 100, recovery_per_interval: 8, warning_score: 30, violation_score: 60 })
+const policyDraftBaseline = ref('')
+const policyDraftDirty = computed(() => policyDraftBaseline.value !== JSON.stringify(policyDraft))
 const error = ref('')
 const message = ref('')
 let controller: AbortController | null = null
@@ -459,6 +481,58 @@ async function setEvaluationEnabled(enabled: boolean) {
   }
 }
 
+function openPolicyEditor() {
+  if (!policy.value) return
+  const effective = policy.value.effective
+  Object.assign(policyDraft, {
+    evaluation_interval_seconds: effective.evaluation_interval_seconds,
+    connection_start_threshold: effective.connection_start_threshold,
+    connection_start_window_seconds: effective.connection_start_window_seconds,
+    connection_start_penalty: effective.connection_start_penalty,
+    working_node_threshold: effective.working_node_threshold,
+    working_node_window_seconds: effective.working_node_window_seconds,
+    working_node_penalty: effective.working_node_penalty,
+    score_max: effective.score_max,
+    recovery_per_interval: effective.recovery_per_interval,
+    warning_score: effective.warning_score,
+    violation_score: effective.violation_score,
+  })
+  policyErrors.clear()
+  policyDraftBaseline.value = JSON.stringify(policyDraft)
+  policyEditorOpen.value = true
+}
+
+async function savePolicyParameters() {
+  if (!subscriptionID.value || !policy.value) return
+  const scoreMax = Number(policyDraft.score_max)
+  const valid = await policyErrors.applyValidation(collectFieldErrors({
+    evaluation_interval_seconds: !isIntegerInRange(policyDraft.evaluation_interval_seconds, 30, 3600) && '评估周期必须为 30–3600 秒。',
+    connection_start_window_seconds: !isIntegerInRange(policyDraft.connection_start_window_seconds, 10, 3600) && '连接统计窗口必须为 10–3600 秒。',
+    connection_start_threshold: !isIntegerInRange(policyDraft.connection_start_threshold, 1, 1000000) && '连接阈值必须为 1–1000000。',
+    connection_start_penalty: !isIntegerInRange(policyDraft.connection_start_penalty, 1, scoreMax) && '连接评分必须大于 0 且不超过评分上限。',
+    working_node_window_seconds: !isIntegerInRange(policyDraft.working_node_window_seconds, 30, 3600) && '节点统计窗口必须为 30–3600 秒。',
+    working_node_threshold: !isIntegerInRange(policyDraft.working_node_threshold, 1, 10000) && '节点阈值必须为 1–10000。',
+    working_node_penalty: !isIntegerInRange(policyDraft.working_node_penalty, 1, scoreMax) && '节点评分必须大于 0 且不超过评分上限。',
+    score_max: !isIntegerInRange(policyDraft.score_max, 10, 10000) && '评分上限必须为 10–10000。',
+    recovery_per_interval: !isIntegerInRange(policyDraft.recovery_per_interval, 1, scoreMax) && '恢复分数必须大于 0 且不超过评分上限。',
+    warning_score: (!isIntegerInRange(policyDraft.warning_score, 1, scoreMax) || policyDraft.warning_score >= policyDraft.violation_score) && '关注阈值必须大于 0 且低于高风险阈值。',
+    violation_score: !isIntegerInRange(policyDraft.violation_score, 1, scoreMax) && '高风险阈值必须大于 0 且不超过评分上限。',
+  }), policyFormElement, '请更正标记字段后再保存实验评估参数。')
+  if (!valid) return
+  policySaving.value = true; error.value = ''; message.value = ''
+  try {
+    const nextPolicy = { ...policy.value.effective, ...policyDraft } as FairUsePolicy
+    policy.value = await updateSubscriptionFairUsePolicy(subscriptionID.value, nextPolicy, true)
+    await evaluateSubscriptionFairUse(subscriptionID.value)
+    policyDraftBaseline.value = JSON.stringify(policyDraft)
+    policyEditorOpen.value = false
+    message.value = `订阅 #${subscriptionID.value} 的实验评估参数已保存并启用。`
+    await load()
+  } catch (cause: any) {
+    error.value = cause?.message || cause?.response?.data?.message || '实验评估参数保存失败。'
+  } finally { policySaving.value = false }
+}
+
 function coverageLabel(value: string) {
   return value === 'complete' ? 'Coverage 完整' : value === 'incomplete' ? 'Coverage 不完整' : 'Coverage 未知'
 }
@@ -541,9 +615,11 @@ onMounted(async () => {
 .reason-cell { max-width: 420px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .evaluation-events { margin-top: 16px; }
 .evaluation-policy-action { display: grid; justify-items: start; gap: 10px; margin-top: 12px; }
+.evaluation-parameter-summary{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:9px;background:var(--line)}.evaluation-parameter-summary>div{display:grid;gap:3px;padding:10px;background:var(--surface)}.evaluation-parameter-summary span{color:var(--muted);font-size:9px}.evaluation-parameter-summary strong{font-size:10px}.evaluation-policy-buttons{display:flex;flex-wrap:wrap;gap:8px}.policy-editor-group{display:grid;gap:12px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}.policy-editor-group header{display:grid;gap:3px}.policy-editor-group header strong{font-size:12px}.policy-editor-group header small{color:var(--muted);font-size:9px}
 @media (max-width: 760px) {
   .selected-observation { grid-template-columns: 1fr; align-items: start; }
   .selected-observation .button { justify-self: start; }
   .fact-grid { grid-template-columns: 1fr; }
+  .evaluation-parameter-summary { grid-template-columns: 1fr; }
 }
 </style>

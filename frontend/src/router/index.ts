@@ -55,7 +55,12 @@ export const routes: RouteRecordRaw[] = [
       { path: 'tasks', component: () => import('../views/Tasks.vue'), meta: { title: '运营任务', section: '系统运营' } },
       { path: 'operation-logs', component: () => import('../views/OperationLogs.vue'), meta: { title: '运行日志', section: '系统运营' } },
       { path: 'audit-logs', component: () => import('../views/AuditLogs.vue'), meta: { title: '审计日志', section: '系统运营' } },
-      { path: 'settings', component: () => import('../views/Settings.vue'), meta: { title: '系统设置', section: '系统运营' } },
+      { path: 'settings', redirect: '/admin/settings/site' },
+      { path: 'settings/site', component: () => import('../views/Settings.vue'), meta: { title: '站点与品牌', section: '系统设置', settingsSection: 'site' } },
+      { path: 'settings/legal', component: () => import('../views/Settings.vue'), meta: { title: '法务与政策', section: '系统设置', settingsSection: 'legal' } },
+      { path: 'settings/registration', component: () => import('../views/RegistrationSettings.vue'), meta: { title: '注册与验证', section: '系统设置' } },
+      { path: 'settings/email', component: () => import('../views/Settings.vue'), meta: { title: '邮件与运营模板', section: '系统设置', settingsSection: 'email' } },
+      { path: 'settings/runtime', component: () => import('../views/Settings.vue'), meta: { title: '系统运行', section: '系统设置', settingsSection: 'runtime' } },
       { path: 'about', component: () => import('../views/About.vue'), meta: { title: '关于 ZBoard', section: '系统运营' } },
       { path: 'billing', redirect: '/admin/orders' }
     ]
@@ -80,7 +85,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/subscription-templates', redirect: '/admin/subscription-templates' },
   { path: '/subscription-rule-sets', redirect: '/admin/subscription-templates/rule-sets' },
   { path: '/audit-logs', redirect: '/admin/audit-logs' },
-  { path: '/settings', redirect: '/admin/settings' },
+  { path: '/settings', redirect: '/admin/settings/site' },
   { path: '/about', redirect: '/admin/about' },
   { path: '/:pathMatch(.*)*', redirect: '/' }
 ]

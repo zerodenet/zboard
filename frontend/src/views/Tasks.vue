@@ -38,7 +38,7 @@
         <div class="form-grid">
           <FormField v-slot="{ controlAttrs }" label="任务类型" name="task-type" :error="createErrors.fields.type"><UiSelect v-model="form.type" v-bind="controlAttrs" :options="createTaskTypeOptions" @change="resetScope" /></FormField>
           <FormField v-slot="{ controlAttrs }" label="作用范围" name="task-scope" :error="createErrors.fields.scope_mode"><UiSelect v-model="scopeMode" v-bind="controlAttrs" :options="scopeOptions" /></FormField>
-          <FormField v-if="scopeMode !== 'all'" v-slot="{ controlAttrs }" :label="scopeMode === 'users' ? '用户 ID' : '订阅 ID'" name="task-scope-ids" :error="createErrors.fields.scope_ids" hint="使用英文逗号分隔；仅接受正整数，重复 ID 会自动去除。" required full><UiInput v-model.trim="scopeIDs" v-bind="controlAttrs" placeholder="例如：1, 2, 3" /></FormField>
+          <FormField v-if="scopeMode !== 'all'" v-slot="{ controlAttrs }" :label="scopeMode === 'users' ? '选择用户' : '选择订阅'" name="task-scope-targets" :error="createErrors.fields.scope_ids" hint="按业务名称搜索并多选，内部 ID 仅用于提交。" required full><TaskTargetLookup v-model="selectedScopeIDs" v-bind="controlAttrs" :mode="scopeMode === 'users' ? 'users' : 'subscriptions'" /></FormField>
         </div>
         <div v-if="form.type === 'quota'" class="form-section"><div><strong>配额调整内容</strong><p>正数增加配额，负数扣减配额。</p></div><div class="form-grid"><FormField v-slot="{ controlAttrs }" label="调整量" name="task-quota-delta" :error="createErrors.fields['quota.delta_mb']" hint="统一以 MB 输入；允许负数。" required><UiNumberInput v-model="quota.delta_mb" v-bind="controlAttrs" suffix=" MB" /></FormField><FormField v-slot="{ controlAttrs }" label="调整原因" name="task-quota-reason" :error="createErrors.fields['quota.reason']" required><UiInput v-model.trim="quota.reason" v-bind="controlAttrs" minlength="3" maxlength="255" placeholder="运营补偿" /></FormField></div></div>
         <div v-else class="form-section"><div><strong>邮件内容</strong><p>选择运营模板后会复制为本次任务草稿；后续修改模板不会改写任务历史。</p></div><div class="stack"><FormField v-slot="{ controlAttrs }" label="运营模板" name="task-email-template" hint="仅显示已启用模板；也可以保留“自定义内容”从空白开始。"><UiSelect v-model="selectedEmailTemplateID" v-bind="controlAttrs" :options="emailTemplateOptions" @change="applyEmailTemplate" /></FormField><PageAlert tone="info" title="收件人变量">主题和正文支持 <span class="mono">{{emailTemplateVariables}}</span>，发送时按每位用户替换。</PageAlert><FormField v-slot="{ controlAttrs }" label="主题" name="task-email-subject" :error="createErrors.fields['email.subject']" required><UiInput v-model.trim="email.subject" v-bind="controlAttrs" maxlength="200" /></FormField><FormField v-slot="{ controlAttrs }" label="正文" name="task-email-body" :error="createErrors.fields['email.body']" required><UiTextarea v-model="email.body" v-bind="controlAttrs" maxlength="100000" rows="7" /></FormField></div></div>
@@ -65,6 +65,7 @@ import PageHeader from '../components/PageHeader.vue'
 import RowActions from '../components/RowActions.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TablePager from '../components/TablePager.vue'
+import TaskTargetLookup from '../components/TaskTargetLookup.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiIcon from '../components/UiIcon.vue'
 import UiNumberInput from '../components/UiNumberInput.vue'
@@ -97,15 +98,15 @@ const itemOffset = ref(0), itemLimit = ref(50)
 const itemStatusFilter = ref('')
 const createOpen = ref(false)
 const createFormElement = ref<HTMLElement | null>(null)
-const scopeMode = ref('all')
-const scopeIDs = ref('')
+const scopeMode = ref<'all' | 'users' | 'subscriptions'>('all')
+const selectedScopeIDs = ref<number[]>([])
 const form = reactive({ type: 'quota' as 'quota' | 'email', max_attempts: 3, auto_run: false })
 const quota = reactive({ delta_mb: 1024, reason: '' })
 const email = reactive({ subject: '', body: '' })
 const emailTemplates = ref<EmailTemplate[]>([])
 const selectedEmailTemplateID = ref(0)
 const emailTemplateVariables = '{{site_name}}、{{site_url}}、{{user_email}}、{{account_name}}、{{registered_at}}、{{current_date}}'
-const createState = useDirtyForm(() => ({ form, quota, email, scope_mode: scopeMode.value, scope_ids: scopeIDs.value }))
+const createState = useDirtyForm(() => ({ form, quota, email, scope_mode: scopeMode.value, scope_ids: [...selectedScopeIDs.value] }))
 useUnsavedChangesGuard(
   () => createOpen.value && createState.dirty.value,
   () => createState.confirmDiscard({
@@ -134,7 +135,7 @@ const emailTemplateOptions = computed(() => [
   { label: '自定义内容', value: 0 },
   ...emailTemplates.value.filter(item => item.is_active).map(item => ({ label: item.name, value: item.id })),
 ])
-const scopeOptions = computed(() => [{ label: '全部有效目标', value: 'all' }, ...(form.type === 'quota' ? [{ label: '指定订阅 ID', value: 'subscriptions' }] : []), { label: '指定用户 ID', value: 'users' }])
+const scopeOptions = computed(() => [{ label: '全部有效目标', value: 'all' }, ...(form.type === 'quota' ? [{ label: '选择指定订阅', value: 'subscriptions' }] : []), { label: '选择指定用户', value: 'users' }])
 const { items: tasks, total, loading, refreshing, error, load } = useRemoteTable<AdminTask>({
   offset,
   limit,
@@ -151,12 +152,11 @@ const { items: taskItems, total: itemTotal, loading: itemLoading, error: itemErr
   errorMessage: (cause: any) => cause?.response?.data?.message || '目标结果加载失败。',
 })
 function parseIDs() {
-  const tokens = scopeIDs.value.split(',').map(value => value.trim()).filter(Boolean)
-  const values = tokens.map(value => Number(value))
-  const valid = tokens.length > 0 && tokens.every((value, index) => /^\d+$/.test(value) && Number.isSafeInteger(values[index]) && values[index] > 0)
+  const values = selectedScopeIDs.value.map(Number)
+  const valid = values.length > 0 && values.every(value => Number.isSafeInteger(value) && value > 0)
   return { valid, ids: valid ? Array.from(new Set(values)) : [] }
 }
-function resetScope() { scopeMode.value = 'all'; scopeIDs.value = ''; createErrors.clear() }
+function resetScope() { scopeMode.value = 'all'; selectedScopeIDs.value = []; createErrors.clear() }
 function createTaskFieldMap(): Record<string, string> {
   return {
     type: 'type',
@@ -170,7 +170,7 @@ function createTaskFieldMap(): Record<string, string> {
   }
 }
 for (const [source, field] of [
-  [() => form.type, 'type'], [() => scopeMode.value, 'scope_mode'], [() => scopeIDs.value, 'scope_ids'],
+  [() => form.type, 'type'], [() => scopeMode.value, 'scope_mode'], [() => selectedScopeIDs.value.join(','), 'scope_ids'],
   [() => form.max_attempts, 'max_attempts'], [() => quota.delta_mb, 'quota.delta_mb'],
   [() => quota.reason, 'quota.reason'], [() => email.subject, 'email.subject'], [() => email.body, 'email.body'],
 ] as Array<[() => unknown, string]>) watch(source, () => createErrors.clear(field))
@@ -199,7 +199,7 @@ async function openCreate() {
   Object.assign(quota, { delta_mb: 1024, reason: '' })
   Object.assign(email, { subject: '', body: '' })
   selectedEmailTemplateID.value = 0
-  scopeMode.value = 'all'; scopeIDs.value = ''; createErrors.clear()
+  scopeMode.value = 'all'; selectedScopeIDs.value = []; createErrors.clear()
   createState.markClean(); createOpen.value = true
   try { emailTemplates.value = await fetchEmailTemplates('operational') }
   catch (cause: any) { error.value = cause?.response?.data?.message || '运营邮件模板加载失败；仍可创建自定义邮件。' }
@@ -217,7 +217,7 @@ async function createTask() {
   const valid = await createErrors.applyValidation(collectFieldErrors({
     type: !isOneOf(form.type, writableTaskTypes) && '请选择配额调整或邮件通知任务。',
     scope_mode: !isOneOf(scopeMode.value, scopeModes) && '请选择有效的作用范围。',
-    scope_ids: scopeMode.value !== 'all' && !parsed.valid && '请输入以英文逗号分隔的正整数 ID。',
+    scope_ids: scopeMode.value !== 'all' && !parsed.valid && '请至少选择一个有效目标。',
     max_attempts: !isIntegerInRange(form.max_attempts, 1, 10) && '最大尝试次数必须在 1 到 10 之间。',
     'quota.delta_mb': form.type === 'quota' && !quotaDeltaValid && '调整量必须为非零整数，且在 -1000000000 到 1000000000 MB 之间。',
     'quota.reason': form.type === 'quota' && !isUtf8LengthInRange(quota.reason, 3, 255, true) && '调整原因需包含 3 到 255 个 UTF-8 字节。',
@@ -263,7 +263,7 @@ watch(() => route.fullPath, async () => {
   if (!taskID && selectedTask.value) { stopDetailPolling(); invalidateTaskItems(); selectedTask.value = null; taskItems.value = []; itemTotal.value = 0 }
   else if (taskID && selectedTask.value?.id !== taskID) await openTaskByID(taskID)
 })
-onMounted(async () => { await refreshAll(); const taskID = Number(route.query.task) || 0; if (taskID) await openTaskByID(taskID); overviewPollTimer = window.setInterval(() => { if ((summary.value?.pending || 0) + (summary.value?.running || 0) > 0) void refreshAll() }, 5000) })
+onMounted(async () => { await refreshAll(); const taskID = Number(route.query.task) || 0; if (taskID) await openTaskByID(taskID); if (route.query.create === 'email') { await openCreate(); form.type = 'email'; createState.markClean() } overviewPollTimer = window.setInterval(() => { if ((summary.value?.pending || 0) + (summary.value?.running || 0) > 0) void refreshAll() }, 5000) })
 onBeforeUnmount(() => { stopDetailPolling(); if (overviewPollTimer !== undefined) window.clearInterval(overviewPollTimer) })
 </script>
 

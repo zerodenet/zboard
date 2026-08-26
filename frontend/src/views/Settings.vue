@@ -1,23 +1,20 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="系统设置" description="按配置域管理站点身份、公开政策、通知和运行参数。部署密钥仍由服务器环境负责。" eyebrow="Configuration">
+    <PageHeader :title="pageTitle" :description="pageDescription" eyebrow="Configuration">
       <template #actions><PageRefreshButton label="刷新系统设置" :loading="loading" @click="reloadSettings" /></template>
     </PageHeader>
 
     <TransientFeedback :success="message" :error="error" success-title="系统设置已保存" error-title="设置操作失败" />
 
     <UiSection class="settings-shell">
-      <UiTabs :model-value="activeTab" :items="tabItems" label="系统设置分类" @update:model-value="changeTab" />
-
-      <div v-if="activeTab === 'site'" class="settings-panel stack-lg">
-        <UiSection title="站点身份" description="公开名称、访问地址和注册策略。">
+      <div v-if="activeSection === 'site'" class="settings-panel stack-lg">
+        <UiSection title="站点身份" description="管理公开名称和访问地址；注册开关与验证方式已迁移到独立的“注册与验证”页面。">
           <template #meta><StatusBadge :tone="siteState.dirty.value ? 'warning' : 'info'" :icon="siteState.dirty.value ? 'edit' : 'info'">{{ siteState.dirty.value ? '有未保存修改' : '公开配置' }}</StatusBadge></template>
           <form ref="siteFormElement" class="panel-body stack" novalidate @submit.prevent="saveSiteSettings">
             <div class="form-grid">
               <FormField v-slot="{ controlAttrs }" label="站点名称" name="settings-site-name" :error="siteErrors.fields.site_name" required><UiInput v-model.trim="form.site_name" v-bind="controlAttrs" maxlength="80" /></FormField>
               <FormField v-slot="{ controlAttrs }" label="公开访问地址" name="settings-site-url" hint="用于订阅链接、canonical 地址和外部页面跳转。" :error="siteErrors.fields.site_url" required><UiInput v-model.trim="form.site_url" v-bind="controlAttrs" type="url" /></FormField>
             </div>
-            <label class="registration-switch"><span class="switch-copy"><strong>开放用户注册</strong><small>允许访客通过登录页创建普通账户。</small></span><UiCheckbox v-model="form.allow_registration" role="switch" /></label>
             <PageAlert v-if="siteErrors.formError.value" tone="danger" title="站点设置未保存">{{ siteErrors.formError.value }}</PageAlert>
             <div class="form-actions"><UiButton type="submit" :loading="savingSite" :disabled="!siteState.dirty.value">保存站点身份</UiButton></div>
           </form>
@@ -97,7 +94,7 @@
         </UiSection>
       </div>
 
-      <div v-else-if="activeTab === 'legal'" class="settings-panel stack-lg">
+      <div v-else-if="activeSection === 'legal'" class="settings-panel stack-lg">
         <UiSection title="公开政策" description="以文档站方式维护所有政策。可以动态创建链接、控制发布状态与展示位置；正文支持 Markdown，或使用完整 HTTP/HTTPS URL。">
           <PolicyDocumentsEditor
             v-if="policyDocumentsConfig"
@@ -130,8 +127,8 @@
         </UiSection>
       </div>
 
-      <div v-else-if="activeTab === 'notifications'" class="settings-panel stack-lg">
-        <UiSection title="SMTP 投递通道" description="保存配置后，可先验证连接与 TLS/认证，再向当前管理员邮箱投递一封完整测试邮件。">
+      <div v-else-if="activeSection === 'email'" class="settings-panel stack-lg">
+        <UiSection title="SMTP 投递通道" description="保存配置后，可先验证连接与 TLS/认证，再向指定邮箱投递一封完整测试邮件。">
           <template #meta><span class="config-count">{{ emailConfigs.length }} 项</span></template>
           <div v-if="emailConfigs.length" class="config-list"><ConfigRow v-for="config in emailConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
           <EmptyState v-else icon="audit" title="没有邮件配置" description="系统当前未返回可编辑的邮件或通知参数。" />
@@ -144,8 +141,8 @@
           </div>
         </UiSection>
 
-        <UiSection title="通知与运营模板" description="注册通知使用系统触发器；运营模板用于批量邮件任务，并在创建任务时复制为不可变快照。">
-          <EmailTemplateManager @dirty="emailTemplateDirty = $event" />
+        <UiSection title="运营邮件模板" description="模板只负责可复用内容；真正的收件人、发送时机和执行进度在运营任务中确定。">
+          <EmailTemplateManager mode="operational" @dirty="emailTemplateDirty = $event" />
         </UiSection>
       </div>
 
@@ -171,6 +168,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { fetchSystemConfigs, testSMTP, updateSiteSettings, updateSystemConfig, type SystemConfig } from '../api/client'
 import EmailTemplateManager from '../components/EmailTemplateManager.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -183,7 +181,6 @@ import SettingsPublicField from '../components/SettingsPublicField.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiIcon from '../components/UiIcon.vue'
-import UiTabs from '../components/UiTabs.vue'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import { useAppStore } from '../stores/app'
 import { normalizeApiErrorMessage } from '../utils/apiError'
@@ -193,7 +190,15 @@ import { formatSystemConfigDraft, normalizeSystemConfigDraft } from '../utils/sy
 import { collectFieldErrors, isEmail, isHttpUrl, isUtf8LengthInRange } from '../utils/validation'
 
 const app = useAppStore()
-const activeTab = ref('site')
+const route = useRoute()
+const activeSection = computed(() => String(route.meta.settingsSection || 'site'))
+const pageTitle = computed(() => ({ site: '站点与品牌', legal: '法务与政策', email: '邮件与运营模板', runtime: '系统运行' } as Record<string, string>)[activeSection.value] || '系统设置')
+const pageDescription = computed(() => ({
+  site: '管理公开站点身份、视觉品牌、首页文案、联系方式与搜索展示。',
+  legal: '维护公开政策文档、发布位置以及地区所需的法律与注册信息。',
+  email: '配置 SMTP 投递通道，并维护可在运营任务中复用的邮件内容。',
+  runtime: '查看部署安全边界并维护系统时区、保留策略等运行参数。',
+} as Record<string, string>)[activeSection.value] || '管理系统配置。')
 const loading = ref(false)
 const savingSite = ref(false)
 const savingKey = ref('')
@@ -218,27 +223,21 @@ const deprecatedSiteKeys = new Set(['site_terms_url', 'site_privacy_url', 'site_
 const legacyPolicyKeys = new Set(['site_terms_content', 'site_privacy_content', 'site_refund_content'])
 const policyDocumentsKeys = new Set(['site_policy_documents'])
 const legalMetadataKeys = new Set(['site_legal_items'])
+const registrationKeys = new Set(['register_email_verification'])
 const siteVisualKeys = ['site_logo', 'site_logo_dark', 'site_favicon']
 const siteContentKeys = ['site_desc', 'site_home_kicker', 'site_home_title']
 const siteContactKeys = ['site_footer_copyright', 'site_support_email', 'site_support_url', 'site_telegram_url']
 const siteSeoKeys = ['site_meta_title', 'site_meta_description']
 const sitePresentationKeys = new Set([...siteVisualKeys, ...siteContentKeys, ...siteContactKeys, ...siteSeoKeys])
 const publicSiteKeys = new Set([...sitePresentationKeys, ...legacyPolicyKeys, ...policyDocumentsKeys, ...legalMetadataKeys])
-const tabItems = [
-  { value: 'site', label: '站点与品牌', icon: 'info' },
-  { value: 'legal', label: '法务与政策', icon: 'audit' },
-  { value: 'notifications', label: '邮件与通知', icon: 'audit' },
-  { value: 'runtime', label: '系统运行', icon: 'settings' },
-]
-
 const operationalConfigs = computed(() => configs.value
   .filter(item => !hiddenSiteKeys.has(item.config_key) && !deprecatedSiteKeys.has(item.config_key))
   .sort((a, b) => a.id - b.id))
 const policyDocumentsConfig = computed(() => operationalConfigs.value.find(item => policyDocumentsKeys.has(item.config_key)))
 const legalMetadataConfig = computed(() => operationalConfigs.value.find(item => legalMetadataKeys.has(item.config_key)))
-const emailConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)))
+const emailConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)))
 const emailConfigDirty = computed(() => emailConfigs.value.some(configDirty))
-const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !/smtp|email/i.test(item.config_key)))
+const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && !/smtp|email/i.test(item.config_key)))
 const visualConfigs = computed(() => configsForKeys(siteVisualKeys))
 const contentConfigs = computed(() => configsForKeys(siteContentKeys))
 const contactConfigs = computed(() => configsForKeys(siteContactKeys))
@@ -277,16 +276,6 @@ useUnsavedChangesGuard(
 watch(() => form.site_name, () => siteErrors.clear('site_name'))
 watch(() => form.site_url, () => siteErrors.clear('site_url'))
 watch(smtpTestRecipient, () => { smtpTestRecipientError.value = '' })
-
-async function changeTab(value: string) {
-  if (activeTab.value === 'notifications' && value !== activeTab.value && emailTemplateDirty.value && !await confirmAction({
-    title: '放弃邮件模板草稿？',
-    message: '当前邮件模板包含尚未保存的修改，切换设置分类后这些修改将丢失。',
-    confirmText: '放弃修改',
-    tone: 'danger',
-  })) return
-  activeTab.value = value
-}
 
 function configValue(config: SystemConfig) {
   return formatSystemConfigDraft(config)
@@ -506,7 +495,6 @@ onMounted(async () => { smtpTestRecipient.value = app.user.email || ''; await lo
 
 <style scoped>
 .settings-shell { overflow: hidden; }
-.settings-shell :deep(.ui-tabs) { border-bottom: 1px solid var(--line); }
 .settings-panel { padding: 20px; }
 .stack-lg { display: grid; gap: 18px; }
 .registration-switch { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
