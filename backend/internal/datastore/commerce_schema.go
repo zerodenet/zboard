@@ -19,7 +19,8 @@ var commerceOrderSnapshotColumns = []commerceColumnSpec{
 	{table: "orders", name: "sku_name", definition: "varchar(80) NOT NULL DEFAULT ''", after: "plan_name"},
 	{table: "orders", name: "billing_unit", definition: "varchar(16) NOT NULL DEFAULT ''", after: "sku_name"},
 	{table: "orders", name: "billing_value", definition: "int NOT NULL DEFAULT 0", after: "billing_unit"},
-	{table: "orders", name: "traffic_bytes", definition: "bigint NOT NULL DEFAULT 0", after: "billing_value"},
+	{table: "orders", name: "renewal_effect", definition: "varchar(32) NOT NULL DEFAULT ''", after: "billing_value"},
+	{table: "orders", name: "traffic_bytes", definition: "bigint NOT NULL DEFAULT 0", after: "renewal_effect"},
 	{table: "orders", name: "device_limit", definition: "int NOT NULL DEFAULT 0", after: "traffic_bytes"},
 	{table: "orders", name: "speed_limit_mbps", definition: "int NOT NULL DEFAULT 0", after: "device_limit"},
 }
@@ -75,6 +76,51 @@ func reconcilePlanSKUCommerceSchema(sqlDB *sql.DB) error {
 		}
 	}
 
+	var entitlementModeColumn int
+	if err := sqlDB.QueryRow(
+		`SELECT COUNT(*)
+		   FROM information_schema.columns
+		  WHERE table_schema = DATABASE()
+		    AND table_name = 'plan_skus'
+		    AND column_name = 'entitlement_mode'`,
+	).Scan(&entitlementModeColumn); err != nil {
+		return fmt.Errorf("inspect plan sku entitlement mode: %w", err)
+	}
+	if entitlementModeColumn == 0 {
+		if _, err := sqlDB.Exec(
+			"ALTER TABLE plan_skus ADD COLUMN entitlement_mode varchar(24) NOT NULL DEFAULT 'plan' AFTER billing_mode",
+		); err != nil {
+			return fmt.Errorf("add plan sku entitlement mode: %w", err)
+		}
+		if _, err := sqlDB.Exec(
+			`UPDATE plan_skus
+			    SET entitlement_mode = CASE
+			      WHEN sku_type = 'traffic_pack' THEN 'traffic_addon'
+			      ELSE 'plan'
+			    END`,
+		); err != nil {
+			return fmt.Errorf("backfill plan sku entitlement mode: %w", err)
+		}
+	}
+
+	var renewalEffectColumn int
+	if err := sqlDB.QueryRow(
+		`SELECT COUNT(*)
+		   FROM information_schema.columns
+		  WHERE table_schema = DATABASE()
+		    AND table_name = 'plan_skus'
+		    AND column_name = 'renewal_effect'`,
+	).Scan(&renewalEffectColumn); err != nil {
+		return fmt.Errorf("inspect plan sku renewal effect: %w", err)
+	}
+	if renewalEffectColumn == 0 {
+		if _, err := sqlDB.Exec(
+			"ALTER TABLE plan_skus ADD COLUMN renewal_effect varchar(32) NOT NULL DEFAULT '' AFTER entitlement_mode",
+		); err != nil {
+			return fmt.Errorf("add plan sku renewal effect: %w", err)
+		}
+	}
+
 	if _, err := sqlDB.Exec(`CREATE TABLE IF NOT EXISTS plan_sku_operations (
 		id bigint unsigned NOT NULL AUTO_INCREMENT,
 		plan_sku_id bigint unsigned NOT NULL,
@@ -107,7 +153,22 @@ func reconcilePlanSKUCommerceSchema(sqlDB *sql.DB) error {
 	}
 
 	if _, err := sqlDB.Exec(`UPDATE plan_skus
-		SET traffic_bytes = CASE WHEN billing_mode = 'one_time' THEN traffic_bytes ELSE 0 END,
+		SET renewal_effect = CASE
+		  WHEN entitlement_mode = 'traffic_addon' THEN 'none'
+		  WHEN NOT EXISTS (
+		    SELECT 1 FROM plan_sku_operations
+		     WHERE plan_sku_operations.plan_sku_id = plan_skus.id
+		       AND plan_sku_operations.operation = 'renew'
+		  ) THEN 'none'
+		  WHEN billing_unit = 'once' THEN 'add_quota_only'
+		  ELSE 'extend_only'
+		END
+		WHERE renewal_effect = ''`); err != nil {
+		return fmt.Errorf("backfill plan sku renewal effect: %w", err)
+	}
+
+	if _, err := sqlDB.Exec(`UPDATE plan_skus
+		SET traffic_bytes = CASE WHEN entitlement_mode = 'traffic_addon' THEN traffic_bytes ELSE 0 END,
 		    device_limit = 0,
 		    speed_limit_mbps = 0`); err != nil {
 		return fmt.Errorf("remove duplicated plan sku entitlements: %w", err)
@@ -154,6 +215,20 @@ func reconcileOrderSnapshotSchema(sqlDB *sql.DB) error {
 		    orders.sku_name = CASE WHEN orders.sku_name = '' THEN COALESCE(plan_skus.name, '') ELSE orders.sku_name END,
 		    orders.billing_unit = CASE WHEN orders.billing_unit = '' THEN COALESCE(plan_skus.billing_unit, '') ELSE orders.billing_unit END`); err != nil {
 		return fmt.Errorf("backfill legacy order identity snapshots: %w", err)
+	}
+
+	// Existing pending renewals retain the historical fulfillment contract:
+	// timed renewals extended the term and added quota, while permanent renewals
+	// added quota and kept the permanent end. New orders always snapshot the
+	// explicit SKU value.
+	if _, err := sqlDB.Exec(`UPDATE orders
+		SET renewal_effect = CASE
+		  WHEN order_type <> 'renewal' THEN 'none'
+		  WHEN billing_unit = 'once' THEN 'add_quota_only'
+		  ELSE 'extend_and_add_quota'
+		END
+		WHERE renewal_effect = ''`); err != nil {
+		return fmt.Errorf("backfill legacy order renewal effect snapshots: %w", err)
 	}
 	return nil
 }

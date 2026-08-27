@@ -540,6 +540,13 @@ func TestBuildPlanSKUValidatesCommercialSpecification(t *testing.T) {
 	if sku.PlanID != 7 || sku.Code != "pro-monthly" || sku.Currency != "CNY" || !sku.IsActive {
 		t.Fatalf("buildPlanSKU() = %+v", sku)
 	}
+	permanent, err := buildPlanSKU(7, planSKUReq{
+		Code: "permanent", Name: "Permanent", SKUType: "new", BillingUnit: "once", BillingValue: 1,
+		PriceCents: 2999, Currency: "CNY",
+	})
+	if err != nil || permanent.BillingUnit != "once" {
+		t.Fatalf("buildPlanSKU() permanent = %+v, err=%v", permanent, err)
+	}
 	for _, unit := range []string{"", "week", "one_time"} {
 		_, err := buildPlanSKU(7, planSKUReq{Code: "x", Name: "x", BillingUnit: unit, BillingValue: 1, Currency: "CNY"})
 		if err == nil {
@@ -1100,6 +1107,49 @@ func TestNextTrafficReset(t *testing.T) {
 	}
 	if got := nextTrafficReset(base, 5); got != nil {
 		t.Fatalf("no-reset policy = %v", got)
+	}
+}
+
+func TestPermanentBillingUsesNoResetAndNoCalendarExpiry(t *testing.T) {
+	base := time.Date(2026, time.August, 26, 12, 0, 0, 0, time.UTC)
+	end, err := addBillingPeriod(base, "once", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isPerpetualSubscriptionEnd(end) || end != perpetualSubscriptionEnd {
+		t.Fatalf("permanent end = %v", end)
+	}
+	if policy := effectiveResetPolicy("once", 2); policy != 5 {
+		t.Fatalf("permanent reset policy = %d, want 5", policy)
+	}
+	if policy := effectiveResetPolicy("month", 2); policy != 2 {
+		t.Fatalf("monthly reset policy = %d, want 2", policy)
+	}
+}
+
+func TestRenewalFulfillmentSeparatesTimeAndQuotaEffects(t *testing.T) {
+	tests := []struct {
+		name          string
+		order         model.Order
+		extendPeriod  bool
+		addQuota      bool
+		makePermanent bool
+	}{
+		{name: "timed extension", order: model.Order{OrderType: "renewal", BillingUnit: "month", RenewalEffect: skuRenewalExtendOnly}, extendPeriod: true},
+		{name: "timed extension and quota", order: model.Order{OrderType: "renewal", BillingUnit: "month", RenewalEffect: skuRenewalExtendAndAdd}, extendPeriod: true, addQuota: true},
+		{name: "permanent quota", order: model.Order{OrderType: "renewal", BillingUnit: "once", RenewalEffect: skuRenewalAddQuotaOnly}, addQuota: true, makePermanent: true},
+		{name: "traffic addon", order: model.Order{OrderType: "traffic_pack", BillingUnit: "once", RenewalEffect: skuRenewalNone}, addQuota: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := renewalFulfillmentForOrder(test.order)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.extendPeriod != test.extendPeriod || got.addQuota != test.addQuota || got.makePermanent != test.makePermanent {
+				t.Fatalf("fulfillment = %#v", got)
+			}
+		})
 	}
 }
 

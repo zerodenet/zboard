@@ -28,6 +28,7 @@ DROP TABLE IF EXISTS
   subscription_tokens,
   orders,
   subscriptions,
+  plan_sku_operations,
   plan_skus,
   plans,
   node_group_endpoints,

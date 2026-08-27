@@ -32,8 +32,15 @@ export function formatCurrency(cents: number | undefined | null, currency = 'CNY
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency, minimumFractionDigits: 2 }).format(Number(cents) / 100)
 }
 
+export function isPerpetualDate(value?: string | null): boolean {
+  if (!value) return false
+  const date = new Date(value)
+  return !Number.isNaN(date.getTime()) && date.getUTCFullYear() >= 9999
+}
+
 export function formatDateTime(value?: string | null) {
   if (!value) return '—'
+  if (isPerpetualDate(value)) return '永久有效'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '无效时间'
   return new Intl.DateTimeFormat('zh-CN', {
@@ -44,6 +51,7 @@ export function formatDateTime(value?: string | null) {
 
 export function formatExactDateTime(value?: string | null) {
   if (!value) return '未记录时间'
+  if (isPerpetualDate(value)) return '永久有效（流量用完为止）'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '无效时间'
   return new Intl.DateTimeFormat('zh-CN', {
@@ -60,6 +68,7 @@ export function formatExactDateTime(value?: string | null) {
 
 export function formatRelativeTime(value?: string | null, now = Date.now()) {
   if (!value) return '未记录'
+  if (isPerpetualDate(value)) return '永久有效'
   const date = new Date(value)
   const timestamp = date.getTime()
   if (Number.isNaN(timestamp)) return '无效时间'
@@ -80,6 +89,7 @@ export function formatRelativeTime(value?: string | null, now = Date.now()) {
 
 export function formatCompactDateTime(value?: string | null, now = Date.now()) {
   if (!value) return '未记录'
+  if (isPerpetualDate(value)) return '永久有效'
   const date = new Date(value)
   const timestamp = date.getTime()
   if (Number.isNaN(timestamp)) return '无效时间'
@@ -109,6 +119,7 @@ export function shortVersion(version?: string | null) {
 
 export function daysRemaining(endAt?: string | null) {
   if (!endAt) return '未设置'
+  if (isPerpetualDate(endAt)) return '永久有效'
   const remaining = new Date(endAt).getTime() - Date.now()
   if (!Number.isFinite(remaining)) return '未知'
   if (remaining <= 0) return '已到期'

@@ -326,7 +326,7 @@ func (h *handlers) OrderCreateCommerceValidatedHandler(w http.ResponseWriter, r 
 			}
 			return err
 		}
-		billingModes, operationMap, err := loadPlanSKUCommerceMetadata(tx, []model.PlanSKU{sku})
+		_, entitlementModes, operationMap, err := loadPlanSKUCommerceMetadata(tx, []model.PlanSKU{sku})
 		if err != nil {
 			return err
 		}
@@ -340,7 +340,7 @@ func (h *handlers) OrderCreateCommerceValidatedHandler(w http.ResponseWriter, r 
 			target = &subscription
 			targetSubscriptionID = &subscription.ID
 		}
-		orderType, err := deriveOrderTypeForSKU(plan.ID, billingModes[sku.ID], operationMap[sku.ID], target)
+		orderType, err := deriveOrderTypeForSKU(plan.ID, entitlementModes[sku.ID], operationMap[sku.ID], target)
 		if err != nil {
 			return err
 		}
@@ -373,7 +373,7 @@ func (h *handlers) OrderCreateCommerceValidatedHandler(w http.ResponseWriter, r 
 			AmountCents: sku.PriceCents, PayableAmount: sku.PriceCents, Currency: sku.Currency,
 			Channel: channel, Status: orderStatusPending,
 			PlanName: plan.Name, SKUName: sku.Name, BillingUnit: sku.BillingUnit,
-			BillingValue: sku.BillingValue, TrafficBytes: trafficBytes,
+			BillingValue: sku.BillingValue, RenewalEffect: sku.RenewalEffect, TrafficBytes: trafficBytes,
 			DeviceLimit: deviceLimit, SpeedLimitMbps: speedLimitMbps,
 		}
 		return tx.Create(&order).Error

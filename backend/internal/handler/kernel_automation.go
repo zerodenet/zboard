@@ -1052,7 +1052,7 @@ func zeroConnectorAPIConfig(panelURL string, nodeID uint, apiKey string, allowIn
 		"tag":       "zboard",
 		"type":      "webhook",
 		"url":       strings.TrimRight(panelURL, "/") + "/api/zero/events",
-		"events":    []string{"engine.started", "engine.stopped", "engine.warning", "config.changed", "stats.sampled", "flow.updated", "flow.completed"},
+		"events":    []string{"engine.started", "engine.stopped", "engine.warning", "config.changed", "stats.sampled", "flow.started", "flow.updated", "flow.completed"},
 		"source_id": fmt.Sprintf("node-%d", nodeID),
 		"headers": map[string]string{
 			"authorization": "Bearer " + apiKey,

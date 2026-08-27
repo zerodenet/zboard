@@ -42,6 +42,7 @@ var preReleaseBaselineTables = []string{
 	"orders",
 	"payment_events",
 	"plan_skus",
+	"plan_sku_operations",
 	"plans",
 	"protocol_credentials",
 	"protocol_deployments",
@@ -74,6 +75,8 @@ var preReleaseBaselineColumns = []struct {
 	{table: "managed_certificates", column: "provider_account_id", columnType: "bigint unsigned"},
 	{table: "managed_certificates", column: "webroot_path", columnType: "varchar(255)"},
 	{table: "node_groups", column: "revision", columnType: "bigint unsigned"},
+	{table: "plan_skus", column: "billing_mode", columnType: "varchar(20)"},
+	{table: "plan_skus", column: "entitlement_mode", columnType: "varchar(24)"},
 	{table: "plans", column: "revision", columnType: "bigint unsigned"},
 	{table: "protocol_credentials", column: "credential_id", columnType: "varchar(96)"},
 	{table: "protocol_endpoints", column: "managed_principal_ready", columnType: "tinyint(1)"},
@@ -95,6 +98,7 @@ var preReleaseBaselineIndexes = []struct {
 	{table: "node_operations", index: "idx_node_operations_history_cursor"},
 	{table: "managed_certificates", index: "idx_managed_certificates_provider"},
 	{table: "orders", index: "idx_orders_created_at_id"},
+	{table: "plan_sku_operations", index: "idx_plan_sku_operations_operation"},
 	{table: "protocol_deployments", index: "idx_protocol_deployments_history_cursor"},
 	{table: "subscriptions", index: "idx_subscriptions_end_at_id"},
 	{table: "tasks", index: "idx_tasks_history_cursor"},
@@ -166,6 +170,12 @@ func RunMigrations(db *gorm.DB) error {
 	}
 	if isPreReleaseBaselineOnly(versions) {
 		if err := finalizePreReleaseBaselineSchema(sqlDB); err != nil {
+			return err
+		}
+		// An already-applied squashed baseline is not replayed. Install additive
+		// commerce schema before validating the current baseline inventory so an
+		// older development database can advance without failing on the new fields.
+		if err := reconcilePlanSKUCommerceSchema(sqlDB); err != nil {
 			return err
 		}
 		if err := validatePreReleaseBaselineSchema(sqlDB); err != nil {

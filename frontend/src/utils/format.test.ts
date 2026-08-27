@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { formatBytes, formatCompactDateTime, formatCurrency, formatDateTime, formatExactDateTime, formatNumber, formatRelativeTime, formatSignedBytes, formatUnknownValue } from './format'
+import { daysRemaining, formatBytes, formatCompactDateTime, formatCurrency, formatDateTime, formatExactDateTime, formatNumber, formatRelativeTime, formatSignedBytes, formatUnknownValue, isPerpetualDate } from './format'
 import { setDisplayTimeZone } from './timeZone'
 
 afterEach(() => setDisplayTimeZone('UTC'))
@@ -33,6 +33,18 @@ describe('formatters', () => {
     expect(formatDateTime('not-a-date')).toBe('无效时间')
     expect(formatRelativeTime('not-a-date')).toBe('无效时间')
     expect(formatCompactDateTime('not-a-date')).toBe('无效时间')
+  })
+
+  it('renders the permanent subscription sentinel as permanent instead of year 9999', () => {
+    const permanent = '9999-12-31T23:59:59Z'
+
+    expect(isPerpetualDate(permanent)).toBe(true)
+    expect(isPerpetualDate('2026-08-26T00:00:00Z')).toBe(false)
+    expect(formatDateTime(permanent)).toBe('永久有效')
+    expect(formatExactDateTime(permanent)).toBe('永久有效（流量用完为止）')
+    expect(formatRelativeTime(permanent)).toBe('永久有效')
+    expect(formatCompactDateTime(permanent)).toBe('永久有效')
+    expect(daysRemaining(permanent)).toBe('永久有效')
   })
 
   it('uses relative labels for recent timestamps', () => {

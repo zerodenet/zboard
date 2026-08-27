@@ -75,6 +75,7 @@
               <p v-if="mode === 'addon' && sku.grant_traffic_bytes > 0">
                 增加 {{ formatBytes(sku.grant_traffic_bytes) }} 流量
               </p>
+              <p v-else-if="mode === 'renew'">{{ renewalEffectLabel(sku) }}</p>
             </button>
           </div>
           <div v-else class="storefront-empty-specifications">
@@ -92,6 +93,7 @@
           <div><dt>操作</dt><dd>{{ operationLabel }}</dd></div>
           <div><dt>规格</dt><dd>{{ selectedSku?.name || '请选择' }}</dd></div>
           <div><dt>服务周期</dt><dd>{{ selectedSku ? billingLabel(selectedSku) : '—' }}</dd></div>
+          <div v-if="mode === 'renew'"><dt>再次购买效果</dt><dd>{{ selectedSku ? renewalEffectLabel(selectedSku) : '—' }}</dd></div>
         </dl>
         <div class="storefront-order-summary__total">
           <span>应付金额</span>
@@ -187,7 +189,19 @@ function closePolicy() {
 
 function billingLabel(sku: PlanSKU) {
   const unit = ({ day: '天', month: '个月', year: '年', once: '次' } as Record<string, string>)[sku.billing_unit] || sku.billing_unit
-  return sku.billing_unit === 'once' ? '一次性' : `${sku.billing_value} ${unit}`
+  if (sku.entitlement_mode === 'traffic_addon') return '一次性流量加购'
+  if (sku.billing_unit === 'once') return '永久有效 · 流量用完为止'
+  const period = `${sku.billing_value} ${unit}`
+  return sku.billing_mode === 'one_time' ? `一次性付费 · ${period}有效` : period
+}
+
+function renewalEffectLabel(sku: PlanSKU) {
+  return ({
+    none: '不适用',
+    extend_only: '只延长有效期，流量不叠加',
+    extend_and_add_quota: '延长有效期，并增加一份套餐流量',
+    add_quota_only: '只补充一份套餐流量',
+  } as Record<string, string>)[sku.renewal_effect] || '按规格配置履约'
 }
 </script>
 

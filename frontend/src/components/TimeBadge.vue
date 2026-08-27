@@ -4,7 +4,7 @@
     :class="`time-badge-${tone}`"
     :datetime="dateTimeAttribute"
     :title="exactLabel"
-    :aria-label="`${label}，精确时间 ${exactLabel}`"
+    :aria-label="ariaLabel"
   >
     <UiIcon name="clock" />
     <span>{{ label }}</span>
@@ -13,7 +13,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { formatCompactDateTime, formatDateTime, formatExactDateTime, formatRelativeTime } from '../utils/format'
+import { formatCompactDateTime, formatDateTime, formatExactDateTime, formatRelativeTime, isPerpetualDate } from '../utils/format'
 import UiIcon from './UiIcon.vue'
 
 const props = withDefaults(defineProps<{
@@ -38,4 +38,5 @@ const label = computed(() => {
   if (props.mode === 'exact') return formatDateTime(props.value)
   return formatCompactDateTime(props.value)
 })
+const ariaLabel = computed(() => isPerpetualDate(props.value) ? exactLabel.value : `${label.value}，精确时间 ${exactLabel.value}`)
 </script>

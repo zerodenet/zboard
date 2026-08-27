@@ -1100,6 +1100,8 @@ export interface PlanSKU {
   name: string
   sku_type: string
   billing_mode?: 'periodic' | 'one_time'
+  entitlement_mode?: 'plan' | 'traffic_addon'
+  renewal_effect: 'none' | 'extend_only' | 'extend_and_add_quota' | 'add_quota_only'
   allowed_operations?: Array<'purchase' | 'renew' | 'change' | 'addon'>
   billing_unit: string
   billing_value: number
@@ -1183,9 +1185,10 @@ export async function fetchPlanCatalogItem(id: number, options: ApiRequestOption
   return unwrap(response)
 }
 
-export async function fetchPlanCatalogSKUs(planId: number, params: { q?: string; skuType?: PlanSKU['sku_type']; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<PlanSKU>> {
+export async function fetchPlanCatalogSKUs(planId: number, params: { q?: string; operation?: NonNullable<PlanSKU['allowed_operations']>[number]; skuType?: PlanSKU['sku_type']; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<PlanSKU>> {
   const query = new URLSearchParams()
   appendPageParams(query, params)
+  if (params.operation) query.set('operation', params.operation)
   if (params.skuType) query.set('sku_type', params.skuType)
   const response = await api.get(`/plans/${planId}/skus?${query}`, { signal: options.signal })
   return normalizePageResult<PlanSKU>(unwrap(response), params.offset || 0, params.limit || 25)
@@ -1270,6 +1273,7 @@ export interface AdminOrderDetail extends AdminOrderListItem {
   provider_trade_no?: string | null
   billing_unit: string
   billing_value: number
+  renewal_effect: PlanSKU['renewal_effect']
   traffic_bytes: number
   device_limit: number
   speed_limit_mbps: number

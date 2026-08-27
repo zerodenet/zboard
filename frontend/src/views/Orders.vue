@@ -28,7 +28,7 @@
       <main v-else-if="selectedOrder" class="business-detail stack">
         <section class="detail-status-strip" aria-label="订单状态">
           <StatusBadge :tone="statusTone(selectedOrder.status)">{{ statusName(selectedOrder.status) }}</StatusBadge>
-          <StatusBadge tone="info">{{ orderTypeName(selectedOrder.order_type) }}</StatusBadge>
+          <StatusBadge tone="info">{{ orderTypeName(selectedOrder.order_type, selectedOrder.renewal_effect) }}</StatusBadge>
           <StatusBadge :tone="selectedOrder.fulfilled_at ? 'success' : 'neutral'">{{ selectedOrder.fulfilled_at ? '已履约' : '未履约' }}</StatusBadge>
         </section>
         <PageAlert v-if="selectedOrder.failure_reason" tone="danger" title="最近失败原因">{{ safeFailureReason(selectedOrder.failure_reason) }}</PageAlert>
@@ -46,6 +46,7 @@
           <div><span>关联订阅</span><strong class="mono">{{ selectedOrder.subscription_id ? `#${selectedOrder.subscription_id}` : '尚未创建' }}</strong></div>
           <div><span>目标订阅</span><strong class="mono">{{ selectedOrder.target_subscription_id ? `#${selectedOrder.target_subscription_id}` : '无' }}</strong></div>
           <div><span>计费周期</span><strong>{{ billingName(selectedOrder.billing_unit, selectedOrder.billing_value) }}</strong></div>
+          <div><span>再次购买效果</span><strong>{{ renewalEffectName(selectedOrder.renewal_effect) }}</strong></div>
           <div><span>流量权益</span><strong>{{ formatBytes(selectedOrder.traffic_bytes) }}</strong></div>
           <div><span>设备数</span><strong>{{ selectedOrder.device_limit }}</strong></div>
           <div><span>速率</span><strong>{{ selectedOrder.speed_limit_mbps ? `${selectedOrder.speed_limit_mbps} Mbps` : '不限速' }}</strong></div>
@@ -164,8 +165,9 @@ const { items: paymentEvents, total: paymentEventTotal, loading: paymentEventLoa
 })
 function statusName(status: string) { return ({ pending: '待支付', paid: '已支付', failed: '失败', canceled: '已取消' } as Record<string, string>)[status] || formatUnknownValue('状态', status) }
 function statusTone(status: string): 'warning' | 'success' | 'danger' | 'neutral' { return status === 'paid' ? 'success' : status === 'pending' ? 'warning' : status === 'failed' ? 'danger' : 'neutral' }
-function orderTypeName(value: string) { return ({ new: '新购', renewal: '续费', upgrade: '升级', traffic_pack: '流量包' } as Record<string, string>)[value] || formatUnknownValue('订单类型', value) }
-function billingName(unit: string, value: number) { const label = ({ day: '天', month: '个月', year: '年' } as Record<string, string>)[unit]; return label ? `${value || 0} ${label}` : formatUnknownValue('计费周期', `${value || 0} ${unit || ''}`.trim()) }
+function orderTypeName(value: string, renewalEffect = '') { if (value === 'renewal' && renewalEffect === 'add_quota_only') return '补充额度'; return ({ new: '新购', renewal: '续费', upgrade: '升级', traffic_pack: '流量包' } as Record<string, string>)[value] || formatUnknownValue('订单类型', value) }
+function billingName(unit: string, value: number) { if (unit === 'once') return '永久有效'; const label = ({ day: '天', month: '个月', year: '年' } as Record<string, string>)[unit]; return label ? `${value || 0} ${label}` : formatUnknownValue('计费周期', `${value || 0} ${unit || ''}`.trim()) }
+function renewalEffectName(value: string) { return ({ none: '不适用', extend_only: '只延长有效期', extend_and_add_quota: '延长有效期并增加套餐流量', add_quota_only: '只补充套餐流量' } as Record<string, string>)[value] || formatUnknownValue('再次购买效果', value) }
 function safeFailureReason(value: string) { return truncateOutput(normalizeOutput(value), 360) || '未提供失败原因。' }
 function safeEventReference(value: string) { return truncateOutput(normalizeOutput(value), 96) || '无渠道事件号' }
 function providerName(value: string) { return truncateOutput(normalizeOutput(value), 32) || '未知渠道' }

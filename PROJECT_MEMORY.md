@@ -339,6 +339,56 @@ Remaining gaps:
   independently verified against the latest day that contained traffic.
 - No Git staging, commit, push or release was performed.
 
+## 2026-08-27 - Subscribe Fair Use to Zero flow-start events
+
+Goal outcome:
+
+- Corrected Zboard's generic Zero Connector event filter to subscribe to
+  `flow.started`. The kernel already publishes this event; the omission was in
+  Zboard's generated runtime configuration and prevented Fair Use observations
+  from reaching the existing ingestion and coverage pipeline.
+- Retained the existing `flow.updated` accounting and `flow.completed`
+  principal-flow subscriptions. No new telemetry resource or duplicate usage
+  fact was introduced.
+- Added a connector-contract regression assertion so future generated configs
+  cannot silently drop `flow.started` again.
+
+Local verification:
+
+- `go test ./internal/handler -count=1` passed.
+- `go vet ./internal/handler` and `git diff --check` passed.
+
+Synchronization and deployed verification:
+
+- `scripts/deploy-intranet.local.ps1 -SkipLocalChecks` delegated the verified
+  working tree to `scripts/sync-intranet.ps1` and completed successfully as
+  `v0.0.1-20260827T-flow-start-subscription-working-tree@2026-08-27T03:05:43Z`.
+- `/readyz` returned `ready=true, db=true`. `zboard_next-zboard-1` reported
+  `running/healthy`; the external MySQL `db` and Redis `cache` containers both
+  reported `running` after the node republishes.
+- The pre-switch database backup is
+  `/data/zboard-next/backups/20260827T030543Z/zboard-before-sync.sql` (127,738
+  bytes), and the previous source is
+  `/data/zboard-next/app-prev-20260827T030543Z`; both were verified present.
+- The deployed source contains `flow.started` between the existing sampled and
+  flow-update Connector events. Existing enabled nodes 5 and 6, both running
+  Zero `0.0.16-dev.202608140314`, were republished without a kernel upgrade via
+  protocol endpoints 3 and 4. Deployments 31 and 32 succeeded in 1,806 ms and
+  1,767 ms respectively; each applied SHA-256 matched its generated desired
+  configuration. Both kernels remained service-active, control-healthy and in
+  the healthy Zboard state.
+
+Remaining gaps:
+
+- No natural subscriber flow began during the immediate post-publish
+  observation window, so production `subscription_flow_start_events` remained
+  unchanged. No synthetic production flow or credential was created merely to
+  manufacture telemetry; the deployed filter, Zero validation, exact applied
+  configuration hashes and Connector health prove delivery readiness, while
+  the next real subscriber connection will exercise end-to-end ingestion.
+- No database migration is required. No Git staging, commit, push or release
+  was performed.
+
 ## 2026-08-26: timestamped development and RC release tags
 
 Goal outcome:
@@ -8746,4 +8796,249 @@ Remaining gaps:
 - Authenticated click-through verification was not possible without creating or
   using an administrator session; deployment verification therefore stops at
   healthy runtime, route delivery and compiled goal-specific asset evidence.
+- No Git staging, commit, push or release was performed.
+
+## 2026-08-26: decouple one-time plan sales from traffic add-ons
+
+Goal outcome:
+
+- Reworked the SKU model so billing cadence, entitlement fulfillment and
+  allowed sales operations are independent. A `one_time` SKU with `plan`
+  entitlement can now participate in new purchase, renewal and plan change,
+  while still carrying an explicit day/month/year service validity period.
+- Reserved `traffic_addon` for the actual one-time traffic grant. That mode
+  requires the `once` unit, an `addon` operation and a positive traffic grant;
+  plan-entitlement SKUs inherit quota, device and speed policy from the plan.
+  The legacy SKU type is retained only as a compatibility projection.
+- Updated order-context derivation and public SKU filtering to use entitlement
+  mode and allowed operations instead of inferring behavior from billing mode
+  or legacy SKU type. Public and account storefronts now request SKUs by the
+  intended operation.
+- Added the entitlement mode and operation resource to the model, OpenAPI
+  contract, squashed baseline and additive pre-release reconciliation. Existing
+  traffic-pack rows are backfilled as traffic add-ons; other existing rows are
+  backfilled as plan entitlement.
+- Added the missing traffic-grant input to product creation. Create and SKU
+  editors now expose separate billing and entitlement controls, disable
+  incompatible operations, and allow one-time plan SKUs without forcing them
+  to become add-ons or removing new purchase.
+- Moved create/save failure summaries to the global toast host while retaining
+  field-level validation and first-invalid-field focus, so an error is visible
+  even when its field is below the current modal viewport.
+
+Local verification:
+
+- `go test ./internal/handler ./internal/datastore -count=1` passed, including
+  one-time plan, traffic-add-on and order-context tests. Every backend package
+  except `internal/zeroevent` passed in a package-filtered full run, and
+  `go vet ./...` passed.
+- A literal `go test ./...` remains red only for the existing Windows
+  `internal/zeroevent` directory-sync `Access is denied` failures. Its first run
+  also caught a new baseline table-inventory mismatch; that task-related
+  regression was fixed before deployment and the datastore suite then passed.
+- `pnpm typecheck` and `pnpm build` passed; the production build transformed
+  616 modules. The new commerce SKU source-contract suite passed all 3 tests.
+- The full frontend suite completed with 242 passing tests and the same 11
+  unrelated source-contract failures across catalog/workbench, form inventory,
+  design tokens, row actions and traffic tooltip formatting.
+- `git diff --check` passed.
+
+Deployment verification:
+
+- The first synchronization attempt exposed an upgrade-order defect: current
+  baseline validation checked `plan_skus.entitlement_mode` before additive
+  reconciliation could install it. The source directory rollback ran, but the
+  mutable Compose image tag still referenced the failed new binary, leaving the
+  app container unhealthy. The migration order was corrected, locally
+  reverified and immediately redeployed; no database business mutation had run
+  before the initial validation failure.
+- Synchronized the corrected working tree with
+  `scripts/deploy-intranet.local.ps1 -SkipLocalChecks` as
+  `v0.0.1-20260826T085814Z-commerce-sku-working-tree@2026-08-26T08:58:15Z`.
+- The retained pre-deployment database backup is
+  `/data/zboard-next/backups/20260826T085815Z/zboard-before-sync.sql`; the
+  previous source is `/data/zboard-next/app-prev-20260826T085815Z`.
+- Workstation `/readyz` returned `ready=true, db=true`.
+  `zboard_next-zboard-1` reported `running/healthy`; MySQL container `db` and
+  Redis container `cache` both reported `running`.
+- Deployed schema evidence reported
+  `billing_mode:varchar(20):periodic` and
+  `entitlement_mode:varchar(24):plan`. All 6 persisted operation rows used a
+  supported operation. The 2 existing SKUs had no invalid entitlement mode and
+  no traffic-add-on/legacy-type mismatch.
+- Public operation filtering matched database expectations for both active
+  plans: each returned one purchase SKU and one renewal SKU. Deployed assets
+  `Plans-BpobVCnY.js`, `PublicPlans-WRh8wKpd.js` and
+  `AccountPlans-BAayZDB9.js` contain the independent entitlement controls,
+  one-time labels, global failure feedback and operation-based catalog query.
+
+Remaining gaps:
+
+- The deployment wrapper does not retain an immutable previous image tag. A
+  failed health check can therefore restore the previous source directory while
+  still launching the newly built image. This run recovered through the
+  corrected redeployment, but image-tagged rollback remains a deployment-script
+  defect to fix separately.
+- Authenticated administrator click-through was not performed without creating
+  or using a production admin session. Runtime, schema, public API and compiled
+  asset evidence are complete; the admin modal interaction is covered by local
+  validation and source-contract tests.
+- The 11 unrelated frontend source-contract failures and the Windows-only
+  zero-event temporary-directory sync failures remain outside this goal.
+- No Git staging, commit, push or release was performed.
+
+## 2026-08-26: make one-time plan quota permanent until exhausted
+
+Goal outcome:
+
+- Corrected the remaining one-time SKU semantic mismatch. A plan-entitlement
+  SKU with `billing_mode=one_time` and `billing_unit=once` is now accepted as
+  permanent quota instead of being rewritten to one month.
+- Permanent quota delivery uses the explicit `9999-12-31T23:59:59Z` storage
+  sentinel required by the existing non-null subscription expiry model. It
+  always applies the no-reset policy, leaves `next_reset_at` empty and remains
+  active until `flow_used >= flow_total`; the existing expiry worker then marks
+  the exhausted subscription expired.
+- Renewing a permanent quota subscription adds the plan quota and preserves the
+  permanent end. Changing a permanent subscription to a timed SKU starts the
+  timed period from the change time instead of performing date arithmetic on
+  the sentinel.
+- The SKU editors now name `once` as `永久（流量用完为止）`, automatically pair
+  it with one-time payment, preserve the value instead of forcing `month`, and
+  explain that traffic does not reset. Storefront and subscription views render
+  the sentinel as `永久有效` rather than exposing year 9999.
+- Documented the permanent-quota meaning in the OpenAPI contract and resource
+  model documentation.
+
+Local verification:
+
+- `go test ./internal/handler ./internal/datastore -count=1` passed, including
+  focused normalization, permanent expiry and no-reset policy assertions;
+  `go vet ./...` passed.
+- A literal `go test ./... -count=1` passed every package except the existing
+  Windows `internal/zeroevent` file-spool tests, which cannot sync temporary
+  directories because this host returns `Access is denied`.
+- `pnpm typecheck` and `pnpm build` passed; the production build transformed
+  616 modules. The focused permanent-date and commerce SKU suites passed all
+  11 tests.
+- The full frontend suite completed with 243 passing tests and the same 11
+  unrelated source-contract failures across catalog/workbench, form inventory,
+  design tokens, row actions and traffic tooltip formatting.
+- `git diff --check` passed.
+
+Deployment verification:
+
+- Synchronized the verified working tree with
+  `scripts/deploy-intranet.local.ps1 -SkipLocalChecks` as
+  `v0.0.1-20260826T113419Z-permanent-quota-working-tree@2026-08-26T11:34:21Z`.
+- The pre-deployment database backup is
+  `/data/zboard-next/backups/20260826T113421Z/zboard-before-sync.sql`; the
+  previous source is `/data/zboard-next/app-prev-20260826T113421Z`; and the
+  archived release source is
+  `/data/zboard-next/releases/20260826T113421Z/source.tar.gz`.
+- Workstation `/readyz` returned `ready=true, db=true`.
+  `zboard_next-zboard-1` reported `running/healthy`; MySQL container `db` and
+  Redis container `cache` both reported `running`.
+- Deployed-source evidence contains the year-9999 permanent end and once-unit
+  no-reset branches, while the old unconditional once-to-month rewrite is
+  absent. Compiled assets `Plans-235P66Lm.js` and
+  `AccountPlans-BaQWypdE.js` contain the permanent option and permanent expiry
+  labels.
+- The current database has no non-traffic-pack once-unit SKU to migrate
+  (`ONCE_PLAN_SKUS=0`); corresponding invalid billing-mode and entitlement-mode
+  counts are both zero. No production business row was created for this
+  verification.
+
+Remaining gaps:
+
+- The 11 unrelated frontend source-contract failures and Windows-only
+  zero-event temporary-directory sync failures remain outside this goal.
+- Authenticated administrator click-through was not performed without creating
+  or using a production admin session. Runtime, deployed source and compiled
+  asset evidence are complete; the modal behavior is covered by focused local
+  source-contract and type checks.
+- No Git staging, commit, push or release was performed.
+
+## 2026-08-26 - Make renewal fulfillment explicit across timed and permanent SKUs
+
+Goal outcome:
+
+- Added an explicit `renewal_effect` contract to plan SKUs and order snapshots.
+  Timed renewal SKUs may extend time only or extend time and add one plan quota;
+  permanent one-time SKUs may only add one plan quota while preserving the
+  permanent end; non-renewable and traffic-addon SKUs store `none`.
+- New timed renewal SKUs default to `extend_only`. Existing timed renewal SKUs
+  are migrated to `extend_only`, while legacy pending timed renewal orders are
+  backfilled to `extend_and_add_quota` so already-created orders retain their
+  original fulfillment meaning.
+- Renewal fulfillment now follows the order snapshot instead of assuming every
+  renewal extends time and adds quota. Quota-only permanent replenishment can
+  reactivate an exhausted permanent subscription without changing its sentinel
+  end or reset policy.
+- The administrator SKU forms, product detail, checkout and order detail expose
+  the configured renewal result in user-facing language. Exhausted permanent
+  subscriptions are included in the account renewal target list and use the
+  action label `补充额度`.
+- Updated the OpenAPI and resource-model documentation for the new field and
+  fulfillment rules.
+
+Local verification:
+
+- `go test ./internal/handler ./internal/datastore -count=1` passed, including
+  normalization and fulfillment-effect tests; `go vet ./...` passed.
+- A literal `go test ./... -count=1` passed every package except the existing
+  Windows `internal/zeroevent` file-spool tests, which fail directory sync with
+  `Access is denied` on this host.
+- `pnpm build` passed after type checking and transformed 616 modules. Focused
+  commerce SKU and permanent-date suites passed all 13 tests.
+- The full frontend suite completed with 245 passing tests and the same 11
+  unrelated source-contract failures across catalog/workbench, form inventory,
+  design tokens, row actions and traffic tooltip formatting.
+- `git diff --check` passed.
+
+Deployment verification:
+
+- The first synchronization attempt as
+  `v0.0.1-20260826T150408Z-renewal-effects-working-tree` exposed an ordering
+  defect: legacy baseline validation required `orders.renewal_effect` before
+  commerce reconciliation could add it. The container became unhealthy and the
+  deployment wrapper's source-only rollback did not restore service.
+- Removed both evolving `renewal_effect` columns from legacy-baseline
+  prerequisites while retaining them in commerce reconciliation, and added a
+  regression test that protects this ordering. The focused datastore/handler
+  suites and `go vet ./...` passed again before resynchronization.
+- Resynchronized the corrected tree as
+  `v0.0.1-20260826T151003Z-renewal-effects-working-tree-working-tree@2026-08-26T15:10:05Z`.
+  The retained pre-deployment database backup is
+  `/data/zboard-next/backups/20260826T151005Z/zboard-before-sync.sql`; the
+  previous source is `/data/zboard-next/app-prev-20260826T151005Z`; and the
+  archived release source is
+  `/data/zboard-next/releases/20260826T151005Z/source.tar.gz`.
+- Workstation `/readyz` returned `ready=true, db=true`.
+  `zboard_next-zboard-1` reported `running/healthy`; MySQL container `db` and
+  Redis container `cache` both reported `running`.
+- The deployed database contains non-null `varchar(32)` `renewal_effect`
+  columns on `plan_skus` and `orders`. Existing SKU values are
+  `extend_only=2, none=1`; historical order snapshots are
+  `extend_and_add_quota=2, none=2`. Invalid enum, permanent-renewal,
+  timed-renewal and non-renewal combination counts are all zero.
+- Public renewal catalog responses for plans 1 and 2 return their monthly SKUs
+  with `renewal_effect=extend_only`. Deployed assets
+  `AccountPlans-IL6Ox1LC.js` and related commerce chunks contain
+  `再次购买效果`, `只延长有效期` and `补充额度`.
+- Deployed source contains `renewalFulfillmentForOrder` and the explicit SKU
+  effect constants; the old unconditional quota-addition statement is absent.
+  No production business row was created for verification.
+
+Remaining gaps:
+
+- The deployment wrapper still cannot reliably roll back a newly built image
+  when startup fails; its source-only rollback left the failed image active in
+  the first attempt. Service is healthy after the corrected redeployment, but
+  immutable image-tag rollback remains a separate deployment-script defect.
+- The 11 unrelated frontend failures and Windows-only zero-event temporary
+  directory sync failures remain outside this goal.
+- Authenticated administrator click-through was not performed without creating
+  or using a production admin session; focused local tests, public API, schema,
+  deployed source and compiled assets cover the implemented behavior.
 - No Git staging, commit, push or release was performed.

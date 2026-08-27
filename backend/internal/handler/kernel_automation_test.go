@@ -190,6 +190,7 @@ func TestZeroConnectorUsesCurrentLocalKernelContract(t *testing.T) {
 		`"outbox_path":"/var/lib/zerodenet/event-outbox.jsonl"`,
 		`"engine.started"`,
 		`"stats.sampled"`,
+		`"flow.started"`,
 		`"flow.completed"`,
 		`"allow_insecure":true`,
 	} {

@@ -40,6 +40,7 @@ type adminOrderDetail struct {
 	ProviderTradeNo      *string    `json:"provider_trade_no"`
 	BillingUnit          string     `json:"billing_unit"`
 	BillingValue         int        `json:"billing_value"`
+	RenewalEffect        string     `json:"renewal_effect"`
 	TrafficBytes         int64      `json:"traffic_bytes"`
 	DeviceLimit          int        `json:"device_limit"`
 	SpeedLimitMbps       int        `json:"speed_limit_mbps"`
@@ -108,6 +109,7 @@ func newAdminOrderDetail(order model.Order) adminOrderDetail {
 		ProviderTradeNo:      order.ProviderTradeNo,
 		BillingUnit:          order.BillingUnit,
 		BillingValue:         order.BillingValue,
+		RenewalEffect:        order.RenewalEffect,
 		TrafficBytes:         order.TrafficBytes,
 		DeviceLimit:          order.DeviceLimit,
 		SpeedLimitMbps:       order.SpeedLimitMbps,

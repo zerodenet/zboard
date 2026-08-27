@@ -3775,13 +3775,19 @@ components:
         code: { type: string }
         name: { type: string }
         sku_type: { type: string, enum: [new, renewal, upgrade, traffic_pack] }
-        billing_unit: { type: string, enum: [day, month, year, once] }
+        billing_mode: { type: string, enum: [periodic, one_time] }
+        entitlement_mode: { type: string, enum: [plan, traffic_addon] }
+        renewal_effect: { type: string, enum: [none, extend_only, extend_and_add_quota, add_quota_only], description: Fulfillment applied when an existing subscription purchases this SKU again. }
+        allowed_operations:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [purchase, renew, change, addon] }
+        billing_unit: { type: string, enum: [day, month, year, once], description: For plan entitlement, once means permanent quota with no traffic reset; for a traffic add-on, once means a single grant. }
         billing_value: { type: integer, minimum: 1 }
         price_cents: { type: integer, format: int64, minimum: 0 }
         currency: { type: string }
-        traffic_bytes: { type: integer, format: int64, minimum: 1 }
-        device_limit: { type: integer, minimum: 1 }
-        speed_limit_mbps: { type: integer, minimum: 0 }
+        grant_traffic_bytes: { type: integer, format: int64, minimum: 0, description: Additional traffic granted only when entitlement_mode is traffic_addon. }
         is_active: { type: boolean }
     PlanPage:
       allOf:
@@ -4286,6 +4292,7 @@ components:
             provider_trade_no: { type: string, nullable: true }
             billing_unit: { type: string }
             billing_value: { type: integer }
+            renewal_effect: { type: string, enum: [none, extend_only, extend_and_add_quota, add_quota_only] }
             traffic_bytes: { type: integer, format: int64 }
             device_limit: { type: integer }
             speed_limit_mbps: { type: integer }

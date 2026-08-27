@@ -56,26 +56,30 @@ type Plan struct {
 	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
-// PlanSKU defines how a plan is sold. Subscription entitlements belong to
-// Plan and are snapshotted into Order. TrafficBytes remains as legacy storage
-// for a one-time traffic grant and is not exposed as a normal SKU entitlement.
+// PlanSKU defines how a plan is sold. Billing cadence, allowed operations and
+// entitlement fulfillment are independent concerns. Subscription entitlements
+// belong to Plan and are snapshotted into Order. TrafficBytes remains as
+// storage for an explicit traffic-addon grant only.
 type PlanSKU struct {
-	ID             uint      `json:"id" gorm:"primaryKey"`
-	PlanID         uint      `json:"plan_id" gorm:"index;not null"`
-	Code           string    `json:"code" gorm:"size:80;uniqueIndex;not null"`
-	Name           string    `json:"name" gorm:"size:80;not null"`
-	SKUType        string    `json:"sku_type" gorm:"size:20;not null;default:new"`
-	BillingUnit    string    `json:"billing_unit" gorm:"size:16;not null"`
-	BillingValue   int       `json:"billing_value" gorm:"not null"`
-	PriceCents     int64     `json:"price_cents" gorm:"not null"`
-	Currency       string    `json:"currency" gorm:"size:8;not null"`
-	TrafficBytes   int64     `json:"-" gorm:"not null"`
-	DeviceLimit    int       `json:"-" gorm:"not null"`
-	SpeedLimitMbps int       `json:"-" gorm:"not null;default:0"`
-	IsActive       bool      `json:"is_active" gorm:"default:true"`
-	SortOrder      int       `json:"sort_order" gorm:"default:0"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID              uint      `json:"id" gorm:"primaryKey"`
+	PlanID          uint      `json:"plan_id" gorm:"index;not null"`
+	Code            string    `json:"code" gorm:"size:80;uniqueIndex;not null"`
+	Name            string    `json:"name" gorm:"size:80;not null"`
+	SKUType         string    `json:"sku_type" gorm:"size:20;not null;default:new"`
+	BillingMode     string    `json:"billing_mode" gorm:"size:20;not null;default:periodic"`
+	EntitlementMode string    `json:"entitlement_mode" gorm:"size:24;not null;default:plan"`
+	RenewalEffect   string    `json:"renewal_effect" gorm:"size:32;not null;default:extend_only"`
+	BillingUnit     string    `json:"billing_unit" gorm:"size:16;not null"`
+	BillingValue    int       `json:"billing_value" gorm:"not null"`
+	PriceCents      int64     `json:"price_cents" gorm:"not null"`
+	Currency        string    `json:"currency" gorm:"size:8;not null"`
+	TrafficBytes    int64     `json:"-" gorm:"not null"`
+	DeviceLimit     int       `json:"-" gorm:"not null"`
+	SpeedLimitMbps  int       `json:"-" gorm:"not null;default:0"`
+	IsActive        bool      `json:"is_active" gorm:"default:true"`
+	SortOrder       int       `json:"sort_order" gorm:"default:0"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type Subscription struct {
@@ -124,6 +128,7 @@ type Order struct {
 	SKUName              string     `json:"sku_name" gorm:"size:80;not null"`
 	BillingUnit          string     `json:"billing_unit" gorm:"size:16;not null"`
 	BillingValue         int        `json:"billing_value" gorm:"not null"`
+	RenewalEffect        string     `json:"renewal_effect" gorm:"size:32;not null;default:none"`
 	TrafficBytes         int64      `json:"traffic_bytes" gorm:"not null"`
 	DeviceLimit          int        `json:"device_limit" gorm:"not null"`
 	SpeedLimitMbps       int        `json:"speed_limit_mbps" gorm:"not null;default:0"`

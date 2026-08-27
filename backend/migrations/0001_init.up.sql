@@ -372,6 +372,7 @@ CREATE TABLE `orders` (
   `sku_name` varchar(80) NOT NULL DEFAULT '',
   `billing_unit` varchar(16) NOT NULL DEFAULT '',
   `billing_value` int NOT NULL DEFAULT '0',
+  `renewal_effect` varchar(32) NOT NULL DEFAULT 'none',
   `traffic_bytes` bigint NOT NULL DEFAULT '0',
   `device_limit` int NOT NULL DEFAULT '0',
   `speed_limit_mbps` int NOT NULL DEFAULT '0',
@@ -418,6 +419,9 @@ CREATE TABLE `plan_skus` (
   `code` varchar(80) NOT NULL,
   `name` varchar(80) NOT NULL,
   `sku_type` varchar(20) NOT NULL DEFAULT 'new',
+  `billing_mode` varchar(20) NOT NULL DEFAULT 'periodic',
+  `entitlement_mode` varchar(24) NOT NULL DEFAULT 'plan',
+  `renewal_effect` varchar(32) NOT NULL DEFAULT 'extend_only',
   `billing_unit` varchar(16) NOT NULL,
   `billing_value` int NOT NULL,
   `price_cents` bigint NOT NULL,
@@ -433,6 +437,16 @@ CREATE TABLE `plan_skus` (
   UNIQUE KEY `uk_plan_skus_code` (`code`),
   KEY `idx_plan_skus_plan` (`plan_id`),
   CONSTRAINT `fk_plan_skus_plan` FOREIGN KEY (`plan_id`) REFERENCES `plans` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+CREATE TABLE `plan_sku_operations` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `plan_sku_id` bigint unsigned NOT NULL,
+  `operation` varchar(20) NOT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_plan_sku_operations_sku_operation` (`plan_sku_id`,`operation`),
+  KEY `idx_plan_sku_operations_operation` (`operation`,`plan_sku_id`),
+  CONSTRAINT `fk_plan_sku_operations_sku` FOREIGN KEY (`plan_sku_id`) REFERENCES `plan_skus` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 CREATE TABLE `plans` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,

@@ -58,6 +58,7 @@
                 <div><dt>附加流量</dt><dd>{{ formatBytes(selectedSKU.grant_traffic_bytes) }}</dd></div>
                 <div><dt>到期时间</dt><dd>保持目标订阅不变</dd></div>
               </template>
+              <div v-if="operation === 'renew'"><dt>再次购买效果</dt><dd>{{ renewalEffectLabel(selectedSKU) }}</dd></div>
               <template v-else>
                 <div><dt>套餐流量</dt><dd>{{ formatBytes(selectedPlan.traffic_bytes) }}</dd></div>
                 <div><dt>设备数</dt><dd>{{ selectedPlan.device_limit > 0 ? `${selectedPlan.device_limit} 台` : '不限设备' }}</dd></div>
@@ -104,7 +105,7 @@
             <h2 id="active-subscriptions-title">管理现有订阅</h2>
             <p>续费、切换套餐和购买流量包从具体订阅发起。</p>
           </div>
-          <small v-if="subscriptions.length">{{ subscriptions.length }} 个有效订阅</small>
+          <small v-if="subscriptions.length">{{ subscriptions.length }} 个可管理订阅</small>
         </div>
 
         <div v-if="subscriptionLoading" class="commerce-loading-state"><UiIcon name="refresh" />正在加载订阅</div>
@@ -116,16 +117,16 @@
                 <h3>{{ subscription.plan_name }}</h3>
                 <p>{{ subscription.sku_name }}</p>
               </div>
-              <strong>{{ formatDate(subscription.end_at) }}</strong>
+              <strong>{{ subscription.status === 'expired' ? '额度已用完' : formatDate(subscription.end_at) }}</strong>
             </header>
             <dl>
               <div><dt>剩余流量</dt><dd>{{ formatBytes(Math.max(0, subscription.flow_total - subscription.flow_used)) }}</dd></div>
               <div><dt>设备数</dt><dd>{{ subscription.device_limit > 0 ? subscription.device_limit : '不限' }}</dd></div>
             </dl>
             <div class="commerce-subscription-actions">
-              <UiButton variant="secondary" type="button" @click="startOperation('renew', subscription.id)">续费</UiButton>
-              <UiButton variant="secondary" type="button" @click="startOperation('change', subscription.id)">切换套餐</UiButton>
-              <UiButton variant="secondary" type="button" @click="startOperation('addon', subscription.id)">购买流量包</UiButton>
+              <UiButton variant="secondary" type="button" @click="startOperation('renew', subscription.id)">{{ renewActionLabel(subscription) }}</UiButton>
+              <UiButton v-if="subscription.status === 'active'" variant="secondary" type="button" @click="startOperation('change', subscription.id)">切换套餐</UiButton>
+              <UiButton v-if="subscription.status === 'active'" variant="secondary" type="button" @click="startOperation('addon', subscription.id)">购买流量包</UiButton>
             </div>
           </article>
         </div>
@@ -151,7 +152,7 @@
           <div>
             <span>订阅 #{{ selectedSubscription.id }}</span>
             <h3>{{ selectedSubscription.plan_name }}</h3>
-            <p>{{ selectedSubscription.sku_name }} · 到期 {{ formatDate(selectedSubscription.end_at) }}</p>
+            <p>{{ selectedSubscription.sku_name }} · {{ selectedSubscription.status === 'expired' ? '额度已用完，可补充后恢复' : `到期 ${formatDate(selectedSubscription.end_at)}` }}</p>
           </div>
           <dl>
             <div><dt>剩余流量</dt><dd>{{ formatBytes(Math.max(0, selectedSubscription.flow_total - selectedSubscription.flow_used)) }}</dd></div>
@@ -159,9 +160,9 @@
           </dl>
           <UiButton variant="secondary" type="button" @click="changeTarget">更换订阅</UiButton>
         </div>
-        <div v-else-if="subscriptions.length" class="commerce-target-grid">
+        <div v-else-if="operationSubscriptions.length" class="commerce-target-grid">
           <button
-            v-for="subscription in subscriptions"
+            v-for="subscription in operationSubscriptions"
             :key="subscription.id"
             type="button"
             @click="selectTargetSubscription(subscription.id)"
@@ -266,7 +267,7 @@ import UiIcon from '../../components/UiIcon.vue'
 import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../../components/WorkbenchFilterInput.vue'
 import { commerceErrorMessage } from '../../utils/commerceErrors'
-import { formatBytes, formatCurrency } from '../../utils/format'
+import { formatBytes, formatCurrency, isPerpetualDate } from '../../utils/format'
 
 type PurchaseOperation = 'purchase' | 'renew' | 'change' | 'addon'
 
@@ -290,12 +291,6 @@ const operationOptions: OperationOption[] = [
   { value: 'addon', label: '流量包', title: '购买流量包', description: '为指定订阅增加可用流量。' },
 ]
 const validOperations = new Set<PurchaseOperation>(operationOptions.map(item => item.value))
-const skuTypeByOperation: Record<PurchaseOperation, PlanSKU['sku_type']> = {
-  purchase: 'new',
-  renew: 'renewal',
-  change: 'upgrade',
-  addon: 'traffic_pack',
-}
 const orderTypeByOperation: Record<PurchaseOperation, string> = {
   purchase: 'new',
   renew: 'renewal',
@@ -337,8 +332,15 @@ const creating = ref(false)
 const actionError = ref('')
 const checkoutError = ref('')
 
-const currentOperation = computed(() => operationOptions.find(item => item.value === operation.value) || operationOptions[0]!)
 const selectedSubscription = computed(() => subscriptions.value.find(item => item.id === targetSubscriptionID.value) || null)
+const currentOperation = computed<OperationOption>(() => {
+  const base = operationOptions.find(item => item.value === operation.value) || operationOptions[0]!
+  if (operation.value !== 'renew' || !isPermanentSubscription(selectedSubscription.value)) return base
+  return { value: 'renew', label: '补充额度', title: '补充永久套餐额度', description: '选择同商品规格，为永久订阅补充套餐流量。' }
+})
+const operationSubscriptions = computed(() => operation.value === 'renew'
+  ? subscriptions.value
+  : subscriptions.value.filter(item => item.status === 'active'))
 const selectedSKU = computed(() => detailSKUs.value.find(item => item.id === selectedSKUID.value) || null)
 const loading = computed(() => subscriptionLoading.value || planLoading.value || detailLoading.value || creating.value)
 const catalogVisible = computed(() => operation.value === 'purchase' || Boolean(selectedSubscription.value))
@@ -346,24 +348,45 @@ const pageTitle = computed(() => checkoutOpen.value ? '确认订单' : selectedP
 const pageDescription = computed(() => checkoutOpen.value ? '核对订单内容后创建订单。' : selectedPlan.value ? '选择规格并继续结算。' : currentOperation.value.description)
 const catalogTitle = computed(() => ({
   purchase: '购买新的订阅',
-  renew: `${selectedSubscription.value?.plan_name || ''} 续费`,
+  renew: `${selectedSubscription.value?.plan_name || ''} ${currentOperation.value.label}`,
   change: '选择新的套餐',
   addon: `${selectedSubscription.value?.plan_name || ''} 流量包`,
 }[operation.value]))
 const catalogDescription = computed(() => ({
   purchase: '选择套餐后进入商品详情。',
-  renew: '选择可用的续费规格。',
+  renew: isPermanentSubscription(selectedSubscription.value) ? '选择规格并为永久订阅补充套餐流量。' : '选择规格并延长订阅有效期。',
   change: '选择要切换到的套餐。',
   addon: '选择需要增加的流量。',
 }[operation.value]))
 
 function billingLabel(sku: PlanSKU) {
   const unit = ({ day: '天', month: '个月', year: '年', once: '次' } as Record<string, string>)[sku.billing_unit] || sku.billing_unit
-  return sku.billing_unit === 'once' ? '一次性' : `${sku.billing_value} ${unit}`
+  if (sku.entitlement_mode === 'traffic_addon') return '一次性流量加购'
+  if (sku.billing_unit === 'once') return '永久有效 · 流量用完为止'
+  const period = `${sku.billing_value} ${unit}`
+  return sku.billing_mode === 'one_time' ? `一次性付费 · ${period}有效` : period
+}
+
+function renewalEffectLabel(sku: PlanSKU) {
+  return ({
+    none: '不适用',
+    extend_only: '只延长有效期，流量不叠加',
+    extend_and_add_quota: '延长有效期，并增加一份套餐流量',
+    add_quota_only: '只补充一份套餐流量，永久有效期不变',
+  } as Record<string, string>)[sku.renewal_effect] || '按规格配置履约'
+}
+
+function isPermanentSubscription(subscription: AdminSubscriptionListItem | null | undefined) {
+  return Boolean(subscription && isPerpetualDate(subscription.end_at))
+}
+
+function renewActionLabel(subscription: AdminSubscriptionListItem) {
+  return isPermanentSubscription(subscription) ? '补充额度' : '续费'
 }
 
 function formatDate(value: string) {
   if (!value) return '—'
+  if (isPerpetualDate(value)) return '永久有效'
   return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value))
 }
 
@@ -387,8 +410,15 @@ async function loadSubscriptions() {
   subscriptionLoading.value = true
   subscriptionError.value = ''
   try {
-    const result = await fetchAccountSubscriptionsPage({ status: 'active', offset: 0, limit: 100 })
-    subscriptions.value = result.items
+    const [active, expired] = await Promise.all([
+      fetchAccountSubscriptionsPage({ status: 'active', offset: 0, limit: 100 }),
+      fetchAccountSubscriptionsPage({ status: 'expired', offset: 0, limit: 100 }),
+    ])
+    const exhaustedPermanent = expired.items.filter(item => isPermanentSubscription(item) && item.flow_used >= item.flow_total)
+    subscriptions.value = [...active.items, ...exhaustedPermanent].sort((left, right) => right.id - left.id)
+    if (operation.value !== 'renew' && selectedSubscription.value?.status !== 'active') {
+      targetSubscriptionID.value = 0
+    }
     if (targetSubscriptionID.value && !subscriptions.value.some(item => item.id === targetSubscriptionID.value)) {
       targetSubscriptionID.value = 0
     }
@@ -404,7 +434,7 @@ async function loadCardOffer(plan: PlanCatalogItem) {
   cardOfferState[plan.id] = { loading: true, offer: null, total: 0 }
   try {
     const result = await fetchPlanCatalogSKUs(plan.id, {
-      skuType: skuTypeByOperation[operation.value],
+      operation: operation.value,
       offset: 0,
       limit: 1,
     })
@@ -464,7 +494,7 @@ async function openPlanDetail(planID: number, preserveRequestedSKU = false) {
     const [plan, skuResult] = await Promise.all([
       fetchPlanCatalogItem(planID),
       fetchPlanCatalogSKUs(planID, {
-        skuType: skuTypeByOperation[operation.value],
+        operation: operation.value,
         offset: 0,
         limit: 100,
       }),

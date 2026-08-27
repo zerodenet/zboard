@@ -59,6 +59,9 @@ defineEmits<{ select: [] }>()
 
 function billingLabel(sku: PlanSKU) {
   const unit = ({ day: '天', month: '个月', year: '年', once: '次' } as Record<string, string>)[sku.billing_unit] || sku.billing_unit
-  return sku.billing_unit === 'once' ? '一次性' : `${sku.billing_value} ${unit}`
+  if (sku.entitlement_mode === 'traffic_addon') return '一次性流量加购'
+  if (sku.billing_unit === 'once') return '永久有效 · 流量用完为止'
+  const period = `${sku.billing_value} ${unit}`
+  return sku.billing_mode === 'one_time' ? `一次性付费 · ${period}有效` : period
 }
 </script>

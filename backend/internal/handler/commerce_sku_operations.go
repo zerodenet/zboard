@@ -14,8 +14,14 @@ import (
 )
 
 const (
-	skuBillingPeriodic = "periodic"
-	skuBillingOneTime  = "one_time"
+	skuBillingPeriodic         = "periodic"
+	skuBillingOneTime          = "one_time"
+	skuEntitlementPlan         = "plan"
+	skuEntitlementTrafficAddon = "traffic_addon"
+	skuRenewalNone             = "none"
+	skuRenewalExtendOnly       = "extend_only"
+	skuRenewalExtendAndAdd     = "extend_and_add_quota"
+	skuRenewalAddQuotaOnly     = "add_quota_only"
 
 	skuOperationPurchase = "purchase"
 	skuOperationRenew    = "renew"
@@ -35,6 +41,8 @@ type commercePlanSKURequest struct {
 	Name              string   `json:"name"`
 	SKUType           string   `json:"sku_type"` // Deprecated compatibility input.
 	BillingMode       string   `json:"billing_mode"`
+	EntitlementMode   string   `json:"entitlement_mode"`
+	RenewalEffect     string   `json:"renewal_effect"`
 	AllowedOperations []string `json:"allowed_operations"`
 	BillingUnit       string   `json:"billing_unit"`
 	BillingValue      int      `json:"billing_value"`
@@ -77,19 +85,21 @@ type commerceOrderCreateRequest struct {
 type normalizedCommerceSKU struct {
 	SKU               model.PlanSKU
 	BillingMode       string
+	EntitlementMode   string
+	RenewalEffect     string
 	AllowedOperations []string
 }
 
 type commercePlanSKUItem struct {
 	model.PlanSKU
-	BillingMode       string   `json:"billing_mode"`
 	AllowedOperations []string `json:"allowed_operations"`
 	GrantTrafficBytes int64    `json:"grant_traffic_bytes"`
 }
 
 type planSKUBillingRow struct {
-	ID          uint   `gorm:"column:id"`
-	BillingMode string `gorm:"column:billing_mode"`
+	ID              uint   `gorm:"column:id"`
+	BillingMode     string `gorm:"column:billing_mode"`
+	EntitlementMode string `gorm:"column:entitlement_mode"`
 }
 
 func legacySKUTypeOperation(value string) string {
@@ -105,8 +115,8 @@ func legacySKUTypeOperation(value string) string {
 	}
 }
 
-func compatibilitySKUType(billingMode string, operations []string) string {
-	if billingMode == skuBillingOneTime || containsSKUOperation(operations, skuOperationAddon) {
+func compatibilitySKUType(entitlementMode string, operations []string) string {
+	if entitlementMode == skuEntitlementTrafficAddon {
 		return "traffic_pack"
 	}
 	if containsSKUOperation(operations, skuOperationPurchase) {
@@ -172,12 +182,36 @@ func normalizeCommercePlanSKU(planID uint, request commercePlanSKURequest) (norm
 		grantTrafficBytes = request.TrafficBytes
 	}
 	billingUnit := strings.ToLower(strings.TrimSpace(request.BillingUnit))
-	if billingMode == skuBillingOneTime {
+	entitlementMode := strings.ToLower(strings.TrimSpace(request.EntitlementMode))
+	if entitlementMode == "" {
+		if strings.EqualFold(strings.TrimSpace(request.SKUType), "traffic_pack") || containsSKUOperation(operations, skuOperationAddon) {
+			entitlementMode = skuEntitlementTrafficAddon
+		} else {
+			entitlementMode = skuEntitlementPlan
+		}
+	}
+	if entitlementMode != skuEntitlementPlan && entitlementMode != skuEntitlementTrafficAddon {
+		fields["entitlement_mode"] = "权益用途只能是套餐权益或流量加购。"
+	}
+	renewalEffect := strings.ToLower(strings.TrimSpace(request.RenewalEffect))
+	if entitlementMode == skuEntitlementTrafficAddon || !containsSKUOperation(operations, skuOperationRenew) {
+		renewalEffect = skuRenewalNone
+	} else if renewalEffect == "" {
+		if billingUnit == "once" {
+			renewalEffect = skuRenewalAddQuotaOnly
+		} else {
+			renewalEffect = skuRenewalExtendOnly
+		}
+	}
+	if entitlementMode == skuEntitlementTrafficAddon {
+		if billingMode != skuBillingOneTime {
+			fields["billing_mode"] = "流量加购必须使用一次性付费。"
+		}
 		if billingUnit != "once" {
-			fields["billing_unit"] = "一次性规格必须使用一次性计费单位。"
+			fields["billing_unit"] = "流量加购必须使用一次性单位。"
 		}
 		if len(operations) != 1 || operations[0] != skuOperationAddon {
-			fields["allowed_operations"] = "一次性规格当前仅用于附加权益购买。"
+			fields["allowed_operations"] = "流量加购只能用于附加购买。"
 		}
 		if grantTrafficBytes <= 0 {
 			fields["grant_traffic_bytes"] = "流量包的附加流量必须大于 0。"
@@ -185,15 +219,23 @@ func normalizeCommercePlanSKU(planID uint, request commercePlanSKURequest) (norm
 		if request.DeviceLimit != 0 || request.SpeedLimitMbps != 0 {
 			fields["entitlements"] = "流量包只能增加流量，不能修改设备数或限速。"
 		}
-	} else {
-		if billingUnit == "once" {
-			fields["billing_unit"] = "周期规格不能使用一次性计费单位。"
+	} else if entitlementMode == skuEntitlementPlan {
+		if billingMode == skuBillingPeriodic && billingUnit == "once" {
+			fields["billing_unit"] = "按周期付费不能使用永久有效；请改为一次性付费。"
 		}
 		if containsSKUOperation(operations, skuOperationAddon) {
-			fields["allowed_operations"] = "附加权益请使用一次性规格。"
+			fields["allowed_operations"] = "套餐权益不能用于附加购买；请将权益用途改为流量加购。"
+		}
+		if containsSKUOperation(operations, skuOperationRenew) {
+			if billingUnit == "once" && renewalEffect != skuRenewalAddQuotaOnly {
+				fields["renewal_effect"] = "永久套餐再次购买只能补充套餐额度。"
+			}
+			if billingUnit != "once" && renewalEffect != skuRenewalExtendOnly && renewalEffect != skuRenewalExtendAndAdd {
+				fields["renewal_effect"] = "限时套餐请选择只延长时间，或延长时间并增加套餐额度。"
+			}
 		}
 		if request.GrantTrafficBytes != 0 || request.TrafficBytes != 0 || request.DeviceLimit != 0 || request.SpeedLimitMbps != 0 {
-			fields["entitlements"] = "周期规格继承商品权益，不能单独配置流量、设备数或限速。"
+			fields["entitlements"] = "套餐权益继承商品配置，不能在 SKU 单独覆盖流量、设备数或限速。"
 		}
 		grantTrafficBytes = 0
 	}
@@ -203,7 +245,7 @@ func normalizeCommercePlanSKU(planID uint, request commercePlanSKURequest) (norm
 
 	legacy := planSKUReq{
 		Code: request.Code, Name: request.Name,
-		SKUType:     compatibilitySKUType(billingMode, operations),
+		SKUType:     compatibilitySKUType(entitlementMode, operations),
 		BillingUnit: request.BillingUnit, BillingValue: request.BillingValue,
 		PriceCents: request.PriceCents, Currency: request.Currency,
 		TrafficBytes: grantTrafficBytes, DeviceLimit: 0,
@@ -214,7 +256,10 @@ func normalizeCommercePlanSKU(planID uint, request commercePlanSKURequest) (norm
 	if err != nil {
 		return normalizedCommerceSKU{}, err
 	}
-	return normalizedCommerceSKU{SKU: sku, BillingMode: billingMode, AllowedOperations: operations}, nil
+	sku.BillingMode = billingMode
+	sku.EntitlementMode = entitlementMode
+	sku.RenewalEffect = renewalEffect
+	return normalizedCommerceSKU{SKU: sku, BillingMode: billingMode, EntitlementMode: entitlementMode, RenewalEffect: renewalEffect, AllowedOperations: operations}, nil
 }
 
 func containsSKUOperation(operations []string, target string) bool {
@@ -224,6 +269,16 @@ func containsSKUOperation(operations []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func defaultSKURenewalEffect(billingUnit, entitlementMode string, operations []string) string {
+	if entitlementMode == skuEntitlementTrafficAddon || !containsSKUOperation(operations, skuOperationRenew) {
+		return skuRenewalNone
+	}
+	if billingUnit == "once" {
+		return skuRenewalAddQuotaOnly
+	}
+	return skuRenewalExtendOnly
 }
 
 func replacePlanSKUOperations(tx *gorm.DB, planSKUID uint, operations []string) error {
@@ -240,26 +295,28 @@ func replacePlanSKUOperations(tx *gorm.DB, planSKUID uint, operations []string) 
 	return tx.Create(&rows).Error
 }
 
-func loadPlanSKUCommerceMetadata(db *gorm.DB, skus []model.PlanSKU) (map[uint]string, map[uint][]string, error) {
+func loadPlanSKUCommerceMetadata(db *gorm.DB, skus []model.PlanSKU) (map[uint]string, map[uint]string, map[uint][]string, error) {
 	billingModes := make(map[uint]string, len(skus))
+	entitlementModes := make(map[uint]string, len(skus))
 	operations := make(map[uint][]string, len(skus))
 	if len(skus) == 0 {
-		return billingModes, operations, nil
+		return billingModes, entitlementModes, operations, nil
 	}
 	ids := make([]uint, 0, len(skus))
 	for _, sku := range skus {
 		ids = append(ids, sku.ID)
 	}
 	var billingRows []planSKUBillingRow
-	if err := db.Table("plan_skus").Select("id, billing_mode").Where("id IN ?", ids).Scan(&billingRows).Error; err != nil {
-		return nil, nil, err
+	if err := db.Table("plan_skus").Select("id, billing_mode, entitlement_mode").Where("id IN ?", ids).Scan(&billingRows).Error; err != nil {
+		return nil, nil, nil, err
 	}
 	for _, row := range billingRows {
 		billingModes[row.ID] = row.BillingMode
+		entitlementModes[row.ID] = row.EntitlementMode
 	}
 	var operationRows []model.PlanSKUOperation
 	if err := db.Where("plan_sku_id IN ?", ids).Order("plan_sku_id asc, operation asc").Find(&operationRows).Error; err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	for _, row := range operationRows {
 		operations[row.PlanSKUID] = append(operations[row.PlanSKUID], row.Operation)
@@ -272,6 +329,13 @@ func loadPlanSKUCommerceMetadata(db *gorm.DB, skus []model.PlanSKU) (map[uint]st
 				billingModes[sku.ID] = skuBillingPeriodic
 			}
 		}
+		if entitlementModes[sku.ID] == "" {
+			if sku.SKUType == "traffic_pack" {
+				entitlementModes[sku.ID] = skuEntitlementTrafficAddon
+			} else {
+				entitlementModes[sku.ID] = skuEntitlementPlan
+			}
+		}
 		if len(operations[sku.ID]) == 0 {
 			operations[sku.ID] = []string{legacySKUTypeOperation(sku.SKUType)}
 		}
@@ -279,22 +343,27 @@ func loadPlanSKUCommerceMetadata(db *gorm.DB, skus []model.PlanSKU) (map[uint]st
 			return skuOperationOrder[operations[sku.ID][left]] < skuOperationOrder[operations[sku.ID][right]]
 		})
 	}
-	return billingModes, operations, nil
+	return billingModes, entitlementModes, operations, nil
 }
 
 func decoratePlanSKUs(db *gorm.DB, skus []model.PlanSKU) ([]commercePlanSKUItem, error) {
-	billingModes, operations, err := loadPlanSKUCommerceMetadata(db, skus)
+	billingModes, entitlementModes, operations, err := loadPlanSKUCommerceMetadata(db, skus)
 	if err != nil {
 		return nil, err
 	}
 	items := make([]commercePlanSKUItem, 0, len(skus))
 	for _, sku := range skus {
+		sku.BillingMode = billingModes[sku.ID]
+		sku.EntitlementMode = entitlementModes[sku.ID]
+		if sku.RenewalEffect == "" {
+			sku.RenewalEffect = defaultSKURenewalEffect(sku.BillingUnit, sku.EntitlementMode, operations[sku.ID])
+		}
 		grantTrafficBytes := int64(0)
-		if billingModes[sku.ID] == skuBillingOneTime || containsSKUOperation(operations[sku.ID], skuOperationAddon) {
+		if entitlementModes[sku.ID] == skuEntitlementTrafficAddon {
 			grantTrafficBytes = sku.TrafficBytes
 		}
 		items = append(items, commercePlanSKUItem{
-			PlanSKU: sku, BillingMode: billingModes[sku.ID], AllowedOperations: operations[sku.ID],
+			PlanSKU: sku, AllowedOperations: operations[sku.ID],
 			GrantTrafficBytes: grantTrafficBytes,
 		})
 	}
@@ -505,9 +574,6 @@ func (h *handlers) PlanSKUCreateCommerceHandler(w http.ResponseWriter, r *http.R
 		if err := tx.Create(&normalized.SKU).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&model.PlanSKU{}).Where("id = ?", normalized.SKU.ID).Update("billing_mode", normalized.BillingMode).Error; err != nil {
-			return err
-		}
 		if err := replacePlanSKUOperations(tx, normalized.SKU.ID, normalized.AllowedOperations); err != nil {
 			return err
 		}
@@ -522,7 +588,7 @@ func (h *handlers) PlanSKUCreateCommerceHandler(w http.ResponseWriter, r *http.R
 		BadRequest(w, err.Error())
 		return
 	}
-	OK(w, commercePlanSKUItem{PlanSKU: normalized.SKU, BillingMode: normalized.BillingMode, AllowedOperations: normalized.AllowedOperations, GrantTrafficBytes: normalized.SKU.TrafficBytes})
+	OK(w, commercePlanSKUItem{PlanSKU: normalized.SKU, AllowedOperations: normalized.AllowedOperations, GrantTrafficBytes: normalized.SKU.TrafficBytes})
 }
 
 func (h *handlers) PlanSKUUpdateCommerceHandler(w http.ResponseWriter, r *http.Request) {
@@ -569,6 +635,7 @@ func (h *handlers) PlanSKUUpdateCommerceHandler(w http.ResponseWriter, r *http.R
 		updates := map[string]interface{}{
 			"code": normalized.SKU.Code, "name": normalized.SKU.Name,
 			"sku_type": normalized.SKU.SKUType, "billing_mode": normalized.BillingMode,
+			"entitlement_mode": normalized.EntitlementMode, "renewal_effect": normalized.RenewalEffect,
 			"billing_unit": normalized.SKU.BillingUnit, "billing_value": normalized.SKU.BillingValue,
 			"price_cents": normalized.SKU.PriceCents, "currency": normalized.SKU.Currency,
 			"traffic_bytes": normalized.SKU.TrafficBytes, "device_limit": normalized.SKU.DeviceLimit,
@@ -588,7 +655,7 @@ func (h *handlers) PlanSKUUpdateCommerceHandler(w http.ResponseWriter, r *http.R
 		BadRequest(w, err.Error())
 		return
 	}
-	OK(w, commercePlanSKUItem{PlanSKU: normalized.SKU, BillingMode: normalized.BillingMode, AllowedOperations: normalized.AllowedOperations, GrantTrafficBytes: normalized.SKU.TrafficBytes})
+	OK(w, commercePlanSKUItem{PlanSKU: normalized.SKU, AllowedOperations: normalized.AllowedOperations, GrantTrafficBytes: normalized.SKU.TrafficBytes})
 }
 
 func (h *handlers) PlanCreateCommerceHandler(w http.ResponseWriter, r *http.Request) {
@@ -675,9 +742,6 @@ func (h *handlers) PlanCreateCommerceHandler(w http.ResponseWriter, r *http.Requ
 		for index := range normalizedSKUs {
 			normalizedSKUs[index].SKU.PlanID = plan.ID
 			if err := tx.Create(&normalizedSKUs[index].SKU).Error; err != nil {
-				return err
-			}
-			if err := tx.Model(&model.PlanSKU{}).Where("id = ?", normalizedSKUs[index].SKU.ID).Update("billing_mode", normalizedSKUs[index].BillingMode).Error; err != nil {
 				return err
 			}
 			if err := replacePlanSKUOperations(tx, normalizedSKUs[index].SKU.ID, normalizedSKUs[index].AllowedOperations); err != nil {
@@ -892,14 +956,14 @@ func (h *handlers) PublicPlanDetailCommerceHandler(w http.ResponseWriter, r *htt
 	OK(w, newPlanCatalogItem(plan, counts[plan.ID], primarySKU))
 }
 
-func deriveOrderTypeForSKU(planID uint, billingMode string, operations []string, target *model.Subscription) (string, error) {
+func deriveOrderTypeForSKU(planID uint, entitlementMode string, operations []string, target *model.Subscription) (string, error) {
 	if target == nil {
-		if billingMode != skuBillingPeriodic || !containsSKUOperation(operations, skuOperationPurchase) {
+		if entitlementMode != skuEntitlementPlan || !containsSKUOperation(operations, skuOperationPurchase) {
 			return "", validationError("订单创建失败。", map[string]string{"plan_sku_id": "该规格不允许新购。"})
 		}
 		return "new", nil
 	}
-	if billingMode == skuBillingOneTime {
+	if entitlementMode == skuEntitlementTrafficAddon {
 		if !containsSKUOperation(operations, skuOperationAddon) {
 			return "", validationError("订单创建失败。", map[string]string{"plan_sku_id": "该规格不允许附加购买。"})
 		}
@@ -946,7 +1010,7 @@ func (h *handlers) OrderCreateCommerceHandler(w http.ResponseWriter, r *http.Req
 		BadRequestFields(w, "订单创建失败。", map[string]string{"plan_sku_id": "商品不可购买。"})
 		return
 	}
-	billingModes, operationMap, err := loadPlanSKUCommerceMetadata(h.db, []model.PlanSKU{sku})
+	_, entitlementModes, operationMap, err := loadPlanSKUCommerceMetadata(h.db, []model.PlanSKU{sku})
 	if err != nil {
 		ServerError(w, err)
 		return
@@ -962,7 +1026,7 @@ func (h *handlers) OrderCreateCommerceHandler(w http.ResponseWriter, r *http.Req
 		target = &subscription
 		targetSubscriptionID = &subscription.ID
 	}
-	orderType, err := deriveOrderTypeForSKU(plan.ID, billingModes[sku.ID], operationMap[sku.ID], target)
+	orderType, err := deriveOrderTypeForSKU(plan.ID, entitlementModes[sku.ID], operationMap[sku.ID], target)
 	if err != nil {
 		BadRequestError(w, err)
 		return
@@ -995,7 +1059,7 @@ func (h *handlers) OrderCreateCommerceHandler(w http.ResponseWriter, r *http.Req
 		AmountCents: sku.PriceCents, PayableAmount: sku.PriceCents, Currency: sku.Currency,
 		Channel: channel, Status: orderStatusPending,
 		PlanName: plan.Name, SKUName: sku.Name, BillingUnit: sku.BillingUnit,
-		BillingValue: sku.BillingValue, TrafficBytes: trafficBytes,
+		BillingValue: sku.BillingValue, RenewalEffect: sku.RenewalEffect, TrafficBytes: trafficBytes,
 		DeviceLimit: deviceLimit, SpeedLimitMbps: speedLimitMbps,
 	}
 	if err := h.db.Create(&order).Error; err != nil {

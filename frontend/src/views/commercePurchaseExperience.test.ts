@@ -27,7 +27,7 @@ describe('commerce purchase experience source contract', () => {
     expect(source).toContain('storefront-catalog-toolbar')
     expect(source).toContain('CommercePlanCard')
     expect(source).toContain('CommercePlanDetail')
-    expect(source).toContain("fetchPlanCatalogSKUs(planID, { skuType: 'new', offset: 0, limit: 100 })")
+    expect(source).toContain("fetchPlanCatalogSKUs(planID, { operation: 'purchase', offset: 0, limit: 100 })")
     expect(source).not.toContain('commerce-offer-tabs')
     expect(source).not.toContain('skuPage')
     expect(source).not.toContain('skuPager')

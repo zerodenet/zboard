@@ -163,7 +163,7 @@ async function openDetail(planID: number, preserveRequestedSKU = false, updateRo
   try {
     const [plan, skuResult] = await Promise.all([
       fetchPlanCatalogItem(planID),
-      fetchPlanCatalogSKUs(planID, { skuType: 'new', offset: 0, limit: 100 }),
+      fetchPlanCatalogSKUs(planID, { operation: 'purchase', offset: 0, limit: 100 }),
     ])
     selectedPlan.value = plan
     detailSKUs.value = skuResult.items

@@ -62,6 +62,8 @@ const (
 	maxEndpointSelection   = 10000
 )
 
+var perpetualSubscriptionEnd = time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC)
+
 var (
 	errAlreadyInstalled            = errors.New("zboard is already installed")
 	errNodeReportCredentialChanged = errors.New("node report credential changed")
@@ -4505,9 +4507,6 @@ func buildPlanSKU(planID uint, req planSKUReq) (model.PlanSKU, error) {
 	default:
 		fields["billing_unit"] = "请选择有效的计费单位。"
 	}
-	if req.BillingUnit == "once" && req.SKUType != "traffic_pack" {
-		fields["billing_unit"] = "一次性计费仅适用于流量包。"
-	}
 	if req.PriceCents < 0 {
 		fields["price_cents"] = "价格不能小于 0。"
 	}
@@ -4961,7 +4960,7 @@ func (h *handlers) OrderCreateHandler(w http.ResponseWriter, r *http.Request) {
 		AmountCents: sku.PriceCents, PayableAmount: sku.PriceCents, Currency: sku.Currency,
 		Channel: channel, Status: orderStatusPending,
 		PlanName: plan.Name, SKUName: sku.Name, BillingUnit: sku.BillingUnit,
-		BillingValue: sku.BillingValue, TrafficBytes: trafficBytes,
+		BillingValue: sku.BillingValue, RenewalEffect: sku.RenewalEffect, TrafficBytes: trafficBytes,
 		DeviceLimit: deviceLimit, SpeedLimitMbps: speedLimitMbps,
 	}
 	if err := h.db.Create(&order).Error; err != nil {
@@ -5267,7 +5266,8 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 		if err != nil {
 			return model.Subscription{}, err
 		}
-		nextResetAt := nextTrafficReset(now, plan.ResetPolicy)
+		resetPolicy := effectiveResetPolicy(order.BillingUnit, plan.ResetPolicy)
+		nextResetAt := nextTrafficReset(now, resetPolicy)
 		renewalPrice := int64(0)
 		if plan.IsRenewable {
 			renewalPrice = sku.PriceCents
@@ -5279,7 +5279,7 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 			FlowTotal: order.TrafficBytes, FlowUsed: 0,
 			SpeedLimitMbps: order.SpeedLimitMbps, DeviceLimit: order.DeviceLimit,
 			FamilyLimit: plan.FamilyLimit, RenewalPriceMinor: renewalPrice,
-			ResetPolicy: plan.ResetPolicy, NextResetAt: nextResetAt,
+			ResetPolicy: resetPolicy, NextResetAt: nextResetAt,
 			TrafficCalcMode: plan.TrafficCalcMode,
 			Config:          "{}",
 		}
@@ -5295,17 +5295,31 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 		return sub, nil
 	}
 
-	if order.OrderType != "traffic_pack" {
-		if !plan.IsRenewable && order.OrderType == "renewal" {
-			return model.Subscription{}, errors.New("plan does not support renewal")
+	fulfillment, err := renewalFulfillmentForOrder(order)
+	if err != nil {
+		return model.Subscription{}, err
+	}
+	if !plan.IsRenewable && order.OrderType == "renewal" {
+		return model.Subscription{}, errors.New("plan does not support renewal")
+	}
+	if fulfillment.makePermanent {
+		sub.EndAt = perpetualSubscriptionEnd
+	} else if fulfillment.extendPeriod {
+		periodBase := sub.EndAt
+		if periodBase.Before(now) || (isPerpetualSubscriptionEnd(periodBase) && order.BillingUnit != "once") {
+			periodBase = now
 		}
-		sub.EndAt, err = addBillingPeriod(sub.EndAt, order.BillingUnit, order.BillingValue)
+		sub.EndAt, err = addBillingPeriod(periodBase, order.BillingUnit, order.BillingValue)
 		if err != nil {
 			return model.Subscription{}, err
 		}
 	}
 	before := sub.FlowTotal - sub.FlowUsed
-	sub.FlowTotal += order.TrafficBytes
+	quotaDelta := int64(0)
+	if fulfillment.addQuota {
+		quotaDelta = order.TrafficBytes
+		sub.FlowTotal += quotaDelta
+	}
 	sub.Status = subStatusActive
 	if order.OrderType != "traffic_pack" {
 		sub.PlanID = plan.ID
@@ -5314,8 +5328,8 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 		sub.SpeedLimitMbps = order.SpeedLimitMbps
 		sub.DeviceLimit = order.DeviceLimit
 		sub.FamilyLimit = plan.FamilyLimit
-		sub.ResetPolicy = plan.ResetPolicy
-		sub.NextResetAt = nextTrafficReset(now, plan.ResetPolicy)
+		sub.ResetPolicy = effectiveResetPolicy(order.BillingUnit, plan.ResetPolicy)
+		sub.NextResetAt = nextTrafficReset(now, sub.ResetPolicy)
 		sub.TrafficCalcMode = plan.TrafficCalcMode
 		if plan.IsRenewable {
 			sub.RenewalPriceMinor = sku.PriceCents
@@ -5330,10 +5344,48 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 	if _, err := h.ensureSubscriptionCredentials(tx, sub); err != nil {
 		return model.Subscription{}, err
 	}
-	if err := createQuotaEvent(tx, sub, order.OrderType, order.TrafficBytes, before, before+order.TrafficBytes, "order", strconv.FormatUint(uint64(order.ID), 10)); err != nil {
+	if err := createQuotaEvent(tx, sub, order.OrderType, quotaDelta, before, before+quotaDelta, "order", strconv.FormatUint(uint64(order.ID), 10)); err != nil {
 		return model.Subscription{}, err
 	}
 	return sub, nil
+}
+
+type renewalFulfillment struct {
+	extendPeriod  bool
+	addQuota      bool
+	makePermanent bool
+}
+
+func renewalFulfillmentForOrder(order model.Order) (renewalFulfillment, error) {
+	switch order.OrderType {
+	case "traffic_pack":
+		return renewalFulfillment{addQuota: true}, nil
+	case "upgrade":
+		return renewalFulfillment{extendPeriod: true, addQuota: true}, nil
+	case "renewal":
+		effect := strings.TrimSpace(order.RenewalEffect)
+		if effect == "" {
+			// Compatibility for an order created before the renewal-effect snapshot
+			// existed. Reconciliation persists this same interpretation.
+			if order.BillingUnit == "once" {
+				effect = skuRenewalAddQuotaOnly
+			} else {
+				effect = skuRenewalExtendAndAdd
+			}
+		}
+		switch effect {
+		case skuRenewalExtendOnly:
+			return renewalFulfillment{extendPeriod: true}, nil
+		case skuRenewalExtendAndAdd:
+			return renewalFulfillment{extendPeriod: true, addQuota: true}, nil
+		case skuRenewalAddQuotaOnly:
+			return renewalFulfillment{addQuota: true, makePermanent: order.BillingUnit == "once"}, nil
+		default:
+			return renewalFulfillment{}, fmt.Errorf("unsupported renewal effect %q", effect)
+		}
+	default:
+		return renewalFulfillment{extendPeriod: true, addQuota: true}, nil
+	}
 }
 
 func createQuotaEvent(tx *gorm.DB, sub model.Subscription, eventType string, delta, before, after int64, referenceType, referenceID string) error {
@@ -5362,6 +5414,17 @@ func nextTrafficReset(base time.Time, policy int16) *time.Time {
 	return &next
 }
 
+func effectiveResetPolicy(billingUnit string, planPolicy int16) int16 {
+	if billingUnit == "once" {
+		return 5
+	}
+	return planPolicy
+}
+
+func isPerpetualSubscriptionEnd(value time.Time) bool {
+	return !value.IsZero() && value.UTC().Year() >= perpetualSubscriptionEnd.Year()
+}
+
 func addBillingPeriod(base time.Time, unit string, value int) (time.Time, error) {
 	if value <= 0 {
 		return time.Time{}, errors.New("billing value must be positive")
@@ -5374,7 +5437,7 @@ func addBillingPeriod(base time.Time, unit string, value int) (time.Time, error)
 	case "year":
 		return addCalendarMonths(base, value*12), nil
 	case "once":
-		return time.Time{}, errors.New("once billing does not create a subscription period")
+		return perpetualSubscriptionEnd, nil
 	default:
 		return time.Time{}, errors.New("unsupported billing unit")
 	}
