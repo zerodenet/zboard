@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -12,19 +13,140 @@ import (
 	"gorm.io/gorm"
 )
 
-const nodeConfigPublishTimeout = 2 * time.Minute
+const (
+	nodeConfigPublishTimeout     = 2 * time.Minute
+	nodeConfigPublishWorkerCount = 4
+)
 
-func (h *handlers) nodePublishLock(nodeID uint) *sync.Mutex {
-	value, _ := h.nodePublishLocks.LoadOrStore(nodeID, &sync.Mutex{})
-	return value.(*sync.Mutex)
+type contextMutex struct {
+	token chan struct{}
+}
+
+func newContextMutex() *contextMutex {
+	lock := &contextMutex{token: make(chan struct{}, 1)}
+	lock.token <- struct{}{}
+	return lock
+}
+
+func (m *contextMutex) Lock(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-m.token:
+		return nil
+	}
+}
+
+func (m *contextMutex) Unlock() {
+	m.token <- struct{}{}
+}
+
+type scheduledNodePublish struct {
+	nodeID      uint
+	endpointID  uint
+	requestedBy uint
+}
+
+type nodePublishScheduler struct {
+	mu      sync.Mutex
+	pending map[uint]scheduledNodePublish
+	running map[uint]struct{}
+	wake    chan struct{}
+}
+
+func newNodePublishScheduler() *nodePublishScheduler {
+	return &nodePublishScheduler{
+		pending: make(map[uint]scheduledNodePublish),
+		running: make(map[uint]struct{}),
+		wake:    make(chan struct{}, 1),
+	}
+}
+
+func (s *nodePublishScheduler) enqueue(request scheduledNodePublish) {
+	if request.nodeID == 0 {
+		return
+	}
+	s.mu.Lock()
+	s.pending[request.nodeID] = request
+	s.mu.Unlock()
+	s.signal()
+}
+
+func (s *nodePublishScheduler) take() (scheduledNodePublish, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for nodeID, request := range s.pending {
+		if _, busy := s.running[nodeID]; busy {
+			continue
+		}
+		delete(s.pending, nodeID)
+		s.running[nodeID] = struct{}{}
+		return request, true
+	}
+	return scheduledNodePublish{}, false
+}
+
+func (s *nodePublishScheduler) finish(nodeID uint) {
+	s.mu.Lock()
+	delete(s.running, nodeID)
+	_, pending := s.pending[nodeID]
+	s.mu.Unlock()
+	if pending {
+		s.signal()
+	}
+}
+
+func (s *nodePublishScheduler) signal() {
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (h *handlers) nodePublishLock(nodeID uint) *contextMutex {
+	value, _ := h.nodePublishLocks.LoadOrStore(nodeID, newContextMutex())
+	return value.(*contextMutex)
+}
+
+func (h *handlers) ensureNodePublishScheduler() *nodePublishScheduler {
+	if h.nodePublishScheduler == nil {
+		h.nodePublishScheduler = newNodePublishScheduler()
+	}
+	h.nodePublishSchedulerOnce.Do(func() {
+		for worker := 0; worker < nodeConfigPublishWorkerCount; worker++ {
+			go h.runScheduledNodePublishWorker(h.nodePublishScheduler)
+		}
+	})
+	return h.nodePublishScheduler
 }
 
 func (h *handlers) scheduleNodeConfigPublish(nodeID, endpointID, requestedBy uint) {
-	go func() {
+	h.ensureNodePublishScheduler().enqueue(scheduledNodePublish{
+		nodeID: nodeID, endpointID: endpointID, requestedBy: requestedBy,
+	})
+}
+
+func (h *handlers) runScheduledNodePublishWorker(scheduler *nodePublishScheduler) {
+	for {
+		request, ok := scheduler.take()
+		if !ok {
+			<-scheduler.wake
+			continue
+		}
+		// Wake another bounded worker when the map contains more independent
+		// nodes. A one-slot notification channel intentionally coalesces bursts.
+		scheduler.signal()
 		ctx, cancel := context.WithTimeout(context.Background(), nodeConfigPublishTimeout)
-		defer cancel()
-		_, _, _ = h.publishNodeConfigForNode(ctx, nodeID, endpointID, requestedBy)
-	}()
+		_, _, err := h.publishNodeConfigForNode(ctx, request.nodeID, request.endpointID, request.requestedBy)
+		cancel()
+		if err != nil {
+			log.Printf("scheduled node config publish failed: node_id=%d endpoint_id=%d error=%v", request.nodeID, request.endpointID, err)
+		}
+		scheduler.finish(request.nodeID)
+	}
 }
 
 func (h *handlers) scheduleSubscriptionConfigPublishes(subscriptionID, requestedBy uint) {
@@ -61,7 +183,9 @@ func (h *handlers) publishNodeConfig(ctx context.Context, endpointID, requestedB
 func (h *handlers) publishNodeConfigForNode(ctx context.Context, nodeID, triggerEndpointID, requestedBy uint) (model.ProtocolDeployment, time.Duration, error) {
 	started := time.Now()
 	lock := h.nodePublishLock(nodeID)
-	lock.Lock()
+	if err := lock.Lock(ctx); err != nil {
+		return model.ProtocolDeployment{}, time.Since(started), fmt.Errorf("wait for node config publication lock: %w", err)
+	}
 	defer lock.Unlock()
 
 	return h.publishNodeConfigForNodeLocked(ctx, nodeID, triggerEndpointID, requestedBy, false, started)
@@ -132,6 +256,7 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 		}).Error; err != nil {
 			return fail(err, "")
 		}
+		h.invalidateZeroEventCredential(node.ID)
 	}
 	runtimeConfig, configSHA, err := h.compileNodeRuntimeConfigWithOptions(node, credential.Raw, probe.Version, suppressMieruFallback)
 	if err != nil {

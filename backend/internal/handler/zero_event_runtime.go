@@ -137,6 +137,10 @@ func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node model.Node,
 		}
 		flowID = flow.FlowID
 	}
+	receivedAt := time.Now().UTC()
+	if state := zeroEventStateFromContext(ctx); state != nil && !state.receivedAt.IsZero() {
+		receivedAt = state.receivedAt.UTC()
+	}
 	envelope := zeroevent.Envelope{
 		ID:             strings.TrimSpace(event.EventID),
 		NodeID:         uint64(node.ID),
@@ -144,6 +148,7 @@ func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node model.Node,
 		PrincipalKey:   strings.TrimSpace(event.PrincipalKey),
 		Type:           event.EventType,
 		OccurredAt:     zeroEventTime(event, time.Now().UTC()),
+		ReceivedAt:     receivedAt,
 		CoreInstanceID: strings.TrimSpace(event.CoreInstanceID),
 		ConfigRevision: event.ConfigRevision,
 		FlowID:         flowID,
@@ -314,6 +319,14 @@ func (h *handlers) projectZeroNodeEvents(ctx context.Context, events []zeroevent
 	})
 	if err != nil {
 		return err
+	}
+	// Coverage is observability state rather than accounting state. Fold it in
+	// one transaction per spool batch, but keep it fail-open so an auxiliary
+	// write can never stop traffic settlement or checkpoint progress.
+	if coverageErr := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return h.projectFairUseCoverageBatch(tx, events)
+	}); coverageErr != nil && ctx.Err() == nil {
+		log.Printf("fair use buffered coverage projection failed: %v", coverageErr)
 	}
 	for _, result := range exhausted {
 		h.scheduleNodeConfigPublish(result.NodeID, result.ProtocolEndpointID, 0)

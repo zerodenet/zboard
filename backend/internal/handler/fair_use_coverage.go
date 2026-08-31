@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/internal/zeroevent"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -53,9 +54,32 @@ type fairUseCoverageSummary struct {
 }
 
 func (h *handlers) observeFairUseEventCoverage(nodeID uint, event zeroEventEnvelope, receivedAt time.Time) error {
+	if nodeID == 0 || strings.TrimSpace(event.CoreInstanceID) == "" || event.Sequence == 0 {
+		return nil
+	}
+	if receivedAt.IsZero() {
+		receivedAt = time.Now().UTC()
+	}
+	receivedAt = receivedAt.UTC()
+	return h.db.Transaction(func(tx *gorm.DB) error {
+		var current fairUseNodeCoverage
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID).First(&current).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		exists := err == nil
+		next, changed := advanceFairUseCoverage(current, exists, nodeID, event, receivedAt)
+		if !changed {
+			return nil
+		}
+		return persistFairUseCoverage(tx, next, exists)
+	})
+}
+
+func advanceFairUseCoverage(current fairUseNodeCoverage, exists bool, nodeID uint, event zeroEventEnvelope, receivedAt time.Time) (fairUseNodeCoverage, bool) {
 	coreInstanceID := strings.TrimSpace(event.CoreInstanceID)
 	if nodeID == 0 || coreInstanceID == "" || event.Sequence == 0 {
-		return nil
+		return current, false
 	}
 	if receivedAt.IsZero() {
 		receivedAt = time.Now().UTC()
@@ -63,84 +87,126 @@ func (h *handlers) observeFairUseEventCoverage(nodeID uint, event zeroEventEnvel
 	receivedAt = receivedAt.UTC()
 	occurredAt := zeroEventTime(event, receivedAt).UTC()
 	eventID := strings.TrimSpace(event.EventID)
+	if !exists {
+		return fairUseNodeCoverage{
+			NodeID: nodeID, CoreInstanceID: coreInstanceID, LastSequence: event.Sequence,
+			LastEventID: eventID, ContinuousSinceAt: receivedAt, LastReceivedAt: receivedAt,
+			LastEventOccurredAt: occurredAt, UpdatedAt: receivedAt,
+		}, true
+	}
 
-	return h.db.Transaction(func(tx *gorm.DB) error {
-		var current fairUseNodeCoverage
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID).First(&current).Error
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+	if current.CoreInstanceID != coreInstanceID {
+		if !current.LastEventOccurredAt.IsZero() && occurredAt.Before(current.LastEventOccurredAt) && event.EventType != "engine.started" {
+			return current, false
 		}
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return tx.Create(&fairUseNodeCoverage{
-				NodeID:              nodeID,
-				CoreInstanceID:      coreInstanceID,
-				LastSequence:        event.Sequence,
-				LastEventID:         eventID,
-				ContinuousSinceAt:   receivedAt,
-				LastReceivedAt:      receivedAt,
-				LastEventOccurredAt: occurredAt,
-				UpdatedAt:           receivedAt,
-			}).Error
-		}
+		current.CoreInstanceID = coreInstanceID
+		current.LastSequence = event.Sequence
+		current.LastEventID = eventID
+		current.ContinuousSinceAt = receivedAt
+		current.LastReceivedAt = receivedAt
+		current.LastEventOccurredAt = occurredAt
+		current.LastGapFromSequence = 0
+		current.LastGapToSequence = 0
+		current.LastGapAt = nil
+		current.UpdatedAt = receivedAt
+		return current, true
+	}
 
-		if current.CoreInstanceID != coreInstanceID {
-			// A different Core instance is a new delivery generation. Ignore an
-			// obviously late event from an older generation rather than allowing
-			// it to reset the coverage cursor backwards.
-			if !current.LastEventOccurredAt.IsZero() && occurredAt.Before(current.LastEventOccurredAt) && event.EventType != "engine.started" {
-				return nil
-			}
-			return tx.Model(&fairUseNodeCoverage{}).Where("node_id = ?", nodeID).Updates(map[string]interface{}{
-				"core_instance_id":       coreInstanceID,
-				"last_sequence":          event.Sequence,
-				"last_event_id":          eventID,
-				"continuous_since_at":    receivedAt,
-				"last_received_at":       receivedAt,
-				"last_event_occurred_at": occurredAt,
-				"last_gap_from_sequence": 0,
-				"last_gap_to_sequence":   0,
-				"last_gap_at":            nil,
-				"updated_at":             receivedAt,
-			}).Error
-		}
-
-		receiptInterrupted := !current.LastReceivedAt.IsZero() && receivedAt.Sub(current.LastReceivedAt) > fairUseCoverageFreshness
-		if event.Sequence <= current.LastSequence {
-			// Duplicate/replayed older deliveries do not heal a previously
-			// detected sequence gap. A long receive-side silence still resets the
-			// trustworthy continuous window so a replay burst after reconnect
-			// cannot be scored as fresh subscriber behaviour.
-			updates := map[string]interface{}{
-				"last_received_at": receivedAt,
-				"updated_at":       receivedAt,
-			}
-			if receiptInterrupted {
-				updates["continuous_since_at"] = receivedAt
-			}
-			return tx.Model(&fairUseNodeCoverage{}).Where("node_id = ?", nodeID).Updates(updates).Error
-		}
-
-		updates := map[string]interface{}{
-			"last_sequence":          event.Sequence,
-			"last_event_id":          eventID,
-			"last_received_at":       receivedAt,
-			"last_event_occurred_at": occurredAt,
-			"updated_at":             receivedAt,
-		}
+	receiptInterrupted := !current.LastReceivedAt.IsZero() && receivedAt.Sub(current.LastReceivedAt) > fairUseCoverageFreshness
+	if event.Sequence <= current.LastSequence {
+		current.LastReceivedAt = receivedAt
+		current.UpdatedAt = receivedAt
 		if receiptInterrupted {
-			updates["continuous_since_at"] = receivedAt
+			current.ContinuousSinceAt = receivedAt
 		}
-		if event.Sequence > current.LastSequence+1 {
-			missing := event.Sequence - current.LastSequence - 1
-			gapAt := receivedAt
-			updates["continuous_since_at"] = receivedAt
-			updates["last_gap_from_sequence"] = current.LastSequence + 1
-			updates["last_gap_to_sequence"] = event.Sequence - 1
-			updates["last_gap_at"] = gapAt
-			updates["gap_count"] = gorm.Expr("gap_count + ?", missing)
+		return current, true
+	}
+
+	previousSequence := current.LastSequence
+	current.LastSequence = event.Sequence
+	current.LastEventID = eventID
+	current.LastReceivedAt = receivedAt
+	current.LastEventOccurredAt = occurredAt
+	current.UpdatedAt = receivedAt
+	if receiptInterrupted {
+		current.ContinuousSinceAt = receivedAt
+	}
+	if event.Sequence > previousSequence+1 {
+		missing := event.Sequence - previousSequence - 1
+		gapAt := receivedAt
+		current.ContinuousSinceAt = receivedAt
+		current.LastGapFromSequence = previousSequence + 1
+		current.LastGapToSequence = event.Sequence - 1
+		current.LastGapAt = &gapAt
+		current.GapCount += missing
+	}
+	return current, true
+}
+
+func persistFairUseCoverage(tx *gorm.DB, row fairUseNodeCoverage, exists bool) error {
+	if !exists {
+		return tx.Create(&row).Error
+	}
+	return tx.Model(&fairUseNodeCoverage{}).Where("node_id = ?", row.NodeID).Updates(map[string]interface{}{
+		"core_instance_id": row.CoreInstanceID, "last_sequence": row.LastSequence,
+		"last_event_id": row.LastEventID, "continuous_since_at": row.ContinuousSinceAt,
+		"last_received_at": row.LastReceivedAt, "last_event_occurred_at": row.LastEventOccurredAt,
+		"last_gap_from_sequence": row.LastGapFromSequence, "last_gap_to_sequence": row.LastGapToSequence,
+		"last_gap_at": row.LastGapAt, "gap_count": row.GapCount, "updated_at": row.UpdatedAt,
+	}).Error
+}
+
+func (h *handlers) projectFairUseCoverageBatch(tx *gorm.DB, events []zeroevent.Envelope) error {
+	nodeSet := make(map[uint]struct{})
+	for _, buffered := range events {
+		if buffered.NodeID > 0 && strings.TrimSpace(buffered.CoreInstanceID) != "" && buffered.Sequence > 0 {
+			nodeSet[uint(buffered.NodeID)] = struct{}{}
 		}
-		return tx.Model(&fairUseNodeCoverage{}).Where("node_id = ?", nodeID).Updates(updates).Error
-	})
+	}
+	if len(nodeSet) == 0 {
+		return nil
+	}
+	nodeIDs := make([]uint, 0, len(nodeSet))
+	for nodeID := range nodeSet {
+		nodeIDs = append(nodeIDs, nodeID)
+	}
+	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
+
+	var rows []fairUseNodeCoverage
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id IN ?", nodeIDs).Order("node_id asc").Find(&rows).Error; err != nil {
+		return err
+	}
+	byNode := make(map[uint]fairUseNodeCoverage, len(rows))
+	existed := make(map[uint]bool, len(rows))
+	for _, row := range rows {
+		byNode[row.NodeID] = row
+		existed[row.NodeID] = true
+	}
+	changed := make(map[uint]bool, len(nodeIDs))
+	batchReceivedAt := time.Now().UTC()
+	for _, buffered := range events {
+		nodeID := uint(buffered.NodeID)
+		if _, tracked := nodeSet[nodeID]; !tracked {
+			continue
+		}
+		receivedAt := buffered.ReceivedAt
+		if receivedAt.IsZero() {
+			receivedAt = batchReceivedAt
+		}
+		next, didChange := advanceFairUseCoverage(byNode[nodeID], existed[nodeID] || changed[nodeID], nodeID, zeroBufferedEnvelopeAsEvent(buffered), receivedAt)
+		if didChange {
+			byNode[nodeID] = next
+			changed[nodeID] = true
+		}
+	}
+	for _, nodeID := range nodeIDs {
+		if changed[nodeID] {
+			if err := persistFairUseCoverage(tx, byNode[nodeID], existed[nodeID]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func classifyFairUseCoverage(row fairUseNodeCoverage, exists bool, cutoff, freshCutoff time.Time) (string, string) {

@@ -218,6 +218,64 @@ func (h *handlers) ensureSubscriptionCredentialsWithMieru(tx *gorm.DB, subscript
 	return credentials, nil
 }
 
+func protocolCredentialsCurrentForEndpoints(subscription model.Subscription, endpoints []model.ProtocolEndpoint, credentials []model.ProtocolCredential, mieruAccess bool) bool {
+	credentialsByEndpoint := make(map[uint]model.ProtocolCredential, len(credentials))
+	for _, credential := range credentials {
+		credentialsByEndpoint[credential.ProtocolEndpointID] = credential
+	}
+	for _, endpoint := range endpoints {
+		if !protocolStoresSubscriptionCredentialWithMieru(endpoint.Protocol, mieruAccess) {
+			continue
+		}
+		credential, exists := credentialsByEndpoint[endpoint.ID]
+		if !exists ||
+			credential.UserID != subscription.UserID ||
+			credential.NodeID != endpoint.NodeID ||
+			credential.ListenPort != endpoint.Port ||
+			credential.PublicPort != endpoint.PublicPort ||
+			credential.Status != desiredProtocolCredentialStatusWithMieru(endpoint, mieruAccess) ||
+			!credential.ExpiresAt.Equal(subscription.EndAt) ||
+			credential.RevokedAt != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// Most callers only need to make sure credentials exist before rendering a
+// subscription or compiling a node config. Avoid taking the global advisory
+// lock (and updating unchanged rows) when the projection is already current.
+func (h *handlers) subscriptionCredentialsCurrentWithMieru(db *gorm.DB, subscription model.Subscription, mieruAccess bool) (bool, error) {
+	if db == nil {
+		db = h.db
+	}
+	var endpoints []model.ProtocolEndpoint
+	if err := db.Model(&model.ProtocolEndpoint{}).
+		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
+		Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", subscription.NodeGroupID, true).
+		Order("protocol_endpoints.sort_order asc, protocol_endpoints.id asc").
+		Find(&endpoints).Error; err != nil {
+		return false, err
+	}
+
+	endpointIDs := make([]uint, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		if protocolStoresSubscriptionCredentialWithMieru(endpoint.Protocol, mieruAccess) {
+			endpointIDs = append(endpointIDs, endpoint.ID)
+		}
+	}
+	if len(endpointIDs) == 0 {
+		return true, nil
+	}
+
+	var credentials []model.ProtocolCredential
+	if err := db.Where("subscription_id = ? AND protocol_endpoint_id IN ?", subscription.ID, endpointIDs).
+		Find(&credentials).Error; err != nil {
+		return false, err
+	}
+	return protocolCredentialsCurrentForEndpoints(subscription, endpoints, credentials, mieruAccess), nil
+}
+
 func (h *handlers) ensureCredentialsForSubscriptions(subscriptions []model.Subscription) error {
 	return h.ensureCredentialsForSubscriptionsWithMieru(subscriptions, h.zeroMieruAccess)
 }
@@ -225,12 +283,31 @@ func (h *handlers) ensureCredentialsForSubscriptions(subscriptions []model.Subsc
 func (h *handlers) ensureCredentialsForSubscriptionsWithMieru(subscriptions []model.Subscription, mieruAccess bool) error {
 	for _, subscription := range orderedProtocolCredentialSubscriptions(subscriptions) {
 		subscription := subscription
-		if err := h.runProtocolCredentialTransaction(func(tx *gorm.DB) error {
-			_, err := h.ensureSubscriptionCredentialsWithMieru(tx, subscription, mieruAccess)
-			return err
-		}); err != nil {
+		current, err := h.subscriptionCredentialsCurrentWithMieru(h.db, subscription, mieruAccess)
+		if err != nil {
 			return err
 		}
+		if current {
+			continue
+		}
+
+		err = h.runProtocolCredentialTransaction(func(tx *gorm.DB) error {
+			_, err := h.ensureSubscriptionCredentialsWithMieru(tx, subscription, mieruAccess)
+			return err
+		})
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, errProtocolCredentialLockTimeout) {
+			current, checkErr := h.subscriptionCredentialsCurrentWithMieru(h.db, subscription, mieruAccess)
+			if checkErr == nil && current {
+				continue
+			}
+			if checkErr != nil {
+				return errors.Join(err, checkErr)
+			}
+		}
+		return err
 	}
 	return nil
 }

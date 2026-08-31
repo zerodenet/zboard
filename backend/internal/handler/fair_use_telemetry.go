@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -74,12 +73,12 @@ type fairUseTelemetryMetrics struct {
 // also fail-open: auxiliary telemetry persistence cannot turn an accepted Zero
 // event into a failed delivery or interfere with traffic accounting.
 func (h *handlers) ZeroEventFairUseTelemetryHandler(w http.ResponseWriter, r *http.Request) {
-	body, readErr := io.ReadAll(io.LimitReader(r.Body, nodeReportMaxBodyBytes+1))
-	if readErr != nil {
-		BadRequest(w, "invalid Zero event body")
+	state, err := h.prepareZeroEventRequest(r)
+	if err != nil {
+		writeZeroEventRequestError(w, err)
 		return
 	}
-	r.Body = io.NopCloser(bytes.NewReader(body))
+	r = withZeroEventState(r, state)
 	recorded := httptest.NewRecorder()
 	h.ZeroEventObservabilityHandler(recorded, r)
 	if recorded.Code < http.StatusOK || recorded.Code >= http.StatusMultipleChoices {
@@ -87,17 +86,18 @@ func (h *handlers) ZeroEventFairUseTelemetryHandler(w http.ResponseWriter, r *ht
 		return
 	}
 
-	var event zeroEventEnvelope
-	if err := json.Unmarshal(body, &event); err == nil {
-		if nodeID, ok := zeroEventSourceNodeID(event.SourceID); ok {
-			receivedAt := time.Now().UTC()
-			if err := h.observeFairUseEventCoverage(nodeID, event, receivedAt); err != nil {
+	event := state.event
+	if nodeID, ok := zeroEventSourceNodeID(event.SourceID); ok {
+		// Buffered high-frequency events update coverage once per node and spool
+		// batch in the projector transaction. Lifecycle facts remain synchronous.
+		if !state.buffered {
+			if err := h.observeFairUseEventCoverage(nodeID, event, state.receivedAt); err != nil {
 				log.Printf("fair use coverage persistence failed: node_id=%d event_id=%q error=%v", nodeID, event.EventID, err)
 			}
-			if event.EventType == "flow.started" {
-				if err := h.persistSubscriptionFlowStartEvent(nodeID, event); err != nil {
-					log.Printf("fair use flow-start telemetry persistence failed: node_id=%d event_id=%q error=%v", nodeID, event.EventID, err)
-				}
+		}
+		if event.EventType == "flow.started" {
+			if err := h.persistSubscriptionFlowStartEvent(nodeID, event); err != nil {
+				log.Printf("fair use flow-start telemetry persistence failed: node_id=%d event_id=%q error=%v", nodeID, event.EventID, err)
 			}
 		}
 	}

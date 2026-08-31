@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -19,6 +20,31 @@ import (
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
+
+const (
+	zeroEventCredentialCacheTTL        = 5 * time.Second
+	zeroEventInvalidCredentialCacheTTL = time.Minute
+)
+
+type zeroEventRequestStateKey struct{}
+
+type zeroEventRequestState struct {
+	event      zeroEventEnvelope
+	node       model.Node
+	receivedAt time.Time
+	buffered   bool
+}
+
+type zeroEventCredentialCacheEntry struct {
+	node      model.Node
+	secret    string
+	expiresAt time.Time
+}
+
+type zeroEventAuthFailureEntry struct {
+	digest    [sha256.Size]byte
+	expiresAt time.Time
+}
 
 type zeroEventEnvelope struct {
 	SchemaID             string          `json:"schema_id"`
@@ -74,25 +100,16 @@ func zeroCompletionAccountingBaseline(usage model.FlowUsage, found bool, credent
 }
 
 func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, nodeReportMaxBodyBytes+1))
-	if err != nil || len(body) == 0 || len(body) > nodeReportMaxBodyBytes {
-		BadRequest(w, "invalid Zero event body")
-		return
+	state := zeroEventStateFromContext(r.Context())
+	if state == nil {
+		var err error
+		state, err = h.prepareZeroEventRequest(r)
+		if err != nil {
+			writeZeroEventRequestError(w, err)
+			return
+		}
 	}
-	var event zeroEventEnvelope
-	if err := json.Unmarshal(body, &event); err != nil {
-		BadRequest(w, "invalid Zero event JSON")
-		return
-	}
-	if event.SchemaID != "zero.event.v1" || strings.TrimSpace(event.EventID) == "" {
-		BadRequest(w, "unsupported Zero event envelope")
-		return
-	}
-	node, err := h.authenticateZeroEvent(r, event.SourceID)
-	if err != nil {
-		Unauthorized(w, err.Error())
-		return
-	}
+	event, node := state.event, state.node
 
 	// High-frequency buffered events are fully validated before durable append.
 	// After validation, any Append error is a storage/service failure and must
@@ -119,6 +136,7 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 			ServerError(w, err)
 			return
 		}
+		state.buffered = true
 		OK(w, map[string]interface{}{
 			"accepted": true,
 			"buffered": true,
@@ -191,6 +209,59 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type zeroEventRequestError struct {
+	status  int
+	message string
+}
+
+func (e *zeroEventRequestError) Error() string { return e.message }
+
+func writeZeroEventRequestError(w http.ResponseWriter, err error) {
+	var requestErr *zeroEventRequestError
+	if errors.As(err, &requestErr) {
+		if requestErr.status == http.StatusUnauthorized {
+			Unauthorized(w, requestErr.message)
+			return
+		}
+		BadRequest(w, requestErr.message)
+		return
+	}
+	ServerError(w, err)
+}
+
+func (h *handlers) prepareZeroEventRequest(r *http.Request) (*zeroEventRequestState, error) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, nodeReportMaxBodyBytes+1))
+	if err != nil || len(body) == 0 || len(body) > nodeReportMaxBodyBytes {
+		return nil, &zeroEventRequestError{status: http.StatusBadRequest, message: "invalid Zero event body"}
+	}
+	var event zeroEventEnvelope
+	if err := json.Unmarshal(body, &event); err != nil {
+		return nil, &zeroEventRequestError{status: http.StatusBadRequest, message: "invalid Zero event JSON"}
+	}
+	if event.SchemaID != "zero.event.v1" || strings.TrimSpace(event.EventID) == "" {
+		return nil, &zeroEventRequestError{status: http.StatusBadRequest, message: "unsupported Zero event envelope"}
+	}
+	node, err := h.authenticateZeroEvent(r, event.SourceID)
+	if err != nil {
+		return nil, &zeroEventRequestError{status: http.StatusUnauthorized, message: err.Error()}
+	}
+	return &zeroEventRequestState{
+		event: event, node: node, receivedAt: time.Now().UTC(),
+	}, nil
+}
+
+func zeroEventStateFromContext(ctx context.Context) *zeroEventRequestState {
+	if ctx == nil {
+		return nil
+	}
+	state, _ := ctx.Value(zeroEventRequestStateKey{}).(*zeroEventRequestState)
+	return state
+}
+
+func withZeroEventState(r *http.Request, state *zeroEventRequestState) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), zeroEventRequestStateKey{}, state))
+}
+
 func isMieruMigrationPrincipal(value string) bool {
 	value = strings.TrimSpace(value)
 	if !strings.HasPrefix(value, "migration:endpoint:") {
@@ -212,9 +283,31 @@ func (h *handlers) authenticateZeroEvent(r *http.Request, sourceID string) (mode
 	if err != nil {
 		return model.Node{}, errors.New("missing Zero event bearer credential")
 	}
+	nodeID := uint(id)
+	now := time.Now().UTC()
+	providedDigest := sha256.Sum256([]byte(provided))
+	if cached, ok := h.zeroEventAuthFailures.Load(nodeID); ok {
+		entry := cached.(zeroEventAuthFailureEntry)
+		if entry.digest == providedDigest && now.Before(entry.expiresAt) {
+			return model.Node{}, errors.New("invalid Zero event credential")
+		}
+		if !now.Before(entry.expiresAt) {
+			h.zeroEventAuthFailures.Delete(nodeID)
+		}
+	}
+	if cached, ok := h.zeroEventAuthCache.Load(nodeID); ok {
+		entry := cached.(zeroEventCredentialCacheEntry)
+		if now.Before(entry.expiresAt) && len(provided) == len(entry.secret) && subtle.ConstantTimeCompare([]byte(provided), []byte(entry.secret)) == 1 {
+			return entry.node, nil
+		}
+		if !now.Before(entry.expiresAt) {
+			h.zeroEventAuthCache.Delete(nodeID)
+		}
+	}
 	var node model.Node
-	lookup := h.db.Where("id = ?", uint(id)).Limit(1).Find(&node)
+	lookup := h.db.Where("id = ?", nodeID).Limit(1).Find(&node)
 	if lookup.Error != nil || lookup.RowsAffected == 0 || node.NodeCredentialRevokedAt != nil || node.NodeCredential == "" {
+		h.zeroEventAuthFailures.Store(nodeID, zeroEventAuthFailureEntry{digest: providedDigest, expiresAt: now.Add(zeroEventInvalidCredentialCacheTTL)})
 		return model.Node{}, errors.New("Zero event credential is unavailable")
 	}
 	expected, err := h.credentialCipher.Decrypt(node.NodeCredential)
@@ -222,9 +315,19 @@ func (h *handlers) authenticateZeroEvent(r *http.Request, sourceID string) (mode
 		return model.Node{}, errors.New("Zero event credential is unavailable")
 	}
 	if len(provided) != len(expected) || subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
+		h.zeroEventAuthFailures.Store(nodeID, zeroEventAuthFailureEntry{digest: providedDigest, expiresAt: now.Add(zeroEventInvalidCredentialCacheTTL)})
 		return model.Node{}, errors.New("invalid Zero event credential")
 	}
+	h.zeroEventAuthFailures.Delete(nodeID)
+	h.zeroEventAuthCache.Store(nodeID, zeroEventCredentialCacheEntry{node: node, secret: expected, expiresAt: now.Add(zeroEventCredentialCacheTTL)})
 	return node, nil
+}
+
+func (h *handlers) invalidateZeroEventCredential(nodeID uint) {
+	if h != nil && nodeID != 0 {
+		h.zeroEventAuthCache.Delete(nodeID)
+		h.zeroEventAuthFailures.Delete(nodeID)
+	}
 }
 
 func (h *handlers) recordZeroConnectorActivity(node model.Node, event zeroEventEnvelope) error {

@@ -1,6 +1,7 @@
 package datastore
 
 import (
+	"database/sql"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -44,6 +45,8 @@ func ReconcileFairUseTelemetrySchema(db *gorm.DB) error {
 				UNIQUE KEY uk_subscription_flow_start_event (node_id, event_id),
 				KEY idx_subscription_flow_start_subscription_time (subscription_id, occurred_at),
 				KEY idx_subscription_flow_start_subscription_node_time (subscription_id, node_id, occurred_at),
+				KEY idx_subscription_flow_start_subscription_received (subscription_id, received_at),
+				KEY idx_subscription_flow_start_subscription_node_received (subscription_id, node_id, received_at),
 				KEY idx_subscription_flow_start_user_time (user_id, occurred_at),
 				KEY idx_subscription_flow_start_received (received_at)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -138,6 +141,32 @@ func ReconcileFairUseTelemetrySchema(db *gorm.DB) error {
 			return fmt.Errorf("reconcile fair use %s schema: %w", statement.name, err)
 		}
 	}
+	indexes := []struct {
+		table string
+		name  string
+		ddl   string
+	}{
+		{
+			table: "subscription_flow_start_events",
+			name:  "idx_subscription_flow_start_subscription_received",
+			ddl:   "ALTER TABLE subscription_flow_start_events ADD KEY idx_subscription_flow_start_subscription_received (subscription_id, received_at)",
+		},
+		{
+			table: "subscription_flow_start_events",
+			name:  "idx_subscription_flow_start_subscription_node_received",
+			ddl:   "ALTER TABLE subscription_flow_start_events ADD KEY idx_subscription_flow_start_subscription_node_received (subscription_id, node_id, received_at)",
+		},
+		{
+			table: "subscriptions",
+			name:  "idx_subscriptions_fair_use_candidates",
+			ddl:   "ALTER TABLE subscriptions ADD KEY idx_subscriptions_fair_use_candidates (status, end_at, id)",
+		},
+	}
+	for _, index := range indexes {
+		if err := ensureFairUseIndex(sqlDB, index.table, index.name, index.ddl); err != nil {
+			return err
+		}
+	}
 
 	// #69 initially used a subscription-only policy table before the policy
 	// hierarchy was finalized. Preserve any values created by prerelease/test
@@ -158,6 +187,21 @@ func ReconcileFairUseTelemetrySchema(db *gorm.DB) error {
 		FROM subscription_fair_use_policies`); err != nil {
 			return fmt.Errorf("migrate subscription fair use policies: %w", err)
 		}
+	}
+	return nil
+}
+
+func ensureFairUseIndex(sqlDB *sql.DB, table, index, ddl string) error {
+	var count int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM information_schema.statistics
+		WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?`, table, index).Scan(&count); err != nil {
+		return fmt.Errorf("inspect Fair Use index %s: %w", index, err)
+	}
+	if count > 0 {
+		return nil
+	}
+	if _, err := sqlDB.Exec(ddl); err != nil {
+		return fmt.Errorf("create Fair Use index %s: %w", index, err)
 	}
 	return nil
 }

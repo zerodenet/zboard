@@ -3783,7 +3783,7 @@ components:
           minItems: 1
           uniqueItems: true
           items: { type: string, enum: [purchase, renew, change, addon] }
-        billing_unit: { type: string, enum: [day, month, year, once], description: For plan entitlement, once means permanent quota with no traffic reset; for a traffic add-on, once means a single grant. }
+        billing_unit: { type: string, enum: [day, month, year, once], description: "For plan entitlement, once means permanent quota with no traffic reset; for a traffic add-on, once means a single grant." }
         billing_value: { type: integer, minimum: 1 }
         price_cents: { type: integer, format: int64, minimum: 0 }
         currency: { type: string }

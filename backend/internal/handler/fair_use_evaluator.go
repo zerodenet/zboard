@@ -32,6 +32,8 @@ const (
 	fairUseEnforcementRestrict = "restrict"
 
 	fairUseEvaluationWorkerInterval       = 15 * time.Second
+	fairUseEvaluationBatchSize            = 100
+	fairUseDefaultEvaluationInterval      = 60
 	fairUseMinEvaluationInterval          = 30
 	fairUseMaxEvaluationInterval          = 3600
 	fairUseMinRestrictionDurationSeconds  = 60
@@ -161,7 +163,7 @@ func defaultFairUsePolicy(scopeType string, scopeID uint) fairUsePolicy {
 		ScopeType:                    scopeType,
 		ScopeID:                      scopeID,
 		Enabled:                      false,
-		EvaluationIntervalSeconds:    60,
+		EvaluationIntervalSeconds:    fairUseDefaultEvaluationInterval,
 		ConnectionStartThreshold:     120,
 		ConnectionStartWindowSeconds: 60,
 		ConnectionStartPenalty:       10,
@@ -733,6 +735,16 @@ func (h *handlers) evaluateFairUseSubscription(subscriptionID uint, now time.Tim
 		result.Reason = "policy_disabled"
 		return result, nil
 	}
+	due, state, err := h.fairUseEvaluationDue(subscriptionID, policy.EvaluationIntervalSeconds, now)
+	if err != nil {
+		return result, err
+	}
+	if !due {
+		result.State = state
+		result.Skipped = true
+		result.Reason = "evaluation_interval_not_due"
+		return result, nil
+	}
 
 	metrics, err := h.loadFairUseTelemetryMetrics(subscriptionID, policy.ConnectionStartWindowSeconds, policy.WorkingNodeWindowSeconds, now)
 	if err != nil {
@@ -844,6 +856,28 @@ func (h *handlers) evaluateFairUseSubscription(subscriptionID uint, now time.Tim
 	return result, err
 }
 
+func (h *handlers) fairUseEvaluationDue(subscriptionID uint, intervalSeconds int, now time.Time) (bool, subscriptionFairUseState, error) {
+	var state subscriptionFairUseState
+	err := h.db.Where("subscription_id = ?", subscriptionID).First(&state).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return true, subscriptionFairUseState{}, nil
+	}
+	if err != nil {
+		return false, subscriptionFairUseState{}, err
+	}
+	if state.LastEvaluatedAt == nil {
+		return true, state, nil
+	}
+	return fairUseEvaluationIsDue(state.LastEvaluatedAt, intervalSeconds, now), state, nil
+}
+
+func fairUseEvaluationIsDue(lastEvaluatedAt *time.Time, intervalSeconds int, now time.Time) bool {
+	if lastEvaluatedAt == nil {
+		return true
+	}
+	return !lastEvaluatedAt.Add(time.Duration(intervalSeconds) * time.Second).After(now)
+}
+
 func (h *handlers) StartFairUseEvaluationWorker() {
 	ctx, cancel := context.WithCancel(context.Background())
 	runtime := &fairUseEvaluationRuntime{cancel: cancel, done: make(chan struct{})}
@@ -880,13 +914,18 @@ func (h *handlers) CloseFairUseEvaluationWorker() {
 func (h *handlers) fairUseEvaluationCandidateIDs(now time.Time) ([]uint, error) {
 	var ids []uint
 	err := h.db.Table("subscriptions").
-		Select("DISTINCT subscriptions.id").
+		Select("subscriptions.id").
 		Joins("LEFT JOIN fair_use_policies AS subscription_policy ON subscription_policy.scope_type = ? AND subscription_policy.scope_id = subscriptions.id", fairUsePolicyScopeSubscription).
 		Joins("LEFT JOIN fair_use_policies AS plan_policy ON plan_policy.scope_type = ? AND plan_policy.scope_id = subscriptions.plan_id", fairUsePolicyScopePlan).
 		Joins("LEFT JOIN fair_use_policies AS platform_policy ON platform_policy.scope_type = ? AND platform_policy.scope_id = ?", fairUsePolicyScopePlatform, 0).
+		Joins("LEFT JOIN subscription_fair_use_states AS evaluation_state ON evaluation_state.subscription_id = subscriptions.id").
 		Where("subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", subStatusActive, now).
 		Where("COALESCE(subscription_policy.enabled, plan_policy.enabled, platform_policy.enabled, ?) = ?", false, true).
-		Order("subscriptions.id asc").
+		Where(`(evaluation_state.last_evaluated_at IS NULL OR TIMESTAMPADD(SECOND,
+			COALESCE(subscription_policy.evaluation_interval_seconds, plan_policy.evaluation_interval_seconds,
+				platform_policy.evaluation_interval_seconds, ?), evaluation_state.last_evaluated_at) <= ?)`, fairUseDefaultEvaluationInterval, now).
+		Order("evaluation_state.last_evaluated_at IS NOT NULL asc, evaluation_state.last_evaluated_at asc, subscriptions.id asc").
+		Limit(fairUseEvaluationBatchSize).
 		Pluck("subscriptions.id", &ids).Error
 	return ids, err
 }

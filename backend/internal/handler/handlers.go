@@ -446,17 +446,21 @@ type siteSettingsRequest struct {
 }
 
 type handlers struct {
-	db                  *gorm.DB
-	jwtSecret           string
-	credentialCipher    *security.CredentialCipher
-	zeroArtifactDir     string
-	zeroNativeAccess    bool
-	zeroMieruAccess     bool
-	zeroLocalVersion    string
-	sshTerminal         *sshTerminalRuntime
-	nodePublishLocks    sync.Map
-	expiryReconcileMu   sync.Mutex
-	lastExpiryReconcile time.Time
+	db                       *gorm.DB
+	jwtSecret                string
+	credentialCipher         *security.CredentialCipher
+	zeroArtifactDir          string
+	zeroNativeAccess         bool
+	zeroMieruAccess          bool
+	zeroLocalVersion         string
+	sshTerminal              *sshTerminalRuntime
+	nodePublishLocks         sync.Map
+	nodePublishScheduler     *nodePublishScheduler
+	nodePublishSchedulerOnce sync.Once
+	zeroEventAuthCache       sync.Map
+	zeroEventAuthFailures    sync.Map
+	expiryReconcileMu        sync.Mutex
+	lastExpiryReconcile      time.Time
 }
 
 func NewHandlers(db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string) (*handlers, error) {
@@ -477,8 +481,9 @@ func NewHandlers(db *gorm.DB, jwtSecret string, credentialCipher *security.Crede
 		zeroNativeAccess: nativeContract,
 		zeroMieruAccess: normalizedKernelContract == cfgpkg.ZeroKernelNativeMieru ||
 			(nativeContract && zeroSupportsMieruPrincipal(localVersion)),
-		zeroLocalVersion: localVersion,
-		sshTerminal:      newSSHTerminalRuntime(),
+		zeroLocalVersion:     localVersion,
+		sshTerminal:          newSSHTerminalRuntime(),
+		nodePublishScheduler: newNodePublishScheduler(),
 	}, nil
 }
 
@@ -1855,6 +1860,7 @@ func (h *handlers) NodeDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
+	h.invalidateZeroEventCredential(node.ID)
 	OK(w, map[string]interface{}{"id": node.ID, "deleted": true, "remote_zero_retained": true})
 }
 
@@ -2161,6 +2167,7 @@ func (h *handlers) NodeConnectorCredentialRotateHandler(w http.ResponseWriter, r
 		ServerError(w, err)
 		return
 	}
+	h.invalidateZeroEventCredential(node.ID)
 	OK(w, map[string]interface{}{
 		"node_id":        strconv.FormatUint(uint64(node.ID), 10),
 		"api_key":        apiKey,
@@ -2199,6 +2206,7 @@ func (h *handlers) NodeConnectorCredentialRevokeHandler(w http.ResponseWriter, r
 		ServerError(w, err)
 		return
 	}
+	h.invalidateZeroEventCredential(nodeID)
 	OK(w, map[string]interface{}{"node_id": nodeID, "revoked": true})
 }
 

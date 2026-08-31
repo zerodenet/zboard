@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -121,12 +120,16 @@ type principalFlowScopeTrendRow struct {
 // a projection failure is safe because the existing accounting path is
 // idempotent and Core will retry its durable lifecycle fact.
 func (h *handlers) ZeroEventObservabilityHandler(w http.ResponseWriter, r *http.Request) {
-	body, readErr := io.ReadAll(io.LimitReader(r.Body, nodeReportMaxBodyBytes+1))
-	if readErr != nil {
-		BadRequest(w, "invalid Zero event body")
-		return
+	state := zeroEventStateFromContext(r.Context())
+	if state == nil {
+		var err error
+		state, err = h.prepareZeroEventRequest(r)
+		if err != nil {
+			writeZeroEventRequestError(w, err)
+			return
+		}
+		r = withZeroEventState(r, state)
 	}
-	r.Body = io.NopCloser(bytes.NewReader(body))
 	recorded := httptest.NewRecorder()
 	h.ZeroEventHandler(recorded, r)
 	if recorded.Code < http.StatusOK || recorded.Code >= http.StatusMultipleChoices {
@@ -134,11 +137,7 @@ func (h *handlers) ZeroEventObservabilityHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	var event zeroEventEnvelope
-	if err := json.Unmarshal(body, &event); err != nil {
-		copyRecordedResponse(w, recorded)
-		return
-	}
+	event := state.event
 	nodeID, ok := zeroEventSourceNodeID(event.SourceID)
 	if !ok {
 		copyRecordedResponse(w, recorded)

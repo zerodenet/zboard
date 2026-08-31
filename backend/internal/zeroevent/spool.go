@@ -24,6 +24,7 @@ type Envelope struct {
 	PrincipalKey   string          `json:"principal_key,omitempty"`
 	Type           string          `json:"type"`
 	OccurredAt     time.Time       `json:"occurred_at"`
+	ReceivedAt     time.Time       `json:"received_at,omitempty"`
 	CoreInstanceID string          `json:"core_instance_id,omitempty"`
 	ConfigRevision uint64          `json:"config_revision,omitempty"`
 	FlowID         string          `json:"flow_id,omitempty"`

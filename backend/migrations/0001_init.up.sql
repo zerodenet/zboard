@@ -698,6 +698,7 @@ CREATE TABLE `subscriptions` (
   KEY `idx_subscriptions_reset` (`next_reset_at`),
   KEY `idx_subscriptions_node_group` (`node_group_id`),
   KEY `idx_subscriptions_end_at_id` (`end_at`,`id`),
+  KEY `idx_subscriptions_fair_use_candidates` (`status`,`end_at`,`id`),
   CONSTRAINT `fk_sub_plan` FOREIGN KEY (`plan_id`) REFERENCES `plans` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_sub_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_subscriptions_node_group` FOREIGN KEY (`node_group_id`) REFERENCES `node_groups` (`id`) ON DELETE RESTRICT,

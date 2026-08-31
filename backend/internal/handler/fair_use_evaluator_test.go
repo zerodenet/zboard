@@ -1,6 +1,9 @@
 package handler
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestDefaultFairUsePolicyRequiresRepeatedAbnormalIntervals(t *testing.T) {
 	policy := defaultFairUsePolicy(fairUsePolicyScopePlatform, 0)
@@ -117,5 +120,17 @@ func TestParseFairUseResourceIDs(t *testing.T) {
 		if _, err := parseFairUseResourceSubscriptionID(path, "/fair-use/state"); err == nil {
 			t.Fatalf("path %q should fail", path)
 		}
+	}
+}
+
+func TestFairUseEvaluationIsDueBeforeTelemetryWork(t *testing.T) {
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	recent := now.Add(-29 * time.Second)
+	due := now.Add(-30 * time.Second)
+	if fairUseEvaluationIsDue(&recent, 30, now) {
+		t.Fatal("an evaluation inside its interval must be skipped before telemetry queries")
+	}
+	if !fairUseEvaluationIsDue(&due, 30, now) || !fairUseEvaluationIsDue(nil, 30, now) {
+		t.Fatal("a due or never-evaluated subscription must be selected")
 	}
 }

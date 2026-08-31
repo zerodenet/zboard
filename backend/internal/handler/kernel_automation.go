@@ -376,6 +376,7 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 		}).Error; err != nil {
 			return nil, fmt.Errorf("prepare generated connector credential before Zero startup: %w", err)
 		}
+		h.invalidateZeroEventCredential(node.ID)
 		credentialActivated = true
 	}
 	restoreCredential := func() error {
@@ -1169,7 +1170,7 @@ func (h *handlers) restoreGeneratedNodeCredential(node model.Node, credential pe
 	if !credential.IsNew {
 		return nil
 	}
-	return h.db.Model(&model.Node{}).Where("id = ?", node.ID).Updates(map[string]interface{}{
+	err := h.db.Model(&model.Node{}).Where("id = ?", node.ID).Updates(map[string]interface{}{
 		"node_credential":            node.NodeCredential,
 		"node_credential_prefix":     node.NodeCredentialPrefix,
 		"node_credential_revoked_at": node.NodeCredentialRevokedAt,
@@ -1183,6 +1184,10 @@ func (h *handlers) restoreGeneratedNodeCredential(node model.Node, credential pe
 		"bytes_up":                   node.BytesUp,
 		"bytes_down":                 node.BytesDown,
 	}).Error
+	if err == nil {
+		h.invalidateZeroEventCredential(node.ID)
+	}
+	return err
 }
 
 func (h *handlers) rollbackNodeKernel(node model.Node, operationID uint) error {

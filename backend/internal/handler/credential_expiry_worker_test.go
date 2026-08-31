@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/zerodenet/zboard/backend/internal/model"
 )
 
 func TestCredentialExpiryWorkerRunsImmediatelyAndPeriodically(t *testing.T) {
@@ -60,4 +62,24 @@ func TestCredentialExpiryWorkerReportsErrors(t *testing.T) {
 		t.Fatal("credential expiry worker did not report reconciliation error")
 	}
 	<-done
+}
+
+func TestExpireDueSubscriptionCredentialsRequiresDatabase(t *testing.T) {
+	if _, err := expireDueSubscriptionCredentials(nil, time.Now().UTC(), 1); err == nil {
+		t.Fatal("nil database must be rejected")
+	}
+}
+
+func TestProtocolCredentialIDsPreservesAllCredentials(t *testing.T) {
+	credentials := []model.ProtocolCredential{{ID: 7}, {ID: 11}, {ID: 19}}
+	got := protocolCredentialIDs(credentials)
+	want := []uint{7, 11, 19}
+	if len(got) != len(want) {
+		t.Fatalf("credential IDs = %v, want %v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("credential ID at %d = %d, want %d", index, got[index], want[index])
+		}
+	}
 }

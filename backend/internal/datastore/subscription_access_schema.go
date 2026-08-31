@@ -58,8 +58,18 @@ func ReconcileSubscriptionAccessSchema(db *gorm.DB) error {
 		}
 	}
 
-	if _, err := sqlDB.Exec(`ALTER TABLE subscription_tokens MODIFY subscription_id bigint unsigned NOT NULL`); err != nil {
-		return fmt.Errorf("require subscription token ownership: %w", err)
+	// MODIFY always takes a metadata lock in MySQL, even when the column is
+	// already NOT NULL. Startup runs this reconciler on every process boot, so
+	// inspect the final invariant first and only acquire that lock for a legacy
+	// nullable column.
+	required, err := columnIsRequired(sqlDB, subscriptionTokensTable, "subscription_id")
+	if err != nil {
+		return err
+	}
+	if !required {
+		if _, err := sqlDB.Exec(`ALTER TABLE subscription_tokens MODIFY subscription_id bigint unsigned NOT NULL`); err != nil {
+			return fmt.Errorf("require subscription token ownership: %w", err)
+		}
 	}
 
 	// Add the subscription-level unique index before dropping any existing
@@ -96,6 +106,23 @@ func tableExists(sqlDB *sql.DB, table string) (bool, error) {
 		return false, fmt.Errorf("inspect table %s: %w", table, err)
 	}
 	return count > 0, nil
+}
+
+func columnIsRequired(sqlDB *sql.DB, table, column string) (bool, error) {
+	var nullable string
+	var columnType string
+	err := sqlDB.QueryRow(
+		`SELECT is_nullable, column_type
+		   FROM information_schema.columns
+		  WHERE table_schema = DATABASE()
+		    AND table_name = ?
+		    AND column_name = ?`,
+		table, column,
+	).Scan(&nullable, &columnType)
+	if err != nil {
+		return false, fmt.Errorf("inspect %s.%s ownership column: %w", table, column, err)
+	}
+	return strings.EqualFold(strings.TrimSpace(nullable), "NO") && strings.EqualFold(strings.TrimSpace(columnType), "bigint unsigned"), nil
 }
 
 func singleColumnIndexes(sqlDB *sql.DB, table, column string, unique bool) ([]string, error) {

@@ -94,6 +94,150 @@ Remaining gaps:
 
 ## Completed goals
 
+### 2026-08-28 - Bound high-frequency event, Fair Use and node-publication work
+
+Goal outcome before synchronization:
+
+- Removed the request-amplification path from authenticated Zero events. One
+  request now reads and parses its envelope once, reuses a five-second
+  per-node credential cache, and temporarily rejects a repeated stale secret
+  from a bounded per-node negative cache. Connector credential rotation,
+  revocation, generation, rollback and node deletion invalidate both caches.
+- Preserved durable spool acknowledgement while moving high-frequency
+  `flow.updated` and `stats.sampled` Fair Use coverage writes out of the HTTP
+  request. The consumer folds ordered events in memory and persists at most one
+  coverage row per node and spool batch. Coverage remains fail-open and keeps
+  its original sequence-gap, restart-generation and receive-time semantics.
+- Bounded the Fair Use evaluator to the oldest 100 due subscriptions per
+  cycle. Never-evaluated and least-recently-evaluated subscriptions are ordered
+  first to prevent starvation; a second due check happens before telemetry
+  metrics, and the transaction retains its final concurrency check.
+- Added subscription/receive-time, subscription/node/receive-time and active
+  Fair Use candidate indexes. Existing installations inspect index metadata
+  and add only missing indexes; the v0.0.1 baseline includes the subscription
+  candidate index for fresh databases.
+- Replaced one goroutine per asynchronous node publish with four fixed workers
+  and a per-node latest-request map. A running node can have at most one
+  coalesced rerun, different nodes retain bounded parallelism, and node-lock
+  waits now honor their request context.
+- Resource boundaries remain unchanged: spool events are delivery facts,
+  Fair Use coverage is derived observability state, traffic settlement remains
+  authoritative, and node publication still owns runtime configuration.
+
+Local verification:
+
+- `go test ./internal/handler ./internal/datastore -count=1` passed, including
+  new cache, parse-once, coverage-folding, due-gating, scheduler-coalescing and
+  cancellable-lock tests.
+- `go vet ./...` passed. A literal `go test ./... -count=1` passed every package
+  except the existing Windows `internal/zeroevent` directory-sync tests, which
+  continue to return `Access is denied`; all other packages passed.
+- The exact due-candidate `TIMESTAMPADD` query executed successfully against
+  the intranet MySQL schema. `git diff --check` passed.
+- The Go race detector was unavailable because this Windows toolchain has
+  CGO disabled; deterministic concurrency-state tests passed without it.
+
+Synchronization and deployed verification:
+
+- `scripts/deploy-intranet.local.ps1 -SkipLocalChecks` synchronized the
+  verified working tree as
+  `v0.0.1-202608281727-performance-p0-working-tree@2026-08-28T09:27:48Z`.
+  The pre-switch database backup is
+  `/data/zboard-next/backups/20260828T092748Z/zboard-before-sync.sql`
+  (144,247 bytes), and the previous source is
+  `/data/zboard-next/app-prev-20260828T092748Z`; both were verified present.
+- `/readyz` returned `ready=true, db=true`. `zboard_next-zboard-1` remained
+  `running/healthy` with zero restarts and no OOM; external MySQL `db` and
+  Redis `cache` remained running. The sampled application used 1.12% CPU and
+  11.45 MiB, while MySQL used 1.20% CPU and 80.84 MiB.
+- All three deployed indexes were verified with their ordered columns:
+  `(subscription_id, received_at)`,
+  `(subscription_id, node_id, received_at)` and
+  `(status, end_at, id)`.
+- Under the same live two-node event stream, a ten-second MySQL sample fell
+  from the pre-deployment 167 questions, 80 selects, 32 updates and 26 commits
+  to 65 questions, 42 selects, 12 updates and 4 commits. That is about 61%
+  fewer total statements, 48% fewer selects, 63% fewer updates and 85% fewer
+  commits; lock waits and slow-query counters did not increase.
+- Across the new container's first 208 successful Zero event requests, mean
+  latency was 14.211 ms with a 32.627 ms maximum, compared with the earlier
+  18.9-20.9 ms node averages. Seventy-one repeated stale-credential requests
+  from `192.168.50.25` averaged 1.875 ms instead of the earlier 2.799 ms.
+- During a separate twelve-second continuity sample, node 5 coverage advanced
+  from sequence 2309 to 2319 and node 6 from 109091 to 109101, while both
+  historical gap counts stayed at 753. No buffered coverage, projector, panic
+  or fatal error appeared in the deployed logs. Deployed-source checks found
+  the four-worker scheduler, 100-item evaluator batch and batch coverage path.
+
+Remaining gaps:
+
+- Startup schema reconciliation and the global credential-expiry scans remain
+  the next performance phase; they are not part of this P0 request-path and
+  queue-bounding change.
+- The stale sender at `192.168.50.25` still retries an invalid credential. Its
+  repeated attempts are now cheaply negative-cached, but the obsolete sender
+  should still be stopped or corrected operationally.
+- No Git staging, commit, push or release was performed.
+
+### 2026-08-31 - Remove startup DDL and global expiry-scan pressure
+
+Goal outcome before synchronization:
+
+- Startup no longer unconditionally modifies `subscription_tokens.subscription_id`.
+  The reconciler reads its nullability and column type first, preserving the
+  legacy repair when needed while avoiding an unnecessary MySQL metadata lock
+  on every healthy process start.
+- Commerce reconciliation no longer rewrites every SKU's entitlement fields.
+  It updates only rows whose legacy duplicate fields differ from the final
+  plan-versus-addon model.
+- The 20-second credential-expiry worker now locks and expires at most 200
+  time-due subscriptions in end-time order. Quota exhaustion already changes
+  subscription state in the traffic-accounting transaction, so it is no longer
+  redundantly found by a global `flow_used >= flow_total` scan. Only credentials
+  belonging to the resulting bounded batch are expired and scheduled for node
+  publication.
+- Repeated invalid Zero Connector credentials now remain in the per-node
+  negative cache for one minute, while valid credentials retain the five-second
+  rotation-sensitive cache. This limits the known obsolete sender without
+  changing the valid Connector contract.
+- Resource boundaries remain unchanged: subscriptions own entitlement status,
+  credentials remain endpoint access material, traffic accounting remains the
+  authoritative quota transition, and nodes continue to own publication.
+
+Local verification:
+
+- `go test ./internal/handler ./internal/datastore` and `go vet ./...` passed.
+- `go test ./...` passed every package except the existing Windows
+  `internal/zeroevent` directory-sync tests, which continue to fail with
+  `Access is denied`; all non-spool packages passed. `git diff --check` passed.
+
+Synchronization and deployed verification:
+
+- The verified working tree is deployed as
+  `v0.0.1-202608311040-performance-p1-working-tree@2026-08-31T02:43:00Z`.
+  The pre-switch backup is
+  `/data/zboard-next/backups/20260831T024300Z/zboard-before-sync.sql`; the
+  previous source is `/data/zboard-next/app-prev-20260831T024300Z`.
+- `/readyz` returned `ready=true, db=true`, and
+  `zboard_next-zboard-1` became `running/healthy`. The deployment completed
+  after a clean image build and the database backup was non-empty.
+- The live schema reports `subscription_tokens.subscription_id` as
+  `NO bigint unsigned`; it already satisfies the reconciler and will not take
+  the former unconditional `ALTER TABLE` path.
+- In a 25-second live window with no due subscription rows, MySQL reported
+  198 questions, 126 selects, 33 updates and 15 commits, with both row-lock
+  time and slow-query counters unchanged. No historical global expiry update
+  matching the former `flow_used >= flow_total` scan was observed.
+
+Remaining gaps:
+
+- The obsolete sender at `192.168.50.25` is now suppressed more cheaply after
+  a failed authentication, but it still should be stopped or reconfigured at
+  its source; application-side caching cannot make the sender healthy.
+- The full Windows spool persistence suite remains environment-blocked by the
+  temporary-directory sync permission. No Git staging, commit, push or release
+  was performed.
+
 ### 2026-08-24 - Operational SMTP, registration notices and email templates
 
 Goal outcome:
@@ -9041,4 +9185,107 @@ Remaining gaps:
 - Authenticated administrator click-through was not performed without creating
   or using a production admin session; focused local tests, public API, schema,
   deployed source and compiled assets cover the implemented behavior.
+- No Git staging, commit, push or release was performed.
+
+## 2026-08-28 - Repair PlanSKU OpenAPI flow-scalar parsing
+
+Goal outcome:
+
+- Repaired the CI contract failure from GitHub Actions run `33148921905`, job
+  `98776132172`. The new `PlanSKU.billing_unit` description contained commas
+  inside an unquoted YAML flow mapping, so the YAML parser interpreted the
+  prose fragments as two unexpected schema properties.
+- Quoted the description as one scalar without changing its API meaning,
+  runtime behavior or commerce resource ownership.
+
+Local verification:
+
+- Redocly CLI `1.34.3`, matching `.github/workflows/ci.yml`, validated
+  `backend/api/openapi.yaml` successfully with zero errors. The existing 201
+  recommended-rule warnings remain non-fatal, matching the previous CI
+  baseline outside the two repaired structure errors.
+- `git diff --check` passed. Local Docker reproduction was unavailable because
+  Docker Desktop was not running, so the same CLI package and version was run
+  directly through pnpm instead of its container image.
+
+Synchronization and deployed verification:
+
+- `scripts/deploy-intranet.local.ps1 -SkipLocalChecks` delegated the verified
+  working tree to `scripts/sync-intranet.ps1` and completed successfully as
+  `v0.0.1-20260828T-openapi-contract-fix-working-tree@2026-08-28T06:53:14Z`.
+- `/readyz` returned `ready=true, db=true`. `zboard_next-zboard-1` reported
+  `running/healthy`; the external MySQL `db` and Redis `cache` containers both
+  reported `running`.
+- The pre-switch database backup is
+  `/data/zboard-next/backups/20260828T065314Z/zboard-before-sync.sql` (135,708
+  bytes), and the previous source is
+  `/data/zboard-next/app-prev-20260828T065314Z`; both were verified present.
+- The synchronized OpenAPI document contains the quoted billing-unit
+  description. No database or runtime business state was changed for this
+  documentation-only repair.
+
+Remaining gaps:
+
+- GitHub Actions will remain red for the referenced commit until this repair is
+  explicitly committed and pushed; the existing failed run itself is immutable.
+- No database migration is required. No Git staging, commit, push or release
+  was performed.
+
+## 2026-08-28 - Keep node publication independent of no-op credential reconciliation
+
+Goal outcome:
+
+- Diagnosed `reconcile subscription credentials: protocol credential
+  reconciliation lock timeout` during node publication as transient contention,
+  not a leaked MySQL advisory lock. The global
+  `zboard:protocol-credentials` lock was shared by node compilation,
+  subscription rendering and credential reconciliation, and the common
+  already-current path still acquired that lock and rewrote every credential.
+- Added a read-only current-projection check for every subscription before
+  entering the serialized credential transaction. It compares the owning user,
+  node, listener/public ports, desired status, expiry and revocation state for
+  every managed endpoint. Fully current credentials now skip both the advisory
+  lock and database writes.
+- A genuine reconciliation still uses the existing serialized transaction. If
+  an advisory-lock timeout occurs, the caller performs one final read-only
+  check and continues only when the competing worker has already completed the
+  required state; missing or stale credentials still fail closed.
+- Added focused coverage for current, missing, stale, revoked and unmanaged
+  endpoint projections. No schema or resource-ownership boundary changed.
+
+Local verification:
+
+- `go test ./internal/handler ./internal/datastore -count=1` passed and
+  `go vet ./...` passed.
+- A literal `go test ./...` passed every package except the existing Windows
+  `internal/zeroevent` file-spool tests, which cannot sync temporary
+  directories because this host returns `Access is denied`.
+- `git diff --check` passed.
+
+Synchronization and deployed verification:
+
+- Synchronized the verified working tree with
+  `scripts/deploy-intranet.local.ps1 -SkipLocalChecks` as
+  `v0.0.1-202608280900-credential-lock-fix-working-tree@2026-08-28T08:50:53Z`.
+- `/readyz` returned `ready=true, db=true`. `zboard_next-zboard-1` reported
+  `running/healthy`; the external MySQL `db` and Redis `cache` containers both
+  reported `running`.
+- The pre-switch database backup is
+  `/data/zboard-next/backups/20260828T085053Z/zboard-before-sync.sql` (141,992
+  bytes), and the previous source is
+  `/data/zboard-next/app-prev-20260828T085053Z`; both were verified present.
+- The deployed source contains the current-projection fast path. To exercise
+  the reported failure rather than only a normal publish, verification held
+  `zboard:protocol-credentials` from a separate MySQL connection while
+  publishing endpoint `3`. The API returned HTTP/application code `200` in
+  2,544 ms while that lock was still held; persisted deployment `39` finished
+  `succeeded` with no error.
+- The test lock was explicitly released. The final advisory-lock owner is
+  zero, managed credential mismatch count is zero, and recent application logs
+  contain no credential reconciliation timeout.
+
+Remaining gaps:
+
+- The Windows-only Zero event spool temporary-directory sync failures remain
+  outside this goal.
 - No Git staging, commit, push or release was performed.

@@ -170,7 +170,10 @@ func reconcilePlanSKUCommerceSchema(sqlDB *sql.DB) error {
 	if _, err := sqlDB.Exec(`UPDATE plan_skus
 		SET traffic_bytes = CASE WHEN entitlement_mode = 'traffic_addon' THEN traffic_bytes ELSE 0 END,
 		    device_limit = 0,
-		    speed_limit_mbps = 0`); err != nil {
+		    speed_limit_mbps = 0
+		WHERE (entitlement_mode <> 'traffic_addon' AND traffic_bytes <> 0)
+		   OR device_limit <> 0
+		   OR speed_limit_mbps <> 0`); err != nil {
 		return fmt.Errorf("remove duplicated plan sku entitlements: %w", err)
 	}
 	return nil
