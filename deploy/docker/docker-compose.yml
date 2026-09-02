@@ -49,10 +49,6 @@ services:
         source: ${ZBOARD_ZERO_EVENT_SPOOL_HOST_DIR:-./zero-events}
         target: /var/lib/zboard/zero-events
         read_only: false
-      - type: bind
-        source: ${ZBOARD_DATABASE_HOST_DIR:-./data}
-        target: /var/lib/zboard/data
-        read_only: false
     ports:
       - "${ZBOARD_HTTP_BIND:-0.0.0.0}:${ZBOARD_HTTP_PORT:-8080}:8080"
     networks:

@@ -102,7 +102,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Prepare host directories
-        run: sh deploy/docker/prepare-host-dirs.sh
+        run: |
+          sh deploy/docker/prepare-host-dirs.sh
+          test ! -e deploy/docker/data
+          ZBOARD_DATABASE_DRIVER=sqlite sh deploy/docker/prepare-host-dirs.sh
+          test -d deploy/docker/data
       - name: Exercise nested bind permissions
         run: |
           docker run --rm \
@@ -120,6 +124,12 @@ jobs:
         run: |
           docker compose -f deploy/docker/docker-compose.yml config >/dev/null
           docker compose -f deploy/docker/docker-compose.release.yml config >/dev/null
+          ZBOARD_DATABASE_DRIVER=sqlite \
+            ZBOARD_DATA_SOURCE=/var/lib/zboard/data/zboard.db \
+            docker compose \
+              -f deploy/docker/docker-compose.release.yml \
+              -f deploy/docker/docker-compose.sqlite.yml \
+              config >/dev/null
           docker compose -f deploy/docker/docker-compose.validation.yml config >/dev/null
           docker compose -f deploy/docker/docker-compose.blue-green.yml config >/dev/null
       - name: Verify managed rule mount contract
@@ -133,6 +143,9 @@ jobs:
             grep -q 'source: ${ZBOARD_MANAGED_RULE_HOST_DIR:-./managed-rules}' "$file"
           done
           test "$(grep -c 'target: /var/lib/zboard/artifacts/rules$' deploy/docker/docker-compose.blue-green.yml)" -eq 2
+          ! grep -q 'target: /var/lib/zboard/data$' deploy/docker/docker-compose.yml
+          ! grep -q 'target: /var/lib/zboard/data$' deploy/docker/docker-compose.release.yml
+          grep -q 'target: /var/lib/zboard/data$' deploy/docker/docker-compose.sqlite.yml
 
   contract:
     runs-on: ubuntu-latest

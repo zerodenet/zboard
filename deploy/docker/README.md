@@ -22,6 +22,23 @@ ZBOARD_MANAGED_RULE_HOST_DIR=/srv/zboard/managed-rules \
 sh ./prepare-host-dirs.sh
 ```
 
+MySQL deployments use only the base Compose file and do not create or mount a
+SQLite data directory. For SQLite, set `ZBOARD_DATABASE_DRIVER=sqlite`, set
+`ZBOARD_DATA_SOURCE=/var/lib/zboard/data/zboard.db`, optionally set
+`ZBOARD_DATABASE_HOST_DIR`, and include the SQLite override:
+
+```bash
+set -a
+. ./.env.release
+set +a
+sh ./prepare-host-dirs.sh
+docker compose \
+  -f docker-compose.release.yml \
+  -f docker-compose.sqlite.yml \
+  --env-file .env.release \
+  up -d
+```
+
 The preparation script creates an empty `rules/` mount point under the read-only artifact directory. Compose then overlays that path with the separate writable managed-rule directory.
 
 ## Mount layout
@@ -62,6 +79,16 @@ Render the Compose configuration before applying it:
 
 ```bash
 docker compose -f docker-compose.release.yml --env-file .env.release config
+```
+
+For SQLite, render both files together:
+
+```bash
+docker compose \
+  -f docker-compose.release.yml \
+  -f docker-compose.sqlite.yml \
+  --env-file .env.release \
+  config
 ```
 
 After startup, verify that the parent directory is protected and the child directory is writable:
