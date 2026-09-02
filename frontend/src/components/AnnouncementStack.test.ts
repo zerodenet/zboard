@@ -29,6 +29,7 @@ describe('AnnouncementStack', () => {
       global: { plugins: [createPinia(), router] },
     })
 
+    expect(wrapper.get('.announcement-dialog').classes()).not.toContain('has-queue')
     const acknowledge = wrapper.get('button.acknowledge')
     expect(acknowledge.text()).toBe('我知道了')
     await acknowledge.trigger('click')
@@ -48,6 +49,7 @@ describe('AnnouncementStack', () => {
     })
 
     expect(wrapper.get('.announcement-feature h3').text()).toBe('重点通知')
+    expect(wrapper.get('.announcement-dialog').classes()).toContain('has-queue')
     const otherTab = wrapper.findAll('[role="tab"]')[1]
     expect(otherTab.text()).toContain('1')
     await otherTab.trigger('click')
