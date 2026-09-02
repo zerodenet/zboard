@@ -277,7 +277,8 @@ function chartBucket(): TrafficUsageBucket {
   const start = new Date(`${from.value}T00:00:00Z`).getTime()
   const end = new Date(`${to.value}T00:00:00Z`).getTime()
   if (!Number.isFinite(start) || !Number.isFinite(end)) return 'hour'
-  return end - start > 7 * 24 * 60 * 60 * 1000 ? 'hour' : 'minute'
+  const inclusiveDays = Math.floor((end - start) / (24 * 60 * 60 * 1000)) + 1
+  return inclusiveDays <= 1 ? 'minute' : 'hour'
 }
 
 async function loadSummary() {
@@ -344,7 +345,8 @@ async function loadNodeSeries() {
 }
 
 async function loadAll() {
-  await Promise.all([loadSummary(), loadRecords(), loadObservability(), loadNodeSeries()])
+  await Promise.all([loadSummary(), loadRecords(), loadObservability()])
+  await loadNodeSeries()
 }
 
 async function syncURL(replace = false) {
@@ -371,7 +373,8 @@ async function applyFilters() {
   normalizeRange()
   cursor.value = ''
   await syncURL()
-  await Promise.all([loadRecords(), loadObservability(), loadNodeSeries()])
+  await Promise.all([loadRecords(), loadObservability()])
+  await loadNodeSeries()
 }
 
 async function clearFilters() {
@@ -379,7 +382,8 @@ async function clearFilters() {
   bucket.value = 'hour'
   cursor.value = ''
   await syncURL()
-  await Promise.all([loadRecords(), loadObservability(), loadNodeSeries()])
+  await Promise.all([loadRecords(), loadObservability()])
+  await loadNodeSeries()
 }
 
 async function changeCursor(value: string | null) {
@@ -417,7 +421,8 @@ watch(() => route.fullPath, async () => {
     from.value = nextRange.from
     to.value = nextRange.to
     limit.value = nextLimit
-    await Promise.all([loadRecords(), loadObservability(), loadNodeSeries()])
+    await Promise.all([loadRecords(), loadObservability()])
+    await loadNodeSeries()
   }
 })
 

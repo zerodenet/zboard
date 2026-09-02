@@ -4,6 +4,7 @@ import { normalizeApiErrorPayload } from '../utils/apiError'
 export const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 
 const tokenKey = 'zboard.auth.token'
+export const MAINTENANCE_STATE_EVENT = 'zboard:maintenance-state'
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -23,6 +24,10 @@ api.interceptors.response.use(
   response => response,
   (cause) => {
     if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data)
+		const maintenance = cause?.response?.status === 503 ? cause?.response?.data?.data?.maintenance : null
+		if (maintenance && typeof window !== 'undefined') {
+			window.dispatchEvent(new CustomEvent(MAINTENANCE_STATE_EVENT, { detail: maintenance }))
+		}
     return Promise.reject(cause)
   },
 )
@@ -2117,5 +2122,111 @@ export async function closeTicket(id: number): Promise<TicketDetail> {
 
 export async function updateTicketStatus(id: number, status: TicketStatus): Promise<TicketDetail> {
 	const response = await api.put(`/admin/tickets/${id}/status`, { status })
+	return unwrap(response)
+}
+
+export interface MaintenanceState {
+	enabled: boolean
+	title: string
+	message: string
+	migration_in_progress: boolean
+	migration_cutover_pending: boolean
+}
+
+export interface Announcement {
+	id: number
+	title: string
+	content: string
+	severity: 'info' | 'success' | 'warning' | 'critical'
+	dismissible: boolean
+	starts_at?: string | null
+	ends_at?: string | null
+	revision: number
+	updated_at: string
+}
+
+export interface AdminAnnouncement extends Announcement {
+	audience: 'all' | 'guest' | 'user' | 'admin'
+	status: 'draft' | 'published' | 'archived'
+	created_by: number
+	created_at: string
+}
+
+export interface SystemStatus {
+	maintenance: MaintenanceState
+	announcements: Announcement[]
+	as_of: string
+}
+
+export async function fetchSystemStatus(): Promise<SystemStatus> {
+	const response = await api.get('/system/status')
+	return unwrap(response)
+}
+
+export async function updateMaintenanceSettings(payload: MaintenanceState & { expected_revisions: Record<string, number> }): Promise<MaintenanceState> {
+	const response = await api.put('/admin/maintenance', {
+		enabled: payload.enabled,
+		title: payload.title,
+		message: payload.message,
+		expected_revisions: payload.expected_revisions,
+	})
+	return unwrap(response)
+}
+
+export async function fetchAdminAnnouncements(offset = 0, limit = 50): Promise<PageResult<AdminAnnouncement>> {
+	const response = await api.get('/admin/announcements', { params: { paged: true, offset, limit } })
+	return normalizePageResult<AdminAnnouncement>(unwrap(response), offset, limit)
+}
+
+export type AnnouncementWriteRequest = Pick<AdminAnnouncement, 'title' | 'content' | 'severity' | 'audience' | 'status' | 'dismissible'> & {
+	starts_at?: string | null
+	ends_at?: string | null
+	expected_revision?: number
+}
+
+export async function createAnnouncement(payload: AnnouncementWriteRequest): Promise<AdminAnnouncement> {
+	const response = await api.post('/admin/announcements', payload)
+	return unwrap(response)
+}
+
+export async function updateAnnouncement(id: number, payload: AnnouncementWriteRequest): Promise<AdminAnnouncement> {
+	const response = await api.put(`/admin/announcements/${id}`, payload)
+	return unwrap(response)
+}
+
+export async function deleteAnnouncement(id: number): Promise<void> {
+	await api.delete(`/admin/announcements/${id}`)
+}
+
+export interface DatabaseMigrationTask {
+	id: number
+	status: number
+	total: number
+	current: number
+	errors: string
+	created_at: string
+	started_at?: string | null
+	finished_at?: string | null
+}
+
+export interface DatabaseMigrationStatus {
+	source_driver: 'mysql' | 'sqlite'
+	task?: DatabaseMigrationTask
+	maintenance: MaintenanceState
+	next_step?: string
+}
+
+export async function fetchDatabaseMigrationStatus(): Promise<DatabaseMigrationStatus> {
+	const response = await api.get('/admin/database-migrations/status')
+	return unwrap(response)
+}
+
+export async function preflightDatabaseMigration(payload: { target_driver: 'mysql' | 'sqlite'; target_datasource: string }) {
+	const response = await api.post('/admin/database-migrations/preflight', payload)
+	return unwrap(response) as { source_driver: string; target_driver: string; target: string; tables: number; ready: boolean }
+}
+
+export async function startDatabaseMigration(payload: { target_driver: 'mysql' | 'sqlite'; target_datasource: string; confirm: true }): Promise<DatabaseMigrationTask> {
+	const response = await api.post('/admin/database-migrations', payload)
 	return unwrap(response)
 }

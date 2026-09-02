@@ -55,6 +55,8 @@ export interface TrafficNodeSeries {
   to: string
   points: TrafficNodeSeriesPoint[]
   nodes: TrafficNodeReference[]
+  truncated: boolean
+  node_limit: number
   as_of: string
 }
 

@@ -10,7 +10,6 @@ param(
     [int]$GoQueryRetryLimit = 3,
     [int]$SmokeRequestTimeoutSec = 10,
     [string]$DataSource = "",
-    [string]$RedisAddr = "",
     [string]$JwtSecret = "",
     [string]$CredentialEncryptionKey = "",
 	[string]$AdminEmail = "",
@@ -102,7 +101,7 @@ try {
 
 if (-not $SkipDependencies) {
     if (Get-Command docker -ErrorAction SilentlyContinue) {
-        Write-Output "Starting dependency services via docker compose (mysql, redis)..."
+        Write-Output "Starting MySQL via docker compose..."
         $oldMySqlRootPassword = $env:ZBOARD_MYSQL_ROOT_PASSWORD
         $oldMySqlPassword = $env:ZBOARD_MYSQL_PASSWORD
         if ([string]::IsNullOrWhiteSpace($env:ZBOARD_MYSQL_ROOT_PASSWORD)) {
@@ -113,7 +112,7 @@ if (-not $SkipDependencies) {
         }
         Push-Location (Join-Path $projectRoot "deploy\docker")
         try {
-            docker compose -f docker-compose.yml up -d mysql redis
+            docker compose -f docker-compose.development.yml up -d mysql
         } finally {
             Pop-Location
             if ($null -eq $oldMySqlRootPassword) {
@@ -128,7 +127,7 @@ if (-not $SkipDependencies) {
             }
         }
     } else {
-        Write-Warning "docker not found, skipped mysql/redis bootstrap."
+        Write-Warning "docker not found, skipped MySQL bootstrap."
     }
 }
 
@@ -137,14 +136,6 @@ if ([string]::IsNullOrWhiteSpace($DataSource)) {
         $DataSource = "zboard:zboard-local-db-password@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local"
     } else {
         $DataSource = $env:ZBOARD_LOCAL_DSN
-    }
-}
-
-if ([string]::IsNullOrWhiteSpace($RedisAddr)) {
-    if ([string]::IsNullOrWhiteSpace($env:ZBOARD_LOCAL_REDIS)) {
-        $RedisAddr = "127.0.0.1:6379"
-    } else {
-        $RedisAddr = $env:ZBOARD_LOCAL_REDIS
     }
 }
 
@@ -204,7 +195,6 @@ $sourceConfig = Join-Path $projectRoot "backend/etc/zboard.yaml.example"
 $configText = Get-Content -Raw $sourceConfig
 $configText = [regex]::Replace($configText, '(?m)^(\s*)environment:\s*.*$', '$1environment: development')
 $configText = [regex]::Replace($configText, '(?m)^(\s*)datasource:\s*".*?"', '$1datasource: "' + $DataSource + '"')
-$configText = [regex]::Replace($configText, '(?m)^(\s*)redis_addr:\s*".*?"', '$1redis_addr: "' + $RedisAddr + '"')
 $configText = [regex]::Replace($configText, '(?m)^(\s*)Port:\s*[0-9]+', '$1Port: ' + $BackendPort)
 Set-Content -NoNewline -Encoding UTF8 -Path $runtimeConfig -Value $configText
 

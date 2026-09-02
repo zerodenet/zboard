@@ -10,6 +10,7 @@ Set those infrastructure secrets explicitly before first startup:
 ```bash
 cd backend
 export ZBOARD_ENVIRONMENT=development
+export ZBOARD_DATABASE_DRIVER=mysql
 export ZBOARD_DATA_SOURCE='zboard:<local-db-password>@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local'
 export ZBOARD_JWT_SECRET='<at-least-32-random-bytes>'
 export ZBOARD_CREDENTIAL_ENCRYPTION_KEY='<exactly-32-random-bytes-as-base64-or-hex>'
@@ -63,13 +64,16 @@ cd ../scripts
 ./sync-go-baseline.sh
 ```
 
-`ensure-go-env.ps1` auto-installs missing Go into `C:\Users\higanbana\sdk\golang` by default; pass `-AutoInstall:$false` to disable.
+`ensure-go-env.ps1` auto-installs missing Go into a per-user application-data
+directory by default; pass `-AutoInstall:$false` to disable. Set
+`ZBOARD_GOROOT_FALLBACK` to use an existing SDK outside `PATH`.
 The checked-in `go` and `toolchain` directives are the reproducible build baseline:
 
 - `go` directive: compatibility family in `backend/go.mod`
 - `toolchain`: exact repository build toolchain
 
-If your environment blocks `go.dev` download, preinstall Go in `C:\Users\higanbana\sdk\golang` and run with `-AutoInstall:$false`.
+If your environment blocks `go.dev` download, set `ZBOARD_GOROOT_FALLBACK` to
+an existing Go SDK and run with `-AutoInstall:$false`.
 
 You can also disable bash auto install by setting `ZBOARD_AUTO_INSTALL_GO=0`.
 
@@ -108,8 +112,8 @@ cd ../scripts
 Script behavior:
 
 - auto ensure Go environment
-- auto start `mysql` and `redis` via docker compose (optional)
-- rewrite runtime config datasource/redis to local addresses
+- auto start `mysql` via the development Docker Compose file (optional)
+- rewrite the runtime datasource to the local MySQL address
 - generate and cache random local JWT, bootstrap, and credential-encryption secrets when not supplied
 - rewrite runtime config `Port` from `--backend-port`
 - wait `/healthz` ready and run smoke test
@@ -163,7 +167,19 @@ final table, column and index signature. Existing applied rows are retained for
 rollback compatibility with the immediately previous development binary; only
 new databases contain a single baseline row. Partial histories and unversioned
 non-empty schemas fail startup with an explicit recovery message. Production
-startup does not call GORM `AutoMigrate`.
+MySQL startup does not call GORM `AutoMigrate`. SQLite uses the audited GORM
+model inventory plus explicit operational-table DDL, enables WAL, foreign keys
+and a busy timeout, and limits the pool to one connection because SQLite
+permits only one writer at a time.
+
+Set `ZBOARD_DATABASE_DRIVER=sqlite` and point `ZBOARD_DATA_SOURCE` at a
+persistent file (for example `/var/lib/zboard/zboard.db`) for a low-resource
+deployment. The administrator maintenance console supports controlled
+MySQL-to-SQLite and SQLite-to-MySQL migration: it preflights an empty target,
+enables maintenance, copies every application table under a consistent source
+lock, verifies row counts, and leaves maintenance enabled until the operator
+switches deployment configuration and restarts. It never hot-swaps a live
+process between database handles.
 
 See [`../docs/database-migrations.md`](../docs/database-migrations.md) for the
 upgrade, verification and post-`v0.1.0` append-only rules.

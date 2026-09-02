@@ -7,6 +7,7 @@ import (
 	"time"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"gorm.io/gorm"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -26,6 +27,14 @@ type protocolCredentialLockRow interface {
 }
 
 func (h *handlers) runProtocolCredentialTransaction(operation func(tx *gorm.DB) error) error {
+	if datastore.IsSQLite(h.db) {
+		// The SQLite datasource is configured with one connection and
+		// _txlock=immediate, which provides the process/database-wide writer
+		// serialization that the MySQL advisory lock supplies below.
+		return retryProtocolCredentialTransaction(func() error {
+			return h.db.Transaction(operation)
+		}, time.Sleep)
+	}
 	return retryProtocolCredentialTransaction(func() error {
 		return h.db.Connection(func(connection *gorm.DB) (err error) {
 			acquired, err := acquireProtocolCredentialLock(connection)

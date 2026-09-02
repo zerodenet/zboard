@@ -103,6 +103,8 @@ const navigationGroups: NavigationGroup[] = [
   ] },
   { label: '系统运营', items: [
     { to: '/admin/tasks', label: '运营任务', icon: 'tasks' },
+    { to: '/admin/announcements', label: '站点公告', icon: 'info' },
+    { to: '/admin/maintenance', label: '系统维护', icon: 'settings' },
     { to: '/admin/operation-logs', label: '运行日志', icon: 'terminal' },
     { to: '/admin/audit-logs', label: '审计日志', icon: 'audit' },
     { label: '系统设置', icon: 'settings', children: [

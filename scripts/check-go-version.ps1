@@ -14,7 +14,7 @@ if ([string]::IsNullOrWhiteSpace($RequiredGoVersion)) {
 }
 if ([string]::IsNullOrWhiteSpace($FallbackRoot)) {
     $FallbackRoot = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_GOROOT_FALLBACK)) {
-        "C:\Users\higanbana\sdk\golang"
+        Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "zboard\go"
     } else {
         $env:ZBOARD_GOROOT_FALLBACK
     }

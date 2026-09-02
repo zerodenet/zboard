@@ -224,6 +224,7 @@ const legacyPolicyKeys = new Set(['site_terms_content', 'site_privacy_content', 
 const policyDocumentsKeys = new Set(['site_policy_documents'])
 const legalMetadataKeys = new Set(['site_legal_items'])
 const registrationKeys = new Set(['register_email_verification'])
+const dedicatedOperationsKeys = new Set(['maintenance_enabled', 'maintenance_title', 'maintenance_message', 'maintenance_task_id'])
 const siteVisualKeys = ['site_logo', 'site_logo_dark', 'site_favicon']
 const siteContentKeys = ['site_desc', 'site_home_kicker', 'site_home_title']
 const siteContactKeys = ['site_footer_copyright', 'site_support_email', 'site_support_url', 'site_telegram_url']
@@ -237,7 +238,7 @@ const policyDocumentsConfig = computed(() => operationalConfigs.value.find(item 
 const legalMetadataConfig = computed(() => operationalConfigs.value.find(item => legalMetadataKeys.has(item.config_key)))
 const emailConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)))
 const emailConfigDirty = computed(() => emailConfigs.value.some(configDirty))
-const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && !/smtp|email/i.test(item.config_key)))
+const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && !dedicatedOperationsKeys.has(item.config_key) && !/smtp|email/i.test(item.config_key)))
 const visualConfigs = computed(() => configsForKeys(siteVisualKeys))
 const contentConfigs = computed(() => configsForKeys(siteContentKeys))
 const contactConfigs = computed(() => configsForKeys(siteContactKeys))

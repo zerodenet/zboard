@@ -25,6 +25,12 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	if err := datastore.ReconcileZeroEventSchema(db); err != nil {
 		return nil, err
 	}
+	if err := datastore.ReconcileTrafficReadSchema(db); err != nil {
+		return nil, err
+	}
+	if err := datastore.ReconcileOperationsSchema(db); err != nil {
+		return nil, err
+	}
 	if err := datastore.ReconcileFairUseTelemetrySchema(db); err != nil {
 		return nil, err
 	}
@@ -39,6 +45,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/readyz", h.ReadyHandler),
 		newRoute(http.MethodGet, "/api/v1/version", h.VersionHandler),
 		newRoute(http.MethodGet, "/api/v1/setup/status", h.SetupStatusHandler),
+		newRoute(http.MethodGet, "/api/v1/system/status", h.SystemStatusHandler),
+		newRoute(http.MethodGet, "/api/v1/announcements", h.PublicAnnouncementsHandler),
 		newRoute(http.MethodPost, "/api/v1/setup/install", h.SetupInstallWithSystemPreferencesHandler),
 		newRoute(http.MethodPost, "/api/v1/auth/register", h.RegisterAuthRoutes),
 		newRoute(http.MethodPost, "/api/v1/auth/register/code", h.RegistrationEmailCodeHandler),
@@ -59,6 +67,14 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/system/configs", h.PublicSystemConfigsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/system-configs", h.AdminSystemConfigsListHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/system-configs/:key", h.AdminSystemConfigUpdateHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/announcements", h.AdminAnnouncementsListHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/announcements", h.AdminAnnouncementCreateHandler),
+		newRoute(http.MethodPut, "/api/v1/admin/announcements/:id", h.AdminAnnouncementUpdateHandler),
+		newRoute(http.MethodDelete, "/api/v1/admin/announcements/:id", h.AdminAnnouncementDeleteHandler),
+		newRoute(http.MethodPut, "/api/v1/admin/maintenance", h.AdminMaintenanceUpdateHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/database-migrations/status", h.AdminDatabaseMigrationStatusHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/database-migrations/preflight", h.AdminDatabaseMigrationPreflightHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/database-migrations", h.AdminDatabaseMigrationStartHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/smtp/test", h.AdminSMTPTestHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/email-templates", h.AdminEmailTemplatesListHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/email-templates", h.AdminEmailTemplateCreateHandler),
@@ -214,6 +230,9 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/system/info", h.SystemInfoHandler),
 	})
 	if err := h.ReconcileSystemConfigDefaults(); err != nil {
+		return nil, err
+	}
+	if err := h.ReconcileInterruptedDatabaseMigrations(); err != nil {
 		return nil, err
 	}
 	if err := h.ReconcileSiteCustomizationDefaults(); err != nil {

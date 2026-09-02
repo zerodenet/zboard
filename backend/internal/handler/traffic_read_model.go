@@ -601,7 +601,8 @@ func (h *handlers) TrafficTrendsHandler(w http.ResponseWriter, r *http.Request) 
 		BadRequest(w, err.Error())
 		return
 	}
-	query := h.db.Model(&model.TrafficRecord{}).
+	db := h.db.WithContext(r.Context())
+	query := db.Model(&model.TrafficRecord{}).
 		Where("record_at >= ? AND record_at < ?", from, to.AddDate(0, 0, 1))
 
 	var facetUserID uint
@@ -648,7 +649,7 @@ func (h *handlers) TrafficTrendsHandler(w http.ResponseWriter, r *http.Request) 
 	subscriptions := make([]entityReference, 0)
 	if facetUserID > 0 {
 		var subscriptionRows []subscriptionReferenceRow
-		if err := h.db.Table("subscriptions").
+		if err := db.Table("subscriptions").
 			Select("subscriptions.id AS id, subscriptions.status AS status, plans.name AS plan_name, plan_skus.name AS sku_name").
 			Joins("LEFT JOIN plans ON plans.id = subscriptions.plan_id").
 			Joins("LEFT JOIN plan_skus ON plan_skus.id = subscriptions.plan_sku_id").

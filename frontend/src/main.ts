@@ -102,6 +102,7 @@ router.beforeEach(async (to) => {
   if (store.token && !store.user.email) {
     await store.loadMe()
   }
+	try { await store.loadSystemStatus() } catch (_) { /* API calls retain the last known state. */ }
 
   const meta = resolveMeta(to)
   if (meta.requiresAuth && !store.isAuthenticated) {

@@ -213,6 +213,9 @@ func zeroBufferedFlowID(payload json.RawMessage) string {
 func (h *handlers) runZeroEventConsumer(ctx context.Context, runtime *zeroEventRuntime) {
 	defer close(runtime.done)
 	consume := func() {
+		if h.backgroundWorkPaused() {
+			return
+		}
 		burst := zeroEventConsumerBurst(runtime.spool.Status())
 		for index := 0; index < burst; index++ {
 			count, err := h.consumeZeroEventBatch(ctx, runtime.spool, runtime.config.MaxBatch)

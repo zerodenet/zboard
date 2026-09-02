@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 )
@@ -91,6 +92,16 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		BadRequest(w, err.Error())
 		return
+	}
+	if datastore.IsSQLite(h.db) {
+		switch bucket.Name {
+		case trafficUsageBucketMinute:
+			bucket.Expression = "strftime('%Y-%m-%d %H:%M:00', record_at)"
+		case trafficUsageBucketHour:
+			bucket.Expression = "strftime('%Y-%m-%d %H:00:00', record_at)"
+		case trafficUsageBucketDay:
+			bucket.Expression = "strftime('%Y-%m-%d 00:00:00', record_at)"
+		}
 	}
 	window, err := parseHistoryWindow(r.URL.Query(), 7)
 	if err != nil {

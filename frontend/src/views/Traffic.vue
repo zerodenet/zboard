@@ -202,7 +202,9 @@ function emptyTrafficTrend(): TrafficTrendResult { return { from: '', to: '', po
 function chartBucket(): TrafficUsageBucket {
   if (bucket.value !== 'minute') return bucket.value
   const duration = Date.parse(`${to.value}T00:00:00Z`) - Date.parse(`${from.value}T00:00:00Z`)
-  return Number.isFinite(duration) && duration <= 7 * 86400000 ? 'minute' : 'hour'
+  const inclusiveDays = Math.floor(duration / 86400000) + 1
+  const maxDays = filters.nodeId ? 7 : 1
+  return Number.isFinite(inclusiveDays) && inclusiveDays <= maxDays ? 'minute' : 'hour'
 }
 function adminContextLink(path: string, query: Record<string, string>) { return withAdminReturnTo(path, route.fullPath, query) }
 function userReference(id: number) { return references.value.users[String(id)] || null }
@@ -263,7 +265,11 @@ async function loadNodeSeries() {
   }
 }
 
-async function load() { await Promise.all([loadRecords(), loadReconciliation(), loadTrend(), loadNodeSeries()]); await loadReferences() }
+async function load() {
+  await Promise.all([loadRecords(), loadReconciliation(), loadTrend()])
+  await loadReferences()
+  await loadNodeSeries()
+}
 async function syncURL(replace = false) {
   const reconciliationPage = Math.floor(reconciliationOffset.value / reconciliationLimit.value) + 1
   const location = { query: {

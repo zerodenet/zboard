@@ -931,6 +931,9 @@ func (h *handlers) fairUseEvaluationCandidateIDs(now time.Time) ([]uint, error) 
 }
 
 func (h *handlers) runFairUseEvaluationCycle(now time.Time) {
+	if h.backgroundWorkPaused() {
+		return
+	}
 	subscriptionIDs, err := h.fairUseEvaluationCandidateIDs(now)
 	if err != nil {
 		log.Printf("fair use evaluation policy scan failed: %v", err)

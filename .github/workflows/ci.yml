@@ -25,6 +25,10 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: Test
         run: go test ./...
+      - name: Verify pure-Go SQLite path
+        env:
+          CGO_ENABLED: "0"
+        run: go test ./internal/datastore -run SQLite -count=1
       - name: Vet
         run: go vet ./...
       - name: Build
@@ -88,7 +92,6 @@ jobs:
     env:
       ZBOARD_IMAGE_TAG: v0.0.1-validation
       ZBOARD_DATA_SOURCE: zboard:validation@tcp(mysql:3306)/zboard?charset=utf8mb4&parseTime=true&loc=UTC
-      ZBOARD_REDIS_ADDR: redis:6379
       ZBOARD_JWT_SECRET: 0123456789abcdef0123456789abcdef
       ZBOARD_CREDENTIAL_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
       ZBOARD_BOOTSTRAP_ADMIN_EMAIL: admin@example.com

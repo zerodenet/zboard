@@ -31,6 +31,9 @@ var commerceOrderSnapshotColumns = []commerceColumnSpec{
 // changes must be safe for both fresh installations and databases that already
 // recorded that baseline.
 func ReconcileCommerceSchema(db *gorm.DB) error {
+	if IsSQLite(db) {
+		return nil
+	}
 	if db == nil {
 		return fmt.Errorf("database is required")
 	}

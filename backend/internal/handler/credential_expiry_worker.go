@@ -55,6 +55,9 @@ func (h *handlers) CloseCredentialExpiryWorker() {
 }
 
 func (h *handlers) runExpiredCredentialReconciliation(now time.Time) error {
+	if h.backgroundWorkPaused() {
+		return nil
+	}
 	started := now.UTC()
 	if started.IsZero() {
 		started = time.Now().UTC()

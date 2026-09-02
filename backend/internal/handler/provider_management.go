@@ -857,6 +857,9 @@ func (h *handlers) StartDNSPublicObservationWorker() {
 }
 
 func (h *handlers) scanDNSPublicObservations(now time.Time) {
+	if h.backgroundWorkPaused() {
+		return
+	}
 	var records []model.ManagedDNSRecord
 	if err := h.db.Where(
 		"public_resolved = ? AND last_synced_at IS NOT NULL AND status IN ? AND (last_public_check_at IS NULL OR last_public_check_at <= ?)",

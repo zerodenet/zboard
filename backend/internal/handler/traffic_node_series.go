@@ -11,8 +11,11 @@ import (
 )
 
 const (
-	trafficNodeSeriesMinuteMaxDays = 7
-	trafficNodeSeriesHourMaxDays   = historyMaxWindowDays
+	trafficNodeSeriesNodeLimit             = 8
+	trafficNodeSeriesMinuteMaxDays         = 1
+	trafficNodeSeriesFilteredMinuteMaxDays = 7
+	trafficNodeSeriesHourMaxDays           = 31
+	trafficNodeSeriesFilteredHourMaxDays   = historyMaxWindowDays
 )
 
 type trafficNodeSeriesPoint struct {
@@ -26,18 +29,34 @@ type trafficNodeSeriesPoint struct {
 }
 
 type trafficNodeSeriesResponse struct {
-	Bucket string                   `json:"bucket"`
-	From   time.Time                `json:"from"`
-	To     time.Time                `json:"to"`
-	Points []trafficNodeSeriesPoint `json:"points"`
-	Nodes  []entityReference        `json:"nodes"`
-	AsOf   time.Time                `json:"as_of"`
+	Bucket    string                   `json:"bucket"`
+	From      time.Time                `json:"from"`
+	To        time.Time                `json:"to"`
+	Points    []trafficNodeSeriesPoint `json:"points"`
+	Nodes     []entityReference        `json:"nodes"`
+	Truncated bool                     `json:"truncated"`
+	NodeLimit int                      `json:"node_limit"`
+	AsOf      time.Time                `json:"as_of"`
 }
 
-func validateTrafficNodeSeriesWindow(bucket trafficUsageBucketSpec, window historyWindow) error {
-	maxDays := trafficNodeSeriesHourMaxDays
-	if bucket.Name == trafficUsageBucketMinute {
+type trafficNodeSeriesTotal struct {
+	NodeID    uint  `gorm:"column:node_id"`
+	UsedBytes int64 `gorm:"column:used_bytes"`
+}
+
+func validateTrafficNodeSeriesWindow(bucket trafficUsageBucketSpec, window historyWindow, nodeFiltered bool) error {
+	maxDays := historyMaxWindowDays
+	switch bucket.Name {
+	case trafficUsageBucketMinute:
 		maxDays = trafficNodeSeriesMinuteMaxDays
+		if nodeFiltered {
+			maxDays = trafficNodeSeriesFilteredMinuteMaxDays
+		}
+	case trafficUsageBucketHour:
+		maxDays = trafficNodeSeriesHourMaxDays
+		if nodeFiltered {
+			maxDays = trafficNodeSeriesFilteredHourMaxDays
+		}
 	}
 	if window.To.Sub(window.From) > time.Duration(maxDays)*24*time.Hour {
 		return fmt.Errorf("%s node series supports at most %d days", bucket.Name, maxDays)
@@ -71,12 +90,7 @@ func (h *handlers) trafficNodeSeriesHandler(w http.ResponseWriter, r *http.Reque
 		BadRequest(w, err.Error())
 		return
 	}
-	if err := validateTrafficNodeSeriesWindow(bucket, window); err != nil {
-		BadRequest(w, err.Error())
-		return
-	}
-
-	query := applyHistoryWindow(h.db.Model(&model.TrafficRecord{}), "record_at", window)
+	query := applyHistoryWindow(h.db.WithContext(r.Context()).Model(&model.TrafficRecord{}), "record_at", window)
 	if adminScope {
 		if userID, parseErr := positiveQueryID(r.URL.Query(), "user_id"); parseErr != nil {
 			BadRequest(w, parseErr.Error())
@@ -93,11 +107,49 @@ func (h *handlers) trafficNodeSeriesHandler(w http.ResponseWriter, r *http.Reque
 	} else if subscriptionID > 0 {
 		query = query.Where("subscription_id = ?", subscriptionID)
 	}
-	if nodeID, parseErr := positiveQueryID(r.URL.Query(), "node_id"); parseErr != nil {
+	nodeID, parseErr := positiveQueryID(r.URL.Query(), "node_id")
+	if parseErr != nil {
 		BadRequest(w, parseErr.Error())
 		return
-	} else if nodeID > 0 {
+	}
+	if err := validateTrafficNodeSeriesWindow(bucket, window, nodeID > 0); err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	if nodeID > 0 {
 		query = query.Where("node_id = ?", nodeID)
+	}
+
+	truncated := false
+	if nodeID == 0 {
+		totals := make([]trafficNodeSeriesTotal, 0, trafficNodeSeriesNodeLimit+1)
+		if err := query.Session(&gorm.Session{}).
+			Select("node_id, COALESCE(SUM(used_bytes), 0) AS used_bytes").
+			Where("node_id > 0").
+			Group("node_id").
+			Order("COALESCE(SUM(used_bytes), 0) DESC, node_id ASC").
+			Limit(trafficNodeSeriesNodeLimit + 1).
+			Scan(&totals).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		if len(totals) > trafficNodeSeriesNodeLimit {
+			truncated = true
+			totals = totals[:trafficNodeSeriesNodeLimit]
+		}
+		selectedNodeIDs := make([]uint, 0, len(totals))
+		for _, total := range totals {
+			selectedNodeIDs = append(selectedNodeIDs, total.NodeID)
+		}
+		if len(selectedNodeIDs) == 0 {
+			OK(w, trafficNodeSeriesResponse{
+				Bucket: bucket.Name, From: window.From, To: window.To,
+				Points: []trafficNodeSeriesPoint{}, Nodes: []entityReference{},
+				Truncated: false, NodeLimit: trafficNodeSeriesNodeLimit, AsOf: time.Now().UTC(),
+			})
+			return
+		}
+		query = query.Where("node_id IN ?", selectedNodeIDs)
 	}
 
 	points := make([]trafficNodeSeriesPoint, 0)
@@ -135,11 +187,13 @@ func (h *handlers) trafficNodeSeriesHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	OK(w, trafficNodeSeriesResponse{
-		Bucket: bucket.Name,
-		From:   window.From,
-		To:     window.To,
-		Points: points,
-		Nodes:  nodes,
-		AsOf:   time.Now().UTC(),
+		Bucket:    bucket.Name,
+		From:      window.From,
+		To:        window.To,
+		Points:    points,
+		Nodes:     nodes,
+		Truncated: truncated,
+		NodeLimit: trafficNodeSeriesNodeLimit,
+		AsOf:      time.Now().UTC(),
 	})
 }

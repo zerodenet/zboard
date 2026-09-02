@@ -3,7 +3,15 @@ package datastore
 import (
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestDefaultPoolConfigUsesLowResourceDefaults(t *testing.T) {
+	pool := DefaultPoolConfig()
+	if pool.MaxOpenConnections != 8 || pool.MaxIdleConnections != 2 || pool.ConnectionLifetime != time.Hour {
+		t.Fatalf("DefaultPoolConfig() = %+v", pool)
+	}
+}
 
 func TestQuoteDSNRedactsPassword(t *testing.T) {
 	quoted := QuoteDSN("zboard:super-secret@tcp(mysql:3306)/zboard?parseTime=true")

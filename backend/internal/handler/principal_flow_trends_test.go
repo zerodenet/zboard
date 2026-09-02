@@ -1,9 +1,27 @@
 package handler
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestPrincipalFlowBaselineSQLUsesRankedBoundedTimeline(t *testing.T) {
+	query := principalFlowBaselineSQL("user_id")
+	for _, expected := range []string{
+		"ROW_NUMBER() OVER",
+		"source = 'generation_reset'",
+		"o.user_id = ? AND o.observed_at < ?",
+		"WHERE observation_rank = 1 AND active_flows > 0",
+	} {
+		if !strings.Contains(query, expected) {
+			t.Errorf("baseline SQL does not contain %q", expected)
+		}
+	}
+	if strings.Contains(query, "NOT EXISTS") {
+		t.Fatal("baseline SQL must not use the former per-row correlated anti-query")
+	}
+}
 
 func TestApplyPrincipalFlowReplayOrdersByRegistryObservationNotDelivery(t *testing.T) {
 	from := time.Date(2026, time.August, 14, 0, 0, 0, 0, time.UTC)

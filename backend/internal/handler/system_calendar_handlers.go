@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -33,7 +35,8 @@ func (h *handlers) TrafficTrendsSystemCalendarHandler(w http.ResponseWriter, r *
 		return
 	}
 	queryEnd := to.AddDate(0, 0, 1).UTC()
-	query := h.db.Model(&model.TrafficRecord{}).
+	db := h.db.WithContext(r.Context())
+	query := db.Model(&model.TrafficRecord{}).
 		Where("record_at >= ? AND record_at < ?", from.UTC(), queryEnd)
 
 	var facetUserID uint
@@ -76,7 +79,7 @@ func (h *handlers) TrafficTrendsSystemCalendarHandler(w http.ResponseWriter, r *
 	subscriptions := make([]entityReference, 0)
 	if facetUserID > 0 {
 		var subscriptionRows []subscriptionReferenceRow
-		if err := h.db.Table("subscriptions").
+		if err := db.Table("subscriptions").
 			Select("subscriptions.id AS id, subscriptions.status AS status, plans.name AS plan_name, plan_skus.name AS sku_name").
 			Joins("LEFT JOIN plans ON plans.id = subscriptions.plan_id").
 			Joins("LEFT JOIN plan_skus ON plan_skus.id = subscriptions.plan_sku_id").
@@ -170,8 +173,14 @@ func (h *handlers) TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler(w h
 	}
 	start := buckets[0].StartUTC
 	end := buckets[len(buckets)-1].EndUTC
-	baseline, events, boundaries, err := h.loadPrincipalFlowTrendTimeline(scopeType, scopeID, start, end)
+	replayContext, cancel := context.WithTimeout(r.Context(), principalFlowTrendReplayTimeout)
+	defer cancel()
+	baseline, events, boundaries, err := h.loadPrincipalFlowTrendTimeline(replayContext, scopeType, scopeID, start, end)
 	if err != nil {
+		if errors.Is(replayContext.Err(), context.DeadlineExceeded) && r.Context().Err() == nil {
+			copyRecordedResponse(w, recorded)
+			return
+		}
 		ServerError(w, err)
 		return
 	}

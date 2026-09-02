@@ -461,6 +461,9 @@ type handlers struct {
 	zeroEventAuthFailures    sync.Map
 	expiryReconcileMu        sync.Mutex
 	lastExpiryReconcile      time.Time
+	maintenanceMu            sync.RWMutex
+	maintenanceState         maintenanceState
+	maintenanceLoadedAt      time.Time
 }
 
 func NewHandlers(db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string) (*handlers, error) {
@@ -685,6 +688,27 @@ func (h *handlers) InstallationMiddleware(next http.HandlerFunc) http.HandlerFun
 		if count == 0 {
 			writeJSON(w, http.StatusPreconditionRequired, "zboard installation is required", map[string]string{"setup_url": "/setup"})
 			return
+		}
+		state, err := h.loadMaintenanceState(false)
+		if err != nil {
+			ServerError(w, err)
+			return
+		}
+		writeLocked := state.MigrationInProgress || state.MigrationCutoverPending
+		unsafeMethod := r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions
+		cutoverConfirmation := state.MigrationCutoverPending && r.Method == http.MethodPut && r.URL.Path == "/api/v1/admin/maintenance"
+		if writeLocked && unsafeMethod && r.URL.Path != "/api/v1/auth/login" && !cutoverConfirmation {
+			w.Header().Set("Retry-After", "60")
+			writeJSON(w, http.StatusServiceUnavailable, "database migration locks all writes until cutover is confirmed", map[string]interface{}{"maintenance": state})
+			return
+		}
+		if state.Enabled && !maintenanceRouteAllowedWithoutAdmin(r.URL.Path) {
+			claims, authErr := h.authFromRequest(r)
+			if authErr != nil || !claims.IsAdmin {
+				w.Header().Set("Retry-After", "60")
+				writeJSON(w, http.StatusServiceUnavailable, state.Title, map[string]interface{}{"maintenance": state})
+				return
+			}
 		}
 		next(w, r)
 	}

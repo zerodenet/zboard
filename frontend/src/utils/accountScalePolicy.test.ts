@@ -34,6 +34,9 @@ describe('account list scale policy', () => {
     expect(traffic).toContain('<CursorPager')
     expect(traffic).toContain('<WorkbenchFilterDate')
     expect(traffic).toContain('TrafficUsageBucket')
+    expect(traffic).toContain('await Promise.all([loadSummary(), loadRecords(), loadObservability()])')
+    expect(traffic).toContain('await loadNodeSeries()')
+    expect(traffic).not.toContain('loadObservability(), loadNodeSeries()')
     expect(traffic).not.toMatch(/\bfetchTrafficRecords\(/)
   })
 

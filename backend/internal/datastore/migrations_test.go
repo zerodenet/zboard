@@ -84,10 +84,11 @@ func TestPreReleaseMigrationInventoryIsSquashed(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(payload)
-	if count := strings.Count(source, "CREATE TABLE "); count != len(preReleaseBaselineTables) {
-		t.Fatalf("baseline creates %d tables, want %d", count, len(preReleaseBaselineTables))
+	allBaselineTables := append(append([]string{}, preReleaseBaselineTables...), preReleaseReconciledTables...)
+	if count := strings.Count(source, "CREATE TABLE "); count != len(allBaselineTables) {
+		t.Fatalf("baseline creates %d tables, want %d", count, len(allBaselineTables))
 	}
-	for _, table := range preReleaseBaselineTables {
+	for _, table := range allBaselineTables {
 		if !strings.Contains(source, "CREATE TABLE `"+table+"`") {
 			t.Errorf("baseline is missing table %s", table)
 		}

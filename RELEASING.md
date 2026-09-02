@@ -62,15 +62,14 @@ Kubernetes deployment and rollout automation are outside the supported v0.1.0 re
 
 ## Docker service dependencies
 
-- The supported Compose bundles start only the ZBoard application. MySQL and
-  Redis are externally managed services and must already be reachable through
+- The supported Compose bundles start only the ZBoard application. MySQL is an
+  externally managed service and must already be reachable through
   `ZBOARD_EXTERNAL_NETWORK`.
 - Supply the complete application-account DSN in `ZBOARD_DATA_SOURCE`.
   Production startup deliberately rejects the MySQL root account; use root
   only to provision a database-scoped application account.
-- Supply the existing Redis address and password through
-  `ZBOARD_REDIS_ADDR` and `ZBOARD_REDIS_PASSWORD`. Compose does not create,
-  restart, remove or back up the external MySQL and Redis containers.
+- Compose does not create, restart, remove or back up the external MySQL
+  container.
 - Keep `ZBOARD_ZERO_ARTIFACT_HOST_DIR` read-only. It contains trusted Zero
   binaries and checksum files.
 - Mount `ZBOARD_MANAGED_RULE_HOST_DIR` read-write at
@@ -80,9 +79,6 @@ Kubernetes deployment and rollout automation are outside the supported v0.1.0 re
 - Run `sh deploy/docker/prepare-host-dirs.sh` before the first Compose start.
   Detailed backup, restore and mount verification steps are documented in
   [`deploy/docker/README.md`](deploy/docker/README.md).
-- The intranet synchronization script uses
-  `ZBOARD_EXTERNAL_MYSQL_CONTAINER` only for the pre-switch database dump.
-
 The complete schema policy and verification queries are documented in
 [`docs/database-migrations.md`](docs/database-migrations.md).
 
@@ -127,6 +123,8 @@ access is required.
 
 ## Release notes artifact
 
+- GitHub Actions generates release notes from non-merge commits since the
+  previous tag. Do not maintain a second tracked changelog by hand.
 - Before publishing, attach `docs/release/v0.1.0-launch-checklist.md` results as the public release check evidence.
 - Include:
   - smoke test outputs

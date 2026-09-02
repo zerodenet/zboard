@@ -13,6 +13,9 @@ import (
 // state: billing facts, observability facts and business restrictions have
 // distinct ownership and lifecycles.
 func ReconcileFairUseTelemetrySchema(db *gorm.DB) error {
+	if IsSQLite(db) {
+		return nil
+	}
 	if db == nil {
 		return fmt.Errorf("database is required")
 	}
