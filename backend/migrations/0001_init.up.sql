@@ -727,6 +727,7 @@ CREATE TABLE `announcements` (
   `severity` varchar(16) NOT NULL DEFAULT 'info',
   `audience` varchar(16) NOT NULL DEFAULT 'all',
   `status` varchar(16) NOT NULL DEFAULT 'draft',
+  `popup_enabled` tinyint(1) NOT NULL DEFAULT '0',
   `dismissible` tinyint(1) NOT NULL DEFAULT '1',
   `starts_at` datetime(3) DEFAULT NULL,
   `ends_at` datetime(3) DEFAULT NULL,
@@ -736,6 +737,7 @@ CREATE TABLE `announcements` (
   `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`id`),
   KEY `idx_announcements_visibility` (`status`,`starts_at`,`ends_at`),
+  KEY `idx_announcements_feed` (`status`,`audience`,`popup_enabled`,`starts_at`),
   KEY `idx_announcements_audience` (`audience`),
   KEY `idx_announcements_created_by` (`created_by`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

@@ -51,6 +51,7 @@ async function submit() {
   try {
     const result = await login(email.value, password.value)
     store.setToken(result.auth.token); store.setUser(result.user)
+    await store.loadSystemStatus(true).catch(() => undefined)
     const requested = typeof route.query.redirect === 'string' ? route.query.redirect : ''
     const accountRequest = requested === '/account' || requested.startsWith('/account/')
     const adminRequest = requested === '/admin' || requested.startsWith('/admin/')

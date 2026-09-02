@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"gorm.io/gorm"
 )
 
 func newAnnouncementTestHandlers(t *testing.T) (*handlers, string) {
@@ -54,7 +56,6 @@ func TestAnnouncementReadReceiptTracksRevision(t *testing.T) {
 	if err := h.db.Create(&record).Error; err != nil {
 		t.Fatal(err)
 	}
-
 	items, err := h.activeAnnouncements(announcementRequest(http.MethodGet, "/api/v1/announcements", token, ""))
 	if err != nil || len(items) != 1 || items[0].Read {
 		t.Fatalf("activeAnnouncements() = %+v, %v; want one unread item", items, err)
@@ -79,7 +80,7 @@ func TestAnnouncementReadReceiptTracksRevision(t *testing.T) {
 	}
 }
 
-func TestAccountAnnouncementHistoryIncludesEndedAndArchivedNotices(t *testing.T) {
+func TestAccountAnnouncementHistoryKeepsEndedButHidesArchivedNotices(t *testing.T) {
 	h, token := newAnnouncementTestHandlers(t)
 	past := time.Now().UTC().Add(-time.Hour)
 	records := []model.Announcement{
@@ -97,10 +98,64 @@ func TestAccountAnnouncementHistoryIncludesEndedAndArchivedNotices(t *testing.T)
 		t.Fatalf("history status = %d body = %s", response.Code, response.Body.String())
 	}
 	body := response.Body.String()
-	if !strings.Contains(body, `"unread_count":2`) || !strings.Contains(body, `"title":"Ended"`) || !strings.Contains(body, `"title":"Archived"`) {
-		t.Fatalf("history response missing published history: %s", body)
+	if !strings.Contains(body, `"unread_count":0`) || !strings.Contains(body, `"title":"Ended"`) {
+		t.Fatalf("history response missing ended published history: %s", body)
 	}
-	if strings.Contains(body, `"title":"Guest"`) {
-		t.Fatalf("history response leaked guest-only announcement: %s", body)
+	if strings.Contains(body, `"title":"Archived"`) || strings.Contains(body, `"title":"Guest"`) {
+		t.Fatalf("history response leaked archived or guest-only announcement: %s", body)
+	}
+}
+
+func TestActiveAnnouncementsAreBoundedAndPrioritizePopupNotices(t *testing.T) {
+	h, token := newAnnouncementTestHandlers(t)
+	now := time.Now().UTC()
+	past := now.Add(-time.Hour)
+	expired := now.Add(-time.Minute)
+	records := []model.Announcement{
+		{Title: "Priority", Content: "priority", Severity: "info", Audience: "user", Status: "published", PopupEnabled: true, StartsAt: &past, Revision: 1},
+		{Title: "Newest", Content: "newest", Severity: "info", Audience: "user", Status: "published", StartsAt: &now, Revision: 1},
+		{Title: "Three", Content: "three", Severity: "info", Audience: "user", Status: "published", StartsAt: &past, Revision: 1},
+		{Title: "Four", Content: "four", Severity: "info", Audience: "user", Status: "published", StartsAt: &past, Revision: 1},
+		{Title: "Five", Content: "five", Severity: "info", Audience: "user", Status: "published", StartsAt: &past, Revision: 1},
+		{Title: "Six", Content: "six", Severity: "info", Audience: "user", Status: "published", StartsAt: &past, Revision: 1},
+		{Title: "Expired", Content: "expired", Severity: "critical", Audience: "user", Status: "published", StartsAt: &past, EndsAt: &expired, PopupEnabled: true, Revision: 1},
+	}
+	if err := h.db.Create(&records).Error; err != nil {
+		t.Fatal(err)
+	}
+	items, err := h.activeAnnouncements(announcementRequest(http.MethodGet, "/api/v1/announcements", token, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != maxActiveAnnouncements || items[0].Title != "Priority" || !items[0].PopupEnabled {
+		t.Fatalf("active announcements = %+v, want five items with popup priority first", items)
+	}
+	for _, item := range items {
+		if item.Title == "Expired" {
+			t.Fatal("expired announcement must be removed automatically")
+		}
+	}
+}
+
+func TestArchivedAnnouncementCanBeDeletedWithoutUserVisibility(t *testing.T) {
+	h, _ := newAnnouncementTestHandlers(t)
+	record := model.Announcement{Title: "Archived", Content: "gone", Severity: "info", Audience: "all", Status: "archived", Revision: 2}
+	if err := h.db.Create(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Model(&model.User{}).Where("id = ?", 1).Update("is_admin", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	adminToken, _, err := h.issueToken(authClaims{UserID: 1, Email: "admin@example.test", IsAdmin: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	h.AdminAnnouncementDeleteHandler(response, announcementRequest(http.MethodDelete, "/api/v1/admin/announcements/1", adminToken, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("delete archived status = %d body = %s", response.Code, response.Body.String())
+	}
+	if err := h.db.First(&model.Announcement{}, record.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("archived announcement still exists: %v", err)
 	}
 }

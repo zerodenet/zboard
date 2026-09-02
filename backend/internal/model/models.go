@@ -689,19 +689,20 @@ type SystemConfig struct {
 // evaluated by the server so clients never need to download and filter an
 // unbounded announcement history.
 type Announcement struct {
-	ID          uint       `json:"id" gorm:"primaryKey"`
-	Title       string     `json:"title" gorm:"size:160;not null"`
-	Content     string     `json:"content" gorm:"type:text;not null"`
-	Severity    string     `json:"severity" gorm:"size:16;index;not null;default:info"`
-	Audience    string     `json:"audience" gorm:"size:16;index;not null;default:all"`
-	Status      string     `json:"status" gorm:"size:16;index;not null;default:draft"`
-	Dismissible bool       `json:"dismissible" gorm:"not null;default:true"`
-	StartsAt    *time.Time `json:"starts_at" gorm:"index"`
-	EndsAt      *time.Time `json:"ends_at" gorm:"index"`
-	CreatedBy   uint       `json:"created_by" gorm:"index"`
-	Revision    uint64     `json:"revision" gorm:"not null;default:1"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID           uint       `json:"id" gorm:"primaryKey"`
+	Title        string     `json:"title" gorm:"size:160;not null"`
+	Content      string     `json:"content" gorm:"type:text;not null"`
+	Severity     string     `json:"severity" gorm:"size:16;index;not null;default:info"`
+	Audience     string     `json:"audience" gorm:"size:16;index;index:idx_announcements_feed,priority:2;not null;default:all"`
+	Status       string     `json:"status" gorm:"size:16;index;index:idx_announcements_feed,priority:1;not null;default:draft"`
+	PopupEnabled bool       `json:"popup_enabled" gorm:"index:idx_announcements_feed,priority:3;not null;default:false"`
+	Dismissible  bool       `json:"dismissible" gorm:"not null;default:true"`
+	StartsAt     *time.Time `json:"starts_at" gorm:"index;index:idx_announcements_feed,priority:4"`
+	EndsAt       *time.Time `json:"ends_at" gorm:"index"`
+	CreatedBy    uint       `json:"created_by" gorm:"index"`
+	Revision     uint64     `json:"revision" gorm:"not null;default:1"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 // AnnouncementRead records the latest announcement revision acknowledged by a

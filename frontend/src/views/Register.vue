@@ -65,7 +65,7 @@ async function submit() {
   }), formElement, '请更正标记字段后再注册。')
   if (!valid) return
   loading.value = true
-  try { const result = await register({ email: email.value, password: password.value, ...(verificationRequired.value ? { verification_code: verificationCode.value } : {}) }); store.setToken(result.auth.token); store.setUser(result.user); await router.push('/account') }
+  try { const result = await register({ email: email.value, password: password.value, ...(verificationRequired.value ? { verification_code: verificationCode.value } : {}) }); store.setToken(result.auth.token); store.setUser(result.user); await store.loadSystemStatus(true).catch(() => undefined); await router.push('/account') }
   catch (e: any) { await formErrors.applyApiError(e, '注册失败，请稍后重试。', formElement, { email: 'email', password: 'password', verification_code: 'verification_code' }) }
   finally { loading.value = false }
 }

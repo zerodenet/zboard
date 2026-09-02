@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const maxActiveAnnouncements = 10
+const maxActiveAnnouncements = 5
 
 type announcementWriteRequest struct {
 	Title            string     `json:"title"`
@@ -21,6 +21,7 @@ type announcementWriteRequest struct {
 	Severity         string     `json:"severity"`
 	Audience         string     `json:"audience"`
 	Status           string     `json:"status"`
+	PopupEnabled     *bool      `json:"popup_enabled"`
 	Dismissible      *bool      `json:"dismissible"`
 	StartsAt         *time.Time `json:"starts_at"`
 	EndsAt           *time.Time `json:"ends_at"`
@@ -28,23 +29,25 @@ type announcementWriteRequest struct {
 }
 
 type publicAnnouncement struct {
-	ID          uint       `json:"id"`
-	Title       string     `json:"title"`
-	Content     string     `json:"content"`
-	Severity    string     `json:"severity"`
-	Dismissible bool       `json:"dismissible"`
-	StartsAt    *time.Time `json:"starts_at"`
-	EndsAt      *time.Time `json:"ends_at"`
-	Revision    uint64     `json:"revision"`
-	Read        bool       `json:"read"`
-	ReadAt      *time.Time `json:"read_at,omitempty"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID           uint       `json:"id"`
+	Title        string     `json:"title"`
+	Content      string     `json:"content"`
+	Severity     string     `json:"severity"`
+	PopupEnabled bool       `json:"popup_enabled"`
+	Dismissible  bool       `json:"dismissible"`
+	StartsAt     *time.Time `json:"starts_at"`
+	EndsAt       *time.Time `json:"ends_at"`
+	Revision     uint64     `json:"revision"`
+	Read         bool       `json:"read"`
+	ReadAt       *time.Time `json:"read_at,omitempty"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 type accountAnnouncement struct {
 	publicAnnouncement
 	Audience  string    `json:"audience"`
 	Status    string    `json:"status"`
+	Active    bool      `json:"active"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -148,7 +151,7 @@ func announcementPublicView(record model.Announcement, receipt model.Announcemen
 	}
 	return publicAnnouncement{
 		ID: record.ID, Title: record.Title, Content: record.Content, Severity: record.Severity,
-		Dismissible: record.Dismissible, StartsAt: record.StartsAt, EndsAt: record.EndsAt,
+		PopupEnabled: record.PopupEnabled, Dismissible: record.Dismissible, StartsAt: record.StartsAt, EndsAt: record.EndsAt,
 		Revision: record.Revision, Read: read, ReadAt: readAt, UpdatedAt: record.UpdatedAt,
 	}
 }
@@ -161,7 +164,7 @@ func (h *handlers) activeAnnouncements(r *http.Request) ([]publicAnnouncement, e
 		Where("status = ?", "published").
 		Where("audience IN ?", audiences).
 		Where("(starts_at IS NULL OR starts_at <= ?) AND (ends_at IS NULL OR ends_at > ?)", now, now).
-		Order("severity = 'critical' DESC, starts_at DESC, id DESC").
+		Order("popup_enabled DESC, COALESCE(starts_at, created_at) DESC, id DESC").
 		Limit(maxActiveAnnouncements).
 		Find(&records).Error; err != nil {
 		return nil, err
@@ -185,9 +188,9 @@ func (h *handlers) announcementUnreadCount(r *http.Request) (int64, error) {
 	now := time.Now().UTC()
 	var unread int64
 	err = h.db.WithContext(r.Context()).Model(&model.Announcement{}).
-		Where("status IN ?", []string{"published", "archived"}).
+		Where("status = ?", "published").
 		Where("audience IN ?", announcementAudiencesForClaims(claims)).
-		Where("starts_at IS NULL OR starts_at <= ?", now).
+		Where("(starts_at IS NULL OR starts_at <= ?) AND (ends_at IS NULL OR ends_at > ?)", now, now).
 		Where(`NOT EXISTS (
 			SELECT 1 FROM announcement_reads
 			WHERE announcement_reads.announcement_id = announcements.id
@@ -219,16 +222,18 @@ func (h *handlers) AccountAnnouncementsListHandler(w http.ResponseWriter, r *htt
 		return
 	}
 	now := time.Now().UTC()
-	base := h.db.WithContext(r.Context()).Model(&model.Announcement{}).
-		Where("status IN ?", []string{"published", "archived"}).
-		Where("audience IN ?", announcementAudiencesForClaims(claims)).
-		Where("starts_at IS NULL OR starts_at <= ?", now)
+	historyQuery := func() *gorm.DB {
+		return h.db.WithContext(r.Context()).Model(&model.Announcement{}).
+			Where("status = ?", "published").
+			Where("audience IN ?", announcementAudiencesForClaims(claims)).
+			Where("starts_at IS NULL OR starts_at <= ?", now)
+	}
 	var total, unread int64
-	if err := base.Count(&total).Error; err != nil {
+	if err := historyQuery().Count(&total).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
-	if err := base.Where(`NOT EXISTS (
+	if err := historyQuery().Where("ends_at IS NULL OR ends_at > ?", now).Where(`NOT EXISTS (
 		SELECT 1 FROM announcement_reads
 		WHERE announcement_reads.announcement_id = announcements.id
 		  AND announcement_reads.user_id = ?
@@ -238,7 +243,12 @@ func (h *handlers) AccountAnnouncementsListHandler(w http.ResponseWriter, r *htt
 		return
 	}
 	var records []model.Announcement
-	if err := base.Order("created_at DESC, id DESC").Offset(offset).Limit(limit).Find(&records).Error; err != nil {
+	if err := historyQuery().
+		Order(clause.Expr{SQL: "CASE WHEN ends_at IS NULL OR ends_at > ? THEN 0 ELSE 1 END", Vars: []interface{}{now}, WithoutParentheses: true}).
+		Order("popup_enabled DESC").
+		Order("CASE severity WHEN 'critical' THEN 4 WHEN 'warning' THEN 3 WHEN 'success' THEN 2 ELSE 1 END DESC").
+		Order("starts_at DESC, id DESC").
+		Offset(offset).Limit(limit).Find(&records).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -249,9 +259,10 @@ func (h *handlers) AccountAnnouncementsListHandler(w http.ResponseWriter, r *htt
 	}
 	items := make([]accountAnnouncement, 0, len(records))
 	for _, record := range records {
+		active := record.EndsAt == nil || record.EndsAt.After(now)
 		items = append(items, accountAnnouncement{
 			publicAnnouncement: announcementPublicView(record, reads[record.ID]),
-			Audience:           record.Audience, Status: record.Status, CreatedAt: record.CreatedAt,
+			Audience:           record.Audience, Status: record.Status, Active: active, CreatedAt: record.CreatedAt,
 		})
 	}
 	data := pagedData(items, total, offset, limit)
@@ -285,7 +296,7 @@ func (h *handlers) AccountAnnouncementReadHandler(w http.ResponseWriter, r *http
 		if err := tx.First(&record, id).Error; err != nil {
 			return err
 		}
-		if record.Status != "published" && record.Status != "archived" {
+		if record.Status != "published" {
 			return gorm.ErrRecordNotFound
 		}
 		if record.StartsAt != nil && record.StartsAt.After(time.Now().UTC()) {
@@ -367,9 +378,13 @@ func (h *handlers) AdminAnnouncementCreateHandler(w http.ResponseWriter, r *http
 	if req.Dismissible != nil {
 		dismissible = *req.Dismissible
 	}
+	if req.Status == "published" && req.StartsAt == nil {
+		now := time.Now().UTC()
+		req.StartsAt = &now
+	}
 	record := model.Announcement{
 		Title: req.Title, Content: req.Content, Severity: req.Severity, Audience: req.Audience,
-		Status: req.Status, Dismissible: dismissible, StartsAt: req.StartsAt, EndsAt: req.EndsAt,
+		Status: req.Status, PopupEnabled: req.PopupEnabled != nil && *req.PopupEnabled, Dismissible: dismissible, StartsAt: req.StartsAt, EndsAt: req.EndsAt,
 		CreatedBy: claims.UserID, Revision: 1,
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -424,11 +439,24 @@ func (h *handlers) AdminAnnouncementUpdateHandler(w http.ResponseWriter, r *http
 		if record.Revision != *req.ExpectedRevision {
 			return errConfigRevisionConflict
 		}
+		if record.Status == "archived" {
+			return errors.New("archived announcements cannot be edited")
+		}
 		if record.Status == "draft" && req.Status == "archived" {
 			return errors.New("a draft announcement cannot be archived before it is published")
 		}
+		if record.Status == "published" && req.Status == "draft" {
+			return errors.New("a published announcement cannot return to draft")
+		}
+		if record.Status == "draft" && req.Status == "published" && req.StartsAt == nil {
+			now := time.Now().UTC()
+			req.StartsAt = &now
+		}
 		record.Title, record.Content, record.Severity, record.Audience, record.Status = req.Title, req.Content, req.Severity, req.Audience, req.Status
 		record.StartsAt, record.EndsAt = req.StartsAt, req.EndsAt
+		if req.PopupEnabled != nil {
+			record.PopupEnabled = *req.PopupEnabled
+		}
 		if req.Dismissible != nil {
 			record.Dismissible = *req.Dismissible
 		}
@@ -468,8 +496,11 @@ func (h *handlers) AdminAnnouncementDeleteHandler(w http.ResponseWriter, r *http
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, id).Error; err != nil {
 			return err
 		}
-		if record.Status != "draft" {
-			return errors.New("only draft announcements can be deleted; archive published announcements instead")
+		if record.Status != "draft" && record.Status != "archived" {
+			return errors.New("only draft or archived announcements can be deleted; archive published announcements first")
+		}
+		if err := tx.Where("announcement_id = ?", record.ID).Delete(&model.AnnouncementRead{}).Error; err != nil {
+			return err
 		}
 		if err := tx.Delete(&record).Error; err != nil {
 			return err

@@ -2138,6 +2138,7 @@ export interface Announcement {
 	title: string
 	content: string
 	severity: 'info' | 'success' | 'warning' | 'critical'
+	popup_enabled: boolean
 	dismissible: boolean
 	starts_at?: string | null
 	ends_at?: string | null
@@ -2156,7 +2157,8 @@ export interface AdminAnnouncement extends Announcement {
 
 export interface AccountAnnouncement extends Announcement {
 	audience: AdminAnnouncement['audience']
-	status: 'published' | 'archived'
+	status: 'published'
+	active: boolean
 	created_at: string
 }
 
@@ -2201,7 +2203,7 @@ export async function markAnnouncementRead(id: number, revision: number): Promis
 	await api.post(`/account/announcements/${id}/read`, { revision })
 }
 
-export type AnnouncementWriteRequest = Pick<AdminAnnouncement, 'title' | 'content' | 'severity' | 'audience' | 'status' | 'dismissible'> & {
+export type AnnouncementWriteRequest = Pick<AdminAnnouncement, 'title' | 'content' | 'severity' | 'audience' | 'status' | 'popup_enabled' | 'dismissible'> & {
 	starts_at?: string | null
 	ends_at?: string | null
 	expected_revision?: number

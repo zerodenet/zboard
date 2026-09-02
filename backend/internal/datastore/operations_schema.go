@@ -3,6 +3,7 @@ package datastore
 import (
 	"fmt"
 
+	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 )
 
@@ -23,6 +24,7 @@ func ReconcileOperationsSchema(db *gorm.DB) error {
 		severity varchar(16) NOT NULL DEFAULT 'info',
 		audience varchar(16) NOT NULL DEFAULT 'all',
 		status varchar(16) NOT NULL DEFAULT 'draft',
+		popup_enabled tinyint(1) NOT NULL DEFAULT 0,
 		dismissible tinyint(1) NOT NULL DEFAULT 1,
 		starts_at datetime(3) NULL,
 		ends_at datetime(3) NULL,
@@ -32,10 +34,21 @@ func ReconcileOperationsSchema(db *gorm.DB) error {
 		updated_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
 		PRIMARY KEY (id),
 		KEY idx_announcements_visibility (status, starts_at, ends_at),
+		KEY idx_announcements_feed (status, audience, popup_enabled, starts_at),
 		KEY idx_announcements_audience (audience),
 		KEY idx_announcements_created_by (created_by)
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`).Error; err != nil {
 		return fmt.Errorf("reconcile announcement schema: %w", err)
+	}
+	if !db.Migrator().HasColumn(&model.Announcement{}, "PopupEnabled") {
+		if err := db.Migrator().AddColumn(&model.Announcement{}, "PopupEnabled"); err != nil {
+			return fmt.Errorf("reconcile announcement popup column: %w", err)
+		}
+	}
+	if !db.Migrator().HasIndex(&model.Announcement{}, "idx_announcements_feed") {
+		if err := db.Migrator().CreateIndex(&model.Announcement{}, "idx_announcements_feed"); err != nil {
+			return fmt.Errorf("reconcile announcement feed index: %w", err)
+		}
 	}
 	if err := db.Exec(`CREATE TABLE IF NOT EXISTS announcement_reads (
 		announcement_id bigint unsigned NOT NULL,

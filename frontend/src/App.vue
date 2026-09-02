@@ -7,7 +7,7 @@
     :has-token="app.isAuthenticated"
   />
   <template v-else>
-    <AnnouncementStack v-if="!app.maintenance.enabled || app.isAdmin" :items="app.announcements" />
+    <AnnouncementStack v-if="showAnnouncementPrompt" :items="app.announcements" />
     <RouterView />
   </template>
   <div v-if="app.maintenance.enabled && app.isAdmin" class="admin-maintenance-banner">整站维护模式已开启<span v-if="app.maintenance.migration_in_progress"> · 数据库迁移正在执行</span><span v-else-if="app.maintenance.migration_cutover_pending"> · 等待数据库切换确认</span></div>
@@ -26,6 +26,7 @@ import { useAppStore } from './stores/app'
 const app = useAppStore()
 const route = useRoute()
 const showMaintenance = computed(() => app.maintenance.enabled && !app.isAdmin && route.path !== '/login')
+const showAnnouncementPrompt = computed(() => (!app.maintenance.enabled || app.isAdmin) && (route.path === '/' || route.path === '/account'))
 let statusTimer = 0
 function applyMaintenanceEvent(event: Event) {
   const state = (event as CustomEvent<MaintenanceState>).detail
