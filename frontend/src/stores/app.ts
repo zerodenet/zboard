@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { clearAuthToken, fetchPublicSystemConfigs, fetchSystemStatus, getAuthToken, getSetupStatus, setAuthToken, me as fetchMe, type Announcement, type MaintenanceState, type SetupStatus, type SystemConfig } from '../api/client'
+import { clearAuthToken, fetchPublicSystemConfigs, fetchSystemStatus, getAuthToken, getSetupStatus, markAnnouncementRead as markAnnouncementReadRequest, setAuthToken, me as fetchMe, type Announcement, type MaintenanceState, type SetupStatus, type SystemConfig } from '../api/client'
 import { applySiteMetadata, buildSiteProfile } from '../utils/siteProfile'
 import { DEFAULT_SYSTEM_TIME_ZONE, setDisplayTimeZone } from '../utils/timeZone'
 
@@ -11,6 +11,7 @@ export const useAppStore = defineStore('app', {
 	publicConfigs: [] as SystemConfig[],
 	maintenance: { enabled: false, title: '系统维护中', message: '系统正在维护，请稍后再试。', migration_in_progress: false, migration_cutover_pending: false } as MaintenanceState,
 	announcements: [] as Announcement[],
+	announcementUnreadCount: 0,
 	systemStatusLoadedAt: 0,
     systemTimeZone: DEFAULT_SYSTEM_TIME_ZONE,
     user: {
@@ -29,13 +30,20 @@ export const useAppStore = defineStore('app', {
   actions: {
 	async loadSystemStatus(force = false) {
 		if (!force && Date.now() - this.systemStatusLoadedAt < 5000) {
-			return { maintenance: this.maintenance, announcements: this.announcements, as_of: new Date(this.systemStatusLoadedAt).toISOString() }
+			return { maintenance: this.maintenance, announcements: this.announcements, announcement_unread_count: this.announcementUnreadCount, as_of: new Date(this.systemStatusLoadedAt).toISOString() }
 		}
 		const status = await fetchSystemStatus()
 		this.maintenance = status.maintenance
 		this.announcements = status.announcements || []
+		this.announcementUnreadCount = Number(status.announcement_unread_count || 0)
 		this.systemStatusLoadedAt = Date.now()
 		return status
+	},
+	async markAnnouncementRead(item: Announcement) {
+		if (!this.token) return
+		await markAnnouncementReadRequest(item.id, item.revision)
+		this.announcements = this.announcements.map(candidate => candidate.id === item.id ? { ...candidate, read: true, read_at: new Date().toISOString() } : candidate)
+		this.announcementUnreadCount = Math.max(0, this.announcementUnreadCount - 1)
 	},
     setSystemTimeZone(value: unknown) {
       this.systemTimeZone = setDisplayTimeZone(value)
@@ -119,6 +127,8 @@ export const useAppStore = defineStore('app', {
     clear() {
       this.token = ''
       this.user = { id: 0, email: '', isAdmin: false }
+	  this.announcements = []
+	  this.announcementUnreadCount = 0
       clearAuthToken()
     }
   }

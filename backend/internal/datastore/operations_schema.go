@@ -37,5 +37,17 @@ func ReconcileOperationsSchema(db *gorm.DB) error {
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`).Error; err != nil {
 		return fmt.Errorf("reconcile announcement schema: %w", err)
 	}
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS announcement_reads (
+		announcement_id bigint unsigned NOT NULL,
+		user_id bigint unsigned NOT NULL,
+		revision bigint unsigned NOT NULL,
+		read_at datetime(3) NOT NULL,
+		created_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+		updated_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+		PRIMARY KEY (announcement_id, user_id),
+		KEY idx_announcement_reads_user_time (user_id, read_at)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`).Error; err != nil {
+		return fmt.Errorf("reconcile announcement read schema: %w", err)
+	}
 	return nil
 }

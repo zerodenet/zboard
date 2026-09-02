@@ -9,6 +9,7 @@
         <RouterLink to="/account/orders"><UiIcon name="billing" />我的订单</RouterLink>
         <RouterLink to="/account/subscription"><UiIcon name="key" />订阅配置</RouterLink>
         <RouterLink to="/account/traffic"><UiIcon name="activity" />流量明细</RouterLink>
+        <RouterLink to="/account/announcements"><UiIcon name="info" />公告中心<span v-if="app.announcementUnreadCount" class="nav-count">{{ app.announcementUnreadCount > 99 ? '99+' : app.announcementUnreadCount }}</span></RouterLink>
         <RouterLink to="/account/tickets"><UiIcon name="ticket" />我的工单</RouterLink>
         <RouterLink v-if="app.isAdmin" to="/admin/dashboard"><UiIcon name="shield" />管理后台</RouterLink>
       </nav>
@@ -35,4 +36,5 @@ function logout() { app.clear(); router.push('/') }
 
 <style scoped>
 .account-logo { display: block; width: auto; max-width: 150px; height: 32px; object-fit: contain; }
+.nav-count { min-width: 18px; height: 18px; display: inline-grid; place-items: center; margin-left: auto; padding: 0 5px; border-radius: 999px; background: var(--danger); color: var(--text-inverse); font-size: 9px; font-weight: 800; }
 </style>

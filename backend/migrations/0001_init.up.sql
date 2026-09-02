@@ -740,6 +740,17 @@ CREATE TABLE `announcements` (
   KEY `idx_announcements_created_by` (`created_by`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `announcement_reads` (
+  `announcement_id` bigint unsigned NOT NULL,
+  `user_id` bigint unsigned NOT NULL,
+  `revision` bigint unsigned NOT NULL,
+  `read_at` datetime(3) NOT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`announcement_id`,`user_id`),
+  KEY `idx_announcement_reads_user_time` (`user_id`,`read_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `task_items` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `task_id` bigint unsigned NOT NULL,

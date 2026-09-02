@@ -704,6 +704,18 @@ type Announcement struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
+// AnnouncementRead records the latest announcement revision acknowledged by a
+// user. Comparing revisions makes an edited announcement unread again without
+// deleting receipt history.
+type AnnouncementRead struct {
+	AnnouncementID uint      `json:"announcement_id" gorm:"primaryKey;autoIncrement:false"`
+	UserID         uint      `json:"user_id" gorm:"primaryKey;autoIncrement:false;index:idx_announcement_reads_user_time,priority:1"`
+	Revision       uint64    `json:"revision" gorm:"not null"`
+	ReadAt         time.Time `json:"read_at" gorm:"index:idx_announcement_reads_user_time,priority:2"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
 type ProtocolDeployment struct {
 	ID                  uint       `json:"id" gorm:"primaryKey"`
 	ProtocolEndpointID  uint       `json:"protocol_endpoint_id" gorm:"index;not null"`

@@ -2142,6 +2142,8 @@ export interface Announcement {
 	starts_at?: string | null
 	ends_at?: string | null
 	revision: number
+	read?: boolean
+	read_at?: string | null
 	updated_at: string
 }
 
@@ -2152,9 +2154,20 @@ export interface AdminAnnouncement extends Announcement {
 	created_at: string
 }
 
+export interface AccountAnnouncement extends Announcement {
+	audience: AdminAnnouncement['audience']
+	status: 'published' | 'archived'
+	created_at: string
+}
+
+export interface AccountAnnouncementPage extends PageResult<AccountAnnouncement> {
+	unread_count: number
+}
+
 export interface SystemStatus {
 	maintenance: MaintenanceState
 	announcements: Announcement[]
+	announcement_unread_count: number
 	as_of: string
 }
 
@@ -2176,6 +2189,16 @@ export async function updateMaintenanceSettings(payload: MaintenanceState & { ex
 export async function fetchAdminAnnouncements(offset = 0, limit = 50): Promise<PageResult<AdminAnnouncement>> {
 	const response = await api.get('/admin/announcements', { params: { paged: true, offset, limit } })
 	return normalizePageResult<AdminAnnouncement>(unwrap(response), offset, limit)
+}
+
+export async function fetchAccountAnnouncements(offset = 0, limit = 20): Promise<AccountAnnouncementPage> {
+	const response = await api.get('/account/announcements', { params: { paged: true, offset, limit } })
+	const data = unwrap(response)
+	return { ...normalizePageResult<AccountAnnouncement>(data, offset, limit), unread_count: Number(data?.unread_count || 0) }
+}
+
+export async function markAnnouncementRead(id: number, revision: number): Promise<void> {
+	await api.post(`/account/announcements/${id}/read`, { revision })
 }
 
 export type AnnouncementWriteRequest = Pick<AdminAnnouncement, 'title' | 'content' | 'severity' | 'audience' | 'status' | 'dismissible'> & {

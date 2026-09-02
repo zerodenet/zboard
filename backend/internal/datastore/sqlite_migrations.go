@@ -24,7 +24,7 @@ func IsSQLite(db *gorm.DB) bool {
 // the authoritative logical table inventory used by cross-database migration.
 func databaseModels() []interface{} {
 	return []interface{}{
-		&model.User{}, &model.Installation{}, &model.SystemConfig{}, &model.Announcement{},
+		&model.User{}, &model.Installation{}, &model.SystemConfig{}, &model.Announcement{}, &model.AnnouncementRead{},
 		&model.Plan{}, &model.PlanSKU{}, &model.PlanSKUOperation{}, &model.Node{}, &model.NodeGroup{}, &model.ProtocolEndpoint{},
 		&model.NodeGroupEndpoint{}, &model.Subscription{}, &model.Order{}, &model.PaymentEvent{},
 		&model.SubscriptionMember{}, &model.SubscriptionToken{}, &model.SubscriptionTemplate{},

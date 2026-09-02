@@ -913,6 +913,15 @@ func (h *handlers) CloseFairUseEvaluationWorker() {
 
 func (h *handlers) fairUseEvaluationCandidateIDs(now time.Time) ([]uint, error) {
 	var ids []uint
+	dueExpression := `(evaluation_state.last_evaluated_at IS NULL OR TIMESTAMPADD(SECOND,
+			COALESCE(subscription_policy.evaluation_interval_seconds, plan_policy.evaluation_interval_seconds,
+				platform_policy.evaluation_interval_seconds, ?), evaluation_state.last_evaluated_at) <= ?)`
+	if h.db.Dialector.Name() == "sqlite" {
+		dueExpression = `(evaluation_state.last_evaluated_at IS NULL OR
+			julianday(evaluation_state.last_evaluated_at) + (COALESCE(
+				subscription_policy.evaluation_interval_seconds, plan_policy.evaluation_interval_seconds,
+				platform_policy.evaluation_interval_seconds, ?) / 86400.0) <= julianday(?))`
+	}
 	err := h.db.Table("subscriptions").
 		Select("subscriptions.id").
 		Joins("LEFT JOIN fair_use_policies AS subscription_policy ON subscription_policy.scope_type = ? AND subscription_policy.scope_id = subscriptions.id", fairUsePolicyScopeSubscription).
@@ -921,9 +930,7 @@ func (h *handlers) fairUseEvaluationCandidateIDs(now time.Time) ([]uint, error) 
 		Joins("LEFT JOIN subscription_fair_use_states AS evaluation_state ON evaluation_state.subscription_id = subscriptions.id").
 		Where("subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", subStatusActive, now).
 		Where("COALESCE(subscription_policy.enabled, plan_policy.enabled, platform_policy.enabled, ?) = ?", false, true).
-		Where(`(evaluation_state.last_evaluated_at IS NULL OR TIMESTAMPADD(SECOND,
-			COALESCE(subscription_policy.evaluation_interval_seconds, plan_policy.evaluation_interval_seconds,
-				platform_policy.evaluation_interval_seconds, ?), evaluation_state.last_evaluated_at) <= ?)`, fairUseDefaultEvaluationInterval, now).
+		Where(dueExpression, fairUseDefaultEvaluationInterval, now).
 		Order("evaluation_state.last_evaluated_at IS NOT NULL asc, evaluation_state.last_evaluated_at asc, subscriptions.id asc").
 		Limit(fairUseEvaluationBatchSize).
 		Pluck("subscriptions.id", &ids).Error

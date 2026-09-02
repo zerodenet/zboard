@@ -134,3 +134,14 @@ func TestFairUseEvaluationIsDueBeforeTelemetryWork(t *testing.T) {
 		t.Fatal("a due or never-evaluated subscription must be selected")
 	}
 }
+
+func TestFairUseEvaluationCandidateScanSupportsSQLite(t *testing.T) {
+	h, _ := newAnnouncementTestHandlers(t)
+	ids, err := h.fairUseEvaluationCandidateIDs(time.Now().UTC())
+	if err != nil {
+		t.Fatalf("fairUseEvaluationCandidateIDs() error = %v", err)
+	}
+	if len(ids) != 0 {
+		t.Fatalf("fairUseEvaluationCandidateIDs() = %v, want no candidates", ids)
+	}
+}

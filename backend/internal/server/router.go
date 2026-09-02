@@ -47,6 +47,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/setup/status", h.SetupStatusHandler),
 		newRoute(http.MethodGet, "/api/v1/system/status", h.SystemStatusHandler),
 		newRoute(http.MethodGet, "/api/v1/announcements", h.PublicAnnouncementsHandler),
+		newRoute(http.MethodGet, "/api/v1/account/announcements", h.AccountAnnouncementsListHandler),
+		newRoute(http.MethodPost, "/api/v1/account/announcements/:id/read", h.AccountAnnouncementReadHandler),
 		newRoute(http.MethodPost, "/api/v1/setup/install", h.SetupInstallWithSystemPreferencesHandler),
 		newRoute(http.MethodPost, "/api/v1/auth/register", h.RegisterAuthRoutes),
 		newRoute(http.MethodPost, "/api/v1/auth/register/code", h.RegistrationEmailCodeHandler),

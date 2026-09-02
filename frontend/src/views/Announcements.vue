@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="站点公告" description="发布面向访客、登录用户或管理员的定时公告；前台最多展示 10 条当前有效公告。" eyebrow="Communications">
+    <PageHeader title="站点公告" description="发布支持安全 Markdown 的定时公告；登录用户可在公告中心查看历史与已读状态。" eyebrow="Communications">
       <template #actions><PageRefreshButton :loading="loading" label="刷新公告" @click="load" /><UiButton type="button" @click="newAnnouncement">新建公告</UiButton></template>
     </PageHeader>
     <TransientFeedback :success="success" :error="error" />
@@ -17,10 +17,11 @@
         <header><div><small>Announcement</small><h2>{{ form.id ? '编辑公告' : '新建公告' }}</h2></div><UiButton variant="ghost" icon type="button" aria-label="关闭" @click="closeEditor">×</UiButton></header>
         <div class="stack">
           <FormField v-slot="{ controlAttrs }" label="标题" name="announcement-title" required><UiInput v-model.trim="form.title" v-bind="controlAttrs" maxlength="160" /></FormField>
-          <FormField v-slot="{ controlAttrs }" label="正文" name="announcement-content" required><UiTextarea v-model="form.content" v-bind="controlAttrs" rows="7" maxlength="16384" /></FormField>
+          <FormField v-slot="{ controlAttrs }" label="正文（Markdown）" name="announcement-content" hint="支持标题、粗体、列表、引用、代码和安全的 HTTP(S) 链接。" required><UiTextarea v-model="form.content" v-bind="controlAttrs" rows="9" maxlength="16384" /></FormField>
           <div class="form-grid"><FormField v-slot="{ controlAttrs }" label="级别" name="announcement-severity"><UiSelect v-model="form.severity" v-bind="controlAttrs" :options="severityOptions" /></FormField><FormField v-slot="{ controlAttrs }" label="受众" name="announcement-audience"><UiSelect v-model="form.audience" v-bind="controlAttrs" :options="audienceOptions" /></FormField><FormField v-slot="{ controlAttrs }" label="状态" name="announcement-status"><UiSelect v-model="form.status" v-bind="controlAttrs" :options="statusOptions" /></FormField></div>
           <div class="form-grid"><FormField v-slot="{ controlAttrs }" label="开始时间" name="announcement-start"><UiInput v-model="form.starts_at" v-bind="controlAttrs" type="datetime-local" /></FormField><FormField v-slot="{ controlAttrs }" label="结束时间" name="announcement-end"><UiInput v-model="form.ends_at" v-bind="controlAttrs" type="datetime-local" /></FormField></div>
-          <label class="toggle-row"><UiCheckbox v-model="form.dismissible" /><span>允许用户关闭这条公告</span></label>
+          <label class="toggle-row"><UiCheckbox v-model="form.dismissible" /><span>允许直接关闭；关闭会记录已读。关闭此项后用户仍可点击“我知道了”确认并收起。</span></label>
+          <section class="announcement-preview"><header><strong>用户视角预览</strong><span>安全 Markdown</span></header><MarkdownContent :content="form.content || '公告正文预览'" /></section>
           <PageAlert v-if="form.status === 'published'" tone="warning" title="发布后立即按时间与受众生效">已经发布的公告不能删除，只能归档；编辑会提升版本，使用户重新看到更新后的公告。</PageAlert>
           <div class="form-actions"><UiButton v-if="form.id && form.status === 'draft'" variant="danger" type="button" :loading="deleting" @click="remove">删除草稿</UiButton><UiButton variant="ghost" type="button" @click="closeEditor">取消</UiButton><UiButton type="button" :loading="saving" @click="save">保存公告</UiButton></div>
         </div>
@@ -34,6 +35,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { createAnnouncement, deleteAnnouncement, fetchAdminAnnouncements, updateAnnouncement, type AdminAnnouncement, type AnnouncementWriteRequest } from '../api/client'
 import DataTable from '../components/DataTable.vue'
 import EmptyState from '../components/EmptyState.vue'
+import MarkdownContent from '../components/MarkdownContent.vue'
 import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
@@ -67,5 +69,5 @@ onMounted(load)
 </script>
 
 <style scoped>
-.cell-title span { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.modal-backdrop { position: fixed; z-index: 1300; inset: 0; display: grid; place-items: center; padding: 20px; background: var(--navigation-scrim); }.editor-card { width: min(760px, 100%); max-height: calc(100vh - 40px); overflow: auto; padding: 24px; border-radius: 18px; background: var(--surface); box-shadow: 0 30px 90px var(--sidebar-shadow); }.editor-card > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }.editor-card h2 { margin: 4px 0 0; }.editor-card header small { color: var(--primary); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }.toggle-row { display: flex; gap: 10px; align-items: center; }
+.cell-title span { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.modal-backdrop { position: fixed; z-index: 1300; inset: 0; display: grid; place-items: center; padding: 20px; background: var(--navigation-scrim); }.editor-card { width: min(860px, 100%); max-height: calc(100vh - 40px); overflow: auto; padding: 24px; border-radius: 18px; background: var(--surface); box-shadow: 0 30px 90px var(--sidebar-shadow); }.editor-card > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }.editor-card h2 { margin: 4px 0 0; }.editor-card header small { color: var(--primary); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }.toggle-row { display: flex; gap: 10px; align-items: flex-start; }.announcement-preview { padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }.announcement-preview > header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: var(--muted); font-size: 10px; }.announcement-preview > header strong { color: var(--text); font-size: 11px; }
 </style>

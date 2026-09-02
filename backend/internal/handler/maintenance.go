@@ -117,7 +117,12 @@ func (h *handlers) SystemStatusHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
-	OK(w, map[string]interface{}{"maintenance": state, "announcements": announcements, "as_of": time.Now().UTC()})
+	unread, err := h.announcementUnreadCount(r)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
+	OK(w, map[string]interface{}{"maintenance": state, "announcements": announcements, "announcement_unread_count": unread, "as_of": time.Now().UTC()})
 }
 
 func (h *handlers) AdminMaintenanceUpdateHandler(w http.ResponseWriter, r *http.Request) {
