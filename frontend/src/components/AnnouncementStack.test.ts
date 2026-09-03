@@ -30,6 +30,8 @@ describe('AnnouncementStack', () => {
     })
 
     expect(wrapper.get('.announcement-dialog').classes()).not.toContain('has-queue')
+    expect(wrapper.find('.announcement-tabs').exists()).toBe(false)
+    expect(wrapper.get('.announcement-feature h2').text()).toBe('重要维护')
     const acknowledge = wrapper.get('button.acknowledge')
     expect(acknowledge.text()).toBe('我知道了')
     await acknowledge.trigger('click')
@@ -48,11 +50,35 @@ describe('AnnouncementStack', () => {
       global: { plugins: [createPinia(), router] },
     })
 
-    expect(wrapper.get('.announcement-feature h3').text()).toBe('重点通知')
-    expect(wrapper.get('.announcement-dialog').classes()).toContain('has-queue')
+    expect(wrapper.get('.announcement-feature h2').text()).toBe('重点通知')
+    expect(wrapper.get('.announcement-dialog').classes()).not.toContain('has-queue')
+    expect(wrapper.find('.announcement-tabs').exists()).toBe(true)
     const otherTab = wrapper.findAll('[role="tab"]')[1]
     expect(otherTab.text()).toContain('1')
     await otherTab.trigger('click')
-    expect(wrapper.get('.announcement-feature h3').text()).toBe('普通通知')
+    expect(wrapper.get('.announcement-feature h2').text()).toBe('普通通知')
+  })
+
+  it('shows a queue only for additional notices in the selected category', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
+    const now = new Date().toISOString()
+    const wrapper = mount(AnnouncementStack, {
+      props: { items: [
+        { id: 1, title: '重点通知', content: '重点内容', severity: 'warning', popup_enabled: true, dismissible: true, revision: 1, read: false, updated_at: now },
+        { id: 2, title: '另一条重点通知', content: '其他重点内容', severity: 'info', popup_enabled: true, dismissible: true, revision: 1, read: false, updated_at: now },
+        { id: 3, title: '普通通知', content: '普通内容', severity: 'info', popup_enabled: false, dismissible: true, revision: 1, read: false, updated_at: now },
+      ] },
+      global: { plugins: [createPinia(), router] },
+    })
+
+    expect(wrapper.get('.announcement-dialog').classes()).toContain('has-queue')
+    expect(wrapper.findAll('.announcement-queue button')).toHaveLength(1)
+    expect(wrapper.get('.announcement-queue').text()).toContain('另一条重点通知')
+    expect(wrapper.get('.announcement-queue').text()).not.toContain('普通通知')
+    await wrapper.get('.announcement-queue button').trigger('click')
+    expect(wrapper.get('.announcement-feature h2').text()).toBe('另一条重点通知')
+    await wrapper.findAll('[role="tab"]')[1].trigger('click')
+    expect(wrapper.get('.announcement-dialog').classes()).not.toContain('has-queue')
+    expect(wrapper.find('.announcement-queue').exists()).toBe(false)
   })
 })
