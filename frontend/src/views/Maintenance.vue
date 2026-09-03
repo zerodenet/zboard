@@ -26,7 +26,7 @@
         <div class="migration-summary"><span>当前驱动</span><strong>{{ migration.source_driver.toUpperCase() }}</strong><span v-if="migration.task">最近任务 #{{ migration.task.id }} · {{ migration.task.current }}/{{ migration.task.total }}</span></div>
         <div class="form-grid">
           <FormField v-slot="{ controlAttrs }" label="目标驱动" name="migration-driver"><UiSelect v-model="targetDriver" v-bind="controlAttrs" :options="targetOptions" /></FormField>
-          <FormField v-slot="{ controlAttrs }" label="目标数据源" name="migration-dsn" :hint="datasourceHint"><UiInput v-model.trim="targetDatasource" v-bind="controlAttrs" type="password" autocomplete="new-password" :placeholder="datasourcePlaceholder" /></FormField>
+          <DatabaseMigrationDatasource v-model="targetDatasource" :driver="targetDriver" />
         </div>
         <PageAlert v-if="preflight" tone="success" title="预检通过">目标 {{ preflight.target }} 可用且为空，将迁移 {{ preflight.tables }} 张逻辑表。</PageAlert>
         <PageAlert v-if="migration.task?.errors" tone="danger" title="迁移失败">{{ migration.task.errors }}</PageAlert>
@@ -48,6 +48,7 @@ import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
+import DatabaseMigrationDatasource from '../components/DatabaseMigrationDatasource.vue'
 import { useAppStore } from '../stores/app'
 import { normalizeApiErrorMessage } from '../utils/apiError'
 
@@ -66,8 +67,6 @@ const taskRunning = computed(() => migration.task?.status === 0 || migration.tas
 const taskLabel = computed(() => taskRunning.value ? '迁移运行中' : migration.task?.status === 2 ? '迁移完成待切换' : migration.task?.status === 3 ? '迁移失败' : '未执行')
 const taskTone = computed(() => taskRunning.value ? 'warning' : migration.task?.status === 2 ? 'success' : migration.task?.status === 3 ? 'danger' : 'neutral')
 const targetOptions = computed(() => [{ label: migration.source_driver === 'mysql' ? 'SQLite' : 'MySQL', value: migration.source_driver === 'mysql' ? 'sqlite' : 'mysql' }])
-const datasourcePlaceholder = computed(() => targetDriver.value === 'sqlite' ? './data/zboard.db' : 'zboard:password@tcp(mysql:3306)/zboard?parseTime=true')
-const datasourceHint = computed(() => targetDriver.value === 'sqlite' ? '使用持久化文件路径；生产环境不允许 :memory:。' : '必须指向已创建且无业务数据的数据库。凭证只加密用于本次任务，不会回显。')
 
 function config(key: string) { return configs.value.find(item => item.config_key === key) }
 async function load() {
