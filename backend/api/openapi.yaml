@@ -2741,7 +2741,7 @@ paths:
             type: integer
             format: int64
         - { name: view, in: query, schema: { type: string, enum: [raw, node_series, usage_summary] }, description: Use node_series for the read-only time-by-node chart projection. }
-        - { name: include_totals, in: query, schema: { type: boolean, default: true }, description: Grouped pages only. Set false to skip full-window statistics; page.total, total and aggregates are null. Read view=usage_summary separately. }
+        - { name: include_totals, in: query, schema: { type: boolean, default: true }, description: "Grouped pages only. Set false to skip full-window statistics; page.total, total and aggregates are null. Read view=usage_summary separately." }
         - { name: bucket, in: query, schema: { type: string, enum: [minute, hour, day], default: hour }, description: Aggregation precision for paged records and node_series. }
         - { name: paged, in: query, schema: { type: boolean } }
         - { name: cursor, in: query, schema: { type: string }, description: Opaque bidirectional history cursor returned by page.next_cursor or page.previous_cursor. }
@@ -2776,7 +2776,7 @@ paths:
         - { name: protocol_endpoint_id, in: query, schema: { type: integer, format: int64 } }
         - { name: subscription_id, in: query, schema: { type: integer, format: int64 } }
         - { name: view, in: query, schema: { type: string, enum: [raw, node_series, usage_summary] }, description: Use node_series for the read-only time-by-node chart and ranking projection. }
-        - { name: include_totals, in: query, schema: { type: boolean, default: true }, description: Grouped pages only. Set false to skip full-window statistics; page.total, total and aggregates are null. Read view=usage_summary separately. }
+        - { name: include_totals, in: query, schema: { type: boolean, default: true }, description: "Grouped pages only. Set false to skip full-window statistics; page.total, total and aggregates are null. Read view=usage_summary separately." }
         - { name: bucket, in: query, schema: { type: string, enum: [minute, hour, day], default: hour }, description: Aggregation precision for paged records and node_series. }
         - { name: paged, in: query, schema: { type: boolean } }
         - { name: cursor, in: query, schema: { type: string }, description: Opaque bidirectional history cursor returned by page.next_cursor or page.previous_cursor. }
