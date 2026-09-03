@@ -1,6 +1,6 @@
 <template>
   <nav class="table-pager cursor-pager" data-variant="stripe" aria-label="历史记录分页">
-    <span class="cursor-pager-summary">{{ count }} / {{ total }}</span>
+    <span class="cursor-pager-summary">{{ count }} / {{ total ?? '—' }}</span>
     <div class="cursor-pager-controls">
       <label class="cursor-pager-size"><span class="sr-only">每次加载条数</span><UiSelect :model-value="limit" :options="pageSizeOptions" aria-label="每次加载条数" @update:model-value="changeLimit" /></label>
       <UiButton class="cursor-pager-nav cursor-pager-newer" variant="secondary" size="sm" icon type="button" :disabled="!hasPrevious || loading" aria-label="较新记录" title="较新记录" @click="$emit('previous')"><UiIcon name="chevron" /></UiButton>
@@ -14,7 +14,7 @@ import UiButton from './UiButton.vue'
 import UiIcon from './UiIcon.vue'
 import UiSelect from './UiSelect.vue'
 
-withDefaults(defineProps<{ count: number; total: number; limit: number; loading?: boolean; hasPrevious?: boolean; hasNext?: boolean }>(), {
+withDefaults(defineProps<{ count: number; total?: number | null; limit: number; loading?: boolean; hasPrevious?: boolean; hasNext?: boolean }>(), {
   loading: false,
   hasPrevious: false,
   hasNext: false,

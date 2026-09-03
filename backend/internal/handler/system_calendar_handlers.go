@@ -77,7 +77,7 @@ func (h *handlers) TrafficTrendsSystemCalendarHandler(w http.ResponseWriter, r *
 	points, recordCount := buildTrafficTrendPoints(from, days, rows)
 
 	subscriptions := make([]entityReference, 0)
-	if facetUserID > 0 {
+	if facetUserID > 0 && r.URL.Query().Get("include_subscriptions") == "true" {
 		var subscriptionRows []subscriptionReferenceRow
 		if err := db.Table("subscriptions").
 			Select("subscriptions.id AS id, subscriptions.status AS status, plans.name AS plan_name, plan_skus.name AS sku_name").

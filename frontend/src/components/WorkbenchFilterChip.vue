@@ -57,12 +57,14 @@
   </span>
 </template>
 
+<script lang="ts">
+let nextFilterChipID = 0
+</script>
+
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import UiButton from './UiButton.vue'
 import UiIcon from './UiIcon.vue'
-
-let nextFilterChipID = 0
 
 withDefaults(defineProps<{
   label: string
@@ -87,6 +89,7 @@ const instanceID = ++nextFilterChipID
 const popoverId = `workbench-filter-popover-${instanceID}`
 const headingId = `workbench-filter-heading-${instanceID}`
 const position = reactive({ top: '0px', left: '0px' })
+let resizeObserver: ResizeObserver | undefined
 
 function triggerElement() {
   return trigger.value?.$el as HTMLElement | undefined
@@ -97,7 +100,10 @@ async function show(focusFirst = false) {
   emit('open')
   open.value = true
   await nextTick()
+  if (!open.value || !popover.value) return
   updatePosition()
+  resizeObserver = new ResizeObserver(updatePosition)
+  resizeObserver.observe(popover.value)
   if (focusFirst) {
     popover.value?.querySelector<HTMLElement>('button:not([disabled]),input:not([disabled]),[tabindex="0"]')?.focus()
   }
@@ -111,6 +117,8 @@ function toggle() {
 function close(restoreFocus = false) {
   if (!open.value) return
   open.value = false
+  resizeObserver?.disconnect()
+  resizeObserver = undefined
   emit('close')
   if (restoreFocus) void nextTick(() => triggerElement()?.focus())
 }
@@ -133,9 +141,23 @@ function updatePosition() {
   position.top = `${Math.round(top)}px`
 }
 
+function containsTarget(target: EventTarget | null) {
+  if (!(target instanceof Node)) return false
+  if (root.value?.contains(target) || popover.value?.contains(target)) return true
+  // Select menus can be teleported outside the dialog; keep their owning filter open.
+  return Array.from(popover.value?.querySelectorAll('[aria-controls]') || []).some(control =>
+    (control.getAttribute('aria-controls') || '').split(/\s+/).some(id =>
+      id && document.getElementById(id)?.contains(target),
+    ),
+  )
+}
+
 function handleOutsidePointer(event: PointerEvent) {
-  const target = event.target as Node
-  if (!root.value?.contains(target) && !popover.value?.contains(target)) close()
+  if (!containsTarget(event.target)) close()
+}
+
+function handleScroll(event: Event) {
+  if (!containsTarget(event.target)) close()
 }
 
 function closeOnViewportChange() {
@@ -145,14 +167,32 @@ function closeOnViewportChange() {
 onMounted(() => {
   document.addEventListener('pointerdown', handleOutsidePointer)
   window.addEventListener('resize', closeOnViewportChange)
-  window.addEventListener('scroll', closeOnViewportChange, true)
+  window.addEventListener('scroll', handleScroll, true)
 })
 
 onBeforeUnmount(() => {
+  open.value = false
+  resizeObserver?.disconnect()
   document.removeEventListener('pointerdown', handleOutsidePointer)
   window.removeEventListener('resize', closeOnViewportChange)
-  window.removeEventListener('scroll', closeOnViewportChange, true)
+  window.removeEventListener('scroll', handleScroll, true)
 })
 
 defineExpose({ close, show })
 </script>
+
+<style scoped>
+.workbench-filter-popover {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 16px);
+}
+.workbench-filter-popover > header {
+  flex-shrink: 0;
+}
+.workbench-filter-popover-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+</style>

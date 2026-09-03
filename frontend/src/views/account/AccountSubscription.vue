@@ -2,7 +2,7 @@
   <section class="account-page stack">
     <PageHeader title="订阅配置" description="每个服务实例拥有独立链接，分别管理客户端配置和访问凭证。" eyebrow="SUBSCRIPTION">
       <template #actions>
-        <UiButton variant="secondary" type="button" :disabled="loading" @click="loadAll">
+        <UiButton variant="secondary" type="button" :disabled="loading || working" @click="loadAll">
           <UiIcon name="refresh" />刷新
         </UiButton>
       </template>
@@ -15,7 +15,7 @@
       error-title="订阅操作失败"
     />
 
-    <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
+    <DataWorkbench :total="total" :loading="listLoading" :refreshing="refreshing">
       <template #filters>
         <WorkbenchFilterBar :active="Boolean(status)" @clear="clearFilters">
           <WorkbenchFilterSelect v-model="status" label="订阅状态" :options="statusOptions" @apply="applyFilters" />
@@ -62,7 +62,7 @@
                   variant="secondary"
                   size="sm"
                   type="button"
-                  :disabled="sub.status !== 'active'"
+                  :disabled="sub.status !== 'active' || working"
                   @click="selectSubscription(sub.id)"
                 >
                   {{ sub.id === selectedSubscriptionID ? '正在管理' : '管理链接' }}
@@ -80,7 +80,7 @@
           :total="total"
           :offset="offset"
           :limit="limit"
-          :loading="loading"
+          :loading="listLoading"
           @change="changePage"
         />
       </template>
@@ -89,11 +89,16 @@
     <UiSection title="协议实时负载" description="仅显示当前有效套餐可使用的协议；活跃人数和连接数来自最近两分钟的 Zero 会话事件。">
       <template #meta><TimeBadge :value="protocolLoads.sampled_at" /></template>
       <div class="panel-body">
+        <PageAlert v-if="protocolLoadResource.error.value" tone="danger" title="协议实时负载加载失败">
+          {{ protocolLoadResource.error.value }} 订阅链接仍可独立使用。
+          <UiButton variant="secondary" size="sm" type="button" @click="loadProtocolLoads">重试负载</UiButton>
+        </PageAlert>
+        <p v-if="protocolLoadResource.loading.value" role="status">正在读取协议实时负载…</p>
         <DataTable v-if="protocolLoads.items.length" caption="可用协议实时负载" :row-count="protocolLoads.items.length" :min-width="720">
           <thead><tr><th class="table-primary-column">使用位置</th><th>协议</th><th class="numeric-column">活跃用户</th><th class="numeric-column">活跃连接</th><th data-column-priority="2">最近活动</th></tr></thead>
           <tbody><tr v-for="item in protocolLoads.items" :key="item.protocol_endpoint_id"><td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><span>{{ item.region || '未设置区域' }}</span></div></td><td><StatusBadge :tone="item.active_flows ? 'success' : 'neutral'" icon="activity">{{ item.protocol.toUpperCase() }}</StatusBadge></td><td class="numeric-column">{{ item.active_users }}</td><td class="numeric-column">{{ item.active_flows }}</td><td data-column-priority="2"><TimeBadge :value="item.last_activity_at" /></td></tr></tbody>
         </DataTable>
-        <EmptyState v-else icon="activity" title="暂无可用协议" description="拥有有效套餐且节点在线后，会在这里显示对应协议的实时使用人数和连接数。" />
+        <EmptyState v-else-if="protocolLoadResource.loaded.value && !protocolLoadResource.error.value && !protocolLoadResource.loading.value" icon="activity" title="暂无可用协议" description="拥有有效套餐且节点在线后，会在这里显示对应协议的实时使用人数和连接数。" />
       </div>
     </UiSection>
 
@@ -102,13 +107,18 @@
       :description="selectedSubscription ? `${selectedSubscription.plan_name} · ${selectedSubscription.sku_name}` : '从订阅列表选择需要管理的服务实例。'"
     >
       <template #meta>
-        <StatusBadge v-if="selectedSubscription" :tone="access.configured ? 'success' : 'warning'">
+        <StatusBadge v-if="selectedSubscription && accessReady" :tone="access.configured ? 'success' : 'warning'">
           {{ access.configured ? '已启用' : '未生成' }}
         </StatusBadge>
       </template>
       <div v-if="selectedSubscription" class="panel-body access-panel">
         <span class="access-icon"><UiIcon name="key" /></span>
-        <div v-if="access.configured" class="access-meta">
+        <PageAlert v-if="accessResource.error.value" tone="danger" title="订阅链接读取失败">
+          {{ accessResource.error.value }}
+          <UiButton variant="secondary" size="sm" type="button" @click="loadAccess">重试链接</UiButton>
+        </PageAlert>
+        <p v-else-if="!accessReady" role="status">{{ working ? '正在更新链接状态…' : '正在读取链接状态…' }}</p>
+        <div v-else-if="access.configured" class="access-meta">
           <strong>{{ selectedSubscription.plan_name }} 的链接已启用</strong>
           <p>凭证前缀 <code>{{ access.token_prefix }}…</code></p>
           <div class="access-time"><span>最近使用</span><TimeBadge :value="access.last_used_at" /></div>
@@ -124,7 +134,7 @@
           <div><span>到期时间</span><TimeBadge :value="selectedSubscription.end_at" /></div>
         </div>
 
-        <div v-if="baseSubscriptionUrl" class="access-template-picker">
+        <div v-if="subscriptionUrl" class="access-template-picker">
           <FormField
             v-slot="{ controlAttrs }"
             label="查找导出模板"
@@ -163,10 +173,10 @@
           <UiButton v-if="subscriptionUrl" variant="secondary" size="sm" type="button" @click="copy">
             <UiIcon name="copy" />{{ copyLabel }}
           </UiButton>
-          <UiButton variant="secondary" size="sm" type="button" @click="ask(access.configured ? 'rotate' : 'generate')">
+          <UiButton variant="secondary" size="sm" type="button" :disabled="!accessReady || working" @click="ask(access.configured ? 'rotate' : 'generate')">
             {{ access.configured ? '轮换此链接' : '生成此链接' }}
           </UiButton>
-          <UiButton v-if="access.configured" variant="danger" size="sm" type="button" @click="ask('revoke')">吊销此链接</UiButton>
+          <UiButton v-if="accessReady && access.configured" variant="danger" size="sm" type="button" :disabled="working" @click="ask('revoke')">吊销此链接</UiButton>
         </div>
       </div>
       <EmptyState v-else icon="key" title="请选择有效订阅" description="每条订阅分别生成和管理自己的客户端链接。" />
@@ -194,7 +204,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchActiveSubscriptionTemplatesPage,
@@ -202,6 +212,7 @@ import {
   fetchAccountSubscriptionsPage,
   type AccountProtocolLoadSnapshot,
   type AdminSubscriptionListItem,
+  type SubscriptionTemplate,
 } from '../../api/client'
 import {
   fetchSubscriptionAccess,
@@ -228,6 +239,7 @@ import UiSelect from '../../components/UiSelect.vue'
 import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterSelect from '../../components/WorkbenchFilterSelect.vue'
 import { useRemoteTable } from '../../composables/useRemoteTable'
+import { useRemoteResource } from '../../composables/useRemoteResource'
 import { formatBytes, formatUnknownValue } from '../../utils/format'
 import {
   buildSubscriptionURL,
@@ -250,25 +262,17 @@ const statusOptions = [
   { label: '已到期或耗尽', value: 'expired' },
   { label: '已取消', value: 'canceled' },
 ]
-const access = ref<SubscriptionAccess>({ configured: false, subscription_id: 0 })
-const activeSubscriptions = ref<AdminSubscriptionListItem[]>([])
-const templates = ref<any[]>([])
-const templateTotal = ref(0)
 const templateQuery = ref('')
 const templateDraftQuery = ref('')
-const templateLoading = ref(false)
-const activeSubscriptionTotal = ref(0)
 const selectedTemplate = ref(subscriptionDeliveryAuto)
-const baseSubscriptionUrl = ref('')
 const copyLabel = ref('复制链接')
-const metadataLoading = ref(false)
-const accessLoading = ref(false)
-const metadataError = ref('')
-const protocolLoads = ref<AccountProtocolLoadSnapshot>({ sampled_at: '', activity_window_seconds: 120, items: [] })
 const working = ref(false)
 const message = ref('')
 const confirmOpen = ref(false)
 const kind = ref<'generate' | 'rotate' | 'revoke'>('generate')
+let selectionGeneration = 0
+let disposed = false
+let mutationSubscriptionID = 0
 
 const {
   items: subscriptions,
@@ -290,16 +294,74 @@ const {
 })
 
 const selectedSubscription = computed(() => {
-  return activeSubscriptions.value.find(item => item.id === selectedSubscriptionID.value)
+  return selectedSubscriptionResource.data.value
+    || activeSubscriptions.value.find(item => item.id === selectedSubscriptionID.value)
     || subscriptions.value.find(item => item.id === selectedSubscriptionID.value && item.status === 'active')
     || null
 })
-const loading = computed(() => listLoading.value || metadataLoading.value || accessLoading.value || templateLoading.value)
-const error = computed({
-  get: () => listError.value || metadataError.value,
-  set: value => { metadataError.value = value },
+
+const selectedSubscriptionResource = useRemoteResource<AdminSubscriptionListItem | null>({
+  initial: () => null,
+  fetch: async ({ signal }) => {
+    const id = selectedSubscriptionID.value
+    const page = await fetchAccountSubscriptionsPage({ subscriptionId: id, status: 'active', offset: 0, limit: 1 }, { signal })
+    const selected = page.items.find(item => item.id === id && item.status === 'active')
+    if (!selected) throw new Error('unavailable subscription')
+    return selected
+  },
+  errorMessage: '所选订阅不存在或已失效，请从列表重新选择。',
 })
-const subscriptionUrl = computed(() => buildSubscriptionURL(baseSubscriptionUrl.value, selectedTemplate.value))
+
+const activeSubscriptionResource = useRemoteResource({
+  initial: () => ({ items: [] as AdminSubscriptionListItem[], total: 0 }),
+  fetch: async ({ signal }) => {
+    const page = await fetchAccountSubscriptionsPage({ status: 'active', offset: 0, limit: 1 }, { signal })
+    return { items: page.items, total: page.total }
+  },
+  errorMessage: '有效订阅加载失败。',
+})
+const templateResource = useRemoteResource({
+  initial: () => ({ items: [] as SubscriptionTemplate[], total: 0 }),
+  fetch: async ({ signal }) => {
+    const page = await fetchActiveSubscriptionTemplatesPage({ q: templateQuery.value || undefined, offset: 0, limit: 25 }, { signal })
+    return { items: page.items, total: page.total }
+  },
+  errorMessage: '订阅模板加载失败。',
+})
+const protocolLoadResource = useRemoteResource<AccountProtocolLoadSnapshot>({
+  initial: () => ({ sampled_at: '', activity_window_seconds: 120, items: [] }),
+  fetch: ({ signal }) => fetchAccountProtocolLoads({ signal }),
+  errorMessage: '协议实时负载加载失败。',
+})
+const accessResource = useRemoteResource<SubscriptionAccess>({
+  initial: () => ({ configured: false, subscription_id: selectedSubscriptionID.value }),
+  fetch: async ({ signal }) => {
+    const subscriptionID = selectedSubscriptionID.value
+    const result = await fetchSubscriptionAccess(subscriptionID, { signal })
+    if (result.subscription_id !== subscriptionID) throw new Error('subscription access response mismatch')
+    return result
+  },
+  errorMessage: '订阅链接加载失败。',
+})
+
+const activeSubscriptions = computed(() => activeSubscriptionResource.data.value.items)
+const activeSubscriptionTotal = computed(() => activeSubscriptionResource.data.value.total)
+const templates = computed(() => templateResource.data.value.items)
+const templateTotal = computed(() => templateResource.data.value.total)
+const templateLoading = templateResource.loading
+const metadataLoading = computed(() => activeSubscriptionResource.loading.value || selectedSubscriptionResource.loading.value)
+const protocolLoads = protocolLoadResource.data
+const access = accessResource.data
+const accessLoading = accessResource.loading
+const accessReady = computed(() => accessResource.loaded.value
+  && !accessLoading.value
+  && !accessResource.error.value
+  && access.value.subscription_id === selectedSubscriptionID.value)
+const loading = computed(() => listLoading.value || metadataLoading.value || accessLoading.value || templateLoading.value || protocolLoadResource.loading.value)
+const error = computed(() => listError.value || selectedSubscriptionResource.error.value || activeSubscriptionResource.error.value || templateResource.error.value)
+const subscriptionUrl = computed(() => accessReady.value
+  ? buildSubscriptionURL(access.value.subscription_url ? `${window.location.origin}${access.value.subscription_url}` : '', selectedTemplate.value)
+  : '')
 const templateOptions = computed(() => [
   { label: '自动识别（推荐）', value: subscriptionDeliveryAuto },
   { label: 'ZBoard 原生格式（Base64）', value: subscriptionDeliveryNative },
@@ -342,76 +404,40 @@ function subLabel(value: string) {
 }
 
 function selectDefaultSubscription() {
-  const requested = Math.max(0, Number(route.query.subscription) || selectedSubscriptionID.value)
-  const requestedItem = activeSubscriptions.value.find(item => item.id === requested)
-  const currentItem = activeSubscriptions.value.find(item => item.id === selectedSubscriptionID.value)
-  selectedSubscriptionID.value = requestedItem?.id || currentItem?.id || activeSubscriptions.value[0]?.id || 0
+  if (selectedSubscriptionID.value) return
+  selectedSubscriptionID.value = activeSubscriptions.value[0]?.id || 0
 }
 
 async function loadAccess() {
-  access.value = { configured: false, subscription_id: selectedSubscriptionID.value }
-  baseSubscriptionUrl.value = ''
-  copyLabel.value = '复制链接'
-  if (!selectedSubscriptionID.value || !selectedSubscription.value) return
-  accessLoading.value = true
-  metadataError.value = ''
-  try {
-    access.value = await fetchSubscriptionAccess(selectedSubscriptionID.value)
-    baseSubscriptionUrl.value = access.value.subscription_url ? `${window.location.origin}${access.value.subscription_url}` : ''
-  } catch (cause: any) {
-    metadataError.value = cause?.response?.data?.message || '订阅链接加载失败。'
-  } finally {
-    accessLoading.value = false
-  }
+  if (working.value && mutationSubscriptionID === selectedSubscriptionID.value) return
+  if (!selectedSubscriptionID.value) return
+  const selection = selectionGeneration
+  if (selectedSubscription.value) selectedSubscriptionResource.replace(selectedSubscription.value)
+  else if (!await selectedSubscriptionResource.load() || disposed || selection !== selectionGeneration) return
+  await accessResource.load()
 }
 
 async function loadMetadata() {
-  metadataLoading.value = true
-  metadataError.value = ''
-  try {
-    const [activePage, templateResult, protocolLoadResult] = await Promise.all([
-      fetchAccountSubscriptionsPage({ status: 'active', offset: 0, limit: 100 }),
-      fetchActiveSubscriptionTemplatesPage({ q: templateQuery.value || undefined, offset: 0, limit: 25 }),
-      fetchAccountProtocolLoads(),
-    ])
-    activeSubscriptions.value = activePage.items
-    activeSubscriptionTotal.value = activePage.total
-    templates.value = templateResult.items
-    templateTotal.value = templateResult.total
-    protocolLoads.value = protocolLoadResult
+  if (await activeSubscriptionResource.load()) {
     selectDefaultSubscription()
-    if (!isBuiltInDeliveryMode(selectedTemplate.value) && !templates.value.some(item => item.slug === selectedTemplate.value)) {
-      selectedTemplate.value = subscriptionDeliveryAuto
-    }
-  } catch (cause: any) {
-    metadataError.value = cause?.response?.data?.message || '订阅配置加载失败。'
-  } finally {
-    metadataLoading.value = false
+    await loadAccess()
+    if (!disposed) await syncURL(true)
   }
 }
 
 async function searchTemplates() {
   templateQuery.value = templateDraftQuery.value.trim()
-  templateLoading.value = true
-  metadataError.value = ''
-  try {
-    const result = await fetchActiveSubscriptionTemplatesPage({ q: templateQuery.value || undefined, offset: 0, limit: 25 })
-    templates.value = result.items
-    templateTotal.value = result.total
+  if (await templateResource.load()) {
     if (!isBuiltInDeliveryMode(selectedTemplate.value) && !templates.value.some(item => item.slug === selectedTemplate.value)) {
       selectedTemplate.value = subscriptionDeliveryAuto
     }
-  } catch (cause: any) {
-    metadataError.value = cause?.response?.data?.message || '订阅模板搜索失败。'
-  } finally {
-    templateLoading.value = false
   }
 }
 
+async function loadProtocolLoads() { await protocolLoadResource.load() }
+
 async function loadAll() {
-  await Promise.all([load(), loadMetadata()])
-  await loadAccess()
-  await syncURL(true)
+  await Promise.all([load(), loadMetadata(), searchTemplates(), loadProtocolLoads()])
 }
 
 async function syncURL(replace = false) {
@@ -428,11 +454,10 @@ async function syncURL(replace = false) {
 }
 
 async function selectSubscription(subscriptionID: number) {
-  if (subscriptionID === selectedSubscriptionID.value) return
+  if (working.value || subscriptionID === selectedSubscriptionID.value) return
   selectedSubscriptionID.value = subscriptionID
   message.value = ''
-  await syncURL()
-  await loadAccess()
+  await Promise.all([syncURL(), loadAccess()])
 }
 
 async function applyFilters() {
@@ -454,48 +479,73 @@ async function changePage(value: { offset: number; limit: number }) {
 }
 
 function ask(next: typeof kind.value) {
-  if (!selectedSubscription.value) return
+  if (!selectedSubscription.value || !accessReady.value || working.value) return
   kind.value = next
   confirmOpen.value = true
 }
 
 async function execute() {
-  if (!selectedSubscription.value) return
+  if (!selectedSubscription.value || !accessReady.value || working.value || !confirmOpen.value) return
+  const subscriptionID = selectedSubscription.value.id
+  const selection = selectionGeneration
+  const action = kind.value
+  const isCurrent = () => !disposed && selection === selectionGeneration && subscriptionID === selectedSubscriptionID.value
+  mutationSubscriptionID = subscriptionID
   working.value = true
-  metadataError.value = ''
+  accessResource.reset()
   message.value = ''
   try {
-    const subscriptionID = selectedSubscription.value.id
-    if (kind.value === 'revoke') {
+    if (action === 'revoke') {
       await revokeSubscriptionAccess(subscriptionID)
-      access.value = { configured: false, subscription_id: subscriptionID }
-      baseSubscriptionUrl.value = ''
+      if (!isCurrent()) return
+      accessResource.replace({ configured: false, subscription_id: subscriptionID })
       message.value = `订阅 #${subscriptionID} 的链接已吊销。`
     } else {
       const result = await rotateSubscriptionAccess(subscriptionID)
-      access.value = result
-      baseSubscriptionUrl.value = `${window.location.origin}${result.subscription_url}`
+      if (!isCurrent()) return
+      if (result.subscription_id !== subscriptionID) throw new Error('subscription access response mismatch')
+      accessResource.replace(result)
       copyLabel.value = '复制链接'
-      message.value = kind.value === 'rotate'
+      message.value = action === 'rotate'
         ? `订阅 #${subscriptionID} 的链接已轮换。`
         : `订阅 #${subscriptionID} 的链接已生成。`
     }
     confirmOpen.value = false
   } catch (cause: any) {
-    metadataError.value = cause?.response?.data?.message || '操作失败。'
+    if (isCurrent()) {
+      accessResource.error.value = cause?.response?.data?.message || '链接操作失败，请重新读取状态后再试。'
+      confirmOpen.value = false
+    }
   } finally {
-    working.value = false
+    if (!disposed) {
+      working.value = false
+      // Returning to the original subscription during its mutation deferred its
+      // GET. Read the settled state now; never reuse the old selection's result.
+      if (selection !== selectionGeneration && subscriptionID === selectedSubscriptionID.value) await loadAccess()
+    }
   }
 }
 
 async function copy() {
+  if (!subscriptionUrl.value) return
+  const selection = selectionGeneration
   try {
     await navigator.clipboard.writeText(subscriptionUrl.value)
-    copyLabel.value = '已复制'
+    if (!disposed && selection === selectionGeneration) copyLabel.value = '已复制'
   } catch {
-    copyLabel.value = '复制失败'
+    if (!disposed && selection === selectionGeneration) copyLabel.value = '复制失败'
   }
 }
+
+// Clear credentials synchronously, before URL navigation or a replacement GET.
+watch(selectedSubscriptionID, () => {
+  selectionGeneration += 1
+  selectedSubscriptionResource.reset()
+  accessResource.reset()
+  copyLabel.value = '复制链接'
+  message.value = ''
+  confirmOpen.value = false
+}, { flush: 'sync' })
 
 watch(() => route.fullPath, async () => {
   const nextStatus = String(route.query.status || '')
@@ -505,19 +555,17 @@ watch(() => route.fullPath, async () => {
   const nextSubscriptionID = Math.max(0, Number(route.query.subscription) || 0)
   const listChanged = nextStatus !== status.value || nextLimit !== limit.value || nextOffset !== offset.value
   const subscriptionChanged = nextSubscriptionID !== selectedSubscriptionID.value
+  if (subscriptionChanged) selectedSubscriptionID.value = nextSubscriptionID
   if (listChanged) {
     status.value = nextStatus
     limit.value = nextLimit
     offset.value = nextOffset
-    await load()
   }
-  if (subscriptionChanged) {
-    selectedSubscriptionID.value = nextSubscriptionID
-    await loadAccess()
-  }
+  await Promise.all([listChanged ? load() : Promise.resolve(), subscriptionChanged ? loadAccess() : Promise.resolve()])
 })
 
 onMounted(loadAll)
+onBeforeUnmount(() => { disposed = true; selectionGeneration += 1 })
 </script>
 
 <style scoped>

@@ -1,5 +1,7 @@
 import axios from 'axios'
 import { normalizeApiErrorPayload } from '../utils/apiError'
+import { appendQueryID, type QueryID } from './queryID'
+import { requirePageResponse } from './pageResponse'
 
 export const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 
@@ -1178,11 +1180,16 @@ export async function fetchPlansPage(params: { includeInactive?: boolean; q?: st
   return normalizePageResult<PlanSummary>(unwrap(response), params.offset || 0, params.limit || 50)
 }
 
-export async function fetchPlanCatalogPage(params: { q?: string; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<PlanCatalogItem>> {
+export type CatalogOperation = 'purchase' | 'renew' | 'change' | 'addon'
+
+export async function fetchPlanCatalogPage(params: { q?: string; offset?: number; limit?: number; operation?: CatalogOperation; planId?: number; excludePlanId?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<PlanCatalogItem>> {
   const query = new URLSearchParams()
   appendPageParams(query, params)
+  query.set('operation', params.operation || 'purchase')
+  if (params.planId) query.set('plan_id', String(params.planId))
+  if (params.excludePlanId) query.set('exclude_plan_id', String(params.excludePlanId))
   const response = await api.get(`/plans?${query}`, { signal: options.signal })
-  return normalizePageResult<PlanCatalogItem>(unwrap(response), params.offset || 0, params.limit || 25)
+  return normalizePageResult<PlanCatalogItem>(requirePageResponse(unwrap(response)), params.offset || 0, params.limit || 25)
 }
 
 export async function fetchPlanCatalogItem(id: number, options: ApiRequestOptions = {}): Promise<PlanCatalogItem> {
@@ -1190,13 +1197,14 @@ export async function fetchPlanCatalogItem(id: number, options: ApiRequestOption
   return unwrap(response)
 }
 
-export async function fetchPlanCatalogSKUs(planId: number, params: { q?: string; operation?: NonNullable<PlanSKU['allowed_operations']>[number]; skuType?: PlanSKU['sku_type']; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<PlanSKU>> {
+export async function fetchPlanCatalogSKUs(planId: number, params: { q?: string; operation?: NonNullable<PlanSKU['allowed_operations']>[number]; skuType?: PlanSKU['sku_type']; offset?: number; limit?: number; anchorId?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<PlanSKU>> {
   const query = new URLSearchParams()
   appendPageParams(query, params)
   if (params.operation) query.set('operation', params.operation)
   if (params.skuType) query.set('sku_type', params.skuType)
+  if (params.anchorId) query.set('anchor_id', String(params.anchorId))
   const response = await api.get(`/plans/${planId}/skus?${query}`, { signal: options.signal })
-  return normalizePageResult<PlanSKU>(unwrap(response), params.offset || 0, params.limit || 25)
+  return normalizePageResult<PlanSKU>(requirePageResponse(unwrap(response)), params.offset || 0, params.limit || 25)
 }
 
 export async function fetchPlanDetail(id: number, options: ApiRequestOptions = {}): Promise<PlanDetail> {
@@ -1400,12 +1408,14 @@ export async function fetchSubscriptionsPage(params: { q?: string; userId?: numb
   return normalizePageResult<AdminSubscriptionListItem>(unwrap(response), params.offset || 0, params.limit || 50)
 }
 
-export async function fetchAccountSubscriptionsPage(params: { status?: string; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminSubscriptionListItem>> {
+export async function fetchAccountSubscriptionsPage(params: { status?: string; offset?: number; limit?: number; q?: string; subscriptionId?: number; eligibleFor?: 'manage' | 'renew' | 'change' | 'addon' } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminSubscriptionListItem>> {
   const query = new URLSearchParams()
   appendPageParams(query, params)
   if (params.status) query.set('status', String(params.status))
+  if (params.subscriptionId) query.set('subscription_id', String(params.subscriptionId))
+  if (params.eligibleFor) query.set('eligible_for', params.eligibleFor)
   const response = await api.get(`/subscriptions?${query}`, { signal: options.signal })
-  return normalizePageResult<AdminSubscriptionListItem>(unwrap(response), params.offset || 0, params.limit || 25)
+  return normalizePageResult<AdminSubscriptionListItem>(requirePageResponse(unwrap(response)), params.offset || 0, params.limit || 25)
 }
 
 export async function fetchAdminSubscriptionDetail(id: number, options: ApiRequestOptions = {}): Promise<AdminSubscriptionDetail> {
@@ -1434,8 +1444,8 @@ export interface AccountProtocolLoadSnapshot {
 	items: AccountProtocolLoadItem[]
 }
 
-export async function fetchAccountProtocolLoads(): Promise<AccountProtocolLoadSnapshot> {
-	const response = await api.get('/subscription/protocol-loads')
+export async function fetchAccountProtocolLoads(options: ApiRequestOptions = {}): Promise<AccountProtocolLoadSnapshot> {
+	const response = await api.get('/subscription/protocol-loads', { signal: options.signal })
 	return unwrap(response)
 }
 
@@ -1627,8 +1637,8 @@ export async function deleteSubscriptionTemplate(id: number) {
 	return unwrap(response)
 }
 
-export async function fetchTrafficSummary(admin = false) {
-  const response = await api.get(`${admin ? '/admin' : ''}/traffic/summary`)
+export async function fetchTrafficSummary(admin = false, options: ApiRequestOptions = {}) {
+  const response = await api.get(`${admin ? '/admin' : ''}/traffic/summary`, { signal: options.signal })
   return unwrap(response) || {}
 }
 
@@ -1724,11 +1734,11 @@ export type TrafficReconciliationAggregates = {
   over_recorded_bytes: number
 }
 
-export async function fetchTrafficReconciliationPage(params: { userId?: number; subscriptionId?: number; issuesOnly?: boolean; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<TrafficReconciliationItem, TrafficReconciliationAggregates>> {
+export async function fetchTrafficReconciliationPage(params: { userId?: QueryID; subscriptionId?: QueryID; issuesOnly?: boolean; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<TrafficReconciliationItem, TrafficReconciliationAggregates>> {
   const query = new URLSearchParams()
   appendPageParams(query, params)
-  if (params.userId) query.set('user_id', String(params.userId))
-  if (params.subscriptionId) query.set('subscription_id', String(params.subscriptionId))
+  appendQueryID(query, 'user_id', params.userId)
+  appendQueryID(query, 'subscription_id', params.subscriptionId)
   if (params.issuesOnly) query.set('issues_only', 'true')
   const response = await api.get(`/admin/traffic/reconciliation?${query}`, { signal: options.signal })
   return normalizePageResult<TrafficReconciliationItem, TrafficReconciliationAggregates>(unwrap(response), params.offset || 0, params.limit || 25)

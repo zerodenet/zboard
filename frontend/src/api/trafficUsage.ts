@@ -1,5 +1,8 @@
 import { API_BASE, getAuthToken, normalizePageResult, type PageResult } from './client'
 import { normalizeApiErrorPayload } from '../utils/apiError'
+import type { EntityReference } from './readModels'
+import { appendQueryID, type QueryID } from './queryID'
+import { requirePageResponse } from './pageResponse'
 
 export type TrafficUsageBucket = 'minute' | 'hour' | 'day'
 
@@ -26,8 +29,24 @@ export interface TrafficUsageAggregates extends Record<string, unknown> {
   protocol_endpoint_count: number
 }
 
-export interface TrafficUsagePage extends PageResult<TrafficUsageRecord, TrafficUsageAggregates> {
+export interface TrafficUsageReferences extends Record<string, unknown> {
+  subscriptions: Record<string, EntityReference>
+  nodes: Record<string, EntityReference>
+}
+
+type UsagePageEnvelope = PageResult<TrafficUsageRecord, TrafficUsageAggregates, TrafficUsageReferences>
+export interface TrafficUsagePage extends Omit<UsagePageEnvelope, 'total' | 'page' | 'aggregates'> {
+  total: number | null
+  page: Omit<UsagePageEnvelope['page'], 'total'> & { total: number | null }
+  aggregates: TrafficUsageAggregates | null
   bucket: TrafficUsageBucket
+}
+
+export interface TrafficUsageStatistics {
+  total: number
+  aggregates: TrafficUsageAggregates
+  bucket: TrafficUsageBucket
+  as_of: string
 }
 
 export interface TrafficNodeReference {
@@ -62,13 +81,14 @@ export interface TrafficNodeSeries {
 
 export interface TrafficUsageQuery {
   bucket?: TrafficUsageBucket
-  userId?: number
-  nodeId?: number
-  subscriptionId?: number
+  userId?: QueryID
+  nodeId?: QueryID
+  subscriptionId?: QueryID
   cursor?: string
   from?: string
   to?: string
   limit?: number
+  includeTotals?: boolean
 }
 
 async function requestData<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -91,13 +111,14 @@ async function requestData<T>(path: string, signal?: AbortSignal): Promise<T> {
 function appendUsageQuery(query: URLSearchParams, params: TrafficUsageQuery) {
   query.set('paged', 'true')
   query.set('bucket', params.bucket || 'hour')
-  if (params.userId) query.set('user_id', String(params.userId))
-  if (params.nodeId) query.set('node_id', String(params.nodeId))
-  if (params.subscriptionId) query.set('subscription_id', String(params.subscriptionId))
+  appendQueryID(query, 'user_id', params.userId)
+  appendQueryID(query, 'node_id', params.nodeId)
+  appendQueryID(query, 'subscription_id', params.subscriptionId)
   if (params.cursor) query.set('cursor', params.cursor)
   if (params.from) query.set('from', params.from)
   if (params.to) query.set('to', params.to)
   if (params.limit !== undefined) query.set('limit', String(params.limit))
+  if (params.includeTotals !== undefined) query.set('include_totals', String(params.includeTotals))
 }
 
 function normalizeTrafficUsageBucket(value: unknown): TrafficUsageBucket {
@@ -112,11 +133,29 @@ export async function fetchTrafficUsagePage(
 ): Promise<TrafficUsagePage> {
   const query = new URLSearchParams()
   appendUsageQuery(query, params)
-  const data = await requestData<any>(`${admin ? '/admin' : ''}/traffic/records?${query}`, options.signal)
+  const data = requirePageResponse(await requestData<any>(`${admin ? '/admin' : ''}/traffic/records?${query}`, options.signal), true)
+  const normalized = normalizePageResult<TrafficUsageRecord, TrafficUsageAggregates, TrafficUsageReferences>(data, 0, params.limit || (admin ? 50 : 25))
+  const total = data?.page?.total === null || data?.total === null ? null : normalized.total
   return {
-    ...normalizePageResult<TrafficUsageRecord, TrafficUsageAggregates>(data, 0, params.limit || (admin ? 50 : 25)),
+    ...normalized, total, page: { ...normalized.page, total },
+    aggregates: data?.aggregates === null ? null : normalized.aggregates,
     bucket: normalizeTrafficUsageBucket(data?.bucket),
   }
+}
+
+export async function fetchTrafficUsageStatistics(
+  params: Omit<TrafficUsageQuery, 'cursor' | 'limit' | 'includeTotals'> = {},
+  admin = false,
+  options: { signal?: AbortSignal } = {},
+): Promise<TrafficUsageStatistics> {
+  const query = new URLSearchParams()
+  appendUsageQuery(query, params)
+  query.set('view', 'usage_summary')
+  const data = await requestData<TrafficUsageStatistics>(`${admin ? '/admin' : ''}/traffic/records?${query}`, options.signal)
+  if (!Number.isFinite(data?.total) || data.total < 0 || !data.as_of || !data.aggregates ||
+    ['raw_bytes', 'used_bytes', 'user_count', 'subscription_count', 'node_count', 'protocol_endpoint_count']
+      .some(key => !Number.isFinite(data.aggregates[key]))) throw new Error('流量区间统计响应不完整。')
+  return data
 }
 
 export async function fetchTrafficNodeSeries(
@@ -127,9 +166,9 @@ export async function fetchTrafficNodeSeries(
   const query = new URLSearchParams()
   query.set('view', 'node_series')
   query.set('bucket', params.bucket || 'hour')
-  if (params.userId) query.set('user_id', String(params.userId))
-  if (params.nodeId) query.set('node_id', String(params.nodeId))
-  if (params.subscriptionId) query.set('subscription_id', String(params.subscriptionId))
+  appendQueryID(query, 'user_id', params.userId)
+  appendQueryID(query, 'node_id', params.nodeId)
+  appendQueryID(query, 'subscription_id', params.subscriptionId)
   if (params.from) query.set('from', params.from)
   if (params.to) query.set('to', params.to)
   return requestData<TrafficNodeSeries>(`${admin ? '/admin' : ''}/traffic/records?${query}`, options.signal)

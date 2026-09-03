@@ -49,13 +49,13 @@
               <span>{{ operationLabel }}</span>
               <h2>选择规格</h2>
             </div>
-            <small v-if="skus.length">{{ skus.length }} 个可用规格</small>
+            <small v-if="skuTotal">{{ skuTotal }} 个可用规格</small>
           </div>
 
           <div v-if="loading" class="commerce-loading-state">
             <UiIcon name="refresh" />正在加载规格
           </div>
-          <PageAlert v-else-if="error" tone="danger" title="规格加载失败">{{ error }}</PageAlert>
+          <PageAlert v-else-if="error" tone="danger" title="规格加载失败">{{ error }}<UiButton variant="secondary" type="button" @click="$emit('retry')">重试规格</UiButton></PageAlert>
           <div v-else-if="skus.length" class="storefront-sku-grid" role="radiogroup" :aria-label="`${plan.name} 可用规格`">
             <button
               v-for="sku in skus"
@@ -82,6 +82,7 @@
             <strong>当前没有可用规格</strong>
             <span>请稍后再试。</span>
           </div>
+          <TablePager v-if="skuTotal > skuLimit" :total="skuTotal" :offset="skuOffset" :limit="skuLimit" :loading="loading" @change="$emit('change-sku-page', $event)" />
         </section>
       </div>
 
@@ -112,7 +113,7 @@
             <span>我已阅读并同意以上与本次购买相关的服务规则</span>
           </label>
         </div>
-        <UiButton type="button" :disabled="!selectedSku || (hasPurchasePolicies && !purchasePoliciesAccepted)" @click="$emit('continue')">
+        <UiButton type="button" :disabled="loading || Boolean(error) || !selectedSku || (hasPurchasePolicies && !purchasePoliciesAccepted)" @click="$emit('continue')">
           继续结算<UiIcon name="chevron" />
         </UiButton>
       </aside>
@@ -139,10 +140,14 @@ import PageAlert from './PageAlert.vue'
 import UiButton from './UiButton.vue'
 import UiCheckbox from './UiCheckbox.vue'
 import UiIcon from './UiIcon.vue'
+import TablePager from './TablePager.vue'
 
 const props = withDefaults(defineProps<{
   plan: PlanCatalogItem
   skus: PlanSKU[]
+  skuTotal?: number
+  skuOffset?: number
+  skuLimit?: number
   selectedSkuId?: number
   operationLabel?: string
   mode?: 'purchase' | 'renew' | 'change' | 'addon'
@@ -156,11 +161,16 @@ const props = withDefaults(defineProps<{
   targetName: '',
   loading: false,
   error: '',
+  skuTotal: 0,
+  skuOffset: 0,
+  skuLimit: 25,
 })
 
 defineEmits<{
   back: []
   'select-sku': [sku: PlanSKU]
+  'change-sku-page': [page: { offset: number; limit: number }]
+  retry: []
   continue: []
 }>()
 

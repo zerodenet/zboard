@@ -1566,7 +1566,10 @@ paths:
             type: boolean
           description: |
             Admin-only flag. When true, inactive plans are returned for management.
-        - { name: paged, in: query, schema: { type: boolean }, description: Return a bounded page object. Public pages contain active plan summaries and one primary new-purchase SKU; administrators receive management summaries. }
+        - { name: paged, in: query, schema: { type: boolean }, description: Return a bounded page object with plan entitlements and one primary SKU. Without an explicit operation administrators retain management filtering and counts. }
+        - { name: operation, in: query, schema: { type: string, enum: [purchase, renew, change, addon] }, description: "Select only active plans with an active SKU for this operation, including for administrators. Filtering precedes count and pagination; SKU counts and the primary lowest-price SKU use the same operation." }
+        - { name: plan_id, in: query, schema: { type: integer, minimum: 1 }, description: Exact plan filter applied before pagination. }
+        - { name: exclude_plan_id, in: query, schema: { type: integer, minimum: 1 }, description: Exclude the current plan before count and pagination for change candidates. }
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Search across name, slug and summary when paged=true." }
         - { name: active, in: query, schema: { type: boolean }, description: Admin-only exact publication-state filter. }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
@@ -1633,6 +1636,8 @@ paths:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Search name, code or currency." }
         - { name: sku_type, in: query, schema: { type: string, enum: [new, renewal, upgrade, traffic_pack] } }
+        - { name: operation, in: query, schema: { type: string, enum: [purchase, renew, change, addon] }, description: Overrides the legacy sku_type filter. }
+        - { name: anchor_id, in: query, schema: { type: integer, minimum: 1 }, description: "Return the page containing this SKU in sort_order/id order, overriding offset. The anchor must belong to the active plan and current operation/search scope or the response is 404. The response page offset is authoritative." }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
       responses:
@@ -1923,6 +1928,9 @@ paths:
       summary: List subscriptions owned by the current user
       description: This self-service route remains user-scoped even when the current user also has administrator permission. Use paged=true for a bounded projection with plan and SKU display names.
       parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: Paged reads only. Search plan/SKU names or exact subscription ID before count and pagination; restricted to the authenticated owner. }
+        - { name: subscription_id, in: query, schema: { type: integer, minimum: 1 }, description: Exact target lookup within the current user's subscriptions and all other filters; an unavailable target produces an empty result. }
+        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon] }, description: "Read-only management filter applied before count and pagination. change/addon require effectively active subscriptions. manage/renew additionally include exhausted permanent subscriptions unless canceled. This filter does not replace order authorization." }
         - name: status
           in: query
           schema:
@@ -2720,7 +2728,7 @@ paths:
       tags:
         - traffic
       summary: Traffic records for the current user
-      description: All filters remain constrained to records owned by the current user. Paged responses use the bounded history projection, stable cursor navigation and complete filtered-window aggregates.
+      description: All filters remain constrained to records owned by the current user. Paged responses use the bounded history projection, stable cursor navigation and complete filtered-window aggregates. Grouped account pages include facets.nodes and facets.subscriptions maps for the current page only; subscription names are owner-scoped and unavailable references are marked missing, independently of chart rankings.
       parameters:
         - name: node_id
           in: query
@@ -2732,7 +2740,8 @@ paths:
           schema:
             type: integer
             format: int64
-        - { name: view, in: query, schema: { type: string, enum: [raw, node_series] }, description: Use node_series for the read-only time-by-node chart projection. }
+        - { name: view, in: query, schema: { type: string, enum: [raw, node_series, usage_summary] }, description: Use node_series for the read-only time-by-node chart projection. }
+        - { name: include_totals, in: query, schema: { type: boolean, default: true }, description: Grouped pages only. Set false to skip full-window statistics; page.total, total and aggregates are null. Read view=usage_summary separately. }
         - { name: bucket, in: query, schema: { type: string, enum: [minute, hour, day], default: hour }, description: Aggregation precision for paged records and node_series. }
         - { name: paged, in: query, schema: { type: boolean } }
         - { name: cursor, in: query, schema: { type: string }, description: Opaque bidirectional history cursor returned by page.next_cursor or page.previous_cursor. }
@@ -2750,10 +2759,12 @@ paths:
                   - $ref: "#/components/schemas/ApiResponse"
                   - properties:
                       data:
-                        oneOf:
+                        anyOf:
                           - type: array
                             items: { $ref: "#/components/schemas/TrafficRecord" }
                           - $ref: "#/components/schemas/TrafficRecordPage"
+                          - $ref: "#/components/schemas/TrafficUsagePage"
+                          - $ref: "#/components/schemas/TrafficUsageStatistics"
   /api/v1/admin/traffic/records:
     get:
       tags: [traffic, admin]
@@ -2764,7 +2775,8 @@ paths:
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol_endpoint_id, in: query, schema: { type: integer, format: int64 } }
         - { name: subscription_id, in: query, schema: { type: integer, format: int64 } }
-        - { name: view, in: query, schema: { type: string, enum: [raw, node_series] }, description: Use node_series for the read-only time-by-node chart and ranking projection. }
+        - { name: view, in: query, schema: { type: string, enum: [raw, node_series, usage_summary] }, description: Use node_series for the read-only time-by-node chart and ranking projection. }
+        - { name: include_totals, in: query, schema: { type: boolean, default: true }, description: Grouped pages only. Set false to skip full-window statistics; page.total, total and aggregates are null. Read view=usage_summary separately. }
         - { name: bucket, in: query, schema: { type: string, enum: [minute, hour, day], default: hour }, description: Aggregation precision for paged records and node_series. }
         - { name: paged, in: query, schema: { type: boolean } }
         - { name: cursor, in: query, schema: { type: string }, description: Opaque bidirectional history cursor returned by page.next_cursor or page.previous_cursor. }
@@ -2782,10 +2794,12 @@ paths:
                   - $ref: "#/components/schemas/ApiResponse"
                   - properties:
                       data:
-                        oneOf:
+                        anyOf:
                           - type: array
                             items: { $ref: "#/components/schemas/TrafficRecord" }
                           - $ref: "#/components/schemas/TrafficRecordPage"
+                          - $ref: "#/components/schemas/TrafficUsagePage"
+                          - $ref: "#/components/schemas/TrafficUsageStatistics"
         "403": { $ref: "#/components/responses/Error" }
   /api/v1/traffic/reconciliation:
     get:
@@ -4499,6 +4513,80 @@ components:
         recorded_bytes: { type: integer, format: int64 }
         missing_bytes: { type: integer, format: int64 }
         over_recorded_bytes: { type: integer, format: int64 }
+    TrafficEntityReference:
+      type: object
+      required: [id, kind, display_name]
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string, enum: [node, subscription] }
+        display_name: { type: string }
+        secondary: { type: string }
+        status: { type: string }
+        missing: { type: boolean }
+    TrafficUsageStatistics:
+      type: object
+      required: [total, aggregates, bucket, as_of]
+      description: Independent full-filter statistics snapshot. Cursor and limit do not affect its values; as_of identifies the statistics read time, not a shared live-page snapshot.
+      properties:
+        total: { type: integer, format: int64, minimum: 0 }
+        aggregates: { $ref: "#/components/schemas/TrafficRecordAggregates" }
+        bucket: { type: string, enum: [minute, hour, day] }
+        as_of: { type: string, format: date-time }
+    TrafficUsagePage:
+      type: object
+      required: [items, page, total, aggregates, bucket]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, user_id, node_id, record_at, raw_bytes, upload_bytes, download_bytes, used_bytes, protocol_multiplier_milli, record_count]
+            properties:
+              id: { type: integer, format: int64 }
+              user_id: { type: integer, format: int64 }
+              subscription_id: { type: integer, format: int64 }
+              node_id: { type: integer, format: int64 }
+              record_at: { type: string, format: date-time }
+              raw_bytes: { type: integer, format: int64 }
+              upload_bytes: { type: integer, format: int64 }
+              download_bytes: { type: integer, format: int64 }
+              used_bytes: { type: integer, format: int64 }
+              protocol_multiplier_milli: { type: integer, format: int64 }
+              record_count: { type: integer, format: int64 }
+        page:
+          type: object
+          required: [total, offset, limit, next_cursor, previous_cursor]
+          properties:
+            total: { type: integer, format: int64, nullable: true }
+            offset: { type: integer, minimum: 0 }
+            limit: { type: integer, minimum: 1, maximum: 200 }
+            next_cursor: { type: string, nullable: true }
+            previous_cursor: { type: string, nullable: true }
+        total: { type: integer, format: int64, nullable: true }
+        offset: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1, maximum: 200 }
+        aggregates:
+          type: object
+          nullable: true
+          description: Full-window aggregate values, or null when include_totals=false.
+          properties:
+            raw_bytes: { type: integer, format: int64 }
+            used_bytes: { type: integer, format: int64 }
+            user_count: { type: integer, format: int64 }
+            subscription_count: { type: integer, format: int64 }
+            node_count: { type: integer, format: int64 }
+            protocol_endpoint_count: { type: integer, format: int64 }
+        bucket: { type: string, enum: [minute, hour, day] }
+        facets:
+          type: object
+          description: Account-scoped reference maps for current page rows, not complete filter directories.
+          properties:
+            nodes:
+              type: object
+              additionalProperties: { $ref: "#/components/schemas/TrafficEntityReference" }
+            subscriptions:
+              type: object
+              additionalProperties: { $ref: "#/components/schemas/TrafficEntityReference" }
     TrafficRecordPage:
       allOf:
         - $ref: "#/components/schemas/PageEnvelope"
@@ -4510,6 +4598,16 @@ components:
               items: { $ref: "#/components/schemas/TrafficRecordSummary" }
             aggregates:
               $ref: "#/components/schemas/TrafficRecordAggregates"
+            facets:
+              type: object
+              description: Grouped current-account pages only. Maps contain references for the returned rows, keyed by decimal ID; they are not complete filter option collections.
+              properties:
+                nodes:
+                  type: object
+                  additionalProperties: { $ref: "#/components/schemas/TrafficEntityReference" }
+                subscriptions:
+                  type: object
+                  additionalProperties: { $ref: "#/components/schemas/TrafficEntityReference" }
     TrafficReconciliationPage:
       allOf:
         - $ref: "#/components/schemas/PageEnvelope"

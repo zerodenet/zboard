@@ -9,7 +9,7 @@
         <UiButton v-if="checkoutOpen" variant="secondary" type="button" :disabled="creating" @click="backToDetail">
           返回商品详情
         </UiButton>
-        <UiButton v-else-if="selectedPlan" variant="secondary" type="button" @click="backToCatalog">
+        <UiButton v-else-if="selectedPlan || route.query.plan" variant="secondary" type="button" @click="backToCatalog">
           返回套餐列表
         </UiButton>
         <UiButton v-else-if="operation !== 'purchase'" variant="secondary" type="button" @click="returnToOverview">
@@ -24,6 +24,12 @@
     <PageAlert v-if="actionError && !checkoutOpen" tone="danger" title="套餐操作失败">{{ actionError }}</PageAlert>
     <PageAlert v-if="subscriptionError" tone="danger" title="订阅加载失败">{{ subscriptionError }}</PageAlert>
     <PageAlert v-if="planError" tone="danger" title="套餐目录加载失败">{{ planError }}</PageAlert>
+    <PageAlert v-if="detailError && !selectedPlan" tone="danger" title="套餐详情加载失败">
+      {{ detailError }} <UiButton variant="secondary" @click="retryDetail">重试详情</UiButton>
+    </PageAlert>
+    <div v-if="detailLoading && !selectedPlan" class="commerce-loading-state" role="status">
+      <UiIcon name="refresh" />正在加载套餐详情
+    </div>
 
     <section v-if="checkoutOpen && selectedPlan && selectedSKU" class="purchase-checkout">
       <ol class="purchase-checkout__steps" aria-label="结算进度">
@@ -92,12 +98,17 @@
       :target-name="selectedSubscription ? `${selectedSubscription.plan_name} / #${selectedSubscription.id}` : ''"
       :loading="detailLoading"
       :error="detailError"
+      :sku-total="skuTotal"
+      :sku-offset="skuOffset"
+      :sku-limit="skuLimit"
+      @change-sku-page="changeSKUPage"
+      @retry="retryDetail"
       @back="backToCatalog"
       @select-sku="selectDetailSKU"
       @continue="openCheckout"
     />
 
-    <template v-else>
+    <template v-else-if="!detailLoading && !detailError">
       <section v-if="operation === 'purchase'" class="commerce-hub-section" aria-labelledby="active-subscriptions-title">
         <div class="commerce-hub-heading">
           <div>
@@ -105,7 +116,7 @@
             <h2 id="active-subscriptions-title">管理现有订阅</h2>
             <p>续费、切换套餐和购买流量包从具体订阅发起。</p>
           </div>
-          <small v-if="subscriptions.length">{{ subscriptions.length }} 个可管理订阅</small>
+          <small v-if="subscriptionTotal">{{ subscriptionTotal }} 个可管理订阅</small>
         </div>
 
         <div v-if="subscriptionLoading" class="commerce-loading-state"><UiIcon name="refresh" />正在加载订阅</div>
@@ -131,7 +142,7 @@
           </article>
         </div>
         <EmptyState
-          v-else-if="subscriptionsLoaded"
+          v-else-if="subscriptionsLoaded && !subscriptionError"
           icon="plans"
           title="当前没有有效订阅"
           description="从下方选择套餐即可创建新的订阅。"
@@ -176,7 +187,7 @@
           </button>
         </div>
         <EmptyState
-          v-else-if="subscriptionsLoaded"
+          v-else-if="subscriptionsLoaded && !subscriptionError"
           icon="plans"
           title="当前没有可操作的订阅"
           description="请先购买套餐。"
@@ -184,6 +195,12 @@
           <template #actions><UiButton type="button" @click="returnToOverview">前往新购</UiButton></template>
         </EmptyState>
       </section>
+
+      <TablePager
+        v-if="subscriptionTotal > subscriptionLimit && (operation === 'purchase' || !selectedSubscription)"
+        :total="subscriptionTotal" :offset="subscriptionOffset" :limit="subscriptionLimit"
+        :loading="subscriptionLoading" :page-sizes="[6, 25, 50]" @change="changeSubscriptionPage"
+      />
 
       <section v-if="catalogVisible" class="commerce-hub-section" aria-labelledby="commerce-catalog-title">
         <div class="commerce-hub-heading">
@@ -215,15 +232,14 @@
             v-for="plan in plans"
             :key="plan.id"
             :plan="plan"
-            :offer="cardOfferState[plan.id]?.offer || null"
-            :offer-count="cardOfferState[plan.id]?.total || 0"
-            :loading="cardOfferState[plan.id]?.loading"
-            :disabled="cardOfferState[plan.id]?.loading || !cardOfferState[plan.id]?.offer"
+            :offer="plan.primary_sku || null"
+            :offer-count="plan.active_sku_count"
+            :disabled="Boolean(planError) || !plan.primary_sku"
             @select="openPlanDetail(plan.id)"
           />
         </div>
         <EmptyState
-          v-else-if="!planLoading"
+          v-else-if="!planLoading && !planError"
           icon="plans"
           :title="query ? '没有找到匹配的套餐' : operation === 'change' ? '没有可切换的套餐' : '暂无可购买套餐'"
           :description="query ? '请尝试其他关键词。' : '可购买套餐发布后会显示在这里。'"
@@ -244,18 +260,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  createOrder,
-  fetchAccountSubscriptionsPage,
-  fetchPlanCatalogItem,
-  fetchPlanCatalogPage,
-  fetchPlanCatalogSKUs,
-  type AdminSubscriptionListItem,
-  type PlanCatalogItem,
-  type PlanSKU,
-} from '../../api/client'
+import { createOrder, fetchAccountSubscriptionsPage, fetchPlanCatalogPage, type AdminSubscriptionListItem, type PlanCatalogItem, type PlanSKU, type CatalogOperation } from '../../api/client'
 import CommercePlanCard from '../../components/CommercePlanCard.vue'
 import CommercePlanDetail from '../../components/CommercePlanDetail.vue'
 import EmptyState from '../../components/EmptyState.vue'
@@ -266,97 +273,84 @@ import UiButton from '../../components/UiButton.vue'
 import UiIcon from '../../components/UiIcon.vue'
 import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../../components/WorkbenchFilterInput.vue'
+import { useCatalogDetail } from '../../composables/useCatalogDetail'
+import { useRemoteResource } from '../../composables/useRemoteResource'
+import { useRemoteTable } from '../../composables/useRemoteTable'
 import { commerceErrorMessage } from '../../utils/commerceErrors'
 import { formatBytes, formatCurrency, isPerpetualDate } from '../../utils/format'
 
-type PurchaseOperation = 'purchase' | 'renew' | 'change' | 'addon'
-
-interface OperationOption {
-  value: PurchaseOperation
-  label: string
-  title: string
-  description: string
-}
-
-interface CardOfferState {
-  loading: boolean
-  offer: PlanSKU | null
-  total: number
-}
-
-const operationOptions: OperationOption[] = [
+type PurchaseOperation = CatalogOperation
+const operationOptions = [
   { value: 'purchase', label: '新购', title: '套餐中心', description: '选择套餐，进入详情比较规格并确认订单。' },
   { value: 'renew', label: '续费', title: '续费订阅', description: '选择续费规格并确认服务周期。' },
   { value: 'change', label: '切换套餐', title: '切换套餐', description: '为指定订阅选择新的套餐和规格。' },
   { value: 'addon', label: '流量包', title: '购买流量包', description: '为指定订阅增加可用流量。' },
 ]
-const validOperations = new Set<PurchaseOperation>(operationOptions.map(item => item.value))
-const orderTypeByOperation: Record<PurchaseOperation, string> = {
-  purchase: 'new',
-  renew: 'renewal',
-  change: 'upgrade',
-  addon: 'traffic_pack',
-}
+const orderTypeByOperation = { purchase: 'new', renew: 'renewal', change: 'upgrade', addon: 'traffic_pack' }
+const route = useRoute(), router = useRouter()
+const operation = ref<PurchaseOperation>('purchase')
+const targetSubscriptionID = ref(0)
+const planOffset = ref(0), planLimit = ref(9)
+const subscriptionOffset = ref(0), subscriptionLimit = ref(6)
+const query = ref(''), searchDraft = ref('')
+const checkoutOpen = ref(false), creating = ref(false)
+const actionError = ref(''), checkoutError = ref('')
+const eligibleFor = computed(() => operation.value === 'purchase' ? 'manage' : operation.value)
 
-const route = useRoute()
-const router = useRouter()
-const routeOperation = String(route.query.operation || 'purchase') as PurchaseOperation
-const operation = ref<PurchaseOperation>(validOperations.has(routeOperation) ? routeOperation : 'purchase')
-const targetSubscriptionID = ref(Math.max(0, Number(route.query.subscription) || 0))
-const requestedPlanID = ref(Math.max(0, Number(route.query.plan) || 0))
-const requestedSKUID = ref(Math.max(0, Number(route.query.sku) || 0))
-const requestedStep = String(route.query.step || '')
-
-const subscriptions = ref<AdminSubscriptionListItem[]>([])
-const subscriptionsLoaded = ref(false)
-const subscriptionLoading = ref(false)
-const subscriptionError = ref('')
-
-const plans = ref<PlanCatalogItem[]>([])
-const planTotal = ref(0)
-const planLoading = ref(false)
-const planError = ref('')
-const planOffset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * 9)
-const planLimit = ref(9)
-const query = ref(String(route.query.q || '').trim())
-const searchDraft = ref(query.value)
-const cardOfferState = reactive<Record<number, CardOfferState>>({})
-
-const selectedPlan = ref<PlanCatalogItem | null>(null)
-const detailSKUs = ref<PlanSKU[]>([])
-const selectedSKUID = ref(requestedSKUID.value)
-const detailLoading = ref(false)
-const detailError = ref('')
-const checkoutOpen = ref(false)
-const creating = ref(false)
-const actionError = ref('')
-const checkoutError = ref('')
-
-const selectedSubscription = computed(() => subscriptions.value.find(item => item.id === targetSubscriptionID.value) || null)
-const currentOperation = computed<OperationOption>(() => {
-  const base = operationOptions.find(item => item.value === operation.value) || operationOptions[0]!
-  if (operation.value !== 'renew' || !isPermanentSubscription(selectedSubscription.value)) return base
-  return { value: 'renew', label: '补充额度', title: '补充永久套餐额度', description: '选择同商品规格，为永久订阅补充套餐流量。' }
+const subscriptionTable = useRemoteTable<AdminSubscriptionListItem>({
+  offset: subscriptionOffset, limit: subscriptionLimit,
+  fetchPage: ({ signal }) => fetchAccountSubscriptionsPage({
+    eligibleFor: eligibleFor.value, offset: subscriptionOffset.value, limit: subscriptionLimit.value,
+  }, { signal }),
+  errorMessage: '可操作订阅加载失败，请重试。',
 })
-const operationSubscriptions = computed(() => operation.value === 'renew'
-  ? subscriptions.value
-  : subscriptions.value.filter(item => item.status === 'active'))
-const selectedSKU = computed(() => detailSKUs.value.find(item => item.id === selectedSKUID.value) || null)
+const { items: subscriptions, total: subscriptionTotal, hasLoaded: subscriptionsLoaded } = subscriptionTable
+// The selected ID is resolved independently of the current candidate page.
+const targetResource = useRemoteResource<AdminSubscriptionListItem | null>({
+  initial: () => null,
+  fetch: async ({ signal }) => {
+    const id = targetSubscriptionID.value
+    const result = await fetchAccountSubscriptionsPage({ subscriptionId: id, eligibleFor: eligibleFor.value, offset: 0, limit: 1 }, { signal })
+    const selected = result.items.find(item => item.id === id)
+    if (!selected) throw new Error('unavailable subscription')
+    return selected
+  },
+  errorMessage: '目标订阅不存在或不适用于本次操作，请更换订阅。',
+})
+const selectedSubscription = targetResource.data
+const subscriptionLoading = computed(() => subscriptionTable.loading.value || targetResource.loading.value)
+const subscriptionError = computed(() => targetResource.error.value || subscriptionTable.error.value)
+const operationSubscriptions = subscriptions
+const catalog = useRemoteTable<PlanCatalogItem>({
+  offset: planOffset, limit: planLimit,
+  fetchPage: ({ signal }) => fetchPlanCatalogPage({
+    q: query.value || undefined, offset: planOffset.value, limit: planLimit.value, operation: operation.value,
+    planId: operation.value === 'renew' || operation.value === 'addon' ? selectedSubscription.value?.plan_id : undefined,
+    excludePlanId: operation.value === 'change' ? selectedSubscription.value?.plan_id : undefined,
+  }, { signal }),
+  errorMessage: '套餐目录加载失败，请重试。',
+})
+const { items: plans, total: planTotal, loading: planLoading, error: planError } = catalog
+const detail = useCatalogDetail()
+const { plan: selectedPlan, skus: detailSKUs, selectedSkuId: selectedSKUID, selectedSku: selectedSKU,
+  loading: detailLoading, error: detailError, total: skuTotal, offset: skuOffset, limit: skuLimit } = detail
+const currentOperation = computed(() => {
+  const base = operationOptions.find(item => item.value === operation.value) || operationOptions[0]!
+  return operation.value === 'renew' && isPermanentSubscription(selectedSubscription.value)
+    ? { value: 'renew', label: '补充额度', title: '补充永久套餐额度', description: '选择同商品规格，为永久订阅补充套餐流量。' } : base
+})
 const loading = computed(() => subscriptionLoading.value || planLoading.value || detailLoading.value || creating.value)
 const catalogVisible = computed(() => operation.value === 'purchase' || Boolean(selectedSubscription.value))
-const pageTitle = computed(() => checkoutOpen.value ? '确认订单' : selectedPlan.value ? selectedPlan.value.name : currentOperation.value.title)
+const pageTitle = computed(() => checkoutOpen.value ? '确认订单' : selectedPlan.value?.name || currentOperation.value.title)
 const pageDescription = computed(() => checkoutOpen.value ? '核对订单内容后创建订单。' : selectedPlan.value ? '选择规格并继续结算。' : currentOperation.value.description)
 const catalogTitle = computed(() => ({
-  purchase: '购买新的订阅',
-  renew: `${selectedSubscription.value?.plan_name || ''} ${currentOperation.value.label}`,
-  change: '选择新的套餐',
-  addon: `${selectedSubscription.value?.plan_name || ''} 流量包`,
+  purchase: '购买新的订阅', renew: `${selectedSubscription.value?.plan_name || ''} ${currentOperation.value.label}`,
+  change: '选择新的套餐', addon: `${selectedSubscription.value?.plan_name || ''} 流量包`,
 }[operation.value]))
 const catalogDescription = computed(() => ({
   purchase: '选择套餐后进入商品详情。',
   renew: isPermanentSubscription(selectedSubscription.value) ? '选择规格并为永久订阅补充套餐流量。' : '选择规格并延长订阅有效期。',
-  change: '选择要切换到的套餐。',
-  addon: '选择需要增加的流量。',
+  change: '选择要切换到的套餐。', addon: '选择需要增加的流量。',
 }[operation.value]))
 
 function billingLabel(sku: PlanSKU) {
@@ -390,244 +384,116 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value))
 }
 
-function clearCardOffers() {
-  for (const key of Object.keys(cardOfferState)) delete cardOfferState[Number(key)]
-}
 
-async function syncURL(step = '') {
-  const page = Math.floor(planOffset.value / planLimit.value) + 1
-  const params: Record<string, string> = { operation: operation.value }
-  if (targetSubscriptionID.value) params.subscription = String(targetSubscriptionID.value)
-  if (query.value && (operation.value === 'purchase' || operation.value === 'change')) params.q = query.value
-  if (page > 1 && !selectedPlan.value) params.page = String(page)
-  if (selectedPlan.value) params.plan = String(selectedPlan.value.id)
-  if (selectedSKUID.value) params.sku = String(selectedSKUID.value)
-  if (step) params.step = step
-  await router.replace({ query: params })
-}
-
-async function loadSubscriptions() {
-  subscriptionLoading.value = true
-  subscriptionError.value = ''
-  try {
-    const [active, expired] = await Promise.all([
-      fetchAccountSubscriptionsPage({ status: 'active', offset: 0, limit: 100 }),
-      fetchAccountSubscriptionsPage({ status: 'expired', offset: 0, limit: 100 }),
-    ])
-    const exhaustedPermanent = expired.items.filter(item => isPermanentSubscription(item) && item.flow_used >= item.flow_total)
-    subscriptions.value = [...active.items, ...exhaustedPermanent].sort((left, right) => right.id - left.id)
-    if (operation.value !== 'renew' && selectedSubscription.value?.status !== 'active') {
-      targetSubscriptionID.value = 0
-    }
-    if (targetSubscriptionID.value && !subscriptions.value.some(item => item.id === targetSubscriptionID.value)) {
-      targetSubscriptionID.value = 0
-    }
-  } catch (cause: any) {
-    subscriptionError.value = cause?.response?.data?.message || '有效订阅加载失败。'
-  } finally {
-    subscriptionsLoaded.value = true
-    subscriptionLoading.value = false
+function catalogQuery() {
+  return {
+    operation: operation.value,
+    ...(targetSubscriptionID.value ? { subscription: String(targetSubscriptionID.value) } : {}),
+    ...(query.value ? { q: query.value } : {}),
+    page: String(Math.floor(planOffset.value / planLimit.value) + 1), limit: String(planLimit.value),
+    subscription_page: String(Math.floor(subscriptionOffset.value / subscriptionLimit.value) + 1),
+    subscription_limit: String(subscriptionLimit.value),
   }
 }
-
-async function loadCardOffer(plan: PlanCatalogItem) {
-  cardOfferState[plan.id] = { loading: true, offer: null, total: 0 }
-  try {
-    const result = await fetchPlanCatalogSKUs(plan.id, {
-      operation: operation.value,
-      offset: 0,
-      limit: 1,
-    })
-    cardOfferState[plan.id] = {
-      loading: false,
-      offer: result.items[0] || null,
-      total: result.total,
-    }
-  } catch {
-    cardOfferState[plan.id] = { loading: false, offer: null, total: 0 }
-  }
+function detailURL(step = 'detail') {
+  if (!selectedPlan.value) return
+  return router.replace({ query: { ...catalogQuery(), plan: String(selectedPlan.value.id), sku: String(selectedSKUID.value), step } })
 }
-
-async function loadCatalog() {
-  if (operation.value !== 'purchase' && !selectedSubscription.value) return
-  planLoading.value = true
-  planError.value = ''
-  plans.value = []
-  planTotal.value = 0
-  clearCardOffers()
-  try {
-    if ((operation.value === 'renew' || operation.value === 'addon') && selectedSubscription.value) {
-      const plan = await fetchPlanCatalogItem(selectedSubscription.value.plan_id)
-      plans.value = [plan]
-      planTotal.value = 1
-    } else {
-      const result = await fetchPlanCatalogPage({
-        q: query.value || undefined,
-        offset: planOffset.value,
-        limit: planLimit.value,
-      })
-      if (operation.value === 'change') {
-        const currentPlanID = selectedSubscription.value?.plan_id || 0
-        plans.value = result.items.filter(plan => plan.id !== currentPlanID)
-        planTotal.value = result.items.some(plan => plan.id === currentPlanID)
-          ? Math.max(0, result.total - 1)
-          : result.total
-      } else {
-        plans.value = result.items
-        planTotal.value = result.total
-      }
-    }
-    await Promise.all(plans.value.map(loadCardOffer))
-  } catch (cause: any) {
-    planError.value = cause?.response?.data?.message || '套餐目录加载失败。'
-  } finally {
-    planLoading.value = false
-  }
+function openPlanDetail(id: number) { return router.replace({ query: { ...catalogQuery(), plan: String(id), step: 'detail' } }) }
+function backToCatalog() { return router.replace({ query: catalogQuery() }) }
+function startOperation(next: Exclude<PurchaseOperation, 'purchase'>, id: number) {
+  const target = subscriptions.value.find(item => item.id === id) || (selectedSubscription.value?.id === id ? selectedSubscription.value : null)
+  return router.replace({ query: {
+    operation: next, subscription: String(id),
+    ...((next === 'renew' || next === 'addon') && target ? { plan: String(target.plan_id), step: 'detail' } : {}),
+  } })
 }
-
-async function openPlanDetail(planID: number, preserveRequestedSKU = false) {
-  detailLoading.value = true
-  detailError.value = ''
-  actionError.value = ''
-  checkoutError.value = ''
-  try {
-    const [plan, skuResult] = await Promise.all([
-      fetchPlanCatalogItem(planID),
-      fetchPlanCatalogSKUs(planID, {
-        operation: operation.value,
-        offset: 0,
-        limit: 100,
-      }),
-    ])
-    selectedPlan.value = plan
-    detailSKUs.value = skuResult.items
-    const requested = preserveRequestedSKU
-      ? skuResult.items.find(item => item.id === selectedSKUID.value)
-      : undefined
-    selectedSKUID.value = requested?.id || skuResult.items[0]?.id || 0
-    checkoutOpen.value = false
-    await syncURL('detail')
-  } catch (cause: any) {
-    detailError.value = cause?.response?.data?.message || '套餐详情加载失败。'
-  } finally {
-    detailLoading.value = false
-  }
+function selectTargetSubscription(id: number) { return startOperation(operation.value as Exclude<PurchaseOperation, 'purchase'>, id) }
+function changeTarget() { return router.replace({ query: { operation: operation.value } }) }
+function returnToOverview() { return router.replace({ query: { operation: 'purchase' } }) }
+function submitSearch() { return router.replace({ query: { ...catalogQuery(), q: searchDraft.value.trim() || undefined, page: '1' } }) }
+function clearSearch() { searchDraft.value = ''; return submitSearch() }
+function changePlanPage(value: { offset: number; limit: number }) {
+  return router.replace({ query: { ...catalogQuery(), page: String(Math.floor(value.offset / value.limit) + 1), limit: String(value.limit) } })
 }
-
-async function selectDetailSKU(sku: PlanSKU) {
+function changeSubscriptionPage(value: { offset: number; limit: number }) {
+  return router.replace({ query: { ...catalogQuery(), subscription_page: String(Math.floor(value.offset / value.limit) + 1), subscription_limit: String(value.limit) } })
+}
+function selectDetailSKU(sku: PlanSKU) {
+  if (detailLoading.value || detailError.value || !detailSKUs.value.some(item => item.id === sku.id)) return
   selectedSKUID.value = sku.id
-  checkoutError.value = ''
-  await syncURL('detail')
+  return detailURL()
 }
-
-async function openCheckout() {
-  if (!selectedSKU.value) return
-  checkoutError.value = ''
-  checkoutOpen.value = true
-  await syncURL('checkout')
+async function changeSKUPage(value: { offset: number; limit: number }) {
+  if (await detail.changePage(value)) await detailURL()
 }
+async function retryDetail() { if (await detail.retry()) await detailURL() }
+function openCheckout() { if (selectedSKU.value) return detailURL('checkout') }
+function backToDetail() { return detailURL() }
 
-async function backToDetail() {
-  checkoutError.value = ''
-  checkoutOpen.value = false
-  await syncURL('detail')
-}
-
-async function backToCatalog() {
-  checkoutError.value = ''
-  checkoutOpen.value = false
-  selectedPlan.value = null
-  detailSKUs.value = []
-  selectedSKUID.value = 0
-  requestedPlanID.value = 0
-  requestedSKUID.value = 0
-  await syncURL()
-  if (!plans.value.length) await loadCatalog()
-}
-
-async function startOperation(next: Exclude<PurchaseOperation, 'purchase'>, subscriptionID: number) {
-  operation.value = next
-  targetSubscriptionID.value = subscriptionID
-  query.value = ''
-  searchDraft.value = ''
-  planOffset.value = 0
-  selectedPlan.value = null
-  detailSKUs.value = []
-  selectedSKUID.value = 0
+// Route transitions have their own generation: a late target lookup cannot
+// start a detail/catalog request for a route that has already been left.
+let generation = 0, contextKey = '', subscriptionKey = '', catalogKey = '', detailPlanID = 0
+let targetReady: Promise<boolean> = Promise.resolve(true)
+onScopeDispose(() => { generation++ })
+async function applyRoute(force = false) {
+  const current = ++generation
+  const nextOperation = String(route.query.operation || 'purchase')
+  const nextTarget = Math.max(0, Number(route.query.subscription) || 0)
+  const planID = Math.max(0, Number(route.query.plan) || 0)
+  const skuID = Math.max(0, Number(route.query.sku) || 0)
+  const step = String(route.query.step || '')
+  operation.value = operationOptions.some(item => item.value === nextOperation) ? nextOperation as PurchaseOperation : 'purchase'
+  targetSubscriptionID.value = operation.value === 'purchase' ? 0 : nextTarget
+  planLimit.value = [6, 9, 12].includes(Number(route.query.limit)) ? Number(route.query.limit) : 9
+  planOffset.value = (Math.max(1, Number(route.query.page) || 1) - 1) * planLimit.value
+  subscriptionLimit.value = [6, 25, 50].includes(Number(route.query.subscription_limit)) ? Number(route.query.subscription_limit) : 6
+  subscriptionOffset.value = (Math.max(1, Number(route.query.subscription_page) || 1) - 1) * subscriptionLimit.value
+  query.value = String(route.query.q || '').trim()
+  searchDraft.value = query.value
   checkoutOpen.value = false
   checkoutError.value = ''
-  await loadCatalog()
-  if ((next === 'renew' || next === 'addon') && plans.value[0]) {
-    await openPlanDetail(plans.value[0].id)
-  } else {
-    await syncURL()
+  const nextContext = `${operation.value}:${targetSubscriptionID.value}`
+  const contextChanged = contextKey !== nextContext
+  if (contextChanged || force) {
+    contextKey = nextContext
+    detail.close()
+    catalog.invalidate()
+    plans.value = []
+    planTotal.value = 0
+    catalogKey = ''
+    targetResource.reset()
+    targetReady = targetSubscriptionID.value ? targetResource.load() : Promise.resolve(true)
+  }
+  if (!planID || detailPlanID !== planID) detail.close()
+  detailPlanID = planID
+  const nextSubscriptions = `${eligibleFor.value}:${subscriptionOffset.value}:${subscriptionLimit.value}`
+  if (subscriptionKey !== nextSubscriptions || force) {
+    subscriptionKey = nextSubscriptions
+    void subscriptionTable.load()
+  }
+  if (!await targetReady || current !== generation) return
+  if (!catalogVisible.value) return
+  if (planID) {
+    catalog.invalidate()
+    catalogKey = ''
+    if (!force && selectedPlan.value?.id === planID && (!skuID || detailSKUs.value.some(item => item.id === skuID))) {
+      if (skuID) selectedSKUID.value = skuID
+    } else if (!await detail.open(planID, operation.value, skuID) || current !== generation) return
+    checkoutOpen.value = step === 'checkout' && Boolean(selectedSKU.value)
+    return
+  }
+  const nextCatalog = `${contextKey}:${query.value}:${planOffset.value}:${planLimit.value}`
+  if (catalogKey !== nextCatalog || force) {
+    catalogKey = nextCatalog
+    await catalog.load()
   }
 }
-
-async function selectTargetSubscription(subscriptionID: number) {
-  targetSubscriptionID.value = subscriptionID
-  planOffset.value = 0
-  checkoutError.value = ''
-  await loadCatalog()
-  await syncURL()
-}
-
-async function changeTarget() {
-  targetSubscriptionID.value = 0
-  plans.value = []
-  planTotal.value = 0
-  checkoutError.value = ''
-  clearCardOffers()
-  await syncURL()
-}
-
-async function returnToOverview() {
-  operation.value = 'purchase'
-  targetSubscriptionID.value = 0
-  query.value = ''
-  searchDraft.value = ''
-  planOffset.value = 0
-  selectedPlan.value = null
-  detailSKUs.value = []
-  selectedSKUID.value = 0
-  checkoutOpen.value = false
-  checkoutError.value = ''
-  await loadCatalog()
-  await syncURL()
-}
-
-async function submitSearch() {
-  query.value = searchDraft.value.trim()
-  searchDraft.value = query.value
-  planOffset.value = 0
-  await loadCatalog()
-  await syncURL()
-}
-
-async function clearSearch() {
-  query.value = ''
-  searchDraft.value = ''
-  planOffset.value = 0
-  await loadCatalog()
-  await syncURL()
-}
-
-async function changePlanPage(value: { offset: number; limit: number }) {
-  planOffset.value = value.offset
-  planLimit.value = value.limit
-  await loadCatalog()
-  await syncURL()
-}
-
-async function refreshAll() {
-  actionError.value = ''
-  checkoutError.value = ''
-  await loadSubscriptions()
-  await loadCatalog()
-}
+function refreshAll() { actionError.value = ''; return applyRoute(true) }
+watch(() => route.fullPath, () => { void applyRoute() }, { immediate: true })
 
 async function submitOrder() {
-  if (!selectedPlan.value || !selectedSKU.value) return
+  if (creating.value || !selectedPlan.value || !selectedSKU.value) return
   if (operation.value !== 'purchase' && !selectedSubscription.value) {
     checkoutError.value = '请选择目标订阅后再创建订单。'
     return
@@ -646,39 +512,4 @@ async function submitOrder() {
     creating.value = false
   }
 }
-
-watch(
-  () => [route.query.q, route.query.page],
-  async () => {
-    if (selectedPlan.value || checkoutOpen.value) return
-    const nextQuery = String(route.query.q || '').trim()
-    const nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * planLimit.value
-    if (query.value === nextQuery && planOffset.value === nextOffset) return
-    query.value = nextQuery
-    searchDraft.value = nextQuery
-    planOffset.value = nextOffset
-    await loadCatalog()
-  },
-)
-
-onMounted(async () => {
-  await loadSubscriptions()
-
-  if (operation.value !== 'purchase' && !selectedSubscription.value) {
-    await syncURL()
-    return
-  }
-
-  if (requestedPlanID.value) {
-    await openPlanDetail(requestedPlanID.value, true)
-    if (requestedStep === 'checkout' && selectedSKU.value) {
-      checkoutOpen.value = true
-      await syncURL('checkout')
-    }
-    return
-  }
-
-  await loadCatalog()
-  await syncURL()
-})
 </script>

@@ -247,31 +247,31 @@ func (h *handlers) AdminEntityReferencesHandler(w http.ResponseWriter, r *http.R
 		Targets:           make(map[string]entityReference, len(targets)),
 	}
 
-	if err := h.resolveUserReferences(response.Users, sortedEntityIDs(sets["user"])); err != nil {
+	if err := resolveUserReferences(h.db.WithContext(r.Context()), response.Users, sortedEntityIDs(sets["user"])); err != nil {
 		ServerError(w, err)
 		return
 	}
-	if err := h.resolveSubscriptionReferences(response.Subscriptions, sortedEntityIDs(sets["subscription"])); err != nil {
+	if err := resolveSubscriptionReferences(h.db.WithContext(r.Context()), response.Subscriptions, sortedEntityIDs(sets["subscription"])); err != nil {
 		ServerError(w, err)
 		return
 	}
-	if err := h.resolveNodeReferences(response.Nodes, sortedEntityIDs(sets["node"])); err != nil {
+	if err := resolveNodeReferences(h.db.WithContext(r.Context()), response.Nodes, sortedEntityIDs(sets["node"])); err != nil {
 		ServerError(w, err)
 		return
 	}
-	if err := h.resolveProtocolEndpointReferences(response.ProtocolEndpoints, sortedEntityIDs(sets["protocol_endpoint"])); err != nil {
+	if err := resolveProtocolEndpointReferences(h.db.WithContext(r.Context()), response.ProtocolEndpoints, sortedEntityIDs(sets["protocol_endpoint"])); err != nil {
 		ServerError(w, err)
 		return
 	}
-	if err := h.resolvePlanReferences(response.Plans, sortedEntityIDs(sets["plan"])); err != nil {
+	if err := resolvePlanReferences(h.db.WithContext(r.Context()), response.Plans, sortedEntityIDs(sets["plan"])); err != nil {
 		ServerError(w, err)
 		return
 	}
-	if err := h.resolvePlanSKUReferences(response.PlanSKUs, sortedEntityIDs(sets["plan_sku"])); err != nil {
+	if err := resolvePlanSKUReferences(h.db.WithContext(r.Context()), response.PlanSKUs, sortedEntityIDs(sets["plan_sku"])); err != nil {
 		ServerError(w, err)
 		return
 	}
-	if err := h.resolveOrderReferences(response.Orders, sortedEntityIDs(sets["order"])); err != nil {
+	if err := resolveOrderReferences(h.db.WithContext(r.Context()), response.Orders, sortedEntityIDs(sets["order"])); err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -309,12 +309,12 @@ func (h *handlers) AdminEntityReferencesHandler(w http.ResponseWriter, r *http.R
 	OK(w, response)
 }
 
-func (h *handlers) resolveUserReferences(result map[string]entityReference, ids []uint) error {
+func resolveUserReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	var items []model.User
-	if err := h.db.Unscoped().Where("id IN ?", ids).Find(&items).Error; err != nil {
+	if err := db.Unscoped().Select("id, account_name, email, status").Where("id IN ?", ids).Find(&items).Error; err != nil {
 		return err
 	}
 	for _, item := range items {
@@ -339,12 +339,12 @@ type subscriptionReferenceRow struct {
 	SKUName  string `gorm:"column:sku_name"`
 }
 
-func (h *handlers) resolveSubscriptionReferences(result map[string]entityReference, ids []uint) error {
+func resolveSubscriptionReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	var rows []subscriptionReferenceRow
-	if err := h.db.Table("subscriptions").
+	if err := db.Table("subscriptions").
 		Select("subscriptions.id AS id, subscriptions.status AS status, plans.name AS plan_name, plan_skus.name AS sku_name").
 		Joins("LEFT JOIN plans ON plans.id = subscriptions.plan_id").
 		Joins("LEFT JOIN plan_skus ON plan_skus.id = subscriptions.plan_sku_id").
@@ -362,12 +362,12 @@ func (h *handlers) resolveSubscriptionReferences(result map[string]entityReferen
 	return nil
 }
 
-func (h *handlers) resolveNodeReferences(result map[string]entityReference, ids []uint) error {
+func resolveNodeReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	var items []model.Node
-	if err := h.db.Where("id IN ?", ids).Find(&items).Error; err != nil {
+	if err := db.Select("id, name, region, lifecycle_status").Where("id IN ?", ids).Find(&items).Error; err != nil {
 		return err
 	}
 	for _, item := range items {
@@ -388,12 +388,12 @@ type protocolEndpointReferenceRow struct {
 	IsActive bool   `gorm:"column:is_active"`
 }
 
-func (h *handlers) resolveProtocolEndpointReferences(result map[string]entityReference, ids []uint) error {
+func resolveProtocolEndpointReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	var rows []protocolEndpointReferenceRow
-	if err := h.db.Table("protocol_endpoints").
+	if err := db.Table("protocol_endpoints").
 		Select("protocol_endpoints.id AS id, protocol_endpoints.name AS name, protocol_endpoints.protocol AS protocol, protocol_endpoints.is_active AS is_active, nodes.name AS node_name").
 		Joins("LEFT JOIN nodes ON nodes.id = protocol_endpoints.node_id").
 		Where("protocol_endpoints.id IN ?", ids).
@@ -424,12 +424,12 @@ func (h *handlers) resolveProtocolEndpointReferences(result map[string]entityRef
 	return nil
 }
 
-func (h *handlers) resolvePlanReferences(result map[string]entityReference, ids []uint) error {
+func resolvePlanReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	var items []model.Plan
-	if err := h.db.Where("id IN ?", ids).Find(&items).Error; err != nil {
+	if err := db.Select("id, name, slug, is_active").Where("id IN ?", ids).Find(&items).Error; err != nil {
 		return err
 	}
 	for _, item := range items {
@@ -453,12 +453,12 @@ type planSKUReferenceRow struct {
 	IsActive bool   `gorm:"column:is_active"`
 }
 
-func (h *handlers) resolvePlanSKUReferences(result map[string]entityReference, ids []uint) error {
+func resolvePlanSKUReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	var rows []planSKUReferenceRow
-	if err := h.db.Table("plan_skus").
+	if err := db.Table("plan_skus").
 		Select("plan_skus.id AS id, plan_skus.name AS name, plan_skus.is_active AS is_active, plans.name AS plan_name").
 		Joins("LEFT JOIN plans ON plans.id = plan_skus.plan_id").
 		Where("plan_skus.id IN ?", ids).
@@ -479,12 +479,12 @@ func (h *handlers) resolvePlanSKUReferences(result map[string]entityReference, i
 	return nil
 }
 
-func (h *handlers) resolveOrderReferences(result map[string]entityReference, ids []uint) error {
+func resolveOrderReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	var items []model.Order
-	if err := h.db.Where("id IN ?", ids).Find(&items).Error; err != nil {
+	if err := db.Select("id, plan_name, sku_name, trade_no, status").Where("id IN ?", ids).Find(&items).Error; err != nil {
 		return err
 	}
 	for _, item := range items {
@@ -647,7 +647,7 @@ func (h *handlers) TrafficTrendsHandler(w http.ResponseWriter, r *http.Request) 
 	points, recordCount := buildTrafficTrendPoints(from, days, rows)
 
 	subscriptions := make([]entityReference, 0)
-	if facetUserID > 0 {
+	if facetUserID > 0 && r.URL.Query().Get("include_subscriptions") == "true" {
 		var subscriptionRows []subscriptionReferenceRow
 		if err := db.Table("subscriptions").
 			Select("subscriptions.id AS id, subscriptions.status AS status, plans.name AS plan_name, plan_skus.name AS sku_name").

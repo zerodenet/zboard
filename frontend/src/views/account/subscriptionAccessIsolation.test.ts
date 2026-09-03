@@ -17,7 +17,8 @@ describe('subscription access isolation source contract', () => {
   it('manages links from an explicitly selected subscription', () => {
     const source = readSource('./AccountSubscription.vue')
     expect(source).toContain('selectedSubscriptionID')
-    expect(source).toContain('fetchSubscriptionAccess(selectedSubscriptionID.value)')
+    expect(source).toContain('fetchSubscriptionAccess(subscriptionID, { signal })')
+    expect(source).toContain('result.subscription_id !== subscriptionID')
     expect(source).toContain('rotateSubscriptionAccess(subscriptionID)')
     expect(source).toContain('revokeSubscriptionAccess(subscriptionID)')
     expect(source).toContain('其他订阅不会被合并到该链接')

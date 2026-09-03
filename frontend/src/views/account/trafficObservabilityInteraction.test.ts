@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const chartSource = readFileSync(resolve(process.cwd(), 'src/views/account/TrafficObservabilityChart.vue'), 'utf8')
+  .replace(/\r\n/g, '\n')
 
 describe('TrafficObservabilityChart interactions', () => {
   it('exposes pointer and keyboard exploration', () => {

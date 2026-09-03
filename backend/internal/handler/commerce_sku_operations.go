@@ -459,13 +459,14 @@ func parseStrictBool(value string) (bool, error) {
 }
 
 func (h *handlers) PublicPlanSKUListCommerceHandler(w http.ResponseWriter, r *http.Request) {
+	db := h.db.WithContext(r.Context())
 	planID, err := parsePathID(r.URL.Path, "/api/v1/plans/")
 	if err != nil {
 		BadRequest(w, err.Error())
 		return
 	}
 	var planCount int64
-	if err := h.db.Model(&model.Plan{}).Where("id = ? AND is_active = ?", planID, true).Count(&planCount).Error; err != nil {
+	if err := db.Model(&model.Plan{}).Where("id = ? AND is_active = ?", planID, true).Count(&planCount).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -478,7 +479,7 @@ func (h *handlers) PublicPlanSKUListCommerceHandler(w http.ResponseWriter, r *ht
 		BadRequest(w, err.Error())
 		return
 	}
-	query := h.db.Model(&model.PlanSKU{}).Where("plan_id = ? AND is_active = ?", planID, true)
+	query := db.Model(&model.PlanSKU{}).Where("plan_id = ? AND is_active = ?", planID, true)
 	if search := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))); search != "" {
 		if len(search) > 128 {
 			BadRequest(w, "q must not exceed 128 bytes")
@@ -502,6 +503,30 @@ func (h *handlers) PublicPlanSKUListCommerceHandler(w http.ResponseWriter, r *ht
 		BadRequest(w, err.Error())
 		return
 	}
+	anchorID, err := positiveQueryID(r.URL.Query(), "anchor_id")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	if anchorID > 0 {
+		var anchor model.PlanSKU
+		if err := query.Session(&gorm.Session{}).Where("id = ?", anchorID).First(&anchor).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				NotFound(w)
+			} else {
+				ServerError(w, err)
+			}
+			return
+		}
+		var preceding int64
+		if err := query.Session(&gorm.Session{}).
+			Where("sort_order < ? OR (sort_order = ? AND id < ?)", anchor.SortOrder, anchor.SortOrder, anchor.ID).
+			Count(&preceding).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		offset = int(preceding) / limit * limit
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		ServerError(w, err)
@@ -512,7 +537,7 @@ func (h *handlers) PublicPlanSKUListCommerceHandler(w http.ResponseWriter, r *ht
 		ServerError(w, err)
 		return
 	}
-	decorated, err := decoratePlanSKUs(h.db, items)
+	decorated, err := decoratePlanSKUs(db, items)
 	if err != nil {
 		ServerError(w, err)
 		return
@@ -779,6 +804,10 @@ func loadPlanSKUCountsCommerce(db *gorm.DB, planIDs []uint, publicCatalog bool) 
 	if !publicCatalog {
 		return loadPlanSKUCounts(db, planIDs)
 	}
+	return loadPlanSKUCountsForOperation(db, planIDs, skuOperationPurchase)
+}
+
+func loadPlanSKUCountsForOperation(db *gorm.DB, planIDs []uint, operation string) (map[uint]planSKUCountRow, error) {
 	counts := make(map[uint]planSKUCountRow, len(planIDs))
 	if len(planIDs) == 0 {
 		return counts, nil
@@ -786,7 +815,7 @@ func loadPlanSKUCountsCommerce(db *gorm.DB, planIDs []uint, publicCatalog bool) 
 	rows := make([]planSKUCountRow, 0, len(planIDs))
 	if err := db.Table("plan_skus").
 		Select("plan_skus.plan_id, COUNT(*) AS sku_count, COUNT(*) AS active_sku_count").
-		Joins("JOIN plan_sku_operations ON plan_sku_operations.plan_sku_id = plan_skus.id AND plan_sku_operations.operation = ?", skuOperationPurchase).
+		Joins("JOIN plan_sku_operations ON plan_sku_operations.plan_sku_id = plan_skus.id AND plan_sku_operations.operation = ?", operation).
 		Where("plan_skus.plan_id IN ? AND plan_skus.is_active = ?", planIDs, true).
 		Group("plan_skus.plan_id").Scan(&rows).Error; err != nil {
 		return nil, err
@@ -798,20 +827,24 @@ func loadPlanSKUCountsCommerce(db *gorm.DB, planIDs []uint, publicCatalog bool) 
 }
 
 func loadPrimaryPlanSKUsCommerce(db *gorm.DB, planIDs []uint) (map[uint]model.PlanSKU, error) {
+	return loadPrimaryPlanSKUsForOperation(db, planIDs, skuOperationPurchase)
+}
+
+func loadPrimaryPlanSKUsForOperation(db *gorm.DB, planIDs []uint, operation string) (map[uint]model.PlanSKU, error) {
 	items := make(map[uint]model.PlanSKU, len(planIDs))
 	if len(planIDs) == 0 {
 		return items, nil
 	}
 	rows := make([]model.PlanSKU, 0, len(planIDs))
 	if err := db.Table("plan_skus AS candidate").
-		Joins("JOIN plan_sku_operations AS candidate_operation ON candidate_operation.plan_sku_id = candidate.id AND candidate_operation.operation = ?", skuOperationPurchase).
+		Joins("JOIN plan_sku_operations AS candidate_operation ON candidate_operation.plan_sku_id = candidate.id AND candidate_operation.operation = ?", operation).
 		Where("candidate.plan_id IN ? AND candidate.is_active = ?", planIDs, true).
 		Where(`NOT EXISTS (
 			SELECT 1
 			FROM plan_skus AS earlier
 			JOIN plan_sku_operations AS earlier_operation
 			  ON earlier_operation.plan_sku_id = earlier.id
-			 AND earlier_operation.operation = 'purchase'
+			 AND earlier_operation.operation = ?
 			WHERE earlier.plan_id = candidate.plan_id
 			  AND earlier.is_active = 1
 			  AND (
@@ -819,7 +852,7 @@ func loadPrimaryPlanSKUsCommerce(db *gorm.DB, planIDs []uint) (map[uint]model.Pl
 			    OR (earlier.price_cents = candidate.price_cents AND earlier.sort_order < candidate.sort_order)
 			    OR (earlier.price_cents = candidate.price_cents AND earlier.sort_order = candidate.sort_order AND earlier.id < candidate.id)
 			  )
-		)`).
+		)`, operation).
 		Order("candidate.plan_id asc").Find(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -830,12 +863,17 @@ func loadPrimaryPlanSKUsCommerce(db *gorm.DB, planIDs []uint) (map[uint]model.Pl
 }
 
 func (h *handlers) PlanListCommerceHandler(w http.ResponseWriter, r *http.Request) {
+	db := h.db.WithContext(r.Context())
+	scope, err := parseCatalogScope(r.URL.Query())
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
 	plans := make([]model.Plan, 0)
 	claims, claimErr := h.authFromRequest(r)
 	isAdmin := claimErr == nil && claims.IsAdmin
 	paged := r.URL.Query().Get("paged") == "true"
 	offset, limit := 0, 50
-	var err error
 	if paged {
 		offset, limit, err = parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
 		if err != nil {
@@ -843,7 +881,7 @@ func (h *handlers) PlanListCommerceHandler(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
-	query := h.db.Model(&model.Plan{}).Order("sort_order asc, id desc")
+	query := scope.apply(db.Model(&model.Plan{})).Order("sort_order asc, id desc")
 	if !isAdmin {
 		query = query.Where("is_active = 1")
 	} else if !parseBoolQuery(r.URL.Query().Get("include_inactive")) {
@@ -878,9 +916,13 @@ func (h *handlers) PlanListCommerceHandler(w http.ResponseWriter, r *http.Reques
 		query = query.Offset(offset).Limit(limit).Preload("NodeGroup")
 	} else {
 		query = query.Preload("SKUs", func(db *gorm.DB) *gorm.DB {
-			if !isAdmin {
+			if !isAdmin || scope.Operation != "" {
+				operation := scope.Operation
+				if operation == "" {
+					operation = skuOperationPurchase
+				}
 				db = db.Where("is_active = ?", true).
-					Where("EXISTS (SELECT 1 FROM plan_sku_operations WHERE plan_sku_operations.plan_sku_id = plan_skus.id AND plan_sku_operations.operation = ?)", skuOperationPurchase)
+					Where("EXISTS (SELECT 1 FROM plan_sku_operations WHERE plan_sku_operations.plan_sku_id = plan_skus.id AND plan_sku_operations.operation = ?)", operation)
 			}
 			return db.Order("sort_order asc, id asc")
 		}).Preload("NodeGroup")
@@ -897,7 +939,12 @@ func (h *handlers) PlanListCommerceHandler(w http.ResponseWriter, r *http.Reques
 	for _, plan := range plans {
 		planIDs = append(planIDs, plan.ID)
 	}
-	counts, err := loadPlanSKUCountsCommerce(h.db, planIDs, !isAdmin)
+	var counts map[uint]planSKUCountRow
+	if scope.Operation != "" {
+		counts, err = loadPlanSKUCountsForOperation(db, planIDs, scope.Operation)
+	} else {
+		counts, err = loadPlanSKUCountsCommerce(db, planIDs, !isAdmin)
+	}
 	if err != nil {
 		ServerError(w, err)
 		return
@@ -905,7 +952,11 @@ func (h *handlers) PlanListCommerceHandler(w http.ResponseWriter, r *http.Reques
 	// Keep the paged catalog payload stable when the caller is an administrator.
 	// Admin authentication may widen filters/counts, but storefront entitlement
 	// fields must not disappear merely because the same public URL carries a JWT.
-	primarySKUs, err := loadPrimaryPlanSKUsCommerce(h.db, planIDs)
+	operation := scope.Operation
+	if operation == "" {
+		operation = skuOperationPurchase
+	}
+	primarySKUs, err := loadPrimaryPlanSKUsForOperation(db, planIDs, operation)
 	if err != nil {
 		ServerError(w, err)
 		return
@@ -924,13 +975,14 @@ func (h *handlers) PlanListCommerceHandler(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *handlers) PublicPlanDetailCommerceHandler(w http.ResponseWriter, r *http.Request) {
+	db := h.db.WithContext(r.Context())
 	id, err := parsePathID(r.URL.Path, "/api/v1/plans/")
 	if err != nil {
 		BadRequest(w, err.Error())
 		return
 	}
 	var plan model.Plan
-	if err := h.db.Preload("NodeGroup").Where("is_active = ?", true).First(&plan, id).Error; err != nil {
+	if err := db.Preload("NodeGroup").Where("is_active = ?", true).First(&plan, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			NotFound(w)
 			return
@@ -938,12 +990,12 @@ func (h *handlers) PublicPlanDetailCommerceHandler(w http.ResponseWriter, r *htt
 		ServerError(w, err)
 		return
 	}
-	counts, err := loadPlanSKUCountsCommerce(h.db, []uint{plan.ID}, true)
+	counts, err := loadPlanSKUCountsCommerce(db, []uint{plan.ID}, true)
 	if err != nil {
 		ServerError(w, err)
 		return
 	}
-	primarySKUs, err := loadPrimaryPlanSKUsCommerce(h.db, []uint{plan.ID})
+	primarySKUs, err := loadPrimaryPlanSKUsCommerce(db, []uint{plan.ID})
 	if err != nil {
 		ServerError(w, err)
 		return

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { API_BASE, getAuthToken } from './client'
+import { API_BASE, getAuthToken, type ApiRequestOptions } from './client'
 import { normalizeApiErrorPayload } from '../utils/apiError'
 
 export interface SubscriptionAccess {
@@ -49,8 +49,8 @@ function accessPath(subscriptionId: number) {
   return `/account/subscriptions/${subscriptionId}/access`
 }
 
-export async function fetchSubscriptionAccess(subscriptionId: number): Promise<SubscriptionAccess> {
-  return unwrap<SubscriptionAccess>(await subscriptionAccessApi.get(accessPath(subscriptionId)))
+export async function fetchSubscriptionAccess(subscriptionId: number, options: ApiRequestOptions = {}): Promise<SubscriptionAccess> {
+  return unwrap<SubscriptionAccess>(await subscriptionAccessApi.get(accessPath(subscriptionId), { signal: options.signal }))
 }
 
 export async function rotateSubscriptionAccess(subscriptionId: number): Promise<SubscriptionAccess> {

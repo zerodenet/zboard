@@ -19,13 +19,13 @@ const (
 )
 
 type trafficNodeSeriesPoint struct {
-	RecordAt      time.Time `json:"record_at" gorm:"column:record_at"`
-	NodeID        uint      `json:"node_id" gorm:"column:node_id"`
-	RawBytes      int64     `json:"raw_bytes" gorm:"column:raw_bytes"`
-	UploadBytes   int64     `json:"upload_bytes" gorm:"column:upload_bytes"`
-	DownloadBytes int64     `json:"download_bytes" gorm:"column:download_bytes"`
-	UsedBytes     int64     `json:"used_bytes" gorm:"column:used_bytes"`
-	RecordCount   int64     `json:"record_count" gorm:"column:record_count"`
+	RecordAt      trafficBucketTime `json:"record_at" gorm:"column:record_at"`
+	NodeID        uint              `json:"node_id" gorm:"column:node_id"`
+	RawBytes      int64             `json:"raw_bytes" gorm:"column:raw_bytes"`
+	UploadBytes   int64             `json:"upload_bytes" gorm:"column:upload_bytes"`
+	DownloadBytes int64             `json:"download_bytes" gorm:"column:download_bytes"`
+	UsedBytes     int64             `json:"used_bytes" gorm:"column:used_bytes"`
+	RecordCount   int64             `json:"record_count" gorm:"column:record_count"`
 }
 
 type trafficNodeSeriesResponse struct {
@@ -85,6 +85,7 @@ func (h *handlers) trafficNodeSeriesHandler(w http.ResponseWriter, r *http.Reque
 		BadRequest(w, err.Error())
 		return
 	}
+	bucket = bucket.forDB(h.db)
 	window, err := parseHistoryWindow(r.URL.Query(), 7)
 	if err != nil {
 		BadRequest(w, err.Error())
@@ -177,7 +178,7 @@ func (h *handlers) trafficNodeSeriesHandler(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	nodeMap := prefillEntityReferences("node", nodeIDs)
-	if err := h.resolveNodeReferences(nodeMap, sortedEntityIDs(nodeIDs)); err != nil {
+	if err := resolveNodeReferences(h.db.WithContext(r.Context()), nodeMap, sortedEntityIDs(nodeIDs)); err != nil {
 		ServerError(w, err)
 		return
 	}
