@@ -64,6 +64,12 @@ var preReleaseBaselineTables = []string{
 	"users",
 }
 
+// preReleaseReconciledTables are included in a fresh squashed baseline but are
+// installed additively for databases that recorded the baseline before those
+// operational resources were introduced. They must not become requirements of
+// the legacy baseline signature checked before route-time reconciliation.
+var preReleaseReconciledTables = []string{"announcements", "announcement_reads"}
+
 var preReleaseBaselineColumns = []struct {
 	table      string
 	column     string
@@ -116,6 +122,9 @@ var preReleaseBaselineIndexes = []struct {
 func RunMigrations(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("database is required")
+	}
+	if IsSQLite(db) {
+		return runSQLiteMigrations(db)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {

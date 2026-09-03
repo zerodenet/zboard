@@ -24,10 +24,13 @@ describe('commerce purchase experience source contract', () => {
 
   it('keeps the public catalog compact and moves specifications into product detail', () => {
     const source = readSource('./PublicPlans.vue')
-    expect(source).toContain('storefront-catalog-toolbar')
+    expect(source).toContain('WorkbenchFilterBar')
     expect(source).toContain('CommercePlanCard')
     expect(source).toContain('CommercePlanDetail')
-    expect(source).toContain("fetchPlanCatalogSKUs(planID, { operation: 'purchase', offset: 0, limit: 100 })")
+    expect(source).toContain('useCatalogDetail')
+    expect(source).toContain('@change-sku-page="changeSKUPage"')
+    expect(source).toContain(':sku-total="skuTotal"')
+    expect(source).not.toContain('limit: 100')
     expect(source).not.toContain('commerce-offer-tabs')
     expect(source).not.toContain('skuPage')
     expect(source).not.toContain('skuPager')

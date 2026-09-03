@@ -35,7 +35,7 @@ func main() {
 	if err := c.Validate(); err != nil {
 		log.Fatalf("config validation failed: %v", err)
 	}
-	if err := datastore.ValidateDSN(c.DataSource, c.Environment == cfgpkg.EnvironmentProduction); err != nil {
+	if err := datastore.ValidateDataSource(c.DatabaseDriver, c.DataSource, c.Environment == cfgpkg.EnvironmentProduction); err != nil {
 		log.Fatalf("config validation failed: %v", err)
 	}
 	credentialCipher, err := security.NewCredentialCipher(c.CredentialEncryptionKey)
@@ -43,7 +43,11 @@ func main() {
 		log.Fatalf("credential encryption init failed: %v", err)
 	}
 
-	db, err := datastore.Open(c.DataSource)
+	db, err := datastore.OpenWithDriver(c.DatabaseDriver, c.DataSource, datastore.PoolConfig{
+		MaxOpenConnections: c.DatabaseMaxOpenConnections,
+		MaxIdleConnections: c.DatabaseMaxIdleConnections,
+		ConnectionLifetime: time.Duration(c.DatabaseConnectionMaxLifetimeSecs) * time.Second,
+	})
 	if err != nil {
 		log.Fatalf("database init failed: %v", err)
 	}
@@ -88,7 +92,8 @@ func main() {
 	log.Printf("starting zboard service")
 	log.Printf("version: %s", version.FullVersion())
 	log.Printf("environment: %s", c.Environment)
-	log.Printf("config datasource: %s", datastore.QuoteDSN(c.DataSource))
+	log.Printf("config database driver: %s", c.DatabaseDriver)
+	log.Printf("config datasource: %s", datastore.QuoteDataSource(c.DatabaseDriver, c.DataSource))
 
 	closeZeroEventSpool, err := server.RegisterRoutes(
 		srv,

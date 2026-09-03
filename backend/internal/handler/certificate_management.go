@@ -1304,6 +1304,9 @@ func (h *handlers) StartCertificateRenewalWorker() {
 }
 
 func (h *handlers) scanCertificateRenewals(now time.Time) {
+	if h.backgroundWorkPaused() {
+		return
+	}
 	_ = h.db.Model(&model.ManagedCertificate{}).
 		Where("not_after IS NOT NULL AND not_after <= ? AND status NOT IN ?", now, []string{certificateStatusIssuing, certificateStatusRenewing, certificateStatusExpired}).
 		Updates(map[string]interface{}{"status": certificateStatusExpired, "last_error": "certificate has expired"}).Error

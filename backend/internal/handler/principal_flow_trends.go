@@ -1,14 +1,17 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sort"
-	"strings"
 	"time"
 )
+
+const principalFlowTrendReplayTimeout = 3 * time.Second
 
 type principalFlowHistoryRow struct {
 	ID                      uint64    `gorm:"column:id"`
@@ -91,8 +94,14 @@ func (h *handlers) TrafficTrendsWithPrincipalFlowReplayHandler(w http.ResponseWr
 		copyRecordedResponse(w, recorded)
 		return
 	}
-	baseline, events, boundaries, err := h.loadPrincipalFlowTrendTimeline(scopeType, scopeID, from, to.AddDate(0, 0, 1))
+	replayContext, cancel := context.WithTimeout(r.Context(), principalFlowTrendReplayTimeout)
+	defer cancel()
+	baseline, events, boundaries, err := h.loadPrincipalFlowTrendTimeline(replayContext, scopeType, scopeID, from, to.AddDate(0, 0, 1))
 	if err != nil {
+		if errors.Is(replayContext.Err(), context.DeadlineExceeded) && r.Context().Err() == nil {
+			copyRecordedResponse(w, recorded)
+			return
+		}
 		ServerError(w, err)
 		return
 	}
@@ -100,64 +109,71 @@ func (h *handlers) TrafficTrendsWithPrincipalFlowReplayHandler(w http.ResponseWr
 	writeJSONResponse(w, http.StatusOK, wire.Message, response, wire.Error)
 }
 
-func (h *handlers) loadPrincipalFlowTrendTimeline(scopeType string, scopeID uint, from, end time.Time) ([]principalFlowHistoryRow, []principalFlowHistoryRow, []principalFlowBoundaryRow, error) {
+func (h *handlers) loadPrincipalFlowTrendTimeline(ctx context.Context, scopeType string, scopeID uint, from, end time.Time) ([]principalFlowHistoryRow, []principalFlowHistoryRow, []principalFlowBoundaryRow, error) {
 	column, err := principalFlowScopeColumn(scopeType)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	// One state immediately before the requested interval for each node/principal
-	// is enough to establish the interval baseline. NOT EXISTS keeps this query
-	// compatible with MySQL variants without requiring window functions.
-	baselineSQL := fmt.Sprintf(`
-SELECT o.id, o.node_id, o.core_instance_id, o.session_registry_revision,
-       o.principal_key, o.active_flows, o.observed_at
-FROM principal_flow_observations o
-WHERE o.%[1]s = ? AND o.observed_at < ?
-  AND NOT EXISTS (
-    SELECT 1 FROM principal_flow_observations newer
-    WHERE newer.%[1]s = ?
-      AND newer.node_id = o.node_id
-      AND newer.principal_key = o.principal_key
-      AND newer.observed_at < ?
-      AND (
-        newer.observed_at > o.observed_at
-        OR (newer.observed_at = o.observed_at
-            AND newer.core_instance_id = o.core_instance_id
-            AND newer.session_registry_revision > o.session_registry_revision)
-        OR (newer.observed_at = o.observed_at
-            AND newer.core_instance_id = o.core_instance_id
-            AND newer.session_registry_revision = o.session_registry_revision
-            AND newer.id > o.id)
-      )
-  )`, column)
+	baselineSQL := principalFlowBaselineSQL(column)
 	var baseline []principalFlowHistoryRow
-	if err := h.db.Raw(baselineSQL, scopeID, from, scopeID, from).Scan(&baseline).Error; err != nil {
+	db := h.db.WithContext(ctx)
+	if err := db.Raw(baselineSQL, scopeType, scopeID, from, scopeID, from).Scan(&baseline).Error; err != nil {
 		return nil, nil, nil, err
 	}
 
 	var events []principalFlowHistoryRow
-	if err := h.db.Table("principal_flow_observations").
+	if err := db.Table("principal_flow_observations").
 		Select("id, node_id, core_instance_id, session_registry_revision, principal_key, active_flows, observed_at").
 		Where(column+" = ? AND observed_at >= ? AND observed_at < ?", scopeID, from, end).
 		Find(&events).Error; err != nil {
 		return nil, nil, nil, err
 	}
 
-	// Generation resets are already persisted by the current projection path.
-	// They are timeline boundaries, not connection samples: when one occurs all
-	// previously known Principal state for that node must be removed before new
-	// generation observations at the same timestamp are applied.
+	// The baseline query has already discarded generations closed before the
+	// interval. Only boundaries inside the requested range can affect replay.
 	var boundaries []principalFlowBoundaryRow
-	if err := h.db.Table("principal_flow_scope_observations").
+	if err := db.Table("principal_flow_scope_observations").
 		Select("id, node_id, core_instance_id, source, observed_at").
-		Where("scope_type = ? AND scope_id = ? AND source <> ? AND observed_at < ?", scopeType, scopeID, "lifecycle", end).
+		Where("scope_type = ? AND scope_id = ? AND source = ? AND observed_at >= ? AND observed_at < ?", scopeType, scopeID, "generation_reset", from, end).
 		Find(&boundaries).Error; err != nil {
 		return nil, nil, nil, err
 	}
 
-	baseline = filterPrincipalFlowBaselineAfterBoundaries(baseline, boundaries, from)
-	return baseline, events, boundariesInRange(boundaries, from, end), nil
+	return baseline, events, boundaries, nil
+}
+
+func principalFlowBaselineSQL(column string) string {
+	return fmt.Sprintf(`
+WITH latest_boundaries AS (
+  SELECT node_id, core_instance_id, observed_at
+  FROM (
+    SELECT node_id, core_instance_id, observed_at,
+           ROW_NUMBER() OVER (PARTITION BY node_id ORDER BY observed_at DESC, id DESC) AS boundary_rank
+    FROM principal_flow_scope_observations
+    WHERE scope_type = ? AND scope_id = ? AND source = 'generation_reset' AND observed_at < ?
+  ) boundary_rows
+  WHERE boundary_rank = 1
+), ranked_observations AS (
+  SELECT o.id, o.node_id, o.core_instance_id, o.session_registry_revision,
+         o.principal_key, o.active_flows, o.observed_at,
+         ROW_NUMBER() OVER (
+           PARTITION BY o.node_id, o.principal_key
+           ORDER BY o.observed_at DESC, o.session_registry_revision DESC, o.id DESC
+         ) AS observation_rank
+  FROM principal_flow_observations o
+  LEFT JOIN latest_boundaries boundary ON boundary.node_id = o.node_id
+  WHERE o.%[1]s = ? AND o.observed_at < ?
+    AND (
+      boundary.node_id IS NULL
+      OR o.observed_at > boundary.observed_at
+      OR (o.observed_at = boundary.observed_at AND o.core_instance_id = boundary.core_instance_id)
+    )
+)
+SELECT id, node_id, core_instance_id, session_registry_revision,
+       principal_key, active_flows, observed_at
+FROM ranked_observations
+WHERE observation_rank = 1 AND active_flows > 0`, column)
 }
 
 func principalFlowScopeColumn(scopeType string) (string, error) {
@@ -169,45 +185,6 @@ func principalFlowScopeColumn(scopeType string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported Principal flow scope %q", scopeType)
 	}
-}
-
-func filterPrincipalFlowBaselineAfterBoundaries(baseline []principalFlowHistoryRow, boundaries []principalFlowBoundaryRow, from time.Time) []principalFlowHistoryRow {
-	latest := make(map[uint]principalFlowBoundaryRow)
-	for _, boundary := range boundaries {
-		if !boundary.ObservedAt.Before(from) {
-			continue
-		}
-		current, exists := latest[boundary.NodeID]
-		if !exists || boundary.ObservedAt.After(current.ObservedAt) || (boundary.ObservedAt.Equal(current.ObservedAt) && boundary.ID > current.ID) {
-			latest[boundary.NodeID] = boundary
-		}
-	}
-	filtered := make([]principalFlowHistoryRow, 0, len(baseline))
-	for _, row := range baseline {
-		boundary, exists := latest[row.NodeID]
-		if !exists {
-			filtered = append(filtered, row)
-			continue
-		}
-		if row.ObservedAt.After(boundary.ObservedAt) {
-			filtered = append(filtered, row)
-			continue
-		}
-		if row.ObservedAt.Equal(boundary.ObservedAt) && boundary.Source == "generation_reset" && strings.TrimSpace(row.CoreInstanceID) == strings.TrimSpace(boundary.CoreInstanceID) {
-			filtered = append(filtered, row)
-		}
-	}
-	return filtered
-}
-
-func boundariesInRange(boundaries []principalFlowBoundaryRow, from, end time.Time) []principalFlowBoundaryRow {
-	result := make([]principalFlowBoundaryRow, 0, len(boundaries))
-	for _, boundary := range boundaries {
-		if !boundary.ObservedAt.Before(from) && boundary.ObservedAt.Before(end) {
-			result = append(result, boundary)
-		}
-	}
-	return result
 }
 
 func applyPrincipalFlowReplay(response *trafficTrendResponse, from time.Time, baseline, events []principalFlowHistoryRow, boundaries []principalFlowBoundaryRow) {

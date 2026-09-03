@@ -44,9 +44,11 @@ export function useRemoteTable<
   const error = ref('')
   const requests = createRequestGuard()
   let controller: AbortController | null = null
+  let disposed = false
   const loading = computed(() => initialLoading.value || refreshing.value)
 
   async function load(): Promise<boolean> {
+    if (disposed) return false
     controller?.abort()
     controller = new AbortController()
     const currentController = controller
@@ -68,11 +70,12 @@ export function useRemoteTable<
       if (options.offset.value >= page.total && options.offset.value > 0) {
         options.offset.value = Math.max(0, Math.floor(Math.max(0, page.total - 1) / options.limit.value) * options.limit.value)
         await options.onOffsetCorrected?.()
+        if (!requests.isCurrent(request) || disposed) return false
         return load()
       }
 
       await options.onPageLoaded?.(page)
-      return true
+      return requests.isCurrent(request)
     } catch (cause) {
       if (!requests.isCurrent(request)) return false
       if (currentController.signal.aborted) return false
@@ -94,7 +97,17 @@ export function useRemoteTable<
     refreshing.value = false
   }
 
-  if (getCurrentScope()) onScopeDispose(invalidate)
+  function reset() {
+    invalidate()
+    items.value = []
+    total.value = 0
+    aggregates.value = {} as A
+    facets.value = {} as F
+    hasLoaded.value = false
+    error.value = ''
+  }
 
-  return { items, total, aggregates, facets, loading, initialLoading, refreshing, hasLoaded, error, load, invalidate }
+  if (getCurrentScope()) onScopeDispose(() => { disposed = true; invalidate() })
+
+  return { items, total, aggregates, facets, loading, initialLoading, refreshing, hasLoaded, error, load, invalidate, reset }
 }

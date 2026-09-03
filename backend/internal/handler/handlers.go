@@ -461,6 +461,9 @@ type handlers struct {
 	zeroEventAuthFailures    sync.Map
 	expiryReconcileMu        sync.Mutex
 	lastExpiryReconcile      time.Time
+	maintenanceMu            sync.RWMutex
+	maintenanceState         maintenanceState
+	maintenanceLoadedAt      time.Time
 }
 
 func NewHandlers(db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string) (*handlers, error) {
@@ -685,6 +688,27 @@ func (h *handlers) InstallationMiddleware(next http.HandlerFunc) http.HandlerFun
 		if count == 0 {
 			writeJSON(w, http.StatusPreconditionRequired, "zboard installation is required", map[string]string{"setup_url": "/setup"})
 			return
+		}
+		state, err := h.loadMaintenanceState(false)
+		if err != nil {
+			ServerError(w, err)
+			return
+		}
+		writeLocked := state.MigrationInProgress || state.MigrationCutoverPending
+		unsafeMethod := r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions
+		cutoverConfirmation := state.MigrationCutoverPending && r.Method == http.MethodPut && r.URL.Path == "/api/v1/admin/maintenance"
+		if writeLocked && unsafeMethod && r.URL.Path != "/api/v1/auth/login" && !cutoverConfirmation {
+			w.Header().Set("Retry-After", "60")
+			writeJSON(w, http.StatusServiceUnavailable, "database migration locks all writes until cutover is confirmed", map[string]interface{}{"maintenance": state})
+			return
+		}
+		if state.Enabled && !maintenanceRouteAllowedWithoutAdmin(r.URL.Path) {
+			claims, authErr := h.authFromRequest(r)
+			if authErr != nil || !claims.IsAdmin {
+				w.Header().Set("Retry-After", "60")
+				writeJSON(w, http.StatusServiceUnavailable, state.Title, map[string]interface{}{"maintenance": state})
+				return
+			}
 		}
 		next(w, r)
 	}
@@ -5523,7 +5547,7 @@ func (h *handlers) SubscriptionsHandler(w http.ResponseWriter, r *http.Request) 
 
 	paged := wantsPagedList(r)
 	var subs []model.Subscription
-	query := h.db.Model(&model.Subscription{})
+	query := h.db.WithContext(r.Context()).Model(&model.Subscription{})
 	if adminScope || paged {
 		query = query.
 			Joins("LEFT JOIN users ON users.id = subscriptions.user_id").
@@ -5533,6 +5557,17 @@ func (h *handlers) SubscriptionsHandler(w http.ResponseWriter, r *http.Request) 
 	if scopeUserID != 0 {
 		query = query.Where("subscriptions.user_id = ?", scopeUserID)
 	}
+	if id, parseErr := positiveQueryID(r.URL.Query(), "subscription_id"); parseErr != nil {
+		BadRequest(w, parseErr.Error())
+		return
+	} else if id > 0 {
+		query = query.Where("subscriptions.id = ?", id)
+	}
+	query, err = applySubscriptionManagementFilter(query, strings.TrimSpace(r.URL.Query().Get("eligible_for")), now)
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
 	if status := strings.TrimSpace(r.URL.Query().Get("status")); status != "" {
 		if !isValidSubscriptionStatus(status) {
 			BadRequest(w, "invalid status")
@@ -5540,21 +5575,31 @@ func (h *handlers) SubscriptionsHandler(w http.ResponseWriter, r *http.Request) 
 		}
 		query = applyEffectiveSubscriptionStatusFilter(query, status, now)
 	}
-	if adminScope {
+	if adminScope || paged {
 		if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
 			if len(search) > 128 {
 				BadRequest(w, "q must not exceed 128 bytes")
 				return
 			}
 			pattern := "%" + strings.ToLower(search) + "%"
-			condition := `LOWER(users.email) LIKE ? OR LOWER(plans.name) LIKE ? OR LOWER(plan_skus.name) LIKE ?`
-			args := []interface{}{pattern, pattern, pattern}
+			condition := `LOWER(plans.name) LIKE ? OR LOWER(plan_skus.name) LIKE ?`
+			args := []interface{}{pattern, pattern}
+			if adminScope {
+				condition += " OR LOWER(users.email) LIKE ?"
+				args = append(args, pattern)
+			}
 			if parsed, parseErr := strconv.ParseUint(search, 10, 64); parseErr == nil && parsed > 0 {
-				condition += " OR subscriptions.id = ? OR subscriptions.user_id = ? OR subscriptions.plan_id = ?"
-				args = append(args, parsed, parsed, parsed)
+				condition += " OR subscriptions.id = ?"
+				args = append(args, parsed)
+				if adminScope {
+					condition += " OR subscriptions.user_id = ? OR subscriptions.plan_id = ?"
+					args = append(args, parsed, parsed)
+				}
 			}
 			query = query.Where(condition, args...)
 		}
+	}
+	if adminScope {
 		if quota := strings.TrimSpace(r.URL.Query().Get("quota")); quota != "" {
 			if !isValidSubscriptionQuotaFilter(quota) {
 				BadRequest(w, "invalid quota")
@@ -6048,7 +6093,7 @@ func (h *handlers) TrafficSummaryHandler(w http.ResponseWriter, r *http.Request)
 	now := time.Now().UTC()
 
 	var totalUsed int64
-	usedQuery := h.db.Model(&model.TrafficRecord{}).Select("COALESCE(SUM(used_bytes), 0)")
+	usedQuery := h.db.WithContext(r.Context()).Model(&model.TrafficRecord{}).Select("COALESCE(SUM(used_bytes), 0)")
 	if userFilter > 0 {
 		usedQuery = usedQuery.Where("user_id = ?", userFilter)
 	}
@@ -6058,7 +6103,7 @@ func (h *handlers) TrafficSummaryHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	var currentRemain int64
-	subQuery := h.db.Model(&model.Subscription{})
+	subQuery := h.db.WithContext(r.Context()).Model(&model.Subscription{})
 	if userFilter > 0 {
 		subQuery = subQuery.Where("user_id = ?", userFilter)
 	}
@@ -6071,7 +6116,7 @@ func (h *handlers) TrafficSummaryHandler(w http.ResponseWriter, r *http.Request)
 
 	todayStart := now.Truncate(24 * time.Hour)
 	var usedToday int64
-	todayQuery := h.db.Model(&model.TrafficRecord{}).Where("record_at >= ?", todayStart).Select("COALESCE(SUM(used_bytes), 0)")
+	todayQuery := h.db.WithContext(r.Context()).Model(&model.TrafficRecord{}).Where("record_at >= ?", todayStart).Select("COALESCE(SUM(used_bytes), 0)")
 	if userFilter > 0 {
 		todayQuery = todayQuery.Where("user_id = ?", userFilter)
 	}
@@ -6371,7 +6416,7 @@ func (h *handlers) TrafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 		subscriptionFilter = parsed
 	}
 	baseQuery := func() *gorm.DB {
-		query := h.db.Model(&model.TrafficRecord{})
+		query := h.db.WithContext(r.Context()).Model(&model.TrafficRecord{})
 		if userFilter > 0 {
 			query = query.Where("user_id = ?", userFilter)
 		}
@@ -6490,172 +6535,6 @@ func trafficRecordSummaries(records []model.TrafficRecord) []trafficRecordListIt
 		})
 	}
 	return items
-}
-
-func (h *handlers) TrafficReconciliationHandler(w http.ResponseWriter, r *http.Request) {
-	adminScope := strings.HasPrefix(r.URL.Path, "/api/v1/admin/traffic/")
-	var claims authClaims
-	var err error
-	if adminScope {
-		claims, err = h.requireAdmin(w, r)
-		if err != nil {
-			return
-		}
-	} else {
-		claims, err = h.authFromRequest(r)
-		if err != nil {
-			Unauthorized(w, err.Error())
-			return
-		}
-	}
-
-	userID := claims.UserID
-	if adminScope {
-		if target := strings.TrimSpace(r.URL.Query().Get("user_id")); target != "" {
-			parsed, parseErr := strconv.ParseUint(target, 10, 64)
-			if parseErr != nil || parsed == 0 {
-				BadRequest(w, "invalid user_id")
-				return
-			}
-			userID = uint(parsed)
-		} else {
-			userID = 0
-		}
-	}
-	now := time.Now().UTC()
-
-	var subscriptionID uint
-	if target := strings.TrimSpace(r.URL.Query().Get("subscription_id")); target != "" {
-		parsed, parseErr := strconv.ParseUint(target, 10, 64)
-		if parseErr != nil || parsed == 0 {
-			BadRequest(w, "invalid subscription_id")
-			return
-		}
-		subscriptionID = uint(parsed)
-	}
-	issuesOnly := false
-	if adminScope {
-		if rawIssuesOnly := strings.TrimSpace(r.URL.Query().Get("issues_only")); rawIssuesOnly != "" {
-			issuesOnly, err = strconv.ParseBool(rawIssuesOnly)
-			if err != nil {
-				BadRequest(w, "invalid issues_only")
-				return
-			}
-		}
-	}
-	baseQuery := func() *gorm.DB {
-		query := h.db.Model(&model.Subscription{})
-		if userID != 0 {
-			query = query.Where("subscriptions.user_id = ?", userID)
-		}
-		if subscriptionID != 0 {
-			query = query.Where("subscriptions.id = ?", subscriptionID)
-		}
-		return query
-	}
-	trafficTotalsQuery := func() *gorm.DB {
-		return h.db.Model(&model.TrafficRecord{}).
-			Select("subscription_id, COALESCE(SUM(used_bytes), 0) AS recorded_bytes").
-			Group("subscription_id")
-	}
-	paged := adminScope && r.URL.Query().Get("paged") == "true"
-	offset, limit := 0, 50
-	var total int64
-	aggregates := trafficReconciliationAggregates{}
-	query := baseQuery().Order("subscriptions.id desc")
-	if paged {
-		offset, limit, err = parsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
-		if err != nil {
-			BadRequest(w, err.Error())
-			return
-		}
-		if err := baseQuery().
-			Joins("LEFT JOIN (?) AS reconciliation_totals ON reconciliation_totals.subscription_id = subscriptions.id", trafficTotalsQuery()).
-			Select(`
-				COUNT(*) AS subscription_count,
-				COALESCE(SUM(CASE WHEN subscriptions.flow_used = COALESCE(reconciliation_totals.recorded_bytes, 0) THEN 1 ELSE 0 END), 0) AS matched_count,
-				COALESCE(SUM(CASE WHEN subscriptions.flow_used > COALESCE(reconciliation_totals.recorded_bytes, 0) THEN 1 ELSE 0 END), 0) AS missing_records_count,
-				COALESCE(SUM(CASE WHEN subscriptions.flow_used < COALESCE(reconciliation_totals.recorded_bytes, 0) THEN 1 ELSE 0 END), 0) AS over_recorded_count,
-				COALESCE(SUM(subscriptions.flow_used), 0) AS flow_used,
-				COALESCE(SUM(COALESCE(reconciliation_totals.recorded_bytes, 0)), 0) AS recorded_bytes,
-				COALESCE(SUM(CASE WHEN subscriptions.flow_used > COALESCE(reconciliation_totals.recorded_bytes, 0) THEN subscriptions.flow_used - COALESCE(reconciliation_totals.recorded_bytes, 0) ELSE 0 END), 0) AS missing_bytes,
-				COALESCE(SUM(CASE WHEN subscriptions.flow_used < COALESCE(reconciliation_totals.recorded_bytes, 0) THEN COALESCE(reconciliation_totals.recorded_bytes, 0) - subscriptions.flow_used ELSE 0 END), 0) AS over_recorded_bytes
-			`).
-			Scan(&aggregates).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
-		if issuesOnly {
-			query = query.
-				Joins("LEFT JOIN (?) AS reconciliation_totals ON reconciliation_totals.subscription_id = subscriptions.id", trafficTotalsQuery()).
-				Where("subscriptions.flow_used <> COALESCE(reconciliation_totals.recorded_bytes, 0)")
-		}
-		if err := query.Count(&total).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
-		query = query.Offset(offset).Limit(limit)
-	}
-	subscriptions := make([]model.Subscription, 0)
-	if err := query.Find(&subscriptions).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-
-	totals := make(map[uint]int64, len(subscriptions))
-	if len(subscriptions) > 0 {
-		ids := make([]uint, 0, len(subscriptions))
-		for _, subscription := range subscriptions {
-			ids = append(ids, subscription.ID)
-		}
-		var aggregates []struct {
-			SubscriptionID uint  `gorm:"column:subscription_id"`
-			RecordedBytes  int64 `gorm:"column:recorded_bytes"`
-		}
-		if err := h.db.Model(&model.TrafficRecord{}).
-			Select("subscription_id, COALESCE(SUM(used_bytes), 0) AS recorded_bytes").
-			Where("subscription_id IN ?", ids).
-			Group("subscription_id").Scan(&aggregates).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
-		for _, aggregate := range aggregates {
-			totals[aggregate.SubscriptionID] = aggregate.RecordedBytes
-		}
-	}
-
-	items := make([]trafficReconciliationItem, 0, len(subscriptions))
-	for _, subscription := range subscriptions {
-		recorded := totals[subscription.ID]
-		difference := subscription.FlowUsed - recorded
-		items = append(items, trafficReconciliationItem{
-			SubscriptionID: subscription.ID,
-			UserID:         subscription.UserID,
-			PlanID:         subscription.PlanID,
-			Status:         effectiveSubscriptionStatus(subscription, now),
-			FlowUsed:       subscription.FlowUsed,
-			RecordedBytes:  recorded,
-			Difference:     difference,
-			Result:         trafficReconciliationResult(difference),
-		})
-	}
-	if paged {
-		data := pagedData(items, total, offset, limit)
-		data["aggregates"] = aggregates
-		OK(w, data)
-		return
-	}
-	OK(w, items)
-}
-
-func trafficReconciliationResult(difference int64) string {
-	if difference > 0 {
-		return "missing_records"
-	}
-	if difference < 0 {
-		return "over_recorded"
-	}
-	return "matched"
 }
 
 func (h *handlers) TrafficReportHandler(w http.ResponseWriter, r *http.Request) {
@@ -7086,7 +6965,7 @@ func (h *handlers) authFromRequest(r *http.Request) (authClaims, error) {
 		return authClaims{}, errors.New("invalid token payload")
 	}
 	var user model.User
-	if err := h.db.Where("id = ? AND status = ?", payload.UserID, userStatusActive).First(&user).Error; err != nil {
+	if err := h.db.WithContext(r.Context()).Select("id, email, is_admin, status").Where("id = ? AND status = ?", payload.UserID, userStatusActive).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return authClaims{}, errors.New("user not found")
 		}

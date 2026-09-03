@@ -1,7 +1,9 @@
 import PrimeVue from 'primevue/config'
 import PrimeSelect from 'primevue/select'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
+import { primeVueOptions } from '../theme/primevue'
 import UiSelect from './UiSelect.vue'
 
 describe('UiSelect', () => {
@@ -52,5 +54,26 @@ describe('UiSelect', () => {
     const select = wrapper.findComponent(PrimeSelect)
     expect(select.props('optionGroupLabel')).toBe('label')
     expect(select.props('optionGroupChildren')).toBe('options')
+  })
+
+  it('renders its option overlay above custom modal backdrops', async () => {
+    const wrapper = mount(UiSelect, {
+      attachTo: document.body,
+      props: {
+        modelValue: 'info',
+        options: [{ label: '信息', value: 'info' }, { label: '警告', value: 'warning' }],
+      },
+      global: { plugins: [[PrimeVue, primeVueOptions]] },
+    })
+
+    await wrapper.get('[role="combobox"]').trigger('click')
+    await nextTick()
+    const overlay = document.body.querySelector<HTMLElement>('.p-select-overlay')
+    expect(overlay).not.toBeNull()
+    // Happy DOM does not run PrimeVue's transition enter hook that applies the
+    // inline z-index, so assert the runtime source used by that hook.
+    expect((wrapper.vm as any).$primevue.config.zIndex.overlay).toBeGreaterThan(1300)
+    wrapper.unmount()
+    document.body.innerHTML = ''
   })
 })

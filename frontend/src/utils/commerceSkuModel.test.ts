@@ -57,7 +57,9 @@ describe('commerce SKU model', () => {
     const detail = read('components', 'CommercePlanDetail.vue')
     const orders = read('views', 'Orders.vue')
 
-    expect(accountPlans).toContain("status: 'expired'")
+    expect(accountPlans).toContain("operation.value === 'purchase' ? 'manage' : operation.value")
+    expect(accountPlans).toContain('eligibleFor: eligibleFor.value')
+    expect(accountPlans).not.toContain("status: 'expired'")
     expect(accountPlans).toContain('isPermanentSubscription')
     expect(accountPlans).toContain("? '补充额度' : '续费'")
     expect(accountPlans).toContain("add_quota_only: '只补充一份套餐流量，永久有效期不变'")

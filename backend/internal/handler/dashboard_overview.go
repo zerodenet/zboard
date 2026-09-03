@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
 
@@ -417,6 +418,12 @@ func (h *handlers) loadDashboardTrend(period dashboardPeriod) ([]dashboardTrendP
 	bucketExpression := "DATE_FORMAT(paid_at, '%Y-%m-%d 00:00:00')"
 	if period.Bucket == "hour" {
 		bucketExpression = "DATE_FORMAT(paid_at, '%Y-%m-%d %H:00:00')"
+	}
+	if datastore.IsSQLite(h.db) {
+		bucketExpression = "strftime('%Y-%m-%d 00:00:00', paid_at)"
+		if period.Bucket == "hour" {
+			bucketExpression = "strftime('%Y-%m-%d %H:00:00', paid_at)"
+		}
 	}
 	var rows []dashboardTrendRow
 	query := h.db.Model(&model.Order{}).

@@ -26,4 +26,10 @@ printf 'Prepared managed rule directory: %s (writable persistent mount)\n' "$man
 printf 'Prepared Zero event spool directory: %s (writable persistent mount)\n' "$zero_event_spool_dir"
 printf 'Prepared blue Zero event spool directory: %s (writable persistent mount)\n' "$zero_event_spool_blue_dir"
 printf 'Prepared green Zero event spool directory: %s (writable persistent mount)\n' "$zero_event_spool_green_dir"
-printf 'Back up the managed rule and Zero event spool directories together with the Zboard database.\n'
+if [ "${ZBOARD_DATABASE_DRIVER:-mysql}" = "sqlite" ]; then
+  database_dir=$(resolve_path "${ZBOARD_DATABASE_HOST_DIR:-./data}")
+  mkdir -p "$database_dir"
+  chmod 0750 "$database_dir"
+  printf 'Prepared SQLite database directory: %s (writable persistent mount)\n' "$database_dir"
+fi
+printf 'Back up the database, managed rule, and Zero event spool directories together.\n'

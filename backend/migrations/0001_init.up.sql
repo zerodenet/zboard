@@ -720,6 +720,39 @@ CREATE TABLE `system_configs` (
   UNIQUE KEY `uk_system_configs_key` (`config_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `announcements` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `title` varchar(160) NOT NULL,
+  `content` text NOT NULL,
+  `severity` varchar(16) NOT NULL DEFAULT 'info',
+  `audience` varchar(16) NOT NULL DEFAULT 'all',
+  `status` varchar(16) NOT NULL DEFAULT 'draft',
+  `popup_enabled` tinyint(1) NOT NULL DEFAULT '0',
+  `dismissible` tinyint(1) NOT NULL DEFAULT '1',
+  `starts_at` datetime(3) DEFAULT NULL,
+  `ends_at` datetime(3) DEFAULT NULL,
+  `created_by` bigint unsigned NOT NULL DEFAULT '0',
+  `revision` bigint unsigned NOT NULL DEFAULT '1',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  KEY `idx_announcements_visibility` (`status`,`starts_at`,`ends_at`),
+  KEY `idx_announcements_feed` (`status`,`audience`,`popup_enabled`,`starts_at`),
+  KEY `idx_announcements_audience` (`audience`),
+  KEY `idx_announcements_created_by` (`created_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `announcement_reads` (
+  `announcement_id` bigint unsigned NOT NULL,
+  `user_id` bigint unsigned NOT NULL,
+  `revision` bigint unsigned NOT NULL,
+  `read_at` datetime(3) NOT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`announcement_id`,`user_id`),
+  KEY `idx_announcement_reads_user_time` (`user_id`,`read_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `task_items` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `task_id` bigint unsigned NOT NULL,
@@ -832,6 +865,10 @@ CREATE TABLE `traffic_records` (
   KEY `idx_traffic_records_flow` (`flow_id`),
   KEY `idx_traffic_records_event_type` (`event_type`),
   KEY `idx_traffic_records_history_cursor` (`record_at`,`id`),
+  KEY `idx_traffic_records_user_time` (`user_id`,`record_at`),
+  KEY `idx_traffic_records_subscription_time` (`subscription_id`,`record_at`),
+  KEY `idx_traffic_records_node_time` (`node_id`,`record_at`),
+  KEY `idx_traffic_records_endpoint_time` (`protocol_endpoint_id`,`record_at`),
   CONSTRAINT `fk_traffic_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_traffic_protocol_endpoint` FOREIGN KEY (`protocol_endpoint_id`) REFERENCES `protocol_endpoints` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_traffic_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
@@ -877,6 +914,9 @@ VALUES
   ('site_url', '站点网址', '', 'string', '当前站点的网址', 1, 0),
   ('subscribe_url', '订阅网址', '', 'string', '独立订阅地址；为空时由站点网址生成', 1, 0),
   ('subscription_camouflage_url', '订阅伪装跳转地址', '', 'string', '无效或已撤销的公开订阅链接的跳转目标；留空时使用站点公开访问地址', 0, 0),
+  ('maintenance_enabled', '系统维护模式', 'false', 'bool', '开启后普通用户只能看到维护提示，管理员仍可进入控制台', 1, 0),
+  ('maintenance_title', '维护页标题', '系统维护中', 'string', '维护页面显示的标题', 1, 0),
+  ('maintenance_message', '维护页提示', '系统正在维护，请稍后再试。', 'string', '维护页面显示的可配置说明', 1, 0),
   ('register_email_verification', '注册邮箱验证码', 'false', 'bool', '注册时必须先通过邮箱验证码；启用前需完成 SMTP 配置', 1, 0),
   ('task_email_enabled', '邮件任务开关', 'false', 'bool', '是否允许任务执行器发送邮件', 0, 0),
   ('smtp_host', 'SMTP 主机', '', 'string', '邮件服务器主机名', 0, 0),

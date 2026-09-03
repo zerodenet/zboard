@@ -30,9 +30,11 @@ const (
 type Config struct {
 	rest.RestConf
 	Environment                         string  `json:"environment,default=development"`
+	DatabaseDriver                      string  `json:"database_driver,default=mysql"`
 	DataSource                          string  `json:"datasource"`
-	RedisAddr                           string  `json:"redis_addr,optional"`
-	RedisPassword                       string  `json:"-"`
+	DatabaseMaxOpenConnections          int     `json:"database_max_open_connections,default=8"`
+	DatabaseMaxIdleConnections          int     `json:"database_max_idle_connections,default=2"`
+	DatabaseConnectionMaxLifetimeSecs   int     `json:"database_connection_max_lifetime_seconds,default=3600"`
 	JwtSecret                           string  `json:"jwt_secret"`
 	BootstrapAdminEmail                 string  `json:"bootstrap_admin_email,optional"`
 	BootstrapAdminPassword              string  `json:"bootstrap_admin_password,optional"`
@@ -69,6 +71,9 @@ type Config struct {
 	zeroEventSpoolCompactionEnabledEnv     string
 	zeroEventSpoolMergeFlowUpdatesEnv      string
 	zeroEventSpoolMergeNodeStatsEnv        string
+	databaseMaxOpenConnectionsEnv          string
+	databaseMaxIdleConnectionsEnv          string
+	databaseConnectionMaxLifetimeSecsEnv   string
 	zeroEventSpoolCompression              *zeroevent.CompressionConfig
 	zeroEventSpoolCompaction               *zeroevent.CompactionConfig
 }
@@ -83,13 +88,11 @@ func (c *Config) ApplyEnvironment(getenv func(string) string) {
 		return
 	}
 	applyOverride(&c.Environment, getenv("ZBOARD_ENVIRONMENT"))
+	applyOverride(&c.DatabaseDriver, getenv("ZBOARD_DATABASE_DRIVER"))
 	applyOverride(&c.DataSource, getenv("ZBOARD_DATA_SOURCE"))
-	if value := getenv("ZBOARD_REDIS_ADDR"); strings.TrimSpace(value) != "" {
-		c.RedisAddr = value
-	} else {
-		applyOverride(&c.RedisAddr, getenv("ZBOARD_REDIS"))
-	}
-	applyOverride(&c.RedisPassword, getenv("ZBOARD_REDIS_PASSWORD"))
+	applyOverride(&c.databaseMaxOpenConnectionsEnv, getenv("ZBOARD_DATABASE_MAX_OPEN_CONNECTIONS"))
+	applyOverride(&c.databaseMaxIdleConnectionsEnv, getenv("ZBOARD_DATABASE_MAX_IDLE_CONNECTIONS"))
+	applyOverride(&c.databaseConnectionMaxLifetimeSecsEnv, getenv("ZBOARD_DATABASE_CONNECTION_MAX_LIFETIME_SECONDS"))
 	applyOverride(&c.JwtSecret, getenv("ZBOARD_JWT_SECRET"))
 	applyOverride(&c.BootstrapAdminEmail, getenv("ZBOARD_BOOTSTRAP_ADMIN_EMAIL"))
 	applyOverride(&c.BootstrapAdminPassword, getenv("ZBOARD_BOOTSTRAP_ADMIN_PASSWORD"))
@@ -161,6 +164,20 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.DataSource) == "" {
 		return errors.New("datasource is required")
 	}
+	c.DatabaseDriver = strings.ToLower(strings.TrimSpace(c.DatabaseDriver))
+	if c.DatabaseDriver == "" {
+		c.DatabaseDriver = "mysql"
+	}
+	if c.DatabaseDriver != "mysql" && c.DatabaseDriver != "sqlite" {
+		return errors.New("database_driver must be mysql or sqlite")
+	}
+	if err := c.normalizeDatabasePool(); err != nil {
+		return err
+	}
+	if c.DatabaseDriver == "sqlite" {
+		c.DatabaseMaxOpenConnections = 1
+		c.DatabaseMaxIdleConnections = 1
+	}
 	if err := ValidateJWTSecret(c.JwtSecret); err != nil {
 		return err
 	}
@@ -171,6 +188,37 @@ func (c *Config) Validate() error {
 	admin := c.BootstrapAdmin()
 	if admin.Configured() {
 		return admin.Validate(environment)
+	}
+	return nil
+}
+
+func (c *Config) normalizeDatabasePool() error {
+	if c.DatabaseMaxOpenConnections == 0 {
+		c.DatabaseMaxOpenConnections = 8
+	}
+	if c.DatabaseMaxIdleConnections == 0 {
+		c.DatabaseMaxIdleConnections = 2
+	}
+	if c.DatabaseConnectionMaxLifetimeSecs == 0 {
+		c.DatabaseConnectionMaxLifetimeSecs = 3600
+	}
+	if err := parseIntConfigOverride(&c.DatabaseMaxOpenConnections, c.databaseMaxOpenConnectionsEnv, "ZBOARD_DATABASE_MAX_OPEN_CONNECTIONS"); err != nil {
+		return err
+	}
+	if err := parseIntConfigOverride(&c.DatabaseMaxIdleConnections, c.databaseMaxIdleConnectionsEnv, "ZBOARD_DATABASE_MAX_IDLE_CONNECTIONS"); err != nil {
+		return err
+	}
+	if err := parseIntConfigOverride(&c.DatabaseConnectionMaxLifetimeSecs, c.databaseConnectionMaxLifetimeSecsEnv, "ZBOARD_DATABASE_CONNECTION_MAX_LIFETIME_SECONDS"); err != nil {
+		return err
+	}
+	if c.DatabaseMaxOpenConnections < 1 || c.DatabaseMaxOpenConnections > 256 {
+		return errors.New("database_max_open_connections must be between 1 and 256")
+	}
+	if c.DatabaseMaxIdleConnections < 0 || c.DatabaseMaxIdleConnections > c.DatabaseMaxOpenConnections {
+		return errors.New("database_max_idle_connections must be between 0 and database_max_open_connections")
+	}
+	if c.DatabaseConnectionMaxLifetimeSecs < 60 || c.DatabaseConnectionMaxLifetimeSecs > 86400 {
+		return errors.New("database_connection_max_lifetime_seconds must be between 60 and 86400")
 	}
 	return nil
 }

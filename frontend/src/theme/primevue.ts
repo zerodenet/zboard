@@ -48,6 +48,12 @@ export const zboardPrimePreset = definePreset(Aura, {
 
 export const primeVueOptions = {
   ripple: true,
+  zIndex: {
+    modal: 1400,
+    overlay: 1500,
+    menu: 1500,
+    tooltip: 1600,
+  },
   theme: {
     preset: zboardPrimePreset,
     options: {

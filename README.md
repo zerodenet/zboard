@@ -88,7 +88,7 @@ ZBoard brings infrastructure, service delivery, and commercial operations togeth
 | --- | --- |
 | Backend | Go, go-zero, GORM |
 | Frontend | Vue 3, Vite, Pinia, PrimeVue |
-| Data | MySQL 8, Redis |
+| Data | MySQL 8 / SQLite |
 | Runtime | Zero |
 | API | RESTful `/api/v1`, OpenAPI |
 

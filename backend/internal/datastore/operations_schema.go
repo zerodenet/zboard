@@ -1,0 +1,66 @@
+package datastore
+
+import (
+	"fmt"
+
+	"github.com/zerodenet/zboard/backend/internal/model"
+	"gorm.io/gorm"
+)
+
+// ReconcileOperationsSchema installs additive operational resources that must
+// also be available to databases whose squashed pre-release baseline was
+// already recorded before the resource was introduced.
+func ReconcileOperationsSchema(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("database is required")
+	}
+	if IsSQLite(db) {
+		return nil
+	}
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS announcements (
+		id bigint unsigned NOT NULL AUTO_INCREMENT,
+		title varchar(160) NOT NULL,
+		content text NOT NULL,
+		severity varchar(16) NOT NULL DEFAULT 'info',
+		audience varchar(16) NOT NULL DEFAULT 'all',
+		status varchar(16) NOT NULL DEFAULT 'draft',
+		popup_enabled tinyint(1) NOT NULL DEFAULT 0,
+		dismissible tinyint(1) NOT NULL DEFAULT 1,
+		starts_at datetime(3) NULL,
+		ends_at datetime(3) NULL,
+		created_by bigint unsigned NOT NULL DEFAULT 0,
+		revision bigint unsigned NOT NULL DEFAULT 1,
+		created_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+		updated_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+		PRIMARY KEY (id),
+		KEY idx_announcements_visibility (status, starts_at, ends_at),
+		KEY idx_announcements_feed (status, audience, popup_enabled, starts_at),
+		KEY idx_announcements_audience (audience),
+		KEY idx_announcements_created_by (created_by)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`).Error; err != nil {
+		return fmt.Errorf("reconcile announcement schema: %w", err)
+	}
+	if !db.Migrator().HasColumn(&model.Announcement{}, "PopupEnabled") {
+		if err := db.Migrator().AddColumn(&model.Announcement{}, "PopupEnabled"); err != nil {
+			return fmt.Errorf("reconcile announcement popup column: %w", err)
+		}
+	}
+	if !db.Migrator().HasIndex(&model.Announcement{}, "idx_announcements_feed") {
+		if err := db.Migrator().CreateIndex(&model.Announcement{}, "idx_announcements_feed"); err != nil {
+			return fmt.Errorf("reconcile announcement feed index: %w", err)
+		}
+	}
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS announcement_reads (
+		announcement_id bigint unsigned NOT NULL,
+		user_id bigint unsigned NOT NULL,
+		revision bigint unsigned NOT NULL,
+		read_at datetime(3) NOT NULL,
+		created_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+		updated_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+		PRIMARY KEY (announcement_id, user_id),
+		KEY idx_announcement_reads_user_time (user_id, read_at)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`).Error; err != nil {
+		return fmt.Errorf("reconcile announcement read schema: %w", err)
+	}
+	return nil
+}

@@ -6,8 +6,11 @@ Timeout: 2000000000
 MaxConns: 10000
 
 environment: development
+database_driver: mysql
 datasource: ""
-redis_addr: "redis:6379"
+database_max_open_connections: 8
+database_max_idle_connections: 2
+database_connection_max_lifetime_seconds: 3600
 jwt_secret: ""
 bootstrap_admin_email: ""
 bootstrap_admin_password: ""

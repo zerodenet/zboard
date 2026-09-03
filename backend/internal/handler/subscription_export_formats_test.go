@@ -266,8 +266,17 @@ func TestRenderClashSubscriptionConvertsProtocolFields(t *testing.T) {
 	if len(document.ProxyGroups) != 2 || document.ProxyGroups[0].Type != "select" || len(document.ProxyGroups[0].Proxies) != 9 || document.ProxyGroups[1].Type != "url-test" {
 		t.Fatalf("proxy-groups = %#v", document.ProxyGroups)
 	}
-	if len(document.Rules) != 1 || document.Rules[0] != "MATCH,节点选择" {
-		t.Fatalf("rules = %#v", document.Rules)
+	wantRules := []string{
+		"DOMAIN,vless.example.com,DIRECT",
+		"DOMAIN,vmess.example.com,DIRECT",
+		"DOMAIN,trojan.example.com,DIRECT",
+		"DOMAIN,ss.example.com,DIRECT",
+		"DOMAIN,hy2.example.com,DIRECT",
+		"DOMAIN,mieru.example.com,DIRECT",
+		"MATCH,节点选择",
+	}
+	if !slices.Equal(document.Rules, wantRules) {
+		t.Fatalf("rules = %#v, want %#v", document.Rules, wantRules)
 	}
 }
 
@@ -471,6 +480,58 @@ func TestSubscriptionCustomizationAddsRuleSetsAndAdvancedOverlay(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "name: Premium") {
 		t.Fatalf("customized Clash group missing:\n%s", rendered)
+	}
+}
+
+func TestClashProxyServerDirectRulesNormalizeAndDeduplicate(t *testing.T) {
+	endpoints := []subscriptionTemplateEndpoint{
+		{Address: "8.138.144.121"},
+		{Address: "8.138.144.121"},
+		{Address: "[2001:db8::1]"},
+		{Address: "Node.Example.COM."},
+		{Address: "node.example.com"},
+		{Address: "invalid host/value"},
+	}
+	want := []string{
+		"IP-CIDR,8.138.144.121/32,DIRECT,no-resolve",
+		"IP-CIDR6,2001:db8::1/128,DIRECT,no-resolve",
+		"DOMAIN,node.example.com,DIRECT",
+	}
+	if got := clashProxyServerDirectRules(endpoints); !slices.Equal(got, want) {
+		t.Fatalf("clashProxyServerDirectRules() = %#v, want %#v", got, want)
+	}
+}
+
+func TestClashSubscriptionKeepsProxyServerDirectRulesAheadOfAdvancedRules(t *testing.T) {
+	data := subscriptionExporterTestData()
+	data.ProtocolEndpoints[0].Address = "8.138.144.121"
+	data.ProtocolEndpoints[1].Address = "8.138.144.121"
+	customization := defaultSubscriptionCustomization(subscriptionRendererClash)
+	customization.AdvancedSource = `
+rules:
+  - MATCH,节点选择
+  - IP-CIDR,8.138.144.121/32,DIRECT,no-resolve
+`
+	rendered, err := renderClashSubscription(data, customization)
+	if err != nil {
+		t.Fatalf("renderClashSubscription() error = %v", err)
+	}
+	var document clashSubscriptionDocument
+	if err := yaml.Unmarshal([]byte(rendered), &document); err != nil {
+		t.Fatalf("rendered Clash output is not YAML: %v", err)
+	}
+	wantPrefix := []string{
+		"IP-CIDR,8.138.144.121/32,DIRECT,no-resolve",
+		"DOMAIN,trojan.example.com,DIRECT",
+		"DOMAIN,ss.example.com,DIRECT",
+		"DOMAIN,hy2.example.com,DIRECT",
+		"DOMAIN,mieru.example.com,DIRECT",
+	}
+	if len(document.Rules) != len(wantPrefix)+1 || !slices.Equal(document.Rules[:len(wantPrefix)], wantPrefix) {
+		t.Fatalf("Clash direct-rule prefix = %#v, want %#v", document.Rules, wantPrefix)
+	}
+	if document.Rules[len(document.Rules)-1] != "MATCH,节点选择" {
+		t.Fatalf("Clash final rule = %q, want MATCH,节点选择", document.Rules[len(document.Rules)-1])
 	}
 }
 

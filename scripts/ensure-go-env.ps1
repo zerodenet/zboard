@@ -1,7 +1,7 @@
 param(
     [string]$GoBinaryName = "go",
     [string]$RequiredVersion = "",
-    [string]$FallbackRoot = "C:\Users\higanbana\sdk\golang",
+    [string]$FallbackRoot = "",
     [string]$AllowStale = "",
     [int]$RequestTimeoutSec = 8,
     [int]$QueryTimeoutBudgetSec = 30,
@@ -13,6 +13,9 @@ param(
 
 if (-not [string]::IsNullOrWhiteSpace($env:ZBOARD_GOROOT_FALLBACK)) {
     $FallbackRoot = $env:ZBOARD_GOROOT_FALLBACK
+}
+if ([string]::IsNullOrWhiteSpace($FallbackRoot)) {
+    $FallbackRoot = Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "zboard\go"
 }
 if ([string]::IsNullOrWhiteSpace($RequiredVersion) -and -not [string]::IsNullOrWhiteSpace($env:ZBOARD_REQUIRED_GO_VERSION)) {
     $RequiredVersion = $env:ZBOARD_REQUIRED_GO_VERSION

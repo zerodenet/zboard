@@ -3,9 +3,10 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
-	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 )
@@ -44,17 +45,17 @@ func parseTrafficUsageBucket(raw string) (trafficUsageBucketSpec, error) {
 }
 
 type trafficUsageBucket struct {
-	ID                      uint      `json:"id" gorm:"column:id"`
-	UserID                  uint      `json:"user_id" gorm:"column:user_id"`
-	SubscriptionID          uint      `json:"subscription_id,omitempty" gorm:"column:subscription_id"`
-	NodeID                  uint      `json:"node_id" gorm:"column:node_id"`
-	RawBytes                int64     `json:"raw_bytes" gorm:"column:raw_bytes"`
-	UploadBytes             int64     `json:"upload_bytes" gorm:"column:upload_bytes"`
-	DownloadBytes           int64     `json:"download_bytes" gorm:"column:download_bytes"`
-	ProtocolMultiplierMilli int64     `json:"protocol_multiplier_milli" gorm:"column:protocol_multiplier_milli"`
-	UsedBytes               int64     `json:"used_bytes" gorm:"column:used_bytes"`
-	RecordAt                time.Time `json:"record_at" gorm:"column:record_at"`
-	RecordCount             int64     `json:"record_count" gorm:"column:record_count"`
+	ID                      uint              `json:"id" gorm:"column:id"`
+	UserID                  uint              `json:"user_id" gorm:"column:user_id"`
+	SubscriptionID          uint              `json:"subscription_id,omitempty" gorm:"column:subscription_id"`
+	NodeID                  uint              `json:"node_id" gorm:"column:node_id"`
+	RawBytes                int64             `json:"raw_bytes" gorm:"column:raw_bytes"`
+	UploadBytes             int64             `json:"upload_bytes" gorm:"column:upload_bytes"`
+	DownloadBytes           int64             `json:"download_bytes" gorm:"column:download_bytes"`
+	ProtocolMultiplierMilli int64             `json:"protocol_multiplier_milli" gorm:"column:protocol_multiplier_milli"`
+	UsedBytes               int64             `json:"used_bytes" gorm:"column:used_bytes"`
+	RecordAt                trafficBucketTime `json:"record_at" gorm:"column:record_at"`
+	RecordCount             int64             `json:"record_count" gorm:"column:record_count"`
 }
 
 // TrafficUsageRecordsHandler is the human-facing read model for traffic history.
@@ -71,7 +72,8 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 		h.trafficNodeSeriesHandler(w, r)
 		return
 	}
-	if r == nil || r.URL == nil || !wantsPagedList(r) || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("view")), "raw") {
+	summaryOnly := r != nil && r.URL != nil && r.URL.Query().Get("view") == "usage_summary"
+	if r == nil || r.URL == nil || (!wantsPagedList(r) && !summaryOnly) || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("view")), "raw") {
 		h.TrafficRecordsHandler(w, r)
 		return
 	}
@@ -92,6 +94,15 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 		BadRequest(w, err.Error())
 		return
 	}
+	includeTotals := true
+	if raw := r.URL.Query().Get("include_totals"); raw != "" {
+		includeTotals, err = strconv.ParseBool(raw)
+		if err != nil {
+			BadRequest(w, "invalid include_totals")
+			return
+		}
+	}
+	bucket = bucket.forDB(h.db)
 	window, err := parseHistoryWindow(r.URL.Query(), 7)
 	if err != nil {
 		BadRequest(w, err.Error())
@@ -108,7 +119,8 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	base := applyHistoryWindow(h.db.Model(&model.TrafficRecord{}), "record_at", window)
+	db := h.db.WithContext(r.Context())
+	base := applyHistoryWindow(db.Model(&model.TrafficRecord{}), "record_at", window)
 	if adminScope {
 		if userID, parseErr := positiveQueryID(r.URL.Query(), "user_id"); parseErr != nil {
 			BadRequest(w, parseErr.Error())
@@ -137,20 +149,21 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	var aggregates trafficRecordAggregates
-	if err := base.Session(&gorm.Session{}).Select(`
-		COALESCE(SUM(raw_bytes), 0) AS raw_bytes,
-		COALESCE(SUM(used_bytes), 0) AS used_bytes,
-		COUNT(DISTINCT user_id) AS user_count,
-		COUNT(DISTINCT NULLIF(subscription_id, 0)) AS subscription_count,
-		COUNT(DISTINCT node_id) AS node_count,
-		COUNT(DISTINCT protocol_endpoint_id) AS protocol_endpoint_count
-	`).Scan(&aggregates).Error; err != nil {
-		ServerError(w, err)
-		return
+	var total *int64
+	var aggregates *trafficRecordAggregates
+	if includeTotals || summaryOnly {
+		statistics, err := loadTrafficUsageStatistics(base, bucket)
+		if err != nil {
+			ServerError(w, err)
+			return
+		}
+		if summaryOnly {
+			OK(w, statistics)
+			return
+		}
+		total, aggregates = &statistics.Total, &statistics.Aggregates
 	}
-
-	grouped := base.Session(&gorm.Session{}).
+	grouped := bucket.seekSource(base.Session(&gorm.Session{}), cursor).
 		Select(`
 			MIN(id) AS id,
 			user_id,
@@ -164,20 +177,18 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 			` + bucket.Expression + ` AS record_at,
 			COUNT(*) AS record_count
 		`).
-		Group(bucket.Expression + ", user_id, subscription_id, node_id, protocol_multiplier_milli")
+		Group(bucket.group())
 
-	var total int64
-	if err := h.db.Table("(?) AS traffic_usage_buckets", grouped).Count(&total).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-
-	bucketQuery := h.db.Table("(?) AS traffic_usage_buckets", grouped)
+	bucketQuery := db.Table("(?) AS traffic_usage_buckets", grouped)
 	if cursor != nil {
+		var at any = cursor.At
+		if datastore.IsSQLite(db) {
+			at = cursor.At.Format("2006-01-02 15:04:05.999999999")
+		}
 		if cursor.Direction == historyDirectionOlder {
-			bucketQuery = bucketQuery.Where("(record_at < ?) OR (record_at = ? AND id < ?)", cursor.At, cursor.At, cursor.ID)
+			bucketQuery = bucketQuery.Where("(record_at < ?) OR (record_at = ? AND id < ?)", at, at, cursor.ID)
 		} else {
-			bucketQuery = bucketQuery.Where("(record_at > ?) OR (record_at = ? AND id > ?)", cursor.At, cursor.At, cursor.ID)
+			bucketQuery = bucketQuery.Where("(record_at > ?) OR (record_at = ? AND id > ?)", at, at, cursor.ID)
 		}
 	}
 	order := "record_at desc, id desc"
@@ -191,9 +202,17 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 			ServerError(w, err)
 			return
 		}
-		data := pagedData(buckets, total, offset, limit)
+		data := trafficUsagePageData(buckets, total, offset, limit, nil, nil)
 		data["aggregates"] = aggregates
 		data["bucket"] = bucket.Name
+		if !adminScope {
+			references, err := accountTrafficPageReferences(db, buckets, claims.UserID)
+			if err != nil {
+				ServerError(w, err)
+				return
+			}
+			data["facets"] = references
+		}
 		OK(w, data)
 		return
 	}
@@ -212,8 +231,8 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 	var nextCursor, previousCursor *string
 	if len(buckets) > 0 {
 		nextCursor, previousCursor, err = historyPageCursorValues(
-			historyKey{At: buckets[0].RecordAt, ID: buckets[0].ID},
-			historyKey{At: buckets[len(buckets)-1].RecordAt, ID: buckets[len(buckets)-1].ID},
+			historyKey{At: buckets[0].RecordAt.Time, ID: buckets[0].ID},
+			historyKey{At: buckets[len(buckets)-1].RecordAt.Time, ID: buckets[len(buckets)-1].ID},
 			cursor,
 			hasMore,
 		)
@@ -222,8 +241,16 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 			return
 		}
 	}
-	data := cursorPagedData(buckets, total, limit, nextCursor, previousCursor)
+	data := trafficUsagePageData(buckets, total, 0, limit, nextCursor, previousCursor)
 	data["aggregates"] = aggregates
 	data["bucket"] = bucket.Name
+	if !adminScope {
+		references, err := accountTrafficPageReferences(db, buckets, claims.UserID)
+		if err != nil {
+			ServerError(w, err)
+			return
+		}
+		data["facets"] = references
+	}
 	OK(w, data)
 }

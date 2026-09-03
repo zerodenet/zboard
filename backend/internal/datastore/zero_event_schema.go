@@ -13,6 +13,9 @@ const zeroEventNodeCursorsTable = "zero_event_node_cursors"
 // billing records: runtime ordering and connection observations are
 // observability state, not node identity or accounting settlement.
 func ReconcileZeroEventSchema(db *gorm.DB) error {
+	if IsSQLite(db) {
+		return nil
+	}
 	if db == nil {
 		return fmt.Errorf("database is required")
 	}

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { adminNavigation, resolveAdminNavigation } from './adminNavigation'
 
 const root = join(import.meta.dirname, '..')
 const views = join(root, 'views')
@@ -51,9 +52,17 @@ describe('infrastructure detail density policy', () => {
     expect(dns).toContain('deleteManagedDNSRecord')
     expect(dns).toContain('title="编辑 DNS 解析"')
     expect(dns).toContain('to="/admin/providers"')
-    expect(layout).toContain("{ to: '/admin/providers', label: '外部供应商' }")
-    expect(layout).toContain("{ to: '/admin/dns-records', label: 'DNS 解析' }")
-    expect(layout).toContain("label: '资源与接入'")
+    expect(layout).toContain('<AdminNavigation')
+    const infrastructure = adminNavigation.find(domain => domain.id === 'infrastructure')
+    const accessPages = infrastructure?.sections.find(section => section.label === '接入配置')?.pages
+    expect(accessPages).toEqual(expect.arrayContaining([
+      { to: '/admin/providers', label: '外部供应商' },
+      { to: '/admin/dns-records', label: 'DNS 解析' },
+    ]))
+    for (const path of ['/admin/providers', '/admin/dns-records']) {
+      expect(resolveAdminNavigation(path)?.domain.id).toBe('infrastructure')
+      expect(resolveAdminNavigation(path)?.page.to).toBe(path)
+    }
     expect(router).toContain("path: 'dns-records'")
   })
 

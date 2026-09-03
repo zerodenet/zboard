@@ -27,3 +27,13 @@ frontend/.nuxt
 /zboard-deploy-*.tar.gz
 /deploy/docker/artifacts/
 /deploy/docker/managed-rules/
+
+# Workstation-local agent history and intranet operations.
+/AGENTS.md
+/CHANGELOG.md
+/PROJECT_MEMORY.md
+/scripts/sync-intranet.ps1
+/scripts/verify-scale-intranet.ps1
+/design-qa.md
+/docs/admin-frontend-completion-audit.md
+/docs/admin-frontend-implementation-plan.md

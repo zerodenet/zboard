@@ -88,7 +88,7 @@ ZBoard 将基础设施、服务交付和商业运营统一管理：
 | --- | --- |
 | 后端 | Go、go-zero、GORM |
 | 前端 | Vue 3、Vite、Pinia、PrimeVue |
-| 数据 | MySQL 8、Redis |
+| 数据 | MySQL 8 / SQLite |
 | 节点运行时 | Zero |
 | 接口 | RESTful `/api/v1`、OpenAPI |
 

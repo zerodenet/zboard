@@ -15,6 +15,9 @@ const subscriptionTokensTable = "subscription_tokens"
 // subscription_id are deliberately deleted: retaining them would preserve the
 // implicit account-level aggregation that this schema boundary removes.
 func ReconcileSubscriptionAccessSchema(db *gorm.DB) error {
+	if IsSQLite(db) {
+		return nil
+	}
 	if db == nil {
 		return fmt.Errorf("database is required")
 	}

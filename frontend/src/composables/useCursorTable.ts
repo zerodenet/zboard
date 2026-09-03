@@ -47,9 +47,11 @@ export function useCursorTable<
   const error = ref('')
   const requests = createRequestGuard()
   let controller: AbortController | null = null
+  let disposed = false
   const loading = computed(() => initialLoading.value || refreshing.value)
 
   async function load(): Promise<boolean> {
+    if (disposed) return false
     controller?.abort()
     controller = new AbortController()
     const currentController = controller
@@ -68,7 +70,7 @@ export function useCursorTable<
       previousCursor.value = page.page.previous_cursor
       hasLoaded.value = true
       await options.onPageLoaded?.(page)
-      return true
+      return requests.isCurrent(request)
     } catch (cause) {
       if (!requests.isCurrent(request) || currentController.signal.aborted) return false
       error.value = typeof options.errorMessage === 'function' ? options.errorMessage(cause) : options.errorMessage
@@ -89,7 +91,19 @@ export function useCursorTable<
     refreshing.value = false
   }
 
-  if (getCurrentScope()) onScopeDispose(invalidate)
+  function reset() {
+    invalidate()
+    items.value = []
+    total.value = 0
+    aggregates.value = {} as A
+    facets.value = {} as F
+    hasLoaded.value = false
+    error.value = ''
+    nextCursor.value = null
+    previousCursor.value = null
+  }
 
-  return { items, total, aggregates, facets, nextCursor, previousCursor, loading, initialLoading, refreshing, hasLoaded, error, load, invalidate }
+  if (getCurrentScope()) onScopeDispose(() => { disposed = true; invalidate() })
+
+  return { items, total, aggregates, facets, nextCursor, previousCursor, loading, initialLoading, refreshing, hasLoaded, error, load, invalidate, reset }
 }

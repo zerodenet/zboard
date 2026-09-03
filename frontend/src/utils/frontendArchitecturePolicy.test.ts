@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { adminNavigation, resolveAdminNavigation } from './adminNavigation'
 
 const sourceRoot = join(import.meta.dirname, '..')
 const viewsRoot = join(sourceRoot, 'views')
@@ -58,25 +59,32 @@ describe('frontend architecture policy', () => {
     expect(routerSource).toContain("{ path: 'subscription-rule-sets', redirect: '/admin/subscription-templates/rule-sets' }")
   })
 
-  it('splits system settings into routable pages and keeps navigation subgroups collapsible', () => {
+  it('splits system settings into routable pages owned by the settings navigation domain', () => {
     const layout = read('layouts', 'AdminLayout.vue')
     expect(routerSource).toContain("{ path: 'settings', redirect: '/admin/settings/site' }")
     expect(routerSource).toContain("{ path: 'settings/registration', component: () => import('../views/RegistrationSettings.vue')")
     expect(routerSource).toContain("{ path: 'settings/email', component: () => import('../views/Settings.vue')")
     expect(routerSource).toContain("{ path: 'settings/runtime', component: () => import('../views/Settings.vue')")
-    expect(layout).toContain(':aria-expanded="isSubgroupExpanded(item.label)"')
-    expect(layout).toContain("zboard.admin.expandedSubgroups")
-    expect(layout).toContain("to: '/admin/settings/registration'")
+    expect(layout).toContain('<AdminNavigation')
+    expect(adminNavigation.map(domain => domain.id)).toEqual([
+      'overview', 'customers', 'commerce', 'infrastructure', 'operations', 'settings',
+    ])
+    for (const section of ['site', 'registration', 'email', 'legal', 'runtime']) {
+      const path = `/admin/settings/${section}`
+      expect(resolveAdminNavigation(path)?.domain.id).toBe('settings')
+      expect(resolveAdminNavigation(path)?.page.to).toBe(path)
+    }
   })
 
   it('keeps rule sets inside the subscription-template information architecture', () => {
-    const layout = read('layouts', 'AdminLayout.vue')
     const templates = read('views', 'SubscriptionTemplates.vue')
     const ruleSets = read('views', 'SubscriptionRuleSets.vue')
     const sectionNavigation = read('components', 'SubscriptionTemplateSectionNav.vue')
     const customizer = read('components', 'SubscriptionTemplateCustomizer.vue')
 
-    expect(layout).not.toContain("to: '/admin/subscription-rule-sets'")
+    expect(resolveAdminNavigation('/admin/subscription-rule-sets')).toBeUndefined()
+    expect(resolveAdminNavigation('/admin/subscription-templates/rule-sets')?.page.to)
+      .toBe('/admin/subscription-templates/rule-sets')
     expect(templates).toContain('<SubscriptionTemplateSectionNav section="templates"')
     expect(ruleSets).toContain('<SubscriptionTemplateSectionNav section="rule-sets"')
     expect(ruleSets).toContain('PageHeader title="规则集"')
@@ -130,23 +138,41 @@ describe('frontend architecture policy', () => {
   it('keeps account and public high-volume collections bounded on the server', () => {
     const accountLists = [
       read('views', 'account', 'AccountOrders.vue'),
-      read('views', 'account', 'AccountPlans.vue'),
       read('views', 'account', 'AccountSubscription.vue'),
       read('views', 'account', 'AccountTraffic.vue'),
     ]
     for (const source of accountLists) {
       expect(source).toContain('<PageHeader')
       expect(source).toContain('<DataWorkbench')
-      expect(source).toMatch(/use(?:Remote|Cursor)Table/)
+      expect(source).toMatch(/use(?:Remote|Cursor|TrafficUsage)Table/)
       expect(source).toContain('useRoute(')
       expect(source).toContain('useRouter(')
       expect(source).toContain('<WorkbenchFilterBar')
     }
 
+    const trafficReader = read('composables', 'useTrafficUsageTable.ts')
+    expect(trafficReader).toContain('fetchTrafficUsagePage')
+    expect(trafficReader).toContain('includeTotals: false')
+    expect(trafficReader).toContain('fetchTrafficUsageStatistics')
+    expect(trafficReader).toContain('useRemoteResource')
     const publicPlans = read('views', 'PublicPlans.vue')
     expect(publicPlans).toContain('useRemoteTable')
     expect(publicPlans).toContain('<TablePager')
     expect(publicPlans).not.toContain('plan.skus')
+
+    // Storefront cards share bounded reads and paging, not the admin table carrier.
+    for (const source of [publicPlans, read('views', 'account', 'AccountPlans.vue')]) {
+      expect(source).toContain('useRemoteTable<PlanCatalogItem>')
+      expect(source).toContain('useCatalogDetail')
+      expect(source).toContain('<CommercePlanCard')
+      expect(source).toContain('<TablePager')
+      expect(source).toContain(':sku-total="skuTotal"')
+      expect(source).toContain('@change-sku-page="changeSKUPage"')
+      expect(source).toContain('useRoute(')
+      expect(source).toContain('useRouter(')
+      expect(source).toContain('<WorkbenchFilterBar')
+      expect(source).not.toContain('limit: 100')
+    }
 
     const accountDashboard = read('views', 'account', 'AccountDashboard.vue')
     expect(accountDashboard).toContain('limit: 3')

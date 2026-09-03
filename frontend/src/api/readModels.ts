@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { normalizeApiErrorPayload } from '../utils/apiError'
 import { API_BASE, getAuthToken } from './client'
+import { appendQueryID, type QueryID } from './queryID'
 
 export type EntityKind = 'user' | 'subscription' | 'node' | 'protocol_endpoint' | 'plan' | 'plan_sku' | 'order' | string
 
@@ -48,10 +49,10 @@ export interface TrafficTrendResult {
 
 export interface TrafficTrendQuery {
   admin?: boolean
-  userId?: number
-  subscriptionId?: number
-  nodeId?: number
-  protocolEndpointId?: number
+  userId?: QueryID
+  subscriptionId?: QueryID
+  nodeId?: QueryID
+  protocolEndpointId?: QueryID
   from: string
   to: string
   signal?: AbortSignal
@@ -136,10 +137,12 @@ export function fallbackEntityReference(kind: EntityKind, id: number): EntityRef
 
 export async function fetchTrafficTrends(query: TrafficTrendQuery): Promise<TrafficTrendResult> {
   const params = new URLSearchParams({ from: query.from, to: query.to })
-  if (query.userId) params.set('user_id', String(query.userId))
-  if (query.subscriptionId) params.set('subscription_id', String(query.subscriptionId))
-  if (query.nodeId) params.set('node_id', String(query.nodeId))
-  if (query.protocolEndpointId) params.set('protocol_endpoint_id', String(query.protocolEndpointId))
+  // Option browsing is a separate bounded subscription read, not chart data.
+  params.set('include_subscriptions', 'false')
+  appendQueryID(params, 'user_id', query.userId)
+  appendQueryID(params, 'subscription_id', query.subscriptionId)
+  appendQueryID(params, 'node_id', query.nodeId)
+  appendQueryID(params, 'protocol_endpoint_id', query.protocolEndpointId)
   const path = query.admin ? '/admin/traffic/trends' : '/traffic/trends'
   return unwrap<TrafficTrendResult>(await readModelApi.get(`${path}?${params}`, { signal: query.signal }))
 }

@@ -1,6 +1,8 @@
 <template>
   <div class="pricing-page commerce-pricing-page commerce-catalog-page">
-    <PageAlert v-if="detailError" tone="danger" title="套餐加载失败">{{ detailError }}</PageAlert>
+    <PageAlert v-if="detailError && !selectedPlan" tone="danger" title="套餐加载失败">
+      {{ detailError }} <UiButton variant="secondary" @click="retryDetail">重试详情</UiButton>
+    </PageAlert>
     <div v-if="detailLoading && !selectedPlan" class="commerce-loading-state" role="status">
       <UiIcon name="refresh" />正在加载套餐详情
     </div>
@@ -10,7 +12,12 @@
         :skus="detailSKUs"
         :selected-sku-id="selectedSKUID"
         :loading="detailLoading"
-        :error="skuError"
+        :error="detailError"
+        :sku-total="skuTotal"
+        :sku-offset="skuOffset"
+        :sku-limit="skuLimit"
+        @change-sku-page="changeSKUPage"
+        @retry="retryDetail"
         operation-label="新购"
         @back="closeDetail"
         @select-sku="selectSKU"
@@ -39,7 +46,9 @@
         />
       </WorkbenchFilterBar>
 
-      <PageAlert v-if="error" class="pricing-alert" tone="danger" title="套餐加载失败">{{ error }}</PageAlert>
+      <PageAlert v-if="error" class="pricing-alert" tone="danger" title="套餐加载失败">
+        {{ error }} <UiButton variant="secondary" @click="retryCatalog">重试目录</UiButton>
+      </PageAlert>
 
       <div v-if="loading" class="commerce-loading-state" role="status">
         <UiIcon name="refresh" />正在加载套餐
@@ -52,11 +61,12 @@
           :plan="plan"
           :offer="plan.primary_sku || null"
           :offer-count="plan.active_sku_count"
+          :disabled="Boolean(error)"
           @select="openDetail(plan.id)"
         />
       </section>
 
-      <div v-else class="public-empty commerce-catalog-empty">
+      <div v-else-if="!error" class="public-empty commerce-catalog-empty">
         <span><UiIcon name="plans" /></span>
         <h2>{{ query ? '没有找到匹配的套餐' : '暂时没有可用套餐' }}</h2>
         <p>{{ query ? '请尝试其他关键词。' : '新的套餐上线后会在这里展示。' }}</p>
@@ -76,194 +86,87 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onScopeDispose, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  fetchPlanCatalogItem,
-  fetchPlanCatalogPage,
-  fetchPlanCatalogSKUs,
-  type PlanCatalogItem,
-  type PlanSKU,
-} from '../api/client'
+import { fetchPlanCatalogPage, type PlanCatalogItem, type PlanSKU } from '../api/client'
 import CommercePlanCard from '../components/CommercePlanCard.vue'
 import CommercePlanDetail from '../components/CommercePlanDetail.vue'
 import PageAlert from '../components/PageAlert.vue'
 import TablePager from '../components/TablePager.vue'
+import UiButton from '../components/UiButton.vue'
 import UiIcon from '../components/UiIcon.vue'
 import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
+import { useCatalogDetail } from '../composables/useCatalogDetail'
+import { useRemoteTable } from '../composables/useRemoteTable'
 import { useAppStore } from '../stores/app'
 
-const app = useAppStore()
-const route = useRoute()
-const router = useRouter()
-const allowedPageSizes = [6, 9, 12]
-const routeLimit = Number(route.query.limit)
-
-const limit = ref(allowedPageSizes.includes(routeLimit) ? routeLimit : 9)
-const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
-const query = ref(String(route.query.q || '').trim())
-const searchDraft = ref(query.value)
-const plans = ref<PlanCatalogItem[]>([])
-const total = ref(0)
-const loading = ref(false)
-const error = ref('')
-
-const selectedPlan = ref<PlanCatalogItem | null>(null)
-const detailSKUs = ref<PlanSKU[]>([])
-const selectedSKUID = ref(Math.max(0, Number(route.query.sku) || 0))
-const detailLoading = ref(false)
-const detailError = ref('')
-const skuError = ref('')
-
-async function syncCatalogURL() {
-  const page = Math.floor(offset.value / limit.value) + 1
-  await router.replace({
-    query: {
-      ...(query.value ? { q: query.value } : {}),
-      ...(page > 1 ? { page: String(page) } : {}),
-      ...(limit.value !== 9 ? { limit: String(limit.value) } : {}),
-    },
-  })
+const app = useAppStore(), route = useRoute(), router = useRouter()
+const limit = ref(9), offset = ref(0), query = ref(''), searchDraft = ref('')
+const catalog = useRemoteTable<PlanCatalogItem>({
+  offset, limit,
+  fetchPage: ({ signal }) => fetchPlanCatalogPage({ q: query.value || undefined, offset: offset.value, limit: limit.value }, { signal }),
+  errorMessage: '套餐加载失败，请重试。',
+})
+const { items: plans, total, loading, error } = catalog
+const detail = useCatalogDetail()
+const { plan: selectedPlan, skus: detailSKUs, selectedSkuId: selectedSKUID, selectedSku: selectedSKU,
+  loading: detailLoading, error: detailError, total: skuTotal, offset: skuOffset, limit: skuLimit } = detail
+function catalogQuery() {
+  return { ...(query.value ? { q: query.value } : {}), page: String(Math.floor(offset.value / limit.value) + 1), limit: String(limit.value) }
 }
-
-async function syncDetailURL() {
-  if (!selectedPlan.value) return
-  await router.replace({
-    query: {
-      ...(query.value ? { q: query.value } : {}),
-      plan: String(selectedPlan.value.id),
-      ...(selectedSKUID.value ? { sku: String(selectedSKUID.value) } : {}),
-    },
-  })
+function syncDetailURL() {
+  if (selectedPlan.value) return router.replace({ query: { ...catalogQuery(), plan: String(selectedPlan.value.id), sku: String(selectedSKUID.value) } })
 }
-
-async function loadCatalog() {
-  loading.value = true
-  error.value = ''
-  try {
-    const result = await fetchPlanCatalogPage({ q: query.value || undefined, offset: offset.value, limit: limit.value })
-    plans.value = result.items
-    total.value = result.total
-  } catch (cause: any) {
-    error.value = cause?.response?.data?.message || '套餐加载失败。'
-    plans.value = []
-    total.value = 0
-  } finally {
-    loading.value = false
-  }
-}
-
-async function openDetail(planID: number, preserveRequestedSKU = false, updateRoute = true) {
-  detailLoading.value = true
-  detailError.value = ''
-  skuError.value = ''
-  selectedPlan.value = null
-  detailSKUs.value = []
-  try {
-    const [plan, skuResult] = await Promise.all([
-      fetchPlanCatalogItem(planID),
-      fetchPlanCatalogSKUs(planID, { operation: 'purchase', offset: 0, limit: 100 }),
-    ])
-    selectedPlan.value = plan
-    detailSKUs.value = skuResult.items
-    const requested = preserveRequestedSKU
-      ? skuResult.items.find(item => item.id === selectedSKUID.value)
-      : undefined
-    selectedSKUID.value = requested?.id || skuResult.items[0]?.id || 0
-    if (updateRoute) await syncDetailURL()
-  } catch (cause: any) {
-    detailError.value = cause?.response?.data?.message || '套餐详情加载失败。'
-  } finally {
-    detailLoading.value = false
-  }
-}
-
-async function closeDetail() {
-  selectedPlan.value = null
-  detailSKUs.value = []
-  selectedSKUID.value = 0
-  await syncCatalogURL()
-  if (!plans.value.length) await loadCatalog()
-}
-
-async function selectSKU(sku: PlanSKU) {
+function openDetail(id: number) { return router.replace({ query: { ...catalogQuery(), plan: String(id) } }) }
+function closeDetail() { return router.replace({ query: catalogQuery() }) }
+function selectSKU(sku: PlanSKU) {
+  if (detailLoading.value || detailError.value || !detailSKUs.value.some(item => item.id === sku.id)) return
   selectedSKUID.value = sku.id
-  await syncDetailURL()
+  return syncDetailURL()
 }
-
+async function changeSKUPage(value: { offset: number; limit: number }) {
+  if (await detail.changePage(value)) await syncDetailURL()
+}
+async function retryDetail() { if (await detail.retry()) await syncDetailURL() }
 async function continuePurchase() {
-  if (!selectedPlan.value || !selectedSKUID.value) return
-  const target = `/account/plans?operation=purchase&plan=${selectedPlan.value.id}&sku=${selectedSKUID.value}&step=detail`
+  if (!selectedPlan.value || !selectedSKU.value) return
+  const target = `/account/plans?operation=purchase&plan=${selectedPlan.value.id}&sku=${selectedSKU.value.id}&step=detail`
   await router.push(app.isAuthenticated ? target : `/login?redirect=${encodeURIComponent(target)}`)
 }
-
-async function submitSearch() {
-  query.value = searchDraft.value.trim()
+function submitSearch() {
+  return router.replace({ query: { ...catalogQuery(), q: searchDraft.value.trim() || undefined, page: '1' } })
+}
+function clearSearch() { searchDraft.value = ''; return submitSearch() }
+function changePage(value: { offset: number; limit: number }) {
+  return router.replace({ query: { ...catalogQuery(), page: String(Math.floor(value.offset / value.limit) + 1), limit: String(value.limit) } })
+}
+let generation = 0, catalogKey = ''
+onScopeDispose(() => { generation++ })
+async function applyRoute(force = false) {
+  const current = ++generation
+  limit.value = [6, 9, 12].includes(Number(route.query.limit)) ? Number(route.query.limit) : 9
+  offset.value = (Math.max(1, Number(route.query.page) || 1) - 1) * limit.value
+  query.value = String(route.query.q || '').trim()
   searchDraft.value = query.value
-  offset.value = 0
-  await syncCatalogURL()
-  await loadCatalog()
-}
-
-async function clearSearch() {
-  searchDraft.value = ''
-  query.value = ''
-  offset.value = 0
-  await syncCatalogURL()
-  await loadCatalog()
-}
-
-async function changePage(value: { offset: number; limit: number }) {
-  offset.value = value.offset
-  limit.value = value.limit
-  await syncCatalogURL()
-  await loadCatalog()
-}
-
-watch(
-  () => [route.query.q, route.query.page, route.query.limit, route.query.plan, route.query.sku],
-  async () => {
-    const nextLimitValue = Number(route.query.limit)
-    const nextLimit = allowedPageSizes.includes(nextLimitValue) ? nextLimitValue : 9
-    const nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * nextLimit
-    const nextQuery = String(route.query.q || '').trim()
-    const nextPlanID = Math.max(0, Number(route.query.plan) || 0)
-    const nextSKUID = Math.max(0, Number(route.query.sku) || 0)
-
-    const catalogChanged = query.value !== nextQuery || limit.value !== nextLimit || offset.value !== nextOffset
-    query.value = nextQuery
-    searchDraft.value = nextQuery
-    limit.value = nextLimit
-    offset.value = nextOffset
-
-    if (nextPlanID) {
-      if (selectedPlan.value?.id !== nextPlanID) {
-        selectedSKUID.value = nextSKUID
-        await openDetail(nextPlanID, true, false)
-      } else if (nextSKUID && detailSKUs.value.some(item => item.id === nextSKUID)) {
-        selectedSKUID.value = nextSKUID
-      }
-      return
+  const planID = Math.max(0, Number(route.query.plan) || 0), skuID = Math.max(0, Number(route.query.sku) || 0)
+  if (planID) {
+    catalog.invalidate()
+    catalogKey = ''
+    if (!force && selectedPlan.value?.id === planID && (!skuID || detailSKUs.value.some(item => item.id === skuID))) {
+      if (skuID) selectedSKUID.value = skuID
+    } else {
+      if (!await detail.open(planID, 'purchase', skuID) || current !== generation) return
     }
-
-    const wasShowingDetail = Boolean(selectedPlan.value)
-    if (wasShowingDetail) {
-      selectedPlan.value = null
-      detailSKUs.value = []
-      selectedSKUID.value = 0
-    }
-    if (catalogChanged || wasShowingDetail) await loadCatalog()
-  },
-)
-
-onMounted(async () => {
-  const requestedPlanID = Math.max(0, Number(route.query.plan) || 0)
-  if (requestedPlanID) {
-    await openDetail(requestedPlanID, true)
     return
   }
-  await loadCatalog()
-  await syncCatalogURL()
-})
+  detail.close()
+  const nextCatalog = `${query.value}:${offset.value}:${limit.value}`
+  if (force || catalogKey !== nextCatalog) {
+    catalogKey = nextCatalog
+    await catalog.load()
+  }
+}
+function retryCatalog() { return applyRoute(true) }
+watch(() => route.fullPath, () => { void applyRoute() }, { immediate: true })
 </script>

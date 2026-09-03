@@ -11,7 +11,7 @@ Use the versions declared by the repository instead of choosing local defaults:
 - Go and the exact toolchain are declared in `backend/go.mod`;
 - Node.js is pinned by the frontend and Docker build;
 - pnpm is declared by `frontend/package.json#packageManager`;
-- MySQL 8 and Redis are required for a complete local service.
+- MySQL 8 is required for the current local service.
 
 The environment checks can resolve the repository Go toolchain automatically:
 
@@ -25,8 +25,8 @@ The environment checks can resolve the repository Go toolchain automatically:
 
 ## One-command startup
 
-The development launcher verifies dependencies, starts MySQL and Redis through
-Docker Compose when necessary, creates ignored local runtime configuration,
+The development launcher verifies dependencies, starts MySQL through Docker
+Compose when necessary, creates ignored local runtime configuration,
 starts the backend and optionally starts the frontend.
 
 PowerShell:
@@ -41,7 +41,7 @@ Bash:
 ./scripts/start-dev.sh --with-frontend
 ```
 
-Use `-SkipDependencies` or `--skip-deps` when MySQL and Redis already run
+Use `-SkipDependencies` or `--skip-deps` when MySQL already runs
 outside the repository Compose stack. Both launchers expose additional port,
 timeout and datasource options in their built-in help or parameter list.
 

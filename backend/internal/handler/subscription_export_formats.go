@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"strings"
 
+	"golang.org/x/net/idna"
 	"gopkg.in/yaml.v2"
 )
 
@@ -198,6 +200,9 @@ func renderClashSubscription(data subscriptionTemplateData, customization subscr
 	if err := applySubscriptionAdvancedOverlay(subscriptionRendererClash, baseMap, customization.AdvancedSource, proxyNames); err != nil {
 		return "", err
 	}
+	if err := prependClashProxyServerDirectRules(baseMap, data.ProtocolEndpoints); err != nil {
+		return "", err
+	}
 	if err := validateGeneratedSubscriptionDocument(subscriptionRendererClash, baseMap); err != nil {
 		return "", err
 	}
@@ -206,6 +211,91 @@ func renderClashSubscription(data subscriptionTemplateData, customization subscr
 		return "", fmt.Errorf("encode customized Clash subscription: %w", err)
 	}
 	return string(rendered), nil
+}
+
+func prependClashProxyServerDirectRules(document map[string]interface{}, endpoints []subscriptionTemplateEndpoint) error {
+	directRules := clashProxyServerDirectRules(endpoints)
+	if len(directRules) == 0 {
+		return nil
+	}
+	existing, err := subscriptionStringList(document["rules"], "Clash rules")
+	if err != nil {
+		return err
+	}
+	directRuleSet := make(map[string]struct{}, len(directRules))
+	rules := make([]interface{}, 0, len(directRules)+len(existing))
+	for _, rule := range directRules {
+		directRuleSet[strings.ToUpper(rule)] = struct{}{}
+		rules = append(rules, rule)
+	}
+	for _, rule := range existing {
+		if _, generated := directRuleSet[strings.ToUpper(strings.TrimSpace(rule))]; generated {
+			continue
+		}
+		rules = append(rules, rule)
+	}
+	document["rules"] = rules
+	return nil
+}
+
+func clashProxyServerDirectRules(endpoints []subscriptionTemplateEndpoint) []string {
+	seen := make(map[string]struct{}, len(endpoints))
+	rules := make([]string, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		address := strings.TrimSpace(endpoint.Address)
+		if len(address) > 1 && address[0] == '[' && address[len(address)-1] == ']' {
+			address = address[1 : len(address)-1]
+		}
+		if parsed, err := netip.ParseAddr(address); err == nil {
+			parsed = parsed.Unmap().WithZone("")
+			family := "IP-CIDR6"
+			prefix := 128
+			if parsed.Is4() {
+				family = "IP-CIDR"
+				prefix = 32
+			}
+			key := family + ":" + parsed.String()
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			rules = append(rules, fmt.Sprintf("%s,%s/%d,DIRECT,no-resolve", family, parsed, prefix))
+			continue
+		}
+
+		domain, ok := normalizeClashProxyServerDomain(address)
+		if !ok {
+			continue
+		}
+		key := "DOMAIN:" + domain
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		rules = append(rules, "DOMAIN,"+domain+",DIRECT")
+	}
+	return rules
+}
+
+func normalizeClashProxyServerDomain(value string) (string, bool) {
+	trimmed := strings.TrimSuffix(strings.TrimSpace(value), ".")
+	if trimmed == "" {
+		return "", false
+	}
+	ascii, err := idna.Lookup.ToASCII(trimmed)
+	if err != nil {
+		return "", false
+	}
+	ascii = strings.ToLower(ascii)
+	if len(ascii) > 253 {
+		return "", false
+	}
+	for _, label := range strings.Split(ascii, ".") {
+		if label == "" || len(label) > 63 {
+			return "", false
+		}
+	}
+	return ascii, true
 }
 
 func renderSingBoxSubscription(data subscriptionTemplateData, customization subscriptionTemplateCustomization) (string, error) {

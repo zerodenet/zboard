@@ -23,7 +23,6 @@ NO_SMOKE=0
 START_FRONTEND=0
 API_BASE_MANUALLY_SET=0
 DATA_SOURCE="${ZBOARD_LOCAL_DSN:-zboard:zboard-local-db-password@tcp(127.0.0.1:3306)/zboard?charset=utf8mb4&parseTime=true&loc=Local}"
-REDIS_ADDR="${ZBOARD_LOCAL_REDIS:-127.0.0.1:6379}"
 JWT_SECRET="${ZBOARD_JWT_SECRET:-}"
 CREDENTIAL_ENCRYPTION_KEY="${ZBOARD_CREDENTIAL_ENCRYPTION_KEY:-}"
 ADMIN_EMAIL="${ZBOARD_BOOTSTRAP_ADMIN_EMAIL:-admin@zboard.local}"
@@ -45,8 +44,7 @@ Options:
   --smoke-timeout SEC timeout for smoke-test API calls (default: 10)
   --go-version VERSION      Go version target for baseline resolution, default: 1.26.5
   --datasource DSN      override mysql DSN
-  --redis-addr ADDR     override redis addr
-  --skip-deps           do not auto-start mysql/redis in docker
+  --skip-deps           do not auto-start mysql in docker
   --no-smoke            skip smoke test
   --with-frontend       start frontend dev server
   --stop-when-done      stop services after smoke test and exit
@@ -159,15 +157,6 @@ while [[ $# -gt 0 ]]; do
       DATA_SOURCE="$2"
       shift 2
       ;;
-    --redis-addr)
-      if [[ $# -lt 2 ]]; then
-        echo "missing value for --redis-addr" >&2
-        usage
-        exit 1
-      fi
-      REDIS_ADDR="$2"
-      shift 2
-      ;;
     --skip-deps)
       SKIP_DEPS=1
       shift
@@ -274,10 +263,10 @@ else
 fi
 
 if [[ "${SKIP_DEPS}" == "0" ]] && command -v docker >/dev/null 2>&1; then
-  info "Starting dependency services via docker compose (mysql, redis)..."
+  info "Starting MySQL via docker compose..."
   ZBOARD_MYSQL_ROOT_PASSWORD="${ZBOARD_MYSQL_ROOT_PASSWORD:-zboard-local-root-password}" \
     ZBOARD_MYSQL_PASSWORD="${ZBOARD_MYSQL_PASSWORD:-zboard-local-db-password}" \
-    docker compose -f "${PROJECT_ROOT}/deploy/docker/docker-compose.yml" up -d mysql redis
+    docker compose -f "${PROJECT_ROOT}/deploy/docker/docker-compose.development.yml" up -d mysql
 fi
 
 dev_secrets_path="${TMP_DIR}/zboard.dev.secrets"
@@ -316,7 +305,7 @@ fi
 source_config="${PROJECT_ROOT}/backend/etc/zboard.yaml.example"
 runtime_config="${TMP_DIR}/zboard.local.yaml"
 
-awk -v dsn="${DATA_SOURCE}" -v redis_addr="${REDIS_ADDR}" -v backend_port="${BACKEND_PORT}" '
+awk -v dsn="${DATA_SOURCE}" -v backend_port="${BACKEND_PORT}" '
 {
   if ($0 ~ /^[[:space:]]*environment:/) {
     print "environment: development"
@@ -324,10 +313,6 @@ awk -v dsn="${DATA_SOURCE}" -v redis_addr="${REDIS_ADDR}" -v backend_port="${BAC
   }
   if ($0 ~ /^[[:space:]]*datasource:/) {
     print "datasource: \"" dsn "\""
-    next
-  }
-  if ($0 ~ /^[[:space:]]*redis_addr:/) {
-    print "redis_addr: \"" redis_addr "\""
     next
   }
   if ($0 ~ /^[[:space:]]*Port:/) {

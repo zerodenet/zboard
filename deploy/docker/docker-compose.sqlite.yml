@@ -1,0 +1,7 @@
+services:
+  zboard:
+    volumes:
+      - type: bind
+        source: ${ZBOARD_DATABASE_HOST_DIR:-./data}
+        target: /var/lib/zboard/data
+        read_only: false

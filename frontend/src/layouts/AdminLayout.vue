@@ -1,44 +1,32 @@
 <template>
-  <div class="app-shell" :class="{ 'nav-open': navigationOpen }">
-    <UiButton v-if="navigationOpen" variant="ghost" class="nav-scrim" aria-label="关闭导航" @click="navigationOpen = false"></UiButton>
-    <aside id="admin-navigation" class="app-sidebar">
+  <div class="app-shell admin-shell" :class="{ 'nav-open': navigationOpen }">
+    <button v-if="drawerModal" type="button" class="nav-scrim" aria-label="关闭导航遮罩" tabindex="-1" @click="navigationOpen = false" />
+    <aside id="admin-navigation" ref="sidebar" class="app-sidebar admin-sidebar"
+      :inert="mobile && !navigationOpen" :role="drawerModal ? 'dialog' : undefined"
+      :aria-modal="drawerModal ? true : undefined" aria-label="管理导航">
       <div class="brand-block">
-        <RouterLink class="admin-brand-home" to="/admin/dashboard"><span class="brand-mark">Z</span><div><strong>{{ app.siteName }}</strong><span>运营控制台</span></div></RouterLink>
-        <UiButton variant="ghost" icon class="icon-button sidebar-close" type="button" aria-label="关闭导航" @click="navigationOpen = false"><UiIcon name="close" /></UiButton>
+        <RouterLink class="admin-brand-home" to="/admin/dashboard" @click="navigationOpen = false">
+          <span class="brand-mark">Z</span><div><strong>{{ app.siteName }}</strong><span>管理控制台</span></div>
+        </RouterLink>
+        <button class="sidebar-close nav-icon-button" type="button" aria-label="关闭导航" @click="navigationOpen = false"><UiIcon name="close" /></button>
       </div>
 
-      <nav class="primary-nav" aria-label="管理端主导航">
-        <section v-for="group in navigationGroups" :key="group.label" class="nav-group">
-          <p>{{ group.label }}</p>
-          <template v-for="item in group.items" :key="item.to || item.label">
-            <div v-if="item.children?.length" class="nav-subgroup" :class="{ active: item.children.some(child => isNavigationItemActive(child.to)), collapsed: !isSubgroupExpanded(item.label) }">
-              <button class="nav-subgroup-label" type="button" :aria-expanded="isSubgroupExpanded(item.label)" :aria-controls="subgroupID(item.label)" @click="toggleSubgroup(item.label)"><UiIcon :name="item.icon" /><span>{{ item.label }}</span><UiIcon class="nav-subgroup-chevron" name="chevron" /></button>
-              <div v-show="isSubgroupExpanded(item.label)" :id="subgroupID(item.label)" class="nav-subgroup-items">
-                <RouterLink v-for="child in item.children" :key="child.to" class="nav-child" :to="child.to" :class="{ 'router-link-active': isNavigationItemActive(child.to) }"><span>{{ child.label }}</span></RouterLink>
-              </div>
-            </div>
-            <RouterLink v-else-if="item.to" :to="item.to" :class="{ 'router-link-active': isNavigationItemActive(item.to) }"><UiIcon :name="item.icon" /><span>{{ item.label }}</span></RouterLink>
-          </template>
-        </section>
-      </nav>
+      <AdminNavigation @select-domain="selectDomain" @select-page="navigationOpen = false" />
 
-      <div class="sidebar-footer">
-        <div class="account-summary">
-          <span class="avatar">{{ userInitial }}</span>
-          <div><strong>{{ app.user.email }}</strong><span>用户 · 管理员权限</span></div>
-          <UiButton variant="ghost" icon class="icon-button" type="button" title="退出登录" aria-label="退出登录" @click="logout"><UiIcon name="logout" /></UiButton>
-        </div>
-        <p class="build-version" :title="fullVersion">{{ displayVersion }}</p>
+      <div class="admin-account">
+        <span class="avatar">{{ userInitial }}</span>
+        <div class="admin-account-identity"><strong :title="app.user.email">{{ app.user.email }}</strong><span>管理员</span></div>
+        <button class="nav-icon-button" type="button" title="退出登录" aria-label="退出登录" @click="logout"><UiIcon name="logout" /></button>
       </div>
     </aside>
 
-    <div class="app-workspace">
+    <div class="app-workspace" :inert="drawerModal">
       <header class="topbar">
         <div class="topbar-leading">
-          <UiButton variant="ghost" icon class="icon-button menu-button" type="button" :aria-label="navigationOpen ? '关闭导航' : '打开导航'" :aria-expanded="navigationOpen" aria-controls="admin-navigation" @click="navigationOpen = !navigationOpen"><UiIcon :name="navigationOpen ? 'close' : 'menu'" /></UiButton>
+          <button class="nav-icon-button menu-button" type="button" :aria-label="navigationOpen ? '关闭导航' : '打开导航'" :aria-expanded="navigationOpen" aria-controls="admin-navigation" @click="navigationOpen = !navigationOpen"><UiIcon :name="navigationOpen ? 'close' : 'menu'" /></button>
           <div><span class="topbar-context">{{ currentSection }}</span><strong>{{ currentTitle }}</strong></div>
         </div>
-        <div class="topbar-status"><RouterLink class="topbar-link" to="/account">个人中心</RouterLink><span class="topbar-separator"></span><RouterLink class="topbar-link muted-link" to="/">查看站点</RouterLink></div>
+        <div class="topbar-status"><RouterLink class="topbar-link" to="/account">个人中心</RouterLink><span class="topbar-separator" /><RouterLink class="topbar-link muted-link" to="/">查看站点</RouterLink></div>
       </header>
       <nav v-if="returnTarget" class="context-return-bar" aria-label="跨资源返回">
         <RouterLink :to="returnTarget"><UiIcon name="chevron" />返回来源</RouterLink>
@@ -46,127 +34,72 @@
       </nav>
       <main class="app-content admin-stripe-surface"><RouterView /></main>
     </div>
-    <TaskTray />
+    <div class="admin-task-layer" :inert="drawerModal"><TaskTray /></div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getVersion } from '../api/client'
+import AdminNavigation from '../components/AdminNavigation.vue'
 import TaskTray from '../components/TaskTray.vue'
 import UiIcon from '../components/UiIcon.vue'
+import { useAdminDrawer } from '../composables/useAdminDrawer'
 import { useAppStore } from '../stores/app'
-import { shortVersion } from '../utils/format'
+import { resolveAdminNavigation } from '../utils/adminNavigation'
 import { normalizeAdminReturnTo } from '../utils/navigation'
 
 const app = useAppStore()
 const route = useRoute()
 const router = useRouter()
-const navigationOpen = ref(false)
-const expandedSubgroups = ref<Record<string, boolean>>(readExpandedSubgroups())
-const fetchedVersion = ref('')
-const fullVersion = computed(() => app.installation?.version || fetchedVersion.value || '')
-const displayVersion = computed(() => shortVersion(fullVersion.value))
+const sidebar = ref<HTMLElement | null>(null)
+const { open: navigationOpen, mobile, modal: drawerModal } = useAdminDrawer(sidebar)
 const currentTitle = computed(() => String(route.meta.title || '管理后台'))
-const currentSection = computed(() => String(route.meta.section || 'ZBoard'))
+const currentSection = computed(() => resolveAdminNavigation(route.path)?.domain.label || '管理控制台')
 const returnTarget = computed(() => normalizeAdminReturnTo(route.query.return_to))
 const userInitial = computed(() => (app.user.email || 'Z').slice(0, 1).toUpperCase())
-type NavigationLeaf = { to: string; label: string; icon?: string }
-type NavigationItem = { to?: string; label: string; icon: string; children?: NavigationLeaf[] }
-type NavigationGroup = { label: string; items: NavigationItem[] }
-const navigationGroups: NavigationGroup[] = [
-  { label: '工作台', items: [{ to: '/admin/dashboard', label: '运营工作台', icon: 'dashboard' }] },
-  { label: '客户与支持', items: [
-    { to: '/admin/users', label: '用户管理', icon: 'users' },
-    { to: '/admin/subscriptions', label: '订阅管理', icon: 'plans' },
-    { to: '/admin/fair-use', label: 'Fair Use 观测', icon: 'activity' },
-    { to: '/admin/tickets', label: '工单中心', icon: 'ticket' }
-  ] },
-  { label: '商业管理', items: [
-    { to: '/admin/plans', label: '商品与套餐', icon: 'plans' },
-    { to: '/admin/subscription-templates', label: '订阅模板', icon: 'audit' },
-    { to: '/admin/orders', label: '订单管理', icon: 'billing' }
-  ] },
-  { label: '基础设施', items: [
-    { label: '资源与接入', icon: 'nodes', children: [
-      { to: '/admin/nodes', label: '节点资产' },
-      { to: '/admin/providers', label: '外部供应商' },
-      { to: '/admin/dns-records', label: 'DNS 解析' }
-    ] },
-    { label: '服务与交付', icon: 'activity', children: [
-      { to: '/admin/certificates', label: '免费证书' },
-      { to: '/admin/protocols', label: '协议服务' },
-      { to: '/admin/node-groups', label: '节点组' },
-      { to: '/admin/traffic', label: '流量与对账' }
-    ] }
-  ] },
-  { label: '系统运营', items: [
-    { to: '/admin/tasks', label: '运营任务', icon: 'tasks' },
-    { to: '/admin/operation-logs', label: '运行日志', icon: 'terminal' },
-    { to: '/admin/audit-logs', label: '审计日志', icon: 'audit' },
-    { label: '系统设置', icon: 'settings', children: [
-      { to: '/admin/settings/site', label: '站点与品牌' },
-      { to: '/admin/settings/legal', label: '法务与政策' },
-      { to: '/admin/settings/registration', label: '注册与验证' },
-      { to: '/admin/settings/email', label: '邮件与运营模板' },
-      { to: '/admin/settings/runtime', label: '系统运行' }
-    ] },
-    { to: '/admin/about', label: '关于 ZBoard', icon: 'info' }
-  ] }
-]
+let selectingDomain = false
 
-function readExpandedSubgroups() {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem('zboard.admin.expandedSubgroups') || '{}')
-    return parsed && typeof parsed === 'object' ? parsed : {}
-  } catch { return {} }
+async function selectDomain(path: string) {
+  // Keep the mobile drawer open so a domain and its page can be chosen together.
+  selectingDomain = true
+  try { await router.push(path) } finally { selectingDomain = false }
 }
 
-function isSubgroupExpanded(label: string) {
-  return expandedSubgroups.value[label] !== false
-}
-
-function toggleSubgroup(label: string) {
-  expandedSubgroups.value = { ...expandedSubgroups.value, [label]: !isSubgroupExpanded(label) }
-  window.localStorage.setItem('zboard.admin.expandedSubgroups', JSON.stringify(expandedSubgroups.value))
-}
-
-function expandActiveSubgroup() {
-  const active = navigationGroups
-    .flatMap(group => group.items)
-    .find(item => item.children?.some(child => isNavigationItemActive(child.to)))
-  if (!active || isSubgroupExpanded(active.label)) return
-  expandedSubgroups.value = { ...expandedSubgroups.value, [active.label]: true }
-  window.localStorage.setItem('zboard.admin.expandedSubgroups', JSON.stringify(expandedSubgroups.value))
-}
-
-function subgroupID(label: string) { return `admin-subgroup-${label.replace(/[^a-zA-Z0-9\u4e00-\u9fff]+/g, '-')}` }
-
-function isNavigationItemActive(path: string) {
-  return route.path === path || route.path.startsWith(`${path}/`)
-}
-
-watch(() => route.path, expandActiveSubgroup, { immediate: true })
-
-onMounted(async () => {
-  try { fetchedVersion.value = (await getVersion())?.version || '' } catch { fetchedVersion.value = '' }
-  await app.loadMe()
-})
-watch(() => route.fullPath, () => { navigationOpen.value = false })
+onMounted(() => { void app.loadMe() })
+watch(() => route.fullPath, () => { if (!selectingDomain) navigationOpen.value = false })
 function logout() { app.clear(); router.push('/') }
 </script>
 
 <style scoped>
+.admin-shell { grid-template-columns: 280px minmax(0, 1fr); }
+.admin-sidebar { height: 100dvh; color: var(--text-body); background: var(--surface); border-right-color: var(--line); }
+.admin-sidebar .brand-block { min-height: 76px; padding: 16px 20px; border-color: var(--line-subtle); }
 .admin-brand-home { min-width: 0; display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.admin-brand-home .brand-mark { width: 34px; height: 34px; border-radius: 10px; }
+.admin-brand-home strong { color: var(--text-strong); font-size: 15px; }
+.admin-brand-home span:not(.brand-mark) { color: var(--muted); font-size: 11px; }
+.admin-account { display: flex; align-items: center; gap: 10px; min-height: 76px; padding: 14px 16px; border-top: 1px solid var(--line-subtle); }
+.admin-account .avatar { width: 32px; height: 32px; flex: 0 0 auto; border-radius: 10px; font-size: 13px; }
+.admin-account-identity { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.admin-account strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-body); font-size: 12px; font-weight: 600; }
+.admin-account-identity > span { color: var(--muted); font-size: 11px; }
+.nav-icon-button { flex: 0 0 auto; display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 8px; color: var(--text-secondary); background: transparent; cursor: pointer; font-size: 16px; }
+.nav-icon-button:hover { background: var(--surface-muted); color: var(--text-strong); }
+.nav-icon-button:focus-visible, .admin-brand-home:focus-visible { outline: 2px solid var(--focus-border); outline-offset: 2px; }
+.admin-task-layer { display: contents; }
 .topbar-link { color: var(--primary); font-weight: 650; text-decoration: none; }
 .topbar-link.muted-link { color: var(--muted); }.topbar-separator { width: 1px; height: 13px; background: var(--line-strong); }
 .context-return-bar { min-height: 38px; display: flex; align-items: center; gap: 10px; padding: 6px 32px; border-bottom: 1px solid var(--line); background: var(--primary-soft); color: var(--muted); font-size: 10px; }
 .context-return-bar a { display: inline-flex; align-items: center; gap: 5px; color: var(--primary); font-size: 11px; font-weight: 750; text-decoration: none; }
 .context-return-bar a:hover { text-decoration: underline; }
 .context-return-bar .ui-icon { transform: rotate(180deg); }
-@media (max-width: 900px) {
+@media (max-width: 820px) {
+  .admin-sidebar { width: min(320px, 92vw); }
+  /* The global maintenance badge must not cover the drawer's account actions. */
+  :global(.admin-shell.nav-open ~ .admin-maintenance-banner) { visibility: hidden; }
   .context-return-bar { padding-inline: 18px; }
   .context-return-bar > span { display: none; }
 }
+@media (prefers-reduced-motion: reduce) { .admin-sidebar { transition: none; } }
 </style>

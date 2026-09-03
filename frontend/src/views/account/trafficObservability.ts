@@ -3,6 +3,7 @@ import {
   type EntityReference,
   type TrafficTrendPoint,
 } from '../../api/readModels'
+import type { QueryID } from '../../api/queryID'
 
 // Kept for chart compatibility. Backend aggregation is no longer bounded by a
 // browser-side record scan, so this value is never used as a truncation limit.
@@ -21,7 +22,7 @@ export interface TrafficObservabilityResult {
 }
 
 export interface TrafficObservabilityQuery {
-  subscriptionId?: number
+  subscriptionId?: QueryID
   from: string
   to: string
   signal?: AbortSignal

@@ -147,6 +147,9 @@ func (h *handlers) CloseHistoryRetentionWorker() {
 }
 
 func (h *handlers) runHistoryRetentionSafely() {
+	if h.backgroundWorkPaused() {
+		return
+	}
 	result, err := h.runHistoryRetention(time.Now().UTC())
 	if err != nil {
 		log.Printf("history retention cleanup failed: %v", err)

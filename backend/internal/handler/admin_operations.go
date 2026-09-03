@@ -28,14 +28,15 @@ const (
 	taskStatusCompleted = int16(2)
 	taskStatusFailed    = int16(3)
 
-	taskTypeQuota          = "quota"
-	taskTypeEmail          = "email"
-	taskTypeNodeDetect     = "node_detect"
-	taskTypeNodeReconcile  = "node_reconcile"
-	taskTypeNodeLifecycle  = "node_lifecycle"
-	taskTypeProtocolDeploy = "protocol_deploy"
-	taskTypeProtocolActive = "protocol_active"
-	taskTypeNodeGroupSync  = "node_group_reconcile"
+	taskTypeQuota             = "quota"
+	taskTypeEmail             = "email"
+	taskTypeNodeDetect        = "node_detect"
+	taskTypeNodeReconcile     = "node_reconcile"
+	taskTypeNodeLifecycle     = "node_lifecycle"
+	taskTypeProtocolDeploy    = "protocol_deploy"
+	taskTypeProtocolActive    = "protocol_active"
+	taskTypeNodeGroupSync     = "node_group_reconcile"
+	taskTypeDatabaseMigration = "database_migration"
 
 	maxTaskTargets       = 10000
 	operationTaskWorkers = 4
@@ -74,6 +75,22 @@ type systemConfigInputSchema struct {
 
 func (h *handlers) ReconcileSystemConfigDefaults() error {
 	defaults := []model.SystemConfig{
+		{
+			ConfigKey: "maintenance_enabled", Name: "系统维护模式", Value: "false", ValueType: "bool",
+			Description: "开启后普通用户只能看到维护提示，管理员仍可进入控制台", IsPublic: true,
+		},
+		{
+			ConfigKey: "maintenance_title", Name: "维护页标题", Value: "系统维护中", ValueType: "string",
+			Description: "维护页面显示的标题", IsPublic: true,
+		},
+		{
+			ConfigKey: "maintenance_message", Name: "维护页提示", Value: "系统正在维护，请稍后再试。", ValueType: "string",
+			Description: "维护页面显示的可配置说明", IsPublic: true,
+		},
+		{
+			ConfigKey: "maintenance_task_id", Name: "维护任务标识", Value: "0", ValueType: "int",
+			Description: "由数据库迁移任务维护，不应手动修改", IsPublic: false,
+		},
 		{
 			ConfigKey:   "subscription_camouflage_url",
 			Name:        "订阅伪装跳转地址",
@@ -223,6 +240,10 @@ func (h *handlers) AdminSystemConfigUpdateHandler(w http.ResponseWriter, r *http
 		BadRequest(w, err.Error())
 		return
 	}
+	if key == "maintenance_task_id" {
+		Forbidden(w, "maintenance_task_id is managed by database migration tasks")
+		return
+	}
 	var req systemConfigUpdateReq
 	if err := decodeBody(r, &req); err != nil {
 		BadRequest(w, err.Error())
@@ -247,6 +268,15 @@ func (h *handlers) AdminSystemConfigUpdateHandler(w http.ResponseWriter, r *http
 		}
 		if err := validateSystemConfigValue(updated.ConfigKey, value); err != nil {
 			return err
+		}
+		if updated.ConfigKey == "maintenance_enabled" && value == "false" {
+			var activeMigrations int64
+			if err := tx.Model(&model.Task{}).Where("type = ? AND status IN ?", taskTypeDatabaseMigration, []int16{taskStatusPending, taskStatusRunning}).Count(&activeMigrations).Error; err != nil {
+				return err
+			}
+			if activeMigrations > 0 {
+				return errors.New("database migration is running; maintenance mode cannot be disabled")
+			}
 		}
 		storedValue := value
 		if updated.IsSecret && value != "" {
@@ -287,6 +317,9 @@ func (h *handlers) AdminSystemConfigUpdateHandler(w http.ResponseWriter, r *http
 	if err != nil {
 		BadRequest(w, err.Error())
 		return
+	}
+	if strings.HasPrefix(updated.ConfigKey, "maintenance_") {
+		h.invalidateMaintenanceState()
 	}
 	view, err := systemConfigToView(updated)
 	if err != nil {
@@ -367,8 +400,14 @@ func systemConfigInputSchemaFor(config model.SystemConfig) systemConfigInputSche
 	case "subscription_camouflage_url":
 		maxBytes := 2048
 		schema = systemConfigInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "留空时跳转到站点公开访问地址"}
-	case "task_email_enabled", "register_switch", "register_email_verification":
+	case "task_email_enabled", "register_switch", "register_email_verification", "maintenance_enabled":
 		schema = systemConfigInputSchema{Control: "switch"}
+	case "maintenance_title":
+		maxBytes := 160
+		schema = systemConfigInputSchema{Control: "text", Required: true, MaxBytes: &maxBytes, Placeholder: "系统维护中"}
+	case "maintenance_message":
+		maxBytes := 4000
+		schema = systemConfigInputSchema{Control: "textarea", Required: true, MaxBytes: &maxBytes, Placeholder: "说明维护原因和预计恢复时间"}
 	case "smtp_host":
 		maxBytes := 255
 		schema = systemConfigInputSchema{Control: "hostname", MaxBytes: &maxBytes, Placeholder: "smtp.example.com"}
@@ -501,6 +540,19 @@ func validateSystemConfigValue(key, value string) error {
 	case "smtp_password":
 		if len(value) > 4096 {
 			return errors.New("smtp_password is too long")
+		}
+	case "maintenance_title":
+		if strings.TrimSpace(value) == "" || len(value) > 160 {
+			return errors.New("maintenance_title must contain 1 to 160 bytes")
+		}
+	case "maintenance_message":
+		if strings.TrimSpace(value) == "" || len(value) > 4000 {
+			return errors.New("maintenance_message must contain 1 to 4000 bytes")
+		}
+	case "maintenance_task_id":
+		id, err := strconv.ParseUint(value, 10, 64)
+		if err != nil || id > uint64(^uint(0)) {
+			return errors.New("maintenance_task_id must be a non-negative integer")
 		}
 	}
 	return nil

@@ -2,6 +2,22 @@
 
 zboard is a modular monolith that combines subscription commerce with node operations. Product, entitlement, infrastructure and accounting data are deliberately separated so that editing a node or catalog entry cannot rewrite historical purchases.
 
+## Bounded self-service read projections
+
+Catalog pages may select an explicit purchase/renew/change/addon operation and
+include or exclude a plan before counting and paging. The same operation scopes
+the active SKU count and lowest-price primary SKU, including when the viewer is
+an administrator. Cards consume this projection without per-card SKU requests.
+The SKU detail collection is separately paginated; an optional anchor identifies
+the page containing a deep-linked SKU within the same plan/operation/search
+scope. A missing anchor is not replaced with another purchasable SKU.
+
+Subscription candidates use a server-side management filter and independent
+pagination. An explicit subscription ID is resolved inside the authenticated
+user scope, not searched only in a preview page. These are read projections:
+they do not grant purchase eligibility, alter subscription ownership, change
+historical entitlement snapshots or replace order-creation authorization.
+
 ## Identity and installation
 
 - `users.email` is the normalized unique login identifier; `account_name` is a display name.
@@ -112,6 +128,10 @@ zboard is a modular monolith that combines subscription commerce with node opera
 - Billed traffic is calculated with integer thousandths: `selected_bytes * protocol_multiplier_milli / 1_000`, rounded up.
 - `traffic_records` stores the direction policy and protocol multiplier snapshot, so later endpoint changes never alter historical accounting.
 - Human-facing traffic history is a read-only projection over `traffic_records`: details can group by minute, hour or UTC day while retaining user, subscription, node and multiplier dimensions. The node-series projection applies the same authorization and optional filters, then intentionally groups away user/subscription identity to answer node-capacity questions and produce a descending node-total ranking; it never creates a second accounting fact.
+- Account usage pages carry bounded `facets.nodes` and `facets.subscriptions` reference maps for their own rows. A top-node chart ranking is not a complete directory. Subscription labels are independently restricted to the authenticated owner; deleted or incorrectly associated foreign subscriptions remain explicit missing references. Node references expose only ID, name, region and lifecycle status, never host or credential fields. Page rows and reference maps are replaced atomically by the client.
+- Reconciliation scopes raw traffic totals by the selected subscription IDs before aggregation, not by the raw row's user ID: a misattributed record remains visible as an accounting fact for its subscription. Issue-page counts reuse summary counts and page rows reuse their joined totals. Cursor seeks on usage buckets retain the complete cursor bucket before aggregation; the raw ID must not be used to cut a bucket before its `MIN(id)` and sums are computed. Request cancellation propagates through these read queries, and no accounting writes or persisted aggregate tables are introduced.
+- Grouped usage supports an independent `view=usage_summary` projection with `total`, `aggregates`, `bucket` and `as_of`. Its sum/count reads run in one database transaction. Current clients request live pages with `include_totals=false`, receiving explicit null totals/aggregates; they do not fabricate zero or reconstruct whole-range totals from visible rows. The separate statistics snapshot is keyed by authorization/filter/range/bucket, not cursor or page size, and is refreshed on scope changes or an explicit refresh. The UI displays its timestamp and keeps paging usable while statistics are pending or fail; live rows and an older labelled statistics snapshot are not a single cross-request snapshot.
+- Account subscription filter options use the paged self-service subscription reader, with `q` matching plan/SKU names or an exact subscription ID before count/offset/limit, always inside the authenticated owner. Historical subscriptions are selectable without an active-status restriction. A URL-selected ID is resolved independently, not replaced by a preview row. Trend responses no longer load a subscription directory by default; `include_subscriptions=true` is an explicit deprecated compatibility opt-in only, never used by current UI filters.
 - `(node_id, report_id)` provides retry idempotency and `(node_id, nonce)` prevents replay.
 - `quota_events` is the auditable allocation/usage ledger. Subscription counters remain the fast balance projection and can be reconciled against traffic and quota events.
 

@@ -12,31 +12,32 @@
       </template>
     </PageHeader>
 
-    <TransientFeedback :error="error" error-title="账户概览加载失败" />
+    <PageAlert v-if="summaryError" tone="danger" title="流量汇总加载失败">{{ summaryError }} <UiButton variant="secondary" @click="summaryResource.load()">重试流量汇总</UiButton></PageAlert>
+    <PageAlert v-if="pendingError" tone="danger" title="待处理订单统计加载失败">{{ pendingError }} <UiButton variant="secondary" @click="pendingResource.load()">重试订单统计</UiButton></PageAlert>
 
     <UiMetricStrip :columns="3">
       <MetricCard
         label="剩余流量"
-        :value="formatBytes(summary.remaining_bytes)"
+        :value="summaryLoaded && !summaryError ? formatBytes(summary.remaining_bytes) : '—'"
         icon="activity"
-        status="流量"
+        :status="summaryLoading ? '加载中' : summaryError ? '读取失败' : '流量'"
         tone="info"
-        :meta="`累计使用 ${formatBytes(summary.total_used_bytes)}`"
+        :meta="summaryLoaded && !summaryError ? `累计使用 ${formatBytes(summary.total_used_bytes)}` : '尚未取得汇总'"
       />
       <MetricCard
         label="有效订阅"
-        :value="activeSubscriptionTotal"
+        :value="activeLoaded && !activeError ? activeSubscriptionTotal : '—'"
         icon="plans"
-        status="服务中"
+        :status="activeLoading ? '加载中' : activeError ? '读取失败' : '服务中'"
         :tone="activeSubscriptionTotal ? 'success' : 'neutral'"
         icon-tone="success"
         meta="仅加载最近 3 条"
       />
       <MetricCard
         label="待处理订单"
-        :value="pendingOrderTotal"
+        :value="pendingLoaded && !pendingError ? pendingOrderTotal : '—'"
         icon="billing"
-        status="待支付"
+        :status="pendingLoading ? '加载中' : pendingError ? '读取失败' : '待支付'"
         :tone="pendingOrderTotal ? 'warning' : 'neutral'"
         icon-tone="warning"
         meta="按当前用户完整统计"
@@ -50,6 +51,8 @@
             管理订阅<UiIcon name="chevron" />
           </RouterLink>
         </template>
+        <PageAlert v-if="activeError" tone="danger" title="有效订阅加载失败">{{ activeError }} <UiButton variant="secondary" @click="activeResource.load()">重试订阅</UiButton></PageAlert>
+        <p v-if="activeLoading" role="status">正在加载有效订阅…</p>
         <DataTable v-if="activeSubscriptions.length" caption="最近三条有效订阅" :row-count="activeSubscriptionTotal" :min-width="620">
           <thead>
             <tr>
@@ -74,7 +77,7 @@
           </tbody>
         </DataTable>
         <EmptyState
-          v-else
+          v-else-if="activeLoaded && !activeLoading && !activeError"
           icon="plans"
           title="还没有有效订阅"
           description="选择一个套餐并创建订单，订单确认后即可获得订阅服务。"
@@ -98,6 +101,8 @@
           全部订单<UiIcon name="chevron" />
         </RouterLink>
       </template>
+      <PageAlert v-if="ordersError" tone="danger" title="最近订单加载失败">{{ ordersError }} <UiButton variant="secondary" @click="ordersResource.load()">重试最近订单</UiButton></PageAlert>
+      <p v-if="ordersLoading" role="status">正在加载最近订单…</p>
       <DataTable v-if="orders.length" caption="最近三笔订单" :row-count="recentOrderTotal" :min-width="680">
         <thead>
           <tr>
@@ -123,13 +128,13 @@
           </tr>
         </tbody>
       </DataTable>
-      <EmptyState v-else icon="billing" title="还没有订单" description="从套餐页面创建第一笔订单。" />
+      <EmptyState v-else-if="ordersLoaded && !ordersLoading && !ordersError" icon="billing" title="还没有订单" description="从套餐页面创建第一笔订单。" />
     </UiSection>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 import {
   fetchAccountOrdersPage,
   fetchAccountSubscriptionsPage,
@@ -142,22 +147,43 @@ import EmptyState from '../../components/EmptyState.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import TimeBadge from '../../components/TimeBadge.vue'
-import TransientFeedback from '../../components/TransientFeedback.vue'
+import PageAlert from '../../components/PageAlert.vue'
+import MetricCard from '../../components/MetricCard.vue'
+import UiMetricStrip from '../../components/UiMetricStrip.vue'
+import UiSection from '../../components/UiSection.vue'
+import { useRemoteResource } from '../../composables/useRemoteResource'
 import UiButton from '../../components/UiButton.vue'
 import UiIcon from '../../components/UiIcon.vue'
 import { useAppStore } from '../../stores/app'
 import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/format'
 
 const app = useAppStore()
-const loading = ref(false)
-const error = ref('')
-const summary = ref<Record<string, any>>({})
-const activeSubscriptions = ref<AdminSubscriptionListItem[]>([])
-const activeSubscriptionTotal = ref(0)
-const orders = ref<AdminOrderListItem[]>([])
-const recentOrderTotal = ref(0)
-const pendingOrderTotal = ref(0)
-
+const summaryResource = useRemoteResource<Record<string, any>>({
+  initial: () => ({}), fetch: ({ signal }) => fetchTrafficSummary(false, { signal }), errorMessage: '流量汇总加载失败。',
+})
+const activeResource = useRemoteResource({
+  initial: () => ({ items: [] as AdminSubscriptionListItem[], total: 0 }),
+  fetch: ({ signal }) => fetchAccountSubscriptionsPage({ status: 'active', offset: 0, limit: 3 }, { signal }),
+  errorMessage: '有效订阅加载失败。',
+})
+const ordersResource = useRemoteResource({
+  initial: () => ({ items: [] as AdminOrderListItem[], total: 0 }),
+  fetch: ({ signal }) => fetchAccountOrdersPage({ offset: 0, limit: 3 }, { signal }), errorMessage: '最近订单加载失败。',
+})
+const pendingResource = useRemoteResource({
+  initial: () => 0,
+  fetch: async ({ signal }) => (await fetchAccountOrdersPage({ status: 'pending', offset: 0, limit: 1 }, { signal })).total,
+  errorMessage: '待处理订单统计加载失败。',
+})
+const { data: summary, loading: summaryLoading, error: summaryError, loaded: summaryLoaded } = summaryResource
+const { loading: activeLoading, error: activeError, loaded: activeLoaded } = activeResource
+const { loading: ordersLoading, error: ordersError, loaded: ordersLoaded } = ordersResource
+const { data: pendingOrderTotal, loading: pendingLoading, error: pendingError, loaded: pendingLoaded } = pendingResource
+const activeSubscriptions = computed(() => activeResource.data.value.items)
+const activeSubscriptionTotal = computed(() => activeResource.data.value.total)
+const orders = computed(() => ordersResource.data.value.items)
+const recentOrderTotal = computed(() => ordersResource.data.value.total)
+const loading = computed(() => summaryLoading.value || activeLoading.value || ordersLoading.value || pendingLoading.value)
 function remaining(sub: AdminSubscriptionListItem) {
   return Math.max(0, (sub.flow_total || 0) - (sub.flow_used || 0))
 }
@@ -172,26 +198,7 @@ function orderLabel(status: string) {
 }
 
 async function load() {
-  loading.value = true
-  error.value = ''
-  try {
-    const [summaryResult, activePage, recentOrderPage, pendingOrderPage] = await Promise.all([
-      fetchTrafficSummary(),
-      fetchAccountSubscriptionsPage({ status: 'active', offset: 0, limit: 3 }),
-      fetchAccountOrdersPage({ offset: 0, limit: 3 }),
-      fetchAccountOrdersPage({ status: 'pending', offset: 0, limit: 1 }),
-    ])
-    summary.value = summaryResult
-    activeSubscriptions.value = activePage.items
-    activeSubscriptionTotal.value = activePage.total
-    orders.value = recentOrderPage.items
-    recentOrderTotal.value = recentOrderPage.total
-    pendingOrderTotal.value = pendingOrderPage.total
-  } catch (cause: any) {
-    error.value = cause?.response?.data?.message || '账户数据加载失败。'
-  } finally {
-    loading.value = false
-  }
+  await Promise.all([summaryResource.load(), activeResource.load(), ordersResource.load(), pendingResource.load()])
 }
 
 onMounted(load)
