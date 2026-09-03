@@ -1576,6 +1576,9 @@ func (h *handlers) ensureKernelState(nodeID uint) (model.NodeKernelState, error)
 func (h *handlers) beginKernelOperation(nodeID uint, claims authClaims, operationType string) (model.NodeOperation, error) {
 	var operation model.NodeOperation
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := requireAvailableNode(tx, nodeID); err != nil {
+			return err
+		}
 		var state model.NodeKernelState
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID).First(&state).Error; err != nil {
 			if !errors.Is(err, gorm.ErrRecordNotFound) {

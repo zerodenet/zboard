@@ -196,6 +196,9 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	if err != nil {
 		return model.ProtocolDeployment{}, time.Since(started), err
 	}
+	if node.LifecycleStatus == resourceStatusDeleting {
+		return model.ProtocolDeployment{}, time.Since(started), errResourceDeleting
+	}
 	var mieruFallbackCount int64
 	startedAt := time.Now().UTC()
 	deployment := model.ProtocolDeployment{

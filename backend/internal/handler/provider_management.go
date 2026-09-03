@@ -139,6 +139,12 @@ func (h *handlers) ProviderAccountListHandler(w http.ResponseWriter, r *http.Req
 			ServerError(w, err)
 			return
 		}
+		var certificates int64
+		if err := h.db.Model(&model.ManagedCertificate{}).Where("provider_account_id = ?", account.ID).Count(&certificates).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		count += certificates
 		views = append(views, providerAccountView{ProviderAccount: account, Capabilities: capabilities, UsageCount: count})
 	}
 	OK(w, views)
@@ -340,6 +346,12 @@ func (h *handlers) ManagedDNSCreateHandler(w http.ResponseWriter, r *http.Reques
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		for index := range records {
+			if err := requireAvailableNode(tx, records[index].NodeID); err != nil {
+				return err
+			}
+			if err := requireAvailableProvider(tx, records[index].ProviderAccountID); err != nil {
+				return err
+			}
 			if err := tx.Create(&records[index]).Error; err != nil {
 				return err
 			}
@@ -398,6 +410,15 @@ func (h *handlers) ManagedDNSUpdateHandler(w http.ResponseWriter, r *http.Reques
 		var existing model.ManagedDNSRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&existing, id).Error; err != nil {
 			return err
+		}
+		if err := requireAvailableNode(tx, existing.NodeID); err != nil {
+			return err
+		}
+		if err := requireAvailableNode(tx, updated.NodeID); err != nil {
+			return err
+		}
+		if existing.Status == resourceStatusDeleting {
+			return errResourceDeleting
 		}
 		currentRevision = existing.Revision
 		if existing.Revision != request.ExpectedRevision {
@@ -460,83 +481,6 @@ var (
 	errManagedDNSRevisionConflict = errors.New("managed DNS revision conflict")
 	errManagedDNSOperationRunning = errors.New("managed DNS operation is running")
 )
-
-func (h *handlers) ManagedDNSDeleteHandler(w http.ResponseWriter, r *http.Request) {
-	claims, err := h.requireAdmin(w, r)
-	if err != nil {
-		return
-	}
-	id, err := parsePathID(r.URL.Path, "/api/v1/admin/dns-records/")
-	if err != nil {
-		BadRequest(w, err.Error())
-		return
-	}
-	var record model.ManagedDNSRecord
-	err = h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, id).Error; err != nil {
-			return err
-		}
-		var running int64
-		if err := tx.Model(&model.ProviderOperation{}).Where("resource_type = ? AND resource_id = ? AND status = ?", "dns_record", record.ID, "running").Count(&running).Error; err != nil {
-			return err
-		}
-		if running > 0 || record.Status == dnsStatusSyncing {
-			return errManagedDNSOperationRunning
-		}
-		return tx.Model(&record).Updates(map[string]interface{}{"status": dnsStatusSyncing, "last_error": ""}).Error
-	})
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		NotFound(w)
-		return
-	}
-	if errors.Is(err, errManagedDNSOperationRunning) {
-		writeJSON(w, http.StatusConflict, "DNS 记录正在执行供应商操作，请等待完成后再删除。", nil)
-		return
-	}
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
-	if record.ProviderZoneID != "" && record.ProviderRecordID != "" {
-		var account model.ProviderAccount
-		if err := h.db.First(&account, record.ProviderAccountID).Error; err != nil {
-			h.failManagedDNSDeletion(record.ID, err)
-			ServerError(w, err)
-			return
-		}
-		token, err := h.credentialCipher.Decrypt(account.CredentialCiphertext)
-		if err != nil {
-			h.failManagedDNSDeletion(record.ID, err)
-			ServerError(w, err)
-			return
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-		defer cancel()
-		if err := deleteCloudflareDNSRecord(ctx, token, record.ProviderZoneID, record.ProviderRecordID); err != nil && !cloudflareRecordAlreadyAbsent(err) {
-			h.failManagedDNSDeletion(record.ID, err)
-			BadRequest(w, "Cloudflare 远端 DNS 记录删除失败；面板记录已保留，可稍后重试。")
-			return
-		}
-	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := createAuditLog(tx, claims, "dns_record.delete", fmt.Sprintf("managed_dns_record:%d", record.ID),
-			fmt.Sprintf("domain=%s type=%s node=%d provider_account=%d", record.DomainName, record.RecordType, record.NodeID, record.ProviderAccountID)); err != nil {
-			return err
-		}
-		return tx.Delete(&model.ManagedDNSRecord{}, record.ID).Error
-	}); err != nil {
-		h.failManagedDNSDeletion(record.ID, err)
-		ServerError(w, err)
-		return
-	}
-	OK(w, map[string]interface{}{"id": record.ID, "deleted": true, "remote_record_deleted": record.ProviderRecordID != ""})
-}
-
-func (h *handlers) failManagedDNSDeletion(recordID uint, err error) {
-	_ = h.db.Model(&model.ManagedDNSRecord{}).Where("id = ?", recordID).Updates(map[string]interface{}{
-		"status": dnsStatusFailed, "last_error": truncateCertificateError(err.Error()),
-	}).Error
-}
 
 func deleteCloudflareDNSRecord(ctx context.Context, token, zoneID, recordID string) error {
 	_, err := cloudflareRequest[json.RawMessage](ctx, http.MethodDelete,
@@ -631,6 +575,12 @@ func (h *handlers) startDNSOperation(recordID uint, takeover bool, requestedBy *
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var record model.ManagedDNSRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, recordID).Error; err != nil {
+			return err
+		}
+		if record.Status == resourceStatusDeleting {
+			return errResourceDeleting
+		}
+		if err := requireAvailableNode(tx, record.NodeID); err != nil {
 			return err
 		}
 		var count int64

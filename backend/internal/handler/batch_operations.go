@@ -527,6 +527,9 @@ func (h *handlers) executeNodeLifecycleTask(nodeID uint, lifecycle string, claim
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, nodeID).Error; err != nil {
 			return err
 		}
+		if node.LifecycleStatus == resourceStatusDeleting {
+			return errResourceDeleting
+		}
 		enabled := lifecycle == "active"
 		if node.LifecycleStatus == lifecycle && node.IsEnabled == enabled {
 			return nil

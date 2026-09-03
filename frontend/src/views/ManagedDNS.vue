@@ -20,8 +20,8 @@
           <td><TimeBadge v-if="record.last_synced_at" :value="record.last_synced_at" mode="relative" /><span v-else class="muted-value">尚未同步</span></td>
           <td class="table-action-column">
             <RowActions :label="`${record.record_type} ${record.domain_name} 的操作`" :trigger-key="`dns-${record.id}`">
-              <UiButton size="sm" variant="ghost" :disabled="record.status === 'syncing'" @click="openEdit(record)"><UiIcon name="settings" />编辑</UiButton>
-              <UiButton size="sm" variant="ghost" :loading="operatingRecord === record.id" :disabled="record.status === 'syncing'" @click="syncRecord(record)">同步</UiButton>
+              <UiButton size="sm" variant="ghost" :disabled="record.status === 'syncing' || record.status === 'deleting'" @click="openEdit(record)"><UiIcon name="settings" />编辑</UiButton>
+              <UiButton size="sm" variant="ghost" :loading="operatingRecord === record.id" :disabled="record.status === 'syncing' || record.status === 'deleting'" @click="syncRecord(record)">同步</UiButton>
               <RouterLink class="button button-ghost button-sm" :to="{ path: '/admin/certificates', query: { dns_domain: record.domain_name, dns_node: record.node_id, dns_provider: record.provider_account_id } }">申请证书</RouterLink>
               <UiButton size="sm" variant="danger" :loading="deletingRecord === record.id" :disabled="record.status === 'syncing'" @click="removeRecord(record)"><UiIcon name="trash" />删除</UiButton>
             </RowActions>
@@ -182,7 +182,7 @@ let editAddressController: AbortController | null = null
 let createAddressRequest = 0
 let editAddressRequest = 0
 
-function dnsStatus(status: string) { return ({ pending: '待同步', syncing: '同步中', active: '已同步', drifted: '存在漂移', failed: '同步失败' } as Record<string, string>)[status] || status }
+function dnsStatus(status: string) { return ({ pending: '待同步', syncing: '同步中', active: '已同步', drifted: '存在漂移', failed: '同步失败', deleting: '待完成删除' } as Record<string, string>)[status] || status }
 function dnsTone(status: string): 'success' | 'warning' | 'danger' | 'neutral' { return status === 'active' ? 'success' : status === 'failed' ? 'danger' : status === 'syncing' || status === 'drifted' ? 'warning' : 'neutral' }
 function openCreateDNS() { dnsOpen.value = true; if (dnsForm.node_id) void loadCreateAddressCandidates() }
 function closeCreateDNS() { createAddressController?.abort(); dnsOpen.value = false }
@@ -341,8 +341,8 @@ async function removeRecord(record: ManagedDNSRecord) {
     message.value = `${record.record_type} ${record.domain_name} 已从 Cloudflare 和面板删除。`
     await refreshAll()
   } catch (cause: any) {
-    error.value = cause?.response?.data?.message || 'DNS 记录删除失败。'
     await refreshAll()
+    error.value = cause?.response?.data?.message || 'DNS 记录删除失败。'
   } finally {
     deletingRecord.value = 0
   }
