@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	subscriptionCustomizationVersion     = 2
+	subscriptionCustomizationVersion     = 3
 	maxSubscriptionRuleSets              = 64
 	maxSubscriptionPolicyGroups          = 16
 	maxSubscriptionAdvancedSourceBytes   = 128 << 10
@@ -39,7 +39,12 @@ var (
 
 type subscriptionTemplateCustomization struct {
 	Version        int                                `json:"version"`
+	Mode           string                             `json:"mode"`
+	MixedEnabled   bool                               `json:"mixed_enabled"`
 	MixedPort      int                                `json:"mixed_port"`
+	SystemProxy    bool                               `json:"system_proxy"`
+	Tun            subscriptionTunCustomization       `json:"tun"`
+	DNS            subscriptionDNSCustomization       `json:"dns"`
 	MainGroup      string                             `json:"main_group"`
 	PolicyGroups   []subscriptionPolicyGroup          `json:"policy_groups"`
 	Final          string                             `json:"final,omitempty"`
@@ -112,9 +117,16 @@ func defaultSubscriptionCustomization(renderer string) subscriptionTemplateCusto
 		ID: "auto", Name: "自动选择", Type: "urltest",
 		ProbeURL: defaultSubscriptionProbeURL, Interval: 300, Tolerance: 50,
 	}
+	if renderer == subscriptionRendererSingBox {
+		mainGroup.IncludeReject = subscriptionBool(false)
+	}
 	return subscriptionTemplateCustomization{
 		Version:      subscriptionCustomizationVersion,
+		Mode:         subscriptionModeRule,
+		MixedEnabled: true,
 		MixedPort:    defaultSubscriptionMixedPort,
+		Tun:          defaultSubscriptionTunCustomization(),
+		DNS:          defaultSubscriptionDNSCustomization(),
 		MainGroup:    mainGroup.ID,
 		PolicyGroups: []subscriptionPolicyGroup{mainGroup, autoGroup},
 		Final:        subscriptionGroupTarget(mainGroup.ID),
@@ -153,6 +165,21 @@ func normalizeSubscriptionCustomization(renderer string, raw json.RawMessage) (s
 				return subscriptionTemplateCustomization{}, nil, err
 			}
 			customization = decoded
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(trimmed, &fields); err == nil {
+				if _, exists := fields["mixed_enabled"]; !exists {
+					customization.MixedEnabled = true
+				}
+			}
+			if envelope.Version == 2 {
+				runtimeDefaults := defaultSubscriptionCustomization(renderer)
+				customization.Version = subscriptionCustomizationVersion
+				customization.Mode = runtimeDefaults.Mode
+				customization.MixedEnabled = runtimeDefaults.MixedEnabled
+				customization.SystemProxy = runtimeDefaults.SystemProxy
+				customization.Tun = runtimeDefaults.Tun
+				customization.DNS = runtimeDefaults.DNS
+			}
 		}
 	}
 	if customization.Version == 0 {
@@ -166,6 +193,9 @@ func normalizeSubscriptionCustomization(renderer string, raw json.RawMessage) (s
 	}
 	if customization.MixedPort < 1 || customization.MixedPort > 65535 {
 		return subscriptionTemplateCustomization{}, nil, fmt.Errorf("本地混合入站端口必须在 1 到 65535 之间")
+	}
+	if err := normalizeSubscriptionRuntime(renderer, &customization); err != nil {
+		return subscriptionTemplateCustomization{}, nil, err
 	}
 	if err := normalizeSubscriptionPolicyGroups(renderer, &customization); err != nil {
 		return subscriptionTemplateCustomization{}, nil, err
@@ -282,7 +312,8 @@ func migrateLegacySubscriptionCustomization(renderer string, legacy legacySubscr
 		final = subscriptionGroupTarget(mainGroup.ID)
 	}
 	return subscriptionTemplateCustomization{
-		Version: subscriptionCustomizationVersion, MixedPort: defaultSubscriptionMixedPort, MainGroup: mainGroup.ID,
+		Version: subscriptionCustomizationVersion, Mode: subscriptionModeRule, MixedEnabled: true, MixedPort: defaultSubscriptionMixedPort,
+		Tun: defaultSubscriptionTunCustomization(), DNS: defaultSubscriptionDNSCustomization(), MainGroup: mainGroup.ID,
 		PolicyGroups: groups, Final: final, RuleSets: ruleSets, AdvancedSource: legacy.AdvancedSource,
 	}
 }
@@ -364,6 +395,9 @@ func normalizeSubscriptionPolicyGroups(renderer string, customization *subscript
 			}
 			if group.IncludeReject == nil {
 				group.IncludeReject = subscriptionBool(true)
+			}
+			if renderer == subscriptionRendererSingBox {
+				group.IncludeReject = subscriptionBool(false)
 			}
 		} else {
 			group.IncludeDirect = nil

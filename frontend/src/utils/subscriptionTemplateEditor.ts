@@ -21,6 +21,7 @@ export interface SubscriptionTemplateOutputOption {
   contentType: string
   icon: string
   mode: 'full' | 'nodes'
+  runtimeNetwork: boolean
 }
 
 function canonicalRenderer(renderer: RendererInput): SupportedSubscriptionRenderer | 'unsupported' {
@@ -38,26 +39,29 @@ export const subscriptionTemplateOutputOptions: SubscriptionTemplateOutputOption
   {
     value: 'zero',
     label: 'Zero',
-    description: 'Base64 编码的 Zero JSON，适合 ZNet Sink 和其他 Zero 客户端。',
+    description: 'Base64 编码的 Zero 完整 JSON；支持代理入口、DNS、TUN 与运行模式。',
     contentType: 'text/plain',
     icon: 'activity',
     mode: 'full',
+    runtimeNetwork: true,
   },
   {
     value: 'clash',
     label: 'Clash / Mihomo',
-    description: '生成节点、策略组和规则的完整 YAML 配置。',
+    description: '生成代理入口、DNS、TUN、节点、策略组和规则的完整 YAML 配置。',
     contentType: 'application/yaml',
     icon: 'nodes',
     mode: 'full',
+    runtimeNetwork: true,
   },
   {
     value: 'sing-box',
     label: 'sing-box',
-    description: '生成 outbounds、selector 和路由规则的完整 JSON 配置。',
+    description: '生成代理入口、DNS、TUN、outbounds、selector 和路由规则的完整 JSON 配置。',
     contentType: 'application/json',
     icon: 'database',
     mode: 'full',
+    runtimeNetwork: true,
   },
   {
     value: 'shadowrocket',
@@ -66,6 +70,7 @@ export const subscriptionTemplateOutputOptions: SubscriptionTemplateOutputOption
     contentType: 'text/plain',
     icon: 'activity',
     mode: 'nodes',
+    runtimeNetwork: false,
   },
   {
     value: 'quantumult-x',
@@ -74,6 +79,7 @@ export const subscriptionTemplateOutputOptions: SubscriptionTemplateOutputOption
     contentType: 'text/plain',
     icon: 'nodes',
     mode: 'nodes',
+    runtimeNetwork: false,
   },
   {
     value: 'v2rayn',
@@ -82,6 +88,7 @@ export const subscriptionTemplateOutputOptions: SubscriptionTemplateOutputOption
     contentType: 'text/plain',
     icon: 'activity',
     mode: 'nodes',
+    runtimeNetwork: false,
   },
 ]
 
@@ -92,6 +99,10 @@ export function subscriptionTemplateOutput(renderer: RendererInput) {
 
 export function subscriptionRendererSupportsPolicyConfig(renderer: RendererInput) {
   return subscriptionTemplateOutput(renderer)?.mode === 'full'
+}
+
+export function subscriptionRendererSupportsRuntimeNetwork(renderer: RendererInput) {
+  return subscriptionTemplateOutput(renderer)?.runtimeNetwork === true
 }
 
 export function subscriptionPolicyGroupTypeOptions(renderer: RendererInput) {
@@ -151,12 +162,35 @@ export function defaultSubscriptionCustomization(
   renderer: RendererInput,
 ): SubscriptionTemplateCustomization {
   const main = defaultSubscriptionPolicyGroup('main', '节点选择', 'select')
+  if (canonicalRenderer(renderer) === 'sing-box') (main as EditableSubscriptionPolicyGroup).include_reject = false
   main.include_groups = ['auto']
   main.default_group = 'auto'
   const auto = defaultSubscriptionPolicyGroup('auto', '自动选择', 'urltest')
   return {
-    version: 2,
+    version: 3,
+    mode: 'rule',
+    mixed_enabled: true,
     mixed_port: 7890,
+    system_proxy: false,
+    tun: {
+      enabled: false,
+      addresses: ['10.66.0.1/24', 'fd66::1/64'],
+      mtu: 1500,
+      auto_route: true,
+      strict_route: true,
+      dns_hijack: true,
+    },
+    dns: {
+      enabled: false,
+      servers: [{ tag: 'default', type: 'system' }],
+      default_server: 'default',
+      strategy: 'prefer_ipv4',
+      cache_enabled: true,
+      cache_capacity: 1024,
+      fake_ip_enabled: false,
+      fake_ipv4_range: '198.18.0.0/15',
+      fake_ipv6_range: 'fc00::/18',
+    },
     main_group: 'main',
     policy_groups: [main, auto],
     final: 'group:main',
@@ -175,13 +209,40 @@ export function normalizeSubscriptionCustomization(
   const fallback = defaultSubscriptionCustomization(renderer)
   const sourceGroups = Array.isArray(value?.policy_groups) ? value.policy_groups : fallback.policy_groups
   const policyGroups = sourceGroups.map((group: Record<string, any>, index: number) => normalizeSubscriptionPolicyGroup(group, index))
+  if (canonicalRenderer(renderer) === 'sing-box') {
+    policyGroups.forEach((group: SubscriptionPolicyGroup) => {
+      if (group.type === 'select') (group as EditableSubscriptionPolicyGroup).include_reject = false
+    })
+  }
   const mainGroup = policyGroups.some((group: SubscriptionPolicyGroup) => group.id === value?.main_group)
     ? String(value?.main_group)
     : policyGroups[0]?.id || 'main'
   const sourceRules = Array.isArray(value?.rule_sets) ? value.rule_sets : []
   return {
-    version: 2,
+    version: 3,
+    mode: ['rule', 'global', 'direct'].includes(String(value?.mode)) ? value?.mode : fallback.mode,
+    mixed_enabled: value?.mixed_enabled !== false,
     mixed_port: Number(value?.mixed_port || 7890),
+    system_proxy: canonicalRenderer(renderer) === 'sing-box' && value?.system_proxy === true,
+    tun: {
+      ...fallback.tun,
+      ...(value?.tun && typeof value.tun === 'object' ? value.tun : {}),
+      addresses: Array.isArray(value?.tun?.addresses) ? value.tun.addresses.map(String) : fallback.tun.addresses,
+    },
+    dns: {
+      ...fallback.dns,
+      ...(value?.dns && typeof value.dns === 'object' ? value.dns : {}),
+      servers: Array.isArray(value?.dns?.servers)
+        ? value.dns.servers.map((server: Record<string, any>) => ({
+            tag: String(server?.tag || ''),
+            type: String(server?.type || 'system') as any,
+            ...(server?.host ? { host: String(server.host) } : {}),
+            ...(server?.port ? { port: Number(server.port) } : {}),
+            ...(server?.path ? { path: String(server.path) } : {}),
+            ...(server?.server_name ? { server_name: String(server.server_name) } : {}),
+          }))
+        : fallback.dns.servers,
+    },
     main_group: mainGroup,
     policy_groups: policyGroups,
     final: normalizeSubscriptionTarget(String(value?.final || ''), mainGroup, false),
@@ -338,4 +399,21 @@ function normalizeSubscriptionTarget(target: string, mainGroup: string, includeR
 
 export function advancedSubscriptionLanguage(renderer: RendererInput) {
   return canonicalRenderer(renderer) === 'clash' ? 'YAML' : 'JSON'
+}
+
+export function serializeSubscriptionCustomization(value: SubscriptionTemplateCustomization) {
+  return JSON.stringify(value, null, 2)
+}
+
+export function parseSubscriptionCustomizationRaw(renderer: RendererInput, source: string) {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch (error: any) {
+    throw new Error(`Raw JSON 无效：${error?.message || '无法解析'}`)
+  }
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error('Raw 模板必须是一个 JSON 对象。')
+  }
+  return normalizeSubscriptionCustomization(renderer, parsed as Record<string, any>)
 }

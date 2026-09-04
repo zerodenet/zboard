@@ -6,9 +6,12 @@ import {
   subscriptionPolicyGroupIncludesDirect,
   subscriptionPolicyGroupIncludesReject,
   subscriptionRendererSupportsPolicyConfig,
+  subscriptionRendererSupportsRuntimeNetwork,
   subscriptionRuleFormatOptions,
   subscriptionTemplateOutput,
   subscriptionTemplateOutputOptions,
+  parseSubscriptionCustomizationRaw,
+  serializeSubscriptionCustomization,
 } from './subscriptionTemplateEditor'
 
 describe('subscription template editor policy', () => {
@@ -31,11 +34,17 @@ describe('subscription template editor policy', () => {
     expect(subscriptionTemplateOutput('v2rayn')).toMatchObject({ mode: 'nodes' })
     expect(subscriptionRendererSupportsPolicyConfig('clash')).toBe(true)
     expect(subscriptionRendererSupportsPolicyConfig('shadowrocket')).toBe(false)
+    expect(subscriptionRendererSupportsRuntimeNetwork('zero')).toBe(true)
+    expect(subscriptionRendererSupportsRuntimeNetwork('clash')).toBe(true)
+    expect(subscriptionRendererSupportsRuntimeNetwork('sing-box')).toBe(true)
+    expect(subscriptionRendererSupportsRuntimeNetwork('shadowrocket')).toBe(false)
   })
 
   it('provides renderer-specific rule defaults without exposing Go templates', () => {
     expect(defaultSubscriptionCustomization('clash')).toMatchObject({
-      version: 2,
+      version: 3,
+      mode: 'rule',
+      mixed_enabled: true,
       mixed_port: 7890,
       main_group: 'main',
       final: 'group:main',
@@ -46,7 +55,9 @@ describe('subscription template editor policy', () => {
       { id: 'auto', name: '自动选择', type: 'urltest' },
     ])
     expect(normalizeSubscriptionCustomization('clash', { version: 1, group_name: 'Legacy', final: 'proxy', rule_sets: [] })).toMatchObject({
-      version: 2,
+      version: 3,
+      mode: 'rule',
+      mixed_enabled: true,
       mixed_port: 7890,
       main_group: 'main',
       policy_groups: [{ id: 'main', name: 'Legacy', type: 'select' }],
@@ -96,5 +107,23 @@ describe('subscription template editor policy', () => {
     })
     expect((explicit.policy_groups[0] as any).include_direct).toBe(false)
     expect((explicit.policy_groups[0] as any).include_reject).toBe(true)
+  })
+
+  it('round-trips the complete raw model back into visual state', () => {
+    const customization = defaultSubscriptionCustomization('sing-box')
+    customization.mode = 'global'
+    customization.system_proxy = true
+    customization.dns.enabled = true
+    customization.tun.enabled = true
+    const parsed = parseSubscriptionCustomizationRaw('sing-box', serializeSubscriptionCustomization(customization))
+    expect(parsed).toMatchObject({
+      version: 3,
+      mode: 'global',
+      mixed_enabled: true,
+      system_proxy: true,
+      dns: { enabled: true },
+      tun: { enabled: true },
+    })
+    expect(() => parseSubscriptionCustomizationRaw('sing-box', '{')).toThrow(/Raw JSON/)
   })
 })

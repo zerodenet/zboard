@@ -1480,6 +1480,39 @@ export interface SubscriptionPolicyGroup {
 	tolerance?: number
 }
 
+export type SubscriptionRouteMode = 'rule' | 'global' | 'direct'
+export type SubscriptionDNSServerType = 'system' | 'udp' | 'tcp' | 'doh' | 'dot' | 'doq'
+
+export interface SubscriptionTunCustomization {
+	enabled: boolean
+	addresses: string[]
+	mtu: number
+	auto_route: boolean
+	strict_route: boolean
+	dns_hijack: boolean
+}
+
+export interface SubscriptionDNSServer {
+	tag: string
+	type: SubscriptionDNSServerType
+	host?: string
+	port?: number
+	path?: string
+	server_name?: string
+}
+
+export interface SubscriptionDNSCustomization {
+	enabled: boolean
+	servers: SubscriptionDNSServer[]
+	default_server: string
+	strategy: 'prefer_ipv4' | 'prefer_ipv6' | 'ipv4_only' | 'ipv6_only'
+	cache_enabled: boolean
+	cache_capacity: number
+	fake_ip_enabled: boolean
+	fake_ipv4_range: string
+	fake_ipv6_range?: string
+}
+
 export interface SubscriptionTemplateRuleSet {
 	rule_set_id?: number
 	tag?: string
@@ -1512,8 +1545,13 @@ export type SubscriptionRuleSetWriteRequest = Omit<SubscriptionRuleSet, 'id' | '
 }
 
 export interface SubscriptionTemplateCustomization {
-	version: 2
+	version: 3
+	mode: SubscriptionRouteMode
+	mixed_enabled: boolean
 	mixed_port: number
+	system_proxy: boolean
+	tun: SubscriptionTunCustomization
+	dns: SubscriptionDNSCustomization
 	main_group: string
 	policy_groups: SubscriptionPolicyGroup[]
 	final: string

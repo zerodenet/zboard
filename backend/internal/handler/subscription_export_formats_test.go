@@ -165,8 +165,8 @@ func TestManualSelectionGroupsKeepDirectAndRejectPermanent(t *testing.T) {
 	for _, outbound := range singDocument.Outbounds {
 		switch outbound.Type {
 		case "selector":
-			if !slices.Contains(outbound.Outbounds, "DIRECT") || !slices.Contains(outbound.Outbounds, "REJECT") {
-				t.Fatalf("sing-box selector permanent targets = %#v", outbound.Outbounds)
+			if !slices.Contains(outbound.Outbounds, "DIRECT") || slices.Contains(outbound.Outbounds, "REJECT") {
+				t.Fatalf("sing-box selector special targets = %#v", outbound.Outbounds)
 			}
 		case "urltest":
 			if slices.Contains(outbound.Outbounds, "DIRECT") || slices.Contains(outbound.Outbounds, "REJECT") {
@@ -306,8 +306,8 @@ func TestRenderSingBoxSubscriptionConvertsAndOmitsUnsupportedMieru(t *testing.T)
 	if err := json.Unmarshal([]byte(rendered), &document); err != nil {
 		t.Fatalf("rendered sing-box output is not JSON: %v\n%s", err, rendered)
 	}
-	if len(document.Outbounds) != 10 {
-		t.Fatalf("outbounds count = %d, want 10", len(document.Outbounds))
+	if len(document.Outbounds) != 9 {
+		t.Fatalf("outbounds count = %d, want 9", len(document.Outbounds))
 	}
 	for _, outbound := range document.Outbounds {
 		if outbound["type"] == "mieru" {

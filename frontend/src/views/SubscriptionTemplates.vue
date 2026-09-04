@@ -89,9 +89,9 @@
             <StatusBadge tone="success" icon="check">{{ selectedOutput.mode === 'full' ? '完整配置' : '节点订阅' }}</StatusBadge>
           </div>
           <PageAlert v-else tone="warning" title="旧模板已停用">该记录来自无法自动转换的旧技术模板。请选择一个系统支持的输出格式后才能重新启用。</PageAlert>
-          <SubscriptionTemplateCustomizer v-if="selectedOutput?.mode === 'full'" v-model="form.customization" :renderer="form.renderer" :error="editorErrors.fields['template-customization']" />
-          <PageAlert v-else-if="selectedOutput" tone="info" title="节点订阅由客户端管理策略">
-            {{ selectedOutput.label }} 模板只负责导出兼容节点与凭据。DIRECT、REJECT、策略组和规则集不会写入该节点订阅；相关分流策略由客户端侧配置。
+          <SubscriptionTemplateCustomizer v-if="selectedOutput?.mode === 'full'" v-model="form.customization" :renderer="form.renderer" :error="editorErrors.fields['template-customization']" @raw-error="rawCustomizationError = $event" />
+          <PageAlert v-else-if="selectedOutput" tone="info" title="该标准订阅协议只承载节点">
+            {{ selectedOutput.label }} 模板只负责导出兼容节点与凭据。DNS、TUN、本地代理开关、运行模式、DIRECT、REJECT、策略组和规则集都属于客户端全局设置，无法写入这种节点订阅；界面不会保存后又静默丢弃这些字段。
           </PageAlert>
         </section>
 
@@ -148,6 +148,7 @@ import {
   normalizeSubscriptionCustomization,
   subscriptionPolicyGroupTypeOptions,
   subscriptionRendererSupportsPolicyConfig,
+  subscriptionRendererSupportsRuntimeNetwork,
   subscriptionTemplateOutput,
   subscriptionTemplateOutputOptions,
   type SupportedSubscriptionRenderer,
@@ -172,6 +173,7 @@ const editingID = ref(0), deletingID = ref(0), statusChangingID = ref(0)
 const message = ref('')
 const editorRouteKey = ref(typeof route.query.template === 'string' ? route.query.template : '')
 const revisionConflict = ref(false)
+const rawCustomizationError = ref('')
 const previewResult = ref<SubscriptionTemplatePreview | null>(null)
 const previewSource = ref('')
 const formElement = ref<HTMLElement | null>(null)
@@ -233,6 +235,7 @@ async function loadEditor(id: number) {
     suppressRendererDraftSwitch = false
     rendererDrafts.clear()
     rendererDrafts.set(form.renderer as EditableRenderer, cloneCustomization(form.customization))
+    rawCustomizationError.value = ''
     editorState.markClean(); editorErrors.clear(); revisionConflict.value = false
     previewResult.value = null; previewSource.value = ''; editorOpen.value = true
   } catch (e: any) {
@@ -257,6 +260,7 @@ async function syncEditorFromRoute() {
     suppressRendererDraftSwitch = false
     rendererDrafts.clear()
     rendererDrafts.set(form.renderer as EditableRenderer, cloneCustomization(form.customization))
+    rawCustomizationError.value = ''
     editorState.markClean(); editorErrors.clear()
     revisionConflict.value = false; previewResult.value = null; previewSource.value = ''; editorOpen.value = true
     return
@@ -283,7 +287,7 @@ async function reloadEditor() {
 }
 
 async function runPreview() {
-  const customizationError = validateCustomizationDraft(form.renderer as EditableRenderer, form.customization)
+  const customizationError = rawCustomizationError.value || validateCustomizationDraft(form.renderer as EditableRenderer, form.customization)
   const valid = await editorErrors.applyValidation(collectFieldErrors({
     renderer: !isOneOf(form.renderer, supportedRenderers) && '请选择系统支持的订阅输出格式。',
     'template-customization': customizationError,
@@ -319,7 +323,7 @@ async function save() {
       }
     }
   }
-  const customizationError = validateCustomizationDraft(form.renderer as EditableRenderer, form.customization)
+  const customizationError = rawCustomizationError.value || validateCustomizationDraft(form.renderer as EditableRenderer, form.customization)
   const valid = await editorErrors.applyValidation(collectFieldErrors({
     name: !isUtf8LengthInRange(form.name, 1, 80, true) && '模板名称需包含 1 到 80 个 UTF-8 字节。',
     slug: !isSlug(form.slug, 80) && '链接标识只能包含小写字母、数字和单个连字符，且不能超过 80 个 UTF-8 字节。',
@@ -397,6 +401,7 @@ watch(() => form.renderer, (next, previous) => {
   if (supportedRenderers.includes(previous as any)) rendererDrafts.set(previous as EditableRenderer, cloneCustomization(form.customization))
   const nextDraft = rendererDrafts.get(next as EditableRenderer)
   form.customization = nextDraft ? cloneCustomization(nextDraft) : defaultSubscriptionCustomization(next as EditableRenderer)
+  rawCustomizationError.value = ''
   previewResult.value = null
   previewSource.value = ''
 }, { flush: 'sync' })
@@ -421,8 +426,14 @@ function cloneCustomization(value: SubscriptionTemplateCustomization): Subscript
 
 function validateCustomizationDraft(renderer: EditableRenderer, customization: SubscriptionTemplateCustomization) {
   if (!subscriptionRendererSupportsPolicyConfig(renderer)) return ''
-  if (customization.version !== 2) return '订阅模板配置版本无效。'
-  if (!isIntegerInRange(Number(customization.mixed_port), 1, 65535)) return '本地混合入站端口必须在 1 到 65535 之间。'
+  if (customization.version !== 3) return '订阅模板配置版本无效。'
+  if (!['rule', 'global', 'direct'].includes(customization.mode)) return '运行模式必须是规则、全局代理或全部直连。'
+  if (customization.mixed_enabled && !isIntegerInRange(Number(customization.mixed_port), 1, 65535)) return '本地混合入站端口必须在 1 到 65535 之间。'
+  if (customization.system_proxy && renderer !== 'sing-box') return '只有 sing-box 支持自动设置系统 HTTP 代理。'
+  if (customization.system_proxy && !customization.mixed_enabled) return '自动设置系统 HTTP 代理需要先启用本地混合代理。'
+  if (!customization.mixed_enabled && !customization.tun.enabled) return '本地混合代理与 TUN 不能同时关闭。'
+  const runtimeError = validateRuntimeCustomization(renderer, customization)
+  if (runtimeError) return runtimeError
   if (!customization.policy_groups.length || customization.policy_groups.length > 16) return '策略组数量需在 1 到 16 个之间。'
   const supportedTypes = new Set(subscriptionPolicyGroupTypeOptions(renderer).map(option => option.value))
   const groupIDs = new Set<string>()
@@ -441,7 +452,7 @@ function validateCustomizationDraft(renderer: EditableRenderer, customization: S
     if (new TextEncoder().encode(group.include_pattern || '').length > 256 || new TextEncoder().encode(group.exclude_pattern || '').length > 256) return `第 ${index + 1} 个策略组节点正则不能超过 256 字节。`
     if (group.type === 'urltest' || group.type === 'fallback') {
       if (!isHttpUrl(group.probe_url || '')) return `第 ${index + 1} 个策略组检测地址无效。`
-      if (renderer === 'znet-sink' && !String(group.probe_url).startsWith('http://')) return `第 ${index + 1} 个 Zero 策略组检测地址必须使用 HTTP。`
+      if ((renderer === 'zero' || renderer === 'znet-sink') && !String(group.probe_url).startsWith('http://')) return `第 ${index + 1} 个 Zero 策略组检测地址必须使用 HTTP。`
       if (!isIntegerInRange(Number(group.interval), 60, 86400)) return `第 ${index + 1} 个策略组检测间隔需在 60 秒到 24 小时之间。`
     }
     if (group.type === 'urltest' && !isIntegerInRange(Number(group.tolerance || 0), 0, 10000)) return `第 ${index + 1} 个策略组延迟容差需在 0 到 10000 毫秒之间。`
@@ -476,6 +487,45 @@ function validateCustomizationDraft(renderer: EditableRenderer, customization: S
   }
   if (new TextEncoder().encode(customization.advanced_source || '').length > 131072) return '高级配置不能超过 128 KiB。'
   return ''
+}
+
+function validateRuntimeCustomization(renderer: EditableRenderer, customization: SubscriptionTemplateCustomization) {
+  const supportsRuntimeNetwork = subscriptionRendererSupportsRuntimeNetwork(renderer)
+  if ((customization.dns.enabled || customization.tun.enabled) && !supportsRuntimeNetwork) return '当前输出格式不支持可视化 DNS 或 TUN 配置。'
+  if (customization.tun.enabled) {
+    const addresses = customization.tun.addresses.map(value => value.trim()).filter(Boolean)
+    if (!addresses.length || addresses.length > 2 || addresses.some(value => !isCIDR(value))) return 'TUN 必须配置一到两个有效 CIDR 地址。'
+    if (!isIntegerInRange(Number(customization.tun.mtu), 576, 9000)) return 'TUN MTU 必须在 576 到 9000 之间。'
+    if (customization.tun.dns_hijack && !customization.dns.enabled) return 'TUN DNS 劫持需要先启用 DNS。'
+  }
+  if (!customization.dns.enabled) return ''
+  if (!customization.dns.servers.length || customization.dns.servers.length > 8) return 'DNS 服务器数量必须在 1 到 8 个之间。'
+  const tags = new Set<string>()
+  for (const [index, server] of customization.dns.servers.entries()) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(server.tag)) return `第 ${index + 1} 个 DNS 服务器标识无效。`
+    if (tags.has(server.tag.toLowerCase())) return `第 ${index + 1} 个 DNS 服务器标识重复。`
+    tags.add(server.tag.toLowerCase())
+    if (!['system', 'udp', 'tcp', 'doh', 'dot', 'doq'].includes(server.type)) return `第 ${index + 1} 个 DNS 服务器类型无效。`
+    if ((renderer === 'zero' || renderer === 'znet-sink') && server.type === 'tcp') return 'Zero 当前不支持 TCP DNS，请选择 UDP、DoH、DoT 或 DoQ。'
+    if (server.type !== 'system' && (!isIPAddress(server.host || '') || !isIntegerInRange(Number(server.port), 1, 65535))) return `第 ${index + 1} 个 DNS 服务器地址或端口无效。`
+    if (server.type === 'doh' && !(server.path || '').startsWith('/')) return `第 ${index + 1} 个 DoH 路径必须以 / 开头。`
+  }
+  if (!tags.has(customization.dns.default_server.toLowerCase())) return '默认 DNS 服务器不存在。'
+  if (customization.dns.cache_enabled && !isIntegerInRange(Number(customization.dns.cache_capacity), 1, 65536)) return 'DNS 缓存容量必须在 1 到 65536 之间。'
+  if (customization.dns.fake_ip_enabled && (!isCIDR(customization.dns.fake_ipv4_range) || (customization.dns.fake_ipv6_range && !isCIDR(customization.dns.fake_ipv6_range)))) return 'Fake-IP 地址池必须使用有效 CIDR。'
+  return ''
+}
+
+function isIPAddress(value: string) {
+  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(value)) return value.split('.').every(part => Number(part) >= 0 && Number(part) <= 255)
+  return value.includes(':') && /^[0-9a-f:]+$/i.test(value)
+}
+
+function isCIDR(value: string) {
+  const [address, prefix, ...rest] = value.trim().split('/')
+  if (rest.length || prefix === undefined || !/^\d+$/.test(prefix)) return false
+  const size = isIPAddress(address) && address.includes(':') ? 128 : isIPAddress(address) ? 32 : -1
+  return size > 0 && Number(prefix) >= 0 && Number(prefix) <= size
 }
 
 function isValidSubscriptionTarget(target: string, groupIDs: Set<string>, allowReject: boolean) {

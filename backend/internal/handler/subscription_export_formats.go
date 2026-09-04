@@ -21,6 +21,7 @@ type clashSubscriptionDocument struct {
 	UnifiedDelay  bool                         `yaml:"unified-delay,omitempty"`
 	TCPConcurrent bool                         `yaml:"tcp-concurrent,omitempty"`
 	DNS           map[string]interface{}       `yaml:"dns,omitempty"`
+	Tun           map[string]interface{}       `yaml:"tun,omitempty"`
 	Profile       map[string]interface{}       `yaml:"profile,omitempty"`
 	Proxies       []map[string]interface{}     `yaml:"proxies"`
 	ProxyGroups   []clashSubscriptionGroup     `yaml:"proxy-groups"`
@@ -76,7 +77,7 @@ func renderZnetSinkSubscription(data subscriptionTemplateData, customization sub
 		if err != nil {
 			return "", err
 		}
-		members = appendPermanentSelectionTargets(group, members)
+		members = appendPermanentSelectionTargets(subscriptionRendererZnetSink, group, members)
 		rendered := map[string]interface{}{
 			"tag": group.Name, "type": zeroSubscriptionPolicyGroupType(group.Type), "outbounds": members,
 		}
@@ -104,18 +105,23 @@ func renderZnetSinkSubscription(data subscriptionTemplateData, customization sub
 			"action":    zeroSubscriptionRuleAction(item.Target, groupNames),
 		})
 	}
-	document := map[string]interface{}{
-		"inbounds": []map[string]interface{}{
-			{
-				"tag":    "mixed-in",
-				"listen": map[string]interface{}{"address": "127.0.0.1", "port": customization.MixedPort},
-				"protocol": map[string]interface{}{
-					"type": "mixed",
-				},
+	inbounds := []map[string]interface{}{}
+	if customization.MixedEnabled {
+		inbounds = append(inbounds, map[string]interface{}{
+			"tag":    "mixed-in",
+			"listen": map[string]interface{}{"address": "127.0.0.1", "port": customization.MixedPort},
+			"protocol": map[string]interface{}{
+				"type": "mixed",
 			},
-		},
+		})
+	}
+	document := map[string]interface{}{
+		"schema_version":  1,
+		"inbounds":        inbounds,
 		"outbounds":       outbounds,
 		"outbound_groups": outboundGroups,
+		"runtime":         zeroSubscriptionRuntime(customization),
+		"mode":            zeroSubscriptionMode(customization, groupNames),
 		"route": map[string]interface{}{
 			"rule_sets": ruleSets,
 			"rules":     rules,
@@ -161,7 +167,7 @@ func renderClashSubscription(data subscriptionTemplateData, customization subscr
 		if err != nil {
 			return "", err
 		}
-		members = appendPermanentSelectionTargets(group, members)
+		members = appendPermanentSelectionTargets(subscriptionRendererClash, group, members)
 		rendered := clashSubscriptionGroup{
 			Name: group.Name, Type: clashSubscriptionPolicyGroupType(group.Type), Proxies: members,
 		}
@@ -173,11 +179,20 @@ func renderClashSubscription(data subscriptionTemplateData, customization subscr
 		policyGroups = append(policyGroups, rendered)
 	}
 	document := clashSubscriptionDocument{
-		MixedPort:     customization.MixedPort,
-		BindAddress:   "127.0.0.1",
+		Mode:          customization.Mode,
 		Proxies:       proxies,
 		ProxyGroups:   policyGroups,
 		RuleProviders: ruleProviders,
+	}
+	if customization.MixedEnabled {
+		document.MixedPort = customization.MixedPort
+		document.BindAddress = "127.0.0.1"
+	}
+	if customization.DNS.Enabled {
+		document.DNS = clashSubscriptionDNS(customization.DNS)
+	}
+	if customization.Tun.Enabled {
+		document.Tun = clashSubscriptionTun(customization.Tun)
 	}
 	rules = append(rules, "MATCH,"+clashSubscriptionActionTarget(customization.Final, groupNames))
 	document.Rules = rules
@@ -320,7 +335,6 @@ func renderSingBoxSubscription(data subscriptionTemplateData, customization subs
 	outbounds = append(outbounds,
 		map[string]interface{}{"type": "direct", "tag": "direct"},
 		map[string]interface{}{"type": "direct", "tag": "DIRECT"},
-		map[string]interface{}{"type": "block", "tag": "REJECT"},
 	)
 	groupNames := subscriptionPolicyGroupNames(customization.PolicyGroups)
 	for _, group := range customization.PolicyGroups {
@@ -328,7 +342,7 @@ func renderSingBoxSubscription(data subscriptionTemplateData, customization subs
 		if err != nil {
 			return "", err
 		}
-		members = appendPermanentSelectionTargets(group, members)
+		members = appendPermanentSelectionTargets(subscriptionRendererSingBox, group, members)
 		rendered := map[string]interface{}{
 			"type": singBoxSubscriptionPolicyGroupType(group.Type), "tag": group.Name, "outbounds": members,
 		}
@@ -342,7 +356,7 @@ func renderSingBoxSubscription(data subscriptionTemplateData, customization subs
 		}
 		outbounds = append(outbounds, rendered)
 	}
-	finalTag := singBoxSubscriptionActionTarget(customization.Final, groupNames)
+	finalTag := subscriptionModeFinalTarget(customization, groupNames)
 	ruleSets := make([]map[string]interface{}, 0, len(customization.RuleSets))
 	rules := make([]map[string]interface{}, 0, len(customization.RuleSets))
 	for _, item := range customization.RuleSets {
@@ -360,16 +374,15 @@ func renderSingBoxSubscription(data subscriptionTemplateData, customization subs
 		rules = append(rules, rule)
 	}
 	document := map[string]interface{}{
-		"inbounds": []map[string]interface{}{
-			{
-				"type":        "mixed",
-				"tag":         "mixed-in",
-				"listen":      "127.0.0.1",
-				"listen_port": customization.MixedPort,
-			},
-		},
+		"inbounds":  singBoxSubscriptionInbounds(customization),
 		"outbounds": outbounds,
-		"route":     map[string]interface{}{"rules": rules, "rule_set": ruleSets, "final": finalTag},
+		"route": map[string]interface{}{
+			"rules": singBoxRuntimeRouteRules(customization, rules), "rule_set": ruleSets, "final": finalTag,
+			"auto_detect_interface": customization.Tun.Enabled && customization.Tun.AutoRoute,
+		},
+	}
+	if customization.DNS.Enabled {
+		document["dns"] = singBoxSubscriptionDNS(customization.DNS)
 	}
 	if err := applySubscriptionAdvancedOverlay(subscriptionRendererSingBox, document, customization.AdvancedSource, proxyTags); err != nil {
 		return "", err
@@ -456,11 +469,17 @@ func uniqueSubscriptionTargets(items []string) []string {
 	return result
 }
 
-func appendPermanentSelectionTargets(group subscriptionPolicyGroup, members []string) []string {
+func appendPermanentSelectionTargets(renderer string, group subscriptionPolicyGroup, members []string) []string {
 	if group.Type != "select" {
 		return members
 	}
-	return uniqueSubscriptionTargets(append(members, "DIRECT", "REJECT"))
+	if subscriptionPolicyGroupIncludesDirect(group) {
+		members = append(members, "DIRECT")
+	}
+	if renderer != subscriptionRendererSingBox && subscriptionPolicyGroupIncludesReject(group) {
+		members = append(members, "REJECT")
+	}
+	return uniqueSubscriptionTargets(members)
 }
 
 func zeroSubscriptionPolicyGroupType(groupType string) string {

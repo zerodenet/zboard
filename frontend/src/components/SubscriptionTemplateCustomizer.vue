@@ -17,9 +17,7 @@
     <UiTabs v-model="activeTab" label="订阅模板配置方式" :items="tabs" />
 
     <div v-if="activeTab === 'basic'" class="customizer-basic">
-      <FormField label="本地混合入站端口" name="template-mixed-port" hint="订阅生成的完整客户端配置将在 127.0.0.1 的该端口同时提供 HTTP 和 SOCKS 代理。" required>
-        <template #default="{ controlAttrs }"><UiNumberInput v-model="model.mixed_port" v-bind="controlAttrs" :min="1" :max="65535" /></template>
-      </FormField>
+      <SubscriptionRuntimeCustomizer v-model="model" :renderer="renderer" />
 
       <div class="section-heading">
         <div>
@@ -78,7 +76,7 @@
           <div v-if="group.type === 'select'" class="group-special-target-editor">
             <div>
               <strong>特殊节点</strong>
-              <span>决定系统特殊节点是否作为该策略组成员导出。新建策略组默认全部选中。</span>
+              <span>决定系统特殊节点是否作为该策略组成员导出；sing-box 使用路由拒绝动作，不提供 REJECT 出站。</span>
             </div>
             <label class="group-reference-option">
               <UiCheckbox
@@ -87,7 +85,7 @@
               />
               <span><b>DIRECT</b> · 直连</span>
             </label>
-            <label class="group-reference-option">
+            <label v-if="renderer !== 'sing-box'" class="group-reference-option">
               <UiCheckbox
                 :model-value="subscriptionPolicyGroupIncludesReject(group)"
                 @update:model-value="setSubscriptionPolicyGroupSpecialTarget(group, 'reject', $event)"
@@ -192,6 +190,8 @@
       </div>
     </div>
 
+    <SubscriptionRawCustomizer v-else-if="activeTab === 'raw'" v-model="model" :renderer="renderer" :active="activeTab === 'raw'" @error="$emit('raw-error', $event)" />
+
     <div v-else class="customizer-advanced">
       <PageAlert tone="warning" title="高级配置会直接影响客户端输出">
         这里填写 {{ advancedSubscriptionLanguage(renderer) }} 配置。保存、预览和订阅输出都会校验最终结构与引用；
@@ -242,6 +242,8 @@ import FormField from './FormField.vue'
 import PageAlert from './PageAlert.vue'
 import StatusBadge from './StatusBadge.vue'
 import SubscriptionRuleSetLookup from './SubscriptionRuleSetLookup.vue'
+import SubscriptionRawCustomizer from './SubscriptionRawCustomizer.vue'
+import SubscriptionRuntimeCustomizer from './SubscriptionRuntimeCustomizer.vue'
 import TemplateCodeEditor from './TemplateCodeEditor.vue'
 import UiButton from './UiButton.vue'
 import UiCheckbox from './UiCheckbox.vue'
@@ -252,10 +254,12 @@ import UiSelect from './UiSelect.vue'
 import UiTabs from './UiTabs.vue'
 
 const props = withDefaults(defineProps<{ renderer: SubscriptionRenderer | SupportedSubscriptionRenderer; error?: string }>(), { error: '' })
+defineEmits<{ 'raw-error': [value: string] }>()
 const model = defineModel<SubscriptionTemplateCustomization>({ required: true })
 const activeTab = ref('basic')
 const tabs = [
   { value: 'basic', label: '可视化配置', icon: 'settings' },
+  { value: 'raw', label: 'Raw 模型', icon: 'database' },
   { value: 'advanced', label: '高级配置', icon: 'edit' },
 ]
 const protectedField = computed(() => props.renderer === 'clash' ? 'proxies' : 'outbounds')
@@ -284,7 +288,9 @@ const advancedPlaceholder = computed(() => {
 
 function addPolicyGroup() {
   const id = nextSubscriptionPolicyGroupID(model.value.policy_groups)
-  model.value.policy_groups.push(defaultSubscriptionPolicyGroup(id, `策略组 ${model.value.policy_groups.length + 1}`, 'select'))
+  const group = defaultSubscriptionPolicyGroup(id, `策略组 ${model.value.policy_groups.length + 1}`, 'select')
+  if (props.renderer === 'sing-box') setSubscriptionPolicyGroupSpecialTarget(group, 'reject', false)
+  model.value.policy_groups.push(group)
 }
 
 function movePolicyGroup(index: number, offset: number) {
@@ -320,6 +326,7 @@ function removePolicyGroup(index: number) {
 
 function normalizeGroupType(group: SubscriptionPolicyGroup) {
   initializeSubscriptionPolicyGroupSpecialTargets(group)
+  if (props.renderer === 'sing-box' && group.type === 'select') setSubscriptionPolicyGroupSpecialTarget(group, 'reject', false)
   if (group.type === 'urltest' || group.type === 'fallback') {
     group.probe_url ||= 'http://www.gstatic.com/generate_204'
     group.interval ||= 300

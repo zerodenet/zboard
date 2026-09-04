@@ -4202,10 +4202,15 @@ components:
       type: object
       additionalProperties: false
       description: Declarative, non-executable policy groups and rule bindings applied to a backend-owned renderer. Dynamic nodes and credentials remain backend-managed.
-      required: [version, main_group, policy_groups, final, rule_sets]
+      required: [version, mode, mixed_enabled, mixed_port, system_proxy, tun, dns, main_group, policy_groups, final, rule_sets]
       properties:
-        version: { type: integer, enum: [2] }
-        mixed_port: { type: integer, minimum: 1, maximum: 65535, default: 7890, description: Local loopback mixed HTTP and SOCKS inbound port emitted for every supported client renderer. Omission is accepted for older version-2 records and normalizes to 7890. }
+        version: { type: integer, enum: [3] }
+        mode: { type: string, enum: [rule, global, direct], default: rule, description: Initial routing mode. Zero emits its native mode object, Clash emits mode, and sing-box derives route rules/final. }
+        mixed_enabled: { type: boolean, default: true, description: Emit the renderer-native local loopback mixed HTTP and SOCKS inbound. At least one of mixed_enabled and tun.enabled must be true. }
+        mixed_port: { type: integer, minimum: 1, maximum: 65535, default: 7890, description: Local loopback mixed HTTP and SOCKS inbound port emitted for every supported client renderer. }
+        system_proxy: { type: boolean, default: false, description: sing-box-only switch that sets and cleans the operating-system HTTP proxy for the mixed inbound. }
+        tun: { $ref: "#/components/schemas/SubscriptionTunCustomization" }
+        dns: { $ref: "#/components/schemas/SubscriptionDNSCustomization" }
         main_group: { type: string, pattern: "^[a-z][a-z0-9-]{0,31}$", description: ID of the policy group used as the primary client selector. }
         policy_groups:
           type: array
@@ -4223,6 +4228,42 @@ components:
           type: string
           maxLength: 131072
           description: YAML for Clash or JSON for ZNet Sink and sing-box. Deep-merged after visual configuration and validated as a final client document. Root proxies/outbounds replacement must retain the documented Zboard generated injection marker; $zboard:all-nodes expands node names in member arrays.
+    SubscriptionTunCustomization:
+      type: object
+      additionalProperties: false
+      required: [enabled, addresses, mtu, auto_route, strict_route, dns_hijack]
+      properties:
+        enabled: { type: boolean }
+        addresses: { type: array, minItems: 1, maxItems: 2, items: { type: string }, description: One or two distinct-family interface CIDRs. }
+        mtu: { type: integer, minimum: 576, maximum: 9000 }
+        auto_route: { type: boolean }
+        strict_route: { type: boolean }
+        dns_hijack: { type: boolean }
+    SubscriptionDNSCustomization:
+      type: object
+      additionalProperties: false
+      required: [enabled, servers, default_server, strategy, cache_enabled, cache_capacity, fake_ip_enabled, fake_ipv4_range]
+      properties:
+        enabled: { type: boolean }
+        servers: { type: array, minItems: 1, maxItems: 8, items: { $ref: "#/components/schemas/SubscriptionDNSServer" } }
+        default_server: { type: string, minLength: 1, maxLength: 64 }
+        strategy: { type: string, enum: [prefer_ipv4, prefer_ipv6, ipv4_only, ipv6_only] }
+        cache_enabled: { type: boolean }
+        cache_capacity: { type: integer, minimum: 1, maximum: 65536, default: 1024 }
+        fake_ip_enabled: { type: boolean }
+        fake_ipv4_range: { type: string }
+        fake_ipv6_range: { type: string }
+    SubscriptionDNSServer:
+      type: object
+      additionalProperties: false
+      required: [tag, type]
+      properties:
+        tag: { type: string, minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }
+        type: { type: string, enum: [system, udp, tcp, doh, dot, doq], description: TCP is available for Clash/Mihomo and sing-box; Zero supports system, UDP, DoH, DoT and DoQ. }
+        host: { type: string, description: IP literal for visually managed network servers. Advanced overlays may add renderer-native domain resolver/bootstrap fields. }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        path: { type: string, description: DoH request path. }
+        server_name: { type: string, description: Optional TLS server name for an IP endpoint. }
     SubscriptionPolicyGroup:
       type: object
       additionalProperties: false
@@ -4233,6 +4274,8 @@ components:
         type: { type: string, enum: [select, urltest, fallback], description: fallback is supported only by Clash and ZNet Sink. }
         include_pattern: { type: string, maxLength: 256, description: Optional RE2 regular expression matched against protocol configuration names. Empty includes every available node. }
         exclude_pattern: { type: string, maxLength: 256, description: Optional RE2 regular expression applied after include_pattern. }
+        include_direct: { type: boolean, default: true, description: Include the renderer's native DIRECT target in a select group. }
+        include_reject: { type: boolean, default: true, description: Include the native REJECT target where available. Current sing-box uses route rejection actions instead. }
         include_groups:
           type: array
           maxItems: 15

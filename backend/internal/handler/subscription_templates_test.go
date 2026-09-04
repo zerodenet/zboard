@@ -190,11 +190,11 @@ func TestNormalizeSubscriptionCustomizationMigratesLegacyShapeToPolicyGroups(t *
 	if err != nil {
 		t.Fatalf("normalizeSubscriptionCustomization() error = %v", err)
 	}
-	if customization.Version != 2 || customization.MainGroup != "main" || len(customization.PolicyGroups) != 1 || customization.PolicyGroups[0].Name != "Legacy" {
+	if customization.Version != 3 || customization.Mode != subscriptionModeRule || customization.MainGroup != "main" || len(customization.PolicyGroups) != 1 || customization.PolicyGroups[0].Name != "Legacy" {
 		t.Fatalf("legacy customization = %#v, want one migrated Legacy group", customization)
 	}
 	if strings.Contains(string(normalized), `"profile"`) || !strings.Contains(string(normalized), `"policy_groups"`) {
-		t.Fatalf("normalized customization = %s, want version 2 policy groups without legacy profile", normalized)
+		t.Fatalf("normalized customization = %s, want version 3 policy groups without legacy profile", normalized)
 	}
 }
 

@@ -102,7 +102,11 @@ func TestPreReleaseMigrationInventoryIsSquashed(t *testing.T) {
 		"'znet-sink'",
 		"'clash'",
 		"'sing-box'",
-		`"version":2`,
+		`"version":3`,
+		`"mode":"rule"`,
+		`"mixed_enabled":true`,
+		`"dns"`,
+		`"tun"`,
 		`"policy_groups"`,
 		`"main_group":"main"`,
 	} {
