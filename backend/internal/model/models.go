@@ -725,7 +725,7 @@ type ProtocolDeployment struct {
 	DesiredConfigSHA256 string     `json:"desired_config_sha256" gorm:"size:64"`
 	AppliedConfigSHA256 string     `json:"applied_config_sha256" gorm:"size:64"`
 	Status              string     `json:"status" gorm:"size:20;index;not null"`
-	RequestedBy         uint       `json:"requested_by" gorm:"index"`
+	RequestedBy         *uint      `json:"requested_by,omitempty" gorm:"index"`
 	Output              string     `json:"output" gorm:"type:text"`
 	Error               string     `json:"error" gorm:"type:text"`
 	StartedAt           *time.Time `json:"started_at"`

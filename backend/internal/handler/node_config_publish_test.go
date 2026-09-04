@@ -7,6 +7,17 @@ import (
 	"time"
 )
 
+func TestOptionalRequesterIDTreatsSystemPublishAsNull(t *testing.T) {
+	if requester := optionalRequesterID(0); requester != nil {
+		t.Fatalf("system requester = %v, want nil", *requester)
+	}
+
+	requester := optionalRequesterID(7)
+	if requester == nil || *requester != 7 {
+		t.Fatalf("admin requester = %v, want 7", requester)
+	}
+}
+
 func TestFinalizeConnectorConfirmationUsesConnectorEventTime(t *testing.T) {
 	confirmedAt := time.Date(2026, time.August, 5, 1, 25, 43, 0, time.UTC)
 	fallback := confirmedAt.Add(time.Minute)

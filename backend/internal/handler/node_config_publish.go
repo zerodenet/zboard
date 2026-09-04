@@ -206,7 +206,7 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 		NodeID:             node.ID,
 		ConfigRevision:     uint64(startedAt.UnixNano()),
 		Status:             "running",
-		RequestedBy:        requestedBy,
+		RequestedBy:        optionalRequesterID(requestedBy),
 		StartedAt:          &startedAt,
 	}
 	if err := h.db.Create(&deployment).Error; err != nil {
@@ -353,6 +353,13 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 		return h.publishNodeConfigForNodeLocked(ctx, node.ID, triggerEndpointID, requestedBy, true, started)
 	}
 	return deployment, time.Since(started), nil
+}
+
+func optionalRequesterID(requestedBy uint) *uint {
+	if requestedBy == 0 {
+		return nil
+	}
+	return &requestedBy
 }
 
 func finalizeConnectorConfirmation(output string, connectorEventAt time.Time, connectorErr error, fallback time.Time) (string, time.Time) {
