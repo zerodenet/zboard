@@ -317,7 +317,7 @@ export interface AdminNodeListItem {
 	region: string
 	address: string
 	status: number
-	lifecycle_status: 'active' | 'maintenance' | 'retired'
+	lifecycle_status: 'active' | 'maintenance' | 'retired' | 'deleting'
 	is_enabled: boolean
 	connector_last_seen_at?: string
 	connector_online: boolean
@@ -435,7 +435,7 @@ export async function updateNode(nodeId: number, payload: any) {
 }
 
 export async function deleteNode(nodeId: number) {
-  const response = await api.delete(`/nodes/${nodeId}`)
+  const response = await api.delete(`/nodes/${nodeId}`, { timeout: 510_000 })
   return unwrap(response)
 }
 
@@ -830,7 +830,7 @@ export interface ManagedCertificate {
 	environment: 'production' | 'staging'
 	challenge_type: 'http-01' | 'http-01-webroot' | 'dns-01'
 	webroot_path: string
-	status: 'pending' | 'issuing' | 'active' | 'renewing' | 'failed' | 'expired'
+	status: 'pending' | 'issuing' | 'active' | 'renewing' | 'failed' | 'expired' | 'deleting'
 	cert_path: string
 	key_path: string
 	serial_number: string
@@ -912,7 +912,7 @@ export async function updateManagedCertificate(id: number, payload: {
 }
 
 export async function deleteManagedCertificate(id: number) {
-	const response = await api.delete(`/admin/certificates/${id}`)
+	const response = await api.delete(`/admin/certificates/${id}`, { timeout: 510_000 })
 	return unwrap(response)
 }
 
@@ -964,7 +964,7 @@ export interface ManagedDNSRecord {
 	provider_record_id: string
 	ttl: number
 	proxied: boolean
-	status: 'pending' | 'syncing' | 'active' | 'drifted' | 'failed'
+	status: 'pending' | 'syncing' | 'active' | 'drifted' | 'failed' | 'deleting'
 	public_resolved: boolean
 	last_synced_at?: string
 	last_public_check_at?: string
@@ -985,6 +985,10 @@ export async function fetchProviderAccounts(): Promise<ProviderAccount[]> {
 
 export async function createProviderAccount(payload: { provider_key: string; name: string; api_token: string }): Promise<ProviderAccount> {
 	return unwrap(await api.post('/admin/provider-accounts', payload))
+}
+
+export async function deleteProviderAccount(id: number): Promise<{ id: number; deleted: boolean; external_account_retained: boolean }> {
+	return unwrap(await api.delete(`/admin/provider-accounts/${id}`))
 }
 
 export async function verifyProviderAccount(id: number): Promise<ProviderAccount> {

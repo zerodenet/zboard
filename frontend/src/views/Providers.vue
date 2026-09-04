@@ -16,7 +16,7 @@
           <td><StatusBadge :tone="account.status === 'active' ? 'success' : account.status === 'invalid' ? 'danger' : 'warning'">{{ account.status === 'active' ? '有效' : account.status === 'invalid' ? '验证失败' : '待验证' }}</StatusBadge><small v-if="account.last_error" class="row-error">{{ account.last_error }}</small></td>
           <td>{{ account.usage_count }}</td>
           <td><TimeBadge v-if="account.last_verified_at" :value="account.last_verified_at" mode="relative" /><span v-else class="muted-value">尚未验证</span></td>
-          <td class="table-action-column"><UiButton size="sm" variant="secondary" :loading="operatingAccount === account.id" @click="verifyAccount(account)">重新验证</UiButton></td>
+          <td class="table-action-column"><UiButton size="sm" variant="secondary" :loading="operatingAccount === account.id" @click="verifyAccount(account)">重新验证</UiButton><UiButton size="sm" variant="danger" :disabled="account.usage_count > 0 || operatingAccount === account.id" @click="removeAccount(account)">删除</UiButton></td>
         </tr></tbody>
       </DataTable>
       <EmptyState v-else class="provider-empty-state" icon="settings" title="还没有供应商账户" description="先添加 Cloudflare API Token，随后即可在面板管理 DNS 解析。" />
@@ -36,7 +36,8 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { createProviderAccount, fetchProviderAccounts, fetchProviderDefinitions, verifyProviderAccount, type ProviderAccount, type ProviderDefinition } from '../api/client'
+import { confirmAction } from '../utils/feedback'
+import { createProviderAccount, deleteProviderAccount, fetchProviderAccounts, fetchProviderDefinitions, verifyProviderAccount, type ProviderAccount, type ProviderDefinition } from '../api/client'
 import DataTable from '../components/DataTable.vue'
 import EmptyState from '../components/EmptyState.vue'
 import FormField from '../components/FormField.vue'
@@ -82,6 +83,13 @@ async function createAccount() {
 async function verifyAccount(account: ProviderAccount) {
   operatingAccount.value = account.id; error.value = ''
   try { await verifyProviderAccount(account.id); message.value = `${account.name} 验证成功。`; await refreshAll() } catch (cause: any) { error.value = cause?.response?.data?.message || '账户验证失败。'; await refreshAll() } finally { operatingAccount.value = 0 }
+}
+async function removeAccount(account: ProviderAccount) {
+  if (!await confirmAction({ title: '删除供应商接入？', message: '请先清理引用此账户的 DNS 和证书。此操作删除面板保存的凭据，Cloudflare 账户及共享 Token 仍由你管理。', confirmText: '确认删除', tone: 'danger' })) return
+  operatingAccount.value = account.id; error.value = ''
+  try { await deleteProviderAccount(account.id); message.value = '供应商接入已删除。'; await refreshAll() }
+  catch (cause: any) { error.value = cause?.response?.data?.message || '供应商删除失败。' }
+  finally { operatingAccount.value = 0 }
 }
 onMounted(async () => {
   loading.value = true

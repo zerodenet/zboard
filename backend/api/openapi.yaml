@@ -208,6 +208,18 @@ paths:
       responses:
         "201":
           description: Provider account created
+  /api/v1/admin/provider-accounts/{id}:
+    delete:
+      tags: [admin, providers]
+      summary: Remove an unused provider integration and its stored credential
+      description: DNS and certificate references and running provider operations block deletion. The external account and shared API token are not revoked.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: Local provider integration removed
+        "409":
+          description: Referenced resources or provider operations still exist
   /api/v1/admin/provider-accounts/{id}/verify:
     post:
       tags: [admin, providers]
@@ -287,11 +299,13 @@ paths:
     delete:
       tags: [admin, providers]
       summary: Delete the exact owned Cloudflare record, then remove its panel record
+      description: External failures retain the record in deleting state for retry. Sync and edits are blocked during deletion; HTTP 404 at Cloudflare is accepted as already absent. Incomplete or uncertain remote ownership blocks deletion.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         "200": { description: Remote and panel records deleted }
         "409": { $ref: "#/components/responses/Error" }
+        "502": { description: External cleanup failed; local identity retained for retry }
   /api/v1/admin/dns-records/{id}/sync:
     post:
       tags: [admin, providers]
@@ -375,12 +389,13 @@ paths:
     delete:
       tags: [admin, certificates]
       summary: Delete an unbound managed certificate
-      description: Running issuance or renewal and protocol endpoint references block deletion. Remote certificate files are retained.
+      description: Running issuance or renewal and protocol endpoint references block deletion. Revoke unexpired owned certificates and remove their Certbot lineage, renewal configuration, and node certificate files before deleting local state. External failures retain the record in deleting state with renewal disabled for an explicit retry. Operation history is retained.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         "200": { description: Managed certificate deleted }
         "409": { $ref: "#/components/responses/Error" }
+        "502": { description: External cleanup failed; local identity retained for retry }
   /api/v1/admin/certificates/{id}/renewal:
     put:
       tags: [admin, certificates]
@@ -1105,7 +1120,7 @@ paths:
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: q, in: query, schema: { type: string } }
         - { name: region, in: query, schema: { type: string } }
-        - { name: lifecycle_status, in: query, schema: { type: string, enum: [active, maintenance, retired] } }
+        - { name: lifecycle_status, in: query, schema: { type: string, enum: [active, maintenance, retired, deleting] } }
         - { name: enabled, in: query, schema: { type: boolean } }
         - { name: connector_online, in: query, schema: { type: boolean } }
         - { name: kernel_status, in: query, schema: { type: string } }
@@ -1196,13 +1211,14 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
     delete:
       tags: [nodes]
-      summary: Delete an empty node asset
-      description: Protocol endpoints, managed certificates, managed DNS records and running node operations block deletion. Remote Zero is not uninstalled.
+      summary: Clean external resources and delete a node asset
+      description: Stop managed Zero, delete exact owned DNS records, revoke unexpired managed certificates and remove their files and renewal configuration before the local cascade. External failure retains the node and resource identities in deleting state for retry. Historical traffic, tasks and audit records and installed Zero files are retained.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         "200": { description: Node asset deleted }
         "409": { $ref: "#/components/responses/Error" }
+        "502": { description: External cleanup failed; node and resource identities retained for retry }
   /api/v1/admin/nodes/{id}/address-candidates:
     get:
       tags: [nodes, admin]
@@ -3554,7 +3570,7 @@ components:
           type: string
         communication_protocol: { type: integer }
         status: { type: integer, description: Runtime status enum; enabled state is represented separately. }
-        lifecycle_status: { type: string, enum: [active, maintenance, retired] }
+        lifecycle_status: { type: string, enum: [active, maintenance, retired, deleting] }
         config: { type: string, description: Node-level JSON configuration. }
         is_enabled: { type: boolean }
         remark: { type: string }
@@ -3619,7 +3635,7 @@ components:
         region: { type: string }
         address: { type: string }
         status: { type: integer }
-        lifecycle_status: { type: string, enum: [active, maintenance, retired] }
+        lifecycle_status: { type: string, enum: [active, maintenance, retired, deleting] }
         is_enabled: { type: boolean }
         connector_last_seen_at: { type: string, format: date-time, nullable: true }
         connector_online: { type: boolean }

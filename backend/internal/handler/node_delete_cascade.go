@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -55,6 +56,14 @@ func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	publishLock := h.nodePublishLock(nodeID)
+	if err := publishLock.Lock(r.Context()); err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	defer publishLock.Unlock()
+	h.deletionMu.Lock()
+	defer h.deletionMu.Unlock()
 	var node model.Node
 	if err := h.db.First(&node, nodeID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -84,6 +93,10 @@ func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if err := h.prepareNodeExternalDeletion(node.ID); err != nil {
+		writeJSON(w, http.StatusConflict, err.Error(), nil)
+		return
+	}
 	remoteZeroStopped, err := h.stopManagedZeroBeforeNodeDelete(node)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, "无法安全删除节点：已安装的 Zero 未能在远端停止，请恢复 SSH 或服务控制后重试。", map[string]interface{}{
@@ -93,6 +106,12 @@ func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	ctx, cancel := context.WithTimeout(r.Context(), certificateOperationTimeout)
+	defer cancel()
+	if err := h.cleanupNodeExternalResources(ctx, node); err != nil {
+		writeJSON(w, http.StatusBadGateway, "外部资源清理未完成，节点及关联记录已保留；请修复后重试删除。", map[string]interface{}{"detail": truncateCertificateError(err.Error())})
+		return
+	}
 	cleanup := nodeDeleteCleanup{}
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		var certificateIDs []uint
@@ -164,7 +183,7 @@ func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 			return err
 		}
 		encodedCleanup, _ := json.Marshal(cleanup)
-		return createAuditLog(tx, claims, "node.delete", fmt.Sprintf("node:%d", node.ID), fmt.Sprintf("name=%s cleanup=%s traffic_records_retained=%d remote_zero_stopped=%t external_artifacts_retained=true", node.Name, encodedCleanup, trafficRecords, remoteZeroStopped))
+		return createAuditLog(tx, claims, "node.delete", fmt.Sprintf("node:%d", node.ID), fmt.Sprintf("name=%s cleanup=%s traffic_records_retained=%d remote_zero_stopped=%t external_cleanup=completed", node.Name, encodedCleanup, trafficRecords, remoteZeroStopped))
 	})
 	if err != nil {
 		ServerError(w, err)
@@ -178,8 +197,8 @@ func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 		TrafficRecordsRetained:         trafficRecords,
 		RemoteZeroRetained:             true,
 		RemoteZeroStopped:              remoteZeroStopped,
-		RemoteCertificateFilesRetained: true,
-		ProviderDNSRecordsRetained:     true,
+		RemoteCertificateFilesRetained: false,
+		ProviderDNSRecordsRetained:     false,
 	})
 }
 

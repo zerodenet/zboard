@@ -289,7 +289,7 @@ func applyManagedCertificateToProtocol(protocol map[string]interface{}, protocol
 
 func effectiveCertificateStatus(certificate model.ManagedCertificate, now time.Time) string {
 	if certificate.NotAfter != nil && !certificate.NotAfter.After(now) &&
-		certificate.Status != certificateStatusIssuing && certificate.Status != certificateStatusRenewing {
+		certificate.Status != resourceStatusDeleting && certificate.Status != certificateStatusIssuing && certificate.Status != certificateStatusRenewing {
 		return certificateStatusExpired
 	}
 	return certificate.Status
@@ -438,54 +438,6 @@ func (h *handlers) ManagedCertificateGetHandler(w http.ResponseWriter, r *http.R
 	OK(w, map[string]interface{}{"certificate": items[0], "protocol_endpoint_ids": endpointIDs})
 }
 
-func (h *handlers) ManagedCertificateDeleteHandler(w http.ResponseWriter, r *http.Request) {
-	claims, err := h.requireAdmin(w, r)
-	if err != nil {
-		return
-	}
-	id, err := parsePathID(r.URL.Path, "/api/v1/admin/certificates/")
-	if err != nil {
-		BadRequest(w, err.Error())
-		return
-	}
-	var certificate model.ManagedCertificate
-	if err := h.db.First(&certificate, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			NotFound(w)
-			return
-		}
-		ServerError(w, err)
-		return
-	}
-	var usageCount, runningCount int64
-	if err := h.db.Model(&model.CertificateProtocolEndpoint{}).Where("managed_certificate_id = ?", id).Count(&usageCount).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	if err := h.db.Model(&model.CertificateOperation{}).
-		Where("managed_certificate_id = ? AND status = ?", id, "running").
-		Count(&runningCount).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	if usageCount > 0 || runningCount > 0 {
-		writeJSON(w, http.StatusConflict, "删除证书前请先解除协议服务引用，并等待正在运行的签发或续期任务结束。",
-			map[string]interface{}{"blockers": map[string]int64{"protocol_endpoints": usageCount, "running_operations": runningCount}})
-		return
-	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := createAuditLog(tx, claims, "certificate.delete", fmt.Sprintf("certificate:%d", certificate.ID),
-			fmt.Sprintf("node=%d name=%s", certificate.NodeID, certificate.Name)); err != nil {
-			return err
-		}
-		return tx.Delete(&certificate).Error
-	}); err != nil {
-		ServerError(w, err)
-		return
-	}
-	OK(w, map[string]interface{}{"id": certificate.ID, "deleted": true, "remote_files_retained": true})
-}
-
 func (h *handlers) ManagedCertificateUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	claims, err := h.requireAdmin(w, r)
 	if err != nil {
@@ -525,6 +477,9 @@ func (h *handlers) ManagedCertificateUpdateHandler(w http.ResponseWriter, r *htt
 		var certificate model.ManagedCertificate
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&certificate, id).Error; err != nil {
 			return err
+		}
+		if certificate.Status == resourceStatusDeleting {
+			return errResourceDeleting
 		}
 		if certificate.Revision != request.ExpectedRevision {
 			return errCertificateRevisionConflict
@@ -665,6 +620,14 @@ func (h *handlers) ManagedCertificateCreateHandler(w http.ResponseWriter, r *htt
 		AutoRenew: autoRenew, RenewBeforeDays: request.RenewBeforeDays, Revision: 1,
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := requireAvailableNode(tx, certificate.NodeID); err != nil {
+			return err
+		}
+		if certificate.ProviderAccountID != nil {
+			if err := requireAvailableProvider(tx, *certificate.ProviderAccountID); err != nil {
+				return err
+			}
+		}
 		if err := tx.Create(&certificate).Error; err != nil {
 			return err
 		}
@@ -704,6 +667,9 @@ func (h *handlers) ManagedCertificateRenewalUpdateHandler(w http.ResponseWriter,
 		var certificate model.ManagedCertificate
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&certificate, id).Error; err != nil {
 			return err
+		}
+		if certificate.Status == resourceStatusDeleting {
+			return errResourceDeleting
 		}
 		if certificate.Revision != request.ExpectedRevision {
 			return errCertificateRevisionConflict
@@ -778,6 +744,9 @@ func (h *handlers) startManagedCertificateOperation(certificateID uint, operatio
 		var certificate model.ManagedCertificate
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&certificate, certificateID).Error; err != nil {
 			return err
+		}
+		if certificate.Status == resourceStatusDeleting {
+			return errResourceDeleting
 		}
 		if certificate.Status == certificateStatusIssuing || certificate.Status == certificateStatusRenewing {
 			return errCertificateOperationRunning
@@ -1308,7 +1277,7 @@ func (h *handlers) scanCertificateRenewals(now time.Time) {
 		return
 	}
 	_ = h.db.Model(&model.ManagedCertificate{}).
-		Where("not_after IS NOT NULL AND not_after <= ? AND status NOT IN ?", now, []string{certificateStatusIssuing, certificateStatusRenewing, certificateStatusExpired}).
+		Where("not_after IS NOT NULL AND not_after <= ? AND status NOT IN ?", now, []string{certificateStatusIssuing, certificateStatusRenewing, certificateStatusExpired, resourceStatusDeleting}).
 		Updates(map[string]interface{}{"status": certificateStatusExpired, "last_error": "certificate has expired"}).Error
 	var certificates []model.ManagedCertificate
 	if err := h.db.Where(

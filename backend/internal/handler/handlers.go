@@ -462,6 +462,7 @@ type handlers struct {
 	expiryReconcileMu        sync.Mutex
 	lastExpiryReconcile      time.Time
 	maintenanceMu            sync.RWMutex
+	deletionMu               sync.Mutex
 	maintenanceState         maintenanceState
 	maintenanceLoadedAt      time.Time
 }
@@ -1506,7 +1507,7 @@ func (h *handlers) nodePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if lifecycle := strings.TrimSpace(r.URL.Query().Get("lifecycle_status")); lifecycle != "" {
 		switch lifecycle {
-		case "active", "maintenance", "retired":
+		case "active", "maintenance", "retired", resourceStatusDeleting:
 			query = query.Where("nodes.lifecycle_status = ?", lifecycle)
 		default:
 			BadRequest(w, "invalid lifecycle_status")
@@ -1818,6 +1819,9 @@ func (h *handlers) NodeUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := requireAvailableNode(tx, node.ID); err != nil {
+			return err
+		}
 		if err := tx.Model(&node).Updates(updates).Error; err != nil {
 			return err
 		}
@@ -2742,6 +2746,23 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 	removedMemberships := protocolEndpointNodeGroupRemovalSet(membershipChanges)
 	validationFinishedAt := time.Now()
 	transactionErr := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := requireAvailableNode(tx, endpoint.NodeID); err != nil {
+			return err
+		}
+		if existing.NodeID != 0 && existing.NodeID != endpoint.NodeID {
+			if err := requireAvailableNode(tx, existing.NodeID); err != nil {
+				return err
+			}
+		}
+		if managedCertificate != nil {
+			var current model.ManagedCertificate
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, managedCertificate.ID).Error; err != nil {
+				return err
+			}
+			if current.Status == resourceStatusDeleting {
+				return errResourceDeleting
+			}
+		}
 		if endpointID == 0 {
 			var last model.ProtocolEndpoint
 			lastResult := tx.Clauses(clause.Locking{Strength: "UPDATE"}).

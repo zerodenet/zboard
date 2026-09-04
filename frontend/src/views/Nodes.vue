@@ -502,7 +502,7 @@ const kernelStatusLabel = computed(() => ({
 } as Record<string, string>)[kernelState.value?.status || 'unknown'] || formatUnknownValue('状态', kernelState.value?.status))
 const kernelDescription = computed(() => kernelState.value?.installed_version ? `Zero ${kernelState.value.installed_version} · ${serviceLabel(kernelState.value.service_status)}` : kernelStatusLabel.value)
 const reconcileButtonLabel = computed(() => kernelState.value?.status === 'unsupported' ? '当前制品不兼容' : kernelState.value?.status === 'not_installed' ? '自动安装' : kernelState.value?.recommended_action === 'configure' ? '应用配置' : '安装 / 升级 / 修复')
-function lifecycleLabel(value?: string) { return ({ active: '正常', maintenance: '维护', retired: '退役' } as Record<string, string>)[value || ''] || formatUnknownValue('状态', value) }
+function lifecycleLabel(value?: string) { return ({ active: '正常', maintenance: '维护', retired: '退役', deleting: '待完成删除' } as Record<string, string>)[value || ''] || formatUnknownValue('状态', value) }
 function lifecycleTone(node: any): 'success' | 'warning' | 'neutral' { return node.lifecycle_status === 'maintenance' ? 'warning' : node.lifecycle_status === 'retired' ? 'neutral' : node.is_enabled ? 'success' : 'neutral' }
 function kernelListLabel(value?: string) { return ({ unknown: '未检测', not_installed: '未安装', healthy: '健康', degraded: '异常', failed: '失败', unsupported: '不兼容', publishing: '发布中', apply_failed: '应用失败' } as Record<string, string>)[value || 'unknown'] || formatUnknownValue('状态', value) }
 function kernelListTone(value?: string): 'success' | 'warning' | 'danger' | 'neutral' { if (value === 'healthy') return 'success'; if (!value || value === 'unknown') return 'neutral'; if (value === 'not_installed' || value === 'unsupported' || value === 'publishing') return 'warning'; return 'danger' }
@@ -766,7 +766,7 @@ async function closeDetail() { diagnosticsOpen.value = false; selectedNode.value
 async function removeNode(node: AdminNodeDetail) {
   if (!await confirmAction({
     title: '删除节点资产？',
-    message: `将永久删除“${node.name}”以及 zboard 中由该节点承载的协议服务、证书、DNS 管理记录和运行状态。历史流量、任务与审计记录会保留；远端 Zero、证书文件和 DNS 服务商记录不会自动删除。`,
+    message: `将永久删除“${node.name}”以及 zboard 中由该节点承载的协议服务、证书、DNS 管理记录和运行状态。将停止并禁用托管 Zero，删除 Cloudflare DNS 记录，撤销仍有效的托管证书并清理证书、私钥和续期配置。历史流量、任务与审计记录保留；清理失败时保留节点及关联记录供重试。`,
     confirmText: '确认删除',
     tone: 'danger',
   })) return
@@ -777,7 +777,7 @@ async function removeNode(node: AdminNodeDetail) {
     await deleteNode(node.id)
     if (pendingBBRNodeID.value === node.id) pendingBBRNodeID.value = 0
     await closeDetail()
-    message.value = `节点“${node.name}”已从面板删除；远端 Zero 未被卸载。`
+    message.value = `节点“${node.name}”及托管 DNS、证书已清理；Zero 已停用，安装文件保留。`
     await refresh()
   } catch (e: any) {
     detailError.value = e?.response?.data?.message || '节点删除失败。'

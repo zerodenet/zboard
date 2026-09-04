@@ -131,6 +131,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/admin/provider-accounts", h.ProviderAccountListHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/provider-accounts", h.ProviderAccountCreateHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/provider-accounts/:id/verify", h.ProviderAccountVerifyHandler),
+		newRoute(http.MethodDelete, "/api/v1/admin/provider-accounts/:id", h.ProviderAccountDeleteHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/dns-records", h.ManagedDNSListHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/dns-records", h.ManagedDNSCreateHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/dns-records/:id", h.ManagedDNSUpdateHandler),

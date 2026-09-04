@@ -86,6 +86,25 @@ historical entitlement snapshots or replace order-creation authorization.
   environment when the distribution does not publish that package. Legacy
   standalone certificates remain renewal-compatible but cannot be newly
   created.
+- DNS and certificate deletion reserve a durable deleting state before
+  external work. Failures retain identity, credential references and error
+  details; retry DELETE resumes cleanup. Editing, sync and renewal cannot
+  reactivate a deleting resource. Cloudflare cleanup uses exact saved zone and
+  record IDs and treats HTTP 404 as already removed; incomplete or uncertain
+  ownership blocks deletion rather than deleting by domain name.
+- Certificate deletion revokes unexpired ID-owned generations, then deletes
+  the Certbot lineage, its renewal configuration, and the canonical
+  /etc/zboard/certificates/<id> directory. SSH or CA failure keeps the panel
+  record and remaining material for retry. Shared ACME accounts, webroots,
+  unrelated certificates and shared provider tokens are never removed.
+- Node deletion stops the managed Zero service and cleans its external DNS
+  and certificate resources before the local cascade. A partial failure keeps
+  the node in deleting lifecycle with its local resource identities intact.
+  New attachments, publication and renewal are blocked until deletion finishes.
+  Zero installation files and historical traffic, task and audit facts remain.
+- A provider integration can be deleted only after all typed DNS/certificate
+  references and running provider operations are gone. This removes Zboard's
+  stored credential, not the externally owned account or shared API token.
 - `nodes` is an independent VPS asset. It can exist without a protocol and owns lifecycle state, encrypted management/report credentials, communication mode, runtime status, enablement, version and synchronization timestamps.
 - SSH client authentication selects password or private key. Server identity verification is automatic: an empty fingerprint is enrolled after the first successful SSH handshake, a recorded fingerprint is always enforced, and an administrator must explicitly reset trust after confirming a legitimate VPS reinstall or host-key change.
 - SSH login identity and system privilege are separate node settings. `ssh_privilege_mode=none` requires a root login for managed system changes; `sudo` supports passwordless or password-based sudo; `su` requires a separately encrypted root password. Privilege passwords are sent only on the SSH session stdin and are never embedded in remote commands, operation output or audit details.

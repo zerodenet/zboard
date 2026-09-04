@@ -24,9 +24,9 @@
           <td class="numeric-column" data-column-priority="3">{{ certificate.usage_count }}</td>
           <td data-column-priority="3"><div v-if="certificate.latest_operation" class="operation-cell"><StatusBadge :tone="operationTone(certificate.latest_operation.status)">{{ operationLabel(certificate.latest_operation) }}</StatusBadge><TimeBadge :value="certificate.latest_operation.created_at" mode="relative" /></div><span v-else class="muted-value">暂无操作</span></td>
           <td class="table-action-column"><RowActions :label="`${certificate.name} 的操作`" :trigger-key="`certificate-${certificate.id}`">
-            <UiButton variant="secondary" size="sm" type="button" :disabled="operationRunning(certificate)" @click="openEdit(certificate)"><UiIcon name="settings" />编辑</UiButton>
-            <UiButton variant="secondary" size="sm" type="button" :disabled="operationRunning(certificate)" @click="openRenewal(certificate)"><UiIcon name="settings" />续期策略</UiButton>
-            <UiButton size="sm" type="button" :loading="operatingID === certificate.id" :disabled="operationRunning(certificate)" @click="runCertificateOperation(certificate)"><UiIcon name="refresh" />{{ certificate.not_after ? '立即续期' : '开始申请' }}</UiButton>
+            <UiButton variant="secondary" size="sm" type="button" :disabled="operationRunning(certificate) || certificate.status === 'deleting'" @click="openEdit(certificate)"><UiIcon name="settings" />编辑</UiButton>
+            <UiButton variant="secondary" size="sm" type="button" :disabled="operationRunning(certificate) || certificate.status === 'deleting'" @click="openRenewal(certificate)"><UiIcon name="settings" />续期策略</UiButton>
+            <UiButton size="sm" type="button" :loading="operatingID === certificate.id" :disabled="operationRunning(certificate) || certificate.status === 'deleting'" @click="runCertificateOperation(certificate)"><UiIcon name="refresh" />{{ certificate.not_after ? '立即续期' : '开始申请' }}</UiButton>
             <UiButton variant="danger" size="sm" type="button" :loading="deletingID === certificate.id" :disabled="operationRunning(certificate)" @click="removeCertificate(certificate)"><UiIcon name="trash" />删除</UiButton>
           </RowActions></td>
         </tr></tbody>
@@ -166,7 +166,7 @@ useUnsavedChangesGuard(
   () => renewalState.confirmDiscard({ title: 'Discard renewal changes?', message: 'The unsaved renewal policy will be lost.', confirmText: 'Discard changes' }),
 )
 
-function certificateStatusLabel(status: ManagedCertificate['status']) { return ({ pending: '待申请', issuing: '申请中', active: '有效', renewing: '续期中', failed: '操作失败', expired: '已过期' } as Record<string, string>)[status] || status }
+function certificateStatusLabel(status: ManagedCertificate['status']) { return ({ pending: '待申请', issuing: '申请中', active: '有效', renewing: '续期中', failed: '操作失败', expired: '已过期', deleting: '待完成删除' } as Record<string, string>)[status] || status }
 function certificateTone(status: ManagedCertificate['status']): 'success' | 'warning' | 'danger' | 'neutral' | 'info' { return status === 'active' ? 'success' : status === 'issuing' || status === 'renewing' ? 'warning' : status === 'failed' || status === 'expired' ? 'danger' : 'neutral' }
 function certificateIcon(status: ManagedCertificate['status']) { return status === 'active' ? 'shield' : status === 'issuing' || status === 'renewing' ? 'refresh' : status === 'failed' || status === 'expired' ? 'alert' : 'clock' }
 function operationRunning(certificate: ManagedCertificate) { return certificate.latest_operation?.status === 'running' || certificate.status === 'issuing' || certificate.status === 'renewing' }
@@ -224,7 +224,7 @@ async function runCertificateOperation(certificate: ManagedCertificate) {
 async function removeCertificate(certificate: ManagedCertificate) {
   if (!await confirmAction({
     title: '删除托管证书？',
-    message: `将删除“${certificate.name}”的面板记录；签发/续期历史和节点上的证书文件会保留，避免破坏审计记录或误删仍被其他服务使用的文件。`,
+    message: `将删除“${certificate.name}”的托管证书，撤销仍有效的证书，并删除节点上的证书、私钥及续期配置。操作历史保留；外部清理失败时保留面板记录，可修复后重试删除。`,
     confirmText: '确认删除',
     tone: 'danger',
   })) return
@@ -233,9 +233,10 @@ async function removeCertificate(certificate: ManagedCertificate) {
   message.value = ''
   try {
     await deleteManagedCertificate(certificate.id)
-    message.value = `证书“${certificate.name}”已删除；节点文件未被移除。`
+    message.value = `证书“${certificate.name}”及节点文件、续期配置已清理。`
     await refresh()
   } catch (cause: any) {
+    await refresh()
     error.value = cause?.response?.data?.message || '证书删除失败。'
   } finally {
     deletingID.value = 0
