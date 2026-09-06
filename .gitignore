@@ -34,6 +34,7 @@ frontend/.nuxt
 /PROJECT_MEMORY.md
 /scripts/sync-intranet.ps1
 /scripts/verify-scale-intranet.ps1
+/scripts/__pycache__/
 /design-qa.md
 /docs/admin-frontend-completion-audit.md
 /docs/admin-frontend-implementation-plan.md

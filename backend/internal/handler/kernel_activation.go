@@ -31,7 +31,7 @@ func (h *handlers) verifyNodeKernelStable(parent context.Context, node model.Nod
 	var lastProbeErr error
 
 	for {
-		probe, err := h.probeNodeKernel(node)
+		probe, err := h.probeNodeKernelContext(ctx, node)
 		if err != nil {
 			lastProbeErr = err
 			consecutiveHealthy = 0
@@ -77,13 +77,15 @@ func formatZeroActivationSummary(summary string) string {
 }
 
 func (h *handlers) captureZeroActivationFailure(node model.Node) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	const command = `set +e
 printf 'zero systemd state:\n'
 systemctl show zero --no-pager -p ActiveState -p SubState -p Result -p ExecMainCode -p ExecMainStatus -p NRestarts 2>/dev/null || true
 printf 'recent zero journal:\n'
 journalctl -u zero --no-pager -n 20 -o cat 2>/dev/null || true
 exit 0`
-	output, _, err := h.execSSHCommandWithPrivilege(node, command, true)
+	output, _, err := h.execSSHCommandWithPrivilegeContext(ctx, node, command, true)
 	output = strings.TrimSpace(output)
 	if output != "" {
 		return "Zero activation summary: " + truncateKernelError(output)

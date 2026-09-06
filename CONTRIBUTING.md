@@ -22,6 +22,10 @@ belong in this guide or a focused document under `docs/`.
 
 ## Code conventions
 
+- Follow [the core and hardening baseline](docs/core-baseline.md): preserve
+  the existing working flows, fix defects in small verified changes, measure
+  performance, and expose narrow internal services for future extensions.
+  Online payment and a plugin runtime are not core-release prerequisites.
 - Keep API changes backward-compatible for `v0.1.x`
 - New endpoint must be added to `backend/api/openapi.yaml`
 - Sensitive operations (SSH, protocol publish, payment callback) should include audit logs and tests where possible

@@ -112,6 +112,7 @@ import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import { useRemoteTable } from '../composables/useRemoteTable'
+import { useRemoteResource } from '../composables/useRemoteResource'
 import { nextSortDirection, resolveSortDirection, resolveSortField } from '../composables/tableState'
 import { useAppStore } from '../stores/app'
 import { formatNumber } from '../utils/format'
@@ -141,11 +142,13 @@ const editFormElement = ref<HTMLElement | null>(null)
 const createErrors = useFormErrors()
 const editErrors = useFormErrors()
 const selectedUser = ref<UserItem | null>(null)
-const selectedUserDetail = ref<AdminUserDetail | null>(null)
 const detailID = ref(0)
-const detailLoading = ref(false)
-const detailError = ref('')
-let detailController: AbortController | null = null
+const detailResource = useRemoteResource<AdminUserDetail | null>({
+  initial: () => null,
+  fetch: ({ signal }) => fetchAdminUserDetail(detailID.value, { signal }),
+  errorMessage: '用户详情加载失败。',
+})
+const { data: selectedUserDetail, loading: detailLoading, error: detailError } = detailResource
 const currentUserId = computed(() => app.user.id)
 const form = reactive({ email: '', password: '', isAdmin: false, status: 'active' })
 const editDraft = reactive({ is_admin: false, status: 'active', password: '' })
@@ -207,20 +210,17 @@ async function clearFilters() { search.value = ''; statusFilter.value = ''; awai
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await refresh() }
 async function setSort(field: string) { const next = resolveSortField(field, userSortFields, 'created_at'); sortDirection.value = nextSortDirection(sortField.value, next, sortDirection.value, next === 'email' ? 'asc' : 'desc'); sortField.value = next; offset.value = 0; await syncURL(); await refresh() }
 async function openDetail(id: number) { await router.push({ query: { ...route.query, user: String(id) } }) }
-async function closeDetail() { detailController?.abort(); detailID.value = 0; selectedUserDetail.value = null; detailError.value = ''; const { user: _user, ...query } = route.query; await router.push({ query }) }
+async function closeDetail() { detailResource.reset(); detailID.value = 0; const { user: _user, ...query } = route.query; await router.push({ query }) }
 async function syncDetailFromRoute() {
   const id = Number(route.query.user)
   if (!Number.isInteger(id) || id <= 0) {
-    detailController?.abort(); detailID.value = 0; selectedUserDetail.value = null; detailError.value = ''; detailLoading.value = false
+    detailResource.reset(); detailID.value = 0
     return
   }
   if (detailID.value === id && (selectedUserDetail.value?.id === id || detailLoading.value)) return
-  detailController?.abort()
-  detailController = new AbortController()
-  detailID.value = id; selectedUserDetail.value = null; detailError.value = ''; detailLoading.value = true
-  try { selectedUserDetail.value = await fetchAdminUserDetail(id, { signal: detailController.signal }) }
-  catch (cause: any) { if (cause?.name !== 'CanceledError' && cause?.name !== 'AbortError') detailError.value = cause?.response?.data?.message || '用户详情加载失败。' }
-  finally { if (detailID.value === id) detailLoading.value = false }
+  detailResource.reset()
+  detailID.value = id
+  await detailResource.load()
 }
 
 async function create() {

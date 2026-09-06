@@ -80,16 +80,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchPlanCatalogPage, type PlanCatalogItem } from '../api/client'
 import CommercePlanCard from '../components/CommercePlanCard.vue'
 import UiIcon from '../components/UiIcon.vue'
 import { useAppStore } from '../stores/app'
+import { useRemoteResource } from '../composables/useRemoteResource'
 
 const app = useAppStore()
 const router = useRouter()
-const plans = ref<PlanCatalogItem[]>([])
+const recommendations = useRemoteResource<PlanCatalogItem[]>({
+  initial: () => [],
+  fetch: async ({ signal }) => (await fetchPlanCatalogPage({ offset: 0, limit: 3 }, { signal })).items,
+  errorMessage: '推荐套餐加载失败。',
+})
+const { data: plans } = recommendations
 const profile = computed(() => app.siteProfile)
 
 const secondaryPath = computed(() => app.isAuthenticated ? (app.isAdmin ? '/admin/dashboard' : '/account') : (app.installation?.allow_registration ? '/register' : '/login'))
@@ -99,11 +105,5 @@ function openPlan(id: number) {
   router.push({ path: '/pricing', query: { plan: String(id) } })
 }
 
-onMounted(async () => {
-  try {
-    plans.value = (await fetchPlanCatalogPage({ offset: 0, limit: 3 })).items
-  } catch {
-    plans.value = []
-  }
-})
+onMounted(recommendations.load)
 </script>

@@ -180,7 +180,7 @@ func zeroRuntimeFlowCountersRegress(usage model.FlowUsage, cumulativeRaw int64, 
 	return usage.RawBytes > cumulativeRaw || usage.UploadBytes > flow.BytesUp || usage.DownloadBytes > flow.BytesDown
 }
 
-func (h *handlers) projectBufferedZeroFlow(tx *gorm.DB, buffered zeroevent.Envelope) (zeroFlowAccountingResult, error) {
+func (h *handlers) projectBufferedZeroFlow(tx *gorm.DB, buffered zeroevent.Envelope, batch *zeroFlowBatch) (zeroFlowAccountingResult, error) {
 	var result zeroFlowAccountingResult
 	event := zeroBufferedEnvelopeAsEvent(buffered)
 	flow, err := parseZeroFlowProjection(event)
@@ -194,28 +194,29 @@ func (h *handlers) projectBufferedZeroFlow(tx *gorm.DB, buffered zeroevent.Envel
 		return result, nil
 	}
 	result.NodeID = uint(buffered.NodeID)
-
-	var existing model.TrafficRecord
-	if err := tx.Where("node_id = ? AND report_id = ?", result.NodeID, event.EventID).First(&existing).Error; err == nil {
-		result.ProtocolEndpointID = existing.ProtocolEndpointID
-		return result, nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	reportKey := zeroFlowReportKey{result.NodeID, event.EventID}
+	endpointID, recorded, err := batch.recordedEndpoint(tx, reportKey)
+	if err != nil {
 		return result, err
 	}
+	if recorded {
+		result.ProtocolEndpointID = endpointID
+		return result, nil
+	}
 
-	credential, err := h.resolveZeroCompletionCredential(tx, result.NodeID, flow.PrincipalKey)
+	credential, err := batch.credential(h, tx, result.NodeID, flow.PrincipalKey)
 	if err != nil {
 		return result, err
 	}
 	flow.PrincipalKey = credential.PrincipalKey
 	result.ProtocolEndpointID = credential.ProtocolEndpointID
 
-	var subscription model.Subscription
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&subscription, credential.SubscriptionID).Error; err != nil {
+	subscription, err := batch.subscription(tx, credential.SubscriptionID)
+	if err != nil {
 		return result, err
 	}
-	var endpoint model.ProtocolEndpoint
-	if err := tx.First(&endpoint, credential.ProtocolEndpointID).Error; err != nil {
+	endpoint, err := batch.endpoint(tx, credential.ProtocolEndpointID)
+	if err != nil {
 		return result, err
 	}
 
@@ -284,7 +285,7 @@ func (h *handlers) projectBufferedZeroFlow(tx *gorm.DB, buffered zeroevent.Envel
 		At:                      recordAt,
 		Meta:                    fmt.Sprintf(`{"source_id":%q,"core_instance_id":%q,"sequence":%d,"credential_id":%q,"buffered":true}`, event.SourceID, event.CoreInstanceID, event.Sequence, credential.CredentialID),
 	}
-	if err := tx.Create(&record).Error; err != nil {
+	if err := batch.appendRecord(tx, record); err != nil {
 		return result, err
 	}
 
@@ -295,13 +296,7 @@ func (h *handlers) projectBufferedZeroFlow(tx *gorm.DB, buffered zeroevent.Envel
 			subscription.Status = subStatusExpired
 			result.Exhausted = true
 		}
-		if err := tx.Model(&subscription).Updates(map[string]interface{}{
-			"flow_used":  subscription.FlowUsed,
-			"status":     subscription.Status,
-			"updated_at": now,
-		}).Error; err != nil {
-			return result, err
-		}
+		batch.dirtySubscriptions[subscription.ID] = now
 	}
 
 	usageKey := zeroFlowUsageKey(event.CoreInstanceID, flow.FlowID)
@@ -328,10 +323,11 @@ func (h *handlers) projectBufferedZeroFlow(tx *gorm.DB, buffered zeroevent.Envel
 		return result, err
 	}
 
-	if err := tx.Model(&credential).Updates(map[string]interface{}{"last_used_at": now, "updated_at": now}).Error; err != nil {
-		return result, err
-	}
+	batch.touched[credential.ID] = now
 	if result.Exhausted {
+		if err := enqueueSubscriptionConfigPublishes(tx, subscription.ID, 0); err != nil {
+			return result, err
+		}
 		if err := tx.Model(&model.ProtocolCredential{}).
 			Where("subscription_id = ? AND status IN ?", subscription.ID, []string{protocolCredentialStatusActive, protocolCredentialStatusPrepared}).
 			Updates(map[string]interface{}{"status": "expired", "updated_at": now}).Error; err != nil {

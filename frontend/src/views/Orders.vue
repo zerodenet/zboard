@@ -100,6 +100,7 @@ import WorkbenchFilterDate from '../components/WorkbenchFilterDate.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import { useRemoteTable } from '../composables/useRemoteTable'
+import { useRemoteResource } from '../composables/useRemoteResource'
 import { commerceErrorMessage } from '../utils/commerceErrors'
 import { formatBytes, formatCurrency, formatUnknownValue } from '../utils/format'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
@@ -124,11 +125,13 @@ const confirmOpen = ref(false)
 const actionError = ref('')
 const actionKind = ref<'pay' | 'cancel'>('pay')
 const actionTarget = ref<OrderItem | null>(null)
-const selectedOrder = ref<AdminOrderDetail | null>(null)
 const detailID = ref(0)
-const detailLoading = ref(false)
-const detailError = ref('')
-let detailController: AbortController | null = null
+const detailResource = useRemoteResource<AdminOrderDetail | null>({
+  initial: () => null,
+  fetch: ({ signal }) => fetchAdminOrderDetail(detailID.value, { signal }),
+  errorMessage: '订单详情加载失败。',
+})
+const { data: selectedOrder, loading: detailLoading, error: detailError } = detailResource
 const paymentEventOffset = ref(0)
 const paymentEventLimit = ref(25)
 const statusOptions = [
@@ -154,7 +157,7 @@ const { items: orders, total, loading, refreshing, error, load } = useRemoteTabl
   errorMessage: (cause: any) => cause?.response?.data?.message || '订单数据加载失败。',
   onOffsetCorrected: () => syncURL(true),
 })
-const { items: paymentEvents, total: paymentEventTotal, loading: paymentEventLoading, error: paymentEventError, load: loadPaymentEvents } = useRemoteTable<AdminPaymentEventSummary>({
+const { items: paymentEvents, total: paymentEventTotal, loading: paymentEventLoading, error: paymentEventError, load: loadPaymentEvents, reset: resetPaymentEvents } = useRemoteTable<AdminPaymentEventSummary>({
   offset: paymentEventOffset,
   limit: paymentEventLimit,
   fetchPage: ({ signal }) => detailID.value
@@ -181,12 +184,12 @@ function requestAction(kind: 'pay' | 'cancel', item: OrderItem) { actionKind.val
 function closeActionDialog() { if (saving.value) return; confirmOpen.value = false; actionError.value = ''; actionTarget.value = null }
 async function executeAction() { if (!actionTarget.value) return; saving.value = true; actionError.value = ''; message.value = ''; try { if (actionKind.value === 'pay') await markOrderPaid(actionTarget.value.id); else await cancelOrder(actionTarget.value.id, true); message.value = actionKind.value === 'pay' ? `订单 #${actionTarget.value.id} 已确认收款。` : `订单 #${actionTarget.value.id} 已取消。`; confirmOpen.value = false; await load(); if (detailID.value === actionTarget.value.id) { selectedOrder.value = null; await syncDetailFromRoute() } actionTarget.value = null } catch (cause: any) { actionError.value = commerceErrorMessage(cause, actionKind.value === 'pay' ? '无法确认收款，请检查订单当前状态。' : '无法取消订单，请检查订单当前状态。') } finally { saving.value = false } }
 async function openDetail(id: number) { const { event_page: _eventPage, event_limit: _eventLimit, ...query } = route.query; paymentEventOffset.value = 0; paymentEventLimit.value = 25; await router.push({ query: { ...query, order: String(id) } }) }
-async function closeDetail() { detailController?.abort(); detailID.value = 0; selectedOrder.value = null; detailError.value = ''; paymentEvents.value = []; const { order: _order, event_page: _eventPage, event_limit: _eventLimit, ...query } = route.query; await router.push({ query }) }
+async function closeDetail() { detailResource.reset(); resetPaymentEvents(); detailID.value = 0; const { order: _order, event_page: _eventPage, event_limit: _eventLimit, ...query } = route.query; await router.push({ query }) }
 async function changePaymentEventPage(value: { offset: number; limit: number }) { paymentEventOffset.value = value.offset; paymentEventLimit.value = value.limit; await syncURL(); await loadPaymentEvents() }
 async function syncDetailFromRoute() {
   const id = Number(route.query.order)
   if (!Number.isInteger(id) || id <= 0) {
-    detailController?.abort(); detailID.value = 0; selectedOrder.value = null; detailError.value = ''; detailLoading.value = false; paymentEvents.value = []
+    detailResource.reset(); resetPaymentEvents(); detailID.value = 0
     return
   }
   const rawEventLimit = Number(route.query.event_limit)
@@ -196,19 +199,13 @@ async function syncDetailFromRoute() {
   paymentEventLimit.value = nextEventLimit
   paymentEventOffset.value = nextEventOffset
   if (detailID.value === id && (selectedOrder.value?.id === id || detailLoading.value)) {
-    if (eventPageChanged && !detailLoading.value) await loadPaymentEvents()
+    if (eventPageChanged) await loadPaymentEvents()
     return
   }
-  detailController?.abort()
-  detailController = new AbortController()
-  detailID.value = id; selectedOrder.value = null; detailError.value = ''; detailLoading.value = true
-  try {
-    const eventLoad = loadPaymentEvents()
-    selectedOrder.value = await fetchAdminOrderDetail(id, { signal: detailController.signal })
-    await eventLoad
-  }
-  catch (cause: any) { if (cause?.name !== 'CanceledError' && cause?.name !== 'AbortError') detailError.value = cause?.response?.data?.message || '订单详情加载失败。' }
-  finally { if (detailID.value === id) detailLoading.value = false }
+  detailResource.reset()
+  resetPaymentEvents()
+  detailID.value = id
+  await Promise.all([detailResource.load(), loadPaymentEvents()])
 }
 watch(() => route.fullPath, async () => { const nextQuery = String(route.query.q || ''), nextStatus = String(route.query.status || ''), nextOrderType = String(route.query.order_type || ''), nextUser = String(route.query.user_id || ''), nextCreatedFrom = String(route.query.created_from || ''), nextCreatedTo = String(route.query.created_to || ''); const rawLimit = Number(route.query.limit), nextLimit = allowedPageSizes.includes(rawLimit) ? rawLimit : 50, nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * nextLimit; if (nextQuery !== queryFilter.value || nextStatus !== statusFilter.value || nextOrderType !== orderTypeFilter.value || nextUser !== userFilter.value || nextCreatedFrom !== createdFrom.value || nextCreatedTo !== createdTo.value || nextLimit !== limit.value || nextOffset !== offset.value) { queryFilter.value = nextQuery; statusFilter.value = nextStatus; orderTypeFilter.value = nextOrderType; userFilter.value = nextUser; createdFrom.value = nextCreatedFrom; createdTo.value = nextCreatedTo; limit.value = nextLimit; offset.value = nextOffset; await load() } await syncDetailFromRoute() })
 onMounted(async () => { await load(); await syncDetailFromRoute() })

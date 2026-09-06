@@ -123,6 +123,11 @@ func systemBucketCaseExpression(column string, buckets []systemCalendarBucket) (
 func (h *handlers) loadTrafficTrendRowsInLocation(query *gorm.DB, from time.Time, days int, location *time.Location) ([]trafficTrendAggregateRow, error) {
 	buckets := systemDayBuckets(from, days, location)
 	expression, args := systemBucketCaseExpression("record_at", buckets)
+	if normalizeSystemLocation(location) == time.UTC {
+		// UTC needs no daylight-saving calendar conversion. Avoid comparing
+		// every row against up to 366 CASE arms for this common configuration.
+		expression, args = "DATE(record_at)", nil
+	}
 	rows := make([]trafficTrendAggregateRow, 0, len(buckets))
 	err := query.
 		Select(expression+" AS day, COALESCE(SUM(upload_bytes), 0) AS upload_bytes, COALESCE(SUM(download_bytes), 0) AS download_bytes, COALESCE(SUM(used_bytes), 0) AS used_bytes, COUNT(*) AS record_count", args...).

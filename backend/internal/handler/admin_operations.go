@@ -1263,6 +1263,9 @@ func (h *handlers) executeQuotaTaskItem(task model.Task, item model.TaskItem) er
 		if err := tx.Model(&subscription).Updates(updates).Error; err != nil {
 			return err
 		}
+		if err := enqueueSubscriptionConfigPublishes(tx, subscription.ID, 0); err != nil {
+			return err
+		}
 		detail, _ := json.Marshal(map[string]interface{}{"reason": strings.TrimSpace(content.Reason), "task_id": task.ID})
 		return tx.Create(&model.QuotaEvent{
 			SubscriptionID: subscription.ID, EventType: "task_adjustment", DeltaBytes: deltaBytes,
@@ -1271,7 +1274,7 @@ func (h *handlers) executeQuotaTaskItem(task model.Task, item model.TaskItem) er
 		}).Error
 	})
 	if err == nil {
-		h.scheduleSubscriptionConfigPublishes(uint(subscriptionID), 0)
+		h.publishScheduler().signal()
 	}
 	return err
 }

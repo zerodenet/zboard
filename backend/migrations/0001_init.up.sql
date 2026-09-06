@@ -940,3 +940,20 @@ VALUES
   ('sing-box', 'sing-box', 'sing-box 1.12+ 原生 JSON；支持运行模式、系统代理、DNS、TUN、策略组和规则集。', 'sing-box', '{"version":3,"mode":"rule","mixed_enabled":true,"mixed_port":7890,"system_proxy":false,"tun":{"enabled":false,"addresses":["10.66.0.1/24","fd66::1/64"],"mtu":1500,"auto_route":true,"strict_route":true,"dns_hijack":true},"dns":{"enabled":false,"servers":[{"tag":"default","type":"system"}],"default_server":"default","strategy":"prefer_ipv4","cache_enabled":true,"cache_capacity":1024,"fake_ip_enabled":false,"fake_ipv4_range":"198.18.0.0/15","fake_ipv6_range":"fc00::/18"},"main_group":"main","policy_groups":[{"id":"main","name":"节点选择","type":"select","include_groups":["auto"],"default_group":"auto"},{"id":"auto","name":"自动选择","type":"urltest","probe_url":"http://www.gstatic.com/generate_204","interval":300,"tolerance":50}],"final":"group:main","rule_sets":[]}', 1, -280, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+CREATE TABLE `node_config_publishes` (
+ `node_id` bigint unsigned NOT NULL,
+ `endpoint_id` bigint unsigned NOT NULL,
+ `requested_by` bigint unsigned NOT NULL,
+ `generation` bigint unsigned NOT NULL DEFAULT 1,
+ `attempts` int unsigned NOT NULL DEFAULT 0,
+ `next_attempt_at` datetime(3) NOT NULL,
+ `lease_until` datetime(3) NOT NULL,
+ `lease_token` varchar(36) NOT NULL DEFAULT '',
+ `last_error` varchar(1000) NOT NULL DEFAULT '',
+ `created_at` datetime(3) NOT NULL,
+ `updated_at` datetime(3) NOT NULL,
+ PRIMARY KEY (`node_id`),
+ KEY `idx_node_publish_due` (`next_attempt_at`, `lease_until`),
+ CONSTRAINT `fk_node_publish_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

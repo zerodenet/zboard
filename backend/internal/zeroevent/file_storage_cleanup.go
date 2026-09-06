@@ -23,7 +23,7 @@ func (s *FileSpool) cleanupCommittedSegmentsMode(checkpoint Checkpoint, ignoreRe
 		}
 		deleteSegment := segment.sequence < checkpoint.Segment
 		if segment.sequence == checkpoint.Segment {
-			consumed, total, err := segmentCheckpointRecordOffset(segment, checkpoint)
+			consumed, total, err := s.segmentCheckpointRecordOffset(segment, checkpoint)
 			if err != nil {
 				return err
 			}

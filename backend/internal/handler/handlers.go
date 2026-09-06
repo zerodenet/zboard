@@ -447,6 +447,7 @@ type siteSettingsRequest struct {
 
 type handlers struct {
 	db                       *gorm.DB
+	trafficReadDB            *gorm.DB
 	jwtSecret                string
 	credentialCipher         *security.CredentialCipher
 	zeroArtifactDir          string
@@ -459,6 +460,9 @@ type handlers struct {
 	nodePublishSchedulerOnce sync.Once
 	zeroEventAuthCache       sync.Map
 	zeroEventAuthFailures    sync.Map
+	trafficStatisticsCache   trafficSnapshotCache[trafficUsageStatistics]
+	trafficIncrementalStats  *trafficIncrementalCache
+	trafficTrendsCache       trafficSnapshotCache[trafficTrendSnapshot]
 	expiryReconcileMu        sync.Mutex
 	lastExpiryReconcile      time.Time
 	maintenanceMu            sync.RWMutex
@@ -2818,6 +2822,15 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		if membershipMutation != nil {
 			detail += fmt.Sprintf(" node_groups_added=%d node_groups_removed=%d membership_publish_status=%s", len(membershipMutation.AddedNodeGroupIDs), len(membershipMutation.RemovedNodeGroupIDs), membershipMutation.PublishStatus)
 		}
+		membershipNodes := []uint(nil)
+		if membershipMutation != nil {
+			membershipNodes = membershipMutation.AffectedNodeIDs
+		}
+		for _, affectedNodeID := range protocolEndpointDirectPublishNodeIDs(changeEffects.AffectedNodeIDs, membershipNodes) {
+			if err := enqueueNodeConfigPublish(tx, affectedNodeID, endpoint.ID, claims.UserID); err != nil {
+				return err
+			}
+		}
 		return createAuditLog(tx, claims, action, fmt.Sprintf("protocol_endpoint:%d", endpoint.ID), detail)
 	})
 	transactionFinishedAt := time.Now()
@@ -2840,13 +2853,7 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 			_ = h.startPersistedAdminTask(&membershipMutation.ReconcileTasks[index])
 		}
 	}
-	membershipPublishedNodeIDs := []uint(nil)
-	if membershipMutation != nil {
-		membershipPublishedNodeIDs = membershipMutation.AffectedNodeIDs
-	}
-	for _, affectedNodeID := range protocolEndpointDirectPublishNodeIDs(changeEffects.AffectedNodeIDs, membershipPublishedNodeIDs) {
-		h.scheduleNodeConfigPublish(affectedNodeID, endpoint.ID, claims.UserID)
-	}
+	h.publishScheduler().signal()
 	taskEnqueueFinishedAt := time.Now()
 	memberships, err := loadProtocolEndpointNodeGroupMemberships(h.db, endpoint.ID)
 	if err != nil {
@@ -5028,53 +5035,30 @@ func (h *handlers) OrderPayHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-
 	orderID, err := parseOrderID(r.URL.Path)
 	if err != nil {
 		BadRequest(w, err.Error())
 		return
 	}
-
-	var order model.Order
-	if err := h.db.First(&order, orderID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			BadRequest(w, "order not found")
-			return
-		}
-		ServerError(w, err)
-		return
-	}
-
-	force := parseBoolQuery(r.URL.Query().Get("force"))
-
-	err = h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, orderID).Error; err != nil {
-			return err
-		}
-		if !orderTransitionAllowed(order.Status, orderStatusPaid, force) {
-			return errOrderNotPayable
-		}
-		previousStatus := order.Status
-		if err := h.setOrderPaid(tx, &order, time.Now().UTC()); err != nil {
-			return err
-		}
-		if previousStatus != order.Status {
-			return createAuditLog(tx, claims, "order.pay", fmt.Sprintf("order:%d", order.ID), previousStatus+"->"+order.Status)
-		}
-		return nil
+	result, err := h.applyOrderResult(r.Context(), orderResultCommand{
+		OrderID: orderID, Status: orderStatusPaid,
+		Force: parseBoolQuery(r.URL.Query().Get("force")), Actor: claims,
 	})
-	if errors.Is(err, errOrderNotPayable) {
-		BadRequest(w, err.Error())
-		return
-	}
-	if err != nil {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		BadRequest(w, "order not found")
+	case errors.Is(err, errOrderTransitionRejected):
+		BadRequest(w, errOrderNotPayable.Error())
+	case errors.Is(err, errPlanSubscriptionLimitReached):
+		writePlanSubscriptionLimitReached(w)
+	case err != nil:
 		ServerError(w, err)
-		return
+	default:
+		if result.Fulfilled {
+			h.publishScheduler().signal()
+		}
+		OK(w, result.Order)
 	}
-	if order.SubscriptionID != 0 && order.Status == orderStatusPaid {
-		h.scheduleSubscriptionConfigPublishes(order.SubscriptionID, claims.UserID)
-	}
-	OK(w, order)
 }
 
 func (h *handlers) OrderCancelHandler(w http.ResponseWriter, r *http.Request) {
@@ -5184,53 +5168,24 @@ func (h *handlers) OrderPayCallbackHandler(w http.ResponseWriter, r *http.Reques
 	if status == orderStatusSuccess {
 		status = orderStatusPaid
 	}
-	var order model.Order
-	err = h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, orderID).Error; err != nil {
-			return err
-		}
-		if !orderTransitionAllowed(order.Status, status, false) {
-			return errOrderTransitionRejected
-		}
-		previousStatus := order.Status
-		now := time.Now().UTC()
-		if status == orderStatusPaid {
-			if err := h.setOrderPaid(tx, &order, now); err != nil {
-				return err
-			}
-		} else if order.Status != status {
-			order.Status = status
-			order.UpdatedAt = now
-		}
-		order.RawCallback = req.RawCallback
-		if err := tx.Model(&order).Updates(map[string]interface{}{
-			"status":       order.Status,
-			"raw_callback": order.RawCallback,
-			"updated_at":   now,
-		}).Error; err != nil {
-			return err
-		}
-		if previousStatus != order.Status {
-			return createAuditLog(tx, claims, "order.payment_result", fmt.Sprintf("order:%d", order.ID), previousStatus+"->"+order.Status)
-		}
-		return nil
+	result, err := h.applyOrderResult(r.Context(), orderResultCommand{
+		OrderID: orderID, Status: status, Actor: claims, Callback: &req.RawCallback,
 	})
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
 		BadRequest(w, "order not found")
-		return
-	}
-	if errors.Is(err, errOrderTransitionRejected) {
+	case errors.Is(err, errOrderTransitionRejected):
 		BadRequest(w, err.Error())
-		return
-	}
-	if err != nil {
+	case errors.Is(err, errPlanSubscriptionLimitReached):
+		writePlanSubscriptionLimitReached(w)
+	case err != nil:
 		ServerError(w, err)
-		return
+	default:
+		if result.Fulfilled {
+			h.publishScheduler().signal()
+		}
+		OK(w, result.Order)
 	}
-	if order.SubscriptionID != 0 && order.Status == orderStatusPaid {
-		h.scheduleSubscriptionConfigPublishes(order.SubscriptionID, claims.UserID)
-	}
-	OK(w, order)
 }
 
 func (h *handlers) setOrderPaid(tx *gorm.DB, order *model.Order, now time.Time) error {
@@ -5270,10 +5225,7 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 	if tx == nil {
 		tx = h.db
 	}
-	var user model.User
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&user, order.UserID).Error; err != nil {
-		return model.Subscription{}, err
-	}
+	// applyOrderResult already holds the buyer and audit actor locks in ID order.
 	var plan model.Plan
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&plan, order.PlanID).Error; err != nil {
 		return model.Subscription{}, err
@@ -5282,13 +5234,17 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 	if err := tx.First(&sku, order.PlanSKUID).Error; err != nil {
 		return model.Subscription{}, err
 	}
-	if err := expireSubscriptions(tx, order.UserID, now); err != nil {
+	if err := expireSubscriptionsInTx(tx, order.UserID, now); err != nil {
 		return model.Subscription{}, err
 	}
 
 	var sub model.Subscription
 	var err error
-	if order.TargetSubscriptionID != nil {
+	if order.OrderType == "new" && order.TargetSubscriptionID == nil {
+		// A purchase grants its own subscription; only renewal/legacy orders
+		// may resolve an existing same-SKU subscription implicitly.
+		err = gorm.ErrRecordNotFound
+	} else if order.TargetSubscriptionID != nil {
 		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND user_id = ?", *order.TargetSubscriptionID, order.UserID).First(&sub).Error
 	} else {
@@ -5304,16 +5260,8 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 		if order.TargetSubscriptionID != nil {
 			return model.Subscription{}, errors.New("target subscription is unavailable")
 		}
-		if plan.MaxActiveSubscriptions > 0 {
-			var activeCount int64
-			if err := tx.Model(&model.Subscription{}).
-				Where("plan_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total", plan.ID, subStatusActive, now).
-				Count(&activeCount).Error; err != nil {
-				return model.Subscription{}, err
-			}
-			if activeCount >= int64(plan.MaxActiveSubscriptions) {
-				return model.Subscription{}, errors.New("plan subscription capacity is exhausted")
-			}
+		if err := ensurePlanSubscriptionCapacity(tx, plan, now); err != nil {
+			return model.Subscription{}, err
 		}
 		periodEnd, err := addBillingPeriod(now, order.BillingUnit, order.BillingValue)
 		if err != nil {
@@ -5373,6 +5321,7 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 		quotaDelta = order.TrafficBytes
 		sub.FlowTotal += quotaDelta
 	}
+	previousGroupID := sub.NodeGroupID
 	sub.Status = subStatusActive
 	if order.OrderType != "traffic_pack" {
 		sub.PlanID = plan.ID
@@ -5393,6 +5342,11 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 
 	if err := tx.Save(&sub).Error; err != nil {
 		return model.Subscription{}, err
+	}
+	if sub.NodeGroupID != previousGroupID {
+		if err := revokeSubscriptionCredentialsOutsideGroup(tx, sub, now); err != nil {
+			return model.Subscription{}, err
+		}
 	}
 	if _, err := h.ensureSubscriptionCredentials(tx, sub); err != nil {
 		return model.Subscription{}, err
@@ -5517,21 +5471,7 @@ func expireSubscriptions(db *gorm.DB, userID uint, now time.Time) error {
 	if db == nil {
 		return errors.New("database is required")
 	}
-	query := db.Model(&model.Subscription{}).
-		Where("status = ? AND (end_at <= ? OR flow_used >= flow_total)", subStatusActive, now)
-	if userID != 0 {
-		query = query.Where("user_id = ?", userID)
-	}
-	if err := query.Update("status", subStatusExpired).Error; err != nil {
-		return err
-	}
-	credentialQuery := db.Model(&model.ProtocolCredential{}).
-		Where("status IN ? AND subscription_id IN (?)", []string{protocolCredentialStatusActive, protocolCredentialStatusPrepared},
-			db.Model(&model.Subscription{}).Select("id").Where("status <> ?", subStatusActive))
-	if userID != 0 {
-		credentialQuery = credentialQuery.Where("user_id = ?", userID)
-	}
-	return credentialQuery.Updates(map[string]interface{}{"status": "expired", "updated_at": now}).Error
+	return db.Transaction(func(tx *gorm.DB) error { return expireSubscriptionsInTx(tx, userID, now.UTC()) })
 }
 
 func (h *handlers) SubscriptionsHandler(w http.ResponseWriter, r *http.Request) {
@@ -6667,7 +6607,7 @@ func (h *handlers) TrafficReportHandler(w http.ResponseWriter, r *http.Request) 
 		}
 
 		now := time.Now().UTC()
-		if err := expireSubscriptions(tx, req.UserID, now); err != nil {
+		if err := expireSubscriptionsInTx(tx, req.UserID, now); err != nil {
 			return err
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -7400,41 +7340,6 @@ func (h *handlers) validateNodeSSH(node model.Node) error {
 	return nil
 }
 
-func (h *handlers) execSSHCommand(node model.Node, command string) (string, time.Duration, error) {
-	return h.execSSHCommandWithPrivilege(node, command, false)
-}
-
-func (h *handlers) execSSHCommandWithPrivilege(node model.Node, command string, privileged bool) (string, time.Duration, error) {
-	start := time.Now()
-	conn, _, err := h.dialNodeSSH(node)
-	if err != nil {
-		return "", time.Since(start), err
-	}
-	defer conn.Close()
-
-	session, err := conn.NewSession()
-	if err != nil {
-		return "", time.Since(start), err
-	}
-	defer session.Close()
-
-	command, stdin, requestPTY, err := h.prepareSSHCommand(node, command, privileged)
-	if err != nil {
-		return "", time.Since(start), err
-	}
-	if requestPTY {
-		modes := ssh.TerminalModes{ssh.ECHO: 0, ssh.TTY_OP_ISPEED: 14400, ssh.TTY_OP_OSPEED: 14400}
-		if err := session.RequestPty("xterm", 24, 80, modes); err != nil {
-			return "", time.Since(start), fmt.Errorf("request privilege terminal: %w", err)
-		}
-	}
-	if stdin != "" {
-		session.Stdin = strings.NewReader(stdin)
-	}
-	out, err := session.CombinedOutput(command)
-	return string(bytes.TrimSpace(out)), time.Since(start), err
-}
-
 func (h *handlers) prepareSSHCommand(node model.Node, command string, privileged bool) (string, string, bool, error) {
 	if !privileged || normalizeSSHPrivilegeMode(node.SSHPrivilegeMode) == sshPrivilegeNone {
 		return command, "", false, nil
@@ -7457,87 +7362,6 @@ func (h *handlers) prepareSSHCommand(node model.Node, command string, privileged
 	default:
 		return "", "", false, errors.New("unsupported node privilege mode")
 	}
-}
-
-func (h *handlers) dialNodeSSH(node model.Node) (*ssh.Client, time.Duration, error) {
-	start := time.Now()
-	credential, err := h.credentialCipher.Decrypt(node.SSHPwd)
-	if err != nil {
-		return nil, time.Since(start), fmt.Errorf("decrypt node ssh credential: %w", err)
-	}
-	var authMethod ssh.AuthMethod
-	switch normalizeSSHAuthMethod(node.SSHAuthMethod) {
-	case sshAuthPassword:
-		authMethod = ssh.Password(credential)
-	case sshAuthPrivateKey:
-		passphrase, err := h.credentialCipher.Decrypt(node.SSHPrivateKeyPassphrase)
-		if err != nil {
-			return nil, time.Since(start), fmt.Errorf("decrypt node ssh private key passphrase: %w", err)
-		}
-		signer, err := parseSSHPrivateKey(credential, passphrase)
-		if err != nil {
-			return nil, time.Since(start), err
-		}
-		authMethod = ssh.PublicKeys(signer)
-	default:
-		return nil, time.Since(start), errors.New("unsupported ssh_auth_method")
-	}
-	observedFingerprint := ""
-	addr := fmt.Sprintf("%s:%d", strings.TrimSpace(node.SSHHost), node.SSHPort)
-	conf := &ssh.ClientConfig{
-		User:            strings.TrimSpace(node.SSHUser),
-		Auth:            []ssh.AuthMethod{authMethod},
-		Timeout:         12 * time.Second,
-		HostKeyCallback: verifiedHostKeyCallback(node.SSHHostKeyFingerprint, &observedFingerprint),
-	}
-	conn, err := ssh.Dial("tcp", addr, conf)
-	if err != nil {
-		return nil, time.Since(start), err
-	}
-	if err := h.pinSSHHostKey(node.ID, node.SSHHostKeyFingerprint, observedFingerprint); err != nil {
-		_ = conn.Close()
-		return nil, time.Since(start), err
-	}
-	return conn, time.Since(start), nil
-}
-
-func (h *handlers) pinSSHHostKey(nodeID uint, expectedFingerprint string, observedFingerprint string) error {
-	expected := strings.TrimSpace(expectedFingerprint)
-	observed := strings.TrimSpace(observedFingerprint)
-	if expected != "" {
-		var stored string
-		if err := h.db.Model(&model.Node{}).Select("ssh_host_key_fingerprint").Where("id = ?", nodeID).Scan(&stored).Error; err != nil {
-			return fmt.Errorf("read recorded SSH host key: %w", err)
-		}
-		stored = strings.TrimSpace(stored)
-		if stored == "" {
-			return errors.New("SSH host trust was reset while connecting; retry the connection to enroll the current host key")
-		}
-		if subtle.ConstantTimeCompare([]byte(stored), []byte(expected)) != 1 || subtle.ConstantTimeCompare([]byte(observed), []byte(expected)) != 1 {
-			return fmt.Errorf("SSH host key changed while connecting: expected %s, received %s; verify the VPS identity before resetting trust", stored, observed)
-		}
-		return nil
-	}
-	if err := validateSSHHostKeyFingerprint(observed); err != nil {
-		return fmt.Errorf("record SSH host key: %w", err)
-	}
-	result := h.db.Model(&model.Node{}).
-		Where("id = ? AND (ssh_host_key_fingerprint IS NULL OR ssh_host_key_fingerprint = '')", nodeID).
-		Update("ssh_host_key_fingerprint", observed)
-	if result.Error != nil {
-		return fmt.Errorf("record SSH host key: %w", result.Error)
-	}
-	if result.RowsAffected == 1 {
-		return nil
-	}
-	var stored string
-	if err := h.db.Model(&model.Node{}).Select("ssh_host_key_fingerprint").Where("id = ?", nodeID).Scan(&stored).Error; err != nil {
-		return fmt.Errorf("read recorded SSH host key: %w", err)
-	}
-	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(stored)), []byte(observed)) == 1 {
-		return nil
-	}
-	return fmt.Errorf("SSH host key changed while it was being recorded: expected %s, received %s; verify the VPS identity before resetting trust", stored, observed)
 }
 
 func normalizeSSHAuthMethod(value string) string {

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/zerodenet/zboard/backend/internal/datastore"
@@ -253,14 +254,21 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	if err := h.ReconcileSubscriptionAccessTokens(); err != nil {
 		return nil, err
 	}
-	if err := h.ConfigureZeroEventSpool(zeroEventSpoolConfig); err != nil {
+	closeTrafficReads, err := h.ConfigureTrafficReads()
+	if err != nil {
 		return nil, err
 	}
+	if err := h.ConfigureZeroEventSpool(zeroEventSpoolConfig); err != nil {
+		_ = closeTrafficReads()
+		return nil, err
+	}
+	h.StartNodePublishWorker()
 	h.StartFairUseEvaluationWorker()
 	h.StartCertificateRenewalWorker()
 	h.StartDNSPublicObservationWorker()
 	return func() error {
+		h.CloseNodePublishWorker()
 		h.CloseFairUseEvaluationWorker()
-		return h.CloseZeroEventSpool()
+		return errors.Join(h.CloseZeroEventSpool(), closeTrafficReads())
 	}, nil
 }

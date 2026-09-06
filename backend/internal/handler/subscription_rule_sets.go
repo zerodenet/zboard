@@ -33,7 +33,9 @@ type subscriptionRuleSetWriteReq struct {
 	Interval int    `json:"interval"`
 }
 
-func validateSubscriptionRuleSet(req *subscriptionRuleSetWriteReq) error {
+// Preparation returns the validated canonical document so persistence does not
+// repeat parsing, normalization and sorting for large inline rule sets.
+func prepareSubscriptionRuleSet(req *subscriptionRuleSetWriteReq) (*managedRuleDocument, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Description = strings.TrimSpace(req.Description)
 	req.Tag = strings.TrimSpace(req.Tag)
@@ -82,15 +84,18 @@ func validateSubscriptionRuleSet(req *subscriptionRuleSetWriteReq) error {
 			fields["source_url"] = err.Error()
 		}
 	}
+	var document *managedRuleDocument
 	if req.Content != nil {
-		if _, err := parseManagedRuleSource([]byte(*req.Content), managedRuleSourceZeroRuleIR); err != nil {
+		if parsed, err := parseManagedRuleSource([]byte(*req.Content), managedRuleSourceZeroRuleIR); err != nil {
 			fields["content"] = err.Error()
+		} else {
+			document = &parsed
 		}
 	}
 	if len(fields) > 0 {
-		return validationError("规则集信息校验失败。", fields)
+		return nil, validationError("规则集信息校验失败。", fields)
 	}
-	return nil
+	return document, nil
 }
 
 func inferManagedRuleSourceFormat(req *subscriptionRuleSetWriteReq) string {
@@ -283,15 +288,15 @@ func (h *handlers) saveSubscriptionRuleSet(w http.ResponseWriter, r *http.Reques
 		BadRequest(w, err.Error())
 		return
 	}
-	if err := validateSubscriptionRuleSet(&req); err != nil {
+	document, err := prepareSubscriptionRuleSet(&req)
+	if err != nil {
 		BadRequestError(w, err)
 		return
 	}
 
 	var normalized []byte
-	if req.Content != nil {
-		document, _ := parseManagedRuleSource([]byte(*req.Content), managedRuleSourceZeroRuleIR)
-		normalized = encodeManagedCanonicalSource(document)
+	if document != nil {
+		normalized = encodeManagedCanonicalSource(*document)
 	} else if id == 0 {
 		raw, err := fetchManagedRuleSource(r.Context(), req.SourceURL)
 		if err != nil {
@@ -323,11 +328,13 @@ func (h *handlers) saveSubscriptionRuleSet(w http.ResponseWriter, r *http.Reques
 	var currentRevision uint64
 	var previousContent []byte
 	var previousContentExists bool
+	created := false
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		if id == 0 {
 			if err := tx.Create(&item).Error; err != nil {
 				return err
 			}
+			created = true
 			if err := h.writeManagedRuleSource(item.Tag, normalized); err != nil {
 				return err
 			}
@@ -363,7 +370,9 @@ func (h *handlers) saveSubscriptionRuleSet(w http.ResponseWriter, r *http.Reques
 		return createAuditLog(tx, claims, action, fmt.Sprintf("subscription_rule_set:%d", item.ID), fmt.Sprintf("managed=true tag=%s revision=%d", item.Tag, item.Revision))
 	})
 	if err != nil {
-		if id == 0 {
+		// A rejected insert owns no files. In particular, a duplicate tag must
+		// never remove the existing rule set's source and compiled artifacts.
+		if created {
 			_ = h.removeManagedRuleSetFiles(item.Tag)
 		} else if normalized != nil && previousContentExists {
 			_ = h.writeManagedRuleSource(item.Tag, previousContent)

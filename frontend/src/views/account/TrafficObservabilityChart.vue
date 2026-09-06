@@ -669,7 +669,7 @@ function tooltipSideClass(index: number) {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-md);
   pointer-events: none;
 }
 

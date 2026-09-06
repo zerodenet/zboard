@@ -393,8 +393,8 @@ type NodeGroupEndpoint struct {
 
 type SubscriptionToken struct {
 	ID              uint       `json:"id" gorm:"primaryKey"`
-	UserID          uint       `json:"user_id" gorm:"uniqueIndex;not null"`
-	SubscriptionID  *uint      `json:"subscription_id,omitempty" gorm:"index"`
+	UserID          uint       `json:"user_id" gorm:"index:idx_subscription_tokens_user;not null"`
+	SubscriptionID  *uint      `json:"subscription_id,omitempty" gorm:"uniqueIndex:uq_subscription_token_subscription"`
 	TokenHash       string     `json:"-" gorm:"size:64;uniqueIndex;not null"`
 	TokenCiphertext string     `json:"-" gorm:"column:token_ciphertext;type:text"`
 	TokenPrefix     string     `json:"token_prefix" gorm:"size:12;not null"`

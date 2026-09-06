@@ -21,7 +21,7 @@ func TestTrafficUsageStatisticsSeparateRangeTotalsFromLiveCursorPages(t *testing
 	if summary.Total != legacy.Total || summary.Aggregates != legacy.Aggregates || summary.AsOf.IsZero() {
 		t.Fatalf("summary=%+v legacy=%+v", summary, legacy)
 	}
-	if len(f.log.queries) != 2 {
+	if len(f.log.queries) != 0 {
 		t.Fatalf("summary queries=%d", len(f.log.queries))
 	}
 	for _, suffix := range []string{"", "&cursor=" + *legacy.Page.NextCursor, "&offset=1"} {

@@ -66,13 +66,8 @@ func (h *handlers) runExpiredCredentialReconciliation(now time.Time) error {
 	if err != nil {
 		return err
 	}
-	seen := map[uint]struct{}{}
-	for _, credential := range expired {
-		if _, exists := seen[credential.NodeID]; exists {
-			continue
-		}
-		seen[credential.NodeID] = struct{}{}
-		h.scheduleNodeConfigPublish(credential.NodeID, credential.ProtocolEndpointID, 0)
+	if len(expired) > 0 {
+		h.publishScheduler().signal()
 	}
 	return nil
 }
@@ -118,6 +113,16 @@ func expireDueSubscriptionCredentials(db *gorm.DB, now time.Time, limit int) ([]
 		}
 		if len(expired) == 0 {
 			return nil
+		}
+		seen := map[uint]struct{}{}
+		for _, credential := range expired {
+			if _, ok := seen[credential.NodeID]; ok {
+				continue
+			}
+			seen[credential.NodeID] = struct{}{}
+			if err := enqueueNodeConfigPublish(tx, credential.NodeID, credential.ProtocolEndpointID, 0); err != nil {
+				return err
+			}
 		}
 		return tx.Model(&model.ProtocolCredential{}).
 			Where("id IN ?", protocolCredentialIDs(expired)).

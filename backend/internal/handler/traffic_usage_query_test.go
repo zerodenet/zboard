@@ -64,10 +64,10 @@ func TestTrafficUsageCursorPreservesCompleteBucketAndScope(t *testing.T) {
 	if second.Total != first.Total || second.Aggregates != first.Aggregates {
 		t.Fatal("cursor changed range-wide totals")
 	}
-	if len(f.log.queries) != 5 || strings.Contains(f.log.queries[1], "SUM(") || !strings.Contains(f.log.queries[2], "record_at < '2026-09-01 03:00:00'") {
+	if len(f.log.queries) != 3 || !strings.Contains(f.log.queries[0], "record_at < '2026-09-01 03:00:00'") {
 		t.Fatalf("count/seek queries = %v", f.log.queries)
 	}
-	assertTrafficScopeIndexPlan(t, f, f.log.queries[2])
+	assertTrafficScopeIndexPlan(t, f, f.log.queries[0])
 	f.get(t, path+"&cursor="+url.QueryEscape(*second.Page.NextCursor), false, f.h.TrafficUsageRecordsHandler, &third)
 	if third.Items[0].ID != 1 || third.Items[0].UsedBytes != 50 || third.Items[0].RecordCount != 2 {
 		t.Fatalf("split cursor bucket = %+v", third)

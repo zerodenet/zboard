@@ -199,7 +199,7 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if exhausted {
-		h.scheduleNodeConfigPublish(node.ID, result.ProtocolEndpointID, 0)
+		h.publishScheduler().signal()
 	}
 	OK(w, map[string]interface{}{
 		"accepted":          true,
@@ -583,6 +583,9 @@ func (h *handlers) recordZeroFlowEvent(node model.Node, event zeroEventEnvelope,
 			return err
 		}
 		if exhausted {
+			if err := enqueueSubscriptionConfigPublishes(tx, subscription.ID, 0); err != nil {
+				return err
+			}
 			if err := tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ? AND status IN ?", subscription.ID,
 				[]string{protocolCredentialStatusActive, protocolCredentialStatusPrepared}).
 				Updates(map[string]interface{}{"status": "expired", "updated_at": now}).Error; err != nil {

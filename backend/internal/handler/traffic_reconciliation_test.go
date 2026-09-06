@@ -189,7 +189,8 @@ func TestTrafficReconciliationPropagatesCancellationToSQL(t *testing.T) {
 	f.log.afterAuth = cancel
 	r := httptest.NewRecorder()
 	f.h.TrafficReconciliationHandler(r, announcementRequest(http.MethodGet, "/api/v1/admin/traffic/reconciliation?paged=true", f.admin, "").WithContext(ctx))
-	if r.Code != http.StatusInternalServerError || len(f.log.queries) != 1 || f.log.contexts[0] != ctx {
+	// Cancellation prevents the read transaction from starting at all.
+	if r.Code != http.StatusInternalServerError || len(f.log.queries) != 0 || len(f.log.authContexts) != 1 || f.log.authContexts[0] != ctx {
 		t.Fatalf("cancellation status=%d queries=%d", r.Code, len(f.log.queries))
 	}
 }

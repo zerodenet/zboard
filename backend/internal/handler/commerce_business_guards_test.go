@@ -35,12 +35,3 @@ func TestWritePlanSubscriptionLimitReachedUsesStableBusinessContract(t *testing.
 		t.Fatalf("business response leaked database details: %s", body)
 	}
 }
-
-func TestPlanSubscriptionLimitResponseRecognizesLegacyFulfillmentError(t *testing.T) {
-	buffered := newBufferedResponseWriter()
-	buffered.WriteHeader(http.StatusInternalServerError)
-	_, _ = buffered.Write([]byte(`{"code":500,"message":"plan subscription capacity is exhausted"}`))
-	if !isPlanSubscriptionLimitResponse(buffered) {
-		t.Fatal("expected legacy fulfillment error to be translated")
-	}
-}

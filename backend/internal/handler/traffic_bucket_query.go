@@ -41,25 +41,26 @@ func (b trafficUsageBucketSpec) forDB(db *gorm.DB) trafficUsageBucketSpec {
 	if !datastore.IsSQLite(db) {
 		return b
 	}
-	format := "%Y-%m-%d %H:%M:00"
-	if b.Name == trafficUsageBucketHour {
-		format = "%Y-%m-%d %H:00:00"
-	}
-	if b.Name == trafficUsageBucketDay {
-		format = "%Y-%m-%d 00:00:00"
-	}
-	b.Expression = "strftime('" + format + "', record_at)"
+	b.Expression = datastore.SQLiteTrafficBucketExpression(b.Name)
 	return b
+}
+
+// Keep the exact raw-time scope while adding an indexed bucket range. The
+// matching SQLite index can then stream groups without a temporary sort tree.
+func (b trafficUsageBucketSpec) groupSource(query *gorm.DB, window historyWindow) *gorm.DB {
+	if !datastore.IsSQLite(query) {
+		return query
+	}
+	from := window.From.UTC().Truncate(b.width()).Format("2006-01-02 15:04:05")
+	last := window.To.UTC().Add(-time.Nanosecond).Truncate(b.width()).Format("2006-01-02 15:04:05")
+	return query.Where(b.Expression+" >= ? AND "+b.Expression+" <= ?", from, last)
 }
 
 func (b trafficUsageBucketSpec) group() string {
 	return b.Expression + ", user_id, COALESCE(subscription_id, 0), node_id, protocol_multiplier_milli"
 }
 
-func (b trafficUsageBucketSpec) seekSource(query *gorm.DB, cursor *historyCursor) *gorm.DB {
-	if cursor == nil {
-		return query
-	}
+func (b trafficUsageBucketSpec) width() time.Duration {
 	width := time.Minute
 	if b.Name == trafficUsageBucketHour {
 		width = time.Hour
@@ -67,6 +68,14 @@ func (b trafficUsageBucketSpec) seekSource(query *gorm.DB, cursor *historyCursor
 	if b.Name == trafficUsageBucketDay {
 		width = 24 * time.Hour
 	}
+	return width
+}
+
+func (b trafficUsageBucketSpec) seekSource(query *gorm.DB, cursor *historyCursor) *gorm.DB {
+	if cursor == nil {
+		return query
+	}
+	width := b.width()
 	start := cursor.At.UTC().Truncate(width)
 	// Retain the entire cursor bucket. Filtering raw IDs before MIN(id) and
 	// SUM(...) would split a billable group and change totals/identity.

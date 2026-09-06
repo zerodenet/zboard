@@ -360,7 +360,6 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 		if err != nil {
 			return nil, err
 		}
-		h.scheduleMieruReadinessPublish(node.ID, release.Version)
 		return map[string]interface{}{"state": state, "operation": operation, "changed": false}, nil
 	}
 
@@ -427,7 +426,6 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 	if err != nil {
 		return nil, rollbackAfterActivation(fmt.Errorf("persist successful Zero operation: %w", err))
 	}
-	h.scheduleMieruReadinessPublish(node.ID, release.Version)
 	result := map[string]interface{}{"state": state, "operation": operation, "changed": true, "action": action, "connector_verified": connectorEventErr == nil}
 	if connectorEventErr != nil {
 		result["connector_warning"] = truncateKernelError(connectorEventErr.Error())
@@ -435,16 +433,20 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 	return result, nil
 }
 
-func (h *handlers) scheduleMieruReadinessPublish(nodeID uint, zeroVersion string) {
+func enqueueMieruReadinessPublish(tx *gorm.DB, nodeID uint, zeroVersion string) error {
 	if !zeroSupportsMieruPrincipal(zeroVersion) {
-		return
+		return nil
 	}
 	var endpoint model.ProtocolEndpoint
-	if err := h.db.Where("node_id = ? AND LOWER(protocol) = ? AND is_active = ? AND mieru_principal_ready = ?",
-		nodeID, "mieru", true, false).Order("id asc").First(&endpoint).Error; err != nil {
-		return
+	read := tx.Where("node_id = ? AND LOWER(protocol) = ? AND is_active = ? AND mieru_principal_ready = ?",
+		nodeID, "mieru", true, false).Order("id asc").Limit(1).Find(&endpoint)
+	if read.Error != nil {
+		return read.Error
 	}
-	h.scheduleNodeConfigPublish(nodeID, endpoint.ID, 0)
+	if endpoint.ID == 0 {
+		return nil
+	}
+	return enqueueNodeConfigPublish(tx, nodeID, endpoint.ID, 0)
 }
 
 func decodeKernelReconcileRequest(r *http.Request) (kernelReconcileRequest, error) {
@@ -1376,6 +1378,10 @@ func shellQuote(value string) string {
 }
 
 func (h *handlers) probeNodeKernel(node model.Node) (kernelProbe, error) {
+	return h.probeNodeKernelContext(context.Background(), node)
+}
+
+func (h *handlers) probeNodeKernelContext(ctx context.Context, node model.Node) (kernelProbe, error) {
 	const command = `set -u
 if [ -r /etc/os-release ]; then . /etc/os-release; printf 'ZBOARD_OS=%s %s\n' "${ID:-linux}" "${VERSION_ID:-unknown}"; else printf 'ZBOARD_OS=linux unknown\n'; fi
 printf 'ZBOARD_ARCH=%s\n' "$(uname -m 2>/dev/null || printf unknown)"
@@ -1395,7 +1401,7 @@ service_status="$(systemctl is-active zero 2>/dev/null || true)"
 if [ -z "$service_status" ]; then service_status=unknown; fi
 printf 'ZBOARD_SERVICE=%s\n' "$service_status"
 if [ "$service_status" = "active" ] && "$zero_path" status --json --socket /run/zerodenet/control.sock >/dev/null 2>&1; then printf 'ZBOARD_CONTROL=healthy\n'; else printf 'ZBOARD_CONTROL=unavailable\n'; fi`
-	output, _, err := h.execSSHCommandWithPrivilege(node, command, true)
+	output, _, err := h.execSSHCommandWithPrivilegeContext(ctx, node, command, true)
 	if err != nil {
 		return kernelProbe{}, fmt.Errorf("probe Zero over SSH: %w: %s", err, truncateKernelError(output))
 	}
@@ -1675,12 +1681,16 @@ func (h *handlers) finishKernelOperation(operation *model.NodeOperation, probe k
 				return err
 			}
 		}
+		if err := enqueueMieruReadinessPublish(tx, operation.NodeID, release.Version); err != nil {
+			return err
+		}
 		operation.Status, operation.Phase, operation.ResultSummary, operation.FinishedAt = "succeeded", "completed", summary, &now
 		return tx.Save(operation).Error
 	})
 	if err != nil {
 		return model.NodeKernelState{}, err
 	}
+	h.publishScheduler().signal()
 	return h.ensureKernelState(operation.NodeID)
 }
 

@@ -21,6 +21,11 @@
   --surface-batch: #f7f9ff;
   --surface-canvas: #fbfcfe;
   --surface-preview: #f4f6fa;
+  --brand-preview-light-surface: #ffffff;
+  --brand-preview-light-text: #111827;
+  --brand-preview-dark-surface: #111827;
+  --brand-preview-dark-text: #f8fafc;
+  --brand-preview-dark-muted: #cbd5e1;
   --surface-track: #eef2f6;
   --text: #172033;
   --text-strong: #101828;
@@ -168,6 +173,10 @@
   --usage-gradient: linear-gradient(90deg, var(--info-bright), var(--info-accent));
 
   /* Geometry and layering */
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
   --radius-sm: 9px;
   --radius-md: 14px;
   --radius-lg: 20px;

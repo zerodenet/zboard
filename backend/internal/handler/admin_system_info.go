@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,30 +18,49 @@ type adminProjectLink struct {
 }
 
 type adminSystemInfo struct {
-	Service        string             `json:"service"`
-	Version        string             `json:"version"`
-	ReleaseVersion string             `json:"release_version"`
-	Commit         string             `json:"commit"`
-	BuildTime      string             `json:"build_time"`
-	ReleaseChannel string             `json:"release_channel"`
-	StartedAt      time.Time          `json:"started_at"`
-	UptimeSeconds  int64              `json:"uptime_seconds"`
-	InstalledAt    time.Time          `json:"installed_at"`
-	License        map[string]string  `json:"license"`
-	Links          []adminProjectLink `json:"links"`
-	UpdateURL      string             `json:"update_url"`
+	Service        string              `json:"service"`
+	Version        string              `json:"version"`
+	ReleaseVersion string              `json:"release_version"`
+	Commit         string              `json:"commit"`
+	BuildTime      string              `json:"build_time"`
+	ReleaseChannel string              `json:"release_channel"`
+	StartedAt      time.Time           `json:"started_at"`
+	UptimeSeconds  int64               `json:"uptime_seconds"`
+	InstalledAt    time.Time           `json:"installed_at"`
+	License        map[string]string   `json:"license"`
+	Links          []adminProjectLink  `json:"links"`
+	UpdateURL      string              `json:"update_url"`
+	Runtime        *runtimeDiagnostics `json:"runtime,omitempty"`
 }
 
 func (h *handlers) AdminSystemInfoHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.requireAdmin(w, r); err != nil {
 		return
 	}
+	includeRuntime := false
+	if raw := r.URL.Query().Get("include_runtime"); raw != "" {
+		var err error
+		includeRuntime, err = strconv.ParseBool(raw)
+		if err != nil {
+			BadRequest(w, "invalid include_runtime")
+			return
+		}
+	}
 	var installation model.Installation
-	if err := h.db.First(&installation, 1).Error; err != nil {
+	if err := h.db.WithContext(r.Context()).First(&installation, 1).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
-	OK(w, buildAdminSystemInfo(version.FullVersion(), installation.InstalledAt, time.Now().UTC()))
+	result := buildAdminSystemInfo(version.FullVersion(), installation.InstalledAt, time.Now().UTC())
+	if includeRuntime {
+		snapshot, err := h.runtimeDiagnostics()
+		if err != nil {
+			ServerError(w, err)
+			return
+		}
+		result.Runtime = &snapshot
+	}
+	OK(w, result)
 }
 
 func buildAdminSystemInfo(currentVersion string, installedAt, now time.Time) adminSystemInfo {

@@ -22,7 +22,7 @@ import (
 
 const testCredentialKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-func newTestCredentialCipher(t *testing.T) *security.CredentialCipher {
+func newTestCredentialCipher(t testing.TB) *security.CredentialCipher {
 	t.Helper()
 	cipher, err := security.NewCredentialCipher(testCredentialKey)
 	if err != nil {

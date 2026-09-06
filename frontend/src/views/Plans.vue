@@ -282,6 +282,7 @@
       @close="createOpen = false"
     >
       <form id="create-plan-form" ref="createFormElement" class="stack" novalidate @submit.prevent="create">
+        <PageAlert v-if="createErrors.formError.value" tone="danger" title="无法创建商品">{{ createErrors.formError.value }}</PageAlert>
         <section class="form-section">
           <div class="form-section-title"><span>1</span><div><h3>商品信息</h3><p>用于目录展示和内部识别。</p></div></div>
           <div class="form-grid form-grid-3">
@@ -355,6 +356,7 @@
       @close="closePlanEditor"
     >
       <form id="edit-plan-form" ref="planFormElement" class="stack" novalidate @submit.prevent="savePlan">
+        <PageAlert v-if="planErrors.formError.value" tone="danger" title="无法保存商品">{{ planErrors.formError.value }}</PageAlert>
         <div class="editor-version-meta"><StatusBadge tone="neutral" icon="history">版本 {{ planDraft.revision }}</StatusBadge><TimeBadge :value="planDraft.updated_at" /></div>
         <PageAlert v-if="planRevisionConflict" tone="warning" title="商品已在其他会话更新">
           当前草稿基于旧版本。请重新加载最新商品信息后再继续，避免覆盖其他会话的修改。
@@ -403,6 +405,7 @@
       @close="closeSKU"
     >
       <form id="sku-form" ref="skuFormElement" class="form-grid form-grid-3" novalidate @submit.prevent="saveSKU">
+        <PageAlert v-if="skuErrors.formError.value" class="field-full" tone="danger" title="无法保存规格">{{ skuErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="规格名称" name="edit-sku-name" :error="skuErrors.fields.name" required><UiInput v-model.trim="skuDraft.name" v-bind="controlAttrs" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="SKU 编码" name="edit-sku-code" :error="skuErrors.fields.code" required><UiInput v-model.trim="skuDraft.code" v-bind="controlAttrs" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="计费方式" name="edit-sku-billing-mode" :error="skuErrors.fields.billing_mode"><UiSelect v-model="skuDraft.billing_mode" v-bind="controlAttrs" :options="billingModeOptions" /></FormField>

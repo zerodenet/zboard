@@ -29,6 +29,12 @@ var trafficReadIndexes = []trafficReadIndexDefinition{
 	},
 	{
 		table:   "traffic_records",
+		name:    "idx_traffic_records_subscription_usage",
+		columns: "(subscription_id, used_bytes)",
+		ddl:     "ALTER TABLE traffic_records ADD KEY idx_traffic_records_subscription_usage (subscription_id, used_bytes)",
+	},
+	{
+		table:   "traffic_records",
 		name:    "idx_traffic_records_node_time",
 		columns: "(node_id, record_at)",
 		ddl:     "ALTER TABLE traffic_records ADD KEY idx_traffic_records_node_time (node_id, record_at)",
@@ -63,6 +69,8 @@ var trafficReadIndexes = []trafficReadIndexDefinition{
 // traffic and Principal-flow timelines. Existing single-column indexes remain
 // useful to other read paths, while these indexes prevent trend queries from
 // scanning a user's or dimension's complete history before applying time.
+// The narrow subscription/usage index lets reconciliation aggregate the ledger
+// without fetching every full record (including event metadata) from the table.
 func ReconcileTrafficReadSchema(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("database is required")
@@ -77,7 +85,10 @@ func ReconcileTrafficReadSchema(db *gorm.DB) error {
 				return fmt.Errorf("add SQLite traffic read index %s: %w", index.name, err)
 			}
 		}
-		return nil
+		if err := reconcileSQLiteTrafficBuckets(db); err != nil {
+			return err
+		}
+		return reconcileSQLiteLedgerRevision(db)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {

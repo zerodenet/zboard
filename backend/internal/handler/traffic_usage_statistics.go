@@ -17,7 +17,7 @@ type trafficUsageStatistics struct {
 // A statistics snapshot is independent of cursor/limit. Two reads share a
 // transaction snapshot; page reads remain live and never pretend this count
 // was recalculated for each cursor movement.
-func loadTrafficUsageStatistics(base *gorm.DB, bucket trafficUsageBucketSpec) (trafficUsageStatistics, error) {
+func loadTrafficUsageStatistics(base *gorm.DB, bucket trafficUsageBucketSpec, window historyWindow) (trafficUsageStatistics, error) {
 	result := trafficUsageStatistics{Bucket: bucket.Name, AsOf: time.Now().UTC()}
 	err := base.Transaction(func(tx *gorm.DB) error {
 		scoped := tx.Session(&gorm.Session{})
@@ -31,10 +31,23 @@ func loadTrafficUsageStatistics(base *gorm.DB, bucket trafficUsageBucketSpec) (t
   `).Scan(&result.Aggregates).Error; err != nil {
 			return err
 		}
-		groups := scoped.Session(&gorm.Session{}).Select("1").Group(bucket.group())
+		groups := bucket.groupSource(scoped.Session(&gorm.Session{}), window).Select("1").Group(bucket.group())
 		return tx.Session(&gorm.Session{NewDB: true}).Table("(?) AS traffic_usage_buckets", groups).Count(&result.Total).Error
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	return result, err
+}
+
+func (h *handlers) trafficUsageStatistics(base *gorm.DB, bucket trafficUsageBucketSpec, window historyWindow) (trafficUsageStatistics, error) {
+	key := trafficSnapshotQueryKey(base, bucket.Name)
+	return h.trafficStatisticsCache.get(base.Statement.Context, key, func() (trafficUsageStatistics, error) {
+		if h.trafficIncrementalStats != nil {
+			statistics, used, err := h.trafficIncrementalStats.load(base, bucket, key)
+			if err != nil || used {
+				return statistics, err
+			}
+		}
+		return loadTrafficUsageStatistics(base, bucket, window)
+	})
 }
 
 // Null means deliberately not calculated, never zero. Legacy requests still

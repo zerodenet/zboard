@@ -1,6 +1,7 @@
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS
+  node_config_publishes,
   announcement_reads,
   announcements,
   registration_email_challenges,

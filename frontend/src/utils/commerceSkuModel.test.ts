@@ -19,15 +19,18 @@ describe('commerce SKU model', () => {
     expect(plans).not.toContain("sku.allowed_operations = ['addon']\n    sku.sku_type = 'traffic_pack'\n    return\n  }\n  sku.billing_mode")
   })
 
-  it('shows addon traffic only for an explicit traffic addon and announces modal failures globally', () => {
+  it('shows addon traffic only for an explicit traffic addon and retains modal failure summaries', () => {
     const plans = read('views', 'Plans.vue')
 
     expect(plans).toContain("form.sku.entitlement_mode === 'traffic_addon'")
     expect(plans).toContain("skuDraft.entitlement_mode === 'traffic_addon'")
     expect(plans).toContain("notify('无法创建商品'")
     expect(plans).toContain("notify('无法保存规格'")
-    expect(plans).not.toContain('v-if="createErrors.formError.value"')
-    expect(plans).not.toContain('v-if="skuErrors.formError.value"')
+    // Toasts announce failure immediately; the draft must retain its error
+    // summary after that transient notification disappears.
+    expect(plans).toContain('v-if="createErrors.formError.value"')
+    expect(plans).toContain('v-if="planErrors.formError.value"')
+    expect(plans).toContain('v-if="skuErrors.formError.value"')
   })
 
   it('queries the storefront by allowed operation instead of the legacy SKU type', () => {

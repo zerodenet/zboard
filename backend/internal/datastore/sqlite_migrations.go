@@ -34,7 +34,7 @@ func databaseModels() []interface{} {
 		&model.Task{}, &model.TaskItem{}, &model.ProtocolDeployment{}, &model.QuotaEvent{},
 		&model.NodeKernelState{}, &model.NodeOperation{}, &model.ProviderAccount{}, &model.ManagedDNSRecord{},
 		&model.ProviderOperation{}, &model.ManagedCertificate{}, &model.CertificateProtocolEndpoint{},
-		&model.CertificateOperation{},
+		&model.CertificateOperation{}, &model.NodeConfigPublish{},
 	}
 }
 
@@ -45,6 +45,9 @@ func runSQLiteMigrations(db *gorm.DB) error {
 	models := append([]interface{}{&schemaMigration{}}, databaseModels()...)
 	if err := db.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("apply sqlite schema: %w", err)
+	}
+	if err := ReconcileSubscriptionAccessSchema(db); err != nil {
+		return err
 	}
 	if err := reconcileSQLiteOperationalTables(db); err != nil {
 		return err

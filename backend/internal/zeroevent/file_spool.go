@@ -76,7 +76,8 @@ type FileSpool struct {
 	// segmentMu protects representation changes such as .active -> .ready,
 	// .ready -> .ready.zst, semantic replacement, and deletion after a committed
 	// checkpoint. CPU-heavy compression/compaction work happens outside this lock.
-	segmentMu sync.RWMutex
+	segmentMu  sync.RWMutex
+	rawIndexes rawSegmentIndexes
 
 	// compressionMu serializes all sealed representation maintenance. Semantic
 	// compaction uses the same mutex so an old zstd representation can never win

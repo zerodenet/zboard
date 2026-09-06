@@ -3,9 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,128 +42,9 @@ func (m *contextMutex) Unlock() {
 	m.token <- struct{}{}
 }
 
-type scheduledNodePublish struct {
-	nodeID      uint
-	endpointID  uint
-	requestedBy uint
-}
-
-type nodePublishScheduler struct {
-	mu      sync.Mutex
-	pending map[uint]scheduledNodePublish
-	running map[uint]struct{}
-	wake    chan struct{}
-}
-
-func newNodePublishScheduler() *nodePublishScheduler {
-	return &nodePublishScheduler{
-		pending: make(map[uint]scheduledNodePublish),
-		running: make(map[uint]struct{}),
-		wake:    make(chan struct{}, 1),
-	}
-}
-
-func (s *nodePublishScheduler) enqueue(request scheduledNodePublish) {
-	if request.nodeID == 0 {
-		return
-	}
-	s.mu.Lock()
-	s.pending[request.nodeID] = request
-	s.mu.Unlock()
-	s.signal()
-}
-
-func (s *nodePublishScheduler) take() (scheduledNodePublish, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for nodeID, request := range s.pending {
-		if _, busy := s.running[nodeID]; busy {
-			continue
-		}
-		delete(s.pending, nodeID)
-		s.running[nodeID] = struct{}{}
-		return request, true
-	}
-	return scheduledNodePublish{}, false
-}
-
-func (s *nodePublishScheduler) finish(nodeID uint) {
-	s.mu.Lock()
-	delete(s.running, nodeID)
-	_, pending := s.pending[nodeID]
-	s.mu.Unlock()
-	if pending {
-		s.signal()
-	}
-}
-
-func (s *nodePublishScheduler) signal() {
-	select {
-	case s.wake <- struct{}{}:
-	default:
-	}
-}
-
 func (h *handlers) nodePublishLock(nodeID uint) *contextMutex {
 	value, _ := h.nodePublishLocks.LoadOrStore(nodeID, newContextMutex())
 	return value.(*contextMutex)
-}
-
-func (h *handlers) ensureNodePublishScheduler() *nodePublishScheduler {
-	if h.nodePublishScheduler == nil {
-		h.nodePublishScheduler = newNodePublishScheduler()
-	}
-	h.nodePublishSchedulerOnce.Do(func() {
-		for worker := 0; worker < nodeConfigPublishWorkerCount; worker++ {
-			go h.runScheduledNodePublishWorker(h.nodePublishScheduler)
-		}
-	})
-	return h.nodePublishScheduler
-}
-
-func (h *handlers) scheduleNodeConfigPublish(nodeID, endpointID, requestedBy uint) {
-	h.ensureNodePublishScheduler().enqueue(scheduledNodePublish{
-		nodeID: nodeID, endpointID: endpointID, requestedBy: requestedBy,
-	})
-}
-
-func (h *handlers) runScheduledNodePublishWorker(scheduler *nodePublishScheduler) {
-	for {
-		request, ok := scheduler.take()
-		if !ok {
-			<-scheduler.wake
-			continue
-		}
-		// Wake another bounded worker when the map contains more independent
-		// nodes. A one-slot notification channel intentionally coalesces bursts.
-		scheduler.signal()
-		ctx, cancel := context.WithTimeout(context.Background(), nodeConfigPublishTimeout)
-		_, _, err := h.publishNodeConfigForNode(ctx, request.nodeID, request.endpointID, request.requestedBy)
-		cancel()
-		if err != nil {
-			log.Printf("scheduled node config publish failed: node_id=%d endpoint_id=%d error=%v", request.nodeID, request.endpointID, err)
-		}
-		scheduler.finish(request.nodeID)
-	}
-}
-
-func (h *handlers) scheduleSubscriptionConfigPublishes(subscriptionID, requestedBy uint) {
-	var endpoints []model.ProtocolEndpoint
-	if err := h.db.Model(&model.ProtocolEndpoint{}).
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
-		Joins("JOIN subscriptions ON subscriptions.node_group_id = node_group_endpoints.node_group_id").
-		Where("subscriptions.id = ? AND protocol_endpoints.is_active = ?", subscriptionID, true).
-		Order("protocol_endpoints.id asc").Find(&endpoints).Error; err != nil {
-		return
-	}
-	seen := map[uint]struct{}{}
-	for _, endpoint := range endpoints {
-		if _, exists := seen[endpoint.NodeID]; exists {
-			continue
-		}
-		seen[endpoint.NodeID] = struct{}{}
-		h.scheduleNodeConfigPublish(endpoint.NodeID, endpoint.ID, requestedBy)
-	}
 }
 
 // Legacy request handlers still call this hook while their source is phased out.
@@ -231,7 +110,7 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	if err := h.validateNodeSSH(node); err != nil {
 		return fail(err, "")
 	}
-	probe, err := h.probeNodeKernel(node)
+	probe, err := h.probeNodeKernelContext(ctx, node)
 	if err != nil {
 		return fail(fmt.Errorf("detect installed Zero before publishing config: %w", err), "")
 	}
@@ -278,11 +157,13 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	})
 
 	stage := "/tmp/zboard-zero-config-" + uuid.NewString()
-	conn, _, err := h.dialNodeSSH(node)
+	conn, _, err := h.dialNodeSSHContext(ctx, node)
 	if err != nil {
 		return fail(err, "")
 	}
 	defer conn.Close()
+	stopSSH := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopSSH()
 	if output, err := h.runNodeSSHSession(conn, node, "install -d -m 0700 "+shellQuote(stage), false); err != nil {
 		return fail(fmt.Errorf("create Zero config staging directory: %w", err), output)
 	}

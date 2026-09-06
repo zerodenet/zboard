@@ -2,7 +2,6 @@ package handler
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -87,14 +86,6 @@ func writePlanSubscriptionLimitReached(w http.ResponseWriter) {
 
 func writeCommercePersistenceFailure(w http.ResponseWriter, message string) {
 	writeCommerceError(w, http.StatusInternalServerError, commerceErrorPersistenceFailed, message, nil)
-}
-
-func responseMessage(payload []byte) string {
-	var response APIResponse
-	if err := json.Unmarshal(payload, &response); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(response.Message)
 }
 
 func isDuplicatePersistenceResponse(buffered *bufferedResponseWriter) bool {
@@ -394,30 +385,11 @@ func (h *handlers) OrderCreateCommerceValidatedHandler(w http.ResponseWriter, r 
 	OK(w, order)
 }
 
-func isPlanSubscriptionLimitResponse(buffered *bufferedResponseWriter) bool {
-	if buffered == nil || buffered.status < http.StatusBadRequest {
-		return false
-	}
-	message := responseMessage(buffered.body.Bytes())
-	return message == "plan subscription capacity is exhausted" || message == errPlanSubscriptionLimitReached.Error()
-}
-
+// Preserve existing route names while the handlers map typed settlement errors directly.
 func (h *handlers) OrderPayCommerceHandler(w http.ResponseWriter, r *http.Request) {
-	buffered := newBufferedResponseWriter()
-	h.OrderPayHandler(buffered, r)
-	if isPlanSubscriptionLimitResponse(buffered) {
-		writePlanSubscriptionLimitReached(w)
-		return
-	}
-	flushBufferedResponse(w, buffered)
+	h.OrderPayHandler(w, r)
 }
 
 func (h *handlers) OrderPayCallbackCommerceHandler(w http.ResponseWriter, r *http.Request) {
-	buffered := newBufferedResponseWriter()
-	h.OrderPayCallbackHandler(buffered, r)
-	if isPlanSubscriptionLimitResponse(buffered) {
-		writePlanSubscriptionLimitReached(w)
-		return
-	}
-	flushBufferedResponse(w, buffered)
+	h.OrderPayCallbackHandler(w, r)
 }

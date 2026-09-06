@@ -108,7 +108,7 @@
       :return-focus-selector="form.id ? `[data-row-action-trigger='subscription-rule-set-${form.id}']` : ''"
       @close="closeEditor"
     >
-      <form id="managed-rule-set-form" class="rule-set-editor" novalidate @submit.prevent="save">
+      <form id="managed-rule-set-form" ref="formElement" class="rule-set-editor" novalidate @submit.prevent="save">
         <div v-if="form.id" class="editor-meta">
           <StatusBadge tone="neutral" icon="history">版本 {{ form.revision }}</StatusBadge>
           <StatusBadge tone="info" icon="audit">{{ formatNumber(form.rule_count) }} 条规则</StatusBadge>
@@ -124,7 +124,7 @@
             </UiButton>
           </template>
         </PageAlert>
-        <PageAlert v-if="editorError" tone="danger" title="无法保存规则集">{{ editorError }}</PageAlert>
+        <PageAlert v-if="editorErrors.formError.value" tone="danger" title="无法保存规则集">{{ editorErrors.formError.value }}</PageAlert>
 
         <div class="form-grid">
           <FormField label="规则集名称" name="managed-rule-set-name" :error="fieldErrors.name" hint="用于后台检索和模板选择。" required>
@@ -191,7 +191,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   createManagedRuleSet,
@@ -229,6 +229,8 @@ import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import { useRemoteTable } from '../composables/useRemoteTable'
+import { useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
+import { isCharacterLengthInRange, isHttpUrl } from '../utils/validation'
 import { confirmAction } from '../utils/feedback'
 
 const route = useRoute()
@@ -292,10 +294,20 @@ const syncingID = ref(0)
 const deletingID = ref(0)
 const message = ref('')
 const operationError = ref('')
-const editorError = ref('')
+const formElement = ref<HTMLElement | null>(null)
+const editorErrors = useFormErrors()
 const revisionConflict = ref(false)
-const fieldErrors = reactive<Record<string, string>>({})
+const fieldErrors = editorErrors.fields
 const editorDirty = computed(() => editorOpen.value && JSON.stringify(form) !== initialSnapshot.value)
+useUnsavedChangesGuard(() => editorDirty.value, () => saving.value ? false : confirmAction({
+  title: '放弃规则集草稿？',
+  message: '离开页面后，尚未保存的规则正文和设置将丢失。',
+  confirmText: '放弃并离开',
+}))
+for (const field of ['name', 'tag', 'description', 'content', 'source_url', 'source_format', 'sync_interval', 'is_active'] as const) {
+  watch(() => form[field], () => editorErrors.clear(field))
+}
+watch(() => form.mode, () => editorErrors.clear())
 
 const { items: ruleSets, total, loading, refreshing, error, load } = useRemoteTable<ManagedRuleSet>({
   offset,
@@ -316,9 +328,8 @@ function setSnapshot() {
 }
 
 function clearEditorErrors() {
-  editorError.value = ''
+  editorErrors.clear()
   revisionConflict.value = false
-  for (const key of Object.keys(fieldErrors)) delete fieldErrors[key]
 }
 
 function resetEditorState() {
@@ -409,27 +420,27 @@ function closeEditor() {
 }
 
 function validateForm() {
-  for (const key of Object.keys(fieldErrors)) delete fieldErrors[key]
-  if (!form.name.trim()) fieldErrors.name = '请输入规则集名称。'
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(form.tag)) fieldErrors.tag = '规则标识仅允许字母、数字、点、下划线和连字符。'
-  if (form.description.length > 255) fieldErrors.description = '用途说明不能超过 255 个字符。'
-  if (!Number.isInteger(form.sync_interval) || form.sync_interval < 60 || form.sync_interval > 604800) fieldErrors.sync_interval = '下载间隔必须在 60 秒到 7 天之间。'
+  const fields: Record<string, string> = {}
+  if (!isCharacterLengthInRange(form.name, 1, 80, true)) fields.name = '请输入 1 至 80 个字符的规则集名称。'
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(form.tag)) fields.tag = '规则标识仅允许字母、数字、点、下划线和连字符。'
+  if (!isCharacterLengthInRange(form.description, 0, 255, true)) fields.description = '用途说明不能超过 255 个字符。'
+  if (!Number.isInteger(form.sync_interval) || form.sync_interval < 60 || form.sync_interval > 604800) fields.sync_interval = '下载间隔必须在 60 秒到 7 天之间。'
   if (form.mode === 'remote') {
-    if (!/^https?:\/\//i.test(form.source_url)) fieldErrors.source_url = '请输入完整的 HTTP 或 HTTPS 地址。'
-    if (!sourceFormatOptions.some(option => option.value === form.source_format)) fieldErrors.source_format = '请选择受支持的远端格式。'
+    if (!isHttpUrl(form.source_url)) fields.source_url = '请输入完整的 HTTP 或 HTTPS 地址。'
+    if (!sourceFormatOptions.some(option => option.value === form.source_format)) fields.source_format = '请选择受支持的远端格式。'
   } else if (!form.content.trim()) {
-    fieldErrors.content = '请输入 Zero Rule IR 正文。'
+    fields.content = '请输入 Zero Rule IR 正文。'
   }
-  return Object.keys(fieldErrors).length === 0
+  return fields
 }
 
 async function save() {
-  if (!validateForm()) return
+  if (saving.value || revisionConflict.value) return
   saving.value = true
   operationError.value = ''
-  editorError.value = ''
   message.value = ''
   try {
+    if (!await editorErrors.applyValidation(validateForm(), formElement)) return
     const base = {
       name: form.name.trim(),
       description: form.description.trim(),
@@ -460,10 +471,8 @@ async function save() {
     closeEditor()
     await load()
   } catch (cause: any) {
-    const payload = cause?.response?.data
     if (Number(cause?.response?.status || 0) === 409) revisionConflict.value = true
-    if (payload?.fields && typeof payload.fields === 'object') Object.assign(fieldErrors, payload.fields)
-    editorError.value = payload?.message || '规则集保存失败。'
+    await editorErrors.applyApiError(cause, '规则集保存失败。', formElement)
   } finally {
     saving.value = false
   }

@@ -96,7 +96,7 @@ SELECT COUNT(*) FROM system_configs;
 SELECT COUNT(*) FROM subscription_templates;
 ```
 
-Expected baseline results are one migration record, 30 business tables,
+Expected baseline results are one migration record, 42 business tables,
 13 system configuration rows and three built-in templates.
 
 For a retained development database, also verify that application row counts
@@ -104,6 +104,14 @@ and the previous applied-history rows remain unchanged across the upgrade, and
 that the obsolete
 `subscription_template_legacy_archives` table and
 `uk_access_groups_code` index are absent.
+
+## Durable node publication queue
+
+The baseline includes `node_config_publishes`. For an existing development
+schema, startup creates this table additively from the same embedded DDL.
+SQLite upgrades include it in the model inventory. Existing business rows are
+preserved; pending publication rows are included in cross-database migration.
+The due-work index is `idx_node_publish_due`.
 
 ## Policy after v0.1.0
 

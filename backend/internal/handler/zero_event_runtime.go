@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/zeroevent"
 	"gorm.io/gorm"
@@ -24,6 +25,7 @@ const (
 	zeroEventConsumerCompactBurstBatches   = 16
 	zeroEventConsumerEmergencyBurstBatches = 32
 	zeroEventConsumerMinimumInterval       = 100 * time.Millisecond
+	zeroEventSQLiteBatchLimit              = 32
 	zeroConnectorReceiptPersistInterval    = 30 * time.Second
 )
 
@@ -35,6 +37,7 @@ type zeroEventRuntime struct {
 	cancel      context.CancelFunc
 	done        chan struct{}
 	lastReceipt sync.Map
+	metrics     zeroEventConsumerMetrics
 }
 
 type zeroEventNodeCursor struct {
@@ -212,36 +215,58 @@ func zeroBufferedFlowID(payload json.RawMessage) string {
 
 func (h *handlers) runZeroEventConsumer(ctx context.Context, runtime *zeroEventRuntime) {
 	defer close(runtime.done)
-	consume := func() {
+	limit := zeroEventConsumerBatchLimit(runtime.config.MaxBatch, datastore.IsSQLite(h.db))
+	consume := func() bool {
 		if h.backgroundWorkPaused() {
-			return
+			return false
 		}
 		burst := zeroEventConsumerBurst(runtime.spool.Status())
 		for index := 0; index < burst; index++ {
-			count, err := h.consumeZeroEventBatch(ctx, runtime.spool, runtime.config.MaxBatch)
+			count, err := h.consumeZeroEventBatchMeasured(ctx, runtime.spool, limit, &runtime.metrics)
 			if err != nil {
 				if ctx.Err() == nil {
+					runtime.metrics.failures.Add(1)
 					log.Printf("Zero event projector failed: %v", err)
 				}
-				return
+				return false
 			}
-			if count < runtime.config.MaxBatch {
-				return
+			if count < limit {
+				return false
 			}
 		}
+		return true
 	}
-	consume()
-	timer := time.NewTimer(zeroEventConsumerInterval(runtime.config.CommitInterval, runtime.spool.Status()))
+	more := consume()
+	timer := time.NewTimer(zeroEventConsumerNextInterval(runtime.config.CommitInterval, runtime.spool.Status(), more))
 	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			consume()
-			timer.Reset(zeroEventConsumerInterval(runtime.config.CommitInterval, runtime.spool.Status()))
+			more = consume()
+			timer.Reset(zeroEventConsumerNextInterval(runtime.config.CommitInterval, runtime.spool.Status(), more))
 		}
 	}
+}
+
+// SQLite shares a single connection with live authorization and management
+// reads. Keep transactions short; each committed batch retains its own durable
+// checkpoint. MySQL keeps the configured batch size.
+func zeroEventConsumerBatchLimit(configured int, sqlite bool) int {
+	if sqlite && configured > zeroEventSQLiteBatchLimit {
+		return zeroEventSQLiteBatchLimit
+	}
+	return configured
+}
+
+func zeroEventConsumerNextInterval(base time.Duration, status zeroevent.Status, fullBurst bool) time.Duration {
+	if fullBurst {
+		// A full burst may leave work queued. Do not impose another idle flush
+		// interval on that backlog after reducing the transaction size.
+		return zeroEventConsumerMinimumInterval
+	}
+	return zeroEventConsumerInterval(base, status)
 }
 
 func zeroEventConsumerBurst(status zeroevent.Status) int {
@@ -274,6 +299,11 @@ func zeroEventConsumerInterval(base time.Duration, status zeroevent.Status) time
 }
 
 func (h *handlers) consumeZeroEventBatch(ctx context.Context, spool zeroevent.EventSpool, limit int) (int, error) {
+	return h.consumeZeroEventBatchMeasured(ctx, spool, limit, nil)
+}
+
+func (h *handlers) consumeZeroEventBatchMeasured(ctx context.Context, spool zeroevent.EventSpool, limit int, metrics *zeroEventConsumerMetrics) (int, error) {
+	started := time.Now()
 	batch, err := spool.ReadBatch(ctx, limit)
 	if err != nil {
 		return 0, err
@@ -286,6 +316,9 @@ func (h *handlers) consumeZeroEventBatch(ctx context.Context, spool zeroevent.Ev
 	}
 	if err := spool.Commit(ctx, batch.Next); err != nil {
 		return 0, fmt.Errorf("commit Zero event checkpoint: %w", err)
+	}
+	if metrics != nil {
+		metrics.committed(batch.Events, time.Since(started), time.Now().UTC())
 	}
 	return len(batch.Events), nil
 }
@@ -309,8 +342,12 @@ func (h *handlers) projectZeroNodeEvents(ctx context.Context, events []zeroevent
 				return err
 			}
 		}
+		batch := newZeroFlowBatch(tx)
+		if err := batch.loadReports(tx, flowEvents); err != nil {
+			return err
+		}
 		for _, event := range flowEvents {
-			result, err := h.projectBufferedZeroFlow(tx, event)
+			result, err := h.projectBufferedZeroFlow(tx, event, batch)
 			if err != nil {
 				return err
 			}
@@ -318,7 +355,7 @@ func (h *handlers) projectZeroNodeEvents(ctx context.Context, events []zeroevent
 				exhausted = append(exhausted, result)
 			}
 		}
-		return nil
+		return batch.flush(tx)
 	})
 	if err != nil {
 		return err
@@ -331,8 +368,8 @@ func (h *handlers) projectZeroNodeEvents(ctx context.Context, events []zeroevent
 	}); coverageErr != nil && ctx.Err() == nil {
 		log.Printf("fair use buffered coverage projection failed: %v", coverageErr)
 	}
-	for _, result := range exhausted {
-		h.scheduleNodeConfigPublish(result.NodeID, result.ProtocolEndpointID, 0)
+	if len(exhausted) > 0 {
+		h.publishScheduler().signal()
 	}
 	return nil
 }

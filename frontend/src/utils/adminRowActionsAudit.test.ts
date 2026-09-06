@@ -27,7 +27,9 @@ function actionControlCount(source: string): number {
 }
 
 describe('administration table row actions', () => {
-  const files = sourceRoots.flatMap(vueFiles)
+  // Account pages expose their frequent actions directly; this contract
+  // governs administration tables and the shared components they consume.
+  const files = sourceRoots.flatMap(vueFiles).filter(file => !file.includes('/views/account/'))
 
   it('routes every multi-action table cell through the shared RowActions component', () => {
     const violations: string[] = []

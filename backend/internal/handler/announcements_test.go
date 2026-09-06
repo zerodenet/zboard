@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func newAnnouncementTestHandlers(t *testing.T) (*handlers, string) {
+func newAnnouncementTestHandlers(t testing.TB) (*handlers, string) {
 	t.Helper()
 	db, err := datastore.OpenWithDriver(datastore.DriverSQLite, filepath.Join(t.TempDir(), "announcements.db"))
 	if err != nil {

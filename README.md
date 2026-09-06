@@ -2,15 +2,15 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-**An all-in-one management platform for proxy service providers.**
+**A proxy management panel for personal and small-scale use.**
 
-ZBoard connects VPS infrastructure, protocol nodes, subscription delivery, users, plans, orders, traffic accounting, and daily operations in one system.
+ZBoard connects users, nodes, subscriptions, basic orders, and traffic accounting in a complete management workflow, alongside login, registration, public documents, announcements, and essential maintenance.
 
-It is not only a subscription panel. ZBoard manages the complete lifecycle of a proxy service platform: from VPS onboarding and protocol service management to product sales, subscription delivery, traffic settlement, and operational auditing.
+The current priority is to harden the existing workflow, fix frontend and backend defects, and reduce resource use. Online payment is not integrated; it is a future plugin capability. Internal service boundaries are being prepared before a plugin runtime is built.
 
 > ZBoard is under active development. The current development baseline is `v0.0.1`, with `v0.1.0` planned as the first public release.
 
-## Complete service lifecycle
+## Core management workflow
 
 ```text
 VPS infrastructure
@@ -49,10 +49,11 @@ Traffic accounting
 - Validate configurations before delivery.
 - Rotate and revoke subscription credentials securely.
 
-### Business operations
+### Users, orders, and entitlements
 
 - Manage users, plans, SKUs, orders, subscriptions, renewals, and quotas.
 - Preserve order and entitlement snapshots.
+- Activate entitlements through administrator order confirmation without an online payment plugin.
 - Provide user-facing subscription and usage information.
 
 ### Traffic and operations
@@ -67,20 +68,16 @@ Traffic accounting
 Node asset → Protocol service → Node group → Plan / SKU → Order → Subscription
 ```
 
-ZBoard separates infrastructure resources from commercial resources, allowing nodes and services to evolve without changing existing customer entitlements.
+ZBoard separates node resources, order records, and entitlements so that node changes do not rewrite historical orders. Existing plan/SKU models remain compatible during hardening.
 
-## Why ZBoard
+## Current direction
 
-Traditional panels usually focus on subscriptions and products while leaving VPS management, protocol lifecycle, and operational workflows to external tools.
+- Preserve working core flows and improve reliability and usability through small, verified changes.
+- Measure query latency, memory, concurrency, and end-to-end correctness.
+- Use XBoard to compare core workflows, X-Panel to inform basic/add-on scope, and Typecho to inform a lean core with explicit extension points.
+- Gradually isolate complex commercial and policy capabilities for future plugins; implementing a plugin runtime is outside the current phase.
 
-ZBoard brings infrastructure, service delivery, and commercial operations together:
-
-| Traditional approach | ZBoard |
-| --- | --- |
-| Manage nodes separately from products | Connect infrastructure and business resources |
-| Bind subscriptions directly to servers | Use reusable services and node groups |
-| Generate static subscriptions | Deliver validated client configurations |
-| Maintain isolated traffic counters | Associate runtime events with subscriptions |
+See the [core and hardening baseline](docs/core-baseline.md) for scope, sources, and acceptance criteria. These are implementation goals, not claims that existing optional features have been removed or performance targets met.
 
 ## Technology
 

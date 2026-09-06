@@ -16,7 +16,7 @@ const subscriptionTokensTable = "subscription_tokens"
 // implicit account-level aggregation that this schema boundary removes.
 func ReconcileSubscriptionAccessSchema(db *gorm.DB) error {
 	if IsSQLite(db) {
-		return nil
+		return reconcileSQLiteSubscriptionAccess(db)
 	}
 	if db == nil {
 		return fmt.Errorf("database is required")

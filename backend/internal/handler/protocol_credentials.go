@@ -544,7 +544,9 @@ func (h *handlers) ReconcileMieruEndpointCredentials() error {
 			}
 		}
 		for nodeID, endpointID := range changedNodes {
-			h.scheduleNodeConfigPublish(nodeID, endpointID, 0)
+			if err := h.scheduleNodeConfigPublish(nodeID, endpointID, 0); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -571,7 +573,9 @@ func (h *handlers) ReconcileMieruEndpointCredentials() error {
 		}
 	}
 	for nodeID, endpointID := range changedNodes {
-		h.scheduleNodeConfigPublish(nodeID, endpointID, 0)
+		if err := h.scheduleNodeConfigPublish(nodeID, endpointID, 0); err != nil {
+			return err
+		}
 	}
 	return nil
 }

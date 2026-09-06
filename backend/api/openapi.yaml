@@ -113,6 +113,34 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/SystemInfo"
+  /api/v1/admin/system-info:
+    get:
+      tags: [admin, system]
+      summary: Administrator service information and optional runtime diagnostics
+      parameters:
+        - name: include_runtime
+          in: query
+          schema: { type: boolean, default: false }
+          description: Include bounded process-local database and event-consumer observations. Requires an active administrator.
+      responses:
+        "200":
+          description: Service metadata; runtime is omitted unless requested.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          service: { type: string }
+                          version: { type: string }
+                          started_at: { type: string, format: date-time }
+                          runtime: { $ref: "#/components/schemas/RuntimeDiagnostics" }
+        "400": { description: Invalid include_runtime flag }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
   /api/v1/auth/register:
     post:
       tags:
@@ -4585,7 +4613,7 @@ components:
     TrafficUsageStatistics:
       type: object
       required: [total, aggregates, bucket, as_of]
-      description: Independent full-filter statistics snapshot. Cursor and limit do not affect its values; as_of identifies the statistics read time, not a shared live-page snapshot.
+      description: Independent full-filter statistics snapshot. Identical scoped queries may reuse a result for up to two seconds from query start. Cursor and limit do not affect its values; as_of identifies the statistics read time, not a shared live-page snapshot. Authorization is checked on every request.
       properties:
         total: { type: integer, format: int64, minimum: 0 }
         aggregates: { $ref: "#/components/schemas/TrafficRecordAggregates" }
@@ -4636,6 +4664,11 @@ components:
             node_count: { type: integer, format: int64 }
             protocol_endpoint_count: { type: integer, format: int64 }
         bucket: { type: string, enum: [minute, hour, day] }
+        statistics_as_of:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the full-window statistics, which may be reused for up to two seconds from query start. Null when include_totals=false. Page items remain live.
         facets:
           type: object
           description: Account-scoped reference maps for current page rows, not complete filter directories.
@@ -4768,6 +4801,42 @@ components:
               type: boolean
             kubernetes:
               type: boolean
+    RuntimeDiagnostics:
+      type: object
+      description: Observational counters reset at process restart. These are not accounting or authorization inputs; concurrent counters are not one transactional snapshot.
+      properties:
+        as_of: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        shared_pool: { type: boolean }
+        accounting_db: { $ref: "#/components/schemas/DatabasePoolDiagnostics" }
+        traffic_read_db: { $ref: "#/components/schemas/DatabasePoolDiagnostics" }
+        event_consumer:
+          type: object
+          nullable: true
+          description: Null when file buffering is disabled. Processed envelopes include duplicates and stats events; they are not billed-event counts. Receive-to-checkpoint latency uses 100ms upper-bound buckets; overflow uses the observed maximum. Missing/future receive times are excluded explicitly.
+          properties:
+            batches: { type: integer, format: int64 }
+            processed_envelopes: { type: integer, format: int64 }
+            failures: { type: integer, format: int64 }
+            processing_seconds: { type: number }
+            missing_receive_time: { type: integer, format: int64 }
+            latency_samples: { type: integer, format: int64 }
+            latency_bucket_ms: { type: integer }
+            p95_upper_ms: { type: integer, format: int64, nullable: true }
+            maximum_ms: { type: integer, format: int64 }
+        event_spool:
+          type: object
+          nullable: true
+          description: Current file-buffer status, including pending events, bytes, oldest event time and storage pressure. Null when disabled.
+    DatabasePoolDiagnostics:
+      type: object
+      properties:
+        maximum: { type: integer }
+        open: { type: integer }
+        in_use: { type: integer }
+        idle: { type: integer }
+        wait_count: { type: integer, format: int64 }
+        wait_seconds: { type: number, description: Cumulative connection-wait time; concurrent waits can exceed wall-clock duration. }
     DashboardMetrics:
       type: object
       properties:

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -119,8 +120,8 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	db := h.db.WithContext(r.Context())
-	base := applyHistoryWindow(db.Model(&model.TrafficRecord{}), "record_at", window)
+	db := h.trafficQueryDB().WithContext(r.Context())
+	base := db.Model(&model.TrafficRecord{})
 	if adminScope {
 		if userID, parseErr := positiveQueryID(r.URL.Query(), "user_id"); parseErr != nil {
 			BadRequest(w, parseErr.Error())
@@ -149,10 +150,14 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 		}
 	}
 
+	pageScope := base.Session(&gorm.Session{})
+	base = applyHistoryWindow(base.Session(&gorm.Session{}), "record_at", window)
+
 	var total *int64
 	var aggregates *trafficRecordAggregates
+	var statisticsAsOf *time.Time
 	if includeTotals || summaryOnly {
-		statistics, err := loadTrafficUsageStatistics(base, bucket)
+		statistics, err := h.trafficUsageStatistics(base, bucket, window)
 		if err != nil {
 			ServerError(w, err)
 			return
@@ -162,8 +167,13 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 			return
 		}
 		total, aggregates = &statistics.Total, &statistics.Aggregates
+		statisticsAsOf = &statistics.AsOf
 	}
-	grouped := bucket.seekSource(base.Session(&gorm.Session{}), cursor).
+	pageSource := bucket.seekSource(base.Session(&gorm.Session{}), cursor)
+	if cursor == nil && offset == 0 {
+		pageSource = bucket.firstPageSource(pageScope, window, limit)
+	}
+	grouped := pageSource.Session(&gorm.Session{}).
 		Select(`
 			MIN(id) AS id,
 			user_id,
@@ -180,6 +190,9 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 		Group(bucket.group())
 
 	bucketQuery := db.Table("(?) AS traffic_usage_buckets", grouped)
+	if cursor == nil && offset == 0 && datastore.IsSQLite(db) {
+		bucketQuery = bucket.selectedFirstPageQuery(base, pageSource, limit)
+	}
 	if cursor != nil {
 		var at any = cursor.At
 		if datastore.IsSQLite(db) {
@@ -204,6 +217,7 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 		}
 		data := trafficUsagePageData(buckets, total, offset, limit, nil, nil)
 		data["aggregates"] = aggregates
+		data["statistics_as_of"] = statisticsAsOf
 		data["bucket"] = bucket.Name
 		if !adminScope {
 			references, err := accountTrafficPageReferences(db, buckets, claims.UserID)
@@ -243,6 +257,7 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 	}
 	data := trafficUsagePageData(buckets, total, 0, limit, nextCursor, previousCursor)
 	data["aggregates"] = aggregates
+	data["statistics_as_of"] = statisticsAsOf
 	data["bucket"] = bucket.Name
 	if !adminScope {
 		references, err := accountTrafficPageReferences(db, buckets, claims.UserID)

@@ -8,28 +8,28 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
 
-func TestValidateSubscriptionRuleSetNormalizesManagedFields(t *testing.T) {
+func TestPrepareSubscriptionRuleSetNormalizesManagedFields(t *testing.T) {
 	req := subscriptionRuleSetWriteReq{
 		Name: "Advertising", Tag: "reject-ads",
 		SourceURL: "https://example.com/ads.txt", SourceFormat: "domain_list", SyncInterval: 3600,
 	}
-	if err := validateSubscriptionRuleSet(&req); err != nil {
-		t.Fatalf("validateSubscriptionRuleSet() error = %v", err)
+	if document, err := prepareSubscriptionRuleSet(&req); err != nil || document != nil {
+		t.Fatalf("remote preparation = %v, %v; expected deferred import", document, err)
 	}
 	if req.SourceFormat != managedRuleSourceDomainList || req.SyncInterval != 3600 {
 		t.Fatalf("normalized rule set = %#v", req)
 	}
 }
 
-func TestValidateSubscriptionRuleSetRejectsUnsafeOrInvalidSources(t *testing.T) {
+func TestPrepareSubscriptionRuleSetRejectsUnsafeOrInvalidSources(t *testing.T) {
 	invalidIR := `{"version":1,"rules":[{"type":"domain_exact","value":"example.com","extra":true}]}`
 	tests := []subscriptionRuleSetWriteReq{
 		{Name: "unsafe", Tag: "ads", SourceURL: "https://user:secret@example.com/ads.yaml", SourceFormat: "clash_classical", SyncInterval: 3600},
 		{Name: "invalid", Tag: "ads", Content: &invalidIR, SourceFormat: managedRuleSourceZeroRuleIR, SyncInterval: 3600},
 	}
 	for _, req := range tests {
-		if err := validateSubscriptionRuleSet(&req); err == nil {
-			t.Fatalf("validateSubscriptionRuleSet(%q) succeeded, want error", req.Name)
+		if _, err := prepareSubscriptionRuleSet(&req); err == nil {
+			t.Fatalf("prepareSubscriptionRuleSet(%q) succeeded, want error", req.Name)
 		}
 	}
 }

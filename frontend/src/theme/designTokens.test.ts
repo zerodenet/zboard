@@ -32,8 +32,12 @@ describe('design token ownership', () => {
     const missing = new Set<string>()
     for (const path of sourceFiles(sourceRoot)) {
       if (path === tokenPath) continue
-      for (const match of readFileSync(path, 'utf8').matchAll(/var\((--[a-z0-9-]+)/gi)) {
-        if (!declared.has(match[1]) && !runtimeProperties.has(match[1])) missing.add(match[1])
+      const source = readFileSync(path, 'utf8')
+      // Component-local style bindings, such as each chart series color,
+      // are declared where they are used rather than in the global theme.
+      const localProperties = new Set(Array.from(source.matchAll(/['"](--[a-z0-9-]+)['"]\s*:/gi), match => match[1]))
+      for (const match of source.matchAll(/var\((--[a-z0-9-]+)/gi)) {
+        if (!declared.has(match[1]) && !runtimeProperties.has(match[1]) && !localProperties.has(match[1])) missing.add(match[1])
       }
     }
 

@@ -69,6 +69,7 @@ import WorkbenchFilterDate from '../components/WorkbenchFilterDate.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import { useRemoteTable } from '../composables/useRemoteTable'
+import { useRemoteResource } from '../composables/useRemoteResource'
 import { formatBytes, formatUnknownValue } from '../utils/format'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 
@@ -84,11 +85,13 @@ const allowedPageSizes = [25, 50, 100]
 const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 50)
 const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
-const selectedSubscription = ref<AdminSubscriptionDetail | null>(null)
 const detailID = ref(0)
-const detailLoading = ref(false)
-const detailError = ref('')
-let detailController: AbortController | null = null
+const detailResource = useRemoteResource<AdminSubscriptionDetail | null>({
+  initial: () => null,
+  fetch: ({ signal }) => fetchAdminSubscriptionDetail(detailID.value, { signal }),
+  errorMessage: '订阅详情加载失败。',
+})
+const { data: selectedSubscription, loading: detailLoading, error: detailError } = detailResource
 const trafficLink = computed(() => adminContextLink('/admin/traffic', userFilter.value ? { user_id: userFilter.value } : {}))
 const statusOptions = [{ label: '全部状态', value: '' }, { label: '有效', value: 'active' }, { label: '已到期或耗尽', value: 'expired' }, { label: '已取消', value: 'canceled' }]
 const quotaOptions = [{ label: '全部配额', value: '' }, { label: '仍有余量', value: 'available' }, { label: '已经耗尽', value: 'exhausted' }]
@@ -111,20 +114,17 @@ async function applyFilters() { offset.value = 0; await syncURL(); await load() 
 async function clearFilters() { queryFilter.value = ''; statusFilter.value = ''; quotaFilter.value = ''; userFilter.value = ''; expiresFrom.value = ''; expiresTo.value = ''; offset.value = 0; await syncURL(); await load() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await load() }
 async function openDetail(id: number) { await router.push({ query: { ...route.query, subscription: String(id) } }) }
-async function closeDetail() { detailController?.abort(); detailID.value = 0; selectedSubscription.value = null; detailError.value = ''; const { subscription: _subscription, ...query } = route.query; await router.push({ query }) }
+async function closeDetail() { detailResource.reset(); detailID.value = 0; const { subscription: _subscription, ...query } = route.query; await router.push({ query }) }
 async function syncDetailFromRoute() {
   const id = Number(route.query.subscription)
   if (!Number.isInteger(id) || id <= 0) {
-    detailController?.abort(); detailID.value = 0; selectedSubscription.value = null; detailError.value = ''; detailLoading.value = false
+    detailResource.reset(); detailID.value = 0
     return
   }
   if (detailID.value === id && (selectedSubscription.value?.id === id || detailLoading.value)) return
-  detailController?.abort()
-  detailController = new AbortController()
-  detailID.value = id; selectedSubscription.value = null; detailError.value = ''; detailLoading.value = true
-  try { selectedSubscription.value = await fetchAdminSubscriptionDetail(id, { signal: detailController.signal }) }
-  catch (cause: any) { if (cause?.name !== 'CanceledError' && cause?.name !== 'AbortError') detailError.value = cause?.response?.data?.message || '订阅详情加载失败。' }
-  finally { if (detailID.value === id) detailLoading.value = false }
+  detailResource.reset()
+  detailID.value = id
+  await detailResource.load()
 }
 watch(() => route.fullPath, async () => { const nextQuery = String(route.query.q || ''), nextStatus = String(route.query.status || ''), nextQuota = String(route.query.quota || ''), nextUser = String(route.query.user_id || ''), nextExpiresFrom = String(route.query.expires_from || ''), nextExpiresTo = String(route.query.expires_to || ''); const rawLimit = Number(route.query.limit), nextLimit = allowedPageSizes.includes(rawLimit) ? rawLimit : 50, nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * nextLimit; if (nextQuery !== queryFilter.value || nextStatus !== statusFilter.value || nextQuota !== quotaFilter.value || nextUser !== userFilter.value || nextExpiresFrom !== expiresFrom.value || nextExpiresTo !== expiresTo.value || nextLimit !== limit.value || nextOffset !== offset.value) { queryFilter.value = nextQuery; statusFilter.value = nextStatus; quotaFilter.value = nextQuota; userFilter.value = nextUser; expiresFrom.value = nextExpiresFrom; expiresTo.value = nextExpiresTo; limit.value = nextLimit; offset.value = nextOffset; await load() } await syncDetailFromRoute() })
 onMounted(async () => { await load(); await syncDetailFromRoute() })

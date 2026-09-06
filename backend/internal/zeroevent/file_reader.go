@@ -66,7 +66,7 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 		if segment.sequence == checkpoint.Segment {
 			start = checkpoint
 		}
-		events, next, err := readSegmentBatch(ctx, segment, start, limit-len(batch.Events))
+		events, next, err := s.readSegmentBatch(ctx, segment, start, limit-len(batch.Events))
 		if err != nil {
 			return Batch{}, err
 		}
@@ -98,6 +98,10 @@ func readSegmentBatch(ctx context.Context, segment segmentFile, checkpoint Check
 }
 
 func readRawSegmentBatch(ctx context.Context, segment segmentFile, startRecord uint64, limit int) ([]Envelope, uint64, error) {
+	return readRawSegmentBatchAt(ctx, segment, startRecord, limit, 0, 0)
+}
+
+func readRawSegmentBatchAt(ctx context.Context, segment segmentFile, startRecord uint64, limit int, index uint64, offset int64) ([]Envelope, uint64, error) {
 	file, err := os.Open(segment.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -106,8 +110,10 @@ func readRawSegmentBatch(ctx context.Context, segment segmentFile, startRecord u
 		return nil, startRecord, fmt.Errorf("open event segment for read: %w", err)
 	}
 	defer file.Close()
-	reader := bufio.NewReader(io.LimitReader(file, segment.size))
-	var index uint64
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return nil, index, err
+	}
+	reader := bufio.NewReader(io.LimitReader(file, segment.size-offset))
 	for index < startRecord {
 		if err := ctx.Err(); err != nil {
 			return nil, index, err
@@ -197,17 +203,17 @@ func (s *FileSpool) validateCheckpoint(checkpoint Checkpoint) error {
 		if segment.sequence != checkpoint.Segment {
 			continue
 		}
-		if _, _, err := inspectSegment(segment.path, segment.size, segment.active); err != nil {
-			return err
-		}
 		if segment.codec != CompressionNone {
+			if _, _, err := s.inspectSegment(segment); err != nil {
+				return err
+			}
 			_, _, err := compressedCheckpointRecordOffset(segment.path, checkpoint)
 			return err
 		}
 		if checkpoint.Block != 0 {
 			return fmt.Errorf("raw segment %d cannot use block checkpoint %d", checkpoint.Segment, checkpoint.Block)
 		}
-		records, _, err := inspectSegment(segment.path, segment.size, segment.active)
+		records, _, err := s.inspectSegment(segment)
 		if err != nil {
 			return err
 		}
@@ -223,14 +229,14 @@ func (s *FileSpool) cleanupCommittedSegments(checkpoint Checkpoint) error {
 	return s.cleanupCommittedSegmentsMode(checkpoint, false)
 }
 
-func segmentCheckpointRecordOffset(segment segmentFile, checkpoint Checkpoint) (uint64, uint64, error) {
+func (s *FileSpool) segmentCheckpointRecordOffset(segment segmentFile, checkpoint Checkpoint) (uint64, uint64, error) {
 	if segment.codec != CompressionNone {
 		return compressedCheckpointRecordOffset(segment.path, checkpoint)
 	}
 	if checkpoint.Block != 0 {
 		return 0, 0, fmt.Errorf("raw segment %d cannot use block checkpoint %d", segment.sequence, checkpoint.Block)
 	}
-	records, _, err := inspectSegment(segment.path, segment.size, segment.active)
+	records, _, err := s.inspectSegment(segment)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -270,13 +276,13 @@ func (s *FileSpool) Status() Status {
 			if checkpoint.Segment != 0 && segment.sequence < checkpoint.Segment {
 				continue
 			}
-			records, _, inspectErr := inspectSegment(segment.path, segment.size, segment.active)
+			records, _, inspectErr := s.inspectSegment(segment)
 			if inspectErr != nil {
 				continue
 			}
 			pending := records
 			if segment.sequence == checkpoint.Segment {
-				consumed, total, offsetErr := segmentCheckpointRecordOffset(segment, checkpoint)
+				consumed, total, offsetErr := s.segmentCheckpointRecordOffset(segment, checkpoint)
 				if offsetErr != nil {
 					continue
 				}

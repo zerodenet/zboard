@@ -17,7 +17,7 @@ type catalogFixture struct {
 	group model.NodeGroup
 }
 
-func newCatalogFixture(t *testing.T) catalogFixture {
+func newCatalogFixture(t testing.TB) catalogFixture {
 	t.Helper()
 	h, token := newAnnouncementTestHandlers(t) // Full SQLite schema and an authenticated account.
 	group := model.NodeGroup{Name: "Catalog", Code: "catalog", IsEnabled: true}
@@ -27,7 +27,7 @@ func newCatalogFixture(t *testing.T) catalogFixture {
 	return catalogFixture{h, token, group}
 }
 
-func (f catalogFixture) plan(t *testing.T, id uint) model.Plan {
+func (f catalogFixture) plan(t testing.TB, id uint) model.Plan {
 	t.Helper()
 	plan := model.Plan{ID: id, Name: fmt.Sprintf("Plan %d", id), Slug: fmt.Sprintf("plan-%d", id), NodeGroupID: f.group.ID, IsActive: true}
 	if err := f.h.db.Create(&plan).Error; err != nil {
@@ -36,7 +36,7 @@ func (f catalogFixture) plan(t *testing.T, id uint) model.Plan {
 	return plan
 }
 
-func (f catalogFixture) sku(t *testing.T, planID uint, price int64, operation string) model.PlanSKU {
+func (f catalogFixture) sku(t testing.TB, planID uint, price int64, operation string) model.PlanSKU {
 	t.Helper()
 	var count int64
 	f.h.db.Model(&model.PlanSKU{}).Count(&count)
