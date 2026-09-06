@@ -21,7 +21,7 @@ if ([string]::IsNullOrWhiteSpace($RequiredVersion) -and -not [string]::IsNullOrW
     $RequiredVersion = $env:ZBOARD_REQUIRED_GO_VERSION
 }
 if ([string]::IsNullOrWhiteSpace($RequiredVersion)) {
-    $RequiredVersion = "1.26.5"
+    $RequiredVersion = "1.26.8"
 }
 if ([string]::IsNullOrWhiteSpace($DownloadBase)) {
     $DownloadBase = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_GO_DOWNLOAD_BASE)) {

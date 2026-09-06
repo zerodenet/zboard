@@ -3,7 +3,7 @@ param(
     [int]$BackendPort = 8080,
     [int]$FrontendPort = 5173,
     [int]$StartupTimeoutSec = 120,
-    [string]$GoVersion = "1.26.5",
+    [string]$GoVersion = "1.26.8",
     [int]$GoQueryTimeoutSec = 8,
     [int]$GoDownloadTimeoutSec = 120,
     [int]$GoQueryTimeoutBudgetSec = 30,
@@ -39,7 +39,7 @@ if (-not $PSBoundParameters.ContainsKey('ApiBase')) {
     $ApiBase = "http://127.0.0.1:$BackendPort"
 }
 
-$GoVersion = if ([string]::IsNullOrWhiteSpace($GoVersion)) { "1.26.5" } else { $GoVersion }
+$GoVersion = if ([string]::IsNullOrWhiteSpace($GoVersion)) { "1.26.8" } else { $GoVersion }
 $env:ZBOARD_REQUIRED_GO_VERSION = $GoVersion
 $env:ZBOARD_ENFORCE_GO_BASELINE = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_ENFORCE_GO_BASELINE)) { "1" } else { $env:ZBOARD_ENFORCE_GO_BASELINE }
 $env:ZBOARD_GO_QUERY_TIMEOUT = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_GO_QUERY_TIMEOUT)) { "$GoQueryTimeoutSec" } else { $env:ZBOARD_GO_QUERY_TIMEOUT }

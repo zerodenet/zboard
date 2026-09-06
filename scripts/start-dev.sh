@@ -15,7 +15,7 @@ GO_DOWNLOAD_TIMEOUT=120
 GO_QUERY_TIMEOUT_BUDGET=30
 GO_QUERY_RETRY_LIMIT=3
 SMOKE_TIMEOUT=10
-GO_VERSION="1.26.5"
+GO_VERSION="1.26.8"
 ENFORCE_GO_BASELINE="${ZBOARD_ENFORCE_GO_BASELINE:-1}"
 SKIP_DEPS=0
 STOP_WHEN_DONE=0
@@ -42,7 +42,7 @@ Options:
   --go-query-retry-limit N max attempts across query backends (default: 3)
   --go-download-timeout SEC timeout for go download during auto-install (default: 120)
   --smoke-timeout SEC timeout for smoke-test API calls (default: 10)
-  --go-version VERSION      Go version target for baseline resolution, default: 1.26.5
+  --go-version VERSION      Go version target for baseline resolution, default: 1.26.8
   --datasource DSN      override mysql DSN
   --skip-deps           do not auto-start mysql in docker
   --no-smoke            skip smoke test

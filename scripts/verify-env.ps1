@@ -32,7 +32,7 @@ function Get-GoModBaseline {
 
 if ([string]::IsNullOrWhiteSpace($RequiredGoVersion)) {
     $RequiredGoVersion = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_REQUIRED_GO_VERSION)) {
-        "1.26.5"
+        "1.26.8"
     } else {
         $env:ZBOARD_REQUIRED_GO_VERSION
     }

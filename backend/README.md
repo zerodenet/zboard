@@ -124,7 +124,7 @@ The generated bootstrap password is printed once. Reuse it through
 Local generated secrets are cached in ignored `tmp/zboard.dev.secrets`.
 Back up the production credential-encryption key separately from the database.
 
-By default, start scripts enforce the checked-in baseline (`--check-only`) and use Go 1.26.5.
+By default, start scripts enforce the checked-in baseline (`--check-only`) and use Go 1.26.8.
 To downgrade to non-failing mode for local/offline flows, set:
 
 ```bash

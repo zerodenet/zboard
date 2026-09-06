@@ -10,7 +10,7 @@ param(
 )
 
 if ([string]::IsNullOrWhiteSpace($RequiredGoVersion)) {
-    $RequiredGoVersion = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_REQUIRED_GO_VERSION)) { "1.26.5" } else { $env:ZBOARD_REQUIRED_GO_VERSION }
+    $RequiredGoVersion = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_REQUIRED_GO_VERSION)) { "1.26.8" } else { $env:ZBOARD_REQUIRED_GO_VERSION }
 }
 if ([string]::IsNullOrWhiteSpace($FallbackRoot)) {
     $FallbackRoot = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_GOROOT_FALLBACK)) {

@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release && \
     cp target/release/zrs-compiler /zrs-compiler
 
-FROM golang:1.26.5-alpine AS backend-builder
+FROM golang:1.26.8-alpine AS backend-builder
 WORKDIR /src/backend
 ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=${GOPROXY}

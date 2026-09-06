@@ -63,7 +63,7 @@ if ($RequestTimeoutSec -lt 1) {
     $RequestTimeoutSec = 8
 }
 if ([string]::IsNullOrWhiteSpace($RequiredVersion)) {
-    $RequiredVersion = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_REQUIRED_GO_VERSION)) { "1.26.5" } else { $env:ZBOARD_REQUIRED_GO_VERSION }
+    $RequiredVersion = if ([string]::IsNullOrWhiteSpace($env:ZBOARD_REQUIRED_GO_VERSION)) { "1.26.8" } else { $env:ZBOARD_REQUIRED_GO_VERSION }
 }
 
 function Get-QueryTimeout {

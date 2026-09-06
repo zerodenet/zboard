@@ -16,7 +16,7 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 $CurrentCheckPolicy = if ($SkipGoBaselineCheck) { "skipped" } else { "required" }
 Write-Output "Go baseline check: ${CurrentCheckPolicy}."
 if (-not $SkipGoBaselineCheck) {
-    & "$PSScriptRoot\sync-go-baseline.ps1" -RequiredVersion 1.26.5 -CheckOnly
+    & "$PSScriptRoot\sync-go-baseline.ps1" -RequiredVersion 1.26.8 -CheckOnly
 }
 $Commit = "local"
 $BuildTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")

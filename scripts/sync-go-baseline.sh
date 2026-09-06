@@ -10,7 +10,7 @@ QUERY_RETRY_LIMIT="${ZBOARD_GO_QUERY_RETRY_LIMIT:-3}"
 ALLOW_STALE="${ZBOARD_ALLOW_STALE_GO_VERSION:-0}"
 DRY_RUN=0
 CHECK_ONLY=0
-TARGET_VERSION="${ZBOARD_REQUIRED_GO_VERSION:-1.26.5}"
+TARGET_VERSION="${ZBOARD_REQUIRED_GO_VERSION:-1.26.8}"
 
 if [ "${REQUEST_TIMEOUT}" -lt 1 ]; then
   REQUEST_TIMEOUT=8
@@ -28,7 +28,7 @@ Usage: ./sync-go-baseline.sh [--go-mod PATH] [--target VERSION] [--download-base
 
 Options:
   --go-mod PATH             path to go.mod (default: backend/go.mod)
-  --target VERSION          explicit target version (e.g. 1.26.5 or go1.26.5), default: 1.26.5
+  --target VERSION          explicit target version (e.g. 1.26.8 or go1.26.8), default: 1.26.8
   --download-base URL       go download API base, default: https://go.dev/dl
   --go-query-timeout SEC     per-request query timeout (default: ${REQUEST_TIMEOUT})
   --go-query-budget-sec SEC  total query budget before fallback (default: ${QUERY_TIMEOUT_BUDGET})

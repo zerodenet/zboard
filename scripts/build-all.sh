@@ -13,7 +13,7 @@ fi
 "${SCRIPT_DIR}/ensure-go-env.sh"
 
 if [ "${GO_BASELINE_CHECK}" = "1" ]; then
-  "${SCRIPT_DIR}/sync-go-baseline.sh" --check-only --target 1.26.5
+  "${SCRIPT_DIR}/sync-go-baseline.sh" --check-only --target 1.26.8
 else
   echo "Go baseline check: skipped."
 fi
