@@ -4233,7 +4233,7 @@ components:
       required: [version, mode, mixed_enabled, mixed_port, system_proxy, tun, dns, main_group, policy_groups, final, rule_sets]
       properties:
         version: { type: integer, enum: [3] }
-        mode: { type: string, enum: [rule, global, direct], default: rule, description: Initial routing mode. Zero emits its native mode object, Clash emits mode, and sing-box derives route rules/final. }
+        mode: { type: string, enum: [rule, global, direct], default: rule, description: "Initial routing mode. Zero emits its native mode object, Clash emits mode, and sing-box derives route rules/final." }
         mixed_enabled: { type: boolean, default: true, description: Emit the renderer-native local loopback mixed HTTP and SOCKS inbound. At least one of mixed_enabled and tun.enabled must be true. }
         mixed_port: { type: integer, minimum: 1, maximum: 65535, default: 7890, description: Local loopback mixed HTTP and SOCKS inbound port emitted for every supported client renderer. }
         system_proxy: { type: boolean, default: false, description: sing-box-only switch that sets and cleans the operating-system HTTP proxy for the mixed inbound. }
@@ -4287,7 +4287,7 @@ components:
       required: [tag, type]
       properties:
         tag: { type: string, minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }
-        type: { type: string, enum: [system, udp, tcp, doh, dot, doq], description: TCP is available for Clash/Mihomo and sing-box; Zero supports system, UDP, DoH, DoT and DoQ. }
+        type: { type: string, enum: [system, udp, tcp, doh, dot, doq], description: "TCP is available for Clash/Mihomo and sing-box; Zero supports system, UDP, DoH, DoT and DoQ." }
         host: { type: string, description: IP literal for visually managed network servers. Advanced overlays may add renderer-native domain resolver/bootstrap fields. }
         port: { type: integer, minimum: 1, maximum: 65535 }
         path: { type: string, description: DoH request path. }
