@@ -111,7 +111,10 @@ if [ "${dry_run}" -eq 0 ]; then
   git diff --cached --quiet || die "index has staged changes; commit or unstage them before releasing"
 fi
 
-mapfile -t remotes < <(git remote)
+remotes=()
+while IFS= read -r remote; do
+  remotes+=("${remote}")
+done < <(git remote)
 if [ "${dry_run}" -eq 0 ] && [ "${#remotes[@]}" -gt 0 ]; then
   for remote in "${remotes[@]}"; do
     git fetch --tags "${remote}"
