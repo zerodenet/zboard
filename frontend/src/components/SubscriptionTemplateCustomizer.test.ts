@@ -5,6 +5,26 @@ import { defaultSubscriptionCustomization } from '../utils/subscriptionTemplateE
 import SubscriptionTemplateCustomizer from './SubscriptionTemplateCustomizer.vue'
 
 describe('SubscriptionTemplateCustomizer', () => {
+  it('hides the desktop proxy setter for TUN clients even when an older template enabled it', async () => {
+    const customization = defaultSubscriptionCustomization('sing-box')
+    customization.system_proxy = true
+    const wrapper = mount(SubscriptionTemplateCustomizer, {
+      props: { renderer: 'sing-box', modelValue: customization },
+      global: { plugins: [PrimeVue] },
+    })
+    expect(wrapper.text()).toContain('自动设置系统 HTTP 代理（桌面命令行）')
+    const enable = wrapper.findAll('button').find(button => button.text() === '启用客户端 HTTP 代理开关')
+    await enable!.trigger('click')
+    expect(customization.tun.enabled).toBe(true)
+    expect(customization.system_proxy).toBe(true)
+    expect(wrapper.text()).toContain('已提供客户端 HTTP 代理开关')
+    expect(wrapper.text()).not.toContain('自动设置系统 HTTP 代理（桌面命令行）')
+    const tun = wrapper.findAll('label.setting-switch').find(label => label.text().includes('启用 TUN 全局接管'))!
+    await tun.find('input[type="checkbox"]').setValue(false)
+    expect(wrapper.text()).toContain('自动设置系统 HTTP 代理（桌面命令行）')
+    expect(customization.system_proxy).toBe(true)
+  })
+
   it('prepares the sing-box client HTTP switch with TUN, mixed inbound and DNS', async () => {
     const customization = defaultSubscriptionCustomization('sing-box')
     const wrapper = mount(SubscriptionTemplateCustomizer, {

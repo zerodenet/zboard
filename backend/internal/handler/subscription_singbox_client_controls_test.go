@@ -70,8 +70,13 @@ func TestSingBoxClientHTTPProxyRequiresTunAndMixedAndUsesConfiguredPort(t *testi
 				customization.MixedPort = 17890
 				foundPlatform := false
 				for _, inbound := range singBoxSubscriptionInbounds(customization) {
-					if inbound["type"] == "mixed" && (inbound["set_system_proxy"] == true) != system {
-						t.Fatalf("CLI proxy setting lost: %#v", inbound)
+					if inbound["type"] == "mixed" {
+						if _, exists := inbound["set_system_proxy"]; tun && exists {
+							t.Fatalf("TUN client must not invoke a desktop system proxy setter: %#v", inbound)
+						}
+						if (inbound["set_system_proxy"] == true) != (system && !tun) {
+							t.Fatalf("CLI proxy setting must only apply without TUN: %#v", inbound)
+						}
 					}
 					if platform, ok := inbound["platform"].(map[string]interface{}); ok {
 						foundPlatform = true

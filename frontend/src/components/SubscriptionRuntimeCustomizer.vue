@@ -2,7 +2,7 @@
   <section class="runtime-settings">
     <div v-if="renderer === 'sing-box'" class="runtime-client-controls">
       <p>导入后可在客户端切换 Rule（规则）、Direct（直连）、Global（全局）；初始模式不会移除其他模式的规则。</p>
-      <p v-if="model.tun.enabled && model.mixed_enabled">已提供客户端 HTTP 代理开关，可在支持该功能的 sing-box 图形客户端中随时切换。</p>
+      <p v-if="model.tun.enabled && model.mixed_enabled">已提供客户端 HTTP 代理开关，可在支持该功能的 sing-box 图形客户端中随时切换。由客户端管理系统代理，适用于 iOS / Android，无需额外启用命令行系统代理。</p>
       <template v-else>
         <p>客户端 HTTP 代理开关需要同时启用 TUN 和本地 HTTP/SOCKS 代理。</p>
         <UiButton variant="secondary" @click="enableClientHTTPProxy">启用客户端 HTTP 代理开关</UiButton>
@@ -22,8 +22,8 @@
       <UiCheckbox v-model="model.mixed_enabled" role="switch" @update:model-value="toggleMixed" />
     </label>
 
-    <label v-if="renderer === 'sing-box' && model.mixed_enabled" class="setting-switch">
-      <span><strong>自动设置系统 HTTP 代理</strong><small>适用于命令行运行：启动时设置系统代理，退出时清理。图形客户端的 HTTP 代理开关由上方配置提供。</small></span>
+    <label v-if="renderer === 'sing-box' && model.mixed_enabled && !model.tun.enabled" class="setting-switch">
+      <span><strong>自动设置系统 HTTP 代理（桌面命令行）</strong><small>仅适用于有权限的桌面命令行运行。iOS / Android 图形客户端请启用 TUN，使用客户端内的 HTTP 代理开关。</small></span>
       <UiCheckbox v-model="model.system_proxy" role="switch" />
     </label>
 

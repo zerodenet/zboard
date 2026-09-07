@@ -353,7 +353,10 @@ func singBoxSubscriptionInbounds(customization subscriptionTemplateCustomization
 	mixed := map[string]interface{}{
 		"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": customization.MixedPort,
 	}
-	if customization.SystemProxy {
+	// TUN clients own the system HTTP proxy through platform.http_proxy.
+	// The mixed listener's desktop proxy setter invokes networksetup on Apple
+	// platforms, which is unavailable inside an iOS packet tunnel.
+	if customization.SystemProxy && !customization.Tun.Enabled {
 		mixed["set_system_proxy"] = true
 	}
 	inbounds := []map[string]interface{}{}

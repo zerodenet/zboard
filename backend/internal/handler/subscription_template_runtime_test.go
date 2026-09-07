@@ -89,8 +89,15 @@ func TestSingBoxRendererEmitsCurrentRuntimeShape(t *testing.T) {
 	if err := json.Unmarshal([]byte(rendered), &document); err != nil {
 		t.Fatal(err)
 	}
-	if len(document.Inbounds) != 2 || document.Inbounds[0]["set_system_proxy"] != true || document.Inbounds[1]["type"] != "tun" {
+	if len(document.Inbounds) != 2 || document.Inbounds[0]["type"] != "mixed" || document.Inbounds[1]["type"] != "tun" {
 		t.Fatalf("sing-box inbounds = %#v", document.Inbounds)
+	}
+	if _, exists := document.Inbounds[0]["set_system_proxy"]; exists {
+		t.Fatal("a saved system_proxy preference must not enable the desktop proxy setter in TUN clients")
+	}
+	platform := document.Inbounds[1]["platform"].(map[string]interface{})
+	if platform["http_proxy"].(map[string]interface{})["enabled"] != true {
+		t.Fatal("TUN clients must retain their platform HTTP proxy control")
 	}
 	if _, exists := document.Inbounds[1]["dns_mode"]; exists {
 		t.Fatalf("stable sing-box config must not require the 1.14-only dns_mode field: %#v", document.Inbounds[1])
