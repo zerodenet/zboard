@@ -181,7 +181,7 @@
             <div>
               <span>订阅 #{{ subscription.id }}</span>
               <strong>{{ subscription.plan_name }}</strong>
-              <small>{{ subscription.sku_name }}</small>
+              <small :title="subscription.sku_name">{{ subscription.sku_name }}</small>
             </div>
             <UiIcon name="chevron" />
           </button>

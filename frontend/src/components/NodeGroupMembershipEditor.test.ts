@@ -61,8 +61,6 @@ describe('NodeGroupMembershipEditor', () => {
   it('adds the selected group with its loaded revision and no invented group order', async () => {
     const wrapper = mountEditor({ modelValue: [] })
     await wrapper.get('[data-lookup]').trigger('click')
-    const buttons = wrapper.findAll('button')
-    await buttons[1].trigger('click')
 
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual([{
       node_group_id: 9,
@@ -81,8 +79,7 @@ describe('NodeGroupMembershipEditor', () => {
     expect(wrapper.text()).toContain('协议服务停用时不能新增节点组关联')
 
     const buttons = wrapper.findAll('button')
-    expect(buttons[1].attributes('disabled')).toBeDefined()
-    await buttons[2].trigger('click')
+    await buttons[1].trigger('click')
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual([])
   })
 })

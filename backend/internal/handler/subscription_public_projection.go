@@ -461,7 +461,7 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(subscriptions []model
 		})
 		seenEndpoints[endpoint.ID] = struct{}{}
 	}
-	return manifestNodes, nil
+	return h.projectNetworkEntries(manifestNodes, now)
 }
 
 func (h *handlers) writeProjectedSubscription(w http.ResponseWriter, r *http.Request, manifest subscriptionManifest) {

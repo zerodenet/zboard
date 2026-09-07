@@ -103,7 +103,7 @@
                 :reference="nodeReference(record.node_id)"
                 :fallback-id="record.node_id"
                 fallback-kind="node"
-              />
+              compact />
             </td>
             <td>
               <EntityReference
@@ -111,13 +111,13 @@
                 :reference="subscriptionReference(record.subscription_id)"
                 :fallback-id="record.subscription_id"
                 fallback-kind="subscription"
-              />
+              compact />
               <span v-else>—</span>
             </td>
-            <td class="numeric-column" data-column-priority="2">{{ formatBytes(record.upload_bytes) }}</td>
-            <td class="numeric-column" data-column-priority="2">{{ formatBytes(record.download_bytes) }}</td>
+            <td class="value-cell numeric-column" data-column-priority="2">{{ formatBytes(record.upload_bytes) }}</td>
+            <td class="value-cell numeric-column" data-column-priority="2">{{ formatBytes(record.download_bytes) }}</td>
             <td class="numeric-column" data-column-priority="3">{{ formatMultiplier(record.protocol_multiplier_milli) }}</td>
-            <td class="numeric-column"><strong>{{ formatBytes(record.used_bytes) }}</strong></td>
+            <td class="value-cell numeric-column"><strong>{{ formatBytes(record.used_bytes) }}</strong></td>
           </tr>
         </tbody>
       </DataTable>

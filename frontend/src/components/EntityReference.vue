@@ -1,12 +1,14 @@
 <template>
   <div class="entity-reference" :class="{ compact, missing: resolved.missing }">
-    <strong>{{ resolved.display_name }}</strong>
-    <span v-if="meta">{{ meta }}</span>
+    <TableText v-if="compact" class="entity-name" :value="resolved.display_name" />
+    <strong v-else>{{ resolved.display_name }}</strong>
+    <TableText v-if="meta" class="entity-meta" :value="meta" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import TableText from './TableText.vue'
 import { fallbackEntityReference, type EntityKind, type EntityReference } from '../api/readModels'
 
 const props = withDefaults(defineProps<{
@@ -46,26 +48,24 @@ const meta = computed(() => {
 <style scoped>
 .entity-reference {
   min-width: 0;
+  max-width: 300px;
   display: grid;
   gap: 3px;
 }
 
 .entity-reference strong {
-  overflow: hidden;
   color: var(--text-strong);
   font-size: 11px;
   line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-.entity-reference span {
-  overflow: hidden;
+.entity-reference .entity-name { color:var(--text-strong); font-size:11px; font-weight:700; }
+.entity-reference .entity-meta {
   color: var(--muted);
   font-size: 9px;
   line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .entity-reference.compact {

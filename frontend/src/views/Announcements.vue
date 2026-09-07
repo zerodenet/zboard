@@ -6,8 +6,8 @@
     <TransientFeedback :success="success" :error="error" />
     <UiSection>
       <DataTable v-if="items.length" caption="站点公告列表" :row-count="items.length" :min-width="980">
-        <thead><tr><th>公告</th><th>级别</th><th>受众</th><th>提醒</th><th>状态</th><th>有效时间</th><th></th></tr></thead>
-        <tbody><tr v-for="item in items" :key="item.id"><td><div class="cell-title"><strong>{{ item.title }}</strong><span>{{ item.content }}</span></div></td><td><StatusBadge :tone="severityTone(item.severity)">{{ severityLabel(item.severity) }}</StatusBadge></td><td>{{ audienceLabel(item.audience) }}</td><td><StatusBadge :tone="item.popup_enabled ? 'warning' : 'neutral'">{{ item.popup_enabled ? '弹窗' : '仅中心' }}</StatusBadge></td><td><StatusBadge :tone="item.status === 'published' ? 'success' : item.status === 'archived' ? 'neutral' : 'warning'">{{ statusLabel(item.status) }}</StatusBadge></td><td><span>{{ item.starts_at ? formatDate(item.starts_at) : '立即' }}</span><br><small>{{ item.ends_at ? `至 ${formatDate(item.ends_at)}` : '长期有效' }}</small></td><td><div class="row-actions"><UiButton v-if="item.status !== 'archived'" variant="ghost" size="sm" type="button" @click="edit(item)">编辑</UiButton><UiButton v-if="item.status === 'published'" variant="ghost" size="sm" type="button" @click="archiveItem(item)">归档</UiButton><UiButton v-if="item.status !== 'published'" variant="danger" size="sm" type="button" @click="deleteItem(item)">删除</UiButton></div></td></tr></tbody>
+        <thead><tr><th class="table-primary-column">公告</th><th>级别</th><th data-column-priority="2">受众</th><th data-column-priority="3">提醒</th><th>状态</th><th data-column-priority="2">有效时间</th><th></th></tr></thead>
+        <tbody><tr v-for="item in items" :key="item.id"><td class="table-primary-column"><div class="cell-title"><strong>{{ item.title }}</strong><TableText :value="item.content" /></div></td><td><StatusBadge :tone="severityTone(item.severity)">{{ severityLabel(item.severity) }}</StatusBadge></td><td data-column-priority="2">{{ audienceLabel(item.audience) }}</td><td data-column-priority="3"><StatusBadge :tone="item.popup_enabled ? 'warning' : 'neutral'">{{ item.popup_enabled ? '弹窗' : '仅中心' }}</StatusBadge></td><td><StatusBadge :tone="item.status === 'published' ? 'success' : item.status === 'archived' ? 'neutral' : 'warning'">{{ statusLabel(item.status) }}</StatusBadge></td><td class="value-cell" data-column-priority="2"><span>{{ item.starts_at ? formatDate(item.starts_at) : '立即' }}</span><br><small>{{ item.ends_at ? `至 ${formatDate(item.ends_at)}` : '长期有效' }}</small></td><td><div class="row-actions"><UiButton v-if="item.status !== 'archived'" variant="ghost" size="sm" type="button" @click="edit(item)">编辑</UiButton><UiButton v-if="item.status === 'published'" variant="ghost" size="sm" type="button" @click="archiveItem(item)">归档</UiButton><UiButton v-if="item.status !== 'published'" variant="danger" size="sm" type="button" @click="deleteItem(item)">删除</UiButton></div></td></tr></tbody>
       </DataTable>
       <EmptyState v-else icon="info" title="还没有公告" description="创建第一条公告后，可先保存草稿再发布。" />
     </UiSection>
@@ -32,6 +32,7 @@
 </template>
 
 <script setup lang="ts">
+import TableText from '../components/TableText.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { createAnnouncement, deleteAnnouncement, fetchAdminAnnouncements, updateAnnouncement, type AdminAnnouncement, type AnnouncementWriteRequest } from '../api/client'
 import DataTable from '../components/DataTable.vue'

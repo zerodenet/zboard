@@ -74,6 +74,9 @@ func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if h.networkEntryDeletionBlocked(w, "node_id = ? OR endpoint_id IN (?)", node.ID, h.db.Model(&model.ProtocolEndpoint{}).Select("id").Where("node_id = ?", node.ID)) {
+		return
+	}
 	endpointIDs := make([]uint, 0)
 	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("node_id = ?", node.ID).Pluck("id", &endpointIDs).Error; err != nil {
 		ServerError(w, err)

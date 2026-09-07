@@ -64,10 +64,11 @@ func renderZnetSinkSubscription(data subscriptionTemplateData, customization sub
 		}
 		proxyTags = append(proxyTags, tag)
 		availableTags[tag] = struct{}{}
-		outbounds = append(outbounds, map[string]interface{}{
-			"tag":      tag,
-			"protocol": protocol,
-		})
+		outbound := map[string]interface{}{"tag": tag, "protocol": protocol}
+		if endpoint.NetworkEntryNetwork == "tcp" && endpoint.Protocol == "shadowsocks" {
+			outbound["udp"] = map[string]interface{}{"enabled": false}
+		}
+		outbounds = append(outbounds, outbound)
 	}
 
 	groupNames := subscriptionPolicyGroupNames(customization.PolicyGroups)
@@ -356,7 +357,7 @@ func renderSingBoxSubscription(data subscriptionTemplateData, customization subs
 		}
 		outbounds = append(outbounds, rendered)
 	}
-	finalTag := subscriptionModeFinalTarget(customization, groupNames)
+	finalTag := singBoxSubscriptionActionTarget(customization.Final, groupNames)
 	ruleSets := make([]map[string]interface{}, 0, len(customization.RuleSets))
 	rules := make([]map[string]interface{}, 0, len(customization.RuleSets))
 	for _, item := range customization.RuleSets {
@@ -374,6 +375,9 @@ func renderSingBoxSubscription(data subscriptionTemplateData, customization subs
 		rules = append(rules, rule)
 	}
 	document := map[string]interface{}{
+		"experimental": map[string]interface{}{
+			"clash_api": map[string]interface{}{"default_mode": customization.Mode},
+		},
 		"inbounds":  singBoxSubscriptionInbounds(customization),
 		"outbounds": outbounds,
 		"route": map[string]interface{}{
@@ -687,6 +691,9 @@ func clashProxy(endpoint subscriptionTemplateEndpoint) (map[string]interface{}, 
 	default:
 		return nil, fmt.Errorf("endpoint %d uses unsupported Clash protocol %q", endpoint.ID, endpoint.Protocol)
 	}
+	if endpoint.NetworkEntryNetwork == "tcp" && protocol == "shadowsocks" {
+		proxy["udp"] = false
+	}
 	addClashTLS(proxy, config, protocol)
 	addClashTransport(proxy, config)
 	return proxy, nil
@@ -740,6 +747,9 @@ func singBoxOutbound(endpoint subscriptionTemplateEndpoint) (map[string]interfac
 	}
 	if tls := singBoxTLS(config, protocol); len(tls) > 0 {
 		outbound["tls"] = tls
+	}
+	if endpoint.NetworkEntryNetwork == "tcp" && protocol == "shadowsocks" {
+		outbound["network"] = "tcp"
 	}
 	if transport := singBoxTransport(config); len(transport) > 0 {
 		outbound["transport"] = transport

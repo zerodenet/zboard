@@ -131,8 +131,12 @@ func (h *handlers) replaceManagedRuleContent(item model.SubscriptionRuleSet, con
 }
 
 func (h *handlers) replaceManagedRuleContentAndSource(item model.SubscriptionRuleSet, content []byte, expected *uint64, claims authClaims) error {
+	format, err := managedRuleStorageFormat(content)
+	if err != nil {
+		return err
+	}
 	previous, previousErr := h.readManagedRuleSource(item.Tag)
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err = h.db.Transaction(func(tx *gorm.DB) error {
 		var locked model.SubscriptionRuleSet
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, item.ID).Error; err != nil {
 			return err
@@ -143,10 +147,13 @@ func (h *handlers) replaceManagedRuleContentAndSource(item model.SubscriptionRul
 		if expected != nil && locked.Revision != *expected {
 			return fmt.Errorf("%w:%d", errSubscriptionRuleSetRevisionConflict, locked.Revision)
 		}
+		if err := guardManagedRuleClientUpdate(tx, locked.ID, format); err != nil {
+			return err
+		}
 		if err := h.writeManagedRuleSource(locked.Tag, content); err != nil {
 			return err
 		}
-		updates := map[string]interface{}{"revision": locked.Revision + 1}
+		updates := map[string]interface{}{"revision": locked.Revision + 1, "format": format}
 		if item.URL != locked.URL || item.Behavior != locked.Behavior {
 			updates["url"] = item.URL
 			updates["behavior"] = item.Behavior
@@ -170,6 +177,10 @@ func (h *handlers) replaceManagedRuleContentAndSource(item model.SubscriptionRul
 }
 
 func (h *handlers) writeManagedRuleMutationError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errManagedRuleClientCompatibility) {
+		BadRequestFields(w, "规则集与已有模板不兼容。", map[string]string{"content": err.Error()})
+		return
+	}
 	if errors.Is(err, errSubscriptionRuleSetRevisionConflict) {
 		current := uint64(0)
 		parts := strings.Split(err.Error(), ":")

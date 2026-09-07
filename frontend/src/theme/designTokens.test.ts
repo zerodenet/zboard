@@ -64,7 +64,11 @@ describe('design token ownership', () => {
     expect(mobileWorkbenchRule).toContain('flex:0 0 auto')
     expect(mobileWorkbenchRule).toContain('width:100%')
     expect(mobileWorkbenchRule).toContain('align-content:flex-start')
-    expect(baseStyles).toContain(".data-table{width:max-content;min-width:100%!important}")
+    // Auxiliary columns can collapse; primary identity columns remain visible.
+    expect(baseStyles).toContain(".data-table:not([data-show-secondary='true']) [data-column-priority='3']{display:none}")
+    expect(baseStyles).toContain(".data-table:not([data-show-secondary='true']) [data-column-priority='2']{display:none}")
+    expect(baseStyles).not.toContain(".data-table [data-column-priority='1']{display:none}")
+    expect(baseStyles).not.toContain('min-width:100%!important')
     expect(baseStyles).toContain('.detail-drawer { min-width:0; min-height:0; height:100%;')
     expect(baseStyles).toContain('overflow:hidden; background:var(--surface); box-shadow:-18px 0 48px var(--drawer-shadow); }')
   })

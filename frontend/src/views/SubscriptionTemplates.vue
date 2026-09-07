@@ -22,8 +22,8 @@
       <DataTable v-if="templates.length" caption="订阅模板列表；状态使用图标标签，排序直接显示数字，更新时间经过格式化并保留精确时间提示" :row-count="total" :min-width="980" table-class="template-table">
           <thead><tr><th class="table-primary-column">模板</th><th data-column-priority="2">链接参数</th><th data-column-priority="3">输出格式</th><th>状态</th><th class="numeric-column" data-column-priority="3">排序</th><th data-column-priority="2">更新时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
           <tbody><tr v-for="item in templates" :key="item.id">
-            <td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><span>{{ item.description || '暂无说明' }}</span></div></td>
-            <td data-column-priority="2"><code>?template={{ item.slug }}</code></td>
+            <td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><TableText :value="item.description || '暂无说明'" /></div></td>
+            <td data-column-priority="2"><TableText class="mono" :value="`?template=${item.slug}`" /></td>
             <td data-column-priority="3"><StatusBadge :tone="item.renderer === 'unsupported' ? 'warning' : 'info'" icon="audit" :title="item.content_type || undefined">{{ rendererLabel(item.renderer) }}</StatusBadge></td>
             <td><StatusBadge :tone="item.is_active ? 'success' : 'neutral'" :icon="item.is_active ? 'check' : 'minus'">{{ item.is_active ? '用户可选' : '已停用' }}</StatusBadge></td>
             <td class="numeric-column" data-column-priority="3">{{ item.sort_order }}</td>
@@ -115,6 +115,7 @@
 </template>
 
 <script setup lang="ts">
+import TableText from '../components/TableText.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { createSubscriptionTemplate, deleteSubscriptionTemplate, fetchSubscriptionTemplate, fetchSubscriptionTemplatesPage, previewSubscriptionTemplate, updateSubscriptionTemplate, type SubscriptionRenderer, type SubscriptionTemplate, type SubscriptionTemplateCustomization, type SubscriptionTemplatePreview } from '../api/client'

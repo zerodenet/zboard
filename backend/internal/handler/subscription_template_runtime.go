@@ -255,17 +255,6 @@ func zeroSubscriptionMode(customization subscriptionTemplateCustomization, group
 	}
 }
 
-func subscriptionModeFinalTarget(customization subscriptionTemplateCustomization, groupNames map[string]string) string {
-	switch customization.Mode {
-	case subscriptionModeGlobal:
-		return groupNames[customization.MainGroup]
-	case subscriptionModeDirect:
-		return "direct"
-	default:
-		return singBoxSubscriptionActionTarget(customization.Final, groupNames)
-	}
-}
-
 func zeroSubscriptionRuntime(customization subscriptionTemplateCustomization) map[string]interface{} {
 	runtime := map[string]interface{}{}
 	if customization.DNS.Enabled {
@@ -377,6 +366,15 @@ func singBoxSubscriptionInbounds(customization subscriptionTemplateCustomization
 			"mtu": customization.Tun.MTU, "auto_route": customization.Tun.AutoRoute,
 			"strict_route": customization.Tun.StrictRoute, "stack": "mixed",
 		}
+		// GUI clients expose the HTTP proxy switch only when a platform proxy
+		// is configured. Its on/off state is then owned by the client.
+		if customization.MixedEnabled {
+			tun["platform"] = map[string]interface{}{
+				"http_proxy": map[string]interface{}{
+					"enabled": true, "server": "127.0.0.1", "server_port": customization.MixedPort,
+				},
+			}
+		}
 		inbounds = append(inbounds, tun)
 	}
 	return inbounds
@@ -441,15 +439,29 @@ func clashSubscriptionTun(tun subscriptionTunCustomization) map[string]interface
 }
 
 func singBoxRuntimeRouteRules(customization subscriptionTemplateCustomization, rules []map[string]interface{}) []map[string]interface{} {
-	result := make([]map[string]interface{}, 0, len(rules)+2)
+	result := make([]map[string]interface{}, 0, len(rules)+5)
 	if customization.Tun.Enabled {
 		result = append(result, map[string]interface{}{"action": "sniff"})
 		if customization.Tun.DNSHijack {
 			result = append(result, map[string]interface{}{"protocol": "dns", "action": "hijack-dns"})
 		}
 	}
-	if customization.Mode == subscriptionModeRule {
-		result = append(result, rules...)
+	groupNames := subscriptionPolicyGroupNames(customization.PolicyGroups)
+	globalTarget := groupNames[customization.MainGroup]
+	if len(customization.PolicyGroups) == 0 {
+		// An empty public projection intentionally contains only direct outbounds.
+		globalTarget = "direct"
 	}
+	result = append(result,
+		map[string]interface{}{"clash_mode": subscriptionModeDirect, "action": "route", "outbound": "direct"},
+		map[string]interface{}{"clash_mode": subscriptionModeGlobal, "action": "route", "outbound": globalTarget},
+	)
+	result = append(result, rules...)
+	// Keep rule mode discoverable even when the initial mode is direct/global
+	// and there are no rule sets. The fallback must follow all user rules.
+	result = append(result, map[string]interface{}{
+		"clash_mode": subscriptionModeRule, "action": "route",
+		"outbound": singBoxSubscriptionActionTarget(customization.Final, groupNames),
+	})
 	return result
 }

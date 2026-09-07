@@ -21,6 +21,21 @@ export function formatBytes(bytes: number | undefined | null): string {
   return `${normalized.toFixed(byteFractionDigits(normalized))} ${units[index]}`
 }
 
+// Dense usage lists can round; quota balances retain formatBytes' extra precision.
+export function formatCompactBytes(bytes: number | undefined | null): string {
+  if (bytes == null || !Number.isFinite(Number(bytes))) return '—'
+  const value = Number(bytes)
+  if (value === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+  let index = Math.max(0, Math.min(Math.floor(Math.log(Math.abs(value)) / Math.log(1024)), units.length - 1))
+  let normalized = Number((value / 1024 ** index).toFixed(2))
+  if (Math.abs(normalized) >= 1024 && index < units.length - 1) {
+    index += 1
+    normalized = Number((value / 1024 ** index).toFixed(2))
+  }
+  return `${normalized} ${units[index]}`
+}
+
 export function formatSignedBytes(bytes: number | undefined | null): string {
   if (bytes === null || bytes === undefined || !Number.isFinite(Number(bytes))) return '—'
   const value = Number(bytes)

@@ -394,7 +394,6 @@
   gap: 3px;
 }
 
-.commerce-target-grid strong,
 .commerce-target-grid small {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -402,6 +401,8 @@
 }
 
 .commerce-target-grid strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
   font-size: 13px;
 }
 

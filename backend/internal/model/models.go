@@ -719,7 +719,7 @@ type AnnouncementRead struct {
 
 type ProtocolDeployment struct {
 	ID                  uint       `json:"id" gorm:"primaryKey"`
-	ProtocolEndpointID  uint       `json:"protocol_endpoint_id" gorm:"index;not null"`
+	ProtocolEndpointID  uint       `json:"protocol_endpoint_id" gorm:"index;default:null"`
 	NodeID              uint       `json:"node_id" gorm:"index;not null"`
 	ConfigRevision      uint64     `json:"config_revision" gorm:"not null"`
 	DesiredConfigSHA256 string     `json:"desired_config_sha256" gorm:"size:64"`

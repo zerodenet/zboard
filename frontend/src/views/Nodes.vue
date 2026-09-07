@@ -35,8 +35,8 @@
           <tbody>
             <tr v-for="node in nodes" :key="node.id" :class="{ selected: selectedNode?.id === node.id, 'batch-selected': isNodeSelected(node.id) }">
               <td class="selection-column"><UiCheckbox :model-value="isNodeSelected(node.id)" :disabled="selectionAllMatching" :aria-label="`选择节点 ${node.name}`" @update:model-value="toggleNodeSelection(node.id, $event)" /></td>
-              <td class="table-primary-column"><div class="cell-title"><strong>{{ node.name }}</strong><span class="mono">{{ node.address || '未设置地址' }}</span></div></td>
-              <td data-column-priority="3">{{ node.region || '—' }}</td>
+              <td class="table-primary-column"><div class="cell-title"><strong>{{ node.name }}</strong><EndpointAddress v-if="node.address" :address="node.address" /><span v-else>未设置地址</span></div></td>
+              <td data-column-priority="3"><TableText :value="node.region" /></td>
               <td data-column-priority="2"><StatusBadge :tone="lifecycleTone(node)" :icon="node.lifecycle_status === 'maintenance' ? 'settings' : undefined">{{ lifecycleLabel(node.lifecycle_status) }}</StatusBadge></td>
               <td><StatusBadge :tone="node.connector_online ? 'success' : node.connector_last_seen_at ? 'warning' : 'neutral'" :icon="node.connector_online ? 'wifi' : node.connector_last_seen_at ? 'alert' : 'minus'">{{ node.connector_online ? '在线' : node.connector_last_seen_at ? '离线' : '未连接' }}</StatusBadge></td>
               <td data-column-priority="3"><StatusBadge :tone="node.ssh_verified_at ? 'success' : node.ssh_configured ? 'warning' : 'neutral'" icon="key">{{ node.ssh_verified_at ? '已验证' : node.ssh_configured ? '待验证' : '未配置' }}</StatusBadge></td>
@@ -171,7 +171,7 @@
                   <div class="cell-title"><strong>{{ endpoint.name }}</strong><span>{{ endpoint.protocol }} · #{{ endpoint.id }}</span></div>
                 </td>
                 <td><StatusBadge :tone="endpoint.is_active ? 'success' : 'neutral'" :icon="endpoint.is_active ? 'check' : 'minus'">{{ endpoint.is_active ? '运行中' : '已停用' }}</StatusBadge></td>
-                <td class="mono" data-column-priority="2">{{ endpoint.address }}:{{ endpoint.public_port || endpoint.port }}</td>
+                <td data-column-priority="2"><EndpointAddress :address="endpoint.address" :port="endpoint.public_port || endpoint.port" /></td>
                 <td><MultiplierInput v-model="multiplierDrafts[endpoint.id]" :aria-label="`${endpoint.name} 的计费倍率`" /></td>
                 <td class="table-action-column">
                   <UiButton variant="secondary" size="sm" type="button" :loading="savingMultiplierID === endpoint.id" @click="saveMultiplier(endpoint)">保存倍率</UiButton>
@@ -259,11 +259,13 @@
 </template>
 
 <script setup lang="ts">
+import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createNode, createNodeBatchOperation, deleteNode, detectNodeKernel, fetchAdminTask, fetchNode, fetchNodeKernel, fetchNodeLoad, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type NodeLoadSnapshot, type ZeroReleaseOption } from '../api/client'
 import { enableNodeBBR, fetchNodeSystemActions, type NodeBBRState } from '../api/nodeSystemActions'
 import DataWorkbench from '../components/DataWorkbench.vue'
+import EndpointAddress from '../components/EndpointAddress.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
 import MultiplierInput from '../components/MultiplierInput.vue'

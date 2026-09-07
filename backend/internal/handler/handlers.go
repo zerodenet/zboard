@@ -404,18 +404,20 @@ type protocolEndpointSelectionSnapshot struct {
 }
 
 type subscriptionManifestNode struct {
-	ID              uint            `json:"id"`
-	NodeID          uint            `json:"node_id"`
-	SubscriptionID  uint            `json:"subscription_id,omitempty"`
-	CredentialID    string          `json:"credential_id,omitempty"`
-	Name            string          `json:"name"`
-	Region          string          `json:"region"`
-	Address         string          `json:"address"`
-	Port            int             `json:"port"`
-	PublicPort      int             `json:"public_port"`
-	Protocol        string          `json:"protocol"`
-	MultiplierMilli int64           `json:"multiplier_milli"`
-	Config          json.RawMessage `json:"config"`
+	NetworkEntryID      uint            `json:"network_entry_id,omitempty"`
+	NetworkEntryNetwork string          `json:"network_entry_network,omitempty"`
+	ID                  uint            `json:"id"`
+	NodeID              uint            `json:"node_id"`
+	SubscriptionID      uint            `json:"subscription_id,omitempty"`
+	CredentialID        string          `json:"credential_id,omitempty"`
+	Name                string          `json:"name"`
+	Region              string          `json:"region"`
+	Address             string          `json:"address"`
+	Port                int             `json:"port"`
+	PublicPort          int             `json:"public_port"`
+	Protocol            string          `json:"protocol"`
+	MultiplierMilli     int64           `json:"multiplier_milli"`
+	Config              json.RawMessage `json:"config"`
 }
 
 type adminUserCreateReq struct {
@@ -2439,6 +2441,9 @@ func (h *handlers) ProtocolEndpointDeleteHandler(w http.ResponseWriter, r *http.
 		ServerError(w, err)
 		return
 	}
+	if h.networkEntryDeletionBlocked(w, "endpoint_id = ?", endpoint.ID) {
+		return
+	}
 	var activePlanCount int64
 	if err := h.db.Table("node_group_endpoints").
 		Joins("JOIN plans ON plans.node_group_id = node_group_endpoints.node_group_id").
@@ -2652,6 +2657,32 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 	}
+	if endpointID != 0 {
+		var invalidEntries int64
+		query := h.db.Model(&model.NetworkEntry{}).Where("endpoint_id = ?", endpointID)
+		if protocol == "hysteria2" {
+			query = query.Where("node_id = ? OR network = ?", node.ID, "tcp")
+		} else {
+			query = query.Where("node_id = ?", node.ID)
+		}
+		if err := query.Count(&invalidEntries).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		if invalidEntries > 0 {
+			BadRequestFields(w, "协议服务变更与网络前置冲突。", map[string]string{"node_id": "请先调整前置入口：入口和落地必须是不同节点，Hysteria2 必须使用 TCP/UDP 转发。"})
+			return
+		}
+	}
+	var entryPortCount int64
+	if err := h.db.Model(&model.NetworkEntry{}).Where("node_id = ? AND port = ?", node.ID, req.Port).Count(&entryPortCount).Error; err != nil {
+		ServerError(w, err)
+		return
+	}
+	if entryPortCount > 0 {
+		BadRequestFields(w, "协议服务校验失败。", map[string]string{"port": "该端口已被网络前置入口占用。"})
+		return
+	}
 	if req.Config, req.ClientConfig, err = normalizeManagedProtocolTemplates(protocol, req.Config, req.ClientConfig); err != nil {
 		BadRequestError(w, err)
 		return
@@ -2845,7 +2876,7 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 			BadRequestError(w, err)
 			return
 		}
-		BadRequest(w, err.Error())
+		ServerError(w, err)
 		return
 	}
 	if membershipMutation != nil {
@@ -5903,6 +5934,12 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 			MultiplierMilli: endpoint.MultiplierMilli, Config: clientConfig,
 		})
 	}
+	projectedNodes, projectionErr := h.projectNetworkEntries(manifestNodes, now)
+	if projectionErr != nil {
+		ServerError(w, projectionErr)
+		return
+	}
+	manifestNodes = projectedNodes
 	if err := h.sortSubscriptionManifestNodes(subscriptions, manifestNodes); err != nil {
 		ServerError(w, fmt.Errorf("resolve subscription delivery order: %w", err))
 		return

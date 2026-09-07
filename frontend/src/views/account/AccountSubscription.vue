@@ -43,9 +43,9 @@
             <td class="table-primary-column"><strong class="mono">#{{ sub.id }}</strong></td>
             <td><StatusBadge :tone="subTone(sub.status)">{{ subLabel(sub.status) }}</StatusBadge></td>
             <td data-column-priority="2">
-              <div class="cell-title">
-                <strong>{{ sub.plan_name || `套餐 #${sub.plan_id}` }}</strong>
-                <span>{{ sub.sku_name || `SKU #${sub.plan_sku_id}` }}</span>
+              <div class="cell-title cell-related">
+                <TableText :value="sub.plan_name || `套餐 #${sub.plan_id}`" />
+                <TableText :value="sub.sku_name || `SKU #${sub.plan_sku_id}`" />
               </div>
             </td>
             <td>
@@ -96,7 +96,7 @@
         <p v-if="protocolLoadResource.loading.value" role="status">正在读取协议实时负载…</p>
         <DataTable v-if="protocolLoads.items.length" caption="可用协议实时负载" :row-count="protocolLoads.items.length" :min-width="720">
           <thead><tr><th class="table-primary-column">使用位置</th><th>协议</th><th class="numeric-column">活跃用户</th><th class="numeric-column">活跃连接</th><th data-column-priority="2">最近活动</th></tr></thead>
-          <tbody><tr v-for="item in protocolLoads.items" :key="item.protocol_endpoint_id"><td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><span>{{ item.region || '未设置区域' }}</span></div></td><td><StatusBadge :tone="item.active_flows ? 'success' : 'neutral'" icon="activity">{{ item.protocol.toUpperCase() }}</StatusBadge></td><td class="numeric-column">{{ item.active_users }}</td><td class="numeric-column">{{ item.active_flows }}</td><td data-column-priority="2"><TimeBadge :value="item.last_activity_at" /></td></tr></tbody>
+          <tbody><tr v-for="item in protocolLoads.items" :key="item.protocol_endpoint_id"><td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><TableText :value="item.region || '未设置区域'" /></div></td><td><StatusBadge :tone="item.active_flows ? 'success' : 'neutral'" icon="activity">{{ item.protocol.toUpperCase() }}</StatusBadge></td><td class="numeric-column">{{ item.active_users }}</td><td class="numeric-column">{{ item.active_flows }}</td><td data-column-priority="2"><TimeBadge :value="item.last_activity_at" /></td></tr></tbody>
         </DataTable>
         <EmptyState v-else-if="protocolLoadResource.loaded.value && !protocolLoadResource.error.value && !protocolLoadResource.loading.value" icon="activity" title="暂无可用协议" description="拥有有效套餐且节点在线后，会在这里显示对应协议的实时使用人数和连接数。" />
       </div>
@@ -204,6 +204,7 @@
 </template>
 
 <script setup lang="ts">
+import TableText from '../../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {

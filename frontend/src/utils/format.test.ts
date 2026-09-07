@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { daysRemaining, formatBytes, formatCompactDateTime, formatCurrency, formatDateTime, formatExactDateTime, formatNumber, formatRelativeTime, formatSignedBytes, formatUnknownValue, isPerpetualDate } from './format'
+import { daysRemaining, formatBytes, formatCompactBytes, formatCompactDateTime, formatCurrency, formatDateTime, formatExactDateTime, formatNumber, formatRelativeTime, formatSignedBytes, formatUnknownValue, isPerpetualDate } from './format'
 import { setDisplayTimeZone } from './timeZone'
 
 afterEach(() => setDisplayTimeZone('UTC'))
@@ -16,6 +16,17 @@ describe('formatters', () => {
     expect(formatNumber(null)).toBe('—')
     expect(formatCurrency(0)).toContain('0.00')
     expect(formatCurrency(undefined)).toBe('—')
+  })
+
+  it('uses concise usage values without affecting precise quota formatting', () => {
+    expect(formatCompactBytes(620.0003 * 1024 ** 2)).toBe('620 MB')
+    expect(formatCompactBytes(25.89 * 1024)).toBe('25.89 KB')
+    expect(formatCompactBytes(1024 ** 2 - 1)).toBe('1 MB')
+    expect(formatCompactBytes(-1024)).toBe('-1 KB')
+    expect(formatCompactBytes(0)).toBe('0 B')
+    expect(formatCompactBytes(0.5)).toBe('0.5 B')
+    expect(formatCompactBytes(null)).toBe('—')
+    expect(formatCompactBytes(Infinity)).toBe('—')
   })
 
   it('does not round remaining quota back to the full allowance', () => {

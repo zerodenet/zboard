@@ -1,43 +1,47 @@
 <template>
   <section class="standard-page">
     <PageHeader title="外部供应商" description="集中管理外部账户、加密凭据和供应商能力；DNS、证书与未来支付渠道仍保留各自独立的业务资源。" eyebrow="Infrastructure">
-      <template #actions><PageRefreshButton label="刷新" :loading="loading || refreshing" @click="refreshAll" /><UiButton type="button" @click="accountOpen = true"><UiIcon name="plus" />添加供应商账户</UiButton></template>
+      <template #actions><PageRefreshButton label="刷新" :loading="loading || refreshing" @click="refreshAll" /><UiButton type="button" @click="openAccount()"><UiIcon name="plus" />添加供应商账户</UiButton></template>
     </PageHeader>
     <TransientFeedback :success="message" :error="error" success-title="操作已提交" error-title="操作失败" />
 
     <section class="provider-section panel">
-      <div class="section-heading"><div><h2>供应商账户</h2><p>凭据只在创建时提交，保存后仅显示脱敏标识。</p></div></div>
+      <div class="section-heading"><div><h2>供应商账户</h2><p>支持修改账户名称和更换 Token；保存后仅显示脱敏标识。</p></div></div>
       <DataTable v-if="accounts.length" caption="外部供应商账户" :row-count="accounts.length" :min-width="760">
-        <thead><tr><th>账户</th><th>供应商</th><th>能力</th><th>状态</th><th>引用</th><th>最近验证</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
+        <thead><tr><th class="table-primary-column">账户</th><th data-column-priority="2">供应商</th><th data-column-priority="3">能力</th><th>状态</th><th data-column-priority="2">引用</th><th data-column-priority="2">最近验证</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
         <tbody><tr v-for="account in accounts" :key="account.id">
-          <td><div class="cell-title"><strong>{{ account.name }}</strong><span>{{ account.credential_prefix }}</span></div></td>
-          <td>{{ providerLabel(account.provider_key) }}</td>
-          <td><div class="capabilities"><StatusBadge v-for="capability in account.capabilities" :key="capability" tone="neutral">{{ capability }}</StatusBadge></div></td>
-          <td><StatusBadge :tone="account.status === 'active' ? 'success' : account.status === 'invalid' ? 'danger' : 'warning'">{{ account.status === 'active' ? '有效' : account.status === 'invalid' ? '验证失败' : '待验证' }}</StatusBadge><small v-if="account.last_error" class="row-error">{{ account.last_error }}</small></td>
-          <td>{{ account.usage_count }}</td>
-          <td><TimeBadge v-if="account.last_verified_at" :value="account.last_verified_at" mode="relative" /><span v-else class="muted-value">尚未验证</span></td>
-          <td class="table-action-column"><RowActions :label="`${account.name} 的操作`" :trigger-key="`provider-${account.id}`"><UiButton size="sm" variant="secondary" :loading="operatingAccount === account.id" @click="verifyAccount(account)">重新验证</UiButton><UiButton size="sm" variant="danger" :disabled="account.usage_count > 0 || operatingAccount === account.id" @click="removeAccount(account)">删除</UiButton></RowActions></td>
+          <td class="table-primary-column"><div class="cell-title"><strong>{{ account.name }}</strong><TableText :value="account.credential_prefix" /></div></td>
+          <td data-column-priority="2">{{ providerLabel(account.provider_key) }}</td>
+          <td data-column-priority="3"><div class="capabilities"><StatusBadge v-for="capability in account.capabilities" :key="capability" tone="neutral">{{ capability }}</StatusBadge></div></td>
+          <td><StatusBadge :tone="account.status === 'active' ? 'success' : account.status === 'invalid' ? 'danger' : 'warning'">{{ account.status === 'active' ? '有效' : account.status === 'invalid' ? '验证失败' : '待验证' }}</StatusBadge><small v-if="account.last_error" class="row-error" :title="account.last_error">{{ account.last_error }}</small></td>
+          <td data-column-priority="2">{{ account.usage_count }}<small v-if="account.usage_count > 0" class="usage-help">删除前请清理 <RouterLink to="/admin/dns-records">DNS 解析</RouterLink> 和 <RouterLink to="/admin/certificates">证书</RouterLink> 中的引用。</small></td>
+          <td data-column-priority="2"><TimeBadge v-if="account.last_verified_at" :value="account.last_verified_at" mode="relative" /><span v-else class="muted-value">尚未验证</span></td>
+          <td class="table-action-column"><RowActions :label="`${account.name} 的操作`" :trigger-key="`provider-${account.id}`"><UiButton size="sm" variant="ghost" :disabled="operatingAccount === account.id" @click="openAccount(account)">编辑</UiButton><UiButton size="sm" variant="secondary" :loading="operatingAccount === account.id" @click="verifyAccount(account)">重新验证</UiButton><UiButton size="sm" variant="danger" :disabled="account.usage_count > 0 || operatingAccount === account.id" :title="account.usage_count > 0 ? `仍有 ${account.usage_count} 项 DNS 或证书引用，请先清理引用。` : '删除面板保存的供应商凭据'" @click="removeAccount(account)">删除</UiButton></RowActions></td>
         </tr></tbody>
       </DataTable>
       <EmptyState v-else class="provider-empty-state" icon="settings" title="还没有供应商账户" description="先添加 Cloudflare API Token，随后即可在面板管理 DNS 解析。" />
     </section>
 
-    <ModalDialog :open="accountOpen" title="添加供应商账户" description="第一阶段支持 Cloudflare；Token 加密保存且不会再次回显。" :busy="savingAccount" @close="accountOpen = false">
+    <ModalDialog :open="accountOpen" :title="editingAccount ? '编辑供应商账户' : '添加供应商账户'" description="Token 加密保存且不会再次回显；编辑时留空可保留原凭据。" :busy="savingAccount" @close="accountOpen = false">
       <div class="modal-form">
-        <FormField label="供应商"><UiSelect v-model="accountForm.provider_key" :options="providerOptions" /></FormField>
-        <FormField label="账户名称" required><UiInput v-model.trim="accountForm.name" maxlength="80" placeholder="例如：生产 Cloudflare" /></FormField>
-        <FormField label="Cloudflare API Token" hint="建议仅授予 Zone 读取和 DNS 编辑权限。" required full><UiInput v-model.trim="accountForm.api_token" type="password" autocomplete="new-password" /></FormField>
+        <p v-if="accountErrors.formError.value" class="account-form-error" role="alert">{{ accountErrors.formError.value }}</p>
+        <FormField label="供应商"><UiSelect v-model="accountForm.provider_key" :options="providerOptions" :disabled="Boolean(editingAccount)" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="账户名称" :error="accountErrors.fields.name" required><UiInput v-bind="controlAttrs" v-model.trim="accountForm.name" maxlength="80" placeholder="例如：生产 Cloudflare" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="Cloudflare API Token" :hint="editingAccount ? '留空保留原 Token；更换时先验证，新 Token 无效不会覆盖原凭据。' : '建议仅授予 Zone 读取和 DNS 编辑权限。'" :error="accountErrors.fields.api_token" :required="!editingAccount" full><UiInput v-bind="controlAttrs" v-model.trim="accountForm.api_token" type="password" autocomplete="new-password" /></FormField>
       </div>
-      <template #footer><UiButton variant="secondary" @click="accountOpen = false">取消</UiButton><UiButton type="button" :loading="savingAccount" @click="createAccount">保存并验证</UiButton></template>
+      <template #footer><UiButton variant="secondary" @click="accountOpen = false">取消</UiButton><UiButton type="button" :loading="savingAccount" @click="saveAccount">{{ editingAccount && !accountForm.api_token ? '保存修改' : '保存并验证' }}</UiButton></template>
     </ModalDialog>
 
   </section>
 </template>
 
 <script setup lang="ts">
+import TableText from '../components/TableText.vue'
 import { onMounted, reactive, ref } from 'vue'
+import { RouterLink } from 'vue-router'
+import { useFormErrors } from '../composables/useFormState'
 import { confirmAction } from '../utils/feedback'
-import { createProviderAccount, deleteProviderAccount, fetchProviderAccounts, fetchProviderDefinitions, verifyProviderAccount, type ProviderAccount, type ProviderDefinition } from '../api/client'
+import { updateProviderAccount, createProviderAccount, deleteProviderAccount, fetchProviderAccounts, fetchProviderDefinitions, verifyProviderAccount, type ProviderAccount, type ProviderDefinition } from '../api/client'
 import DataTable from '../components/DataTable.vue'
 import EmptyState from '../components/EmptyState.vue'
 import FormField from '../components/FormField.vue'
@@ -60,6 +64,8 @@ const refreshing = ref(false)
 const error = ref('')
 const message = ref('')
 const accountOpen = ref(false)
+const editingAccount = ref<ProviderAccount | null>(null)
+const accountErrors = useFormErrors()
 const savingAccount = ref(false)
 const operatingAccount = ref(0)
 const accountForm = reactive({ provider_key: 'cloudflare', name: '', api_token: '' })
@@ -75,11 +81,25 @@ async function refreshAll() {
     accounts.value = providerAccounts
   } catch (cause: any) { error.value = cause?.response?.data?.message || '供应商数据加载失败。' } finally { loading.value = false; refreshing.value = false }
 }
-async function createAccount() {
-  savingAccount.value = true; error.value = ''; message.value = ''
+function openAccount(account?: ProviderAccount) {
+  editingAccount.value = account || null
+  Object.assign(accountForm, { provider_key: account?.provider_key || 'cloudflare', name: account?.name || '', api_token: '' })
+  accountErrors.clear()
+  accountOpen.value = true
+}
+async function saveAccount() {
+  savingAccount.value = true; error.value = ''; message.value = ''; accountErrors.clear()
   try {
-    const created = await createProviderAccount(accountForm); accountOpen.value = false; Object.assign(accountForm, { provider_key: 'cloudflare', name: '', api_token: '' }); message.value = created.status === 'active' ? '供应商账户已保存并验证。' : '供应商账户已保存，但 Cloudflare 验证失败；请检查 Token 权限后重新验证。'; await refreshAll()
-  } catch (cause: any) { error.value = cause?.response?.data?.message || '供应商账户创建失败。' } finally { savingAccount.value = false }
+    const saved = editingAccount.value
+      ? await updateProviderAccount(editingAccount.value.id, { name: accountForm.name, api_token: accountForm.api_token || undefined, expected_revision: editingAccount.value.revision })
+      : await createProviderAccount({ ...accountForm })
+    accountOpen.value = false
+    accountForm.api_token = ''
+    message.value = saved.status === 'active' ? '供应商账户已保存。' : '供应商账户已保存，但验证未通过；请编辑账户更换有效 Token 后重试。'
+    await refreshAll()
+  } catch (cause: any) {
+    await accountErrors.applyApiError(cause, '供应商账户保存失败，请稍后重试。')
+  } finally { savingAccount.value = false }
 }
 async function verifyAccount(account: ProviderAccount) {
   operatingAccount.value = account.id; error.value = ''
@@ -105,8 +125,10 @@ onMounted(async () => {
 .section-heading h2 { margin: 0; font-size: 16px; }.section-heading p { margin: 4px 0 0; color: var(--muted); }
 .provider-empty-state { min-height: 150px; padding: 24px; }
 .capabilities { display: flex; flex-wrap: wrap; gap: 6px; }
+.usage-help { display: block; max-width: 220px; margin-top: 4px; color: var(--muted); }
+.account-form-error { grid-column: 1 / -1; color: var(--danger); margin: 0; overflow-wrap: anywhere; }
 .row-error { display: block; max-width: 260px; margin-top: 4px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .muted-value { color: var(--muted); }
-.modal-form { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 20px; }.modal-form > :deep(.field-full) { grid-column: 1 / -1; }
+.modal-form { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 20px; }.modal-form > :deep(.form-field-full) { grid-column: 1 / -1; }
 @media (max-width: 720px) { .modal-form { grid-template-columns: 1fr; }.modal-form > * { grid-column: 1; }.section-heading { align-items: stretch; flex-direction: column; } }
 </style>

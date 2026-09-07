@@ -73,7 +73,7 @@
               </td>
               <td><strong class="mono">#{{ sub.id }}</strong></td>
               <td data-column-priority="2">
-                <div class="cell-title"><strong>{{ sub.plan_name || `套餐 #${sub.plan_id}` }}</strong><span>{{ sub.sku_name || `SKU #${sub.plan_sku_id}` }}</span></div>
+                <div class="cell-title cell-related"><TableText :value="sub.plan_name || `套餐 #${sub.plan_id}`" /><TableText :value="sub.sku_name || `SKU #${sub.plan_sku_id}`" /></div>
               </td>
               <td><StatusBadge :tone="subscriptionStatusTone(sub.status)">{{ subscriptionStatusLabel(sub.status) }}</StatusBadge></td>
               <td data-column-priority="2"><TimeBadge :value="sub.end_at" /></td>
@@ -231,7 +231,7 @@
               <td><StatusBadge tone="neutral">{{ eventTypeLabel(event.event_type) }}</StatusBadge></td>
               <td>{{ riskLabel(event.state_before) }} → {{ riskLabel(event.state_after) }}</td>
               <td class="numeric-column">{{ signed(event.score_after - event.score_before) }}</td>
-              <td data-column-priority="2" class="reason-cell">{{ event.reason || '—' }}</td>
+              <td data-column-priority="2" class="reason-cell"><TableText :value="event.reason || '—'" /></td>
             </tr>
           </tbody>
         </DataTable>
@@ -242,6 +242,7 @@
 </template>
 
 <script setup lang="ts">
+import TableText from '../components/TableText.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchAdminSubscriptionDetail, fetchSubscriptionsPage, type AdminSubscriptionListItem } from '../api/client'

@@ -77,7 +77,7 @@ describe('infrastructure control policy', () => {
   it('preserves table-cell geometry for protocol node-group headings', () => {
     const protocols = read('views', 'Protocols.vue')
 
-    expect(protocols).toContain('class="protocol-group-row"><td colspan="13"><div class="protocol-group-content">')
+    expect(protocols).toContain('class="protocol-group-row"><td :colspan="visibleProtocolColumnCount"><div class="protocol-group-content">')
     expect(protocols).toContain('.protocol-group-content{display:flex')
     expect(protocols).not.toContain('.protocol-group-row td{display:flex')
   })

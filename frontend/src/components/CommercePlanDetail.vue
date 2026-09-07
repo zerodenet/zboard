@@ -69,7 +69,7 @@
               <span class="storefront-sku-grid__check"><UiIcon name="check" /></span>
               <div>
                 <strong>{{ sku.name }}</strong>
-                <small>{{ billingLabel(sku) }}</small>
+                <small :title="billingLabel(sku)">{{ billingLabel(sku) }}</small>
               </div>
               <b>{{ formatCurrency(sku.price_cents, sku.currency) }}</b>
               <p v-if="mode === 'addon' && sku.grant_traffic_bytes > 0">

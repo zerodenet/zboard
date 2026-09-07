@@ -991,6 +991,10 @@ export async function deleteProviderAccount(id: number): Promise<{ id: number; d
 	return unwrap(await api.delete(`/admin/provider-accounts/${id}`))
 }
 
+export async function updateProviderAccount(id: number, payload: { name: string; api_token?: string; expected_revision: number }): Promise<ProviderAccount> {
+	return unwrap(await api.put(`/admin/provider-accounts/${id}`, payload))
+}
+
 export async function verifyProviderAccount(id: number): Promise<ProviderAccount> {
 	return unwrap(await api.post(`/admin/provider-accounts/${id}/verify`))
 }
@@ -2307,3 +2311,14 @@ export async function startDatabaseMigration(payload: { target_driver: 'mysql' |
 	const response = await api.post('/admin/database-migrations', payload)
 	return unwrap(response)
 }
+
+export interface NetworkEntry {
+  id: number; name: string; node_id: number; node_name: string; landing_node_id: number; endpoint_id: number; endpoint_name: string
+  address: string; port: number; public_port: number; enabled: boolean; has_path: boolean; revision: number
+  pending: boolean; last_error: string; network: 'tcp' | 'tcp_udp'
+}
+export async function fetchNetworkEntries(): Promise<NetworkEntry[]> { return unwrap(await api.get('/admin/network-entries')) || [] }
+export async function saveNetworkEntry(id: number, data: Record<string, unknown>): Promise<NetworkEntry> {
+  return unwrap(id ? await api.put(`/admin/network-entries/${id}`, data) : await api.post('/admin/network-entries', data))
+}
+export async function deleteNetworkEntry(id: number) { return unwrap(await api.delete(`/admin/network-entries/${id}`)) }

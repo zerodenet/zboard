@@ -18,6 +18,7 @@ import (
 
 const (
 	managedRuleSetRenderer          = "managed"
+	managedRuleSourceAuto           = "auto"
 	managedRuleSourceZeroRuleIR     = "zero_rule_ir"
 	managedRuleSourceDomainList     = "domain_list"
 	managedRuleSourceCIDRList       = "cidr_list"
@@ -33,6 +34,9 @@ const (
 )
 
 const (
+	managedRuleTypeProcessName   = "process_name"
+	managedRuleTypeProcessPath   = "process_path"
+	managedRuleSetFormatClient   = "managed_client_rules"
 	managedRuleTypeDomainExact   = "domain_exact"
 	managedRuleTypeDomainSuffix  = "domain_suffix"
 	managedRuleTypeDomainKeyword = "domain_keyword"
@@ -54,15 +58,17 @@ type managedRule struct {
 }
 
 type managedRuleDocument struct {
-	Version uint32        `json:"version"`
-	Name    *string       `json:"name,omitempty"`
-	Rules   []managedRule `json:"rules"`
+	Version     uint32        `json:"version"`
+	Name        *string       `json:"name,omitempty"`
+	Rules       []managedRule `json:"rules"`
+	ClientRules []managedRule `json:"client_rules,omitempty"`
 }
 
 type managedRuleDocumentWire struct {
-	Version uint32         `json:"version"`
-	Name    *string        `json:"name,omitempty"`
-	Rules   *[]managedRule `json:"rules"`
+	Version     uint32         `json:"version"`
+	Name        *string        `json:"name,omitempty"`
+	Rules       *[]managedRule `json:"rules"`
+	ClientRules []managedRule  `json:"client_rules,omitempty"`
 }
 
 type managedRuleSetContentWriteReq struct {
@@ -144,6 +150,9 @@ func (h *handlers) managedRuleArtifactPath(tag string, sourceDigest [32]byte, fo
 	if err != nil {
 		return "", err
 	}
+	if format == managedRuleArtifactSingBoxSource {
+		format += "-v2"
+	}
 	return filepath.Join(dir, "artifacts", hex.EncodeToString(sourceDigest[:]), format), nil
 }
 
@@ -195,6 +204,13 @@ func (h *handlers) writeManagedRuleSource(tag string, content []byte) error {
 	if err != nil {
 		return err
 	}
+	format, err := managedRuleStorageFormat(content)
+	if err != nil {
+		return err
+	}
+	if format == managedRuleSetFormatClient {
+		return writeManagedRuleFileAtomic(sourcePath, content)
+	}
 	artifact, err := managedRuleZRSCompiler(content)
 	if err != nil {
 		return err
@@ -230,7 +246,7 @@ func managedRuleContentMetadata(content []byte) (string, int) {
 	digest := sha256.Sum256(content)
 	count := 0
 	if document, err := decodeAndNormalizeZeroRuleIR(content); err == nil {
-		count = len(document.Rules)
+		count = len(document.Rules) + len(document.ClientRules)
 	}
 	return hex.EncodeToString(digest[:]), count
 }
@@ -247,7 +263,11 @@ func (h *handlers) presentManagedRuleSet(item model.SubscriptionRuleSet) managed
 		presentation.ContentSHA256, presentation.RuleCount = managedRuleContentMetadata(content)
 	}
 	if siteURL, err := h.managedRuleSiteURL(); err == nil {
-		presentation.PublicURL = managedRuleZRSURL(siteURL, item.Tag)
+		if item.Format == managedRuleSetFormatClient {
+			presentation.PublicURL = managedRulePublicURL(siteURL, item.Tag, managedRuleArtifactSingBoxSource)
+		} else {
+			presentation.PublicURL = managedRuleZRSURL(siteURL, item.Tag)
+		}
 	}
 	return presentation
 }

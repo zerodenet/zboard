@@ -164,6 +164,12 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	defer conn.Close()
 	stopSSH := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stopSSH()
+	if requiresDirectInboundUDP(runtimeConfig) {
+		output, err := h.runNodeSSHSession(conn, node, "/usr/local/bin/zero build-info", true)
+		if err != nil || !zeroBuildSupportsDirectUDP(output) {
+			return fail(fmt.Errorf("入口节点的 Zero 未声明 direct 入站 UDP 能力，请升级内核或关闭入口 UDP 转发。"), output)
+		}
+	}
 	if output, err := h.runNodeSSHSession(conn, node, "install -d -m 0700 "+shellQuote(stage), false); err != nil {
 		return fail(fmt.Errorf("create Zero config staging directory: %w", err), output)
 	}

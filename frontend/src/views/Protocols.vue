@@ -9,6 +9,7 @@
     </PageHeader>
 
     <TransientFeedback :success="message" :error="error" success-title="协议操作已完成" error-title="协议操作失败" />
+    <PageAlert tone="info" title="Mieru / Hysteria2 用户凭证自动管理">尚无有效订阅凭证时，服务配置可正常保存和发布，暂不启动监听；订阅开通后自动生成用户凭证并发布，最后一个有效凭证失效后停止监听。</PageAlert>
     <PageAlert v-if="mieruUnavailableReason" tone="warning" title="Mieru 暂不可用">
       {{ mieruUnavailableReason }} 已有 Mieru 记录会保留供查看和停用，但不会进入新订阅或节点发布。
     </PageAlert>
@@ -46,30 +47,31 @@
           <div><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'deploy'" @click="runProtocolBatch('deploy')"><UiIcon name="play" />批量发布</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'enable'" @click="runProtocolBatch('enable')"><UiIcon name="check" />批量启用</UiButton><UiButton variant="danger" size="sm" type="button" :loading="bulkBusy === 'disable'" @click="runProtocolBatch('disable')">批量停用</UiButton><UiButton variant="ghost" size="sm" type="button" @click="clearSelection">清除</UiButton></div>
         </div>
       </template>
-      <DataTable v-if="endpoints.length" caption="协议服务列表；可按服务、节点、协议和倍率排序，数量直接显示数字，时间保留精确时间提示" :row-count="total" :density="density" :min-width="1120" selectable table-class="protocol-table">
+      <DataTable v-if="endpoints.length" caption="协议服务列表；可按服务、节点、协议和倍率排序，数量直接显示数字，时间保留精确时间提示" :row-count="total" :density="density" :min-width="1428" selectable table-class="protocol-table" @visible-column-count="visibleProtocolColumnCount = $event">
+          <colgroup><col v-for="(column, index) in protocolColumns" :key="index" :data-column-priority="column.priority" :style="column.width ? { width: `${column.width}px` } : undefined" /></colgroup>
           <thead><tr>
             <th class="selection-column"><UiCheckbox :model-value="allPageEndpointsSelected" :indeterminate="pageEndpointSelectionIndeterminate" :disabled="selectionAllMatching" aria-label="选择当前页全部协议服务" @update:model-value="toggleCurrentEndpointPage" /></th>
             <SortableHeader field="name" label="服务" :sort-field="effectiveSortField" :direction="effectiveSortDirection" pinned="start" @sort="setSort" />
             <SortableHeader field="node_id" label="承载节点" :sort-field="effectiveSortField" :direction="effectiveSortDirection" :priority="2" @sort="setSort" />
             <SortableHeader field="protocol" label="协议" :sort-field="effectiveSortField" :direction="effectiveSortDirection" :priority="2" @sort="setSort" />
-            <th data-column-priority="3">对外入口</th><th>服务状态</th><th>发布状态</th><th class="numeric-column" data-column-priority="3">活跃用户</th><th class="numeric-column" data-column-priority="3">活跃连接</th><th data-column-priority="3">今日流量</th>
+            <th data-column-priority="3">对外入口</th><th>服务状态</th><th>发布状态</th><th class="numeric-column" data-column-priority="3">活跃用户</th><th class="numeric-column" data-column-priority="3">活跃连接</th><th class="numeric-column" data-column-priority="3">今日流量</th>
             <SortableHeader field="multiplier" label="倍率" :sort-field="effectiveSortField" :direction="effectiveSortDirection" numeric :priority="3" @sort="setSort" />
             <th data-column-priority="3">最近使用</th><th class="table-action-column"><span class="sr-only">操作</span></th>
           </tr></thead>
           <tbody>
             <template v-for="(endpoint, index) in endpoints" :key="endpoint.id">
-            <tr v-if="groupedByNode && isFirstNodeGroup(index)" class="protocol-group-row"><td colspan="13"><div class="protocol-group-content"><UiIcon name="nodes" /><strong>{{ endpoint.node_name || `VPS #${endpoint.node_id}` }}</strong><span>节点 #{{ endpoint.node_id }}</span></div></td></tr>
+            <tr v-if="groupedByNode && isFirstNodeGroup(index)" class="protocol-group-row"><td :colspan="visibleProtocolColumnCount"><div class="protocol-group-content"><UiIcon name="nodes" /><strong :title="endpoint.node_name || `VPS #${endpoint.node_id}`">{{ endpoint.node_name || `VPS #${endpoint.node_id}` }}</strong><span>节点 #{{ endpoint.node_id }}</span></div></td></tr>
             <tr :class="{ 'batch-selected': isEndpointSelected(endpoint.id) }">
               <td class="selection-column"><UiCheckbox :model-value="isEndpointSelected(endpoint.id)" :disabled="selectionAllMatching" :aria-label="`选择协议服务 ${endpoint.name}`" @update:model-value="toggleEndpointSelection(endpoint.id, $event)" /></td>
-              <td class="table-primary-column"><div class="cell-title"><strong>{{ endpoint.name }}</strong><span>#{{ endpoint.id }}</span></div></td>
-              <td data-column-priority="2"><RouterLink :to="adminContextLink('/admin/nodes', { node: String(endpoint.node_id) })">{{ endpoint.node_name || `VPS #${endpoint.node_id}` }}</RouterLink></td>
+              <td class="table-primary-column"><div class="cell-title"><strong :title="endpoint.name">{{ endpoint.name }}</strong><span>#{{ endpoint.id }}</span></div></td>
+              <td class="protocol-node-column" data-column-priority="2"><RouterLink :title="endpoint.node_name || `VPS #${endpoint.node_id}`" :to="adminContextLink('/admin/nodes', { node: String(endpoint.node_id) })">{{ endpoint.node_name || `VPS #${endpoint.node_id}` }}</RouterLink></td>
               <td data-column-priority="2"><StatusBadge :tone="endpoint.kernel_supported ? 'info' : 'warning'" :icon="endpoint.kernel_supported ? 'activity' : 'alert'">{{ protocolLabel(endpoint.protocol) }}</StatusBadge></td>
-              <td class="mono" data-column-priority="3">{{ endpoint.address }}:{{ endpoint.public_port || endpoint.port }}</td>
+              <td data-column-priority="3"><EndpointAddress :address="endpoint.address" :port="endpoint.public_port || endpoint.port" /></td>
               <td><StatusBadge v-if="!endpoint.kernel_supported" tone="warning" icon="alert">内核不支持</StatusBadge><StatusBadge v-else :tone="endpoint.is_active ? 'success' : 'neutral'" :icon="endpoint.is_active ? 'check' : 'minus'">{{ endpoint.is_active ? '运行中' : '已停用' }}</StatusBadge></td>
               <td><StatusBadge :tone="deploymentTone(endpoint.latest_deployment?.status)" :icon="deploymentIcon(endpoint.latest_deployment?.status)">{{ deploymentLabel(endpoint.latest_deployment?.status) }}</StatusBadge></td>
               <td class="numeric-column" data-column-priority="3">{{ formatNumber(endpoint.usage?.active_users) }}</td>
               <td class="numeric-column" data-column-priority="3">{{ formatNumber(endpoint.usage?.active_flows) }}</td>
-              <td data-column-priority="3">{{ formatBytes(endpoint.usage?.used_bytes_today) }}</td>
+              <td class="value-cell numeric-column" data-column-priority="3" :title="formatBytes(endpoint.usage?.used_bytes_today)">{{ formatCompactBytes(endpoint.usage?.used_bytes_today) }}</td>
               <td class="numeric-column" data-column-priority="3">{{ formatMultiplierNumber(endpoint.multiplier_milli) }}</td>
               <td data-column-priority="3"><TimeBadge :value="endpoint.usage?.last_used_at" /></td>
               <td class="table-action-column"><RowActions :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><RouterLink v-if="endpoint.latest_deployment?.has_error" class="button button-ghost button-sm" :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', status: 'failed', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink><UiButton variant="secondary" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton><UiButton variant="danger" size="sm" type="button" :loading="deletingID === endpoint.id" @click="removeEndpoint(endpoint)"><UiIcon name="trash" />删除</UiButton></RowActions></td>
@@ -184,7 +186,9 @@
     <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑协议服务' : copySourceID ? '复制协议配置' : '创建协议服务'" :description="form.id ? '协议配置可切换承载 VPS；保存前会校验凭证、端口和完整配置。' : copySourceID ? '已复制原服务配置为独立草稿，可更换节点、入口和名称后保存。' : '跟随步骤完成节点、连接参数和配置确认。'" size="xl" :busy="saving" @close="closeEditor">
       <form id="protocol-form" ref="protocolFormElement" class="protocol-editor" novalidate @submit.prevent="save">
         <UiStepNav :steps="wizardSteps" :current="editorStep" :max-step="form.id ? 3 : editorStep" label="协议服务配置步骤" @select="goToStep" />
-        <PageAlert v-if="editorErrors.formError.value || editorError" tone="danger" title="无法保存协议服务">{{ editorErrors.formError.value || editorError }}</PageAlert>
+        <PageAlert v-if="editorErrors.formError.value || editorError" tone="danger" title="无法保存协议服务">{{ editorErrors.formError.value || editorError }}
+          <ul v-if="Object.keys(editorErrors.fields).length"><li v-for="(reason, field) in editorErrors.fields" :key="field">{{ reason }}</li></ul>
+        </PageAlert>
         <PageAlert v-if="!selectedProtocolCapability.supported" tone="warning" title="当前内核不支持所选协议">
           {{ selectedProtocolCapability.reason }}<template v-if="form.id"> 此历史记录只能在关闭“启用服务”后保存，以便从节点配置中移除。</template>
         </PageAlert>
@@ -314,7 +318,8 @@ import { useRemoteTable } from '../composables/useRemoteTable'
 import { useSelectionScope } from '../composables/useSelectionScope'
 import { nextSortDirection, resolveSortDirection, resolveSortField, resolveTableDensity } from '../composables/tableState'
 import { confirmAction } from '../utils/feedback'
-import { formatBytes, formatNumber, formatUnknownValue } from '../utils/format'
+import EndpointAddress from '../components/EndpointAddress.vue'
+import { formatCompactBytes, formatBytes, formatNumber, formatUnknownValue } from '../utils/format'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 import { normalizeOutput, truncateOutput } from '../utils/output'
 import { trackAdminTask } from '../utils/taskTracker'
@@ -325,6 +330,14 @@ import { moveProtocolEndpointOrder, protocolEndpointOrderChanged } from '../util
 import { isIntegerInRange } from '../utils/validation'
 import { zeroVersionAtLeast } from '../utils/zeroVersion'
 
+// The service column takes remaining space; selection stays exactly 42px for sticky alignment.
+const protocolColumns: { width?: number; priority?: number }[] = [
+  { width: 42 }, {}, { width: 152, priority: 2 }, { width: 132, priority: 2 },
+  { width: 192, priority: 3 }, { width: 120 }, { width: 108 },
+  { width: 66, priority: 3 }, { width: 66, priority: 3 }, { width: 100, priority: 3 },
+  { width: 70, priority: 3 }, { width: 128, priority: 3 }, { width: 52 },
+]
+const visibleProtocolColumnCount = ref(13)
 const protocols = ['vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria2', 'mieru']
 const defaultMieruUnavailableReason = 'Mieru 托管归属需要 Zero 0.0.15-rc.4 或更高版本；请先升级所选节点内核。'
 const protocolCapabilities = reactive<Record<string, ProtocolKernelCapability>>({
@@ -1007,9 +1020,10 @@ async function save() {
       return
     }
     if (e?.response?.data) {
-      const normalized = await editorErrors.applyApiError(e, '协议服务保存失败，请检查表单内容。', null, protocolFieldMap)
+      const normalized = await editorErrors.applyApiError(e, '协议服务未能保存，请稍后重试；如持续失败，请检查服务端日志。', null, protocolFieldMap)
       const fields = Object.keys(normalized.fields)
       if (fields.some(field => ['node_id', 'protocol', 'name', 'address', 'port', 'public_port'].includes(field))) editorStep.value = 1
+      else if (fields.includes('managed_certificate_id')) editorStep.value = 2
       else editorStep.value = 3
       await editorErrors.focusFirst(protocolFormElement)
     } else editorError.value = e?.message || '协议服务保存失败。'
@@ -1091,10 +1105,10 @@ onMounted(async () => {
 
 <style scoped>
 .protocol-status-overview{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
-:deep(.protocol-table th),:deep(.protocol-table td){height:40px;padding-block:7px}:deep(.protocol-table .mono){font-size:11px}:deep(.protocol-table a){color:var(--primary);font-weight:650;text-decoration:none}:deep(.protocol-table a:hover){text-decoration:underline}.numeric-column{text-align:right!important;font-variant-numeric:tabular-nums}:deep(.protocol-table .cell-actions .button){min-height:30px}:deep(.protocol-table .time-badge){margin-left:auto}
+:deep(.protocol-table){table-layout:fixed}:deep(.protocol-table th),:deep(.protocol-table td){height:40px;padding:7px 10px}:deep(.protocol-table .sortable-header-button){padding-inline:10px}:deep(.protocol-table .cell-title){min-width:0;overflow-wrap:anywhere}:deep(.protocol-table .protocol-node-column a){display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}:deep(.protocol-table .table-action-column){min-width:0}:deep(.protocol-table .selection-column){padding-inline:10px}:deep(.protocol-table .mono){font-size:11px}:deep(.protocol-table a){color:var(--primary);font-weight:650;text-decoration:none}:deep(.protocol-table a:hover){text-decoration:underline}.numeric-column{text-align:right!important;font-variant-numeric:tabular-nums}:deep(.protocol-table .cell-actions .button){min-height:30px}:deep(.protocol-table .time-badge){margin-left:auto}
 .protocol-group-row td{height:34px!important;padding:7px 12px!important;color:var(--text);background:var(--surface-soft)!important}.protocol-group-content{display:flex;align-items:center;gap:7px;min-width:0}.protocol-group-row .ui-icon{flex:0 0 auto;color:var(--primary)}.protocol-group-row strong{min-width:0;overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.protocol-group-row span{flex:0 0 auto;color:var(--muted);font-size:9px}
 .protocol-metrics{margin-bottom:16px}.protocol-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.protocol-card{display:grid;overflow:hidden}.protocol-header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px}.protocol-title{display:flex;gap:12px;min-width:0}.protocol-icon{width:40px;height:40px;display:grid;place-items:center;flex:0 0 auto;border-radius:10px;color:var(--primary);background:var(--primary-soft);font-size:19px}.title-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.title-line h2{margin:0;font-size:16px}.protocol-title p{margin:5px 0 0;color:var(--muted);font-family:var(--font-mono);font-size:11px;overflow-wrap:anywhere}.multiplier{color:var(--primary);font-size:18px}.protocol-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0;padding:14px 18px;border-block:1px solid var(--line);background:var(--surface-soft)}.protocol-meta div{display:grid;gap:4px}.protocol-meta dt{color:var(--muted);font-size:10px}.protocol-meta dd{margin:0;font-size:11px;font-weight:650}.usage-summary{display:flex;flex-wrap:wrap;gap:14px;padding:10px 18px;color:var(--muted);border-bottom:1px solid var(--line);font-size:9px}.deployment-error{margin:12px 18px 0;padding:9px;border-radius:8px;color:var(--danger);background:var(--danger-soft);font-size:11px;overflow-wrap:anywhere}.protocol-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px}
-.protocol-order-editor{display:grid;gap:14px}.protocol-order-loading{padding:32px;text-align:center;color:var(--muted);font-size:11px}.protocol-order-list{display:grid;gap:8px;max-height:55vh;margin:0;padding:0;overflow:auto;list-style:none}.protocol-order-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.protocol-order-position{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;color:var(--primary);background:var(--primary-soft);font-size:11px;font-weight:750;font-variant-numeric:tabular-nums}.protocol-order-content{display:grid;gap:3px;min-width:0}.protocol-order-content strong{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.protocol-order-content span{color:var(--muted);font-size:9px}.protocol-order-actions{display:flex;gap:3px}.protocol-order-actions :deep(.p-button){width:30px;min-width:30px;padding:0}
+.protocol-order-editor{display:grid;gap:14px}.protocol-order-loading{padding:32px;text-align:center;color:var(--muted);font-size:11px}.protocol-order-list{display:grid;gap:8px;max-height:55vh;margin:0;padding:0;overflow:auto;list-style:none}.protocol-order-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.protocol-order-position{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;color:var(--primary);background:var(--primary-soft);font-size:11px;font-weight:750;font-variant-numeric:tabular-nums}.protocol-order-content{display:grid;gap:3px;min-width:0}.protocol-order-content strong{font-size:12px;white-space:normal;overflow-wrap:anywhere}.protocol-order-content span{color:var(--muted);font-size:9px}.protocol-order-actions{display:flex;gap:3px}.protocol-order-actions :deep(.p-button){width:30px;min-width:30px;padding:0}
 .protocol-editor{display:grid;gap:20px}
 .wizard-panel{display:grid;gap:20px}
 .wizard-heading{display:flex;align-items:flex-start;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--line)}
@@ -1131,10 +1145,12 @@ onMounted(async () => {
 .compact-grid{max-width:520px}
 .config-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .config-grid textarea{font-family:var(--font-mono);font-size:10px}
+@media(max-width:1100px){:deep(.protocol-table[data-show-secondary='false']){min-width:820px!important}}
+@media(max-width:720px){:deep(.protocol-table[data-show-secondary='false']){min-width:520px!important}}
 @media(max-width:1080px){.protocol-status-overview{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:900px){.protocol-grid,.guided-grid,.config-grid{grid-template-columns:1fr}.protocol-meta,.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-meta{row-gap:12px}}@media(max-width:680px){.protocol-status-overview{display:flex;overflow-x:auto;padding:1px 1px 6px;scroll-snap-type:x proximity}.protocol-status-overview :deep(.overview-card){min-width:178px;scroll-snap-align:start}.protocol-grid{gap:8px}.protocol-card{border-inline:0;border-radius:0;box-shadow:none}.protocol-meta{background:transparent}.review-grid{grid-template-columns:1fr}.selected-node-card{grid-template-columns:auto minmax(0,1fr)}.selected-node-card .status-badge{grid-column:2}.input-with-action{grid-template-columns:1fr}.input-with-action input{border-radius:8px!important}.input-with-action button{min-height:36px;border:1px solid var(--line-strong);border-top:0;border-radius:0 0 8px 8px}}.protocol-mobile-detail-actions{display:none}@media(max-width:560px){.protocol-order-item{grid-template-columns:30px minmax(0,1fr) auto}.protocol-order-item>.status-badge{grid-column:2}.protocol-order-actions{grid-column:3;grid-row:1/3}:deep(.page-actions .p-button:last-child){flex:1}:deep(.protocol-table .table-primary-column){min-width:200px}.protocol-mobile-detail-actions{display:flex;flex-wrap:wrap;gap:7px}}
+@media(max-width:900px){.protocol-grid,.guided-grid,.config-grid{grid-template-columns:1fr}.protocol-meta,.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-meta{row-gap:12px}}@media(max-width:680px){.protocol-status-overview{display:flex;overflow-x:auto;padding:1px 1px 6px;scroll-snap-type:x proximity}.protocol-status-overview :deep(.overview-card){min-width:178px;scroll-snap-align:start}.protocol-grid{gap:8px}.protocol-card{border-inline:0;border-radius:0;box-shadow:none}.protocol-meta{background:transparent}.review-grid{grid-template-columns:1fr}.selected-node-card{grid-template-columns:auto minmax(0,1fr)}.selected-node-card .status-badge{grid-column:2}.input-with-action{grid-template-columns:1fr}.input-with-action input{border-radius:8px!important}.input-with-action button{min-height:36px;border:1px solid var(--line-strong);border-top:0;border-radius:0 0 8px 8px}}.protocol-mobile-detail-actions{display:none}@media(max-width:560px){.protocol-order-item{grid-template-columns:30px minmax(0,1fr) auto}.protocol-order-item>.status-badge{grid-column:2}.protocol-order-actions{grid-column:3;grid-row:1/3}:deep(.page-actions .p-button:last-child){flex:1}.protocol-mobile-detail-actions{display:flex;flex-wrap:wrap;gap:7px}}
 .protocol-editor .p-select{min-height:var(--control-height)}
 .protocol-grid{grid-template-columns:1fr;gap:0;border-block:1px solid var(--line)}.protocol-card{border:0;border-radius:0}.protocol-card+.protocol-card{border-top:1px solid var(--line)}
 .selected-node-card{border-color:var(--primary-border);background:var(--primary-soft)}
-.protocol-detail{min-width:0}.detail-status-strip{display:flex;flex-wrap:wrap;gap:8px}.detail-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:hidden}.detail-facts>div{display:grid;gap:5px;padding:14px 16px;border-bottom:1px solid var(--line)}.detail-facts>div:nth-child(odd){border-right:1px solid var(--line)}.detail-facts span{color:var(--muted);font-size:10px}.detail-facts strong,.detail-facts a{font-size:12px}.detail-facts a{color:var(--primary);font-weight:650;text-decoration:none}.numeric-summary{color:var(--primary);font-size:14px;font-weight:750;font-variant-numeric:tabular-nums}.deployment-history{overflow:hidden}.deployment-history>.page-alert{margin:12px}.deployment-history :deep(.data-table-shell){border:0;border-radius:0}.deployment-output{max-width:360px;margin:0;color:var(--muted);font-family:var(--font-mono);font-size:10px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:560px){.detail-facts{grid-template-columns:1fr}.detail-facts>div:nth-child(odd){border-right:0}}
+.protocol-detail{min-width:0}.detail-status-strip{display:flex;flex-wrap:wrap;gap:8px}.detail-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:hidden}.detail-facts>div{display:grid;gap:5px;padding:14px 16px;border-bottom:1px solid var(--line)}.detail-facts>div:nth-child(odd){border-right:1px solid var(--line)}.detail-facts span{color:var(--muted);font-size:10px}.detail-facts strong,.detail-facts a{font-size:12px;overflow-wrap:anywhere}.detail-facts a{color:var(--primary);font-weight:650;text-decoration:none}.numeric-summary{color:var(--primary);font-size:14px;font-weight:750;font-variant-numeric:tabular-nums}.deployment-history{overflow:hidden}.deployment-history>.page-alert{margin:12px}.deployment-history :deep(.data-table-shell){border:0;border-radius:0}.deployment-output{max-width:360px;margin:0;color:var(--muted);font-family:var(--font-mono);font-size:10px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:560px){.detail-facts{grid-template-columns:1fr}.detail-facts>div:nth-child(odd){border-right:0}}
 </style>

@@ -798,6 +798,9 @@ func (h *handlers) runtimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, p
 			user["password"] = secret
 			users = append(users, user)
 		}
+		if strings.EqualFold(endpoint.Protocol, "hysteria2") && len(users) == 0 {
+			return []map[string]interface{}{}, nil
+		}
 		delete(protocol, "password")
 		protocol["users"] = users
 		return []map[string]interface{}{runtimeInbound(endpoint, fmt.Sprintf("endpoint-%d", endpoint.ID), endpoint.Port, protocol)}, nil
@@ -814,6 +817,11 @@ func (h *handlers) runtimeInboundsForEndpoint(endpoint model.ProtocolEndpoint, p
 				return nil, err
 			}
 			users = append(users, fallback)
+		}
+		// Mieru requires a non-empty user list. Keep the endpoint in the panel,
+		// but defer its listener until subscription reconciliation supplies users.
+		if len(users) == 0 {
+			return []map[string]interface{}{}, nil
 		}
 		protocol["users"] = users
 		return []map[string]interface{}{runtimeInbound(endpoint, fmt.Sprintf("endpoint-%d", endpoint.ID), endpoint.Port, protocol)}, nil

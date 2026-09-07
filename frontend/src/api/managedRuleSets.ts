@@ -2,7 +2,7 @@ import axios from 'axios'
 import { normalizeApiErrorPayload } from '../utils/apiError'
 import { API_BASE, getAuthToken, normalizePageResult, type ApiRequestOptions, type PageResult } from './client'
 
-export type ManagedRuleSourceFormat = 'zero_rule_ir' | 'domain_list' | 'cidr_list' | 'clash_classical'
+export type ManagedRuleSourceFormat = 'auto' | 'zero_rule_ir' | 'domain_list' | 'cidr_list' | 'clash_classical'
 
 export interface ManagedRuleSet {
   id: number

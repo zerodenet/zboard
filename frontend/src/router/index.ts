@@ -48,6 +48,7 @@ export const routes: RouteRecordRaw[] = [
       { path: 'orders', component: () => import('../views/Orders.vue'), meta: { title: '订单管理', section: '商业管理' } },
       { path: 'nodes', component: () => import('../views/Nodes.vue'), meta: { title: '节点资产', section: '基础设施' } },
       { path: 'certificates', component: () => import('../views/Certificates.vue'), meta: { title: '免费证书', section: '基础设施' } },
+      { path: 'network-entries', component: () => import('../views/NetworkEntries.vue'), meta: { title: '网络前置', section: '基础设施' } },
       { path: 'providers', component: () => import('../views/Providers.vue'), meta: { title: '外部供应商', section: '基础设施' } },
       { path: 'dns-records', component: () => import('../views/ManagedDNS.vue'), meta: { title: 'DNS 解析', section: '基础设施' } },
       { path: 'protocols', component: () => import('../views/Protocols.vue'), meta: { title: '协议服务', section: '基础设施' } },

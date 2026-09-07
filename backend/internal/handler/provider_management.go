@@ -239,6 +239,7 @@ func (h *handlers) verifyProviderAccount(ctx context.Context, account *model.Pro
 	now := time.Now().UTC()
 	if err != nil {
 		_ = h.db.Model(account).Updates(map[string]interface{}{"status": "invalid", "last_error": truncateCertificateError(err.Error())}).Error
+		account.Status, account.LastError = "invalid", truncateCertificateError(err.Error())
 		return err
 	}
 	if err := h.db.Model(account).Updates(map[string]interface{}{"status": "active", "last_verified_at": now, "last_error": ""}).Error; err != nil {

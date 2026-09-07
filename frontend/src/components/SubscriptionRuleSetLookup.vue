@@ -18,7 +18,7 @@
       <template #option="{ option }">
         <div class="rule-set-option">
           <strong>{{ option.name }}</strong>
-          <small>{{ option.tag }} · {{ option.format }} · 已用于 {{ option.usage_count }} 个模板</small>
+          <small>{{ option.tag }} · {{ option.format === 'managed_client_rules' ? '含进程匹配 · Clash / sing-box' : option.format }} · 已用于 {{ option.usage_count }} 个模板</small>
         </div>
       </template>
     </UiAutocomplete>

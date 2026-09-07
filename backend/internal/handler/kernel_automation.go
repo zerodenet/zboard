@@ -864,6 +864,12 @@ func validateSubscriptionWithManagedZero(ctx context.Context, artifactDir, versi
 	}
 	validateCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	if requiresDirectInboundUDP(config) {
+		info, infoErr := exec.CommandContext(validateCtx, binaryPath, "build-info").CombinedOutput()
+		if infoErr != nil || !zeroBuildSupportsDirectUDP(string(info)) {
+			return fmt.Errorf("Zero validator does not declare direct inbound UDP support; upgrade the validator or disable inbound UDP")
+		}
+	}
 	output, err := exec.CommandContext(validateCtx, binaryPath, "validate", configPath).CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(output))
@@ -1003,14 +1009,20 @@ func (h *handlers) compileNodeRuntimeConfigWithOptions(node model.Node, apiKey, 
 		}
 		inbounds = append(inbounds, endpointInbounds...)
 	}
-	if len(inbounds) == 0 {
-		inbounds = append(inbounds, zeroBootstrapControlInbound())
-	}
+
 	config := map[string]interface{}{
 		"inbounds": inbounds,
 		"mode":     map[string]interface{}{"type": "rule"},
 		"route":    map[string]interface{}{"rules": []interface{}{}, "final": map[string]interface{}{"type": "direct"}},
 	}
+	if err := h.appendNetworkEntryRuntime(config, node.ID); err != nil {
+		return nil, "", err
+	}
+	inbounds = config["inbounds"].([]map[string]interface{})
+	if len(inbounds) == 0 {
+		inbounds = append(inbounds, zeroBootstrapControlInbound())
+	}
+	config["inbounds"] = inbounds
 	if h.zeroNativeAccess || zeroUsesGenericConnector(zeroVersion) {
 		config["api"] = zeroConnectorAPIConfig(panelURL, node.ID, apiKey, parsedURL.Scheme == "http")
 	} else {

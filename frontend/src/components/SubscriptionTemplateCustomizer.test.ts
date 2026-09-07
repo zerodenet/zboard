@@ -5,6 +5,24 @@ import { defaultSubscriptionCustomization } from '../utils/subscriptionTemplateE
 import SubscriptionTemplateCustomizer from './SubscriptionTemplateCustomizer.vue'
 
 describe('SubscriptionTemplateCustomizer', () => {
+  it('prepares the sing-box client HTTP switch with TUN, mixed inbound and DNS', async () => {
+    const customization = defaultSubscriptionCustomization('sing-box')
+    const wrapper = mount(SubscriptionTemplateCustomizer, {
+      props: { renderer: 'sing-box', modelValue: customization },
+      global: { plugins: [PrimeVue] },
+    })
+    expect(wrapper.text()).toContain('Rule（规则）、Direct（直连）、Global（全局）')
+    const enable = wrapper.findAll('button').find(button => button.text() === '启用客户端 HTTP 代理开关')
+    expect(enable).toBeDefined()
+    await enable!.trigger('click')
+    expect(customization.mixed_enabled).toBe(true)
+    expect(customization.tun.enabled).toBe(true)
+    expect(customization.dns.enabled).toBe(true)
+    expect(customization.system_proxy).toBe(false)
+    expect(wrapper.text()).toContain('已提供客户端 HTTP 代理开关')
+    expect(wrapper.findAll('button').some(button => button.text() === '启用客户端 HTTP 代理开关')).toBe(false)
+  })
+
   it('edits native policy groups and gates validated direct configuration behind the advanced tab', async () => {
     const customization = defaultSubscriptionCustomization('clash')
     let rawUpdate = customization

@@ -95,7 +95,7 @@ func TestSingBoxRendererEmitsCurrentRuntimeShape(t *testing.T) {
 	if _, exists := document.Inbounds[1]["dns_mode"]; exists {
 		t.Fatalf("stable sing-box config must not require the 1.14-only dns_mode field: %#v", document.Inbounds[1])
 	}
-	if document.Route["final"] != "direct" || document.Route["auto_detect_interface"] != true {
+	if document.Route["final"] != "节点选择" || document.Route["auto_detect_interface"] != true {
 		t.Fatalf("sing-box route = %#v", document.Route)
 	}
 	rules := document.Route["rules"].([]interface{})

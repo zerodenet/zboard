@@ -50,7 +50,7 @@
             <td data-column-priority="2">
               <div class="actor-cell">
                 <span aria-hidden="true">{{ actorInitial(item.actor) }}</span>
-                <strong>{{ adminActorLabel(item.actor) }}</strong>
+                <TableText :value="adminActorLabel(item.actor)" />
               </div>
             </td>
             <td data-column-priority="1">
@@ -58,7 +58,7 @@
                 :reference="targetReference(item.target)"
                 :fallback-id="targetID(item.target)"
                 :fallback-kind="targetKind(item.target)"
-              />
+              compact />
             </td>
             <td><TimeBadge :value="item.created_at" /></td>
             <td data-column-priority="3">
@@ -174,6 +174,7 @@
 </template>
 
 <script setup lang="ts">
+import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchAuditLog, fetchAuditLogs, type AuditLogDetail, type AuditLogSummary } from '../api/client'

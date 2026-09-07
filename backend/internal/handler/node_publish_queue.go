@@ -17,6 +17,21 @@ func enqueueNodeConfigPublish(tx *gorm.DB, nodeID, endpointID, requestedBy uint)
 	if nodeID == 0 {
 		return nil
 	}
+	var entryNodes []uint
+	if err := tx.Model(&model.NetworkEntry{}).Where("endpoint_id IN (?)", tx.Model(&model.ProtocolEndpoint{}).Select("id").Where("node_id = ?", nodeID)).Distinct().Pluck("node_id", &entryNodes).Error; err != nil {
+		return err
+	}
+	for _, entryNode := range entryNodes {
+		if entryNode != nodeID {
+			if err := enqueueNodeConfigPublishOnly(tx, entryNode, 0, requestedBy); err != nil {
+				return err
+			}
+		}
+	}
+	return enqueueNodeConfigPublishOnly(tx, nodeID, endpointID, requestedBy)
+}
+
+func enqueueNodeConfigPublishOnly(tx *gorm.DB, nodeID, endpointID, requestedBy uint) error {
 	now := time.Now().UTC()
 	item := model.NodeConfigPublish{NodeID: nodeID, EndpointID: endpointID, RequestedBy: requestedBy,
 		Generation: 1, NextAttemptAt: now, LeaseUntil: nodePublishIdleLease}

@@ -95,18 +95,20 @@ type subscriptionManifest struct {
 }
 
 type subscriptionTemplateEndpoint struct {
-	ID              uint                   `json:"id"`
-	NodeID          uint                   `json:"node_id"`
-	SubscriptionID  uint                   `json:"subscription_id,omitempty"`
-	CredentialID    string                 `json:"credential_id,omitempty"`
-	Name            string                 `json:"name"`
-	Region          string                 `json:"region"`
-	Address         string                 `json:"address"`
-	Port            int                    `json:"port"`
-	PublicPort      int                    `json:"public_port"`
-	Protocol        string                 `json:"protocol"`
-	MultiplierMilli int64                  `json:"multiplier_milli"`
-	Config          map[string]interface{} `json:"config"`
+	NetworkEntryID      uint                   `json:"network_entry_id,omitempty"`
+	NetworkEntryNetwork string                 `json:"network_entry_network,omitempty"`
+	ID                  uint                   `json:"id"`
+	NodeID              uint                   `json:"node_id"`
+	SubscriptionID      uint                   `json:"subscription_id,omitempty"`
+	CredentialID        string                 `json:"credential_id,omitempty"`
+	Name                string                 `json:"name"`
+	Region              string                 `json:"region"`
+	Address             string                 `json:"address"`
+	Port                int                    `json:"port"`
+	PublicPort          int                    `json:"public_port"`
+	Protocol            string                 `json:"protocol"`
+	MultiplierMilli     int64                  `json:"multiplier_milli"`
+	Config              map[string]interface{} `json:"config"`
 }
 
 type subscriptionTemplateData struct {
@@ -600,7 +602,7 @@ func (h *handlers) writeSubscriptionTemplate(ctx context.Context, w http.Respons
 			return fmt.Errorf("decode endpoint %d client config: %w", endpoint.ID, err)
 		}
 		data.ProtocolEndpoints = append(data.ProtocolEndpoints, subscriptionTemplateEndpoint{
-			ID: endpoint.ID, NodeID: endpoint.NodeID, SubscriptionID: endpoint.SubscriptionID, CredentialID: endpoint.CredentialID,
+			NetworkEntryID: endpoint.NetworkEntryID, NetworkEntryNetwork: endpoint.NetworkEntryNetwork, ID: endpoint.ID, NodeID: endpoint.NodeID, SubscriptionID: endpoint.SubscriptionID, CredentialID: endpoint.CredentialID,
 			Name: endpoint.Name, Region: endpoint.Region, Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
 			Protocol: endpoint.Protocol, MultiplierMilli: endpoint.MultiplierMilli, Config: config,
 		})

@@ -22,9 +22,9 @@
           <tbody><tr v-for="item in items" :key="`${item.source}:${item.id}`">
             <td data-column-priority="2"><TimeBadge :value="item.created_at" /></td>
             <td class="table-primary-column"><div class="cell-title"><strong><UiIcon :name="sourceIcon(item.source)" />{{ sourceLabel(item.source) }}</strong><span>{{ adminActionLabel(item.action) }} · #{{ item.id }}</span></div></td>
-            <td data-column-priority="2">{{ operationTargetLabel(item) }}</td>
+            <td data-column-priority="2"><TableText :value="operationTargetLabel(item)" /></td>
             <td><StatusBadge :tone="statusTone(item.status)">{{ statusLabel(item.status) }}</StatusBadge></td>
-            <td data-column-priority="3">{{ operationSummaryLabel(item) }}</td>
+            <td data-column-priority="3"><TableText :value="operationSummaryLabel(item)" /></td>
             <td data-column-priority="3"><StatusBadge v-if="item.has_error" tone="danger" icon="alert">有错误</StatusBadge><StatusBadge v-else-if="item.has_output" tone="info" icon="terminal">有输出</StatusBadge><span v-else>—</span></td>
             <td class="table-action-column"><UiButton variant="secondary" size="sm" type="button" :loading="detailLoadingKey === `${item.source}:${item.id}`" @click="openDetail(item)">查看</UiButton></td>
           </tr></tbody>
@@ -47,6 +47,7 @@
 </template>
 
 <script setup lang="ts">
+import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchOperationLog, fetchOperationLogs, type OperationLog } from '../api/client'

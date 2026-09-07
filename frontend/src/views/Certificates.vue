@@ -15,8 +15,8 @@
       <DataTable v-if="certificates.length" caption="免费证书列表；证书材料保存在目标节点，面板仅展示公开元数据和运行状态" :row-count="total" :min-width="1080" table-class="certificate-table">
         <thead><tr><th class="table-primary-column">证书</th><th data-column-priority="2">节点</th><th>状态</th><th data-column-priority="2">签发环境</th><th>到期时间</th><th data-column-priority="3">自动续期</th><th class="numeric-column" data-column-priority="3">使用数</th><th data-column-priority="3">最近操作</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
         <tbody><tr v-for="certificate in certificates" :key="certificate.id">
-          <td class="table-primary-column"><div class="cell-title"><strong>{{ certificate.name }}</strong><span>{{ certificate.domains.join('、') }}</span></div></td>
-          <td data-column-priority="2"><RouterLink :to="`/admin/nodes?node=${certificate.node_id}`">{{ certificate.node_name || `VPS #${certificate.node_id}` }}</RouterLink></td>
+          <td class="table-primary-column"><div class="cell-title"><strong>{{ certificate.name }}</strong><TableText :value="certificate.domains.join('、')" /></div></td>
+          <td data-column-priority="2"><RouterLink class="table-secondary-text" :title="certificate.node_name || `VPS #${certificate.node_id}`" :to="`/admin/nodes?node=${certificate.node_id}`">{{ certificate.node_name || `VPS #${certificate.node_id}` }}</RouterLink></td>
           <td><StatusBadge :tone="certificateTone(certificate.status)" :icon="certificateIcon(certificate.status)">{{ certificateStatusLabel(certificate.status) }}</StatusBadge><small v-if="certificate.last_error" class="certificate-error" :title="certificate.last_error">{{ certificate.last_error }}</small></td>
           <td data-column-priority="2"><StatusBadge :tone="certificate.environment === 'production' ? 'info' : 'warning'">{{ certificate.environment === 'production' ? '生产证书' : '测试证书' }}</StatusBadge></td>
           <td><TimeBadge v-if="certificate.not_after" :value="certificate.not_after" :tone="expiryTone(certificate)" /><span v-else class="muted-value">尚未签发</span></td>
@@ -76,6 +76,7 @@
 </template>
 
 <script setup lang="ts">
+import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createManagedCertificate, deleteManagedCertificate, fetchManagedCertificatesPage, fetchProviderAccounts, issueManagedCertificate, renewManagedCertificate, updateManagedCertificate, updateManagedCertificateRenewal, type CertificateOperation, type ManagedCertificate, type ProviderAccount } from '../api/client'

@@ -1,6 +1,7 @@
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS
+  network_entries,
   node_config_publishes,
   announcement_reads,
   announcements,

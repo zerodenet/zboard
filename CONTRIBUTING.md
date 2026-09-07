@@ -9,6 +9,16 @@ Keep the root `README.md` focused on product positioning and operator-facing
 entry points. Contributor procedures, troubleshooting and script parameters
 belong in this guide or a focused document under `docs/`.
 
+## Documentation scope
+
+Version architecture, API and configuration contracts, operator/developer guides,
+reusable verification procedures, roadmaps and release/upgrade notes under `docs/`.
+Store temporary implementation plans, audit journals, per-run test reports and
+machine-specific evidence in the ignored `.codex-local-artifacts/` directory.
+When a working note contains a lasting decision or procedure, move that content
+into the relevant guide; keep the execution history local. Published documents
+must not depend on ignored notes. Dated release notes remain versioned.
+
 ## Branch policy
 
 - `main`: stable and releasable

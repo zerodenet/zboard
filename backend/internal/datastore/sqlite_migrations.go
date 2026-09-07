@@ -34,7 +34,7 @@ func databaseModels() []interface{} {
 		&model.Task{}, &model.TaskItem{}, &model.ProtocolDeployment{}, &model.QuotaEvent{},
 		&model.NodeKernelState{}, &model.NodeOperation{}, &model.ProviderAccount{}, &model.ManagedDNSRecord{},
 		&model.ProviderOperation{}, &model.ManagedCertificate{}, &model.CertificateProtocolEndpoint{},
-		&model.CertificateOperation{}, &model.NodeConfigPublish{},
+		&model.CertificateOperation{}, &model.NodeConfigPublish{}, &model.NetworkEntry{},
 	}
 }
 

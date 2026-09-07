@@ -585,7 +585,6 @@
   gap: 4px;
 }
 
-.storefront-sku-grid strong,
 .storefront-sku-grid small {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -593,6 +592,8 @@
 }
 
 .storefront-sku-grid strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
   font-size: 13px;
 }
 

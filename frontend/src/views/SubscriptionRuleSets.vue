@@ -10,7 +10,7 @@
     <SubscriptionTemplateSectionNav section="rule-sets" />
 
     <PageAlert tone="info" title="统一规则源">
-      正文固定保存为 Zero Rule IR v1。远端地址只用于导入，模板会收到 ZBoard 为 znet-sink、Clash 或 sing-box 生成的规则地址。
+      远端规则会完整保存在 ZBoard，再按客户端生成规则地址。包含进程匹配的规则集支持 Clash / sing-box，不能绑定 Zero 模板。
     </PageAlert>
 
     <TransientFeedback :success="message" :error="feedbackError" success-title="规则集操作已完成" error-title="规则集操作失败" />
@@ -41,7 +41,8 @@
             <td class="table-primary-column">
               <div class="cell-title">
                 <strong>{{ item.name }}</strong>
-                <span><code>{{ item.tag }}</code><template v-if="item.public_url"> · {{ sourceHost(item.public_url) }}</template></span>
+                <small v-if="item.format === 'managed_client_rules'">含进程匹配 · Clash / sing-box</small>
+                <TableText :value="item.public_url ? `${item.tag} · ${sourceHost(item.public_url)}` : item.tag" />
               </div>
             </td>
             <td>
@@ -50,7 +51,7 @@
               </StatusBadge>
             </td>
             <td class="numeric-column">{{ formatNumber(item.rule_count) }}</td>
-            <td data-column-priority="2">{{ formatBytes(item.content_bytes) }}</td>
+            <td class="value-cell" data-column-priority="2">{{ formatBytes(item.content_bytes) }}</td>
             <td>
               <StatusBadge :tone="item.is_active ? 'success' : 'neutral'" :icon="item.is_active ? 'check' : 'minus'">
                 {{ item.is_active ? '可供选择' : '已停用' }}
@@ -144,7 +145,7 @@
           </FormField>
 
           <template v-if="form.mode === 'remote'">
-            <FormField label="远端来源格式" name="managed-rule-set-source-format" :error="fieldErrors.source_format" hint="导入后统一转换为 Zero Rule IR v1。" required>
+            <FormField label="远端来源格式" name="managed-rule-set-source-format" :error="fieldErrors.source_format" :hint="sourceFormatHint" required>
               <template #default="{ controlAttrs }"><UiSelect v-model="form.source_format" v-bind="controlAttrs" :options="sourceFormatOptions" /></template>
             </FormField>
 
@@ -159,10 +160,10 @@
 
           <FormField
             v-if="form.mode === 'manual'"
-            label="Zero Rule IR v1 正文"
+            label="统一规则正文"
             name="managed-rule-set-content"
             :error="fieldErrors.content"
-            hint="仅接受 version、可选 name 和 rules；规则项只包含 type 与 value。保存时会规范化、排序和去重。"
+            hint="rules 保存域名和 IP 规则；可选 client_rules 保存 process_name / process_path。规则项包含 type 与 value，保存时排序去重并保留进程名称大小写。"
             required
             full
           >
@@ -191,6 +192,7 @@
 </template>
 
 <script setup lang="ts">
+import TableText from '../components/TableText.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -242,15 +244,23 @@ const activeOptions = [
   { label: '已停用', value: 'false' },
 ]
 const modeOptions = [
-  { label: '面板维护 Zero Rule IR', value: 'manual' },
+  { label: '面板维护规则正文', value: 'manual' },
   { label: '从远端导入并同步', value: 'remote' },
 ]
 const sourceFormatOptions = [
+  { label: '自动识别（推荐）', value: 'auto' },
   { label: 'Zero Rule IR v1', value: 'zero_rule_ir' },
   { label: '域名列表', value: 'domain_list' },
   { label: 'CIDR 列表', value: 'cidr_list' },
   { label: 'Clash classical', value: 'clash_classical' },
 ]
+const sourceFormatHint = computed(() => {
+  if (form.source_format === 'auto') return '自动识别 Clash Provider、域名列表、CIDR 列表和统一规则 JSON；包含进程规则时会完整保留。'
+  if (form.source_format === 'cidr_list') return '只接受纯 IP 网段，如 192.0.2.0/24。包含 DOMAIN-SUFFIX 或 IP-CIDR 类型前缀时，请选择 Clash classical。'
+  if (form.source_format === 'domain_list') return '每项为纯域名或 +.example.com 等域名匹配形式；包含 DOMAIN-SUFFIX 等类型前缀时，请选择 Clash classical。'
+  if (form.source_format === 'clash_classical') return '支持 DOMAIN-SUFFIX,example.com、IP-CIDR,192.0.2.0/24、PROCESS-NAME,App.exe 等规则，以及 payload 包装的 Clash Provider YAML（如 dler-io AdBlock.yaml）。'
+  return '接受包含 version 和 rules 的 Zero Rule IR v1 JSON；Clash Provider YAML 请按实际内容选择其他来源格式。'
+})
 const defaultContent = `{
   "version": 1,
   "name": "example",
@@ -275,7 +285,7 @@ const emptyForm = () => ({
   tag: '',
   mode: 'manual' as 'manual' | 'remote',
   source_url: '',
-  source_format: 'zero_rule_ir' as ManagedRuleSourceFormat,
+  source_format: 'auto' as ManagedRuleSourceFormat,
   content: defaultContent,
   sync_interval: 86400,
   is_active: true,

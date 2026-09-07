@@ -39,15 +39,15 @@
         <tbody>
           <tr v-for="item in orders" :key="item.id">
             <td class="table-primary-column">
-              <div class="cell-title"><strong>#{{ item.id }}</strong><span class="mono">{{ item.trade_no }}</span></div>
+              <div class="cell-title"><strong>#{{ item.id }}</strong><TableText :value="item.trade_no" /></div>
             </td>
             <td>
-              <div class="cell-title">
-                <strong>{{ item.plan_name || `套餐 #${item.plan_id}` }}</strong>
-                <span>{{ item.sku_name || `SKU #${item.plan_sku_id}` }}</span>
+              <div class="cell-title cell-related">
+                <TableText :value="item.plan_name || `套餐 #${item.plan_id}`" />
+                <TableText :value="item.sku_name || `SKU #${item.plan_sku_id}`" />
               </div>
             </td>
-            <td>{{ formatCurrency(item.amount_cents, item.currency) }}</td>
+            <td class="value-cell">{{ formatCurrency(item.amount_cents, item.currency) }}</td>
             <td><StatusBadge :tone="tone(item.status)">{{ label(item.status) }}</StatusBadge></td>
             <td data-column-priority="2"><TimeBadge :value="item.created_at" /></td>
             <td class="table-action-column">
@@ -104,6 +104,7 @@
 </template>
 
 <script setup lang="ts">
+import TableText from '../../components/TableText.vue'
 import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { cancelOrder, fetchAccountOrdersPage, type AdminOrderListItem } from '../../api/client'

@@ -96,7 +96,7 @@ SELECT COUNT(*) FROM system_configs;
 SELECT COUNT(*) FROM subscription_templates;
 ```
 
-Expected baseline results are one migration record, 42 business tables,
+Expected baseline results are one migration record, 43 business tables,
 13 system configuration rows and three built-in templates.
 
 For a retained development database, also verify that application row counts

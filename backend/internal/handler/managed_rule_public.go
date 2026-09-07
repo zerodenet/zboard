@@ -60,6 +60,10 @@ func (h *handlers) PublicManagedRuleSetHandler(w http.ResponseWriter, r *http.Re
 		ServerError(w, fmt.Errorf("parse managed Zero Rule IR: %w", err))
 		return
 	}
+	if format == managedRuleArtifactZRS && len(document.ClientRules) > 0 {
+		BadRequest(w, managedRuleClientCompatibilityMessage)
+		return
+	}
 	digest := sha256.Sum256(content)
 	artifact, err := h.loadOrBuildManagedRuleArtifact(item, document, digest, format)
 	if err != nil {
@@ -167,6 +171,10 @@ func (h *handlers) loadOrBuildManagedRuleArtifact(item model.SubscriptionRuleSet
 
 func managedRuleClashType(ruleType string) string {
 	switch ruleType {
+	case managedRuleTypeProcessName:
+		return "PROCESS-NAME"
+	case managedRuleTypeProcessPath:
+		return "PROCESS-PATH"
 	case managedRuleTypeDomainExact:
 		return "DOMAIN"
 	case managedRuleTypeDomainSuffix:
@@ -184,7 +192,7 @@ func managedRuleClashType(ruleType string) string {
 
 func encodeManagedRuleClashText(document managedRuleDocument) []byte {
 	var output strings.Builder
-	for _, rule := range document.Rules {
+	for _, rule := range managedRuleAllRules(document) {
 		output.WriteString(managedRuleClashType(rule.Type))
 		output.WriteByte(',')
 		output.WriteString(rule.Value)
@@ -196,7 +204,7 @@ func encodeManagedRuleClashText(document managedRuleDocument) []byte {
 func encodeManagedRuleClashYAML(document managedRuleDocument) []byte {
 	var output strings.Builder
 	output.WriteString("payload:\n")
-	for _, rule := range document.Rules {
+	for _, rule := range managedRuleAllRules(document) {
 		value := managedRuleClashType(rule.Type) + "," + rule.Value
 		output.WriteString("  - '")
 		output.WriteString(strings.ReplaceAll(value, "'", "''"))
@@ -206,25 +214,26 @@ func encodeManagedRuleClashYAML(document managedRuleDocument) []byte {
 }
 
 func encodeManagedRuleSingBox(document managedRuleDocument) ([]byte, error) {
-	rule := map[string]interface{}{}
-	for _, item := range document.Rules {
-		field := ""
-		switch item.Type {
-		case managedRuleTypeDomainExact:
-			field = "domain"
-		case managedRuleTypeDomainSuffix:
-			field = "domain_suffix"
-		case managedRuleTypeDomainKeyword:
-			field = "domain_keyword"
-		case managedRuleTypeIPv4CIDR, managedRuleTypeIPv6CIDR:
-			field = "ip_cidr"
+	fields := []string{"domain", "domain_suffix", "domain_keyword", "ip_cidr", "process_name", "process_path"}
+	values := make(map[string][]string)
+	for _, item := range managedRuleAllRules(document) {
+		field := map[string]string{
+			managedRuleTypeDomainExact: "domain", managedRuleTypeDomainSuffix: "domain_suffix",
+			managedRuleTypeDomainKeyword: "domain_keyword", managedRuleTypeIPv4CIDR: "ip_cidr",
+			managedRuleTypeIPv6CIDR: "ip_cidr", managedRuleTypeProcessName: "process_name", managedRuleTypeProcessPath: "process_path",
+		}[item.Type]
+		if field == "" {
+			return nil, fmt.Errorf("sing-box 不支持规则类型 %q", item.Type)
 		}
-		values, _ := rule[field].([]string)
-		rule[field] = append(values, item.Value)
+		values[field] = append(values[field], item.Value)
 	}
-	rules := make([]map[string]interface{}, 0, 1)
-	if len(rule) > 0 {
-		rules = append(rules, rule)
+	// Separate rule objects preserve the source set's OR semantics. Combining
+	// process, domain and address fields in one object introduces AND conditions.
+	rules := make([]map[string]interface{}, 0, len(fields))
+	for _, field := range fields {
+		if len(values[field]) > 0 {
+			rules = append(rules, map[string]interface{}{field: values[field]})
+		}
 	}
 	content, err := json.MarshalIndent(map[string]interface{}{"version": 3, "rules": rules}, "", "  ")
 	if err != nil {

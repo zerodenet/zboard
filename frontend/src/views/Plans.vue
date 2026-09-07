@@ -56,7 +56,7 @@
             <td class="table-primary-column">
               <div class="cell-title">
                 <strong>{{ plan.name }}</strong>
-                <span>{{ plan.slug }} · {{ plan.summary || '暂无摘要' }}</span>
+                <TableText :value="`${plan.slug} · ${plan.summary || '暂无摘要'}`" />
               </div>
             </td>
             <td>
@@ -64,9 +64,7 @@
                 {{ plan.is_active ? '已发布' : '草稿' }}
               </StatusBadge>
             </td>
-            <td data-column-priority="2">
-              {{ plan.node_group?.name || `节点组 #${plan.node_group_id}` }}
-            </td>
+            <td data-column-priority="2"><TableText :value="plan.node_group?.name || `节点组 #${plan.node_group_id}`" /></td>
             <td class="numeric-column" data-column-priority="3">{{ plan.sku_count }}</td>
             <td class="numeric-column">{{ plan.active_sku_count }}</td>
             <td data-column-priority="2"><TimeBadge :value="plan.updated_at" /></td>
@@ -220,16 +218,16 @@
                 <td class="table-primary-column">
                   <div class="cell-title">
                     <strong>{{ sku.name }}</strong>
-                    <span>{{ sku.code }}</span>
+                    <TableText :value="sku.code" />
                   </div>
                 </td>
                 <td><StatusBadge :tone="sku.is_active ? 'success' : 'neutral'">{{ sku.is_active ? '可售' : '停用' }}</StatusBadge></td>
-                <td>{{ formatCurrency(sku.price_cents, sku.currency) }}</td>
-                <td data-column-priority="2">{{ billingLabel(sku) }}</td>
+                <td class="value-cell">{{ formatCurrency(sku.price_cents, sku.currency) }}</td>
+                <td data-column-priority="2"><TableText :value="billingLabel(sku)" /></td>
                 <td data-column-priority="2"><span class="sku-operation-summary">{{ operationSummary(sku.allowed_operations) }}</span></td>
-                <td data-column-priority="3">
-                  <div class="cell-title">
-                    <strong>{{ sku.entitlement_mode === 'traffic_addon' ? `流量加购 · ${formatBytes(sku.grant_traffic_bytes)}` : '继承商品权益' }}</strong>
+                <td class="value-cell" data-column-priority="3">
+                  <div class="cell-title cell-related">
+                    <TableText :value="sku.entitlement_mode === 'traffic_addon' ? `流量加购 · ${formatBytes(sku.grant_traffic_bytes)}` : '继承商品权益'" />
                     <span v-if="skuOperationsFor(sku).includes('renew')">再次购买：{{ renewalEffectLabel(sku) }}</span>
                   </div>
                 </td>
@@ -438,6 +436,7 @@
 </template>
 
 <script setup lang="ts">
+import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import {
@@ -1702,46 +1701,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 520px) {
-  :deep(.plan-table) {
-    width: 100%;
-    min-width: 100% !important;
-    table-layout: fixed;
-  }
-
-  :deep(.plan-table .table-primary-column) {
-    width: 150px;
-    min-width: 150px;
-    max-width: 150px;
-  }
-
-  :deep(.plan-table th:nth-child(2)),
-  :deep(.plan-table td:nth-child(2)) {
-    width: 64px;
-  }
-
-  :deep(.plan-table th:nth-child(5)),
-  :deep(.plan-table td:nth-child(5)) {
-    width: 44px;
-  }
-
-  :deep(.plan-table .table-action-column) {
-    width: 68px;
-    min-width: 68px;
-  }
-
-  :deep(.plan-table .cell-title strong),
-  :deep(.plan-table .cell-title span) {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  :deep(.plan-table .table-action-column .ui-button) {
-    min-width: 0;
-    padding-inline: 9px;
-  }
-
   .detail-kv {
     grid-template-columns: 1fr;
   }

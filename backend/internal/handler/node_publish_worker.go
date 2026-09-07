@@ -59,9 +59,6 @@ func (h *handlers) publishQueuedNode(ctx context.Context, item model.NodeConfigP
 	if read.Error != nil {
 		return read.Error
 	}
-	if endpoint.ID == 0 {
-		return errors.New("node publication is waiting for a protocol endpoint")
-	}
 	if item.RequestedBy != 0 {
 		var count int64
 		if err := h.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", item.RequestedBy).Count(&count).Error; err != nil {

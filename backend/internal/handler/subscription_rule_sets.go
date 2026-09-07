@@ -181,6 +181,9 @@ func (h *handlers) AdminSubscriptionRuleSetListHandler(w http.ResponseWriter, r 
 				return
 			}
 			query = query.Where("renderer IN ?", []string{renderer, managedRuleSetRenderer})
+			if renderer == subscriptionRendererZNetSink || renderer == "zero" {
+				query = query.Where("format <> ?", managedRuleSetFormatClient)
+			}
 		} else {
 			query = query.Where("renderer = ?", renderer)
 		}
@@ -321,6 +324,13 @@ func (h *handlers) saveSubscriptionRuleSet(w http.ResponseWriter, r *http.Reques
 		Behavior: req.SourceFormat, Format: managedRuleSetFormatCanonical,
 		Interval: req.SyncInterval, IsActive: active, Revision: 1,
 	}
+	if normalized != nil {
+		item.Format, err = managedRuleStorageFormat(normalized)
+		if err != nil {
+			BadRequestFields(w, "规则内容无效。", map[string]string{"content": err.Error()})
+			return
+		}
+	}
 	action := "subscription_rule_set.create"
 	if id != 0 {
 		action = "subscription_rule_set.update"
@@ -353,6 +363,12 @@ func (h *handlers) saveSubscriptionRuleSet(w http.ResponseWriter, r *http.Reques
 			if existing.Tag != item.Tag {
 				return errSubscriptionRuleSetTagImmutable
 			}
+			if normalized == nil {
+				item.Format = existing.Format
+			}
+			if err := guardManagedRuleClientUpdate(tx, existing.ID, item.Format); err != nil {
+				return err
+			}
 			item.CreatedAt = existing.CreatedAt
 			item.Revision = existing.Revision + 1
 			if normalized != nil {
@@ -382,6 +398,8 @@ func (h *handlers) saveSubscriptionRuleSet(w http.ResponseWriter, r *http.Reques
 			NotFound(w)
 		case errors.Is(err, errSubscriptionRuleSetRevisionConflict):
 			writeJSON(w, http.StatusConflict, "规则集已被其他管理员更新，请重新加载最新版本。", map[string]interface{}{"current_revision": currentRevision})
+		case errors.Is(err, errManagedRuleClientCompatibility):
+			BadRequestFields(w, "规则集与已有模板不兼容。", map[string]string{"content": err.Error()})
 		case errors.Is(err, errSubscriptionRuleSetTagImmutable):
 			BadRequestFields(w, "规则集信息校验失败。", map[string]string{"tag": "规则集标识用于公开地址，创建后不能修改。"})
 		case errors.Is(err, errSubscriptionRuleSetLegacyReadOnly):
@@ -513,6 +531,9 @@ func managedRuleCustomizationForRenderer(renderer, siteURL string, record model.
 	resolved := subscriptionRuleSetCustomization{Tag: record.Tag, Target: target, Interval: record.Interval}
 	switch renderer {
 	case subscriptionRendererZNetSink:
+		if record.Format == managedRuleSetFormatClient {
+			return subscriptionRuleSetCustomization{}, fmt.Errorf("规则集 %q：%w", record.Name, errManagedRuleClientCompatibility)
+		}
 		resolved.URL = managedRuleZRSURL(siteURL, record.Tag)
 		resolved.Format = managedRuleArtifactZRS
 	case subscriptionRendererClash:

@@ -38,3 +38,7 @@ frontend/.nuxt
 /design-qa.md
 /docs/admin-frontend-completion-audit.md
 /docs/admin-frontend-implementation-plan.md
+
+# Historical task plans and local acceptance journals; keep local copies.
+/docs/admin-frontend-system-redesign.md
+/docs/core-acceptance.md

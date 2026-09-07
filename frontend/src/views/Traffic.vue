@@ -70,9 +70,9 @@
               <span v-else>—</span>
             </td>
             <td data-column-priority="2"><EntityReference :reference="nodeReference(record.node_id)" :fallback-id="record.node_id" fallback-kind="node" compact /></td>
-            <td class="numeric-column" data-column-priority="3">{{ formatBytes(record.raw_bytes) }}</td>
+            <td class="value-cell numeric-column" data-column-priority="3">{{ formatBytes(record.raw_bytes) }}</td>
             <td class="numeric-column" data-column-priority="3">{{ formatMultiplier(record.protocol_multiplier_milli) }}</td>
-            <td class="numeric-column"><strong>{{ formatBytes(record.used_bytes) }}</strong></td>
+            <td class="value-cell numeric-column"><strong>{{ formatBytes(record.used_bytes) }}</strong></td>
           </tr>
         </tbody>
       </DataTable>
@@ -112,9 +112,9 @@
             <td data-column-priority="3"><EntityReference :reference="userReference(item.user_id)" :fallback-id="item.user_id" fallback-kind="user" compact /></td>
             <td data-column-priority="3"><EntityReference :reference="planReference(item.plan_id)" :fallback-id="item.plan_id" fallback-kind="plan" compact /></td>
             <td><StatusBadge :tone="item.status === 'active' ? 'success' : 'neutral'">{{ subscriptionStatusName(item.status) }}</StatusBadge></td>
-            <td class="numeric-column" data-column-priority="2">{{ formatBytes(item.flow_used) }}</td>
-            <td class="numeric-column" data-column-priority="2">{{ formatBytes(item.recorded_bytes) }}</td>
-            <td class="numeric-column" :class="{ 'danger-text': item.difference }">{{ formatSignedBytes(item.difference) }}</td>
+            <td class="value-cell numeric-column" data-column-priority="2">{{ formatBytes(item.flow_used) }}</td>
+            <td class="value-cell numeric-column" data-column-priority="2">{{ formatBytes(item.recorded_bytes) }}</td>
+            <td class="value-cell numeric-column" :class="{ 'danger-text': item.difference }">{{ formatSignedBytes(item.difference) }}</td>
             <td><StatusBadge :tone="resultTone(item.result)">{{ resultName(item.result) }}</StatusBadge></td>
             <td class="table-action-column"><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(item.user_id), subscription: String(item.subscription_id) })">查看订阅</RouterLink></td>
           </tr>

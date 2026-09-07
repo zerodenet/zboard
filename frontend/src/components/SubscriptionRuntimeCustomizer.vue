@@ -1,5 +1,13 @@
 <template>
   <section class="runtime-settings">
+    <div v-if="renderer === 'sing-box'" class="runtime-client-controls">
+      <p>导入后可在客户端切换 Rule（规则）、Direct（直连）、Global（全局）；初始模式不会移除其他模式的规则。</p>
+      <p v-if="model.tun.enabled && model.mixed_enabled">已提供客户端 HTTP 代理开关，可在支持该功能的 sing-box 图形客户端中随时切换。</p>
+      <template v-else>
+        <p>客户端 HTTP 代理开关需要同时启用 TUN 和本地 HTTP/SOCKS 代理。</p>
+        <UiButton variant="secondary" @click="enableClientHTTPProxy">启用客户端 HTTP 代理开关</UiButton>
+      </template>
+    </div>
     <div class="runtime-grid">
       <FormField label="初始运行模式" name="template-route-mode" hint="规则模式按规则集匹配；全局模式全部走主策略组；直连模式绕过代理。" required>
         <template #default="{ controlAttrs }"><UiSelect v-model="model.mode" v-bind="controlAttrs" :options="modeOptions" /></template>
@@ -15,7 +23,7 @@
     </label>
 
     <label v-if="renderer === 'sing-box' && model.mixed_enabled" class="setting-switch">
-      <span><strong>自动设置系统 HTTP 代理</strong><small>启动 sing-box 时将系统代理指向上述混合端口，退出时自动清理。</small></span>
+      <span><strong>自动设置系统 HTTP 代理</strong><small>适用于命令行运行：启动时设置系统代理，退出时清理。图形客户端的 HTTP 代理开关由上方配置提供。</small></span>
       <UiCheckbox v-model="model.system_proxy" role="switch" />
     </label>
 
@@ -107,6 +115,12 @@ const dnsTypeOptions = computed(() => [
 ])
 const dnsDefaultOptions = computed(() => model.value.dns.servers.map(server => ({ label: server.tag || '未命名', value: server.tag })))
 
+function enableClientHTTPProxy() {
+  model.value.mixed_enabled = true
+  model.value.tun.enabled = true
+  toggleTun(true)
+}
+
 function addDNSServer() {
   const used = new Set(model.value.dns.servers.map(server => server.tag))
   let index = model.value.dns.servers.length + 1
@@ -145,5 +159,8 @@ function toggleDNSHijack(enabled: boolean) {
 </script>
 
 <style scoped>
+.runtime-client-controls { display: grid; gap: 8px; font-size: 13px; color: var(--muted); }
+.runtime-client-controls p { margin: 0; }
+.runtime-client-controls .ui-button { justify-self: start; }
 .runtime-settings,.nested-settings,.dns-server-list{display:grid;gap:10px}.runtime-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}.setting-switch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft)}.setting-switch span{display:grid;gap:3px}.setting-switch strong,.dns-list-heading strong{font-size:10px;color:var(--text-strong)}.setting-switch small{font-size:9px;color:var(--muted);line-height:1.5}.setting-switch.compact{min-height:58px}.nested-settings{padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft)}.dns-list-heading,.dns-server-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.dns-server-row{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}.dns-server-grid{flex:1}.tun-switches{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tun-switches label{display:flex;align-items:center;gap:6px;font-size:10px}@media(max-width:760px){.runtime-grid{grid-template-columns:1fr}.dns-server-row{align-items:flex-start;flex-direction:column}}
 </style>

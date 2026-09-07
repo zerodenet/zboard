@@ -10,14 +10,14 @@
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <DataTable v-if="records.length" caption="面板托管的 DNS 解析" :row-count="total" :min-width="980">
-        <thead><tr><th>域名</th><th>目标节点</th><th>供应商</th><th>状态</th><th>公共解析</th><th>同步时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
+        <thead><tr><th class="table-primary-column">域名</th><th data-column-priority="2">目标节点</th><th data-column-priority="2">供应商</th><th>状态</th><th data-column-priority="3">公共解析</th><th data-column-priority="2">同步时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
         <tbody><tr v-for="record in records" :key="record.id">
-          <td><div class="cell-title"><strong>{{ record.record_type }} {{ record.domain_name }}</strong><span>{{ record.record_value }} · TTL {{ record.ttl === 1 ? '自动' : record.ttl }}<template v-if="record.proxied"> · Cloudflare 代理</template></span></div></td>
-          <td><RouterLink :to="`/admin/nodes?node=${record.node_id}`">{{ record.node_name }}</RouterLink></td>
-          <td>{{ record.provider_name }}</td>
-          <td><StatusBadge :tone="dnsTone(record.status)">{{ dnsStatus(record.status) }}</StatusBadge><small v-if="record.last_error" class="row-error">{{ record.last_error }}</small></td>
-          <td><StatusBadge :tone="record.public_resolved ? 'success' : 'warning'">{{ record.public_resolved ? '已观察到' : '自动观察中' }}</StatusBadge></td>
-          <td><TimeBadge v-if="record.last_synced_at" :value="record.last_synced_at" mode="relative" /><span v-else class="muted-value">尚未同步</span></td>
+          <td class="table-primary-column"><div class="cell-title"><strong>{{ record.record_type }} {{ record.domain_name }}</strong><EndpointAddress :address="record.record_value" /><span>TTL {{ record.ttl === 1 ? '自动' : record.ttl }}<template v-if="record.proxied"> · Cloudflare 代理</template></span></div></td>
+          <td data-column-priority="2"><RouterLink class="table-secondary-text" :title="record.node_name || `VPS #${record.node_id}`" :to="`/admin/nodes?node=${record.node_id}`">{{ record.node_name }}</RouterLink></td>
+          <td data-column-priority="2"><TableText :value="record.provider_name" /></td>
+          <td><StatusBadge :tone="dnsTone(record.status)">{{ dnsStatus(record.status) }}</StatusBadge><small v-if="record.last_error" class="row-error" :title="record.last_error">{{ record.last_error }}</small></td>
+          <td data-column-priority="3"><StatusBadge :tone="record.public_resolved ? 'success' : 'warning'">{{ record.public_resolved ? '已观察到' : '自动观察中' }}</StatusBadge></td>
+          <td data-column-priority="2"><TimeBadge v-if="record.last_synced_at" :value="record.last_synced_at" mode="relative" /><span v-else class="muted-value">尚未同步</span></td>
           <td class="table-action-column">
             <RowActions :label="`${record.record_type} ${record.domain_name} 的操作`" :trigger-key="`dns-${record.id}`">
               <UiButton size="sm" variant="ghost" :disabled="record.status === 'syncing' || record.status === 'deleting'" @click="openEdit(record)"><UiIcon name="settings" />编辑</UiButton>
@@ -109,6 +109,8 @@
 </template>
 
 <script setup lang="ts">
+import EndpointAddress from '../components/EndpointAddress.vue'
+import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   createManagedDNSRecord,

@@ -38,13 +38,13 @@
         <section class="diagnostic-section">
           <header><div><strong>协议服务</strong><span>只检查 ZBoard 当前启用并分配到该节点的协议，不展示主机端口或其他宿主机信息。</span></div></header>
           <DataTable v-if="snapshot.protocols.length" caption="当前分配协议的运行状态" :row-count="snapshot.protocols.length" :min-width="520">
-            <thead><tr><th>服务</th><th>协议</th><th>状态</th><th>说明</th></tr></thead>
+            <thead><tr><th class="table-primary-column">服务</th><th>协议</th><th>状态</th><th data-column-priority="2">说明</th></tr></thead>
             <tbody>
               <tr v-for="protocol in snapshot.protocols" :key="`${protocol.name}-${protocol.protocol}`">
-                <td><strong>{{ protocol.name || protocolLabel(protocol.protocol) }}</strong></td>
+                <td class="table-primary-column"><strong>{{ protocol.name || protocolLabel(protocol.protocol) }}</strong></td>
                 <td>{{ protocolLabel(protocol.protocol) }}</td>
                 <td><StatusBadge :tone="statusTone(protocol.status)" :icon="protocol.status === 'healthy' ? 'check' : 'alert'">{{ statusLabel(protocol.status) }}</StatusBadge></td>
-                <td>{{ protocol.status === 'healthy' ? '运行正常' : reasonLabel(protocol.reason) }}</td>
+                <td data-column-priority="2"><TableText :value="protocol.status === 'healthy' ? '运行正常' : reasonLabel(protocol.reason)" /></td>
               </tr>
             </tbody>
           </DataTable>
@@ -65,6 +65,7 @@
 </template>
 
 <script setup lang="ts">
+import TableText from './TableText.vue'
 import { ref, watch } from 'vue'
 import { runNodeDiagnostics, type NodeDiagnosticReason, type NodeDiagnosticSnapshot, type NodeDiagnosticStatus } from '../api/nodeDiagnostics'
 import { normalizeApiErrorMessage } from '../utils/apiError'

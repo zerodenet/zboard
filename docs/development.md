@@ -111,6 +111,50 @@ The repository also provides:
 - `scripts/check-go-version.*` and `scripts/sync-go-baseline.*` for toolchain
   maintenance.
 
+## Performance and stability verification
+
+Run these commands from the repository root with the pinned Go toolchain
+(`GO_BIN` can select its executable):
+
+```bash
+bash scripts/benchmark-accounting.sh local
+bash scripts/benchmark-accounting.sh container
+bash scripts/acceptance-mixed.sh
+```
+
+The accounting benchmark defaults to 100 batches per scenario and three runs;
+`BENCH_TIME` and `BENCH_COUNT` override these settings. Container checks require
+Docker. The mixed workload defaults to 10 nodes, 1,000 subscriptions, 100,000
+historical records, four concurrent readers and 100 events/second for 300 seconds.
+`DURATION_SECONDS`, `EVENT_RATE` and `READERS` select other workload profiles.
+The application and database share the 1 CPU / 1 GiB budget; the load generator
+runs outside it. The [roadmap](roadmap.md#资源和性能预算) defines latency and memory
+budgets. Also verify exact accounting under replay and reordering, no OOM,
+explained failures and a fully drained backlog.
+
+Real Zero revocation checks use isolated nodes and test credentials:
+
+```bash
+ZERO_ARTIFACT_DIR=/path/to/verified-linux-zero-artifact \
+  NODE_SCENARIO=expiry bash scripts/acceptance-node.sh
+```
+
+The artifact directory must contain `zero` and its matching `verification.json`.
+Other scenarios are `exhaustion`, `group_change` and `recovery`. Verify data-plane
+access after revocation and publication recovery, including existing connections;
+control-plane status or a mock SSH server alone is insufficient. See also
+[node publication](node-config-delivery.md#重跑-mysql-验证) for real MySQL checks.
+
+Keep raw logs, profiles, environment details, source/build hashes and per-run
+reports under the ignored `.codex-local-artifacts/acceptance/` directory. A dirty
+build needs source hashes as well as Git HEAD. Share selected evidence through
+CI/release artifacts when needed, without committing workstation journals.
+
+A 500-events/second, 60-second burst and a 24-hour soak are separate acceptance
+profiles. Record fault injection, restarts, queue recovery and resource trends;
+restart the soak clock after changing the build or resetting the environment.
+Short runs do not establish long-term stability or production capacity.
+
 ## Restricted networks
 
 `scripts/ensure-go-env.*` can install the pinned Go toolchain when it is

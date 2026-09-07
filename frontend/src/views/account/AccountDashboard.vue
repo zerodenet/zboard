@@ -66,12 +66,12 @@
             <tr v-for="sub in activeSubscriptions" :key="sub.id">
               <td class="table-primary-column"><strong class="mono">#{{ sub.id }}</strong></td>
               <td>
-                <div class="cell-title">
-                  <strong>{{ sub.plan_name || `套餐 #${sub.plan_id}` }}</strong>
-                  <span>{{ sub.sku_name || `SKU #${sub.plan_sku_id}` }}</span>
+                <div class="cell-title cell-related">
+                  <TableText :value="sub.plan_name || `套餐 #${sub.plan_id}`" />
+                  <TableText :value="sub.sku_name || `SKU #${sub.plan_sku_id}`" />
                 </div>
               </td>
-              <td><strong>{{ formatBytes(remaining(sub)) }}</strong></td>
+              <td class="value-cell"><strong>{{ formatBytes(remaining(sub)) }}</strong></td>
               <td data-column-priority="1"><TimeBadge :value="sub.end_at" mode="relative" /></td>
             </tr>
           </tbody>
@@ -117,12 +117,12 @@
           <tr v-for="order in orders" :key="order.id">
             <td class="table-primary-column">#{{ order.id }}</td>
             <td>
-              <div class="cell-title">
-                <strong>{{ order.plan_name || `套餐 #${order.plan_id}` }}</strong>
-                <span>{{ order.sku_name || `SKU #${order.plan_sku_id}` }}</span>
+              <div class="cell-title cell-related">
+                <TableText :value="order.plan_name || `套餐 #${order.plan_id}`" />
+                <TableText :value="order.sku_name || `SKU #${order.plan_sku_id}`" />
               </div>
             </td>
-            <td>{{ formatCurrency(order.amount_cents, order.currency) }}</td>
+            <td class="value-cell">{{ formatCurrency(order.amount_cents, order.currency) }}</td>
             <td><StatusBadge :tone="orderTone(order.status)">{{ orderLabel(order.status) }}</StatusBadge></td>
             <td data-column-priority="2"><TimeBadge :value="order.created_at" /></td>
           </tr>
@@ -134,6 +134,7 @@
 </template>
 
 <script setup lang="ts">
+import TableText from '../../components/TableText.vue'
 import { computed, onMounted } from 'vue'
 import {
   fetchAccountOrdersPage,

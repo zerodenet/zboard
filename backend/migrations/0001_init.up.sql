@@ -506,7 +506,7 @@ CREATE TABLE `protocol_credentials` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 CREATE TABLE `protocol_deployments` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `protocol_endpoint_id` bigint unsigned NOT NULL,
+  `protocol_endpoint_id` bigint unsigned DEFAULT NULL,
   `node_id` bigint unsigned NOT NULL,
   `config_revision` bigint unsigned NOT NULL,
   `desired_config_sha256` char(64) NOT NULL DEFAULT '',
@@ -957,3 +957,25 @@ CREATE TABLE `node_config_publishes` (
  KEY `idx_node_publish_due` (`next_attempt_at`, `lease_until`),
  CONSTRAINT `fk_node_publish_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `network_entries` (
+ `network` varchar(16) NOT NULL DEFAULT 'tcp_udp',
+ `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+ `name` varchar(80) NOT NULL,
+ `node_id` bigint unsigned NOT NULL,
+ `endpoint_id` bigint unsigned NOT NULL,
+ `address` varchar(255) NOT NULL,
+ `port` int NOT NULL,
+ `public_port` int NOT NULL,
+ `enabled` boolean NOT NULL DEFAULT false,
+ `path_config` text,
+ `revision` bigint unsigned NOT NULL DEFAULT 1,
+ `created_at` datetime(3) DEFAULT NULL,
+ `updated_at` datetime(3) DEFAULT NULL,
+ PRIMARY KEY (`id`),
+ UNIQUE KEY `ux_network_entry_port` (`node_id`, `port`),
+ KEY `idx_network_entries_endpoint_id` (`endpoint_id`),
+ UNIQUE KEY `ux_network_entry_name` (`endpoint_id`, `name`),
+ CONSTRAINT `fk_network_entries_entry_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE RESTRICT,
+ CONSTRAINT `fk_network_entries_landing_endpoint` FOREIGN KEY (`endpoint_id`) REFERENCES `protocol_endpoints` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

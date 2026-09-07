@@ -15,6 +15,10 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// Rule matchers can name DNS labels containing underscores, unlike strict
+// hostnames. Retain IDNA lookup mapping and validate the resulting ASCII below.
+var managedRuleDomainProfile = idna.New(idna.MapForLookup(), idna.BidiRule(), idna.StrictDomainName(false))
+
 func normalizeManagedRuleSourceFormat(value string) (string, error) {
 	value = strings.ToLower(strings.TrimSpace(value))
 	if value == "" {
@@ -23,7 +27,7 @@ func normalizeManagedRuleSourceFormat(value string) (string, error) {
 	switch value {
 	case managedRuleSourceZeroRuleIR, "zero-rule-ir", "zero_rule_ir_v1", "canonical":
 		return managedRuleSourceZeroRuleIR, nil
-	case managedRuleSourceDomainList, managedRuleSourceCIDRList, managedRuleSourceClashClassical:
+	case managedRuleSourceAuto, managedRuleSourceDomainList, managedRuleSourceCIDRList, managedRuleSourceClashClassical:
 		return value, nil
 	default:
 		return "", fmt.Errorf("unsupported source_format %q", value)
@@ -54,6 +58,13 @@ func parseManagedRuleSource(raw []byte, sourceFormat string) (managedRuleDocumen
 	if err != nil {
 		return managedRuleDocument{}, err
 	}
+	raw = bytes.TrimPrefix(raw, []byte{0xef, 0xbb, 0xbf})
+	if format == managedRuleSourceAuto {
+		format, err = detectManagedRuleSourceFormat(raw)
+		if err != nil {
+			return managedRuleDocument{}, err
+		}
+	}
 	if format == managedRuleSourceZeroRuleIR {
 		return decodeAndNormalizeZeroRuleIR(raw)
 	}
@@ -74,6 +85,7 @@ func parseManagedRuleSource(raw []byte, sourceFormat string) (managedRuleDocumen
 	}
 
 	rules := make([]managedRule, 0, len(lines))
+	clientRules := []managedRule{}
 	location := "line"
 	if wrapped {
 		location = "payload item"
@@ -93,14 +105,18 @@ func parseManagedRuleSource(raw []byte, sourceFormat string) (managedRuleDocumen
 			rule, err = parseManagedCIDRListRule(line)
 		}
 		if err != nil {
-			return managedRuleDocument{}, fmt.Errorf("%s %d: %w", location, index+1, err)
+			return managedRuleDocument{}, managedRuleSourceLineError(format, location, index+1, line, err)
 		}
-		rules = append(rules, rule)
-		if len(rules) > managedRuleMaxRules {
+		if isManagedClientRule(rule.Type) {
+			clientRules = append(clientRules, rule)
+		} else {
+			rules = append(rules, rule)
+		}
+		if len(rules)+len(clientRules) > managedRuleMaxRules {
 			return managedRuleDocument{}, fmt.Errorf("rule source exceeds %d rules", managedRuleMaxRules)
 		}
 	}
-	return normalizeManagedRuleDocument(managedRuleDocument{Version: zeroRuleIRVersion, Rules: rules})
+	return normalizeManagedRuleDocument(managedRuleDocument{Version: zeroRuleIRVersion, Rules: rules, ClientRules: clientRules})
 }
 
 // Clash rule-provider sources wrap their entries in a YAML payload sequence.
@@ -133,10 +149,10 @@ func decodeManagedRuleProviderPayload(raw []byte) ([]string, bool, error) {
 		return nil, true, fmt.Errorf("invalid Clash provider YAML: %w", err)
 	}
 	if source.Payload == nil {
-		return nil, true, errors.New("Clash provider YAML field payload must be a string sequence")
+		return nil, true, errors.New("Clash Provider 的 payload 没有有效规则，文件可能只有注释；请选择有实际规则的文件。")
 	}
 	if len(source.Payload) == 0 {
-		return nil, true, errors.New("Clash provider YAML payload cannot be empty")
+		return nil, true, errors.New("Clash Provider 的 payload 为空，没有可导入的规则。")
 	}
 	return source.Payload, true, nil
 }
@@ -157,7 +173,7 @@ func decodeAndNormalizeZeroRuleIR(raw []byte) (managedRuleDocument, error) {
 	if wire.Rules == nil {
 		return managedRuleDocument{}, errors.New("Zero Rule IR field rules is required and cannot be null")
 	}
-	return normalizeManagedRuleDocument(managedRuleDocument{Version: wire.Version, Name: wire.Name, Rules: *wire.Rules})
+	return normalizeManagedRuleDocument(managedRuleDocument{Version: wire.Version, Name: wire.Name, Rules: *wire.Rules, ClientRules: wire.ClientRules})
 }
 
 func normalizeManagedRuleDocument(document managedRuleDocument) (managedRuleDocument, error) {
@@ -179,21 +195,36 @@ func normalizeManagedRuleDocument(document managedRuleDocument) (managedRuleDocu
 			return managedRuleDocument{}, fmt.Errorf("Zero Rule IR name exceeds %d UTF-8 bytes", managedRuleMaxDisplayNameBytes)
 		}
 	}
-	if len(document.Rules) == 0 {
+	if len(document.Rules)+len(document.ClientRules) == 0 {
 		return managedRuleDocument{}, errors.New("Zero Rule IR rules cannot be empty")
 	}
-	if len(document.Rules) > managedRuleMaxRules {
+	if len(document.Rules)+len(document.ClientRules) > managedRuleMaxRules {
 		return managedRuleDocument{}, fmt.Errorf("Zero Rule IR contains more than %d rules", managedRuleMaxRules)
 	}
 
 	normalized := make([]managedRule, 0, len(document.Rules))
 	for index, rule := range document.Rules {
+		if isManagedClientRule(rule.Type) {
+			return managedRuleDocument{}, errors.New("进程规则请放入 client_rules；rules 保持 Zero Rule IR v1 格式")
+		}
 		value, err := normalizeManagedRuleValue(rule.Type, rule.Value)
 		if err != nil {
 			return managedRuleDocument{}, fmt.Errorf("rule %d: %w", index, err)
 		}
 		normalized = append(normalized, managedRule{Type: rule.Type, Value: value})
 	}
+	clientRules := make([]managedRule, 0, len(document.ClientRules))
+	for index, rule := range document.ClientRules {
+		if !isManagedClientRule(rule.Type) {
+			return managedRuleDocument{}, fmt.Errorf("client_rules 第 %d 项仅支持 process_name 或 process_path", index+1)
+		}
+		value, err := normalizeManagedProcessValue(rule.Type, rule.Value)
+		if err != nil {
+			return managedRuleDocument{}, fmt.Errorf("client_rules 第 %d 项：%w", index+1, err)
+		}
+		clientRules = append(clientRules, managedRule{Type: rule.Type, Value: value})
+	}
+	document.ClientRules = normalizeManagedRuleOrder(clientRules)
 	document.Rules = normalizeManagedRuleOrder(normalized)
 	return document, nil
 }
@@ -214,7 +245,7 @@ func normalizeManagedRuleValue(ruleType, value string) (string, error) {
 		if trimmed == "" {
 			return "", errors.New("domain is empty")
 		}
-		ascii, err := idna.Lookup.ToASCII(trimmed)
+		ascii, err := managedRuleDomainProfile.ToASCII(trimmed)
 		if err != nil {
 			return "", fmt.Errorf("invalid domain %q: %w", value, err)
 		}
@@ -225,6 +256,12 @@ func normalizeManagedRuleValue(ruleType, value string) (string, error) {
 		for _, label := range strings.Split(ascii, ".") {
 			if label == "" || len(label) > 63 {
 				return "", errors.New("domain contains an empty label or a label longer than 63 bytes")
+			}
+			for _, char := range label {
+				if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-' || char == '_' {
+					continue
+				}
+				return "", fmt.Errorf("invalid domain %q: unsupported character %q", value, char)
 			}
 		}
 		return ascii, nil
@@ -262,7 +299,7 @@ func normalizeManagedRuleValue(ruleType, value string) (string, error) {
 func normalizeManagedRuleOrder(rules []managedRule) []managedRule {
 	order := map[string]int{
 		managedRuleTypeDomainExact: 0, managedRuleTypeDomainSuffix: 1,
-		managedRuleTypeDomainKeyword: 2, managedRuleTypeIPv4CIDR: 3, managedRuleTypeIPv6CIDR: 4,
+		managedRuleTypeDomainKeyword: 2, managedRuleTypeIPv4CIDR: 3, managedRuleTypeIPv6CIDR: 4, managedRuleTypeProcessName: 5, managedRuleTypeProcessPath: 6,
 	}
 	sort.Slice(rules, func(i, j int) bool {
 		left, right := order[rules[i].Type], order[rules[j].Type]
@@ -349,6 +386,10 @@ func parseManagedClashClassicalRule(line string) (managedRule, error) {
 	}
 	var ruleType string
 	switch strings.ToUpper(strings.TrimSpace(parts[0])) {
+	case "PROCESS-NAME":
+		ruleType = managedRuleTypeProcessName
+	case "PROCESS-PATH":
+		ruleType = managedRuleTypeProcessPath
 	case "DOMAIN":
 		ruleType = managedRuleTypeDomainExact
 	case "DOMAIN-SUFFIX":
@@ -361,6 +402,10 @@ func parseManagedClashClassicalRule(line string) (managedRule, error) {
 		ruleType = managedRuleTypeIPv6CIDR
 	default:
 		return managedRule{}, fmt.Errorf("unsupported classical rule type %q", parts[0])
+	}
+	if isManagedClientRule(ruleType) {
+		value, err := normalizeManagedProcessValue(ruleType, parts[1])
+		return managedRule{Type: ruleType, Value: value}, err
 	}
 	value, err := normalizeManagedRuleValue(ruleType, strings.TrimSpace(parts[1]))
 	return managedRule{Type: ruleType, Value: value}, err

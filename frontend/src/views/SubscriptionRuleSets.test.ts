@@ -4,6 +4,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SubscriptionRuleSets from './SubscriptionRuleSets.vue'
+import UiSelect from '../components/UiSelect.vue'
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), list: vi.fn(), confirm: vi.fn() }))
 vi.mock('../api/managedRuleSets', () => ({
@@ -46,6 +47,19 @@ async function fillRequired() {
 }
 
 describe('managed rule set editor', () => {
+  it('defaults remote imports to auto detection and explains process compatibility', async () => {
+    await render()
+    expect(wrapper!.text()).toContain('不能绑定 Zero 模板')
+    const mode = wrapper!.findAllComponents(UiSelect).find(select =>
+      (select.props('options') as Array<{ value: string }>).some(option => option.value === 'remote'))!
+    mode.vm.$emit('update:modelValue', 'remote')
+    await flushPromises()
+    const format = wrapper!.findAllComponents(UiSelect).find(select =>
+      (select.props('options') as Array<{ value: string }>).some(option => option.value === 'clash_classical'))!
+    expect(format.props('modelValue')).toBe('auto')
+    expect(wrapper!.text()).toContain('包含进程规则时会完整保留')
+  })
+
   it('protects dirty drafts on navigation and browser unload, and allows explicit discard', async () => {
     const router = await render()
     await fillRequired()
@@ -88,6 +102,38 @@ describe('managed rule set editor', () => {
     expect(wrapper!.get<HTMLInputElement>('#managed-rule-set-name').element.value).toBe('Example')
     await tag.setValue('another')
     expect(tag.attributes('aria-invalid')).toBeUndefined()
+  })
+
+  it('explains source formats and lets a mismatched AdBlock import be corrected in place', async () => {
+    await render()
+    await fillRequired()
+    const selectOption = async (value: string) => {
+      const select = wrapper!.findAllComponents(UiSelect).find(item =>
+        (item.props('options') as Array<{ value: string }>).some(option => option.value === value))!
+      select.vm.$emit('update:modelValue', value)
+      await flushPromises()
+    }
+    await selectOption('remote')
+    await selectOption('cidr_list')
+    expect(wrapper!.text()).toContain('只接受纯 IP 网段')
+    const url = 'https://raw.githubusercontent.com/dler-io/Rules/refs/heads/main/Clash/Provider/AdBlock.yaml'
+    await wrapper!.get('#managed-rule-set-source-url').setValue(url)
+    mocks.create.mockRejectedValueOnce({ response: { status: 400, data: {
+      message: '远端规则导入失败。',
+      error: { version: 1, code: 'validation_failed', fields: {
+        source_format: 'payload 第 1 项：请将“远端来源格式”改为“Clash classical”后重新导入。',
+      } },
+    } } })
+    await wrapper!.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper!.text()).toContain('请将“远端来源格式”改为“Clash classical”')
+    expect(wrapper!.get<HTMLInputElement>('#managed-rule-set-source-url').element.value).toBe(url)
+    await selectOption('clash_classical')
+    expect(wrapper!.text()).toContain('payload 包装的 Clash Provider YAML')
+    await wrapper!.get('form').trigger('submit')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenLastCalledWith(expect.objectContaining({ source_url: url, source_format: 'clash_classical' }))
+    expect(wrapper!.find('form').exists()).toBe(false)
   })
 
   it('closes a successfully saved draft without prompting on later navigation', async () => {
