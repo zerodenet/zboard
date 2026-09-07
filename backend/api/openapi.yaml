@@ -229,7 +229,7 @@ paths:
       summary: List network fronting entries and pending publication state
       description: Proxy path credentials are never returned. B owns access and traffic accounting.
       responses:
-        "200": { description: Entries with node_name, landing_node_id, endpoint_name, has_path, pending and last_error }
+        "200": { description: "Entries with node_name, landing_node_id, endpoint_name, has_path, pending and last_error" }
     post:
       tags: [admin, nodes]
       summary: Create an opaque TCP/UDP entry on A targeting an existing B protocol
@@ -240,7 +240,7 @@ paths:
             schema: { $ref: '#/components/schemas/NetworkEntryRequest' }
       responses:
         "200": { description: Entry saved and A publication queued }
-        "400": { description: Invalid reference, port conflict, proxy path or incompatible legacy credential ports }
+        "400": { description: "Invalid reference, port conflict, proxy path or incompatible legacy credential ports" }
   /api/v1/admin/network-entries/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -4323,7 +4323,7 @@ components:
       properties:
         version: { type: integer, enum: [3] }
         mode: { type: string, enum: [rule, global, direct], default: rule, description: "Initial routing mode. Zero emits its native mode object, Clash emits mode, and sing-box emits clash_api.default_mode and keeps rule/direct/global routes available for client-side switching." }
-        mixed_enabled: { type: boolean, default: true, description: Emit the renderer-native local loopback mixed HTTP and SOCKS inbound. At least one of mixed_enabled and tun.enabled must be true. With both enabled, sing-box also emits tun.platform.http_proxy to expose the GUI client HTTP proxy switch. }
+        mixed_enabled: { type: boolean, default: true, description: "Emit the renderer-native local loopback mixed HTTP and SOCKS inbound. At least one of mixed_enabled and tun.enabled must be true. With both enabled, sing-box also emits tun.platform.http_proxy to expose the GUI client HTTP proxy switch." }
         mixed_port: { type: integer, minimum: 1, maximum: 65535, default: 7890, description: Local loopback mixed HTTP and SOCKS inbound port emitted for every supported client renderer. }
         system_proxy: { type: boolean, default: false, description: sing-box-only switch that sets and cleans the operating-system HTTP proxy for the mixed inbound. }
         tun: { $ref: "#/components/schemas/SubscriptionTunCustomization" }
