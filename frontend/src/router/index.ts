@@ -15,6 +15,7 @@ export const routes: RouteRecordRaw[] = [
     ]
   },
   { path: '/setup', component: () => import('../views/Setup.vue'), meta: { setupOnly: true, title: '初始化', layout: 'auth' } },
+  { path: '/auth/oidc/complete', component: () => import('../views/IdentityLoginComplete.vue'), meta: { title: '第三方登录', layout: 'auth' } },
   { path: '/login', component: () => import('../views/Login.vue'), meta: { requiresGuest: true, title: '登录', layout: 'auth' } },
   { path: '/register', component: () => import('../views/Register.vue'), meta: { requiresGuest: true, requiresRegistration: true, title: '注册', layout: 'auth' } },
   {
@@ -24,6 +25,7 @@ export const routes: RouteRecordRaw[] = [
     children: [
       { path: '', component: () => import('../views/account/AccountDashboard.vue'), meta: { title: '我的概览' } },
       { path: 'extensions/:pluginId/:pageId', component: () => import('../views/PluginPage.vue'), meta: { pluginPage: true, title: '扩展' } },
+      { path: 'security', component: () => import('../views/account/AccountSecurity.vue'), meta: { title: '账户安全' } },
       { path: 'plans', component: () => import('../views/account/AccountPlans.vue'), meta: { title: '购买套餐' } },
       { path: 'orders', component: () => import('../views/account/AccountOrders.vue'), meta: { title: '我的订单' } },
       { path: 'subscription', component: () => import('../views/account/AccountSubscription.vue'), meta: { title: '订阅配置' } },

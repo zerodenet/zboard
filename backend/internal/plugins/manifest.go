@@ -87,12 +87,12 @@ func (m Manifest) Validate() error {
 	if _, err := semver.NewConstraint(m.Requires.ZBoard); err != nil || m.Requires.ZBoard == "" {
 		return errors.New("host version constraint is required")
 	}
-	if len(m.Capabilities) == 0 || len(m.Capabilities) > 2 {
+	if len(m.Capabilities) == 0 || len(m.Capabilities) > 3 {
 		return errors.New("declare supported capabilities")
 	}
 	seen := map[string]bool{}
 	for _, c := range m.Capabilities {
-		if seen[c] || (c != "zboard.ui.page.v1" && c != "zboard.config.v1") {
+		if seen[c] || (c != "zboard.ui.page.v1" && c != "zboard.config.v1" && c != IdentityCapability) {
 			return fmt.Errorf("unsupported or duplicate capability: %s", c)
 		}
 		seen[c] = true
@@ -128,6 +128,9 @@ func (m Manifest) Validate() error {
 			return errors.New("configuration pages require admin config capability")
 		}
 		pages[key] = true
+	}
+	if seen[IdentityCapability] && (m.Components.Server == nil || !seen["zboard.config.v1"]) {
+		return errors.New("identity provider requires a configurable server")
 	}
 	if m.Components.Server != nil {
 		if !seen["zboard.config.v1"] || len(m.Components.Server.Executables) == 0 || len(m.Components.Server.Executables) > 12 {

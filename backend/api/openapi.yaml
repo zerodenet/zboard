@@ -22,6 +22,127 @@ tags:
   - name: traffic
   - name: tickets
 paths:
+  /api/v1/auth/oidc/providers:
+    get:
+      tags: [auth]
+      security: []
+      summary: List enabled identity provider plugins
+      responses:
+        '200':
+          description: Public provider IDs and names; empty when the optional runtime is unavailable
+  /api/v1/auth/oidc/{id}/start:
+    post:
+      tags: [auth]
+      security: []
+      summary: Begin a browser-bound authorization code login with PKCE
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200':
+          description: Authorization URL and a five-minute HttpOnly SameSite=Lax flow cookie
+        '400': { description: Provider unavailable or canonical HTTPS site origin missing }
+        '403': { description: Cross-site request rejected }
+  /api/v1/auth/oidc/callback:
+    get:
+      tags: [auth]
+      security: []
+      summary: Consume browser-bound state and verify an external identity through the plugin
+      description: This GET writes core identity state and is blocked during database migration. The redirect never contains a ZBoard bearer token. Unlinked identities cannot log in or create accounts.
+      parameters:
+        - name: state
+          in: query
+          required: true
+          schema: { type: string }
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: error
+          in: query
+          schema: { type: string }
+        - name: iss
+          in: query
+          schema: { type: string }
+      responses:
+        '303': { description: Fixed completion page, with a one-minute HttpOnly result cookie on success }
+        '400': { description: Callback configuration unavailable }
+  /api/v1/auth/oidc/finish:
+    post:
+      tags: [auth]
+      security: []
+      summary: Consume the one-time browser result and issue a core login session
+      description: Rechecks live account status, retained identity binding and plugin generation/configuration. A link completion returns linked=true without issuing another session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200': { description: Core user/auth response or linked=true }
+        '401': { description: Expired, replayed or revoked result }
+        '403': { description: Cross-site request rejected }
+  /api/v1/account/identities:
+    get:
+      tags: [auth]
+      summary: List the current user's external identity bindings
+      responses:
+        '200': { description: Binding ID, plugin ID, issuer and created_at; no subject or provider token }
+        '401': { description: Authentication required }
+  /api/v1/account/identities/{id}/bind:
+    post:
+      tags: [auth]
+      summary: Confirm the current password and begin linking an identity provider
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Plugin ID
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [password]
+              properties:
+                password: { type: string, format: password }
+      responses:
+        '200': { description: Authorization URL and browser-bound flow cookie }
+        '401': { description: Authentication or password confirmation failed }
+        '403': { description: Cross-site request rejected }
+  /api/v1/account/identities/{id}/unlink:
+    post:
+      tags: [auth]
+      summary: Remove an owned binding after confirming the current password
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: External identity binding ID
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [password]
+              properties:
+                password: { type: string, format: password }
+      responses:
+        '200': { description: Binding removed and audited }
+        '400': { description: Binding missing or not owned by this user }
+        '401': { description: Authentication or password confirmation failed }
   "/api/v1/admin/plugins":
     "get":
       "tags": ["plugins"]
@@ -3886,7 +4007,7 @@ components:
           "type": "array"
           "items":
             "type": "string"
-            "enum": ["zboard.ui.page.v1", "zboard.config.v1"]
+            "enum": ["zboard.ui.page.v1", "zboard.config.v1", "zboard.identity.provider.v1"]
         "surfaces":
           "type": "array"
           "items":

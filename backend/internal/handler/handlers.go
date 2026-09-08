@@ -448,6 +448,8 @@ type siteSettingsRequest struct {
 }
 
 type handlers struct {
+	identityProviders        identityRuntime
+	externalAuth             externalAuthState
 	pluginManager            *plugins.Manager
 	db                       *gorm.DB
 	trafficReadDB            *gorm.DB
@@ -702,7 +704,7 @@ func (h *handlers) InstallationMiddleware(next http.HandlerFunc) http.HandlerFun
 			return
 		}
 		writeLocked := state.MigrationInProgress || state.MigrationCutoverPending
-		unsafeMethod := r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions
+		unsafeMethod := (r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions) || r.URL.Path == externalAuthPath+"/callback"
 		cutoverConfirmation := state.MigrationCutoverPending && r.Method == http.MethodPut && r.URL.Path == "/api/v1/admin/maintenance"
 		if writeLocked && unsafeMethod && r.URL.Path != "/api/v1/auth/login" && !cutoverConfirmation {
 			w.Header().Set("Retry-After", "60")

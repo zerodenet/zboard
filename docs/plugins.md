@@ -1,6 +1,6 @@
 # 插件开发与运维
 
-本期提供插件市场、插件管理、离线导入、三个前后台页面范围，以及可选服务端配置进程。核心业务所有权见 [设计](plugin-system-design.md)。
+本期提供插件市场、插件管理、离线导入、三个前后台页面范围，以及可选服务端配置进程和身份提供方登录。核心业务所有权见 [设计](plugin-system-design.md)。
 
 ## 配置宿主
 
@@ -55,7 +55,7 @@ manifest 示例见 [welcome/manifest.json](../examples/plugins/welcome/manifest.
 | requires.zboard | 必须满足的宿主版本范围 |
 | requires.tested_zboard_versions | 发布者明确验证过的宿主版本 |
 | requires.plugin_protocol / ui_bridge | 当前均为 1 |
-| capabilities | 仅接受 zboard.ui.page.v1、zboard.config.v1 |
+| capabilities | 接受 zboard.ui.page.v1、zboard.config.v1、zboard.identity.provider.v1 |
 | surfaces | public、account、admin 中的子集；服务端插件可为空 |
 | components.ui | 各范围对应的 ui/ 内 HTML 入口 |
 | components.server.executables | 平台到 runtimes/ 内二进制的映射，例如 linux-amd64 |
@@ -90,6 +90,8 @@ parent.postMessage({
 宿主使用 go-plugin gRPC/mTLS，限制 RPC 报文和启动/配置超时；每次从已验签包复制当前平台二进制到独立工作目录，不继承宿主环境。GetInfo 必须与 manifest 的 ID、版本和能力一致。配置验证应返回规范化 JSON 对象，ApplyConfig 必须以 revision 幂等，禁止在配置应用或测试中执行业务扣款、修改核心凭证等副作用。标准输出和错误不会直接进入管理页面。
 
 该 SDK 当前没有宿主业务回调、通用命令、事件订阅或 KV API；需要业务扩展时先在核心设计专用能力，未开放能力不能通过自定义方法绕过。
+
+身份提供方插件额外实现 GetIdentityProvider 和 ExchangeIdentity。完整绑定、回调与核心会话契约见 [插件身份提供方](plugin-identity.md)。认证能力不向 iframe 桥开放。
 
 ## 提供市场目录
 

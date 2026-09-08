@@ -11,7 +11,13 @@ import (
 	"gorm.io/gorm"
 )
 
-func (h *handlers) SetPluginManager(m *plugins.Manager) { h.pluginManager = m }
+func (h *handlers) SetPluginManager(m *plugins.Manager) {
+	h.pluginManager = m
+	h.identityProviders = nil
+	if m != nil {
+		h.identityProviders = m
+	}
+}
 func pluginError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):

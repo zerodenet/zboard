@@ -19,11 +19,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PluginControl_GetInfo_FullMethodName        = "/zboard.plugin.v1.PluginControl/GetInfo"
-	PluginControl_Health_FullMethodName         = "/zboard.plugin.v1.PluginControl/Health"
-	PluginControl_ValidateConfig_FullMethodName = "/zboard.plugin.v1.PluginControl/ValidateConfig"
-	PluginControl_ApplyConfig_FullMethodName    = "/zboard.plugin.v1.PluginControl/ApplyConfig"
-	PluginControl_TestConfig_FullMethodName     = "/zboard.plugin.v1.PluginControl/TestConfig"
+	PluginControl_GetInfo_FullMethodName             = "/zboard.plugin.v1.PluginControl/GetInfo"
+	PluginControl_Health_FullMethodName              = "/zboard.plugin.v1.PluginControl/Health"
+	PluginControl_ValidateConfig_FullMethodName      = "/zboard.plugin.v1.PluginControl/ValidateConfig"
+	PluginControl_ApplyConfig_FullMethodName         = "/zboard.plugin.v1.PluginControl/ApplyConfig"
+	PluginControl_TestConfig_FullMethodName          = "/zboard.plugin.v1.PluginControl/TestConfig"
+	PluginControl_GetIdentityProvider_FullMethodName = "/zboard.plugin.v1.PluginControl/GetIdentityProvider"
+	PluginControl_ExchangeIdentity_FullMethodName    = "/zboard.plugin.v1.PluginControl/ExchangeIdentity"
 )
 
 // PluginControlClient is the client API for PluginControl service.
@@ -37,6 +39,9 @@ type PluginControlClient interface {
 	ValidateConfig(ctx context.Context, in *ConfigRequest, opts ...grpc.CallOption) (*ConfigResult, error)
 	ApplyConfig(ctx context.Context, in *ConfigRequest, opts ...grpc.CallOption) (*HealthResult, error)
 	TestConfig(ctx context.Context, in *ConfigRequest, opts ...grpc.CallOption) (*HealthResult, error)
+	// Requires zboard.identity.provider.v1. Host owns redirects, state and sessions.
+	GetIdentityProvider(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*IdentityProvider, error)
+	ExchangeIdentity(ctx context.Context, in *IdentityExchange, opts ...grpc.CallOption) (*VerifiedIdentity, error)
 }
 
 type pluginControlClient struct {
@@ -97,6 +102,26 @@ func (c *pluginControlClient) TestConfig(ctx context.Context, in *ConfigRequest,
 	return out, nil
 }
 
+func (c *pluginControlClient) GetIdentityProvider(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*IdentityProvider, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IdentityProvider)
+	err := c.cc.Invoke(ctx, PluginControl_GetIdentityProvider_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pluginControlClient) ExchangeIdentity(ctx context.Context, in *IdentityExchange, opts ...grpc.CallOption) (*VerifiedIdentity, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifiedIdentity)
+	err := c.cc.Invoke(ctx, PluginControl_ExchangeIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PluginControlServer is the server API for PluginControl service.
 // All implementations must embed UnimplementedPluginControlServer
 // for forward compatibility.
@@ -108,6 +133,9 @@ type PluginControlServer interface {
 	ValidateConfig(context.Context, *ConfigRequest) (*ConfigResult, error)
 	ApplyConfig(context.Context, *ConfigRequest) (*HealthResult, error)
 	TestConfig(context.Context, *ConfigRequest) (*HealthResult, error)
+	// Requires zboard.identity.provider.v1. Host owns redirects, state and sessions.
+	GetIdentityProvider(context.Context, *Empty) (*IdentityProvider, error)
+	ExchangeIdentity(context.Context, *IdentityExchange) (*VerifiedIdentity, error)
 	mustEmbedUnimplementedPluginControlServer()
 }
 
@@ -132,6 +160,12 @@ func (UnimplementedPluginControlServer) ApplyConfig(context.Context, *ConfigRequ
 }
 func (UnimplementedPluginControlServer) TestConfig(context.Context, *ConfigRequest) (*HealthResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method TestConfig not implemented")
+}
+func (UnimplementedPluginControlServer) GetIdentityProvider(context.Context, *Empty) (*IdentityProvider, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetIdentityProvider not implemented")
+}
+func (UnimplementedPluginControlServer) ExchangeIdentity(context.Context, *IdentityExchange) (*VerifiedIdentity, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExchangeIdentity not implemented")
 }
 func (UnimplementedPluginControlServer) mustEmbedUnimplementedPluginControlServer() {}
 func (UnimplementedPluginControlServer) testEmbeddedByValue()                       {}
@@ -244,6 +278,42 @@ func _PluginControl_TestConfig_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PluginControl_GetIdentityProvider_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginControlServer).GetIdentityProvider(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginControl_GetIdentityProvider_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginControlServer).GetIdentityProvider(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PluginControl_ExchangeIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IdentityExchange)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginControlServer).ExchangeIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginControl_ExchangeIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginControlServer).ExchangeIdentity(ctx, req.(*IdentityExchange))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PluginControl_ServiceDesc is the grpc.ServiceDesc for PluginControl service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -270,6 +340,14 @@ var PluginControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TestConfig",
 			Handler:    _PluginControl_TestConfig_Handler,
+		},
+		{
+			MethodName: "GetIdentityProvider",
+			Handler:    _PluginControl_GetIdentityProvider_Handler,
+		},
+		{
+			MethodName: "ExchangeIdentity",
+			Handler:    _PluginControl_ExchangeIdentity_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -9,9 +9,31 @@ service PluginControl {
  rpc ValidateConfig(ConfigRequest) returns (ConfigResult);
  rpc ApplyConfig(ConfigRequest) returns (HealthResult);
  rpc TestConfig(ConfigRequest) returns (HealthResult);
+ // Requires zboard.identity.provider.v1. Host owns redirects, state and sessions.
+ rpc GetIdentityProvider(Empty) returns (IdentityProvider);
+ rpc ExchangeIdentity(IdentityExchange) returns (VerifiedIdentity);
 }
 message Empty {}
 message Info { string id = 1; string version = 2; uint32 protocol = 3; repeated string capabilities = 4; }
 message ConfigRequest { bytes config_json = 1; uint64 revision = 2; }
 message ConfigResult { bytes normalized_json = 1; }
 message HealthResult { bool healthy = 1; string message = 2; }
+
+message IdentityProvider {
+ string issuer = 1;
+ string authorization_endpoint = 2;
+ string client_id = 3;
+ repeated string scopes = 4;
+}
+message IdentityExchange {
+ string code = 1;
+ string redirect_uri = 2;
+ string nonce = 3;
+ string pkce_verifier = 4;
+ string issuer = 5;
+}
+// An assertion only: it does not carry user IDs, permissions or host commands.
+message VerifiedIdentity {
+ string issuer = 1;
+ string subject = 2;
+}

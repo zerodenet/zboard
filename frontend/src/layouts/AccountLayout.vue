@@ -11,6 +11,7 @@
         <RouterLink to="/account/traffic"><UiIcon name="activity" />流量明细</RouterLink>
         <RouterLink to="/account/announcements"><UiIcon name="info" />公告中心<span v-if="app.announcementUnreadCount" class="nav-count">{{ app.announcementUnreadCount > 99 ? '99+' : app.announcementUnreadCount }}</span></RouterLink>
         <RouterLink to="/account/tickets"><UiIcon name="ticket" />我的工单</RouterLink>
+        <RouterLink to="/account/security"><UiIcon name="shield" />账户安全</RouterLink>
         <PluginNavigation surface="account" />
         <RouterLink v-if="app.isAdmin" to="/admin/dashboard"><UiIcon name="shield" />管理后台</RouterLink>
       </nav>

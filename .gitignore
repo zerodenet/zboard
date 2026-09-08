@@ -46,3 +46,6 @@ frontend/.nuxt
 # Local plugin runtime data.
 /data/plugins/
 /deploy/docker/plugins/
+
+# Independently versioned plugin projects.
+/plugins/
