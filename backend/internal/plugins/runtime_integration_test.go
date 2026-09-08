@@ -34,7 +34,7 @@ func TestRealPluginProcessConfigurationAndStop(t *testing.T) {
 		files["runtimes/host/plugin"] = payload
 	})
 	m, db, _ := testManager(t, keys)
-	v, err := importApproved(t, m, raw)
+	v, err := importFixture(t, m, raw)
 	if err != nil {
 		t.Fatal(err)
 	}

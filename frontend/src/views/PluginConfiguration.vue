@@ -14,7 +14,7 @@
       </header>
       <TransientFeedback :success="message" />
       <PageAlert v-if="testError" tone="danger">{{ testError }}</PageAlert>
-      <PageAlert v-if="!configurable" tone="warning">{{ plugin.state === 'uninstalled' ? '插件已卸载，重新安装后可继续配置。' : !plugin.authorization?.reviewed ? '请先在插件详情中确认此包的能力授权。' : !plugin.compatibility.compatible ? '此插件与当前宿主不兼容，暂时无法配置。' : plugin.manifest.capabilities.includes('zboard.config.v1') ? '尚未授予配置能力，请到详情调整授权。' : '此插件未声明配置能力。' }}</PageAlert>
+      <PageAlert v-if="!configurable" tone="warning">{{ plugin.state === 'uninstalled' ? '插件已卸载，重新安装后可继续配置。' : !plugin.admission?.accepted ? '插件尚未通过宿主校验，请查看插件详情。' : !plugin.compatibility.compatible ? '此插件与当前宿主不兼容，暂时无法配置。' : '此插件未声明配置能力。' }}</PageAlert>
       <template v-else>
         <div v-if="configPage" v-show="!jsonOpen"><PluginFrame :key="`${plugin.id}:${frameRevision}`" :plugin-id="plugin.id" :page-id="configPage.id" surface="admin" configuration :title="`${plugin.name}配置页面`" /></div>
         <section v-else-if="!jsonOpen" class="plugins-empty"><h2>此插件使用 JSON 配置</h2><p>插件未提供可视化配置页面，请依据发布者文档填写完整配置。</p><UiButton @click="jsonOpen = true">编辑配置</UiButton></section>
@@ -31,14 +31,14 @@ import PageAlert from '../components/PageAlert.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import PluginFrame from '../plugins/PluginFrame.vue'
 import PluginConfigDialog from '../plugins/PluginConfigDialog.vue'
-import { usePluginDetail, pluginDetailPath, hasPluginConfig, capabilityGranted } from '../plugins/usePluginManagement'
+import { usePluginDetail, pluginDetailPath, hasPluginConfig, hasPluginCapability } from '../plugins/usePluginManagement'
 import { testPluginConfig } from '../api/plugins'
 import '../styles/plugins.css'
 const route = useRoute()
 const { data: plugin, loading, error, load } = usePluginDetail()
 const jsonOpen = ref(false), testing = ref(false), testError = ref(''), message = ref(''), frameRevision = ref(0)
 const configurable = computed(() => plugin.value && hasPluginConfig(plugin.value) && plugin.value.compatibility.compatible)
-const configPage = computed(() => plugin.value && capabilityGranted(plugin.value, 'zboard.ui.page.v1') ? plugin.value.manifest.contributions.pages.find(p => p.surface === 'admin' && p.purpose === 'configuration') : undefined)
+const configPage = computed(() => plugin.value && hasPluginCapability(plugin.value, 'zboard.ui.page.v1') ? plugin.value.manifest.contributions.pages.find(p => p.surface === 'admin' && p.purpose === 'configuration') : undefined)
 let generation = 0
 watch(() => route.params.pluginId, () => { generation++; jsonOpen.value = false; testing.value = false; testError.value = ''; message.value = '' })
 onScopeDispose(() => { generation++ })

@@ -1,7 +1,6 @@
 package plugins
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"time"
@@ -14,7 +13,7 @@ import (
 
 func (m *Manager) checkDataCompatibility(v Installation) error {
 	if !v.Data.Compatible || v.Data.MigrationRequired {
-		return errors.New("plugin data migration required or data version incompatible; review data management")
+		return errors.New("plugin lifecycle data preparation is incomplete or incompatible")
 	}
 	return m.checkMigrationHistory(v)
 }
@@ -44,120 +43,93 @@ func (m *Manager) checkMigrationHistory(v Installation) error {
 	}
 	return nil
 }
-func (m *Manager) migrateLocked(ctx context.Context, v Installation, actor string) error {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	if v.Enabled || v.State == "uninstalled" || !v.Compatibility.Compatible || !v.Authorization.Reviewed || v.Manifest.Data == nil {
-		return ErrPermission
-	}
-	if err := executionAuthorized(v); err != nil {
-		return err
-	}
+
+// migrationPlan holds candidate data only. No persistent state changes before
+// the enclosing installation transaction commits the package and this plan.
+type migrationPlan struct {
+	row           *model.PluginData
+	records       []model.PluginMigration
+	config        []byte
+	configChanged bool
+}
+
+func (m *Manager) planMigration(v Installation, actor string) (migrationPlan, error) {
+	plan := migrationPlan{}
 	if err := m.checkMigrationHistory(v); err != nil {
-		return err
-	}
-	if v.Data.Version >= v.Manifest.Data.Version {
-		return errors.New("no forward data migration available")
-	}
-	row, err := m.readData(v.ID)
-	if err != nil {
-		return err
-	}
-	obj, err := m.decodeStorage(row)
-	if err != nil {
-		return err
+		return plan, err
 	}
 	config, err := m.config(v)
 	if err != nil {
-		return err
+		return plan, err
+	}
+	plan.config = config
+	if v.Manifest.Data == nil || v.Data.Version == v.Manifest.Data.Version {
+		return plan, nil
+	}
+	row, err := m.readData(v.ID)
+	if err != nil {
+		return plan, err
+	}
+	obj, err := m.decodeStorage(row)
+	if err != nil {
+		return plan, err
 	}
 	var cfg map[string]json.RawMessage
 	if err := json.Unmarshal(config, &cfg); err != nil {
-		return err
+		return plan, err
 	}
-	changedConfig := false
-	pending := []model.PluginMigration{}
 	for _, step := range v.Manifest.Data.Migrations {
 		if step.Version <= row.Version {
 			continue
 		}
 		for _, change := range step.Changes {
-			target := obj
-			cap := StorageCapability
+			target, capability := obj, StorageCapability
 			if change.Target == "config" {
-				target = cfg
-				cap = ConfigCapability
-				changedConfig = true
+				target, capability = cfg, ConfigCapability
+				plan.configChanged = true
 			}
-			if !hasCapability(v, cap) {
-				return ErrPermission
+			if !hasCapability(v, capability) {
+				return plan, ErrPermission
 			}
 			if err := applyDataChange(target, change); err != nil {
-				return err
+				return plan, err
 			}
 		}
-		pending = append(pending, model.PluginMigration{ID: uuid.NewString(), PluginID: v.ID, Epoch: row.Epoch, Version: step.Version, Checksum: migrationChecksum(step), Digest: v.Digest, Actor: actor})
+		plan.records = append(plan.records, model.PluginMigration{ID: uuid.NewString(), PluginID: v.ID, Epoch: row.Epoch, Version: step.Version, Checksum: migrationChecksum(step), Digest: v.Digest, Actor: actor})
 	}
 	raw, err := encodeStorage(obj)
 	if err != nil {
-		return err
+		return plan, err
 	}
 	row.Ciphertext, err = m.cipher.Encrypt(string(raw))
 	if err != nil {
-		return err
+		return plan, err
 	}
-	nextConfig, err := json.Marshal(cfg)
+	plan.config, err = json.Marshal(cfg)
 	if err != nil {
-		return err
+		return plan, err
 	}
-	if err := validConfig(nextConfig); err != nil {
-		return err
-	}
-	if v.Manifest.Components.Server != nil {
-		// Validate only the candidate configuration: the old schema may be unreadable by the new binary.
-		proc, err := m.startAuthorizedProcess(ctx, v)
-		if err != nil {
-			return err
-		}
-		normalized, err := proc.apply(ctx, nextConfig, v.ConfigRevision+1)
-		proc.close()
-		if err != nil {
-			return err
-		}
-		if string(normalized) != string(nextConfig) {
-			changedConfig = true
-		}
-		nextConfig = normalized
-	}
-	encrypted := ""
-	if changedConfig {
-		encrypted, err = m.cipher.Encrypt(string(nextConfig))
-		if err != nil {
-			return err
-		}
+	if err := validConfig(plan.config); err != nil {
+		return plan, err
 	}
 	row.Version = v.Manifest.Data.Version
 	row.Revision++
 	row.UpdatedAt = time.Now().UTC()
-	return m.db.Transaction(func(tx *gorm.DB) error {
-		if err := m.guard(tx); err != nil {
+	plan.row = &row
+	return plan, nil
+}
+func (plan migrationPlan) commit(tx *gorm.DB) error {
+	if plan.row != nil {
+		if err := tx.Clauses(clause.OnConflict{UpdateAll: true}).Create(plan.row).Error; err != nil {
 			return err
 		}
-		if err := tx.Clauses(clause.OnConflict{UpdateAll: true}).Create(&row).Error; err != nil {
+	}
+	for _, record := range plan.records {
+		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
-		for _, record := range pending {
-			if err := tx.Create(&record).Error; err != nil {
-				return err
-			}
-		}
-		updates := map[string]any{"generation": gorm.Expr("generation + 1"), "last_error": ""}
-		if changedConfig {
-			updates["config_ciphertext"] = encrypted
-			updates["config_revision"] = gorm.Expr("config_revision + 1")
-		}
-		return tx.Model(&model.PluginInstallation{}).Where("id = ?", v.ID).Updates(updates).Error
-	})
+	}
+	return nil
 }
 func (m *Manager) purgeDataLocked(v Installation) error {
 	row, err := m.readData(v.ID)

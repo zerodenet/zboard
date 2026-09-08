@@ -9,7 +9,6 @@ import (
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func (m *Manager) Import(data []byte, actor string) (Installation, error) {
@@ -23,12 +22,14 @@ func (m *Manager) Import(data []byte, actor string) (Installation, error) {
 		return Installation{}, err
 	}
 	var prev model.PluginInstallation
-	err = m.db.First(&prev, "id = ?", p.Manifest.ID).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := m.db.Where("id = ?", p.Manifest.ID).Limit(1).Find(&prev).Error; err != nil {
 		return Installation{}, err
 	}
-	if prev.ID != "" && (prev.Enabled || prev.Publisher != p.Publisher) {
-		return Installation{}, errors.New("disable plugin before replacing it; publisher must match")
+	if prev.ID != "" && prev.Publisher != p.Publisher {
+		return Installation{}, errors.New("publisher must match")
+	}
+	if !p.Manifest.Compatibility(m.host).Compatible {
+		return Installation{}, errors.New("plugin is incompatible with this host")
 	}
 	if prev.ID == "" {
 		var count int64
@@ -39,41 +40,33 @@ func (m *Manager) Import(data []byte, actor string) (Installation, error) {
 			return Installation{}, errors.New("plugin installation limit reached")
 		}
 	}
-	var versionCount int64
-	if err := m.db.Model(&model.PluginVersion{}).Where("plugin_id = ? AND id <> ?", p.Manifest.ID, p.Digest).Count(&versionCount).Error; err != nil {
+	var count int64
+	if err := m.db.Model(&model.PluginVersion{}).Where("plugin_id = ? AND id <> ?", p.Manifest.ID, p.Digest).Count(&count).Error; err != nil {
 		return Installation{}, err
 	}
-	if versionCount >= 30 {
+	if count >= 30 {
 		return Installation{}, errors.New("plugin version history limit reached (30)")
+	}
+	// An active installation cannot implicitly accept an untested runtime upgrade.
+	if prev.Enabled && !p.Manifest.Compatibility(m.host).Tested {
+		return Installation{}, errors.New("disable before importing an untested host version")
 	}
 	op, err := m.newOperation(p.Manifest.ID, "import", actor)
 	if err != nil {
 		return Installation{}, err
 	}
+	target := filepath.Join(m.options.Directory, "versions", p.Digest)
+	_, before := os.Lstat(target)
 	err = writePackage(m.options.Directory, p, data)
 	if err == nil {
-		err = m.db.Transaction(func(tx *gorm.DB) error {
-			if err := m.guard(tx); err != nil {
-				return err
-			}
-			version := model.PluginVersion{ID: p.Digest, PluginID: p.Manifest.ID, Version: p.Manifest.Version, Digest: p.Digest, Publisher: p.Publisher, Manifest: string(p.RawManifest)}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&version).Error; err != nil {
-				return err
-			}
-			state := "disabled"
-			if !p.Manifest.Compatibility(m.host).Compatible {
-				state = "incompatible"
-			}
-			if prev.ID == "" {
-				return tx.Create(&model.PluginInstallation{ID: p.Manifest.ID, VersionID: p.Digest, Name: p.Manifest.Name, Publisher: p.Publisher, State: state, Generation: 1}).Error
-			}
-			return tx.Model(&prev).Updates(map[string]any{"version_id": p.Digest, "name": p.Manifest.Name, "state": state, "generation": gorm.Expr("generation + 1"), "last_error": ""}).Error
-		})
+		err = m.commitCandidate(context.Background(), prev, p, actor, &op)
 	}
-	if err = m.finish(op, err); err != nil {
-		return Installation{}, err
+	if err != nil {
+		if os.IsNotExist(before) {
+			_ = os.RemoveAll(target)
+		}
+		return Installation{}, m.finish(op, err)
 	}
-	m.invalidate(p.Manifest.ID)
 	return m.load(p.Manifest.ID)
 }
 func (m *Manager) packageFor(v Installation) (*Package, error) {
@@ -139,13 +132,13 @@ func (m *Manager) Action(ctx context.Context, id, action, actor string, generati
 	if generation != v.Generation {
 		return v, ErrConflict
 	}
-	if action != "enable" && action != "disable" && action != "uninstall" && action != "rollback" && action != "purge" && action != "purge_data" && action != "migrate" {
+	if action != "enable" && action != "disable" && action != "uninstall" && action != "rollback" && action != "purge_data" {
 		return v, errors.New("unsupported plugin operation")
 	}
 	if action == "enable" && (!v.Compatibility.Compatible || (!v.Compatibility.Tested && !acceptUntested)) {
 		return v, errors.New("incompatible or unconfirmed host version")
 	}
-	if (action == "uninstall" || action == "rollback" || action == "purge" || action == "purge_data" || action == "migrate") && v.Enabled {
+	if (action == "rollback" || action == "purge_data") && v.Enabled {
 		return v, errors.New("disable plugin first")
 	}
 	if action == "enable" {
@@ -159,16 +152,17 @@ func (m *Manager) Action(ctx context.Context, id, action, actor string, generati
 	if action == "enable" && v.State == "uninstalled" {
 		return v, errors.New("import plugin before enabling")
 	}
-	if (action == "purge" || action == "purge_data") && v.State != "uninstalled" {
+	if action == "purge_data" && v.State != "uninstalled" {
 		return v, errors.New("uninstall before deleting configuration")
+	}
+	if action == "enable" && v.Enabled && v.State == "active" && (v.Manifest.Components.Server == nil || (m.processes[id] != nil && !m.processes[id].client.Exited())) {
+		return v, nil
 	}
 	op, err := m.newOperation(id, action, actor)
 	if err != nil {
 		return v, err
 	}
 	switch action {
-	case "migrate":
-		err = m.migrateLocked(ctx, v, actor)
 	case "purge_data":
 		err = m.purgeDataLocked(v)
 	case "enable":
@@ -201,39 +195,27 @@ func (m *Manager) Action(ctx context.Context, id, action, actor string, generati
 			delete(m.processes, id)
 		}
 	case "uninstall":
-		err = m.updateInstallation(id, map[string]any{"state": "uninstalled", "generation": gorm.Expr("generation + 1")})
+		err = m.updateInstallation(id, map[string]any{"enabled": false, "state": "uninstalled", "generation": gorm.Expr("generation + 1")})
 		if err == nil {
+			m.processes[id].close()
+			delete(m.processes, id)
 			for _, ver := range v.Versions {
 				if digestPattern.MatchString(ver.Digest) {
 					err = errors.Join(err, os.RemoveAll(filepath.Join(m.options.Directory, "versions", ver.Digest)))
 				}
 			}
 		}
-	case "purge":
-		err = m.updateInstallation(id, map[string]any{"config_ciphertext": "", "config_revision": gorm.Expr("config_revision + 1"), "generation": gorm.Expr("generation + 1")})
 	case "rollback":
 		var ver model.PluginVersion
 		err = m.db.First(&ver, "id = ? AND plugin_id = ?", versionID, id).Error
 		if err == nil {
 			candidate := v
-			candidate.Digest = ver.Digest
-			candidate.Version = ver.Version
-			p, e := m.packageFor(candidate)
-			err = e
+			candidate.Digest, candidate.Version = ver.Digest, ver.Version
+			var pack *Package
+			pack, err = m.packageFor(candidate)
 			if err == nil {
-				candidate.Manifest = p.Manifest
-				candidate.Compatibility = p.Manifest.Compatibility(m.host)
-				if e := m.loadDataStatus(&candidate); e != nil {
-					err = e
-				} else if !candidate.Compatibility.Compatible {
-					err = errors.New("rollback package is incompatible")
-				} else {
-					err = m.checkDataCompatibility(candidate)
-				}
+				err = m.commitCandidate(ctx, v.PluginInstallation, pack, actor, nil)
 			}
-		}
-		if err == nil {
-			err = m.updateInstallation(id, map[string]any{"version_id": ver.ID, "state": "disabled", "generation": gorm.Expr("generation + 1"), "last_error": ""})
 		}
 	}
 	m.invalidate(id)

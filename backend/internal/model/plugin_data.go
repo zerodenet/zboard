@@ -2,7 +2,8 @@ package model
 
 import "time"
 
-// Authorization is bound to a reviewed package, not just a publisher or plugin ID.
+// Host admission receipt. The legacy table name is retained for schema compatibility.
+// Only the lifecycle transaction writes this record after package validation.
 type PluginAuthorization struct {
 	PluginID      string    `gorm:"primaryKey;size:160" json:"-"`
 	Digest        string    `gorm:"size:64;not null" json:"digest"`

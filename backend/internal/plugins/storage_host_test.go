@@ -2,6 +2,9 @@ package plugins
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
 	"os"
 	"os/exec"
@@ -22,7 +25,9 @@ func TestNativePluginStorageUsesScopedHostSDKAndClosesWithProcess(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, keys := fixturePackage(t, func(m *Manifest, files map[string][]byte) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	keys := map[string]string{"test.publisher": base64.StdEncoding.EncodeToString(pub)}
+	raw := fixtureSignedPackage(t, priv, pub, func(m *Manifest, files map[string][]byte) {
 		m.ID = "example.storage"
 		m.Capabilities = []string{ConfigCapability, StorageCapability}
 		m.Surfaces = nil
@@ -39,18 +44,6 @@ func TestNativePluginStorageUsesScopedHostSDKAndClosesWithProcess(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err = m.Authorize(v.ID, "admin", v.Digest, v.Generation, v.Manifest.Capabilities, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = m.Action(context.Background(), v.ID, "migrate", "admin", v.Generation, false, ""); err == nil {
-		t.Fatal("untrusted native program ran")
-	}
-	v, err = m.Authorize(v.ID, "admin", v.Digest, v.Generation, v.Manifest.Capabilities, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	v = migratePlugin(t, m, v)
 	v, err = m.Action(context.Background(), v.ID, "enable", "admin", v.Generation, false, "")
 	if err != nil {
 		t.Fatal(err)
@@ -74,10 +67,42 @@ func TestNativePluginStorageUsesScopedHostSDKAndClosesWithProcess(t *testing.T) 
 	if err := m.TestConfig(ctx, v.ID, "admin"); err == nil {
 		t.Fatal("storage allowed during lifecycle transaction")
 	}
-	if _, err = m.Authorize(v.ID, "admin", v.Digest, v.Generation, []string{ConfigCapability}, true); err != nil {
+	// A failing candidate must leave the old process and state usable.
+	pack, err := ReadPackage(raw, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := func(version, description string) []byte {
+		return fixtureSignedPackage(t, priv, pub, func(manifest *Manifest, files map[string][]byte) {
+			*manifest = pack.Manifest
+			manifest.Version, manifest.Description = version, description
+			files["runtimes/host/plugin"] = payload
+		})
+	}
+	if _, err = m.Import(replacement("2.0.0", "bad runtime identity"), "admin"); err == nil {
+		t.Fatal("mismatched runtime installed")
+	}
+	current, _ := m.load(v.ID)
+	if p.client.Exited() || m.processes[v.ID] != p || current.Digest != v.Digest || current.Generation != v.Generation {
+		t.Fatal("failed runtime upgrade replaced working instance")
+	}
+	v, err = m.Import(replacement(pack.Manifest.Version, "compatible new package"), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.client.Exited() || m.processes[v.ID] == p || !v.Enabled || v.State != "active" {
+		t.Fatal("upgrade did not swap process after commit")
+	}
+	p = m.processes[v.ID]
+	row, _ = m.readData(v.ID)
+	obj, err = m.decodeStorage(row)
+	if err != nil || !strings.Contains(string(obj["background"]), "native-plugin") {
+		t.Fatal("upgrade discarded data", err)
+	}
+	if _, err = m.Action(context.Background(), v.ID, "uninstall", "admin", v.Generation, false, ""); err != nil {
 		t.Fatal(err)
 	}
 	if !p.client.Exited() {
-		t.Fatal("revoked native process survived")
+		t.Fatal("uninstalled native process survived")
 	}
 }

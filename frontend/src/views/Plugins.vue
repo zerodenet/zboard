@@ -45,7 +45,7 @@
         <p class="plugin-id">{{ plugin.id }} · v{{ plugin.version }}</p>
         <p>{{ plugin.manifest.description || "此插件未提供描述。" }}</p>
         <p>{{ pluginBusinessLabel(plugin) }}</p>
-        <p v-if="!plugin.authorization?.reviewed">待授权，请进入详情确认权限。</p>
+        <p v-if="!plugin.admission?.accepted">宿主校验未通过，请查看详情。</p>
         <div class="plugin-tags">
           <span v-for="s in plugin.manifest.surfaces" :key="s">{{
             surfaceLabel(s)

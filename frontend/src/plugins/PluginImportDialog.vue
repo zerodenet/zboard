@@ -1,11 +1,11 @@
 <template>
-  <ModalDialog :open="open" title="离线导入插件" description="选择发布者提供的签名插件包，系统会检查签名和兼容版本。" :busy="busy" @close="$emit('close')">
+  <ModalDialog :open="open" title="离线导入插件" description="选择发布者提供的签名插件包，系统会校验签名、能力和版本，并自动准备数据。" :busy="busy" @close="$emit('close')">
     <div class="plugin-import-content">
       <PageAlert v-if="error" tone="danger">{{ error }}</PageAlert>
       <UiFileUpload choose-label="选择插件包" accept=".zbplugin" :max-file-size="32 * 1024 * 1024" :disabled="busy" @select="select" />
       <div v-if="file" class="plugin-import-file"><strong>{{ file.name }}</strong><span>{{ (file.size / 1024 / 1024).toFixed(2) }} MiB</span></div>
       <p v-else>支持 .zbplugin 文件，最大 32 MiB。</p>
-      <p>导入后保持停用。你可以先完成配置，再启用插件。</p>
+      <p>新安装保持停用，配置后即可启用。升级自动迁移数据并保留原启停状态，失败时保留原版本和数据。</p>
     </div>
     <template #footer>
       <UiButton variant="secondary" :disabled="busy" @click="$emit('close')">取消</UiButton>

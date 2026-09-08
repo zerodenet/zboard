@@ -102,7 +102,7 @@ async function install(entry: MarketEntry) {
     busy.value ||
     !(await confirmAction({
       title: `安装 ${entry.name}`,
-      message: `安装发布者 ${entry.publisher} 提供的 v${entry.version}。插件安装后保持停用。`,
+      message: `安装发布者 ${entry.publisher} 提供的 v${entry.version}。首次安装保持停用；升级自动迁移数据并保留原启停状态，失败时保留原版本。`,
       confirmText: "验证并安装",
     }))
   )
@@ -112,7 +112,7 @@ async function install(entry: MarketEntry) {
   message.value = "";
   try {
     await installMarketPlugin(entry);
-    message.value = `${entry.name} 已安装，请到插件管理中配置和启用。`;
+    message.value = `${entry.name} 安装已完成，请到插件管理中查看状态。`;
   } catch (e: any) {
     actionError.value =
       e?.response?.data?.message ||

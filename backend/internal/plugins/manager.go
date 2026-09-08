@@ -36,8 +36,8 @@ type Manager struct {
 	lost      atomic.Bool
 }
 type Installation struct {
-	Authorization Authorization `json:"authorization"`
-	Data          DataStatus    `json:"data"`
+	Admission Admission  `json:"admission"`
+	Data      DataStatus `json:"data"`
 	model.PluginInstallation
 	Version       string                `json:"version"`
 	Digest        string                `json:"digest"`
@@ -183,28 +183,27 @@ func (m *Manager) recover() error {
 		return err
 	}
 	for _, r := range rows {
-		if !r.Enabled {
+		if r.State == "uninstalled" {
 			continue
 		}
 		v, err := m.load(r.ID)
 		if err != nil {
 			return err
 		}
-		p, err := m.prepare(context.Background(), v)
-		state, message := "active", ""
+		if !r.Enabled && v.Admission.Accepted && !v.Data.MigrationRequired {
+			continue
+		}
+		pack, err := m.packageFor(v)
+		if err == nil {
+			err = m.commitCandidate(context.Background(), r, pack, "host-recovery", nil)
+		}
 		if err != nil {
-			state, message = "failed", err.Error()
-		} else if p != nil {
-			m.processes[r.ID] = p
-		}
-		updates := map[string]any{"generation": gorm.Expr("generation + 1"), "state": state, "last_error": message}
-		if errors.Is(err, ErrPermission) {
-			updates["enabled"] = false
-			updates["state"] = "disabled"
-			updates["last_error"] = ""
-		}
-		if err := m.updateInstallation(r.ID, updates); err != nil {
-			return err
+			m.processes[r.ID].close()
+			delete(m.processes, r.ID)
+			m.invalidate(r.ID)
+			if updateErr := m.updateInstallation(r.ID, map[string]any{"generation": gorm.Expr("generation + 1"), "state": "failed", "last_error": err.Error()}); updateErr != nil {
+				return updateErr
+			}
 		}
 	}
 	return nil
@@ -230,7 +229,7 @@ func (m *Manager) load(id string) (Installation, error) {
 	v.Version = version.Version
 	v.Digest = version.Digest
 	v.Compatibility = v.Manifest.Compatibility(m.host)
-	if err := m.loadAuthorization(&v); err != nil {
+	if err := m.loadAdmission(&v); err != nil {
 		return v, err
 	}
 	if err := m.loadDataStatus(&v); err != nil {

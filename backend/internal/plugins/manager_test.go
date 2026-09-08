@@ -41,7 +41,7 @@ func testManager(t testing.TB, keys map[string]string) (*Manager, *gorm.DB, Opti
 func TestOfflineInstallEnableRevokeAndKeepCoreOwnership(t *testing.T) {
 	raw, keys := fixturePackage(t, nil)
 	m, db, _ := testManager(t, keys)
-	v, err := importApproved(t, m, raw)
+	v, err := importFixture(t, m, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestOfflineInstallEnableRevokeAndKeepCoreOwnership(t *testing.T) {
 func TestRestartRestoresEnabledPackagesAndFencesStandbyHost(t *testing.T) {
 	raw, keys := fixturePackage(t, nil)
 	m, db, opts := testManager(t, keys)
-	v, err := importApproved(t, m, raw)
+	v, err := importFixture(t, m, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestRestartRestoresEnabledPackagesAndFencesStandbyHost(t *testing.T) {
 func TestLostLeaseAndStaleRevisionDenyMutations(t *testing.T) {
 	raw, keys := fixturePackage(t, nil)
 	m, db, _ := testManager(t, keys)
-	v, err := importApproved(t, m, raw)
+	v, err := importFixture(t, m, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestLostLeaseAndStaleRevisionDenyMutations(t *testing.T) {
 func TestDatabaseConfigFailureKeepsCommittedConfiguration(t *testing.T) {
 	raw, keys := fixturePackage(t, nil)
 	m, db, _ := testManager(t, keys)
-	v, err := importApproved(t, m, raw)
+	v, err := importFixture(t, m, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestConfigRequiresDeclaredCapabilityAndArchiveCanBeRepaired(t *testing.T) {
 		m.Contributions.Pages = m.Contributions.Pages[:2]
 	})
 	m, _, opts := testManager(t, keys)
-	v, err := importApproved(t, m, raw)
+	v, err := importFixture(t, m, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestConfigRequiresDeclaredCapabilityAndArchiveCanBeRepaired(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(opts.Directory, "versions", v.Digest, "package.zbplugin"), []byte("damaged"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := importApproved(t, m, raw); err != nil {
+	if _, err := importFixture(t, m, raw); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.packageFor(v); err != nil {
@@ -195,7 +195,7 @@ func TestConfigRequiresDeclaredCapabilityAndArchiveCanBeRepaired(t *testing.T) {
 func TestLateConfigurationRequestCannotCrossDisableGeneration(t *testing.T) {
 	raw, keys := fixturePackage(t, nil)
 	m, _, _ := testManager(t, keys)
-	v, err := importApproved(t, m, raw)
+	v, err := importFixture(t, m, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,11 +219,7 @@ func TestLateConfigurationRequestCannotCrossDisableGeneration(t *testing.T) {
 	}
 }
 
-func importApproved(t testing.TB, m *Manager, raw []byte) (Installation, error) {
+func importFixture(t testing.TB, m *Manager, raw []byte) (Installation, error) {
 	t.Helper()
-	v, err := m.Import(raw, "admin")
-	if err != nil {
-		return v, err
-	}
-	return m.Authorize(v.ID, "admin", v.Digest, v.Generation, v.Manifest.Capabilities, v.Manifest.Components.Server != nil)
+	return m.Import(raw, "admin")
 }
