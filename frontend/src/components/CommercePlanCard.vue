@@ -9,6 +9,7 @@
     </header>
 
     <p class="storefront-plan-card__summary">{{ plan.summary || '稳定、透明的订阅服务。' }}</p>
+    <p v-if="plan.description?.trim()" class="storefront-plan-card__description">{{ plan.description }}</p>
 
     <div v-if="loading" class="storefront-plan-card__loading">
       <UiIcon name="refresh" />正在加载价格

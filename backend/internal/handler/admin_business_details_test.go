@@ -174,6 +174,7 @@ func TestPlanDetailProjectionUsesCountsWithoutEmbeddingSKUData(t *testing.T) {
 func TestPlanCatalogProjectionContainsOnePrimarySKUWithoutCollection(t *testing.T) {
 	plan := model.Plan{
 		ID: 19, Name: "Catalog", Slug: "catalog", Summary: "Public summary",
+		Description: "Public product description",
 		SKUs: []model.PlanSKU{
 			{ID: 111, PlanID: 19, Code: "must-not-leak", Name: "Unbounded"},
 		},
@@ -191,12 +192,12 @@ func TestPlanCatalogProjectionContainsOnePrimarySKUWithoutCollection(t *testing.
 		t.Fatal(err)
 	}
 	text := string(payload)
-	for _, required := range []string{`"id":19`, `"sku_count":3`, `"active_sku_count":3`, `"primary_sku":`, `"code":"catalog-month"`} {
+	for _, required := range []string{`"id":19`, `"description":"Public product description"`, `"sku_count":3`, `"active_sku_count":3`, `"primary_sku":`, `"code":"catalog-month"`} {
 		if !strings.Contains(text, required) {
 			t.Errorf("plan catalog item is missing %q: %s", required, text)
 		}
 	}
-	for _, forbidden := range []string{`"skus"`, `"must-not-leak"`, `"description"`} {
+	for _, forbidden := range []string{`"skus"`, `"must-not-leak"`} {
 		if strings.Contains(text, forbidden) {
 			t.Errorf("plan catalog item embeds unbounded or detail data %q: %s", forbidden, text)
 		}

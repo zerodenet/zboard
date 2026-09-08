@@ -28,8 +28,6 @@ func (h *handlers) ProviderAccountDeleteHandler(w http.ResponseWriter, r *http.R
 			return err
 		}
 		for name, query := range map[string]*gorm.DB{
-			"dns_records":        tx.Model(&model.ManagedDNSRecord{}).Where("provider_account_id = ?", id),
-			"certificates":       tx.Model(&model.ManagedCertificate{}).Where("provider_account_id = ?", id),
 			"running_operations": tx.Model(&model.ProviderOperation{}).Where("provider_account_id = ? AND status = ?", id, "running"),
 		} {
 			var count int64
@@ -43,6 +41,21 @@ func (h *handlers) ProviderAccountDeleteHandler(w http.ResponseWriter, r *http.R
 		if len(blockers) != 0 {
 			return blocked
 		}
+		var running int64
+		if err := tx.Model(&model.ManagedCertificate{}).Where("provider_account_id = ? AND status IN ?", id, []string{certificateStatusIssuing, certificateStatusRenewing}).Count(&running).Error; err != nil {
+			return err
+		}
+		if running > 0 {
+			blockers["certificate_operations"] = running
+			return blocked
+		}
+		if err := tx.Model(&model.ManagedCertificate{}).Where("provider_account_id = ?", id).Updates(map[string]interface{}{"provider_account_id": nil, "auto_renew": false}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("provider_account_id = ?", id).Delete(&model.ManagedDNSRecord{}).Error; err != nil {
+			return err
+		}
+
 		if err := createAuditLog(tx, claims, "provider_account.delete", fmt.Sprintf("provider_account:%d", id), "local credential removed; external account and shared token unchanged"); err != nil {
 			return err
 		}
@@ -53,7 +66,7 @@ func (h *handlers) ProviderAccountDeleteHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 	if errors.Is(err, blocked) {
-		writeJSON(w, http.StatusConflict, "请先删除引用此账户的 DNS、证书，并等待供应商任务结束。", map[string]interface{}{"blockers": blockers})
+		writeJSON(w, http.StatusConflict, "请等待正在执行的供应商或证书任务结束。", map[string]interface{}{"blockers": blockers})
 		return
 	}
 	if err != nil {

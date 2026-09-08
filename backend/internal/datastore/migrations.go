@@ -68,7 +68,7 @@ var preReleaseBaselineTables = []string{
 // installed additively for databases that recorded the baseline before those
 // operational resources were introduced. They must not become requirements of
 // the legacy baseline signature checked before route-time reconciliation.
-var preReleaseReconciledTables = []string{"announcements", "announcement_reads", "node_config_publishes", "network_entries"}
+var preReleaseReconciledTables = []string{"announcements", "announcement_reads", "node_config_publishes", "network_entries", "node_group_network_entries", "node_proxy_pools"}
 
 var preReleaseBaselineColumns = []struct {
 	table      string

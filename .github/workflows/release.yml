@@ -53,7 +53,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          tar -C backend/bin -czf "dist/${BINARY_ARCHIVE}" zboard
+          cp backend/internal/nodecleanup/cleanup-zero-node.sh backend/bin/cleanup-zero-node.sh
+          tar -C backend/bin -czf "dist/${BINARY_ARCHIVE}" zboard cleanup-zero-node.sh
           (cd dist && sha256sum "${BINARY_ARCHIVE}" > SHA256SUMS)
       - uses: docker/setup-buildx-action@v3
       - name: Login GHCR

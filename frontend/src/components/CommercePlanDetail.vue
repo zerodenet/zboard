@@ -43,6 +43,11 @@
           </template>
         </div>
 
+        <section v-if="plan.description?.trim()" class="storefront-plan-description" aria-label="商品描述">
+          <h2>商品描述</h2>
+          <p>{{ plan.description }}</p>
+        </section>
+
         <section class="storefront-specifications">
           <div class="storefront-section-heading">
             <div>

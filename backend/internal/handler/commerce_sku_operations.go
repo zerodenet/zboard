@@ -782,7 +782,7 @@ func (h *handlers) PlanCreateCommerceHandler(w http.ResponseWriter, r *http.Requ
 				return validationError("商品信息校验失败。", map[string]string{"skus": "已发布商品至少需要一个允许新购的可售 SKU。"})
 			}
 			var endpointCount int64
-			if err := tx.Model(&model.NodeGroupEndpoint{}).
+			if err := credentialMemberships(tx).
 				Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
 				Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", plan.NodeGroupID, true).
 				Count(&endpointCount).Error; err != nil || endpointCount == 0 {

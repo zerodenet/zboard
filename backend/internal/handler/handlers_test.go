@@ -424,59 +424,41 @@ func TestSupportedProtocolsAreCaseInsensitive(t *testing.T) {
 	}
 }
 
-func TestProtocolKernelCapabilitiesUseConcreteZeroVersionForMieru(t *testing.T) {
-	legacy, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
-	if err != nil {
-		t.Fatalf("NewHandlers(legacy) error = %v", err)
-	}
-	if supported, reason := legacy.protocolKernelSupport("mieru"); !supported || reason != "" {
-		t.Fatalf("panel Mieru support = %t %q", supported, reason)
-	}
-	if supported, reason := legacy.protocolKernelSupportForVersion("mieru", "0.0.15-rc.3"); supported || reason != protocolKernelMieruUnavailableReason {
-		t.Fatalf("rc.3 Mieru support = %t %q", supported, reason)
-	}
-	if supported, reason := legacy.protocolKernelSupportForVersion("mieru", "0.0.15-rc.4"); !supported || reason != "" {
-		t.Fatalf("rc.4 Mieru support = %t %q", supported, reason)
-	}
-	if supported, reason := legacy.protocolKernelSupport("vless"); !supported || reason != "" {
-		t.Fatalf("legacy VLESS support = %t %q", supported, reason)
-	}
-	capabilities := legacy.protocolKernelCapabilities()
-	if !capabilities["mieru"].Supported || capabilities["mieru"].MinimumZeroVersion != zeroMieruPrincipalSince {
-		t.Fatalf("panel Mieru capability = %+v", capabilities["mieru"])
-	}
-	for _, protocol := range []string{"trojan", "hysteria2"} {
-		if supported, reason := legacy.protocolKernelSupportForVersion(protocol, "0.0.15-rc.2"); supported || reason != protocolKernelManagedUsersUnavailableReason {
-			t.Fatalf("rc.2 %s support = %t %q", protocol, supported, reason)
+func TestProtocolCapabilitiesDoNotGateOnReleaseNumbers(t *testing.T) {
+	h := &handlers{}
+	for _, version := range []string{"", "development", "0.0.1-rc.1", "0.0.1", "0.0.15-rc.2", "0.0.15-rc.4"} {
+		for protocol := range supportedProtocols {
+			node := model.Node{Version: version, KernelState: &model.NodeKernelState{InstalledVersion: version}}
+			if supported, reason := h.protocolKernelSupportForNode(protocol, node); !supported || reason != "" {
+				t.Fatalf("%s on %q rejected: %s", protocol, version, reason)
+			}
 		}
-		if supported, reason := legacy.protocolKernelSupportForVersion(protocol, "0.0.15"); !supported || reason != "" {
-			t.Fatalf("formal 0.0.15 %s support = %t %q", protocol, supported, reason)
-		}
-		if capabilities[protocol].MinimumZeroVersion != zeroNativeAccessSince {
-			t.Fatalf("panel %s capability = %+v", protocol, capabilities[protocol])
+		native, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "native-local", version)
+		if err != nil || !native.zeroMieruAccess {
+			t.Fatalf("native Mieru access for %q: %v", version, err)
 		}
 	}
-
-	future, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "native-local", "0.0.15-rc.4")
-	if err != nil {
-		t.Fatalf("NewHandlers(native-local rc.4) error = %v", err)
+	if supported, _ := h.protocolKernelSupportForNode("unknown", model.Node{}); supported {
+		t.Fatal("unknown protocol accepted")
 	}
-	if !future.zeroMieruAccess {
-		t.Fatal("native-local rc.4 did not enable Mieru managed access")
-	}
-
 	response := httptest.NewRecorder()
-	legacy.VersionHandler(response, httptest.NewRequest("GET", "/api/v1/version", nil))
+	h.VersionHandler(response, httptest.NewRequest("GET", "/api/v1/version", nil))
 	var envelope struct {
 		Data struct {
 			ProtocolCapabilities map[string]protocolKernelCapability `json:"protocol_capabilities"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
-		t.Fatalf("decode version response: %v", err)
+		t.Fatal(err)
 	}
-	if capability := envelope.Data.ProtocolCapabilities["mieru"]; !capability.Supported || capability.MinimumZeroVersion != zeroMieruPrincipalSince {
-		t.Fatalf("version Mieru capability = %+v", capability)
+	for protocol := range supportedProtocols {
+		capability := envelope.Data.ProtocolCapabilities[protocol]
+		if !capability.Supported || capability.MinimumZeroVersion != "" {
+			t.Fatalf("capability %s = %+v", protocol, capability)
+		}
+	}
+	if strings.Contains(response.Body.String(), "minimum_zero_version") {
+		t.Fatal("obsolete version gate returned")
 	}
 }
 

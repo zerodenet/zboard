@@ -141,7 +141,7 @@ func (h *handlers) ensureSubscriptionCredentialsWithMieru(tx *gorm.DB, subscript
 	}
 	var endpoints []model.ProtocolEndpoint
 	if err := tx.Model(&model.ProtocolEndpoint{}).
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
+		Joins(credentialMembershipJoin("node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id")).
 		Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", subscription.NodeGroupID, true).
 		Order("protocol_endpoints.sort_order asc, protocol_endpoints.id asc").
 		Find(&endpoints).Error; err != nil {
@@ -251,7 +251,7 @@ func (h *handlers) subscriptionCredentialsCurrentWithMieru(db *gorm.DB, subscrip
 	}
 	var endpoints []model.ProtocolEndpoint
 	if err := db.Model(&model.ProtocolEndpoint{}).
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
+		Joins(credentialMembershipJoin("node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id")).
 		Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", subscription.NodeGroupID, true).
 		Order("protocol_endpoints.sort_order asc, protocol_endpoints.id asc").
 		Find(&endpoints).Error; err != nil {
@@ -319,7 +319,7 @@ func (h *handlers) reconcileNodeGroupCredentials(groupID uint) error {
 		activeSubscriptionIDs := tx.Model(&model.Subscription{}).
 			Select("id").
 			Where("node_group_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total", groupID, subStatusActive, now)
-		currentEndpointIDs := tx.Model(&model.NodeGroupEndpoint{}).
+		currentEndpointIDs := credentialMemberships(tx).
 			Select("protocol_endpoint_id").
 			Where("node_group_id = ?", groupID)
 		if err := tx.Model(&model.ProtocolCredential{}).
@@ -554,7 +554,7 @@ func (h *handlers) ReconcileMieruEndpointCredentials() error {
 	var subscriptions []model.Subscription
 	if err := h.db.Model(&model.Subscription{}).
 		Select("DISTINCT subscriptions.*").
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.node_group_id = subscriptions.node_group_id").
+		Joins(credentialMembershipJoin("node_group_endpoints.node_group_id = subscriptions.node_group_id")).
 		Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
 		Where("LOWER(protocol_endpoints.protocol) = ? AND subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", "mieru", subStatusActive, now).
 		Order("subscriptions.id asc").
@@ -711,7 +711,7 @@ func (h *handlers) activeEndpointCredentials(endpointID uint, now time.Time) ([]
 	var credentials []model.ProtocolCredential
 	err := h.db.Model(&model.ProtocolCredential{}).
 		Joins("JOIN subscriptions ON subscriptions.id = protocol_credentials.subscription_id").
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.node_group_id = subscriptions.node_group_id AND node_group_endpoints.protocol_endpoint_id = protocol_credentials.protocol_endpoint_id").
+		Joins(credentialMembershipJoin("node_group_endpoints.node_group_id = subscriptions.node_group_id AND node_group_endpoints.protocol_endpoint_id = protocol_credentials.protocol_endpoint_id")).
 		Where("protocol_credentials.protocol_endpoint_id = ? AND protocol_credentials.status = ? AND protocol_credentials.revoked_at IS NULL AND protocol_credentials.expires_at > ?", endpointID, protocolCredentialStatusActive, now).
 		Where("subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", subStatusActive, now).
 		Order("protocol_credentials.id asc").

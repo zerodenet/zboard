@@ -23,6 +23,7 @@ func TestRenewalEffectColumnsEvolveAfterLegacyBaselineValidation(t *testing.T) {
 
 func TestCommerceOrderSnapshotColumnInventory(t *testing.T) {
 	want := []string{
+		"assigned_by", "assignment_note", "assignment_fingerprint",
 		"plan_name",
 		"sku_name",
 		"billing_unit",

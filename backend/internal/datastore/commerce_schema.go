@@ -15,6 +15,9 @@ type commerceColumnSpec struct {
 }
 
 var commerceOrderSnapshotColumns = []commerceColumnSpec{
+	{table: "orders", name: "assigned_by", definition: "bigint unsigned NOT NULL DEFAULT 0", after: "user_id"},
+	{table: "orders", name: "assignment_note", definition: "varchar(500) NOT NULL DEFAULT ''", after: "assigned_by"},
+	{table: "orders", name: "assignment_fingerprint", definition: "varchar(64) NOT NULL DEFAULT ''", after: "assignment_note"},
 	{table: "orders", name: "plan_name", definition: "varchar(80) NOT NULL DEFAULT ''", after: "status"},
 	{table: "orders", name: "sku_name", definition: "varchar(80) NOT NULL DEFAULT ''", after: "plan_name"},
 	{table: "orders", name: "billing_unit", definition: "varchar(16) NOT NULL DEFAULT ''", after: "sku_name"},

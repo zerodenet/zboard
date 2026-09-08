@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +13,8 @@ import (
 )
 
 type nodeDeleteCleanup struct {
+	NetworkEntries          int64 `json:"network_entries"`
+	ProxyPools              int64 `json:"proxy_pools"`
 	ProtocolEndpoints       int64 `json:"protocol_endpoints"`
 	ProtocolDeployments     int64 `json:"protocol_deployments"`
 	ProtocolCredentials     int64 `json:"protocol_credentials"`
@@ -40,11 +41,9 @@ type nodeCascadeDeleteResponse struct {
 	ProviderDNSRecordsRetained     bool              `json:"provider_dns_records_retained"`
 }
 
-// NodeCascadeDeleteHandler treats a registered VPS as the lifecycle root for
-// zboard-owned runtime/configuration resources. Historical billing, task and
-// audit facts deliberately survive the asset deletion. Installed Zero artifacts
-// are retained on the VPS, but a managed Zero service is stopped and disabled
-// before its central identity is removed so it cannot become an orphan reporter.
+// NodeCascadeDeleteHandler removes panel-owned records and associations.
+// Remote services, certificate files and provider DNS are managed separately;
+// neither expired credentials nor an unreachable VPS can veto local deletion.
 func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	claims, err := h.requireAdmin(w, r)
 	if err != nil {
@@ -74,9 +73,6 @@ func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if h.networkEntryDeletionBlocked(w, "node_id = ? OR endpoint_id IN (?)", node.ID, h.db.Model(&model.ProtocolEndpoint{}).Select("id").Where("node_id = ?", node.ID)) {
-		return
-	}
 	endpointIDs := make([]uint, 0)
 	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("node_id = ?", node.ID).Pluck("id", &endpointIDs).Error; err != nil {
 		ServerError(w, err)
@@ -100,23 +96,16 @@ func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusConflict, err.Error(), nil)
 		return
 	}
-	remoteZeroStopped, err := h.stopManagedZeroBeforeNodeDelete(node)
-	if err != nil {
-		writeJSON(w, http.StatusConflict, "无法安全删除节点：已安装的 Zero 未能在远端停止，请恢复 SSH 或服务控制后重试。", map[string]interface{}{
-			"remote_zero_stop_required": true,
-			"detail":                    err.Error(),
-		})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), certificateOperationTimeout)
-	defer cancel()
-	if err := h.cleanupNodeExternalResources(ctx, node); err != nil {
-		writeJSON(w, http.StatusBadGateway, "外部资源清理未完成，节点及关联记录已保留；请修复后重试删除。", map[string]interface{}{"detail": truncateCertificateError(err.Error())})
-		return
-	}
 	cleanup := nodeDeleteCleanup{}
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := touchEndpointGroups(tx, endpointIDs); err != nil {
+			return err
+		}
+		var cleanupErr error
+		cleanup.NetworkEntries, cleanupErr = deleteNetworkEntryRecords(tx, node.ID, claims.UserID, "node_id = ? OR endpoint_id IN (?)", node.ID, tx.Model(&model.ProtocolEndpoint{}).Select("id").Where("node_id = ?", node.ID))
+		if cleanupErr != nil {
+			return cleanupErr
+		}
 		var certificateIDs []uint
 		if err := tx.Model(&model.ManagedCertificate{}).Where("node_id = ?", node.ID).Pluck("id", &certificateIDs).Error; err != nil {
 			return err
@@ -182,26 +171,31 @@ func (h *handlers) NodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 			return err
 		}
 
+		if cleanup.ProxyPools, err = deleteNodeScopedRows(tx, &model.NodeProxyPool{}, "node_id = ?", node.ID); err != nil {
+			return err
+		}
+
 		if err := tx.Delete(&node).Error; err != nil {
 			return err
 		}
 		encodedCleanup, _ := json.Marshal(cleanup)
-		return createAuditLog(tx, claims, "node.delete", fmt.Sprintf("node:%d", node.ID), fmt.Sprintf("name=%s cleanup=%s traffic_records_retained=%d remote_zero_stopped=%t external_cleanup=completed", node.Name, encodedCleanup, trafficRecords, remoteZeroStopped))
+		return createAuditLog(tx, claims, "node.delete", fmt.Sprintf("node:%d", node.ID), fmt.Sprintf("name=%s cleanup=%s traffic_records_retained=%d external_cleanup=not_attempted", node.Name, encodedCleanup, trafficRecords))
 	})
 	if err != nil {
 		ServerError(w, err)
 		return
 	}
 
+	h.invalidateZeroEventCredential(node.ID)
 	OK(w, nodeCascadeDeleteResponse{
 		ID:                             node.ID,
 		Deleted:                        true,
 		Cleanup:                        cleanup,
 		TrafficRecordsRetained:         trafficRecords,
 		RemoteZeroRetained:             true,
-		RemoteZeroStopped:              remoteZeroStopped,
-		RemoteCertificateFilesRetained: false,
-		ProviderDNSRecordsRetained:     false,
+		RemoteZeroStopped:              false,
+		RemoteCertificateFilesRetained: true,
+		ProviderDNSRecordsRetained:     true,
 	})
 }
 

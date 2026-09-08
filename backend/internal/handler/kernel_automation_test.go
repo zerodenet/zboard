@@ -88,31 +88,16 @@ func TestCompareZeroVersions(t *testing.T) {
 	}
 }
 
-func TestZeroManagedAccessCapabilitiesFollowReleaseVersion(t *testing.T) {
+func TestZeroConnectorCompatibilityFollowsReleaseVersion(t *testing.T) {
 	for _, version := range []string{"0.0.1", "v0.0.1", "0.0.2-dev.202609080000", "0.0.3"} {
-		if !zeroUsesGenericConnector(version) || !zeroSupportsNativeManagedAccess(version) || !zeroSupportsMieruPrincipal(version) {
-			t.Fatalf("reset baseline %s must preserve all current management capabilities", version)
+		if !zeroUsesGenericConnector(version) {
+			t.Fatalf("reset baseline %s must use generic connector", version)
 		}
 	}
 	for _, version := range []string{"0.0.0", "0.0.1-rc.1", "0.0.4", "0.0.14", "invalid"} {
-		if zeroUsesGenericConnector(version) || zeroSupportsNativeManagedAccess(version) || zeroSupportsMieruPrincipal(version) {
-			t.Fatalf("unqualified or legacy version %s must retain its capability gates", version)
+		if zeroUsesGenericConnector(version) {
+			t.Fatalf("legacy connector changed for %s", version)
 		}
-	}
-	if zeroSupportsNativeManagedAccess("0.0.15-rc.2") {
-		t.Fatal("rc.2 must not enable the native managed-user contract")
-	}
-	if !zeroSupportsNativeManagedAccess("v0.0.15-rc.3") {
-		t.Fatal("rc.3 must enable the native managed-user contract")
-	}
-	if zeroSupportsMieruPrincipal("0.0.15-rc.3") {
-		t.Fatal("rc.3 must not enable attributable Mieru users")
-	}
-	if !zeroSupportsMieruPrincipal("v0.0.15-rc.4") || !zeroSupportsMieruPrincipal("0.0.15") {
-		t.Fatal("rc.4 and later must enable attributable Mieru users")
-	}
-	if zeroSupportsMieruPrincipal("development") {
-		t.Fatal("an unparseable version must fail closed")
 	}
 }
 

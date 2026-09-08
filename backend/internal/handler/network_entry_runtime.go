@@ -6,7 +6,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
@@ -26,19 +25,33 @@ func (path networkEntryPath) appendTo(config map[string]interface{}, entry model
 			return err
 		}
 	}
-	prefix := networkEntryTag(entry.ID) + "/"
+	target, err := path.appendGraph(config, networkEntryTag(entry.ID)+"/")
+	if err != nil {
+		return err
+	}
+	appendEntryRoute(config, entry.ID, map[string]interface{}{"type": "route", "outbound": target})
+	return nil
+}
+
+func appendEntryRoute(config map[string]interface{}, entryID uint, action map[string]interface{}) {
+	route := config["route"].(map[string]interface{})
+	rules, _ := route["rules"].([]interface{})
+	route["rules"] = append(rules, map[string]interface{}{"condition": map[string]interface{}{"type": "inbound", "values": []string{networkEntryTag(entryID)}}, "action": action})
+}
+
+func (path networkEntryPath) appendGraph(config map[string]interface{}, prefix string) (string, error) {
 	names := map[string]string{}
 	for _, list := range [][]map[string]interface{}{path.Outbounds, path.Groups} {
 		for _, item := range list {
 			tag, _ := item["tag"].(string)
 			if tag == "" || names[tag] != "" {
-				return fmt.Errorf("代理路径的 tag 必须非空且唯一")
+				return "", fmt.Errorf("代理路径的 tag 必须非空且唯一")
 			}
 			names[tag] = prefix + tag
 		}
 	}
 	if names[path.Target] == "" {
-		return fmt.Errorf("请选择代理路径中存在的 target")
+		return "", fmt.Errorf("请选择代理路径中存在的 target")
 	}
 	outbounds, _ := config["outbounds"].([]interface{})
 	for _, item := range path.Outbounds {
@@ -55,12 +68,12 @@ func (path networkEntryPath) appendTo(config map[string]interface{}, entry model
 		}
 		members, ok := item[memberKey].([]interface{})
 		if !ok || len(members) == 0 {
-			return fmt.Errorf("代理组必须包含 outbounds")
+			return "", fmt.Errorf("代理组必须包含 outbounds")
 		}
 		for i, value := range members {
 			name, _ := value.(string)
 			if names[name] == "" {
-				return fmt.Errorf("代理组引用了不存在的出口")
+				return "", fmt.Errorf("代理组引用了不存在的出口")
 			}
 			members[i] = names[name]
 		}
@@ -68,7 +81,7 @@ func (path networkEntryPath) appendTo(config map[string]interface{}, entry model
 			if value, exists := item[key]; exists {
 				name, _ := value.(string)
 				if names[name] == "" {
-					return fmt.Errorf("代理组选择了不存在的出口")
+					return "", fmt.Errorf("代理组选择了不存在的出口")
 				}
 				item[key] = names[name]
 			}
@@ -77,10 +90,7 @@ func (path networkEntryPath) appendTo(config map[string]interface{}, entry model
 		groups = append(groups, item)
 	}
 	config["outbound_groups"] = groups
-	route := config["route"].(map[string]interface{})
-	rules, _ := route["rules"].([]interface{})
-	route["rules"] = append(rules, map[string]interface{}{"condition": map[string]interface{}{"type": "inbound", "values": []string{networkEntryTag(entry.ID)}}, "action": map[string]interface{}{"type": "route", "outbound": names[path.Target]}})
-	return nil
+	return names[path.Target], nil
 }
 
 func (h *handlers) appendNetworkEntryRuntime(config map[string]interface{}, nodeID uint) error {
@@ -95,6 +105,7 @@ func (h *handlers) appendNetworkEntryRuntime(config map[string]interface{}, node
 		port, _ := listen["port"].(int)
 		ports[port] = true
 	}
+	poolTargets := map[uint]string{}
 	for _, entry := range entries {
 		var endpoint model.ProtocolEndpoint
 		if err := h.db.First(&endpoint, entry.EndpointID).Error; err != nil {
@@ -120,7 +131,26 @@ func (h *handlers) appendNetworkEntryRuntime(config map[string]interface{}, node
 		}
 		protocol := map[string]interface{}{"type": "direct", "target": endpoint.Address, "port": port}
 		inbounds = append(inbounds, map[string]interface{}{"tag": networkEntryTag(entry.ID), "listen": map[string]interface{}{"address": "0.0.0.0", "port": entry.Port}, "udp": map[string]interface{}{"enabled": entry.Network != "tcp"}, "protocol": protocol})
-		if entry.PathConfig != "" {
+		if entry.ProxyPoolID != nil {
+			target := poolTargets[*entry.ProxyPoolID]
+			if target == "" {
+				path, err := h.proxyPoolPath(h.db, *entry.ProxyPoolID, entry.NodeID, entry.Network)
+				if err != nil {
+					return err
+				}
+				target, err = path.appendGraph(config, fmt.Sprintf("pool-%d/", *entry.ProxyPoolID))
+				if err != nil {
+					return err
+				}
+				poolTargets[*entry.ProxyPoolID] = target
+			} else {
+				// Each binding retains its own TCP/UDP requirements.
+				if _, err := h.proxyPoolPath(h.db, *entry.ProxyPoolID, entry.NodeID, entry.Network); err != nil {
+					return err
+				}
+			}
+			appendEntryRoute(config, entry.ID, map[string]interface{}{"type": "route", "outbound": target})
+		} else if entry.PathConfig != "" {
 			raw, err := h.credentialCipher.Decrypt(entry.PathConfig)
 			if err != nil {
 				return fmt.Errorf("解密入口 %d 代理路径失败", entry.ID)
@@ -132,6 +162,8 @@ func (h *handlers) appendNetworkEntryRuntime(config map[string]interface{}, node
 			if err := path.appendTo(config, entry); err != nil {
 				return fmt.Errorf("入口 %d: %w", entry.ID, err)
 			}
+		} else {
+			appendEntryRoute(config, entry.ID, map[string]interface{}{"type": "direct"})
 		}
 	}
 	config["inbounds"] = inbounds
@@ -139,71 +171,6 @@ func (h *handlers) appendNetworkEntryRuntime(config map[string]interface{}, node
 }
 
 // Called after B's access filtering. Retaining B's identity also preserves group order and billing.
-func (h *handlers) projectNetworkEntries(nodes []subscriptionManifestNode, now time.Time) ([]subscriptionManifestNode, error) {
-	if len(nodes) == 0 {
-		return nodes, nil
-	}
-	ids := make([]uint, 0, len(nodes))
-	for _, node := range nodes {
-		ids = append(ids, node.ID)
-	}
-	var entries []model.NetworkEntry
-	if err := h.db.Where("endpoint_id IN ? AND enabled = ?", ids, true).Order("id").Find(&entries).Error; err != nil {
-		return nil, err
-	}
-	result := make([]subscriptionManifestNode, 0, len(nodes)+len(entries))
-	for _, base := range nodes {
-		fronts := []subscriptionManifestNode{}
-		for _, entry := range entries {
-			if entry.EndpointID != base.ID {
-				continue
-			}
-			var node model.Node
-			if err := h.db.First(&node, entry.NodeID).Error; err != nil {
-				return nil, err
-			}
-			if !node.IsEnabled || node.LifecycleStatus == resourceStatusDeleting || node.LastSeenAt == nil || node.LastSeenAt.Before(now.Add(-nodeOnlineWindow)) {
-				continue
-			}
-			var pending int64
-			if err := h.db.Model(&model.NodeConfigPublish{}).Where("node_id = ?", entry.NodeID).Count(&pending).Error; err != nil {
-				return nil, err
-			}
-			if pending > 0 {
-				continue
-			}
-			var config map[string]interface{}
-			if err := json.Unmarshal(base.Config, &config); err != nil {
-				return nil, err
-			}
-			// Keep implicit TLS peer identity pinned to B before replacing the transport destination.
-			port := base.PublicPort
-			if port <= 0 {
-				port = base.Port
-			}
-			preserveNetworkEntryPeerIdentity(config, base.Address, base.Protocol, port)
-			config["server"] = entry.Address
-			config["port"] = entry.PublicPort
-			raw, err := json.Marshal(config)
-			if err != nil {
-				return nil, err
-			}
-			front := base
-			front.NetworkEntryID = entry.ID
-			front.NetworkEntryNetwork = entry.Network
-			front.Name = entry.Name + " · " + base.Name
-			front.Address = entry.Address
-			front.Port = entry.Port
-			front.PublicPort = entry.PublicPort
-			front.Config = raw
-			fronts = append(fronts, front)
-		}
-		result = append(result, base)
-		result = append(result, fronts...)
-	}
-	return result, nil
-}
-
 func preserveNetworkEntryPeerIdentity(config map[string]interface{}, address, protocol string, port int) {
 	authority := address
 	if port > 0 {

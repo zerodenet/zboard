@@ -1,7 +1,7 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="订单管理" description="处理全站交易状态和人工收款，不混入管理员自己的购买与订阅操作。" eyebrow="Commerce">
-      <template #actions><PageRefreshButton label="刷新订单" :loading="loading" @click="load" /></template>
+    <PageHeader title="订单管理" description="为用户分配待付款订单，处理全站交易状态和人工收款。" eyebrow="Commerce">
+      <template #actions><PageRefreshButton label="刷新订单" :loading="loading" @click="load" /><UiButton @click="openAssignment">分配订单</UiButton></template>
     </PageHeader>
 
     <TransientFeedback :success="message" :error="error" success-title="订单状态已更新" error-title="订单数据加载失败" />
@@ -17,10 +17,12 @@
         </WorkbenchFilterBar>
       </template>
       <template #actions><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/plans')">管理商品<UiIcon name="chevron" /></RouterLink></template>
-      <DataTable v-if="orders.length" caption="订单管理列表" :row-count="total" :min-width="980"><thead><tr><th class="table-primary-column">订单</th><th data-column-priority="3">用户</th><th data-column-priority="2">商品规格</th><th data-column-priority="1">金额</th><th>状态</th><th data-column-priority="2">创建时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="item in orders" :key="item.id"><td class="table-primary-column"><div class="cell-title"><strong>#{{ item.id }}</strong><TableText :value="item.trade_no" /></div></td><td class="mono" data-column-priority="3">#{{ item.user_id }}</td><td data-column-priority="2"><div class="cell-title cell-related"><TableText :value="item.plan_name || `套餐 #${item.plan_id}`" /><TableText :value="item.sku_name || `SKU #${item.plan_sku_id}`" /></div></td><td class="value-cell" data-column-priority="1">{{ formatCurrency(item.amount_cents, item.currency || 'CNY') }}</td><td><StatusBadge :tone="statusTone(item.status)">{{ statusName(item.status) }}</StatusBadge></td><td data-column-priority="2"><TimeBadge :value="item.created_at" /></td><td class="table-action-column"><RowActions :label="`订单 #${item.id} 的操作`" :trigger-key="`order-${item.id}`"><UiButton variant="secondary" size="sm" type="button" :data-order-detail-trigger="item.id" @click="openDetail(item.id)">查看详情</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(item.user_id) })">用户订阅</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/users', { user: String(item.user_id) })">用户详情</RouterLink><UiButton v-if="item.status === 'pending'" variant="ghost" size="sm" type="button" @click="requestAction('cancel', item)">取消订单</UiButton><UiButton v-if="item.status === 'pending' || item.status === 'failed'" variant="ghost" size="sm" type="button" @click="requestAction('pay', item)">{{ item.status === 'failed' ? '重新确认收款' : '确认收款' }}</UiButton></RowActions></td></tr></tbody></DataTable>
+      <DataTable v-if="orders.length" caption="订单管理列表" :row-count="total" :min-width="980"><thead><tr><th class="table-primary-column">订单</th><th data-column-priority="3">用户</th><th data-column-priority="2">商品规格</th><th data-column-priority="1">应付金额</th><th>状态</th><th data-column-priority="2">创建时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="item in orders" :key="item.id"><td class="table-primary-column"><div class="cell-title"><strong>#{{ item.id }}</strong><TableText :value="item.trade_no" /></div></td><td class="mono" data-column-priority="3">#{{ item.user_id }}</td><td data-column-priority="2"><div class="cell-title cell-related"><TableText :value="item.plan_name || `套餐 #${item.plan_id}`" /><TableText :value="item.sku_name || `SKU #${item.plan_sku_id}`" /></div></td><td class="value-cell" data-column-priority="1">{{ formatCurrency(item.payable_amount ?? item.amount_cents, item.currency || 'CNY') }}</td><td><StatusBadge :tone="statusTone(item.status)">{{ statusName(item.status) }}</StatusBadge></td><td data-column-priority="2"><TimeBadge :value="item.created_at" /></td><td class="table-action-column"><RowActions :label="`订单 #${item.id} 的操作`" :trigger-key="`order-${item.id}`"><UiButton variant="secondary" size="sm" type="button" :data-order-detail-trigger="item.id" @click="openDetail(item.id)">查看详情</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(item.user_id) })">用户订阅</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/users', { user: String(item.user_id) })">用户详情</RouterLink><UiButton v-if="item.status === 'pending'" variant="ghost" size="sm" type="button" @click="requestAction('cancel', item)">取消订单</UiButton><UiButton v-if="item.status === 'pending' || item.status === 'failed'" variant="ghost" size="sm" type="button" @click="requestAction('pay', item)">{{ item.status === 'failed' ? '重新确认收款' : '确认收款' }}</UiButton></RowActions></td></tr></tbody></DataTable>
       <EmptyState v-else icon="billing" title="没有匹配订单" description="调整状态或用户筛选条件。" />
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
+
+    <AdminOrderAssignmentDialog v-if="assignmentOpen" :open="assignmentOpen" :user-id="Number(route.query.user_id) || undefined" @close="closeAssignment" @assigned="onAssigned" />
 
     <DetailDrawer :open="Boolean(detailID)" :title="selectedOrder ? `订单 #${selectedOrder.id}` : '订单详情'" eyebrow="Order" :description="selectedOrder?.trade_no || '正在加载交易与履约快照'" :return-focus-selector="detailID ? `[data-row-action-trigger='order-${detailID}']` : ''" @close="closeDetail">
       <PageAlert v-if="detailError" tone="danger" title="订单详情加载失败">{{ detailError }}</PageAlert>
@@ -33,7 +35,8 @@
         </section>
         <PageAlert v-if="selectedOrder.failure_reason" tone="danger" title="最近失败原因">{{ safeFailureReason(selectedOrder.failure_reason) }}</PageAlert>
         <section class="detail-metrics" aria-label="订单金额">
-          <div><strong>{{ formatCurrency(selectedOrder.amount_cents, selectedOrder.currency || 'CNY') }}</strong><span>订单金额</span></div>
+          <div><strong>{{ formatCurrency(selectedOrder.payable_amount, selectedOrder.currency || 'CNY') }}</strong><span>应付金额</span></div>
+          <div><strong>{{ formatCurrency(selectedOrder.amount_cents, selectedOrder.currency || 'CNY') }}</strong><span>规格原价</span></div>
           <div><strong>{{ formatCurrency(selectedOrder.paid_amount, selectedOrder.currency || 'CNY') }}</strong><span>实收金额</span></div>
           <div><strong>{{ formatCurrency(selectedOrder.discount_amount, selectedOrder.currency || 'CNY') }}</strong><span>优惠金额</span></div>
           <div><strong>{{ formatCurrency(selectedOrder.refund_amount, selectedOrder.currency || 'CNY') }}</strong><span>退款金额</span></div>
@@ -41,7 +44,9 @@
         <section class="detail-facts" aria-label="交易与权益快照">
           <div><span>商品规格</span><strong>{{ selectedOrder.plan_name || `套餐 #${selectedOrder.plan_id}` }} / {{ selectedOrder.sku_name || `SKU #${selectedOrder.plan_sku_id}` }}</strong></div>
           <div><span>用户</span><strong class="mono">#{{ selectedOrder.user_id }}</strong></div>
-          <div><span>支付渠道</span><strong>{{ selectedOrder.channel || '未指定' }}</strong></div>
+          <div><span>支付渠道</span><strong>{{ selectedOrder.channel === 'admin_assignment' ? '管理员代建订单' : selectedOrder.channel || '未指定' }}</strong></div>
+          <div v-if="selectedOrder.assigned_by"><span>分配人</span><strong>#{{ selectedOrder.assigned_by }}</strong></div>
+          <div v-if="selectedOrder.assignment_note"><span>分配原因</span><strong>{{ selectedOrder.assignment_note }}</strong></div>
           <div><span>渠道交易号</span><strong class="mono">{{ selectedOrder.provider_trade_no || '未生成' }}</strong></div>
           <div><span>关联订阅</span><strong class="mono">{{ selectedOrder.subscription_id ? `#${selectedOrder.subscription_id}` : '尚未创建' }}</strong></div>
           <div><span>目标订阅</span><strong class="mono">{{ selectedOrder.target_subscription_id ? `#${selectedOrder.target_subscription_id}` : '无' }}</strong></div>
@@ -80,6 +85,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminOrderAssignmentDialog from '../components/AdminOrderAssignmentDialog.vue'
 import TableText from '../components/TableText.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -110,6 +116,14 @@ import { normalizeOutput, truncateOutput } from '../utils/output'
 type OrderItem = AdminOrderListItem
 const route = useRoute()
 const router = useRouter()
+const assignmentOpen = computed(() => route.query.assign === '1')
+async function openAssignment() { await router.push({ query: { ...route.query, assign: '1' } }) }
+async function closeAssignment() { const { assign: _assign, ...query } = route.query; await router.replace({ query }) }
+async function onAssigned(order: AdminOrderDetail) {
+  message.value = `已为用户 #${order.user_id} 创建待付款订单 #${order.id}。`
+  await router.replace({ query: { ...preserveAdminReturnTo(route.query.return_to), user_id: String(order.user_id), order: String(order.id) } })
+  await load()
+}
 const queryFilter = ref(String(route.query.q || ''))
 const statusFilter = ref(String(route.query.status || ''))
 const orderTypeFilter = ref(String(route.query.order_type || ''))

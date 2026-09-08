@@ -28,6 +28,7 @@ const auditActions: Record<string, string> = {
   'plan.update': '更新商品',
   'plan.sku.create': '创建销售规格',
   'plan.sku.update': '更新销售规格',
+  'order.assign': '为用户分配订单',
   'order.pay': '确认订单收款',
   'order.cancel': '取消订单',
   'order.payment_result': '处理支付结果',

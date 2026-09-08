@@ -8,16 +8,17 @@
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters><WorkbenchFilterBar :active="Boolean(search || enabledFilter)" @clear="clearFilters"><WorkbenchFilterInput v-model="search" label="搜索" placeholder="名称、代码或说明" @apply="applyFilters" /><WorkbenchFilterSelect v-model="enabledFilter" label="启用状态" :options="enabledOptions" @apply="applyFilters" /></WorkbenchFilterBar></template>
-      <DataTable v-if="groups.length" caption="节点组列表；成员数量直接展示，完整成员仅在编辑时按需加载" :row-count="total" :min-width="900" table-class="group-table"><thead><tr><th class="table-primary-column">节点组</th><th data-column-priority="2">代码</th><th>状态</th><th class="numeric-column">端点数</th><th class="numeric-column" data-column-priority="3">套餐数</th><th data-column-priority="2">更新时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="group in groups" :key="group.id"><td class="table-primary-column"><div class="cell-title"><strong>{{ group.name }}</strong><TableText :value="group.description || '暂无说明'" /></div></td><td data-column-priority="2"><TableText class="mono" :value="group.code" /></td><td><StatusBadge :tone="group.is_enabled ? 'success' : 'neutral'">{{ group.is_enabled ? '已启用' : '已停用' }}</StatusBadge></td><td class="numeric-column">{{ group.protocol_endpoint_count || 0 }}</td><td class="numeric-column" data-column-priority="3">{{ group.plan_count || 0 }}</td><td data-column-priority="2"><TimeBadge :value="group.updated_at" /></td><td class="table-action-column"><UiButton variant="secondary" size="sm" type="button" :loading="editingID === group.id" :disabled="Boolean(editingID)" @click="openEdit(group)"><UiIcon name="edit" />编辑</UiButton></td></tr></tbody></DataTable>
+      <DataTable v-if="groups.length" caption="节点组列表；成员数量直接展示，完整成员仅在编辑时按需加载" :row-count="total" :min-width="900" table-class="group-table"><thead><tr><th class="table-primary-column">节点组</th><th data-column-priority="2">代码</th><th>状态</th><th class="numeric-column">服务数</th><th class="numeric-column" data-column-priority="3">套餐数</th><th data-column-priority="2">更新时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="group in groups" :key="group.id"><td class="table-primary-column"><div class="cell-title"><strong>{{ group.name }}</strong><TableText :value="group.description || '暂无说明'" /></div></td><td data-column-priority="2"><TableText class="mono" :value="group.code" /></td><td><StatusBadge :tone="group.is_enabled ? 'success' : 'neutral'">{{ group.is_enabled ? '已启用' : '已停用' }}</StatusBadge></td><td class="numeric-column">{{ (group.protocol_endpoint_count || 0) + (group.network_entry_count || 0) }}</td><td class="numeric-column" data-column-priority="3">{{ group.plan_count || 0 }}</td><td data-column-priority="2"><TimeBadge :value="group.updated_at" /></td><td class="table-action-column"><UiButton variant="secondary" size="sm" type="button" :loading="editingID === group.id" :disabled="Boolean(editingID)" @click="openEdit(group)"><UiIcon name="edit" />编辑</UiButton></td></tr></tbody></DataTable>
       <EmptyState v-else icon="nodes" title="没有匹配的节点组" description="调整筛选条件，或创建第一个节点组。"><template #actions><UiButton  type="button" @click="openCreate"><UiIcon name="plus" />创建节点组</UiButton></template></EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
-    <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑节点组' : '创建节点组'" description="节点组只持有协议端点成员；端点倍率仍由协议端点维护。" size="xl" :busy="saving" @close="closeEditor">
+    <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑节点组' : '创建节点组'" description="独立选择直连服务和前置线路。前置线路不授予落地权限；使用前置线路仍需显式选择其落地协议。流量倍率沿用落地协议。" size="xl" :busy="saving" @close="closeEditor">
       <form id="node-group-form" ref="formElement" class="group-editor" novalidate @submit.prevent="save">
         <section class="group-members">
           <header><strong>按需搜索成员</strong><p>列表只展示 25 条；批量加入或移除会解析一次最多 10000 个 ID 的服务端筛选快照，不逐页拼接详情。</p></header>
-          <FormField v-slot="{ controlAttrs }" label="协议端点成员" name="node-group-endpoints" :error="editorErrors.fields.protocol_endpoint_ids" required full><EndpointMultiLookup v-model="form.protocol_endpoint_ids" v-bind="controlAttrs" /></FormField>
+          <FormField v-slot="{ controlAttrs }" label="直连协议服务" name="node-group-endpoints" :error="editorErrors.fields.protocol_endpoint_ids" full><EndpointMultiLookup v-model="form.protocol_endpoint_ids" v-bind="controlAttrs" /></FormField>
+          <FormField label="前置线路" name="node-group-network-entries" :error="editorErrors.fields.network_entry_ids" full hint="这里只授予入口权限，不生成 B 凭据；需要使用该线路时，请同时显式授予 B 的协议权限。"><NetworkEntryMultiLookup v-model="form.network_entry_ids" /></FormField>
         </section>
         <aside class="group-fields">
           <div v-if="form.id" class="group-editor-meta"><StatusBadge tone="neutral" icon="history">版本 {{ form.revision }}</StatusBadge><TimeBadge :value="form.updated_at" /></div>
@@ -46,8 +47,10 @@ import DataTable from '../components/DataTable.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
 import EndpointMultiLookup from '../components/EndpointMultiLookup.vue'
+import NetworkEntryMultiLookup from '../components/NetworkEntryMultiLookup.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import PageHeader from '../components/PageHeader.vue'
+import PageAlert from '../components/PageAlert.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TablePager from '../components/TablePager.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
@@ -75,8 +78,9 @@ const editingID = ref(0)
 const message = ref('')
 const formElement = ref<HTMLElement | null>(null)
 const originalEndpointIDs = ref<number[]>([])
+const originalEntryIDs = ref<number[]>([])
 const revisionConflict = ref(false)
-const emptyForm = () => ({ id: 0, name: '', code: '', description: '', is_enabled: true, revision: 0, updated_at: '', protocol_endpoint_ids: [] as number[] })
+const emptyForm = () => ({ id: 0, name: '', code: '', description: '', is_enabled: true, revision: 0, updated_at: '', protocol_endpoint_ids: [] as number[], network_entry_ids: [] as number[] })
 const form = reactive(emptyForm())
 const editorState = useDirtyForm(() => form)
 useUnsavedChangesGuard(
@@ -88,10 +92,10 @@ useUnsavedChangesGuard(
   }),
 )
 const editorErrors = useFormErrors()
-const nodeGroupFieldMap: Record<string, string> = { name: 'name', code: 'code', description: 'description', is_enabled: 'is_enabled', protocol_endpoint_ids: 'protocol_endpoint_ids' }
+const nodeGroupFieldMap: Record<string, string> = { name: 'name', code: 'code', description: 'description', is_enabled: 'is_enabled', protocol_endpoint_ids: 'protocol_endpoint_ids', network_entry_ids: 'network_entry_ids' }
 for (const [source, field] of [
   [() => form.name, 'name'], [() => form.code, 'code'], [() => form.description, 'description'],
-  [() => form.is_enabled, 'is_enabled'], [() => [...form.protocol_endpoint_ids], 'protocol_endpoint_ids'],
+  [() => [...form.network_entry_ids], 'network_entry_ids'], [() => form.is_enabled, 'is_enabled'], [() => [...form.protocol_endpoint_ids], 'protocol_endpoint_ids'],
 ] as Array<[() => unknown, string]>) watch(source, () => editorErrors.clear(field))
 const enabledOptions = [{ label: '全部状态', value: '' }, { label: '已启用', value: 'true' }, { label: '已停用', value: 'false' }]
 const { items: groups, total, loading, refreshing, error, load: refresh } = useRemoteTable<any>({
@@ -107,7 +111,7 @@ async function syncURL(replace = false) { const page = Math.floor(offset.value /
 async function applyFilters() { offset.value = 0; await syncURL(); await refresh() }
 async function clearFilters() { search.value = ''; enabledFilter.value = ''; await applyFilters() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await refresh() }
-function openCreate() { Object.assign(form, emptyForm()); originalEndpointIDs.value = []; revisionConflict.value = false; editorState.markClean(); editorErrors.clear(); editorOpen.value = true }
+function openCreate() { Object.assign(form, emptyForm()); originalEndpointIDs.value = []; originalEntryIDs.value = []; revisionConflict.value = false; editorState.markClean(); editorErrors.clear(); editorOpen.value = true }
 async function openEdit(group: NodeGroupSummary) {
   if (editingID.value) return
   editingID.value = group.id
@@ -122,9 +126,11 @@ async function openEdit(group: NodeGroupSummary) {
       is_enabled: Boolean(detail.is_enabled),
       revision: detail.revision,
       updated_at: detail.updated_at,
-      protocol_endpoint_ids: [...detail.protocol_endpoint_ids],
+      protocol_endpoint_ids: [...(detail.protocol_endpoint_ids || [])],
+      network_entry_ids: [...(detail.network_entry_ids || [])],
     })
-    originalEndpointIDs.value = [...detail.protocol_endpoint_ids]
+    originalEndpointIDs.value = [...(detail.protocol_endpoint_ids || [])]
+    originalEntryIDs.value = [...(detail.network_entry_ids || [])]
     revisionConflict.value = false
     editorState.markClean()
     editorErrors.clear()
@@ -148,9 +154,11 @@ async function reloadEditor() {
       is_enabled: Boolean(detail.is_enabled),
       revision: detail.revision,
       updated_at: detail.updated_at,
-      protocol_endpoint_ids: [...detail.protocol_endpoint_ids],
+      protocol_endpoint_ids: [...(detail.protocol_endpoint_ids || [])],
+      network_entry_ids: [...(detail.network_entry_ids || [])],
     })
-    originalEndpointIDs.value = [...detail.protocol_endpoint_ids]
+    originalEndpointIDs.value = [...(detail.protocol_endpoint_ids || [])]
+    originalEntryIDs.value = [...(detail.network_entry_ids || [])]
     revisionConflict.value = false
     editorErrors.clear()
     editorState.markClean()
@@ -169,20 +177,21 @@ async function save() {
 		name: !isUtf8LengthInRange(form.name, 1, 80, true) && '节点组名称需包含 1 到 80 个 UTF-8 字节。',
 		code: !isBlank(form.code) && !isSlug(form.code, 80) && '代码只能包含小写字母、数字和单个连字符，且不能超过 80 个 UTF-8 字节。',
 		description: !isUtf8LengthInRange(form.description, 0, 255) && '用途说明不能超过 255 个 UTF-8 字节。',
-		protocol_endpoint_ids: form.is_enabled && !form.protocol_endpoint_ids.length && '启用的节点组至少需要选择一个协议端点。',
+		protocol_endpoint_ids: form.is_enabled && !form.protocol_endpoint_ids.length && !form.network_entry_ids.length && '启用的节点组至少需要选择一个直连服务或前置线路。',
 	}), formElement, '请更正标记字段后再保存节点组。')
 	if (!valid) return
 	const nextEndpointIDs = new Set(form.protocol_endpoint_ids)
-	const removedEndpointCount = form.id ? originalEndpointIDs.value.filter(id => !nextEndpointIDs.has(id)).length : 0
+	const nextEntryIDs = new Set(form.network_entry_ids)
+	const removedEndpointCount = form.id ? originalEndpointIDs.value.filter(id => !nextEndpointIDs.has(id)).length + originalEntryIDs.value.filter(id => !nextEntryIDs.has(id)).length : 0
 	if (removedEndpointCount > 0 && !await confirmAction({
-		title: `从节点组移除 ${removedEndpointCount} 个端点？`,
-		message: '保存后，引用该节点组的套餐和订阅将立即停止交付这些端点，并触发相关凭证与节点配置对齐。',
+		title: `从节点组移除 ${removedEndpointCount} 个服务？`,
+		message: '保存后，引用该节点组的套餐和订阅将立即停止交付这些直连服务或前置线路，并触发相关凭证与节点配置对齐。',
 		confirmText: '确认保存变更',
 		tone: 'danger',
 	})) return
 	saving.value = true; error.value = ''; message.value = ''
 	try {
-		const payload = { name: form.name, code: form.code || generatedGroupCode(form.name), description: form.description, is_enabled: form.is_enabled, protocol_endpoint_ids: form.protocol_endpoint_ids, ...(form.id ? { expected_revision: form.revision } : {}) }
+		const payload = { name: form.name, code: form.code || generatedGroupCode(form.name), description: form.description, is_enabled: form.is_enabled, protocol_endpoint_ids: form.protocol_endpoint_ids, network_entry_ids: form.network_entry_ids, ...(form.id ? { expected_revision: form.revision } : {}) }
 		const result = form.id ? await updateNodeGroup(form.id, payload) : await createNodeGroup(payload)
 		if (result.reconcile_task) trackAdminTask(result.reconcile_task)
 		editorOpen.value = false

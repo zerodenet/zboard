@@ -225,7 +225,7 @@ async function runCertificateOperation(certificate: ManagedCertificate) {
 async function removeCertificate(certificate: ManagedCertificate) {
   if (!await confirmAction({
     title: '删除托管证书？',
-    message: `将删除“${certificate.name}”的托管证书，撤销仍有效的证书，并删除节点上的证书、私钥及续期配置。操作历史保留；外部清理失败时保留面板记录，可修复后重试删除。`,
+    message: `将删除“${certificate.name}”的面板托管记录及协议关联，停止面板自动续期。此操作不连接 SSH，不撤销 CA 证书，也不删除节点文件；远端残留可用离线脚本清理。`,
     confirmText: '确认删除',
     tone: 'danger',
   })) return
@@ -234,7 +234,7 @@ async function removeCertificate(certificate: ManagedCertificate) {
   message.value = ''
   try {
     await deleteManagedCertificate(certificate.id)
-    message.value = `证书“${certificate.name}”及节点文件、续期配置已清理。`
+    message.value = `证书“${certificate.name}”的面板记录及关联已删除，远端文件保留。`
     await refresh()
   } catch (cause: any) {
     await refresh()

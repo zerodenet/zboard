@@ -1064,12 +1064,14 @@ export interface NodeGroupSummary {
 	is_enabled: boolean
 	revision: number
 	protocol_endpoint_count: number
+	network_entry_count?: number
 	plan_count: number
 	created_at: string
 	updated_at: string
 }
 
 export interface NodeGroupDetail extends NodeGroupSummary {
+	network_entry_ids?: number[]
 	protocol_endpoint_ids: number[]
 }
 
@@ -1158,6 +1160,7 @@ export interface PlanDetail extends PlanSummary {
 }
 
 export interface PlanCatalogItem extends PlanSummary {
+  description?: string
   traffic_bytes: number
   speed_limit_mbps: number
   device_limit: number
@@ -1268,6 +1271,7 @@ export async function fetchOrders(params: { status?: string; userId?: number } =
 }
 
 export interface AdminOrderListItem {
+  payable_amount?: number
   id: number
   user_id: number
   subscription_id: number
@@ -1285,6 +1289,8 @@ export interface AdminOrderListItem {
 }
 
 export interface AdminOrderDetail extends AdminOrderListItem {
+  assigned_by?: number
+  assignment_note?: string
   target_subscription_id?: number | null
   payable_amount: number
   paid_amount: number
@@ -2313,12 +2319,35 @@ export async function startDatabaseMigration(payload: { target_driver: 'mysql' |
 }
 
 export interface NetworkEntry {
+  service_kind?: 'forward'; parent_protocol_id?: number; proxy_pool_id?: number | null; node_group_memberships?: ProtocolEndpointNodeGroupMembership[]
   id: number; name: string; node_id: number; node_name: string; landing_node_id: number; endpoint_id: number; endpoint_name: string
   address: string; port: number; public_port: number; enabled: boolean; has_path: boolean; revision: number
-  pending: boolean; last_error: string; network: 'tcp' | 'tcp_udp'
+  node_group_names?: string[]; pending: boolean; last_error: string; network: 'tcp' | 'tcp_udp'
 }
 export async function fetchNetworkEntries(): Promise<NetworkEntry[]> { return unwrap(await api.get('/admin/network-entries')) || [] }
 export async function saveNetworkEntry(id: number, data: Record<string, unknown>): Promise<NetworkEntry> {
   return unwrap(id ? await api.put(`/admin/network-entries/${id}`, data) : await api.post('/admin/network-entries', data))
 }
 export async function deleteNetworkEntry(id: number) { return unwrap(await api.delete(`/admin/network-entries/${id}`)) }
+
+export interface NodeProxyPool { id: number; node_id: number; name: string; revision: number; entry_count: number }
+export async function fetchNodeProxyPools(nodeID: number): Promise<NodeProxyPool[]> { return unwrap(await api.get(`/admin/node-proxy-pools?node_id=${nodeID}`)) || [] }
+export async function saveNodeProxyPool(id: number, payload: Record<string, unknown>): Promise<NodeProxyPool> { return unwrap(id ? await api.put(`/admin/node-proxy-pools/${id}`,payload) : await api.post('/admin/node-proxy-pools',payload)) }
+export async function deleteNodeProxyPool(id: number) { return unwrap(await api.delete(`/admin/node-proxy-pools/${id}`)) }
+
+export async function fetchNodeCleanupScript(): Promise<string> {
+ return (await api.get('/admin/node-cleanup-script', {responseType:'text'})).data
+}
+
+export interface AdminOrderAssignmentRequest {
+  payable_amount?: number
+  user_id: number
+  plan_sku_id: number
+  target_subscription_id?: number
+  note: string
+  request_id: string
+}
+export async function assignAdminOrder(payload: AdminOrderAssignmentRequest): Promise<AdminOrderDetail> {
+  const response = await api.post('/admin/orders', payload)
+  return unwrap(response)
+}

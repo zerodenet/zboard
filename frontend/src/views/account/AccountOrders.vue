@@ -30,7 +30,7 @@
           <tr>
             <th class="table-primary-column">订单</th>
             <th>商品规格</th>
-            <th>金额</th>
+            <th>应付金额</th>
             <th>状态</th>
             <th data-column-priority="2">时间</th>
             <th class="table-action-column"><span class="sr-only">操作</span></th>
@@ -47,7 +47,7 @@
                 <TableText :value="item.sku_name || `SKU #${item.plan_sku_id}`" />
               </div>
             </td>
-            <td class="value-cell">{{ formatCurrency(item.amount_cents, item.currency) }}</td>
+            <td class="value-cell">{{ formatCurrency(item.payable_amount ?? item.amount_cents, item.currency) }}</td>
             <td><StatusBadge :tone="tone(item.status)">{{ label(item.status) }}</StatusBadge></td>
             <td data-column-priority="2"><TimeBadge :value="item.created_at" /></td>
             <td class="table-action-column">

@@ -251,7 +251,7 @@ func (h *handlers) dashboardOrderAggregate(from, to time.Time) (dashboardPeriodA
 	var aggregate dashboardPeriodAggregate
 	err := h.db.Model(&model.Order{}).
 		Select(`
-			COALESCE(SUM((CASE WHEN paid_amount > 0 THEN paid_amount ELSE amount_cents END) - refund_amount), 0) AS revenue_cents,
+			COALESCE(SUM((CASE WHEN assigned_by > 0 OR paid_amount > 0 THEN paid_amount ELSE amount_cents END) - refund_amount), 0) AS revenue_cents,
 			COUNT(*) AS paid_orders,
 			COALESCE(SUM(CASE WHEN order_type = 'new' THEN 1 ELSE 0 END), 0) AS new_orders,
 			COALESCE(SUM(CASE WHEN order_type = 'renew' THEN 1 ELSE 0 END), 0) AS renew_orders`).
@@ -428,7 +428,7 @@ func (h *handlers) loadDashboardTrend(period dashboardPeriod) ([]dashboardTrendP
 	var rows []dashboardTrendRow
 	query := h.db.Model(&model.Order{}).
 		Select(fmt.Sprintf(`%s AS bucket_start,
-			COALESCE(SUM((CASE WHEN paid_amount > 0 THEN paid_amount ELSE amount_cents END) - refund_amount), 0) AS revenue_cents,
+			COALESCE(SUM((CASE WHEN assigned_by > 0 OR paid_amount > 0 THEN paid_amount ELSE amount_cents END) - refund_amount), 0) AS revenue_cents,
 			COUNT(*) AS paid_orders,
 			COALESCE(SUM(CASE WHEN order_type = 'new' THEN 1 ELSE 0 END), 0) AS new_orders,
 			COALESCE(SUM(CASE WHEN order_type = 'renew' THEN 1 ELSE 0 END), 0) AS renew_orders`, bucketExpression)).

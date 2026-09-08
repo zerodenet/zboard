@@ -323,6 +323,19 @@
   gap: 7px;
 }
 
+.storefront-plan-card__description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .storefront-plan-card__price strong {
   font-size: clamp(28px, 3vw, 38px);
   letter-spacing: -.04em;
@@ -427,11 +440,13 @@
 }
 
 .storefront-detail__main {
+  min-width: 0;
   display: grid;
   gap: 18px;
 }
 
 .storefront-detail__hero,
+.storefront-plan-description,
 .storefront-specifications,
 .storefront-order-summary,
 .purchase-checkout__section,
@@ -477,6 +492,25 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+.storefront-plan-description {
+  min-width: 0;
+  padding: 26px;
+}
+
+.storefront-plan-description h2 {
+  margin: 0 0 14px;
+  font-size: 20px;
+}
+
+.storefront-plan-description p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.85;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .storefront-entitlement-grid article {
@@ -950,6 +984,7 @@
 
   .storefront-plan-card,
   .storefront-detail__hero,
+  .storefront-plan-description,
   .storefront-specifications,
   .storefront-order-summary,
   .purchase-checkout__section,

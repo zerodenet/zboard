@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -14,7 +13,7 @@ import (
 // it; ordinary edits and background workers must never recreate removed assets.
 const resourceStatusDeleting = "deleting"
 
-var errResourceDeleting = errors.New("资源已进入删除流程，请修复外部连接后重试删除")
+var errResourceDeleting = errors.New("资源已进入删除流程，请等待删除完成或重试删除")
 
 func requireAvailableNode(tx *gorm.DB, id uint) error {
 	var node model.Node
@@ -113,28 +112,4 @@ func (h *handlers) prepareNodeExternalDeletion(nodeID uint) error {
 		}
 		return tx.Model(&model.ManagedCertificate{}).Where("node_id = ?", nodeID).Updates(map[string]interface{}{"status": resourceStatusDeleting, "auto_renew": false}).Error
 	})
-}
-
-func (h *handlers) cleanupNodeExternalResources(ctx context.Context, node model.Node) error {
-	var records []model.ManagedDNSRecord
-	if err := h.db.Where("node_id = ?", node.ID).Order("id").Find(&records).Error; err != nil {
-		return err
-	}
-	for _, record := range records {
-		if _, err := h.deleteManagedDNSRemote(ctx, record); err != nil {
-			h.failManagedDNSDeletion(record.ID, err)
-			return fmt.Errorf("DNS %d: %w", record.ID, err)
-		}
-	}
-	var certificates []model.ManagedCertificate
-	if err := h.db.Where("node_id = ?", node.ID).Order("id").Find(&certificates).Error; err != nil {
-		return err
-	}
-	for _, certificate := range certificates {
-		if err := h.removeManagedCertificateRemote(ctx, node, certificate); err != nil {
-			_ = h.db.Model(&certificate).Update("last_error", truncateCertificateError(err.Error())).Error
-			return fmt.Errorf("certificate %d: %w", certificate.ID, err)
-		}
-	}
-	return nil
 }

@@ -303,71 +303,7 @@ func (h *handlers) OrderCreateCommerceValidatedHandler(w http.ResponseWriter, r 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&user, claims.UserID).Error; err != nil {
 			return err
 		}
-		var sku model.PlanSKU
-		if err := tx.Where("is_active = ?", true).First(&sku, request.PlanSKUID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return validationError("订单创建失败。", map[string]string{"plan_sku_id": "销售规格不存在或已停止销售。"})
-			}
-			return err
-		}
-		var plan model.Plan
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("is_active = ?", true).First(&plan, sku.PlanID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return validationError("订单创建失败。", map[string]string{"plan_sku_id": "商品不可购买。"})
-			}
-			return err
-		}
-		_, entitlementModes, operationMap, err := loadPlanSKUCommerceMetadata(tx, []model.PlanSKU{sku})
-		if err != nil {
-			return err
-		}
-		var target *model.Subscription
-		var targetSubscriptionID *uint
-		if request.TargetSubscriptionID != 0 {
-			var subscription model.Subscription
-			if err := tx.Where("id = ? AND user_id = ?", request.TargetSubscriptionID, claims.UserID).First(&subscription).Error; err != nil {
-				return validationError("订单创建失败。", map[string]string{"target_subscription_id": "目标订阅不存在。"})
-			}
-			target = &subscription
-			targetSubscriptionID = &subscription.ID
-		}
-		orderType, err := deriveOrderTypeForSKU(plan.ID, entitlementModes[sku.ID], operationMap[sku.ID], target)
-		if err != nil {
-			return err
-		}
-		if orderType == "renewal" && !plan.IsRenewable {
-			return validationError("订单创建失败。", map[string]string{"plan_sku_id": "该商品不支持续费。"})
-		}
-		if assertion := strings.ToLower(strings.TrimSpace(request.OrderType)); assertion != "" && assertion != orderType {
-			return validationError("订单创建失败。", map[string]string{"order_type": "订单类型与当前购买操作不一致，请返回套餐详情后重试。"})
-		}
-		if orderType == "new" {
-			if err := ensurePlanSubscriptionCapacity(tx, plan, time.Now().UTC()); err != nil {
-				return err
-			}
-		}
-		channel := strings.TrimSpace(request.Channel)
-		if channel == "" {
-			channel = "manual"
-		}
-		trafficBytes := plan.TrafficBytes
-		deviceLimit := plan.DeviceLimit
-		speedLimitMbps := plan.SpeedLimitMbps
-		if orderType == "traffic_pack" {
-			trafficBytes = sku.TrafficBytes
-			deviceLimit = 0
-			speedLimitMbps = 0
-		}
-		order = model.Order{
-			UserID: claims.UserID, PlanID: plan.ID, PlanSKUID: sku.ID,
-			TradeNo: uuid.NewString(), OrderType: orderType, TargetSubscriptionID: targetSubscriptionID,
-			AmountCents: sku.PriceCents, PayableAmount: sku.PriceCents, Currency: sku.Currency,
-			Channel: channel, Status: orderStatusPending,
-			PlanName: plan.Name, SKUName: sku.Name, BillingUnit: sku.BillingUnit,
-			BillingValue: sku.BillingValue, RenewalEffect: sku.RenewalEffect, TrafficBytes: trafficBytes,
-			DeviceLimit: deviceLimit, SpeedLimitMbps: speedLimitMbps,
-		}
-		return tx.Create(&order).Error
+		return h.createCommerceOrder(tx, claims.UserID, request, &order)
 	})
 	if errors.Is(err, errPlanSubscriptionLimitReached) {
 		writePlanSubscriptionLimitReached(w)
@@ -392,4 +328,74 @@ func (h *handlers) OrderPayCommerceHandler(w http.ResponseWriter, r *http.Reques
 
 func (h *handlers) OrderPayCallbackCommerceHandler(w http.ResponseWriter, r *http.Request) {
 	h.OrderPayCallbackHandler(w, r)
+}
+
+// createCommerceOrder snapshots a validated SKU for an explicitly selected buyer.
+// The caller owns the transaction and locks the buyer before calling.
+func (h *handlers) createCommerceOrder(tx *gorm.DB, userID uint, request commerceOrderCreateRequest, order *model.Order) error {
+	var sku model.PlanSKU
+	if err := tx.Where("is_active = ?", true).First(&sku, request.PlanSKUID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return validationError("订单创建失败。", map[string]string{"plan_sku_id": "销售规格不存在或已停止销售。"})
+		}
+		return err
+	}
+	var plan model.Plan
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("is_active = ?", true).First(&plan, sku.PlanID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return validationError("订单创建失败。", map[string]string{"plan_sku_id": "商品不可购买。"})
+		}
+		return err
+	}
+	_, entitlementModes, operationMap, err := loadPlanSKUCommerceMetadata(tx, []model.PlanSKU{sku})
+	if err != nil {
+		return err
+	}
+	var target *model.Subscription
+	var targetSubscriptionID *uint
+	if request.TargetSubscriptionID != 0 {
+		var subscription model.Subscription
+		if err := tx.Where("id = ? AND user_id = ?", request.TargetSubscriptionID, userID).First(&subscription).Error; err != nil {
+			return validationError("订单创建失败。", map[string]string{"target_subscription_id": "目标订阅不存在。"})
+		}
+		target = &subscription
+		targetSubscriptionID = &subscription.ID
+	}
+	orderType, err := deriveOrderTypeForSKU(plan.ID, entitlementModes[sku.ID], operationMap[sku.ID], target)
+	if err != nil {
+		return err
+	}
+	if orderType == "renewal" && !plan.IsRenewable {
+		return validationError("订单创建失败。", map[string]string{"plan_sku_id": "该商品不支持续费。"})
+	}
+	if assertion := strings.ToLower(strings.TrimSpace(request.OrderType)); assertion != "" && assertion != orderType {
+		return validationError("订单创建失败。", map[string]string{"order_type": "订单类型与当前购买操作不一致，请返回套餐详情后重试。"})
+	}
+	if orderType == "new" {
+		if err := ensurePlanSubscriptionCapacity(tx, plan, time.Now().UTC()); err != nil {
+			return err
+		}
+	}
+	channel := strings.TrimSpace(request.Channel)
+	if channel == "" {
+		channel = "manual"
+	}
+	trafficBytes := plan.TrafficBytes
+	deviceLimit := plan.DeviceLimit
+	speedLimitMbps := plan.SpeedLimitMbps
+	if orderType == "traffic_pack" {
+		trafficBytes = sku.TrafficBytes
+		deviceLimit = 0
+		speedLimitMbps = 0
+	}
+	*order = model.Order{
+		UserID: userID, PlanID: plan.ID, PlanSKUID: sku.ID,
+		TradeNo: uuid.NewString(), OrderType: orderType, TargetSubscriptionID: targetSubscriptionID,
+		AmountCents: sku.PriceCents, PayableAmount: sku.PriceCents, Currency: sku.Currency,
+		Channel: channel, Status: orderStatusPending,
+		PlanName: plan.Name, SKUName: sku.Name, BillingUnit: sku.BillingUnit,
+		BillingValue: sku.BillingValue, RenewalEffect: sku.RenewalEffect, TrafficBytes: trafficBytes,
+		DeviceLimit: deviceLimit, SpeedLimitMbps: speedLimitMbps,
+	}
+	return tx.Create(order).Error
 }

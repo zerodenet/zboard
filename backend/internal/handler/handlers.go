@@ -86,9 +86,6 @@ var supportedProtocols = map[string]struct{}{
 	"mieru":       {},
 }
 
-const protocolKernelMieruUnavailableReason = "Mieru 托管归属需要统一正式版 Zero v0.0.1，或旧编号 0.0.15-rc.4 及以上版本；请先升级所选节点内核。"
-const protocolKernelManagedUsersUnavailableReason = "Trojan 和 Hysteria2 的订阅用户模式需要统一正式版 Zero v0.0.1，或旧编号 0.0.15-rc.3 及以上版本；不支持退化为共享密码，请先升级所选节点内核。"
-
 type authClaims struct {
 	UserID  uint   `json:"uid"`
 	Email   string `json:"e"`
@@ -253,6 +250,7 @@ type nodeGroupCreateReq struct {
 	Description         string `json:"description"`
 	IsEnabled           *bool  `json:"is_enabled"`
 	ProtocolEndpointIDs []uint `json:"protocol_endpoint_ids"`
+	NetworkEntryIDs     []uint `json:"network_entry_ids"`
 }
 
 type nodeGroupUpdateReq struct {
@@ -261,6 +259,7 @@ type nodeGroupUpdateReq struct {
 	Description         *string `json:"description"`
 	IsEnabled           *bool   `json:"is_enabled"`
 	ProtocolEndpointIDs *[]uint `json:"protocol_endpoint_ids"`
+	NetworkEntryIDs     *[]uint `json:"network_entry_ids"`
 	ExpectedRevision    *uint64 `json:"expected_revision"`
 }
 
@@ -484,13 +483,12 @@ func NewHandlers(db *gorm.DB, jwtSecret string, credentialCipher *security.Crede
 	localVersion := strings.TrimSpace(zeroLocalVersion)
 	nativeContract := normalizedKernelContract == cfgpkg.ZeroKernelNativeLocal || normalizedKernelContract == cfgpkg.ZeroKernelNativeMieru
 	return &handlers{
-		db:               db,
-		jwtSecret:        jwtSecret,
-		credentialCipher: credentialCipher,
-		zeroArtifactDir:  strings.TrimSpace(zeroArtifactDir),
-		zeroNativeAccess: nativeContract,
-		zeroMieruAccess: normalizedKernelContract == cfgpkg.ZeroKernelNativeMieru ||
-			(nativeContract && zeroSupportsMieruPrincipal(localVersion)),
+		db:                   db,
+		jwtSecret:            jwtSecret,
+		credentialCipher:     credentialCipher,
+		zeroArtifactDir:      strings.TrimSpace(zeroArtifactDir),
+		zeroNativeAccess:     nativeContract,
+		zeroMieruAccess:      nativeContract,
 		zeroLocalVersion:     localVersion,
 		sshTerminal:          newSSHTerminalRuntime(),
 		nodePublishScheduler: newNodePublishScheduler(),
@@ -1844,58 +1842,7 @@ func (h *handlers) NodeUpdateHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) NodeDeleteHandler(w http.ResponseWriter, r *http.Request) {
-	claims, err := h.requireAdmin(w, r)
-	if err != nil {
-		return
-	}
-	nodeID, err := parsePathID(r.URL.Path, "/api/v1/nodes/")
-	if err != nil {
-		BadRequest(w, err.Error())
-		return
-	}
-	var node model.Node
-	if err := h.db.First(&node, nodeID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			NotFound(w)
-			return
-		}
-		ServerError(w, err)
-		return
-	}
-	blockers := map[string]int64{}
-	for name, query := range map[string]*gorm.DB{
-		"protocol_endpoints":   h.db.Model(&model.ProtocolEndpoint{}).Where("node_id = ?", node.ID),
-		"managed_certificates": h.db.Model(&model.ManagedCertificate{}).Where("node_id = ?", node.ID),
-		"managed_dns_records":  h.db.Model(&model.ManagedDNSRecord{}).Where("node_id = ?", node.ID),
-		"running_operations":   h.db.Model(&model.NodeOperation{}).Where("node_id = ? AND status = ?", node.ID, "running"),
-	} {
-		var count int64
-		if err := query.Count(&count).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
-		if count > 0 {
-			blockers[name] = count
-		}
-	}
-	if len(blockers) > 0 {
-		writeJSON(w, http.StatusConflict, "删除节点前请先删除其协议服务、证书和 DNS 解析，并等待正在运行的节点任务结束。", map[string]interface{}{"blockers": blockers})
-		return
-	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := createAuditLog(tx, claims, "node.delete", fmt.Sprintf("node:%d", node.ID), fmt.Sprintf("name=%s", node.Name)); err != nil {
-			return err
-		}
-		if err := tx.Delete(&model.NodeKernelState{}, "node_id = ?", node.ID).Error; err != nil {
-			return err
-		}
-		return tx.Delete(&node).Error
-	}); err != nil {
-		ServerError(w, err)
-		return
-	}
-	h.invalidateZeroEventCredential(node.ID)
-	OK(w, map[string]interface{}{"id": node.ID, "deleted": true, "remote_zero_retained": true})
+	h.NodeCascadeDeleteHandler(w, r)
 }
 
 func (h *handlers) NodeSSHTestHandler(w http.ResponseWriter, r *http.Request) {
@@ -2441,21 +2388,6 @@ func (h *handlers) ProtocolEndpointDeleteHandler(w http.ResponseWriter, r *http.
 		ServerError(w, err)
 		return
 	}
-	if h.networkEntryDeletionBlocked(w, "endpoint_id = ?", endpoint.ID) {
-		return
-	}
-	var activePlanCount int64
-	if err := h.db.Table("node_group_endpoints").
-		Joins("JOIN plans ON plans.node_group_id = node_group_endpoints.node_group_id").
-		Where("node_group_endpoints.protocol_endpoint_id = ? AND plans.is_active = ?", endpoint.ID, true).
-		Count(&activePlanCount).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	if activePlanCount > 0 {
-		writeJSON(w, http.StatusConflict, "删除协议服务前请先从所有已发布套餐的节点组中解绑。", map[string]interface{}{"blockers": map[string]int64{"active_plans": activePlanCount}})
-		return
-	}
 	var runningDeployments int64
 	if err := h.db.Model(&model.ProtocolDeployment{}).
 		Where("protocol_endpoint_id = ? AND status = ?", endpoint.ID, "running").
@@ -2469,24 +2401,16 @@ func (h *handlers) ProtocolEndpointDeleteHandler(w http.ResponseWriter, r *http.
 	}
 
 	wasActive := endpoint.IsActive
-	if wasActive {
-		if err := h.db.Model(&endpoint).Update("is_active", false).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), nodeConfigPublishTimeout)
-		_, _, publishErr := h.publishNodeConfigForNode(ctx, endpoint.NodeID, endpoint.ID, claims.UserID)
-		cancel()
-		if publishErr != nil {
-			if restoreErr := h.db.Model(&endpoint).Update("is_active", true).Error; restoreErr != nil {
-				ServerError(w, fmt.Errorf("remove protocol from node: %w; restore active state: %v", publishErr, restoreErr))
-				return
-			}
-			BadRequest(w, "删除前无法从节点运行配置移除该协议服务："+publishErr.Error())
-			return
-		}
-	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := requireAvailableNode(tx, endpoint.NodeID); err != nil {
+			return err
+		}
+		if err := touchEndpointGroups(tx, []uint{endpoint.ID}); err != nil {
+			return err
+		}
+		if _, err := deleteNetworkEntryRecords(tx, 0, claims.UserID, "endpoint_id = ?", endpoint.ID); err != nil {
+			return err
+		}
 		if err := createAuditLog(tx, claims, "protocol_endpoint.delete", fmt.Sprintf("protocol_endpoint:%d", endpoint.ID),
 			fmt.Sprintf("node=%d protocol=%s was_active=%t", endpoint.NodeID, endpoint.Protocol, wasActive)); err != nil {
 			return err
@@ -2503,12 +2427,15 @@ func (h *handlers) ProtocolEndpointDeleteHandler(w http.ResponseWriter, r *http.
 			Updates(map[string]interface{}{"status": protocolCredentialStatusRevoked, "revoked_at": revokedAt}).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&endpoint).Error
+		if err := tx.Delete(&endpoint).Error; err != nil {
+			return err
+		}
+		return enqueueNodeConfigPublishOnly(tx, endpoint.NodeID, 0, claims.UserID)
 	}); err != nil {
 		ServerError(w, err)
 		return
 	}
-	OK(w, map[string]interface{}{"id": endpoint.ID, "deleted": true, "removed_from_runtime": wasActive})
+	OK(w, map[string]interface{}{"id": endpoint.ID, "deleted": true, "removed_from_runtime": false, "runtime_cleanup_queued": true})
 }
 
 func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, endpointID uint) {
@@ -3503,6 +3430,15 @@ func (h *handlers) NodeGroupListHandler(w http.ResponseWriter, r *http.Request) 
 				groupByID[link.NodeGroupID].ProtocolEndpointIDs = append(groupByID[link.NodeGroupID].ProtocolEndpointIDs, link.ProtocolEndpointID)
 			}
 		}
+		var entryLinks []model.NodeGroupNetworkEntry
+		if err := h.db.Where("node_group_id IN ?", groupIDs).Order("sort_order, id").Find(&entryLinks).Error; err != nil {
+			ServerError(w, err)
+			return
+		}
+		for _, link := range entryLinks {
+			groupByID[link.NodeGroupID].NetworkEntryIDs = append(groupByID[link.NodeGroupID].NetworkEntryIDs, link.NetworkEntryID)
+		}
+
 		type planCountRow struct {
 			NodeGroupID uint
 			Count       int64
@@ -3527,6 +3463,7 @@ func (h *handlers) NodeGroupListHandler(w http.ResponseWriter, r *http.Request) 
 				IsEnabled:             group.IsEnabled,
 				Revision:              group.Revision,
 				ProtocolEndpointCount: endpointCounts[group.ID],
+				NetworkEntryCount:     len(group.NetworkEntryIDs),
 				PlanCount:             group.PlanCount,
 				CreatedAt:             group.CreatedAt,
 				UpdatedAt:             group.UpdatedAt,
@@ -3546,6 +3483,7 @@ type nodeGroupSummaryItem struct {
 	IsEnabled             bool      `json:"is_enabled"`
 	Revision              uint64    `json:"revision"`
 	ProtocolEndpointCount int64     `json:"protocol_endpoint_count"`
+	NetworkEntryCount     int       `json:"network_entry_count"`
 	PlanCount             int64     `json:"plan_count"`
 	CreatedAt             time.Time `json:"created_at"`
 	UpdatedAt             time.Time `json:"updated_at"`
@@ -3580,6 +3518,11 @@ func (h *handlers) NodeGroupDetailHandler(w http.ResponseWriter, r *http.Request
 		ServerError(w, err)
 		return
 	}
+	if err := loadNodeGroupNetworkEntryIDs(h.db, &group); err != nil {
+		ServerError(w, err)
+		return
+	}
+
 	OK(w, group)
 }
 
@@ -3613,7 +3556,7 @@ func (h *handlers) NodeGroupCreateHandler(w http.ResponseWriter, r *http.Request
 	group := model.NodeGroup{Name: req.Name, Code: req.Code, Description: strings.TrimSpace(req.Description), IsEnabled: isEnabled, Revision: 1}
 	var reconcileTask model.Task
 	endpointIDs := uniqueUintIDs(req.ProtocolEndpointIDs)
-	if isEnabled && len(endpointIDs) == 0 {
+	if isEnabled && len(endpointIDs) == 0 && len(req.NetworkEntryIDs) == 0 {
 		BadRequestFields(w, "节点组信息校验失败。", map[string]string{"protocol_endpoint_ids": "启用的节点组至少需要一个可用协议端点。"})
 		return
 	}
@@ -3624,10 +3567,14 @@ func (h *handlers) NodeGroupCreateHandler(w http.ResponseWriter, r *http.Request
 		if err := replaceNodeGroupEndpoints(tx, group.ID, endpointIDs); err != nil {
 			return err
 		}
+		entryEndpointIDs, err := replaceNodeGroupNetworkEntries(tx, group.ID, req.NetworkEntryIDs)
+		if err != nil {
+			return err
+		}
 		if err := createAuditLog(tx, claims, "node_group.create", fmt.Sprintf("node_group:%d", group.ID), fmt.Sprintf("endpoint_count=%d", len(endpointIDs))); err != nil {
 			return err
 		}
-		targets, err := h.nodeGroupCredentialPublishTargets(tx, group.ID, endpointIDs)
+		targets, err := h.nodeGroupCredentialPublishTargets(tx, group.ID, append(endpointIDs, entryEndpointIDs...))
 		if err != nil {
 			return err
 		}
@@ -3651,6 +3598,7 @@ func (h *handlers) NodeGroupCreateHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	group.ProtocolEndpointIDs = endpointIDs
+	group.NetworkEntryIDs = uniqueUintIDs(req.NetworkEntryIDs)
 	_ = h.startPersistedAdminTask(&reconcileTask)
 	OK(w, nodeGroupMutationResponse{NodeGroup: group, ReconcileTask: &reconcileTask})
 }
@@ -3707,7 +3655,7 @@ func (h *handlers) NodeGroupUpdateHandler(w http.ResponseWriter, r *http.Request
 	if req.IsEnabled != nil {
 		updates["is_enabled"] = *req.IsEnabled
 	}
-	if len(updates) == 0 && req.ProtocolEndpointIDs == nil {
+	if len(updates) == 0 && req.ProtocolEndpointIDs == nil && req.NetworkEntryIDs == nil {
 		if len(fields) > 0 {
 			BadRequestFields(w, "节点组信息校验失败。", fields)
 			return
@@ -3743,53 +3691,41 @@ func (h *handlers) NodeGroupUpdateHandler(w http.ResponseWriter, r *http.Request
 				}
 			}
 		}
+		membershipUpdated := req.ProtocolEndpointIDs != nil || req.NetworkEntryIDs != nil
 		endpointIDs := []uint(nil)
+		changedEndpointIDs := []uint{}
 		if req.ProtocolEndpointIDs != nil {
 			endpointIDs = uniqueUintIDs(*req.ProtocolEndpointIDs)
-			if len(endpointIDs) == 0 && targetEnabled {
-				return validationError("节点组成员校验失败。", map[string]string{"protocol_endpoint_ids": "启用的节点组至少需要一个可用协议端点。"})
-			}
-			if len(endpointIDs) == 0 {
-				var activePlans int64
-				if err := tx.Model(&model.Plan{}).Where("node_group_id = ? AND is_active = ?", locked.ID, true).Count(&activePlans).Error; err != nil {
-					return err
-				}
-				if activePlans > 0 {
-					return validationError("节点组成员校验失败。", map[string]string{"protocol_endpoint_ids": "已发布套餐使用的节点组必须保留至少一个可用协议端点。"})
-				}
-			}
-		} else if targetEnabled && !locked.IsEnabled {
-			var activeEndpoints int64
-			if err := tx.Model(&model.NodeGroupEndpoint{}).
-				Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
-				Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", locked.ID, true).
-				Count(&activeEndpoints).Error; err != nil {
-				return err
-			}
-			if activeEndpoints == 0 {
-				return validationError("节点组成员校验失败。", map[string]string{"protocol_endpoint_ids": "启用节点组前请至少加入一个可用协议端点。"})
-			}
-		}
-		updates["revision"] = locked.Revision + 1
-		if len(updates) > 0 {
-			if err := tx.Model(&locked).Updates(updates).Error; err != nil {
-				return err
-			}
-		}
-		if req.ProtocolEndpointIDs != nil {
 			var existingLinks []model.NodeGroupEndpoint
 			if err := tx.Where("node_group_id = ?", locked.ID).Find(&existingLinks).Error; err != nil {
 				return err
 			}
-			changedEndpointIDs := nodeGroupMembershipChangedEndpointIDs(existingLinks, endpointIDs)
+			changedEndpointIDs = nodeGroupMembershipChangedEndpointIDs(existingLinks, endpointIDs)
 			if err := replaceNodeGroupEndpoints(tx, locked.ID, endpointIDs); err != nil {
 				return err
 			}
+		}
+		if req.NetworkEntryIDs != nil {
+			changed, err := replaceNodeGroupNetworkEntries(tx, locked.ID, *req.NetworkEntryIDs)
+			if err != nil {
+				return err
+			}
+			changedEndpointIDs = append(changedEndpointIDs, changed...)
+		}
+		locked.IsEnabled = targetEnabled
+		if err := validateNodeGroupMembershipAvailability(tx, locked); err != nil {
+			return err
+		}
+		updates["revision"] = locked.Revision + 1
+		if err := tx.Model(&locked).Updates(updates).Error; err != nil {
+			return err
+		}
+		if membershipUpdated {
 			targets, err := h.nodeGroupCredentialPublishTargets(tx, locked.ID, changedEndpointIDs)
 			if err != nil {
 				return err
 			}
-			task, items, err := prepareNodeGroupReconcileTask(claims, locked.ID, locked.Revision+1, targets)
+			task, items, err := prepareNodeGroupReconcileTask(claims, locked.ID, currentRevision+1, targets)
 			if err != nil {
 				return err
 			}
@@ -3798,7 +3734,7 @@ func (h *handlers) NodeGroupUpdateHandler(w http.ResponseWriter, r *http.Request
 				return err
 			}
 		}
-		detail := fmt.Sprintf("revision=%d membership_updated=%t", locked.Revision+1, req.ProtocolEndpointIDs != nil)
+		detail := fmt.Sprintf("revision=%d membership_updated=%t", currentRevision+1, membershipUpdated)
 		if req.ProtocolEndpointIDs != nil {
 			detail += fmt.Sprintf(" endpoint_count=%d", len(endpointIDs))
 		}
@@ -3838,6 +3774,11 @@ func (h *handlers) NodeGroupUpdateHandler(w http.ResponseWriter, r *http.Request
 		_ = h.startPersistedAdminTask(&reconcileTask)
 		responseTask = &reconcileTask
 	}
+	if err := loadNodeGroupNetworkEntryIDs(h.db, &group); err != nil {
+		ServerError(w, err)
+		return
+	}
+
 	OK(w, nodeGroupMutationResponse{NodeGroup: group, ReconcileTask: responseTask})
 }
 
@@ -3953,6 +3894,7 @@ type planDetailItem struct {
 
 type planCatalogItem struct {
 	planSummaryItem
+	Description    string         `json:"description"`
 	TrafficBytes   int64          `json:"traffic_bytes"`
 	SpeedLimitMbps int            `json:"speed_limit_mbps"`
 	DeviceLimit    int            `json:"device_limit"`
@@ -4002,6 +3944,7 @@ func newPlanDetailItem(plan model.Plan, counts planSKUCountRow) planDetailItem {
 func newPlanCatalogItem(plan model.Plan, counts planSKUCountRow, primarySKU *model.PlanSKU) planCatalogItem {
 	return planCatalogItem{
 		planSummaryItem: newPlanSummaryItem(plan, counts),
+		Description:     plan.Description,
 		TrafficBytes:    plan.TrafficBytes,
 		SpeedLimitMbps:  plan.SpeedLimitMbps,
 		DeviceLimit:     plan.DeviceLimit,
@@ -4301,7 +4244,7 @@ func (h *handlers) PlanCreateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if plan.IsActive {
 			var endpointCount int64
-			if err := tx.Model(&model.NodeGroupEndpoint{}).
+			if err := credentialMemberships(tx).
 				Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
 				Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", plan.NodeGroupID, true).
 				Count(&endpointCount).Error; err != nil || endpointCount == 0 {
@@ -4462,7 +4405,7 @@ func (h *handlers) PlanUpdateHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var endpointCount int64
-		if err := h.db.Model(&model.NodeGroupEndpoint{}).
+		if err := credentialMemberships(h.db).
 			Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
 			Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", targetNodeGroupID, true).
 			Count(&endpointCount).Error; err != nil || endpointCount == 0 {
@@ -5859,87 +5802,12 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	nodeGroupIDs := make([]uint, 0, len(subscriptions))
-	subscriptionIDs := make([]uint, 0, len(subscriptions))
-	for _, subscription := range subscriptions {
-		nodeGroupIDs = append(nodeGroupIDs, subscription.NodeGroupID)
-		subscriptionIDs = append(subscriptionIDs, subscription.ID)
-	}
-	manifestNodes := make([]subscriptionManifestNode, 0)
-	var credentials []model.ProtocolCredential
-	if err := h.db.Where("subscription_id IN ? AND status = ? AND revoked_at IS NULL AND expires_at > ?", uniqueUintIDs(subscriptionIDs), protocolCredentialStatusActive, now).
-		Order("protocol_endpoint_id asc, id asc").Find(&credentials).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	for _, credential := range credentials {
-		var endpoint model.ProtocolEndpoint
-		if err := h.db.Where("id = ? AND is_active = ?", credential.ProtocolEndpointID, true).First(&endpoint).Error; err != nil {
-			continue
-		}
-		if !h.endpointDeliversSubscriptionCredential(endpoint) {
-			continue
-		}
-		var node model.Node
-		if err := h.db.Select("id", "region", "last_seen_at", "is_enabled").First(&node, endpoint.NodeID).Error; err != nil || !node.IsEnabled || node.LastSeenAt == nil || node.LastSeenAt.Before(now.Add(-nodeOnlineWindow)) {
-			continue
-		}
-		if supported, _ := h.protocolKernelSupportForNode(endpoint.Protocol, node); !supported {
-			continue
-		}
-		clientConfig, err := h.credentialClientConfig(endpoint, credential)
-		if err != nil {
-			continue
-		}
-		manifestNodes = append(manifestNodes, subscriptionManifestNode{
-			ID: endpoint.ID, NodeID: endpoint.NodeID, SubscriptionID: credential.SubscriptionID,
-			CredentialID: credential.CredentialID, Name: endpoint.Name, Region: node.Region,
-			Address: endpoint.Address, Port: credential.ListenPort, PublicPort: credential.PublicPort,
-			Protocol: endpoint.Protocol, MultiplierMilli: endpoint.MultiplierMilli, Config: clientConfig,
-		})
-	}
-
-	// Protocols without a native attributed-user contract remain available via
-	// their legacy endpoint template. They are deliberately kept separate from
-	// the credential-backed protocols above so the panel never pretends those
-	// flows have per-subscription attribution.
-	var endpoints []model.ProtocolEndpoint
-	if err := h.db.Model(&model.ProtocolEndpoint{}).
-		Select("DISTINCT protocol_endpoints.*").
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
-		Joins("JOIN nodes ON nodes.id = protocol_endpoints.node_id").
-		Where("node_group_endpoints.node_group_id IN ? AND protocol_endpoints.is_active = ? AND nodes.last_seen_at >= ? AND nodes.is_enabled = ? AND protocol_endpoints.client_config <> ''", uniqueUintIDs(nodeGroupIDs), true, now.Add(-nodeOnlineWindow), true).
-		Order("protocol_endpoints.sort_order asc, protocol_endpoints.id asc").Find(&endpoints).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	for _, endpoint := range endpoints {
-		if h.endpointDeliversSubscriptionCredential(endpoint) {
-			continue
-		}
-		var node model.Node
-		if err := h.db.Select("id", "region").First(&node, endpoint.NodeID).Error; err != nil {
-			continue
-		}
-		if supported, _ := h.protocolKernelSupportForNode(endpoint.Protocol, node); !supported {
-			continue
-		}
-		clientConfig, err := h.endpointSubscriptionClientConfig(endpoint)
-		if err != nil {
-			continue
-		}
-		manifestNodes = append(manifestNodes, subscriptionManifestNode{
-			ID: endpoint.ID, NodeID: endpoint.NodeID, Name: endpoint.Name, Region: node.Region,
-			Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort, Protocol: endpoint.Protocol,
-			MultiplierMilli: endpoint.MultiplierMilli, Config: clientConfig,
-		})
-	}
-	projectedNodes, projectionErr := h.projectNetworkEntries(manifestNodes, now)
+	manifestNodes, projectionErr := h.buildProjectedSubscriptionManifestNodes(subscriptions, subscriptionProjectionFilter{}, now)
 	if projectionErr != nil {
 		ServerError(w, projectionErr)
 		return
 	}
-	manifestNodes = projectedNodes
+
 	if err := h.sortSubscriptionManifestNodes(subscriptions, manifestNodes); err != nil {
 		ServerError(w, fmt.Errorf("resolve subscription delivery order: %w", err))
 		return
@@ -6192,7 +6060,7 @@ func (h *handlers) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
-	if err := h.db.Model(&model.Order{}).Where("status = ?", orderStatusPaid).Select("COALESCE(SUM(amount_cents),0)").Scan(&paidRevenue).Error; err != nil {
+	if err := h.db.Model(&model.Order{}).Where("status = ?", orderStatusPaid).Select("COALESCE(SUM((CASE WHEN assigned_by > 0 OR paid_amount > 0 THEN paid_amount ELSE amount_cents END) - refund_amount),0)").Scan(&paidRevenue).Error; err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -6648,7 +6516,7 @@ func (h *handlers) TrafficReportHandler(w http.ResponseWriter, r *http.Request) 
 			return err
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Joins("JOIN node_group_endpoints ON node_group_endpoints.node_group_id = subscriptions.node_group_id").
+			Joins(credentialMembershipJoin("node_group_endpoints.node_group_id = subscriptions.node_group_id")).
 			Where("subscriptions.user_id = ? AND subscriptions.status = ? AND subscriptions.end_at > ? AND node_group_endpoints.protocol_endpoint_id = ?", req.UserID, subStatusActive, now, endpoint.ID).
 			Order("end_at desc").First(&sub).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -7069,40 +6937,9 @@ func (h *handlers) protocolKernelSupport(proto string) (bool, string) {
 	return true, ""
 }
 
-func (h *handlers) protocolKernelSupportForVersion(proto, zeroVersion string) (bool, string) {
-	supported, reason := h.protocolKernelSupport(proto)
-	if !supported {
-		return supported, reason
-	}
-	if strings.EqualFold(strings.TrimSpace(proto), "mieru") && !zeroSupportsMieruPrincipal(zeroVersion) {
-		return false, protocolKernelMieruUnavailableReason
-	}
-	if (strings.EqualFold(strings.TrimSpace(proto), "trojan") || strings.EqualFold(strings.TrimSpace(proto), "hysteria2")) &&
-		!zeroSupportsNativeManagedAccess(zeroVersion) {
-		return false, protocolKernelManagedUsersUnavailableReason
-	}
-	return true, ""
-}
-
-func (h *handlers) nodeKernelVersion(node model.Node) string {
-	if node.KernelState != nil {
-		if installed := strings.TrimSpace(node.KernelState.InstalledVersion); installed != "" {
-			return installed
-		}
-	}
-	if h.db != nil {
-		var state model.NodeKernelState
-		if err := h.db.Select("installed_version").First(&state, "node_id = ?", node.ID).Error; err == nil {
-			if installed := strings.TrimSpace(state.InstalledVersion); installed != "" {
-				return installed
-			}
-		}
-	}
-	return strings.TrimSpace(node.Version)
-}
-
-func (h *handlers) protocolKernelSupportForNode(proto string, node model.Node) (bool, string) {
-	return h.protocolKernelSupportForVersion(proto, h.nodeKernelVersion(node))
+func (h *handlers) protocolKernelSupportForNode(proto string, _ model.Node) (bool, string) {
+	// Release numbering can reset; the target kernel validates the generated config.
+	return h.protocolKernelSupport(proto)
 }
 
 func (h *handlers) protocolKernelCapabilities() map[string]protocolKernelCapability {
@@ -7110,11 +6947,6 @@ func (h *handlers) protocolKernelCapabilities() map[string]protocolKernelCapabil
 	for protocol := range supportedProtocols {
 		supported, reason := h.protocolKernelSupport(protocol)
 		capability := protocolKernelCapability{Supported: supported, Reason: reason}
-		if protocol == "mieru" {
-			capability.MinimumZeroVersion = zeroMieruPrincipalSince
-		} else if protocol == "trojan" || protocol == "hysteria2" {
-			capability.MinimumZeroVersion = zeroNativeAccessSince
-		}
 		capabilities[protocol] = capability
 	}
 	return capabilities
@@ -7174,7 +7006,7 @@ func validateProtocolTransportConfigs(protocol string, server, client map[string
 		return validationError("协议配置校验失败。", map[string]string{"client_config": "服务端与客户端必须使用相同的 TCP、WebSocket 或 gRPC 传输方式。"})
 	}
 	if protocol == "vless" && serverKind != "tcp" && (server["reality"] != nil || client["reality"] != nil) {
-		return validationError("协议配置校验失败。", map[string]string{"config": "Zero 0.0.15 的 VLESS Reality 仅支持原始 TCP。"})
+		return validationError("协议配置校验失败。", map[string]string{"config": "VLESS Reality 仅支持原始 TCP。"})
 	}
 	switch serverKind {
 	case "ws":

@@ -18,7 +18,7 @@ function deferred<T>() {
   return { promise, resolve }
 }
 function sku(id: number) { return { id, name: `SKU ${id}`, price_cents: 100, currency: 'CNY', billing_unit: 'month', billing_value: 1 } as any }
-function plan(id: number) { return { id, name: `Plan ${id}`, slug: `plan-${id}`, traffic_bytes: 100, active_sku_count: 105, primary_sku: sku(id) } as any }
+function plan(id: number) { return { id, name: `Plan ${id}`, slug: `plan-${id}`, description: `商品 ${id} 的详细说明`, traffic_bytes: 100, active_sku_count: 105, primary_sku: sku(id) } as any }
 function subscription(id: number) {
   return { id, plan_id: id, plan_name: `Subscription ${id}`, sku_name: 'Monthly', status: 'active', end_at: '2027-01-01T00:00:00Z', flow_used: 1, flow_total: 100 } as any
 }
@@ -54,6 +54,7 @@ describe('account catalog bounded reads and route isolation', () => {
   it('renders nine cards with two reads and no per-card SKU request', async () => {
     await open()
     expect(wrapper!.findAllComponents(CommercePlanCard)).toHaveLength(9)
+    expect(wrapper!.get('.storefront-plan-card__description').text()).toBe('商品 1 的详细说明')
     expect(fetchPlanCatalogPage).toHaveBeenCalledOnce()
     expect(fetchAccountSubscriptionsPage).toHaveBeenCalledOnce()
     expect(fetchPlanCatalogSKUs).not.toHaveBeenCalled()
@@ -70,6 +71,7 @@ describe('account catalog bounded reads and route isolation', () => {
     await wrapper!.findAll('button').find(item => item.text() === '续费')!.trigger('click')
     await flushPromises()
     expect(wrapper!.getComponent(CommercePlanDetail).props('mode')).toBe('renew')
+    expect(wrapper!.getComponent(CommercePlanDetail).props('plan').description).toBe('商品 105 的详细说明')
     expect(fetchPlanCatalogPage).toHaveBeenCalledOnce()
     expect(fetchPlanCatalogSKUs).toHaveBeenCalledOnce()
     expect(router.currentRoute.value.query.subscription).toBe('105')

@@ -36,7 +36,6 @@ export const adminNavigation: AdminNavigationDomain[] = [
     { label: '服务资源', pages: [
       { to: '/admin/nodes', label: '节点资产' },
       { to: '/admin/protocols', label: '协议服务' },
-      { to: '/admin/network-entries', label: '网络前置' },
       { to: '/admin/node-groups', label: '节点组' },
       { to: '/admin/traffic', label: '流量与对账' },
     ] },

@@ -5,7 +5,6 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"net"
-	"net/http"
 	"strings"
 )
 
@@ -39,17 +38,4 @@ func networkEntryPortAvailable(tx *gorm.DB, nodeID uint, port int, entryID uint)
 		}
 	}
 	return nil
-}
-
-func (h *handlers) networkEntryDeletionBlocked(w http.ResponseWriter, query string, args ...interface{}) bool {
-	var count int64
-	if err := h.db.Model(&model.NetworkEntry{}).Where(query, args...).Count(&count).Error; err != nil {
-		ServerError(w, err)
-		return true
-	}
-	if count > 0 {
-		writeJSON(w, http.StatusConflict, "请先删除引用此资源的网络前置入口，并等待入口配置撤除。", map[string]interface{}{"network_entries": count})
-		return true
-	}
-	return false
 }

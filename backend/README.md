@@ -27,13 +27,12 @@ explicit `ZBOARD_ZERO_LOCAL_VERSION`; zboard reads
 `zero-v<version>-linux-x86_64-musl.tar.gz` and its matching `.sha256` only from
 `ZBOARD_ZERO_ARTIFACT_DIR`, without consulting GitHub.
 
-Zero `0.0.15-rc.4` added attributable Mieru users with `principal_key`.
-Zboard advertises that minimum in `/api/v1/version` and checks the concrete
-target node's installed version before creating, re-enabling, publishing or
-delivering a Mieru endpoint. Older nodes retain their records but may only
-disable them. After an rc.4-or-newer node passes `zero validate`, activation,
-health and Connector confirmation, Zboard completes the two-stage fallback
-removal and begins delivering per-subscription Mieru credentials.
+Protocol availability is not inferred from Zero release numbers, which can reset.
+Zboard generates the current managed-user contract for Mieru, Trojan and Hysteria2;
+the target kernel must pass `zero validate`, activation and health checks before
+readiness is committed. Mieru still completes the two-stage fallback removal
+before delivering per-subscription credentials. `/api/v1/version` no longer
+advertises a protocol minimum version.
 
 `native-local-mieru` remains accepted as a backwards-compatible contract name.
 An rc.4-or-newer `native-local` artifact enables the same Mieru behavior
@@ -253,3 +252,7 @@ Every newly accepted traffic report stores the exact `subscription_id` whose quo
 attributed traffic records and reports `matched`, `missing_records`, or `over_recorded`. Pre-attribution
 records remain visible as legacy records and may intentionally produce `missing_records` for an older
 subscription.
+
+## 删除与离线节点维护
+
+基础设施删除只清理面板数据库及关联，不以 SSH、CA 或供应商 API 成功为前提。协议运行配置撤除会排队重试，不能把“数据库已删除”理解为“远端已停止”。在节点资产的“内核与运维”可下载无凭据的离线脚本；新安装或更新内核时会安装 `/usr/local/sbin/zboard-zero-cleanup`。完整范围和操作见 [节点清理说明](../docs/node-cleanup.md)。

@@ -2,12 +2,18 @@
   <section class="standard-page">
     <PageHeader title="协议服务" description="协议配置可复用、复制并切换承载 VPS；运行参数变更才发布 Zero，名称、计费和交付顺序独立保存。" eyebrow="Infrastructure">
       <template #actions>
-        <PageRefreshButton label="刷新协议服务" :loading="loading" @click="refresh" />
-        <UiButton variant="secondary" type="button" data-testid="protocol-delivery-order" @click="openOrdering"><UiIcon name="sort" />调整交付顺序</UiButton>
-        <UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建协议服务</UiButton>
+        <PageRefreshButton label="刷新协议服务" :loading="loading" @click="serviceKind === 'forward' ? forwardServices?.load() : refresh()" />
+        <UiButton v-if="serviceKind === 'listener'" variant="secondary" type="button" data-testid="protocol-delivery-order" @click="openOrdering"><UiIcon name="sort" />调整交付顺序</UiButton>
+        <UiButton type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton>
       </template>
     </PageHeader>
 
+    <UiTabs v-model="serviceKind" :items="[{value:'listener',label:'实际协议监听'},{value:'forward',label:'前置端口转发'}]" label="服务接入方式" />
+    <NetworkEntries v-show="serviceKind === 'forward'" ref="forwardServices" embedded />
+    <ModalDialog :open="serviceTypeOpen" title="创建协议服务" @close="serviceTypeOpen=false">
+      <div class="stack"><p>选择服务接入方式。</p><UiButton @click="createService('listener')">实际协议监听</UiButton><p>在承载节点上运行协议，处理客户端握手和认证。</p><UiButton @click="createService('forward')">前置端口转发</UiButton><p>用 A 的一个端口承载 B 的父协议；A 默认直连 B，也可以使用 A 的共享代理池。</p></div>
+    </ModalDialog>
+    <div v-show="serviceKind === 'listener'">
     <TransientFeedback :success="message" :error="error" success-title="协议操作已完成" error-title="协议操作失败" />
     <PageAlert tone="info" title="Mieru / Hysteria2 用户凭证自动管理">尚无有效订阅凭证时，服务配置可正常保存和发布，暂不启动监听；订阅开通后自动生成用户凭证并发布，最后一个有效凭证失效后停止监听。</PageAlert>
     <PageAlert v-if="mieruUnavailableReason" tone="warning" title="Mieru 暂不可用">
@@ -79,7 +85,7 @@
             </template>
           </tbody>
       </DataTable>
-      <EmptyState v-else-if="!initialLoading" icon="activity" :title="filters.q || filters.protocol || filters.active || filters.deployment ? '没有匹配服务' : '还没有协议服务'" :description="filters.q || filters.protocol || filters.active || filters.deployment ? '调整或清除筛选条件后重试。' : '选择一台 VPS，填写连接参数后即可创建。'"><template #actions><UiButton v-if="!filters.q && !filters.protocol && !filters.active && !filters.deployment"  type="button" @click="openCreate"><UiIcon name="plus" />创建协议服务</UiButton></template></EmptyState>
+      <EmptyState v-else-if="!initialLoading" icon="activity" :title="filters.q || filters.protocol || filters.active || filters.deployment ? '没有匹配服务' : '还没有协议服务'" :description="filters.q || filters.protocol || filters.active || filters.deployment ? '调整或清除筛选条件后重试。' : '选择一台 VPS，填写连接参数后即可创建。'"><template #actions><UiButton v-if="!filters.q && !filters.protocol && !filters.active && !filters.deployment"  type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton></template></EmptyState>
       <template #footer><TablePager variant="stripe" :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
@@ -217,7 +223,7 @@
             <FormField v-if="form.protocol === 'vmess'" v-slot="{ controlAttrs }" label="VMess 加密方式"><UiSelect v-model="structured.cipher" v-bind="controlAttrs" :options="vmessCipherOptions" /></FormField>
             <FormField v-if="form.protocol === 'shadowsocks'" v-slot="{ controlAttrs }" label="Shadowsocks 加密方式"><UiSelect v-model="structured.cipher" v-bind="controlAttrs" :options="shadowsocksCipherOptions" /></FormField>
             <FormField v-if="form.protocol === 'vless'" v-slot="{ controlAttrs }" label="传输安全"><UiSelect v-model="structured.security" v-bind="controlAttrs" :options="securityOptions" /></FormField>
-            <FormField v-if="supportsSelectableTransport" v-slot="{ controlAttrs }" label="传输方式" :hint="form.protocol === 'vless' && structured.security === 'reality' ? 'Zero 0.0.15 的 Reality 仅支持原始 TCP。' : 'TCP 不添加额外封装；WebSocket 和 gRPC 会同步写入服务端及订阅客户端。'"><UiSelect v-model="structured.transport" v-bind="controlAttrs" :options="effectiveTransportOptions" /></FormField>
+            <FormField v-if="supportsSelectableTransport" v-slot="{ controlAttrs }" label="传输方式" :hint="form.protocol === 'vless' && structured.security === 'reality' ? 'Reality 仅支持原始 TCP。' : 'TCP 不添加额外封装；WebSocket 和 gRPC 会同步写入服务端及订阅客户端。'"><UiSelect v-model="structured.transport" v-bind="controlAttrs" :options="effectiveTransportOptions" /></FormField>
             <FormField v-if="supportsSelectableTransport && structured.transport === 'ws'" v-slot="{ controlAttrs }" label="WebSocket 路径" name="protocol-transport-path" :error="editorErrors.fields['structured.transport_path']" required><UiInput v-model.trim="structured.transport_path" v-bind="controlAttrs" placeholder="/proxy" /></FormField>
             <FormField v-if="supportsSelectableTransport && structured.transport === 'grpc'" v-slot="{ controlAttrs }" label="gRPC Service Name" name="protocol-grpc-service-name" :error="editorErrors.fields['structured.grpc_service_name']" required><UiInput v-model.trim="structured.grpc_service_name" v-bind="controlAttrs" placeholder="zboard" /></FormField>
             <template v-if="form.protocol === 'vless' && structured.security === 'reality'">
@@ -250,11 +256,12 @@
           </div>
           <section class="membership-section">
             <header><div><strong>节点组关联</strong><small>节点组是套餐和订阅的交付授权边界；保存时只提交新增或移除的关系，不覆盖节点组完整成员顺序。</small></div><StatusBadge tone="neutral">{{ form.node_group_memberships.length }} 个节点组</StatusBadge></header>
-            <PageAlert v-if="copySourceID" tone="info" title="复制不会继承节点组关联">为避免无意扩大交付范围，副本默认不关联原服务的节点组；需要关联时，请先在高级设置中启用副本，再在这里显式选择。</PageAlert>
+            <PageAlert v-if="copySourceID" tone="info" title="复制不会继承节点组关联">副本默认启用，但不会继承原服务的节点组；请选择需要关联的节点组，保存后生效。</PageAlert>
             <PageAlert v-if="membershipRevisionConflict" tone="warning" title="节点组关联已在其他会话更新">
               当前草稿携带的节点组版本已过期。重新加载关联不会覆盖协议参数，但会以最新关联作为新的比较基线。
               <template #actions><UiButton variant="secondary" size="sm" type="button" :loading="membershipReloading" @click="reloadNodeGroupMemberships"><UiIcon name="refresh" />重新加载关联</UiButton></template>
             </PageAlert>
+            <FormField v-slot="{ controlAttrs }" label="运行状态" name="protocol-active" :error="editorErrors.fields.is_active"><div class="check-field"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /><span>保存后启用并发布该运行实例</span></div></FormField>
             <FormField label="关联节点组" name="protocol-node-groups" :error="editorErrors.fields.node_group_membership_changes" full>
               <NodeGroupMembershipEditor v-model="form.node_group_memberships" :can-add="Boolean(form.is_active)" />
             </FormField>
@@ -263,9 +270,7 @@
             <summary><span><UiIcon name="settings" /></span><div><strong>高级设置</strong><small>仅在需要链式协议或自定义 Zero 参数时展开；交付顺序在列表页统一调整。</small></div><UiIcon name="chevron" /></summary>
             <div class="advanced-body">
               <div class="guided-grid compact-grid">
-                <FormField label="父协议" name="protocol-parent" hint="可选；只检索同一节点的协议端点。" :error="editorErrors.fields.parent_protocol_id"><template #default="{ controlAttrs }"><EndpointLookup v-model="form.parent_protocol_id" v-bind="controlAttrs" :node-id="form.node_id" :exclude-id="form.id" /></template></FormField>
                 <FormField v-slot="{ controlAttrs }" label="流量倍率" name="protocol-multiplier" hint="显示为倍数，接口保存千分值。" :error="editorErrors.fields.multiplier_milli"><MultiplierInput v-model="form.multiplier_milli" v-bind="controlAttrs" /></FormField>
-                <FormField v-slot="{ controlAttrs }" label="运行状态" name="protocol-active" :error="editorErrors.fields.is_active"><div class="check-field"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /><span>保存后启用并发布该运行实例</span></div></FormField>
               </div>
               <div class="config-grid">
                 <FormField v-slot="{ controlAttrs }" label="服务端配置 JSON" name="protocol-server-config" :error="editorErrors.fields.config" required><UiTextarea v-model="form.config" v-bind="controlAttrs" rows="10" spellcheck="false"></UiTextarea></FormField>
@@ -283,17 +288,19 @@
         <UiButton v-else form="protocol-form" type="submit" :disabled="!canSaveSelectedProtocol || membershipRevisionConflict" :title="!canSaveSelectedProtocol ? selectedProtocolCapability.reason : ''" :loading="saving">{{ copySourceID ? '保存为新服务' : '保存协议服务' }}</UiButton>
       </template>
     </ModalDialog>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import NetworkEntries from './NetworkEntries.vue'
+import UiTabs from '../components/UiTabs.vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, updateProtocolEndpoint, updateProtocolEndpointOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointNodeGroupMembership, type ProtocolEndpointOrderItem, type ProtocolKernelCapability } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
-import EndpointLookup from '../components/EndpointLookup.vue'
 import EmptyState from '../components/EmptyState.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import MultiplierInput from '../components/MultiplierInput.vue'
@@ -328,7 +335,6 @@ import { formatProtocolSaveTiming, summarizeProtocolSaveTiming } from '../utils/
 import { buildProtocolNodeGroupMembershipChanges } from '../utils/protocolNodeGroupMembership'
 import { moveProtocolEndpointOrder, protocolEndpointOrderChanged } from '../utils/protocolEndpointOrdering'
 import { isIntegerInRange } from '../utils/validation'
-import { zeroVersionAtLeast } from '../utils/zeroVersion'
 
 // The service column takes remaining space; selection stays exactly 42px for sticky alignment.
 const protocolColumns: { width?: number; priority?: number }[] = [
@@ -339,7 +345,7 @@ const protocolColumns: { width?: number; priority?: number }[] = [
 ]
 const visibleProtocolColumnCount = ref(13)
 const protocols = ['vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria2', 'mieru']
-const defaultMieruUnavailableReason = 'Mieru 托管归属需要 Zero 0.0.15-rc.4 或更高版本；请先升级所选节点内核。'
+const defaultMieruUnavailableReason = '面板暂时无法确认 Mieru 协议能力，请刷新后重试。'
 const protocolCapabilities = reactive<Record<string, ProtocolKernelCapability>>({
   vmess: { supported: true },
   vless: { supported: true },
@@ -368,7 +374,12 @@ const realityFingerprintOptions = [{ label: 'Chrome', value: 'chrome' }, { label
 const realityPresetOptions = [{ label: '通用兼容（推荐）', value: 'compatible' }, { label: '全球 CDN', value: 'cdn' }, { label: 'Apple 生态', value: 'apple' }]
 const wizardSteps = [{ id: 1, title: '节点与入口', caption: '选择 VPS' }, { id: 2, title: '服务参数', caption: '系统管凭证' }, { id: 3, title: '确认保存', caption: '检查变更' }]
 const route = useRoute()
+const serviceKind = ref(route.query.kind === 'forward' ? 'forward' : 'listener'), serviceTypeOpen=ref(false)
+const forwardServices=ref<InstanceType<typeof NetworkEntries>|null>(null)
+async function createService(kind:string) { serviceKind.value=kind;serviceTypeOpen.value=false;if(kind==='listener')await openCreate();else { await nextTick();forwardServices.value?.edit() } }
 const router = useRouter()
+watch(serviceKind,kind=>{ void router.replace({query:{...route.query,kind:kind==='forward'?'forward':undefined}}) })
+watch(()=>route.query.kind,kind=>{serviceKind.value=kind==='forward'?'forward':'listener'})
 const allowedPageSizes = [25, 50, 100]
 const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 50)
@@ -496,17 +507,8 @@ const managedCertificateOptions = computed(() => [
     .map(item => ({ label: `${item.name} · ${item.domains.join('、')}`, value: item.id })),
 ])
 const hasConfigError = computed(() => ['config', 'client_config', 'optional_config', 'tags', 'parent_protocol_id', 'multiplier_milli', 'sort_order', 'node_group_membership_changes'].some(field => Boolean(editorErrors.fields[field])))
-const selectedProtocolCapability = computed<ProtocolKernelCapability>(() => {
-  const capability = protocolCapabilities[form.protocol] || { supported: false, reason: '无法确认当前内核是否支持该协议。' }
-  if (!capability.supported) return capability
-  const minimum = capability.minimum_zero_version || ''
-  if (!minimum) return capability
-  const installed = selectedNode.value?.kernel_state?.installed_version || ''
-  if (!zeroVersionAtLeast(installed, minimum)) {
-    return { supported: false, minimum_zero_version: minimum, reason: capability.reason || `该协议需要 Zero ${minimum} 或更高版本；请先升级所选节点内核。` }
-  }
-  return capability
-})
+const selectedProtocolCapability = computed<ProtocolKernelCapability>(() =>
+  protocolCapabilities[form.protocol] || { supported: false, reason: '无法确认当前内核是否支持该协议。' })
 const canSaveSelectedProtocol = computed(() => selectedProtocolCapability.value.supported || (Boolean(form.id) && !form.is_active))
 const mieruUnavailableReason = computed(() => protocolCapabilities.mieru?.supported ? '' : protocolCapabilities.mieru?.reason || defaultMieruUnavailableReason)
 
@@ -828,7 +830,7 @@ async function openCopy(endpoint: ProtocolEndpointListItem) {
     Object.assign(form, emptyForm(), detail, {
       id: 0,
       name: `${detail.name} 副本`,
-      is_active: false,
+      is_active: true,
       parent_protocol_id: detail.parent_protocol_id || 0,
       config: detail.config || '{}',
       client_config: detail.client_config || '{}',
@@ -1043,9 +1045,7 @@ async function deploy(endpoint: ProtocolEndpointListItem) {
 async function removeEndpoint(endpoint: ProtocolEndpointListItem) {
   const accepted = await confirmAction({
     title: '删除协议服务？',
-    message: endpoint.is_active
-      ? `系统会先从 ${endpoint.node_name || `VPS #${endpoint.node_id}`} 的完整 Zero 配置中移除“${endpoint.name}”，验证生效后再删除面板记录。`
-      : `将永久删除“${endpoint.name}”的服务记录并吊销其凭证；历史发布和流量记录会保留用于审计。`,
+    message: `将删除“${endpoint.name}”的面板记录、用户凭据、节点组关联及以它为落地的前置入口。节点运行配置撤除会排队重试，SSH 不可达不阻止删除；远端完成更新前可能仍保留旧配置。`,
     confirmText: '确认删除',
     tone: 'danger',
   })

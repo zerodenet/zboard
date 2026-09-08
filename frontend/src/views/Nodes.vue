@@ -143,6 +143,14 @@
                 <small>进入“内核与运维”时会读取一次当前状态；也可以随时手动重新检测。只维护 <code>/etc/sysctl.d/99-zboard-bbr.conf</code>，不会执行全局 <code>sysctl --system</code>。</small>
               </div>
             </div>
+            <section class="kernel-history" aria-label="离线节点清理">
+              <h3>离线节点清理</h3>
+              <p>删除面板记录不会停止远端进程。可提前下载脚本，网站不可用时通过 SSH 在节点本机执行；无需面板登录凭据。</p>
+              <UiButton variant="secondary" size="sm" type="button" @click="downloadCleanupScript">下载清理脚本</UiButton>
+              <p>停机并关闭自动启动：<code>sudo sh cleanup-zero-node.sh stop --yes</code></p>
+              <p>彻底卸载内核、配置和事件队列：<code>sudo sh cleanup-zero-node.sh uninstall --yes</code></p>
+              <p>新安装或更新内核后，也可直接执行 <code>sudo /usr/local/sbin/zboard-zero-cleanup stop --yes</code>。</p>
+            </section>
             <div v-if="kernelOperations.length" class="kernel-history">
               <div v-for="operation in kernelOperations.slice(0, 5)" :key="operation.id">
                 <StatusBadge :tone="operationStatusTone(operation.status)" :icon="operation.status === 'succeeded' ? 'check' : operation.status === 'running' ? 'refresh' : 'alert'">{{ operationStatusLabel(operation.status) }}</StatusBadge>
@@ -153,6 +161,7 @@
           </div>
         </article>
 
+        <NodeProxyPools v-else-if="detailSection === 'pools'" :key="selectedNode.id" :node-id="selectedNode.id" />
         <section v-else-if="detailSection === 'protocols'" class="panel node-protocols">
           <header class="panel-header"><div><h2>协议服务与倍率</h2><p>倍率属于这台 VPS 承载的协议端点。修改只影响后续流量计费与订阅展示，不会重启 Zero。</p></div><span class="count-label">{{ formatNumber(nodeProtocolTotal) }}</span></header>
           <DataTable v-if="nodeEndpoints.length" caption="当前节点协议服务与计费倍率" :row-count="nodeProtocolTotal" :min-width="820">
@@ -259,10 +268,11 @@
 </template>
 
 <script setup lang="ts">
+import NodeProxyPools from '../components/NodeProxyPools.vue'
 import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createNode, createNodeBatchOperation, deleteNode, detectNodeKernel, fetchAdminTask, fetchNode, fetchNodeKernel, fetchNodeLoad, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type NodeLoadSnapshot, type ZeroReleaseOption } from '../api/client'
+import { createNode, createNodeBatchOperation, deleteNode, fetchNodeCleanupScript, detectNodeKernel, fetchAdminTask, fetchNode, fetchNodeKernel, fetchNodeLoad, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type NodeLoadSnapshot, type ZeroReleaseOption } from '../api/client'
 import { enableNodeBBR, fetchNodeSystemActions, type NodeBBRState } from '../api/nodeSystemActions'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EndpointAddress from '../components/EndpointAddress.vue'
@@ -328,10 +338,11 @@ const nodeLoad = ref<NodeLoadSnapshot | null>(null)
 const nodeLoadLoading = ref(false)
 const nodeLoadError = ref('')
 const diagnosticsOpen = ref(false)
-const detailSection = ref<'overview' | 'kernel' | 'protocols' | 'credentials'>('overview')
+const detailSection = ref<'overview' | 'kernel' | 'pools' | 'protocols' | 'credentials'>('overview')
 const nodeDetailTabs = [
   { value: 'overview', label: '状态概览', icon: 'dashboard' },
   { value: 'kernel', label: '内核与运维', icon: 'activity' },
+  { value: 'pools', label: '共享代理池', icon: 'nodes' },
   { value: 'protocols', label: '协议与倍率', icon: 'plans' },
   { value: 'credentials', label: '连接凭证', icon: 'key' },
 ]
@@ -765,10 +776,18 @@ async function selectNode(node: AdminNodeListItem) {
   finally { detailLoadingID.value = 0 }
 }
 async function closeDetail() { diagnosticsOpen.value = false; selectedNode.value = null; detailError.value = ''; detailMessage.value = ''; nodeProtocolOffset.value = 0; bbrState.value = null; await syncURL() }
+async function downloadCleanupScript() {
+ try {
+  const content=await fetchNodeCleanupScript()
+  const url=URL.createObjectURL(new Blob([content],{type:'text/plain'}))
+  const link=document.createElement('a');link.href=url;link.download='cleanup-zero-node.sh';link.click()
+  setTimeout(()=>URL.revokeObjectURL(url),1000)
+ } catch(cause:any) { detailError.value=cause?.response?.data?.message||'清理脚本下载失败。' }
+}
 async function removeNode(node: AdminNodeDetail) {
   if (!await confirmAction({
     title: '删除节点资产？',
-    message: `将永久删除“${node.name}”以及 zboard 中由该节点承载的协议服务、证书、DNS 管理记录和运行状态。将停止并禁用托管 Zero，删除 Cloudflare DNS 记录，撤销仍有效的托管证书并清理证书、私钥和续期配置。历史流量、任务与审计记录保留；清理失败时保留节点及关联记录供重试。`,
+    message: `将永久删除“${node.name}”以及 zboard 中由该节点承载的协议服务、证书、DNS 管理记录和运行状态。同时清理相关前置入口、节点组关联和共享代理池。此操作不连接 SSH 或供应商，远端 Zero、证书文件和 DNS 记录保留；如需停机或卸载，请先保存清理脚本。历史流量、任务与审计记录保留。`,
     confirmText: '确认删除',
     tone: 'danger',
   })) return
@@ -779,7 +798,7 @@ async function removeNode(node: AdminNodeDetail) {
     await deleteNode(node.id)
     if (pendingBBRNodeID.value === node.id) pendingBBRNodeID.value = 0
     await closeDetail()
-    message.value = `节点“${node.name}”及托管 DNS、证书已清理；Zero 已停用，安装文件保留。`
+    message.value = `节点“${node.name}”的面板记录及关联已删除；远端进程和供应商资源未清理。`
     await refresh()
   } catch (e: any) {
     detailError.value = e?.response?.data?.message || '节点删除失败。'
@@ -964,7 +983,7 @@ watch(() => route.fullPath, async () => {
     }
   }
   const tab = typeof route.query.tab === 'string' ? route.query.tab : 'overview'
-  if (['overview', 'kernel', 'protocols', 'credentials'].includes(tab)) detailSection.value = tab as typeof detailSection.value
+  if (['overview', 'kernel', 'pools', 'protocols', 'credentials'].includes(tab)) detailSection.value = tab as typeof detailSection.value
 })
 onMounted(async () => {
   await refresh()
@@ -973,7 +992,7 @@ onMounted(async () => {
     try { selectedNode.value = await fetchNode(nodeID) } catch { selectedNode.value = null }
   }
   const tab = typeof route.query.tab === 'string' ? route.query.tab : 'overview'
-  if (['overview', 'kernel', 'protocols', 'credentials'].includes(tab)) detailSection.value = tab as typeof detailSection.value
+  if (['overview', 'kernel', 'pools', 'protocols', 'credentials'].includes(tab)) detailSection.value = tab as typeof detailSection.value
 })
 onBeforeUnmount(stopKernelPolling)
 </script>

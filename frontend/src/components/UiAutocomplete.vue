@@ -8,6 +8,7 @@
     <template #option="slotProps">
       <slot name="option" v-bind="slotProps" />
     </template>
+    <template v-if="$slots.footer" #footer><slot name="footer" /></template>
     <template #dropdownicon>
       <UiIcon name="chevron" />
     </template>

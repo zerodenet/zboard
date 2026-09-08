@@ -66,7 +66,7 @@ func nodeGroupPublishTargets(tx *gorm.DB, groupID uint) ([]nodeGroupPublishTarge
 	var endpoints []model.ProtocolEndpoint
 	err := tx.Model(&model.ProtocolEndpoint{}).
 		Select("protocol_endpoints.id, protocol_endpoints.node_id").
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
+		Joins(credentialMembershipJoin("node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id")).
 		Where("node_group_endpoints.node_group_id = ?", groupID).
 		Order("protocol_endpoints.node_id asc, protocol_endpoints.id asc").
 		Find(&endpoints).Error

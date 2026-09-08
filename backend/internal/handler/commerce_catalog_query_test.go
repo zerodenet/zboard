@@ -98,6 +98,34 @@ func TestCatalogProjectionFiltersBeforePagingAndSelectsOperationPrice(t *testing
 	}
 }
 
+func TestCatalogListAndDetailPreserveSavedProductDescription(t *testing.T) {
+	f := newCatalogFixture(t)
+	plan := f.plan(t, 1)
+	f.sku(t, plan.ID, 500, skuOperationPurchase)
+	description := "适合短期体验。\n\n使用须知：流量用完即止。\n<img src=x onerror=alert(1)>"
+	if err := f.h.db.Model(&plan).Updates(map[string]any{"summary": "基础试用套餐", "description": description}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{"", f.token} {
+		client := f
+		client.token = token
+		var page struct{ Items []planCatalogItem }
+		if status := client.get(t, "/api/v1/plans?paged=true&operation=purchase&limit=9", f.h.PlanListCommerceHandler, &page); status != http.StatusOK {
+			t.Fatalf("list status = %d", status)
+		}
+		if len(page.Items) != 1 || page.Items[0].Description != description || page.Items[0].Summary != "基础试用套餐" {
+			t.Fatalf("catalog lost saved description or summary: %+v", page)
+		}
+		var detail planCatalogItem
+		if status := client.get(t, "/api/v1/plans/1", f.h.PublicPlanDetailCommerceHandler, &detail); status != http.StatusOK {
+			t.Fatalf("detail status = %d", status)
+		}
+		if detail.Description != description || detail.Summary != "基础试用套餐" {
+			t.Fatalf("detail lost saved description or summary: %+v", detail)
+		}
+	}
+}
+
 func TestCatalogSKUAnchorFindsSelectedSKUAfterFirstHundredWithinScope(t *testing.T) {
 	f := newCatalogFixture(t)
 	f.plan(t, 1)

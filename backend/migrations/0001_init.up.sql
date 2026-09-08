@@ -353,6 +353,9 @@ CREATE TABLE `certificate_operations` (
 CREATE TABLE `orders` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `user_id` bigint unsigned NOT NULL,
+  `assigned_by` bigint unsigned NOT NULL DEFAULT 0,
+  `assignment_note` varchar(500) NOT NULL DEFAULT '',
+  `assignment_fingerprint` varchar(64) NOT NULL DEFAULT '',
   `plan_id` bigint unsigned DEFAULT NULL,
   `plan_sku_id` bigint unsigned NOT NULL,
   `subscription_id` bigint unsigned DEFAULT NULL,
@@ -958,7 +961,21 @@ CREATE TABLE `node_config_publishes` (
  CONSTRAINT `fk_node_publish_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `node_proxy_pools` (
+ `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+ `node_id` bigint unsigned NOT NULL,
+ `name` varchar(80) NOT NULL,
+ `config` text NOT NULL,
+ `revision` bigint unsigned NOT NULL DEFAULT 1,
+ `created_at` datetime(3) DEFAULT NULL,
+ `updated_at` datetime(3) DEFAULT NULL,
+ PRIMARY KEY (`id`),
+ UNIQUE KEY `ux_node_proxy_pool_name` (`node_id`,`name`),
+ CONSTRAINT `fk_node_proxy_pools_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE `network_entries` (
+ `proxy_pool_id` bigint unsigned DEFAULT NULL,
  `network` varchar(16) NOT NULL DEFAULT 'tcp_udp',
  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
  `name` varchar(80) NOT NULL,
@@ -977,5 +994,21 @@ CREATE TABLE `network_entries` (
  KEY `idx_network_entries_endpoint_id` (`endpoint_id`),
  UNIQUE KEY `ux_network_entry_name` (`endpoint_id`, `name`),
  CONSTRAINT `fk_network_entries_entry_node` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE RESTRICT,
- CONSTRAINT `fk_network_entries_landing_endpoint` FOREIGN KEY (`endpoint_id`) REFERENCES `protocol_endpoints` (`id`) ON DELETE RESTRICT
+ CONSTRAINT `fk_network_entries_landing_endpoint` FOREIGN KEY (`endpoint_id`) REFERENCES `protocol_endpoints` (`id`) ON DELETE RESTRICT,
+ KEY `idx_network_entries_proxy_pool_id` (`proxy_pool_id`),
+ CONSTRAINT `fk_network_entries_proxy_pool` FOREIGN KEY (`proxy_pool_id`) REFERENCES `node_proxy_pools` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `node_group_network_entries` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `node_group_id` bigint unsigned NOT NULL,
+  `network_entry_id` bigint unsigned NOT NULL,
+  `sort_order` int NOT NULL DEFAULT 0,
+  `created_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_node_group_network_entry` (`node_group_id`, `network_entry_id`),
+  KEY `idx_node_group_network_entries_node_group_id` (`node_group_id`),
+  KEY `idx_node_group_network_entries_network_entry_id` (`network_entry_id`),
+  CONSTRAINT `fk_node_group_network_entries_group` FOREIGN KEY (`node_group_id`) REFERENCES `node_groups` (`id`) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT `fk_node_group_network_entries_entry` FOREIGN KEY (`network_entry_id`) REFERENCES `network_entries` (`id`) ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

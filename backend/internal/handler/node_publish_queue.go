@@ -47,7 +47,7 @@ func enqueueSubscriptionConfigPublishes(tx *gorm.DB, subscriptionID, requestedBy
 		EndpointID uint
 	}
 	if err := tx.Table("protocol_endpoints").Select("protocol_endpoints.node_id, MIN(protocol_endpoints.id) AS endpoint_id").
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
+		Joins(credentialMembershipJoin("node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id")).
 		Joins("JOIN subscriptions ON subscriptions.node_group_id = node_group_endpoints.node_group_id").
 		Where("subscriptions.id = ? AND protocol_endpoints.is_active = ?", subscriptionID, true).
 		Group("protocol_endpoints.node_id").Order("protocol_endpoints.node_id").Scan(&nodes).Error; err != nil {

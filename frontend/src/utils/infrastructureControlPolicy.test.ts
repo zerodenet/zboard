@@ -45,7 +45,7 @@ describe('infrastructure control policy', () => {
     expect(protocols).not.toContain(':disabled="Boolean(form.id)" @select="handleNodeSelect"')
   })
 
-  it('gates protocols by the selected node kernel version', () => {
+  it('uses protocol capabilities without comparing reset kernel release numbers', () => {
     const protocols = read('views', 'Protocols.vue')
     const client = read('api', 'client.ts')
 
@@ -54,8 +54,8 @@ describe('infrastructure control policy', () => {
     expect(client).toContain('kernel_supported: boolean')
     expect(protocols).toContain('loadProtocolCapabilities')
     expect(protocols).toContain(':disabled="!endpoint.kernel_supported"')
-    expect(protocols).toContain('selectedNode.value?.kernel_state?.installed_version')
-    expect(protocols).toContain('zeroVersionAtLeast')
+    expect(protocols).not.toContain('selectedNode.value?.kernel_state?.installed_version')
+    expect(protocols).not.toContain('zeroVersionAtLeast')
     expect(protocols).toContain('effectiveTransportOptions')
     expect(protocols).toContain("structured.security === 'reality'")
     expect(protocols).toContain("structured.transport === 'ws'")

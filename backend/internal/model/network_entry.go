@@ -4,6 +4,8 @@ import "time"
 
 // NetworkEntry forwards opaque protocol traffic. Authentication and charging remain at EndpointID.
 type NetworkEntry struct {
+	ProxyPoolID     *uint             `json:"proxy_pool_id" gorm:"index"`
+	ProxyPool       *NodeProxyPool    `json:"-" gorm:"foreignKey:ProxyPoolID;constraint:OnDelete:RESTRICT"`
 	EntryNode       *Node             `json:"-" gorm:"foreignKey:NodeID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
 	LandingEndpoint *ProtocolEndpoint `json:"-" gorm:"foreignKey:EndpointID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
 	Network         string            `json:"network" gorm:"size:16;not null;default:tcp_udp"`

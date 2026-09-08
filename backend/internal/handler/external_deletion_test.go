@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"gorm.io/gorm"
 )
 
 func deletionFixture(t *testing.T) (trafficReadFixture, model.Node, model.ProviderAccount) {
@@ -45,163 +46,135 @@ func mockDeletionDNS(t *testing.T, fn http.HandlerFunc) {
 	t.Cleanup(func() { cloudflareAPIBaseURL = previous; server.Close() })
 }
 
-func TestDNSDeletionFailureRetainsIdentityAndRetryAfterRestart(t *testing.T) {
+func TestDNSDeletionRemovesLocalRecordWithoutUsingExpiredProviderCredentials(t *testing.T) {
 	f, node, account := deletionFixture(t)
-	record := seedDeletionDNS(t, f, node, account, "record-1")
-	failure := true
+	record := seedDeletionDNS(t, f, node, account, "record")
 	calls := 0
-	mockDeletionDNS(t, func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		if r.Method != http.MethodDelete || r.URL.Path != "/zones/zone-1/dns_records/record-1" {
-			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-		if failure {
-			w.WriteHeader(http.StatusForbidden)
-			fmt.Fprint(w, `{"success":false,"errors":[{"message":"denied"}]}`)
-			return
-		}
-		// The first attempt may have completed remotely despite a lost response.
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprint(w, `{"success":false,"errors":[{"message":"absent"}]}`)
-	})
-	request := func() *httptest.ResponseRecorder {
-		w := httptest.NewRecorder()
-		f.h.ManagedDNSDeleteHandler(w, announcementRequest(http.MethodDelete, fmt.Sprintf("/api/v1/admin/dns-records/%d", record.ID), f.admin, ""))
-		return w
-	}
-	if w := request(); w.Code != http.StatusBadGateway {
-		t.Fatalf("delete: %d %s", w.Code, w.Body.String())
-	}
-	var retained model.ManagedDNSRecord
-	if err := f.h.db.First(&retained, record.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if retained.Status != resourceStatusDeleting || retained.ProviderRecordID != record.ProviderRecordID || retained.LastError == "" {
-		t.Fatalf("lost recovery state: %+v", retained)
-	}
-	h, err := NewHandlers(f.h.db, f.h.jwtSecret, f.h.credentialCipher, "", "legacy", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.h = h
-	if _, err := f.h.startDNSOperation(record.ID, false, nil); err == nil {
-		t.Fatal("sync resurrected deleting resource")
-	}
-	failure = false
-	if w := request(); w.Code != http.StatusOK {
-		t.Fatalf("retry: %d %s", w.Code, w.Body.String())
+	mockDeletionDNS(t, func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(403) })
+	w := httptest.NewRecorder()
+	f.h.ManagedDNSDeleteHandler(w, announcementRequest("DELETE", fmt.Sprintf("/api/v1/admin/dns-records/%d", record.ID), f.admin, ""))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"remote_record_deleted":false`) {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 	var count int64
 	f.h.db.Model(&model.ManagedDNSRecord{}).Where("id = ?", record.ID).Count(&count)
-	if count != 0 || calls != 2 {
-		t.Fatalf("count=%d calls=%d", count, calls)
+	if count != 0 || calls != 0 {
+		t.Fatalf("local=%d remote calls=%d", count, calls)
+	}
+	if _, err := f.h.startDNSOperation(record.ID, false, nil); err == nil {
+		t.Fatal("deleted DNS could be synchronized")
 	}
 }
 
-func TestNodeDeletionRetriesPartialDNSCleanupBeforeDroppingRows(t *testing.T) {
-	f, node, account := deletionFixture(t)
-	seedDeletionDNS(t, f, node, account, "first")
-	seedDeletionDNS(t, f, node, account, "second")
-	failSecond := true
-	removed := map[string]bool{}
-	mockDeletionDNS(t, func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/second") && failSecond {
-			w.WriteHeader(403)
-			fmt.Fprint(w, `{"success":false,"errors":[{"message":"denied"}]}`)
-			return
-		}
-		if removed[r.URL.Path] {
-			w.WriteHeader(404)
-			fmt.Fprint(w, `{"success":false,"errors":[{"message":"absent"}]}`)
-			return
-		}
-		removed[r.URL.Path] = true
-		fmt.Fprint(w, `{"success":true,"result":{}}`)
-	})
-	request := func() *httptest.ResponseRecorder {
-		w := httptest.NewRecorder()
-		f.h.NodeCascadeDeleteHandler(w, announcementRequest(http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", node.ID), f.admin, ""))
-		return w
-	}
-	if w := request(); w.Code != 502 {
-		t.Fatalf("delete: %d %s", w.Code, w.Body.String())
-	}
-	var count int64
-	f.h.db.Model(&model.ManagedDNSRecord{}).Where("node_id = ?", node.ID).Count(&count)
-	if count != 2 {
-		t.Fatalf("partial cleanup lost local identities: %d", count)
-	}
-	var retained model.Node
-	if err := f.h.db.First(&retained, node.ID).Error; err != nil {
+func TestNodeDeletionClearsRelationsWithoutSSHOrProviderAccess(t *testing.T) {
+	f, a, b := networkEntryFixture(t)
+	entry := saveEntryForTest(t, f, a, b, "")
+	group := model.NodeGroup{Name: "assigned", Code: "assigned"}
+	if err := f.h.db.Create(&group).Error; err != nil {
 		t.Fatal(err)
 	}
-	if retained.LifecycleStatus != resourceStatusDeleting || retained.IsEnabled {
-		t.Fatal("node deletion intent lost")
+	if err := f.h.db.Create(&model.NodeGroupNetworkEntry{NodeGroupID: group.ID, NetworkEntryID: entry.ID}).Error; err != nil {
+		t.Fatal(err)
 	}
-	if err := requireAvailableNode(f.h.db, node.ID); err == nil {
-		t.Fatal("new attachments accepted during deletion")
+	if err := f.h.db.Create(&model.NodeGroupEndpoint{NodeGroupID: group.ID, ProtocolEndpointID: b.ID}).Error; err != nil {
+		t.Fatal(err)
 	}
-	failSecond = false
-	if w := request(); w.Code != 200 {
-		t.Fatalf("retry: %d %s", w.Code, w.Body.String())
+	pool := model.NodeProxyPool{NodeID: b.NodeID, Name: "owned", Config: "encrypted"}
+	if err := f.h.db.Create(&pool).Error; err != nil {
+		t.Fatal(err)
 	}
-	f.h.db.Model(&model.Node{}).Where("id = ?", node.ID).Count(&count)
-	if count != 0 {
-		t.Fatal("node remains")
+	f.h.db.Model(&model.NodeKernelState{}).Where("node_id = ?", b.NodeID).Update("installed_version", "0.0.1")
+	now := time.Now().UTC()
+	f.h.db.Model(&model.Node{}).Where("id = ?", b.NodeID).Updates(map[string]interface{}{"connector_last_seen_at": now, "ssh_host": "", "ssh_user": ""})
+	calls := 0
+	mockDeletionDNS(t, func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(403) })
+	f.h.db.Where("1 = 1").Delete(&model.NodeConfigPublish{})
+	w := httptest.NewRecorder()
+	f.h.NodeCascadeDeleteHandler(w, announcementRequest("DELETE", fmt.Sprintf("/api/v1/nodes/%d", b.NodeID), f.admin, ""))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"remote_zero_stopped":false`) {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
-	f.h.db.Model(&model.ManagedDNSRecord{}).Where("node_id = ?", node.ID).Count(&count)
-	if count != 0 || len(removed) != 2 {
-		t.Fatal("external/local cleanup incomplete")
+	for _, query := range []*gorm.DB{
+		f.h.db.Model(&model.Node{}).Where("id = ?", b.NodeID),
+		f.h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", b.ID),
+		f.h.db.Model(&model.NetworkEntry{}).Where("id = ?", entry.ID),
+		f.h.db.Model(&model.NodeGroupNetworkEntry{}).Where("node_group_id = ?", group.ID),
+		f.h.db.Model(&model.NodeGroupEndpoint{}).Where("node_group_id = ?", group.ID),
+		f.h.db.Model(&model.NodeProxyPool{}).Where("node_id = ?", b.NodeID),
+	} {
+		var count int64
+		if err := query.Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("local cleanup count=%d err=%v", count, err)
+		}
+	}
+	var surviving model.Node
+	if err := f.h.db.First(&surviving, a.ID).Error; err != nil {
+		t.Fatal("entry node was removed")
+	}
+	var queue model.NodeConfigPublish
+	if err := f.h.db.Where("node_id = ?", a.ID).First(&queue).Error; err != nil {
+		t.Fatal("surviving entry withdrawal not queued")
+	}
+	if calls != 0 {
+		t.Fatal("local deletion contacted provider")
 	}
 }
 
-func TestProviderDeletionRequiresBothDNSAndCertificateCleanup(t *testing.T) {
+func TestProviderDeletionClearsLocalLinksWithoutRemovingCertificates(t *testing.T) {
 	f, node, account := deletionFixture(t)
-	cert := model.ManagedCertificate{NodeID: node.ID, ProviderAccountID: &account.ID, Name: "fixture", Domains: `["fixture.example.test"]`, ContactEmail: "admin@example.test"}
+	cert := model.ManagedCertificate{NodeID: node.ID, ProviderAccountID: &account.ID, Name: "fixture", Domains: `["fixture.example.test"]`, ContactEmail: "admin@example.test", AutoRenew: true}
 	if err := f.h.db.Create(&cert).Error; err != nil {
 		t.Fatal(err)
 	}
-	request := func() *httptest.ResponseRecorder {
-		w := httptest.NewRecorder()
-		f.h.ProviderAccountDeleteHandler(w, announcementRequest("DELETE", fmt.Sprintf("/api/v1/admin/provider-accounts/%d", account.ID), f.admin, ""))
-		return w
-	}
-	if w := request(); w.Code != 409 || !strings.Contains(w.Body.String(), "certificates") {
-		t.Fatalf("certificate blocker: %s", w.Body.String())
-	}
-	f.h.db.Delete(&cert)
 	record := seedDeletionDNS(t, f, node, account, "record")
-	if w := request(); w.Code != 409 || !strings.Contains(w.Body.String(), "dns_records") {
-		t.Fatal("DNS blocker missing")
+	w := httptest.NewRecorder()
+	f.h.ProviderAccountDeleteHandler(w, announcementRequest("DELETE", fmt.Sprintf("/api/v1/admin/provider-accounts/%d", account.ID), f.admin, ""))
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
-	f.h.db.Delete(&record)
-	if w := request(); w.Code != 200 {
-		t.Fatalf("unreferenced account: %s", w.Body.String())
+	var retained model.ManagedCertificate
+	if err := f.h.db.First(&retained, cert.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if retained.ProviderAccountID != nil || retained.AutoRenew {
+		t.Fatal("deleted provider still bound to certificate")
+	}
+	var count int64
+	f.h.db.Model(&model.ManagedDNSRecord{}).Where("id = ?", record.ID).Count(&count)
+	if count != 0 {
+		t.Fatal("DNS link remains")
 	}
 }
 
-func TestCertificateDeletionFailureBlocksRenewalAndRetainsMetadata(t *testing.T) {
+func TestCertificateDeletionRemovesExpiredRecordAndLinksWithoutSSH(t *testing.T) {
 	f, node, _ := deletionFixture(t)
 	expiry := time.Now().Add(-time.Hour)
 	cert := model.ManagedCertificate{NodeID: node.ID, Name: "fixture", Domains: `["fixture.example.test"]`, ContactEmail: "admin@example.test", Status: certificateStatusActive, CertPath: "/etc/zboard/certificates/1/current/fullchain.pem", KeyPath: "/etc/zboard/certificates/1/current/privkey.pem", NotAfter: &expiry}
 	if err := f.h.db.Create(&cert).Error; err != nil {
 		t.Fatal(err)
 	}
+	endpoint := model.ProtocolEndpoint{NodeID: node.ID, Name: "tls", Protocol: "trojan", Port: 443}
+	if err := f.h.db.Create(&endpoint).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.h.db.Create(&model.CertificateProtocolEndpoint{ManagedCertificateID: cert.ID, ProtocolEndpointID: endpoint.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
 	w := httptest.NewRecorder()
 	f.h.ManagedCertificateDeleteHandler(w, announcementRequest("DELETE", fmt.Sprintf("/api/v1/admin/certificates/%d", cert.ID), f.admin, ""))
-	if w.Code != 502 {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"remote_files_retained":true`) {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 	if _, err := f.h.startManagedCertificateOperation(cert.ID, certificateOperationRenew, nil); err == nil {
-		t.Fatal("renewal restarted deletion")
+		t.Fatal("deleted certificate renewed")
 	}
-	f.h.scanCertificateRenewals(time.Now())
-	var retained model.ManagedCertificate
-	if err := f.h.db.First(&retained, cert.ID).Error; err != nil {
-		t.Fatal(err)
+	var count int64
+	f.h.db.Model(&model.CertificateProtocolEndpoint{}).Where("managed_certificate_id = ?", cert.ID).Count(&count)
+	if count != 0 {
+		t.Fatal("certificate link remains")
 	}
-	if retained.Status != resourceStatusDeleting || retained.AutoRenew || retained.LastError == "" {
-		t.Fatalf("lost deletion intent: %+v", retained)
+	if err := f.h.db.First(&endpoint, endpoint.ID).Error; err != nil {
+		t.Fatal("certificate deletion removed protocol")
 	}
 }
 

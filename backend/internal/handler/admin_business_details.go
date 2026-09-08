@@ -13,6 +13,7 @@ import (
 // administration tables. Payment callback bodies and failure diagnostics are
 // detail-only and must never be returned by a list endpoint.
 type adminOrderListItem struct {
+	PayableAmount  int64     `json:"payable_amount"`
 	ID             uint      `json:"id"`
 	UserID         uint      `json:"user_id"`
 	SubscriptionID uint      `json:"subscription_id"`
@@ -30,9 +31,10 @@ type adminOrderListItem struct {
 }
 
 type adminOrderDetail struct {
+	AssignedBy     uint   `json:"assigned_by"`
+	AssignmentNote string `json:"assignment_note"`
 	adminOrderListItem
 	TargetSubscriptionID *uint      `json:"target_subscription_id"`
-	PayableAmount        int64      `json:"payable_amount"`
 	PaidAmount           int64      `json:"paid_amount"`
 	RefundAmount         int64      `json:"refund_amount"`
 	DiscountAmount       int64      `json:"discount_amount"`
@@ -89,7 +91,8 @@ type adminSubscriptionDetail struct {
 
 func newAdminOrderListItem(order model.Order) adminOrderListItem {
 	return adminOrderListItem{
-		ID: order.ID, UserID: order.UserID, SubscriptionID: order.SubscriptionID,
+		PayableAmount: order.PayableAmount,
+		ID:            order.ID, UserID: order.UserID, SubscriptionID: order.SubscriptionID,
 		PlanID: order.PlanID, PlanSKUID: order.PlanSKUID, TradeNo: order.TradeNo,
 		OrderType: order.OrderType, AmountCents: order.AmountCents, Currency: order.Currency,
 		Status: order.Status, PlanName: order.PlanName, SKUName: order.SKUName,
@@ -99,9 +102,9 @@ func newAdminOrderListItem(order model.Order) adminOrderListItem {
 
 func newAdminOrderDetail(order model.Order) adminOrderDetail {
 	return adminOrderDetail{
+		AssignedBy: order.AssignedBy, AssignmentNote: order.AssignmentNote,
 		adminOrderListItem:   newAdminOrderListItem(order),
 		TargetSubscriptionID: order.TargetSubscriptionID,
-		PayableAmount:        order.PayableAmount,
 		PaidAmount:           order.PaidAmount,
 		RefundAmount:         order.RefundAmount,
 		DiscountAmount:       order.DiscountAmount,

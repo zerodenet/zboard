@@ -334,13 +334,13 @@ async function saveEdit() {
   }
 }
 async function removeRecord(record: ManagedDNSRecord) {
-  if (!await confirmAction({ title: '删除 DNS 解析？', message: `将先从 Cloudflare 删除 ${record.record_type} ${record.domain_name}，远端删除成功后才会移除面板记录。`, confirmText: '确认删除', tone: 'danger' })) return
+  if (!await confirmAction({ title: '删除 DNS 解析？', message: `将删除 ${record.record_type} ${record.domain_name} 的面板管理记录；不调用供应商 API，Cloudflare 上的解析保留，可在供应商控制台单独删除。`, confirmText: '确认删除', tone: 'danger' })) return
   deletingRecord.value = record.id
   error.value = ''
   message.value = ''
   try {
     await deleteManagedDNSRecord(record.id)
-    message.value = `${record.record_type} ${record.domain_name} 已从 Cloudflare 和面板删除。`
+    message.value = `${record.record_type} ${record.domain_name} 的面板记录已删除，Cloudflare 解析保留。`
     await refreshAll()
   } catch (cause: any) {
     await refreshAll()

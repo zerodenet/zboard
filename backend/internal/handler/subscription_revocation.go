@@ -44,7 +44,7 @@ func persistCredentialRevocation(tx *gorm.DB, query *gorm.DB, status string, now
 }
 
 func revokeSubscriptionCredentialsOutsideGroup(tx *gorm.DB, sub model.Subscription, now time.Time) error {
-	membership := tx.Model(&model.NodeGroupEndpoint{}).Select("protocol_endpoint_id").Where("node_group_id = ?", sub.NodeGroupID)
+	membership := credentialMemberships(tx).Select("protocol_endpoint_id").Where("node_group_id = ?", sub.NodeGroupID)
 	query := tx.Model(&model.ProtocolCredential{}).
 		Where("subscription_id = ? AND status IN ? AND protocol_endpoint_id NOT IN (?)", sub.ID,
 			[]string{protocolCredentialStatusActive, protocolCredentialStatusPrepared}, membership)

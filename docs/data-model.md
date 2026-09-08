@@ -73,9 +73,7 @@ historical entitlement snapshots or replace order-creation authorization.
   retries public resolvers until each synced record is visible; it never repeats
   the Cloudflare write merely because propagation is pending. Mutable target,
   address, TTL and proxy policy use optimistic concurrency and resynchronize
-  after editing. Deletion removes the exact provider-owned record before
-  deleting local desired state; identity changes use explicit
-  delete-and-recreate so old remote names cannot become orphaned. A node remains
+  after editing. Deletion removes local desired state without calling the provider; old remote records must be managed explicitly in the provider console. Identity changes use explicit delete-and-recreate. A node remains
   an infrastructure asset and does not acquire a single canonical domain.
 - `managed_certificates` explicitly owns either a verified Cloudflare provider
   account for DNS-01 or a canonical node webroot for HTTP-01. DNS-01 does not
@@ -91,25 +89,22 @@ historical entitlement snapshots or replace order-creation authorization.
   environment when the distribution does not publish that package. Legacy
   standalone certificates remain renewal-compatible but cannot be newly
   created.
-- DNS and certificate deletion reserve a durable deleting state before
-  external work. Failures retain identity, credential references and error
-  details; retry DELETE resumes cleanup. Editing, sync and renewal cannot
-  reactivate a deleting resource. Cloudflare cleanup uses exact saved zone and
-  record IDs and treats HTTP 404 as already removed; incomplete or uncertain
-  ownership blocks deletion rather than deleting by domain name.
-- Certificate deletion revokes unexpired ID-owned generations, then deletes
-  the Certbot lineage, its renewal configuration, and the canonical
-  /etc/zboard/certificates/<id> directory. SSH or CA failure keeps the panel
-  record and remaining material for retry. Shared ACME accounts, webroots,
-  unrelated certificates and shared provider tokens are never removed.
-- Node deletion stops the managed Zero service and cleans its external DNS
-  and certificate resources before the local cascade. A partial failure keeps
-  the node in deleting lifecycle with its local resource identities intact.
-  New attachments, publication and renewal are blocked until deletion finishes.
-  Zero installation files and historical traffic, task and audit facts remain.
-- A provider integration can be deleted only after all typed DNS/certificate
-  references and running provider operations are gone. This removes Zboard's
-  stored credential, not the externally owned account or shared API token.
+- Deletion of infrastructure resources is local and transactional. SSH, CA or
+  provider API availability is not a prerequisite. Node deletion removes owned
+  protocols, credentials, entries, pools, certificate/DNS management records and
+  membership links. Surviving entry nodes receive queued configuration withdrawal.
+  Historical traffic, administrative task and audit facts are retained.
+- Certificate deletion unlinks protocols and stops panel renewal without
+  revoking CA certificates or deleting node files. DNS deletion leaves the
+  provider record intact. Provider deletion removes local DNS records and
+  detaches certificates with automatic renewal disabled.
+- Protocol and entry deletion clears memberships automatically. Runtime removal
+  is queued and may remain pending while the node is offline. Actual running
+  operations are still serialized or rejected to avoid concurrent recreation.
+- The offline node cleanup utility separates stop/disable from explicit uninstall.
+  It is downloadable, included in binary archives and installed alongside new
+  managed Zero installations. See `node-cleanup.md` for exact paths and scope.
+
 - `nodes` is an independent VPS asset. It can exist without a protocol and owns lifecycle state, encrypted management/report credentials, communication mode, runtime status, enablement, version and synchronization timestamps.
 - SSH client authentication selects password or private key. Server identity verification is automatic: an empty fingerprint is enrolled after the first successful SSH handshake, a recorded fingerprint is always enforced, and an administrator must explicitly reset trust after confirming a legitimate VPS reinstall or host-key change.
 - SSH login identity and system privilege are separate node settings. `ssh_privilege_mode=none` requires a root login for managed system changes; `sudo` supports passwordless or password-based sudo; `su` requires a separately encrypted root password. Privilege passwords are sent only on the SSH session stdin and are never embedded in remote commands, operation output or audit details.
@@ -196,3 +191,11 @@ email_templates -> tasks (content snapshot only)
 The embedded SQL under `backend/migrations` is the production schema source of truth. Before the first public release, `0001_init.up.sql` directly expresses the complete v0.0.1 resource model: plans reference one node group, node groups own explicit protocol-endpoint membership, subscriptions retain their granted plan/SKU/node-group snapshot, and no legacy plan-to-endpoint or access-group tables are created. Startup records applied files in `schema_migrations`; GORM `AutoMigrate` is not used in production startup.
 
 Existing databases from the former v0.0.1 development chain are accepted only after they reached its terminal migration. Startup verifies the final schema signature, removes only the empty legacy template archive and renames the stale access-group index. Previously applied migration rows remain as rollback compatibility metadata even though their SQL files are no longer shipped; a fresh database records only `0001_init.up.sql`. Partial and unversioned non-empty schemas are rejected. After v0.1.0 is released, the baseline becomes immutable and all schema changes use append-only migrations. See [database-migrations.md](database-migrations.md).
+
+### 管理员分配订单
+
+管理员通过 `POST /api/v1/admin/orders` 为指定用户创建待付款订单。选择商品规格后，可以覆盖 `payable_amount`（整数分）；未指定时使用规格价格。`amount_cents` 保留规格原价，低于原价的差额记录为 `discount_amount`，高于原价时优惠为零。用户订单列表展示最终应付金额。
+
+`orders.assigned_by`、`assignment_note` 保存分配人和原因，创建订单与 `order.assign` 审计日志在同一事务中提交。详情只向管理员公开分配记录。`assignment_fingerprint` 不对外返回；管理员 ID 与请求 UUID 派生唯一交易号，用来防止重复请求创建多笔订单。重复请求返回原订单当前状态，不重新开通。
+
+分配只生成 `pending` 订单，即使应付金额为零也不自动开通。收到付款并确认后，复用现有履约事务，为订单所属用户开通或续费订阅、分发其显式授权范围内的凭证，实际收入按该订单最终实收金额统计。

@@ -223,13 +223,53 @@ paths:
       responses:
         "200":
           description: Provider catalog
+  /api/v1/admin/node-proxy-pools:
+    get:
+      tags: [admin, nodes]
+      summary: List a node's shared proxy pools without credentials
+      parameters:
+        - { name: node_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200": { description: Pools with id, node_id, name, revision and entry_count; no config or credentials }
+    post:
+      tags: [admin, nodes]
+      summary: Create a node-local proxy pool and queue publication to that node
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NodeProxyPoolRequest' }
+      responses:
+        "200": { description: Pool saved with encrypted configuration }
+        "400": { description: Invalid pool or configuration rejected by Zero }
+  /api/v1/admin/node-proxy-pools/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    put:
+      tags: [admin, nodes]
+      summary: Update a shared pool with optimistic revision; validate all referring entries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NodeProxyPoolRequest' }
+      responses:
+        "200": { description: Updated and node publication queued }
+        "400": { description: Invalid configuration or incompatible referring entry }
+        "409": { description: Stale revision or node changed }
+    delete:
+      tags: [admin, nodes]
+      summary: Delete an unreferenced shared pool
+      responses:
+        "200": { description: Deleted }
+        "400": { description: Pool is still referenced }
   /api/v1/admin/network-entries:
     get:
       tags: [admin, nodes]
       summary: List network fronting entries and pending publication state
-      description: Proxy path credentials are never returned. B owns access and traffic accounting.
+      description: Proxy path credentials are never returned. Entries are independently assigned through node groups. B owns authentication and traffic accounting; direct B access is a separate grant.
       responses:
-        "200": { description: "Entries with node_name, landing_node_id, endpoint_name, has_path, pending and last_error" }
+        "200": { description: "Entries with node_name, landing_node_id, endpoint_name, node_group_names, has_path, pending and last_error" }
     post:
       tags: [admin, nodes]
       summary: Create an opaque TCP/UDP entry on A targeting an existing B protocol
@@ -239,14 +279,14 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/NetworkEntryRequest' }
       responses:
-        "200": { description: Entry saved and A publication queued }
+        "200": { description: Entry saved and A/B publication queued; no subscription delivery until explicitly assigned to a node group }
         "400": { description: "Invalid reference, port conflict, proxy path or incompatible legacy credential ports" }
   /api/v1/admin/network-entries/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
     put:
       tags: [admin, nodes]
-      summary: Update entry with optimistic revision and republish affected A nodes
+      summary: Update entry with optimistic revision and republish affected entry and landing nodes
       requestBody:
         required: true
         content:
@@ -301,8 +341,8 @@ paths:
           description: Account was concurrently updated
     delete:
       tags: [admin, providers]
-      summary: Remove an unused provider integration and its stored credential
-      description: DNS and certificate references and running provider operations block deletion. The external account and shared API token are not revoked.
+      summary: Remove a provider credential and its local associations
+      description: Deletes local DNS management records and detaches certificates with automatic renewal disabled. Running provider or certificate operations block concurrent deletion. External accounts, tokens and records are not changed.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
@@ -388,14 +428,13 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
     delete:
       tags: [admin, providers]
-      summary: Delete the exact owned Cloudflare record, then remove its panel record
-      description: External failures retain the record in deleting state for retry. Sync and edits are blocked during deletion; HTTP 404 at Cloudflare is accepted as already absent. Incomplete or uncertain remote ownership blocks deletion.
+      summary: Delete the local DNS management record
+      description: Removes local state without a provider API call. Remote DNS remains intact. Running synchronization still blocks concurrent deletion.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
-        "200": { description: Remote and panel records deleted }
+        "200": { description: Panel record deleted; remote_record_deleted is false }
         "409": { $ref: "#/components/responses/Error" }
-        "502": { description: External cleanup failed; local identity retained for retry }
   /api/v1/admin/dns-records/{id}/sync:
     post:
       tags: [admin, providers]
@@ -478,14 +517,13 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
     delete:
       tags: [admin, certificates]
-      summary: Delete an unbound managed certificate
-      description: Running issuance or renewal and protocol endpoint references block deletion. Revoke unexpired owned certificates and remove their Certbot lineage, renewal configuration, and node certificate files before deleting local state. External failures retain the record in deleting state with renewal disabled for an explicit retry. Operation history is retained.
+      summary: Delete a local managed certificate and unlink protocols
+      description: Removes local certificate management and endpoint links without SSH or CA calls. Remote files remain and CA certificates are not revoked. Running issuance or renewal blocks concurrent deletion.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         "200": { description: Managed certificate deleted }
         "409": { $ref: "#/components/responses/Error" }
-        "502": { description: External cleanup failed; local identity retained for retry }
   /api/v1/admin/certificates/{id}/renewal:
     put:
       tags: [admin, certificates]
@@ -1301,14 +1339,24 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
     delete:
       tags: [nodes]
-      summary: Clean external resources and delete a node asset
-      description: Stop managed Zero, delete exact owned DNS records, revoke unexpired managed certificates and remove their files and renewal configuration before the local cascade. External failure retains the node and resource identities in deleting state for retry. Historical traffic, tasks and audit records and installed Zero files are retained.
+      summary: Delete a node asset and its local associations
+      description: Atomically clears owned protocol services, credentials, network entries, shared pools, memberships, certificate and DNS management records. No SSH or provider access is attempted. Remote services, files and DNS remain. Surviving entry nodes receive queued withdrawal. Historical traffic, administrative tasks and audit records are retained.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         "200": { description: Node asset deleted }
         "409": { $ref: "#/components/responses/Error" }
-        "502": { description: External cleanup failed; node and resource identities retained for retry }
+  /api/v1/admin/node-cleanup-script:
+    get:
+      tags: [admin, nodes]
+      summary: Download the standalone offline node cleanup utility
+      responses:
+        "200":
+          description: POSIX shell script without any node credentials
+          content:
+            text/plain:
+              schema: { type: string }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/admin/nodes/{id}/address-candidates:
     get:
       tags: [nodes, admin]
@@ -1863,6 +1911,29 @@ paths:
                       data:
                         $ref: "#/components/schemas/Order"
   /api/v1/admin/orders:
+    post:
+      tags: [orders, admin]
+      summary: Assign a pending order to a selected user
+      description: "Administrator only. Validates the active plan/SKU and recipient, snapshots the chosen payable amount, and records the actor and reason atomically. Creates no subscription or credentials until payment is confirmed. The same request_id and payload replay the original order; changed payloads require a new request_id."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminOrderAssignmentRequest" }
+      responses:
+        "200":
+          description: Created or replayed order; a replay retains its current payment status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/AdminOrderDetail" }
+        "400": { description: Invalid recipient, amount, SKU, target subscription or request identifier }
+        "401": { description: Authentication required }
+        "403": { description: Administrator permission required }
+        "409": { description: Plan subscription capacity reached }
     get:
       tags: [orders, admin]
       summary: List orders across all users
@@ -2592,11 +2663,11 @@ paths:
     delete:
       tags: [nodes, admin]
       summary: Remove and delete a protocol endpoint
-      description: Active endpoints are first removed through a verified full node configuration publish. Active plan references and running deployments block deletion.
+      description: Deletes local endpoint credentials, memberships and dependent front entries atomically. Runtime withdrawal is queued without requiring SSH success. Running deployments block concurrent deletion.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
-        "200": { description: Protocol endpoint removed from runtime and deleted }
+        "200": { description: Protocol endpoint and relations deleted locally; runtime withdrawal queued }
         "400": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
   /api/v1/admin/protocol-endpoints/{id}/deploy:
@@ -3197,13 +3268,38 @@ components:
           schema:
             $ref: "#/components/schemas/ApiResponse"
   schemas:
+    NodeProxyPoolRequest:
+      type: object
+      required: [node_id, name]
+      properties:
+        node_id: { type: integer, minimum: 1 }
+        name: { type: string, maxLength: 80 }
+        revision: { type: integer, minimum: 0, description: Required on update }
+        config:
+          type: object
+          writeOnly: true
+          description: Required on create; omitted on update preserves credentials. Zero path with outbounds, outbound_groups and target. Validated by Zero before encrypted storage.
     NetworkEntryRequest:
       type: object
-      required: [name, node_id, endpoint_id, address, port, enabled]
+      required: [name, node_id, address, port, enabled]
+      anyOf:
+        - required: [parent_protocol_id]
+        - required: [endpoint_id]
       properties:
         name: { type: string, maxLength: 80 }
         node_id: { type: integer, format: int64, description: Entry node A }
-        endpoint_id: { type: integer, format: int64, description: Existing landing protocol on B }
+        endpoint_id: { type: integer, format: int64, description: Legacy alias for parent_protocol_id }
+        parent_protocol_id: { type: integer, format: int64, description: Actual protocol listener on B; A only forwards opaque TCP or UDP }
+        proxy_pool_id: { type: integer, minimum: 0, description: Node-local shared pool on A. Omit to preserve; zero clears the reference. }
+        node_group_membership_changes:
+          type: array
+          items:
+            type: object
+            required: [node_group_id, expected_revision, member]
+            properties:
+              node_group_id: { type: integer, minimum: 1 }
+              expected_revision: { type: integer, minimum: 1 }
+              member: { type: boolean }
         address: { type: string, description: Client-visible address of A }
         port: { type: integer, minimum: 1, maximum: 65535 }
         public_port: { type: integer, minimum: 1, maximum: 65535, description: Defaults to port }
@@ -3877,6 +3973,9 @@ components:
         - $ref: "#/components/schemas/PlanSummary"
         - type: object
           properties:
+            description:
+              type: string
+              description: Public product description, rendered as plain text with line breaks preserved.
             primary_sku:
               $ref: "#/components/schemas/PlanSKU"
     Plan:
@@ -3968,7 +4067,8 @@ components:
         description: { type: string }
         is_enabled: { type: boolean }
         revision: { type: integer, format: int64, minimum: 1, description: Optimistic concurrency version for fields and complete endpoint membership. }
-        protocol_endpoint_count: { type: integer, format: int64, description: Number of endpoint memberships without embedding the full ID list. }
+        protocol_endpoint_count: { type: integer, format: int64, description: Number of direct endpoint memberships without embedding the full ID list. }
+        network_entry_count: { type: integer, format: int64, description: Number of independently assigned fronting services. }
         plan_count: { type: integer, format: int64, description: Number of plans bound to this group in admin list responses. }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -3980,6 +4080,10 @@ components:
           properties:
             protocol_endpoint_ids:
               type: array
+              items: { type: integer, format: int64 }
+            network_entry_ids:
+              type: array
+              description: Ordered explicit entry grants. Does not grant direct landing access. Omit on update to preserve existing entries; send an empty array to remove them.
               items: { type: integer, format: int64 }
     NodeGroupMutationResponse:
       allOf:
@@ -4456,6 +4560,7 @@ components:
           type: integer
           format: int64
           nullable: true
+        payable_amount: { type: integer, format: int64, description: "Final amount due in minor currency units, including an administrator price override." }
         amount_cents:
           type: integer
           format: int64
@@ -4475,7 +4580,8 @@ components:
         - type: object
           description: Detail projection that still excludes raw payment callback bodies.
           properties:
-            payable_amount: { type: integer, format: int64 }
+            assigned_by: { type: integer, format: int64, description: "Administrator ID for an assigned order; zero for an ordinary purchase." }
+            assignment_note: { type: string, maxLength: 500, description: "Administrator-only assignment reason." }
             paid_amount: { type: integer, format: int64 }
             refund_amount: { type: integer, format: int64 }
             discount_amount: { type: integer, format: int64 }
@@ -4811,7 +4917,7 @@ components:
         zero_kernel_contract:
           type: string
           enum: [legacy, native-local, native-local-mieru]
-          description: Active generated-config contract. native-local-mieru remains a backwards-compatible alias; Zero 0.0.15-rc.4 or newer enables attributable Mieru users based on the concrete target or installed version.
+          description: Active generated-config contract. native-local-mieru remains a backwards-compatible alias; native-local includes attributable Mieru users. Protocol support is validated by the target kernel rather than inferred from release numbers.
         zero_local_version:
           type: string
           description: Explicit locally managed Zero version for native-local contracts.
@@ -4831,7 +4937,8 @@ components:
           description: Present when the protocol is unavailable.
         minimum_zero_version:
           type: string
-          description: Minimum Zero version required by this protocol when the capability is version-gated.
+          deprecated: true
+          description: Legacy field, no longer emitted or enforced because Zero release numbering can reset.
     SetupStatus:
       type: object
       required: [installed, version]
@@ -5345,7 +5452,7 @@ components:
         protocol:
           type: string
           enum: [vmess, vless, trojan, shadowsocks, hysteria2, mieru]
-          description: Mieru requires Zero 0.0.15-rc.4 or newer on the selected node; older-node records may be disabled or deleted for recovery.
+          description: Protocol names are checked against panel support; generated configuration must pass validation and activation on the selected node. No minimum Zero release number is imposed.
         address:
           type: string
         port:
@@ -5464,6 +5571,10 @@ components:
         protocol_endpoint_ids:
           type: array
           items: { type: integer, format: int64 }
+        network_entry_ids:
+          type: array
+          description: Ordered explicit entry grants. Does not grant direct landing access. Omit on update to preserve existing entries; send an empty array to remove them.
+          items: { type: integer, format: int64 }
     NodeGroupUpdateRequest:
       type: object
       required: [expected_revision]
@@ -5476,6 +5587,10 @@ components:
           type: array
           items: { type: integer, format: int64 }
         expected_revision: { type: integer, format: int64, minimum: 1 }
+        network_entry_ids:
+          type: array
+          description: Ordered explicit entry grants. Does not grant direct landing access. Omit on update to preserve existing entries; send an empty array to remove them.
+          items: { type: integer, format: int64 }
     PlanUpdateRequest:
       type: object
       required: [expected_revision]
@@ -5498,6 +5613,16 @@ components:
         reset_policy: { type: integer, minimum: 0, maximum: 5 }
         traffic_calc_mode: { type: integer, enum: [0, 1, 2] }
         expected_revision: { type: integer, format: int64, minimum: 1 }
+    AdminOrderAssignmentRequest:
+      type: object
+      required: [user_id, plan_sku_id, note, request_id]
+      properties:
+        user_id: { type: integer, format: int64, minimum: 1 }
+        plan_sku_id: { type: integer, format: int64, minimum: 1 }
+        target_subscription_id: { type: integer, format: int64, minimum: 1, description: "Optional existing subscription belonging to the selected user, for renewal, plan change or traffic add-on." }
+        payable_amount: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991, description: "Optional override in integer minor units. Omitted uses the SKU price; zero is valid and still creates a pending order." }
+        note: { type: string, minLength: 1, maxLength: 500 }
+        request_id: { type: string, format: uuid, description: "Nonzero UUID, unique per administrator operation. Reuse only to retry an identical payload." }
     OrderCreateRequest:
       type: object
       required:

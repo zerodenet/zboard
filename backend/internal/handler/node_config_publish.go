@@ -117,8 +117,8 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	if !probe.Installed || strings.TrimSpace(probe.Version) == "" {
 		return fail(fmt.Errorf("detect installed Zero before publishing config: Zero is not installed"), "")
 	}
-	mieruAccess := zeroSupportsMieruPrincipal(probe.Version)
-	managedAccess := zeroSupportsNativeManagedAccess(probe.Version)
+	// Readiness commits only after the target accepts and activates this config.
+	mieruAccess, managedAccess := true, true
 	if mieruAccess {
 		if err := h.db.Model(&model.ProtocolEndpoint{}).
 			Where("node_id = ? AND LOWER(protocol) = ? AND mieru_principal_ready = ?", node.ID, "mieru", false).

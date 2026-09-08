@@ -241,7 +241,7 @@ func (h *handlers) applyProtocolEndpointNodeGroupMembershipChanges(tx *gorm.DB, 
 
 func validateNodeGroupMembershipAvailability(tx *gorm.DB, group model.NodeGroup) error {
 	var activeEndpointCount int64
-	if err := tx.Model(&model.NodeGroupEndpoint{}).
+	if err := credentialMemberships(tx).
 		Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
 		Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", group.ID, true).
 		Count(&activeEndpointCount).Error; err != nil {
@@ -250,6 +250,15 @@ func validateNodeGroupMembershipAvailability(tx *gorm.DB, group model.NodeGroup)
 	if activeEndpointCount > 0 {
 		return nil
 	}
+	// A group may describe entry access without granting its landing protocol.
+	var entries int64
+	if err := tx.Model(&model.NodeGroupNetworkEntry{}).Joins("JOIN network_entries ON network_entries.id = node_group_network_entries.network_entry_id").Where("node_group_id = ? AND network_entries.enabled = ?", group.ID, true).Count(&entries).Error; err != nil {
+		return err
+	}
+	if entries > 0 {
+		return nil
+	}
+
 	if group.IsEnabled {
 		return validationError("节点组关联校验失败。", map[string]string{
 			"node_group_membership_changes": fmt.Sprintf("节点组“%s”已启用，必须至少保留一个可用协议服务。", group.Name),
@@ -292,7 +301,7 @@ func (h *handlers) validateProtocolEndpointDeactivationMemberships(tx *gorm.DB, 
 	}
 	for _, membership := range memberships {
 		var otherActive int64
-		if err := tx.Model(&model.NodeGroupEndpoint{}).
+		if err := credentialMemberships(tx).
 			Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
 			Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.id <> ? AND protocol_endpoints.is_active = ?", membership.NodeGroupID, endpointID, true).
 			Count(&otherActive).Error; err != nil {

@@ -28,14 +28,15 @@ describe('Provider integration deletion', () => {
     mocks.confirm.mockResolvedValue(true)
     mocks.remove.mockResolvedValue({ id: 7, deleted: true })
   })
-  it('blocks deletion while DNS or certificate usage exists', async () => {
+  it('allows deletion with references and explains automatic local cleanup', async () => {
     mocks.list.mockResolvedValue([{ ...account, usage_count: 1 }])
     const wrapper = render()
     await flushPromises()
     await openActions(wrapper)
     const button = wrapper.findAll('button').find(item => item.text() === '删除')!
-    expect(button.attributes('disabled')).toBeDefined()
-    expect(mocks.remove).not.toHaveBeenCalled()
+    expect(button.attributes('disabled')).toBeUndefined()
+    await button.trigger('click'); await flushPromises()
+    expect(mocks.remove).toHaveBeenCalledWith(7)
     wrapper.unmount()
   })
   it('confirms and removes only the selected unused integration', async () => {
@@ -45,7 +46,7 @@ describe('Provider integration deletion', () => {
     await openActions(wrapper)
     await wrapper.findAll('button').find(item => item.text() === '删除')!.trigger('click')
     await flushPromises()
-    expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Cloudflare 账户及共享 Token') }))
+    expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Cloudflare 账户、Token') }))
     expect(mocks.remove).toHaveBeenCalledWith(7)
     expect(wrapper.text()).not.toContain('Fixture provider')
     wrapper.unmount()
@@ -87,7 +88,7 @@ describe('Provider account editing', () => {
     mocks.list.mockResolvedValue([{ ...account, usage_count: 2 }])
     const wrapper = render()
     await flushPromises()
-    expect(wrapper.text()).toContain('删除前请清理')
+    expect(wrapper.text()).toContain('删除时清理 DNS 管理记录')
     await openActions(wrapper)
     await wrapper.findAll('button').find(item => item.text() === '编辑')!.trigger('click')
     await flushPromises()

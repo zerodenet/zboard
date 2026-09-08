@@ -27,6 +27,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/internal/nodecleanup"
 )
 
 const (
@@ -36,8 +37,6 @@ const (
 	zeroLinuxGNUAsset         = "zero-linux-x86_64.tar.gz"
 	zeroLinuxMuslAsset        = "zero-linux-x86_64-musl.tar.gz"
 	zeroGenericConnectorSince = "0.0.15-rc.2"
-	zeroNativeAccessSince     = "0.0.15-rc.3"
-	zeroMieruPrincipalSince   = "0.0.15-rc.4"
 	zeroBinaryMaxBytes        = 64 << 20
 	zeroArtifactMaxBytes      = 128 << 20
 	zeroControlSocket         = "/run/zerodenet/control.sock"
@@ -433,10 +432,7 @@ func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, ope
 	return result, nil
 }
 
-func enqueueMieruReadinessPublish(tx *gorm.DB, nodeID uint, zeroVersion string) error {
-	if !zeroSupportsMieruPrincipal(zeroVersion) {
-		return nil
-	}
+func enqueueMieruReadinessPublish(tx *gorm.DB, nodeID uint) error {
 	var endpoint model.ProtocolEndpoint
 	read := tx.Where("node_id = ? AND LOWER(protocol) = ? AND is_active = ? AND mieru_principal_ready = ?",
 		nodeID, "mieru", true, false).Order("id asc").Limit(1).Find(&endpoint)
@@ -957,12 +953,12 @@ func (h *handlers) compileNodeRuntimeConfigWithOptions(node model.Node, apiKey, 
 		return nil, "", errors.New("Zero connector credential is unavailable")
 	}
 	now := time.Now().UTC()
-	nativeAccess := h.zeroNativeAccess || zeroSupportsNativeManagedAccess(zeroVersion)
-	mieruAccess := zeroSupportsMieruPrincipal(zeroVersion)
+	// Protocol contracts are validated by Zero, not inferred from release numbers.
+	nativeAccess, mieruAccess := true, true
 	var subscriptions []model.Subscription
 	if err := h.db.Model(&model.Subscription{}).
 		Select("DISTINCT subscriptions.*").
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.node_group_id = subscriptions.node_group_id").
+		Joins(credentialMembershipJoin("node_group_endpoints.node_group_id = subscriptions.node_group_id")).
 		Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
 		Where("protocol_endpoints.node_id = ? AND subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", node.ID, subStatusActive, now).
 		Find(&subscriptions).Error; err != nil {
@@ -981,7 +977,7 @@ func (h *handlers) compileNodeRuntimeConfigWithOptions(node model.Node, apiKey, 
 	}
 	inbounds := make([]map[string]interface{}, 0, len(endpoints))
 	for _, endpoint := range endpoints {
-		if supported, reason := h.protocolKernelSupportForVersion(endpoint.Protocol, zeroVersion); !supported {
+		if supported, reason := h.protocolKernelSupport(endpoint.Protocol); !supported {
 			return nil, "", fmt.Errorf("protocol endpoint %d cannot be published: %s", endpoint.ID, reason)
 		}
 		rawConfig, err := h.credentialCipher.Decrypt(endpoint.ServerConfig)
@@ -1048,18 +1044,6 @@ func zeroUsesGenericConnector(version string) bool {
 		return false
 	}
 	return zeroUsesResetBaseline(version) || compareZeroVersions(version, zeroGenericConnectorSince) >= 0
-}
-
-func zeroSupportsNativeManagedAccess(version string) bool {
-	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
-	return localZeroVersionPattern.MatchString(version) &&
-		(zeroUsesResetBaseline(version) || compareZeroVersions(version, zeroNativeAccessSince) >= 0)
-}
-
-func zeroSupportsMieruPrincipal(version string) bool {
-	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
-	return localZeroVersionPattern.MatchString(version) &&
-		(zeroUsesResetBaseline(version) || compareZeroVersions(version, zeroMieruPrincipalSince) >= 0)
 }
 
 // Core's old public release history began at v0.0.4. The reset baseline
@@ -1148,6 +1132,7 @@ func (h *handlers) installNodeKernel(node model.Node, operationID uint, binary [
 		{stage + "/runtime.json", "0600", runtimeConfig},
 		{stage + "/zero.env", "0600", []byte("ZERO_PANEL_API_KEY=" + apiKey + "\n")},
 		{stage + "/zero.service", "0644", []byte(zeroSystemdUnit)},
+		{stage + "/cleanup-zero-node.sh", "0700", nodecleanup.Script},
 	}
 	for _, file := range files {
 		if err := uploadSSHFile(conn, file.path, file.mode, file.data); err != nil {
@@ -1306,6 +1291,8 @@ mv -Tf /etc/zerodenet/current.json.next /etc/zerodenet/current.json
 systemctl daemon-reload
 systemctl enable zero >/dev/null
 systemctl restart zero
+install -d -m 0755 /usr/local/sbin
+install -m 0755 "$stage/cleanup-zero-node.sh" /usr/local/sbin/zboard-zero-cleanup
 trap - EXIT
 rm -rf "$stage"
 printf 'ZBOARD_KERNEL_ACTIVATED=1\n'
@@ -1701,7 +1688,7 @@ func (h *handlers) finishKernelOperation(operation *model.NodeOperation, probe k
 				return err
 			}
 		}
-		if err := enqueueMieruReadinessPublish(tx, operation.NodeID, release.Version); err != nil {
+		if err := enqueueMieruReadinessPublish(tx, operation.NodeID); err != nil {
 			return err
 		}
 		operation.Status, operation.Phase, operation.ResultSummary, operation.FinishedAt = "succeeded", "completed", summary, &now

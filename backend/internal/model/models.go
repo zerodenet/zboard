@@ -107,39 +107,42 @@ type Subscription struct {
 }
 
 type Order struct {
-	ID                   uint       `json:"id" gorm:"primaryKey"`
-	UserID               uint       `json:"user_id" gorm:"index"`
-	SubscriptionID       uint       `json:"subscription_id" gorm:"index"`
-	PlanID               uint       `json:"plan_id" gorm:"index"`
-	PlanSKUID            uint       `json:"plan_sku_id" gorm:"column:plan_sku_id;index"`
-	TradeNo              string     `json:"trade_no" gorm:"size:64;uniqueIndex"`
-	OrderType            string     `json:"order_type" gorm:"size:20;not null;default:new"`
-	TargetSubscriptionID *uint      `json:"target_subscription_id" gorm:"index"`
-	AmountCents          int64      `json:"amount_cents"`
-	PayableAmount        int64      `json:"payable_amount"`
-	PaidAmount           int64      `json:"paid_amount"`
-	RefundAmount         int64      `json:"refund_amount"`
-	DiscountAmount       int64      `json:"discount_amount"`
-	Currency             string     `json:"currency" gorm:"size:16;default:USD"`
-	Channel              string     `json:"channel" gorm:"size:32"`
-	ProviderTradeNo      *string    `json:"provider_trade_no" gorm:"size:128;uniqueIndex"`
-	Status               string     `json:"status" gorm:"size:32;default:pending"`
-	PlanName             string     `json:"plan_name" gorm:"size:80;not null"`
-	SKUName              string     `json:"sku_name" gorm:"size:80;not null"`
-	BillingUnit          string     `json:"billing_unit" gorm:"size:16;not null"`
-	BillingValue         int        `json:"billing_value" gorm:"not null"`
-	RenewalEffect        string     `json:"renewal_effect" gorm:"size:32;not null;default:none"`
-	TrafficBytes         int64      `json:"traffic_bytes" gorm:"not null"`
-	DeviceLimit          int        `json:"device_limit" gorm:"not null"`
-	SpeedLimitMbps       int        `json:"speed_limit_mbps" gorm:"not null;default:0"`
-	RawCallback          string     `json:"raw_callback" gorm:"type:text"`
-	PaidAt               *time.Time `json:"paid_at"`
-	CanceledAt           *time.Time `json:"canceled_at"`
-	FulfilledAt          *time.Time `json:"fulfilled_at"`
-	RefundedAt           *time.Time `json:"refunded_at"`
-	FailureReason        string     `json:"failure_reason" gorm:"size:255"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	AssignedBy            uint       `json:"-" gorm:"not null;default:0"`
+	AssignmentNote        string     `json:"-" gorm:"size:500;not null;default:''"`
+	AssignmentFingerprint string     `json:"-" gorm:"size:64;not null;default:''"`
+	ID                    uint       `json:"id" gorm:"primaryKey"`
+	UserID                uint       `json:"user_id" gorm:"index"`
+	SubscriptionID        uint       `json:"subscription_id" gorm:"index"`
+	PlanID                uint       `json:"plan_id" gorm:"index"`
+	PlanSKUID             uint       `json:"plan_sku_id" gorm:"column:plan_sku_id;index"`
+	TradeNo               string     `json:"trade_no" gorm:"size:64;uniqueIndex"`
+	OrderType             string     `json:"order_type" gorm:"size:20;not null;default:new"`
+	TargetSubscriptionID  *uint      `json:"target_subscription_id" gorm:"index"`
+	AmountCents           int64      `json:"amount_cents"`
+	PayableAmount         int64      `json:"payable_amount"`
+	PaidAmount            int64      `json:"paid_amount"`
+	RefundAmount          int64      `json:"refund_amount"`
+	DiscountAmount        int64      `json:"discount_amount"`
+	Currency              string     `json:"currency" gorm:"size:16;default:USD"`
+	Channel               string     `json:"channel" gorm:"size:32"`
+	ProviderTradeNo       *string    `json:"provider_trade_no" gorm:"size:128;uniqueIndex"`
+	Status                string     `json:"status" gorm:"size:32;default:pending"`
+	PlanName              string     `json:"plan_name" gorm:"size:80;not null"`
+	SKUName               string     `json:"sku_name" gorm:"size:80;not null"`
+	BillingUnit           string     `json:"billing_unit" gorm:"size:16;not null"`
+	BillingValue          int        `json:"billing_value" gorm:"not null"`
+	RenewalEffect         string     `json:"renewal_effect" gorm:"size:32;not null;default:none"`
+	TrafficBytes          int64      `json:"traffic_bytes" gorm:"not null"`
+	DeviceLimit           int        `json:"device_limit" gorm:"not null"`
+	SpeedLimitMbps        int        `json:"speed_limit_mbps" gorm:"not null;default:0"`
+	RawCallback           string     `json:"raw_callback" gorm:"type:text"`
+	PaidAt                *time.Time `json:"paid_at"`
+	CanceledAt            *time.Time `json:"canceled_at"`
+	FulfilledAt           *time.Time `json:"fulfilled_at"`
+	RefundedAt            *time.Time `json:"refunded_at"`
+	FailureReason         string     `json:"failure_reason" gorm:"size:255"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
 }
 
 type Node struct {
@@ -378,6 +381,7 @@ type NodeGroup struct {
 	IsEnabled           bool      `json:"is_enabled" gorm:"not null;default:true"`
 	Revision            uint64    `json:"revision" gorm:"not null;default:1"`
 	ProtocolEndpointIDs []uint    `json:"protocol_endpoint_ids" gorm:"-"`
+	NetworkEntryIDs     []uint    `json:"network_entry_ids" gorm:"-"`
 	PlanCount           int64     `json:"plan_count" gorm:"-"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`

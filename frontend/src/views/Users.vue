@@ -23,7 +23,7 @@
               <td class="numeric-column" data-column-priority="2">{{ formatNumber(user.active_subscription_count) }} / {{ formatNumber(user.total_subscription_count) }}</td>
               <td class="numeric-column" data-column-priority="3">{{ formatNumber(user.pending_order_count) }} / {{ formatNumber(user.total_order_count) }}</td>
               <td data-column-priority="3"><TimeBadge :value="user.created_at" /></td>
-              <td class="table-action-column"><RowActions :label="`${user.email} 的操作`" :trigger-key="`user-${user.id}`"><UiButton variant="secondary" size="sm" type="button" :data-user-detail-trigger="user.id" @click="openDetail(user.id)">查看详情</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id) })">查看订阅</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(user.id) })">查看订单</RouterLink><UiButton variant="ghost" size="sm" type="button" @click="openEdit(user)"><UiIcon name="edit" />账户与权限</UiButton></RowActions></td>
+              <td class="table-action-column"><RowActions :label="`${user.email} 的操作`" :trigger-key="`user-${user.id}`"><UiButton variant="secondary" size="sm" type="button" :data-user-detail-trigger="user.id" @click="openDetail(user.id)">查看详情</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id) })">查看订阅</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(user.id) })">查看订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink><UiButton variant="ghost" size="sm" type="button" @click="openEdit(user)"><UiIcon name="edit" />账户与权限</UiButton></RowActions></td>
             </tr>
           </tbody>
       </DataTable>
@@ -56,7 +56,7 @@
         </section>
         <div class="detail-action-row">
           <RouterLink class="button button-secondary button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedUserDetail.id) })">查看订阅</RouterLink>
-          <RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id) })">查看订单</RouterLink>
+          <RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id) })">查看订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id), assign: '1' })">分配订单</RouterLink>
           <UiButton variant="ghost" size="sm" type="button" @click="openEdit(selectedUserDetail)"><UiIcon name="edit" />账户与权限</UiButton>
         </div>
       </main>

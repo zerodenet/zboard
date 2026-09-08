@@ -1,12 +1,9 @@
 package handler
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
-	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -30,17 +27,20 @@ func (h *handlers) ManagedCertificateDeleteHandler(w http.ResponseWriter, r *htt
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&certificate, id).Error; err != nil {
 			return err
 		}
-		var references, running int64
-		if err := tx.Model(&model.CertificateProtocolEndpoint{}).Where("managed_certificate_id = ?", id).Count(&references).Error; err != nil {
-			return err
-		}
+		var running int64
 		if err := tx.Model(&model.CertificateOperation{}).Where("managed_certificate_id = ? AND status = ?", id, "running").Count(&running).Error; err != nil {
 			return err
 		}
-		if references > 0 || running > 0 || certificate.Status == certificateStatusIssuing || certificate.Status == certificateStatusRenewing {
-			return errors.New("请先解除协议服务引用，并等待签发或续期任务结束")
+		if running > 0 || certificate.Status == certificateStatusIssuing || certificate.Status == certificateStatusRenewing {
+			return errors.New("请等待正在执行的签发或续期任务结束")
 		}
-		return tx.Model(&certificate).Updates(map[string]interface{}{"status": resourceStatusDeleting, "auto_renew": false, "last_error": ""}).Error
+		if err := tx.Where("managed_certificate_id = ?", id).Delete(&model.CertificateProtocolEndpoint{}).Error; err != nil {
+			return err
+		}
+		if err := createAuditLog(tx, claims, "certificate.delete", fmt.Sprintf("certificate:%d", id), fmt.Sprintf("node=%d external_cleanup=not_attempted", certificate.NodeID)); err != nil {
+			return err
+		}
+		return tx.Delete(&certificate).Error
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		NotFound(w)
@@ -50,62 +50,7 @@ func (h *handlers) ManagedCertificateDeleteHandler(w http.ResponseWriter, r *htt
 		writeJSON(w, http.StatusConflict, err.Error(), nil)
 		return
 	}
-	var node model.Node
-	err = h.db.First(&node, certificate.NodeID).Error
-	if err == nil {
-		ctx, cancel := context.WithTimeout(r.Context(), certificateOperationTimeout)
-		defer cancel()
-		err = h.removeManagedCertificateRemote(ctx, node, certificate)
-	}
-	if err == nil {
-		err = h.db.Transaction(func(tx *gorm.DB) error {
-			if err := createAuditLog(tx, claims, "certificate.delete", fmt.Sprintf("certificate:%d", id), fmt.Sprintf("node=%d external_cleanup=completed", certificate.NodeID)); err != nil {
-				return err
-			}
-			return tx.Delete(&certificate).Error
-		})
-	}
-	if err != nil {
-		_ = h.db.Model(&certificate).Updates(map[string]interface{}{"status": resourceStatusDeleting, "last_error": truncateCertificateError(err.Error())}).Error
-		writeJSON(w, http.StatusBadGateway, "证书外部清理未完成，面板记录已保留；请修复后重试删除。", nil)
-		return
-	}
-	OK(w, map[string]interface{}{"id": id, "deleted": true, "remote_files_retained": false, "external_cleanup_completed": true})
-}
-
-func (h *handlers) removeManagedCertificateRemote(ctx context.Context, node model.Node, certificate model.ManagedCertificate) error {
-	// Failed issuance may have reached Certbot even before paths were persisted.
-	var attempts int64
-	if err := h.db.Model(&model.CertificateOperation{}).Where("managed_certificate_id = ?", certificate.ID).Count(&attempts).Error; err != nil {
-		return err
-	}
-	if attempts == 0 && certificate.CertPath == "" && certificate.KeyPath == "" && certificate.LastIssuedAt == nil {
-		return nil
-	}
-	if err := h.validateNodeSSH(node); err != nil {
-		return err
-	}
-	conn, _, err := h.dialNodeSSH(node)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
-	defer stop()
-	timeout := time.AfterFunc(certificateOperationTimeout, func() { _ = conn.Close() })
-	defer timeout.Stop()
-	script, err := buildCertificateDeleteScript(certificate)
-	if err != nil {
-		return err
-	}
-	output, err := h.runNodeSSHSession(conn, node, script, true)
-	if err != nil {
-		return fmt.Errorf("certificate cleanup failed: %w", err)
-	}
-	if !strings.Contains(output, "ZBOARD_CERTIFICATE_REMOVED=1") {
-		return errors.New("certificate cleanup acknowledgement missing")
-	}
-	return nil
+	OK(w, map[string]interface{}{"id": id, "deleted": true, "remote_files_retained": true, "external_cleanup_completed": false})
 }
 
 // Destructive paths derive only from the numeric ID, never editable DB paths.
