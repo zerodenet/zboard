@@ -3,10 +3,14 @@ package plugins
 import (
 	"context"
 	"errors"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"net/url"
+	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -47,7 +51,29 @@ func (m *Manager) IdentityProviders() ([]IdentityProviderView, error) {
 			return nil, err
 		}
 		if slices.Contains(v.Manifest.Capabilities, IdentityCapability) && v.ConfigRevision > 0 && m.processes[v.ID] != nil {
-			out = append(out, IdentityProviderView{ID: v.ID, Name: v.Name})
+			p := m.processes[v.ID]
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			catalog, err := p.api.ListIdentityProviders(ctx, &pluginv1.Empty{})
+			cancel()
+			if status.Code(err) == codes.Unimplemented {
+				out = append(out, IdentityProviderView{ID: v.ID, Name: v.Name})
+				continue
+			}
+			if err != nil || catalog == nil || len(catalog.Providers) > 16 {
+				continue
+			}
+			seen := map[string]bool{}
+			for _, option := range catalog.Providers {
+				if option == nil || !validProviderID(option.Id) || option.Name == "" || len(option.Name) > 100 || seen[option.Id] {
+					continue
+				}
+				seen[option.Id] = true
+				id := v.ID
+				if option.Id != "" {
+					id += "~" + option.Id
+				}
+				out = append(out, IdentityProviderView{ID: id, Name: option.Name})
+			}
 		}
 	}
 	return out, nil
@@ -67,7 +93,13 @@ func (m *Manager) identityProcess(id string) (Installation, *process, error) {
 	return v, p, nil
 }
 func validIdentityProvider(p *pluginv1.IdentityProvider) bool {
-	if p == nil || p.ClientId == "" || len(p.ClientId) > 512 || len(p.Scopes) > 16 || !slices.Contains(p.Scopes, "openid") {
+	if p == nil || p.ClientId == "" || len(p.ClientId) > 512 || len(p.Scopes) > 16 {
+		return false
+	}
+	if !validProviderID(p.ProviderId) || (p.Protocol != "" && p.Protocol != "oidc" && p.Protocol != "oauth2") {
+		return false
+	}
+	if p.Protocol != "oauth2" && !slices.Contains(p.Scopes, "openid") {
 		return false
 	}
 	for _, raw := range []string{p.Issuer, p.AuthorizationEndpoint} {
@@ -91,14 +123,18 @@ func validIdentityProvider(p *pluginv1.IdentityProvider) bool {
 func (m *Manager) IdentityProvider(ctx context.Context, id string) (IdentitySnapshot, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	v, p, err := m.identityProcess(id)
+	pluginID, providerID, _ := strings.Cut(id, "~")
+	if !validProviderID(providerID) {
+		return IdentitySnapshot{}, ErrUnavailable
+	}
+	v, p, err := m.identityProcess(pluginID)
 	if err != nil {
 		return IdentitySnapshot{}, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	info, err := p.api.GetIdentityProvider(ctx, &pluginv1.Empty{})
-	if err != nil || !validIdentityProvider(info) {
+	info, err := p.api.GetIdentityProvider(ctx, &pluginv1.IdentityProviderRequest{ProviderId: providerID})
+	if err != nil || !validIdentityProvider(info) || info.ProviderId != providerID {
 		return IdentitySnapshot{}, errors.New("identity provider unavailable or invalid")
 	}
 	return IdentitySnapshot{ID: v.ID, Publisher: v.Publisher, Generation: v.Generation, Revision: v.ConfigRevision, Provider: info}, nil
@@ -146,14 +182,26 @@ func (m *Manager) ExchangeIdentity(ctx context.Context, snapshot IdentitySnapsho
 	if err != nil {
 		return err
 	}
-	if snapshot.Provider == nil || request.Issuer != snapshot.Provider.Issuer {
+	if snapshot.Provider == nil || request.Issuer != snapshot.Provider.Issuer || request.ProviderId != snapshot.Provider.ProviderId {
 		return ErrConflict
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	identity, err := p.api.ExchangeIdentity(ctx, request)
-	if err != nil || identity == nil || identity.Issuer != request.Issuer || identity.Subject == "" || len(identity.Subject) > 512 {
+	if err != nil || identity == nil || identity.Issuer != request.Issuer || identity.Subject == "" || len(identity.Subject) > 512 || len(identity.Email) > 254 {
 		return errors.New("provider identity verification failed")
 	}
 	return m.identityTransaction(snapshot, func(tx *gorm.DB) error { return commit(identity, tx) })
+}
+
+var providerIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
+
+func validProviderID(id string) bool { return id == "" || providerIDPattern.MatchString(id) }
+
+// IdentityKey scopes bindings to a selected provider within the plugin.
+func (s IdentitySnapshot) IdentityKey() string {
+	if s.Provider != nil && s.Provider.ProviderId != "" {
+		return s.ID + "~" + s.Provider.ProviderId
+	}
+	return s.ID
 }

@@ -195,7 +195,7 @@ func (h *handlers) ExternalAuthCallbackHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	result := externalAuthCompletion{Provider: flow.Provider}
-	err = h.identityProviders.ExchangeIdentity(r.Context(), flow.Provider, &pluginv1.IdentityExchange{Code: code, RedirectUri: flow.RedirectURI, Nonce: flow.Nonce, PkceVerifier: flow.Verifier, Issuer: flow.Provider.Provider.Issuer}, func(identity *pluginv1.VerifiedIdentity, tx *gorm.DB) error {
+	err = h.identityProviders.ExchangeIdentity(r.Context(), flow.Provider, &pluginv1.IdentityExchange{Code: code, RedirectUri: flow.RedirectURI, Nonce: flow.Nonce, PkceVerifier: flow.Verifier, Issuer: flow.Provider.Provider.Issuer, ProviderId: flow.Provider.Provider.ProviderId}, func(identity *pluginv1.VerifiedIdentity, tx *gorm.DB) error {
 		return h.resolveExternalIdentity(tx, flow, identity, &result)
 	})
 	if err != nil {
@@ -221,21 +221,74 @@ func (h *handlers) ExternalAuthFinishHandler(w http.ResponseWriter, r *http.Requ
 		Forbidden(w, "invalid authentication origin or content type")
 		return
 	}
+	var input externalRegistrationInput
+	if !pluginBody(w, r, &input) {
+		return
+	}
 	result, err := h.externalAuth.finish(cookieValue(r, origin, resultCookie))
 	authCookie(w, origin, resultCookie, "", -1)
-	if err != nil || h.identityProviders == nil {
-		Unauthorized(w, "login expired or failed; sign in with email and link your account first")
+	if err != nil || result.PasswordSetup || h.identityProviders == nil {
+		Unauthorized(w, "login expired or failed; restart third-party authorization")
 		return
+	}
+	if result.Identity != nil && (!result.Identity.EmailVerified || !validEmail(normalizeEmail(result.Identity.Email))) {
+		if input.Email == "" && input.VerificationCode == "" {
+			if err := h.identityProviders.WithIdentityProvider(result.Provider, func(tx *gorm.DB) error {
+				var installation model.Installation
+				if err := tx.First(&installation, 1).Error; err != nil {
+					return err
+				}
+				if !installation.AllowRegistration {
+					return errors.New("registration disabled")
+				}
+				return nil
+			}); err != nil {
+				Forbidden(w, "registration unavailable")
+				return
+			}
+			ticket, err := h.externalAuth.complete(result)
+			if err != nil {
+				ServiceUnavailable(w, "registration unavailable")
+				return
+			}
+			authCookie(w, origin, resultCookie, ticket, 300)
+			OK(w, map[string]any{"registration_required": true, "email": result.Identity.Email})
+			return
+		}
+		if err := h.recordExternalEmailAttempt(input); err != nil {
+			Unauthorized(w, "email verification failed; restart authorization")
+			return
+		}
 	}
 	var output any
 	err = h.identityProviders.WithIdentityProvider(result.Provider, func(tx *gorm.DB) error {
 		var err error
-		output, err = h.finishExternalIdentity(tx, result)
+		output, err = h.finishExternalIdentityRegistration(tx, result, input)
 		return err
 	})
 	if err != nil {
 		Unauthorized(w, "identity or account is no longer available")
 		return
+	}
+	if response, ok := output.(map[string]any); ok {
+		if public, ok := response["user"].(userPublic); ok {
+			var user model.User
+			if h.db.First(&user, public.ID).Error == nil {
+				if result.Identity != nil {
+					_ = h.enqueueRegistrationWelcome(user)
+				}
+				if user.Password == "!external" {
+					identityID := result.IdentityID
+					if result.Identity != nil {
+						identityID = externalIdentityID(result.Provider, result.Identity)
+					}
+					proof, err := h.externalAuth.complete(externalAuthCompletion{Provider: result.Provider, UserID: user.ID, IdentityID: identityID, PasswordSetup: true})
+					if err == nil {
+						authCookie(w, origin, passwordSetupCookie, proof, 300)
+					}
+				}
+			}
+		}
 	}
 	OK(w, output)
 }

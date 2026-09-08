@@ -60,8 +60,15 @@ func TestRealIdentityPluginRevokesUncommittedCoreWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	providers, err := m.IdentityProviders()
-	if err != nil || len(providers) != 1 {
+	if err != nil || len(providers) != 2 {
 		t.Fatal("identity catalog missing", err)
+	}
+	selected, err := m.IdentityProvider(ctx, v.ID+"~second")
+	if err != nil || selected.ID != v.ID || selected.Provider.ProviderId != "second" || selected.IdentityKey() != v.ID+"~second" {
+		t.Fatal("provider selection failed", err)
+	}
+	if err := m.ExchangeIdentity(ctx, selected, &pluginv1.IdentityExchange{Code: "valid", Issuer: selected.Provider.Issuer}, func(*pluginv1.VerifiedIdentity, *gorm.DB) error { t.Fatal("wrong provider reached core"); return nil }); err == nil {
+		t.Fatal("provider mismatch accepted")
 	}
 	snapshot, err := m.IdentityProvider(ctx, v.ID)
 	if err != nil {

@@ -38,6 +38,9 @@ type registrationCodeRequest struct {
 }
 
 func (h *handlers) RegistrationEmailCodeHandler(w http.ResponseWriter, r *http.Request) {
+ h.registrationEmailCodeHandler(w,r,false)
+}
+func (h *handlers) registrationEmailCodeHandler(w http.ResponseWriter, r *http.Request, external bool) {
 	var installation model.Installation
 	if err := h.db.First(&installation, 1).Error; err != nil {
 		ServerError(w, err)
@@ -52,7 +55,7 @@ func (h *handlers) RegistrationEmailCodeHandler(w http.ResponseWriter, r *http.R
 		ServerError(w, err)
 		return
 	}
-	if !enabled {
+	if !enabled && !external {
 		BadRequest(w, "registration email verification is disabled")
 		return
 	}

@@ -6,24 +6,32 @@ option go_package = "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1;plugin
 service PluginControl {
  rpc GetInfo(Empty) returns (Info);
  rpc Health(Empty) returns (HealthResult);
+ // Optional safe configuration projection; secrets must be omitted.
+ rpc DescribeConfig(ConfigRequest) returns (ConfigResult);
  rpc ValidateConfig(ConfigRequest) returns (ConfigResult);
  rpc ApplyConfig(ConfigRequest) returns (HealthResult);
  rpc TestConfig(ConfigRequest) returns (HealthResult);
  // Requires zboard.identity.provider.v1. Host owns redirects, state and sessions.
- rpc GetIdentityProvider(Empty) returns (IdentityProvider);
+ rpc ListIdentityProviders(Empty) returns (IdentityProviderList);
+ rpc GetIdentityProvider(IdentityProviderRequest) returns (IdentityProvider);
  rpc ExchangeIdentity(IdentityExchange) returns (VerifiedIdentity);
 }
 message Empty {}
 message Info { string id = 1; string version = 2; uint32 protocol = 3; repeated string capabilities = 4; }
-message ConfigRequest { bytes config_json = 1; uint64 revision = 2; }
+message ConfigRequest { bytes config_json = 1; uint64 revision = 2; bytes previous_config_json = 3; }
 message ConfigResult { bytes normalized_json = 1; }
 message HealthResult { bool healthy = 1; string message = 2; }
 
+message IdentityProviderRequest { string provider_id = 1; }
+message IdentityProviderOption { string id = 1; string name = 2; }
+message IdentityProviderList { repeated IdentityProviderOption providers = 1; }
 message IdentityProvider {
  string issuer = 1;
  string authorization_endpoint = 2;
  string client_id = 3;
  repeated string scopes = 4;
+ string provider_id = 5;
+ string protocol = 6;
 }
 message IdentityExchange {
  string code = 1;
@@ -31,9 +39,12 @@ message IdentityExchange {
  string nonce = 3;
  string pkce_verifier = 4;
  string issuer = 5;
+ string provider_id = 6;
 }
 // An assertion only: it does not carry user IDs, permissions or host commands.
 message VerifiedIdentity {
  string issuer = 1;
  string subject = 2;
+ string email = 3;
+ bool email_verified = 4;
 }

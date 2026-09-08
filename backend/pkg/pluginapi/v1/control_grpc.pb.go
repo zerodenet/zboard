@@ -19,13 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PluginControl_GetInfo_FullMethodName             = "/zboard.plugin.v1.PluginControl/GetInfo"
-	PluginControl_Health_FullMethodName              = "/zboard.plugin.v1.PluginControl/Health"
-	PluginControl_ValidateConfig_FullMethodName      = "/zboard.plugin.v1.PluginControl/ValidateConfig"
-	PluginControl_ApplyConfig_FullMethodName         = "/zboard.plugin.v1.PluginControl/ApplyConfig"
-	PluginControl_TestConfig_FullMethodName          = "/zboard.plugin.v1.PluginControl/TestConfig"
-	PluginControl_GetIdentityProvider_FullMethodName = "/zboard.plugin.v1.PluginControl/GetIdentityProvider"
-	PluginControl_ExchangeIdentity_FullMethodName    = "/zboard.plugin.v1.PluginControl/ExchangeIdentity"
+	PluginControl_GetInfo_FullMethodName               = "/zboard.plugin.v1.PluginControl/GetInfo"
+	PluginControl_Health_FullMethodName                = "/zboard.plugin.v1.PluginControl/Health"
+	PluginControl_DescribeConfig_FullMethodName        = "/zboard.plugin.v1.PluginControl/DescribeConfig"
+	PluginControl_ValidateConfig_FullMethodName        = "/zboard.plugin.v1.PluginControl/ValidateConfig"
+	PluginControl_ApplyConfig_FullMethodName           = "/zboard.plugin.v1.PluginControl/ApplyConfig"
+	PluginControl_TestConfig_FullMethodName            = "/zboard.plugin.v1.PluginControl/TestConfig"
+	PluginControl_ListIdentityProviders_FullMethodName = "/zboard.plugin.v1.PluginControl/ListIdentityProviders"
+	PluginControl_GetIdentityProvider_FullMethodName   = "/zboard.plugin.v1.PluginControl/GetIdentityProvider"
+	PluginControl_ExchangeIdentity_FullMethodName      = "/zboard.plugin.v1.PluginControl/ExchangeIdentity"
 )
 
 // PluginControlClient is the client API for PluginControl service.
@@ -36,11 +38,14 @@ const (
 type PluginControlClient interface {
 	GetInfo(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Info, error)
 	Health(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*HealthResult, error)
+	// Optional safe configuration projection; secrets must be omitted.
+	DescribeConfig(ctx context.Context, in *ConfigRequest, opts ...grpc.CallOption) (*ConfigResult, error)
 	ValidateConfig(ctx context.Context, in *ConfigRequest, opts ...grpc.CallOption) (*ConfigResult, error)
 	ApplyConfig(ctx context.Context, in *ConfigRequest, opts ...grpc.CallOption) (*HealthResult, error)
 	TestConfig(ctx context.Context, in *ConfigRequest, opts ...grpc.CallOption) (*HealthResult, error)
 	// Requires zboard.identity.provider.v1. Host owns redirects, state and sessions.
-	GetIdentityProvider(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*IdentityProvider, error)
+	ListIdentityProviders(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*IdentityProviderList, error)
+	GetIdentityProvider(ctx context.Context, in *IdentityProviderRequest, opts ...grpc.CallOption) (*IdentityProvider, error)
 	ExchangeIdentity(ctx context.Context, in *IdentityExchange, opts ...grpc.CallOption) (*VerifiedIdentity, error)
 }
 
@@ -66,6 +71,16 @@ func (c *pluginControlClient) Health(ctx context.Context, in *Empty, opts ...grp
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(HealthResult)
 	err := c.cc.Invoke(ctx, PluginControl_Health_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pluginControlClient) DescribeConfig(ctx context.Context, in *ConfigRequest, opts ...grpc.CallOption) (*ConfigResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfigResult)
+	err := c.cc.Invoke(ctx, PluginControl_DescribeConfig_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +117,17 @@ func (c *pluginControlClient) TestConfig(ctx context.Context, in *ConfigRequest,
 	return out, nil
 }
 
-func (c *pluginControlClient) GetIdentityProvider(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*IdentityProvider, error) {
+func (c *pluginControlClient) ListIdentityProviders(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*IdentityProviderList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IdentityProviderList)
+	err := c.cc.Invoke(ctx, PluginControl_ListIdentityProviders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pluginControlClient) GetIdentityProvider(ctx context.Context, in *IdentityProviderRequest, opts ...grpc.CallOption) (*IdentityProvider, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(IdentityProvider)
 	err := c.cc.Invoke(ctx, PluginControl_GetIdentityProvider_FullMethodName, in, out, cOpts...)
@@ -130,11 +155,14 @@ func (c *pluginControlClient) ExchangeIdentity(ctx context.Context, in *Identity
 type PluginControlServer interface {
 	GetInfo(context.Context, *Empty) (*Info, error)
 	Health(context.Context, *Empty) (*HealthResult, error)
+	// Optional safe configuration projection; secrets must be omitted.
+	DescribeConfig(context.Context, *ConfigRequest) (*ConfigResult, error)
 	ValidateConfig(context.Context, *ConfigRequest) (*ConfigResult, error)
 	ApplyConfig(context.Context, *ConfigRequest) (*HealthResult, error)
 	TestConfig(context.Context, *ConfigRequest) (*HealthResult, error)
 	// Requires zboard.identity.provider.v1. Host owns redirects, state and sessions.
-	GetIdentityProvider(context.Context, *Empty) (*IdentityProvider, error)
+	ListIdentityProviders(context.Context, *Empty) (*IdentityProviderList, error)
+	GetIdentityProvider(context.Context, *IdentityProviderRequest) (*IdentityProvider, error)
 	ExchangeIdentity(context.Context, *IdentityExchange) (*VerifiedIdentity, error)
 	mustEmbedUnimplementedPluginControlServer()
 }
@@ -152,6 +180,9 @@ func (UnimplementedPluginControlServer) GetInfo(context.Context, *Empty) (*Info,
 func (UnimplementedPluginControlServer) Health(context.Context, *Empty) (*HealthResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method Health not implemented")
 }
+func (UnimplementedPluginControlServer) DescribeConfig(context.Context, *ConfigRequest) (*ConfigResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method DescribeConfig not implemented")
+}
 func (UnimplementedPluginControlServer) ValidateConfig(context.Context, *ConfigRequest) (*ConfigResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method ValidateConfig not implemented")
 }
@@ -161,7 +192,10 @@ func (UnimplementedPluginControlServer) ApplyConfig(context.Context, *ConfigRequ
 func (UnimplementedPluginControlServer) TestConfig(context.Context, *ConfigRequest) (*HealthResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method TestConfig not implemented")
 }
-func (UnimplementedPluginControlServer) GetIdentityProvider(context.Context, *Empty) (*IdentityProvider, error) {
+func (UnimplementedPluginControlServer) ListIdentityProviders(context.Context, *Empty) (*IdentityProviderList, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListIdentityProviders not implemented")
+}
+func (UnimplementedPluginControlServer) GetIdentityProvider(context.Context, *IdentityProviderRequest) (*IdentityProvider, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetIdentityProvider not implemented")
 }
 func (UnimplementedPluginControlServer) ExchangeIdentity(context.Context, *IdentityExchange) (*VerifiedIdentity, error) {
@@ -224,6 +258,24 @@ func _PluginControl_Health_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PluginControl_DescribeConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginControlServer).DescribeConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginControl_DescribeConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginControlServer).DescribeConfig(ctx, req.(*ConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PluginControl_ValidateConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ConfigRequest)
 	if err := dec(in); err != nil {
@@ -278,8 +330,26 @@ func _PluginControl_TestConfig_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
-func _PluginControl_GetIdentityProvider_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _PluginControl_ListIdentityProviders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginControlServer).ListIdentityProviders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginControl_ListIdentityProviders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginControlServer).ListIdentityProviders(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PluginControl_GetIdentityProvider_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IdentityProviderRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -291,7 +361,7 @@ func _PluginControl_GetIdentityProvider_Handler(srv interface{}, ctx context.Con
 		FullMethod: PluginControl_GetIdentityProvider_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(PluginControlServer).GetIdentityProvider(ctx, req.(*Empty))
+		return srv.(PluginControlServer).GetIdentityProvider(ctx, req.(*IdentityProviderRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -330,6 +400,10 @@ var PluginControl_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _PluginControl_Health_Handler,
 		},
 		{
+			MethodName: "DescribeConfig",
+			Handler:    _PluginControl_DescribeConfig_Handler,
+		},
+		{
 			MethodName: "ValidateConfig",
 			Handler:    _PluginControl_ValidateConfig_Handler,
 		},
@@ -340,6 +414,10 @@ var PluginControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TestConfig",
 			Handler:    _PluginControl_TestConfig_Handler,
+		},
+		{
+			MethodName: "ListIdentityProviders",
+			Handler:    _PluginControl_ListIdentityProviders_Handler,
 		},
 		{
 			MethodName: "GetIdentityProvider",

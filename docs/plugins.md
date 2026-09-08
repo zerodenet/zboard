@@ -91,7 +91,7 @@ parent.postMessage({
 
 该 SDK 当前没有宿主业务回调、通用命令、事件订阅或 KV API；需要业务扩展时先在核心设计专用能力，未开放能力不能通过自定义方法绕过。
 
-身份提供方插件额外实现 GetIdentityProvider 和 ExchangeIdentity。完整绑定、回调与核心会话契约见 [插件身份提供方](plugin-identity.md)。认证能力不向 iframe 桥开放。
+身份提供方插件额外实现 ListIdentityProviders、GetIdentityProvider 和 ExchangeIdentity。完整注册、绑定、回调与核心会话契约见 [插件身份提供方](plugin-identity.md)。认证能力不向 iframe 桥开放。
 
 ## 提供市场目录
 
@@ -127,3 +127,5 @@ go -C backend run ./tools/pluginpackager \
 打包器输出 `{payload, signature}`，对紧凑 payload 的精确原始字节签名。发布该文件并设置 `plugins.catalog_url`；不要通过再格式化或转义修改 payload。宿主校验目录有效期与签名，安装时再次校验包，旧页面选择的摘要过期会返回冲突并要求刷新。
 
 没有配置目录时市场显示空状态，离线导入仍可用。本仓库不预置公共插件源，也不包含在线开发者上架服务。
+
+第三方登录与注册、多提供方快捷配置、自定义 OAuth2 字段映射和配置密钥保留契约见 [插件身份能力](plugin-identity.md)。配置读取可包含插件投影的公开字段；密钥保持隐藏。

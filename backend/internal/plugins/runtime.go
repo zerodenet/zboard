@@ -54,7 +54,7 @@ func startProcess(ctx context.Context, root string, p *Package) (*process, error
 		SecureConfig: &hcplugin.SecureConfig{Checksum: checksum, Hash: sha256.New()}, StartTimeout: 10 * time.Second,
 		Logger: hclog.NewNullLogger(), SyncStdout: io.Discard, SyncStderr: io.Discard,
 		UnixSocketConfig: &hcplugin.UnixSocketConfig{TempDir: filepath.Join(root, "sockets")},
-		GRPCDialOptions:  []grpc.DialOption{grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(128<<10), grpc.MaxCallSendMsgSize(128<<10))},
+		GRPCDialOptions:  []grpc.DialOption{grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(128<<10), grpc.MaxCallSendMsgSize(256<<10))},
 	})
 	rpc, err := client.Client()
 	if err != nil {
@@ -92,8 +92,12 @@ func (p *process) close() {
 		os.RemoveAll(p.directory)
 	}
 }
-func (p *process) apply(ctx context.Context, raw []byte, rev uint64) ([]byte, error) {
-	normalized, err := p.api.ValidateConfig(ctx, &pluginv1.ConfigRequest{ConfigJson: raw, Revision: rev})
+func (p *process) apply(ctx context.Context, raw []byte, rev uint64, previous ...[]byte) ([]byte, error) {
+	request := &pluginv1.ConfigRequest{ConfigJson: raw, Revision: rev}
+	if len(previous) > 0 {
+		request.PreviousConfigJson = previous[0]
+	}
+	normalized, err := p.api.ValidateConfig(ctx, request)
 	if err != nil || normalized == nil || validConfig(normalized.NormalizedJson) != nil {
 		return nil, errors.New("plugin rejected configuration")
 	}

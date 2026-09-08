@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/plugins"
+	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
 )
 
 type externalAuthFlow struct {
@@ -23,11 +24,13 @@ type externalAuthFlow struct {
 	Expires      time.Time
 }
 type externalAuthCompletion struct {
-	Provider   plugins.IdentitySnapshot
-	UserID     uint
-	IdentityID string
-	Linked     bool
-	Expires    time.Time
+	Identity      *pluginv1.VerifiedIdentity
+	PasswordSetup bool
+	Provider      plugins.IdentitySnapshot
+	UserID        uint
+	IdentityID    string
+	Linked        bool
+	Expires       time.Time
 }
 type externalAuthState struct {
 	mu      sync.Mutex
@@ -100,7 +103,13 @@ func (s *externalAuthState) complete(result externalAuthCompletion) (string, err
 	if err != nil {
 		return "", err
 	}
-	result.Expires = time.Now().Add(time.Minute)
+	if result.Expires.IsZero() {
+		ttl := time.Minute
+		if result.Identity != nil || result.PasswordSetup {
+			ttl = 5 * time.Minute
+		}
+		result.Expires = time.Now().Add(ttl)
+	}
 	s.results[ticket] = result
 	return ticket, nil
 }
@@ -118,4 +127,15 @@ func (s *externalAuthState) finish(ticket string) (externalAuthCompletion, error
 func pkceChallenge(verifier string) string {
 	sum := sha256.Sum256([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func (s *externalAuthState) peek(ticket string) (externalAuthCompletion, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clean(time.Now())
+	result, ok := s.results[ticket]
+	if !ok {
+		return result, errors.New("invalid or expired authentication result")
+	}
+	return result, nil
 }

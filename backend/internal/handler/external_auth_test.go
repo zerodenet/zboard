@@ -24,6 +24,7 @@ type fakeIdentityRuntime struct {
 	snapshot  plugins.IdentitySnapshot
 	disabled  bool
 	exchanges int
+	identity  *pluginv1.VerifiedIdentity
 }
 
 func (f *fakeIdentityRuntime) IdentityProviders() ([]plugins.IdentityProviderView, error) {
@@ -44,7 +45,11 @@ func (f *fakeIdentityRuntime) ExchangeIdentity(_ context.Context, s plugins.Iden
 		return errors.New("missing core authentication constraints")
 	}
 	return f.WithIdentityProvider(s, func(tx *gorm.DB) error {
-		return commit(&pluginv1.VerifiedIdentity{Issuer: r.Issuer, Subject: "subject-123"}, tx)
+		identity := f.identity
+		if identity == nil {
+			identity = &pluginv1.VerifiedIdentity{Issuer: r.Issuer, Subject: "subject-123"}
+		}
+		return commit(identity, tx)
 	})
 }
 func identityTestHandlers(t *testing.T) (*handlers, string, *fakeIdentityRuntime) {
@@ -52,6 +57,7 @@ func identityTestHandlers(t *testing.T) (*handlers, string, *fakeIdentityRuntime
 	if err := h.db.Create(&model.Installation{ID: 1, SiteURL: "https://panel.example.test", AllowRegistration: false}).Error; err != nil {
 		t.Fatal(err)
 	}
+	h.db.Model(&model.Installation{}).Where("id = ?", 1).Update("allow_registration", false)
 	hash, _ := bcrypt.GenerateFromPassword([]byte("account-password"), bcrypt.MinCost)
 	if err := h.db.Model(&model.User{}).Where("id = ?", 1).Update("password", string(hash)).Error; err != nil {
 		t.Fatal(err)

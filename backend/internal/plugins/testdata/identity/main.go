@@ -21,8 +21,8 @@ func (*server) ValidateConfig(_ context.Context, r *pluginv1.ConfigRequest) (*pl
 func (*server) ApplyConfig(context.Context, *pluginv1.ConfigRequest) (*pluginv1.HealthResult, error) {
 	return &pluginv1.HealthResult{Healthy: true}, nil
 }
-func (*server) GetIdentityProvider(context.Context, *pluginv1.Empty) (*pluginv1.IdentityProvider, error) {
-	return &pluginv1.IdentityProvider{Issuer: "https://id.example.test", AuthorizationEndpoint: "https://id.example.test/auth", ClientId: "test", Scopes: []string{"openid"}}, nil
+func (*server) GetIdentityProvider(_ context.Context, r *pluginv1.IdentityProviderRequest) (*pluginv1.IdentityProvider, error) {
+	return &pluginv1.IdentityProvider{Issuer: "https://id.example.test", AuthorizationEndpoint: "https://id.example.test/auth", ClientId: "test", Scopes: []string{"openid"}, ProviderId: r.ProviderId}, nil
 }
 func (*server) ExchangeIdentity(_ context.Context, r *pluginv1.IdentityExchange) (*pluginv1.VerifiedIdentity, error) {
 	subject := "subject"
@@ -32,3 +32,7 @@ func (*server) ExchangeIdentity(_ context.Context, r *pluginv1.IdentityExchange)
 	return &pluginv1.VerifiedIdentity{Issuer: r.Issuer, Subject: subject}, nil
 }
 func main() { pluginv1.Serve(&server{}) }
+
+func (*server) ListIdentityProviders(context.Context, *pluginv1.Empty) (*pluginv1.IdentityProviderList, error) {
+	return &pluginv1.IdentityProviderList{Providers: []*pluginv1.IdentityProviderOption{{Id: "", Name: "Legacy"}, {Id: "second", Name: "Second"}}}, nil
+}

@@ -1,9 +1,9 @@
 <template>
   <section v-if="providers.length" class="identity-login" aria-label="第三方登录">
-    <p>已绑定第三方账号？</p>
-    <UiButton v-for="provider in providers" :key="provider.id" type="button" variant="secondary" :disabled="busy" @click="start(provider.id)">使用 {{ provider.name }}</UiButton>
+    <p>使用第三方账号继续</p>
+    <UiButton v-for="provider in providers" :key="provider.id" type="button" variant="secondary" :disabled="busy" @click="start(provider.id)">使用 {{ provider.name }} 登录</UiButton>
     <p v-if="error" role="alert">{{ error }}</p>
-    <small>首次使用请先通过邮箱登录，在账户安全中绑定。</small>
+    <small>首次授权可注册账户，受本站注册设置控制；已有同邮箱账户请先登录后绑定。</small>
   </section>
 </template>
 <script setup lang="ts">

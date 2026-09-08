@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"slices"
 	"time"
 
@@ -31,15 +33,48 @@ func (m *Manager) config(v Installation) ([]byte, error) {
 }
 
 type ConfigView struct {
-	Revision   uint64 `json:"revision"`
-	Configured bool   `json:"configured"`
+	Config     json.RawMessage `json:"config,omitempty"`
+	Revision   uint64          `json:"revision"`
+	Configured bool            `json:"configured"`
 }
 
 func (m *Manager) Config(id string) (ConfigView, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	v, err := m.load(id)
-	return ConfigView{Revision: v.ConfigRevision, Configured: v.ConfigCiphertext != ""}, err
+	view := ConfigView{Revision: v.ConfigRevision, Configured: v.ConfigCiphertext != ""}
+	if err != nil || v.Manifest.Components.Server == nil || !slices.Contains(v.Manifest.Capabilities, "zboard.config.v1") || v.ConfigCiphertext == "" {
+		return view, err
+	}
+	if err := m.guard(m.db); err != nil {
+		return view, err
+	}
+	raw, err := m.config(v)
+	if err != nil {
+		return view, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	proc := m.processes[id]
+	if proc == nil {
+		proc, err = m.prepare(ctx, v)
+		if err != nil {
+			return view, err
+		}
+		defer proc.close()
+	}
+	projected, err := proc.api.DescribeConfig(ctx, &pluginv1.ConfigRequest{ConfigJson: raw, Revision: v.ConfigRevision})
+	if status.Code(err) == codes.Unimplemented {
+		return view, nil
+	}
+	if err != nil {
+		return view, errors.New("configuration view unavailable")
+	}
+	if projected == nil || validConfig(projected.NormalizedJson) != nil {
+		return view, errors.New("invalid configuration view")
+	}
+	view.Config = projected.NormalizedJson
+	return view, nil
 }
 func (m *Manager) SaveConfig(ctx context.Context, id, actor string, revision uint64, raw []byte) (ConfigView, error) {
 	m.mu.Lock()
@@ -94,7 +129,7 @@ func (m *Manager) saveConfigLocked(ctx context.Context, id, actor string, revisi
 	}
 	next := raw
 	if proc != nil {
-		next, err = proc.apply(ctx, raw, revision+1)
+		next, err = proc.apply(ctx, raw, revision+1, old)
 	}
 	if err == nil {
 		var encrypted string
