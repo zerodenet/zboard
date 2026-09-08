@@ -106,10 +106,21 @@
         <button aria-label="关闭插件详情" @click="selected = null">关闭</button>
       </header>
       <p v-if="hasConfig">
-        配置加密保存，已存值不会回显。提交下方 JSON 会完整替换旧配置。
+        配置加密保存，密钥不会回显。优先使用插件提供的配置页面。
       </p>
       <p v-if="!hasConfig">此插件未声明配置能力。</p>
       <div v-if="hasConfig && selected.state !== 'uninstalled'">
+        <PluginFrame
+          v-if="configPage && selected.compatibility.compatible"
+          :plugin-id="selected.id"
+          :page-id="configPage.id"
+          surface="admin"
+          configuration
+          title="插件配置页面"
+        />
+        <details :open="!configPage">
+          <summary>高级：直接编辑完整配置 JSON</summary>
+          <p>提交将完整替换旧配置，请包含需要保留的全部提供方和密钥。</p>
         <label for="plugin-config">插件配置 JSON</label
         ><UiTextarea
           id="plugin-config"
@@ -130,14 +141,8 @@
             >测试已保存配置</UiButton
           >
         </div>
-        <PluginFrame
-          v-if="configPage && selected.compatibility.compatible"
-          :plugin-id="selected.id"
-          :page-id="configPage.id"
-          surface="admin"
-          configuration
-          title="插件配置页面"
-        />
+
+        </details>
       </div>
       <template
         v-if="

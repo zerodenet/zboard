@@ -38,7 +38,7 @@ type registrationCodeRequest struct {
 }
 
 func (h *handlers) RegistrationEmailCodeHandler(w http.ResponseWriter, r *http.Request) {
- h.registrationEmailCodeHandler(w,r,false)
+	h.registrationEmailCodeHandler(w, r, false)
 }
 func (h *handlers) registrationEmailCodeHandler(w http.ResponseWriter, r *http.Request, external bool) {
 	var installation model.Installation
