@@ -1047,19 +1047,27 @@ func zeroUsesGenericConnector(version string) bool {
 	if !localZeroVersionPattern.MatchString(version) {
 		return false
 	}
-	return compareZeroVersions(version, zeroGenericConnectorSince) >= 0
+	return zeroUsesResetBaseline(version) || compareZeroVersions(version, zeroGenericConnectorSince) >= 0
 }
 
 func zeroSupportsNativeManagedAccess(version string) bool {
 	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
 	return localZeroVersionPattern.MatchString(version) &&
-		compareZeroVersions(version, zeroNativeAccessSince) >= 0
+		(zeroUsesResetBaseline(version) || compareZeroVersions(version, zeroNativeAccessSince) >= 0)
 }
 
 func zeroSupportsMieruPrincipal(version string) bool {
 	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
 	return localZeroVersionPattern.MatchString(version) &&
-		compareZeroVersions(version, zeroMieruPrincipalSince) >= 0
+		(zeroUsesResetBaseline(version) || compareZeroVersions(version, zeroMieruPrincipalSince) >= 0)
+}
+
+// Core's old public release history began at v0.0.4. The reset baseline
+// occupies the previously unused lower range without granting capabilities
+// to old v0.0.4-v0.0.15 installations that still require the legacy gates.
+func zeroUsesResetBaseline(version string) bool {
+	return compareZeroVersions(version, "0.0.1") >= 0 &&
+		compareZeroVersions(version, "0.0.4-0") < 0
 }
 
 func zeroConnectorAPIConfig(panelURL string, nodeID uint, apiKey string, allowInsecure bool) map[string]interface{} {

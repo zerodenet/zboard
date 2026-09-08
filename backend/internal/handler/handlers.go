@@ -86,8 +86,8 @@ var supportedProtocols = map[string]struct{}{
 	"mieru":       {},
 }
 
-const protocolKernelMieruUnavailableReason = "Mieru 托管归属需要 Zero 0.0.15-rc.4 或更高版本；请先升级所选节点内核。"
-const protocolKernelManagedUsersUnavailableReason = "Trojan 和 Hysteria2 的订阅用户模式需要 Zero 0.0.15-rc.3 或更高版本；不支持退化为共享密码，请先升级所选节点内核。"
+const protocolKernelMieruUnavailableReason = "Mieru 托管归属需要统一正式版 Zero v0.0.1，或旧编号 0.0.15-rc.4 及以上版本；请先升级所选节点内核。"
+const protocolKernelManagedUsersUnavailableReason = "Trojan 和 Hysteria2 的订阅用户模式需要统一正式版 Zero v0.0.1，或旧编号 0.0.15-rc.3 及以上版本；不支持退化为共享密码，请先升级所选节点内核。"
 
 type authClaims struct {
 	UserID  uint   `json:"uid"`

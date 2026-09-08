@@ -115,6 +115,9 @@ jobs:
             printf '%s\n\n' "${note_title}"
             git log --no-merges --reverse --pretty=format:'- %s (%h)' "${note_scope}"
           } > dist/RELEASE_NOTES.md
+          if [ "${GITHUB_REF_NAME}" = "v0.0.1" ]; then
+            cp docs/release/v0.0.1.md dist/RELEASE_NOTES.md
+          fi
       - name: Publish GitHub release
         shell: bash
         env:
