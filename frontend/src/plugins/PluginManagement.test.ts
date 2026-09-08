@@ -8,14 +8,16 @@ import PluginDetail from '../views/PluginDetail.vue'
 import PluginConfiguration from '../views/PluginConfiguration.vue'
 import PluginImportDialog from './PluginImportDialog.vue'
 import PluginConfigDialog from './PluginConfigDialog.vue'
+import UiCheckbox from '../components/UiCheckbox.vue'
 import UiFileUpload from '../components/UiFileUpload.vue'
 import type { Plugin } from '../api/plugins'
-const mocks = vi.hoisted(() => ({ list: vi.fn(), config: vi.fn(), operations: vi.fn(), import: vi.fn(), save: vi.fn(), action: vi.fn(), confirm: vi.fn() }))
-vi.mock('../api/plugins', async importOriginal => ({ ...await importOriginal<typeof import('../api/plugins')>(), fetchPlugins: mocks.list, fetchPluginConfig: mocks.config, fetchPluginOperations: mocks.operations, importPlugin: mocks.import, savePluginConfig: mocks.save, pluginAction: mocks.action }))
+const mocks = vi.hoisted(() => ({ list: vi.fn(), config: vi.fn(), operations: vi.fn(), import: vi.fn(), save: vi.fn(), action: vi.fn(), confirm: vi.fn(), authorize: vi.fn(), migrations: vi.fn() }))
+vi.mock('../api/plugins', async importOriginal => ({ ...await importOriginal<typeof import('../api/plugins')>(), fetchPlugins: mocks.list, fetchPluginConfig: mocks.config, fetchPluginOperations: mocks.operations, importPlugin: mocks.import, savePluginConfig: mocks.save, pluginAction: mocks.action, savePluginAuthorization: mocks.authorize, fetchPluginMigrations: mocks.migrations }))
 vi.mock('../utils/feedback', async importOriginal => ({ ...await importOriginal<typeof import('../utils/feedback')>(), confirmAction: mocks.confirm }))
 const plugin = (id = 'zboard.oauth'): Plugin => ({
+  authorization: { reviewed: true, granted: ['zboard.ui.page.v1', 'zboard.config.v1'], native_trusted: true }, data: { version: 0, target_version: 0, epoch: 0, revision: 0, stored: false, compatible: true, migration_required: false },
   id, name: id === 'zboard.oauth' ? 'OAuth 登录' : '第二个插件', version: '0.2.0', version_id: 'v2', digest: 'digest', publisher: 'publisher', state: 'disabled', enabled: false, generation: 3, config_revision: 7, last_error: '',
-  manifest: { surfaces: ['public', 'admin'], description: '第三方账号登录', capabilities: ['zboard.config.v1'], components: { server: {} }, contributions: { pages: [{ id: 'configuration', surface: 'admin', title: '配置', purpose: 'configuration' }] } },
+  manifest: { surfaces: ['public', 'admin'], description: '第三方账号登录', capabilities: ['zboard.ui.page.v1', 'zboard.config.v1'], components: { server: {} }, contributions: { pages: [{ id: 'configuration', surface: 'admin', title: '配置', purpose: 'configuration' }] } },
   compatibility: { compatible: true, tested: true, reason: '' }, versions: [{ id: 'v2', version: '0.2.0', digest: 'digest', created_at: '2026-09-09' }, { id: 'v1', version: '0.1.0', digest: 'old-digest', created_at: '2026-09-08' }],
 })
 const ModalStub = defineComponent({ props: ['open'], emits: ['close'], template: '<section v-if="open" role="dialog"><slot/><slot name="footer" :request-close="() => $emit(\'close\')"/></section>' })
@@ -38,7 +40,7 @@ const clickText = async (wrapper: ReturnType<typeof mount>, label: string) => {
 }
 beforeEach(() => {
   mocks.list.mockResolvedValue([plugin()]); mocks.config.mockResolvedValue({ configured: true, revision: 7 }); mocks.operations.mockResolvedValue([])
-  mocks.import.mockResolvedValue(plugin()); mocks.save.mockResolvedValue({ revision: 8 }); mocks.confirm.mockResolvedValue(true); mocks.action.mockResolvedValue(plugin())
+  mocks.import.mockResolvedValue(plugin()); mocks.save.mockResolvedValue({ revision: 8 }); mocks.confirm.mockResolvedValue(true); mocks.action.mockResolvedValue(plugin()); mocks.authorize.mockResolvedValue(plugin()); mocks.migrations.mockResolvedValue([])
 })
 afterEach(() => { mounted.splice(0).forEach(w => w.unmount()); document.body.innerHTML = '' })
 describe('plugin management navigation', () => {
@@ -109,6 +111,32 @@ describe('plugin management navigation', () => {
     expect(wrapper.text()).toContain('Record 10'); expect(wrapper.text()).not.toContain('Record 0')
     await clickText(wrapper, '下一页')
     expect(wrapper.findAll('.plugin-history')).toHaveLength(1)
+  })
+  it('requires explicit per-package grants before enabling or opening configuration', async () => {
+    const unreviewed = plugin(); unreviewed.authorization = { reviewed: false, granted: [], native_trusted: false }
+    mocks.list.mockResolvedValue([unreviewed])
+    const { wrapper, router } = await render('/admin/plugins/zboard.oauth')
+    expect(wrapper.findAll('button').find(b => b.text() === '启用插件')!.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('a[href$="/configuration"]').exists()).toBe(false)
+    await router.push('/admin/plugins/zboard.oauth?tab=authorization'); await flushPromises()
+    await clickText(wrapper, '调整授权')
+    expect(mocks.authorize).not.toHaveBeenCalled()
+    const choices = wrapper.findAllComponents(UiCheckbox)
+    choices[0].vm.$emit('update:modelValue', true); await flushPromises()
+    await clickText(wrapper, '保存授权并保持停用')
+    expect(mocks.authorize).toHaveBeenCalledWith(unreviewed, ['zboard.ui.page.v1'], false)
+    expect(mocks.action).not.toHaveBeenCalled()
+  })
+  it('exposes migration plans separately and prevents activation before migration', async () => {
+    const migrating = plugin()
+    migrating.data = { ...migrating.data, target_version: 1, compatible: false, migration_required: true }
+    migrating.manifest.data = { version: 1, min_compatible_version: 1, migrations: [{ version: 1, changes: [{ target: 'config', operation: 'rename', key: 'old', to: 'new' }] }] }
+    mocks.list.mockResolvedValue([migrating])
+    const { wrapper } = await render('/admin/plugins/zboard.oauth?tab=data')
+    expect(wrapper.text()).toContain('重命名键 old'); expect(mocks.migrations).toHaveBeenCalled()
+    await clickText(wrapper, '执行数据迁移')
+    expect(mocks.action).toHaveBeenCalledWith(migrating, 'migrate', false, '')
+    expect(wrapper.findAll('button').find(b => b.text() === '启用插件')!.attributes('disabled')).toBeDefined()
   })
   it('protects a dirty advanced configuration from switching to a different plugin', async () => {
     const { wrapper, router } = await render('/admin/plugins/zboard.oauth/configuration')

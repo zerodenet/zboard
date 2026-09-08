@@ -104,7 +104,7 @@ async function receive(event: MessageEvent) {
   )
     return;
   if (
-    !["context.load", "config.load", "config.save", "config.test"].includes(
+    !["context.load", "config.load", "config.save", "config.test", "storage.get", "storage.put", "storage.delete"].includes(
       message.type,
     )
   )
@@ -126,7 +126,8 @@ async function receive(event: MessageEvent) {
   try {
     if (message.type.startsWith("config.") && s.purpose !== "configuration")
       throw new Error("denied");
-    const payload =
+    if (message.type.startsWith("storage.") && props.surface !== "admin") throw new Error("denied");
+    const payload = message.type.startsWith("storage.") ? { key: message.key, revision: message.revision, value: message.value } :
       message.type === "config.save"
         ? { revision: message.revision, config: message.config }
         : {};

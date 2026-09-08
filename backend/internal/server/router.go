@@ -305,6 +305,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		pluginRoute(http.MethodPut, "/api/v1/admin/plugins/:id/config", h.AdminPluginConfigHandler),
 		pluginRoute(http.MethodPost, "/api/v1/admin/plugins/:id/test", h.AdminPluginTestHandler),
 		pluginRoute(http.MethodGet, "/api/v1/admin/plugins/:id/operations", h.AdminPluginOperationsHandler),
+		pluginRoute(http.MethodPut, "/api/v1/admin/plugins/:id/authorization", h.AdminPluginAuthorizationHandler),
+		pluginRoute(http.MethodGet, "/api/v1/admin/plugins/:id/migrations", h.AdminPluginMigrationsHandler),
 		pluginRoute(http.MethodGet, "/api/v1/admin/plugin-market", h.AdminPluginMarketHandler),
 		pluginRoute(http.MethodPost, "/api/v1/admin/plugin-market", h.AdminPluginMarketHandler),
 		pluginRoute(http.MethodGet, "/api/v1/plugin-ui/catalog", h.PluginCatalogHandler),

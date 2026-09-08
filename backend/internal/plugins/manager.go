@@ -36,6 +36,8 @@ type Manager struct {
 	lost      atomic.Bool
 }
 type Installation struct {
+	Authorization Authorization `json:"authorization"`
+	Data          DataStatus    `json:"data"`
 	model.PluginInstallation
 	Version       string                `json:"version"`
 	Digest        string                `json:"digest"`
@@ -195,7 +197,13 @@ func (m *Manager) recover() error {
 		} else if p != nil {
 			m.processes[r.ID] = p
 		}
-		if err := m.updateInstallation(r.ID, map[string]any{"generation": gorm.Expr("generation + 1"), "state": state, "last_error": message}); err != nil {
+		updates := map[string]any{"generation": gorm.Expr("generation + 1"), "state": state, "last_error": message}
+		if errors.Is(err, ErrPermission) {
+			updates["enabled"] = false
+			updates["state"] = "disabled"
+			updates["last_error"] = ""
+		}
+		if err := m.updateInstallation(r.ID, updates); err != nil {
 			return err
 		}
 	}
@@ -222,6 +230,12 @@ func (m *Manager) load(id string) (Installation, error) {
 	v.Version = version.Version
 	v.Digest = version.Digest
 	v.Compatibility = v.Manifest.Compatibility(m.host)
+	if err := m.loadAuthorization(&v); err != nil {
+		return v, err
+	}
+	if err := m.loadDataStatus(&v); err != nil {
+		return v, err
+	}
 	err := m.db.Where("plugin_id = ?", id).Order("created_at desc").Limit(30).Find(&v.Versions).Error
 	return v, err
 }

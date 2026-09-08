@@ -94,6 +94,12 @@ func (m *Manager) packageFor(v Installation) (*Package, error) {
 	return p, nil
 }
 func (m *Manager) prepare(ctx context.Context, v Installation) (*process, error) {
+	if err := executionAuthorized(v); err != nil {
+		return nil, err
+	}
+	if err := m.checkDataCompatibility(v); err != nil {
+		return nil, err
+	}
 	if !v.Compatibility.Compatible {
 		return nil, errors.New("plugin is incompatible")
 	}
@@ -106,7 +112,7 @@ func (m *Manager) prepare(ctx context.Context, v Installation) (*process, error)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	proc, err := startProcess(ctx, m.options.Directory, p)
+	proc, err := m.startAuthorizedProcess(ctx, v)
 	if err != nil {
 		return nil, err
 	}
@@ -133,19 +139,27 @@ func (m *Manager) Action(ctx context.Context, id, action, actor string, generati
 	if generation != v.Generation {
 		return v, ErrConflict
 	}
-	if action != "enable" && action != "disable" && action != "uninstall" && action != "rollback" && action != "purge" {
+	if action != "enable" && action != "disable" && action != "uninstall" && action != "rollback" && action != "purge" && action != "purge_data" && action != "migrate" {
 		return v, errors.New("unsupported plugin operation")
 	}
 	if action == "enable" && (!v.Compatibility.Compatible || (!v.Compatibility.Tested && !acceptUntested)) {
 		return v, errors.New("incompatible or unconfirmed host version")
 	}
-	if (action == "uninstall" || action == "rollback" || action == "purge") && v.Enabled {
+	if (action == "uninstall" || action == "rollback" || action == "purge" || action == "purge_data" || action == "migrate") && v.Enabled {
 		return v, errors.New("disable plugin first")
+	}
+	if action == "enable" {
+		if err := executionAuthorized(v); err != nil {
+			return v, err
+		}
+		if err := m.checkDataCompatibility(v); err != nil {
+			return v, err
+		}
 	}
 	if action == "enable" && v.State == "uninstalled" {
 		return v, errors.New("import plugin before enabling")
 	}
-	if action == "purge" && v.State != "uninstalled" {
+	if (action == "purge" || action == "purge_data") && v.State != "uninstalled" {
 		return v, errors.New("uninstall before deleting configuration")
 	}
 	op, err := m.newOperation(id, action, actor)
@@ -153,6 +167,10 @@ func (m *Manager) Action(ctx context.Context, id, action, actor string, generati
 		return v, err
 	}
 	switch action {
+	case "migrate":
+		err = m.migrateLocked(ctx, v, actor)
+	case "purge_data":
+		err = m.purgeDataLocked(v)
 	case "enable":
 		if old := m.processes[id]; old != nil {
 			old.close()
@@ -205,9 +223,13 @@ func (m *Manager) Action(ctx context.Context, id, action, actor string, generati
 			if err == nil {
 				candidate.Manifest = p.Manifest
 				candidate.Compatibility = p.Manifest.Compatibility(m.host)
-				proc, e := m.prepare(ctx, candidate)
-				err = e
-				proc.close()
+				if e := m.loadDataStatus(&candidate); e != nil {
+					err = e
+				} else if !candidate.Compatibility.Compatible {
+					err = errors.New("rollback package is incompatible")
+				} else {
+					err = m.checkDataCompatibility(candidate)
+				}
 			}
 		}
 		if err == nil {

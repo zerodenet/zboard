@@ -19,7 +19,7 @@
         v-model="query"
         placeholder="搜索名称或功能"
         aria-label="搜索市场插件"
-      /><UiSelect v-model="surface" aria-label="使用范围" :options="surfaceOptions" /><button :disabled="loading || busy" @click="load">刷新市场</button>
+      /><UiSelect v-model="surface" aria-label="页面位置" :options="surfaceOptions" /><button :disabled="loading || busy" @click="load">刷新市场</button>
     </div>
     <p v-if="loading">正在加载市场目录…</p>
     <section v-else-if="!market.configured && !error" class="plugins-empty">
@@ -82,7 +82,7 @@ const {
   fetch: ({ signal }) => fetchPluginMarket(signal),
   errorMessage: "市场暂不可用，离线导入仍可使用。",
 });
-const surfaceOptions = [{ label: '所有范围', value: '' }, { label: '公开前台', value: 'public' }, { label: '用户前台', value: 'account' }, { label: '管理后台', value: 'admin' }]
+const surfaceOptions = [{ label: '所有页面位置', value: '' }, { label: '公开前台', value: 'public' }, { label: '用户前台', value: 'account' }, { label: '管理后台', value: 'admin' }]
 const query = ref(""),
   surface = ref(""),
   busy = ref(false),

@@ -66,7 +66,7 @@ func TestPluginHTTPBoundaryAndRevokedAssets(t *testing.T) {
 	}
 	defer manager.Close()
 	h.SetPluginManager(manager)
-	for _, handler := range []http.HandlerFunc{h.AdminPluginsHandler, h.AdminPluginMarketHandler, h.AdminPluginActionHandler, h.AdminPluginConfigHandler, h.AdminPluginTestHandler, h.AdminPluginOperationsHandler} {
+	for _, handler := range []http.HandlerFunc{h.AdminPluginsHandler, h.AdminPluginMarketHandler, h.AdminPluginActionHandler, h.AdminPluginConfigHandler, h.AdminPluginTestHandler, h.AdminPluginOperationsHandler, h.AdminPluginAuthorizationHandler, h.AdminPluginMigrationsHandler} {
 		response := httptest.NewRecorder()
 		handler(response, announcementRequest("POST", "/", token, "{}"))
 		if response.Code != 403 {
@@ -74,6 +74,9 @@ func TestPluginHTTPBoundaryAndRevokedAssets(t *testing.T) {
 		}
 	}
 	v, err := manager.Import(buffer.Bytes(), "admin")
+	if err == nil {
+		v, err = manager.Authorize(v.ID, "admin", v.Digest, v.Generation, v.Manifest.Capabilities, v.Manifest.Components.Server != nil)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

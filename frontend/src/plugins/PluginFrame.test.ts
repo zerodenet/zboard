@@ -56,6 +56,7 @@ describe("plugin iframe boundary", () => {
     send(wrapper, "context.load", {}, window);
     send(wrapper, "context.load", { bridge_token: "wrong" });
     send(wrapper, "users.credentials.rotate");
+    send(wrapper, "storage.get", { key: "private" });
     send(wrapper, "config.save", { config: {} });
     await flushPromises();
     expect(mocks.bridge).not.toHaveBeenCalled();
@@ -90,4 +91,14 @@ describe("plugin iframe boundary", () => {
     expect(mocks.revoke).toHaveBeenCalled();
     wrapper.unmount();
   });
+  it("forwards only the administrator session storage key, revision and value", async () => {
+    mocks.create.mockResolvedValue({ ...session, purpose: 'business' });
+    const wrapper = mount(PluginFrame, { props: { pluginId: 'example.storage', pageId: 'home', surface: 'admin' } });
+    await flushPromises();
+    send(wrapper, 'storage.put', { key: 'cursor', revision: 2, value: { offset: 10 }, plugin_id: 'other.plugin' });
+    await flushPromises();
+    expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), 'storage.put', { key: 'cursor', revision: 2, value: { offset: 10 } }, expect.any(AbortSignal));
+    wrapper.unmount();
+  });
+
 });

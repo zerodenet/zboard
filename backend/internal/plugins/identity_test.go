@@ -48,7 +48,7 @@ func TestRealIdentityPluginRevokesUncommittedCoreWork(t *testing.T) {
 	})
 	m, _, _ := testManager(t, keys)
 	ctx := context.Background()
-	v, err := m.Import(raw, "admin")
+	v, err := importApproved(t, m, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,4 +104,24 @@ func TestRealIdentityPluginRevokesUncommittedCoreWork(t *testing.T) {
 	if m.WithIdentityProvider(snapshot, func(*gorm.DB) error { commits++; return nil }) == nil || commits != 1 {
 		t.Fatal("disabled plugin completed session")
 	}
+	// Revoking identity permission must fence already verified work even when the configurable service can still run.
+	current, err := m.load(v.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err = m.Authorize(v.ID, "admin", current.Digest, current.Generation, []string{ConfigCapability}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err = m.Action(ctx, current.ID, "enable", "admin", current.Generation, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if providers, err := m.IdentityProviders(); err != nil || len(providers) != 0 {
+		t.Fatal("revoked identity capability advertised", err)
+	}
+	if m.WithIdentityProvider(snapshot, func(*gorm.DB) error { commits++; return nil }) == nil || commits != 1 {
+		t.Fatal("revoked permission completed core work")
+	}
+
 }

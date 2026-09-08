@@ -20,6 +20,8 @@ func (h *handlers) SetPluginManager(m *plugins.Manager) {
 }
 func pluginError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, plugins.ErrPermission):
+		Forbidden(w, err.Error())
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		NotFound(w)
 	case errors.Is(err, plugins.ErrConflict):

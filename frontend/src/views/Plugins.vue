@@ -23,7 +23,7 @@
         v-model="query"
         placeholder="搜索插件名称或 ID"
         aria-label="搜索插件"
-      /><UiSelect v-model="surface" aria-label="使用范围" :options="surfaceOptions" /><button type="button" :disabled="loading || busy" @click="load">
+      /><UiSelect v-model="surface" aria-label="页面位置" :options="surfaceOptions" /><button type="button" :disabled="loading || busy" @click="load">
         刷新</button
       ><span>{{ items.length }} 个插件</span>
     </div>
@@ -44,6 +44,8 @@
         <h2>{{ plugin.name }}</h2>
         <p class="plugin-id">{{ plugin.id }} · v{{ plugin.version }}</p>
         <p>{{ plugin.manifest.description || "此插件未提供描述。" }}</p>
+        <p>{{ pluginBusinessLabel(plugin) }}</p>
+        <p v-if="!plugin.authorization?.reviewed">待授权，请进入详情确认权限。</p>
         <div class="plugin-tags">
           <span v-for="s in plugin.manifest.surfaces" :key="s">{{
             surfaceLabel(s)
@@ -64,7 +66,7 @@
             >停用</UiButton
           ><UiButton
             v-else-if="plugin.state !== 'uninstalled'"
-            :disabled="busy || !plugin.compatibility.compatible"
+            :disabled="busy || !plugin.compatibility.compatible || !canPluginRun(plugin)"
             @click="act(plugin, 'enable')"
             >启用</UiButton
           >
@@ -85,8 +87,8 @@ import TransientFeedback from '../components/TransientFeedback.vue'
 import UiButton from '../components/UiButton.vue'
 import PluginImportDialog from '../plugins/PluginImportDialog.vue'
 import { useRemoteResource } from '../composables/useRemoteResource'
-import { usePluginActions, pluginDetailPath, hasPluginConfig } from '../plugins/usePluginManagement'
-import { fetchPlugins, surfaceLabel, pluginStateLabel, type Plugin, type Surface } from '../api/plugins'
+import { usePluginActions, pluginDetailPath, hasPluginConfig, canPluginRun } from '../plugins/usePluginManagement'
+import { fetchPlugins, surfaceLabel, pluginStateLabel, pluginBusinessLabel, type Plugin, type Surface } from '../api/plugins'
 import '../styles/plugins.css'
 const router = useRouter(), route = useRoute()
 const { data: items, loading, error, load } = useRemoteResource<Plugin[]>({
@@ -94,7 +96,7 @@ const { data: items, loading, error, load } = useRemoteResource<Plugin[]>({
 })
 const { busy, error: actionError, message, act } = usePluginActions(load)
 const importOpen = ref(false)
-const surfaceOptions = [{ label: '所有范围', value: '' }, { label: '公开前台', value: 'public' }, { label: '用户前台', value: 'account' }, { label: '管理后台', value: 'admin' }]
+const surfaceOptions = [{ label: '所有页面位置', value: '' }, { label: '公开前台', value: 'public' }, { label: '用户前台', value: 'account' }, { label: '管理后台', value: 'admin' }]
 const query = computed({ get: () => String(route.query.q || ''), set: q => { void router.replace({ query: { ...route.query, q: q || undefined } }) } })
 const surface = computed({ get: () => String(route.query.surface || ''), set: surface => { void router.replace({ query: { ...route.query, surface: surface || undefined } }) } })
 const filtered = computed(() => items.value.filter(p => `${p.name} ${p.id}`.toLowerCase().includes(query.value.toLowerCase()) && (!surface.value || p.manifest.surfaces.includes(surface.value as Surface))))

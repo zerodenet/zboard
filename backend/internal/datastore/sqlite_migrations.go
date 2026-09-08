@@ -25,6 +25,7 @@ func IsSQLite(db *gorm.DB) bool {
 // the authoritative logical table inventory used by cross-database migration.
 func databaseModels() []interface{} {
 	return []interface{}{
+		&model.PluginAuthorization{}, &model.PluginData{}, &model.PluginMigration{},
 		&model.User{}, &model.ExternalIdentity{}, &model.Installation{}, &model.SystemConfig{}, &model.Announcement{}, &model.AnnouncementRead{},
 		&model.Plan{}, &model.PlanSKU{}, &model.PlanSKUOperation{}, &model.Node{}, &model.NodeGroup{}, &model.ProtocolEndpoint{},
 		&model.NodeGroupEndpoint{}, &model.Subscription{}, &model.Order{}, &model.PaymentEvent{},
@@ -72,6 +73,9 @@ func runSQLiteMigrations(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0003_external_identities.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0004_plugin_governance.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
 		return err
 	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}

@@ -43,15 +43,16 @@ type Components struct {
 	} `json:"server,omitempty"`
 }
 type Manifest struct {
-	SchemaVersion int          `json:"schema_version"`
-	ID            string       `json:"id"`
-	Name          string       `json:"name"`
-	Description   string       `json:"description,omitempty"`
-	Version       string       `json:"version"`
-	Requires      Requirements `json:"requires"`
-	Capabilities  []string     `json:"capabilities"`
-	Surfaces      []string     `json:"surfaces"`
-	Components    Components   `json:"components"`
+	Data          *DataManifest `json:"data,omitempty"`
+	SchemaVersion int           `json:"schema_version"`
+	ID            string        `json:"id"`
+	Name          string        `json:"name"`
+	Description   string        `json:"description,omitempty"`
+	Version       string        `json:"version"`
+	Requires      Requirements  `json:"requires"`
+	Capabilities  []string      `json:"capabilities"`
+	Surfaces      []string      `json:"surfaces"`
+	Components    Components    `json:"components"`
 	Contributions struct {
 		Pages []Page `json:"pages"`
 	} `json:"contributions"`
@@ -87,12 +88,12 @@ func (m Manifest) Validate() error {
 	if _, err := semver.NewConstraint(m.Requires.ZBoard); err != nil || m.Requires.ZBoard == "" {
 		return errors.New("host version constraint is required")
 	}
-	if len(m.Capabilities) == 0 || len(m.Capabilities) > 3 {
+	if len(m.Capabilities) == 0 || len(m.Capabilities) > 4 {
 		return errors.New("declare supported capabilities")
 	}
 	seen := map[string]bool{}
 	for _, c := range m.Capabilities {
-		if seen[c] || (c != "zboard.ui.page.v1" && c != "zboard.config.v1" && c != IdentityCapability) {
+		if seen[c] || (c != "zboard.ui.page.v1" && c != "zboard.config.v1" && c != IdentityCapability && c != StorageCapability) {
 			return fmt.Errorf("unsupported or duplicate capability: %s", c)
 		}
 		seen[c] = true
@@ -150,7 +151,7 @@ func (m Manifest) Validate() error {
 			return errors.New("invalid file declaration")
 		}
 	}
-	return nil
+	return m.validateData()
 }
 func (m Manifest) Compatibility(host string) Compatibility {
 	v, err := semver.NewVersion(strings.TrimPrefix(host, "v"))

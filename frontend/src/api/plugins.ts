@@ -12,7 +12,10 @@ export interface PluginVersion {
   digest: string;
   created_at: string;
 }
+export interface PluginMigration { id: string; epoch: number; version: number; checksum: string; digest: string; actor: string; created_at: string }
 export interface Plugin {
+  authorization: { reviewed: boolean; granted: string[]; native_trusted: boolean };
+  data: { version: number; target_version: number; epoch: number; revision: number; stored: boolean; compatible: boolean; migration_required: boolean };
   id: string;
   name: string;
   version: string;
@@ -25,6 +28,7 @@ export interface Plugin {
   config_revision: number;
   last_error: string;
   manifest: {
+    data?: { version: number; min_compatible_version: number; migrations: Array<{ version: number; changes: Array<{ target: string; operation: string; key: string; to?: string }> }> };
     description?: string;
     surfaces: Surface[];
     capabilities: string[];
@@ -180,3 +184,8 @@ export const revokePluginSession = (session: PluginSession) =>
   api.delete("/plugin-ui/session", {
     headers: { "X-Plugin-Session": session.token },
   });
+
+export const savePluginAuthorization = (plugin: Plugin, capabilities: string[], nativeTrusted: boolean) => api.put(`/admin/plugins/${plugin.id}/authorization`, { generation: plugin.generation, digest: plugin.digest, capabilities, native_trusted: nativeTrusted }).then(data<Plugin>);
+export const fetchPluginMigrations = (id: string, signal?: AbortSignal) => api.get(`/admin/plugins/${id}/migrations`, { signal }).then(data<PluginMigration[]>);
+export const capabilityLabel = (c: string) => ({ 'zboard.ui.page.v1': '展示插件页面', 'zboard.config.v1': '管理自身配置', 'zboard.identity.provider.v1': '验证第三方身份', 'zboard.storage.v1': '读写自身私有数据' })[c] || c;
+export const pluginBusinessLabel = (p: Plugin) => p.manifest.capabilities.includes('zboard.identity.provider.v1') ? '第三方登录与注册' : p.manifest.components.server ? '服务扩展' : '页面扩展';

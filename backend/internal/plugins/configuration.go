@@ -6,7 +6,6 @@ import (
 	"errors"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"slices"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -43,7 +42,7 @@ func (m *Manager) Config(id string) (ConfigView, error) {
 	defer m.mu.Unlock()
 	v, err := m.load(id)
 	view := ConfigView{Revision: v.ConfigRevision, Configured: v.ConfigCiphertext != ""}
-	if err != nil || v.Manifest.Components.Server == nil || !slices.Contains(v.Manifest.Capabilities, "zboard.config.v1") || v.ConfigCiphertext == "" {
+	if err != nil || v.Manifest.Components.Server == nil || !hasCapability(v, ConfigCapability) || v.ConfigCiphertext == "" {
 		return view, err
 	}
 	if err := m.guard(m.db); err != nil {
@@ -104,7 +103,7 @@ func (m *Manager) saveConfigLocked(ctx context.Context, id, actor string, revisi
 	if v.ConfigRevision != revision {
 		return ConfigView{}, ErrConflict
 	}
-	if v.State == "uninstalled" || !v.Compatibility.Compatible || !slices.Contains(v.Manifest.Capabilities, "zboard.config.v1") {
+	if v.State == "uninstalled" || !v.Compatibility.Compatible || !hasCapability(v, ConfigCapability) {
 		return ConfigView{}, errors.New("plugin is not configurable")
 	}
 	op, err := m.newOperation(id, "configure", actor)
@@ -188,7 +187,7 @@ func (m *Manager) testConfigLocked(ctx context.Context, id, actor string) error 
 	if err != nil {
 		return err
 	}
-	if v.State == "uninstalled" || !v.Compatibility.Compatible || v.Manifest.Components.Server == nil {
+	if v.State == "uninstalled" || !v.Compatibility.Compatible || v.Manifest.Components.Server == nil || !hasCapability(v, ConfigCapability) {
 		return errors.New("this UI plugin has no server diagnostic")
 	}
 	op, err := m.newOperation(id, "test", actor)

@@ -241,7 +241,7 @@ paths:
               "format": "binary"
               "maxLength": 33554432
   "/api/v1/admin/plugins/{id}/actions/{action}":
-    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "action", "in": "path", "required": true, "schema": {"type": "string", "enum": ["enable", "disable", "rollback", "uninstall", "purge"]}}]
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "action", "in": "path", "required": true, "schema": {"type": "string", "enum": ["enable", "disable", "rollback", "uninstall", "purge", "purge_data", "migrate"]}}]
     "post":
       "tags": ["plugins"]
       "summary": "Change plugin lifecycle; administrator only"
@@ -277,6 +277,42 @@ paths:
                 "version_id":
                   "type": "string"
               "required": ["generation"]
+  "/api/v1/admin/plugins/{id}/authorization":
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    put:
+      tags: [plugins]
+      summary: Review package capabilities and revoke prior runtime sessions
+      description: Administrator only. Grants must be declared by the exact package digest. Saving always stops the plugin. Native programs require explicit trust; no OS sandbox is claimed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [generation, digest, capabilities, native_trusted]
+              properties:
+                generation: {type: integer, minimum: 0}
+                digest: {type: string}
+                capabilities: {type: array, items: {type: string}}
+                native_trusted: {type: boolean}
+      responses:
+        '200': {description: Updated disabled installation, content: {application/json: {schema: {allOf: [{"$ref": "#/components/schemas/ApiResponse"}, {type: object, properties: {data: {"$ref": "#/components/schemas/PluginInstallation"}}}]}}}}
+        '400': {description: Invalid capability declaration}
+        '401': {description: Authentication required}
+        '403': {description: Administrator required or unauthorized capability}
+        '409': {description: Package digest or generation changed}
+        '503': {description: Plugin host unavailable}
+  "/api/v1/admin/plugins/{id}/migrations":
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      tags: [plugins]
+      summary: Read latest 100 committed plugin data migrations
+      responses:
+        '200': {description: Migration history, content: {application/json: {schema: {allOf: [{"$ref": "#/components/schemas/ApiResponse"}, {type: object, properties: {data: {type: array, items: {"$ref": "#/components/schemas/PluginMigration"}}}}]}}}}
+        '401': {description: Authentication required}
+        '403': {description: Administrator required}
+        '503': {description: Plugin host unavailable}
   "/api/v1/admin/plugins/{id}/config":
     "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}]
     "get":
@@ -546,14 +582,16 @@ paths:
               "properties":
                 "type":
                   "type": "string"
-                  "enum": ["context.load", "config.load", "config.save", "config.test"]
+                  "enum": ["context.load", "config.load", "config.save", "config.test", "storage.get", "storage.put", "storage.delete"]
                 "revision":
                   "type": "integer"
                   "minimum": 0
                 "config":
                   "type": "object"
+                key: {type: string, maxLength: 128}
+                value: {}
               "required": ["type"]
-      "description": "context.load returns surface, plugin_id and page_id only. config methods require an administrator configuration session. config.save fully replaces the configuration with CAS revision; config.load returns PluginConfigView. No core commands, credentials, authentication tokens, SQL or node APIs are exposed."
+      "description": "Storage methods require an administrator page session and granted zboard.storage.v1. The host binds the namespace to the session; writes use a global per-plugin CAS revision. Public/account pages cannot access private storage. context.load returns surface, plugin_id and page_id only. config methods require an administrator configuration session. config.save fully replaces the configuration with CAS revision; config.load returns PluginConfigView. No core commands, credentials, authentication tokens, SQL or node APIs are exposed."
     "parameters": [{"name": "X-Plugin-Session", "in": "header", "required": true, "schema": {"type": "string"}}]
   "/api/v1/plugin-assets/{token}/{part1}":
     "get":
@@ -4025,9 +4063,49 @@ components:
         "updated_at":
           "type": "string"
           "format": "date-time"
+    PluginMigration:
+      type: object
+      properties:
+        id: {type: string}
+        epoch: {type: integer, minimum: 0}
+        version: {type: integer, minimum: 1}
+        checksum: {type: string}
+        digest: {type: string}
+        actor: {type: string}
+        created_at: {type: string, format: date-time}
+    PluginDataManifest:
+      type: object
+      additionalProperties: false
+      required: [version, min_compatible_version, migrations]
+      properties:
+        version: {type: integer, minimum: 1, maximum: 32}
+        min_compatible_version: {type: integer, minimum: 1}
+        migrations:
+          type: array
+          maxItems: 32
+          items:
+            type: object
+            additionalProperties: false
+            required: [version, changes]
+            properties:
+              version: {type: integer, minimum: 1}
+              changes:
+                type: array
+                maxItems: 128
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [target, operation, key]
+                  properties:
+                    target: {type: string, enum: [config, storage]}
+                    operation: {type: string, enum: [set_default, rename, remove]}
+                    key: {type: string, maxLength: 128}
+                    to: {type: string, maxLength: 128}
+                    value: {}
     "PluginManifest":
       "type": "object"
       "properties":
+        data: {"$ref": "#/components/schemas/PluginDataManifest"}
         "schema_version":
           "type": "integer"
           "enum": [1]
@@ -4058,7 +4136,7 @@ components:
           "type": "array"
           "items":
             "type": "string"
-            "enum": ["zboard.ui.page.v1", "zboard.config.v1", "zboard.identity.provider.v1"]
+            "enum": ["zboard.ui.page.v1", "zboard.config.v1", "zboard.identity.provider.v1", "zboard.storage.v1"]
         "surfaces":
           "type": "array"
           "items":
@@ -4092,6 +4170,23 @@ components:
     "PluginInstallation":
       "type": "object"
       "properties":
+        authorization:
+          type: object
+          properties:
+            reviewed: {type: boolean}
+            granted: {type: array, items: {type: string}}
+            native_trusted: {type: boolean}
+        data:
+          type: object
+          properties:
+            version: {type: integer, minimum: 0}
+            target_version: {type: integer, minimum: 0}
+            epoch: {type: integer, minimum: 0}
+            revision: {type: integer, minimum: 0}
+            stored: {type: boolean}
+            compatible: {type: boolean}
+            migration_required: {type: boolean}
+
         "id":
           "type": "string"
         "name":

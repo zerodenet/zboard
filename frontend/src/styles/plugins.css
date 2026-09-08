@@ -310,3 +310,11 @@
 .plugins-heading > .plugins-actions { flex-shrink: 0; }
 .plugin-operation-paging { justify-content: flex-end; font-size: 13px; color: var(--muted); }
 @media (max-width: 1000px) { .plugin-configuration-page .plugins-heading { flex-direction: column; align-items: flex-start; } }
+
+.plugin-tabs { flex-wrap: wrap; gap: 10px 24px; }
+.plugin-authorization-form { display: grid; gap: 18px; }
+.plugin-permission-option { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+.plugin-permission-option small { display: block; color: var(--muted); margin-top: 6px; line-height: 1.6; }
+.plugin-permission-note { color: var(--muted); font-size: 13px; line-height: 1.7; }
+.plugin-migration-step { padding: 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+.plugin-digest { overflow-wrap: anywhere; font-size: 12px; }

@@ -50,7 +50,7 @@ func (m *Manager) IdentityProviders() ([]IdentityProviderView, error) {
 		if err != nil {
 			return nil, err
 		}
-		if slices.Contains(v.Manifest.Capabilities, IdentityCapability) && v.ConfigRevision > 0 && m.processes[v.ID] != nil {
+		if hasCapability(v, IdentityCapability) && v.ConfigRevision > 0 && m.processes[v.ID] != nil {
 			p := m.processes[v.ID]
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			catalog, err := p.api.ListIdentityProviders(ctx, &pluginv1.Empty{})
@@ -87,7 +87,7 @@ func (m *Manager) identityProcess(id string) (Installation, *process, error) {
 		return v, nil, err
 	}
 	p := m.processes[id]
-	if !v.Enabled || v.State != "active" || p == nil || p.client.Exited() || !slices.Contains(v.Manifest.Capabilities, IdentityCapability) {
+	if !v.Enabled || v.State != "active" || p == nil || p.client.Exited() || !hasCapability(v, IdentityCapability) {
 		return v, nil, ErrUnavailable
 	}
 	return v, p, nil

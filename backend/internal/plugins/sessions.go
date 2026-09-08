@@ -49,7 +49,7 @@ func (m *Manager) CreateSession(id, pageID, surface string, userID uint, admin, 
 	if err != nil {
 		return Session{}, err
 	}
-	if !v.Compatibility.Compatible || v.State == "uninstalled" {
+	if !v.Compatibility.Compatible || v.State == "uninstalled" || !hasCapability(v, PageCapability) || (configuration && !hasCapability(v, ConfigCapability)) {
 		return Session{}, ErrUnavailable
 	}
 	if surface == "admin" && !admin || surface == "account" && userID == 0 {
@@ -61,7 +61,7 @@ func (m *Manager) CreateSession(id, pageID, surface string, userID uint, admin, 
 		if !admin || surface != "admin" {
 			return Session{}, errors.New("configuration requires administrator")
 		}
-	} else if !v.Enabled || v.State != "active" {
+	} else if !v.Enabled || v.State != "active" || !hasCapability(v, PageCapability) {
 		return Session{}, ErrUnavailable
 	}
 	found := false
@@ -100,7 +100,7 @@ func (m *Manager) session(token string) (Session, error) {
 		return Session{}, ErrUnavailable
 	}
 	v, err := m.load(s.PluginID)
-	if err != nil || s.Generation != v.Generation || v.State == "uninstalled" || (s.Purpose != "configuration" && (!v.Enabled || v.State != "active")) {
+	if err != nil || s.Generation != v.Generation || !hasCapability(v, PageCapability) || (s.Purpose == "configuration" && !hasCapability(v, ConfigCapability)) || v.State == "uninstalled" || (s.Purpose != "configuration" && (!v.Enabled || v.State != "active")) {
 		return Session{}, ErrUnavailable
 	}
 	return s, nil
@@ -152,7 +152,7 @@ func (m *Manager) Pages(surface string, userID uint, admin bool) ([]CatalogPage,
 		return out, nil
 	}
 	for _, v := range rows {
-		if !v.Enabled || v.State != "active" {
+		if !v.Enabled || v.State != "active" || !hasCapability(v, PageCapability) {
 			continue
 		}
 		for _, p := range v.Manifest.Contributions.Pages {

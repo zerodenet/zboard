@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"github.com/zerodenet/zboard/backend/internal/plugins"
 	"mime"
 	"net/http"
 	"path"
@@ -69,6 +70,8 @@ func (h *handlers) PluginBridgeHandler(w http.ResponseWriter, r *http.Request) {
 		Type     string          `json:"type"`
 		Revision uint64          `json:"revision"`
 		Config   json.RawMessage `json:"config"`
+		Key      string          `json:"key"`
+		Value    json.RawMessage `json:"value"`
 	}
 	if !pluginBody(w, r, &body) {
 		return
@@ -76,6 +79,15 @@ func (h *handlers) PluginBridgeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if body.Type == "context.load" {
 		OK(w, map[string]any{"surface": s.Surface, "plugin_id": s.PluginID, "page_id": s.PageID})
+		return
+	}
+	if strings.HasPrefix(body.Type, "storage.") {
+		result, err := h.pluginManager.SessionStorage(r.Header.Get("X-Plugin-Session"), c.UserID, c.IsAdmin, plugins.StorageRequest{Type: body.Type, Key: body.Key, Revision: body.Revision, Value: body.Value})
+		if err != nil {
+			pluginError(w, err)
+			return
+		}
+		OK(w, result)
 		return
 	}
 	if s.Purpose != "configuration" || !c.IsAdmin {

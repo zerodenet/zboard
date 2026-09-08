@@ -69,10 +69,10 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 			down = append(down, entry.Name())
 		}
 	}
-	if len(up) != 3 || up[0] != preReleaseBaselineVersion || up[1] != "0002_plugins.up.sql" || up[2] != "0003_external_identities.up.sql" {
+	if len(up) != 4 || up[0] != preReleaseBaselineVersion || up[1] != "0002_plugins.up.sql" || up[2] != "0003_external_identities.up.sql" || up[3] != "0004_plugin_governance.up.sql" {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
 	}
-	if len(down) != 3 || down[0] != "0001_init.down.sql" || down[1] != "0002_plugins.down.sql" || down[2] != "0003_external_identities.down.sql" {
+	if len(down) != 4 || down[0] != "0001_init.down.sql" || down[1] != "0002_plugins.down.sql" || down[2] != "0003_external_identities.down.sql" || down[3] != "0004_plugin_governance.down.sql" {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)
 	}
 	if err := validateMigrationInventory(up); err != nil {

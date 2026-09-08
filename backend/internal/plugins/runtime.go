@@ -20,12 +20,13 @@ import (
 )
 
 type process struct {
+	closeHost func()
 	client    *hcplugin.Client
 	api       pluginv1.PluginControlClient
 	directory string
 }
 
-func startProcess(ctx context.Context, root string, p *Package) (*process, error) {
+func startProcess(ctx context.Context, root string, p *Package, environment ...string) (*process, error) {
 	rel := p.Manifest.Components.Server.Executables[runtime.GOOS+"-"+runtime.GOARCH]
 	checksum, _ := hex.DecodeString(p.Manifest.Files[rel])
 	directory, err := os.MkdirTemp(filepath.Join(root, "sockets"), "run-")
@@ -48,6 +49,7 @@ func startProcess(ctx context.Context, root string, p *Package) (*process, error
 	}()
 	cmd := exec.Command(binary)
 	cmd.Dir = directory
+	cmd.Env = append([]string{}, environment...)
 	client := hcplugin.NewClient(&hcplugin.ClientConfig{
 		HandshakeConfig: pluginv1.Handshake, Plugins: pluginv1.ClientMap(), Cmd: cmd,
 		AllowedProtocols: []hcplugin.Protocol{hcplugin.ProtocolGRPC}, AutoMTLS: true, SkipHostEnv: true,
@@ -88,6 +90,9 @@ func startProcess(ctx context.Context, root string, p *Package) (*process, error
 }
 func (p *process) close() {
 	if p != nil {
+		if p.closeHost != nil {
+			p.closeHost()
+		}
 		p.client.Kill()
 		os.RemoveAll(p.directory)
 	}
