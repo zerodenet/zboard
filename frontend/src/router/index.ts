@@ -41,6 +41,8 @@ export const routes: RouteRecordRaw[] = [
     children: [
       { path: '', redirect: '/admin/dashboard' },
       { path: 'plugins', component: () => import('../views/Plugins.vue'), meta: { title: '插件管理', section: '扩展中心' } },
+      { path: 'plugins/:pluginId', component: () => import('../views/PluginDetail.vue'), meta: { title: '插件详情', section: '扩展中心' } },
+      { path: 'plugins/:pluginId/configuration', component: () => import('../views/PluginConfiguration.vue'), meta: { title: '插件配置', section: '扩展中心' } },
       { path: 'plugin-market', component: () => import('../views/PluginMarket.vue'), meta: { title: '插件市场', section: '扩展中心' } },
       { path: 'extensions/:pluginId/:pageId', component: () => import('../views/PluginPage.vue'), meta: { pluginPage: true, title: '扩展', section: '扩展中心' } },
       { path: 'dashboard', component: () => import('../views/Dashboard.vue'), meta: { title: '运营工作台', section: '工作台' } },

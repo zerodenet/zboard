@@ -5,13 +5,13 @@
         <p class="eyebrow">扩展中心</p>
         <h1>插件管理</h1>
         <p>
-          管理前台与后台扩展。插件停用后，已提交的核心业务仍由系统继续处理。
+          查看已安装插件，管理启停与配置。
         </p>
       </div>
       <div class="plugins-actions">
         <RouterLink class="button button-secondary" to="/admin/plugin-market"
           >浏览插件市场</RouterLink
-        ><UiFileUpload choose-label="离线导入" accept=".zbplugin" :max-file-size="32 * 1024 * 1024" :disabled="busy" @select="importFiles" />
+        ><UiButton :disabled="busy" @click="importOpen = true">离线导入</UiButton>
       </div>
     </header>
     <TransientFeedback :success="message" />
@@ -52,24 +52,6 @@
             plugin.manifest.components.server ? "包含服务端组件" : "页面扩展"
           }}</span>
         </div>
-        <dl>
-          <div>
-            <dt>签名发布者</dt>
-            <dd>{{ plugin.publisher }}</dd>
-          </div>
-          <div>
-            <dt>版本检查</dt>
-            <dd>
-              {{
-                !plugin.compatibility.compatible
-                  ? "当前宿主不兼容"
-                  : plugin.compatibility.tested
-                    ? "发布者已测试当前版本"
-                    : "兼容范围内，尚未声明测试"
-              }}
-            </dd>
-          </div>
-        </dl>
         <p v-if="plugin.last_error" class="plugins-error">
           {{ plugin.last_error }}
         </p>
@@ -85,267 +67,40 @@
             :disabled="busy || !plugin.compatibility.compatible"
             @click="act(plugin, 'enable')"
             >启用</UiButton
-          ><UiButton variant="ghost" :disabled="busy" @click="inspect(plugin)"
-            >配置与记录</UiButton
-          ><UiButton
-            v-if="!plugin.enabled && plugin.state !== 'uninstalled'"
-            variant="ghost"
-            :disabled="busy"
-            @click="act(plugin, 'uninstall')"
-            >卸载</UiButton
           >
+          <RouterLink class="button button-secondary" :to="pluginDetailPath(plugin.id)">查看详情</RouterLink>
+          <RouterLink v-if="hasPluginConfig(plugin) && plugin.compatibility.compatible" class="plugin-text-link" :to="`${pluginDetailPath(plugin.id)}/configuration`">配置</RouterLink>
         </div>
       </article>
     </div>
-    <section v-if="selected" class="plugin-detail">
-      <header>
-        <div>
-          <p class="eyebrow">配置与运行记录</p>
-          <h2>{{ selected.name }}</h2>
-        </div>
-        <button aria-label="关闭插件详情" @click="selected = null">关闭</button>
-      </header>
-      <p v-if="hasConfig">
-        配置加密保存，密钥不会回显。优先使用插件提供的配置页面。
-      </p>
-      <p v-if="!hasConfig">此插件未声明配置能力。</p>
-      <div v-if="hasConfig && selected.state !== 'uninstalled'">
-        <PluginFrame
-          v-if="configPage && selected.compatibility.compatible"
-          :plugin-id="selected.id"
-          :page-id="configPage.id"
-          surface="admin"
-          configuration
-          title="插件配置页面"
-        />
-        <details :open="!configPage">
-          <summary>高级：直接编辑完整配置 JSON</summary>
-          <p>提交将完整替换旧配置，请包含需要保留的全部提供方和密钥。</p>
-        <label for="plugin-config">插件配置 JSON</label
-        ><UiTextarea
-          id="plugin-config"
-          v-model="configText"
-          rows="7"
-          spellcheck="false"
-        />
-        <div class="plugins-actions">
-          <UiButton
-            :disabled="busy || !selected.compatibility.compatible"
-            @click="save"
-            >保存配置</UiButton
-          ><UiButton
-            v-if="selected.manifest.components.server"
-            variant="secondary"
-            :disabled="busy || !selected.compatibility.compatible"
-            @click="test"
-            >测试已保存配置</UiButton
-          >
-        </div>
-
-        </details>
-      </div>
-      <template
-        v-if="
-          !selected.enabled &&
-          selected.state !== 'uninstalled' &&
-          selected.versions.length > 1
-        "
-        ><h3>历史版本</h3>
-        <p>切换后保持停用；旧版本必须能够验证当前配置。</p>
-        <div
-          v-for="version in selected.versions.filter(
-            (v) => v.id !== selected?.version_id,
-          )"
-          :key="version.id"
-          class="plugin-history"
-        >
-          <span>v{{ version.version }}</span
-          ><button
-            :disabled="busy"
-            @click="act(selected, 'rollback', version.id)"
-          >
-            恢复此版本
-          </button>
-        </div></template
-      >
-      <UiButton
-        v-if="selected.state === 'uninstalled'"
-        variant="danger"
-        :disabled="busy"
-        @click="act(selected, 'purge')"
-        >删除保留的配置</UiButton
-      >
-      <h3>最近操作</h3>
-      <p v-if="!operations.length">暂无操作记录</p>
-      <div v-for="op in operations" :key="op.id" class="plugin-history">
-        <span
-          >{{ op.action }} · {{ op.state
-          }}<small>{{ op.actor }} · {{ op.created_at }}</small></span
-        ><span>{{ op.message }}</span>
-      </div>
-    </section>
+    <PluginImportDialog :open="importOpen" @close="importOpen = false" @imported="imported" />
   </div>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import UiFileUpload from '../components/UiFileUpload.vue'
-import UiTextarea from '../components/UiTextarea.vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import UiInput from '../components/UiInput.vue'
 import UiSelect from '../components/UiSelect.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
-import UiButton from "../components/UiButton.vue";
-import PluginFrame from "../plugins/PluginFrame.vue";
-import { useRemoteResource } from "../composables/useRemoteResource";
-import { confirmAction } from "../utils/feedback";
-import {
-  fetchPlugins,
-  importPlugin,
-  pluginAction,
-  fetchPluginConfig,
-  savePluginConfig,
-  testPluginConfig,
-  fetchPluginOperations,
-  surfaceLabel,
-  pluginStateLabel,
-  type Plugin,
-} from "../api/plugins";
-import "../styles/plugins.css";
-const {
-  data: items,
-  loading,
-  error,
-  load,
-} = useRemoteResource<Plugin[]>({
-  initial: () => [],
-  fetch: ({ signal }) => fetchPlugins(signal),
-  errorMessage: "无法读取插件列表，请重试。",
-});
+import UiButton from '../components/UiButton.vue'
+import PluginImportDialog from '../plugins/PluginImportDialog.vue'
+import { useRemoteResource } from '../composables/useRemoteResource'
+import { usePluginActions, pluginDetailPath, hasPluginConfig } from '../plugins/usePluginManagement'
+import { fetchPlugins, surfaceLabel, pluginStateLabel, type Plugin, type Surface } from '../api/plugins'
+import '../styles/plugins.css'
+const router = useRouter(), route = useRoute()
+const { data: items, loading, error, load } = useRemoteResource<Plugin[]>({
+  initial: () => [], fetch: ({ signal }) => fetchPlugins(signal), errorMessage: '无法读取插件列表，请重试。',
+})
+const { busy, error: actionError, message, act } = usePluginActions(load)
+const importOpen = ref(false)
 const surfaceOptions = [{ label: '所有范围', value: '' }, { label: '公开前台', value: 'public' }, { label: '用户前台', value: 'account' }, { label: '管理后台', value: 'admin' }]
-const query = ref(""),
-  surface = ref(""),
-  busy = ref(false),
-  actionError = ref(""),
-  message = ref(""),
-  selected = ref<Plugin | null>(null),
-  configText = ref("{}"),
-  configRevision = ref(0);
-const operations = ref<Awaited<ReturnType<typeof fetchPluginOperations>>>([]);
-const filtered = computed(() =>
-  items.value.filter(
-    (p) =>
-      `${p.name} ${p.id}`.toLowerCase().includes(query.value.toLowerCase()) &&
-      (!surface.value || p.manifest.surfaces.includes(surface.value as any)),
-  ),
-);
-const hasConfig = computed(() =>
-  selected.value?.manifest.capabilities.includes("zboard.config.v1"),
-);
-const configPage = computed(() =>
-  selected.value?.manifest.contributions.pages.find(
-    (p) => p.surface === "admin" && p.purpose === "configuration",
-  ),
-);
-async function run(fn: () => Promise<unknown>, success: string) {
-  if (busy.value) return;
-  busy.value = true;
-  actionError.value = "";
-  message.value = "";
-  try {
-    await fn();
-    message.value = success;
-    await load();
-    if (selected.value)
-      selected.value =
-        items.value.find((p) => p.id === selected.value?.id) || null;
-  } catch (e: any) {
-    actionError.value =
-      e?.response?.data?.message ||
-      e?.message ||
-      "插件操作失败，请检查签名、兼容版本和运行状态。";
-  } finally {
-    busy.value = false;
-  }
+const query = computed({ get: () => String(route.query.q || ''), set: q => { void router.replace({ query: { ...route.query, q: q || undefined } }) } })
+const surface = computed({ get: () => String(route.query.surface || ''), set: surface => { void router.replace({ query: { ...route.query, surface: surface || undefined } }) } })
+const filtered = computed(() => items.value.filter(p => `${p.name} ${p.id}`.toLowerCase().includes(query.value.toLowerCase()) && (!surface.value || p.manifest.surfaces.includes(surface.value as Surface))))
+function imported(plugin: Plugin) {
+  importOpen.value = false
+  void router.push({ path: pluginDetailPath(plugin.id), query: { imported: '1' } })
 }
-async function importFiles(files: File[]) {
-  const file = files[0];
-  if (!file) return;
-  if (file.size > 32 * 1024 * 1024) {
-    actionError.value = "插件包不能超过 32 MiB。";
-    return;
-  }
-  await run(
-    () => importPlugin(file),
-    "插件已导入并保持停用，请检查配置后启用。",
-  );
-}
-async function act(plugin: Plugin, action: string, versionID = "") {
-  const untested = action === "enable" && !plugin.compatibility.tested;
-  const labels: Record<string, string> = {
-    enable: "启用",
-    disable: "停用",
-    uninstall: "卸载",
-    rollback: "恢复版本",
-    purge: "删除配置",
-  };
-  if (
-    !(await confirmAction({
-      title: `${labels[action]} ${plugin.name}`,
-      message:
-        action === "purge"
-          ? "永久删除插件保留的配置。核心用户、订单和审计记录不受影响。"
-          : action === "uninstall"
-            ? "删除插件程序和页面，保留配置与操作记录。"
-            : untested
-              ? "发布者尚未声明测试当前宿主版本。确认信任该插件后启用。"
-              : `${labels[action]}此插件？核心业务仍由 ZBoard 管理。`,
-      tone: action === "purge" ? "danger" : "primary",
-      confirmText: labels[action],
-    }))
-  )
-    return;
-  await run(
-    () => pluginAction(plugin, action, untested, versionID),
-    `插件操作已完成：${labels[action]}。`,
-  );
-  if (selected.value)
-    await run(async () => {
-      operations.value = await fetchPluginOperations(selected.value!.id);
-    }, message.value);
-}
-async function inspect(plugin: Plugin) {
-  if (busy.value) return;
-  selected.value = plugin;
-  configText.value = "{}";
-  await run(async () => {
-    const [config, ops] = await Promise.all([
-      fetchPluginConfig(plugin.id),
-      fetchPluginOperations(plugin.id),
-    ]);
-    configRevision.value = config.revision;
-    operations.value = ops;
-  }, "");
-}
-async function save() {
-  const p = selected.value;
-  if (!p) return;
-  let config: unknown;
-  try {
-    config = JSON.parse(configText.value);
-    if (!config || Array.isArray(config) || typeof config !== "object")
-      throw new Error();
-  } catch {
-    actionError.value = "请输入有效的 JSON 对象。";
-    return;
-  }
-  await run(async () => {
-    const view = await savePluginConfig(p.id, configRevision.value, config);
-    configRevision.value = view.revision;
-    configText.value = "{}";
-  }, "配置已加密保存。");
-}
-async function test() {
-  if (selected.value)
-    await run(() => testPluginConfig(selected.value!.id), "插件配置测试通过。");
-}
-onMounted(load);
+onMounted(load)
 </script>

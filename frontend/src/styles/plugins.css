@@ -274,3 +274,39 @@
 .plugins-toolbar > .p-select { flex: 0 1 200px; width: 200px; }
 .plugins-toolbar > button, .plugins-toolbar > span { flex: none; white-space: nowrap; }
 @media (max-width: 700px) { .plugins-toolbar > .p-inputtext { flex-basis: 100%; } .plugins-toolbar > .p-select { flex: 1; width: auto; } }
+
+.plugin-breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.plugin-breadcrumb a, .plugin-text-link { color: var(--primary); text-decoration: none; }
+.plugin-text-link { align-self: center; padding: 8px; font-size: 13px; }
+.plugin-card-actions { margin-top: auto; align-items: center; }
+.plugin-tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--line); }
+.plugin-tabs a { padding: 12px 0; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; }
+.plugin-tabs a.selected { color: var(--primary); border-color: var(--primary); font-weight: 600; }
+.plugin-facts { margin: 0; display: grid; gap: 0; }
+.plugin-facts > div { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 24px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.plugin-facts dt { color: var(--muted); font-size: 13px; }
+.plugin-facts dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; }
+.plugin-facts small { display: block; margin-top: 6px; color: var(--muted); }
+.plugin-removal { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 12px; padding-top: 20px; }
+.plugin-removal h3 { font-size: 15px; }
+.plugin-removal p { margin-bottom: 0; font-size: 13px; }
+.plugin-removal button, .plugin-history button { flex-shrink: 0; }
+.plugin-history { align-items: flex-start; }
+.plugin-history > span { min-width: 0; }
+.plugin-history .plugin-status { white-space: nowrap; }
+.plugin-configuration-page { max-width: 1200px; }
+.plugin-import-content { display: grid; gap: 20px; }
+.plugin-import-content p { margin: 0; color: var(--muted); line-height: 1.7; }
+.plugin-import-file { display: flex; justify-content: space-between; gap: 20px; border: 1px solid var(--line); padding: 16px; border-radius: 10px; overflow-wrap: anywhere; }
+.plugin-import-file span { white-space: nowrap; color: var(--muted); }
+.plugin-json-input { width: 100%; font-family: monospace; }
+#plugin-json-form { display: grid; gap: 16px; }
+@media (max-width: 700px) {
+  .plugin-facts > div { grid-template-columns: 1fr; gap: 8px; }
+  .plugin-removal { align-items: flex-start; flex-direction: column; }
+  .plugin-history { flex-wrap: wrap; }
+}
+
+.plugins-heading > .plugins-actions { flex-shrink: 0; }
+.plugin-operation-paging { justify-content: flex-end; font-size: 13px; color: var(--muted); }
+@media (max-width: 1000px) { .plugin-configuration-page .plugins-heading { flex-direction: column; align-items: flex-start; } }

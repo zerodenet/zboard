@@ -95,8 +95,8 @@ export const pluginAction = (
       { timeout: 60_000 },
     )
     .then(data<Plugin>);
-export const fetchPluginConfig = (id: string) =>
-  api.get(`/admin/plugins/${id}/config`).then(data<ConfigView>);
+export const fetchPluginConfig = (id: string, signal?: AbortSignal) =>
+  api.get(`/admin/plugins/${id}/config`, { signal }).then(data<ConfigView>);
 export const savePluginConfig = (
   id: string,
   revision: number,
@@ -107,9 +107,9 @@ export const savePluginConfig = (
     .then(data<ConfigView>);
 export const testPluginConfig = (id: string) =>
   api.post(`/admin/plugins/${id}/test`);
-export const fetchPluginOperations = (id: string) =>
+export const fetchPluginOperations = (id: string, signal?: AbortSignal) =>
   api
-    .get(`/admin/plugins/${id}/operations`)
+    .get(`/admin/plugins/${id}/operations`, { signal })
     .then(
       data<
         Array<{
