@@ -6,6 +6,7 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('../layouts/PublicLayout.vue'),
     children: [
       { path: '', component: () => import('../views/Home.vue'), meta: { title: '首页', layout: 'public' } },
+      { path: 'extensions/:pluginId/:pageId', component: () => import('../views/PluginPage.vue'), meta: { pluginPage: true, title: '扩展', layout: 'public' } },
       { path: 'pricing', component: () => import('../views/PublicPlans.vue'), meta: { title: '套餐价格', layout: 'public' } },
       { path: 'terms', redirect: '/docs/terms' },
       { path: 'privacy', redirect: '/docs/privacy' },
@@ -22,6 +23,7 @@ export const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, layout: 'account' },
     children: [
       { path: '', component: () => import('../views/account/AccountDashboard.vue'), meta: { title: '我的概览' } },
+      { path: 'extensions/:pluginId/:pageId', component: () => import('../views/PluginPage.vue'), meta: { pluginPage: true, title: '扩展' } },
       { path: 'plans', component: () => import('../views/account/AccountPlans.vue'), meta: { title: '购买套餐' } },
       { path: 'orders', component: () => import('../views/account/AccountOrders.vue'), meta: { title: '我的订单' } },
       { path: 'subscription', component: () => import('../views/account/AccountSubscription.vue'), meta: { title: '订阅配置' } },
@@ -36,6 +38,9 @@ export const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, layout: 'admin' },
     children: [
       { path: '', redirect: '/admin/dashboard' },
+      { path: 'plugins', component: () => import('../views/Plugins.vue'), meta: { title: '插件管理', section: '扩展中心' } },
+      { path: 'plugin-market', component: () => import('../views/PluginMarket.vue'), meta: { title: '插件市场', section: '扩展中心' } },
+      { path: 'extensions/:pluginId/:pageId', component: () => import('../views/PluginPage.vue'), meta: { pluginPage: true, title: '扩展', section: '扩展中心' } },
       { path: 'dashboard', component: () => import('../views/Dashboard.vue'), meta: { title: '运营工作台', section: '工作台' } },
       { path: 'users', component: () => import('../views/Users.vue'), meta: { title: '用户管理', section: '客户与支持' } },
       { path: 'subscriptions', component: () => import('../views/Subscriptions.vue'), meta: { title: '订阅管理', section: '客户与支持' } },

@@ -53,6 +53,9 @@ func SafeAccessLogMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func sanitizeAccessLogPath(path string) string {
+	if strings.HasPrefix(path, "/api/v1/plugin-assets/") {
+		return "/api/v1/plugin-assets/[redacted]"
+	}
 	const subscriptionPrefix = "/api/v1/client/subscription/"
 	if strings.HasPrefix(path, subscriptionPrefix) {
 		return redactedSubscriptionPath

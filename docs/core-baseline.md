@@ -6,7 +6,7 @@
 
 - 保留现有自用/小规模面板闭环，通过小步修复提高性能、稳定性与交互质量。
 - 核心包含用户、登录注册、节点/协议、基础订单、权益、订阅、流量、内核基础限制、文档公告及必要维护。
-- 支付尚未接入，未来通过插件补充；当前只渐进整理内部服务边界，不建设插件运行时。
+- 支付尚未接入，未来通过独立插件能力补充；当前插件运行时仅开放页面与自身配置，提供签名市场、管理和离线导入。核心写入仍由明确的专用服务负责，见[插件边界](plugin-system-design.md)。
 - [XBoard](https://github.com/cedar2025/Xboard) 对照业务流程；[X-Panel](https://github.com/xeefei/X-Panel) 参考基础/增值能力分离；[Typecho 插件实现](https://github.com/typecho/typecho/blob/master/var/Typecho/Plugin.php) 参考精简核心和扩展点。三者都不直接决定 ZBoard 的功能清单或性能结论。
 - 现有套餐/SKU、历史订单、权益和节点配置保持兼容，外围能力按真实依赖逐项隔离。未来 ZBoard 插件不能向 Zero Connector 引入支付、套餐或第三方业务语义。
 

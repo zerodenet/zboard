@@ -6,5 +6,5 @@ import "embed"
 // migrations shipped with every zboard binary, so a deployment never depends
 // on a separately copied schema folder.
 //
-//go:embed *.up.sql *.down.sql
+//go:embed *.up.sql *.down.sql sqlite/*.sql
 var Files embed.FS

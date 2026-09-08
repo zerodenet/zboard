@@ -31,3 +31,9 @@ zero_event_spool_emergency_ratio: 0.95
 zero_event_spool_min_free_bytes: 536870912
 zero_event_spool_emergency_reserve_bytes: 268435456
 zero_event_spool_critical_reserve_bytes: 1073741824
+
+# Persistent plugin packages. Configure public keys before importing.
+plugins:
+  directory: "/var/lib/zboard/plugins"
+  catalog_url: ""
+  trusted_publishers: {}

@@ -11,6 +11,7 @@ servers:
 security:
   - bearerAuth: []
 tags:
+  - name: plugins
   - name: system
   - name: auth
   - name: admin
@@ -21,6 +22,530 @@ tags:
   - name: traffic
   - name: tickets
 paths:
+  "/api/v1/admin/plugins":
+    "get":
+      "tags": ["plugins"]
+      "summary": "List up to 200 plugin installations; administrator only"
+      "responses":
+        "200":
+          "description": "Success; response data is described below"
+          "content":
+            "application/json":
+              "schema":
+                "allOf": [{"$ref": "#/components/schemas/ApiResponse"}, {"type": "object", "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/PluginInstallation"}}}}]
+        "400":
+          "description": "Invalid package, signature, configuration or unsupported capability"
+        "401":
+          "description": "Authentication required or expired"
+        "403":
+          "description": "Administrator, surface or session access denied"
+        "409":
+          "description": "Stale installation generation, configuration revision or catalog digest"
+        "503":
+          "description": "Plugin host lease lost or runtime unavailable"
+    "post":
+      "tags": ["plugins"]
+      "summary": "Import a trusted signed offline package; installed disabled"
+      "responses":
+        "200":
+          "description": "Success; response data is described below"
+          "content":
+            "application/json":
+              "schema":
+                "allOf": [{"$ref": "#/components/schemas/ApiResponse"}, {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/PluginInstallation"}}}]
+        "400":
+          "description": "Invalid package, signature, configuration or unsupported capability"
+        "401":
+          "description": "Authentication required or expired"
+        "403":
+          "description": "Administrator, surface or session access denied"
+        "409":
+          "description": "Stale installation generation, configuration revision or catalog digest"
+        "503":
+          "description": "Plugin host lease lost or runtime unavailable"
+      "requestBody":
+        "required": true
+        "content":
+          "application/octet-stream":
+            "schema":
+              "type": "string"
+              "format": "binary"
+              "maxLength": 33554432
+  "/api/v1/admin/plugins/{id}/actions/{action}":
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "action", "in": "path", "required": true, "schema": {"type": "string", "enum": ["enable", "disable", "rollback", "uninstall", "purge"]}}]
+    "post":
+      "tags": ["plugins"]
+      "summary": "Change plugin lifecycle; administrator only"
+      "responses":
+        "200":
+          "description": "Success; response data is described below"
+          "content":
+            "application/json":
+              "schema":
+                "allOf": [{"$ref": "#/components/schemas/ApiResponse"}, {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/PluginInstallation"}}}]
+        "400":
+          "description": "Invalid package, signature, configuration or unsupported capability"
+        "401":
+          "description": "Authentication required or expired"
+        "403":
+          "description": "Administrator, surface or session access denied"
+        "409":
+          "description": "Stale installation generation, configuration revision or catalog digest"
+        "503":
+          "description": "Plugin host lease lost or runtime unavailable"
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "type": "object"
+              "properties":
+                "generation":
+                  "type": "integer"
+                  "minimum": 0
+                "accept_untested":
+                  "type": "boolean"
+                "version_id":
+                  "type": "string"
+              "required": ["generation"]
+  "/api/v1/admin/plugins/{id}/config":
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}]
+    "get":
+      "tags": ["plugins"]
+      "summary": "Read configuration revision and presence without secrets"
+      "responses":
+        "200":
+          "description": "Success; response data is described below"
+          "content":
+            "application/json":
+              "schema":
+                "allOf": [{"$ref": "#/components/schemas/ApiResponse"}, {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/PluginConfigView"}}}]
+        "400":
+          "description": "Invalid package, signature, configuration or unsupported capability"
+        "401":
+          "description": "Authentication required or expired"
+        "403":
+          "description": "Administrator, surface or session access denied"
+        "409":
+          "description": "Stale installation generation, configuration revision or catalog digest"
+        "503":
+          "description": "Plugin host lease lost or runtime unavailable"
+    "put":
+      "tags": ["plugins"]
+      "summary": "Validate and replace encrypted plugin configuration"
+      "responses":
+        "200":
+          "description": "Success; response data is described below"
+          "content":
+            "application/json":
+              "schema":
+                "allOf": [{"$ref": "#/components/schemas/ApiResponse"}, {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/PluginConfigView"}}}]
+        "400":
+          "description": "Invalid package, signature, configuration or unsupported capability"
+        "401":
+          "description": "Authentication required or expired"
+        "403":
+          "description": "Administrator, surface or session access denied"
+        "409":
+          "description": "Stale installation generation, configuration revision or catalog digest"
+        "503":
+          "description": "Plugin host lease lost or runtime unavailable"
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "type": "object"
+              "properties":
+                "revision":
+                  "type": "integer"
+                  "minimum": 0
+                "config":
+                  "type": "object"
+                  "additionalProperties": true
+              "required": ["revision", "config"]
+              "additionalProperties": false
+  "/api/v1/admin/plugins/{id}/test":
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}]
+    "post":
+      "tags": ["plugins"]
+      "summary": "Test saved configuration using the optional server component"
+      "responses":
+        "200":
+          "description": "Success; response data is described below"
+          "content":
+            "application/json":
+              "schema":
+                "allOf": [{"$ref": "#/components/schemas/ApiResponse"}, {"type": "object", "properties": {"data": {"type": "object", "properties": {"healthy": {"type": "boolean"}}}}}]
+        "400":
+          "description": "Invalid package, signature, configuration or unsupported capability"
+        "401":
+          "description": "Authentication required or expired"
+        "403":
+          "description": "Administrator, surface or session access denied"
+        "409":
+          "description": "Stale installation generation, configuration revision or catalog digest"
+        "503":
+          "description": "Plugin host lease lost or runtime unavailable"
+  "/api/v1/admin/plugins/{id}/operations":
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}]
+    "get":
+      "tags": ["plugins"]
+      "summary": "Read the latest 50 plugin operation records"
+      "responses":
+        "200":
+          "description": "Success; response data is described below"
+          "content":
+            "application/json":
+              "schema":
+                "allOf": [{"$ref": "#/components/schemas/ApiResponse"}, {"type": "object", "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/PluginOperation"}}}}]
+        "400":
+          "description": "Invalid package, signature, configuration or unsupported capability"
+        "401":
+          "description": "Authentication required or expired"
+        "403":
+          "description": "Administrator, surface or session access denied"
+        "409":
+          "description": "Stale installation generation, configuration revision or catalog digest"
+        "503":
+          "description": "Plugin host lease lost or runtime unavailable"
+  "/api/v1/admin/plugin-market":
+    "get":
+      "tags": ["plugins"]
+      "summary": "Read and verify the configured signed marketplace"
+      "responses":
+        "200":
+          "description": "Success; response data is described below"
+          "content":
+            "application/json":
+              "schema":
+                "allOf": [{"$ref": "#/components/schemas/ApiResponse"}, {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/PluginMarket"}}}]
+        "400":
+          "description": "Invalid package, signature, configuration or unsupported capability"
+        "401":
+          "description": "Authentication required or expired"
+        "403":
+          "description": "Administrator, surface or session access denied"
+        "409":
+          "description": "Stale installation generation, configuration revision or catalog digest"
+        "503":
+          "description": "Plugin host lease lost or runtime unavailable"
+    "post":
+      "tags": ["plugins"]
+      "summary": "Download and verify the selected market package; installed disabled"
+      "responses":
+        "200":
+          "description": "Success; response data is described below"
+          "content":
+            "application/json":
+              "schema":
+                "allOf": [{"$ref": "#/components/schemas/ApiResponse"}, {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/PluginInstallation"}}}]
+        "400":
+          "description": "Invalid package, signature, configuration or unsupported capability"
+        "401":
+          "description": "Authentication required or expired"
+        "403":
+          "description": "Administrator, surface or session access denied"
+        "409":
+          "description": "Stale installation generation, configuration revision or catalog digest"
+        "503":
+          "description": "Plugin host lease lost or runtime unavailable"
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "type": "object"
+              "properties":
+                "id":
+                  "type": "string"
+                "digest":
+                  "type": "string"
+              "required": ["id", "digest"]
+  "/api/v1/plugin-ui/catalog":
+    "get":
+      "tags": ["plugins"]
+      "summary": "List active page contributions for the authorized surface"
+      "responses":
+        "200":
+          "description": "Success; response data is described below"
+          "content":
+            "application/json":
+              "schema":
+                "allOf": [{"$ref": "#/components/schemas/ApiResponse"}, {"type": "object", "properties": {"data": {"type": "array", "items": {"type": "object", "properties": {"plugin_id": {"type": "string"}, "page": {"$ref": "#/components/schemas/PluginPage"}, "generation": {"type": "integer", "minimum": 0}}}}}}]
+        "400":
+          "description": "Invalid package, signature, configuration or unsupported capability"
+        "401":
+          "description": "Authentication required or expired"
+        "403":
+          "description": "Administrator, surface or session access denied"
+        "409":
+          "description": "Stale installation generation, configuration revision or catalog digest"
+        "503":
+          "description": "Plugin host lease lost or runtime unavailable"
+      "security": [{}, {"bearerAuth": []}]
+      "parameters": [{"name": "surface", "in": "query", "required": true, "schema": {"type": "string", "enum": ["public", "account", "admin"]}}]
+  "/api/v1/plugin-ui/{id}/session":
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}]
+    "post":
+      "tags": ["plugins"]
+      "summary": "Create a ten minute session bound to identity, surface and generation"
+      "responses":
+        "200":
+          "description": "Success; response data is described below"
+          "content":
+            "application/json":
+              "schema":
+                "allOf": [{"$ref": "#/components/schemas/ApiResponse"}, {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/PluginSession"}}}]
+        "400":
+          "description": "Invalid package, signature, configuration or unsupported capability"
+        "401":
+          "description": "Authentication required or expired"
+        "403":
+          "description": "Administrator, surface or session access denied"
+        "409":
+          "description": "Stale installation generation, configuration revision or catalog digest"
+        "503":
+          "description": "Plugin host lease lost or runtime unavailable"
+      "security": [{}, {"bearerAuth": []}]
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "type": "object"
+              "properties":
+                "page":
+                  "type": "string"
+                "surface":
+                  "type": "string"
+                  "enum": ["public", "account", "admin"]
+                "configuration":
+                  "type": "boolean"
+              "required": ["page", "surface"]
+  "/api/v1/plugin-ui/session":
+    "delete":
+      "tags": ["plugins"]
+      "summary": "Revoke a page session owned by the current identity"
+      "responses":
+        "200":
+          "description": "Success; response data is described below"
+          "content":
+            "application/json":
+              "schema":
+                "allOf": [{"$ref": "#/components/schemas/ApiResponse"}, {"type": "object", "properties": {"data": {"type": "object", "properties": {"revoked": {"type": "boolean"}}}}}]
+        "400":
+          "description": "Invalid package, signature, configuration or unsupported capability"
+        "401":
+          "description": "Authentication required or expired"
+        "403":
+          "description": "Administrator, surface or session access denied"
+        "409":
+          "description": "Stale installation generation, configuration revision or catalog digest"
+        "503":
+          "description": "Plugin host lease lost or runtime unavailable"
+      "security": [{}, {"bearerAuth": []}]
+    "parameters": [{"name": "X-Plugin-Session", "in": "header", "required": true, "schema": {"type": "string"}}]
+  "/api/v1/plugin-ui/bridge":
+    "post":
+      "tags": ["plugins"]
+      "summary": "Invoke an explicitly allowed page or configuration operation"
+      "responses":
+        "200":
+          "description": "Success; response data is described below"
+          "content":
+            "application/json":
+              "schema":
+                "allOf": [{"$ref": "#/components/schemas/ApiResponse"}, {"type": "object", "properties": {"data": {"type": "object"}}}]
+        "400":
+          "description": "Invalid package, signature, configuration or unsupported capability"
+        "401":
+          "description": "Authentication required or expired"
+        "403":
+          "description": "Administrator, surface or session access denied"
+        "409":
+          "description": "Stale installation generation, configuration revision or catalog digest"
+        "503":
+          "description": "Plugin host lease lost or runtime unavailable"
+      "security": [{}, {"bearerAuth": []}]
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "type": "object"
+              "properties":
+                "type":
+                  "type": "string"
+                  "enum": ["context.load", "config.load", "config.save", "config.test"]
+                "revision":
+                  "type": "integer"
+                  "minimum": 0
+                "config":
+                  "type": "object"
+              "required": ["type"]
+      "description": "context.load returns surface, plugin_id and page_id only. config methods require an administrator configuration session. config.save fully replaces the configuration with CAS revision; config.load returns PluginConfigView. No core commands, credentials, authentication tokens, SQL or node APIs are exposed."
+    "parameters": [{"name": "X-Plugin-Session", "in": "header", "required": true, "schema": {"type": "string"}}]
+  "/api/v1/plugin-assets/{token}/{part1}":
+    "get":
+      "tags": ["plugins"]
+      "summary": "Read a declared UI asset through a revocable bearer resource token"
+      "description": "No host bearer token is passed to the iframe. Only signed ui/ files, at most eight path segments; no source maps, traversal, manifest or executable access. CSP sandbox allows scripts without same-origin access; direct network and form requests are blocked. Returns 404 for absent, expired or revoked sessions."
+      "security": []
+      "parameters": [{"name": "token", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part1", "in": "path", "required": true, "schema": {"type": "string"}}]
+      "responses":
+        "200":
+          "description": "Signed static file with restrictive CSP and no-store caching"
+          "content":
+            "text/html":
+              "schema":
+                "type": "string"
+            "application/octet-stream":
+              "schema":
+                "type": "string"
+                "format": "binary"
+        "404":
+          "description": "Session or asset unavailable"
+  "/api/v1/plugin-assets/{token}/{part1}/{part2}":
+    "get":
+      "tags": ["plugins"]
+      "summary": "Read a declared UI asset through a revocable bearer resource token"
+      "description": "No host bearer token is passed to the iframe. Only signed ui/ files, at most eight path segments; no source maps, traversal, manifest or executable access. CSP sandbox allows scripts without same-origin access; direct network and form requests are blocked. Returns 404 for absent, expired or revoked sessions."
+      "security": []
+      "parameters": [{"name": "token", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part1", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part2", "in": "path", "required": true, "schema": {"type": "string"}}]
+      "responses":
+        "200":
+          "description": "Signed static file with restrictive CSP and no-store caching"
+          "content":
+            "text/html":
+              "schema":
+                "type": "string"
+            "application/octet-stream":
+              "schema":
+                "type": "string"
+                "format": "binary"
+        "404":
+          "description": "Session or asset unavailable"
+  "/api/v1/plugin-assets/{token}/{part1}/{part2}/{part3}":
+    "get":
+      "tags": ["plugins"]
+      "summary": "Read a declared UI asset through a revocable bearer resource token"
+      "description": "No host bearer token is passed to the iframe. Only signed ui/ files, at most eight path segments; no source maps, traversal, manifest or executable access. CSP sandbox allows scripts without same-origin access; direct network and form requests are blocked. Returns 404 for absent, expired or revoked sessions."
+      "security": []
+      "parameters": [{"name": "token", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part1", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part2", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part3", "in": "path", "required": true, "schema": {"type": "string"}}]
+      "responses":
+        "200":
+          "description": "Signed static file with restrictive CSP and no-store caching"
+          "content":
+            "text/html":
+              "schema":
+                "type": "string"
+            "application/octet-stream":
+              "schema":
+                "type": "string"
+                "format": "binary"
+        "404":
+          "description": "Session or asset unavailable"
+  "/api/v1/plugin-assets/{token}/{part1}/{part2}/{part3}/{part4}":
+    "get":
+      "tags": ["plugins"]
+      "summary": "Read a declared UI asset through a revocable bearer resource token"
+      "description": "No host bearer token is passed to the iframe. Only signed ui/ files, at most eight path segments; no source maps, traversal, manifest or executable access. CSP sandbox allows scripts without same-origin access; direct network and form requests are blocked. Returns 404 for absent, expired or revoked sessions."
+      "security": []
+      "parameters": [{"name": "token", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part1", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part2", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part3", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part4", "in": "path", "required": true, "schema": {"type": "string"}}]
+      "responses":
+        "200":
+          "description": "Signed static file with restrictive CSP and no-store caching"
+          "content":
+            "text/html":
+              "schema":
+                "type": "string"
+            "application/octet-stream":
+              "schema":
+                "type": "string"
+                "format": "binary"
+        "404":
+          "description": "Session or asset unavailable"
+  "/api/v1/plugin-assets/{token}/{part1}/{part2}/{part3}/{part4}/{part5}":
+    "get":
+      "tags": ["plugins"]
+      "summary": "Read a declared UI asset through a revocable bearer resource token"
+      "description": "No host bearer token is passed to the iframe. Only signed ui/ files, at most eight path segments; no source maps, traversal, manifest or executable access. CSP sandbox allows scripts without same-origin access; direct network and form requests are blocked. Returns 404 for absent, expired or revoked sessions."
+      "security": []
+      "parameters": [{"name": "token", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part1", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part2", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part3", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part4", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part5", "in": "path", "required": true, "schema": {"type": "string"}}]
+      "responses":
+        "200":
+          "description": "Signed static file with restrictive CSP and no-store caching"
+          "content":
+            "text/html":
+              "schema":
+                "type": "string"
+            "application/octet-stream":
+              "schema":
+                "type": "string"
+                "format": "binary"
+        "404":
+          "description": "Session or asset unavailable"
+  "/api/v1/plugin-assets/{token}/{part1}/{part2}/{part3}/{part4}/{part5}/{part6}":
+    "get":
+      "tags": ["plugins"]
+      "summary": "Read a declared UI asset through a revocable bearer resource token"
+      "description": "No host bearer token is passed to the iframe. Only signed ui/ files, at most eight path segments; no source maps, traversal, manifest or executable access. CSP sandbox allows scripts without same-origin access; direct network and form requests are blocked. Returns 404 for absent, expired or revoked sessions."
+      "security": []
+      "parameters": [{"name": "token", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part1", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part2", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part3", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part4", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part5", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part6", "in": "path", "required": true, "schema": {"type": "string"}}]
+      "responses":
+        "200":
+          "description": "Signed static file with restrictive CSP and no-store caching"
+          "content":
+            "text/html":
+              "schema":
+                "type": "string"
+            "application/octet-stream":
+              "schema":
+                "type": "string"
+                "format": "binary"
+        "404":
+          "description": "Session or asset unavailable"
+  "/api/v1/plugin-assets/{token}/{part1}/{part2}/{part3}/{part4}/{part5}/{part6}/{part7}":
+    "get":
+      "tags": ["plugins"]
+      "summary": "Read a declared UI asset through a revocable bearer resource token"
+      "description": "No host bearer token is passed to the iframe. Only signed ui/ files, at most eight path segments; no source maps, traversal, manifest or executable access. CSP sandbox allows scripts without same-origin access; direct network and form requests are blocked. Returns 404 for absent, expired or revoked sessions."
+      "security": []
+      "parameters": [{"name": "token", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part1", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part2", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part3", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part4", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part5", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part6", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part7", "in": "path", "required": true, "schema": {"type": "string"}}]
+      "responses":
+        "200":
+          "description": "Signed static file with restrictive CSP and no-store caching"
+          "content":
+            "text/html":
+              "schema":
+                "type": "string"
+            "application/octet-stream":
+              "schema":
+                "type": "string"
+                "format": "binary"
+        "404":
+          "description": "Session or asset unavailable"
+  "/api/v1/plugin-assets/{token}/{part1}/{part2}/{part3}/{part4}/{part5}/{part6}/{part7}/{part8}":
+    "get":
+      "tags": ["plugins"]
+      "summary": "Read a declared UI asset through a revocable bearer resource token"
+      "description": "No host bearer token is passed to the iframe. Only signed ui/ files, at most eight path segments; no source maps, traversal, manifest or executable access. CSP sandbox allows scripts without same-origin access; direct network and form requests are blocked. Returns 404 for absent, expired or revoked sessions."
+      "security": []
+      "parameters": [{"name": "token", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part1", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part2", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part3", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part4", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part5", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part6", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part7", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "part8", "in": "path", "required": true, "schema": {"type": "string"}}]
+      "responses":
+        "200":
+          "description": "Signed static file with restrictive CSP and no-store caching"
+          "content":
+            "text/html":
+              "schema":
+                "type": "string"
+            "application/octet-stream":
+              "schema":
+                "type": "string"
+                "format": "binary"
+        "404":
+          "description": "Session or asset unavailable"
   /healthz:
     get:
       tags:
@@ -230,7 +755,7 @@ paths:
       parameters:
         - { name: node_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
       responses:
-        "200": { description: Pools with id, node_id, name, revision and entry_count; no config or credentials }
+        "200": { description: "Pools with id, node_id, name, revision and entry_count; no config or credentials" }
     post:
       tags: [admin, nodes]
       summary: Create a node-local proxy pool and queue publication to that node
@@ -1930,7 +2455,7 @@ paths:
                   - $ref: "#/components/schemas/ApiResponse"
                   - properties:
                       data: { $ref: "#/components/schemas/AdminOrderDetail" }
-        "400": { description: Invalid recipient, amount, SKU, target subscription or request identifier }
+        "400": { description: "Invalid recipient, amount, SKU, target subscription or request identifier" }
         "401": { description: Authentication required }
         "403": { description: Administrator permission required }
         "409": { description: Plan subscription capacity reached }
@@ -3268,6 +3793,237 @@ components:
           schema:
             $ref: "#/components/schemas/ApiResponse"
   schemas:
+    "PluginPage":
+      "type": "object"
+      "properties":
+        "id":
+          "type": "string"
+        "surface":
+          "type": "string"
+          "enum": ["public", "account", "admin"]
+        "title":
+          "type": "string"
+        "purpose":
+          "type": "string"
+          "enum": ["business", "configuration"]
+      "required": ["id", "surface", "title"]
+    "PluginConfigView":
+      "type": "object"
+      "properties":
+        "revision":
+          "type": "integer"
+          "minimum": 0
+        "configured":
+          "type": "boolean"
+      "required": ["revision", "configured"]
+    "PluginVersion":
+      "type": "object"
+      "properties":
+        "id":
+          "type": "string"
+        "plugin_id":
+          "type": "string"
+        "version":
+          "type": "string"
+        "digest":
+          "type": "string"
+        "publisher":
+          "type": "string"
+        "created_at":
+          "type": "string"
+          "format": "date-time"
+    "PluginOperation":
+      "type": "object"
+      "properties":
+        "id":
+          "type": "string"
+        "plugin_id":
+          "type": "string"
+        "action":
+          "type": "string"
+        "state":
+          "type": "string"
+        "actor":
+          "type": "string"
+        "message":
+          "type": "string"
+        "created_at":
+          "type": "string"
+          "format": "date-time"
+        "updated_at":
+          "type": "string"
+          "format": "date-time"
+    "PluginManifest":
+      "type": "object"
+      "properties":
+        "schema_version":
+          "type": "integer"
+          "enum": [1]
+        "id":
+          "type": "string"
+        "name":
+          "type": "string"
+        "description":
+          "type": "string"
+        "version":
+          "type": "string"
+        "requires":
+          "type": "object"
+          "properties":
+            "zboard":
+              "type": "string"
+            "recommended_zboard_version":
+              "type": "string"
+            "tested_zboard_versions":
+              "type": "array"
+              "items":
+                "type": "string"
+            "plugin_protocol":
+              "type": "integer"
+            "ui_bridge":
+              "type": "integer"
+        "capabilities":
+          "type": "array"
+          "items":
+            "type": "string"
+            "enum": ["zboard.ui.page.v1", "zboard.config.v1"]
+        "surfaces":
+          "type": "array"
+          "items":
+            "type": "string"
+            "enum": ["public", "account", "admin"]
+        "components":
+          "type": "object"
+          "properties":
+            "ui":
+              "type": "object"
+              "additionalProperties":
+                "type": "string"
+            "server":
+              "type": "object"
+              "properties":
+                "executables":
+                  "type": "object"
+                  "additionalProperties":
+                    "type": "string"
+        "contributions":
+          "type": "object"
+          "properties":
+            "pages":
+              "type": "array"
+              "items":
+                "$ref": "#/components/schemas/PluginPage"
+        "files":
+          "type": "object"
+          "additionalProperties":
+            "type": "string"
+    "PluginInstallation":
+      "type": "object"
+      "properties":
+        "id":
+          "type": "string"
+        "name":
+          "type": "string"
+        "version":
+          "type": "string"
+        "version_id":
+          "type": "string"
+        "digest":
+          "type": "string"
+        "publisher":
+          "type": "string"
+        "last_error":
+          "type": "string"
+        "state":
+          "type": "string"
+          "enum": ["disabled", "active", "failed", "incompatible", "uninstalled"]
+        "enabled":
+          "type": "boolean"
+        "generation":
+          "type": "integer"
+          "minimum": 0
+        "config_revision":
+          "type": "integer"
+          "minimum": 0
+        "manifest":
+          "$ref": "#/components/schemas/PluginManifest"
+        "compatibility":
+          "type": "object"
+          "properties":
+            "compatible":
+              "type": "boolean"
+            "tested":
+              "type": "boolean"
+            "reason":
+              "type": "string"
+        "versions":
+          "type": "array"
+          "items":
+            "$ref": "#/components/schemas/PluginVersion"
+        "created_at":
+          "type": "string"
+          "format": "date-time"
+        "updated_at":
+          "type": "string"
+          "format": "date-time"
+    "PluginSession":
+      "type": "object"
+      "properties":
+        "token":
+          "type": "string"
+        "bridge_token":
+          "type": "string"
+        "plugin_id":
+          "type": "string"
+        "page_id":
+          "type": "string"
+        "purpose":
+          "type": "string"
+        "entrypoint":
+          "type": "string"
+        "url":
+          "type": "string"
+        "surface":
+          "type": "string"
+          "enum": ["public", "account", "admin"]
+        "generation":
+          "type": "integer"
+          "minimum": 0
+        "expires_at":
+          "type": "string"
+          "format": "date-time"
+    "PluginMarket":
+      "type": "object"
+      "properties":
+        "configured":
+          "type": "boolean"
+        "expires_at":
+          "type": "string"
+          "format": "date-time"
+        "entries":
+          "type": "array"
+          "items":
+            "type": "object"
+            "properties":
+              "id":
+                "type": "string"
+              "name":
+                "type": "string"
+              "description":
+                "type": "string"
+              "version":
+                "type": "string"
+              "publisher":
+                "type": "string"
+              "package_url":
+                "type": "string"
+              "sha256":
+                "type": "string"
+              "surfaces":
+                "type": "array"
+                "items":
+                  "type": "string"
+                  "enum": ["public", "account", "admin"]
     NodeProxyPoolRequest:
       type: object
       required: [node_id, name]

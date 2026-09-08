@@ -21,12 +21,14 @@
             <span>{{ page.label }}</span><span v-if="currentPage?.to === page.to" class="current-marker" aria-hidden="true" />
           </RouterLink>
         </section>
+        <section class="page-section"><PluginNavigation surface="admin" /></section>
       </nav>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import PluginNavigation from '../plugins/PluginNavigation.vue'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import UiIcon from './UiIcon.vue'

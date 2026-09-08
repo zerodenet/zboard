@@ -31,6 +31,7 @@ import (
 
 	cfgpkg "github.com/zerodenet/zboard/backend/internal/config"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/internal/plugins"
 	"github.com/zerodenet/zboard/backend/internal/security"
 	"github.com/zerodenet/zboard/backend/internal/version"
 )
@@ -447,6 +448,7 @@ type siteSettingsRequest struct {
 }
 
 type handlers struct {
+	pluginManager            *plugins.Manager
 	db                       *gorm.DB
 	trafficReadDB            *gorm.DB
 	jwtSecret                string

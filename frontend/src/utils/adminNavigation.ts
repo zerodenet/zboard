@@ -62,6 +62,7 @@ export const adminNavigation: AdminNavigationDomain[] = [
       { to: '/admin/settings/email', label: '邮件与运营模板' },
       { to: '/admin/settings/legal', label: '法务与政策' },
     ] },
+    { label: '扩展中心', pages: [{ to: '/admin/plugin-market', label: '插件市场' }, { to: '/admin/plugins', label: '插件管理' }] },
     { label: '系统管理', pages: [
       { to: '/admin/settings/runtime', label: '系统运行' },
       { to: '/admin/maintenance', label: '系统维护' },
@@ -75,7 +76,8 @@ const entries = adminNavigation.flatMap(domain => domain.sections.flatMap(sectio
 )).sort((left, right) => right.page.to.length - left.page.to.length)
 
 export function resolveAdminNavigation(path: string) {
-  const pathname = path.split(/[?#]/, 1)[0]
+  const rawPath = path.split(/[?#]/, 1)[0]
+  const pathname = rawPath.startsWith('/admin/extensions/') ? '/admin/plugins' : rawPath
   // Longest match prevents both templates and their rule-set page being selected.
   return entries.find(({ page }) => pathname === page.to || pathname.startsWith(`${page.to}/`))
 }

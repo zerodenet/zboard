@@ -11,6 +11,7 @@
         <RouterLink to="/account/traffic"><UiIcon name="activity" />流量明细</RouterLink>
         <RouterLink to="/account/announcements"><UiIcon name="info" />公告中心<span v-if="app.announcementUnreadCount" class="nav-count">{{ app.announcementUnreadCount > 99 ? '99+' : app.announcementUnreadCount }}</span></RouterLink>
         <RouterLink to="/account/tickets"><UiIcon name="ticket" />我的工单</RouterLink>
+        <PluginNavigation surface="account" />
         <RouterLink v-if="app.isAdmin" to="/admin/dashboard"><UiIcon name="shield" />管理后台</RouterLink>
       </nav>
       <div class="account-identity"><span class="avatar">{{ userInitial }}</span><div><strong>{{ app.user.email }}</strong><span v-if="app.isAdmin">已授予管理员权限</span></div><UiButton variant="ghost" icon class="icon-button" type="button" aria-label="退出登录" title="退出登录" @click="logout"><UiIcon name="logout" /></UiButton></div>
@@ -20,6 +21,7 @@
 </template>
 
 <script setup lang="ts">
+import PluginNavigation from '../plugins/PluginNavigation.vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import UiIcon from '../components/UiIcon.vue'

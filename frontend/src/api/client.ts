@@ -2351,3 +2351,6 @@ export async function assignAdminOrder(payload: AdminOrderAssignmentRequest): Pr
   const response = await api.post('/admin/orders', payload)
   return unwrap(response)
 }
+
+// Shared authenticated client for bounded feature APIs.
+export { api as authenticatedAPI }

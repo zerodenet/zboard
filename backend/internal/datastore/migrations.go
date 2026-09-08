@@ -177,7 +177,7 @@ func RunMigrations(db *gorm.DB) error {
 			return fmt.Errorf("record migration %s: %w", version, err)
 		}
 	}
-	if isPreReleaseBaselineOnly(versions) {
+	if len(versions) > 0 && versions[0] == preReleaseBaselineVersion {
 		if err := finalizePreReleaseBaselineSchema(sqlDB); err != nil {
 			return err
 		}
@@ -209,7 +209,7 @@ func isPreReleaseBaselineOnly(versions []string) bool {
 }
 
 func preparePreReleaseMigrationHistory(db *sql.DB, versions []string) error {
-	if !isPreReleaseBaselineOnly(versions) {
+	if len(versions) == 0 || versions[0] != preReleaseBaselineVersion {
 		return nil
 	}
 
@@ -239,6 +239,14 @@ func preparePreReleaseMigrationHistory(db *sql.DB, versions []string) error {
 	}
 	if baselineApplied == 0 {
 		return fmt.Errorf("database migration history does not contain required baseline %s", preReleaseBaselineVersion)
+	}
+	// Exclude known append-only migrations from the legacy development-chain check.
+	for _, version := range versions[1:] {
+		var count int
+		if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations WHERE version = ?", version).Scan(&count); err != nil {
+			return err
+		}
+		applied -= count
 	}
 	if applied > 1 && terminalApplied == 0 {
 		return fmt.Errorf("pre-release database must reach %s before adopting the squashed %s baseline", preSquashTerminalVersion, preReleaseBaselineVersion)

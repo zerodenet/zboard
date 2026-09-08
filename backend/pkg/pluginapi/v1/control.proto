@@ -1,0 +1,17 @@
+syntax = "proto3";
+package zboard.plugin.v1;
+option go_package = "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1;pluginv1";
+
+// No generic host command, SQL, node or credential service is exposed here.
+service PluginControl {
+ rpc GetInfo(Empty) returns (Info);
+ rpc Health(Empty) returns (HealthResult);
+ rpc ValidateConfig(ConfigRequest) returns (ConfigResult);
+ rpc ApplyConfig(ConfigRequest) returns (HealthResult);
+ rpc TestConfig(ConfigRequest) returns (HealthResult);
+}
+message Empty {}
+message Info { string id = 1; string version = 2; uint32 protocol = 3; repeated string capabilities = 4; }
+message ConfigRequest { bytes config_json = 1; uint64 revision = 2; }
+message ConfigResult { bytes normalized_json = 1; }
+message HealthResult { bool healthy = 1; string message = 2; }
