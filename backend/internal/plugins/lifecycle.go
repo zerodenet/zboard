@@ -18,6 +18,8 @@ func (m *Manager) commitCandidate(ctx context.Context, prev model.PluginInstalla
 	defer cancel()
 	candidate := Installation{PluginInstallation: prev, Manifest: pack.Manifest, Digest: pack.Digest, Version: pack.Manifest.Version, Compatibility: pack.Manifest.Compatibility(m.host)}
 	candidate.ID, candidate.Name, candidate.Publisher = pack.Manifest.ID, pack.Manifest.Name, pack.Publisher
+	candidate.LocalTrust = pack.LocalTrust
+	candidate.SigningKey = pack.PublicKey
 	candidate.VersionID = pack.Digest
 	candidate.Generation = prev.Generation + 1
 	candidate.Enabled = prev.Enabled && prev.State != "uninstalled"

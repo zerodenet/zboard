@@ -66,7 +66,17 @@ func (h *handlers) AdminPluginsHandler(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "plugin package exceeds 32 MiB")
 		return
 	}
-	item, err := h.pluginManager.Import(raw, claims.Email)
+	publicKey := r.Header.Get("X-Plugin-Public-Key")
+	if r.URL.Query().Get("inspect") == "true" {
+		preview, err := h.pluginManager.PreviewImport(raw, publicKey)
+		if err != nil {
+			pluginError(w, err)
+			return
+		}
+		OK(w, preview)
+		return
+	}
+	item, err := h.pluginManager.ImportConfirmed(raw, claims.Email, publicKey, r.Header.Get("X-Plugin-Digest"), r.Header.Get("X-Plugin-Trust-Fingerprint"))
 	if err != nil {
 		pluginError(w, err)
 		return

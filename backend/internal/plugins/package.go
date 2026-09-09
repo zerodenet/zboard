@@ -16,11 +16,14 @@ import (
 )
 
 type Signature struct {
+	PublicKey string `json:"public_key,omitempty"`
 	Algorithm string `json:"algorithm"`
 	KeyID     string `json:"key_id"`
 	Signature string `json:"signature"`
 }
 type Package struct {
+	LocalTrust  bool
+	PublicKey   string
 	Manifest    Manifest
 	RawManifest []byte
 	Digest      string
@@ -40,6 +43,11 @@ func verifySignature(raw []byte, sig Signature, keys map[string]string) error {
 	return nil
 }
 func ReadPackage(data []byte, keys map[string]string) (*Package, error) {
+	return readPackage(data, func(_ string, sig Signature) (string, error) { return keys[sig.KeyID], nil })
+}
+
+// Resolving a key is separate from cryptographic verification and host admission.
+func readPackage(data []byte, resolve func(string, Signature) (string, error)) (*Package, error) {
 	if int64(len(data)) > MaxPackageBytes {
 		return nil, errors.New("plugin package exceeds 32 MiB")
 	}
@@ -85,14 +93,21 @@ func ReadPackage(data []byte, keys map[string]string) (*Package, error) {
 	if err := DecodeStrict(files["signature.json"], &sig); err != nil {
 		return nil, errors.New("signed packages are required")
 	}
-	if err := verifySignature(raw, sig, keys); err != nil {
-		return nil, err
-	}
 	var m Manifest
 	if err := DecodeStrict(raw, &m); err != nil {
 		return nil, err
 	}
 	if err := m.Validate(); err != nil {
+		return nil, err
+	}
+	key, err := resolve(m.ID, sig)
+	if err != nil {
+		return nil, err
+	}
+	if sig.PublicKey != "" && sig.PublicKey != key {
+		return nil, errors.New("package public key mismatch")
+	}
+	if err := verifySignature(raw, sig, map[string]string{sig.KeyID: key}); err != nil {
 		return nil, err
 	}
 	if len(files) != len(m.Files)+2 {
@@ -109,7 +124,7 @@ func ReadPackage(data []byte, keys map[string]string) (*Package, error) {
 		}
 	}
 	sum := sha256.Sum256(data)
-	return &Package{Manifest: m, RawManifest: raw, Digest: hex.EncodeToString(sum[:]), Publisher: sig.KeyID, Files: files}, nil
+	return &Package{PublicKey: key, Manifest: m, RawManifest: raw, Digest: hex.EncodeToString(sum[:]), Publisher: sig.KeyID, Files: files}, nil
 }
 func writePackage(root string, p *Package, data []byte) error {
 	target := filepath.Join(root, "versions", p.Digest)

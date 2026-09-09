@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 )
 
 type MarketEntry struct {
+	PublicKey   string   `json:"public_key,omitempty"`
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
@@ -82,7 +84,7 @@ func remoteClient() *http.Client {
 		}
 		return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
 	}}
-	return &http.Client{Transport: transport, Timeout: 30 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errors.New("market redirects are not allowed") }}
+	return &http.Client{Transport: transport, Timeout: 30 * time.Second, CheckRedirect: validateMarketRedirect}
 }
 func fetchRemote(ctx context.Context, raw string, max int64) ([]byte, error) {
 	if _, err := safeRemoteURL(raw); err != nil {
@@ -128,8 +130,16 @@ func parseMarket(raw []byte, keys map[string]string, now time.Time) (Market, err
 	}
 	seen := map[string]bool{}
 	for _, e := range payload.Entries {
-		if !idPattern.MatchString(e.ID) || !digestPattern.MatchString(e.SHA256) || seen[e.ID] || len(e.Description) > 2000 || len(e.Name) > 160 || keys[e.Publisher] == "" {
+		if !idPattern.MatchString(e.ID) || !digestPattern.MatchString(e.SHA256) || seen[e.ID] || len(e.Description) > 2000 || len(e.Name) > 160 || e.Publisher == "" || len(e.Publisher) > 160 {
 			return Market{}, errors.New("invalid catalog entry")
+		}
+		key := e.PublicKey
+		if key == "" {
+			key = keys[e.Publisher]
+		}
+		decoded, err := base64.StdEncoding.DecodeString(key)
+		if err != nil || len(decoded) != 32 || (keys[e.Publisher] != "" && keys[e.Publisher] != key) {
+			return Market{}, errors.New("invalid catalog publisher key")
 		}
 		if _, err := semver.StrictNewVersion(e.Version); err != nil || e.Name == "" || len(e.ID) > 160 || len(e.Surfaces) > 3 {
 			return Market{}, errors.New("invalid catalog version or surfaces")
@@ -181,14 +191,18 @@ func (m *Manager) InstallMarket(ctx context.Context, id, digest, actor string) (
 		if !strings.EqualFold(hex.EncodeToString(sum[:]), e.SHA256) {
 			return Installation{}, errors.New("market package checksum mismatch")
 		}
-		p, err := ReadPackage(raw, m.options.TrustedPublishers)
+		key := e.PublicKey
+		if key == "" {
+			key = m.options.TrustedPublishers[e.Publisher]
+		}
+		p, err := ReadPackage(raw, map[string]string{e.Publisher: key})
 		if err != nil {
 			return Installation{}, err
 		}
 		if p.Manifest.ID != e.ID || p.Manifest.Version != e.Version || p.Publisher != e.Publisher {
 			return Installation{}, errors.New("market package identity mismatch")
 		}
-		return m.Import(raw, actor)
+		return m.importVerified(raw, actor, p, true)
 	}
 	return Installation{}, errors.New("plugin not found in configured market")
 }

@@ -12,12 +12,30 @@ import (
 )
 
 func (m *Manager) Import(data []byte, actor string) (Installation, error) {
-	p, err := ReadPackage(data, m.options.TrustedPublishers)
+	return m.ImportConfirmed(data, actor, "", "", "")
+}
+
+// The confirmation is bound to both the complete archive and the verified key.
+func (m *Manager) ImportConfirmed(data []byte, actor, publicKey, digest, fingerprint string) (Installation, error) {
+	p, err := m.inspectPackage(data, publicKey)
 	if err != nil {
 		return Installation{}, err
 	}
+	if digest != "" && digest != p.Digest {
+		return Installation{}, ErrConflict
+	}
+	return m.importVerified(data, actor, p, digest == p.Digest && fingerprint == keyFingerprint(p.PublicKey))
+}
+func (m *Manager) importVerified(data []byte, actor string, p *Package, confirmed bool) (Installation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	trusted, err := m.packageTrusted(p)
+	if err != nil {
+		return Installation{}, err
+	}
+	if !trusted && !confirmed {
+		return Installation{}, errors.New("confirm trust for this plugin publisher before importing")
+	}
 	if err := m.guard(m.db); err != nil {
 		return Installation{}, err
 	}
@@ -25,6 +43,7 @@ func (m *Manager) Import(data []byte, actor string) (Installation, error) {
 	if err := m.db.Where("id = ?", p.Manifest.ID).Limit(1).Find(&prev).Error; err != nil {
 		return Installation{}, err
 	}
+	p.LocalTrust = prev.LocalTrust || (prev.ID == "" && !trusted && confirmed)
 	if prev.ID != "" && prev.Publisher != p.Publisher {
 		return Installation{}, errors.New("publisher must match")
 	}
@@ -77,13 +96,21 @@ func (m *Manager) packageFor(v Installation) (*Package, error) {
 	if err != nil {
 		return nil, errors.New("plugin package missing; import it again")
 	}
-	p, err := ReadPackage(data, m.options.TrustedPublishers)
+	keys := map[string]string{v.Publisher: m.options.TrustedPublishers[v.Publisher]}
+	if v.LocalTrust {
+		keys[v.Publisher] = v.SigningKey
+	}
+	if v.SigningKey != "" && keys[v.Publisher] != v.SigningKey {
+		return nil, errors.New("publisher trust revoked or key changed")
+	}
+	p, err := ReadPackage(data, keys)
 	if err != nil {
 		return nil, err
 	}
 	if p.Digest != v.Digest || p.Manifest.ID != v.ID || p.Publisher != v.Publisher {
 		return nil, errors.New("stored package identity mismatch")
 	}
+	p.LocalTrust = v.LocalTrust
 	return p, nil
 }
 func (m *Manager) prepare(ctx context.Context, v Installation) (*process, error) {

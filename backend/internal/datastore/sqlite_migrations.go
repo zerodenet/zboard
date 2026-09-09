@@ -78,6 +78,18 @@ func runSQLiteMigrations(db *gorm.DB) error {
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0004_plugin_governance.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
 		return err
 	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		for _, column := range []string{"SigningKey", "LocalTrust"} {
+			if !tx.Migrator().HasColumn(&model.PluginInstallation{}, column) {
+				if err := tx.Migrator().AddColumn(&model.PluginInstallation{}, column); err != nil {
+					return err
+				}
+			}
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0005_plugin_signing_key.up.sql", AppliedAt: time.Now().UTC()}).Error
+	}); err != nil {
+		return err
+	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {
 		return fmt.Errorf("record sqlite schema version: %w", err)

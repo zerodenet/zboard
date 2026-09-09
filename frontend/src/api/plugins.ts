@@ -75,13 +75,19 @@ export interface ConfigView {
 const data = <T>(r: { data: { data: T } }) => r.data.data;
 export const fetchPlugins = (signal?: AbortSignal) =>
   api.get("/admin/plugins", { signal }).then(data<Plugin[]>);
-export const importPlugin = (file: File) =>
-  api
-    .post("/admin/plugins", file, {
-      headers: { "Content-Type": "application/octet-stream" },
-      timeout: 60_000,
-    })
-    .then(data<Plugin>);
+export interface ImportPreview {
+  manifest: Plugin['manifest'] & { id: string; name: string; version: string };
+  publisher: string; public_key: string; fingerprint: string; digest: string; trusted: boolean;
+  compatibility: Plugin['compatibility'];
+}
+export const previewPlugin = (file: File, publicKey = '') => api.post('/admin/plugins', file, {
+  params: { inspect: true }, headers: { 'Content-Type': 'application/octet-stream', 'X-Plugin-Public-Key': publicKey.trim() }, timeout: 60_000,
+}).then(data<ImportPreview>);
+export const importPlugin = (file: File, preview?: ImportPreview, trust = false) => api.post('/admin/plugins', file, {
+  headers: { 'Content-Type': 'application/octet-stream', 'X-Plugin-Public-Key': preview?.public_key || '',
+    'X-Plugin-Digest': preview?.digest || '', 'X-Plugin-Trust-Fingerprint': trust ? preview?.fingerprint || '' : '' },
+  timeout: 60_000,
+}).then(data<Plugin>);
 export const pluginAction = (
   p: Plugin,
   action: string,

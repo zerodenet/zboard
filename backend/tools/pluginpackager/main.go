@@ -55,6 +55,20 @@ func run() error {
 		}
 		return nil
 	}
+	if *source != "" && *catalog == "" && *keyFile == "" {
+		directory, err := os.UserConfigDir()
+		if err != nil {
+			return err
+		}
+		path, id, err := localSigningKey(filepath.Join(directory, "zboard", "plugin-signing"))
+		if err != nil {
+			return err
+		}
+		*keyFile = path
+		if *keyID == "" {
+			*keyID = id
+		}
+	}
 	if (*source == "" && *catalog == "") || *keyFile == "" || *keyID == "" || *out == "" {
 		return fmt.Errorf("source, key, key-id and out are required")
 	}
@@ -63,7 +77,7 @@ func run() error {
 		return err
 	}
 	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(keyText)))
-	if err != nil || len(key) != ed25519.PrivateKeySize {
+	if err != nil || len(key) != ed25519.PrivateKeySize || !bytes.Equal(ed25519.NewKeyFromSeed(key[:32]), key) {
 		return fmt.Errorf("invalid Ed25519 private key")
 	}
 	if *catalog != "" {
@@ -136,7 +150,7 @@ func run() error {
 		return err
 	}
 	files["manifest.json"] = raw
-	sig := plugins.Signature{Algorithm: "ed25519", KeyID: *keyID, Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(key, raw))}
+	sig := plugins.Signature{PublicKey: base64.StdEncoding.EncodeToString(ed25519.PrivateKey(key).Public().(ed25519.PublicKey)), Algorithm: "ed25519", KeyID: *keyID, Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(key, raw))}
 	files["signature.json"], err = json.Marshal(sig)
 	if err != nil {
 		return err

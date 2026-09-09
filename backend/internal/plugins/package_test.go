@@ -35,7 +35,7 @@ func fixtureSignedPackage(t testing.TB, priv ed25519.PrivateKey, pub ed25519.Pub
 		m.Files[p] = hex.EncodeToString(sum[:])
 	}
 	raw, _ := json.Marshal(m)
-	sig, _ := json.Marshal(Signature{Algorithm: "ed25519", KeyID: "test.publisher", Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(priv, raw))})
+	sig, _ := json.Marshal(Signature{PublicKey: base64.StdEncoding.EncodeToString(pub), Algorithm: "ed25519", KeyID: "test.publisher", Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(priv, raw))})
 	files["manifest.json"] = raw
 	files["signature.json"] = sig
 	var out bytes.Buffer
@@ -115,7 +115,7 @@ func TestMarketRejectsExpiredOrModifiedSignedCatalog(t *testing.T) {
 	keys := map[string]string{"test.publisher": base64.StdEncoding.EncodeToString(pub)}
 	now := time.Now()
 	payload, _ := json.Marshal(marketPayload{SchemaVersion: 1, ExpiresAt: now.Add(time.Hour), Entries: []MarketEntry{}})
-	sig := Signature{Algorithm: "ed25519", KeyID: "test.publisher", Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(priv, payload))}
+	sig := Signature{PublicKey: base64.StdEncoding.EncodeToString(pub), Algorithm: "ed25519", KeyID: "test.publisher", Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(priv, payload))}
 	raw, _ := json.Marshal(signedCatalog{Payload: payload, Signature: sig})
 	if _, err := parseMarket(raw, keys, now); err != nil {
 		t.Fatal(err)

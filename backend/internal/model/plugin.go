@@ -4,6 +4,8 @@ import "time"
 
 // PluginInstallation stores host-owned desired state. Plugins never receive a DB handle.
 type PluginInstallation struct {
+	LocalTrust       bool      `gorm:"not null;default:false" json:"local_trust"`
+	SigningKey       string    `gorm:"size:64;not null;default:''" json:"signing_key"`
 	ID               string    `gorm:"primaryKey;size:160" json:"id"`
 	VersionID        string    `gorm:"size:64;not null" json:"version_id"`
 	Name             string    `gorm:"size:160;not null" json:"name"`

@@ -10,8 +10,8 @@ import PluginImportDialog from './PluginImportDialog.vue'
 import PluginConfigDialog from './PluginConfigDialog.vue'
 import UiFileUpload from '../components/UiFileUpload.vue'
 import type { Plugin } from '../api/plugins'
-const mocks = vi.hoisted(() => ({ list: vi.fn(), config: vi.fn(), operations: vi.fn(), import: vi.fn(), save: vi.fn(), action: vi.fn(), confirm: vi.fn(), migrations: vi.fn() }))
-vi.mock('../api/plugins', async importOriginal => ({ ...await importOriginal<typeof import('../api/plugins')>(), fetchPlugins: mocks.list, fetchPluginConfig: mocks.config, fetchPluginOperations: mocks.operations, importPlugin: mocks.import, savePluginConfig: mocks.save, pluginAction: mocks.action, fetchPluginMigrations: mocks.migrations }))
+const mocks = vi.hoisted(() => ({ list: vi.fn(), config: vi.fn(), operations: vi.fn(), import: vi.fn(), preview: vi.fn(), save: vi.fn(), action: vi.fn(), confirm: vi.fn(), migrations: vi.fn() }))
+vi.mock('../api/plugins', async importOriginal => ({ ...await importOriginal<typeof import('../api/plugins')>(), fetchPlugins: mocks.list, fetchPluginConfig: mocks.config, fetchPluginOperations: mocks.operations, importPlugin: mocks.import, previewPlugin: mocks.preview, savePluginConfig: mocks.save, pluginAction: mocks.action, fetchPluginMigrations: mocks.migrations }))
 vi.mock('../utils/feedback', async importOriginal => ({ ...await importOriginal<typeof import('../utils/feedback')>(), confirmAction: mocks.confirm }))
 const plugin = (id = 'zboard.oauth'): Plugin => ({
   admission: { accepted: true, capabilities: ['zboard.ui.page.v1', 'zboard.config.v1'] }, data: { version: 0, target_version: 0, epoch: 0, revision: 0, stored: false, compatible: true, migration_required: false },
@@ -39,7 +39,7 @@ const clickText = async (wrapper: ReturnType<typeof mount>, label: string) => {
 }
 beforeEach(() => {
   mocks.list.mockResolvedValue([plugin()]); mocks.config.mockResolvedValue({ configured: true, revision: 7 }); mocks.operations.mockResolvedValue([])
-  mocks.import.mockResolvedValue(plugin()); mocks.save.mockResolvedValue({ revision: 8 }); mocks.confirm.mockResolvedValue(true); mocks.action.mockResolvedValue(plugin()); mocks.migrations.mockResolvedValue([])
+  mocks.preview.mockResolvedValue({ manifest: { ...plugin().manifest, id: plugin().id, name: plugin().name, version: plugin().version }, publisher: 'publisher', public_key: 'key', fingerprint: 'fingerprint', digest: 'digest', trusted: true, compatibility: plugin().compatibility }); mocks.import.mockResolvedValue(plugin()); mocks.save.mockResolvedValue({ revision: 8 }); mocks.confirm.mockResolvedValue(true); mocks.action.mockResolvedValue(plugin()); mocks.migrations.mockResolvedValue([])
 })
 afterEach(() => { mounted.splice(0).forEach(w => w.unmount()); document.body.innerHTML = '' })
 describe('plugin management navigation', () => {
@@ -64,7 +64,7 @@ describe('plugin management navigation', () => {
     dialog.getComponent(UiFileUpload).vm.$emit('select', [file]); await flushPromises()
     expect(mocks.import).not.toHaveBeenCalled(); expect(wrapper.text()).toContain('oauth.zbplugin')
     mocks.import.mockRejectedValueOnce({ response: { data: { message: '发布者签名不受信任' } } })
-    await clickText(wrapper, '验证并导入')
+    await clickText(wrapper, '查看插件'); await clickText(wrapper, '确认导入')
     expect(wrapper.text()).toContain('发布者签名不受信任'); expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
     await clickText(wrapper, '取消'); expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     await clickText(wrapper, '离线导入'); expect(wrapper.text()).not.toContain('oauth.zbplugin')
@@ -74,9 +74,28 @@ describe('plugin management navigation', () => {
     const { wrapper, router } = await render('/admin/plugins')
     await clickText(wrapper, '离线导入')
     wrapper.getComponent(UiFileUpload).vm.$emit('select', [new File(['package'], 'oauth.zbplugin')]); await flushPromises()
-    await clickText(wrapper, '验证并导入')
+    await clickText(wrapper, '查看插件'); await clickText(wrapper, '确认导入')
     expect(router.currentRoute.value.path).toBe('/admin/plugins/zboard.oauth')
     expect(wrapper.text()).toContain('系统已完成能力校验和数据准备'); expect(mocks.action).not.toHaveBeenCalled()
+  })
+  it('requires explicit trust for an unknown key and clears consent on package replacement', async () => {
+    mocks.preview.mockResolvedValueOnce({ ...await mocks.preview(), trusted: false })
+    const { wrapper } = await render('/admin/plugins')
+    await clickText(wrapper, '离线导入')
+    const file = new File(['package'], 'oauth.zbplugin')
+    wrapper.getComponent(UiFileUpload).vm.$emit('select', [file]); await flushPromises()
+    await clickText(wrapper, '查看插件')
+    expect(mocks.import).not.toHaveBeenCalled()
+    expect(wrapper.findAll('button').find(b => b.text() === '确认导入')!.attributes('disabled')).toBeDefined()
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    mocks.preview.mockResolvedValueOnce({ ...await mocks.preview(), trusted: false })
+    wrapper.getComponent(UiFileUpload).vm.$emit('select', [file]); await flushPromises()
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+    await clickText(wrapper, '查看插件')
+    expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await clickText(wrapper, '确认导入')
+    expect(mocks.import).toHaveBeenCalledWith(file, expect.objectContaining({ fingerprint: 'fingerprint', digest: 'digest' }), true)
   })
   it('ignores stale detail and operation responses after switching plugins', async () => {
     const { wrapper, router } = await render('/admin/plugins/zboard.oauth?tab=operations')
