@@ -65,6 +65,7 @@ describe('form feedback policy', () => {
   it('protects all persistent business forms from route changes and browser unload', () => {
     const expectedGuardedOwners = [
       'components/TicketCenter.vue',
+      'plugins/PluginConfigDialog.vue',
       'views/Certificates.vue',
       'views/NodeGroups.vue',
       'views/Nodes.vue',

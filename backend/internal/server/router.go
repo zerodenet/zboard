@@ -2,12 +2,17 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/handler"
+	"github.com/zerodenet/zboard/backend/internal/plugins"
 	"github.com/zerodenet/zboard/backend/internal/security"
+	"github.com/zerodenet/zboard/backend/internal/version"
 	"github.com/zerodenet/zboard/backend/internal/zeroevent"
+	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/rest"
 	"gorm.io/gorm"
 )
@@ -16,7 +21,7 @@ func newRoute(method, path string, fn func(http.ResponseWriter, *http.Request)) 
 	return rest.Route{Method: method, Path: path, Handler: http.HandlerFunc(fn)}
 }
 
-func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string, zeroEventSpoolConfig zeroevent.Config) (func() error, error) {
+func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string, zeroEventSpoolConfig zeroevent.Config, pluginOptions plugins.Options) (func() error, error) {
 	if err := datastore.ReconcileCommerceSchema(db); err != nil {
 		return nil, err
 	}
@@ -55,6 +60,16 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPost, "/api/v1/auth/register/code", h.RegistrationEmailCodeHandler),
 		newRoute(http.MethodPost, "/api/v1/auth/login", h.LoginHandler),
 		newRoute(http.MethodGet, "/api/v1/auth/me", h.MeHandler),
+		newRoute(http.MethodGet, "/api/v1/auth/oidc/providers", h.ExternalAuthProvidersHandler),
+		newRoute(http.MethodPost, "/api/v1/auth/oidc/:id/start", h.ExternalAuthStartHandler),
+		newRoute(http.MethodGet, "/api/v1/auth/oidc/callback", h.ExternalAuthCallbackHandler),
+		newRoute(http.MethodPost, "/api/v1/auth/oidc/finish", h.ExternalAuthFinishHandler),
+		newRoute(http.MethodPost, "/api/v1/auth/oidc/registration-code", h.ExternalRegistrationCodeHandler),
+		newRoute(http.MethodPost, "/api/v1/auth/oidc/password", h.ExternalPasswordSetupHandler),
+		newRoute(http.MethodGet, "/api/v1/account/identities/security", h.ExternalPasswordStatusHandler),
+		newRoute(http.MethodGet, "/api/v1/account/identities", h.ExternalIdentitiesHandler),
+		newRoute(http.MethodPost, "/api/v1/account/identities/:id/bind", h.ExternalIdentityBindHandler),
+		newRoute(http.MethodPost, "/api/v1/account/identities/:id/unlink", h.ExternalIdentityUnlinkHandler),
 		newRoute(http.MethodGet, "/api/v1/tickets", h.TicketListHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/tickets", h.TicketListHandler),
 		newRoute(http.MethodPost, "/api/v1/tickets", h.TicketCreateHandler),
@@ -274,11 +289,44 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		_ = closeTrafficReads()
 		return nil, err
 	}
+	pluginManager, pluginErr := plugins.NewManager(db, credentialCipher, pluginOptions, version.Version)
+	if pluginErr != nil {
+		logx.Errorf("plugin runtime unavailable; core service remains online: %v", pluginErr)
+	}
+	h.SetPluginManager(pluginManager)
+	pluginRoute := func(method, path string, fn http.HandlerFunc) rest.Route {
+		return newRoute(method, path, h.PluginGuard(fn))
+	}
+	srv.AddRoutes([]rest.Route{
+		pluginRoute(http.MethodGet, "/api/v1/admin/plugins", h.AdminPluginsHandler),
+		pluginRoute(http.MethodPost, "/api/v1/admin/plugins", h.AdminPluginsHandler),
+		pluginRoute(http.MethodPost, "/api/v1/admin/plugins/:id/actions/:action", h.AdminPluginActionHandler),
+		pluginRoute(http.MethodGet, "/api/v1/admin/plugins/:id/config", h.AdminPluginConfigHandler),
+		pluginRoute(http.MethodPut, "/api/v1/admin/plugins/:id/config", h.AdminPluginConfigHandler),
+		pluginRoute(http.MethodPost, "/api/v1/admin/plugins/:id/test", h.AdminPluginTestHandler),
+		pluginRoute(http.MethodGet, "/api/v1/admin/plugins/:id/operations", h.AdminPluginOperationsHandler),
+		pluginRoute(http.MethodGet, "/api/v1/admin/plugins/:id/migrations", h.AdminPluginMigrationsHandler),
+		pluginRoute(http.MethodGet, "/api/v1/admin/plugin-market", h.AdminPluginMarketHandler),
+		pluginRoute(http.MethodPost, "/api/v1/admin/plugin-market", h.AdminPluginMarketHandler),
+		pluginRoute(http.MethodGet, "/api/v1/plugin-ui/catalog", h.PluginCatalogHandler),
+		pluginRoute(http.MethodPost, "/api/v1/plugin-ui/:id/session", h.PluginSessionHandler),
+		pluginRoute(http.MethodPost, "/api/v1/plugin-ui/bridge", h.PluginBridgeHandler),
+		pluginRoute(http.MethodDelete, "/api/v1/plugin-ui/session", h.PluginRevokeSessionHandler),
+	}, rest.WithMaxBytes(plugins.MaxPackageBytes), rest.WithTimeout(60*time.Second))
+	assetPath := "/api/v1/plugin-assets/:token"
+	for depth := 1; depth <= 8; depth++ {
+		assetPath += fmt.Sprintf("/:part%d", depth)
+		srv.AddRoute(pluginRoute(http.MethodGet, assetPath, h.PluginAssetHandler))
+	}
+
 	h.StartNodePublishWorker()
 	h.StartFairUseEvaluationWorker()
 	h.StartCertificateRenewalWorker()
 	h.StartDNSPublicObservationWorker()
 	return func() error {
+		if pluginManager != nil {
+			pluginManager.Close()
+		}
 		h.CloseNodePublishWorker()
 		h.CloseFairUseEvaluationWorker()
 		return errors.Join(h.CloseZeroEventSpool(), closeTrafficReads())

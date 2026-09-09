@@ -9,6 +9,7 @@ import (
 
 	"github.com/zeromicro/go-zero/rest"
 
+	"github.com/zerodenet/zboard/backend/internal/plugins"
 	"github.com/zerodenet/zboard/backend/internal/security"
 	"github.com/zerodenet/zboard/backend/internal/zeroevent"
 )
@@ -29,32 +30,33 @@ const (
 
 type Config struct {
 	rest.RestConf
-	Environment                         string  `json:"environment,default=development"`
-	DatabaseDriver                      string  `json:"database_driver,default=mysql"`
-	DataSource                          string  `json:"datasource"`
-	DatabaseMaxOpenConnections          int     `json:"database_max_open_connections,default=8"`
-	DatabaseMaxIdleConnections          int     `json:"database_max_idle_connections,default=2"`
-	DatabaseConnectionMaxLifetimeSecs   int     `json:"database_connection_max_lifetime_seconds,default=3600"`
-	JwtSecret                           string  `json:"jwt_secret"`
-	BootstrapAdminEmail                 string  `json:"bootstrap_admin_email,optional"`
-	BootstrapAdminPassword              string  `json:"bootstrap_admin_password,optional"`
-	CredentialEncryptionKey             string  `json:"credential_encryption_key,optional"`
-	ZeroArtifactDir                     string  `json:"zero_artifact_dir,optional"`
-	ZeroKernelContract                  string  `json:"zero_kernel_contract,default=legacy"`
-	ZeroLocalVersion                    string  `json:"zero_local_version,optional"`
-	ZeroEventSpoolMode                  string  `json:"zero_event_spool_mode,default=file"`
-	ZeroEventSpoolDir                   string  `json:"zero_event_spool_dir,default=/var/lib/zboard/zero-events"`
-	ZeroEventSpoolCompressionAlgorithm  string  `json:"zero_event_spool_compression_algorithm,optional"`
-	ZeroEventSpoolCompressionLevel      int     `json:"zero_event_spool_compression_level,optional"`
-	ZeroEventSpoolCompressionBlockBytes int64   `json:"zero_event_spool_compression_block_bytes,optional"`
-	ZeroEventSpoolCompressionWorkers    int     `json:"zero_event_spool_compression_workers,optional"`
-	ZeroEventSpoolMaxBytes              int64   `json:"zero_event_spool_max_bytes,optional"`
-	ZeroEventSpoolWarningRatio          float64 `json:"zero_event_spool_warning_ratio,optional"`
-	ZeroEventSpoolCompactRatio          float64 `json:"zero_event_spool_compact_ratio,optional"`
-	ZeroEventSpoolEmergencyRatio        float64 `json:"zero_event_spool_emergency_ratio,optional"`
-	ZeroEventSpoolMinFreeBytes          int64   `json:"zero_event_spool_min_free_bytes,optional"`
-	ZeroEventSpoolEmergencyReserveBytes int64   `json:"zero_event_spool_emergency_reserve_bytes,optional"`
-	ZeroEventSpoolCriticalReserveBytes  int64   `json:"zero_event_spool_critical_reserve_bytes,optional"`
+	Plugins                             plugins.Options `json:"plugins,optional"`
+	Environment                         string          `json:"environment,default=development"`
+	DatabaseDriver                      string          `json:"database_driver,default=mysql"`
+	DataSource                          string          `json:"datasource"`
+	DatabaseMaxOpenConnections          int             `json:"database_max_open_connections,default=8"`
+	DatabaseMaxIdleConnections          int             `json:"database_max_idle_connections,default=2"`
+	DatabaseConnectionMaxLifetimeSecs   int             `json:"database_connection_max_lifetime_seconds,default=3600"`
+	JwtSecret                           string          `json:"jwt_secret"`
+	BootstrapAdminEmail                 string          `json:"bootstrap_admin_email,optional"`
+	BootstrapAdminPassword              string          `json:"bootstrap_admin_password,optional"`
+	CredentialEncryptionKey             string          `json:"credential_encryption_key,optional"`
+	ZeroArtifactDir                     string          `json:"zero_artifact_dir,optional"`
+	ZeroKernelContract                  string          `json:"zero_kernel_contract,default=legacy"`
+	ZeroLocalVersion                    string          `json:"zero_local_version,optional"`
+	ZeroEventSpoolMode                  string          `json:"zero_event_spool_mode,default=file"`
+	ZeroEventSpoolDir                   string          `json:"zero_event_spool_dir,default=/var/lib/zboard/zero-events"`
+	ZeroEventSpoolCompressionAlgorithm  string          `json:"zero_event_spool_compression_algorithm,optional"`
+	ZeroEventSpoolCompressionLevel      int             `json:"zero_event_spool_compression_level,optional"`
+	ZeroEventSpoolCompressionBlockBytes int64           `json:"zero_event_spool_compression_block_bytes,optional"`
+	ZeroEventSpoolCompressionWorkers    int             `json:"zero_event_spool_compression_workers,optional"`
+	ZeroEventSpoolMaxBytes              int64           `json:"zero_event_spool_max_bytes,optional"`
+	ZeroEventSpoolWarningRatio          float64         `json:"zero_event_spool_warning_ratio,optional"`
+	ZeroEventSpoolCompactRatio          float64         `json:"zero_event_spool_compact_ratio,optional"`
+	ZeroEventSpoolEmergencyRatio        float64         `json:"zero_event_spool_emergency_ratio,optional"`
+	ZeroEventSpoolMinFreeBytes          int64           `json:"zero_event_spool_min_free_bytes,optional"`
+	ZeroEventSpoolEmergencyReserveBytes int64           `json:"zero_event_spool_emergency_reserve_bytes,optional"`
+	ZeroEventSpoolCriticalReserveBytes  int64           `json:"zero_event_spool_critical_reserve_bytes,optional"`
 
 	zeroEventSpoolCompressionEnabledEnv    string
 	zeroEventSpoolCompressionAlgorithmEnv  string
@@ -87,6 +89,8 @@ func (c *Config) ApplyEnvironment(getenv func(string) string) {
 	if getenv == nil {
 		return
 	}
+	applyOverride(&c.Plugins.Directory, getenv("ZBOARD_PLUGIN_DIRECTORY"))
+	applyOverride(&c.Plugins.CatalogURL, getenv("ZBOARD_PLUGIN_CATALOG_URL"))
 	applyOverride(&c.Environment, getenv("ZBOARD_ENVIRONMENT"))
 	applyOverride(&c.DatabaseDriver, getenv("ZBOARD_DATABASE_DRIVER"))
 	applyOverride(&c.DataSource, getenv("ZBOARD_DATA_SOURCE"))
@@ -120,6 +124,9 @@ func (c *Config) ApplyEnvironment(getenv func(string) string) {
 }
 
 func (c *Config) Validate() error {
+	if err := c.Plugins.Validate(); err != nil {
+		return err
+	}
 	environment, err := NormalizeEnvironment(c.Environment)
 	if err != nil {
 		return err

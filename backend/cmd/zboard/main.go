@@ -104,6 +104,7 @@ func main() {
 		c.ZeroKernelContract,
 		c.ZeroLocalVersion,
 		c.ZeroEventSpoolConfig(),
+		c.Plugins,
 	)
 	if err != nil {
 		log.Fatalf("route registration failed: %v", err)

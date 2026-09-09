@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "example.welcome",
+  "name": "欢迎卡片",
+  "description": "一个可离线安装的前后台页面示例。展示当前使用范围，不读取或修改核心业务数据。",
+  "version": "1.0.0",
+  "requires": { "zboard": ">=0.0.1 <0.1.0", "recommended_zboard_version": "0.0.1", "tested_zboard_versions": ["0.0.1"], "plugin_protocol": 1, "ui_bridge": 1 },
+  "capabilities": ["zboard.ui.page.v1"],
+  "surfaces": ["public", "account", "admin"],
+  "components": { "ui": { "public": "ui/index.html", "account": "ui/index.html", "admin": "ui/index.html" } },
+  "contributions": { "pages": [
+    { "id": "welcome", "surface": "public", "title": "欢迎" },
+    { "id": "welcome", "surface": "account", "title": "欢迎" },
+    { "id": "welcome", "surface": "admin", "title": "欢迎扩展" }
+  ] },
+  "files": {}
+}

@@ -54,7 +54,7 @@ func TestEveryEmbeddedUpMigrationParses(t *testing.T) {
 	}
 }
 
-func TestPreReleaseMigrationInventoryIsSquashed(t *testing.T) {
+func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 	entries, err := migrations.Files.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
@@ -69,11 +69,11 @@ func TestPreReleaseMigrationInventoryIsSquashed(t *testing.T) {
 			down = append(down, entry.Name())
 		}
 	}
-	if len(up) != 1 || up[0] != preReleaseBaselineVersion {
-		t.Fatalf("up migrations = %v, want only %s", up, preReleaseBaselineVersion)
+	if len(up) != 4 || up[0] != preReleaseBaselineVersion || up[1] != "0002_plugins.up.sql" || up[2] != "0003_external_identities.up.sql" || up[3] != "0004_plugin_governance.up.sql" {
+		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
 	}
-	if len(down) != 1 || down[0] != "0001_init.down.sql" {
-		t.Fatalf("down migrations = %v, want only 0001_init.down.sql", down)
+	if len(down) != 4 || down[0] != "0001_init.down.sql" || down[1] != "0002_plugins.down.sql" || down[2] != "0003_external_identities.down.sql" || down[3] != "0004_plugin_governance.down.sql" {
+		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)
 	}
 	if err := validateMigrationInventory(up); err != nil {
 		t.Fatal(err)

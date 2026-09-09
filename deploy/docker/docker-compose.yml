@@ -38,6 +38,10 @@ services:
       ZBOARD_ZERO_EVENT_SPOOL_COMPACTION_NODE_STATS: ${ZBOARD_ZERO_EVENT_SPOOL_COMPACTION_NODE_STATS:-true}
     volumes:
       - type: bind
+        source: ${ZBOARD_PLUGIN_HOST_DIR:-./plugins}
+        target: /var/lib/zboard/plugins
+        read_only: false
+      - type: bind
         source: ${ZBOARD_ZERO_ARTIFACT_HOST_DIR:-./artifacts}
         target: /var/lib/zboard/artifacts
         read_only: true

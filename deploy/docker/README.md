@@ -100,3 +100,9 @@ docker compose -f docker-compose.release.yml --env-file .env.release exec zboard
   rm /var/lib/zboard/artifacts/rules/.write-test
 '
 ```
+
+## Plugin persistence
+
+The service mounts `ZBOARD_PLUGIN_HOST_DIR` (default `./plugins`) at `/var/lib/zboard/plugins`. `prepare-host-dirs.sh` creates this private directory. Back it up together with the database and credential encryption key. Add publisher public keys and the optional signed catalog URL to a custom ZBoard YAML file and mount it read-only at `/app/etc/zboard.yaml`; see [plugin setup](../../docs/plugins.md).
+
+Only one instance per database owns plugin execution. Standby instances keep core APIs available but do not issue plugin page sessions or execute plugin operations. Stop the owner and restart the replacement to transfer plugin execution; an ungraceful exit requires the one-minute lease to expire. This does not implement active-active plugin routing.

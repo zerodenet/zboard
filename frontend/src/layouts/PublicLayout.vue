@@ -7,7 +7,7 @@
         <strong>{{ profile.name }}</strong>
       </RouterLink>
       <UiButton variant="ghost" icon class="icon-button public-menu" type="button" :aria-label="menuOpen ? '关闭站点导航' : '打开站点导航'" :aria-expanded="menuOpen" aria-controls="public-navigation" @click="menuOpen = !menuOpen"><UiIcon :name="menuOpen ? 'close' : 'menu'" /></UiButton>
-      <nav id="public-navigation" :class="{ open: menuOpen }" aria-label="站点导航"><RouterLink to="/" @click="menuOpen = false">首页</RouterLink><RouterLink to="/pricing" @click="menuOpen = false">套餐</RouterLink><RouterLink v-if="profile.policyDocuments.length" to="/docs" @click="menuOpen = false">文档</RouterLink></nav>
+      <nav id="public-navigation" :class="{ open: menuOpen }" aria-label="站点导航"><RouterLink to="/" @click="menuOpen = false">首页</RouterLink><RouterLink to="/pricing" @click="menuOpen = false">套餐</RouterLink><RouterLink v-if="profile.policyDocuments.length" to="/docs" @click="menuOpen = false">文档</RouterLink><PluginNavigation surface="public" /></nav>
       <div class="public-actions">
         <RouterLink v-if="app.isAuthenticated" class="button button-secondary button-sm" :to="landingPath">进入{{ app.isAdmin ? '管理后台' : '用户中心' }}</RouterLink>
         <template v-else><RouterLink class="button button-ghost button-sm" to="/login">登录</RouterLink><RouterLink v-if="app.installation?.allow_registration" class="button button-sm" to="/register">免费注册</RouterLink></template>
@@ -42,6 +42,7 @@
 </template>
 
 <script setup lang="ts">
+import PluginNavigation from '../plugins/PluginNavigation.vue'
 import { computed, ref } from 'vue'
 import UiIcon from '../components/UiIcon.vue'
 import UiButton from '../components/UiButton.vue'

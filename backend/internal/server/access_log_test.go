@@ -21,6 +21,7 @@ func TestConfigureSafeHTTPLoggingDisablesNativeRequestDump(t *testing.T) {
 
 func TestSanitizeAccessLogPath(t *testing.T) {
 	tests := map[string]string{
+		"/api/v1/plugin-assets/secret-token/ui/index.html": "/api/v1/plugin-assets/[redacted]",
 		"":                       "/",
 		"/api/v1/admin/tasks/42": "/api/v1/admin/tasks/42",
 		"/api/v1/client/subscription/secret-token":    redactedSubscriptionPath,

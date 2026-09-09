@@ -96,3 +96,9 @@ Development, deployment, API references, and operational guides are maintained i
 ## License
 
 ZBoard is licensed under the [Mozilla Public License 2.0](LICENSE).
+
+Plugin extensions
+
+- Install signed frontend and administrator extensions from a configured marketplace or an offline `.zbplugin` file.
+- Enable, disable, configure and inspect plugins without restarting ZBoard. Core business changes remain owned by ZBoard.
+- See [plugin setup and development](docs/plugins.md) for trusted publishers, package signing and current capability limits.

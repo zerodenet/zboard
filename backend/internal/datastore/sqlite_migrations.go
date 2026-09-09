@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/migrations"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -24,7 +25,8 @@ func IsSQLite(db *gorm.DB) bool {
 // the authoritative logical table inventory used by cross-database migration.
 func databaseModels() []interface{} {
 	return []interface{}{
-		&model.User{}, &model.Installation{}, &model.SystemConfig{}, &model.Announcement{}, &model.AnnouncementRead{},
+		&model.PluginAuthorization{}, &model.PluginData{}, &model.PluginMigration{},
+		&model.User{}, &model.ExternalIdentity{}, &model.Installation{}, &model.SystemConfig{}, &model.Announcement{}, &model.AnnouncementRead{},
 		&model.Plan{}, &model.PlanSKU{}, &model.PlanSKUOperation{}, &model.Node{}, &model.NodeGroup{}, &model.ProtocolEndpoint{},
 		&model.NodeGroupEndpoint{}, &model.Subscription{}, &model.Order{}, &model.PaymentEvent{},
 		&model.SubscriptionMember{}, &model.SubscriptionToken{}, &model.SubscriptionTemplate{},
@@ -52,6 +54,30 @@ func runSQLiteMigrations(db *gorm.DB) error {
 	if err := reconcileSQLiteOperationalTables(db); err != nil {
 		return err
 	}
+	payload, err := migrations.Files.ReadFile("sqlite/0002_plugins.sql")
+	if err != nil {
+		return err
+	}
+	statements, err := splitMigrationStatements(string(payload))
+	if err != nil {
+		return err
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		for _, statement := range statements {
+			if err := tx.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0002_plugins.up.sql", AppliedAt: time.Now().UTC()}).Error
+	}); err != nil {
+		return err
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0003_external_identities.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0004_plugin_governance.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
+	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {
 		return fmt.Errorf("record sqlite schema version: %w", err)
@@ -73,6 +99,7 @@ func MigrationTables(db *gorm.DB) ([]string, error) {
 		tables = append(tables, parsed.Schema.Table)
 	}
 	tables = append(tables,
+		"plugin_installations", "plugin_versions", "plugin_operations", "plugin_host_leases",
 		"subscription_flow_start_events", "fair_use_node_coverage", "fair_use_policies",
 		"subscription_fair_use_states", "subscription_fair_use_events",
 		"zero_event_node_cursors", "principal_flow_node_generations", "principal_flow_observations",
