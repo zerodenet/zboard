@@ -1,0 +1,51 @@
+name: Restore stable image channel
+
+# One-time recovery for the prerelease published before latest=false was set.
+# Exact digest guards make subsequent runs harmless and protect newer releases.
+on:
+  push:
+    branches: [develop]
+    paths: [.github/workflows/restore-stable-image.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: restore-zboard-stable-image
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    if: github.repository == 'zerodenet/zboard'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      IMAGE: ghcr.io/zerodenet/zboard
+      STABLE: sha256:c486d2b23680f142f410c05819846dc74cf5d945dea2d3f465845387f6d3536f
+      MISLABELED: sha256:67cf5b7703f5b53cc9d7bb27a8a981e263e57280cb8b5b4df59700d05df862a0
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Restore only the known mislabeled manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest() {
+            docker buildx imagetools inspect "$1" | awk '$1 == "Digest:" { print $2; exit }'
+          }
+          current="$(digest "${IMAGE}:latest")"
+          if [ "$current" = "$STABLE" ]; then
+            echo "Stable image already restored."
+            exit 0
+          fi
+          test "$current" = "$MISLABELED"
+          test "$(digest "${IMAGE}:v0.0.1")" = "$STABLE"
+          docker buildx imagetools create --tag "${IMAGE}:latest" "${IMAGE}@${STABLE}"
+          test "$(digest "${IMAGE}:latest")" = "$STABLE"
+          echo "latest restored to the existing v0.0.1 manifest; no image was rebuilt."
