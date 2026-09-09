@@ -23,7 +23,8 @@ jobs:
     timeout-minutes: 10
     env:
       IMAGE: ghcr.io/zerodenet/zboard
-      STABLE: sha256:c486d2b23680f142f410c05819846dc74cf5d945dea2d3f465845387f6d3536f
+      # Published v0.0.1 at e1b7246, verified against its OCI revision label.
+      STABLE: sha256:24d78f30aae750a3118e7c9fe1276fe41fb2bafebecf34f064f04568c2e0ab83
       MISLABELED: sha256:67cf5b7703f5b53cc9d7bb27a8a981e263e57280cb8b5b4df59700d05df862a0
     steps:
       - uses: docker/setup-buildx-action@v3
@@ -37,9 +38,10 @@ jobs:
         run: |
           set -euo pipefail
           digest() {
-            docker buildx imagetools inspect "$1" | awk '$1 == "Digest:" { print $2; exit }'
+            docker buildx imagetools inspect "$1" | awk '$1 == "Digest:" && !seen++ { print $2 }'
           }
           current="$(digest "${IMAGE}:latest")"
+          echo "Current latest: $current; stable target: $STABLE"
           if [ "$current" = "$STABLE" ]; then
             echo "Stable image already restored."
             exit 0
