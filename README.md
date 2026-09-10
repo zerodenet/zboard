@@ -49,7 +49,7 @@ The current development branch also includes a plugin marketplace, offline `.zbp
 
 - [First installation](https://docs.zerodenet.org/projects/zboard/guides/installation-en)
 - [Docker storage and backups](deploy/docker/README.md)
-- [Node installation and maintenance](https://docs.zerodenet.org/projects/zboard/reference/node-kernel-lifecycle)
+- [Node installation and maintenance](https://docs.zerodenet.org/projects/zboard/guides/node-management)
 - [Network fronting and shared proxy pools](https://docs.zerodenet.org/projects/zboard/guides/network-fronting)
 - [Subscription filtering](https://docs.zerodenet.org/projects/zboard/guides/subscription-filtering)
 - [Local development](https://docs.zerodenet.org/projects/zboard/contributing/development) and [contributing](CONTRIBUTING.md)

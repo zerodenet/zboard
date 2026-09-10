@@ -180,8 +180,9 @@ lock, verifies row counts, and leaves maintenance enabled until the operator
 switches deployment configuration and restarts. It never hot-swaps a live
 process between database handles.
 
-See [database migration guide](https://docs.zerodenet.org/projects/zboard/reference/database-migrations) for the
-upgrade, verification and post-`v0.1.0` append-only rules.
+See [database migration guide](https://docs.zerodenet.org/projects/zboard/guides/maintenance) for the
+database switching, backups and recovery procedure. Schema changes are owned by
+the SQL migrations shipped with the target build; do not rewrite published migrations.
 
 ## Core feature set
 

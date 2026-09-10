@@ -49,7 +49,7 @@ Docker 镜像已包含后端和 Web 控制台。[Releases](https://github.com/ze
 
 - [首次安装](https://docs.zerodenet.org/projects/zboard/guides/installation)
 - [Docker 存储与备份](deploy/docker/README.md)
-- [节点安装与维护](https://docs.zerodenet.org/projects/zboard/reference/node-kernel-lifecycle)
+- [节点安装与维护](https://docs.zerodenet.org/projects/zboard/guides/node-management)
 - [网络前置与共享代理池](https://docs.zerodenet.org/projects/zboard/guides/network-fronting)
 - [订阅节点过滤](https://docs.zerodenet.org/projects/zboard/guides/subscription-filtering)
 - [本地开发](https://docs.zerodenet.org/projects/zboard/contributing/development)与[参与贡献](CONTRIBUTING.md)

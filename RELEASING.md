@@ -30,7 +30,7 @@
 6. Security review passed for auth, payment callback, and SSH operations
 7. API contract in `backend/api/openapi.yaml` is frozen for release.
 8. Release artifacts include version metadata in `/api/v1/version`
-9. Use [historical launch checklist](https://docs.zerodenet.org/projects/zboard/reference/history/launch-checklist) for end-to-end release runbook.
+9. Record the target build, verification results and artifact checksums with the release.
 10. Confirm production startup rejects missing/weak JWT, database, and bootstrap administrator settings.
 
 ## Version lock
@@ -81,8 +81,8 @@ Kubernetes deployment and rollout automation are outside the supported v0.1.0 re
 - Run `sh deploy/docker/prepare-host-dirs.sh` before the first Compose start.
   Detailed backup, restore and mount verification steps are documented in
   [`deploy/docker/README.md`](deploy/docker/README.md).
-The complete schema policy and verification queries are documented in
-[database migration guide](https://docs.zerodenet.org/projects/zboard/reference/database-migrations).
+Database switching and recovery are documented in
+[database migration guide](https://docs.zerodenet.org/projects/zboard/guides/maintenance).
 
 ## Tag and release command
 
@@ -127,7 +127,7 @@ access is required.
 
 - GitHub Actions generates release notes from non-merge commits since the
   previous tag. Do not maintain a second tracked changelog by hand.
-- Before publishing, attach [historical launch checklist](https://docs.zerodenet.org/projects/zboard/reference/history/launch-checklist) results as the public release check evidence.
+- Before publishing, attach verification results for the exact release build as CI or release artifacts.
 - Include:
   - smoke test outputs
   - Docker backup and rollback rehearsal result

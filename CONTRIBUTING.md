@@ -39,7 +39,7 @@ procedures, and engineering acceptance targets belong in their focused guides.
 
 ## Code conventions
 
-- Follow [the core and hardening baseline](https://docs.zerodenet.org/projects/zboard/reference/core-baseline): preserve
+- Follow [the project scope](https://docs.zerodenet.org/projects/zboard/): preserve
   the existing working flows, fix defects in small verified changes, measure
   performance, and expose narrow internal services for future extensions.
   Keep the core focused on essential panel functions. Implement online payments
@@ -49,6 +49,7 @@ procedures, and engineering acceptance targets belong in their focused guides.
 - New endpoint must be added to `backend/api/openapi.yaml`
 - Sensitive operations (SSH, protocol publish, payment callback) should include audit logs and tests where possible
 - Database structure is owned by the embedded SQL migrations, not runtime GORM
-  `AutoMigrate`; follow [database migration guide](https://docs.zerodenet.org/projects/zboard/reference/database-migrations).
+  `AutoMigrate`. Review `backend/migrations/` and preserve published migrations;
+  use the [maintenance guide](https://docs.zerodenet.org/projects/zboard/guides/maintenance) for database switching.
 - Run backend tests and vet for backend changes, and frontend tests plus the
   production build for frontend changes. Record any check that could not run.
