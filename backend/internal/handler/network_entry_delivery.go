@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -60,7 +61,7 @@ func (h *handlers) buildAuthorizedNetworkEntries(subscriptions []model.Subscript
 				continue
 			}
 			visibleEndpoint := endpoint
-			visibleEndpoint.Name = entry.Name + " · " + endpoint.Name
+			visibleEndpoint.Name = networkEntryDisplayName(entry.Name, endpoint.Name)
 			visibleEndpoint.Address = entry.Address
 			if !filter.matchesEndpoint(visibleEndpoint, landing) {
 				continue
@@ -126,7 +127,14 @@ func projectNetworkEntry(base subscriptionManifestNode, entry model.NetworkEntry
 	}
 	front := base
 	front.NetworkEntryID, front.NetworkEntryNetwork = entry.ID, entry.Network
-	front.Name = entry.Name + " · " + base.Name
+	front.Name = networkEntryDisplayName(entry.Name, base.Name)
 	front.Address, front.Port, front.PublicPort, front.Config = entry.Address, entry.Port, entry.PublicPort, raw
 	return front, nil
+}
+
+func networkEntryDisplayName(name, fallback string) string {
+	if name = strings.TrimSpace(name); name != "" {
+		return name
+	}
+	return fallback
 }

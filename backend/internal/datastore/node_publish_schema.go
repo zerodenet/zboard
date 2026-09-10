@@ -34,6 +34,11 @@ func ReconcileNodePublishSchema(db *gorm.DB) error {
 	if found != 4 {
 		return fmt.Errorf("node publication or network entry schema missing from baseline")
 	}
+	if !db.Migrator().HasColumn(&model.NetworkEntry{}, "DeliverySortOrder") {
+		if err := db.Migrator().AddColumn(&model.NetworkEntry{}, "DeliverySortOrder"); err != nil {
+			return err
+		}
+	}
 	if !db.Migrator().HasColumn(&model.NetworkEntry{}, "ProxyPoolID") {
 		if err := db.Migrator().AddColumn(&model.NetworkEntry{}, "ProxyPoolID"); err != nil {
 			return err

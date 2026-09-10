@@ -1132,6 +1132,7 @@ export interface PlanSKU {
 }
 
 export interface PlanSummary {
+  traffic_bytes: number
   id: number
   name: string
   slug: string
@@ -2354,3 +2355,19 @@ export async function assignAdminOrder(payload: AdminOrderAssignmentRequest): Pr
 
 // Shared authenticated client for bounded feature APIs.
 export { api as authenticatedAPI }
+
+export interface SubscriptionDeliveryOrderItem extends ProtocolEndpointOrderItem {
+  key: string
+  service_kind: 'listener' | 'forward'
+}
+export interface SubscriptionDeliveryOrderSnapshot {
+  items: SubscriptionDeliveryOrderItem[]
+  version: string
+  total: number
+}
+export async function fetchSubscriptionDeliveryOrder(): Promise<SubscriptionDeliveryOrderSnapshot> {
+  return unwrap(await api.get('/admin/subscription-delivery-order'))
+}
+export async function updateSubscriptionDeliveryOrder(payload: { ordered_keys: string[]; expected_version: string }): Promise<SubscriptionDeliveryOrderSnapshot> {
+  return unwrap(await api.put('/admin/subscription-delivery-order', payload))
+}

@@ -23,7 +23,7 @@
       <div class="modal-form">
         <p class="entry-preview">A 只监听转发端口，不创建 SS、VLESS 等协议监听；客户端认证与协议握手由父协议所在的 B 完成。关联父协议不会授予 B 的使用权限。</p>
         <p v-if="formError" class="entry-error" role="alert">{{ formError }}</p>
-        <FormField label="入口名称" required full><UiInput v-model.trim="form.name" maxlength="80" placeholder="例如：香港入口" /></FormField>
+        <FormField label="入口名称" required full hint="客户端订阅直接显示此名称，不再追加落地协议名称。展示位置可在「订阅展示顺序」中调整。"><UiInput v-model.trim="form.name" maxlength="80" placeholder="例如：香港入口" /></FormField>
         <FormField label="入口节点 A" required><NodeLookup v-model="form.node_id" @select="node => { if(node && !editing) form.address = node.address || '' }" /></FormField>
         <FormField label="落地节点 B" required><NodeLookup v-model="landingNode" /></FormField>
         <FormField label="父协议（B 的实际协议）" required full :hint="endpointError || '选择转发目标，不继承落地协议的节点组权限。'"><UiSelect v-model="form.endpoint_id" :options="endpointOptions" :disabled="!landingNode || endpointLoading" placeholder="选择落地协议" /></FormField>

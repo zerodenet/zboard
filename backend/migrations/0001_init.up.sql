@@ -986,6 +986,7 @@ CREATE TABLE `network_entries` (
  `public_port` int NOT NULL,
  `enabled` boolean NOT NULL DEFAULT false,
  `path_config` text,
+ `delivery_sort_order` int DEFAULT NULL,
  `revision` bigint unsigned NOT NULL DEFAULT 1,
  `created_at` datetime(3) DEFAULT NULL,
  `updated_at` datetime(3) DEFAULT NULL,

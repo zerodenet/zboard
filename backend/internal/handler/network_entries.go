@@ -254,7 +254,7 @@ func (h *handlers) NetworkEntriesHandler(w http.ResponseWriter, r *http.Request)
 	}
 	var tasks []model.Task
 	previous := row
-	row = model.NetworkEntry{ProxyPoolID: poolID, Network: request.Network, ID: id, Name: request.Name, NodeID: request.NodeID, EndpointID: request.EndpointID, Address: request.Address, Port: request.Port, PublicPort: request.PublicPort, Enabled: request.Enabled, PathConfig: encryptedPath, Revision: previous.Revision + 1, CreatedAt: previous.CreatedAt}
+	row = model.NetworkEntry{DeliverySortOrder: previous.DeliverySortOrder, ProxyPoolID: poolID, Network: request.Network, ID: id, Name: request.Name, NodeID: request.NodeID, EndpointID: request.EndpointID, Address: request.Address, Port: request.Port, PublicPort: request.PublicPort, Enabled: request.Enabled, PathConfig: encryptedPath, Revision: previous.Revision + 1, CreatedAt: previous.CreatedAt}
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		// Serialize against other entry/endpoint mutations on the same nodes.
 		var endpoint model.ProtocolEndpoint
@@ -310,7 +310,7 @@ func (h *handlers) NetworkEntriesHandler(w http.ResponseWriter, r *http.Request)
 			}
 			return createAuditLog(tx, claims, "network_entry.create", fmt.Sprintf("network_entry:%d", row.ID), fmt.Sprintf("node=%d endpoint=%d", row.NodeID, row.EndpointID))
 		}
-		update := tx.Model(&model.NetworkEntry{}).Where("id = ? AND revision = ?", id, previous.Revision).Select("*").Updates(&row)
+		update := tx.Model(&model.NetworkEntry{}).Where("id = ? AND revision = ?", id, previous.Revision).Select("*").Omit("delivery_sort_order").Updates(&row)
 		if update.Error != nil {
 			return update.Error
 		}

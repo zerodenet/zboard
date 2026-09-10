@@ -3,7 +3,7 @@
     <PageHeader title="协议服务" description="协议配置可复用、复制并切换承载 VPS；运行参数变更才发布 Zero，名称、计费和交付顺序独立保存。" eyebrow="Infrastructure">
       <template #actions>
         <PageRefreshButton label="刷新协议服务" :loading="loading" @click="serviceKind === 'forward' ? forwardServices?.load() : refresh()" />
-        <UiButton v-if="serviceKind === 'listener'" variant="secondary" type="button" data-testid="protocol-delivery-order" @click="openOrdering"><UiIcon name="sort" />调整交付顺序</UiButton>
+        <UiButton variant="secondary" type="button" data-testid="protocol-delivery-order" @click="openOrdering"><UiIcon name="sort" />订阅展示顺序</UiButton>
         <UiButton type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton>
       </template>
     </PageHeader>
@@ -152,28 +152,28 @@
     <ModalDialog
       :open="orderingOpen"
       :dirty="orderingDirty"
-      title="调整协议交付顺序"
-      description="这里加载全部协议服务，不受当前分页、筛选或节点分组视图影响。保存后会改变客户端订阅中的节点顺序，但不会发布或重启 Zero。"
+      title="订阅展示顺序"
+      description="将直连服务与前置入口统一排序，不受当前分页、筛选或节点分组视图影响。保存后会改变客户端订阅中的节点顺序，但不会发布或重启 Zero。"
       size="lg"
       :busy="orderingSaving"
       return-focus-selector="[data-testid='protocol-delivery-order']"
       @close="closeOrdering"
     >
-      <section class="protocol-order-editor" aria-label="协议交付顺序编辑器">
-        <PageAlert v-if="orderingError" tone="danger" title="无法调整交付顺序">
+      <section class="protocol-order-editor" aria-label="订阅展示顺序编辑器">
+        <PageAlert v-if="orderingError" tone="danger" title="无法更新订阅展示顺序">
           {{ orderingError }}
           <template #actions><UiButton variant="secondary" size="sm" type="button" :disabled="orderingSaving" @click="openOrdering">重新加载完整顺序</UiButton></template>
         </PageAlert>
         <PageAlert tone="info" title="完整交付范围">
-          当前共 {{ orderingItems.length }} 个协议服务。节点组设置了独立成员顺序时，组内顺序优先；未设置时使用这里的全局顺序。
+          当前共 {{ orderingItems.length }} 个直连服务与前置入口，可交错排列。用户只会看到其已授权且可用的服务，展示顺序与这里一致。
         </PageAlert>
-        <div v-if="orderingLoading" class="protocol-order-loading">正在加载完整协议范围…</div>
+        <div v-if="orderingLoading" class="protocol-order-loading">正在加载完整服务列表…</div>
         <ol v-else class="protocol-order-list">
-          <li v-for="(item, index) in orderingItems" :key="item.id" class="protocol-order-item">
+          <li v-for="(item, index) in orderingItems" :key="item.key" class="protocol-order-item">
             <span class="protocol-order-position" aria-hidden="true">{{ index + 1 }}</span>
             <div class="protocol-order-content">
               <strong>{{ item.name }}</strong>
-              <span>#{{ item.id }} · {{ protocolLabel(item.protocol) }} · VPS #{{ item.node_id }}</span>
+              <span>{{ item.service_kind === 'forward' ? '前置入口' : '直连服务' }} #{{ item.id }} · {{ protocolLabel(item.protocol) }} · 节点 #{{ item.node_id }}</span>
             </div>
             <StatusBadge :tone="item.is_active ? 'success' : 'neutral'">{{ item.is_active ? '运行中' : '已停用' }}</StatusBadge>
             <div class="protocol-order-actions">
@@ -185,7 +185,7 @@
       </section>
       <template #footer="{ requestClose }">
         <UiButton variant="secondary" type="button" :disabled="orderingSaving" @click="requestClose">取消</UiButton>
-        <UiButton type="button" :loading="orderingSaving" :disabled="orderingLoading || !orderingDirty" @click="saveOrdering">保存交付顺序</UiButton>
+        <UiButton type="button" :loading="orderingSaving" :disabled="orderingLoading || !orderingDirty" @click="saveOrdering">保存展示顺序</UiButton>
       </template>
     </ModalDialog>
 
@@ -297,7 +297,7 @@ import NetworkEntries from './NetworkEntries.vue'
 import UiTabs from '../components/UiTabs.vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, updateProtocolEndpoint, updateProtocolEndpointOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointNodeGroupMembership, type ProtocolEndpointOrderItem, type ProtocolKernelCapability } from '../api/client'
+import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchSubscriptionDeliveryOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, updateProtocolEndpoint, updateSubscriptionDeliveryOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointNodeGroupMembership, type SubscriptionDeliveryOrderItem, type ProtocolKernelCapability } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -333,7 +333,7 @@ import { trackAdminTask } from '../utils/taskTracker'
 import { protocolEndpointMutationMessage } from '../utils/protocolEndpointEffects'
 import { formatProtocolSaveTiming, summarizeProtocolSaveTiming } from '../utils/protocolSaveTiming'
 import { buildProtocolNodeGroupMembershipChanges } from '../utils/protocolNodeGroupMembership'
-import { moveProtocolEndpointOrder, protocolEndpointOrderChanged } from '../utils/protocolEndpointOrdering'
+import { moveProtocolEndpointOrder } from '../utils/protocolEndpointOrdering'
 import { isIntegerInRange } from '../utils/validation'
 
 // The service column takes remaining space; selection stays exactly 42px for sticky alignment.
@@ -413,8 +413,8 @@ const deploymentOffset = ref((Math.max(1, Number(route.query.deployment_page) ||
 const deploymentLimit = ref(allowedPageSizes.includes(Number(route.query.deployment_limit)) ? Number(route.query.deployment_limit) : 25)
 const saving = ref(false), realityKeyBusy = ref(false), realityTemplateBusy = ref(false), realityPreset = ref('compatible'), deployingID = ref(0), deletingID = ref(0), detailLoadingID = ref(0), editorOpen = ref(false), editorStep = ref(1)
 const orderingOpen = ref(false), orderingLoading = ref(false), orderingSaving = ref(false), orderingError = ref(''), orderingVersion = ref('')
-const orderingItems = ref<ProtocolEndpointOrderItem[]>([]), orderingOriginalIDs = ref<number[]>([])
-const orderingDirty = computed(() => protocolEndpointOrderChanged(orderingItems.value, orderingOriginalIDs.value))
+const orderingItems = ref<SubscriptionDeliveryOrderItem[]>([]), orderingOriginalIDs = ref<string[]>([])
+const orderingDirty = computed(() => orderingItems.value.length !== orderingOriginalIDs.value.length || orderingItems.value.some((item, index) => item.key !== orderingOriginalIDs.value[index]))
 const copySourceID = ref(0)
 const originalNodeID = ref(0)
 const originalNodeGroupMemberships = ref<ProtocolEndpointNodeGroupMembership[]>([])
@@ -712,12 +712,12 @@ async function openOrdering() {
   orderingOriginalIDs.value = []
   orderingVersion.value = ''
   try {
-    const snapshot = await fetchProtocolEndpointOrder()
+    const snapshot = await fetchSubscriptionDeliveryOrder()
     orderingItems.value = snapshot.items.slice()
-    orderingOriginalIDs.value = snapshot.items.map(item => item.id)
+    orderingOriginalIDs.value = snapshot.items.map(item => item.key)
     orderingVersion.value = snapshot.version
   } catch (cause: any) {
-    orderingError.value = cause?.response?.data?.message || '完整协议交付顺序加载失败。'
+    orderingError.value = cause?.response?.data?.message || '完整订阅展示顺序加载失败。'
   } finally {
     orderingLoading.value = false
   }
@@ -735,18 +735,18 @@ async function saveOrdering() {
   orderingSaving.value = true
   orderingError.value = ''
   try {
-    const result = await updateProtocolEndpointOrder({
-      ordered_ids: orderingItems.value.map(item => item.id),
+    const result = await updateSubscriptionDeliveryOrder({
+      ordered_keys: orderingItems.value.map(item => item.key),
       expected_version: orderingVersion.value,
     })
     orderingItems.value = result.items.slice()
-    orderingOriginalIDs.value = result.items.map(item => item.id)
+    orderingOriginalIDs.value = result.items.map(item => item.key)
     orderingVersion.value = result.version
     orderingOpen.value = false
-    message.value = '协议交付顺序已保存；后续客户端订阅将按新顺序渲染，无需发布节点。'
+    message.value = '订阅展示顺序已保存；后续客户端订阅将按新顺序渲染，无需发布节点。'
     await refresh()
   } catch (cause: any) {
-    orderingError.value = cause?.response?.data?.message || '协议交付顺序保存失败，请重新加载完整列表后重试。'
+    orderingError.value = cause?.response?.data?.message || '订阅展示顺序保存失败，请重新加载完整列表后重试。'
   } finally {
     orderingSaving.value = false
   }

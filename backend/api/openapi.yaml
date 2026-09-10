@@ -3166,6 +3166,45 @@ paths:
       responses:
         "200": { description: Template deleted }
         "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/subscription-delivery-order:
+    get:
+      tags: [nodes, subscriptions, admin]
+      operationId: getSubscriptionDeliveryOrder
+      summary: Load the complete global subscription display order
+      description: Returns every protocol endpoint and forwarding entry in persisted business-delivery order. The snapshot is intentionally independent of list filters, pagination and display grouping, and includes an optimistic version for a later complete-scope update.
+      responses:
+        "200":
+          description: Complete protocol endpoint and forwarding entry delivery-order snapshot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/SubscriptionDeliveryOrderSnapshot" }
+    put:
+      tags: [nodes, subscriptions, admin]
+      operationId: updateSubscriptionDeliveryOrder
+      summary: Replace the complete global subscription display order
+      description: Requires every current protocol endpoint and forwarding entry exactly once and the version returned by GET. The change affects subsequent subscription rendering only; it does not publish or restart Zero. Direct services and forwarding entries can be interleaved; authorization and runtime configuration remain unchanged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubscriptionDeliveryOrderRequest" }
+      responses:
+        "200":
+          description: Updated complete delivery order; no node publication was required
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/SubscriptionDeliveryOrderMutationResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "428": { $ref: "#/components/responses/Error" }
   /api/v1/admin/protocol-endpoints/order:
     get:
       tags: [nodes, subscriptions, admin]
@@ -5222,6 +5261,52 @@ components:
             used_bytes_total: { type: integer, format: int64, minimum: 0 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    SubscriptionDeliveryOrderItem:
+      type: object
+      required: [id, key, service_kind, node_id, name, protocol, is_active, sort_order]
+      properties:
+        key: { type: string, pattern: "^(protocol|entry):[1-9][0-9]*$" }
+        service_kind: { type: string, enum: [listener, forward] }
+        id: { type: integer, format: int64 }
+        node_id: { type: integer, format: int64 }
+        name: { type: string }
+        protocol: { type: string }
+        is_active: { type: boolean }
+        sort_order: { type: integer }
+    SubscriptionDeliveryOrderSnapshot:
+      type: object
+      required: [items, version, total]
+      properties:
+        items:
+          type: array
+          description: Every current protocol endpoint and forwarding entry in global delivery order. The list is never filtered or paginated.
+          items: { $ref: "#/components/schemas/SubscriptionDeliveryOrderItem" }
+        version:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+          description: Optimistic hash of endpoint membership and persisted delivery positions.
+        total: { type: integer, minimum: 0 }
+    SubscriptionDeliveryOrderRequest:
+      type: object
+      required: [ordered_keys, expected_version]
+      properties:
+        ordered_keys:
+          type: array
+          minItems: 0
+          uniqueItems: true
+          description: Every current protocol endpoint and forwarding entry key exactly once, in the desired global client-delivery order.
+          items: { type: string, pattern: "^(protocol|entry):[1-9][0-9]*$" }
+        expected_version:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+    SubscriptionDeliveryOrderMutationResult:
+      allOf:
+        - $ref: "#/components/schemas/SubscriptionDeliveryOrderSnapshot"
+        - type: object
+          required: [effect, publish_status]
+          properties:
+            effect: { type: string, enum: [delivery] }
+            publish_status: { type: string, enum: [not_required] }
     ProtocolEndpointOrderItem:
       type: object
       required: [id, node_id, name, protocol, is_active, sort_order]

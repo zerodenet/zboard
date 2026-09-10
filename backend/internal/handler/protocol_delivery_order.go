@@ -235,6 +235,7 @@ func duplicateOrZeroUintID(values []uint) (uint, bool) {
 }
 
 type subscriptionDeliveryRelation struct {
+	NetworkEntryID     uint
 	NodeGroupID        uint
 	ProtocolEndpointID uint
 	GroupSortOrder     int
@@ -263,6 +264,15 @@ func (h *handlers) sortSubscriptionManifestNodes(subscriptions []model.Subscript
 		Find(&relations).Error; err != nil {
 		return err
 	}
+	var entries []subscriptionDeliveryRelation
+	if err := h.db.Table("node_group_network_entries membership").
+		Select("membership.node_group_id, network_entries.endpoint_id AS protocol_endpoint_id, network_entries.id AS network_entry_id, membership.sort_order AS group_sort_order, COALESCE(network_entries.delivery_sort_order, protocol_endpoints.sort_order) AS global_sort_order").
+		Joins("JOIN network_entries ON network_entries.id = membership.network_entry_id").
+		Joins("JOIN protocol_endpoints ON protocol_endpoints.id = network_entries.endpoint_id").
+		Where("membership.node_group_id IN ?", uniqueUintIDs(groupIDs)).Find(&entries).Error; err != nil {
+		return err
+	}
+	relations = append(relations, entries...)
 	orderSubscriptionManifestNodes(subscriptions, relations, nodes)
 	return nil
 }
@@ -276,12 +286,12 @@ func orderSubscriptionManifestNodes(subscriptions []model.Subscription, relation
 	}
 
 	groupRelations := make(map[uint][]subscriptionDeliveryRelation)
-	globalOrder := make(map[uint]int)
+	globalOrder := make(map[string]int)
 	for _, relation := range relations {
 		groupRelations[relation.NodeGroupID] = append(groupRelations[relation.NodeGroupID], relation)
-		globalOrder[relation.ProtocolEndpointID] = relation.GlobalSortOrder
+		globalOrder[deliveryOrderKey(relation.ProtocolEndpointID, relation.NetworkEntryID)] = relation.GlobalSortOrder
 	}
-	groupEndpointRank := make(map[uint]map[uint]int, len(groupRelations))
+	groupEndpointRank := make(map[uint]map[string]int, len(groupRelations))
 	for groupID, items := range groupRelations {
 		sort.SliceStable(items, func(left, right int) bool {
 			if items[left].GlobalSortOrder != items[right].GlobalSortOrder {
@@ -292,9 +302,9 @@ func orderSubscriptionManifestNodes(subscriptions []model.Subscription, relation
 			}
 			return items[left].ProtocolEndpointID < items[right].ProtocolEndpointID
 		})
-		ranks := make(map[uint]int, len(items))
+		ranks := make(map[string]int, len(items))
 		for index, item := range items {
-			ranks[item.ProtocolEndpointID] = index
+			ranks[deliveryOrderKey(item.ProtocolEndpointID, item.NetworkEntryID)] = index
 		}
 		groupEndpointRank[groupID] = ranks
 	}
@@ -302,21 +312,21 @@ func orderSubscriptionManifestNodes(subscriptions []model.Subscription, relation
 	positionFor := func(node subscriptionManifestNode) subscriptionDeliveryPosition {
 		maxRank := int(^uint(0) >> 1)
 		position := subscriptionDeliveryPosition{GroupRank: len(subscriptions), EndpointRank: maxRank, GlobalOrder: maxRank}
-		if rank, exists := globalOrder[node.ID]; exists {
+		if rank, exists := globalOrder[deliveryOrderKey(node.ID, node.NetworkEntryID)]; exists {
 			position.GlobalOrder = rank
 		}
 		if node.SubscriptionID != 0 {
 			if rank, exists := subscriptionRank[node.SubscriptionID]; exists {
 				position.GroupRank = rank
 				groupID := subscriptionGroup[node.SubscriptionID]
-				if endpointRank, exists := groupEndpointRank[groupID][node.ID]; exists {
+				if endpointRank, exists := groupEndpointRank[groupID][deliveryOrderKey(node.ID, node.NetworkEntryID)]; exists {
 					position.EndpointRank = endpointRank
 				}
 				return position
 			}
 		}
 		for index, subscription := range subscriptions {
-			if endpointRank, exists := groupEndpointRank[subscription.NodeGroupID][node.ID]; exists {
+			if endpointRank, exists := groupEndpointRank[subscription.NodeGroupID][deliveryOrderKey(node.ID, node.NetworkEntryID)]; exists {
 				position.GroupRank = index
 				position.EndpointRank = endpointRank
 				return position
@@ -330,6 +340,9 @@ func orderSubscriptionManifestNodes(subscriptions []model.Subscription, relation
 		rightPosition := positionFor(nodes[right])
 		if leftPosition.GlobalOrder != rightPosition.GlobalOrder {
 			return leftPosition.GlobalOrder < rightPosition.GlobalOrder
+		}
+		if nodes[left].NetworkEntryID != nodes[right].NetworkEntryID {
+			return nodes[left].NetworkEntryID < nodes[right].NetworkEntryID
 		}
 		if nodes[left].ID != nodes[right].ID {
 			return nodes[left].ID < nodes[right].ID

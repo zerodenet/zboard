@@ -8,7 +8,7 @@ import NodeGroupMembershipEditor from '../components/NodeGroupMembershipEditor.v
 import NodeGroupLookup from '../components/NodeGroupLookup.vue'
 import { fetchProtocolEndpoint, fetchProtocolEndpointsPage, getVersion } from '../api/client'
 
-const mocks = vi.hoisted(() => ({ create: vi.fn() }))
+const mocks = vi.hoisted(() => ({ create: vi.fn(), order: vi.fn(), saveOrder: vi.fn() }))
 vi.mock('../api/client', async (importOriginal) => ({
   ...await importOriginal<typeof import('../api/client')>(),
   getVersion: vi.fn(async () => ({ protocol_capabilities: {} })),
@@ -18,6 +18,8 @@ vi.mock('../api/client', async (importOriginal) => ({
   fetchManagedCertificatesPage: vi.fn(async () => ({ items: [] })),
   fetchNodeGroupsPage: vi.fn(async () => ({ items: [], total: 0 })),
   createProtocolEndpoint: mocks.create,
+  fetchSubscriptionDeliveryOrder: mocks.order,
+  updateSubscriptionDeliveryOrder: mocks.saveOrder,
 }))
 vi.mock('../utils/taskTracker', () => ({ trackAdminTask: vi.fn() }))
 vi.mock('../utils/feedback', () => ({ confirmAction: vi.fn(async () => true), notify: vi.fn() }))
@@ -120,4 +122,21 @@ describe('Protocol creation and actionable errors', () => {
     expect(wrapper.getComponent({ name: 'NodeGroupMembershipEditor' }).props('modelValue')).toEqual([membership])
     wrapper.unmount()
   })
+})
+
+it('orders a forwarding entry independently of a direct service with the same numeric ID', async () => {
+  const direct = { id: 1, key: 'protocol:1', service_kind: 'listener', name: '落地', node_id: 2, protocol: 'trojan', is_active: true, sort_order: 0 }
+  const entry = { id: 1, key: 'entry:1', service_kind: 'forward', name: '广州专线', node_id: 6, protocol: 'trojan', is_active: true, sort_order: 1 }
+  mocks.order.mockResolvedValue({ items: [direct, entry], version: 'v1', total: 2 })
+  mocks.saveOrder.mockResolvedValue({ items: [entry, direct], version: 'v2', total: 2 })
+  const wrapper = await render()
+  await wrapper.get('[data-testid="protocol-delivery-order"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.findAll('.protocol-order-item')).toHaveLength(2)
+  await wrapper.get('[aria-label="上移 广州专线"]').trigger('click')
+  expect(wrapper.findAll('.protocol-order-item')[0].text()).toContain('广州专线')
+  await click(wrapper, '保存展示顺序')
+  await flushPromises()
+  expect(mocks.saveOrder).toHaveBeenCalledWith({ ordered_keys: ['entry:1','protocol:1'], expected_version: 'v1' })
+  wrapper.unmount()
 })
