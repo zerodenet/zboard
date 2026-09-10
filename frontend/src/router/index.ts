@@ -44,6 +44,7 @@ export const routes: RouteRecordRaw[] = [
       { path: 'plugins/:pluginId', component: () => import('../views/PluginDetail.vue'), meta: { title: '插件详情', section: '扩展中心' } },
       { path: 'plugins/:pluginId/configuration', component: () => import('../views/PluginConfiguration.vue'), meta: { title: '插件配置', section: '扩展中心' } },
       { path: 'plugin-market', component: () => import('../views/PluginMarket.vue'), meta: { title: '插件市场', section: '扩展中心' } },
+      { path: 'plugin-market/:pluginId', component: () => import('../views/PluginMarketDetail.vue'), meta: { title: '市场插件详情', section: '扩展中心' } },
       { path: 'extensions/:pluginId/:pageId', component: () => import('../views/PluginPage.vue'), meta: { pluginPage: true, title: '扩展', section: '扩展中心' } },
       { path: 'dashboard', component: () => import('../views/Dashboard.vue'), meta: { title: '运营工作台', section: '工作台' } },
       { path: 'users', component: () => import('../views/Users.vue'), meta: { title: '用户管理', section: '客户与支持' } },

@@ -274,6 +274,8 @@ paths:
                   "minimum": 0
                 "accept_untested":
                   "type": "boolean"
+                  deprecated: true
+                  description: Ignored; publisher host-version test coverage is advisory.
                 "version_id":
                   "type": "string"
               "required": ["generation"]
@@ -388,10 +390,89 @@ paths:
           "description": "Stale installation generation, configuration revision or catalog digest"
         "503":
           "description": "Plugin host lease lost or runtime unavailable"
+  /api/v1/admin/plugin-market/{id}:
+    get:
+      tags: [plugins]
+      summary: Read platform downloads and the installed state for a market plugin
+      description: Public registry entries resolve marketplace-entry.json from the registered repository and version. Release metadata alone never grants installation trust.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Release details; notice describes unavailable metadata or platform support
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/PluginMarketDetail" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/plugin-market/{id}/inspect:
+    post:
+      tags: [plugins]
+      summary: Download and inspect the server-platform package without installing or granting trust
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Verified manifest, archive digest, key fingerprint and host compatibility
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          manifest: { type: object }
+                          digest: { type: string }
+                          publisher: { type: string }
+                          public_key: { type: string }
+                          fingerprint: { type: string }
+                          trusted: { type: boolean }
+                          compatibility: { type: object }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/plugin-market/{id}/install:
+    post:
+      tags: [plugins]
+      summary: Confirm the inspected package and install through the host lifecycle
+      description: Re-fetches and validates the server-platform package. The digest must match the preview. Unknown publishers additionally require its verified key fingerprint. Existing plugin key pins remain mandatory; fresh installations remain disabled.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [digest]
+              properties:
+                digest: { type: string }
+                fingerprint: { type: string }
+      responses:
+        "200":
+          description: Installed plugin
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/PluginInstallation" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   "/api/v1/admin/plugin-market":
     "get":
       "tags": ["plugins"]
-      "summary": "Read and verify the configured signed marketplace"
+      "summary": "Read the public registry or verify the configured signed marketplace"
       "responses":
         "200":
           "description": "Success; response data is described below"
@@ -2687,6 +2768,32 @@ paths:
                       data: { $ref: "#/components/schemas/AdminOrderDetail" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/orders/{id}/subscription-access:
+    post:
+      tags: [orders, admin]
+      summary: Read the subscription address fulfilled by a paid order
+      description: Administrator-only audited credential read. Requires a paid fulfilled order and a usable subscription belonging to the buyer. Creates a missing scoped token through the core provisioner; never rotates or reactivates an existing token. Response is not cached.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: Scoped address or a reason why it is unavailable
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          configured: { type: boolean }
+                          subscription_id: { type: integer, format: int64 }
+                          subscription_url: { type: string }
+                          notice: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v1/admin/orders/{id}/payment-events:
     get:
       tags: [orders, admin]
@@ -4135,6 +4242,7 @@ components:
           "properties":
             "zboard":
               "type": "string"
+              description: Optional advisory product version range; does not gate plugin admission.
             "recommended_zboard_version":
               "type": "string"
             "tested_zboard_versions":
@@ -4234,6 +4342,10 @@ components:
               "type": "boolean"
             "tested":
               "type": "boolean"
+              description: Publisher test coverage only; does not gate activation.
+            "warning":
+              "type": "string"
+              description: Advisory host release metadata notice.
             "reason":
               "type": "string"
         "versions":
@@ -4272,9 +4384,36 @@ components:
         "expires_at":
           "type": "string"
           "format": "date-time"
+    PluginMarketDetail:
+      type: object
+      properties:
+        entry: { $ref: "#/components/schemas/PluginMarket/properties/entries/items" }
+        platform: { type: string }
+        notice: { type: string }
+        installed:
+          type: object
+          properties:
+            version: { type: string }
+            digest: { type: string }
+            state: { type: string }
+        release:
+          type: object
+          properties:
+            version: { type: string }
+            artifacts:
+              type: array
+              items:
+                type: object
+                properties:
+                  platform: { type: string }
+                  url: { type: string, format: uri }
+                  sha256: { type: string }
+                  size: { type: integer, format: int64 }
     "PluginMarket":
       "type": "object"
       "properties":
+        "kind": { "type": "string", "enum": ["registry", "signed"] }
+        "source_url": { "type": "string" }
         "configured":
           "type": "boolean"
         "expires_at":
@@ -4285,6 +4424,8 @@ components:
           "items":
             "type": "object"
             "properties":
+              "discovery_only": { "type": "boolean" }
+              "repository": { "type": "string", "format": "uri" }
               "id":
                 "type": "string"
               "name":
@@ -4974,8 +5115,9 @@ components:
         is_enabled: { type: boolean }
     PlanSummary:
       type: object
-      required: [id, name, slug, summary, node_group_id, is_active, sort_order, revision, sku_count, active_sku_count, created_at, updated_at]
+      required: [traffic_bytes, id, name, slug, summary, node_group_id, is_active, sort_order, revision, sku_count, active_sku_count, created_at, updated_at]
       properties:
+        traffic_bytes: { type: integer, format: int64, description: Traffic quota in bytes }
         id: { type: integer, format: int64 }
         name: { type: string }
         slug: { type: string }

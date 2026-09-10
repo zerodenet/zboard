@@ -58,8 +58,12 @@ func (h *handlers) ownedSubscription(userID, subscriptionID uint) (model.Subscri
 }
 
 func (h *handlers) createMissingSubscriptionAccessToken(subscription model.Subscription) (model.SubscriptionToken, string, error) {
+	return h.createMissingSubscriptionAccessTokenIn(h.db, subscription)
+}
+
+func (h *handlers) createMissingSubscriptionAccessTokenIn(db *gorm.DB, subscription model.Subscription) (model.SubscriptionToken, string, error) {
 	var existing model.SubscriptionToken
-	err := h.db.Where("subscription_id = ? AND user_id = ?", subscription.ID, subscription.UserID).First(&existing).Error
+	err := db.Where("subscription_id = ? AND user_id = ?", subscription.ID, subscription.UserID).First(&existing).Error
 	if err == nil {
 		return existing, "", nil
 	}
@@ -83,7 +87,7 @@ func (h *handlers) createMissingSubscriptionAccessToken(subscription model.Subsc
 		TokenCiphertext: encryptedToken,
 		TokenPrefix:     prefix,
 	}
-	result := h.db.Clauses(clause.OnConflict{
+	result := db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "subscription_id"}},
 		DoNothing: true,
 	}).Create(&candidate)
@@ -93,7 +97,7 @@ func (h *handlers) createMissingSubscriptionAccessToken(subscription model.Subsc
 	if result.RowsAffected > 0 {
 		return candidate, rawToken, nil
 	}
-	if err := h.db.Where("subscription_id = ? AND user_id = ?", subscription.ID, subscription.UserID).First(&existing).Error; err != nil {
+	if err := db.Where("subscription_id = ? AND user_id = ?", subscription.ID, subscription.UserID).First(&existing).Error; err != nil {
 		return model.SubscriptionToken{}, "", err
 	}
 	return existing, "", nil

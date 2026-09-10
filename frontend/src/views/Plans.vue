@@ -44,6 +44,7 @@
           <tr>
             <th class="table-primary-column">商品</th>
             <th>状态</th>
+            <th class="numeric-column">流量配额</th>
             <th data-column-priority="2">节点组</th>
             <th class="numeric-column" data-column-priority="3">SKU</th>
             <th class="numeric-column">可售 SKU</th>
@@ -64,6 +65,7 @@
                 {{ plan.is_active ? '已发布' : '草稿' }}
               </StatusBadge>
             </td>
+            <td class="numeric-column">{{ formatBytes(plan.traffic_bytes) }}</td>
             <td data-column-priority="2"><TableText :value="plan.node_group?.name || `节点组 #${plan.node_group_id}`" /></td>
             <td class="numeric-column" data-column-priority="3">{{ plan.sku_count }}</td>
             <td class="numeric-column">{{ plan.active_sku_count }}</td>

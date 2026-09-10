@@ -4,23 +4,23 @@
       <div>
         <p class="eyebrow">扩展中心</p>
         <h1>插件市场</h1>
-        <p>发现前台与后台扩展，安装前验证发布者签名和包内容。</p>
+        <p>发现前台与后台扩展，查看插件来源和发行状态，安装前验证签名和包内容。</p>
       </div>
       <RouterLink class="button button-secondary" to="/admin/plugins"
         >管理插件 / 离线导入</RouterLink
       >
     </header>
-    <p v-if="error || actionError" role="alert" class="plugins-error">
-      {{ actionError || error }}
+    <p v-if="error" role="alert" class="plugins-error">
+      {{ error }}
     </p>
-    <TransientFeedback :success="message" />
     <div class="plugins-toolbar">
       <UiInput
         v-model="query"
         placeholder="搜索名称或功能"
         aria-label="搜索市场插件"
-      /><UiSelect v-model="surface" aria-label="页面位置" :options="surfaceOptions" /><button :disabled="loading || busy" @click="load">刷新市场</button>
+      /><UiSelect v-model="surface" aria-label="页面位置" :options="surfaceOptions" /><button :disabled="loading" @click="load">刷新市场</button>
     </div>
+    <p v-if="market.kind === 'registry'" class="plugin-market-notice">浏览 ZeroDeNet 插件市场，进入详情可下载安装包或在线安装；首次安装会请你确认插件来源。</p>
     <p v-if="loading">正在加载市场目录…</p>
     <section v-else-if="!market.configured && !error" class="plugins-empty">
       <h2>尚未配置插件市场源</h2>
@@ -35,7 +35,7 @@
       <article v-for="entry in filtered" :key="entry.id" class="plugin-card">
         <div class="plugin-card-top">
           <div class="plugin-monogram">{{ entry.name.slice(0, 1) }}</div>
-          <span class="plugin-status">签名目录</span>
+          <span class="plugin-status">{{ entry.discovery_only ? '公开收录' : '签名目录' }}</span>
         </div>
         <h2>{{ entry.name }}</h2>
         <p class="plugin-id">{{ entry.id }} · v{{ entry.version }}</p>
@@ -51,7 +51,7 @@
             <dd>{{ entry.publisher }}</dd>
           </div>
         </dl>
-        <UiButton :disabled="busy" @click="install(entry)">安装插件</UiButton>
+        <RouterLink class="button button-secondary" :to="`/admin/plugin-market/${encodeURIComponent(entry.id)}`">详情 / 下载 / 安装</RouterLink>
       </article>
     </div>
   </div>
@@ -60,16 +60,11 @@
 import { computed, onMounted, ref } from "vue";
 import UiInput from '../components/UiInput.vue'
 import UiSelect from '../components/UiSelect.vue'
-import TransientFeedback from '../components/TransientFeedback.vue'
-import UiButton from "../components/UiButton.vue";
 import { useRemoteResource } from "../composables/useRemoteResource";
-import { confirmAction } from "../utils/feedback";
 import {
   fetchPluginMarket,
-  installMarketPlugin,
   surfaceLabel,
   type Market,
-  type MarketEntry,
 } from "../api/plugins";
 import "../styles/plugins.css";
 const {
@@ -84,42 +79,15 @@ const {
 });
 const surfaceOptions = [{ label: '所有页面位置', value: '' }, { label: '公开前台', value: 'public' }, { label: '用户前台', value: 'account' }, { label: '管理后台', value: 'admin' }]
 const query = ref(""),
-  surface = ref(""),
-  busy = ref(false),
-  actionError = ref(""),
-  message = ref("");
+  surface = ref("");
 const filtered = computed(() =>
   market.value.entries.filter(
     (e) =>
-      `${e.name} ${e.description}`
+      `${e.id} ${e.name} ${e.description}`
         .toLowerCase()
         .includes(query.value.toLowerCase()) &&
       (!surface.value || e.surfaces.includes(surface.value as any)),
   ),
 );
-async function install(entry: MarketEntry) {
-  if (
-    busy.value ||
-    !(await confirmAction({
-      title: `安装 ${entry.name}`,
-      message: `安装发布者 ${entry.publisher} 提供的 v${entry.version}。首次安装保持停用；升级自动迁移数据并保留原启停状态，失败时保留原版本。`,
-      confirmText: "验证并安装",
-    }))
-  )
-    return;
-  busy.value = true;
-  actionError.value = "";
-  message.value = "";
-  try {
-    await installMarketPlugin(entry);
-    message.value = `${entry.name} 安装已完成，请到插件管理中查看状态。`;
-  } catch (e: any) {
-    actionError.value =
-      e?.response?.data?.message ||
-      "安装失败，请检查市场连接、签名和插件版本。";
-  } finally {
-    busy.value = false;
-  }
-}
 onMounted(load);
 </script>

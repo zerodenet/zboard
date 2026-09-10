@@ -133,12 +133,12 @@ func TestPlanSummaryProjectionOmitsDescriptionPolicyAndSKUs(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(payload)
-	for _, forbidden := range []string{"description", "Long detail", "traffic_bytes", "speed_limit_mbps", "device_limit", `"skus"`, "private-list-sku"} {
+	for _, forbidden := range []string{"description", "Long detail", "speed_limit_mbps", "device_limit", `"skus"`, "private-list-sku"} {
 		if strings.Contains(text, forbidden) {
 			t.Errorf("plan summary contains detail field %q: %s", forbidden, text)
 		}
 	}
-	for _, required := range []string{`"id":17`, `"name":"Standard"`, `"sku_count":4`, `"active_sku_count":3`, `"node_group":{"id":8,"name":"Primary"`} {
+	for _, required := range []string{`"id":17`, `"traffic_bytes":1024`, `"name":"Standard"`, `"sku_count":4`, `"active_sku_count":3`, `"node_group":{"id":8,"name":"Primary"`} {
 		if !strings.Contains(text, required) {
 			t.Errorf("plan summary is missing %q: %s", required, text)
 		}

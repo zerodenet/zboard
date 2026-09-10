@@ -3868,6 +3868,7 @@ type planNodeGroupSummary struct {
 }
 
 type planSummaryItem struct {
+	TrafficBytes   int64                 `json:"traffic_bytes"`
 	ID             uint                  `json:"id"`
 	Name           string                `json:"name"`
 	Slug           string                `json:"slug"`
@@ -3922,7 +3923,8 @@ func newPlanNodeGroupSummary(group *model.NodeGroup) *planNodeGroupSummary {
 
 func newPlanSummaryItem(plan model.Plan, counts planSKUCountRow) planSummaryItem {
 	return planSummaryItem{
-		ID: plan.ID, Name: plan.Name, Slug: plan.Slug, Summary: plan.Summary,
+		TrafficBytes: plan.TrafficBytes,
+		ID:           plan.ID, Name: plan.Name, Slug: plan.Slug, Summary: plan.Summary,
 		NodeGroupID: plan.NodeGroupID, NodeGroup: newPlanNodeGroupSummary(plan.NodeGroup),
 		IsActive: plan.IsActive, SortOrder: plan.SortOrder, Revision: plan.Revision,
 		SKUCount: counts.SKUCount, ActiveSKUCount: counts.ActiveSKUCount,

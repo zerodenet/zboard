@@ -14,6 +14,10 @@ Legacy archives without an embedded key can supply their public key through the 
 
 ## Market installation
 
+Without `plugins.catalog_url`, the market reads the [ZeroDeNet ZBoard registry](https://github.com/zerodenet/plugins/blob/main/catalogs/zboard.json). Each plugin has a detail page with platform downloads, online installation and a link to its installed management page. The detail page resolves `releases/download/v<registered-version>/marketplace-entry.json` from the registered GitHub repository. The release must match the registry's plugin ID, repository, publisher and version, and list platform-specific `.zbplugin` assets with SHA-256, size and the publisher's public key. No arbitrary download URL is accepted from the browser.
+
+Online installation selects the server's platform (or a platform-independent `any` artifact). Inspection downloads the package, checks its size, digest, identity, signature and compatibility, and displays the same confirmation used by offline import. A public listing or publisher metadata never grants trust: an unknown key requires explicit fingerprint confirmation scoped to that plugin. Confirmation re-fetches and re-validates the package against the inspected archive digest; changed packages require inspection again. Existing signing-key pins, capability admission, migrations and activation policy continue to apply. A missing release or unsupported server platform remains visible without presenting an installable package.
+
 The host first validates the configured catalog signature and expiry. Each signed entry may supply `public_key`, attesting that publisher key only for the entry's plugin. Before recording trust, the host checks the package digest, signature, plugin ID, publisher and version. Entry keys do not enter the global publisher configuration and cannot sign future catalogs.
 
 `plugins.catalog_url` must reference a signed host catalog, not the source registry JSON. The catalog signer remains a host-configured trust root. This implementation does not publish a production catalog or invent an official market key.
@@ -27,3 +31,5 @@ Downloads allow at most four redirects. Every destination must use HTTPS on port
 The updated packager adds the optional public-key field to package signatures. Earlier hosts with strict signature decoding must be upgraded to read these new packages. Existing released archives are not rewritten; the compatibility input supports them without changing their checksums.
 
 Installation remains disabled initially. Core capability admission, registration policy, account ownership, configuration validation and data migrations apply independently of publisher trust.
+
+Plugin admission depends on the host's plugin protocol, UI bridge, supported capabilities and runtime platform, together with host authorization and data lifecycle checks. ZBoard product release numbers, including dev and RC suffixes, do not block installation, activation or active upgrades. `requires.zboard` is optional advisory metadata; `tested_zboard_versions` records publisher test coverage. An out-of-range or unrecognized host version produces a notice, not a refusal or extra activation consent. Existing signed packages need no rebuilding to adopt this host policy. Unsupported APIs, capabilities and runtime platforms remain rejected.

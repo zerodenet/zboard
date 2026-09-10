@@ -60,3 +60,9 @@ export async function rotateSubscriptionAccess(subscriptionId: number): Promise<
 export async function revokeSubscriptionAccess(subscriptionId: number): Promise<SubscriptionAccess> {
   return unwrap<SubscriptionAccess>(await subscriptionAccessApi.delete(accessPath(subscriptionId)))
 }
+
+// Explicit operator action; keep credentials out of list/detail API responses.
+export async function fetchOrderSubscriptionAccess(orderId: number, options: ApiRequestOptions = {}): Promise<SubscriptionAccess> {
+  if (!Number.isInteger(orderId) || orderId <= 0) throw new Error('orderId must be a positive integer')
+  return unwrap<SubscriptionAccess>(await subscriptionAccessApi.post(`/admin/orders/${orderId}/subscription-access`, undefined, { signal: options.signal }))
+}

@@ -101,7 +101,7 @@ func TestPackageCompatibilityAndFileBoundaries(t *testing.T) {
 	if c := p.Manifest.Compatibility("v0.0.1"); !c.Compatible || !c.Tested {
 		t.Fatal(c)
 	}
-	if c := p.Manifest.Compatibility("v1.0.0"); c.Compatible {
+	if c := p.Manifest.Compatibility("v1.0.0"); !c.Compatible || c.Warning == "" {
 		t.Fatal(c)
 	}
 	for _, path := range []string{"/etc/passwd", "a/../../b", "a\\b", "a/./b", "a:b", "a\x00b"} {

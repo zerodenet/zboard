@@ -19,17 +19,21 @@ import (
 )
 
 type MarketEntry struct {
-	PublicKey   string   `json:"public_key,omitempty"`
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Version     string   `json:"version"`
-	Publisher   string   `json:"publisher"`
-	PackageURL  string   `json:"package_url"`
-	SHA256      string   `json:"sha256"`
-	Surfaces    []string `json:"surfaces"`
+	DiscoveryOnly bool     `json:"discovery_only,omitempty"`
+	Repository    string   `json:"repository,omitempty"`
+	PublicKey     string   `json:"public_key,omitempty"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	Version       string   `json:"version"`
+	Publisher     string   `json:"publisher"`
+	PackageURL    string   `json:"package_url"`
+	SHA256        string   `json:"sha256"`
+	Surfaces      []string `json:"surfaces"`
 }
 type Market struct {
+	Kind       string        `json:"kind"`
+	SourceURL  string        `json:"source_url,omitempty"`
 	Configured bool          `json:"configured"`
 	Entries    []MarketEntry `json:"entries"`
 	ExpiresAt  time.Time     `json:"expires_at"`
@@ -159,11 +163,11 @@ func parseMarket(raw []byte, keys map[string]string, now time.Time) (Market, err
 	if payload.Entries == nil {
 		payload.Entries = []MarketEntry{}
 	}
-	return Market{Configured: true, Entries: payload.Entries, ExpiresAt: payload.ExpiresAt}, nil
+	return Market{Kind: "signed", Configured: true, Entries: payload.Entries, ExpiresAt: payload.ExpiresAt}, nil
 }
 func (m *Manager) Market(ctx context.Context) (Market, error) {
 	if m.options.CatalogURL == "" {
-		return Market{Entries: []MarketEntry{}}, nil
+		return m.publicRegistry(ctx)
 	}
 	raw, err := m.fetch(ctx, m.options.CatalogURL, 2<<20)
 	if err != nil {
@@ -172,6 +176,9 @@ func (m *Manager) Market(ctx context.Context) (Market, error) {
 	return parseMarket(raw, m.options.TrustedPublishers, time.Now().UTC())
 }
 func (m *Manager) InstallMarket(ctx context.Context, id, digest, actor string) (Installation, error) {
+	if m.options.CatalogURL == "" {
+		return Installation{}, errors.New("公开目录仅用于发现插件，在线安装需要已签名的安装目录；也可下载插件包后离线导入")
+	}
 	market, err := m.Market(ctx)
 	if err != nil {
 		return Installation{}, err

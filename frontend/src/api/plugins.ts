@@ -35,10 +35,12 @@ export interface Plugin {
     components: { server?: unknown };
     contributions: { pages: PluginPage[] };
   };
-  compatibility: { compatible: boolean; tested: boolean; reason: string };
+  compatibility: { compatible: boolean; tested: boolean; reason: string; warning?: string };
   versions: PluginVersion[];
 }
 export interface MarketEntry {
+  discovery_only?: boolean;
+  repository?: string;
   id: string;
   name: string;
   description: string;
@@ -48,10 +50,21 @@ export interface MarketEntry {
   surfaces: Surface[];
 }
 export interface Market {
+  kind?: "registry" | "signed";
+  source_url?: string;
   configured: boolean;
   entries: MarketEntry[];
   expires_at: string;
 }
+export interface MarketArtifact { platform: string; url: string; sha256: string; size: number }
+export interface MarketDetail {
+  entry: MarketEntry; platform: string; notice?: string;
+  release?: { version: string; artifacts: MarketArtifact[] };
+  installed?: { version: string; digest: string; state: string };
+}
+export const fetchMarketDetail = (id: string, signal?: AbortSignal) => api.get(`/admin/plugin-market/${encodeURIComponent(id)}`, { signal, timeout: 60_000 }).then(data<MarketDetail>);
+export const previewMarketPlugin = (id: string, signal?: AbortSignal) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/inspect`, undefined, { signal, timeout: 60_000 }).then(data<ImportPreview>);
+export const confirmMarketPlugin = (id: string, preview: ImportPreview, trust: boolean) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/install`, { digest: preview.digest, fingerprint: trust ? preview.fingerprint : '' }, { timeout: 60_000 }).then(data<Plugin>);
 export interface PluginSession {
   token: string;
   bridge_token: string;

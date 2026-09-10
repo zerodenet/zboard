@@ -58,8 +58,8 @@ manifest 示例见 [welcome/manifest.json](../examples/plugins/welcome/manifest.
 | --- | --- |
 | schema_version | 固定为 1 |
 | id/version | 稳定插件 ID / 严格 SemVer |
-| requires.zboard | 必须满足的宿主版本范围 |
-| requires.tested_zboard_versions | 发布者明确验证过的宿主版本 |
+| requires.zboard | 可选的宿主发行版本参考范围，仅作提示，不作为安装、启用或升级门槛 |
+| requires.tested_zboard_versions | 发布者明确验证过的宿主版本，仅描述测试覆盖 |
 | requires.plugin_protocol / ui_bridge | 当前均为 1 |
 | capabilities | 接受 zboard.ui.page.v1、zboard.config.v1、zboard.identity.provider.v1、zboard.storage.v1 |
 | surfaces | public、account、admin 中的子集；服务端插件可为空 |

@@ -3,15 +3,18 @@ import { flushPromises, shallowMount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Orders from './Orders.vue'
+import OrderSubscriptionDialog from '../components/OrderSubscriptionDialog.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
+vi.mock('../api/subscriptionAccess', () => ({ fetchOrderSubscriptionAccess: vi.fn() }))
 import Users from './Users.vue'
 import Subscriptions from './Subscriptions.vue'
 
-const mocks = vi.hoisted(() => ({ detail: vi.fn(), events: vi.fn(), list: vi.fn() }))
+const mocks = vi.hoisted(() => ({ detail: vi.fn(), events: vi.fn(), list: vi.fn(), pay: vi.fn() }))
 vi.mock('../api/client', () => ({
   fetchAdminOrderDetail: mocks.detail, fetchAdminUserDetail: mocks.detail,
   fetchAdminSubscriptionDetail: mocks.detail, fetchAdminOrderPaymentEvents: mocks.events,
   fetchOrdersPage: mocks.list, fetchUsersPage: mocks.list, fetchSubscriptionsPage: mocks.list,
-  cancelOrder: vi.fn(), markOrderPaid: vi.fn(), createAdminUser: vi.fn(), updateAdminUser: vi.fn(),
+  cancelOrder: vi.fn(), markOrderPaid: mocks.pay, createAdminUser: vi.fn(), updateAdminUser: vi.fn(),
 }))
 vi.mock('../stores/app', () => ({ useAppStore: () => ({ user: { id: 99 } }) }))
 
@@ -147,4 +150,18 @@ it('applies event pagination from the URL while order details are still pending'
   expect(mocks.detail).toHaveBeenCalledOnce()
   pending.resolve(detail(1))
   await flushPromises()
+})
+
+
+it('opens subscription delivery for the order whose payment was confirmed', async () => {
+  mocks.list.mockResolvedValue({ items: [{ ...detail(27), status: 'pending', subscription_id: 0 }], total: 1 })
+  mocks.pay.mockResolvedValue({ id: 27, status: 'paid', subscription_id: 301 })
+  const { wrapper } = await render(cases[0])
+  const pay = wrapper.findAllComponents({ name: 'UiButton' }).find(b => b.text() === '确认收款')
+  expect(pay).toBeDefined()
+  await pay!.trigger('click')
+  wrapper.findComponent(ConfirmDialog).vm.$emit('confirm')
+  await flushPromises()
+  expect(mocks.pay).toHaveBeenCalledWith(27)
+  expect(wrapper.findComponent(OrderSubscriptionDialog).props('orderId')).toBe(27)
 })

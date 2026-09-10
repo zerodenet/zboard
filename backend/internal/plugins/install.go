@@ -66,10 +66,6 @@ func (m *Manager) importVerified(data []byte, actor string, p *Package, confirme
 	if count >= 30 {
 		return Installation{}, errors.New("plugin version history limit reached (30)")
 	}
-	// An active installation cannot implicitly accept an untested runtime upgrade.
-	if prev.Enabled && !p.Manifest.Compatibility(m.host).Tested {
-		return Installation{}, errors.New("disable before importing an untested host version")
-	}
 	op, err := m.newOperation(p.Manifest.ID, "import", actor)
 	if err != nil {
 		return Installation{}, err
@@ -146,7 +142,7 @@ func (m *Manager) prepare(ctx context.Context, v Installation) (*process, error)
 	}
 	return proc, nil
 }
-func (m *Manager) Action(ctx context.Context, id, action, actor string, generation uint64, acceptUntested bool, versionID string) (Installation, error) {
+func (m *Manager) Action(ctx context.Context, id, action, actor string, generation uint64, _ bool, versionID string) (Installation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.guard(m.db); err != nil {
@@ -162,8 +158,8 @@ func (m *Manager) Action(ctx context.Context, id, action, actor string, generati
 	if action != "enable" && action != "disable" && action != "uninstall" && action != "rollback" && action != "purge_data" {
 		return v, errors.New("unsupported plugin operation")
 	}
-	if action == "enable" && (!v.Compatibility.Compatible || (!v.Compatibility.Tested && !acceptUntested)) {
-		return v, errors.New("incompatible or unconfirmed host version")
+	if action == "enable" && !v.Compatibility.Compatible {
+		return v, errors.New("plugin API or runtime is incompatible")
 	}
 	if (action == "rollback" || action == "purge_data") && v.Enabled {
 		return v, errors.New("disable plugin first")

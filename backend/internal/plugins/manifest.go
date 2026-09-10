@@ -62,6 +62,7 @@ type Compatibility struct {
 	Compatible bool   `json:"compatible"`
 	Tested     bool   `json:"tested"`
 	Reason     string `json:"reason"`
+	Warning    string `json:"warning,omitempty"`
 }
 
 func DecodeStrict(data []byte, out any) error {
@@ -85,8 +86,10 @@ func (m Manifest) Validate() error {
 	if _, err := semver.StrictNewVersion(m.Version); err != nil || len(m.Version) > 64 {
 		return errors.New("invalid plugin version")
 	}
-	if _, err := semver.NewConstraint(m.Requires.ZBoard); err != nil || m.Requires.ZBoard == "" {
-		return errors.New("host version constraint is required")
+	if m.Requires.ZBoard != "" {
+		if _, err := semver.NewConstraint(m.Requires.ZBoard); err != nil {
+			return errors.New("invalid advisory host version range")
+		}
 	}
 	if len(m.Capabilities) == 0 || len(m.Capabilities) > 4 {
 		return errors.New("declare supported capabilities")
@@ -154,19 +157,31 @@ func (m Manifest) Validate() error {
 	return m.validateData()
 }
 func (m Manifest) Compatibility(host string) Compatibility {
-	v, err := semver.NewVersion(strings.TrimPrefix(host, "v"))
-	if err != nil {
-		return Compatibility{Reason: "unrecognized host version"}
-	}
-	c, err := semver.NewConstraint(m.Requires.ZBoard)
-	if err != nil || !c.Check(v) {
-		return Compatibility{Reason: "host version outside supported range"}
-	}
 	if m.Requires.Protocol != 1 || m.Requires.Bridge != 1 {
 		return Compatibility{Reason: "unsupported protocol version"}
 	}
 	if m.Components.Server != nil && m.Components.Server.Executables[runtime.GOOS+"-"+runtime.GOARCH] == "" {
 		return Compatibility{Reason: "no runtime for this platform"}
 	}
-	return Compatibility{Compatible: true, Tested: slices.Contains(m.Requires.Tested, v.String())}
+	// Product release numbers describe publisher test coverage, not the host API.
+	// Admission is enforced by protocol, capabilities, platform and lifecycle.
+	result := Compatibility{Compatible: true}
+	v, err := semver.NewVersion(strings.TrimPrefix(host, "v"))
+	if err != nil {
+		result.Warning = "宿主发行版本无法识别，不影响插件接口准入。"
+		return result
+	}
+	for _, tested := range m.Requires.Tested {
+		if t, err := semver.NewVersion(tested); err == nil && t.String() == v.String() {
+			result.Tested = true
+			break
+		}
+	}
+	if m.Requires.ZBoard != "" {
+		c, err := semver.NewConstraint(m.Requires.ZBoard)
+		if err != nil || !c.Check(v) {
+			result.Warning = "当前发行版本不在发布者声明范围内；该声明仅供参考，不阻止安装或启用。"
+		}
+	}
+	return result
 }

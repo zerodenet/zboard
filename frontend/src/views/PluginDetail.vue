@@ -26,7 +26,7 @@
           <div><dt>签名发布者</dt><dd>{{ plugin.publisher }}</dd></div>
           <div><dt>页面位置</dt><dd>{{ plugin.manifest.surfaces.map(surfaceLabel).join('、') }}</dd></div>
           <div><dt>组件</dt><dd>{{ plugin.manifest.components.server ? '包含服务端组件' : '页面扩展' }}</dd></div>
-          <div><dt>版本兼容性</dt><dd>{{ !plugin.compatibility.compatible ? '当前宿主不兼容' : plugin.compatibility.tested ? '发布者已测试当前版本' : '兼容范围内，尚未声明测试' }}<small v-if="plugin.compatibility.reason">{{ plugin.compatibility.reason }}</small></dd></div>
+          <div><dt>接口兼容性</dt><dd>{{ !plugin.compatibility.compatible ? '插件接口或运行平台不兼容' : '接口与运行平台满足要求' }}<small v-if="plugin.compatibility.reason">{{ plugin.compatibility.reason }}</small><small v-if="plugin.compatibility.warning">{{ plugin.compatibility.warning }}</small><small>{{ plugin.compatibility.tested ? '发布者已测试当前版本' : '发布者未声明当前版本的测试结果' }}</small></dd></div>
           <div><dt>业务作用</dt><dd>{{ pluginBusinessLabel(plugin) }}</dd></div>
           <div><dt>扩展能力</dt><dd>{{ plugin.manifest.capabilities.map(capabilityLabel).join('、') }}<small>由 ZBoard 根据插件声明、调用身份和站点策略约束。</small></dd></div>
           <div><dt>包摘要 SHA-256</dt><dd><code>{{ plugin.digest }}</code></dd></div>
