@@ -39,11 +39,15 @@ After installation:
 
 [ZNet Sink](https://github.com/zerodenet/znet-sink) is the desktop client in the Zero ecosystem. You can also use compatible Clash/Mihomo or sing-box clients with the corresponding subscription format.
 
-## Versions and extensions
+## Plugins
 
-`v0.0.1` is the first public release. Use a specific release tag for deployment; the documentation in each tag describes that version.
+The ZBoard core manages nodes, users, subscriptions, basic orders, and traffic usage. Third-party login, online payments, and other business extensions belong in plugins, which operators install and enable as needed.
 
-The current development branch also includes a plugin marketplace, offline `.zbplugin` installation, extension pages, and third-party login providers. These extensions are **not included in v0.0.1**. See the [plugin guide](https://docs.zerodenet.org/projects/zboard/plugins/development) for configuration and supported capabilities.
+Install plugins from the marketplace or import a `.zbplugin` package, then manage their configuration, activation, and updates in the console. Available features depend on the plugin and the interfaces exposed by the panel. The payment extension interface is not yet available; payment channels are not built into the core.
+
+[Using plugins](https://docs.zerodenet.org/projects/zboard/plugins/) · [Marketplace and installation](https://docs.zerodenet.org/projects/zboard/plugins/marketplace) · [Plugin development](https://docs.zerodenet.org/projects/zboard/plugins/development)
+
+Deploy a specific [release tag](https://github.com/zerodenet/zboard/releases) and check its release notes for supported features and installation requirements. RC builds are release candidates for deployment validation.
 
 ## Documentation
 

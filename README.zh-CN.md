@@ -39,11 +39,15 @@ Docker 镜像已包含后端和 Web 控制台。[Releases](https://github.com/ze
 
 [ZNet Sink](https://github.com/zerodenet/znet-sink) 是 Zero 生态的桌面客户端，也可以选择兼容的 Clash/Mihomo 或 sing-box 客户端，并使用对应的订阅格式。
 
-## 版本与扩展
+## 插件扩展
 
-`v0.0.1` 是首个公开版本。部署时请选择明确的 Release 标签，对应标签下的文档用于说明该版本。
+ZBoard 核心负责节点、用户、订阅、基础订单与流量管理。第三方登录、在线支付和其他业务扩展由插件对接，按站点需要安装和启用。
 
-当前开发分支还提供插件市场、离线 `.zbplugin` 安装、扩展页面和第三方登录提供方。这些扩展能力**不包含在 v0.0.1 中**，配置方法和支持范围见[插件指南](https://docs.zerodenet.org/projects/zboard/plugins/development)。
+管理员可以从插件市场安装扩展，也可以导入 `.zbplugin` 安装包，在后台管理配置、启停和更新。可用功能取决于插件本身及面板开放的接口；在线支付接口尚未开放，不代表面板内置支付渠道。
+
+[插件使用指南](https://docs.zerodenet.org/projects/zboard/plugins/) · [插件市场与安装](https://docs.zerodenet.org/projects/zboard/plugins/marketplace) · [插件开发](https://docs.zerodenet.org/projects/zboard/plugins/development)
+
+部署时选择明确的 [Release 标签](https://github.com/zerodenet/zboard/releases)，并查看对应发布说明中的功能范围和安装要求。RC 为候选版本，用于部署验证。
 
 ## 使用文档
 
