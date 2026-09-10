@@ -14,7 +14,6 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/plugins"
 	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
-	"github.com/zeromicro/go-zero/rest/pathvar"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -68,30 +67,18 @@ func identityTestHandlers(t *testing.T) (*handlers, string, *fakeIdentityRuntime
 }
 func startIdentityTest(t *testing.T, h *handlers, token string, bind bool) (*http.Cookie, url.Values) {
 	t.Helper()
-	body := "{}"
-	if bind {
-		body = `{"password":"account-password"}`
-	}
-	req := pathvar.WithVars(announcementRequest("POST", "https://panel.example.test/start", token, body), map[string]string{"id": "test.oauth"})
+	req := announcementRequest("POST", "https://panel.example.test/start", token, "{}")
 	req.Header.Set("Origin", "https://panel.example.test")
 	response := httptest.NewRecorder()
+	password := ""
 	if bind {
-		h.ExternalIdentityBindHandler(response, req)
-	} else {
-		h.ExternalAuthStartHandler(response, req)
+		password = "account-password"
 	}
-	if response.Code != 200 {
-		t.Fatalf("start: %d %s", response.Code, response.Body)
+	status, message, authorization := h.beginExternalAuth(response, req, bind, "test.oauth", password)
+	if status != 0 {
+		t.Fatalf("start: %d %s", status, message)
 	}
-	var result struct {
-		Data struct {
-			URL string `json:"authorization_url"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
-		t.Fatal(err)
-	}
-	u, _ := url.Parse(result.Data.URL)
+	u, _ := url.Parse(authorization)
 	q := u.Query()
 	if q.Get("code_challenge_method") != "S256" || len(q.Get("state")) != 43 || len(q.Get("nonce")) != 43 || q.Get("redirect_uri") != "https://panel.example.test/api/v1/auth/oidc/callback" {
 		t.Fatal("core authorization URL lacks binding")
@@ -211,22 +198,16 @@ func TestExternalIdentityRechecksAccountAndBindingAtFinish(t *testing.T) {
 func TestExternalIdentityPasswordAndOriginChecks(t *testing.T) {
 	h, token, _ := identityTestHandlers(t)
 	for _, tc := range []struct {
-		origin, body string
-		want         int
-	}{{"https://evil.example", `{}`, 403}, {"https://panel.example.test", `{"password":"wrong"}`, 401}} {
-		req := pathvar.WithVars(announcementRequest("POST", "/bind", token, tc.body), map[string]string{"id": "test.oauth"})
+		origin, password string
+		want             int
+	}{{"https://evil.example", "account-password", 403}, {"https://panel.example.test", "wrong", 401}} {
+		req := announcementRequest("POST", "/bind", token, "{}")
 		req.Header.Set("Origin", tc.origin)
 		response := httptest.NewRecorder()
-		h.ExternalIdentityBindHandler(response, req)
-		if response.Code != tc.want {
-			t.Fatalf("got %d want %d", response.Code, tc.want)
+		status, _, _ := h.beginExternalAuth(response, req, true, "test.oauth", tc.password)
+		if status != tc.want {
+			t.Fatalf("got %d want %d", status, tc.want)
 		}
-	}
-	h.SetPluginManager(nil)
-	response := httptest.NewRecorder()
-	h.ExternalAuthProvidersHandler(response, httptest.NewRequest("GET", "/providers", nil))
-	if response.Code != 200 {
-		t.Fatal("optional plugin outage broke provider catalog")
 	}
 }
 func TestExternalIdentityExpiryAndCaseSensitiveNamespace(t *testing.T) {
@@ -273,23 +254,17 @@ func TestExternalIdentityCannotBeStolenAndUnlinkInvalidatesPendingLogin(t *testi
 	if !strings.Contains(callbackIdentityTest(h, cookie, q).Header().Get("Location"), "error=failed") {
 		t.Fatal("identity transferred to another user")
 	}
-	for _, tc := range []struct {
-		token, body string
-		want        int
-	}{{otherToken, `{"password":"account-password"}`, 400}, {token, `{"password":"wrong"}`, 401}} {
-		r := pathvar.WithVars(announcementRequest("POST", "/unlink", tc.token, tc.body), map[string]string{"id": row.ID})
-		w := httptest.NewRecorder()
-		h.ExternalIdentityUnlinkHandler(w, r)
-		if w.Code != tc.want {
-			t.Fatal("foreign binding or wrong password accepted", w.Code)
-		}
+	foreign := plugins.Session{PluginID: "test.oauth", Surface: "account", Purpose: "slot", UserID: other.ID, TargetUserID: other.ID}
+	if err := h.unlinkPluginIdentity(foreign, authClaims{UserID: other.ID, Email: other.Email}, row.ID, "account-password"); err == nil {
+		t.Fatal("foreign binding was removed")
+	}
+	owner := plugins.Session{PluginID: "test.oauth", Surface: "account", Purpose: "slot", UserID: 1, TargetUserID: 1}
+	if err := h.unlinkPluginIdentity(owner, authClaims{UserID: 1, Email: "admin@example.com", IsAdmin: true}, row.ID, "wrong"); err == nil {
+		t.Fatal("wrong password was accepted")
 	}
 	cookie, q = startIdentityTest(t, h, "", false)
 	pending := callbackIdentityTest(h, cookie, q)
-	r := pathvar.WithVars(announcementRequest("POST", "/unlink", token, `{"password":"account-password"}`), map[string]string{"id": row.ID})
-	w := httptest.NewRecorder()
-	h.ExternalIdentityUnlinkHandler(w, r)
-	if w.Code != 200 || finishIdentityTest(h, pending).Code != 401 {
+	if err := h.unlinkPluginIdentity(owner, authClaims{UserID: 1, Email: "admin@example.com", IsAdmin: true}, row.ID, "account-password"); err != nil || finishIdentityTest(h, pending).Code != 401 {
 		t.Fatal("unlink did not invalidate pending login")
 	}
 }

@@ -54,6 +54,7 @@
           <div><span>更新时间</span><TimeBadge :value="selectedUserDetail.updated_at" /></div>
           <div><span>邮箱验证</span><TimeBadge :value="selectedUserDetail.email_verified_at" /></div>
         </section>
+        <PluginSlot name="admin.user.identities" surface="admin" :target-user-id="selectedUserDetail.id" />
         <div class="detail-action-row">
           <RouterLink class="button button-secondary button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedUserDetail.id) })">查看订阅</RouterLink>
           <RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id) })">查看订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id), assign: '1' })">分配订单</RouterLink>
@@ -118,6 +119,7 @@ import { useAppStore } from '../stores/app'
 import { formatNumber } from '../utils/format'
 import { collectFieldErrors, isEmail, isOneOf, isUtf8LengthInRange } from '../utils/validation'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
+import PluginSlot from '../plugins/PluginSlot.vue'
 
 type UserItem = AdminUserListItem
 const app = useAppStore()

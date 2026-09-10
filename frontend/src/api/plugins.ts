@@ -6,6 +6,13 @@ export interface PluginPage {
   title: string;
   purpose?: string;
 }
+export interface PluginSlotContribution {
+  id: string;
+  surface: Surface;
+  slot: string;
+  title: string;
+  entrypoint: string;
+}
 export interface PluginVersion {
   id: string;
   version: string;
@@ -33,7 +40,7 @@ export interface Plugin {
     surfaces: Surface[];
     capabilities: string[];
     components: { server?: unknown };
-    contributions: { pages: PluginPage[] };
+    contributions: { pages: PluginPage[]; slots?: PluginSlotContribution[] };
   };
   compatibility: { compatible: boolean; tested: boolean; reason: string; warning?: string };
   versions: PluginVersion[];
@@ -70,6 +77,9 @@ export interface PluginSession {
   bridge_token: string;
   plugin_id: string;
   page_id: string;
+  slot_id?: string;
+  slot?: string;
+  target_user_id?: number;
   surface: Surface;
   purpose: string;
   url: string;
@@ -79,6 +89,11 @@ export interface PluginSession {
 export interface CatalogPage {
   plugin_id: string;
   page: PluginPage;
+  generation: number;
+}
+export interface CatalogSlot {
+  plugin_id: string;
+  slot: PluginSlotContribution;
   generation: number;
 }
 export interface ConfigView {
@@ -159,6 +174,10 @@ export const fetchPluginPages = (surface: Surface, signal?: AbortSignal) =>
   api
     .get("/plugin-ui/catalog", { params: { surface }, signal })
     .then(data<CatalogPage[]>);
+export const fetchPluginSlots = (surface: Surface, slot: string, signal?: AbortSignal) =>
+  api
+    .get("/plugin-ui/slots", { params: { surface, slot }, signal })
+    .then(data<CatalogSlot[]>);
 export const createPluginSession = (
   id: string,
   page: string,
@@ -170,6 +189,19 @@ export const createPluginSession = (
     .post(
       `/plugin-ui/${id}/session`,
       { page, surface, configuration },
+      { signal },
+    )
+    .then(data<PluginSession>);
+export const createPluginSlotSession = (
+  id: string,
+  contribution: PluginSlotContribution,
+  targetUserID = 0,
+  signal?: AbortSignal,
+) =>
+  api
+    .post(
+      `/plugin-ui/${id}/slot-session`,
+      { id: contribution.id, slot: contribution.slot, surface: contribution.surface, target_user_id: targetUserID },
       { signal },
     )
     .then(data<PluginSession>);

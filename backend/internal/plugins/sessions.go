@@ -9,17 +9,20 @@ import (
 )
 
 type Session struct {
-	Token       string    `json:"token"`
-	BridgeToken string    `json:"bridge_token"`
-	PluginID    string    `json:"plugin_id"`
-	PageID      string    `json:"page_id"`
-	Surface     string    `json:"surface"`
-	Purpose     string    `json:"purpose"`
-	Entrypoint  string    `json:"entrypoint"`
-	URL         string    `json:"url"`
-	Generation  uint64    `json:"generation"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	UserID      uint      `json:"-"`
+	Token        string    `json:"token"`
+	BridgeToken  string    `json:"bridge_token"`
+	PluginID     string    `json:"plugin_id"`
+	PageID       string    `json:"page_id"`
+	SlotID       string    `json:"slot_id,omitempty"`
+	Slot         string    `json:"slot,omitempty"`
+	Surface      string    `json:"surface"`
+	Purpose      string    `json:"purpose"`
+	Entrypoint   string    `json:"entrypoint"`
+	URL          string    `json:"url"`
+	Generation   uint64    `json:"generation"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	UserID       uint      `json:"-"`
+	TargetUserID uint      `json:"target_user_id,omitempty"`
 }
 
 func randomToken() string {
@@ -82,6 +85,50 @@ func (m *Manager) CreateSession(id, pageID, surface string, userID uint, admin, 
 	m.sessions[s.Token] = s
 	return s, nil
 }
+
+func (m *Manager) CreateSlotSession(id, slotID, slot, surface string, userID uint, admin bool, targetUserID uint) (Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.guard(m.db); err != nil {
+		return Session{}, err
+	}
+	if len(m.sessions) >= 2048 {
+		return Session{}, errors.New("too many active plugin sessions")
+	}
+	v, err := m.load(id)
+	if err != nil {
+		return Session{}, err
+	}
+	if !v.Compatibility.Compatible || !v.Enabled || v.State != "active" || !hasCapability(v, PageCapability) || !hasCapability(v, IdentityCapability) {
+		return Session{}, ErrUnavailable
+	}
+	if surface == "admin" {
+		if !admin || targetUserID == 0 {
+			return Session{}, errors.New("plugin slot is not authorized")
+		}
+	} else if surface == "account" {
+		if userID == 0 || targetUserID != userID {
+			return Session{}, errors.New("plugin slot is not authorized")
+		}
+	} else if surface != "public" || targetUserID != 0 {
+		return Session{}, errors.New("plugin slot is not authorized")
+	}
+	var found *Slot
+	for i := range v.Manifest.Contributions.Slots {
+		candidate := &v.Manifest.Contributions.Slots[i]
+		if candidate.ID == slotID && candidate.Slot == slot && candidate.Surface == surface {
+			found = candidate
+			break
+		}
+	}
+	if found == nil {
+		return Session{}, errors.New("plugin slot not declared")
+	}
+	s := Session{Token: randomToken(), BridgeToken: randomToken(), PluginID: id, SlotID: slotID, Slot: slot, Surface: surface, Purpose: "slot", Entrypoint: found.Entrypoint, Generation: v.Generation, ExpiresAt: time.Now().Add(10 * time.Minute), UserID: userID, TargetUserID: targetUserID}
+	s.URL = "/api/v1/plugin-assets/" + s.Token + "/" + s.Entrypoint + "#bridge_token=" + s.BridgeToken
+	m.sessions[s.Token] = s
+	return s, nil
+}
 func (m *Manager) CheckSession(token string, userID uint, admin bool) (Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -134,6 +181,40 @@ type CatalogPage struct {
 	PluginID   string `json:"plugin_id"`
 	Page       Page   `json:"page"`
 	Generation uint64 `json:"generation"`
+}
+
+type CatalogSlot struct {
+	PluginID   string `json:"plugin_id"`
+	Slot       Slot   `json:"slot"`
+	Generation uint64 `json:"generation"`
+}
+
+func (m *Manager) Slots(surface, name string, userID uint, admin bool) ([]CatalogSlot, error) {
+	if requiredSurface, ok := slotSurfaces[name]; !ok || requiredSurface != surface {
+		return nil, errors.New("unknown plugin slot")
+	}
+	if surface == "admin" && !admin || surface == "account" && userID == 0 {
+		return nil, errors.New("surface not authorized")
+	}
+	rows, err := m.List()
+	if err != nil {
+		return nil, err
+	}
+	out := []CatalogSlot{}
+	if m.lost.Load() {
+		return out, nil
+	}
+	for _, v := range rows {
+		if !v.Enabled || v.State != "active" || !hasCapability(v, PageCapability) || !hasCapability(v, IdentityCapability) {
+			continue
+		}
+		for _, contribution := range v.Manifest.Contributions.Slots {
+			if contribution.Surface == surface && contribution.Slot == name {
+				out = append(out, CatalogSlot{PluginID: v.ID, Slot: contribution, Generation: v.Generation})
+			}
+		}
+	}
+	return out, nil
 }
 
 func (m *Manager) Pages(surface string, userID uint, admin bool) ([]CatalogPage, error) {

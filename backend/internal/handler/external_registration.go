@@ -79,7 +79,7 @@ func (h *handlers) createExternalRegistration(tx *gorm.DB, result externalAuthCo
 	if err := tx.Create(&binding).Error; err != nil {
 		return user, binding, err
 	}
-	err := createAuditLog(tx, authClaims{UserID: user.ID, Email: user.Email}, "identity.register", result.Provider.IdentityKey(), "core registered an ordinary user from verified external identity")
+	err := createAuditLog(tx, authClaims{UserID: user.ID, Email: user.Email}, "plugin.identity.register", result.Provider.IdentityKey(), "plugin identity verified; core registered an ordinary user")
 	return user, binding, err
 }
 

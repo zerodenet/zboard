@@ -22,34 +22,6 @@ tags:
   - name: traffic
   - name: tickets
 paths:
-  /api/v1/auth/oidc/providers:
-    get:
-      tags: [auth]
-      security: []
-      summary: List enabled OAuth2 and OIDC providers
-      responses:
-        '200':
-          description: Public provider IDs and names; empty when the optional runtime is unavailable
-  /api/v1/auth/oidc/{id}/start:
-    post:
-      tags: [auth]
-      security: []
-      summary: Begin a browser-bound authorization code login with PKCE
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { type: object, additionalProperties: false }
-      responses:
-        '200':
-          description: Authorization URL and a five-minute HttpOnly SameSite=Lax flow cookie
-        '400': { description: Provider unavailable or canonical HTTPS site origin missing }
-        '403': { description: Cross-site request rejected }
   /api/v1/auth/oidc/callback:
     get:
       tags: [auth]
@@ -136,61 +108,6 @@ paths:
       responses:
         '200': { description: Object with password_set boolean }
         '401': { description: Authentication required }
-  /api/v1/account/identities:
-    get:
-      tags: [auth]
-      summary: List the current user's external identity bindings
-      responses:
-        '200': { description: "Binding ID, plugin ID, issuer and created_at; no subject or provider token" }
-        '401': { description: Authentication required }
-  /api/v1/account/identities/{id}/bind:
-    post:
-      tags: [auth]
-      summary: Confirm the current password and begin linking an identity provider
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: Plugin ID
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [password]
-              properties:
-                password: { type: string, format: password }
-      responses:
-        '200': { description: Authorization URL and browser-bound flow cookie }
-        '401': { description: Authentication or password confirmation failed }
-        '403': { description: Cross-site request rejected }
-  /api/v1/account/identities/{id}/unlink:
-    post:
-      tags: [auth]
-      summary: Remove an owned binding after confirming the current password
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: External identity binding ID
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [password]
-              properties:
-                password: { type: string, format: password }
-      responses:
-        '200': { description: Binding removed and audited }
-        '400': { description: Binding missing or not owned by this user }
-        '401': { description: Authentication or password confirmation failed }
   "/api/v1/admin/plugins":
     "get":
       "tags": ["plugins"]
@@ -545,6 +462,18 @@ paths:
           "description": "Plugin host lease lost or runtime unavailable"
       "security": [{}, {"bearerAuth": []}]
       "parameters": [{"name": "surface", "in": "query", "required": true, "schema": {"type": "string", "enum": ["public", "account", "admin"]}}]
+  "/api/v1/plugin-ui/slots":
+    "get":
+      "tags": ["plugins"]
+      "summary": "List active contributions for one declared host slot"
+      "security": [{}, {"bearerAuth": []}]
+      "parameters":
+        - {"name": "surface", "in": "query", "required": true, "schema": {"type": "string", "enum": ["public", "account", "admin"]}}
+        - {"name": "slot", "in": "query", "required": true, "schema": {"type": "string", "enum": ["auth.login.methods", "account.security.identities", "admin.user.identities"]}}
+      "responses":
+        "200": {"description": "Enabled slot contributions scoped to the authorized surface"}
+        "403": {"description": "Surface or slot access denied"}
+        "503": {"description": "Plugin runtime unavailable"}
   "/api/v1/plugin-ui/{id}/session":
     "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}]
     "post":
@@ -583,6 +512,29 @@ paths:
                 "configuration":
                   "type": "boolean"
               "required": ["page", "surface"]
+  "/api/v1/plugin-ui/{id}/slot-session":
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}]
+    "post":
+      "tags": ["plugins"]
+      "summary": "Create a slot session bound to actor, surface, plugin generation and optional target user"
+      "security": [{}, {"bearerAuth": []}]
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "type": "object"
+              "additionalProperties": false
+              "properties":
+                "id": {"type": "string"}
+                "slot": {"type": "string"}
+                "surface": {"type": "string", "enum": ["public", "account", "admin"]}
+                "target_user_id": {"type": "integer", "minimum": 1}
+              "required": ["id", "slot", "surface"]
+      "responses":
+        "200": {"description": "Revocable slot session; account targets are forced to the actor and admin targets must exist"}
+        "403": {"description": "Slot, surface, actor or target access denied"}
+        "503": {"description": "Plugin runtime unavailable"}
   "/api/v1/plugin-ui/session":
     "delete":
       "tags": ["plugins"]
@@ -637,7 +589,7 @@ paths:
               "properties":
                 "type":
                   "type": "string"
-                  "enum": ["context.load", "config.load", "config.save", "config.test", "storage.get", "storage.put", "storage.delete"]
+                  "enum": ["context.load", "config.load", "config.save", "config.test", "storage.get", "storage.put", "storage.delete", "identity.providers.list", "identity.bindings.list", "identity.login.start", "identity.bind.start", "identity.binding.unlink"]
                 "revision":
                   "type": "integer"
                   "minimum": 0
@@ -645,8 +597,11 @@ paths:
                   "type": "object"
                 key: {type: string, maxLength: 128}
                 value: {}
+                provider_id: {type: string, maxLength: 193}
+                identity_id: {type: string, maxLength: 64}
+                password: {type: string, format: password}
               "required": ["type"]
-      "description": "Storage methods require an administrator page session and host-admitted zboard.storage.v1. The host binds the namespace to the session; writes use a global per-plugin CAS revision. Public/account pages cannot access private storage. context.load returns surface, plugin_id and page_id only. config methods require an administrator configuration session. config.save fully replaces the configuration with CAS revision; config.load returns PluginConfigView. No core commands, credentials, authentication tokens, SQL or node APIs are exposed."
+      "description": "Storage methods require an administrator page session and host-admitted zboard.storage.v1. Identity methods require a declared identity slot and are always scoped to the session plugin; account targets are the actor and administrator targets are fixed when the slot session is created. context.load returns only the admitted page/slot context. Config methods require an administrator configuration session. No core commands, bearer tokens, SQL or node APIs are exposed."
     "parameters": [{"name": "X-Plugin-Session", "in": "header", "required": true, "schema": {"type": "string"}}]
   "/api/v1/plugin-assets/{token}/{part1}":
     "get":
@@ -4134,6 +4089,15 @@ components:
           "type": "string"
           "enum": ["business", "configuration"]
       "required": ["id", "surface", "title"]
+    "PluginSlot":
+      "type": "object"
+      "properties":
+        "id": {"type": "string"}
+        "surface": {"type": "string", "enum": ["public", "account", "admin"]}
+        "slot": {"type": "string", "enum": ["auth.login.methods", "account.security.identities", "admin.user.identities"]}
+        "title": {"type": "string"}
+        "entrypoint": {"type": "string"}
+      "required": ["id", "surface", "slot", "title", "entrypoint"]
     "PluginConfigView":
       "type": "object"
       "properties":
@@ -4284,6 +4248,10 @@ components:
               "type": "array"
               "items":
                 "$ref": "#/components/schemas/PluginPage"
+            "slots":
+              "type": "array"
+              "items":
+                "$ref": "#/components/schemas/PluginSlot"
         "files":
           "type": "object"
           "additionalProperties":
@@ -4369,6 +4337,13 @@ components:
           "type": "string"
         "page_id":
           "type": "string"
+        "slot_id":
+          "type": "string"
+        "slot":
+          "type": "string"
+        "target_user_id":
+          "type": "integer"
+          "minimum": 1
         "purpose":
           "type": "string"
         "entrypoint":

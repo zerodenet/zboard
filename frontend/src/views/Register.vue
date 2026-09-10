@@ -16,7 +16,7 @@
         <PageAlert v-if="formErrors.formError.value" tone="danger" title="注册未完成">{{ formErrors.formError.value }}</PageAlert>
         <UiButton class="login-button" :loading="loading" type="submit">创建账户</UiButton>
         <AuthLegalLinks context="register" />
-        <IdentityLoginButtons />
+        <PluginSlot name="auth.login.methods" surface="public" />
         <RouterLink class="mode-switch" to="/login">已有账户？返回登录</RouterLink>
         <RouterLink class="back-home" to="/">返回首页</RouterLink>
       </form>
@@ -28,7 +28,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { register, requestRegistrationCode } from '../api/client'
-import IdentityLoginButtons from '../components/IdentityLoginButtons.vue'
+import PluginSlot from '../plugins/PluginSlot.vue'
 import AuthLegalLinks from '../components/AuthLegalLinks.vue'
 import FormField from '../components/FormField.vue'
 import PageAlert from '../components/PageAlert.vue'

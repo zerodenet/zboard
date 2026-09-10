@@ -5,14 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/plugins"
 	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
-	"github.com/zeromicro/go-zero/rest/pathvar"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -66,7 +63,7 @@ func (h *handlers) resolveExternalIdentity(db *gorm.DB, flow externalAuthFlow, i
 			if err := tx.Create(&row).Error; err != nil {
 				return err
 			}
-			if err := createAuditLog(tx, authClaims{UserID: user.ID, Email: user.Email, IsAdmin: user.IsAdmin}, "identity.link", flow.Provider.ID, "external identity linked after password confirmation"); err != nil {
+			if err := createAuditLog(tx, authClaims{UserID: user.ID, Email: user.Email, IsAdmin: user.IsAdmin}, "plugin.identity.link", flow.Provider.IdentityKey(), "plugin identity linked after core password confirmation"); err != nil {
 				return err
 			}
 		}
@@ -110,63 +107,11 @@ func (h *handlers) finishExternalIdentityRegistration(db *gorm.DB, result extern
 		if err != nil {
 			return err
 		}
-		if err := createAuditLog(tx, authClaims{UserID: user.ID, Email: user.Email, IsAdmin: user.IsAdmin}, "identity.login", result.Provider.ID, "external identity login"); err != nil {
+		if err := createAuditLog(tx, authClaims{UserID: user.ID, Email: user.Email, IsAdmin: user.IsAdmin}, "plugin.identity.login", result.Provider.IdentityKey(), "plugin identity verified; core session issued"); err != nil {
 			return err
 		}
 		output = map[string]any{"user": toPublicUser(user), "auth": tokenResponse{Token: token, ExpiresAt: expires}}
 		return nil
 	})
 	return output, err
-}
-func (h *handlers) ExternalIdentitiesHandler(w http.ResponseWriter, r *http.Request) {
-	claims, err := h.authFromRequest(r)
-	if err != nil {
-		Unauthorized(w, "authentication required")
-		return
-	}
-	authNoStore(w)
-	rows := []model.ExternalIdentity{}
-	if err := h.db.Where("user_id = ?", claims.UserID).Order("created_at desc").Find(&rows).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	OK(w, rows)
-}
-func (h *handlers) ExternalIdentityUnlinkHandler(w http.ResponseWriter, r *http.Request) {
-	claims, err := h.authFromRequest(r)
-	if err != nil {
-		Unauthorized(w, "authentication required")
-		return
-	}
-	var body struct {
-		Password string `json:"password"`
-	}
-	if !pluginBody(w, r, &body) {
-		return
-	}
-	var user model.User
-	if h.db.Where("id = ? AND status = ?", claims.UserID, userStatusActive).First(&user).Error != nil || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password)) != nil {
-		Unauthorized(w, "confirm your current account password before unlinking")
-		return
-	}
-	err = h.db.Transaction(func(tx *gorm.DB) error {
-		var current model.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND status = ? AND password = ?", user.ID, userStatusActive, user.Password).First(&current).Error; err != nil {
-			return err
-		}
-		row := tx.Where("id = ? AND user_id = ?", pathvar.Vars(r)["id"], user.ID).Delete(&model.ExternalIdentity{})
-		if row.Error != nil {
-			return row.Error
-		}
-		if row.RowsAffected != 1 {
-			return gorm.ErrRecordNotFound
-		}
-		return createAuditLog(tx, claims, "identity.unlink", pathvar.Vars(r)["id"], "external identity removed after password confirmation")
-	})
-	if err != nil {
-		BadRequest(w, "identity could not be removed")
-		return
-	}
-	authNoStore(w)
-	OK(w, map[string]bool{"unlinked": true})
 }

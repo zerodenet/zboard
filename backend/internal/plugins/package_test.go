@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -20,6 +21,34 @@ func fixturePackage(t testing.TB, edit func(*Manifest, map[string][]byte)) ([]by
 		t.Fatal(err)
 	}
 	return fixtureSignedPackage(t, priv, pub, edit), map[string]string{"test.publisher": base64.StdEncoding.EncodeToString(pub)}
+}
+func TestPackageValidatesIdentitySlotEntrypointsAndSurfaces(t *testing.T) {
+	raw, keys := fixturePackage(t, func(m *Manifest, files map[string][]byte) {
+		m.Capabilities = append(m.Capabilities, IdentityCapability)
+		executable := "runtimes/" + runtime.GOOS + "-" + runtime.GOARCH + "/oauth"
+		m.Components.Server = &struct {
+			Executables map[string]string `json:"executables"`
+		}{Executables: map[string]string{runtime.GOOS + "-" + runtime.GOARCH: executable}}
+		files[executable] = []byte("runtime")
+		files["ui/login.html"] = []byte("<button>Login</button>")
+		m.Contributions.Slots = []Slot{{ID: "login-methods", Surface: "public", Slot: "auth.login.methods", Title: "Login", Entrypoint: "ui/login.html"}}
+	})
+	if _, err := ReadPackage(raw, keys); err != nil {
+		t.Fatal(err)
+	}
+	bad, keys := fixturePackage(t, func(m *Manifest, files map[string][]byte) {
+		m.Capabilities = append(m.Capabilities, IdentityCapability)
+		executable := "runtimes/" + runtime.GOOS + "-" + runtime.GOARCH + "/oauth"
+		m.Components.Server = &struct {
+			Executables map[string]string `json:"executables"`
+		}{Executables: map[string]string{runtime.GOOS + "-" + runtime.GOARCH: executable}}
+		files[executable] = []byte("runtime")
+		files["ui/login.html"] = []byte("<button>Login</button>")
+		m.Contributions.Slots = []Slot{{ID: "login-methods", Surface: "admin", Slot: "auth.login.methods", Title: "Login", Entrypoint: "ui/login.html"}}
+	})
+	if _, err := ReadPackage(bad, keys); err == nil {
+		t.Fatal("slot accepted on the wrong host surface")
+	}
 }
 func fixtureSignedPackage(t testing.TB, priv ed25519.PrivateKey, pub ed25519.PublicKey, edit func(*Manifest, map[string][]byte)) []byte {
 	t.Helper()

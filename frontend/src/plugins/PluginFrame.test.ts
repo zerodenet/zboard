@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import PluginFrame from "./PluginFrame.vue";
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
+  createSlot: vi.fn(),
   bridge: vi.fn(),
   revoke: vi.fn(),
 }));
 vi.mock("../stores/app", () => ({ useAppStore: () => ({ token: "" }) }));
 vi.mock("../api/plugins", () => ({
   createPluginSession: mocks.create,
+  createPluginSlotSession: mocks.createSlot,
   pluginBridge: mocks.bridge,
   revokePluginSession: mocks.revoke,
 }));
@@ -46,6 +48,7 @@ function send(
 describe("plugin iframe boundary", () => {
   beforeEach(() => {
     mocks.create.mockResolvedValue({ ...session });
+    mocks.createSlot.mockResolvedValue({ ...session, purpose: "slot", slot: "account.security.identities" });
     mocks.bridge.mockResolvedValue({ surface: "public" });
     mocks.revoke.mockResolvedValue({});
   });
@@ -98,6 +101,29 @@ describe("plugin iframe boundary", () => {
     send(wrapper, 'storage.put', { key: 'cursor', revision: 2, value: { offset: 10 }, plugin_id: 'other.plugin' });
     await flushPromises();
     expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), 'storage.put', { key: 'cursor', revision: 2, value: { offset: 10 } }, expect.any(AbortSignal));
+    wrapper.unmount();
+  });
+  it("creates a target-scoped slot session and forwards only identity bridge fields", async () => {
+    const slot = { id: "admin-user-identities", surface: "admin" as const, slot: "admin.user.identities", title: "OAuth", entrypoint: "ui/admin-user.html" };
+    const wrapper = mount(PluginFrame, { props: { pluginId: "zboard.oauth", slot, surface: "admin", targetUserId: 9 } });
+    await flushPromises();
+    expect(mocks.createSlot).toHaveBeenCalledWith("zboard.oauth", slot, 9, expect.any(AbortSignal));
+    send(wrapper, "identity.bindings.list", { target_user_id: 88, password: "ignored", plugin_id: "other.plugin" });
+    await flushPromises();
+    expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), "identity.bindings.list", {}, expect.any(AbortSignal));
+    wrapper.unmount();
+  });
+  it("collects account confirmation in the host and never trusts a plugin-supplied password", async () => {
+    const slot = { id: "account-identities", surface: "account" as const, slot: "account.security.identities", title: "OAuth", entrypoint: "ui/account.html" };
+    const wrapper = mount(PluginFrame, { props: { pluginId: "zboard.oauth", slot, surface: "account" } });
+    await flushPromises();
+    send(wrapper, "identity.binding.unlink", { identity_id: "binding", password: "plugin-controlled" });
+    await flushPromises();
+    expect(mocks.bridge).not.toHaveBeenCalled();
+    await wrapper.get("#plugin-confirm-password").setValue("host-confirmed");
+    await wrapper.findAll(".plugin-confirm button")[1].trigger("click");
+    await flushPromises();
+    expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), "identity.binding.unlink", { identity_id: "binding", password: "host-confirmed" }, expect.any(AbortSignal));
     wrapper.unmount();
   });
 
