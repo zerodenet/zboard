@@ -8,7 +8,7 @@ ZBoard brings node deployment, protocol services, users, subscriptions, basic or
 
 Administrators configure services and grant access; users get a separate account area to manage their subscriptions, copy client configurations, check usage, and contact support. [Zero Core](https://github.com/zerodenet/core) runs on the nodes and handles proxy traffic.
 
-[Get started](https://docs.zerodenet.org/projects/zboard/guides/installation-en) · [Downloads](https://github.com/zerodenet/zboard/releases) · [Documentation](https://docs.zerodenet.org/projects/zboard/guides/) · [Report an issue](https://github.com/zerodenet/zboard/issues)
+[Get started](https://docs.zerodenet.org/projects/zboard/guides/installation) · [Downloads](https://github.com/zerodenet/zboard/releases) · [Documentation](https://docs.zerodenet.org/projects/zboard/guides/) · [Report an issue](https://github.com/zerodenet/zboard/issues)
 
 ## What you can do
 
@@ -27,7 +27,7 @@ ZBoard focuses on essential panel functions. Online payments and other capabilit
 
 The published Docker image includes the backend and web console. A Linux amd64 binary package and an offline Docker image archive are also available from [Releases](https://github.com/zerodenet/zboard/releases).
 
-For Docker deployment, prepare Docker Compose, a database, and a domain with HTTPS. Follow the [first installation guide](https://docs.zerodenet.org/projects/zboard/guides/installation-en) to configure the service and create your first administrator at `/setup`.
+For Docker deployment, prepare Docker Compose, a database, and a domain with HTTPS. Follow the [first installation guide](https://docs.zerodenet.org/projects/zboard/guides/installation) to configure the service and create your first administrator at `/setup`.
 
 After installation:
 
@@ -47,7 +47,7 @@ The current development branch also includes a plugin marketplace, offline `.zbp
 
 ## Documentation
 
-- [First installation](https://docs.zerodenet.org/projects/zboard/guides/installation-en)
+- [First installation](https://docs.zerodenet.org/projects/zboard/guides/installation)
 - [Docker storage and backups](deploy/docker/README.md)
 - [Node installation and maintenance](https://docs.zerodenet.org/projects/zboard/guides/node-management)
 - [Network fronting and shared proxy pools](https://docs.zerodenet.org/projects/zboard/guides/network-fronting)

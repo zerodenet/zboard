@@ -1,6 +1,6 @@
 # Release Guide
 
-> Historical planning: v0.0.1 has been publicly released. The pre-public numbering and migration-squashing rules below describe an earlier release plan; they must not be used to treat published builds or schemas as unreleased. Use [Releases](https://github.com/zerodenet/zboard/releases) for available versions and verify the target revision before using the operational commands. For first installation, use the [installation guide](https://docs.zerodenet.org/projects/zboard/guides/installation-en).
+> Historical planning: v0.0.1 has been publicly released. The pre-public numbering and migration-squashing rules below describe an earlier release plan; they must not be used to treat published builds or schemas as unreleased. Use [Releases](https://github.com/zerodenet/zboard/releases) for available versions and verify the target revision before using the operational commands. For first installation, use the [installation guide](https://docs.zerodenet.org/projects/zboard/guides/installation).
 
 ## Historical pre-public version policy
 

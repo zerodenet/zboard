@@ -1,6 +1,6 @@
 # Docker storage and backups
 
-For a first installation, start with the [English guide](https://docs.zerodenet.org/projects/zboard/guides/installation-en) or [首次安装指南](https://docs.zerodenet.org/projects/zboard/guides/installation). This page covers persistent directories, database storage options, and backup/restore.
+For a first installation, start with the [installation guide (Chinese)](https://docs.zerodenet.org/projects/zboard/guides/installation). This page covers persistent directories, database storage options, and backup/restore.
 
 ## Required host directories
 
