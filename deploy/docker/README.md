@@ -1,4 +1,6 @@
-# Docker deployment storage
+# Docker storage and backups
+
+For a first installation, start with the [English guide](https://docs.zerodenet.org/projects/zboard/guides/installation-en) or [首次安装指南](https://docs.zerodenet.org/projects/zboard/guides/installation). This page covers persistent directories, database storage options, and backup/restore.
 
 ## Required host directories
 
@@ -103,6 +105,6 @@ docker compose -f docker-compose.release.yml --env-file .env.release exec zboard
 
 ## Plugin persistence
 
-The service mounts `ZBOARD_PLUGIN_HOST_DIR` (default `./plugins`) at `/var/lib/zboard/plugins`. `prepare-host-dirs.sh` creates this private directory. Back it up together with the database and credential encryption key. Add publisher public keys and the optional signed catalog URL to a custom ZBoard YAML file and mount it read-only at `/app/etc/zboard.yaml`; see [plugin setup](../../docs/plugins.md).
+The service mounts `ZBOARD_PLUGIN_HOST_DIR` (default `./plugins`) at `/var/lib/zboard/plugins`. `prepare-host-dirs.sh` creates this private directory. Back it up together with the database and credential encryption key. Add publisher public keys and the optional signed catalog URL to a custom ZBoard YAML file and mount it read-only at `/app/etc/zboard.yaml`; see [plugin setup](https://docs.zerodenet.org/projects/zboard/plugins/development).
 
 Only one instance per database owns plugin execution. Standby instances keep core APIs available but do not issue plugin page sessions or execute plugin operations. Stop the owner and restart the replacement to transfer plugin execution; an ungraceful exit requires the one-minute lease to expire. This does not implement active-active plugin routing.

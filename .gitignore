@@ -49,3 +49,6 @@ frontend/.nuxt
 
 # Independently versioned plugin projects.
 /plugins/
+
+# Public documentation is maintained in zerodenet/docs. Keep local copies untracked.
+/docs/

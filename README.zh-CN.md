@@ -2,97 +2,65 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-**面向自用与小规模使用的代理管理面板。**
+**面向 Zero 代理服务的自托管基础面板。**
 
-ZBoard 围绕用户、节点、订阅、基础订单和流量统计提供完整的管理闭环，并保留登录注册、文档公告与必要的维护能力。
+ZBoard 将节点部署、协议服务、用户订阅、基础订单和流量管理集中到一个 Web 控制台，适合个人部署，以及需要统一管理多个节点的小规模服务。
 
-当前重点是加固已经形成的基础闭环，逐项修复前后端问题并降低资源消耗。在线支付尚未接入，未来通过插件扩展；现阶段先建立清晰的内部服务边界。
+管理员在后台配置服务、分配访问权限；用户在独立的账户中心管理订阅、获取客户端配置、查看用量和提交工单。[Zero Core](https://github.com/zerodenet/core) 运行在节点上，负责处理代理流量。
 
-> ZBoard 当前仍在开发中，当前开发基线为 `v0.0.1`，首个公开版本计划为 `v0.1.0`。
+[开始使用](https://docs.zerodenet.org/projects/zboard/guides/installation) · [下载版本](https://github.com/zerodenet/zboard/releases) · [项目文档](https://docs.zerodenet.org/projects/zboard/guides/) · [反馈问题](https://github.com/zerodenet/zboard/issues)
 
-## 基础管理链路
+## 可以用它做什么
 
-```text
-VPS 基础设施
-      ↓
-协议服务
-      ↓
-节点组
-      ↓
-套餐 / SKU
-      ↓
-订单 / 订阅
-      ↓
-客户端配置交付
-      ↓
-流量结算
-```
+| 功能 | 说明 |
+| --- | --- |
+| 节点管理 | 管理服务器与 SSH 连接，安装 Zero、发布配置并查看部署结果。 |
+| 协议服务 | 配置 VLESS、VMess、Shadowsocks、Trojan、Hysteria2 和 Mieru，通过节点组组织访问权限；协议是否可用取决于节点安装的 Zero 内核。 |
+| 网络前置 | 通过转发节点访问落地服务，同一节点上的多个转发入口可以共用代理池。 |
+| 订阅配置 | 生成 Zero、Clash/Mihomo 和 sing-box 配置，管理订阅模板、路由规则、策略组和节点过滤。 |
+| 用户与订单 | 管理套餐、计费选项、订单、续费、订阅有效期和流量额度，由管理员确认订单后开通服务。 |
+| 用量与支持 | 查看订阅流量、任务执行结果和审计记录，发布公告并处理用户工单。 |
 
-## 核心能力
+ZBoard 专注于基础面板能力，在线支付及其他超出基础管理范围的能力通过插件按需实现。
 
-### 基础设施管理
+## 开始使用
 
-- 管理 VPS 资产、SSH 凭证、主机信任和节点状态。
-- 安装、校验、升级和回滚 Zero 运行组件。
-- 发布节点配置并跟踪运行结果。
+Docker 镜像已包含后端和 Web 控制台。[Releases](https://github.com/zerodenet/zboard/releases) 同时提供 Linux amd64 二进制包和 Docker 镜像离线包。
 
-### 协议服务
+使用 Docker 部署时，需要准备 Docker Compose、数据库，以及配置 HTTPS 的域名。按照[首次安装指南](https://docs.zerodenet.org/projects/zboard/guides/installation)启动服务后，访问 `/setup` 创建第一个管理员。
 
-- 支持 VLESS、VMess、Shadowsocks、Trojan、Hysteria2。
-- 协议服务与物理节点分离管理。
-- 支持服务复用、迁移和节点组管理。
+安装完成后，可以按以下顺序配置第一条服务：
 
-### 订阅交付
+1. 添加节点并安装 Zero。
+2. 创建协议服务，等待节点配置发布成功。
+3. 将服务加入节点组，再将节点组关联到套餐。
+4. 通过订单流程为用户开通订阅。
+5. 在兼容客户端中导入用户的订阅，连接后在控制台查看流量用量。
 
-- 为 ZNet Sink、Clash/Mihomo、sing-box 生成客户端配置。
-- 管理模板、规则、策略组、出站目标和节点过滤。
-- 交付前校验配置。
-- 支持订阅凭证轮换和撤销。
+[ZNet Sink](https://github.com/zerodenet/znet-sink) 是 Zero 生态的桌面客户端，也可以选择兼容的 Clash/Mihomo 或 sing-box 客户端，并使用对应的订阅格式。
 
-### 用户、订单与权益
+## 版本与扩展
 
-- 管理用户、套餐、SKU、订单、订阅、续费和流量额度。
-- 保存订单和权益快照。
-- 通过管理员确认订单完成基础开通流程，无需在线支付插件。
-- 提供用户端订阅和用量查询能力。
+`v0.0.1` 是首个公开版本。部署时请选择明确的 Release 标签，对应标签下的文档用于说明该版本。
 
-### 流量与运维
+当前开发分支还提供插件市场、离线 `.zbplugin` 安装、扩展页面和第三方登录提供方。这些扩展能力**不包含在 v0.0.1 中**，配置方法和支持范围见[插件指南](https://docs.zerodenet.org/projects/zboard/plugins/development)。
 
-- 接收节点流量事件并关联订阅。
-- 支持流量结算和数据核对。
-- 提供任务、日志、审计、备份、升级和回滚能力。
+## 使用文档
 
-## 资源模型
+- [首次安装](https://docs.zerodenet.org/projects/zboard/guides/installation)
+- [Docker 存储与备份](deploy/docker/README.md)
+- [节点安装与维护](https://docs.zerodenet.org/projects/zboard/reference/node-kernel-lifecycle)
+- [网络前置与共享代理池](https://docs.zerodenet.org/projects/zboard/guides/network-fronting)
+- [订阅节点过滤](https://docs.zerodenet.org/projects/zboard/guides/subscription-filtering)
+- [本地开发](https://docs.zerodenet.org/projects/zboard/contributing/development)与[参与贡献](CONTRIBUTING.md)
+- [API 参考](backend/api/openapi.yaml)
 
-```text
-节点资产 → 协议服务 → 节点组 → 套餐 / SKU → 订单 → 订阅
-```
-
-ZBoard 分离节点资源、订单记录与使用权益，使节点和服务可以持续演进，而不会改写历史订单。现有套餐/SKU 模型在加固期间保持兼容。
-
-## 当前推进方向
-
-- 保留已可用的基础流程，通过小步修复提升稳定性与使用体验。
-- 用查询耗时、内存、并发和端到端验证衡量性能与正确性。
-- 以 XBoard 对照基础业务流程，参考 X-Panel 控制基础与增值能力范围，借鉴 Typecho 的精简核心和扩展点思想。
-- 复杂商业运营与策略能力逐步与核心隔离，未来由插件补充；当前不实现插件运行时。
-
-具体范围、参考来源与验收条件见 [核心能力与加固基线](docs/core-baseline.md)。这些是实施方向，不代表现有外围功能已被移除或性能已经达标。
+其他专题可以从[文档导航](https://docs.zerodenet.org/projects/zboard/guides/)查找。
 
 ## 技术基础
 
-| 组件 | 技术 |
-| --- | --- |
-| 后端 | Go、go-zero、GORM |
-| 前端 | Vue 3、Vite、Pinia、PrimeVue |
-| 数据 | MySQL 8 / SQLite |
-| 节点运行时 | Zero |
-| 接口 | RESTful `/api/v1`、OpenAPI |
+后端使用 Go、go-zero 和 GORM，前端使用 Vue 3、Vite、Pinia 和 PrimeVue；提供 MySQL 8 与 SQLite 数据库驱动，节点运行时为 Zero。
 
-## 文档
-
-开发、部署、API 和运维说明统一维护在[项目文档](docs/)中。
-
-## 授权协议
+## 开源协议
 
 ZBoard 使用 [Mozilla Public License 2.0](LICENSE) 授权。

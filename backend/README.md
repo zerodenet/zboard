@@ -180,7 +180,7 @@ lock, verifies row counts, and leaves maintenance enabled until the operator
 switches deployment configuration and restarts. It never hot-swaps a live
 process between database handles.
 
-See [`../docs/database-migrations.md`](../docs/database-migrations.md) for the
+See [database migration guide](https://docs.zerodenet.org/projects/zboard/reference/database-migrations) for the
 upgrade, verification and post-`v0.1.0` append-only rules.
 
 ## Core feature set
@@ -255,4 +255,4 @@ subscription.
 
 ## 删除与离线节点维护
 
-基础设施删除只清理面板数据库及关联，不以 SSH、CA 或供应商 API 成功为前提。协议运行配置撤除会排队重试，不能把“数据库已删除”理解为“远端已停止”。在节点资产的“内核与运维”可下载无凭据的离线脚本；新安装或更新内核时会安装 `/usr/local/sbin/zboard-zero-cleanup`。完整范围和操作见 [节点清理说明](../docs/node-cleanup.md)。
+基础设施删除只清理面板数据库及关联，不以 SSH、CA 或供应商 API 成功为前提。协议运行配置撤除会排队重试，不能把“数据库已删除”理解为“远端已停止”。在节点资产的“内核与运维”可下载无凭据的离线脚本；新安装或更新内核时会安装 `/usr/local/sbin/zboard-zero-cleanup`。完整范围和操作见 [节点清理说明](https://docs.zerodenet.org/projects/zboard/guides/node-cleanup)。

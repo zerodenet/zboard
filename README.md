@@ -2,103 +2,65 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-**A proxy management panel for personal and small-scale use.**
+**A self-hosted panel for essential Zero proxy service management.**
 
-ZBoard connects users, nodes, subscriptions, basic orders, and traffic accounting in a complete management workflow, alongside login, registration, public documents, announcements, and essential maintenance.
+ZBoard brings node deployment, protocol services, users, subscriptions, basic orders, and traffic usage into one web console. It is designed for personal deployments and small services that need to manage access across multiple nodes.
 
-The current priority is to harden the existing workflow, fix frontend and backend defects, and reduce resource use. Online payment is not integrated; it is a future plugin capability. Internal service boundaries are being prepared before a plugin runtime is built.
+Administrators configure services and grant access; users get a separate account area to manage their subscriptions, copy client configurations, check usage, and contact support. [Zero Core](https://github.com/zerodenet/core) runs on the nodes and handles proxy traffic.
 
-> ZBoard is under active development. The current development baseline is `v0.0.1`, with `v0.1.0` planned as the first public release.
+[Get started](https://docs.zerodenet.org/projects/zboard/guides/installation-en) · [Downloads](https://github.com/zerodenet/zboard/releases) · [Documentation](https://docs.zerodenet.org/projects/zboard/guides/) · [Report an issue](https://github.com/zerodenet/zboard/issues)
 
-## Core management workflow
+## What you can do
 
-```text
-VPS infrastructure
-        ↓
-Protocol services
-        ↓
-Node groups
-        ↓
-Plans / SKUs
-        ↓
-Orders / Subscriptions
-        ↓
-Client configuration delivery
-        ↓
-Traffic accounting
-```
-
-## Core capabilities
-
-### Infrastructure management
-
-- Manage VPS assets, SSH credentials, host trust, and node status.
-- Install, validate, upgrade, and rollback Zero runtime components.
-- Publish node configurations and track operational results.
-
-### Protocol services
-
-- Support VLESS, VMess, Shadowsocks, Trojan, and Hysteria2.
-- Separate protocol services from physical nodes.
-- Reuse, migrate, and organize services through node groups.
-
-### Subscription delivery
-
-- Generate client-native configurations for ZNet Sink, Clash/Mihomo, and sing-box.
-- Manage templates, rules, policy groups, outbound targets, and node filters.
-- Validate configurations before delivery.
-- Rotate and revoke subscription credentials securely.
-
-### Users, orders, and entitlements
-
-- Manage users, plans, SKUs, orders, subscriptions, renewals, and quotas.
-- Preserve order and entitlement snapshots.
-- Activate entitlements through administrator order confirmation without an online payment plugin.
-- Provide user-facing subscription and usage information.
-
-### Traffic and operations
-
-- Receive authenticated traffic events from nodes.
-- Attribute usage to subscriptions.
-- Provide operational logs, tasks, audit records, backups, upgrades, and rollback workflows.
-
-## Resource model
-
-```text
-Node asset → Protocol service → Node group → Plan / SKU → Order → Subscription
-```
-
-ZBoard separates node resources, order records, and entitlements so that node changes do not rewrite historical orders. Existing plan/SKU models remain compatible during hardening.
-
-## Current direction
-
-- Preserve working core flows and improve reliability and usability through small, verified changes.
-- Measure query latency, memory, concurrency, and end-to-end correctness.
-- Use XBoard to compare core workflows, X-Panel to inform basic/add-on scope, and Typecho to inform a lean core with explicit extension points.
-- Gradually isolate complex commercial and policy capabilities for future plugins; implementing a plugin runtime is outside the current phase.
-
-See the [core and hardening baseline](docs/core-baseline.md) for scope, sources, and acceptance criteria. These are implementation goals, not claims that existing optional features have been removed or performance targets met.
-
-## Technology
-
-| Component | Technology |
+| Area | Capabilities |
 | --- | --- |
-| Backend | Go, go-zero, GORM |
-| Frontend | Vue 3, Vite, Pinia, PrimeVue |
-| Data | MySQL 8 / SQLite |
-| Runtime | Zero |
-| API | RESTful `/api/v1`, OpenAPI |
+| Nodes | Manage server assets and SSH access, install Zero, publish configurations, and inspect deployment results. |
+| Protocol services | Configure VLESS, VMess, Shadowsocks, Trojan, Hysteria2, and Mieru; organize access through node groups. Protocol availability depends on the installed Zero build. |
+| Network fronting | Expose a service through a forwarding node, with an optional shared proxy pool for that node's forwarding entries. |
+| Subscriptions | Deliver Zero, Clash/Mihomo, and sing-box configurations; customize templates, routing rules, policy groups, and node filters. |
+| Users and orders | Manage plans, billing options, orders, renewals, subscription periods, and traffic allowances. Administrators can confirm orders to activate access. |
+| Usage and support | Track subscription traffic, review operational tasks and audit records, publish announcements, and handle support tickets. |
+
+ZBoard focuses on essential panel functions. Online payments and other capabilities beyond this foundation are implemented through optional plugins.
+
+## Get started
+
+The published Docker image includes the backend and web console. A Linux amd64 binary package and an offline Docker image archive are also available from [Releases](https://github.com/zerodenet/zboard/releases).
+
+For Docker deployment, prepare Docker Compose, a database, and a domain with HTTPS. Follow the [first installation guide](https://docs.zerodenet.org/projects/zboard/guides/installation-en) to configure the service and create your first administrator at `/setup`.
+
+After installation:
+
+1. Add a node and install Zero.
+2. Create a protocol service and wait for its configuration to be published successfully.
+3. Add the service to a node group and associate that group with a plan.
+4. Create a user subscription through the order workflow.
+5. Import the user's subscription into a compatible client and check traffic usage in the console.
+
+[ZNet Sink](https://github.com/zerodenet/znet-sink) is the desktop client in the Zero ecosystem. You can also use compatible Clash/Mihomo or sing-box clients with the corresponding subscription format.
+
+## Versions and extensions
+
+`v0.0.1` is the first public release. Use a specific release tag for deployment; the documentation in each tag describes that version.
+
+The current development branch also includes a plugin marketplace, offline `.zbplugin` installation, extension pages, and third-party login providers. These extensions are **not included in v0.0.1**. See the [plugin guide](https://docs.zerodenet.org/projects/zboard/plugins/development) for configuration and supported capabilities.
 
 ## Documentation
 
-Development, deployment, API references, and operational guides are maintained in the [documentation](docs/).
+- [First installation](https://docs.zerodenet.org/projects/zboard/guides/installation-en)
+- [Docker storage and backups](deploy/docker/README.md)
+- [Node installation and maintenance](https://docs.zerodenet.org/projects/zboard/reference/node-kernel-lifecycle)
+- [Network fronting and shared proxy pools](https://docs.zerodenet.org/projects/zboard/guides/network-fronting)
+- [Subscription filtering](https://docs.zerodenet.org/projects/zboard/guides/subscription-filtering)
+- [Local development](https://docs.zerodenet.org/projects/zboard/contributing/development) and [contributing](CONTRIBUTING.md)
+- [API reference](backend/api/openapi.yaml)
+
+The [documentation index](https://docs.zerodenet.org/projects/zboard/guides/) groups the remaining guides by task.
+
+## Technology
+
+Go, go-zero, and GORM on the backend; Vue 3, Vite, Pinia, and PrimeVue on the frontend. Database drivers are available for MySQL 8 and SQLite. Zero is the node runtime.
 
 ## License
 
 ZBoard is licensed under the [Mozilla Public License 2.0](LICENSE).
-
-Plugin extensions
-
-- Install signed frontend and administrator extensions from a configured marketplace or an offline `.zbplugin` file.
-- Enable, disable, configure and inspect plugins without restarting ZBoard. Core business changes remain owned by ZBoard.
-- See [plugin setup and development](docs/plugins.md) for trusted publishers, package signing and current capability limits.
