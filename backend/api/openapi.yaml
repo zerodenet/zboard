@@ -101,6 +101,55 @@ paths:
       responses:
         '200': { description: Initial password set }
         '401': { description: Recent authentication proof unavailable or revoked }
+  /api/v1/account/security/password:
+    post:
+      tags: [auth]
+      operationId: changeAccountPassword
+      summary: Change the current user's local password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, password]
+              properties:
+                current_password: { type: string, format: password }
+                password: { type: string, format: password, description: "12–72 UTF-8 bytes" }
+      responses:
+        "200": { description: Password changed }
+        "400": { description: Invalid current or new password }
+        "401": { description: Authentication required }
+        "409": { description: Account changed concurrently }
+  /api/v1/account/security/confirm-password:
+    post:
+      tags: [auth]
+      operationId: confirmAccountPassword
+      summary: Confirm password for identity management in the same login for five minutes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Host-only confirmation proof bound to login and current password
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      confirmation: { type: string }
+                      expires_at: { type: string, description: Unix expiry in seconds }
+        "400": { description: Incorrect password }
+        "401": { description: Authentication required }
   /api/v1/account/identities/security:
     get:
       tags: [auth]
@@ -565,6 +614,12 @@ paths:
     "post":
       "tags": ["plugins"]
       "summary": "Invoke an explicitly allowed page or configuration operation"
+      parameters:
+        - name: X-ZBoard-Account-Confirmation
+          in: header
+          required: false
+          description: Host-owned five-minute identity-management proof; never supplied by the iframe
+          schema: { type: string }
       "responses":
         "200":
           "description": "Success; response data is described below"

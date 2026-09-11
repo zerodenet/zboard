@@ -1,9 +1,14 @@
 <template>
-  <section class="plugin-frame">
-    <p v-if="error" role="alert">
-      {{ error }} <button type="button" @click="load">重新加载</button>
-    </p>
-    <p v-else-if="!session" role="status">正在加载扩展…</p>
+  <section class="plugin-frame" :class="{ 'plugin-frame--slot': !!slot }">
+    <div v-if="error" class="plugin-state" role="alert">
+      <div><strong>暂时无法显示此内容</strong><p>{{ error }}</p></div>
+      <UiButton variant="secondary" size="sm" @click="load">重新加载</UiButton>
+    </div>
+    <div v-else-if="!session" class="plugin-state" role="status">正在加载…</div>
+    <div v-if="connectionWarning" class="plugin-state plugin-state--connection" role="status">
+      <p>连接暂时中断，正在尝试恢复。</p>
+      <UiButton variant="secondary" size="sm" @click="verify">重试连接</UiButton>
+    </div>
     <iframe
       v-if="session"
       ref="frame"
@@ -15,19 +20,21 @@
       :style="{ height: `${height}px` }"
       @load="onLoad"
     />
-    <div v-if="passwordConfirmation" class="plugin-confirm-backdrop" role="presentation" @click.self="cancelPasswordConfirmation">
+    <div v-if="passwordConfirmation" class="plugin-confirm-backdrop" role="presentation" @click.self="!confirming && cancelPasswordConfirmation()">
       <section class="plugin-confirm" role="dialog" aria-modal="true" aria-labelledby="plugin-confirm-title">
         <h2 id="plugin-confirm-title">确认账户密码</h2>
-        <p>这是 ZBoard 的安全确认，密码不会提供给插件。</p>
+        <p>验证后 5 分钟内无需重复输入。密码不会提供给插件。</p>
         <label for="plugin-confirm-password">当前密码</label>
         <input id="plugin-confirm-password" v-model="confirmationPassword" type="password" autocomplete="current-password" maxlength="72" autofocus @keyup.enter="confirmPassword">
-        <div><button type="button" @click="cancelPasswordConfirmation">取消</button><button type="button" :disabled="!confirmationPassword" @click="confirmPassword">确认</button></div>
+        <p v-if="confirmationError" role="alert">{{ confirmationError }}</p><div><UiButton variant="secondary" type="button" :disabled="confirming" @click="cancelPasswordConfirmation">取消</UiButton><UiButton type="button" :disabled="!confirmationPassword || confirming" @click="confirmPassword">{{ confirming ? "验证中…" : "确认" }}</UiButton></div>
       </section>
     </div>
   </section>
 </template>
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { accountConfirmation, clearAccountConfirmation, confirmAccountPassword } from "../api/accountSecurity";
+import UiButton from "../components/UiButton.vue";
 import { useAppStore } from "../stores/app";
 import {
   createPluginSession,
@@ -51,17 +58,21 @@ const app = useAppStore();
 const frame = ref<HTMLIFrameElement | null>(null),
   session = ref<PluginSession | null>(null),
   error = ref(""),
+  connectionWarning = ref(false),
   height = ref(props.slot ? 160 : 620);
 let controller = new AbortController(),
   generation = 0,
   loaded = false,
+  verifying = false,
   timer: ReturnType<typeof setInterval> | undefined;
 const pending = new Set<string>();
-const passwordConfirmation = ref(false), confirmationPassword = ref("");
+const passwordConfirmation = ref(false), confirmationPassword = ref(""), confirmationError = ref(""), confirming = ref(false);
 let passwordResolver: ((value: string) => void) | undefined,
   passwordRejecter: ((reason?: unknown) => void) | undefined;
 function requestPasswordConfirmation() {
   if (passwordConfirmation.value) return Promise.reject(new Error("confirmation already active"));
+  const proof = accountConfirmation(); if (proof) return Promise.resolve(proof);
+  confirmationError.value = "";
   passwordConfirmation.value = true;
   confirmationPassword.value = "";
   return new Promise<string>((resolve, reject) => { passwordResolver = resolve; passwordRejecter = reject; });
@@ -72,11 +83,18 @@ function finishPasswordConfirmation() {
   passwordResolver = undefined;
   passwordRejecter = undefined;
 }
-function confirmPassword() {
-  if (!confirmationPassword.value || !passwordResolver) return;
-  const resolve = passwordResolver, value = confirmationPassword.value;
-  finishPasswordConfirmation();
-  resolve(value);
+async function confirmPassword() {
+  if (!confirmationPassword.value || !passwordResolver || confirming.value) return;
+  const resolve = passwordResolver;
+  confirming.value = true; confirmationError.value = "";
+  try {
+    const proof = await confirmAccountPassword(confirmationPassword.value);
+    if (passwordResolver !== resolve) return;
+    finishPasswordConfirmation(); resolve(proof);
+  } catch (cause: any) {
+    confirmationError.value = cause?.response?.data?.message || "密码验证失败，请重试。";
+    confirmationPassword.value = "";
+  } finally { confirming.value = false; }
 }
 function cancelPasswordConfirmation() {
   const reject = passwordRejecter;
@@ -90,6 +108,7 @@ function clear() {
   controller.abort();
   controller = new AbortController();
   session.value = null;
+  connectionWarning.value = false;
   pending.clear();
   loaded = false;
 }
@@ -128,7 +147,7 @@ async function receive(event: MessageEvent) {
   if (typeof message.type !== "string") return;
   if (message.type === "ui.resize") {
     if (Number.isFinite(message.height))
-      height.value = Math.max(props.slot ? 80 : 320, Math.min(1000, message.height));
+      height.value = Math.max(props.slot ? 0 : 320, Math.min(1000, Math.ceil(message.height)));
     return;
   }
   if (message.type === "plugin.ready") return;
@@ -169,9 +188,9 @@ async function receive(event: MessageEvent) {
     const identityPayload = message.type === "identity.login.start"
       ? { provider_id: message.provider_id }
       : message.type === "identity.bind.start"
-        ? { provider_id: message.provider_id, password: confirmedPassword }
+        ? { provider_id: message.provider_id,  }
         : message.type === "identity.binding.unlink"
-          ? { identity_id: message.identity_id, password: confirmedPassword }
+          ? { identity_id: message.identity_id,  }
           : {};
     const payload = message.type.startsWith("identity.")
       ? identityPayload
@@ -180,12 +199,9 @@ async function receive(event: MessageEvent) {
         ? { revision: message.revision, config: message.config }
         : {};
     if (JSON.stringify(payload).length > 65_536) throw new Error("too large");
-    const result = await pluginBridge(
-      s,
-      message.type,
-      payload,
-      controller.signal,
-    );
+    const result = confirmedPassword
+      ? await pluginBridge(s, message.type, payload, controller.signal, confirmedPassword)
+      : await pluginBridge(s, message.type, payload, controller.signal);
     if (message.type === "identity.login.start" || message.type === "identity.bind.start") {
       const raw = typeof result.authorization_url === "string" ? result.authorization_url : "";
       const target = new URL(raw);
@@ -194,22 +210,31 @@ async function receive(event: MessageEvent) {
       window.location.assign(target.href);
     }
     respond({ ok: true, result });
-  } catch {
-    respond({ ok: false, error: "扩展请求被拒绝或执行失败。" });
+  } catch (cause: any) {
+    if (cause?.response?.status === 401) clearAccountConfirmation();
+    respond({ ok: false, error: cause?.response?.data?.message || "操作已取消或未完成，请重试。" });
   } finally {
     if (current === generation) pending.delete(message.request_id);
   }
 }
 async function verify() {
   const s = session.value;
-  if (!s || document.hidden) return;
+  if (!s || document.hidden || verifying) return;
+  verifying = true;
   try {
     await pluginBridge(s, "context.load", {}, controller.signal);
-  } catch {
-    if (session.value?.token === s.token) {
+    if (session.value?.token === s.token) connectionWarning.value = false;
+  } catch (cause: any) {
+    if (session.value?.token !== s.token) return;
+    if ([401, 403].includes(cause?.response?.status)) {
       clear();
-      error.value = "扩展会话已结束，请重新加载。";
+      error.value = "此内容已过期或访问权限已变化，请重新加载。";
+    } else {
+      // A failed connectivity check must not discard an in-progress form.
+      connectionWarning.value = true;
     }
+  } finally {
+    verifying = false;
   }
 }
 watch(
@@ -219,7 +244,7 @@ watch(
 watch(
   () => app.token,
   () => {
-    clear();
+    clearAccountConfirmation(); clear();
     error.value = "登录状态已变化，请重新加载扩展。";
   },
 );
@@ -242,18 +267,19 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 .plugin-frame iframe {
+  display: block;
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
 }
-.plugin-frame p {
-  padding: 24px;
-  color: var(--muted);
-}
-.plugin-frame button {
-  margin-left: 12px;
-}
+.plugin-frame--slot iframe { border: 0; border-radius: 0; background: transparent; }
+.plugin-state { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--muted); }
+.plugin-state strong { color: var(--text); font-size: 14px; }
+.plugin-state p { margin: 4px 0 0; line-height: 1.6; }
+.plugin-state button { flex-shrink: 0; }
+.plugin-state--connection { margin-bottom: 12px; }
+@media (max-width: 520px) { .plugin-state { align-items: flex-start; flex-direction: column; } }
 .plugin-confirm-backdrop { position: fixed; z-index: 10000; inset: 0; display: grid; place-items: center; padding: 20px; background: var(--navigation-scrim); }
 .plugin-confirm { width: min(420px, 100%); padding: 22px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 20px 60px var(--sidebar-shadow); }
 .plugin-confirm h2 { margin: 0 0 6px; }

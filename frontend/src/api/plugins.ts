@@ -221,12 +221,13 @@ export const pluginBridge = (
   type: string,
   payload: Record<string, unknown> = {},
   signal?: AbortSignal,
+  confirmation?: string,
 ) =>
   api
     .post(
       "/plugin-ui/bridge",
       { ...payload, type },
-      { headers: { "X-Plugin-Session": session.token }, signal },
+      { headers: { "X-Plugin-Session": session.token, ...(confirmation ? { "X-ZBoard-Account-Confirmation": confirmation } : {}) }, signal },
     )
     .then(data<Record<string, unknown>>);
 export const pluginPagePath = (surface: Surface, id: string, page: string) =>

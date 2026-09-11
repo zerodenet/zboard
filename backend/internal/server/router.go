@@ -65,6 +65,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPost, "/api/v1/auth/oidc/registration-code", h.ExternalRegistrationCodeHandler),
 		newRoute(http.MethodPost, "/api/v1/auth/oidc/password", h.ExternalPasswordSetupHandler),
 		newRoute(http.MethodGet, "/api/v1/account/identities/security", h.ExternalPasswordStatusHandler),
+		newRoute(http.MethodPost, "/api/v1/account/security/password", h.ChangeAccountPasswordHandler),
+		newRoute(http.MethodPost, "/api/v1/account/security/confirm-password", h.ConfirmAccountPasswordHandler),
 		newRoute(http.MethodGet, "/api/v1/tickets", h.TicketListHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/tickets", h.TicketListHandler),
 		newRoute(http.MethodPost, "/api/v1/tickets", h.TicketCreateHandler),

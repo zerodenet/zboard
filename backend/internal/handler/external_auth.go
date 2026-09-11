@@ -88,7 +88,7 @@ func (h *handlers) beginExternalAuth(w http.ResponseWriter, r *http.Request, bin
 			return http.StatusUnauthorized, "authentication required", ""
 		}
 		var user model.User
-		if err := h.db.Where("id = ? AND status = ?", claims.UserID, userStatusActive).First(&user).Error; err != nil || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) != nil {
+		if err := h.db.Where("id = ? AND status = ?", claims.UserID, userStatusActive).First(&user).Error; err != nil || (!h.accountPasswordConfirmed(user, r) && bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) != nil) {
 			return http.StatusUnauthorized, "confirm your current account password before linking", ""
 		}
 		flow.BindUserID = user.ID

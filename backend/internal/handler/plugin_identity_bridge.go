@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -58,6 +59,9 @@ func (h *handlers) pluginIdentityBindings(userID uint, pluginID string) ([]plugi
 }
 
 func (h *handlers) unlinkPluginIdentity(session plugins.Session, claims authClaims, identityID, password string) error {
+	return h.unlinkPluginIdentityConfirmed(session, claims, identityID, password, nil)
+}
+func (h *handlers) unlinkPluginIdentityConfirmed(session plugins.Session, claims authClaims, identityID, password string, r *http.Request) error {
 	if session.Surface != "account" && session.Surface != "admin" {
 		return plugins.ErrPermission
 	}
@@ -73,8 +77,8 @@ func (h *handlers) unlinkPluginIdentity(session plugins.Session, claims authClai
 		if err := query.First(&target).Error; err != nil {
 			return err
 		}
-		if session.Surface == "account" && bcrypt.CompareHashAndPassword([]byte(target.Password), []byte(password)) != nil {
-			return errors.New("confirm your current account password before unlinking")
+		if session.Surface == "account" && !h.accountPasswordConfirmed(target, r) && bcrypt.CompareHashAndPassword([]byte(target.Password), []byte(password)) != nil {
+			return errAccountPasswordConfirmation
 		}
 		var binding model.ExternalIdentity
 		if err := tx.Where("id = ? AND user_id = ?", identityID, target.ID).First(&binding).Error; err != nil {
