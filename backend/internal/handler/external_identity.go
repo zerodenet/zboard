@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -16,6 +17,25 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+type externalIdentityView struct {
+	ID         string    `json:"id"`
+	PluginID   string    `json:"plugin_id"`
+	ProviderID string    `json:"provider_id"`
+	Publisher  string    `json:"publisher"`
+	Issuer     string    `json:"issuer"`
+	Subject    string    `json:"subject"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+func newExternalIdentityView(identity model.ExternalIdentity) externalIdentityView {
+	_, providerID, _ := strings.Cut(identity.PluginID, "~")
+	return externalIdentityView{
+		ID: identity.ID, PluginID: identity.PluginID, ProviderID: providerID,
+		Publisher: identity.Publisher, Issuer: identity.Issuer,
+		Subject: identity.Subject, CreatedAt: identity.CreatedAt,
+	}
+}
 
 func externalIdentityID(provider plugins.IdentitySnapshot, identity *pluginv1.VerifiedIdentity) string {
 	raw, _ := json.Marshal([]string{provider.Publisher, provider.IdentityKey(), identity.Issuer, identity.Subject})
@@ -130,7 +150,11 @@ func (h *handlers) ExternalIdentitiesHandler(w http.ResponseWriter, r *http.Requ
 		ServerError(w, err)
 		return
 	}
-	OK(w, rows)
+	bindings := make([]externalIdentityView, 0, len(rows))
+	for _, row := range rows {
+		bindings = append(bindings, newExternalIdentityView(row))
+	}
+	OK(w, bindings)
 }
 func (h *handlers) ExternalIdentityUnlinkHandler(w http.ResponseWriter, r *http.Request) {
 	claims, err := h.authFromRequest(r)

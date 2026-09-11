@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -18,8 +17,11 @@ func (h *handlers) TrafficTrendsSystemCalendarHandler(w http.ResponseWriter, r *
 }
 
 // TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler preserves the
-// Principal-flow replay added by the existing endpoint while using system-local
-// day boundaries instead of fixed UTC days.
+// established route name while serving the persisted Principal scope
+// projection. Request-time replay used to scan the raw lifecycle history and
+// silently return "not collected" after a three-second timeout. The scope
+// projection is maintained when events are accepted and has a bounded,
+// time-indexed read path.
 func (h *handlers) TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler(w http.ResponseWriter, r *http.Request) {
 	recorded := httptest.NewRecorder()
 	h.TrafficTrendsSystemCalendarHandler(recorded, r)
@@ -74,21 +76,30 @@ func (h *handlers) TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler(w h
 		copyRecordedResponse(w, recorded)
 		return
 	}
-	start := buckets[0].StartUTC
-	end := buckets[len(buckets)-1].EndUTC
-	replayContext, cancel := context.WithTimeout(r.Context(), principalFlowTrendReplayTimeout)
-	defer cancel()
-	baseline, events, boundaries, err := h.loadPrincipalFlowTrendTimeline(replayContext, scopeType, scopeID, start, end)
+	rows, err := h.loadPrincipalFlowScopeTrendRowsInBuckets(r.Context(), scopeType, scopeID, buckets)
 	if err != nil {
-		if errors.Is(replayContext.Err(), context.DeadlineExceeded) && r.Context().Err() == nil {
-			copyRecordedResponse(w, recorded)
-			return
-		}
 		ServerError(w, err)
 		return
 	}
-	applyPrincipalFlowReplayInBuckets(&response, buckets, baseline, events, boundaries)
+	applyPrincipalFlowTrendRows(&response, rows)
 	writeJSONResponse(w, http.StatusOK, wire.Message, response, wire.Error)
+}
+
+func (h *handlers) loadPrincipalFlowScopeTrendRowsInBuckets(ctx context.Context, scopeType string, scopeID uint, buckets []systemCalendarBucket) ([]principalFlowScopeTrendRow, error) {
+	if len(buckets) == 0 {
+		return nil, nil
+	}
+	expression, args := systemBucketCaseExpression("observed_at", buckets)
+	if buckets[0].StartUTC.Location() == time.UTC && buckets[0].StartUTC.Hour() == 0 {
+		expression, args = "DATE(observed_at)", nil
+	}
+	rows := make([]principalFlowScopeTrendRow, 0, len(buckets))
+	err := h.trafficQueryDB().WithContext(ctx).Table("principal_flow_scope_observations").
+		Select(expression+" AS day, MAX(active_flows) AS peak, COUNT(*) AS sample_count", args...).
+		Where("scope_type = ? AND scope_id = ? AND observed_at >= ? AND observed_at < ?", scopeType, scopeID, buckets[0].StartUTC, buckets[len(buckets)-1].EndUTC).
+		Group("day").Order("day ASC").
+		Scan(&rows).Error
+	return rows, err
 }
 
 func applyPrincipalFlowReplayInBuckets(response *trafficTrendResponse, buckets []systemCalendarBucket, baseline, events []principalFlowHistoryRow, boundaries []principalFlowBoundaryRow) {

@@ -12,14 +12,24 @@
       <h2>已绑定账号</h2>
       <p v-if="!identities.length">尚未绑定第三方账号。</p>
       <div v-for="identity in identities" :key="identity.id" class="identity-row">
-        <div><strong>{{ providerName(identity.plugin_id) }}</strong><p>{{ identity.issuer }}</p></div>
+        <div class="identity-summary">
+          <strong>{{ providerName(identity) }}</strong>
+          <dl class="identity-details">
+            <div><dt>第三方账号标识</dt><dd class="mono">{{ identity.subject }}</dd></div>
+            <div><dt>提供方</dt><dd>{{ identity.provider_id || identity.plugin_id }}</dd></div>
+            <div><dt>插件来源</dt><dd>{{ identity.publisher }}</dd></div>
+            <div><dt>插件 ID</dt><dd class="mono">{{ pluginBaseID(identity) }}</dd></div>
+            <div><dt>身份签发方</dt><dd class="mono">{{ identity.issuer }}</dd></div>
+            <div><dt>绑定时间</dt><dd><TimeBadge :value="identity.created_at" /></dd></div>
+          </dl>
+        </div>
         <UiButton type="button" variant="secondary" :disabled="busy || !passwordSet || !password" @click="unlink(identity.id)">解绑</UiButton>
       </div>
       <h2>可用提供方</h2>
       <p v-if="!providers.length">当前没有可用的第三方登录提供方。</p>
       <div v-for="provider in providers" :key="provider.id" class="identity-row">
         <strong>{{ provider.name }}</strong>
-        <UiButton type="button" :disabled="busy || !passwordSet || !password || identities.some(item => item.plugin_id === provider.id)" @click="bind(provider.id)">{{ identities.some(item => item.plugin_id === provider.id) ? '已绑定' : '绑定账号' }}</UiButton>
+        <UiButton type="button" :disabled="busy || !passwordSet || !password || identities.some(item => providerKey(item) === provider.id)" @click="bind(provider.id)">{{ identities.some(item => providerKey(item) === provider.id) ? '已绑定' : '绑定账号' }}</UiButton>
       </div>
     </section>
   </section>
@@ -34,7 +44,9 @@ const route = useRoute()
 const providers = ref<IdentityProvider[]>([]), identities = ref<ExternalIdentity[]>([])
 const passwordSet = ref(true), newPassword = ref('')
 const password = ref(''), busy = ref(false), message = ref(''), error = ref('')
-const providerName = (id: string) => providers.value.find(item => item.id === id)?.name || id
+const providerKey = (identity: ExternalIdentity) => identity.plugin_id
+const pluginBaseID = (identity: ExternalIdentity) => identity.plugin_id.split('~', 1)[0]
+const providerName = (identity: ExternalIdentity) => providers.value.find(item => item.id === providerKey(identity))?.name || identity.provider_id || pluginBaseID(identity)
 async function load() { const [available, linked, security] = await Promise.all([fetchIdentityProviders(), fetchExternalIdentities(), fetchIdentityPasswordStatus()]); providers.value = available; identities.value = linked; passwordSet.value = security.password_set }
 onMounted(async () => { try { await load(); if (route.query.linked === '1') message.value = '第三方账号已绑定。下次可从登录页直接登录。' } catch { error.value = '账户安全信息加载失败，请刷新重试。' } })
 async function setPassword() {
@@ -60,5 +72,6 @@ async function unlink(id: string) {
 }
 </script>
 <style scoped>
-.panel{padding:24px}.identity-row{display:flex;justify-content:space-between;align-items:center;gap:16px;border-top:1px solid var(--line);padding:16px 0}.identity-row p{overflow-wrap:anywhere;color:var(--muted);font-size:13px}.identity-row>div{min-width:0}
+.panel{padding:24px}.identity-row{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;border-top:1px solid var(--line);padding:18px 0}.identity-summary{min-width:0;flex:1}.identity-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;margin:12px 0 0}.identity-details div{min-width:0}.identity-details dt{color:var(--muted);font-size:12px}.identity-details dd{margin:3px 0 0;overflow-wrap:anywhere;font-size:13px}.mono{font-family:var(--font-mono,monospace)}
+@media(max-width:720px){.identity-row{flex-direction:column}.identity-details{grid-template-columns:1fr}.identity-row>button{width:100%}}
 </style>

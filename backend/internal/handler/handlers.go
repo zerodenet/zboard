@@ -112,6 +112,7 @@ type adminUserListItem struct {
 	TotalSubscriptionCount  int64     `json:"total_subscription_count"`
 	PendingOrderCount       int64     `json:"pending_order_count"`
 	TotalOrderCount         int64     `json:"total_order_count"`
+	IdentityBindingCount    int64     `json:"identity_binding_count"`
 	CreatedAt               time.Time `json:"created_at"`
 }
 
@@ -125,6 +126,11 @@ type adminUserOrderCountRow struct {
 	UserID            uint  `gorm:"column:user_id"`
 	PendingOrderCount int64 `gorm:"column:pending_order_count"`
 	TotalOrderCount   int64 `gorm:"column:total_order_count"`
+}
+
+type adminUserIdentityCountRow struct {
+	UserID               uint  `gorm:"column:user_id"`
+	IdentityBindingCount int64 `gorm:"column:identity_binding_count"`
 }
 
 type adminSubscriptionListItem struct {
@@ -1136,6 +1142,19 @@ func loadAdminUserListItems(db *gorm.DB, users []model.User, now time.Time) ([]a
 		orderCounts[row.UserID] = row
 	}
 
+	identityRows := make([]adminUserIdentityCountRow, 0, len(users))
+	if err := db.Model(&model.ExternalIdentity{}).
+		Select("user_id, COUNT(*) AS identity_binding_count").
+		Where("user_id IN ?", userIDs).
+		Group("user_id").
+		Scan(&identityRows).Error; err != nil {
+		return nil, err
+	}
+	identityCounts := make(map[uint]int64, len(identityRows))
+	for _, row := range identityRows {
+		identityCounts[row.UserID] = row.IdentityBindingCount
+	}
+
 	for _, user := range users {
 		subscriptions := subscriptionCounts[user.ID]
 		orders := orderCounts[user.ID]
@@ -1145,6 +1164,7 @@ func loadAdminUserListItems(db *gorm.DB, users []model.User, now time.Time) ([]a
 			TotalSubscriptionCount:  subscriptions.TotalSubscriptionCount,
 			PendingOrderCount:       orders.PendingOrderCount,
 			TotalOrderCount:         orders.TotalOrderCount,
+			IdentityBindingCount:    identityCounts[user.ID],
 			CreatedAt:               user.CreatedAt,
 		})
 	}
@@ -3222,24 +3242,66 @@ func (h *handlers) loadProtocolEndpointUsageBatch(endpoints []model.ProtocolEndp
 	for _, id := range ids {
 		usageByEndpoint[id] = protocolEndpointUsage{}
 	}
-	type countRow struct {
+	// New Core versions report an absolute, per-Principal current state. Prefer
+	// that projection whenever an endpoint has Principal observations; retain the
+	// recent flow_usages count only as compatibility for legacy nodes that
+	// do not emit the Principal contract yet.
+	type principalCountRow struct {
 		ProtocolEndpointID uint
 		ActiveFlows        int64
 		ActiveUsers        int64
+		ObservationCount   int64
+		LastObservedAt     *time.Time
 	}
-	flowRows := make([]countRow, 0, len(ids))
-	if err := h.db.Model(&model.FlowUsage{}).
-		Select("flow_usages.protocol_endpoint_id, COUNT(*) AS active_flows, COUNT(DISTINCT subscriptions.user_id) AS active_users").
-		Joins("JOIN subscriptions ON subscriptions.id = flow_usages.subscription_id").
-		Where("flow_usages.protocol_endpoint_id IN ? AND flow_usages.status = ? AND flow_usages.last_seen_at >= ?", ids, "active", now.Add(-protocolActivityWindow)).
-		Group("flow_usages.protocol_endpoint_id").Scan(&flowRows).Error; err != nil {
+	principalRows := make([]principalCountRow, 0, len(ids))
+	if err := h.db.Table("principal_flow_currents").
+		Select(`protocol_endpoint_id,
+			COALESCE(SUM(active_flows), 0) AS active_flows,
+			COUNT(DISTINCT CASE WHEN active_flows > 0 AND user_id > 0 THEN user_id END) AS active_users,
+			COUNT(*) AS observation_count,
+			MAX(observed_at) AS last_observed_at`).
+		Where("protocol_endpoint_id IN ?", ids).
+		Group("protocol_endpoint_id").Scan(&principalRows).Error; err != nil {
 		return nil, err
 	}
-	for _, row := range flowRows {
+	principalCovered := make(map[uint]struct{}, len(principalRows))
+	for _, row := range principalRows {
+		if row.ObservationCount == 0 {
+			continue
+		}
+		principalCovered[row.ProtocolEndpointID] = struct{}{}
 		usage := usageByEndpoint[row.ProtocolEndpointID]
 		usage.ActiveFlows = row.ActiveFlows
 		usage.ActiveUsers = row.ActiveUsers
+		usage.LastUsedAt = row.LastObservedAt
 		usageByEndpoint[row.ProtocolEndpointID] = usage
+	}
+	legacyIDs := make([]uint, 0, len(ids)-len(principalCovered))
+	for _, id := range ids {
+		if _, covered := principalCovered[id]; !covered {
+			legacyIDs = append(legacyIDs, id)
+		}
+	}
+	if len(legacyIDs) > 0 {
+		type countRow struct {
+			ProtocolEndpointID uint
+			ActiveFlows        int64
+			ActiveUsers        int64
+		}
+		flowRows := make([]countRow, 0, len(legacyIDs))
+		if err := h.db.Model(&model.FlowUsage{}).
+			Select("flow_usages.protocol_endpoint_id, COUNT(*) AS active_flows, COUNT(DISTINCT subscriptions.user_id) AS active_users").
+			Joins("JOIN subscriptions ON subscriptions.id = flow_usages.subscription_id").
+			Where("flow_usages.protocol_endpoint_id IN ? AND flow_usages.status = ? AND flow_usages.last_seen_at >= ?", legacyIDs, "active", now.Add(-protocolActivityWindow)).
+			Group("flow_usages.protocol_endpoint_id").Scan(&flowRows).Error; err != nil {
+			return nil, err
+		}
+		for _, row := range flowRows {
+			usage := usageByEndpoint[row.ProtocolEndpointID]
+			usage.ActiveFlows = row.ActiveFlows
+			usage.ActiveUsers = row.ActiveUsers
+			usageByEndpoint[row.ProtocolEndpointID] = usage
+		}
 	}
 	type credentialRow struct {
 		ProtocolEndpointID uint
@@ -3256,7 +3318,9 @@ func (h *handlers) loadProtocolEndpointUsageBatch(endpoints []model.ProtocolEndp
 	for _, row := range credentialRows {
 		usage := usageByEndpoint[row.ProtocolEndpointID]
 		usage.ActiveCredentials = row.ActiveCredentials
-		usage.LastUsedAt = row.LastUsedAt
+		if row.LastUsedAt != nil && (usage.LastUsedAt == nil || row.LastUsedAt.After(*usage.LastUsedAt)) {
+			usage.LastUsedAt = row.LastUsedAt
+		}
 		usageByEndpoint[row.ProtocolEndpointID] = usage
 	}
 	type trafficRow struct {

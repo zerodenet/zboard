@@ -9,14 +9,15 @@ vi.mock('../api/subscriptionAccess', () => ({ fetchOrderSubscriptionAccess: vi.f
 import Users from './Users.vue'
 import Subscriptions from './Subscriptions.vue'
 
-const mocks = vi.hoisted(() => ({ detail: vi.fn(), events: vi.fn(), list: vi.fn(), pay: vi.fn() }))
+const mocks = vi.hoisted(() => ({ detail: vi.fn(), events: vi.fn(), list: vi.fn(), pay: vi.fn(), unlinkIdentity: vi.fn(), confirm: vi.fn(async () => true) }))
 vi.mock('../api/client', () => ({
   fetchAdminOrderDetail: mocks.detail, fetchAdminUserDetail: mocks.detail,
   fetchAdminSubscriptionDetail: mocks.detail, fetchAdminOrderPaymentEvents: mocks.events,
   fetchOrdersPage: mocks.list, fetchUsersPage: mocks.list, fetchSubscriptionsPage: mocks.list,
-  cancelOrder: vi.fn(), markOrderPaid: mocks.pay, createAdminUser: vi.fn(), updateAdminUser: vi.fn(),
+  cancelOrder: vi.fn(), markOrderPaid: mocks.pay, createAdminUser: vi.fn(), updateAdminUser: vi.fn(), unlinkAdminExternalIdentity: mocks.unlinkIdentity,
 }))
 vi.mock('../stores/app', () => ({ useAppStore: () => ({ user: { id: 99 } }) }))
+vi.mock('../utils/feedback', () => ({ confirmAction: mocks.confirm }))
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -25,7 +26,7 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 function detail(id: number) {
-  return { id, email: `user-${id}@example.com`, plan_name: `订阅 #${id}`, status: 'active', trade_no: `trade-${id}`, user_id: id }
+  return { id, email: `user-${id}@example.com`, plan_name: `订阅 #${id}`, status: 'active', trade_no: `trade-${id}`, user_id: id, identity_binding_count: 0, external_identities: [] }
 }
 const drawer = defineComponent({
   props: ['open', 'title'], emits: ['close'],
@@ -35,6 +36,7 @@ const hiddenModal = defineComponent({ template: '<div />' })
 let wrapper: VueWrapper | undefined
 beforeEach(() => {
   vi.resetAllMocks()
+  mocks.confirm.mockResolvedValue(true)
   mocks.list.mockResolvedValue({ items: [], total: 0 })
   mocks.events.mockResolvedValue({ items: [], total: 0 })
   mocks.detail.mockImplementation(async id => detail(id))
@@ -150,6 +152,24 @@ it('applies event pagination from the URL while order details are still pending'
   expect(mocks.detail).toHaveBeenCalledOnce()
   pending.resolve(detail(1))
   await flushPromises()
+})
+
+it('shows an external identity source and lets an administrator unlink it', async () => {
+  mocks.detail.mockResolvedValue({
+    ...detail(7),
+    identity_binding_count: 1,
+    external_identities: [{ id: 'binding-7', plugin_id: 'zboard.oauth', provider_id: 'github', publisher: 'higanbana986', issuer: 'https://github.com', subject: 'github-user-7', created_at: '2026-09-10T00:00:00Z' }],
+  })
+  const { wrapper } = await render(cases[1])
+  expect(wrapper.text()).toContain('github')
+  expect(wrapper.text()).toContain('higanbana986')
+  expect(wrapper.text()).toContain('github-user-7')
+  const unlink = wrapper.findAllComponents({ name: 'UiButton' }).find(button => button.text() === '解绑')
+  expect(unlink).toBeDefined()
+  await unlink!.trigger('click')
+  await flushPromises()
+  expect(mocks.confirm).toHaveBeenCalled()
+  expect(mocks.unlinkIdentity).toHaveBeenCalledWith(7, 'binding-7')
 })
 
 

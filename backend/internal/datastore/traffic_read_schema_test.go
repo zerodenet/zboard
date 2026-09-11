@@ -16,6 +16,7 @@ func TestTrafficReadIndexesCoverDimensionTimeQueries(t *testing.T) {
 		"idx_principal_flow_observation_user_timeline":         "(user_id, node_id, principal_key, observed_at, id)",
 		"idx_principal_flow_observation_subscription_timeline": "(subscription_id, node_id, principal_key, observed_at, id)",
 		"idx_principal_flow_scope_boundary_timeline":           "(scope_type, scope_id, source, node_id, observed_at, id)",
+		"idx_principal_flow_current_endpoint_usage":            "(protocol_endpoint_id, active_flows, user_id, observed_at)",
 	}
 	if len(trafficReadIndexes) != len(want) {
 		t.Fatalf("traffic read index count = %d, want %d", len(trafficReadIndexes), len(want))

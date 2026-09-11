@@ -12,10 +12,19 @@ describe('protocol business load and Reality assistance', () => {
     const admin = source('views', 'Protocols.vue')
     expect(account).toContain('fetchAccountProtocolLoads')
     expect(account).toContain('协议实时负载')
+    expect(account).toContain('Zero Principal 当前态')
     expect(account).toContain('item.active_users')
     expect(account).toContain('item.active_flows')
+    expect(account).toContain('protocolLoadRefreshIntervalMS')
+    expect(account).toContain('window.clearInterval(protocolLoadRefreshTimer)')
     expect(admin).toContain('endpoint.usage?.active_users')
     expect(admin).toContain('endpoint.usage?.active_flows')
+    expect(admin).toContain('protocolUsageRefreshIntervalMS')
+    expect(admin).toContain('window.clearInterval(protocolUsageRefreshTimer)')
+
+    const dashboard = source('views', 'Dashboard.vue')
+    expect(dashboard).toContain('dashboardRefreshIntervalMS')
+    expect(dashboard).toContain('window.clearInterval(dashboardRefreshTimer)')
   })
 
   it('offers one-click Reality scenarios and distinguishes host resources', () => {

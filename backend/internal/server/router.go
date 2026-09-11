@@ -81,6 +81,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPut, "/api/v1/admin/tickets/:id/status", h.AdminTicketStatusHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/users", h.AdminUsersListHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/users/:id", h.AdminUserGetHandler),
+		newRoute(http.MethodDelete, "/api/v1/admin/users/:user_id/identities/:identity_id", h.AdminExternalIdentityDeleteHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/settings", h.AdminSettingsUpdateHandler),
 		newRoute(http.MethodGet, "/api/v1/system/configs", h.PublicSystemConfigsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/system-configs", h.AdminSystemConfigsListHandler),
@@ -111,6 +112,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 
 		newRoute(http.MethodGet, "/api/v1/admin/node-proxy-pools", h.NodeProxyPoolsHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/node-proxy-pools", h.NodeProxyPoolsHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/node-proxy-pools/:id/config", h.NodeProxyPoolConfigHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/node-proxy-pools/:id/runtime", h.NodeProxyPoolRuntimeHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/node-proxy-pools/:id", h.NodeProxyPoolsHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/node-proxy-pools/:id", h.NodeProxyPoolsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/network-entries", h.NetworkEntriesHandler),

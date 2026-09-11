@@ -176,6 +176,49 @@ func TestExternalIdentityRequiresLinkThenCoreIssuesSession(t *testing.T) {
 		t.Fatal("callback replay reached plugin")
 	}
 }
+
+func TestExternalIdentitiesShowsOwnedAccountAndPluginSource(t *testing.T) {
+	h, token, _ := identityTestHandlers(t)
+	binding := model.ExternalIdentity{
+		ID: "binding-visible-to-owner", UserID: 1, PluginID: "zboard.oauth~github",
+		Publisher: "higanbana986", Issuer: "https://github.com", Subject: "github-user-42",
+	}
+	if err := h.db.Create(&binding).Error; err != nil {
+		t.Fatal(err)
+	}
+	other := model.User{Email: "other-oauth-user@example.test", Password: "!external", Status: userStatusActive}
+	if err := h.db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Create(&model.ExternalIdentity{
+		ID: "binding-owned-by-another-user", UserID: other.ID, PluginID: "zboard.oauth~google",
+		Publisher: "another-publisher", Issuer: "https://accounts.google.com", Subject: "other-subject",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	response := httptest.NewRecorder()
+	h.ExternalIdentitiesHandler(response, announcementRequest(http.MethodGet, "/api/v1/account/identities", token, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("list status = %d body = %s", response.Code, response.Body.String())
+	}
+	var result struct {
+		Data []externalIdentityView `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Data) != 1 {
+		t.Fatalf("bindings = %+v", result.Data)
+	}
+	got := result.Data[0]
+	if got.ID != binding.ID || got.PluginID != "zboard.oauth~github" || got.ProviderID != "github" || got.Publisher != "higanbana986" || got.Issuer != "https://github.com" || got.Subject != "github-user-42" || got.CreatedAt.IsZero() {
+		t.Fatalf("owner binding detail missing: %+v", got)
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("identity response may be cached: %q", response.Header().Get("Cache-Control"))
+	}
+}
 func TestExternalIdentityRejectsCrossBrowserAndChangedPlugin(t *testing.T) {
 	h, token, runtime := identityTestHandlers(t)
 	cookie, q := startIdentityTest(t, h, token, true)

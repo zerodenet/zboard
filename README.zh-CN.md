@@ -2,9 +2,9 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-**面向 Zero 代理服务的自托管基础面板。**
+**面向自用的 Zero 代理服务管理面板。**
 
-ZBoard 将节点部署、协议服务、用户订阅、基础订单和流量管理集中到一个 Web 控制台，适合个人部署，以及需要统一管理多个节点的小规模服务。
+ZBoard 以最小核心满足日常管理需要，通过插件按需增强能力。节点部署、服务配置和订阅管理可以在同一个 Web 控制台中完成。
 
 管理员在后台配置服务、分配访问权限；用户在独立的账户中心管理订阅、获取客户端配置、查看用量和提交工单。[Zero Core](https://github.com/zerodenet/core) 运行在节点上，负责处理代理流量。
 
@@ -21,11 +21,9 @@ ZBoard 将节点部署、协议服务、用户订阅、基础订单和流量管�
 | 用户与订单 | 管理套餐、计费选项、订单、续费、订阅有效期和流量额度，由管理员确认订单后开通服务。 |
 | 用量与支持 | 查看订阅流量、任务执行结果和审计记录，发布公告并处理用户工单。 |
 
-ZBoard 专注于基础面板能力，在线支付及其他超出基础管理范围的能力通过插件按需实现。
-
 ## 开始使用
 
-Docker 镜像已包含后端和 Web 控制台。[Releases](https://github.com/zerodenet/zboard/releases) 同时提供 Linux amd64 二进制包和 Docker 镜像离线包。
+Docker 镜像已包含后端和 Web 控制台。[Releases](https://github.com/zerodenet/zboard/releases) 同时提供 Linux amd64 二进制包和 Docker 镜像离线包。部署时请选择明确的 Release 标签，并查看对应的发布说明。
 
 使用 Docker 部署时，需要准备 Docker Compose、数据库，以及配置 HTTPS 的域名。按照[首次安装指南](https://docs.zerodenet.org/projects/zboard/guides/installation)启动服务后，访问 `/setup` 创建第一个管理员。
 
@@ -39,15 +37,13 @@ Docker 镜像已包含后端和 Web 控制台。[Releases](https://github.com/ze
 
 [ZNet Sink](https://github.com/zerodenet/znet-sink) 是 Zero 生态的桌面客户端，也可以选择兼容的 Clash/Mihomo 或 sing-box 客户端，并使用对应的订阅格式。
 
-## 插件扩展
+## 插件系统
 
-ZBoard 核心负责节点、用户、订阅、基础订单与流量管理。第三方登录、在线支付和其他业务扩展由插件对接，按站点需要安装和启用。
+插件系统用于在最小核心之上扩展功能。你可以按需安装现有插件，也可以开发插件满足特定需求。
 
-管理员可以从插件市场安装扩展，也可以导入 `.zbplugin` 安装包，在后台管理配置、启停和更新。可用功能取决于插件本身及面板开放的接口；在线支付接口尚未开放，不代表面板内置支付渠道。
+插件支持从市场安装或通过 `.zbplugin` 安装包导入，并在后台统一管理配置、启停和更新。
 
 [插件使用指南](https://docs.zerodenet.org/projects/zboard/plugins/) · [插件市场与安装](https://docs.zerodenet.org/projects/zboard/plugins/marketplace) · [插件开发](https://docs.zerodenet.org/projects/zboard/plugins/development)
-
-部署时选择明确的 [Release 标签](https://github.com/zerodenet/zboard/releases)，并查看对应发布说明中的功能范围和安装要求。RC 为候选版本，用于部署验证。
 
 ## 使用文档
 

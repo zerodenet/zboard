@@ -1,7 +1,15 @@
 import { authenticatedAPI as api } from './client'
 
 export interface IdentityProvider { id: string; name: string }
-export interface ExternalIdentity { id: string; plugin_id: string; issuer: string; created_at: string }
+export interface ExternalIdentity {
+  id: string
+  plugin_id: string
+  provider_id: string
+  publisher: string
+  issuer: string
+  subject: string
+  created_at: string
+}
 export interface IdentityLoginResult {
   registration_required?: boolean
   email?: string

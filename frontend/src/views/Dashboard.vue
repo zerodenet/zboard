@@ -252,7 +252,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { fetchProtocolDeployments, type ProtocolDeployment } from '../api/client'
 import {
   fetchDashboardOverview,
@@ -276,6 +276,8 @@ const error = ref('')
 const overview = ref<DashboardOverview | null>(null)
 const deployments = ref<ProtocolDeployment[]>([])
 const selectedRange = ref<DashboardRange>('7d')
+const dashboardRefreshIntervalMS = 15_000
+let dashboardRefreshTimer: number | undefined
 
 const periodOptions: Array<{ label: string; value: DashboardRange }> = [
   { label: 'Today', value: 'today' },
@@ -472,7 +474,15 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  void load()
+  dashboardRefreshTimer = window.setInterval(() => {
+    if (!loading.value) void load()
+  }, dashboardRefreshIntervalMS)
+})
+onBeforeUnmount(() => {
+  if (dashboardRefreshTimer !== undefined) window.clearInterval(dashboardRefreshTimer)
+})
 </script>
 
 <style scoped>
