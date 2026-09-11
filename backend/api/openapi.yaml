@@ -987,6 +987,47 @@ paths:
       responses:
         "200": { description: Pool saved with encrypted configuration }
         "400": { description: Invalid pool or configuration rejected by Zero }
+  /api/v1/admin/node-proxy-pools/{id}/config:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [admin, nodes]
+      summary: Read decrypted pool configuration for editing
+      description: Explicit administrator-only, audited, no-store read. Returns pool metadata, original config (outbounds, outbound_groups, target), decrypted subscription-maintenance settings and a compiled graph with node-local pool tag prefixes. Includes credentials; list and mutation responses still omit them. Compiled graph is a preview, not proof of publication.
+      responses:
+        "200": { description: "pool, config and compiled" }
+        "403": { description: Administrator required }
+        "404": { description: Pool not found }
+  /api/v1/admin/node-proxy-pools/{id}/runtime:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [admin, nodes]
+      summary: Read this pool from the node's published configuration file over SSH
+      description: Administrator-only, audited, no-store read with a 20-second timeout and 8 MiB file limit. Returns source, node_id, read_at, sha256 of the read configuration, present and config. Config contains only this pool's outbounds, outbound_groups and associated direct forwarding inbounds and route rules. Does not expose unrelated credentials. Reads /etc/zerodenet/current.json; this is a published file snapshot, not an in-memory kernel state query. A failed read never falls back to a generated preview.
+      responses:
+        "200": { description: "Published pool snapshot, or present=false if not in the file" }
+        "403": { description: Administrator required }
+        "404": { description: Pool or node not found }
+        "502": { description: SSH read or configuration parsing failed }
+  /api/v1/admin/node-proxy-pools/{id}/sync:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    post:
+      tags: [admin, nodes]
+      summary: Fetch, validate and publish a shared proxy pool subscription
+      description: Downloads the encrypted-at-rest subscription URL with SSRF protection and the configured User-Agent. The current pool is replaced only after parsing and Zero validation succeed; failures retain the last good configuration. A successful sync increments the optimistic revision and queues publication to the owning node.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_revision: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: Subscription synchronized and node publication queued }
+        "400": { description: Subscription is missing, unavailable, unsupported or invalid }
+        "409": { description: Pool changed while synchronization was in progress }
   /api/v1/admin/node-proxy-pools/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
@@ -4424,11 +4465,6 @@ components:
               "version":
                 "type": "string"
               "public_key": { "type": "string" }
-              "metadata_source":
-                "type": "object"
-                "properties":
-                  "type": { "type": "string", "enum": ["repository-file"] }
-                  "path": { "type": "string", "enum": ["marketplace.json"] }
               "release_source":
                 "type": "object"
                 "properties":
@@ -4465,7 +4501,22 @@ components:
         config:
           type: object
           writeOnly: true
-          description: Required on create; omitted on update preserves credentials. Zero path with outbounds, outbound_groups and target. Validated by Zero before encrypted storage.
+          description: Required on create unless a subscription URL is supplied; omitted on update preserves credentials. Zero path with outbounds, outbound_groups and target. Validated by Zero before encrypted storage.
+        subscription_url:
+          type: string
+          format: uri
+          writeOnly: true
+          description: Optional remote subscription. Encrypted at rest; an empty value removes subscription maintenance without changing config.
+        subscription_format:
+          type: string
+          enum: [auto, zero, zero-json, clash, sing-box, links]
+          default: auto
+        subscription_user_agent:
+          type: string
+          maxLength: 255
+          default: Clash.Meta
+        auto_sync: { type: boolean, default: false }
+        sync_interval_seconds: { type: integer, minimum: 300, maximum: 604800, default: 86400 }
     NetworkEntryRequest:
       type: object
       required: [name, node_id, address, port, enabled]

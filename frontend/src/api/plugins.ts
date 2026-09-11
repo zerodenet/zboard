@@ -49,7 +49,6 @@ export interface MarketEntry {
   discovery_only?: boolean;
   repository?: string;
   public_key?: string;
-  metadata_source?: { type: string; path: string };
   release_source?: { type: string; metadata_asset: string };
   id: string;
   name: string;

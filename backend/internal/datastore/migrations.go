@@ -151,6 +151,9 @@ func RunMigrations(db *gorm.DB) error {
 	if err := preparePreReleaseMigrationHistory(sqlDB, versions); err != nil {
 		return err
 	}
+	if err := prepareNodeProxyPoolMigrationTable(sqlDB); err != nil {
+		return err
+	}
 
 	for _, version := range versions {
 		var applied int
@@ -192,6 +195,38 @@ func RunMigrations(db *gorm.DB) error {
 		}
 	}
 	return ReconcileNodePublishSchema(db)
+}
+
+// Some pre-release databases recorded the squashed baseline before network
+// fronting tables were added. Later column migrations must have the original
+// pool table available before they run; the normal reconciler still installs
+// the rest of the related tables after append-only migrations complete.
+func prepareNodeProxyPoolMigrationTable(db *sql.DB) error {
+	var baselineApplied int
+	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations WHERE version = ?", preReleaseBaselineVersion).Scan(&baselineApplied); err != nil {
+		return fmt.Errorf("inspect node proxy pool migration baseline: %w", err)
+	}
+	if baselineApplied == 0 {
+		return nil
+	}
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS node_proxy_pools (
+		 id bigint unsigned NOT NULL AUTO_INCREMENT,
+		 node_id bigint unsigned NOT NULL,
+		 name varchar(80) NOT NULL,
+		 config text NOT NULL,
+		 revision bigint unsigned NOT NULL DEFAULT 1,
+		 created_at datetime(3) DEFAULT NULL,
+		 updated_at datetime(3) DEFAULT NULL,
+		 PRIMARY KEY (id),
+		 UNIQUE KEY ux_node_proxy_pool_name (node_id,name),
+		 CONSTRAINT fk_node_proxy_pools_node FOREIGN KEY (node_id) REFERENCES nodes (id) ON DELETE RESTRICT
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+	`)
+	if err != nil {
+		return fmt.Errorf("prepare node proxy pool migration table: %w", err)
+	}
+	return nil
 }
 
 func validateMigrationInventory(versions []string) error {

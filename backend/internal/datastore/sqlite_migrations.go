@@ -90,6 +90,9 @@ func runSQLiteMigrations(db *gorm.DB) error {
 	}); err != nil {
 		return err
 	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0006_node_proxy_pool_subscriptions.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
+	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {
 		return fmt.Errorf("record sqlite schema version: %w", err)
