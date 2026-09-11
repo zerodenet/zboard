@@ -314,7 +314,7 @@ paths:
       description: The admitted directory contains no release history. ZBoard discovers stable, rc and dev versions from the registered publisher repository, then verifies the selected metadata and package against the admitted publisher key and capability ceiling.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
-        - { name: version, in: query, required: false, description: Exact published version to select; defaults to the newest stable release, then rc or dev, schema: { type: string } }
+        - { name: version, in: query, required: false, description: "Exact published version to select; defaults to the newest stable release, then rc or dev", schema: { type: string } }
       responses:
         "200":
           description: Release details; notice describes unavailable metadata or platform support
