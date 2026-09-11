@@ -1026,7 +1026,7 @@ paths:
                 expected_revision: { type: integer, minimum: 1 }
       responses:
         "200": { description: Subscription synchronized and node publication queued }
-        "400": { description: Subscription is missing, unavailable, unsupported or invalid }
+        "400": { description: "Subscription is missing, unavailable, unsupported or invalid" }
         "409": { description: Pool changed while synchronization was in progress }
   /api/v1/admin/node-proxy-pools/{id}:
     parameters:
