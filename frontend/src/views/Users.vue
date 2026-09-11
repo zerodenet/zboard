@@ -4,7 +4,7 @@
       <template #actions><PageRefreshButton label="刷新用户" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template>
     </PageHeader>
 
-    <TransientFeedback :success="message" :error="identityActionError || error" success-title="用户信息已更新" error-title="用户操作失败" />
+    <TransientFeedback :success="message" :error="error" success-title="用户信息已更新" error-title="用户操作失败" />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
@@ -13,14 +13,13 @@
           <WorkbenchFilterSelect v-model="statusFilter" label="账户状态" :options="filterStatusOptions" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
-      <DataTable v-if="users.length" caption="用户与权限列表" :row-count="total" :min-width="1080">
-          <thead><tr><th class="table-primary-column">用户</th><th data-column-priority="2">管理权限</th><th>状态</th><th class="numeric-column" data-column-priority="2">第三方绑定</th><th class="numeric-column" data-column-priority="2">订阅（有效/全部）</th><th class="numeric-column" data-column-priority="3">订单（待处理/全部）</th><SortableHeader field="created_at" label="创建时间" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" /><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
+      <DataTable v-if="users.length" caption="用户与权限列表" :row-count="total" :min-width="980">
+          <thead><tr><th class="table-primary-column">用户</th><th data-column-priority="2">管理权限</th><th>状态</th><th class="numeric-column" data-column-priority="2">订阅（有效/全部）</th><th class="numeric-column" data-column-priority="3">订单（待处理/全部）</th><SortableHeader field="created_at" label="创建时间" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" /><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
           <tbody>
             <tr v-for="user in users" :key="user.id">
               <td class="table-primary-column"><div class="user-cell"><span class="user-avatar">{{ user.email.slice(0, 1).toUpperCase() }}</span><div class="cell-title"><strong>{{ user.email }}</strong><span class="mono">#{{ user.id }}</span></div></div></td>
               <td data-column-priority="2"><StatusBadge :tone="permissionTone(user.is_admin)">{{ permissionName(user.is_admin) }}</StatusBadge></td>
               <td><StatusBadge :tone="statusTone(user.status)">{{ statusName(user.status) }}</StatusBadge></td>
-              <td class="numeric-column" data-column-priority="2"><StatusBadge :tone="user.identity_binding_count ? 'info' : 'neutral'">{{ user.identity_binding_count ? `${formatNumber(user.identity_binding_count)} 个` : '未绑定' }}</StatusBadge></td>
               <td class="numeric-column" data-column-priority="2">{{ formatNumber(user.active_subscription_count) }} / {{ formatNumber(user.total_subscription_count) }}</td>
               <td class="numeric-column" data-column-priority="3">{{ formatNumber(user.pending_order_count) }} / {{ formatNumber(user.total_order_count) }}</td>
               <td data-column-priority="3"><TimeBadge :value="user.created_at" /></td>
@@ -40,7 +39,6 @@
           <StatusBadge :tone="statusTone(selectedUserDetail.status)">{{ statusName(selectedUserDetail.status) }}</StatusBadge>
           <StatusBadge :tone="permissionTone(selectedUserDetail.is_admin)">{{ permissionName(selectedUserDetail.is_admin) }}</StatusBadge>
           <StatusBadge :tone="selectedUserDetail.email_verified_at ? 'success' : 'warning'">{{ selectedUserDetail.email_verified_at ? '邮箱已验证' : '邮箱未验证' }}</StatusBadge>
-          <StatusBadge :tone="selectedUserDetail.external_identities.length ? 'info' : 'neutral'">{{ selectedUserDetail.external_identities.length ? `已绑定 ${selectedUserDetail.external_identities.length} 个第三方账号` : '未绑定第三方账号' }}</StatusBadge>
         </section>
         <section class="detail-metrics" aria-label="关联业务数量">
           <div><strong>{{ selectedUserDetail.active_subscription_count }}</strong><span>有效订阅</span></div>
@@ -56,19 +54,7 @@
           <div><span>更新时间</span><TimeBadge :value="selectedUserDetail.updated_at" /></div>
           <div><span>邮箱验证</span><TimeBadge :value="selectedUserDetail.email_verified_at" /></div>
         </section>
-        <section class="identity-bindings stack" aria-label="第三方账号绑定">
-          <div><h2>第三方账号绑定</h2><p>显示绑定的提供方、插件发布来源和第三方稳定账号标识。管理员解绑只移除这条登录关系。</p></div>
-          <p v-if="!selectedUserDetail.external_identities.length" class="identity-empty">该用户尚未绑定第三方账号。</p>
-          <article v-for="identity in selectedUserDetail.external_identities" :key="identity.id" class="identity-binding">
-            <header><div><strong>{{ identity.provider_id || identity.plugin_id }}</strong><span class="mono">{{ identity.plugin_id }}{{ identity.provider_id ? ` / ${identity.provider_id}` : '' }}</span></div><UiButton variant="ghost" size="sm" type="button" :disabled="saving" @click="unlinkIdentity(identity)">解绑</UiButton></header>
-            <dl>
-              <div><dt>插件来源</dt><dd>{{ identity.publisher || '未知发布者' }}</dd></div>
-              <div><dt>Issuer</dt><dd class="mono">{{ identity.issuer }}</dd></div>
-              <div><dt>外部账号标识</dt><dd class="mono">{{ identity.subject }}</dd></div>
-              <div><dt>绑定时间</dt><dd><TimeBadge :value="identity.created_at" /></dd></div>
-            </dl>
-          </article>
-        </section>
+        <PluginSlot name="admin.user.identities" surface="admin" :target-user-id="selectedUserDetail.id" />
         <div class="detail-action-row">
           <RouterLink class="button button-secondary button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedUserDetail.id) })">查看订阅</RouterLink>
           <RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id) })">查看订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id), assign: '1' })">分配订单</RouterLink>
@@ -107,7 +93,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createAdminUser, fetchAdminUserDetail, fetchUsersPage, unlinkAdminExternalIdentity, updateAdminUser, type AdminExternalIdentity, type AdminUserDetail, type AdminUserListItem } from '../api/client'
+import { createAdminUser, fetchAdminUserDetail, fetchUsersPage, updateAdminUser, type AdminUserDetail, type AdminUserListItem } from '../api/client'
 import DataTable from '../components/DataTable.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -130,10 +116,10 @@ import { useRemoteTable } from '../composables/useRemoteTable'
 import { useRemoteResource } from '../composables/useRemoteResource'
 import { nextSortDirection, resolveSortDirection, resolveSortField } from '../composables/tableState'
 import { useAppStore } from '../stores/app'
-import { confirmAction } from '../utils/feedback'
 import { formatNumber } from '../utils/format'
 import { collectFieldErrors, isEmail, isOneOf, isUtf8LengthInRange } from '../utils/validation'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
+import PluginSlot from '../plugins/PluginSlot.vue'
 
 type UserItem = AdminUserListItem
 const app = useAppStore()
@@ -150,7 +136,6 @@ const userSortFields = new Set<UserSortField>(['id', 'email', 'created_at'])
 const sortField = ref(resolveSortField(route.query.sort, userSortFields, 'created_at'))
 const sortDirection = ref<'asc' | 'desc'>(resolveSortDirection(route.query.direction, 'desc'))
 const message = ref('')
-const identityActionError = ref('')
 const saving = ref(false)
 const createOpen = ref(false)
 const editOpen = ref(false)
@@ -277,27 +262,6 @@ async function saveUser() {
   } catch (e: any) { await editErrors.applyApiError(e, '账户保存失败，请检查表单内容。', editFormElement, { status: 'status', password: 'password' }) }
   finally { saving.value = false }
 }
-async function unlinkIdentity(identity: AdminExternalIdentity) {
-  const user = selectedUserDetail.value
-  if (!user || saving.value) return
-  const accepted = await confirmAction({
-    title: '解绑第三方账号？',
-    message: `将解除 ${user.email} 与 ${identity.provider_id || identity.plugin_id} 的登录关系。第三方账号本身、用户密码、其他绑定和现有会话不会改变。`,
-    confirmText: '确认解绑',
-    tone: 'danger',
-  })
-  if (!accepted) return
-  saving.value = true; identityActionError.value = ''; message.value = ''
-  try {
-    await unlinkAdminExternalIdentity(user.id, identity.id)
-    message.value = `${user.email} 的第三方账号已解绑。`
-    await refresh()
-    selectedUserDetail.value = null
-    await syncDetailFromRoute()
-  } catch (cause: any) {
-    identityActionError.value = cause?.response?.data?.message || '第三方账号解绑失败，请刷新用户详情后重试。'
-  } finally { saving.value = false }
-}
 watch(() => route.fullPath, async () => {
   const nextSearch = String(route.query.q || '')
   const nextStatus = String(route.query.status || '')
@@ -315,8 +279,8 @@ onMounted(async () => { await refresh(); await syncDetailFromRoute() })
 </script>
 
 <style scoped>
-.page-alert { margin-bottom: 14px; }.user-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }.user-summary > div { display: flex; align-items: center; gap: 11px; padding: 16px 18px; }.user-summary > div + div { border-left: 1px solid var(--line); }.summary-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 9px; color: var(--primary); background: var(--primary-soft); }.summary-icon.success { color: var(--success); background: var(--success-soft); }.summary-icon.admin { color: var(--admin-accent); background: var(--code-soft); }.summary-icon.warning { color: var(--warning); background: var(--warning-soft); }.user-summary > div > div { display: grid; }.user-summary strong { font-size: 20px; }.user-summary span:not(.summary-icon) { color: var(--muted); font-size: 10px; }.user-cell { display: flex; align-items: center; gap: 10px; }.user-avatar { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: var(--info); background: var(--info-soft); font-size: 12px; font-weight: 750; }.password-section { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(240px, 1.3fr); gap: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }.password-section strong { font-size: 13px; }.password-section p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }.identity-bindings { border-top: 1px solid var(--line); padding-top: 18px; }.identity-bindings h2 { margin: 0; font-size: 16px; }.identity-bindings > div > p, .identity-empty { margin: 5px 0 0; color: var(--muted); font-size: 12px; }.identity-binding { padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }.identity-binding header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }.identity-binding header > div { display: grid; gap: 3px; min-width: 0; }.identity-binding header span { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }.identity-binding dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; margin: 14px 0 0; }.identity-binding dl > div { min-width: 0; }.identity-binding dt { color: var(--muted); font-size: 10px; }.identity-binding dd { margin: 4px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.page-alert { margin-bottom: 14px; }.user-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }.user-summary > div { display: flex; align-items: center; gap: 11px; padding: 16px 18px; }.user-summary > div + div { border-left: 1px solid var(--line); }.summary-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 9px; color: var(--primary); background: var(--primary-soft); }.summary-icon.success { color: var(--success); background: var(--success-soft); }.summary-icon.admin { color: var(--admin-accent); background: var(--code-soft); }.summary-icon.warning { color: var(--warning); background: var(--warning-soft); }.user-summary > div > div { display: grid; }.user-summary strong { font-size: 20px; }.user-summary span:not(.summary-icon) { color: var(--muted); font-size: 10px; }.user-cell { display: flex; align-items: center; gap: 10px; }.user-avatar { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: var(--info); background: var(--info-soft); font-size: 12px; font-weight: 750; }.password-section { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(240px, 1.3fr); gap: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }.password-section strong { font-size: 13px; }.password-section p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
 @media (max-width: 900px) { .user-summary { grid-template-columns: repeat(2, 1fr); }.user-summary > div:nth-child(3) { border-left: 0; border-top: 1px solid var(--line); }.user-summary > div:nth-child(4) { border-top: 1px solid var(--line); } }
-@media (max-width: 560px) { .user-summary { grid-template-columns: 1fr; }.user-summary > div + div { border-left: 0; border-top: 1px solid var(--line); }.password-section, .identity-binding dl { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .user-summary { grid-template-columns: 1fr; }.user-summary > div + div { border-left: 0; border-top: 1px solid var(--line); }.password-section { grid-template-columns: 1fr; } }
 .user-summary{border-inline:0;border-radius:0}
 </style>

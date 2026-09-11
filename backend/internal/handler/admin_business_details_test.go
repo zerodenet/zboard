@@ -18,7 +18,6 @@ func TestAdminUserListProjectionCarriesBoundedBusinessCounts(t *testing.T) {
 		TotalSubscriptionCount:  3,
 		PendingOrderCount:       1,
 		TotalOrderCount:         7,
-		IdentityBindingCount:    2,
 		CreatedAt:               time.Unix(10, 0).UTC(),
 	}
 
@@ -32,7 +31,6 @@ func TestAdminUserListProjectionCarriesBoundedBusinessCounts(t *testing.T) {
 		`"total_subscription_count":3`,
 		`"pending_order_count":1`,
 		`"total_order_count":7`,
-		`"identity_binding_count":2`,
 		`"created_at":"1970-01-01T00:00:10Z"`,
 	} {
 		if !strings.Contains(text, required) {
@@ -43,27 +41,6 @@ func TestAdminUserListProjectionCarriesBoundedBusinessCounts(t *testing.T) {
 		if strings.Contains(text, forbidden) {
 			t.Errorf("user list projection contains detail field %q: %s", forbidden, text)
 		}
-	}
-}
-
-func TestAdminExternalIdentityProjectionShowsSourceWithoutUserForeignKey(t *testing.T) {
-	item := newAdminExternalIdentity(model.ExternalIdentity{
-		ID: "binding-id", UserID: 42, PluginID: "zboard.oauth~github",
-		Publisher: "higanbana986", Issuer: "https://github.com", Subject: "9007199254740993",
-		CreatedAt: time.Unix(11, 0).UTC(),
-	})
-	payload, err := json.Marshal(item)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(payload)
-	for _, required := range []string{`"plugin_id":"zboard.oauth"`, `"provider_id":"github"`, `"publisher":"higanbana986"`, `"issuer":"https://github.com"`, `"subject":"9007199254740993"`} {
-		if !strings.Contains(text, required) {
-			t.Errorf("identity projection is missing %q: %s", required, text)
-		}
-	}
-	if strings.Contains(text, "user_id") || strings.Contains(text, `"plugin_id":"zboard.oauth~github"`) {
-		t.Fatalf("identity projection leaked storage-only shape: %s", text)
 	}
 }
 

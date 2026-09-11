@@ -112,7 +112,6 @@ type adminUserListItem struct {
 	TotalSubscriptionCount  int64     `json:"total_subscription_count"`
 	PendingOrderCount       int64     `json:"pending_order_count"`
 	TotalOrderCount         int64     `json:"total_order_count"`
-	IdentityBindingCount    int64     `json:"identity_binding_count"`
 	CreatedAt               time.Time `json:"created_at"`
 }
 
@@ -126,11 +125,6 @@ type adminUserOrderCountRow struct {
 	UserID            uint  `gorm:"column:user_id"`
 	PendingOrderCount int64 `gorm:"column:pending_order_count"`
 	TotalOrderCount   int64 `gorm:"column:total_order_count"`
-}
-
-type adminUserIdentityCountRow struct {
-	UserID               uint  `gorm:"column:user_id"`
-	IdentityBindingCount int64 `gorm:"column:identity_binding_count"`
 }
 
 type adminSubscriptionListItem struct {
@@ -1142,19 +1136,6 @@ func loadAdminUserListItems(db *gorm.DB, users []model.User, now time.Time) ([]a
 		orderCounts[row.UserID] = row
 	}
 
-	identityRows := make([]adminUserIdentityCountRow, 0, len(users))
-	if err := db.Model(&model.ExternalIdentity{}).
-		Select("user_id, COUNT(*) AS identity_binding_count").
-		Where("user_id IN ?", userIDs).
-		Group("user_id").
-		Scan(&identityRows).Error; err != nil {
-		return nil, err
-	}
-	identityCounts := make(map[uint]int64, len(identityRows))
-	for _, row := range identityRows {
-		identityCounts[row.UserID] = row.IdentityBindingCount
-	}
-
 	for _, user := range users {
 		subscriptions := subscriptionCounts[user.ID]
 		orders := orderCounts[user.ID]
@@ -1164,7 +1145,6 @@ func loadAdminUserListItems(db *gorm.DB, users []model.User, now time.Time) ([]a
 			TotalSubscriptionCount:  subscriptions.TotalSubscriptionCount,
 			PendingOrderCount:       orders.PendingOrderCount,
 			TotalOrderCount:         orders.TotalOrderCount,
-			IdentityBindingCount:    identityCounts[user.ID],
 			CreatedAt:               user.CreatedAt,
 		})
 	}

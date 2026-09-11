@@ -68,21 +68,19 @@ type adminPaymentEventSummary struct {
 }
 
 type adminUserDetail struct {
-	ID                      uint                    `json:"id"`
-	AccountName             string                  `json:"account_name"`
-	Email                   string                  `json:"email"`
-	EmailVerifiedAt         *time.Time              `json:"email_verified_at"`
-	LastLoginAt             *time.Time              `json:"last_login_at"`
-	IsAdmin                 bool                    `json:"is_admin"`
-	Status                  string                  `json:"status"`
-	ActiveSubscriptionCount int64                   `json:"active_subscription_count"`
-	TotalSubscriptionCount  int64                   `json:"total_subscription_count"`
-	PendingOrderCount       int64                   `json:"pending_order_count"`
-	TotalOrderCount         int64                   `json:"total_order_count"`
-	IdentityBindingCount    int64                   `json:"identity_binding_count"`
-	ExternalIdentities      []adminExternalIdentity `json:"external_identities"`
-	CreatedAt               time.Time               `json:"created_at"`
-	UpdatedAt               time.Time               `json:"updated_at"`
+	ID                      uint       `json:"id"`
+	AccountName             string     `json:"account_name"`
+	Email                   string     `json:"email"`
+	EmailVerifiedAt         *time.Time `json:"email_verified_at"`
+	LastLoginAt             *time.Time `json:"last_login_at"`
+	IsAdmin                 bool       `json:"is_admin"`
+	Status                  string     `json:"status"`
+	ActiveSubscriptionCount int64      `json:"active_subscription_count"`
+	TotalSubscriptionCount  int64      `json:"total_subscription_count"`
+	PendingOrderCount       int64      `json:"pending_order_count"`
+	TotalOrderCount         int64      `json:"total_order_count"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
 }
 
 type adminSubscriptionDetail struct {
@@ -179,17 +177,6 @@ func (h *handlers) AdminUserGetHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	identities := make([]model.ExternalIdentity, 0)
-	if err := h.db.Where("user_id = ?", id).Order("created_at desc").Find(&identities).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	detail.ExternalIdentities = make([]adminExternalIdentity, 0, len(identities))
-	for _, identity := range identities {
-		detail.ExternalIdentities = append(detail.ExternalIdentities, newAdminExternalIdentity(identity))
-	}
-	detail.IdentityBindingCount = int64(len(detail.ExternalIdentities))
-	authNoStore(w)
 	OK(w, detail)
 }
 

@@ -1898,17 +1898,6 @@ export interface AdminUserListItem {
   total_subscription_count: number
   pending_order_count: number
   total_order_count: number
-  identity_binding_count: number
-  created_at: string
-}
-
-export interface AdminExternalIdentity {
-  id: string
-  plugin_id: string
-  provider_id: string
-  publisher: string
-  issuer: string
-  subject: string
   created_at: string
 }
 
@@ -1920,7 +1909,6 @@ export interface AdminUserDetail extends AdminUserListItem {
   total_subscription_count: number
   pending_order_count: number
   total_order_count: number
-  external_identities: AdminExternalIdentity[]
   created_at: string
   updated_at: string
 }
@@ -1949,11 +1937,6 @@ export async function createAdminUser(payload: { email: string; password: string
 export async function updateAdminUser(id: number, payload: { status?: string; is_admin?: boolean; password?: string }) {
   const response = await api.put(`/admin/users/${id}`, payload)
   return unwrap(response)
-}
-
-export async function unlinkAdminExternalIdentity(userId: number, identityId: string) {
-  const response = await api.delete(`/admin/users/${userId}/identities/${encodeURIComponent(identityId)}`)
-  return unwrap(response) as { unlinked: boolean }
 }
 
 export async function markOrderPaid(orderId: number) {

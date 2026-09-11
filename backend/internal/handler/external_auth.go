@@ -11,7 +11,6 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/plugins"
 	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
-	"github.com/zeromicro/go-zero/rest/pathvar"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -71,81 +70,48 @@ func authNoStore(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 }
-func (h *handlers) ExternalAuthProvidersHandler(w http.ResponseWriter, r *http.Request) {
-	authNoStore(w)
-	out := []plugins.IdentityProviderView{}
-	if h.identityProviders != nil {
-		if values, err := h.identityProviders.IdentityProviders(); err == nil {
-			out = values
-		}
-	}
-	OK(w, out)
-}
-func (h *handlers) ExternalAuthStartHandler(w http.ResponseWriter, r *http.Request) {
-	h.startExternalAuth(w, r, false)
-}
-func (h *handlers) ExternalIdentityBindHandler(w http.ResponseWriter, r *http.Request) {
-	h.startExternalAuth(w, r, true)
-}
-func (h *handlers) startExternalAuth(w http.ResponseWriter, r *http.Request, bind bool) {
-	authNoStore(w)
+func (h *handlers) beginExternalAuth(w http.ResponseWriter, r *http.Request, bind bool, providerID, password string) (int, string, string) {
 	if h.identityProviders == nil {
-		ServiceUnavailable(w, "identity provider unavailable")
-		return
+		return http.StatusServiceUnavailable, "identity provider unavailable", ""
 	}
 	origin, err := h.externalAuthOrigin()
 	if err != nil {
-		BadRequest(w, err.Error())
-		return
+		return http.StatusBadRequest, err.Error(), ""
 	}
 	if !externalAuthRequest(r, origin) {
-		Forbidden(w, "invalid authentication origin or content type")
-		return
-	}
-	var body struct {
-		Password string `json:"password"`
-	}
-	if !pluginBody(w, r, &body) {
-		return
+		return http.StatusForbidden, "invalid authentication origin or content type", ""
 	}
 	flow := externalAuthFlow{}
 	if bind {
 		claims, err := h.authFromRequest(r)
 		if err != nil {
-			Unauthorized(w, "authentication required")
-			return
+			return http.StatusUnauthorized, "authentication required", ""
 		}
 		var user model.User
-		if err := h.db.Where("id = ? AND status = ?", claims.UserID, userStatusActive).First(&user).Error; err != nil || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password)) != nil {
-			Unauthorized(w, "confirm your current account password before linking")
-			return
+		if err := h.db.Where("id = ? AND status = ?", claims.UserID, userStatusActive).First(&user).Error; err != nil || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) != nil {
+			return http.StatusUnauthorized, "confirm your current account password before linking", ""
 		}
 		flow.BindUserID = user.ID
 		flow.PasswordHash = user.Password
 	}
-	provider, err := h.identityProviders.IdentityProvider(r.Context(), pathvar.Vars(r)["id"])
+	provider, err := h.identityProviders.IdentityProvider(r.Context(), providerID)
 	if err != nil {
-		BadRequest(w, "identity provider is unavailable; review its configuration")
-		return
+		return http.StatusBadRequest, "identity provider is unavailable; review its configuration", ""
 	}
 	flow.Provider = provider
 	flow.RedirectURI = origin + externalAuthPath + "/callback"
 	if flow.Binding, err = authRandom(); err != nil {
-		ServerError(w, err)
-		return
+		return http.StatusInternalServerError, "authentication unavailable", ""
 	}
 	if flow.Nonce, err = authRandom(); err != nil {
-		ServerError(w, err)
-		return
+		return http.StatusInternalServerError, "authentication unavailable", ""
 	}
 	if flow.Verifier, err = authRandom(); err != nil {
-		ServerError(w, err)
-		return
+		return http.StatusInternalServerError, "authentication unavailable", ""
 	}
 	state, err := h.externalAuth.add(flow, cookieValue(r, origin, flowCookie))
 	if err != nil {
-		ServiceUnavailable(w, err.Error())
-		return
+		return http.StatusServiceUnavailable, err.Error(), ""
 	}
 	authorization, _ := url.Parse(provider.Provider.AuthorizationEndpoint)
 	query := authorization.Query()
@@ -161,7 +127,7 @@ func (h *handlers) startExternalAuth(w http.ResponseWriter, r *http.Request, bin
 	authCookie(w, origin, flowCookie, flow.Binding, 300)
 	// A previous completion cannot be redeemed as the result of this new attempt.
 	authCookie(w, origin, resultCookie, "", -1)
-	OK(w, map[string]string{"authorization_url": authorization.String()})
+	return 0, "", authorization.String()
 }
 func (h *handlers) ExternalAuthCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	authNoStore(w)

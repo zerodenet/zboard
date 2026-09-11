@@ -36,6 +36,20 @@ type Page struct {
 	Title   string `json:"title"`
 	Purpose string `json:"purpose,omitempty"`
 }
+type Slot struct {
+	ID         string `json:"id"`
+	Surface    string `json:"surface"`
+	Slot       string `json:"slot"`
+	Title      string `json:"title"`
+	Entrypoint string `json:"entrypoint"`
+}
+
+var slotSurfaces = map[string]string{
+	"auth.login.methods":          "public",
+	"account.security.identities": "account",
+	"admin.user.identities":       "admin",
+}
+
 type Components struct {
 	UI     map[string]string `json:"ui,omitempty"`
 	Server *struct {
@@ -55,6 +69,7 @@ type Manifest struct {
 	Components    Components    `json:"components"`
 	Contributions struct {
 		Pages []Page `json:"pages"`
+		Slots []Slot `json:"slots,omitempty"`
 	} `json:"contributions"`
 	Files map[string]string `json:"files"`
 }
@@ -101,7 +116,7 @@ func (m Manifest) Validate() error {
 		}
 		seen[c] = true
 	}
-	if len(m.Surfaces) > 3 || len(m.Contributions.Pages) > 24 || len(m.Files) == 0 || len(m.Files) > 512 {
+	if len(m.Surfaces) > 3 || len(m.Contributions.Pages) > 24 || len(m.Contributions.Slots) > 24 || len(m.Files) == 0 || len(m.Files) > 512 {
 		return errors.New("plugin contribution limits exceeded")
 	}
 	surfaces := map[string]bool{}
@@ -132,6 +147,18 @@ func (m Manifest) Validate() error {
 			return errors.New("configuration pages require admin config capability")
 		}
 		pages[key] = true
+	}
+	slots := map[string]bool{}
+	for _, contribution := range m.Contributions.Slots {
+		key := contribution.Surface + ":" + contribution.Slot + ":" + contribution.ID
+		requiredSurface, known := slotSurfaces[contribution.Slot]
+		if slots[key] || !pagePattern.MatchString(contribution.ID) || !known || contribution.Surface != requiredSurface || !surfaces[contribution.Surface] || contribution.Title == "" || len(contribution.Title) > 160 || !strings.HasPrefix(contribution.Entrypoint, "ui/") || !SafePath(contribution.Entrypoint) || !digestPattern.MatchString(m.Files[contribution.Entrypoint]) {
+			return errors.New("invalid slot contribution")
+		}
+		if !seen[PageCapability] || !seen[IdentityCapability] {
+			return errors.New("identity slots require UI and identity provider capabilities")
+		}
+		slots[key] = true
 	}
 	if seen[IdentityCapability] && (m.Components.Server == nil || !seen["zboard.config.v1"]) {
 		return errors.New("identity provider requires a configurable server")
