@@ -6751,8 +6751,8 @@ components:
               name: { type: string }
               region: { type: string }
               protocol: { type: string }
-              active_users: { type: integer, format: int64, minimum: 0, description: Distinct users from Principal current state, with a two-minute legacy event fallback. }
-              active_flows: { type: integer, format: int64, minimum: 0, description: Sum of Principal current flows, with a two-minute legacy event fallback. }
+              active_users: { type: integer, format: int64, minimum: 0, description: "Distinct users from Principal current state, with a two-minute legacy event fallback." }
+              active_flows: { type: integer, format: int64, minimum: 0, description: "Sum of Principal current flows, with a two-minute legacy event fallback." }
               last_activity_at: { type: string, format: date-time, nullable: true }
     PlanCreateRequest:
       type: object
