@@ -19,25 +19,24 @@ import (
 )
 
 type MarketEntry struct {
-	DiscoveryOnly  bool                 `json:"discovery_only,omitempty"`
-	Repository     string               `json:"repository,omitempty"`
-	PublicKey      string               `json:"public_key,omitempty"`
-	MetadataSource MarketMetadataSource `json:"metadata_source,omitzero"`
-	ReleaseSource  MarketReleaseSource  `json:"release_source,omitzero"`
-	ID             string               `json:"id"`
-	Name           string               `json:"name"`
-	Description    string               `json:"description"`
-	License        string               `json:"license,omitempty"`
-	Maintainers    []string             `json:"maintainers,omitempty"`
-	Homepage       string               `json:"homepage,omitempty"`
-	Documentation  string               `json:"documentation,omitempty"`
-	Security       string               `json:"security,omitempty"`
-	Version        string               `json:"version,omitempty"`
-	Publisher      string               `json:"publisher"`
-	PackageURL     string               `json:"package_url,omitempty"`
-	SHA256         string               `json:"sha256,omitempty"`
-	Surfaces       []string             `json:"surfaces"`
-	Capabilities   []string             `json:"capabilities,omitempty"`
+	DiscoveryOnly bool                `json:"discovery_only,omitempty"`
+	Repository    string              `json:"repository,omitempty"`
+	PublicKey     string              `json:"public_key,omitempty"`
+	ReleaseSource MarketReleaseSource `json:"release_source,omitzero"`
+	ID            string              `json:"id"`
+	Name          string              `json:"name"`
+	Description   string              `json:"description"`
+	License       string              `json:"license,omitempty"`
+	Maintainers   []string            `json:"maintainers,omitempty"`
+	Homepage      string              `json:"homepage,omitempty"`
+	Documentation string              `json:"documentation,omitempty"`
+	Security      string              `json:"security,omitempty"`
+	Version       string              `json:"version,omitempty"`
+	Publisher     string              `json:"publisher"`
+	PackageURL    string              `json:"package_url,omitempty"`
+	SHA256        string              `json:"sha256,omitempty"`
+	Surfaces      []string            `json:"surfaces"`
+	Capabilities  []string            `json:"capabilities,omitempty"`
 }
 type Market struct {
 	Kind       string        `json:"kind"`

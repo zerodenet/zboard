@@ -54,12 +54,18 @@ func (path networkEntryPath) appendGraph(config map[string]interface{}, prefix s
 		return "", fmt.Errorf("请选择代理路径中存在的 target")
 	}
 	outbounds, _ := config["outbounds"].([]interface{})
+	if outbounds == nil {
+		outbounds = []interface{}{}
+	}
 	for _, item := range path.Outbounds {
 		item["tag"] = names[item["tag"].(string)]
 		outbounds = append(outbounds, item)
 	}
 	config["outbounds"] = outbounds
 	groups, _ := config["outbound_groups"].([]interface{})
+	if groups == nil {
+		groups = []interface{}{}
+	}
 	for _, item := range path.Groups {
 		item["tag"] = names[item["tag"].(string)]
 		memberKey := "outbounds"

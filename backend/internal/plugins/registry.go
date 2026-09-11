@@ -15,11 +15,6 @@ type MarketReleaseSource struct {
 	MetadataAsset string `json:"metadata_asset"`
 }
 
-type MarketMetadataSource struct {
-	Type string `json:"type"`
-	Path string `json:"path"`
-}
-
 // The official directory admits publisher identities and policy ceilings.
 // Version and artifact records remain in each publisher repository.
 func (m *Manager) publicRegistry(ctx context.Context) (Market, error) {
@@ -27,24 +22,7 @@ func (m *Manager) publicRegistry(ctx context.Context) (Market, error) {
 	if err != nil {
 		return Market{}, err
 	}
-	market, err := parseRegistry(raw)
-	if err != nil {
-		return Market{}, err
-	}
-	for index := range market.Entries {
-		metadata, metadataErr := m.publisherMetadata(ctx, market.Entries[index])
-		if metadataErr != nil {
-			return Market{}, metadataErr
-		}
-		market.Entries[index].Name = metadata.Name
-		market.Entries[index].Description = metadata.Description
-		market.Entries[index].License = metadata.License
-		market.Entries[index].Maintainers = append([]string(nil), metadata.Maintainers...)
-		market.Entries[index].Homepage = metadata.Homepage
-		market.Entries[index].Documentation = metadata.Documentation
-		market.Entries[index].Security = metadata.Security
-	}
-	return market, nil
+	return parseRegistry(raw)
 }
 
 func parseRegistry(raw []byte) (Market, error) {
@@ -52,13 +30,19 @@ func parseRegistry(raw []byte) (Market, error) {
 		SchemaVersion int    `json:"schema_version"`
 		Host          string `json:"host"`
 		Plugins       []struct {
-			ID             string               `json:"id"`
-			Repository     string               `json:"repository"`
-			Publisher      registryPublisher    `json:"publisher"`
-			MetadataSource MarketMetadataSource `json:"metadata_source"`
-			ReleaseSource  MarketReleaseSource  `json:"release_source"`
-			Surfaces       []string             `json:"surfaces"`
-			Capabilities   []string             `json:"capabilities"`
+			ID            string              `json:"id"`
+			Repository    string              `json:"repository"`
+			Publisher     registryPublisher   `json:"publisher"`
+			Name          string              `json:"name"`
+			Description   string              `json:"description"`
+			License       string              `json:"license"`
+			Maintainers   []string            `json:"maintainers"`
+			Homepage      string              `json:"homepage"`
+			Documentation string              `json:"documentation"`
+			Security      string              `json:"security"`
+			ReleaseSource MarketReleaseSource `json:"release_source"`
+			Surfaces      []string            `json:"surfaces"`
+			Capabilities  []string            `json:"capabilities"`
 		} `json:"plugins"`
 	}
 	if err := json.Unmarshal(raw, &registry); err != nil {
@@ -79,7 +63,6 @@ func parseRegistry(raw []byte) (Market, error) {
 			return Market{}, errors.New("invalid registry publisher")
 		}
 		if !idPattern.MatchString(item.ID) || seen[item.ID] ||
-			item.MetadataSource.Type != "repository-file" || item.MetadataSource.Path != "marketplace.json" ||
 			item.ReleaseSource.Type != "github-releases" ||
 			!safeMetadataAsset(item.ReleaseSource.MetadataAsset) {
 			return Market{}, errors.New("invalid registry plugin")
@@ -87,11 +70,17 @@ func parseRegistry(raw []byte) (Market, error) {
 		if !validListingBoundary(item.Surfaces, item.Capabilities) {
 			return Market{}, errors.New("invalid registry capability boundary")
 		}
+		if err := validateDirectoryInformation(item.Name, item.Description, item.License, item.Maintainers, item.Homepage, item.Documentation, item.Security); err != nil {
+			return Market{}, err
+		}
 		seen[item.ID] = true
 		market.Entries = append(market.Entries, MarketEntry{
 			ID:        item.ID,
 			Publisher: item.Publisher.ID, PublicKey: item.Publisher.PublicKey,
-			Repository: item.Repository, MetadataSource: item.MetadataSource, ReleaseSource: item.ReleaseSource,
+			Repository: item.Repository, ReleaseSource: item.ReleaseSource,
+			Name: item.Name, Description: item.Description, License: item.License,
+			Maintainers: append([]string(nil), item.Maintainers...), Homepage: item.Homepage,
+			Documentation: item.Documentation, Security: item.Security,
 			Surfaces:     append([]string(nil), item.Surfaces...),
 			Capabilities: append([]string(nil), item.Capabilities...),
 		})
@@ -142,4 +131,25 @@ func slicesContains(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func validateDirectoryInformation(name, description, license string, maintainers []string, links ...string) error {
+	if strings.TrimSpace(name) == "" || len(name) > 160 || strings.TrimSpace(description) == "" || len(description) > 2000 || strings.TrimSpace(license) == "" || len(license) > 160 || len(maintainers) == 0 || len(maintainers) > 20 {
+		return errors.New("invalid directory basic information")
+	}
+	seen := map[string]bool{}
+	for _, value := range maintainers {
+		if strings.TrimSpace(value) == "" || len(value) > 160 || seen[value] {
+			return errors.New("invalid directory maintainer")
+		}
+		seen[value] = true
+	}
+	for _, link := range links {
+		if link != "" {
+			if _, err := safeRemoteURL(link); err != nil {
+				return errors.New("invalid directory information URL")
+			}
+		}
+	}
+	return nil
 }

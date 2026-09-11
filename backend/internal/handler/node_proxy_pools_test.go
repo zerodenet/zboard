@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +18,15 @@ import (
 	"gorm.io/gorm"
 )
 
+func stubProxyPoolSubscriptionFetch(t *testing.T, content string, fetchErr error) {
+	t.Helper()
+	previous := proxyPoolSubscriptionFetcher
+	proxyPoolSubscriptionFetcher = func(context.Context, string, string) ([]byte, error) {
+		return []byte(content), fetchErr
+	}
+	t.Cleanup(func() { proxyPoolSubscriptionFetcher = previous })
+}
+
 func poolValidationForTest(t *testing.T) {
 	t.Helper()
 	old := managedZeroSubscriptionValidator
@@ -28,6 +39,7 @@ func poolValidationForTest(t *testing.T) {
 			}
 			out, err := exec.CommandContext(ctx, binary, "validate", path).CombinedOutput()
 			if err != nil {
+				t.Logf("Zero validation failed: %s", out)
 				return fmt.Errorf("validate: %w %s", err, out)
 			}
 		}
@@ -179,6 +191,117 @@ func TestSharedPoolReferencesAreNodeScopedAndProtected(t *testing.T) {
 	f.h.db.Find(&publishes)
 	if len(publishes) != 1 || publishes[0].NodeID != a.ID {
 		t.Fatalf("pool update published to B: %v", publishes)
+	}
+}
+
+func TestProxyPoolSubscriptionParsesZeroAndClashWithoutImportingRoutes(t *testing.T) {
+	zeroDocument := `{"outbounds":[{"tag":"direct","protocol":{"type":"direct"}},{"tag":"hk","protocol":{"type":"shadowsocks","server":"198.51.100.1","port":443,"cipher":"aes-128-gcm","password":"secret"}}],"outbound_groups":[{"tag":"best","type":"url_test","outbounds":["hk"],"interval_seconds":300}],"route":{"rules":[{"condition":{"type":"domain"}}],"final":{"type":"route","outbound":"best"}}}`
+	encoded := base64.RawStdEncoding.EncodeToString([]byte(zeroDocument))
+	path, count, err := parseProxyPoolSubscription([]byte(encoded), "auto")
+	if err != nil || count != 1 || path.Target != "best" || len(path.Outbounds) != 2 || len(path.Groups) != 1 {
+		t.Fatalf("zero subscription = %#v, count=%d, error=%v", path, count, err)
+	}
+
+	clash := `
+proxies:
+  - name: hk
+    type: ss
+    server: 198.51.100.2
+    port: 443
+    cipher: aes-128-gcm
+    password: secret
+proxy-groups:
+  - name: best
+    type: url-test
+    proxies: [hk, DIRECT]
+    interval: 600
+rules:
+  - MATCH,best
+`
+	path, count, err = parseProxyPoolSubscription([]byte(clash), "clash")
+	if err != nil || count != 1 || path.Target != "best" || len(path.Groups) != 1 {
+		t.Fatalf("clash subscription = %#v, count=%d, error=%v", path, count, err)
+	}
+	if _, exists := path.Groups[0]["rules"]; exists {
+		t.Fatal("subscription routes entered proxy pool graph")
+	}
+}
+
+func TestProxyPoolSubscriptionIsEncryptedAndManualRawOverwriteIsPreserved(t *testing.T) {
+	poolValidationForTest(t)
+	f, a, _ := networkEntryFixture(t)
+	subscriptionURL := "https://example.com/subscription/private-token"
+	first := base64.StdEncoding.EncodeToString([]byte(`{"outbounds":[{"tag":"remote","protocol":{"type":"shadowsocks","server":"198.51.100.10","port":443,"cipher":"aes-128-gcm","password":"remote-secret"}}],"target":"remote"}`))
+	stubProxyPoolSubscriptionFetch(t, first, nil)
+	w := poolRequest(t, f, "POST", "/api/v1/admin/node-proxy-pools", map[string]interface{}{
+		"node_id": a.ID, "name": "subscribed", "subscription_url": subscriptionURL,
+		"subscription_format": "auto", "subscription_user_agent": "test-client/1", "auto_sync": true, "sync_interval_seconds": 3600,
+	}, f.h.NodeProxyPoolsHandler)
+	if w.Code != http.StatusOK {
+		t.Fatalf("create subscribed pool: %d %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "private-token") || strings.Contains(w.Body.String(), "remote-secret") {
+		t.Fatal("mutation response leaked subscription or proxy credentials")
+	}
+	var stored model.NodeProxyPool
+	if err := f.h.db.Where("name = ?", "subscribed").First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.SubscriptionURL == subscriptionURL || !stored.AutoSync || stored.SubscriptionNodeCount != 1 || stored.LastSyncAt == nil {
+		t.Fatalf("subscription metadata was not securely persisted: %#v", stored)
+	}
+	decryptedURL, err := f.h.credentialCipher.Decrypt(stored.SubscriptionURL)
+	if err != nil || decryptedURL != subscriptionURL {
+		t.Fatalf("decrypt subscription URL: %q %v", decryptedURL, err)
+	}
+
+	detailPath := fmt.Sprintf("/api/v1/admin/node-proxy-pools/%d/config", stored.ID)
+	w = poolRequest(t, f, "GET", detailPath, nil, f.h.NodeProxyPoolConfigHandler)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), subscriptionURL) {
+		t.Fatalf("audited config read did not return source: %d %s", w.Code, w.Body.String())
+	}
+	list := poolRequest(t, f, "GET", fmt.Sprintf("/api/v1/admin/node-proxy-pools?node_id=%d", a.ID), nil, f.h.NodeProxyPoolsHandler)
+	if strings.Contains(list.Body.String(), "private-token") || !strings.Contains(list.Body.String(), `"subscription_configured":true`) {
+		t.Fatalf("pool list source projection is unsafe or incomplete: %s", list.Body.String())
+	}
+
+	manual := map[string]interface{}{"outbounds": []interface{}{map[string]interface{}{"tag": "manual", "protocol": map[string]interface{}{"type": "shadowsocks", "server": "198.51.100.20", "port": 443, "cipher": "aes-128-gcm", "password": "manual-secret"}}}, "outbound_groups": []interface{}{}, "target": "manual"}
+	w = poolRequest(t, f, "PUT", fmt.Sprintf("/api/v1/admin/node-proxy-pools/%d", stored.ID), map[string]interface{}{"node_id": a.ID, "name": stored.Name, "revision": stored.Revision, "config": manual}, f.h.NodeProxyPoolsHandler)
+	if w.Code != http.StatusOK {
+		t.Fatalf("manual overwrite: %d %s", w.Code, w.Body.String())
+	}
+	if err := f.h.db.First(&stored, stored.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	decryptedURL, _ = f.h.credentialCipher.Decrypt(stored.SubscriptionURL)
+	decryptedConfig, _ := f.h.credentialCipher.Decrypt(stored.Config)
+	if decryptedURL != subscriptionURL || !strings.Contains(decryptedConfig, "manual-secret") {
+		t.Fatal("manual RAW overwrite removed the subscription or failed to replace the pool")
+	}
+}
+
+func TestProxyPoolSubscriptionSyncKeepsLastGoodConfigOnFailure(t *testing.T) {
+	poolValidationForTest(t)
+	f, a, _ := networkEntryFixture(t)
+	pool := createPoolForTest(t, f, a.ID)
+	encryptedURL, err := f.h.credentialCipher.Encrypt("https://example.com/subscription/token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.h.db.Model(&pool).Updates(map[string]interface{}{"subscription_url": encryptedURL, "subscription_format": "zero", "sync_interval_seconds": 3600}).Error; err != nil {
+		t.Fatal(err)
+	}
+	var before model.NodeProxyPool
+	f.h.db.First(&before, pool.ID)
+	stubProxyPoolSubscriptionFetch(t, "", errors.New("订阅请求失败，请检查地址、网络和 TLS"))
+	expected := before.Revision
+	if _, err := f.h.syncNodeProxyPoolSubscription(context.Background(), pool.ID, &expected, &authClaims{UserID: 1, Email: "admin@example.test"}); err == nil {
+		t.Fatal("failed subscription sync succeeded")
+	}
+	var after model.NodeProxyPool
+	f.h.db.First(&after, pool.ID)
+	if after.Config != before.Config || after.Revision != before.Revision || after.LastSyncError == "" {
+		t.Fatal("failed sync replaced the last good pool or omitted failure status")
 	}
 }
 

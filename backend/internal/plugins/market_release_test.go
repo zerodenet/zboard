@@ -46,13 +46,7 @@ func newPublicMarketFixture(t *testing.T) *publicMarketTestFixture {
 }
 
 func (fixture *publicMarketTestFixture) registry() []byte {
-	return []byte(`{"schema_version":2,"host":"zboard","plugins":[{"id":"example.welcome","repository":"https://github.com/example/plugin","publisher":{"id":"test.publisher","public_key":"` + fixture.key + `"},"metadata_source":{"type":"repository-file","path":"marketplace.json"},"release_source":{"type":"github-releases","metadata_asset":"marketplace-entry.json"},"surfaces":["public","account","admin"],"capabilities":["zboard.ui.page.v1","zboard.config.v1"]}]}`)
-}
-
-func (fixture *publicMarketTestFixture) repositoryMetadata() []byte {
-	value := `{"schema_version":1,"id":"example.welcome","name":"Welcome from repository","description":"Repository metadata","repository":"https://github.com/example/plugin","license":"MPL-2.0","maintainers":["example"]}`
-	raw, _ := json.Marshal(map[string]any{"type": "file", "encoding": "base64", "size": len(value), "content": base64.StdEncoding.EncodeToString([]byte(value))})
-	return raw
+	return []byte(`{"schema_version":2,"host":"zboard","plugins":[{"id":"example.welcome","repository":"https://github.com/example/plugin","publisher":{"id":"test.publisher","public_key":"` + fixture.key + `"},"name":"Welcome from directory","description":"Directory metadata","license":"MPL-2.0","maintainers":["example"],"release_source":{"type":"github-releases","metadata_asset":"marketplace-entry.json"},"surfaces":["public","account","admin"],"capabilities":["zboard.ui.page.v1","zboard.config.v1"]}]}`)
 }
 
 func (fixture *publicMarketTestFixture) releaseDocument(version string) []byte {
@@ -74,8 +68,6 @@ func (fixture *publicMarketTestFixture) fetch(_ context.Context, target string, 
 	switch target {
 	case DefaultRegistryURL:
 		return fixture.registry(), nil
-	case "https://api.github.com/repos/example/plugin/contents/marketplace.json":
-		return fixture.repositoryMetadata(), nil
 	case "https://api.github.com/repos/example/plugin/releases":
 		return []byte(`[
 			{"tag_name":"v1.2.0-dev.4","name":"Development release","body":"Dev notes","html_url":"https://github.com/example/plugin/releases/tag/v1.2.0-dev.4","published_at":"2026-09-11T04:08:00Z","draft":false,"prerelease":true,"assets":[{"name":"marketplace-entry.json","browser_download_url":"https://github.com/example/plugin/releases/download/v1.2.0-dev.4/marketplace-entry.json"}]},
@@ -99,7 +91,7 @@ func (fixture *publicMarketTestFixture) fetch(_ context.Context, target string, 
 func TestPublicMarketDiscoversPublisherOwnedStableRCAndDev(t *testing.T) {
 	fixture := newPublicMarketFixture(t)
 	detail, err := fixture.manager.MarketDetail(context.Background(), "example.welcome", "")
-	if err != nil || detail.Entry.Name != "Welcome from repository" || detail.Release == nil || detail.Release.Version != "1.0.0" || detail.Release.Channel != "stable" ||
+	if err != nil || detail.Entry.Name != "Welcome from directory" || detail.Release == nil || detail.Release.Version != "1.0.0" || detail.Release.Channel != "stable" ||
 		detail.Release.Title != "Latest stable" || detail.Release.Notes != "Stable release notes" ||
 		len(detail.Releases) != 3 || detail.Releases[0].Version != "1.2.0-dev.4" {
 		t.Fatal(detail, err)
@@ -110,21 +102,6 @@ func TestPublicMarketDiscoversPublisherOwnedStableRCAndDev(t *testing.T) {
 	}
 	if _, err := fixture.manager.MarketDetail(context.Background(), "example.welcome", "1.3.0-beta.1"); err == nil {
 		t.Fatal("unsupported publisher release was selectable")
-	}
-}
-
-func TestPublicMarketRejectsRepositoryMetadataIdentityMismatch(t *testing.T) {
-	fixture := newPublicMarketFixture(t)
-	baseFetch := fixture.manager.fetch
-	fixture.manager.fetch = func(ctx context.Context, target string, limit int64) ([]byte, error) {
-		if target == "https://api.github.com/repos/example/plugin/contents/marketplace.json" {
-			value := `{"schema_version":1,"id":"other.plugin","name":"Welcome from repository","description":"Repository metadata","repository":"https://github.com/example/plugin","license":"MPL-2.0","maintainers":["example"]}`
-			return json.Marshal(map[string]any{"type": "file", "encoding": "base64", "size": len(value), "content": base64.StdEncoding.EncodeToString([]byte(value))})
-		}
-		return baseFetch(ctx, target, limit)
-	}
-	if _, err := fixture.manager.Market(context.Background()); err == nil {
-		t.Fatal("repository metadata for another plugin was accepted")
 	}
 }
 

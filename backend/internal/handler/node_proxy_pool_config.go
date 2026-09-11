@@ -65,11 +65,17 @@ func (h *handlers) NodeProxyPoolConfigHandler(w http.ResponseWriter, r *http.Req
 		ServerError(w, err)
 		return
 	}
+	subscription, err := h.proxyPoolSubscriptionSettings(pool)
+	if err != nil {
+		ServerError(w, err)
+		return
+	}
 	OK(w, struct {
-		Pool     model.NodeProxyPool    `json:"pool"`
-		Config   json.RawMessage        `json:"config"`
-		Compiled map[string]interface{} `json:"compiled"`
-	}{pool, json.RawMessage(raw), compiled})
+		Pool         model.NodeProxyPool           `json:"pool"`
+		Config       json.RawMessage               `json:"config"`
+		Compiled     map[string]interface{}        `json:"compiled"`
+		Subscription proxyPoolSubscriptionSettings `json:"subscription"`
+	}{pool, json.RawMessage(raw), compiled, subscription})
 }
 
 const poolRuntimeBegin = "__ZBOARD_POOL_CONFIG_BEGIN__\n"

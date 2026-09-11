@@ -25,6 +25,7 @@ async function render(path: string) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/admin/plugins', component: Plugins },
     { path: '/admin/plugin-market', component: { template: '<div>市场</div>' } },
+    { path: '/admin/plugin-market/:pluginId', component: { template: '<div>发行版本</div>' } },
     { path: '/admin/plugins/:pluginId', component: PluginDetail },
     { path: '/admin/plugins/:pluginId/configuration', component: PluginConfiguration },
   ] })
@@ -43,6 +44,12 @@ beforeEach(() => {
 })
 afterEach(() => { mounted.splice(0).forEach(w => w.unmount()); document.body.innerHTML = '' })
 describe('plugin management navigation', () => {
+  it('opens publisher releases from installed plugin version management', async () => {
+    const { wrapper } = await render('/admin/plugins/zboard.oauth?tab=versions')
+    const link = wrapper.findAll('a').find(item => item.text() === '切换发布版本')
+    expect(link?.attributes('href')).toBe('/admin/plugin-market/zboard.oauth')
+    expect(wrapper.text()).toContain('stable、rc 或 dev')
+  })
   it('keeps configuration out of the list and loads operations only in their detail section', async () => {
     const { wrapper, router } = await render('/admin/plugins?q=OAuth&surface=admin')
     expect(wrapper.find('iframe').exists()).toBe(false)

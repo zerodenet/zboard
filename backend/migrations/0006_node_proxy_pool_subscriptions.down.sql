@@ -1,0 +1,11 @@
+ALTER TABLE `node_proxy_pools`
+  DROP INDEX `idx_node_proxy_pool_sync_due`,
+  DROP COLUMN `last_sync_error`,
+  DROP COLUMN `next_sync_at`,
+  DROP COLUMN `last_sync_at`,
+  DROP COLUMN `subscription_node_count`,
+  DROP COLUMN `sync_interval_seconds`,
+  DROP COLUMN `auto_sync`,
+  DROP COLUMN `subscription_user_agent`,
+  DROP COLUMN `subscription_format`,
+  DROP COLUMN `subscription_url`;

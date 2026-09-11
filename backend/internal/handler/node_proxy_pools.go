@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -17,7 +18,8 @@ import (
 
 type nodeProxyPoolView struct {
 	model.NodeProxyPool
-	EntryCount int64 `json:"entry_count"`
+	EntryCount             int64 `json:"entry_count"`
+	SubscriptionConfigured bool  `json:"subscription_configured"`
 }
 
 func (h *handlers) proxyPoolPath(db *gorm.DB, id, nodeID uint, network string) (networkEntryPath, error) {
@@ -91,7 +93,7 @@ func (h *handlers) NodeProxyPoolsHandler(w http.ResponseWriter, r *http.Request)
 				ServerError(w, err)
 				return
 			}
-			result = append(result, nodeProxyPoolView{NodeProxyPool: row, EntryCount: count})
+			result = append(result, nodeProxyPoolView{NodeProxyPool: row, EntryCount: count, SubscriptionConfigured: row.SubscriptionURL != ""})
 		}
 		OK(w, result)
 		return
@@ -116,11 +118,19 @@ func (h *handlers) NodeProxyPoolsHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	var req struct {
-		NodeID   uint             `json:"node_id"`
-		Name     string           `json:"name"`
-		Config   *json.RawMessage `json:"config"`
-		Revision uint64           `json:"revision"`
+		NodeID                uint             `json:"node_id"`
+		Name                  string           `json:"name"`
+		Config                *json.RawMessage `json:"config"`
+		Revision              uint64           `json:"revision"`
+		SubscriptionURL       *string          `json:"subscription_url"`
+		SubscriptionFormat    string           `json:"subscription_format"`
+		SubscriptionUserAgent string           `json:"subscription_user_agent"`
+		AutoSync              *bool            `json:"auto_sync"`
+		SyncIntervalSeconds   int              `json:"sync_interval_seconds"`
 	}
+	var initialSyncAt *time.Time
+	var initialNodeCount int
+	var subscriptionSourceChanged bool
 	if r.Method != http.MethodDelete {
 		if err := decodeBody(r, &req); err != nil {
 			BadRequest(w, err.Error())
@@ -135,9 +145,69 @@ func (h *handlers) NodeProxyPoolsHandler(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, http.StatusConflict, "代理池已更新或节点不匹配，请重新加载。", nil)
 			return
 		}
-		if id == 0 && req.Config == nil {
-			BadRequest(w, "请配置代理池成员")
+		if req.SubscriptionURL != nil {
+			value := strings.TrimSpace(*req.SubscriptionURL)
+			req.SubscriptionURL = &value
+			format, formatErr := normalizeProxyPoolSubscriptionFormat(req.SubscriptionFormat)
+			if formatErr != nil {
+				BadRequest(w, formatErr.Error())
+				return
+			}
+			req.SubscriptionFormat = format
+			interval, intervalErr := proxyPoolSyncInterval(req.SyncIntervalSeconds)
+			if intervalErr != nil {
+				BadRequest(w, intervalErr.Error())
+				return
+			}
+			req.SyncIntervalSeconds = interval
+			req.SubscriptionUserAgent = strings.TrimSpace(req.SubscriptionUserAgent)
+			if len(req.SubscriptionUserAgent) > 255 || strings.ContainsAny(req.SubscriptionUserAgent, "\r\n") {
+				BadRequest(w, "订阅 User-Agent 不能超过 255 字节或包含换行")
+				return
+			}
+			if value != "" {
+				if _, err := validateProxyPoolSubscriptionURL(value); err != nil {
+					BadRequest(w, err.Error())
+					return
+				}
+			} else if req.AutoSync != nil && *req.AutoSync {
+				BadRequest(w, "启用自动同步前请填写订阅地址")
+				return
+			}
+			if id != 0 {
+				settings, err := h.proxyPoolSubscriptionSettings(row)
+				if err != nil {
+					ServerError(w, err)
+					return
+				}
+				subscriptionSourceChanged = settings.URL != value
+			}
+		}
+		if id == 0 && req.Config == nil && (req.SubscriptionURL == nil || *req.SubscriptionURL == "") {
+			BadRequest(w, "请配置代理池成员或订阅地址")
 			return
+		}
+		if id == 0 && req.Config == nil {
+			content, err := proxyPoolSubscriptionFetcher(r.Context(), *req.SubscriptionURL, req.SubscriptionUserAgent)
+			if err != nil {
+				BadRequest(w, err.Error())
+				return
+			}
+			path, count, err := parseProxyPoolSubscription(content, req.SubscriptionFormat)
+			if err != nil {
+				BadRequest(w, err.Error())
+				return
+			}
+			raw, err := json.Marshal(path)
+			if err != nil {
+				ServerError(w, err)
+				return
+			}
+			message := json.RawMessage(raw)
+			req.Config = &message
+			now := time.Now().UTC()
+			initialSyncAt = &now
+			initialNodeCount = count
 		}
 		if req.Config != nil {
 			if err := h.validateProxyPoolDocument(r.Context(), *req.Config); err != nil {
@@ -188,6 +258,48 @@ func (h *handlers) NodeProxyPoolsHandler(w http.ResponseWriter, r *http.Request)
 					return err
 				}
 				row.Config = encrypted
+			}
+			if req.SubscriptionURL != nil {
+				if *req.SubscriptionURL == "" {
+					row.SubscriptionURL = ""
+					row.SubscriptionFormat = ""
+					row.SubscriptionUserAgent = ""
+					row.AutoSync = false
+					row.SyncIntervalSeconds = proxyPoolSubscriptionDefaultInterval
+					row.SubscriptionNodeCount = 0
+					row.LastSyncAt = nil
+					row.NextSyncAt = nil
+					row.LastSyncError = ""
+				} else {
+					encrypted, err := h.credentialCipher.Encrypt(*req.SubscriptionURL)
+					if err != nil {
+						return err
+					}
+					row.SubscriptionURL = encrypted
+					row.SubscriptionFormat = req.SubscriptionFormat
+					row.SubscriptionUserAgent = req.SubscriptionUserAgent
+					row.SyncIntervalSeconds = req.SyncIntervalSeconds
+					if subscriptionSourceChanged {
+						row.SubscriptionNodeCount = 0
+						row.LastSyncAt = nil
+						row.LastSyncError = ""
+					}
+					if req.AutoSync != nil {
+						row.AutoSync = *req.AutoSync
+					}
+					if initialSyncAt != nil {
+						row.LastSyncAt = initialSyncAt
+						row.SubscriptionNodeCount = initialNodeCount
+						next := initialSyncAt.Add(time.Duration(row.SyncIntervalSeconds) * time.Second)
+						row.NextSyncAt = &next
+						row.LastSyncError = ""
+					} else if row.AutoSync {
+						now := time.Now().UTC()
+						row.NextSyncAt = &now
+					} else {
+						row.NextSyncAt = nil
+					}
+				}
 			}
 			if err := tx.Save(&row).Error; err != nil {
 				return err

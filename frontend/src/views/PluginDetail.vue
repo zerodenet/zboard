@@ -8,6 +8,7 @@
       <header class="plugins-heading">
         <div><p class="eyebrow">插件详情</p><h1>{{ plugin.name }}</h1><p>{{ plugin.id }} · v{{ plugin.version }} <span class="plugin-status" :class="plugin.state">{{ pluginStateLabel(plugin.state) }}</span></p></div>
         <div class="plugins-actions">
+          <RouterLink class="button button-secondary" :to="`/admin/plugin-market/${encodeURIComponent(plugin.id)}`">切换发布版本</RouterLink>
           <UiButton v-if="plugin.enabled" variant="secondary" :disabled="busy" @click="act(plugin, 'disable')">停用插件</UiButton>
           <UiButton v-else-if="plugin.state !== 'uninstalled'" variant="secondary" :disabled="busy || !plugin.compatibility.compatible || !canPluginRun(plugin)" @click="act(plugin, 'enable')">启用插件</UiButton>
           <RouterLink v-if="hasPluginConfig(plugin) && plugin.compatibility.compatible" class="button" :to="`${pluginDetailPath(plugin.id)}/configuration`">配置插件</RouterLink>
@@ -39,7 +40,7 @@
         </div>
       </section>
       <section v-else-if="tab === 'versions'" class="plugin-detail">
-        <h2>版本管理</h2><p>安装和升级时由系统自动完成数据迁移。恢复旧版本前请先停用；系统会校验数据与配置，失败时保留当前版本。</p>
+        <h2>版本管理</h2><p>选择发布者提供的 stable、rc 或 dev 版本，请使用“切换发布版本”。下方列出本机保留的历史版本。</p><p>安装和升级时由系统自动完成数据迁移。恢复旧版本前请先停用；系统会校验数据与配置，失败时保留当前版本。</p>
         <p v-if="!plugin.versions.length">暂无保留的版本。</p>
         <div v-for="version in plugin.versions" :key="version.id" class="plugin-history">
           <span><strong>v{{ version.version }}</strong><small>{{ formatDateTime(version.created_at) }}</small><small>{{ version.digest }}</small></span>
