@@ -33,7 +33,7 @@ func proxyPoolPathFromSingBox(content []byte) (networkEntryPath, int, error) {
 			group := map[string]interface{}{"tag": tag, "type": "selector", "outbounds": src["outbounds"]}
 			if kind == "urltest" {
 				group["type"] = "url_test"
-				copyConfigValue(group, src, "url", "url")
+				applySubscriptionProbeURL(group, clashString(src, "url"))
 				copyConfigValue(group, src, "tolerance_ms", "tolerance")
 				if interval := clashString(src, "interval"); interval != "" {
 					duration, err := time.ParseDuration(interval)

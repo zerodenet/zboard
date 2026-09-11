@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -218,9 +219,7 @@ func clashProxyPoolGroup(source map[string]interface{}, known map[string]bool) (
 	}
 	group := map[string]interface{}{"tag": tag, "type": mapped, key: members}
 	if mapped == "url_test" {
-		if value := clashString(source, "url"); value != "" {
-			group["url"] = value
-		}
+		applySubscriptionProbeURL(group, clashString(source, "url"))
 		if value := clashInt(source, "interval"); value > 0 {
 			group["interval_seconds"] = value
 		}
@@ -250,4 +249,17 @@ func clashInt(source map[string]interface{}, key string) int {
 func clashBool(source map[string]interface{}, key string) (bool, bool) {
 	value, ok := source[key].(bool)
 	return value, ok
+}
+
+// Zero currently probes plain HTTP only. Use its default probe for HTTPS
+// subscriptions; never downgrade a publisher URL that may contain credentials.
+func applySubscriptionProbeURL(group map[string]interface{}, raw string) {
+	if raw == "" {
+		return
+	}
+	parsed, err := url.Parse(raw)
+	if err == nil && strings.EqualFold(parsed.Scheme, "https") && parsed.Hostname() != "" {
+		return
+	}
+	group["url"] = raw
 }

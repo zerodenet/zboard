@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"mime"
 	"net/http"
 	"path"
@@ -167,7 +168,11 @@ func (h *handlers) PluginBridgeHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			OK(w, map[string]string{"authorization_url": authorization})
 		case "identity.binding.unlink":
-			if err := h.unlinkPluginIdentity(s, c, body.IdentityID, body.Password); err != nil {
+			if err := h.unlinkPluginIdentityConfirmed(s, c, body.IdentityID, body.Password, r); err != nil {
+				if errors.Is(err, errAccountPasswordConfirmation) {
+					Unauthorized(w, err.Error())
+					return
+				}
 				pluginError(w, err)
 				return
 			}

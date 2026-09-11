@@ -65,7 +65,13 @@ func (h *handlers) validateProxyPoolDocument(ctx context.Context, raw json.RawMe
 		return err
 	}
 	if err := managedZeroSubscriptionValidator(ctx, h.zeroArtifactDir, h.zeroLocalVersion, payload); err != nil {
-		return fmt.Errorf("代理池未通过 Zero 校验，请检查协议、代理组和引用，并确认校验内核可用")
+		if strings.Contains(err.Error(), "only supports `http://` probe urls") {
+			return fmt.Errorf("测速组使用了不支持的地址：当前 Zero 仅支持 HTTP 测速，请改用 HTTP 测速地址或留空使用默认地址")
+		}
+		if strings.HasPrefix(err.Error(), "resolve Zero preview validator:") || strings.HasPrefix(err.Error(), "load Zero preview validator:") {
+			return fmt.Errorf("Zero 校验内核无法加载，请检查面板校验内核的版本配置和安装文件")
+		}
+		return fmt.Errorf("代理池未通过 Zero 校验，请检查协议字段、代理组和引用关系")
 	}
 	return nil
 }

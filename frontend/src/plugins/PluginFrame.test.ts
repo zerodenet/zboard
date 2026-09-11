@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   bridge: vi.fn(),
   revoke: vi.fn(),
 }));
+const security = vi.hoisted(() => ({ proof: '', confirm: vi.fn() }));
+vi.mock('../api/accountSecurity', () => ({ accountConfirmation: () => security.proof, clearAccountConfirmation: () => { security.proof = '' }, confirmAccountPassword: security.confirm }));
 vi.mock("../stores/app", () => ({ useAppStore: () => ({ token: "" }) }));
 vi.mock("../api/plugins", () => ({
   createPluginSession: mocks.create,
@@ -47,6 +49,8 @@ function send(
 }
 describe("plugin iframe boundary", () => {
   beforeEach(() => {
+    security.proof = '';
+    security.confirm.mockImplementation(async () => { security.proof = 'host-proof'; return security.proof });
     mocks.create.mockResolvedValue({ ...session });
     mocks.createSlot.mockResolvedValue({ ...session, purpose: "slot", slot: "account.security.identities" });
     mocks.bridge.mockResolvedValue({ surface: "public" });
@@ -95,6 +99,8 @@ describe("plugin iframe boundary", () => {
     wrapper.unmount();
   });
   it("forwards only the administrator session storage key, revision and value", async () => {
+    security.proof = '';
+    security.confirm.mockImplementation(async () => { security.proof = 'host-proof'; return security.proof });
     mocks.create.mockResolvedValue({ ...session, purpose: 'business' });
     const wrapper = mount(PluginFrame, { props: { pluginId: 'example.storage', pageId: 'home', surface: 'admin' } });
     await flushPromises();
@@ -123,7 +129,49 @@ describe("plugin iframe boundary", () => {
     await wrapper.get("#plugin-confirm-password").setValue("host-confirmed");
     await wrapper.findAll(".plugin-confirm button")[1].trigger("click");
     await flushPromises();
-    expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), "identity.binding.unlink", { identity_id: "binding", password: "host-confirmed" }, expect.any(AbortSignal));
+    expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), "identity.binding.unlink", { identity_id: "binding" }, expect.any(AbortSignal), "host-proof");
+    expect(security.confirm).toHaveBeenCalledWith("host-confirmed");
+    send(wrapper, "identity.binding.unlink", { identity_id: "second" });
+    await flushPromises();
+    expect(wrapper.find('#plugin-confirm-password').exists()).toBe(false);
+    expect(security.confirm).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it("retains the frame on a network failure and clears the warning after recovery", async () => {
+    const wrapper = render();
+    await flushPromises();
+    const frame = wrapper.get('iframe').element;
+    mocks.bridge.mockRejectedValueOnce(new Error('Network Error'));
+    window.dispatchEvent(new Event('focus'));
+    await flushPromises();
+    expect(wrapper.get('iframe').element).toBe(frame);
+    expect(wrapper.text()).toContain('连接暂时中断');
+    window.dispatchEvent(new Event('focus'));
+    await flushPromises();
+    expect(wrapper.text()).not.toContain('连接暂时中断');
+    wrapper.unmount();
+  });
+  it("closes invalid sessions and offers a styled reload action", async () => {
+    const wrapper = render();
+    await flushPromises();
+    mocks.bridge.mockRejectedValueOnce({ response: { status: 403 } });
+    window.dispatchEvent(new Event('focus'));
+    await flushPromises();
+    expect(wrapper.find('iframe').exists()).toBe(false);
+    expect(wrapper.get('[role="alert"]').text()).toContain('访问权限已变化');
+    await wrapper.get('[role="alert"] button').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('iframe').exists()).toBe(true);
+    wrapper.unmount();
+  });
+  it("allows compact slots to shrink to their intrinsic content height", async () => {
+    const slot = { id: 'login', surface: 'public' as const, slot: 'auth.login.methods', title: 'OAuth', entrypoint: 'ui/login.html' };
+    const wrapper = mount(PluginFrame, { props: { pluginId: 'zboard.oauth', slot, surface: 'public' } });
+    await flushPromises();
+    send(wrapper, 'ui.resize', { height: 42 });
+    await flushPromises();
+    expect(wrapper.get('iframe').attributes('style')).toContain('42px');
     wrapper.unmount();
   });
 
