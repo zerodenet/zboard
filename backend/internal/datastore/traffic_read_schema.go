@@ -63,6 +63,12 @@ var trafficReadIndexes = []trafficReadIndexDefinition{
 		columns: "(scope_type, scope_id, source, node_id, observed_at, id)",
 		ddl:     "ALTER TABLE principal_flow_scope_observations ADD KEY idx_principal_flow_scope_boundary_timeline (scope_type, scope_id, source, node_id, observed_at, id)",
 	},
+	{
+		table:   "principal_flow_currents",
+		name:    "idx_principal_flow_current_endpoint_usage",
+		columns: "(protocol_endpoint_id, active_flows, user_id, observed_at)",
+		ddl:     "ALTER TABLE principal_flow_currents ADD KEY idx_principal_flow_current_endpoint_usage (protocol_endpoint_id, active_flows, user_id, observed_at)",
+	},
 }
 
 // ReconcileTrafficReadSchema installs the composite indexes used by bounded

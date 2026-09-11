@@ -2333,6 +2333,10 @@ export async function deleteNetworkEntry(id: number) { return unwrap(await api.d
 
 export interface NodeProxyPool { id: number; node_id: number; name: string; revision: number; entry_count: number }
 export async function fetchNodeProxyPools(nodeID: number): Promise<NodeProxyPool[]> { return unwrap(await api.get(`/admin/node-proxy-pools?node_id=${nodeID}`)) || [] }
+export interface NodeProxyPoolConfig { pool: NodeProxyPool; config: import('../utils/proxyPoolGraph').ProxyPoolGraph; compiled: Record<string, unknown> }
+export interface NodeProxyPoolRuntime { source: string; node_id: number; sha256: string; read_at: string; present: boolean; config: Record<string, unknown> }
+export async function fetchNodeProxyPoolConfig(id: number): Promise<NodeProxyPoolConfig> { return unwrap(await api.get(`/admin/node-proxy-pools/${id}/config`)) }
+export async function fetchNodeProxyPoolRuntime(id: number): Promise<NodeProxyPoolRuntime> { return unwrap(await api.get(`/admin/node-proxy-pools/${id}/runtime`, { timeout: 25000 })) }
 export async function saveNodeProxyPool(id: number, payload: Record<string, unknown>): Promise<NodeProxyPool> { return unwrap(id ? await api.put(`/admin/node-proxy-pools/${id}`,payload) : await api.post('/admin/node-proxy-pools',payload)) }
 export async function deleteNodeProxyPool(id: number) { return unwrap(await api.delete(`/admin/node-proxy-pools/${id}`)) }
 

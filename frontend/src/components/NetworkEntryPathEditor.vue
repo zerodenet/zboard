@@ -1,9 +1,9 @@
 <template>
   <section class="path-editor" aria-label="代理路径配置">
-    <header><strong>代理节点</strong><p>A 通过这个代理节点连接落地 B。连接信息仅用于 A 的转发路径。</p></header>
+
     <div class="path-fields">
-      <FormField label="配置方式"><UiSelect v-model="mode" aria-label="路径配置方式" :options="[{ label: '单节点表单', value: 'form' }, { label: 'Raw 覆盖', value: 'raw' }]" @change="seedRaw" /></FormField>
-      <template v-if="mode === 'form'">
+
+      <template v-if="supported">
         <FormField label="代理协议"><UiSelect v-model="form.protocol" aria-label="代理协议" :options="pathProtocolOptions" @change="changeProtocol" /></FormField>
         <FormField label="代理节点地址" required><UiInput v-model.trim="form.server" aria-label="代理节点地址" placeholder="proxy.example.com" /></FormField>
         <FormField label="代理节点端口" required><UiInput v-model.number="form.port" aria-label="代理节点端口" type="number" min="1" max="65535" /></FormField>
@@ -30,9 +30,9 @@
           <FormField label="Reality 公钥" required><UiInput v-model.trim="form.publicKey" aria-label="Reality 公钥" /></FormField>
           <FormField label="Reality Short ID"><UiInput v-model.trim="form.shortID" aria-label="Reality Short ID" /></FormField>
         </template>
-        <p class="path-note">更多传输参数、多跳代理链、测速或选择组可切换到 Raw 覆盖，保留 Zero 支持的完整配置。</p>
+        <p class="path-note">表单未展示的高级参数会保留，可在完整 RAW 中查看和修改。</p>
       </template>
-      <FormField v-else label="Raw 覆盖配置" full hint="此对象完整替代表单。接受单个协议节点、单个 outbound，或含 outbounds、outbound_groups、target 的完整路径。保存时由 Zero 校验。">
+      <FormField v-else label="协议 RAW" full hint="此协议暂未提供专用表单，仍可编辑完整 outbound JSON。">
         <UiTextarea v-model="raw" aria-label="Raw 覆盖配置" rows="16" spellcheck="false" />
       </FormField>
     </div>
@@ -40,24 +40,36 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { hydratePathNode, mergePathNode } from '../utils/proxyPoolGraph'
 import FormField from './FormField.vue'
 import UiInput from './UiInput.vue'
 import UiSelect from './UiSelect.vue'
 import UiTextarea from './UiTextarea.vue'
 import UiCheckbox from './UiCheckbox.vue'
-import { buildPathNode, emptyPathNode, parseRawPath, pathProtocolOptions } from '../utils/networkEntryPath'
+import { pathProtocolOptions } from '../utils/networkEntryPath'
 
-const form = reactive(emptyPathNode())
-const mode = ref('form'), raw = ref('')
+const props = defineProps<{ outbound: Record<string, any> }>()
+const source = JSON.parse(JSON.stringify(props.outbound))
+const initial = hydratePathNode(source)
+const form = reactive({ ...initial })
+const supported = pathProtocolOptions.some(option => option.value === initial.protocol)
+const raw = ref(JSON.stringify(source, null, 2))
+const emit = defineEmits<{ summary: [value: string] }>()
+watch(() => `${form.protocol} · ${form.server || '未填写地址'}`, value => emit('summary', value), { immediate: true })
 const securityOptions = computed(() => [{ label: '无', value: 'none' }, { label: 'TLS', value: 'tls' }, ...(form.protocol === 'vless' ? [{ label: 'Reality', value: 'reality' }] : [])])
 const tlsVisible = computed(() => ['trojan', 'hysteria2'].includes(form.protocol) || (['vless', 'vmess'].includes(form.protocol) && form.security !== 'none'))
 function changeProtocol() {
   form.cipher = form.protocol === 'shadowsocks' ? 'chacha20-ietf-poly1305' : 'aes-128-gcm'
   form.security = 'none'; form.transport = 'tcp'; form.flow = ''
 }
-function seedRaw() { if (mode.value === 'raw' && !raw.value.trim()) raw.value = JSON.stringify(buildPathNode(form, false), null, 2) }
-function build() { return mode.value === 'raw' ? parseRawPath(raw.value) : buildPathNode(form) }
+function build(validate = true) {
+  if (supported) return mergePathNode(source, initial, form, validate)
+  let value: any
+  try { value = JSON.parse(raw.value) } catch { throw new Error('协议 RAW 必须是有效 JSON。') }
+  if (!value?.protocol || typeof value.protocol.type !== 'string') throw new Error('协议 RAW 需要 protocol.type。')
+  return value
+}
 defineExpose({ build })
 </script>
 

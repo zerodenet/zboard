@@ -86,7 +86,7 @@
       </template>
     </DataWorkbench>
 
-    <UiSection title="协议实时负载" description="仅显示当前有效套餐可使用的协议；活跃人数和连接数来自最近两分钟的 Zero 会话事件。">
+    <UiSection title="协议实时负载" description="仅显示当前有效套餐可使用的协议；优先使用 Zero Principal 当前态，旧版内核回退到最近两分钟的会话事件。">
       <template #meta><TimeBadge :value="protocolLoads.sampled_at" /></template>
       <div class="panel-body">
         <PageAlert v-if="protocolLoadResource.error.value" tone="danger" title="协议实时负载加载失败">
@@ -274,6 +274,8 @@ const kind = ref<'generate' | 'rotate' | 'revoke'>('generate')
 let selectionGeneration = 0
 let disposed = false
 let mutationSubscriptionID = 0
+const protocolLoadRefreshIntervalMS = 15_000
+let protocolLoadRefreshTimer: number | undefined
 
 const {
   items: subscriptions,
@@ -565,8 +567,17 @@ watch(() => route.fullPath, async () => {
   await Promise.all([listChanged ? load() : Promise.resolve(), subscriptionChanged ? loadAccess() : Promise.resolve()])
 })
 
-onMounted(loadAll)
-onBeforeUnmount(() => { disposed = true; selectionGeneration += 1 })
+onMounted(() => {
+  void loadAll()
+  protocolLoadRefreshTimer = window.setInterval(() => {
+    if (!protocolLoadResource.loading.value) void loadProtocolLoads()
+  }, protocolLoadRefreshIntervalMS)
+})
+onBeforeUnmount(() => {
+  disposed = true
+  selectionGeneration += 1
+  if (protocolLoadRefreshTimer !== undefined) window.clearInterval(protocolLoadRefreshTimer)
+})
 </script>
 
 <style scoped>

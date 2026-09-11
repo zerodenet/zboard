@@ -984,6 +984,29 @@ paths:
       responses:
         "200": { description: Pool saved with encrypted configuration }
         "400": { description: Invalid pool or configuration rejected by Zero }
+  /api/v1/admin/node-proxy-pools/{id}/config:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [admin, nodes]
+      summary: Read decrypted pool configuration for editing
+      description: Explicit administrator-only, audited, no-store read. Returns pool metadata, original config (outbounds, outbound_groups, target) and compiled graph with node-local pool tag prefixes. Includes credentials; list and mutation responses still omit them. Compiled graph is a preview, not proof of publication.
+      responses:
+        "200": { description: "pool, config and compiled" }
+        "403": { description: Administrator required }
+        "404": { description: Pool not found }
+  /api/v1/admin/node-proxy-pools/{id}/runtime:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [admin, nodes]
+      summary: Read this pool from the node's published configuration file over SSH
+      description: Administrator-only, audited, no-store read with a 20-second timeout and 8 MiB file limit. Returns source, node_id, read_at, sha256 of the read configuration, present and config. Config contains only this pool's outbounds, outbound_groups and associated direct forwarding inbounds and route rules. Does not expose unrelated credentials. Reads /etc/zerodenet/current.json; this is a published file snapshot, not an in-memory kernel state query. A failed read never falls back to a generated preview.
+      responses:
+        "200": { description: "Published pool snapshot, or present=false if not in the file" }
+        "403": { description: Administrator required }
+        "404": { description: Pool or node not found }
+        "502": { description: SSH read or configuration parsing failed }
   /api/v1/admin/node-proxy-pools/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
@@ -5370,8 +5393,8 @@ components:
         usage:
           type: object
           properties:
-            active_flows: { type: integer, format: int64, minimum: 0 }
-            active_users: { type: integer, format: int64, minimum: 0, description: Distinct users with an active Zero flow seen during the two-minute activity window. }
+            active_flows: { type: integer, format: int64, minimum: 0, description: Sum of authoritative Principal current flows when available; legacy endpoints fall back to active flows seen during the two-minute activity window. }
+            active_users: { type: integer, format: int64, minimum: 0, description: Distinct users with authoritative Principal current flows when available; legacy endpoints fall back to users seen during the two-minute activity window. }
             active_credentials: { type: integer, format: int64, minimum: 0 }
             last_used_at: { type: string, format: date-time, nullable: true }
             used_bytes_today: { type: integer, format: int64, minimum: 0 }
@@ -6728,8 +6751,8 @@ components:
               name: { type: string }
               region: { type: string }
               protocol: { type: string }
-              active_users: { type: integer, format: int64, minimum: 0 }
-              active_flows: { type: integer, format: int64, minimum: 0 }
+              active_users: { type: integer, format: int64, minimum: 0, description: Distinct users from Principal current state, with a two-minute legacy event fallback. }
+              active_flows: { type: integer, format: int64, minimum: 0, description: Sum of Principal current flows, with a two-minute legacy event fallback. }
               last_activity_at: { type: string, format: date-time, nullable: true }
     PlanCreateRequest:
       type: object

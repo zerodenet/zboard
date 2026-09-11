@@ -2,16 +2,10 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"sort"
 	"time"
 )
-
-const principalFlowTrendReplayTimeout = 3 * time.Second
 
 type principalFlowHistoryRow struct {
 	ID                      uint64    `gorm:"column:id"`
@@ -45,68 +39,6 @@ type principalFlowTimelineItem struct {
 type principalFlowStateKey struct {
 	NodeID    uint
 	Principal string
-}
-
-// TrafficTrendsWithPrincipalFlowReplayHandler enriches the existing traffic
-// trend contract by replaying Core's absolute Principal observations in their
-// observed state-transition order. Delivery order is intentionally irrelevant:
-// Core documents that event sequence and SessionRegistry revision can diverge
-// under concurrency.
-func (h *handlers) TrafficTrendsWithPrincipalFlowReplayHandler(w http.ResponseWriter, r *http.Request) {
-	recorded := httptest.NewRecorder()
-	h.TrafficTrendsHandler(recorded, r)
-	if recorded.Code != http.StatusOK {
-		copyRecordedResponse(w, recorded)
-		return
-	}
-	var wire struct {
-		Code      int             `json:"code"`
-		Message   string          `json:"message"`
-		Data      json.RawMessage `json:"data"`
-		Error     *APIError       `json:"error,omitempty"`
-		Timestamp string          `json:"timestamp"`
-	}
-	if err := json.Unmarshal(recorded.Body.Bytes(), &wire); err != nil {
-		copyRecordedResponse(w, recorded)
-		return
-	}
-	var response trafficTrendResponse
-	if err := json.Unmarshal(wire.Data, &response); err != nil {
-		copyRecordedResponse(w, recorded)
-		return
-	}
-	scopeType, scopeID, allowed, err := h.principalFlowTrendScope(r)
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
-	if !allowed || scopeID == 0 {
-		copyRecordedResponse(w, recorded)
-		return
-	}
-	from, err := time.Parse("2006-01-02", response.From)
-	if err != nil {
-		copyRecordedResponse(w, recorded)
-		return
-	}
-	to, err := time.Parse("2006-01-02", response.To)
-	if err != nil {
-		copyRecordedResponse(w, recorded)
-		return
-	}
-	replayContext, cancel := context.WithTimeout(r.Context(), principalFlowTrendReplayTimeout)
-	defer cancel()
-	baseline, events, boundaries, err := h.loadPrincipalFlowTrendTimeline(replayContext, scopeType, scopeID, from, to.AddDate(0, 0, 1))
-	if err != nil {
-		if errors.Is(replayContext.Err(), context.DeadlineExceeded) && r.Context().Err() == nil {
-			copyRecordedResponse(w, recorded)
-			return
-		}
-		ServerError(w, err)
-		return
-	}
-	applyPrincipalFlowReplay(&response, from, baseline, events, boundaries)
-	writeJSONResponse(w, http.StatusOK, wire.Message, response, wire.Error)
 }
 
 func (h *handlers) loadPrincipalFlowTrendTimeline(ctx context.Context, scopeType string, scopeID uint, from, end time.Time) ([]principalFlowHistoryRow, []principalFlowHistoryRow, []principalFlowBoundaryRow, error) {

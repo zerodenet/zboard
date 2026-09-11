@@ -295,7 +295,7 @@
 <script setup lang="ts">
 import NetworkEntries from './NetworkEntries.vue'
 import UiTabs from '../components/UiTabs.vue'
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchSubscriptionDeliveryOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, updateProtocolEndpoint, updateSubscriptionDeliveryOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointNodeGroupMembership, type SubscriptionDeliveryOrderItem, type ProtocolKernelCapability } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
@@ -422,6 +422,8 @@ const membershipRevisionConflict = ref(false)
 const membershipReloading = ref(false)
 const bulkBusy = ref<'' | 'deploy' | 'enable' | 'disable'>('')
 const message = ref(''), editorError = ref('')
+const protocolUsageRefreshIntervalMS = 15_000
+let protocolUsageRefreshTimer: number | undefined
 const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, managed_principal_ready: false, is_active: true, config: '{}', client_config: '{}', optional_config: '{}', tags: '[]', node_group_memberships: [] as ProtocolEndpointNodeGroupMembership[] })
 const emptyStructured = () => ({ credential: randomUUID(), username: 'subscriber', password: randomSecret(), cipher: 'aes-128-gcm', security: 'none', transport: 'tcp', transport_path: '/', grpc_service_name: 'zboard', cert_path: '', key_path: '', server_name: '', reality_private_key: '', reality_public_key: '', reality_short_id: '', reality_server_name: '', reality_fingerprint: 'chrome' })
 const form = reactive<any>(emptyForm())
@@ -1100,6 +1102,12 @@ onMounted(async () => {
   await Promise.all([refresh(), loadProtocolCapabilities()])
   const endpointID = Number(route.query.endpoint) || 0
   if (endpointID) await loadDetail(endpointID)
+  protocolUsageRefreshTimer = window.setInterval(() => {
+    if (serviceKind.value === 'listener' && !loading.value && !saving.value) void loadEndpoints()
+  }, protocolUsageRefreshIntervalMS)
+})
+onBeforeUnmount(() => {
+  if (protocolUsageRefreshTimer !== undefined) window.clearInterval(protocolUsageRefreshTimer)
 })
 </script>
 

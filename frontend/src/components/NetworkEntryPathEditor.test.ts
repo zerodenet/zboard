@@ -2,25 +2,24 @@ import PrimeVue from 'primevue/config'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import NetworkEntryPathEditor from './NetworkEntryPathEditor.vue'
-import UiSelect from './UiSelect.vue'
 
 describe('network entry path form', () => {
-  it('submits an SS node from fields and lets raw replace it without losing advanced fields', async () => {
-    const wrapper = mount(NetworkEntryPathEditor, { global: { plugins: [PrimeVue] } })
-    await wrapper.get('input[aria-label="代理节点地址"]').setValue('ss.example.com')
-    await wrapper.get('input[aria-label="代理节点端口"]').setValue('8388')
-    await wrapper.get('input[aria-label="代理密码"]').setValue('secret')
-    expect(wrapper.vm.build()).toMatchObject({ outbounds: [{ protocol: { type: 'shadowsocks', port: 8388, password: 'secret' } }] })
-    const mode = wrapper.findAllComponents(UiSelect)[0]!
-    mode.vm.$emit('update:modelValue', 'raw'); mode.vm.$emit('change', { value: 'raw', target: { value: 'raw' } })
-    await wrapper.vm.$nextTick()
-    const raw = wrapper.get('textarea[aria-label="Raw 覆盖配置"]')
-    expect((raw.element as HTMLTextAreaElement).value).toContain('ss.example.com')
-    await raw.setValue('{"type":"vless","server":"vless.example.com","port":443,"id":"fixture-id","mux_concurrency":4,"h2":{"host":"example.com","path":"/stream"}}')
-    expect(wrapper.vm.build()).toMatchObject({ outbounds: [{ protocol: { type: 'vless', mux_concurrency: 4, h2: { path: '/stream' } } }] })
-    mode.vm.$emit('update:modelValue', 'form')
-    await wrapper.vm.$nextTick()
-    expect(wrapper.vm.build()).toMatchObject({ outbounds: [{ protocol: { type: 'shadowsocks', password: 'secret' } }] })
-    wrapper.unmount()
-  })
+ it('edits an existing SS node while preserving credentials and opaque options', async () => {
+  const outbound={tag:'ss',protocol:{type:'shadowsocks',server:'old.example',port:443,cipher:'aes-128-gcm',password:' secret ',advanced:{mode:'keep'}}}
+  const wrapper=mount(NetworkEntryPathEditor,{props:{outbound},global:{plugins:[PrimeVue]}})
+  expect(wrapper.vm.build()).toEqual(outbound)
+  await wrapper.get('input[aria-label="代理节点地址"]').setValue('new.example')
+  await wrapper.get('input[aria-label="代理节点端口"]').setValue('8388')
+  expect(wrapper.vm.build()).toEqual({...outbound,protocol:{...outbound.protocol,server:'new.example',port:8388}})
+  expect(wrapper.emitted('summary')?.at(-1)?.[0]).toBe('shadowsocks · new.example')
+  wrapper.unmount()
+ })
+ it('preserves protocol RAW for nodes without a dedicated form',async()=>{
+  const outbound={tag:'direct',protocol:{type:'direct',bind_interface:'eth0'}}
+  const wrapper=mount(NetworkEntryPathEditor,{props:{outbound},global:{plugins:[PrimeVue]}})
+  expect(wrapper.vm.build()).toEqual(outbound)
+  await wrapper.get('textarea').setValue(JSON.stringify({...outbound,protocol:{type:'direct',bind_interface:'eth1'}}))
+  expect(wrapper.vm.build().protocol.bind_interface).toBe('eth1')
+  wrapper.unmount()
+ })
 })

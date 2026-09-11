@@ -163,6 +163,7 @@ func TestExternalIdentityRequiresLinkThenCoreIssuesSession(t *testing.T) {
 		t.Fatal("callback replay reached plugin")
 	}
 }
+
 func TestExternalIdentityRejectsCrossBrowserAndChangedPlugin(t *testing.T) {
 	h, token, runtime := identityTestHandlers(t)
 	cookie, q := startIdentityTest(t, h, token, true)

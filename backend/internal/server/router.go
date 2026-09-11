@@ -106,6 +106,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 
 		newRoute(http.MethodGet, "/api/v1/admin/node-proxy-pools", h.NodeProxyPoolsHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/node-proxy-pools", h.NodeProxyPoolsHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/node-proxy-pools/:id/config", h.NodeProxyPoolConfigHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/node-proxy-pools/:id/runtime", h.NodeProxyPoolRuntimeHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/node-proxy-pools/:id", h.NodeProxyPoolsHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/node-proxy-pools/:id", h.NodeProxyPoolsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/network-entries", h.NetworkEntriesHandler),

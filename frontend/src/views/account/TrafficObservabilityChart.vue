@@ -199,8 +199,8 @@
         <div v-else class="connection-unavailable">
           <UiIcon name="activity" />
           <div>
-            <strong>连接数暂未采集</strong>
-            <p>当前上报链路还没有用户级峰值连接数。字段已经预留，后续接入后会直接按采样最大值展示。</p>
+            <strong>暂无连接数据</strong>
+            <p>所选时间范围内暂时没有可用的连接统计。</p>
           </div>
         </div>
       </article>

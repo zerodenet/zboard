@@ -152,7 +152,6 @@ it('applies event pagination from the URL while order details are still pending'
   await flushPromises()
 })
 
-
 it('opens subscription delivery for the order whose payment was confirmed', async () => {
   mocks.list.mockResolvedValue({ items: [{ ...detail(27), status: 'pending', subscription_id: 0 }], total: 1 })
   mocks.pay.mockResolvedValue({ id: 27, status: 'paid', subscription_id: 301 })
