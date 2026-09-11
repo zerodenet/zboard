@@ -310,10 +310,11 @@ paths:
   /api/v1/admin/plugin-market/{id}:
     get:
       tags: [plugins]
-      summary: Read platform downloads and the installed state for a market plugin
-      description: Public registry entries resolve marketplace-entry.json from the registered repository and version. Release metadata alone never grants installation trust.
+      summary: Read selectable release channels, platform downloads and installed state
+      description: The admitted directory contains no release history. ZBoard discovers stable, rc and dev versions from the registered publisher repository, then verifies the selected metadata and package against the admitted publisher key and capability ceiling.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: version, in: query, required: false, description: Exact published version to select; defaults to the newest stable release, then rc or dev, schema: { type: string } }
       responses:
         "200":
           description: Release details; notice describes unavailable metadata or platform support
@@ -330,9 +331,10 @@ paths:
   /api/v1/admin/plugin-market/{id}/inspect:
     post:
       tags: [plugins]
-      summary: Download and inspect the server-platform package without installing or granting trust
+      summary: Download and inspect the selected server-platform package without installing
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: version, in: query, required: false, description: Exact published version to inspect, schema: { type: string } }
       responses:
         "200":
           description: Verified manifest, archive digest, key fingerprint and host compatibility
@@ -359,7 +361,7 @@ paths:
     post:
       tags: [plugins]
       summary: Confirm the inspected package and install through the host lifecycle
-      description: Re-fetches and validates the server-platform package. The digest must match the preview. Unknown publishers additionally require its verified key fingerprint. Existing plugin key pins remain mandatory; fresh installations remain disabled.
+      description: Re-fetches and validates the selected package. The digest must match the preview. Marketplace publishers use the admitted plugin-scoped key; unknown offline publishers require explicit fingerprint confirmation. Existing key pins remain mandatory and fresh installations remain disabled.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       requestBody:
@@ -370,6 +372,7 @@ paths:
               type: object
               required: [digest]
               properties:
+                version: { type: string, description: Exact published version selected during inspection }
                 digest: { type: string }
                 fingerprint: { type: string }
       responses:
@@ -984,29 +987,6 @@ paths:
       responses:
         "200": { description: Pool saved with encrypted configuration }
         "400": { description: Invalid pool or configuration rejected by Zero }
-  /api/v1/admin/node-proxy-pools/{id}/config:
-    parameters:
-      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
-    get:
-      tags: [admin, nodes]
-      summary: Read decrypted pool configuration for editing
-      description: Explicit administrator-only, audited, no-store read. Returns pool metadata, original config (outbounds, outbound_groups, target) and compiled graph with node-local pool tag prefixes. Includes credentials; list and mutation responses still omit them. Compiled graph is a preview, not proof of publication.
-      responses:
-        "200": { description: "pool, config and compiled" }
-        "403": { description: Administrator required }
-        "404": { description: Pool not found }
-  /api/v1/admin/node-proxy-pools/{id}/runtime:
-    parameters:
-      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
-    get:
-      tags: [admin, nodes]
-      summary: Read this pool from the node's published configuration file over SSH
-      description: Administrator-only, audited, no-store read with a 20-second timeout and 8 MiB file limit. Returns source, node_id, read_at, sha256 of the read configuration, present and config. Config contains only this pool's outbounds, outbound_groups and associated direct forwarding inbounds and route rules. Does not expose unrelated credentials. Reads /etc/zerodenet/current.json; this is a published file snapshot, not an in-memory kernel state query. A failed read never falls back to a generated preview.
-      responses:
-        "200": { description: "Published pool snapshot, or present=false if not in the file" }
-        "403": { description: Administrator required }
-        "404": { description: Pool or node not found }
-        "502": { description: SSH read or configuration parsing failed }
   /api/v1/admin/node-proxy-pools/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
@@ -4395,18 +4375,29 @@ components:
             digest: { type: string }
             state: { type: string }
         release:
-          type: object
-          properties:
-            version: { type: string }
-            artifacts:
-              type: array
-              items:
-                type: object
-                properties:
-                  platform: { type: string }
-                  url: { type: string, format: uri }
-                  sha256: { type: string }
-                  size: { type: integer, format: int64 }
+          $ref: "#/components/schemas/PluginMarketRelease"
+        releases:
+          type: array
+          items: { $ref: "#/components/schemas/PluginMarketRelease" }
+    PluginMarketRelease:
+      type: object
+      required: [version, channel, artifacts]
+      properties:
+        version: { type: string }
+        channel: { type: string, enum: [stable, rc, dev] }
+        title: { type: string }
+        notes: { type: string, description: Plain-text GitHub Release notes supplied by the plugin repository }
+        url: { type: string, format: uri }
+        published_at: { type: string, format: date-time }
+        artifacts:
+          type: array
+          items:
+            type: object
+            properties:
+              platform: { type: string }
+              url: { type: string, format: uri }
+              sha256: { type: string }
+              size: { type: integer, format: int64 }
     "PluginMarket":
       "type": "object"
       "properties":
@@ -4432,8 +4423,26 @@ components:
                 "type": "string"
               "version":
                 "type": "string"
+              "public_key": { "type": "string" }
+              "metadata_source":
+                "type": "object"
+                "properties":
+                  "type": { "type": "string", "enum": ["repository-file"] }
+                  "path": { "type": "string", "enum": ["marketplace.json"] }
+              "release_source":
+                "type": "object"
+                "properties":
+                  "type": { "type": "string" }
+                  "metadata_asset": { "type": "string" }
               "publisher":
                 "type": "string"
+              "license": { "type": "string" }
+              "maintainers":
+                "type": "array"
+                "items": { "type": "string" }
+              "homepage": { "type": "string", "format": "uri" }
+              "documentation": { "type": "string", "format": "uri" }
+              "security": { "type": "string", "format": "uri" }
               "package_url":
                 "type": "string"
               "sha256":
@@ -4443,6 +4452,9 @@ components:
                 "items":
                   "type": "string"
                   "enum": ["public", "account", "admin"]
+              "capabilities":
+                "type": "array"
+                "items": { "type": "string" }
     NodeProxyPoolRequest:
       type: object
       required: [node_id, name]
@@ -5393,8 +5405,8 @@ components:
         usage:
           type: object
           properties:
-            active_flows: { type: integer, format: int64, minimum: 0, description: Sum of authoritative Principal current flows when available; legacy endpoints fall back to active flows seen during the two-minute activity window. }
-            active_users: { type: integer, format: int64, minimum: 0, description: Distinct users with authoritative Principal current flows when available; legacy endpoints fall back to users seen during the two-minute activity window. }
+            active_flows: { type: integer, format: int64, minimum: 0 }
+            active_users: { type: integer, format: int64, minimum: 0, description: Distinct users with an active Zero flow seen during the two-minute activity window. }
             active_credentials: { type: integer, format: int64, minimum: 0 }
             last_used_at: { type: string, format: date-time, nullable: true }
             used_bytes_today: { type: integer, format: int64, minimum: 0 }
@@ -6751,8 +6763,8 @@ components:
               name: { type: string }
               region: { type: string }
               protocol: { type: string }
-              active_users: { type: integer, format: int64, minimum: 0, description: "Distinct users from Principal current state, with a two-minute legacy event fallback." }
-              active_flows: { type: integer, format: int64, minimum: 0, description: "Sum of Principal current flows, with a two-minute legacy event fallback." }
+              active_users: { type: integer, format: int64, minimum: 0 }
+              active_flows: { type: integer, format: int64, minimum: 0 }
               last_activity_at: { type: string, format: date-time, nullable: true }
     PlanCreateRequest:
       type: object

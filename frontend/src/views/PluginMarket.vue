@@ -20,7 +20,7 @@
         aria-label="搜索市场插件"
       /><UiSelect v-model="surface" aria-label="页面位置" :options="surfaceOptions" /><button :disabled="loading" @click="load">刷新市场</button>
     </div>
-    <p v-if="market.kind === 'registry'" class="plugin-market-notice">浏览 ZeroDeNet 插件市场，进入详情可下载安装包或在线安装；首次安装会请你确认插件来源。</p>
+    <p v-if="market.kind === 'registry'" class="plugin-market-notice">这里展示经 ZeroDeNet 准入的插件。版本由开发者仓库维护，进入详情可选择正式版、RC 或 Dev，在线安装前由 ZBoard 校验签名、兼容性和能力边界。</p>
     <p v-if="loading">正在加载市场目录…</p>
     <section v-else-if="!market.configured && !error" class="plugins-empty">
       <h2>尚未配置插件市场源</h2>
@@ -35,10 +35,10 @@
       <article v-for="entry in filtered" :key="entry.id" class="plugin-card">
         <div class="plugin-card-top">
           <div class="plugin-monogram">{{ entry.name.slice(0, 1) }}</div>
-          <span class="plugin-status">{{ entry.discovery_only ? '公开收录' : '签名目录' }}</span>
+          <span class="plugin-status">{{ market.kind === 'registry' ? '官方收录' : '签名目录' }}</span>
         </div>
         <h2>{{ entry.name }}</h2>
-        <p class="plugin-id">{{ entry.id }} · v{{ entry.version }}</p>
+        <p class="plugin-id">{{ entry.id }}<template v-if="entry.version"> · v{{ entry.version }}</template></p>
         <p>{{ entry.description }}</p>
         <div class="plugin-tags">
           <span v-for="s in entry.surfaces" :key="s">{{

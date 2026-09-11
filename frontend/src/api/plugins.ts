@@ -48,13 +48,22 @@ export interface Plugin {
 export interface MarketEntry {
   discovery_only?: boolean;
   repository?: string;
+  public_key?: string;
+  metadata_source?: { type: string; path: string };
+  release_source?: { type: string; metadata_asset: string };
   id: string;
   name: string;
   description: string;
-  version: string;
+  license?: string;
+  maintainers?: string[];
+  homepage?: string;
+  documentation?: string;
+  security?: string;
+  version?: string;
   publisher: string;
-  sha256: string;
+  sha256?: string;
   surfaces: Surface[];
+  capabilities?: string[];
 }
 export interface Market {
   kind?: "registry" | "signed";
@@ -64,14 +73,17 @@ export interface Market {
   expires_at: string;
 }
 export interface MarketArtifact { platform: string; url: string; sha256: string; size: number }
+export type MarketReleaseChannel = "stable" | "rc" | "dev";
+export interface MarketRelease { version: string; channel: MarketReleaseChannel; title?: string; notes?: string; url?: string; published_at?: string; artifacts: MarketArtifact[] }
 export interface MarketDetail {
   entry: MarketEntry; platform: string; notice?: string;
-  release?: { version: string; artifacts: MarketArtifact[] };
+  release?: MarketRelease;
+  releases?: MarketRelease[];
   installed?: { version: string; digest: string; state: string };
 }
-export const fetchMarketDetail = (id: string, signal?: AbortSignal) => api.get(`/admin/plugin-market/${encodeURIComponent(id)}`, { signal, timeout: 60_000 }).then(data<MarketDetail>);
-export const previewMarketPlugin = (id: string, signal?: AbortSignal) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/inspect`, undefined, { signal, timeout: 60_000 }).then(data<ImportPreview>);
-export const confirmMarketPlugin = (id: string, preview: ImportPreview, trust: boolean) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/install`, { digest: preview.digest, fingerprint: trust ? preview.fingerprint : '' }, { timeout: 60_000 }).then(data<Plugin>);
+export const fetchMarketDetail = (id: string, version = '', signal?: AbortSignal) => api.get(`/admin/plugin-market/${encodeURIComponent(id)}`, { params: version ? { version } : undefined, signal, timeout: 60_000 }).then(data<MarketDetail>);
+export const previewMarketPlugin = (id: string, version: string, signal?: AbortSignal) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/inspect`, undefined, { params: { version }, signal, timeout: 60_000 }).then(data<ImportPreview>);
+export const confirmMarketPlugin = (id: string, version: string, preview: ImportPreview, trust: boolean) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/install`, { version, digest: preview.digest, fingerprint: trust ? preview.fingerprint : '' }, { timeout: 60_000 }).then(data<Plugin>);
 export interface PluginSession {
   token: string;
   bridge_token: string;

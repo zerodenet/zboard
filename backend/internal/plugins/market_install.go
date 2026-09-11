@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-func (m *Manager) inspectMarketPackage(ctx context.Context, id string) (MarketDetail, []byte, ImportPreview, error) {
-	d, err := m.MarketDetail(ctx, id)
+func (m *Manager) inspectMarketPackage(ctx context.Context, id, version string) (MarketDetail, []byte, ImportPreview, error) {
+	d, err := m.MarketDetail(ctx, id, version)
 	if err != nil {
 		return d, nil, ImportPreview{}, err
 	}
@@ -32,24 +32,30 @@ func (m *Manager) inspectMarketPackage(ctx context.Context, id string) (MarketDe
 	if preview.Manifest.ID != id || preview.Manifest.Version != d.Release.Version || preview.Publisher != d.Entry.Publisher {
 		return d, nil, preview, errors.New("安装包身份与市场条目不符")
 	}
-	if d.signed {
+	if len(d.Entry.Surfaces) > 0 && !withinListingBoundary(preview.Manifest.Surfaces, d.Entry.Surfaces) {
+		return d, nil, preview, errors.New("安装包界面范围超出市场准入上限")
+	}
+	if len(d.Entry.Capabilities) > 0 && !withinListingBoundary(preview.Manifest.Capabilities, d.Entry.Capabilities) {
+		return d, nil, preview, errors.New("安装包能力超出市场准入上限")
+	}
+	if d.trusted {
 		preview.Trusted = true
 	}
 	return d, raw, preview, nil
 }
-func (m *Manager) PreviewMarket(ctx context.Context, id string) (ImportPreview, error) {
-	_, _, preview, err := m.inspectMarketPackage(ctx, id)
+func (m *Manager) PreviewMarket(ctx context.Context, id, version string) (ImportPreview, error) {
+	_, _, preview, err := m.inspectMarketPackage(ctx, id, version)
 	return preview, err
 }
-func (m *Manager) InstallMarketConfirmed(ctx context.Context, id, digest, fingerprint, actor string) (Installation, error) {
-	d, raw, preview, err := m.inspectMarketPackage(ctx, id)
+func (m *Manager) InstallMarketConfirmed(ctx context.Context, id, version, digest, fingerprint, actor string) (Installation, error) {
+	d, raw, preview, err := m.inspectMarketPackage(ctx, id, version)
 	if err != nil {
 		return Installation{}, err
 	}
 	if digest == "" || digest != preview.Digest {
 		return Installation{}, ErrConflict
 	}
-	if d.signed {
+	if d.trusted {
 		p, err := m.inspectPackage(raw, d.publicKey)
 		if err != nil {
 			return Installation{}, err

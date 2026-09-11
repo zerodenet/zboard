@@ -35,14 +35,14 @@ import UiFileUpload from '../components/UiFileUpload.vue'
 import UiButton from '../components/UiButton.vue'
 import PageAlert from '../components/PageAlert.vue'
 import { importPlugin, previewPlugin, previewMarketPlugin, confirmMarketPlugin, capabilityLabel, surfaceLabel, type ImportPreview, type Plugin } from '../api/plugins'
-const props = defineProps<{ open: boolean; marketId?: string }>()
+const props = defineProps<{ open: boolean; marketId?: string; marketVersion?: string }>()
 const emit = defineEmits<{ close: []; imported: [plugin: Plugin] }>()
 const file = ref<File | null>(null), error = ref(''), busy = ref(false)
 const preview = ref<ImportPreview | null>(null), publicKey = ref(''), trust = ref(false)
 let generation = 0
 let controller: AbortController | undefined
 onScopeDispose(() => { generation++; controller?.abort() })
-watch(() => [props.open, props.marketId], () => {
+watch(() => [props.open, props.marketId, props.marketVersion], () => {
   generation++; controller?.abort(); busy.value = false
   file.value = null; error.value = ''; preview.value = null; publicKey.value = ''; trust.value = false
   if (props.open && props.marketId) void submit()
@@ -62,9 +62,9 @@ async function submit() {
   controller = new AbortController()
   busy.value = true; error.value = ''
   try {
-    if (!preview.value) { const result = props.marketId ? await previewMarketPlugin(props.marketId, controller.signal) : await previewPlugin(file.value!, publicKey.value); if (request === generation) preview.value = result; return }
+    if (!preview.value) { const result = props.marketId ? await previewMarketPlugin(props.marketId, props.marketVersion || '', controller.signal) : await previewPlugin(file.value!, publicKey.value); if (request === generation) preview.value = result; return }
     if (!preview.value.compatibility.compatible || (!preview.value.trusted && !trust.value)) return
-    const plugin = props.marketId ? await confirmMarketPlugin(props.marketId, preview.value, trust.value) : await importPlugin(file.value!, preview.value, trust.value); if (request === generation) emit('imported', plugin)
+    const plugin = props.marketId ? await confirmMarketPlugin(props.marketId, props.marketVersion || '', preview.value, trust.value) : await importPlugin(file.value!, preview.value, trust.value); if (request === generation) emit('imported', plugin)
   }
   catch (cause: any) { if (request === generation) error.value = cause?.response?.data?.message || '导入失败，请检查插件包和发布者签名后重试。' }
   finally { if (request === generation) busy.value = false }

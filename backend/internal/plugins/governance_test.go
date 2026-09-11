@@ -91,7 +91,7 @@ func dataPackage(t testing.TB, priv ed25519.PrivateKey, pub ed25519.PublicKey, i
 		}
 	})
 }
-func TestPluginPrivateDataIsolationCASAndUninstallRetention(t *testing.T) {
+func TestPluginPrivateDataIsolationCASAndDisableUninstallRetention(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
 	keys := map[string]string{"test.publisher": base64.StdEncoding.EncodeToString(pub)}
 	m, db, _ := testManager(t, keys)
@@ -146,6 +146,17 @@ func TestPluginPrivateDataIsolationCASAndUninstallRetention(t *testing.T) {
 	binding := model.ExternalIdentity{ID: "core-binding", UserID: user.ID, PluginID: a.ID, Publisher: "publisher", Issuer: "issuer", Subject: "subject"}
 	if err := db.Create(&binding).Error; err != nil {
 		t.Fatal(err)
+	}
+	a, err = m.Action(context.Background(), a.ID, "disable", "admin", a.Generation, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, _ = m.readData(a.ID)
+	if row.Ciphertext == "" || row.Version != 1 {
+		t.Fatal("disable removed private data")
+	}
+	if db.First(&model.ExternalIdentity{}, "id = ?", binding.ID).Error != nil {
+		t.Fatal("disable removed core identity")
 	}
 	a, err = m.Action(context.Background(), a.ID, "uninstall", "admin", a.Generation, false, "")
 	if err != nil {
