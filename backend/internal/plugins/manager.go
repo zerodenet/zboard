@@ -21,19 +21,22 @@ var ErrConflict = errors.New("plugin changed; refresh and retry")
 var ErrUnavailable = errors.New("plugin service unavailable")
 
 type Manager struct {
-	db        *gorm.DB
-	cipher    *security.CredentialCipher
-	options   Options
-	fetch     func(context.Context, string, int64) ([]byte, error)
-	host      string
-	owner     string
-	epoch     uint64
-	mu        sync.Mutex
-	processes map[string]*process
-	sessions  map[string]Session
-	cancel    context.CancelFunc
-	done      chan struct{}
-	lost      atomic.Bool
+	db             *gorm.DB
+	cipher         *security.CredentialCipher
+	options        Options
+	fetch          func(context.Context, string, int64) ([]byte, error)
+	host           string
+	owner          string
+	epoch          uint64
+	mu             sync.Mutex
+	marketMu       sync.Mutex
+	processes      map[string]*process
+	marketReleases map[string]marketReleaseCache
+	marketMetadata map[string]marketMetadataCache
+	sessions       map[string]Session
+	cancel         context.CancelFunc
+	done           chan struct{}
+	lost           atomic.Bool
 }
 type Installation struct {
 	Admission Admission  `json:"admission"`
@@ -62,7 +65,7 @@ func NewManager(db *gorm.DB, cipher *security.CredentialCipher, options Options,
 			return nil, err
 		}
 	}
-	m := &Manager{db: db, cipher: cipher, options: options, fetch: fetchRemote, host: host, owner: uuid.NewString(), processes: map[string]*process{}, sessions: map[string]Session{}, done: make(chan struct{})}
+	m := &Manager{db: db, cipher: cipher, options: options, fetch: fetchRemote, host: host, owner: uuid.NewString(), processes: map[string]*process{}, marketReleases: map[string]marketReleaseCache{}, marketMetadata: map[string]marketMetadataCache{}, sessions: map[string]Session{}, done: make(chan struct{})}
 	now := time.Now().UTC()
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&model.PluginHostLease{ID: 1, Owner: "", ExpiresAt: now.Add(-time.Hour)}).Error; err != nil {
 		return nil, err
