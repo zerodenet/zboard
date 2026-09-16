@@ -24,9 +24,9 @@
             <label>插件版本<UiSelect v-model="version" :options="versionOptions" aria-label="插件版本" /></label>
           </div>
           <p>已选 {{ channelLabel(selectedRelease.channel) }} v{{ selectedRelease.version }} · 服务器平台 {{ detail.platform }}</p>
-          <p v-if="!hostArtifact" role="status">此版本没有适用于当前服务器的安装包，可以下载其他平台的安装包。</p>
+          <p v-if="!hostArtifact" role="status">此版本没有适用于当前服务器的安装包，或超过 32 MiB 安装上限。你仍可下载发行包。</p>
           <div class="plugin-card-actions">
-            <UiButton :disabled="!hostArtifact || samePackage || loading" @click="installOpen = true">{{ samePackage ? '当前版本已安装' : detail.installed ? '切换到此版本' : '在线安装' }}</UiButton>
+            <UiButton :disabled="!hostArtifact || samePackage || loading || !!error" @click="installOpen = true">{{ samePackage ? '当前版本已安装' : detail.installed ? '切换到此版本' : '在线安装' }}</UiButton>
             <RouterLink v-if="detail.installed" class="button button-secondary" :to="`/admin/plugins/${encodeURIComponent(id)}`">管理插件</RouterLink>
           </div>
           <p>安装前会展示包内清单、兼容性与签名指纹。新安装默认停用，随后可进入管理页配置、启用或卸载。</p>
@@ -38,8 +38,8 @@
         <h2>{{ selectedRelease.title || `v${selectedRelease.version}` }}</h2>
         <p v-if="selectedRelease.published_at">发布于 {{ formatDateTime(selectedRelease.published_at) }}</p>
         <MarkdownContent v-if="selectedRelease.notes" class="release-notes" :content="selectedRelease.notes" />
-        <p v-else>发布者未提供版本说明。</p>
-        <a v-if="selectedRelease.url" class="plugin-text-link" :href="selectedRelease.url" target="_blank" rel="noopener noreferrer">查看 GitHub Release</a>
+        <p v-else>暂无版本说明，可前往发布页面查看。</p>
+        <a v-if="selectedRelease.url" class="plugin-text-link" :href="selectedRelease.url" target="_blank" rel="noopener noreferrer">查看发布记录</a>
       </section>
       <section v-if="selectedRelease" class="plugin-card">
         <h2>下载安装包</h2>
@@ -73,13 +73,14 @@ const id = computed(() => String(route.params.pluginId || ''))
 const installOpen = ref(false), platform = ref(''), channel = ref<MarketReleaseChannel>('stable'), version = ref('')
 const versionLoading = ref(false), versionError = ref('')
 let versionController: AbortController | undefined
-const resource = useRemoteResource<MarketDetail | null>({ initial: () => null, fetch: ({ signal }) => fetchMarketDetail(id.value, '', signal), errorMessage: '无法读取插件发行信息，请重试。' })
-const { data: detail, loading: detailLoading, error: detailError, load } = resource
+const resource = useRemoteResource<MarketDetail | null>({ initial: () => null, fetch: ({ signal }) => fetchMarketDetail(id.value, version.value, signal), errorMessage: '无法读取插件发行信息，请重试。' })
+const { data: detail, loading: detailLoading, error: detailError, load: loadDetail } = resource
+async function load() { versionController?.abort(); versionController = undefined; versionLoading.value = false; versionError.value = ''; await loadDetail() }
 const loading = computed(() => detailLoading.value || versionLoading.value)
 const error = computed(() => detailError.value || versionError.value)
 const releases = computed(() => detail.value?.releases?.length ? detail.value.releases : (detail.value?.release ? [detail.value.release] : []))
 const selectedRelease = computed(() => releases.value.find(release => release.version === version.value) || detail.value?.release)
-const hostArtifact = computed(() => selectedRelease.value?.artifacts.find(a => a.platform === detail.value?.platform) || selectedRelease.value?.artifacts.find(a => a.platform === 'any'))
+const hostArtifact = computed(() => selectedRelease.value?.artifacts.find(a => a.platform === detail.value?.platform && a.size <= 32 * 1024 * 1024) || selectedRelease.value?.artifacts.find(a => a.platform === `any-${detail.value?.platform.split('-')[1]}` && a.size <= 32 * 1024 * 1024) || selectedRelease.value?.artifacts.find(a => a.platform === 'any' && a.size <= 32 * 1024 * 1024))
 const samePackage = computed(() => detail.value?.installed?.state !== 'uninstalled' && !!hostArtifact.value && detail.value?.installed?.digest === hostArtifact.value.sha256)
 const channelOptions = computed(() => (['stable', 'rc', 'dev'] as MarketReleaseChannel[]).filter(value => releases.value.some(release => release.channel === value)).map(value => ({ label: channelLabel(value), value })))
 const versionOptions = computed(() => releases.value.filter(release => release.channel === channel.value).map(release => ({ label: `v${release.version}`, value: release.version })))
@@ -101,7 +102,7 @@ watch(version, async value => {
   versionController = controller; versionLoading.value = true
   try {
     const selected = await fetchMarketDetail(id.value, value, controller.signal)
-    if (!controller.signal.aborted && version.value === value) resource.replace(selected)
+    if (!controller.signal.aborted && version.value === value && selected.entry.id === id.value) resource.replace(selected)
   } catch (cause: any) {
     if (!controller.signal.aborted && version.value === value) versionError.value = cause?.response?.data?.message || '无法读取所选版本的发行信息，请重试。'
   } finally {
@@ -112,10 +113,10 @@ watch(selectedRelease, value => {
   installOpen.value = false
   platform.value = hostArtifact.value?.platform || value?.artifacts[0]?.platform || ''
 })
-watch(id, () => { versionController?.abort(); versionError.value = ''; installOpen.value = false; resource.reset(); void load() }, { immediate: true })
+watch(id, () => { versionController?.abort(); versionError.value = ''; installOpen.value = false; version.value = ''; resource.reset(); void load() }, { immediate: true })
 onScopeDispose(() => versionController?.abort())
 function installed(plugin: Plugin) { installOpen.value = false; void router.push({ path: `/admin/plugins/${encodeURIComponent(plugin.id)}`, query: { imported: '1' } }) }
-function channelLabel(value: MarketReleaseChannel) { return ({ stable: '正式版 / Latest', rc: 'RC', dev: 'Dev' })[value] }
+function channelLabel(value: MarketReleaseChannel) { return ({ stable: '正式版', rc: '候选版', dev: '开发版' })[value] }
 </script>
 <style scoped>
 .package-platform { display: grid; gap: .5rem; max-width: 22rem; }

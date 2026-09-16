@@ -1,0 +1,386 @@
+{
+  "snapshot_version": "sha256:237b87ef3a8e45252e76088c1987f0136229417d4d23f58d51cdbcea709cf74a",
+  "generated_at": "2026-09-15T11:09:04Z",
+  "page": 1,
+  "page_size": 1000,
+  "total": 2,
+  "items": [
+    {
+      "id": "org.zerodenet.connect",
+      "name": "Connect",
+      "description": "Connects compatible subscription providers and clients for device authorization, managed subscription synchronization, and read-only provider messages.",
+      "categories": [
+        "integration",
+        "network"
+      ],
+      "license": "MPL-2.0",
+      "maintainers": [
+        "zerodenet"
+      ],
+      "repository": "https://github.com/zerodenet/connect",
+      "publisher": {
+        "id": "zerodenet",
+        "public_key": "/fr8OvitVqcn5EVbZyzRCUyO7h0MDB5O+lhSMsaXHOQ="
+      },
+      "release_source": {
+        "type": "github-releases",
+        "metadata_asset": "marketplace-entry.json"
+      },
+      "documentation": "https://github.com/zerodenet/connect/blob/main/README.md",
+      "security": "https://github.com/zerodenet/connect/blob/main/SECURITY.md",
+      "targets": [
+        {
+          "host": "zboard",
+          "package_id": "org.zerodenet.connect.zboard",
+          "surfaces": [
+            "account",
+            "admin"
+          ],
+          "capabilities": [
+            "zboard.ui.page.v1",
+            "zboard.config.v1",
+            "zboard.storage.v1"
+          ],
+          "releases": [
+            {
+              "version": "0.0.1-dev.202609150807",
+              "channel": "dev",
+              "published_at": "2026-09-15T08:07:05Z",
+              "notes_url": "https://github.com/zerodenet/connect/releases/tag/v0.0.1-dev.202609150807",
+              "host_version": {
+                "min": "0.0.2",
+                "max_exclusive": "0.1.0"
+              },
+              "surfaces": [
+                "account",
+                "admin"
+              ],
+              "capabilities": [
+                "zboard.ui.page.v1"
+              ],
+              "artifacts": [
+                {
+                  "os": "linux",
+                  "arch": "amd64",
+                  "url": "https://github.com/zerodenet/connect/releases/download/v0.0.1-dev.202609150807/org.zerodenet.connect.zboard-0.0.1-dev.202609150807-linux-amd64.zbplugin",
+                  "size": 2571,
+                  "sha256": "cf287ec2eb36a94d38fb37b151bcabfd7892d462d83da670d29aba7875bc0c87",
+                  "signature": {
+                    "algorithm": "ed25519",
+                    "value": "I4gQ7dPLwn8e5wY1SUaldNGzI/v1L9aTynN/cRjhTRBIAELlX09r4VtmHatnlNCeNisP1UxPDt4GYIvWbLIADw=="
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "release_feed": [
+        {
+          "tag": "v0.0.1",
+          "name": "Connect 0.0.1",
+          "channel": "stable",
+          "prerelease": false,
+          "published_at": "2026-09-15T09:57:19Z",
+          "url": "https://github.com/zerodenet/connect/releases/tag/v0.0.1",
+          "body": "Initial signed foundation release for the ZBoard and ZNet Sink package hosts. Package verification and installation surfaces are available; account authorization, subscription delivery, and provider messages remain disabled until the required host APIs land.",
+          "body_truncated": false,
+          "assets_count": 5,
+          "validated": true
+        },
+        {
+          "tag": "v0.0.1-dev.202609150807",
+          "name": "Connect 0.0.1-dev.202609150807",
+          "channel": "dev",
+          "prerelease": true,
+          "published_at": "2026-09-15T08:08:18Z",
+          "url": "https://github.com/zerodenet/connect/releases/tag/v0.0.1-dev.202609150807",
+          "body": "Signed development foundation for the ZBoard and ZNet Sink package hosts. This release validates automated distribution and installation wiring; account authorization, subscription synchronization, and provider messages are not enabled yet.",
+          "body_truncated": false,
+          "assets_count": 5,
+          "validated": true
+        }
+      ],
+      "installable": true,
+      "compatibility": "host",
+      "latest_published_at": "2026-09-15T08:07:05Z"
+    },
+    {
+      "id": "zboard.oauth",
+      "name": "OAuth for ZBoard",
+      "description": "Sign in to ZBoard with GitHub, Google or a custom OAuth2 / OpenID Connect provider.",
+      "categories": [],
+      "license": "MPL-2.0",
+      "maintainers": [
+        "higanbana986"
+      ],
+      "repository": "https://github.com/higanbana986/zboard-oauth",
+      "publisher": {
+        "id": "higanbana986",
+        "public_key": "k+s2/1J6/R9VSNbc2bcX3C8KRBXVZ+IrSKFButaR4Q4="
+      },
+      "release_source": {
+        "type": "github-releases",
+        "metadata_asset": "marketplace-entry.json"
+      },
+      "targets": [
+        {
+          "host": "zboard",
+          "package_id": "zboard.oauth",
+          "surfaces": [
+            "public",
+            "account",
+            "admin"
+          ],
+          "capabilities": [
+            "zboard.ui.page.v1",
+            "zboard.config.v1",
+            "zboard.identity.provider.v1",
+            "zboard.storage.v1"
+          ],
+          "releases": [
+            {
+              "version": "0.0.2-dev.202609140217",
+              "channel": "dev",
+              "published_at": "2026-09-14T03:16:41Z",
+              "notes_url": "https://github.com/higanbana986/zboard-oauth/releases/tag/v0.0.2-dev.202609140217",
+              "host_version": {
+                "min": "0.0.2",
+                "max_exclusive": "0.1.0"
+              },
+              "surfaces": [
+                "public",
+                "account",
+                "admin"
+              ],
+              "capabilities": [
+                "zboard.ui.page.v1",
+                "zboard.config.v1",
+                "zboard.identity.provider.v1"
+              ],
+              "artifacts": [
+                {
+                  "os": "linux",
+                  "arch": "amd64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609140217/zboard.oauth-v0.0.2-dev.202609140217-linux-amd64.zbplugin",
+                  "size": 5498225,
+                  "sha256": "53d2e54a96cc7f02949757891f1f30f177ba97c8dd011cc94c875244e39ba851",
+                  "signature": null
+                },
+                {
+                  "os": "linux",
+                  "arch": "arm64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609140217/zboard.oauth-v0.0.2-dev.202609140217-linux-arm64.zbplugin",
+                  "size": 4998236,
+                  "sha256": "4b01096693b9a2ebecb69376981f1d20253588a658f1f3c54c2cb30068ad6e20",
+                  "signature": null
+                },
+                {
+                  "os": "darwin",
+                  "arch": "amd64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609140217/zboard.oauth-v0.0.2-dev.202609140217-darwin-amd64.zbplugin",
+                  "size": 5629586,
+                  "sha256": "cd5860729442e740296f22e4196585ef43390c441c82745811df9fc3a63966b8",
+                  "signature": null
+                },
+                {
+                  "os": "darwin",
+                  "arch": "arm64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609140217/zboard.oauth-v0.0.2-dev.202609140217-darwin-arm64.zbplugin",
+                  "size": 5230426,
+                  "sha256": "1073b976f9c8f64168f822cebff0fc6b7d94f8d3e5f8dacf4fa727e610c6e8ab",
+                  "signature": null
+                },
+                {
+                  "os": "windows",
+                  "arch": "amd64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609140217/zboard.oauth-v0.0.2-dev.202609140217-windows-amd64.zbplugin",
+                  "size": 5662455,
+                  "sha256": "30a5d59ca41308bc7f49e8d0898dc4befccea720f4e178db22b3b69279467bf5",
+                  "signature": null
+                }
+              ]
+            },
+            {
+              "version": "0.0.2-dev.202609111242",
+              "channel": "dev",
+              "published_at": "2026-09-11T12:49:21Z",
+              "notes_url": "https://github.com/higanbana986/zboard-oauth/releases/tag/v0.0.2-dev.202609111242",
+              "host_version": {
+                "min": "0.0.2",
+                "max_exclusive": "0.1.0"
+              },
+              "surfaces": [
+                "public",
+                "account",
+                "admin"
+              ],
+              "capabilities": [
+                "zboard.ui.page.v1",
+                "zboard.config.v1",
+                "zboard.identity.provider.v1"
+              ],
+              "artifacts": [
+                {
+                  "os": "linux",
+                  "arch": "amd64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609111242/zboard.oauth-v0.0.2-dev.202609111242-linux-amd64.zbplugin",
+                  "size": 5498227,
+                  "sha256": "ec73821cb42380c58bea305970f3713bc26bf6155b8e3ca139d410e9ba1edb2e",
+                  "signature": null
+                },
+                {
+                  "os": "linux",
+                  "arch": "arm64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609111242/zboard.oauth-v0.0.2-dev.202609111242-linux-arm64.zbplugin",
+                  "size": 4998240,
+                  "sha256": "996c4ed5e1b8fe03437e40a46a876540c2e0dd9faadc925e001dd5cd310749d1",
+                  "signature": null
+                },
+                {
+                  "os": "darwin",
+                  "arch": "amd64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609111242/zboard.oauth-v0.0.2-dev.202609111242-darwin-amd64.zbplugin",
+                  "size": 5629586,
+                  "sha256": "ff897251310d6ef08697db45c027a5be59e31ca1be986fb5d83504073fd52462",
+                  "signature": null
+                },
+                {
+                  "os": "darwin",
+                  "arch": "arm64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609111242/zboard.oauth-v0.0.2-dev.202609111242-darwin-arm64.zbplugin",
+                  "size": 5230430,
+                  "sha256": "a857e9e6b6408372cbfcb343c78b104d1ba66d4b2f5333de7fdb95486060636d",
+                  "signature": null
+                },
+                {
+                  "os": "windows",
+                  "arch": "amd64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609111242/zboard.oauth-v0.0.2-dev.202609111242-windows-amd64.zbplugin",
+                  "size": 5662458,
+                  "sha256": "82f77786521695ababbe3a6bec35ac0091389ddbf1913659bdd54cf63020a5d2",
+                  "signature": null
+                }
+              ]
+            },
+            {
+              "version": "0.0.2-dev.202609111158",
+              "channel": "dev",
+              "published_at": "2026-09-11T04:08:35Z",
+              "notes_url": "https://github.com/higanbana986/zboard-oauth/releases/tag/v0.0.2-dev.202609111158",
+              "host_version": {
+                "min": "0.0.2",
+                "max_exclusive": "0.1.0"
+              },
+              "surfaces": [
+                "public",
+                "account",
+                "admin"
+              ],
+              "capabilities": [
+                "zboard.ui.page.v1",
+                "zboard.config.v1",
+                "zboard.identity.provider.v1"
+              ],
+              "artifacts": [
+                {
+                  "os": "linux",
+                  "arch": "amd64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609111158/zboard.oauth-v0.0.2-dev.202609111158-linux-amd64.zbplugin",
+                  "size": 5497685,
+                  "sha256": "20d2f356f7f632f17dc6e812d0136577c329812faebd013eda24d2e569e2f99a",
+                  "signature": null
+                },
+                {
+                  "os": "linux",
+                  "arch": "arm64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609111158/zboard.oauth-v0.0.2-dev.202609111158-linux-arm64.zbplugin",
+                  "size": 4997712,
+                  "sha256": "124df95207c837a8d0ffb0121010dadbe664873eaf22bebd0fd111340e6fc0a4",
+                  "signature": null
+                },
+                {
+                  "os": "darwin",
+                  "arch": "amd64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609111158/zboard.oauth-v0.0.2-dev.202609111158-darwin-amd64.zbplugin",
+                  "size": 5629077,
+                  "sha256": "0a3c6fb00a693d52c3ef56e1af71c47b486df21a09fc26183ecf7cf789b8ebd0",
+                  "signature": null
+                },
+                {
+                  "os": "darwin",
+                  "arch": "arm64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609111158/zboard.oauth-v0.0.2-dev.202609111158-darwin-arm64.zbplugin",
+                  "size": 5229900,
+                  "sha256": "b84431cdc67cd21a73dd027f94813913a35814d5dc3c0cebe319b593aa95fcc2",
+                  "signature": null
+                },
+                {
+                  "os": "windows",
+                  "arch": "amd64",
+                  "url": "https://github.com/higanbana986/zboard-oauth/releases/download/v0.0.2-dev.202609111158/zboard.oauth-v0.0.2-dev.202609111158-windows-amd64.zbplugin",
+                  "size": 5662138,
+                  "sha256": "8f6d4414e4f5c205a2e2fe3b10fefd4b393126f3e1485990e6506bb57ebbcc34",
+                  "signature": null
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "release_feed": [
+        {
+          "tag": "v0.0.2-dev.202609140217",
+          "name": "v0.0.2-dev.202609140217",
+          "channel": "dev",
+          "prerelease": true,
+          "published_at": "2026-09-14T03:16:41Z",
+          "url": "https://github.com/higanbana986/zboard-oauth/releases/tag/v0.0.2-dev.202609140217",
+          "body": "OAuth for ZBoard v0.0.2-dev.202609140217\n\nSign in with GitHub, Google or a custom OAuth2 / OpenID Connect provider. ZBoard owns account creation, registration policy and sessions.\n\nDownload the signed `.zbplugin` for your host platform. Verify its SHA-256 against `SHA256SUMS` and obtain the publisher public key through a trusted channel before offline import.\n\nSource: `57686460beb2a828377c1cf02a3810a8e1d7ab5e`. See the repository configuration and installation guides. `marketplace-entry.json` is a submission record, not a host catalog or a trust grant. Cross-compilation does not establish target-platform or live-provider acceptance.\n",
+          "body_truncated": false,
+          "assets_count": 7,
+          "validated": true
+        },
+        {
+          "tag": "v0.0.2-dev.202609111242",
+          "name": "v0.0.2-dev.202609111242",
+          "channel": "dev",
+          "prerelease": true,
+          "published_at": "2026-09-11T12:49:21Z",
+          "url": "https://github.com/higanbana986/zboard-oauth/releases/tag/v0.0.2-dev.202609111242",
+          "body": "OAuth for ZBoard v0.0.2-dev.202609111242\n\nSign in with GitHub, Google or a custom OAuth2 / OpenID Connect provider. ZBoard owns account creation, registration policy and sessions.\n\nDownload the signed `.zbplugin` for your host platform. Verify its SHA-256 against `SHA256SUMS` and obtain the publisher public key through a trusted channel before offline import.\n\nSource: `6f9434d0e150f6f8eb1c8582718b36faa7ee184c`. See the repository configuration and installation guides. `marketplace-entry.json` is a submission record, not a host catalog or a trust grant. Cross-compilation does not establish target-platform or live-provider acceptance.\n",
+          "body_truncated": false,
+          "assets_count": 7,
+          "validated": true
+        },
+        {
+          "tag": "v0.0.2-dev.202609111158",
+          "name": "v0.0.2-dev.202609111158",
+          "channel": "dev",
+          "prerelease": true,
+          "published_at": "2026-09-11T04:08:35Z",
+          "url": "https://github.com/higanbana986/zboard-oauth/releases/tag/v0.0.2-dev.202609111158",
+          "body": "OAuth for ZBoard v0.0.2-dev.202609111158\n\nSign in with GitHub, Google or a custom OAuth2 / OpenID Connect provider. ZBoard owns account creation, registration policy and sessions.\n\nDownload the signed `.zbplugin` for your host platform. Verify its SHA-256 against `SHA256SUMS` and obtain the publisher public key through a trusted channel before offline import.\n\nSource: `4611b46303a6fc251259f2946a1675970c6a6798`. See the repository configuration and installation guides. `marketplace-entry.json` is a submission record, not a host catalog or a trust grant. Cross-compilation does not establish target-platform or live-provider acceptance.\n",
+          "body_truncated": false,
+          "assets_count": 7,
+          "validated": true
+        },
+        {
+          "tag": "v0.0.1",
+          "name": "v0.0.1",
+          "channel": "stable",
+          "prerelease": false,
+          "published_at": "2026-09-09T10:26:52Z",
+          "url": "https://github.com/higanbana986/zboard-oauth/releases/tag/v0.0.1",
+          "body": "OAuth for ZBoard v0.0.1\n\nSign in with GitHub, Google or a custom OAuth2 / OpenID Connect provider. ZBoard owns account creation, registration policy and sessions.\n\nDownload the signed `.zbplugin` for your host platform. Verify its SHA-256 against `SHA256SUMS` and obtain the publisher public key through a trusted channel before offline import.\n\nSource: `6d48f3b2f19361b0abbdae1b7d24722cc466385a`. See the repository configuration and installation guides. `marketplace-entry.json` is a submission record, not a host catalog or a trust grant. Cross-compilation does not establish target-platform or live-provider acceptance.\n",
+          "body_truncated": false,
+          "assets_count": 7,
+          "validated": true
+        }
+      ],
+      "installable": true,
+      "compatibility": "host",
+      "latest_published_at": "2026-09-14T03:16:41Z"
+    }
+  ]
+}
