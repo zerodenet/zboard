@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/Masterminds/semver/v3"
 	"io"
 	"net"
 	"net/http"
@@ -16,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Masterminds/semver/v3"
 )
 
 type MarketEntry struct {
@@ -24,6 +25,7 @@ type MarketEntry struct {
 	PublicKey     string              `json:"public_key,omitempty"`
 	ReleaseSource MarketReleaseSource `json:"release_source,omitzero"`
 	ID            string              `json:"id"`
+	ProductID     string              `json:"product_id,omitempty"`
 	Name          string              `json:"name"`
 	Description   string              `json:"description"`
 	License       string              `json:"license,omitempty"`
@@ -37,13 +39,17 @@ type MarketEntry struct {
 	SHA256        string              `json:"sha256,omitempty"`
 	Surfaces      []string            `json:"surfaces"`
 	Capabilities  []string            `json:"capabilities,omitempty"`
+	releases      []MarketRelease
 }
 type Market struct {
-	Kind       string        `json:"kind"`
-	SourceURL  string        `json:"source_url,omitempty"`
-	Configured bool          `json:"configured"`
-	Entries    []MarketEntry `json:"entries"`
-	ExpiresAt  time.Time     `json:"expires_at"`
+	Kind            string        `json:"kind"`
+	SnapshotVersion string        `json:"snapshot_version,omitempty"`
+	GeneratedAt     time.Time     `json:"generated_at,omitzero"`
+	Notice          string        `json:"notice,omitempty"`
+	SourceURL       string        `json:"source_url,omitempty"`
+	Configured      bool          `json:"configured"`
+	Entries         []MarketEntry `json:"entries"`
+	ExpiresAt       time.Time     `json:"expires_at"`
 }
 type signedCatalog struct {
 	Payload   json.RawMessage `json:"payload"`

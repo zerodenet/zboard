@@ -46,6 +46,7 @@ export interface Plugin {
   versions: PluginVersion[];
 }
 export interface MarketEntry {
+  product_id?: string;
   discovery_only?: boolean;
   repository?: string;
   public_key?: string;
@@ -67,6 +68,9 @@ export interface MarketEntry {
 export interface Market {
   kind?: "registry" | "signed";
   source_url?: string;
+  snapshot_version?: string;
+  generated_at?: string;
+  notice?: string;
   configured: boolean;
   entries: MarketEntry[];
   expires_at: string;

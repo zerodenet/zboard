@@ -547,7 +547,7 @@ paths:
     get:
       tags: [plugins]
       summary: Read selectable release channels, platform downloads and installed state
-      description: The admitted directory contains no release history. ZBoard discovers stable, rc and dev versions from the registered publisher repository, then verifies the selected metadata and package against the admitted publisher key and capability ceiling.
+      description: Reads the fixed ZBoard stable/rc/dev snapshot files from the published marketplace and filters host versions locally. Falls back to the schema-v2 directory and publisher metadata only when the snapshot is unavailable or invalid. Package signatures, admitted identities, capability ceilings and existing key pins remain mandatory.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
         - { name: version, in: query, required: false, description: "Exact published version to select; defaults to the newest stable release, then rc or dev", schema: { type: string } }
@@ -628,7 +628,7 @@ paths:
   "/api/v1/admin/plugin-market":
     "get":
       "tags": ["plugins"]
-      "summary": "Read the public registry or verify the configured signed marketplace"
+      "summary": "Read the unified ZBoard marketplace or verify a configured signed catalog"
       "responses":
         "200":
           "description": "Success; response data is described below"
@@ -5026,6 +5026,9 @@ components:
     "PluginMarket":
       "type": "object"
       "properties":
+        "snapshot_version": { "type": "string" }
+        "generated_at": { "type": "string", "format": "date-time" }
+        "notice": { "type": "string" }
         "kind": { "type": "string", "enum": ["registry", "signed"] }
         "source_url": { "type": "string" }
         "configured":
@@ -5048,6 +5051,7 @@ components:
                 "type": "string"
               "version":
                 "type": "string"
+              "product_id": { "type": "string", "description": "Marketplace product identity; id remains the ZBoard package identity" }
               "public_key": { "type": "string" }
               "release_source":
                 "type": "object"

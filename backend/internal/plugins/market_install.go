@@ -15,6 +15,9 @@ func (m *Manager) inspectMarketPackage(ctx context.Context, id, version string) 
 	}
 	a, err := d.hostArtifact()
 	if err != nil {
+		if d.Notice != "" {
+			return d, nil, ImportPreview{}, errors.New(d.Notice)
+		}
 		return d, nil, ImportPreview{}, err
 	}
 	raw, err := m.fetch(ctx, a.URL, MaxPackageBytes)
@@ -32,11 +35,14 @@ func (m *Manager) inspectMarketPackage(ctx context.Context, id, version string) 
 	if preview.Manifest.ID != id || preview.Manifest.Version != d.Release.Version || preview.Publisher != d.Entry.Publisher {
 		return d, nil, preview, errors.New("安装包身份与市场条目不符")
 	}
-	if len(d.Entry.Surfaces) > 0 && !withinListingBoundary(preview.Manifest.Surfaces, d.Entry.Surfaces) {
+	if (d.Entry.ReleaseSource.Type != "" || len(d.Entry.Surfaces) > 0) && !withinListingBoundary(preview.Manifest.Surfaces, d.Entry.Surfaces) {
 		return d, nil, preview, errors.New("安装包界面范围超出市场准入上限")
 	}
-	if len(d.Entry.Capabilities) > 0 && !withinListingBoundary(preview.Manifest.Capabilities, d.Entry.Capabilities) {
+	if (d.Entry.ReleaseSource.Type != "" || len(d.Entry.Capabilities) > 0) && !withinListingBoundary(preview.Manifest.Capabilities, d.Entry.Capabilities) {
 		return d, nil, preview, errors.New("安装包能力超出市场准入上限")
+	}
+	if d.Release.bounded && (!withinListingBoundary(preview.Manifest.Surfaces, d.Release.surfaces) || !withinListingBoundary(preview.Manifest.Capabilities, d.Release.capabilities)) {
+		return d, nil, preview, errors.New("安装包声明超出所选发行版本的能力或界面范围")
 	}
 	if d.trusted {
 		preview.Trusted = true

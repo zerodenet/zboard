@@ -21,6 +21,8 @@
       /><UiSelect v-model="surface" aria-label="页面位置" :options="surfaceOptions" /><button :disabled="loading" @click="load">刷新市场</button>
     </div>
     <p v-if="market.kind === 'registry'" class="plugin-market-notice">这里展示经 ZeroDeNet 准入的插件。版本由开发者仓库维护，进入详情可选择正式版、RC 或 Dev，在线安装前由 ZBoard 校验签名、兼容性和能力边界。</p>
+    <p v-if="market.notice" role="status" class="plugin-market-notice">{{ market.notice }}</p>
+    <p v-if="market.generated_at" class="plugin-market-notice">目录更新于 {{ formatDateTime(market.generated_at) }}</p>
     <p v-if="loading">正在加载市场目录…</p>
     <section v-else-if="!market.configured && !error" class="plugins-empty">
       <h2>尚未配置插件市场源</h2>
@@ -58,6 +60,7 @@
 </template>
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { formatDateTime } from "../utils/format";
 import UiInput from '../components/UiInput.vue'
 import UiSelect from '../components/UiSelect.vue'
 import { useRemoteResource } from "../composables/useRemoteResource";
