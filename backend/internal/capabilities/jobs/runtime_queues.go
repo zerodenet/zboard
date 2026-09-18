@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -52,13 +53,25 @@ func (s RuntimeQueues) Summaries(ctx context.Context, now time.Time) ([]RuntimeQ
 	if s.Admin == nil || s.Publication == nil {
 		return nil, ErrInvalid
 	}
-	publication, err := s.Publication.Summary(ctx, now.UTC())
-	if err != nil {
-		return nil, err
+	now = now.UTC()
+	var publication, admin RuntimeQueueSummary
+	var publicationErr, adminErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		publication, publicationErr = s.Publication.Summary(ctx, now)
+	}()
+	go func() {
+		defer wg.Done()
+		admin, adminErr = s.Admin.Summary(ctx, now)
+	}()
+	wg.Wait()
+	if publicationErr != nil {
+		return nil, publicationErr
 	}
-	admin, err := s.Admin.Summary(ctx, now.UTC())
-	if err != nil {
-		return nil, err
+	if adminErr != nil {
+		return nil, adminErr
 	}
 	return []RuntimeQueueSummary{publication, admin}, nil
 }

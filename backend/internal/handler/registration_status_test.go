@@ -26,6 +26,10 @@ func TestRegistrationStatusPagesPendingEventsAndRechecksAdministrator(t *testing
 		t.Fatal(err)
 	}
 	service := h.services.RegistrationEventStatus()
+	summary, err := service.Summary(context.Background(), admin.ID)
+	if err != nil || summary.Pending != 2 || len(summary.Items) != 0 || summary.OldestAt == nil || !summary.OldestAt.Equal(rows[1].OccurredAt) {
+		t.Fatal(summary, err)
+	}
 	page, err := service.Pending(context.Background(), admin.ID, 1, 1)
 	if err != nil || page.Pending != 2 || len(page.Items) != 1 || page.Items[0].AccountID != 101 || page.OldestAt == nil || !page.OldestAt.Equal(rows[1].OccurredAt) {
 		t.Fatal(page, err)
@@ -35,5 +39,8 @@ func TestRegistrationStatusPagesPendingEventsAndRechecksAdministrator(t *testing
 	}
 	if _, err := service.Pending(context.Background(), admin.ID, 1, 0); !errors.Is(err, messaging.ErrTemplatePermission) {
 		t.Fatal("revoked administrator read events", err)
+	}
+	if _, err := service.Summary(context.Background(), admin.ID); !errors.Is(err, messaging.ErrTemplatePermission) {
+		t.Fatal("revoked administrator read summary", err)
 	}
 }

@@ -112,7 +112,7 @@ func (s ProtocolEndpointMutations) CommitProtocolEndpointMutation(ctx context.Co
 				return err
 			}
 			update := tx.Model(&model.ProtocolEndpoint{}).Where("id = ?", previous.ID).
-				Select("node_id", "name", "runtime_key", "protocol", "address", "port", "public_port", "cipher", "parent_protocol_id", "multiplier_milli", "managed_principal_ready", "mieru_principal_ready", "server_config", "client_config", "optional_config", "tags", "is_active").
+				Select("node_id", "name", "runtime_key", "protocol", "address", "port", "public_port", "cipher", "parent_protocol_id", "multiplier_milli", "managed_principal_ready", "mieru_principal_ready", "server_config", "egress_protocol", "egress_config", "client_config", "optional_config", "tags", "is_active").
 				Updates(&row)
 			if update.Error != nil {
 				return update.Error
@@ -166,6 +166,7 @@ func (s ProtocolEndpointMutations) CommitProtocolEndpointMutation(ctx context.Co
 		}
 		record := protocolEndpointMutationRecord(row)
 		record.ServerConfig = change.Endpoint.ServerConfig
+		record.EgressConfig = change.Endpoint.EgressConfig
 		out = network.ProtocolEndpointMutationResult{
 			ProtocolEndpoint: record, Memberships: memberships, MembershipMutation: membershipMutation,
 			ProtocolEndpointChangeEffects: change.Effects,
@@ -195,7 +196,8 @@ func protocolEndpointMutationRecord(row model.ProtocolEndpoint) network.Protocol
 		Protocol: row.Protocol, Address: row.Address, Port: row.Port, PublicPort: row.PublicPort,
 		Cipher: row.Cipher, ParentProtocolID: row.ParentProtocolID, MultiplierMilli: row.MultiplierMilli,
 		ManagedPrincipalReady: row.ManagedPrincipalReady, MieruPrincipalReady: row.MieruPrincipalReady,
-		ServerCiphertext: row.ServerConfig, ClientConfig: row.ClientConfig, OptionalConfig: row.OptionalConfig,
+		ServerCiphertext: row.ServerConfig, EgressProtocol: row.EgressProtocol, EgressCiphertext: row.EgressConfig,
+		ClientConfig: row.ClientConfig, OptionalConfig: row.OptionalConfig,
 		Tags: row.Tags, IsActive: row.IsActive, SortOrder: row.SortOrder, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 }
@@ -206,7 +208,8 @@ func protocolEndpointMutationModel(row network.ProtocolEndpointRecord) model.Pro
 		Protocol: row.Protocol, Address: row.Address, Port: row.Port, PublicPort: row.PublicPort,
 		Cipher: row.Cipher, ParentProtocolID: row.ParentProtocolID, MultiplierMilli: row.MultiplierMilli,
 		ManagedPrincipalReady: row.ManagedPrincipalReady, MieruPrincipalReady: row.MieruPrincipalReady,
-		ServerConfig: row.ServerCiphertext, ClientConfig: row.ClientConfig, OptionalConfig: row.OptionalConfig,
+		ServerConfig: row.ServerCiphertext, EgressProtocol: row.EgressProtocol, EgressConfig: row.EgressCiphertext,
+		ClientConfig: row.ClientConfig, OptionalConfig: row.OptionalConfig,
 		Tags: row.Tags, IsActive: row.IsActive, SortOrder: row.SortOrder, CreatedAt: row.CreatedAt,
 	}
 }

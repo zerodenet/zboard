@@ -20,7 +20,18 @@ it('retains the last snapshot on refresh failure and cancels requests when leavi
  const w = await render(); api.jobs.mockRejectedValue(new Error('offline'))
  await w.get('button[aria-label="刷新后台任务"]').trigger('click'); await flushPromises()
  expect(w.text()).toContain('运行状态未更新'); expect(w.text()).toContain('订阅到期处理')
+ expect(w.text()).toContain('当前继续显示上次成功读取的快照'); expect(w.text()).toContain('重新读取')
  const signal = api.jobs.mock.calls.at(-1)![0] as AbortSignal; w.unmount(); wrapper = undefined; expect(signal.aborted).toBe(true)
+})
+
+it('keeps usable sections visible when one runtime partition fails', async () => {
+ const w = await render({ ...snapshot, jobs: [], execution_queue: undefined, issues: [{ section: 'execution', message: '任务执行状态读取失败' }] })
+ expect(w.text()).toContain('部分运行状态暂不可用')
+ expect(w.text()).toContain('任务执行状态读取失败')
+ expect(w.text()).toContain('任务执行状态暂不可用')
+ expect(w.text()).toContain('运营任务')
+ expect(w.text()).not.toContain('此实例尚无已注册的后台执行器')
+ expect(api.queue).toHaveBeenCalledWith('admin_tasks', 0, expect.any(AbortSignal))
 })
 it('clears previous queue details on queue selection and bounds polling after unmount', async () => {
  vi.useFakeTimers(); const w = await render(); await w.findAll('button.queue-card')[1].trigger('click'); await flushPromises()

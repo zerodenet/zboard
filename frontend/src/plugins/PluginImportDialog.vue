@@ -1,9 +1,16 @@
 <template>
-  <ModalDialog :open="open" :title="marketId ? '在线安装插件' : '离线导入插件'" description="先查看插件来源和所需能力，再确认导入。" :busy="busy" @close="$emit('close')">
+  <ModalDialog :open="open" :title="marketId ? '在线安装插件' : '离线导入插件'" description="先查看插件来源和所需能力，再确认导入。" size="lg" :busy="busy" @close="$emit('close')">
     <div class="plugin-import-content">
       <PageAlert v-if="error" tone="danger">{{ error }}</PageAlert>
       <UiFileUpload v-if="!marketId" choose-label="选择插件包" accept=".zbplugin" :max-file-size="32 * 1024 * 1024" :disabled="busy" @select="select" />
-      <div v-if="file" class="plugin-import-file"><strong>{{ file.name }}</strong><span>{{ (file.size / 1024 / 1024).toFixed(2) }} MiB</span></div>
+      <div v-if="file" class="plugin-import-file" role="status" aria-live="polite">
+        <span class="plugin-import-file-icon"><UiIcon name="plans" /></span>
+        <span class="plugin-import-file-identity">
+          <strong :title="file.name">{{ file.name }}</strong>
+          <small>已选择的 .zbplugin 安装包</small>
+        </span>
+        <span class="plugin-import-file-size">{{ formatCompactBytes(file.size) }}</span>
+      </div>
       <p v-else-if="!marketId">支持 .zbplugin 文件，最大 32 MiB。</p>
       <p v-if="marketId && busy && !preview" role="status">正在下载并校验安装包…</p>
       <details v-if="!marketId && !preview"><summary>旧版插件包兼容选项</summary><label>发布者公钥（.pub 文件内容）<input v-model="publicKey" :disabled="busy" autocomplete="off" placeholder="仅旧包未附带公钥时需要" /></label></details>
@@ -33,8 +40,10 @@ import { onScopeDispose, ref, watch } from 'vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import UiFileUpload from '../components/UiFileUpload.vue'
 import UiButton from '../components/UiButton.vue'
+import UiIcon from '../components/UiIcon.vue'
 import PageAlert from '../components/PageAlert.vue'
 import { importPlugin, previewPlugin, previewMarketPlugin, confirmMarketPlugin, capabilityLabel, surfaceLabel, type ImportPreview, type Plugin } from '../api/plugins'
+import { formatCompactBytes } from '../utils/format'
 const props = defineProps<{ open: boolean; marketId?: string; marketVersion?: string }>()
 const emit = defineEmits<{ close: []; imported: [plugin: Plugin] }>()
 const file = ref<File | null>(null), error = ref(''), busy = ref(false)
@@ -75,4 +84,11 @@ async function submit() {
 .plugin-key-fingerprint { overflow-wrap: anywhere; font-family: monospace; }
 .plugin-import-preview { display: grid; gap: .5rem; }
 details label { display: grid; gap: .5rem; margin-top: .75rem; }
+.plugin-import-file { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-width: 0; padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.plugin-import-file-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 9px; color: var(--primary); background: var(--primary-soft); font-size: 18px; }
+.plugin-import-file-identity { display: grid; gap: 4px; min-width: 0; }
+.plugin-import-file-identity strong { overflow: hidden; font-family: var(--font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.plugin-import-file-identity small, .plugin-import-file-size { color: var(--muted); font-size: 11px; }
+.plugin-import-file-size { white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media(max-width:560px) { .plugin-import-file { grid-template-columns: 34px minmax(0, 1fr); } .plugin-import-file-icon { width: 34px; height: 34px; } .plugin-import-file-size { grid-column: 2; } }
 </style>

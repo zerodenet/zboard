@@ -99,7 +99,7 @@ describe('infrastructure control policy', () => {
     expect(protocols).toContain('class="protocol-status-overview"')
     expect(protocols).toContain('<OverviewCard')
     expect(protocols).toContain('selectDeploymentStatus(item.value)')
-    expect(protocols).toContain('loadProtocolOverview')
+    expect(protocols).toContain('includeStatusFacets')
     expect(protocols).toContain('<TablePager variant="stripe"')
     expect(protocols).not.toContain('protocol-stripe-page')
     expect(protocols).not.toContain('protocol-stripe-workbench')

@@ -48,6 +48,8 @@ func (r RuntimeConfigurationRenderer) Render(request RuntimeConfigurationRenderR
 	}
 	now := request.Now.UTC()
 	inbounds := make([]map[string]interface{}, 0, len(request.Snapshot.Endpoints))
+	outbounds := make([]interface{}, 0)
+	routeRules := make([]interface{}, 0)
 	for _, endpoint := range request.Snapshot.Endpoints {
 		if !supportedRuntimeProtocol(endpoint.Protocol) {
 			return nil, "", fmt.Errorf("protocol endpoint %d cannot be published: 面板无法识别该协议。", endpoint.ID)
@@ -76,12 +78,36 @@ func (r RuntimeConfigurationRenderer) Render(request RuntimeConfigurationRenderR
 			return nil, "", fmt.Errorf("compile protocol endpoint %d: %w", endpoint.ID, err)
 		}
 		inbounds = append(inbounds, endpointInbounds...)
+		if len(endpointInbounds) > 0 && strings.TrimSpace(endpoint.EgressConfig) != "" {
+			rawEgress, err := r.Cipher.Decrypt(endpoint.EgressConfig)
+			if err != nil {
+				return nil, "", fmt.Errorf("decrypt protocol endpoint %d egress config: %w", endpoint.ID, err)
+			}
+			_, canonical, err := network.NormalizeProtocolEndpointEgressConfig(rawEgress)
+			if err != nil {
+				return nil, "", fmt.Errorf("protocol endpoint %d egress config is invalid: %w", endpoint.ID, err)
+			}
+			if canonical == "" {
+				return nil, "", fmt.Errorf("protocol endpoint %d egress config must contain a proxy outbound", endpoint.ID)
+			}
+			var egressProtocol map[string]interface{}
+			if err := json.Unmarshal([]byte(canonical), &egressProtocol); err != nil {
+				return nil, "", fmt.Errorf("protocol endpoint %d egress config is invalid JSON: %w", endpoint.ID, err)
+			}
+			tag := fmt.Sprintf("endpoint-%d-egress", endpoint.ID)
+			outbounds = append(outbounds, map[string]interface{}{"tag": tag, "protocol": egressProtocol})
+			routeRules = append(routeRules, map[string]interface{}{
+				"condition": map[string]interface{}{"type": "inbound", "values": []string{fmt.Sprintf("endpoint-%d", endpoint.ID)}},
+				"action":    map[string]interface{}{"type": "route", "outbound": tag},
+			})
+		}
 	}
 
 	config := map[string]interface{}{
-		"inbounds": inbounds,
-		"mode":     map[string]interface{}{"type": "rule"},
-		"route":    map[string]interface{}{"rules": []interface{}{}, "final": map[string]interface{}{"type": "direct"}},
+		"inbounds":  inbounds,
+		"outbounds": outbounds,
+		"mode":      map[string]interface{}{"type": "rule"},
+		"route":     map[string]interface{}{"rules": routeRules, "final": map[string]interface{}{"type": "direct"}},
 	}
 	if err := r.appendNetworkEntries(config, request.Snapshot.NetworkEntries); err != nil {
 		return nil, "", err

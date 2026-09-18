@@ -1,0 +1,3 @@
+ALTER TABLE protocol_deployments DROP INDEX idx_protocol_deployments_endpoint_latest;
+ALTER TABLE flow_usages DROP INDEX idx_flow_usages_endpoint_active;
+DROP TABLE IF EXISTS protocol_endpoint_usage_daily;

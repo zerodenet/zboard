@@ -35,18 +35,20 @@ func TestProtocolEndpointMutationsLoadDecryptsAndPreparesAtomicChange(t *testing
 		Endpoint: ProtocolEndpointRecord{
 			ID: 19, NodeID: 2, Name: "before", RuntimeKey: "runtime", Protocol: "vless", Address: "old.example",
 			Port: 443, PublicPort: 443, MultiplierMilli: 1000, ServerCiphertext: `enc:{"type":"vless","users":[]}`,
+			EgressProtocol: "socks5", EgressCiphertext: `enc:{"type":"socks5","server":"old-egress.example","port":1080}`,
 			ClientConfig: "{}", OptionalConfig: "{}", Tags: "[]", IsActive: true, SortOrder: 8,
 			ManagedPrincipalReady: true, MieruPrincipalReady: true,
 		}, ManagedCertificateID: 11, Version: "snapshot",
 	}}
 	service := ProtocolEndpointMutations{Repository: repository, Cipher: proxyPoolMutationCipher{}, Now: func() time.Time { return now }}
 	snapshot, err := service.Load(context.Background(), 7, 19)
-	if err != nil || snapshot.Endpoint.ServerConfig != `{"type":"vless","users":[]}` {
+	if err != nil || snapshot.Endpoint.ServerConfig != `{"type":"vless","users":[]}` || snapshot.Endpoint.EgressConfig == "" {
 		t.Fatalf("snapshot=%+v error=%v", snapshot, err)
 	}
 	result, err := service.Save(context.Background(), 7, &snapshot, ProtocolEndpointMutationRequest{
 		ID: 19, NodeID: 3, Name: " after ", Protocol: "VLESS", Address: " new.example ", Port: 8443,
 		PublicPort: 9443, MultiplierMilli: 2000, ServerConfig: `{"type":"vless","users":[]}`,
+		EgressConfig: ` { "port": 1081, "server": "new-egress.example", "type": "SOCKS5" } `,
 		ClientConfig: `{"server":"new.example"}`, OptionalConfig: "", Tags: "",
 		MembershipChanges: []ProtocolEndpointMembershipChange{
 			{NodeGroupID: 9, ExpectedRevision: 2, Member: true},
@@ -63,11 +65,34 @@ func TestProtocolEndpointMutationsLoadDecryptsAndPreparesAtomicChange(t *testing
 	if change.Endpoint.Name != "after" || change.Endpoint.Address != "new.example" || change.Endpoint.ServerCiphertext != `enc:{"type":"vless","users":[]}` || change.Endpoint.OptionalConfig != "{}" || change.Endpoint.Tags != "[]" {
 		t.Fatalf("normalized change=%+v", change)
 	}
+	if change.Endpoint.EgressProtocol != "socks5" || change.Endpoint.EgressConfig != `{"port":1081,"server":"new-egress.example","type":"socks5"}` || change.Endpoint.EgressCiphertext != `enc:{"port":1081,"server":"new-egress.example","type":"socks5"}` {
+		t.Fatalf("egress change=%+v", change.Endpoint)
+	}
 	if change.Endpoint.ManagedPrincipalReady || change.Endpoint.MieruPrincipalReady || change.MembershipChanges[0].NodeGroupID != 4 || len(change.CredentialProtocols) != 1 || !change.Now.Equal(now) {
 		t.Fatalf("owned change=%+v", change)
 	}
 	if change.Effects.Effect != ProtocolEndpointEffectCredentialPlacement || change.Effects.PublishStatus != ProtocolEndpointPublishQueued || len(change.Effects.AffectedNodeIDs) != 2 {
 		t.Fatalf("effects=%+v", change.Effects)
+	}
+}
+
+func TestNormalizeProtocolEndpointEgressConfig(t *testing.T) {
+	kind, canonical, err := NormalizeProtocolEndpointEgressConfig(`{"type":"SOCKS5","server":" proxy.example ","port":1080,"username":"user"}`)
+	if err != nil || kind != "socks5" || canonical != `{"port":1080,"server":"proxy.example","type":"socks5","username":"user"}` {
+		t.Fatalf("kind=%q canonical=%q error=%v", kind, canonical, err)
+	}
+	if kind, canonical, err = NormalizeProtocolEndpointEgressConfig(`{"type":"direct"}`); err != nil || kind != "" || canonical != "" {
+		t.Fatalf("direct kind=%q canonical=%q error=%v", kind, canonical, err)
+	}
+	for _, invalid := range []string{
+		`{"type":"http","server":"proxy.example","port":8080}`,
+		`{"type":"vmess","server":"proxy.example","port":443}`,
+		`{"type":"shadowsocks","server":"proxy.example","port":8388,"password":"secret"}`,
+		`{"type":"socks5","server":"proxy.example","port":1.5}`,
+	} {
+		if _, _, err := NormalizeProtocolEndpointEgressConfig(invalid); err == nil {
+			t.Fatalf("accepted invalid egress %s", invalid)
+		}
 	}
 }
 

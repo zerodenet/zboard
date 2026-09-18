@@ -15,9 +15,17 @@ type RegistrationEventStatus struct {
 	Items    []PendingRegistrationEvent
 }
 type RegistrationStatusRepository interface {
+	Summary(context.Context, uint) (RegistrationEventStatus, error)
 	Pending(context.Context, uint, int, int) (RegistrationEventStatus, error)
 }
 type RegistrationStatus struct{ Repository RegistrationStatusRepository }
+
+func (s RegistrationStatus) Summary(ctx context.Context, actor uint) (RegistrationEventStatus, error) {
+	if actor == 0 {
+		return RegistrationEventStatus{}, ErrTemplatePermission
+	}
+	return s.Repository.Summary(ctx, actor)
+}
 
 func (s RegistrationStatus) Pending(ctx context.Context, actor uint, limit, offset int) (RegistrationEventStatus, error) {
 	if actor == 0 {

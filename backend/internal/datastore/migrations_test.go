@@ -86,6 +86,8 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0013_integration_invocation_quota.up.sql",
 		"0014_job_attempt_retries.up.sql",
 		"0015_job_schedule_planning.up.sql",
+		"0016_protocol_endpoint_usage_daily.up.sql",
+		"0017_protocol_endpoint_egress.up.sql",
 	}
 	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
@@ -106,6 +108,8 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0013_integration_invocation_quota.down.sql",
 		"0014_job_attempt_retries.down.sql",
 		"0015_job_schedule_planning.down.sql",
+		"0016_protocol_endpoint_usage_daily.down.sql",
+		"0017_protocol_endpoint_egress.down.sql",
 	}
 	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)

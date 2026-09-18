@@ -35,6 +35,9 @@ func TestRuntimeJobsRequiresAdminAndReportsDurableQueue(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatal(rec.Code, rec.Body.String())
 	}
+	if timing := rec.Header().Get("Server-Timing"); timing == "" {
+		t.Fatal("runtime status response omitted server timing")
+	}
 	var body struct {
 		Data struct {
 			Queues []runtimeQueue `json:"queues"`
@@ -173,7 +176,59 @@ func TestRuntimeQueueDatabaseFailureIsNotAnEmptyQueue(t *testing.T) {
 	defer h.db.Exec("ALTER TABLE hidden_tasks RENAME TO tasks")
 	rec := httptest.NewRecorder()
 	h.AdminRuntimeJobsHandler(rec, announcementRequest("GET", "/api/v1/admin/runtime-jobs", token, ""))
-	if rec.Code != 503 {
-		t.Fatal("database failure was not surfaced", rec.Code, rec.Body.String())
+	if rec.Code != 200 {
+		t.Fatal("partial runtime snapshot was not returned", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data struct {
+			Queues []runtimeQueue       `json:"queues"`
+			Issues []runtimeStatusIssue `json:"issues"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, queue := range body.Data.Queues {
+		if queue.ID == "admin_tasks" || queue.ID == "node_publish" {
+			t.Fatalf("failed queues were presented as healthy: %+v", body.Data.Queues)
+		}
+	}
+	if len(body.Data.Issues) == 0 || body.Data.Issues[0].Section != "queues" {
+		t.Fatalf("queue failure missing from partial snapshot: %+v", body.Data.Issues)
+	}
+}
+
+func TestRuntimeExecutionFailureKeepsIndependentQueuesVisible(t *testing.T) {
+	h, _ := newAnnouncementTestHandlers(t)
+	h.db.Model(&model.User{}).Where("id = 1").Update("is_admin", true)
+	token, _, _ := h.issueToken(authClaims{UserID: 1, Email: "reader@example.test", IsAdmin: true})
+	if err := h.db.Exec("ALTER TABLE job_execution_budget RENAME TO hidden_job_execution_budget").Error; err != nil {
+		t.Fatal(err)
+	}
+	defer h.db.Exec("ALTER TABLE hidden_job_execution_budget RENAME TO job_execution_budget")
+	rec := httptest.NewRecorder()
+	h.AdminRuntimeJobsHandler(rec, announcementRequest("GET", "/api/v1/admin/runtime-jobs", token, ""))
+	if rec.Code != 200 {
+		t.Fatal("partial runtime snapshot was not returned", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data struct {
+			Queues         []runtimeQueue       `json:"queues"`
+			Issues         []runtimeStatusIssue `json:"issues"`
+			ExecutionQueue json.RawMessage      `json:"execution_queue"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	foundAdminQueue, foundIssue := false, false
+	for _, queue := range body.Data.Queues {
+		foundAdminQueue = foundAdminQueue || queue.ID == "admin_tasks"
+	}
+	for _, issue := range body.Data.Issues {
+		foundIssue = foundIssue || issue.Section == "execution"
+	}
+	if !foundAdminQueue || !foundIssue || len(body.Data.ExecutionQueue) != 0 {
+		t.Fatalf("independent sections were not isolated: queues=%+v issues=%+v execution_queue=%s", body.Data.Queues, body.Data.Issues, body.Data.ExecutionQueue)
 	}
 }

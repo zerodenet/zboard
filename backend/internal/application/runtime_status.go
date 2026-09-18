@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
@@ -28,27 +29,40 @@ type RuntimeExecutionStatus struct {
 }
 
 func (s *Services) RuntimeExecutionStatus(ctx context.Context) (RuntimeExecutionStatus, error) {
-	rows, err := s.Jobs.Schedules(ctx)
-	if err != nil {
-		return RuntimeExecutionStatus{}, err
-	}
+	var rows []jobs.ScheduleView
 	var budget jobstore.Budget
-	if err := s.Identity.db.WithContext(ctx).First(&budget, 1).Error; err != nil {
-		return RuntimeExecutionStatus{}, err
-	}
 	var external jobstore.ExecutionGroup
-	if err := s.Identity.db.WithContext(ctx).First(&external, "id = ?", "external").Error; err != nil {
-		return RuntimeExecutionStatus{}, err
-	}
-	queue, err := jobstore.New(s.Identity.db).QueueStatus(ctx)
-	if err != nil {
-		return RuntimeExecutionStatus{}, err
+	var queue jobstore.QueueStatus
+	var native []jobrun.Snapshot
+	var schedulesErr, configurationErr, queueErr, nativeErr error
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() {
+		defer wg.Done()
+		rows, schedulesErr = s.Jobs.Schedules(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		configurationErr = s.Identity.db.WithContext(ctx).First(&budget, 1).Error
+		if configurationErr == nil {
+			configurationErr = s.Identity.db.WithContext(ctx).First(&external, "id = ?", "external").Error
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		queue, queueErr = jobstore.New(s.Identity.db).QueueStatus(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		native, nativeErr = s.nativeRuntimeSnapshots(ctx)
+	}()
+	wg.Wait()
+	for _, err := range []error{schedulesErr, configurationErr, queueErr, nativeErr} {
+		if err != nil {
+			return RuntimeExecutionStatus{}, err
+		}
 	}
 	periodic := runtimeScheduleSnapshots(rows)
-	native, err := s.nativeRuntimeSnapshots(ctx)
-	if err != nil {
-		return RuntimeExecutionStatus{}, err
-	}
 	return RuntimeExecutionStatus{
 		Jobs: append(periodic, native...), Capacity: budget.Capacity, ExternalCapacity: external.Capacity,
 		Queue: ExecutionQueueStatus{PendingLimit: queue.PendingLimit, PluginPendingLimit: queue.PluginPendingLimit, PluginOwnerPendingLimit: queue.PluginOwnerPendingLimit, MaintenanceReserved: queue.MaintenanceReserved, Pending: queue.Pending, Running: queue.Running, Delayed: queue.Delayed, Unknown: queue.Unknown},

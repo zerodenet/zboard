@@ -81,14 +81,24 @@ type ProtocolEndpointInventoryQuery struct {
 	Search, Protocol, DeploymentStatus string
 	Active                             *bool
 	Paged                              bool
+	IncludeStatusFacets                bool
 	Offset, Limit                      int
 	Sort, Direction                    string
 	Now                                time.Time
 }
 
 type ProtocolEndpointInventoryPage struct {
-	Items []ProtocolEndpointInventoryItem
-	Total int64
+	Items  []ProtocolEndpointInventoryItem
+	Total  int64
+	Facets ProtocolEndpointStatusFacets
+}
+
+type ProtocolEndpointStatusFacets struct {
+	All       int64 `json:"all"`
+	Succeeded int64 `json:"succeeded"`
+	Running   int64 `json:"running"`
+	Failed    int64 `json:"failed"`
+	Never     int64 `json:"never"`
 }
 
 type ProtocolDeploymentQuery struct {

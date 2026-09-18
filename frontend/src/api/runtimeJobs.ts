@@ -8,8 +8,10 @@ export interface PluginTask extends RuntimeJob { plugin_id: string; plugin_name:
 export interface RuntimeQueue { oldest_at?: string | null; id: string; name: string; pending: number; running: number; delayed: number; stale: number; drafts: number; failed: number }
 export interface QueueItem { id: number; kind: string; state: string; attempts: number; created_at: string; next_attempt_at: string | null; lease_until: string | null; last_error: string }
 export interface QueuePage { items: QueueItem[]; total: number; offset: number; limit: number }
+export interface RuntimeStatusIssue { section: 'queues' | 'runtime' | 'execution' | 'plugin_tasks' | 'registration_messages'; message: string }
 export interface RuntimeJobs {
   as_of: string; started_at: string; observation_scope: string; jobs: RuntimeJob[]; queues: RuntimeQueue[]
+  issues?: RuntimeStatusIssue[]
   execution_queue?: { pending: number; running: number; delayed: number; unknown: number; maintenance_reserved?: boolean; pending_limit?: number; plugin_pending_limit?: number; plugin_owner_pending_limit?: number }; execution_concurrency?: number; external_execution_concurrency?: number; admin_task_concurrency: number; admin_item_concurrency: number
   plugin_tasks?: PluginTask[] | null; plugin_task_concurrency?: number
   plugin_host: { state: string; epoch: number; lease_until: string | null; renewal_failures: number; interval_seconds: number } | null

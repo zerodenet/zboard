@@ -53,6 +53,10 @@ func checkAccountingBatchReplayOutOfOrderAndExhaustion(t *testing.T, h *handlers
 	if err := h.db.Model(&model.TrafficRecord{}).Count(&count).Error; err != nil || count != 64 {
 		t.Fatalf("replayed/old events persisted: count=%d error=%v", count, err)
 	}
+	var projected int64
+	if err := h.db.Model(&model.ProtocolEndpointUsageDaily{}).Where("protocol_endpoint_id = ?", credential.ProtocolEndpointID).Select("COALESCE(SUM(used_bytes),0)").Scan(&projected).Error; err != nil || projected != 1920 {
+		t.Fatalf("batch usage projection: %d %v", projected, err)
+	}
 	// Only 30 bytes remain, although the next batch reports 960 new bytes.
 	if err := h.db.Model(&model.Subscription{}).Where("id = ?", credential.SubscriptionID).Update("flow_total", 1950).Error; err != nil {
 		t.Fatal(err)
@@ -68,6 +72,9 @@ func checkAccountingBatchReplayOutOfOrderAndExhaustion(t *testing.T, h *handlers
 	var current model.ProtocolCredential
 	if err := h.db.First(&current, credential.ID).Error; err != nil || current.Status != "expired" {
 		t.Fatalf("credential not expired: status=%s error=%v", current.Status, err)
+	}
+	if err := h.db.Model(&model.ProtocolEndpointUsageDaily{}).Where("protocol_endpoint_id = ?", credential.ProtocolEndpointID).Select("COALESCE(SUM(used_bytes),0)").Scan(&projected).Error; err != nil || projected != 1950 {
+		t.Fatalf("exhausted usage projection: %d %v", projected, err)
 	}
 }
 

@@ -3,6 +3,7 @@ package networkstore
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
@@ -251,7 +252,29 @@ func (s Inventory) endpointQuery(ctx context.Context, input network.ProtocolEndp
 func (s Inventory) ListProtocolEndpoints(ctx context.Context, input network.ProtocolEndpointInventoryQuery) (network.ProtocolEndpointInventoryPage, error) {
 	q := s.endpointQuery(ctx, input)
 	page := network.ProtocolEndpointInventoryPage{}
-	if err := q.Count(&page.Total).Error; err != nil {
+	if input.Paged && input.IncludeStatusFacets {
+		facets, err := s.protocolEndpointStatusFacets(ctx, input)
+		if err != nil {
+			return page, err
+		}
+		page.Facets = facets
+		switch input.DeploymentStatus {
+		case "succeeded":
+			page.Total = facets.Succeeded
+		case "running":
+			page.Total = facets.Running
+		case "failed":
+			page.Total = facets.Failed
+		case "never":
+			page.Total = facets.Never
+		case "":
+			page.Total = facets.All
+		default:
+			if err := q.Count(&page.Total).Error; err != nil {
+				return page, err
+			}
+		}
+	} else if err := q.Count(&page.Total).Error; err != nil {
 		return page, err
 	}
 	sortColumn := map[string]string{"sort_order": "protocol_endpoints.sort_order", "id": "protocol_endpoints.id", "name": "protocol_endpoints.name", "protocol": "protocol_endpoints.protocol", "node_id": "protocol_endpoints.node_id", "multiplier": "protocol_endpoints.multiplier_milli", "updated_at": "protocol_endpoints.updated_at"}[input.Sort]
@@ -273,6 +296,31 @@ func (s Inventory) ListProtocolEndpoints(ctx context.Context, input network.Prot
 	items, err := s.decorateEndpoints(ctx, rows, input.Now, false)
 	page.Items = items
 	return page, err
+}
+
+func (s Inventory) protocolEndpointStatusFacets(ctx context.Context, input network.ProtocolEndpointInventoryQuery) (network.ProtocolEndpointStatusFacets, error) {
+	input.DeploymentStatus = ""
+	latest := s.DB.WithContext(ctx).Model(&model.ProtocolDeployment{}).
+		Select("protocol_endpoint_id, MAX(id) AS latest_id").
+		Group("protocol_endpoint_id")
+	var row struct {
+		Total, Succeeded, Running, Failed, Never int64
+	}
+	err := s.endpointQuery(ctx, input).
+		Select(`COUNT(*) AS total,
+			COALESCE(SUM(CASE WHEN protocol_endpoint_deployment.status = 'succeeded' THEN 1 ELSE 0 END), 0) AS succeeded,
+			COALESCE(SUM(CASE WHEN protocol_endpoint_deployment.status = 'running' THEN 1 ELSE 0 END), 0) AS running,
+			COALESCE(SUM(CASE WHEN protocol_endpoint_deployment.status = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
+			COALESCE(SUM(CASE WHEN protocol_endpoint_deployment.id IS NULL THEN 1 ELSE 0 END), 0) AS never`).
+		Joins("LEFT JOIN (?) AS protocol_endpoint_latest ON protocol_endpoint_latest.protocol_endpoint_id = protocol_endpoints.id", latest).
+		Joins("LEFT JOIN protocol_deployments AS protocol_endpoint_deployment ON protocol_endpoint_deployment.id = protocol_endpoint_latest.latest_id").
+		Scan(&row).Error
+	if err != nil {
+		return network.ProtocolEndpointStatusFacets{}, err
+	}
+	return network.ProtocolEndpointStatusFacets{
+		All: row.Total, Succeeded: row.Succeeded, Running: row.Running, Failed: row.Failed, Never: row.Never,
+	}, nil
 }
 
 func (s Inventory) ProtocolEndpoint(ctx context.Context, id uint, now time.Time) (network.ProtocolEndpointInventoryItem, error) {
@@ -297,25 +345,38 @@ func (s Inventory) decorateEndpoints(ctx context.Context, rows []model.ProtocolE
 		ids = append(ids, r.ID)
 		nodeIDs = append(nodeIDs, r.NodeID)
 	}
-	usage, err := s.protocolUsage(ctx, ids, now)
-	if err != nil {
-		return nil, err
-	}
-	latest, err := s.latestDeployments(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
+	var usage map[uint]network.ProtocolUsageRecord
+	var latest map[uint]network.ProtocolDeploymentRecord
 	var nodes []model.Node
-	if err := s.DB.WithContext(ctx).Where("id IN ?", nodeIDs).Find(&nodes).Error; err != nil {
-		return nil, err
+	var bindings []model.CertificateProtocolEndpoint
+	var usageErr, latestErr, nodesErr, bindingsErr error
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() {
+		defer wg.Done()
+		usage, usageErr = s.protocolUsage(ctx, ids, now)
+	}()
+	go func() {
+		defer wg.Done()
+		latest, latestErr = s.latestDeployments(ctx, ids)
+	}()
+	go func() {
+		defer wg.Done()
+		nodesErr = s.DB.WithContext(ctx).Where("id IN ?", nodeIDs).Find(&nodes).Error
+	}()
+	go func() {
+		defer wg.Done()
+		bindingsErr = s.DB.WithContext(ctx).Where("protocol_endpoint_id IN ?", ids).Find(&bindings).Error
+	}()
+	wg.Wait()
+	for _, err := range []error{usageErr, latestErr, nodesErr, bindingsErr} {
+		if err != nil {
+			return nil, err
+		}
 	}
 	nodeByID := map[uint]network.NodeAdministrationRecord{}
 	for _, r := range nodes {
 		nodeByID[r.ID] = nodeAdministrationRecord(r)
-	}
-	var bindings []model.CertificateProtocolEndpoint
-	if err := s.DB.WithContext(ctx).Where("protocol_endpoint_id IN ?", ids).Find(&bindings).Error; err != nil {
-		return nil, err
 	}
 	certificateByEndpoint := map[uint]uint{}
 	for _, r := range bindings {
@@ -372,8 +433,38 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 		LastObservedAt                             *time.Time
 	}
 	var principal []principalRow
-	if err := s.DB.WithContext(ctx).Table("principal_flow_currents").Select("protocol_endpoint_id, COALESCE(SUM(active_flows),0) AS active_flows, COUNT(DISTINCT CASE WHEN active_flows > 0 AND user_id > 0 THEN user_id END) AS active_users, COUNT(*) AS observation_count, MAX(observed_at) AS last_observed_at").Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id").Scan(&principal).Error; err != nil {
-		return nil, err
+	type credentialRow struct {
+		ProtocolEndpointID uint
+		ActiveCredentials  int64
+		LastUsedAt         *time.Time
+	}
+	var credentials []credentialRow
+	type trafficRow struct {
+		ProtocolEndpointID             uint
+		UsedBytesToday, UsedBytesTotal int64
+	}
+	var traffic []trafficRow
+	day := now.UTC().Format("2006-01-02")
+	var principalErr, credentialErr, trafficErr error
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		principalErr = s.DB.WithContext(ctx).Table("principal_flow_currents").Select("protocol_endpoint_id, COALESCE(SUM(active_flows),0) AS active_flows, COUNT(DISTINCT CASE WHEN active_flows > 0 AND user_id > 0 THEN user_id END) AS active_users, COUNT(*) AS observation_count, MAX(observed_at) AS last_observed_at").Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id").Scan(&principal).Error
+	}()
+	go func() {
+		defer wg.Done()
+		credentialErr = s.DB.WithContext(ctx).Model(&model.ProtocolCredential{}).Select("protocol_endpoint_id, SUM(CASE WHEN status = ? AND revoked_at IS NULL AND expires_at > ? THEN 1 ELSE 0 END) AS active_credentials, MAX(last_used_at) AS last_used_at", "active", now).Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id").Scan(&credentials).Error
+	}()
+	go func() {
+		defer wg.Done()
+		trafficErr = s.DB.WithContext(ctx).Model(&model.ProtocolEndpointUsageDaily{}).Select("protocol_endpoint_id, COALESCE(SUM(used_bytes),0) AS used_bytes_total, COALESCE(SUM(CASE WHEN usage_date = ? THEN used_bytes ELSE 0 END),0) AS used_bytes_today", day).Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id").Scan(&traffic).Error
+	}()
+	wg.Wait()
+	for _, err := range []error{principalErr, credentialErr, trafficErr} {
+		if err != nil {
+			return nil, err
+		}
 	}
 	covered := map[uint]struct{}{}
 	for _, r := range principal {
@@ -409,15 +500,6 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 			result[r.ProtocolEndpointID] = v
 		}
 	}
-	type credentialRow struct {
-		ProtocolEndpointID uint
-		ActiveCredentials  int64
-		LastUsedAt         *time.Time
-	}
-	var credentials []credentialRow
-	if err := s.DB.WithContext(ctx).Model(&model.ProtocolCredential{}).Select("protocol_endpoint_id, SUM(CASE WHEN status = ? AND revoked_at IS NULL AND expires_at > ? THEN 1 ELSE 0 END) AS active_credentials, MAX(last_used_at) AS last_used_at", "active", now).Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id").Scan(&credentials).Error; err != nil {
-		return nil, err
-	}
 	for _, r := range credentials {
 		v := result[r.ProtocolEndpointID]
 		v.ActiveCredentials = r.ActiveCredentials
@@ -425,15 +507,6 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 			v.LastUsedAt = r.LastUsedAt
 		}
 		result[r.ProtocolEndpointID] = v
-	}
-	type trafficRow struct {
-		ProtocolEndpointID             uint
-		UsedBytesToday, UsedBytesTotal int64
-	}
-	var traffic []trafficRow
-	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	if err := s.DB.WithContext(ctx).Model(&model.TrafficRecord{}).Select("protocol_endpoint_id, COALESCE(SUM(used_bytes),0) AS used_bytes_total, COALESCE(SUM(CASE WHEN record_at >= ? THEN used_bytes ELSE 0 END),0) AS used_bytes_today", day).Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id").Scan(&traffic).Error; err != nil {
-		return nil, err
 	}
 	for _, r := range traffic {
 		v := result[r.ProtocolEndpointID]

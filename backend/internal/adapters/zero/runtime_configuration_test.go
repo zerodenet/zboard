@@ -33,6 +33,7 @@ func TestRuntimeConfigurationRendererBuildsManagedEndpointAndNetworkEntry(t *tes
 			Endpoints: []network.RuntimeConfigurationEndpoint{{
 				ID: 11, NodeID: 7, Protocol: "vless", Address: "node.example.test", Port: 443, PublicPort: 8443,
 				ServerConfig:            `enc:{"type":"vless","tls":{},"users":[{"flow":"xtls-rprx-vision"}]}`,
+				EgressConfig:            `enc:{"type":"socks5","server":"egress.example.test","port":1080,"username":"user","password":"pass"}`,
 				ActiveSubscriptionCount: 1,
 				Certificate:             &network.RuntimeConfigurationCertificate{Status: "active", CertPath: "/cert.pem", KeyPath: "/key.pem", NotAfter: &notAfter},
 				Credentials: []network.RuntimeConfigurationCredential{{
@@ -74,6 +75,15 @@ func TestRuntimeConfigurationRendererBuildsManagedEndpointAndNetworkEntry(t *tes
 	api := config["api"].(map[string]interface{})
 	if _, exists := config["push"]; exists || api["outbox_path"] != "/var/lib/zerodenet/event-outbox.jsonl" {
 		t.Fatalf("connector configuration = %#v", config)
+	}
+	outbounds := config["outbounds"].([]interface{})
+	if len(outbounds) != 1 || outbounds[0].(map[string]interface{})["tag"] != "endpoint-11-egress" {
+		t.Fatalf("endpoint egress outbounds = %#v", outbounds)
+	}
+	rules := config["route"].(map[string]interface{})["rules"].([]interface{})
+	egressRule := rules[0].(map[string]interface{})
+	if egressRule["action"].(map[string]interface{})["outbound"] != "endpoint-11-egress" {
+		t.Fatalf("endpoint egress route = %#v", rules)
 	}
 }
 

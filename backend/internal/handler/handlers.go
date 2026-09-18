@@ -269,6 +269,7 @@ type protocolEndpointWriteReq struct {
 	IsActive                   *bool                                       `json:"is_active"`
 	SortOrder                  int                                         `json:"sort_order"`
 	Config                     string                                      `json:"config"`
+	EgressConfig               string                                      `json:"egress_config"`
 	ClientConfig               string                                      `json:"client_config"`
 	OptionalConfig             string                                      `json:"optional_config"`
 	Tags                       string                                      `json:"tags"`
@@ -1538,6 +1539,15 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		BadRequestError(w, err)
 		return
 	}
+	if _, req.EgressConfig, err = networkcap.NormalizeProtocolEndpointEgressConfig(req.EgressConfig); err != nil {
+		var validation *networkcap.ProtocolEndpointMutationValidation
+		if errors.As(err, &validation) {
+			BadRequestFields(w, validation.Message, validation.Fields)
+		} else {
+			ServerError(w, err)
+		}
+		return
+	}
 
 	if supported, reason := h.protocolKernelSupport(protocol); !supported {
 		// Existing records on an unsupported selected kernel remain recoverable:
@@ -1564,7 +1574,7 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		ID: endpointID, NodeID: req.NodeID, Name: req.Name, Protocol: protocol, Address: req.Address,
 		Port: req.Port, PublicPort: req.PublicPort, Cipher: req.Cipher, ParentProtocolID: req.ParentProtocolID,
 		ManagedCertificateID: req.ManagedCertificateID, MultiplierMilli: req.MultiplierMilli, IsActive: req.IsActive,
-		ServerConfig: req.Config, ClientConfig: req.ClientConfig, OptionalConfig: req.OptionalConfig, Tags: req.Tags,
+		ServerConfig: req.Config, EgressConfig: req.EgressConfig, ClientConfig: req.ClientConfig, OptionalConfig: req.OptionalConfig, Tags: req.Tags,
 		MembershipChanges: capabilityMembershipChanges, CredentialProtocols: h.storedSubscriptionCredentialProtocols(),
 	})
 	transactionFinishedAt := time.Now()
@@ -1637,6 +1647,7 @@ func (h *handlers) ProtocolEndpointDeployHandler(w http.ResponseWriter, r *http.
 type protocolEndpointAdminDetail struct {
 	model.ProtocolEndpoint
 	Config                  string                                `json:"config"`
+	EgressConfig            string                                `json:"egress_config,omitempty"`
 	ManagedCertificateID    *uint                                 `json:"managed_certificate_id,omitempty"`
 	LatestDeployment        *model.ProtocolDeployment             `json:"latest_deployment,omitempty"`
 	Usage                   protocolEndpointUsage                 `json:"usage"`
@@ -1669,6 +1680,7 @@ type protocolEndpointListItem struct {
 	NodeName                string                      `json:"node_name"`
 	Name                    string                      `json:"name"`
 	Protocol                string                      `json:"protocol"`
+	EgressProtocol          string                      `json:"egress_protocol,omitempty"`
 	Address                 string                      `json:"address"`
 	Port                    int                         `json:"port"`
 	PublicPort              int                         `json:"public_port"`
@@ -1690,7 +1702,7 @@ type protocolEndpointListItem struct {
 func newProtocolEndpointListItem(endpoint model.ProtocolEndpoint, nodeName string, managedCertificateID *uint, deployment *model.ProtocolDeployment, usage protocolEndpointUsage, kernelSupported bool, kernelUnsupportedReason string) protocolEndpointListItem {
 	item := protocolEndpointListItem{
 		ID: endpoint.ID, NodeID: endpoint.NodeID, NodeName: nodeName, Name: endpoint.Name,
-		Protocol: endpoint.Protocol, Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
+		Protocol: endpoint.Protocol, EgressProtocol: endpoint.EgressProtocol, Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
 		ParentProtocolID: endpoint.ParentProtocolID, ManagedCertificateID: managedCertificateID, MultiplierMilli: endpoint.MultiplierMilli,
 		ManagedPrincipalReady: endpoint.ManagedPrincipalReady, MieruPrincipalReady: endpoint.MieruPrincipalReady, IsActive: endpoint.IsActive, SortOrder: endpoint.SortOrder, Usage: usage,
 		KernelSupported: kernelSupported, KernelUnsupportedReason: kernelUnsupportedReason,
@@ -1729,6 +1741,14 @@ func (h *handlers) ProtocolEndpointDetailHandler(w http.ResponseWriter, r *http.
 		ServerError(w, fmt.Errorf("decrypt protocol endpoint config: %w", err))
 		return
 	}
+	egressConfig := ""
+	if strings.TrimSpace(endpoint.EgressConfig) != "" {
+		egressConfig, err = h.credentialCipher.Decrypt(endpoint.EgressConfig)
+		if err != nil {
+			ServerError(w, fmt.Errorf("decrypt protocol endpoint egress config: %w", err))
+			return
+		}
+	}
 	if strings.EqualFold(endpoint.Protocol, "mieru") {
 		serverConfig, endpoint.ClientConfig = redactMieruEndpointAdminConfigs(serverConfig, endpoint.ClientConfig)
 	} else if serverConfig, endpoint.ClientConfig, err = normalizeManagedProtocolTemplates(endpoint.Protocol, serverConfig, endpoint.ClientConfig); err != nil {
@@ -1743,7 +1763,7 @@ func (h *handlers) ProtocolEndpointDetailHandler(w http.ResponseWriter, r *http.
 		memberships = append(memberships, protocolEndpointNodeGroupMembership{NodeGroupID: membership.NodeGroupID, Name: membership.Name, Code: membership.Code, Description: membership.Description, IsEnabled: membership.IsEnabled, Revision: membership.Revision, SortOrder: membership.SortOrder})
 	}
 	detail := protocolEndpointAdminDetail{
-		ProtocolEndpoint: endpoint, Config: serverConfig, ManagedCertificateID: item.ManagedCertificateID,
+		ProtocolEndpoint: endpoint, Config: serverConfig, EgressConfig: egressConfig, ManagedCertificateID: item.ManagedCertificateID,
 		Usage: usage, KernelSupported: kernelSupported, KernelUnsupportedReason: kernelUnsupportedReason,
 		NodeGroupMemberships: memberships,
 	}
@@ -1880,6 +1900,7 @@ func (h *handlers) ProtocolEndpointListHandler(w http.ResponseWriter, r *http.Re
 	if _, err := h.requireAdmin(w, r); err != nil {
 		return
 	}
+	requestStartedAt := time.Now()
 	paged := wantsPagedList(r)
 	offset, limit := 0, 50
 	var err error
@@ -1901,6 +1922,7 @@ func (h *handlers) ProtocolEndpointListHandler(w http.ResponseWriter, r *http.Re
 	}
 	if paged {
 		query.Paged, query.Offset, query.Limit = true, offset, limit
+		query.IncludeStatusFacets = r.URL.Query().Get("include_facets") == "true"
 	}
 	query.Now = time.Now().UTC()
 	page, err := h.services.NetworkInventory.ProtocolEndpoints(r.Context(), query)
@@ -1920,8 +1942,13 @@ func (h *handlers) ProtocolEndpointListHandler(w http.ResponseWriter, r *http.Re
 		}
 		items = append(items, newProtocolEndpointListItem(endpoint, node.Name, row.ManagedCertificateID, deployment, protocolUsageModel(row.Usage), kernelSupported, kernelUnsupportedReason))
 	}
+	w.Header().Set("Server-Timing", fmt.Sprintf("protocol_inventory;dur=%d", time.Since(requestStartedAt).Milliseconds()))
 	if paged {
-		OK(w, pagedData(items, page.Total, offset, limit))
+		data := pagedData(items, page.Total, offset, limit)
+		if query.IncludeStatusFacets {
+			data["facets"] = page.Facets
+		}
+		OK(w, data)
 		return
 	}
 	OK(w, items)
@@ -2028,7 +2055,7 @@ func (h *handlers) loadProtocolEndpointNodes(endpoints []model.ProtocolEndpoint)
 }
 
 func protocolEndpointRecordModel(r networkcap.ProtocolEndpointRecord) model.ProtocolEndpoint {
-	return model.ProtocolEndpoint{ID: r.ID, NodeID: r.NodeID, Name: r.Name, RuntimeKey: r.RuntimeKey, Protocol: r.Protocol, Address: r.Address, Port: r.Port, PublicPort: r.PublicPort, Cipher: r.Cipher, ParentProtocolID: r.ParentProtocolID, MultiplierMilli: r.MultiplierMilli, ManagedPrincipalReady: r.ManagedPrincipalReady, MieruPrincipalReady: r.MieruPrincipalReady, ServerConfig: r.ServerCiphertext, ClientConfig: r.ClientConfig, OptionalConfig: r.OptionalConfig, Tags: r.Tags, IsActive: r.IsActive, SortOrder: r.SortOrder, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
+	return model.ProtocolEndpoint{ID: r.ID, NodeID: r.NodeID, Name: r.Name, RuntimeKey: r.RuntimeKey, Protocol: r.Protocol, Address: r.Address, Port: r.Port, PublicPort: r.PublicPort, Cipher: r.Cipher, ParentProtocolID: r.ParentProtocolID, MultiplierMilli: r.MultiplierMilli, ManagedPrincipalReady: r.ManagedPrincipalReady, MieruPrincipalReady: r.MieruPrincipalReady, ServerConfig: r.ServerCiphertext, EgressProtocol: r.EgressProtocol, EgressConfig: r.EgressCiphertext, ClientConfig: r.ClientConfig, OptionalConfig: r.OptionalConfig, Tags: r.Tags, IsActive: r.IsActive, SortOrder: r.SortOrder, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
 }
 func protocolDeploymentModel(r networkcap.ProtocolDeploymentRecord) model.ProtocolDeployment {
 	return model.ProtocolDeployment{ID: r.ID, NodeID: r.NodeID, ProtocolEndpointID: r.ProtocolEndpointID, ConfigRevision: r.ConfigRevision, DesiredConfigSHA256: r.DesiredConfigSHA256, AppliedConfigSHA256: r.AppliedConfigSHA256, Status: r.Status, RequestedBy: r.RequestedBy, Error: r.Error, Output: r.Output, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}

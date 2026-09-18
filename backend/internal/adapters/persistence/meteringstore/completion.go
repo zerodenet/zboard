@@ -115,6 +115,9 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
+		if err := AddProtocolEndpointUsage(tx, []model.TrafficRecord{record}); err != nil {
+			return err
+		}
 		if charged > 0 {
 			subscription.FlowUsed += charged
 			if subscription.FlowUsed >= subscription.FlowTotal {

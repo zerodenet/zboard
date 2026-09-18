@@ -26,6 +26,10 @@ func TestNodeReportCapabilityTransactionReplayAndRotation(t *testing.T) {
 		t.Fatalf("failed transaction: %+v %v", out, err)
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 0, subStatusActive)
+	var projected int64
+	if err := h.db.Model(&model.ProtocolEndpointUsageDaily{}).Select("COALESCE(SUM(used_bytes),0)").Scan(&projected).Error; err != nil || projected != 0 {
+		t.Fatalf("failed report retained usage projection: %d %v", projected, err)
+	}
 	out, err = service.Record(context.Background(), in)
 	if err != nil || out.Record.ID == 0 || out.Record.UsedBytes == 0 || out.Duplicate {
 		t.Fatalf("report: %+v %v", out, err)
@@ -46,4 +50,7 @@ func TestNodeReportCapabilityTransactionReplayAndRotation(t *testing.T) {
 		t.Fatalf("rotation: %v", err)
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, out.Record.UsedBytes, subStatusActive)
+	if err := h.db.Model(&model.ProtocolEndpointUsageDaily{}).Select("COALESCE(SUM(used_bytes),0)").Scan(&projected).Error; err != nil || projected != out.Record.UsedBytes {
+		t.Fatalf("node report usage projection: %d %v", projected, err)
+	}
 }

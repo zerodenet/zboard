@@ -182,6 +182,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPost, "/api/v1/admin/protocol-deployments/batch", h.ProtocolBatchDeployHandler),
 		newRoute(http.MethodPatch, "/api/v1/admin/protocol-endpoints/batch", h.ProtocolBatchActiveHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/protocol-endpoints", h.ProtocolEndpointCreateHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/protocol-endpoints/egress/parse", h.ProtocolEndpointEgressParseHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/protocol-endpoints/reality-keypair", h.ProtocolRealityKeyPairHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/protocol-endpoints/reality-template", h.ProtocolRealityTemplateHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/protocol-endpoints/:id", h.ProtocolEndpointDetailHandler),

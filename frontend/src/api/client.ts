@@ -629,11 +629,22 @@ export async function createProtocolEndpoint(payload: any): Promise<ProtocolEndp
   return unwrap(response)
 }
 
+export interface ProtocolEndpointEgressParseResult {
+	protocol: string
+	config: Record<string, unknown>
+}
+
+export async function parseProtocolEndpointEgress(input: string): Promise<ProtocolEndpointEgressParseResult> {
+	const response = await api.post('/admin/protocol-endpoints/egress/parse', { input })
+	return unwrap(response)
+}
+
 export interface ProtocolEndpointOrderItem {
 	id: number
 	node_id: number
 	name: string
 	protocol: string
+	egress_protocol?: string
 	is_active: boolean
 	sort_order: number
 }
@@ -721,6 +732,15 @@ export interface ProtocolEndpointListItem {
 	updated_at: string
 }
 
+export interface ProtocolEndpointStatusFacets {
+	[key: string]: number
+	all: number
+	succeeded: number
+	running: number
+	failed: number
+	never: number
+}
+
 export async function fetchProtocolEndpointsPage(params: {
 	offset?: number
 	limit?: number
@@ -729,19 +749,21 @@ export async function fetchProtocolEndpointsPage(params: {
 	protocol?: string
 	active?: boolean
 	deploymentStatus?: string
+	includeFacets?: boolean
 	ids?: number[]
 	sort?: string
 	direction?: 'asc' | 'desc'
-} = {}, options: ApiRequestOptions = {}): Promise<PageResult<ProtocolEndpointListItem>> {
+} = {}, options: ApiRequestOptions = {}): Promise<PageResult<ProtocolEndpointListItem, Record<string, unknown>, ProtocolEndpointStatusFacets>> {
 	const query = new URLSearchParams()
 	appendPageParams(query, params)
 	if (params.nodeId) query.set('node_id', String(params.nodeId))
 	if (params.protocol) query.set('protocol', params.protocol)
 	if (params.active !== undefined) query.set('active', String(params.active))
 	if (params.deploymentStatus) query.set('deployment_status', params.deploymentStatus)
+	if (params.includeFacets) query.set('include_facets', 'true')
 	if (params.ids?.length) query.set('ids', params.ids.join(','))
 	const response = await api.get(`/admin/protocol-endpoints?${query}`, { signal: options.signal })
-	return normalizePageResult<ProtocolEndpointListItem>(unwrap(response), params.offset || 0, params.limit || 50)
+	return normalizePageResult<ProtocolEndpointListItem, Record<string, unknown>, ProtocolEndpointStatusFacets>(unwrap(response), params.offset || 0, params.limit || 50)
 }
 
 export interface ProtocolEndpointSelectionSnapshot {

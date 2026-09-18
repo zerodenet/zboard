@@ -40,6 +40,7 @@ type RuntimeConfigurationEndpoint struct {
 	PublicPort              int
 	MieruPrincipalReady     bool
 	ServerConfig            string
+	EgressConfig            string
 	ActiveSubscriptionCount int64
 	Credentials             []RuntimeConfigurationCredential
 	Certificate             *RuntimeConfigurationCertificate

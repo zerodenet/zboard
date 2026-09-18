@@ -41,6 +41,7 @@ type flowBatch struct {
 	touched            map[uint]time.Time
 	dirtySubscriptions map[uint]time.Time
 	records            []model.TrafficRecord
+	usageRecords       []model.TrafficRecord
 	recorded           map[zeroFlowReportKey]uint
 }
 
@@ -108,6 +109,7 @@ func (s *flowBatch) appendRecord(tx *gorm.DB, record model.TrafficRecord) error 
 			return err
 		}
 	}
+	s.usageRecords = append(s.usageRecords, record)
 	s.recorded[zeroFlowReportKey{record.NodeID, record.ReportID}] = record.ProtocolEndpointID
 	return nil
 }
@@ -157,6 +159,9 @@ func (s *flowBatch) flush(tx *gorm.DB) error {
 		if err := tx.CreateInBatches(&s.records, 100).Error; err != nil {
 			return err
 		}
+	}
+	if err := AddProtocolEndpointUsage(tx, s.usageRecords); err != nil {
+		return err
 	}
 	subscriptionIDs := make([]uint, 0, len(s.dirtySubscriptions))
 	for id := range s.dirtySubscriptions {

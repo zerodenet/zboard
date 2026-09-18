@@ -31,7 +31,7 @@ func databaseModels() []interface{} {
 		&model.NodeGroupEndpoint{}, &model.Subscription{}, &model.Order{}, &model.PaymentEvent{},
 		&model.SubscriptionMember{}, &model.SubscriptionToken{}, &model.SubscriptionTemplate{},
 		&model.SubscriptionRuleSet{}, &model.SubscriptionTemplateRuleSetBinding{}, &model.ProtocolCredential{},
-		&model.FlowUsage{}, &model.TrafficRecord{}, &model.AuditLog{}, &model.EmailTemplate{},
+		&model.FlowUsage{}, &model.TrafficRecord{}, &model.ProtocolEndpointUsageDaily{}, &model.AuditLog{}, &model.EmailTemplate{},
 		&model.RegistrationEmailChallenge{}, &model.AccountRegistrationEvent{}, &model.Ticket{}, &model.TicketMessage{}, &model.UserAPIToken{},
 		&model.Task{}, &model.TaskItem{}, &model.MailDeliveryAttempt{}, &model.ProtocolDeployment{}, &model.QuotaEvent{},
 		&model.NodeKernelState{}, &model.NodeOperation{}, &model.ProviderAccount{}, &model.ManagedDNSRecord{},
@@ -168,6 +168,42 @@ func runSQLiteMigrations(db *gorm.DB) error {
 		}); err != nil {
 			return err
 		}
+	}
+	var endpointUsageMigrationApplied int64
+	if err := db.Model(&schemaMigration{}).Where("version = ?", "0016_protocol_endpoint_usage_daily.up.sql").Count(&endpointUsageMigrationApplied).Error; err != nil {
+		return err
+	}
+	if endpointUsageMigrationApplied == 0 {
+		usageSchema, err := migrations.Files.ReadFile("sqlite/0016_protocol_endpoint_usage_daily.sql")
+		if err != nil {
+			return err
+		}
+		usageStatements, err := splitMigrationStatements(string(usageSchema))
+		if err != nil {
+			return err
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			for _, statement := range usageStatements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return tx.Create(&schemaMigration{Version: "0016_protocol_endpoint_usage_daily.up.sql", AppliedAt: time.Now().UTC()}).Error
+		}); err != nil {
+			return err
+		}
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		for _, column := range []string{"EgressProtocol", "EgressConfig"} {
+			if !tx.Migrator().HasColumn(&model.ProtocolEndpoint{}, column) {
+				if err := tx.Migrator().AddColumn(&model.ProtocolEndpoint{}, column); err != nil {
+					return err
+				}
+			}
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0017_protocol_endpoint_egress.up.sql", AppliedAt: time.Now().UTC()}).Error
+	}); err != nil {
+		return err
 	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {

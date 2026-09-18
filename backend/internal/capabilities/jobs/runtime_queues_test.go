@@ -16,6 +16,22 @@ type runtimeQueueSourceStub struct {
 	offset  int
 }
 
+type blockingRuntimeQueueSource struct {
+	started chan<- struct{}
+	release <-chan struct{}
+	id      string
+}
+
+func (s blockingRuntimeQueueSource) Summary(context.Context, time.Time) (RuntimeQueueSummary, error) {
+	s.started <- struct{}{}
+	<-s.release
+	return RuntimeQueueSummary{ID: s.id}, nil
+}
+
+func (blockingRuntimeQueueSource) Page(context.Context, time.Time, int, int) (RuntimeQueuePage, error) {
+	return RuntimeQueuePage{}, nil
+}
+
 func (s *runtimeQueueSourceStub) Summary(_ context.Context, now time.Time) (RuntimeQueueSummary, error) {
 	s.now = now
 	return s.summary, s.err
@@ -57,5 +73,31 @@ func TestRuntimeQueuesOwnSelectionAndPagingBounds(t *testing.T) {
 		if _, err := queues.Page(context.Background(), input.name, now, input.limit, input.offset); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("Page(%q,%d,%d) error = %v, want ErrInvalid", input.name, input.limit, input.offset, err)
 		}
+	}
+}
+
+func TestRuntimeQueueSummariesStartSourcesConcurrently(t *testing.T) {
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	queues := RuntimeQueues{
+		Admin:       blockingRuntimeQueueSource{started: started, release: release, id: AdminRuntimeQueue},
+		Publication: blockingRuntimeQueueSource{started: started, release: release, id: PublicationRuntimeQueue},
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := queues.Summaries(context.Background(), time.Now())
+		done <- err
+	}()
+	for i := 0; i < 2; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			close(release)
+			t.Fatal("queue summaries were serialized")
+		}
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

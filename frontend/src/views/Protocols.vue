@@ -109,6 +109,7 @@
           <div><span>承载节点</span><RouterLink :to="adminContextLink('/admin/nodes', { node: String(selectedEndpointDetail.node_id) })">{{ selectedEndpointSummary?.node_name || `VPS #${selectedEndpointDetail.node_id}` }}</RouterLink></div>
           <div><span>对外入口</span><strong class="mono">{{ selectedEndpointDetail.address }}:{{ selectedEndpointDetail.public_port || selectedEndpointDetail.port }}</strong></div>
           <div><span>监听端口</span><strong>{{ formatNumber(selectedEndpointDetail.port) }}</strong></div>
+          <div><span>流量出口</span><strong>{{ selectedEndpointDetail.egress_protocol ? protocolLabel(selectedEndpointDetail.egress_protocol) : 'Direct' }}</strong></div>
           <div><span>计费倍率</span><strong>{{ formatMultiplierNumber(selectedEndpointDetail.multiplier_milli) }}×</strong></div>
           <div><span>活跃用户</span><strong>{{ formatNumber(selectedEndpointDetail.usage?.active_users) }}</strong></div>
           <div><span>活跃连接</span><strong>{{ formatNumber(selectedEndpointDetail.usage?.active_flows) }}</strong></div>
@@ -243,6 +244,32 @@
               <div v-if="!managedCertificateOptions.length || (managedCertificateOptions.length === 1 && managedCertificateOptions[0].value === 0)" class="generated-config-note field-full"><UiIcon name="shield" /><div><strong>本节点暂无可用托管证书</strong><p>可先到 <RouterLink to="/admin/certificates">免费证书</RouterLink> 完成申请，再返回选择使用。</p></div></div>
             </template>
             <div class="generated-config-note field-full"><UiIcon name="check" /><div><strong>配置由系统生成</strong><p>系统会把服务参数转换为 Zero 配置，并在订阅开通、续费、到期时自动更新节点；原始 JSON 仅在最后一步的高级设置中提供。</p></div></div>
+            <section class="endpoint-egress field-full">
+              <header><div><strong>出口配置（可选）</strong><small>不启用时，这个协议入口仍由节点直接访问目标；启用后只影响当前入口。</small></div><label class="check-field"><UiCheckbox v-model="egress.enabled" /><span>为此入口指定代理出口</span></label></header>
+              <div v-if="egress.enabled" class="endpoint-egress-body">
+                <UiTabs v-model="egress.mode" :items="[{ value: 'manual', label: '逐项填写' }, { value: 'import', label: '解析分享链接' }]" label="出口配置方式" />
+                <template v-if="egress.mode === 'import'">
+                  <PageAlert v-if="egressImportError" tone="danger" title="无法解析出口">{{ egressImportError }}</PageAlert>
+                  <FormField v-slot="{ controlAttrs }" label="分享链接或 Zero 出口 JSON" name="protocol-egress-import" hint="支持 SOCKS5、SS、VLESS、VMess、Trojan、Hysteria2 分享链接，也可粘贴单个 Zero protocol/outbound JSON。" full>
+                    <UiTextarea v-model="egress.import_text" v-bind="controlAttrs" rows="5" spellcheck="false" placeholder="socks5://user:pass@proxy.example:1080" />
+                  </FormField>
+                  <div class="endpoint-egress-actions"><UiButton type="button" variant="secondary" :loading="egressParsing" :disabled="!egress.import_text.trim()" @click="parseEgressImport">解析并载入</UiButton></div>
+                </template>
+                <div v-else class="guided-grid compact-grid">
+                  <FormField v-slot="{ controlAttrs }" label="出口协议" required><UiSelect v-model="egress.protocol" v-bind="controlAttrs" :options="egressProtocolOptions" /></FormField>
+                  <FormField v-slot="{ controlAttrs }" label="出口服务器" name="protocol-egress-server" :error="editorErrors.fields['egress.server']" required><UiInput v-model.trim="egress.server" v-bind="controlAttrs" placeholder="proxy.example.com" /></FormField>
+                  <FormField v-slot="{ controlAttrs }" label="出口端口" name="protocol-egress-port" :error="editorErrors.fields['egress.port']" required><PortInput v-model="egress.port" v-bind="controlAttrs" /></FormField>
+                  <FormField v-if="['socks5', 'mieru'].includes(egress.protocol)" v-slot="{ controlAttrs }" label="用户名（可选）"><UiInput v-model.trim="egress.username" v-bind="controlAttrs" autocomplete="off" /></FormField>
+                  <FormField v-if="['shadowsocks', 'trojan', 'hysteria2', 'mieru'].includes(egress.protocol) || egress.protocol === 'socks5'" v-slot="{ controlAttrs }" :label="egress.protocol === 'socks5' ? '密码（可选）' : '密码'" name="protocol-egress-password" :error="editorErrors.fields['egress.password']" :required="egress.protocol !== 'socks5'"><UiInput v-model="egress.password" v-bind="controlAttrs" type="password" autocomplete="new-password" /></FormField>
+                  <FormField v-if="egress.protocol === 'shadowsocks'" v-slot="{ controlAttrs }" label="加密方式" required><UiSelect v-model="egress.cipher" v-bind="controlAttrs" :options="shadowsocksCipherOptions" /></FormField>
+                  <FormField v-if="['vless', 'vmess'].includes(egress.protocol)" v-slot="{ controlAttrs }" label="用户 ID" name="protocol-egress-id" :error="editorErrors.fields['egress.id']" required><UiInput v-model.trim="egress.id" v-bind="controlAttrs" class="mono" /></FormField>
+                  <FormField v-if="egress.protocol === 'vmess'" v-slot="{ controlAttrs }" label="VMess 加密方式"><UiSelect v-model="egress.cipher" v-bind="controlAttrs" :options="vmessCipherOptions" /></FormField>
+                  <FormField v-if="['vless', 'vmess', 'trojan', 'hysteria2'].includes(egress.protocol)" v-slot="{ controlAttrs }" label="TLS / Reality 域名（可选）"><UiInput v-model.trim="egress.server_name" v-bind="controlAttrs" :placeholder="egress.server" /></FormField>
+                  <FormField v-if="['vless', 'vmess', 'trojan', 'hysteria2'].includes(egress.protocol)" label="证书校验"><div class="check-field"><UiCheckbox v-model="egress.insecure" /><span>允许不安全证书</span></div></FormField>
+                  <PageAlert v-if="Object.keys(egress.base || {}).some(key => !['type', 'server', 'port', 'username', 'password', 'cipher', 'id', 'server_name', 'sni', 'insecure'].includes(key))" tone="info" title="已保留导入扩展参数">TLS、Reality、WebSocket、gRPC 等扩展字段会原样保留；上方修改只覆盖对应基础字段。</PageAlert>
+                </div>
+              </div>
+            </section>
           </div>
         </section>
 
@@ -252,6 +279,7 @@
             <article><span>承载节点</span><strong>{{ selectedNode?.name || '未选择' }}</strong><small>{{ selectedNode?.region || '未设置区域' }}</small></article>
             <article><span>协议服务</span><strong>{{ form.name }}</strong><small>{{ protocolLabel(form.protocol) }}</small></article>
             <article><span>对外入口</span><strong class="mono">{{ form.address }}:{{ form.public_port }}</strong><small>VPS 监听 {{ form.port }}</small></article>
+            <article><span>流量出口</span><strong>{{ egress.enabled ? protocolLabel(egress.protocol) : 'Direct' }}</strong><small>{{ egress.enabled ? `${egress.server}:${egress.port}` : '节点直接访问目标' }}</small></article>
             <article><span>流量计费</span><strong>{{ formatMultiplier(form.multiplier_milli) }}</strong><small>前端自动换算，无需手动填写千分值</small></article>
           </div>
           <section class="membership-section">
@@ -274,6 +302,7 @@
               </div>
               <div class="config-grid">
                 <FormField v-slot="{ controlAttrs }" label="服务端配置 JSON" name="protocol-server-config" :error="editorErrors.fields.config" required><UiTextarea v-model="form.config" v-bind="controlAttrs" rows="10" spellcheck="false"></UiTextarea></FormField>
+                <FormField v-if="egress.enabled" v-slot="{ controlAttrs }" label="出口配置 JSON" name="protocol-egress-config" :error="editorErrors.fields.egress_config"><UiTextarea v-model="form.egress_config" v-bind="controlAttrs" rows="10" spellcheck="false" @change="readEgressConfig"></UiTextarea></FormField>
                 <FormField v-slot="{ controlAttrs }" label="客户端配置 JSON" name="protocol-client-config" :error="editorErrors.fields.client_config" required><UiTextarea v-model="form.client_config" v-bind="controlAttrs" rows="10" spellcheck="false"></UiTextarea></FormField>
                 <FormField v-slot="{ controlAttrs }" label="可选配置 JSON" name="protocol-optional-config" :error="editorErrors.fields.optional_config"><UiTextarea v-model="form.optional_config" v-bind="controlAttrs" rows="5" spellcheck="false"></UiTextarea></FormField>
                 <FormField v-slot="{ controlAttrs }" label="标签 JSON 数组" name="protocol-tags" :error="editorErrors.fields.tags"><UiTextarea v-model="form.tags" v-bind="controlAttrs" rows="5" spellcheck="false"></UiTextarea></FormField>
@@ -297,7 +326,7 @@ import NetworkEntries from './NetworkEntries.vue'
 import UiTabs from '../components/UiTabs.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchSubscriptionDeliveryOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, updateProtocolEndpoint, updateSubscriptionDeliveryOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointNodeGroupMembership, type SubscriptionDeliveryOrderItem, type ProtocolKernelCapability } from '../api/client'
+import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchSubscriptionDeliveryOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, parseProtocolEndpointEgress, updateProtocolEndpoint, updateSubscriptionDeliveryOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointNodeGroupMembership, type ProtocolEndpointStatusFacets, type SubscriptionDeliveryOrderItem, type ProtocolKernelCapability } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -364,6 +393,15 @@ const activeFilterOptions = [{ label: '全部服务状态', value: '' }, { label
 const deploymentFilterOptions = [{ label: '全部发布状态', value: '' }, { label: '已生效', value: 'succeeded' }, { label: '发布中', value: 'running' }, { label: '发布失败', value: 'failed' }, { label: '未发布', value: 'never' }]
 const vmessCipherOptions = [{ label: 'AES-128-GCM（推荐）', value: 'aes-128-gcm' }, { label: 'ChaCha20-Poly1305', value: 'chacha20-poly1305' }, { label: '不额外加密', value: 'none' }]
 const shadowsocksCipherOptions = [{ label: 'AES-128-GCM', value: 'aes-128-gcm' }, { label: 'AES-256-GCM', value: 'aes-256-gcm' }, { label: 'ChaCha20-Poly1305（推荐）', value: 'chacha20-ietf-poly1305' }]
+const egressProtocolOptions = [
+  { label: 'SOCKS5', value: 'socks5' },
+  { label: 'Shadowsocks', value: 'shadowsocks' },
+  { label: 'VLESS', value: 'vless' },
+  { label: 'VMess', value: 'vmess' },
+  { label: 'Trojan', value: 'trojan' },
+  { label: 'Hysteria2', value: 'hysteria2' },
+  { label: 'Mieru', value: 'mieru' },
+]
 const securityOptions = [{ label: '无 TLS（直接连接）', value: 'none' }, { label: 'TLS 证书', value: 'tls' }, { label: 'Reality', value: 'reality' }]
 const transportOptions = [
   { label: 'TCP（原始传输）', value: 'tcp' },
@@ -401,7 +439,6 @@ const managedCertificates = ref<ManagedCertificate[]>([])
 const selectedEndpointDetail = ref<any | null>(null)
 const selectedEndpointSummary = ref<ProtocolEndpointListItem | null>(null)
 type ProtocolDeploymentStatus = '' | 'succeeded' | 'running' | 'failed' | 'never'
-const overviewLoading = ref(true)
 const overviewCounts = reactive<Record<ProtocolDeploymentStatus, number>>({
   '': 0,
   succeeded: 0,
@@ -409,9 +446,10 @@ const overviewCounts = reactive<Record<ProtocolDeploymentStatus, number>>({
   failed: 0,
   never: 0,
 })
+const includeStatusFacets = ref(false)
 const deploymentOffset = ref((Math.max(1, Number(route.query.deployment_page) || 1) - 1) * 25)
 const deploymentLimit = ref(allowedPageSizes.includes(Number(route.query.deployment_limit)) ? Number(route.query.deployment_limit) : 25)
-const saving = ref(false), realityKeyBusy = ref(false), realityTemplateBusy = ref(false), realityPreset = ref('compatible'), deployingID = ref(0), deletingID = ref(0), detailLoadingID = ref(0), editorOpen = ref(false), editorStep = ref(1)
+const saving = ref(false), realityKeyBusy = ref(false), realityTemplateBusy = ref(false), realityPreset = ref('compatible'), egressParsing = ref(false), egressImportError = ref(''), deployingID = ref(0), deletingID = ref(0), detailLoadingID = ref(0), editorOpen = ref(false), editorStep = ref(1)
 const orderingOpen = ref(false), orderingLoading = ref(false), orderingSaving = ref(false), orderingError = ref(''), orderingVersion = ref('')
 const orderingItems = ref<SubscriptionDeliveryOrderItem[]>([]), orderingOriginalIDs = ref<string[]>([])
 const orderingDirty = computed(() => orderingItems.value.length !== orderingOriginalIDs.value.length || orderingItems.value.some((item, index) => item.key !== orderingOriginalIDs.value[index]))
@@ -424,19 +462,21 @@ const bulkBusy = ref<'' | 'deploy' | 'enable' | 'disable'>('')
 const message = ref(''), editorError = ref('')
 const protocolUsageRefreshIntervalMS = 15_000
 let protocolUsageRefreshTimer: number | undefined
-const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, managed_principal_ready: false, is_active: true, config: '{}', client_config: '{}', optional_config: '{}', tags: '[]', node_group_memberships: [] as ProtocolEndpointNodeGroupMembership[] })
+const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, managed_principal_ready: false, is_active: true, config: '{}', egress_config: '', client_config: '{}', optional_config: '{}', tags: '[]', node_group_memberships: [] as ProtocolEndpointNodeGroupMembership[] })
 const emptyStructured = () => ({ credential: randomUUID(), username: 'subscriber', password: randomSecret(), cipher: 'aes-128-gcm', security: 'none', transport: 'tcp', transport_path: '/', grpc_service_name: 'zboard', cert_path: '', key_path: '', server_name: '', reality_private_key: '', reality_public_key: '', reality_short_id: '', reality_server_name: '', reality_fingerprint: 'chrome' })
+const emptyEgress = () => ({ enabled: false, mode: 'manual', import_text: '', protocol: 'socks5', server: '', port: 1080, username: '', password: '', cipher: 'chacha20-ietf-poly1305', id: '', server_name: '', insecure: false, base: {} as Record<string, any> })
 const form = reactive<any>(emptyForm())
 const structured = reactive<any>(emptyStructured())
+const egress = reactive<any>(emptyEgress())
 const protocolFormElement = ref<HTMLElement | null>(null)
 const editorErrors = useFormErrors()
 const protocolFieldMap: Record<string, string> = {
   node_id: 'node_id', name: 'name', protocol: 'protocol', address: 'address', port: 'port', public_port: 'public_port',
   multiplier_milli: 'multiplier_milli', sort_order: 'sort_order', parent_protocol_id: 'parent_protocol_id', managed_certificate_id: 'managed_certificate_id',
-  config: 'config', client_config: 'client_config', optional_config: 'optional_config', tags: 'tags', is_active: 'is_active',
+  config: 'config', egress_config: 'egress_config', client_config: 'client_config', optional_config: 'optional_config', tags: 'tags', is_active: 'is_active',
   node_group_membership_changes: 'node_group_membership_changes',
 }
-const editorState = useDirtyForm(() => ({ form, structured }))
+const editorState = useDirtyForm(() => ({ form, structured, egress }))
 useUnsavedChangesGuard(
   () => (editorOpen.value && editorState.dirty.value) || (orderingOpen.value && orderingDirty.value),
   () => orderingOpen.value && orderingDirty.value
@@ -452,7 +492,7 @@ useUnsavedChangesGuard(
         confirmText: '离开页面',
       }),
 )
-const { items: endpoints, total, loading, initialLoading, refreshing, error, load: loadEndpoints } = useRemoteTable<ProtocolEndpointListItem>({
+const { items: endpoints, total, loading, initialLoading, refreshing, error, load: loadEndpoints } = useRemoteTable<ProtocolEndpointListItem, Record<string, unknown>, ProtocolEndpointStatusFacets>({
   offset,
   limit,
   fetchPage: ({ signal }) => fetchProtocolEndpointsPage({
@@ -462,17 +502,26 @@ const { items: endpoints, total, loading, initialLoading, refreshing, error, loa
     protocol: filters.protocol || undefined,
     active: filters.active ? filters.active === 'active' : undefined,
     deploymentStatus: filters.deployment || undefined,
+    includeFacets: includeStatusFacets.value,
     sort: groupedByNode.value ? 'node_id' : sortField.value,
     direction: groupedByNode.value ? 'asc' : sortDirection.value,
   }, { signal }),
   errorMessage: (cause: any) => cause?.response?.data?.message || '协议服务加载失败。',
   onOffsetCorrected: () => syncURL(true),
   onPageLoaded: (page) => {
+    if (typeof page.facets?.all === 'number') {
+      overviewCounts[''] = page.facets.all
+      overviewCounts.succeeded = Number(page.facets.succeeded || 0)
+      overviewCounts.running = Number(page.facets.running || 0)
+      overviewCounts.failed = Number(page.facets.failed || 0)
+      overviewCounts.never = Number(page.facets.never || 0)
+    }
     if (!selectedEndpointDetail.value) return
     const summary = page.items.find(item => item.id === selectedEndpointDetail.value?.id)
     if (summary) selectedEndpointSummary.value = summary
   },
 })
+const overviewLoading = computed(() => loading.value)
 const {
   selectedIDs: selectedEndpointIDs,
   allMatching: selectionAllMatching,
@@ -508,7 +557,7 @@ const managedCertificateOptions = computed(() => [
     .filter(item => item.not_after && new Date(item.not_after).getTime() > Date.now() && (item.status === 'active' || item.status === 'failed'))
     .map(item => ({ label: `${item.name} · ${item.domains.join('、')}`, value: item.id })),
 ])
-const hasConfigError = computed(() => ['config', 'client_config', 'optional_config', 'tags', 'parent_protocol_id', 'multiplier_milli', 'sort_order', 'node_group_membership_changes'].some(field => Boolean(editorErrors.fields[field])))
+const hasConfigError = computed(() => ['config', 'egress_config', 'client_config', 'optional_config', 'tags', 'parent_protocol_id', 'multiplier_milli', 'sort_order', 'node_group_membership_changes'].some(field => Boolean(editorErrors.fields[field])))
 const selectedProtocolCapability = computed<ProtocolKernelCapability>(() =>
   protocolCapabilities[form.protocol] || { supported: false, reason: '无法确认当前内核是否支持该协议。' })
 const canSaveSelectedProtocol = computed(() => selectedProtocolCapability.value.supported || (Boolean(form.id) && !form.is_active))
@@ -520,6 +569,10 @@ for (const field of Object.keys(protocolFieldMap)) {
 watch(() => form.node_group_memberships.map((item: ProtocolEndpointNodeGroupMembership) => `${item.node_group_id}:${item.revision}`).join(','), () => {
   editorErrors.clear('node_group_membership_changes')
 })
+for (const [source, field] of [
+  [() => egress.server, 'egress.server'], [() => egress.port, 'egress.port'],
+  [() => egress.password, 'egress.password'], [() => egress.id, 'egress.id'],
+] as Array<[() => unknown, string]>) watch(source, () => editorErrors.clear(field))
 for (const [source, field] of [
   [() => structured.username, 'structured.username'], [() => structured.password, 'structured.password'],
   [() => structured.cert_path, 'structured.cert_path'], [() => structured.key_path, 'structured.key_path'],
@@ -542,7 +595,7 @@ const protocolStatusOverview = computed(() => [
   { value: 'never' as ProtocolDeploymentStatus, label: '等待发布', caption: '尚无发布记录', icon: 'clock', tone: 'neutral', count: overviewCounts.never },
 ] as const)
 
-function protocolLabel(protocol: string) { return ({ vmess: 'VMess', vless: 'VLESS', trojan: 'Trojan', shadowsocks: 'Shadowsocks', hysteria2: 'Hysteria 2', mieru: 'Mieru' } as Record<string, string>)[protocol] || protocol }
+function protocolLabel(protocol: string) { return ({ socks5: 'SOCKS5', vmess: 'VMess', vless: 'VLESS', trojan: 'Trojan', shadowsocks: 'Shadowsocks', hysteria2: 'Hysteria 2', mieru: 'Mieru' } as Record<string, string>)[protocol] || protocol }
 function formatMultiplier(value: number) { return `${Number(value || 1000) / 1000}×` }
 function formatMultiplierNumber(value: number) { return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(Number(value || 1000) / 1000) }
 function deploymentLabel(status?: string) { return !status ? '等待首次发布' : status === 'succeeded' ? '已生效' : status === 'failed' ? '发布失败' : status === 'running' ? '发布中' : formatUnknownValue('状态', status) }
@@ -567,26 +620,80 @@ async function runProtocolBatch(action: 'deploy' | 'enable' | 'disable') {
 function randomUUID() { if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID(); return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => { const value = Math.random() * 16 | 0; return (char === 'x' ? value : (value & 0x3) | 0x8).toString(16) }) }
 function randomSecret(length = 24) { const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; const values = new Uint8Array(length); if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(values); else for (let index = 0; index < length; index++) values[index] = Math.floor(Math.random() * 256); return Array.from(values, value => chars[value % chars.length]).join('') }
 function parseObject(value: string) { try { const parsed = JSON.parse(value || '{}'); return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {} } catch { return {} } }
-function adminContextLink(path: string, query: Record<string, string>) { return withAdminReturnTo(path, route.fullPath, query) }
-
-async function loadProtocolOverview() {
-  overviewLoading.value = true
-  const statuses: ProtocolDeploymentStatus[] = ['', 'succeeded', 'running', 'failed', 'never']
+function readEgressConfig() {
+  const config: any = parseObject(form.egress_config)
+  const protocol = String(config.type || '').toLowerCase()
+  if (!protocol || protocol === 'direct') {
+    Object.assign(egress, emptyEgress())
+    return
+  }
+  const tls = config.tls || {}
+  const reality = config.reality || {}
+  Object.assign(egress, emptyEgress(), {
+    enabled: true,
+    protocol,
+    server: config.server || '',
+    port: Number(config.port || (protocol === 'socks5' ? 1080 : 443)),
+    username: config.username || '',
+    password: config.password || '',
+    cipher: config.cipher || (protocol === 'vmess' ? 'aes-128-gcm' : 'chacha20-ietf-poly1305'),
+    id: config.id || '',
+    server_name: tls.server_name || reality.server_name || config.server_name || config.sni || '',
+    insecure: Boolean(tls.insecure ?? config.insecure),
+    base: JSON.parse(JSON.stringify(config)),
+  })
+}
+function buildEgressConfig() {
+  if (!egress.enabled) {
+    form.egress_config = ''
+    return
+  }
+  const base = String(egress.base?.type || '').toLowerCase() === egress.protocol ? JSON.parse(JSON.stringify(egress.base)) : {}
+  const config: any = { ...base, type: egress.protocol, server: String(egress.server || '').trim(), port: Number(egress.port) }
+  if (egress.protocol === 'socks5') {
+    if (egress.username) config.username = egress.username; else delete config.username
+    if (egress.password) config.password = egress.password; else delete config.password
+  } else if (egress.protocol === 'shadowsocks') {
+    config.password = egress.password
+    config.cipher = egress.cipher
+  } else if (egress.protocol === 'vless' || egress.protocol === 'vmess') {
+    config.id = egress.id
+    if (egress.protocol === 'vmess') config.cipher = egress.cipher || 'aes-128-gcm'
+    if (config.reality && egress.server_name) config.reality = { ...config.reality, server_name: egress.server_name }
+    else if (egress.server_name || config.tls) config.tls = { ...(config.tls || {}), server_name: egress.server_name || config.server, insecure: Boolean(egress.insecure) }
+  } else {
+    config.password = egress.password
+    if (egress.protocol === 'mieru') {
+      if (egress.username) config.username = egress.username; else delete config.username
+    }
+    if (egress.protocol === 'trojan') {
+      config.sni = egress.server_name || config.server
+      config.insecure = Boolean(egress.insecure)
+    }
+    if (egress.protocol === 'hysteria2') {
+      config.server_name = egress.server_name || config.server
+      config.insecure = Boolean(egress.insecure)
+    }
+  }
+  form.egress_config = JSON.stringify(config, null, 2)
+}
+async function parseEgressImport() {
+  egressImportError.value = ''
+  egressParsing.value = true
   try {
-    const results = await Promise.all(statuses.map(deploymentStatus => fetchProtocolEndpointsPage({
-      limit: 1,
-      q: filters.q || undefined,
-      protocol: filters.protocol || undefined,
-      active: filters.active ? filters.active === 'active' : undefined,
-      deploymentStatus: deploymentStatus || undefined,
-    })))
-    results.forEach((page, index) => { overviewCounts[statuses[index]] = page.total })
-  } catch {
-    // The overview is secondary navigation; a failed count request must not hide the service table.
+    const result = await parseProtocolEndpointEgress(egress.import_text)
+    form.egress_config = JSON.stringify(result.config, null, 2)
+    readEgressConfig()
+    egress.import_text = ''
+    egress.mode = 'manual'
+  } catch (cause: any) {
+    egressImportError.value = cause?.response?.data?.error?.fields?.egress_import || cause?.response?.data?.data?.fields?.egress_import || cause?.response?.data?.fields?.egress_import || cause?.response?.data?.message || '无法解析出口配置。'
   } finally {
-    overviewLoading.value = false
+    egressParsing.value = false
   }
 }
+function adminContextLink(path: string, query: Record<string, string>) { return withAdminReturnTo(path, route.fullPath, query) }
+
 async function loadProtocolCapabilities() {
   try {
     const version = await getVersion()
@@ -599,7 +706,11 @@ async function loadProtocolCapabilities() {
     // defaults so a transient version request does not disable the page.
   }
 }
-async function refresh() { await Promise.all([loadEndpoints(), loadProtocolOverview()]) }
+async function refresh() {
+  includeStatusFacets.value = true
+  try { await loadEndpoints() }
+  finally { includeStatusFacets.value = false }
+}
 async function syncURL(replace = false) {
   const page = Math.floor(offset.value / limit.value) + 1
   const location = { query: {
@@ -763,6 +874,8 @@ async function openCreate() {
   selectedNode.value = null
   Object.assign(form, emptyForm())
   Object.assign(structured, emptyStructured())
+  Object.assign(egress, emptyEgress())
+  egressImportError.value = ''
   editorStep.value = 1
   editorError.value = ''
   editorErrors.clear()
@@ -795,6 +908,7 @@ async function openEdit(endpoint: any) {
       parent_protocol_id: detail.parent_protocol_id || 0,
       managed_certificate_id: detail.managed_certificate_id || 0,
       config: detail.config || '{}',
+      egress_config: detail.egress_config || '',
       client_config: detail.client_config || '{}',
       optional_config: detail.optional_config || '{}',
       tags: detail.tags || '[]',
@@ -802,6 +916,7 @@ async function openEdit(endpoint: any) {
     })
     await loadManagedCertificates(detail.node_id)
     readStructuredConfig()
+    readEgressConfig()
     editorState.markClean()
     editorStep.value = 1
     editorError.value = ''
@@ -835,12 +950,14 @@ async function openCopy(endpoint: ProtocolEndpointListItem) {
       is_active: true,
       parent_protocol_id: detail.parent_protocol_id || 0,
       config: detail.config || '{}',
+      egress_config: detail.egress_config || '',
       client_config: detail.client_config || '{}',
       optional_config: detail.optional_config || '{}',
       tags: detail.tags || '[]',
       node_group_memberships: [],
     })
     readStructuredConfig()
+    readEgressConfig()
     editorStep.value = 1
     editorError.value = ''
     editorErrors.clear()
@@ -952,15 +1069,25 @@ async function validateStep(step: number) {
       if (!/^[0-9a-fA-F]{2,16}$/.test(structured.reality_short_id) || structured.reality_short_id.length % 2 !== 0) fields['structured.reality_short_id'] = 'Short ID 必须是 2–16 位偶数长度十六进制字符串。'
       if (!structured.reality_server_name.trim()) fields['structured.reality_server_name'] = '请输入 Reality 伪装域名。'
     }
+    if (egress.enabled) {
+      if (!String(egress.server || '').trim()) fields['egress.server'] = '请输入出口服务器地址。'
+      if (!isIntegerInRange(egress.port, 1, 65535)) fields['egress.port'] = '出口端口必须为 1–65535 之间的整数。'
+      if (['shadowsocks', 'trojan', 'hysteria2', 'mieru'].includes(egress.protocol) && !String(egress.password || '')) fields['egress.password'] = '请输入出口密码。'
+      if (['vless', 'vmess'].includes(egress.protocol) && !String(egress.id || '').trim()) fields['egress.id'] = '请输入出口用户 ID。'
+      if (egress.protocol === 'shadowsocks' && !String(egress.cipher || '').trim()) fields['egress.password'] = '请选择 Shadowsocks 加密方式。'
+    }
   }
   if (Object.keys(fields).length) editorStep.value = step
   return editorErrors.applyValidation(fields, protocolFormElement, '请修正标出的字段后继续。')
 }
-async function nextStep() { if (!await validateStep(editorStep.value)) return; if (editorStep.value === 2) buildGeneratedConfigs(); editorStep.value++ }
-function goToStep(step: number) { if (step === editorStep.value) return; if (!form.id && step > editorStep.value) return; if (step === 3) buildGeneratedConfigs(); editorError.value = ''; editorStep.value = step }
+async function nextStep() { if (!await validateStep(editorStep.value)) return; if (editorStep.value === 2) { buildGeneratedConfigs(); buildEgressConfig() } editorStep.value++ }
+function goToStep(step: number) { if (step === editorStep.value) return; if (!form.id && step > editorStep.value) return; if (step === 3) { buildGeneratedConfigs(); buildEgressConfig() } editorError.value = ''; editorStep.value = step }
 function validateJSONFields() {
   const fields: Record<string, string> = {}
   try { const server = JSON.parse(form.config); if (!server || Array.isArray(server) || typeof server !== 'object') fields.config = '服务端配置必须是 JSON 对象。'; else if (String(server.type || '').toLowerCase() !== form.protocol) fields.config = '服务端配置的 type 必须与协议一致。' } catch { fields.config = '服务端配置必须是有效 JSON 对象。' }
+  if (egress.enabled) {
+    try { const outbound = JSON.parse(form.egress_config); if (!outbound || Array.isArray(outbound) || typeof outbound !== 'object') fields.egress_config = '出口配置必须是 JSON 对象。'; else if (String(outbound.type || '').toLowerCase() !== egress.protocol) fields.egress_config = '出口配置的 type 必须与所选出口协议一致。' } catch { fields.egress_config = '出口配置必须是有效 JSON 对象。' }
+  }
   for (const [field, label, value, array] of [['client_config', '客户端配置', form.client_config, false], ['optional_config', '可选配置', form.optional_config || '{}', false], ['tags', '标签', form.tags || '[]', true]] as const) {
     try { const parsed = JSON.parse(value); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) !== array) fields[field] = `${label} JSON 格式不正确。` } catch { fields[field] = `${label}必须是有效 JSON。` }
   }
@@ -972,6 +1099,8 @@ async function save() {
     return
   }
   if (!await validateStep(1) || !await validateStep(2)) return
+  buildGeneratedConfigs()
+  buildEgressConfig()
   const jsonFields = validateJSONFields()
   if (Object.keys(jsonFields).length) { editorStep.value = 3; await editorErrors.applyValidation(jsonFields, protocolFormElement, '高级配置格式不正确。'); return }
   const membershipChanges = buildProtocolNodeGroupMembershipChanges(originalNodeGroupMemberships.value, form.node_group_memberships)
@@ -1002,7 +1131,7 @@ async function save() {
   const saveStartedAt = performance.now()
   try {
     const creatingCopy = Boolean(copySourceID.value)
-    const payload = { node_id: form.node_id, name: form.name, protocol: form.protocol, address: form.address, port: form.port, public_port: form.public_port, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, parent_protocol_id: form.parent_protocol_id || null, managed_certificate_id: form.managed_certificate_id || null, is_active: Boolean(form.is_active), config: form.config, client_config: form.client_config, optional_config: form.optional_config || '{}', tags: form.tags || '[]', node_group_membership_changes: membershipChanges }
+    const payload = { node_id: form.node_id, name: form.name, protocol: form.protocol, address: form.address, port: form.port, public_port: form.public_port, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, parent_protocol_id: form.parent_protocol_id || null, managed_certificate_id: form.managed_certificate_id || null, is_active: Boolean(form.is_active), config: form.config, egress_config: form.egress_config || '', client_config: form.client_config, optional_config: form.optional_config || '{}', tags: form.tags || '[]', node_group_membership_changes: membershipChanges }
     const requestStartedAt = performance.now()
     const result = form.id ? await updateProtocolEndpoint(form.id, payload) : await createProtocolEndpoint(payload)
     const requestMS = performance.now() - requestStartedAt
@@ -1027,7 +1156,7 @@ async function save() {
       const normalized = await editorErrors.applyApiError(e, '协议服务未能保存，请稍后重试；如持续失败，请检查服务端日志。', null, protocolFieldMap)
       const fields = Object.keys(normalized.fields)
       if (fields.some(field => ['node_id', 'protocol', 'name', 'address', 'port', 'public_port'].includes(field))) editorStep.value = 1
-      else if (fields.includes('managed_certificate_id')) editorStep.value = 2
+      else if (fields.includes('managed_certificate_id') || fields.includes('egress_config')) editorStep.value = 2
       else editorStep.value = 3
       await editorErrors.focusFirst(protocolFormElement)
     } else editorError.value = e?.message || '协议服务保存失败。'
@@ -1135,6 +1264,8 @@ onBeforeUnmount(() => {
 .generated-config-note>.ui-icon{margin-top:1px}
 .generated-config-note strong{font-size:11px}
 .generated-config-note p{margin:3px 0 0;font-size:9px;line-height:1.6}
+.endpoint-egress{display:grid;gap:14px;padding:15px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
+.endpoint-egress>header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.endpoint-egress>header strong,.endpoint-egress>header small{display:block}.endpoint-egress>header strong{font-size:12px}.endpoint-egress>header small{margin-top:4px;color:var(--muted);font-size:9px;line-height:1.6}.endpoint-egress-body{display:grid;gap:14px;padding-top:14px;border-top:1px solid var(--line)}.endpoint-egress-actions{display:flex;justify-content:flex-end}
 .review-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .review-grid article{display:grid;gap:4px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
 .review-grid span,.review-grid small{color:var(--muted);font-size:9px}

@@ -1811,7 +1811,7 @@ paths:
       tags: [admin]
       operationId: getAdminRuntimeJobs
       summary: Observe process-local job runs and durable queue counts
-      description: Administrator only. Execution observations reset on restart. Queue counts come from persistent storage; stale leases are a subset of pending or delayed publication records. A successful scan does not imply an empty queue. Database failures return 503.
+      description: Administrator only. Execution observations reset on restart. Queue counts come from persistent storage; stale leases are a subset of pending or delayed publication records. A successful scan does not imply an empty queue. Independent section failures are returned in issues while unaffected runtime sections remain available; failed sections are omitted rather than represented by healthy-looking zero values.
       responses:
         "200":
           description: Persistent deployment task observations, queue summaries, event spool and plugin host lease
@@ -1827,6 +1827,15 @@ paths:
                           as_of: { type: string, format: date-time }
                           started_at: { type: string, format: date-time }
                           observation_scope: { type: string, enum: [deployment] }
+                          issues:
+                            type: array
+                            description: Runtime sections that could not be refreshed in this snapshot. Unlisted sections were read successfully.
+                            items:
+                              type: object
+                              required: [section, message]
+                              properties:
+                                section: { type: string, enum: [queues, runtime, execution, plugin_tasks, registration_messages] }
+                                message: { type: string }
                           jobs: { type: array, items: { type: object } }
                           queues: { type: array, items: { type: object } }
                           runtime: { type: object }
@@ -3864,6 +3873,7 @@ paths:
         - { name: protocol, in: query, schema: { type: string } }
         - { name: active, in: query, schema: { type: boolean } }
         - { name: deployment_status, in: query, schema: { type: string, enum: [running, succeeded, failed, never] } }
+        - { name: include_facets, in: query, schema: { type: boolean, default: false }, description: "Include deployment-status counts for the current non-status filters in the paged response." }
         - { name: sort, in: query, schema: { type: string, enum: [sort_order, id, name, node_id, protocol, multiplier, updated_at] } }
         - { name: direction, in: query, schema: { type: string, enum: [asc, desc] } }
       responses:
@@ -3919,6 +3929,32 @@ paths:
                   - $ref: "#/components/schemas/ApiResponse"
                   - properties:
                       data: { $ref: "#/components/schemas/RealityKeyPair" }
+  /api/v1/admin/protocol-endpoints/egress/parse:
+    post:
+      tags: [nodes, admin]
+      summary: Parse one endpoint-local outbound share link or Zero JSON object
+      description: Admin only. Returns one normalized Zero outbound protocol object; it does not save or publish the endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [input]
+              properties:
+                input: { type: string, minLength: 1, maxLength: 16384 }
+      responses:
+        "200":
+          description: Parsed endpoint-local outbound
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/ProtocolEndpointEgressParseResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/admin/protocol-endpoints/reality-template:
     post:
       tags: [nodes, admin]
@@ -5573,6 +5609,7 @@ components:
         q: { type: string, maxLength: 100 }
         node_id: { type: integer, format: int64, minimum: 1 }
         protocol: { type: string }
+        egress_protocol: { type: string, enum: [socks5, vless, vmess, trojan, shadowsocks, hysteria2, mieru], description: Omitted when this endpoint uses direct egress. }
         active: { type: boolean }
         deployment_status: { type: string, enum: [running, succeeded, failed, never] }
     ProtocolBatchScopeRequest:
@@ -6000,6 +6037,7 @@ components:
           required: [config, usage, kernel_supported, node_group_memberships]
           properties:
             config: { type: string, description: Decrypted administrator-only server configuration. }
+            egress_config: { type: string, description: Decrypted administrator-only Zero outbound protocol JSON. Empty when direct egress is used. }
             managed_certificate_id: { type: integer, format: int64, nullable: true }
             latest_deployment: { $ref: "#/components/schemas/ProtocolDeploymentSummary" }
             usage: { type: object }
@@ -6024,6 +6062,7 @@ components:
         node_name: { type: string }
         name: { type: string }
         protocol: { type: string }
+        egress_protocol: { type: string, enum: [socks5, vless, vmess, trojan, shadowsocks, hysteria2, mieru] }
         address: { type: string }
         port: { type: integer, minimum: 1, maximum: 65535 }
         public_port: { type: integer, minimum: 1, maximum: 65535 }
@@ -6198,11 +6237,20 @@ components:
       allOf:
         - $ref: "#/components/schemas/PageEnvelope"
         - type: object
-          required: [items]
+          required: [items, facets]
           properties:
             items:
               type: array
               items: { $ref: "#/components/schemas/ProtocolEndpointSummary" }
+            facets:
+              type: object
+              description: Populated when include_facets=true. Counts use the current text, protocol, node and active-state filters; deployment-status counts deliberately ignore the selected deployment-status filter.
+              properties:
+                all: { type: integer, format: int64, minimum: 0 }
+                succeeded: { type: integer, format: int64, minimum: 0 }
+                running: { type: integer, format: int64, minimum: 0 }
+                failed: { type: integer, format: int64, minimum: 0 }
+                never: { type: integer, format: int64, minimum: 0 }
     SubscriptionTemplate:
       type: object
       properties:
@@ -7351,7 +7399,10 @@ components:
           maximum: 100000
         config:
           type: string
-          description: Zero inbound protocol JSON object. Its type field must match protocol. The current SSH flow stages this JSON but does not apply it to the Zero runtime.
+          description: Zero inbound protocol JSON object. Its type field must match protocol.
+        egress_config:
+          type: string
+          description: Optional Zero outbound protocol JSON object. Empty means direct. When set, only this endpoint's inbound tag is routed through this single outbound.
         client_config:
           type: string
           description: Valid client JSON published through the subscription manifest.
@@ -7372,6 +7423,15 @@ components:
           maxItems: 100
           description: Incremental revision-guarded commands. Unchanged node groups are omitted; additions append this endpoint to the group's existing delivery order and removals delete only this relationship.
           items: { $ref: "#/components/schemas/ProtocolEndpointNodeGroupMembershipChange" }
+    ProtocolEndpointEgressParseResult:
+      type: object
+      required: [protocol, config]
+      properties:
+        protocol: { type: string, enum: [socks5, vless, vmess, trojan, shadowsocks, hysteria2, mieru] }
+        config:
+          type: object
+          description: Normalized Zero outbound protocol object. Imported transport and TLS extensions are preserved.
+          additionalProperties: true
     RealityKeyPair:
       type: object
       required: [private_key, public_key, short_id]

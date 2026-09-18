@@ -2,6 +2,7 @@ package messagingstore
 
 import (
 	"context"
+	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/messaging"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -9,6 +10,31 @@ import (
 )
 
 type RegistrationStatus struct{ DB *gorm.DB }
+
+func (s RegistrationStatus) Summary(ctx context.Context, actor uint) (messaging.RegistrationEventStatus, error) {
+	out := messaging.RegistrationEventStatus{Items: []messaging.PendingRegistrationEvent{}}
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := templateAdministrator(tx, actor); err != nil {
+			return err
+		}
+		var summary struct {
+			Pending  int64
+			OldestAt *time.Time
+		}
+		if err := tx.Model(&model.AccountRegistrationEvent{}).
+			Where("processed_at IS NULL").
+			Select("COUNT(*) AS pending, MIN(occurred_at) AS oldest_at").
+			Scan(&summary).Error; err != nil {
+			return err
+		}
+		out.Pending, out.OldestAt = summary.Pending, summary.OldestAt
+		return nil
+	})
+	if err != nil {
+		return messaging.RegistrationEventStatus{}, err
+	}
+	return out, nil
+}
 
 func (s RegistrationStatus) Pending(ctx context.Context, actor uint, limit, offset int) (messaging.RegistrationEventStatus, error) {
 	out := messaging.RegistrationEventStatus{Items: []messaging.PendingRegistrationEvent{}}

@@ -121,7 +121,10 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 			At:                      in.Timestamp,
 			Meta:                    in.Meta,
 		}
-		return tx.Create(&record).Error
+		if err := tx.Create(&record).Error; err != nil {
+			return err
+		}
+		return AddProtocolEndpointUsage(tx, []model.TrafficRecord{record})
 	})
 	if err != nil {
 		return metering.NodeReportResult{}, err

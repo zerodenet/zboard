@@ -2,7 +2,11 @@ package datastore
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/zerodenet/zboard/backend/internal/model"
 )
 
 func TestSQLiteMigrationsCreateCompleteApplicationInventory(t *testing.T) {
@@ -30,12 +34,25 @@ func TestSQLiteMigrationsCreateCompleteApplicationInventory(t *testing.T) {
 	if !db.Migrator().HasTable("schema_migrations") {
 		t.Error("SQLite schema is missing schema_migrations")
 	}
+	for _, column := range []string{"egress_protocol", "egress_config"} {
+		if !db.Migrator().HasColumn("protocol_endpoints", column) {
+			t.Errorf("SQLite protocol_endpoints is missing %q", column)
+		}
+	}
 	if err := ReconcileTrafficReadSchema(db); err != nil {
 		t.Fatalf("ReconcileTrafficReadSchema() error = %v", err)
 	}
 	for _, index := range trafficReadIndexes {
 		if !db.Migrator().HasIndex(index.table, index.name) {
 			t.Errorf("SQLite schema is missing traffic read index %q", index.name)
+		}
+	}
+	for table, index := range map[string]string{
+		"flow_usages":          "idx_flow_usages_endpoint_active",
+		"protocol_deployments": "idx_protocol_deployments_endpoint_latest",
+	} {
+		if !db.Migrator().HasIndex(table, index) {
+			t.Errorf("SQLite schema is missing statistics index %q", index)
 		}
 	}
 }
@@ -202,5 +219,38 @@ func TestSQLiteJobPlanningUpgradeBackfillsLanesAndIsRepeatable(t *testing.T) {
 	}
 	if !db.Migrator().HasTable("job_dispatch_lanes") || !db.Migrator().HasIndex("job_runs", "job_schedule_planned") {
 		t.Fatal("planning migration inventory is incomplete")
+	}
+}
+
+func TestSQLiteEndpointUsageUpgradeBackfillsLedgerAndIsRepeatable(t *testing.T) {
+	db, err := OpenWithDriver(DriverSQLite, filepath.Join(t.TempDir(), "endpoint-usage-upgrade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, _ := db.DB()
+	defer pool.Close()
+	if err := RunMigrations(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.TrafficRecord{ProtocolEndpointID: 7, ReportID: "legacy", Nonce: "legacy", UsedBytes: 41, RawBytes: 43, At: time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("DELETE FROM protocol_endpoint_usage_daily").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version = '0016_protocol_endpoint_usage_daily.up.sql'").Error; err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := RunMigrations(db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var row model.ProtocolEndpointUsageDaily
+	if err := db.First(&row, "protocol_endpoint_id = ?", 7).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.UsedBytes != 41 || row.RawBytes != 43 || row.RecordCount != 1 || !strings.HasPrefix(row.UsageDate, "2026-09-17") {
+		t.Fatal(row)
 	}
 }

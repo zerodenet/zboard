@@ -3,7 +3,14 @@
     <PageHeader title="后台任务" description="查看执行周期、最近结果与队列积压，追踪后台工作的运行情况。" eyebrow="Operations">
       <template #actions><RouterLink class="task-link" to="/admin/tasks">运营任务</RouterLink><PageRefreshButton label="刷新后台任务" :loading="loading" @click="refresh" /></template>
     </PageHeader>
-    <PageAlert v-if="error" tone="danger" title="运行状态未更新">{{ error }} 已有数据保留为上次快照。</PageAlert>
+    <PageAlert v-if="error" tone="danger" title="运行状态未更新">
+      {{ error }} {{ data ? '当前继续显示上次成功读取的快照。' : '当前没有可显示的运行快照。' }}
+      <template #actions><UiButton variant="secondary" size="sm" :loading="loading" @click="refresh">重新读取</UiButton></template>
+    </PageAlert>
+    <PageAlert v-if="data?.issues?.length" tone="warning" title="部分运行状态暂不可用">
+      {{ data.issues.map(issue => issue.message).join('；') }}。其余分区仍可查看，不会用零值伪装为正常状态。
+      <template #actions><UiButton variant="secondary" size="sm" :loading="loading" @click="refresh">重试失败分区</UiButton></template>
+    </PageAlert>
     <p v-if="!data && loading" role="status">正在读取运行状态…</p>
     <template v-if="data">
       <div class="snapshot-note"><span>最近更新 <TimeBadge :value="data.as_of" /></span><span>每 15 秒刷新 · 任务执行记录持久保存</span></div>
@@ -22,7 +29,7 @@
           <span v-if="queue.id === 'registration_messages'" class="queue-foot">最早事件 <TimeBadge :value="queue.oldest_at" /></span>
           <span v-else class="queue-foot">租约失效 {{ queue.stale }}<template v-if="queue.id === 'admin_tasks'"> · 未入队 {{ queue.drafts }} · 失败 {{ queue.failed }}</template></span>
         </button>
-        <div class="queue-card spool-card"><span class="queue-title">流量事件入账</span><template v-if="data.runtime.event_spool"><span class="queue-counts"><span><strong>{{ data.runtime.event_spool.pending_events }}</strong>待入账事件</span><span><strong>{{ bytes(data.runtime.event_spool.pending_bytes) }}</strong>待处理数据</span></span><span class="queue-foot">最早事件 <TimeBadge :value="data.runtime.event_spool.oldest_event_at" /> · 存储压力 {{ pressure(data.runtime.event_spool.pressure_level) }}</span></template><p v-else>此实例未启用事件队列</p></div>
+        <div class="queue-card spool-card"><span class="queue-title">流量事件入账</span><template v-if="data.runtime.event_spool"><span class="queue-counts"><span><strong>{{ data.runtime.event_spool.pending_events }}</strong>待入账事件</span><span><strong>{{ bytes(data.runtime.event_spool.pending_bytes) }}</strong>待处理数据</span></span><span class="queue-foot">最早事件 <TimeBadge :value="data.runtime.event_spool.oldest_event_at" /> · 存储压力 {{ pressure(data.runtime.event_spool.pressure_level) }}</span></template><p v-else-if="sectionIssue('runtime')">事件队列状态暂不可用</p><p v-else>此实例未启用事件队列</p></div>
       </section>
       <section class="runtime-section">
         <div class="runtime-heading"><h2>任务执行情况</h2><span>共享执行名额 {{ data.execution_concurrency || 4 }} 个 · 外部操作最多占用 {{ data.external_execution_concurrency || 3 }} 个</span></div>
@@ -30,12 +37,14 @@
           <thead><tr><th>任务</th><th>执行周期</th><th>运行状态</th><th>最近结果</th><th>最近完成 / 耗时</th><th>下次扫描</th><th>执行 / 失败</th></tr></thead>
           <tbody><tr v-for="job in data.jobs" :key="job.id"><td><strong>{{ job.name }}</strong><small v-if="job.last_error" class="job-error">{{ job.last_error }}</small></td><td>{{ interval(job) }}<small v-if="job.timezone">{{ job.timezone }} · {{ job.misfire_policy === 'skip' ? '错过跳过' : '错过合并一次' }}</small></td><td><StatusBadge :tone="tone(job.state)">{{ state(job.state) }}<template v-if="job.running"> · {{ job.running }}</template></StatusBadge></td><td><StatusBadge :tone="tone(job.last_result)">{{ state(job.last_result) }}</StatusBadge></td><td><TimeBadge :value="job.last_finished_at" /><small v-if="job.last_finished_at">{{ duration(job.last_duration_ms) }}</small></td><td><TimeBadge v-if="job.next_scan_at" :value="job.next_scan_at" /><span v-else>{{ job.state === 'running' ? '已保留下次计划' : '等待事件或扫描' }}</span></td><td>{{ job.runs }} / {{ job.failures }}<small v-if="job.missed_runs">跳过 {{ job.missed_runs }}</small></td></tr></tbody>
         </DataTable>
-        <p v-if="!data.jobs.length">此实例尚无已注册的后台执行器。</p>
+        <p v-if="sectionIssue('execution')" class="detail-note">任务执行状态暂不可用；业务队列、插件状态和历史记录仍可独立查看。</p>
+        <p v-else-if="!data.jobs.length">此实例尚无已注册的后台执行器。</p>
         <p class="detail-note">证书续期扫描只负责触发，签发结果请在证书管理查看。周期任务按持久化计划时间推进，不因本轮耗时漂移；错过多个周期时按任务政策跳过或合并执行一次。队列任务按事件唤醒或轮询领取。最近成功表示该轮处理成功，不代表队列已清空。</p>
       </section>
       <section class="runtime-section" aria-label="插件任务">
         <div class="runtime-heading"><h2>插件任务</h2><span>来自插件注册 · 每插件串行，与内置任务共用 {{ data.execution_concurrency || data.plugin_task_concurrency || 4 }} 个执行名额</span></div>
-        <p v-if="!data.plugin_host" class="detail-note">插件宿主不可用，暂时无法读取注册任务。</p>
+        <p v-if="sectionIssue('plugin_tasks')" class="detail-note">插件任务状态暂不可用；插件宿主租约仍按已取得的状态展示。</p>
+        <p v-else-if="!data.plugin_host" class="detail-note">插件宿主不可用，暂时无法读取注册任务。</p>
         <template v-else-if="pluginTasks.length">
           <div class="plugin-queue-summary" aria-label="插件任务队列状态"><span>已注册 <strong>{{ pluginTasks.length }}</strong></span><span>到期等待 <strong>{{ pluginTasks.filter(task => task.state === 'queued').length }}</strong></span><span>执行中 <strong>{{ pluginTasks.reduce((sum, task) => sum + task.running, 0) }}</strong></span><span>最近失败或中断 <strong>{{ pluginTasks.filter(task => ['failed', 'interrupted', 'unknown'].includes(task.last_result)).length }}</strong></span></div>
           <DataTable caption="插件注册任务" :row-count="pluginTasks.length" :min-width="1000">
@@ -47,7 +56,7 @@
         <p v-else class="detail-note">尚无插件注册任务。插件需要声明任务能力与周期，宿主才能调度和记录；插件内部自行启动的定时器不会自动出现在这里。</p>
         <p v-if="pluginTasks.length" class="detail-note">任务计划与执行记录持久保存，重启后继续读取。禁用或版本变化会中断旧执行；超时或失联可能产生待核验结果，此时暂停同一资源的后续工作。</p>
       </section>
-      <section class="runtime-section" aria-label="队列明细">
+      <section v-if="data.queues.length" class="runtime-section" aria-label="队列明细">
         <div class="runtime-heading"><h2>{{ data.queues.find(queue => queue.id === selected)?.name || '任务' }}队列</h2><span>等待、执行中、延后及待处理异常</span></div>
         <PageAlert v-if="queueError" tone="danger" title="队列明细未更新">{{ queueError }}</PageAlert>
         <DataTable v-if="queuePage?.items.length" caption="队列明细" :row-count="queuePage.total" :min-width="800">
@@ -70,6 +79,7 @@ import RuntimeJobHistory from '../components/RuntimeJobHistory.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PageRefreshButton from '../components/PageRefreshButton.vue'
 import PageAlert from '../components/PageAlert.vue'
+import UiButton from '../components/UiButton.vue'
 import DataTable from '../components/DataTable.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TimeBadge from '../components/TimeBadge.vue'
@@ -87,19 +97,33 @@ function duration(ms: number) { return ms < 1000 ? `${ms} 毫秒` : `${(ms / 100
 function interval(job: RuntimeJob) { const n = job.interval_seconds; const value = n >= 3600 ? `${n / 3600} 小时` : n >= 60 ? `${n / 60} 分钟` : `${n} 秒`; return n <= 0 ? (job.kind === 'on_demand' ? '按需执行' : '事件驱动') : job.kind === 'queue' ? `唤醒 / ${value}轮询` : `每 ${value}` }
 function bytes(n: number) { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB` }
 function pressure(value: string) { return ({ normal: '正常', warning: '预警', compact: '压缩中', emergency: '紧急' } as Record<string,string>)[value] || value }
+function sectionIssue(section: string) { return data.value?.issues?.some(issue => issue.section === section) || false }
+function requestError(cause: any, fallback: string) { return cause?.response?.data?.message || fallback }
 async function refreshQueue() {
+  if (!selected.value) { queuePage.value = null; queueError.value = ''; return }
   queueController?.abort(); const current = new AbortController(); queueController = current; queueLoading.value = true
   try { const result = await fetchRuntimeQueue(selected.value, offset.value, current.signal); if (!current.signal.aborted) { queuePage.value = result; queueError.value = '' } }
-  catch { if (!current.signal.aborted) queueError.value = '读取失败，请稍后重试。' }
+  catch (cause: any) { if (!current.signal.aborted) queueError.value = requestError(cause, '读取失败，请稍后重试。') }
   finally { if (queueController === current) queueLoading.value = false }
 }
 async function refresh() {
   if (loading.value) return
   loading.value = true; const current = new AbortController(); controller = current
-  try { const result = await fetchRuntimeJobs(current.signal); if (!current.signal.aborted) { data.value = result; error.value = '' } }
-  catch { if (!current.signal.aborted) error.value = '暂时无法读取后台执行情况。' }
+  let loaded = false
+  try {
+    const result = await fetchRuntimeJobs(current.signal)
+    if (!current.signal.aborted) {
+      result.jobs ||= []
+      result.queues ||= []
+      data.value = result; error.value = ''; loaded = true
+      if (!result.queues.some(queue => queue.id === selected.value)) {
+        selected.value = result.queues[0]?.id || ''; offset.value = 0; queuePage.value = null; queueError.value = ''
+      }
+    }
+  }
+  catch (cause: any) { if (!current.signal.aborted) error.value = requestError(cause, '暂时无法读取后台执行情况。') }
   finally { if (!current.signal.aborted) loading.value = false }
-  if (!current.signal.aborted) await refreshQueue()
+  if (!current.signal.aborted && loaded) await refreshQueue()
 }
 function selectQueue(id: string) { if (id === selected.value) return; selected.value = id; offset.value = 0; queuePage.value = null; queueError.value = ''; void refreshQueue() }
 function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; void refreshQueue() }

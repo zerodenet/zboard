@@ -41,6 +41,9 @@ type ProtocolEndpointRecord struct {
 	MieruPrincipalReady   bool      `json:"mieru_principal_ready"`
 	ServerConfig          string    `json:"-"`
 	ServerCiphertext      string    `json:"-"`
+	EgressProtocol        string    `json:"egress_protocol,omitempty"`
+	EgressConfig          string    `json:"-"`
+	EgressCiphertext      string    `json:"-"`
 	ClientConfig          string    `json:"client_config"`
 	OptionalConfig        string    `json:"optional_config"`
 	Tags                  string    `json:"tags"`
@@ -129,6 +132,7 @@ type ProtocolEndpointMutationRequest struct {
 	MultiplierMilli      int64
 	IsActive             *bool
 	ServerConfig         string
+	EgressConfig         string
 	ClientConfig         string
 	OptionalConfig       string
 	Tags                 string
@@ -177,6 +181,13 @@ func (s ProtocolEndpointMutations) Load(ctx context.Context, actor, id uint) (Pr
 		return ProtocolEndpointMutationSnapshot{}, err
 	}
 	snapshot.Endpoint.ServerConfig = plain
+	if strings.TrimSpace(snapshot.Endpoint.EgressCiphertext) != "" {
+		plain, err = s.Cipher.Decrypt(snapshot.Endpoint.EgressCiphertext)
+		if err != nil {
+			return ProtocolEndpointMutationSnapshot{}, err
+		}
+		snapshot.Endpoint.EgressConfig = plain
+	}
 	return snapshot, nil
 }
 
@@ -202,6 +213,10 @@ func (s ProtocolEndpointMutations) Save(ctx context.Context, actor uint, before 
 	if err := validateProtocolEndpointMutationRequest(request); err != nil {
 		return ProtocolEndpointMutationResult{}, err
 	}
+	egressProtocol, egressConfig, err := NormalizeProtocolEndpointEgressConfig(request.EgressConfig)
+	if err != nil {
+		return ProtocolEndpointMutationResult{}, err
+	}
 	changes, err := normalizeProtocolEndpointMembershipChanges(request.MembershipChanges, before == nil)
 	if err != nil {
 		return ProtocolEndpointMutationResult{}, err
@@ -210,12 +225,21 @@ func (s ProtocolEndpointMutations) Save(ctx context.Context, actor uint, before 
 	if err != nil {
 		return ProtocolEndpointMutationResult{}, err
 	}
+	egressCiphertext := ""
+	if egressConfig != "" {
+		egressCiphertext, err = s.Cipher.Encrypt(egressConfig)
+		if err != nil {
+			return ProtocolEndpointMutationResult{}, err
+		}
+	}
 	record := ProtocolEndpointRecord{
 		ID: request.ID, NodeID: request.NodeID, Name: request.Name,
 		Protocol: request.Protocol, Address: request.Address,
 		Port: request.Port, PublicPort: request.PublicPort, Cipher: request.Cipher,
 		ParentProtocolID: request.ParentProtocolID, MultiplierMilli: request.MultiplierMilli,
-		ServerConfig: request.ServerConfig, ServerCiphertext: ciphertext, ClientConfig: request.ClientConfig,
+		ServerConfig: request.ServerConfig, ServerCiphertext: ciphertext,
+		EgressProtocol: egressProtocol, EgressConfig: egressConfig, EgressCiphertext: egressCiphertext,
+		ClientConfig:   request.ClientConfig,
 		OptionalConfig: normalizedEndpointJSON(request.OptionalConfig, "{}"), Tags: normalizedEndpointJSON(request.Tags, "[]"),
 	}
 	if before == nil {
@@ -303,7 +327,7 @@ func ClassifyProtocolEndpointChange(before *ProtocolEndpointRecord, after Protoc
 	if strings.TrimSpace(before.Name) != strings.TrimSpace(after.Name) || strings.TrimSpace(before.Address) != strings.TrimSpace(after.Address) || before.PublicPort != after.PublicPort || canonicalEndpointJSON(before.ClientConfig, "{}") != canonicalEndpointJSON(after.ClientConfig, "{}") || before.SortOrder != after.SortOrder {
 		changed[ProtocolEndpointEffectDelivery] = true
 	}
-	if !strings.EqualFold(strings.TrimSpace(before.Protocol), strings.TrimSpace(after.Protocol)) || before.Port != after.Port || before.Cipher != after.Cipher || !sameEndpointOptionalUint(before.ParentProtocolID, after.ParentProtocolID) || before.IsActive != after.IsActive || canonicalEndpointJSON(before.ServerConfig, "{}") != canonicalEndpointJSON(after.ServerConfig, "{}") || canonicalEndpointJSON(before.OptionalConfig, "{}") != canonicalEndpointJSON(after.OptionalConfig, "{}") || beforeCertificateID != afterCertificateID {
+	if !strings.EqualFold(strings.TrimSpace(before.Protocol), strings.TrimSpace(after.Protocol)) || before.Port != after.Port || before.Cipher != after.Cipher || !sameEndpointOptionalUint(before.ParentProtocolID, after.ParentProtocolID) || before.IsActive != after.IsActive || canonicalEndpointJSON(before.ServerConfig, "{}") != canonicalEndpointJSON(after.ServerConfig, "{}") || canonicalEndpointJSON(before.EgressConfig, "{}") != canonicalEndpointJSON(after.EgressConfig, "{}") || canonicalEndpointJSON(before.OptionalConfig, "{}") != canonicalEndpointJSON(after.OptionalConfig, "{}") || beforeCertificateID != afterCertificateID {
 		changed[ProtocolEndpointEffectRuntime] = true
 	}
 	if before.NodeID != after.NodeID {

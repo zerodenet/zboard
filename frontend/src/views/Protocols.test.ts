@@ -110,6 +110,28 @@ describe('Protocol creation and actionable errors', () => {
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'VLESS fixture', node_id: 1, node_group_membership_changes: [{ node_group_id: 9, expected_revision: 7, member: true }] }))
     wrapper.unmount()
   })
+  it('saves one optional SOCKS5 egress without changing the protocol inbound', async () => {
+    const wrapper = await render()
+    await click(wrapper, '创建协议服务')
+    await click(wrapper, '实际协议监听')
+    wrapper.findAllComponents({ name: 'UiInput' })[0].vm.$emit('update:modelValue', 'VLESS with egress')
+    await click(wrapper, '下一步')
+    const state = wrapper.vm as any
+    state.egress.enabled = true
+    state.egress.protocol = 'socks5'
+    state.egress.server = 'proxy.example'
+    state.egress.port = 1080
+    state.egress.username = 'user'
+    state.egress.password = 'pass'
+    await click(wrapper, '下一步')
+    await wrapper.get('#protocol-form').trigger('submit')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      protocol: 'vless',
+      egress_config: JSON.stringify({ type: 'socks5', server: 'proxy.example', port: 1080, username: 'user', password: 'pass' }, null, 2),
+    }))
+    wrapper.unmount()
+  })
   it('shows the specific field failure and keeps the group selection for correction', async () => {
     mocks.create.mockRejectedValue({ response: { data: { message: '协议服务校验失败。', error: { version: 1, code: 'validation_failed', fields: { node_group_membership_changes: '节点组版本信息缺失，请重新选择。' } } } } })
     const wrapper = await render()
@@ -122,6 +144,44 @@ describe('Protocol creation and actionable errors', () => {
     expect(wrapper.getComponent({ name: 'NodeGroupMembershipEditor' }).props('modelValue')).toEqual([membership])
     wrapper.unmount()
   })
+})
+
+it('loads the table and deployment status counts in one endpoint request', async () => {
+  vi.mocked(fetchProtocolEndpointsPage).mockResolvedValue({
+    items: [], total: 7,
+    facets: { all: 7, succeeded: 4, running: 1, failed: 1, never: 1 },
+  } as any)
+  const wrapper = await render()
+  expect(fetchProtocolEndpointsPage).toHaveBeenCalledTimes(1)
+  expect(fetchProtocolEndpointsPage).toHaveBeenCalledWith(expect.objectContaining({ includeFacets: true }), expect.anything())
+  const cards = wrapper.findAllComponents({ name: 'OverviewCard' })
+  expect(cards.map(card => [card.props('label'), card.props('value')])).toContainEqual(['全部服务', '7'])
+  expect(cards.map(card => [card.props('label'), card.props('value')])).toContainEqual(['已生效', '4'])
+  wrapper.unmount()
+})
+
+it('refreshes live usage without recomputing or clearing deployment status counts', async () => {
+  vi.useFakeTimers()
+  vi.mocked(fetchProtocolEndpointsPage)
+    .mockResolvedValueOnce({
+      items: [], total: 7,
+      facets: { all: 7, succeeded: 4, running: 1, failed: 1, never: 1 },
+    } as any)
+    .mockResolvedValue({ items: [], total: 7 } as any)
+  const wrapper = await render()
+  try {
+    vi.mocked(fetchProtocolEndpointsPage).mockClear()
+    await vi.advanceTimersByTimeAsync(15_000)
+    await flushPromises()
+    expect(fetchProtocolEndpointsPage).toHaveBeenCalledTimes(1)
+    expect(fetchProtocolEndpointsPage).toHaveBeenCalledWith(expect.objectContaining({ includeFacets: false }), expect.anything())
+    const cards = wrapper.findAllComponents({ name: 'OverviewCard' })
+    expect(cards.map(card => [card.props('label'), card.props('value')])).toContainEqual(['全部服务', '7'])
+    expect(cards.map(card => [card.props('label'), card.props('value')])).toContainEqual(['已生效', '4'])
+  } finally {
+    wrapper.unmount()
+    vi.useRealTimers()
+  }
 })
 
 it('orders a forwarding entry independently of a direct service with the same numeric ID', async () => {

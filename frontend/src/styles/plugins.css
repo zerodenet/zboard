@@ -297,8 +297,6 @@
 .plugin-configuration-page { max-width: 1200px; }
 .plugin-import-content { display: grid; gap: 20px; }
 .plugin-import-content p { margin: 0; color: var(--muted); line-height: 1.7; }
-.plugin-import-file { display: flex; justify-content: space-between; gap: 20px; border: 1px solid var(--line); padding: 16px; border-radius: 10px; overflow-wrap: anywhere; }
-.plugin-import-file span { white-space: nowrap; color: var(--muted); }
 .plugin-json-input { width: 100%; font-family: monospace; }
 #plugin-json-form { display: grid; gap: 16px; }
 @media (max-width: 700px) {

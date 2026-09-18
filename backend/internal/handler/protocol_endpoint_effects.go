@@ -30,6 +30,7 @@ type protocolEndpointEffectSnapshot struct {
 	ParentProtocolID     *uint
 	MultiplierMilli      int64
 	ServerConfig         string
+	EgressConfig         string
 	ClientConfig         string
 	OptionalConfig       string
 	Tags                 string
@@ -64,7 +65,7 @@ func protocolEndpointEffectRecord(snapshot protocolEndpointEffectSnapshot) netwo
 		NodeID: snapshot.NodeID, Name: snapshot.Name, Protocol: snapshot.Protocol, Address: snapshot.Address,
 		Port: snapshot.Port, PublicPort: snapshot.PublicPort, Cipher: snapshot.Cipher,
 		ParentProtocolID: snapshot.ParentProtocolID, MultiplierMilli: snapshot.MultiplierMilli,
-		ServerConfig: snapshot.ServerConfig, ClientConfig: snapshot.ClientConfig,
+		ServerConfig: snapshot.ServerConfig, EgressConfig: snapshot.EgressConfig, ClientConfig: snapshot.ClientConfig,
 		OptionalConfig: snapshot.OptionalConfig, Tags: snapshot.Tags, IsActive: snapshot.IsActive, SortOrder: snapshot.SortOrder,
 	}
 }

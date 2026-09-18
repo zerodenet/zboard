@@ -28,15 +28,26 @@ func TestCompletionCapabilityRollsBackExhaustionAndReplays(t *testing.T) {
 	if err = h.db.Model(&model.TrafficRecord{}).Where("report_id = ?", in.EventID).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("failed transaction retained record: %d %v", count, err)
 	}
+	if err = h.db.Model(&model.ProtocolEndpointUsageDaily{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("failed transaction retained usage projection: %d %v", count, err)
+	}
 	service := h.services.CompletionAccounting(h.credentialCipher)
 	record, exhausted, err = service.Complete(context.Background(), in)
 	if err != nil || !exhausted || record.UsedBytes != 20 {
 		t.Fatalf("completion: %+v %t %v", record, exhausted, err)
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 20, subStatusExpired)
+	var usage model.ProtocolEndpointUsageDaily
+	if err := h.db.First(&usage, "protocol_endpoint_id = ?", credential.ProtocolEndpointID).Error; err != nil || usage.UsedBytes != 20 || usage.RecordCount != 1 {
+		t.Fatalf("completion usage projection: %+v %v", usage, err)
+	}
 	repeated, _, err := service.Complete(context.Background(), in)
 	if err != nil || repeated.ID != record.ID {
 		t.Fatalf("replay: %+v %v", repeated, err)
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 20, subStatusExpired)
+	usage = model.ProtocolEndpointUsageDaily{}
+	if err := h.db.First(&usage, "protocol_endpoint_id = ?", credential.ProtocolEndpointID).Error; err != nil || usage.UsedBytes != 20 || usage.RecordCount != 1 {
+		t.Fatalf("replay changed usage projection: %+v %v", usage, err)
+	}
 }
