@@ -36,7 +36,7 @@ func TestTrafficSnapshotsReuseStatisticsButKeepPagesLive(t *testing.T) {
 	if page.Aggregates != before.Aggregates || !page.StatisticsAsOf.Equal(before.AsOf) || len(page.Items) != 5 || page.Items[0].UsedBytes != 15 {
 		t.Fatalf("snapshot/live page=%+v before=%+v", page, before)
 	}
-	if len(f.log.queries) != 3 || len(f.log.authContexts) != 1 {
+	if len(f.log.queries) != 3 || len(f.log.authContexts) != 2 {
 		t.Fatalf("cached request queries=%d auth=%d", len(f.log.queries), len(f.log.authContexts))
 	}
 	f.h.trafficStatisticsCache.mu.Lock()
@@ -112,7 +112,7 @@ func TestTrafficTrendsReuseFactsButReadAuthorizationAndFacetsLive(t *testing.T) 
 	if first.RecordCount != 6 || second.RecordCount != first.RecordCount || !second.AsOf.Equal(first.AsOf) || len(second.Subscriptions) != 1 || second.Subscriptions[0].Status != subStatusExpired {
 		t.Fatalf("first=%+v second=%+v", first, second)
 	}
-	if len(f.log.queries) != 1 || len(f.log.authContexts) != 1 {
+	if len(f.log.queries) != 1 || len(f.log.authContexts) != 2 {
 		t.Fatalf("trend cache queries=%d auth=%d", len(f.log.queries), len(f.log.authContexts))
 	}
 	for _, handler := range []http.HandlerFunc{f.h.TrafficTrendsHandler, f.h.TrafficUsageRecordsHandler} {

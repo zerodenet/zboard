@@ -9,8 +9,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
 )
 
 const auditDetailMaxBytes = 16 * 1024
@@ -97,14 +97,14 @@ func (h *handlers) AuditLogDetailHandler(w http.ResponseWriter, r *http.Request)
 		BadRequest(w, "invalid audit log id")
 		return
 	}
-	var item model.AuditLog
-	if err := h.db.First(&item, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	record, err := h.services.AuditDirectory.Detail(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, observability.ErrAuditNotFound) {
 			NotFound(w)
 			return
 		}
 		ServerError(w, err)
 		return
 	}
-	OK(w, newAuditLogDetail(item))
+	OK(w, newAuditLogDetail(auditLogModel(record)))
 }

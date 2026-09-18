@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"context"
-	"gorm.io/gorm"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,7 +66,10 @@ func TestRealIdentityPluginRevokesUncommittedCoreWork(t *testing.T) {
 	if err != nil || selected.ID != v.ID || selected.Provider.ProviderId != "second" || selected.IdentityKey() != v.ID+"~second" {
 		t.Fatal("provider selection failed", err)
 	}
-	if err := m.ExchangeIdentity(ctx, selected, &pluginv1.IdentityExchange{Code: "valid", Issuer: selected.Provider.Issuer}, func(*pluginv1.VerifiedIdentity, *gorm.DB) error { t.Fatal("wrong provider reached core"); return nil }); err == nil {
+	if err := m.ExchangeIdentity(ctx, selected, &pluginv1.IdentityExchange{Code: "valid", Issuer: selected.Provider.Issuer}, func(*pluginv1.VerifiedIdentity, IdentityServices) error {
+		t.Fatal("wrong provider reached core")
+		return nil
+	}); err == nil {
 		t.Fatal("provider mismatch accepted")
 	}
 	snapshot, err := m.IdentityProvider(ctx, v.ID)
@@ -76,7 +78,7 @@ func TestRealIdentityPluginRevokesUncommittedCoreWork(t *testing.T) {
 	}
 	request := &pluginv1.IdentityExchange{Code: "valid", Issuer: snapshot.Provider.Issuer}
 	commits := 0
-	commit := func(*pluginv1.VerifiedIdentity, *gorm.DB) error { commits++; return nil }
+	commit := func(*pluginv1.VerifiedIdentity, IdentityServices) error { commits++; return nil }
 	if err := m.ExchangeIdentity(ctx, snapshot, request, commit); err != nil || commits != 1 {
 		t.Fatal("identity exchange failed", err)
 	}
@@ -101,7 +103,7 @@ func TestRealIdentityPluginRevokesUncommittedCoreWork(t *testing.T) {
 	if m.ExchangeIdentity(ctx, snapshot, request, commit) == nil || commits != 1 {
 		t.Fatal("disabled plugin reached core")
 	}
-	if m.WithIdentityProvider(snapshot, func(*gorm.DB) error { commits++; return nil }) == nil || commits != 1 {
+	if m.WithIdentityProvider(ctx, snapshot, func(IdentityServices) error { commits++; return nil }) == nil || commits != 1 {
 		t.Fatal("disabled plugin completed session")
 	}
 	// Core work verified before disable stays revoked even after re-enable.
@@ -112,7 +114,7 @@ func TestRealIdentityPluginRevokesUncommittedCoreWork(t *testing.T) {
 	if _, err = m.Action(ctx, current.ID, "enable", "admin", current.Generation, false, ""); err != nil {
 		t.Fatal(err)
 	}
-	if m.WithIdentityProvider(snapshot, func(*gorm.DB) error { commits++; return nil }) == nil || commits != 1 {
+	if m.WithIdentityProvider(ctx, snapshot, func(IdentityServices) error { commits++; return nil }) == nil || commits != 1 {
 		t.Fatal("old identity work survived lifecycle change")
 	}
 }

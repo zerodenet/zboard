@@ -32,8 +32,8 @@ func databaseModels() []interface{} {
 		&model.SubscriptionMember{}, &model.SubscriptionToken{}, &model.SubscriptionTemplate{},
 		&model.SubscriptionRuleSet{}, &model.SubscriptionTemplateRuleSetBinding{}, &model.ProtocolCredential{},
 		&model.FlowUsage{}, &model.TrafficRecord{}, &model.AuditLog{}, &model.EmailTemplate{},
-		&model.RegistrationEmailChallenge{}, &model.Ticket{}, &model.TicketMessage{}, &model.UserAPIToken{},
-		&model.Task{}, &model.TaskItem{}, &model.ProtocolDeployment{}, &model.QuotaEvent{},
+		&model.RegistrationEmailChallenge{}, &model.AccountRegistrationEvent{}, &model.Ticket{}, &model.TicketMessage{}, &model.UserAPIToken{},
+		&model.Task{}, &model.TaskItem{}, &model.MailDeliveryAttempt{}, &model.ProtocolDeployment{}, &model.QuotaEvent{},
 		&model.NodeKernelState{}, &model.NodeOperation{}, &model.ProviderAccount{}, &model.ManagedDNSRecord{},
 		&model.ProviderOperation{}, &model.ManagedCertificate{}, &model.CertificateProtocolEndpoint{},
 		&model.CertificateOperation{}, &model.NodeConfigPublish{}, &model.NodeProxyPool{}, &model.NetworkEntry{}, &model.NodeGroupNetworkEntry{},
@@ -93,6 +93,82 @@ func runSQLiteMigrations(db *gorm.DB) error {
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0006_node_proxy_pool_subscriptions.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
 		return err
 	}
+	jobsSchema, err := migrations.Files.ReadFile("sqlite/0007_jobs.sql")
+	if err != nil {
+		return err
+	}
+	jobsStatements, err := splitMigrationStatements(string(jobsSchema))
+	if err != nil {
+		return err
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		for _, statement := range jobsStatements {
+			if err := tx.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0007_jobs.up.sql", AppliedAt: time.Now().UTC()}).Error
+	}); err != nil {
+		return err
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if !tx.Migrator().HasColumn("job_runs", "timeout_ms") {
+			if err := tx.Exec("ALTER TABLE job_runs ADD COLUMN timeout_ms INTEGER NOT NULL DEFAULT 0").Error; err != nil {
+				return err
+			}
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0008_job_timeouts.up.sql", AppliedAt: time.Now().UTC()}).Error
+	}); err != nil {
+		return err
+	}
+	var retryMigrationApplied int64
+	if err := db.Model(&schemaMigration{}).Where("version = ?", "0014_job_attempt_retries.up.sql").Count(&retryMigrationApplied).Error; err != nil {
+		return err
+	}
+	if retryMigrationApplied == 0 {
+		retrySchema, err := migrations.Files.ReadFile("sqlite/0014_job_attempt_retries.sql")
+		if err != nil {
+			return err
+		}
+		retryStatements, err := splitMigrationStatements(string(retrySchema))
+		if err != nil {
+			return err
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			for _, statement := range retryStatements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return tx.Create(&schemaMigration{Version: "0014_job_attempt_retries.up.sql", AppliedAt: time.Now().UTC()}).Error
+		}); err != nil {
+			return err
+		}
+	}
+	var planningMigrationApplied int64
+	if err := db.Model(&schemaMigration{}).Where("version = ?", "0015_job_schedule_planning.up.sql").Count(&planningMigrationApplied).Error; err != nil {
+		return err
+	}
+	if planningMigrationApplied == 0 {
+		planningSchema, err := migrations.Files.ReadFile("sqlite/0015_job_schedule_planning.sql")
+		if err != nil {
+			return err
+		}
+		planningStatements, err := splitMigrationStatements(string(planningSchema))
+		if err != nil {
+			return err
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			for _, statement := range planningStatements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return tx.Create(&schemaMigration{Version: "0015_job_schedule_planning.up.sql", AppliedAt: time.Now().UTC()}).Error
+		}); err != nil {
+			return err
+		}
+	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {
 		return fmt.Errorf("record sqlite schema version: %w", err)
@@ -114,6 +190,7 @@ func MigrationTables(db *gorm.DB) ([]string, error) {
 		tables = append(tables, parsed.Schema.Table)
 	}
 	tables = append(tables,
+		"job_execution_budget", "job_execution_groups", "job_dispatch_lanes", "job_runs", "job_attempts", "job_schedules",
 		"plugin_installations", "plugin_versions", "plugin_operations", "plugin_host_leases",
 		"subscription_flow_start_events", "fair_use_node_coverage", "fair_use_policies",
 		"subscription_fair_use_states", "subscription_fair_use_events",

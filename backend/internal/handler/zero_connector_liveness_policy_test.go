@@ -19,7 +19,7 @@ func TestBufferedZeroEventsRefreshConnectorLivenessOnReceipt(t *testing.T) {
 	}
 	appendSource := text[appendStart : appendStart+appendEnd]
 	persistAt := strings.Index(appendSource, ".spool.Append(ctx, envelope)")
-	touchAt := strings.Index(appendSource, "recordBufferedZeroConnectorReceipt(node, runtime)")
+	touchAt := strings.Index(appendSource, "recordBufferedZeroConnectorReceipt(ctx, node, runtime)")
 	if persistAt < 0 || touchAt < 0 || touchAt <= persistAt {
 		t.Fatal("connector liveness must be refreshed only after the event is durably appended")
 	}
@@ -31,10 +31,13 @@ func TestBufferedProjectionDoesNotRegressReceiptLivenessToEventTime(t *testing.T
 		t.Fatalf("read zero_event_runtime.go: %v", err)
 	}
 	text := string(source)
-	start := strings.Index(text, "func projectZeroNode")
+	start := strings.Index(text, "func zeroNodeObservation")
+	if start < 0 {
+		t.Fatal("zeroNodeObservation source is missing")
+	}
 	end := strings.Index(text[start:], "func zeroEventNewer")
-	if start < 0 || end < 0 {
-		t.Fatal("projectZeroNode source is missing")
+	if end < 0 {
+		t.Fatal("zeroNodeObservation boundary is missing")
 	}
 	projectionSource := text[start : start+end]
 	if strings.Contains(projectionSource, "connector_last_seen_at") || strings.Contains(projectionSource, "\"is_online\"") {

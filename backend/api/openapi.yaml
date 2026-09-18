@@ -12,6 +12,7 @@ security:
   - bearerAuth: []
 tags:
   - name: plugins
+  - name: integrations
   - name: system
   - name: auth
   - name: admin
@@ -22,6 +23,116 @@ tags:
   - name: traffic
   - name: tickets
 paths:
+  /api/v1/admin/subscriptions/{id}/fair-use/evaluate:
+    post:
+      tags: [admin]
+      summary: Queue a subscription Fair Use evaluation
+      description: Requires a current active administrator. Atomically records the request and audit in the shared job queue. Returns acceptance, not an evaluation result. Execution rechecks the requesting administrator and shares the fair_use resource lock with periodic evaluation. Inspect runtime job history and refresh subscription Fair Use state after completion.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '202':
+          description: Evaluation queued
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data:
+                        type: object
+                        required: [run_id, state, subscription_id]
+                        properties:
+                          run_id: { type: string }
+                          state: { type: string, enum: [queued] }
+                          subscription_id: { type: integer }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/v1/admin/database-migrations/status:
+    get:
+      tags: [admin]
+      summary: Read migration status through the platform capability
+      description: Requires a current active administrator. Returns the latest migration and maintenance state from one read transaction. Task content and scope are empty; run_id links the public execution history when present. Legacy tasks may have no run_id.
+      responses:
+        '200':
+          description: Migration status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/DatabaseMigrationStatus' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /api/v1/admin/database-migrations/preflight:
+    post:
+      tags: [admin]
+      summary: Check a migration destination and source snapshot
+      description: Administrator-only operational probe. Checks an empty destination, source snapshot access and current authorization before returning readiness. May open/create the requested SQLite database, but does not enqueue a migration or change maintenance settings. Readiness is advisory; submission repeats admission checks.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DatabaseMigrationTarget' }
+      responses:
+        '200':
+          description: Checked migration target with credentials redacted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data:
+                        type: object
+                        required: [source_driver, target_driver, target, tables, ready]
+                        properties:
+                          source_driver: { type: string, enum: [mysql, sqlite] }
+                          target_driver: { type: string, enum: [mysql, sqlite] }
+                          target: { type: string, description: Target description with the MySQL password redacted. }
+                          tables: { type: integer, minimum: 0 }
+                          ready: { type: boolean }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/v1/admin/database-migrations:
+    post:
+      tags: [admin]
+      summary: Submit a migration to the shared maintenance executor
+      description: Requires a current active administrator and confirm=true. Atomically creates the task, shared Run, maintenance reservation and audit. Credentials are sealed in task storage and excluded from the Run payload. An uncertain result requires operator review; this does not switch the running deployment to the destination database.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/DatabaseMigrationTarget'
+                - type: object
+                  required: [confirm]
+                  properties:
+                    confirm: { type: boolean, enum: [true] }
+      responses:
+        '202':
+          description: Migration intent accepted, not proof of completed copying
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/DatabaseMigrationTask' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
   /api/v1/auth/oidc/callback:
     get:
       tags: [auth]
@@ -157,6 +268,82 @@ paths:
       responses:
         '200': { description: Object with password_set boolean }
         '401': { description: Authentication required }
+  /api/v1/account/integrations/credentials:
+    get:
+      tags: [integrations]
+      summary: List the current account's external integration credentials
+      description: Returns metadata only. Plaintext credentials and stored hashes are never returned.
+      parameters:
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200': { description: Credential metadata page }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+    post:
+      tags: [integrations]
+      summary: Issue a scoped external integration credential
+      description: The zbi_ plaintext token is returned once. It expires within 366 days and never inherits administrator authority.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IntegrationCredentialIssue' }
+      responses:
+        '200':
+          description: Credential issued; data.token is write-only and returned only by this response.
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /api/v1/account/integrations/credentials/{id}:
+    delete:
+      tags: [integrations]
+      summary: Revoke one external integration credential
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: Credential revoked; repeating the request is safe. }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /api/v1/integrations/capabilities:
+    get:
+      tags: [integrations]
+      summary: Discover operations visible to an integration credential
+      security: [{ integrationBearer: [] }]
+      responses:
+        '200':
+          description: Authorized capability descriptors, including the enforced per-minute rate limit.
+        '401': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/integrations/capabilities/{name}/invoke:
+    post:
+      tags: [integrations]
+      summary: Invoke one authorized integration capability
+      description: The credential, scope, active account and fixed-minute admission window are rechecked for every invocation. Request bodies are limited to 64 KiB.
+      security: [{ integrationBearer: [] }]
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string, example: metering.usage.query } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: Capability result }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '429':
+          description: Per-credential capability rate limit reached.
+          headers:
+            Retry-After: { schema: { type: integer, enum: [60] } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponse' }
+        '503': { $ref: '#/components/responses/Error' }
+        '504': { $ref: '#/components/responses/Error' }
   "/api/v1/admin/plugins":
     "get":
       "tags": ["plugins"]
@@ -1019,7 +1206,7 @@ paths:
   /api/v1/admin/provider-definitions:
     get:
       tags: [admin, providers]
-      summary: List built-in external supplier adapters and capabilities
+      summary: List built-in and active admitted plugin supplier adapters and capabilities
       responses:
         "200":
           description: Provider catalog
@@ -1151,7 +1338,7 @@ paths:
           description: Provider accounts
     post:
       tags: [admin, providers]
-      summary: Save and verify a Cloudflare provider account
+      summary: Save and verify an available DNS provider account
       responses:
         "201":
           description: Provider account created
@@ -1183,7 +1370,7 @@ paths:
     delete:
       tags: [admin, providers]
       summary: Remove a provider credential and its local associations
-      description: Deletes local DNS management records and detaches certificates with automatic renewal disabled. Running provider or certificate operations block concurrent deletion. External accounts, tokens and records are not changed.
+      description: Deletes local DNS management records and detaches certificates with automatic renewal disabled. Running provider or certificate operations, unresolved shared job executions and contradictory outcomes block concurrent deletion. External accounts, tokens and records are not changed.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
@@ -1199,11 +1386,20 @@ paths:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         "200":
-          description: Provider account verified
+          description: Provider account verified with an incremented revision
+        "400":
+          description: Credential verification failed
+        "403":
+          description: Administrator permission is no longer available
+        "404":
+          description: Provider account no longer exists
+        "409":
+          description: Account changed during verification; newer credential state is preserved
   /api/v1/admin/dns-records:
     get:
       tags: [admin, providers]
       summary: List panel-managed DNS records
+      description: Returns a bounded capability-owned projection with provider, node and latest operation summaries. Current administrator authority is rechecked for every request.
       parameters:
         - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
@@ -1212,9 +1408,12 @@ paths:
       responses:
         "200":
           description: Managed DNS record page
+        "403":
+          description: Administrator permission is no longer available
     post:
       tags: [admin, providers]
       summary: Create and asynchronously synchronize one A record, one AAAA record, or both
+      description: Validates the desired records in the network capability, rechecks the active administrator, node and provider in persistence, commits records and audits atomically, then accepts each provider operation into the shared job ledger.
       requestBody:
         required: true
         content:
@@ -1242,10 +1441,17 @@ paths:
       responses:
         "202":
           description: DNS synchronization started
+        "400":
+          description: Invalid record, unavailable dependency or duplicate managed identity
+        "403":
+          description: Administrator permission is no longer available
+        "409":
+          description: A resource entered deletion or synchronization while the request was being accepted
   /api/v1/admin/dns-records/{id}:
     put:
       tags: [admin, providers]
       summary: Update a managed DNS record and synchronize it
+      description: Provider, domain and record type are immutable. Revision, active authority, dependency availability and absence of another provider operation are checked in the capability-owned transaction before a shared job is accepted.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       requestBody:
@@ -1266,11 +1472,14 @@ paths:
                 expected_revision: { type: integer, format: int64, minimum: 1 }
       responses:
         "202": { description: DNS update synchronization started }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
     delete:
       tags: [admin, providers]
       summary: Delete the local DNS management record
-      description: Removes local state without a provider API call. Remote DNS remains intact. Running synchronization still blocks concurrent deletion.
+      description: Removes local state without a provider API call. Remote DNS remains intact. Running synchronization, unresolved shared executions and contradictory outcomes block concurrent deletion.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
@@ -1280,12 +1489,16 @@ paths:
     post:
       tags: [admin, providers]
       summary: Synchronize a managed DNS record
+      description: Rechecks current administrator, node and provider state and atomically fences the record, creates the operation and submits the shared external job. Provider I/O remains outside the database transaction.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
         - { name: takeover, in: query, schema: { type: boolean, default: false } }
       responses:
         "202":
           description: DNS synchronization started
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/admin/certificates:
     get:
       tags: [admin, certificates]
@@ -1296,6 +1509,7 @@ paths:
     post:
       tags: [admin, certificates]
       summary: Create a managed certificate using Cloudflare DNS-01 or HTTP-01 Webroot
+      description: The certificate, dependency checks and audit record are committed atomically after the current active administrator is revalidated.
       requestBody:
         required: true
         content:
@@ -1325,6 +1539,7 @@ paths:
       responses:
         "201":
           description: Managed certificate created
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/admin/certificates/{id}:
     get:
       tags: [admin, certificates]
@@ -1337,6 +1552,7 @@ paths:
     put:
       tags: [admin, certificates]
       summary: Update mutable certificate metadata and renewal settings
+      description: Revalidates the current active administrator and certificate revision in the same transaction as the certificate update and audit record.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       requestBody:
@@ -1355,11 +1571,13 @@ paths:
                 expected_revision: { type: integer, format: int64, minimum: 1 }
       responses:
         "200": { description: Certificate updated }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
     delete:
       tags: [admin, certificates]
       summary: Delete a local managed certificate and unlink protocols
-      description: Removes local certificate management and endpoint links without SSH or CA calls. Remote files remain and CA certificates are not revoked. Running issuance or renewal blocks concurrent deletion.
+      description: Removes local certificate management and endpoint links without SSH or CA calls. Remote files remain and CA certificates are not revoked. Running issuance or renewal, unresolved shared executions and contradictory outcomes block concurrent deletion.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
@@ -1369,29 +1587,41 @@ paths:
     put:
       tags: [admin, certificates]
       summary: Update automatic renewal settings
+      description: Revalidates the current active administrator and revision before atomically updating the policy and audit record.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         "200":
           description: Renewal settings updated
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/admin/certificates/{id}/issue:
     post:
       tags: [admin, certificates]
       summary: Start initial ACME issuance
+      description: Atomically creates the certificate operation, advances certificate state and submits the shared external job after revalidating the current active administrator.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         "202":
           description: Issuance started
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/admin/certificates/{id}/renew:
     post:
       tags: [admin, certificates]
       summary: Start ACME renewal
+      description: Atomically creates the renewal operation, advances certificate state and submits the shared external job after revalidating the current active administrator.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         "202":
           description: Renewal started
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/system/configs:
     get:
       tags: [system]
@@ -1415,6 +1645,7 @@ paths:
       tags: [admin]
       operationId: listAdminSystemConfigs
       summary: List typed runtime configuration with secret values redacted
+      description: Requires a current active administrator. Secret values are blanked in the persistence projection; configured only reports presence.
       responses:
         "200":
           description: System configuration
@@ -1575,6 +1806,151 @@ paths:
         "200": { description: Deleted }
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/runtime-jobs:
+    get:
+      tags: [admin]
+      operationId: getAdminRuntimeJobs
+      summary: Observe process-local job runs and durable queue counts
+      description: Administrator only. Execution observations reset on restart. Queue counts come from persistent storage; stale leases are a subset of pending or delayed publication records. A successful scan does not imply an empty queue. Database failures return 503.
+      responses:
+        "200":
+          description: Persistent deployment task observations, queue summaries, event spool and plugin host lease
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          as_of: { type: string, format: date-time }
+                          started_at: { type: string, format: date-time }
+                          observation_scope: { type: string, enum: [deployment] }
+                          jobs: { type: array, items: { type: object } }
+                          queues: { type: array, items: { type: object } }
+                          runtime: { type: object }
+                          plugin_host: { type: object, nullable: true }
+                          plugin_tasks:
+                            type: array
+                            nullable: true
+                            description: Tasks declared by installed plugins, including disabled plugins. Null when the plugin host is unavailable. Execution records are persisted by the shared host task service.
+                            items: { type: object }
+                          execution_queue:
+                            type: object
+                            description: Deployment-wide execution backlog shared by built-in and plugin jobs. Business item and event backlogs are reported separately.
+                            properties:
+                              pending: { type: integer }
+                              running: { type: integer }
+                              delayed: { type: integer }
+                              unknown: { type: integer }
+                              maintenance_reserved: { type: boolean, description: Host maintenance reserves exclusive execution until its outcome is resolved. }
+                          execution_concurrency: { type: integer }
+                          external_execution_concurrency: { type: integer }
+                          plugin_task_concurrency: { type: integer, deprecated: true }
+                          admin_task_concurrency: { type: integer }
+                          admin_item_concurrency: { type: integer }
+        "403": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/runtime-jobs/runs:
+    get:
+      tags: [admin]
+      operationId: listRuntimeJobHistory
+      summary: Read paginated persisted execution history without payloads or lease tokens
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 } }
+      responses:
+        "200": { description: Paginated execution records }
+        "403": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/runtime-jobs/runs/{id}/attempts:
+    get:
+      tags: [admin]
+      operationId: listRuntimeJobAttempts
+      summary: Read paginated Attempt records without payloads or lease tokens
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 } }
+      responses:
+        "200": { description: Paginated Attempt records ordered newest first }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/runtime-jobs/runs/{id}/cancel:
+    post:
+      tags: [admin]
+      operationId: cancelRuntimeJob
+      summary: Cancel a pending run or durably request cancellation of its active Attempt
+      description: A running request first becomes cancel_requested. Cooperative handlers may confirm canceled; handlers with uncertain external effects finish unknown; a completion that won the race may remain succeeded.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        "200": { description: Cancellation applied or durably requested }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/runtime-jobs/runs/{id}/resolve:
+    post:
+      tags: [admin]
+      operationId: resolveRuntimeJobOutcome
+      summary: Record and audit an operator-verified outcome for an uncertain execution
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome, reason]
+              properties:
+                outcome: { type: string, enum: [succeeded, failed] }
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        "200": { description: Outcome recorded; this does not immediately retry the execution }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/runtime-jobs/runs/{id}/reconcile-dns:
+    post:
+      tags: [admin]
+      operationId: reconcileRuntimeDNSOutcome
+      summary: Queue a read-only inspection of the stored remote DNS identity through the shared runtime
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "202": { description: Inspection queued; original outcome remains uncertain until evidence is verified }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/runtime-jobs/queue:
+    get:
+      tags: [admin]
+      operationId: getAdminRuntimeQueue
+      summary: Page through pending, running and exceptional queue entries without payloads
+      parameters:
+        - { name: name, in: query, required: true, schema: { type: string, enum: [node_publish, admin_tasks] } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
+      responses:
+        "200": { description: Canonical page envelope with items, total, offset and limit }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /api/v1/admin/tasks:
     get:
       tags: [admin]
@@ -1843,6 +2219,7 @@ paths:
     post:
       tags: [tickets]
       summary: Create a ticket and its first timeline message
+      description: Revalidates the current active user and commits the ticket plus its first timeline message in one transaction.
       requestBody:
         required: true
         content:
@@ -1876,7 +2253,7 @@ paths:
     post:
       tags: [tickets]
       summary: Reply to a ticket
-      description: A self-service reply moves the ticket to pending_admin. Closed tickets reject replies.
+      description: Revalidates current ownership, then commits the reply, pending_admin state and status event in one transaction. Closed tickets reject replies.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       requestBody:
@@ -1944,7 +2321,7 @@ paths:
     post:
       tags: [tickets, admin]
       summary: Reply to a ticket as an administrator
-      description: An administrator reply moves the ticket to pending_user. Closed tickets reject replies.
+      description: Revalidates the current active administrator, then commits the reply, pending_user state and status event in one transaction. Closed tickets reject replies.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       requestBody:
@@ -1961,6 +2338,7 @@ paths:
     put:
       tags: [tickets, admin]
       summary: Change ticket status as an administrator
+      description: Revalidates the current active administrator and commits the status, timeline event and audit record atomically.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       requestBody:
@@ -2115,6 +2493,7 @@ paths:
       tags:
         - nodes
       summary: Create node
+      description: Admin only. Current administrator authority is rechecked in the resource capability; the node, initial kernel state and audit record commit atomically.
       requestBody:
         required: true
         content:
@@ -2132,6 +2511,7 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/Node"
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{id}:
     get:
       tags: [nodes]
@@ -2156,7 +2536,7 @@ paths:
       tags:
         - nodes
       summary: Update node asset metadata and lifecycle
-      description: Admin only. Nodes are independent VPS assets and do not require a protocol endpoint.
+      description: Admin only. Nodes are independent VPS assets and do not require a protocol endpoint. Current authority and deletion state are rechecked under the node lock; lifecycle changes and audit commit atomically.
       parameters:
         - name: id
           in: path
@@ -2178,10 +2558,12 @@ paths:
                   - properties:
                       data: { $ref: "#/components/schemas/Node" }
         "404": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
     delete:
       tags: [nodes]
       summary: Delete a node asset and its local associations
-      description: Atomically clears owned protocol services, credentials, network entries, shared pools, memberships, certificate and DNS management records. No SSH or provider access is attempted. Remote services, files and DNS remain. Surviving entry nodes receive queued withdrawal. Historical traffic, administrative tasks and audit records are retained.
+      description: Atomically clears owned protocol services, credentials, network entries, shared pools, memberships, certificate and DNS management records. No SSH or provider access is attempted. Remote services, files and DNS remain. Surviving entry nodes receive queued withdrawal. Historical traffic, administrative tasks and audit records are retained. Unconfirmed child executions, contradictory outcomes, publication leases and active task items block removal. Failure rolls back node lifecycle and association changes.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
@@ -2246,6 +2628,7 @@ paths:
       tags:
         - nodes
       summary: Test node SSH and update status
+      description: Admin only. The remote probe runs before the resource capability rechecks current authority and records the verification result; a successful HTTP response does not bypass a concurrent permission or deletion-state change.
       requestBody:
         required: true
         content:
@@ -2263,12 +2646,15 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/Node"
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{id}/ssh:
     put:
       tags:
         - nodes
       summary: Update node SSH authentication
-      description: Authentication chooses password or private key. The first successful SSH connection automatically records the server host key; later connections reject changes.
+      description: Admin only. Authentication chooses password or private key. The first successful SSH connection automatically records the server host key; later connections reject changes. Current authority and deletion state are rechecked under lock, and the encrypted configuration and audit commit atomically.
       parameters:
         - name: id
           in: path
@@ -2295,6 +2681,9 @@ paths:
                         $ref: "#/components/schemas/Node"
         "400":
           $ref: "#/components/responses/Error"
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{id}/ssh/host-key/reset:
     post:
       tags:
@@ -2308,7 +2697,9 @@ paths:
           schema: { type: integer, format: int64 }
       responses:
         "200": { description: Recorded host identity cleared }
+        "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{id}/ssh/terminal-ticket:
     post:
       tags:
@@ -2430,7 +2821,7 @@ paths:
       tags:
         - nodes
       summary: Create or rotate a node traffic-report credential
-      description: Admin only. The plaintext secret is returned once and the previous credential is immediately invalidated.
+      description: Admin only. The plaintext secret is returned once and the previous credential is immediately invalidated. Current authority and deletion state are rechecked under lock, and rotation and audit commit atomically.
       parameters:
         - name: id
           in: path
@@ -2451,6 +2842,8 @@ paths:
                         $ref: "#/components/schemas/NodeReportCredential"
         "404":
           $ref: "#/components/responses/Error"
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
     delete:
       tags:
         - nodes
@@ -2468,12 +2861,14 @@ paths:
           description: Credential revoked
         "404":
           $ref: "#/components/responses/Error"
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{id}/connector-credential:
     post:
       tags:
         - nodes
       summary: Create or rotate the Zero Webhook Connector credential
-      description: Admin only. Returns the plaintext API key once; the previous Connector credential is invalidated immediately.
+      description: Admin only. Returns the plaintext API key once; the previous Connector credential is invalidated immediately. Current authority and deletion state are rechecked under lock, and rotation and audit commit atomically.
       parameters:
         - name: id
           in: path
@@ -2490,6 +2885,8 @@ paths:
                   - properties:
                       data: { $ref: "#/components/schemas/NodeConnectorCredential" }
         "404": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
     delete:
       tags:
         - nodes
@@ -2502,6 +2899,8 @@ paths:
       responses:
         "200": { description: Connector credential revoked }
         "404": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{id}/heartbeat:
     post:
       tags:
@@ -2554,6 +2953,7 @@ paths:
       tags:
         - plans
       summary: List plans
+      description: Commerce owns filtering, counts and primary-price projection. Administrator scope is rechecked against current account authority. paged=true uses bounded pages; the legacy array response is retained for compatibility and can include the full matching set.
       parameters:
         - name: include_inactive
           in: query
@@ -2588,6 +2988,7 @@ paths:
       tags:
         - plans
       summary: Create plan (admin only)
+      description: Requires a current active administrator. Product policy, initial SKUs, allowed operations and audit commit together. Explicit inactive and nonrenewable values are preserved. Published plans require an enabled group with an active explicit protocol member and a purchasable SKU.
       requestBody:
         required: true
         content:
@@ -2605,11 +3006,14 @@ paths:
                   - properties:
                        data:
                          $ref: "#/components/schemas/Plan"
+        "400": { description: "Field validation, including skus.N fields, or error.code=commerce_identifier_conflict with slug and/or skus.N.code fields; legacy database name uniqueness is reported in name." }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { description: "error.code=commerce_persistence_failed; no partial product, SKU or operation set is committed." }
   /api/v1/plans/{id}:
     get:
       tags: [plans]
       summary: Get one active public plan catalog item
-      description: Returns bounded plan summary data and at most one primary active new-purchase SKU. It never embeds the full SKU collection.
+      description: Remains public-scoped even with an administrator token. Counts and primary price use active purchase SKUs; ties are ordered by price, sort order and ID. Historical active products without such SKUs return zero counts and no primary SKU. Returns bounded plan summary data and at most one primary active new-purchase SKU. It never embeds the full SKU collection.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
@@ -2626,7 +3030,8 @@ paths:
   /api/v1/plans/{id}/skus:
     get:
       tags: [plans]
-      summary: List active purchasable SKUs for one active plan
+      summary: List active SKUs for one active plan
+      description: Public scope cannot include inactive SKUs or an inactive parent. Operation or legacy sku_type optionally narrows the active set. Count, anchor and page metadata are read in the same transaction.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Search name, code or currency." }
@@ -2651,7 +3056,7 @@ paths:
       tags:
         - plans
       summary: Get one plan policy and SKU counts
-      description: The detail response intentionally omits the unbounded SKU collection. Use the paginated plan SKU route.
+      description: Requires a current active administrator. The commerce detail projection includes counts of all SKUs and active SKUs, independently of their allowed operations. The detail response intentionally omits the unbounded SKU collection. Use the paginated plan SKU route.
       parameters:
         - name: id
           in: path
@@ -2676,6 +3081,7 @@ paths:
       tags:
         - plans
       summary: Update plan fields and toggle active state
+      description: Requires a current active administrator and expected_revision. Field changes, revision and audit commit atomically. Publishing or changing the group of a published product validates enabled explicit protocol membership; published products retain a purchasable SKU.
       parameters:
         - name: id
           in: path
@@ -2700,6 +3106,10 @@ paths:
                   - properties:
                        data:
                          $ref: "#/components/schemas/Plan"
+        "400": { description: "Field validation failed, error.code=plan_slug_conflict with error.fields.slug, or plan_name_conflict with error.fields.name when the database retains the legacy unique name constraint." }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { description: "error.code=commerce_persistence_failed; changes and audit roll back together." }
         "409": { $ref: "#/components/responses/Error" }
         "428": { $ref: "#/components/responses/Error" }
   /api/v1/orders:
@@ -2707,7 +3117,7 @@ paths:
       tags:
         - orders
       summary: List orders owned by the current user
-      description: This self-service route remains user-scoped even when the current user also has administrator permission. Use paged=true for the bounded account workbench contract.
+      description: This self-service route remains user-scoped even when the current user also has administrator permission. The commerce capability rechecks the current active account; list queries select only summary fields and exclude raw payment callbacks and failure diagnostics. Use paged=true for the bounded account workbench contract. The legacy array remains available for existing callers.
       parameters:
         - name: status
           in: query
@@ -2734,6 +3144,7 @@ paths:
       tags:
         - orders
       summary: Create order for plan
+      description: The commerce capability rechecks the current active buyer inside the transaction and snapshots current SKU pricing after locking its plan. Target subscriptions must belong to the buyer. Pending orders do not reserve active-subscription capacity.
       requestBody:
         required: true
         content:
@@ -3181,6 +3592,7 @@ paths:
     post:
       tags: [subscriptions, admin]
       summary: Create a reusable remote subscription rule set
+      description: Revalidates the current active administrator and active-template client compatibility, then publishes canonical source content and commits metadata plus the audit record transactionally. Failed database or audit writes restore the previous published content.
       requestBody:
         required: true
         content:
@@ -3189,6 +3601,7 @@ paths:
       responses:
         "200": { description: Rule set created }
         "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/admin/subscription-rule-sets/{id}:
     get:
       tags: [subscriptions, admin]
@@ -3209,7 +3622,7 @@ paths:
     put:
       tags: [subscriptions, admin]
       summary: Update a reusable subscription rule set
-      description: Renderer changes are rejected while templates reference the rule set. Source changes apply to every reference.
+      description: Revalidates the current active administrator, expected revision and active-template client compatibility. Renderer or tag constraints are enforced before metadata and audit commit; published content is restored if the transaction fails. Source changes apply to every reference.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       requestBody:
@@ -3220,15 +3633,18 @@ paths:
       responses:
         "200": { description: Rule set updated }
         "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
     delete:
       tags: [subscriptions, admin]
       summary: Delete an unused reusable subscription rule set
+      description: Revalidates the current active administrator, rejects active template references, and commits deletion plus its audit record before removing published files.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         "200": { description: Rule set deleted }
+        "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
   /api/v1/admin/subscription-templates:
@@ -3259,6 +3675,7 @@ paths:
     post:
       tags: [subscriptions, admin]
       summary: Create and validate a subscription export template
+      description: Revalidates the current active administrator and referenced active rule sets, then commits the template, binding index and audit record in one transaction.
       requestBody:
         required: true
         content:
@@ -3267,6 +3684,7 @@ paths:
       responses:
         "200": { description: Template created }
         "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/admin/subscription-templates/preview:
     post:
       tags: [subscriptions, admin]
@@ -3307,6 +3725,7 @@ paths:
     put:
       tags: [subscriptions, admin]
       summary: Update and validate a subscription export template
+      description: Revalidates the current active administrator, revision and active rule-set references before atomically replacing the template, binding index and audit record.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       requestBody:
@@ -3317,15 +3736,18 @@ paths:
       responses:
         "200": { description: Template updated }
         "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
     delete:
       tags: [subscriptions, admin]
       summary: Delete a subscription export template
+      description: Revalidates the current active administrator and deletes the template with its audit record in one transaction.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         "200": { description: Template deleted }
+        "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
   /api/v1/admin/subscription-delivery-order:
     get:
@@ -3461,7 +3883,7 @@ paths:
     post:
       tags: [nodes]
       summary: Create a protocol endpoint and apply its classified operational effect
-      description: Persists the endpoint, compares normalized plaintext configuration before encryption, applies revision-guarded incremental node-group membership commands in the same transaction, and queues node publication only for active runtime or credential-set changes.
+      description: Rechecks the current active administrator and atomically persists the endpoint, certificate binding, revision-guarded node-group memberships and reconciliation tasks, publication intents, and audit. Normalized plaintext configuration is classified before encryption; only active runtime or credential-placement changes queue direct node publication.
       requestBody:
         required: true
         content:
@@ -3479,6 +3901,8 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/ProtocolEndpointMutationResult"
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
   /api/v1/admin/protocol-endpoints/reality-keypair:
     post:
@@ -3542,7 +3966,7 @@ paths:
     put:
       tags: [nodes]
       summary: Update a protocol endpoint and apply its classified operational effect
-      description: Delivery, billing and management changes avoid node publication. Runtime changes publish the current node; carrier-node changes migrate credentials and publish only the previous and target nodes. Node-group membership is changed incrementally with each group revision as an optimistic precondition.
+      description: Loads an opaque endpoint snapshot and rejects a stale save after locking the current endpoint and certificate binding. The current administrator, old and target nodes, parent relation, front-entry topology, certificate, credential protocol/port constraints, deactivation availability, node-group revisions, endpoint row, credential placement, certificate binding, reconciliation tasks, publication intents, and audits are checked or changed in one transaction. Delivery, billing and management-only changes avoid direct node publication; runtime and carrier-node changes publish only the required nodes.
       parameters:
         - in: path
           name: id
@@ -3564,17 +3988,21 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/ProtocolEndpointMutationResult"
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
     delete:
       tags: [nodes, admin]
       summary: Remove and delete a protocol endpoint
-      description: Deletes local endpoint credentials, memberships and dependent front entries atomically. Runtime withdrawal is queued without requiring SSH success. Running deployments block concurrent deletion.
+      description: Rechecks the current active administrator and atomically removes dependent front entries, increments affected node-group revisions, removes memberships and certificate bindings, revokes endpoint credentials, records the audit, deletes the endpoint, and queues runtime withdrawal for landing and entry nodes without requiring SSH success. A deleting node or running deployment blocks concurrent deletion.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         "200": { description: Protocol endpoint and relations deleted locally; runtime withdrawal queued }
         "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
   /api/v1/admin/protocol-endpoints/{id}/deploy:
     post:
@@ -3626,6 +4054,7 @@ paths:
     get:
       tags: [plans]
       summary: List one plan's sales specifications
+      description: Requires a current active administrator. Filters and paging are shared with the internal commerce query capability; inactive specifications remain visible to administrators.
       parameters:
         - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
         - { in: query, name: q, schema: { type: string, maxLength: 128 }, description: "Match SKU name, code or currency." }
@@ -3646,7 +4075,8 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
     post:
       tags: [plans]
-      summary: Add a purchasable SKU to a plan
+      summary: Add a sales specification to a plan
+      description: Requires a current active administrator. SKU, allowed operations and audit commit atomically. Explicit is_active=false remains inactive.
       parameters:
         - in: path
           name: id
@@ -3659,6 +4089,10 @@ paths:
             schema: { $ref: "#/components/schemas/PlanSKU" }
       responses:
         "200": { description: SKU created }
+        "400": { description: "Field validation failed, or error.code=plan_sku_code_conflict with error.fields.code for a duplicate code." }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { description: "error.code=commerce_persistence_failed; no partial SKU is committed and database diagnostics are not returned." }
   /api/v1/admin/node-groups:
     get:
       tags: [plans]
@@ -3751,6 +4185,7 @@ paths:
     get:
       tags: [plans]
       summary: Get one sales specification for editing
+      description: Requires a current active administrator and returns the shared commerce SKU projection, including legacy operation metadata.
       parameters:
         - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
       responses:
@@ -3768,6 +4203,7 @@ paths:
     put:
       tags: [plans]
       summary: Update pricing and service specification for a SKU
+      description: Requires a current active administrator. SKU, allowed operations and audit update atomically. Published products must retain an active SKU allowing purchase; concurrent SKU updates and product publication share the parent lock.
       parameters:
         - in: path
           name: id
@@ -4162,6 +4598,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    integrationBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: zbi_external_integration
     NodeConnectorBearer:
       type: http
       scheme: bearer
@@ -4174,6 +4614,95 @@ components:
           schema:
             $ref: "#/components/schemas/ApiResponse"
   schemas:
+    IntegrationCredentialIssue:
+      type: object
+      additionalProperties: false
+      required: [name, scopes, expires_at]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        scopes:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: { type: string, enum: [metering.usage.query, commerce.orders.list, commerce.payments.record] }
+        expires_at: { type: string, format: date-time, description: Future instant no more than 366 days from issuance. }
+    IntegrationCredential:
+      type: object
+      required: [id, name, token_prefix, scopes, expires_at, created_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        name: { type: string }
+        token_prefix: { type: string, readOnly: true }
+        scopes: { type: array, items: { type: string } }
+        expires_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    CapabilityDescriptor:
+      type: object
+      required: [name, version, owner, kind, input_schema, output_schema, sensitivity, authorization, idempotency, execution, timeout_ms, quota, rate_limit_per_minute, error_codes, compatibility, deprecation]
+      properties:
+        name: { type: string, example: metering.usage.query }
+        version: { type: string }
+        owner: { type: string }
+        kind: { type: string, enum: [query, command] }
+        input_schema: { type: object, additionalProperties: true }
+        output_schema: { type: object, additionalProperties: true }
+        sensitivity: { type: string }
+        authorization: { type: string }
+        idempotency: { type: string }
+        execution: { type: string }
+        timeout_ms: { type: integer, minimum: 1, maximum: 300000 }
+        quota: { type: string }
+        rate_limit_per_minute: { type: integer, minimum: 1, maximum: 10000 }
+        error_codes: { type: array, items: { type: string } }
+        compatibility: { type: string }
+        deprecation: { type: string }
+    DatabaseMigrationTarget:
+      type: object
+      required: [target_driver, target_datasource]
+      properties:
+        target_driver: { type: string, enum: [mysql, sqlite], description: Must differ from the active source driver. }
+        target_datasource: { type: string, minLength: 1, writeOnly: true }
+    DatabaseMigrationTask:
+      type: object
+      required: [id, type, status, total, current, content, scope]
+      properties:
+        id: { type: integer, minimum: 1 }
+        run_id: { type: string, readOnly: true, description: Shared Run ID when available. }
+        type: { type: string, enum: [database_migration] }
+        status: { type: integer }
+        total: { type: integer }
+        current: { type: integer }
+        errors: { type: string }
+        content: { type: string, enum: [''] }
+        scope: { type: string, enum: [''] }
+        idempotency_key: { type: string }
+        priority: { type: integer }
+        attempts: { type: integer }
+        max_attempts: { type: integer }
+        locked_by: { type: string }
+        locked_until: { type: string, format: date-time, nullable: true }
+        scheduled_at: { type: string, format: date-time, nullable: true }
+        started_at: { type: string, format: date-time, nullable: true }
+        finished_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    DatabaseMigrationStatus:
+      type: object
+      required: [source_driver, maintenance]
+      properties:
+        source_driver: { type: string, enum: [mysql, sqlite] }
+        task: { $ref: '#/components/schemas/DatabaseMigrationTask' }
+        next_step: { type: string }
+        maintenance:
+          type: object
+          required: [enabled, title, message, migration_in_progress, migration_cutover_pending]
+          properties:
+            enabled: { type: boolean }
+            title: { type: string }
+            message: { type: string }
+            migration_in_progress: { type: boolean }
+            migration_cutover_pending: { type: boolean }
     "PluginPage":
       "type": "object"
       "properties":
@@ -4633,6 +5162,9 @@ components:
         code:
           type: string
           example: validation_failed
+        retryable:
+          type: boolean
+          description: Present for capability failures. Clients may retry only when true and must still honor idempotency and Retry-After.
         fields:
           type: object
           description: Field-path to localized actionable message. Present when code is validation_failed.

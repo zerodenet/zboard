@@ -15,6 +15,16 @@ service PluginControl {
  rpc ListIdentityProviders(Empty) returns (IdentityProviderList);
  rpc GetIdentityProvider(IdentityProviderRequest) returns (IdentityProvider);
  rpc ExchangeIdentity(IdentityExchange) returns (VerifiedIdentity);
+ // Optional zboard.task.v1: only signed, admitted manifest task IDs are dispatched.
+ rpc RunTask(TaskRunRequest) returns (TaskRunResult);
+ // Requires zboard.dns.provider.v1. Credentials are scoped to one provider
+ // account invocation and never persisted by the host protocol.
+ rpc VerifyDNSCredential(DNSCredentialRequest) returns (HealthResult);
+ rpc ApplyDNSRecord(DNSApplyRequest) returns (DNSApplyResult);
+ // Requires zboard.certificate.provider.v1. The private key remains on the
+ // target node; the plugin receives only its signed CSR.
+ rpc VerifyCertificateCredential(CertificateCredentialRequest) returns (HealthResult);
+ rpc IssueCertificate(CertificateIssueRequest) returns (CertificateIssueResult);
 }
 message Empty {}
 message Info { string id = 1; string version = 2; uint32 protocol = 3; repeated string capabilities = 4; }
@@ -48,3 +58,61 @@ message VerifiedIdentity {
  string email = 3;
  bool email_verified = 4;
 }
+
+// run_id is an observation identity, not a guarantee of exactly-once delivery.
+message TaskRunRequest {
+ string task_id = 1;
+ string run_id = 2;
+ uint64 generation = 3;
+ uint64 config_revision = 4;
+}
+message TaskRunResult { bool succeeded = 1; }
+
+message DNSCredentialRequest {
+ string provider_key = 1;
+ bytes credential = 2;
+ uint64 generation = 3;
+ uint64 config_revision = 4;
+}
+message DNSApplyRequest {
+ string provider_key = 1;
+ bytes credential = 2;
+ string record_type = 3;
+ string name = 4;
+ string value = 5;
+ int32 ttl = 6;
+ bool proxied = 7;
+ string provider_zone_id = 8;
+ string provider_record_id = 9;
+ bool takeover = 10;
+ uint64 generation = 11;
+ uint64 config_revision = 12;
+}
+message DNSApplyResult {
+ string zone_id = 1;
+ string record_id = 2;
+ string record_type = 3;
+ string name = 4;
+ string value = 5;
+ int32 ttl = 6;
+ bool proxied = 7;
+}
+message CertificateCredentialRequest {
+ string provider_key = 1;
+ bytes credential = 2;
+ uint64 generation = 3;
+ uint64 config_revision = 4;
+}
+message CertificateIssueRequest {
+ string provider_key = 1;
+ bytes credential = 2;
+ bytes csr_pem = 3;
+ repeated string domains = 4;
+ string contact_email = 5;
+ string environment = 6;
+ bool renewal = 7;
+ string operation_id = 8;
+ uint64 generation = 9;
+ uint64 config_revision = 10;
+}
+message CertificateIssueResult { bytes fullchain_pem = 1; }

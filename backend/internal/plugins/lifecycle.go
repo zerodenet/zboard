@@ -79,6 +79,11 @@ func (m *Manager) commitCandidate(ctx context.Context, prev model.PluginInstalla
 	if candidate.Enabled {
 		candidate.State = "active"
 	}
+	if prev.ID != "" && prev.Enabled {
+		if err := m.deactivatePluginTasks(ctx, candidate.ID); err != nil {
+			return err
+		}
+	}
 	err = m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := m.guard(tx); err != nil {
 			return err

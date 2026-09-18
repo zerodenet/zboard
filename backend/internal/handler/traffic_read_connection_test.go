@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -57,7 +58,7 @@ func TestTrafficReconciliationUsesOneSnapshotDuringConcurrentSettlement(t *testi
 		}
 		committed = true
 	}}
-	f.h.trafficReadDB = f.h.trafficReadDB.Session(&gorm.Session{Logger: trace})
+	f.h.services.SetTrafficReadDatabaseForTest(f.h.services.PrincipalTrends().Repository.(meteringstore.PrincipalTrends).ReadDB.Session(&gorm.Session{Logger: trace}))
 	path := "/api/v1/admin/traffic/reconciliation?paged=true"
 	var first, next struct {
 		Items      []trafficReconciliationItem
@@ -91,7 +92,7 @@ func TestTrafficReportingHandlersUseIsolatedReadConnection(t *testing.T) {
 		{"/api/v1/admin/traffic/reconciliation?paged=true", f.h.TrafficReconciliationHandler},
 	} {
 		trace := &trafficQueryLog{Interface: logger.Discard}
-		f.h.trafficReadDB = f.h.trafficReadDB.Session(&gorm.Session{Logger: trace})
+		f.h.services.SetTrafficReadDatabaseForTest(f.h.services.PrincipalTrends().Repository.(meteringstore.PrincipalTrends).ReadDB.Session(&gorm.Session{Logger: trace}))
 		var ignored interface{}
 		f.get(t, endpoint.path, true, endpoint.run, &ignored)
 		if len(trace.queries) == 0 {

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	networkcap "github.com/zerodenet/zboard/backend/internal/capabilities/network"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 )
@@ -35,8 +37,8 @@ func (h *handlers) NodeProxyPoolConfigHandler(w http.ResponseWriter, r *http.Req
 		BadRequest(w, "无效的代理池")
 		return
 	}
-	var pool model.NodeProxyPool
-	if err := h.db.First(&pool, id).Error; err != nil {
+	record, err := h.services.ProxyPoolQueries.Get(r.Context(), claims.UserID, id)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			NotFound(w)
 		} else {
@@ -44,6 +46,7 @@ func (h *handlers) NodeProxyPoolConfigHandler(w http.ResponseWriter, r *http.Req
 		}
 		return
 	}
+	pool := proxyPoolQueryModel(record)
 	raw, err := h.credentialCipher.Decrypt(pool.Config)
 	if err != nil {
 		ServerError(w, fmt.Errorf("代理池配置无法解密"))
@@ -61,7 +64,9 @@ func (h *handlers) NodeProxyPoolConfigHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	compiled["target"] = target
-	if err := createAuditLog(h.db, claims, "node_proxy_pool.config.read", fmt.Sprintf("node_proxy_pool:%d", id), fmt.Sprintf("node=%d revision=%d", pool.NodeID, pool.Revision)); err != nil {
+	if err := h.services.Audit.RecordAdmin(r.Context(), claims.UserID, observability.AuditEvent{
+		Action: "node_proxy_pool.config.read", Target: fmt.Sprintf("node_proxy_pool:%d", id), Detail: fmt.Sprintf("node=%d revision=%d", pool.NodeID, pool.Revision),
+	}); err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -112,8 +117,8 @@ func (h *handlers) NodeProxyPoolRuntimeHandler(w http.ResponseWriter, r *http.Re
 		BadRequest(w, "无效的代理池")
 		return
 	}
-	var pool model.NodeProxyPool
-	if err := h.db.First(&pool, id).Error; err != nil {
+	record, err := h.services.ProxyPoolQueries.Get(r.Context(), claims.UserID, id)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			NotFound(w)
 		} else {
@@ -121,12 +126,15 @@ func (h *handlers) NodeProxyPoolRuntimeHandler(w http.ResponseWriter, r *http.Re
 		}
 		return
 	}
+	pool := proxyPoolQueryModel(record)
 	node, err := h.loadNode(pool.NodeID)
 	if err != nil {
 		NotFound(w)
 		return
 	}
-	if err := createAuditLog(h.db, claims, "node_proxy_pool.runtime.read", fmt.Sprintf("node_proxy_pool:%d", id), fmt.Sprintf("node=%d", pool.NodeID)); err != nil {
+	if err := h.services.Audit.RecordAdmin(r.Context(), claims.UserID, observability.AuditEvent{
+		Action: "node_proxy_pool.runtime.read", Target: fmt.Sprintf("node_proxy_pool:%d", id), Detail: fmt.Sprintf("node=%d", pool.NodeID),
+	}); err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -144,6 +152,15 @@ func (h *handlers) NodeProxyPoolRuntimeHandler(w http.ResponseWriter, r *http.Re
 	}
 	snapshot.NodeID = pool.NodeID
 	OK(w, snapshot)
+}
+
+func proxyPoolQueryModel(record networkcap.ProxyPoolRecord) model.NodeProxyPool {
+	return model.NodeProxyPool{ID: record.ID, NodeID: record.NodeID, Name: record.Name, Config: record.ConfigCiphertext,
+		SubscriptionURL: record.SubscriptionURLCiphertext, SubscriptionFormat: record.SubscriptionFormat,
+		SubscriptionUserAgent: record.SubscriptionUserAgent, AutoSync: record.AutoSync,
+		SyncIntervalSeconds: record.SyncIntervalSeconds, SubscriptionNodeCount: record.SubscriptionNodeCount,
+		LastSyncAt: record.LastSyncAt, NextSyncAt: record.NextSyncAt, LastSyncError: record.LastSyncError,
+		Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
 }
 
 // Never expose the full node document: it can contain connector secrets and

@@ -7,7 +7,7 @@
     <TransientFeedback :success="message" :error="error" success-title="证书操作已提交" error-title="证书操作失败" />
 
     <PageAlert tone="info" title="ACME 验证方式">
-      默认通过 Cloudflare DNS-01 自动完成验证，不占用节点端口；已有 Web 服务时也可选择 HTTP-01 Webroot，由现有服务在公网 80 端口提供挑战文件。证书私钥始终留在节点上。
+      默认通过内置 Cloudflare DNS 或证书供应商插件完成 DNS-01 验证，不占用节点端口；已有 Web 服务时也可选择 HTTP-01 Webroot。证书私钥始终在目标节点生成和保存，不会交给插件。
     </PageAlert>
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
@@ -43,7 +43,7 @@
         <FormField v-slot="{ controlAttrs }" label="ACME 联系邮箱" name="certificate-email" :error="createErrors.fields.contact_email" required><UiInput v-model.trim="createForm.contact_email" v-bind="controlAttrs" type="email" placeholder="ops@example.com" maxlength="254" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="证书域名" name="certificate-domains" :error="createErrors.fields.domains" hint="每行或逗号分隔一个域名，最多 10 个；HTTP-01 不支持通配符和 IP。" required full><UiTextarea v-model="createForm.domains" v-bind="controlAttrs" rows="5" placeholder="edge.example.com&#10;cdn.example.com" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="验证方式" name="certificate-challenge" :error="createErrors.fields.challenge_type" required><UiSelect v-model="createForm.challenge_type" v-bind="controlAttrs" :options="challengeOptions" /></FormField>
-        <FormField v-if="createForm.challenge_type === 'dns-01'" v-slot="{ controlAttrs }" label="Cloudflare DNS 账户" name="certificate-provider" :error="createErrors.fields.provider_account_id" required><UiSelect v-model.number="createForm.provider_account_id" v-bind="controlAttrs" :options="providerOptions" /></FormField>
+        <FormField v-if="createForm.challenge_type === 'dns-01'" v-slot="{ controlAttrs }" label="DNS / 证书供应商账户" name="certificate-provider" :error="createErrors.fields.provider_account_id" required><UiSelect v-model.number="createForm.provider_account_id" v-bind="controlAttrs" :options="providerOptions" /></FormField>
         <FormField v-else v-slot="{ controlAttrs }" label="节点 Webroot" name="certificate-webroot" :error="createErrors.fields.webroot_path" hint="现有 Web 服务必须从该目录提供 /.well-known/acme-challenge/。" required><UiInput v-model.trim="createForm.webroot_path" v-bind="controlAttrs" placeholder="/var/www/html" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="签发环境" name="certificate-environment" :error="createErrors.fields.environment"><UiSelect v-model="createForm.environment" v-bind="controlAttrs" :options="environmentOptions" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="提前续期天数" name="certificate-renew-days" :error="createErrors.fields.renew_before_days"><UiNumberInput v-model="createForm.renew_before_days" v-bind="controlAttrs" :min="1" :max="60" /></FormField>
@@ -143,8 +143,8 @@ const statusOptions = [
   { label: '有效', value: 'active' }, { label: '续期中', value: 'renewing' }, { label: '失败', value: 'failed' }, { label: '已过期', value: 'expired' },
 ]
 const environmentOptions = [{ label: '生产环境（受信任）', value: 'production' }, { label: '测试环境（不受信任）', value: 'staging' }]
-const challengeOptions = [{ label: 'Cloudflare DNS-01（推荐）', value: 'dns-01' }, { label: 'HTTP-01 Webroot', value: 'http-01-webroot' }]
-const providerOptions = computed(() => providerAccounts.value.filter(item => item.provider_key === 'cloudflare' && item.status === 'active' && item.capabilities.includes('dns.records')).map(item => ({ label: item.name, value: item.id })))
+const challengeOptions = [{ label: 'DNS-01（推荐）', value: 'dns-01' }, { label: 'HTTP-01 Webroot', value: 'http-01-webroot' }]
+const providerOptions = computed(() => providerAccounts.value.filter(item => item.status === 'active' && ((item.provider_key === 'cloudflare' && item.capabilities.includes('dns.records')) || item.capabilities.includes('certificate.issue'))).map(item => ({ label: item.name, value: item.id })))
 const { items: certificates, total, loading, refreshing, error, load: refresh } = useRemoteTable<ManagedCertificate>({
   offset,
   limit,
@@ -194,7 +194,7 @@ async function create() {
     domains: (!domains.length || domains.length > 10) && '请输入 1–10 个域名。',
     contact_email: !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(createForm.contact_email.trim()) && '请输入有效的 ACME 联系邮箱。',
     renew_before_days: !isIntegerInRange(createForm.renew_before_days, 1, 60) && '提前续期天数必须为 1–60 之间的整数。',
-    provider_account_id: createForm.challenge_type === 'dns-01' && !createForm.provider_account_id && '请选择已验证的 Cloudflare DNS 账户。',
+    provider_account_id: createForm.challenge_type === 'dns-01' && !createForm.provider_account_id && '请选择已验证且支持证书签发的供应商账户。',
     webroot_path: createForm.challenge_type === 'http-01-webroot' && !createForm.webroot_path.startsWith('/') && '请输入节点上的绝对 Webroot 路径。',
   }), createFormElement, '请更正标记字段后再申请证书。')
   if (!valid) return
@@ -211,7 +211,7 @@ async function create() {
 }
 async function runCertificateOperation(certificate: ManagedCertificate) {
   const renewing = Boolean(certificate.not_after)
-  const challengeNotice = certificate.challenge_type === 'dns-01' ? '将通过 Cloudflare DNS 自动验证，不占用节点端口。' : '将先检查域名全部 A/AAAA 地址的公网 80 端口，再由现有 Webroot 提供挑战文件。'
+  const challengeNotice = certificate.challenge_type === 'dns-01' ? '将通过已绑定的 DNS 或证书供应商自动验证，不占用节点端口；私钥不会离开节点。' : '将先检查域名全部 A/AAAA 地址的公网 80 端口，再由现有 Webroot 提供挑战文件。'
   if (!await confirmAction({ title: renewing ? '立即续期证书？' : '开始申请证书？', message: `${challengeNotice} 成功后${certificate.usage_count ? '会重新发布绑定协议的完整 Zero 配置' : '可在协议服务中绑定使用'}。`, confirmText: renewing ? '开始续期' : '开始申请' })) return
   operatingID.value = certificate.id; error.value = ''; message.value = ''
   try {

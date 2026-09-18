@@ -1,19 +1,73 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
-	"strings"
-	"time"
 
-	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 )
 
-// An omitted token preserves the encrypted credential and its verification state.
+// VerifyProviderCredential is the temporary transport bridge until supplier
+// implementations move behind the provider plugin registry.
+func (h *handlers) VerifyProviderCredential(ctx context.Context, key, token string) error {
+	if key == providerCloudflare {
+		_, err := cloudflareRequest[json.RawMessage](ctx, http.MethodGet, "/user/tokens/verify", token, nil)
+		return err
+	}
+	if h.pluginManager == nil {
+		return errors.New("unsupported provider credential verification")
+	}
+	definitions, err := h.pluginManager.ProviderDefinitions(ctx)
+	if err != nil {
+		return err
+	}
+	for _, definition := range definitions {
+		if definition.Key != key {
+			continue
+		}
+		matched := false
+		for _, capability := range definition.Capabilities {
+			if capability == "dns.records" {
+				matched = true
+				if err := h.pluginManager.VerifyDNSProviderCredential(ctx, key, token); err != nil {
+					return err
+				}
+			}
+			if capability == "certificate.issue" {
+				matched = true
+				if err := h.pluginManager.VerifyCertificateProviderCredential(ctx, key, token); err != nil {
+					return err
+				}
+			}
+		}
+		if matched {
+			return nil
+		}
+	}
+	return errors.New("unsupported provider credential verification")
+}
+
+func (h *handlers) ProviderDefinition(ctx context.Context, key string) (network.ProviderDefinition, error) {
+	for _, definition := range providerCatalog {
+		if definition.Key == key {
+			return definition, nil
+		}
+	}
+	if h.pluginManager != nil {
+		providers, err := h.pluginManager.ProviderDefinitions(ctx)
+		if err != nil {
+			return network.ProviderDefinition{}, err
+		}
+		for _, provider := range providers {
+			if provider.Key == key {
+				return network.ProviderDefinition{Key: provider.Key, Name: provider.Name, Capabilities: append([]string{}, provider.Capabilities...)}, nil
+			}
+		}
+	}
+	return network.ProviderDefinition{}, errors.New("unsupported provider")
+}
 func (h *handlers) ProviderAccountUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	claims, err := h.requireAdmin(w, r)
 	if err != nil {
@@ -24,94 +78,56 @@ func (h *handlers) ProviderAccountUpdateHandler(w http.ResponseWriter, r *http.R
 		BadRequest(w, err.Error())
 		return
 	}
-	var request struct {
-		Name             string `json:"name"`
-		APIToken         string `json:"api_token"`
-		ExpectedRevision uint64 `json:"expected_revision"`
-	}
+	var request network.ProviderUpdate
 	if err := decodeBody(r, &request); err != nil {
 		BadRequest(w, err.Error())
 		return
 	}
-	request.Name = strings.TrimSpace(request.Name)
-	request.APIToken = strings.TrimSpace(request.APIToken)
-	fields := map[string]string{}
-	if request.Name == "" || len([]byte(request.Name)) > 80 {
-		fields["name"] = "账户名称需要包含 1–80 个 UTF-8 字节。"
-	}
-	if request.APIToken != "" && (len(request.APIToken) < 20 || len(request.APIToken) > 512) {
-		fields["api_token"] = "请输入有效的 Cloudflare API Token，或留空保留原凭据。"
-	}
-	if len(fields) > 0 {
-		BadRequestFields(w, "供应商账户校验失败。", fields)
-		return
-	}
-	var account model.ProviderAccount
-	if err := h.db.First(&account, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			NotFound(w)
-		} else {
-			ServerError(w, err)
-		}
-		return
-	}
-	if request.ExpectedRevision != account.Revision {
-		writeJSON(w, http.StatusConflict, "供应商账户已更新，请重新打开编辑窗口。", nil)
-		return
-	}
-	updates := map[string]interface{}{"name": request.Name, "revision": account.Revision + 1}
-	if request.APIToken != "" {
-		// Verify before replacing a working token used by DNS and certificates.
-		if _, err := cloudflareRequest[json.RawMessage](r.Context(), http.MethodGet, "/user/tokens/verify", request.APIToken, nil); err != nil {
-			BadRequestFields(w, "新 Token 验证失败，原凭据已保留。", map[string]string{"api_token": "请检查 Cloudflare Token 是否有效以及所需权限后重试。"})
-			return
-		}
-		encrypted, err := h.credentialCipher.Encrypt(request.APIToken)
-		if err != nil {
-			ServerError(w, err)
-			return
-		}
-		updates["credential_ciphertext"] = encrypted
-		updates["credential_prefix"] = secretPrefix(request.APIToken)
-		updates["status"] = "active"
-		updates["last_verified_at"] = time.Now().UTC()
-		updates["last_error"] = ""
-	}
-	conflict := errors.New("provider revision conflict")
-	err = h.db.Transaction(func(tx *gorm.DB) error {
-		var current model.ProviderAccount
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, id).Error; err != nil {
-			return err
-		}
-		if current.Revision != request.ExpectedRevision {
-			return conflict
-		}
-		if err := tx.Model(&current).Updates(updates).Error; err != nil {
-			return err
-		}
-		return createAuditLog(tx, claims, "provider_account.update", fmt.Sprintf("provider_account:%d", id), fmt.Sprintf("credential_replaced=%t", request.APIToken != ""))
-	})
-	if errors.Is(err, conflict) {
-		writeJSON(w, http.StatusConflict, "供应商账户已更新，请重新打开编辑窗口。", nil)
-		return
-	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		NotFound(w)
-		return
-	}
-	if isDuplicateError(err) {
-		BadRequestFields(w, "供应商账户校验失败。", map[string]string{"name": "账户名称已存在，请使用其他名称。"})
-		return
-	}
+	account, err := h.services.ProviderAccounts(h.credentialCipher, h).Update(r.Context(), claims.UserID, id, request)
 	if err != nil {
-		ServerError(w, err)
+		providerAccountError(w, err)
 		return
 	}
-	if err := h.db.First(&account, id).Error; err != nil {
+	OK(w, account)
+}
+func providerAccountError(w http.ResponseWriter, err error) {
+	var validation *network.ProviderValidation
+	switch {
+	case errors.As(err, &validation):
+		BadRequestFields(w, validation.Error(), validation.Fields)
+	case errors.Is(err, network.ErrProviderConflict):
+		writeJSON(w, http.StatusConflict, "供应商账户已更新，请重新打开编辑窗口。", nil)
+	case errors.Is(err, network.ErrProviderNotFound):
+		NotFound(w)
+	case errors.Is(err, network.ErrProviderPermission):
+		writeJSON(w, http.StatusForbidden, "需要管理员权限。", nil)
+	case errors.Is(err, network.ErrProviderDuplicate):
+		BadRequestFields(w, "供应商账户校验失败。", map[string]string{"name": "账户名称已存在，请使用其他名称。"})
+	default:
 		ServerError(w, err)
-		return
 	}
-	var capabilities []string
-	_ = json.Unmarshal([]byte(account.Capabilities), &capabilities)
-	OK(w, providerAccountView{ProviderAccount: account, Capabilities: capabilities})
+}
+
+func managedDNSError(w http.ResponseWriter, err error) {
+	var validation *network.ManagedDNSValidation
+	switch {
+	case errors.As(err, &validation):
+		BadRequestFields(w, validation.Error(), validation.Fields)
+	case errors.Is(err, network.ErrManagedDNSNotFound):
+		NotFound(w)
+	case errors.Is(err, network.ErrManagedDNSPermission):
+		writeJSON(w, http.StatusForbidden, "需要管理员权限。", nil)
+	case errors.Is(err, network.ErrManagedDNSRevisionConflict):
+		writeJSON(w, http.StatusConflict, "DNS 记录已被其他管理员更新，请重新加载。", nil)
+	case errors.Is(err, network.ErrManagedDNSOperationRunning):
+		writeJSON(w, http.StatusConflict, "DNS 记录正在执行供应商操作，请等待完成后再编辑。", nil)
+	case errors.Is(err, network.ErrManagedDNSDeleting):
+		writeJSON(w, http.StatusConflict, "DNS 记录已进入删除流程。", nil)
+	case errors.Is(err, network.ErrManagedDNSDuplicate):
+		BadRequestFields(w, "DNS 解析校验失败。", map[string]string{"domain_name": "该供应商账户下已管理相同域名和记录类型。"})
+	case errors.Is(err, network.ErrManagedDNSDependency):
+		BadRequestFields(w, "DNS 解析校验失败。", map[string]string{"resource": "目标节点或供应商账户当前不可用。"})
+	default:
+		ServerError(w, err)
+	}
 }

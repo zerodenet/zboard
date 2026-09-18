@@ -23,6 +23,10 @@ func TestOpenAPIIsValidYAMLAndContainsCoreCommercialPaths(t *testing.T) {
 	}
 	for _, path := range []string{
 		"/api/v1/setup/install",
+		"/api/v1/account/integrations/credentials",
+		"/api/v1/account/integrations/credentials/{id}",
+		"/api/v1/integrations/capabilities",
+		"/api/v1/integrations/capabilities/{name}/invoke",
 		"/api/v1/admin/protocol-endpoints",
 		"/api/v1/admin/provider-definitions",
 		"/api/v1/admin/provider-accounts",
@@ -57,6 +61,9 @@ func TestOpenAPIIsValidYAMLAndContainsCoreCommercialPaths(t *testing.T) {
 		"/api/v1/admin/plan-skus/{id}",
 		"/api/v1/admin/node-groups",
 		"/api/v1/admin/system-configs/{key}",
+		"/api/v1/admin/database-migrations",
+		"/api/v1/admin/database-migrations/status",
+		"/api/v1/admin/database-migrations/preflight",
 		"/api/v1/admin/tasks",
 		"/api/v1/admin/tasks/{id}",
 		"/api/v1/admin/tasks/{id}/items",
@@ -119,6 +126,16 @@ func TestOpenAPIIsValidYAMLAndContainsCoreCommercialPaths(t *testing.T) {
 	}
 	components := document["components"].(map[interface{}]interface{})
 	schemas := components["schemas"].(map[interface{}]interface{})
+	for _, name := range []string{"IntegrationCredentialIssue", "IntegrationCredential", "CapabilityDescriptor"} {
+		if _, ok := schemas[name]; !ok {
+			t.Errorf("OpenAPI integration schema %s is missing", name)
+		}
+	}
+	descriptor := schemas["CapabilityDescriptor"].(map[interface{}]interface{})
+	descriptorProperties := descriptor["properties"].(map[interface{}]interface{})
+	if _, ok := descriptorProperties["rate_limit_per_minute"]; !ok {
+		t.Error("OpenAPI CapabilityDescriptor omits rate_limit_per_minute")
+	}
 	capability := schemas["ProtocolKernelCapability"].(map[interface{}]interface{})
 	properties := capability["properties"].(map[interface{}]interface{})
 	if _, ok := properties["minimum_zero_version"]; !ok {

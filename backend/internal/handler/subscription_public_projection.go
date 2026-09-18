@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -205,7 +206,7 @@ func filterSubscriptionsForProjection(subscriptions []model.Subscription, source
 	return result
 }
 
-func (h *handlers) loadSubscriptionProjectionSources(subscriptions []model.Subscription) (map[uint]subscriptionProjectionSource, error) {
+func (h *handlers) loadSubscriptionProjectionSources(ctx context.Context, subscriptions []model.Subscription) (map[uint]subscriptionProjectionSource, error) {
 	result := make(map[uint]subscriptionProjectionSource, len(subscriptions))
 	ids := make([]uint, 0, len(subscriptions))
 	for _, subscription := range subscriptions {
@@ -214,20 +215,8 @@ func (h *handlers) loadSubscriptionProjectionSources(subscriptions []model.Subsc
 	if len(ids) == 0 {
 		return result, nil
 	}
-	type sourceRow struct {
-		SubscriptionID uint
-		PlanSlug       string
-		SKUCode        string
-		NodeGroupCode  string
-	}
-	var rows []sourceRow
-	if err := h.db.Table("subscriptions").
-		Select("subscriptions.id AS subscription_id, plans.slug AS plan_slug, plan_skus.code AS sku_code, node_groups.code AS node_group_code").
-		Joins("JOIN plans ON plans.id = subscriptions.plan_id").
-		Joins("JOIN plan_skus ON plan_skus.id = subscriptions.plan_sku_id").
-		Joins("JOIN node_groups ON node_groups.id = subscriptions.node_group_id").
-		Where("subscriptions.id IN ?", ids).
-		Scan(&rows).Error; err != nil {
+	rows, err := h.services.SubscriptionProjection.Sources(ctx, ids)
+	if err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
@@ -238,97 +227,7 @@ func (h *handlers) loadSubscriptionProjectionSources(subscriptions []model.Subsc
 	return result, nil
 }
 
-func (h *handlers) FilteredClientSubscriptionHandler(w http.ResponseWriter, r *http.Request) {
-	if !hasSubscriptionProjectionFilters(r.URL.Query()) {
-		h.ClientSubscriptionHandler(w, r)
-		return
-	}
-
-	rawToken := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/client/subscription/"))
-	if rawToken == "" || strings.Contains(rawToken, "/") {
-		h.redirectSubscriptionCamouflage(w, r)
-		return
-	}
-	var access model.SubscriptionToken
-	if err := h.db.Where("token_hash = ? AND revoked_at IS NULL", hashSubscriptionToken(rawToken)).First(&access).Error; err != nil {
-		h.redirectSubscriptionCamouflage(w, r)
-		return
-	}
-	var user model.User
-	if err := h.db.Where("id = ? AND status = ?", access.UserID, userStatusActive).First(&user).Error; err != nil {
-		h.redirectSubscriptionCamouflage(w, r)
-		return
-	}
-
-	filter, err := parseSubscriptionProjectionFilter(r.URL.Query(), h.isProtocolSupported)
-	if err != nil {
-		BadRequestError(w, err)
-		return
-	}
-	now := time.Now().UTC()
-	if err := expireSubscriptions(h.db, access.UserID, now); err != nil {
-		ServerError(w, err)
-		return
-	}
-	allSubscriptions := make([]model.Subscription, 0)
-	if err := h.db.Where(
-		"user_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total",
-		access.UserID, subStatusActive, now,
-	).Order("end_at asc, id asc").Find(&allSubscriptions).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	if len(allSubscriptions) == 0 {
-		Forbidden(w, "subscription is inactive, expired, or out of traffic")
-		return
-	}
-	sources, err := h.loadSubscriptionProjectionSources(allSubscriptions)
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
-	subscriptions := filterSubscriptionsForProjection(allSubscriptions, sources, filter)
-	if len(subscriptions) > 0 {
-		if err := h.ensureCredentialsForSubscriptions(subscriptions); err != nil {
-			ServerError(w, err)
-			return
-		}
-	}
-
-	manifestNodes, err := h.buildProjectedSubscriptionManifestNodes(subscriptions, filter, now)
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
-	if err := h.sortSubscriptionManifestNodes(subscriptions, manifestNodes); err != nil {
-		ServerError(w, fmt.Errorf("resolve subscription delivery order: %w", err))
-		return
-	}
-
-	var total, used int64
-	var expiresAt time.Time
-	for _, subscription := range allSubscriptions {
-		total += subscription.FlowTotal
-		used += subscription.FlowUsed
-		if subscription.EndAt.After(expiresAt) {
-			expiresAt = subscription.EndAt
-		}
-	}
-	_ = h.db.Model(&access).Update("last_used_at", now).Error
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Subscription-Userinfo", fmt.Sprintf("upload=0; download=%d; total=%d; expire=%d", used, total, expiresAt.Unix()))
-	manifest := subscriptionManifest{
-		Version:     "zboard.subscription/v1",
-		GeneratedAt: now.Format(time.RFC3339),
-		Subscription: subscriptionManifestSummary{
-			ExpiresAt: expiresAt.Format(time.RFC3339), FlowTotal: total, FlowUsed: used, FlowRemaining: total - used,
-		},
-		ProtocolEndpoints: manifestNodes,
-	}
-	h.writeProjectedSubscription(w, r, manifest)
-}
-
-func (h *handlers) buildProjectedSubscriptionManifestNodes(subscriptions []model.Subscription, filter subscriptionProjectionFilter, now time.Time) ([]subscriptionManifestNode, error) {
+func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, subscriptions []model.Subscription, filter subscriptionProjectionFilter, now time.Time) ([]subscriptionManifestNode, error) {
 	manifestNodes := make([]subscriptionManifestNode, 0)
 	if len(subscriptions) == 0 {
 		return manifestNodes, nil
@@ -344,29 +243,27 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(subscriptions []model
 		subscriptionGroup[subscription.ID] = subscription.NodeGroupID
 	}
 
-	type membershipRow struct {
-		NodeGroupID        uint
-		ProtocolEndpointID uint
-	}
-	var membershipRows []membershipRow
-	if err := h.db.Table("node_group_endpoints").
-		Select("node_group_id, protocol_endpoint_id").
-		Where("node_group_id IN ?", uniqueUintIDs(nodeGroupIDs)).
-		Scan(&membershipRows).Error; err != nil {
+	projection, err := h.services.SubscriptionProjection.Load(ctx, uniqueUintIDs(subscriptionIDs), uniqueUintIDs(nodeGroupIDs), now)
+	if err != nil {
 		return nil, err
 	}
 	memberships := make(map[uint]map[uint]struct{})
-	for _, row := range membershipRows {
-		if memberships[row.NodeGroupID] == nil {
-			memberships[row.NodeGroupID] = make(map[uint]struct{})
+	for groupID, endpointIDs := range projection.Memberships {
+		if memberships[groupID] == nil {
+			memberships[groupID] = make(map[uint]struct{})
 		}
-		memberships[row.NodeGroupID][row.ProtocolEndpointID] = struct{}{}
+		for _, endpointID := range endpointIDs {
+			memberships[groupID][endpointID] = struct{}{}
+		}
 	}
-
-	var credentials []model.ProtocolCredential
-	if err := h.db.Where("subscription_id IN ? AND status = ? AND revoked_at IS NULL AND expires_at > ?", uniqueUintIDs(subscriptionIDs), protocolCredentialStatusActive, now).
-		Find(&credentials).Error; err != nil {
-		return nil, err
+	credentials := make([]model.ProtocolCredential, 0, len(projection.Credentials))
+	for _, row := range projection.Credentials {
+		credentials = append(credentials, model.ProtocolCredential{
+			ID: row.ID, SubscriptionID: row.SubscriptionID, UserID: row.UserID, ProtocolEndpointID: row.ProtocolEndpointID, NodeID: row.NodeID,
+			CredentialID: row.CredentialID, PrincipalKey: row.PrincipalKey, Secret: row.SecretCiphertext,
+			ListenPort: row.ListenPort, PublicPort: row.PublicPort, Status: row.Status, ExpiresAt: row.ExpiresAt,
+			LastUsedAt: row.LastUsedAt, RevokedAt: row.RevokedAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		})
 	}
 	sort.SliceStable(credentials, func(left, right int) bool {
 		leftRank := subscriptionRank[credentials[left].SubscriptionID]
@@ -379,6 +276,22 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(subscriptions []model
 		}
 		return credentials[left].ID < credentials[right].ID
 	})
+	endpoints := make([]model.ProtocolEndpoint, 0, len(projection.Endpoints))
+	endpointByID := make(map[uint]model.ProtocolEndpoint, len(projection.Endpoints))
+	for _, row := range projection.Endpoints {
+		endpoint := model.ProtocolEndpoint{
+			ID: row.ID, NodeID: row.NodeID, Name: row.Name, Protocol: row.Protocol, Address: row.Address,
+			Port: row.Port, PublicPort: row.PublicPort, MultiplierMilli: row.MultiplierMilli,
+			ManagedPrincipalReady: row.ManagedPrincipalReady, MieruPrincipalReady: row.MieruPrincipalReady,
+			ServerConfig: row.ServerConfig, ClientConfig: row.ClientConfig, Tags: row.Tags, IsActive: true, SortOrder: row.SortOrder,
+		}
+		endpoints = append(endpoints, endpoint)
+		endpointByID[endpoint.ID] = endpoint
+	}
+	nodes := make(map[uint]model.Node, len(projection.Nodes))
+	for id, row := range projection.Nodes {
+		nodes[id] = model.Node{ID: row.ID, Region: row.Region, IsEnabled: row.IsEnabled, LastSeenAt: row.LastSeenAt}
+	}
 	seenEndpoints := make(map[uint]struct{})
 	for _, credential := range credentials {
 		groupID := subscriptionGroup[credential.SubscriptionID]
@@ -388,22 +301,16 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(subscriptions []model
 		if _, seen := seenEndpoints[credential.ProtocolEndpointID]; seen {
 			continue
 		}
-		var endpoint model.ProtocolEndpoint
-		if err := h.db.Where("id = ? AND is_active = ?", credential.ProtocolEndpointID, true).First(&endpoint).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				continue
-			}
-			return nil, err
+		endpoint, exists := endpointByID[credential.ProtocolEndpointID]
+		if !exists {
+			continue
 		}
 		if !h.endpointDeliversSubscriptionCredential(endpoint) {
 			continue
 		}
-		var node model.Node
-		if err := h.db.Select("id", "region", "last_seen_at", "is_enabled").First(&node, endpoint.NodeID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				continue
-			}
-			return nil, err
+		node, exists := nodes[endpoint.NodeID]
+		if !exists {
+			continue
 		}
 		if !node.IsEnabled || node.LastSeenAt == nil || node.LastSeenAt.Before(now.Add(-nodeOnlineWindow)) || !filter.matchesEndpoint(endpoint, node) {
 			continue
@@ -424,25 +331,13 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(subscriptions []model
 		seenEndpoints[endpoint.ID] = struct{}{}
 	}
 
-	var endpoints []model.ProtocolEndpoint
-	if err := h.db.Model(&model.ProtocolEndpoint{}).
-		Select("DISTINCT protocol_endpoints.*").
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
-		Joins("JOIN nodes ON nodes.id = protocol_endpoints.node_id").
-		Where("node_group_endpoints.node_group_id IN ? AND protocol_endpoints.is_active = ? AND nodes.last_seen_at >= ? AND nodes.is_enabled = ? AND protocol_endpoints.client_config <> ''", uniqueUintIDs(nodeGroupIDs), true, now.Add(-nodeOnlineWindow), true).
-		Order("protocol_endpoints.sort_order asc, protocol_endpoints.id asc").Find(&endpoints).Error; err != nil {
-		return nil, err
-	}
 	for _, endpoint := range endpoints {
 		if _, seen := seenEndpoints[endpoint.ID]; seen || h.endpointDeliversSubscriptionCredential(endpoint) {
 			continue
 		}
-		var node model.Node
-		if err := h.db.Select("id", "region").First(&node, endpoint.NodeID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				continue
-			}
-			return nil, err
+		node, exists := nodes[endpoint.NodeID]
+		if !exists || !node.IsEnabled || node.LastSeenAt == nil || node.LastSeenAt.Before(now.Add(-nodeOnlineWindow)) || strings.TrimSpace(endpoint.ClientConfig) == "" {
+			continue
 		}
 		if !filter.matchesEndpoint(endpoint, node) {
 			continue
@@ -461,7 +356,7 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(subscriptions []model
 		})
 		seenEndpoints[endpoint.ID] = struct{}{}
 	}
-	fronts, err := h.buildAuthorizedNetworkEntries(subscriptions, filter, now)
+	fronts, err := h.buildAuthorizedNetworkEntries(ctx, subscriptions, filter, now)
 	if err != nil {
 		return nil, err
 	}
@@ -501,10 +396,11 @@ func (h *handlers) writeProjectedSubscription(w http.ResponseWriter, r *http.Req
 }
 
 func (h *handlers) writeEmptySubscriptionTemplate(r *http.Request, w http.ResponseWriter, slug string, manifest subscriptionManifest) error {
-	var item model.SubscriptionTemplate
-	if err := h.db.Where("slug = ? AND is_active = ?", slug, true).First(&item).Error; err != nil {
+	source, err := h.services.SubscriptionTemplates.RenderSource(r.Context(), slug)
+	if err != nil {
 		return err
 	}
+	item := subscriptionTemplateModel(source.Template)
 	customization, _, err := normalizeSubscriptionCustomization(item.Renderer, item.Customization)
 	if err != nil {
 		return err
@@ -517,10 +413,7 @@ func (h *handlers) writeEmptySubscriptionTemplate(r *http.Request, w http.Respon
 		Version: manifest.Version, GeneratedAt: manifest.GeneratedAt, Subscription: manifest.Subscription,
 		ProtocolEndpoints: []subscriptionTemplateEndpoint{},
 	}
-	var installation model.Installation
-	if err := h.db.First(&installation, 1).Error; err == nil {
-		data.SiteName = installation.SiteName
-	}
+	data.SiteName = source.SiteName
 	definition, ok := subscriptionRenderer(item.Renderer)
 	if !ok {
 		return fmt.Errorf("unsupported subscription renderer %q", item.Renderer)

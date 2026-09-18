@@ -172,8 +172,12 @@ func TestNetworkEntryRealTCPUDPForwarding(t *testing.T) {
 					testPorts = append(testPorts, extra.Port)
 				}
 			}
-			config := map[string]interface{}{"inbounds": []map[string]interface{}{}, "mode": map[string]interface{}{"type": "rule"}, "route": map[string]interface{}{"rules": []interface{}{}, "final": map[string]interface{}{"type": "direct"}}}
-			if err := f.h.appendNetworkEntryRuntime(config, a.ID); err != nil {
+			payload, _, err := f.h.compileNodeRuntimeConfig(a, "connector-fixture", "0.1.0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var config map[string]interface{}
+			if err := json.Unmarshal(payload, &config); err != nil {
 				t.Fatal(err)
 			}
 			start(t, config, entryPort)
@@ -241,8 +245,12 @@ func TestNetworkEntryRealTCPUDPForwarding(t *testing.T) {
 			if err := f.h.db.Create(&entry).Error; err != nil {
 				t.Fatal(err)
 			}
-			aConfig := map[string]interface{}{"inbounds": []map[string]interface{}{}, "mode": map[string]interface{}{"type": "rule"}, "route": map[string]interface{}{"rules": []interface{}{}, "final": map[string]interface{}{"type": "direct"}}}
-			if err := f.h.appendNetworkEntryRuntime(aConfig, a.ID); err != nil {
+			payload, _, err := f.h.compileNodeRuntimeConfig(a, "connector-fixture", "0.1.0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var aConfig map[string]interface{}
+			if err := json.Unmarshal(payload, &aConfig); err != nil {
 				t.Fatal(err)
 			}
 			raw, _ := json.Marshal(aConfig)

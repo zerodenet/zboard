@@ -63,10 +63,11 @@ func newMySQLPublishHandlers(t *testing.T) (*handlers, string) {
 			t.Fatal(err)
 		}
 	}
-	h, err := NewHandlers(db, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
+	h, err := newTestHandlers(db, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(h.CloseBackgroundJobs)
 	return h, config.FormatDSN()
 }
 

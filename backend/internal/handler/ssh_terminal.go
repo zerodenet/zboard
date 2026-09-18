@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -19,10 +20,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"golang.org/x/crypto/ssh"
+	sshadapter "github.com/zerodenet/zboard/backend/internal/adapters/ssh"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"gorm.io/gorm"
-
-	"github.com/zerodenet/zboard/backend/internal/model"
 )
 
 const (
@@ -251,10 +251,8 @@ func (h *handlers) NodeSSHTerminalHandler(w http.ResponseWriter, r *http.Request
 		Forbidden(w, "SSH terminal origin does not match this panel")
 		return
 	}
-	var user model.User
-	if err := h.db.Select("id", "email", "is_admin", "status").
-		Where("id = ? AND status = ? AND is_admin = 1", ticket.Claims.UserID, userStatusActive).
-		First(&user).Error; err != nil {
+	user, err := h.services.Identity.Relationships.Account(r.Context(), ticket.Claims.UserID)
+	if err != nil || user.Status != userStatusActive || !user.IsAdmin {
 		Unauthorized(w, "SSH terminal administrator is no longer active")
 		return
 	}
@@ -281,7 +279,9 @@ func (h *handlers) NodeSSHTerminalHandler(w http.ResponseWriter, r *http.Request
 	defer release()
 
 	sessionID := uuid.NewString()
-	if err := createAuditLog(h.db, ticket.Claims, "node.ssh_terminal.open", fmt.Sprintf("node:%d", node.ID), fmt.Sprintf("session=%s remote=%s", sessionID, terminalRemoteAddress(r.RemoteAddr))); err != nil {
+	if err := h.services.Audit.RecordAdmin(r.Context(), ticket.Claims.UserID, observability.AuditEvent{
+		Action: "node.ssh_terminal.open", Target: fmt.Sprintf("node:%d", node.ID), Detail: fmt.Sprintf("session=%s remote=%s", sessionID, terminalRemoteAddress(r.RemoteAddr)),
+	}); err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -295,7 +295,11 @@ func (h *handlers) NodeSSHTerminalHandler(w http.ResponseWriter, r *http.Request
 			bytesWritten = writer.bytesWritten.Load()
 		}
 		detail := fmt.Sprintf("session=%s duration_ms=%d bytes_in=%d bytes_out=%d reason=%s", sessionID, time.Since(startedAt).Milliseconds(), bytesRead.Load(), bytesWritten, reason)
-		if err := createAuditLog(h.db, ticket.Claims, "node.ssh_terminal.close", fmt.Sprintf("node:%d", node.ID), detail); err != nil {
+		auditCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+		defer cancel()
+		if err := h.services.Audit.RecordAdmin(auditCtx, ticket.Claims.UserID, observability.AuditEvent{
+			Action: "node.ssh_terminal.close", Target: fmt.Sprintf("node:%d", node.ID), Detail: detail,
+		}); err != nil {
 			log.Printf("record SSH terminal close audit failed: session=%s error=%v", sessionID, err)
 		}
 	}()
@@ -324,36 +328,14 @@ func (h *handlers) NodeSSHTerminalHandler(w http.ResponseWriter, r *http.Request
 	}
 	defer sshClient.Close()
 
-	sshSession, err := sshClient.NewSession()
+	terminal, err := sshadapter.OpenTerminal(sshClient, writer, "xterm-256color", 30, 120)
 	if err != nil {
 		reason = "ssh_session_failed"
-		_ = writer.writeJSON(sshTerminalServerMessage{Type: "error", Message: "无法创建 SSH 会话：" + err.Error()})
+		_ = writer.writeJSON(sshTerminalServerMessage{Type: "error", Message: "无法创建远程终端：" + err.Error()})
 		return
 	}
-	defer sshSession.Close()
-	stdin, err := sshSession.StdinPipe()
-	if err != nil {
-		reason = "ssh_stdin_failed"
-		_ = writer.writeJSON(sshTerminalServerMessage{Type: "error", Message: "无法打开 SSH 输入：" + err.Error()})
-		return
-	}
-	sshSession.Stdout = writer
-	sshSession.Stderr = writer
-	modes := ssh.TerminalModes{
-		ssh.ECHO:          1,
-		ssh.TTY_OP_ISPEED: 14400,
-		ssh.TTY_OP_OSPEED: 14400,
-	}
-	if err := sshSession.RequestPty("xterm-256color", 30, 120, modes); err != nil {
-		reason = "ssh_pty_failed"
-		_ = writer.writeJSON(sshTerminalServerMessage{Type: "error", Message: "服务器拒绝分配终端：" + err.Error()})
-		return
-	}
-	if err := sshSession.Shell(); err != nil {
-		reason = "ssh_shell_failed"
-		_ = writer.writeJSON(sshTerminalServerMessage{Type: "error", Message: "服务器拒绝启动 Shell：" + err.Error()})
-		return
-	}
+	defer terminal.Close()
+	stdin := terminal.Input()
 	if err := writer.writeJSON(sshTerminalServerMessage{Type: "connected", Message: "SSH 已连接"}); err != nil {
 		reason = "client_write_failed"
 		return
@@ -364,7 +346,7 @@ func (h *handlers) NodeSSHTerminalHandler(w http.ResponseWriter, r *http.Request
 	incoming := make(chan sshTerminalInbound, 16)
 	go readSSHTerminalMessages(connection, incoming, done)
 	waitResult := make(chan error, 1)
-	go func() { waitResult <- sshSession.Wait() }()
+	go func() { waitResult <- terminal.Wait() }()
 	pingTicker := time.NewTicker(sshTerminalPingInterval)
 	defer pingTicker.Stop()
 	idleTicker := time.NewTicker(time.Minute)
@@ -401,7 +383,7 @@ func (h *handlers) NodeSSHTerminalHandler(w http.ResponseWriter, r *http.Request
 				if inbound.message.Cols < 20 || inbound.message.Cols > 500 || inbound.message.Rows < 5 || inbound.message.Rows > 200 {
 					continue
 				}
-				if err := sshSession.WindowChange(inbound.message.Rows, inbound.message.Cols); err != nil {
+				if err := terminal.Resize(inbound.message.Rows, inbound.message.Cols); err != nil {
 					reason = "ssh_resize_failed"
 					return
 				}

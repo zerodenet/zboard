@@ -1,13 +1,10 @@
 package handler
 
 import (
-	"database/sql"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
-
-	"gorm.io/gorm"
 )
 
 func (h *handlers) TrafficReconciliationHandler(w http.ResponseWriter, r *http.Request) {
@@ -40,8 +37,6 @@ func (h *handlers) TrafficReconciliationHandler(w http.ResponseWriter, r *http.R
 			userID = 0
 		}
 	}
-	now := time.Now().UTC()
-	db := h.trafficQueryDB().WithContext(r.Context())
 
 	var subscriptionID uint
 	if target := strings.TrimSpace(r.URL.Query().Get("subscription_id")); target != "" {
@@ -71,25 +66,19 @@ func (h *handlers) TrafficReconciliationHandler(w http.ResponseWriter, r *http.R
 			return
 		}
 	}
-	var data interface{}
-	err = db.Transaction(func(tx *gorm.DB) error {
-		var loadErr error
-		data, loadErr = loadTrafficReconciliation(tx, userID, subscriptionID, now, paged, issuesOnly, offset, limit)
-		return loadErr
-	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	result, err := h.services.Reconciliation().Read(r.Context(), claims.UserID, metering.ReconciliationQuery{Administrative: adminScope, UserID: userID, SubscriptionID: subscriptionID, Paged: paged, IssuesOnly: issuesOnly, Offset: offset, Limit: limit})
 	if err != nil {
-		ServerError(w, err)
+		writePrincipalTrendError(w, err)
 		return
 	}
-	OK(w, data)
+	if paged {
+		data := pagedData(result.Items, result.Total, offset, limit)
+		data["aggregates"] = result.Aggregates
+		OK(w, data)
+		return
+	}
+	OK(w, result.Items)
 }
-
 func trafficReconciliationResult(difference int64) string {
-	if difference > 0 {
-		return "missing_records"
-	}
-	if difference < 0 {
-		return "over_recorded"
-	}
-	return "matched"
+	return metering.ReconciliationResult(difference)
 }

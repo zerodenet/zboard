@@ -88,6 +88,13 @@ func TestScopedSubscriptionChecksClientUserAgentBeforeTokenLookup(t *testing.T) 
 }
 
 func TestRouterRemovesAccountAggregateAccessRoutes(t *testing.T) {
+	schema, err := os.ReadFile("../application/database.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(schema), "datastore.ReconcileSubscriptionAccessSchema") {
+		t.Fatal("application schema preparation omits subscription access upgrade")
+	}
 	source, err := os.ReadFile("../server/router.go")
 	if err != nil {
 		t.Fatalf("read router source: %v", err)
@@ -98,7 +105,6 @@ func TestRouterRemovesAccountAggregateAccessRoutes(t *testing.T) {
 		`/api/v1/account/subscriptions/:id/access/rotate`,
 		`h.ScopedClientSubscriptionHandler`,
 		`h.ReconcileSubscriptionAccessTokens()`,
-		`datastore.ReconcileSubscriptionAccessSchema(db)`,
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("router missing %q", expected)

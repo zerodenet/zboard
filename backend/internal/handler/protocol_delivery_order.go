@@ -1,41 +1,18 @@
 package handler
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"sort"
-	"strconv"
-	"strings"
 
+	networkcap "github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
-var errProtocolEndpointOrderConflict = errors.New("protocol endpoint order conflict")
-
-type protocolEndpointOrderItem struct {
-	ID        uint   `json:"id"`
-	NodeID    uint   `json:"node_id"`
-	Name      string `json:"name"`
-	Protocol  string `json:"protocol"`
-	IsActive  bool   `json:"is_active"`
-	SortOrder int    `json:"sort_order"`
-}
-
-type protocolEndpointOrderSnapshot struct {
-	Items   []protocolEndpointOrderItem `json:"items"`
-	Version string                      `json:"version"`
-	Total   int                         `json:"total"`
-}
-
-type protocolEndpointOrderRequest struct {
-	OrderedIDs      []uint `json:"ordered_ids"`
-	ExpectedVersion string `json:"expected_version"`
-}
+type protocolEndpointOrderItem = networkcap.ProtocolEndpointOrderItem
+type protocolEndpointOrderSnapshot = networkcap.ProtocolEndpointOrderSnapshot
+type protocolEndpointOrderRequest = networkcap.ProtocolEndpointOrderRequest
 
 type protocolEndpointOrderMutationResponse struct {
 	protocolEndpointOrderSnapshot
@@ -45,30 +22,35 @@ type protocolEndpointOrderMutationResponse struct {
 
 func (h *handlers) ProtocolEndpointOrderHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		h.ProtocolEndpointOrderSnapshotHandler(w, r)
+		h.protocolEndpointOrderSnapshotHandler(w, r)
 		return
 	}
 	if r.Method == http.MethodPut {
-		h.ProtocolEndpointOrderUpdateHandler(w, r)
+		h.protocolEndpointOrderUpdateHandler(w, r)
 		return
 	}
 	w.Header().Set("Allow", http.MethodGet+", "+http.MethodPut)
 	writeJSON(w, http.StatusMethodNotAllowed, "method not allowed", nil)
 }
 
-func (h *handlers) ProtocolEndpointOrderSnapshotHandler(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.requireAdmin(w, r); err != nil {
+func (h *handlers) protocolEndpointOrderSnapshotHandler(w http.ResponseWriter, r *http.Request) {
+	claims, err := h.requireAdmin(w, r)
+	if err != nil {
 		return
 	}
-	snapshot, err := loadProtocolEndpointOrderSnapshot(h.db)
+	snapshot, err := h.services.ProtocolEndpointOrder.Read(r.Context(), claims.UserID)
 	if err != nil {
+		if errors.Is(err, networkcap.ErrProtocolEndpointOrderPermission) {
+			Forbidden(w, err.Error())
+			return
+		}
 		ServerError(w, err)
 		return
 	}
 	OK(w, snapshot)
 }
 
-func (h *handlers) ProtocolEndpointOrderUpdateHandler(w http.ResponseWriter, r *http.Request) {
+func (h *handlers) protocolEndpointOrderUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	claims, err := h.requireAdmin(w, r)
 	if err != nil {
 		return
@@ -78,90 +60,29 @@ func (h *handlers) ProtocolEndpointOrderUpdateHandler(w http.ResponseWriter, r *
 		BadRequest(w, err.Error())
 		return
 	}
-	req.ExpectedVersion = strings.TrimSpace(req.ExpectedVersion)
-	if req.ExpectedVersion == "" {
-		writeJSON(w, http.StatusPreconditionRequired, "调整协议交付顺序前需要提供当前顺序版本。", nil)
-		return
-	}
-	if duplicateID, invalid := duplicateOrZeroUintID(req.OrderedIDs); invalid {
-		BadRequestFields(w, "协议交付顺序校验失败。", map[string]string{
-			"ordered_ids": fmt.Sprintf("协议服务 ID #%d 无效或重复，请重新加载完整列表。", duplicateID),
-		})
-		return
-	}
-
-	var conflictVersion string
-	changed := false
-	err = h.db.Transaction(func(tx *gorm.DB) error {
-		var endpoints []model.ProtocolEndpoint
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Order("id asc").Find(&endpoints).Error; err != nil {
-			return err
-		}
-		currentVersion := protocolEndpointOrderVersion(endpoints)
-		conflictVersion = currentVersion
-		if currentVersion != req.ExpectedVersion {
-			return errProtocolEndpointOrderConflict
-		}
-		if err := validateCompleteProtocolEndpointOrder(endpoints, req.OrderedIDs); err != nil {
-			return err
-		}
-
-		currentOrder := append([]model.ProtocolEndpoint(nil), endpoints...)
-		sort.SliceStable(currentOrder, func(left, right int) bool {
-			if currentOrder[left].SortOrder != currentOrder[right].SortOrder {
-				return currentOrder[left].SortOrder < currentOrder[right].SortOrder
-			}
-			return currentOrder[left].ID < currentOrder[right].ID
-		})
-		if len(currentOrder) == len(req.OrderedIDs) {
-			changed = false
-			for index, endpoint := range currentOrder {
-				if endpoint.ID != req.OrderedIDs[index] || endpoint.SortOrder != index {
-					changed = true
-					break
-				}
-			}
-		}
-		if !changed {
-			return nil
-		}
-
-		caseExpression := strings.Builder{}
-		caseExpression.WriteString("CASE id")
-		args := make([]interface{}, 0, len(req.OrderedIDs)*2)
-		for index, endpointID := range req.OrderedIDs {
-			caseExpression.WriteString(" WHEN ? THEN ?")
-			args = append(args, endpointID, index)
-		}
-		caseExpression.WriteString(" END")
-		if len(req.OrderedIDs) > 0 {
-			if err := tx.Model(&model.ProtocolEndpoint{}).
-				Where("id IN ?", req.OrderedIDs).
-				UpdateColumn("sort_order", gorm.Expr(caseExpression.String(), args...)).Error; err != nil {
-				return err
-			}
-		}
-		return createAuditLog(tx, claims, "protocol_endpoint.order", "protocol_endpoints", fmt.Sprintf("endpoint_count=%d publish_status=%s", len(req.OrderedIDs), protocolEndpointPublishNotRequired))
-	})
+	snapshot, _, err := h.services.ProtocolEndpointOrder.Update(r.Context(), claims.UserID, req)
 	if err != nil {
-		if errors.Is(err, errProtocolEndpointOrderConflict) {
-			writeJSON(w, http.StatusConflict, "协议交付顺序已被其他管理员更新，请重新加载后再保存。", map[string]interface{}{"current_version": conflictVersion})
+		if errors.Is(err, networkcap.ErrProtocolEndpointOrderVersionRequired) {
+			writeJSON(w, http.StatusPreconditionRequired, "调整协议交付顺序前需要提供当前顺序版本。", nil)
 			return
 		}
-		var validation *requestValidationError
+		if errors.Is(err, networkcap.ErrProtocolEndpointOrderConflict) {
+			writeJSON(w, http.StatusConflict, "协议交付顺序已被其他管理员更新，请重新加载后再保存。", map[string]interface{}{"current_version": snapshot.Version})
+			return
+		}
+		if errors.Is(err, networkcap.ErrProtocolEndpointOrderPermission) {
+			Forbidden(w, err.Error())
+			return
+		}
+		var validation *networkcap.ProtocolEndpointOrderValidation
 		if errors.As(err, &validation) {
-			BadRequestError(w, err)
+			BadRequestFields(w, validation.Error(), validation.Fields)
 			return
 		}
 		ServerError(w, err)
 		return
 	}
 
-	snapshot, err := loadProtocolEndpointOrderSnapshot(h.db)
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
 	OK(w, protocolEndpointOrderMutationResponse{
 		protocolEndpointOrderSnapshot: snapshot,
 		Effect:                        protocolEndpointEffectDelivery,
@@ -169,78 +90,7 @@ func (h *handlers) ProtocolEndpointOrderUpdateHandler(w http.ResponseWriter, r *
 	})
 }
 
-func loadProtocolEndpointOrderSnapshot(db *gorm.DB) (protocolEndpointOrderSnapshot, error) {
-	var endpoints []model.ProtocolEndpoint
-	query := db.Select("id", "node_id", "name", "protocol", "is_active", "sort_order")
-	if err := query.Order("sort_order asc, id asc").Find(&endpoints).Error; err != nil {
-		return protocolEndpointOrderSnapshot{}, err
-	}
-	items := make([]protocolEndpointOrderItem, 0, len(endpoints))
-	for _, endpoint := range endpoints {
-		items = append(items, protocolEndpointOrderItem{
-			ID: endpoint.ID, NodeID: endpoint.NodeID, Name: endpoint.Name, Protocol: endpoint.Protocol,
-			IsActive: endpoint.IsActive, SortOrder: endpoint.SortOrder,
-		})
-	}
-	return protocolEndpointOrderSnapshot{
-		Items: items, Version: protocolEndpointOrderVersion(endpoints), Total: len(items),
-	}, nil
-}
-
-func protocolEndpointOrderVersion(endpoints []model.ProtocolEndpoint) string {
-	ordered := append([]model.ProtocolEndpoint(nil), endpoints...)
-	sort.SliceStable(ordered, func(left, right int) bool { return ordered[left].ID < ordered[right].ID })
-	digest := sha256.New()
-	for _, endpoint := range ordered {
-		_, _ = digest.Write([]byte(strconv.FormatUint(uint64(endpoint.ID), 10)))
-		_, _ = digest.Write([]byte(":"))
-		_, _ = digest.Write([]byte(strconv.Itoa(endpoint.SortOrder)))
-		_, _ = digest.Write([]byte(";"))
-	}
-	return hex.EncodeToString(digest.Sum(nil))
-}
-
-func validateCompleteProtocolEndpointOrder(endpoints []model.ProtocolEndpoint, orderedIDs []uint) error {
-	if len(endpoints) != len(orderedIDs) {
-		return validationError("协议交付顺序校验失败。", map[string]string{
-			"ordered_ids": fmt.Sprintf("必须提交全部 %d 个协议服务，当前仅收到 %d 个。", len(endpoints), len(orderedIDs)),
-		})
-	}
-	available := make(map[uint]struct{}, len(endpoints))
-	for _, endpoint := range endpoints {
-		available[endpoint.ID] = struct{}{}
-	}
-	for _, endpointID := range orderedIDs {
-		if _, exists := available[endpointID]; !exists {
-			return validationError("协议交付顺序校验失败。", map[string]string{
-				"ordered_ids": fmt.Sprintf("协议服务 #%d 不在当前完整范围内，请重新加载。", endpointID),
-			})
-		}
-	}
-	return nil
-}
-
-func duplicateOrZeroUintID(values []uint) (uint, bool) {
-	seen := make(map[uint]struct{}, len(values))
-	for _, value := range values {
-		if value == 0 {
-			return value, true
-		}
-		if _, exists := seen[value]; exists {
-			return value, true
-		}
-		seen[value] = struct{}{}
-	}
-	return 0, false
-}
-
-type subscriptionDeliveryRelation struct {
-	NetworkEntryID     uint
-	NodeGroupID        uint
-	ProtocolEndpointID uint
-	GroupSortOrder     int
-	GlobalSortOrder    int
-}
+type subscriptionDeliveryRelation = networkcap.SubscriptionDeliveryRelation
 
 type subscriptionDeliveryPosition struct {
 	GroupRank    int
@@ -256,23 +106,10 @@ func (h *handlers) sortSubscriptionManifestNodes(subscriptions []model.Subscript
 	for _, subscription := range subscriptions {
 		groupIDs = append(groupIDs, subscription.NodeGroupID)
 	}
-	var relations []subscriptionDeliveryRelation
-	if err := h.db.Table("node_group_endpoints").
-		Select("node_group_endpoints.node_group_id, node_group_endpoints.protocol_endpoint_id, node_group_endpoints.sort_order AS group_sort_order, protocol_endpoints.sort_order AS global_sort_order").
-		Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
-		Where("node_group_endpoints.node_group_id IN ?", uniqueUintIDs(groupIDs)).
-		Find(&relations).Error; err != nil {
+	relations, err := h.services.NetworkInventory.DeliveryRelations(context.Background(), uniqueUintIDs(groupIDs))
+	if err != nil {
 		return err
 	}
-	var entries []subscriptionDeliveryRelation
-	if err := h.db.Table("node_group_network_entries membership").
-		Select("membership.node_group_id, network_entries.endpoint_id AS protocol_endpoint_id, network_entries.id AS network_entry_id, membership.sort_order AS group_sort_order, COALESCE(network_entries.delivery_sort_order, protocol_endpoints.sort_order) AS global_sort_order").
-		Joins("JOIN network_entries ON network_entries.id = membership.network_entry_id").
-		Joins("JOIN protocol_endpoints ON protocol_endpoints.id = network_entries.endpoint_id").
-		Where("membership.node_group_id IN ?", uniqueUintIDs(groupIDs)).Find(&entries).Error; err != nil {
-		return err
-	}
-	relations = append(relations, entries...)
 	orderSubscriptionManifestNodes(subscriptions, relations, nodes)
 	return nil
 }

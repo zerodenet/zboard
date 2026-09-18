@@ -11,10 +11,12 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 )
 
 // Each process receives only its own private socket and bearer token. There is
-// deliberately no plugin ID, user, SQL, or core-command selector in this API.
+// deliberately no caller-selected plugin ID, user, SQL, or core-command selector in this API.
 func (m *Manager) startAuthorizedProcess(ctx context.Context, v Installation) (*process, error) {
 	if err := executionAuthorized(v); err != nil {
 		return nil, err
@@ -23,7 +25,7 @@ func (m *Manager) startAuthorizedProcess(ctx context.Context, v Installation) (*
 	if err != nil {
 		return nil, err
 	}
-	if !hasCapability(v, StorageCapability) {
+	if !hasCapability(v, StorageCapability) && !hasCapability(v, TaskCapability) {
 		return startProcess(ctx, m.options.Directory, pack)
 	}
 	directory, err := os.MkdirTemp("", "zbh-")
@@ -47,8 +49,44 @@ func (m *Manager) startAuthorizedProcess(ctx context.Context, v Installation) (*
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		if r.Method != "POST" || r.URL.Path != "/storage" || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Plugin-Host")), []byte(token)) != 1 {
+		if r.Method != "POST" || (r.URL.Path != "/storage" && r.URL.Path != "/tasks") || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Plugin-Host")), []byte(token)) != 1 {
 			http.Error(w, "forbidden", 403)
+			return
+		}
+
+		if r.URL.Path == "/tasks" {
+			raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4096))
+			var request hostTaskRequest
+			if err != nil || DecodeStrict(raw, &request) != nil {
+				http.Error(w, "invalid request", 400)
+				return
+			}
+			if !m.mu.TryLock() {
+				http.Error(w, "host busy; retry outside lifecycle callback", 503)
+				return
+			}
+			defer m.mu.Unlock()
+			if proc == nil || m.processes[v.ID] != proc {
+				http.Error(w, "plugin process is not active", 403)
+				return
+			}
+			result, err := m.hostTasksLocked(r.Context(), v.ID, request)
+			if err != nil {
+				code := 400
+				if errors.Is(err, ErrPermission) {
+					code = 403
+				}
+				if errors.Is(err, ErrUnavailable) {
+					code = 503
+				}
+				if errors.Is(err, jobs.ErrBackpressure) {
+					code = http.StatusTooManyRequests
+					w.Header().Set("Retry-After", "5")
+				}
+				http.Error(w, "task request denied or unavailable", code)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(result)
 			return
 		}
 		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxStorageValueBytes+4096))

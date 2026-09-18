@@ -62,7 +62,12 @@ func (m *Manager) Config(id string) (ConfigView, error) {
 		}
 		defer proc.close()
 	}
+	m.mu.Unlock()
 	projected, err := proc.api.DescribeConfig(ctx, &pluginv1.ConfigRequest{ConfigJson: raw, Revision: v.ConfigRevision})
+	m.mu.Lock()
+	if checkErr := m.checkRuntimeSnapshot(v); checkErr != nil {
+		return view, checkErr
+	}
 	if status.Code(err) == codes.Unimplemented {
 		return view, nil
 	}
@@ -207,8 +212,13 @@ func (m *Manager) testConfigLocked(ctx context.Context, id, actor string) error 
 	raw, err := m.config(v)
 	if err == nil {
 		var res *pluginv1.HealthResult
+		m.mu.Unlock()
 		res, err = proc.api.TestConfig(ctx, &pluginv1.ConfigRequest{ConfigJson: raw, Revision: v.ConfigRevision})
-		if err != nil || !res.Healthy {
+		m.mu.Lock()
+		if checkErr := m.checkRuntimeSnapshot(v); checkErr != nil {
+			return m.finish(op, checkErr)
+		}
+		if err != nil || res == nil || !res.Healthy {
 			err = errors.New("plugin diagnostic failed; review plugin configuration")
 		}
 	}

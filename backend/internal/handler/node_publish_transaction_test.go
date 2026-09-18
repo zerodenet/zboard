@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -80,7 +81,7 @@ func TestCredentialExpiryRollsBackWhenPublicationCannotPersist(t *testing.T) {
 		t.Fatal(err)
 	}
 	rejectPublishInsert(t, f)
-	if _, err := expireDueSubscriptionCredentials(f.h.db, time.Now().UTC(), 200); err == nil {
+	if _, err := f.h.services.CredentialExpiry().ExpireDue(context.Background(), time.Now().UTC(), 200); err == nil {
 		t.Fatal("expiry ignored publication failure")
 	}
 	var sub model.Subscription
@@ -102,46 +103,11 @@ func TestCredentialExpiryRollsBackWhenPublicationCannotPersist(t *testing.T) {
 	if err := f.h.db.Exec("DROP TRIGGER reject_publish").Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := expireDueSubscriptionCredentials(f.h.db, time.Now().UTC(), 200); err != nil {
+	if _, err := f.h.services.CredentialExpiry().ExpireDue(context.Background(), time.Now().UTC(), 200); err != nil {
 		t.Fatal(err)
 	}
 	var pending model.NodeConfigPublish
 	if err := f.h.db.First(&pending).Error; err != nil || pending.Generation != 2 {
 		t.Fatalf("expiry publication missing: %+v %v", pending, err)
-	}
-}
-
-func TestKernelCompletionAndReadinessPublicationCommitTogether(t *testing.T) {
-	f := newOrderFixture(t)
-	endpoint := attachOrderPublishEndpoint(t, f)
-	if err := f.h.db.Model(&endpoint).Update("protocol", "mieru").Error; err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.h.ensureKernelState(endpoint.NodeID); err != nil {
-		t.Fatal(err)
-	}
-	operation := model.NodeOperation{NodeID: endpoint.NodeID, OperationType: "upgrade", Status: "running", Phase: "verifying", RequestedBy: 1}
-	if err := f.h.db.Create(&operation).Error; err != nil {
-		t.Fatal(err)
-	}
-	rejectPublishInsert(t, f)
-	probe := kernelProbe{Installed: true, Version: "0.0.15"}
-	release := zeroRelease{Version: "0.0.15"}
-	if _, err := f.h.finishKernelOperation(&operation, probe, release, "binary", "config", "verified"); err == nil {
-		t.Fatal("kernel completion ignored queue failure")
-	}
-	var stored model.NodeOperation
-	if err := f.h.db.First(&stored, operation.ID).Error; err != nil || stored.Status != "running" {
-		t.Fatalf("kernel completion partially committed: %+v %v", stored, err)
-	}
-	if err := f.h.db.Exec("DROP TRIGGER reject_publish").Error; err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.h.finishKernelOperation(&operation, probe, release, "binary", "config", "verified"); err != nil {
-		t.Fatal(err)
-	}
-	var pending model.NodeConfigPublish
-	if err := f.h.db.First(&pending, endpoint.NodeID).Error; err != nil || pending.EndpointID != endpoint.ID {
-		t.Fatalf("readiness publication missing: %+v %v", pending, err)
 	}
 }

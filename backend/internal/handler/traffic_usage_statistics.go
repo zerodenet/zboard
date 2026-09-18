@@ -1,53 +1,25 @@
 package handler
 
 import (
-	"database/sql"
-	"time"
+	"context"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 
 	"gorm.io/gorm"
 )
 
-type trafficUsageStatistics struct {
-	Total      int64                   `json:"total"`
-	Aggregates trafficRecordAggregates `json:"aggregates"`
-	Bucket     string                  `json:"bucket"`
-	AsOf       time.Time               `json:"as_of"`
-}
+type trafficUsageStatistics = metering.UsageStatistics
 
-// A statistics snapshot is independent of cursor/limit. Two reads share a
-// transaction snapshot; page reads remain live and never pretend this count
-// was recalculated for each cursor movement.
 func loadTrafficUsageStatistics(base *gorm.DB, bucket trafficUsageBucketSpec, window historyWindow) (trafficUsageStatistics, error) {
-	result := trafficUsageStatistics{Bucket: bucket.Name, AsOf: time.Now().UTC()}
-	err := base.Transaction(func(tx *gorm.DB) error {
-		scoped := tx.Session(&gorm.Session{})
-		if err := scoped.Session(&gorm.Session{}).Select(`
-   COALESCE(SUM(raw_bytes), 0) AS raw_bytes,
-   COALESCE(SUM(used_bytes), 0) AS used_bytes,
-   COUNT(DISTINCT user_id) AS user_count,
-   COUNT(DISTINCT NULLIF(subscription_id, 0)) AS subscription_count,
-   COUNT(DISTINCT node_id) AS node_count,
-   COUNT(DISTINCT protocol_endpoint_id) AS protocol_endpoint_count
-  `).Scan(&result.Aggregates).Error; err != nil {
-			return err
-		}
-		groups := bucket.groupSource(scoped.Session(&gorm.Session{}), window).Select("1").Group(bucket.group())
-		return tx.Session(&gorm.Session{NewDB: true}).Table("(?) AS traffic_usage_buckets", groups).Count(&result.Total).Error
-	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
-	return result, err
+	return meteringstore.LoadUsageStatistics(base, meteringstore.UsageBucketSpec(bucket), meteringstore.UsageWindow{From: window.From, To: window.To})
 }
 
-func (h *handlers) trafficUsageStatistics(base *gorm.DB, bucket trafficUsageBucketSpec, window historyWindow) (trafficUsageStatistics, error) {
-	key := trafficSnapshotQueryKey(base, bucket.Name)
-	return h.trafficStatisticsCache.get(base.Statement.Context, key, func() (trafficUsageStatistics, error) {
-		if h.trafficIncrementalStats != nil {
-			statistics, used, err := h.trafficIncrementalStats.load(base, bucket, key)
-			if err != nil || used {
-				return statistics, err
-			}
-		}
-		return loadTrafficUsageStatistics(base, bucket, window)
-	})
+type trafficStatisticsCacheAdapter struct {
+	cache *trafficSnapshotCache[trafficUsageStatistics]
+}
+
+func (a trafficStatisticsCacheAdapter) Get(ctx context.Context, key [32]byte, load func() (metering.UsageStatistics, error)) (metering.UsageStatistics, error) {
+	return a.cache.get(ctx, key, load)
 }
 
 // Null means deliberately not calculated, never zero. Legacy requests still

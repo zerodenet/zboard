@@ -1,14 +1,18 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 )
@@ -167,7 +171,7 @@ func (h *handlers) NodeSystemActionsHandler(w http.ResponseWriter, r *http.Reque
 			BadRequest(w, "unsupported node system action")
 			return
 		}
-		task, err := h.createNodeSystemActionTask(node, claims, req)
+		task, err := h.createNodeSystemActionTask(r.Context(), node, claims, req)
 		if err != nil {
 			if isDuplicateError(err) {
 				writeJSON(w, http.StatusConflict, "task idempotency key already exists", nil)
@@ -182,7 +186,7 @@ func (h *handlers) NodeSystemActionsHandler(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-func (h *handlers) createNodeSystemActionTask(node model.Node, claims authClaims, req nodeSystemActionRequest) (model.Task, error) {
+func (h *handlers) createNodeSystemActionTask(ctx context.Context, node model.Node, claims authClaims, req nodeSystemActionRequest) (model.Task, error) {
 	content, err := json.Marshal(nodeSystemActionTaskContent{Action: req.Action, RequestedBy: claims.UserID, Actor: claims.Email})
 	if err != nil {
 		return model.Task{}, err
@@ -198,62 +202,39 @@ func (h *handlers) createNodeSystemActionTask(node model.Node, claims authClaims
 	if len(idempotencyKey) > 128 {
 		return model.Task{}, errors.New("idempotency_key is too long")
 	}
-	task := model.Task{
-		Type: taskTypeNodeSystemAction, Scope: string(scope), Content: string(content), Status: taskStatusPending,
-		Total: 1, IdempotencyKey: idempotencyKey, MaxAttempts: 1,
-	}
-	items := []model.TaskItem{newTaskItem("node", node.ID)}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		return persistAdminTaskRecords(tx, claims, &task, items)
-	}); err != nil {
+	now := time.Now().UTC()
+	receipt, err := h.services.BatchRequests.Submit(context.WithoutCancel(ctx), claims.UserID, jobs.BatchSubmission{
+		Type: taskTypeNodeSystemAction, Scope: string(scope), Content: string(content), IdempotencyKey: idempotencyKey,
+		MaxAttempts: 1, ScheduledAt: now, Targets: []jobs.BatchSubmissionTarget{{Type: "node", ID: node.ID}},
+	})
+	if err != nil {
 		return model.Task{}, err
 	}
-	lockID, err := h.claimTask(task.ID, nil)
+	h.StartAdminTaskWorker()
+	return taskFromBatchReceipt(receipt.BatchReceipt), nil
+}
+
+func (h *handlers) executeNodeSystemActionItem(ctx context.Context, task model.Task, item model.TaskItem) error {
+	var content nodeSystemActionTaskContent
+	if err := json.Unmarshal([]byte(task.Content), &content); err != nil {
+		return err
+	}
+	nodeID, err := strconv.ParseUint(item.TargetID, 10, 64)
+	if err != nil || nodeID == 0 {
+		return errors.New("invalid node system action target")
+	}
+	node, err := h.loadNodeContext(ctx, uint(nodeID))
 	if err != nil {
-		return task, err
+		return err
 	}
-	task.Status = taskStatusRunning
-	task.Attempts++
-	go h.executeNodeSystemActionTask(task.ID, items[0].ID, lockID, node, claims, req.Action)
-	return task, nil
-}
-
-func (h *handlers) executeNodeSystemActionTask(taskID, itemID uint, lockID string, node model.Node, claims authClaims, action string) {
-	startedAt := time.Now().UTC()
-	if err := h.db.Model(&model.TaskItem{}).Where("id = ? AND task_id = ?", itemID, taskID).Updates(map[string]interface{}{
-		"status": taskStatusRunning, "attempts": gorm.Expr("attempts + 1"), "error": "", "started_at": startedAt, "finished_at": nil,
-	}).Error; err != nil {
-		h.finishNodeSystemActionTask(taskID, itemID, lockID, err)
-		return
-	}
-
-	var err error
-	switch action {
+	claims := authClaims{UserID: content.RequestedBy, Email: content.Actor, IsAdmin: true}
+	switch content.Action {
 	case nodeSystemActionEnableBBR:
-		_, err = h.enableNodeBBR(node, claims)
+		_, err := h.enableNodeBBR(ctx, node, claims)
+		return err
 	default:
-		err = errors.New("unsupported node system action")
+		return errors.New("unsupported node system action")
 	}
-	h.finishNodeSystemActionTask(taskID, itemID, lockID, err)
-}
-
-func (h *handlers) finishNodeSystemActionTask(taskID, itemID uint, lockID string, actionErr error) {
-	finishedAt := time.Now().UTC()
-	itemStatus := taskStatusCompleted
-	taskStatus := taskStatusCompleted
-	errorText := ""
-	if actionErr != nil {
-		itemStatus = taskStatusFailed
-		taskStatus = taskStatusFailed
-		errorText = truncateTaskError(actionErr.Error())
-	}
-	_ = h.db.Model(&model.TaskItem{}).Where("id = ? AND task_id = ?", itemID, taskID).Updates(map[string]interface{}{
-		"status": itemStatus, "error": errorText, "finished_at": finishedAt,
-	}).Error
-	_ = h.db.Model(&model.Task{}).Where("id = ? AND locked_by = ?", taskID, lockID).Updates(map[string]interface{}{
-		"status": taskStatus, "current": 1, "errors": errorText, "finished_at": finishedAt,
-		"locked_by": "", "locked_until": nil,
-	}).Error
 }
 
 func (h *handlers) probeNodeBBR(node model.Node) (nodeBBRState, error) {
@@ -270,14 +251,14 @@ func (h *handlers) probeNodeBBR(node model.Node) (nodeBBRState, error) {
 	return state, nil
 }
 
-func (h *handlers) enableNodeBBR(node model.Node, claims authClaims) (nodeBBRState, error) {
+func (h *handlers) enableNodeBBR(ctx context.Context, node model.Node, claims authClaims) (nodeBBRState, error) {
 	output, _, err := h.execSSHCommandWithPrivilege(node, nodeBBREnableCommand, true)
 	if err != nil {
 		detail := "result=failed"
 		if strings.Contains(output, "ZBOARD_BBR_UNAVAILABLE=1") {
 			detail += " reason=kernel_unavailable"
 		}
-		_ = createAuditLog(h.db, claims, "node.system_action.bbr", fmt.Sprintf("node:%d", node.ID), detail)
+		h.recordNodeSystemActionAudit(ctx, claims, node.ID, detail)
 		if strings.Contains(output, "ZBOARD_BBR_UNAVAILABLE=1") {
 			return nodeBBRState{}, errors.New("当前 Linux 内核未提供 BBR 拥塞控制算法，未修改系统配置")
 		}
@@ -285,15 +266,23 @@ func (h *handlers) enableNodeBBR(node model.Node, claims authClaims) (nodeBBRSta
 	}
 	state, err := h.probeNodeBBR(node)
 	if err != nil {
-		_ = createAuditLog(h.db, claims, "node.system_action.bbr", fmt.Sprintf("node:%d", node.ID), "result=verification_failed")
+		h.recordNodeSystemActionAudit(ctx, claims, node.ID, "result=verification_failed")
 		return nodeBBRState{}, fmt.Errorf("BBR 已执行但状态复核失败：%w", err)
 	}
 	if !state.Active || !state.Persistent || state.DefaultQdisc != "fq" {
-		_ = createAuditLog(h.db, claims, "node.system_action.bbr", fmt.Sprintf("node:%d", node.ID), "result=verification_failed")
+		h.recordNodeSystemActionAudit(ctx, claims, node.ID, "result=verification_failed")
 		return nodeBBRState{}, errors.New("BBR 状态复核未达到期望值，系统配置未被报告为成功")
 	}
-	_ = createAuditLog(h.db, claims, "node.system_action.bbr", fmt.Sprintf("node:%d", node.ID), "result=succeeded congestion_control=bbr qdisc=fq")
+	h.recordNodeSystemActionAudit(ctx, claims, node.ID, "result=succeeded congestion_control=bbr qdisc=fq")
 	return state, nil
+}
+
+func (h *handlers) recordNodeSystemActionAudit(ctx context.Context, claims authClaims, nodeID uint, detail string) {
+	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_ = h.services.Audit.RecordAdmin(auditCtx, claims.UserID, observability.AuditEvent{
+		Action: "node.system_action.bbr", Target: fmt.Sprintf("node:%d", nodeID), Detail: detail,
+	})
 }
 
 func parseNodeBBRState(output string) (nodeBBRState, error) {

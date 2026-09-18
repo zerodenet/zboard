@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -97,83 +96,6 @@ func (path networkEntryPath) appendGraph(config map[string]interface{}, prefix s
 	}
 	config["outbound_groups"] = groups
 	return names[path.Target], nil
-}
-
-func (h *handlers) appendNetworkEntryRuntime(config map[string]interface{}, nodeID uint) error {
-	var entries []model.NetworkEntry
-	if err := h.db.Where("node_id = ? AND enabled = ?", nodeID, true).Order("id").Find(&entries).Error; err != nil {
-		return err
-	}
-	inbounds := config["inbounds"].([]map[string]interface{})
-	ports := map[int]bool{}
-	for _, inbound := range inbounds {
-		listen, _ := inbound["listen"].(map[string]interface{})
-		port, _ := listen["port"].(int)
-		ports[port] = true
-	}
-	poolTargets := map[uint]string{}
-	for _, entry := range entries {
-		var endpoint model.ProtocolEndpoint
-		if err := h.db.First(&endpoint, entry.EndpointID).Error; err != nil {
-			return fmt.Errorf("入口 %d 的落地协议不存在", entry.ID)
-		}
-		var landing model.Node
-		if err := h.db.First(&landing, endpoint.NodeID).Error; err != nil {
-			return err
-		}
-		if !endpoint.IsActive || !landing.IsEnabled || landing.LifecycleStatus == resourceStatusDeleting {
-			continue
-		}
-		if ports[entry.Port] {
-			return fmt.Errorf("入口 %d 的监听端口 %d 已占用", entry.ID, entry.Port)
-		}
-		ports[entry.Port] = true
-		port := endpoint.PublicPort
-		if port == 0 {
-			port = endpoint.Port
-		}
-		if entry.Network == "tcp" && endpoint.Protocol == "hysteria2" {
-			return fmt.Errorf("入口 %d 的 Hysteria2 落地需要 TCP/UDP 转发", entry.ID)
-		}
-		protocol := map[string]interface{}{"type": "direct", "target": endpoint.Address, "port": port}
-		inbounds = append(inbounds, map[string]interface{}{"tag": networkEntryTag(entry.ID), "listen": map[string]interface{}{"address": "0.0.0.0", "port": entry.Port}, "udp": map[string]interface{}{"enabled": entry.Network != "tcp"}, "protocol": protocol})
-		if entry.ProxyPoolID != nil {
-			target := poolTargets[*entry.ProxyPoolID]
-			if target == "" {
-				path, err := h.proxyPoolPath(h.db, *entry.ProxyPoolID, entry.NodeID, entry.Network)
-				if err != nil {
-					return err
-				}
-				target, err = path.appendGraph(config, fmt.Sprintf("pool-%d/", *entry.ProxyPoolID))
-				if err != nil {
-					return err
-				}
-				poolTargets[*entry.ProxyPoolID] = target
-			} else {
-				// Each binding retains its own TCP/UDP requirements.
-				if _, err := h.proxyPoolPath(h.db, *entry.ProxyPoolID, entry.NodeID, entry.Network); err != nil {
-					return err
-				}
-			}
-			appendEntryRoute(config, entry.ID, map[string]interface{}{"type": "route", "outbound": target})
-		} else if entry.PathConfig != "" {
-			raw, err := h.credentialCipher.Decrypt(entry.PathConfig)
-			if err != nil {
-				return fmt.Errorf("解密入口 %d 代理路径失败", entry.ID)
-			}
-			var path networkEntryPath
-			if err := json.Unmarshal([]byte(raw), &path); err != nil {
-				return fmt.Errorf("入口 %d 代理路径无效", entry.ID)
-			}
-			if err := path.appendTo(config, entry); err != nil {
-				return fmt.Errorf("入口 %d: %w", entry.ID, err)
-			}
-		} else {
-			appendEntryRoute(config, entry.ID, map[string]interface{}{"type": "direct"})
-		}
-	}
-	config["inbounds"] = inbounds
-	return nil
 }
 
 // Called after B's access filtering. Retaining B's identity also preserves group order and billing.

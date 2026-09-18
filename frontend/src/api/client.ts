@@ -1996,6 +1996,7 @@ export interface AdminTaskSummary {
 }
 
 export interface AdminTaskItem {
+	delivery_state?: 'accepted' | 'not_accepted' | 'unknown' | ''
 	id: number
 	task_id: number
 	target_type: string
@@ -2037,6 +2038,11 @@ export async function fetchAdminTaskSummary(): Promise<AdminTaskSummary> {
 export async function createAdminTask(payload: AdminTaskCreateRequest): Promise<AdminTask> {
 	const response = await api.post('/admin/tasks', payload)
 	return unwrap(response)
+}
+
+export async function reviewAdminMailDelivery(taskID: number, itemID: number, input: { expected_attempt: number; acceptance: 'accepted' | 'not_accepted'; reason: string }) {
+ const response = await api.post(`/admin/tasks/${taskID}/items/${itemID}/review`, input)
+ return unwrap(response)
 }
 
 export async function runAdminTask(id: number) {
@@ -2287,6 +2293,7 @@ export async function deleteAnnouncement(id: number): Promise<void> {
 }
 
 export interface DatabaseMigrationTask {
+	run_id?: string
 	id: number
 	status: number
 	total: number
@@ -2376,4 +2383,10 @@ export async function fetchSubscriptionDeliveryOrder(): Promise<SubscriptionDeli
 }
 export async function updateSubscriptionDeliveryOrder(payload: { ordered_keys: string[]; expected_version: string }): Promise<SubscriptionDeliveryOrderSnapshot> {
   return unwrap(await api.put('/admin/subscription-delivery-order', payload))
+}
+
+export interface MailDeliveryAttempt { id: number; attempt: number; acceptance: 'accepted' | 'not_accepted' | 'unknown'; started_at: string; finished_at: string | null }
+export async function fetchMailDeliveryHistory(taskID: number, itemID: number, offset = 0, signal?: AbortSignal): Promise<PageResult<MailDeliveryAttempt>> {
+ const response = await api.get(`/admin/tasks/${taskID}/items/${itemID}/attempts`, { params: { offset, limit: 25 }, signal })
+ return normalizePageResult<MailDeliveryAttempt>(unwrap(response), offset, 25)
 }

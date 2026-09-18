@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/zerodenet/zboard/backend/internal/application"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/security"
@@ -45,10 +46,8 @@ func seed(dir string, nodes, subscriptions, records int) error {
 	pool, _ := db.DB()
 	defer pool.Close()
 	db.Logger = logger.Default.LogMode(logger.Silent)
-	for _, migrate := range []func(*gorm.DB) error{datastore.RunMigrations, datastore.ReconcileCommerceSchema, datastore.ReconcileSubscriptionAccessSchema, datastore.ReconcileZeroEventSchema, datastore.ReconcileTrafficReadSchema, datastore.ReconcileOperationsSchema, datastore.ReconcileFairUseTelemetrySchema} {
-		if err := migrate(db); err != nil {
-			return err
-		}
+	if err := application.PrepareDatabaseSchema(db); err != nil {
+		return err
 	}
 	f := fixture{RunID: uuid.NewString(), AdminEmail: "acceptance@example.test", AdminPassword: randomHex(16), EncryptionKey: randomHex(32), JWTSecret: randomHex(32), HistoryRecords: records}
 	cipher, err := security.NewCredentialCipher(f.EncryptionKey)

@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "plugin_rpcs": [
+    {"name": "PluginControl.GetInfo", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"},
+    {"name": "PluginControl.Health", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"},
+    {"name": "PluginControl.DescribeConfig", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"},
+    {"name": "PluginControl.ValidateConfig", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"},
+    {"name": "PluginControl.ApplyConfig", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"},
+    {"name": "PluginControl.TestConfig", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"},
+    {"name": "PluginControl.ListIdentityProviders", "owner": "identity", "source": "pkg/pluginapi/v1/control.proto"},
+    {"name": "PluginControl.GetIdentityProvider", "owner": "identity", "source": "pkg/pluginapi/v1/control.proto"},
+    {"name": "PluginControl.ExchangeIdentity", "owner": "identity", "source": "pkg/pluginapi/v1/control.proto"},
+    {"name": "PluginControl.RunTask", "owner": "jobs", "source": "pkg/pluginapi/v1/control.proto"},
+    {"name": "PluginControl.VerifyDNSCredential", "owner": "network", "source": "pkg/pluginapi/v1/control.proto"},
+    {"name": "PluginControl.ApplyDNSRecord", "owner": "network", "source": "pkg/pluginapi/v1/control.proto"},
+    {"name": "PluginControl.VerifyCertificateCredential", "owner": "network", "source": "pkg/pluginapi/v1/control.proto"},
+    {"name": "PluginControl.IssueCertificate", "owner": "network", "source": "pkg/pluginapi/v1/control.proto"}
+  ],
+  "plugin_capabilities": [
+    {"name": "zboard.ui.page.v1", "owner": "extensions", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.config.v1", "owner": "extensions", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.storage.v1", "owner": "extensions", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.identity.provider.v1", "owner": "identity", "source": "internal/plugins/identity.go"},
+    {"name": "zboard.task.v1", "owner": "jobs", "source": "internal/plugins/tasks.go"},
+    {"name": "zboard.metering.read.v1", "owner": "metering", "source": "internal/plugins/capabilities.go"},
+    {"name": "zboard.commerce.orders.read.v1", "owner": "commerce", "source": "internal/plugins/capabilities.go"},
+    {"name": "zboard.dns.provider.v1", "owner": "network", "source": "internal/plugins/dns_provider.go"},
+    {"name": "zboard.certificate.provider.v1", "owner": "network", "source": "internal/plugins/certificate_provider.go"}
+  ],
+  "host_operations": [
+    {
+      "name": "metering.usage.query",
+      "owner": "metering",
+      "source": "internal/application/metering_catalog.go",
+      "plugin_capability": "zboard.metering.read.v1",
+      "external_http": true
+    },
+    {
+      "name": "commerce.orders.list",
+      "owner": "commerce",
+      "source": "internal/application/commerce_catalog.go",
+      "plugin_capability": "zboard.commerce.orders.read.v1",
+      "external_http": true
+    },
+    {
+      "name": "commerce.payments.record",
+      "owner": "commerce",
+      "source": "internal/application/commerce_catalog.go",
+      "plugin_capability": "",
+      "external_http": true,
+      "note": "Records a payment fact verified by an external integration; checkout, callbacks, signatures, and provider SDKs remain outside ZBoard."
+    }
+  ],
+  "cross_domain_transactions": [
+    {
+      "id": "commerce.payment_fact_settlement",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/payment_facts.go",
+      "symbol": "PaymentFacts.Record",
+      "participants": ["commerce", "entitlements", "resources", "observability"],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback the payment event, order transition, entitlement grant, audit row, and publication intent together; provider_event_id makes replay conflict-safe.",
+      "outbox": "NodeConfigPublish intents are inserted in the settlement transaction only when fulfillment changes the subscription."
+    },
+    {
+      "id": "commerce.admin_order_settlement",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/order_settlement.go",
+      "symbol": "OrderSettlement.Apply",
+      "participants": ["commerce", "entitlements", "resources", "observability"],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback order transition, entitlement fulfillment, audit row, and publication intent together; repeated paid settlement is idempotent.",
+      "outbox": "NodeConfigPublish intents are committed with a newly fulfilled subscription."
+    },
+    {
+      "id": "metering.flow_completion",
+      "owner": "metering",
+      "source": "internal/adapters/persistence/meteringstore/completion.go",
+      "symbol": "CompletionAccounting.Complete",
+      "participants": ["metering", "entitlements", "resources"],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback traffic, usage cursor, quota deduction, credential expiry, and publication intents together; node_id plus report_id deduplicates replay.",
+      "outbox": "When quota is exhausted, NodeConfigPublish intents are inserted before commit and delivered asynchronously."
+    },
+    {
+      "id": "entitlements.quota_execution",
+      "owner": "entitlements",
+      "source": "internal/adapters/persistence/entitlementstore/quota_execution.go",
+      "symbol": "QuotaExecution.Execute",
+      "participants": ["jobs", "entitlements", "resources"],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback quota, quota event, and publication intent together; the task_item reference prevents a replay from applying the adjustment twice.",
+      "outbox": "NodeConfigPublish intents are committed with the quota adjustment."
+    },
+    {
+      "id": "entitlements.credential_expiry",
+      "owner": "entitlements",
+      "source": "internal/adapters/persistence/entitlementstore/credential_expiry.go",
+      "symbol": "CredentialExpiry.ExpireDueCredentials",
+      "participants": ["entitlements", "resources"],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback subscription and credential expiry with publication intents; the next bounded scan retries uncommitted rows.",
+      "outbox": "One coalesced NodeConfigPublish intent is inserted per affected node before credentials become expired."
+    },
+    {
+      "id": "identity.local_registration_message",
+      "owner": "identity",
+      "source": "internal/adapters/persistence/identitystore/registration.go",
+      "symbol": "registrationTx.CreateLocalAccount",
+      "participants": ["identity", "messaging"],
+      "atomicity": "joins_registration_transaction",
+      "compensation": "Account creation and handoff event roll back together; the messaging consumer retries the unprocessed event.",
+      "outbox": "AccountRegistrationEvent is the durable identity-owned message handoff and carries no message body or credential."
+    },
+    {
+      "id": "identity.external_registration_message",
+      "owner": "identity",
+      "source": "internal/adapters/persistence/identitystore/external.go",
+      "symbol": "externalTx.CreateExternalAccount",
+      "participants": ["identity", "messaging"],
+      "atomicity": "joins_external_identity_transaction",
+      "compensation": "External account creation and handoff event roll back together; the messaging consumer retries the unprocessed event.",
+      "outbox": "AccountRegistrationEvent is committed in the same transaction as the external account."
+    },
+    {
+      "id": "resources.node_publication_intent",
+      "owner": "resources",
+      "source": "internal/adapters/persistence/networkstore/publication_intents.go",
+      "symbol": "EnqueuePublication",
+      "participants": ["resources", "jobs", "network"],
+      "atomicity": "joins_calling_domain_transaction",
+      "compensation": "The calling transaction rolls back the intent; committed failures retain the row for leased retry while newer requests coalesce by generation.",
+      "outbox": "NodeConfigPublish is the durable outbox record; the shared jobs runtime leases and delivers it to the Zero adapter."
+    }
+  ]
+}

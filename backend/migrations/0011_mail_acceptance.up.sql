@@ -1,0 +1,1 @@
+ALTER TABLE task_items ADD COLUMN delivery_state VARCHAR(24) NOT NULL DEFAULT '';

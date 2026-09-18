@@ -36,18 +36,14 @@ func (h *handlers) AccountProtocolLoadHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	now := time.Now().UTC()
-	var endpoints []model.ProtocolEndpoint
-	if err := h.db.Model(&model.ProtocolEndpoint{}).
-		Select("DISTINCT protocol_endpoints.*").
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
-		Joins("JOIN subscriptions ON subscriptions.node_group_id = node_group_endpoints.node_group_id").
-		Joins("JOIN nodes ON nodes.id = protocol_endpoints.node_id").
-		Where("subscriptions.user_id = ? AND subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", claims.UserID, subStatusActive, now).
-		Where("protocol_endpoints.is_active = ? AND nodes.is_enabled = ? AND nodes.last_seen_at >= ?", true, true, now.Add(-nodeOnlineWindow)).
-		Order("protocol_endpoints.sort_order asc, protocol_endpoints.id asc").
-		Find(&endpoints).Error; err != nil {
+	records, err := h.services.NetworkInventory.AuthorizedProtocolEndpoints(r.Context(), claims.UserID, now)
+	if err != nil {
 		ServerError(w, err)
 		return
+	}
+	endpoints := make([]model.ProtocolEndpoint, 0, len(records))
+	for _, record := range records {
+		endpoints = append(endpoints, protocolEndpointRecordModel(record))
 	}
 	usageByEndpoint, err := h.loadProtocolEndpointUsageBatch(endpoints, now)
 	if err != nil {

@@ -21,21 +21,29 @@ var ErrConflict = errors.New("plugin changed; refresh and retry")
 var ErrUnavailable = errors.New("plugin service unavailable")
 
 type Manager struct {
-	db             *gorm.DB
-	cipher         *security.CredentialCipher
-	options        Options
-	fetch          func(context.Context, string, int64) ([]byte, error)
-	host           string
-	owner          string
-	epoch          uint64
-	mu             sync.Mutex
-	marketMu       sync.Mutex
-	processes      map[string]*process
-	marketReleases map[string]marketReleaseCache
-	sessions       map[string]Session
-	cancel         context.CancelFunc
-	done           chan struct{}
-	lost           atomic.Bool
+	tasks             *pluginTaskRuntime
+	db                *gorm.DB
+	identityTx        IdentityTransactions
+	cipher            *security.CredentialCipher
+	options           Options
+	fetch             func(context.Context, string, int64) ([]byte, error)
+	host              string
+	owner             string
+	epoch             atomic.Uint64
+	mu                sync.Mutex
+	marketMu          sync.Mutex
+	processes         map[string]*process
+	marketReleases    map[string]marketReleaseCache
+	sessions          map[string]Session
+	capabilityWindows map[string]capabilityAdmissionWindow
+	cancel            context.CancelFunc
+	done              chan struct{}
+	lost              atomic.Bool
+	leaseUntil        atomic.Int64
+	leaseErrors       atomic.Uint64
+	supervisorDone    chan struct{}
+	closeOnce         sync.Once
+	restarts          map[string]restartAttempt
 }
 type Installation struct {
 	Admission Admission  `json:"admission"`
@@ -64,7 +72,7 @@ func NewManager(db *gorm.DB, cipher *security.CredentialCipher, options Options,
 			return nil, err
 		}
 	}
-	m := &Manager{db: db, cipher: cipher, options: options, fetch: fetchRemote, host: host, owner: uuid.NewString(), processes: map[string]*process{}, marketReleases: map[string]marketReleaseCache{}, sessions: map[string]Session{}, done: make(chan struct{})}
+	m := &Manager{tasks: newPluginTaskRuntime(), db: db, cipher: cipher, options: options, fetch: fetchRemote, host: host, owner: uuid.NewString(), processes: map[string]*process{}, marketReleases: map[string]marketReleaseCache{}, sessions: map[string]Session{}, capabilityWindows: map[string]capabilityAdmissionWindow{}, done: make(chan struct{}), supervisorDone: make(chan struct{}), restarts: map[string]restartAttempt{}}
 	now := time.Now().UTC()
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&model.PluginHostLease{ID: 1, Owner: "", ExpiresAt: now.Add(-time.Hour)}).Error; err != nil {
 		return nil, err
@@ -77,18 +85,22 @@ func NewManager(db *gorm.DB, cipher *security.CredentialCipher, options Options,
 		// A standby console must remain available for core business even when
 		// another host owns extension execution. It grants no plugin sessions.
 		m.lost.Store(true)
-		m.cancel = func() {}
-		close(m.done)
+		ctx, cancel := context.WithCancel(context.Background())
+		m.cancel = cancel
+		go m.maintain(ctx)
+		go m.supervise(ctx)
 		return m, nil
 	}
 	var lease model.PluginHostLease
 	if err := db.First(&lease, 1).Error; err != nil {
 		return nil, err
 	}
-	m.epoch = lease.Epoch
+	m.epoch.Store(lease.Epoch)
+	m.leaseUntil.Store(lease.ExpiresAt.UnixNano())
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	go m.maintain(ctx)
+	go m.supervise(ctx)
 	m.mu.Lock()
 	recoveryErr := m.recover()
 	m.mu.Unlock()
@@ -104,7 +116,7 @@ func (m *Manager) guard(tx *gorm.DB) error {
 	}
 	now := time.Now().UTC()
 	var lease model.PluginHostLease
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = 1 AND owner = ? AND epoch = ? AND expires_at > ?", m.owner, m.epoch, now).Take(&lease).Error
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = 1 AND owner = ? AND epoch = ? AND expires_at > ?", m.owner, m.epoch.Load(), now).Take(&lease).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			m.lost.Store(true)
@@ -116,67 +128,50 @@ func (m *Manager) guard(tx *gorm.DB) error {
 	return nil
 }
 func (m *Manager) renew() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	now := time.Now().UTC()
-	r := m.db.Model(&model.PluginHostLease{}).Where("id = 1 AND owner = ? AND epoch = ? AND expires_at > ?", m.owner, m.epoch, now).Update("expires_at", now.Add(time.Minute))
+	until := now.Add(time.Minute)
+	r := m.db.WithContext(ctx).Model(&model.PluginHostLease{}).Where("id = 1 AND owner = ? AND epoch = ? AND expires_at > ?", m.owner, m.epoch.Load(), now).Update("expires_at", until)
 	if r.Error != nil {
 		return r.Error
 	}
 	if r.RowsAffected != 1 {
 		return ErrUnavailable
 	}
+	m.leaseUntil.Store(until.UnixNano())
 	return nil
 }
 func (m *Manager) maintain(ctx context.Context) {
 	defer close(m.done)
-	t := time.NewTicker(10 * time.Second)
-	defer t.Stop()
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
-			if err := m.renew(); err != nil {
-				m.lost.Store(true)
-				m.mu.Lock()
-				for id, p := range m.processes {
-					p.close()
-					delete(m.processes, id)
-				}
-				m.sessions = map[string]Session{}
-				m.mu.Unlock()
-				return
-			}
-			m.mu.Lock()
-			for token, s := range m.sessions {
-				if time.Now().After(s.ExpiresAt) {
-					delete(m.sessions, token)
-				}
-			}
-			for id, p := range m.processes {
-				if p.client.Exited() {
-					p.close()
-					delete(m.processes, id)
-					m.invalidate(id)
-					_ = m.updateInstallation(id, map[string]any{"state": "failed", "last_error": "plugin process exited"})
-				}
-			}
-			m.mu.Unlock()
+		case <-ticker.C:
+			m.renewLease()
 		}
 	}
 }
 func (m *Manager) Close() {
-	m.cancel()
-	<-m.done
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.lost.Store(true)
-	for _, p := range m.processes {
-		p.close()
-	}
-	m.sessions = map[string]Session{}
-	_ = m.db.Model(&model.PluginHostLease{}).Where("id = 1 AND owner = ? AND epoch = ?", m.owner, m.epoch).Update("expires_at", time.Now().UTC().Add(-time.Second)).Error
+	m.closeOnce.Do(func() {
+		m.cancel()
+		<-m.done
+		<-m.supervisorDone
+		m.cancelPluginTasks()
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		m.lost.Store(true)
+		m.stopProcesses()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = m.db.WithContext(ctx).Model(&model.PluginHostLease{}).Where("id = 1 AND owner = ? AND epoch = ?", m.owner, m.epoch.Load()).Update("expires_at", time.Now().UTC().Add(-time.Second)).Error
+	})
 }
-func (m *Manager) recover() error {
+func (m *Manager) recover() error { return m.recoverWithContext(context.Background()) }
+func (m *Manager) recoverWithContext(ctx context.Context) error {
 	if err := m.db.Model(&model.PluginOperation{}).Where("state = ?", "running").Updates(map[string]any{"state": "interrupted", "message": "host restarted; committed configuration retained"}).Error; err != nil {
 		return err
 	}
@@ -185,6 +180,9 @@ func (m *Manager) recover() error {
 		return err
 	}
 	for _, r := range rows {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if r.State == "uninstalled" {
 			continue
 		}
@@ -197,7 +195,7 @@ func (m *Manager) recover() error {
 		}
 		pack, err := m.packageFor(v)
 		if err == nil {
-			err = m.commitCandidate(context.Background(), r, pack, "host-recovery", nil)
+			err = m.commitCandidate(ctx, r, pack, "host-recovery", nil)
 		}
 		if err != nil {
 			m.processes[r.ID].close()

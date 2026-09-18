@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -26,7 +27,7 @@ func TestReadExpiryPersistsRevocationBeforeWorkerSkipsSubscription(t *testing.T)
 	if err := expireSubscriptions(f.h.db, paid.UserID, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := expireDueSubscriptionCredentials(f.h.db, now, 200); err != nil {
+	if _, err := f.h.services.CredentialExpiry().ExpireDue(context.Background(), now, 200); err != nil {
 		t.Fatal(err)
 	}
 	var job model.NodeConfigPublish
@@ -109,13 +110,13 @@ func TestPlanChangeRevokesOldGroupAndPublishesBothNodes(t *testing.T) {
 			t.Fatalf("missing publication on node %d: %v", endpoint.NodeID, err)
 		}
 	}
-	current, err := f.h.activeEndpointCredentials(newEndpoint.ID, time.Now().UTC())
-	if err != nil || len(current) != 1 {
-		t.Fatalf("new group entitlement unavailable: %v %v", current, err)
+	current := activeEndpointCredentialsForTest(t, f.h, newEndpoint.ID, time.Now().UTC())
+	if len(current) != 1 {
+		t.Fatalf("new group entitlement unavailable: %v", current)
 	}
-	previous, err := f.h.activeEndpointCredentials(oldEndpoint.ID, time.Now().UTC())
-	if err != nil || len(previous) != 0 {
-		t.Fatalf("old node projection still grants access: %v %v", previous, err)
+	previous := activeEndpointCredentialsForTest(t, f.h, oldEndpoint.ID, time.Now().UTC())
+	if len(previous) != 0 {
+		t.Fatalf("old node projection still grants access: %v", previous)
 	}
 }
 

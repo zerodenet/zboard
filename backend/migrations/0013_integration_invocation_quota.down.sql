@@ -1,0 +1,3 @@
+DROP INDEX idx_user_api_tokens_invocation_window ON user_api_tokens;
+ALTER TABLE user_api_tokens DROP COLUMN invocation_window_count;
+ALTER TABLE user_api_tokens DROP COLUMN invocation_window_started_at;

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -252,6 +253,11 @@ func managedRuleContentMetadata(content []byte) (string, int) {
 }
 
 func (h *handlers) presentManagedRuleSet(item model.SubscriptionRuleSet) managedRuleSetPresentation {
+	siteURL, _ := h.managedRuleSiteURL()
+	return h.presentManagedRuleSetAt(item, siteURL)
+}
+
+func (h *handlers) presentManagedRuleSetAt(item model.SubscriptionRuleSet, siteURL string) managedRuleSetPresentation {
 	presentation := managedRuleSetPresentation{SubscriptionRuleSet: item, Managed: item.Renderer == managedRuleSetRenderer}
 	if !presentation.Managed {
 		return presentation
@@ -262,7 +268,7 @@ func (h *handlers) presentManagedRuleSet(item model.SubscriptionRuleSet) managed
 		presentation.ContentBytes = len(content)
 		presentation.ContentSHA256, presentation.RuleCount = managedRuleContentMetadata(content)
 	}
-	if siteURL, err := h.managedRuleSiteURL(); err == nil {
+	if strings.TrimSpace(siteURL) != "" {
 		if item.Format == managedRuleSetFormatClient {
 			presentation.PublicURL = managedRulePublicURL(siteURL, item.Tag, managedRuleArtifactSingBoxSource)
 		} else {
@@ -273,11 +279,11 @@ func (h *handlers) presentManagedRuleSet(item model.SubscriptionRuleSet) managed
 }
 
 func (h *handlers) managedRuleSiteURL() (string, error) {
-	var installation model.Installation
-	if err := h.db.Select("site_url").First(&installation, 1).Error; err != nil {
+	siteURL, err := h.subscriptionRuleSets().SiteURL(context.Background())
+	if err != nil {
 		return "", err
 	}
-	siteURL := strings.TrimRight(strings.TrimSpace(installation.SiteURL), "/")
+	siteURL = strings.TrimRight(strings.TrimSpace(siteURL), "/")
 	if siteURL == "" {
 		return "", errors.New("site URL is not configured")
 	}

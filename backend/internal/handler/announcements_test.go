@@ -32,7 +32,7 @@ func newAnnouncementTestHandlers(t testing.TB) (*handlers, string) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
-	h, err := NewHandlers(db, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
+	h, err := newTestHandlers(db, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,6 +40,7 @@ func newAnnouncementTestHandlers(t testing.TB) (*handlers, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(h.CloseBackgroundJobs)
 	return h, token
 }
 

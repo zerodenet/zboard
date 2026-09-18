@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v3.18.1
-// source: backend/pkg/pluginapi/v1/control.proto
+// source: pkg/pluginapi/v1/control.proto
 
 package pluginv1
 
@@ -19,15 +19,20 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PluginControl_GetInfo_FullMethodName               = "/zboard.plugin.v1.PluginControl/GetInfo"
-	PluginControl_Health_FullMethodName                = "/zboard.plugin.v1.PluginControl/Health"
-	PluginControl_DescribeConfig_FullMethodName        = "/zboard.plugin.v1.PluginControl/DescribeConfig"
-	PluginControl_ValidateConfig_FullMethodName        = "/zboard.plugin.v1.PluginControl/ValidateConfig"
-	PluginControl_ApplyConfig_FullMethodName           = "/zboard.plugin.v1.PluginControl/ApplyConfig"
-	PluginControl_TestConfig_FullMethodName            = "/zboard.plugin.v1.PluginControl/TestConfig"
-	PluginControl_ListIdentityProviders_FullMethodName = "/zboard.plugin.v1.PluginControl/ListIdentityProviders"
-	PluginControl_GetIdentityProvider_FullMethodName   = "/zboard.plugin.v1.PluginControl/GetIdentityProvider"
-	PluginControl_ExchangeIdentity_FullMethodName      = "/zboard.plugin.v1.PluginControl/ExchangeIdentity"
+	PluginControl_GetInfo_FullMethodName                     = "/zboard.plugin.v1.PluginControl/GetInfo"
+	PluginControl_Health_FullMethodName                      = "/zboard.plugin.v1.PluginControl/Health"
+	PluginControl_DescribeConfig_FullMethodName              = "/zboard.plugin.v1.PluginControl/DescribeConfig"
+	PluginControl_ValidateConfig_FullMethodName              = "/zboard.plugin.v1.PluginControl/ValidateConfig"
+	PluginControl_ApplyConfig_FullMethodName                 = "/zboard.plugin.v1.PluginControl/ApplyConfig"
+	PluginControl_TestConfig_FullMethodName                  = "/zboard.plugin.v1.PluginControl/TestConfig"
+	PluginControl_ListIdentityProviders_FullMethodName       = "/zboard.plugin.v1.PluginControl/ListIdentityProviders"
+	PluginControl_GetIdentityProvider_FullMethodName         = "/zboard.plugin.v1.PluginControl/GetIdentityProvider"
+	PluginControl_ExchangeIdentity_FullMethodName            = "/zboard.plugin.v1.PluginControl/ExchangeIdentity"
+	PluginControl_RunTask_FullMethodName                     = "/zboard.plugin.v1.PluginControl/RunTask"
+	PluginControl_VerifyDNSCredential_FullMethodName         = "/zboard.plugin.v1.PluginControl/VerifyDNSCredential"
+	PluginControl_ApplyDNSRecord_FullMethodName              = "/zboard.plugin.v1.PluginControl/ApplyDNSRecord"
+	PluginControl_VerifyCertificateCredential_FullMethodName = "/zboard.plugin.v1.PluginControl/VerifyCertificateCredential"
+	PluginControl_IssueCertificate_FullMethodName            = "/zboard.plugin.v1.PluginControl/IssueCertificate"
 )
 
 // PluginControlClient is the client API for PluginControl service.
@@ -47,6 +52,16 @@ type PluginControlClient interface {
 	ListIdentityProviders(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*IdentityProviderList, error)
 	GetIdentityProvider(ctx context.Context, in *IdentityProviderRequest, opts ...grpc.CallOption) (*IdentityProvider, error)
 	ExchangeIdentity(ctx context.Context, in *IdentityExchange, opts ...grpc.CallOption) (*VerifiedIdentity, error)
+	// Optional zboard.task.v1: only signed, admitted manifest task IDs are dispatched.
+	RunTask(ctx context.Context, in *TaskRunRequest, opts ...grpc.CallOption) (*TaskRunResult, error)
+	// Requires zboard.dns.provider.v1. Credentials are scoped to one provider
+	// account invocation and never persisted by the host protocol.
+	VerifyDNSCredential(ctx context.Context, in *DNSCredentialRequest, opts ...grpc.CallOption) (*HealthResult, error)
+	ApplyDNSRecord(ctx context.Context, in *DNSApplyRequest, opts ...grpc.CallOption) (*DNSApplyResult, error)
+	// Requires zboard.certificate.provider.v1. The private key remains on the
+	// target node; the plugin receives only its signed CSR.
+	VerifyCertificateCredential(ctx context.Context, in *CertificateCredentialRequest, opts ...grpc.CallOption) (*HealthResult, error)
+	IssueCertificate(ctx context.Context, in *CertificateIssueRequest, opts ...grpc.CallOption) (*CertificateIssueResult, error)
 }
 
 type pluginControlClient struct {
@@ -147,6 +162,56 @@ func (c *pluginControlClient) ExchangeIdentity(ctx context.Context, in *Identity
 	return out, nil
 }
 
+func (c *pluginControlClient) RunTask(ctx context.Context, in *TaskRunRequest, opts ...grpc.CallOption) (*TaskRunResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaskRunResult)
+	err := c.cc.Invoke(ctx, PluginControl_RunTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pluginControlClient) VerifyDNSCredential(ctx context.Context, in *DNSCredentialRequest, opts ...grpc.CallOption) (*HealthResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HealthResult)
+	err := c.cc.Invoke(ctx, PluginControl_VerifyDNSCredential_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pluginControlClient) ApplyDNSRecord(ctx context.Context, in *DNSApplyRequest, opts ...grpc.CallOption) (*DNSApplyResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DNSApplyResult)
+	err := c.cc.Invoke(ctx, PluginControl_ApplyDNSRecord_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pluginControlClient) VerifyCertificateCredential(ctx context.Context, in *CertificateCredentialRequest, opts ...grpc.CallOption) (*HealthResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HealthResult)
+	err := c.cc.Invoke(ctx, PluginControl_VerifyCertificateCredential_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pluginControlClient) IssueCertificate(ctx context.Context, in *CertificateIssueRequest, opts ...grpc.CallOption) (*CertificateIssueResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CertificateIssueResult)
+	err := c.cc.Invoke(ctx, PluginControl_IssueCertificate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PluginControlServer is the server API for PluginControl service.
 // All implementations must embed UnimplementedPluginControlServer
 // for forward compatibility.
@@ -164,6 +229,16 @@ type PluginControlServer interface {
 	ListIdentityProviders(context.Context, *Empty) (*IdentityProviderList, error)
 	GetIdentityProvider(context.Context, *IdentityProviderRequest) (*IdentityProvider, error)
 	ExchangeIdentity(context.Context, *IdentityExchange) (*VerifiedIdentity, error)
+	// Optional zboard.task.v1: only signed, admitted manifest task IDs are dispatched.
+	RunTask(context.Context, *TaskRunRequest) (*TaskRunResult, error)
+	// Requires zboard.dns.provider.v1. Credentials are scoped to one provider
+	// account invocation and never persisted by the host protocol.
+	VerifyDNSCredential(context.Context, *DNSCredentialRequest) (*HealthResult, error)
+	ApplyDNSRecord(context.Context, *DNSApplyRequest) (*DNSApplyResult, error)
+	// Requires zboard.certificate.provider.v1. The private key remains on the
+	// target node; the plugin receives only its signed CSR.
+	VerifyCertificateCredential(context.Context, *CertificateCredentialRequest) (*HealthResult, error)
+	IssueCertificate(context.Context, *CertificateIssueRequest) (*CertificateIssueResult, error)
 	mustEmbedUnimplementedPluginControlServer()
 }
 
@@ -200,6 +275,21 @@ func (UnimplementedPluginControlServer) GetIdentityProvider(context.Context, *Id
 }
 func (UnimplementedPluginControlServer) ExchangeIdentity(context.Context, *IdentityExchange) (*VerifiedIdentity, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExchangeIdentity not implemented")
+}
+func (UnimplementedPluginControlServer) RunTask(context.Context, *TaskRunRequest) (*TaskRunResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method RunTask not implemented")
+}
+func (UnimplementedPluginControlServer) VerifyDNSCredential(context.Context, *DNSCredentialRequest) (*HealthResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method VerifyDNSCredential not implemented")
+}
+func (UnimplementedPluginControlServer) ApplyDNSRecord(context.Context, *DNSApplyRequest) (*DNSApplyResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method ApplyDNSRecord not implemented")
+}
+func (UnimplementedPluginControlServer) VerifyCertificateCredential(context.Context, *CertificateCredentialRequest) (*HealthResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method VerifyCertificateCredential not implemented")
+}
+func (UnimplementedPluginControlServer) IssueCertificate(context.Context, *CertificateIssueRequest) (*CertificateIssueResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method IssueCertificate not implemented")
 }
 func (UnimplementedPluginControlServer) mustEmbedUnimplementedPluginControlServer() {}
 func (UnimplementedPluginControlServer) testEmbeddedByValue()                       {}
@@ -384,6 +474,96 @@ func _PluginControl_ExchangeIdentity_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PluginControl_RunTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TaskRunRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginControlServer).RunTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginControl_RunTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginControlServer).RunTask(ctx, req.(*TaskRunRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PluginControl_VerifyDNSCredential_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DNSCredentialRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginControlServer).VerifyDNSCredential(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginControl_VerifyDNSCredential_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginControlServer).VerifyDNSCredential(ctx, req.(*DNSCredentialRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PluginControl_ApplyDNSRecord_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DNSApplyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginControlServer).ApplyDNSRecord(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginControl_ApplyDNSRecord_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginControlServer).ApplyDNSRecord(ctx, req.(*DNSApplyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PluginControl_VerifyCertificateCredential_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CertificateCredentialRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginControlServer).VerifyCertificateCredential(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginControl_VerifyCertificateCredential_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginControlServer).VerifyCertificateCredential(ctx, req.(*CertificateCredentialRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PluginControl_IssueCertificate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CertificateIssueRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginControlServer).IssueCertificate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginControl_IssueCertificate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginControlServer).IssueCertificate(ctx, req.(*CertificateIssueRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PluginControl_ServiceDesc is the grpc.ServiceDesc for PluginControl service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -427,7 +607,27 @@ var PluginControl_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "ExchangeIdentity",
 			Handler:    _PluginControl_ExchangeIdentity_Handler,
 		},
+		{
+			MethodName: "RunTask",
+			Handler:    _PluginControl_RunTask_Handler,
+		},
+		{
+			MethodName: "VerifyDNSCredential",
+			Handler:    _PluginControl_VerifyDNSCredential_Handler,
+		},
+		{
+			MethodName: "ApplyDNSRecord",
+			Handler:    _PluginControl_ApplyDNSRecord_Handler,
+		},
+		{
+			MethodName: "VerifyCertificateCredential",
+			Handler:    _PluginControl_VerifyCertificateCredential_Handler,
+		},
+		{
+			MethodName: "IssueCertificate",
+			Handler:    _PluginControl_IssueCertificate_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "backend/pkg/pluginapi/v1/control.proto",
+	Metadata: "pkg/pluginapi/v1/control.proto",
 }

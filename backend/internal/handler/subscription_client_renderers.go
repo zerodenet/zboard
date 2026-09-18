@@ -1,18 +1,18 @@
 package handler
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gopkg.in/yaml.v2"
-	"gorm.io/gorm"
 )
 
 const (
@@ -75,27 +75,27 @@ func init() {
 // through the one-time seed guard, so later administrator edits or deletions
 // remain authoritative.
 func (h *handlers) ReconcileSubscriptionClientTemplateDefaults() error {
-	return h.db.Transaction(func(tx *gorm.DB) error {
-		for _, definition := range builtinClientSubscriptionTemplates {
-			customization, err := json.Marshal(defaultSubscriptionCustomization(definition.Renderer))
-			if err != nil {
-				return fmt.Errorf("encode %s subscription defaults: %w", definition.Renderer, err)
-			}
-			definition.Customization = customization
-			var existing model.SubscriptionTemplate
-			err = tx.Where("slug = ?", definition.Slug).First(&existing).Error
-			switch {
-			case err == nil:
-				continue
-			case !errors.Is(err, gorm.ErrRecordNotFound):
-				return fmt.Errorf("inspect subscription template %q: %w", definition.Slug, err)
-			}
-			if err := tx.Create(&definition).Error; err != nil {
-				return fmt.Errorf("create subscription template %q: %w", definition.Slug, err)
-			}
+	definitions, err := subscriptionClientTemplateDefinitions()
+	if err != nil {
+		return err
+	}
+	return h.services.SubscriptionTemplates.EnsureClients(context.Background(), definitions)
+}
+
+func subscriptionClientTemplateDefinitions() ([]entitlements.SubscriptionTemplate, error) {
+	definitions := make([]entitlements.SubscriptionTemplate, 0, len(builtinClientSubscriptionTemplates))
+	for _, definition := range builtinClientSubscriptionTemplates {
+		customization, err := json.Marshal(defaultSubscriptionCustomization(definition.Renderer))
+		if err != nil {
+			return nil, fmt.Errorf("encode %s subscription defaults: %w", definition.Renderer, err)
 		}
-		return nil
-	})
+		definitions = append(definitions, entitlements.SubscriptionTemplate{
+			Name: definition.Name, Slug: definition.Slug, Description: definition.Description,
+			Renderer: definition.Renderer, Customization: customization, IsActive: definition.IsActive,
+			SortOrder: definition.SortOrder, Revision: definition.Revision,
+		})
+	}
+	return definitions, nil
 }
 
 func renderShadowrocketSubscription(data subscriptionTemplateData, _ subscriptionTemplateCustomization) (string, error) {

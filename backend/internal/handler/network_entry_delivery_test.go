@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
 )
 
 func TestNetworkEntriesNeverGrantLandingCredentialsImplicitly(t *testing.T) {
@@ -42,7 +42,7 @@ func TestNetworkEntriesNeverGrantLandingCredentialsImplicitly(t *testing.T) {
 		t.Fatal("entry implicitly created B credentials")
 	}
 	f.h.db.Where("1 = 1").Delete(&model.NodeConfigPublish{})
-	nodes, err := f.h.buildProjectedSubscriptionManifestNodes([]model.Subscription{sub}, subscriptionProjectionFilter{}, now)
+	nodes, err := f.h.buildProjectedSubscriptionManifestNodes(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
 	if err != nil || len(nodes) != 0 {
 		t.Fatalf("entry-only subscription delivered credentials: %v %v", nodes, err)
 	}
@@ -54,26 +54,26 @@ func TestNetworkEntriesNeverGrantLandingCredentialsImplicitly(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.h.db.Where("1 = 1").Delete(&model.NodeConfigPublish{})
-	nodes, err = f.h.buildProjectedSubscriptionManifestNodes([]model.Subscription{sub}, subscriptionProjectionFilter{}, now)
+	nodes, err = f.h.buildProjectedSubscriptionManifestNodes(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
 	if err != nil || len(nodes) != 2 || nodes[0].CredentialID == "" || nodes[0].CredentialID != nodes[1].CredentialID {
 		t.Fatalf("explicit A+B: %v %v", nodes, err)
 	}
-	credentials, err := f.h.activeEndpointCredentials(b.ID, now)
-	if err != nil || len(credentials) != 1 {
-		t.Fatalf("explicit B auth: %v %v", credentials, err)
+	credentials := activeEndpointCredentialsForTest(t, f.h, b.ID, now)
+	if len(credentials) != 1 {
+		t.Fatalf("explicit B auth: %v", credentials)
 	}
 	// Removing only B must reject both delivery and runtime auth immediately,
 	// including still-active credential rows created before the removal.
 	if err := f.h.db.Where("node_group_id = ?", group.ID).Delete(&model.NodeGroupEndpoint{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	nodes, err = f.h.buildProjectedSubscriptionManifestNodes([]model.Subscription{sub}, subscriptionProjectionFilter{}, now)
+	nodes, err = f.h.buildProjectedSubscriptionManifestNodes(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
 	if err != nil || len(nodes) != 0 {
 		t.Fatalf("stale B credential leaked: %v %v", nodes, err)
 	}
-	credentials, err = f.h.activeEndpointCredentials(b.ID, now)
-	if err != nil || len(credentials) != 0 {
-		t.Fatalf("removed B grant still authorizes: %v %v", credentials, err)
+	credentials = activeEndpointCredentialsForTest(t, f.h, b.ID, now)
+	if len(credentials) != 0 {
+		t.Fatalf("removed B grant still authorizes: %v", credentials)
 	}
 	if err := f.h.reconcileNodeGroupCredentials(group.ID); err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestNetworkEntriesNeverGrantLandingCredentialsImplicitly(t *testing.T) {
 	b.Protocol = "http"
 	b.ClientConfig = `{"type":"http","username":"shared","password":"secret"}`
 	f.h.db.Save(&b)
-	nodes, err = f.h.buildAuthorizedNetworkEntries([]model.Subscription{sub}, subscriptionProjectionFilter{}, now)
+	nodes, err = f.h.buildAuthorizedNetworkEntries(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
 	if err != nil || len(nodes) != 0 {
 		t.Fatalf("static B config bypassed grant: %v %v", nodes, err)
 	}
@@ -108,7 +108,11 @@ func TestNodeGroupCanAssignOnlyNetworkEntryAndRejectStaleOrInvalidUpdates(t *tes
 	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	group := created.Data.NodeGroup
+	group := model.NodeGroup{
+		ID: created.Data.ID, Name: created.Data.Name, Code: created.Data.Code,
+		IsEnabled: created.Data.IsEnabled, Revision: created.Data.Revision,
+		ProtocolEndpointIDs: created.Data.ProtocolEndpointIDs, NetworkEntryIDs: created.Data.NetworkEntryIDs,
+	}
 	if len(group.ProtocolEndpointIDs) != 0 || len(group.NetworkEntryIDs) != 1 {
 		t.Fatalf("group=%+v", group)
 	}
@@ -140,12 +144,9 @@ func TestNodeGroupCanAssignOnlyNetworkEntryAndRejectStaleOrInvalidUpdates(t *tes
 	if err := f.h.db.Create(&model.NodeGroupEndpoint{NodeGroupID: group.ID, ProtocolEndpointID: b.ID}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := f.h.db.Transaction(func(tx *gorm.DB) error {
-		if err := replaceNodeGroupEndpoints(tx, group.ID, nil); err != nil {
-			return err
-		}
-		return validateNodeGroupMembershipAvailability(tx, group)
-	}); err != nil {
-		t.Fatal(err)
+	w := httptest.NewRecorder()
+	f.h.NodeGroupUpdateHandler(w, announcementRequest(http.MethodPut, fmt.Sprintf("/api/v1/admin/node-groups/%d", group.ID), f.admin, `{"expected_revision":1,"protocol_endpoint_ids":[]}`))
+	if w.Code != http.StatusOK {
+		t.Fatalf("remove direct access with retained front: %d %s", w.Code, w.Body.String())
 	}
 }

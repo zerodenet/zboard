@@ -6,42 +6,43 @@ import (
 	"strings"
 	"testing"
 
+	networkcap "github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gopkg.in/yaml.v2"
 )
 
 func TestProtocolEndpointOrderVersionIsStableAndTracksOrder(t *testing.T) {
-	first := []model.ProtocolEndpoint{{ID: 2, SortOrder: 1}, {ID: 1, SortOrder: 0}}
-	second := []model.ProtocolEndpoint{{ID: 1, SortOrder: 0}, {ID: 2, SortOrder: 1}}
-	if protocolEndpointOrderVersion(first) != protocolEndpointOrderVersion(second) {
+	first := []networkcap.ProtocolEndpointOrderItem{{ID: 2, SortOrder: 1}, {ID: 1, SortOrder: 0}}
+	second := []networkcap.ProtocolEndpointOrderItem{{ID: 1, SortOrder: 0}, {ID: 2, SortOrder: 1}}
+	if networkcap.ProtocolEndpointOrderVersion(first) != networkcap.ProtocolEndpointOrderVersion(second) {
 		t.Fatal("version must not depend on database row order")
 	}
 	second[1].SortOrder = 0
-	if protocolEndpointOrderVersion(first) == protocolEndpointOrderVersion(second) {
+	if networkcap.ProtocolEndpointOrderVersion(first) == networkcap.ProtocolEndpointOrderVersion(second) {
 		t.Fatal("version must change when a persisted delivery position changes")
 	}
 }
 
 func TestValidateCompleteProtocolEndpointOrderRejectsPartialUnknownAndDuplicateScope(t *testing.T) {
-	endpoints := []model.ProtocolEndpoint{{ID: 1}, {ID: 2}, {ID: 3}}
+	endpoints := []networkcap.ProtocolEndpointOrderItem{{ID: 1}, {ID: 2}, {ID: 3}}
 	for name, orderedIDs := range map[string][]uint{
 		"partial":   {1, 2},
 		"unknown":   {1, 2, 9},
 		"duplicate": {1, 2, 2},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if duplicateID, invalid := duplicateOrZeroUintID(orderedIDs); invalid {
+			if duplicateID, invalid := networkcap.DuplicateOrZeroID(orderedIDs); invalid {
 				if name != "duplicate" || duplicateID != 2 {
 					t.Fatalf("unexpected duplicate validation: id=%d invalid=%t", duplicateID, invalid)
 				}
 				return
 			}
-			if err := validateCompleteProtocolEndpointOrder(endpoints, orderedIDs); err == nil {
+			if err := networkcap.ValidateCompleteProtocolEndpointOrder(endpoints, orderedIDs); err == nil {
 				t.Fatal("invalid complete-scope order unexpectedly accepted")
 			}
 		})
 	}
-	if err := validateCompleteProtocolEndpointOrder(endpoints, []uint{3, 1, 2}); err != nil {
+	if err := networkcap.ValidateCompleteProtocolEndpointOrder(endpoints, []uint{3, 1, 2}); err != nil {
 		t.Fatalf("valid complete-scope order rejected: %v", err)
 	}
 }

@@ -1,12 +1,13 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/zerodenet/zboard/backend/internal/datastore"
+	"github.com/zerodenet/zboard/backend/internal/application"
 	"github.com/zerodenet/zboard/backend/internal/handler"
 	"github.com/zerodenet/zboard/backend/internal/plugins"
 	"github.com/zerodenet/zboard/backend/internal/security"
@@ -21,27 +22,21 @@ func newRoute(method, path string, fn func(http.ResponseWriter, *http.Request)) 
 	return rest.Route{Method: method, Path: path, Handler: http.HandlerFunc(fn)}
 }
 
+// RegisterRoutes binds transports and starts application services after
+// application.PrepareDatabaseSchema has completed. It never changes the schema.
 func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string, zeroEventSpoolConfig zeroevent.Config, pluginOptions plugins.Options) (func() error, error) {
-	if err := datastore.ReconcileCommerceSchema(db); err != nil {
-		return nil, err
-	}
-	if err := datastore.ReconcileSubscriptionAccessSchema(db); err != nil {
-		return nil, err
-	}
-	if err := datastore.ReconcileZeroEventSchema(db); err != nil {
-		return nil, err
-	}
-	if err := datastore.ReconcileTrafficReadSchema(db); err != nil {
-		return nil, err
-	}
-	if err := datastore.ReconcileOperationsSchema(db); err != nil {
-		return nil, err
-	}
-	if err := datastore.ReconcileFairUseTelemetrySchema(db); err != nil {
-		return nil, err
-	}
-	h, err := handler.NewHandlers(db, jwtSecret, credentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion)
+	services := application.New(db, jwtSecret)
+	initialized := false
+	defer func() {
+		if !initialized {
+			services.Close()
+		}
+	}()
+	h, err := handler.NewHandlers(services, db, jwtSecret, credentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := services.RecoverLegacyOperations(context.Background()); err != nil {
 		return nil, err
 	}
 	srv.Use(h.InstallationMiddleware)
@@ -60,6 +55,11 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPost, "/api/v1/auth/register/code", h.RegistrationEmailCodeHandler),
 		newRoute(http.MethodPost, "/api/v1/auth/login", h.LoginHandler),
 		newRoute(http.MethodGet, "/api/v1/auth/me", h.MeHandler),
+		newRoute(http.MethodPost, "/api/v1/account/integrations/credentials", h.IntegrationCredentialCreateHandler),
+		newRoute(http.MethodGet, "/api/v1/account/integrations/credentials", h.IntegrationCredentialListHandler),
+		newRoute(http.MethodDelete, "/api/v1/account/integrations/credentials/:id", h.IntegrationCredentialRevokeHandler),
+		newRoute(http.MethodGet, "/api/v1/integrations/capabilities", h.IntegrationCapabilitiesHandler),
+		newRoute(http.MethodPost, "/api/v1/integrations/capabilities/:name/invoke", h.IntegrationInvokeHandler),
 		newRoute(http.MethodGet, "/api/v1/auth/oidc/callback", h.ExternalAuthCallbackHandler),
 		newRoute(http.MethodPost, "/api/v1/auth/oidc/finish", h.ExternalAuthFinishHandler),
 		newRoute(http.MethodPost, "/api/v1/auth/oidc/registration-code", h.ExternalRegistrationCodeHandler),
@@ -97,12 +97,21 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPut, "/api/v1/admin/email-templates/:id", h.AdminEmailTemplateUpdateHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/email-templates/:id", h.AdminEmailTemplateDeleteHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/system-info", h.AdminSystemInfoHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/runtime-jobs", h.AdminRuntimeJobsHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/runtime-jobs/runs", h.AdminRuntimeHistoryHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/runtime-jobs/runs/:id/attempts", h.AdminRuntimeAttemptsHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/runtime-jobs/runs/:id/cancel", h.AdminRuntimeCancelHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/runtime-jobs/runs/:id/resolve", h.AdminRuntimeResolveHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/runtime-jobs/runs/:id/reconcile-dns", h.AdminDNSReconcileHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/runtime-jobs/queue", h.AdminRuntimeQueueHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/tasks", h.AdminTasksListHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/tasks/summary", h.AdminTaskSummaryHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/tasks", h.AdminTaskCreateHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/tasks/:id", h.AdminTaskGetHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/tasks/:id/items", h.AdminTaskItemsHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/tasks/:id/run", h.AdminTaskRunHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/tasks/:id/items/:item_id/review", h.AdminMailDeliveryReviewHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/tasks/:id/items/:item_id/attempts", h.AdminMailDeliveryHistoryHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/users", h.AdminUserCreateHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/users/:id", h.AdminUserUpdateHandler),
 
@@ -186,20 +195,20 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/admin/node-groups/:id", h.NodeGroupDetailHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/node-groups/:id", h.NodeGroupUpdateHandler),
 		newRoute(http.MethodGet, "/api/v1/plans", h.PlanListCommerceHandler),
-		newRoute(http.MethodPost, "/api/v1/plans", h.PlanCreateCommerceValidatedHandler),
+		newRoute(http.MethodPost, "/api/v1/plans", h.PlanCreateCommerceHandler),
 		newRoute(http.MethodGet, "/api/v1/plans/:id", h.PublicPlanDetailCommerceHandler),
 		newRoute(http.MethodGet, "/api/v1/plans/:id/skus", h.PublicPlanSKUListCommerceHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/fair-use/policy", h.AdminPlatformFairUsePolicyHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/fair-use/policy", h.AdminPlatformFairUsePolicyHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/plans/:id", h.PlanDetailHandler),
-		newRoute(http.MethodPut, "/api/v1/admin/plans/:id", h.PlanUpdateCommerceValidatedHandler),
+		newRoute(http.MethodPut, "/api/v1/admin/plans/:id", h.PlanUpdateHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/plans/:id/fair-use/policy", h.AdminPlanFairUsePolicyHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/plans/:id/fair-use/policy", h.AdminPlanFairUsePolicyHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/plans/:id/fair-use/policy", h.AdminPlanFairUsePolicyHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/plans/:id/skus", h.PlanSKUListCommerceHandler),
-		newRoute(http.MethodPost, "/api/v1/admin/plans/:id/skus", h.PlanSKUCreateCommerceValidatedHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/plans/:id/skus", h.PlanSKUCreateCommerceHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/plan-skus/:id", h.PlanSKUGetCommerceHandler),
-		newRoute(http.MethodPut, "/api/v1/admin/plan-skus/:id", h.PlanSKUUpdateCommerceValidatedHandler),
+		newRoute(http.MethodPut, "/api/v1/admin/plan-skus/:id", h.PlanSKUUpdateCommerceHandler),
 		newRoute(http.MethodGet, "/api/v1/orders", h.OrderListHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/orders", h.OrderListHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/orders", h.AdminOrderAssignHandler),
@@ -266,7 +275,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	if err := h.ReconcileSystemConfigDefaults(); err != nil {
 		return nil, err
 	}
-	if err := h.ReconcileInterruptedDatabaseMigrations(); err != nil {
+	if err := services.RecoverLegacyDatabaseMigrations(context.Background()); err != nil {
 		return nil, err
 	}
 	if err := h.ReconcileSiteCustomizationDefaults(); err != nil {
@@ -295,6 +304,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	pluginManager, pluginErr := plugins.NewManager(db, credentialCipher, pluginOptions, version.Version)
 	if pluginErr != nil {
 		logx.Errorf("plugin runtime unavailable; core service remains online: %v", pluginErr)
+	} else {
+		pluginManager.SetIdentityTransactions(services.Identity.PluginTransactions())
 	}
 	h.SetPluginManager(pluginManager)
 	pluginRoute := func(method, path string, fn http.HandlerFunc) rest.Route {
@@ -327,11 +338,23 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		srv.AddRoute(pluginRoute(http.MethodGet, assetPath, h.PluginAssetHandler))
 	}
 
+	h.StartAdminTaskWorker()
 	h.StartNodePublishWorker()
 	h.StartProxyPoolSubscriptionWorker()
 	h.StartFairUseEvaluationWorker()
 	h.StartCertificateRenewalWorker()
 	h.StartDNSPublicObservationWorker()
+	if err := services.RegisterDatabaseMigrationJobs(credentialCipher); err != nil {
+		if pluginManager != nil {
+			pluginManager.Close()
+		}
+		_ = h.CloseZeroEventSpool()
+		h.CloseBackgroundJobs()
+		_ = closeTrafficReads()
+		return nil, err
+	}
+	services.StartWork()
+	initialized = true
 	return func() error {
 		if pluginManager != nil {
 			pluginManager.Close()
@@ -339,6 +362,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		h.CloseNodePublishWorker()
 		h.CloseProxyPoolSubscriptionWorker()
 		h.CloseFairUseEvaluationWorker()
-		return errors.Join(h.CloseZeroEventSpool(), closeTrafficReads())
+		err := h.CloseZeroEventSpool()
+		h.CloseBackgroundJobs()
+		return errors.Join(err, closeTrafficReads())
 	}, nil
 }

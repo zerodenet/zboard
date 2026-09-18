@@ -212,13 +212,19 @@ func (m *Manager) Action(ctx context.Context, id, action, actor string, generati
 			_ = m.updateInstallation(id, map[string]any{"state": "failed"})
 		}
 	case "disable":
-		err = m.updateInstallation(id, map[string]any{"enabled": false, "state": "disabled", "generation": gorm.Expr("generation + 1")})
+		err = m.deactivatePluginTasks(ctx, id)
+		if err == nil {
+			err = m.updateInstallation(id, map[string]any{"enabled": false, "state": "disabled", "generation": gorm.Expr("generation + 1")})
+		}
 		if err == nil {
 			m.processes[id].close()
 			delete(m.processes, id)
 		}
 	case "uninstall":
-		err = m.updateInstallation(id, map[string]any{"enabled": false, "state": "uninstalled", "generation": gorm.Expr("generation + 1")})
+		err = m.deactivatePluginTasks(ctx, id)
+		if err == nil {
+			err = m.updateInstallation(id, map[string]any{"enabled": false, "state": "uninstalled", "generation": gorm.Expr("generation + 1")})
+		}
 		if err == nil {
 			m.processes[id].close()
 			delete(m.processes, id)

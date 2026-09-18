@@ -7,13 +7,13 @@ import (
 )
 
 func TestGeneratedConnectorCredentialIsPreparedBeforeZeroStartup(t *testing.T) {
-	payload, err := os.ReadFile("kernel_automation.go")
+	payload, err := os.ReadFile("../capabilities/network/kernel_reconciliation.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	source := string(payload)
 	prepared := strings.Index(source, "credentialActivated := false")
-	installed := strings.Index(source, "h.installNodeKernel(node, operation.ID")
+	installed := strings.Index(source, "materialization.Install(ctx, operation.ID)")
 	if prepared < 0 || installed < 0 || prepared > installed {
 		t.Fatalf("generated connector credential must be activated before Zero installation: prepared=%d installed=%d", prepared, installed)
 	}

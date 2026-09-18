@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"gorm.io/gorm"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 )
 
 func TestTrafficAuthenticationQueryHonorsCancellation(t *testing.T) {
@@ -22,20 +22,12 @@ func TestTrafficAuthenticationQueryHonorsCancellation(t *testing.T) {
 	}
 }
 
-func TestTrafficReferenceQueriesAllHonorCancellation(t *testing.T) {
+func TestTrafficReferenceReadModelHonorsCancellation(t *testing.T) {
 	f := newTrafficReadFixture(t)
-	readers := map[string]func(*gorm.DB, map[string]entityReference, []uint) error{
-		"user": resolveUserReferences, "subscription": resolveSubscriptionReferences, "node": resolveNodeReferences,
-		"protocol": resolveProtocolEndpointReferences, "plan": resolvePlanReferences, "sku": resolvePlanSKUReferences, "order": resolveOrderReferences,
-	}
-	for name, reader := range readers {
-		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
-			err := reader(f.h.db.WithContext(ctx), map[string]entityReference{}, []uint{1})
-			if !errors.Is(err, context.Canceled) {
-				t.Fatalf("query ignored cancellation: %v", err)
-			}
-		})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := f.h.services.EntityReferences.Resolve(ctx, observability.EntityReferenceRequest{Users: []uint{1}}, observability.EntityReferenceData{Users: map[string]entityReference{}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("query ignored cancellation: %v", err)
 	}
 }

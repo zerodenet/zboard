@@ -23,9 +23,9 @@
       <div v-if="selectedTask" class="stack task-detail">
         <div class="task-facts"><div><span>状态</span><StatusBadge :tone="statusTone(selectedTask)" :icon="statusIcon(selectedTask)">{{ statusName(selectedTask) }}</StatusBadge></div><div><span>处理进度</span><strong>{{ selectedTask.current }} / {{ selectedTask.total }}</strong></div><div><span>任务范围</span><strong>{{ scopeLabel(selectedTask.scope) }}</strong></div><div><span>尝试次数</span><strong>{{ selectedTask.attempts }} / {{ selectedTask.max_attempts }}</strong></div><div><span>开始时间</span><TimeBadge :value="selectedTask.started_at || selectedTask.created_at" /></div><div><span>结束时间</span><TimeBadge :value="selectedTask.finished_at" /></div></div>
         <PageAlert v-if="selectedTask.errors" :tone="Number(selectedTask.succeeded_count) > 0 ? 'warning' : 'danger'" :title="Number(selectedTask.succeeded_count) > 0 ? '任务存在部分失败' : '任务执行失败'"><OutputBlock :value="selectedTask.errors" label="任务错误汇总" tone="danger" /></PageAlert>
-        <section class="task-items-section"><header><div><h3>目标结果</h3><p>每行对应一个持久化 TaskItem，大任务不会一次加载全部结果。</p></div><UiSelect v-model="itemStatusFilter" aria-label="目标状态" :options="taskStatusOptions" @change="applyItemFilter" /></header>
+        <section class="task-items-section"><header><div><h3>目标结果</h3><p>查看各目标的执行结果；邮件“渠道已接收”表示服务器接受提交，不代表已到达收件箱。</p></div><UiSelect v-model="itemStatusFilter" aria-label="目标状态" :options="taskStatusOptions" @change="applyItemFilter" /></header>
           <PageAlert v-if="itemError" tone="danger" title="目标结果加载失败">{{ itemError }}</PageAlert>
-          <DataTable v-if="taskItems.length" caption="任务目标执行结果" :row-count="itemTotal" :min-width="760" table-class="task-item-table"><thead><tr><th class="table-primary-column">目标</th><th>状态</th><th class="numeric-column" data-column-priority="3">尝试次数</th><th data-column-priority="2">完成时间</th><th>错误</th></tr></thead><tbody><tr v-for="item in taskItems" :key="item.id"><td class="table-primary-column"><div class="cell-title"><strong>{{ targetTypeLabel(item.target_type) }} #{{ item.target_id }}</strong><span>TaskItem #{{ item.id }}</span></div></td><td><StatusBadge :tone="itemStatusTone(item.status)" :icon="itemStatusIcon(item.status)">{{ itemStatusName(item.status) }}</StatusBadge></td><td class="numeric-column" data-column-priority="3">{{ item.attempts }}</td><td data-column-priority="2"><TimeBadge :value="item.finished_at || item.started_at" /></td><td><OutputBlock v-if="item.error" :value="item.error" :label="`目标 ${item.target_id} 错误`" tone="danger" :max-length="220" /><span v-else>—</span></td></tr></tbody></DataTable>
+          <DataTable v-if="taskItems.length" caption="任务目标执行结果" :row-count="itemTotal" :min-width="760" table-class="task-item-table"><thead><tr><th class="table-primary-column">目标</th><th>状态</th><th class="numeric-column" data-column-priority="3">尝试次数</th><th data-column-priority="2">完成时间</th><th>错误</th></tr></thead><tbody><tr v-for="item in taskItems" :key="item.id"><td class="table-primary-column"><div class="cell-title"><strong>{{ targetTypeLabel(item.target_type) }} #{{ item.target_id }}</strong><span>TaskItem #{{ item.id }}</span></div></td><td><StatusBadge :tone="itemStatusTone(item.status)" :icon="itemStatusIcon(item.status)">{{ itemStatusName(item.status) }}</StatusBadge><UiButton v-if="selectedTask.type === 'email'" variant="secondary" @click="mailHistory = { taskID: selectedTask.id, itemID: item.id }">执行历史</UiButton><small v-if="item.delivery_state">{{ item.status === 1 ? '发送处理中' : item.delivery_state === 'accepted' ? '渠道已接收' : item.delivery_state === 'unknown' ? '接收结果待核验' : '渠道未接收' }}</small><UiButton v-if="item.delivery_state === 'unknown' && selectedTask.status !== 1" variant="secondary" @click="openDeliveryReview(item)">核验接收结果</UiButton></td><td class="numeric-column" data-column-priority="3">{{ item.attempts }}</td><td data-column-priority="2"><TimeBadge :value="item.finished_at || item.started_at" /></td><td><OutputBlock v-if="item.error" :value="item.error" :label="`目标 ${item.target_id} 错误`" tone="danger" :max-length="220" /><span v-else>—</span></td></tr></tbody></DataTable>
           <EmptyState v-else-if="!itemLoading" icon="tasks" title="没有匹配的目标结果" description="调整目标状态筛选，或等待任务开始执行。" />
           <TablePager :total="itemTotal" :offset="itemOffset" :limit="itemLimit" :loading="itemLoading" @change="changeItemPage" />
         </section>
@@ -46,14 +46,24 @@
       </form>
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="creating" @click="requestClose">取消</UiButton><UiButton form="create-task-form" type="submit" :loading="creating">创建任务</UiButton></template>
     </ModalDialog>
+    <ModalDialog :open="Boolean(mailHistory)" title="邮件执行历史" @close="mailHistory = null"><MailDeliveryHistory v-if="mailHistory" :task-i-d="mailHistory.taskID" :item-i-d="mailHistory.itemID" /></ModalDialog>
+    <ModalDialog :open="Boolean(deliveryReview)" title="核验邮件接收结果" description="请根据邮件服务器日志或渠道记录确认。核验只更新结果，不会发送邮件。" :busy="reviewingDelivery" @close="deliveryReview = null">
+      <div class="stack">
+        <PageAlert v-if="deliveryReviewError" tone="danger" title="核验未保存">{{ deliveryReviewError }}</PageAlert>
+        <FormField v-slot="{ controlAttrs }" label="核验结果" name="delivery-review-outcome" required><UiSelect v-model="deliveryReviewOutcome" v-bind="controlAttrs" :options="[{ label: '请选择核验结果', value: '' }, { label: '渠道已接收，不再发送', value: 'accepted' }, { label: '确认未接收，允许后续重试', value: 'not_accepted' }]" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="核验依据" name="delivery-review-reason" required hint="填写查询到的服务器记录或其他核验依据，5–2000 字节。"><UiTextarea v-model="deliveryReviewReason" v-bind="controlAttrs" rows="4" maxlength="2000" /></FormField>
+      </div>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" :disabled="reviewingDelivery" @click="requestClose">取消</UiButton><UiButton :loading="reviewingDelivery" :disabled="!deliveryReviewOutcome || !deliveryReviewReason.trim()" @click="saveDeliveryReview">保存核验</UiButton></template>
+    </ModalDialog>
   </section>
 </template>
 
 <script setup lang="ts">
+import MailDeliveryHistory from '../components/MailDeliveryHistory.vue'
 import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createAdminTask, fetchAdminTask, fetchAdminTaskItems, fetchAdminTasksPage, fetchAdminTaskSummary, fetchEmailTemplates, runAdminTask, type AdminTask, type AdminTaskItem, type AdminTaskSummary, type EmailTemplate } from '../api/client'
+import { createAdminTask, fetchAdminTask, fetchAdminTaskItems, fetchAdminTasksPage, fetchAdminTaskSummary, fetchEmailTemplates, runAdminTask, reviewAdminMailDelivery, type AdminTask, type AdminTaskItem, type AdminTaskSummary, type EmailTemplate } from '../api/client'
 import DataTable from '../components/DataTable.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
@@ -81,6 +91,28 @@ import { trackAdminTask } from '../utils/taskTracker'
 import { collectFieldErrors, isIntegerInRange, isOneOf, isUtf8LengthInRange } from '../utils/validation'
 
 const selectedTask = ref<AdminTask | null>(null)
+const mailHistory = ref<{ taskID: number; itemID: number } | null>(null)
+const deliveryReview = ref<{ taskID: number; item: AdminTaskItem } | null>(null)
+const deliveryReviewOutcome = ref<'' | 'accepted' | 'not_accepted'>('')
+const deliveryReviewReason = ref(''), deliveryReviewError = ref(''), reviewingDelivery = ref(false)
+function openDeliveryReview(item: AdminTaskItem) {
+ if (!selectedTask.value) return
+ deliveryReview.value = { taskID: selectedTask.value.id, item: { ...item } }
+ deliveryReviewOutcome.value = ''; deliveryReviewReason.value = ''; deliveryReviewError.value = ''
+}
+async function saveDeliveryReview() {
+ const target = deliveryReview.value, outcome = deliveryReviewOutcome.value
+ if (!target || !outcome || reviewingDelivery.value) return
+ if (!isUtf8LengthInRange(deliveryReviewReason.value.trim(), 5, 2000)) { deliveryReviewError.value = '核验依据需包含 5–2000 个 UTF-8 字节。'; return }
+ reviewingDelivery.value = true; deliveryReviewError.value = ''
+ try {
+  await reviewAdminMailDelivery(target.taskID, target.item.id, { expected_attempt: target.item.attempts, acceptance: outcome, reason: deliveryReviewReason.value.trim() })
+  deliveryReview.value = null; message.value = '邮件接收结果已核验。'
+  await refreshAll(); if (selectedTask.value?.id === target.taskID) await refreshSelectedTask(target.taskID)
+ } catch (e: any) { deliveryReviewError.value = e?.response?.data?.message || '核验保存失败，请刷新后重试。' }
+ finally { reviewingDelivery.value = false }
+}
+
 const creating = ref(false)
 const runningID = ref(0)
 const summary = ref<AdminTaskSummary | null>(null)

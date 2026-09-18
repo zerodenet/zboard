@@ -16,6 +16,9 @@ func (h *handlers) SetPluginManager(m *plugins.Manager) {
 	h.identityProviders = nil
 	if m != nil {
 		h.identityProviders = m
+		m.SetTaskPauseCheck(h.services.WorkPaused)
+		h.backgroundJobs()
+		m.SetTaskRuntime(h.services.Jobs)
 	}
 }
 func pluginError(w http.ResponseWriter, err error) {

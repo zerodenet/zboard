@@ -116,3 +116,37 @@ func TestProviderCreateReturnsInvalidVerificationState(t *testing.T) {
 		t.Fatalf("state: %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestProviderVerifyRejectsResultForReplacedCredential(t *testing.T) {
+	f, _, account := deletionFixture(t)
+	mockDeletionDNS(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := f.h.db.Model(&model.ProviderAccount{}).Where("id = ?", account.ID).Updates(map[string]any{"revision": account.Revision + 1, "credential_ciphertext": "newer-ciphertext", "status": "pending"}).Error; err != nil {
+			t.Error(err)
+		}
+		fmt.Fprint(w, `{"success":true,"result":{"status":"active"}}`)
+	})
+	w := httptest.NewRecorder()
+	f.h.ProviderAccountVerifyHandler(w, announcementRequest(http.MethodPost, fmt.Sprintf("/api/v1/admin/provider-accounts/%d/verify", account.ID), f.admin, ""))
+	if w.Code != http.StatusConflict {
+		t.Fatalf("stale verification status=%d body=%s", w.Code, w.Body.String())
+	}
+	var after model.ProviderAccount
+	if err := f.h.db.First(&after, account.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if after.Status != "pending" || after.CredentialCiphertext != "newer-ciphertext" {
+		t.Fatal("stale verification activated replacement")
+	}
+}
+
+func TestProviderVerifyRetainsLegacyResponseAndRedactsCredential(t *testing.T) {
+	f, _, account := deletionFixture(t)
+	mockDeletionDNS(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"success":true,"result":{"status":"active"}}`)
+	})
+	w := httptest.NewRecorder()
+	f.h.ProviderAccountVerifyHandler(w, announcementRequest(http.MethodPost, fmt.Sprintf("/api/v1/admin/provider-accounts/%d/verify", account.ID), f.admin, ""))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"capabilities":"[]"`) || strings.Contains(w.Body.String(), account.CredentialCiphertext) {
+		t.Fatalf("legacy response changed: %d %s", w.Code, w.Body.String())
+	}
+}

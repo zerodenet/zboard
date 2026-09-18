@@ -1,12 +1,7 @@
 package handler
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,31 +16,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"golang.org/x/crypto/ssh"
+	zeroadapter "github.com/zerodenet/zboard/backend/internal/adapters/zero"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
-	"github.com/zerodenet/zboard/backend/internal/nodecleanup"
 )
 
 const (
-	zeroReleaseAPI            = "https://api.github.com/repos/zerodenet/zero/releases/latest"
-	zeroReleasesAPI           = "https://api.github.com/repos/zerodenet/zero/releases?per_page=30"
-	zeroReleaseByTagAPI       = "https://api.github.com/repos/zerodenet/zero/releases/tags/"
-	zeroLinuxGNUAsset         = "zero-linux-x86_64.tar.gz"
-	zeroLinuxMuslAsset        = "zero-linux-x86_64-musl.tar.gz"
-	zeroGenericConnectorSince = "0.0.15-rc.2"
-	zeroBinaryMaxBytes        = 64 << 20
-	zeroArtifactMaxBytes      = 128 << 20
-	zeroControlSocket         = "/run/zerodenet/control.sock"
-	zeroConnectorEventTimeout = 10 * time.Second
+	zeroReleaseAPI       = "https://api.github.com/repos/zerodenet/zero/releases/latest"
+	zeroReleasesAPI      = "https://api.github.com/repos/zerodenet/zero/releases?per_page=30"
+	zeroReleaseByTagAPI  = "https://api.github.com/repos/zerodenet/zero/releases/tags/"
+	zeroLinuxGNUAsset    = "zero-linux-x86_64.tar.gz"
+	zeroLinuxMuslAsset   = "zero-linux-x86_64-musl.tar.gz"
+	zeroArtifactMaxBytes = 128 << 20
+	zeroControlSocket    = "/run/zerodenet/control.sock"
 )
 
 var (
-	errKernelOperationRunning    = errors.New("another kernel operation is already running for this node")
-	errKernelPlatformUnsupported = errors.New("the official Zero artifact is incompatible with this platform")
+	errKernelOperationRunning    = network.ErrKernelOperationRunning
+	errKernelPlatformUnsupported = network.ErrKernelPlatformUnsupported
 	stableZeroTagPattern         = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 	publishedZeroTagPattern      = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$`)
 	managedZeroArtifactPattern   = regexp.MustCompile(`^zero-v[0-9]+\.[0-9]+\.[0-9]+-linux-x86_64-musl\.tar\.gz$`)
@@ -102,11 +92,185 @@ type kernelProbe struct {
 	ControlStatus   string
 }
 
+type preparedHandlerKernelReconciliation struct {
+	h    *handlers
+	node model.Node
+}
+
+func (h *handlers) PrepareKernelReconciliation(ctx context.Context, nodeID uint) (network.PreparedKernelReconciliation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	node, err := h.loadNode(nodeID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.validateNodeSSH(node); err != nil {
+		return nil, err
+	}
+	return preparedHandlerKernelReconciliation{h: h, node: node}, nil
+}
+
+func (p preparedHandlerKernelReconciliation) Probe(ctx context.Context) (network.KernelProbe, error) {
+	probe, err := p.h.probeNodeKernelContext(ctx, p.node)
+	if err != nil {
+		return network.KernelProbe{}, err
+	}
+	return kernelProbeCapability(probe), nil
+}
+
+func (p preparedHandlerKernelReconciliation) ResolveRelease(ctx context.Context, probe network.KernelProbe, version string) (network.PreparedKernelRelease, error) {
+	release, err := p.h.resolveZeroRelease(ctx, kernelProbeFromCapability(probe), version)
+	if err != nil {
+		return nil, err
+	}
+	return preparedHandlerKernelRelease{h: p.h, node: p.node, release: release}, nil
+}
+
+func kernelProbeCapability(probe kernelProbe) network.KernelProbe {
+	return network.KernelProbe{
+		OperatingSystem: probe.OperatingSystem,
+		Architecture:    probe.Architecture,
+		Libc:            probe.Libc,
+		Systemd:         probe.Systemd,
+		Installed:       probe.Installed,
+		Version:         probe.Version,
+		BinarySHA256:    probe.BinarySHA256,
+		ConfigSHA256:    probe.ConfigSHA256,
+		ServiceStatus:   probe.ServiceStatus,
+		ControlStatus:   probe.ControlStatus,
+	}
+}
+
+func kernelProbeFromCapability(probe network.KernelProbe) kernelProbe {
+	return kernelProbe{
+		OperatingSystem: probe.OperatingSystem,
+		Architecture:    probe.Architecture,
+		Libc:            probe.Libc,
+		Systemd:         probe.Systemd,
+		Installed:       probe.Installed,
+		Version:         probe.Version,
+		BinarySHA256:    probe.BinarySHA256,
+		ConfigSHA256:    probe.ConfigSHA256,
+		ServiceStatus:   probe.ServiceStatus,
+		ControlStatus:   probe.ControlStatus,
+	}
+}
+
+func kernelReleaseCapability(release zeroRelease) network.KernelRelease {
+	return network.KernelRelease{
+		Version:        release.Version,
+		ArtifactURL:    release.ArtifactURL,
+		ArtifactSHA256: release.ArtifactSHA256,
+		ArtifactSize:   release.ArtifactSize,
+	}
+}
+
 type pendingNodeCredential struct {
 	Raw       string
 	Encrypted string
 	Prefix    string
 	IsNew     bool
+}
+
+type preparedHandlerKernelRelease struct {
+	h       *handlers
+	node    model.Node
+	release zeroRelease
+}
+
+func (p preparedHandlerKernelRelease) Descriptor() network.KernelRelease {
+	return kernelReleaseCapability(p.release)
+}
+
+func (p preparedHandlerKernelRelease) PrepareTrafficCredential(ctx context.Context) (*network.KernelEncryptedCredential, error) {
+	return p.h.prepareNodeTrafficReportCredential(ctx, p.node)
+}
+
+func (p preparedHandlerKernelRelease) PrepareActivation(ctx context.Context) (network.PreparedKernelActivation, error) {
+	credential, err := p.h.nodeConnectorCredential(p.node)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.h.services.NodeCredentialReconciliation(p.h.credentialCipher, true).ReconcileNode(ctx, p.node.ID); err != nil {
+		return nil, fmt.Errorf("reconcile node subscription credentials: %w", err)
+	}
+	runtimeConfig, configSHA, err := p.h.compileNodeRuntimeConfigContext(ctx, p.node, credential.Raw, p.release.Version)
+	if err != nil {
+		return nil, err
+	}
+	return &preparedHandlerKernelActivation{
+		h: p.h, node: p.node, release: p.release, runtimeConfig: runtimeConfig,
+		configSHA: configSHA, credential: credential,
+	}, nil
+}
+
+type preparedHandlerKernelActivation struct {
+	h             *handlers
+	node          model.Node
+	release       zeroRelease
+	runtimeConfig []byte
+	configSHA     string
+	credential    pendingNodeCredential
+}
+
+func (p *preparedHandlerKernelActivation) ConfigSHA256() string { return p.configSHA }
+
+func (p *preparedHandlerKernelActivation) ConnectorCredential() (network.KernelEncryptedCredential, bool) {
+	if !p.credential.IsNew {
+		return network.KernelEncryptedCredential{}, false
+	}
+	return network.KernelEncryptedCredential{Ciphertext: p.credential.Encrypted, Prefix: p.credential.Prefix}, true
+}
+
+func (p *preparedHandlerKernelActivation) ConnectorSnapshot() network.KernelConnectorSnapshot {
+	return kernelConnectorSnapshot(p.node)
+}
+
+func (p *preparedHandlerKernelActivation) Materialize(ctx context.Context) (network.PreparedKernelMaterialization, error) {
+	binary, binarySHA, err := downloadZeroBinary(ctx, p.release)
+	if err != nil {
+		return nil, err
+	}
+	return &preparedHandlerKernelMaterialization{
+		h: p.h, node: p.node, binary: binary, binarySHA: binarySHA,
+		runtimeConfig: p.runtimeConfig, connectorKey: p.credential.Raw,
+	}, nil
+}
+
+func (p *preparedHandlerKernelActivation) Verify(ctx context.Context, expectedBinarySHA string) (network.KernelProbe, error) {
+	probe, err := p.h.verifyNodeKernelStable(ctx, p.node, expectedBinarySHA)
+	if err != nil {
+		return network.KernelProbe{}, err
+	}
+	return kernelProbeCapability(probe), nil
+}
+
+func (p *preparedHandlerKernelActivation) WaitConnector(ctx context.Context, activationStartedAt time.Time) (time.Time, error) {
+	return p.h.services.ConnectorActivityObserver().Wait(ctx, p.node.ID, activationStartedAt)
+}
+
+func (p *preparedHandlerKernelActivation) InvalidateConnectorCredential() {
+	p.h.invalidateZeroEventCredential(p.node.ID)
+}
+
+type preparedHandlerKernelMaterialization struct {
+	h             *handlers
+	node          model.Node
+	binary        []byte
+	binarySHA     string
+	runtimeConfig []byte
+	connectorKey  string
+}
+
+func (p *preparedHandlerKernelMaterialization) BinarySHA256() string { return p.binarySHA }
+
+func (p *preparedHandlerKernelMaterialization) Install(ctx context.Context, operationID uint) error {
+	return p.h.installNodeKernel(ctx, p.node, operationID, p.binary, p.binarySHA, p.runtimeConfig, p.connectorKey)
+}
+
+func (p *preparedHandlerKernelMaterialization) Rollback(ctx context.Context, operationID uint) error {
+	return p.h.rollbackNodeKernel(ctx, p.node, operationID)
 }
 
 func (h *handlers) LatestKernelReleaseHandler(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +326,8 @@ func (h *handlers) KernelReleasesHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *handlers) NodeKernelStateHandler(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.requireAdmin(w, r); err != nil {
+	claims, err := h.requireAdmin(w, r)
+	if err != nil {
 		return
 	}
 	nodeID, err := parsePathID(r.URL.Path, "/api/v1/nodes/")
@@ -170,25 +335,20 @@ func (h *handlers) NodeKernelStateHandler(w http.ResponseWriter, r *http.Request
 		BadRequest(w, err.Error())
 		return
 	}
-	if _, err := h.loadNode(nodeID); err != nil {
+	result, err := h.services.KernelHistory().Get(r.Context(), network.KernelDetectionRequest{NodeID: nodeID, ActorID: claims.UserID})
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			NotFound(w)
+			return
+		}
+		if errors.Is(err, network.ErrKernelPermission) {
+			Forbidden(w, err.Error())
 			return
 		}
 		ServerError(w, err)
 		return
 	}
-	state, err := h.ensureKernelState(nodeID)
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
-	operations := make([]model.NodeOperation, 0)
-	if err := h.db.Where("node_id = ?", nodeID).Order("id desc").Limit(20).Find(&operations).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	OK(w, map[string]interface{}{"state": state, "operations": operations})
+	OK(w, result)
 }
 
 func (h *handlers) NodeKernelDetectHandler(w http.ResponseWriter, r *http.Request) {
@@ -201,248 +361,21 @@ func (h *handlers) NodeKernelDetectHandler(w http.ResponseWriter, r *http.Reques
 		BadRequest(w, err.Error())
 		return
 	}
-	node, err := h.loadNode(nodeID)
+	result, err := h.services.KernelDetection(h, h.hasConfiguredNativeZeroArtifact()).Detect(r.Context(), network.KernelDetectionRequest{NodeID: nodeID, ActorID: claims.UserID})
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			NotFound(w)
-			return
+		case errors.Is(err, network.ErrKernelPermission):
+			Forbidden(w, err.Error())
+		case errors.Is(err, network.ErrKernelDetectionCommit):
+			ServerError(w, err)
+		default:
+			BadRequest(w, err.Error())
 		}
-		ServerError(w, err)
-		return
-	}
-	if err := h.validateNodeSSH(node); err != nil {
-		BadRequest(w, err.Error())
-		return
-	}
-	operation, err := h.beginKernelOperation(node.ID, claims, "detect")
-	if err != nil {
-		BadRequest(w, err.Error())
-		return
-	}
-	probe, probeErr := h.probeNodeKernel(node)
-	if probeErr != nil {
-		_ = h.failKernelOperation(operation.ID, node.ID, "detecting", probeErr)
-		BadRequest(w, probeErr.Error())
-		return
-	}
-	state, err := h.completeKernelDetection(operation, probe)
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
-	OK(w, map[string]interface{}{"state": state, "operation": operation})
-}
-
-func (h *handlers) NodeKernelReconcileHandler(w http.ResponseWriter, r *http.Request) {
-	claims, err := h.requireAdmin(w, r)
-	if err != nil {
-		return
-	}
-	nodeID, err := parsePathID(r.URL.Path, "/api/v1/nodes/")
-	if err != nil {
-		BadRequest(w, err.Error())
-		return
-	}
-	node, err := h.loadNode(nodeID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			NotFound(w)
-			return
-		}
-		ServerError(w, err)
-		return
-	}
-	if err := h.validateNodeSSH(node); err != nil {
-		BadRequest(w, err.Error())
-		return
-	}
-	request, err := decodeKernelReconcileRequest(r)
-	if err != nil {
-		BadRequestError(w, err)
-		return
-	}
-	operation, err := h.beginKernelOperation(node.ID, claims, "reconcile")
-	if err != nil {
-		BadRequest(w, err.Error())
-		return
-	}
-
-	result, reconcileErr := h.reconcileNodeKernel(r.Context(), node, &operation, request)
-	if reconcileErr != nil {
-		_ = h.failKernelOperation(operation.ID, node.ID, operation.Phase, reconcileErr)
-		BadRequest(w, reconcileErr.Error())
 		return
 	}
 	OK(w, result)
-}
-
-func (h *handlers) reconcileNodeKernel(ctx context.Context, node model.Node, operation *model.NodeOperation, request kernelReconcileRequest) (map[string]interface{}, error) {
-	if err := h.setKernelOperationPhase(operation, "detecting"); err != nil {
-		return nil, err
-	}
-	probe, err := h.probeNodeKernel(node)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.updateKernelState(node.ID, map[string]interface{}{
-		"platform_os": probe.OperatingSystem, "architecture": probe.Architecture, "libc": probe.Libc,
-		"installed_version": probe.Version, "installed_sha256": probe.BinarySHA256,
-		"applied_config_sha256": probe.ConfigSHA256, "service_status": probe.ServiceStatus,
-		"control_status": probe.ControlStatus, "last_detected_at": time.Now().UTC(),
-	}); err != nil {
-		return nil, err
-	}
-	if probe.Architecture != "x86_64" || !probe.Systemd {
-		return nil, fmt.Errorf("%w: automatic installation requires Linux x86_64 with systemd (os=%s arch=%s systemd=%t)", errKernelPlatformUnsupported, probe.OperatingSystem, probe.Architecture, probe.Systemd)
-	}
-	if err := h.setKernelOperationPhase(operation, "resolving_release"); err != nil {
-		return nil, err
-	}
-	release, err := h.resolveZeroRelease(ctx, probe, request.Version)
-	if err != nil {
-		return nil, fmt.Errorf("resolve Zero release: %w", err)
-	}
-	operation.DesiredVersion = release.Version
-	operation.DesiredSHA256 = release.ArtifactSHA256
-	operation.ArtifactURL = release.ArtifactURL
-	if err := h.db.Model(operation).Updates(map[string]interface{}{
-		"desired_version": release.Version,
-		"desired_sha256":  release.ArtifactSHA256,
-		"artifact_url":    release.ArtifactURL,
-	}).Error; err != nil {
-		return nil, err
-	}
-
-	if err := h.setKernelOperationPhase(operation, "preparing_connector_credential"); err != nil {
-		return nil, err
-	}
-	if err := h.ensureNodeTrafficReportCredential(node); err != nil {
-		return nil, err
-	}
-	credential, err := h.nodeConnectorCredential(node)
-	if err != nil {
-		return nil, err
-	}
-	runtimeConfig, configSHA, err := h.compileNodeRuntimeConfig(node, credential.Raw, release.Version)
-	if err != nil {
-		return nil, err
-	}
-
-	if compareZeroVersions(probe.Version, release.Version) > 0 && !request.AllowDowngrade {
-		_ = h.updateKernelState(node.ID, map[string]interface{}{
-			"status":                h.kernelStatus(probe),
-			"phase":                 "idle",
-			"recommended_action":    "manual_review",
-			"desired_version":       release.Version,
-			"desired_config_sha256": configSHA,
-		})
-		return nil, fmt.Errorf("installed Zero %s is newer than selected release %s; set allow_downgrade only after explicit operator confirmation", probe.Version, release.Version)
-	}
-
-	if err := h.setKernelOperationPhase(operation, "downloading"); err != nil {
-		return nil, err
-	}
-	binary, binarySHA, err := downloadZeroBinary(ctx, release)
-	if err != nil {
-		return nil, err
-	}
-	action := classifyKernelAction(probe, release.Version, binarySHA, configSHA)
-	if action == "manual_review" && request.AllowDowngrade {
-		action = "downgrade"
-	}
-	operation.OperationType = action
-	if err := h.db.Model(operation).Update("operation_type", action).Error; err != nil {
-		return nil, err
-	}
-	if action == "none" {
-		state, err := h.finishKernelOperation(operation, probe, release, binarySHA, configSHA, "Zero is already at the desired binary and configuration")
-		if err != nil {
-			return nil, err
-		}
-		return map[string]interface{}{"state": state, "operation": operation, "changed": false}, nil
-	}
-
-	if err := h.setKernelOperationPhase(operation, "staging"); err != nil {
-		return nil, err
-	}
-	credentialActivated := false
-	if credential.IsNew {
-		if err := h.db.Model(&model.Node{}).Where("id = ?", node.ID).Updates(map[string]interface{}{
-			"node_credential":            credential.Encrypted,
-			"node_credential_prefix":     credential.Prefix,
-			"node_credential_revoked_at": nil,
-		}).Error; err != nil {
-			return nil, fmt.Errorf("prepare generated connector credential before Zero startup: %w", err)
-		}
-		h.invalidateZeroEventCredential(node.ID)
-		credentialActivated = true
-	}
-	restoreCredential := func() error {
-		if !credentialActivated {
-			return nil
-		}
-		return h.restoreGeneratedNodeCredential(node, credential)
-	}
-	activationStartedAt := time.Now().UTC()
-	if err := h.installNodeKernel(node, operation.ID, binary, binarySHA, runtimeConfig, credential.Raw); err != nil {
-		if credentialErr := restoreCredential(); credentialErr != nil {
-			return nil, fmt.Errorf("%w; generated connector credential rollback failed: %v", err, credentialErr)
-		}
-		if credentialActivated {
-			return nil, fmt.Errorf("%w; the generated connector credential was rolled back because Zero activation did not complete", err)
-		}
-		return nil, err
-	}
-	rollbackAfterActivation := func(cause error) error {
-		rollbackErr := h.rollbackNodeKernel(node, operation.ID)
-		credentialErr := restoreCredential()
-		if rollbackErr != nil || credentialErr != nil {
-			return fmt.Errorf("%w; automatic rollback incomplete (kernel=%v credential=%v)", cause, rollbackErr, credentialErr)
-		}
-		if credentialActivated {
-			return fmt.Errorf("%w; the activated generation and generated connector credential were rolled back", cause)
-		}
-		return fmt.Errorf("%w; the activated generation was rolled back", cause)
-	}
-	if err := h.setKernelOperationPhase(operation, "verifying"); err != nil {
-		return nil, rollbackAfterActivation(err)
-	}
-	verified, err := h.verifyNodeKernelStable(ctx, node, binarySHA)
-	if err != nil {
-		return nil, rollbackAfterActivation(fmt.Errorf("post-install verification failed: %w", err))
-	}
-	if err := h.setKernelOperationPhase(operation, "waiting_connector_event"); err != nil {
-		return nil, rollbackAfterActivation(err)
-	}
-	connectorEventAt, connectorEventErr := h.waitForNodeConnectorEvent(ctx, node.ID, activationStartedAt)
-	summary := fmt.Sprintf("Zero %s %s and passed systemd and control-socket health checks", release.Version, action)
-	if connectorEventErr == nil {
-		summary += fmt.Sprintf("; Connector activity observed at %s", connectorEventAt.Format(time.RFC3339))
-	} else {
-		summary += fmt.Sprintf("; Connector activity is not yet observable (%s)", truncateKernelError(connectorEventErr.Error()))
-	}
-	state, err := h.finishKernelOperation(operation, verified, release, binarySHA, configSHA, summary)
-	if err != nil {
-		return nil, rollbackAfterActivation(fmt.Errorf("persist successful Zero operation: %w", err))
-	}
-	result := map[string]interface{}{"state": state, "operation": operation, "changed": true, "action": action, "connector_verified": connectorEventErr == nil}
-	if connectorEventErr != nil {
-		result["connector_warning"] = truncateKernelError(connectorEventErr.Error())
-	}
-	return result, nil
-}
-
-func enqueueMieruReadinessPublish(tx *gorm.DB, nodeID uint) error {
-	var endpoint model.ProtocolEndpoint
-	read := tx.Where("node_id = ? AND LOWER(protocol) = ? AND is_active = ? AND mieru_principal_ready = ?",
-		nodeID, "mieru", true, false).Order("id asc").Limit(1).Find(&endpoint)
-	if read.Error != nil {
-		return read.Error
-	}
-	if endpoint.ID == 0 {
-		return nil
-	}
-	return enqueueNodeConfigPublish(tx, nodeID, endpoint.ID, 0)
 }
 
 func decodeKernelReconcileRequest(r *http.Request) (kernelReconcileRequest, error) {
@@ -750,81 +683,9 @@ func resolveManagedZeroArtifact(artifactDir, name, version, tag string) (zeroRel
 }
 
 func downloadZeroBinary(parent context.Context, release zeroRelease) ([]byte, string, error) {
-	var archive []byte
-	var err error
-	if release.LocalPath != "" {
-		artifact, openErr := os.Open(release.LocalPath)
-		if openErr != nil {
-			return nil, "", fmt.Errorf("open managed Zero artifact: %w", openErr)
-		}
-		archive, err = io.ReadAll(io.LimitReader(artifact, zeroArtifactMaxBytes+1))
-		closeErr := artifact.Close()
-		if err != nil {
-			return nil, "", fmt.Errorf("read managed Zero artifact: %w", err)
-		}
-		if closeErr != nil {
-			return nil, "", fmt.Errorf("close managed Zero artifact: %w", closeErr)
-		}
-	} else {
-		ctx, cancel := context.WithTimeout(parent, 2*time.Minute)
-		defer cancel()
-		client := zeroHTTPClient()
-		request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, release.ArtifactURL, nil)
-		if requestErr != nil {
-			return nil, "", requestErr
-		}
-		request.Header.Set("User-Agent", "zboard-kernel-automation")
-		response, requestErr := client.Do(request)
-		if requestErr != nil {
-			return nil, "", fmt.Errorf("download Zero artifact: %w", requestErr)
-		}
-		defer response.Body.Close()
-		if response.StatusCode != http.StatusOK {
-			return nil, "", fmt.Errorf("download Zero artifact returned %s", response.Status)
-		}
-		archive, err = io.ReadAll(io.LimitReader(response.Body, zeroArtifactMaxBytes+1))
-		if err != nil {
-			return nil, "", err
-		}
-	}
-	if len(archive) > zeroArtifactMaxBytes {
-		return nil, "", errors.New("Zero artifact exceeds the size limit")
-	}
-	if release.ArtifactSize <= 0 || int64(len(archive)) != release.ArtifactSize {
-		return nil, "", errors.New("Zero artifact size does not match release metadata")
-	}
-	archiveDigest := sha256.Sum256(archive)
-	if hex.EncodeToString(archiveDigest[:]) != release.ArtifactSHA256 {
-		return nil, "", errors.New("Zero artifact SHA-256 does not match the signed release metadata")
-	}
-	gz, err := gzip.NewReader(bytes.NewReader(archive))
-	if err != nil {
-		return nil, "", fmt.Errorf("open Zero artifact: %w", err)
-	}
-	defer gz.Close()
-	tarReader := tar.NewReader(gz)
-	for {
-		header, err := tarReader.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, "", fmt.Errorf("read Zero artifact: %w", err)
-		}
-		if header.Name != "zero" || header.Typeflag != tar.TypeReg {
-			continue
-		}
-		if header.Size <= 0 || header.Size > zeroBinaryMaxBytes {
-			return nil, "", errors.New("Zero binary in the release has an invalid size")
-		}
-		binary, err := io.ReadAll(io.LimitReader(tarReader, zeroBinaryMaxBytes+1))
-		if err != nil {
-			return nil, "", err
-		}
-		digest := sha256.Sum256(binary)
-		return binary, hex.EncodeToString(digest[:]), nil
-	}
-	return nil, "", errors.New("Zero release archive does not contain the zero binary")
+	return (zeroadapter.ArtifactLoader{Client: zeroHTTPClient()}).LoadBinary(parent, zeroadapter.ArtifactRelease{
+		URL: release.ArtifactURL, SHA256: release.ArtifactSHA256, Size: release.ArtifactSize, LocalPath: release.LocalPath,
+	})
 }
 
 var managedZeroSubscriptionValidator = validateSubscriptionWithManagedZero
@@ -860,9 +721,9 @@ func validateSubscriptionWithManagedZero(ctx context.Context, artifactDir, versi
 	}
 	validateCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	if requiresDirectInboundUDP(config) {
+	if zeroadapter.RequiresDirectInboundUDP(config) {
 		info, infoErr := exec.CommandContext(validateCtx, binaryPath, "build-info").CombinedOutput()
-		if infoErr != nil || !zeroBuildSupportsDirectUDP(string(info)) {
+		if infoErr != nil || !zeroadapter.SupportsDirectInboundUDP(string(info)) {
 			return fmt.Errorf("Zero validator does not declare direct inbound UDP support; upgrade the validator or disable inbound UDP")
 		}
 	}
@@ -893,15 +754,7 @@ func zeroHTTPClient() *http.Client {
 }
 
 func validateZeroReleaseURL(value *url.URL) error {
-	if value == nil || value.Scheme != "https" {
-		return errors.New("Zero release URL must use HTTPS")
-	}
-	switch strings.ToLower(value.Hostname()) {
-	case "api.github.com", "github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com":
-		return nil
-	default:
-		return fmt.Errorf("Zero release host %q is not allowed", value.Hostname())
-	}
+	return zeroadapter.ValidateReleaseURL(value)
 }
 
 func fetchSmallText(ctx context.Context, client *http.Client, rawURL string, limit int64) (string, error) {
@@ -936,157 +789,27 @@ func fetchSmallText(ctx context.Context, client *http.Client, rawURL string, lim
 }
 
 func (h *handlers) compileNodeRuntimeConfig(node model.Node, apiKey, zeroVersion string) ([]byte, string, error) {
-	return h.compileNodeRuntimeConfigWithOptions(node, apiKey, zeroVersion, false)
+	return h.compileNodeRuntimeConfigContext(context.Background(), node, apiKey, zeroVersion)
 }
 
 func (h *handlers) compileNodeRuntimeConfigWithOptions(node model.Node, apiKey, zeroVersion string, suppressMieruFallback bool) ([]byte, string, error) {
-	var installation model.Installation
-	if err := h.db.First(&installation, 1).Error; err != nil {
-		return nil, "", fmt.Errorf("load installation URL: %w", err)
-	}
-	panelURL := strings.TrimRight(strings.TrimSpace(installation.SiteURL), "/")
-	parsedURL, err := url.Parse(panelURL)
-	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
-		return nil, "", errors.New("site_url must be an absolute HTTP(S) URL reachable by the VPS before installing Zero")
-	}
-	if apiKey == "" {
-		return nil, "", errors.New("Zero connector credential is unavailable")
-	}
+	return h.compileNodeRuntimeConfigWithOptionsContext(context.Background(), node, apiKey, zeroVersion, suppressMieruFallback)
+}
+
+func (h *handlers) compileNodeRuntimeConfigContext(ctx context.Context, node model.Node, apiKey, zeroVersion string) ([]byte, string, error) {
+	return h.compileNodeRuntimeConfigWithOptionsContext(ctx, node, apiKey, zeroVersion, false)
+}
+
+func (h *handlers) compileNodeRuntimeConfigWithOptionsContext(ctx context.Context, node model.Node, apiKey, zeroVersion string, suppressMieruFallback bool) ([]byte, string, error) {
 	now := time.Now().UTC()
-	// Protocol contracts are validated by Zero, not inferred from release numbers.
-	nativeAccess, mieruAccess := true, true
-	var subscriptions []model.Subscription
-	if err := h.db.Model(&model.Subscription{}).
-		Select("DISTINCT subscriptions.*").
-		Joins(credentialMembershipJoin("node_group_endpoints.node_group_id = subscriptions.node_group_id")).
-		Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
-		Where("protocol_endpoints.node_id = ? AND subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", node.ID, subStatusActive, now).
-		Find(&subscriptions).Error; err != nil {
-		return nil, "", err
-	}
-	if err := h.ensureCredentialsForSubscriptionsWithMieru(subscriptions, mieruAccess); err != nil {
-		return nil, "", fmt.Errorf("reconcile subscription credentials: %w", err)
-	}
-	var endpoints []model.ProtocolEndpoint
-	if err := h.db.Where("node_id = ? AND is_active = ?", node.ID, true).Order(protocolEndpointRuntimeOrder).Find(&endpoints).Error; err != nil {
-		return nil, "", err
-	}
-	managedCertificates, err := h.loadManagedCertificatesForEndpoints(endpoints)
+	snapshot, err := h.services.RuntimeConfigurationSource().Load(ctx, node.ID, now, h.runtimeCredentialProtocols())
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("load node runtime configuration source: %w", err)
 	}
-	inbounds := make([]map[string]interface{}, 0, len(endpoints))
-	for _, endpoint := range endpoints {
-		if supported, reason := h.protocolKernelSupport(endpoint.Protocol); !supported {
-			return nil, "", fmt.Errorf("protocol endpoint %d cannot be published: %s", endpoint.ID, reason)
-		}
-		rawConfig, err := h.credentialCipher.Decrypt(endpoint.ServerConfig)
-		if err != nil {
-			return nil, "", fmt.Errorf("decrypt protocol endpoint %d config: %w", endpoint.ID, err)
-		}
-		var protocol map[string]interface{}
-		if err := json.Unmarshal([]byte(rawConfig), &protocol); err != nil {
-			return nil, "", fmt.Errorf("protocol endpoint %d config is invalid JSON: %w", endpoint.ID, err)
-		}
-		if kind, _ := protocol["type"].(string); !strings.EqualFold(strings.TrimSpace(kind), endpoint.Protocol) {
-			return nil, "", fmt.Errorf("protocol endpoint %d config type must be %s", endpoint.ID, endpoint.Protocol)
-		}
-		if certificate, exists := managedCertificates[endpoint.ID]; exists {
-			if err := applyManagedCertificateToProtocol(protocol, endpoint.Protocol, certificate, now); err != nil {
-				return nil, "", fmt.Errorf("protocol endpoint %d managed certificate: %w", endpoint.ID, err)
-			}
-		}
-		if endpoint.Port <= 0 || endpoint.Port > 65535 {
-			return nil, "", fmt.Errorf("protocol endpoint %d listen port is invalid", endpoint.ID)
-		}
-		endpointInbounds, err := h.runtimeInboundsForEndpoint(endpoint, protocol, now, suppressMieruFallback, nativeAccess, mieruAccess)
-		if err != nil {
-			return nil, "", fmt.Errorf("compile protocol endpoint %d: %w", endpoint.ID, err)
-		}
-		inbounds = append(inbounds, endpointInbounds...)
-	}
-
-	config := map[string]interface{}{
-		"inbounds": inbounds,
-		"mode":     map[string]interface{}{"type": "rule"},
-		"route":    map[string]interface{}{"rules": []interface{}{}, "final": map[string]interface{}{"type": "direct"}},
-	}
-	if err := h.appendNetworkEntryRuntime(config, node.ID); err != nil {
-		return nil, "", err
-	}
-	inbounds = config["inbounds"].([]map[string]interface{})
-	if len(inbounds) == 0 {
-		inbounds = append(inbounds, zeroBootstrapControlInbound())
-	}
-	config["inbounds"] = inbounds
-	if h.zeroNativeAccess || zeroUsesGenericConnector(zeroVersion) {
-		config["api"] = zeroConnectorAPIConfig(panelURL, node.ID, apiKey, parsedURL.Scheme == "http")
-	} else {
-		config["api"] = zeroLegacyEventAPIConfig(panelURL, node.ID, parsedURL.Scheme == "http")
-		config["push"] = map[string]interface{}{
-			"url": panelURL, "node_id": strconv.FormatUint(uint64(node.ID), 10),
-			"api_key_env": "ZERO_PANEL_API_KEY", "heartbeat_interval_seconds": 30,
-			"pull_commands": true, "command_poll_interval_seconds": 10,
-		}
-	}
-	payload, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return nil, "", err
-	}
-	payload = append(payload, '\n')
-	digest := sha256.Sum256(payload)
-	return payload, hex.EncodeToString(digest[:]), nil
-}
-
-func zeroUsesGenericConnector(version string) bool {
-	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
-	if !localZeroVersionPattern.MatchString(version) {
-		return false
-	}
-	return zeroUsesResetBaseline(version) || compareZeroVersions(version, zeroGenericConnectorSince) >= 0
-}
-
-// Core's old public release history began at v0.0.4. The reset baseline
-// occupies the previously unused lower range without granting capabilities
-// to old v0.0.4-v0.0.15 installations that still require the legacy gates.
-func zeroUsesResetBaseline(version string) bool {
-	return compareZeroVersions(version, "0.0.1") >= 0 &&
-		compareZeroVersions(version, "0.0.4-0") < 0
-}
-
-func zeroConnectorAPIConfig(panelURL string, nodeID uint, apiKey string, allowInsecure bool) map[string]interface{} {
-	eventSink := map[string]interface{}{
-		"tag":       "zboard",
-		"type":      "webhook",
-		"url":       strings.TrimRight(panelURL, "/") + "/api/zero/events",
-		"events":    []string{"engine.started", "engine.stopped", "engine.warning", "config.changed", "stats.sampled", "flow.started", "flow.updated", "flow.completed"},
-		"source_id": fmt.Sprintf("node-%d", nodeID),
-		"headers": map[string]string{
-			"authorization": "Bearer " + apiKey,
-		},
-	}
-	if allowInsecure {
-		eventSink["allow_insecure"] = true
-	}
-	return map[string]interface{}{
-		"event_sinks": []interface{}{eventSink},
-		"outbox_path": "/var/lib/zerodenet/event-outbox.jsonl",
-	}
-}
-
-func zeroLegacyEventAPIConfig(panelURL string, nodeID uint, allowInsecure bool) map[string]interface{} {
-	eventSink := map[string]interface{}{
-		"tag":         "zboard",
-		"type":        "webhook",
-		"url":         strings.TrimRight(panelURL, "/") + "/api/zero/events",
-		"events":      []string{"flow.updated", "flow.completed"},
-		"source_id":   fmt.Sprintf("node-%d", nodeID),
-		"api_key_env": "ZERO_PANEL_API_KEY",
-	}
-	if allowInsecure {
-		eventSink["allow_insecure"] = true
-	}
-	return map[string]interface{}{"event_sinks": []interface{}{eventSink}}
+	return (zeroadapter.RuntimeConfigurationRenderer{Cipher: h.credentialCipher}).Render(zeroadapter.RuntimeConfigurationRenderRequest{
+		NodeID: node.ID, APIKey: apiKey, ZeroVersion: zeroVersion, NativeConnector: h.zeroNativeAccess,
+		SuppressMieruFallback: suppressMieruFallback, Now: now, Snapshot: snapshot,
+	})
 }
 
 func (h *handlers) nodeConnectorCredential(node model.Node) (pendingNodeCredential, error) {
@@ -1108,276 +831,31 @@ func (h *handlers) nodeConnectorCredential(node model.Node) (pendingNodeCredenti
 	return pendingNodeCredential{Raw: raw, Encrypted: encrypted, Prefix: prefix, IsNew: true}, nil
 }
 
-func (h *handlers) installNodeKernel(node model.Node, operationID uint, binary []byte, binarySHA string, runtimeConfig []byte, apiKey string) error {
-	if !sha256Pattern.MatchString(binarySHA) || apiKey == "" {
-		return errors.New("invalid staged Zero binary or connector credential")
-	}
-	stage := "/tmp/zboard-zero-" + uuid.NewString()
-	conn, _, err := h.dialNodeSSH(node)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	timeout := time.AfterFunc(4*time.Minute, func() { _ = conn.Close() })
-	defer timeout.Stop()
-	if output, err := h.runNodeSSHSession(conn, node, "install -d -m 0700 "+shellQuote(stage), false); err != nil {
-		return fmt.Errorf("create Zero staging directory: %w: %s", err, output)
-	}
-	files := []struct {
-		path string
-		mode string
-		data []byte
-	}{
-		{stage + "/zero", "0700", binary},
-		{stage + "/runtime.json", "0600", runtimeConfig},
-		{stage + "/zero.env", "0600", []byte("ZERO_PANEL_API_KEY=" + apiKey + "\n")},
-		{stage + "/zero.service", "0644", []byte(zeroSystemdUnit)},
-		{stage + "/cleanup-zero-node.sh", "0700", nodecleanup.Script},
-	}
-	for _, file := range files {
-		if err := uploadSSHFile(conn, file.path, file.mode, file.data); err != nil {
-			return fmt.Errorf("stage %s: %w", file.path, err)
-		}
-	}
-	script := buildZeroInstallScript(stage, binarySHA, operationID)
-	output, err := h.runNodeSSHSession(conn, node, script, true)
-	if err != nil {
-		return fmt.Errorf("activate Zero (automatic rollback attempted): %w: %s", err, truncateKernelError(output))
-	}
-	return nil
+func (h *handlers) installNodeKernel(ctx context.Context, node model.Node, operationID uint, binary []byte, binarySHA string, runtimeConfig []byte, apiKey string) error {
+	installer := zeroadapter.KernelInstaller{Dialer: zeroKernelRemoteDialer{h: h, node: node}}
+	return installer.Install(ctx, zeroadapter.KernelInstallRequest{
+		OperationID: operationID, Binary: binary, BinarySHA256: binarySHA, RuntimeConfig: runtimeConfig, ConnectorKey: apiKey,
+	})
 }
 
-func (h *handlers) waitForNodeConnectorEvent(parent context.Context, nodeID uint, activatedAt time.Time) (time.Time, error) {
-	ctx, cancel := context.WithTimeout(parent, zeroConnectorEventTimeout)
-	defer cancel()
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		var activity struct {
-			ConnectorLastSeenAt *time.Time
-		}
-		if err := h.db.Model(&model.Node{}).Select("connector_last_seen_at").Where("id = ?", nodeID).Take(&activity).Error; err != nil {
-			return time.Time{}, err
-		}
-		if activity.ConnectorLastSeenAt != nil && !activity.ConnectorLastSeenAt.Before(activatedAt) {
-			return activity.ConnectorLastSeenAt.UTC(), nil
-		}
-		select {
-		case <-ctx.Done():
-			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return time.Time{}, fmt.Errorf("connector event verification canceled: %w", ctx.Err())
-			}
-			return time.Time{}, fmt.Errorf("no fresh connector event arrived within %s: %w", zeroConnectorEventTimeout, ctx.Err())
-		case <-ticker.C:
-		}
+func kernelConnectorSnapshot(node model.Node) network.KernelConnectorSnapshot {
+	return network.KernelConnectorSnapshot{
+		Credential:          network.KernelEncryptedCredential{Ciphertext: node.NodeCredential, Prefix: node.NodeCredentialPrefix},
+		RevokedAt:           node.NodeCredentialRevokedAt,
+		ConnectorLastSeenAt: node.ConnectorLastSeenAt,
+		LastSeenAt:          node.LastSeenAt,
+		IsOnline:            node.IsOnline,
+		Status:              node.Status,
+		Version:             node.Version,
+		UptimeSeconds:       node.UptimeSeconds,
+		ActiveFlows:         node.ActiveFlows,
+		BytesUp:             node.BytesUp,
+		BytesDown:           node.BytesDown,
 	}
 }
 
-func (h *handlers) restoreGeneratedNodeCredential(node model.Node, credential pendingNodeCredential) error {
-	if !credential.IsNew {
-		return nil
-	}
-	err := h.db.Model(&model.Node{}).Where("id = ?", node.ID).Updates(map[string]interface{}{
-		"node_credential":            node.NodeCredential,
-		"node_credential_prefix":     node.NodeCredentialPrefix,
-		"node_credential_revoked_at": node.NodeCredentialRevokedAt,
-		"connector_last_seen_at":     node.ConnectorLastSeenAt,
-		"last_seen_at":               node.LastSeenAt,
-		"is_online":                  node.IsOnline,
-		"status":                     node.Status,
-		"version":                    node.Version,
-		"uptime_seconds":             node.UptimeSeconds,
-		"active_flows":               node.ActiveFlows,
-		"bytes_up":                   node.BytesUp,
-		"bytes_down":                 node.BytesDown,
-	}).Error
-	if err == nil {
-		h.invalidateZeroEventCredential(node.ID)
-	}
-	return err
-}
-
-func (h *handlers) rollbackNodeKernel(node model.Node, operationID uint) error {
-	conn, _, err := h.dialNodeSSH(node)
-	if err != nil {
-		return fmt.Errorf("connect for Zero rollback: %w", err)
-	}
-	defer conn.Close()
-	timeout := time.AfterFunc(time.Minute, func() { _ = conn.Close() })
-	defer timeout.Stop()
-	output, err := h.runNodeSSHSession(conn, node, buildZeroRollbackScript(operationID), true)
-	if err != nil {
-		return fmt.Errorf("rollback Zero generation: %w: %s", err, truncateKernelError(output))
-	}
-	return nil
-}
-
-const zeroSystemdUnit = `[Unit]
-Description=Zero network kernel
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=root
-EnvironmentFile=/etc/zerodenet/zero.env
-RuntimeDirectory=zerodenet
-RuntimeDirectoryMode=0750
-ExecStart=/usr/local/bin/zero run --control-socket /run/zerodenet/control.sock /etc/zerodenet/current.json
-Restart=on-failure
-RestartSec=3s
-LimitNOFILE=1048576
-
-[Install]
-WantedBy=multi-user.target
-`
-
-func buildZeroInstallScript(stage, binarySHA string, operationID uint) string {
-	generation := fmt.Sprintf("/etc/zerodenet/generations/%d.json", operationID)
-	backup := fmt.Sprintf("/var/lib/zerodenet/backups/%d", operationID)
-	return fmt.Sprintf(`set -eu
-stage=%s
-generation=%s
-backup=%s
-expected_sha=%s
-test "$(id -u)" = "0"
-test "$(uname -s)" = "Linux"
-test "$(uname -m)" = "x86_64"
-command -v systemctl >/dev/null
-actual_sha="$(sha256sum "$stage/zero" | awk '{print $1}')"
-test "$actual_sha" = "$expected_sha"
-set -a
-. "$stage/zero.env"
-set +a
-"$stage/zero" build_info >/dev/null
-"$stage/zero" validate "$stage/runtime.json" >/dev/null
-install -d -m 0755 /usr/local/bin /etc/zerodenet/generations /var/lib/zerodenet/backups
-install -d -m 0700 "$backup"
-had_bin=0; had_env=0; had_service=0; old_active=0; old_enabled=0
-old_link="$(readlink /etc/zerodenet/current.json 2>/dev/null || true)"
-if [ -f /usr/local/bin/zero ]; then cp -a /usr/local/bin/zero "$backup/zero"; had_bin=1; fi
-if [ -f /etc/zerodenet/zero.env ]; then cp -a /etc/zerodenet/zero.env "$backup/zero.env"; had_env=1; fi
-if [ -f /etc/systemd/system/zero.service ]; then cp -a /etc/systemd/system/zero.service "$backup/zero.service"; had_service=1; fi
-if systemctl is-active --quiet zero >/dev/null 2>&1; then old_active=1; fi
-if systemctl is-enabled --quiet zero >/dev/null 2>&1; then old_enabled=1; fi
-printf '%%s\n' "$had_bin" > "$backup/had_bin"
-printf '%%s\n' "$had_env" > "$backup/had_env"
-printf '%%s\n' "$had_service" > "$backup/had_service"
-printf '%%s\n' "$old_active" > "$backup/old_active"
-printf '%%s\n' "$old_enabled" > "$backup/old_enabled"
-printf '%%s\n' "$old_link" > "$backup/old_link"
-rollback() {
-  if [ "$had_bin" = "1" ]; then
-    install -m 0755 "$backup/zero" /usr/local/bin/zero.rollback
-    mv -f /usr/local/bin/zero.rollback /usr/local/bin/zero
-  else
-    rm -f /usr/local/bin/zero
-  fi
-  if [ -n "$old_link" ]; then ln -sfn "$old_link" /etc/zerodenet/current.json; else rm -f /etc/zerodenet/current.json; fi
-  if [ "$had_env" = "1" ]; then cp -a "$backup/zero.env" /etc/zerodenet/zero.env; else rm -f /etc/zerodenet/zero.env; fi
-  if [ "$had_service" = "1" ]; then cp -a "$backup/zero.service" /etc/systemd/system/zero.service; else rm -f /etc/systemd/system/zero.service; fi
-  systemctl daemon-reload >/dev/null 2>&1 || true
-  if [ "$old_enabled" = "1" ]; then systemctl enable zero >/dev/null 2>&1 || true; else systemctl disable zero >/dev/null 2>&1 || true; fi
-  if [ "$old_active" = "1" ]; then systemctl restart zero >/dev/null 2>&1 || true; else systemctl stop zero >/dev/null 2>&1 || true; fi
-}
-trap 'rc=$?; if [ "$rc" != "0" ]; then rollback; fi; exit "$rc"' EXIT
-install -m 0755 "$stage/zero" /usr/local/bin/zero.next
-mv -f /usr/local/bin/zero.next /usr/local/bin/zero
-install -m 0600 "$stage/runtime.json" "$generation"
-install -m 0600 "$stage/zero.env" /etc/zerodenet/zero.env
-install -m 0644 "$stage/zero.service" /etc/systemd/system/zero.service
-ln -sfn "$generation" /etc/zerodenet/current.json.next
-mv -Tf /etc/zerodenet/current.json.next /etc/zerodenet/current.json
-systemctl daemon-reload
-systemctl enable zero >/dev/null
-systemctl restart zero
-install -d -m 0755 /usr/local/sbin
-install -m 0755 "$stage/cleanup-zero-node.sh" /usr/local/sbin/zboard-zero-cleanup
-trap - EXIT
-rm -rf "$stage"
-printf 'ZBOARD_KERNEL_ACTIVATED=1\n'
-`, shellQuote(stage), shellQuote(generation), shellQuote(backup), shellQuote(binarySHA))
-}
-
-func buildZeroRollbackScript(operationID uint) string {
-	generation := fmt.Sprintf("/etc/zerodenet/generations/%d.json", operationID)
-	backup := fmt.Sprintf("/var/lib/zerodenet/backups/%d", operationID)
-	return fmt.Sprintf(`set -eu
-backup=%s
-generation=%s
-test "$(id -u)" = "0"
-test -d "$backup"
-for key in had_bin had_env had_service old_active old_enabled old_link; do test -f "$backup/$key"; done
-had_bin="$(cat "$backup/had_bin")"
-had_env="$(cat "$backup/had_env")"
-had_service="$(cat "$backup/had_service")"
-old_active="$(cat "$backup/old_active")"
-old_enabled="$(cat "$backup/old_enabled")"
-old_link="$(cat "$backup/old_link")"
-case "$had_bin$had_env$had_service$old_active$old_enabled" in *[!01]*) exit 1;; esac
-if [ "$had_bin" = "1" ]; then
-  install -m 0755 "$backup/zero" /usr/local/bin/zero.rollback
-  mv -f /usr/local/bin/zero.rollback /usr/local/bin/zero
-else
-  rm -f /usr/local/bin/zero
-fi
-if [ -n "$old_link" ]; then ln -sfn "$old_link" /etc/zerodenet/current.json; else rm -f /etc/zerodenet/current.json; fi
-if [ "$had_env" = "1" ]; then cp -a "$backup/zero.env" /etc/zerodenet/zero.env; else rm -f /etc/zerodenet/zero.env; fi
-if [ "$had_service" = "1" ]; then cp -a "$backup/zero.service" /etc/systemd/system/zero.service; else rm -f /etc/systemd/system/zero.service; fi
-rm -f "$generation"
-systemctl daemon-reload
-if [ "$old_enabled" = "1" ]; then systemctl enable zero >/dev/null; else systemctl disable zero >/dev/null 2>&1 || true; fi
-if [ "$old_active" = "1" ]; then systemctl restart zero; else systemctl stop zero >/dev/null 2>&1 || true; fi
-printf 'ZBOARD_KERNEL_ROLLED_BACK=1\n'
-`, shellQuote(backup), shellQuote(generation))
-}
-
-func uploadSSHFile(conn *ssh.Client, path, mode string, payload []byte) error {
-	if conn == nil || len(payload) == 0 {
-		return errors.New("empty SSH upload")
-	}
-	session, err := conn.NewSession()
-	if err != nil {
-		return err
-	}
-	defer session.Close()
-	session.Stdin = bytes.NewReader(payload)
-	command := "umask 077; cat > " + shellQuote(path) + " && chmod " + mode + " " + shellQuote(path)
-	output, err := session.CombinedOutput(command)
-	if err != nil {
-		return fmt.Errorf("%w: %s", err, truncateKernelError(string(output)))
-	}
-	return nil
-}
-
-func (h *handlers) runNodeSSHSession(conn *ssh.Client, node model.Node, command string, privileged bool) (string, error) {
-	return h.runNodeSSHSessionWithInput(conn, node, command, privileged, "")
-}
-
-func (h *handlers) runNodeSSHSessionWithInput(conn *ssh.Client, node model.Node, command string, privileged bool, input string) (string, error) {
-	session, err := conn.NewSession()
-	if err != nil {
-		return "", err
-	}
-	defer session.Close()
-	command, stdin, requestPTY, err := h.prepareSSHCommand(node, command, privileged)
-	if err != nil {
-		return "", err
-	}
-	if requestPTY {
-		modes := ssh.TerminalModes{ssh.ECHO: 0, ssh.TTY_OP_ISPEED: 14400, ssh.TTY_OP_OSPEED: 14400}
-		if err := session.RequestPty("xterm", 24, 80, modes); err != nil {
-			return "", fmt.Errorf("request privilege terminal: %w", err)
-		}
-	}
-	if stdin != "" {
-		input = stdin + input
-	}
-	if input != "" {
-		session.Stdin = strings.NewReader(input)
-	}
-	output, err := session.CombinedOutput(command)
-	return strings.TrimSpace(string(output)), err
+func (h *handlers) rollbackNodeKernel(ctx context.Context, node model.Node, operationID uint) error {
+	return (zeroadapter.KernelInstaller{Dialer: zeroKernelRemoteDialer{h: h, node: node}}).Rollback(ctx, operationID)
 }
 
 func shellQuote(value string) string {
@@ -1419,6 +897,28 @@ if [ "$service_status" = "active" ] && "$zero_path" status --json --socket /run/
 	return probe, nil
 }
 
+func (h *handlers) ValidateKernelProbeTarget(ctx context.Context, nodeID uint) error {
+	node, err := h.loadNodeContext(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	node.SSHPrivilegeConfigured = node.SSHPrivilegePassword != ""
+	return h.validateNodeSSH(node)
+}
+
+func (h *handlers) ProbeKernel(ctx context.Context, nodeID uint) (network.KernelProbe, error) {
+	node, err := h.loadNodeContext(ctx, nodeID)
+	if err != nil {
+		return network.KernelProbe{}, err
+	}
+	node.SSHPrivilegeConfigured = node.SSHPrivilegePassword != ""
+	probe, err := h.probeNodeKernelContext(ctx, node)
+	if err != nil {
+		return network.KernelProbe{}, err
+	}
+	return kernelProbeCapability(probe), nil
+}
+
 func parseKernelProbe(output string) (kernelProbe, error) {
 	values := map[string]string{}
 	for _, line := range strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n") {
@@ -1448,102 +948,11 @@ func parseKernelProbe(output string) (kernelProbe, error) {
 }
 
 func classifyKernelAction(probe kernelProbe, desiredVersion, desiredBinarySHA, desiredConfigSHA string) string {
-	if !probe.Installed {
-		return "install"
-	}
-	switch compareZeroVersions(probe.Version, desiredVersion) {
-	case -1:
-		return "upgrade"
-	case 1:
-		return "manual_review"
-	}
-	if probe.BinarySHA256 != desiredBinarySHA {
-		return "repair"
-	}
-	if probe.ConfigSHA256 != desiredConfigSHA {
-		return "configure"
-	}
-	if probe.ServiceStatus != "active" || probe.ControlStatus != "healthy" {
-		return "repair"
-	}
-	return "none"
+	return network.ClassifyKernelAction(kernelProbeCapability(probe), desiredVersion, desiredBinarySHA, desiredConfigSHA)
 }
 
 func compareZeroVersions(left, right string) int {
-	type parsedVersion struct {
-		core       [3]int
-		prerelease []string
-	}
-	parse := func(raw string) (parsedVersion, bool) {
-		var result parsedVersion
-		versionParts := strings.SplitN(strings.TrimPrefix(strings.TrimSpace(raw), "v"), "-", 2)
-		parts := strings.Split(versionParts[0], ".")
-		if len(parts) != 3 {
-			return result, false
-		}
-		for index, part := range parts {
-			value, err := strconv.Atoi(part)
-			if err != nil || value < 0 {
-				return result, false
-			}
-			result.core[index] = value
-		}
-		if len(versionParts) == 2 {
-			result.prerelease = strings.Split(versionParts[1], ".")
-		}
-		return result, true
-	}
-	l, lok := parse(left)
-	r, rok := parse(right)
-	if !lok || !rok {
-		return 0
-	}
-	for index := range l.core {
-		if l.core[index] < r.core[index] {
-			return -1
-		}
-		if l.core[index] > r.core[index] {
-			return 1
-		}
-	}
-	if len(l.prerelease) == 0 && len(r.prerelease) == 0 {
-		return 0
-	}
-	if len(l.prerelease) == 0 {
-		return 1
-	}
-	if len(r.prerelease) == 0 {
-		return -1
-	}
-	for index := 0; index < len(l.prerelease) && index < len(r.prerelease); index++ {
-		if l.prerelease[index] == r.prerelease[index] {
-			continue
-		}
-		leftNumber, leftErr := strconv.Atoi(l.prerelease[index])
-		rightNumber, rightErr := strconv.Atoi(r.prerelease[index])
-		switch {
-		case leftErr == nil && rightErr == nil:
-			if leftNumber < rightNumber {
-				return -1
-			}
-			return 1
-		case leftErr == nil:
-			return -1
-		case rightErr == nil:
-			return 1
-		case l.prerelease[index] < r.prerelease[index]:
-			return -1
-		default:
-			return 1
-		}
-	}
-	if len(l.prerelease) < len(r.prerelease) {
-		return -1
-	}
-	if len(l.prerelease) > len(r.prerelease) {
-		return 1
-	}
-	return 0
+	return network.CompareKernelVersions(left, right)
 }
 
 func (h *handlers) kernelStatus(probe kernelProbe) string {
@@ -1578,150 +987,6 @@ func (h *handlers) hasConfiguredNativeZeroArtifact() bool {
 	}
 	_, err := resolveLocalNativeZeroRelease(h.zeroArtifactDir, h.zeroLocalVersion)
 	return err == nil
-}
-
-func (h *handlers) ensureKernelState(nodeID uint) (model.NodeKernelState, error) {
-	state := model.NodeKernelState{NodeID: nodeID, Status: "unknown", Phase: "idle", RecommendedAction: "detect"}
-	err := h.db.Where("node_id = ?", nodeID).FirstOrCreate(&state).Error
-	return state, err
-}
-
-func (h *handlers) beginKernelOperation(nodeID uint, claims authClaims, operationType string) (model.NodeOperation, error) {
-	var operation model.NodeOperation
-	err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := requireAvailableNode(tx, nodeID); err != nil {
-			return err
-		}
-		var state model.NodeKernelState
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID).First(&state).Error; err != nil {
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
-			state = model.NodeKernelState{NodeID: nodeID, Status: "unknown", Phase: "idle", RecommendedAction: "detect"}
-			if err := tx.Create(&state).Error; err != nil {
-				return err
-			}
-		}
-		if state.ActiveOperationID != nil {
-			var active model.NodeOperation
-			if err := tx.First(&active, *state.ActiveOperationID).Error; err == nil && active.Status == "running" {
-				return errKernelOperationRunning
-			}
-		}
-		now := time.Now().UTC()
-		operation = model.NodeOperation{
-			NodeID: nodeID, OperationType: operationType, Status: "running", Phase: "queued",
-			RequestedBy: claims.UserID, StartedAt: &now,
-		}
-		if err := tx.Create(&operation).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&state).Updates(map[string]interface{}{
-			"phase": "queued", "active_operation_id": operation.ID, "last_error": "",
-		}).Error; err != nil {
-			return err
-		}
-		return createAuditLog(tx, claims, "node.kernel."+operationType, fmt.Sprintf("node:%d", nodeID), fmt.Sprintf("operation=%d", operation.ID))
-	})
-	return operation, err
-}
-
-func (h *handlers) setKernelOperationPhase(operation *model.NodeOperation, phase string) error {
-	operation.Phase = phase
-	return h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(operation).Update("phase", phase).Error; err != nil {
-			return err
-		}
-		return tx.Model(&model.NodeKernelState{}).Where("node_id = ? AND active_operation_id = ?", operation.NodeID, operation.ID).Update("phase", phase).Error
-	})
-}
-
-func (h *handlers) completeKernelDetection(operation model.NodeOperation, probe kernelProbe) (model.NodeKernelState, error) {
-	now := time.Now().UTC()
-	summary := fmt.Sprintf("os=%s arch=%s libc=%s installed=%t version=%s service=%s control=%s", probe.OperatingSystem, probe.Architecture, probe.Libc, probe.Installed, probe.Version, probe.ServiceStatus, probe.ControlStatus)
-	updates := map[string]interface{}{
-		"status": h.kernelStatus(probe), "phase": "idle", "recommended_action": h.kernelRecommendedAction(probe),
-		"platform_os": probe.OperatingSystem, "architecture": probe.Architecture, "libc": probe.Libc,
-		"installed_version": probe.Version, "installed_sha256": probe.BinarySHA256,
-		"applied_config_sha256": probe.ConfigSHA256, "service_status": probe.ServiceStatus,
-		"control_status": probe.ControlStatus, "last_detected_at": now, "last_error": "", "active_operation_id": nil,
-	}
-	if h.kernelStatus(probe) == "healthy" {
-		updates["last_healthy_at"] = now
-	}
-	err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.NodeKernelState{}).Where("node_id = ?", operation.NodeID).Updates(updates).Error; err != nil {
-			return err
-		}
-		operation.Status, operation.Phase, operation.ResultSummary, operation.FinishedAt = "succeeded", "completed", summary, &now
-		return tx.Save(&operation).Error
-	})
-	if err != nil {
-		return model.NodeKernelState{}, err
-	}
-	return h.ensureKernelState(operation.NodeID)
-}
-
-func (h *handlers) finishKernelOperation(operation *model.NodeOperation, probe kernelProbe, release zeroRelease, binarySHA, configSHA, summary string) (model.NodeKernelState, error) {
-	now := time.Now().UTC()
-	updates := map[string]interface{}{
-		"status": h.kernelStatus(probe), "phase": "idle", "recommended_action": "none",
-		"platform_os": probe.OperatingSystem, "architecture": probe.Architecture, "libc": probe.Libc,
-		"desired_version": release.Version, "installed_version": probe.Version,
-		"desired_sha256": binarySHA, "installed_sha256": probe.BinarySHA256,
-		"desired_config_sha256": configSHA, "applied_config_sha256": probe.ConfigSHA256,
-		"service_status": probe.ServiceStatus, "control_status": probe.ControlStatus,
-		"last_detected_at": now, "last_error": "", "active_operation_id": nil,
-	}
-	if h.kernelStatus(probe) == "healthy" {
-		updates["last_healthy_at"] = now
-	}
-	err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.NodeKernelState{}).Where("node_id = ?", operation.NodeID).Updates(updates).Error; err != nil {
-			return err
-		}
-		if probe.Installed && strings.TrimSpace(probe.Version) != "" {
-			if err := tx.Model(&model.Node{}).Where("id = ?", operation.NodeID).Updates(map[string]interface{}{
-				"version":         probe.Version,
-				"ssh_verified_at": now,
-			}).Error; err != nil {
-				return err
-			}
-		}
-		if err := enqueueMieruReadinessPublish(tx, operation.NodeID); err != nil {
-			return err
-		}
-		operation.Status, operation.Phase, operation.ResultSummary, operation.FinishedAt = "succeeded", "completed", summary, &now
-		return tx.Save(operation).Error
-	})
-	if err != nil {
-		return model.NodeKernelState{}, err
-	}
-	h.publishScheduler().signal()
-	return h.ensureKernelState(operation.NodeID)
-}
-
-func (h *handlers) failKernelOperation(operationID, nodeID uint, phase string, operationErr error) error {
-	now := time.Now().UTC()
-	errorText := truncateKernelError(operationErr.Error())
-	stateStatus, recommendedAction := "failed", "retry"
-	if errors.Is(operationErr, errKernelPlatformUnsupported) {
-		stateStatus, recommendedAction = "unsupported", "manual_review"
-	}
-	return h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.NodeOperation{}).Where("id = ?", operationID).Updates(map[string]interface{}{
-			"status": "failed", "phase": phase, "error": errorText, "finished_at": now,
-		}).Error; err != nil {
-			return err
-		}
-		return tx.Model(&model.NodeKernelState{}).Where("node_id = ? AND active_operation_id = ?", nodeID, operationID).Updates(map[string]interface{}{
-			"status": stateStatus, "phase": "idle", "recommended_action": recommendedAction, "last_error": errorText, "active_operation_id": nil,
-		}).Error
-	})
-}
-
-func (h *handlers) updateKernelState(nodeID uint, updates map[string]interface{}) error {
-	return h.db.Model(&model.NodeKernelState{}).Where("node_id = ?", nodeID).Updates(updates).Error
 }
 
 func truncateKernelError(value string) string {

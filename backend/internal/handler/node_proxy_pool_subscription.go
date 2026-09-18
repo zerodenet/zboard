@@ -9,12 +9,10 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
+	networkcap "github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const (
@@ -26,11 +24,7 @@ const (
 	proxyPoolSubscriptionPollInterval    = time.Minute
 )
 
-var (
-	errProxyPoolRevisionConflict = errors.New("proxy pool revision conflict")
-	proxyPoolSyncWorkers         sync.Map
-	proxyPoolSubscriptionFetcher = fetchProxyPoolSubscription
-)
+var proxyPoolSubscriptionFetcher = fetchProxyPoolSubscription
 
 type proxyPoolSubscriptionSettings struct {
 	Configured          bool       `json:"configured"`
@@ -43,11 +37,6 @@ type proxyPoolSubscriptionSettings struct {
 	LastSyncAt          *time.Time `json:"last_sync_at,omitempty"`
 	NextSyncAt          *time.Time `json:"next_sync_at,omitempty"`
 	LastSyncError       string     `json:"last_sync_error,omitempty"`
-}
-
-type proxyPoolSyncRuntime struct {
-	cancel context.CancelFunc
-	done   chan struct{}
 }
 
 func normalizeProxyPoolSubscriptionFormat(value string) (string, error) {
@@ -115,10 +104,12 @@ func (h *handlers) NodeProxyPoolSyncHandler(w http.ResponseWriter, r *http.Reque
 	pool, err := h.syncNodeProxyPoolSubscription(r.Context(), id, req.ExpectedRevision, &claims)
 	if err != nil {
 		switch {
-		case errors.Is(err, gorm.ErrRecordNotFound):
+		case errors.Is(err, networkcap.ErrProxyPoolNotFound):
 			NotFound(w)
-		case errors.Is(err, errProxyPoolRevisionConflict):
+		case errors.Is(err, networkcap.ErrProxyPoolConflict):
 			writeJSON(w, http.StatusConflict, "代理池已更新，请重新加载后再同步。", nil)
+		case errors.Is(err, networkcap.ErrProxyPoolMutationPermission):
+			Forbidden(w, "管理员权限已失效。")
 		default:
 			BadRequest(w, err.Error())
 		}
@@ -127,153 +118,70 @@ func (h *handlers) NodeProxyPoolSyncHandler(w http.ResponseWriter, r *http.Reque
 	OK(w, pool)
 }
 
-func (h *handlers) syncNodeProxyPoolSubscription(ctx context.Context, id uint, expected *uint64, claims *authClaims) (model.NodeProxyPool, error) {
-	var snapshot model.NodeProxyPool
-	if err := h.db.First(&snapshot, id).Error; err != nil {
-		return snapshot, err
+func (h *handlers) syncNodeProxyPoolSubscription(ctx context.Context, id uint, expected *uint64, claims *authClaims) (networkcap.ProxyPoolRecord, error) {
+	actor := networkcap.ProxyPoolSubscriptionActor{System: true}
+	if claims != nil {
+		actor = networkcap.ProxyPoolSubscriptionActor{AccountID: claims.UserID}
 	}
-	if expected != nil && snapshot.Revision != *expected {
-		return snapshot, errProxyPoolRevisionConflict
-	}
-	settings, err := h.proxyPoolSubscriptionSettings(snapshot)
+	service := h.services.ProxyPoolSubscriptions(h.credentialCipher, proxyPoolMutationInspector{h: h})
+	prepared, err := service.Prepare(ctx, actor, id, expected)
 	if err != nil {
-		return snapshot, err
+		return networkcap.ProxyPoolRecord{}, err
 	}
-	if !settings.Configured {
-		return snapshot, errors.New("请先配置订阅地址")
+	recordFailure := func(cause error) {
+		_ = service.RecordFailure(ctx, actor, prepared, cause)
 	}
-	content, err := proxyPoolSubscriptionFetcher(ctx, settings.URL, settings.UserAgent)
+	content, err := proxyPoolSubscriptionFetcher(ctx, prepared.Settings.URL, prepared.Settings.UserAgent)
 	if err != nil {
-		h.recordProxyPoolSyncFailure(snapshot, err)
-		return snapshot, err
+		recordFailure(err)
+		return prepared.Snapshot.Pool, err
 	}
-	path, nodeCount, err := parseProxyPoolSubscription(content, settings.Format)
+	path, nodeCount, err := parseProxyPoolSubscription(content, prepared.Settings.Format)
 	if err != nil {
-		h.recordProxyPoolSyncFailure(snapshot, err)
-		return snapshot, err
+		recordFailure(err)
+		return prepared.Snapshot.Pool, err
 	}
 	raw, err := json.Marshal(path)
 	if err != nil {
-		return snapshot, err
+		return prepared.Snapshot.Pool, err
 	}
 	if err := h.validateProxyPoolDocument(ctx, raw); err != nil {
 		err = fmt.Errorf("订阅内容未通过 Zero 校验：%w", err)
-		h.recordProxyPoolSyncFailure(snapshot, err)
-		return snapshot, err
+		recordFailure(err)
+		return prepared.Snapshot.Pool, err
 	}
-	encrypted, err := h.credentialCipher.Encrypt(string(raw))
-	if err != nil {
-		return snapshot, err
+	updated, err := service.Commit(ctx, actor, prepared, string(raw), nodeCount)
+	if err != nil && !errors.Is(err, networkcap.ErrProxyPoolConflict) && !errors.Is(err, networkcap.ErrProxyPoolNotFound) && !errors.Is(err, networkcap.ErrProxyPoolMutationPermission) {
+		recordFailure(err)
 	}
-	now := time.Now().UTC()
-	err = h.db.Transaction(func(tx *gorm.DB) error {
-		var current model.NodeProxyPool
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, id).Error; err != nil {
-			return err
-		}
-		if current.Revision != snapshot.Revision || current.SubscriptionURL != snapshot.SubscriptionURL {
-			return errProxyPoolRevisionConflict
-		}
-		current.Config, current.SubscriptionNodeCount, current.LastSyncAt = encrypted, nodeCount, &now
-		current.Revision++
-		next := now.Add(time.Duration(settings.SyncIntervalSeconds) * time.Second)
-		current.NextSyncAt, current.LastSyncError = &next, ""
-		if err := tx.Save(&current).Error; err != nil {
-			return err
-		}
-		var entries []model.NetworkEntry
-		if err := tx.Where("proxy_pool_id = ?", current.ID).Find(&entries).Error; err != nil {
-			return err
-		}
-		for _, entry := range entries {
-			if _, err := h.proxyPoolPath(tx, current.ID, entry.NodeID, entry.Network); err != nil {
-				return fmt.Errorf("入口 %s: %w", entry.Name, err)
-			}
-		}
-		requestedBy := uint(0)
-		if claims != nil {
-			requestedBy = claims.UserID
-			if err := createAuditLog(tx, *claims, "node_proxy_pool.subscription.sync", fmt.Sprintf("node_proxy_pool:%d", current.ID), fmt.Sprintf("node=%d revision=%d nodes=%d", current.NodeID, current.Revision, nodeCount)); err != nil {
-				return err
-			}
-		} else if err := tx.Create(&model.AuditLog{Actor: "system:proxy-pool-subscription", Action: "node_proxy_pool.subscription.sync", Target: fmt.Sprintf("node_proxy_pool:%d", current.ID), Detail: fmt.Sprintf("node=%d revision=%d nodes=%d", current.NodeID, current.Revision, nodeCount)}).Error; err != nil {
-			return err
-		}
-		if err := enqueueNodeConfigPublishOnly(tx, current.NodeID, 0, requestedBy); err != nil {
-			return err
-		}
-		snapshot = current
-		return nil
-	})
-	if err != nil && !errors.Is(err, errProxyPoolRevisionConflict) && !errors.Is(err, gorm.ErrRecordNotFound) {
-		h.recordProxyPoolSyncFailure(snapshot, err)
-	}
-	return snapshot, err
-}
-
-func (h *handlers) recordProxyPoolSyncFailure(snapshot model.NodeProxyPool, cause error) {
-	message := cause.Error()
-	if len(message) > 1000 {
-		message = message[:1000]
-	}
-	next := time.Now().UTC().Add(5 * time.Minute)
-	_ = h.db.Model(&model.NodeProxyPool{}).Where("id = ? AND revision = ? AND subscription_url = ?", snapshot.ID, snapshot.Revision, snapshot.SubscriptionURL).
-		Updates(map[string]interface{}{"last_sync_error": message, "next_sync_at": next}).Error
+	return updated, err
 }
 
 func (h *handlers) StartProxyPoolSubscriptionWorker() {
-	ctx, cancel := context.WithCancel(context.Background())
-	runtime := &proxyPoolSyncRuntime{cancel: cancel, done: make(chan struct{})}
-	if _, loaded := proxyPoolSyncWorkers.LoadOrStore(h, runtime); loaded {
-		cancel()
-		return
-	}
-	go func() {
-		defer close(runtime.done)
-		h.syncDueProxyPools(ctx, time.Now().UTC())
-		ticker := time.NewTicker(proxyPoolSubscriptionPollInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case now := <-ticker.C:
-				h.syncDueProxyPools(ctx, now.UTC())
-			}
-		}
-	}()
+	h.startScheduledJob("proxy_pool_sync", proxyPoolSubscriptionPollInterval, func(ctx context.Context) error { return h.syncDueProxyPools(ctx, time.Now().UTC()) })
 }
 
-func (h *handlers) CloseProxyPoolSubscriptionWorker() {
-	value, ok := proxyPoolSyncWorkers.LoadAndDelete(h)
-	if !ok {
-		return
-	}
-	runtime := value.(*proxyPoolSyncRuntime)
-	runtime.cancel()
-	<-runtime.done
-}
+func (h *handlers) CloseProxyPoolSubscriptionWorker() { h.closeScheduledJob("proxy_pool_sync") }
 
-func (h *handlers) syncDueProxyPools(ctx context.Context, now time.Time) {
-	var pools []model.NodeProxyPool
-	if err := h.db.Where("auto_sync = ? AND subscription_url <> '' AND (next_sync_at IS NULL OR next_sync_at <= ?)", true, now).Order("next_sync_at, id").Limit(10).Find(&pools).Error; err != nil {
+func (h *handlers) syncDueProxyPools(ctx context.Context, now time.Time) error {
+	service := h.services.ProxyPoolSubscriptions(h.credentialCipher, proxyPoolMutationInspector{h: h})
+	claims, err := service.ClaimDue(ctx, now, 10)
+	if err != nil {
 		log.Printf("proxy pool subscription scan failed: %v", err)
-		return
+		return err
 	}
-	for _, pool := range pools {
+	var failures []error
+	for _, claim := range claims {
 		if ctx.Err() != nil {
-			return
+			return ctx.Err()
 		}
-		leaseUntil := now.Add(5 * time.Minute)
-		result := h.db.Model(&model.NodeProxyPool{}).Where("id = ? AND revision = ? AND auto_sync = ? AND (next_sync_at IS NULL OR next_sync_at <= ?)", pool.ID, pool.Revision, true, now).Update("next_sync_at", leaseUntil)
-		if result.Error != nil || result.RowsAffected != 1 {
-			continue
-		}
-		expected := pool.Revision
-		if _, err := h.syncNodeProxyPoolSubscription(ctx, pool.ID, &expected, nil); err != nil && !errors.Is(err, errProxyPoolRevisionConflict) {
-			log.Printf("proxy pool subscription sync failed: pool_id=%d error=%v", pool.ID, err)
+		expected := claim.Revision
+		if _, err := h.syncNodeProxyPoolSubscription(ctx, claim.ID, &expected, nil); err != nil && !errors.Is(err, networkcap.ErrProxyPoolConflict) {
+			log.Printf("proxy pool subscription sync failed: pool_id=%d error=%v", claim.ID, err)
+			failures = append(failures, err)
 		}
 	}
+	return errors.Join(failures...)
 }
 
 func proxyPoolSyncInterval(value int) (int, error) {

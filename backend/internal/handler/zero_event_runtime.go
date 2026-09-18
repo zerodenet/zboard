@@ -6,17 +6,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
+	"github.com/zerodenet/zboard/backend/internal/application"
+	capabilityjobs "github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"log"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/zerodenet/zboard/backend/internal/datastore"
-	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/zeroevent"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const (
@@ -40,16 +41,7 @@ type zeroEventRuntime struct {
 	metrics     zeroEventConsumerMetrics
 }
 
-type zeroEventNodeCursor struct {
-	NodeID         uint      `gorm:"column:node_id;primaryKey"`
-	CoreInstanceID string    `gorm:"column:core_instance_id"`
-	Sequence       uint64    `gorm:"column:sequence"`
-	ConfigRevision uint64    `gorm:"column:config_revision"`
-	OccurredAt     time.Time `gorm:"column:occurred_at"`
-	UpdatedAt      time.Time `gorm:"column:updated_at"`
-}
-
-func (zeroEventNodeCursor) TableName() string { return "zero_event_node_cursors" }
+type zeroEventNodeCursor = networkstore.ObservationCursor
 
 type zeroNodeProjection struct {
 	NodeID     uint
@@ -94,7 +86,8 @@ func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 		h.CloseCredentialExpiryWorker()
 		return errors.New("Zero event spool is already configured")
 	}
-	go h.runZeroEventConsumer(ctx, runtime)
+	h.backgroundJobs().observations.Register("event_consumer", jobNames["event_consumer"], "queue", cfg.Consumer.CommitInterval, 1)
+	h.startScheduledJob("event_consumer", cfg.Consumer.CommitInterval, func(ctx context.Context) error { return h.consumeZeroEventCycle(ctx, runtime) })
 	log.Printf("Zero event spool started: driver=%s directory=%s commit_interval=%s max_batch=%d", cfg.Driver, cfg.Directory, cfg.Consumer.CommitInterval, cfg.Consumer.MaxBatch)
 	return nil
 }
@@ -107,8 +100,9 @@ func (h *handlers) CloseZeroEventSpool() error {
 		return nil
 	}
 	runtime := value.(*zeroEventRuntime)
+	h.closeScheduledJob("event_consumer")
 	runtime.cancel()
-	<-runtime.done
+	close(runtime.done)
 	if err := runtime.spool.Close(); err != nil {
 		return err
 	}
@@ -116,7 +110,7 @@ func (h *handlers) CloseZeroEventSpool() error {
 	return nil
 }
 
-func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node model.Node, event zeroEventEnvelope) (bool, error) {
+func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node network.EventNode, event zeroEventEnvelope) (bool, error) {
 	if event.EventType != "flow.updated" && event.EventType != "stats.sampled" {
 		return false, nil
 	}
@@ -161,7 +155,7 @@ func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node model.Node,
 	if err := runtime.spool.Append(ctx, envelope); err != nil {
 		return true, fmt.Errorf("persist Zero event %s: %w", event, err)
 	}
-	if err := h.recordBufferedZeroConnectorReceipt(node, runtime); err != nil {
+	if err := h.recordBufferedZeroConnectorReceipt(ctx, node, runtime); err != nil {
 		// The durable event has already been accepted. Liveness projection is
 		// deliberately best-effort here so a transient metadata write cannot make
 		// Core retry an event that is safely stored in the spool.
@@ -170,25 +164,17 @@ func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node model.Node,
 	return true, nil
 }
 
-func (h *handlers) recordBufferedZeroConnectorReceipt(node model.Node, runtime *zeroEventRuntime) error {
+func (h *handlers) recordBufferedZeroConnectorReceipt(ctx context.Context, node network.EventNode, runtime *zeroEventRuntime) error {
 	now := time.Now().UTC()
 	if previous, ok := runtime.lastReceipt.Load(node.ID); ok {
 		if last, ok := previous.(time.Time); ok && now.Sub(last) < zeroConnectorReceiptPersistInterval {
 			return nil
 		}
 	}
-	result := h.db.Model(&model.Node{}).
-		Where("id = ? AND is_enabled = ? AND node_credential = ? AND node_credential_revoked_at IS NULL", node.ID, true, node.NodeCredential).
-		Updates(map[string]interface{}{
-			"last_seen_at":           now,
-			"connector_last_seen_at": now,
-			"is_online":              true,
-			"status":                 1,
-		})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
+	if err := h.services.NodeActivity.Record(ctx, node.ID, node.Credential, network.NodeActivityUpdate{At: now, Online: true, ConnectorSeen: true}); err != nil {
+		if !errors.Is(err, network.ErrNodeActivityCredential) {
+			return err
+		}
 		return errors.New("Zero event credential is no longer active")
 	}
 	runtime.lastReceipt.Store(node.ID, now)
@@ -213,41 +199,20 @@ func zeroBufferedFlowID(payload json.RawMessage) string {
 	return flowID
 }
 
-func (h *handlers) runZeroEventConsumer(ctx context.Context, runtime *zeroEventRuntime) {
-	defer close(runtime.done)
-	limit := zeroEventConsumerBatchLimit(runtime.config.MaxBatch, datastore.IsSQLite(h.db))
-	consume := func() bool {
-		if h.backgroundWorkPaused() {
-			return false
+func (h *handlers) consumeZeroEventCycle(ctx context.Context, runtime *zeroEventRuntime) error {
+	limit := zeroEventConsumerBatchLimit(runtime.config.MaxBatch, h.services.TrafficReadsUseSQLite())
+	burst := zeroEventConsumerBurst(runtime.spool.Status())
+	for index := 0; index < burst; index++ {
+		count, err := h.consumeZeroEventBatchMeasured(ctx, runtime.spool, limit, &runtime.metrics)
+		if err != nil {
+			runtime.metrics.failures.Add(1)
+			return err
 		}
-		burst := zeroEventConsumerBurst(runtime.spool.Status())
-		for index := 0; index < burst; index++ {
-			count, err := h.consumeZeroEventBatchMeasured(ctx, runtime.spool, limit, &runtime.metrics)
-			if err != nil {
-				if ctx.Err() == nil {
-					runtime.metrics.failures.Add(1)
-					log.Printf("Zero event projector failed: %v", err)
-				}
-				return false
-			}
-			if count < limit {
-				return false
-			}
-		}
-		return true
-	}
-	more := consume()
-	timer := time.NewTimer(zeroEventConsumerNextInterval(runtime.config.CommitInterval, runtime.spool.Status(), more))
-	defer timer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			more = consume()
-			timer.Reset(zeroEventConsumerNextInterval(runtime.config.CommitInterval, runtime.spool.Status(), more))
+		if count < limit {
+			return nil
 		}
 	}
+	return capabilityjobs.ErrContinue
 }
 
 // SQLite shares a single connection with live authorization and management
@@ -311,12 +276,16 @@ func (h *handlers) consumeZeroEventBatchMeasured(ctx context.Context, spool zero
 	if len(batch.Events) == 0 {
 		return 0, nil
 	}
+	finishObservation := h.observeJob("event_consumer", "queue", 0, 1)
 	if err := h.projectZeroNodeEvents(ctx, batch.Events); err != nil {
+		finishObservation(err)
 		return 0, err
 	}
 	if err := spool.Commit(ctx, batch.Next); err != nil {
+		finishObservation(err)
 		return 0, fmt.Errorf("commit Zero event checkpoint: %w", err)
 	}
+	finishObservation(nil)
 	if metrics != nil {
 		metrics.committed(batch.Events, time.Since(started), time.Now().UTC())
 	}
@@ -335,41 +304,45 @@ func (h *handlers) projectZeroNodeEvents(ctx context.Context, events []zeroevent
 	}
 	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
 
-	exhausted := make([]zeroFlowAccountingResult, 0)
-	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, nodeID := range nodeIDs {
-			if err := projectZeroNode(tx, nodeProjections[nodeID]); err != nil {
-				return err
-			}
-		}
-		batch := newZeroFlowBatch(tx)
-		if err := batch.loadReports(tx, flowEvents); err != nil {
+	samples := make([]metering.FlowSample, 0, len(flowEvents))
+	for _, buffered := range flowEvents {
+		event := zeroBufferedEnvelopeAsEvent(buffered)
+		flow, err := parseZeroFlowProjection(event)
+		if err != nil {
 			return err
 		}
-		for _, event := range flowEvents {
-			result, err := h.projectBufferedZeroFlow(tx, event, batch)
-			if err != nil {
-				return err
-			}
-			if result.Exhausted {
-				exhausted = append(exhausted, result)
-			}
+		if flow.PrincipalKey == "" {
+			return errors.New("flow event has no attributable principal_key")
 		}
-		return batch.flush(tx)
-	})
+		if isMieruMigrationPrincipal(flow.PrincipalKey) {
+			continue
+		}
+		samples = append(samples, metering.FlowSample{NodeID: uint(buffered.NodeID), SourceID: event.SourceID, CoreInstanceID: event.CoreInstanceID, EventID: event.EventID, EventType: event.EventType, Sequence: event.Sequence, FlowID: flow.FlowID, PrincipalKey: flow.PrincipalKey, Revision: flow.Revision, BytesUp: flow.BytesUp, BytesDown: flow.BytesDown, OccurredAt: zeroEventTime(event, time.Now().UTC())})
+	}
+	observations := make([]network.NodeObservation, 0, len(nodeIDs))
+	for _, nodeID := range nodeIDs {
+		observations = append(observations, zeroNodeObservation(nodeProjections[nodeID]))
+	}
+	coverage := make([]metering.NodeCoverageEvent, 0, len(events))
+	now := time.Now().UTC()
+	for _, event := range events {
+		receivedAt := event.ReceivedAt
+		if receivedAt.IsZero() {
+			receivedAt = now
+		}
+		coverage = append(coverage, coverageInput(uint(event.NodeID), zeroBufferedEnvelopeAsEvent(event), receivedAt))
+	}
+	result, err := h.services.ProjectBufferedEvents(ctx, application.BufferedEventProjection{Nodes: observations, Flows: samples, Coverage: coverage}, h.credentialCipher)
 	if err != nil {
 		return err
 	}
 	// Coverage is observability state rather than accounting state. Fold it in
 	// one transaction per spool batch, but keep it fail-open so an auxiliary
 	// write can never stop traffic settlement or checkpoint progress.
-	if coverageErr := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return h.projectFairUseCoverageBatch(tx, events)
-	}); coverageErr != nil && ctx.Err() == nil {
-		log.Printf("fair use buffered coverage projection failed: %v", coverageErr)
+	if result.CoverageErr != nil && ctx.Err() == nil {
+		log.Printf("fair use buffered coverage projection failed: %v", result.CoverageErr)
 	}
-	if len(exhausted) > 0 {
-		h.publishScheduler().signal()
+	if len(result.Exhausted) > 0 {
 	}
 	return nil
 }
@@ -399,84 +372,20 @@ func aggregateZeroNodeEvents(events []zeroevent.Envelope) map[uint]zeroNodeProje
 	return result
 }
 
-func projectZeroNode(tx *gorm.DB, projection zeroNodeProjection) error {
-	var cursor zeroEventNodeCursor
-	cursorErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", projection.NodeID).First(&cursor).Error
-	if cursorErr != nil && !errors.Is(cursorErr, gorm.ErrRecordNotFound) {
-		return cursorErr
-	}
-	if cursorErr == nil && !zeroEnvelopeNewerThanCursor(projection.Latest, cursor) {
-		return nil
-	}
-
-	eventOccurredAt := projection.Latest.OccurredAt.UTC()
-	if eventOccurredAt.IsZero() {
-		eventOccurredAt = time.Now().UTC()
-	}
-	now := time.Now().UTC()
-	if projection.StatsEvent != nil && (cursorErr != nil || zeroEnvelopeNewerThanCursor(*projection.StatsEvent, cursor)) {
-		result := tx.Model(&model.Node{}).
-			Where("id = ? AND is_enabled = ? AND node_credential_revoked_at IS NULL", projection.NodeID, true).
-			Updates(map[string]interface{}{
-				"active_flows": projection.Stats.ActiveSessions,
-				"bytes_up":     projection.Stats.BytesUp,
-				"bytes_down":   projection.Stats.BytesDown,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-	}
-
-	next := zeroEventNodeCursor{
-		NodeID:         projection.NodeID,
-		CoreInstanceID: strings.TrimSpace(projection.Latest.CoreInstanceID),
-		Sequence:       projection.Latest.Sequence,
-		ConfigRevision: projection.Latest.ConfigRevision,
-		OccurredAt:     eventOccurredAt,
-		UpdatedAt:      now,
-	}
-	if errors.Is(cursorErr, gorm.ErrRecordNotFound) {
-		return tx.Create(&next).Error
-	}
-	return tx.Model(&zeroEventNodeCursor{}).Where("node_id = ?", projection.NodeID).Updates(map[string]interface{}{
-		"core_instance_id": next.CoreInstanceID,
-		"sequence":         next.Sequence,
-		"config_revision":  next.ConfigRevision,
-		"occurred_at":      next.OccurredAt,
-		"updated_at":       next.UpdatedAt,
-	}).Error
+func networkEventPosition(event zeroevent.Envelope) network.EventPosition {
+	return network.EventPosition{ID: event.ID, CoreInstanceID: event.CoreInstanceID, Sequence: event.Sequence, ConfigRevision: event.ConfigRevision, OccurredAt: event.OccurredAt}
 }
-
+func zeroNodeObservation(projection zeroNodeProjection) network.NodeObservation {
+	input := network.NodeObservation{NodeID: projection.NodeID, Latest: networkEventPosition(projection.Latest), Stats: network.NodeStats(projection.Stats)}
+	if projection.StatsEvent != nil {
+		stats := networkEventPosition(*projection.StatsEvent)
+		input.StatsEvent = &stats
+	}
+	return input
+}
 func zeroEventNewer(left, right zeroevent.Envelope) bool {
-	leftInstance := strings.TrimSpace(left.CoreInstanceID)
-	rightInstance := strings.TrimSpace(right.CoreInstanceID)
-	if leftInstance != "" && leftInstance == rightInstance && left.Sequence > 0 && right.Sequence > 0 {
-		return left.Sequence > right.Sequence
-	}
-	if !left.OccurredAt.Equal(right.OccurredAt) {
-		return left.OccurredAt.After(right.OccurredAt)
-	}
-	if left.ConfigRevision != right.ConfigRevision {
-		return left.ConfigRevision > right.ConfigRevision
-	}
-	if left.Sequence != right.Sequence {
-		return left.Sequence > right.Sequence
-	}
-	return left.ID > right.ID
+	return network.EventNewer(networkEventPosition(left), networkEventPosition(right))
 }
-
 func zeroEnvelopeNewerThanCursor(event zeroevent.Envelope, cursor zeroEventNodeCursor) bool {
-	instanceID := strings.TrimSpace(event.CoreInstanceID)
-	cursorInstanceID := strings.TrimSpace(cursor.CoreInstanceID)
-	if instanceID != "" && instanceID == cursorInstanceID && event.Sequence > 0 && cursor.Sequence > 0 {
-		return event.Sequence > cursor.Sequence
-	}
-	occurredAt := event.OccurredAt.UTC()
-	if !occurredAt.Equal(cursor.OccurredAt.UTC()) {
-		return occurredAt.After(cursor.OccurredAt.UTC())
-	}
-	if event.ConfigRevision != cursor.ConfigRevision {
-		return event.ConfigRevision > cursor.ConfigRevision
-	}
-	return event.Sequence > cursor.Sequence
+	return network.EventNewerThanPosition(networkEventPosition(event), network.EventPosition{CoreInstanceID: cursor.CoreInstanceID, Sequence: cursor.Sequence, ConfigRevision: cursor.ConfigRevision, OccurredAt: cursor.OccurredAt})
 }

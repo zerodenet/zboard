@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/application"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/plugins"
 	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
@@ -20,6 +21,7 @@ import (
 
 type fakeIdentityRuntime struct {
 	db        *gorm.DB
+	core      application.Identity
 	snapshot  plugins.IdentitySnapshot
 	disabled  bool
 	exchanges int
@@ -32,23 +34,26 @@ func (f *fakeIdentityRuntime) IdentityProviders() ([]plugins.IdentityProviderVie
 func (f *fakeIdentityRuntime) IdentityProvider(context.Context, string) (plugins.IdentitySnapshot, error) {
 	return f.snapshot, nil
 }
-func (f *fakeIdentityRuntime) WithIdentityProvider(s plugins.IdentitySnapshot, commit func(*gorm.DB) error) error {
+func (f *fakeIdentityRuntime) WithIdentityProvider(ctx context.Context, s plugins.IdentitySnapshot, commit func(plugins.IdentityServices) error) error {
 	if f.disabled || s.Revision != f.snapshot.Revision {
 		return errors.New("revoked")
 	}
-	return f.db.Transaction(commit)
+	return f.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		core := f.core.InTransaction(tx)
+		return commit(plugins.IdentityServices{External: core.External, InitialPasswords: core.InitialPasswords})
+	})
 }
-func (f *fakeIdentityRuntime) ExchangeIdentity(_ context.Context, s plugins.IdentitySnapshot, r *pluginv1.IdentityExchange, commit func(*pluginv1.VerifiedIdentity, *gorm.DB) error) error {
+func (f *fakeIdentityRuntime) ExchangeIdentity(ctx context.Context, s plugins.IdentitySnapshot, r *pluginv1.IdentityExchange, commit func(*pluginv1.VerifiedIdentity, plugins.IdentityServices) error) error {
 	f.exchanges++
 	if len(r.Nonce) != 43 || len(r.PkceVerifier) != 43 || r.RedirectUri != "https://panel.example.test/api/v1/auth/oidc/callback" {
 		return errors.New("missing core authentication constraints")
 	}
-	return f.WithIdentityProvider(s, func(tx *gorm.DB) error {
+	return f.WithIdentityProvider(ctx, s, func(services plugins.IdentityServices) error {
 		identity := f.identity
 		if identity == nil {
 			identity = &pluginv1.VerifiedIdentity{Issuer: r.Issuer, Subject: "subject-123"}
 		}
-		return commit(identity, tx)
+		return commit(identity, services)
 	})
 }
 func identityTestHandlers(t *testing.T) (*handlers, string, *fakeIdentityRuntime) {
@@ -61,7 +66,7 @@ func identityTestHandlers(t *testing.T) (*handlers, string, *fakeIdentityRuntime
 	if err := h.db.Model(&model.User{}).Where("id = ?", 1).Update("password", string(hash)).Error; err != nil {
 		t.Fatal(err)
 	}
-	runtime := &fakeIdentityRuntime{db: h.db, snapshot: plugins.IdentitySnapshot{ID: "test.oauth", Publisher: "trusted", Generation: 1, Revision: 1, Provider: &pluginv1.IdentityProvider{Issuer: "https://id.example.test", AuthorizationEndpoint: "https://id.example.test/auth", ClientId: "client", Scopes: []string{"openid"}}}}
+	runtime := &fakeIdentityRuntime{db: h.db, core: h.services.Identity, snapshot: plugins.IdentitySnapshot{ID: "test.oauth", Publisher: "trusted", Generation: 1, Revision: 1, Provider: &pluginv1.IdentityProvider{Issuer: "https://id.example.test", AuthorizationEndpoint: "https://id.example.test/auth", ClientId: "client", Scopes: []string{"openid"}}}}
 	h.identityProviders = runtime
 	return h, token, runtime
 }
@@ -294,10 +299,10 @@ func TestExternalIdentityPasswordChangeAndAuditFailureCancelBinding(t *testing.T
 }
 func TestExternalIdentityCallbackRespectsDatabaseMigrationWriteLock(t *testing.T) {
 	h, _, _ := identityTestHandlers(t)
-	h.maintenanceMu.Lock()
-	h.maintenanceState = maintenanceState{MigrationInProgress: true}
-	h.maintenanceLoadedAt = time.Now()
-	h.maintenanceMu.Unlock()
+	if err := h.db.Create(&model.Task{Type: "database_migration", Scope: "{}", Content: "{}", Status: taskStatusRunning}).Error; err != nil {
+		t.Fatal(err)
+	}
+	h.services.InvalidateMaintenance()
 	called := false
 	w := httptest.NewRecorder()
 	h.InstallationMiddleware(func(http.ResponseWriter, *http.Request) { called = true })(w, httptest.NewRequest("GET", externalAuthPath+"/callback?state=sensitive", nil))

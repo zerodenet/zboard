@@ -2,7 +2,15 @@ package handler
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
+	"encoding/pem"
 	"errors"
+	"math/big"
 	"net"
 	"os/exec"
 	"strings"
@@ -123,5 +131,65 @@ func TestBuildCertbotCertificateScriptsHaveValidShellSyntax(t *testing.T) {
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("challenge %s generated invalid shell: %v: %s", certificate.ChallengeType, err, output)
 		}
+	}
+}
+
+func TestProviderCertificateScriptsHaveValidShellSyntax(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("POSIX shell is not available")
+	}
+	for name, script := range map[string]string{
+		"csr":     buildCertificateCSRScript(9, "stage-id", []string{"edge.example.com", "*.example.com"}),
+		"install": buildCertificateInstallScript(9, "stage-id"),
+	} {
+		command := exec.Command(sh, "-n")
+		command.Stdin = strings.NewReader(script)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("%s script has invalid shell syntax: %v: %s", name, err, output)
+		}
+	}
+}
+
+func TestProviderCertificateValidationBindsCSRDomainsAndKey(t *testing.T) {
+	now := time.Now().UTC()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	domains := []string{"edge.example.com", "api.example.com"}
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: domains[0]}, DNSNames: domains}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csrPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
+	output := certificateCSRMarker + base64.StdEncoding.EncodeToString(csrPEM)
+	parsedPEM, csr, err := parseCertificateCSR(output, domains)
+	if err != nil || !strings.Contains(string(parsedPEM), "CERTIFICATE REQUEST") {
+		t.Fatalf("parseCertificateCSR() error=%v", err)
+	}
+	if _, _, err := parseCertificateCSR(output, []string{"wrong.example.com"}); err == nil {
+		t.Fatal("CSR domain mismatch accepted")
+	}
+	template := &x509.Certificate{SerialNumber: big.NewInt(42), Subject: pkix.Name{CommonName: domains[0]}, DNSNames: domains, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(90 * 24 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fullchain := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	metadata, err := validateProviderCertificate(fullchain, csr, domains, now)
+	if err != nil || metadata.SerialNumber != "2A" || metadata.FingerprintSHA256 == "" {
+		t.Fatalf("metadata=%+v error=%v", metadata, err)
+	}
+	otherKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongDER, err := x509.CreateCertificate(rand.Reader, template, template, &otherKey.PublicKey, otherKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateProviderCertificate(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: wrongDER}), csr, domains, now); err == nil || !strings.Contains(err.Error(), "private key") {
+		t.Fatalf("mismatched certificate error=%v", err)
 	}
 }

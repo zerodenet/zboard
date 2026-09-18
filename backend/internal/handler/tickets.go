@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,9 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/experience"
 )
 
 const (
@@ -57,23 +56,9 @@ type ticketStatusRequest struct {
 	Status string `json:"status"`
 }
 
-type ticketView struct {
-	model.Ticket
-	UserEmail    string `json:"user_email"`
-	MessageCount int64  `json:"message_count"`
-}
-
-type ticketMessageView struct {
-	model.TicketMessage
-	AuthorEmail string `json:"author_email"`
-}
-
-type ticketDetailView struct {
-	Ticket           ticketView          `json:"ticket"`
-	Messages         []ticketMessageView `json:"messages"`
-	HasOlderMessages bool                `json:"has_older_messages"`
-	OldestMessageID  uint                `json:"oldest_message_id,omitempty"`
-}
+type ticketView = experience.TicketSummary
+type ticketMessageView = experience.TicketMessageView
+type ticketDetailView = experience.TicketDetail
 
 func (h *handlers) TicketListHandler(w http.ResponseWriter, r *http.Request) {
 	adminScope := strings.HasPrefix(r.URL.Path, "/api/v1/admin/tickets")
@@ -98,51 +83,35 @@ func (h *handlers) TicketListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := h.db.Model(&model.Ticket{})
-	if !claims.IsAdmin {
-		query = query.Where("tickets.user_id = ?", claims.UserID)
-	}
+	query := experience.TicketQuery{ActorID: claims.UserID, Admin: claims.IsAdmin, Offset: offset, Limit: limit}
 	if status := strings.TrimSpace(r.URL.Query().Get("status")); status != "" {
 		statuses, valid := ticketListStatusValues(status, adminScope)
 		if !valid {
 			BadRequest(w, "invalid ticket status")
 			return
 		}
-		query = query.Where("tickets.status IN ?", statuses)
+		query.Statuses = statuses
 	}
 	if category := strings.TrimSpace(r.URL.Query().Get("category")); category != "" {
 		if !validTicketCategory(category) {
 			BadRequest(w, "invalid ticket category")
 			return
 		}
-		query = query.Where("tickets.category = ?", category)
+		query.Category = category
 	}
 	if keyword := strings.TrimSpace(r.URL.Query().Get("q")); keyword != "" {
 		if utf8.RuneCountInString(keyword) > 100 {
 			BadRequest(w, "search keyword is too long")
 			return
 		}
-		pattern := "%" + keyword + "%"
-		query = query.Joins("JOIN users ticket_owner ON ticket_owner.id = tickets.user_id").
-			Where("tickets.ticket_no LIKE ? OR tickets.subject LIKE ? OR ticket_owner.email LIKE ?", pattern, pattern, pattern)
+		query.Search = keyword
 	}
-
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	var tickets []model.Ticket
-	if err := query.Order("tickets.last_message_at DESC, tickets.id DESC").Offset(offset).Limit(limit).Find(&tickets).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	views, err := h.buildTicketViews(tickets)
+	page, err := h.services.Tickets.List(r.Context(), query)
 	if err != nil {
 		ServerError(w, err)
 		return
 	}
-	OK(w, pagedData(views, total, offset, limit))
+	OK(w, pagedData(page.Items, page.Total, offset, limit))
 }
 
 func (h *handlers) TicketCreateHandler(w http.ResponseWriter, r *http.Request) {
@@ -163,30 +132,18 @@ func (h *handlers) TicketCreateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
-	ticket := model.Ticket{
-		TicketNo:      newTicketNumber(now),
-		UserID:        claims.UserID,
-		Subject:       body.Subject,
-		Category:      body.Category,
-		Priority:      body.Priority,
-		Status:        ticketStatusOpen,
-		LastMessageAt: now,
+	ticketID, err := h.services.Tickets.Create(r.Context(), claims.UserID, experience.NewTicket{
+		TicketNo: newTicketNumber(now), Subject: body.Subject, Category: body.Category, Priority: body.Priority, Body: body.Body,
+	}, now)
+	if errors.Is(err, experience.ErrPermission) {
+		Forbidden(w, err.Error())
+		return
 	}
-	err = h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&ticket).Error; err != nil {
-			return err
-		}
-		authorID := claims.UserID
-		return tx.Create(&model.TicketMessage{
-			TicketID: ticket.ID, AuthorID: &authorID, AuthorRole: ticketAuthorRole(claims),
-			Type: ticketMessageReply, Body: body.Body, CreatedAt: now,
-		}).Error
-	})
 	if err != nil {
 		ServerError(w, err)
 		return
 	}
-	detail, err := h.ticketDetail(ticket.ID, claims)
+	detail, err := h.ticketDetail(r.Context(), ticketID, claims)
 	if err != nil {
 		ServerError(w, err)
 		return
@@ -228,8 +185,8 @@ func (h *handlers) TicketGetHandler(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, err.Error())
 		return
 	}
-	detail, err := h.ticketDetailPage(id, claims, beforeID, messageLimit)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	detail, err := h.ticketDetailPage(r.Context(), id, claims, beforeID, messageLimit)
+	if errors.Is(err, experience.ErrNotFound) {
 		NotFound(w)
 		return
 	}
@@ -279,41 +236,13 @@ func (h *handlers) TicketReplyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.db.Transaction(func(tx *gorm.DB) error {
-		var ticket model.Ticket
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&ticket, id).Error; err != nil {
-			return err
-		}
-		if !claims.IsAdmin && ticket.UserID != claims.UserID {
-			return errTicketForbidden
-		}
-		if ticket.Status == ticketStatusClosed {
-			return errTicketClosed
-		}
-		now := time.Now().UTC()
-		authorID := claims.UserID
-		if err := tx.Create(&model.TicketMessage{
-			TicketID: ticket.ID, AuthorID: &authorID, AuthorRole: ticketAuthorRole(claims),
-			Type: ticketMessageReply, Body: body.Body, CreatedAt: now,
-		}).Error; err != nil {
-			return err
-		}
-		fromStatus := ticket.Status
-		toStatus := ticketStatusPendingAdmin
-		if claims.IsAdmin {
-			toStatus = ticketStatusPendingUser
-		}
-		updates := map[string]interface{}{"last_message_at": now, "status": toStatus, "resolved_at": nil, "closed_at": nil}
-		if err := tx.Model(&ticket).Updates(updates).Error; err != nil {
-			return err
-		}
-		if fromStatus != toStatus {
-			return createTicketStatusEvent(tx, ticket.ID, &authorID, ticketAuthorRole(claims), fromStatus, toStatus, now)
-		}
-		return nil
-	})
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	err = h.services.Tickets.Reply(r.Context(), experience.TicketActor{ID: claims.UserID, IsAdmin: claims.IsAdmin}, id, body.Body, time.Now().UTC())
+	if errors.Is(err, experience.ErrNotFound) {
 		NotFound(w)
+		return
+	}
+	if errors.Is(err, experience.ErrPermission) {
+		Forbidden(w, err.Error())
 		return
 	}
 	if errors.Is(err, errTicketForbidden) {
@@ -328,7 +257,7 @@ func (h *handlers) TicketReplyHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
-	detail, err := h.ticketDetail(id, claims)
+	detail, err := h.ticketDetail(r.Context(), id, claims)
 	if err != nil {
 		ServerError(w, err)
 		return
@@ -348,11 +277,11 @@ func (h *handlers) TicketCloseHandler(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "invalid ticket id")
 		return
 	}
-	err = h.changeTicketStatus(id, claims, ticketStatusClosed, false)
+	err = h.changeTicketStatus(r.Context(), id, claims, ticketStatusClosed, false)
 	if handleTicketMutationError(w, err) {
 		return
 	}
-	detail, err := h.ticketDetail(id, claims)
+	detail, err := h.ticketDetail(r.Context(), id, claims)
 	if err != nil {
 		ServerError(w, err)
 		return
@@ -380,14 +309,10 @@ func (h *handlers) AdminTicketStatusHandler(w http.ResponseWriter, r *http.Reque
 		BadRequest(w, "invalid ticket status")
 		return
 	}
-	if err := h.changeTicketStatus(id, claims, body.Status, true); handleTicketMutationError(w, err) {
+	if err := h.changeTicketStatus(r.Context(), id, claims, body.Status, true); handleTicketMutationError(w, err) {
 		return
 	}
-	if err := createAuditLog(h.db, claims, "ticket.status.update", fmt.Sprintf("ticket:%d", id), "status="+body.Status); err != nil {
-		ServerError(w, err)
-		return
-	}
-	detail, err := h.ticketDetail(id, claims)
+	detail, err := h.ticketDetail(r.Context(), id, claims)
 	if err != nil {
 		ServerError(w, err)
 		return
@@ -396,137 +321,20 @@ func (h *handlers) AdminTicketStatusHandler(w http.ResponseWriter, r *http.Reque
 }
 
 var (
-	errTicketForbidden = errors.New("ticket access denied")
-	errTicketClosed    = errors.New("ticket is closed")
+	errTicketForbidden = experience.ErrTicketForbidden
+	errTicketClosed    = experience.ErrTicketClosed
 )
 
-func (h *handlers) changeTicketStatus(id uint, claims authClaims, status string, adminOverride bool) error {
-	return h.db.Transaction(func(tx *gorm.DB) error {
-		var ticket model.Ticket
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&ticket, id).Error; err != nil {
-			return err
-		}
-		if !claims.IsAdmin && ticket.UserID != claims.UserID {
-			return errTicketForbidden
-		}
-		if !adminOverride && status != ticketStatusClosed {
-			return errTicketForbidden
-		}
-		if ticket.Status == status {
-			return nil
-		}
-		fromStatus := ticket.Status
-		now := time.Now().UTC()
-		updates := map[string]interface{}{"status": status, "last_message_at": now}
-		switch status {
-		case ticketStatusResolved:
-			updates["resolved_at"] = now
-			updates["closed_at"] = nil
-		case ticketStatusClosed:
-			updates["closed_at"] = now
-		default:
-			updates["resolved_at"] = nil
-			updates["closed_at"] = nil
-		}
-		if err := tx.Model(&ticket).Updates(updates).Error; err != nil {
-			return err
-		}
-		authorID := claims.UserID
-		return createTicketStatusEvent(tx, ticket.ID, &authorID, ticketAuthorRole(claims), fromStatus, status, now)
-	})
+func (h *handlers) changeTicketStatus(ctx context.Context, id uint, claims authClaims, status string, adminOverride bool) error {
+	return h.services.Tickets.ChangeStatus(ctx, experience.TicketActor{ID: claims.UserID, IsAdmin: claims.IsAdmin}, id, status, adminOverride, time.Now().UTC())
 }
 
-func (h *handlers) ticketDetail(id uint, claims authClaims) (ticketDetailView, error) {
-	return h.ticketDetailPage(id, claims, 0, ticketMessagePageLimit)
+func (h *handlers) ticketDetail(ctx context.Context, id uint, claims authClaims) (ticketDetailView, error) {
+	return h.ticketDetailPage(ctx, id, claims, 0, ticketMessagePageLimit)
 }
 
-func (h *handlers) ticketDetailPage(id uint, claims authClaims, beforeID uint, limit int) (ticketDetailView, error) {
-	var ticket model.Ticket
-	if err := h.db.First(&ticket, id).Error; err != nil {
-		return ticketDetailView{}, err
-	}
-	if !claims.IsAdmin && ticket.UserID != claims.UserID {
-		return ticketDetailView{}, errTicketForbidden
-	}
-	views, err := h.buildTicketViews([]model.Ticket{ticket})
-	if err != nil {
-		return ticketDetailView{}, err
-	}
-	var messages []ticketMessageView
-	query := h.db.Table("ticket_messages").
-		Select("ticket_messages.*, COALESCE(users.email, '') AS author_email").
-		Joins("LEFT JOIN users ON users.id = ticket_messages.author_id").
-		Where("ticket_messages.ticket_id = ?", id)
-	if beforeID > 0 {
-		query = query.Where("ticket_messages.id < ?", beforeID)
-	}
-	if err := query.Order("ticket_messages.created_at DESC, ticket_messages.id DESC").Limit(limit + 1).Scan(&messages).Error; err != nil {
-		return ticketDetailView{}, err
-	}
-	hasOlderMessages := len(messages) > limit
-	if hasOlderMessages {
-		messages = messages[:limit]
-	}
-	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
-		messages[left], messages[right] = messages[right], messages[left]
-	}
-	oldestMessageID := uint(0)
-	if len(messages) > 0 {
-		oldestMessageID = messages[0].ID
-	}
-	return ticketDetailView{
-		Ticket:           views[0],
-		Messages:         messages,
-		HasOlderMessages: hasOlderMessages,
-		OldestMessageID:  oldestMessageID,
-	}, nil
-}
-
-func (h *handlers) buildTicketViews(tickets []model.Ticket) ([]ticketView, error) {
-	if len(tickets) == 0 {
-		return []ticketView{}, nil
-	}
-	userIDs := make([]uint, 0, len(tickets))
-	ticketIDs := make([]uint, 0, len(tickets))
-	seenUsers := make(map[uint]struct{}, len(tickets))
-	for _, ticket := range tickets {
-		ticketIDs = append(ticketIDs, ticket.ID)
-		if _, ok := seenUsers[ticket.UserID]; !ok {
-			seenUsers[ticket.UserID] = struct{}{}
-			userIDs = append(userIDs, ticket.UserID)
-		}
-	}
-	var users []model.User
-	if err := h.db.Select("id", "email").Where("id IN ?", userIDs).Find(&users).Error; err != nil {
-		return nil, err
-	}
-	emails := make(map[uint]string, len(users))
-	for _, user := range users {
-		emails[user.ID] = user.Email
-	}
-	type ticketMessageCount struct {
-		TicketID uint  `gorm:"column:ticket_id"`
-		Count    int64 `gorm:"column:message_count"`
-	}
-	var countRows []ticketMessageCount
-	if err := h.db.Model(&model.TicketMessage{}).
-		Select("ticket_id, COUNT(*) AS message_count").
-		Where("ticket_id IN ?", ticketIDs).
-		Group("ticket_id").
-		Scan(&countRows).Error; err != nil {
-		return nil, err
-	}
-	counts := make(map[uint]int64, len(countRows))
-	for _, row := range countRows {
-		counts[row.TicketID] = row.Count
-	}
-	views := make([]ticketView, 0, len(tickets))
-	for _, ticket := range tickets {
-		views = append(views, ticketView{
-			Ticket: ticket, UserEmail: emails[ticket.UserID], MessageCount: counts[ticket.ID],
-		})
-	}
-	return views, nil
+func (h *handlers) ticketDetailPage(ctx context.Context, id uint, claims authClaims, beforeID uint, limit int) (ticketDetailView, error) {
+	return h.services.Tickets.Detail(ctx, experience.TicketActor{ID: claims.UserID, IsAdmin: claims.IsAdmin}, id, beforeID, limit)
 }
 
 func parseTicketMessageLimit(value string) (int, error) {
@@ -538,13 +346,6 @@ func parseTicketMessageLimit(value string) (int, error) {
 		return 0, fmt.Errorf("message_limit must be an integer between 20 and %d", ticketMessagePageLimit)
 	}
 	return limit, nil
-}
-
-func createTicketStatusEvent(tx *gorm.DB, ticketID uint, authorID *uint, authorRole, fromStatus, toStatus string, at time.Time) error {
-	return tx.Create(&model.TicketMessage{
-		TicketID: ticketID, AuthorID: authorID, AuthorRole: authorRole, Type: ticketMessageStatus,
-		Body: "", FromStatus: fromStatus, ToStatus: toStatus, CreatedAt: at,
-	}).Error
 }
 
 func normalizeTicketCreateRequest(body *ticketCreateRequest) error {
@@ -610,11 +411,11 @@ func handleTicketMutationError(w http.ResponseWriter, err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if errors.Is(err, experience.ErrNotFound) {
 		NotFound(w)
 		return true
 	}
-	if errors.Is(err, errTicketForbidden) {
+	if errors.Is(err, errTicketForbidden) || errors.Is(err, experience.ErrPermission) {
 		Forbidden(w, "ticket access denied")
 		return true
 	}

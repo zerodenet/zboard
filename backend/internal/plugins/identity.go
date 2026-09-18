@@ -3,10 +3,9 @@ package plugins
 import (
 	"context"
 	"errors"
+	identitycap "github.com/zerodenet/zboard/backend/internal/capabilities/identity"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"net/url"
 	"regexp"
 	"slices"
@@ -34,6 +33,35 @@ type IdentitySnapshot struct {
 	Provider   *pluginv1.IdentityProvider
 }
 
+// IdentityFence is the persistence boundary required to atomically recheck a
+// plugin runtime before committing host-owned identity state.
+type IdentityFence struct {
+	InstallationID string
+	Publisher      string
+	Generation     uint64
+	Revision       uint64
+	HostOwner      string
+	HostEpoch      uint64
+}
+
+// IdentityServices contains only the core identity operations an admitted
+// provider exchange may commit. It deliberately exposes neither GORM nor a
+// generic database transaction to the plugin runtime or HTTP adapter.
+type IdentityServices struct {
+	External         identitycap.ExternalIdentities
+	InitialPasswords identitycap.InitialPasswords
+}
+
+type IdentityTransactions interface {
+	WithinIdentity(context.Context, IdentityFence, func(IdentityServices) error) error
+}
+
+func (m *Manager) SetIdentityTransactions(transactions IdentityTransactions) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.identityTx = transactions
+}
+
 func (m *Manager) IdentityProviders() ([]IdentityProviderView, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -53,8 +81,13 @@ func (m *Manager) IdentityProviders() ([]IdentityProviderView, error) {
 		if hasCapability(v, IdentityCapability) && v.ConfigRevision > 0 && m.processes[v.ID] != nil {
 			p := m.processes[v.ID]
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			m.mu.Unlock()
 			catalog, err := p.api.ListIdentityProviders(ctx, &pluginv1.Empty{})
+			m.mu.Lock()
 			cancel()
+			if m.checkRuntimeSnapshot(v) != nil {
+				continue
+			}
 			if status.Code(err) == codes.Unimplemented {
 				out = append(out, IdentityProviderView{ID: v.ID, Name: v.Name})
 				continue
@@ -133,7 +166,12 @@ func (m *Manager) IdentityProvider(ctx context.Context, id string) (IdentitySnap
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	m.mu.Unlock()
 	info, err := p.api.GetIdentityProvider(ctx, &pluginv1.IdentityProviderRequest{ProviderId: providerID})
+	m.mu.Lock()
+	if checkErr := m.checkRuntimeSnapshot(v); checkErr != nil {
+		return IdentitySnapshot{}, checkErr
+	}
 	if err != nil || !validIdentityProvider(info) || info.ProviderId != providerID {
 		return IdentitySnapshot{}, errors.New("identity provider unavailable or invalid")
 	}
@@ -152,30 +190,31 @@ func (m *Manager) checkIdentitySnapshot(snapshot IdentitySnapshot) (*process, er
 
 // WithIdentityProvider serializes a host-owned commit with disable, uninstall,
 // crash recovery and config changes. The plugin never receives commit or a DB.
-func (m *Manager) WithIdentityProvider(snapshot IdentitySnapshot, commit func(*gorm.DB) error) error {
+func (m *Manager) WithIdentityProvider(ctx context.Context, snapshot IdentitySnapshot, commit func(IdentityServices) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, err := m.checkIdentitySnapshot(snapshot); err != nil {
 		return err
 	}
-	return m.identityTransaction(snapshot, commit)
+	return m.identityTransaction(ctx, snapshot, commit)
 }
 
 // Hold lease and installation row locks in the SAME transaction as the core
 // identity/session write. A takeover or configuration update cannot cross it.
-func (m *Manager) identityTransaction(snapshot IdentitySnapshot, commit func(*gorm.DB) error) error {
-	return m.db.Transaction(func(tx *gorm.DB) error {
-		if err := m.guard(tx); err != nil {
-			return err
-		}
-		var row model.PluginInstallation
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND enabled = ? AND state = ? AND generation = ? AND config_revision = ? AND publisher = ?", snapshot.ID, true, "active", snapshot.Generation, snapshot.Revision, snapshot.Publisher).First(&row).Error; err != nil {
-			return ErrConflict
-		}
-		return commit(tx)
-	})
+func (m *Manager) identityTransaction(ctx context.Context, snapshot IdentitySnapshot, commit func(IdentityServices) error) error {
+	if m.identityTx == nil || commit == nil {
+		return ErrUnavailable
+	}
+	return m.identityTx.WithinIdentity(ctx, IdentityFence{
+		InstallationID: snapshot.ID,
+		Publisher:      snapshot.Publisher,
+		Generation:     snapshot.Generation,
+		Revision:       snapshot.Revision,
+		HostOwner:      m.owner,
+		HostEpoch:      m.epoch.Load(),
+	}, commit)
 }
-func (m *Manager) ExchangeIdentity(ctx context.Context, snapshot IdentitySnapshot, request *pluginv1.IdentityExchange, commit func(*pluginv1.VerifiedIdentity, *gorm.DB) error) error {
+func (m *Manager) ExchangeIdentity(ctx context.Context, snapshot IdentitySnapshot, request *pluginv1.IdentityExchange, commit func(*pluginv1.VerifiedIdentity, IdentityServices) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	p, err := m.checkIdentitySnapshot(snapshot)
@@ -187,11 +226,16 @@ func (m *Manager) ExchangeIdentity(ctx context.Context, snapshot IdentitySnapsho
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	identity, err := p.api.ExchangeIdentity(ctx, request)
-	if err != nil || identity == nil || identity.Issuer != request.Issuer || identity.Subject == "" || len(identity.Subject) > 512 || len(identity.Email) > 254 {
+	m.mu.Unlock()
+	verified, err := p.api.ExchangeIdentity(ctx, request)
+	m.mu.Lock()
+	if _, checkErr := m.checkIdentitySnapshot(snapshot); checkErr != nil {
+		return checkErr
+	}
+	if err != nil || verified == nil || verified.Issuer != request.Issuer || verified.Subject == "" || len(verified.Subject) > 512 || len(verified.Email) > 254 {
 		return errors.New("provider identity verification failed")
 	}
-	return m.identityTransaction(snapshot, func(tx *gorm.DB) error { return commit(identity, tx) })
+	return m.identityTransaction(ctx, snapshot, func(services IdentityServices) error { return commit(verified, services) })
 }
 
 var providerIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)

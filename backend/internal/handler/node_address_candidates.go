@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 )
 
@@ -106,8 +105,8 @@ func (h *handlers) NodeAddressCandidatesHandler(w http.ResponseWriter, r *http.R
 		BadRequest(w, err.Error())
 		return
 	}
-	var node model.Node
-	if err := h.db.First(&node, nodeID).Error; err != nil {
+	node, err := h.loadNodeContext(r.Context(), nodeID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			NotFound(w)
 			return

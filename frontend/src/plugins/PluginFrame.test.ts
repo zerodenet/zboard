@@ -109,6 +109,14 @@ describe("plugin iframe boundary", () => {
     expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), 'storage.put', { key: 'cursor', revision: 2, value: { offset: 10 } }, expect.any(AbortSignal));
     wrapper.unmount();
   });
+  it("forwards account capability input without caller-selected authority", async () => {
+    const wrapper = mount(PluginFrame, { props: { pluginId: 'example.reports', pageId: 'home', surface: 'account' } });
+    await flushPromises();
+    send(wrapper, 'capabilities.invoke', { operation: 'metering.usage.query', input: { bucket: 'day' }, user_id: 99, administrative: true, plugin_id: 'other.plugin' });
+    await flushPromises();
+    expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), 'capabilities.invoke', { operation: 'metering.usage.query', input: { bucket: 'day' } }, expect.any(AbortSignal));
+    wrapper.unmount();
+  });
   it("creates a target-scoped slot session and forwards only identity bridge fields", async () => {
     const slot = { id: "admin-user-identities", surface: "admin" as const, slot: "admin.user.identities", title: "OAuth", entrypoint: "ui/admin-user.html" };
     const wrapper = mount(PluginFrame, { props: { pluginId: "zboard.oauth", slot, surface: "admin", targetUserId: 9 } });

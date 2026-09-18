@@ -3,6 +3,8 @@ package handler
 import (
 	"encoding/json"
 	"testing"
+
+	zeroadapter "github.com/zerodenet/zboard/backend/internal/adapters/zero"
 )
 
 func TestDirectUDPRequiresDeclaredKernelCapability(t *testing.T) {
@@ -17,7 +19,7 @@ func TestDirectUDPRequiresDeclaredKernelCapability(t *testing.T) {
 		{`protocol_capabilities: [{"protocol":"direct","compiled":false,"inbound":{"udp":{"supported":true}}}]`, false},
 		{`protocol_capabilities: [{"protocol":"shadowsocks","compiled":true,"inbound":{"udp":{"supported":true}}}]`, false},
 	} {
-		if got := zeroBuildSupportsDirectUDP(tc.info); got != tc.want {
+		if got := zeroadapter.SupportsDirectInboundUDP(tc.info); got != tc.want {
 			t.Fatalf("capability %q = %v, want %v", tc.info, got, tc.want)
 		}
 	}
@@ -33,7 +35,7 @@ func TestDirectUDPRequirementUsesExistingPolicy(t *testing.T) {
 		{`{"runtime":{"udp":{"enabled":false}},"inbounds":[{"protocol":{"type":"direct"},"udp":{"enabled":true}}]}`, false},
 		{`{"inbounds":[{"protocol":{"type":"socks5"}}],"outbounds":[{"protocol":{"type":"direct"}}]}`, false},
 	} {
-		if got := requiresDirectInboundUDP([]byte(tc.config)); got != tc.want {
+		if got := zeroadapter.RequiresDirectInboundUDP([]byte(tc.config)); got != tc.want {
 			t.Fatalf("requirement %s = %v, want %v", tc.config, got, tc.want)
 		}
 	}

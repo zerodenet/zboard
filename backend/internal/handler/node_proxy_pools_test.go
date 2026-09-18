@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
 )
 
 func stubProxyPoolSubscriptionFetch(t *testing.T, content string, fetchErr error) {
@@ -295,7 +294,7 @@ func TestProxyPoolSubscriptionSyncKeepsLastGoodConfigOnFailure(t *testing.T) {
 	f.h.db.First(&before, pool.ID)
 	stubProxyPoolSubscriptionFetch(t, "", errors.New("订阅请求失败，请检查地址、网络和 TLS"))
 	expected := before.Revision
-	if _, err := f.h.syncNodeProxyPoolSubscription(context.Background(), pool.ID, &expected, &authClaims{UserID: 1, Email: "admin@example.test"}); err == nil {
+	if _, err := f.h.syncNodeProxyPoolSubscription(context.Background(), pool.ID, &expected, &authClaims{UserID: 99, Email: "traffic-admin@example.test"}); err == nil {
 		t.Fatal("failed subscription sync succeeded")
 	}
 	var after model.NodeProxyPool
@@ -314,14 +313,15 @@ func TestForwardServiceMembershipChangesAreAtomicAndQueueCredentialReconcile(t *
 			t.Fatal(err)
 		}
 	}
-	var tasks []model.Task
-	apply := func(changes []protocolEndpointNodeGroupMembershipChange) error {
-		return f.h.db.Transaction(func(tx *gorm.DB) error {
-			return f.h.applyNetworkEntryMembershipChanges(tx, entry, changes, authClaims{UserID: 1, Email: "admin@example.test"}, &tasks)
-		})
+	apply := func(changes []protocolEndpointNodeGroupMembershipChange) *httptest.ResponseRecorder {
+		return poolRequest(t, f, http.MethodPut, fmt.Sprintf("/api/v1/admin/network-entries/%d", entry.ID), map[string]any{
+			"revision": entry.Revision, "name": entry.Name, "node_id": entry.NodeID, "endpoint_id": entry.EndpointID,
+			"address": entry.Address, "port": entry.Port, "public_port": entry.PublicPort, "network": entry.Network,
+			"enabled": entry.Enabled, "node_group_membership_changes": changes,
+		}, f.h.NetworkEntriesHandler)
 	}
-	if err := apply([]protocolEndpointNodeGroupMembershipChange{{NodeGroupID: groups[0].ID, ExpectedRevision: 1, Member: true}, {NodeGroupID: groups[1].ID, ExpectedRevision: 99, Member: true}}); err == nil {
-		t.Fatal("stale group accepted")
+	if response := apply([]protocolEndpointNodeGroupMembershipChange{{NodeGroupID: groups[0].ID, ExpectedRevision: 1, Member: true}, {NodeGroupID: groups[1].ID, ExpectedRevision: 99, Member: true}}); response.Code != http.StatusConflict {
+		t.Fatalf("stale group accepted: %d %s", response.Code, response.Body.String())
 	}
 	var count int64
 	f.h.db.Model(&model.NodeGroupNetworkEntry{}).Count(&count)
@@ -332,14 +332,14 @@ func TestForwardServiceMembershipChangesAreAtomicAndQueueCredentialReconcile(t *
 	if count != 0 {
 		t.Fatal("failed group assignment created task")
 	}
-	tasks = nil
-	if err := apply([]protocolEndpointNodeGroupMembershipChange{{NodeGroupID: groups[0].ID, ExpectedRevision: 1, Member: true}}); err != nil {
-		t.Fatal(err)
+	if response := apply([]protocolEndpointNodeGroupMembershipChange{{NodeGroupID: groups[0].ID, ExpectedRevision: 1, Member: true}}); response.Code != http.StatusOK {
+		t.Fatalf("membership update: %d %s", response.Code, response.Body.String())
 	}
 	var group model.NodeGroup
 	f.h.db.First(&group, groups[0].ID)
-	if group.Revision != 2 || len(tasks) != 1 || tasks[0].IdempotencyKey != fmt.Sprintf("node-group-reconcile:%d:2", group.ID) {
-		t.Fatalf("revision/task mismatch: %v %v", group, tasks)
+	var task model.Task
+	if err := f.h.db.Where("idempotency_key = ?", fmt.Sprintf("node-group-reconcile:%d:2", group.ID)).First(&task).Error; err != nil || group.Revision != 2 {
+		t.Fatalf("revision/task mismatch: group=%v task=%v error=%v", group, task, err)
 	}
 	memberships, err := loadNetworkEntryMemberships(f.h.db, entry.ID)
 	if err != nil || len(memberships) != 1 || memberships[0].NodeGroupID != group.ID {

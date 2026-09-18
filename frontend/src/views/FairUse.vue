@@ -11,6 +11,11 @@
     </PageHeader>
 
     <TransientFeedback :success="message" :error="error" success-title="实验评估策略已更新" error-title="Fair Use 观测加载失败" />
+    <PageAlert v-if="evaluationReceipt?.subscription_id === subscriptionID" tone="info" title="评估任务已提交">
+      已进入统一执行队列。执行完成后刷新本页查看评分。
+      <UiButton variant="secondary" @click="router.push('/admin/runtime-jobs')">查看任务队列</UiButton>
+      <span>执行记录：{{ evaluationReceipt?.run_id }}</span>
+    </PageAlert>
     <PageAlert tone="info" title="当前阶段仅收集和分析数据">
       原始行为事实最多保留 15 天。页面查询只做实时聚合，不生成新的分析记录；风险评分属于实验参考，不代表用户违规，也不会改变订阅服务状态。
     </PageAlert>
@@ -316,6 +321,7 @@ const policyDraftBaseline = ref('')
 const policyDraftDirty = computed(() => policyDraftBaseline.value !== JSON.stringify(policyDraft))
 const error = ref('')
 const message = ref('')
+const evaluationReceipt = ref<{ run_id: string; state: string; subscription_id: number } | null>(null)
 let controller: AbortController | null = null
 let pickerController: AbortController | null = null
 let selectedController: AbortController | null = null
@@ -470,9 +476,9 @@ async function setEvaluationEnabled(enabled: boolean) {
   message.value = ''
   try {
     policy.value = await updateSubscriptionFairUsePolicy(subscriptionID.value, policy.value.effective, enabled)
-    if (enabled) await evaluateSubscriptionFairUse(subscriptionID.value)
+    if (enabled) evaluationReceipt.value = await evaluateSubscriptionFairUse(subscriptionID.value)
     message.value = enabled
-      ? `订阅 #${subscriptionID.value} 已启用只读实验评估。`
+      ? `订阅 #${subscriptionID.value} 已启用只读实验评估，首次评估已排队。`
       : `订阅 #${subscriptionID.value} 已停用实验评估。`
     await load()
   } catch (cause: any) {
@@ -524,10 +530,10 @@ async function savePolicyParameters() {
   try {
     const nextPolicy = { ...policy.value.effective, ...policyDraft } as FairUsePolicy
     policy.value = await updateSubscriptionFairUsePolicy(subscriptionID.value, nextPolicy, true)
-    await evaluateSubscriptionFairUse(subscriptionID.value)
+    evaluationReceipt.value = await evaluateSubscriptionFairUse(subscriptionID.value)
     policyDraftBaseline.value = JSON.stringify(policyDraft)
     policyEditorOpen.value = false
-    message.value = `订阅 #${subscriptionID.value} 的实验评估参数已保存并启用。`
+    message.value = `订阅 #${subscriptionID.value} 的实验评估参数已保存并启用，评估已排队。`
     await load()
   } catch (cause: any) {
     error.value = cause?.message || cause?.response?.data?.message || '实验评估参数保存失败。'

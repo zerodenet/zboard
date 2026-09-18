@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestRealPluginProcessConfigurationAndStop(t *testing.T) {
@@ -66,6 +67,25 @@ func TestRealPluginProcessConfigurationAndStop(t *testing.T) {
 	}
 	if err := db.Exec(`DROP TRIGGER fail_live_config`).Error; err != nil {
 		t.Fatal(err)
+	}
+	// A crashed admitted process is restarted from committed configuration.
+	p.close()
+	m.superviseOnce(context.Background())
+	m.mu.Lock()
+	retry := m.restarts[v.ID]
+	retry.next = time.Now().Add(-time.Second)
+	m.restarts[v.ID] = retry
+	m.mu.Unlock()
+	m.superviseOnce(context.Background())
+	m.mu.Lock()
+	v, err = m.load(v.ID)
+	p = m.processes[v.ID]
+	m.mu.Unlock()
+	if err != nil || p == nil || p.client.Exited() || v.State != "active" {
+		t.Fatal("crashed process did not recover", err)
+	}
+	if err := m.TestConfig(context.Background(), v.ID, "admin"); err != nil {
+		t.Fatal("restart lost committed configuration", err)
 	}
 	if _, err := m.Action(context.Background(), v.ID, "disable", "admin", v.Generation, false, ""); err != nil {
 		t.Fatal(err)

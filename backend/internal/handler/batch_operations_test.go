@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -47,10 +48,10 @@ func TestValidateBatchTargetCountEnforcesNonEmptyAndMaximum(t *testing.T) {
 
 func TestBatchScopeRejectsExplicitIDsWithAllMatching(t *testing.T) {
 	h := &handlers{}
-	if _, _, err := h.resolveNodeBatchScope(nodeBatchOperationRequest{NodeIDs: []uint{1}, AllMatching: true}); err == nil {
+	if _, _, err := h.resolveNodeBatchScope(context.Background(), nodeBatchOperationRequest{NodeIDs: []uint{1}, AllMatching: true}); err == nil {
 		t.Fatal("node scope accepted node_ids with all_matching")
 	}
-	if _, _, err := h.resolveProtocolBatchScope(protocolBatchDeployRequest{ProtocolEndpointIDs: []uint{1}, AllMatching: true}); err == nil {
+	if _, _, err := h.resolveProtocolBatchScope(context.Background(), protocolBatchDeployRequest{ProtocolEndpointIDs: []uint{1}, AllMatching: true}); err == nil {
 		t.Fatal("protocol scope accepted protocol_endpoint_ids with all_matching")
 	}
 }

@@ -19,7 +19,7 @@
           <td class="table-action-column"><RowActions :label="`${account.name} 的操作`" :trigger-key="`provider-${account.id}`"><UiButton size="sm" variant="ghost" :disabled="operatingAccount === account.id" @click="openAccount(account)">编辑</UiButton><UiButton size="sm" variant="secondary" :loading="operatingAccount === account.id" @click="verifyAccount(account)">重新验证</UiButton><UiButton size="sm" variant="danger" :disabled="operatingAccount === account.id" title="删除面板凭据并清理关联" @click="removeAccount(account)">删除</UiButton></RowActions></td>
         </tr></tbody>
       </DataTable>
-      <EmptyState v-else class="provider-empty-state" icon="settings" title="还没有供应商账户" description="先添加 Cloudflare API Token，随后即可在面板管理 DNS 解析。" />
+      <EmptyState v-else class="provider-empty-state" icon="settings" title="还没有供应商账户" description="先添加可用供应商的访问凭据，随后即可在面板管理 DNS 解析。" />
     </section>
 
     <ModalDialog :open="accountOpen" :title="editingAccount ? '编辑供应商账户' : '添加供应商账户'" description="Token 加密保存且不会再次回显；编辑时留空可保留原凭据。" :busy="savingAccount" @close="accountOpen = false">
@@ -27,7 +27,7 @@
         <p v-if="accountErrors.formError.value" class="account-form-error" role="alert">{{ accountErrors.formError.value }}</p>
         <FormField label="供应商"><UiSelect v-model="accountForm.provider_key" :options="providerOptions" :disabled="Boolean(editingAccount)" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="账户名称" :error="accountErrors.fields.name" required><UiInput v-bind="controlAttrs" v-model.trim="accountForm.name" maxlength="80" placeholder="例如：生产 Cloudflare" /></FormField>
-        <FormField v-slot="{ controlAttrs }" label="Cloudflare API Token" :hint="editingAccount ? '留空保留原 Token；更换时先验证，新 Token 无效不会覆盖原凭据。' : '建议仅授予 Zone 读取和 DNS 编辑权限。'" :error="accountErrors.fields.api_token" :required="!editingAccount" full><UiInput v-bind="controlAttrs" v-model.trim="accountForm.api_token" type="password" autocomplete="new-password" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="供应商访问凭据" :hint="editingAccount ? '留空保留原凭据；更换时先验证，无效凭据不会覆盖原值。' : '请按供应商要求授予最小 DNS 读取和编辑权限。'" :error="accountErrors.fields.api_token" :required="!editingAccount" full><UiInput v-bind="controlAttrs" v-model.trim="accountForm.api_token" type="password" autocomplete="new-password" /></FormField>
       </div>
       <template #footer><UiButton variant="secondary" @click="accountOpen = false">取消</UiButton><UiButton type="button" :loading="savingAccount" @click="saveAccount">{{ editingAccount && !accountForm.api_token ? '保存修改' : '保存并验证' }}</UiButton></template>
     </ModalDialog>
@@ -76,7 +76,7 @@ async function refreshAll() {
   try {
     const [defs, providerAccounts] = await Promise.all([fetchProviderDefinitions(), fetchProviderAccounts()])
     definitions.value = defs
-    providerOptions.value = defs.filter(item => item.key === 'cloudflare').map(item => ({ label: item.name, value: item.key }))
+    providerOptions.value = defs.filter(item => item.capabilities.includes('dns.records') || item.capabilities.includes('certificate.issue')).map(item => ({ label: item.name, value: item.key }))
     accounts.value = providerAccounts
   } catch (cause: any) { error.value = cause?.response?.data?.message || '供应商数据加载失败。' } finally { loading.value = false; refreshing.value = false }
 }

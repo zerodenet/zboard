@@ -62,7 +62,9 @@ func newTrafficReadFixture(t *testing.T) trafficReadFixture {
 
 func (f *trafficReadFixture) capture() {
 	f.log = &trafficQueryLog{Interface: logger.Discard}
-	f.h.db = f.h.db.Session(&gorm.Session{Logger: f.log})
+	// Instrument the authority handle shared by application capabilities and
+	// HTTP queries, including the authentication query that precedes aggregates.
+	f.h.db.Logger = f.log
 }
 
 func (f trafficReadFixture) get(t *testing.T, path string, admin bool, handler http.HandlerFunc, data any) {

@@ -5,10 +5,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"io"
 	"net/http"
 	"strconv"
@@ -16,7 +18,6 @@ import (
 	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
@@ -30,13 +31,13 @@ type zeroEventRequestStateKey struct{}
 
 type zeroEventRequestState struct {
 	event      zeroEventEnvelope
-	node       model.Node
+	node       network.EventNode
 	receivedAt time.Time
 	buffered   bool
 }
 
 type zeroEventCredentialCacheEntry struct {
-	node      model.Node
+	node      network.EventNode
 	secret    string
 	expiresAt time.Time
 }
@@ -82,13 +83,7 @@ func isZeroAccountingEvent(eventType string) bool {
 // raw flow cursors. Runtime-scoped cursors additionally use the event sequence
 // in recordZeroFlowEvent so a restarted engine cannot reuse the same position.
 func zeroCompletionAccountingBaseline(usage model.FlowUsage, found bool, credentialID uint, flow zeroFlowProjection, cumulativeRaw int64) zeroCompletionBaseline {
-	if !found || usage.Status != "active" || usage.ProtocolCredentialID != credentialID {
-		return zeroCompletionBaseline{}
-	}
-	if usage.RawBytes > cumulativeRaw || usage.UploadBytes > flow.BytesUp || usage.DownloadBytes > flow.BytesDown {
-		return zeroCompletionBaseline{}
-	}
-	if flow.Revision > 0 && usage.Revision > flow.Revision {
+	if !found || !metering.ContinuesLegacyFlow(meteringstore.FlowCursor(usage), credentialID, flow.Revision, metering.FlowCounters{Raw: cumulativeRaw, Upload: flow.BytesUp, Download: flow.BytesDown}) {
 		return zeroCompletionBaseline{}
 	}
 	return zeroCompletionBaseline{
@@ -100,6 +95,10 @@ func zeroCompletionAccountingBaseline(usage model.FlowUsage, found bool, credent
 }
 
 func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
+	h.zeroEventHandler(w, r)
+}
+
+func (h *handlers) zeroEventHandler(w http.ResponseWriter, r *http.Request) {
 	state := zeroEventStateFromContext(r.Context())
 	if state == nil {
 		var err error
@@ -149,7 +148,7 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 	// rollback switch. Interim flow accounting is disabled there; completion is
 	// still authoritative and settles the final cumulative total.
 	if event.EventType == "flow.updated" {
-		if err := h.recordZeroConnectorActivity(node, event); err != nil {
+		if err := h.recordZeroConnectorActivity(r.Context(), node, event); err != nil {
 			ServerError(w, err)
 			return
 		}
@@ -161,7 +160,7 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !isZeroAccountingEvent(event.EventType) {
-		if err := h.recordZeroConnectorActivity(node, event); err != nil {
+		if err := h.recordZeroConnectorActivity(r.Context(), node, event); err != nil {
 			ServerError(w, err)
 			return
 		}
@@ -178,7 +177,7 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if isMieruMigrationPrincipal(flow.PrincipalKey) {
-		if err := h.recordZeroConnectorActivity(node, event); err != nil {
+		if err := h.recordZeroConnectorActivity(r.Context(), node, event); err != nil {
 			ServerError(w, err)
 			return
 		}
@@ -194,12 +193,11 @@ func (h *handlers) ZeroEventHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
-	if err := h.recordZeroConnectorActivity(node, event); err != nil {
+	if err := h.recordZeroConnectorActivity(r.Context(), node, event); err != nil {
 		ServerError(w, err)
 		return
 	}
 	if exhausted {
-		h.publishScheduler().signal()
 	}
 	OK(w, map[string]interface{}{
 		"accepted":          true,
@@ -271,17 +269,17 @@ func isMieruMigrationPrincipal(value string) bool {
 	return err == nil && id > 0
 }
 
-func (h *handlers) authenticateZeroEvent(r *http.Request, sourceID string) (model.Node, error) {
+func (h *handlers) authenticateZeroEvent(r *http.Request, sourceID string) (network.EventNode, error) {
 	if !strings.HasPrefix(sourceID, "node-") {
-		return model.Node{}, errors.New("invalid Zero event source_id")
+		return network.EventNode{}, errors.New("invalid Zero event source_id")
 	}
 	id, err := strconv.ParseUint(strings.TrimPrefix(sourceID, "node-"), 10, 64)
 	if err != nil || id == 0 {
-		return model.Node{}, errors.New("invalid Zero event source_id")
+		return network.EventNode{}, errors.New("invalid Zero event source_id")
 	}
 	provided, err := extractBearerToken(r)
 	if err != nil {
-		return model.Node{}, errors.New("missing Zero event bearer credential")
+		return network.EventNode{}, errors.New("missing Zero event bearer credential")
 	}
 	nodeID := uint(id)
 	now := time.Now().UTC()
@@ -289,7 +287,7 @@ func (h *handlers) authenticateZeroEvent(r *http.Request, sourceID string) (mode
 	if cached, ok := h.zeroEventAuthFailures.Load(nodeID); ok {
 		entry := cached.(zeroEventAuthFailureEntry)
 		if entry.digest == providedDigest && now.Before(entry.expiresAt) {
-			return model.Node{}, errors.New("invalid Zero event credential")
+			return network.EventNode{}, errors.New("invalid Zero event credential")
 		}
 		if !now.Before(entry.expiresAt) {
 			h.zeroEventAuthFailures.Delete(nodeID)
@@ -304,19 +302,18 @@ func (h *handlers) authenticateZeroEvent(r *http.Request, sourceID string) (mode
 			h.zeroEventAuthCache.Delete(nodeID)
 		}
 	}
-	var node model.Node
-	lookup := h.db.Where("id = ?", nodeID).Limit(1).Find(&node)
-	if lookup.Error != nil || lookup.RowsAffected == 0 || node.NodeCredentialRevokedAt != nil || node.NodeCredential == "" {
-		h.zeroEventAuthFailures.Store(nodeID, zeroEventAuthFailureEntry{digest: providedDigest, expiresAt: now.Add(zeroEventInvalidCredentialCacheTTL)})
-		return model.Node{}, errors.New("Zero event credential is unavailable")
-	}
-	expected, err := h.credentialCipher.Decrypt(node.NodeCredential)
+	node, err := h.services.EventCredentials.Load(r.Context(), nodeID)
 	if err != nil {
-		return model.Node{}, errors.New("Zero event credential is unavailable")
+		h.zeroEventAuthFailures.Store(nodeID, zeroEventAuthFailureEntry{digest: providedDigest, expiresAt: now.Add(zeroEventInvalidCredentialCacheTTL)})
+		return network.EventNode{}, errors.New("Zero event credential is unavailable")
+	}
+	expected, err := h.credentialCipher.Decrypt(node.Credential)
+	if err != nil {
+		return network.EventNode{}, errors.New("Zero event credential is unavailable")
 	}
 	if len(provided) != len(expected) || subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
 		h.zeroEventAuthFailures.Store(nodeID, zeroEventAuthFailureEntry{digest: providedDigest, expiresAt: now.Add(zeroEventInvalidCredentialCacheTTL)})
-		return model.Node{}, errors.New("invalid Zero event credential")
+		return network.EventNode{}, errors.New("invalid Zero event credential")
 	}
 	h.zeroEventAuthFailures.Delete(nodeID)
 	h.zeroEventAuthCache.Store(nodeID, zeroEventCredentialCacheEntry{node: node, secret: expected, expiresAt: now.Add(zeroEventCredentialCacheTTL)})
@@ -330,14 +327,9 @@ func (h *handlers) invalidateZeroEventCredential(nodeID uint) {
 	}
 }
 
-func (h *handlers) recordZeroConnectorActivity(node model.Node, event zeroEventEnvelope) error {
+func (h *handlers) recordZeroConnectorActivity(ctx context.Context, node network.EventNode, event zeroEventEnvelope) error {
 	now := time.Now().UTC()
-	updates := map[string]interface{}{
-		"last_seen_at":           now,
-		"connector_last_seen_at": now,
-		"is_online":              true,
-		"status":                 1,
-	}
+	activity := network.NodeActivityUpdate{At: now, Online: true, ConnectorSeen: true}
 	switch event.EventType {
 	case "engine.started":
 		var payload struct {
@@ -351,28 +343,24 @@ func (h *handlers) recordZeroConnectorActivity(node model.Node, event zeroEventE
 			return errors.New("Zero engine build_id is too long")
 		}
 		if payload.BuildID != "" {
-			updates["version"] = payload.BuildID
+			activity.Version = &payload.BuildID
 		}
 	case "engine.stopped":
-		updates["is_online"] = false
-		updates["status"] = 0
-		updates["connector_last_seen_at"] = nil
+		activity.Online = false
+		activity.ConnectorSeen = false
 	case "stats.sampled":
 		stats, err := parseZeroStatsProjection(event.Payload)
 		if err != nil {
 			return err
 		}
-		updates["active_flows"] = stats.ActiveSessions
-		updates["bytes_up"] = stats.BytesUp
-		updates["bytes_down"] = stats.BytesDown
+		activity.ActiveFlows = &stats.ActiveSessions
+		activity.BytesUp = &stats.BytesUp
+		activity.BytesDown = &stats.BytesDown
 	}
-	result := h.db.Model(&model.Node{}).
-		Where("id = ? AND is_enabled = ? AND node_credential = ? AND node_credential_revoked_at IS NULL", node.ID, true, node.NodeCredential).
-		Updates(updates)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
+	if err := h.services.NodeActivity.Record(ctx, node.ID, node.Credential, activity); err != nil {
+		if !errors.Is(err, network.ErrNodeActivityCredential) {
+			return err
+		}
 		return errors.New("Zero event credential is no longer active")
 	}
 	return nil
@@ -440,205 +428,10 @@ func parseZeroFlowProjection(event zeroEventEnvelope) (zeroFlowProjection, error
 	return zeroFlowProjection{FlowID: flowID, Revision: revision, PrincipalKey: principal, BytesUp: bytesUp, BytesDown: bytesDown}, nil
 }
 
-func (h *handlers) recordZeroFlowEvent(node model.Node, event zeroEventEnvelope, flow zeroFlowProjection) (model.TrafficRecord, bool, error) {
-	var record model.TrafficRecord
-	if !isZeroAccountingEvent(event.EventType) {
-		return record, false, fmt.Errorf("Zero event %q is not an accounting event", event.EventType)
-	}
-	exhausted := false
-	err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("node_id = ? AND report_id = ?", node.ID, event.EventID).First(&record).Error; err == nil {
-			return nil
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-		credential, credentialErr := h.resolveZeroCompletionCredential(tx, node.ID, flow.PrincipalKey)
-		if credentialErr != nil {
-			return credentialErr
-		}
-		flow.PrincipalKey = credential.PrincipalKey
-		var subscription model.Subscription
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&subscription, credential.SubscriptionID).Error; err != nil {
-			return err
-		}
-		var endpoint model.ProtocolEndpoint
-		if err := tx.First(&endpoint, credential.ProtocolEndpointID).Error; err != nil {
-			return err
-		}
-
-		cumulativeRaw := trafficBytesForMode(flow.BytesUp, flow.BytesDown, subscription.TrafficCalcMode)
-		usage, usageExists, legacyUsage, err := loadZeroFlowUsage(tx, node.ID, event, flow, credential.ID, cumulativeRaw)
-		if err != nil {
-			return err
-		}
-		targetUsageKey := zeroFlowUsageKey(event.CoreInstanceID, flow.FlowID)
-		continues := false
-		previousRaw, previousUpload, previousDownload, previousUsed := int64(0), int64(0), int64(0), int64(0)
-		if usageExists {
-			if zeroFlowUsageRuntimeScoped(targetUsageKey) && !legacyUsage {
-				if usage.ProtocolCredentialID != credential.ID {
-					return errors.New("flow principal changed during its runtime generation")
-				}
-				if usage.Revision > 0 && event.Sequence > 0 && event.Sequence < usage.Revision {
-					return errors.New("Zero flow completion sequence is older than the persisted runtime cursor")
-				}
-				if zeroRuntimeFlowCountersRegress(usage, cumulativeRaw, flow) {
-					return errors.New("Zero flow completion counters regressed within one core instance")
-				}
-				continues = true
-			} else if usage.ProtocolCredentialID == credential.ID &&
-				usage.RawBytes <= cumulativeRaw && usage.UploadBytes <= flow.BytesUp && usage.DownloadBytes <= flow.BytesDown {
-				continues = true
-			}
-			if continues {
-				previousRaw = usage.RawBytes
-				previousUpload = usage.UploadBytes
-				previousDownload = usage.DownloadBytes
-				previousUsed = usage.UsedBytes
-			}
-		}
-
-		deltaRaw := cumulativeRaw - previousRaw
-		deltaUpload := flow.BytesUp - previousUpload
-		deltaDownload := flow.BytesDown - previousDownload
-		if deltaRaw < 0 || deltaUpload < 0 || deltaDownload < 0 {
-			return errors.New("Zero flow completion cannot produce a negative delta")
-		}
-		billedDelta, err := billedTrafficBytesChecked(deltaRaw, endpoint.MultiplierMilli)
-		if err != nil {
-			return err
-		}
-		remaining := subscription.FlowTotal - subscription.FlowUsed
-		if remaining < 0 {
-			remaining = 0
-		}
-		charged := billedDelta
-		if charged > remaining {
-			charged = remaining
-		}
-		now := time.Now().UTC()
-		recordAt := zeroEventTime(event, now)
-		record = model.TrafficRecord{
-			UserID:                  subscription.UserID,
-			SubscriptionID:          subscription.ID,
-			NodeID:                  node.ID,
-			ProtocolEndpointID:      endpoint.ID,
-			ReportID:                event.EventID,
-			Nonce:                   zeroEventNonce(event.EventID),
-			FlowID:                  flow.FlowID,
-			EventType:               event.EventType,
-			EventRevision:           flow.Revision,
-			RawBytes:                deltaRaw,
-			UploadBytes:             deltaUpload,
-			DownloadBytes:           deltaDownload,
-			TrafficCalcMode:         subscription.TrafficCalcMode,
-			ProtocolMultiplierMilli: endpoint.MultiplierMilli,
-			UsedBytes:               charged,
-			At:                      recordAt,
-			Meta:                    fmt.Sprintf(`{"source_id":%q,"core_instance_id":%q,"sequence":%d,"credential_id":%q,"continued_flow":%t}`, event.SourceID, event.CoreInstanceID, event.Sequence, credential.CredentialID, continues),
-		}
-		if err := tx.Create(&record).Error; err != nil {
-			return err
-		}
-		if charged > 0 {
-			subscription.FlowUsed += charged
-			if subscription.FlowUsed >= subscription.FlowTotal {
-				subscription.FlowUsed = subscription.FlowTotal
-				subscription.Status = subStatusExpired
-				exhausted = true
-			}
-			if err := tx.Model(&subscription).Updates(map[string]interface{}{
-				"flow_used":  subscription.FlowUsed,
-				"status":     subscription.Status,
-				"updated_at": now,
-			}).Error; err != nil {
-				return err
-			}
-		}
-
-		usage.ProtocolCredentialID = credential.ID
-		usage.NodeID = node.ID
-		usage.FlowID = targetUsageKey
-		usage.SubscriptionID = subscription.ID
-		usage.ProtocolEndpointID = endpoint.ID
-		usage.PrincipalKey = credential.PrincipalKey
-		usage.Revision = zeroFlowUsageCursorSequence(event, flow)
-		usage.RawBytes = cumulativeRaw
-		usage.UploadBytes = flow.BytesUp
-		usage.DownloadBytes = flow.BytesDown
-		usage.UsedBytes = previousUsed + charged
-		usage.Status = "completed"
-		usage.LastEventID = event.EventID
-		usage.LastSeenAt = recordAt
-		usage.CompletedAt = &now
-		if usageExists {
-			if err := tx.Save(&usage).Error; err != nil {
-				return err
-			}
-		} else if err := tx.Create(&usage).Error; err != nil {
-			return err
-		}
-
-		if err := tx.Model(&credential).Updates(map[string]interface{}{"last_used_at": now, "updated_at": now}).Error; err != nil {
-			return err
-		}
-		if exhausted {
-			if err := enqueueSubscriptionConfigPublishes(tx, subscription.ID, 0); err != nil {
-				return err
-			}
-			if err := tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ? AND status IN ?", subscription.ID,
-				[]string{protocolCredentialStatusActive, protocolCredentialStatusPrepared}).
-				Updates(map[string]interface{}{"status": "expired", "updated_at": now}).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	return record, exhausted, err
+func (h *handlers) recordZeroFlowEvent(node network.EventNode, event zeroEventEnvelope, flow zeroFlowProjection) (model.TrafficRecord, bool, error) {
+	record, exhausted, err := h.services.CompletionAccounting(h.credentialCipher).Complete(context.Background(), metering.CompletedFlow{NodeID: node.ID, SourceID: event.SourceID, CoreInstanceID: event.CoreInstanceID, EventID: event.EventID, EventType: event.EventType, Sequence: event.Sequence, FlowID: flow.FlowID, PrincipalKey: flow.PrincipalKey, Revision: flow.Revision, BytesUp: flow.BytesUp, BytesDown: flow.BytesDown, OccurredAt: zeroEventTime(event, time.Now().UTC())})
+	return model.TrafficRecord(record), exhausted, err
 }
-
-// Completion and buffered updates remain attributable after a subscription or
-// credential has expired. The node event itself is authenticated, so historical
-// credentials can be used for ownership resolution without re-enabling access.
-func (h *handlers) resolveZeroCompletionCredential(tx *gorm.DB, nodeID uint, principal string) (model.ProtocolCredential, error) {
-	var credential model.ProtocolCredential
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("principal_key = ? AND node_id = ?", principal, nodeID).
-		Order("id DESC").
-		First(&credential).Error
-	if err == nil || !errors.Is(err, gorm.ErrRecordNotFound) {
-		return credential, err
-	}
-	return h.matchNodeCredentialSecret(tx, nodeID, principal)
-}
-
-// Current Zero Shadowsocks events use the authenticated password as the
-// protocol principal. Match it only in memory, then immediately replace it
-// with the stable panel principal; the password is never persisted in traffic
-// records or logs. Completed flows may reference a credential that has already
-// expired, so ownership lookup intentionally includes historical credentials.
-func (h *handlers) matchNodeCredentialSecret(tx *gorm.DB, nodeID uint, provided string) (model.ProtocolCredential, error) {
-	var credentials []model.ProtocolCredential
-	if err := tx.Where("node_id = ?", nodeID).Order("id DESC").Find(&credentials).Error; err != nil {
-		return model.ProtocolCredential{}, err
-	}
-	for _, credential := range credentials {
-		secret, err := h.credentialCipher.Decrypt(credential.Secret)
-		if err != nil {
-			continue
-		}
-		if len(secret) == len(provided) && subtle.ConstantTimeCompare([]byte(secret), []byte(provided)) == 1 {
-			return credential, nil
-		}
-	}
-	return model.ProtocolCredential{}, gorm.ErrRecordNotFound
-}
-
-func zeroEventNonce(eventID string) string {
-	digest := sha256.Sum256([]byte(eventID))
-	return hex.EncodeToString(digest[:])
-}
-
 func zeroEventTime(event zeroEventEnvelope, fallback time.Time) time.Time {
 	if event.OccurredAtUnixMillis <= 0 {
 		return fallback

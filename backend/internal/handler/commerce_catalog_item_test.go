@@ -24,7 +24,7 @@ func TestNewPlanCatalogItemUsesPlanEntitlements(t *testing.T) {
 	if item.SpeedLimitMbps != plan.SpeedLimitMbps {
 		t.Fatalf("speed limit = %d, want %d", item.SpeedLimitMbps, plan.SpeedLimitMbps)
 	}
-	if item.PrimarySKU != primarySKU {
+	if item.PrimarySKU == nil || model.PlanSKU(*item.PrimarySKU) != *primarySKU {
 		t.Fatal("primary SKU was not preserved")
 	}
 }

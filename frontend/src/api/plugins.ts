@@ -40,7 +40,7 @@ export interface Plugin {
     surfaces: Surface[];
     capabilities: string[];
     components: { server?: unknown };
-    contributions: { pages: PluginPage[]; slots?: PluginSlotContribution[] };
+    contributions: { pages: PluginPage[]; slots?: PluginSlotContribution[]; tasks?: { id: string; title: string; interval_seconds: number; timeout_seconds: number }[] };
   };
   compatibility: { compatible: boolean; tested: boolean; reason: string; warning?: string };
   versions: PluginVersion[];
@@ -249,5 +249,5 @@ export const revokePluginSession = (session: PluginSession) =>
   });
 
 export const fetchPluginMigrations = (id: string, signal?: AbortSignal) => api.get(`/admin/plugins/${id}/migrations`, { signal }).then(data<PluginMigration[]>);
-export const capabilityLabel = (c: string) => ({ 'zboard.ui.page.v1': '展示插件页面', 'zboard.config.v1': '管理自身配置', 'zboard.identity.provider.v1': '验证第三方身份', 'zboard.storage.v1': '读写自身私有数据' })[c] || c;
+export const capabilityLabel = (c: string) => ({ 'zboard.ui.page.v1': '展示插件页面', 'zboard.config.v1': '管理自身配置', 'zboard.identity.provider.v1': '验证第三方身份', 'zboard.storage.v1': '读写自身私有数据', 'zboard.task.v1': '注册定时任务' })[c] || c;
 export const pluginBusinessLabel = (p: Plugin) => p.manifest.capabilities.includes('zboard.identity.provider.v1') ? '第三方登录与注册' : p.manifest.components.server ? '服务扩展' : '页面扩展';

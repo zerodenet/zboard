@@ -1,61 +1,60 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
 )
 
 // Build entries from explicit group grants, never by expanding the direct
 // endpoint list. A landing credential alone is not a grant to any entry.
-func (h *handlers) buildAuthorizedNetworkEntries(subscriptions []model.Subscription, filter subscriptionProjectionFilter, now time.Time) ([]subscriptionManifestNode, error) {
+func (h *handlers) buildAuthorizedNetworkEntries(ctx context.Context, subscriptions []model.Subscription, filter subscriptionProjectionFilter, now time.Time) ([]subscriptionManifestNode, error) {
+	targets := make([]entitlements.NetworkEntryProjectionSubscription, 0, len(subscriptions))
+	for _, subscription := range subscriptions {
+		targets = append(targets, entitlements.NetworkEntryProjectionSubscription{ID: subscription.ID, NodeGroupID: subscription.NodeGroupID})
+	}
+	projection, err := h.services.NetworkEntryProjection.Load(ctx, targets, now)
+	if err != nil {
+		return nil, err
+	}
+	entriesByGroup := make(map[uint][]model.NetworkEntry)
+	for _, row := range projection.Entries {
+		entriesByGroup[row.NodeGroupID] = append(entriesByGroup[row.NodeGroupID], model.NetworkEntry{ID: row.ID, NodeID: row.NodeID, EndpointID: row.EndpointID, Name: row.Name, Address: row.Address, Network: row.Network, Port: row.Port, PublicPort: row.PublicPort, Enabled: true})
+	}
+	endpoints := make(map[uint]model.ProtocolEndpoint, len(projection.Endpoints))
+	for _, row := range projection.Endpoints {
+		endpoints[row.ID] = model.ProtocolEndpoint{ID: row.ID, NodeID: row.NodeID, Name: row.Name, Protocol: row.Protocol, Address: row.Address, ServerConfig: row.ServerConfig, ClientConfig: row.ClientConfig, Tags: row.Tags, Port: row.Port, PublicPort: row.PublicPort, MultiplierMilli: row.MultiplierMilli, ManagedPrincipalReady: row.ManagedPrincipalReady, MieruPrincipalReady: row.MieruPrincipalReady, IsActive: true}
+	}
+	nodes := make(map[uint]model.Node, len(projection.Nodes))
+	for _, row := range projection.Nodes {
+		nodes[row.ID] = model.Node{ID: row.ID, Region: row.Region, IsEnabled: row.IsEnabled, LifecycleStatus: row.LifecycleStatus, LastSeenAt: row.LastSeenAt}
+	}
+	pending := make(map[uint]struct{}, len(projection.PendingNodeIDs))
+	for _, nodeID := range projection.PendingNodeIDs {
+		pending[nodeID] = struct{}{}
+	}
+	type credentialKey struct{ subscriptionID, endpointID uint }
+	credentials := make(map[credentialKey]model.ProtocolCredential, len(projection.Credentials))
+	for _, row := range projection.Credentials {
+		credentials[credentialKey{row.SubscriptionID, row.ProtocolEndpointID}] = model.ProtocolCredential{SubscriptionID: row.SubscriptionID, ProtocolEndpointID: row.ProtocolEndpointID, CredentialID: row.CredentialID, Secret: row.SecretCiphertext, ListenPort: row.ListenPort, PublicPort: row.PublicPort, Status: protocolCredentialStatusActive}
+	}
 	result := []subscriptionManifestNode{}
 	seen := map[uint]bool{}
 	for _, sub := range subscriptions {
-		var entries []model.NetworkEntry
-		if err := h.db.Model(&model.NetworkEntry{}).Select("network_entries.*").
-			Joins("JOIN node_group_network_entries membership ON membership.network_entry_id = network_entries.id").
-			Where("membership.node_group_id = ? AND network_entries.enabled = ?", sub.NodeGroupID, true).
-			Order("membership.sort_order, network_entries.id").Find(&entries).Error; err != nil {
-			return nil, err
-		}
-		for _, entry := range entries {
-			// Stale credentials and static protocol templates cannot bypass an
-			// explicit landing grant, even before reconciliation runs.
-			var grants int64
-			if err := h.db.Model(&model.NodeGroupEndpoint{}).Where("node_group_id = ? AND protocol_endpoint_id = ?", sub.NodeGroupID, entry.EndpointID).Count(&grants).Error; err != nil {
-				return nil, err
-			}
-			if grants == 0 {
-				continue
-			}
+		for _, entry := range entriesByGroup[sub.NodeGroupID] {
 			if seen[entry.ID] {
 				continue
 			}
-			var endpoint model.ProtocolEndpoint
-			if err := h.db.Where("id = ? AND is_active = ?", entry.EndpointID, true).First(&endpoint).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					continue
-				}
-				return nil, err
-			}
-			var nodes []model.Node
-			if err := h.db.Where("id IN ? AND is_enabled = ? AND last_seen_at >= ? AND lifecycle_status <> ?", []uint{entry.NodeID, endpoint.NodeID}, true, now.Add(-nodeOnlineWindow), resourceStatusDeleting).Find(&nodes).Error; err != nil {
-				return nil, err
-			}
-			if len(nodes) != 2 {
+			endpoint, endpointExists := endpoints[entry.EndpointID]
+			entryNode, entryNodeExists := nodes[entry.NodeID]
+			landing, landingExists := nodes[endpoint.NodeID]
+			if !endpointExists || !entryNodeExists || !landingExists || entryNode.ID == landing.ID {
 				continue
-			}
-			var landing model.Node
-			for _, node := range nodes {
-				if node.ID == endpoint.NodeID {
-					landing = node
-				}
 			}
 			if supported, _ := h.protocolKernelSupportForNode(endpoint.Protocol, landing); !supported {
 				continue
@@ -66,23 +65,19 @@ func (h *handlers) buildAuthorizedNetworkEntries(subscriptions []model.Subscript
 			if !filter.matchesEndpoint(visibleEndpoint, landing) {
 				continue
 			}
-			var pending int64
-			if err := h.db.Model(&model.NodeConfigPublish{}).Where("node_id IN ?", []uint{entry.NodeID, endpoint.NodeID}).Count(&pending).Error; err != nil {
-				return nil, err
+			if _, exists := pending[entry.NodeID]; exists {
+				continue
 			}
-			if pending > 0 {
+			if _, exists := pending[endpoint.NodeID]; exists {
 				continue
 			}
 			base := subscriptionManifestNode{ID: endpoint.ID, NodeID: endpoint.NodeID, SubscriptionID: sub.ID,
 				Name: endpoint.Name, Region: landing.Region, Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
 				Protocol: endpoint.Protocol, MultiplierMilli: endpoint.MultiplierMilli}
 			if h.endpointDeliversSubscriptionCredential(endpoint) {
-				var credential model.ProtocolCredential
-				if err := h.db.Where("subscription_id = ? AND protocol_endpoint_id = ? AND status = ? AND revoked_at IS NULL AND expires_at > ?", sub.ID, endpoint.ID, protocolCredentialStatusActive, now).First(&credential).Error; err != nil {
-					if errors.Is(err, gorm.ErrRecordNotFound) {
-						continue
-					}
-					return nil, err
+				credential, exists := credentials[credentialKey{sub.ID, endpoint.ID}]
+				if !exists {
+					continue
 				}
 				config, err := h.credentialClientConfig(endpoint, credential)
 				if err != nil {

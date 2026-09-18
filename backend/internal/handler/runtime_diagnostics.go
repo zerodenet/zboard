@@ -26,23 +26,18 @@ type runtimeDiagnostics struct {
 	EventSpool    *zeroevent.Status          `json:"event_spool"`
 }
 
-func snapshotDatabasePool(pool *sql.DB) databasePoolSnapshot {
-	stats := pool.Stats()
+func snapshotDatabasePool(stats sql.DBStats) databasePoolSnapshot {
 	return databasePoolSnapshot{stats.MaxOpenConnections, stats.OpenConnections, stats.InUse, stats.Idle,
 		stats.WaitCount, stats.WaitDuration.Seconds()}
 }
 
 func (h *handlers) runtimeDiagnostics() (runtimeDiagnostics, error) {
-	writer, err := h.db.DB()
+	pools, err := h.services.DatabasePoolStats()
 	if err != nil {
 		return runtimeDiagnostics{}, err
 	}
-	reader, err := h.trafficQueryDB().DB()
-	if err != nil {
-		return runtimeDiagnostics{}, err
-	}
-	result := runtimeDiagnostics{AsOf: time.Now().UTC(), StartedAt: zboardProcessStartedAt, AccountingDB: snapshotDatabasePool(writer),
-		TrafficReadDB: snapshotDatabasePool(reader), SharedPool: writer == reader}
+	result := runtimeDiagnostics{AsOf: time.Now().UTC(), StartedAt: zboardProcessStartedAt, AccountingDB: snapshotDatabasePool(pools.Accounting),
+		TrafficReadDB: snapshotDatabasePool(pools.Traffic), SharedPool: pools.Shared}
 	if value, ok := zeroEventRuntimeRegistry.Load(h); ok {
 		runtime := value.(*zeroEventRuntime)
 		consumer, spool := runtime.metrics.snapshot(), runtime.spool.Status()
