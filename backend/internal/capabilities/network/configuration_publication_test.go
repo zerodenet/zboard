@@ -85,6 +85,17 @@ func TestConfigurationPublicationStatePreservesCauseAndCommitFailure(t *testing.
 	}
 }
 
+func TestConfigurationPublicationStateAllowsEndpointlessTarget(t *testing.T) {
+	repository := &configurationPublicationRepositoryStub{}
+	state := ConfigurationPublicationState{Repository: repository}
+	if _, err := state.Begin(context.Background(), ConfigurationPublicationRequest{NodeID: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.beginRequest.NodeID != 3 || repository.beginRequest.TriggerEndpointID != 0 {
+		t.Fatalf("request=%+v", repository.beginRequest)
+	}
+}
+
 func TestConfigurationPublicationStateRejectsIncompleteBoundaryValues(t *testing.T) {
 	state := ConfigurationPublicationState{}
 	if _, err := state.Begin(context.Background(), ConfigurationPublicationRequest{NodeID: 1, TriggerEndpointID: 2}); !errors.Is(err, ErrConfigurationPublicationUnavailable) {

@@ -74,6 +74,26 @@ func TestConfigurationPublicationPersistsLifecycleAndReadiness(t *testing.T) {
 	}
 }
 
+func TestConfigurationPublicationAllowsNullableTriggerEndpoint(t *testing.T) {
+	store, node, _ := configurationPublicationFixture(t)
+	started, err := store.BeginConfigurationPublication(context.Background(), network.ConfigurationPublicationRequest{NodeID: node.ID}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.Deployment.ProtocolEndpointID != 0 || started.Deployment.NodeID != node.ID {
+		t.Fatalf("deployment=%+v", started.Deployment)
+	}
+	var count int64
+	if err := store.DB.Model(&model.ProtocolDeployment{}).
+		Where("id = ? AND protocol_endpoint_id IS NULL", started.Deployment.ID).
+		Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("nullable endpoint rows=%d", count)
+	}
+}
+
 func TestConfigurationPublicationFailureAndCredentialRestoreAreFenced(t *testing.T) {
 	store, node, endpoint := configurationPublicationFixture(t)
 	ctx := context.Background()

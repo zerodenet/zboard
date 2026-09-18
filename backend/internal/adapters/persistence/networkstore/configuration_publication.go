@@ -22,13 +22,15 @@ func (s ConfigurationPublicationState) BeginConfigurationPublication(ctx context
 		if node.LifecycleStatus == "deleting" {
 			return network.ErrKernelResourceDeleting
 		}
-		var endpoint model.ProtocolEndpoint
-		if err := tx.Select("id", "node_id").Where("id = ? AND node_id = ?", request.TriggerEndpointID, request.NodeID).First(&endpoint).Error; err != nil {
-			return err
+		if request.TriggerEndpointID != 0 {
+			var endpoint model.ProtocolEndpoint
+			if err := tx.Select("id", "node_id").Where("id = ? AND node_id = ?", request.TriggerEndpointID, request.NodeID).First(&endpoint).Error; err != nil {
+				return err
+			}
 		}
 		requestedBy := optionalUint(request.RequestedBy)
 		row := model.ProtocolDeployment{
-			ProtocolEndpointID: endpoint.ID, NodeID: node.ID, ConfigRevision: uint64(now.UnixNano()),
+			ProtocolEndpointID: request.TriggerEndpointID, NodeID: node.ID, ConfigRevision: uint64(now.UnixNano()),
 			Status: "running", RequestedBy: requestedBy, StartedAt: &now,
 		}
 		if err := tx.Create(&row).Error; err != nil {

@@ -199,6 +199,19 @@ func TestPublishExecutorRetainsFailureAndUnacknowledgedSuccess(t *testing.T) {
 	}
 }
 
+func TestPublishWorkerCompletesTrulyUnconfiguredNode(t *testing.T) {
+	h, _ := newPublishFixture(t)
+	mustEnqueuePublish(t, h, 0)
+	now := time.Now().UTC().Add(time.Second)
+	item := mustClaimPublish(t, h, now)
+	if err := h.executeNodePublish(context.Background(), item, func(ctx context.Context) error {
+		return h.publishQueuedNode(ctx, item)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertNoPublishClaim(t, h, now.Add(time.Hour))
+}
+
 func TestPublicationSchemaAddsQueueToExistingDatabase(t *testing.T) {
 	h, _ := newPublishFixture(t)
 	if err := h.db.Migrator().DropTable(&model.NodeConfigPublish{}); err != nil {

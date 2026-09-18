@@ -14,7 +14,9 @@ var (
 )
 
 type ConfigurationPublicationRequest struct {
-	NodeID            uint
+	NodeID uint
+	// TriggerEndpointID is optional for fronting-only nodes and publications
+	// that remove the last runtime listener from a node.
 	TriggerEndpointID uint
 	RequestedBy       uint
 }
@@ -64,7 +66,7 @@ type ConfigurationPublicationState struct {
 }
 
 func (s ConfigurationPublicationState) Begin(ctx context.Context, request ConfigurationPublicationRequest) (ConfigurationPublicationStart, error) {
-	if s.Repository == nil || request.NodeID == 0 || request.TriggerEndpointID == 0 {
+	if s.Repository == nil || request.NodeID == 0 {
 		return ConfigurationPublicationStart{}, ErrConfigurationPublicationUnavailable
 	}
 	return s.Repository.BeginConfigurationPublication(ctx, request, s.now())
