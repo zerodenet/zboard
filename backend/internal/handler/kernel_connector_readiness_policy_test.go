@@ -18,7 +18,7 @@ func TestZeroStatsProjectionAcceptsIdleNode(t *testing.T) {
 }
 
 func TestKernelReadinessDoesNotRollbackForMissingConnectorActivity(t *testing.T) {
-	payload, err := os.ReadFile("kernel_automation.go")
+	payload, err := os.ReadFile("../capabilities/network/kernel_reconciliation.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,8 +28,8 @@ func TestKernelReadinessDoesNotRollbackForMissingConnectorActivity(t *testing.T)
 	}
 	for _, expected := range []string{
 		`summary := fmt.Sprintf("Zero %s %s and passed systemd and control-socket health checks"`,
-		`"connector_verified": connectorEventErr == nil`,
-		`result["connector_warning"]`,
+		`connectorEventErr == nil, warning`,
+		`warning = TruncateKernelError(connectorEventErr.Error())`,
 	} {
 		if !strings.Contains(source, expected) {
 			t.Fatalf("kernel/Connector readiness must remain independently observable: missing %q", expected)
@@ -42,8 +42,15 @@ func TestManagedZeroOnboardingInitializesCompatibilityTrafficCredential(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(payload), `h.ensureNodeTrafficReportCredential(node)`) {
-		t.Fatal("managed Zero reconcile must initialize the node traffic-report credential")
+	if !strings.Contains(string(payload), `PrepareTrafficCredential`) || !strings.Contains(string(payload), `prepareNodeTrafficReportCredential`) {
+		t.Fatal("managed Zero adapter must prepare the node traffic-report credential")
+	}
+	capabilitySource, err := os.ReadFile("../capabilities/network/kernel_reconciliation.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(capabilitySource), `s.State.EnsureTrafficCredential`) {
+		t.Fatal("kernel reconciliation capability must own traffic credential persistence order")
 	}
 	credentialSource, err := os.ReadFile("kernel_traffic_credential.go")
 	if err != nil {
@@ -52,8 +59,7 @@ func TestManagedZeroOnboardingInitializesCompatibilityTrafficCredential(t *testi
 	source := string(credentialSource)
 	for _, expected := range []string{
 		`node.TrafficSecret != "" || node.TrafficSecretRevokedAt != nil`,
-		`"traffic_secret":`,
-		`"traffic_secret_prefix":`,
+		`&network.KernelEncryptedCredential{Ciphertext: encrypted, Prefix: prefix}`,
 	} {
 		if !strings.Contains(source, expected) {
 			t.Fatalf("traffic credential bootstrap policy is incomplete: missing %q", expected)

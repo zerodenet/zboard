@@ -1,11 +1,9 @@
 package handler
 
 import (
-	"errors"
-	"strings"
+	"context"
 
-	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/platform"
 )
 
 const defaultTermsContent = `# 服务条款
@@ -106,8 +104,8 @@ var legacyPolicyKeys = map[string]string{
 	"site_refund_content":  "site_refund_url",
 }
 
-func siteCustomizationDefaults() []model.SystemConfig {
-	return []model.SystemConfig{
+func siteCustomizationDefaults() []platform.SiteCustomizationDefault {
+	definitions := []platform.SiteCustomizationDefault{
 		{
 			ConfigKey:   "site_logo_dark",
 			Name:        "深色站点 Logo",
@@ -244,22 +242,10 @@ func siteCustomizationDefaults() []model.SystemConfig {
 			Revision:    1,
 		},
 	}
-}
-
-func (h *handlers) legacyPolicyValue(configKey string) (string, error) {
-	legacyKey := legacyPolicyKeys[configKey]
-	if legacyKey == "" {
-		return "", nil
+	for index := range definitions {
+		definitions[index].LegacyKey = legacyPolicyKeys[definitions[index].ConfigKey]
 	}
-	var legacy model.SystemConfig
-	err := h.db.Where("config_key = ?", legacyKey).First(&legacy).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(legacy.Value), nil
+	return definitions
 }
 
 // ReconcileSiteCustomizationDefaults follows the existing runtime-default
@@ -269,35 +255,5 @@ func (h *handlers) legacyPolicyValue(configKey string) (string, error) {
 // promoted into the new content keys on first upgrade so existing sites keep
 // their configured legal documents instead of silently switching to defaults.
 func (h *handlers) ReconcileSiteCustomizationDefaults() error {
-	for _, definition := range siteCustomizationDefaults() {
-		var existing model.SystemConfig
-		err := h.db.Where("config_key = ?", definition.ConfigKey).First(&existing).Error
-		switch {
-		case errors.Is(err, gorm.ErrRecordNotFound):
-			seed := definition
-			legacyValue, legacyErr := h.legacyPolicyValue(definition.ConfigKey)
-			if legacyErr != nil {
-				return legacyErr
-			}
-			if legacyValue != "" {
-				seed.Value = legacyValue
-			}
-			if err := h.db.Create(&seed).Error; err != nil {
-				return err
-			}
-		case err != nil:
-			return err
-		default:
-			if err := h.db.Model(&existing).Updates(map[string]interface{}{
-				"name":        definition.Name,
-				"value_type":  definition.ValueType,
-				"description": definition.Description,
-				"is_public":   definition.IsPublic,
-				"is_secret":   definition.IsSecret,
-			}).Error; err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return h.services.SiteCustomizationDefaults.Reconcile(context.Background(), siteCustomizationDefaults())
 }

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	capabilityjobs "github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"testing"
 	"time"
 
@@ -47,8 +48,15 @@ func TestSQLiteConsumerShortTransactionsContinueAfterFullBurst(t *testing.T) {
 	count := zeroEventConsumerBurstBatches*zeroEventSQLiteBatchLimit + 1
 	spool := &checkpointTestSpool{events: accountingBenchmarkEvents(credential, 0, count), complete: cancel}
 	runtime := &zeroEventRuntime{spool: spool, config: zeroevent.ConsumerConfig{MaxBatch: 2000, CommitInterval: time.Hour}, done: make(chan struct{})}
-	go h.runZeroEventConsumer(ctx, runtime)
-	<-runtime.done
+	for ctx.Err() == nil {
+		err := h.consumeZeroEventCycle(ctx, runtime)
+		if err != nil && !errors.Is(err, capabilityjobs.ErrContinue) {
+			t.Fatal(err)
+		}
+		if err == nil {
+			break
+		}
+	}
 	if spool.position != count || len(spool.limits) != zeroEventConsumerBurstBatches+1 {
 		t.Fatalf("consumer stalled after full burst: position=%d reads=%v", spool.position, spool.limits)
 	}

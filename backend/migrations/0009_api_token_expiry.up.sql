@@ -1,0 +1,2 @@
+ALTER TABLE user_api_tokens ADD COLUMN name VARCHAR(120) NOT NULL DEFAULT '';
+ALTER TABLE user_api_tokens ADD COLUMN expires_at DATETIME(3) NULL;

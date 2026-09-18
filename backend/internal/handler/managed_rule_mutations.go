@@ -14,10 +14,51 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
+
+type managedRuleContentStore struct{ h *handlers }
+
+func (s managedRuleContentStore) Read(_ context.Context, tag string) ([]byte, bool, error) {
+	content, err := s.h.readManagedRuleSource(tag)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
+	return content, err == nil, err
+}
+
+func (s managedRuleContentStore) Write(_ context.Context, tag string, content []byte) error {
+	return s.h.writeManagedRuleSource(tag, content)
+}
+
+func (s managedRuleContentStore) RemoveSource(_ context.Context, tag string) error {
+	path, err := s.h.managedRuleSourcePath(tag)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func (s managedRuleContentStore) RemoveAll(_ context.Context, tag string) error {
+	return s.h.removeManagedRuleSetFiles(tag)
+}
+
+func subscriptionRuleSetCapability(row model.SubscriptionRuleSet) entitlements.SubscriptionRuleSet {
+	return entitlements.SubscriptionRuleSet{ID: row.ID, Name: row.Name, Description: row.Description, Renderer: row.Renderer, Tag: row.Tag, URL: row.URL, Behavior: row.Behavior, Format: row.Format, Interval: row.Interval, IsActive: row.IsActive, Revision: row.Revision, UsageCount: row.UsageCount, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
+}
+
+func subscriptionRuleSetModel(row entitlements.SubscriptionRuleSet) model.SubscriptionRuleSet {
+	return model.SubscriptionRuleSet{ID: row.ID, Name: row.Name, Description: row.Description, Renderer: row.Renderer, Tag: row.Tag, URL: row.URL, Behavior: row.Behavior, Format: row.Format, Interval: row.Interval, IsActive: row.IsActive, Revision: row.Revision, UsageCount: row.UsageCount, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
+}
+
+func (h *handlers) subscriptionRuleSets() entitlements.SubscriptionRuleSets {
+	return h.services.SubscriptionRuleSets(managedRuleContentStore{h: h})
+}
 
 func (h *handlers) AdminSubscriptionRuleSetContentHandler(w http.ResponseWriter, r *http.Request) {
 	claims, err := h.requireAdmin(w, r)
@@ -29,8 +70,9 @@ func (h *handlers) AdminSubscriptionRuleSetContentHandler(w http.ResponseWriter,
 		BadRequest(w, err.Error())
 		return
 	}
-	var item model.SubscriptionRuleSet
-	if err := h.db.First(&item, id).Error; err != nil || item.Renderer != managedRuleSetRenderer {
+	record, _, err := h.subscriptionRuleSets().Get(r.Context(), claims.UserID, id)
+	item := subscriptionRuleSetModel(record)
+	if err != nil || item.Renderer != managedRuleSetRenderer {
 		NotFound(w)
 		return
 	}
@@ -63,10 +105,12 @@ func (h *handlers) AdminSubscriptionRuleSetContentHandler(w http.ResponseWriter,
 		h.writeManagedRuleMutationError(w, err)
 		return
 	}
-	if err := h.db.First(&item, item.ID).Error; err != nil {
+	record, _, err = h.subscriptionRuleSets().Get(r.Context(), claims.UserID, item.ID)
+	if err != nil {
 		ServerError(w, err)
 		return
 	}
+	item = subscriptionRuleSetModel(record)
 	digest, count := managedRuleContentMetadata(normalized)
 	OK(w, managedRuleSetContentResponse{ID: item.ID, Tag: item.Tag, Content: string(normalized), RuleCount: count, ContentBytes: len(normalized), ContentSHA256: digest, Revision: item.Revision})
 }
@@ -81,8 +125,9 @@ func (h *handlers) AdminSubscriptionRuleSetImportHandler(w http.ResponseWriter, 
 		BadRequest(w, err.Error())
 		return
 	}
-	var item model.SubscriptionRuleSet
-	if err := h.db.First(&item, id).Error; err != nil || item.Renderer != managedRuleSetRenderer {
+	record, _, err := h.subscriptionRuleSets().Get(r.Context(), claims.UserID, id)
+	item := subscriptionRuleSetModel(record)
+	if err != nil || item.Renderer != managedRuleSetRenderer {
 		NotFound(w)
 		return
 	}
@@ -119,11 +164,13 @@ func (h *handlers) AdminSubscriptionRuleSetImportHandler(w http.ResponseWriter, 
 		h.writeManagedRuleMutationError(w, err)
 		return
 	}
-	if err := h.db.First(&item, item.ID).Error; err != nil {
+	record, siteURL, err := h.subscriptionRuleSets().Get(r.Context(), claims.UserID, item.ID)
+	if err != nil {
 		ServerError(w, err)
 		return
 	}
-	OK(w, h.presentManagedRuleSet(item))
+	item = subscriptionRuleSetModel(record)
+	OK(w, h.presentManagedRuleSetAt(item, siteURL))
 }
 
 func (h *handlers) replaceManagedRuleContent(item model.SubscriptionRuleSet, content []byte, expected *uint64, claims authClaims) error {
@@ -135,49 +182,20 @@ func (h *handlers) replaceManagedRuleContentAndSource(item model.SubscriptionRul
 	if err != nil {
 		return err
 	}
-	previous, previousErr := h.readManagedRuleSource(item.Tag)
-	err = h.db.Transaction(func(tx *gorm.DB) error {
-		var locked model.SubscriptionRuleSet
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, item.ID).Error; err != nil {
-			return err
-		}
-		if locked.Renderer != managedRuleSetRenderer {
-			return gorm.ErrRecordNotFound
-		}
-		if expected != nil && locked.Revision != *expected {
-			return fmt.Errorf("%w:%d", errSubscriptionRuleSetRevisionConflict, locked.Revision)
-		}
-		if err := guardManagedRuleClientUpdate(tx, locked.ID, format); err != nil {
-			return err
-		}
-		if err := h.writeManagedRuleSource(locked.Tag, content); err != nil {
-			return err
-		}
-		updates := map[string]interface{}{"revision": locked.Revision + 1, "format": format}
-		if item.URL != locked.URL || item.Behavior != locked.Behavior {
-			updates["url"] = item.URL
-			updates["behavior"] = item.Behavior
-		}
-		if err := tx.Model(&locked).Updates(updates).Error; err != nil {
-			return err
-		}
-		return createAuditLog(tx, claims, "subscription_rule_set.content.update", fmt.Sprintf("subscription_rule_set:%d", item.ID), fmt.Sprintf("bytes=%d revision=%d", len(content), locked.Revision+1))
-	})
-	if err != nil {
-		if previousErr == nil {
-			_ = h.writeManagedRuleSource(item.Tag, previous)
-		} else if errors.Is(previousErr, gorm.ErrRecordNotFound) {
-			path, pathErr := h.managedRuleSourcePath(item.Tag)
-			if pathErr == nil {
-				_ = os.Remove(path)
-			}
-		}
+	item.Format = format
+	_, current, err := h.subscriptionRuleSets().ReplaceContent(context.Background(), claims.UserID, subscriptionRuleSetCapability(item), expected, content)
+	if errors.Is(err, entitlements.ErrRuleSetConflict) {
+		return fmt.Errorf("%w:%d", errSubscriptionRuleSetRevisionConflict, current)
 	}
 	return err
 }
 
 func (h *handlers) writeManagedRuleMutationError(w http.ResponseWriter, err error) {
-	if errors.Is(err, errManagedRuleClientCompatibility) {
+	if errors.Is(err, entitlements.ErrAdministrativeRead) {
+		Forbidden(w, "当前管理员状态无效。")
+		return
+	}
+	if errors.Is(err, errManagedRuleClientCompatibility) || errors.Is(err, entitlements.ErrRuleSetClientCompatibility) {
 		BadRequestFields(w, "规则集与已有模板不兼容。", map[string]string{"content": err.Error()})
 		return
 	}
@@ -190,7 +208,7 @@ func (h *handlers) writeManagedRuleMutationError(w http.ResponseWriter, err erro
 		writeJSON(w, http.StatusConflict, "规则集已被其他管理员更新，请重新加载最新版本。", map[string]interface{}{"current_revision": current})
 		return
 	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, entitlements.ErrRuleSetNotFound) {
 		NotFound(w)
 		return
 	}

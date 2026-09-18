@@ -7,15 +7,6 @@ import (
 	"testing"
 )
 
-func TestDuplicatePersistenceResponseDetection(t *testing.T) {
-	buffered := newBufferedResponseWriter()
-	buffered.WriteHeader(http.StatusInternalServerError)
-	_, _ = buffered.Write([]byte(`{"message":"Error 1062 (23000): Duplicate entry 'starter' for key 'uni_plans_slug'"}`))
-	if !isDuplicatePersistenceResponse(buffered) {
-		t.Fatal("expected duplicate database response to be detected")
-	}
-}
-
 func TestWritePlanSubscriptionLimitReachedUsesStableBusinessContract(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	writePlanSubscriptionLimitReached(recorder)

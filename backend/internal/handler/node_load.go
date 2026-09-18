@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"gorm.io/gorm"
-
-	"github.com/zerodenet/zboard/backend/internal/model"
 )
 
 const nodeLoadCommand = `LC_ALL=C; export LC_ALL
@@ -44,8 +42,8 @@ func (h *handlers) NodeLoadHandler(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, err.Error())
 		return
 	}
-	var node model.Node
-	if err := h.db.First(&node, nodeID).Error; err != nil {
+	node, err := h.loadNodeContext(r.Context(), nodeID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			NotFound(w)
 			return

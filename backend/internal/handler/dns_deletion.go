@@ -2,12 +2,8 @@ package handler
 
 import (
 	"errors"
-	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"net/http"
-
-	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func (h *handlers) ManagedDNSDeleteHandler(w http.ResponseWriter, r *http.Request) {
@@ -20,32 +16,23 @@ func (h *handlers) ManagedDNSDeleteHandler(w http.ResponseWriter, r *http.Reques
 		BadRequest(w, err.Error())
 		return
 	}
-	h.deletionMu.Lock()
-	defer h.deletionMu.Unlock()
-	var record model.ManagedDNSRecord
-	err = h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, id).Error; err != nil {
-			return err
-		}
-		var running int64
-		if err := tx.Model(&model.ProviderOperation{}).Where("resource_type = ? AND resource_id = ? AND status = ?", "dns_record", id, "running").Count(&running).Error; err != nil {
-			return err
-		}
-		if running > 0 || record.Status == dnsStatusSyncing {
-			return errManagedDNSOperationRunning
-		}
-		if err := createAuditLog(tx, claims, "dns_record.delete", fmt.Sprintf("managed_dns_record:%d", id), fmt.Sprintf("domain=%s provider_account=%d remote_record_deleted=false external_cleanup=not_attempted", record.DomainName, record.ProviderAccountID)); err != nil {
-			return err
-		}
-		return tx.Delete(&record).Error
-	})
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		NotFound(w)
-		return
-	}
+	result, err := h.services.ResourceRemoval.DNS(r.Context(), claims.UserID, id)
 	if err != nil {
-		writeJSON(w, http.StatusConflict, err.Error(), nil)
+		resourceRemovalError(w, err)
 		return
 	}
-	OK(w, map[string]interface{}{"id": id, "deleted": true, "remote_record_deleted": false})
+	OK(w, result)
+}
+func resourceRemovalError(w http.ResponseWriter, err error) {
+	var blocked *network.ResourceRemovalBlocked
+	switch {
+	case errors.As(err, &blocked):
+		writeJSON(w, http.StatusConflict, "请先完成或核验资源任务。", map[string]any{"blockers": blocked.Blockers})
+	case errors.Is(err, network.ErrResourceNotFound):
+		NotFound(w)
+	case errors.Is(err, network.ErrResourcePermission):
+		writeJSON(w, http.StatusForbidden, "需要管理员权限。", nil)
+	default:
+		ServerError(w, err)
+	}
 }

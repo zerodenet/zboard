@@ -3,6 +3,8 @@ package handler
 import (
 	"strings"
 	"testing"
+
+	zeroadapter "github.com/zerodenet/zboard/backend/internal/adapters/zero"
 )
 
 func TestKernelActivationProbeHealthyRequiresStableExpectedGeneration(t *testing.T) {
@@ -24,7 +26,7 @@ func TestKernelActivationProbeHealthyRequiresStableExpectedGeneration(t *testing
 }
 
 func TestZeroInstallScriptLeavesReadinessVerificationToGo(t *testing.T) {
-	script := buildZeroInstallScript("/tmp/stage", strings.Repeat("a", 64), 42)
+	script := zeroadapter.BuildKernelInstallScript("/tmp/stage", strings.Repeat("a", 64), 42)
 	if strings.Contains(script, "healthy=0") || strings.Contains(script, "for attempt in 1 2 3 4 5 6 7 8 9 10") {
 		t.Fatal("install shell must not own the Zero readiness window")
 	}

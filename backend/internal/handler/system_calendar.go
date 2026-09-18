@@ -1,13 +1,11 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
 )
 
 const systemTimezoneConfigKey = "system_timezone"
@@ -26,8 +24,8 @@ func normalizeSystemLocation(location *time.Location) *time.Location {
 }
 
 func (h *handlers) systemTimezoneLocation() *time.Location {
-	var config model.SystemConfig
-	if err := h.db.Select("value").Where("config_key = ?", systemTimezoneConfigKey).First(&config).Error; err != nil {
+	config, err := h.services.Settings.Get(context.Background(), systemTimezoneConfigKey)
+	if err != nil {
 		return time.UTC
 	}
 	location, err := time.LoadLocation(strings.TrimSpace(config.Value))
@@ -120,23 +118,6 @@ func systemBucketCaseExpression(column string, buckets []systemCalendarBucket) (
 	return "CASE " + strings.Join(parts, " ") + " END", args
 }
 
-func (h *handlers) loadTrafficTrendRowsInLocation(query *gorm.DB, from time.Time, days int, location *time.Location) ([]trafficTrendAggregateRow, error) {
-	buckets := systemDayBuckets(from, days, location)
-	expression, args := systemBucketCaseExpression("record_at", buckets)
-	if normalizeSystemLocation(location) == time.UTC {
-		// UTC needs no daylight-saving calendar conversion. Avoid comparing
-		// every row against up to 366 CASE arms for this common configuration.
-		expression, args = "DATE(record_at)", nil
-	}
-	rows := make([]trafficTrendAggregateRow, 0, len(buckets))
-	err := query.
-		Select(expression+" AS day, COALESCE(SUM(upload_bytes), 0) AS upload_bytes, COALESCE(SUM(download_bytes), 0) AS download_bytes, COALESCE(SUM(used_bytes), 0) AS used_bytes, COUNT(*) AS record_count", args...).
-		Group("day").
-		Order("day ASC").
-		Scan(&rows).Error
-	return rows, err
-}
-
 func resolveDashboardPeriodInLocation(raw string, now time.Time, location *time.Location) (dashboardPeriod, error) {
 	location = normalizeSystemLocation(location)
 	nowUTC := now.UTC()
@@ -193,40 +174,4 @@ func dashboardCalendarBuckets(period dashboardPeriod, location *time.Location) [
 		cursor = next
 	}
 	return buckets
-}
-
-func (h *handlers) loadDashboardTrendInLocation(period dashboardPeriod, location *time.Location) ([]dashboardTrendPoint, error) {
-	buckets := dashboardCalendarBuckets(period, location)
-	if len(buckets) == 0 {
-		return []dashboardTrendPoint{}, nil
-	}
-	expression, args := systemBucketCaseExpression("paid_at", buckets)
-	rows := make([]dashboardTrendRow, 0, len(buckets))
-	query := h.db.Model(&model.Order{}).
-		Select(expression+` AS bucket_start,
-			COALESCE(SUM((CASE WHEN assigned_by > 0 OR paid_amount > 0 THEN paid_amount ELSE amount_cents END) - refund_amount), 0) AS revenue_cents,
-			COUNT(*) AS paid_orders,
-			COALESCE(SUM(CASE WHEN order_type = 'new' THEN 1 ELSE 0 END), 0) AS new_orders,
-			COALESCE(SUM(CASE WHEN order_type = 'renew' THEN 1 ELSE 0 END), 0) AS renew_orders`, args...).
-		Where("status = ? AND paid_at IS NOT NULL AND paid_at >= ? AND paid_at < ?", orderStatusPaid, period.From, period.To).
-		Group("bucket_start").Order("bucket_start ASC")
-	if err := query.Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	byBucket := make(map[string]dashboardTrendRow, len(rows))
-	for _, row := range rows {
-		byBucket[strings.TrimSpace(row.BucketStart)] = row
-	}
-	points := make([]dashboardTrendPoint, 0, len(buckets))
-	for _, bucket := range buckets {
-		row := byBucket[bucket.Key]
-		points = append(points, dashboardTrendPoint{
-			BucketStart:  bucket.StartUTC,
-			RevenueCents: row.RevenueCents,
-			PaidOrders:   row.PaidOrders,
-			NewOrders:    row.NewOrders,
-			RenewOrders:  row.RenewOrders,
-		})
-	}
-	return points, nil
 }

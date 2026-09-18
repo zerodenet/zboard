@@ -18,9 +18,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	capabilitynetwork "github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const (
@@ -46,10 +45,32 @@ const (
 )
 
 var (
-	errCertificateOperationRunning = errors.New("certificate operation is already running")
-	errCertificateRevisionConflict = errors.New("certificate revision conflict")
+	errCertificateOperationRunning = capabilitynetwork.ErrCertificateOperationActive
+	errCertificateRevisionConflict = capabilitynetwork.ErrCertificateConflict
 	domainLabelPattern             = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 )
+
+func managedCertificateModel(row capabilitynetwork.CertificateRecord) model.ManagedCertificate {
+	return model.ManagedCertificate{
+		ID: row.ID, NodeID: row.NodeID, ProviderAccountID: row.ProviderAccountID, Name: row.Name,
+		Domains: row.Domains, ContactEmail: row.ContactEmail, Environment: row.Environment,
+		ChallengeType: row.ChallengeType, WebrootPath: row.WebrootPath, Status: row.Status,
+		CertPath: row.CertPath, KeyPath: row.KeyPath, SerialNumber: row.SerialNumber,
+		FingerprintSHA256: row.FingerprintSHA256, NotBefore: row.NotBefore, NotAfter: row.NotAfter,
+		LastIssuedAt: row.LastIssuedAt, LastRenewalAttemptAt: row.LastRenewalAttemptAt,
+		NextRenewalAt: row.NextRenewalAt, AutoRenew: row.AutoRenew, RenewBeforeDays: row.RenewBeforeDays,
+		LastError: row.LastError, Revision: row.Revision, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}
+}
+
+func certificateOperationModel(row capabilitynetwork.CertificateOperationRecord) model.CertificateOperation {
+	return model.CertificateOperation{
+		ID: row.ID, ManagedCertificateID: row.ManagedCertificateID, NodeID: row.NodeID,
+		OperationType: row.OperationType, Status: row.Status, Phase: row.Phase,
+		RequestedBy: row.RequestedBy, ResultSummary: row.ResultSummary, Error: row.Error,
+		StartedAt: row.StartedAt, FinishedAt: row.FinishedAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}
+}
 
 type certificateWriteRequest struct {
 	NodeID            uint     `json:"node_id"`
@@ -179,112 +200,17 @@ func decodeCertificateDomains(raw string) []string {
 	return domains
 }
 
-func protocolSupportsManagedCertificate(protocol string) bool {
-	switch strings.ToLower(strings.TrimSpace(protocol)) {
-	case "vless", "vmess", "trojan", "hysteria2":
-		return true
-	default:
-		return false
-	}
-}
-
-func (h *handlers) loadUsableManagedCertificate(id, nodeID uint, protocol string, now time.Time) (model.ManagedCertificate, error) {
-	if !protocolSupportsManagedCertificate(protocol) {
-		return model.ManagedCertificate{}, errors.New("当前协议不使用 TLS 证书。")
-	}
-	var certificate model.ManagedCertificate
-	if err := h.db.First(&certificate, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return certificate, errors.New("所选证书不存在。")
-		}
-		return certificate, err
-	}
-	if certificate.NodeID != nodeID {
-		return certificate, errors.New("证书与协议服务必须属于同一节点。")
-	}
-	if certificate.NotAfter == nil || !certificate.NotAfter.After(now) ||
-		(certificate.Status != certificateStatusActive && certificate.Status != certificateStatusFailed) {
-		return certificate, errors.New("证书尚未成功签发或已经过期。")
-	}
-	return certificate, nil
-}
-
-func (h *handlers) loadManagedCertificateIDsForEndpoints(endpointIDs []uint) (map[uint]*uint, error) {
-	result := make(map[uint]*uint, len(endpointIDs))
-	if len(endpointIDs) == 0 {
-		return result, nil
-	}
-	var links []model.CertificateProtocolEndpoint
-	if err := h.db.Where("protocol_endpoint_id IN ?", endpointIDs).Find(&links).Error; err != nil {
+func (h *handlers) loadManagedCertificateIDsForEndpoints(ctx context.Context, endpointIDs []uint) (map[uint]*uint, error) {
+	bindings, err := h.services.CertificateInventory.Bindings(ctx, endpointIDs)
+	if err != nil {
 		return nil, err
 	}
-	for _, link := range links {
-		id := link.ManagedCertificateID
-		result[link.ProtocolEndpointID] = &id
+	result := make(map[uint]*uint, len(bindings))
+	for endpointID, certificateID := range bindings {
+		id := certificateID
+		result[endpointID] = &id
 	}
 	return result, nil
-}
-
-func (h *handlers) loadManagedCertificatesForEndpoints(endpoints []model.ProtocolEndpoint) (map[uint]model.ManagedCertificate, error) {
-	result := make(map[uint]model.ManagedCertificate)
-	if len(endpoints) == 0 {
-		return result, nil
-	}
-	endpointIDs := make([]uint, 0, len(endpoints))
-	for _, endpoint := range endpoints {
-		endpointIDs = append(endpointIDs, endpoint.ID)
-	}
-	type certificateEndpointRow struct {
-		ProtocolEndpointID uint
-		model.ManagedCertificate
-	}
-	var rows []certificateEndpointRow
-	if err := h.db.Table("certificate_protocol_endpoints").
-		Select("certificate_protocol_endpoints.protocol_endpoint_id, managed_certificates.*").
-		Joins("JOIN managed_certificates ON managed_certificates.id = certificate_protocol_endpoints.managed_certificate_id").
-		Where("certificate_protocol_endpoints.protocol_endpoint_id IN ?", endpointIDs).
-		Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	for _, row := range rows {
-		result[row.ProtocolEndpointID] = row.ManagedCertificate
-	}
-	return result, nil
-}
-
-func applyManagedCertificateToProtocol(protocol map[string]interface{}, protocolType string, certificate model.ManagedCertificate, now time.Time) error {
-	if certificate.NotAfter == nil || !certificate.NotAfter.After(now) {
-		return errors.New("certificate is expired")
-	}
-	if certificate.Status != certificateStatusActive && certificate.Status != certificateStatusFailed {
-		return fmt.Errorf("certificate status is %s", certificate.Status)
-	}
-	if strings.TrimSpace(certificate.CertPath) == "" || strings.TrimSpace(certificate.KeyPath) == "" {
-		return errors.New("certificate file paths are unavailable")
-	}
-	switch strings.ToLower(strings.TrimSpace(protocolType)) {
-	case "vless":
-		tls, ok := protocol["tls"].(map[string]interface{})
-		if !ok || tls == nil {
-			return errors.New("VLESS endpoint is not configured for TLS")
-		}
-		tls["cert_path"] = certificate.CertPath
-		tls["key_path"] = certificate.KeyPath
-	case "vmess", "trojan":
-		tls, _ := protocol["tls"].(map[string]interface{})
-		if tls == nil {
-			tls = make(map[string]interface{})
-			protocol["tls"] = tls
-		}
-		tls["cert_path"] = certificate.CertPath
-		tls["key_path"] = certificate.KeyPath
-	case "hysteria2":
-		protocol["cert_path"] = certificate.CertPath
-		protocol["key_path"] = certificate.KeyPath
-	default:
-		return fmt.Errorf("%s does not support managed certificates", protocolType)
-	}
-	return nil
 }
 
 func effectiveCertificateStatus(certificate model.ManagedCertificate, now time.Time) string {
@@ -319,90 +245,36 @@ func (h *handlers) ManagedCertificateListHandler(w http.ResponseWriter, r *http.
 		BadRequest(w, err.Error())
 		return
 	}
-	query := h.db.Model(&model.ManagedCertificate{})
+	input := capabilitynetwork.CertificateInventoryQuery{Offset: offset, Limit: limit}
 	if nodeID := strings.TrimSpace(r.URL.Query().Get("node_id")); nodeID != "" {
 		parsed, parseErr := strconv.ParseUint(nodeID, 10, 64)
 		if parseErr != nil || parsed == 0 {
 			BadRequest(w, "node_id must be a positive integer")
 			return
 		}
-		query = query.Where("node_id = ?", parsed)
+		input.NodeID = uint(parsed)
 	}
-	if status := strings.TrimSpace(r.URL.Query().Get("status")); status != "" {
-		query = query.Where("status = ?", status)
-	}
-	if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
-		like := "%" + search + "%"
-		query = query.Where("name LIKE ? OR domains LIKE ?", like, like)
-	}
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	var certificates []model.ManagedCertificate
-	if err := query.Order("id desc").Offset(offset).Limit(limit).Find(&certificates).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	items, err := h.decorateManagedCertificates(certificates, time.Now().UTC())
+	input.Status = strings.TrimSpace(r.URL.Query().Get("status"))
+	input.Search = strings.TrimSpace(r.URL.Query().Get("q"))
+	page, err := h.services.CertificateInventory.List(r.Context(), input)
 	if err != nil {
 		ServerError(w, err)
 		return
 	}
-	OK(w, map[string]interface{}{"items": items, "total": total, "offset": offset, "limit": limit})
+	items := make([]certificateListItem, 0, len(page.Items))
+	for _, item := range page.Items {
+		items = append(items, certificateInventoryListItem(item, time.Now().UTC()))
+	}
+	OK(w, map[string]interface{}{"items": items, "total": page.Total, "offset": offset, "limit": limit})
 }
 
-func (h *handlers) decorateManagedCertificates(certificates []model.ManagedCertificate, now time.Time) ([]certificateListItem, error) {
-	if len(certificates) == 0 {
-		return []certificateListItem{}, nil
+func certificateInventoryListItem(item capabilitynetwork.CertificateInventoryItem, now time.Time) certificateListItem {
+	var operation *model.CertificateOperation
+	if item.LatestOperation != nil {
+		value := certificateOperationModel(*item.LatestOperation)
+		operation = &value
 	}
-	ids := make([]uint, 0, len(certificates))
-	nodeIDs := make([]uint, 0, len(certificates))
-	for _, certificate := range certificates {
-		ids = append(ids, certificate.ID)
-		nodeIDs = append(nodeIDs, certificate.NodeID)
-	}
-	var nodes []model.Node
-	if err := h.db.Select("id", "name").Where("id IN ?", nodeIDs).Find(&nodes).Error; err != nil {
-		return nil, err
-	}
-	nodeNames := make(map[uint]string, len(nodes))
-	for _, node := range nodes {
-		nodeNames[node.ID] = node.Name
-	}
-	type usageRow struct {
-		ManagedCertificateID uint
-		Count                int64
-	}
-	var usageRows []usageRow
-	if err := h.db.Model(&model.CertificateProtocolEndpoint{}).
-		Select("managed_certificate_id, COUNT(*) AS count").
-		Where("managed_certificate_id IN ?", ids).
-		Group("managed_certificate_id").Scan(&usageRows).Error; err != nil {
-		return nil, err
-	}
-	usageCounts := make(map[uint]int64, len(usageRows))
-	for _, row := range usageRows {
-		usageCounts[row.ManagedCertificateID] = row.Count
-	}
-	var operations []model.CertificateOperation
-	if err := h.db.Where("managed_certificate_id IN ?", ids).
-		Order("managed_certificate_id asc, id desc").Find(&operations).Error; err != nil {
-		return nil, err
-	}
-	latestOperations := make(map[uint]*model.CertificateOperation, len(operations))
-	for index := range operations {
-		operation := &operations[index]
-		if latestOperations[operation.ManagedCertificateID] == nil {
-			latestOperations[operation.ManagedCertificateID] = operation
-		}
-	}
-	items := make([]certificateListItem, 0, len(certificates))
-	for _, certificate := range certificates {
-		items = append(items, newCertificateListItem(certificate, nodeNames[certificate.NodeID], usageCounts[certificate.ID], latestOperations[certificate.ID], now))
-	}
-	return items, nil
+	return newCertificateListItem(managedCertificateModel(item.Certificate), item.NodeName, item.UsageCount, operation, now)
 }
 
 func (h *handlers) ManagedCertificateGetHandler(w http.ResponseWriter, r *http.Request) {
@@ -414,28 +286,16 @@ func (h *handlers) ManagedCertificateGetHandler(w http.ResponseWriter, r *http.R
 		BadRequest(w, err.Error())
 		return
 	}
-	var certificate model.ManagedCertificate
-	if err := h.db.First(&certificate, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	detail, err := h.services.CertificateInventory.Detail(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, capabilitynetwork.ErrCertificateNotFound) {
 			NotFound(w)
 			return
 		}
 		ServerError(w, err)
 		return
 	}
-	items, err := h.decorateManagedCertificates([]model.ManagedCertificate{certificate}, time.Now().UTC())
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
-	var endpointIDs []uint
-	if err := h.db.Model(&model.CertificateProtocolEndpoint{}).
-		Where("managed_certificate_id = ?", id).Order("protocol_endpoint_id asc").
-		Pluck("protocol_endpoint_id", &endpointIDs).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	OK(w, map[string]interface{}{"certificate": items[0], "protocol_endpoint_ids": endpointIDs})
+	OK(w, map[string]interface{}{"certificate": certificateInventoryListItem(detail.Certificate, time.Now().UTC()), "protocol_endpoint_ids": detail.ProtocolEndpointIDs})
 }
 
 func (h *handlers) ManagedCertificateUpdateHandler(w http.ResponseWriter, r *http.Request) {
@@ -473,42 +333,29 @@ func (h *handlers) ManagedCertificateUpdateHandler(w http.ResponseWriter, r *htt
 		BadRequestFields(w, "证书信息校验失败。", fields)
 		return
 	}
-	err = h.db.Transaction(func(tx *gorm.DB) error {
-		var certificate model.ManagedCertificate
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&certificate, id).Error; err != nil {
-			return err
+	detail, err := h.services.CertificateInventory.Detail(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, capabilitynetwork.ErrCertificateNotFound) {
+			NotFound(w)
+			return
 		}
-		if certificate.Status == resourceStatusDeleting {
-			return errResourceDeleting
+		ServerError(w, err)
+		return
+	}
+	if detail.Certificate.Certificate.ChallengeType == certificateChallengeHTTP01Webroot {
+		if !validNodeWebroot(request.WebrootPath) {
+			BadRequestFields(w, "证书信息校验失败。", map[string]string{"webroot_path": "Webroot 必须是节点上的规范绝对目录，且不能是根目录。"})
+			return
 		}
-		if certificate.Revision != request.ExpectedRevision {
-			return errCertificateRevisionConflict
-		}
-		if certificate.Status == certificateStatusIssuing || certificate.Status == certificateStatusRenewing {
-			return errCertificateOperationRunning
-		}
-		if certificate.ChallengeType == certificateChallengeHTTP01Webroot {
-			if !validNodeWebroot(request.WebrootPath) {
-				return validationError("证书信息校验失败。", map[string]string{"webroot_path": "Webroot 必须是节点上的规范绝对目录，且不能是根目录。"})
-			}
-		} else if request.WebrootPath != "" {
-			return validationError("证书信息校验失败。", map[string]string{"webroot_path": "DNS-01 不使用 Webroot 路径。"})
-		}
-		updates := map[string]interface{}{
-			"name": request.Name, "contact_email": request.ContactEmail, "webroot_path": request.WebrootPath,
-			"auto_renew": request.AutoRenew, "renew_before_days": request.RenewBeforeDays,
-			"revision": certificate.Revision + 1,
-		}
-		if certificate.NotAfter != nil {
-			updates["next_renewal_at"] = certificate.NotAfter.Add(-time.Duration(request.RenewBeforeDays) * 24 * time.Hour)
-		}
-		if err := tx.Model(&certificate).Updates(updates).Error; err != nil {
-			return err
-		}
-		return createAuditLog(tx, claims, "certificate.update", fmt.Sprintf("certificate:%d", certificate.ID),
-			fmt.Sprintf("name=%s auto_renew=%t renew_before_days=%d", request.Name, request.AutoRenew, request.RenewBeforeDays))
+	} else if request.WebrootPath != "" {
+		BadRequestFields(w, "证书信息校验失败。", map[string]string{"webroot_path": "DNS-01 不使用 Webroot 路径。"})
+		return
+	}
+	err = h.services.CertificateLifecycle.Update(r.Context(), claims.UserID, id, capabilitynetwork.CertificateUpdate{
+		Name: request.Name, ContactEmail: request.ContactEmail, WebrootPath: request.WebrootPath,
+		AutoRenew: request.AutoRenew, RenewBeforeDays: request.RenewBeforeDays, ExpectedRevision: request.ExpectedRevision,
 	})
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if errors.Is(err, capabilitynetwork.ErrCertificateNotFound) {
 		NotFound(w)
 		return
 	}
@@ -520,12 +367,15 @@ func (h *handlers) ManagedCertificateUpdateHandler(w http.ResponseWriter, r *htt
 		writeJSON(w, http.StatusConflict, "证书正在签发或续期，请等待操作完成后再编辑。", nil)
 		return
 	}
+	if errors.Is(err, capabilitynetwork.ErrCertificateDeleting) {
+		writeJSON(w, http.StatusConflict, errResourceDeleting.Error(), nil)
+		return
+	}
+	if errors.Is(err, capabilitynetwork.ErrCertificatePermission) {
+		Forbidden(w, "管理员权限已失效。")
+		return
+	}
 	if err != nil {
-		var validation *requestValidationError
-		if errors.As(err, &validation) {
-			BadRequestError(w, validation)
-			return
-		}
 		ServerError(w, err)
 		return
 	}
@@ -586,24 +436,13 @@ func (h *handlers) ManagedCertificateCreateHandler(w http.ResponseWriter, r *htt
 		BadRequestFields(w, "证书信息校验失败。", fields)
 		return
 	}
-	var node model.Node
-	if err := h.db.First(&node, request.NodeID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			BadRequestFields(w, "证书信息校验失败。", map[string]string{"node_id": "所选节点不存在。"})
-			return
-		}
-		ServerError(w, err)
-		return
-	}
 	var providerAccountID *uint
 	if request.ChallengeType == certificateChallengeDNS01 {
-		var account model.ProviderAccount
-		if request.ProviderAccountID == 0 || h.db.First(&account, request.ProviderAccountID).Error != nil ||
-			account.ProviderKey != providerCloudflare || account.Status != "active" {
-			BadRequestFields(w, "证书信息校验失败。", map[string]string{"provider_account_id": "请选择已验证的 Cloudflare DNS 账户。"})
+		if request.ProviderAccountID == 0 {
+			BadRequestFields(w, "证书信息校验失败。", map[string]string{"provider_account_id": "请选择已验证且支持证书签发的供应商账户。"})
 			return
 		}
-		providerAccountID = &account.ID
+		providerAccountID = &request.ProviderAccountID
 	} else if request.ProviderAccountID != 0 {
 		BadRequestFields(w, "证书信息校验失败。", map[string]string{"provider_account_id": "HTTP-01 Webroot 不使用 DNS 供应商账户。"})
 		return
@@ -613,31 +452,30 @@ func (h *handlers) ManagedCertificateCreateHandler(w http.ResponseWriter, r *htt
 	if request.AutoRenew != nil {
 		autoRenew = *request.AutoRenew
 	}
-	certificate := model.ManagedCertificate{
+	certificate := capabilitynetwork.CertificateRecord{
 		NodeID: request.NodeID, ProviderAccountID: providerAccountID, Name: request.Name, Domains: string(domainsJSON),
 		ContactEmail: request.ContactEmail, Environment: request.Environment,
 		ChallengeType: request.ChallengeType, WebrootPath: request.WebrootPath, Status: certificateStatusPending,
 		AutoRenew: autoRenew, RenewBeforeDays: request.RenewBeforeDays, Revision: 1,
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := requireAvailableNode(tx, certificate.NodeID); err != nil {
-			return err
-		}
-		if certificate.ProviderAccountID != nil {
-			if err := requireAvailableProvider(tx, *certificate.ProviderAccountID); err != nil {
-				return err
-			}
-		}
-		if err := tx.Create(&certificate).Error; err != nil {
-			return err
-		}
-		return createAuditLog(tx, claims, "certificate.create", fmt.Sprintf("certificate:%d", certificate.ID),
-			fmt.Sprintf("node=%d environment=%s challenge=%s domains=%d", certificate.NodeID, certificate.Environment, certificate.ChallengeType, len(domains)))
-	}); err != nil {
+	created, nodeName, err := h.services.CertificateLifecycle.Create(r.Context(), claims.UserID, certificate)
+	if errors.Is(err, capabilitynetwork.ErrCertificateDependency) {
+		BadRequest(w, "证书依赖的节点或供应商账户不可用。")
+		return
+	}
+	if errors.Is(err, capabilitynetwork.ErrCertificateDeleting) {
+		writeJSON(w, http.StatusConflict, errResourceDeleting.Error(), nil)
+		return
+	}
+	if errors.Is(err, capabilitynetwork.ErrCertificatePermission) {
+		Forbidden(w, "管理员权限已失效。")
+		return
+	}
+	if err != nil {
 		ServerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, "certificate created", newCertificateListItem(certificate, node.Name, 0, nil, time.Now().UTC()))
+	writeJSON(w, http.StatusCreated, "certificate created", newCertificateListItem(managedCertificateModel(created), nodeName, 0, nil, time.Now().UTC()))
 }
 
 func (h *handlers) ManagedCertificateRenewalUpdateHandler(w http.ResponseWriter, r *http.Request) {
@@ -663,37 +501,21 @@ func (h *handlers) ManagedCertificateRenewalUpdateHandler(w http.ResponseWriter,
 		BadRequestFields(w, "证书续期策略校验失败。", map[string]string{"renew_before_days": "提前续期天数必须在 1–60 之间。"})
 		return
 	}
-	err = h.db.Transaction(func(tx *gorm.DB) error {
-		var certificate model.ManagedCertificate
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&certificate, id).Error; err != nil {
-			return err
-		}
-		if certificate.Status == resourceStatusDeleting {
-			return errResourceDeleting
-		}
-		if certificate.Revision != request.ExpectedRevision {
-			return errCertificateRevisionConflict
-		}
-		updates := map[string]interface{}{
-			"auto_renew": request.AutoRenew, "renew_before_days": request.RenewBeforeDays,
-			"revision": certificate.Revision + 1,
-		}
-		if certificate.NotAfter != nil {
-			next := certificate.NotAfter.Add(-time.Duration(request.RenewBeforeDays) * 24 * time.Hour)
-			updates["next_renewal_at"] = next
-		}
-		if err := tx.Model(&certificate).Updates(updates).Error; err != nil {
-			return err
-		}
-		return createAuditLog(tx, claims, "certificate.renewal_policy.update", fmt.Sprintf("certificate:%d", certificate.ID),
-			fmt.Sprintf("auto_renew=%t renew_before_days=%d", request.AutoRenew, request.RenewBeforeDays))
-	})
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	err = h.services.CertificateLifecycle.UpdateRenewal(r.Context(), claims.UserID, id, request.AutoRenew, request.RenewBeforeDays, request.ExpectedRevision)
+	if errors.Is(err, capabilitynetwork.ErrCertificateNotFound) {
 		NotFound(w)
 		return
 	}
 	if errors.Is(err, errCertificateRevisionConflict) {
 		writeJSON(w, http.StatusConflict, "证书续期策略已被其他会话更新，请重新加载。", nil)
+		return
+	}
+	if errors.Is(err, capabilitynetwork.ErrCertificateDeleting) {
+		writeJSON(w, http.StatusConflict, errResourceDeleting.Error(), nil)
+		return
+	}
+	if errors.Is(err, capabilitynetwork.ErrCertificatePermission) {
+		Forbidden(w, "管理员权限已失效。")
 		return
 	}
 	if err != nil {
@@ -723,12 +545,16 @@ func (h *handlers) startManagedCertificateOperationHandler(w http.ResponseWriter
 	}
 	requestedBy := claims.UserID
 	operation, err := h.startManagedCertificateOperation(id, operationType, &requestedBy)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if errors.Is(err, capabilitynetwork.ErrCertificateNotFound) {
 		NotFound(w)
 		return
 	}
 	if errors.Is(err, errCertificateOperationRunning) {
 		writeJSON(w, http.StatusConflict, err.Error(), nil)
+		return
+	}
+	if errors.Is(err, capabilitynetwork.ErrCertificatePermission) {
+		Forbidden(w, "管理员权限已失效。")
 		return
 	}
 	if err != nil {
@@ -739,95 +565,74 @@ func (h *handlers) startManagedCertificateOperationHandler(w http.ResponseWriter
 }
 
 func (h *handlers) startManagedCertificateOperation(certificateID uint, operationType string, requestedBy *uint) (model.CertificateOperation, error) {
-	var operation model.CertificateOperation
-	err := h.db.Transaction(func(tx *gorm.DB) error {
-		var certificate model.ManagedCertificate
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&certificate, certificateID).Error; err != nil {
-			return err
-		}
-		if certificate.Status == resourceStatusDeleting {
-			return errResourceDeleting
-		}
-		if certificate.Status == certificateStatusIssuing || certificate.Status == certificateStatusRenewing {
-			return errCertificateOperationRunning
-		}
-		if operationType == certificateOperationRenew && certificate.NotAfter == nil {
-			return errors.New("certificate has not been issued yet")
-		}
-		now := time.Now().UTC()
-		status := certificateStatusIssuing
-		if operationType == certificateOperationRenew {
-			status = certificateStatusRenewing
-		}
-		operation = model.CertificateOperation{
-			ManagedCertificateID: certificate.ID, NodeID: certificate.NodeID,
-			OperationType: operationType, Status: "running", Phase: "queued",
-			RequestedBy: requestedBy, StartedAt: &now,
-		}
-		if err := tx.Create(&operation).Error; err != nil {
-			return err
-		}
-		updates := map[string]interface{}{"status": status, "last_error": ""}
-		if operationType == certificateOperationRenew {
-			updates["last_renewal_attempt_at"] = now
-		}
-		return tx.Model(&certificate).Updates(updates).Error
-	})
+	h.backgroundJobs()
+	actor := uint(0)
+	if requestedBy != nil {
+		actor = *requestedBy
+	}
+	record, err := h.services.CertificateLifecycle.Start(context.Background(), actor, certificateID, operationType)
+	operation := certificateOperationModel(record)
 	if err != nil {
 		return operation, err
 	}
-	go h.executeManagedCertificateOperation(operation.ID)
 	return operation, nil
 }
 
 func (h *handlers) executeManagedCertificateOperation(operationID uint) {
-	var operation model.CertificateOperation
-	if err := h.db.First(&operation, operationID).Error; err != nil {
+	h.executeManagedCertificateOperationContext(context.Background(), operationID)
+}
+func (h *handlers) executeManagedCertificateOperationContext(parent context.Context, operationID uint) {
+	prepared, err := h.services.CertificateLifecycle.Prepare(parent, operationID)
+	if err != nil {
+		if prepared.Operation.ID != 0 {
+			h.finishCertificateOperationFailure(certificateOperationModel(prepared.Operation), managedCertificateModel(prepared.Certificate), "loading", err, false)
+		}
 		return
 	}
-	var certificate model.ManagedCertificate
-	if err := h.db.First(&certificate, operation.ManagedCertificateID).Error; err != nil {
-		h.finishCertificateOperationFailure(operation, certificate, "loading", err, false)
-		return
-	}
-	var node model.Node
-	if err := h.db.First(&node, certificate.NodeID).Error; err != nil {
-		h.finishCertificateOperationFailure(operation, certificate, "loading", err, false)
-		return
-	}
+	operation := certificateOperationModel(prepared.Operation)
+	certificate := managedCertificateModel(prepared.Certificate)
+	node := certificateExecutionNodeModel(prepared.Node)
 	if err := h.validateNodeSSH(node); err != nil {
 		h.finishCertificateOperationFailure(operation, certificate, "connecting", err, false)
 		return
 	}
 	domains := decodeCertificateDomains(certificate.Domains)
 	secretInput := ""
+	pluginProviderKey := ""
+	pluginProviderCredential := ""
 	switch certificate.ChallengeType {
 	case certificateChallengeDNS01:
 		if certificate.ProviderAccountID == nil {
 			h.finishCertificateOperationFailure(operation, certificate, "preflight", errors.New("DNS-01 certificate has no provider account"), false)
 			return
 		}
-		var account model.ProviderAccount
-		if err := h.db.First(&account, *certificate.ProviderAccountID).Error; err != nil ||
-			account.ProviderKey != providerCloudflare || account.Status != "active" {
+		if prepared.Provider == nil || prepared.Provider.Status != "active" {
 			h.finishCertificateOperationFailure(operation, certificate, "preflight", errors.New("DNS-01 provider account is unavailable"), false)
 			return
 		}
-		token, err := h.credentialCipher.Decrypt(account.CredentialCiphertext)
+		token, err := h.credentialCipher.Decrypt(prepared.Provider.CredentialCiphertext)
 		if err != nil {
 			h.finishCertificateOperationFailure(operation, certificate, "preflight", errors.New("DNS-01 provider credential is unavailable"), false)
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		for _, domain := range domains {
-			if _, err := findCloudflareZone(ctx, token, domain); err != nil {
-				cancel()
-				h.finishCertificateOperationFailure(operation, certificate, "preflight", fmt.Errorf("DNS-01 cannot manage %s: %w", domain, err), false)
-				return
+		if prepared.Provider.ProviderKey == providerCloudflare && providerHasCapability(prepared.Provider.Capabilities, "dns.records") {
+			ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+			for _, domain := range domains {
+				if _, err := findCloudflareZone(ctx, token, domain); err != nil {
+					cancel()
+					h.finishCertificateOperationFailure(operation, certificate, "preflight", fmt.Errorf("DNS-01 cannot manage %s: %w", domain, err), false)
+					return
+				}
 			}
+			cancel()
+			secretInput = token + "\n"
+		} else if providerHasCapability(prepared.Provider.Capabilities, "certificate.issue") {
+			pluginProviderKey = prepared.Provider.ProviderKey
+			pluginProviderCredential = token
+		} else {
+			h.finishCertificateOperationFailure(operation, certificate, "preflight", errors.New("DNS-01 provider does not support certificate issuance"), false)
+			return
 		}
-		cancel()
-		secretInput = token + "\n"
 	case certificateChallengeHTTP01Webroot:
 		if err := preflightHTTP01Domains(domains); err != nil {
 			h.finishCertificateOperationFailure(operation, certificate, "preflight", err, false)
@@ -839,25 +644,35 @@ func (h *handlers) executeManagedCertificateOperation(operationID uint) {
 		h.finishCertificateOperationFailure(operation, certificate, "preflight", fmt.Errorf("unsupported certificate challenge %q", certificate.ChallengeType), false)
 		return
 	}
-	_ = h.db.Model(&operation).Update("phase", "requesting").Error
+	_ = h.services.CertificateLifecycle.Phase(parent, operation.ID, "requesting")
 	conn, _, err := h.dialNodeSSH(node)
 	if err != nil {
 		h.finishCertificateOperationFailure(operation, certificate, "connecting", err, false)
 		return
 	}
-	defer conn.Close()
-	timeout := time.AfterFunc(certificateOperationTimeout, func() { _ = conn.Close() })
+	remote := h.newSSHRemoteSession(conn, node)
+	defer remote.Close()
+	stopCancellation := context.AfterFunc(parent, func() { _ = remote.Close() })
+	defer stopCancellation()
+	timeout := time.AfterFunc(certificateOperationTimeout, func() { _ = remote.Close() })
 	defer timeout.Stop()
-	script := buildCertbotCertificateScript(certificate, domains, operation.OperationType == certificateOperationRenew, uuid.NewString())
-	output, err := h.runNodeSSHSessionWithInput(conn, node, script, true, secretInput)
-	if err != nil {
-		h.finishCertificateOperationFailure(operation, certificate, "requesting",
-			fmt.Errorf("ACME certificate request failed: %w: %s", err, truncateCertificateError(output)), false)
-		return
+	var metadata issuedCertificateMetadata
+	failurePhase := "requesting"
+	if pluginProviderKey != "" {
+		metadata, failurePhase, err = h.issueCertificateWithProvider(parent, remote, certificate, operation, pluginProviderKey, pluginProviderCredential, domains)
+	} else {
+		script := buildCertbotCertificateScript(certificate, domains, operation.OperationType == certificateOperationRenew, uuid.NewString())
+		var output string
+		output, err = remote.RunWithInput(script, true, secretInput)
+		if err == nil {
+			failurePhase = "validating"
+			metadata, err = parseIssuedCertificateMetadata(output, domains, time.Now().UTC())
+		} else {
+			err = fmt.Errorf("ACME certificate request failed: %w: %s", err, truncateCertificateError(output))
+		}
 	}
-	metadata, err := parseIssuedCertificateMetadata(output, domains, time.Now().UTC())
 	if err != nil {
-		h.finishCertificateOperationFailure(operation, certificate, "validating", err, false)
+		h.finishCertificateOperationFailure(operation, certificate, failurePhase, err, false)
 		return
 	}
 	now := time.Now().UTC()
@@ -866,26 +681,19 @@ func (h *handlers) executeManagedCertificateOperation(operationID uint) {
 		nextRenewal = now.Add(24 * time.Hour)
 	}
 	certPath, keyPath := managedCertificatePaths(certificate.ID)
-	if err := h.db.Model(&certificate).Updates(map[string]interface{}{
-		"status": certificateStatusActive, "cert_path": certPath, "key_path": keyPath,
-		"serial_number": metadata.SerialNumber, "fingerprint_sha256": metadata.FingerprintSHA256,
-		"not_before": metadata.NotBefore, "not_after": metadata.NotAfter,
-		"last_issued_at": now, "next_renewal_at": nextRenewal, "last_error": "",
-	}).Error; err != nil {
+	if err := h.services.CertificateLifecycle.Issued(parent, operation.ID, certificate.ID, capabilitynetwork.CertificateIssued{
+		CertPath: certPath, KeyPath: keyPath, SerialNumber: metadata.SerialNumber,
+		FingerprintSHA256: metadata.FingerprintSHA256, NotBefore: metadata.NotBefore,
+		NotAfter: metadata.NotAfter, IssuedAt: now, NextRenewalAt: nextRenewal,
+	}); err != nil {
 		h.finishCertificateOperationFailure(operation, certificate, "persisting", err, false)
 		return
 	}
 
-	_ = h.db.Model(&operation).Update("phase", "publishing").Error
-	var binding model.CertificateProtocolEndpoint
-	bindingErr := h.db.Where("managed_certificate_id = ?", certificate.ID).Order("id asc").First(&binding).Error
-	if bindingErr != nil && !errors.Is(bindingErr, gorm.ErrRecordNotFound) {
-		h.finishCertificateOperationFailure(operation, certificate, "publishing", bindingErr, true)
-		return
-	}
-	if bindingErr == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), nodeConfigPublishTimeout)
-		_, _, publishErr := h.publishNodeConfigForNode(ctx, certificate.NodeID, binding.ProtocolEndpointID, requestedByValue(operation.RequestedBy))
+	_ = h.services.CertificateLifecycle.Phase(parent, operation.ID, "publishing")
+	if prepared.BindingProtocolEndpointID != 0 {
+		ctx, cancel := context.WithTimeout(parent, nodeConfigPublishTimeout)
+		_, _, publishErr := h.publishNodeConfigForNode(ctx, certificate.NodeID, prepared.BindingProtocolEndpointID, requestedByValue(operation.RequestedBy))
 		cancel()
 		if publishErr != nil {
 			h.finishCertificateOperationFailure(operation, certificate, "publishing",
@@ -895,10 +703,17 @@ func (h *handlers) executeManagedCertificateOperation(operationID uint) {
 	}
 	finished := time.Now().UTC()
 	summary := fmt.Sprintf("%s certificate valid until %s", operation.OperationType, metadata.NotAfter.Format(time.RFC3339))
-	_ = h.db.Model(&operation).Updates(map[string]interface{}{
-		"status": "succeeded", "phase": "completed", "result_summary": summary,
-		"error": "", "finished_at": finished,
-	}).Error
+	_ = h.services.CertificateLifecycle.Complete(parent, operation.ID, summary, finished)
+}
+
+func certificateExecutionNodeModel(row capabilitynetwork.CertificateExecutionNode) model.Node {
+	return model.Node{
+		ID: row.ID, SSHHost: row.SSHHost, SSHPort: row.SSHPort, SSHUser: row.SSHUser,
+		SSHAuthMethod: row.SSHAuthMethod, SSHPwd: row.SSHPwdCiphertext,
+		SSHPrivateKeyPassphrase: row.SSHPrivateKeyPassphraseCiphertext,
+		SSHPrivilegeMode:        row.SSHPrivilegeMode, SSHPrivilegePassword: row.SSHPrivilegePasswordCiphertext,
+		SSHHostKeyFingerprint: row.SSHHostKeyFingerprint,
+	}
 }
 
 func requestedByValue(value *uint) uint {
@@ -911,24 +726,9 @@ func requestedByValue(value *uint) uint {
 func (h *handlers) finishCertificateOperationFailure(operation model.CertificateOperation, certificate model.ManagedCertificate, phase string, cause error, certificateUsable bool) {
 	now := time.Now().UTC()
 	message := truncateCertificateError(cause.Error())
-	status := certificateStatusFailed
-	if certificateUsable {
-		status = certificateStatusActive
-	} else if certificate.NotAfter != nil && !certificate.NotAfter.After(now) {
-		status = certificateStatusExpired
-	}
 	nextRetry := now.Add(certificateRetryInterval)
-	_ = h.db.Transaction(func(tx *gorm.DB) error {
-		if certificate.ID != 0 {
-			if err := tx.Model(&model.ManagedCertificate{}).Where("id = ?", certificate.ID).Updates(map[string]interface{}{
-				"status": status, "last_error": message, "next_renewal_at": nextRetry,
-			}).Error; err != nil {
-				return err
-			}
-		}
-		return tx.Model(&model.CertificateOperation{}).Where("id = ?", operation.ID).Updates(map[string]interface{}{
-			"status": "failed", "phase": phase, "error": message, "finished_at": now,
-		}).Error
+	_ = h.services.CertificateLifecycle.Fail(context.Background(), operation.ID, certificate.ID, capabilitynetwork.CertificateFailure{
+		Phase: phase, Message: message, Usable: certificateUsable, At: now, NextRetry: nextRetry,
 	})
 }
 
@@ -1262,31 +1062,23 @@ func truncateCertificateError(value string) string {
 }
 
 func (h *handlers) StartCertificateRenewalWorker() {
-	go func() {
-		h.scanCertificateRenewals(time.Now().UTC())
-		ticker := time.NewTicker(certificateRenewalScanInterval)
-		defer ticker.Stop()
-		for now := range ticker.C {
-			h.scanCertificateRenewals(now.UTC())
-		}
-	}()
+	h.startScheduledJob("certificate_renewal", certificateRenewalScanInterval, func(ctx context.Context) error { return h.scanCertificateRenewals(time.Now().UTC()) })
 }
 
-func (h *handlers) scanCertificateRenewals(now time.Time) {
+func (h *handlers) scanCertificateRenewals(now time.Time) error {
 	if h.backgroundWorkPaused() {
-		return
+		return nil
 	}
-	_ = h.db.Model(&model.ManagedCertificate{}).
-		Where("not_after IS NOT NULL AND not_after <= ? AND status NOT IN ?", now, []string{certificateStatusIssuing, certificateStatusRenewing, certificateStatusExpired, resourceStatusDeleting}).
-		Updates(map[string]interface{}{"status": certificateStatusExpired, "last_error": "certificate has expired"}).Error
-	var certificates []model.ManagedCertificate
-	if err := h.db.Where(
-		"auto_renew = ? AND not_after IS NOT NULL AND not_after > ? AND next_renewal_at IS NOT NULL AND next_renewal_at <= ? AND status IN ?",
-		true, now, now, []string{certificateStatusActive, certificateStatusFailed},
-	).Order("next_renewal_at asc, id asc").Limit(20).Find(&certificates).Error; err != nil {
-		return
+	certificateIDs, err := h.services.CertificateLifecycle.DueRenewals(context.Background(), now, 20)
+	if err != nil {
+		return err
 	}
-	for _, certificate := range certificates {
-		_, _ = h.startManagedCertificateOperation(certificate.ID, certificateOperationRenew, nil)
+	var failures []error
+	for _, certificateID := range certificateIDs {
+		_, err := h.startManagedCertificateOperation(certificateID, certificateOperationRenew, nil)
+		if err != nil && !errors.Is(err, errCertificateOperationRunning) {
+			failures = append(failures, err)
+		}
 	}
+	return errors.Join(failures...)
 }

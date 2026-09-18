@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"fmt"
 	"sort"
 	"time"
@@ -39,40 +38,6 @@ type principalFlowTimelineItem struct {
 type principalFlowStateKey struct {
 	NodeID    uint
 	Principal string
-}
-
-func (h *handlers) loadPrincipalFlowTrendTimeline(ctx context.Context, scopeType string, scopeID uint, from, end time.Time) ([]principalFlowHistoryRow, []principalFlowHistoryRow, []principalFlowBoundaryRow, error) {
-	column, err := principalFlowScopeColumn(scopeType)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	baselineSQL := principalFlowBaselineSQL(column)
-	var baseline []principalFlowHistoryRow
-	db := h.db.WithContext(ctx)
-	if err := db.Raw(baselineSQL, scopeType, scopeID, from, scopeID, from).Scan(&baseline).Error; err != nil {
-		return nil, nil, nil, err
-	}
-
-	var events []principalFlowHistoryRow
-	if err := db.Table("principal_flow_observations").
-		Select("id, node_id, core_instance_id, session_registry_revision, principal_key, active_flows, observed_at").
-		Where(column+" = ? AND observed_at >= ? AND observed_at < ?", scopeID, from, end).
-		Find(&events).Error; err != nil {
-		return nil, nil, nil, err
-	}
-
-	// The baseline query has already discarded generations closed before the
-	// interval. Only boundaries inside the requested range can affect replay.
-	var boundaries []principalFlowBoundaryRow
-	if err := db.Table("principal_flow_scope_observations").
-		Select("id, node_id, core_instance_id, source, observed_at").
-		Where("scope_type = ? AND scope_id = ? AND source = ? AND observed_at >= ? AND observed_at < ?", scopeType, scopeID, "generation_reset", from, end).
-		Find(&boundaries).Error; err != nil {
-		return nil, nil, nil, err
-	}
-
-	return baseline, events, boundaries, nil
 }
 
 func principalFlowBaselineSQL(column string) string {

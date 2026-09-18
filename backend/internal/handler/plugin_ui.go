@@ -8,7 +8,6 @@ import (
 	"path"
 	"strings"
 
-	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/plugins"
 	"github.com/zeromicro/go-zero/rest/pathvar"
 )
@@ -89,8 +88,8 @@ func (h *handlers) PluginSlotSessionHandler(w http.ResponseWriter, r *http.Reque
 		body.TargetUserID = c.UserID
 	}
 	if body.Surface == "admin" {
-		var count int64
-		if !c.IsAdmin || body.TargetUserID == 0 || h.db.Model(&model.User{}).Where("id = ?", body.TargetUserID).Count(&count).Error != nil || count != 1 {
+		_, targetErr := h.services.Identity.Relationships.Account(r.Context(), body.TargetUserID)
+		if !c.IsAdmin || body.TargetUserID == 0 || targetErr != nil {
 			Forbidden(w, "plugin slot target is not authorized")
 			return
 		}
@@ -110,11 +109,17 @@ func (h *handlers) PluginBridgeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := h.pluginManager.CheckSession(r.Header.Get("X-Plugin-Session"), c.UserID, c.IsAdmin)
 	if err != nil {
-		Forbidden(w, "invalid plugin session")
+		if errors.Is(err, plugins.ErrInvalidSession) {
+			Forbidden(w, "invalid plugin session")
+		} else {
+			pluginError(w, err)
+		}
 		return
 	}
 	var body struct {
 		Type       string          `json:"type"`
+		Operation  string          `json:"operation"`
+		Input      json.RawMessage `json:"input"`
 		Revision   uint64          `json:"revision"`
 		Config     json.RawMessage `json:"config"`
 		Key        string          `json:"key"`
@@ -129,6 +134,10 @@ func (h *handlers) PluginBridgeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if body.Type == "context.load" {
 		OK(w, map[string]any{"surface": s.Surface, "plugin_id": s.PluginID, "page_id": s.PageID, "slot_id": s.SlotID, "slot": s.Slot, "target_user_id": s.TargetUserID})
+		return
+	}
+	if body.Type == "capabilities.list" || body.Type == "capabilities.invoke" {
+		h.pluginCapabilityCall(w, r, c, body.Type, body.Operation, body.Input)
 		return
 	}
 	if strings.HasPrefix(body.Type, "identity.") {

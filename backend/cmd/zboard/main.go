@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"github.com/zerodenet/zboard/backend/internal/application"
 	cfgpkg "github.com/zerodenet/zboard/backend/internal/config"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -24,7 +25,7 @@ import (
 )
 
 var configFile = flag.String("f", "etc/zboard.yaml", "the config file")
-var migrateOnly = flag.Bool("migrate-only", false, "apply embedded database migrations and exit")
+var migrateOnly = flag.Bool("migrate-only", false, "prepare the complete database schema and exit")
 
 func main() {
 	flag.Parse()
@@ -54,7 +55,7 @@ func main() {
 	if err := datastore.Ping(db); err != nil {
 		log.Fatalf("database ping failed: %v", err)
 	}
-	if err := datastore.RunMigrations(db); err != nil {
+	if err := application.PrepareDatabaseSchema(db); err != nil {
 		log.Fatalf("database migrate failed: %v", err)
 	}
 	migratedCredentials, err := datastore.MigrateNodeCredentials(db, credentialCipher)

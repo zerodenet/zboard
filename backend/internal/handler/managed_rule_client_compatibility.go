@@ -8,13 +8,14 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 )
 
 const managedRuleClientCompatibilityMessage = "规则集包含进程匹配，仅支持 Clash / sing-box；Zero 的 ZRS 当前不支持，不能省略进程规则后发布。"
 
-var errManagedRuleClientCompatibility = errors.New(managedRuleClientCompatibilityMessage)
+var errManagedRuleClientCompatibility = entitlements.ErrRuleSetClientCompatibility
 
 func isManagedClientRule(kind string) bool {
 	return kind == managedRuleTypeProcessName || kind == managedRuleTypeProcessPath

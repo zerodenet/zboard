@@ -86,7 +86,8 @@ func TestTrafficSummaryCancellationStopsBeforeFollowingAggregates(t *testing.T) 
 	f.log.afterAuth = cancel
 	r := httptest.NewRecorder()
 	f.h.TrafficSummaryHandler(r, announcementRequest(http.MethodGet, "/api/v1/traffic/summary", f.token, "").WithContext(ctx))
-	if r.Code != http.StatusInternalServerError || len(f.log.queries) != 1 || f.log.contexts[0] != ctx {
+	// Cancellation after HTTP authentication now stops before capability SQL.
+	if r.Code != http.StatusInternalServerError || len(f.log.queries) != 0 || len(f.log.authContexts) != 1 || f.log.authContexts[0] != ctx {
 		t.Fatalf("status=%d query count=%d", r.Code, len(f.log.queries))
 	}
 }
@@ -125,10 +126,7 @@ func TestTrafficUsageAndNodeSeriesQueriesHonorRequestCancellation(t *testing.T) 
 			f.log.afterAuth = cancel
 			r := httptest.NewRecorder()
 			f.h.TrafficUsageRecordsHandler(r, announcementRequest(http.MethodGet, "/api/v1/traffic/records?paged=true&bucket=hour"+view, f.token, "").WithContext(ctx))
-			wantQueries := 1
-			if view == "" {
-				wantQueries = 0
-			} // Canceled statistics transaction cannot begin.
+			wantQueries := 0 // Canceled requests stop before read transactions or capability SQL.
 			if r.Code != http.StatusInternalServerError || len(f.log.queries) != wantQueries || (wantQueries > 0 && f.log.contexts[0] != ctx) {
 				t.Fatalf("status=%d query count=%d", r.Code, len(f.log.queries))
 			}

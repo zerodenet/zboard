@@ -8,27 +8,29 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
 	"github.com/zerodenet/zboard/backend/internal/plugins"
 	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 type identityRuntime interface {
 	IdentityProviders() ([]plugins.IdentityProviderView, error)
 	IdentityProvider(context.Context, string) (plugins.IdentitySnapshot, error)
-	ExchangeIdentity(context.Context, plugins.IdentitySnapshot, *pluginv1.IdentityExchange, func(*pluginv1.VerifiedIdentity, *gorm.DB) error) error
-	WithIdentityProvider(plugins.IdentitySnapshot, func(*gorm.DB) error) error
+	ExchangeIdentity(context.Context, plugins.IdentitySnapshot, *pluginv1.IdentityExchange, func(*pluginv1.VerifiedIdentity, plugins.IdentityServices) error) error
+	WithIdentityProvider(context.Context, plugins.IdentitySnapshot, func(plugins.IdentityServices) error) error
 }
 
 const externalAuthPath = "/api/v1/auth/oidc"
 const flowCookie = "zboard_oidc_flow"
 const resultCookie = "zboard_oidc_result"
 
-func (h *handlers) externalAuthOrigin() (string, error) {
-	var installation model.Installation
-	if err := h.db.First(&installation, 1).Error; err != nil {
+func (h *handlers) externalAuthOrigin(ctx context.Context) (string, error) {
+	installation, err := h.services.Installation.Status(ctx)
+	if err != nil || !installation.Installed {
+		if err == nil {
+			err = errors.New("installation is unavailable")
+		}
 		return "", err
 	}
 	u, err := url.Parse(strings.TrimRight(installation.SiteURL, "/"))
@@ -74,7 +76,7 @@ func (h *handlers) beginExternalAuth(w http.ResponseWriter, r *http.Request, bin
 	if h.identityProviders == nil {
 		return http.StatusServiceUnavailable, "identity provider unavailable", ""
 	}
-	origin, err := h.externalAuthOrigin()
+	origin, err := h.externalAuthOrigin(r.Context())
 	if err != nil {
 		return http.StatusBadRequest, err.Error(), ""
 	}
@@ -87,12 +89,13 @@ func (h *handlers) beginExternalAuth(w http.ResponseWriter, r *http.Request, bin
 		if err != nil {
 			return http.StatusUnauthorized, "authentication required", ""
 		}
-		var user model.User
-		if err := h.db.Where("id = ? AND status = ?", claims.UserID, userStatusActive).First(&user).Error; err != nil || (!h.accountPasswordConfirmed(user, r) && bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) != nil) {
+		account, accountErr := h.passwordService().Active(r.Context(), identity.Principal{ID: claims.UserID, Actor: claims.Email})
+		confirmed := accountErr == nil && h.services.Identity.Confirmation.Valid(account, r.Header.Get("Authorization"), r.Header.Get("X-ZBoard-Account-Confirmation"))
+		if accountErr != nil || (!confirmed && bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), []byte(password)) != nil) {
 			return http.StatusUnauthorized, "confirm your current account password before linking", ""
 		}
-		flow.BindUserID = user.ID
-		flow.PasswordHash = user.Password
+		flow.BindUserID = account.ID
+		flow.PasswordHash = account.PasswordHash
 	}
 	provider, err := h.identityProviders.IdentityProvider(r.Context(), providerID)
 	if err != nil {
@@ -131,7 +134,7 @@ func (h *handlers) beginExternalAuth(w http.ResponseWriter, r *http.Request, bin
 }
 func (h *handlers) ExternalAuthCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	authNoStore(w)
-	origin, err := h.externalAuthOrigin()
+	origin, err := h.externalAuthOrigin(r.Context())
 	if err != nil {
 		BadRequest(w, "identity callback is unavailable")
 		return
@@ -161,8 +164,8 @@ func (h *handlers) ExternalAuthCallbackHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	result := externalAuthCompletion{Provider: flow.Provider}
-	err = h.identityProviders.ExchangeIdentity(r.Context(), flow.Provider, &pluginv1.IdentityExchange{Code: code, RedirectUri: flow.RedirectURI, Nonce: flow.Nonce, PkceVerifier: flow.Verifier, Issuer: flow.Provider.Provider.Issuer, ProviderId: flow.Provider.Provider.ProviderId}, func(identity *pluginv1.VerifiedIdentity, tx *gorm.DB) error {
-		return h.resolveExternalIdentity(tx, flow, identity, &result)
+	err = h.identityProviders.ExchangeIdentity(r.Context(), flow.Provider, &pluginv1.IdentityExchange{Code: code, RedirectUri: flow.RedirectURI, Nonce: flow.Nonce, PkceVerifier: flow.Verifier, Issuer: flow.Provider.Provider.Issuer, ProviderId: flow.Provider.Provider.ProviderId}, func(identity *pluginv1.VerifiedIdentity, services plugins.IdentityServices) error {
+		return h.resolveExternalIdentity(r.Context(), services, flow, identity, &result)
 	})
 	if err != nil {
 		fail()
@@ -178,7 +181,7 @@ func (h *handlers) ExternalAuthCallbackHandler(w http.ResponseWriter, r *http.Re
 }
 func (h *handlers) ExternalAuthFinishHandler(w http.ResponseWriter, r *http.Request) {
 	authNoStore(w)
-	origin, err := h.externalAuthOrigin()
+	origin, err := h.externalAuthOrigin(r.Context())
 	if err != nil {
 		BadRequest(w, "authentication unavailable")
 		return
@@ -199,15 +202,8 @@ func (h *handlers) ExternalAuthFinishHandler(w http.ResponseWriter, r *http.Requ
 	}
 	if result.Identity != nil && (!result.Identity.EmailVerified || !validEmail(normalizeEmail(result.Identity.Email))) {
 		if input.Email == "" && input.VerificationCode == "" {
-			if err := h.identityProviders.WithIdentityProvider(result.Provider, func(tx *gorm.DB) error {
-				var installation model.Installation
-				if err := tx.First(&installation, 1).Error; err != nil {
-					return err
-				}
-				if !installation.AllowRegistration {
-					return errors.New("registration disabled")
-				}
-				return nil
+			if err := h.identityProviders.WithIdentityProvider(r.Context(), result.Provider, func(services plugins.IdentityServices) error {
+				return services.External.RegistrationAvailable(r.Context())
 			}); err != nil {
 				Forbidden(w, "registration unavailable")
 				return
@@ -221,15 +217,15 @@ func (h *handlers) ExternalAuthFinishHandler(w http.ResponseWriter, r *http.Requ
 			OK(w, map[string]any{"registration_required": true, "email": result.Identity.Email})
 			return
 		}
-		if err := h.recordExternalEmailAttempt(input); err != nil {
+		if err := h.recordExternalEmailAttempt(r.Context(), input); err != nil {
 			Unauthorized(w, "email verification failed; restart authorization")
 			return
 		}
 	}
 	var output any
-	err = h.identityProviders.WithIdentityProvider(result.Provider, func(tx *gorm.DB) error {
+	err = h.identityProviders.WithIdentityProvider(r.Context(), result.Provider, func(services plugins.IdentityServices) error {
 		var err error
-		output, err = h.finishExternalIdentityRegistration(tx, result, input)
+		output, err = h.finishExternalIdentityRegistration(r.Context(), services, result, input)
 		return err
 	})
 	if err != nil {
@@ -238,17 +234,13 @@ func (h *handlers) ExternalAuthFinishHandler(w http.ResponseWriter, r *http.Requ
 	}
 	if response, ok := output.(map[string]any); ok {
 		if public, ok := response["user"].(userPublic); ok {
-			var user model.User
-			if h.db.First(&user, public.ID).Error == nil {
-				if result.Identity != nil {
-					_ = h.enqueueRegistrationWelcome(user)
-				}
-				if user.Password == "!external" {
+			if hasLocal, accountErr := h.passwordService().HasLocalPassword(r.Context(), identity.Principal{ID: public.ID}); accountErr == nil {
+				if !hasLocal {
 					identityID := result.IdentityID
 					if result.Identity != nil {
 						identityID = externalIdentityID(result.Provider, result.Identity)
 					}
-					proof, err := h.externalAuth.complete(externalAuthCompletion{Provider: result.Provider, UserID: user.ID, IdentityID: identityID, PasswordSetup: true})
+					proof, err := h.externalAuth.complete(externalAuthCompletion{Provider: result.Provider, UserID: public.ID, IdentityID: identityID, PasswordSetup: true})
 					if err == nil {
 						authCookie(w, origin, passwordSetupCookie, proof, 300)
 					}

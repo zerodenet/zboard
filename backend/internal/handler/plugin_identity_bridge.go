@@ -1,17 +1,13 @@
 package handler
 
 import (
+	"context"
 	"errors"
-	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
-	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
 	"github.com/zerodenet/zboard/backend/internal/plugins"
-	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type pluginIdentityBinding struct {
@@ -24,7 +20,7 @@ type pluginIdentityBinding struct {
 }
 
 func pluginOwnsProvider(pluginID, providerID string) bool {
-	return providerID == pluginID || strings.HasPrefix(providerID, pluginID+"~")
+	return identity.ProviderOwnedBy(pluginID, providerID)
 }
 
 func (h *handlers) pluginIdentityProviderViews(pluginID string) ([]plugins.IdentityProviderView, error) {
@@ -45,14 +41,14 @@ func (h *handlers) pluginIdentityProviderViews(pluginID string) ([]plugins.Ident
 }
 
 func (h *handlers) pluginIdentityBindings(userID uint, pluginID string) ([]pluginIdentityBinding, error) {
-	rows := []model.ExternalIdentity{}
-	if err := h.db.Where("user_id = ?", userID).Order("created_at desc").Find(&rows).Error; err != nil {
+	rows, err := h.services.Identity.Relationships.Bindings(context.Background(), userID)
+	if err != nil {
 		return nil, err
 	}
 	out := []pluginIdentityBinding{}
 	for _, row := range rows {
-		if pluginOwnsProvider(pluginID, row.PluginID) {
-			out = append(out, pluginIdentityBinding{ID: row.ID, ProviderID: row.PluginID, Publisher: row.Publisher, Issuer: row.Issuer, Subject: row.Subject, CreatedAt: row.CreatedAt})
+		if pluginOwnsProvider(pluginID, row.Authority) {
+			out = append(out, pluginIdentityBinding{ID: row.ID, ProviderID: row.Authority, Publisher: row.Publisher, Issuer: row.Issuer, Subject: row.Subject, CreatedAt: row.CreatedAt})
 		}
 	}
 	return out, nil
@@ -62,34 +58,25 @@ func (h *handlers) unlinkPluginIdentity(session plugins.Session, claims authClai
 	return h.unlinkPluginIdentityConfirmed(session, claims, identityID, password, nil)
 }
 func (h *handlers) unlinkPluginIdentityConfirmed(session plugins.Session, claims authClaims, identityID, password string, r *http.Request) error {
-	if session.Surface != "account" && session.Surface != "admin" {
+	if (session.Surface != "account" && session.Surface != "admin") || session.UserID != claims.UserID {
 		return plugins.ErrPermission
 	}
-	if identityID == "" || len(identityID) > 64 {
-		return errors.New("invalid identity binding")
+	in := identity.UnlinkRequest{ActorID: claims.UserID, TargetID: session.TargetUserID, PluginID: session.PluginID, BindingID: identityID, Administrative: session.Surface == "admin", Password: password}
+	if r != nil {
+		in.Authorization = r.Header.Get("Authorization")
+		in.Confirmation = r.Header.Get("X-ZBoard-Account-Confirmation")
 	}
-	return h.db.Transaction(func(tx *gorm.DB) error {
-		var target model.User
-		query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", session.TargetUserID)
-		if session.Surface == "account" {
-			query = query.Where("status = ?", userStatusActive)
-		}
-		if err := query.First(&target).Error; err != nil {
-			return err
-		}
-		if session.Surface == "account" && !h.accountPasswordConfirmed(target, r) && bcrypt.CompareHashAndPassword([]byte(target.Password), []byte(password)) != nil {
-			return errAccountPasswordConfirmation
-		}
-		var binding model.ExternalIdentity
-		if err := tx.Where("id = ? AND user_id = ?", identityID, target.ID).First(&binding).Error; err != nil {
-			return err
-		}
-		if !pluginOwnsProvider(session.PluginID, binding.PluginID) {
-			return plugins.ErrPermission
-		}
-		if err := tx.Delete(&binding).Error; err != nil {
-			return err
-		}
-		return createAuditLog(tx, claims, "plugin.identity.unlink", fmt.Sprintf("user:%d", target.ID), fmt.Sprintf("plugin=%s provider=%s identity=%s", session.PluginID, binding.PluginID, binding.ID))
-	})
+	service := h.services.Identity.Bindings
+	ctx := context.Background()
+	if r != nil {
+		ctx = r.Context()
+	}
+	err := service.Unlink(ctx, in)
+	if errors.Is(err, identity.ErrPermission) {
+		return plugins.ErrPermission
+	}
+	if errors.Is(err, identity.ErrPassword) {
+		return errAccountPasswordConfirmation
+	}
+	return err
 }

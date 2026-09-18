@@ -78,7 +78,7 @@ func TestTrafficUsageWithoutTotalsStillHonorsCancellationAndRejectsInvalidFlags(
 	f.log.afterAuth = cancel
 	recorder := httptest.NewRecorder()
 	f.h.TrafficUsageRecordsHandler(recorder, announcementRequest(http.MethodGet, "/api/v1/traffic/records?paged=true&include_totals=false", f.token, "").WithContext(ctx))
-	if recorder.Code != 500 || len(f.log.queries) != 1 || f.log.contexts[0] != ctx {
+	if recorder.Code != 500 || len(f.log.queries) != 0 || len(f.log.authContexts) != 1 || f.log.authContexts[0] != ctx {
 		t.Fatalf("cancellation status=%d queries=%d", recorder.Code, len(f.log.queries))
 	}
 	recorder = httptest.NewRecorder()

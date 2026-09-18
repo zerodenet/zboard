@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -24,7 +23,7 @@ func (h *handlers) TrafficTrendsSystemCalendarHandler(w http.ResponseWriter, r *
 // time-indexed read path.
 func (h *handlers) TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler(w http.ResponseWriter, r *http.Request) {
 	recorded := httptest.NewRecorder()
-	h.TrafficTrendsSystemCalendarHandler(recorded, r)
+	h.trafficTrends(recorded, r, true)
 	if recorded.Code != http.StatusOK {
 		copyRecordedResponse(w, recorded)
 		return
@@ -45,16 +44,6 @@ func (h *handlers) TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler(w h
 		copyRecordedResponse(w, recorded)
 		return
 	}
-	scopeType, scopeID, allowed, err := h.principalFlowTrendScope(r)
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
-	if !allowed || scopeID == 0 {
-		copyRecordedResponse(w, recorded)
-		return
-	}
-
 	location := h.systemTimezoneLocation()
 	from, err := parseSystemDate(response.From, location)
 	if err != nil {
@@ -76,30 +65,13 @@ func (h *handlers) TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler(w h
 		copyRecordedResponse(w, recorded)
 		return
 	}
-	rows, err := h.loadPrincipalFlowScopeTrendRowsInBuckets(r.Context(), scopeType, scopeID, buckets)
+	rows, err := h.readPrincipalTrends(r, buckets)
 	if err != nil {
-		ServerError(w, err)
+		writePrincipalTrendError(w, err)
 		return
 	}
 	applyPrincipalFlowTrendRows(&response, rows)
 	writeJSONResponse(w, http.StatusOK, wire.Message, response, wire.Error)
-}
-
-func (h *handlers) loadPrincipalFlowScopeTrendRowsInBuckets(ctx context.Context, scopeType string, scopeID uint, buckets []systemCalendarBucket) ([]principalFlowScopeTrendRow, error) {
-	if len(buckets) == 0 {
-		return nil, nil
-	}
-	expression, args := systemBucketCaseExpression("observed_at", buckets)
-	if buckets[0].StartUTC.Location() == time.UTC && buckets[0].StartUTC.Hour() == 0 {
-		expression, args = "DATE(observed_at)", nil
-	}
-	rows := make([]principalFlowScopeTrendRow, 0, len(buckets))
-	err := h.trafficQueryDB().WithContext(ctx).Table("principal_flow_scope_observations").
-		Select(expression+" AS day, MAX(active_flows) AS peak, COUNT(*) AS sample_count", args...).
-		Where("scope_type = ? AND scope_id = ? AND observed_at >= ? AND observed_at < ?", scopeType, scopeID, buckets[0].StartUTC, buckets[len(buckets)-1].EndUTC).
-		Group("day").Order("day ASC").
-		Scan(&rows).Error
-	return rows, err
 }
 
 func applyPrincipalFlowReplayInBuckets(response *trafficTrendResponse, buckets []systemCalendarBucket, baseline, events []principalFlowHistoryRow, boundaries []principalFlowBoundaryRow) {
@@ -226,41 +198,10 @@ func (h *handlers) DashboardOverviewSystemCalendarHandler(w http.ResponseWriter,
 		return
 	}
 
-	business, err := h.loadDashboardBusiness(period, now)
+	response, err := h.loadDashboardOverview(r.Context(), period, now, location)
 	if err != nil {
 		ServerError(w, err)
 		return
 	}
-	service, coverage, err := h.loadDashboardService(period, now)
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
-	subscriptions, err := h.loadDashboardSubscriptionHealth(now)
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
-	attention, infrastructure, err := h.loadDashboardOperationalHealth(now)
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
-	trend, err := h.loadDashboardTrendInLocation(period, location)
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
-
-	OK(w, dashboardOverviewResponse{
-		Period:         period,
-		Business:       business,
-		Service:        service,
-		Subscriptions:  subscriptions,
-		Attention:      attention,
-		Infrastructure: infrastructure,
-		Coverage:       coverage,
-		Trend:          trend,
-		AsOf:           now,
-	})
+	OK(w, response)
 }

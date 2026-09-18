@@ -7,11 +7,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+	networkcap "github.com/zerodenet/zboard/backend/internal/capabilities/network"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 )
 
 type protocolMultiplierWriteReq struct {
@@ -33,28 +31,18 @@ func (h *handlers) ProtocolEndpointMultiplierHandler(w http.ResponseWriter, r *h
 		BadRequest(w, err.Error())
 		return
 	}
-	if req.MultiplierMilli < 1 || req.MultiplierMilli > 100000 {
-		BadRequest(w, "multiplier_milli must be between 1 and 100000 (1000 means 1x)")
-		return
-	}
-	var endpoint model.ProtocolEndpoint
-	var previous int64
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&endpoint, id).Error; err != nil {
-			return err
-		}
-		previous = endpoint.MultiplierMilli
-		if previous == req.MultiplierMilli {
-			return nil
-		}
-		if err := tx.Model(&endpoint).Update("multiplier_milli", req.MultiplierMilli).Error; err != nil {
-			return err
-		}
-		endpoint.MultiplierMilli = req.MultiplierMilli
-		return createAuditLog(tx, claims, "protocol_endpoint.multiplier.update", fmt.Sprintf("protocol_endpoint:%d", endpoint.ID), fmt.Sprintf("from=%d to=%d", previous, req.MultiplierMilli))
-	}); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	endpoint, err := h.services.ProtocolEndpointMultiplier.Update(r.Context(), claims.UserID, id, req.MultiplierMilli)
+	if err != nil {
+		var validation *networkcap.ProtocolEndpointMultiplierValidation
+		switch {
+		case errors.As(err, &validation):
+			BadRequest(w, validation.Fields["multiplier_milli"])
+			return
+		case errors.Is(err, networkcap.ErrProtocolEndpointNotFound):
 			NotFound(w)
+			return
+		case errors.Is(err, networkcap.ErrProtocolEndpointMultiplierPermission):
+			Forbidden(w, "管理员权限已失效。")
 			return
 		}
 		ServerError(w, err)
@@ -63,24 +51,7 @@ func (h *handlers) ProtocolEndpointMultiplierHandler(w http.ResponseWriter, r *h
 	OK(w, endpoint)
 }
 
-type operationLogItem struct {
-	ID                 uint       `json:"id"`
-	Source             string     `json:"source"`
-	Action             string     `json:"action"`
-	Status             string     `json:"status"`
-	TargetType         string     `json:"target_type"`
-	TargetID           uint       `json:"target_id"`
-	NodeID             uint       `json:"node_id,omitempty"`
-	ProtocolEndpointID uint       `json:"protocol_endpoint_id,omitempty"`
-	Summary            string     `json:"summary,omitempty"`
-	HasOutput          bool       `json:"has_output"`
-	HasError           bool       `json:"has_error"`
-	Output             string     `json:"output,omitempty"`
-	Error              string     `json:"error,omitempty"`
-	StartedAt          *time.Time `json:"started_at,omitempty"`
-	FinishedAt         *time.Time `json:"finished_at,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-}
+type operationLogItem = observability.OperationLogItem
 
 func (h *handlers) OperationLogsHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.requireAdmin(w, r); err != nil {
@@ -131,90 +102,28 @@ func (h *handlers) OperationLogsHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	items := make([]operationLogItem, 0, fetchLimit*3)
 	total := int64(0)
-	if source == "" || source == "protocol_publish" {
-		query := applyHistoryWindow(h.db.Model(&model.ProtocolDeployment{}), "created_at", window)
-		if status != "" {
-			query = query.Where("status = ?", status)
+	sources := []string{"protocol_publish", "node_kernel", "task"}
+	for _, candidate := range sources {
+		if source != "" && source != candidate {
+			continue
 		}
-		if nodeID != 0 {
-			query = query.Where("node_id = ?", nodeID)
+		if candidate == "node_kernel" && endpointID != 0 {
+			continue
 		}
-		if endpointID != 0 {
-			query = query.Where("protocol_endpoint_id = ?", endpointID)
+		if candidate == "task" && (nodeID != 0 || endpointID != 0) {
+			continue
 		}
-		var count int64
-		if err := query.Count(&count).Error; err != nil {
-			ServerError(w, err)
+		query := observability.OperationLogQuery{Source: candidate, Status: status, NodeID: nodeID, ProtocolEndpointID: endpointID, From: window.From, To: window.To, FetchLimit: fetchLimit}
+		if cursor != nil {
+			query.CursorAt, query.CursorID, query.CursorSource, query.CursorDirection = cursor.At, cursor.ID, cursor.Source, cursor.Direction
+		}
+		page, readErr := h.services.OperationLogs.ListSource(r.Context(), query)
+		if readErr != nil {
+			ServerError(w, readErr)
 			return
 		}
-		total += count
-		var records []model.ProtocolDeployment
-		query = applyOperationHistoryCursor(query, "protocol_publish", cursor)
-		if err := query.Order(operationHistoryOrder(cursor)).Limit(fetchLimit).Find(&records).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
-		for _, record := range records {
-			items = append(items, operationLogItem{
-				ID: record.ID, Source: "protocol_publish", Action: "protocol.publish", Status: record.Status,
-				TargetType: "protocol_endpoint", TargetID: record.ProtocolEndpointID, NodeID: record.NodeID, ProtocolEndpointID: record.ProtocolEndpointID,
-				Summary: fmt.Sprintf("config revision %d", record.ConfigRevision), HasOutput: record.Output != "", HasError: record.Error != "",
-				StartedAt: record.StartedAt, FinishedAt: record.FinishedAt, CreatedAt: record.CreatedAt,
-			})
-		}
-	}
-	if endpointID == 0 && (source == "" || source == "node_kernel") {
-		query := applyHistoryWindow(h.db.Model(&model.NodeOperation{}), "created_at", window)
-		if status != "" {
-			query = query.Where("status = ?", status)
-		}
-		if nodeID != 0 {
-			query = query.Where("node_id = ?", nodeID)
-		}
-		var count int64
-		if err := query.Count(&count).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
-		total += count
-		var records []model.NodeOperation
-		query = applyOperationHistoryCursor(query, "node_kernel", cursor)
-		if err := query.Order(operationHistoryOrder(cursor)).Limit(fetchLimit).Find(&records).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
-		for _, record := range records {
-			items = append(items, operationLogItem{
-				ID: record.ID, Source: "node_kernel", Action: "node.kernel." + record.OperationType, Status: record.Status,
-				TargetType: "node", TargetID: record.NodeID, NodeID: record.NodeID,
-				Summary: record.ResultSummary, HasError: record.Error != "", StartedAt: record.StartedAt, FinishedAt: record.FinishedAt, CreatedAt: record.CreatedAt,
-			})
-		}
-	}
-	if nodeID == 0 && endpointID == 0 && (source == "" || source == "task") {
-		query := applyHistoryWindow(h.db.Model(&model.Task{}), "created_at", window)
-		if status != "" {
-			query = query.Where("status = ?", operationTaskStatus(status))
-		}
-		var count int64
-		if err := query.Count(&count).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
-		total += count
-		var records []model.Task
-		query = applyOperationHistoryCursor(query, "task", cursor)
-		if err := query.Order(operationHistoryOrder(cursor)).Limit(fetchLimit).Find(&records).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
-		for _, record := range records {
-			items = append(items, operationLogItem{
-				ID: record.ID, Source: "task", Action: "task." + record.Type, Status: normalizeTaskStatus(record.Status),
-				TargetType: "task", TargetID: record.ID, Summary: fmt.Sprintf("progress %d/%d; attempt %d/%d", record.Current, record.Total, record.Attempts, record.MaxAttempts),
-				HasError: record.Errors != "", StartedAt: record.StartedAt, FinishedAt: record.FinishedAt, CreatedAt: record.CreatedAt,
-			})
-		}
+		total += page.Total
+		items = append(items, page.Items...)
 	}
 	ascending := cursor != nil && cursor.Direction == historyDirectionNewer
 	sort.SliceStable(items, func(i, j int) bool {
@@ -284,68 +193,20 @@ func (h *handlers) OperationLogDetailHandler(w http.ResponseWriter, r *http.Requ
 		BadRequest(w, "invalid operation log id")
 		return
 	}
-	item := operationLogItem{ID: uint(id), Source: parts[0]}
-	switch parts[0] {
-	case "protocol_publish":
-		var record model.ProtocolDeployment
-		if err := h.db.First(&record, uint(id)).Error; err != nil {
-			h.operationLogReadError(w, err)
-			return
-		}
-		item.Action = "protocol.publish"
-		item.Status = record.Status
-		item.TargetType = "protocol_endpoint"
-		item.TargetID = record.ProtocolEndpointID
-		item.NodeID = record.NodeID
-		item.ProtocolEndpointID = record.ProtocolEndpointID
-		item.Summary = fmt.Sprintf("config revision %d", record.ConfigRevision)
-		item.Output = record.Output
-		item.Error = record.Error
-		item.StartedAt = record.StartedAt
-		item.FinishedAt = record.FinishedAt
-		item.CreatedAt = record.CreatedAt
-	case "node_kernel":
-		var record model.NodeOperation
-		if err := h.db.First(&record, uint(id)).Error; err != nil {
-			h.operationLogReadError(w, err)
-			return
-		}
-		item.Action = "node.kernel." + record.OperationType
-		item.Status = record.Status
-		item.TargetType = "node"
-		item.TargetID = record.NodeID
-		item.NodeID = record.NodeID
-		item.Summary = record.ResultSummary
-		item.Error = record.Error
-		item.StartedAt = record.StartedAt
-		item.FinishedAt = record.FinishedAt
-		item.CreatedAt = record.CreatedAt
-	case "task":
-		var record model.Task
-		if err := h.db.First(&record, uint(id)).Error; err != nil {
-			h.operationLogReadError(w, err)
-			return
-		}
-		item.Action = "task." + record.Type
-		item.Status = normalizeTaskStatus(record.Status)
-		item.TargetType = "task"
-		item.TargetID = record.ID
-		item.Summary = fmt.Sprintf("progress %d/%d; attempt %d/%d", record.Current, record.Total, record.Attempts, record.MaxAttempts)
-		item.Error = record.Errors
-		item.StartedAt = record.StartedAt
-		item.FinishedAt = record.FinishedAt
-		item.CreatedAt = record.CreatedAt
-	default:
+	if parts[0] != "protocol_publish" && parts[0] != "node_kernel" && parts[0] != "task" {
 		BadRequest(w, "invalid operation log source")
 		return
 	}
-	item.HasOutput = item.Output != ""
-	item.HasError = item.Error != ""
+	item, err := h.services.OperationLogs.Detail(r.Context(), parts[0], uint(id))
+	if err != nil {
+		h.operationLogReadError(w, err)
+		return
+	}
 	OK(w, item)
 }
 
 func (h *handlers) operationLogReadError(w http.ResponseWriter, err error) {
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if errors.Is(err, observability.ErrOperationLogNotFound) {
 		NotFound(w)
 		return
 	}
@@ -364,6 +225,8 @@ func optionalUintQuery(r *http.Request, name string) (uint, error) {
 	return uint(parsed), nil
 }
 
+// These compatibility projections remain transport-local for tests and JSON
+// contracts; operation-log persistence owns their use in database queries.
 func operationTaskStatus(status string) int16 {
 	return map[string]int16{"queued": 0, "running": 1, "succeeded": 2, "failed": 3}[status]
 }

@@ -6,12 +6,14 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
 
 type nodeGroupMutationResponse struct {
-	model.NodeGroup
-	ReconcileTask *model.Task `json:"reconcile_task,omitempty"`
+	network.NodeGroupRecord
+	ReconcileTask *jobs.BatchReceipt `json:"reconcile_task,omitempty"`
 }
 
 type nodeGroupReconcileScope struct {

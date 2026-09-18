@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"path"
 	"time"
 )
@@ -137,18 +138,26 @@ func (m *Manager) CheckSession(token string, userID uint, admin bool) (Session, 
 		return s, err
 	}
 	if s.UserID != userID || (s.Surface == "admin" && !admin) {
-		return Session{}, errors.New("plugin session identity mismatch")
+		return Session{}, ErrInvalidSession
 	}
+	s.ExpiresAt = time.Now().Add(10 * time.Minute)
+	m.sessions[token] = s
 	return s, nil
 }
 func (m *Manager) session(token string) (Session, error) {
 	s, ok := m.sessions[token]
-	if !ok || time.Now().After(s.ExpiresAt) || m.lost.Load() {
+	if m.lost.Load() {
 		return Session{}, ErrUnavailable
 	}
+	if !ok || time.Now().After(s.ExpiresAt) {
+		return Session{}, ErrInvalidSession
+	}
 	v, err := m.load(s.PluginID)
-	if err != nil || s.Generation != v.Generation || !hasCapability(v, PageCapability) || (s.Purpose == "configuration" && !hasCapability(v, ConfigCapability)) || v.State == "uninstalled" || (s.Purpose != "configuration" && (!v.Enabled || v.State != "active")) {
-		return Session{}, ErrUnavailable
+	if err != nil {
+		return Session{}, fmt.Errorf("%w: session metadata unavailable", ErrUnavailable)
+	}
+	if s.Generation != v.Generation || !hasCapability(v, PageCapability) || (s.Purpose == "configuration" && !hasCapability(v, ConfigCapability)) || v.State == "uninstalled" || (s.Purpose != "configuration" && (!v.Enabled || v.State != "active")) {
+		return Session{}, ErrInvalidSession
 	}
 	return s, nil
 }

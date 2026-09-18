@@ -1,24 +1,19 @@
 package handler
 
-import (
-	"encoding/json"
-	"strings"
+import networkcap "github.com/zerodenet/zboard/backend/internal/capabilities/network"
 
-	"github.com/zerodenet/zboard/backend/internal/model"
-)
-
-type protocolEndpointEffect string
+type protocolEndpointEffect = networkcap.ProtocolEndpointEffect
 
 const (
-	protocolEndpointEffectNone                protocolEndpointEffect = "none"
-	protocolEndpointEffectManagement          protocolEndpointEffect = "management"
-	protocolEndpointEffectBilling             protocolEndpointEffect = "billing"
-	protocolEndpointEffectDelivery            protocolEndpointEffect = "delivery"
-	protocolEndpointEffectRuntime             protocolEndpointEffect = "runtime"
-	protocolEndpointEffectCredentialPlacement protocolEndpointEffect = "credential_placement"
+	protocolEndpointEffectNone                = networkcap.ProtocolEndpointEffectNone
+	protocolEndpointEffectManagement          = networkcap.ProtocolEndpointEffectManagement
+	protocolEndpointEffectBilling             = networkcap.ProtocolEndpointEffectBilling
+	protocolEndpointEffectDelivery            = networkcap.ProtocolEndpointEffectDelivery
+	protocolEndpointEffectRuntime             = networkcap.ProtocolEndpointEffectRuntime
+	protocolEndpointEffectCredentialPlacement = networkcap.ProtocolEndpointEffectCredentialPlacement
 
-	protocolEndpointPublishNotRequired = "not_required"
-	protocolEndpointPublishQueued      = "queued"
+	protocolEndpointPublishNotRequired = networkcap.ProtocolEndpointPublishNotRequired
+	protocolEndpointPublishQueued      = networkcap.ProtocolEndpointPublishQueued
 
 	// Runtime compilation is ordered by endpoint identity. SortOrder belongs to subscription delivery.
 	protocolEndpointRuntimeOrder = "id asc"
@@ -43,153 +38,33 @@ type protocolEndpointEffectSnapshot struct {
 	ManagedCertificateID uint
 }
 
-type protocolEndpointChangeEffects struct {
-	Effect          protocolEndpointEffect   `json:"effect"`
-	Effects         []protocolEndpointEffect `json:"effects"`
-	PublishStatus   string                   `json:"publish_status"`
-	AffectedNodeIDs []uint                   `json:"affected_node_ids,omitempty"`
-}
+type protocolEndpointChangeEffects = networkcap.ProtocolEndpointChangeEffects
 
 type protocolEndpointMutationResponse struct {
-	ProtocolEndpoint     model.ProtocolEndpoint                   `json:"protocol_endpoint"`
-	NodeGroupMemberships []protocolEndpointNodeGroupMembership    `json:"node_group_memberships"`
-	NodeGroupMembership  *protocolEndpointNodeGroupMutationResult `json:"node_group_membership,omitempty"`
-	Timing               protocolEndpointMutationTiming           `json:"timing"`
+	ProtocolEndpoint     networkcap.ProtocolEndpointRecord              `json:"protocol_endpoint"`
+	NodeGroupMemberships []networkcap.ProtocolEndpointMembership        `json:"node_group_memberships"`
+	NodeGroupMembership  *networkcap.ProtocolEndpointMembershipMutation `json:"node_group_membership,omitempty"`
+	Timing               protocolEndpointMutationTiming                 `json:"timing"`
 	protocolEndpointChangeEffects
 }
 
 func classifyProtocolEndpointChange(before *protocolEndpointEffectSnapshot, after protocolEndpointEffectSnapshot) protocolEndpointChangeEffects {
-	if before == nil {
-		if after.IsActive {
-			return protocolEndpointChangeEffects{
-				Effect:          protocolEndpointEffectRuntime,
-				Effects:         []protocolEndpointEffect{protocolEndpointEffectRuntime},
-				PublishStatus:   protocolEndpointPublishQueued,
-				AffectedNodeIDs: []uint{after.NodeID},
-			}
-		}
-		return protocolEndpointChangeEffects{
-			Effect:        protocolEndpointEffectManagement,
-			Effects:       []protocolEndpointEffect{protocolEndpointEffectManagement},
-			PublishStatus: protocolEndpointPublishNotRequired,
-		}
+	var beforeRecord *networkcap.ProtocolEndpointRecord
+	beforeCertificateID := uint(0)
+	if before != nil {
+		record := protocolEndpointEffectRecord(*before)
+		beforeRecord = &record
+		beforeCertificateID = before.ManagedCertificateID
 	}
-
-	changed := make(map[protocolEndpointEffect]bool)
-	if canonicalJSON(before.Tags, "[]") != canonicalJSON(after.Tags, "[]") {
-		changed[protocolEndpointEffectManagement] = true
-	}
-	if before.MultiplierMilli != after.MultiplierMilli {
-		changed[protocolEndpointEffectBilling] = true
-	}
-	if strings.TrimSpace(before.Name) != strings.TrimSpace(after.Name) ||
-		strings.TrimSpace(before.Address) != strings.TrimSpace(after.Address) ||
-		before.PublicPort != after.PublicPort ||
-		canonicalJSON(before.ClientConfig, "{}") != canonicalJSON(after.ClientConfig, "{}") ||
-		before.SortOrder != after.SortOrder {
-		changed[protocolEndpointEffectDelivery] = true
-	}
-	if !strings.EqualFold(strings.TrimSpace(before.Protocol), strings.TrimSpace(after.Protocol)) ||
-		before.Port != after.Port ||
-		before.Cipher != after.Cipher ||
-		!sameOptionalUint(before.ParentProtocolID, after.ParentProtocolID) ||
-		before.IsActive != after.IsActive ||
-		canonicalJSON(before.ServerConfig, "{}") != canonicalJSON(after.ServerConfig, "{}") ||
-		canonicalJSON(before.OptionalConfig, "{}") != canonicalJSON(after.OptionalConfig, "{}") ||
-		before.ManagedCertificateID != after.ManagedCertificateID {
-		changed[protocolEndpointEffectRuntime] = true
-	}
-	if before.NodeID != after.NodeID {
-		changed[protocolEndpointEffectCredentialPlacement] = true
-	}
-
-	ordered := []protocolEndpointEffect{
-		protocolEndpointEffectManagement,
-		protocolEndpointEffectBilling,
-		protocolEndpointEffectDelivery,
-		protocolEndpointEffectRuntime,
-		protocolEndpointEffectCredentialPlacement,
-	}
-	effects := make([]protocolEndpointEffect, 0, len(ordered))
-	primary := protocolEndpointEffectNone
-	for _, effect := range ordered {
-		if !changed[effect] {
-			continue
-		}
-		effects = append(effects, effect)
-		primary = effect
-	}
-
-	result := protocolEndpointChangeEffects{
-		Effect:        primary,
-		Effects:       effects,
-		PublishStatus: protocolEndpointPublishNotRequired,
-	}
-	if changed[protocolEndpointEffectRuntime] || changed[protocolEndpointEffectCredentialPlacement] {
-		result.AffectedNodeIDs = protocolEndpointRuntimeAffectedNodeIDs(*before, after)
-		if len(result.AffectedNodeIDs) > 0 {
-			result.PublishStatus = protocolEndpointPublishQueued
-		}
-	}
-	return result
+	return networkcap.ClassifyProtocolEndpointChange(beforeRecord, protocolEndpointEffectRecord(after), beforeCertificateID, after.ManagedCertificateID)
 }
 
-func protocolEndpointRuntimeAffectedNodeIDs(before, after protocolEndpointEffectSnapshot) []uint {
-	if before.NodeID == after.NodeID {
-		if before.IsActive || after.IsActive {
-			return uniqueNodeIDs(after.NodeID)
-		}
-		return nil
+func protocolEndpointEffectRecord(snapshot protocolEndpointEffectSnapshot) networkcap.ProtocolEndpointRecord {
+	return networkcap.ProtocolEndpointRecord{
+		NodeID: snapshot.NodeID, Name: snapshot.Name, Protocol: snapshot.Protocol, Address: snapshot.Address,
+		Port: snapshot.Port, PublicPort: snapshot.PublicPort, Cipher: snapshot.Cipher,
+		ParentProtocolID: snapshot.ParentProtocolID, MultiplierMilli: snapshot.MultiplierMilli,
+		ServerConfig: snapshot.ServerConfig, ClientConfig: snapshot.ClientConfig,
+		OptionalConfig: snapshot.OptionalConfig, Tags: snapshot.Tags, IsActive: snapshot.IsActive, SortOrder: snapshot.SortOrder,
 	}
-
-	affected := make([]uint, 0, 2)
-	if before.IsActive {
-		affected = append(affected, before.NodeID)
-	}
-	if after.IsActive {
-		affected = append(affected, after.NodeID)
-	}
-	if len(affected) == 0 {
-		return nil
-	}
-	return uniqueNodeIDs(affected...)
-}
-
-func canonicalJSON(value, fallback string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		trimmed = fallback
-	}
-	var decoded interface{}
-	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
-		return trimmed
-	}
-	normalized, err := json.Marshal(decoded)
-	if err != nil {
-		return trimmed
-	}
-	return string(normalized)
-}
-
-func sameOptionalUint(left, right *uint) bool {
-	if left == nil || *left == 0 {
-		return right == nil || *right == 0
-	}
-	return right != nil && *left == *right
-}
-
-func uniqueNodeIDs(values ...uint) []uint {
-	seen := make(map[uint]struct{}, len(values))
-	result := make([]uint, 0, len(values))
-	for _, value := range values {
-		if value == 0 {
-			continue
-		}
-		if _, exists := seen[value]; exists {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	return result
 }

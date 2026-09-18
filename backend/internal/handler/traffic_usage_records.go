@@ -1,15 +1,12 @@
 package handler
 
 import (
-	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/zerodenet/zboard/backend/internal/datastore"
-	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
 )
 
 const (
@@ -18,31 +15,11 @@ const (
 	trafficUsageBucketDay    = "day"
 )
 
-type trafficUsageBucketSpec struct {
-	Name       string
-	Expression string
-}
+type trafficUsageBucketSpec meteringstore.UsageBucketSpec
 
 func parseTrafficUsageBucket(raw string) (trafficUsageBucketSpec, error) {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "", trafficUsageBucketMinute:
-		return trafficUsageBucketSpec{
-			Name:       trafficUsageBucketMinute,
-			Expression: "CAST(DATE_FORMAT(record_at, '%Y-%m-%d %H:%i:00') AS DATETIME)",
-		}, nil
-	case trafficUsageBucketHour:
-		return trafficUsageBucketSpec{
-			Name:       trafficUsageBucketHour,
-			Expression: "CAST(DATE_FORMAT(record_at, '%Y-%m-%d %H:00:00') AS DATETIME)",
-		}, nil
-	case trafficUsageBucketDay:
-		return trafficUsageBucketSpec{
-			Name:       trafficUsageBucketDay,
-			Expression: "CAST(DATE_FORMAT(record_at, '%Y-%m-%d 00:00:00') AS DATETIME)",
-		}, nil
-	default:
-		return trafficUsageBucketSpec{}, fmt.Errorf("bucket must be minute, hour or day")
-	}
+	b, err := meteringstore.ParseUsageBucket(raw)
+	return trafficUsageBucketSpec(b), err
 }
 
 type trafficUsageBucket struct {
@@ -75,7 +52,7 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 	}
 	summaryOnly := r != nil && r.URL != nil && r.URL.Query().Get("view") == "usage_summary"
 	if r == nil || r.URL == nil || (!wantsPagedList(r) && !summaryOnly) || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("view")), "raw") {
-		h.TrafficRecordsHandler(w, r)
+		h.trafficRecordsHandler(w, r)
 		return
 	}
 
@@ -103,7 +80,6 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 			return
 		}
 	}
-	bucket = bucket.forDB(h.db)
 	window, err := parseHistoryWindow(r.URL.Query(), 7)
 	if err != nil {
 		BadRequest(w, err.Error())
@@ -120,152 +96,81 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	db := h.trafficQueryDB().WithContext(r.Context())
-	base := db.Model(&model.TrafficRecord{})
+	q := metering.UsageQuery{RecordsQuery: metering.RecordsQuery{Administrative: adminScope, Offset: offset, Limit: limit, From: window.From, To: window.To}, Bucket: bucket.Name, IncludeTotals: includeTotals, SummaryOnly: summaryOnly}
+	if cursor != nil {
+		q.Cursor = &metering.RecordCursor{At: cursor.At, ID: cursor.ID, Direction: cursor.Direction}
+	}
 	if adminScope {
-		if userID, parseErr := positiveQueryID(r.URL.Query(), "user_id"); parseErr != nil {
-			BadRequest(w, parseErr.Error())
-			return
-		} else if userID > 0 {
-			base = base.Where("user_id = ?", userID)
-		}
-	} else {
-		base = base.Where("user_id = ?", claims.UserID)
-	}
-	for _, filter := range []struct {
-		key    string
-		column string
-	}{
-		{key: "subscription_id", column: "subscription_id"},
-		{key: "node_id", column: "node_id"},
-		{key: "protocol_endpoint_id", column: "protocol_endpoint_id"},
-	} {
-		id, parseErr := positiveQueryID(r.URL.Query(), filter.key)
-		if parseErr != nil {
-			BadRequest(w, parseErr.Error())
+		q.UserID, err = positiveQueryID(r.URL.Query(), "user_id")
+		if err != nil {
+			BadRequest(w, err.Error())
 			return
 		}
-		if id > 0 {
-			base = base.Where(filter.column+" = ?", id)
+	}
+	for _, f := range []struct {
+		name string
+		dest *uint
+	}{{"subscription_id", &q.SubscriptionID}, {"node_id", &q.NodeID}, {"protocol_endpoint_id", &q.ProtocolEndpointID}} {
+		*f.dest, err = positiveQueryID(r.URL.Query(), f.name)
+		if err != nil {
+			BadRequest(w, err.Error())
+			return
 		}
 	}
-
-	pageScope := base.Session(&gorm.Session{})
-	base = applyHistoryWindow(base.Session(&gorm.Session{}), "record_at", window)
-
+	result, err := h.services.Usage(trafficStatisticsCacheAdapter{&h.trafficStatisticsCache}, h.trafficIncrementalStats).Read(r.Context(), claims.UserID, q)
+	if err != nil {
+		writePrincipalTrendError(w, err)
+		return
+	}
+	if summaryOnly {
+		OK(w, result.Statistics)
+		return
+	}
+	rows := make([]trafficUsageBucket, 0, len(result.Rows))
+	for _, v := range result.Rows {
+		rows = append(rows, trafficUsageBucket{ID: v.ID, UserID: v.UserID, SubscriptionID: v.SubscriptionID, NodeID: v.NodeID, RawBytes: v.RawBytes, UploadBytes: v.UploadBytes, DownloadBytes: v.DownloadBytes, ProtocolMultiplierMilli: v.ProtocolMultiplierMilli, UsedBytes: v.UsedBytes, RecordAt: trafficBucketTime{Time: v.RecordAt}, RecordCount: v.RecordCount})
+	}
 	var total *int64
 	var aggregates *trafficRecordAggregates
-	var statisticsAsOf *time.Time
-	if includeTotals || summaryOnly {
-		statistics, err := h.trafficUsageStatistics(base, bucket, window)
-		if err != nil {
-			ServerError(w, err)
-			return
-		}
-		if summaryOnly {
-			OK(w, statistics)
-			return
-		}
-		total, aggregates = &statistics.Total, &statistics.Aggregates
-		statisticsAsOf = &statistics.AsOf
+	var asOf *time.Time
+	if result.Statistics != nil {
+		total = &result.Statistics.Total
+		aggregates = &result.Statistics.Aggregates
+		asOf = &result.Statistics.AsOf
 	}
-	pageSource := bucket.seekSource(base.Session(&gorm.Session{}), cursor)
-	if cursor == nil && offset == 0 {
-		pageSource = bucket.firstPageSource(pageScope, window, limit)
-	}
-	grouped := pageSource.Session(&gorm.Session{}).
-		Select(`
-			MIN(id) AS id,
-			user_id,
-			COALESCE(subscription_id, 0) AS subscription_id,
-			node_id,
-			protocol_multiplier_milli,
-			COALESCE(SUM(raw_bytes), 0) AS raw_bytes,
-			COALESCE(SUM(upload_bytes), 0) AS upload_bytes,
-			COALESCE(SUM(download_bytes), 0) AS download_bytes,
-			COALESCE(SUM(used_bytes), 0) AS used_bytes,
-			` + bucket.Expression + ` AS record_at,
-			COUNT(*) AS record_count
-		`).
-		Group(bucket.group())
-
-	bucketQuery := db.Table("(?) AS traffic_usage_buckets", grouped)
-	if cursor == nil && offset == 0 && datastore.IsSQLite(db) {
-		bucketQuery = bucket.selectedFirstPageQuery(base, pageSource, limit)
-	}
-	if cursor != nil {
-		var at any = cursor.At
-		if datastore.IsSQLite(db) {
-			at = cursor.At.Format("2006-01-02 15:04:05.999999999")
-		}
-		if cursor.Direction == historyDirectionOlder {
-			bucketQuery = bucketQuery.Where("(record_at < ?) OR (record_at = ? AND id < ?)", at, at, cursor.ID)
-		} else {
-			bucketQuery = bucketQuery.Where("(record_at > ?) OR (record_at = ? AND id > ?)", at, at, cursor.ID)
-		}
-	}
-	order := "record_at desc, id desc"
-	if cursor != nil && cursor.Direction == historyDirectionNewer {
-		order = "record_at asc, id asc"
-	}
-
-	buckets := make([]trafficUsageBucket, 0, limit+1)
+	var next, previous *string
+	pageOffset := 0
 	if cursor == nil && offset > 0 {
-		if err := bucketQuery.Order("record_at desc, id desc").Offset(offset).Limit(limit).Scan(&buckets).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
-		data := trafficUsagePageData(buckets, total, offset, limit, nil, nil)
-		data["aggregates"] = aggregates
-		data["statistics_as_of"] = statisticsAsOf
-		data["bucket"] = bucket.Name
-		if !adminScope {
-			references, err := accountTrafficPageReferences(db, buckets, claims.UserID)
-			if err != nil {
-				ServerError(w, err)
-				return
-			}
-			data["facets"] = references
-		}
-		OK(w, data)
-		return
-	}
-	if err := bucketQuery.Order(order).Limit(limit + 1).Scan(&buckets).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
-	hasMore := len(buckets) > limit
-	if hasMore {
-		buckets = buckets[:limit]
-	}
-	if cursor != nil && cursor.Direction == historyDirectionNewer {
-		reverseHistoryPage(buckets)
-	}
-
-	var nextCursor, previousCursor *string
-	if len(buckets) > 0 {
-		nextCursor, previousCursor, err = historyPageCursorValues(
-			historyKey{At: buckets[0].RecordAt.Time, ID: buckets[0].ID},
-			historyKey{At: buckets[len(buckets)-1].RecordAt.Time, ID: buckets[len(buckets)-1].ID},
-			cursor,
-			hasMore,
-		)
+		pageOffset = offset
+	} else if len(rows) > 0 {
+		next, previous, err = historyPageCursorValues(historyKey{At: rows[0].RecordAt.Time, ID: rows[0].ID}, historyKey{At: rows[len(rows)-1].RecordAt.Time, ID: rows[len(rows)-1].ID}, cursor, result.HasMore)
 		if err != nil {
 			ServerError(w, err)
 			return
 		}
 	}
-	data := trafficUsagePageData(buckets, total, 0, limit, nextCursor, previousCursor)
+	data := trafficUsagePageData(rows, total, pageOffset, limit, next, previous)
 	data["aggregates"] = aggregates
-	data["statistics_as_of"] = statisticsAsOf
+	data["statistics_as_of"] = asOf
 	data["bucket"] = bucket.Name
 	if !adminScope {
-		references, err := accountTrafficPageReferences(db, buckets, claims.UserID)
-		if err != nil {
-			ServerError(w, err)
-			return
+		refs := trafficPageReferences{Subscriptions: map[string]entityReference{}, Nodes: map[string]entityReference{}}
+		for _, v := range result.References {
+			ref := missingEntityReference(v.Kind, v.ID)
+			if !v.Missing {
+				name := v.Name
+				if name == "" {
+					name = entityKindLabel(v.Kind)
+				}
+				ref = entityReference{ID: v.ID, Kind: v.Kind, DisplayName: name, Secondary: v.Secondary, Status: v.Status}
+			}
+			if v.Kind == "subscription" {
+				refs.Subscriptions[entityKey(v.ID)] = ref
+			} else {
+				refs.Nodes[entityKey(v.ID)] = ref
+			}
 		}
-		data["facets"] = references
+		data["facets"] = refs
 	}
 	OK(w, data)
 }

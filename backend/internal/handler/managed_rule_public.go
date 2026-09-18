@@ -21,11 +21,12 @@ func (h *handlers) PublicManagedRuleSetHandler(w http.ResponseWriter, r *http.Re
 		NotFound(w)
 		return
 	}
-	var item model.SubscriptionRuleSet
-	if err := h.db.Where("renderer = ? AND tag = ? AND is_active = ?", managedRuleSetRenderer, tag, true).First(&item).Error; err != nil {
+	record, err := h.subscriptionRuleSets().Public(r.Context(), tag)
+	if err != nil {
 		NotFound(w)
 		return
 	}
+	item := subscriptionRuleSetModel(record)
 	requestedFormat := strings.TrimSpace(r.URL.Query().Get("format"))
 	usesUserAgent := requestedFormat == "" && pathFormat == ""
 	if pathFormat != "" {

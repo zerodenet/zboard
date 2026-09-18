@@ -159,7 +159,7 @@ async function receive(event: MessageEvent) {
   )
     return;
   if (
-    !["context.load", "config.load", "config.save", "config.test", "storage.get", "storage.put", "storage.delete", "identity.providers.list", "identity.bindings.list", "identity.login.start", "identity.bind.start", "identity.binding.unlink"].includes(
+    !["capabilities.list", "capabilities.invoke", "context.load", "config.load", "config.save", "config.test", "storage.get", "storage.put", "storage.delete", "identity.providers.list", "identity.bindings.list", "identity.login.start", "identity.bind.start", "identity.binding.unlink"].includes(
       message.type,
     )
   )
@@ -179,6 +179,7 @@ async function receive(event: MessageEvent) {
       );
   };
   try {
+    if (message.type.startsWith("capabilities.") && (props.surface !== "account" || s.purpose !== "business")) throw new Error("denied");
     if (message.type.startsWith("config.") && s.purpose !== "configuration")
       throw new Error("denied");
     if (message.type.startsWith("storage.") && props.surface !== "admin") throw new Error("denied");
@@ -192,7 +193,7 @@ async function receive(event: MessageEvent) {
         : message.type === "identity.binding.unlink"
           ? { identity_id: message.identity_id,  }
           : {};
-    const payload = message.type.startsWith("identity.")
+    const payload = message.type === "capabilities.invoke" ? { operation: message.operation, input: message.input } : message.type.startsWith("identity.")
       ? identityPayload
       : message.type.startsWith("storage.") ? { key: message.key, revision: message.revision, value: message.value } :
       message.type === "config.save"

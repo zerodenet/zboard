@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 )
 
 func TestZeroEventHandlerReusesPreparedRequestState(t *testing.T) {
@@ -18,7 +18,7 @@ func TestZeroEventHandlerReusesPreparedRequestState(t *testing.T) {
 			SchemaID: "zero.event.v1", EventID: "event-1", EventType: "flow.updated", SourceID: "node-5",
 			Payload: json.RawMessage(`{"flow_id":"flow-1","traffic":{"bytes_up":0,"bytes_down":0}}`),
 		},
-		node: model.Node{ID: 5}, receivedAt: time.Now().UTC(),
+		node: network.EventNode{ID: 5}, receivedAt: time.Now().UTC(),
 	}
 	request := withZeroEventState(httptest.NewRequest("POST", "/api/zero/events", nil), state)
 	response := httptest.NewRecorder()
@@ -31,7 +31,7 @@ func TestZeroEventHandlerReusesPreparedRequestState(t *testing.T) {
 func TestAuthenticateZeroEventUsesValidCredentialCacheWithoutDatabase(t *testing.T) {
 	h := &handlers{}
 	h.zeroEventAuthCache.Store(uint(5), zeroEventCredentialCacheEntry{
-		node: model.Node{ID: 5, Name: "cached-node"}, secret: "connector-secret", expiresAt: time.Now().Add(time.Minute),
+		node: network.EventNode{ID: 5}, secret: "connector-secret", expiresAt: time.Now().Add(time.Minute),
 	})
 	request := httptest.NewRequest("POST", "/api/zero/events", nil)
 	request.Header.Set("Authorization", "Bearer connector-secret")

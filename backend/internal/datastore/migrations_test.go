@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -69,10 +70,44 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 			down = append(down, entry.Name())
 		}
 	}
-	if len(up) != 6 || up[0] != preReleaseBaselineVersion || up[1] != "0002_plugins.up.sql" || up[2] != "0003_external_identities.up.sql" || up[3] != "0004_plugin_governance.up.sql" || up[4] != "0005_plugin_signing_key.up.sql" || up[5] != "0006_node_proxy_pool_subscriptions.up.sql" {
+	expectedUp := []string{
+		preReleaseBaselineVersion,
+		"0002_plugins.up.sql",
+		"0003_external_identities.up.sql",
+		"0004_plugin_governance.up.sql",
+		"0005_plugin_signing_key.up.sql",
+		"0006_node_proxy_pool_subscriptions.up.sql",
+		"0007_jobs.up.sql",
+		"0008_job_timeouts.up.sql",
+		"0009_api_token_expiry.up.sql",
+		"0010_registration_events.up.sql",
+		"0011_mail_acceptance.up.sql",
+		"0012_mail_delivery_attempts.up.sql",
+		"0013_integration_invocation_quota.up.sql",
+		"0014_job_attempt_retries.up.sql",
+		"0015_job_schedule_planning.up.sql",
+	}
+	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
 	}
-	if len(down) != 6 || down[0] != "0001_init.down.sql" || down[1] != "0002_plugins.down.sql" || down[2] != "0003_external_identities.down.sql" || down[3] != "0004_plugin_governance.down.sql" || down[4] != "0005_plugin_signing_key.down.sql" || down[5] != "0006_node_proxy_pool_subscriptions.down.sql" {
+	expectedDown := []string{
+		"0001_init.down.sql",
+		"0002_plugins.down.sql",
+		"0003_external_identities.down.sql",
+		"0004_plugin_governance.down.sql",
+		"0005_plugin_signing_key.down.sql",
+		"0006_node_proxy_pool_subscriptions.down.sql",
+		"0007_jobs.down.sql",
+		"0008_job_timeouts.down.sql",
+		"0009_api_token_expiry.down.sql",
+		"0010_registration_events.down.sql",
+		"0011_mail_acceptance.down.sql",
+		"0012_mail_delivery_attempts.down.sql",
+		"0013_integration_invocation_quota.down.sql",
+		"0014_job_attempt_retries.down.sql",
+		"0015_job_schedule_planning.down.sql",
+	}
+	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)
 	}
 	if err := validateMigrationInventory(up); err != nil {

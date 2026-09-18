@@ -10,19 +10,31 @@ import (
 
 const DefaultRegistryURL = "https://raw.githubusercontent.com/zerodenet/plugins/main/catalogs/zboard.json"
 
+// GitHub Pages is the published origin; the custom domain is not deployed yet.
+const DefaultMarketplaceAPIURL = "https://zerodenet.github.io/plugins/api/plugins"
+
 type MarketReleaseSource struct {
 	Type          string `json:"type"`
 	MetadataAsset string `json:"metadata_asset"`
 }
 
-// The official directory admits publisher identities and policy ceilings.
-// Version and artifact records remain in each publisher repository.
 func (m *Manager) publicRegistry(ctx context.Context) (Market, error) {
+	market, err := m.publicMarketplaceSnapshot(ctx)
+	if err == nil {
+		return market, nil
+	}
+	if ctx.Err() != nil {
+		return Market{}, ctx.Err()
+	}
 	raw, err := m.fetch(ctx, DefaultRegistryURL, 2<<20)
 	if err != nil {
 		return Market{}, err
 	}
-	return parseRegistry(raw)
+	market, err = parseRegistry(raw)
+	if err == nil {
+		market.Notice = "统一市场暂不可用，正在使用兼容目录。"
+	}
+	return market, err
 }
 
 func parseRegistry(raw []byte) (Market, error) {
@@ -81,7 +93,7 @@ func parseRegistry(raw []byte) (Market, error) {
 			Name: item.Name, Description: item.Description, License: item.License,
 			Maintainers: append([]string(nil), item.Maintainers...), Homepage: item.Homepage,
 			Documentation: item.Documentation, Security: item.Security,
-			Surfaces:     append([]string(nil), item.Surfaces...),
+			Surfaces:     append([]string{}, item.Surfaces...),
 			Capabilities: append([]string(nil), item.Capabilities...),
 		})
 	}

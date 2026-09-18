@@ -33,7 +33,7 @@ it('offers platform downloads and installs an admitted publisher only after pack
  expect(wrapper.get('a[href$="linux.zbplugin"]').text()).toContain('下载')
  expect(wrapper.text()).toContain('OAuth v0.0.1')
  expect(wrapper.text()).toContain('Repository-owned release notes')
- expect(wrapper.get('a[href$="/releases/tag/v0.0.1"]').text()).toContain('GitHub Release')
+ expect(wrapper.get('a[href$="/releases/tag/v0.0.1"]').text()).toContain('查看发布记录')
  wrapper.findAllComponents(UiSelect)[2].vm.$emit('update:modelValue', 'darwin-arm64'); await flushPromises()
  expect(wrapper.find('a[href$="mac.zbplugin"]').exists()).toBe(true)
  expect(api.preview).not.toHaveBeenCalled()
@@ -54,7 +54,7 @@ it('selects stable, rc and dev releases and binds inspection to the selected ver
  expect(selects).toHaveLength(3)
  selects[0].vm.$emit('update:modelValue', 'rc'); await flushPromises()
  expect(api.detail).toHaveBeenCalledWith('zboard.oauth', '0.0.2-rc.1', expect.any(AbortSignal))
- expect(wrapper.text()).toContain('已选 RC v0.0.2-rc.1')
+ expect(wrapper.text()).toContain('已选 候选版 v0.0.2-rc.1')
  expect(wrapper.find('a[href*="v0.0.2-rc.1"]').exists()).toBe(true)
  await click('在线安装')
  expect(api.preview).toHaveBeenCalledWith('zboard.oauth', '0.0.2-rc.1', expect.any(AbortSignal))
@@ -102,4 +102,43 @@ it('allows installation when the publisher host version declaration is only advi
  expect(wrapper.findAll('button').find(b => b.text() === '确认安装')!.attributes('disabled')).toBeUndefined()
  await click('确认安装')
  expect(api.install).toHaveBeenCalledOnce()
+})
+
+it('keeps other-platform downloads while disabling installation on this server', async () => {
+ const value = detail(); value.platform = 'windows-arm64'; api.detail.mockResolvedValue(value)
+ await render()
+ expect(wrapper.find('a[href$="linux.zbplugin"]').exists()).toBe(true)
+ expect(wrapper.findAll('button').find(b => b.text() === '在线安装')!.attributes('disabled')).toBeDefined()
+ expect(api.preview).not.toHaveBeenCalled()
+})
+
+it('blocks an oversized package without hiding its download', async () => {
+ const value = detail(); value.release = { ...stableRelease, artifacts: stableRelease.artifacts.map(a => ({ ...a, size: 33 * 1024 * 1024 })) }; value.releases = [value.release]
+ api.detail.mockResolvedValue(value); await render()
+ expect(wrapper.find('a[href$="linux.zbplugin"]').exists()).toBe(true)
+ expect(wrapper.findAll('button').find(b => b.text() === '在线安装')!.attributes('disabled')).toBeDefined()
+})
+
+it('retries the selected version after a request failure and does not install stale metadata', async () => {
+ await render()
+ api.detail.mockRejectedValueOnce(new Error('offline'))
+ wrapper.findAllComponents(UiSelect)[0].vm.$emit('update:modelValue', 'rc'); await flushPromises()
+ expect(wrapper.text()).toContain('无法读取所选版本')
+ expect(wrapper.findAll('button').find(b => b.text() === '在线安装')!.attributes('disabled')).toBeDefined()
+ await click('重试')
+ expect(api.detail).toHaveBeenLastCalledWith('zboard.oauth', '0.0.2-rc.1', expect.any(AbortSignal))
+ expect(wrapper.text()).toContain('已选 候选版 v0.0.2-rc.1')
+ expect(wrapper.findAll('button').find(b => b.text() === '在线安装')!.attributes('disabled')).toBeUndefined()
+})
+
+it('discards an older version response after another channel is selected', async () => {
+ await render()
+ let done!: (value: any) => void
+ api.detail.mockImplementationOnce(() => new Promise(resolve => { done = resolve }))
+ wrapper.findAllComponents(UiSelect)[0].vm.$emit('update:modelValue', 'rc'); await flushPromises()
+ wrapper.findAllComponents(UiSelect)[0].vm.$emit('update:modelValue', 'dev'); await flushPromises()
+ const rc = detail(); done({ ...rc, release: rc.releases[1] }); await flushPromises()
+ expect(wrapper.text()).toContain('已选 开发版 v0.0.3-dev.1')
+ await click('在线安装')
+ expect(api.preview).toHaveBeenLastCalledWith('zboard.oauth', '0.0.3-dev.1', expect.any(AbortSignal))
 })

@@ -1,27 +1,18 @@
 package handler
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
-	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/zeroevent"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const zeroRuntimeFlowUsagePrefix = "v2:"
 
-type zeroFlowAccountingResult struct {
-	NodeID             uint
-	ProtocolEndpointID uint
-	Exhausted          bool
-}
+type zeroFlowAccountingResult = metering.FlowAccountingResult
 
 type zeroBufferedFlowKey struct {
 	NodeID         uint64
@@ -29,22 +20,8 @@ type zeroBufferedFlowKey struct {
 	FlowID         string
 }
 
-func zeroFlowUsageKey(coreInstanceID, flowID string) string {
-	flowID = strings.TrimSpace(flowID)
-	if flowID == "" {
-		return ""
-	}
-	coreInstanceID = strings.TrimSpace(coreInstanceID)
-	if coreInstanceID == "" {
-		return flowID
-	}
-	digest := sha256.Sum256([]byte(coreInstanceID + "\x00" + flowID))
-	return zeroRuntimeFlowUsagePrefix + hex.EncodeToString(digest[:])
-}
-
-func zeroFlowUsageRuntimeScoped(flowID string) bool {
-	return strings.HasPrefix(strings.TrimSpace(flowID), zeroRuntimeFlowUsagePrefix)
-}
+func zeroFlowUsageKey(instance, flow string) string { return metering.FlowUsageKey(instance, flow) }
+func zeroFlowUsageRuntimeScoped(key string) bool    { return metering.RuntimeScopedFlow(key) }
 
 func aggregateZeroFlowEvents(events []zeroevent.Envelope) []zeroevent.Envelope {
 	latest := make(map[zeroBufferedFlowKey]zeroevent.Envelope)
@@ -109,66 +86,9 @@ func zeroBufferedEnvelopeAsEvent(event zeroevent.Envelope) zeroEventEnvelope {
 	}
 }
 
-func pickZeroFlowUsage(candidates []model.FlowUsage, usageKey, legacyKey string) (model.FlowUsage, bool, bool) {
-	for _, candidate := range candidates {
-		if candidate.FlowID == usageKey {
-			return candidate, true, false
-		}
-	}
-	if usageKey == legacyKey {
-		return model.FlowUsage{}, false, false
-	}
-	for _, candidate := range candidates {
-		if candidate.FlowID == legacyKey {
-			return candidate, true, true
-		}
-	}
-	return model.FlowUsage{}, false, false
+func pickZeroFlowUsage(candidates []model.FlowUsage, key, legacy string) (model.FlowUsage, bool, bool) {
+	return meteringstore.PickFlowUsage(candidates, key, legacy)
 }
-
-func loadZeroFlowUsage(tx *gorm.DB, nodeID uint, event zeroEventEnvelope, flow zeroFlowProjection, credentialID uint, cumulativeRaw int64) (model.FlowUsage, bool, bool, error) {
-	usageKey := zeroFlowUsageKey(event.CoreInstanceID, flow.FlowID)
-	keys := []string{usageKey}
-	if usageKey != flow.FlowID {
-		keys = append(keys, flow.FlowID)
-	}
-
-	// Runtime-scoped and legacy cursors are migration alternatives for the same
-	// flow. Lock them in one round trip so a normal first-seen flow does not pay
-	// two serial SELECT ... FOR UPDATE RTTs. Find intentionally treats an empty
-	// result as a normal miss instead of emitting GORM's record-not-found error.
-	var candidates []model.FlowUsage
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("node_id = ? AND flow_id IN ?", nodeID, keys).
-		Find(&candidates).Error; err != nil {
-		return model.FlowUsage{}, false, false, err
-	}
-	usage, found, legacy := pickZeroFlowUsage(candidates, usageKey, flow.FlowID)
-	if !found {
-		return model.FlowUsage{}, false, false, nil
-	}
-	if !legacy {
-		return usage, true, false, nil
-	}
-
-	// Deploying the runtime-scoped cursor while a connection is already active
-	// must not charge the cumulative bytes again. Carry an old raw-flow cursor
-	// forward only when ownership and counters are clearly monotonic.
-	if usage.Status != "active" || usage.ProtocolCredentialID != credentialID ||
-		usage.RawBytes > cumulativeRaw || usage.UploadBytes > flow.BytesUp || usage.DownloadBytes > flow.BytesDown ||
-		(flow.Revision > 0 && usage.Revision > flow.Revision) {
-		return model.FlowUsage{}, false, false, nil
-	}
-	return usage, true, true, nil
-}
-
-func zeroFlowUsageCursorSequence(event zeroEventEnvelope, flow zeroFlowProjection) uint64 {
-	if strings.TrimSpace(event.CoreInstanceID) != "" {
-		return event.Sequence
-	}
-	return flow.Revision
-}
-
 func zeroRuntimeFlowEventIsStale(usage model.FlowUsage, event zeroEventEnvelope, _ zeroFlowProjection) bool {
 	if !zeroFlowUsageRuntimeScoped(usage.FlowID) || usage.Revision == 0 || event.Sequence == 0 {
 		return false
@@ -178,161 +98,4 @@ func zeroRuntimeFlowEventIsStale(usage model.FlowUsage, event zeroEventEnvelope,
 
 func zeroRuntimeFlowCountersRegress(usage model.FlowUsage, cumulativeRaw int64, flow zeroFlowProjection) bool {
 	return usage.RawBytes > cumulativeRaw || usage.UploadBytes > flow.BytesUp || usage.DownloadBytes > flow.BytesDown
-}
-
-func (h *handlers) projectBufferedZeroFlow(tx *gorm.DB, buffered zeroevent.Envelope, batch *zeroFlowBatch) (zeroFlowAccountingResult, error) {
-	var result zeroFlowAccountingResult
-	event := zeroBufferedEnvelopeAsEvent(buffered)
-	flow, err := parseZeroFlowProjection(event)
-	if err != nil {
-		return result, err
-	}
-	if flow.PrincipalKey == "" {
-		return result, errors.New("flow event has no attributable principal_key")
-	}
-	if isMieruMigrationPrincipal(flow.PrincipalKey) {
-		return result, nil
-	}
-	result.NodeID = uint(buffered.NodeID)
-	reportKey := zeroFlowReportKey{result.NodeID, event.EventID}
-	endpointID, recorded, err := batch.recordedEndpoint(tx, reportKey)
-	if err != nil {
-		return result, err
-	}
-	if recorded {
-		result.ProtocolEndpointID = endpointID
-		return result, nil
-	}
-
-	credential, err := batch.credential(h, tx, result.NodeID, flow.PrincipalKey)
-	if err != nil {
-		return result, err
-	}
-	flow.PrincipalKey = credential.PrincipalKey
-	result.ProtocolEndpointID = credential.ProtocolEndpointID
-
-	subscription, err := batch.subscription(tx, credential.SubscriptionID)
-	if err != nil {
-		return result, err
-	}
-	endpoint, err := batch.endpoint(tx, credential.ProtocolEndpointID)
-	if err != nil {
-		return result, err
-	}
-
-	cumulativeRaw := trafficBytesForMode(flow.BytesUp, flow.BytesDown, subscription.TrafficCalcMode)
-	usage, found, legacy, err := loadZeroFlowUsage(tx, result.NodeID, event, flow, credential.ID, cumulativeRaw)
-	if err != nil {
-		return result, err
-	}
-	if found && usage.Status == "completed" {
-		return result, nil
-	}
-	if found && !legacy {
-		if usage.ProtocolCredentialID != credential.ID {
-			return result, errors.New("flow principal changed during its runtime generation")
-		}
-		if zeroRuntimeFlowEventIsStale(usage, event, flow) {
-			return result, nil
-		}
-		if zeroRuntimeFlowCountersRegress(usage, cumulativeRaw, flow) {
-			return result, errors.New("Zero flow cumulative counters regressed within one core instance")
-		}
-	}
-
-	previousRaw, previousUpload, previousDownload := int64(0), int64(0), int64(0)
-	if found {
-		previousRaw = usage.RawBytes
-		previousUpload = usage.UploadBytes
-		previousDownload = usage.DownloadBytes
-	}
-	deltaRaw := cumulativeRaw - previousRaw
-	deltaUpload := flow.BytesUp - previousUpload
-	deltaDownload := flow.BytesDown - previousDownload
-	if deltaRaw < 0 || deltaUpload < 0 || deltaDownload < 0 {
-		return result, errors.New("Zero flow cumulative counters cannot produce a negative delta")
-	}
-	billedDelta, err := billedTrafficBytesChecked(deltaRaw, endpoint.MultiplierMilli)
-	if err != nil {
-		return result, err
-	}
-	remaining := subscription.FlowTotal - subscription.FlowUsed
-	if remaining < 0 {
-		remaining = 0
-	}
-	charged := billedDelta
-	if charged > remaining {
-		charged = remaining
-	}
-	now := time.Now().UTC()
-	recordAt := zeroEventTime(event, now)
-	record := model.TrafficRecord{
-		UserID:                  subscription.UserID,
-		SubscriptionID:          subscription.ID,
-		NodeID:                  result.NodeID,
-		ProtocolEndpointID:      endpoint.ID,
-		ReportID:                event.EventID,
-		Nonce:                   zeroEventNonce(event.EventID),
-		FlowID:                  flow.FlowID,
-		EventType:               event.EventType,
-		EventRevision:           flow.Revision,
-		RawBytes:                deltaRaw,
-		UploadBytes:             deltaUpload,
-		DownloadBytes:           deltaDownload,
-		TrafficCalcMode:         subscription.TrafficCalcMode,
-		ProtocolMultiplierMilli: endpoint.MultiplierMilli,
-		UsedBytes:               charged,
-		At:                      recordAt,
-		Meta:                    fmt.Sprintf(`{"source_id":%q,"core_instance_id":%q,"sequence":%d,"credential_id":%q,"buffered":true}`, event.SourceID, event.CoreInstanceID, event.Sequence, credential.CredentialID),
-	}
-	if err := batch.appendRecord(tx, record); err != nil {
-		return result, err
-	}
-
-	if charged > 0 {
-		subscription.FlowUsed += charged
-		if subscription.FlowUsed >= subscription.FlowTotal {
-			subscription.FlowUsed = subscription.FlowTotal
-			subscription.Status = subStatusExpired
-			result.Exhausted = true
-		}
-		batch.dirtySubscriptions[subscription.ID] = now
-	}
-
-	usageKey := zeroFlowUsageKey(event.CoreInstanceID, flow.FlowID)
-	usage.ProtocolCredentialID = credential.ID
-	usage.NodeID = result.NodeID
-	usage.FlowID = usageKey
-	usage.SubscriptionID = subscription.ID
-	usage.ProtocolEndpointID = endpoint.ID
-	usage.PrincipalKey = credential.PrincipalKey
-	usage.Revision = zeroFlowUsageCursorSequence(event, flow)
-	usage.RawBytes = cumulativeRaw
-	usage.UploadBytes = flow.BytesUp
-	usage.DownloadBytes = flow.BytesDown
-	usage.UsedBytes += charged
-	usage.Status = "active"
-	usage.LastEventID = event.EventID
-	usage.LastSeenAt = recordAt
-	usage.CompletedAt = nil
-	if found {
-		if err := tx.Save(&usage).Error; err != nil {
-			return result, err
-		}
-	} else if err := tx.Create(&usage).Error; err != nil {
-		return result, err
-	}
-
-	batch.touched[credential.ID] = now
-	if result.Exhausted {
-		if err := enqueueSubscriptionConfigPublishes(tx, subscription.ID, 0); err != nil {
-			return result, err
-		}
-		if err := tx.Model(&model.ProtocolCredential{}).
-			Where("subscription_id = ? AND status IN ?", subscription.ID, []string{protocolCredentialStatusActive, protocolCredentialStatusPrepared}).
-			Updates(map[string]interface{}{"status": "expired", "updated_at": now}).Error; err != nil {
-			return result, err
-		}
-	}
-	return result, nil
 }

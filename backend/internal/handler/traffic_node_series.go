@@ -1,21 +1,11 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
-)
-
-const (
-	trafficNodeSeriesNodeLimit             = 8
-	trafficNodeSeriesMinuteMaxDays         = 1
-	trafficNodeSeriesFilteredMinuteMaxDays = 7
-	trafficNodeSeriesHourMaxDays           = 31
-	trafficNodeSeriesFilteredHourMaxDays   = historyMaxWindowDays
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 )
 
 type trafficNodeSeriesPoint struct {
@@ -39,29 +29,8 @@ type trafficNodeSeriesResponse struct {
 	AsOf      time.Time                `json:"as_of"`
 }
 
-type trafficNodeSeriesTotal struct {
-	NodeID    uint  `gorm:"column:node_id"`
-	UsedBytes int64 `gorm:"column:used_bytes"`
-}
-
 func validateTrafficNodeSeriesWindow(bucket trafficUsageBucketSpec, window historyWindow, nodeFiltered bool) error {
-	maxDays := historyMaxWindowDays
-	switch bucket.Name {
-	case trafficUsageBucketMinute:
-		maxDays = trafficNodeSeriesMinuteMaxDays
-		if nodeFiltered {
-			maxDays = trafficNodeSeriesFilteredMinuteMaxDays
-		}
-	case trafficUsageBucketHour:
-		maxDays = trafficNodeSeriesHourMaxDays
-		if nodeFiltered {
-			maxDays = trafficNodeSeriesFilteredHourMaxDays
-		}
-	}
-	if window.To.Sub(window.From) > time.Duration(maxDays)*24*time.Hour {
-		return fmt.Errorf("%s node series supports at most %d days", bucket.Name, maxDays)
-	}
-	return nil
+	return metering.ValidateNodeSeriesWindow(bucket.Name, window.From, window.To, nodeFiltered)
 }
 
 // trafficNodeSeriesHandler returns a read-only chart projection over TrafficRecord.
@@ -85,116 +54,50 @@ func (h *handlers) trafficNodeSeriesHandler(w http.ResponseWriter, r *http.Reque
 		BadRequest(w, err.Error())
 		return
 	}
-	bucket = bucket.forDB(h.db)
 	window, err := parseHistoryWindow(r.URL.Query(), 7)
 	if err != nil {
 		BadRequest(w, err.Error())
 		return
 	}
-	query := applyHistoryWindow(h.db.WithContext(r.Context()).Model(&model.TrafficRecord{}), "record_at", window)
+
+	userID := uint(0)
 	if adminScope {
-		if userID, parseErr := positiveQueryID(r.URL.Query(), "user_id"); parseErr != nil {
-			BadRequest(w, parseErr.Error())
+		userID, err = positiveQueryID(r.URL.Query(), "user_id")
+		if err != nil {
+			BadRequest(w, err.Error())
 			return
-		} else if userID > 0 {
-			query = query.Where("user_id = ?", userID)
 		}
-	} else {
-		query = query.Where("user_id = ?", claims.UserID)
 	}
-	if subscriptionID, parseErr := positiveQueryID(r.URL.Query(), "subscription_id"); parseErr != nil {
-		BadRequest(w, parseErr.Error())
-		return
-	} else if subscriptionID > 0 {
-		query = query.Where("subscription_id = ?", subscriptionID)
-	}
-	nodeID, parseErr := positiveQueryID(r.URL.Query(), "node_id")
-	if parseErr != nil {
-		BadRequest(w, parseErr.Error())
-		return
-	}
-	if err := validateTrafficNodeSeriesWindow(bucket, window, nodeID > 0); err != nil {
+	subscriptionID, err := positiveQueryID(r.URL.Query(), "subscription_id")
+	if err != nil {
 		BadRequest(w, err.Error())
 		return
 	}
-	if nodeID > 0 {
-		query = query.Where("node_id = ?", nodeID)
-	}
-
-	truncated := false
-	if nodeID == 0 {
-		totals := make([]trafficNodeSeriesTotal, 0, trafficNodeSeriesNodeLimit+1)
-		if err := query.Session(&gorm.Session{}).
-			Select("node_id, COALESCE(SUM(used_bytes), 0) AS used_bytes").
-			Where("node_id > 0").
-			Group("node_id").
-			Order("COALESCE(SUM(used_bytes), 0) DESC, node_id ASC").
-			Limit(trafficNodeSeriesNodeLimit + 1).
-			Scan(&totals).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
-		if len(totals) > trafficNodeSeriesNodeLimit {
-			truncated = true
-			totals = totals[:trafficNodeSeriesNodeLimit]
-		}
-		selectedNodeIDs := make([]uint, 0, len(totals))
-		for _, total := range totals {
-			selectedNodeIDs = append(selectedNodeIDs, total.NodeID)
-		}
-		if len(selectedNodeIDs) == 0 {
-			OK(w, trafficNodeSeriesResponse{
-				Bucket: bucket.Name, From: window.From, To: window.To,
-				Points: []trafficNodeSeriesPoint{}, Nodes: []entityReference{},
-				Truncated: false, NodeLimit: trafficNodeSeriesNodeLimit, AsOf: time.Now().UTC(),
-			})
-			return
-		}
-		query = query.Where("node_id IN ?", selectedNodeIDs)
-	}
-
-	points := make([]trafficNodeSeriesPoint, 0)
-	if err := query.Session(&gorm.Session{}).
-		Select(`
-			` + bucket.Expression + ` AS record_at,
-			node_id,
-			COALESCE(SUM(raw_bytes), 0) AS raw_bytes,
-			COALESCE(SUM(upload_bytes), 0) AS upload_bytes,
-			COALESCE(SUM(download_bytes), 0) AS download_bytes,
-			COALESCE(SUM(used_bytes), 0) AS used_bytes,
-			COUNT(*) AS record_count
-		`).
-		Group(bucket.Expression + ", node_id").
-		Order("record_at asc, node_id asc").
-		Scan(&points).Error; err != nil {
-		ServerError(w, err)
+	nodeID, err := positiveQueryID(r.URL.Query(), "node_id")
+	if err != nil {
+		BadRequest(w, err.Error())
 		return
 	}
-
-	nodeIDs := make(map[uint]struct{})
-	for _, point := range points {
-		if point.NodeID > 0 {
-			nodeIDs[point.NodeID] = struct{}{}
-		}
-	}
-	nodeMap := prefillEntityReferences("node", nodeIDs)
-	if err := resolveNodeReferences(h.db.WithContext(r.Context()), nodeMap, sortedEntityIDs(nodeIDs)); err != nil {
-		ServerError(w, err)
+	result, err := h.services.NodeSeries().Read(r.Context(), claims.UserID, metering.NodeSeriesQuery{Administrative: adminScope, UserID: userID, SubscriptionID: subscriptionID, NodeID: nodeID, Bucket: bucket.Name, From: window.From, To: window.To})
+	if err != nil {
+		writePrincipalTrendError(w, err)
 		return
 	}
-	nodes := make([]entityReference, 0, len(nodeIDs))
-	for _, id := range sortedEntityIDs(nodeIDs) {
-		nodes = append(nodes, nodeMap[entityKey(id)])
+	points := make([]trafficNodeSeriesPoint, 0, len(result.Points))
+	for _, p := range result.Points {
+		points = append(points, trafficNodeSeriesPoint{RecordAt: trafficBucketTime{Time: p.RecordAt}, NodeID: p.NodeID, RawBytes: p.RawBytes, UploadBytes: p.UploadBytes, DownloadBytes: p.DownloadBytes, UsedBytes: p.UsedBytes, RecordCount: p.RecordCount})
 	}
-
-	OK(w, trafficNodeSeriesResponse{
-		Bucket:    bucket.Name,
-		From:      window.From,
-		To:        window.To,
-		Points:    points,
-		Nodes:     nodes,
-		Truncated: truncated,
-		NodeLimit: trafficNodeSeriesNodeLimit,
-		AsOf:      time.Now().UTC(),
-	})
+	nodes := make([]entityReference, 0, len(result.Nodes))
+	for _, n := range result.Nodes {
+		if n.Missing {
+			nodes = append(nodes, missingEntityReference("node", n.ID))
+			continue
+		}
+		name := n.Name
+		if name == "" {
+			name = "节点"
+		}
+		nodes = append(nodes, entityReference{ID: n.ID, Kind: "node", DisplayName: name, Secondary: n.Region, Status: n.Status})
+	}
+	OK(w, trafficNodeSeriesResponse{Bucket: bucket.Name, From: window.From, To: window.To, Points: points, Nodes: nodes, Truncated: result.Truncated, NodeLimit: metering.NodeSeriesNodeLimit, AsOf: result.AsOf})
 }

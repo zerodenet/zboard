@@ -63,9 +63,9 @@ func TestNativePluginStorageUsesScopedHostSDKAndClosesWithProcess(t *testing.T) 
 	if err != nil || !strings.Contains(string(obj["background"]), "native-plugin") {
 		t.Fatal("native write missing", err)
 	}
-	// Host-owned lifecycle RPCs cannot recursively mutate storage or deadlock.
-	if err := m.TestConfig(ctx, v.ID, "admin"); err == nil {
-		t.Fatal("storage allowed during lifecycle transaction")
+	// A diagnostic runs outside the lifecycle transaction and can use scoped storage.
+	if err := m.TestConfig(ctx, v.ID, "admin"); err != nil {
+		t.Fatal("diagnostic blocked scoped storage", err)
 	}
 	// A failing candidate must leave the old process and state usable.
 	pack, err := ReadPackage(raw, keys)

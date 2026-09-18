@@ -4,11 +4,13 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	zeroadapter "github.com/zerodenet/zboard/backend/internal/adapters/zero"
 )
 
 func TestZeroBootstrapControlInboundIsLoopbackEphemeralDirect(t *testing.T) {
-	inbound := zeroBootstrapControlInbound()
-	if inbound["tag"] != zeroBootstrapInboundTag {
+	inbound := zeroadapter.BootstrapControlInbound()
+	if inbound["tag"] != "zboard-control-bootstrap" {
 		t.Fatalf("unexpected bootstrap tag: %#v", inbound["tag"])
 	}
 	listen, ok := inbound["listen"].(map[string]interface{})
@@ -34,12 +36,12 @@ func TestZeroBootstrapControlInboundIsLoopbackEphemeralDirect(t *testing.T) {
 }
 
 func TestRuntimeCompilerUsesBootstrapOnlyForEmptyInboundSet(t *testing.T) {
-	payload, err := os.ReadFile("kernel_automation.go")
+	payload, err := os.ReadFile("../adapters/zero/runtime_configuration.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	source := string(payload)
-	guard := "if len(inbounds) == 0 {\n\t\tinbounds = append(inbounds, zeroBootstrapControlInbound())\n\t}"
+	guard := "if len(inbounds) == 0 {\n\t\tinbounds = append(inbounds, BootstrapControlInbound())\n\t}"
 	if !strings.Contains(source, guard) {
 		t.Fatal("runtime compiler must inject the bootstrap inbound only when no real inbound was compiled")
 	}

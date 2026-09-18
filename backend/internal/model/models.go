@@ -627,15 +627,19 @@ type SubscriptionMember struct {
 }
 
 type UserAPIToken struct {
-	ID          uint       `json:"id" gorm:"primaryKey"`
-	UserID      uint       `json:"user_id" gorm:"index;not null"`
-	TokenHash   string     `json:"-" gorm:"size:64;uniqueIndex;not null"`
-	TokenPrefix string     `json:"token_prefix" gorm:"size:12;not null"`
-	Scopes      string     `json:"scopes" gorm:"type:json"`
-	LastUsedAt  *time.Time `json:"last_used_at"`
-	RevokedAt   *time.Time `json:"revoked_at"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID                        uint       `json:"id" gorm:"primaryKey"`
+	UserID                    uint       `json:"user_id" gorm:"index;not null"`
+	TokenHash                 string     `json:"-" gorm:"size:64;uniqueIndex;not null"`
+	TokenPrefix               string     `json:"token_prefix" gorm:"size:12;not null"`
+	Scopes                    string     `json:"scopes" gorm:"type:json"`
+	LastUsedAt                *time.Time `json:"last_used_at"`
+	RevokedAt                 *time.Time `json:"revoked_at"`
+	CreatedAt                 time.Time  `json:"created_at"`
+	UpdatedAt                 time.Time  `json:"updated_at"`
+	Name                      string     `json:"name" gorm:"size:120"`
+	ExpiresAt                 *time.Time `json:"expires_at"`
+	InvocationWindowStartedAt *time.Time `json:"-" gorm:"index"`
+	InvocationWindowCount     uint       `json:"-" gorm:"not null;default:0"`
 }
 
 type Task struct {
@@ -661,18 +665,19 @@ type Task struct {
 }
 
 type TaskItem struct {
-	ID         uint       `json:"id" gorm:"primaryKey"`
-	TaskID     uint       `json:"task_id" gorm:"uniqueIndex:ux_task_target,priority:1;index;not null"`
-	TargetType string     `json:"target_type" gorm:"size:32;uniqueIndex:ux_task_target,priority:2;not null"`
-	TargetID   string     `json:"target_id" gorm:"size:128;uniqueIndex:ux_task_target,priority:3;not null"`
-	Payload    string     `json:"payload" gorm:"type:json"`
-	Status     int16      `json:"status" gorm:"index;not null;default:0"`
-	Attempts   int        `json:"attempts"`
-	Error      string     `json:"error" gorm:"type:text"`
-	StartedAt  *time.Time `json:"started_at"`
-	FinishedAt *time.Time `json:"finished_at"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
+	DeliveryState string     `json:"delivery_state,omitempty" gorm:"size:24;not null;default:''"`
+	ID            uint       `json:"id" gorm:"primaryKey"`
+	TaskID        uint       `json:"task_id" gorm:"uniqueIndex:ux_task_target,priority:1;index;not null"`
+	TargetType    string     `json:"target_type" gorm:"size:32;uniqueIndex:ux_task_target,priority:2;not null"`
+	TargetID      string     `json:"target_id" gorm:"size:128;uniqueIndex:ux_task_target,priority:3;not null"`
+	Payload       string     `json:"payload" gorm:"type:json"`
+	Status        int16      `json:"status" gorm:"index;not null;default:0"`
+	Attempts      int        `json:"attempts"`
+	Error         string     `json:"error" gorm:"type:text"`
+	StartedAt     *time.Time `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type SystemConfig struct {

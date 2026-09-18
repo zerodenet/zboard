@@ -186,6 +186,8 @@ export function updateSubscriptionFairUsePolicy(subscriptionID: number, policy: 
   })
 }
 
+export interface FairUseEvaluationReceipt { run_id: string; state: string; subscription_id: number }
+
 export function evaluateSubscriptionFairUse(subscriptionID: number) {
-  return requestFairUse<{ evaluated: boolean; skipped: boolean; reason: string }>(`/admin/subscriptions/${subscriptionID}/fair-use/evaluate`, { method: 'POST' })
+  return requestFairUse<FairUseEvaluationReceipt>(`/admin/subscriptions/${subscriptionID}/fair-use/evaluate`, { method: 'POST' })
 }

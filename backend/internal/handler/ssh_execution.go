@@ -1,16 +1,12 @@
 package handler
 
 import (
-	"bytes"
 	"context"
-	"crypto/subtle"
-	"errors"
 	"fmt"
-	"net"
-	"strconv"
 	"strings"
 	"time"
 
+	sshadapter "github.com/zerodenet/zboard/backend/internal/adapters/ssh"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"golang.org/x/crypto/ssh"
 )
@@ -29,34 +25,21 @@ func (h *handlers) execSSHCommandWithPrivilegeContext(ctx context.Context, node 
 	if err != nil {
 		return "", time.Since(start), err
 	}
-	defer conn.Close()
-	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	remote := h.newSSHRemoteSession(conn, node)
+	defer remote.Close()
+	stop := context.AfterFunc(ctx, func() { _ = remote.Close() })
 	defer stop()
-
-	session, err := conn.NewSession()
-	if err != nil {
-		return "", time.Since(start), err
-	}
-	defer session.Close()
-
-	command, stdin, requestPTY, err := h.prepareSSHCommand(node, command, privileged)
-	if err != nil {
-		return "", time.Since(start), err
-	}
-	if requestPTY {
-		modes := ssh.TerminalModes{ssh.ECHO: 0, ssh.TTY_OP_ISPEED: 14400, ssh.TTY_OP_OSPEED: 14400}
-		if err := session.RequestPty("xterm", 24, 80, modes); err != nil {
-			return "", time.Since(start), fmt.Errorf("request privilege terminal: %w", err)
-		}
-	}
-	if stdin != "" {
-		session.Stdin = strings.NewReader(stdin)
-	}
-	out, err := session.CombinedOutput(command)
+	out, err := remote.Run(command, privileged)
 	if ctx.Err() != nil {
 		err = ctx.Err()
 	}
-	return string(bytes.TrimSpace(out)), time.Since(start), err
+	return out, time.Since(start), err
+}
+
+func (h *handlers) newSSHRemoteSession(client *ssh.Client, node model.Node) *sshadapter.RemoteSession {
+	return sshadapter.NewRemoteSession(client, func(command string, privileged bool) (string, string, bool, error) {
+		return h.prepareSSHCommand(node, command, privileged)
+	})
 }
 
 func (h *handlers) dialNodeSSH(node model.Node) (*ssh.Client, time.Duration, error) {
@@ -64,71 +47,30 @@ func (h *handlers) dialNodeSSH(node model.Node) (*ssh.Client, time.Duration, err
 }
 
 func (h *handlers) dialNodeSSHContext(ctx context.Context, node model.Node) (*ssh.Client, time.Duration, error) {
-	start := time.Now()
 	credential, err := h.credentialCipher.Decrypt(node.SSHPwd)
 	if err != nil {
-		return nil, time.Since(start), fmt.Errorf("decrypt node ssh credential: %w", err)
+		return nil, 0, fmt.Errorf("decrypt node ssh credential: %w", err)
 	}
-	var authMethod ssh.AuthMethod
-	switch normalizeSSHAuthMethod(node.SSHAuthMethod) {
-	case sshAuthPassword:
-		authMethod = ssh.Password(credential)
-	case sshAuthPrivateKey:
-		passphrase, err := h.credentialCipher.Decrypt(node.SSHPrivateKeyPassphrase)
+	passphrase := ""
+	if normalizeSSHAuthMethod(node.SSHAuthMethod) == sshAuthPrivateKey {
+		passphrase, err = h.credentialCipher.Decrypt(node.SSHPrivateKeyPassphrase)
 		if err != nil {
-			return nil, time.Since(start), fmt.Errorf("decrypt node ssh private key passphrase: %w", err)
+			return nil, 0, fmt.Errorf("decrypt node ssh private key passphrase: %w", err)
 		}
-		signer, err := parseSSHPrivateKey(credential, passphrase)
-		if err != nil {
-			return nil, time.Since(start), err
-		}
-		authMethod = ssh.PublicKeys(signer)
-	default:
-		return nil, time.Since(start), errors.New("unsupported ssh_auth_method")
 	}
-	observedFingerprint := ""
-	addr := net.JoinHostPort(strings.TrimSpace(node.SSHHost), strconv.Itoa(node.SSHPort))
-	conf := &ssh.ClientConfig{
-		User:            strings.TrimSpace(node.SSHUser),
-		Auth:            []ssh.AuthMethod{authMethod},
-		Timeout:         12 * time.Second,
-		HostKeyCallback: verifiedHostKeyCallback(node.SSHHostKeyFingerprint, &observedFingerprint),
-	}
-	// ssh.ClientConfig.Timeout bounds TCP dialing only. Bound the entire SSH
-	// handshake and close the underlying socket on cancellation as well.
-	handshakeCtx, cancel := context.WithTimeout(ctx, conf.Timeout)
-	defer cancel()
-	raw, err := (&net.Dialer{}).DialContext(handshakeCtx, "tcp", addr)
+	result, err := sshadapter.Dial(ctx, sshadapter.DialRequest{
+		Host: node.SSHHost, Port: node.SSHPort, User: node.SSHUser,
+		AuthMethod: normalizeSSHAuthMethod(node.SSHAuthMethod), Credential: credential,
+		PrivateKeyPassphrase: passphrase, ExpectedHostFingerprint: node.SSHHostKeyFingerprint,
+	})
 	if err != nil {
-		return nil, time.Since(start), err
+		return nil, result.Elapsed, err
 	}
-	deadline, _ := handshakeCtx.Deadline()
-	if err := raw.SetDeadline(deadline); err != nil {
-		_ = raw.Close()
-		return nil, time.Since(start), err
+	if err := h.pinSSHHostKeyContext(ctx, node.ID, node.SSHHostKeyFingerprint, result.ObservedHostFingerprint); err != nil {
+		_ = result.Client.Close()
+		return nil, result.Elapsed, err
 	}
-	closed := make(chan struct{})
-	stop := context.AfterFunc(handshakeCtx, func() { _ = raw.Close(); close(closed) })
-	clientConn, channels, requests, err := ssh.NewClientConn(raw, addr, conf)
-	if !stop() {
-		<-closed
-	}
-	if handshakeCtx.Err() != nil {
-		err = handshakeCtx.Err()
-	}
-	if err == nil {
-		err = raw.SetDeadline(time.Time{})
-	}
-	if err != nil {
-		_ = raw.Close()
-		return nil, time.Since(start), err
-	}
-	conn := ssh.NewClient(clientConn, channels, requests)
-	if err := h.pinSSHHostKeyContext(ctx, node.ID, node.SSHHostKeyFingerprint, observedFingerprint); err != nil {
-		_ = conn.Close()
-		return nil, time.Since(start), err
-	}
-	return conn, time.Since(start), nil
+	return result.Client, result.Elapsed, nil
 }
 
 func (h *handlers) pinSSHHostKey(nodeID uint, expectedFingerprint string, observedFingerprint string) error {
@@ -138,38 +80,8 @@ func (h *handlers) pinSSHHostKey(nodeID uint, expectedFingerprint string, observ
 func (h *handlers) pinSSHHostKeyContext(ctx context.Context, nodeID uint, expectedFingerprint string, observedFingerprint string) error {
 	expected := strings.TrimSpace(expectedFingerprint)
 	observed := strings.TrimSpace(observedFingerprint)
-	if expected != "" {
-		var stored string
-		if err := h.db.WithContext(ctx).Model(&model.Node{}).Select("ssh_host_key_fingerprint").Where("id = ?", nodeID).Scan(&stored).Error; err != nil {
-			return fmt.Errorf("read recorded SSH host key: %w", err)
-		}
-		stored = strings.TrimSpace(stored)
-		if stored == "" {
-			return errors.New("SSH host trust was reset while connecting; retry the connection to enroll the current host key")
-		}
-		if subtle.ConstantTimeCompare([]byte(stored), []byte(expected)) != 1 || subtle.ConstantTimeCompare([]byte(observed), []byte(expected)) != 1 {
-			return fmt.Errorf("SSH host key changed while connecting: expected %s, received %s; verify the VPS identity before resetting trust", stored, observed)
-		}
-		return nil
-	}
-	if err := validateSSHHostKeyFingerprint(observed); err != nil {
+	if err := sshadapter.ValidateHostKeyFingerprint(observed); err != nil {
 		return fmt.Errorf("record SSH host key: %w", err)
 	}
-	result := h.db.WithContext(ctx).Model(&model.Node{}).
-		Where("id = ? AND (ssh_host_key_fingerprint IS NULL OR ssh_host_key_fingerprint = '')", nodeID).
-		Update("ssh_host_key_fingerprint", observed)
-	if result.Error != nil {
-		return fmt.Errorf("record SSH host key: %w", result.Error)
-	}
-	if result.RowsAffected == 1 {
-		return nil
-	}
-	var stored string
-	if err := h.db.WithContext(ctx).Model(&model.Node{}).Select("ssh_host_key_fingerprint").Where("id = ?", nodeID).Scan(&stored).Error; err != nil {
-		return fmt.Errorf("read recorded SSH host key: %w", err)
-	}
-	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(stored)), []byte(observed)) == 1 {
-		return nil
-	}
-	return fmt.Errorf("SSH host key changed while it was being recorded: expected %s, received %s; verify the VPS identity before resetting trust", stored, observed)
+	return h.services.SSHHostTrust.Pin(ctx, nodeID, expected, observed)
 }

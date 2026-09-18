@@ -49,6 +49,7 @@ export const adminNavigation: AdminNavigationDomain[] = [
     { label: '日常运营', pages: [
       { to: '/admin/announcements', label: '站点公告' },
       { to: '/admin/tasks', label: '运营任务' },
+      { to: '/admin/runtime-jobs', label: '后台任务' },
     ] },
     { label: '日志与审计', pages: [
       { to: '/admin/operation-logs', label: '运行日志' },

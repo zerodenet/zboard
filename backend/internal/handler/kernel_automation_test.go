@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	zeroadapter "github.com/zerodenet/zboard/backend/internal/adapters/zero"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -90,12 +92,12 @@ func TestCompareZeroVersions(t *testing.T) {
 
 func TestZeroConnectorCompatibilityFollowsReleaseVersion(t *testing.T) {
 	for _, version := range []string{"0.0.1", "v0.0.1", "0.0.2-dev.202609080000", "0.0.3"} {
-		if !zeroUsesGenericConnector(version) {
+		if !zeroadapter.UsesGenericConnector(version) {
 			t.Fatalf("reset baseline %s must use generic connector", version)
 		}
 	}
 	for _, version := range []string{"0.0.0", "0.0.1-rc.1", "0.0.4", "0.0.14", "invalid"} {
-		if zeroUsesGenericConnector(version) {
+		if zeroadapter.UsesGenericConnector(version) {
 			t.Fatalf("legacy connector changed for %s", version)
 		}
 	}
@@ -117,7 +119,7 @@ func TestZeroConnectorContractFollowsKernelVersion(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.version, func(t *testing.T) {
-			if got := zeroUsesGenericConnector(test.version); got != test.want {
+			if got := zeroadapter.UsesGenericConnector(test.version); got != test.want {
 				t.Fatalf("zeroUsesGenericConnector(%q) = %t, want %t", test.version, got, test.want)
 			}
 		})
@@ -137,7 +139,7 @@ func TestValidateZeroReleaseURL(t *testing.T) {
 
 func TestZeroConnectorConfigMatchesPublishedContracts(t *testing.T) {
 	legacy := map[string]interface{}{
-		"api": zeroLegacyEventAPIConfig("https://panel.example.test", 17, false),
+		"api": zeroadapter.LegacyEventAPIConfig("https://panel.example.test", 17, false),
 		"push": map[string]interface{}{
 			"url": "https://panel.example.test", "node_id": "17",
 			"api_key_env": "ZERO_PANEL_API_KEY",
@@ -154,7 +156,7 @@ func TestZeroConnectorConfigMatchesPublishedContracts(t *testing.T) {
 	}
 
 	generic := map[string]interface{}{
-		"api": zeroConnectorAPIConfig("https://panel.example.test", 17, "opaque-secret", false),
+		"api": zeroadapter.ConnectorAPIConfig("https://panel.example.test", 17, "opaque-secret", false),
 	}
 	genericPayload, err := json.Marshal(generic)
 	if err != nil {
@@ -172,7 +174,7 @@ func TestZeroConnectorUsesCurrentLocalKernelContract(t *testing.T) {
 	if !strings.Contains(zeroReleaseAPI, "/zerodenet/zero/") {
 		t.Fatalf("zeroReleaseAPI = %q, want the currently published zerodenet/zero channel", zeroReleaseAPI)
 	}
-	config := zeroConnectorAPIConfig("http://panel.example.test/", 17, "opaque-secret", true)
+	config := zeroadapter.ConnectorAPIConfig("http://panel.example.test/", 17, "opaque-secret", true)
 	encoded, err := json.Marshal(config)
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +253,7 @@ func TestNativeKernelAccessConfigValidatesWithCurrentZero(t *testing.T) {
 		},
 		"mode":  map[string]interface{}{"type": "rule"},
 		"route": map[string]interface{}{"rules": []interface{}{}, "final": map[string]interface{}{"type": "direct"}},
-		"api":   zeroConnectorAPIConfig("http://127.0.0.1:18080", 17, "opaque-secret", true),
+		"api":   zeroadapter.ConnectorAPIConfig("http://127.0.0.1:18080", 17, "opaque-secret", true),
 	}
 	payload, err := json.Marshal(config)
 	if err != nil {
@@ -291,7 +293,7 @@ func TestMieruPrincipalContractValidatesWithOptInZero(t *testing.T) {
 		}},
 		"mode":  map[string]interface{}{"type": "rule"},
 		"route": map[string]interface{}{"rules": []interface{}{}, "final": map[string]interface{}{"type": "direct"}},
-		"api":   zeroConnectorAPIConfig("http://127.0.0.1:18080", 17, "opaque-secret", true),
+		"api":   zeroadapter.ConnectorAPIConfig("http://127.0.0.1:18080", 17, "opaque-secret", true),
 	}
 	payload, err := json.Marshal(config)
 	if err != nil {
@@ -547,8 +549,8 @@ func TestResolveLocalNativeZeroReleaseSupportsExplicitPrerelease(t *testing.T) {
 
 func TestZeroRollbackUsesAtomicBinaryReplacement(t *testing.T) {
 	for name, script := range map[string]string{
-		"install failure trap": buildZeroInstallScript("/tmp/stage", strings.Repeat("a", 64), 41),
-		"post activation":      buildZeroRollbackScript(41),
+		"install failure trap": zeroadapter.BuildKernelInstallScript("/tmp/stage", strings.Repeat("a", 64), 41),
+		"post activation":      zeroadapter.BuildKernelRollbackScript(41),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if strings.Contains(script, `cp -a "$backup/zero" /usr/local/bin/zero`) {
@@ -581,8 +583,8 @@ func TestManagedZeroReleaseRequiresMatchingChecksumFilename(t *testing.T) {
 }
 
 func TestZeroInstallScriptsPersistAndConsumeRollbackMetadata(t *testing.T) {
-	install := buildZeroInstallScript("/tmp/stage", strings.Repeat("a", 64), 42)
-	rollback := buildZeroRollbackScript(42)
+	install := zeroadapter.BuildKernelInstallScript("/tmp/stage", strings.Repeat("a", 64), 42)
+	rollback := zeroadapter.BuildKernelRollbackScript(42)
 	for _, fragment := range []string{"$backup/old_active", "$backup/old_enabled", "systemctl disable zero"} {
 		if !strings.Contains(install, fragment) {
 			t.Fatalf("install script is missing %q", fragment)

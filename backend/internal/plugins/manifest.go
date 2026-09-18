@@ -22,6 +22,7 @@ const MaxConfigBytes = 64 << 10
 var idPattern = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)+$`)
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var pagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+var providerKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)
 
 type Requirements struct {
 	ZBoard      string   `json:"zboard"`
@@ -42,6 +43,10 @@ type Slot struct {
 	Slot       string `json:"slot"`
 	Title      string `json:"title"`
 	Entrypoint string `json:"entrypoint"`
+}
+type DNSProviderDefinition struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
 }
 
 var slotSurfaces = map[string]string{
@@ -68,8 +73,11 @@ type Manifest struct {
 	Surfaces      []string      `json:"surfaces"`
 	Components    Components    `json:"components"`
 	Contributions struct {
-		Pages []Page `json:"pages"`
-		Slots []Slot `json:"slots,omitempty"`
+		Pages                []Page                  `json:"pages"`
+		Slots                []Slot                  `json:"slots,omitempty"`
+		Tasks                []TaskDefinition        `json:"tasks,omitempty"`
+		DNSProviders         []DNSProviderDefinition `json:"dns_providers,omitempty"`
+		CertificateProviders []DNSProviderDefinition `json:"certificate_providers,omitempty"`
 	} `json:"contributions"`
 	Files map[string]string `json:"files"`
 }
@@ -106,15 +114,38 @@ func (m Manifest) Validate() error {
 			return errors.New("invalid advisory host version range")
 		}
 	}
-	if len(m.Capabilities) == 0 || len(m.Capabilities) > 4 {
+	if len(m.Capabilities) == 0 || len(m.Capabilities) > 8 {
 		return errors.New("declare supported capabilities")
 	}
 	seen := map[string]bool{}
 	for _, c := range m.Capabilities {
-		if seen[c] || (c != "zboard.ui.page.v1" && c != "zboard.config.v1" && c != IdentityCapability && c != StorageCapability) {
+		if seen[c] || (c != "zboard.ui.page.v1" && c != "zboard.config.v1" && c != IdentityCapability && c != StorageCapability && c != TaskCapability && c != MeteringReadCapability && c != CommerceOrdersReadCapability && c != DNSProviderCapability && c != CertificateProviderCapability) {
 			return fmt.Errorf("unsupported or duplicate capability: %s", c)
 		}
 		seen[c] = true
+	}
+
+	if seen[MeteringReadCapability] {
+		accountPage := false
+		for _, page := range m.Contributions.Pages {
+			if page.Surface == "account" && (page.Purpose == "" || page.Purpose == "business") {
+				accountPage = true
+			}
+		}
+		if !seen[PageCapability] || !accountPage {
+			return errors.New("metering read capability requires an account business page")
+		}
+	}
+	if seen[CommerceOrdersReadCapability] {
+		accountPage := false
+		for _, page := range m.Contributions.Pages {
+			if page.Surface == "account" && (page.Purpose == "" || page.Purpose == "business") {
+				accountPage = true
+			}
+		}
+		if !seen[PageCapability] || !accountPage {
+			return errors.New("commerce order read capability requires an account business page")
+		}
 	}
 	if len(m.Surfaces) > 3 || len(m.Contributions.Pages) > 24 || len(m.Contributions.Slots) > 24 || len(m.Files) == 0 || len(m.Files) > 512 {
 		return errors.New("plugin contribution limits exceeded")
@@ -163,6 +194,43 @@ func (m Manifest) Validate() error {
 	if seen[IdentityCapability] && (m.Components.Server == nil || !seen["zboard.config.v1"]) {
 		return errors.New("identity provider requires a configurable server")
 	}
+	if seen[DNSProviderCapability] {
+		if m.Components.Server == nil || !seen[ConfigCapability] || len(m.Contributions.DNSProviders) == 0 || len(m.Contributions.DNSProviders) > 8 {
+			return errors.New("DNS provider capability requires a configurable server and provider declarations")
+		}
+		providers := map[string]bool{}
+		for _, provider := range m.Contributions.DNSProviders {
+			if !providerKeyPattern.MatchString(provider.Key) || provider.Key == "cloudflare" || provider.Key == "letsencrypt" || strings.TrimSpace(provider.Name) == "" || len(provider.Name) > 100 || providers[provider.Key] {
+				return errors.New("invalid or duplicate DNS provider declaration")
+			}
+			providers[provider.Key] = true
+		}
+	} else if len(m.Contributions.DNSProviders) > 0 {
+		return errors.New("DNS provider declarations require the DNS provider capability")
+	}
+	if seen[CertificateProviderCapability] {
+		if m.Components.Server == nil || !seen[ConfigCapability] || len(m.Contributions.CertificateProviders) == 0 || len(m.Contributions.CertificateProviders) > 8 {
+			return errors.New("certificate provider capability requires a configurable server and provider declarations")
+		}
+		providers := map[string]bool{}
+		for _, provider := range m.Contributions.CertificateProviders {
+			if !providerKeyPattern.MatchString(provider.Key) || provider.Key == "cloudflare" || provider.Key == "letsencrypt" || strings.TrimSpace(provider.Name) == "" || len(provider.Name) > 100 || providers[provider.Key] {
+				return errors.New("invalid or duplicate certificate provider declaration")
+			}
+			providers[provider.Key] = true
+		}
+	} else if len(m.Contributions.CertificateProviders) > 0 {
+		return errors.New("certificate provider declarations require the certificate provider capability")
+	}
+	dnsProviderNames := make(map[string]string, len(m.Contributions.DNSProviders))
+	for _, provider := range m.Contributions.DNSProviders {
+		dnsProviderNames[provider.Key] = provider.Name
+	}
+	for _, provider := range m.Contributions.CertificateProviders {
+		if dnsName, shared := dnsProviderNames[provider.Key]; shared && dnsName != provider.Name {
+			return errors.New("shared DNS and certificate provider declarations must use the same name")
+		}
+	}
 	if m.Components.Server != nil {
 		if !seen["zboard.config.v1"] || len(m.Components.Server.Executables) == 0 || len(m.Components.Server.Executables) > 12 {
 			return errors.New("server requires config capability and runtime")
@@ -180,6 +248,9 @@ func (m Manifest) Validate() error {
 		if !SafePath(p) || !digestPattern.MatchString(h) || p == "manifest.json" || p == "signature.json" || p == "package.zbplugin" {
 			return errors.New("invalid file declaration")
 		}
+	}
+	if err := m.validateTasks(); err != nil {
+		return err
 	}
 	return m.validateData()
 }

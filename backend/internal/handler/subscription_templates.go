@@ -13,37 +13,35 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func (h *handlers) ReconcileSubscriptionTemplateDefaults() error {
-	var templates []model.SubscriptionTemplate
-	if err := h.db.Select("id", "renderer", "customization").Order("id asc").Find(&templates).Error; err != nil {
+	page, err := h.services.SubscriptionTemplates.List(context.Background(), entitlements.SubscriptionTemplateQuery{})
+	if err != nil {
 		return err
 	}
-	for _, template := range templates {
+	updates := make([]entitlements.SubscriptionTemplateDefault, 0, len(page.Items))
+	for _, template := range page.Items {
 		renderer := normalizeSubscriptionRenderer(template.Renderer)
 		_, normalized, err := normalizeSubscriptionCustomization(renderer, template.Customization)
 		if err != nil {
 			return fmt.Errorf("normalize subscription template %d: %w", template.ID, err)
 		}
-		updates := map[string]interface{}{}
-		if template.Renderer != renderer {
-			updates["renderer"] = renderer
-		}
-		if !bytes.Equal(bytes.TrimSpace(template.Customization), bytes.TrimSpace(normalized)) {
-			updates["customization"] = normalized
-		}
-		if len(updates) == 0 {
+		if template.Renderer == renderer && bytes.Equal(bytes.TrimSpace(template.Customization), bytes.TrimSpace(normalized)) {
 			continue
 		}
-		if err := h.db.Model(&model.SubscriptionTemplate{}).Where("id = ?", template.ID).Updates(updates).Error; err != nil {
-			return fmt.Errorf("persist subscription template %d defaults: %w", template.ID, err)
-		}
+		updates = append(updates, entitlements.SubscriptionTemplateDefault{ID: template.ID, Renderer: renderer, Customization: normalized})
+	}
+	if err := h.services.SubscriptionTemplates.ReconcileDefaults(context.Background(), updates); err != nil {
+		return fmt.Errorf("persist subscription template defaults: %w", err)
 	}
 	return nil
+}
+
+func subscriptionTemplateModel(row entitlements.SubscriptionTemplate) model.SubscriptionTemplate {
+	return model.SubscriptionTemplate{ID: row.ID, Name: row.Name, Slug: row.Slug, Description: row.Description, Renderer: row.Renderer, Customization: row.Customization, IsActive: row.IsActive, SortOrder: row.SortOrder, Revision: row.Revision, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
 }
 
 const (
@@ -246,11 +244,11 @@ func validateSubscriptionTemplate(req *subscriptionTemplateWriteReq) error {
 	return nil
 }
 
-func (h *handlers) validateSubscriptionTemplateWithRuleSets(db *gorm.DB, req *subscriptionTemplateWriteReq) error {
+func (h *handlers) validateSubscriptionTemplateWithRuleSets(ctx context.Context, req *subscriptionTemplateWriteReq) error {
 	if err := normalizeSubscriptionTemplateRequest(req); err != nil {
 		return err
 	}
-	resolved, err := resolveSubscriptionCustomization(db, req.Renderer, req.Customization, true)
+	resolved, err := h.resolveSubscriptionCustomization(ctx, req.Renderer, req.Customization, true)
 	if err != nil {
 		return validationError("订阅输出格式校验失败。", map[string]string{"customization": err.Error()})
 	}
@@ -306,6 +304,14 @@ func presentSubscriptionTemplates(items []model.SubscriptionTemplate) {
 	}
 }
 
+func subscriptionTemplateModels(items []entitlements.SubscriptionTemplate) []model.SubscriptionTemplate {
+	result := make([]model.SubscriptionTemplate, 0, len(items))
+	for _, item := range items {
+		result = append(result, subscriptionTemplateModel(item))
+	}
+	return result
+}
+
 func (h *handlers) SubscriptionTemplateListHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.authFromRequest(r); err != nil {
 		Unauthorized(w, err.Error())
@@ -317,36 +323,32 @@ func (h *handlers) SubscriptionTemplateListHandler(w http.ResponseWriter, r *htt
 			BadRequest(w, err.Error())
 			return
 		}
-		query := h.db.Model(&model.SubscriptionTemplate{}).Where("is_active = ?", true)
+		active := true
+		query := entitlements.SubscriptionTemplateQuery{Active: &active, Paged: true, Offset: offset, Limit: limit}
 		if keyword := strings.TrimSpace(r.URL.Query().Get("q")); keyword != "" {
 			if len(keyword) > 100 {
 				BadRequest(w, "search keyword is too long")
 				return
 			}
-			pattern := "%" + keyword + "%"
-			query = query.Where("name LIKE ? OR slug LIKE ? OR description LIKE ?", pattern, pattern, pattern)
+			query.Search = keyword
 		}
-		var total int64
-		if err := query.Count(&total).Error; err != nil {
+		page, err := h.services.SubscriptionTemplates.List(r.Context(), query)
+		if err != nil {
 			ServerError(w, err)
 			return
 		}
-		items := make([]model.SubscriptionTemplate, 0)
-		if err := query.Select("id", "name", "slug", "description", "renderer", "is_active", "sort_order", "revision", "created_at", "updated_at").
-			Order("sort_order asc, id asc").Offset(offset).Limit(limit).Find(&items).Error; err != nil {
-			ServerError(w, err)
-			return
-		}
+		items := subscriptionTemplateModels(page.Items)
 		presentSubscriptionTemplates(items)
-		OK(w, pagedData(items, total, offset, limit))
+		OK(w, pagedData(items, page.Total, offset, limit))
 		return
 	}
-	items := make([]model.SubscriptionTemplate, 0)
-	if err := h.db.Select("id", "name", "slug", "description", "renderer", "is_active", "sort_order", "revision", "created_at", "updated_at").
-		Where("is_active = ?", true).Order("sort_order asc, id asc").Find(&items).Error; err != nil {
+	active := true
+	page, err := h.services.SubscriptionTemplates.List(r.Context(), entitlements.SubscriptionTemplateQuery{Active: &active})
+	if err != nil {
 		ServerError(w, err)
 		return
 	}
+	items := subscriptionTemplateModels(page.Items)
 	presentSubscriptionTemplates(items)
 	OK(w, items)
 }
@@ -356,12 +358,12 @@ func (h *handlers) AdminSubscriptionTemplateListHandler(w http.ResponseWriter, r
 		return
 	}
 	if !parseBoolQuery(r.URL.Query().Get("paged")) {
-		items := make([]model.SubscriptionTemplate, 0)
-		if err := h.db.Select("id", "name", "slug", "description", "renderer", "is_active", "sort_order", "revision", "created_at", "updated_at").
-			Order("sort_order asc, id asc").Find(&items).Error; err != nil {
+		page, err := h.services.SubscriptionTemplates.List(r.Context(), entitlements.SubscriptionTemplateQuery{})
+		if err != nil {
 			ServerError(w, err)
 			return
 		}
+		items := subscriptionTemplateModels(page.Items)
 		presentSubscriptionTemplates(items)
 		OK(w, items)
 		return
@@ -371,14 +373,13 @@ func (h *handlers) AdminSubscriptionTemplateListHandler(w http.ResponseWriter, r
 		BadRequest(w, err.Error())
 		return
 	}
-	query := h.db.Model(&model.SubscriptionTemplate{})
+	query := entitlements.SubscriptionTemplateQuery{Paged: true, Offset: offset, Limit: limit}
 	if keyword := strings.TrimSpace(r.URL.Query().Get("q")); keyword != "" {
 		if len(keyword) > 100 {
 			BadRequest(w, "search keyword is too long")
 			return
 		}
-		pattern := "%" + keyword + "%"
-		query = query.Where("name LIKE ? OR slug LIKE ? OR description LIKE ?", pattern, pattern, pattern)
+		query.Search = keyword
 	}
 	if activeValue := strings.TrimSpace(r.URL.Query().Get("active")); activeValue != "" {
 		active, err := strconv.ParseBool(activeValue)
@@ -386,21 +387,16 @@ func (h *handlers) AdminSubscriptionTemplateListHandler(w http.ResponseWriter, r
 			BadRequest(w, "active must be true or false")
 			return
 		}
-		query = query.Where("is_active = ?", active)
+		query.Active = &active
 	}
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	page, err := h.services.SubscriptionTemplates.List(r.Context(), query)
+	if err != nil {
 		ServerError(w, err)
 		return
 	}
-	items := make([]model.SubscriptionTemplate, 0)
-	if err := query.Select("id", "name", "slug", "description", "renderer", "is_active", "sort_order", "revision", "created_at", "updated_at").
-		Order("sort_order asc, id asc").Offset(offset).Limit(limit).Find(&items).Error; err != nil {
-		ServerError(w, err)
-		return
-	}
+	items := subscriptionTemplateModels(page.Items)
 	presentSubscriptionTemplates(items)
-	OK(w, pagedData(items, total, offset, limit))
+	OK(w, pagedData(items, page.Total, offset, limit))
 }
 
 func (h *handlers) AdminSubscriptionTemplateGetHandler(w http.ResponseWriter, r *http.Request) {
@@ -412,15 +408,16 @@ func (h *handlers) AdminSubscriptionTemplateGetHandler(w http.ResponseWriter, r 
 		BadRequest(w, err.Error())
 		return
 	}
-	var item model.SubscriptionTemplate
-	if err := h.db.First(&item, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	stored, err := h.services.SubscriptionTemplates.Get(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, entitlements.ErrTemplateNotFound) {
 			NotFound(w)
 			return
 		}
 		ServerError(w, err)
 		return
 	}
+	item := subscriptionTemplateModel(stored)
 	presentSubscriptionTemplate(&item)
 	OK(w, item)
 }
@@ -444,7 +441,7 @@ func (h *handlers) AdminSubscriptionTemplatePreviewHandler(w http.ResponseWriter
 		BadRequestFields(w, "订阅输出格式预览校验失败。", map[string]string{"customization": err.Error()})
 		return
 	}
-	resolvedCustomization, err := resolveSubscriptionCustomization(h.db, req.Renderer, normalizedCustomization, true)
+	resolvedCustomization, err := h.resolveSubscriptionCustomization(r.Context(), req.Renderer, normalizedCustomization, true)
 	if err != nil {
 		BadRequestFields(w, "订阅输出格式预览校验失败。", map[string]string{"customization": err.Error()})
 		return
@@ -484,7 +481,7 @@ func (h *handlers) saveSubscriptionTemplate(w http.ResponseWriter, r *http.Reque
 		BadRequest(w, err.Error())
 		return
 	}
-	if err := h.validateSubscriptionTemplateWithRuleSets(h.db, &req); err != nil {
+	if err := h.validateSubscriptionTemplateWithRuleSets(r.Context(), &req); err != nil {
 		BadRequestError(w, err)
 		return
 	}
@@ -492,55 +489,32 @@ func (h *handlers) saveSubscriptionTemplate(w http.ResponseWriter, r *http.Reque
 	if req.IsActive != nil {
 		active = *req.IsActive
 	}
-	item := model.SubscriptionTemplate{
+	item := entitlements.SubscriptionTemplate{
 		ID: id, Name: req.Name, Slug: req.Slug, Description: req.Description,
 		Renderer: req.Renderer, Customization: req.Customization,
 		IsActive: active, SortOrder: req.SortOrder, Revision: 1,
 	}
-	action := "subscription_template.create"
-	if id != 0 {
-		action = "subscription_template.update"
+	bindings, err := subscriptionTemplateRuleSetBindings(item.Customization)
+	if err != nil {
+		BadRequestError(w, validationError("订阅输出格式校验失败。", map[string]string{"customization": err.Error()}))
+		return
 	}
-	var currentRevision uint64
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if _, err := resolveSubscriptionCustomization(tx, req.Renderer, req.Customization, true); err != nil {
-			return validationError("订阅输出格式校验失败。", map[string]string{"customization": err.Error()})
+	saved, currentRevision, err := h.services.SubscriptionTemplates.Save(r.Context(), claims.UserID, item, req.ExpectedRevision, bindings)
+	if err != nil {
+		if errors.Is(err, entitlements.ErrAdministrativeRead) {
+			Forbidden(w, "管理员权限已失效。")
+			return
 		}
-		if id == 0 {
-			if err := tx.Create(&item).Error; err != nil {
-				return err
-			}
-		} else {
-			var existing model.SubscriptionTemplate
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&existing, id).Error; err != nil {
-				return err
-			}
-			currentRevision = existing.Revision
-			if req.ExpectedRevision != nil && existing.Revision != *req.ExpectedRevision {
-				return errSubscriptionTemplateRevisionConflict
-			}
-			item.CreatedAt = existing.CreatedAt
-			item.Revision = existing.Revision + 1
-			if err := tx.Save(&item).Error; err != nil {
-				return err
-			}
-		}
-		if err := syncSubscriptionTemplateRuleSetBindings(tx, item.ID, item.Customization); err != nil {
-			return err
-		}
-		return createAuditLog(tx, claims, action, fmt.Sprintf("subscription_template:%d", item.ID), fmt.Sprintf("slug=%s revision=%d", item.Slug, item.Revision))
-	}); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, entitlements.ErrTemplateNotFound) {
 			NotFound(w)
 			return
 		}
-		if errors.Is(err, errSubscriptionTemplateRevisionConflict) {
+		if errors.Is(err, entitlements.ErrTemplateConflict) {
 			writeJSON(w, http.StatusConflict, "订阅模板已被其他管理员更新，请重新加载最新版本。", map[string]interface{}{"current_revision": currentRevision})
 			return
 		}
-		var validation *requestValidationError
-		if errors.As(err, &validation) {
-			BadRequestError(w, validation)
+		if errors.Is(err, entitlements.ErrTemplateRuleSet) {
+			BadRequestFields(w, "订阅输出格式校验失败。", map[string]string{"customization": "引用的规则集不存在或已停用。"})
 			return
 		}
 		if isDuplicateError(err) {
@@ -550,11 +524,12 @@ func (h *handlers) saveSubscriptionTemplate(w http.ResponseWriter, r *http.Reque
 		ServerError(w, err)
 		return
 	}
-	presentSubscriptionTemplate(&item)
-	OK(w, item)
+	itemModel := subscriptionTemplateModel(saved)
+	presentSubscriptionTemplate(&itemModel)
+	OK(w, itemModel)
 }
 
-var errSubscriptionTemplateRevisionConflict = errors.New("subscription template revision conflict")
+var errSubscriptionTemplateRevisionConflict = entitlements.ErrTemplateConflict
 
 func (h *handlers) AdminSubscriptionTemplateDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	claims, err := h.requireAdmin(w, r)
@@ -566,17 +541,15 @@ func (h *handlers) AdminSubscriptionTemplateDeleteHandler(w http.ResponseWriter,
 		BadRequest(w, err.Error())
 		return
 	}
-	var item model.SubscriptionTemplate
-	if err := h.db.First(&item, id).Error; err != nil {
-		NotFound(w)
-		return
-	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&item).Error; err != nil {
-			return err
+	if err := h.services.SubscriptionTemplates.Delete(r.Context(), claims.UserID, id); err != nil {
+		if errors.Is(err, entitlements.ErrAdministrativeRead) {
+			Forbidden(w, "管理员权限已失效。")
+			return
 		}
-		return createAuditLog(tx, claims, "subscription_template.delete", fmt.Sprintf("subscription_template:%d", item.ID), "slug="+item.Slug)
-	}); err != nil {
+		if errors.Is(err, entitlements.ErrTemplateNotFound) {
+			NotFound(w)
+			return
+		}
 		ServerError(w, err)
 		return
 	}
@@ -584,18 +557,16 @@ func (h *handlers) AdminSubscriptionTemplateDeleteHandler(w http.ResponseWriter,
 }
 
 func (h *handlers) writeSubscriptionTemplate(ctx context.Context, w http.ResponseWriter, slug string, manifest subscriptionManifest) error {
-	var item model.SubscriptionTemplate
-	if err := h.db.Where("slug = ? AND is_active = ?", slug, true).First(&item).Error; err != nil {
+	source, err := h.services.SubscriptionTemplates.RenderSource(ctx, slug)
+	if err != nil {
 		return err
 	}
+	item := subscriptionTemplateModel(source.Template)
 	data := subscriptionTemplateData{
 		Version: manifest.Version, GeneratedAt: manifest.GeneratedAt, Subscription: manifest.Subscription,
 		ProtocolEndpoints: make([]subscriptionTemplateEndpoint, 0, len(manifest.ProtocolEndpoints)),
 	}
-	var installation model.Installation
-	if err := h.db.First(&installation, 1).Error; err == nil {
-		data.SiteName = installation.SiteName
-	}
+	data.SiteName = source.SiteName
 	for _, endpoint := range manifest.ProtocolEndpoints {
 		config := make(map[string]interface{})
 		if err := json.Unmarshal(endpoint.Config, &config); err != nil {
@@ -608,7 +579,7 @@ func (h *handlers) writeSubscriptionTemplate(ctx context.Context, w http.Respons
 		})
 	}
 	renderer := normalizeSubscriptionRenderer(item.Renderer)
-	rendered, contentType, err := renderSubscriptionWithStoredRuleSets(h.db, renderer, item.Customization, data, false)
+	rendered, contentType, err := h.renderSubscriptionWithStoredRuleSets(ctx, renderer, item.Customization, data, false)
 	if err != nil {
 		return err
 	}

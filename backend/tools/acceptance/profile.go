@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/application"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/handler"
 	"github.com/zerodenet/zboard/backend/internal/security"
@@ -62,10 +63,13 @@ func profileReads(dir string) error {
 	if err != nil {
 		return err
 	}
-	h, err := handler.NewHandlers(db, f.JWTSecret, cipher, "", "legacy", "")
+	services := application.New(db, f.JWTSecret)
+	defer services.Close()
+	h, err := handler.NewHandlers(services, db, f.JWTSecret, cipher, "", "legacy", "")
 	if err != nil {
 		return err
 	}
+	services.StartWork()
 	loginBody, _ := json.Marshal(map[string]string{"email": f.AdminEmail, "password": f.AdminPassword})
 	login := httptest.NewRecorder()
 	h.LoginHandler(login, httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(string(loginBody))))

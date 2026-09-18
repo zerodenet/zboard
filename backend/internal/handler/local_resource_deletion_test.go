@@ -21,6 +21,10 @@ func TestNodeDeletionRollsBackAssociationsWhenDatabaseDeletionFails(t *testing.T
 	if err := f.h.db.Exec(fmt.Sprintf("CREATE TRIGGER deny_node_delete BEFORE DELETE ON nodes WHEN OLD.id = %d BEGIN SELECT RAISE(ABORT, 'test delete failure'); END", b.NodeID)).Error; err != nil {
 		t.Fatal(err)
 	}
+	var originalNode model.Node
+	if err := f.h.db.First(&originalNode, b.NodeID).Error; err != nil {
+		t.Fatal(err)
+	}
 	w := httptest.NewRecorder()
 	f.h.NodeCascadeDeleteHandler(w, announcementRequest("DELETE", fmt.Sprintf("/api/v1/nodes/%d", b.NodeID), f.admin, ""))
 	if w.Code != 500 {
@@ -37,6 +41,14 @@ func TestNodeDeletionRollsBackAssociationsWhenDatabaseDeletionFails(t *testing.T
 	if err := f.h.db.First(&b, b.ID).Error; err != nil {
 		t.Fatal("failed deletion lost landing protocol")
 	}
+	var retainedNode model.Node
+	if err := f.h.db.First(&retainedNode, b.NodeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if retainedNode.LifecycleStatus != originalNode.LifecycleStatus || retainedNode.IsEnabled != originalNode.IsEnabled {
+		t.Fatal("failed deletion left node disabled or deleting")
+	}
+
 	var queued int64
 	f.h.db.Model(&model.NodeConfigPublish{}).Count(&queued)
 	if queued != 0 {
@@ -73,5 +85,21 @@ func TestActiveProtocolDeletionClearsReferencesAndQueuesWithoutSSH(t *testing.T)
 	var node model.Node
 	if err := f.h.db.First(&node, b.NodeID).Error; err != nil {
 		t.Fatal("protocol deletion deleted VPS")
+	}
+}
+
+func TestProtocolEndpointDeletionReportsRunningPublicationConflict(t *testing.T) {
+	f, _, endpoint := networkEntryFixture(t)
+	if err := f.h.db.Create(&model.ProtocolDeployment{ProtocolEndpointID: endpoint.ID, NodeID: endpoint.NodeID, Status: "running"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	f.h.ProtocolEndpointDeleteHandler(w, announcementRequest("DELETE", fmt.Sprintf("/api/v1/admin/protocol-endpoints/%d", endpoint.ID), f.admin, ""))
+	if w.Code != 409 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	var count int64
+	if err := f.h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", endpoint.ID).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("endpoint count=%d error=%v", count, err)
 	}
 }

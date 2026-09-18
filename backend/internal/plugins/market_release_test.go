@@ -176,6 +176,29 @@ func TestPublicMarketRejectsReleaseOutsideAdmissionBoundary(t *testing.T) {
 	}
 }
 
+func TestPublicMarketInspectionReportsUnavailableMetadata(t *testing.T) {
+	for _, failedPath := range []string{"https://api.github.com/repos/example/plugin/releases", "/marketplace-entry.json"} {
+		t.Run(failedPath, func(t *testing.T) {
+			fixture := newPublicMarketFixture(t)
+			fetch := fixture.manager.fetch
+			fixture.manager.fetch = func(ctx context.Context, target string, limit int64) ([]byte, error) {
+				if strings.HasSuffix(target, failedPath) {
+					return nil, errors.New("upstream unavailable")
+				}
+				return fetch(ctx, target, limit)
+			}
+			detail, err := fixture.manager.MarketDetail(context.Background(), "example.welcome", "1.0.0")
+			if err != nil || detail.Notice == "" {
+				t.Fatal(detail, err)
+			}
+			_, err = fixture.manager.PreviewMarket(context.Background(), "example.welcome", "1.0.0")
+			if err == nil || err.Error() != detail.Notice {
+				t.Fatalf("inspection lost metadata failure: %v; want %s", err, detail.Notice)
+			}
+		})
+	}
+}
+
 func TestPublicMarketKeepsOtherPlatformsDownloadableWithoutInstallingThem(t *testing.T) {
 	fixture := newPublicMarketFixture(t)
 	release := fixture.releases["1.0.0"]

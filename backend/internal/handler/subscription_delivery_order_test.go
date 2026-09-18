@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,10 @@ import (
 
 func TestSubscriptionDeliveryOrderInterleavesEntriesAndLandingWithoutPublishing(t *testing.T) {
 	f, a, endpoint := networkEntryFixture(t)
+	actor, err := f.h.authFromRequest(announcementRequest(http.MethodGet, "/api/v1/admin/subscription-delivery-order", f.admin, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
 	entry := saveEntryForTest(t, f, a, endpoint, "")
 	other := model.ProtocolEndpoint{NodeID: endpoint.NodeID, Name: "other", Protocol: "trojan", Address: "other.test", Port: 444, IsActive: true}
 	if err := f.h.db.Create(&other).Error; err != nil {
@@ -22,7 +27,7 @@ func TestSubscriptionDeliveryOrderInterleavesEntriesAndLandingWithoutPublishing(
 	if err := f.h.db.Create(&second).Error; err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := loadSubscriptionDeliveryOrder(f.h.db, false)
+	snapshot, err := f.h.services.DeliveryOrder.Read(context.Background(), actor.UserID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +51,7 @@ func TestSubscriptionDeliveryOrderInterleavesEntriesAndLandingWithoutPublishing(
 	if w := request(keys, snapshot.Version); w.Code != 200 {
 		t.Fatalf("save: %d %s", w.Code, w.Body.String())
 	}
-	after, err := loadSubscriptionDeliveryOrder(f.h.db, false)
+	after, err := f.h.services.DeliveryOrder.Read(context.Background(), actor.UserID)
 	if err != nil {
 		t.Fatal(err)
 	}

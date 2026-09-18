@@ -56,7 +56,7 @@ func (h *handlers) NodeKernelReconcileAsyncHandler(w http.ResponseWriter, r *htt
 		"node_ids":       []uint{node.ID},
 		"kernel_version": request.Version,
 	}
-	task, err := h.createOperationTask(claims, taskTypeNodeReconcile, scope, content, "node", []uint{node.ID}, "")
+	task, err := h.createOperationTask(r.Context(), claims, taskTypeNodeReconcile, scope, content, "node", []uint{node.ID}, "")
 	if err != nil {
 		writeOperationTaskError(w, err)
 		return

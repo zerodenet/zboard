@@ -35,8 +35,15 @@ func testManager(t testing.TB, keys map[string]string) (*Manager, *gorm.DB, Opti
 	if err != nil {
 		t.Fatal(err)
 	}
+	m.SetIdentityTransactions(testIdentityTransactions{db: db})
 	t.Cleanup(m.Close)
 	return m, db, opts
+}
+
+type testIdentityTransactions struct{ db *gorm.DB }
+
+func (s testIdentityTransactions) WithinIdentity(ctx context.Context, _ IdentityFence, commit func(IdentityServices) error) error {
+	return s.db.WithContext(ctx).Transaction(func(*gorm.DB) error { return commit(IdentityServices{}) })
 }
 func TestOfflineInstallEnableRevokeAndKeepCoreOwnership(t *testing.T) {
 	raw, keys := fixturePackage(t, nil)

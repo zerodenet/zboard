@@ -1,12 +1,12 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/version"
 )
 
@@ -46,8 +46,11 @@ func (h *handlers) AdminSystemInfoHandler(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	var installation model.Installation
-	if err := h.db.WithContext(r.Context()).First(&installation, 1).Error; err != nil {
+	installation, err := h.services.Installation.Status(r.Context())
+	if err != nil || !installation.Installed {
+		if err == nil {
+			err = errors.New("installation is unavailable")
+		}
 		ServerError(w, err)
 		return
 	}

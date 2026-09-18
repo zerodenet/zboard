@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	zeroadapter "github.com/zerodenet/zboard/backend/internal/adapters/zero"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/security"
 	"golang.org/x/crypto/ssh"
@@ -32,9 +33,9 @@ func newTestCredentialCipher(t testing.TB) *security.CredentialCipher {
 }
 
 func TestIssueTokenSignsClaimsAndSetsExpiry(t *testing.T) {
-	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
+	h, err := newTestHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
 	if err != nil {
-		t.Fatalf("NewHandlers() error = %v", err)
+		t.Fatalf("newTestHandlers() error = %v", err)
 	}
 	before := time.Now().Add(23*time.Hour + 59*time.Minute).Unix()
 
@@ -279,26 +280,6 @@ func TestTrafficRecordAggregatesUseStableJSONContract(t *testing.T) {
 	}
 }
 
-func TestFirstMissingUintIDPreservesRequestedOrder(t *testing.T) {
-	if missing, ok := firstMissingUintID([]uint{9, 4, 7}, []uint{4, 9}); !ok || missing != 7 {
-		t.Fatalf("firstMissingUintID() = (%d, %v), want (7, true)", missing, ok)
-	}
-	if missing, ok := firstMissingUintID([]uint{9, 4}, []uint{4, 9, 12}); ok || missing != 0 {
-		t.Fatalf("firstMissingUintID() = (%d, %v), want (0, false)", missing, ok)
-	}
-	requested := make([]uint, 5000)
-	existing := make([]uint, 0, 4999)
-	for index := range requested {
-		requested[index] = uint(index + 1)
-		if requested[index] != 4096 {
-			existing = append(existing, requested[index])
-		}
-	}
-	if missing, ok := firstMissingUintID(requested, existing); !ok || missing != 4096 {
-		t.Fatalf("firstMissingUintID(5000 IDs) = (%d, %v), want (4096, true)", missing, ok)
-	}
-}
-
 func TestScalePageEnvelopesKeepFirstPageBounded(t *testing.T) {
 	nodePage := pagedData(make([]nodeListItem, 50), 1000, 0, 50)
 	endpointPage := pagedData(make([]protocolEndpointListItem, 50), 5000, 0, 50)
@@ -410,9 +391,9 @@ func TestEffectiveSubscriptionStatusDoesNotRequirePersistence(t *testing.T) {
 }
 
 func TestSupportedProtocolsAreCaseInsensitive(t *testing.T) {
-	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
+	h, err := newTestHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
 	if err != nil {
-		t.Fatalf("NewHandlers() error = %v", err)
+		t.Fatalf("newTestHandlers() error = %v", err)
 	}
 	for _, protocol := range []string{"vmess", "VLESS", "Trojan", "SHADOWSOCKS", "hysteria2", "Mieru"} {
 		if !h.isProtocolSupported(protocol) {
@@ -433,7 +414,7 @@ func TestProtocolCapabilitiesDoNotGateOnReleaseNumbers(t *testing.T) {
 				t.Fatalf("%s on %q rejected: %s", protocol, version, reason)
 			}
 		}
-		native, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "native-local", version)
+		native, err := newTestHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "native-local", version)
 		if err != nil || !native.zeroMieruAccess {
 			t.Fatalf("native Mieru access for %q: %v", version, err)
 		}
@@ -463,8 +444,8 @@ func TestProtocolCapabilitiesDoNotGateOnReleaseNumbers(t *testing.T) {
 }
 
 func TestNewHandlersRejectsWeakJWTSecret(t *testing.T) {
-	if _, err := NewHandlers(nil, "test-secret", newTestCredentialCipher(t), "", "legacy", ""); err == nil {
-		t.Fatal("NewHandlers() error = nil, want weak secret rejection")
+	if _, err := newTestHandlers(nil, "test-secret", newTestCredentialCipher(t), "", "legacy", ""); err == nil {
+		t.Fatal("newTestHandlers() error = nil, want weak secret rejection")
 	}
 }
 
@@ -1156,7 +1137,7 @@ func TestValidateSSHPrivilege(t *testing.T) {
 
 func TestPrepareSSHCommandDoesNotExposePrivilegePassword(t *testing.T) {
 	cipher := newTestCredentialCipher(t)
-	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", cipher, "", "legacy", "")
+	h, err := newTestHandlers(nil, "0123456789abcdef0123456789abcdef", cipher, "", "legacy", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1238,33 +1219,6 @@ func TestParseZeroStatsProjectionPreservesConnectorCounters(t *testing.T) {
 	}
 }
 
-func TestManagedAccessUserFieldsMapsSafeSubscriptionPolicy(t *testing.T) {
-	now := time.UnixMilli(1_753_500_000_123).UTC()
-	context := runtimeCredentialContext{
-		Credential: model.ProtocolCredential{PrincipalKey: "subscription:7:endpoint:3"},
-		Subscription: model.Subscription{
-			ID: 7, FlowTotal: 10_000, FlowUsed: 2_500, SpeedLimitMbps: 80,
-			DeviceLimit: 3, TrafficCalcMode: trafficCalcBoth, UpdatedAt: now,
-		},
-		SoleActiveCredential: true,
-	}
-	user, err := managedAccessUserFields(context)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for key, want := range map[string]interface{}{
-		"principal_key":   "subscription:7:endpoint:3",
-		"policy_revision": uint64(now.UnixMilli()),
-		"up_bps":          uint64(10_000_000),
-		"down_bps":        uint64(10_000_000),
-		"device_limit":    uint32(3),
-	} {
-		if got := user[key]; got != want {
-			t.Errorf("%s = %#v, want %#v", key, got, want)
-		}
-	}
-}
-
 func TestProtocolCredentialContractIsExplicitlyStaged(t *testing.T) {
 	legacy := &handlers{}
 	native := &handlers{zeroNativeAccess: true}
@@ -1300,12 +1254,6 @@ func TestProtocolCredentialContractIsExplicitlyStaged(t *testing.T) {
 		if !legacy.endpointDeliversSubscriptionCredential(model.ProtocolEndpoint{Protocol: protocol, ManagedPrincipalReady: true}) {
 			t.Fatalf("%s subscription delivery ignored the actual node publication readiness", protocol)
 		}
-		if endpointUsesRuntimeCredentials(protocol, false, false) {
-			t.Fatalf("legacy runtime attempted duplicate %s credential inbounds on one port", protocol)
-		}
-		if !endpointUsesRuntimeCredentials(protocol, true, false) {
-			t.Fatalf("native runtime did not compile %s managed users", protocol)
-		}
 	}
 	if legacy.desiredProtocolCredentialStatus(model.ProtocolEndpoint{Protocol: "mieru"}) != protocolCredentialStatusPrepared {
 		t.Fatal("legacy Mieru credential was not kept in prepared state")
@@ -1318,28 +1266,8 @@ func TestProtocolCredentialContractIsExplicitlyStaged(t *testing.T) {
 	}
 }
 
-func TestManagedAccessUserFieldsOmitsUnsafeDistributedQuota(t *testing.T) {
-	context := runtimeCredentialContext{
-		Credential: model.ProtocolCredential{PrincipalKey: "subscription:7:endpoint:3"},
-		Subscription: model.Subscription{
-			ID: 7, FlowTotal: 10_000, FlowUsed: 2_500, DeviceLimit: 2,
-			TrafficCalcMode: trafficCalcUpload,
-		},
-		SoleActiveCredential: false,
-	}
-	user, err := managedAccessUserFields(context)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, field := range []string{"up_bps", "down_bps", "device_limit", "quota_remaining_bytes"} {
-		if _, exists := user[field]; exists {
-			t.Fatalf("unsafe distributed policy field %s was projected: %#v", field, user)
-		}
-	}
-}
-
 func TestZeroConfigPublishScriptValidatesSwitchesAndChecksHealth(t *testing.T) {
-	script := buildZeroConfigPublishScript("/tmp/stage", strings.Repeat("a", 64), 91)
+	script := zeroadapter.BuildConfigurationPublishScript("/tmp/stage", strings.Repeat("a", 64), 91)
 	for _, required := range []string{
 		`zero validate "$stage/runtime.json"`,
 		`mv -Tf /etc/zerodenet/current.json.next /etc/zerodenet/current.json`,
@@ -1352,7 +1280,7 @@ func TestZeroConfigPublishScriptValidatesSwitchesAndChecksHealth(t *testing.T) {
 			t.Fatalf("publish script is missing %q", required)
 		}
 	}
-	rollback := buildZeroConfigRollbackScript(91)
+	rollback := zeroadapter.BuildConfigurationRollbackScript(91)
 	if !strings.Contains(rollback, "config-91.json") || !strings.Contains(rollback, "systemctl restart zero") {
 		t.Fatalf("unexpected rollback script: %s", rollback)
 	}
@@ -1360,7 +1288,7 @@ func TestZeroConfigPublishScriptValidatesSwitchesAndChecksHealth(t *testing.T) {
 
 func TestShadowsocks2022CredentialUsesCipherKeyLength(t *testing.T) {
 	cipher := newTestCredentialCipher(t)
-	h, err := NewHandlers(nil, "0123456789abcdef0123456789abcdef", cipher, "", "legacy", "")
+	h, err := newTestHandlers(nil, "0123456789abcdef0123456789abcdef", cipher, "", "legacy", "")
 	if err != nil {
 		t.Fatal(err)
 	}

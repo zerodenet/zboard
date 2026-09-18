@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
@@ -225,9 +226,11 @@ func TestAdminAssignmentCustomPaymentAmount(t *testing.T) {
 				t.Fatalf("foreign order leaked: %s", w.Body.String())
 			}
 			paid := f.paid(t, order.ID)
-			aggregate, err := f.h.dashboardOrderAggregate(time.Now().UTC().Add(-time.Hour), time.Now().UTC().Add(time.Hour))
-			if err != nil || aggregate.RevenueCents != amount {
-				t.Fatalf("custom amount revenue: %+v %v", aggregate, err)
+			now := time.Now().UTC().Add(time.Hour)
+			period := dashboardPeriod{Range: dashboardRangeToday, From: now.Add(-2 * time.Hour), To: now, PreviousFrom: now.Add(-4 * time.Hour), PreviousTo: now.Add(-2 * time.Hour), Bucket: "hour", Timezone: "UTC"}
+			overview, err := f.h.loadDashboardOverview(context.Background(), period, now, time.UTC)
+			if err != nil || overview.Business.RevenueCents != amount {
+				t.Fatalf("custom amount revenue: %+v %v", overview.Business, err)
 			}
 			if paid.PaidAmount != amount || paid.SubscriptionID == 0 {
 				t.Fatalf("paid wrong amount: %+v", paid)

@@ -2,15 +2,14 @@ package handler
 
 import (
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/zerodenet/zboard/backend/internal/model"
-	"gorm.io/gorm"
 )
 
 const (
@@ -18,14 +17,7 @@ const (
 	trafficTrendMaxDays  = 366
 )
 
-type entityReference struct {
-	ID          uint   `json:"id"`
-	Kind        string `json:"kind"`
-	DisplayName string `json:"display_name"`
-	Secondary   string `json:"secondary,omitempty"`
-	Status      string `json:"status,omitempty"`
-	Missing     bool   `json:"missing,omitempty"`
-}
+type entityReference = observability.EntityReference
 
 type entityReferenceResponse struct {
 	Users             map[string]entityReference `json:"users"`
@@ -38,23 +30,8 @@ type entityReferenceResponse struct {
 	Targets           map[string]entityReference `json:"targets"`
 }
 
-type trafficTrendAggregateRow struct {
-	Day           string `gorm:"column:day"`
-	UploadBytes   int64  `gorm:"column:upload_bytes"`
-	DownloadBytes int64  `gorm:"column:download_bytes"`
-	UsedBytes     int64  `gorm:"column:used_bytes"`
-	RecordCount   int64  `gorm:"column:record_count"`
-}
-
-type trafficTrendPoint struct {
-	Date            string `json:"date"`
-	Label           string `json:"label"`
-	UploadBytes     int64  `json:"upload_bytes"`
-	DownloadBytes   int64  `json:"download_bytes"`
-	UsedBytes       int64  `json:"used_bytes"`
-	PeakConnections *int64 `json:"peak_connections"`
-	RecordCount     int64  `json:"record_count"`
-}
+type trafficTrendAggregateRow = metering.TrafficTrendAggregate
+type trafficTrendPoint = metering.TrafficTrendPoint
 
 type trafficTrendResponse struct {
 	From                  string              `json:"from"`
@@ -246,32 +223,14 @@ func (h *handlers) AdminEntityReferencesHandler(w http.ResponseWriter, r *http.R
 		Orders:            prefillEntityReferences("order", sets["order"]),
 		Targets:           make(map[string]entityReference, len(targets)),
 	}
-
-	if err := resolveUserReferences(h.db.WithContext(r.Context()), response.Users, sortedEntityIDs(sets["user"])); err != nil {
-		ServerError(w, err)
-		return
-	}
-	if err := resolveSubscriptionReferences(h.db.WithContext(r.Context()), response.Subscriptions, sortedEntityIDs(sets["subscription"])); err != nil {
-		ServerError(w, err)
-		return
-	}
-	if err := resolveNodeReferences(h.db.WithContext(r.Context()), response.Nodes, sortedEntityIDs(sets["node"])); err != nil {
-		ServerError(w, err)
-		return
-	}
-	if err := resolveProtocolEndpointReferences(h.db.WithContext(r.Context()), response.ProtocolEndpoints, sortedEntityIDs(sets["protocol_endpoint"])); err != nil {
-		ServerError(w, err)
-		return
-	}
-	if err := resolvePlanReferences(h.db.WithContext(r.Context()), response.Plans, sortedEntityIDs(sets["plan"])); err != nil {
-		ServerError(w, err)
-		return
-	}
-	if err := resolvePlanSKUReferences(h.db.WithContext(r.Context()), response.PlanSKUs, sortedEntityIDs(sets["plan_sku"])); err != nil {
-		ServerError(w, err)
-		return
-	}
-	if err := resolveOrderReferences(h.db.WithContext(r.Context()), response.Orders, sortedEntityIDs(sets["order"])); err != nil {
+	if err := h.services.EntityReferences.Resolve(r.Context(), observability.EntityReferenceRequest{
+		Users: sortedEntityIDs(sets["user"]), Subscriptions: sortedEntityIDs(sets["subscription"]),
+		Nodes: sortedEntityIDs(sets["node"]), ProtocolEndpoints: sortedEntityIDs(sets["protocol_endpoint"]),
+		Plans: sortedEntityIDs(sets["plan"]), PlanSKUs: sortedEntityIDs(sets["plan_sku"]), Orders: sortedEntityIDs(sets["order"]),
+	}, observability.EntityReferenceData{
+		Users: response.Users, Subscriptions: response.Subscriptions, Nodes: response.Nodes,
+		ProtocolEndpoints: response.ProtocolEndpoints, Plans: response.Plans, PlanSKUs: response.PlanSKUs, Orders: response.Orders,
+	}); err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -307,201 +266,6 @@ func (h *handlers) AdminEntityReferencesHandler(w http.ResponseWriter, r *http.R
 	}
 
 	OK(w, response)
-}
-
-func resolveUserReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	var items []model.User
-	if err := db.Unscoped().Select("id, account_name, email, status").Where("id IN ?", ids).Find(&items).Error; err != nil {
-		return err
-	}
-	for _, item := range items {
-		displayName := strings.TrimSpace(item.AccountName)
-		secondary := strings.TrimSpace(item.Email)
-		if displayName == "" {
-			displayName = secondary
-			secondary = ""
-		}
-		if displayName == "" {
-			displayName = "用户"
-		}
-		result[entityKey(item.ID)] = entityReference{ID: item.ID, Kind: "user", DisplayName: displayName, Secondary: secondary, Status: item.Status}
-	}
-	return nil
-}
-
-type subscriptionReferenceRow struct {
-	ID       uint   `gorm:"column:id"`
-	Status   string `gorm:"column:status"`
-	PlanName string `gorm:"column:plan_name"`
-	SKUName  string `gorm:"column:sku_name"`
-}
-
-func resolveSubscriptionReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	var rows []subscriptionReferenceRow
-	if err := db.Table("subscriptions").
-		Select("subscriptions.id AS id, subscriptions.status AS status, plans.name AS plan_name, plan_skus.name AS sku_name").
-		Joins("LEFT JOIN plans ON plans.id = subscriptions.plan_id").
-		Joins("LEFT JOIN plan_skus ON plan_skus.id = subscriptions.plan_sku_id").
-		Where("subscriptions.id IN ?", ids).
-		Scan(&rows).Error; err != nil {
-		return err
-	}
-	for _, row := range rows {
-		displayName := strings.TrimSpace(row.PlanName)
-		if displayName == "" {
-			displayName = "订阅"
-		}
-		result[entityKey(row.ID)] = entityReference{ID: row.ID, Kind: "subscription", DisplayName: displayName, Secondary: strings.TrimSpace(row.SKUName), Status: row.Status}
-	}
-	return nil
-}
-
-func resolveNodeReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	var items []model.Node
-	if err := db.Select("id, name, region, lifecycle_status").Where("id IN ?", ids).Find(&items).Error; err != nil {
-		return err
-	}
-	for _, item := range items {
-		displayName := strings.TrimSpace(item.Name)
-		if displayName == "" {
-			displayName = "节点"
-		}
-		result[entityKey(item.ID)] = entityReference{ID: item.ID, Kind: "node", DisplayName: displayName, Secondary: strings.TrimSpace(item.Region), Status: item.LifecycleStatus}
-	}
-	return nil
-}
-
-type protocolEndpointReferenceRow struct {
-	ID       uint   `gorm:"column:id"`
-	Name     string `gorm:"column:name"`
-	Protocol string `gorm:"column:protocol"`
-	NodeName string `gorm:"column:node_name"`
-	IsActive bool   `gorm:"column:is_active"`
-}
-
-func resolveProtocolEndpointReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	var rows []protocolEndpointReferenceRow
-	if err := db.Table("protocol_endpoints").
-		Select("protocol_endpoints.id AS id, protocol_endpoints.name AS name, protocol_endpoints.protocol AS protocol, protocol_endpoints.is_active AS is_active, nodes.name AS node_name").
-		Joins("LEFT JOIN nodes ON nodes.id = protocol_endpoints.node_id").
-		Where("protocol_endpoints.id IN ?", ids).
-		Scan(&rows).Error; err != nil {
-		return err
-	}
-	for _, row := range rows {
-		displayName := strings.TrimSpace(row.Name)
-		if displayName == "" {
-			displayName = strings.TrimSpace(row.NodeName)
-		}
-		if displayName == "" {
-			displayName = "协议端点"
-		}
-		secondaryParts := make([]string, 0, 2)
-		if strings.TrimSpace(row.Protocol) != "" {
-			secondaryParts = append(secondaryParts, strings.TrimSpace(row.Protocol))
-		}
-		if strings.TrimSpace(row.NodeName) != "" && strings.TrimSpace(row.NodeName) != displayName {
-			secondaryParts = append(secondaryParts, strings.TrimSpace(row.NodeName))
-		}
-		status := "inactive"
-		if row.IsActive {
-			status = "active"
-		}
-		result[entityKey(row.ID)] = entityReference{ID: row.ID, Kind: "protocol_endpoint", DisplayName: displayName, Secondary: strings.Join(secondaryParts, " · "), Status: status}
-	}
-	return nil
-}
-
-func resolvePlanReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	var items []model.Plan
-	if err := db.Select("id, name, slug, is_active").Where("id IN ?", ids).Find(&items).Error; err != nil {
-		return err
-	}
-	for _, item := range items {
-		displayName := strings.TrimSpace(item.Name)
-		if displayName == "" {
-			displayName = "套餐"
-		}
-		status := "inactive"
-		if item.IsActive {
-			status = "active"
-		}
-		result[entityKey(item.ID)] = entityReference{ID: item.ID, Kind: "plan", DisplayName: displayName, Secondary: strings.TrimSpace(item.Slug), Status: status}
-	}
-	return nil
-}
-
-type planSKUReferenceRow struct {
-	ID       uint   `gorm:"column:id"`
-	Name     string `gorm:"column:name"`
-	PlanName string `gorm:"column:plan_name"`
-	IsActive bool   `gorm:"column:is_active"`
-}
-
-func resolvePlanSKUReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	var rows []planSKUReferenceRow
-	if err := db.Table("plan_skus").
-		Select("plan_skus.id AS id, plan_skus.name AS name, plan_skus.is_active AS is_active, plans.name AS plan_name").
-		Joins("LEFT JOIN plans ON plans.id = plan_skus.plan_id").
-		Where("plan_skus.id IN ?", ids).
-		Scan(&rows).Error; err != nil {
-		return err
-	}
-	for _, row := range rows {
-		displayName := strings.TrimSpace(row.Name)
-		if displayName == "" {
-			displayName = "套餐规格"
-		}
-		status := "inactive"
-		if row.IsActive {
-			status = "active"
-		}
-		result[entityKey(row.ID)] = entityReference{ID: row.ID, Kind: "plan_sku", DisplayName: displayName, Secondary: strings.TrimSpace(row.PlanName), Status: status}
-	}
-	return nil
-}
-
-func resolveOrderReferences(db *gorm.DB, result map[string]entityReference, ids []uint) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	var items []model.Order
-	if err := db.Select("id, plan_name, sku_name, trade_no, status").Where("id IN ?", ids).Find(&items).Error; err != nil {
-		return err
-	}
-	for _, item := range items {
-		displayName := strings.TrimSpace(item.PlanName)
-		if displayName == "" {
-			displayName = "订单"
-		}
-		secondaryParts := make([]string, 0, 2)
-		if strings.TrimSpace(item.SKUName) != "" {
-			secondaryParts = append(secondaryParts, strings.TrimSpace(item.SKUName))
-		}
-		if strings.TrimSpace(item.TradeNo) != "" {
-			secondaryParts = append(secondaryParts, strings.TrimSpace(item.TradeNo))
-		}
-		result[entityKey(item.ID)] = entityReference{ID: item.ID, Kind: "order", DisplayName: displayName, Secondary: strings.Join(secondaryParts, " · "), Status: item.Status}
-	}
-	return nil
 }
 
 func parseTrafficTrendRange(values url.Values, now time.Time) (time.Time, time.Time, int, error) {
@@ -545,41 +309,5 @@ func positiveQueryID(values url.Values, key string) (uint, error) {
 }
 
 func buildTrafficTrendPoints(from time.Time, days int, rows []trafficTrendAggregateRow) ([]trafficTrendPoint, int64) {
-	byDay := make(map[string]trafficTrendAggregateRow, len(rows))
-	var recordCount int64
-	for _, row := range rows {
-		key := strings.TrimSpace(row.Day)
-		if len(key) >= 10 {
-			key = key[:10]
-		}
-		byDay[key] = row
-		recordCount += row.RecordCount
-	}
-	points := make([]trafficTrendPoint, 0, days)
-	for index := 0; index < days; index++ {
-		date := from.AddDate(0, 0, index)
-		key := date.Format("2006-01-02")
-		row := byDay[key]
-		points = append(points, trafficTrendPoint{
-			Date:            key,
-			Label:           fmt.Sprintf("%d/%d", int(date.Month()), date.Day()),
-			UploadBytes:     row.UploadBytes,
-			DownloadBytes:   row.DownloadBytes,
-			UsedBytes:       row.UsedBytes,
-			PeakConnections: nil,
-			RecordCount:     row.RecordCount,
-		})
-	}
-	return points, recordCount
-}
-
-func applyTrafficTrendIDFilter(query *gorm.DB, values url.Values, key, column string) (*gorm.DB, error) {
-	id, err := positiveQueryID(values, key)
-	if err != nil {
-		return nil, err
-	}
-	if id > 0 {
-		query = query.Where(column+" = ?", id)
-	}
-	return query, nil
+	return metering.BuildTrafficTrendPoints(from, days, rows)
 }

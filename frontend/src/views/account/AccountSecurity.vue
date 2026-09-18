@@ -10,6 +10,7 @@
       <FormField v-slot="{ controlAttrs }" label="确认新密码" name="account-confirm-password" required full><UiInput v-model="repeatPassword" v-bind="controlAttrs" type="password" autocomplete="new-password" /></FormField>
       <UiButton type="button" :disabled="busy || !newPassword || !repeatPassword || (passwordSet && !currentPassword)" @click="setPassword">{{ passwordSet ? '修改密码' : '设置密码' }}</UiButton>
     </section>
+    <section class="panel stack"><h2>外部集成</h2><p>创建独立凭据供报表客户端读取本人数据，管理有效期并随时撤销。</p><RouterLink to="/account/integrations">管理集成凭据</RouterLink></section>
     <PluginSlot name="account.security.identities" surface="account" />
   </section>
 </template>
