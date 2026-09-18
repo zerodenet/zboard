@@ -65,7 +65,24 @@ func marketplaceHostCompatible(minimum, maximumExclusive, hostVersion string) (b
 	if err != nil {
 		return false, nil
 	}
+	current = marketplaceHostReleaseLine(current)
 	return !current.LessThan(minimumVersion) && (maximumVersion == nil || current.LessThan(maximumVersion)), nil
+}
+
+// Marketplace host ranges describe product release lines. An RC/dev build of
+// 0.0.2 therefore consumes 0.0.2 listings, while 0.1.0-rc remains outside a
+// max-exclusive 0.1.0 boundary. Package admission still uses its own protocol,
+// capability, platform, lifecycle, and advisory publisher-coverage checks.
+func marketplaceHostReleaseLine(version *semver.Version) *semver.Version {
+	line, err := version.SetPrerelease("")
+	if err != nil {
+		return version
+	}
+	line, err = line.SetMetadata("")
+	if err != nil {
+		return version
+	}
+	return &line
 }
 
 func validSnapshotPlatform(os, arch string) bool {

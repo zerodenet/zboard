@@ -41,7 +41,7 @@ func TestPublishedMarketplaceSnapshotPreservesProductIdentityAndDownloads(t *tes
 }
 
 func TestMarketplaceKeepsIncompatibleListingsWithoutRediscoveringReleases(t *testing.T) {
-	for _, host := range []string{"0.0.1", "0.0.2-rc.1", "0.1.0", "dev"} {
+	for _, host := range []string{"0.0.1", "0.1.0-rc.1", "0.1.0", "dev"} {
 		t.Run(host, func(t *testing.T) {
 			m, _, _ := testManager(t, nil)
 			m.host = host
@@ -59,6 +59,64 @@ func TestMarketplaceKeepsIncompatibleListingsWithoutRediscoveringReleases(t *tes
 				t.Fatal(detail, err)
 			}
 		})
+	}
+}
+
+func TestMarketplacePrereleaseHostUsesItsProductReleaseLine(t *testing.T) {
+	for _, test := range []struct {
+		host       string
+		compatible bool
+	}{
+		{host: "0.0.1", compatible: false},
+		{host: "0.0.2", compatible: true},
+		{host: "v0.0.2-rc.1", compatible: true},
+		{host: "v0.0.2-dev.202609180411", compatible: true},
+		{host: "v0.1.0-rc.1", compatible: false},
+		{host: "0.1.0", compatible: false},
+		{host: "dev", compatible: false},
+	} {
+		t.Run(test.host, func(t *testing.T) {
+			compatible, err := marketplaceHostCompatible("0.0.2", "0.1.0", test.host)
+			if err != nil || compatible != test.compatible {
+				t.Fatalf("compatible=%v, want %v: %v", compatible, test.compatible, err)
+			}
+		})
+	}
+}
+
+func TestMarketplaceRCExposesConnectAndOAuthChannels(t *testing.T) {
+	m, _, _ := testManager(t, nil)
+	m.host = "v0.0.2-rc.202609180411"
+	m.fetch = func(_ context.Context, target string, _ int64) ([]byte, error) {
+		for _, channel := range []string{"stable", "rc", "dev"} {
+			if target == DefaultMarketplaceAPIURL+"/zboard/"+channel+".json" {
+				return snapshotFixture(t, channel), nil
+			}
+		}
+		t.Fatalf("unexpected request %s", target)
+		return nil, nil
+	}
+	market, err := m.publicMarketplaceSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]map[string]bool{
+		"org.zerodenet.connect.zboard": {"stable": true, "dev": true},
+		"zboard.oauth":                 {"stable": true, "dev": true},
+	}
+	for _, entry := range market.Entries {
+		channels, ok := want[entry.ID]
+		if !ok {
+			continue
+		}
+		for _, release := range entry.releases {
+			delete(channels, release.Channel)
+		}
+	}
+	for id, channels := range want {
+		if len(channels) != 0 {
+			t.Fatalf("%s is missing channels: %v", id, channels)
+		}
 	}
 }
 
