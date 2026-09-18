@@ -1947,7 +1947,7 @@ paths:
         - { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
       responses:
-        "200": { description: Canonical page envelope with items, total, offset and limit }
+        "200": { description: "Canonical page envelope with items, total, offset and limit" }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
