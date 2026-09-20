@@ -10,16 +10,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"time"
-
-	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
 )
-
-var hostOperationPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*){1,3}$`)
-
-const nativeStorageValueBytes = 8 << 20
-const nativeStorageBytes = 32 << 20
 
 // Each process receives only its own private socket and bearer token. There is
 // deliberately no plugin ID, user, SQL, or core-command selector in this API.
@@ -31,7 +23,7 @@ func (m *Manager) startAuthorizedProcess(ctx context.Context, v Installation) (*
 	if err != nil {
 		return nil, err
 	}
-	if !requiresHostCallback(v) {
+	if !hasCapability(v, StorageCapability) {
 		return startProcess(ctx, m.options.Directory, pack)
 	}
 	directory, err := os.MkdirTemp("", "zbh-")
@@ -55,50 +47,13 @@ func (m *Manager) startAuthorizedProcess(ctx context.Context, v Installation) (*
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		if r.Method != "POST" || (r.URL.Path != "/storage" && r.URL.Path != "/service") || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Plugin-Host")), []byte(token)) != 1 {
+		if r.Method != "POST" || r.URL.Path != "/storage" || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Plugin-Host")), []byte(token)) != 1 {
 			http.Error(w, "forbidden", 403)
 			return
 		}
-		limit := int64(nativeStorageValueBytes + 4096)
-		if r.URL.Path == "/service" {
-			limit = pluginv1.MaxHostCallBytes + 4096
-		}
-		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
-		if err != nil {
-			http.Error(w, "invalid request", 400)
-			return
-		}
-		if r.URL.Path == "/service" {
-			var request pluginv1.HostCallRequest
-			if DecodeStrict(raw, &request) != nil || !isHostServiceCapability(request.Capability) || !hostOperationPattern.MatchString(request.Operation) || len(request.Payload) == 0 || !json.Valid(request.Payload) {
-				http.Error(w, "invalid request", 400)
-				return
-			}
-			if !m.mu.TryLock() {
-				http.Error(w, "host busy; retry outside lifecycle callback", 503)
-				return
-			}
-			active := proc != nil && m.processes[v.ID] == proc && hasCapability(v, request.Capability)
-			services := m.services
-			m.mu.Unlock()
-			if !active {
-				http.Error(w, "plugin process is not active", 403)
-				return
-			}
-			if services == nil {
-				http.Error(w, "host services unavailable", 503)
-				return
-			}
-			data, callErr := services.CallPluginHost(r.Context(), v.ID, request.Capability, request.Operation, request.Payload)
-			response := pluginv1.HostCallResponse{Data: data, Error: callErr}
-			if response.Data == nil && response.Error == nil {
-				response.Data = json.RawMessage(`{}`)
-			}
-			_ = json.NewEncoder(w).Encode(response)
-			return
-		}
+		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxStorageValueBytes+4096))
 		var request StorageRequest
-		if DecodeStrict(raw, &request) != nil || !hasCapability(v, StorageCapability) {
+		if err != nil || DecodeStrict(raw, &request) != nil {
 			http.Error(w, "invalid request", 400)
 			return
 		}
@@ -113,7 +68,7 @@ func (m *Manager) startAuthorizedProcess(ctx context.Context, v Installation) (*
 			http.Error(w, "plugin process is not active", 403)
 			return
 		}
-		result, err := m.storageLocked(v.ID, request, nativeStorageValueBytes, nativeStorageBytes)
+		result, err := m.storageLocked(v.ID, request)
 		if err != nil {
 			code := 400
 			if errors.Is(err, ErrPermission) {

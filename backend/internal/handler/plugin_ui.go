@@ -122,8 +122,6 @@ func (h *handlers) PluginBridgeHandler(w http.ResponseWriter, r *http.Request) {
 		ProviderID string          `json:"provider_id"`
 		IdentityID string          `json:"identity_id"`
 		Password   string          `json:"password"`
-		Action     string          `json:"action"`
-		Payload    json.RawMessage `json:"payload"`
 	}
 	if !pluginBody(w, r, &body) {
 		return
@@ -186,15 +184,6 @@ func (h *handlers) PluginBridgeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(body.Type, "storage.") {
 		result, err := h.pluginManager.SessionStorage(r.Header.Get("X-Plugin-Session"), c.UserID, c.IsAdmin, plugins.StorageRequest{Type: body.Type, Key: body.Key, Revision: body.Revision, Value: body.Value})
-		if err != nil {
-			pluginError(w, err)
-			return
-		}
-		OK(w, result)
-		return
-	}
-	if body.Type == "page.call" {
-		result, err := h.pluginManager.SessionPageAction(r.Context(), r.Header.Get("X-Plugin-Session"), c.UserID, c.IsAdmin, body.Action, body.Payload)
 		if err != nil {
 			pluginError(w, err)
 			return

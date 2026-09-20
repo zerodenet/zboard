@@ -13,10 +13,6 @@ import (
 const StorageCapability = "zboard.storage.v1"
 const ConfigCapability = "zboard.config.v1"
 const PageCapability = "zboard.ui.page.v1"
-const HTTPRouteCapability = "zboard.http.route.v1"
-const AccountAssertionCapability = "zboard.account.assertion.v1"
-const SubscriptionProjectionCapability = "zboard.subscription.projection.v1"
-const MessageProjectionCapability = "zboard.message.projection.v1"
 
 var ErrPermission = errors.New("plugin capability is outside the host admission scope")
 

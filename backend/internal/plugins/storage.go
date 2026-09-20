@@ -54,20 +54,16 @@ func (m *Manager) decodeStorage(row model.PluginData) (map[string]json.RawMessag
 	return obj, nil
 }
 func encodeStorage(obj map[string]json.RawMessage) ([]byte, error) {
-	return encodeStorageWithLimits(obj, MaxStorageValueBytes, MaxStorageBytes)
-}
-
-func encodeStorageWithLimits(obj map[string]json.RawMessage, maxValue, maxTotal int) ([]byte, error) {
 	raw, err := json.Marshal(obj)
 	if err != nil {
 		return nil, err
 	}
-	if len(obj) > 128 || len(raw) > maxTotal {
-		return nil, errors.New("plugin storage quota exceeded")
+	if len(obj) > 128 || len(raw) > MaxStorageBytes {
+		return nil, errors.New("plugin storage quota exceeded (128 keys / 256 KiB)")
 	}
 	for k, v := range obj {
-		if !storageKeyPattern.MatchString(k) || len(v) > maxValue {
-			return nil, errors.New("invalid storage key or value exceeds quota")
+		if !storageKeyPattern.MatchString(k) || len(v) > MaxStorageValueBytes {
+			return nil, errors.New("invalid storage key or value exceeds 32 KiB")
 		}
 	}
 	return raw, nil
@@ -95,9 +91,9 @@ func (m *Manager) SessionStorage(token string, userID uint, admin bool, request 
 	if !admin || s.UserID != userID || s.Surface != "admin" {
 		return StorageResult{}, ErrPermission
 	}
-	return m.storageLocked(s.PluginID, request, MaxStorageValueBytes, MaxStorageBytes)
+	return m.storageLocked(s.PluginID, request)
 }
-func (m *Manager) storageLocked(id string, r StorageRequest, maxValue, maxTotal int) (StorageResult, error) {
+func (m *Manager) storageLocked(id string, r StorageRequest) (StorageResult, error) {
 	if err := m.guard(m.db); err != nil {
 		return StorageResult{}, err
 	}
@@ -131,7 +127,7 @@ func (m *Manager) storageLocked(id string, r StorageRequest, maxValue, maxTotal 
 	}
 	switch r.Type {
 	case "storage.put":
-		if !json.Valid(r.Value) || len(r.Value) > maxValue {
+		if !json.Valid(r.Value) || len(r.Value) > MaxStorageValueBytes {
 			return StorageResult{}, errors.New("invalid storage value")
 		}
 		obj[r.Key] = r.Value
@@ -140,7 +136,7 @@ func (m *Manager) storageLocked(id string, r StorageRequest, maxValue, maxTotal 
 	default:
 		return StorageResult{}, ErrPermission
 	}
-	raw, err := encodeStorageWithLimits(obj, maxValue, maxTotal)
+	raw, err := encodeStorage(obj)
 	if err != nil {
 		return StorageResult{}, err
 	}

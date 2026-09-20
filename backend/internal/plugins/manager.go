@@ -32,19 +32,11 @@ type Manager struct {
 	marketMu       sync.Mutex
 	processes      map[string]*process
 	marketReleases map[string]marketReleaseCache
-	services       HostServices
 	sessions       map[string]Session
 	cancel         context.CancelFunc
 	done           chan struct{}
 	lost           atomic.Bool
 }
-
-func (m *Manager) SetHostServices(services HostServices) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.services = services
-}
-
 type Installation struct {
 	Admission Admission  `json:"admission"`
 	Data      DataStatus `json:"data"`
