@@ -159,7 +159,7 @@ async function receive(event: MessageEvent) {
   )
     return;
   if (
-    !["capabilities.list", "capabilities.invoke", "context.load", "config.load", "config.save", "config.test", "storage.get", "storage.put", "storage.delete", "identity.providers.list", "identity.bindings.list", "identity.login.start", "identity.bind.start", "identity.binding.unlink"].includes(
+    !["capabilities.list", "capabilities.invoke", "context.load", "config.load", "config.save", "config.test", "storage.get", "storage.put", "storage.delete", "page.call", "identity.providers.list", "identity.bindings.list", "identity.login.start", "identity.bind.start", "identity.binding.unlink"].includes(
       message.type,
     )
   )
@@ -195,6 +195,8 @@ async function receive(event: MessageEvent) {
           : {};
     const payload = message.type === "capabilities.invoke" ? { operation: message.operation, input: message.input } : message.type.startsWith("identity.")
       ? identityPayload
+      : message.type === "page.call"
+        ? { action: message.action, payload: message.payload }
       : message.type.startsWith("storage.") ? { key: message.key, revision: message.revision, value: message.value } :
       message.type === "config.save"
         ? { revision: message.revision, config: message.config }

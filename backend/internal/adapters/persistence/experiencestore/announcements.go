@@ -178,7 +178,11 @@ func announcementReadItems(records []model.Announcement, reads map[uint]model.An
 }
 
 func announcementScope(db *gorm.DB, input experience.AnnouncementAudienceQuery) *gorm.DB {
-	return db.Model(&model.Announcement{}).Where("status = ?", "published").Where("audience IN ?", input.Audiences).Where("starts_at IS NULL OR starts_at <= ?", input.Now)
+	query := db.Model(&model.Announcement{}).Where("status = ?", "published").Where("audience IN ?", input.Audiences).Where("starts_at IS NULL OR starts_at <= ?", input.Now)
+	if input.ID != 0 {
+		query = query.Where("id = ?", input.ID)
+	}
+	return query
 }
 
 func unreadScope(query *gorm.DB, userID uint, now time.Time) *gorm.DB {

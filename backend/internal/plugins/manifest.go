@@ -23,6 +23,7 @@ var idPattern = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)+$`)
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var pagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 var providerKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)
+var publicRoutePattern = regexp.MustCompile(`^/\.well-known/[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*){1,5}$`)
 
 type Requirements struct {
 	ZBoard      string   `json:"zboard"`
@@ -47,6 +48,11 @@ type Slot struct {
 type DNSProviderDefinition struct {
 	Key  string `json:"key"`
 	Name string `json:"name"`
+}
+type HTTPRoute struct {
+	ID     string `json:"id"`
+	Method string `json:"method"`
+	Path   string `json:"path"`
 }
 
 var slotSurfaces = map[string]string{
@@ -78,6 +84,7 @@ type Manifest struct {
 		Tasks                []TaskDefinition        `json:"tasks,omitempty"`
 		DNSProviders         []DNSProviderDefinition `json:"dns_providers,omitempty"`
 		CertificateProviders []DNSProviderDefinition `json:"certificate_providers,omitempty"`
+		HTTPRoutes           []HTTPRoute             `json:"http_routes,omitempty"`
 	} `json:"contributions"`
 	Files map[string]string `json:"files"`
 }
@@ -119,7 +126,11 @@ func (m Manifest) Validate() error {
 	}
 	seen := map[string]bool{}
 	for _, c := range m.Capabilities {
-		if seen[c] || (c != "zboard.ui.page.v1" && c != "zboard.config.v1" && c != IdentityCapability && c != StorageCapability && c != TaskCapability && c != MeteringReadCapability && c != CommerceOrdersReadCapability && c != DNSProviderCapability && c != CertificateProviderCapability) {
+		if seen[c] || !slices.Contains([]string{
+			PageCapability, ConfigCapability, IdentityCapability, StorageCapability,
+			HTTPRouteCapability, AccountAssertionCapability, SubscriptionProjectionCapability, MessageProjectionCapability,
+			TaskCapability, MeteringReadCapability, CommerceOrdersReadCapability, DNSProviderCapability, CertificateProviderCapability,
+		}, c) {
 			return fmt.Errorf("unsupported or duplicate capability: %s", c)
 		}
 		seen[c] = true
@@ -147,7 +158,7 @@ func (m Manifest) Validate() error {
 			return errors.New("commerce order read capability requires an account business page")
 		}
 	}
-	if len(m.Surfaces) > 3 || len(m.Contributions.Pages) > 24 || len(m.Contributions.Slots) > 24 || len(m.Files) == 0 || len(m.Files) > 512 {
+	if len(m.Surfaces) > 3 || len(m.Contributions.Pages) > 24 || len(m.Contributions.Slots) > 24 || len(m.Contributions.HTTPRoutes) > 8 || len(m.Files) == 0 || len(m.Files) > 512 {
 		return errors.New("plugin contribution limits exceeded")
 	}
 	surfaces := map[string]bool{}
@@ -190,6 +201,20 @@ func (m Manifest) Validate() error {
 			return errors.New("identity slots require UI and identity provider capabilities")
 		}
 		slots[key] = true
+	}
+	routes := map[string]bool{}
+	for _, contribution := range m.Contributions.HTTPRoutes {
+		method := strings.ToUpper(contribution.Method)
+		key := method + ":" + contribution.Path
+		if routes[key] || !pagePattern.MatchString(contribution.ID) ||
+			(method != "GET" && method != "POST") || contribution.Method != method ||
+			!publicRoutePattern.MatchString(contribution.Path) {
+			return errors.New("invalid public HTTP route contribution")
+		}
+		routes[key] = true
+	}
+	if len(m.Contributions.HTTPRoutes) > 0 && (!seen[HTTPRouteCapability] || m.Components.Server == nil) {
+		return errors.New("public HTTP routes require route capability and server runtime")
 	}
 	if seen[IdentityCapability] && (m.Components.Server == nil || !seen["zboard.config.v1"]) {
 		return errors.New("identity provider requires a configurable server")

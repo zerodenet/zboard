@@ -25,6 +25,11 @@ service PluginControl {
  // target node; the plugin receives only its signed CSR.
  rpc VerifyCertificateCredential(CertificateCredentialRequest) returns (HealthResult);
  rpc IssueCertificate(CertificateIssueRequest) returns (CertificateIssueResult);
+ // Requires zboard.http.route.v1. The host dispatches only exact signed-manifest routes.
+ rpc HandleHTTP(HTTPRequest) returns (HTTPResponse);
+ // Optional action surface for the plugin's own authenticated business page.
+ // The host supplies an opaque actor ID and never exposes its login token.
+ rpc HandlePageAction(PageActionRequest) returns (PageActionResponse);
 }
 message Empty {}
 message Info { string id = 1; string version = 2; uint32 protocol = 3; repeated string capabilities = 4; }
@@ -58,7 +63,6 @@ message VerifiedIdentity {
  string email = 3;
  bool email_verified = 4;
 }
-
 // run_id is an observation identity, not a guarantee of exactly-once delivery.
 message TaskRunRequest {
  string task_id = 1;
@@ -116,3 +120,25 @@ message CertificateIssueRequest {
  uint64 config_revision = 10;
 }
 message CertificateIssueResult { bytes fullchain_pem = 1; }
+message HTTPRequest {
+ string route_id = 1;
+ string method = 2;
+ string path = 3;
+ string content_type = 4;
+ bytes body = 5;
+}
+message HTTPResponse {
+ uint32 status = 1;
+ string content_type = 2;
+ bytes body = 3;
+ int64 retry_after = 4;
+}
+message PageActionRequest {
+ string page_id = 1;
+ string surface = 2;
+ string actor_id = 3;
+ bool actor_admin = 4;
+ string action = 5;
+ bytes payload_json = 6;
+}
+message PageActionResponse { bytes result_json = 1; }
