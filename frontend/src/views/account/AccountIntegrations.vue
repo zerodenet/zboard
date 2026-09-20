@@ -13,14 +13,15 @@
       </div>
     </UiSection>
     <UiSection title="创建凭据" description="允许查询本人的流量记录与统计，每个账号最多保留 20 个有效凭据。">
-      <form class="integration-form" @submit.prevent="create">
-        <FormField v-slot="{ controlAttrs }" label="用途名称" name="integration-name" required>
+      <form ref="formElement" class="integration-form" novalidate @submit.prevent="create">
+        <FormField v-slot="{ controlAttrs }" label="用途名称" name="integration-name" :error="formErrors.fields.name" required>
           <UiInput v-model="name" v-bind="controlAttrs" maxlength="120" placeholder="例如：每日报表" :disabled="creating || !!issuedToken" />
         </FormField>
-        <FormField v-slot="{ controlAttrs }" label="有效期" name="integration-lifetime" required>
+        <FormField v-slot="{ controlAttrs }" label="有效期" name="integration-lifetime" :error="formErrors.fields.days" required>
           <UiSelect v-model="days" v-bind="controlAttrs" :options="[{ label: '30 天', value: 30 }, { label: '90 天', value: 90 }, { label: '一年', value: 365 }]" :disabled="creating || !!issuedToken" />
         </FormField>
         <UiButton type="submit" :loading="creating" :disabled="loading || !name.trim() || !!issuedToken">创建凭据</UiButton>
+        <PageAlert v-if="formErrors.formError.value" tone="danger" title="凭据未创建">{{ formErrors.formError.value }}</PageAlert>
       </form>
     </UiSection>
     <UiSection title="已创建的凭据" description="列表仅显示前缀。撤销后，使用该凭据的客户端将无法继续读取数据。">
@@ -46,7 +47,7 @@
   </section>
 </template>
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref } from 'vue'
+import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { API_BASE } from '../../api/client'
 import { listIntegrationCredentials, issueIntegrationCredential, revokeIntegrationCredential, type IntegrationCredential } from '../../api/integrations'
 import PageHeader from '../../components/PageHeader.vue'
@@ -61,10 +62,16 @@ import DataTable from '../../components/DataTable.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
+import PageAlert from '../../components/PageAlert.vue'
+import { useFormErrors } from '../../composables/useFormState'
+import { collectFieldErrors } from '../../utils/validation'
 const name = ref(''), days = ref(30), issuedToken = ref(''), issuedID = ref(0)
 const items = ref<IntegrationCredential[]>([]), offset = ref(0), hasNext = ref(false), pageSize = 20
 const loading = ref(false), creating = ref(false), revoking = ref(false), message = ref(''), error = ref(''), revokeError = ref('')
 const selected = ref<IntegrationCredential | null>(null)
+const formElement = ref<HTMLElement | null>(null), formErrors = useFormErrors()
+watch(name, () => formErrors.clear('name'))
+watch(days, () => formErrors.clear('days'))
 const directoryURL = new URL(`${API_BASE}/integrations/capabilities`, window.location.origin).href
 const invokeURL = `${directoryURL}/metering.usage.query/invoke`
 let alive = true
@@ -76,10 +83,14 @@ async function load(next = offset.value) {
   finally { loading.value = false }
 }
 async function create() {
-  if (loading.value || creating.value || issuedToken.value || !name.value.trim()) return
+  if (loading.value || creating.value || issuedToken.value) return
+  if (!await formErrors.applyValidation(collectFieldErrors({
+    name: !name.value.trim() && '请输入用途名称。',
+    days: ![30, 90, 365].includes(days.value) && '请选择有效期。',
+  }), formElement)) return
   creating.value = true; error.value = ''; message.value = ''
   try { const result = await issueIntegrationCredential(name.value.trim(), days.value); if (!alive) return; issuedToken.value = result.token; issuedID.value = result.credential.id; name.value = ''; await load(0) }
-  catch { if (alive) error.value = '创建失败，请检查名称、有效期和有效凭据数量后重试。' }
+  catch (cause) { if (alive) await formErrors.applyApiError(cause, '创建失败，请检查名称、有效期和有效凭据数量后重试。', formElement, { expires_at: 'days' }) }
   finally { creating.value = false }
 }
 async function copyToken() {
