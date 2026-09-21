@@ -28,8 +28,6 @@ type StoredValue struct {
 	Value    json.RawMessage `json:"value,omitempty"`
 }
 
-const MaxNativeStorageValueBytes = 8 << 20
-
 func HostStorageFromEnvironment() (*HostStorage, error) {
 	socket, token := os.Getenv("ZBOARD_PLUGIN_HOST_SOCKET"), os.Getenv("ZBOARD_PLUGIN_HOST_TOKEN")
 	if !filepath.IsAbs(socket) || len(token) != 64 {
@@ -61,7 +59,7 @@ func (s *HostStorage) call(ctx context.Context, kind, key string, revision uint6
 	if err != nil {
 		return result, err
 	}
-	if len(raw) > MaxNativeStorageValueBytes+4096 {
+	if len(raw) > 36<<10 {
 		return result, errors.New("storage request too large")
 	}
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://plugin-host/storage", bytes.NewReader(raw))
@@ -78,7 +76,7 @@ func (s *HostStorage) call(ctx context.Context, kind, key string, revision uint6
 	if response.StatusCode != 200 {
 		return result, fmt.Errorf("host storage denied or unavailable (HTTP %d)", response.StatusCode)
 	}
-	raw, err = io.ReadAll(io.LimitReader(response.Body, MaxNativeStorageValueBytes+4096))
+	raw, err = io.ReadAll(io.LimitReader(response.Body, 64<<10))
 	if err != nil {
 		return result, err
 	}

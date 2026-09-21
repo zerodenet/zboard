@@ -44,15 +44,7 @@ type Manager struct {
 	supervisorDone    chan struct{}
 	closeOnce         sync.Once
 	restarts          map[string]restartAttempt
-	services          HostServices
 }
-
-func (m *Manager) SetHostServices(services HostServices) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.services = services
-}
-
 type Installation struct {
 	Admission Admission  `json:"admission"`
 	Data      DataStatus `json:"data"`

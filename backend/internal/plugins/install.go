@@ -189,9 +189,6 @@ func (m *Manager) Action(ctx context.Context, id, action, actor string, generati
 	case "purge_data":
 		err = m.purgeDataLocked(v)
 	case "enable":
-		if err = m.validatePublicRouteRegistrationLocked(v); err != nil {
-			break
-		}
 		if old := m.processes[id]; old != nil {
 			old.close()
 			delete(m.processes, id)

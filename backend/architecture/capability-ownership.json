@@ -14,9 +14,7 @@
     {"name": "PluginControl.VerifyDNSCredential", "owner": "network", "source": "pkg/pluginapi/v1/control.proto"},
     {"name": "PluginControl.ApplyDNSRecord", "owner": "network", "source": "pkg/pluginapi/v1/control.proto"},
     {"name": "PluginControl.VerifyCertificateCredential", "owner": "network", "source": "pkg/pluginapi/v1/control.proto"},
-    {"name": "PluginControl.IssueCertificate", "owner": "network", "source": "pkg/pluginapi/v1/control.proto"},
-    {"name": "PluginControl.HandleHTTP", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"},
-    {"name": "PluginControl.HandlePageAction", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"}
+    {"name": "PluginControl.IssueCertificate", "owner": "network", "source": "pkg/pluginapi/v1/control.proto"}
   ],
   "plugin_capabilities": [
     {"name": "zboard.ui.page.v1", "owner": "extensions", "source": "internal/plugins/admission.go"},
@@ -27,11 +25,7 @@
     {"name": "zboard.metering.read.v1", "owner": "metering", "source": "internal/plugins/capabilities.go"},
     {"name": "zboard.commerce.orders.read.v1", "owner": "commerce", "source": "internal/plugins/capabilities.go"},
     {"name": "zboard.dns.provider.v1", "owner": "network", "source": "internal/plugins/dns_provider.go"},
-    {"name": "zboard.certificate.provider.v1", "owner": "network", "source": "internal/plugins/certificate_provider.go"},
-    {"name": "zboard.http.route.v1", "owner": "extensions", "source": "internal/plugins/admission.go"},
-    {"name": "zboard.account.assertion.v1", "owner": "identity", "source": "internal/plugins/admission.go"},
-    {"name": "zboard.subscription.projection.v1", "owner": "entitlements", "source": "internal/plugins/admission.go"},
-    {"name": "zboard.message.projection.v1", "owner": "experience", "source": "internal/plugins/admission.go"}
+    {"name": "zboard.certificate.provider.v1", "owner": "network", "source": "internal/plugins/certificate_provider.go"}
   ],
   "host_operations": [
     {

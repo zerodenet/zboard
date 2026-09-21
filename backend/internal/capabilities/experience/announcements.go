@@ -63,7 +63,6 @@ type AnnouncementPage struct {
 }
 
 type AnnouncementAudienceQuery struct {
-	ID        uint
 	UserID    uint
 	Audiences []string
 	Now       time.Time

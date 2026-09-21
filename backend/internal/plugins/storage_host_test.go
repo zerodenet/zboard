@@ -63,9 +63,6 @@ func TestNativePluginStorageUsesScopedHostSDKAndClosesWithProcess(t *testing.T) 
 	if err != nil || !strings.Contains(string(obj["background"]), "native-plugin") {
 		t.Fatal("native write missing", err)
 	}
-	if len(obj["background"]) <= MaxStorageValueBytes {
-		t.Fatal("native storage did not accept a value larger than the admin UI quota")
-	}
 	// A diagnostic runs outside the lifecycle transaction and can use scoped storage.
 	if err := m.TestConfig(ctx, v.ID, "admin"); err != nil {
 		t.Fatal("diagnostic blocked scoped storage", err)

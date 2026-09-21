@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v3.18.1
-// source: v1/control.proto
+// source: pkg/pluginapi/v1/control.proto
 
 package pluginv1
 
@@ -33,8 +33,6 @@ const (
 	PluginControl_ApplyDNSRecord_FullMethodName              = "/zboard.plugin.v1.PluginControl/ApplyDNSRecord"
 	PluginControl_VerifyCertificateCredential_FullMethodName = "/zboard.plugin.v1.PluginControl/VerifyCertificateCredential"
 	PluginControl_IssueCertificate_FullMethodName            = "/zboard.plugin.v1.PluginControl/IssueCertificate"
-	PluginControl_HandleHTTP_FullMethodName                  = "/zboard.plugin.v1.PluginControl/HandleHTTP"
-	PluginControl_HandlePageAction_FullMethodName            = "/zboard.plugin.v1.PluginControl/HandlePageAction"
 )
 
 // PluginControlClient is the client API for PluginControl service.
@@ -64,11 +62,6 @@ type PluginControlClient interface {
 	// target node; the plugin receives only its signed CSR.
 	VerifyCertificateCredential(ctx context.Context, in *CertificateCredentialRequest, opts ...grpc.CallOption) (*HealthResult, error)
 	IssueCertificate(ctx context.Context, in *CertificateIssueRequest, opts ...grpc.CallOption) (*CertificateIssueResult, error)
-	// Requires zboard.http.route.v1. The host dispatches only exact signed-manifest routes.
-	HandleHTTP(ctx context.Context, in *HTTPRequest, opts ...grpc.CallOption) (*HTTPResponse, error)
-	// Optional action surface for the plugin's own authenticated business page.
-	// The host supplies an opaque actor ID and never exposes its login token.
-	HandlePageAction(ctx context.Context, in *PageActionRequest, opts ...grpc.CallOption) (*PageActionResponse, error)
 }
 
 type pluginControlClient struct {
@@ -219,26 +212,6 @@ func (c *pluginControlClient) IssueCertificate(ctx context.Context, in *Certific
 	return out, nil
 }
 
-func (c *pluginControlClient) HandleHTTP(ctx context.Context, in *HTTPRequest, opts ...grpc.CallOption) (*HTTPResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(HTTPResponse)
-	err := c.cc.Invoke(ctx, PluginControl_HandleHTTP_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *pluginControlClient) HandlePageAction(ctx context.Context, in *PageActionRequest, opts ...grpc.CallOption) (*PageActionResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(PageActionResponse)
-	err := c.cc.Invoke(ctx, PluginControl_HandlePageAction_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // PluginControlServer is the server API for PluginControl service.
 // All implementations must embed UnimplementedPluginControlServer
 // for forward compatibility.
@@ -266,11 +239,6 @@ type PluginControlServer interface {
 	// target node; the plugin receives only its signed CSR.
 	VerifyCertificateCredential(context.Context, *CertificateCredentialRequest) (*HealthResult, error)
 	IssueCertificate(context.Context, *CertificateIssueRequest) (*CertificateIssueResult, error)
-	// Requires zboard.http.route.v1. The host dispatches only exact signed-manifest routes.
-	HandleHTTP(context.Context, *HTTPRequest) (*HTTPResponse, error)
-	// Optional action surface for the plugin's own authenticated business page.
-	// The host supplies an opaque actor ID and never exposes its login token.
-	HandlePageAction(context.Context, *PageActionRequest) (*PageActionResponse, error)
 	mustEmbedUnimplementedPluginControlServer()
 }
 
@@ -322,12 +290,6 @@ func (UnimplementedPluginControlServer) VerifyCertificateCredential(context.Cont
 }
 func (UnimplementedPluginControlServer) IssueCertificate(context.Context, *CertificateIssueRequest) (*CertificateIssueResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method IssueCertificate not implemented")
-}
-func (UnimplementedPluginControlServer) HandleHTTP(context.Context, *HTTPRequest) (*HTTPResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method HandleHTTP not implemented")
-}
-func (UnimplementedPluginControlServer) HandlePageAction(context.Context, *PageActionRequest) (*PageActionResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method HandlePageAction not implemented")
 }
 func (UnimplementedPluginControlServer) mustEmbedUnimplementedPluginControlServer() {}
 func (UnimplementedPluginControlServer) testEmbeddedByValue()                       {}
@@ -602,42 +564,6 @@ func _PluginControl_IssueCertificate_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
-func _PluginControl_HandleHTTP_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(HTTPRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(PluginControlServer).HandleHTTP(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: PluginControl_HandleHTTP_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(PluginControlServer).HandleHTTP(ctx, req.(*HTTPRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _PluginControl_HandlePageAction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PageActionRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(PluginControlServer).HandlePageAction(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: PluginControl_HandlePageAction_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(PluginControlServer).HandlePageAction(ctx, req.(*PageActionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // PluginControl_ServiceDesc is the grpc.ServiceDesc for PluginControl service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -701,15 +627,7 @@ var PluginControl_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "IssueCertificate",
 			Handler:    _PluginControl_IssueCertificate_Handler,
 		},
-		{
-			MethodName: "HandleHTTP",
-			Handler:    _PluginControl_HandleHTTP_Handler,
-		},
-		{
-			MethodName: "HandlePageAction",
-			Handler:    _PluginControl_HandlePageAction_Handler,
-		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "v1/control.proto",
+	Metadata: "pkg/pluginapi/v1/control.proto",
 }
