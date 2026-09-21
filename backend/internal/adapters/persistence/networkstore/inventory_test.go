@@ -55,6 +55,61 @@ func TestRuntimeNodesUsesOneBatchQuery(t *testing.T) {
 	}
 }
 
+func TestNodeInventoryCountsActiveEndpointsAndEnabledEntriesOnOwningNode(t *testing.T) {
+	db, err := datastore.OpenWithDriver(datastore.DriverSQLite, filepath.Join(t.TempDir(), "node-service-counts.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, _ := db.DB()
+	t.Cleanup(func() { _ = pool.Close() })
+	if err := datastore.RunMigrations(db); err != nil {
+		t.Fatal(err)
+	}
+	nodes := []model.Node{
+		{Name: "entry-node", Address: "192.0.2.10", Config: "{}", IsEnabled: true},
+		{Name: "landing-node", Address: "192.0.2.20", Config: "{}", IsEnabled: true},
+	}
+	if err := db.Create(&nodes).Error; err != nil {
+		t.Fatal(err)
+	}
+	endpoints := []model.ProtocolEndpoint{
+		{NodeID: nodes[0].ID, Name: "entry-local", RuntimeKey: "entry-local", Protocol: "vless", Address: nodes[0].Address, Port: 1001, PublicPort: 1001, IsActive: true},
+		{NodeID: nodes[0].ID, Name: "entry-disabled", RuntimeKey: "entry-disabled", Protocol: "vless", Address: nodes[0].Address, Port: 1002, PublicPort: 1002, IsActive: false},
+		{NodeID: nodes[1].ID, Name: "landing", RuntimeKey: "landing", Protocol: "vless", Address: nodes[1].Address, Port: 2001, PublicPort: 2001, IsActive: true},
+	}
+	if err := db.Create(&endpoints).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.ProtocolEndpoint{}).Where("id = ?", endpoints[1].ID).Update("is_active", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	entries := []model.NetworkEntry{
+		{Name: "front-enabled", Network: "tcp_udp", NodeID: nodes[0].ID, EndpointID: endpoints[2].ID, Address: nodes[0].Address, Port: 3001, PublicPort: 3001, Enabled: true},
+		{Name: "front-disabled", Network: "tcp_udp", NodeID: nodes[0].ID, EndpointID: endpoints[2].ID, Address: nodes[0].Address, Port: 3002, PublicPort: 3002, Enabled: false},
+	}
+	if err := db.Create(&entries).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.NetworkEntry{}).Where("id = ?", entries[1].ID).Update("enabled", false).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := (Inventory{DB: db}).ListNodes(context.Background(), network.NodeInventoryQuery{Paged: true, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := make(map[uint]int64, len(page.Items))
+	for _, item := range page.Items {
+		counts[item.Node.ID] = item.EnabledProtocolCount
+	}
+	if counts[nodes[0].ID] != 2 {
+		t.Fatalf("entry node service count = %d, want active endpoint plus enabled entry", counts[nodes[0].ID])
+	}
+	if counts[nodes[1].ID] != 1 {
+		t.Fatalf("landing node service count = %d, want only its active endpoint", counts[nodes[1].ID])
+	}
+}
+
 func TestProtocolEndpointPageReturnsDeploymentStatusFacetsWithoutChangingSelectedTotal(t *testing.T) {
 	db, err := datastore.OpenWithDriver(datastore.DriverSQLite, filepath.Join(t.TempDir(), "protocol-facets.db"))
 	if err != nil {

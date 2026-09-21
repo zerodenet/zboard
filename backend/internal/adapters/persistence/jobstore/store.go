@@ -26,8 +26,45 @@ func New(db *gorm.DB) *Store {
 }
 
 func (s *Store) Submit(ctx context.Context, in jobs.Submission) (jobs.Run, error) {
+	prepared, err := s.prepareSubmission(in)
+	if err != nil {
+		return jobs.Run{}, err
+	}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := s.lock(tx); err != nil {
+			return err
+		}
+		return s.insertSubmissionLocked(tx, &prepared)
+	})
+	if err != nil {
+		return jobs.Run{}, err
+	}
+	return view(prepared.record), nil
+}
+
+// SubmitLocked inserts an execution intent inside a caller-owned transaction
+// that already holds the jobs ledger lock. It exists for atomic domain changes
+// such as deleting a node and preserving its remote-cleanup intent together.
+func (s *Store) SubmitLocked(ctx context.Context, in jobs.Submission) (jobs.Run, error) {
+	prepared, err := s.prepareSubmission(in)
+	if err != nil {
+		return jobs.Run{}, err
+	}
+	if err := s.insertSubmissionLocked(s.db.WithContext(ctx), &prepared); err != nil {
+		return jobs.Run{}, err
+	}
+	return view(prepared.record), nil
+}
+
+type preparedSubmission struct {
+	input       jobs.Submission
+	record      Record
+	fingerprint string
+}
+
+func (s *Store) prepareSubmission(in jobs.Submission) (preparedSubmission, error) {
 	if in.Resource == jobs.MaintenanceResource && in.Owner != "system" {
-		return jobs.Run{}, jobs.ErrInvalid
+		return preparedSubmission{}, jobs.ErrInvalid
 	}
 	if in.MaxAttempts == 0 {
 		in.MaxAttempts = 1
@@ -37,7 +74,7 @@ func (s *Store) Submit(ctx context.Context, in jobs.Submission) (jobs.Run, error
 	}
 	in.DispatchLane = normalizedDispatchLane(in.Owner, in.ExecutionGroup, in.DispatchLane)
 	if in.Timeout < 0 || in.Timeout > time.Hour || (in.Timeout != 0 && in.Timeout < time.Millisecond) || in.Timeout%time.Millisecond != 0 || in.MaxAttempts < 1 || in.MaxAttempts > 10 || in.RetryBackoff < 0 || in.RetryBackoff > time.Hour || in.RetryBackoff%time.Millisecond != 0 || (in.MaxAttempts == 1 && in.RetryBackoff != 0) || in.Owner == "" || len(in.Owner) > 200 || in.Key == "" || len(in.Key) > 160 || in.Handler == "" || len(in.Handler) > 320 || len(in.ExecutionGroup) > 160 || len(in.DispatchLane) > 200 || len(in.Resource) > 200 || len(in.Payload) > 65536 || !json.Valid([]byte(in.Payload)) {
-		return jobs.Run{}, jobs.ErrInvalid
+		return preparedSubmission{}, jobs.ErrInvalid
 	}
 	// Preserve zero NotBefore in the fingerprint so replaying an immediate
 	// submission after restart still matches the first accepted request.
@@ -60,51 +97,49 @@ func (s *Store) Submit(ctx context.Context, in jobs.Submission) (jobs.Run, error
 		in.NotBefore = now
 	}
 	r := Record{TimeoutMS: in.Timeout.Milliseconds(), MaxAttempts: in.MaxAttempts, RetryBackoffMS: in.RetryBackoff.Milliseconds(), ID: uuid.NewString(), Owner: in.Owner, Key: in.Key, Handler: in.Handler, Resource: in.Resource, ExecutionGroup: in.ExecutionGroup, DispatchLane: in.DispatchLane, Payload: in.Payload, Fingerprint: fingerprint, State: string(jobs.Queued), NotBefore: in.NotBefore, CreatedAt: now}
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err := s.lock(tx); err != nil {
-			return err
-		}
-		var existing Record
-		found := tx.Where("owner = ? AND `key` = ?", in.Owner, in.Key).Limit(1).Find(&existing)
-		if found.Error != nil {
-			return found.Error
-		}
-		if found.RowsAffected == 1 {
-			r = existing
-			if existing.Fingerprint != fingerprint {
-				return jobs.ErrConflict
-			}
-			return nil
-		}
-		if err := checkPendingAdmission(tx, in.Owner, in.Resource); err != nil {
-			return err
-		}
-		if in.ExecutionGroup != "" {
-			var group ExecutionGroup
-			result := tx.Where("id = ? AND capacity > 0", in.ExecutionGroup).Limit(1).Find(&group)
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected != 1 {
-				return jobs.ErrInvalid
-			}
-		}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&r).Error; err != nil {
-			return err
-		}
-		r = Record{}
-		if err := tx.Where("owner = ? AND `key` = ?", in.Owner, in.Key).Take(&r).Error; err != nil {
-			return err
-		}
-		if r.Fingerprint != fingerprint {
+	return preparedSubmission{input: in, record: r, fingerprint: fingerprint}, nil
+}
+
+func (s *Store) insertSubmissionLocked(tx *gorm.DB, prepared *preparedSubmission) error {
+	in, r, fingerprint := prepared.input, prepared.record, prepared.fingerprint
+	var existing Record
+	found := tx.Where("owner = ? AND `key` = ?", in.Owner, in.Key).Limit(1).Find(&existing)
+	if found.Error != nil {
+		return found.Error
+	}
+	if found.RowsAffected == 1 {
+		r = existing
+		if existing.Fingerprint != fingerprint {
 			return jobs.ErrConflict
 		}
+		prepared.record = r
 		return nil
-	})
-	if err != nil {
-		return jobs.Run{}, err
 	}
-	return view(r), nil
+	if err := checkPendingAdmission(tx, in.Owner, in.Resource); err != nil {
+		return err
+	}
+	if in.ExecutionGroup != "" {
+		var group ExecutionGroup
+		result := tx.Where("id = ? AND capacity > 0", in.ExecutionGroup).Limit(1).Find(&group)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return jobs.ErrInvalid
+		}
+	}
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&r).Error; err != nil {
+		return err
+	}
+	r = Record{}
+	if err := tx.Where("owner = ? AND `key` = ?", in.Owner, in.Key).Take(&r).Error; err != nil {
+		return err
+	}
+	if r.Fingerprint != fingerprint {
+		return jobs.ErrConflict
+	}
+	prepared.record = r
+	return nil
 }
 
 func normalizedDispatchLane(owner, group, lane string) string {

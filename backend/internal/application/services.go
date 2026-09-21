@@ -53,6 +53,7 @@ type Services struct {
 	NativeOperationStatus       network.NativeOperationStatus
 	DNSDeletion                 network.DNSDeletion
 	NodeActivity                network.NodeActivity
+	NodeCleanupGuard            network.NodeCleanupGuard
 	EventCredentials            network.EventCredentials
 	SSHHostTrust                network.SSHHostTrust
 	ProtocolEndpointRemoval     network.ProtocolEndpointRemoval
@@ -88,6 +89,7 @@ type Services struct {
 	JobSubmissions              jobs.Submissions
 	JobHistory                  jobs.HistoryQueries
 	JobCancellations            jobs.CancellationService
+	JobResourceFence            jobs.ResourceFence
 	BatchRequests               jobs.BatchRequests
 	JobReviews                  jobs.ReviewService
 	OperationHistory            network.OperationHistory
@@ -132,6 +134,7 @@ func New(db *gorm.DB, secret string) *Services {
 	s.NativeOperationStatus = network.NativeOperationStatus{Repository: networkstore.NativeOperationStatus{DB: db}}
 	s.DNSDeletion = network.DNSDeletion{Repository: networkstore.DNSDeletion{DB: db}}
 	s.NodeActivity = network.NodeActivity{Repository: networkstore.NodeActivity{DB: db}}
+	s.NodeCleanupGuard = network.NodeCleanupGuard{Repository: networkstore.NodeCleanupGuard{DB: db}}
 	s.EventCredentials = network.EventCredentials{Repository: networkstore.EventCredentials{DB: db}}
 	s.SSHHostTrust = network.SSHHostTrust{Repository: networkstore.SSHHostTrust{DB: db}}
 	s.ProtocolEndpointRemoval = network.ProtocolEndpointRemoval{Store: networkstore.ProtocolEndpointRemoval{DB: db}}
@@ -178,6 +181,7 @@ func New(db *gorm.DB, secret string) *Services {
 	s.JobHistory = jobs.HistoryQueries{Repository: jobstore.New(db)}
 	s.Jobs = jobs.NewGatedRuntime(jobstore.New(db), uuid.NewString(), s.isReady, s.WorkPaused, func(err error) { log.Printf("job runtime: %v", err) })
 	s.JobCancellations = jobs.CancellationService{Repository: jobstore.New(db), Active: s.Jobs}
+	s.JobResourceFence = jobs.ResourceFence{Repository: jobstore.New(db)}
 	return s
 }
 
@@ -241,8 +245,8 @@ func (s *Services) MieruEndpointConfigurations(cipher network.ProviderCredential
 	return network.MieruEndpointConfigurations{Repository: networkstore.MieruEndpointConfigurations{DB: s.Identity.db}, Cipher: cipher}
 }
 
-func (s *Services) NodeRemoval() network.NodeRemoval {
-	return network.NodeRemoval{Store: networkstore.NodeRemoval{DB: s.Identity.db}}
+func (s *Services) NodeRemoval(cipher network.ProviderCredentialCipher) network.NodeRemoval {
+	return network.NodeRemoval{Store: networkstore.NodeRemoval{DB: s.Identity.db, Cipher: cipher}}
 }
 
 func (s *Services) SubscriptionRuleSets(content entitlements.RuleSetContentStore) entitlements.SubscriptionRuleSets {

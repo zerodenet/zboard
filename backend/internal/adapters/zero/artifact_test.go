@@ -7,6 +7,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +40,37 @@ func zeroArtifactFixture(t *testing.T, binary []byte) ([]byte, string) {
 	}
 	digest := sha256.Sum256(archive.Bytes())
 	return archive.Bytes(), hex.EncodeToString(digest[:])
+}
+
+func zeroArtifactWithDeclaredSize(t *testing.T, size int64, writeBody bool) []byte {
+	t.Helper()
+	var archive bytes.Buffer
+	gz := gzip.NewWriter(&archive)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: "zero", Mode: 0o700, Size: size, Typeflag: tar.TypeReg}); err != nil {
+		t.Fatal(err)
+	}
+	if writeBody {
+		if _, err := io.CopyN(tw, zeroReader{}, size); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if writeBody {
+		if err := tw.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return archive.Bytes()
+}
+
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
 }
 
 func TestArtifactLoaderVerifiesAndExtractsLocalBinary(t *testing.T) {
@@ -77,5 +110,24 @@ func TestArtifactLoaderRejectsUntrustedRemoteURLBeforeRequest(t *testing.T) {
 		if _, _, err := (ArtifactLoader{}).LoadBinary(context.Background(), ArtifactRelease{URL: rawURL, Size: 1, SHA256: strings.Repeat("0", 64)}); err == nil {
 			t.Fatalf("URL %q was accepted", rawURL)
 		}
+	}
+}
+
+func TestExtractBinaryAcceptsCurrentReleaseLargerThanLegacyLimit(t *testing.T) {
+	archive := zeroArtifactWithDeclaredSize(t, (64<<20)+1, true)
+	binary, _, err := extractBinary(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(binary) != (64<<20)+1 {
+		t.Fatalf("binary size = %d", len(binary))
+	}
+}
+
+func TestExtractBinaryRejectsDeclaredSizeAboveLimit(t *testing.T) {
+	archive := zeroArtifactWithDeclaredSize(t, binaryMaxBytes+1, false)
+	_, _, err := extractBinary(archive)
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprint(binaryMaxBytes+1)) || !strings.Contains(err.Error(), fmt.Sprint(binaryMaxBytes)) {
+		t.Fatalf("size error = %v", err)
 	}
 }

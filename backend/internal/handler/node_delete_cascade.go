@@ -24,7 +24,7 @@ func (h *handlers) nodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer lock.Unlock()
-	result, err := h.services.NodeRemoval().Remove(r.Context(), claims.UserID, id)
+	result, err := h.services.NodeRemoval(h.credentialCipher).Remove(r.Context(), claims.UserID, id)
 	if err != nil {
 		resourceRemovalError(w, err)
 		return

@@ -79,6 +79,29 @@ func TestIntentSurvivesNewStoreAndRejectsConflictingReplay(t *testing.T) {
 	}
 }
 
+func TestResourceFenceTracksOnlyUnresolvedExecution(t *testing.T) {
+	store, _ := fixture(t, 2)
+	run := submit(t, store, "cleanup-node-1", "node_cleanup", "node-cleanup:target")
+	for _, state := range []jobs.State{jobs.Queued, jobs.RetryWait, jobs.Running, jobs.CancelRequested, jobs.Unknown} {
+		if err := store.db.Model(&Record{}).Where("id = ?", run.ID).Update("state", state).Error; err != nil {
+			t.Fatal(err)
+		}
+		pending, err := store.HasUnresolvedResource(context.Background(), "node-cleanup:target")
+		if err != nil || !pending {
+			t.Fatalf("state=%s pending=%v err=%v", state, pending, err)
+		}
+	}
+	for _, state := range []jobs.State{jobs.Succeeded, jobs.Failed, jobs.Canceled} {
+		if err := store.db.Model(&Record{}).Where("id = ?", run.ID).Update("state", state).Error; err != nil {
+			t.Fatal(err)
+		}
+		pending, err := store.HasUnresolvedResource(context.Background(), "node-cleanup:target")
+		if err != nil || pending {
+			t.Fatalf("state=%s pending=%v err=%v", state, pending, err)
+		}
+	}
+}
+
 func TestDispatchMetadataDoesNotBreakLegacyIntentFingerprint(t *testing.T) {
 	store, _ := fixture(t, 1)
 	in := jobs.Submission{Owner: "system", Key: "legacy-fingerprint", Handler: "handler", Payload: `{}`}

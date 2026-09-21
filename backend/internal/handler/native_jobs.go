@@ -52,9 +52,13 @@ func (h *handlers) registerNativeJobs(runtime *jobs.Runtime) {
 			return jobs.ErrUncertain
 		})
 	}
+	_ = runtime.Register(jobs.Definition{ID: network.NodeCleanupHandler, Handler: network.NodeCleanupHandler, Owner: "system", Revision: "1", Timeout: nativeJobTimeout(network.NodeCleanupHandler)}, h.executeNodeCleanupRun)
 }
 
 func nativeJobTimeout(kind string) time.Duration {
+	if kind == network.NodeCleanupHandler {
+		return 3 * time.Minute
+	}
 	if kind == "dns_operation" || kind == "dns_reconcile" {
 		return time.Minute
 	}

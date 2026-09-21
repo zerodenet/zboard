@@ -29,11 +29,13 @@ type NodeRemoved struct {
 	RemoteZeroStopped              bool              `json:"remote_zero_stopped"`
 	RemoteCertificateFilesRetained bool              `json:"remote_certificate_files_retained"`
 	ProviderDNSRecordsRetained     bool              `json:"provider_dns_records_retained"`
+	RemoteCleanupRunID             string            `json:"remote_cleanup_run_id,omitempty"`
 }
 
 type NodeRemovalFacts struct {
 	Cleanup                NodeDeleteCleanup
 	TrafficRecordsRetained int64
+	RemoteCleanupRunID     string
 }
 type NodeRemovalStore interface {
 	RemoveNode(context.Context, uint, uint) (NodeRemovalFacts, error)
@@ -51,5 +53,5 @@ func (s NodeRemoval) Remove(ctx context.Context, actor, id uint) (NodeRemoved, e
 	if err != nil {
 		return NodeRemoved{}, err
 	}
-	return NodeRemoved{ID: id, Deleted: true, Cleanup: facts.Cleanup, TrafficRecordsRetained: facts.TrafficRecordsRetained, RemoteZeroRetained: true, RemoteCertificateFilesRetained: true, ProviderDNSRecordsRetained: true}, nil
+	return NodeRemoved{ID: id, Deleted: true, Cleanup: facts.Cleanup, TrafficRecordsRetained: facts.TrafficRecordsRetained, RemoteZeroRetained: true, RemoteCertificateFilesRetained: true, ProviderDNSRecordsRetained: true, RemoteCleanupRunID: facts.RemoteCleanupRunID}, nil
 }

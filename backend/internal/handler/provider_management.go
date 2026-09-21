@@ -67,6 +67,7 @@ type cloudflareRecord struct {
 	Content string `json:"content"`
 	TTL     int    `json:"ttl"`
 	Proxied bool   `json:"proxied"`
+	Comment string `json:"comment"`
 }
 
 func (h *handlers) ProviderDefinitionListHandler(w http.ResponseWriter, r *http.Request) {
@@ -293,12 +294,7 @@ func (h *handlers) ApplyManagedDNS(ctx context.Context, request network.ManagedD
 	if err := progress("applying_record"); err != nil {
 		return network.ManagedDNSProviderResult{}, err
 	}
-	payload := map[string]interface{}{"type": record.RecordType, "name": record.DomainName, "content": record.RecordValue, "ttl": record.TTL, "proxied": record.Proxied}
-	path, method := "/zones/"+zone.ID+"/dns_records", http.MethodPost
-	if existing != nil {
-		path, method = path+"/"+existing.ID, http.MethodPut
-	}
-	applied, err := cloudflareRequest[cloudflareRecord](ctx, method, path, request.Credential, payload)
+	applied, err := applyCloudflareManagedDNSRecord(ctx, request.Credential, zone.ID, record, existing)
 	if err != nil {
 		return network.ManagedDNSProviderResult{}, err
 	}

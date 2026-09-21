@@ -19,7 +19,7 @@ import (
 
 const (
 	artifactMaxBytes = 128 << 20
-	binaryMaxBytes   = 64 << 20
+	binaryMaxBytes   = 128 << 20
 )
 
 type ArtifactRelease struct {
@@ -131,7 +131,7 @@ func extractBinary(archive []byte) ([]byte, string, error) {
 			continue
 		}
 		if header.Size <= 0 || header.Size > binaryMaxBytes {
-			return nil, "", errors.New("Zero binary in the release has an invalid size")
+			return nil, "", fmt.Errorf("Zero binary size %d bytes is outside the supported range (maximum %d bytes)", header.Size, binaryMaxBytes)
 		}
 		binary, err := io.ReadAll(io.LimitReader(tarReader, binaryMaxBytes+1))
 		if err != nil {

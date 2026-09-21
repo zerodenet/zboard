@@ -2,11 +2,13 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	sshadapter "github.com/zerodenet/zboard/backend/internal/adapters/ssh"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"golang.org/x/crypto/ssh"
 )
@@ -47,6 +49,13 @@ func (h *handlers) dialNodeSSH(node model.Node) (*ssh.Client, time.Duration, err
 }
 
 func (h *handlers) dialNodeSSHContext(ctx context.Context, node model.Node) (*ssh.Client, time.Duration, error) {
+	pendingCleanup, err := h.services.JobResourceFence.Pending(ctx, network.NodeCleanupResource(node.SSHHost, node.SSHPort))
+	if err != nil {
+		return nil, 0, fmt.Errorf("check node cleanup fence: %w", err)
+	}
+	if pendingCleanup {
+		return nil, 0, errors.New("该 SSH 主机仍有未完成的节点清理任务；请先完成、复核或取消清理，再执行节点运维")
+	}
 	credential, err := h.credentialCipher.Decrypt(node.SSHPwd)
 	if err != nil {
 		return nil, 0, fmt.Errorf("decrypt node ssh credential: %w", err)

@@ -105,12 +105,19 @@ func (s Inventory) decorateNodes(ctx context.Context, rows []model.Node, counts 
 			NodeID uint
 			Count  int64
 		}
-		var values []countRow
-		if err := s.DB.WithContext(ctx).Model(&model.ProtocolEndpoint{}).Select("node_id, COUNT(*) AS count").Where("node_id IN ? AND is_active = ?", ids, true).Group("node_id").Scan(&values).Error; err != nil {
+		var endpointValues []countRow
+		if err := s.DB.WithContext(ctx).Model(&model.ProtocolEndpoint{}).Select("node_id, COUNT(*) AS count").Where("node_id IN ? AND is_active = ?", ids, true).Group("node_id").Scan(&endpointValues).Error; err != nil {
 			return nil, err
 		}
-		for _, r := range values {
-			countByID[r.NodeID] = r.Count
+		for _, r := range endpointValues {
+			countByID[r.NodeID] += r.Count
+		}
+		var entryValues []countRow
+		if err := s.DB.WithContext(ctx).Model(&model.NetworkEntry{}).Select("node_id, COUNT(*) AS count").Where("node_id IN ? AND enabled = ?", ids, true).Group("node_id").Scan(&entryValues).Error; err != nil {
+			return nil, err
+		}
+		for _, r := range entryValues {
+			countByID[r.NodeID] += r.Count
 		}
 	}
 	for _, r := range rows {
