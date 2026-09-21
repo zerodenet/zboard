@@ -56,7 +56,7 @@ func startProcess(ctx context.Context, root string, p *Package, environment ...s
 		SecureConfig: &hcplugin.SecureConfig{Checksum: checksum, Hash: sha256.New()}, StartTimeout: 10 * time.Second,
 		Logger: hclog.NewNullLogger(), SyncStdout: io.Discard, SyncStderr: io.Discard,
 		UnixSocketConfig: &hcplugin.UnixSocketConfig{TempDir: filepath.Join(root, "sockets")},
-		GRPCDialOptions:  []grpc.DialOption{grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(128<<10), grpc.MaxCallSendMsgSize(256<<10))},
+		GRPCDialOptions:  []grpc.DialOption{grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(9<<20), grpc.MaxCallSendMsgSize(9<<20))},
 	})
 	rpc, err := client.Client()
 	if err != nil {

@@ -309,6 +309,9 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		pluginManager.SetIdentityTransactions(services.Identity.PluginTransactions())
 	}
 	h.SetPluginManager(pluginManager)
+	if pluginManager != nil {
+		pluginManager.SetHostServices(application.NewPluginHostServices(services, h))
+	}
 	pluginRoute := func(method, path string, fn http.HandlerFunc) rest.Route {
 		return newRoute(method, path, h.PluginGuard(fn))
 	}
@@ -337,6 +340,12 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	for depth := 1; depth <= 8; depth++ {
 		assetPath += fmt.Sprintf("/:part%d", depth)
 		srv.AddRoute(pluginRoute(http.MethodGet, assetPath, h.PluginAssetHandler))
+	}
+	publicPluginPath := "/.well-known"
+	for depth := 1; depth <= 6; depth++ {
+		publicPluginPath += fmt.Sprintf("/:part%d", depth)
+		srv.AddRoute(pluginRoute(http.MethodGet, publicPluginPath, h.PluginPublicRouteHandler), rest.WithTimeout(20*time.Second))
+		srv.AddRoute(pluginRoute(http.MethodPost, publicPluginPath, h.PluginPublicRouteHandler), rest.WithMaxBytes(plugins.MaxPublicRouteBodyBytes), rest.WithTimeout(20*time.Second))
 	}
 
 	h.StartAdminTaskWorker()

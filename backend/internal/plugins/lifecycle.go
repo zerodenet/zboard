@@ -43,6 +43,11 @@ func (m *Manager) commitCandidate(ctx context.Context, prev model.PluginInstalla
 	// Fresh, unconfigured installs may need operator parameters before startup.
 	// Existing or migrated configuration must pass the candidate runtime first.
 	if pack.Manifest.Components.Server != nil && (candidate.Enabled || prev.ConfigRevision > 0 || plan.row != nil) {
+		if candidate.Enabled {
+			if err := m.validatePublicRouteRegistrationLocked(candidate); err != nil {
+				return err
+			}
+		}
 		proc, err = m.startAuthorizedProcess(ctx, candidate)
 		if err != nil {
 			return err

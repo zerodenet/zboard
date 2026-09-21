@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 
 	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
@@ -15,11 +16,16 @@ type server struct {
 	value map[string]any
 }
 
+var pluginCapabilities = "zboard.config.v1"
+
 func (s *server) GetInfo(context.Context, *pluginv1.Empty) (*pluginv1.Info, error) {
-	return &pluginv1.Info{Id: "example.server", Version: "1.0.0", Protocol: 1, Capabilities: []string{"zboard.config.v1"}}, nil
+	return &pluginv1.Info{Id: "example.server", Version: "1.0.0", Protocol: 1, Capabilities: strings.Split(pluginCapabilities, ",")}, nil
 }
 func (s *server) Health(context.Context, *pluginv1.Empty) (*pluginv1.HealthResult, error) {
 	return &pluginv1.HealthResult{Healthy: true}, nil
+}
+func (s *server) DescribeConfig(_ context.Context, r *pluginv1.ConfigRequest) (*pluginv1.ConfigResult, error) {
+	return &pluginv1.ConfigResult{NormalizedJson: r.ConfigJson}, nil
 }
 func (s *server) ValidateConfig(_ context.Context, r *pluginv1.ConfigRequest) (*pluginv1.ConfigResult, error) {
 	var obj map[string]any

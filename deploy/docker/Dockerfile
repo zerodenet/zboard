@@ -28,6 +28,7 @@ WORKDIR /src/backend
 ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=${GOPROXY}
 COPY backend/go.mod backend/go.sum ./
+COPY backend/pkg/pluginapi/go.mod backend/pkg/pluginapi/go.sum ./pkg/pluginapi/
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY backend/ .
 ARG APP_VERSION=v0.0.1

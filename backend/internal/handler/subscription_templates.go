@@ -562,22 +562,11 @@ func (h *handlers) writeSubscriptionTemplate(ctx context.Context, w http.Respons
 		return err
 	}
 	item := subscriptionTemplateModel(source.Template)
-	data := subscriptionTemplateData{
-		Version: manifest.Version, GeneratedAt: manifest.GeneratedAt, Subscription: manifest.Subscription,
-		ProtocolEndpoints: make([]subscriptionTemplateEndpoint, 0, len(manifest.ProtocolEndpoints)),
+	data, err := h.subscriptionTemplateData(ctx, manifest)
+	if err != nil {
+		return err
 	}
 	data.SiteName = source.SiteName
-	for _, endpoint := range manifest.ProtocolEndpoints {
-		config := make(map[string]interface{})
-		if err := json.Unmarshal(endpoint.Config, &config); err != nil {
-			return fmt.Errorf("decode endpoint %d client config: %w", endpoint.ID, err)
-		}
-		data.ProtocolEndpoints = append(data.ProtocolEndpoints, subscriptionTemplateEndpoint{
-			NetworkEntryID: endpoint.NetworkEntryID, NetworkEntryNetwork: endpoint.NetworkEntryNetwork, ID: endpoint.ID, NodeID: endpoint.NodeID, SubscriptionID: endpoint.SubscriptionID, CredentialID: endpoint.CredentialID,
-			Name: endpoint.Name, Region: endpoint.Region, Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
-			Protocol: endpoint.Protocol, MultiplierMilli: endpoint.MultiplierMilli, Config: config,
-		})
-	}
 	renderer := normalizeSubscriptionRenderer(item.Renderer)
 	rendered, contentType, err := h.renderSubscriptionWithStoredRuleSets(ctx, renderer, item.Customization, data, false)
 	if err != nil {
@@ -593,6 +582,29 @@ func (h *handlers) writeSubscriptionTemplate(ctx context.Context, w http.Respons
 	w.WriteHeader(http.StatusOK)
 	_, err = w.Write([]byte(rendered))
 	return err
+}
+
+func (h *handlers) subscriptionTemplateData(ctx context.Context, manifest subscriptionManifest) (subscriptionTemplateData, error) {
+	data := subscriptionTemplateData{
+		Version: manifest.Version, GeneratedAt: manifest.GeneratedAt, Subscription: manifest.Subscription,
+		ProtocolEndpoints: make([]subscriptionTemplateEndpoint, 0, len(manifest.ProtocolEndpoints)),
+	}
+	status, err := h.services.Installation.Status(ctx)
+	if err == nil {
+		data.SiteName = status.SiteName
+	}
+	for _, endpoint := range manifest.ProtocolEndpoints {
+		config := make(map[string]interface{})
+		if err := json.Unmarshal(endpoint.Config, &config); err != nil {
+			return subscriptionTemplateData{}, fmt.Errorf("decode endpoint %d client config: %w", endpoint.ID, err)
+		}
+		data.ProtocolEndpoints = append(data.ProtocolEndpoints, subscriptionTemplateEndpoint{
+			NetworkEntryID: endpoint.NetworkEntryID, NetworkEntryNetwork: endpoint.NetworkEntryNetwork, ID: endpoint.ID, NodeID: endpoint.NodeID, SubscriptionID: endpoint.SubscriptionID, CredentialID: endpoint.CredentialID,
+			Name: endpoint.Name, Region: endpoint.Region, Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
+			Protocol: endpoint.Protocol, MultiplierMilli: endpoint.MultiplierMilli, Config: config,
+		})
+	}
+	return data, nil
 }
 
 func encodeSubscriptionTemplateDelivery(renderer, rendered, contentType string) (string, string, string) {
