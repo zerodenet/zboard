@@ -25,11 +25,11 @@
         aria-label="搜索插件"
       /><UiSelect v-model="surface" aria-label="页面位置" :options="surfaceOptions" /><button type="button" :disabled="loading || busy" @click="load">
         刷新</button
-      ><span>{{ items.length }} 个插件</span>
+      ><span>{{ installedItems.length }} 个插件</span>
     </div>
-    <p v-if="loading && !items.length">正在读取插件…</p>
+    <p v-if="loading && !installedItems.length">正在读取插件…</p>
     <section v-else-if="!filtered.length" class="plugins-empty">
-      <h2>{{ items.length ? "没有匹配的插件" : "还没有安装插件" }}</h2>
+      <h2>{{ installedItems.length ? "没有匹配的插件" : "还没有安装插件" }}</h2>
       <p>从插件市场选择扩展，或导入发布者提供的签名 .zbplugin 文件。</p>
       <p>离线导入不需要连接市场，安装后默认停用。</p>
     </section>
@@ -99,7 +99,8 @@ const importOpen = ref(false)
 const surfaceOptions = [{ label: '所有页面位置', value: '' }, { label: '公开前台', value: 'public' }, { label: '用户前台', value: 'account' }, { label: '管理后台', value: 'admin' }]
 const query = computed({ get: () => String(route.query.q || ''), set: q => { void router.replace({ query: { ...route.query, q: q || undefined } }) } })
 const surface = computed({ get: () => String(route.query.surface || ''), set: surface => { void router.replace({ query: { ...route.query, surface: surface || undefined } }) } })
-const filtered = computed(() => items.value.filter(p => `${p.name} ${p.id}`.toLowerCase().includes(query.value.toLowerCase()) && (!surface.value || p.manifest.surfaces.includes(surface.value as Surface))))
+const installedItems = computed(() => items.value.filter(p => p.state !== 'uninstalled'))
+const filtered = computed(() => installedItems.value.filter(p => `${p.name} ${p.id}`.toLowerCase().includes(query.value.toLowerCase()) && (!surface.value || p.manifest.surfaces.includes(surface.value as Surface))))
 function imported(plugin: Plugin) {
   importOpen.value = false
   void router.push({ path: pluginDetailPath(plugin.id), query: { imported: '1' } })

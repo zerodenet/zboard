@@ -44,6 +44,22 @@ beforeEach(() => {
 })
 afterEach(() => { mounted.splice(0).forEach(w => w.unmount()); document.body.innerHTML = '' })
 describe('plugin management navigation', () => {
+  it('keeps retained uninstall records out of the installed plugin list', async () => {
+    const removed = { ...plugin('removed'), name: '已卸载插件', state: 'uninstalled' }
+    mocks.list.mockResolvedValue([plugin(), removed])
+    const { wrapper } = await render('/admin/plugins')
+    expect(wrapper.text()).toContain('1 个插件')
+    expect(wrapper.text()).toContain('OAuth 登录')
+    expect(wrapper.text()).not.toContain('已卸载插件')
+  })
+  it('shows the installation empty state when only retained uninstall records exist', async () => {
+    const removed = { ...plugin('removed'), name: '已卸载插件', state: 'uninstalled' }
+    mocks.list.mockResolvedValue([removed])
+    const { wrapper } = await render('/admin/plugins')
+    expect(wrapper.text()).toContain('0 个插件')
+    expect(wrapper.text()).toContain('还没有安装插件')
+    expect(wrapper.text()).not.toContain('已卸载插件')
+  })
   it('opens publisher releases from installed plugin version management', async () => {
     const { wrapper } = await render('/admin/plugins/zboard.oauth?tab=versions')
     const link = wrapper.findAll('a').find(item => item.text() === '切换发布版本')
