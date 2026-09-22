@@ -37,13 +37,33 @@ type ConfigView struct {
 	Configured bool            `json:"configured"`
 }
 
+// ConfigRevision exposes only compare-and-swap metadata to write-only pages.
+func (m *Manager) ConfigRevision(id string) (ConfigView, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, err := m.load(id)
+	if err != nil {
+		return ConfigView{}, err
+	}
+	if !configCanRead(v) && !configCanWrite(v) {
+		return ConfigView{}, ErrPermission
+	}
+	return ConfigView{Revision: v.ConfigRevision, Configured: v.ConfigCiphertext != ""}, nil
+}
+
 func (m *Manager) Config(id string) (ConfigView, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	v, err := m.load(id)
 	view := ConfigView{Revision: v.ConfigRevision, Configured: v.ConfigCiphertext != ""}
-	if err != nil || v.Manifest.Components.Server == nil || !hasCapability(v, ConfigCapability) || v.ConfigCiphertext == "" {
+	if err != nil {
 		return view, err
+	}
+	if !configCanRead(v) {
+		return ConfigView{}, ErrPermission
+	}
+	if v.Manifest.Components.Server == nil || v.ConfigCiphertext == "" {
+		return view, nil
 	}
 	if err := m.guard(m.db); err != nil {
 		return view, err
@@ -108,7 +128,10 @@ func (m *Manager) saveConfigLocked(ctx context.Context, id, actor string, revisi
 	if v.ConfigRevision != revision {
 		return ConfigView{}, ErrConflict
 	}
-	if v.State == "uninstalled" || !v.Compatibility.Compatible || !hasCapability(v, ConfigCapability) {
+	if !configCanWrite(v) {
+		return ConfigView{}, ErrPermission
+	}
+	if v.State == "uninstalled" || !v.Compatibility.Compatible {
 		return ConfigView{}, errors.New("plugin is not configurable")
 	}
 	op, err := m.newOperation(id, "configure", actor)
@@ -192,7 +215,10 @@ func (m *Manager) testConfigLocked(ctx context.Context, id, actor string) error 
 	if err != nil {
 		return err
 	}
-	if v.State == "uninstalled" || !v.Compatibility.Compatible || v.Manifest.Components.Server == nil || !hasCapability(v, ConfigCapability) {
+	if !configCanRead(v) {
+		return ErrPermission
+	}
+	if v.State == "uninstalled" || !v.Compatibility.Compatible || v.Manifest.Components.Server == nil {
 		return errors.New("this UI plugin has no server diagnostic")
 	}
 	op, err := m.newOperation(id, "test", actor)

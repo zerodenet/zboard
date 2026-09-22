@@ -41,6 +41,9 @@ func HostStorageFromEnvironment() (*HostStorage, error) {
 	return &HostStorage{client: &http.Client{Transport: transport, Timeout: 5 * time.Second}, token: token}, nil
 }
 func (s *HostStorage) Close() { s.client.CloseIdleConnections() }
+func (s *HostStorage) Head(ctx context.Context, key string) (StoredValue, error) {
+	return s.call(ctx, "storage.head", key, 0, nil)
+}
 func (s *HostStorage) Get(ctx context.Context, key string) (StoredValue, error) {
 	return s.call(ctx, "storage.get", key, 0, nil)
 }

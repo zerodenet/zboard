@@ -17,6 +17,10 @@ import (
 const MaxHostCallBytes = 8 << 20
 
 const (
+	ConfigReadCapability              = "zboard.config.read.v1"
+	ConfigWriteCapability             = "zboard.config.write.v1"
+	StorageReadCapability             = "zboard.storage.read.v1"
+	StorageWriteCapability            = "zboard.storage.write.v1"
 	AccountAssertionCapability        = "zboard.account.assertion.v1"
 	SubscriptionProjectionCapability  = "zboard.subscription.projection.v1"
 	MessageProjectionCapability       = "zboard.message.projection.v1"

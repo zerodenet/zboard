@@ -107,6 +107,18 @@ describe("plugin iframe boundary", () => {
     send(wrapper, 'storage.put', { key: 'cursor', revision: 2, value: { offset: 10 }, plugin_id: 'other.plugin' });
     await flushPromises();
     expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), 'storage.put', { key: 'cursor', revision: 2, value: { offset: 10 } }, expect.any(AbortSignal));
+    send(wrapper, 'storage.head', { key: 'cursor', plugin_id: 'other.plugin' });
+    await flushPromises();
+    expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), 'storage.head', { key: 'cursor', revision: undefined, value: undefined }, expect.any(AbortSignal));
+    wrapper.unmount();
+  });
+  it("forwards write-only configuration revision without plugin-selected authority", async () => {
+    mocks.create.mockResolvedValue({ ...session, purpose: "configuration" });
+    const wrapper = mount(PluginFrame, { props: { pluginId: "example.writer", pageId: "settings", surface: "admin", configuration: true } });
+    await flushPromises();
+    send(wrapper, "config.revision", { plugin_id: "other.plugin" });
+    await flushPromises();
+    expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), "config.revision", {}, expect.any(AbortSignal));
     wrapper.unmount();
   });
   it("forwards account capability input without caller-selected authority", async () => {

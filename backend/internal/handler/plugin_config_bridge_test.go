@@ -137,6 +137,11 @@ func TestConfigurationPageBridgePersistsAndRestartReappliesConfig(t *testing.T) 
 		manager.Close()
 		t.Fatalf("config.load status=%d body=%s", loaded.Code, loaded.Body.String())
 	}
+	revision := bridge(`{"type":"config.revision"}`)
+	if revision.Code != http.StatusOK || !strings.Contains(revision.Body.String(), `"revision":1`) || strings.Contains(revision.Body.String(), "example.test") {
+		manager.Close()
+		t.Fatalf("config.revision leaked content or failed: status=%d body=%s", revision.Code, revision.Body.String())
+	}
 	var stored model.PluginInstallation
 	if err := h.db.First(&stored, "id = ?", installation.ID).Error; err != nil || stored.ConfigRevision != 1 || stored.ConfigCiphertext == "" || strings.Contains(stored.ConfigCiphertext, "example.test") {
 		manager.Close()

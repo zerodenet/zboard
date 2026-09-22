@@ -173,7 +173,7 @@ func (m *Manager) handleHostService(w http.ResponseWriter, r *http.Request, v In
 
 func (m *Manager) handleHostStorage(w http.ResponseWriter, r *http.Request, v Installation, proc *process, raw []byte) {
 	var request StorageRequest
-	if DecodeStrict(raw, &request) != nil || !hasCapability(v, StorageCapability) {
+	if DecodeStrict(raw, &request) != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}

@@ -33,7 +33,7 @@ func isHostServiceCapability(capability string) bool {
 }
 
 func requiresHostCallback(v Installation) bool {
-	if hasCapability(v, StorageCapability) {
+	if storageCanRead(v) || storageCanWrite(v) {
 		return true
 	}
 	for _, capability := range v.Manifest.Capabilities {

@@ -12,6 +12,10 @@ import (
 
 const StorageCapability = "zboard.storage.v1"
 const ConfigCapability = "zboard.config.v1"
+const StorageReadCapability = "zboard.storage.read.v1"
+const StorageWriteCapability = "zboard.storage.write.v1"
+const ConfigReadCapability = "zboard.config.read.v1"
+const ConfigWriteCapability = "zboard.config.write.v1"
 const PageCapability = "zboard.ui.page.v1"
 const HTTPRouteCapability = "zboard.http.route.v1"
 const AccountAssertionCapability = "zboard.account.assertion.v1"
@@ -40,6 +44,18 @@ type Admission struct {
 
 func hasCapability(v Installation, capability string) bool {
 	return v.Admission.Accepted && slices.Contains(v.Admission.Capabilities, capability) && slices.Contains(v.Manifest.Capabilities, capability)
+}
+func configCanRead(v Installation) bool {
+	return hasCapability(v, ConfigCapability) || hasCapability(v, ConfigReadCapability)
+}
+func configCanWrite(v Installation) bool {
+	return hasCapability(v, ConfigCapability) || hasCapability(v, ConfigWriteCapability)
+}
+func storageCanRead(v Installation) bool {
+	return hasCapability(v, StorageCapability) || hasCapability(v, StorageReadCapability)
+}
+func storageCanWrite(v Installation) bool {
+	return hasCapability(v, StorageCapability) || hasCapability(v, StorageWriteCapability)
 }
 func (m *Manager) loadAdmission(v *Installation) error {
 	v.Admission.Capabilities = []string{}
@@ -78,7 +94,7 @@ func executionAuthorized(v Installation) error {
 	if !v.Admission.Accepted {
 		return ErrPermission
 	}
-	if v.Manifest.Components.Server != nil && !hasCapability(v, ConfigCapability) {
+	if v.Manifest.Components.Server != nil && !configCanRead(v) && !configCanWrite(v) {
 		return ErrPermission
 	}
 	return nil

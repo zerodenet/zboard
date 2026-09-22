@@ -54,10 +54,14 @@ func TestTwoPluginsShareScopedBusinessCapabilities(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	var readerSession Session
 	for _, id := range []string{"example.reader", "example.operator"} {
 		session, err := m.CreateSession(id, "home", "account", 1, false, false)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if id == "example.reader" {
+			readerSession = session
 		}
 		authority := SessionAuthority{Manager: m, Accounts: accounts, UserID: 1}
 		proof := catalog.Credential{Kind: "plugin_session", Proof: session.Token}
@@ -166,6 +170,42 @@ func TestTwoPluginsShareScopedBusinessCapabilities(t *testing.T) {
 	for _, page := range pages {
 		if page.PluginID == "example.operator" {
 			t.Fatalf("disabled plugin retained page/menu: %+v", pages)
+		}
+	}
+	replacement := fixtureSignedPackage(t, priv, pub, func(manifest *Manifest, _ map[string][]byte) {
+		manifest.ID = "example.reader"
+		manifest.Version = "1.1.0"
+		manifest.Capabilities = []string{PageCapability}
+		manifest.Contributions.Slots = nil
+		pages := manifest.Contributions.Pages[:0]
+		for _, page := range manifest.Contributions.Pages {
+			if page.Purpose != "configuration" {
+				pages = append(pages, page)
+			}
+		}
+		manifest.Contributions.Pages = pages
+	})
+	reader, err := m.Import(replacement, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (SessionAuthority{Manager: m, Accounts: accounts, UserID: 1}).Resolve(context.Background(), catalog.Credential{Kind: "plugin_session", Proof: readerSession.Token}, "account.self.get"); !errors.Is(err, catalog.ErrDenied) {
+		t.Fatalf("old session was accepted after upgrade: %v", err)
+	}
+	slots, err = m.Slots("account", "account.overview.cards", 1, false)
+	if err != nil || len(slots) != 0 {
+		t.Fatalf("upgraded plugin retained removed slot: %+v %v", slots, err)
+	}
+	if _, err := m.Action(context.Background(), reader.ID, "uninstall", "admin", reader.Generation, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	pages, err = m.Pages("account", 1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, page := range pages {
+		if page.PluginID == reader.ID {
+			t.Fatalf("uninstalled plugin retained page/menu: %+v", pages)
 		}
 	}
 }

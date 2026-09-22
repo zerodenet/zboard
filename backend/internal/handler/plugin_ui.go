@@ -216,6 +216,13 @@ func (h *handlers) PluginBridgeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch body.Type {
+	case "config.revision":
+		view, err := h.pluginManager.ConfigRevision(s.PluginID)
+		if err != nil {
+			pluginError(w, err)
+			return
+		}
+		OK(w, view)
 	case "config.load":
 		view, err := h.pluginManager.Config(s.PluginID)
 		if err != nil {

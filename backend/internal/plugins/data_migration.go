@@ -83,12 +83,12 @@ func (m *Manager) planMigration(v Installation, actor string) (migrationPlan, er
 			continue
 		}
 		for _, change := range step.Changes {
-			target, capability := obj, StorageCapability
+			target, allowed := obj, storageCanWrite(v)
 			if change.Target == "config" {
-				target, capability = cfg, ConfigCapability
+				target, allowed = cfg, configCanWrite(v)
 				plan.configChanged = true
 			}
-			if !hasCapability(v, capability) {
+			if !allowed {
 				return plan, ErrPermission
 			}
 			if err := applyDataChange(target, change); err != nil {

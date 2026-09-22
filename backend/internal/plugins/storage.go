@@ -105,7 +105,22 @@ func (m *Manager) storageLocked(id string, r StorageRequest, maxValue, maxTotal 
 	if err != nil {
 		return StorageResult{}, err
 	}
-	if v.State == "uninstalled" || !hasCapability(v, StorageCapability) || !v.Data.Compatible || v.Data.MigrationRequired {
+	if v.State == "uninstalled" || !v.Data.Compatible || v.Data.MigrationRequired {
+		return StorageResult{}, ErrPermission
+	}
+	if r.Type == "storage.get" {
+		if !storageCanRead(v) {
+			return StorageResult{}, ErrPermission
+		}
+	} else if r.Type == "storage.head" {
+		if !storageCanRead(v) && !storageCanWrite(v) {
+			return StorageResult{}, ErrPermission
+		}
+	} else if r.Type == "storage.put" || r.Type == "storage.delete" {
+		if !storageCanWrite(v) {
+			return StorageResult{}, ErrPermission
+		}
+	} else {
 		return StorageResult{}, ErrPermission
 	}
 	if err := m.checkDataCompatibility(v); err != nil {
@@ -121,6 +136,10 @@ func (m *Manager) storageLocked(id string, r StorageRequest, maxValue, maxTotal 
 	obj, err := m.decodeStorage(row)
 	if err != nil {
 		return StorageResult{}, err
+	}
+	if r.Type == "storage.head" {
+		_, found := obj[r.Key]
+		return StorageResult{Revision: row.Revision, Found: found}, nil
 	}
 	if r.Type == "storage.get" {
 		value, found := obj[r.Key]

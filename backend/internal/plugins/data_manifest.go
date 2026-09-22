@@ -32,7 +32,9 @@ type DataChange struct {
 }
 
 func (m Manifest) validateData() error {
-	storage := slices.Contains(m.Capabilities, StorageCapability)
+	storage := slices.Contains(m.Capabilities, StorageCapability) || slices.Contains(m.Capabilities, StorageReadCapability) || slices.Contains(m.Capabilities, StorageWriteCapability)
+	storageWrite := slices.Contains(m.Capabilities, StorageCapability) || slices.Contains(m.Capabilities, StorageWriteCapability)
+	configWrite := slices.Contains(m.Capabilities, ConfigCapability) || slices.Contains(m.Capabilities, ConfigWriteCapability)
 	if m.Data == nil {
 		if storage {
 			return errors.New("storage requires a versioned data declaration")
@@ -53,7 +55,7 @@ func (m Manifest) validateData() error {
 			if !storageKeyPattern.MatchString(c.Key) {
 				return errors.New("invalid migration key")
 			}
-			if c.Target != "config" && c.Target != "storage" || c.Target == "storage" && !storage || c.Target == "config" && !slices.Contains(m.Capabilities, ConfigCapability) {
+			if c.Target != "config" && c.Target != "storage" || c.Target == "storage" && !storageWrite || c.Target == "config" && !configWrite {
 				return errors.New("migration target capability not declared")
 			}
 			switch c.Operation {

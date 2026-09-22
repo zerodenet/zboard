@@ -71,3 +71,15 @@ func TestNativeHostDiscoveryReturnsOnlyOwnAdmittedCapabilities(t *testing.T) {
 		t.Fatalf("wrong discovery data: %+v", data)
 	}
 }
+
+func TestSplitStorageGrantsEnableOnlyPrivateStorageCallback(t *testing.T) {
+	for _, capability := range []string{StorageReadCapability, StorageWriteCapability} {
+		installation := Installation{
+			Admission: Admission{Accepted: true, Capabilities: []string{ConfigReadCapability, capability}},
+			Manifest:  Manifest{Capabilities: []string{ConfigReadCapability, capability}},
+		}
+		if !requiresHostCallback(installation) || isHostServiceCapability(capability) {
+			t.Fatalf("split storage grant %s has wrong callback surface", capability)
+		}
+	}
+}

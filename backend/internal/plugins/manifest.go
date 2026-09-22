@@ -134,7 +134,8 @@ func (m Manifest) Validate() error {
 	seen := map[string]bool{}
 	for _, c := range m.Capabilities {
 		if seen[c] || !slices.Contains([]string{
-			PageCapability, ConfigCapability, IdentityCapability, StorageCapability,
+			PageCapability, ConfigCapability, ConfigReadCapability, ConfigWriteCapability,
+			IdentityCapability, StorageCapability, StorageReadCapability, StorageWriteCapability,
 			HTTPRouteCapability, AccountAssertionCapability, SubscriptionProjectionCapability, MessageProjectionCapability,
 			TaskCapability, MeteringReadCapability, CommerceOrdersReadCapability, DNSProviderCapability, CertificateProviderCapability,
 			AccountSelfReadCapability, AccountAdminReadCapability, SubscriptionReadCapability, SubscriptionConfigReadCapability, SubscriptionAdminReadCapability,
@@ -196,7 +197,7 @@ func (m Manifest) Validate() error {
 		if p.Purpose != "" && p.Purpose != "business" && p.Purpose != "configuration" {
 			return errors.New("invalid page purpose")
 		}
-		if p.Purpose == "configuration" && (p.Surface != "admin" || !seen["zboard.config.v1"]) {
+		if p.Purpose == "configuration" && (p.Surface != "admin" || !(seen[ConfigCapability] || seen[ConfigReadCapability] || seen[ConfigWriteCapability])) {
 			return errors.New("configuration pages require admin config capability")
 		}
 		pages[key] = true
@@ -230,11 +231,11 @@ func (m Manifest) Validate() error {
 	if len(m.Contributions.HTTPRoutes) > 0 && (!seen[HTTPRouteCapability] || m.Components.Server == nil) {
 		return errors.New("public HTTP routes require route capability and server runtime")
 	}
-	if seen[IdentityCapability] && (m.Components.Server == nil || !seen["zboard.config.v1"]) {
+	if seen[IdentityCapability] && (m.Components.Server == nil || !(seen[ConfigCapability] || seen[ConfigWriteCapability])) {
 		return errors.New("identity provider requires a configurable server")
 	}
 	if seen[DNSProviderCapability] {
-		if m.Components.Server == nil || !seen[ConfigCapability] || len(m.Contributions.DNSProviders) == 0 || len(m.Contributions.DNSProviders) > 8 {
+		if m.Components.Server == nil || !(seen[ConfigCapability] || seen[ConfigWriteCapability]) || len(m.Contributions.DNSProviders) == 0 || len(m.Contributions.DNSProviders) > 8 {
 			return errors.New("DNS provider capability requires a configurable server and provider declarations")
 		}
 		providers := map[string]bool{}
@@ -248,7 +249,7 @@ func (m Manifest) Validate() error {
 		return errors.New("DNS provider declarations require the DNS provider capability")
 	}
 	if seen[CertificateProviderCapability] {
-		if m.Components.Server == nil || !seen[ConfigCapability] || len(m.Contributions.CertificateProviders) == 0 || len(m.Contributions.CertificateProviders) > 8 {
+		if m.Components.Server == nil || !(seen[ConfigCapability] || seen[ConfigWriteCapability]) || len(m.Contributions.CertificateProviders) == 0 || len(m.Contributions.CertificateProviders) > 8 {
 			return errors.New("certificate provider capability requires a configurable server and provider declarations")
 		}
 		providers := map[string]bool{}
@@ -271,7 +272,7 @@ func (m Manifest) Validate() error {
 		}
 	}
 	if m.Components.Server != nil {
-		if !seen["zboard.config.v1"] || len(m.Components.Server.Executables) == 0 || len(m.Components.Server.Executables) > 12 {
+		if !(seen[ConfigCapability] || seen[ConfigReadCapability] || seen[ConfigWriteCapability]) || len(m.Components.Server.Executables) == 0 || len(m.Components.Server.Executables) > 12 {
 			return errors.New("server requires config capability and runtime")
 		}
 		for platform, p := range m.Components.Server.Executables {

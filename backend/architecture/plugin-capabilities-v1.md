@@ -38,9 +38,10 @@ capabilities remain admitted for compatibility. Phase 2 adds domain-owned
 subscription term extension and cancellation commands with transactional
 credential/publication updates, replay receipts and audit, plus a separately
 granted owned configuration projection using the host renderer. Other state
-transitions are not admitted until their domain rules exist. Phase 3 should split config/storage
-read and write grants; the existing combined v1 grants remain compatibility
-surfaces meanwhile.
+transitions are not admitted until their domain rules exist. Phase 3 splits
+configuration and private storage read/write grants; the existing combined v1
+grants remain compatibility surfaces. A configuration diagnostic is a read
+operation, while data migrations need the relevant write grant.
 
 Acceptance gates are sequential: signed admission of two independent packages;
 one shared operation set with distinct grants; cross-account and stale-admin
@@ -70,8 +71,18 @@ considered. Deployment and external-plugin E2E are separate later evidence.
 | `zboard.ui.slot.v1` | Signed slot declaration at a named host slot | Host renders sandboxed component frame; no arbitrary host DOM access | Phase 1; legacy identity slots remain compatible |
 | `zboard.http.route.v1` | Signed `.well-known` GET/POST route declaration | Host dispatches only to active generation; no core route override | Released |
 | `zboard.host.discovery.v1` / `capabilities.list` | Signed native runtime | Read this installation's admitted grant names, host version and bridge/protocol versions | Phase 1 |
-| `zboard.config.v1` | Admin configuration page/native runtime | Validate, apply and encrypt persistent config; v1 combined read/write | Released |
-| `zboard.storage.v1` | Native runtime/admin configuration | Plugin-private namespace; v1 combined read/write, no core table handles | Released |
+| `zboard.config.read.v1` | Admin configuration page | Read projected configuration and run diagnostic; cannot save | Phase 3 |
+| `zboard.config.write.v1` | Admin configuration page | Validate, apply and encrypt persistent configuration; cannot load it | Phase 3 |
+| `zboard.config.v1` | Admin configuration page/native runtime | Legacy combined read/write grant | Released; preserved for existing packages |
+| `zboard.storage.read.v1` | Native runtime/admin page | Read the plugin-private encrypted namespace; no writes | Phase 3 |
+| `zboard.storage.write.v1` | Native runtime/admin page | Revision-conditional writes/deletes in the plugin-private namespace; no reads | Phase 3 |
+| `zboard.storage.v1` | Native runtime/admin page | Legacy combined read/write grant, no core table handles | Released; preserved for existing packages |
+
+`config.revision` and `storage.head` expose only compare-and-swap revision
+metadata to write-only callers. They do not return decrypted configuration or
+stored values. `config.load` / `storage.get` require read grants; `config.save`
+and `storage.put/delete` require write grants. A plugin with both grants may
+use both flows; legacy combined grants retain the same behavior as before.
 
 The catalog descriptor version is `1.0` for Phase 1 operations. Native callers
 send a plugin-bound `principal_id` obtained from account assertion or the
@@ -97,6 +108,15 @@ never elevates an account-page grant. Native assertion-derived principal is
 HMAC-bound to one plugin and rechecked against current account state. No
 capability returns a database connection, password hash, host admin token or
 internal HTTP endpoint.
+
+This API boundary is not yet an OS sandbox. Native executables run in a
+separate process with a minimal environment and a private authenticated host
+socket, but the current launcher does not impose portable filesystem or
+network confinement. A malicious signed binary with the host OS user's file
+access may still attempt out-of-band reads or connections. Such packages must
+not be treated as fully isolated until deployment-level process sandboxing and
+its adversarial acceptance tests are in place. This is a release gate, not a
+reason to expose database or internal HTTP through a plugin capability.
 
 For quota changes, plugins compose one-target commands. The task repository
 atomically creates the task/items/audit record; the executor row-locks the

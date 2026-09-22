@@ -53,7 +53,7 @@ func (m *Manager) CreateSession(id, pageID, surface string, userID uint, admin, 
 	if err != nil {
 		return Session{}, err
 	}
-	if !v.Compatibility.Compatible || v.State == "uninstalled" || !hasCapability(v, PageCapability) || (configuration && !hasCapability(v, ConfigCapability)) {
+	if !v.Compatibility.Compatible || v.State == "uninstalled" || !hasCapability(v, PageCapability) || (configuration && !configCanRead(v) && !configCanWrite(v)) {
 		return Session{}, ErrUnavailable
 	}
 	if surface == "admin" && !admin || surface == "account" && userID == 0 {
@@ -156,7 +156,7 @@ func (m *Manager) session(token string) (Session, error) {
 	if err != nil {
 		return Session{}, fmt.Errorf("%w: session metadata unavailable", ErrUnavailable)
 	}
-	if s.Generation != v.Generation || !hasCapability(v, PageCapability) || (s.Purpose == "configuration" && !hasCapability(v, ConfigCapability)) || v.State == "uninstalled" || (s.Purpose != "configuration" && (!v.Enabled || v.State != "active")) {
+	if s.Generation != v.Generation || !hasCapability(v, PageCapability) || (s.Purpose == "configuration" && !configCanRead(v) && !configCanWrite(v)) || v.State == "uninstalled" || (s.Purpose != "configuration" && (!v.Enabled || v.State != "active")) {
 		return Session{}, ErrInvalidSession
 	}
 	return s, nil
