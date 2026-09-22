@@ -77,6 +77,11 @@ func (s *PluginHostServices) CallPluginHost(ctx context.Context, pluginID, capab
 		default:
 			return nil, pluginHostError("forbidden")
 		}
+	case plugins.AccountSelfReadCapability, plugins.AccountAdminReadCapability,
+		plugins.SubscriptionReadCapability, plugins.SubscriptionConfigReadCapability, plugins.SubscriptionAdminReadCapability,
+		plugins.SubscriptionQuotaWriteCapability, plugins.SubscriptionTermWriteCapability, plugins.SubscriptionStatusWriteCapability,
+		plugins.MessageReadCapability, plugins.MessageAckCapability:
+		return s.callBusinessCapability(ctx, pluginID, capability, operation, payload)
 	default:
 		return nil, pluginHostError("forbidden")
 	}

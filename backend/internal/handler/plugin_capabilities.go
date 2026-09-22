@@ -10,13 +10,17 @@ import (
 )
 
 func (h *handlers) pluginCapabilityCall(w http.ResponseWriter, r *http.Request, claims authClaims, kind, name string, input json.RawMessage) {
-	authority := plugins.SessionAuthority{Manager: h.pluginManager, UserID: claims.UserID, Admin: claims.IsAdmin}
+	authority := plugins.SessionAuthority{Manager: h.pluginManager, Accounts: h.services.Identity.Accounts, UserID: claims.UserID, Admin: claims.IsAdmin}
 	registry := catalog.New(authority, authority)
 	if err := h.services.RegisterMeteringCapabilities(registry, trafficStatisticsCacheAdapter{&h.trafficStatisticsCache}, h.trafficIncrementalStats); err != nil {
 		pluginCapabilityError(w, err)
 		return
 	}
 	if err := h.services.RegisterCommerceCapabilities(registry, h.credentialCipher, h.zeroMieruAccess); err != nil {
+		pluginCapabilityError(w, err)
+		return
+	}
+	if err := h.services.RegisterPluginBusinessCapabilities(registry, h); err != nil {
 		pluginCapabilityError(w, err)
 		return
 	}

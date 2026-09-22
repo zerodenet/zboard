@@ -146,6 +146,19 @@ func (m *Manager) handleHostService(w http.ResponseWriter, r *http.Request, v In
 		http.Error(w, "plugin process is not active", http.StatusForbidden)
 		return
 	}
+	if request.Capability == HostDiscoveryCapability {
+		var empty struct{}
+		if request.Operation != "capabilities.list" || DecodeStrict(request.Payload, &empty) != nil {
+			http.Error(w, "invalid discovery request", http.StatusBadRequest)
+			return
+		}
+		data, _ := json.Marshal(map[string]any{
+			"host_version": m.host, "plugin_protocol": v.Manifest.Requires.Protocol,
+			"ui_bridge": v.Manifest.Requires.Bridge, "capabilities": v.Admission.Capabilities,
+		})
+		_ = json.NewEncoder(w).Encode(pluginv1.HostCallResponse{Data: data})
+		return
+	}
 	if services == nil {
 		http.Error(w, "host services unavailable", http.StatusServiceUnavailable)
 		return

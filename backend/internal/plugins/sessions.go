@@ -100,7 +100,7 @@ func (m *Manager) CreateSlotSession(id, slotID, slot, surface string, userID uin
 	if err != nil {
 		return Session{}, err
 	}
-	if !v.Compatibility.Compatible || !v.Enabled || v.State != "active" || !hasCapability(v, PageCapability) || !hasCapability(v, IdentityCapability) {
+	if !v.Compatibility.Compatible || !v.Enabled || v.State != "active" || !slotCapabilityAllowed(v, slot) {
 		return Session{}, ErrUnavailable
 	}
 	if surface == "admin" {
@@ -214,7 +214,7 @@ func (m *Manager) Slots(surface, name string, userID uint, admin bool) ([]Catalo
 		return out, nil
 	}
 	for _, v := range rows {
-		if !v.Enabled || v.State != "active" || !hasCapability(v, PageCapability) || !hasCapability(v, IdentityCapability) {
+		if !v.Enabled || v.State != "active" || !slotCapabilityAllowed(v, name) {
 			continue
 		}
 		for _, contribution := range v.Manifest.Contributions.Slots {
@@ -224,6 +224,16 @@ func (m *Manager) Slots(surface, name string, userID uint, admin bool) ([]Catalo
 		}
 	}
 	return out, nil
+}
+
+func slotCapabilityAllowed(v Installation, name string) bool {
+	if !hasCapability(v, PageCapability) {
+		return false
+	}
+	if identitySlots[name] {
+		return hasCapability(v, IdentityCapability)
+	}
+	return hasCapability(v, UISlotCapability)
 }
 
 func (m *Manager) Pages(surface string, userID uint, admin bool) ([]CatalogPage, error) {

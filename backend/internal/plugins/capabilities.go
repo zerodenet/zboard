@@ -6,30 +6,56 @@ import (
 	"errors"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/catalog"
-	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
 	"time"
 )
 
 const MeteringReadCapability = "zboard.metering.read.v1"
 const CommerceOrdersReadCapability = "zboard.commerce.orders.read.v1"
 
-func pluginOperationCapability(operation string) string {
+// OperationCapability is the single mapping from catalog operations to exact
+// manifest grants for both page sessions and native host calls.
+func OperationCapability(operation string) string {
 	switch operation {
 	case "metering.usage.query":
 		return MeteringReadCapability
 	case "commerce.orders.list":
 		return CommerceOrdersReadCapability
+	case "account.self.get":
+		return AccountSelfReadCapability
+	case "account.admin.get":
+		return AccountAdminReadCapability
+	case "subscriptions.owned.list", "subscriptions.owned.get":
+		return SubscriptionReadCapability
+	case "subscriptions.owned.config":
+		return SubscriptionConfigReadCapability
+	case "subscriptions.admin.list", "subscriptions.admin.get":
+		return SubscriptionAdminReadCapability
+	case "subscriptions.quota.adjust":
+		return SubscriptionQuotaWriteCapability
+	case "subscriptions.term.extend":
+		return SubscriptionTermWriteCapability
+	case "subscriptions.status.cancel":
+		return SubscriptionStatusWriteCapability
+	case "messages.owned.list", "messages.owned.get":
+		return MessageReadCapability
+	case "messages.owned.ack":
+		return MessageAckCapability
 	default:
 		return ""
 	}
 }
 
-// SessionAuthority binds a transport-authenticated account to the plugin's
-// admitted account page. It never grants administrator or target-user rights.
+// SessionAuthority binds a transport-authenticated account to an admitted
+// business page or controlled slot. Administrative operations require a
+// separate manifest grant, admin surface, and fresh account-domain role check.
 type SessionAuthority struct {
-	Manager *Manager
-	UserID  uint
-	Admin   bool
+	Manager  *Manager
+	Accounts interface {
+		Me(context.Context, identity.Principal) (identity.PublicAccount, error)
+	}
+	UserID uint
+	Admin  bool
 }
 
 type capabilityAdmissionWindow struct {
@@ -41,7 +67,7 @@ func (a SessionAuthority) Resolve(ctx context.Context, c catalog.Credential, ope
 	if err := ctx.Err(); err != nil {
 		return catalog.Grant{}, err
 	}
-	requiredCapability := pluginOperationCapability(operation)
+	requiredCapability := OperationCapability(operation)
 	if a.Manager == nil || c.Kind != "plugin_session" || a.UserID == 0 || requiredCapability == "" {
 		return catalog.Grant{}, catalog.ErrDenied
 	}
@@ -55,7 +81,11 @@ func (a SessionAuthority) Resolve(ctx context.Context, c catalog.Credential, ope
 	if err != nil {
 		return catalog.Grant{}, err
 	}
-	if session.UserID != a.UserID || session.Surface != "account" || session.Purpose != "business" {
+	if session.UserID != a.UserID || (session.Purpose != "business" && session.Purpose != "slot") || (session.Surface != "account" && session.Surface != "admin") {
+		return catalog.Grant{}, catalog.ErrDenied
+	}
+	adminOperation := IsAdministrativeOperation(operation)
+	if adminOperation && (session.Surface != "admin" || !a.Admin) {
 		return catalog.Grant{}, catalog.ErrDenied
 	}
 	installation, err := m.load(session.PluginID)
@@ -65,17 +95,17 @@ func (a SessionAuthority) Resolve(ctx context.Context, c catalog.Credential, ope
 	if !hasCapability(installation, requiredCapability) {
 		return catalog.Grant{}, catalog.ErrDenied
 	}
-	var count int64
-	if err := m.db.WithContext(ctx).Model(&model.User{}).Where("id = ? AND status = ?", a.UserID, "active").Count(&count).Error; err != nil {
-		return catalog.Grant{}, err
+	if a.Accounts == nil {
+		return catalog.Grant{}, catalog.ErrUnavailable
 	}
-	if count != 1 {
+	account, err := a.Accounts.Me(ctx, identity.Principal{ID: a.UserID})
+	if err != nil || (adminOperation && !account.IsAdmin) {
 		return catalog.Grant{}, catalog.ErrDenied
 	}
 	return catalog.Grant{Principal: catalog.Principal{
 		Kind: "plugin_session", Subject: pluginCapabilitySubject(session), AccountID: a.UserID,
 		PluginID: session.PluginID, Generation: session.Generation,
-	}}, nil
+	}, Administrative: adminOperation}, nil
 }
 
 func (a SessionAuthority) Admit(ctx context.Context, credential catalog.Credential, grant catalog.Grant, descriptor catalog.Descriptor) error {
@@ -103,15 +133,15 @@ func (a SessionAuthority) Admit(ctx context.Context, credential catalog.Credenti
 	if err != nil {
 		return ErrUnavailable
 	}
-	requiredCapability := pluginOperationCapability(descriptor.Name)
+	requiredCapability := OperationCapability(descriptor.Name)
 	if requiredCapability == "" || !hasCapability(installation, requiredCapability) {
 		return catalog.ErrDenied
 	}
-	var activeAccounts int64
-	if err := m.db.WithContext(ctx).Model(&model.User{}).Where("id = ? AND status = ?", principal.AccountID, "active").Count(&activeAccounts).Error; err != nil {
-		return err
+	if a.Accounts == nil {
+		return catalog.ErrUnavailable
 	}
-	if activeAccounts != 1 {
+	account, err := a.Accounts.Me(ctx, identity.Principal{ID: principal.AccountID})
+	if err != nil || (IsAdministrativeOperation(descriptor.Name) && !account.IsAdmin) {
 		return catalog.ErrDenied
 	}
 	now := time.Now().UTC()
@@ -135,6 +165,15 @@ func (a SessionAuthority) Admit(ctx context.Context, credential catalog.Credenti
 		}
 	}
 	return nil
+}
+
+func IsAdministrativeOperation(operation string) bool {
+	switch operation {
+	case "account.admin.get", "subscriptions.admin.list", "subscriptions.admin.get", "subscriptions.quota.adjust", "subscriptions.term.extend", "subscriptions.status.cancel":
+		return true
+	default:
+		return false
+	}
 }
 
 func pluginCapabilitySubject(session Session) string {

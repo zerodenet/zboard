@@ -491,7 +491,7 @@ func scanPluginOperationMappings(root string, constants map[string]string) ([]pl
 	result := []pluginOperationEvidence{}
 	for _, declaration := range file.Decls {
 		fn, ok := declaration.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != "pluginOperationCapability" || fn.Body == nil {
+		if !ok || (fn.Name.Name != "pluginOperationCapability" && fn.Name.Name != "OperationCapability") || fn.Body == nil {
 			continue
 		}
 		ast.Inspect(fn.Body, func(node ast.Node) bool {

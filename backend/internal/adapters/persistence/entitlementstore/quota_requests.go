@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
-	"strconv"
-	"strings"
-	"time"
 )
 
 type QuotaRequests struct{ DB *gorm.DB }
@@ -19,13 +20,22 @@ type QuotaRequests struct{ DB *gorm.DB }
 func (s QuotaRequests) Create(ctx context.Context, actor uint, in entitlements.QuotaRequestInput) (jobs.BatchReceipt, error) {
 	var out jobs.BatchReceipt
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-
 		if err := subscriptionReader(tx, actor, true); err != nil {
 			return err
 		}
 		var admin model.User
 		if err := tx.Select("id", "email").First(&admin, actor).Error; err != nil {
 			return err
+		}
+		if in.ReplayExisting {
+			receipt, found, err := existingQuotaRequest(tx, in)
+			if err != nil {
+				return err
+			}
+			if found {
+				out = receipt
+				return nil
+			}
 		}
 		query := tx.Model(&model.Subscription{}).Where("end_at > ?", time.Now().UTC())
 		if !in.Scope.AllActive {
@@ -68,17 +78,66 @@ func (s QuotaRequests) Create(ctx context.Context, actor uint, in entitlements.Q
 		if err := tx.CreateInBatches(items, 250).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&model.AuditLog{UserID: &admin.ID, Actor: admin.Email, Action: "task.create", Target: fmt.Sprintf("task:%d", task.ID), Detail: fmt.Sprintf("type=quota total=%d", task.Total)}).Error; err != nil {
+		detail := fmt.Sprintf("type=quota total=%d", task.Total)
+		if in.Origin != "" {
+			detail += " origin=" + in.Origin
+		}
+		if err := tx.Create(&model.AuditLog{UserID: &admin.ID, Actor: admin.Email, Action: "task.create", Target: fmt.Sprintf("task:%d", task.ID), Detail: detail}).Error; err != nil {
 			return err
 		}
-		out = jobs.BatchReceipt{ID: task.ID, Type: task.Type, Scope: task.Scope, Content: task.Content, Status: task.Status, Errors: task.Errors, Total: task.Total, Current: task.Current, IdempotencyKey: task.IdempotencyKey, Priority: task.Priority, ScheduledAt: task.ScheduledAt, StartedAt: task.StartedAt, FinishedAt: task.FinishedAt, Attempts: task.Attempts, MaxAttempts: task.MaxAttempts, LockedBy: task.LockedBy, LockedUntil: task.LockedUntil, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt}
+		out = quotaTaskReceipt(task)
 		return nil
 	})
 	if err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "unique constraint") || strings.Contains(strings.ToLower(err.Error()), "duplicate entry") {
+			if in.ReplayExisting {
+				var receipt jobs.BatchReceipt
+				replayErr := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+					if err := subscriptionReader(tx, actor, true); err != nil {
+						return err
+					}
+					foundReceipt, found, err := existingQuotaRequest(tx, in)
+					if err != nil {
+						return err
+					}
+					if !found {
+						return entitlements.ErrQuotaRequestConflict
+					}
+					receipt = foundReceipt
+					return nil
+				})
+				return receipt, replayErr
+			}
 			return jobs.BatchReceipt{}, entitlements.ErrQuotaRequestConflict
 		}
 		return jobs.BatchReceipt{}, err
 	}
 	return out, nil
+}
+
+func existingQuotaRequest(tx *gorm.DB, in entitlements.QuotaRequestInput) (jobs.BatchReceipt, bool, error) {
+	var task model.Task
+	err := tx.Where("idempotency_key = ?", in.IdempotencyKey).First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return jobs.BatchReceipt{}, false, nil
+	}
+	if err != nil {
+		return jobs.BatchReceipt{}, false, err
+	}
+	scope, err := json.Marshal(in.Scope)
+	if err != nil {
+		return jobs.BatchReceipt{}, false, err
+	}
+	content, err := json.Marshal(in.Content)
+	if err != nil {
+		return jobs.BatchReceipt{}, false, err
+	}
+	if task.Type != "quota" || task.Scope != string(scope) || task.Content != string(content) || task.Priority != in.Priority || task.MaxAttempts != in.MaxAttempts || (task.ScheduledAt != nil) != in.AutoRun {
+		return jobs.BatchReceipt{}, false, entitlements.ErrQuotaRequestConflict
+	}
+	return quotaTaskReceipt(task), true, nil
+}
+
+func quotaTaskReceipt(task model.Task) jobs.BatchReceipt {
+	return jobs.BatchReceipt{ID: task.ID, Type: task.Type, Scope: task.Scope, Content: task.Content, Status: task.Status, Errors: task.Errors, Total: task.Total, Current: task.Current, IdempotencyKey: task.IdempotencyKey, Priority: task.Priority, ScheduledAt: task.ScheduledAt, StartedAt: task.StartedAt, FinishedAt: task.FinishedAt, Attempts: task.Attempts, MaxAttempts: task.MaxAttempts, LockedBy: task.LockedBy, LockedUntil: task.LockedUntil, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt}
 }

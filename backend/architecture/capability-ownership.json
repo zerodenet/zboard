@@ -31,9 +31,34 @@
     {"name": "zboard.http.route.v1", "owner": "extensions", "source": "internal/plugins/admission.go"},
     {"name": "zboard.account.assertion.v1", "owner": "identity", "source": "internal/plugins/admission.go"},
     {"name": "zboard.subscription.projection.v1", "owner": "entitlements", "source": "internal/plugins/admission.go"},
-    {"name": "zboard.message.projection.v1", "owner": "experience", "source": "internal/plugins/admission.go"}
+    {"name": "zboard.message.projection.v1", "owner": "experience", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.account.self.read.v1", "owner": "identity", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.account.admin.read.v1", "owner": "identity", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.subscription.read.v1", "owner": "entitlements", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.subscription.config.read.v1", "owner": "entitlements", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.subscription.admin.read.v1", "owner": "entitlements", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.subscription.quota.write.v1", "owner": "entitlements", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.subscription.term.write.v1", "owner": "entitlements", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.subscription.status.write.v1", "owner": "entitlements", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.message.read.v1", "owner": "experience", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.message.ack.v1", "owner": "experience", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.ui.slot.v1", "owner": "extensions", "source": "internal/plugins/admission.go"},
+    {"name": "zboard.host.discovery.v1", "owner": "extensions", "source": "internal/plugins/admission.go"}
   ],
   "host_operations": [
+    {"name": "account.self.get", "owner": "identity", "source": "internal/application/plugin_business_catalog.go", "plugin_capability": "zboard.account.self.read.v1", "external_http": false},
+    {"name": "account.admin.get", "owner": "identity", "source": "internal/application/plugin_business_catalog.go", "plugin_capability": "zboard.account.admin.read.v1", "external_http": false},
+    {"name": "subscriptions.owned.list", "owner": "entitlements", "source": "internal/application/plugin_business_catalog.go", "plugin_capability": "zboard.subscription.read.v1", "external_http": false},
+    {"name": "subscriptions.owned.get", "owner": "entitlements", "source": "internal/application/plugin_business_catalog.go", "plugin_capability": "zboard.subscription.read.v1", "external_http": false},
+    {"name": "subscriptions.owned.config", "owner": "entitlements", "source": "internal/application/plugin_business_catalog.go", "plugin_capability": "zboard.subscription.config.read.v1", "external_http": false},
+    {"name": "subscriptions.admin.list", "owner": "entitlements", "source": "internal/application/plugin_business_catalog.go", "plugin_capability": "zboard.subscription.admin.read.v1", "external_http": false},
+    {"name": "subscriptions.admin.get", "owner": "entitlements", "source": "internal/application/plugin_business_catalog.go", "plugin_capability": "zboard.subscription.admin.read.v1", "external_http": false},
+    {"name": "subscriptions.quota.adjust", "owner": "entitlements", "source": "internal/application/plugin_business_catalog.go", "plugin_capability": "zboard.subscription.quota.write.v1", "external_http": false},
+    {"name": "subscriptions.term.extend", "owner": "entitlements", "source": "internal/application/plugin_business_catalog.go", "plugin_capability": "zboard.subscription.term.write.v1", "external_http": false},
+    {"name": "subscriptions.status.cancel", "owner": "entitlements", "source": "internal/application/plugin_business_catalog.go", "plugin_capability": "zboard.subscription.status.write.v1", "external_http": false},
+    {"name": "messages.owned.list", "owner": "experience", "source": "internal/application/plugin_business_catalog.go", "plugin_capability": "zboard.message.read.v1", "external_http": false},
+    {"name": "messages.owned.get", "owner": "experience", "source": "internal/application/plugin_business_catalog.go", "plugin_capability": "zboard.message.read.v1", "external_http": false},
+    {"name": "messages.owned.ack", "owner": "experience", "source": "internal/application/plugin_business_catalog.go", "plugin_capability": "zboard.message.ack.v1", "external_http": false},
     {
       "name": "metering.usage.query",
       "owner": "metering",
@@ -97,6 +122,16 @@
       "atomicity": "single_database_transaction",
       "compensation": "Rollback quota, quota event, and publication intent together; the task_item reference prevents a replay from applying the adjustment twice.",
       "outbox": "NodeConfigPublish intents are committed with the quota adjustment."
+    },
+    {
+      "id": "entitlements.subscription_mutation",
+      "owner": "entitlements",
+      "source": "internal/adapters/persistence/entitlementstore/subscription_mutations.go",
+      "symbol": "SubscriptionMutations.Apply",
+      "participants": ["entitlements", "resources", "observability"],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback subscription state, credential change, publication intent, mutation receipt and audit together; a unique idempotency key returns the same receipt for identical replay.",
+      "outbox": "NodeConfigPublish intents are committed with the subscription change."
     },
     {
       "id": "entitlements.credential_expiry",

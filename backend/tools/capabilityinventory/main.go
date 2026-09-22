@@ -121,6 +121,7 @@ var explicitModelOwners = map[string]string{
 	"QuotaEvent":                         "entitlements",
 	"RegistrationEmailChallenge":         "identity",
 	"Subscription":                       "entitlements",
+	"SubscriptionMutation":               "entitlements",
 	"SubscriptionMember":                 "entitlements",
 	"SubscriptionRuleSet":                "entitlements",
 	"SubscriptionTemplate":               "entitlements",

@@ -241,11 +241,11 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 	}
 	want := map[string]int{
 		"plugin_rpc":               16,
-		"plugin_capability":        13,
-		"host_operation":           3,
-		"plugin_host_operation":    2,
+		"plugin_capability":        25,
+		"host_operation":           16,
+		"plugin_host_operation":    15,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 8,
+		"cross_domain_transaction": 9,
 	}
 	counts := map[string]int{}
 	for _, row := range rows {

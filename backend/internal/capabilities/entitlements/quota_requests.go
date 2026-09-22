@@ -26,6 +26,8 @@ type QuotaRequestInput struct {
 	Scope          QuotaScope
 	Content        QuotaAdjustment
 	IdempotencyKey string
+	ReplayExisting bool
+	Origin         string
 	Priority       int
 	MaxAttempts    int
 	AutoRun        bool
@@ -62,6 +64,9 @@ func (s QuotaRequests) Create(ctx context.Context, actor uint, in QuotaRequestIn
 		in.IdempotencyKey = uuid.NewString()
 	}
 	if len(in.IdempotencyKey) > 128 {
+		return jobs.BatchReceipt{}, ErrQuotaRequestInvalid
+	}
+	if len(in.Origin) > 191 {
 		return jobs.BatchReceipt{}, ErrQuotaRequestInvalid
 	}
 	return s.Repository.Create(ctx, actor, in)

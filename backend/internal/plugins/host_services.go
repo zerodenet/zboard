@@ -20,7 +20,12 @@ type PluginPrincipalIssuer interface {
 
 func isHostServiceCapability(capability string) bool {
 	switch capability {
-	case AccountAssertionCapability, SubscriptionProjectionCapability, MessageProjectionCapability:
+	case AccountAssertionCapability, SubscriptionProjectionCapability, MessageProjectionCapability,
+		AccountSelfReadCapability, AccountAdminReadCapability, SubscriptionReadCapability, SubscriptionConfigReadCapability, SubscriptionAdminReadCapability,
+		SubscriptionQuotaWriteCapability, SubscriptionTermWriteCapability, SubscriptionStatusWriteCapability,
+		MessageReadCapability, MessageAckCapability:
+		return true
+	case HostDiscoveryCapability:
 		return true
 	default:
 		return false

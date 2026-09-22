@@ -28,7 +28,7 @@ func databaseModels() []interface{} {
 		&model.PluginAuthorization{}, &model.PluginData{}, &model.PluginMigration{},
 		&model.User{}, &model.ExternalIdentity{}, &model.Installation{}, &model.SystemConfig{}, &model.Announcement{}, &model.AnnouncementRead{},
 		&model.Plan{}, &model.PlanSKU{}, &model.PlanSKUOperation{}, &model.Node{}, &model.NodeGroup{}, &model.ProtocolEndpoint{},
-		&model.NodeGroupEndpoint{}, &model.Subscription{}, &model.Order{}, &model.PaymentEvent{},
+		&model.NodeGroupEndpoint{}, &model.Subscription{}, &model.SubscriptionMutation{}, &model.Order{}, &model.PaymentEvent{},
 		&model.SubscriptionMember{}, &model.SubscriptionToken{}, &model.SubscriptionTemplate{},
 		&model.SubscriptionRuleSet{}, &model.SubscriptionTemplateRuleSetBinding{}, &model.ProtocolCredential{},
 		&model.FlowUsage{}, &model.TrafficRecord{}, &model.ProtocolEndpointUsageDaily{}, &model.AuditLog{}, &model.EmailTemplate{},
@@ -203,6 +203,9 @@ func runSQLiteMigrations(db *gorm.DB) error {
 		}
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0017_protocol_endpoint_egress.up.sql", AppliedAt: time.Now().UTC()}).Error
 	}); err != nil {
+		return err
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0018_subscription_mutations.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
 		return err
 	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}

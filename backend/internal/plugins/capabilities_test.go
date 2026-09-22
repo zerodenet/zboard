@@ -3,7 +3,9 @@ package plugins
 import (
 	"context"
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/identitystore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/catalog"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"testing"
 )
@@ -28,7 +30,8 @@ func TestPluginCapabilityAuthorityFencesSessionAndAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	auth := SessionAuthority{Manager: m, UserID: 1, Admin: true}
+	accounts := identity.Accounts{Repository: identitystore.Accounts{DB: db}}
+	auth := SessionAuthority{Manager: m, Accounts: accounts, UserID: 1, Admin: true}
 	proof := catalog.Credential{Kind: "plugin_session", Proof: session.Token}
 	grant, err := auth.Resolve(context.Background(), proof, "metering.usage.query")
 	if err != nil || grant.Principal.AccountID != 1 || grant.Principal.Kind != "plugin_session" || grant.Principal.PluginID != v.ID || grant.Principal.Generation != v.Generation || grant.Principal.Subject == "" || grant.Administrative {
@@ -56,7 +59,7 @@ func TestPluginCapabilityAuthorityFencesSessionAndAdmission(t *testing.T) {
 	if err := auth.Admit(context.Background(), proof, grant, descriptor); !errors.Is(err, catalog.ErrRateLimited) {
 		t.Fatalf("rate admission: %v", err)
 	}
-	other := SessionAuthority{Manager: m, UserID: 2}
+	other := SessionAuthority{Manager: m, Accounts: accounts, UserID: 2}
 	if _, err = other.Resolve(context.Background(), proof, "metering.usage.query"); !errors.Is(err, catalog.ErrDenied) {
 		t.Fatalf("session substitution: %v", err)
 	}

@@ -56,9 +56,16 @@ type HTTPRoute struct {
 }
 
 var slotSurfaces = map[string]string{
-	"auth.login.methods":          "public",
-	"account.security.identities": "account",
-	"admin.user.identities":       "admin",
+	"auth.login.methods":            "public",
+	"account.security.identities":   "account",
+	"admin.user.identities":         "admin",
+	"account.overview.cards":        "account",
+	"account.subscriptions.actions": "account",
+	"admin.user.actions":            "admin",
+}
+
+var identitySlots = map[string]bool{
+	"auth.login.methods": true, "account.security.identities": true, "admin.user.identities": true,
 }
 
 type Components struct {
@@ -121,7 +128,7 @@ func (m Manifest) Validate() error {
 			return errors.New("invalid advisory host version range")
 		}
 	}
-	if len(m.Capabilities) == 0 || len(m.Capabilities) > 8 {
+	if len(m.Capabilities) == 0 || len(m.Capabilities) > 32 {
 		return errors.New("declare supported capabilities")
 	}
 	seen := map[string]bool{}
@@ -130,6 +137,10 @@ func (m Manifest) Validate() error {
 			PageCapability, ConfigCapability, IdentityCapability, StorageCapability,
 			HTTPRouteCapability, AccountAssertionCapability, SubscriptionProjectionCapability, MessageProjectionCapability,
 			TaskCapability, MeteringReadCapability, CommerceOrdersReadCapability, DNSProviderCapability, CertificateProviderCapability,
+			AccountSelfReadCapability, AccountAdminReadCapability, SubscriptionReadCapability, SubscriptionConfigReadCapability, SubscriptionAdminReadCapability,
+			SubscriptionQuotaWriteCapability, SubscriptionTermWriteCapability, SubscriptionStatusWriteCapability,
+			MessageReadCapability, MessageAckCapability, UISlotCapability,
+			HostDiscoveryCapability,
 		}, c) {
 			return fmt.Errorf("unsupported or duplicate capability: %s", c)
 		}
@@ -197,8 +208,11 @@ func (m Manifest) Validate() error {
 		if slots[key] || !pagePattern.MatchString(contribution.ID) || !known || contribution.Surface != requiredSurface || !surfaces[contribution.Surface] || contribution.Title == "" || len(contribution.Title) > 160 || !strings.HasPrefix(contribution.Entrypoint, "ui/") || !SafePath(contribution.Entrypoint) || !digestPattern.MatchString(m.Files[contribution.Entrypoint]) {
 			return errors.New("invalid slot contribution")
 		}
-		if !seen[PageCapability] || !seen[IdentityCapability] {
-			return errors.New("identity slots require UI and identity provider capabilities")
+		if !seen[PageCapability] || (!seen[UISlotCapability] && !(identitySlots[contribution.Slot] && seen[IdentityCapability])) {
+			return errors.New("slots require UI and slot capabilities")
+		}
+		if identitySlots[contribution.Slot] && !seen[IdentityCapability] {
+			return errors.New("identity slots require identity provider capability")
 		}
 		slots[key] = true
 	}

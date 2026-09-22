@@ -44,6 +44,8 @@
       />
     </UiMetricStrip>
 
+    <PluginSlot name="account.overview.cards" surface="account" />
+
     <div class="section-grid">
       <UiSection class="span-8" title="当前订阅" description="最近三条有效服务及其配额和到期状态。">
         <template #actions>
@@ -134,6 +136,7 @@
 </template>
 
 <script setup lang="ts">
+import PluginSlot from '../../plugins/PluginSlot.vue'
 import TableText from '../../components/TableText.vue'
 import { computed, onMounted } from 'vue'
 import {

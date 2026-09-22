@@ -17,6 +17,18 @@ const HTTPRouteCapability = "zboard.http.route.v1"
 const AccountAssertionCapability = "zboard.account.assertion.v1"
 const SubscriptionProjectionCapability = "zboard.subscription.projection.v1"
 const MessageProjectionCapability = "zboard.message.projection.v1"
+const AccountSelfReadCapability = "zboard.account.self.read.v1"
+const AccountAdminReadCapability = "zboard.account.admin.read.v1"
+const SubscriptionReadCapability = "zboard.subscription.read.v1"
+const SubscriptionConfigReadCapability = "zboard.subscription.config.read.v1"
+const SubscriptionAdminReadCapability = "zboard.subscription.admin.read.v1"
+const SubscriptionQuotaWriteCapability = "zboard.subscription.quota.write.v1"
+const SubscriptionTermWriteCapability = "zboard.subscription.term.write.v1"
+const SubscriptionStatusWriteCapability = "zboard.subscription.status.write.v1"
+const MessageReadCapability = "zboard.message.read.v1"
+const MessageAckCapability = "zboard.message.ack.v1"
+const UISlotCapability = "zboard.ui.slot.v1"
+const HostDiscoveryCapability = "zboard.host.discovery.v1"
 
 var ErrPermission = errors.New("plugin capability is outside the host admission scope")
 

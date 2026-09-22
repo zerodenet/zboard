@@ -15,6 +15,8 @@
       error-title="订阅操作失败"
     />
 
+    <PluginSlot name="account.subscriptions.actions" surface="account" />
+
     <DataWorkbench :total="total" :loading="listLoading" :refreshing="refreshing">
       <template #filters>
         <WorkbenchFilterBar :active="Boolean(status)" @clear="clearFilters">
@@ -204,6 +206,7 @@
 </template>
 
 <script setup lang="ts">
+import PluginSlot from '../../plugins/PluginSlot.vue'
 import TableText from '../../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

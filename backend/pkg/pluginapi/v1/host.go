@@ -17,9 +17,20 @@ import (
 const MaxHostCallBytes = 8 << 20
 
 const (
-	AccountAssertionCapability       = "zboard.account.assertion.v1"
-	SubscriptionProjectionCapability = "zboard.subscription.projection.v1"
-	MessageProjectionCapability      = "zboard.message.projection.v1"
+	AccountAssertionCapability        = "zboard.account.assertion.v1"
+	SubscriptionProjectionCapability  = "zboard.subscription.projection.v1"
+	MessageProjectionCapability       = "zboard.message.projection.v1"
+	AccountSelfReadCapability         = "zboard.account.self.read.v1"
+	AccountAdminReadCapability        = "zboard.account.admin.read.v1"
+	SubscriptionReadCapability        = "zboard.subscription.read.v1"
+	SubscriptionConfigReadCapability  = "zboard.subscription.config.read.v1"
+	SubscriptionAdminReadCapability   = "zboard.subscription.admin.read.v1"
+	SubscriptionQuotaWriteCapability  = "zboard.subscription.quota.write.v1"
+	SubscriptionTermWriteCapability   = "zboard.subscription.term.write.v1"
+	SubscriptionStatusWriteCapability = "zboard.subscription.status.write.v1"
+	MessageReadCapability             = "zboard.message.read.v1"
+	MessageAckCapability              = "zboard.message.ack.v1"
+	HostDiscoveryCapability           = "zboard.host.discovery.v1"
 )
 
 type AccountAssertionRequest struct {
