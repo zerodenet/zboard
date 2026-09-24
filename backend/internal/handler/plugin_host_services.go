@@ -62,7 +62,7 @@ func (h *handlers) ProjectPluginSubscription(ctx context.Context, summary entitl
 	if err != nil {
 		return pluginv1.ProjectedSubscription{}, err
 	}
-	content, _, err := renderSubscriptionWithRenderer(format, nil, data)
+	content, deliveryFormat, err := h.renderPluginSubscriptionTemplate(ctx, format, data)
 	if err != nil {
 		return pluginv1.ProjectedSubscription{}, err
 	}
@@ -73,7 +73,7 @@ func (h *handlers) ProjectPluginSubscription(ctx context.Context, summary entitl
 		display = "Subscription " + strconv.FormatUint(uint64(subscription.ID), 10)
 	}
 	return pluginv1.ProjectedSubscription{
-		ID: strconv.FormatUint(uint64(subscription.ID), 10), DisplayName: display, Format: format,
+		ID: strconv.FormatUint(uint64(subscription.ID), 10), DisplayName: display, Format: deliveryFormat,
 		Revision: contentSHA, ContentSHA256: contentSHA, UpdatedAt: subscription.UpdatedAt.Unix(), Content: content,
 	}, nil
 }
