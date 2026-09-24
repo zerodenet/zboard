@@ -8,17 +8,33 @@ import (
 var PerpetualEnd = time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC)
 
 func NextTrafficReset(base time.Time, policy int16) *time.Time {
-	base = base.UTC()
+	return NextTrafficResetAfter(base, policy, base)
+}
+
+func NextTrafficResetAfter(anchor time.Time, policy int16, after time.Time) *time.Time {
+	anchor, after = anchor.UTC(), after.UTC()
 	var next time.Time
 	switch policy {
 	case 1:
-		next = time.Date(base.Year(), base.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+		next = time.Date(after.Year(), after.Month()+1, 1, 0, 0, 0, 0, time.UTC)
 	case 2:
-		next = AddCalendarMonths(base, 1)
+		months := (after.Year()-anchor.Year())*12 + int(after.Month()-anchor.Month())
+		for months = max(1, months); ; months++ {
+			next = AddCalendarMonths(anchor, months)
+			if next.After(after) {
+				break
+			}
+		}
 	case 3:
-		next = time.Date(base.Year()+1, time.January, 1, 0, 0, 0, 0, time.UTC)
+		next = time.Date(after.Year()+1, time.January, 1, 0, 0, 0, 0, time.UTC)
 	case 4:
-		next = base.AddDate(1, 0, 0)
+		years := max(1, after.Year()-anchor.Year())
+		for ; ; years++ {
+			next = AddCalendarMonths(anchor, years*12)
+			if next.After(after) {
+				break
+			}
+		}
 	default:
 		return nil
 	}

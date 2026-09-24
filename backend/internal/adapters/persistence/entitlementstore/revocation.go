@@ -52,6 +52,12 @@ func RevokeOutsideGroup(tx *gorm.DB, sub model.Subscription, now time.Time) erro
 	return persistCredentialRevocation(tx, query, "revoked", now)
 }
 
+func ExpireSubscriptionCredentials(tx *gorm.DB, subscriptionID uint, now time.Time) error {
+	query := tx.Model(&model.ProtocolCredential{}).
+		Where("subscription_id = ? AND status IN ?", subscriptionID, []string{"active", "prepared"})
+	return persistCredentialRevocation(tx, query, "expired", now)
+}
+
 func ExpireInTransaction(tx *gorm.DB, userID uint, now time.Time) error {
 	query := tx.Model(&model.Subscription{}).
 		Where("status = ? AND (end_at <= ? OR flow_used >= flow_total)", "active", now)

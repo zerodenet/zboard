@@ -2292,6 +2292,9 @@ func createQuotaEvent(tx *gorm.DB, sub model.Subscription, eventType string, del
 func nextTrafficReset(base time.Time, policy int16) *time.Time {
 	return entitlements.NextTrafficReset(base, policy)
 }
+func nextTrafficResetAfter(anchor time.Time, policy int16, after time.Time) *time.Time {
+	return entitlements.NextTrafficResetAfter(anchor, policy, after)
+}
 func effectiveResetPolicy(unit string, policy int16) int16 {
 	return entitlements.EffectiveResetPolicy(unit, policy)
 }

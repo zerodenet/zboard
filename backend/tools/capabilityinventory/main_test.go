@@ -245,7 +245,7 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		"host_operation":           16,
 		"plugin_host_operation":    15,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 9,
+		"cross_domain_transaction": 10,
 	}
 	counts := map[string]int{}
 	for _, row := range rows {

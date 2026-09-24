@@ -169,6 +169,7 @@ var explicitRuntimeSiteOwners = map[string]string{
 var explicitLifecycleOwners = map[string]string{
 	"h.CloseBackgroundJobs":              "jobs",
 	"h.CloseCredentialExpiryWorker":      "entitlements",
+	"h.CloseTrafficResetWorker":          "entitlements",
 	"h.CloseFairUseEvaluationWorker":     "metering",
 	"h.CloseHistoryRetentionWorker":      "observability",
 	"h.CloseNodePublishWorker":           "resources",
@@ -177,6 +178,7 @@ var explicitLifecycleOwners = map[string]string{
 	"h.StartAdminTaskWorker":             "jobs",
 	"h.StartCertificateRenewalWorker":    "network",
 	"h.StartCredentialExpiryWorker":      "entitlements",
+	"h.StartTrafficResetWorker":          "entitlements",
 	"h.StartDNSPublicObservationWorker":  "network",
 	"h.StartFairUseEvaluationWorker":     "metering",
 	"h.StartHistoryRetentionWorker":      "observability",

@@ -23,7 +23,8 @@ const subscriptionSummaryColumns = `subscriptions.id, subscriptions.user_id, use
 				THEN 'expired'
 				ELSE subscriptions.status
 			END AS status,
-			subscriptions.flow_total, subscriptions.flow_used,
+			subscriptions.flow_total - subscriptions.cycle_start_used AS flow_total,
+			subscriptions.flow_used - subscriptions.cycle_start_used AS flow_used,
 			subscriptions.speed_limit_mbps, subscriptions.device_limit,
 			subscriptions.family_limit, subscriptions.renewal_price_minor,
 			subscriptions.reset_policy, subscriptions.next_reset_at,
@@ -143,6 +144,7 @@ func (s SubscriptionQueries) List(ctx context.Context, actor uint, admin bool, q
 		for _, row := range rows {
 			item := entitlements.Subscription(row)
 			item.Status = entitlements.EffectiveStatus(item, now)
+			item.FlowTotal, item.FlowUsed = entitlements.CycleQuota(item)
 			out.Legacy = append(out.Legacy, item)
 		}
 		return nil

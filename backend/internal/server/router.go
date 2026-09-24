@@ -350,6 +350,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 
 	h.StartAdminTaskWorker()
 	h.StartNodePublishWorker()
+	h.StartTrafficResetWorker()
 	h.StartProxyPoolSubscriptionWorker()
 	h.StartFairUseEvaluationWorker()
 	h.StartCertificateRenewalWorker()
@@ -370,6 +371,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 			pluginManager.Close()
 		}
 		h.CloseNodePublishWorker()
+		h.CloseTrafficResetWorker()
 		h.CloseProxyPoolSubscriptionWorker()
 		h.CloseFairUseEvaluationWorker()
 		err := h.CloseZeroEventSpool()

@@ -94,6 +94,8 @@ type Subscription struct {
 	Status            string     `json:"status" gorm:"size:20;default:active"`
 	FlowTotal         int64      `json:"flow_total" gorm:"default:0"`
 	FlowUsed          int64      `json:"flow_used" gorm:"default:0"`
+	ResetQuotaBytes   int64      `json:"-" gorm:"not null;default:0"`
+	CycleStartUsed    int64      `json:"-" gorm:"not null;default:0"`
 	SpeedLimitMbps    int        `json:"speed_limit_mbps" gorm:"not null;default:0"`
 	DeviceLimit       int        `json:"device_limit" gorm:"not null;default:1"`
 	FamilyLimit       int        `json:"family_limit" gorm:"not null;default:0"`

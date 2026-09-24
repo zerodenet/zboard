@@ -18,7 +18,7 @@ type backgroundJobs struct {
 	loops        map[string]*scheduledJob
 }
 
-var jobNames = map[string]string{"credential_expiry": "订阅到期处理", "fair_use": "公平使用评估", "certificate_renewal": "证书续期扫描", "dns_observation": "DNS 公网核验", "history_retention": "历史记录清理", "proxy_pool_sync": "代理池订阅同步", "node_publish": "节点配置发布", "admin_tasks": "运营任务执行", "registration_messages": "注册消息处理", "event_consumer": "流量事件入账"}
+var jobNames = map[string]string{"credential_expiry": "订阅到期处理", "traffic_reset": "订阅流量重置", "fair_use": "公平使用评估", "certificate_renewal": "证书续期扫描", "dns_observation": "DNS 公网核验", "history_retention": "历史记录清理", "proxy_pool_sync": "代理池订阅同步", "node_publish": "节点配置发布", "admin_tasks": "运营任务执行", "registration_messages": "注册消息处理", "event_consumer": "流量事件入账"}
 
 func (h *handlers) backgroundJobs() *backgroundJobs {
 	h.jobRuntimeOnce.Do(func() {
@@ -54,8 +54,8 @@ func (h *handlers) startScheduledJob(id string, interval time.Duration, run func
 	err := h.services.RegisterPeriodicJob(application.PeriodicJob{
 		ID: id, Name: name, Interval: interval, Timeout: 30 * time.Minute, Immediate: true,
 		External:           id == "admin_tasks" || strings.HasPrefix(id, "node_publish_"),
-		ReconcileAfterLoss: id == "registration_messages" || id == "event_consumer" || id == "admin_tasks" || id == "credential_expiry" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
-		RetryFailures:      id == "registration_messages" || id == "event_consumer" || id == "admin_tasks" || id == "credential_expiry" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
+		ReconcileAfterLoss: id == "registration_messages" || id == "event_consumer" || id == "admin_tasks" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
+		RetryFailures:      id == "registration_messages" || id == "event_consumer" || id == "admin_tasks" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
 		Ready:              h.jobReadiness(id),
 		Run: func(ctx context.Context) (err error) {
 			finish := h.observeJob(id, "periodic", interval, 1)

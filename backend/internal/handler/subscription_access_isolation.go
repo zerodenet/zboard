@@ -105,6 +105,7 @@ func (h *handlers) ScopedClientSubscriptionHandler(w http.ResponseWriter, r *htt
 	}
 
 	remaining := subscription.FlowTotal - subscription.FlowUsed
+	cycleTotal, cycleUsed := subscriptionCycleQuota(subscription)
 	if remaining < 0 {
 		remaining = 0
 	}
@@ -112,15 +113,15 @@ func (h *handlers) ScopedClientSubscriptionHandler(w http.ResponseWriter, r *htt
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Subscription-Userinfo", fmt.Sprintf(
 		"upload=0; download=%d; total=%d; expire=%d",
-		subscription.FlowUsed, subscription.FlowTotal, subscription.EndAt.Unix(),
+		cycleUsed, cycleTotal, subscription.EndAt.Unix(),
 	))
 	manifest := subscriptionManifest{
 		Version:     "zboard.subscription/v1",
 		GeneratedAt: now.Format(time.RFC3339),
 		Subscription: subscriptionManifestSummary{
 			ExpiresAt:     subscription.EndAt.Format(time.RFC3339),
-			FlowTotal:     subscription.FlowTotal,
-			FlowUsed:      subscription.FlowUsed,
+			FlowTotal:     cycleTotal,
+			FlowUsed:      cycleUsed,
 			FlowRemaining: remaining,
 		},
 		ProtocolEndpoints: manifestNodes,

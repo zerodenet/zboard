@@ -42,7 +42,7 @@ func NewGrant(request GrantRequest, policy GrantPolicy, now time.Time) (Grant, e
 	sub := Subscription{
 		UserID: request.UserID, PlanID: request.PlanID, PlanSKUID: request.PlanSKUID,
 		NodeGroupID: policy.NodeGroupID, SubscriptionType: 1, StartAt: now, EndAt: end, Status: "active",
-		FlowTotal: request.TrafficBytes, SpeedLimitMbps: request.SpeedLimitMbps, DeviceLimit: request.DeviceLimit,
+		FlowTotal: request.TrafficBytes, ResetQuotaBytes: request.TrafficBytes, SpeedLimitMbps: request.SpeedLimitMbps, DeviceLimit: request.DeviceLimit,
 		FamilyLimit: policy.FamilyLimit, RenewalPriceMinor: renewalPrice, ResetPolicy: reset,
 		NextResetAt: NextTrafficReset(now, reset), TrafficCalcMode: policy.TrafficCalcMode, Config: "{}",
 	}
@@ -83,8 +83,14 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 		sub.SpeedLimitMbps = request.SpeedLimitMbps
 		sub.DeviceLimit = request.DeviceLimit
 		sub.FamilyLimit = policy.FamilyLimit
+		if request.TrafficBytes > 0 {
+			sub.ResetQuotaBytes = request.TrafficBytes
+		}
+		previousResetPolicy := sub.ResetPolicy
 		sub.ResetPolicy = EffectiveResetPolicy(request.BillingUnit, policy.ResetPolicy)
-		sub.NextResetAt = NextTrafficReset(now, sub.ResetPolicy)
+		if sub.ResetPolicy != previousResetPolicy || sub.NextResetAt == nil || sub.NextResetAt.After(now) {
+			sub.NextResetAt = NextTrafficResetAfter(sub.StartAt, sub.ResetPolicy, now)
+		}
 		sub.TrafficCalcMode = policy.TrafficCalcMode
 		sub.RenewalPriceMinor = 0
 		if policy.IsRenewable {

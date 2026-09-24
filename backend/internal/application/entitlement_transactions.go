@@ -21,6 +21,9 @@ func RevokeSubscriptionOutsideGroup(tx *gorm.DB, sub model.Subscription, now tim
 func ExpireSubscriptionsInTransaction(tx *gorm.DB, userID uint, now time.Time) error {
 	return entitlementstore.ExpireInTransaction(tx, userID, now)
 }
+func ExpireSubscriptionCredentials(tx *gorm.DB, subscriptionID uint, now time.Time) error {
+	return entitlementstore.ExpireSubscriptionCredentials(tx, subscriptionID, now)
+}
 func RequestNodeAndTopologyPublication(tx *gorm.DB, nodeID, endpointID, actor uint) error {
 	return networkstore.EnqueueNodePublication(tx, nodeID, endpointID, actor)
 }
@@ -30,6 +33,9 @@ func RequestSubscriptionPublication(tx *gorm.DB, subscriptionID, actor uint) err
 
 func RecordEntitlementQuotaEvent(tx *gorm.DB, sub model.Subscription, eventType string, delta, before, after int64, referenceType, referenceID string) error {
 	return entitlementstore.RecordQuotaEvent(tx, sub, eventType, delta, before, after, referenceType, referenceID)
+}
+func ApplyDueTrafficReset(tx *gorm.DB, sub *model.Subscription, now time.Time) (bool, error) {
+	return entitlementstore.ApplyDueTrafficReset(tx, sub, now)
 }
 
 func EnsureSubscriptionCredentials(tx *gorm.DB, sub model.Subscription, cipher zeroadapter.Cipher, mieru bool) ([]model.ProtocolCredential, error) {
@@ -56,4 +62,11 @@ func (s *Services) ClientSubscriptionAccess() entitlements.ClientAccess {
 
 func (s *Services) ReconcileSubscriptionAccess(ctx context.Context, cipher entitlements.AccessCipher) error {
 	return entitlementstore.ReconcileAccessTokens(ctx, s.Identity.db, cipher)
+}
+
+func (s *Services) TrafficReset(cipher zeroadapter.Cipher, mieru bool) entitlementstore.TrafficReset {
+	return entitlementstore.TrafficReset{
+		DB: s.Identity.db, Issuer: zeroadapter.Issuer{Cipher: cipher, Mieru: mieru},
+		Publish: networkstore.EnqueueSubscriptionPublications,
+	}
 }

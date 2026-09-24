@@ -58,6 +58,9 @@ func Fulfill(tx *gorm.DB, order entitlements.GrantRequest, policy entitlements.G
 	}
 
 	previousGroupID := sub.NodeGroupID
+	if _, err := ApplyDueTrafficReset(tx, &sub, now); err != nil {
+		return model.Subscription{}, err
+	}
 	grant, err := entitlements.ApplyGrant(entitlements.Subscription(sub), order, policy, now)
 	if err != nil {
 		return model.Subscription{}, err

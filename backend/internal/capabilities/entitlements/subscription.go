@@ -14,6 +14,8 @@ type Subscription struct {
 	Status            string     `json:"status"`
 	FlowTotal         int64      `json:"flow_total"`
 	FlowUsed          int64      `json:"flow_used"`
+	ResetQuotaBytes   int64      `json:"-"`
+	CycleStartUsed    int64      `json:"-"`
 	SpeedLimitMbps    int        `json:"speed_limit_mbps"`
 	DeviceLimit       int        `json:"device_limit"`
 	FamilyLimit       int        `json:"family_limit"`
@@ -24,4 +26,12 @@ type Subscription struct {
 	Config            string     `json:"config"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
+func CycleQuota(sub Subscription) (total, used int64) {
+	baseline := sub.CycleStartUsed
+	if baseline < 0 || baseline > sub.FlowUsed || baseline > sub.FlowTotal {
+		baseline = 0
+	}
+	return sub.FlowTotal - baseline, sub.FlowUsed - baseline
 }

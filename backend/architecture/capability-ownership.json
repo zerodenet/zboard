@@ -148,6 +148,16 @@
       "outbox": "One coalesced NodeConfigPublish intent is inserted per affected node before credentials become expired."
     },
     {
+      "id": "entitlements.traffic_reset",
+      "owner": "entitlements",
+      "source": "internal/adapters/persistence/entitlementstore/traffic_reset.go",
+      "symbol": "TrafficReset.ResetDue",
+      "participants": ["entitlements", "resources"],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback the cycle quota, credential state, quota event and publication intent together; the next due scan retries the reset.",
+      "outbox": "NodeConfigPublish intents are committed with the reset when affected credentials need refreshed configuration."
+    },
+    {
       "id": "identity.local_registration_message",
       "owner": "identity",
       "source": "internal/adapters/persistence/identitystore/registration.go",

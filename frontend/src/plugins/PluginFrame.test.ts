@@ -142,6 +142,19 @@ describe("plugin iframe boundary", () => {
     );
     wrapper.unmount();
   });
+  it("forwards page actions without plugin or actor substitution fields", async () => {
+    const wrapper = mount(PluginFrame, { props: { pluginId: "example.page", pageId: "devices", surface: "account" } });
+    await flushPromises();
+    send(wrapper, "page.call", { action: "devices.list", payload: { cursor: "next" }, actor_id: "999", plugin_id: "other.plugin" });
+    await flushPromises();
+    expect(mocks.bridge).toHaveBeenCalledWith(
+      expect.anything(),
+      "page.call",
+      { action: "devices.list", payload: { cursor: "next" } },
+      expect.any(AbortSignal),
+    );
+    wrapper.unmount();
+  });
   it("creates a target-scoped slot session and forwards only identity bridge fields", async () => {
     const slot = { id: "admin-user-identities", surface: "admin" as const, slot: "admin.user.identities", title: "OAuth", entrypoint: "ui/admin-user.html" };
     const wrapper = mount(PluginFrame, { props: { pluginId: "zboard.oauth", slot, surface: "admin", targetUserId: 9 } });

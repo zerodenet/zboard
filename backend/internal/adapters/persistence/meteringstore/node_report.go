@@ -3,6 +3,7 @@ package meteringstore
 import (
 	"context"
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -129,5 +130,6 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 	if err != nil {
 		return metering.NodeReportResult{}, err
 	}
-	return metering.NodeReportResult{Record: metering.TrafficRecord(record), Duplicate: duplicate, QuotaExhausted: quotaExhausted, FlowUsed: sub.FlowUsed, FlowTotal: sub.FlowTotal, SubscriptionEnd: sub.EndAt}, nil
+	cycleTotal, cycleUsed := entitlements.CycleQuota(entitlements.Subscription(sub))
+	return metering.NodeReportResult{Record: metering.TrafficRecord(record), Duplicate: duplicate, QuotaExhausted: quotaExhausted, FlowUsed: cycleUsed, FlowTotal: cycleTotal, SubscriptionEnd: sub.EndAt}, nil
 }

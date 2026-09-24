@@ -284,7 +284,7 @@ const operationOptions = [
   { value: 'purchase', label: '新购', title: '套餐中心', description: '选择套餐，进入详情比较规格并确认订单。' },
   { value: 'renew', label: '续费', title: '续费订阅', description: '选择续费规格并确认服务周期。' },
   { value: 'change', label: '切换套餐', title: '切换套餐', description: '为指定订阅选择新的套餐和规格。' },
-  { value: 'addon', label: '流量包', title: '购买流量包', description: '为指定订阅增加可用流量。' },
+  { value: 'addon', label: '流量包', title: '购买流量包', description: '为指定订阅当前周期增加可用流量；定期重置时失效。' },
 ]
 const orderTypeByOperation = { purchase: 'new', renew: 'renewal', change: 'upgrade', addon: 'traffic_pack' }
 const route = useRoute(), router = useRouter()
