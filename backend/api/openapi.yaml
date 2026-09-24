@@ -5147,7 +5147,11 @@ components:
         ssh_configured: { type: boolean }
         ssh_verified_at: { type: string, format: date-time, nullable: true }
         kernel_state: { type: object, nullable: true }
-        enabled_protocol_count: { type: integer, format: int64, minimum: 0 }
+        enabled_protocol_count:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Enabled protocol services hosted by this node, including active protocol listeners and enabled network fronting entries.
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     NodeDetail:

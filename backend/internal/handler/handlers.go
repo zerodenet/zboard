@@ -1589,21 +1589,10 @@ func (h *handlers) nodePage(w http.ResponseWriter, r *http.Request) {
 	for index := range states {
 		stateByNode[states[index].NodeID] = &states[index]
 	}
-	type nodeProtocolCount struct {
-		NodeID uint
-		Count  int64
-	}
-	counts := make([]nodeProtocolCount, 0, len(nodes))
-	if err := h.db.Model(&model.ProtocolEndpoint{}).
-		Select("node_id, COUNT(*) AS count").
-		Where("node_id IN ? AND is_active = ?", ids, true).
-		Group("node_id").Scan(&counts).Error; err != nil {
+	countByNode, err := enabledNodeProtocolServiceCounts(h.db, ids)
+	if err != nil {
 		ServerError(w, err)
 		return
-	}
-	countByNode := make(map[uint]int64, len(counts))
-	for _, count := range counts {
-		countByNode[count.NodeID] = count.Count
 	}
 	for index := range nodes {
 		nodes[index].KernelState = stateByNode[nodes[index].ID]
@@ -1630,12 +1619,12 @@ func (h *handlers) NodeDetailHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
-	var enabledProtocolCount int64
-	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("node_id = ? AND is_active = ?", node.ID, true).Count(&enabledProtocolCount).Error; err != nil {
+	counts, err := enabledNodeProtocolServiceCounts(h.db, []uint{node.ID})
+	if err != nil {
 		ServerError(w, err)
 		return
 	}
-	OK(w, newNodeDetailItem(node, enabledProtocolCount, time.Now().UTC().Add(-nodeOnlineWindow)))
+	OK(w, newNodeDetailItem(node, counts[node.ID], time.Now().UTC().Add(-nodeOnlineWindow)))
 }
 
 func (h *handlers) NodeCreateHandler(w http.ResponseWriter, r *http.Request) {
