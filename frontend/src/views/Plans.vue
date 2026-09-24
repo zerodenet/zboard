@@ -320,7 +320,7 @@
             <FormField v-if="skuOperationsFor(form.sku).includes('renew')" v-slot="{ controlAttrs }" label="再次购买效果" name="create-plan-renewal-effect" :hint="renewalEffectHint(form.sku)" :error="createErrors.fields['sku.renewal_effect']" required><UiSelect v-model="form.sku.renewal_effect" v-bind="controlAttrs" :options="renewalEffectOptions(form.sku)" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="价格" name="create-plan-price" hint="按所选币种的标准金额输入；系统以整数分保存。" :error="createErrors.fields['sku.price_cents']" required><MoneyInput v-model="form.sku.price_cents" v-bind="controlAttrs" :currency="form.sku.currency || 'CNY'" :min-cents="0" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="币种" name="create-plan-currency" :error="createErrors.fields['sku.currency']" required><UiInput v-model.trim="form.sku.currency" v-bind="controlAttrs" maxlength="8" /></FormField>
-            <FormField v-if="form.sku.entitlement_mode === 'traffic_addon'" v-slot="{ controlAttrs }" label="附加流量" name="create-plan-grant-traffic" hint="仅在流量加购时增加目标订阅的可用流量。" :error="createErrors.fields['sku.grant_traffic_bytes']"><ByteSizeInput v-model="form.sku.grant_traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
+            <FormField v-if="form.sku.entitlement_mode === 'traffic_addon'" v-slot="{ controlAttrs }" label="附加流量" name="create-plan-grant-traffic" hint="增加目标订阅当前周期的可用流量；定期重置时不会重复发放。" :error="createErrors.fields['sku.grant_traffic_bytes']"><ByteSizeInput v-model="form.sku.grant_traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="最大有效订阅" name="create-plan-max-subscriptions" :error="createErrors.fields.max_active_subscriptions"><UiNumberInput v-model="form.max_active_subscriptions" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="家庭共享人数" name="create-plan-family-limit" :error="createErrors.fields.family_limit"><UiNumberInput v-model="form.family_limit" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
           </div>
@@ -423,7 +423,7 @@
         <FormField v-if="skuOperationsFor(skuDraft).includes('renew')" v-slot="{ controlAttrs }" label="再次购买效果" name="edit-sku-renewal-effect" :hint="renewalEffectHint(skuDraft)" :error="skuErrors.fields.renewal_effect" required><UiSelect v-model="skuDraft.renewal_effect" v-bind="controlAttrs" :options="renewalEffectOptions(skuDraft)" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="币种" name="edit-sku-currency" :error="skuErrors.fields.currency" required><UiInput v-model.trim="skuDraft.currency" v-bind="controlAttrs" maxlength="8" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="价格" name="edit-sku-price" hint="按币种标准金额输入；系统以整数分保存。" :error="skuErrors.fields.price_cents"><MoneyInput v-model="skuDraft.price_cents" v-bind="controlAttrs" :currency="skuDraft.currency || 'CNY'" :min-cents="0" /></FormField>
-        <FormField v-if="skuDraft.entitlement_mode === 'traffic_addon'" v-slot="{ controlAttrs }" label="附加流量" name="edit-sku-grant-traffic" hint="只增加目标订阅的可用流量，不修改套餐限速和设备数。" :error="skuErrors.fields.grant_traffic_bytes"><ByteSizeInput v-model="skuDraft.grant_traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
+        <FormField v-if="skuDraft.entitlement_mode === 'traffic_addon'" v-slot="{ controlAttrs }" label="附加流量" name="edit-sku-grant-traffic" hint="只增加目标订阅当前周期的可用流量；定期重置时失效。" :error="skuErrors.fields.grant_traffic_bytes"><ByteSizeInput v-model="skuDraft.grant_traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="排序" name="edit-sku-sort-order" :error="skuErrors.fields.sort_order"><UiNumberInput v-model="skuDraft.sort_order" v-bind="controlAttrs" inputmode="numeric" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="销售状态" name="edit-sku-active" :error="skuErrors.fields.is_active" full>
           <div class="check-field"><UiCheckbox v-model="skuDraft.is_active" v-bind="controlAttrs" /><span>该 SKU 可用于创建新订单</span></div>
@@ -702,7 +702,7 @@ const permanentRenewalEffectOptions = [
   { label: '只补充套餐流量', value: 'add_quota_only' },
 ]
 const resetPolicyOptions = [
-  { label: '跟随系统', value: 0 },
+  { label: '未设置（不重置）', value: 0 },
   { label: '每月 1 日', value: 1 },
   { label: '按购买日每月', value: 2 },
   { label: '每年 1 月 1 日', value: 3 },

@@ -29,6 +29,12 @@ var trafficReadIndexes = []trafficReadIndexDefinition{
 	},
 	{
 		table:   "traffic_records",
+		name:    "idx_traffic_records_subscription_created_at",
+		columns: "(subscription_id, created_at)",
+		ddl:     "ALTER TABLE traffic_records ADD KEY idx_traffic_records_subscription_created_at (subscription_id, created_at)",
+	},
+	{
+		table:   "traffic_records",
 		name:    "idx_traffic_records_subscription_usage",
 		columns: "(subscription_id, used_bytes)",
 		ddl:     "ALTER TABLE traffic_records ADD KEY idx_traffic_records_subscription_usage (subscription_id, used_bytes)",

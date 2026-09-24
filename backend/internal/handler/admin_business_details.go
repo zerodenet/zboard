@@ -267,7 +267,8 @@ func (h *handlers) AdminSubscriptionGetHandler(w http.ResponseWriter, r *http.Re
 				THEN 'expired'
 				ELSE subscriptions.status
 			END AS status,
-			subscriptions.flow_total, subscriptions.flow_used,
+			subscriptions.flow_total - subscriptions.cycle_start_used AS flow_total,
+			subscriptions.flow_used - subscriptions.cycle_start_used AS flow_used,
 			subscriptions.speed_limit_mbps, subscriptions.device_limit,
 			subscriptions.family_limit, subscriptions.renewal_price_minor,
 			subscriptions.reset_policy, subscriptions.next_reset_at,

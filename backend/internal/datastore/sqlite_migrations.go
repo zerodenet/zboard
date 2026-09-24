@@ -48,6 +48,14 @@ func runSQLiteMigrations(db *gorm.DB) error {
 	if err := db.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("apply sqlite schema: %w", err)
 	}
+	if err := db.Exec(`UPDATE subscriptions SET reset_quota_bytes = COALESCE(
+		(SELECT traffic_bytes FROM orders WHERE orders.subscription_id = subscriptions.id
+		 AND orders.status = 'paid' AND orders.order_type <> 'traffic_pack' AND orders.traffic_bytes > 0
+		 ORDER BY orders.fulfilled_at DESC, orders.id DESC LIMIT 1),
+		(SELECT traffic_bytes FROM plans WHERE plans.id = subscriptions.plan_id), 0)
+		WHERE reset_quota_bytes = 0 AND reset_policy BETWEEN 1 AND 4`).Error; err != nil {
+		return fmt.Errorf("backfill subscription reset quota: %w", err)
+	}
 	if err := ReconcileSubscriptionAccessSchema(db); err != nil {
 		return err
 	}
@@ -91,6 +99,9 @@ func runSQLiteMigrations(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0006_node_proxy_pool_subscriptions.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0007_subscription_traffic_reset.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
 		return err
 	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}

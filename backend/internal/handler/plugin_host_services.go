@@ -179,7 +179,7 @@ func (h *handlers) pluginGetSubscriptionUsage(ctx context.Context, pluginID stri
 		return nil, hostCallError("invalid_request")
 	}
 	var subscription model.Subscription
-	if err := h.db.WithContext(ctx).Select("flow_used", "flow_total", "end_at").Where(
+	if err := h.db.WithContext(ctx).Select("flow_used", "flow_total", "cycle_start_used", "end_at").Where(
 		"id = ? AND user_id = ?", subscriptionID, userID,
 	).First(&subscription).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -187,9 +187,10 @@ func (h *handlers) pluginGetSubscriptionUsage(ctx context.Context, pluginID stri
 		}
 		return nil, hostCallError("temporary_unavailable")
 	}
+	cycleTotal, cycleUsed := subscriptionCycleQuota(subscription)
 	return pluginv1.SubscriptionUsage{
-		UsedBytes:      uint64(max(int64(0), subscription.FlowUsed)),
-		TotalBytes:     uint64(max(int64(0), subscription.FlowTotal)),
+		UsedBytes:      uint64(max(int64(0), cycleUsed)),
+		TotalBytes:     uint64(max(int64(0), cycleTotal)),
 		ExpireAtUnixMs: uint64(max(int64(0), subscription.EndAt.UnixMilli())),
 	}, nil
 }
@@ -206,14 +207,15 @@ func (h *handlers) projectPluginSubscription(ctx context.Context, subscription m
 		return pluginv1.ProjectedSubscription{}, err
 	}
 	remaining := subscription.FlowTotal - subscription.FlowUsed
+	cycleTotal, cycleUsed := subscriptionCycleQuota(subscription)
 	if remaining < 0 {
 		remaining = 0
 	}
 	manifest := subscriptionManifest{
 		Version: "zboard.subscription/v1", GeneratedAt: now.Format(time.RFC3339),
 		Subscription: subscriptionManifestSummary{
-			ExpiresAt: subscription.EndAt.Format(time.RFC3339), FlowTotal: subscription.FlowTotal,
-			FlowUsed: subscription.FlowUsed, FlowRemaining: remaining,
+			ExpiresAt: subscription.EndAt.Format(time.RFC3339), FlowTotal: cycleTotal,
+			FlowUsed: cycleUsed, FlowRemaining: remaining,
 		},
 		ProtocolEndpoints: nodes,
 	}

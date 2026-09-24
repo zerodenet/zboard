@@ -308,8 +308,9 @@ func (h *handlers) FilteredClientSubscriptionHandler(w http.ResponseWriter, r *h
 	var total, used int64
 	var expiresAt time.Time
 	for _, subscription := range allSubscriptions {
-		total += subscription.FlowTotal
-		used += subscription.FlowUsed
+		cycleTotal, cycleUsed := subscriptionCycleQuota(subscription)
+		total += cycleTotal
+		used += cycleUsed
 		if subscription.EndAt.After(expiresAt) {
 			expiresAt = subscription.EndAt
 		}

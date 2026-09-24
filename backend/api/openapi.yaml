@@ -5999,17 +5999,19 @@ components:
         flow_total:
           type: integer
           format: int64
+          description: Current reset-cycle quota, including one-time add-ons purchased during this cycle.
         flow_used:
           type: integer
           format: int64
+          description: Traffic consumed in the current reset cycle. Lifetime usage remains in accounting records.
         node_group_id: { type: integer, format: int64 }
         subscription_type: { type: integer }
         speed_limit_mbps: { type: integer }
         device_limit: { type: integer }
         family_limit: { type: integer }
         renewal_price_minor: { type: integer, format: int64 }
-        reset_policy: { type: integer, minimum: 0, maximum: 5 }
-        next_reset_at: { type: string, format: date-time, nullable: true }
+        reset_policy: { type: integer, minimum: 0, maximum: 5, description: "1/2 reset monthly, 3/4 reset yearly, and 0/5 have no scheduled reset." }
+        next_reset_at: { type: string, format: date-time, nullable: true, description: Next due reset; the worker runs on startup and polls each minute. }
         traffic_calc_mode: { type: integer, enum: [0, 1, 2] }
     SubscriptionPage:
       allOf:

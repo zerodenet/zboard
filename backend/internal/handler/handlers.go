@@ -5281,7 +5281,7 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 			return model.Subscription{}, err
 		}
 		resetPolicy := effectiveResetPolicy(order.BillingUnit, plan.ResetPolicy)
-		nextResetAt := nextTrafficReset(now, resetPolicy)
+		nextResetAt := nextTrafficResetAfter(now, resetPolicy, now)
 		renewalPrice := int64(0)
 		if plan.IsRenewable {
 			renewalPrice = sku.PriceCents
@@ -5290,7 +5290,7 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 			UserID: order.UserID, PlanID: order.PlanID, PlanSKUID: order.PlanSKUID,
 			NodeGroupID: plan.NodeGroupID, SubscriptionType: 1,
 			StartAt: now, EndAt: periodEnd, Status: subStatusActive,
-			FlowTotal: order.TrafficBytes, FlowUsed: 0,
+			FlowTotal: order.TrafficBytes, FlowUsed: 0, ResetQuotaBytes: order.TrafficBytes,
 			SpeedLimitMbps: order.SpeedLimitMbps, DeviceLimit: order.DeviceLimit,
 			FamilyLimit: plan.FamilyLimit, RenewalPriceMinor: renewalPrice,
 			ResetPolicy: resetPolicy, NextResetAt: nextResetAt,
@@ -5307,6 +5307,9 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 			return model.Subscription{}, err
 		}
 		return sub, nil
+	}
+	if _, err := applyDueTrafficReset(tx, &sub, now); err != nil {
+		return model.Subscription{}, err
 	}
 
 	fulfillment, err := renewalFulfillmentForOrder(order)
@@ -5343,8 +5346,14 @@ func (h *handlers) allocateOrRenewSubscription(tx *gorm.DB, order model.Order, n
 		sub.SpeedLimitMbps = order.SpeedLimitMbps
 		sub.DeviceLimit = order.DeviceLimit
 		sub.FamilyLimit = plan.FamilyLimit
+		if order.TrafficBytes > 0 {
+			sub.ResetQuotaBytes = order.TrafficBytes
+		}
+		previousResetPolicy := sub.ResetPolicy
 		sub.ResetPolicy = effectiveResetPolicy(order.BillingUnit, plan.ResetPolicy)
-		sub.NextResetAt = nextTrafficReset(now, sub.ResetPolicy)
+		if sub.ResetPolicy != previousResetPolicy || sub.NextResetAt == nil || sub.NextResetAt.After(now) {
+			sub.NextResetAt = nextTrafficResetAfter(sub.StartAt, sub.ResetPolicy, now)
+		}
 		sub.TrafficCalcMode = plan.TrafficCalcMode
 		if plan.IsRenewable {
 			sub.RenewalPriceMinor = sku.PriceCents
@@ -5417,17 +5426,33 @@ func createQuotaEvent(tx *gorm.DB, sub model.Subscription, eventType string, del
 }
 
 func nextTrafficReset(base time.Time, policy int16) *time.Time {
-	base = base.UTC()
+	return nextTrafficResetAfter(base, policy, base)
+}
+
+func nextTrafficResetAfter(anchor time.Time, policy int16, after time.Time) *time.Time {
+	anchor, after = anchor.UTC(), after.UTC()
 	var next time.Time
 	switch policy {
 	case 1:
-		next = time.Date(base.Year(), base.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+		next = time.Date(after.Year(), after.Month()+1, 1, 0, 0, 0, 0, time.UTC)
 	case 2:
-		next = addCalendarMonths(base, 1)
+		months := (after.Year()-anchor.Year())*12 + int(after.Month()-anchor.Month())
+		for months = max(1, months); ; months++ {
+			next = addCalendarMonths(anchor, months)
+			if next.After(after) {
+				break
+			}
+		}
 	case 3:
-		next = time.Date(base.Year()+1, time.January, 1, 0, 0, 0, 0, time.UTC)
+		next = time.Date(after.Year()+1, time.January, 1, 0, 0, 0, 0, time.UTC)
 	case 4:
-		next = base.AddDate(1, 0, 0)
+		years := max(1, after.Year()-anchor.Year())
+		for ; ; years++ {
+			next = addCalendarMonths(anchor, years*12)
+			if next.After(after) {
+				break
+			}
+		}
 	default:
 		return nil
 	}
@@ -5619,7 +5644,8 @@ func (h *handlers) SubscriptionsHandler(w http.ResponseWriter, r *http.Request) 
 					THEN 'expired'
 					ELSE subscriptions.status
 				END AS status,
-				subscriptions.flow_total, subscriptions.flow_used,
+				subscriptions.flow_total - subscriptions.cycle_start_used AS flow_total,
+				subscriptions.flow_used - subscriptions.cycle_start_used AS flow_used,
 				subscriptions.speed_limit_mbps, subscriptions.device_limit,
 				subscriptions.family_limit, subscriptions.renewal_price_minor,
 				subscriptions.reset_policy, subscriptions.next_reset_at,
@@ -5638,6 +5664,7 @@ func (h *handlers) SubscriptionsHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	for index := range subs {
 		subs[index].Status = effectiveSubscriptionStatus(subs[index], now)
+		subs[index].FlowTotal, subs[index].FlowUsed = subscriptionCycleQuota(subs[index])
 	}
 	OK(w, subs)
 }
@@ -5855,8 +5882,9 @@ func (h *handlers) ClientSubscriptionHandler(w http.ResponseWriter, r *http.Requ
 	var total, used int64
 	var expiresAt time.Time
 	for _, sub := range subscriptions {
-		total += sub.FlowTotal
-		used += sub.FlowUsed
+		cycleTotal, cycleUsed := subscriptionCycleQuota(sub)
+		total += cycleTotal
+		used += cycleUsed
 		if sub.EndAt.After(expiresAt) {
 			expiresAt = sub.EndAt
 		}
@@ -6649,8 +6677,9 @@ func (h *handlers) TrafficReportHandler(w http.ResponseWriter, r *http.Request) 
 		"duplicate":                 duplicate,
 	}
 	if !duplicate {
-		response["flow_used"] = sub.FlowUsed
-		response["flow_total"] = sub.FlowTotal
+		cycleTotal, cycleUsed := subscriptionCycleQuota(sub)
+		response["flow_used"] = cycleUsed
+		response["flow_total"] = cycleTotal
 		response["flow_remaining"] = sub.FlowTotal - sub.FlowUsed
 		response["subscription_end"] = sub.EndAt.Format(time.RFC3339)
 	}

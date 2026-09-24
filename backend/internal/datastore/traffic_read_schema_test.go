@@ -10,6 +10,7 @@ func TestTrafficReadIndexesCoverDimensionTimeQueries(t *testing.T) {
 	want := map[string]string{
 		"idx_traffic_records_user_time":                        "(user_id, record_at)",
 		"idx_traffic_records_subscription_time":                "(subscription_id, record_at)",
+		"idx_traffic_records_subscription_created_at":          "(subscription_id, created_at)",
 		"idx_traffic_records_subscription_usage":               "(subscription_id, used_bytes)",
 		"idx_traffic_records_node_time":                        "(node_id, record_at)",
 		"idx_traffic_records_endpoint_time":                    "(protocol_endpoint_id, record_at)",
@@ -41,7 +42,7 @@ func TestSQLiteTrafficTotalsUseCoveringIndexAfterUpgrade(t *testing.T) {
 	defer pool.Close()
 	if err := db.Exec(`CREATE TABLE traffic_records (
 id INTEGER PRIMARY KEY, subscription_id INTEGER NOT NULL, user_id INTEGER,
-node_id INTEGER, protocol_endpoint_id INTEGER, protocol_multiplier_milli INTEGER, record_at DATETIME, used_bytes INTEGER NOT NULL, meta TEXT)`).Error; err != nil {
+node_id INTEGER, protocol_endpoint_id INTEGER, protocol_multiplier_milli INTEGER, record_at DATETIME, created_at DATETIME, used_bytes INTEGER NOT NULL, meta TEXT)`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO traffic_records(id,subscription_id,used_bytes,meta) VALUES (1,1,11,'first'),(2,1,13,'second'),(3,2,17,'third')").Error; err != nil {
