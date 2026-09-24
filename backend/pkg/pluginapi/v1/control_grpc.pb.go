@@ -28,6 +28,8 @@ const (
 	PluginControl_ListIdentityProviders_FullMethodName = "/zboard.plugin.v1.PluginControl/ListIdentityProviders"
 	PluginControl_GetIdentityProvider_FullMethodName   = "/zboard.plugin.v1.PluginControl/GetIdentityProvider"
 	PluginControl_ExchangeIdentity_FullMethodName      = "/zboard.plugin.v1.PluginControl/ExchangeIdentity"
+	PluginControl_HandleHTTP_FullMethodName            = "/zboard.plugin.v1.PluginControl/HandleHTTP"
+	PluginControl_HandlePageAction_FullMethodName      = "/zboard.plugin.v1.PluginControl/HandlePageAction"
 )
 
 // PluginControlClient is the client API for PluginControl service.
@@ -47,6 +49,11 @@ type PluginControlClient interface {
 	ListIdentityProviders(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*IdentityProviderList, error)
 	GetIdentityProvider(ctx context.Context, in *IdentityProviderRequest, opts ...grpc.CallOption) (*IdentityProvider, error)
 	ExchangeIdentity(ctx context.Context, in *IdentityExchange, opts ...grpc.CallOption) (*VerifiedIdentity, error)
+	// Requires zboard.http.route.v1. The host dispatches only exact signed-manifest routes.
+	HandleHTTP(ctx context.Context, in *HTTPRequest, opts ...grpc.CallOption) (*HTTPResponse, error)
+	// Optional action surface for the plugin's own authenticated business page.
+	// The host supplies an opaque actor ID and never exposes its login token.
+	HandlePageAction(ctx context.Context, in *PageActionRequest, opts ...grpc.CallOption) (*PageActionResponse, error)
 }
 
 type pluginControlClient struct {
@@ -147,6 +154,26 @@ func (c *pluginControlClient) ExchangeIdentity(ctx context.Context, in *Identity
 	return out, nil
 }
 
+func (c *pluginControlClient) HandleHTTP(ctx context.Context, in *HTTPRequest, opts ...grpc.CallOption) (*HTTPResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HTTPResponse)
+	err := c.cc.Invoke(ctx, PluginControl_HandleHTTP_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pluginControlClient) HandlePageAction(ctx context.Context, in *PageActionRequest, opts ...grpc.CallOption) (*PageActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PageActionResponse)
+	err := c.cc.Invoke(ctx, PluginControl_HandlePageAction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PluginControlServer is the server API for PluginControl service.
 // All implementations must embed UnimplementedPluginControlServer
 // for forward compatibility.
@@ -164,6 +191,11 @@ type PluginControlServer interface {
 	ListIdentityProviders(context.Context, *Empty) (*IdentityProviderList, error)
 	GetIdentityProvider(context.Context, *IdentityProviderRequest) (*IdentityProvider, error)
 	ExchangeIdentity(context.Context, *IdentityExchange) (*VerifiedIdentity, error)
+	// Requires zboard.http.route.v1. The host dispatches only exact signed-manifest routes.
+	HandleHTTP(context.Context, *HTTPRequest) (*HTTPResponse, error)
+	// Optional action surface for the plugin's own authenticated business page.
+	// The host supplies an opaque actor ID and never exposes its login token.
+	HandlePageAction(context.Context, *PageActionRequest) (*PageActionResponse, error)
 	mustEmbedUnimplementedPluginControlServer()
 }
 
@@ -200,6 +232,12 @@ func (UnimplementedPluginControlServer) GetIdentityProvider(context.Context, *Id
 }
 func (UnimplementedPluginControlServer) ExchangeIdentity(context.Context, *IdentityExchange) (*VerifiedIdentity, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExchangeIdentity not implemented")
+}
+func (UnimplementedPluginControlServer) HandleHTTP(context.Context, *HTTPRequest) (*HTTPResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method HandleHTTP not implemented")
+}
+func (UnimplementedPluginControlServer) HandlePageAction(context.Context, *PageActionRequest) (*PageActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method HandlePageAction not implemented")
 }
 func (UnimplementedPluginControlServer) mustEmbedUnimplementedPluginControlServer() {}
 func (UnimplementedPluginControlServer) testEmbeddedByValue()                       {}
@@ -384,6 +422,42 @@ func _PluginControl_ExchangeIdentity_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PluginControl_HandleHTTP_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HTTPRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginControlServer).HandleHTTP(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginControl_HandleHTTP_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginControlServer).HandleHTTP(ctx, req.(*HTTPRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PluginControl_HandlePageAction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PageActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginControlServer).HandlePageAction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginControl_HandlePageAction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginControlServer).HandlePageAction(ctx, req.(*PageActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PluginControl_ServiceDesc is the grpc.ServiceDesc for PluginControl service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -426,6 +500,14 @@ var PluginControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ExchangeIdentity",
 			Handler:    _PluginControl_ExchangeIdentity_Handler,
+		},
+		{
+			MethodName: "HandleHTTP",
+			Handler:    _PluginControl_HandleHTTP_Handler,
+		},
+		{
+			MethodName: "HandlePageAction",
+			Handler:    _PluginControl_HandlePageAction_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
+	"strings"
 )
 
 type server struct {
@@ -32,7 +33,14 @@ func (*server) TestConfig(ctx context.Context, _ *pluginv1.ConfigRequest) (*plug
 	if err != nil {
 		return nil, err
 	}
-	_, err = client.Put(ctx, "background", current.Revision, json.RawMessage(`{"written_by":"native-plugin"}`))
+	value, err := json.Marshal(map[string]string{
+		"written_by": "native-plugin",
+		"payload":    strings.Repeat("x", 64<<10),
+	})
+	if err != nil {
+		return nil, err
+	}
+	_, err = client.Put(ctx, "background", current.Revision, value)
 	return &pluginv1.HealthResult{Healthy: err == nil}, err
 }
 func main() { pluginv1.Serve(&server{}) }
