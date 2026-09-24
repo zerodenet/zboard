@@ -37,7 +37,7 @@ const (
 	zeroLinuxGNUAsset         = "zero-linux-x86_64.tar.gz"
 	zeroLinuxMuslAsset        = "zero-linux-x86_64-musl.tar.gz"
 	zeroGenericConnectorSince = "0.0.15-rc.2"
-	zeroBinaryMaxBytes        = 64 << 20
+	zeroBinaryMaxBytes        = 128 << 20
 	zeroArtifactMaxBytes      = 128 << 20
 	zeroControlSocket         = "/run/zerodenet/control.sock"
 	zeroConnectorEventTimeout = 10 * time.Second
@@ -815,7 +815,7 @@ func downloadZeroBinary(parent context.Context, release zeroRelease) ([]byte, st
 			continue
 		}
 		if header.Size <= 0 || header.Size > zeroBinaryMaxBytes {
-			return nil, "", errors.New("Zero binary in the release has an invalid size")
+			return nil, "", fmt.Errorf("Zero binary in the release has an invalid size: %d bytes (allowed: 1-%d bytes)", header.Size, zeroBinaryMaxBytes)
 		}
 		binary, err := io.ReadAll(io.LimitReader(tarReader, zeroBinaryMaxBytes+1))
 		if err != nil {
