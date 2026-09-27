@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import CursorPager from './CursorPager.vue'
@@ -8,9 +7,8 @@ describe('CursorPager', () => {
   it('labels cursor directions and only enables available navigation', async () => {
     const wrapper = mount(CursorPager, {
       props: { count: 50, total: 120, limit: 50, hasPrevious: false, hasNext: true },
-      global: { plugins: [PrimeVue] },
     })
-    const buttons = wrapper.findAll('button')
+    const buttons = wrapper.findAll('.cursor-pager-nav')
     expect(buttons[0].attributes('aria-label')).toBe('较新记录')
     expect(buttons[0].attributes('disabled')).toBeDefined()
     expect(buttons[1].attributes('aria-label')).toBe('较旧记录')
@@ -21,9 +19,9 @@ describe('CursorPager', () => {
     wrapper.getComponent(UiSelect).vm.$emit('update:modelValue', 100)
     expect(wrapper.emitted('limit')).toEqual([[100]])
     expect(wrapper.getComponent(UiSelect).props('options')).toEqual([
-      { label: '25', value: 25 },
-      { label: '50', value: 50 },
-      { label: '100', value: 100 },
+      { label: '25 条/次', value: 25 },
+      { label: '50 条/次', value: 50 },
+      { label: '100 条/次', value: 100 },
     ])
   })
 })

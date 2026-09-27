@@ -1,21 +1,20 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="免费证书" description="在节点上申请并保存 Let's Encrypt 证书，绑定协议服务后自动注入 Zero 配置，并在到期窗口内续期。" eyebrow="Infrastructure">
-      <template #actions><PageRefreshButton label="刷新证书" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />申请证书</UiButton></template>
+    <PageHeader title="免费证书" description="申请和管理节点证书，查看有效期与续期状态。">
+      <template #actions><PageRefreshButton label="刷新证书" :loading="loading || refreshing" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />申请证书</UiButton></template>
     </PageHeader>
 
     <TransientFeedback :success="message" :error="error" success-title="证书操作已提交" error-title="证书操作失败" />
 
-    <PageAlert tone="info" title="ACME 验证方式">
-      默认通过内置 Cloudflare DNS 或证书供应商插件完成 DNS-01 验证，不占用节点端口；已有 Web 服务时也可选择 HTTP-01 Webroot。证书私钥始终在目标节点生成和保存，不会交给插件。
-    </PageAlert>
+    <details class="certificate-help"><summary>验证方式与私钥存放</summary><p>默认通过内置 Cloudflare DNS 或证书供应商插件完成 DNS-01 验证；已有 Web 服务时也可选择 HTTP-01 Webroot。证书私钥始终在目标节点生成和保存，不会交给插件。</p></details>
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters><WorkbenchFilterBar :active="Boolean(search || statusFilter)" @clear="clearFilters"><WorkbenchFilterInput v-model="search" label="搜索" placeholder="证书名称或域名" @apply="applyFilters" /><WorkbenchFilterSelect v-model="statusFilter" label="证书状态" :options="statusOptions" @apply="applyFilters" /></WorkbenchFilterBar></template>
-      <DataTable v-if="certificates.length" caption="免费证书列表；证书材料保存在目标节点，面板仅展示公开元数据和运行状态" :row-count="total" :min-width="1080" table-class="certificate-table">
+      <TableSkeleton v-if="(loading || refreshing) && !certificates.length" label="正在加载证书" :columns="7" />
+      <DataTable v-else-if="certificates.length" caption="免费证书列表；证书材料保存在目标节点，面板仅展示公开元数据和运行状态" :row-count="total" :min-width="1080" table-class="certificate-table">
         <thead><tr><th class="table-primary-column">证书</th><th data-column-priority="2">节点</th><th>状态</th><th data-column-priority="2">签发环境</th><th>到期时间</th><th data-column-priority="3">自动续期</th><th class="numeric-column" data-column-priority="3">使用数</th><th data-column-priority="3">最近操作</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
         <tbody><tr v-for="certificate in certificates" :key="certificate.id">
-          <td class="table-primary-column"><div class="cell-title"><strong>{{ certificate.name }}</strong><TableText :value="certificate.domains.join('、')" /></div></td>
+          <td class="table-primary-column"><div class="cell-title"><strong :title="certificate.name">{{ displayCertificateName(certificate) }}</strong><TableText v-if="showCertificateDomains(certificate)" :value="certificate.domains.join('、')" /></div></td>
           <td data-column-priority="2"><RouterLink class="table-secondary-text" :title="certificate.node_name || `VPS #${certificate.node_id}`" :to="`/admin/nodes?node=${certificate.node_id}`">{{ certificate.node_name || `VPS #${certificate.node_id}` }}</RouterLink></td>
           <td><StatusBadge :tone="certificateTone(certificate.status)" :icon="certificateIcon(certificate.status)">{{ certificateStatusLabel(certificate.status) }}</StatusBadge><small v-if="certificate.last_error" class="certificate-error" :title="certificate.last_error">{{ certificate.last_error }}</small></td>
           <td data-column-priority="2"><StatusBadge :tone="certificate.environment === 'production' ? 'info' : 'warning'">{{ certificate.environment === 'production' ? '生产证书' : '测试证书' }}</StatusBadge></td>
@@ -31,11 +30,11 @@
           </RowActions></td>
         </tr></tbody>
       </DataTable>
-      <EmptyState v-else icon="shield" title="还没有托管证书" description="创建证书资产后，系统会在目标节点完成申请、保存和后续自动续期。"><template #actions><UiButton type="button" @click="openCreate"><UiIcon name="plus" />申请第一张证书</UiButton></template></EmptyState>
+      <EmptyState v-else icon="shield" :title="search || statusFilter ? '没有匹配的证书' : '还没有托管证书'" :description="search || statusFilter ? '调整搜索词或证书状态后重试。' : '申请证书后，可以在这里查看签发、有效期和续期状态。'"><template #actions><UiButton v-if="search || statusFilter" type="button" variant="secondary" size="sm" @click="clearFilters">清除筛选</UiButton><UiButton v-else type="button" @click="openCreate"><UiIcon name="plus" />申请第一张证书</UiButton></template></EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
-    <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="申请免费证书" description="创建资产后按所选 ACME 验证方式立即发起签发。" size="lg" :busy="saving" @close="closeCreate">
+    <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="申请免费证书" description="选择节点、域名和验证方式。提交后会开始签发。" size="lg" :busy="saving" @close="closeCreate">
       <form id="certificate-create-form" ref="createFormElement" class="certificate-form" novalidate @submit.prevent="create">
         <PageAlert v-if="createErrors.formError.value" tone="danger" title="无法创建证书">{{ createErrors.formError.value }}</PageAlert>
         <FormField label="目标节点" name="certificate-node" :error="createErrors.fields.node_id" required full><template #default="{ controlAttrs }"><NodeLookup v-model="createForm.node_id" v-bind="controlAttrs" /></template></FormField>
@@ -52,7 +51,7 @@
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="certificate-create-form" type="submit" :loading="saving">创建并申请</UiButton></template>
     </ModalDialog>
 
-    <ModalDialog :open="editOpen" title="编辑证书" description="可修改展示名称、ACME 联系方式、Webroot 和续期设置；节点、域名、签发环境与验证方式保持不变。" :busy="savingEdit" @close="editOpen = false">
+    <ModalDialog :open="editOpen" title="编辑证书" description="可修改名称、联系邮箱和续期设置；节点、域名、签发环境与验证方式保持不变。" :busy="savingEdit" :dirty="editState.dirty.value" @close="editOpen = false">
       <form id="certificate-edit-form" ref="editFormElement" class="renewal-form" novalidate @submit.prevent="saveEdit">
         <PageAlert v-if="editErrors.formError.value" tone="danger" title="无法保存证书">{{ editErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="证书名称" name="edit-certificate-name" :error="editErrors.fields.name" required><UiInput v-model.trim="editForm.name" v-bind="controlAttrs" maxlength="80" /></FormField>
@@ -61,16 +60,16 @@
         <FormField v-slot="{ controlAttrs }" label="自动续期" name="edit-certificate-renew"><label class="check-field"><UiCheckbox v-model="editForm.auto_renew" v-bind="controlAttrs" /><span>启用到期前自动续期</span></label></FormField>
         <FormField v-slot="{ controlAttrs }" label="提前续期天数" name="edit-certificate-days" :error="editErrors.fields.renew_before_days"><UiNumberInput v-model="editForm.renew_before_days" v-bind="controlAttrs" :min="1" :max="60" /></FormField>
       </form>
-      <template #footer><UiButton variant="secondary" type="button" :disabled="savingEdit" @click="editOpen = false">取消</UiButton><UiButton form="certificate-edit-form" type="submit" :loading="savingEdit">保存</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="savingEdit" @click="requestClose">取消</UiButton><UiButton form="certificate-edit-form" type="submit" :loading="savingEdit">保存</UiButton></template>
     </ModalDialog>
 
-    <ModalDialog :open="renewalOpen" title="续期策略" description="修改自动续期窗口；运行中的签发或续期不会被中断。" :busy="savingPolicy" @close="renewalOpen = false">
+    <ModalDialog :open="renewalOpen" title="续期策略" description="修改自动续期窗口；运行中的操作不会中断。" :busy="savingPolicy" :dirty="renewalState.dirty.value" @close="renewalOpen = false">
       <form id="certificate-renewal-form" ref="renewalFormElement" class="renewal-form" novalidate @submit.prevent="saveRenewal">
-        <PageAlert v-if="renewalErrors.formError.value" tone="danger" title="Unable to save renewal policy">{{ renewalErrors.formError.value }}</PageAlert>
+        <PageAlert v-if="renewalErrors.formError.value" tone="danger" title="无法保存续期策略">{{ renewalErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="自动续期" name="renewal-enabled"><label class="check-field"><UiCheckbox v-model="renewalForm.auto_renew" v-bind="controlAttrs" /><span>启用到期前自动续期</span></label></FormField>
-        <FormField v-slot="{ controlAttrs }" label="提前续期天数" name="renewal-days"><UiNumberInput v-model="renewalForm.renew_before_days" v-bind="controlAttrs" :min="1" :max="60" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="提前续期天数" name="renewal-days" :error="renewalErrors.fields.renew_before_days"><UiNumberInput v-model="renewalForm.renew_before_days" v-bind="controlAttrs" :min="1" :max="60" /></FormField>
       </form>
-      <template #footer><UiButton variant="secondary" type="button" :disabled="savingPolicy" @click="renewalOpen = false">取消</UiButton><UiButton form="certificate-renewal-form" type="submit" :loading="savingPolicy">保存策略</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="savingPolicy" @click="requestClose">取消</UiButton><UiButton form="certificate-renewal-form" type="submit" :loading="savingPolicy">保存策略</UiButton></template>
     </ModalDialog>
   </section>
 </template>
@@ -81,6 +80,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createManagedCertificate, deleteManagedCertificate, fetchManagedCertificatesPage, fetchProviderAccounts, issueManagedCertificate, renewManagedCertificate, updateManagedCertificate, updateManagedCertificateRenewal, type CertificateOperation, type ManagedCertificate, type ProviderAccount } from '../api/client'
 import DataTable from '../components/DataTable.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
 import FormField from '../components/FormField.vue'
@@ -138,9 +138,10 @@ const savingEdit = ref(false)
 const editFormElement = ref<HTMLElement | null>(null)
 const editErrors = useFormErrors()
 const editForm = reactive({ id: 0, name: '', contact_email: '', challenge_type: 'dns-01' as ManagedCertificate['challenge_type'], webroot_path: '', auto_renew: true, renew_before_days: 30, revision: 0 })
+const editState = useDirtyForm(() => editForm)
 const statusOptions = [
   { label: '全部状态', value: '' }, { label: '待申请', value: 'pending' }, { label: '申请中', value: 'issuing' },
-  { label: '有效', value: 'active' }, { label: '续期中', value: 'renewing' }, { label: '失败', value: 'failed' }, { label: '已过期', value: 'expired' },
+  { label: '有效', value: 'active' }, { label: '续期中', value: 'renewing' }, { label: '失败', value: 'failed' }, { label: '已过期', value: 'expired' }, { label: '待完成删除', value: 'deleting' },
 ]
 const environmentOptions = [{ label: '生产环境（受信任）', value: 'production' }, { label: '测试环境（不受信任）', value: 'staging' }]
 const challengeOptions = [{ label: 'DNS-01（推荐）', value: 'dns-01' }, { label: 'HTTP-01 Webroot', value: 'http-01-webroot' }]
@@ -164,10 +165,16 @@ watch(() => renewalForm.renew_before_days, () => renewalErrors.clear('renew_befo
 watch(renewalOpen, open => { if (open) renewalState.markClean() })
 useUnsavedChangesGuard(
   () => renewalOpen.value && renewalState.dirty.value,
-  () => renewalState.confirmDiscard({ title: 'Discard renewal changes?', message: 'The unsaved renewal policy will be lost.', confirmText: 'Discard changes' }),
+  () => renewalState.confirmDiscard({ title: '放弃续期策略修改？', message: '尚未保存的续期设置将丢失。' }),
+)
+useUnsavedChangesGuard(
+  () => editOpen.value && editState.dirty.value,
+  () => editState.confirmDiscard({ title: '放弃证书修改？', message: '尚未保存的证书修改将丢失。' }),
 )
 
 function certificateStatusLabel(status: ManagedCertificate['status']) { return ({ pending: '待申请', issuing: '申请中', active: '有效', renewing: '续期中', failed: '操作失败', expired: '已过期', deleting: '待完成删除' } as Record<string, string>)[status] || status }
+function showCertificateDomains(certificate: ManagedCertificate) { return certificate.domains.join('、') !== certificate.name.replace(/ 证书$/, '') }
+function displayCertificateName(certificate: ManagedCertificate) { return showCertificateDomains(certificate) ? certificate.name : certificate.name.replace(/ 证书$/, '') }
 function certificateTone(status: ManagedCertificate['status']): 'success' | 'warning' | 'danger' | 'neutral' | 'info' { return status === 'active' ? 'success' : status === 'issuing' || status === 'renewing' ? 'warning' : status === 'failed' || status === 'expired' ? 'danger' : 'neutral' }
 function certificateIcon(status: ManagedCertificate['status']) { return status === 'active' ? 'shield' : status === 'issuing' || status === 'renewing' ? 'refresh' : status === 'failed' || status === 'expired' ? 'alert' : 'clock' }
 function operationRunning(certificate: ManagedCertificate) { return certificate.latest_operation?.status === 'running' || certificate.status === 'issuing' || certificate.status === 'renewing' }
@@ -196,7 +203,7 @@ async function create() {
     renew_before_days: !isIntegerInRange(createForm.renew_before_days, 1, 60) && '提前续期天数必须为 1–60 之间的整数。',
     provider_account_id: createForm.challenge_type === 'dns-01' && !createForm.provider_account_id && '请选择已验证且支持证书签发的供应商账户。',
     webroot_path: createForm.challenge_type === 'http-01-webroot' && !createForm.webroot_path.startsWith('/') && '请输入节点上的绝对 Webroot 路径。',
-  }), createFormElement, '请更正标记字段后再申请证书。')
+  }), createFormElement, '')
   if (!valid) return
   saving.value = true; message.value = ''; error.value = ''
   try {
@@ -247,6 +254,7 @@ function openRenewal(certificate: ManagedCertificate) { Object.assign(renewalFor
 function openEdit(certificate: ManagedCertificate) {
   editErrors.clear()
   Object.assign(editForm, { id: certificate.id, name: certificate.name, contact_email: certificate.contact_email, challenge_type: certificate.challenge_type, webroot_path: certificate.webroot_path || '', auto_renew: certificate.auto_renew, renew_before_days: certificate.renew_before_days, revision: certificate.revision })
+  editState.markClean()
   editOpen.value = true
 }
 async function saveEdit() {
@@ -255,7 +263,7 @@ async function saveEdit() {
     contact_email: !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(editForm.contact_email.trim()) && '请输入有效的 ACME 联系邮箱。',
     webroot_path: editForm.challenge_type === 'http-01-webroot' && !editForm.webroot_path.startsWith('/') && '请输入节点上的绝对 Webroot 路径。',
     renew_before_days: !isIntegerInRange(editForm.renew_before_days, 1, 60) && '提前续期天数必须为 1–60 之间的整数。',
-  }), editFormElement, '请更正标记字段后再保存证书。')
+  }), editFormElement, '')
   if (!valid) return
   savingEdit.value = true
   error.value = ''
@@ -274,15 +282,14 @@ async function saveEdit() {
 async function saveRenewal() {
   renewalErrors.clear()
   const valid = await renewalErrors.applyValidation(collectFieldErrors({
-    renew_before_days: !isIntegerInRange(renewalForm.renew_before_days, 1, 60) && 'Renewal lead time must be an integer between 1 and 60 days.',
-  }), renewalFormElement, 'Correct the marked field before saving the renewal policy.')
+    renew_before_days: !isIntegerInRange(renewalForm.renew_before_days, 1, 60) && '提前续期天数必须为 1–60 之间的整数。',
+  }), renewalFormElement, '')
   if (!valid) return
-  if (!isIntegerInRange(renewalForm.renew_before_days, 1, 60)) { error.value = '提前续期天数必须为 1–60 之间的整数。'; return }
   savingPolicy.value = true; error.value = ''
   try {
     await updateManagedCertificateRenewal(renewalForm.id, { auto_renew: renewalForm.auto_renew, renew_before_days: renewalForm.renew_before_days, expected_revision: renewalForm.revision })
     renewalOpen.value = false; message.value = '自动续期策略已更新。'; await refresh()
-  } catch (cause: any) { error.value = cause?.response?.data?.message || '自动续期策略保存失败。' }
+  } catch (cause: any) { await renewalErrors.applyApiError(cause, '自动续期策略保存失败。', renewalFormElement, { renew_before_days: 'renew_before_days' }) }
   finally { savingPolicy.value = false }
 }
 function updatePolling() {
@@ -307,12 +314,18 @@ onMounted(async () => {
     createForm.name = `${dnsDomain} 证书`
     createForm.domains = dnsDomain
     createForm.provider_account_id = dnsProvider
+    createState.markClean()
   }
 })
 onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
 </script>
 
 <style scoped>
+.certificate-help { color: var(--muted); font-size: 12px; }
+.certificate-help summary { width: fit-content; cursor: pointer; color: var(--foreground); }
+.certificate-help summary:hover { color: var(--primary); }
+.certificate-help summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 3px; }
+.certificate-help p { max-width: 740px; margin: 8px 0 0; line-height: 1.6; }
 .certificate-error { display: block; max-width: 230px; margin-top: 5px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .operation-cell { display: grid; justify-items: start; gap: 5px; }
 .muted-value { color: var(--muted); }

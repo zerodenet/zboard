@@ -65,7 +65,7 @@
           <FormField v-slot="{ controlAttrs }" label="模板名称" name="email-template-name" :error="editorErrors.fields.name" required><UiInput v-model="form.name" v-bind="controlAttrs" maxlength="80" /></FormField>
           <FormField v-slot="{ controlAttrs }" label="模板标识" name="email-template-slug" hint="仅用于管理识别，不会暴露为公开链接。" :error="editorErrors.fields.slug" required><UiInput v-model="form.slug" v-bind="controlAttrs" maxlength="80" :disabled="form.category === 'registration'" /></FormField>
           <FormField v-slot="{ controlAttrs }" label="排序" name="email-template-order" :error="editorErrors.fields.sort_order"><UiNumberInput v-model="form.sort_order" v-bind="controlAttrs" /></FormField>
-          <label class="template-switch"><span><strong>启用模板</strong><small>{{ form.category === 'registration' ? '注册后自动排队发送' : '允许运营任务选择' }}</small></span><UiCheckbox v-model="form.is_active" role="switch" /></label>
+          <label class="template-switch"><span><strong>启用模板</strong><small>{{ form.category === 'registration' ? '注册后自动排队发送' : '允许运营任务选择' }}</small></span><UiSwitch v-model="form.is_active" /></label>
         </div>
         <FormField v-slot="{ controlAttrs }" label="邮件主题" name="email-template-subject" :error="editorErrors.fields.subject_template" required full><UiInput v-model="form.subject_template" v-bind="controlAttrs" maxlength="200" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="纯文本正文" name="email-template-body" hint="支持上方列出的变量；实际发送前按收件人替换。" :error="editorErrors.fields.body_template" required full><UiTextarea v-model="form.body_template" v-bind="controlAttrs" maxlength="100000" rows="12" /></FormField>
@@ -109,7 +109,7 @@ import ModalDialog from './ModalDialog.vue'
 import PageAlert from './PageAlert.vue'
 import StatusBadge from './StatusBadge.vue'
 import UiButton from './UiButton.vue'
-import UiCheckbox from './UiCheckbox.vue'
+import UiSwitch from './UiSwitch.vue'
 import UiIcon from './UiIcon.vue'
 import UiInput from './UiInput.vue'
 import UiNumberInput from './UiNumberInput.vue'

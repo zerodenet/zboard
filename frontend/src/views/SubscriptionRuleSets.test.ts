@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { defineComponent } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
@@ -35,7 +34,7 @@ async function render() {
   await router.push('/'); await router.isReady()
   wrapper = mount(defineComponent({ components: { RouterView }, template: '<RouterView />' }), {
     attachTo: document.body,
-    global: { plugins: [router, PrimeVue], stubs: { ModalDialog: modal } },
+    global: { plugins: [router], stubs: { ModalDialog: modal } },
   })
   await flushPromises()
   await wrapper.findAll('button').find(button => button.text().includes('新建规则集'))!.trigger('click')

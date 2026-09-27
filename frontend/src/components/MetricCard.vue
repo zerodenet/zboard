@@ -1,7 +1,7 @@
 <template>
   <OverviewCard class="metric-card" :label="label" :value="value" :icon="icon" :tone="iconTone" :description="meta">
     <template #description><span class="metric-meta"><slot name="meta">{{ meta }}</slot></span></template>
-    <template #badge><StatusBadge :tone="tone">{{ status }}</StatusBadge></template>
+    <template v-if="status" #badge><StatusBadge :tone="tone">{{ status }}</StatusBadge></template>
   </OverviewCard>
 </template>
 
@@ -15,7 +15,7 @@ withDefaults(defineProps<{
   label: string
   value: string | number
   icon: string
-  status: string
+  status?: string
   meta?: string
   tone?: Tone
   iconTone?: Tone

@@ -42,7 +42,7 @@ describe('infrastructure detail density policy', () => {
     const layout = readFileSync(join(root, 'layouts', 'AdminLayout.vue'), 'utf8')
     const router = readFileSync(join(root, 'router', 'index.ts'), 'utf8')
 
-    expect(providers.match(/class="provider-section panel"/g)).toHaveLength(1)
+    expect(providers.match(/class="provider-section"/g)).toHaveLength(1)
     expect(providers).not.toContain('fetchManagedDNSRecordsPage')
     expect(providers).not.toContain('title="DNS 解析"')
     expect(providers).toContain('.provider-empty-state { min-height: 150px; padding: 24px; }')

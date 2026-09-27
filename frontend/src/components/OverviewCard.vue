@@ -59,11 +59,11 @@ defineEmits<{ select: [] }>()
   align-items: start;
   gap: 10px;
   padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   color: var(--text-body);
   background: var(--surface);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 5%, transparent);
+  box-shadow: none;
   font: inherit;
   text-align: left;
 }
@@ -82,18 +82,17 @@ defineEmits<{ select: [] }>()
 .overview-card[data-tone='danger'] .overview-card-icon { color: var(--danger); background: var(--danger-soft); }
 .overview-card-copy { min-width: 0; display: grid; gap: 3px; }
 .overview-card-heading { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 8px; }
-.overview-card-label { overflow: hidden; color: var(--text-secondary); font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.overview-card-value { color: var(--text-strong); font-size: 24px; font-weight: 720; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
-.overview-card-description { overflow: hidden; color: var(--muted); font-size: 9px; font-weight: 500; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.overview-card-label { overflow: hidden; color: var(--text-secondary); font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.overview-card-value { color: var(--text-strong); font-size: 24px; font-weight: 600; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.overview-card-description { overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 400; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .overview-card-badge { position: absolute; right: 12px; bottom: 12px; }
 .overview-card-interactive {
   cursor: pointer;
-  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+  transition: border-color .15s ease-out, background-color .15s ease-out;
 }
 .overview-card-interactive:hover:not(:disabled) {
-  border-color: var(--line-strong);
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--text) 8%, transparent);
-  transform: translateY(-1px);
+  border-color: var(--input);
+  background: var(--surface-subtle);
 }
 .overview-card-interactive:focus-visible {
   outline: 0;
@@ -102,7 +101,7 @@ defineEmits<{ select: [] }>()
 }
 .overview-card-interactive[aria-pressed='true'] {
   border-color: var(--primary);
-  box-shadow: 0 0 0 1px var(--primary), 0 4px 14px color-mix(in srgb, var(--primary) 13%, transparent);
+  background: var(--primary-soft);
 }
 .overview-card-interactive:disabled { cursor: not-allowed; opacity: .58; }
 

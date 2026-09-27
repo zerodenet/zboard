@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -59,13 +60,6 @@ func (m *Manager) importVerified(data []byte, actor string, p *Package, confirme
 			return Installation{}, errors.New("plugin installation limit reached")
 		}
 	}
-	var count int64
-	if err := m.db.Model(&model.PluginVersion{}).Where("plugin_id = ? AND id <> ?", p.Manifest.ID, p.Digest).Count(&count).Error; err != nil {
-		return Installation{}, err
-	}
-	if count >= 30 {
-		return Installation{}, errors.New("plugin version history limit reached (30)")
-	}
 	op, err := m.newOperation(p.Manifest.ID, "import", actor)
 	if err != nil {
 		return Installation{}, err
@@ -81,6 +75,9 @@ func (m *Manager) importVerified(data []byte, actor string, p *Package, confirme
 			_ = os.RemoveAll(target)
 		}
 		return Installation{}, m.finish(op, err)
+	}
+	if err := m.prunePackageStorageLocked(); err != nil {
+		log.Printf("plugin package cleanup after import: %v", err)
 	}
 	return m.load(p.Manifest.ID)
 }
@@ -142,7 +139,7 @@ func (m *Manager) prepare(ctx context.Context, v Installation) (*process, error)
 	}
 	return proc, nil
 }
-func (m *Manager) Action(ctx context.Context, id, action, actor string, generation uint64, _ bool, versionID string) (Installation, error) {
+func (m *Manager) Action(ctx context.Context, id, action, actor string, generation uint64, _ bool, _ string) (Installation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.guard(m.db); err != nil {
@@ -155,13 +152,13 @@ func (m *Manager) Action(ctx context.Context, id, action, actor string, generati
 	if generation != v.Generation {
 		return v, ErrConflict
 	}
-	if action != "enable" && action != "disable" && action != "uninstall" && action != "rollback" && action != "purge_data" {
+	if action != "enable" && action != "disable" && action != "uninstall" && action != "purge_data" {
 		return v, errors.New("unsupported plugin operation")
 	}
 	if action == "enable" && !v.Compatibility.Compatible {
 		return v, errors.New("plugin API or runtime is incompatible")
 	}
-	if (action == "rollback" || action == "purge_data") && v.Enabled {
+	if action == "purge_data" && v.Enabled {
 		return v, errors.New("disable plugin first")
 	}
 	if action == "enable" {
@@ -231,22 +228,8 @@ func (m *Manager) Action(ctx context.Context, id, action, actor string, generati
 		if err == nil {
 			m.processes[id].close()
 			delete(m.processes, id)
-			for _, ver := range v.Versions {
-				if digestPattern.MatchString(ver.Digest) {
-					err = errors.Join(err, os.RemoveAll(filepath.Join(m.options.Directory, "versions", ver.Digest)))
-				}
-			}
-		}
-	case "rollback":
-		var ver model.PluginVersion
-		err = m.db.First(&ver, "id = ? AND plugin_id = ?", versionID, id).Error
-		if err == nil {
-			candidate := v
-			candidate.Digest, candidate.Version = ver.Digest, ver.Version
-			var pack *Package
-			pack, err = m.packageFor(candidate)
-			if err == nil {
-				err = m.commitCandidate(ctx, v.PluginInstallation, pack, actor, nil)
+			if cleanupErr := m.prunePackageStorageLocked(); cleanupErr != nil {
+				log.Printf("plugin package cleanup after uninstall: %v", cleanupErr)
 			}
 		}
 	}

@@ -22,8 +22,9 @@
         </WorkbenchFilterBar>
       </template>
 
+      <TableSkeleton v-if="loading && !items.length" label="正在加载审计日志" :columns="6" />
       <DataTable
-        v-if="items.length"
+        v-else-if="items.length"
         caption="安全与业务审计事件摘要；完整详情按需加载"
         :row-count="total"
         :min-width="900"
@@ -181,6 +182,7 @@ import { fetchAuditLog, fetchAuditLogs, type AuditLogDetail, type AuditLogSummar
 import { emptyEntityReferenceResponse, fetchAdminEntityReferences, type EntityKind, type EntityReferenceResponse } from '../api/readModels'
 import CursorPager from '../components/CursorPager.vue'
 import DataTable from '../components/DataTable.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
 import EmptyState from '../components/EmptyState.vue'

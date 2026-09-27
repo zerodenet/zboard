@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import DatabaseMigrationDatasource from './DatabaseMigrationDatasource.vue'
@@ -10,7 +9,7 @@ function mountField(driver: 'mysql' | 'sqlite', value = '') {
       modelValue: value,
       'onUpdate:modelValue': (next: string) => { void wrapper.setProps({ modelValue: next }) },
     },
-    global: { plugins: [PrimeVue] },
+    global: { plugins: [] },
   })
   return wrapper
 }

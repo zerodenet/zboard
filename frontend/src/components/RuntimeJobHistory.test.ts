@@ -1,5 +1,4 @@
 import { mount, flushPromises } from '@vue/test-utils'
-import PrimeVue from 'primevue/config'
 import { expect, it, vi } from 'vitest'
 import RuntimeJobHistory from './RuntimeJobHistory.vue'
 import UiSelect from './UiSelect.vue'
@@ -8,7 +7,7 @@ vi.mock('../api/runtimeHistory', () => ({ fetchRunHistory: api.history, fetchRun
 it('requires verification evidence and saves the selected outcome before refreshing', async () => {
   api.history.mockResolvedValue({ items: [{ id: 'run-1', owner: 'plugin:example.sync', handler: 'sync', state: 'unknown', created_at: '2026-09-12T00:00:00Z', finished_at: null }], total: 1, offset: 0, limit: 25 })
   api.resolve.mockResolvedValue(undefined)
-  const w = mount(RuntimeJobHistory, { props: { asOf: '2026-09-12T01:00:00Z', names: { sync: '同步任务' } }, global: { plugins: [PrimeVue] } })
+  const w = mount(RuntimeJobHistory, { props: { asOf: '2026-09-12T01:00:00Z', names: { sync: '同步任务' } } })
   await flushPromises()
   expect(w.text()).toContain('结果待核验')
   await w.findAll('button').find(button => button.text() === '记录核验结果')!.trigger('click')
@@ -24,7 +23,7 @@ it('requires verification evidence and saves the selected outcome before refresh
 it('queues DNS inspection without resolving the original unknown outcome', async () => {
   api.history.mockResolvedValue({ items: [{ id: 'dns-1', owner: 'system', handler: 'dns_operation', state: 'unknown', created_at: '2026-09-12T00:00:00Z', finished_at: null }], total: 1, offset: 0, limit: 25 })
   api.resolve.mockClear(); api.reconcile.mockResolvedValue(undefined)
-  const w = mount(RuntimeJobHistory, { props: { asOf: 'now', names: {} }, global: { plugins: [PrimeVue] } })
+  const w = mount(RuntimeJobHistory, { props: { asOf: 'now', names: {} } })
   await flushPromises()
   await w.findAll('button').find(button => button.text() === '核验远端 DNS')!.trigger('click')
   await flushPromises()
@@ -37,7 +36,7 @@ it('queues DNS inspection without resolving the original unknown outcome', async
 
 it('explains migration verification without promising automatic cutover or retry', async () => {
   api.history.mockResolvedValue({ items: [{ id: 'migration-1', owner: 'system', handler: 'database_migration', state: 'unknown', created_at: '2026-09-12T00:00:00Z', finished_at: null }], total: 1, offset: 0, limit: 25 })
-  const w = mount(RuntimeJobHistory, { props: { asOf: 'now', names: {} }, global: { plugins: [PrimeVue] } })
+  const w = mount(RuntimeJobHistory, { props: { asOf: 'now', names: {} } })
   await flushPromises()
   expect(w.text()).toContain('数据库迁移')
   await w.findAll('button').find(button => button.text() === '记录核验结果')!.trigger('click')
@@ -50,7 +49,7 @@ it('shows persisted attempts and requests durable cancellation for a running job
   api.history.mockResolvedValue({ items: [{ id: 'run-active', owner: 'system', handler: 'sync', state: 'running', attempts: 2, max_attempts: 3, created_at: '2026-09-12T00:00:00Z', finished_at: null }], total: 1, offset: 0, limit: 25 })
   api.attempts.mockResolvedValue({ items: [{ attempt_number: 2, worker: 'host-b', state: 'running', started_at: '2026-09-12T00:01:00Z', expires_at: '2026-09-12T00:02:00Z', finished_at: null }], total: 2, offset: 0, limit: 25 })
   api.cancel.mockResolvedValue('cancel_requested')
-  const w = mount(RuntimeJobHistory, { props: { asOf: 'now', names: { sync: '同步任务' } }, global: { plugins: [PrimeVue] } })
+  const w = mount(RuntimeJobHistory, { props: { asOf: 'now', names: { sync: '同步任务' } } })
   await flushPromises()
   await w.findAll('button').find(button => button.text() === '查看尝试')!.trigger('click'); await flushPromises()
   expect(api.attempts).toHaveBeenCalledWith('run-active')

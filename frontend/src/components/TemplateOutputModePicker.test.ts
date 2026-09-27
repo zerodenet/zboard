@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import TemplateOutputModePicker from './TemplateOutputModePicker.vue'
@@ -7,7 +6,7 @@ describe('TemplateOutputModePicker', () => {
   it('presents all backend-owned renderers as accessible choices', async () => {
     const wrapper = mount(TemplateOutputModePicker, {
       props: { modelValue: 'clash' },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
 
     const options = wrapper.findAll('[role="radio"]')

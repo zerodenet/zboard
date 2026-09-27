@@ -6,6 +6,7 @@
         <span v-if="refreshing" class="workbench-refreshing" role="status"><UiIcon name="refresh" />更新中</span>
         <span v-if="total !== undefined" class="workbench-total"><strong>{{ total }}</strong><span>条</span></span>
         <UiButton v-if="showDensity" variant="ghost" size="sm" type="button" :aria-pressed="density === 'comfortable'" :aria-label="density === 'compact' ? '切换为舒适行高' : '切换为紧凑行高'" @click="$emit('update:density', density === 'compact' ? 'comfortable' : 'compact')"><UiIcon name="menu" />{{ density === 'compact' ? '紧凑' : '舒适' }}</UiButton>
+        <slot name="pagination" />
         <slot name="actions" />
       </div>
     </header>

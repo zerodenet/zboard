@@ -1,24 +1,51 @@
-import PrimeVue from 'primevue/config'
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DateRangeFilter from './DateRangeFilter.vue'
-import UiDateInput from './UiDateInput.vue'
+
+beforeEach(() => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-09-24T08:00:00Z'))
+})
+afterEach(() => vi.useRealTimers())
 
 describe('DateRangeFilter', () => {
-  it('keeps visible UTC context and emits bounded date values', async () => {
+  it('offers UTC presets with future ranges for subscription expiry', async () => {
     const wrapper = mount(DateRangeFilter, {
-      props: { label: '创建日期', from: '2026-07-01', to: '2026-07-03' },
-      global: { plugins: [PrimeVue] },
+      props: { label: '到期日期', from: '', to: '', presetDirection: 'future' },
     })
-    expect(wrapper.attributes('role')).toBe('group')
-    expect(wrapper.text()).toContain('创建日期')
-    expect(wrapper.text()).toContain('UTC')
-    const inputs = wrapper.findAllComponents(UiDateInput)
-    expect(inputs[0].attributes('max')).toBe('2026-07-03')
-    expect(inputs[1].attributes('min')).toBe('2026-07-01')
-    await inputs[0].vm.$emit('update:modelValue', '2026-07-02')
-    await inputs[1].vm.$emit('update:modelValue', '2026-07-04')
-    expect(wrapper.emitted('update:from')?.at(-1)).toEqual(['2026-07-02'])
-    expect(wrapper.emitted('update:to')?.at(-1)).toEqual(['2026-07-04'])
+    expect(wrapper.attributes('aria-label')).toBe('到期日期（UTC）')
+    expect(wrapper.findAll('.date-range-month')).toHaveLength(2)
+    await wrapper.get('.date-range-presets button:nth-child(2)').trigger('click')
+    expect(wrapper.emitted('update:from')?.at(-1)).toEqual(['2026-09-24'])
+    expect(wrapper.emitted('update:to')?.at(-1)).toEqual(['2026-09-30'])
+    await wrapper.get('.date-range-presets button:last-child').trigger('click')
+    expect(wrapper.emitted('update:from')?.at(-1)).toEqual([''])
+    expect(wrapper.emitted('update:to')?.at(-1)).toEqual([''])
+    wrapper.unmount()
+  })
+
+  it('selects a calendar range and keeps the inclusive end visible', async () => {
+    const wrapper = mount(DateRangeFilter, {
+      props: { label: '记录日期', from: '', to: '' },
+    })
+    await wrapper.get('button[aria-label="2026年9月25日"]:not(:disabled)').trigger('click')
+    expect(wrapper.emitted('update:from')?.at(-1)).toEqual(['2026-09-25'])
+    expect(wrapper.emitted('update:to')?.at(-1)).toEqual(['2026-09-25'])
+    await wrapper.setProps({ from: '2026-09-25', to: '2026-09-25' })
+    await wrapper.get('button[aria-label="2026年9月20日"]:not(:disabled)').trigger('click')
+    expect(wrapper.emitted('update:from')?.at(-1)).toEqual(['2026-09-20'])
+    expect(wrapper.emitted('update:to')?.at(-1)).toEqual(['2026-09-25'])
+    await wrapper.setProps({ from: '2026-09-20', to: '2026-09-25' })
+    expect(wrapper.text()).toContain('2026-09-20  →  2026-09-25')
+    expect(wrapper.text()).toContain('含结束日')
+    wrapper.unmount()
+  })
+
+  it('warns when an existing range exceeds the backend limit', () => {
+    const wrapper = mount(DateRangeFilter, {
+      props: { label: '记录日期', from: '2025-01-01', to: '2026-09-24' },
+    })
+    expect(wrapper.get('[role="alert"]').text()).toContain('366 天')
+    wrapper.unmount()
   })
 })

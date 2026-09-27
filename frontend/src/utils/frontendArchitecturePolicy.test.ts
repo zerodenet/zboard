@@ -48,6 +48,16 @@ const adminListRoutes = Object.keys(adminRoutes).filter(route => !['dashboard', 
 const tabularAdminRoutes = adminListRoutes.filter(route => route !== 'tickets')
 
 describe('frontend architecture policy', () => {
+  it('keeps PrimeVue out of the application runtime', () => {
+    const applicationSources = sourceFilesForRuntime()
+    for (const path of applicationSources) {
+      expect(readFileSync(path, 'utf8'), relative(sourceRoot, path)).not.toMatch(/from ['"]primevue\//)
+    }
+    expect(read('main.ts')).not.toContain('app.use(PrimeVue')
+    const packageJSON = JSON.parse(readFileSync(join(sourceRoot, '..', 'package.json'), 'utf8'))
+    expect(packageJSON.dependencies?.primevue).toBeUndefined()
+    expect(packageJSON.devDependencies?.primevue).toBeUndefined()
+  })
   it('keeps every effective admin route in the audited surface matrix', () => {
     for (const [route, files] of Object.entries(adminRoutes)) {
       expect(routerSource, `missing /admin/${route}`).toContain(
@@ -79,20 +89,17 @@ describe('frontend architecture policy', () => {
   it('keeps rule sets inside the subscription-template information architecture', () => {
     const templates = read('views', 'SubscriptionTemplates.vue')
     const ruleSets = read('views', 'SubscriptionRuleSets.vue')
-    const sectionNavigation = read('components', 'SubscriptionTemplateSectionNav.vue')
     const customizer = read('components', 'SubscriptionTemplateCustomizer.vue')
 
     expect(resolveAdminNavigation('/admin/subscription-rule-sets')).toBeUndefined()
     expect(resolveAdminNavigation('/admin/subscription-templates/rule-sets')?.page.to)
       .toBe('/admin/subscription-templates/rule-sets')
-    expect(templates).toContain('<SubscriptionTemplateSectionNav section="templates"')
-    expect(ruleSets).toContain('<SubscriptionTemplateSectionNav section="rule-sets"')
+    expect(templates).toContain('<PageHeader title="订阅模板"')
+    expect(ruleSets).toContain('<PageHeader title="规则集"')
+    expect(templates).not.toContain('<SubscriptionTemplateSectionNav')
+    expect(ruleSets).not.toContain('<SubscriptionTemplateSectionNav')
     expect(ruleSets).toContain('PageHeader title="规则集"')
     expect(ruleSets).not.toContain('订阅规则集')
-    expect(sectionNavigation).toContain('<nav class="subscription-template-section-nav"')
-    expect(sectionNavigation).toContain('<RouterLink')
-    expect(sectionNavigation).toContain('aria-current')
-    expect(sectionNavigation).not.toContain('<UiTabs')
     expect(customizer).toContain('model.policy_groups')
     expect(customizer).toContain('include_pattern')
     expect(customizer).toContain('$zboard:all-nodes')
@@ -200,7 +207,8 @@ describe('frontend architecture policy', () => {
       const source = readFileSync(path, 'utf8')
       const file = relative(sourceRoot, path)
       const issues: string[] = []
-      if (/<(?:input|textarea|select)\b/.test(source)) issues.push(`${file}: native form control`)
+      const isSharedControl = ['components/UiInput.vue', 'components/UiTextarea.vue', 'components/UiNumberInput.vue', 'components/UiFileUpload.vue'].includes(file) || file.startsWith('components/ui/')
+      if (/<(?:input|textarea|select)\b/.test(source) && !isSharedControl) issues.push(`${file}: native form control`)
       if (/<table\b/.test(source) && path !== join(componentsRoot, 'DataTable.vue')) issues.push(`${file}: private table`)
       return issues
     })
@@ -208,3 +216,7 @@ describe('frontend architecture policy', () => {
     expect(violations).toEqual([])
   })
 })
+
+function sourceFilesForRuntime() {
+  return [join(sourceRoot, 'main.ts'), ...vueFiles(viewsRoot), ...vueFiles(componentsRoot)]
+}

@@ -43,7 +43,8 @@
 
       <PageAlert v-if="recordError" tone="danger" title="流量记录加载失败">{{ recordError }} <UiButton variant="secondary" @click="loadRecords()">重试记录</UiButton></PageAlert>
       <p v-if="recordLoading && !records.length" role="status">正在加载流量记录…</p>
-      <DataTable v-if="records.length" :caption="`流量使用明细（按${bucketLabel}聚合）`" :row-count="recordTotal" :min-width="1020" table-class="traffic-table">
+      <TableSkeleton v-if="recordLoading && !records.length" label="正在加载流量记录" :columns="8" />
+      <DataTable v-else-if="records.length" :caption="`流量使用明细（按${bucketLabel}聚合）`" :row-count="recordTotal" :min-width="1020" table-class="traffic-table">
         <thead>
           <tr>
             <th class="table-primary-column">时间</th>
@@ -92,7 +93,8 @@
       <template #actions><span class="workbench-note">汇总不受“仅异常/全部结果”和当前页影响；节点、日期和汇总粒度只作用于上方记录表</span></template>
       <PageAlert v-if="reconciliationError" tone="danger" title="流量对账加载失败">{{ reconciliationError }} <UiButton variant="secondary" @click="loadReconciliation()">重试对账</UiButton></PageAlert>
       <p v-if="reconciliationLoading && !reconciliation.length" role="status">正在加载对账结果…</p>
-      <DataTable v-if="reconciliation.length" caption="订阅流量对账结果" :row-count="reconciliationTotal" :min-width="1200" table-class="reconciliation-table">
+      <TableSkeleton v-if="reconciliationLoading && !reconciliation.length" label="正在加载对账结果" :columns="8" />
+      <DataTable v-else-if="reconciliation.length" caption="订阅流量对账结果" :row-count="reconciliationTotal" :min-width="1200" table-class="reconciliation-table">
         <thead>
           <tr>
             <th class="table-primary-column">订阅</th>
@@ -134,6 +136,7 @@ import { fetchTrafficNodeSeries, type TrafficNodeSeries, type TrafficUsageBucket
 import { emptyEntityReferenceResponse, fetchAdminEntityReferences, fetchTrafficTrends, type EntityReferenceResponse, type TrafficTrendResult } from '../api/readModels'
 import CursorPager from '../components/CursorPager.vue'
 import DataTable from '../components/DataTable.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
 import EntityReference from '../components/EntityReference.vue'

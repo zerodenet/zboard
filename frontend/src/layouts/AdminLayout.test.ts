@@ -2,20 +2,24 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AdminLayout from './AdminLayout.vue'
+import PageHeader from '../components/PageHeader.vue'
 import { adminNavigation } from '../utils/adminNavigation'
 
-vi.mock('../stores/app', () => ({ useAppStore: () => ({ siteName: 'zboard', user: { email: 'admin@example.test' }, loadMe: vi.fn(), clear: vi.fn() }) }))
+const clearAuth = vi.hoisted(() => vi.fn())
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ siteName: 'zboard', user: { email: 'admin@example.test' }, loadMe: vi.fn(), clear: clearAuth }) }))
 vi.mock('../components/TaskTray.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('../api/system', () => ({ fetchAdminSystemInfo: vi.fn(async () => ({ release_version: '0.3.0', build_time: '2026-09-24T00:00:00Z' })) }))
+vi.mock('../api/releaseUpdates', async importOriginal => ({ ...(await importOriginal<typeof import('../api/releaseUpdates')>()), fetchZBoardReleases: vi.fn(async () => [{ tag_name: 'v0.3.0', html_url: 'https://github.com/zerodenet/zboard/releases/tag/v0.3.0', prerelease: false, draft: false, published_at: '2026-09-24T00:00:00Z' }]) }))
 
 const wrappers: ReturnType<typeof mount>[] = []
-afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.style.overflow = '' })
+afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.restoreAllMocks(); clearAuth.mockClear(); vi.unstubAllGlobals(); document.body.style.overflow = '' })
 
 async function setup(path: string, mobile = false) {
   let viewportListener: (() => void) | undefined
   const media = { matches: mobile, addEventListener: vi.fn((_event, listener) => { viewportListener = listener }), removeEventListener: vi.fn() }
   vi.stubGlobal('matchMedia', vi.fn(() => media))
   const pages = adminNavigation.flatMap(domain => domain.sections.flatMap(section => section.pages))
-  const router = createRouter({ history: createMemoryHistory(), routes: [...pages, { to: '/', label: '首页' }, { to: '/account', label: '个人中心' }].map(page => ({ path: page.to, component: { template: '<p>Page fixture</p>' }, meta: { title: page.label } })) })
+  const router = createRouter({ history: createMemoryHistory(), routes: [...pages, { to: '/', label: '首页' }, { to: '/account', label: '个人中心' }].map(page => ({ path: page.to, component: { components: { PageHeader }, template: '<section class="standard-page"><PageHeader :title="String($route.meta.title)" /></section>' }, meta: { title: page.label } })) })
   await router.push(path)
   await router.isReady()
   const wrapper = mount(AdminLayout, { attachTo: document.body, global: { plugins: [router] } })
@@ -25,33 +29,88 @@ async function setup(path: string, mobile = false) {
 }
 
 describe('AdminLayout navigation', () => {
+  it('searches admin pages from the topbar shortcut and follows a result', async () => {
+    const { router } = await setup('/admin/dashboard')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))
+    await flushPromises()
+    const dialog = document.querySelector<HTMLElement>('.app-dialog')
+    expect(dialog?.parentElement).toBe(document.body)
+    expect(dialog?.querySelector('.app-dialog-body')).not.toBeNull()
+    const search = document.querySelector<HTMLInputElement>('input[aria-label="搜索管理页面"]')
+    expect(search).not.toBeNull()
+    search!.value = '工单'
+    search!.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const results = document.querySelectorAll<HTMLAnchorElement>('.admin-quick-search-results a')
+    expect(results).toHaveLength(1)
+    expect(results[0]?.getAttribute('href')).toBe('/admin/tickets')
+    results[0]?.click()
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/admin/tickets')
+  })
+
   it('shows just the URL-owned domain and one active page on a deep link', async () => {
     const { wrapper } = await setup('/admin/subscription-templates/rule-sets?search=test')
     expect(wrapper.findAll('.domain-link')).toHaveLength(6)
-    expect(wrapper.get('.domain-link[aria-current="true"]').attributes('aria-label')).toBe('商品与订单')
+    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('商品与订单')
     expect(wrapper.findAll('.page-link[aria-current="page"]')).toHaveLength(1)
-    expect(wrapper.get('.page-link.selected').text()).toBe('规则集')
-    expect(wrapper.findAll('.page-link')).toHaveLength(4)
+    expect(wrapper.get('.page-link.selected').text()).toBe('配置交付')
+    expect(wrapper.findAll('.page-link')).toHaveLength(2)
+    expect(wrapper.get('.admin-page-navigation-link[aria-current="page"]').text()).toBe('规则集')
     expect(wrapper.get('.topbar-context').text()).toBe('商品与订单')
-    expect(wrapper.find('.build-version').exists()).toBe(false)
+    expect(wrapper.get('.admin-build-info').text()).toContain('版本 0.3.0')
+    expect(wrapper.get('.admin-build-info').text()).toContain('构建时间')
+    expect(wrapper.find('.admin-account').exists()).toBe(false)
   })
 
-  it('navigates all six domains, follows history, and does not reset the current domain query', async () => {
+  it('keeps site, account and logout actions in the top-right account menu', async () => {
+    const { wrapper, router } = await setup('/admin/users')
+    await wrapper.get('.topbar-account-trigger').trigger('click')
+    await flushPromises()
+    const menu = document.body.querySelector<HTMLElement>('[role="menu"]')
+    expect(menu?.querySelector<HTMLAnchorElement>('a[href="/"]')?.textContent).toContain('查看站点')
+    const account = menu?.querySelector<HTMLAnchorElement>('a[href="/account"]')
+    expect(account?.textContent).toContain('个人中心')
+    expect(menu?.textContent).toContain('退出登录')
+    account!.click()
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/account')
+  })
+
+  it('signs out from the account menu', async () => {
+    const { wrapper, router } = await setup('/admin/users')
+    await wrapper.get('.topbar-account-trigger').trigger('click')
+    await flushPromises()
+    const logout = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(item => item.textContent?.includes('退出登录'))
+    expect(logout).toBeDefined()
+    logout!.click()
+    await flushPromises()
+    expect(clearAuth).toHaveBeenCalledOnce()
+    expect(router.currentRoute.value.path).toBe('/')
+  })
+
+  it('expands all six domains without navigation, then follows the chosen section and browser history', async () => {
     const { wrapper, router } = await setup('/admin/users?page=3')
     await wrapper.get('.domain-link[aria-label="用户与订阅"]').trigger('click')
     expect(router.currentRoute.value.fullPath).toBe('/admin/users?page=3')
+    expect(wrapper.get('.domain-link[aria-label="用户与订阅"]').attributes('aria-expanded')).toBe('false')
     for (const domain of adminNavigation) {
+      const previousRoute = router.currentRoute.value.fullPath
       await wrapper.get(`.domain-link[aria-label="${domain.label}"]`).trigger('click')
       await flushPromises()
+      expect(wrapper.get(`.domain-link[aria-label="${domain.label}"]`).attributes('aria-expanded')).toBe('true')
+      expect(router.currentRoute.value.fullPath).toBe(previousRoute)
+      await wrapper.get(`.page-link[href="${domain.sections[0].pages[0].to}"]`).trigger('click')
+      await flushPromises()
       expect(router.currentRoute.value.path).toBe(domain.sections[0].pages[0].to)
-      expect(wrapper.get('.domain-heading h2').text()).toBe(domain.label)
+      expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe(domain.label)
     }
     router.back()
     await flushPromises()
-    expect(wrapper.get('.domain-heading h2').text()).toBe('运营')
+    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('运营')
     router.forward()
     await flushPromises()
-    expect(wrapper.get('.domain-heading h2').text()).toBe('设置')
+    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('设置')
   })
 
   it('keeps the mobile drawer open for domain selection, then closes for the page and restores focus', async () => {
@@ -68,11 +127,14 @@ describe('AdminLayout navigation', () => {
     await wrapper.get('.domain-link[aria-label="节点与协议"]').trigger('click')
     await flushPromises()
     expect(wrapper.classes()).toContain('nav-open')
-    await wrapper.get('.page-link[href="/admin/protocols"]').trigger('click')
+    await wrapper.get('.page-link[href="/admin/nodes"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/admin/protocols')
+    expect(router.currentRoute.value.path).toBe('/admin/nodes')
     expect(wrapper.classes()).not.toContain('nav-open')
     expect(document.activeElement).toBe(toggle.element)
+    await wrapper.get('.admin-page-navigation-link[href="/admin/protocols"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/admin/protocols')
     expect(document.body.style.overflow).toBe('')
   })
 
@@ -105,7 +167,7 @@ describe('AdminLayout navigation', () => {
     await wrapper.get('.menu-button').trigger('click')
     await flushPromises()
     const first = wrapper.get<HTMLAnchorElement>('.admin-brand-home').element
-    const last = wrapper.get<HTMLButtonElement>('[aria-label="退出登录"]').element
+    const last = wrapper.findAll<HTMLElement>('.app-sidebar a[href]').at(-1)!.element
     last.focus()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', cancelable: true }))
     expect(document.activeElement).toBe(first)

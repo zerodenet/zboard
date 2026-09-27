@@ -36,7 +36,7 @@ func (f *fakeIdentityRuntime) IdentityProvider(context.Context, string) (plugins
 }
 func (f *fakeIdentityRuntime) WithIdentityProvider(ctx context.Context, s plugins.IdentitySnapshot, commit func(plugins.IdentityServices) error) error {
 	if f.disabled || s.Revision != f.snapshot.Revision {
-		return errors.New("revoked")
+		return plugins.ErrConflict
 	}
 	return f.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		core := f.core.InTransaction(tx)
@@ -122,7 +122,7 @@ func TestExternalIdentityRequiresLinkThenCoreIssuesSession(t *testing.T) {
 	h, token, runtime := identityTestHandlers(t)
 	cookie, q := startIdentityTest(t, h, "", false)
 	failed := callbackIdentityTest(h, cookie, q)
-	if !strings.Contains(failed.Header().Get("Location"), "error=failed") {
+	if !strings.Contains(failed.Header().Get("Location"), "error=registration_closed") {
 		t.Fatal("unlinked identity logged in")
 	}
 	var count int64
@@ -174,11 +174,11 @@ func TestExternalIdentityRejectsCrossBrowserAndChangedPlugin(t *testing.T) {
 	cookie, q := startIdentityTest(t, h, token, true)
 	wrong := *cookie
 	wrong.Value = strings.Repeat("x", 43)
-	if !strings.Contains(callbackIdentityTest(h, &wrong, q).Header().Get("Location"), "error=failed") || runtime.exchanges != 0 {
+	if !strings.Contains(callbackIdentityTest(h, &wrong, q).Header().Get("Location"), "error=state_expired") || runtime.exchanges != 0 {
 		t.Fatal("cross-browser callback accepted")
 	}
 	runtime.snapshot.Revision++
-	if !strings.Contains(callbackIdentityTest(h, cookie, q).Header().Get("Location"), "error=failed") {
+	if !strings.Contains(callbackIdentityTest(h, cookie, q).Header().Get("Location"), "error=config_changed") {
 		t.Fatal("changed configuration accepted")
 	}
 	var n int64
@@ -257,7 +257,7 @@ func TestExternalIdentityCannotBeStolenAndUnlinkInvalidatesPendingLogin(t *testi
 	}
 	otherToken, _, _ := h.issueToken(authClaims{UserID: other.ID, Email: other.Email})
 	cookie, q = startIdentityTest(t, h, otherToken, true)
-	if !strings.Contains(callbackIdentityTest(h, cookie, q).Header().Get("Location"), "error=failed") {
+	if !strings.Contains(callbackIdentityTest(h, cookie, q).Header().Get("Location"), "error=binding_conflict") {
 		t.Fatal("identity transferred to another user")
 	}
 	foreign := plugins.Session{PluginID: "test.oauth", Surface: "account", Purpose: "slot", UserID: other.ID, TargetUserID: other.ID}
@@ -280,7 +280,7 @@ func TestExternalIdentityPasswordChangeAndAuditFailureCancelBinding(t *testing.T
 	original := model.User{}
 	h.db.First(&original, 1)
 	h.db.Model(&model.User{}).Where("id = ?", 1).Update("password", "changed")
-	if !strings.Contains(callbackIdentityTest(h, cookie, q).Header().Get("Location"), "error=failed") {
+	if !strings.Contains(callbackIdentityTest(h, cookie, q).Header().Get("Location"), "error=account_unavailable") {
 		t.Fatal("password confirmation survived password change")
 	}
 	h.db.Model(&model.User{}).Where("id = ?", 1).Update("password", original.Password)
@@ -288,7 +288,7 @@ func TestExternalIdentityPasswordChangeAndAuditFailureCancelBinding(t *testing.T
 		t.Fatal(err)
 	}
 	cookie, q = startIdentityTest(t, h, token, true)
-	if !strings.Contains(callbackIdentityTest(h, cookie, q).Header().Get("Location"), "error=failed") {
+	if !strings.Contains(callbackIdentityTest(h, cookie, q).Header().Get("Location"), "error=verification_failed") {
 		t.Fatal("audit failure was ignored")
 	}
 	var count int64

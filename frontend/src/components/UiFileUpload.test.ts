@@ -1,11 +1,10 @@
-import PrimeVue from 'primevue/config'
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import UiFileUpload from './UiFileUpload.vue'
 
 describe('offline file selection', () => {
  it('resets the picker before a busy-state rerender and allows selecting the same package again', async () => {
-  const wrapper = mount(UiFileUpload, { attrs: { accept: '.zbplugin', chooseLabel: '离线导入' }, global: { plugins: [PrimeVue] } })
+  const wrapper = mount(UiFileUpload, { attrs: { accept: '.zbplugin', chooseLabel: '离线导入' }, global: { plugins: [] } })
   const file = new File(['signed fixture'], 'welcome.zbplugin', { type: 'application/octet-stream' })
   const first = wrapper.get('input[type="file"]')
   Object.defineProperty(first.element, 'files', { value: [file], configurable: true })

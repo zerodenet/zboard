@@ -1,5 +1,4 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import PrimeVue from 'primevue/config'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 import NodeGroups from './NodeGroups.vue'
@@ -20,8 +19,8 @@ it('edits and saves a front-only group without adding the landing endpoint', asy
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: NodeGroups }] })
   await router.push('/'); await router.isReady()
   const wrapper = mount({ template: '<router-view />' }, { global: {
-    plugins: [PrimeVue, router], components: { FormField, UiButton, UiInput, UiCheckbox, UiTextarea },
-    stubs: { teleport: true, TimeBadge: true, PageRefreshButton: true, EndpointMultiLookup: true, NetworkEntryMultiLookup: true },
+    plugins: [router], components: { FormField, UiButton, UiInput, UiCheckbox, UiTextarea },
+    stubs: { teleport: true, TimeBadge: true, PageRefreshButton: true, EndpointMultiLookup: true, NetworkEntryMultiLookup: true, ModalDialog: { props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" :requestClose="() => {}" /></div>' } },
   } })
   await flushPromises()
   await wrapper.findAll('button').find(button => button.text().includes('编辑'))!.trigger('click')

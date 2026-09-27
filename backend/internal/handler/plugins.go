@@ -94,13 +94,12 @@ func (h *handlers) AdminPluginActionHandler(w http.ResponseWriter, r *http.Reque
 	var body struct {
 		Generation     uint64 `json:"generation"`
 		AcceptUntested bool   `json:"accept_untested"`
-		VersionID      string `json:"version_id"`
 	}
 	if !pluginBody(w, r, &body) {
 		return
 	}
 	vars := pathvar.Vars(r)
-	item, err := h.pluginManager.Action(r.Context(), vars["id"], vars["action"], claims.Email, body.Generation, body.AcceptUntested, body.VersionID)
+	item, err := h.pluginManager.Action(r.Context(), vars["id"], vars["action"], claims.Email, body.Generation, body.AcceptUntested, "")
 	if err != nil {
 		pluginError(w, err)
 		return

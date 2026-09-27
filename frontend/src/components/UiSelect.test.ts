@@ -1,14 +1,13 @@
-import PrimeVue from 'primevue/config'
-import PrimeSelect from 'primevue/select'
-import { mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
-import { describe, expect, it } from 'vitest'
-import { primeVueOptions } from '../theme/primevue'
+import { mount, flushPromises } from '@vue/test-utils'
+import { afterEach, describe, expect, it } from 'vitest'
 import UiSelect from './UiSelect.vue'
 
+afterEach(() => { document.body.innerHTML = '' })
+
 describe('UiSelect', () => {
-  it('accepts structured options without parsing option VNodes', async () => {
+  it('keeps empty values selectable and exposes a labelled combobox', async () => {
     const wrapper = mount(UiSelect, {
+      attachTo: document.body,
       props: {
         modelValue: '',
         options: [
@@ -18,62 +17,31 @@ describe('UiSelect', () => {
         ],
       },
       attrs: { 'aria-label': '账户状态' },
-      global: { plugins: [PrimeVue] },
     })
-
-    expect(wrapper.get('[role="combobox"]').attributes('aria-label')).toBe('账户状态')
-    const select = wrapper.findComponent(PrimeSelect)
-    expect(select.props('options')).toEqual([
-      { label: '全部状态', value: '' },
-      { label: '正常', value: 'active' },
-      { label: '已停用', value: 'disabled', disabled: true },
-    ])
-    expect(select.props('optionGroupLabel')).toBeUndefined()
-    expect(select.props('optionGroupChildren')).toBeUndefined()
-    expect(select.props('modelValue')).toBe('')
-    select.vm.$emit('update:modelValue', 'active')
+    const trigger = wrapper.get('[role="combobox"]')
+    expect(trigger.attributes('aria-label')).toBe('账户状态')
+    expect(trigger.text()).toContain('全部状态')
+    await trigger.trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    const items = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'))
+    expect(items.map(item => item.textContent?.trim().replace(/✓/g, ''))).toEqual(['全部状态', '正常', '已停用'])
+    expect(items[2].getAttribute('data-disabled')).not.toBeNull()
+    items[1].dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' }))
+    await flushPromises()
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['active'])
+    expect(wrapper.emitted('change')?.at(-1)?.[0]).toMatchObject({ value: 'active', target: { value: 'active' } })
+    wrapper.unmount()
   })
 
-  it('only enables PrimeVue option grouping for grouped options', () => {
-    const wrapper = mount(UiSelect, {
-      props: {
-        options: [
-          {
-            label: '运行状态',
-            options: [
-              { label: '正常', value: 'active' },
-              { label: '已停用', value: 'disabled' },
-            ],
-          },
-        ],
-      },
-      global: { plugins: [PrimeVue] },
-    })
-
-    const select = wrapper.findComponent(PrimeSelect)
-    expect(select.props('optionGroupLabel')).toBe('label')
-    expect(select.props('optionGroupChildren')).toBe('options')
-  })
-
-  it('renders its option overlay above custom modal backdrops', async () => {
+  it('renders grouped options inside the shared menu surface', async () => {
     const wrapper = mount(UiSelect, {
       attachTo: document.body,
-      props: {
-        modelValue: 'info',
-        options: [{ label: '信息', value: 'info' }, { label: '警告', value: 'warning' }],
-      },
-      global: { plugins: [[PrimeVue, primeVueOptions]] },
+      props: { options: [{ label: '运行状态', options: [{ label: '正常', value: 'active' }] }] },
     })
-
-    await wrapper.get('[role="combobox"]').trigger('click')
-    await nextTick()
-    const overlay = document.body.querySelector<HTMLElement>('.p-select-overlay')
-    expect(overlay).not.toBeNull()
-    // Happy DOM does not run PrimeVue's transition enter hook that applies the
-    // inline z-index, so assert the runtime source used by that hook.
-    expect((wrapper.vm as any).$primevue.config.zIndex.overlay).toBeGreaterThan(1300)
+    await wrapper.get('[role="combobox"]').trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    expect(document.body.querySelector('.ui-select-group-label')?.textContent).toBe('运行状态')
+    expect(document.body.querySelector('.ui-select-content')).not.toBeNull()
     wrapper.unmount()
-    document.body.innerHTML = ''
   })
 })

@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { defaultSubscriptionCustomization } from '../utils/subscriptionTemplateEditor'
@@ -10,7 +9,7 @@ describe('SubscriptionTemplateCustomizer', () => {
     customization.system_proxy = true
     const wrapper = mount(SubscriptionTemplateCustomizer, {
       props: { renderer: 'sing-box', modelValue: customization },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
     expect(wrapper.text()).toContain('自动设置系统 HTTP 代理（桌面命令行）')
     const enable = wrapper.findAll('button').find(button => button.text() === '启用客户端 HTTP 代理开关')
@@ -20,7 +19,7 @@ describe('SubscriptionTemplateCustomizer', () => {
     expect(wrapper.text()).toContain('已提供客户端 HTTP 代理开关')
     expect(wrapper.text()).not.toContain('自动设置系统 HTTP 代理（桌面命令行）')
     const tun = wrapper.findAll('label.setting-switch').find(label => label.text().includes('启用 TUN 全局接管'))!
-    await tun.find('input[type="checkbox"]').setValue(false)
+    await tun.find('[role="switch"]').trigger('click')
     expect(wrapper.text()).toContain('自动设置系统 HTTP 代理（桌面命令行）')
     expect(customization.system_proxy).toBe(true)
   })
@@ -29,7 +28,7 @@ describe('SubscriptionTemplateCustomizer', () => {
     const customization = defaultSubscriptionCustomization('sing-box')
     const wrapper = mount(SubscriptionTemplateCustomizer, {
       props: { renderer: 'sing-box', modelValue: customization },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
     expect(wrapper.text()).toContain('Rule（规则）、Direct（直连）、Global（全局）')
     const enable = wrapper.findAll('button').find(button => button.text() === '启用客户端 HTTP 代理开关')
@@ -48,7 +47,7 @@ describe('SubscriptionTemplateCustomizer', () => {
     let rawUpdate = customization
     const wrapper = mount(SubscriptionTemplateCustomizer, {
       props: { renderer: 'clash', modelValue: customization, 'onUpdate:modelValue': value => { rawUpdate = value } },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
 
     expect(wrapper.text()).not.toContain('标准分流')
@@ -72,13 +71,13 @@ describe('SubscriptionTemplateCustomizer', () => {
     expect(wrapper.text()).toContain('未命名远端规则集')
 
     const advanced = wrapper.findAll('[role="tab"]').find(tab => tab.text().includes('高级配置'))
-    await advanced?.trigger('click')
+    await advanced?.trigger('mousedown', { button: 0, ctrlKey: false })
     expect(wrapper.find('.template-code-editor').exists()).toBe(true)
     expect(wrapper.text()).toContain('proxies')
     expect(wrapper.text()).toContain('$zboard:generated-proxies')
 
     const raw = wrapper.findAll('[role="tab"]').find(tab => tab.text().includes('Raw 模型'))
-    await raw?.trigger('click')
+    await raw?.trigger('mousedown', { button: 0, ctrlKey: false })
     expect(wrapper.text()).toContain('Raw 模型与可视化双向同步')
     const rawEditor = wrapper.find('[aria-label="Raw 订阅模板 JSON"]')
     expect(rawEditor.exists()).toBe(true)

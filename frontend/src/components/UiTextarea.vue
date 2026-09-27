@@ -1,22 +1,22 @@
 <template>
-  <PrimeTextarea v-if="hasModelBinding" v-model="model" v-bind="$attrs" fluid />
-  <PrimeTextarea v-else v-bind="$attrs" fluid />
+  <textarea v-bind="attrs" class="ui-textarea" :value="displayValue" @input="onInput" />
 </template>
 
 <script setup lang="ts">
-import { computed, getCurrentInstance } from 'vue'
-import PrimeTextarea from 'primevue/textarea'
+import { computed, getCurrentInstance, useAttrs } from 'vue'
 
 defineOptions({ inheritAttrs: false })
 const instance = getCurrentInstance()
+const attrs = useAttrs()
 const [model, modifiers] = defineModel<any>({
-  set(value) {
-    return modifiers.trim && typeof value === 'string' ? value.trim() : value
-  },
+  set(value) { return modifiers.trim && typeof value === 'string' ? value.trim() : value },
 })
 const hasModelBinding = computed(() => {
   const props = instance?.vnode.props || {}
-  return Object.prototype.hasOwnProperty.call(props, 'modelValue') ||
-    Object.prototype.hasOwnProperty.call(props, 'model-value')
+  return 'modelValue' in props || 'model-value' in props
 })
+const displayValue = computed(() => hasModelBinding.value ? model.value ?? '' : attrs.value ?? '')
+function onInput(event: Event) {
+  if (hasModelBinding.value) model.value = (event.target as HTMLTextAreaElement).value
+}
 </script>

@@ -16,6 +16,7 @@
         :sku-total="skuTotal"
         :sku-offset="skuOffset"
         :sku-limit="skuLimit"
+        :continue-label="app.isAuthenticated ? '继续结算' : '登录并继续结算'"
         @change-sku-page="changeSKUPage"
         @retry="retryDetail"
         operation-label="新购"
@@ -100,6 +101,7 @@ import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import { useCatalogDetail } from '../composables/useCatalogDetail'
 import { useRemoteTable } from '../composables/useRemoteTable'
 import { useAppStore } from '../stores/app'
+import { accountPurchaseRoute } from '../utils/commerceNavigation'
 
 const app = useAppStore(), route = useRoute(), router = useRouter()
 const limit = ref(9), offset = ref(0), query = ref(''), searchDraft = ref('')
@@ -118,7 +120,10 @@ function catalogQuery() {
 function syncDetailURL() {
   if (selectedPlan.value) return router.replace({ query: { ...catalogQuery(), plan: String(selectedPlan.value.id), sku: String(selectedSKUID.value) } })
 }
-function openDetail(id: number) { return router.replace({ query: { ...catalogQuery(), plan: String(id) } }) }
+function openDetail(id: number) {
+  const nextQuery = { ...catalogQuery(), plan: String(id) }
+  return app.isAuthenticated ? router.push(accountPurchaseRoute(nextQuery)) : router.replace({ query: nextQuery })
+}
 function closeDetail() { return router.replace({ query: catalogQuery() }) }
 function selectSKU(sku: PlanSKU) {
   if (detailLoading.value || detailError.value || !detailSKUs.value.some(item => item.id === sku.id)) return
@@ -131,7 +136,7 @@ async function changeSKUPage(value: { offset: number; limit: number }) {
 async function retryDetail() { if (await detail.retry()) await syncDetailURL() }
 async function continuePurchase() {
   if (!selectedPlan.value || !selectedSKU.value) return
-  const target = `/account/plans?operation=purchase&plan=${selectedPlan.value.id}&sku=${selectedSKU.value.id}&step=detail`
+  const target = `/account/plans?operation=purchase&plan=${selectedPlan.value.id}&sku=${selectedSKU.value.id}&step=checkout`
   await router.push(app.isAuthenticated ? target : `/login?redirect=${encodeURIComponent(target)}`)
 }
 function submitSearch() {

@@ -1,9 +1,8 @@
-import PrimeVue from 'primevue/config'
 import {mount,flushPromises} from '@vue/test-utils'
 import {describe,expect,it} from 'vitest'
 import ProxyPoolEditor from './ProxyPoolEditor.vue'
 import {poolFixture} from '../utils/proxyPoolGraph.fixture'
-const render=()=>mount(ProxyPoolEditor,{props:{config:poolFixture()},global:{plugins:[PrimeVue]}})
+const render=()=>mount(ProxyPoolEditor,{props:{config:poolFixture()},global:{plugins:[]}})
 const click=async(wrapper:ReturnType<typeof render>,label:string)=>{await wrapper.findAll('button').find(b=>b.text()===label)!.trigger('click');await flushPromises()}
 describe('pool form and RAW synchronization',()=>{
  it('round trips selectors, relay order and advanced options through RAW and form',async()=>{
@@ -38,7 +37,7 @@ describe('pool form and RAW synchronization',()=>{
   expect(graph.outbounds[0]!.tag).toBe('renamed');wrapper.unmount()
  })
  it('merges newly entered nodes into a new pool',async()=>{
-  const wrapper=mount(ProxyPoolEditor,{global:{plugins:[PrimeVue]}});await flushPromises()
+  const wrapper=mount(ProxyPoolEditor,{global:{plugins:[]}});await flushPromises()
   await wrapper.get('input[aria-label="代理节点地址"]').setValue('one.example')
   await wrapper.get('input[aria-label="代理密码"]').setValue('one')
   await click(wrapper,'添加代理节点')

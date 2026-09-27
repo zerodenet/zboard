@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import TemplateCodeEditor from './TemplateCodeEditor.vue'
@@ -7,7 +6,7 @@ describe('TemplateCodeEditor', () => {
   it('renders line numbers, marks a diagnostic line and inserts spaces for Tab', async () => {
     const wrapper = mount(TemplateCodeEditor, {
       props: { modelValue: 'one\ntwo\nthree', errorLine: 2 },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
 
     const lines = wrapper.findAll('.template-code-gutter span')

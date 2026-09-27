@@ -35,6 +35,8 @@ async function render() {
   const wrapper = shallowMount(Protocols, { global: { plugins: [router], renderStubDefaultSlot: true, stubs: {
     FormField, NodeGroupMembershipEditor, NodeGroupLookup, UiButton: Button, ModalDialog: Dialog, UiInput: true, UiSelect: Select, UiTextarea: true, UiCheckbox: Checkbox, PageRefreshButton: true, TimeBadge: true,
     PageHeader: { template: '<header><slot name="actions" /></header>' },
+    DataWorkbench: { template: '<div><slot name="filters"/><slot/></div>' },
+    WorkbenchFilterBar: { template: '<div><slot/></div>' },
   } } })
   await flushPromises()
   return wrapper
@@ -154,9 +156,9 @@ it('loads the table and deployment status counts in one endpoint request', async
   const wrapper = await render()
   expect(fetchProtocolEndpointsPage).toHaveBeenCalledTimes(1)
   expect(fetchProtocolEndpointsPage).toHaveBeenCalledWith(expect.objectContaining({ includeFacets: true }), expect.anything())
-  const cards = wrapper.findAllComponents({ name: 'OverviewCard' })
-  expect(cards.map(card => [card.props('label'), card.props('value')])).toContainEqual(['全部服务', '7'])
-  expect(cards.map(card => [card.props('label'), card.props('value')])).toContainEqual(['已生效', '4'])
+  const filters = wrapper.getComponent({ name: 'StatusCountFilters' })
+  expect(filters.props('items').map((item: { label: string; count: number }) => [item.label, item.count])).toContainEqual(['全部服务', 7])
+  expect(filters.props('items').map((item: { label: string; count: number }) => [item.label, item.count])).toContainEqual(['已生效', 4])
   wrapper.unmount()
 })
 
@@ -175,9 +177,9 @@ it('refreshes live usage without recomputing or clearing deployment status count
     await flushPromises()
     expect(fetchProtocolEndpointsPage).toHaveBeenCalledTimes(1)
     expect(fetchProtocolEndpointsPage).toHaveBeenCalledWith(expect.objectContaining({ includeFacets: false }), expect.anything())
-    const cards = wrapper.findAllComponents({ name: 'OverviewCard' })
-    expect(cards.map(card => [card.props('label'), card.props('value')])).toContainEqual(['全部服务', '7'])
-    expect(cards.map(card => [card.props('label'), card.props('value')])).toContainEqual(['已生效', '4'])
+    const filters = wrapper.getComponent({ name: 'StatusCountFilters' })
+    expect(filters.props('items').map((item: { label: string; count: number }) => [item.label, item.count])).toContainEqual(['全部服务', 7])
+    expect(filters.props('items').map((item: { label: string; count: number }) => [item.label, item.count])).toContainEqual(['已生效', 4])
   } finally {
     wrapper.unmount()
     vi.useRealTimers()

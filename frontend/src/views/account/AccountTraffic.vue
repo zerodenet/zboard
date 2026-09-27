@@ -83,7 +83,8 @@
 
       <PageAlert v-if="recordError" tone="danger" title="流量记录加载失败">{{ recordError }} <UiButton variant="secondary" @click="loadRecords()">重试记录</UiButton></PageAlert>
       <p v-if="recordLoading && !records.length" role="status">正在加载流量记录…</p>
-      <DataTable v-if="records.length" :caption="`我的流量使用明细（按${bucketLabel}聚合）`" :row-count="total" :min-width="920">
+      <TableSkeleton v-if="recordLoading && !records.length" label="正在加载流量使用明细" :columns="8" />
+      <DataTable v-else-if="records.length" :caption="`我的流量使用明细（按${bucketLabel}聚合）`" :row-count="total" :min-width="920">
         <thead>
           <tr>
             <th class="table-primary-column">时间</th>
@@ -166,6 +167,7 @@ import {
 import type { EntityReference as EntityReferenceData } from '../../api/readModels'
 import CursorPager from '../../components/CursorPager.vue'
 import DataTable from '../../components/DataTable.vue'
+import TableSkeleton from '../../components/TableSkeleton.vue'
 import DataWorkbench from '../../components/DataWorkbench.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import EntityReference from '../../components/EntityReference.vue'

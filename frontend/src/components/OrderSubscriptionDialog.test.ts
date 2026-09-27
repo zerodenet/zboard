@@ -1,7 +1,6 @@
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import PrimeVue from 'primevue/config'
 import OrderSubscriptionDialog from './OrderSubscriptionDialog.vue'
 
 const api = vi.hoisted(() => ({ access: vi.fn(), write: vi.fn() }))
@@ -16,7 +15,7 @@ beforeEach(() => {
 })
 afterEach(() => { wrapper?.unmount(); vi.unstubAllGlobals() })
 async function render(orderId = 7) {
-  wrapper = mount(OrderSubscriptionDialog, { props: { orderId }, global: { plugins: [PrimeVue], stubs: { ModalDialog: modal, UiButton: button, PageAlert: { template: '<div><slot/><slot name="actions"/></div>' } } } })
+  wrapper = mount(OrderSubscriptionDialog, { props: { orderId }, global: { plugins: [], stubs: { ModalDialog: modal, UiButton: button, PageAlert: { template: '<div><slot/><slot name="actions"/></div>' } } } })
   await flushPromises()
   return wrapper
 }

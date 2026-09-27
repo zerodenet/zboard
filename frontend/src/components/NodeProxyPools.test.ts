@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import {mount,flushPromises} from '@vue/test-utils'
 import {beforeEach,describe,expect,it,vi} from 'vitest'
 import {poolFixture} from '../utils/proxyPoolGraph.fixture'
@@ -6,7 +5,7 @@ import NodeProxyPools from './NodeProxyPools.vue'
 const mocks=vi.hoisted(()=>({list:vi.fn(),save:vi.fn(),sync:vi.fn(),remove:vi.fn(),detail:vi.fn(),runtime:vi.fn()}))
 vi.mock('../api/client',()=>({fetchNodeProxyPools:mocks.list,saveNodeProxyPool:mocks.save,syncNodeProxyPool:mocks.sync,deleteNodeProxyPool:mocks.remove,fetchNodeProxyPoolConfig:mocks.detail,fetchNodeProxyPoolRuntime:mocks.runtime}))
 vi.mock('../utils/feedback',()=>({confirmAction:vi.fn(async()=>true),notify:vi.fn()}))
-function render(){return mount(NodeProxyPools,{props:{nodeId:7},global:{plugins:[PrimeVue],stubs:{teleport:true}}})}
+function render(){return mount(NodeProxyPools,{props:{nodeId:7},global:{plugins:[],stubs:{teleport:true,ModalDialog:{props:['open'],template:'<div v-if="open"><slot/><slot name="footer"/></div>'}}}})}
 describe('node shared pools',()=>{
  beforeEach(()=>{vi.clearAllMocks();mocks.list.mockResolvedValue([{id:3,node_id:7,name:'现有池',revision:4,entry_count:2}]);mocks.save.mockResolvedValue({});mocks.sync.mockResolvedValue({});mocks.detail.mockResolvedValue({pool:{id:3,node_id:7,name:'现有池',revision:4},config:poolFixture(),compiled:{}})})
  it('keeps encrypted members when renaming a node pool',async()=>{

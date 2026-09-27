@@ -64,6 +64,6 @@ const brandInitial = computed(() => Array.from(profile.value.name.trim())[0]?.to
 .public-footer__identity small { display: block; margin-top: 12px; color: var(--public-footer-muted); font-size: 11px; }
 .public-footer__links { max-width: 650px; justify-content: flex-end; flex-wrap: wrap; row-gap: 12px; }
 .public-footer__links a, .public-footer__links span, .footer-link-button { color: var(--public-footer-muted); }
-.public-footer__links a:hover { color: var(--text-inverse); }
+.public-footer__links a:hover { color: var(--text-strong); }
 @media (max-width: 700px) { .public-footer__links { justify-content: flex-start; } }
 </style>

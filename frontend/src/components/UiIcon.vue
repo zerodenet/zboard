@@ -47,6 +47,8 @@ const icons: Record<string, string[]> = {
   edit: ['M4 20h4L19 9l-4-4L4 16z', 'm13.5-13.5 4 4'],
   play: ['m8 5 11 7-11 7z'],
   search: ['M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16', 'm21 21-4.3-4.3'],
+  filter: ['M4 6h16', 'M7 12h10', 'M10 18h4'],
+  calendar: ['M4 5h16v16H4z', 'M8 3v4', 'M16 3v4', 'M4 10h16'],
   chevron: ['m9 18 6-6-6-6'],
   sort: ['M8 6h12', 'M8 12h9', 'M8 18h6', 'm4 5-2 2 2 2', 'M4 7v10', 'm2 15 2 2 2-2'],
   'arrow-up': ['M12 19V5', 'm6 11 6-6 6 6'],

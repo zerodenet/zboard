@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -48,7 +47,7 @@ describe('account catalog bounded reads and route isolation', () => {
     ] })
     await router.push(path)
     await router.isReady()
-    wrapper = mount(AccountPlans, { global: { plugins: [router, PrimeVue], stubs: { CommercePlanDetail: true } } })
+    wrapper = mount(AccountPlans, { global: { plugins: [router], stubs: { CommercePlanDetail: true } } })
     await flushPromises()
   }
   it('renders nine cards with two reads and no per-card SKU request', async () => {
@@ -59,6 +58,12 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(fetchAccountSubscriptionsPage).toHaveBeenCalledOnce()
     expect(fetchPlanCatalogSKUs).not.toHaveBeenCalled()
     expect(fetchPlanCatalogItem).not.toHaveBeenCalled()
+  })
+  it('accepts a public purchase selection directly at the account checkout', async () => {
+    await open('/account/plans?operation=purchase&plan=1&sku=105&step=checkout')
+    expect(wrapper!.find('.purchase-checkout').exists()).toBe(true)
+    expect(wrapper!.text()).toContain('确认创建订单')
+    expect(router.currentRoute.value.query.sku).toBe('105')
   })
   it('does not block catalog rendering on a slow subscription list', async () => {
     vi.mocked(fetchAccountSubscriptionsPage).mockReturnValue(deferred<any>().promise)

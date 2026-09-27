@@ -9,56 +9,32 @@
     @close="settleConfirm(false)"
     @confirm="settleConfirm(true)"
   />
-  <PrimeToast
-    position="top-right"
-    :close-button-props="{ 'aria-label': '关闭通知' }"
-    @close="onToastDismiss"
-    @life-end="onToastDismiss"
-  />
+  <div class="ui-toast-viewport" aria-label="通知">
+    <div v-for="item in feedbackState.toasts" :key="item.id" class="ui-toast" :data-tone="item.tone" role="status">
+      <div><strong>{{ item.title }}</strong><p v-if="item.message">{{ item.message }}</p></div>
+      <UiButton variant="ghost" icon size="sm" type="button" aria-label="关闭通知" @click="dismissToast(item.id)">×</UiButton>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { watch } from 'vue'
-import PrimeToast from 'primevue/toast'
-import type { ToastEvent } from 'primevue/toast'
-import { useToast } from 'primevue/usetoast'
+import { onBeforeUnmount, watch } from 'vue'
 import { dismissToast, feedbackState, settleConfirm } from '../utils/feedback'
 import ConfirmDialog from './ConfirmDialog.vue'
+import UiButton from './UiButton.vue'
 
-const toast = useToast()
-const rendered = new Map<number, Record<string, any>>()
-
-watch(() => feedbackState.toasts.slice(), (items) => {
-  const activeIDs = new Set(items.map(item => item.id))
-  for (const [id, message] of rendered) {
-    if (activeIDs.has(id)) continue
-    toast.remove(message)
-    rendered.delete(id)
+const timers = new Map<number, ReturnType<typeof setTimeout>>()
+watch(() => feedbackState.toasts.map(item => item.id), ids => {
+  const active = new Set(ids)
+  for (const [id, timer] of timers) {
+    if (active.has(id)) continue
+    clearTimeout(timer)
+    timers.delete(id)
   }
-
-  for (const item of items) {
-    if (rendered.has(item.id)) continue
-    const message = {
-      id: item.id,
-      severity: item.tone === 'danger' ? 'error' : item.tone,
-      summary: item.title,
-      detail: item.message,
-      life: item.tone === 'danger' ? 6500 : 4200,
-      closable: true,
-    }
-    rendered.set(item.id, message)
-    toast.add(message)
+  for (const item of feedbackState.toasts) {
+    if (timers.has(item.id)) continue
+    timers.set(item.id, setTimeout(() => dismissToast(item.id), item.tone === 'danger' ? 6500 : 4200))
   }
-}, { deep: true, immediate: true })
-
-function onToastDismiss(event: ToastEvent) {
-  const id = Number((event?.message as { id?: unknown })?.id)
-  if (!Number.isInteger(id)) return
-  rendered.delete(id)
-  dismissToast(id)
-}
+}, { immediate: true })
+onBeforeUnmount(() => { for (const timer of timers.values()) clearTimeout(timer) })
 </script>
-
-<style scoped>
-:global(.p-toast) { z-index: var(--z-toast) !important; }
-</style>

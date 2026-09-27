@@ -1,14 +1,13 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
-import PrimeVue from 'primevue/config'
-import ToastService from 'primevue/toastservice'
+import { createRouter, createWebHistory, isNavigationFailure, NavigationFailureType, type RouteLocationNormalized } from 'vue-router'
 import App from './App.vue'
 import { routes } from './router'
 import { useAppStore } from './stores/app'
-import { primeVueOptions } from './theme/primevue'
 import { AUTH_SESSION_EXPIRED_EVENT, resetAuthSessionExpired } from './utils/authSession'
 import { applySiteMetadata } from './utils/siteProfile'
+import { accountPurchaseRoute } from './utils/commerceNavigation'
+import { finishNavigationProgress, navigationProgressGeneration, startNavigationProgress, waitForPagePaint } from './composables/navigationProgress'
 import './styles.css'
 import './styles/auth.css'
 import './styles/public.css'
@@ -17,6 +16,9 @@ import './styles/account.css'
 import './styles/commerce.css'
 import './styles/commerce-catalog.css'
 import './styles/commerce-storefront.css'
+import './theme/shadcn.css'
+import './theme/design-system.css'
+import './theme/admin-layout.css'
 import MetricCard from './components/MetricCard.vue'
 import PageRefreshButton from './components/PageRefreshButton.vue'
 import UiButton from './components/UiButton.vue'
@@ -52,8 +54,6 @@ app.component('UiTabs', UiTabs)
 app.component('FormField', FormField)
 app.component('TimeBadge', TimeBadge)
 const pinia = createPinia()
-app.use(PrimeVue, primeVueOptions)
-app.use(ToastService)
 app.use(pinia)
 app.use(router)
 
@@ -85,6 +85,10 @@ window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, () => {
     .finally(resetAuthSessionExpired)
 })
 
+router.beforeEach((to, from) => {
+  if (from.matched.length && to.fullPath !== from.fullPath) startNavigationProgress()
+})
+
 router.beforeEach(async (to) => {
   const store = useAppStore(pinia)
   try {
@@ -104,6 +108,10 @@ router.beforeEach(async (to) => {
   }
 	try { await store.loadSystemStatus() } catch (_) { /* API calls retain the last known state. */ }
 
+  if (to.path === '/pricing' && store.isAuthenticated) {
+    return { ...accountPurchaseRoute(to.query), replace: true }
+  }
+
   const meta = resolveMeta(to)
   if (meta.requiresAuth && !store.isAuthenticated) {
     return { path: '/login', query: { redirect: to.fullPath } }
@@ -119,7 +127,12 @@ router.beforeEach(async (to) => {
   return true
 })
 
-router.afterEach((to) => {
+router.afterEach((to, _from, failure) => {
+  if (!isNavigationFailure(failure, NavigationFailureType.cancelled)) {
+    const generation = navigationProgressGeneration()
+    if (failure) finishNavigationProgress(generation)
+    else void waitForPagePaint().then(() => finishNavigationProgress(generation))
+  }
   const store = useAppStore(pinia)
   const documentSlug = String(to.params.slug || '')
   const documentTitle = to.meta.policyDocument
@@ -132,5 +145,6 @@ router.afterEach((to) => {
     pageTitle: documentTitle || (typeof to.meta.title === 'string' ? to.meta.title : ''),
   })
 })
+router.onError(() => finishNavigationProgress())
 
 app.mount('#app')

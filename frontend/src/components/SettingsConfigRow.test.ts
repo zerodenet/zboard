@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import type { SystemConfig } from '../api/client'
@@ -32,7 +31,7 @@ describe('SettingsConfigRow', () => {
         dirty: true,
         error: '数值不能大于 65535。',
       },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
 
     const input = wrapper.get('input')
@@ -65,7 +64,7 @@ describe('SettingsConfigRow', () => {
         }),
         draft: 'starttls',
       },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
 
     expect(wrapper.text()).toContain('选项')
@@ -85,7 +84,7 @@ describe('SettingsConfigRow', () => {
         }),
         draft: 'smtp.example.com',
       },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
     expect(hostname.get('input').element.value).toBe('smtp.example.com')
     await hostname.get('input').setValue('mail.example.com')
@@ -102,7 +101,7 @@ describe('SettingsConfigRow', () => {
         }),
         draft: '{\n  "retry": 3\n}',
       },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
     expect(json.get('textarea').element.value).toContain('"retry": 3')
     await json.get('textarea').setValue('{"retry":5}')

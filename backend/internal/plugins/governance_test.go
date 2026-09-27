@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -197,7 +199,7 @@ func TestPluginPrivateDataIsolationCASAndDisableUninstallRetention(t *testing.T)
 func TestPluginUpgradeCommitsRuntimeDataAndVersionTogether(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
 	keys := map[string]string{"test.publisher": base64.StdEncoding.EncodeToString(pub)}
-	m, db, _ := testManager(t, keys)
+	m, db, opts := testManager(t, keys)
 	ctx := context.Background()
 	old, err := m.Import(dataPackage(t, priv, pub, "example.data", 1, nil), "admin")
 	if err != nil {
@@ -230,6 +232,16 @@ func TestPluginUpgradeCommitsRuntimeDataAndVersionTogether(t *testing.T) {
 	if len(current.Versions) != 1 {
 		t.Fatal("failed candidate was published")
 	}
+	if _, err := m.packageFor(current); err != nil {
+		t.Fatal("failed upgrade removed the running package", err)
+	}
+	failedPackage, err := ReadPackage(nextRaw, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(opts.Directory, "versions", failedPackage.Digest)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("failed upgrade retained the candidate package", err)
+	}
 	records, _ := m.Migrations(old.ID)
 	if len(records) != 1 {
 		t.Fatal("failed migration left ledger")
@@ -252,7 +264,7 @@ func TestPluginUpgradeCommitsRuntimeDataAndVersionTogether(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err = m.Action(ctx, next.ID, "rollback", "admin", next.Generation, false, old.VersionID); err == nil {
-		t.Fatal("incompatible old program restored")
+		t.Fatal("plugin rollback remained available")
 	}
 	tampered := fixtureSignedPackage(t, priv, pub, func(manifest *Manifest, _ map[string][]byte) {
 		pack, e := ReadPackage(nextRaw, keys)

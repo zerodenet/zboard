@@ -539,7 +539,7 @@ onBeforeUnmount(() => detailController?.abort())
   .ticket-title-line :deep(.time-badge) { flex: 0 0 auto; white-space: nowrap; }
   .ticket-detail-actions,
   .status-select,
-  .status-select :deep(.p-select) { width: 100%; }
+  .status-select :deep(.ui-select) { width: 100%; }
   .ticket-back-button { display: inline-flex; }
   .ticket-timeline { min-height: 300px; max-height: 48vh; padding: 16px; }
   .ticket-message { max-width: 92%; }
@@ -547,7 +547,7 @@ onBeforeUnmount(() => detailController?.abort())
   .ticket-toolbar .toolbar-group,.ticket-toolbar select { width: 100%; }
   .timeline-history-control { align-items: stretch; flex-direction: column; text-align: center; }
 }
-.ticket-toolbar .p-select { width: 160px; min-height: 36px; }.status-select .p-select { min-width: 150px; min-height: 34px; font-size: 11px; }@media (max-width: 680px) { .ticket-toolbar .p-select { width: 100%; } }
+.ticket-toolbar .ui-select { width: 160px; min-height: 36px; }.status-select .ui-select { min-width: 150px; min-height: 34px; font-size: 11px; }@media (max-width: 680px) { .ticket-toolbar .ui-select { width: 100%; } }
 .ticket-list>button{color:var(--text)}.ticket-list>button:hover,.ticket-list>button.active{background:var(--primary-soft)}.ticket-message.admin{border-color:var(--primary-border);background:var(--primary-soft)}
 .ticket-list-meta .time-badge{margin-left:auto}.timeline-event .time-badge{flex:0 0 auto}.ticket-list-panel>.table-pager{border-top:1px solid var(--line)}
 </style>

@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import RowActionMenu from './RowActionMenu.vue'
 
@@ -21,7 +21,8 @@ describe('RowActionMenu', () => {
 
     menu?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await wrapper.vm.$nextTick()
-    expect(document.body.querySelector('[role="menu"]')).toBeNull()
+    await flushPromises()
+    expect(document.body.querySelector('[role="menu"]')?.getAttribute('data-state') ?? 'closed').toBe('closed')
     expect(document.activeElement).toBe(trigger.element)
     wrapper.unmount()
   })

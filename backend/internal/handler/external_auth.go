@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"log"
 	"mime"
 	"net/http"
 	"net/url"
@@ -139,28 +140,41 @@ func (h *handlers) ExternalAuthCallbackHandler(w http.ResponseWriter, r *http.Re
 		BadRequest(w, "identity callback is unavailable")
 		return
 	}
-	fail := func() {
+	fail := func(reason string) {
+		log.Printf("external identity callback failed: reason=%s", reason)
 		authCookie(w, origin, resultCookie, "", -1)
-		http.Redirect(w, r, origin+"/auth/oidc/complete?error=failed", http.StatusSeeOther)
+		http.Redirect(w, r, origin+"/auth/oidc/complete?error="+reason, http.StatusSeeOther)
 	}
 	query, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil || len(query["state"]) != 1 || len(query["code"]) > 1 || len(query["iss"]) > 1 || len(query["error"]) > 1 {
-		fail()
+		fail("invalid_response")
 		return
 	}
 	flow, err := h.externalAuth.take(query.Get("state"), cookieValue(r, origin, flowCookie))
 	if err != nil {
-		fail()
+		fail("state_expired")
 		return
 	}
 	authCookie(w, origin, flowCookie, "", -1)
 	code := query.Get("code")
-	if query.Get("error") != "" || len(code) == 0 || len(code) > 8192 || h.identityProviders == nil || flow.RedirectURI != origin+externalAuthPath+"/callback" {
-		fail()
+	if query.Get("error") != "" {
+		fail("authorization_denied")
+		return
+	}
+	if len(code) == 0 || len(code) > 8192 {
+		fail("invalid_response")
+		return
+	}
+	if h.identityProviders == nil {
+		fail("provider_unavailable")
+		return
+	}
+	if flow.RedirectURI != origin+externalAuthPath+"/callback" {
+		fail("config_changed")
 		return
 	}
 	if issuer := query.Get("iss"); issuer != "" && issuer != flow.Provider.Provider.Issuer {
-		fail()
+		fail("issuer_mismatch")
 		return
 	}
 	result := externalAuthCompletion{Provider: flow.Provider}
@@ -168,12 +182,25 @@ func (h *handlers) ExternalAuthCallbackHandler(w http.ResponseWriter, r *http.Re
 		return h.resolveExternalIdentity(r.Context(), services, flow, identity, &result)
 	})
 	if err != nil {
-		fail()
+		switch {
+		case errors.Is(err, identity.ErrRegistrationClosed):
+			fail("registration_closed")
+		case errors.Is(err, identity.ErrUnavailable):
+			fail("account_unavailable")
+		case errors.Is(err, identity.ErrBindingConflict):
+			fail("binding_conflict")
+		case errors.Is(err, plugins.ErrConflict):
+			fail("config_changed")
+		case errors.Is(err, plugins.ErrUnavailable):
+			fail("provider_unavailable")
+		default:
+			fail("verification_failed")
+		}
 		return
 	}
 	ticket, err := h.externalAuth.complete(result)
 	if err != nil {
-		fail()
+		fail("provider_unavailable")
 		return
 	}
 	authCookie(w, origin, resultCookie, ticket, 60)

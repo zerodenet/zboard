@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -43,7 +42,7 @@ describe('traffic view HTTP read boundaries', () => {
     await router.push((admin ? '/admin/traffic' : '/account/traffic') + range)
     await router.isReady()
     wrapper = mount(admin ? Traffic : AccountTraffic, { global: {
-      plugins: [router, PrimeVue], stubs: { NodeTrafficChart: true, TrafficObservabilityChart: true },
+      plugins: [router], stubs: { NodeTrafficChart: true, TrafficObservabilityChart: true },
     } })
     await flushPromises()
     expect(wrapper.getComponent(CursorPager).props('count')).toBe(1)

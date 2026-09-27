@@ -25,7 +25,8 @@
         </UiButton>
       </template>
 
-      <DataTable v-if="orders.length" caption="我的订单列表" :row-count="total" :min-width="820">
+      <TableSkeleton v-if="loading && !orders.length" label="正在加载我的订单" :columns="6" />
+      <DataTable v-else-if="orders.length" caption="我的订单列表" :row-count="total" :min-width="820">
         <thead>
           <tr>
             <th class="table-primary-column">订单</th>
@@ -110,6 +111,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { cancelOrder, fetchAccountOrdersPage, type AdminOrderListItem } from '../../api/client'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import DataTable from '../../components/DataTable.vue'
+import TableSkeleton from '../../components/TableSkeleton.vue'
 import DataWorkbench from '../../components/DataWorkbench.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import PageHeader from '../../components/PageHeader.vue'

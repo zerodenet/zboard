@@ -1,5 +1,4 @@
 import { mount } from '@vue/test-utils'
-import PrimeVue from 'primevue/config'
 import { describe, expect, it } from 'vitest'
 import WorkbenchFilterInput from './WorkbenchFilterInput.vue'
 
@@ -12,7 +11,7 @@ describe('WorkbenchFilterInput', () => {
         placeholder: '订阅 ID、邮箱、套餐或 SKU',
       },
       attachTo: document.body,
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
 
     await wrapper.get('.workbench-filter-chip-trigger').trigger('click')
@@ -24,7 +23,7 @@ describe('WorkbenchFilterInput', () => {
 
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
 
-    const apply = document.body.querySelector<HTMLButtonElement>('.workbench-filter-form > button')
+    const apply = document.body.querySelector<HTMLButtonElement>('.workbench-filter-form-actions button:last-child')
     apply?.click()
     await wrapper.vm.$nextTick()
 
@@ -39,7 +38,7 @@ describe('WorkbenchFilterInput', () => {
         label: '搜索',
         modelValue: 'active query',
       },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
 
     expect(wrapper.text()).toContain('active query')

@@ -7,8 +7,6 @@
       </template>
     </PageHeader>
 
-    <SubscriptionTemplateSectionNav section="rule-sets" />
-
     <PageAlert tone="info" title="统一规则源">
       远端规则会完整保存在 ZBoard，再按客户端生成规则地址。包含进程匹配的规则集支持 Clash / sing-box，不能绑定 Zero 模板。
     </PageAlert>
@@ -23,7 +21,8 @@
         </WorkbenchFilterBar>
       </template>
 
-      <DataTable v-if="ruleSets.length" caption="ZBoard 自有规则集列表" :row-count="total" :min-width="1080" table-class="subscription-rule-set-table">
+      <TableSkeleton v-if="loading && !ruleSets.length" label="正在加载规则集" :columns="7" />
+      <DataTable v-else-if="ruleSets.length" caption="ZBoard 自有规则集列表" :row-count="total" :min-width="1080" table-class="subscription-rule-set-table">
         <thead>
           <tr>
             <th class="table-primary-column">规则集</th>
@@ -207,6 +206,7 @@ import {
   type ManagedRuleSourceFormat,
 } from '../api/managedRuleSets'
 import DataTable from '../components/DataTable.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
 import FormField from '../components/FormField.vue'
@@ -216,7 +216,6 @@ import PageHeader from '../components/PageHeader.vue'
 import PageRefreshButton from '../components/PageRefreshButton.vue'
 import RowActions from '../components/RowActions.vue'
 import StatusBadge from '../components/StatusBadge.vue'
-import SubscriptionTemplateSectionNav from '../components/SubscriptionTemplateSectionNav.vue'
 import TablePager from '../components/TablePager.vue'
 import TimeBadge from '../components/TimeBadge.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'

@@ -9,7 +9,7 @@
         <UiButton v-if="checkoutOpen" variant="secondary" type="button" :disabled="creating" @click="backToDetail">
           返回商品详情
         </UiButton>
-        <UiButton v-else-if="selectedPlan || route.query.plan" variant="secondary" type="button" @click="backToCatalog">
+        <UiButton v-else-if="!selectedPlan && route.query.plan" variant="secondary" type="button" @click="backToCatalog">
           返回套餐列表
         </UiButton>
         <UiButton v-else-if="operation !== 'purchase'" variant="secondary" type="button" @click="returnToOverview">

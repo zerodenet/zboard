@@ -1,30 +1,33 @@
 .plugins-page {
   display: grid;
-  gap: 24px;
-  max-width: 1400px;
+  gap: 16px;
+  width: 100%;
+  max-width: 1280px;
   margin: 0 auto;
+  min-width: 0;
 }
+.plugins-page > .admin-page-navigation { margin-top: -2px; }
 .plugins-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 24px;
+  gap: 16px;
 }
 .plugins-heading h1 {
-  margin: 5px 0 10px;
-  font-size: 28px;
-  letter-spacing: -0.04em;
+  margin: 0 0 4px;
+  color: var(--foreground);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 .plugins-heading p {
-  color: var(--muted);
+  color: var(--muted-foreground);
   margin: 0;
-  line-height: 1.7;
+  font-size: 13px;
+  line-height: 1.5;
 }
 .plugins-page .eyebrow {
-  color: var(--primary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  display: none;
 }
 .plugins-actions {
   display: flex;
@@ -52,33 +55,18 @@
 .plugins-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-}
-.plugins-toolbar input {
-  flex: 1;
-  min-width: 80px;
-}
-.plugins-toolbar input,
-.plugins-toolbar select,
-.plugins-toolbar button,
-.plugin-history button,
-.plugin-detail header button {
-  border: 1px solid var(--line);
-  padding: 10px 12px;
-  border-radius: 8px;
-  color: var(--text);
-  background: var(--surface);
-  font: inherit;
+  gap: 8px;
+  padding: 7px 0 10px;
+  border-bottom: 1px solid var(--border);
 }
 .plugins-toolbar span {
   color: var(--muted);
   white-space: nowrap;
   font-size: 12px;
 }
+.plugin-market-context { display: grid; gap: 6px; margin-top: -5px; }
+.plugin-market-context p { max-width: 860px; margin: 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }
+.plugin-market-context small { color: var(--muted-foreground); font-size: 11px; }
 .plugins-notice,
 .plugins-error {
   margin: 0;
@@ -98,16 +86,16 @@
 .plugin-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 18px;
+  gap: 12px;
 }
 .plugin-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 24px;
+  gap: 12px;
+  padding: 18px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 10px;
 }
 .plugin-card-top {
   display: flex;
@@ -119,11 +107,11 @@
   height: 42px;
   display: grid;
   place-items: center;
-  border-radius: 12px;
-  background: var(--primary-soft);
-  color: var(--primary);
-  font-size: 20px;
-  font-weight: 700;
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  color: var(--foreground);
+  font-size: 18px;
+  font-weight: 600;
 }
 .plugin-status {
   padding: 5px 9px;
@@ -143,7 +131,8 @@
 }
 .plugin-card h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
+  font-weight: 600;
 }
 .plugin-card p {
   margin: 0;
@@ -194,10 +183,9 @@
   border-top: 1px solid var(--line);
 }
 .plugins-empty {
-  padding: 70px 24px;
+  padding: 48px 24px;
   text-align: center;
-  border: 1px dashed var(--line);
-  border-radius: 16px;
+  border-top: 1px solid var(--border);
 }
 .plugins-empty h2 {
   font-size: 18px;
@@ -270,10 +258,10 @@
   }
 }
 
-.plugins-toolbar > .p-inputtext { flex: 1 1 240px; width: auto; min-width: 0; }
-.plugins-toolbar > .p-select { flex: 0 1 200px; width: 200px; }
+.plugins-toolbar > .ui-input { flex: 1 1 240px; width: auto; min-width: 0; }
+.plugins-toolbar > .ui-select { flex: 0 1 200px; width: 200px; }
 .plugins-toolbar > button, .plugins-toolbar > span { flex: none; white-space: nowrap; }
-@media (max-width: 700px) { .plugins-toolbar > .p-inputtext { flex-basis: 100%; } .plugins-toolbar > .p-select { flex: 1; width: auto; } }
+@media (max-width: 700px) { .plugins-toolbar > .ui-input { flex-basis: 100%; } .plugins-toolbar > .ui-select { flex: 1; width: auto; } }
 
 .plugin-breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
 .plugin-breadcrumb a, .plugin-text-link { color: var(--primary); text-decoration: none; }

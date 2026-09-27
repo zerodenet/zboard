@@ -20,4 +20,9 @@ describe('MetricCard', () => {
     expect(wrapper.get('.metric-value').text()).toBe('12.5 GiB')
     expect(wrapper.get('.metric-meta time').attributes('datetime')).toBe('2026-07-24T00:00:00.000Z')
   })
+
+  it('omits a badge when the surrounding page already provides the time range', () => {
+    const wrapper = mount(MetricCard, { props: { label: '本期实收', value: '¥20.00', icon: 'dollar' } })
+    expect(wrapper.find('.status-badge').exists()).toBe(false)
+  })
 })

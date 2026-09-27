@@ -215,9 +215,42 @@ describe("plugin iframe boundary", () => {
     const slot = { id: 'login', surface: 'public' as const, slot: 'auth.login.methods', title: 'OAuth', entrypoint: 'ui/login.html' };
     const wrapper = mount(PluginFrame, { props: { pluginId: 'zboard.oauth', slot, surface: 'public' } });
     await flushPromises();
+    expect(wrapper.classes()).toContain('plugin-frame--slot-pending');
     send(wrapper, 'ui.resize', { height: 42 });
     await flushPromises();
     expect(wrapper.get('iframe').attributes('style')).toContain('42px');
+    expect(wrapper.classes()).not.toContain('plugin-frame--slot-pending');
+    expect(wrapper.emitted('ready')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it("uses the default height when a slot never reports its content height", async () => {
+    const slot = { id: 'login', surface: 'public' as const, slot: 'auth.login.methods', title: 'OAuth', entrypoint: 'ui/login.html' };
+    const wrapper = mount(PluginFrame, { props: { pluginId: 'zboard.oauth', slot, surface: 'public' } });
+    await flushPromises();
+    vi.useFakeTimers();
+    try {
+      await wrapper.get('iframe').trigger('load');
+      vi.advanceTimersByTime(3000);
+      await flushPromises();
+      expect(wrapper.find('iframe').exists()).toBe(true);
+      expect(wrapper.get('iframe').attributes('style')).toContain('160px');
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+      expect(wrapper.classes()).not.toContain('plugin-frame--slot-pending');
+      expect(wrapper.emitted('ready')).toHaveLength(1);
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps an optional login method out of the form when its session fails", async () => {
+    const slot = { id: 'login', surface: 'public' as const, slot: 'auth.login.methods', title: 'OAuth', entrypoint: 'ui/login.html' };
+    mocks.createSlot.mockRejectedValueOnce(new Error('unavailable'));
+    const wrapper = mount(PluginFrame, { props: { pluginId: 'zboard.oauth', slot, surface: 'public', optional: true } });
+    await flushPromises();
+    expect(wrapper.find('.plugin-frame').exists()).toBe(false);
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
     wrapper.unmount();
   });
 

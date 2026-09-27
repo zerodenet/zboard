@@ -1,6 +1,5 @@
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
-import PrimeVue from 'primevue/config'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminOrderAssignmentDialog from './AdminOrderAssignmentDialog.vue'
 import AdminOrderLookup from './AdminOrderLookup.vue'
@@ -10,7 +9,7 @@ const mocks = vi.hoisted(() => ({ assign: vi.fn(), user: vi.fn(), users: vi.fn()
 vi.mock('../api/client', () => ({ assignAdminOrder: mocks.assign, fetchAdminUserDetail: mocks.user, fetchUsersPage: mocks.users, fetchSubscriptionsPage: mocks.targets, fetchPlanCatalogPage: mocks.plans, fetchPlanCatalogSKUs: mocks.skus }))
 const modal = defineComponent({ template: '<div><slot /><slot name="footer" /></div>' })
 const lookup = defineComponent({ props: ['modelValue', 'inputId', 'fetchPage'], emits: ['update:modelValue'], template: '<div />' })
-function render() { return mount(AdminOrderAssignmentDialog, { props: { open: true, userId: 7 }, global: { plugins: [PrimeVue], stubs: { ModalDialog: modal, AdminOrderLookup: lookup } } }) }
+function render() { return mount(AdminOrderAssignmentDialog, { props: { open: true, userId: 7 }, global: { plugins: [], stubs: { ModalDialog: modal, AdminOrderLookup: lookup } } }) }
 function findLookup(wrapper: ReturnType<typeof render>, id: string) { return wrapper.findAllComponents(AdminOrderLookup).find(item => item.props('inputId') === id)! }
 async function fill(wrapper: ReturnType<typeof render>) {
   await flushPromises()

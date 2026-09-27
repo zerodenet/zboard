@@ -1,5 +1,4 @@
 import { mount, flushPromises } from '@vue/test-utils'
-import PrimeVue from 'primevue/config'
 import { afterEach, expect, it, vi } from 'vitest'
 import PluginMarket from './PluginMarket.vue'
 
@@ -10,7 +9,7 @@ afterEach(() => { wrapper?.unmount(); vi.clearAllMocks() })
 const entry = { id: 'zboard.oauth', name: 'OAuth for ZBoard', description: 'GitHub and Google login', publisher: 'higanbana986', surfaces: [], repository: 'https://github.com/higanbana986/zboard-oauth' }
 async function render(discovery: boolean) {
   api.market.mockResolvedValue({ configured: true, kind: discovery ? 'registry' : 'signed', entries: [{ ...entry, discovery_only: discovery }], expires_at: '' })
-  wrapper = mount(PluginMarket, { global: { plugins: [PrimeVue], stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot/></a>' } } } })
+  wrapper = mount(PluginMarket, { global: { plugins: [], stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot/></a>' } } } })
   await flushPromises()
   return wrapper
 }

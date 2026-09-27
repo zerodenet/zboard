@@ -104,6 +104,11 @@
   --sidebar-user: #e5e7eb;
   --sidebar-badge: #bae6fd;
   --public-footer-muted: #8291a8;
+  --public-cta-background: #222633;
+  --public-cta-foreground: #f8fafc;
+  --public-cta-accent: #c7d2fe;
+  --public-cta-button-background: #ffffff;
+  --public-cta-button-foreground: #312e81;
   --auth-copy: #a9bad2;
   --auth-footnote: #7186a3;
   --setup-muted: #8da0bb;
@@ -123,20 +128,6 @@
   --terminal-text: #d7e0f0;
   --terminal-text-strong: #e2e8f0;
   --terminal-cursor: #7dd3fc;
-
-  /* PrimeVue surface bridge */
-  --theme-surface-0: #ffffff;
-  --theme-surface-50: #f7f8fa;
-  --theme-surface-100: #eef1f5;
-  --theme-surface-200: #dfe4eb;
-  --theme-surface-300: #c9d0dc;
-  --theme-surface-400: #929dad;
-  --theme-surface-500: #667085;
-  --theme-surface-600: #475467;
-  --theme-surface-700: #344054;
-  --theme-surface-800: #1d2939;
-  --theme-surface-900: #111827;
-  --theme-surface-950: #0b1220;
 
   /* Composite colors, gradients and elevation */
   --surface-glass: rgb(255 255 255 / 0.92);
@@ -190,4 +181,112 @@
   --z-dialog: 1100;
   --z-confirm: 1200;
   --z-toast: 1300;
+}
+
+/* Shared semantic tokens for the Reka/shadcn component layer. */
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --background: #ffffff;
+  --foreground: #181b22;
+  --card: #ffffff;
+  --muted-surface: #f7f8fa;
+  --muted-foreground: #606773;
+  --border: #e2e5e9;
+  --input: #d3d8de;
+  --primary: #5546d3;
+  --primary-foreground: #ffffff;
+  --destructive: #b42318;
+  --destructive-foreground: #ffffff;
+  --destructive-hover: #912018;
+  --success: #067647;
+  --warning: #a75b07;
+  --info: #175cd3;
+  --ring: #7468df;
+  --radius-control: 6px;
+  --radius-floating: 8px;
+  --radius-dialog: 10px;
+  --radius-card: 10px;
+  --control-height: 36px;
+  --control-height-compact: 32px;
+  --table-row-height-compact: 40px;
+  --table-row-height-comfortable: 44px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --page: var(--background);
+  --surface: var(--card);
+  --surface-soft: var(--muted-surface);
+  --surface-subtle: #fafbfc;
+  --surface-hover: #f8f9fb;
+  --text: var(--foreground);
+  --text-strong: var(--foreground);
+  --text-body: #343a44;
+  --text-secondary: #4e5662;
+  --muted: var(--muted-foreground);
+  --line: var(--border);
+  --line-strong: var(--input);
+  --table-header-bg: #fafbfc;
+  --table-header-text: #616a76;
+  --focus-border: var(--ring);
+  --focus-ring: rgb(116 104 223 / .16);
+  --sidebar: #fafbfc;
+  --sidebar-soft: #f2f4f7;
+  --sidebar-hover: #f0f2f5;
+  --sidebar-active: #ebedf1;
+  --sidebar-border: var(--border);
+  --sidebar-text: var(--foreground);
+  --sidebar-nav: #4e5662;
+  --sidebar-icon: #77808d;
+  --sidebar-group: #7a8390;
+  --sidebar-muted: #69727e;
+  --sidebar-account: #69727e;
+  --sidebar-version: #7a8390;
+  --sidebar-user: var(--foreground);
+  --sidebar-badge: var(--info);
+  --sidebar-badge-bg: #eaf2ff;
+  --shadow-sm: none;
+  --shadow-md: 0 12px 32px rgb(18 24 32 / .12);
+  --dialog-overlay: rgb(16 24 40 / .38);
+  --sheet-shadow: -12px 0 32px rgb(16 24 40 / .1);
+  --brand-gradient: var(--primary);
+  --brand-shadow: transparent;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #15171b;
+  --foreground: #f2f3f5;
+  --card: #1d2025;
+  --muted-surface: #242830;
+  --muted-foreground: #a7aeb9;
+  --border: #353a43;
+  --input: #49505b;
+  --primary: #a79cf7;
+  --primary-foreground: #171427;
+  --destructive: #f58278;
+  --destructive-foreground: #171427;
+  --destructive-hover: #ee7065;
+  --success: #59c593;
+  --warning: #e6aa5b;
+  --info: #8fb9ff;
+  --ring: #beb5ff;
+  --surface-subtle: #20242a;
+  --surface-hover: #282d35;
+  --text-body: #d5d9df;
+  --text-secondary: #c1c7d0;
+  --table-header-bg: #242830;
+  --table-header-text: #aeb5bf;
+  --sidebar: #1b1e23;
+  --sidebar-soft: #252a32;
+  --sidebar-hover: #2b3039;
+  --sidebar-active: #343a45;
+  --sidebar-nav: #c6ccd5;
+  --sidebar-icon: #a5aebb;
+  --sidebar-group: #9da6b2;
+  --sidebar-muted: #aab2bc;
+  --sidebar-account: #aab2bc;
+  --sidebar-version: #aab2bc;
+  --sidebar-user: #f2f3f5;
+  --sidebar-badge: #9ec2ff;
+  --sidebar-badge-bg: #25354f;
 }

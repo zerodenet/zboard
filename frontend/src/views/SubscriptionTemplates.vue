@@ -7,8 +7,6 @@
       </template>
     </PageHeader>
 
-    <SubscriptionTemplateSectionNav section="templates" />
-
     <TransientFeedback :success="message" :error="error" success-title="模板操作已完成" error-title="模板操作失败" />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
@@ -19,7 +17,8 @@
         </WorkbenchFilterBar>
       </template>
 
-      <DataTable v-if="templates.length" caption="订阅模板列表；状态使用图标标签，排序直接显示数字，更新时间经过格式化并保留精确时间提示" :row-count="total" :min-width="980" table-class="template-table">
+      <TableSkeleton v-if="loading && !templates.length" label="正在加载订阅模板" :columns="7" />
+      <DataTable v-else-if="templates.length" caption="订阅模板列表；状态使用图标标签，排序直接显示数字，更新时间经过格式化并保留精确时间提示" :row-count="total" :min-width="980" table-class="template-table">
           <thead><tr><th class="table-primary-column">模板</th><th data-column-priority="2">链接参数</th><th data-column-priority="3">输出格式</th><th>状态</th><th class="numeric-column" data-column-priority="3">排序</th><th data-column-priority="2">更新时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
           <tbody><tr v-for="item in templates" :key="item.id">
             <td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><TableText :value="item.description || '暂无说明'" /></div></td>
@@ -120,6 +119,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { createSubscriptionTemplate, deleteSubscriptionTemplate, fetchSubscriptionTemplate, fetchSubscriptionTemplatesPage, previewSubscriptionTemplate, updateSubscriptionTemplate, type SubscriptionRenderer, type SubscriptionTemplate, type SubscriptionTemplateCustomization, type SubscriptionTemplatePreview } from '../api/client'
 import DataTable from '../components/DataTable.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
 import FormField from '../components/FormField.vue'
@@ -129,7 +129,6 @@ import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
 import RowActions from '../components/RowActions.vue'
 import StatusBadge from '../components/StatusBadge.vue'
-import SubscriptionTemplateSectionNav from '../components/SubscriptionTemplateSectionNav.vue'
 import SubscriptionTemplateCustomizer from '../components/SubscriptionTemplateCustomizer.vue'
 import TablePager from '../components/TablePager.vue'
 import TemplateOutputModePicker from '../components/TemplateOutputModePicker.vue'

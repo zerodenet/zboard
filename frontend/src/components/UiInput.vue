@@ -1,11 +1,9 @@
 <template>
-  <PrimeInputText v-if="hasModelBinding" v-model="model" v-bind="attrs" fluid />
-  <PrimeInputText v-else v-bind="attrs" fluid />
+  <input v-bind="attrs" class="ui-input" :value="displayValue" @input="onInput" />
 </template>
 
 <script setup lang="ts">
 import { computed, getCurrentInstance, useAttrs } from 'vue'
-import PrimeInputText from 'primevue/inputtext'
 
 defineOptions({ inheritAttrs: false })
 const instance = getCurrentInstance()
@@ -22,7 +20,10 @@ const [model, modifiers] = defineModel<any>({
 })
 const hasModelBinding = computed(() => {
   const props = instance?.vnode.props || {}
-  return Object.prototype.hasOwnProperty.call(props, 'modelValue') ||
-    Object.prototype.hasOwnProperty.call(props, 'model-value')
+  return 'modelValue' in props || 'model-value' in props
 })
+const displayValue = computed(() => hasModelBinding.value ? model.value ?? '' : attrs.value ?? '')
+function onInput(event: Event) {
+  if (hasModelBinding.value) model.value = (event.target as HTMLInputElement).value
+}
 </script>

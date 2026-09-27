@@ -1,5 +1,4 @@
 import { mount, flushPromises } from '@vue/test-utils'
-import PrimeVue from 'primevue/config'
 import { afterEach, expect, it, vi } from 'vitest'
 import RuntimeJobs from './RuntimeJobs.vue'
 const api = vi.hoisted(() => ({ jobs: vi.fn(), queue: vi.fn() }))
@@ -10,7 +9,7 @@ const snapshot = { as_of: '2026-09-12T01:00:00Z', started_at: '2026-09-12T00:00:
 afterEach(() => { wrapper?.unmount(); vi.clearAllMocks(); vi.useRealTimers() })
 async function render(data: unknown = snapshot) {
  api.jobs.mockResolvedValue(data); api.queue.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 25 })
- wrapper = mount(RuntimeJobs, { global: { plugins: [PrimeVue], stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot/></a>' } } } }); await flushPromises(); return wrapper
+ wrapper = mount(RuntimeJobs, { global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot/></a>' } } } }); await flushPromises(); return wrapper
 }
 it('shows periods, actual failure and unavailable services without inventing healthy states', async () => {
  const w = await render(); expect(w.text()).toContain('每 20 秒'); expect(w.text()).toContain('Asia/Shanghai · 错过合并一次'); expect(w.text()).toContain('跳过 2'); expect(w.text()).toContain('数据库暂不可用'); expect(w.text()).toContain('插件宿主不可用'); expect(w.text()).toContain('此实例未启用事件队列')

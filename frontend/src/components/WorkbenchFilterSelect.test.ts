@@ -73,4 +73,19 @@ describe('WorkbenchFilterSelect', () => {
     expect(document.activeElement).toBe(trigger.element)
     wrapper.unmount()
   })
+
+  it('supports option slots and arrow-key navigation', async () => {
+    const wrapper = mount(WorkbenchFilterSelect, {
+      props: { label: '状态', options: [{ label: '全部', value: '' }, { label: '运行中', value: 'active' }, { label: '已停用', value: 'inactive' }] },
+      slots: { option: '<span>{{ option.label }}选项</span>' },
+      attachTo: document.body,
+    })
+    await wrapper.get('.workbench-filter-chip-trigger').trigger('click')
+    const options = Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="option"]'))
+    expect(options[0]?.textContent).toContain('运行中选项')
+    options[0]?.focus()
+    options[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(document.activeElement).toBe(options[1])
+    wrapper.unmount()
+  })
 })

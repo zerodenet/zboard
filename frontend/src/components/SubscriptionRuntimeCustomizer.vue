@@ -19,18 +19,18 @@
 
     <label class="setting-switch">
       <span><strong>启用本地 HTTP/SOCKS 代理</strong><small>关闭后不监听本地混合代理端口；需同时启用 TUN 才能接管流量。</small></span>
-      <UiCheckbox v-model="model.mixed_enabled" role="switch" @update:model-value="toggleMixed" />
+      <UiSwitch v-model="model.mixed_enabled" @update:model-value="toggleMixed" />
     </label>
 
     <label v-if="renderer === 'sing-box' && model.mixed_enabled && !model.tun.enabled" class="setting-switch">
       <span><strong>自动设置系统 HTTP 代理（桌面命令行）</strong><small>仅适用于有权限的桌面命令行运行。iOS / Android 图形客户端请启用 TUN，使用客户端内的 HTTP 代理开关。</small></span>
-      <UiCheckbox v-model="model.system_proxy" role="switch" />
+      <UiSwitch v-model="model.system_proxy" />
     </label>
 
     <template v-if="supportsRuntimeNetwork">
       <label class="setting-switch">
         <span><strong>启用 DNS</strong><small>生成客户端原生 DNS 服务、缓存、地址族策略与可选 Fake-IP。</small></span>
-        <UiCheckbox v-model="model.dns.enabled" role="switch" />
+        <UiSwitch v-model="model.dns.enabled" />
       </label>
       <div v-if="model.dns.enabled" class="nested-settings">
         <div class="runtime-grid">
@@ -58,9 +58,9 @@
           </article>
         </div>
         <div class="runtime-grid">
-          <label class="setting-switch compact"><span><strong>DNS 缓存</strong><small>减少重复查询。</small></span><UiCheckbox v-model="model.dns.cache_enabled" role="switch" /></label>
+          <label class="setting-switch compact"><span><strong>DNS 缓存</strong><small>减少重复查询。</small></span><UiSwitch v-model="model.dns.cache_enabled" /></label>
           <FormField v-if="model.dns.cache_enabled" label="缓存容量" name="template-dns-cache"><template #default="{ controlAttrs }"><UiNumberInput v-model="model.dns.cache_capacity" v-bind="controlAttrs" :min="1" :max="65536" /></template></FormField>
-          <label class="setting-switch compact"><span><strong>Fake-IP</strong><small>透明代理时保留域名映射。</small></span><UiCheckbox v-model="model.dns.fake_ip_enabled" role="switch" /></label>
+          <label class="setting-switch compact"><span><strong>Fake-IP</strong><small>透明代理时保留域名映射。</small></span><UiSwitch v-model="model.dns.fake_ip_enabled" /></label>
           <template v-if="model.dns.fake_ip_enabled">
             <FormField label="Fake-IP IPv4 地址池" name="template-dns-fake-v4"><template #default="{ controlAttrs }"><UiInput v-model.trim="model.dns.fake_ipv4_range" v-bind="controlAttrs" /></template></FormField>
             <FormField label="Fake-IP IPv6 地址池" name="template-dns-fake-v6"><template #default="{ controlAttrs }"><UiInput v-model.trim="model.dns.fake_ipv6_range" v-bind="controlAttrs" /></template></FormField>
@@ -70,7 +70,7 @@
 
       <label class="setting-switch">
         <span><strong>启用 TUN 全局接管</strong><small>关闭时只处理主动使用本地 HTTP/SOCKS 端口的应用；开启后由 TUN 接管系统流量。</small></span>
-        <UiCheckbox v-model="model.tun.enabled" role="switch" @update:model-value="toggleTun" />
+        <UiSwitch v-model="model.tun.enabled" @update:model-value="toggleTun" />
       </label>
       <div v-if="model.tun.enabled" class="nested-settings runtime-grid">
         <FormField label="TUN IPv4 地址" name="template-tun-v4" required><template #default="{ controlAttrs }"><UiInput v-model.trim="model.tun.addresses[0]" v-bind="controlAttrs" /></template></FormField>
@@ -93,6 +93,7 @@ import { subscriptionRendererSupportsRuntimeNetwork, type SupportedSubscriptionR
 import FormField from './FormField.vue'
 import UiButton from './UiButton.vue'
 import UiCheckbox from './UiCheckbox.vue'
+import UiSwitch from './UiSwitch.vue'
 import UiIcon from './UiIcon.vue'
 import UiInput from './UiInput.vue'
 import UiNumberInput from './UiNumberInput.vue'

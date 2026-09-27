@@ -1,11 +1,11 @@
 <template>
-  <section class="plugin-frame" :class="{ 'plugin-frame--slot': !!slot }">
+  <section v-if="!optional || !error" class="plugin-frame" :class="{ 'plugin-frame--slot': !!slot, 'plugin-frame--slot-pending': !!slot && !slotReady && !error }">
     <div v-if="error" class="plugin-state" role="alert">
       <div><strong>暂时无法显示此内容</strong><p>{{ error }}</p></div>
       <UiButton variant="secondary" size="sm" @click="load">重新加载</UiButton>
     </div>
-    <div v-else-if="!session" class="plugin-state" role="status">正在加载…</div>
-    <div v-if="connectionWarning" class="plugin-state plugin-state--connection" role="status">
+    <div v-else-if="!session && !slot" class="plugin-state" role="status">正在加载…</div>
+    <div v-if="connectionWarning && !optional" class="plugin-state plugin-state--connection" role="status">
       <p>连接暂时中断，正在尝试恢复。</p>
       <UiButton variant="secondary" size="sm" @click="verify">重试连接</UiButton>
     </div>
@@ -53,18 +53,22 @@ const props = defineProps<{
   surface: Surface;
   configuration?: boolean;
   title?: string;
+  optional?: boolean;
 }>();
+const emit = defineEmits<{ ready: [] }>();
 const app = useAppStore();
 const frame = ref<HTMLIFrameElement | null>(null),
   session = ref<PluginSession | null>(null),
   error = ref(""),
   connectionWarning = ref(false),
-  height = ref(props.slot ? 160 : 620);
+  height = ref(props.slot ? 160 : 400),
+  slotReady = ref(false);
 let controller = new AbortController(),
   generation = 0,
   loaded = false,
   verifying = false,
-  timer: ReturnType<typeof setInterval> | undefined;
+  timer: ReturnType<typeof setInterval> | undefined,
+  slotResizeTimer: ReturnType<typeof setTimeout> | undefined;
 const pending = new Set<string>();
 const passwordConfirmation = ref(false), confirmationPassword = ref(""), confirmationError = ref(""), confirming = ref(false);
 let passwordResolver: ((value: string) => void) | undefined,
@@ -102,6 +106,8 @@ function cancelPasswordConfirmation() {
   reject?.(new Error("confirmation cancelled"));
 }
 function clear() {
+  if (slotResizeTimer) clearTimeout(slotResizeTimer);
+  slotResizeTimer = undefined;
   if (passwordConfirmation.value) cancelPasswordConfirmation();
   if (session.value) void revokePluginSession(session.value).catch(() => {});
   generation++;
@@ -111,6 +117,8 @@ function clear() {
   connectionWarning.value = false;
   pending.clear();
   loaded = false;
+  slotReady.value = false;
+  height.value = props.slot ? 160 : 400;
 }
 async function load() {
   clear();
@@ -131,7 +139,22 @@ function onLoad() {
   if (loaded) {
     clear();
     error.value = "扩展页面已导航，会话已关闭。";
-  } else loaded = true;
+  } else {
+    loaded = true;
+    if (props.slot && !slotReady.value) {
+      slotResizeTimer = setTimeout(() => {
+        if (!slotReady.value) {
+          revealSlot();
+          slotResizeTimer = undefined;
+        }
+      }, 3000);
+    }
+  }
+}
+function revealSlot() {
+  if (slotReady.value) return;
+  slotReady.value = true;
+  emit('ready');
 }
 async function receive(event: MessageEvent) {
   const s = session.value,
@@ -146,8 +169,14 @@ async function receive(event: MessageEvent) {
     return;
   if (typeof message.type !== "string") return;
   if (message.type === "ui.resize") {
-    if (Number.isFinite(message.height))
+    if (Number.isFinite(message.height)) {
       height.value = Math.max(props.slot ? 0 : 320, Math.min(1000, Math.ceil(message.height)));
+      if (props.slot) {
+        revealSlot();
+        if (slotResizeTimer) clearTimeout(slotResizeTimer);
+        slotResizeTimer = undefined;
+      }
+    }
     return;
   }
   if (message.type === "plugin.ready") return;
@@ -275,8 +304,12 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
+  color-scheme: light;
 }
+:global(.dark) .plugin-frame iframe { color-scheme: dark; }
 .plugin-frame--slot iframe { border: 0; border-radius: 0; background: transparent; }
+.plugin-frame--slot-pending { height: 0; overflow: hidden; }
+.plugin-frame--slot-pending iframe { visibility: hidden; pointer-events: none; }
 .plugin-state { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--muted); }
 .plugin-state strong { color: var(--text); font-size: 14px; }
 .plugin-state p { margin: 4px 0 0; line-height: 1.6; }

@@ -1,12 +1,8 @@
 import { nextTick } from 'vue'
-import PrimeVue from 'primevue/config'
-import ToastService from 'primevue/toastservice'
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { dismissToast, feedbackState, notify } from '../utils/feedback'
-import { primeVueOptions } from '../theme/primevue'
 import FeedbackHost from './FeedbackHost.vue'
-import UiButton from './UiButton.vue'
 
 afterEach(() => {
   for (const item of [...feedbackState.toasts]) dismissToast(item.id)
@@ -17,10 +13,6 @@ describe('FeedbackHost', () => {
   it('renders the deduplicated three-toast cap and synchronizes manual dismissal', async () => {
     const wrapper = mount(FeedbackHost, {
       attachTo: document.body,
-      global: {
-        plugins: [[PrimeVue, primeVueOptions], ToastService],
-        components: { UiButton },
-      },
     })
 
     notify('第一条', '会被容量淘汰。', 'success')
@@ -31,7 +23,7 @@ describe('FeedbackHost', () => {
     await nextTick()
     await nextTick()
 
-    const toasts = document.body.querySelectorAll('.p-toast-message')
+    const toasts = document.body.querySelectorAll('.ui-toast')
     const closeButtons = document.body.querySelectorAll<HTMLButtonElement>('button[aria-label="关闭通知"]')
     expect(toasts).toHaveLength(3)
     expect(closeButtons).toHaveLength(3)

@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { feedbackState, settleConfirm } from '../utils/feedback'
@@ -13,7 +12,7 @@ describe('ModalDialog', () => {
   it('uses the shared confirmation flow before closing a dirty form', async () => {
     const wrapper = mount(ModalDialog, {
       props: { open: true, title: '编辑节点', dirty: true },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
 
     const closing = (wrapper.vm as unknown as { requestClose: () => Promise<void> }).requestClose()
@@ -32,7 +31,7 @@ describe('ModalDialog', () => {
     trigger.focus()
     const wrapper = mount(ModalDialog, {
       props: { open: false, title: '编辑模板', returnFocusSelector: '[data-modal-trigger="7"]' },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
 
     await wrapper.setProps({ open: true })

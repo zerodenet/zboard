@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import UiTextarea from './UiTextarea.vue'
@@ -8,7 +7,7 @@ describe('UiTextarea', () => {
     const wrapper = mount(UiTextarea, {
       props: { modelValue: 'initial value' },
       attrs: { 'aria-label': 'JSON configuration' },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
 
     const textarea = wrapper.get('textarea')

@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -30,7 +29,7 @@ describe('dashboard independent sections', () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
     await router.push('/account')
     await router.isReady()
-    wrapper = mount(AccountDashboard, { global: { plugins: [router, PrimeVue] } })
+    wrapper = mount(AccountDashboard, { global: { plugins: [router] } })
     await flushPromises()
   }
   it('renders successful sections while another summary remains pending', async () => {

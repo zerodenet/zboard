@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Providers from './Providers.vue'
@@ -16,10 +15,28 @@ vi.mock('../utils/feedback', () => ({ confirmAction: mocks.confirm, notify: vi.f
 
 const account = { id: 7, name: 'Fixture provider', provider_key: 'cloudflare', capabilities: [], usage_count: 0, status: 'active', revision: 3 }
 function render() {
-  return mount(Providers, { global: { plugins: [PrimeVue], stubs: { teleport: true, RouterLink: { template: '<a><slot /></a>' } } } })
+  return mount(Providers, { attachTo: document.body, global: { plugins: [], stubs: { RouterLink: { template: '<a><slot /></a>' } } } })
 }
 async function openActions(wrapper: ReturnType<typeof render>) {
-  await wrapper.get('[data-row-action-trigger="provider-7"]').trigger('click')
+  await wrapper.get('[data-row-action-trigger="provider-7"]').trigger('keydown', { key: 'ArrowDown' })
+  await flushPromises()
+}
+function menuButton(label: string): HTMLButtonElement {
+  const button = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(item => item.textContent?.trim() === label)
+  expect(button, `menu action ${label}`).toBeDefined()
+  return button!
+}
+function dialogButton(label: string): HTMLButtonElement {
+  const button = [...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(item => item.textContent?.trim() === label)
+  expect(button, `dialog action ${label}`).toBeDefined()
+  return button!
+}
+async function fillDialogInput(selector: string, value: string) {
+  const input = document.body.querySelector<HTMLInputElement>(selector)
+  expect(input, `dialog input ${selector}`).not.toBeNull()
+  input!.value = value
+  input!.dispatchEvent(new Event('input', { bubbles: true }))
+  await flushPromises()
 }
 describe('Provider integration deletion', () => {
   beforeEach(() => {
@@ -33,9 +50,9 @@ describe('Provider integration deletion', () => {
     const wrapper = render()
     await flushPromises()
     await openActions(wrapper)
-    const button = wrapper.findAll('button').find(item => item.text() === '删除')!
-    expect(button.attributes('disabled')).toBeUndefined()
-    await button.trigger('click'); await flushPromises()
+    const button = menuButton('删除')
+    expect(button.disabled).toBe(false)
+    button.click(); await flushPromises()
     expect(mocks.remove).toHaveBeenCalledWith(7)
     wrapper.unmount()
   })
@@ -44,7 +61,7 @@ describe('Provider integration deletion', () => {
     await flushPromises()
     mocks.list.mockResolvedValue([])
     await openActions(wrapper)
-    await wrapper.findAll('button').find(item => item.text() === '删除')!.trigger('click')
+    menuButton('删除').click()
     await flushPromises()
     expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Cloudflare 账户、Token') }))
     expect(mocks.remove).toHaveBeenCalledWith(7)
@@ -56,7 +73,7 @@ describe('Provider integration deletion', () => {
     const wrapper = render()
     await flushPromises()
     await openActions(wrapper)
-    await wrapper.findAll('button').find(item => item.text() === '删除')!.trigger('click')
+    menuButton('删除').click()
     await flushPromises()
     expect(wrapper.text()).toContain('仍有证书引用')
     expect(wrapper.text()).toContain('Fixture provider')
@@ -68,7 +85,7 @@ describe('Provider integration deletion', () => {
     await flushPromises()
     mocks.list.mockResolvedValue([{ ...account, status: 'invalid' }])
     await openActions(wrapper)
-    await wrapper.findAll('button').find(item => item.text() === '重新验证')!.trigger('click')
+    menuButton('重新验证').click()
     await flushPromises()
     expect(mocks.verify).toHaveBeenCalledWith(7)
     expect(wrapper.text()).toContain('Token 权限不足')
@@ -88,14 +105,13 @@ describe('Provider account editing', () => {
     mocks.list.mockResolvedValue([{ ...account, usage_count: 2 }])
     const wrapper = render()
     await flushPromises()
-    expect(wrapper.text()).toContain('删除时清理 DNS 管理记录')
+    expect(wrapper.find('[title="关联的 DNS 解析与证书数量"]').text()).toBe('2')
     await openActions(wrapper)
-    await wrapper.findAll('button').find(item => item.text() === '编辑')!.trigger('click')
+    menuButton('编辑').click()
     await flushPromises()
-    const inputs = wrapper.findAll('input')
-    expect(inputs.find(item => item.attributes('type') === 'password')!.element.value).toBe('')
-    await inputs.find(item => item.element.value === account.name)!.setValue('Updated provider')
-    await wrapper.findAll('button').find(item => item.text() === '保存修改')!.trigger('click')
+    expect(document.body.querySelector<HTMLInputElement>('#provider-token')?.value).toBe('')
+    await fillDialogInput('#provider-name', 'Updated provider')
+    dialogButton('保存修改').click()
     await flushPromises()
     expect(mocks.update).toHaveBeenCalledWith(7, { name: 'Updated provider', api_token: undefined, expected_revision: 3 })
     expect(mocks.create).not.toHaveBeenCalled()
@@ -106,14 +122,14 @@ describe('Provider account editing', () => {
     const wrapper = render()
     await flushPromises()
     await openActions(wrapper)
-    await wrapper.findAll('button').find(item => item.text() === '编辑')!.trigger('click')
+    menuButton('编辑').click()
     await flushPromises()
-    await wrapper.get('input[type="password"]').setValue('replacement-cloudflare-token')
-    await wrapper.findAll('button').find(item => item.text() === '保存并验证')!.trigger('click')
+    await fillDialogInput('#provider-token', 'replacement-cloudflare-token')
+    dialogButton('保存并验证').click()
     await flushPromises()
-    expect(wrapper.text()).toContain('原凭据已保留')
-    expect(wrapper.text()).toContain('请检查 Token 权限。')
-    expect((wrapper.get('input[type="password"]').element as HTMLInputElement).value).toBe('replacement-cloudflare-token')
+    expect(document.body.textContent).toContain('原凭据已保留')
+    expect(document.body.textContent).toContain('请检查 Token 权限。')
+    expect(document.body.querySelector<HTMLInputElement>('#provider-token')?.value).toBe('replacement-cloudflare-token')
     wrapper.unmount()
   })
 })

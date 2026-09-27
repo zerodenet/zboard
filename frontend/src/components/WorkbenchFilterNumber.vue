@@ -7,15 +7,16 @@
     @clear="clear"
   >
     <template #default="{ close }">
-      <div class="workbench-filter-form">
-        <UiNumberInput
-          v-model="draft"
-          v-bind="$attrs"
-          :aria-label="label"
-          :placeholder="placeholder || label"
-          @keyup.enter="apply(close)"
-        />
-        <UiButton size="sm" type="button" @click="apply(close)"><UiIcon name="check" />应用</UiButton>
+      <div class="workbench-filter-form" @keyup.enter="apply(close)">
+        <slot name="field" :draft="draft" :set-draft="setDraft">
+          <label class="workbench-filter-field"><span>{{ label }}</span><UiNumberInput v-model="draft" v-bind="$attrs" :aria-label="label" :placeholder="placeholder || label" /></label>
+        </slot>
+        <div class="workbench-filter-form-actions">
+          <slot name="actions" :apply="() => apply(close)" :reset="clearDraft">
+            <UiButton variant="secondary" size="sm" type="button" @click="clearDraft">重置</UiButton>
+            <UiButton size="sm" type="button" @click="apply(close)"><UiIcon name="search" />搜索</UiButton>
+          </slot>
+        </div>
       </div>
     </template>
   </WorkbenchFilterChip>
@@ -54,6 +55,8 @@ watch(model, value => {
 function resetDraft() {
   draft.value = model.value
 }
+function clearDraft() { draft.value = props.emptyValue }
+function setDraft(value: number | null) { draft.value = value }
 
 async function apply(close?: (restoreFocus?: boolean) => void) {
   model.value = draft.value

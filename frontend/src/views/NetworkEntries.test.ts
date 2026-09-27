@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import NetworkEntries from './NetworkEntries.vue'
@@ -6,7 +5,7 @@ const mocks = vi.hoisted(() => ({list: vi.fn(), save: vi.fn(), remove: vi.fn(), 
 vi.mock('../api/client', () => ({fetchNetworkEntries: mocks.list, saveNetworkEntry: mocks.save, deleteNetworkEntry: mocks.remove, fetchProtocolEndpoints: mocks.endpoints, fetchNodeProxyPools: mocks.pools, fetchNodeGroupsPage: vi.fn(async()=>({items:[],total:0}))}))
 vi.mock('../utils/feedback', () => ({confirmAction: mocks.confirm, notify: vi.fn()}))
 const entry = {id: 7, name: '香港入口', node_id: 1, node_name: '香港 A', landing_node_id: 2, endpoint_id: 3, endpoint_name: '日本 B SS', address: 'entry.example.com', port: 10000, public_port: 20000, enabled: true, has_path: true, revision: 4, pending: false, last_error: ''}
-function render() { return mount(NetworkEntries, {global: {plugins: [PrimeVue], stubs: {teleport: true, NodeLookup: {props: ['modelValue'], emits: ['update:modelValue'], template: '<input class="node-lookup-test" type="number" :value="modelValue" @input="$emit(\'update:modelValue\', Number($event.target.value))" />'}, RowActions: {template: '<div><slot /></div>'}}}}) }
+function render() { return mount(NetworkEntries, {global: {plugins: [], stubs: {teleport: true, ModalDialog: {props: ['open', 'title'], template: '<div v-if="open"><h2>{{ title }}</h2><slot/><slot name="footer"/></div>'}, NodeLookup: {props: ['modelValue'], emits: ['update:modelValue'], template: '<input class="node-lookup-test" type="number" :value="modelValue" @input="$emit(\'update:modelValue\', Number($event.target.value))" />'}, RowActions: {template: '<div><slot /></div>'}}}}) }
 async function click(wrapper: ReturnType<typeof render>, text: string) { await wrapper.findAll('button').find(button => button.text() === text)!.trigger('click'); await flushPromises() }
 describe('Network entry management', () => {
  beforeEach(() => {vi.clearAllMocks();mocks.pools.mockResolvedValue([{id: 8, name: "A 的共享池"}]);mocks.list.mockResolvedValue([entry]);mocks.save.mockResolvedValue(entry);mocks.endpoints.mockResolvedValue([{id: 3, name: '日本 B SS', is_active: true}]);mocks.confirm.mockResolvedValue(true)})

@@ -13,7 +13,8 @@
           <WorkbenchFilterSelect v-model="statusFilter" label="账户状态" :options="filterStatusOptions" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
-      <DataTable v-if="users.length" caption="用户与权限列表" :row-count="total" :min-width="980">
+      <TableSkeleton v-if="loading && !users.length" label="正在加载用户" :columns="7" />
+      <DataTable v-else-if="users.length" caption="用户与权限列表" :row-count="total" :min-width="980">
           <thead><tr><th class="table-primary-column">用户</th><th data-column-priority="2">管理权限</th><th>状态</th><th class="numeric-column" data-column-priority="2">订阅（有效/全部）</th><th class="numeric-column" data-column-priority="3">订单（待处理/全部）</th><SortableHeader field="created_at" label="创建时间" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" /><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
           <tbody>
             <tr v-for="user in users" :key="user.id">
@@ -96,6 +97,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createAdminUser, fetchAdminUserDetail, fetchUsersPage, updateAdminUser, type AdminUserDetail, type AdminUserListItem } from '../api/client'
 import DataTable from '../components/DataTable.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
 import EmptyState from '../components/EmptyState.vue'

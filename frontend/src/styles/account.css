@@ -42,7 +42,7 @@
 .account-plan-list { gap: 8px; }
 .account-plan-list > article { border-inline: 0; border-radius: 0; box-shadow: none; }
 @media (max-width: 700px) { .account-metric-grid > article + article { border-left: 0; border-top: 1px solid var(--line); } }
-.compact-field .p-select { min-height: 34px; }
+.compact-field .ui-select { min-height: 34px; }
 
 /* Standardized choice surfaces: cards are reserved for plans and selectable products. */
 .account-sku-grid > article { border-radius: var(--radius-md); box-shadow: none; }

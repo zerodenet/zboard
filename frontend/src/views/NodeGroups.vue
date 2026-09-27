@@ -7,8 +7,17 @@
     <TransientFeedback :success="message" :error="error" success-title="节点组已更新" error-title="节点组操作失败" />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
-      <template #filters><WorkbenchFilterBar :active="Boolean(search || enabledFilter)" @clear="clearFilters"><WorkbenchFilterInput v-model="search" label="搜索" placeholder="名称、代码或说明" @apply="applyFilters" /><WorkbenchFilterSelect v-model="enabledFilter" label="启用状态" :options="enabledOptions" @apply="applyFilters" /></WorkbenchFilterBar></template>
-      <DataTable v-if="groups.length" caption="节点组列表；成员数量直接展示，完整成员仅在编辑时按需加载" :row-count="total" :min-width="900" table-class="group-table"><thead><tr><th class="table-primary-column">节点组</th><th data-column-priority="2">代码</th><th>状态</th><th class="numeric-column">服务数</th><th class="numeric-column" data-column-priority="3">套餐数</th><th data-column-priority="2">更新时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="group in groups" :key="group.id"><td class="table-primary-column"><div class="cell-title"><strong>{{ group.name }}</strong><TableText :value="group.description || '暂无说明'" /></div></td><td data-column-priority="2"><TableText class="mono" :value="group.code" /></td><td><StatusBadge :tone="group.is_enabled ? 'success' : 'neutral'">{{ group.is_enabled ? '已启用' : '已停用' }}</StatusBadge></td><td class="numeric-column">{{ (group.protocol_endpoint_count || 0) + (group.network_entry_count || 0) }}</td><td class="numeric-column" data-column-priority="3">{{ group.plan_count || 0 }}</td><td data-column-priority="2"><TimeBadge :value="group.updated_at" /></td><td class="table-action-column"><UiButton variant="secondary" size="sm" type="button" :loading="editingID === group.id" :disabled="Boolean(editingID)" @click="openEdit(group)"><UiIcon name="edit" />编辑</UiButton></td></tr></tbody></DataTable>
+      <template #filters><WorkbenchFilterBar :active="Boolean(search || enabledFilter)" :active-count="Number(Boolean(search)) + Number(Boolean(enabledFilter))" @clear="clearFilters"><WorkbenchFilterInput v-model="search" label="搜索" field-label="节点组名称或代码" placeholder="名称、代码或说明" @apply="applyFilters" /><WorkbenchFilterSelect v-model="enabledFilter" label="启用状态" :options="enabledOptions" @apply="applyFilters" /></WorkbenchFilterBar></template>
+      <TableSkeleton v-if="loading && !groups.length" label="正在加载节点组" :columns="7" />
+      <DataTable v-else-if="groups.length" caption="节点组列表；成员数量直接展示，完整成员仅在编辑时按需加载" :row-count="total" :min-width="900" table-class="group-table" :columns="groupColumns" :rows="groups">
+        <template #cell-name="{ row: group }"><div class="cell-title"><strong>{{ group.name }}</strong><TableText :value="group.description || '暂无说明'" /></div></template>
+        <template #cell-code="{ row: group }"><TableText class="mono" :value="group.code" /></template>
+        <template #cell-is_enabled="{ row: group }"><StatusBadge :tone="group.is_enabled ? 'success' : 'neutral'">{{ group.is_enabled ? '已启用' : '已停用' }}</StatusBadge></template>
+        <template #cell-protocol_endpoint_count="{ row: group }">{{ (group.protocol_endpoint_count || 0) + (group.network_entry_count || 0) }}</template>
+        <template #cell-plan_count="{ row: group }">{{ group.plan_count || 0 }}</template>
+        <template #cell-updated_at="{ row: group }"><TimeBadge :value="group.updated_at" /></template>
+        <template #cell-actions="{ row: group }"><UiButton variant="secondary" size="sm" type="button" :loading="editingID === group.id" :disabled="Boolean(editingID)" @click="openEdit(group)"><UiIcon name="edit" />编辑</UiButton></template>
+      </DataTable>
       <EmptyState v-else icon="nodes" title="没有匹配的节点组" description="调整筛选条件，或创建第一个节点组。"><template #actions><UiButton  type="button" @click="openCreate"><UiIcon name="plus" />创建节点组</UiButton></template></EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
@@ -44,6 +53,8 @@ import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createNodeGroup, fetchNodeGroupDetail, fetchNodeGroupsPage, updateNodeGroup, type NodeGroupSummary } from '../api/client'
 import DataTable from '../components/DataTable.vue'
+import type { DataTableColumn } from '../components/DataTable.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
 import EndpointMultiLookup from '../components/EndpointMultiLookup.vue'
@@ -66,6 +77,15 @@ import { trackAdminTask } from '../utils/taskTracker'
 import { collectFieldErrors, isBlank, isSlug, isUtf8LengthInRange } from '../utils/validation'
 
 const route = useRoute()
+const groupColumns: DataTableColumn[] = [
+  { key: 'name', label: '节点组', primary: true },
+  { key: 'code', label: '代码', priority: 2 },
+  { key: 'is_enabled', label: '状态' },
+  { key: 'protocol_endpoint_count', label: '服务数', align: 'right' },
+  { key: 'plan_count', label: '套餐数', align: 'right', priority: 3 },
+  { key: 'updated_at', label: '更新时间', priority: 2 },
+  { key: 'actions', label: '操作', action: true },
+]
 const router = useRouter()
 const search = ref(String(route.query.q || ''))
 const enabledFilter = ref(String(route.query.enabled || ''))

@@ -1,6 +1,5 @@
 <script lang="ts">
 import {
-  cloneVNode,
   Comment,
   defineComponent,
   Fragment,
@@ -45,10 +44,7 @@ export default defineComponent({
               RowActionMenu,
               { label: props.label, triggerKey: props.triggerKey },
               {
-                default: () => actions.map(action => cloneVNode(action, {
-                  role: 'menuitem',
-                  tabindex: -1,
-                })),
+                default: () => actions,
               },
             ),
           ]

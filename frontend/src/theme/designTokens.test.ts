@@ -28,7 +28,7 @@ describe('design token ownership', () => {
 
   it('declares every referenced CSS custom property', () => {
     const declared = new Set(Array.from(readFileSync(tokenPath, 'utf8').matchAll(/\s(--[a-z0-9-]+)\s*:/gi), match => match[1]))
-    const runtimeProperties = new Set(['--metric-columns'])
+    const runtimeProperties = new Set(['--metric-columns', '--reka-select-trigger-width', '--reka-select-content-available-height', '--reka-combobox-trigger-width', '--reka-combobox-content-available-height'])
     const missing = new Set<string>()
     for (const path of sourceFiles(sourceRoot)) {
       if (path === tokenPath) continue

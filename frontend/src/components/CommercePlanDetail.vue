@@ -119,7 +119,7 @@
           </label>
         </div>
         <UiButton type="button" :disabled="loading || Boolean(error) || !selectedSku || (hasPurchasePolicies && !purchasePoliciesAccepted)" @click="$emit('continue')">
-          继续结算<UiIcon name="chevron" />
+          {{ continueLabel }}<UiIcon name="chevron" />
         </UiButton>
       </aside>
     </div>
@@ -159,6 +159,7 @@ const props = withDefaults(defineProps<{
   targetName?: string
   loading?: boolean
   error?: string
+  continueLabel?: string
 }>(), {
   selectedSkuId: 0,
   operationLabel: '新购',
@@ -166,6 +167,7 @@ const props = withDefaults(defineProps<{
   targetName: '',
   loading: false,
   error: '',
+  continueLabel: '继续结算',
   skuTotal: 0,
   skuOffset: 0,
   skuLimit: 25,

@@ -7,13 +7,13 @@ const read = (...parts: string[]) => readFileSync(join(sourceRoot, ...parts), 'u
 
 describe('infrastructure control policy', () => {
   it('gives wrapped workbench controls one compact component height', () => {
-    const styles = read('styles.css')
+    const styles = read('theme', 'design-system.css')
     const tokens = read('theme', 'tokens.css')
 
-    expect(tokens).toContain('--control-height-compact: 36px')
-    expect(styles).toContain('.workbench-filters > .date-range-filter')
-    expect(styles).toContain('.workbench-filters .p-autocomplete-input')
-    expect(styles).toContain('height:var(--control-height-compact)')
+    expect(tokens).toContain('--control-height-compact: 32px')
+    expect(styles).toContain('.workbench-filters > .ui-input')
+    expect(styles).toContain('.workbench-filters .ui-select')
+    expect(styles).toContain('min-height: 32px; height: 32px')
   })
 
   it('uses shared step navigation and remote lookup controls in infrastructure forms', () => {
@@ -26,7 +26,7 @@ describe('infrastructure control policy', () => {
     expect(stepNav).toContain('gap: 8px')
     expect(stepNav).toContain('aria-current')
     expect(autocomplete).toContain('class="ui-autocomplete"')
-    expect(autocomplete).toContain('height: var(--control-height)')
+    expect(read('theme', 'design-system.css')).toContain('.ui-autocomplete-anchor { min-height: 36px')
 
     for (const component of ['NodeLookup.vue', 'NodeGroupLookup.vue', 'EndpointLookup.vue']) {
       const source = read('components', component)
@@ -95,10 +95,9 @@ describe('infrastructure control policy', () => {
     expect(styles).toContain('.admin-stripe-surface .data-workbench .data-table th')
     expect(pager).toContain("variant: 'stripe'")
     expect(refresh).toContain('class="page-refresh-button"')
-    expect(protocols).toContain('class="standard-page"')
-    expect(protocols).toContain('class="protocol-status-overview"')
-    expect(protocols).toContain('<OverviewCard')
-    expect(protocols).toContain('selectDeploymentStatus(item.value)')
+    expect(protocols).toContain('class="standard-page protocols-page"')
+    expect(protocols).toContain('<StatusCountFilters')
+    expect(protocols).toContain('@select="selectDeploymentStatus"')
     expect(protocols).toContain('includeStatusFacets')
     expect(protocols).toContain('<TablePager variant="stripe"')
     expect(protocols).not.toContain('protocol-stripe-page')
@@ -117,7 +116,7 @@ describe('infrastructure control policy', () => {
     const protocols = read('views', 'Protocols.vue')
 
     expect(rowActions).toContain("actions.length === 1 ? 'single' : 'menu'")
-    expect(rowActions).toContain("role: 'menuitem'")
+    expect(read('components', 'RowActionMenu.vue')).toContain('DropdownMenuItem')
     expect(rowActions).toContain('RowActionMenu')
     expect(protocols).toContain('<RowActions')
     expect(protocols).not.toContain('protocol-row-actions')
@@ -132,7 +131,6 @@ describe('infrastructure control policy', () => {
     const bar = read('components', 'WorkbenchFilterBar.vue')
     const chip = read('components', 'WorkbenchFilterChip.vue')
     const select = read('components', 'WorkbenchFilterSelect.vue')
-    const styles = read('styles.css')
 
     expect(input).toContain('v-model="draft"')
     expect(input).toContain('model.value = draft.value.trim()')
@@ -140,8 +138,8 @@ describe('infrastructure control policy', () => {
     expect(chip).toContain('class="workbench-filter-chip"')
     expect(chip).toContain('aria-haspopup="dialog"')
     expect(select).toContain('role="listbox"')
-    expect(styles).toContain('.workbench-filter-chip-trigger.p-button')
-    expect(styles).toContain('border:1px dashed var(--line-strong)')
+    expect(chip).toContain('.workbench-filter-chip-trigger {')
+    expect(chip).toContain('border: 1px dashed var(--border)')
 
     for (const view of ['Protocols.vue', 'Nodes.vue', 'NodeGroups.vue', 'Plans.vue', 'Users.vue', 'Orders.vue', 'Subscriptions.vue', 'SubscriptionTemplates.vue', 'SubscriptionRuleSets.vue']) {
       const source = read('views', view)

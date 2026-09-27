@@ -41,7 +41,7 @@
         </div>
 
         <footer class="policy-document-options">
-          <label class="policy-option policy-option-publish"><UiCheckbox :model-value="document.published" role="switch" @update:model-value="updateDocument(index, 'published', Boolean($event))" /><span><strong>发布文档</strong><small>关闭后公开目录和直接访问都会隐藏。</small></span></label>
+          <label class="policy-option policy-option-publish"><UiSwitch :model-value="document.published" @update:model-value="updateDocument(index, 'published', Boolean($event))" /><span><strong>发布文档</strong><small>关闭后公开目录和直接访问都会隐藏。</small></span></label>
           <fieldset>
             <legend>展示位置</legend>
             <label v-for="placement in placementOptions" :key="placement.value" class="policy-option"><UiCheckbox :model-value="document.placements.includes(placement.value)" @update:model-value="togglePlacement(index, placement.value, Boolean($event))" /><span>{{ placement.label }}</span></label>
@@ -71,6 +71,7 @@ import FormField from './FormField.vue'
 import StatusBadge from './StatusBadge.vue'
 import UiButton from './UiButton.vue'
 import UiCheckbox from './UiCheckbox.vue'
+import UiSwitch from './UiSwitch.vue'
 import UiIcon from './UiIcon.vue'
 import UiInput from './UiInput.vue'
 import UiTextarea from './UiTextarea.vue'

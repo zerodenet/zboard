@@ -1,0 +1,86 @@
+/* Admin page composition. Keep navigation geometry in the layout components. */
+.admin-shell .standard-page { gap: 16px; }
+.admin-shell .standard-page > .page-header { align-items: flex-end; padding: 0 0 2px; }
+.admin-shell .standard-page > .page-header h1 { font-size: 24px; line-height: 1.25; font-weight: 600; letter-spacing: -.02em; }
+.admin-shell .standard-page > .page-header .page-eyebrow { display: none; }
+.admin-shell .standard-page > .page-header .page-description { max-width: 780px; margin-top: 5px; font-size: 13px; line-height: 1.5; }
+.admin-shell .standard-page > .page-header .page-actions { align-self: center; }
+.admin-shell .standard-page > .page-header { flex-wrap: wrap; }
+.admin-shell .page-header-navigation { flex: 0 0 100%; margin-top: 9px; }
+.admin-page-navigation { min-width: 0; }
+.admin-page-navigation-horizontal { display: flex; gap: 24px; overflow-x: auto; border-bottom: 1px solid var(--border); }
+.admin-page-navigation-horizontal .admin-page-navigation-link { position: relative; flex: none; padding: 10px 0 11px; color: var(--muted-foreground); font-size: 12px; font-weight: 500; text-decoration: none; white-space: nowrap; }
+.admin-page-navigation-horizontal .admin-page-navigation-link:hover { color: var(--foreground); }
+.admin-page-navigation-horizontal .admin-page-navigation-link[aria-current='page'] { color: var(--foreground); font-weight: 600; }
+.admin-page-navigation-horizontal .admin-page-navigation-link[aria-current='page']::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; background: var(--primary); content: ''; }
+.admin-page-navigation-link:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.admin-page-navigation-vertical { display: grid; align-content: start; gap: 2px; }
+.admin-page-navigation-vertical .admin-page-navigation-link { display: block; min-height: 36px; padding: 8px 12px; border-radius: 6px; color: var(--text-secondary); font-size: 12px; line-height: 20px; text-decoration: none; }
+.admin-page-navigation-vertical .admin-page-navigation-link:hover { color: var(--foreground); background: var(--muted-surface); }
+.admin-page-navigation-vertical .admin-page-navigation-link[aria-current='page'] { color: var(--foreground); background: var(--sidebar-active); font-weight: 600; }
+.admin-shell .business-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.admin-shell .business-metrics > .metric-card:last-child { grid-column: span 2; }
+
+/* Data pages place controls and the table directly in the content column. */
+.admin-shell .data-workbench { width: 100%; min-width: 0; border: 0; background: transparent; box-shadow: none; }
+.admin-shell .data-workbench .workbench-content { min-width: 0; }
+.admin-shell .data-workbench .workbench-toolbar { min-height: 48px; padding: 8px 0 10px; border-bottom: 1px solid var(--border); background: transparent; }
+.admin-shell .data-workbench .workbench-footer { border-top: 1px solid var(--border); }
+
+/* Settings use sections and dividers; the preview entities keep their own borders. */
+.admin-shell .settings-page-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 32px; align-items: start; border-top: 1px solid var(--border); padding-top: 18px; }
+.admin-shell .settings-page-layout > .admin-page-navigation { position: sticky; top: 82px; }
+.admin-shell .settings-page-content { min-width: 0; display: grid; gap: 16px; }
+.admin-shell .settings-shell { border: 0; border-radius: 0; background: transparent; }
+.admin-shell .settings-shell .settings-panel { padding: 0; gap: 0; }
+.admin-shell .settings-panel > .ui-section { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.admin-shell .settings-panel > .ui-section + .ui-section { border-top: 1px solid var(--border); }
+.admin-shell .settings-panel > .ui-section > .panel-header { min-height: 0; padding: 22px 0 10px; border: 0; }
+.admin-shell .settings-panel > .ui-section > .panel-header h2 { font-size: 15px; font-weight: 600; }
+.admin-shell .settings-panel > .ui-section > .panel-header p { max-width: 780px; font-size: 12px; line-height: 1.5; }
+.admin-shell .settings-panel > .ui-section .panel-body { padding-inline: 0; }
+.admin-shell .settings-panel > .ui-section .public-fields { padding-inline: 0; }
+.admin-shell .settings-panel > .ui-section .site-config-layout .public-fields { padding-right: 16px; }
+.admin-shell .settings-panel > .ui-section .section-actions { padding-right: 0; padding-left: 0; }
+.admin-shell .settings-panel > .ui-section .config-list { border-radius: 6px; }
+
+@media (max-width: 1280px) {
+  .admin-shell .protocols-page > .page-header { align-items: stretch; flex-direction: column; gap: 12px; }
+  .admin-shell .protocols-page > .page-header .page-actions { align-self: flex-start; flex-wrap: wrap; }
+  .admin-shell .section-grid.dashboard-section { grid-template-columns: minmax(0, 1fr); }
+  .admin-shell .section-grid.dashboard-section > * { grid-column: 1 / -1; }
+  .admin-shell .standard-page > .dashboard-header { align-items: stretch; flex-direction: column; gap: 12px; }
+  .admin-shell .standard-page > .dashboard-header .page-actions { align-self: flex-start; }
+  .admin-shell .dashboard-header .dashboard-controls { flex-wrap: nowrap; }
+}
+
+@media (min-width: 1400px) {
+  .admin-shell .business-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .admin-shell .business-metrics > .metric-card:last-child { grid-column: auto; }
+}
+
+@media (max-width: 1280px) {
+  .admin-shell .settings-page-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .admin-shell .settings-page-layout > .admin-page-navigation { position: static; display: flex; gap: 18px; overflow-x: auto; border-bottom: 1px solid var(--border); }
+  .admin-shell .settings-page-layout > .admin-page-navigation .admin-page-navigation-link { flex: none; position: relative; border-radius: 0; background: transparent; white-space: nowrap; }
+  .admin-shell .settings-page-layout > .admin-page-navigation .admin-page-navigation-link[aria-current='page']::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; background: var(--primary); content: ''; }
+}
+
+@media (max-width: 999px) {
+  .admin-shell .business-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 601px) and (max-width: 820px) {
+  .admin-shell .standard-page > .page-header { align-items: flex-end; flex-direction: row; }
+  .admin-shell .standard-page > .page-header .page-actions { align-self: center; }
+  .admin-shell .protocols-page > .page-header { align-items: stretch; flex-direction: column; }
+  .admin-shell .protocols-page > .page-header .page-actions { align-self: flex-start; flex-wrap: wrap; }
+}
+
+@media (max-width: 600px) {
+  .admin-shell .business-metrics { grid-template-columns: minmax(0, 1fr); }
+  .admin-shell .business-metrics > .metric-card:last-child { grid-column: auto; }
+  .admin-shell .standard-page > .page-header { align-items: stretch; }
+  .admin-shell .standard-page > .page-header .page-actions { align-self: flex-start; }
+  .admin-shell .settings-panel > .ui-section > .panel-header { align-items: flex-start; flex-direction: column; gap: 8px; }
+}

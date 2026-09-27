@@ -29,7 +29,8 @@
         </StatusBadge>
       </template>
 
-      <DataTable v-if="subscriptions.length" caption="我的订阅列表" :row-count="total" :min-width="940">
+      <TableSkeleton v-if="listLoading && !subscriptions.length" label="正在加载我的订阅" :columns="7" />
+      <DataTable v-else-if="subscriptions.length" caption="我的订阅列表" :row-count="total" :min-width="940">
         <thead>
           <tr>
             <th class="table-primary-column">订阅</th>
@@ -226,6 +227,7 @@ import {
 } from '../../api/subscriptionAccess'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import DataTable from '../../components/DataTable.vue'
+import TableSkeleton from '../../components/TableSkeleton.vue'
 import DataWorkbench from '../../components/DataWorkbench.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import FormField from '../../components/FormField.vue'

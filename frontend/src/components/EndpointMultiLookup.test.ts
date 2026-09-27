@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchProtocolEndpointSelection, fetchProtocolEndpointsPage } from '../api/client'
@@ -45,7 +44,7 @@ describe('EndpointMultiLookup', () => {
     const ids = Array.from({ length: 5000 }, (_, index) => index + 1)
     const wrapper = mount(EndpointMultiLookup, {
       props: { modelValue: ids },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
     await flushPromises()
 
@@ -73,7 +72,7 @@ describe('EndpointMultiLookup', () => {
   it('adds and removes the complete server-resolved filter snapshot without paging through result details', async () => {
     const wrapper = mount(EndpointMultiLookup, {
       props: { modelValue: [5] },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
     await flushPromises()
 

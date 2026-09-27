@@ -53,7 +53,7 @@ describe('SMTP and email template capability', () => {
     expect(registration).toContain('subtle.ConstantTimeCompare')
     expect(registration).toContain('RejectEmailChallenge')
     expect(verification).not.toContain('Code string `gorm')
-    expect(tasks).toContain('task-overview')
+    expect(tasks).toContain('<StatusCountFilters')
     expect(tasks).toContain('activeProgress')
     expect(client).toContain("api.get('/admin/tasks/summary')")
   })

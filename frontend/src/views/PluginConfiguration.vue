@@ -12,6 +12,7 @@
           <UiButton variant="ghost" :disabled="testing || jsonOpen" @click="jsonOpen = true">高级 JSON 配置</UiButton>
         </div>
       </header>
+      <AdminPageNavigation />
       <TransientFeedback :success="message" />
       <PageAlert v-if="testError" tone="danger">{{ testError }}</PageAlert>
       <PageAlert v-if="!configurable" tone="warning">{{ plugin.state === 'uninstalled' ? '插件已卸载，重新安装后可继续配置。' : !plugin.admission?.accepted ? '插件尚未通过宿主校验，请查看插件详情。' : !plugin.compatibility.compatible ? '此插件与当前宿主不兼容，暂时无法配置。' : '此插件未声明配置能力。' }}</PageAlert>
@@ -27,6 +28,7 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import UiButton from '../components/UiButton.vue'
+import AdminPageNavigation from '../components/AdminPageNavigation.vue'
 import PageAlert from '../components/PageAlert.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import PluginFrame from '../plugins/PluginFrame.vue'

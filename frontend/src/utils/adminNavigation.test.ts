@@ -26,5 +26,7 @@ describe('admin navigation inventory', () => {
     expect(resolveAdminNavigation('/admin/extensions/example.welcome/home')?.domain.id).toBe('settings')
     expect(resolveAdminNavigation('/admin/maintenance')?.domain.id).toBe('settings')
     expect(resolveAdminNavigation('/admin/announcements')?.domain.id).toBe('operations')
+    expect(resolveAdminNavigation('/admin/settings/email')?.section.label).toBe('站点设置')
+    expect(resolveAdminNavigation('/admin/plugins/zboard.oauth')?.section.label).toBe('扩展中心')
   })
 })

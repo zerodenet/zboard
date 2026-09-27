@@ -1,35 +1,36 @@
 <template>
-  <PrimeDialog
-    :visible="open"
-    modal
-    block-scroll
-    :closable="!busy"
-    :close-button-props="{ 'aria-label': '关闭弹窗' }"
-    :close-on-escape="!busy"
-    :dismissable-mask="!busy"
-    :draggable="false"
-    :style="dialogStyle"
-    :breakpoints="{ '700px': '100vw' }"
-    class="app-dialog"
-    :class="{ 'app-dialog-fixed': fixedBody }"
-    @update:visible="handleVisible"
-    @after-hide="restoreFocus"
-  >
-    <template #header>
-      <div class="app-dialog-heading">
-        <h2>{{ title }}</h2>
-        <p v-if="description">{{ description }}</p>
-      </div>
-    </template>
-    <div class="app-dialog-body"><slot /></div>
-    <template v-if="$slots.footer" #footer><slot name="footer" :request-close="requestClose" /></template>
-  </PrimeDialog>
+  <DialogRoot :open="open" @update:open="handleOpenChange">
+    <DialogPortal>
+      <DialogOverlay class="ui-dialog-overlay" />
+      <DialogContent
+        class="app-dialog ui-dialog-content"
+        :class="{ 'app-dialog-fixed': fixedBody }"
+        :style="dialogStyle"
+        :close-on-escape="!busy"
+        :disable-outside-pointer-events="true"
+        @escape-key-down="handleDismiss"
+        @pointer-down-outside="handleDismiss"
+        @close-auto-focus="handleCloseAutoFocus"
+      >
+        <header class="app-dialog-header">
+          <div class="app-dialog-heading">
+            <DialogTitle>{{ title }}</DialogTitle>
+            <DialogDescription :class="{ 'sr-only': !description }">{{ description || title }}</DialogDescription>
+          </div>
+          <UiButton variant="ghost" icon type="button" aria-label="关闭弹窗" :disabled="busy" @click="requestClose">×</UiButton>
+        </header>
+        <div class="app-dialog-body"><slot /></div>
+        <footer v-if="$slots.footer" class="app-dialog-footer"><slot name="footer" :request-close="requestClose" /></footer>
+      </DialogContent>
+    </DialogPortal>
+  </DialogRoot>
 </template>
 
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import PrimeDialog from 'primevue/dialog'
+import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { confirmAction } from '../utils/feedback'
+import UiButton from './UiButton.vue'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -66,11 +67,11 @@ async function requestClose() {
   })) return
   emit('close')
 }
-
-function handleVisible(visible: boolean) {
-  if (!visible) void requestClose()
+function handleOpenChange(open: boolean) { if (!open) void requestClose() }
+function handleDismiss(event: Event) {
+  event.preventDefault()
+  void requestClose()
 }
-
 function restoreFocus() {
   const replacement = returnFocusSelector ? document.querySelector<HTMLElement>(returnFocusSelector) : null
   const target = replacement || (previousFocus?.isConnected ? previousFocus : null)
@@ -78,6 +79,9 @@ function restoreFocus() {
   previousFocus = null
   returnFocusSelector = ''
 }
-
+function handleCloseAutoFocus(event: Event) {
+  event.preventDefault()
+  restoreFocus()
+}
 defineExpose({ requestClose, restoreFocus })
 </script>

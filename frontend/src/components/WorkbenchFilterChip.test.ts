@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import WorkbenchFilterChip from './WorkbenchFilterChip.vue'
@@ -32,7 +31,7 @@ describe('filter popover layout lifecycle', () => {
     const wrapper = mount(WorkbenchFilterChip, {
       attachTo: document.body, props: { label: '订阅', wide: true },
       slots: { default: '<button aria-controls="fixture-select-menu">每页</button>' },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
     wrappers.push(wrapper)
     return wrapper

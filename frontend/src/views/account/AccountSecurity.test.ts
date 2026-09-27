@@ -1,5 +1,4 @@
 import { mount, flushPromises } from '@vue/test-utils'
-import PrimeVue from 'primevue/config'
 import { vi, it, expect, beforeEach } from 'vitest'
 import AccountSecurity from './AccountSecurity.vue'
 const mocks = vi.hoisted(() => ({ status: vi.fn(), setup: vi.fn(), change: vi.fn() }))
@@ -7,7 +6,7 @@ vi.mock('../../api/identities', () => ({ fetchIdentityPasswordStatus: mocks.stat
 vi.mock('../../api/accountSecurity', () => ({ changeAccountPassword: mocks.change }))
 vi.mock('../../plugins/PluginSlot.vue', () => ({ default: { template: '<div />' } }))
 beforeEach(() => { vi.clearAllMocks(); mocks.status.mockResolvedValue({ password_set: true }); mocks.change.mockResolvedValue({}); mocks.setup.mockResolvedValue({}) })
-const render = () => mount(AccountSecurity, { global: { plugins: [PrimeVue] } })
+const render = () => mount(AccountSecurity, { global: { plugins: [] } })
 it('always provides native password change for password accounts', async () => {
  const w = render(); await flushPromises(); expect(w.text()).toContain('修改密码')
  const inputs = w.findAll('input[type=password]'); expect(inputs).toHaveLength(3)

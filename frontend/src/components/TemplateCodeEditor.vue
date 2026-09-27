@@ -52,6 +52,6 @@ defineExpose({
 .template-code-gutter { height: 100%; overflow: hidden; padding: 10px 0; border-right: 1px solid var(--line); color: var(--subtle); background: var(--surface-soft); font-family: var(--font-mono); font-size: 11px; line-height: 1.6; text-align: right; }
 .template-code-gutter span { display: block; padding-right: 9px; }
 .template-code-gutter span.invalid { color: var(--danger); background: var(--danger-soft); font-weight: 750; }
-:deep(.p-textarea) { height: 100%!important; min-height: 0; resize: none; padding: 10px 12px; border: 0; border-radius: 0; box-shadow: none!important; font-family: var(--font-mono); font-size: 11px; line-height: 1.6; tab-size: 2; }
+:deep(.ui-textarea) { height: 100%!important; min-height: 0; resize: none; padding: 10px 12px; border: 0; border-radius: 0; box-shadow: none!important; font-family: var(--font-mono); font-size: 11px; line-height: 1.6; tab-size: 2; }
 @media(max-width:700px){.template-code-editor{height:320px;grid-template-columns:36px minmax(0,1fr)}.template-code-gutter span{padding-right:7px}}
 </style>

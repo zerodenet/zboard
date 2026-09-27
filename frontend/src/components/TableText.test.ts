@@ -1,13 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import PrimeVue from 'primevue/config'
 import TableText from './TableText.vue'
 import EntityReference from './EntityReference.vue'
 
 describe('List text roles', () => {
   it('exposes full auxiliary text on click and retains zero as a value', async () => {
     const value = '关联套餐名称很长–东京线路与海外备用线路'
-    const wrapper = mount(TableText, { props: { value }, attachTo: document.body, global: { plugins: [PrimeVue] } })
+    const wrapper = mount(TableText, { props: { value }, attachTo: document.body, global: { plugins: [] } })
     expect(wrapper.get('button').attributes('title')).toBe(value)
     await wrapper.get('button').trigger('click')
     await flushPromises()
@@ -19,7 +18,7 @@ describe('List text roles', () => {
   })
   it('renders a primary entity name directly and uses expandable text only for related entities', async () => {
     const reference = { id: 1, kind: 'node', display_name: '日本东京–完整节点名称', secondary: '', missing: false }
-    const wrapper = mount(EntityReference, { props: { reference, showId: false }, global: { plugins: [PrimeVue] } })
+    const wrapper = mount(EntityReference, { props: { reference, showId: false }, global: { plugins: [] } })
     expect(wrapper.get('strong').text()).toBe(reference.display_name)
     expect(wrapper.find('button').exists()).toBe(false)
     await wrapper.setProps({ compact: true })

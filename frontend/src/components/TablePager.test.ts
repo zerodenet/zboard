@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import TablePager from './TablePager.vue'
@@ -8,7 +7,7 @@ describe('TablePager', () => {
   it('uses the compact Stripe range and icon navigation by default', async () => {
     const wrapper = mount(TablePager, {
       props: { total: 126, offset: 50, limit: 50 },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
 
     expect(wrapper.get('nav').attributes('data-variant')).toBe('stripe')
@@ -17,9 +16,9 @@ describe('TablePager', () => {
     expect(wrapper.findAll('.table-pager-nav')).toHaveLength(2)
     expect(wrapper.findAll('.table-pager-nav .ui-icon')).toHaveLength(2)
     expect(wrapper.getComponent(UiSelect).props('options')).toEqual([
-      { label: '25', value: 25 },
-      { label: '50', value: 50 },
-      { label: '100', value: 100 },
+      { label: '25 条/页', value: 25 },
+      { label: '50 条/页', value: 50 },
+      { label: '100 条/页', value: 100 },
     ])
 
     await wrapper.get('.table-pager-next').trigger('click')

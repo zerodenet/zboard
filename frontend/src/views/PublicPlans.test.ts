@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,7 +6,8 @@ import CommercePlanDetail from '../components/CommercePlanDetail.vue'
 import PublicPlans from './PublicPlans.vue'
 
 vi.mock('../api/client', () => ({ fetchPlanCatalogItem: vi.fn(), fetchPlanCatalogPage: vi.fn(), fetchPlanCatalogSKUs: vi.fn() }))
-vi.mock('../stores/app', () => ({ useAppStore: () => ({ isAuthenticated: false, siteProfile: { policyDocuments: [] } }) }))
+const auth = vi.hoisted(() => ({ loggedIn: false }))
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ get isAuthenticated() { return auth.loggedIn }, siteProfile: { policyDocuments: [] } }) }))
 function page(id = 1, offset = 0) {
   return { items: [{ id, name: `SKU ${id}`, price_cents: 100, currency: 'CNY', billing_unit: 'month', billing_value: 1 }],
     total: 105, page: { total: 105, offset, limit: 25 } } as any
@@ -16,6 +16,7 @@ describe('public catalog navigation and SKU pager', () => {
   let wrapper: VueWrapper | undefined, router: Router
   beforeEach(() => {
     vi.resetAllMocks()
+    auth.loggedIn = false
     vi.mocked(fetchPlanCatalogPage).mockResolvedValue({ items: [], total: 0 } as any)
     vi.mocked(fetchPlanCatalogItem).mockImplementation(async id => ({ id, name: `Plan ${id}`, slug: 'fixture', traffic_bytes: 100 } as any))
     vi.mocked(fetchPlanCatalogSKUs).mockImplementation(async (_id, params) => page(params?.anchorId || (params?.offset || 0) + 1, params?.anchorId ? 100 : params?.offset))
@@ -24,10 +25,11 @@ describe('public catalog navigation and SKU pager', () => {
   async function open(path: string) {
     router = createRouter({ history: createMemoryHistory(), routes: [
       { path: '/plans', component: { template: '<div />' } }, { path: '/login', component: { template: '<div />' } },
+      { path: '/account/plans', component: { template: '<div />' } },
     ] })
     await router.push(path)
     await router.isReady()
-    wrapper = mount(PublicPlans, { global: { plugins: [router, PrimeVue] } })
+    wrapper = mount(PublicPlans, { global: { plugins: [router] } })
     await flushPromises()
   }
   it('renders the real SKU pager, changes pages and preserves the selected deep link', async () => {
@@ -82,9 +84,29 @@ describe('public catalog navigation and SKU pager', () => {
   })
   it('retains the SKU in the login redirect without submitting an order', async () => {
     await open('/plans?plan=1&sku=105')
+    expect(wrapper!.text()).toContain('登录并继续结算')
     await wrapper!.findAll('button').find(item => item.text().includes('继续结算'))!.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/login')
-    expect(router.currentRoute.value.query.redirect).toBe('/account/plans?operation=purchase&plan=1&sku=105&step=detail')
+    expect(router.currentRoute.value.query.redirect).toBe('/account/plans?operation=purchase&plan=1&sku=105&step=checkout')
+  })
+
+  it('opens account plan details directly for an authenticated visitor', async () => {
+    auth.loggedIn = true
+    vi.mocked(fetchPlanCatalogPage).mockResolvedValue({ items: [{ id: 1, name: 'Plan 1', slug: 'plan-1', primary_sku: page().items[0] }], total: 1 } as any)
+    await open('/plans')
+    await wrapper!.findAll('button').find(item => item.text().includes('查看详情'))!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/account/plans')
+    expect(router.currentRoute.value.query).toMatchObject({ operation: 'purchase', plan: '1', step: 'detail' })
+  })
+
+  it('skips repeated product details if authentication changes while the public detail is open', async () => {
+    await open('/plans?plan=1&sku=105')
+    auth.loggedIn = true
+    await wrapper!.findAll('button').find(item => item.text().includes('继续结算'))!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/account/plans')
+    expect(router.currentRoute.value.query).toMatchObject({ operation: 'purchase', plan: '1', sku: '105', step: 'checkout' })
   })
 })

@@ -4,6 +4,7 @@
       <div><p class="eyebrow">扩展中心 / 插件市场</p><h1>{{ detail?.entry.name || '插件详情' }}</h1><p>{{ detail?.entry.description }}</p></div>
       <RouterLink class="button button-secondary" to="/admin/plugin-market">返回市场</RouterLink>
     </header>
+    <AdminPageNavigation />
     <PageAlert v-if="error" tone="danger">{{ error }}<template #actions><UiButton @click="load">重试</UiButton></template></PageAlert>
     <p v-if="loading" role="status">正在读取发行信息…</p>
     <template v-if="detail">
@@ -61,6 +62,7 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 import { formatDateTime } from '../utils/format'
 import { useRoute, useRouter } from 'vue-router'
 import PageAlert from '../components/PageAlert.vue'
+import AdminPageNavigation from '../components/AdminPageNavigation.vue'
 import MarkdownContent from '../components/MarkdownContent.vue'
 import UiButton from '../components/UiButton.vue'
 import UiSelect from '../components/UiSelect.vue'

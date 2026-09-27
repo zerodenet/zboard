@@ -1,168 +1,170 @@
 <template>
   <section class="standard-page">
-    <PageHeader :title="pageTitle" :description="pageDescription" eyebrow="Configuration">
+    <PageHeader :title="pageTitle" :description="pageDescription" eyebrow="Configuration" :show-section-navigation="false">
       <template #actions><PageRefreshButton label="刷新系统设置" :loading="loading" @click="reloadSettings" /></template>
     </PageHeader>
 
     <TransientFeedback :success="message" :error="error" success-title="系统设置已保存" error-title="设置操作失败" />
 
-    <UiSection class="settings-shell">
-      <div v-if="activeSection === 'site'" class="settings-panel stack-lg">
-        <UiSection title="站点身份" description="管理公开名称和访问地址；注册开关与验证方式已迁移到独立的“注册与验证”页面。">
-          <template #meta><StatusBadge :tone="siteState.dirty.value ? 'warning' : 'info'" :icon="siteState.dirty.value ? 'edit' : 'info'">{{ siteState.dirty.value ? '有未保存修改' : '公开配置' }}</StatusBadge></template>
-          <form ref="siteFormElement" class="panel-body stack" novalidate @submit.prevent="saveSiteSettings">
-            <div class="form-grid">
-              <FormField v-slot="{ controlAttrs }" label="站点名称" name="settings-site-name" :error="siteErrors.fields.site_name" required><UiInput v-model.trim="form.site_name" v-bind="controlAttrs" maxlength="80" /></FormField>
-              <FormField v-slot="{ controlAttrs }" label="公开访问地址" name="settings-site-url" hint="用于订阅链接、canonical 地址和外部页面跳转。" :error="siteErrors.fields.site_url" required><UiInput v-model.trim="form.site_url" v-bind="controlAttrs" type="url" /></FormField>
-            </div>
-            <PageAlert v-if="siteErrors.formError.value" tone="danger" title="站点设置未保存">{{ siteErrors.formError.value }}</PageAlert>
-            <div class="form-actions"><UiButton type="submit" :loading="savingSite" :disabled="!siteState.dirty.value">保存站点身份</UiButton></div>
-          </form>
-        </UiSection>
-
-        <UiSection title="视觉品牌" description="配置公开站点使用的 Logo 和浏览器图标。支持完整 HTTP/HTTPS URL 或 / 开头的站内资源路径。">
-          <template #meta><StatusBadge v-if="groupDirty(siteVisualKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
-          <div class="site-config-layout">
-            <div class="public-fields form-grid">
-              <SettingsPublicField v-for="config in visualConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :error="configErrors[config.config_key]" @update:draft="updateDraft(config.config_key, $event)" />
-            </div>
-            <aside class="brand-preview" aria-label="品牌预览">
-              <div class="brand-preview__surface brand-preview__surface-light">
-                <small>浅色背景</small>
-                <img v-if="previewProfile.logo" :src="previewProfile.logo" :alt="previewProfile.name" />
-                <div v-else class="brand-preview__fallback"><span>{{ previewInitial }}</span><strong>{{ previewProfile.name }}</strong></div>
+    <SettingsPageLayout>
+        <UiSection class="settings-shell">
+        <div v-if="activeSection === 'site'" class="settings-panel stack-lg">
+          <UiSection title="站点身份" description="管理公开名称和访问地址；注册开关与验证方式已迁移到独立的“注册与验证”页面。">
+            <template #meta><StatusBadge :tone="siteState.dirty.value ? 'warning' : 'info'" :icon="siteState.dirty.value ? 'edit' : 'info'">{{ siteState.dirty.value ? '有未保存修改' : '公开配置' }}</StatusBadge></template>
+            <form ref="siteFormElement" class="panel-body stack" novalidate @submit.prevent="saveSiteSettings">
+              <div class="form-grid">
+                <FormField v-slot="{ controlAttrs }" label="站点名称" name="settings-site-name" :error="siteErrors.fields.site_name" required><UiInput v-model.trim="form.site_name" v-bind="controlAttrs" maxlength="80" /></FormField>
+                <FormField v-slot="{ controlAttrs }" label="公开访问地址" name="settings-site-url" hint="用于订阅链接、canonical 地址和外部页面跳转。" :error="siteErrors.fields.site_url" required><UiInput v-model.trim="form.site_url" v-bind="controlAttrs" type="url" /></FormField>
               </div>
-              <div class="brand-preview__surface brand-preview__surface-dark">
-                <small>深色背景</small>
-                <img v-if="previewDarkLogo" :src="previewDarkLogo" :alt="previewProfile.name" />
-                <div v-else class="brand-preview__fallback"><span>{{ previewInitial }}</span><strong>{{ previewProfile.name }}</strong></div>
+              <PageAlert v-if="siteErrors.formError.value" tone="danger" title="站点设置未保存">{{ siteErrors.formError.value }}</PageAlert>
+              <div class="form-actions"><UiButton type="submit" :loading="savingSite" :disabled="!siteState.dirty.value">保存站点身份</UiButton></div>
+            </form>
+          </UiSection>
+
+          <UiSection title="视觉品牌" description="配置公开站点使用的 Logo 和浏览器图标。支持完整 HTTP/HTTPS URL 或 / 开头的站内资源路径。">
+            <template #meta><StatusBadge v-if="groupDirty(siteVisualKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
+            <div class="site-config-layout">
+              <div class="public-fields form-grid">
+                <SettingsPublicField v-for="config in visualConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :error="configErrors[config.config_key]" @update:draft="updateDraft(config.config_key, $event)" />
               </div>
-              <div class="favicon-preview"><span>浏览器图标</span><img v-if="previewProfile.favicon" :src="previewProfile.favicon" alt="favicon preview" /><i v-else>{{ previewInitial }}</i></div>
-            </aside>
-          </div>
-          <div class="section-actions">
-            <UiButton v-if="groupHasConflict(siteVisualKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteVisualKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
-            <UiButton type="button" :loading="savingGroup === 'visual'" :disabled="!groupDirty(siteVisualKeys)" @click="saveConfigGroup('visual', '视觉品牌', siteVisualKeys)">保存视觉品牌</UiButton>
-          </div>
-        </UiSection>
-
-        <UiSection title="公开文案" description="只开放真正属于站点内容的文字；套餐、登录注册等固定业务动作仍由产品行为决定。">
-          <template #meta><StatusBadge v-if="groupDirty(siteContentKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
-          <div class="public-fields form-grid">
-            <SettingsPublicField v-for="config in contentConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :error="configErrors[config.config_key]" :full="config.config_key === 'site_desc' || config.config_key === 'site_home_title'" @update:draft="updateDraft(config.config_key, $event)" />
-          </div>
-          <div class="copy-preview">
-            <span>{{ previewProfile.homeKicker }}</span>
-            <strong>{{ previewProfile.homeTitle }}</strong>
-            <p>{{ previewProfile.description }}</p>
-          </div>
-          <div class="section-actions">
-            <UiButton v-if="groupHasConflict(siteContentKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteContentKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
-            <UiButton type="button" :loading="savingGroup === 'content'" :disabled="!groupDirty(siteContentKeys)" @click="saveConfigGroup('content', '公开文案', siteContentKeys)">保存公开文案</UiButton>
-          </div>
-        </UiSection>
-
-        <UiSection title="页脚与联系方式" description="配置公开 Footer 的版权、客服与社区入口。版权留空时自动使用当前年份和站点名称。">
-          <template #meta><StatusBadge v-if="groupDirty(siteContactKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
-          <div class="public-fields form-grid">
-            <SettingsPublicField v-for="config in contactConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :error="configErrors[config.config_key]" :full="config.config_key === 'site_footer_copyright'" @update:draft="updateDraft(config.config_key, $event)" />
-          </div>
-          <div class="footer-preview"><strong>{{ previewProfile.name }}</strong><span>{{ previewProfile.copyright }}</span><span v-if="previewProfile.supportEmail">{{ previewProfile.supportEmail }}</span><span v-if="previewProfile.supportUrl">客服入口</span><span v-if="previewProfile.telegramUrl">Telegram</span></div>
-          <div class="section-actions">
-            <UiButton v-if="groupHasConflict(siteContactKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteContactKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
-            <UiButton type="button" :loading="savingGroup === 'contact'" :disabled="!groupDirty(siteContactKeys)" @click="saveConfigGroup('contact', '页脚与联系方式', siteContactKeys)">保存页脚与联系方式</UiButton>
-          </div>
-        </UiSection>
-
-        <UiSection title="搜索与分享" description="控制浏览器标题、搜索摘要和 OpenGraph 的基础文案；留空时自动回退到站点名称和站点描述。">
-          <template #meta><StatusBadge v-if="groupDirty(siteSeoKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
-          <div class="site-config-layout site-config-layout-seo">
-            <div class="public-fields form-grid">
-              <SettingsPublicField v-for="config in seoConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :error="configErrors[config.config_key]" full @update:draft="updateDraft(config.config_key, $event)" />
+              <aside class="brand-preview" aria-label="品牌预览">
+                <div class="brand-preview__surface brand-preview__surface-light">
+                  <small>浅色背景</small>
+                  <img v-if="previewProfile.logo" :src="previewProfile.logo" :alt="previewProfile.name" />
+                  <div v-else class="brand-preview__fallback"><span>{{ previewInitial }}</span><strong>{{ previewProfile.name }}</strong></div>
+                </div>
+                <div class="brand-preview__surface brand-preview__surface-dark">
+                  <small>深色背景</small>
+                  <img v-if="previewDarkLogo" :src="previewDarkLogo" :alt="previewProfile.name" />
+                  <div v-else class="brand-preview__fallback"><span>{{ previewInitial }}</span><strong>{{ previewProfile.name }}</strong></div>
+                </div>
+                <div class="favicon-preview"><span>浏览器图标</span><img v-if="previewProfile.favicon" :src="previewProfile.favicon" alt="favicon preview" /><i v-else>{{ previewInitial }}</i></div>
+              </aside>
             </div>
-            <aside class="search-preview" aria-label="搜索结果预览">
-              <small>搜索结果预览</small>
-              <span>{{ previewProfile.siteUrl || form.site_url }}</span>
-              <strong>{{ previewProfile.metaTitle }}</strong>
-              <p>{{ previewProfile.metaDescription }}</p>
-            </aside>
-          </div>
-          <div class="section-actions">
-            <UiButton v-if="groupHasConflict(siteSeoKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteSeoKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
-            <UiButton type="button" :loading="savingGroup === 'seo'" :disabled="!groupDirty(siteSeoKeys)" @click="saveConfigGroup('seo', '搜索与分享', siteSeoKeys)">保存搜索与分享</UiButton>
-          </div>
-        </UiSection>
-      </div>
+            <div class="section-actions">
+              <UiButton v-if="groupHasConflict(siteVisualKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteVisualKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
+              <UiButton type="button" :loading="savingGroup === 'visual'" :disabled="!groupDirty(siteVisualKeys)" @click="saveConfigGroup('visual', '视觉品牌', siteVisualKeys)">保存视觉品牌</UiButton>
+            </div>
+          </UiSection>
 
-      <div v-else-if="activeSection === 'legal'" class="settings-panel stack-lg">
-        <UiSection title="公开政策" description="以文档站方式维护所有政策。可以动态创建链接、控制发布状态与展示位置；正文支持 Markdown，或使用完整 HTTP/HTTPS URL。">
-          <PolicyDocumentsEditor
-            v-if="policyDocumentsConfig"
-            :model-value="drafts[policyDocumentsConfig.config_key]"
-            :fallback-documents="previewProfile.policyDocuments"
-            :dirty="configDirty(policyDocumentsConfig)"
-            :saving="savingKey === policyDocumentsConfig.config_key"
-            :error="configErrors[policyDocumentsConfig.config_key]"
-            :conflict="Boolean(configConflicts[policyDocumentsConfig.config_key])"
-            @update:model-value="updateDraft(policyDocumentsConfig.config_key, $event)"
-            @reload="reloadConfig(policyDocumentsConfig.config_key)"
-            @save="saveConfig(policyDocumentsConfig)"
-          />
-          <EmptyState v-else icon="audit" title="没有政策文档配置" description="系统当前未返回政策文档中心配置。" />
-        </UiSection>
+          <UiSection title="公开文案" description="只开放真正属于站点内容的文字；套餐、登录注册等固定业务动作仍由产品行为决定。">
+            <template #meta><StatusBadge v-if="groupDirty(siteContentKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
+            <div class="public-fields form-grid">
+              <SettingsPublicField v-for="config in contentConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :error="configErrors[config.config_key]" :full="config.config_key === 'site_desc' || config.config_key === 'site_home_title'" @update:draft="updateDraft(config.config_key, $event)" />
+            </div>
+            <div class="copy-preview">
+              <span>{{ previewProfile.homeKicker }}</span>
+              <strong>{{ previewProfile.homeTitle }}</strong>
+              <p>{{ previewProfile.description }}</p>
+            </div>
+            <div class="section-actions">
+              <UiButton v-if="groupHasConflict(siteContentKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteContentKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
+              <UiButton type="button" :loading="savingGroup === 'content'" :disabled="!groupDirty(siteContentKeys)" @click="saveConfigGroup('content', '公开文案', siteContentKeys)">保存公开文案</UiButton>
+            </div>
+          </UiSection>
 
-        <UiSection title="法律与注册信息" description="可选的地区中立公开信息。没有注册号、税务编号或当地备案要求时可以完全留空。">
-          <LegalItemsEditor
-            v-if="legalMetadataConfig"
-            :model-value="drafts[legalMetadataConfig.config_key]"
-            :dirty="configDirty(legalMetadataConfig)"
-            :saving="savingKey === legalMetadataConfig.config_key"
-            :error="configErrors[legalMetadataConfig.config_key]"
-            :conflict="Boolean(configConflicts[legalMetadataConfig.config_key])"
-            @update:model-value="updateDraft(legalMetadataConfig.config_key, $event)"
-            @reload="reloadConfig(legalMetadataConfig.config_key)"
-            @save="saveConfig(legalMetadataConfig)"
-          />
-          <EmptyState v-else icon="audit" title="没有法律信息配置" description="无需展示额外注册信息时可以保持为空。" />
-        </UiSection>
-      </div>
+          <UiSection title="页脚与联系方式" description="配置公开 Footer 的版权、客服与社区入口。版权留空时自动使用当前年份和站点名称。">
+            <template #meta><StatusBadge v-if="groupDirty(siteContactKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
+            <div class="public-fields form-grid">
+              <SettingsPublicField v-for="config in contactConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :error="configErrors[config.config_key]" :full="config.config_key === 'site_footer_copyright'" @update:draft="updateDraft(config.config_key, $event)" />
+            </div>
+            <div class="footer-preview"><strong>{{ previewProfile.name }}</strong><span>{{ previewProfile.copyright }}</span><span v-if="previewProfile.supportEmail">{{ previewProfile.supportEmail }}</span><span v-if="previewProfile.supportUrl">客服入口</span><span v-if="previewProfile.telegramUrl">Telegram</span></div>
+            <div class="section-actions">
+              <UiButton v-if="groupHasConflict(siteContactKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteContactKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
+              <UiButton type="button" :loading="savingGroup === 'contact'" :disabled="!groupDirty(siteContactKeys)" @click="saveConfigGroup('contact', '页脚与联系方式', siteContactKeys)">保存页脚与联系方式</UiButton>
+            </div>
+          </UiSection>
 
-      <div v-else-if="activeSection === 'email'" class="settings-panel stack-lg">
-        <UiSection title="SMTP 投递通道" description="保存配置后，可先验证连接与 TLS/认证，再向指定邮箱投递一封完整测试邮件。">
-          <template #meta><span class="config-count">{{ emailConfigs.length }} 项</span></template>
-          <div v-if="emailConfigs.length" class="config-list"><ConfigRow v-for="config in emailConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
-          <EmptyState v-else icon="audit" title="没有邮件配置" description="系统当前未返回可编辑的邮件或通知参数。" />
-          <PageAlert v-if="emailConfigDirty" tone="warning" title="先保存 SMTP 修改">连通性测试始终使用服务端已保存的配置，当前草稿不会被发送到测试接口。</PageAlert>
-          <div class="smtp-test-recipient"><FormField v-slot="{ controlAttrs }" label="测试邮件收件地址" name="smtp-test-recipient" hint="仅用于本次完整投递测试，不会保存为系统配置。" :error="smtpTestRecipientError"><UiInput v-model.trim="smtpTestRecipient" v-bind="controlAttrs" type="email" placeholder="recipient@example.com" /></FormField></div>
-          <div class="section-actions smtp-test-actions">
-            <span>连接测试不发送邮件；完整投递测试发送到上方地址。</span>
-            <UiButton variant="secondary" type="button" :loading="smtpTesting === 'connection'" :disabled="Boolean(smtpTesting) || emailConfigDirty" @click="runSMTPTest('connection')"><UiIcon name="refresh" />测试连接</UiButton>
-            <UiButton type="button" :loading="smtpTesting === 'delivery'" :disabled="Boolean(smtpTesting) || emailConfigDirty" @click="runSMTPTest('delivery')"><UiIcon name="audit" />发送测试邮件</UiButton>
-          </div>
-        </UiSection>
+          <UiSection title="搜索与分享" description="控制浏览器标题、搜索摘要和 OpenGraph 的基础文案；留空时自动回退到站点名称和站点描述。">
+            <template #meta><StatusBadge v-if="groupDirty(siteSeoKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
+            <div class="site-config-layout site-config-layout-seo">
+              <div class="public-fields form-grid">
+                <SettingsPublicField v-for="config in seoConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :error="configErrors[config.config_key]" full @update:draft="updateDraft(config.config_key, $event)" />
+              </div>
+              <aside class="search-preview" aria-label="搜索结果预览">
+                <small>搜索结果预览</small>
+                <span>{{ previewProfile.siteUrl || form.site_url }}</span>
+                <strong>{{ previewProfile.metaTitle }}</strong>
+                <p>{{ previewProfile.metaDescription }}</p>
+              </aside>
+            </div>
+            <div class="section-actions">
+              <UiButton v-if="groupHasConflict(siteSeoKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteSeoKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
+              <UiButton type="button" :loading="savingGroup === 'seo'" :disabled="!groupDirty(siteSeoKeys)" @click="saveConfigGroup('seo', '搜索与分享', siteSeoKeys)">保存搜索与分享</UiButton>
+            </div>
+          </UiSection>
+        </div>
 
-        <UiSection title="运营邮件模板" description="模板只负责可复用内容；真正的收件人、发送时机和执行进度在运营任务中确定。">
-          <EmailTemplateManager mode="operational" @dirty="emailTemplateDirty = $event" />
-        </UiSection>
-      </div>
+        <div v-else-if="activeSection === 'legal'" class="settings-panel stack-lg">
+          <UiSection title="公开政策" description="以文档站方式维护所有政策。可以动态创建链接、控制发布状态与展示位置；正文支持 Markdown，或使用完整 HTTP/HTTPS URL。">
+            <PolicyDocumentsEditor
+              v-if="policyDocumentsConfig"
+              :model-value="drafts[policyDocumentsConfig.config_key]"
+              :fallback-documents="previewProfile.policyDocuments"
+              :dirty="configDirty(policyDocumentsConfig)"
+              :saving="savingKey === policyDocumentsConfig.config_key"
+              :error="configErrors[policyDocumentsConfig.config_key]"
+              :conflict="Boolean(configConflicts[policyDocumentsConfig.config_key])"
+              @update:model-value="updateDraft(policyDocumentsConfig.config_key, $event)"
+              @reload="reloadConfig(policyDocumentsConfig.config_key)"
+              @save="saveConfig(policyDocumentsConfig)"
+            />
+            <EmptyState v-else icon="audit" title="没有政策文档配置" description="系统当前未返回政策文档中心配置。" />
+          </UiSection>
 
-      <div v-else class="settings-panel stack-lg">
-        <UiSection title="安全边界" description="敏感凭证不属于浏览器设置，不会在这里读取或回显。">
-          <template #meta><UiIcon class="security-header" name="shield" /></template>
-          <div class="panel-body security-list">
-            <div><span><UiIcon name="database" /></span><div><strong>数据库凭证</strong><p>由部署环境变量管理</p></div><StatusBadge tone="success">受保护</StatusBadge></div>
-            <div><span><UiIcon name="key" /></span><div><strong>JWT 签名密钥</strong><p>服务启动时校验强度</p></div><StatusBadge tone="success">受保护</StatusBadge></div>
-            <div><span><UiIcon name="shield" /></span><div><strong>凭证加密密钥</strong><p>用于节点与协议敏感配置</p></div><StatusBadge tone="success">受保护</StatusBadge></div>
-          </div>
-        </UiSection>
+          <UiSection title="法律与注册信息" description="可选的地区中立公开信息。没有注册号、税务编号或当地备案要求时可以完全留空。">
+            <LegalItemsEditor
+              v-if="legalMetadataConfig"
+              :model-value="drafts[legalMetadataConfig.config_key]"
+              :dirty="configDirty(legalMetadataConfig)"
+              :saving="savingKey === legalMetadataConfig.config_key"
+              :error="configErrors[legalMetadataConfig.config_key]"
+              :conflict="Boolean(configConflicts[legalMetadataConfig.config_key])"
+              @update:model-value="updateDraft(legalMetadataConfig.config_key, $event)"
+              @reload="reloadConfig(legalMetadataConfig.config_key)"
+              @save="saveConfig(legalMetadataConfig)"
+            />
+            <EmptyState v-else icon="audit" title="没有法律信息配置" description="无需展示额外注册信息时可以保持为空。" />
+          </UiSection>
+        </div>
 
-        <UiSection title="运行参数" description="系统时区、数据保留策略和其他服务端运行行为。">
-          <template #meta><span class="config-count">{{ otherConfigs.length }} 项</span></template>
-          <div v-if="otherConfigs.length" class="config-list"><ConfigRow v-for="config in otherConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
-          <EmptyState v-else icon="settings" title="没有运行配置" description="系统当前未返回其他可编辑运行参数。" />
+        <div v-else-if="activeSection === 'email'" class="settings-panel stack-lg">
+          <UiSection title="SMTP 投递通道" description="保存配置后，可先验证连接与 TLS/认证，再向指定邮箱投递一封完整测试邮件。">
+            <template #meta><span class="config-count">{{ emailConfigs.length }} 项</span></template>
+            <div v-if="emailConfigs.length" class="config-list"><ConfigRow v-for="config in emailConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
+            <EmptyState v-else icon="audit" title="没有邮件配置" description="系统当前未返回可编辑的邮件或通知参数。" />
+            <PageAlert v-if="emailConfigDirty" tone="warning" title="先保存 SMTP 修改">连通性测试始终使用服务端已保存的配置，当前草稿不会被发送到测试接口。</PageAlert>
+            <div class="smtp-test-recipient"><FormField v-slot="{ controlAttrs }" label="测试邮件收件地址" name="smtp-test-recipient" hint="仅用于本次完整投递测试，不会保存为系统配置。" :error="smtpTestRecipientError"><UiInput v-model.trim="smtpTestRecipient" v-bind="controlAttrs" type="email" placeholder="recipient@example.com" /></FormField></div>
+            <div class="section-actions smtp-test-actions">
+              <span>连接测试不发送邮件；完整投递测试发送到上方地址。</span>
+              <UiButton variant="secondary" type="button" :loading="smtpTesting === 'connection'" :disabled="Boolean(smtpTesting) || emailConfigDirty" @click="runSMTPTest('connection')"><UiIcon name="refresh" />测试连接</UiButton>
+              <UiButton type="button" :loading="smtpTesting === 'delivery'" :disabled="Boolean(smtpTesting) || emailConfigDirty" @click="runSMTPTest('delivery')"><UiIcon name="audit" />发送测试邮件</UiButton>
+            </div>
+          </UiSection>
+
+          <UiSection title="运营邮件模板" description="模板只负责可复用内容；真正的收件人、发送时机和执行进度在运营任务中确定。">
+            <EmailTemplateManager mode="operational" @dirty="emailTemplateDirty = $event" />
+          </UiSection>
+        </div>
+
+        <div v-else class="settings-panel stack-lg">
+          <UiSection title="安全边界" description="敏感凭证不属于浏览器设置，不会在这里读取或回显。">
+            <template #meta><UiIcon class="security-header" name="shield" /></template>
+            <div class="panel-body security-list">
+              <div><span><UiIcon name="database" /></span><div><strong>数据库凭证</strong><p>由部署环境变量管理</p></div><StatusBadge tone="success">受保护</StatusBadge></div>
+              <div><span><UiIcon name="key" /></span><div><strong>JWT 签名密钥</strong><p>服务启动时校验强度</p></div><StatusBadge tone="success">受保护</StatusBadge></div>
+              <div><span><UiIcon name="shield" /></span><div><strong>凭证加密密钥</strong><p>用于节点与协议敏感配置</p></div><StatusBadge tone="success">受保护</StatusBadge></div>
+            </div>
+          </UiSection>
+
+          <UiSection title="运行参数" description="系统时区、数据保留策略和其他服务端运行行为。">
+            <template #meta><span class="config-count">{{ otherConfigs.length }} 项</span></template>
+            <div v-if="otherConfigs.length" class="config-list"><ConfigRow v-for="config in otherConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
+            <EmptyState v-else icon="settings" title="没有运行配置" description="系统当前未返回其他可编辑运行参数。" />
+          </UiSection>
+        </div>
         </UiSection>
-      </div>
-    </UiSection>
+    </SettingsPageLayout>
   </section>
 </template>
 
@@ -170,6 +172,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { fetchSystemConfigs, testSMTP, updateSiteSettings, updateSystemConfig, type SystemConfig } from '../api/client'
+import SettingsPageLayout from '../components/SettingsPageLayout.vue'
 import EmailTemplateManager from '../components/EmailTemplateManager.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LegalItemsEditor from '../components/LegalItemsEditor.vue'

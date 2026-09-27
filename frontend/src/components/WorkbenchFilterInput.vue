@@ -3,19 +3,23 @@
     :label="label"
     :active="active"
     :value-label="displayValue"
-    @open="resetDraft"
+    icon="search"
+    @open="restoreDraft"
     @clear="clear"
   >
     <template #default="{ close }">
-      <div class="workbench-filter-form">
-        <UiInput
-          v-model="draft"
-          v-bind="$attrs"
-          :aria-label="label"
-          :placeholder="placeholder || label"
-          @keyup.enter="apply(close)"
-        />
-        <UiButton size="sm" type="button" @click="apply(close)"><UiIcon name="check" />应用</UiButton>
+      <div class="workbench-filter-form" @keyup.enter="apply(close)">
+        <slot name="field" :draft="draft" :set-draft="setDraft">
+          <label class="workbench-filter-field"><span>{{ fieldLabel || label }}</span>
+            <UiInput v-model="draft" v-bind="$attrs" :aria-label="fieldLabel || label" :placeholder="placeholder || label" />
+          </label>
+        </slot>
+        <div class="workbench-filter-form-actions">
+          <slot name="actions" :apply="() => apply(close)" :reset="resetDraft">
+            <UiButton variant="secondary" size="sm" type="button" @click="resetDraft">重置</UiButton>
+            <UiButton size="sm" type="button" @click="apply(close)"><UiIcon name="search" />搜索</UiButton>
+          </slot>
+        </div>
       </div>
     </template>
   </WorkbenchFilterChip>
@@ -34,9 +38,11 @@ const props = withDefaults(defineProps<{
   label: string
   placeholder?: string
   valuePrefix?: string
+  fieldLabel?: string
 }>(), {
   placeholder: '',
   valuePrefix: '',
+  fieldLabel: '',
 })
 
 const model = defineModel<string>({ default: '' })
@@ -50,8 +56,11 @@ watch(model, value => {
 })
 
 function resetDraft() {
-  draft.value = model.value
+  draft.value = ''
 }
+
+function restoreDraft() { draft.value = model.value }
+function setDraft(value: string) { draft.value = value }
 
 async function apply(close?: (restoreFocus?: boolean) => void) {
   model.value = draft.value.trim()

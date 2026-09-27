@@ -1,7 +1,6 @@
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { flushPromises, mount } from '@vue/test-utils'
-import PrimeVue from 'primevue/config'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Plugins from '../views/Plugins.vue'
 import PluginDetail from '../views/PluginDetail.vue'
@@ -30,7 +29,7 @@ async function render(path: string) {
     { path: '/admin/plugins/:pluginId/configuration', component: PluginConfiguration },
   ] })
   await router.push(path); await router.isReady()
-  const wrapper = mount({ template: '<RouterView />' }, { attachTo: document.body, global: { plugins: [router, PrimeVue], stubs: { ModalDialog: ModalStub, PluginFrame: { template: '<iframe title="插件配置页面" />' } } } })
+  const wrapper = mount({ template: '<RouterView />' }, { attachTo: document.body, global: { plugins: [router], stubs: { ModalDialog: ModalStub, PluginFrame: { template: '<iframe title="插件配置页面" />' } } } })
   mounted.push(wrapper); await flushPromises()
   return { wrapper, router }
 }

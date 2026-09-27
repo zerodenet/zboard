@@ -1,11 +1,10 @@
 import { defineComponent } from 'vue'
-import PrimeVue from 'primevue/config'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import SubscriptionUserAgent from './SubscriptionUserAgent.vue'
 import UiSelect from './UiSelect.vue'
 function render(value: string) {
- return mount(defineComponent({ components: { SubscriptionUserAgent }, data: () => ({ value }), template: '<SubscriptionUserAgent v-model="value" />' }), { global: { plugins: [PrimeVue] } })
+ return mount(defineComponent({ components: { SubscriptionUserAgent }, data: () => ({ value }), template: '<SubscriptionUserAgent v-model="value" />' }), { global: { plugins: [] } })
 }
 describe('subscription client selection', () => {
  it('uses presets and allows explicit custom input', async () => {

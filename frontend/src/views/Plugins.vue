@@ -14,6 +14,7 @@
         ><UiButton :disabled="busy" @click="importOpen = true">离线导入</UiButton>
       </div>
     </header>
+    <AdminPageNavigation />
     <TransientFeedback :success="message" />
     <p v-if="error || actionError" role="alert" class="plugins-error">
       {{ actionError || error }}
@@ -23,9 +24,7 @@
         v-model="query"
         placeholder="搜索插件名称或 ID"
         aria-label="搜索插件"
-      /><UiSelect v-model="surface" aria-label="页面位置" :options="surfaceOptions" /><button type="button" :disabled="loading || busy" @click="load">
-        刷新</button
-      ><span>{{ installedItems.length }} 个插件</span>
+      /><UiSelect v-model="surface" aria-label="页面位置" :options="surfaceOptions" /><UiButton variant="secondary" type="button" :loading="loading" :disabled="busy" @click="load">刷新</UiButton><span>{{ installedItems.length }} 个插件</span>
     </div>
     <p v-if="loading && !installedItems.length">正在读取插件…</p>
     <section v-else-if="!filtered.length" class="plugins-empty">
@@ -81,6 +80,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import AdminPageNavigation from '../components/AdminPageNavigation.vue'
 import UiInput from '../components/UiInput.vue'
 import UiSelect from '../components/UiSelect.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'

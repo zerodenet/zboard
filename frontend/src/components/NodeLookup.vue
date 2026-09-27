@@ -3,6 +3,7 @@
     <UiAutocomplete
       v-model="selection"
       v-bind="attrs"
+      :input-id="typeof attrs.id === 'string' ? attrs.id : undefined"
       :suggestions="suggestions"
       option-label="name"
       :disabled="disabled"

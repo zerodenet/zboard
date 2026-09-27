@@ -8,7 +8,7 @@
     <div class="config-control">
       <label v-if="input.control === 'switch'" class="config-switch">
         <span>{{ draft ? '已启用' : '已关闭' }}</span>
-        <UiCheckbox v-bind="controlAttrs" role="switch" :model-value="Boolean(draft)" @update:model-value="emit('update:draft', $event)" />
+        <UiSwitch v-bind="controlAttrs" :model-value="Boolean(draft)" @update:model-value="emit('update:draft', $event)" />
       </label>
       <UiSelect v-else-if="input.control === 'select'" v-bind="controlAttrs" class="config-input" :options="input.options || []" :model-value="draft as any" :placeholder="placeholder" @update:model-value="emit('update:draft', $event)" />
       <PortInput v-else-if="input.control === 'port'" v-bind="controlAttrs" class="config-input" :model-value="Number(draft)" @update:model-value="emit('update:draft', $event)" />
@@ -33,7 +33,7 @@ import PortInput from './PortInput.vue'
 import StatusBadge from './StatusBadge.vue'
 import TimeBadge from './TimeBadge.vue'
 import UiButton from './UiButton.vue'
-import UiCheckbox from './UiCheckbox.vue'
+import UiSwitch from './UiSwitch.vue'
 import UiIcon from './UiIcon.vue'
 import UiInput from './UiInput.vue'
 import UiNumberInput from './UiNumberInput.vue'

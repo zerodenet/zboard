@@ -2,7 +2,6 @@ import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import PrimeVue from 'primevue/config'
 import PluginMarketDetail from './PluginMarketDetail.vue'
 import UiSelect from '../components/UiSelect.vue'
 const api = vi.hoisted(() => ({ detail: vi.fn(), preview: vi.fn(), install: vi.fn() }))
@@ -24,7 +23,7 @@ afterEach(() => wrapper?.unmount())
 async function render() {
  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/admin/plugin-market', component: { template: '<p>市场</p>' } }, { path: '/admin/plugin-market/:pluginId', component: PluginMarketDetail }, { path: '/admin/plugins/:pluginId', component: { template: '<p>插件管理</p>' } }] })
  await router.push('/admin/plugin-market/zboard.oauth'); await router.isReady()
- wrapper = mount({ template: '<RouterView />' }, { global: { plugins: [router, PrimeVue], stubs: { ModalDialog: modal } } }); await flushPromises()
+ wrapper = mount({ template: '<RouterView />' }, { global: { plugins: [router], stubs: { ModalDialog: modal } } }); await flushPromises()
  return router
 }
 async function click(label: string) { const b = wrapper.findAll('button').find(b => b.text() === label)!; await b.trigger('click'); await flushPromises() }

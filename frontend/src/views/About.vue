@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page about-page">
-    <PageHeader title="关于 ZBoard" description="查看当前运行版本、开源许可和 ZeroDeNet 项目资源。" eyebrow="Open Source">
+    <PageHeader title="关于 ZBoard" description="查看当前运行版本、开源许可和 ZeroDeNet 项目资源。" eyebrow="Open Source" :show-section-navigation="false">
       <template #actions>
         <PageRefreshButton label="刷新运行信息" :loading="loading" @click="loadInfo" />
       </template>
@@ -8,65 +8,67 @@
 
     <PageAlert v-if="error" tone="danger" title="运行信息加载失败">{{ error }}</PageAlert>
 
-    <div v-if="info" class="section-grid about-summary">
-      <UiSection class="span-7 project-card" title="ZBoard" description="面向代理服务运营场景的一体化控制面。">
-        <template #meta><StatusBadge tone="success">Open Source</StatusBadge></template>
-        <div class="panel-body project-copy">
-          <p>ZBoard 将节点资产、协议服务、订阅交付、流量统计与日常运营集中在一个可审计的管理后台中，并保持与 ZeroDeNet 其他项目清晰的集成边界。</p>
-          <div class="project-actions">
-            <a class="button button-sm" :href="repositoryURL" target="_blank" rel="noopener noreferrer">查看源码</a>
-            <a class="button button-secondary button-sm" :href="docsURL" target="_blank" rel="noopener noreferrer">阅读文档</a>
+    <SettingsPageLayout>
+      <div v-if="info" class="section-grid about-summary">
+        <UiSection class="span-7 project-card" title="ZBoard" description="面向代理服务运营场景的一体化控制面。">
+          <template #meta><StatusBadge tone="success">Open Source</StatusBadge></template>
+          <div class="panel-body project-copy">
+            <p>ZBoard 将节点资产、协议服务、订阅交付、流量统计与日常运营集中在一个可审计的管理后台中，并保持与 ZeroDeNet 其他项目清晰的集成边界。</p>
+            <div class="project-actions">
+              <a class="button button-sm" :href="repositoryURL" target="_blank" rel="noopener noreferrer">查看源码</a>
+              <a class="button button-secondary button-sm" :href="docsURL" target="_blank" rel="noopener noreferrer">阅读文档</a>
+            </div>
           </div>
-        </div>
-      </UiSection>
+        </UiSection>
 
-      <UiSection class="span-5" title="当前版本" description="本实例正在运行的 ZBoard 构建。">
-        <template #meta><StatusBadge :tone="channelTone">{{ channelLabel }}</StatusBadge></template>
-        <div class="panel-body runtime-version">
-          <strong>{{ info.release_version || info.version || 'unknown' }}</strong>
-          <div class="build-meta" :title="info.version">
-            <div><span>Commit</span><code>{{ shortCommit }}</code></div>
-            <div><span>构建时间</span><b>{{ formatBuildTime(info.build_time) }}</b></div>
+        <UiSection class="span-5" title="当前版本" description="本实例正在运行的 ZBoard 构建。">
+          <template #meta><StatusBadge :tone="channelTone">{{ channelLabel }}</StatusBadge></template>
+          <div class="panel-body runtime-version">
+            <strong>{{ info.release_version || info.version || 'unknown' }}</strong>
+            <div class="build-meta" :title="info.version">
+              <div><span>Commit</span><code>{{ shortCommit }}</code></div>
+              <div><span>构建时间</span><b>{{ formatBuildTime(info.build_time) }}</b></div>
+            </div>
+            <p>许可：{{ info.license.name }}（{{ info.license.spdx }}）</p>
+            <a class="update-link" :href="info.update_url" target="_blank" rel="noopener noreferrer"><UiIcon name="activity" />查看 Releases / 检查更新</a>
           </div>
-          <p>许可：{{ info.license.name }}（{{ info.license.spdx }}）</p>
-          <a class="update-link" :href="info.update_url" target="_blank" rel="noopener noreferrer"><UiIcon name="activity" />查看 Releases / 检查更新</a>
-        </div>
-      </UiSection>
-    </div>
-
-    <div v-if="info" class="section-grid about-runtime">
-      <UiSection class="span-6" title="运行信息" description="当前管理服务的只读运行事实。">
-        <div class="panel-body fact-list">
-          <div><span>服务启动时间</span><strong>{{ formatDateTime(info.started_at) }}</strong></div>
-          <div><span>本次运行时长</span><strong>{{ formatDuration(info.uptime_seconds) }}</strong></div>
-          <div><span>系统安装时间</span><strong>{{ formatDateTime(info.installed_at) }}</strong></div>
-          <div><span>发行通道</span><strong>{{ channelLabel }}</strong></div>
-        </div>
-      </UiSection>
-
-      <UiSection class="span-6" title="开源许可" description="本项目采用 Mozilla Public License 2.0。">
-        <div class="panel-body license-copy">
-          <div class="license-mark"><UiIcon name="shield" /><div><strong>{{ info.license.spdx }}</strong><span>{{ info.license.edition === 'open-source' ? '开源版本' : info.license.edition }}</span></div></div>
-          <p>你可以查看、修改和参与 ZBoard。分发修改过的受 MPL 覆盖文件时，需要遵守 MPL-2.0 对源代码公开的要求；具体权利与义务以仓库 LICENSE 为准。</p>
-          <a :href="licenseURL" target="_blank" rel="noopener noreferrer">查看 LICENSE</a>
-        </div>
-      </UiSection>
-    </div>
-
-    <UiSection v-if="info" title="项目与社区" description="源码、文档、版本发布和问题反馈的官方入口。">
-      <div class="resource-grid">
-        <a v-for="link in info.links" :key="link.url" class="resource-card" :href="link.url" target="_blank" rel="noopener noreferrer">
-          <span>{{ link.label }}</span><UiIcon name="chevron" />
-        </a>
+        </UiSection>
       </div>
-    </UiSection>
 
-    <UiSection v-if="info" class="contribute-card" title="参与 ZeroDeNet" description="ZBoard 仍在持续演进，真实部署反馈会直接影响下一轮设计。">
-      <div class="panel-body contribute-copy">
-        <p>遇到问题可以从 Issues 提交可复现信息；如果你正在部署或扩展 ZBoard，也欢迎通过源码仓库参与实现、文档和兼容性验证。</p>
-        <a class="button button-secondary button-sm" :href="issuesURL" target="_blank" rel="noopener noreferrer">提交问题</a>
+      <div v-if="info" class="section-grid about-runtime">
+        <UiSection class="span-6" title="运行信息" description="当前管理服务的只读运行事实。">
+          <div class="panel-body fact-list">
+            <div><span>服务启动时间</span><strong>{{ formatDateTime(info.started_at) }}</strong></div>
+            <div><span>本次运行时长</span><strong>{{ formatDuration(info.uptime_seconds) }}</strong></div>
+            <div><span>系统安装时间</span><strong>{{ formatDateTime(info.installed_at) }}</strong></div>
+            <div><span>发行通道</span><strong>{{ channelLabel }}</strong></div>
+          </div>
+        </UiSection>
+
+        <UiSection class="span-6" title="开源许可" description="本项目采用 Mozilla Public License 2.0。">
+          <div class="panel-body license-copy">
+            <div class="license-mark"><UiIcon name="shield" /><div><strong>{{ info.license.spdx }}</strong><span>{{ info.license.edition === 'open-source' ? '开源版本' : info.license.edition }}</span></div></div>
+            <p>你可以查看、修改和参与 ZBoard。分发修改过的受 MPL 覆盖文件时，需要遵守 MPL-2.0 对源代码公开的要求；具体权利与义务以仓库 LICENSE 为准。</p>
+            <a :href="licenseURL" target="_blank" rel="noopener noreferrer">查看 LICENSE</a>
+          </div>
+        </UiSection>
       </div>
-    </UiSection>
+
+      <UiSection v-if="info" title="项目与社区" description="源码、文档、版本发布和问题反馈的官方入口。">
+        <div class="resource-grid">
+          <a v-for="link in info.links" :key="link.url" class="resource-card" :href="link.url" target="_blank" rel="noopener noreferrer">
+            <span>{{ link.label }}</span><UiIcon name="chevron" />
+          </a>
+        </div>
+      </UiSection>
+
+      <UiSection v-if="info" class="contribute-card" title="参与 ZeroDeNet" description="ZBoard 仍在持续演进，真实部署反馈会直接影响下一轮设计。">
+        <div class="panel-body contribute-copy">
+          <p>遇到问题可以从 Issues 提交可复现信息；如果你正在部署或扩展 ZBoard，也欢迎通过源码仓库参与实现、文档和兼容性验证。</p>
+          <a class="button button-secondary button-sm" :href="issuesURL" target="_blank" rel="noopener noreferrer">提交问题</a>
+        </div>
+      </UiSection>
+    </SettingsPageLayout>
   </section>
 </template>
 
@@ -75,6 +77,7 @@ import { computed, onMounted, ref } from 'vue'
 import { fetchAdminSystemInfo, type AdminSystemInfo } from '../api/system'
 import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
+import SettingsPageLayout from '../components/SettingsPageLayout.vue'
 import PageRefreshButton from '../components/PageRefreshButton.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import UiIcon from '../components/UiIcon.vue'

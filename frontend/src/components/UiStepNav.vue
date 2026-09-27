@@ -54,7 +54,7 @@ defineEmits<{ select: [step: number] }>()
   min-width: 0;
 }
 
-:deep(.ui-step-button.p-button) {
+:deep(.ui-step-button.ui-button) {
   width: 100%;
   min-height: 56px;
   justify-content: flex-start;
@@ -68,24 +68,24 @@ defineEmits<{ select: [step: number] }>()
   text-align: left;
 }
 
-:deep(.ui-step-button.p-button:hover:not(:disabled)) {
+:deep(.ui-step-button.ui-button:hover:not(:disabled)) {
   border-color: var(--line-strong) !important;
   background: var(--surface-hover) !important;
 }
 
-:deep(.ui-step-button.p-button.is-active) {
+:deep(.ui-step-button.ui-button.is-active) {
   border-color: var(--primary-border) !important;
   color: var(--primary) !important;
   background: var(--primary-soft) !important;
   box-shadow: 0 0 0 1px var(--primary-border) !important;
 }
 
-:deep(.ui-step-button.p-button.is-complete) {
+:deep(.ui-step-button.ui-button.is-complete) {
   color: var(--text-body) !important;
   background: var(--surface-soft) !important;
 }
 
-:deep(.ui-step-button.p-button:disabled) {
+:deep(.ui-step-button.ui-button:disabled) {
   opacity: 1;
 }
 
@@ -133,7 +133,7 @@ defineEmits<{ select: [step: number] }>()
     gap: 6px;
   }
 
-  :deep(.ui-step-button.p-button) {
+  :deep(.ui-step-button.ui-button) {
     min-height: 44px;
     justify-content: center;
     padding: 8px 6px;

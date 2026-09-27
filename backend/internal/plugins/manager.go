@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -111,6 +112,11 @@ func NewManager(db *gorm.DB, cipher *security.CredentialCipher, options Options,
 	go m.supervise(ctx)
 	m.mu.Lock()
 	recoveryErr := m.recover()
+	if recoveryErr == nil {
+		if err := m.prunePackageStorageLocked(); err != nil {
+			log.Printf("plugin package cleanup after recovery: %v", err)
+		}
+	}
 	m.mu.Unlock()
 	if recoveryErr != nil {
 		m.Close()
@@ -154,12 +160,21 @@ func (m *Manager) maintain(ctx context.Context) {
 	defer close(m.done)
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
+	ticks := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			m.renewLease()
+			ticks++
+			if ticks%6 == 0 && !m.lost.Load() {
+				m.mu.Lock()
+				if err := m.prunePackageStorageLocked(); err != nil {
+					log.Printf("periodic plugin package cleanup: %v", err)
+				}
+				m.mu.Unlock()
+			}
 		}
 	}
 }

@@ -6,8 +6,12 @@
         <h1>{{ profile.homeTitle }}</h1>
         <p>{{ profile.description }}</p>
         <div class="hero-actions">
-          <RouterLink class="button hero-primary" to="/pricing">浏览套餐<UiIcon name="chevron" /></RouterLink>
-          <RouterLink class="button button-secondary hero-secondary" :to="secondaryPath">{{ secondaryLabel }}</RouterLink>
+          <Button as-child size="lg" class="storefront-hero__primary">
+            <RouterLink to="/pricing">浏览套餐<UiIcon name="chevron" /></RouterLink>
+          </Button>
+          <Button as-child variant="outline" size="lg" class="storefront-hero__secondary">
+            <RouterLink :to="secondaryPath">{{ secondaryLabel }}</RouterLink>
+          </Button>
         </div>
         <ul class="hero-trust">
           <li><UiIcon name="check" />套餐权益与价格一目了然</li>
@@ -33,7 +37,7 @@
               <span>设备数量</span>
               <span>灵活周期</span>
             </div>
-            <RouterLink class="button" to="/pricing">浏览全部套餐<UiIcon name="chevron" /></RouterLink>
+            <RouterLink class="storefront-preview__link" to="/pricing">浏览全部套餐<UiIcon name="chevron" /></RouterLink>
           </div>
         </div>
       </div>
@@ -74,7 +78,9 @@
 
     <section class="landing-cta">
       <div><span>立即开始</span><h2>找到适合你的套餐，开始使用。</h2></div>
-      <RouterLink class="button" to="/pricing">查看套餐<UiIcon name="chevron" /></RouterLink>
+      <Button as-child size="lg" class="landing-cta__button">
+        <RouterLink to="/pricing">查看套餐<UiIcon name="chevron" /></RouterLink>
+      </Button>
     </section>
   </div>
 </template>
@@ -85,6 +91,7 @@ import { useRouter } from 'vue-router'
 import { fetchPlanCatalogPage, type PlanCatalogItem } from '../api/client'
 import CommercePlanCard from '../components/CommercePlanCard.vue'
 import UiIcon from '../components/UiIcon.vue'
+import { Button } from '../components/ui/button'
 import { useAppStore } from '../stores/app'
 import { useRemoteResource } from '../composables/useRemoteResource'
 

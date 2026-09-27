@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -58,7 +57,7 @@ describe('account subscription independent loading and access identity', () => {
     ] })
     await router.push(path)
     await router.isReady()
-    wrapper = mount(AccountSubscription, { global: { plugins: [router, PrimeVue], stubs: { ConfirmDialog: true } } })
+    wrapper = mount(AccountSubscription, { global: { plugins: [router], stubs: { ConfirmDialog: true } } })
     await flushPromises()
     return wrapper
   }

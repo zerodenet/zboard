@@ -10,6 +10,7 @@
         >管理插件 / 离线导入</RouterLink
       >
     </header>
+    <AdminPageNavigation />
     <p v-if="error" role="alert" class="plugins-error">
       {{ error }}
     </p>
@@ -18,11 +19,13 @@
         v-model="query"
         placeholder="搜索名称或功能"
         aria-label="搜索市场插件"
-      /><UiSelect v-model="surface" aria-label="页面位置" :options="surfaceOptions" /><button :disabled="loading" @click="load">刷新市场</button>
+      /><UiSelect v-model="surface" aria-label="页面位置" :options="surfaceOptions" /><UiButton variant="secondary" type="button" :loading="loading" @click="load">刷新市场</UiButton>
     </div>
-    <p v-if="market.kind === 'registry'" class="plugin-market-notice">这里展示经 ZeroDeNet 准入的插件。版本由开发者仓库维护，进入详情可选择正式版、RC 或 Dev，在线安装前由 ZBoard 校验签名、兼容性和能力边界。</p>
-    <p v-if="market.notice" role="status" class="plugin-market-notice">{{ market.notice }}</p>
-    <p v-if="market.generated_at" class="plugin-market-notice">目录更新于 {{ formatDateTime(market.generated_at) }}</p>
+    <div v-if="market.kind === 'registry' || market.notice || market.generated_at" class="plugin-market-context">
+      <p v-if="market.kind === 'registry'">这里展示经 ZeroDeNet 准入的插件。版本由开发者仓库维护，进入详情可选择正式版、RC 或 Dev，在线安装前由 ZBoard 校验签名、兼容性和能力边界。</p>
+      <p v-if="market.notice" role="status">{{ market.notice }}</p>
+      <small v-if="market.generated_at">目录更新于 {{ formatDateTime(market.generated_at) }}</small>
+    </div>
     <p v-if="loading">正在加载市场目录…</p>
     <section v-else-if="!market.configured && !error" class="plugins-empty">
       <h2>尚未配置插件市场源</h2>
@@ -62,7 +65,9 @@
 import { computed, onMounted, ref } from "vue";
 import { formatDateTime } from "../utils/format";
 import UiInput from '../components/UiInput.vue'
+import AdminPageNavigation from '../components/AdminPageNavigation.vue'
 import UiSelect from '../components/UiSelect.vue'
+import UiButton from '../components/UiButton.vue'
 import { useRemoteResource } from "../composables/useRemoteResource";
 import {
   fetchPluginMarket,

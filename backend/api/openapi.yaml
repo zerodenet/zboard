@@ -394,7 +394,7 @@ paths:
               "format": "binary"
               "maxLength": 33554432
   "/api/v1/admin/plugins/{id}/actions/{action}":
-    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "action", "in": "path", "required": true, "schema": {"type": "string", "enum": ["enable", "disable", "rollback", "uninstall", "purge_data"]}}]
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "action", "in": "path", "required": true, "schema": {"type": "string", "enum": ["enable", "disable", "uninstall", "purge_data"]}}]
     "post":
       "tags": ["plugins"]
       "summary": "Change plugin lifecycle; administrator only"
@@ -429,8 +429,6 @@ paths:
                   "type": "boolean"
                   deprecated: true
                   description: Ignored; publisher host-version test coverage is advisory.
-                "version_id":
-                  "type": "string"
               "required": ["generation"]
   "/api/v1/admin/plugins/{id}/migrations":
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
@@ -4982,6 +4980,7 @@ components:
               "type": "string"
         "versions":
           "type": "array"
+          "description": "Contains only the current version metadata; previous package versions are not retained."
           "items":
             "$ref": "#/components/schemas/PluginVersion"
         "created_at":

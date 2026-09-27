@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchAccountSubscriptionsPage } from '../../api/client'
@@ -19,7 +18,7 @@ describe('account subscription filter bounded reads', () => {
   async function create(value = '') {
     wrapper = mount(AccountSubscriptionFilter, { props: { modelValue: value,
       'onUpdate:modelValue': value => { void wrapper!.setProps({ modelValue: value }) },
-    }, global: { plugins: [PrimeVue], stubs: { teleport: true } } })
+    }, global: { plugins: [], stubs: { teleport: true } } })
     await flushPromises()
   }
   async function open() { await wrapper!.get('.workbench-filter-chip-trigger').trigger('click'); await flushPromises() }

@@ -14,6 +14,7 @@
           <RouterLink v-if="hasPluginConfig(plugin) && plugin.compatibility.compatible" class="button" :to="`${pluginDetailPath(plugin.id)}/configuration`">配置插件</RouterLink>
         </div>
       </header>
+      <AdminPageNavigation />
       <TransientFeedback :success="message" />
       <PageAlert v-if="!plugin.admission?.accepted" tone="warning">插件尚未通过宿主校验，无法运行。请查看操作记录。</PageAlert>
       <PageAlert v-if="route.query.imported === '1' && !plugin.enabled" tone="success">插件已安装，系统已完成能力校验和数据准备。完成配置后即可启用。</PageAlert>
@@ -68,6 +69,7 @@ import { computed, ref, watch } from 'vue'
 import { formatDateTime } from '../utils/format'
 import { useRoute } from 'vue-router'
 import PluginDataPanel from '../plugins/PluginDataPanel.vue'
+import AdminPageNavigation from '../components/AdminPageNavigation.vue'
 import PageAlert from '../components/PageAlert.vue'
 import UiButton from '../components/UiButton.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'

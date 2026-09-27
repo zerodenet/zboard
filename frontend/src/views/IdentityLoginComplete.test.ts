@@ -18,6 +18,10 @@ it('provider errors cannot inject a token from URL parameters',async()=>{
  mocks.query={error:'failed',token:'attacker-token'};const wrapper=render();await flushPromises();expect(mocks.finish).not.toHaveBeenCalled();expect(mocks.setToken).not.toHaveBeenCalled();expect(wrapper.text()).toContain('未完成');wrapper.unmount()
 })
 
+it('explains an expired callback without exposing a login result',async()=>{
+ mocks.query={error:'state_expired'};const wrapper=render();await flushPromises();expect(mocks.finish).not.toHaveBeenCalled();expect(mocks.setToken).not.toHaveBeenCalled();expect(wrapper.text()).toContain('已过期');wrapper.unmount()
+})
+
 it('prompts for missing verified email without issuing a session',async()=>{
  mocks.finish.mockResolvedValue({registration_required:true,email:'hint@example.com'})
  const wrapper=render();await flushPromises();expect(wrapper.text()).toContain('补充注册邮箱');expect(mocks.setToken).not.toHaveBeenCalled();expect(wrapper.find('form').exists()).toBe(true);wrapper.unmount()

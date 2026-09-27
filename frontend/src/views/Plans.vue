@@ -33,8 +33,9 @@
         </WorkbenchFilterBar>
       </template>
 
+      <TableSkeleton v-if="loading && !plans.length" label="正在加载商品" :columns="8" />
       <DataTable
-        v-if="plans.length"
+        v-else-if="plans.length"
         caption="套餐商品列表"
         :row-count="total"
         :min-width="820"
@@ -197,6 +198,7 @@
           </template>
 
           <PageAlert v-if="skuListError" tone="danger" title="销售规格加载失败">{{ skuListError }}</PageAlert>
+          <TableSkeleton v-else-if="skuListLoading && !planSKUs.length" label="正在加载销售规格" :columns="7" />
           <DataTable
             v-else-if="planSKUs.length"
             caption="套餐销售规格列表"
@@ -456,6 +458,7 @@ import {
 } from '../api/client'
 import ByteSizeInput from '../components/ByteSizeInput.vue'
 import DataTable from '../components/DataTable.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
 import EmptyState from '../components/EmptyState.vue'

@@ -1,5 +1,5 @@
 <template>
-  <section class="standard-page">
+  <section class="standard-page protocols-page">
     <PageHeader title="协议服务" description="协议配置可复用、复制并切换承载 VPS；运行参数变更才发布 Zero，名称、计费和交付顺序独立保存。" eyebrow="Infrastructure">
       <template #actions>
         <PageRefreshButton label="刷新协议服务" :loading="loading" @click="serviceKind === 'forward' ? forwardServices?.load() : refresh()" />
@@ -13,29 +13,11 @@
     <ModalDialog :open="serviceTypeOpen" title="创建协议服务" @close="serviceTypeOpen=false">
       <div class="stack"><p>选择服务接入方式。</p><UiButton @click="createService('listener')">实际协议监听</UiButton><p>在承载节点上运行协议，处理客户端握手和认证。</p><UiButton @click="createService('forward')">前置端口转发</UiButton><p>用 A 的一个端口承载 B 的父协议；A 默认直连 B，也可以使用 A 的共享代理池。</p></div>
     </ModalDialog>
-    <div v-show="serviceKind === 'listener'">
+    <div v-show="serviceKind === 'listener'" class="protocol-listener-content">
     <TransientFeedback :success="message" :error="error" success-title="协议操作已完成" error-title="协议操作失败" />
-    <PageAlert tone="info" title="Mieru / Hysteria2 用户凭证自动管理">尚无有效订阅凭证时，服务配置可正常保存和发布，暂不启动监听；订阅开通后自动生成用户凭证并发布，最后一个有效凭证失效后停止监听。</PageAlert>
     <PageAlert v-if="mieruUnavailableReason" tone="warning" title="Mieru 暂不可用">
       {{ mieruUnavailableReason }} 已有 Mieru 记录会保留供查看和停用，但不会进入新订阅或节点发布。
     </PageAlert>
-
-    <section class="protocol-status-overview" aria-label="按发布状态查看协议服务">
-      <OverviewCard
-        v-for="item in protocolStatusOverview"
-        :key="item.value || 'all'"
-        :label="item.label"
-        :value="formatNumber(item.count)"
-        :description="item.caption"
-        :icon="item.icon"
-        :tone="item.tone"
-        interactive
-        :selected="filters.deployment === item.value"
-        :loading="overviewLoading"
-        :disabled="overviewLoading"
-        @select="selectDeploymentStatus(item.value)"
-      />
-    </section>
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing" :density="density" show-density @update:density="setDensity">
       <template #filters>
@@ -43,7 +25,7 @@
           <WorkbenchFilterInput v-model="filters.q" label="搜索" placeholder="服务名称或对外地址" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="filters.protocol" label="协议类型" :options="protocolFilterOptions" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="filters.active" label="服务状态" :options="activeFilterOptions" @apply="applyFilters" />
-          <WorkbenchFilterSelect v-model="filters.deployment" label="发布状态" :options="deploymentFilterOptions" @apply="applyFilters" />
+          <StatusCountFilters label="按发布状态查看协议服务" :value="filters.deployment" :items="protocolStatusOverview" :loading="overviewLoading" @select="selectDeploymentStatus" />
         </WorkbenchFilterBar>
       </template>
       <template #actions><UiButton :variant="groupedByNode ? 'secondary' : 'ghost'" size="sm" type="button" @click="setGroupedView(!groupedByNode)"><UiIcon name="nodes" />{{ groupedByNode ? '节点分组' : '按节点分组' }}</UiButton></template>
@@ -53,7 +35,8 @@
           <div><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'deploy'" @click="runProtocolBatch('deploy')"><UiIcon name="play" />批量发布</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'enable'" @click="runProtocolBatch('enable')"><UiIcon name="check" />批量启用</UiButton><UiButton variant="danger" size="sm" type="button" :loading="bulkBusy === 'disable'" @click="runProtocolBatch('disable')">批量停用</UiButton><UiButton variant="ghost" size="sm" type="button" @click="clearSelection">清除</UiButton></div>
         </div>
       </template>
-      <DataTable v-if="endpoints.length" caption="协议服务列表；可按服务、节点、协议和倍率排序，数量直接显示数字，时间保留精确时间提示" :row-count="total" :density="density" :min-width="1428" selectable table-class="protocol-table" @visible-column-count="visibleProtocolColumnCount = $event">
+      <TableSkeleton v-if="(initialLoading || loading) && !endpoints.length" label="正在加载协议服务" :columns="8" />
+      <DataTable v-else-if="endpoints.length" caption="协议服务列表；可按服务、节点、协议和倍率排序，数量直接显示数字，时间保留精确时间提示" :row-count="total" :density="density" :min-width="1428" selectable table-class="protocol-table" @visible-column-count="visibleProtocolColumnCount = $event">
           <colgroup><col v-for="(column, index) in protocolColumns" :key="index" :data-column-priority="column.priority" :style="column.width ? { width: `${column.width}px` } : undefined" /></colgroup>
           <thead><tr>
             <th class="selection-column"><UiCheckbox :model-value="allPageEndpointsSelected" :indeterminate="pageEndpointSelectionIndeterminate" :disabled="selectionAllMatching" aria-label="选择当前页全部协议服务" @update:model-value="toggleCurrentEndpointPage" /></th>
@@ -85,9 +68,14 @@
             </template>
           </tbody>
       </DataTable>
-      <EmptyState v-else-if="!initialLoading" icon="activity" :title="filters.q || filters.protocol || filters.active || filters.deployment ? '没有匹配服务' : '还没有协议服务'" :description="filters.q || filters.protocol || filters.active || filters.deployment ? '调整或清除筛选条件后重试。' : '选择一台 VPS，填写连接参数后即可创建。'"><template #actions><UiButton v-if="!filters.q && !filters.protocol && !filters.active && !filters.deployment"  type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton></template></EmptyState>
+      <EmptyState v-else-if="!initialLoading && !loading" icon="activity" :title="filters.q || filters.protocol || filters.active || filters.deployment ? '没有匹配服务' : '还没有协议服务'" :description="filters.q || filters.protocol || filters.active || filters.deployment ? '调整或清除筛选条件后重试。' : '选择一台 VPS，填写连接参数后即可创建。'"><template #actions><UiButton v-if="!filters.q && !filters.protocol && !filters.active && !filters.deployment"  type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton></template></EmptyState>
       <template #footer><TablePager variant="stripe" :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
+
+    <details class="protocol-guidance">
+      <summary><UiIcon name="info" />Mieru / Hysteria2 用户凭证规则<UiIcon name="chevron" /></summary>
+      <p>尚无有效订阅凭证时，服务配置可正常保存和发布，暂不启动监听；订阅开通后自动生成用户凭证并发布，最后一个有效凭证失效后停止监听。</p>
+    </details>
 
     <DetailDrawer :open="Boolean(selectedEndpointDetail)" :title="selectedEndpointDetail?.name || '协议服务详情'" eyebrow="Protocol endpoint" :description="selectedEndpointSummary ? `${selectedEndpointSummary.node_name || `VPS #${selectedEndpointSummary.node_id}`} · ${selectedEndpointSummary.address}:${selectedEndpointSummary.public_port || selectedEndpointSummary.port}` : ''" :return-focus-selector="selectedEndpointDetail ? `[data-row-action-trigger='protocol-${selectedEndpointDetail.id}']` : ''" @close="closeDetail">
       <main v-if="selectedEndpointDetail" class="stack protocol-detail">
@@ -329,18 +317,19 @@ import { useRoute, useRouter } from 'vue-router'
 import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchSubscriptionDeliveryOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, parseProtocolEndpointEgress, updateProtocolEndpoint, updateSubscriptionDeliveryOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointNodeGroupMembership, type ProtocolEndpointStatusFacets, type SubscriptionDeliveryOrderItem, type ProtocolKernelCapability } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
 import EmptyState from '../components/EmptyState.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import MultiplierInput from '../components/MultiplierInput.vue'
 import NodeLookup from '../components/NodeLookup.vue'
 import NodeGroupMembershipEditor from '../components/NodeGroupMembershipEditor.vue'
-import OverviewCard from '../components/OverviewCard.vue'
 import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PortInput from '../components/PortInput.vue'
 import RowActions from '../components/RowActions.vue'
 import StatusBadge from '../components/StatusBadge.vue'
+import StatusCountFilters from '../components/StatusCountFilters.vue'
 import SortableHeader from '../components/SortableHeader.vue'
 import TablePager from '../components/TablePager.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
@@ -390,7 +379,6 @@ const protocolOptions = computed(() => protocols.map(value => ({
 })))
 const protocolFilterOptions = [{ label: '全部协议', value: '' }, ...protocols.map(value => ({ label: protocolLabel(value), value }))]
 const activeFilterOptions = [{ label: '全部服务状态', value: '' }, { label: '运行中', value: 'active' }, { label: '已停用', value: 'inactive' }]
-const deploymentFilterOptions = [{ label: '全部发布状态', value: '' }, { label: '已生效', value: 'succeeded' }, { label: '发布中', value: 'running' }, { label: '发布失败', value: 'failed' }, { label: '未发布', value: 'never' }]
 const vmessCipherOptions = [{ label: 'AES-128-GCM（推荐）', value: 'aes-128-gcm' }, { label: 'ChaCha20-Poly1305', value: 'chacha20-poly1305' }, { label: '不额外加密', value: 'none' }]
 const shadowsocksCipherOptions = [{ label: 'AES-128-GCM', value: 'aes-128-gcm' }, { label: 'AES-256-GCM', value: 'aes-256-gcm' }, { label: 'ChaCha20-Poly1305（推荐）', value: 'chacha20-ietf-poly1305' }]
 const egressProtocolOptions = [
@@ -733,9 +721,10 @@ async function syncURL(replace = false) {
 }
 async function applyFilters() { clearSelection(); offset.value = 0; await syncURL(); await refresh() }
 async function resetFilters() { Object.assign(filters, { q: '', protocol: '', active: '', deployment: '' }); await applyFilters() }
-async function selectDeploymentStatus(value: ProtocolDeploymentStatus) {
+async function selectDeploymentStatus(value: string) {
+  if (!['', 'succeeded', 'running', 'failed', 'never'].includes(value)) return
   if (filters.deployment === value) return
-  filters.deployment = value
+  filters.deployment = value as ProtocolDeploymentStatus
   await applyFilters()
 }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await refresh() }
@@ -1241,11 +1230,11 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.protocol-status-overview{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.protocol-listener-content { width: 100%; min-width: 0; }
 :deep(.protocol-table){table-layout:fixed}:deep(.protocol-table th),:deep(.protocol-table td){height:40px;padding:7px 10px}:deep(.protocol-table .sortable-header-button){padding-inline:10px}:deep(.protocol-table .cell-title){min-width:0;overflow-wrap:anywhere}:deep(.protocol-table .protocol-node-column a){display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}:deep(.protocol-table .table-action-column){min-width:0}:deep(.protocol-table .selection-column){padding-inline:10px}:deep(.protocol-table .mono){font-size:11px}:deep(.protocol-table a){color:var(--primary);font-weight:650;text-decoration:none}:deep(.protocol-table a:hover){text-decoration:underline}.numeric-column{text-align:right!important;font-variant-numeric:tabular-nums}:deep(.protocol-table .cell-actions .button){min-height:30px}:deep(.protocol-table .time-badge){margin-left:auto}
 .protocol-group-row td{height:34px!important;padding:7px 12px!important;color:var(--text);background:var(--surface-soft)!important}.protocol-group-content{display:flex;align-items:center;gap:7px;min-width:0}.protocol-group-row .ui-icon{flex:0 0 auto;color:var(--primary)}.protocol-group-row strong{min-width:0;overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.protocol-group-row span{flex:0 0 auto;color:var(--muted);font-size:9px}
 .protocol-metrics{margin-bottom:16px}.protocol-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.protocol-card{display:grid;overflow:hidden}.protocol-header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px}.protocol-title{display:flex;gap:12px;min-width:0}.protocol-icon{width:40px;height:40px;display:grid;place-items:center;flex:0 0 auto;border-radius:10px;color:var(--primary);background:var(--primary-soft);font-size:19px}.title-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.title-line h2{margin:0;font-size:16px}.protocol-title p{margin:5px 0 0;color:var(--muted);font-family:var(--font-mono);font-size:11px;overflow-wrap:anywhere}.multiplier{color:var(--primary);font-size:18px}.protocol-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0;padding:14px 18px;border-block:1px solid var(--line);background:var(--surface-soft)}.protocol-meta div{display:grid;gap:4px}.protocol-meta dt{color:var(--muted);font-size:10px}.protocol-meta dd{margin:0;font-size:11px;font-weight:650}.usage-summary{display:flex;flex-wrap:wrap;gap:14px;padding:10px 18px;color:var(--muted);border-bottom:1px solid var(--line);font-size:9px}.deployment-error{margin:12px 18px 0;padding:9px;border-radius:8px;color:var(--danger);background:var(--danger-soft);font-size:11px;overflow-wrap:anywhere}.protocol-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px}
-.protocol-order-editor{display:grid;gap:14px}.protocol-order-loading{padding:32px;text-align:center;color:var(--muted);font-size:11px}.protocol-order-list{display:grid;gap:8px;max-height:55vh;margin:0;padding:0;overflow:auto;list-style:none}.protocol-order-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.protocol-order-position{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;color:var(--primary);background:var(--primary-soft);font-size:11px;font-weight:750;font-variant-numeric:tabular-nums}.protocol-order-content{display:grid;gap:3px;min-width:0}.protocol-order-content strong{font-size:12px;white-space:normal;overflow-wrap:anywhere}.protocol-order-content span{color:var(--muted);font-size:9px}.protocol-order-actions{display:flex;gap:3px}.protocol-order-actions :deep(.p-button){width:30px;min-width:30px;padding:0}
+.protocol-order-editor{display:grid;gap:14px}.protocol-order-loading{padding:32px;text-align:center;color:var(--muted);font-size:11px}.protocol-order-list{display:grid;gap:8px;max-height:55vh;margin:0;padding:0;overflow:auto;list-style:none}.protocol-order-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.protocol-order-position{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;color:var(--primary);background:var(--primary-soft);font-size:11px;font-weight:750;font-variant-numeric:tabular-nums}.protocol-order-content{display:grid;gap:3px;min-width:0}.protocol-order-content strong{font-size:12px;white-space:normal;overflow-wrap:anywhere}.protocol-order-content span{color:var(--muted);font-size:9px}.protocol-order-actions{display:flex;gap:3px}.protocol-order-actions :deep(.ui-button){width:30px;min-width:30px;padding:0}
 .protocol-editor{display:grid;gap:20px}
 .wizard-panel{display:grid;gap:20px}
 .wizard-heading{display:flex;align-items:flex-start;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--line)}
@@ -1284,12 +1273,28 @@ onBeforeUnmount(() => {
 .compact-grid{max-width:520px}
 .config-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .config-grid textarea{font-family:var(--font-mono);font-size:10px}
-@media(max-width:1100px){:deep(.protocol-table[data-show-secondary='false']){min-width:820px!important}}
+@media(min-width:721px) and (max-width:1100px){
+  :deep(.protocol-table[data-show-secondary='false']){min-width:752px!important}
+  :deep(.protocol-table[data-show-secondary='false'] col:nth-child(2)){width:180px!important}
+  :deep(.protocol-table[data-show-secondary='false'] col:nth-child(3)){width:140px!important}
+  :deep(.protocol-table[data-show-secondary='false'] col:nth-child(4)){width:120px!important}
+  :deep(.protocol-table[data-show-secondary='false'] col:nth-child(6)){width:115px!important}
+  :deep(.protocol-table[data-show-secondary='false'] col:nth-child(7)){width:103px!important}
+}
 @media(max-width:720px){:deep(.protocol-table[data-show-secondary='false']){min-width:520px!important}}
-@media(max-width:1080px){.protocol-status-overview{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:900px){.protocol-grid,.guided-grid,.config-grid{grid-template-columns:1fr}.protocol-meta,.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-meta{row-gap:12px}}@media(max-width:680px){.protocol-status-overview{display:flex;overflow-x:auto;padding:1px 1px 6px;scroll-snap-type:x proximity}.protocol-status-overview :deep(.overview-card){min-width:178px;scroll-snap-align:start}.protocol-grid{gap:8px}.protocol-card{border-inline:0;border-radius:0;box-shadow:none}.protocol-meta{background:transparent}.review-grid{grid-template-columns:1fr}.selected-node-card{grid-template-columns:auto minmax(0,1fr)}.selected-node-card .status-badge{grid-column:2}.input-with-action{grid-template-columns:1fr}.input-with-action input{border-radius:8px!important}.input-with-action button{min-height:36px;border:1px solid var(--line-strong);border-top:0;border-radius:0 0 8px 8px}}.protocol-mobile-detail-actions{display:none}@media(max-width:560px){.protocol-order-item{grid-template-columns:30px minmax(0,1fr) auto}.protocol-order-item>.status-badge{grid-column:2}.protocol-order-actions{grid-column:3;grid-row:1/3}:deep(.page-actions .p-button:last-child){flex:1}.protocol-mobile-detail-actions{display:flex;flex-wrap:wrap;gap:7px}}
-.protocol-editor .p-select{min-height:var(--control-height)}
+@media(max-width:900px){.protocol-grid,.guided-grid,.config-grid{grid-template-columns:1fr}.protocol-meta,.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-meta{row-gap:12px}}@media(max-width:680px){.protocol-grid{gap:8px}.protocol-card{border-inline:0;border-radius:0;box-shadow:none}.protocol-meta{background:transparent}.review-grid{grid-template-columns:1fr}.selected-node-card{grid-template-columns:auto minmax(0,1fr)}.selected-node-card .status-badge{grid-column:2}.input-with-action{grid-template-columns:1fr}.input-with-action input{border-radius:8px!important}.input-with-action button{min-height:36px;border:1px solid var(--line-strong);border-top:0;border-radius:0 0 8px 8px}}.protocol-mobile-detail-actions{display:none}@media(max-width:560px){.protocol-order-item{grid-template-columns:30px minmax(0,1fr) auto}.protocol-order-actions{grid-column:3;grid-row:1/3}:deep(.page-actions .ui-button:last-child){flex:1}.protocol-mobile-detail-actions{display:flex;flex-wrap:wrap;gap:7px}}
+.protocol-editor .ui-select{min-height:var(--control-height)}
 .protocol-grid{grid-template-columns:1fr;gap:0;border-block:1px solid var(--line)}.protocol-card{border:0;border-radius:0}.protocol-card+.protocol-card{border-top:1px solid var(--line)}
 .selected-node-card{border-color:var(--primary-border);background:var(--primary-soft)}
 .protocol-detail{min-width:0}.detail-status-strip{display:flex;flex-wrap:wrap;gap:8px}.detail-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:hidden}.detail-facts>div{display:grid;gap:5px;padding:14px 16px;border-bottom:1px solid var(--line)}.detail-facts>div:nth-child(odd){border-right:1px solid var(--line)}.detail-facts span{color:var(--muted);font-size:10px}.detail-facts strong,.detail-facts a{font-size:12px;overflow-wrap:anywhere}.detail-facts a{color:var(--primary);font-weight:650;text-decoration:none}.numeric-summary{color:var(--primary);font-size:14px;font-weight:750;font-variant-numeric:tabular-nums}.deployment-history{overflow:hidden}.deployment-history>.page-alert{margin:12px}.deployment-history :deep(.data-table-shell){border:0;border-radius:0}.deployment-output{max-width:360px;margin:0;color:var(--muted);font-family:var(--font-mono);font-size:10px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:560px){.detail-facts{grid-template-columns:1fr}.detail-facts>div:nth-child(odd){border-right:0}}
+.protocol-guidance { margin: 10px 0 8px; color: var(--muted-foreground); font-size: 12px; }
+.protocol-guidance summary { width: fit-content; display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; cursor: pointer; list-style: none; }
+.protocol-guidance summary::-webkit-details-marker { display: none; }
+.protocol-guidance summary .ui-icon:last-child { width: 12px; transform: rotate(90deg); }
+.protocol-guidance[open] summary .ui-icon:last-child { transform: rotate(-90deg); }
+.protocol-guidance summary:hover { color: var(--foreground); }
+.protocol-guidance summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.protocol-guidance p { max-width: 900px; margin: 5px 0 9px; line-height: 1.55; }
+:deep(.protocol-table th), :deep(.protocol-table td) { height: 48px; padding-block: 10px; font-size: 12px; }
+:deep(.protocol-table .cell-title strong) { font-size: 12px; font-weight: 600; }
 </style>

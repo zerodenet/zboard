@@ -1,51 +1,26 @@
 <template>
-  <PrimeButton
-    v-bind="forwardedAttrs"
-    :class="forwardedClass"
-    :severity="severity"
-    :text="text"
-    :outlined="outlined"
-    :rounded="icon"
-    :size="small ? 'small' : undefined"
-    :loading="loading"
+  <Button
+    type="button"
+    v-bind="attrs"
+    :variant="variant === 'primary' ? 'default' : variant === 'danger' ? 'destructive' : variant"
+    :size="icon ? 'icon' : size === 'md' ? 'default' : size"
+    :class="['ui-button', `ui-button-${variant === 'primary' ? 'default' : variant === 'danger' ? 'destructive' : variant}`, `ui-button-${size}`, { 'ui-button-icon': icon }]"
     :disabled="disabled || loading"
-    :aria-busy="loading ? 'true' : undefined"
-  >
-    <slot />
-  </PrimeButton>
+    :aria-busy="loading || undefined"
+  ><span v-if="loading" class="ui-button-spinner" aria-hidden="true" /><slot v-if="!loading || !icon" /></Button>
 </template>
 
 <script setup lang="ts">
-import { computed, useAttrs } from 'vue'
-import PrimeButton from 'primevue/button'
+import { useAttrs } from 'vue'
+import { Button } from './ui/button'
 
 defineOptions({ inheritAttrs: false })
-
-const props = withDefaults(defineProps<{
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
-  size?: 'sm' | 'md'
+withDefaults(defineProps<{
+  variant?: 'primary' | 'default' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'destructive' | 'link'
+  size?: 'sm' | 'md' | 'lg'
   icon?: boolean
   loading?: boolean
   disabled?: boolean
-}>(), {
-  variant: 'primary',
-  size: undefined,
-  icon: false,
-  loading: false,
-  disabled: false,
-})
-
+}>(), { variant: 'primary', size: 'md', icon: false, loading: false, disabled: false })
 const attrs = useAttrs()
-const forwardedClass = computed(() => attrs.class)
-const forwardedAttrs = computed(() => {
-  const { class: _class, ...rest } = attrs
-  return rest
-})
-const severity = computed(() => props.variant === 'danger' ? 'danger' : props.variant === 'secondary' || props.variant === 'ghost' ? 'secondary' : undefined)
-const text = computed(() => props.variant === 'ghost')
-const outlined = computed(() => props.variant === 'secondary')
-const small = computed(() => props.size === 'sm')
-const icon = computed(() => props.icon)
-const loading = computed(() => props.loading)
-const disabled = computed(() => props.disabled)
 </script>

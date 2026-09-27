@@ -17,7 +17,8 @@
         </WorkbenchFilterBar>
       </template>
 
-      <DataTable v-if="items.length" caption="运行日志摘要；完整输出和错误在详情抽屉中按需加载" :row-count="total" :min-width="1080" table-class="operation-table">
+      <TableSkeleton v-if="loading && !items.length" label="正在加载运行日志" :columns="7" />
+      <DataTable v-else-if="items.length" caption="运行日志摘要；完整输出和错误在详情抽屉中按需加载" :row-count="total" :min-width="1080" table-class="operation-table">
           <thead><tr><th data-column-priority="2">时间</th><th class="table-primary-column">来源与动作</th><th data-column-priority="2">目标</th><th>状态</th><th data-column-priority="3">摘要</th><th data-column-priority="3">结果内容</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
           <tbody><tr v-for="item in items" :key="`${item.source}:${item.id}`">
             <td data-column-priority="2"><TimeBadge :value="item.created_at" /></td>
@@ -53,6 +54,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { fetchOperationLog, fetchOperationLogs, type OperationLog } from '../api/client'
 import CursorPager from '../components/CursorPager.vue'
 import DataTable from '../components/DataTable.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
 import EmptyState from '../components/EmptyState.vue'

@@ -1,5 +1,5 @@
 <template>
-  <main class="auth-shell"><section class="auth-card stack">
+  <main class="auth-main identity-complete-shell"><section class="auth-card stack">
     <h1>{{ registering ? '补充注册邮箱' : failed ? '第三方登录未完成' : '正在完成身份验证' }}</h1>
     <p :role="failed ? 'alert' : 'status'">{{ statusText }}</p>
     <form v-if="registering" ref="formElement" class="stack" novalidate @submit.prevent="completeRegistration">
@@ -10,7 +10,7 @@
       <PageAlert v-if="formErrors.formError.value" tone="danger" title="注册未完成">{{ formErrors.formError.value }}</PageAlert>
       <AuthLegalLinks context="register" />
     </form>
-    <template v-if="failed"><RouterLink to="/login">返回登录并重试</RouterLink><RouterLink to="/account/security">已有账户？登录后绑定</RouterLink></template>
+    <template v-if="failed"><RouterLink class="identity-retry" to="/login">返回登录并重试</RouterLink><RouterLink class="identity-bind" to="/account/security">已有账户？登录后绑定</RouterLink></template>
   </section></main>
 </template>
 <script setup lang="ts">
@@ -37,8 +37,26 @@ async function accept(result: IdentityLoginResult) {
   await store.loadSystemStatus(true).catch(() => undefined)
   await router.replace(result.user.is_admin ? '/admin/dashboard' : '/account')
 }
-function fail() { failed.value = true; registering.value = false; statusText.value = '授权未完成、注册已关闭、邮箱已被已有账户使用或提供方不可用。可重试授权；已有账户请使用原方式登录后绑定。' }
-onMounted(async () => { try { if (route.query.error) throw new Error('provider failure'); await accept(await finishIdentityLogin()) } catch { fail() } })
+const callbackErrors: Record<string, string> = {
+  invalid_response: '授权服务返回的信息不完整，请重新发起登录。',
+  state_expired: '登录验证已过期，或授权返回时使用了不同的浏览器。请在同一浏览器中重新登录。',
+  authorization_denied: '你没有完成第三方授权。请重新尝试并确认授权。',
+  provider_unavailable: '第三方登录服务暂不可用，请稍后重试或使用邮箱登录。',
+  config_changed: '授权过程中第三方登录配置发生变化，请重新发起登录。',
+  issuer_mismatch: '第三方授权来源与站点配置不一致，请联系管理员检查提供方设置。',
+  registration_closed: '该第三方账号尚未绑定本站账号，且本站目前关闭注册。请先用原方式登录，再到账户安全中绑定。',
+  account_unavailable: '本站账号状态或绑定验证已变化。请用原方式重新登录；若仍失败，请联系管理员。',
+  binding_conflict: '该第三方账号已绑定其他本站账号，请确认使用的第三方账号。',
+  verification_failed: '本站未能验证第三方身份。请重试；若持续失败，请联系管理员检查 OAuth 插件与提供方配置。',
+}
+function fail(message = '第三方登录未完成。请重试；已有本站账号请先用原方式登录，再到账户安全中绑定。') {
+  failed.value = true; registering.value = false; statusText.value = message
+}
+onMounted(async () => {
+  const code = typeof route.query.error === 'string' ? route.query.error : ''
+  if (code) { fail(callbackErrors[code]); return }
+  try { await accept(await finishIdentityLogin()) } catch { fail() }
+})
 async function sendCode() {
   if (busy.value || cooldown.value > 0) return
   if (!await formErrors.applyValidation(collectFieldErrors({email: !isEmail(email.value) && '请输入有效邮箱。'}), formElement)) return
@@ -56,3 +74,11 @@ async function completeRegistration() {
 }
 onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 </script>
+<style scoped>
+.identity-complete-shell { min-height: 100svh; }
+.identity-complete-shell > .auth-card { width: min(480px, 100%); }
+.identity-retry, .identity-bind { width: fit-content; font-size: 13px; text-decoration: none; }
+.identity-retry { color: var(--primary); font-weight: 650; }
+.identity-bind { color: var(--muted); }
+.identity-retry:hover, .identity-bind:hover { text-decoration: underline; }
+</style>

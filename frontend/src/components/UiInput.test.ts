@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import UiInput from './UiInput.vue'
@@ -14,7 +13,7 @@ describe('UiInput', () => {
         readonly: true,
         'aria-label': '管理员邮箱',
       },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
 
     const input = wrapper.get('input')
@@ -30,7 +29,7 @@ describe('UiInput', () => {
     const wrapper = mount(UiInput, {
       props: { modelValue: 4, modelModifiers: { number: true } } as any,
       attrs: { type: 'number', min: '1', max: '9', step: '1' },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [] },
     })
     await wrapper.get('input').setValue('7')
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([7])

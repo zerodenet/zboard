@@ -1,4 +1,3 @@
-import PrimeVue from 'primevue/config'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -63,7 +62,7 @@ describe.each([false, true])('traffic independent reads (admin=%s)', admin => {
     await router.push(path + range)
     await router.isReady()
     wrapper = mount(admin ? Traffic : AccountTraffic, { global: {
-      plugins: [router, PrimeVue], stubs: { NodeTrafficChart: true, TrafficObservabilityChart: true },
+      plugins: [router], stubs: { NodeTrafficChart: true, TrafficObservabilityChart: true },
     } })
     await flushPromises()
   }

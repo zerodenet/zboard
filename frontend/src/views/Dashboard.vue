@@ -1,26 +1,15 @@
 <template>
   <section class="standard-page">
     <PageHeader
+      class="dashboard-header"
       title="运营工作台"
-      description="从经营结果、服务使用到当前未恢复异常查看全站状态；历史失败只保留在历史记录中。"
+      description="查看营收、订阅、服务运行与当前待处理异常。"
       eyebrow="Operations"
     >
       <template #actions>
         <div class="dashboard-controls">
-          <div class="period-switch" aria-label="运营统计周期">
-            <button
-              v-for="option in periodOptions"
-              :key="option.value"
-              type="button"
-              class="button button-sm"
-              :class="selectedRange === option.value ? 'button-primary' : 'button-ghost'"
-              :aria-pressed="selectedRange === option.value"
-              @click="changeRange(option.value)"
-            >
-              {{ option.label }}
-            </button>
-          </div>
-          <PageRefreshButton label="刷新运营工作台" :loading="loading" @click="load" />
+          <UiSegmentedControl class="period-switch" label="运营统计周期" :options="periodOptions" :model-value="selectedRange" @update:model-value="changeRange($event as DashboardRange)" />
+          <PageRefreshButton label="刷新运营工作台" variant="ghost" :loading="loading" @click="load" />
         </div>
       </template>
     </PageHeader>
@@ -40,8 +29,9 @@
         :label="metric.label"
         :value="metric.value"
         :icon="metric.icon"
-        :status="metric.status"
-        tone="info"
+        :status="metric.label === '有效订阅' ? metric.status : undefined"
+        tone="neutral"
+        icon-tone="neutral"
         :meta="metric.meta"
       />
     </UiMetricStrip>
@@ -96,7 +86,7 @@
       <UiSection
         class="span-4"
         title="当前待办与异常"
-        description="只展示现在仍需介入的状态；恢复后的失败不会继续占用待办。"
+        description="仅列出当前仍需处理的问题。"
       >
         <div v-if="actionQueue.length" class="attention-list">
           <RouterLink v-for="item in actionQueue" :key="item.key" :to="item.to" :class="item.tone">
@@ -118,13 +108,18 @@
       </UiSection>
     </div>
 
+    <div v-if="overview" class="dashboard-group-heading">
+      <h2>服务使用</h2>
+      <p>订阅、连接、流量与节点的当前状态</p>
+    </div>
     <UiMetricStrip v-if="overview" class="dashboard-section service-metrics">
       <MetricCard
         label="当前活跃订阅"
         :value="observedValue(overview.service.active_subscriptions)"
         icon="plans"
         :status="overview.coverage.principal_flows ? '实时' : '未采集'"
-        tone="info"
+        tone="neutral"
+        icon-tone="neutral"
         :meta="overview.coverage.principal_flows ? '当前 active_flows > 0 的订阅' : '尚无 Principal 当前态观测样本'"
       />
       <MetricCard
@@ -132,7 +127,8 @@
         :value="observedValue(overview.service.active_flows)"
         icon="nodes"
         :status="overview.coverage.principal_flows ? '实时' : '未采集'"
-        tone="info"
+        tone="neutral"
+        icon-tone="neutral"
         meta="跨节点 Subscription active flows 汇总"
       />
       <MetricCard
@@ -140,7 +136,8 @@
         :value="formatBytes(overview.service.traffic_bytes)"
         icon="traffic"
         status="周期"
-        tone="info"
+        tone="neutral"
+        icon-tone="neutral"
         meta="按现有计费流量口径聚合"
       />
       <MetricCard
@@ -148,13 +145,14 @@
         :value="`${formatNumber(overview.service.online_nodes)} / ${formatNumber(overview.service.enabled_nodes)}`"
         icon="nodes"
         status="当前"
-        tone="info"
+        tone="neutral"
+        icon-tone="neutral"
         meta="按 Connector 两分钟健康窗口"
       />
     </UiMetricStrip>
 
     <div v-if="overview" class="section-grid dashboard-section">
-      <UiSection class="span-6" title="订阅健康" description="聚焦当前生命周期风险，不把普通支付失败等同于运营事故。">
+      <UiSection class="span-6" title="订阅健康" description="关注即将到期或当前不可用的订阅。">
         <div class="health-list">
           <RouterLink v-for="item in subscriptionHealth" :key="item.label" to="/admin/subscriptions" class="health-row">
             <span class="health-copy">
@@ -168,7 +166,7 @@
         </div>
       </UiSection>
 
-      <UiSection class="span-6" title="服务基础设施" description="展示当前运行和交付状态，而不是累计失败次数。">
+      <UiSection class="span-6" title="服务基础设施" description="节点、运维通道与配置交付的当前状态。">
         <div class="health-list">
           <RouterLink v-for="item in infrastructure" :key="item.label" :to="item.to" class="health-row">
             <span class="health-copy">
@@ -213,7 +211,7 @@
       </div>
     </UiSection>
 
-    <UiSection class="dashboard-section" title="最近重要运营事件" description="这里回答最近发生了什么；历史失败即使已恢复也可以保留，但不会进入当前待办。">
+    <UiSection class="dashboard-section" title="最近重要运营事件" description="最近的配置发布与关键运营记录。">
       <template #actions>
         <RouterLink class="button button-ghost button-sm" to="/admin/protocols">
           协议服务<UiIcon name="chevron" />
@@ -268,6 +266,8 @@ import StatusBadge from '../components/StatusBadge.vue'
 import TimeBadge from '../components/TimeBadge.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiIcon from '../components/UiIcon.vue'
+import UiButton from '../components/UiButton.vue'
+import UiSegmentedControl from '../components/UiSegmentedControl.vue'
 import { formatBytes, formatCurrency, formatNumber, formatUnknownValue } from '../utils/format'
 import { buildDashboardAttention } from '../utils/dashboardHealth'
 
@@ -280,9 +280,9 @@ const dashboardRefreshIntervalMS = 15_000
 let dashboardRefreshTimer: number | undefined
 
 const periodOptions: Array<{ label: string; value: DashboardRange }> = [
-  { label: 'Today', value: 'today' },
-  { label: '7 days', value: '7d' },
-  { label: '30 days', value: '30d' },
+  { label: '今天', value: 'today' },
+  { label: '近 7 天', value: '7d' },
+  { label: '近 30 天', value: '30d' },
 ]
 
 const revenueValue = computed(() => {
@@ -335,7 +335,7 @@ const businessMetrics = computed(() => {
   ]
 })
 
-const periodStatus = computed(() => ({ today: 'Today', '7d': '7 days', '30d': '30 days' }[selectedRange.value]))
+const periodStatus = computed(() => ({ today: '今天', '7d': '近 7 天', '30d': '近 30 天' }[selectedRange.value]))
 const periodDescription = computed(() => overview.value ? `${formatUTC(overview.value.period.from)} – ${formatUTC(overview.value.period.to)}` : '')
 
 const actionQueue = computed(() => {
@@ -393,8 +393,8 @@ const trendMax = computed(() => {
   return Math.max(1, ...values)
 })
 const trendDescription = computed(() => overview.value?.business.mixed_currency
-  ? '检测到多个币种，避免错误相加金额；图中柱高改为已支付订单量，订单构成仍由后端聚合。'
-  : 'Today 按小时、7/30 days 按日聚合实收金额；柱下同时显示已支付订单量。')
+  ? '多币种时柱高按订单数显示，避免将不同币种金额相加。'
+  : '按所选周期汇总实收金额；柱下标出已支付订单量。')
 const trendAriaLabel = computed(() => overview.value ? `${periodStatus.value} 经营趋势，共 ${overview.value.trend.length} 个时间桶` : '经营趋势')
 
 function comparisonText(current: number, previous: number, money = false) {
@@ -407,7 +407,7 @@ function comparisonText(current: number, previous: number, money = false) {
     return `上期为 0 · 本期 +${delta}`
   }
   const percent = ((current - previous) / Math.abs(previous)) * 100
-  return `${percent > 0 ? '+' : ''}${percent.toFixed(1)}% vs previous`
+  return `较上期 ${percent > 0 ? '+' : ''}${percent.toFixed(1)}%`
 }
 
 function observedValue(value: number | null) {
@@ -487,52 +487,74 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .dashboard-section { margin-bottom: 18px; }
+.dashboard-group-heading { display: flex; align-items: baseline; gap: 12px; margin-top: 4px; }
+.dashboard-group-heading h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.dashboard-group-heading p { margin: 0; color: var(--muted-foreground); font-size: 12px; }
 .dashboard-controls { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
-.period-switch { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; }
-.period-switch .button { min-width: 66px; }
+.period-switch { flex: 0 0 auto; }
 .period-context { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 14px; color: var(--muted); font-size: 10px; }
-.business-metrics :deep(.metric-card) { min-width: 0; }
-.trend-shell { min-width: 0; }
-.trend-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
-.trend-summary > div { min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }
-.trend-summary span { display: block; color: var(--muted); font-size: 9px; }
-.trend-summary strong { display: block; margin-top: 4px; font-size: 13px; line-height: 1.3; overflow-wrap: anywhere; }
+.business-metrics :deep(.metric-card) { min-width: 0; min-height: 126px; display: flex; flex-direction: column; gap: 10px; padding: 17px 18px; border: 0; background: var(--surface-subtle); box-shadow: none; }
+.business-metrics :deep(.overview-card-icon) { width: 25px; height: 25px; color: var(--text-secondary); background: transparent; }
+.business-metrics :deep(.overview-card-copy) { gap: 6px; }
+.business-metrics :deep(.overview-card-heading) { display: flex; flex-direction: column; gap: 2px; }
+.business-metrics :deep(.overview-card-label) { color: var(--text-secondary); font-size: 12px; font-weight: 500; }
+.business-metrics :deep(.overview-card-value) { font-size: 25px; font-weight: 600; letter-spacing: -.035em; }
+.business-metrics :deep(.overview-card-description) { color: var(--muted-foreground); font-size: 11px; white-space: normal; }
+.business-metrics :deep(.overview-card-badge) { top: 16px; right: 14px; bottom: auto; }
+.service-metrics :deep(.metric-card) { min-height: 94px; padding: 12px 15px; border-color: var(--border); background: var(--card); box-shadow: none; }
+.service-metrics :deep(.overview-card-icon) { width: 28px; height: 28px; background: var(--surface-subtle); }
+.service-metrics :deep(.overview-card-label) { font-size: 11px; font-weight: 500; }
+.service-metrics :deep(.overview-card-value) { font-size: 21px; font-weight: 600; }
+.service-metrics :deep(.overview-card-description) { font-size: 10px; }
+.trend-shell { min-width: 0; padding: 16px 20px 18px; }
+.trend-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin-bottom: 18px; padding-block: 2px 16px; border-bottom: 1px solid var(--border); }
+.trend-summary > div { min-width: 0; padding: 3px 14px; }
+.trend-summary > div:first-child { padding-left: 0; }
+.trend-summary > div + div { border-left: 1px solid var(--border); }
+.trend-summary span { display: block; color: var(--muted); font-size: 11px; }
+.trend-summary strong { display: block; margin-top: 5px; font-size: 15px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
 .trend-chart { height: 220px; display: flex; align-items: stretch; gap: clamp(3px, .7vw, 10px); padding: 8px 2px 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
 .trend-column { min-width: 18px; flex: 1 0 18px; display: grid; grid-template-rows: minmax(120px, 1fr) 18px 24px; align-items: end; text-align: center; }
 .trend-bar-track { width: 70%; max-width: 34px; height: 100%; justify-self: center; display: flex; align-items: end; border-radius: 5px 5px 0 0; background: var(--surface-subtle); overflow: hidden; }
 .trend-bar { width: 100%; min-height: 0; border-radius: 5px 5px 0 0; background: currentColor; color: var(--primary); opacity: .78; transition: height .18s ease; }
-.trend-orders { align-self: center; color: var(--text); font-size: 9px; font-weight: 700; }
-.trend-label { align-self: center; color: var(--muted); font-size: 8px; white-space: nowrap; }
-.trend-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; color: var(--muted); font-size: 9px; }
+.trend-orders { align-self: center; color: var(--text); font-size: 11px; font-weight: 600; }
+.trend-label { align-self: center; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.trend-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; color: var(--muted); font-size: 11px; }
 .trend-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend-bar { width: 9px; height: 9px; border-radius: 2px; background: var(--primary); opacity: .78; }
-.attention-list, .health-list, .readiness-list { display: grid; }
+.attention-list, .health-list, .readiness-list { display: grid; padding-inline: 18px; }
 .attention-list > a { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 16px 4px; text-decoration: none; }
 .attention-list > a + a, .health-row + .health-row, .readiness-list > a + a { border-top: 1px solid var(--line); }
 .queue-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; color: var(--warning); background: var(--warning-soft); }
 .attention-list > a.danger .queue-icon { color: var(--danger); background: var(--danger-soft); }
 .queue-copy { min-width: 0; }
-.queue-label { display: block; font-size: 11px; font-weight: 700; }
+.queue-label { display: block; font-size: 12px; font-weight: 600; }
 .queue-copy strong { display: block; margin-top: 2px; font-size: 22px; line-height: 1.1; }
-.queue-copy p { margin: 4px 0 0; color: var(--muted); font-size: 10px; }
+.queue-copy p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
 .attention-list > a > .ui-icon { color: var(--subtle); }
 .health-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px; padding: 13px 4px; text-decoration: none; }
 .health-copy { min-width: 0; }
-.health-copy strong { display: block; font-size: 11px; }
-.health-copy small { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; line-height: 1.4; }
-.health-value { font-size: 12px; font-weight: 700; white-space: nowrap; }
+.health-copy strong { display: block; font-size: 12px; font-weight: 600; }
+.health-copy small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.health-value { font-size: 13px; font-weight: 600; white-space: nowrap; }
 .health-row > .ui-icon { color: var(--subtle); }
 .progress-count { font-size: 11px; }
 .readiness-list > a { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 13px 4px; text-decoration: none; }
-.readiness-list strong { display: block; font-size: 11px; }
-.readiness-list p { margin: 3px 0 0; color: var(--muted); font-size: 9px; }
+.readiness-list strong { display: block; font-size: 12px; font-weight: 600; }
+.readiness-list p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
 .step-index { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 50%; background: var(--warning-soft); color: var(--warning); font-size: 10px; font-weight: 800; }
 .readiness-list > a.complete .step-index { background: var(--success-soft); color: var(--success); }
 @media (max-width: 900px) {
   .dashboard-controls { justify-content: flex-start; }
-  .period-switch { width: 100%; }
-  .period-switch .button { flex: 1; }
-  .trend-summary { grid-template-columns: 1fr; }
+  .period-switch { max-width: 100%; }
+  .trend-summary { grid-template-columns: 1fr; gap: 10px; }
+  .trend-summary > div, .trend-summary > div:first-child { padding: 0; }
+  .trend-summary > div + div { border-left: 0; }
+}
+@media (max-width: 560px) {
+  .dashboard-group-heading { display: block; }
+  .dashboard-group-heading p { margin-top: 3px; }
+  .trend-shell { padding-inline: 14px; }
 }
 @media (max-width: 640px) {
   .health-row { grid-template-columns: minmax(0, 1fr) auto auto; }
