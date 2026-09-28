@@ -3276,7 +3276,7 @@ paths:
                   - $ref: "#/components/schemas/ApiResponse"
                   - properties:
                       data: { $ref: "#/components/schemas/OrderPreview" }
-        "400": { description: Invalid recipient, target or SKU }
+        "400": { description: "Invalid recipient, target or SKU" }
         "403": { description: Current active administrator required }
   /api/v1/admin/orders:
     post:
