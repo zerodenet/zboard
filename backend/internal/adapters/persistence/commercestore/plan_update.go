@@ -21,7 +21,7 @@ func (s PlanUpdate) Update(ctx context.Context, actor, id uint, request commerce
 			return err
 		}
 		var current model.Plan
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, id).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("archived_at IS NULL").First(&current, id).Error; err != nil {
 			return resourceError(err)
 		}
 		candidate, fields, err := commerce.ApplyPlanUpdate(planView(current), request)
@@ -58,7 +58,7 @@ func (s PlanUpdate) Update(ctx context.Context, actor, id uint, request commerce
 		if err := tx.Create(&model.AuditLog{UserID: &user.ID, Actor: user.Email, Action: "plan.update", Target: fmt.Sprintf("plan:%d", id), Detail: fmt.Sprintf("fields=%d node_group=%d revision=%d", len(fields)-1, candidate.NodeGroupID, candidate.Revision)}).Error; err != nil {
 			return err
 		}
-		if err := tx.Preload("SKUs").First(&updated, id).Error; err != nil {
+		if err := tx.Preload("SKUs", "archived_at IS NULL").First(&updated, id).Error; err != nil {
 			return err
 		}
 		out = planView(updated)

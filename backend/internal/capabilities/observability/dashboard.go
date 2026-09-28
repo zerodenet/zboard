@@ -23,8 +23,11 @@ type DashboardBusiness struct {
 	PreviousRevenueCents     int64  `json:"previous_revenue_cents"`
 	PaidOrders               int64  `json:"paid_orders"`
 	PreviousPaidOrders       int64  `json:"previous_paid_orders"`
+	NewUsers                 int64  `json:"new_users"`
+	PreviousNewUsers         int64  `json:"previous_new_users"`
 	NewOrders                int64  `json:"new_orders"`
 	RenewOrders              int64  `json:"renew_orders"`
+	PreviousRenewOrders      int64  `json:"previous_renew_orders"`
 	NewSubscriptions         int64  `json:"new_subscriptions"`
 	PreviousNewSubscriptions int64  `json:"previous_new_subscriptions"`
 	ActiveSubscriptions      int64  `json:"active_subscriptions"`
@@ -34,11 +37,12 @@ type DashboardBusiness struct {
 }
 
 type DashboardService struct {
-	ActiveSubscriptions *int64 `json:"active_subscriptions"`
-	ActiveFlows         *int64 `json:"active_flows"`
-	TrafficBytes        int64  `json:"traffic_bytes"`
-	OnlineNodes         int64  `json:"online_nodes"`
-	EnabledNodes        int64  `json:"enabled_nodes"`
+	ActiveSubscriptions  *int64 `json:"active_subscriptions"`
+	ActiveFlows          *int64 `json:"active_flows"`
+	TrafficBytes         int64  `json:"traffic_bytes"`
+	PreviousTrafficBytes int64  `json:"previous_traffic_bytes"`
+	OnlineNodes          int64  `json:"online_nodes"`
+	EnabledNodes         int64  `json:"enabled_nodes"`
 }
 
 type DashboardSubscriptionHealth struct {
@@ -121,6 +125,31 @@ type DashboardTotals struct {
 type DashboardRepository interface {
 	LoadDashboard(context.Context, DashboardPeriod, time.Time, []DashboardTrendBucket) (DashboardSnapshot, error)
 	LoadDashboardTotals(context.Context, time.Time) (DashboardTotals, error)
+	LoadTrafficRankings(context.Context, DashboardPeriod, ...string) (DashboardTrafficRankings, error)
+}
+
+type DashboardTrafficRanking struct {
+	ID                   uint   `json:"id"`
+	Name                 string `json:"name"`
+	TrafficBytes         int64  `json:"traffic_bytes"`
+	PreviousTrafficBytes int64  `json:"previous_traffic_bytes"`
+}
+
+type DashboardTrafficRankings struct {
+	Period DashboardPeriod           `json:"period"`
+	Nodes  []DashboardTrafficRanking `json:"nodes"`
+	Users  []DashboardTrafficRanking `json:"users"`
+	AsOf   time.Time                 `json:"as_of"`
+}
+
+func (s Dashboard) Rankings(ctx context.Context, period DashboardPeriod, dimension ...string) (DashboardTrafficRankings, error) {
+	if s.Repository == nil || period.From.IsZero() || period.To.Before(period.From) || period.PreviousFrom.IsZero() || period.PreviousTo.Before(period.PreviousFrom) {
+		return DashboardTrafficRankings{}, ErrDashboardInvalid
+	}
+	if len(dimension) > 1 || (len(dimension) == 1 && dimension[0] != "" && dimension[0] != "nodes" && dimension[0] != "users") {
+		return DashboardTrafficRankings{}, ErrDashboardInvalid
+	}
+	return s.Repository.LoadTrafficRankings(ctx, period, dimension...)
 }
 
 type Dashboard struct{ Repository DashboardRepository }

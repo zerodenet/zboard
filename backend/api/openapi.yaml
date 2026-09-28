@@ -2433,6 +2433,10 @@ paths:
           in: query
           schema:
             type: boolean
+        - name: email_verified
+          in: query
+          description: Filter by whether an email verification timestamp exists.
+          schema: { type: boolean }
         - name: q
           in: query
           schema:
@@ -3119,6 +3123,16 @@ paths:
                       data: { $ref: "#/components/schemas/PlanSKUPage" }
         "404": { $ref: "#/components/responses/Error" }
   /api/v1/admin/plans/{id}:
+    delete:
+      tags: [plans, admin]
+      summary: Delete a product and its sales specifications
+      description: Removes the entry from the catalog while preserving existing orders, commercial snapshots and subscriptions. Requires a current active administrator. Deleting the last purchasable SKU also moves its product to draft. Repeated deletion is idempotent.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Catalog entry deleted }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
     get:
       tags:
         - plans
@@ -3306,7 +3320,7 @@ paths:
       tags: [orders, admin]
       summary: List orders across all users
       parameters:
-        - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Match order/provider trade number, plan, SKU, channel or a numeric order/user/subscription ID." }
+        - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Match customer email, order/provider trade number, plan, SKU, channel or a numeric order/user/subscription ID." }
         - { name: status, in: query, schema: { type: string, enum: [attention, pending, paid, failed, canceled, success] }, description: "Use attention for the administrator work queue containing pending and failed orders." }
         - { name: order_type, in: query, schema: { type: string, enum: [new, renewal, upgrade, traffic_pack, traffic_reset] } }
         - { name: user_id, in: query, schema: { type: integer, format: int64 } }
@@ -3501,7 +3515,7 @@ paths:
       parameters:
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: Paged reads only. Search plan/SKU names or exact subscription ID before count and pagination; restricted to the authenticated owner. }
         - { name: subscription_id, in: query, schema: { type: integer, minimum: 1 }, description: Exact target lookup within the current user's subscriptions and all other filters; an unavailable target produces an empty result. }
-        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: "Read-only management filter applied before count and pagination. change/addon require effectively active subscriptions. manage also includes exhausted timed subscriptions before expiry; renew includes exhausted permanent subscriptions; reset accepts active or exhausted timed subscriptions before expiry with a base quota. Canceled subscriptions are excluded. This filter does not replace order authorization." }
+        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: "Read-only filter applied before count and pagination. Each operation requires a compatible active, unarchived SKU on a published product and an eligible subscription. manage requires at least one such operation. Renewable ended subscriptions remain renewal candidates strictly before the seven-day deadline; single-use nonrenewable instances are removed after their terminal summary is saved to orders. This filter does not replace order authorization." }
         - name: status
           in: query
           schema:
@@ -3528,7 +3542,7 @@ paths:
       tags: [subscriptions, admin]
       summary: List subscriptions across all users
       parameters:
-        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: Filter available targets for an entitlement operation before count and pagination. }
+        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: Filter targets with a compatible saleable SKU before count and pagination. }
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Match user email, plan, SKU or a numeric subscription/user/plan ID." }
         - { name: status, in: query, schema: { type: string, enum: [active, expired, canceled] } }
         - { name: quota, in: query, schema: { type: string, enum: [available, exhausted] } }
@@ -3576,7 +3590,7 @@ paths:
     put:
       tags: [subscriptions, admin]
       summary: Edit current-cycle quota and usage, and the reset quota
-      description: Requires the original values to detect concurrent usage or reset. Preserves traffic records, plan and expiry; atomically audits the change, restores or suspends credentials and queues node publication. Retry with the same idempotency key and payload.
+      description: Applies only supplied fields to the latest locked subscription, after any due reset. Omitted fields retain current values; legacy expected_* fields are accepted and ignored. Preserves traffic records, plan and expiry; atomically audits the change, restores or suspends credentials and queues node publication. Retry with the same idempotency key and payload.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       requestBody:
@@ -3586,14 +3600,18 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [flow_total, flow_used, reset_quota_bytes, expected_flow_total, expected_flow_used, expected_reset_quota_bytes, reason, idempotency_key]
+              required: [reason, idempotency_key]
+              anyOf:
+                - required: [flow_total]
+                - required: [flow_used]
+                - required: [reset_quota_bytes]
               properties:
                 flow_total: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
                 flow_used: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
                 reset_quota_bytes: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
-                expected_flow_total: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
-                expected_flow_used: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
-                expected_reset_quota_bytes: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                expected_flow_total: { deprecated: true, type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                expected_flow_used: { deprecated: true, type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                expected_reset_quota_bytes: { deprecated: true, type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
                 reason: { type: string, minLength: 3, maxLength: 255 }
                 idempotency_key: { type: string, minLength: 1, maxLength: 128 }
       responses:
@@ -4356,6 +4374,16 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "428": { $ref: "#/components/responses/Error" }
   /api/v1/admin/plan-skus/{id}:
+    delete:
+      tags: [plans, admin]
+      summary: Delete a sales specification
+      description: Removes the entry from the catalog while preserving existing orders, commercial snapshots and subscriptions. Requires a current active administrator. Deleting the last purchasable SKU also moves its product to draft. Repeated deletion is idempotent.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Catalog entry deleted }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
     get:
       tags: [plans]
       summary: Get one sales specification for editing
@@ -4653,6 +4681,45 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/DashboardMetrics"
+  /api/v1/admin/dashboard/overview:
+    get:
+      tags: [admin]
+      summary: Read period metrics and comparable previous period
+      description: Administrator only. Calendar boundaries use the configured system timezone. Today compares the same elapsed portion of yesterday; 7d and 30d compare the selected window shifted back by 7 and 30 calendar days. Traffic uses billed bytes, not wire bytes.
+      parameters:
+        - {name: range, in: query, schema: {type: string, enum: [today, 7d, 30d, month], default: 7d}}
+      responses:
+        '200':
+          description: Current period facts
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiResponse'}
+                  - {type: object, properties: {data: {$ref: '#/components/schemas/DashboardOverview'}}}
+        '400': {description: Invalid range}
+        '401': {description: Authentication required}
+        '403': {description: Administrator required}
+  /api/v1/admin/dashboard/traffic-rankings:
+    get:
+      tags: [admin]
+      summary: Read top ten nodes and users with comparable previous traffic
+      description: Administrator only. Calendar boundaries use the configured system timezone. Today compares the same elapsed portion of yesterday; 7d and 30d compare the selected window shifted back by 7 and 30 calendar days. Traffic uses billed bytes, not wire bytes.
+      parameters:
+        - {name: range, in: query, schema: {type: string, enum: [today, 7d, 30d, month], default: 7d}}
+        - {name: dimension, in: query, description: Select one dimension or omit for both, schema: {type: string, enum: [nodes, users]}}
+      responses:
+        '200':
+          description: Current period facts
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiResponse'}
+                  - {type: object, properties: {data: {$ref: '#/components/schemas/DashboardTrafficRankings'}}}
+        '400': {description: Invalid range}
+        '401': {description: Authentication required}
+        '403': {description: Administrator required}
   /api/v1/admin/audit-logs:
     get:
       tags:
@@ -5985,6 +6052,18 @@ components:
       type: object
       required: [traffic_bytes, id, name, slug, summary, node_group_id, is_active, sort_order, revision, sku_count, active_sku_count, created_at, updated_at]
       properties:
+        sales_options:
+          type: array
+          description: Available operations and price ranges from published, active, non-archived SKUs; renewal also requires a renewable plan.
+          items:
+            type: object
+            required: [operation, currency, min_price_cents, max_price_cents]
+            properties:
+              operation: {type: string, enum: [purchase, renew, change, addon, reset]}
+              currency: {type: string}
+              min_price_cents: {type: integer, format: int64}
+              max_price_cents: {type: integer, format: int64}
+
         traffic_bytes: { type: integer, format: int64, description: Traffic quota in bytes }
         id: { type: integer, format: int64 }
         name: { type: string }
@@ -6641,6 +6720,7 @@ components:
         id:
           type: integer
           format: int64
+        user_email: { type: string, format: email, description: Present on administrative lists only; omitted for missing users. }
         user_id:
           type: integer
           format: int64
@@ -6675,6 +6755,10 @@ components:
           type: string
         plan_name: { type: string }
         sku_name: { type: string }
+        subscription_ended_at: { type: string, format: date-time, nullable: true, readOnly: true }
+        subscription_end_reason: { type: string, enum: [expired, exhausted], readOnly: true }
+        subscription_final_flow_total: { type: integer, format: int64, readOnly: true }
+        subscription_final_flow_used: { type: integer, format: int64, readOnly: true }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     AdminOrderDetail:
@@ -6751,7 +6835,12 @@ components:
           type: string
         status:
           type: string
-          description: Lifecycle status. Active unexpired subscriptions remain active when traffic is exhausted.
+          description: Lifecycle status. Monthly reset-cycle exhaustion does not end an unexpired service. Single-use quota exhaustion ends the service; expired renewable services stop access but may renew for seven days.
+        lifecycle: { type: string, enum: [renewable, fixed], description: Renewal support captured when the entitlement is granted. }
+        ends_on_quota_exhaustion: { type: boolean, description: Single-use entitlement ends when its quota is consumed. }
+        ended_at: { type: string, format: date-time, nullable: true }
+        end_reason: { type: string, enum: [expired, exhausted] }
+        renewal_until: { type: string, format: date-time, nullable: true, readOnly: true, description: Exclusive seven-day renewal deadline for an ended renewable entitlement. }
         quota_status: { type: string, enum: [available, exhausted] }
         reset_quota_bytes: { type: integer, format: int64, description: Base quota restored by scheduled or purchased traffic resets. }
         flow_total:
@@ -6789,6 +6878,10 @@ components:
             user_email: { type: string, format: email }
             plan_name: { type: string }
             sku_name: { type: string }
+            can_renew: { type: boolean, readOnly: true, description: Eligible subscription with a saleable renewal SKU and renewable product. }
+            can_change: { type: boolean, readOnly: true, description: Eligible subscription with a saleable timed plan-change SKU on another product. }
+            can_addon: { type: boolean, readOnly: true, description: Eligible subscription with a saleable traffic-addon SKU on its product. }
+            can_reset: { type: boolean, readOnly: true, description: Eligible timed subscription with a base quota and a saleable traffic-reset SKU on its product. }
     AdminSubscriptionDetail:
       allOf:
         - $ref: "#/components/schemas/AdminSubscriptionSummary"
@@ -7141,6 +7234,102 @@ components:
         idle: { type: integer }
         wait_count: { type: integer, format: int64 }
         wait_seconds: { type: number, description: Cumulative connection-wait time; concurrent waits can exceed wall-clock duration. }
+    DashboardPeriod:
+      type: object
+      properties:
+        range: {type: string, enum: [today, 7d, 30d, month]}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        previous_from: {type: string, format: date-time}
+        previous_to: {type: string, format: date-time}
+        bucket: {type: string, enum: [hour, day]}
+        timezone: {type: string}
+    DashboardTrafficRanking:
+      type: object
+      required: [id, name, traffic_bytes, previous_traffic_bytes]
+      properties:
+        id: {type: integer, minimum: 1}
+        name: {type: string}
+        traffic_bytes: {type: integer, format: int64}
+        previous_traffic_bytes: {type: integer, format: int64}
+    DashboardTrafficRankings:
+      type: object
+      properties:
+        period: {$ref: '#/components/schemas/DashboardPeriod'}
+        nodes: {type: array, maxItems: 10, items: {$ref: '#/components/schemas/DashboardTrafficRanking'}}
+        users: {type: array, maxItems: 10, items: {$ref: '#/components/schemas/DashboardTrafficRanking'}}
+        as_of: {type: string, format: date-time}
+    DashboardOverview:
+      type: object
+      properties:
+        period: {$ref: '#/components/schemas/DashboardPeriod'}
+        as_of: {type: string, format: date-time}
+        business:
+          type: object
+          properties:
+            revenue_cents: {type: integer, format: int64}
+            previous_revenue_cents: {type: integer, format: int64}
+            paid_orders: {type: integer, format: int64}
+            previous_paid_orders: {type: integer, format: int64}
+            new_users: {type: integer, format: int64}
+            previous_new_users: {type: integer, format: int64}
+            new_orders: {type: integer, format: int64}
+            renew_orders: {type: integer, format: int64}
+            previous_renew_orders: {type: integer, format: int64}
+            new_subscriptions: {type: integer, format: int64}
+            previous_new_subscriptions: {type: integer, format: int64}
+            active_subscriptions: {type: integer, format: int64}
+            expiring_within_3d: {type: integer, format: int64}
+            currency: {type: string}
+            mixed_currency: {type: boolean}
+        service:
+          type: object
+          properties:
+            traffic_bytes: {type: integer, format: int64}
+            previous_traffic_bytes: {type: integer, format: int64}
+            active_subscriptions: {type: integer, format: int64, nullable: true}
+            active_flows: {type: integer, format: int64, nullable: true}
+            online_nodes: {type: integer, format: int64}
+            enabled_nodes: {type: integer, format: int64}
+        subscriptions:
+          type: object
+          properties:
+            expiring_within_24h: {type: integer, format: int64}
+            expiring_within_3d: {type: integer, format: int64}
+            expiring_within_7d: {type: integer, format: int64}
+            quota_exhausted: {type: integer, format: int64}
+        attention:
+          type: object
+          properties:
+            nodes_offline: {type: integer, format: int64}
+            deployments_unresolved: {type: integer, format: int64}
+            tickets_pending: {type: integer, format: int64}
+        infrastructure:
+          type: object
+          properties:
+            nodes_total: {type: integer, format: int64}
+            nodes_enabled: {type: integer, format: int64}
+            connector_online: {type: integer, format: int64}
+            ssh_verified: {type: integer, format: int64}
+            traffic_ready: {type: integer, format: int64}
+            protocol_endpoints: {type: integer, format: int64}
+            active_protocol_endpoints: {type: integer, format: int64}
+            published_plans: {type: integer, format: int64}
+            unresolved_deployments: {type: integer, format: int64}
+        coverage:
+          type: object
+          properties:
+            principal_flows: {type: boolean}
+        trend:
+          type: array
+          items:
+            type: object
+            properties:
+              bucket_start: {type: string, format: date-time}
+              revenue_cents: {type: integer, format: int64}
+              paid_orders: {type: integer, format: int64}
+              new_orders: {type: integer, format: int64}
+              renew_orders: {type: integer, format: int64}
     DashboardMetrics:
       type: object
       properties:

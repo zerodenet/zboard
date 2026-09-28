@@ -64,25 +64,26 @@ type LegacySKURequest struct {
 }
 
 type SKU struct {
-	ID              uint      `json:"id"`
-	PlanID          uint      `json:"plan_id"`
-	Code            string    `json:"code"`
-	Name            string    `json:"name"`
-	SKUType         string    `json:"sku_type"`
-	BillingMode     string    `json:"billing_mode"`
-	EntitlementMode string    `json:"entitlement_mode"`
-	RenewalEffect   string    `json:"renewal_effect"`
-	BillingUnit     string    `json:"billing_unit"`
-	BillingValue    int       `json:"billing_value"`
-	PriceCents      int64     `json:"price_cents"`
-	Currency        string    `json:"currency"`
-	TrafficBytes    int64     `json:"-"`
-	DeviceLimit     int       `json:"-"`
-	SpeedLimitMbps  int       `json:"-"`
-	IsActive        bool      `json:"is_active"`
-	SortOrder       int       `json:"sort_order"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              uint       `json:"id"`
+	PlanID          uint       `json:"plan_id"`
+	Code            string     `json:"code"`
+	Name            string     `json:"name"`
+	SKUType         string     `json:"sku_type"`
+	BillingMode     string     `json:"billing_mode"`
+	EntitlementMode string     `json:"entitlement_mode"`
+	RenewalEffect   string     `json:"renewal_effect"`
+	BillingUnit     string     `json:"billing_unit"`
+	BillingValue    int        `json:"billing_value"`
+	PriceCents      int64      `json:"price_cents"`
+	Currency        string     `json:"currency"`
+	TrafficBytes    int64      `json:"-"`
+	DeviceLimit     int        `json:"-"`
+	SpeedLimitMbps  int        `json:"-"`
+	IsActive        bool       `json:"is_active"`
+	SortOrder       int        `json:"sort_order"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	ArchivedAt      *time.Time `json:"-"`
 }
 
 type NormalizedSKU struct {

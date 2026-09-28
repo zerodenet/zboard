@@ -24,7 +24,7 @@ func (s PlanListing) list(ctx context.Context, actor uint, q commerce.PlanListQu
 				return err
 			}
 		}
-		query := tx.Model(&model.Plan{})
+		query := tx.Model(&model.Plan{}).Where("plans.archived_at IS NULL")
 		if q.PlanID > 0 {
 			query = query.Where("plans.id = ?", q.PlanID)
 		}
@@ -57,7 +57,7 @@ func (s PlanListing) list(ctx context.Context, actor uint, q commerce.PlanListQu
 				if public || q.Operation != "" {
 					db = db.Where("is_active = ?", true).Where("EXISTS (SELECT 1 FROM plan_sku_operations WHERE plan_sku_operations.plan_sku_id = plan_skus.id AND plan_sku_operations.operation = ?)", operation)
 				}
-				return db.Order("sort_order asc, id asc")
+				return db.Where("archived_at IS NULL").Order("sort_order asc, id asc")
 			})
 		} else {
 			query = query.Offset(q.Offset).Limit(q.Limit)

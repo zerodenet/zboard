@@ -22,49 +22,43 @@ func (s CredentialExpiry) ExpireDueCredentials(ctx context.Context, now time.Tim
 	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var subscriptions []model.Subscription
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
-			Where("status = ? AND end_at <= ?", "active", now).
-			Order("end_at asc, id asc").Limit(limit).Find(&subscriptions).Error; err != nil {
+		if err := subscriptionLifecycleDue(tx.Clauses(clause.Locking{Strength: "UPDATE"}), now).Order("id asc").Limit(limit).Find(&subscriptions).Error; err != nil {
 			return err
 		}
-		if len(subscriptions) == 0 {
-			return nil
-		}
-		ids := make([]uint, 0, len(subscriptions))
-		for _, subscription := range subscriptions {
-			ids = append(ids, subscription.ID)
-		}
-		if err := tx.Model(&model.Subscription{}).
-			Where("id IN ? AND status = ? AND end_at <= ?", ids, "active", now).
-			Updates(map[string]any{"status": "expired", "updated_at": now}).Error; err != nil {
-			return err
-		}
-		var credentials []model.ProtocolCredential
-		if err := tx.Where("status IN ? AND subscription_id IN ?", []string{"active", "prepared"}, ids).Find(&credentials).Error; err != nil {
-			return err
-		}
-		if len(credentials) == 0 {
-			return nil
-		}
-		seen := map[uint]struct{}{}
-		credentialIDs := make([]uint, 0, len(credentials))
-		out = make([]entitlements.ExpiredCredential, 0, len(credentials))
-		for _, credential := range credentials {
-			credentialIDs = append(credentialIDs, credential.ID)
-			out = append(out, entitlements.ExpiredCredential{
-				ID: credential.ID, SubscriptionID: credential.SubscriptionID, NodeID: credential.NodeID,
-				ProtocolEndpointID: credential.ProtocolEndpointID,
-			})
-			if _, ok := seen[credential.NodeID]; ok {
-				continue
-			}
-			seen[credential.NodeID] = struct{}{}
-			if err := s.Publish(tx, credential.NodeID, credential.ProtocolEndpointID, 0); err != nil {
+		for _, sub := range subscriptions {
+			if err := endSubscription(tx, &sub, now); err != nil {
 				return err
 			}
+			deadline := entitlements.RenewalDeadline(entitlements.Subscription(sub), now)
+			cleanup := deadline == nil || !deadline.After(now)
+			var credentials []model.ProtocolCredential
+			query := tx.Where("subscription_id = ?", sub.ID)
+			if !cleanup {
+				query = query.Where("status IN ?", []string{"active", "prepared"})
+			}
+			if err := query.Find(&credentials).Error; err != nil {
+				return err
+			}
+			seen := map[uint]bool{}
+			for _, credential := range credentials {
+				out = append(out, entitlements.ExpiredCredential{ID: credential.ID, SubscriptionID: sub.ID, NodeID: credential.NodeID, ProtocolEndpointID: credential.ProtocolEndpointID})
+				if !seen[credential.NodeID] {
+					if err := s.Publish(tx, credential.NodeID, credential.ProtocolEndpointID, 0); err != nil {
+						return err
+					}
+					seen[credential.NodeID] = true
+				}
+			}
+			if err := tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ? AND status IN ?", sub.ID, []string{"active", "prepared"}).Updates(map[string]any{"status": "expired", "updated_at": now}).Error; err != nil {
+				return err
+			}
+			if cleanup {
+				if err := retireSubscription(tx, sub, now); err != nil {
+					return err
+				}
+			}
 		}
-		return tx.Model(&model.ProtocolCredential{}).Where("id IN ?", credentialIDs).
-			Updates(map[string]any{"status": "expired", "updated_at": now}).Error
+		return nil
 	})
 	return
 }
@@ -74,8 +68,8 @@ func (s CredentialExpiry) HasDueCredentials(ctx context.Context, now time.Time) 
 		return false, entitlements.ErrCredentialExpiryUnavailable
 	}
 	var id uint
-	err := s.DB.WithContext(ctx).Model(&model.Subscription{}).
-		Select("id").Where("status = ? AND end_at <= ?", "active", now).Limit(1).Scan(&id).Error
+	query := s.DB.WithContext(ctx).Model(&model.Subscription{}).Select("id").Limit(1)
+	err := subscriptionLifecycleDue(query, now).Scan(&id).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, err
 	}

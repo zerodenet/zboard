@@ -8,7 +8,7 @@ export const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 const tokenKey = 'zboard.auth.token'
 export const MAINTENANCE_STATE_EVENT = 'zboard:maintenance-state'
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: API_BASE,
   timeout: 30_000
 })
@@ -1153,7 +1153,15 @@ export interface PlanSKU {
   updated_at: string
 }
 
+export interface PlanSalesOption {
+  operation: 'purchase' | 'renew' | 'change' | 'addon' | 'reset'
+  currency: string
+  min_price_cents: number
+  max_price_cents: number
+}
+
 export interface PlanSummary {
+  sales_options?: PlanSalesOption[]
   traffic_bytes: number
   id: number
   name: string
@@ -1294,6 +1302,11 @@ export async function fetchOrders(params: { status?: string; userId?: number } =
 }
 
 export interface AdminOrderListItem {
+  user_email?: string
+  subscription_ended_at?: string | null
+  subscription_end_reason?: 'expired' | 'exhausted'
+  subscription_final_flow_total?: number
+  subscription_final_flow_used?: number
   payable_amount?: number
   id: number
   user_id: number
@@ -1428,6 +1441,15 @@ export async function fetchSubscriptions(params: { userId?: number; status?: str
 }
 
 export interface AdminSubscriptionListItem {
+  lifecycle?: 'renewable' | 'fixed'
+  ends_on_quota_exhaustion?: boolean
+  ended_at?: string | null
+  end_reason?: 'expired' | 'exhausted'
+  renewal_until?: string | null
+  can_renew?: boolean
+  can_change?: boolean
+  can_addon?: boolean
+  can_reset?: boolean
   quota_status?: 'available' | 'exhausted'
   reset_quota_bytes?: number
   reset_policy?: number
@@ -1486,12 +1508,9 @@ export async function fetchAccountSubscriptionsPage(params: { status?: string; o
 }
 
 export interface SubscriptionQuotaUpdate {
-  flow_total: number
-  flow_used: number
-  reset_quota_bytes: number
-  expected_flow_total: number
-  expected_flow_used: number
-  expected_reset_quota_bytes: number
+  flow_total?: number
+  flow_used?: number
+  reset_quota_bytes?: number
   reason: string
   idempotency_key: string
 }
@@ -1979,11 +1998,12 @@ export interface AdminUserDetail extends AdminUserListItem {
   updated_at: string
 }
 
-export async function fetchUsersPage(params: { q?: string; status?: string; isAdmin?: boolean; sort?: 'id' | 'email' | 'created_at'; direction?: 'asc' | 'desc'; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminUserListItem>> {
+export async function fetchUsersPage(params: { q?: string; status?: string; isAdmin?: boolean; emailVerified?: boolean; sort?: 'id' | 'email' | 'created_at'; direction?: 'asc' | 'desc'; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminUserListItem>> {
   const query = new URLSearchParams()
   appendPageParams(query, params)
   if (params.status) query.set('status', params.status)
   if (params.isAdmin !== undefined) query.set('is_admin', String(params.isAdmin))
+  if (params.emailVerified !== undefined) query.set('email_verified', String(params.emailVerified))
   if (params.sort) query.set('sort', params.sort)
   if (params.direction) query.set('direction', params.direction)
   const response = await api.get(`/admin/users?${query}`, { signal: options.signal })
@@ -2456,4 +2476,11 @@ export interface MailDeliveryAttempt { id: number; attempt: number; acceptance: 
 export async function fetchMailDeliveryHistory(taskID: number, itemID: number, offset = 0, signal?: AbortSignal): Promise<PageResult<MailDeliveryAttempt>> {
  const response = await api.get(`/admin/tasks/${taskID}/items/${itemID}/attempts`, { params: { offset, limit: 25 }, signal })
  return normalizePageResult<MailDeliveryAttempt>(unwrap(response), offset, 25)
+}
+
+export async function deletePlan(id: number): Promise<void> {
+  await api.delete(`/admin/plans/${id}`)
+}
+export async function deletePlanSKU(id: number): Promise<void> {
+  await api.delete(`/admin/plan-skus/${id}`)
 }

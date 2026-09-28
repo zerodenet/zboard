@@ -39,7 +39,7 @@ func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
 	paidAt, previousPaidAt := now.Add(-time.Hour), now.Add(-25*time.Hour)
 	orders := []model.Order{
 		{TradeNo: "current", Status: "paid", PaidAt: &paidAt, PaidAmount: 120, Currency: "cny", OrderType: "new"},
-		{TradeNo: "previous", Status: "paid", PaidAt: &previousPaidAt, PaidAmount: 70, Currency: "USD", OrderType: "renew"},
+		{TradeNo: "previous", Status: "paid", PaidAt: &previousPaidAt, PaidAmount: 70, Currency: "USD", OrderType: "renewal"},
 	}
 	if err := db.Create(&orders).Error; err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
 	if err := db.Create(&nodes).Error; err != nil {
 		t.Fatal(err)
 	}
-	user := model.User{Email: "dashboard@example.test", Password: "unused", Status: "active"}
+	user := model.User{Email: "dashboard@example.test", Password: "unused", Status: "active", CreatedAt: paidAt}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -90,6 +90,9 @@ func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
 	result, err := (observability.Dashboard{Repository: Dashboard{DB: counted}}).Load(context.Background(), period, now, buckets)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if result.Business.NewUsers != 1 || result.Business.PreviousNewUsers != 0 || result.Business.PreviousRenewOrders != 1 {
+		t.Fatalf("comparison facts = %+v", result.Business)
 	}
 	if got := counter.queries.Load(); got != 4 {
 		t.Fatalf("dashboard used %d queries, want 4", got)

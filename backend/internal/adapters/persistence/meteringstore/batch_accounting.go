@@ -3,6 +3,7 @@ package meteringstore
 import (
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -140,6 +141,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 			subscription.FlowUsed = subscription.FlowTotal
 			result.Exhausted = true
 		}
+		*subscription = model.Subscription(entitlements.RecordQuotaExhaustion(entitlements.Subscription(*subscription), now))
 		batch.dirtySubscriptions[subscription.ID] = now
 	}
 

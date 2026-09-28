@@ -2,6 +2,7 @@ package commercestore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
@@ -38,6 +39,10 @@ func (s OrderAccess) Read(ctx context.Context, actor, id uint) (entitlements.Acc
 		}
 		var subscription model.Subscription
 		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("id = ? AND user_id = ?", order.SubscriptionID, order.UserID).First(&subscription).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) && order.SubscriptionEndedAt != nil {
+				view.Notice = "原订阅已结束并清理，结束状态可在订单历史中查看。"
+				return nil
+			}
 			return err
 		}
 		view.Notice = "客户或订阅已停用、到期或流量耗尽，暂不能获取订阅地址。"

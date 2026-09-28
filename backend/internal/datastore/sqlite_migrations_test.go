@@ -77,6 +77,51 @@ func TestSQLiteMigrationInventoryHasNoDuplicates(t *testing.T) {
 	}
 }
 
+func TestSQLiteCatalogArchiveUpgradePreservesDataAndResumes(t *testing.T) {
+	db, err := OpenWithDriver(DriverSQLite, filepath.Join(t.TempDir(), "catalog-upgrade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, _ := db.DB()
+	defer pool.Close()
+	if err := RunMigrations(db); err != nil {
+		t.Fatal(err)
+	}
+	group := model.NodeGroup{Name: "Catalog", Code: "catalog"}
+	if err := db.Create(&group).Error; err != nil {
+		t.Fatal(err)
+	}
+	plan := model.Plan{Name: "Existing", Slug: "existing", NodeGroupID: group.ID}
+	if err := db.Create(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	sku := model.PlanSKU{PlanID: plan.ID, Code: "existing-month", Name: "Month", BillingUnit: "month", BillingValue: 1, Currency: "CNY"}
+	if err := db.Create(&sku).Error; err != nil {
+		t.Fatal(err)
+	}
+	// One column present models an interrupted additive upgrade.
+	if err := db.Exec("ALTER TABLE plan_skus DROP COLUMN archived_at").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version = '0022_catalog_archive.up.sql'").Error; err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := RunMigrations(db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, table := range []string{"plans", "plan_skus"} {
+		if !db.Migrator().HasColumn(table, "archived_at") {
+			t.Fatal("missing archive column", table)
+		}
+	}
+	var preserved model.PlanSKU
+	if err := db.First(&preserved, sku.ID).Error; err != nil || preserved.Code != sku.Code || preserved.ArchivedAt != nil {
+		t.Fatal("existing catalog changed", preserved, err)
+	}
+}
+
 func TestSQLiteJobTimeoutUpgradePreservesLegacyRunsAndIsRepeatable(t *testing.T) {
 	db, err := OpenWithDriver(DriverSQLite, filepath.Join(t.TempDir(), "upgrade.db"))
 	if err != nil {
@@ -252,5 +297,56 @@ func TestSQLiteEndpointUsageUpgradeBackfillsLedgerAndIsRepeatable(t *testing.T) 
 	}
 	if row.UsedBytes != 41 || row.RawBytes != 43 || row.RecordCount != 1 || !strings.HasPrefix(row.UsageDate, "2026-09-17") {
 		t.Fatal(row)
+	}
+}
+
+func TestSQLiteLifecycleUpgradeBackfillsLegacyPolicyOnlyOnce(t *testing.T) {
+	db, err := OpenWithDriver(DriverSQLite, filepath.Join(t.TempDir(), "lifecycle-upgrade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, _ := db.DB()
+	t.Cleanup(func() { pool.Close() })
+	if err := RunMigrations(db); err != nil {
+		t.Fatal(err)
+	}
+	group := model.NodeGroup{Name: "Lifecycle", Code: "lifecycle", IsEnabled: true}
+	if err := db.Create(&group).Error; err != nil {
+		t.Fatal(err)
+	}
+	plan := model.Plan{Name: "Once", Slug: "once", NodeGroupID: group.ID}
+	if err := db.Create(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	db.Model(&plan).Update("is_renewable", false)
+	sku := model.PlanSKU{PlanID: plan.ID, Code: "once", Name: "Once", BillingUnit: "once", BillingValue: 1, Currency: "CNY"}
+	if err := db.Create(&sku).Error; err != nil {
+		t.Fatal(err)
+	}
+	sub := model.Subscription{PlanID: plan.ID, PlanSKUID: sku.ID, NodeGroupID: group.ID, Status: "active", ResetPolicy: 5, EndAt: time.Now().UTC().Add(time.Hour), FlowTotal: 100}
+	if err := db.Create(&sub).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version = '0023_subscription_lifecycle.up.sql'").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("ALTER TABLE subscriptions DROP COLUMN lifecycle").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := RunMigrations(db); err != nil {
+		t.Fatal(err)
+	}
+	var upgraded model.Subscription
+	if err := db.First(&upgraded, sub.ID).Error; err != nil || upgraded.Lifecycle != "fixed" || !upgraded.EndsOnQuotaExhaustion || upgraded.EndedAt != nil {
+		t.Fatal(upgraded, err)
+	}
+	db.Model(&plan).Update("is_renewable", true)
+	db.Create(&model.PlanSKUOperation{PlanSKUID: sku.ID, Operation: "renew"})
+	if err := RunMigrations(db); err != nil {
+		t.Fatal(err)
+	}
+	upgraded = model.Subscription{}
+	if err := db.First(&upgraded, sub.ID).Error; err != nil || upgraded.Lifecycle != "fixed" {
+		t.Fatal("policy changed on repeat migration", upgraded, err)
 	}
 }

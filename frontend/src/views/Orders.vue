@@ -8,17 +8,19 @@
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
-        <WorkbenchFilterBar :active="hasFilters" @clear="clearFilters">
-          <WorkbenchFilterInput v-model="queryFilter" label="搜索" maxlength="128" placeholder="订单号、交易号、套餐或渠道" @apply="applyFilters" />
+        <WorkbenchFilterBar :active="hasFilters" :active-count="activeFilterCount" :advanced-count="advancedFilterCount" :loading="loading" @clear="clearFilters">
+          <WorkbenchFilterInput v-model="queryFilter" label="搜索" maxlength="128" placeholder="订单号、邮箱、套餐或渠道" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="statusFilter" label="订单状态" :options="statusOptions" @apply="applyFilters" />
+          <template #advanced>
           <WorkbenchFilterSelect v-model="orderTypeFilter" label="订单类型" :options="orderTypeOptions" @apply="applyFilters" />
           <WorkbenchFilterInput v-model="userFilter" label="用户 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
           <WorkbenchFilterDate v-model:from="createdFrom" v-model:to="createdTo" label="创建日期" @apply="applyFilters" />
+          </template>
         </WorkbenchFilterBar>
       </template>
       <template #actions><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/plans')">管理商品<UiIcon name="chevron" /></RouterLink></template>
       <TableSkeleton v-if="loading && !orders.length" label="正在加载订单" :columns="7" />
-      <DataTable v-else-if="orders.length" caption="订单管理列表" :row-count="total" :min-width="980"><thead><tr><th class="table-primary-column">订单</th><th data-column-priority="3">用户</th><th data-column-priority="2">商品规格</th><th data-column-priority="1">应付金额</th><th>状态</th><th data-column-priority="2">创建时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="item in orders" :key="item.id"><td class="table-primary-column"><div class="cell-title"><strong>#{{ item.id }}</strong><TableText :value="item.trade_no" /></div></td><td class="mono" data-column-priority="3">#{{ item.user_id }}</td><td data-column-priority="2"><div class="cell-title cell-related"><TableText :value="item.plan_name || `套餐 #${item.plan_id}`" /><TableText :value="item.sku_name || `SKU #${item.plan_sku_id}`" /></div></td><td class="value-cell" data-column-priority="1">{{ formatCurrency(item.payable_amount ?? item.amount_cents, item.currency || 'CNY') }}</td><td><StatusBadge :tone="statusTone(item.status)">{{ statusName(item.status) }}</StatusBadge></td><td data-column-priority="2"><TimeBadge :value="item.created_at" /></td><td class="table-action-column"><RowActions :label="`订单 #${item.id} 的操作`" :trigger-key="`order-${item.id}`"><UiButton variant="secondary" size="sm" type="button" :data-order-detail-trigger="item.id" @click="openDetail(item.id)">查看详情</UiButton><UiButton v-if="item.status === 'paid' && item.subscription_id" variant="ghost" size="sm" @click="accessOrderID = item.id">复制订阅地址</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(item.user_id) })">用户订阅</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/users', { user: String(item.user_id) })">用户详情</RouterLink><UiButton v-if="item.status === 'pending'" variant="ghost" size="sm" type="button" @click="requestAction('cancel', item)">取消订单</UiButton><UiButton v-if="item.status === 'pending' || item.status === 'failed'" variant="ghost" size="sm" type="button" @click="requestAction('pay', item)">{{ item.status === 'failed' ? '重新确认收款' : '确认收款' }}</UiButton></RowActions></td></tr></tbody></DataTable>
+      <DataTable v-else-if="orders.length" caption="订单管理列表" :row-count="total" :min-width="980"><thead><tr><th class="table-primary-column">订单</th><th data-column-priority="3">用户</th><th data-column-priority="2">商品规格</th><th data-column-priority="1">应付金额</th><th>状态</th><th data-column-priority="2">创建时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="item in orders" :key="item.id"><td class="table-primary-column"><div class="cell-title"><strong>#{{ item.id }} · {{ orderTypeName(item.order_type) }}</strong><TableText :value="item.trade_no" /></div></td><td data-column-priority="3"><div class="cell-title cell-related"><RouterLink class="order-user-link" :title="item.user_email" :to="adminContextLink('/admin/users', { user: String(item.user_id) })">{{ item.user_email || `用户 #${item.user_id}` }}</RouterLink><span class="mono">#{{ item.user_id }}</span></div></td><td data-column-priority="2"><div class="cell-title cell-related"><TableText :value="item.plan_name || `套餐 #${item.plan_id}`" /><TableText :value="item.sku_name || `SKU #${item.plan_sku_id}`" /></div></td><td class="value-cell" data-column-priority="1">{{ formatCurrency(item.payable_amount ?? item.amount_cents, item.currency || 'CNY') }}</td><td><StatusBadge :tone="statusTone(item.status)">{{ statusName(item.status) }}</StatusBadge></td><td data-column-priority="2"><TimeBadge :value="item.created_at" /></td><td class="table-action-column"><RowActions :label="`订单 #${item.id} 的操作`" :trigger-key="`order-${item.id}`"><UiButton variant="secondary" size="sm" type="button" :data-order-detail-trigger="item.id" @click="openDetail(item.id)">查看详情</UiButton><UiButton v-if="item.status === 'paid' && item.subscription_id && !item.subscription_ended_at" variant="ghost" size="sm" @click="accessOrderID = item.id">复制订阅地址</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(item.user_id) })">用户订阅</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/users', { user: String(item.user_id) })">用户详情</RouterLink><UiButton v-if="item.status === 'pending'" variant="ghost" size="sm" type="button" @click="requestAction('cancel', item)">取消订单</UiButton><UiButton v-if="item.status === 'pending' || item.status === 'failed'" variant="ghost" size="sm" type="button" @click="requestAction('pay', item)">{{ item.status === 'failed' ? '重新确认收款' : '确认收款' }}</UiButton></RowActions></td></tr></tbody></DataTable>
       <EmptyState v-else icon="billing" title="没有匹配订单" description="调整状态或用户筛选条件。" />
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
@@ -49,6 +51,7 @@
           <div v-if="selectedOrder.assigned_by"><span>分配人</span><strong>#{{ selectedOrder.assigned_by }}</strong></div>
           <div v-if="selectedOrder.assignment_note"><span>分配原因</span><strong>{{ selectedOrder.assignment_note }}</strong></div>
           <div><span>渠道交易号</span><strong class="mono">{{ selectedOrder.provider_trade_no || '未生成' }}</strong></div>
+          <div v-if="selectedOrder.subscription_ended_at"><span>原订阅结束</span><strong>{{ selectedOrder.subscription_end_reason === 'exhausted' ? '已用完' : '已到期' }} · {{ formatBytes(selectedOrder.subscription_final_flow_used || 0) }} / {{ formatBytes(selectedOrder.subscription_final_flow_total || 0) }}</strong><TimeBadge :value="selectedOrder.subscription_ended_at" /></div>
           <div><span>关联订阅</span><strong class="mono">{{ selectedOrder.subscription_id ? `#${selectedOrder.subscription_id}` : '尚未创建' }}</strong></div>
           <div><span>目标订阅</span><strong class="mono">{{ selectedOrder.target_subscription_id ? `#${selectedOrder.target_subscription_id}` : '无' }}</strong></div>
           <div><span>计费周期</span><strong>{{ selectedOrder.order_type === 'traffic_reset' ? '一次性重置流量' : selectedOrder.order_type === 'traffic_pack' ? '一次性流量加购' : billingName(selectedOrder.billing_unit, selectedOrder.billing_value) }}</strong></div>
@@ -73,7 +76,7 @@
           <TablePager v-if="paymentEventTotal > paymentEventLimit" :total="paymentEventTotal" :offset="paymentEventOffset" :limit="paymentEventLimit" :loading="paymentEventLoading" @change="changePaymentEventPage" />
         </section>
         <div class="detail-action-row">
-          <UiButton v-if="selectedOrder.status === 'paid' && selectedOrder.subscription_id" variant="secondary" size="sm" @click="accessOrderID = selectedOrder.id">复制订阅地址</UiButton>
+          <UiButton v-if="selectedOrder.status === 'paid' && selectedOrder.subscription_id && !selectedOrder.subscription_ended_at" variant="secondary" size="sm" @click="accessOrderID = selectedOrder.id">复制订阅地址</UiButton>
           <RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedOrder.user_id), ...(selectedOrder.subscription_id ? { subscription: String(selectedOrder.subscription_id) } : {}) })">查看用户订阅</RouterLink>
           <RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/users', { user: String(selectedOrder.user_id) })">查看用户详情</RouterLink>
           <UiButton v-if="selectedOrder.status === 'pending'" variant="danger" size="sm" type="button" @click="requestAction('cancel', selectedOrder)">取消订单</UiButton>
@@ -171,6 +174,8 @@ const orderTypeOptions = [
   { label: '流量包', value: 'traffic_pack' },
   { label: '重置流量', value: 'traffic_reset' },
 ]
+const advancedFilterCount = computed(() => [orderTypeFilter.value, userFilter.value, createdFrom.value || createdTo.value].filter(Boolean).length)
+const activeFilterCount = computed(() => [queryFilter.value, statusFilter.value].filter(Boolean).length + advancedFilterCount.value)
 const hasFilters = computed(() => Boolean(queryFilter.value || statusFilter.value || orderTypeFilter.value || userFilter.value || createdFrom.value || createdTo.value))
 const { items: orders, total, loading, refreshing, error, load } = useRemoteTable<OrderItem>({
   offset,
@@ -236,4 +241,9 @@ onMounted(async () => { await load(); await syncDetailFromRoute() })
 <style scoped>
 .page-alert,.order-metrics { margin-bottom: 16px; }.count-label { color: var(--muted); font-size: 12px; }.toolbar select { min-width: 170px; }
 .toolbar .ui-select { min-width: 170px; }
+</style>
+
+<style scoped>
+.order-user-link { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.order-user-link:hover { color: var(--primary); }
 </style>

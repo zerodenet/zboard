@@ -23,15 +23,15 @@ func (s SKUUpdate) Update(ctx context.Context, actor, id uint, in commerce.Norma
 		}
 		// Read only parent identity before locking. SKU parentage is immutable.
 		var identity model.PlanSKU
-		if err := tx.Select("id", "plan_id").First(&identity, id).Error; err != nil {
+		if err := tx.Select("id", "plan_id").Where("archived_at IS NULL").First(&identity, id).Error; err != nil {
 			return resourceError(err)
 		}
 		var plan model.Plan
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "is_active").First(&plan, identity.PlanID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "is_active").Where("archived_at IS NULL").First(&plan, identity.PlanID).Error; err != nil {
 			return resourceError(err)
 		}
 		var existing model.PlanSKU
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND plan_id = ?", id, plan.ID).First(&existing).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND plan_id = ? AND archived_at IS NULL", id, plan.ID).First(&existing).Error; err != nil {
 			return resourceError(err)
 		}
 		others, err := purchasableSKUs(tx, plan.ID, id)

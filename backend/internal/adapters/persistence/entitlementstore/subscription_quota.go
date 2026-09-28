@@ -61,26 +61,33 @@ func (s SubscriptionQuota) Update(ctx context.Context, actor uint, in entitlemen
 			return err
 		}
 		now := time.Now().UTC()
-		if (sub.Status == "active" || sub.Status == "expired") && sub.EndAt.After(now) {
+		if sub.EndedAt == nil && (sub.Status == "active" || sub.Status == "expired") && sub.EndAt.After(now) {
 			if _, err := ApplyDueTrafficReset(tx, &sub, now); err != nil {
 				return err
 			}
 		}
 		total, used := entitlements.CycleQuota(entitlements.Subscription(sub))
-		if total != in.ExpectedFlowTotal || used != in.ExpectedFlowUsed || sub.ResetQuotaBytes != in.ExpectedResetQuotaBytes {
-			return entitlements.ErrSubscriptionQuotaConflict
+		old := map[string]any{"flow_total": total, "flow_used": used, "reset_quota_bytes": sub.ResetQuotaBytes}
+		resetQuota := sub.ResetQuotaBytes
+		if in.FlowTotal != nil {
+			total = *in.FlowTotal
+		}
+		if in.FlowUsed != nil {
+			used = *in.FlowUsed
+		}
+		if in.ResetQuotaBytes != nil {
+			resetQuota = *in.ResetQuotaBytes
 		}
 		baseline := sub.CycleStartUsed
-		if baseline < 0 || baseline > sub.FlowTotal || baseline > sub.FlowUsed || baseline > math.MaxInt64-max(in.FlowTotal, in.FlowUsed) {
+		if baseline < 0 || baseline > sub.FlowTotal || baseline > sub.FlowUsed || baseline > math.MaxInt64-max(total, used) {
 			return entitlements.ErrSubscriptionQuotaInvalid
 		}
 		before := sub.FlowTotal - sub.FlowUsed
-		old := map[string]any{"flow_total": total, "flow_used": used, "reset_quota_bytes": sub.ResetQuotaBytes}
-		sub.FlowTotal, sub.FlowUsed = baseline+in.FlowTotal, baseline+in.FlowUsed
-		sub.ResetQuotaBytes = in.ResetQuotaBytes
+		sub.FlowTotal, sub.FlowUsed = baseline+total, baseline+used
+		sub.ResetQuotaBytes = resetQuota
 		sub.Status = entitlements.EffectiveStatus(entitlements.Subscription(sub), now)
 		// A legacy exhausted instance can be restored by this adjustment.
-		if sub.Status == "expired" && sub.EndAt.After(now) {
+		if sub.EndedAt == nil && sub.Status == "expired" && sub.EndAt.After(now) {
 			sub.Status = "active"
 		}
 		sub.UpdatedAt = now
@@ -97,7 +104,7 @@ func (s SubscriptionQuota) Update(ctx context.Context, actor uint, in entitlemen
 		if err := s.Publish(tx, sub.ID, actor); err != nil {
 			return err
 		}
-		detail, err := json.Marshal(map[string]any{"hash": hash, "actor_id": actor, "reason": in.Reason, "before": old, "after": map[string]any{"flow_total": in.FlowTotal, "flow_used": in.FlowUsed, "reset_quota_bytes": in.ResetQuotaBytes}})
+		detail, err := json.Marshal(map[string]any{"hash": hash, "actor_id": actor, "reason": in.Reason, "before": old, "after": map[string]any{"flow_total": total, "flow_used": used, "reset_quota_bytes": resetQuota}})
 		if err != nil {
 			return err
 		}

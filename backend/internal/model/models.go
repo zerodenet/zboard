@@ -54,6 +54,7 @@ type Plan struct {
 	NodeGroup              *NodeGroup `json:"node_group,omitempty" gorm:"foreignKey:NodeGroupID"`
 	CreatedAt              time.Time  `json:"created_at"`
 	UpdatedAt              time.Time  `json:"updated_at"`
+	ArchivedAt             *time.Time `json:"-" gorm:"-:migration"`
 }
 
 // PlanSKU defines how a plan is sold. Billing cadence, allowed operations and
@@ -61,28 +62,34 @@ type Plan struct {
 // belong to Plan and are snapshotted into Order. TrafficBytes remains as
 // storage for an explicit traffic-addon grant only.
 type PlanSKU struct {
-	ID              uint      `json:"id" gorm:"primaryKey"`
-	PlanID          uint      `json:"plan_id" gorm:"index;not null"`
-	Code            string    `json:"code" gorm:"size:80;uniqueIndex;not null"`
-	Name            string    `json:"name" gorm:"size:80;not null"`
-	SKUType         string    `json:"sku_type" gorm:"size:20;not null;default:new"`
-	BillingMode     string    `json:"billing_mode" gorm:"size:20;not null;default:periodic"`
-	EntitlementMode string    `json:"entitlement_mode" gorm:"size:24;not null;default:plan"`
-	RenewalEffect   string    `json:"renewal_effect" gorm:"size:32;not null;default:extend_only"`
-	BillingUnit     string    `json:"billing_unit" gorm:"size:16;not null"`
-	BillingValue    int       `json:"billing_value" gorm:"not null"`
-	PriceCents      int64     `json:"price_cents" gorm:"not null"`
-	Currency        string    `json:"currency" gorm:"size:8;not null"`
-	TrafficBytes    int64     `json:"-" gorm:"not null"`
-	DeviceLimit     int       `json:"-" gorm:"not null"`
-	SpeedLimitMbps  int       `json:"-" gorm:"not null;default:0"`
-	IsActive        bool      `json:"is_active" gorm:"default:true"`
-	SortOrder       int       `json:"sort_order" gorm:"default:0"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              uint       `json:"id" gorm:"primaryKey"`
+	PlanID          uint       `json:"plan_id" gorm:"index;not null"`
+	Code            string     `json:"code" gorm:"size:80;uniqueIndex;not null"`
+	Name            string     `json:"name" gorm:"size:80;not null"`
+	SKUType         string     `json:"sku_type" gorm:"size:20;not null;default:new"`
+	BillingMode     string     `json:"billing_mode" gorm:"size:20;not null;default:periodic"`
+	EntitlementMode string     `json:"entitlement_mode" gorm:"size:24;not null;default:plan"`
+	RenewalEffect   string     `json:"renewal_effect" gorm:"size:32;not null;default:extend_only"`
+	BillingUnit     string     `json:"billing_unit" gorm:"size:16;not null"`
+	BillingValue    int        `json:"billing_value" gorm:"not null"`
+	PriceCents      int64      `json:"price_cents" gorm:"not null"`
+	Currency        string     `json:"currency" gorm:"size:8;not null"`
+	TrafficBytes    int64      `json:"-" gorm:"not null"`
+	DeviceLimit     int        `json:"-" gorm:"not null"`
+	SpeedLimitMbps  int        `json:"-" gorm:"not null;default:0"`
+	IsActive        bool       `json:"is_active" gorm:"default:true"`
+	SortOrder       int        `json:"sort_order" gorm:"default:0"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	ArchivedAt      *time.Time `json:"-" gorm:"-:migration"`
 }
 
 type Subscription struct {
+	Lifecycle             string     `json:"lifecycle" gorm:"size:20;not null;default:renewable"`
+	EndsOnQuotaExhaustion bool       `json:"ends_on_quota_exhaustion" gorm:"not null;default:false"`
+	EndedAt               *time.Time `json:"ended_at,omitempty" gorm:"index"`
+	EndReason             string     `json:"end_reason,omitempty" gorm:"size:20;not null;default:''"`
+
 	ID                uint       `json:"id" gorm:"primaryKey"`
 	UserID            uint       `json:"user_id" gorm:"index"`
 	PlanID            uint       `json:"plan_id" gorm:"index"`
@@ -109,6 +116,11 @@ type Subscription struct {
 }
 
 type Order struct {
+	SubscriptionEndedAt        *time.Time `json:"subscription_ended_at,omitempty"`
+	SubscriptionEndReason      string     `json:"subscription_end_reason,omitempty" gorm:"size:20;not null;default:''"`
+	SubscriptionFinalFlowTotal int64      `json:"subscription_final_flow_total" gorm:"not null;default:0"`
+	SubscriptionFinalFlowUsed  int64      `json:"subscription_final_flow_used" gorm:"not null;default:0"`
+
 	ChangeSnapshot        string     `json:"-" gorm:"size:4096;not null;default:'';-:migration"`
 	AssignedBy            uint       `json:"-" gorm:"not null;default:0"`
 	AssignmentNote        string     `json:"-" gorm:"size:500;not null;default:''"`

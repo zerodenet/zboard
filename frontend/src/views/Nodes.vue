@@ -1,17 +1,18 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="节点资产" description="独立管理 VPS、运维通道、Connector、Zero 内核与计量凭证；协议服务在单独页面绑定节点。" eyebrow="Infrastructure">
+    <PageHeader title="节点资产" description="管理承载服务器、连通状态与 Zero 内核，按服务器查看协议服务。" eyebrow="Infrastructure">
       <template #actions>
         <PageRefreshButton label="刷新节点资产" :loading="loading" @click="refresh" />
         <UiButton  type="button" @click="openCreate"><UiIcon name="plus" />登记 VPS</UiButton>
       </template>
     </PageHeader>
+    <NodeSetupGuide />
 
     <TransientFeedback :success="message" :error="error" success-title="节点操作已完成" error-title="节点操作失败" />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing" :density="density" show-density @update:density="setDensity">
       <template #filters>
-        <WorkbenchFilterBar :active="Boolean(filters.q || filters.lifecycle || filters.connector)" @clear="resetFilters">
+        <WorkbenchFilterBar :active="Boolean(filters.q || filters.lifecycle || filters.connector)" :active-count="[filters.q, filters.lifecycle, filters.connector].filter(Boolean).length" :loading="loading" @clear="resetFilters">
           <WorkbenchFilterInput v-model="filters.q" label="搜索" placeholder="名称、区域或地址" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="filters.lifecycle" label="生命周期" :options="lifecycleFilterOptions" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="filters.connector" label="Connector" :options="connectorFilterOptions" @apply="applyFilters" />
@@ -42,7 +43,7 @@
               <td><StatusBadge :tone="node.connector_online ? 'success' : node.connector_last_seen_at ? 'warning' : 'neutral'" :icon="node.connector_online ? 'wifi' : node.connector_last_seen_at ? 'alert' : 'minus'">{{ node.connector_online ? '在线' : node.connector_last_seen_at ? '离线' : '未连接' }}</StatusBadge></td>
               <td data-column-priority="3"><StatusBadge :tone="node.ssh_verified_at ? 'success' : node.ssh_configured ? 'warning' : 'neutral'" icon="key">{{ node.ssh_verified_at ? '已验证' : node.ssh_configured ? '待验证' : '未配置' }}</StatusBadge></td>
               <td data-column-priority="2"><div class="kernel-list-cell"><StatusBadge :tone="kernelListTone(node.kernel_state?.status)" icon="activity">{{ kernelListLabel(node.kernel_state?.status) }}</StatusBadge><span v-if="node.kernel_state?.installed_version" class="mono kernel-list-version" :title="node.kernel_state.installed_version">{{ compactZeroVersion(node.kernel_state.installed_version) }}</span></div></td>
-              <td class="numeric-column" data-column-priority="3">{{ formatNumber(node.enabled_protocol_count) }}</td>
+              <td class="numeric-column" data-column-priority="3"><UiButton variant="ghost" size="sm" type="button" :aria-label="`查看 ${node.name} 的协议服务`" :disabled="detailLoadingID === node.id" @click="selectNode(node, 'protocols')">{{ formatNumber(node.enabled_protocol_count) }}<UiIcon name="chevron" /></UiButton></td>
               <td data-column-priority="3"><TimeBadge :value="node.connector_last_seen_at" /></td>
               <td class="table-action-column"><UiButton variant="ghost" size="sm" type="button" :loading="detailLoadingID === node.id" :aria-label="`查看节点 ${node.name}`" @click="selectNode(node)">查看<UiIcon name="chevron" /></UiButton></td>
             </tr>
@@ -269,6 +270,7 @@
 </template>
 
 <script setup lang="ts">
+import NodeSetupGuide from '../components/NodeSetupGuide.vue'
 import NodeProxyPools from '../components/NodeProxyPools.vue'
 import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
@@ -767,13 +769,13 @@ async function resetFilters() { Object.assign(filters, { q: '', lifecycle: '', c
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await refresh() }
 async function setSort(field: string) { const next = resolveSortField(field, nodeSortFields, 'id'); sortDirection.value = nextSortDirection(sortField.value, next, sortDirection.value, next === 'name' || next === 'region' ? 'asc' : 'desc'); sortField.value = next; offset.value = 0; clearSelection(); await syncURL(); await refresh() }
 async function setDensity(value: 'compact' | 'comfortable') { density.value = value; await syncURL(true) }
-async function selectNode(node: AdminNodeListItem) {
+async function selectNode(node: AdminNodeListItem, section: typeof detailSection.value = 'overview') {
   diagnosticsOpen.value = false
   detailLoadingID.value = node.id; error.value = ''
   detailError.value = ''; detailMessage.value = ''
   try {
     const detail = await fetchNode(node.id)
-    nodeProtocolOffset.value = 0; nodeProtocolLimit.value = 25; selectedNode.value = detail; detailSection.value = 'overview'; await syncURL()
+    nodeProtocolOffset.value = 0; nodeProtocolLimit.value = 25; selectedNode.value = detail; detailSection.value = section; await syncURL()
   } catch (e: any) { error.value = e?.response?.data?.message || '节点详情加载失败。' }
   finally { detailLoadingID.value = 0 }
 }

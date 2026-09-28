@@ -44,7 +44,7 @@
         <tbody>
           <tr v-for="sub in subscriptions" :key="sub.id" :class="{ 'selected-subscription-row': sub.id === selectedSubscriptionID }">
             <td class="table-primary-column"><strong class="mono">#{{ sub.id }}</strong></td>
-            <td><StatusBadge :tone="subTone(sub.status)">{{ subLabel(sub.status) }}</StatusBadge></td>
+            <td><StatusBadge :tone="subTone(sub.status)">{{ sub.end_reason === 'exhausted' ? '已用完' : subLabel(sub.status) }}</StatusBadge></td>
             <td data-column-priority="2">
               <div class="cell-title cell-related">
                 <TableText :value="sub.plan_name || `套餐 #${sub.plan_id}`" />
@@ -59,7 +59,7 @@
                 <small v-if="sub.next_reset_at">下次重置 <TimeBadge :value="sub.next_reset_at" /></small>
               </div>
             </td>
-            <td data-column-priority="1"><TimeBadge :value="sub.end_at" /></td>
+            <td data-column-priority="1"><TimeBadge :value="sub.ended_at || sub.end_at" /><div v-if="sub.renewal_until"><small>续费保留至 <TimeBadge :value="sub.renewal_until" /></small></div></td>
             <td class="table-action-column">
               <div class="subscription-row-actions">
                 <UiButton
@@ -71,8 +71,8 @@
                 >
                   {{ sub.id === selectedSubscriptionID ? '正在管理' : '管理链接' }}
                 </UiButton>
-                <RouterLink v-if="canReset(sub)" class="button button-secondary button-sm" :to="`/account/plans?operation=reset&subscription=${sub.id}`">重置流量</RouterLink>
-                <RouterLink v-if="sub.flow_used < sub.flow_total || new Date(sub.end_at).getUTCFullYear() >= 9999" class="button button-secondary button-sm" :to="`/account/plans?operation=renew&subscription=${sub.id}`">续费</RouterLink>
+                <RouterLink v-if="canReset(sub)" class="button button-secondary button-sm" :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink>
+                <RouterLink v-if="sub.can_renew" class="button button-secondary button-sm" :to="`/account/plans?operation=renew&subscription=${sub.id}`">{{ sub.renewal_until ? '续费恢复' : '续费' }}</RouterLink>
               </div>
             </td>
           </tr>
@@ -122,7 +122,7 @@
           {{ accessResource.error.value }}
           <UiButton variant="secondary" size="sm" type="button" @click="loadAccess">重试链接</UiButton>
         </PageAlert>
-        <PageAlert v-else-if="selectedSubscription.flow_used >= selectedSubscription.flow_total" tone="warning" title="本周期流量已用完">订阅尚未到期，可以购买重置流量或等待下次自动重置。<RouterLink v-if="canReset(selectedSubscription)" class="button button-secondary button-sm" :to="`/account/plans?operation=reset&subscription=${selectedSubscription.id}`">重置流量</RouterLink></PageAlert>
+        <PageAlert v-else-if="selectedSubscription.flow_used >= selectedSubscription.flow_total" tone="warning" title="流量已用完">{{ exhaustedMessage(selectedSubscription) }}<RouterLink v-if="canReset(selectedSubscription)" class="button button-secondary button-sm" :to="`/account/plans?operation=reset&subscription=${selectedSubscription.id}`">购买流量重置</RouterLink></PageAlert>
         <p v-else-if="!accessReady" role="status">{{ working ? '正在更新链接状态…' : '正在读取链接状态…' }}</p>
         <div v-else-if="access.configured" class="access-meta">
           <strong>{{ selectedSubscription.plan_name }} 的链接已启用</strong>
@@ -402,8 +402,15 @@ const confirmMessage = computed(() => kind.value === 'generate'
     : `吊销后只有${selectedLabel.value}无法继续拉取配置。`)
 
 function canReset(sub: AdminSubscriptionListItem) {
-  const end = new Date(sub.end_at)
-  return sub.status === 'active' && end.getTime() > Date.now() && end.getUTCFullYear() < 9999 && (sub.reset_quota_bytes || 0) > 0
+  return Boolean(sub.can_reset)
+}
+
+function exhaustedMessage(sub: AdminSubscriptionListItem) {
+  if (sub.can_reset) return '订阅尚未到期，可以购买重置流量恢复额度。'
+  if (sub.next_reset_at && new Date(sub.next_reset_at).getTime() > Date.now() && new Date(sub.next_reset_at).getTime() < new Date(sub.end_at).getTime() && (sub.reset_policy || 0) > 0) return '订阅尚未到期，流量将在下次自动重置时恢复。'
+  if (sub.can_addon) return '此订阅流量已用完，可前往套餐中心购买流量包。'
+  if (sub.can_renew) return '此订阅流量已用完，可前往套餐中心续费或购买新的订阅。'
+  return '此订阅流量已用完，可前往套餐中心购买新的订阅。'
 }
 
 function percent(sub: AdminSubscriptionListItem) {

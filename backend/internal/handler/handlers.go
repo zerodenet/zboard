@@ -594,6 +594,15 @@ func (h *handlers) AdminUsersListHandler(w http.ResponseWriter, r *http.Request)
 		query.IsAdmin = &flag
 	}
 
+	if verified := strings.TrimSpace(r.URL.Query().Get("email_verified")); verified != "" {
+		flag, parseErr := strconv.ParseBool(verified)
+		if parseErr != nil {
+			BadRequest(w, "invalid email_verified")
+			return
+		}
+		query.EmailVerified = &flag
+	}
+
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
 		if len(q) > 128 {
 			BadRequest(w, "q must not exceed 128 bytes")

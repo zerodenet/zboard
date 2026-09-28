@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -124,9 +125,11 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 				subscription.FlowUsed = subscription.FlowTotal
 				exhausted = true
 			}
+			subscription = model.Subscription(entitlements.RecordQuotaExhaustion(entitlements.Subscription(subscription), now))
 			if err := tx.Model(&subscription).Updates(map[string]interface{}{
-				"flow_used":  subscription.FlowUsed,
-				"status":     subscription.Status,
+				"flow_used": subscription.FlowUsed,
+				"status":    subscription.Status,
+				"ended_at":  subscription.EndedAt, "end_reason": subscription.EndReason,
 				"updated_at": now,
 			}).Error; err != nil {
 				return err

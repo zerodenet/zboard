@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="用户与权限" description="所有账户都是用户；管理员是在用户身份上附加的管理权限。" eyebrow="Identity">
+    <PageHeader title="用户与权限" description="查找账户、管理权限与状态，直接查看关联订阅和订单。" eyebrow="Identity">
       <template #actions><PageRefreshButton label="刷新用户" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template>
     </PageHeader>
 
@@ -8,9 +8,13 @@
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
-        <WorkbenchFilterBar :active="Boolean(search || statusFilter)" @clear="clearFilters">
-          <WorkbenchFilterInput v-model="search" label="搜索" placeholder="用户邮箱" @apply="applyFilters" />
+        <WorkbenchFilterBar :active="activeFilterCount > 0" :active-count="activeFilterCount" :advanced-count="advancedFilterCount" :loading="loading" @clear="clearFilters">
+          <WorkbenchFilterInput v-model="search" label="搜索" placeholder="邮箱或账户名称" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="statusFilter" label="账户状态" :options="filterStatusOptions" @apply="applyFilters" />
+          <template #advanced>
+            <WorkbenchFilterSelect v-model="adminFilter" label="管理权限" :options="adminOptions" @apply="applyFilters" />
+            <WorkbenchFilterSelect v-model="verifiedFilter" label="邮箱验证" :options="verifiedOptions" @apply="applyFilters" />
+          </template>
         </WorkbenchFilterBar>
       </template>
       <TableSkeleton v-if="loading && !users.length" label="正在加载用户" :columns="7" />
@@ -21,8 +25,8 @@
               <td class="table-primary-column"><div class="user-cell"><span class="user-avatar">{{ user.email.slice(0, 1).toUpperCase() }}</span><div class="cell-title"><strong>{{ user.email }}</strong><span class="mono">#{{ user.id }}</span></div></div></td>
               <td data-column-priority="2"><StatusBadge :tone="permissionTone(user.is_admin)">{{ permissionName(user.is_admin) }}</StatusBadge></td>
               <td><StatusBadge :tone="statusTone(user.status)">{{ statusName(user.status) }}</StatusBadge></td>
-              <td class="numeric-column" data-column-priority="2">{{ formatNumber(user.active_subscription_count) }} / {{ formatNumber(user.total_subscription_count) }}</td>
-              <td class="numeric-column" data-column-priority="3">{{ formatNumber(user.pending_order_count) }} / {{ formatNumber(user.total_order_count) }}</td>
+              <td class="numeric-column" data-column-priority="2"><RouterLink :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id) })" :aria-label="`查看 ${user.email} 的订阅`">{{ formatNumber(user.active_subscription_count) }} / {{ formatNumber(user.total_subscription_count) }}</RouterLink></td>
+              <td class="numeric-column" data-column-priority="3"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id) })" :aria-label="`查看 ${user.email} 的订单`">{{ formatNumber(user.pending_order_count) }} / {{ formatNumber(user.total_order_count) }}</RouterLink></td>
               <td data-column-priority="3"><TimeBadge :value="user.created_at" /></td>
               <td class="table-action-column"><RowActions :label="`${user.email} 的操作`" :trigger-key="`user-${user.id}`"><UiButton variant="secondary" size="sm" type="button" :data-user-detail-trigger="user.id" @click="openDetail(user.id)">查看详情</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id) })">查看订阅</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(user.id) })">查看订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink><UiButton variant="ghost" size="sm" type="button" @click="openEdit(user)"><UiIcon name="edit" />账户与权限</UiButton></RowActions></td>
             </tr>
@@ -130,6 +134,13 @@ const route = useRoute()
 const router = useRouter()
 const search = ref(String(route.query.q || ''))
 const statusFilter = ref(String(route.query.status || ''))
+function booleanFilter(value: unknown) { return value === 'true' || value === 'false' ? value : '' }
+const adminFilter = ref(booleanFilter(route.query.is_admin))
+const verifiedFilter = ref(booleanFilter(route.query.email_verified))
+const adminOptions = [{ label: '全部权限', value: '' }, { label: '管理员', value: 'true' }, { label: '普通用户', value: 'false' }]
+const verifiedOptions = [{ label: '全部邮箱', value: '' }, { label: '已验证', value: 'true' }, { label: '未验证', value: 'false' }]
+const advancedFilterCount = computed(() => [adminFilter.value, verifiedFilter.value].filter(Boolean).length)
+const activeFilterCount = computed(() => [search.value, statusFilter.value].filter(Boolean).length + advancedFilterCount.value)
 const allowedPageSizes = [25, 50, 100]
 const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 50)
@@ -194,6 +205,8 @@ const { items: users, total, loading, refreshing, error, load: refresh } = useRe
   fetchPage: ({ signal }) => fetchUsersPage({
     q: search.value || undefined,
     status: statusFilter.value || undefined,
+    isAdmin: adminFilter.value ? adminFilter.value === 'true' : undefined,
+    emailVerified: verifiedFilter.value ? verifiedFilter.value === 'true' : undefined,
     sort: sortField.value,
     direction: sortDirection.value,
     offset: offset.value,
@@ -209,9 +222,9 @@ function statusName(status: string) { return ({ active: '正常', suspended: '�
 function statusTone(status: string): 'success' | 'warning' | 'danger' { return status === 'active' ? 'success' : status === 'suspended' ? 'warning' : 'danger' }
 
 function adminContextLink(path: string, query: Record<string, string>) { return withAdminReturnTo(path, route.fullPath, query) }
-async function syncURL(replace = false) { const page = Math.floor(offset.value / limit.value) + 1; const location = { query: { ...preserveAdminReturnTo(route.query.return_to), ...(search.value ? { q: search.value } : {}), ...(statusFilter.value ? { status: statusFilter.value } : {}), ...(sortField.value !== 'created_at' ? { sort: sortField.value } : {}), ...(sortDirection.value !== 'desc' ? { direction: sortDirection.value } : {}), ...(page > 1 ? { page: String(page) } : {}), ...(limit.value !== 50 ? { limit: String(limit.value) } : {}), ...(detailID.value ? { user: String(detailID.value) } : {}) } }; await (replace ? router.replace(location) : router.push(location)) }
+async function syncURL(replace = false) { const page = Math.floor(offset.value / limit.value) + 1; const location = { query: { ...preserveAdminReturnTo(route.query.return_to), ...(search.value ? { q: search.value } : {}), ...(statusFilter.value ? { status: statusFilter.value } : {}), ...(adminFilter.value ? { is_admin: adminFilter.value } : {}), ...(verifiedFilter.value ? { email_verified: verifiedFilter.value } : {}), ...(sortField.value !== 'created_at' ? { sort: sortField.value } : {}), ...(sortDirection.value !== 'desc' ? { direction: sortDirection.value } : {}), ...(page > 1 ? { page: String(page) } : {}), ...(limit.value !== 50 ? { limit: String(limit.value) } : {}), ...(detailID.value ? { user: String(detailID.value) } : {}) } }; await (replace ? router.replace(location) : router.push(location)) }
 async function applyFilters() { offset.value = 0; await syncURL(); await refresh() }
-async function clearFilters() { search.value = ''; statusFilter.value = ''; await applyFilters() }
+async function clearFilters() { search.value = ''; statusFilter.value = ''; adminFilter.value = ''; verifiedFilter.value = ''; await applyFilters() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await refresh() }
 async function setSort(field: string) { const next = resolveSortField(field, userSortFields, 'created_at'); sortDirection.value = nextSortDirection(sortField.value, next, sortDirection.value, next === 'email' ? 'asc' : 'desc'); sortField.value = next; offset.value = 0; await syncURL(); await refresh() }
 async function openDetail(id: number) { await router.push({ query: { ...route.query, user: String(id) } }) }
@@ -268,13 +281,15 @@ async function saveUser() {
 watch(() => route.fullPath, async () => {
   const nextSearch = String(route.query.q || '')
   const nextStatus = String(route.query.status || '')
+  const nextAdmin = booleanFilter(route.query.is_admin)
+  const nextVerified = booleanFilter(route.query.email_verified)
   const nextLimitValue = Number(route.query.limit)
   const nextLimit = allowedPageSizes.includes(nextLimitValue) ? nextLimitValue : 50
   const nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * nextLimit
   const nextSortField = resolveSortField(route.query.sort, userSortFields, 'created_at')
   const nextSortDirection = resolveSortDirection(route.query.direction, 'desc')
-  if (nextSearch !== search.value || nextStatus !== statusFilter.value || nextLimit !== limit.value || nextOffset !== offset.value || nextSortField !== sortField.value || nextSortDirection !== sortDirection.value) {
-    search.value = nextSearch; statusFilter.value = nextStatus; limit.value = nextLimit; offset.value = nextOffset; sortField.value = nextSortField; sortDirection.value = nextSortDirection; await refresh()
+  if (nextAdmin !== adminFilter.value || nextVerified !== verifiedFilter.value || nextSearch !== search.value || nextStatus !== statusFilter.value || nextLimit !== limit.value || nextOffset !== offset.value || nextSortField !== sortField.value || nextSortDirection !== sortDirection.value) {
+    search.value = nextSearch; statusFilter.value = nextStatus; adminFilter.value = nextAdmin; verifiedFilter.value = nextVerified; limit.value = nextLimit; offset.value = nextOffset; sortField.value = nextSortField; sortDirection.value = nextSortDirection; await refresh()
   }
   await syncDetailFromRoute()
 })

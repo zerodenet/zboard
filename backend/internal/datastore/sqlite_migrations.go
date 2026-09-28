@@ -249,6 +249,35 @@ func runSQLiteMigrations(db *gorm.DB) error {
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0021_order_change_snapshot.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
 		return err
 	}
+	archiveSQL, err := migrations.Files.ReadFile("sqlite/0022_catalog_archive.sql")
+	if err != nil {
+		return err
+	}
+	archiveStatements, err := splitMigrationStatements(string(archiveSQL))
+	if err != nil {
+		return err
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		// Check both additive columns so an interrupted upgrade can resume.
+		for index, table := range []string{"plans", "plan_skus"} {
+			if !tx.Migrator().HasColumn(table, "archived_at") {
+				if err := tx.Exec(archiveStatements[index]).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0022_catalog_archive.up.sql", AppliedAt: time.Now().UTC()}).Error
+	}); err != nil {
+		return err
+	}
+
+	if err := reconcileSQLiteSubscriptionLifecycle(db); err != nil {
+		return err
+	}
+	if err := reconcileSQLiteTrafficHourly(db); err != nil {
+		return err
+	}
+
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {
 		return fmt.Errorf("record sqlite schema version: %w", err)

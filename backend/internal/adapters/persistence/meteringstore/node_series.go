@@ -37,16 +37,20 @@ func (s NodeSeries) Read(ctx context.Context, actor uint, q metering.NodeSeriesQ
 		if err != nil {
 			return err
 		}
-		query := tx.Model(&model.TrafficRecord{}).Where("record_at >= ? AND record_at < ?", q.From, q.To)
-		if q.UserID > 0 {
-			query = query.Where("user_id = ?", q.UserID)
+		query := TrafficAggregateSource(tx, q.From, q.To, TrafficScope{UserID: q.UserID, SubscriptionID: q.SubscriptionID, NodeID: q.NodeID})
+		if q.Bucket == "minute" {
+			query = tx.Model(&model.TrafficRecord{}).Where("record_at >= ? AND record_at < ?", q.From, q.To).Select("*, 1 AS record_count")
+			for _, f := range []struct {
+				column string
+				id     uint
+			}{{"user_id", q.UserID}, {"subscription_id", q.SubscriptionID}, {"node_id", q.NodeID}} {
+				if f.id > 0 {
+					query = query.Where(f.column+" = ?", f.id)
+				}
+			}
+			query = tx.Table("(?) AS traffic_aggregate", query)
 		}
-		if q.SubscriptionID > 0 {
-			query = query.Where("subscription_id = ?", q.SubscriptionID)
-		}
-		if q.NodeID > 0 {
-			query = query.Where("node_id = ?", q.NodeID)
-		} else {
+		if q.NodeID == 0 {
 			var totals []struct {
 				NodeID    uint
 				UsedBytes int64
@@ -72,7 +76,7 @@ func (s NodeSeries) Read(ctx context.Context, actor uint, q metering.NodeSeriesQ
 			NodeID                                                       uint
 			RawBytes, UploadBytes, DownloadBytes, UsedBytes, RecordCount int64
 		}
-		if err := query.Session(&gorm.Session{}).Select(expression + " AS record_at, node_id, COALESCE(SUM(raw_bytes), 0) AS raw_bytes, COALESCE(SUM(upload_bytes), 0) AS upload_bytes, COALESCE(SUM(download_bytes), 0) AS download_bytes, COALESCE(SUM(used_bytes), 0) AS used_bytes, COUNT(*) AS record_count").Group(expression + ", node_id").Order("record_at asc, node_id asc").Scan(&rows).Error; err != nil {
+		if err := query.Session(&gorm.Session{}).Select(expression + " AS record_at, node_id, COALESCE(SUM(raw_bytes), 0) AS raw_bytes, COALESCE(SUM(upload_bytes), 0) AS upload_bytes, COALESCE(SUM(download_bytes), 0) AS download_bytes, COALESCE(SUM(used_bytes), 0) AS used_bytes, SUM(record_count) AS record_count").Group(expression + ", node_id").Order("record_at asc, node_id asc").Scan(&rows).Error; err != nil {
 			return err
 		}
 		ids := make([]uint, 0)

@@ -17,7 +17,10 @@ const quoteGB = int64(1024 * 1024 * 1024)
 
 func preparePricedChange(t *testing.T, used int64, elapsedDays int) (orderFixture, model.Subscription, model.Order) {
 	t.Helper()
-	f := newOrderFixture(t)
+	return preparePricedChangeFixture(t, newOrderFixture(t), used, elapsedDays)
+}
+func preparePricedChangeFixture(t *testing.T, f orderFixture, used int64, elapsedDays int) (orderFixture, model.Subscription, model.Order) {
+	t.Helper()
 	f.h.db.Model(&f.planRecord).Update("traffic_bytes", 100*quoteGB)
 	f.h.db.Model(&f.skuRecord).Update("price_cents", 1000)
 	root := f.paid(t, f.create(t, 0).ID)
@@ -59,6 +62,7 @@ func TestPlanChangeQuoteAndPaymentUseRemainingPaidValue(t *testing.T) {
 		credit int64
 	}{
 		{"unused", 0, 0, 1000}, {"half time", 0, 15, 500}, {"traffic tighter", 75 * quoteGB, 15, 250},
+		{"exhausted without reset SKU", 100 * quoteGB, 15, 0}, {"over quota", 110 * quoteGB, 15, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f, before, _ := preparePricedChange(t, tc.used, tc.days)
@@ -79,6 +83,11 @@ func TestPlanChangeQuoteAndPaymentUseRemainingPaidValue(t *testing.T) {
 			}
 			if order.DiscountAmount != tc.credit || order.PayableAmount != quote.PayableAmount {
 				t.Fatal(order)
+			}
+			var pending model.Subscription
+			f.h.db.First(&pending, before.ID)
+			if pending.PlanID != before.PlanID || pending.FlowUsed != before.FlowUsed || pending.FlowTotal != before.FlowTotal || !pending.EndAt.Equal(before.EndAt) {
+				t.Fatal("pending change granted entitlement", pending)
 			}
 			paid := f.paid(t, order.ID)
 			var after model.Subscription
@@ -130,6 +139,62 @@ func TestPlanChangeCarriesOnlyPaidAndTransferredValue(t *testing.T) {
 	// B's value is 900 paid + 600 transferred, not old A + full B again.
 	if quote.TrafficCredit != 1100 || quote.CreditAmount != 1100 || quote.PayableAmount != 900 {
 		t.Fatal(quote)
+	}
+}
+
+func TestExhaustedPlanChangeCandidatesAndSettlementUseSameEligibility(t *testing.T) {
+	for _, status := range []string{"active", "expired"} {
+		t.Run(status, func(t *testing.T) {
+			f := newOrderFixture(t)
+			endpoint := attachOrderPublishEndpoint(t, f)
+			f, sub, root := preparePricedChangeFixture(t, f, 100*quoteGB, 15)
+			if err := f.h.db.Model(&sub).Update("status", status).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := f.h.db.Model(&model.ProtocolCredential{}).Where("subscription_id = ?", sub.ID).Update("status", "expired").Error; err != nil {
+				t.Fatal(err)
+			}
+			if response, access := orderAccess(t, f, root.ID, f.token); response.Code != 200 || access.Configured {
+				t.Fatal("exhausted subscription exposed usable access", response.Code, access)
+			}
+			var page struct {
+				Items []adminSubscriptionListItem
+				Total int
+			}
+			if code := f.get(t, "/api/v1/subscriptions?paged=true&eligible_for=change&limit=1", f.h.SubscriptionsHandler, &page); code != 200 || page.Total != 1 || len(page.Items) != 1 || !page.Items[0].CanChange || page.Items[0].CanReset {
+				t.Fatal("candidate/operation mismatch", code, page)
+			}
+			quote := previewPricedOrder(t, f, sub.ID)
+			if quote.CreditAmount != 0 || quote.PayableAmount != 1500 || quote.UsedBytes != sub.FlowUsed {
+				t.Fatal("exhausted entitlement had transferable value", quote)
+			}
+			order := f.create(t, sub.ID)
+			if response, access := orderAccess(t, f, order.ID, f.token); response.Code != 200 || access.Configured {
+				t.Fatal("pending change exposed usable access", response.Code, access)
+			}
+			f.paid(t, order.ID)
+			var after model.Subscription
+			f.h.db.First(&after, sub.ID)
+			if after.Status != "active" || after.PlanID != 2 || after.FlowUsed != sub.FlowUsed || after.FlowTotal != 150*quoteGB || !after.EndAt.Equal(sub.EndAt) {
+				t.Fatal("change reset or extended the exhausted cycle", after)
+			}
+			var credential model.ProtocolCredential
+			if err := f.h.db.Where("subscription_id = ? AND protocol_endpoint_id = ? AND status = ?", sub.ID, endpoint.ID, "active").First(&credential).Error; err != nil {
+				t.Fatal("paid change did not restore credentials", err)
+			}
+			if response, access := orderAccess(t, f, order.ID, f.token); response.Code != 200 || !access.Configured || access.SubscriptionURL == "" {
+				t.Fatal("paid change did not restore subscription access", response.Code, access)
+			}
+			var publication model.NodeConfigPublish
+			if err := f.h.db.First(&publication, endpoint.NodeID).Error; err != nil || publication.Generation != 2 {
+				t.Fatal("paid change did not persist node publication", publication, err)
+			}
+			f.paid(t, order.ID)
+			f.h.db.First(&publication, endpoint.NodeID)
+			if publication.Generation != 2 {
+				t.Fatal("replayed change republished entitlement", publication)
+			}
+		})
 	}
 }
 

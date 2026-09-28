@@ -1,0 +1,2 @@
+ALTER TABLE plans ADD COLUMN archived_at DATETIME(3) NULL;
+ALTER TABLE plan_skus ADD COLUMN archived_at DATETIME(3) NULL;

@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -14,6 +13,7 @@ const (
 	dashboardRangeToday  = "today"
 	dashboardRange7Days  = "7d"
 	dashboardRange30Days = "30d"
+	dashboardRangeMonth  = "month"
 )
 
 type dashboardPeriod = observability.DashboardPeriod
@@ -54,13 +54,14 @@ func (h *handlers) DashboardOverviewHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	now := time.Now().UTC()
-	period, err := resolveDashboardPeriod(r.URL.Query().Get("range"), now)
+	location := h.systemTimezoneLocation()
+	period, err := resolveDashboardPeriodInLocation(r.URL.Query().Get("range"), now, location)
 	if err != nil {
 		BadRequest(w, err.Error())
 		return
 	}
 
-	response, err := h.loadDashboardOverview(r.Context(), period, now, time.UTC)
+	response, err := h.loadDashboardOverview(r.Context(), period, now, location)
 	if err != nil {
 		ServerError(w, err)
 		return
@@ -69,30 +70,7 @@ func (h *handlers) DashboardOverviewHandler(w http.ResponseWriter, r *http.Reque
 }
 
 func resolveDashboardPeriod(raw string, now time.Time) (dashboardPeriod, error) {
-	now = now.UTC()
-	startOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	period := dashboardPeriod{Range: strings.ToLower(strings.TrimSpace(raw)), To: now, Bucket: "day", Timezone: "UTC"}
-	if period.Range == "" {
-		period.Range = dashboardRange7Days
-	}
-	comparisonShiftDays := 0
-	switch period.Range {
-	case dashboardRangeToday:
-		period.From = startOfToday
-		period.Bucket = "hour"
-		comparisonShiftDays = 1
-	case dashboardRange7Days:
-		period.From = startOfToday.AddDate(0, 0, -6)
-		comparisonShiftDays = 7
-	case dashboardRange30Days:
-		period.From = startOfToday.AddDate(0, 0, -29)
-		comparisonShiftDays = 30
-	default:
-		return dashboardPeriod{}, fmt.Errorf("range must be one of today, 7d, or 30d")
-	}
-	period.PreviousFrom = period.From.AddDate(0, 0, -comparisonShiftDays)
-	period.PreviousTo = period.To.AddDate(0, 0, -comparisonShiftDays)
-	return period, nil
+	return resolveDashboardPeriodInLocation(raw, now, time.UTC)
 }
 
 func (h *handlers) loadDashboardOverview(ctx context.Context, period dashboardPeriod, now time.Time, location *time.Location) (dashboardOverviewResponse, error) {

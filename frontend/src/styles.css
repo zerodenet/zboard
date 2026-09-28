@@ -168,8 +168,6 @@ h1, h2, h3, h4 { color: var(--text-strong); letter-spacing: -.02em; }
 .form-field-control > .ui-autocomplete,
 .form-field-control > .node-lookup,
 .form-field-control > .endpoint-lookup { width: 100%; }
-.form-field-control .ui-number-input,
-.form-field-control .ui-autocomplete-input { min-height: var(--control-height); }
 .form-field-message { min-height: 17px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .form-field-hint, .form-field-error { display: inline-flex; align-items: flex-start; gap: 5px; }
 .form-field-error { color: var(--danger); }
@@ -179,10 +177,10 @@ h1, h2, h3, h4 { color: var(--text-strong); letter-spacing: -.02em; }
 .form-grid > .field { grid-template-rows: auto minmax(40px, auto) minmax(17px, auto); align-content: start; }
 .form-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .field-full { grid-column: 1 / -1; }
-input:not([type='checkbox']):not([type='radio']):not(.ui-input), textarea:not(.ui-textarea) { width: 100%; min-height: var(--control-height); padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); outline: none; color: var(--text); background: var(--surface); transition: border .15s ease, box-shadow .15s ease; }
+input:not([type='checkbox']):not([type='radio']):not(.ui-input):not(.ui-autocomplete-input):not(.ui-number-input), textarea:not(.ui-textarea) { width: 100%; min-height: var(--control-height); padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); outline: none; color: var(--text); background: var(--surface); transition: border .15s ease, box-shadow .15s ease; }
 textarea:not(.ui-textarea) { min-height: 100px; resize: vertical; line-height: 1.55; }
-input:not(.ui-input):focus, textarea:not(.ui-textarea):focus { border-color: var(--focus-border); box-shadow: 0 0 0 3px var(--focus-ring); }
-input:not(.ui-input)::placeholder, textarea:not(.ui-textarea)::placeholder { color: var(--subtle); }
+input:not(.ui-input):not(.ui-autocomplete-input):not(.ui-number-input):focus, textarea:not(.ui-textarea):focus { border-color: var(--focus-border); box-shadow: 0 0 0 3px var(--focus-ring); }
+input:not(.ui-input):not(.ui-autocomplete-input):not(.ui-number-input)::placeholder, textarea:not(.ui-textarea)::placeholder { color: var(--subtle); }
 .check-field { display: flex; align-items: flex-start; gap: 9px; color: var(--text-body); font-size: 13px; line-height: 1.45; }
 .check-field .ui-checkbox, .check-field .ui-switch { flex: 0 0 auto; margin-top: 1px; }
 .form-actions { display: flex; justify-content: flex-end; gap: 9px; padding-top: 4px; }

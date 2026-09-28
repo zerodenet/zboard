@@ -94,6 +94,7 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 			used = remaining
 		}
 		sub.FlowUsed += used
+		sub = model.Subscription(entitlements.RecordQuotaExhaustion(entitlements.Subscription(sub), now))
 		if err := tx.Save(&sub).Error; err != nil {
 			return err
 		}

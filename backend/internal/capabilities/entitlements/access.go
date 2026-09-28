@@ -48,5 +48,5 @@ func (s Access) run(ctx context.Context, actor, id uint, operation string) (Acce
 	return s.Repository.Execute(ctx, actor, id, operation)
 }
 func AccessAvailable(sub Subscription, now time.Time) bool {
-	return sub.Status == "active" && sub.EndAt.After(now) && sub.FlowUsed < sub.FlowTotal
+	return sub.EndedAt == nil && sub.Status == "active" && sub.EndAt.After(now) && sub.FlowUsed < sub.FlowTotal
 }

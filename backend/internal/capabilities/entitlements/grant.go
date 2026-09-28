@@ -40,7 +40,12 @@ func NewGrant(request GrantRequest, policy GrantPolicy, now time.Time) (Grant, e
 	if policy.IsRenewable {
 		renewalPrice = policy.RenewalPriceMinor
 	}
+	lifecycle := "fixed"
+	if policy.IsRenewable {
+		lifecycle = "renewable"
+	}
 	sub := Subscription{
+		Lifecycle: lifecycle, EndsOnQuotaExhaustion: request.BillingUnit == "once" && (reset == 0 || reset == 5),
 		UserID: request.UserID, PlanID: request.PlanID, PlanSKUID: request.PlanSKUID,
 		NodeGroupID: policy.NodeGroupID, SubscriptionType: 1, StartAt: now, EndAt: end, Status: "active",
 		FlowTotal: request.TrafficBytes, ResetQuotaBytes: request.TrafficBytes, SpeedLimitMbps: request.SpeedLimitMbps, DeviceLimit: request.DeviceLimit,
@@ -58,9 +63,16 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 	if !policy.IsRenewable && request.OrderType == "renewal" {
 		return Grant{}, errors.New("plan does not support renewal")
 	}
+	recovering := request.OrderType == "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now))
+	if request.OrderType == "renewal" && (!CanRenewAt(sub, now) || sub.PlanID != request.PlanID) {
+		return Grant{}, ErrRenewalWindow
+	}
+	if request.OrderType != "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now)) {
+		return Grant{}, errors.New("subscription has ended")
+	}
 	if fulfillment.MakePermanent {
 		sub.EndAt = PerpetualEnd
-	} else if fulfillment.ExtendPeriod {
+	} else if fulfillment.ExtendPeriod || recovering {
 		base := sub.EndAt
 		if base.Before(now) || (IsPerpetualEnd(base) && request.BillingUnit != "once") {
 			base = now
@@ -81,7 +93,7 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 		sub.CycleStartUsed = sub.FlowUsed
 		delta = sub.FlowTotal - previousTotal
 	} else if request.OrderType == "upgrade" {
-		if sub.Status != "active" || !sub.EndAt.After(now) {
+		if !CanChangeAt(sub, now) {
 			return Grant{}, errors.New("plan change requires an active subscription")
 		}
 		_, cycleUsed := CycleQuota(sub)
@@ -92,12 +104,27 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 		previousTotal := sub.FlowTotal
 		sub.FlowTotal = baseline + request.TrafficBytes
 		delta = sub.FlowTotal - previousTotal
+	} else if recovering {
+		if request.TrafficBytes <= 0 || sub.FlowUsed > math.MaxInt64-request.TrafficBytes {
+			return Grant{}, errors.New("invalid renewal recovery quota")
+		}
+		previousTotal := sub.FlowTotal
+		sub.CycleStartUsed = sub.FlowUsed
+		sub.FlowTotal = sub.FlowUsed + request.TrafficBytes
+		delta = sub.FlowTotal - previousTotal
+		sub.StartAt = now
+		sub.EndedAt, sub.EndReason = nil, ""
 	} else if fulfillment.AddQuota {
 		delta = request.TrafficBytes
 		sub.FlowTotal += delta
 	}
 	sub.Status = "active"
 	if request.OrderType != "traffic_pack" && request.OrderType != "traffic_reset" {
+		sub.Lifecycle = "fixed"
+		if policy.IsRenewable {
+			sub.Lifecycle = "renewable"
+		}
+		sub.EndsOnQuotaExhaustion = request.BillingUnit == "once"
 		sub.PlanID = request.PlanID
 		sub.PlanSKUID = request.PlanSKUID
 		sub.NodeGroupID = policy.NodeGroupID
@@ -111,6 +138,9 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 		sub.ResetPolicy = EffectiveResetPolicy(request.BillingUnit, policy.ResetPolicy)
 		if sub.ResetPolicy != previousResetPolicy || sub.NextResetAt == nil || sub.NextResetAt.After(now) {
 			sub.NextResetAt = NextTrafficResetAfter(sub.StartAt, sub.ResetPolicy, now)
+		}
+		if recovering {
+			sub.NextResetAt = NextTrafficReset(now, sub.ResetPolicy)
 		}
 		sub.TrafficCalcMode = policy.TrafficCalcMode
 		sub.RenewalPriceMinor = 0

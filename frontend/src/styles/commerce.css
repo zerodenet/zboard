@@ -95,11 +95,11 @@
 .checkout-detail-list dt { color: var(--muted); font-size: 9px; }
 .checkout-detail-list dd { margin: 0; font-size: 12px; font-weight: 650; }
 
-.sku-operation-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
-.sku-operation-option { display: flex; align-items: flex-start; gap: 9px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.sku-operation-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.sku-operation-option { display: flex; align-items: flex-start; gap: 9px; padding: 4px 0; }
 .sku-operation-option > span { display: grid; gap: 2px; }
-.sku-operation-option strong { font-size: 11px; }
-.sku-operation-option small { color: var(--muted); font-size: 9px; line-height: 1.45; }
+.sku-operation-option strong { font-size: 12px; font-weight: 500; }
+.sku-operation-option small { color: var(--muted); font-size: 11px; line-height: 1.45; }
 .sku-operation-summary { color: var(--muted); font-size: 10px; }
 
 @media (max-width: 980px) {

@@ -3,6 +3,7 @@ package observabilitystore
 import (
 	"context"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"strings"
 	"time"
 
@@ -10,7 +11,20 @@ import (
 	"gorm.io/gorm"
 )
 
-type Dashboard struct{ DB *gorm.DB }
+type Dashboard struct {
+	DB, ReadDB   *gorm.DB
+	ReadDatabase func() *gorm.DB
+}
+
+func (s Dashboard) readDB() *gorm.DB {
+	if s.ReadDatabase != nil {
+		return s.ReadDatabase()
+	}
+	if s.ReadDB != nil {
+		return s.ReadDB
+	}
+	return s.DB
+}
 
 type dashboardOrderAggregate struct {
 	RevenueCents         int64
@@ -19,6 +33,7 @@ type dashboardOrderAggregate struct {
 	PreviousPaidOrders   int64
 	NewOrders            int64
 	RenewOrders          int64
+	PreviousRenewOrders  int64
 	CurrencyCount        int64
 	Currency             string
 }
@@ -35,6 +50,9 @@ type dashboardSubscriptionAggregate struct {
 
 type dashboardOperationalAggregate struct {
 	TrafficBytes            int64
+	PreviousTrafficBytes    int64
+	NewUsers                int64
+	PreviousNewUsers        int64
 	NodesTotal              int64
 	NodesEnabled            int64
 	ConnectorOnline         int64
@@ -60,7 +78,7 @@ type dashboardTrendRow struct {
 
 func (s Dashboard) LoadDashboardTotals(ctx context.Context, now time.Time) (out observability.DashboardTotals, err error) {
 	cutoff := now.Add(-2 * time.Minute)
-	err = s.DB.WithContext(ctx).Raw(`SELECT
+	err = s.readDB().WithContext(ctx).Raw(`SELECT
  users_summary.users,
  users_summary.active_users,
  node_summary.nodes,
@@ -122,7 +140,7 @@ CROSS JOIN
 }
 
 func (s Dashboard) LoadDashboard(ctx context.Context, period observability.DashboardPeriod, now time.Time, buckets []observability.DashboardTrendBucket) (observability.DashboardSnapshot, error) {
-	db := s.DB.WithContext(ctx)
+	db := s.readDB().WithContext(ctx)
 	var orders dashboardOrderAggregate
 	if err := db.Table("orders").Select(`
  COALESCE(SUM(CASE WHEN paid_at >= ? AND paid_at < ? THEN (CASE WHEN assigned_by > 0 OR paid_amount > 0 THEN paid_amount ELSE amount_cents END) - refund_amount ELSE 0 END),0) AS revenue_cents,
@@ -130,12 +148,13 @@ func (s Dashboard) LoadDashboard(ctx context.Context, period observability.Dashb
  COALESCE(SUM(CASE WHEN paid_at >= ? AND paid_at < ? THEN 1 ELSE 0 END),0) AS paid_orders,
  COALESCE(SUM(CASE WHEN paid_at >= ? AND paid_at < ? THEN 1 ELSE 0 END),0) AS previous_paid_orders,
  COALESCE(SUM(CASE WHEN paid_at >= ? AND paid_at < ? AND order_type = 'new' THEN 1 ELSE 0 END),0) AS new_orders,
- COALESCE(SUM(CASE WHEN paid_at >= ? AND paid_at < ? AND order_type = 'renew' THEN 1 ELSE 0 END),0) AS renew_orders,
+ COALESCE(SUM(CASE WHEN paid_at >= ? AND paid_at < ? AND order_type IN ('renew','renewal') THEN 1 ELSE 0 END),0) AS renew_orders,
+ COALESCE(SUM(CASE WHEN paid_at >= ? AND paid_at < ? AND order_type IN ('renew','renewal') THEN 1 ELSE 0 END),0) AS previous_renew_orders,
  COUNT(DISTINCT CASE WHEN TRIM(currency) <> '' THEN UPPER(TRIM(currency)) END) AS currency_count,
  COALESCE(MIN(CASE WHEN TRIM(currency) <> '' THEN UPPER(TRIM(currency)) END),'') AS currency`,
 		period.From, period.To, period.PreviousFrom, period.PreviousTo,
 		period.From, period.To, period.PreviousFrom, period.PreviousTo,
-		period.From, period.To, period.From, period.To).
+		period.From, period.To, period.From, period.To, period.PreviousFrom, period.PreviousTo).
 		Where("status = ? AND paid_at IS NOT NULL AND paid_at >= ? AND paid_at < ?", "paid", period.PreviousFrom, period.To).
 		Scan(&orders).Error; err != nil {
 		return observability.DashboardSnapshot{}, err
@@ -157,8 +176,13 @@ func (s Dashboard) LoadDashboard(ctx context.Context, period observability.Dashb
 	}
 
 	var operational dashboardOperationalAggregate
+	traffic := meteringstore.TrafficAggregateSource(db, period.From, period.To, meteringstore.TrafficScope{}).Select("COALESCE(SUM(used_bytes), 0)")
+	previousTraffic := meteringstore.TrafficAggregateSource(db, period.PreviousFrom, period.PreviousTo, meteringstore.TrafficScope{}).Select("COALESCE(SUM(used_bytes), 0)")
 	if err := db.Raw(`SELECT
- (SELECT COALESCE(SUM(used_bytes),0) FROM traffic_records WHERE record_at >= ? AND record_at < ?) AS traffic_bytes,
+ (?) AS traffic_bytes,
+ (?) AS previous_traffic_bytes,
+ (SELECT COUNT(*) FROM users WHERE created_at >= ? AND created_at < ?) AS new_users,
+ (SELECT COUNT(*) FROM users WHERE created_at >= ? AND created_at < ?) AS previous_new_users,
  (SELECT COUNT(*) FROM nodes) AS nodes_total,
  (SELECT COUNT(*) FROM nodes WHERE is_enabled = ?) AS nodes_enabled,
  (SELECT COUNT(*) FROM nodes WHERE is_enabled = ? AND connector_last_seen_at >= ?) AS connector_online,
@@ -172,7 +196,7 @@ func (s Dashboard) LoadDashboard(ctx context.Context, period observability.Dashb
  (SELECT COUNT(*) FROM plans WHERE is_active = ?) AS published_plans,
  (SELECT COUNT(*) FROM tickets WHERE status IN (?,?)) AS pending_tickets,
  (SELECT COUNT(*) FROM protocol_deployments WHERE id IN (SELECT MAX(id) FROM protocol_deployments GROUP BY protocol_endpoint_id) AND status = ?) AS unresolved_deployments`,
-		period.From, period.To, true, true, now.Add(-2*time.Minute),
+		traffic, previousTraffic, period.From, period.To, period.PreviousFrom, period.PreviousTo, true, true, now.Add(-2*time.Minute),
 		"subscription", "subscription", "subscription", true, true, "open", "pending_admin", "failed").Scan(&operational).Error; err != nil {
 		return observability.DashboardSnapshot{}, err
 	}
@@ -196,11 +220,12 @@ func (s Dashboard) LoadDashboard(ctx context.Context, period observability.Dashb
 			RevenueCents: orders.RevenueCents, PreviousRevenueCents: orders.PreviousRevenueCents,
 			PaidOrders: orders.PaidOrders, PreviousPaidOrders: orders.PreviousPaidOrders,
 			NewOrders: orders.NewOrders, RenewOrders: orders.RenewOrders,
+			PreviousRenewOrders: orders.PreviousRenewOrders, NewUsers: operational.NewUsers, PreviousNewUsers: operational.PreviousNewUsers,
 			NewSubscriptions: subscriptions.NewSubscriptions, PreviousNewSubscriptions: subscriptions.PreviousNewSubscriptions,
 			ActiveSubscriptions: subscriptions.ActiveSubscriptions, ExpiringWithin3Days: subscriptions.ExpiringWithin3Days,
 			Currency: currency, MixedCurrency: mixed,
 		},
-		Service:        observability.DashboardService{TrafficBytes: operational.TrafficBytes, OnlineNodes: operational.ConnectorOnline, EnabledNodes: operational.NodesEnabled},
+		Service:        observability.DashboardService{TrafficBytes: operational.TrafficBytes, PreviousTrafficBytes: operational.PreviousTrafficBytes, OnlineNodes: operational.ConnectorOnline, EnabledNodes: operational.NodesEnabled},
 		Subscriptions:  observability.DashboardSubscriptionHealth{ExpiringWithin24Hours: subscriptions.ExpiringWithin24Hours, ExpiringWithin3Days: subscriptions.ExpiringWithin3Days, ExpiringWithin7Days: subscriptions.ExpiringWithin7Days, QuotaExhausted: subscriptions.QuotaExhausted},
 		Attention:      observability.DashboardAttention{OfflineNodes: offline, UnresolvedDeployments: operational.UnresolvedDeployments, PendingTickets: operational.PendingTickets},
 		Infrastructure: observability.DashboardInfrastructure{NodesTotal: operational.NodesTotal, NodesEnabled: operational.NodesEnabled, ConnectorOnline: operational.ConnectorOnline, SSHVerified: operational.SSHVerified, TrafficReady: operational.TrafficReady, ProtocolEndpoints: operational.ProtocolEndpoints, ActiveProtocolEndpoints: operational.ActiveProtocolEndpoints, PublishedPlans: operational.PublishedPlans, UnresolvedDeployments: operational.UnresolvedDeployments},
@@ -229,7 +254,7 @@ func loadDashboardTrend(db *gorm.DB, period observability.DashboardPeriod, bucke
  COALESCE(SUM((CASE WHEN assigned_by > 0 OR paid_amount > 0 THEN paid_amount ELSE amount_cents END) - refund_amount),0) AS revenue_cents,
  COUNT(*) AS paid_orders,
  COALESCE(SUM(CASE WHEN order_type = 'new' THEN 1 ELSE 0 END),0) AS new_orders,
- COALESCE(SUM(CASE WHEN order_type = 'renew' THEN 1 ELSE 0 END),0) AS renew_orders`, args...).
+ COALESCE(SUM(CASE WHEN order_type IN ('renew','renewal') THEN 1 ELSE 0 END),0) AS renew_orders`, args...).
 		Where("status = ? AND paid_at IS NOT NULL AND paid_at >= ? AND paid_at < ?", "paid", period.From, period.To).
 		Group("bucket_start").Order("bucket_start ASC").Scan(&rows).Error; err != nil {
 		return nil, err

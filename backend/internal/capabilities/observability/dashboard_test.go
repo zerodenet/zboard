@@ -9,6 +9,11 @@ import (
 
 type dashboardRepositoryStub struct{ called bool }
 
+func (s *dashboardRepositoryStub) LoadTrafficRankings(context.Context, DashboardPeriod, ...string) (DashboardTrafficRankings, error) {
+	s.called = true
+	return DashboardTrafficRankings{}, nil
+}
+
 func (s *dashboardRepositoryStub) LoadDashboard(context.Context, DashboardPeriod, time.Time, []DashboardTrendBucket) (DashboardSnapshot, error) {
 	s.called = true
 	return DashboardSnapshot{}, nil

@@ -1,0 +1,11 @@
+ALTER TABLE subscriptions ADD COLUMN lifecycle VARCHAR(20) NOT NULL DEFAULT 'renewable';
+ALTER TABLE subscriptions ADD COLUMN ends_on_quota_exhaustion BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE subscriptions ADD COLUMN ended_at DATETIME NULL;
+ALTER TABLE subscriptions ADD COLUMN end_reason VARCHAR(20) NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN subscription_ended_at DATETIME NULL;
+ALTER TABLE orders ADD COLUMN subscription_end_reason VARCHAR(20) NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN subscription_final_flow_total BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN subscription_final_flow_used BIGINT NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_subscriptions_ended_at ON subscriptions(ended_at);
+UPDATE subscriptions SET lifecycle = CASE WHEN COALESCE((SELECT is_renewable FROM plans WHERE plans.id = subscriptions.plan_id), TRUE) AND EXISTS (SELECT 1 FROM plan_skus JOIN plan_sku_operations ON plan_sku_operations.plan_sku_id = plan_skus.id WHERE plan_skus.plan_id = subscriptions.plan_id AND plan_skus.archived_at IS NULL AND plan_sku_operations.operation = 'renew') THEN 'renewable' ELSE 'fixed' END;
+UPDATE subscriptions SET ends_on_quota_exhaustion = CASE WHEN reset_policy IN (0, 5) AND COALESCE((SELECT billing_unit FROM orders WHERE orders.subscription_id = subscriptions.id AND status = 'paid' AND order_type IN ('new', 'renewal', 'upgrade') ORDER BY fulfilled_at DESC, id DESC LIMIT 1), (SELECT billing_unit FROM plan_skus WHERE plan_skus.id = subscriptions.plan_sku_id), '') = 'once' THEN TRUE ELSE FALSE END;

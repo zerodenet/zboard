@@ -25,14 +25,14 @@ func (s SKUQueries) list(ctx context.Context, actor uint, q commerce.SKUQuery, p
 			}
 		}
 		var plan model.Plan
-		parent := tx.Select("id").Where("id = ?", q.PlanID)
+		parent := tx.Select("id").Where("id = ? AND archived_at IS NULL", q.PlanID)
 		if public {
 			parent = parent.Where("is_active = ?", true)
 		}
 		if err := parent.First(&plan).Error; err != nil {
 			return resourceError(err)
 		}
-		query := tx.Model(&model.PlanSKU{}).Where("plan_id = ?", q.PlanID)
+		query := tx.Model(&model.PlanSKU{}).Where("plan_id = ? AND archived_at IS NULL", q.PlanID)
 		if public {
 			query = query.Where("is_active = ?", true)
 		} else if q.Active != nil {
@@ -82,7 +82,7 @@ func (s SKUQueries) Get(ctx context.Context, actor, id uint) (commerce.SKURecord
 			return err
 		}
 		var sku model.PlanSKU
-		if err := tx.First(&sku, id).Error; err != nil {
+		if err := tx.Where("archived_at IS NULL").First(&sku, id).Error; err != nil {
 			return resourceError(err)
 		}
 		records, err := skuRecords(tx, []model.PlanSKU{sku})

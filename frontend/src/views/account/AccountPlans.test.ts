@@ -19,7 +19,7 @@ function deferred<T>() {
 function sku(id: number) { return { id, name: `SKU ${id}`, price_cents: 100, currency: 'CNY', billing_unit: 'month', billing_value: 1 } as any }
 function plan(id: number) { return { id, name: `Plan ${id}`, slug: `plan-${id}`, description: `商品 ${id} 的详细说明`, traffic_bytes: 100, active_sku_count: 105, primary_sku: sku(id) } as any }
 function subscription(id: number) {
-  return { id, plan_id: id, plan_name: `Subscription ${id}`, sku_name: 'Monthly', status: 'active', end_at: '2027-01-01T00:00:00Z', flow_used: 1, flow_total: 100 } as any
+  return { id, plan_id: id, plan_name: `Subscription ${id}`, sku_name: 'Monthly', status: 'active', can_renew: true, can_change: true, can_addon: true, can_reset: true, end_at: '2027-01-01T00:00:00Z', flow_used: 1, flow_total: 100 } as any
 }
 function page(items: any[], total = items.length, offset = 0, limit = 25) {
   return { items, total, page: { offset, limit, total }, aggregates: {}, facets: {} } as any
@@ -60,6 +60,51 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(fetchPlanCatalogSKUs).not.toHaveBeenCalled()
     expect(fetchPlanCatalogItem).not.toHaveBeenCalled()
   })
+  it('renders only saleable operations returned by the backend', async () => {
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([{ ...subscription(105), can_renew: true, can_change: false, can_addon: false, can_reset: false }]))
+    await open()
+    const actions = wrapper!.get('.commerce-subscription-actions')
+    expect(actions.text()).toBe('续费')
+    expect(fetchPlanCatalogSKUs).not.toHaveBeenCalled()
+  })
+  it('shows the renewal recovery deadline for a stopped service', async () => {
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([{ ...subscription(105), status: 'expired', ended_at: '2026-09-27T00:00:00Z', end_reason: 'expired', renewal_until: '2026-10-04T00:00:00Z', can_change: false, can_reset: false, can_addon: false }]))
+    await open()
+    expect(wrapper!.get('.commerce-subscription-card').text()).toContain('服务已停止')
+    expect(wrapper!.get('.commerce-subscription-actions').text()).toBe('续费恢复')
+    await wrapper!.findAll('button').find(button => button.text() === '续费恢复')!.trigger('click')
+    await flushPromises()
+    expect(fetchAccountSubscriptionsPage).toHaveBeenCalledWith(expect.objectContaining({ subscriptionId: 105, eligibleFor: 'renew' }), expect.anything())
+    expect(fetchPlanCatalogSKUs).toHaveBeenLastCalledWith(105, expect.objectContaining({ operation: 'renew' }), expect.anything())
+  })
+  it('keeps configured renewal and addon actions for an exhausted subscription', async () => {
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([{ ...subscription(105), flow_used: 100, can_change: false, can_reset: false }]))
+    await open()
+    expect(wrapper!.get('.commerce-subscription-actions').text()).toBe('续费购买流量包')
+  })
+  it('allows a paid change with zero credit when no reset SKU is configured', async () => {
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => page([{ ...subscription(params?.subscriptionId || 105), flow_used: 100, can_renew: false, can_addon: false, can_reset: false, can_change: true }]))
+    vi.mocked(previewOrder).mockResolvedValue({ order_type: 'upgrade', amount_cents: 1500, credit_amount: 0, payable_amount: 1500, currency: 'CNY', time_credit: 500, traffic_credit: 0, traffic_bytes: 150 * 1024 ** 3, used_bytes: 100, end_at: '2027-01-01T00:00:00Z', quote_fingerprint: 'exhausted-change' })
+    await open()
+    expect(wrapper!.get('.commerce-subscription-actions').text()).toBe('切换套餐')
+    await router.push('/account/plans?operation=change&subscription=105&plan=2&step=checkout')
+    await flushPromises()
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('15.00')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('0.00')
+    expect(createOrder).not.toHaveBeenCalled()
+    await wrapper!.findAll('button').find(item => item.text() === '确认创建订单')!.trigger('click')
+    await flushPromises()
+    expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'upgrade', targetSubscriptionId: 105, quoteFingerprint: 'exhausted-change' })
+  })
+  it('hides an empty management section while keeping the purchase catalog', async () => {
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([]))
+    await open()
+    expect(wrapper!.find('#active-subscriptions-title').exists()).toBe(false)
+    expect(wrapper!.find('#target-subscription-title').exists()).toBe(false)
+    expect(wrapper!.text()).not.toContain('当前没有有效订阅')
+    expect(wrapper!.find('.commerce-subscription-card').exists()).toBe(false)
+    expect(wrapper!.findAllComponents(CommercePlanCard)).toHaveLength(9)
+  })
   it('accepts a public purchase selection directly at the account checkout', async () => {
     await open('/account/plans?operation=purchase&plan=1&sku=105&step=checkout')
     expect(wrapper!.find('.purchase-checkout').exists()).toBe(true)
@@ -88,7 +133,7 @@ describe('account catalog bounded reads and route isolation', () => {
     await open()
     expect(wrapper!.text()).toContain('套餐目录加载失败')
     expect(wrapper!.text()).not.toContain('暂无可购买套餐')
-    expect(wrapper!.text()).not.toContain('当前没有有效订阅')
+    expect(wrapper!.text()).not.toContain('当前没有可操作订阅')
   })
   it('paginates the eligible subscription set instead of merging status previews', async () => {
     await open()
@@ -160,11 +205,11 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(router.currentRoute.value.path).toBe('/account/orders')
   })
   it('offers reset for an exhausted timed subscription and uses its reset SKU', async () => {
-    const exhausted = { ...subscription(105), status: 'expired', flow_used: 100 }
+    const exhausted = { ...subscription(105), status: 'expired', flow_used: 100, can_renew: false, can_change: false, can_addon: false }
     vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([exhausted]))
     vi.mocked(previewOrder).mockResolvedValue({ order_type: 'traffic_reset', amount_cents: 200, credit_amount: 0, payable_amount: 200, currency: 'CNY', time_credit: 0, traffic_credit: 0, traffic_bytes: 100 * 1024 ** 3, used_bytes: 100, end_at: exhausted.end_at, quote_fingerprint: 'reset-token' })
     await open()
-    await wrapper!.findAll('button').find(item => item.text() === '重置流量')!.trigger('click')
+    await wrapper!.findAll('button').find(item => item.text() === '购买流量重置')!.trigger('click')
     await flushPromises()
     expect(fetchAccountSubscriptionsPage).toHaveBeenCalledWith(expect.objectContaining({ subscriptionId: 105, eligibleFor: 'reset' }), expect.anything())
     expect(fetchPlanCatalogSKUs).toHaveBeenLastCalledWith(105, expect.objectContaining({ operation: 'reset' }), expect.anything())

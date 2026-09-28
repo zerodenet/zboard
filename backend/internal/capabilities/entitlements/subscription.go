@@ -3,6 +3,11 @@ package entitlements
 import "time"
 
 type Subscription struct {
+	Lifecycle             string     `json:"lifecycle"`
+	EndsOnQuotaExhaustion bool       `json:"ends_on_quota_exhaustion"`
+	EndedAt               *time.Time `json:"ended_at,omitempty"`
+	EndReason             string     `json:"end_reason,omitempty"`
+
 	ID                uint       `json:"id"`
 	UserID            uint       `json:"user_id"`
 	PlanID            uint       `json:"plan_id"`

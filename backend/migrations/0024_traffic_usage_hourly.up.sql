@@ -1,0 +1,25 @@
+CREATE TABLE traffic_usage_hourly (
+ record_at DATETIME NOT NULL,
+ user_id BIGINT NOT NULL DEFAULT 0,
+ subscription_id BIGINT NOT NULL DEFAULT 0,
+ node_id BIGINT NOT NULL DEFAULT 0,
+ protocol_endpoint_id BIGINT NOT NULL DEFAULT 0,
+ protocol_multiplier_milli BIGINT NOT NULL DEFAULT 0,
+ raw_bytes BIGINT NOT NULL DEFAULT 0,
+ upload_bytes BIGINT NOT NULL DEFAULT 0,
+ download_bytes BIGINT NOT NULL DEFAULT 0,
+ used_bytes BIGINT NOT NULL DEFAULT 0,
+ record_count BIGINT NOT NULL DEFAULT 0,
+ PRIMARY KEY (record_at, user_id, subscription_id, node_id, protocol_endpoint_id, protocol_multiplier_milli)
+) ENGINE=InnoDB;
+CREATE INDEX idx_traffic_hourly_user_id ON traffic_usage_hourly(user_id, record_at);
+CREATE INDEX idx_traffic_hourly_subscription_id ON traffic_usage_hourly(subscription_id, record_at);
+CREATE INDEX idx_traffic_hourly_node_id ON traffic_usage_hourly(node_id, record_at);
+CREATE INDEX idx_traffic_hourly_protocol_endpoint_id ON traffic_usage_hourly(protocol_endpoint_id, record_at);
+INSERT INTO traffic_usage_hourly(record_at, user_id, subscription_id, node_id, protocol_endpoint_id, protocol_multiplier_milli, raw_bytes, upload_bytes, download_bytes, used_bytes, record_count)
+SELECT CAST(DATE_FORMAT(record_at, '%Y-%m-%d %H:00:00') AS DATETIME), COALESCE(user_id, 0), COALESCE(subscription_id, 0), COALESCE(node_id, 0), COALESCE(protocol_endpoint_id, 0), COALESCE(protocol_multiplier_milli, 0), COALESCE(SUM(raw_bytes), 0), COALESCE(SUM(upload_bytes), 0), COALESCE(SUM(download_bytes), 0), COALESCE(SUM(used_bytes), 0), COUNT(*)
+FROM traffic_records GROUP BY CAST(DATE_FORMAT(record_at, '%Y-%m-%d %H:00:00') AS DATETIME), COALESCE(user_id, 0), COALESCE(subscription_id, 0), COALESCE(node_id, 0), COALESCE(protocol_endpoint_id, 0), COALESCE(protocol_multiplier_milli, 0);
+CREATE TRIGGER traffic_hourly_insert AFTER INSERT ON traffic_records FOR EACH ROW INSERT INTO traffic_usage_hourly(record_at, user_id, subscription_id, node_id, protocol_endpoint_id, protocol_multiplier_milli, raw_bytes, upload_bytes, download_bytes, used_bytes, record_count) VALUES (CAST(DATE_FORMAT(NEW.record_at, '%Y-%m-%d %H:00:00') AS DATETIME), COALESCE(NEW.user_id, 0), COALESCE(NEW.subscription_id, 0), COALESCE(NEW.node_id, 0), COALESCE(NEW.protocol_endpoint_id, 0), COALESCE(NEW.protocol_multiplier_milli, 0), COALESCE(NEW.raw_bytes, 0), COALESCE(NEW.upload_bytes, 0), COALESCE(NEW.download_bytes, 0), COALESCE(NEW.used_bytes, 0), 1) ON DUPLICATE KEY UPDATE raw_bytes = raw_bytes + VALUES(raw_bytes), upload_bytes = upload_bytes + VALUES(upload_bytes), download_bytes = download_bytes + VALUES(download_bytes), used_bytes = used_bytes + VALUES(used_bytes), record_count = record_count + VALUES(record_count);
+CREATE TRIGGER traffic_hourly_update_remove AFTER UPDATE ON traffic_records FOR EACH ROW UPDATE traffic_usage_hourly SET raw_bytes = raw_bytes - COALESCE(OLD.raw_bytes, 0), upload_bytes = upload_bytes - COALESCE(OLD.upload_bytes, 0), download_bytes = download_bytes - COALESCE(OLD.download_bytes, 0), used_bytes = used_bytes - COALESCE(OLD.used_bytes, 0), record_count = record_count - 1 WHERE record_at = CAST(DATE_FORMAT(OLD.record_at, '%Y-%m-%d %H:00:00') AS DATETIME) AND user_id = COALESCE(OLD.user_id, 0) AND subscription_id = COALESCE(OLD.subscription_id, 0) AND node_id = COALESCE(OLD.node_id, 0) AND protocol_endpoint_id = COALESCE(OLD.protocol_endpoint_id, 0) AND protocol_multiplier_milli = COALESCE(OLD.protocol_multiplier_milli, 0);
+CREATE TRIGGER traffic_hourly_update_add AFTER UPDATE ON traffic_records FOR EACH ROW INSERT INTO traffic_usage_hourly(record_at, user_id, subscription_id, node_id, protocol_endpoint_id, protocol_multiplier_milli, raw_bytes, upload_bytes, download_bytes, used_bytes, record_count) VALUES (CAST(DATE_FORMAT(NEW.record_at, '%Y-%m-%d %H:00:00') AS DATETIME), COALESCE(NEW.user_id, 0), COALESCE(NEW.subscription_id, 0), COALESCE(NEW.node_id, 0), COALESCE(NEW.protocol_endpoint_id, 0), COALESCE(NEW.protocol_multiplier_milli, 0), COALESCE(NEW.raw_bytes, 0), COALESCE(NEW.upload_bytes, 0), COALESCE(NEW.download_bytes, 0), COALESCE(NEW.used_bytes, 0), 1) ON DUPLICATE KEY UPDATE raw_bytes = raw_bytes + VALUES(raw_bytes), upload_bytes = upload_bytes + VALUES(upload_bytes), download_bytes = download_bytes + VALUES(download_bytes), used_bytes = used_bytes + VALUES(used_bytes), record_count = record_count + VALUES(record_count);
+CREATE TRIGGER traffic_hourly_delete AFTER DELETE ON traffic_records FOR EACH ROW UPDATE traffic_usage_hourly SET raw_bytes = raw_bytes - COALESCE(OLD.raw_bytes, 0), upload_bytes = upload_bytes - COALESCE(OLD.upload_bytes, 0), download_bytes = download_bytes - COALESCE(OLD.download_bytes, 0), used_bytes = used_bytes - COALESCE(OLD.used_bytes, 0), record_count = record_count - 1 WHERE record_at = CAST(DATE_FORMAT(OLD.record_at, '%Y-%m-%d %H:00:00') AS DATETIME) AND user_id = COALESCE(OLD.user_id, 0) AND subscription_id = COALESCE(OLD.subscription_id, 0) AND node_id = COALESCE(OLD.node_id, 0) AND protocol_endpoint_id = COALESCE(OLD.protocol_endpoint_id, 0) AND protocol_multiplier_milli = COALESCE(OLD.protocol_multiplier_milli, 0);

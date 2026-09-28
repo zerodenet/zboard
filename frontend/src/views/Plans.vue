@@ -2,7 +2,7 @@
   <section class="standard-page">
     <PageHeader
       title="商品与套餐"
-      description="列表只保留商品摘要；销售策略和 SKU 在按需详情中管理。"
+      description="查看商品的购买用途、价格与交付范围，进入详情管理销售规格。"
       eyebrow="Catalog"
     >
       <template #actions>
@@ -47,8 +47,8 @@
             <th>状态</th>
             <th class="numeric-column">流量配额</th>
             <th data-column-priority="2">节点组</th>
-            <th class="numeric-column" data-column-priority="3">SKU</th>
-            <th class="numeric-column">可售 SKU</th>
+            <th>购买用途</th>
+            <th>销售价格</th>
             <th data-column-priority="2">更新时间</th>
             <th class="table-action-column"><span class="sr-only">操作</span></th>
           </tr>
@@ -68,8 +68,8 @@
             </td>
             <td class="numeric-column">{{ formatBytes(plan.traffic_bytes) }}</td>
             <td data-column-priority="2"><TableText :value="plan.node_group?.name || `节点组 #${plan.node_group_id}`" /></td>
-            <td class="numeric-column" data-column-priority="3">{{ plan.sku_count }}</td>
-            <td class="numeric-column">{{ plan.active_sku_count }}</td>
+            <td><TableText :value="planSalesUses(plan)" /><small class="field-hint">{{ plan.active_sku_count }} / {{ plan.sku_count }} 个可售规格</small></td>
+            <td><TableText :value="planSalesPrices(plan)" /></td>
             <td data-column-priority="2"><TimeBadge :value="plan.updated_at" /></td>
             <td class="table-action-column">
               <UiButton
@@ -156,6 +156,7 @@
           >
             {{ detailPlan.is_active ? '转为草稿' : '发布商品' }}
           </UiButton>
+          <UiButton v-if="app.isAdmin" variant="danger" size="sm" type="button" :loading="deleting" @click="removePlan(detailPlan)">删除商品</UiButton>
         </div>
 
         <dl class="detail-kv">
@@ -236,16 +237,10 @@
                   </div>
                 </td>
                 <td class="table-action-column">
-                  <UiButton
-                    v-if="app.isAdmin"
-                    variant="secondary"
-                    size="sm"
-                    type="button"
-                    :data-plan-sku-trigger="sku.id"
-                    @click="openSKU(sku)"
-                  >
-                    编辑
-                  </UiButton>
+                  <RowActions v-if="app.isAdmin" :label="`${sku.name}的操作`" :trigger-key="`sku-${sku.id}`">
+                    <UiButton variant="secondary" size="sm" type="button" :data-plan-sku-trigger="sku.id" @click="openSKU(sku)">编辑</UiButton>
+                    <UiButton variant="danger" size="sm" type="button" :disabled="deleting" @click="removeSKU(sku)">删除</UiButton>
+                  </RowActions>
                 </td>
               </tr>
             </tbody>
@@ -305,22 +300,22 @@
         <section class="form-section">
           <div class="form-section-title"><span>2</span><div><h3>首个销售规格</h3><p>定义价格和计费周期；套餐权益在下一步统一配置。</p></div></div>
           <div class="form-grid form-grid-3">
+            <FormField v-slot="{ controlAttrs }" label="销售用途" name="create-plan-entitlement-mode" full :error="createErrors.fields['sku.entitlement_mode']"><UiSelect v-model="form.sku.entitlement_mode" v-bind="controlAttrs" :options="entitlementModeOptions" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="SKU 名称" name="create-plan-sku-name" :error="createErrors.fields['sku.name']" required><UiInput v-model.trim="form.sku.name" v-bind="controlAttrs" placeholder="月付" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="SKU 编码" name="create-plan-sku-code" :error="createErrors.fields['sku.code']" required><UiInput v-model.trim="form.sku.code" v-bind="controlAttrs" placeholder="starter-monthly" /></FormField>
-            <FormField v-slot="{ controlAttrs }" label="计费方式" name="create-plan-billing-mode" :error="createErrors.fields['sku.billing_mode']"><UiSelect v-model="form.sku.billing_mode" v-bind="controlAttrs" :options="billingModeOptions" /></FormField>
-            <FormField v-slot="{ controlAttrs }" label="权益用途" name="create-plan-entitlement-mode" :error="createErrors.fields['sku.entitlement_mode']"><UiSelect v-model="form.sku.entitlement_mode" v-bind="controlAttrs" :options="entitlementModeOptions" /></FormField>
-            <FormField label="可用场景" name="create-plan-operations" :error="createErrors.fields['sku.allowed_operations']" full>
+            <FormField v-if="form.sku.entitlement_mode === 'plan'" v-slot="{ controlAttrs }" label="计费方式" name="create-plan-billing-mode" :error="createErrors.fields['sku.billing_mode']"><UiSelect v-model="form.sku.billing_mode" v-bind="controlAttrs" :options="billingModeOptions" /></FormField>
+            <p v-if="form.sku.entitlement_mode !== 'plan'" class="field-hint field-full">{{ form.sku.entitlement_mode === 'traffic_reset' ? '一次付费重置当前周期流量，到期时间和自动重置日期保持不变。' : '一次付费为现有订阅增加当前周期流量。' }}</p>
+            <FormField v-if="form.sku.entitlement_mode === 'plan'" label="可用场景" name="create-plan-operations" :error="createErrors.fields['sku.allowed_operations']" full>
               <div class="sku-operation-grid">
-                <label v-for="option in skuOperationOptions" :key="option.value" class="sku-operation-option">
-                  <UiCheckbox :model-value="skuOperationsFor(form.sku).includes(option.value)" :disabled="!skuOperationAvailable(form.sku, option.value)" @update:model-value="toggleSKUOperation(form.sku, option.value, $event)" />
+                <label v-for="option in planOperationOptions" :key="option.value" class="sku-operation-option">
+                  <UiCheckbox :model-value="skuOperationsFor(form.sku).includes(option.value)" @update:model-value="toggleSKUOperation(form.sku, option.value, $event)" />
                   <span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></span>
                 </label>
               </div>
             </FormField>
-            <FormField v-slot="{ controlAttrs }" label="计费单位" name="create-plan-billing-unit" :hint="billingUnitHint(form.sku)" :error="createErrors.fields['sku.billing_unit']"><UiSelect v-model="form.sku.billing_unit" v-bind="controlAttrs" :options="billingUnitOptionsFor(form.sku)" /></FormField>
-            <FormField v-slot="{ controlAttrs }" :label="form.sku.entitlement_mode !== 'plan' ? '执行次数' : form.sku.billing_unit === 'once' ? '永久额度' : '周期数量'" name="create-plan-billing-value" :error="createErrors.fields['sku.billing_value']" required><UiNumberInput v-model="form.sku.billing_value" v-bind="controlAttrs" :min="1" :disabled="form.sku.billing_unit === 'once'" inputmode="numeric" /></FormField>
+            <SKUCycleFields v-if="form.sku.entitlement_mode === 'plan'" id-prefix="create-plan" v-model:billing-unit="form.sku.billing_unit" v-model:billing-value="form.sku.billing_value" :hint="billingUnitHint(form.sku)" :unit-error="createErrors.fields['sku.billing_unit']" :value-error="createErrors.fields['sku.billing_value']" />
             <FormField v-if="skuOperationsFor(form.sku).includes('renew')" v-slot="{ controlAttrs }" label="再次购买效果" name="create-plan-renewal-effect" :hint="renewalEffectHint(form.sku)" :error="createErrors.fields['sku.renewal_effect']" required><UiSelect v-model="form.sku.renewal_effect" v-bind="controlAttrs" :options="renewalEffectOptions(form.sku)" /></FormField>
-            <FormField v-slot="{ controlAttrs }" label="价格" name="create-plan-price" hint="按所选币种的标准金额输入；系统以整数分保存。" :error="createErrors.fields['sku.price_cents']" required><MoneyInput v-model="form.sku.price_cents" v-bind="controlAttrs" :currency="form.sku.currency || 'CNY'" :min-cents="0" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="价格" name="create-plan-price" hint="按所选币种输入金额。" :error="createErrors.fields['sku.price_cents']" required><MoneyInput v-model="form.sku.price_cents" v-bind="controlAttrs" :currency="form.sku.currency || 'CNY'" :min-cents="0" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="币种" name="create-plan-currency" :error="createErrors.fields['sku.currency']" required><UiInput v-model.trim="form.sku.currency" v-bind="controlAttrs" maxlength="8" /></FormField>
             <FormField v-if="form.sku.entitlement_mode === 'traffic_addon'" v-slot="{ controlAttrs }" label="附加流量" name="create-plan-grant-traffic" hint="增加目标订阅当前周期的可用流量；定期重置时不会重复发放。" :error="createErrors.fields['sku.grant_traffic_bytes']"><ByteSizeInput v-model="form.sku.grant_traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="最大有效订阅" name="create-plan-max-subscriptions" :error="createErrors.fields.max_active_subscriptions"><UiNumberInput v-model="form.max_active_subscriptions" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
@@ -336,8 +331,8 @@
             <FormField v-slot="{ controlAttrs }" label="节点组" name="create-plan-node-group" hint="按名称、代码或说明远程搜索，不预载全部节点组。" :error="createErrors.fields.node_group_id" required><NodeGroupLookup v-model="form.node_group_id" v-bind="controlAttrs" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="流量重置" name="create-plan-reset-policy" hint="永久套餐交付时始终不重置；此策略用于其他定期 SKU。" :error="createErrors.fields.reset_policy"><UiSelect v-model.number="form.reset_policy" v-bind="controlAttrs" :options="resetPolicyOptions" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="消耗计算" name="create-plan-traffic-mode" :error="createErrors.fields.traffic_calc_mode"><UiSelect v-model.number="form.traffic_calc_mode" v-bind="controlAttrs" :options="trafficCalcOptions" /></FormField>
-            <label class="check-field"><UiCheckbox v-model="form.is_active" /><span>创建后立即发布商品</span></label>
-            <label class="check-field"><UiCheckbox v-model="form.is_renewable" /><span>允许用户续费</span></label>
+            <FormField v-slot="{ controlAttrs }" label="发布状态" name="create-plan-is_active"><label class="check-field"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /><span>创建后立即发布商品</span></label></FormField>
+            <FormField v-slot="{ controlAttrs }" label="续费" name="create-plan-is_renewable"><label class="check-field"><UiCheckbox v-model="form.is_renewable" v-bind="controlAttrs" /><span>允许用户续费</span></label></FormField>
           </div>
         </section>
       </form>
@@ -385,8 +380,8 @@
             <FormField v-slot="{ controlAttrs }" label="家庭共享人数" name="edit-plan-family-limit" :error="planErrors.fields.family_limit"><UiNumberInput v-model="planDraft.family_limit" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="流量重置" name="edit-plan-reset-policy" :error="planErrors.fields.reset_policy"><UiSelect v-model.number="planDraft.reset_policy" v-bind="controlAttrs" :options="resetPolicyOptions" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="消耗计算" name="edit-plan-traffic-mode" :error="planErrors.fields.traffic_calc_mode"><UiSelect v-model.number="planDraft.traffic_calc_mode" v-bind="controlAttrs" :options="trafficCalcOptions" /></FormField>
-            <label class="check-field"><UiCheckbox v-model="planDraft.is_renewable" /><span>允许用户续费</span></label>
-            <label class="check-field"><UiCheckbox v-model="planDraft.is_active" /><span>商品已发布</span></label>
+            <FormField v-slot="{ controlAttrs }" label="续费" name="edit-plan-is_renewable"><label class="check-field"><UiCheckbox v-model="planDraft.is_renewable" v-bind="controlAttrs" /><span>允许用户续费</span></label></FormField>
+            <FormField v-slot="{ controlAttrs }" label="发布状态" name="edit-plan-is_active"><label class="check-field"><UiCheckbox v-model="planDraft.is_active" v-bind="controlAttrs" /><span>商品已发布</span></label></FormField>
           </div>
         </section>
       </form>
@@ -408,23 +403,23 @@
     >
       <form id="sku-form" ref="skuFormElement" class="form-grid form-grid-3" novalidate @submit.prevent="saveSKU">
         <PageAlert v-if="skuErrors.formError.value" class="field-full" tone="danger" title="无法保存规格">{{ skuErrors.formError.value }}</PageAlert>
+        <FormField v-slot="{ controlAttrs }" label="销售用途" name="edit-sku-entitlement-mode" full :error="skuErrors.fields.entitlement_mode"><UiSelect v-model="skuDraft.entitlement_mode" v-bind="controlAttrs" :options="entitlementModeOptions" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="规格名称" name="edit-sku-name" :error="skuErrors.fields.name" required><UiInput v-model.trim="skuDraft.name" v-bind="controlAttrs" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="SKU 编码" name="edit-sku-code" :error="skuErrors.fields.code" required><UiInput v-model.trim="skuDraft.code" v-bind="controlAttrs" /></FormField>
-        <FormField v-slot="{ controlAttrs }" label="计费方式" name="edit-sku-billing-mode" :error="skuErrors.fields.billing_mode"><UiSelect v-model="skuDraft.billing_mode" v-bind="controlAttrs" :options="billingModeOptions" /></FormField>
-        <FormField v-slot="{ controlAttrs }" label="权益用途" name="edit-sku-entitlement-mode" :error="skuErrors.fields.entitlement_mode"><UiSelect v-model="skuDraft.entitlement_mode" v-bind="controlAttrs" :options="entitlementModeOptions" /></FormField>
-        <FormField label="可用场景" name="edit-sku-operations" :error="skuErrors.fields.allowed_operations" full>
+        <FormField v-if="skuDraft.entitlement_mode === 'plan'" v-slot="{ controlAttrs }" label="计费方式" name="edit-sku-billing-mode" :error="skuErrors.fields.billing_mode"><UiSelect v-model="skuDraft.billing_mode" v-bind="controlAttrs" :options="billingModeOptions" /></FormField>
+        <p v-if="skuDraft.entitlement_mode !== 'plan'" class="field-hint field-full">{{ skuDraft.entitlement_mode === 'traffic_reset' ? '一次付费重置当前周期流量，到期时间和自动重置日期保持不变。' : '一次付费为现有订阅增加当前周期流量。' }}</p>
+        <FormField v-if="skuDraft.entitlement_mode === 'plan'" label="可用场景" name="edit-sku-operations" :error="skuErrors.fields.allowed_operations" full>
           <div class="sku-operation-grid">
-            <label v-for="option in skuOperationOptions" :key="option.value" class="sku-operation-option">
-              <UiCheckbox :model-value="skuOperationsFor(skuDraft).includes(option.value)" :disabled="!skuOperationAvailable(skuDraft, option.value)" @update:model-value="toggleSKUOperation(skuDraft, option.value, $event)" />
+            <label v-for="option in planOperationOptions" :key="option.value" class="sku-operation-option">
+              <UiCheckbox :model-value="skuOperationsFor(skuDraft).includes(option.value)" @update:model-value="toggleSKUOperation(skuDraft, option.value, $event)" />
               <span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></span>
             </label>
           </div>
         </FormField>
-        <FormField v-slot="{ controlAttrs }" label="计费单位" name="edit-sku-billing-unit" :hint="billingUnitHint(skuDraft)" :error="skuErrors.fields.billing_unit"><UiSelect v-model="skuDraft.billing_unit" v-bind="controlAttrs" :options="billingUnitOptionsFor(skuDraft)" /></FormField>
-        <FormField v-slot="{ controlAttrs }" :label="skuDraft.entitlement_mode !== 'plan' ? '执行次数' : skuDraft.billing_unit === 'once' ? '永久额度' : '周期数量'" name="edit-sku-billing-value" :error="skuErrors.fields.billing_value" required><UiNumberInput v-model="skuDraft.billing_value" v-bind="controlAttrs" :min="1" :disabled="skuDraft.billing_unit === 'once'" inputmode="numeric" /></FormField>
+        <SKUCycleFields v-if="skuDraft.entitlement_mode === 'plan'" id-prefix="edit-sku" v-model:billing-unit="skuDraft.billing_unit" v-model:billing-value="skuDraft.billing_value" :hint="billingUnitHint(skuDraft)" :unit-error="skuErrors.fields.billing_unit" :value-error="skuErrors.fields.billing_value" />
         <FormField v-if="skuOperationsFor(skuDraft).includes('renew')" v-slot="{ controlAttrs }" label="再次购买效果" name="edit-sku-renewal-effect" :hint="renewalEffectHint(skuDraft)" :error="skuErrors.fields.renewal_effect" required><UiSelect v-model="skuDraft.renewal_effect" v-bind="controlAttrs" :options="renewalEffectOptions(skuDraft)" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="币种" name="edit-sku-currency" :error="skuErrors.fields.currency" required><UiInput v-model.trim="skuDraft.currency" v-bind="controlAttrs" maxlength="8" /></FormField>
-        <FormField v-slot="{ controlAttrs }" label="价格" name="edit-sku-price" hint="按币种标准金额输入；系统以整数分保存。" :error="skuErrors.fields.price_cents"><MoneyInput v-model="skuDraft.price_cents" v-bind="controlAttrs" :currency="skuDraft.currency || 'CNY'" :min-cents="0" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="价格" name="edit-sku-price" hint="按所选币种输入金额。" :error="skuErrors.fields.price_cents"><MoneyInput v-model="skuDraft.price_cents" v-bind="controlAttrs" :currency="skuDraft.currency || 'CNY'" :min-cents="0" /></FormField>
         <FormField v-if="skuDraft.entitlement_mode === 'traffic_addon'" v-slot="{ controlAttrs }" label="附加流量" name="edit-sku-grant-traffic" hint="只增加目标订阅当前周期的可用流量；定期重置时失效。" :error="skuErrors.fields.grant_traffic_bytes"><ByteSizeInput v-model="skuDraft.grant_traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="排序" name="edit-sku-sort-order" :error="skuErrors.fields.sort_order"><UiNumberInput v-model="skuDraft.sort_order" v-bind="controlAttrs" inputmode="numeric" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="销售状态" name="edit-sku-active" :error="skuErrors.fields.is_active" full>
@@ -441,6 +436,7 @@
 
 <script setup lang="ts">
 import TableText from '../components/TableText.vue'
+import SKUCycleFields from '../components/SKUCycleFields.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import {
@@ -452,11 +448,14 @@ import {
   fetchPlansPage,
   updatePlan,
   updatePlanSKU,
+  deletePlan,
+  deletePlanSKU,
   type PlanDetail,
   type PlanSKU,
   type PlanSummary,
 } from '../api/client'
 import ByteSizeInput from '../components/ByteSizeInput.vue'
+import RowActions from '../components/RowActions.vue'
 import DataTable from '../components/DataTable.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
@@ -509,6 +508,7 @@ const skuOffset = ref((Math.max(1, Number(route.query.sku_page) || 1) - 1) * sku
 const message = ref('')
 const saving = ref(false)
 const statusUpdating = ref(false)
+const deleting = ref(false)
 const createOpen = ref(false)
 const planEditorOpen = ref(false)
 const planRevisionConflict = ref(false)
@@ -682,22 +682,14 @@ const billingModeOptions = [
   { label: '一次性付费', value: 'one_time' },
 ]
 const entitlementModeOptions = [
-  { label: '套餐权益', value: 'plan' },
-  { label: '流量加购', value: 'traffic_addon' },
+  { label: '套餐订阅', value: 'plan' },
+  { label: '流量包', value: 'traffic_addon' },
   { label: '重置流量', value: 'traffic_reset' },
 ]
-const skuOperationOptions = [
+const planOperationOptions = [
   { label: '新购', value: 'purchase' as const, description: '允许用户创建新的独立订阅。' },
   { label: '续费', value: 'renew' as const, description: '允许延长有效期，或为永久套餐补充套餐流量。' },
   { label: '套餐切换', value: 'change' as const, description: '允许其他商品的订阅切换到当前商品。' },
-  { label: '附加购买', value: 'addon' as const, description: '一次性增加目标订阅的附加权益。' },
-  { label: '重置流量', value: 'reset' as const, description: '恢复本周期套餐额度，到期和自动重置日期保持不变。' },
-]
-const billingUnitOptions = [
-  { label: '天', value: 'day' },
-  { label: '月', value: 'month' },
-  { label: '年', value: 'year' },
-  { label: '永久（流量用完为止）', value: 'once' },
 ]
 const timedRenewalEffectOptions = [
   { label: '只延长有效期', value: 'extend_only' },
@@ -852,7 +844,7 @@ const {
 const detailReturnFocusSelector = computed(() => expandedPlanID.value ? `[data-plan-detail-trigger="${expandedPlanID.value}"]` : '')
 const planEditorReturnFocusSelector = computed(() => planDraft.id ? `[data-plan-editor-trigger="${planDraft.id}"]` : '')
 const skuReturnFocusSelector = computed(() => {
-  if (skuDraft.id) return `[data-plan-sku-trigger="${skuDraft.id}"]`
+  if (skuDraft.id) return `[data-row-action-trigger="sku-${skuDraft.id}"]`
   return expandedPlanID.value ? `[data-plan-sku-create-trigger="${expandedPlanID.value}"]` : ''
 })
 
@@ -1002,7 +994,7 @@ async function syncDetailAndEditorsFromRoute() {
 }
 
 function skuOperationsFor(sku: Pick<PlanSKU, 'sku_type' | 'allowed_operations'>) {
-  if (sku.allowed_operations?.length) return sku.allowed_operations
+  if (sku.allowed_operations !== undefined) return sku.allowed_operations
   const legacyOperation = ({ new: 'purchase', renewal: 'renew', upgrade: 'change', traffic_pack: 'addon', traffic_reset: 'reset' } as const)[sku.sku_type as 'new' | 'renewal' | 'upgrade' | 'traffic_pack' | 'traffic_reset']
   return [legacyOperation || 'purchase'] as Array<'purchase' | 'renew' | 'change' | 'addon' | 'reset'>
 }
@@ -1036,8 +1028,11 @@ function syncSKUCommerceFields(sku: PlanSKU | ReturnType<typeof emptySKU>) {
   sku.entitlement_mode = 'plan'
   if (sku.billing_mode === 'periodic' && sku.billing_unit === 'once') sku.billing_unit = 'month'
   if (sku.billing_unit === 'once') sku.billing_value = 1
-  const operations = skuOperationsFor(sku).filter(operation => operation !== 'addon' && operation !== 'reset')
-  sku.allowed_operations = operations.length ? operations : ['purchase']
+  const previousOperations = skuOperationsFor(sku)
+  const operations = previousOperations.some(operation => operation === 'addon' || operation === 'reset')
+    ? ['purchase'] as NonNullable<PlanSKU['allowed_operations']>
+    : previousOperations
+  sku.allowed_operations = operations
   if (!sku.allowed_operations.includes('renew')) {
     sku.renewal_effect = 'none'
   } else if (sku.billing_unit === 'once') {
@@ -1073,6 +1068,14 @@ function toggleSKUOperation(
   syncSKUCommerceFields(sku)
 }
 
+const salesOperationLabels = { purchase: '新购', renew: '续费', change: '切换套餐', addon: '流量包', reset: '重置流量' }
+function planSalesUses(plan: PlanSummary) {
+  return plan.sales_options?.length ? Array.from(new Set(plan.sales_options.map(option => salesOperationLabels[option.operation]))).join(' · ') : '暂无可购买用途'
+}
+function planSalesPrices(plan: PlanSummary) {
+  return plan.sales_options?.length ? plan.sales_options.map(option => `${salesOperationLabels[option.operation]} ${formatCurrency(option.min_price_cents, option.currency)}${option.max_price_cents > option.min_price_cents ? ' 起' : ''}`).join(' · ') : '—'
+}
+
 function billingLabel(sku: PlanSKU) {
   const unit = ({ day: '天', month: '月', year: '年', once: '次' } as Record<string, string>)[sku.billing_unit] || sku.billing_unit
   if (sku.entitlement_mode === 'traffic_reset') return '一次性重置流量'
@@ -1080,10 +1083,6 @@ function billingLabel(sku: PlanSKU) {
   if (sku.billing_unit === 'once') return '永久有效 · 流量用完为止'
   const period = `${sku.billing_value} ${unit}`
   return sku.billing_mode === 'one_time' ? `一次性付费 · ${period}有效` : period
-}
-
-function billingUnitOptionsFor(sku: PlanSKU | ReturnType<typeof emptySKU>) {
-  return sku.entitlement_mode === 'traffic_addon' || sku.entitlement_mode === 'traffic_reset' ? [{ label: '一次', value: 'once' }] : billingUnitOptions
 }
 
 function billingUnitHint(sku: PlanSKU | ReturnType<typeof emptySKU>) {
@@ -1492,6 +1491,31 @@ async function saveSKU() {
   } finally {
     saving.value = false
   }
+}
+
+async function removePlan(plan: PlanDetail) {
+  if (deleting.value || !await confirmAction({ title: '删除商品？', message: `删除“${plan.name}”及其销售规格，已有订单和订阅保留。`, confirmText: '删除商品', tone: 'danger' })) return
+  deleting.value = true
+  try {
+    await deletePlan(plan.id)
+    await closeDetails()
+    await refresh()
+    notify('商品已删除', '已有订单和订阅保留。', 'success')
+  } catch (cause: any) {
+    notify('删除失败', cause?.response?.data?.message || '请稍后重试。', 'danger')
+  } finally { deleting.value = false }
+}
+async function removeSKU(sku: PlanSKU) {
+  if (deleting.value || !await confirmAction({ title: '删除销售规格？', message: `删除“${sku.name}”，已有订单和订阅保留。删除最后一个可新购规格时，商品自动转为草稿。`, confirmText: '删除规格', tone: 'danger' })) return
+  deleting.value = true
+  try {
+    await deletePlanSKU(sku.id)
+    skuOffset.value = 0
+    await refreshAll()
+    notify('销售规格已删除', '已有订单和订阅保留。', 'success')
+  } catch (cause: any) {
+    notify('删除失败', cause?.response?.data?.message || '请稍后重试。', 'danger')
+  } finally { deleting.value = false }
 }
 
 async function toggleActive(plan: PlanDetail) {

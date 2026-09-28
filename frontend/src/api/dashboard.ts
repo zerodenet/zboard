@@ -1,7 +1,6 @@
-import axios from 'axios'
-import { API_BASE, getAuthToken } from './client'
+import { api, type ApiRequestOptions } from './client'
 
-export type DashboardRange = 'today' | '7d' | '30d'
+export type DashboardRange = 'today' | '7d' | '30d' | 'month'
 
 export interface DashboardPeriod {
   range: DashboardRange
@@ -18,6 +17,9 @@ export interface DashboardBusinessOverview {
   previous_revenue_cents: number
   paid_orders: number
   previous_paid_orders: number
+  new_users?: number
+  previous_new_users?: number
+  previous_renew_orders?: number
   new_orders: number
   renew_orders: number
   new_subscriptions: number
@@ -31,6 +33,7 @@ export interface DashboardBusinessOverview {
 export interface DashboardServiceOverview {
   active_subscriptions: number | null
   active_flows: number | null
+  previous_traffic_bytes?: number
   traffic_bytes: number
   online_nodes: number
   enabled_nodes: number
@@ -83,12 +86,26 @@ export interface DashboardOverview {
   as_of: string
 }
 
-export async function fetchDashboardOverview(range: DashboardRange): Promise<DashboardOverview> {
-  const token = getAuthToken()
-  const response = await axios.get(`${API_BASE}/admin/dashboard/overview`, {
-    params: { range },
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    timeout: 8000,
-  })
+export interface DashboardTrafficRanking {
+  id: number
+  name: string
+  traffic_bytes: number
+  previous_traffic_bytes: number
+}
+
+export interface DashboardTrafficRankings {
+  period: DashboardPeriod
+  nodes: DashboardTrafficRanking[]
+  users: DashboardTrafficRanking[]
+  as_of: string
+}
+
+export async function fetchDashboardOverview(range: DashboardRange, options: ApiRequestOptions = {}): Promise<DashboardOverview> {
+  const response = await api.get('/admin/dashboard/overview', { params: { range }, signal: options.signal })
+  return response.data?.data
+}
+
+export async function fetchDashboardTrafficRankings(range: DashboardRange, options: ApiRequestOptions & { dimension?: 'nodes' | 'users' } = {}): Promise<DashboardTrafficRankings> {
+  const response = await api.get('/admin/dashboard/traffic-rankings', { params: { range, dimension: options.dimension }, signal: options.signal })
   return response.data?.data
 }

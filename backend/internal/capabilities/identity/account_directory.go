@@ -6,14 +6,15 @@ import (
 )
 
 type AccountDirectoryQuery struct {
-	Status    string
-	IsAdmin   *bool
-	Search    string
-	Paged     bool
-	Offset    int
-	Limit     int
-	Sort      string
-	Direction string
+	Status        string
+	IsAdmin       *bool
+	EmailVerified *bool
+	Search        string
+	Paged         bool
+	Offset        int
+	Limit         int
+	Sort          string
+	Direction     string
 }
 
 type AccountDirectoryItem struct {

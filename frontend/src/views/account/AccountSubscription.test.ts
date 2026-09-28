@@ -25,7 +25,7 @@ function deferred<T>() {
 }
 
 const subscriptions = [1, 2].map(id => ({
-  id, status: 'active', plan_name: `Plan ${id}`, sku_name: 'Monthly',
+  id, status: 'active', can_renew: true, can_reset: false, plan_name: `Plan ${id}`, sku_name: 'Monthly',
   plan_id: id, plan_sku_id: id, flow_used: 10, flow_total: 100,
   end_at: '2027-01-01T00:00:00Z',
 }))
@@ -231,7 +231,7 @@ describe('account subscription independent loading and access identity', () => {
 
  it('keeps an exhausted unexpired subscription visible with a reset link and no credential rotation', async () => {
   vi.clearAllMocks()
-  const exhausted = { ...subscriptions[0], flow_used: 100, quota_status: 'exhausted', reset_quota_bytes: 100, next_reset_at: '2026-10-15T00:00:00Z' }
+  const exhausted = { ...subscriptions[0], flow_used: 100, can_renew: false, can_reset: true, quota_status: 'exhausted', reset_quota_bytes: 100, next_reset_at: '2026-10-15T00:00:00Z' }
   vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([exhausted]))
   vi.mocked(fetchActiveSubscriptionTemplatesPage).mockResolvedValue(page([]))
   vi.mocked(fetchAccountProtocolLoads).mockResolvedValue({ items: [], sampled_at: '', activity_window_seconds: 120 })
@@ -248,3 +248,37 @@ describe('account subscription independent loading and access identity', () => {
   expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
   wrapper.unmount()
  })
+
+it('offers renewal recovery on a stopped service without offering link management', async () => {
+  vi.clearAllMocks()
+  vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.status === 'active' ? page([]) : page([{ ...subscriptions[0], status: 'expired', ended_at: '2026-09-27T00:00:00Z', end_reason: 'expired', renewal_until: '2026-10-04T00:00:00Z', can_renew: true }]))
+  vi.mocked(fetchActiveSubscriptionTemplatesPage).mockResolvedValue(page([]))
+  vi.mocked(fetchAccountProtocolLoads).mockResolvedValue({ items: [], sampled_at: '', activity_window_seconds: 120 })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }] })
+  await router.push('/account/subscription'); await router.isReady()
+  const wrapper = mount(AccountSubscription, { global: { plugins: [router] } })
+  await flushPromises()
+  expect(wrapper.find('a[href="/account/plans?operation=renew&subscription=1"]').text()).toBe('续费恢复')
+  expect(wrapper.text()).toContain('续费保留至')
+  expect(wrapper.findAll('button').find(button => button.text() === '管理链接')!.attributes('disabled')).toBeDefined()
+  wrapper.unmount()
+})
+
+it('keeps an exhausted purchase-only record without promising a reset or renewal', async () => {
+  vi.clearAllMocks()
+  const exhausted = { ...subscriptions[0], flow_used: 100, can_renew: false, can_reset: false, reset_policy: 0, next_reset_at: null }
+  vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([exhausted]))
+  vi.mocked(fetchActiveSubscriptionTemplatesPage).mockResolvedValue(page([]))
+  vi.mocked(fetchAccountProtocolLoads).mockResolvedValue({ items: [], sampled_at: '', activity_window_seconds: 120 })
+  vi.mocked(fetchSubscriptionAccess).mockResolvedValue({ configured: false, subscription_id: exhausted.id })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }] })
+  await router.push('/account/subscription'); await router.isReady()
+  const wrapper = mount(AccountSubscription, { global: { plugins: [router] } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('Plan 1')
+  expect(wrapper.text()).toContain('此订阅流量已用完，可前往套餐中心购买新的订阅。')
+  expect(wrapper.find('a[href*="operation=reset"]').exists()).toBe(false)
+  expect(wrapper.find('a[href*="operation=renew"]').exists()).toBe(false)
+  expect(wrapper.text()).not.toContain('等待下次自动重置')
+  wrapper.unmount()
+})

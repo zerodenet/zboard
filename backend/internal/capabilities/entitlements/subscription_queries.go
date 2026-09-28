@@ -8,31 +8,40 @@ import (
 )
 
 type SubscriptionSummary struct {
-	ID                uint       `json:"id"`
-	UserID            uint       `json:"user_id"`
-	UserEmail         string     `json:"user_email"`
-	PlanID            uint       `json:"plan_id"`
-	PlanName          string     `json:"plan_name"`
-	PlanSKUID         uint       `json:"plan_sku_id"`
-	SKUName           string     `json:"sku_name"`
-	NodeGroupID       uint       `json:"node_group_id"`
-	SubscriptionType  int16      `json:"subscription_type"`
-	StartAt           time.Time  `json:"start_at"`
-	EndAt             time.Time  `json:"end_at"`
-	Status            string     `json:"status"`
-	QuotaStatus       string     `json:"quota_status"`
-	ResetQuotaBytes   int64      `json:"reset_quota_bytes"`
-	FlowTotal         int64      `json:"flow_total"`
-	FlowUsed          int64      `json:"flow_used"`
-	SpeedLimitMbps    int        `json:"speed_limit_mbps"`
-	DeviceLimit       int        `json:"device_limit"`
-	FamilyLimit       int        `json:"family_limit"`
-	RenewalPriceMinor int64      `json:"renewal_price_minor"`
-	ResetPolicy       int16      `json:"reset_policy"`
-	NextResetAt       *time.Time `json:"next_reset_at"`
-	TrafficCalcMode   int16      `json:"traffic_calc_mode"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	Lifecycle             string     `json:"lifecycle"`
+	EndsOnQuotaExhaustion bool       `json:"ends_on_quota_exhaustion"`
+	EndedAt               *time.Time `json:"ended_at,omitempty"`
+	EndReason             string     `json:"end_reason,omitempty"`
+	RenewalUntil          *time.Time `json:"renewal_until,omitempty"`
+	CanRenew              bool       `json:"can_renew"`
+	CanChange             bool       `json:"can_change"`
+	CanAddon              bool       `json:"can_addon"`
+	CanReset              bool       `json:"can_reset"`
+	ID                    uint       `json:"id"`
+	UserID                uint       `json:"user_id"`
+	UserEmail             string     `json:"user_email"`
+	PlanID                uint       `json:"plan_id"`
+	PlanName              string     `json:"plan_name"`
+	PlanSKUID             uint       `json:"plan_sku_id"`
+	SKUName               string     `json:"sku_name"`
+	NodeGroupID           uint       `json:"node_group_id"`
+	SubscriptionType      int16      `json:"subscription_type"`
+	StartAt               time.Time  `json:"start_at"`
+	EndAt                 time.Time  `json:"end_at"`
+	Status                string     `json:"status"`
+	QuotaStatus           string     `json:"quota_status"`
+	ResetQuotaBytes       int64      `json:"reset_quota_bytes"`
+	FlowTotal             int64      `json:"flow_total"`
+	FlowUsed              int64      `json:"flow_used"`
+	SpeedLimitMbps        int        `json:"speed_limit_mbps"`
+	DeviceLimit           int        `json:"device_limit"`
+	FamilyLimit           int        `json:"family_limit"`
+	RenewalPriceMinor     int64      `json:"renewal_price_minor"`
+	ResetPolicy           int16      `json:"reset_policy"`
+	NextResetAt           *time.Time `json:"next_reset_at"`
+	TrafficCalcMode       int16      `json:"traffic_calc_mode"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
 }
 type SubscriptionDetail struct {
 	SubscriptionSummary
@@ -137,6 +146,9 @@ func (s SubscriptionQueries) Detail(ctx context.Context, actor, id uint) (Subscr
 func EffectiveStatus(sub Subscription, now time.Time) string {
 	if sub.Status == "canceled" {
 		return "canceled"
+	}
+	if sub.EndedAt != nil {
+		return "expired"
 	}
 	if !sub.EndAt.After(now) && (sub.Status == "active" || sub.Status == "expired") {
 		return "expired"

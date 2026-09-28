@@ -65,6 +65,25 @@ func TestPurchasedTrafficResetRestoresExhaustedTimedSubscription(t *testing.T) {
 		t.Fatal(quote)
 	}
 	order := f.create(t, before.ID)
+	var pending model.Subscription
+	f.h.db.First(&pending, before.ID)
+	if pending.FlowUsed != pending.FlowTotal || pending.CycleStartUsed != before.CycleStartUsed {
+		t.Fatal("unpaid reset restored quota", pending)
+	}
+	// An ordinary customer cannot report a paid result and grant their own reset.
+	if err := f.h.db.Model(&model.User{}).Where("id = ?", 1).Update("is_admin", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	if response := f.pay(t, order.ID, true); response.Code != http.StatusForbidden {
+		t.Fatal("customer callback granted a reset", response.Code, response.Body.String())
+	}
+	f.h.db.First(&pending, before.ID)
+	if pending.FlowUsed != pending.FlowTotal {
+		t.Fatal("denied callback changed quota", pending)
+	}
+	if err := f.h.db.Model(&model.User{}).Where("id = ?", 1).Update("is_admin", true).Error; err != nil {
+		t.Fatal(err)
+	}
 	// Later plan edits cannot change the target's purchased base quota.
 	f.h.db.Model(&f.planRecord).Update("traffic_bytes", 150*quoteGB)
 	f.paid(t, order.ID)
@@ -97,6 +116,32 @@ func TestPurchasedTrafficResetRestoresExhaustedTimedSubscription(t *testing.T) {
 	f.h.db.First(&after, before.ID)
 	if total, used := subscriptionCycleQuota(after); total != 100*quoteGB || used != 0 {
 		t.Fatal("paid reset repeated at scheduled reset", after)
+	}
+}
+
+func TestCanceledTrafficResetNeverRestoresQuota(t *testing.T) {
+	f := newOrderFixture(t)
+	paid := f.paid(t, f.create(t, 0).ID)
+	f.h.db.Model(&model.Subscription{}).Where("id = ?", paid.SubscriptionID).Update("flow_used", 1024)
+	f = prepareResetSKU(t, f)
+	order := f.create(t, paid.SubscriptionID)
+	w := httptest.NewRecorder()
+	f.h.OrderPayCallbackCommerceHandler(w, announcementRequest(http.MethodPost, fmt.Sprintf("/api/v1/orders/%d/pay-callback", order.ID), f.token, `{"status":"canceled"}`))
+	if w.Code != http.StatusOK {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if response := f.pay(t, order.ID, true); response.Code != http.StatusBadRequest {
+		t.Fatal("canceled reset paid without explicit recovery", response.Code, response.Body.String())
+	}
+	var sub model.Subscription
+	f.h.db.First(&sub, paid.SubscriptionID)
+	if sub.FlowTotal != 1024 || sub.FlowUsed != 1024 || sub.CycleStartUsed != 0 {
+		t.Fatal("failed payment restored exhausted quota", sub)
+	}
+	var events int64
+	f.h.db.Model(&model.QuotaEvent{}).Where("event_type = ? AND reference_id = ?", "traffic_reset", fmt.Sprint(order.ID)).Count(&events)
+	if events != 0 {
+		t.Fatal("failed payment created a reset ledger event", events)
 	}
 }
 func TestPurchasedTrafficResetReplacesLeftoverQuotaAndInvalidatesOlderReset(t *testing.T) {

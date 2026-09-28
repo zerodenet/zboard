@@ -36,6 +36,9 @@ func (s OrderQueries) List(ctx context.Context, actor uint, admin bool, q commer
 			return err
 		}
 		query := tx.Model(&model.Order{})
+		if admin {
+			query = query.Joins("LEFT JOIN users ON users.id = orders.user_id")
+		}
 		if !admin {
 			query = query.Where("orders.user_id = ?", actor)
 		} else if q.UserID != 0 {
@@ -43,8 +46,8 @@ func (s OrderQueries) List(ctx context.Context, actor uint, admin bool, q commer
 		}
 		if admin && q.Search != "" {
 			pattern := "%" + strings.ToLower(q.Search) + "%"
-			condition := `LOWER(orders.trade_no) LIKE ? OR LOWER(COALESCE(orders.provider_trade_no, '')) LIKE ? OR LOWER(orders.plan_name) LIKE ? OR LOWER(orders.sku_name) LIKE ? OR LOWER(orders.channel) LIKE ?`
-			args := []interface{}{pattern, pattern, pattern, pattern, pattern}
+			condition := `LOWER(orders.trade_no) LIKE ? OR LOWER(COALESCE(orders.provider_trade_no, '')) LIKE ? OR LOWER(orders.plan_name) LIKE ? OR LOWER(orders.sku_name) LIKE ? OR LOWER(orders.channel) LIKE ? OR LOWER(users.email) LIKE ?`
+			args := []interface{}{pattern, pattern, pattern, pattern, pattern, pattern}
 			if id, err := strconv.ParseUint(q.Search, 10, 64); err == nil && id > 0 {
 				condition += " OR orders.id = ? OR orders.user_id = ? OR orders.subscription_id = ?"
 				args = append(args, id, id, id)
@@ -68,7 +71,11 @@ func (s OrderQueries) List(ctx context.Context, actor uint, admin bool, q commer
 			query = query.Offset(q.Offset).Limit(q.Limit)
 		}
 		// Select only list fields: callback payloads and failure diagnostics never enter this projection.
-		return query.Select("orders.id, orders.user_id, orders.subscription_id, orders.plan_id, orders.plan_sku_id, orders.trade_no, orders.order_type, orders.amount_cents, orders.payable_amount, orders.currency, orders.status, orders.plan_name, orders.sku_name, orders.created_at, orders.updated_at").Order("orders.id desc").Scan(&out.Items).Error
+		columns := "orders.subscription_ended_at, orders.subscription_end_reason, orders.subscription_final_flow_total, orders.subscription_final_flow_used, orders.id, orders.user_id, orders.subscription_id, orders.plan_id, orders.plan_sku_id, orders.trade_no, orders.order_type, orders.amount_cents, orders.payable_amount, orders.currency, orders.status, orders.plan_name, orders.sku_name, orders.created_at, orders.updated_at"
+		if admin {
+			columns += ", COALESCE(users.email, '') AS user_email"
+		}
+		return query.Select(columns).Order("orders.id desc").Scan(&out.Items).Error
 	})
 	if err != nil {
 		return commerce.OrderPage{}, err

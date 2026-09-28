@@ -8,21 +8,22 @@
     >
       <template #actions>
         <div class="dashboard-controls">
-          <UiSegmentedControl class="period-switch" label="运营统计周期" :options="periodOptions" :model-value="selectedRange" @update:model-value="changeRange($event as DashboardRange)" />
-          <PageRefreshButton label="刷新运营工作台" variant="ghost" :loading="loading" @click="load" />
+          <UiSegmentedControl class="period-switch" label="经营指标周期" :options="periodOptions" :model-value="selectedRange" @update:model-value="changeRange($event as DashboardRange)" />
+          <PageRefreshButton label="刷新运营工作台" variant="ghost" :loading="refreshing" @click="load" />
         </div>
       </template>
     </PageHeader>
 
     <TransientFeedback :error="error" error-title="工作台加载失败" />
 
+    <div v-if="loading && !overview" class="dashboard-section" role="status">正在加载经营指标…</div>
     <div v-if="overview" class="period-context">
       <span>{{ periodDescription }}</span>
       <span>查询时区 {{ overview.period.timezone }}</span>
       <TimeBadge :value="overview.as_of" mode="relative" />
     </div>
 
-    <UiMetricStrip v-if="overview" class="dashboard-section business-metrics">
+    <UiMetricStrip v-if="overview" :columns="3" class="dashboard-section business-metrics">
       <MetricCard
         v-for="metric in businessMetrics"
         :key="metric.label"
@@ -33,12 +34,18 @@
         tone="neutral"
         icon-tone="neutral"
         :meta="metric.meta"
-      />
+      >
+        <template #meta>
+          <MetricComparison v-if="metric.comparison" :current="metric.comparison[0]" :previous="metric.comparison[1]" :label="comparisonLabel" :format="metric.label === '本期实收' ? comparisonMoney : undefined" />
+          <span v-else>{{ metric.meta }}</span>
+        </template>
+      </MetricCard>
     </UiMetricStrip>
 
     <div v-if="overview" class="section-grid dashboard-section">
       <UiSection class="span-8" title="经营趋势" :description="trendDescription">
         <template #meta>
+          <UiSegmentedControl label="趋势指标" :model-value="trendUsesRevenue ? 'revenue' : 'orders'" :options="trendMeasureOptions" @update:model-value="trendMeasure = $event as 'revenue' | 'orders'" />
           <RouterLink class="button button-ghost button-sm" to="/admin/orders">
             订单明细<UiIcon name="chevron" />
           </RouterLink>
@@ -76,11 +83,11 @@
           </div>
 
           <div class="trend-legend">
-            <span><i class="legend-bar" />{{ overview.business.mixed_currency ? '柱高：订单量' : `柱高：实收金额 ${overview.business.currency || ''}` }}</span>
+            <span><i class="legend-bar" />{{ !trendUsesRevenue ? '柱高：订单量' : `柱高：实收金额 ${overview.business.currency || ''}` }}</span>
             <span>柱下数字：已支付订单数</span>
           </div>
         </div>
-        <EmptyState v-else icon="billing" title="当前周期暂无已支付订单" description="产生已支付订单后，这里会按后端聚合周期展示经营趋势。" />
+        <EmptyState v-else icon="billing" title="当前周期暂无已支付订单" description="产生已支付订单后显示所选周期的经营趋势。" />
       </UiSection>
 
       <UiSection
@@ -120,7 +127,7 @@
         :status="overview.coverage.principal_flows ? '实时' : '未采集'"
         tone="neutral"
         icon-tone="neutral"
-        :meta="overview.coverage.principal_flows ? '当前 active_flows > 0 的订阅' : '尚无 Principal 当前态观测样本'"
+        :meta="overview.coverage.principal_flows ? '当前正在使用服务的订阅' : '尚未收到实时连接数据'"
       />
       <MetricCard
         label="当前连接"
@@ -129,7 +136,7 @@
         :status="overview.coverage.principal_flows ? '实时' : '未采集'"
         tone="neutral"
         icon-tone="neutral"
-        meta="跨节点 Subscription active flows 汇总"
+        meta="各节点当前连接数汇总"
       />
       <MetricCard
         label="本期流量"
@@ -139,7 +146,7 @@
         tone="neutral"
         icon-tone="neutral"
         meta="按现有计费流量口径聚合"
-      />
+      ><template #meta><MetricComparison :current="overview.service.traffic_bytes" :previous="overview.service.previous_traffic_bytes ?? 0" :label="comparisonLabel" :format="formatBytes" /></template></MetricCard>
       <MetricCard
         label="在线节点"
         :value="`${formatNumber(overview.service.online_nodes)} / ${formatNumber(overview.service.enabled_nodes)}`"
@@ -147,7 +154,7 @@
         status="当前"
         tone="neutral"
         icon-tone="neutral"
-        meta="按 Connector 两分钟健康窗口"
+        meta="依据最近两分钟心跳"
       />
     </UiMetricStrip>
 
@@ -211,7 +218,13 @@
       </div>
     </UiSection>
 
+    <div class="section-grid dashboard-section">
+      <DashboardTrafficRanking class="span-6" title="节点流量排行" :items="nodeRankings?.nodes || []" :range="nodeRange" :comparison-label="rangeComparison(nodeRange)" :loading="nodesLoading" :error="nodesError" :as-of="nodeRankings?.as_of" @update:range="changeNodeRange" @refresh="nodesResource.load()" />
+      <DashboardTrafficRanking class="span-6" title="用户流量排行" :items="userRankings?.users || []" :range="userRange" :comparison-label="rangeComparison(userRange)" :loading="usersLoading" :error="usersError" :as-of="userRankings?.as_of" @update:range="changeUserRange" @refresh="usersResource.load()" />
+    </div>
     <UiSection class="dashboard-section" title="最近重要运营事件" description="最近的配置发布与关键运营记录。">
+      <TransientFeedback :error="deploymentsError" error-title="最近事件加载失败" />
+      <div v-if="deploymentsLoading && !deployments.length" role="status">正在加载最近事件…</div>
       <template #actions>
         <RouterLink class="button button-ghost button-sm" to="/admin/protocols">
           协议服务<UiIcon name="chevron" />
@@ -244,7 +257,7 @@
           </tr>
         </tbody>
       </DataTable>
-      <EmptyState v-else icon="nodes" title="暂无重要运营事件" description="发生配置发布等高价值运营事件后会显示在这里。" />
+      <EmptyState v-else-if="!deploymentsLoading && !deploymentsError" icon="nodes" title="暂无重要运营事件" description="发生配置发布等高价值运营事件后会显示在这里。" />
     </UiSection>
   </section>
 </template>
@@ -254,6 +267,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { fetchProtocolDeployments, type ProtocolDeployment } from '../api/client'
 import {
   fetchDashboardOverview,
+  fetchDashboardTrafficRankings,
+  type DashboardTrafficRankings,
   type DashboardOverview,
   type DashboardRange,
   type DashboardTrendPoint,
@@ -261,6 +276,8 @@ import {
 import DataTable from '../components/DataTable.vue'
 import EmptyState from '../components/EmptyState.vue'
 import MetricCard from '../components/MetricCard.vue'
+import MetricComparison from '../components/MetricComparison.vue'
+import DashboardTrafficRanking from '../components/DashboardTrafficRanking.vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TimeBadge from '../components/TimeBadge.vue'
@@ -270,17 +287,31 @@ import UiButton from '../components/UiButton.vue'
 import UiSegmentedControl from '../components/UiSegmentedControl.vue'
 import { formatBytes, formatCurrency, formatNumber, formatUnknownValue } from '../utils/format'
 import { buildDashboardAttention } from '../utils/dashboardHealth'
+import { useRemoteResource } from '../composables/useRemoteResource'
 
-const loading = ref(false)
-const error = ref('')
-const overview = ref<DashboardOverview | null>(null)
-const deployments = ref<ProtocolDeployment[]>([])
 const selectedRange = ref<DashboardRange>('7d')
+const nodeRange = ref<DashboardRange>('today')
+const userRange = ref<DashboardRange>('today')
+const overviewResource = useRemoteResource<DashboardOverview | null>({ initial: () => null, fetch: ({ signal }) => fetchDashboardOverview(selectedRange.value, { signal }), errorMessage: '运营指标加载失败。' })
+const nodesResource = useRemoteResource<DashboardTrafficRankings | null>({ initial: () => null, fetch: ({ signal }) => fetchDashboardTrafficRankings(nodeRange.value, { signal, dimension: 'nodes' }), errorMessage: '节点排行加载失败。' })
+const usersResource = useRemoteResource<DashboardTrafficRankings | null>({ initial: () => null, fetch: ({ signal }) => fetchDashboardTrafficRankings(userRange.value, { signal, dimension: 'users' }), errorMessage: '用户排行加载失败。' })
+const eventsResource = useRemoteResource<ProtocolDeployment[]>({ initial: () => [], fetch: async ({ signal }) => (await fetchProtocolDeployments({ limit: 8 }, { signal })).items || [], errorMessage: '最近事件加载失败。' })
+const { data: overview, loading, error } = overviewResource
+const { data: nodeRankings, loading: nodesLoading, error: nodesError } = nodesResource
+const { data: userRankings, loading: usersLoading, error: usersError } = usersResource
+const { data: deployments, loading: deploymentsLoading, error: deploymentsError } = eventsResource
+const refreshing = computed(() => loading.value || nodesLoading.value || usersLoading.value || deploymentsLoading.value)
+function rangeComparison(range: DashboardRange) { return { today: '对比昨日同期', '7d': '对比前 7 天同期', '30d': '对比前 30 天同期', month: '对比上月同期' }[range] }
+const comparisonLabel = computed(() => rangeComparison(selectedRange.value))
+const trendMeasure = ref<'revenue' | 'orders'>('revenue')
+const trendMeasureOptions = computed(() => overview.value?.business.mixed_currency ? [{ label: '订单量', value: 'orders' }] : [{ label: '实收金额', value: 'revenue' }, { label: '订单量', value: 'orders' }])
+const comparisonMoney = (value: number) => formatCurrency(value, overview.value?.business.currency || 'CNY')
 const dashboardRefreshIntervalMS = 15_000
 let dashboardRefreshTimer: number | undefined
 
 const periodOptions: Array<{ label: string; value: DashboardRange }> = [
   { label: '今天', value: 'today' },
+  { label: '本月', value: 'month' },
   { label: '近 7 天', value: '7d' },
   { label: '近 30 天', value: '30d' },
 ]
@@ -297,6 +328,7 @@ const businessMetrics = computed(() => {
   return [
     {
       label: '本期实收',
+      comparison: business.mixed_currency ? undefined : [business.revenue_cents, business.previous_revenue_cents],
       value: revenueValue.value,
       icon: 'dollar',
       status: periodStatus.value,
@@ -306,6 +338,7 @@ const businessMetrics = computed(() => {
     },
     {
       label: '已支付订单',
+      comparison: [business.paid_orders, business.previous_paid_orders],
       value: formatNumber(business.paid_orders),
       icon: 'billing',
       status: periodStatus.value,
@@ -313,6 +346,7 @@ const businessMetrics = computed(() => {
     },
     {
       label: '新增订阅',
+      comparison: [business.new_subscriptions, business.previous_new_subscriptions],
       value: formatNumber(business.new_subscriptions),
       icon: 'plans',
       status: periodStatus.value,
@@ -320,11 +354,13 @@ const businessMetrics = computed(() => {
     },
     {
       label: '续费成功',
+      comparison: [business.renew_orders, business.previous_renew_orders ?? 0],
       value: formatNumber(business.renew_orders),
       icon: 'refresh',
       status: periodStatus.value,
-      meta: '仅展示已支付续费订单数，不虚构续费转化率',
+      meta: '',
     },
+    { label: '新增用户', value: formatNumber(business.new_users ?? 0), icon: 'users', status: periodStatus.value, comparison: [business.new_users ?? 0, business.previous_new_users ?? 0], meta: '' },
     {
       label: '有效订阅',
       value: formatNumber(business.active_subscriptions),
@@ -335,8 +371,8 @@ const businessMetrics = computed(() => {
   ]
 })
 
-const periodStatus = computed(() => ({ today: '今天', '7d': '近 7 天', '30d': '近 30 天' }[selectedRange.value]))
-const periodDescription = computed(() => overview.value ? `${formatUTC(overview.value.period.from)} – ${formatUTC(overview.value.period.to)}` : '')
+const periodStatus = computed(() => ({ today: '今天', '7d': '近 7 天', '30d': '近 30 天', month: '本月' }[selectedRange.value]))
+const periodDescription = computed(() => overview.value ? `${formatDashboardTime(overview.value.period.from)} – ${formatDashboardTime(overview.value.period.to)}` : '')
 
 const actionQueue = computed(() => {
   if (!overview.value) return []
@@ -354,7 +390,7 @@ const subscriptionHealth = computed(() => {
     { label: '24 小时内到期', value: health.expiring_within_24h, status: health.expiring_within_24h > 0 ? '关注' : '正常', tone: health.expiring_within_24h > 0 ? 'warning' as const : 'success' as const, description: '仍有效且将在未来 24 小时内到期' },
     { label: '3 天内到期', value: health.expiring_within_3d, status: health.expiring_within_3d > 0 ? '关注' : '正常', tone: health.expiring_within_3d > 0 ? 'warning' as const : 'success' as const, description: '累计口径，包含 24 小时内到期订阅' },
     { label: '7 天内到期', value: health.expiring_within_7d, status: health.expiring_within_7d > 0 ? '观察' : '正常', tone: health.expiring_within_7d > 0 ? 'info' as const : 'success' as const, description: '用于提前观察未来一周订阅生命周期' },
-    { label: '流量已耗尽', value: health.quota_exhausted, status: health.quota_exhausted > 0 ? '不可用' : '正常', tone: health.quota_exhausted > 0 ? 'danger' as const : 'success' as const, description: '有效期尚未结束但配额已经耗尽' },
+    { label: '流量已耗尽', value: health.quota_exhausted, status: health.quota_exhausted > 0 ? '流量用尽' : '正常', tone: health.quota_exhausted > 0 ? 'warning' as const : 'success' as const, description: '当前周期配额已用尽，订阅记录仍可管理' },
   ]
 })
 
@@ -365,7 +401,7 @@ const infrastructure = computed(() => {
   return [
     { label: '节点运行', value: `${formatNumber(infra.connector_online)} / ${formatNumber(infra.nodes_enabled)}`, status: offline > 0 ? '需处理' : '正常', tone: offline > 0 ? 'danger' as const : 'success' as const, description: 'Connector 当前在线 / 已启用节点', to: '/admin/nodes' },
     { label: 'SSH 运维通道', value: `${formatNumber(infra.ssh_verified)} 已验证`, status: infra.nodes_total > 0 && infra.ssh_verified < infra.nodes_total ? '未完整' : '已就绪', tone: infra.nodes_total > 0 && infra.ssh_verified < infra.nodes_total ? 'warning' as const : 'success' as const, description: '已验证凭证并固定主机身份的节点', to: '/admin/nodes' },
-    { label: '流量上报凭证', value: `${formatNumber(infra.traffic_ready)} 已配置`, status: infra.nodes_total > 0 && infra.traffic_ready < infra.nodes_total ? '未完整' : '已就绪', tone: infra.nodes_total > 0 && infra.traffic_ready < infra.nodes_total ? 'warning' as const : 'success' as const, description: '这里只表示可信上报凭证就绪，不伪装成实时流量健康', to: '/admin/nodes' },
+    { label: '流量上报凭证', value: `${formatNumber(infra.traffic_ready)} 已配置`, status: infra.nodes_total > 0 && infra.traffic_ready < infra.nodes_total ? '未完整' : '已就绪', tone: infra.nodes_total > 0 && infra.traffic_ready < infra.nodes_total ? 'warning' as const : 'success' as const, description: '已配置可信流量上报的节点', to: '/admin/nodes' },
     { label: '协议交付', value: `${formatNumber(infra.active_protocol_endpoints)} / ${formatNumber(infra.protocol_endpoints)}`, status: infra.active_protocol_endpoints > 0 ? '可用' : '未就绪', tone: infra.active_protocol_endpoints > 0 ? 'success' as const : 'warning' as const, description: '已启用协议端点 / 全部协议端点', to: '/admin/protocols' },
     { label: '配置发布', value: infra.unresolved_deployments ? `${formatNumber(infra.unresolved_deployments)} 未恢复` : '已收敛', status: infra.unresolved_deployments ? '需处理' : '正常', tone: infra.unresolved_deployments ? 'danger' as const : 'success' as const, description: '只统计每个协议端点最新一次发布仍然失败的状态', to: '/admin/protocols?deployment=failed' },
   ]
@@ -386,15 +422,15 @@ const readiness = computed(() => {
 
 const completedReadiness = computed(() => readiness.value.filter(item => item.complete).length)
 const deliveryReady = computed(() => readiness.value.length > 0 && readiness.value.every(item => item.complete))
-const trendUsesRevenue = computed(() => Boolean(overview.value && !overview.value.business.mixed_currency))
+const trendUsesRevenue = computed(() => Boolean(overview.value && !overview.value.business.mixed_currency && trendMeasure.value === 'revenue'))
 const trendMax = computed(() => {
   if (!overview.value) return 1
   const values = overview.value.trend.map(point => trendUsesRevenue.value ? point.revenue_cents : point.paid_orders)
   return Math.max(1, ...values)
 })
 const trendDescription = computed(() => overview.value?.business.mixed_currency
-  ? '多币种时柱高按订单数显示，避免将不同币种金额相加。'
-  : '按所选周期汇总实收金额；柱下标出已支付订单量。')
+  ? '当前包含多币种，趋势按订单量展示。'
+  : trendUsesRevenue.value ? '查看所选周期的实收变化；可切换为订单量。' : '查看所选周期的已支付订单量。')
 const trendAriaLabel = computed(() => overview.value ? `${periodStatus.value} 经营趋势，共 ${overview.value.trend.length} 个时间桶` : '经营趋势')
 
 function comparisonText(current: number, previous: number, money = false) {
@@ -424,14 +460,14 @@ function trendPointTitle(point: DashboardTrendPoint) {
   const revenue = overview.value?.business.mixed_currency
     ? '多币种金额不合并展示'
     : formatCurrency(point.revenue_cents, overview.value?.business.currency || 'CNY')
-  return `${formatUTC(point.bucket_start)} · 实收 ${revenue} · ${formatNumber(point.paid_orders)} 单（新购 ${formatNumber(point.new_orders)} / 续费 ${formatNumber(point.renew_orders)}）`
+  return `${formatDashboardTime(point.bucket_start)} · 实收 ${revenue} · ${formatNumber(point.paid_orders)} 单（新购 ${formatNumber(point.new_orders)} / 续费 ${formatNumber(point.renew_orders)}）`
 }
 
 function trendBucketLabel(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
-  if (overview.value?.period.bucket === 'hour') return new Intl.DateTimeFormat('zh-CN', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
-  return new Intl.DateTimeFormat('zh-CN', { timeZone: 'UTC', month: '2-digit', day: '2-digit' }).format(date)
+  if (overview.value?.period.bucket === 'hour') return new Intl.DateTimeFormat('zh-CN', { timeZone: overview.value?.period.timezone || 'UTC', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
+  return new Intl.DateTimeFormat('zh-CN', { timeZone: overview.value?.period.timezone || 'UTC', month: '2-digit', day: '2-digit' }).format(date)
 }
 
 function formatCompactCount(value: number) {
@@ -439,10 +475,10 @@ function formatCompactCount(value: number) {
   return String(value)
 }
 
-function formatUTC(value: string) {
+function formatDashboardTime(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return `${new Intl.DateTimeFormat('zh-CN', { timeZone: 'UTC', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)} UTC`
+  return `${new Intl.DateTimeFormat('zh-CN', { timeZone: overview.value?.period.timezone || 'UTC', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)}`
 }
 
 function deploymentLabel(status: string) {
@@ -453,31 +489,32 @@ function deploymentTone(status: string): 'info' | 'success' | 'danger' {
 }
 
 async function changeRange(range: DashboardRange) {
-  if (selectedRange.value === range) return
   selectedRange.value = range
-  await load()
+  overviewResource.reset()
+  await overviewResource.load()
+}
+async function changeNodeRange(range: DashboardRange) {
+  nodeRange.value = range
+  nodesResource.reset()
+  await nodesResource.load()
+}
+async function changeUserRange(range: DashboardRange) {
+  userRange.value = range
+  usersResource.reset()
+  await usersResource.load()
 }
 async function load() {
-  loading.value = true
-  error.value = ''
-  try {
-    const [dashboardData, deploymentData] = await Promise.all([
-      fetchDashboardOverview(selectedRange.value),
-      fetchProtocolDeployments({ limit: 8 }),
-    ])
-    overview.value = dashboardData
-    deployments.value = deploymentData.items || []
-  } catch (e: any) {
-    error.value = e?.response?.data?.message || '运营工作台加载失败。'
-  } finally {
-    loading.value = false
-  }
+  await Promise.allSettled([overviewResource.load(), nodesResource.load(), usersResource.load(), eventsResource.load()])
 }
-
 onMounted(() => {
   void load()
   dashboardRefreshTimer = window.setInterval(() => {
-    if (!loading.value) void load()
+    if (!document.hidden) {
+      if (!loading.value) void overviewResource.load()
+      if (!nodesLoading.value) void nodesResource.load()
+      if (!usersLoading.value) void usersResource.load()
+      if (!deploymentsLoading.value) void eventsResource.load()
+    }
   }, dashboardRefreshIntervalMS)
 })
 onBeforeUnmount(() => {
@@ -486,6 +523,8 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.span-6 { grid-column: span 6; }
+@media (max-width: 900px) { .span-6 { grid-column: 1 / -1; } }
 .dashboard-section { margin-bottom: 18px; }
 .dashboard-group-heading { display: flex; align-items: baseline; gap: 12px; margin-top: 4px; }
 .dashboard-group-heading h2 { margin: 0; font-size: 16px; font-weight: 600; }

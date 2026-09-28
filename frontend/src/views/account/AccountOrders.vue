@@ -46,6 +46,8 @@
               <div class="cell-title cell-related">
                 <TableText :value="item.plan_name || `套餐 #${item.plan_id}`" />
                 <TableText :value="item.sku_name || `SKU #${item.plan_sku_id}`" />
+                <small v-if="item.subscription_ended_at">原订阅{{ item.subscription_end_reason === 'exhausted' ? '已用完' : '已到期' }} · <TimeBadge :value="item.subscription_ended_at" /></small>
+                <small v-if="item.subscription_ended_at">最终用量 {{ formatBytes(item.subscription_final_flow_used || 0) }} / {{ formatBytes(item.subscription_final_flow_total || 0) }}</small>
               </div>
             </td>
             <td class="value-cell">{{ formatCurrency(item.payable_amount ?? item.amount_cents, item.currency) }}</td>
@@ -124,7 +126,7 @@ import UiIcon from '../../components/UiIcon.vue'
 import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterSelect from '../../components/WorkbenchFilterSelect.vue'
 import { useRemoteTable } from '../../composables/useRemoteTable'
-import { formatCurrency, formatUnknownValue } from '../../utils/format'
+import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/format'
 
 const route = useRoute()
 const router = useRouter()

@@ -172,6 +172,7 @@ func (s *flowBatch) flush(tx *gorm.DB) error {
 		sub := s.subscriptions[id]
 		if err := tx.Model(sub).Updates(map[string]interface{}{
 			"flow_used": sub.FlowUsed, "status": sub.Status, "updated_at": s.dirtySubscriptions[id],
+			"ended_at": sub.EndedAt, "end_reason": sub.EndReason,
 		}).Error; err != nil {
 			return err
 		}

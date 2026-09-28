@@ -1,15 +1,15 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="订阅管理" description="查看全站服务实例、配额和到期状态；个人订阅链接仍由用户在个人中心管理。" eyebrow="Service Delivery">
+    <PageHeader title="订阅管理" description="查看服务状态、流量配额和续费恢复期限，按需调整订阅参数。" eyebrow="Service Delivery">
       <template #actions><PageRefreshButton label="刷新订阅" :loading="loading" @click="load" /></template>
     </PageHeader>
     <TransientFeedback :success="quotaMessage" :error="error" success-title="订阅流量已更新" error-title="订阅数据加载失败" />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
-      <template #filters><WorkbenchFilterBar :active="hasFilters" @clear="clearFilters"><WorkbenchFilterInput v-model="queryFilter" label="搜索" maxlength="128" placeholder="订阅 ID、邮箱、套餐或 SKU" @apply="applyFilters" /><WorkbenchFilterSelect v-model="statusFilter" label="订阅状态" :options="statusOptions" @apply="applyFilters" /><WorkbenchFilterSelect v-model="quotaFilter" label="配额状态" :options="quotaOptions" @apply="applyFilters" /><WorkbenchFilterInput v-model="userFilter" label="用户 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" /><WorkbenchFilterDate v-model:from="expiresFrom" v-model:to="expiresTo" label="到期日期" preset-direction="future" @apply="applyFilters" /></WorkbenchFilterBar></template>
+      <template #filters><WorkbenchFilterBar :active="hasFilters" :active-count="activeFilterCount" :advanced-count="advancedFilterCount" :loading="loading" @clear="clearFilters"><WorkbenchFilterInput v-model="queryFilter" label="搜索" maxlength="128" placeholder="订阅 ID、邮箱、套餐或 SKU" @apply="applyFilters" /><WorkbenchFilterSelect v-model="statusFilter" label="订阅状态" :options="statusOptions" @apply="applyFilters" /><WorkbenchFilterSelect v-model="quotaFilter" label="配额状态" :options="quotaOptions" @apply="applyFilters" /><template #advanced><WorkbenchFilterInput v-model="userFilter" label="用户 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" /><WorkbenchFilterDate v-model:from="expiresFrom" v-model:to="expiresTo" label="到期日期" preset-direction="future" @apply="applyFilters" /></template></WorkbenchFilterBar></template>
       <template #actions><RouterLink class="button button-ghost button-sm" :to="trafficLink">查看流量<UiIcon name="chevron" /></RouterLink></template>
       <TableSkeleton v-if="loading && !subscriptions.length" label="正在加载订阅" :columns="7" />
-      <DataTable v-else-if="subscriptions.length" caption="订阅管理列表" :row-count="total" :min-width="1040"><thead><tr><th class="table-primary-column">订阅</th><th data-column-priority="2">用户</th><th>状态</th><th data-column-priority="2">套餐</th><th data-column-priority="1">流量配额</th><th data-column-priority="1">到期时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="sub in subscriptions" :key="sub.id"><td class="table-primary-column"><div class="cell-title"><strong class="mono">#{{ sub.id }}</strong><TableText :value="sub.user_email || `用户 #${sub.user_id}`" /></div></td><td data-column-priority="2"><div class="cell-title cell-related"><TableText :value="sub.user_email || `用户 #${sub.user_id}`" /><span class="mono">#{{ sub.user_id }}</span></div></td><td><StatusBadge :tone="statusTone(sub.status)">{{ statusName(sub.status) }}</StatusBadge></td><td data-column-priority="2"><div class="cell-title cell-related"><TableText :value="sub.plan_name || `套餐 #${sub.plan_id}`" /><TableText :value="sub.sku_name || `SKU #${sub.plan_sku_id}`" /></div></td><td data-column-priority="1"><div class="quota-cell"><span>{{ formatBytes(sub.flow_used) }} / {{ formatBytes(sub.flow_total) }}</span><div class="usage-track"><i :style="{ width: `${usagePercent(sub)}%` }"></i></div><small>{{ sub.flow_used >= sub.flow_total ? '本周期流量已用完' : `剩余 ${formatBytes(sub.flow_total - sub.flow_used)}` }}</small></div></td><td data-column-priority="1"><TimeBadge :value="sub.end_at" :tone="sub.status === 'expired' ? 'warning' : 'neutral'" /></td><td class="table-action-column"><RowActions :label="`订阅 #${sub.id} 的操作`" :trigger-key="`subscription-${sub.id}`"><UiButton variant="secondary" size="sm" type="button" :data-subscription-detail-trigger="sub.id" @click="openDetail(sub.id)">查看详情</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/fair-use', { subscription: String(sub.id) })">Fair Use 观测</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/traffic', { subscription_id: String(sub.id) })">流量记录</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(sub.user_id) })">用户订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/users', { user: String(sub.user_id) })">用户详情</RouterLink></RowActions></td></tr></tbody></DataTable>
+      <DataTable v-else-if="subscriptions.length" caption="订阅管理列表" :row-count="total" :min-width="1040"><thead><tr><th class="table-primary-column">订阅</th><th data-column-priority="2">用户</th><th>状态</th><th data-column-priority="2">套餐</th><th data-column-priority="1">流量配额</th><th data-column-priority="1">到期时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="sub in subscriptions" :key="sub.id"><td class="table-primary-column"><div class="cell-title"><strong class="mono">#{{ sub.id }}</strong><TableText :value="sub.user_email || `用户 #${sub.user_id}`" /></div></td><td data-column-priority="2"><div class="cell-title cell-related"><TableText :value="sub.user_email || `用户 #${sub.user_id}`" /><span class="mono">#{{ sub.user_id }}</span></div></td><td><div class="cell-title"><StatusBadge :tone="statusTone(sub.status)">{{ statusName(sub.status) }}</StatusBadge><span v-if="sub.ended_at && sub.can_renew">可续费恢复至 <TimeBadge :value="sub.renewal_until" /></span></div></td><td data-column-priority="2"><div class="cell-title cell-related"><TableText :value="sub.plan_name || `套餐 #${sub.plan_id}`" /><TableText :value="sub.sku_name || `SKU #${sub.plan_sku_id}`" /></div></td><td data-column-priority="1"><div class="quota-cell"><span>{{ formatBytes(sub.flow_used) }} / {{ formatBytes(sub.flow_total) }}</span><div class="usage-track"><i :style="{ width: `${usagePercent(sub)}%` }"></i></div><small>{{ sub.flow_used >= sub.flow_total ? '本周期流量已用完' : `剩余 ${formatBytes(sub.flow_total - sub.flow_used)}` }}</small></div></td><td data-column-priority="1"><TimeBadge :value="sub.end_at" :tone="sub.status === 'expired' ? 'warning' : 'neutral'" /></td><td class="table-action-column"><RowActions :label="`订阅 #${sub.id} 的操作`" :trigger-key="`subscription-${sub.id}`"><UiButton variant="secondary" size="sm" type="button" :data-subscription-detail-trigger="sub.id" @click="openDetail(sub.id)">查看详情</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/fair-use', { subscription: String(sub.id) })">Fair Use 观测</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/traffic', { subscription_id: String(sub.id) })">流量记录</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(sub.user_id) })">用户订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/users', { user: String(sub.user_id) })">用户详情</RouterLink></RowActions></td></tr></tbody></DataTable>
       <EmptyState v-else icon="plans" title="没有匹配订阅" description="调整筛选条件后重试。" />
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
@@ -29,7 +29,15 @@
           <div><strong>{{ selectedSubscription.device_limit }}</strong><span>设备数</span></div>
           <div><strong>{{ selectedSubscription.speed_limit_mbps || '不限' }}</strong><span>{{ selectedSubscription.speed_limit_mbps ? 'Mbps 限速' : '速率' }}</span></div>
         </section>
-        <SubscriptionQuotaEditor :subscription="selectedSubscription" @saved="quotaSaved" @refresh="detailResource.load()" />
+        <PageAlert v-if="selectedSubscription.ended_at" :tone="selectedSubscription.can_renew ? 'info' : 'warning'" :title="selectedSubscription.end_reason === 'exhausted' ? '服务因流量用尽而结束' : '服务已到期'">
+          <template v-if="selectedSubscription.can_renew">服务已停止，可在 <TimeBadge :value="selectedSubscription.renewal_until" /> 前续费恢复。</template>
+          <template v-else>当前订阅已结束，历史权益与用量可在订单中追溯。</template>
+        </PageAlert>
+        <PageAlert v-else-if="selectedSubscription.status === 'active' && selectedSubscription.flow_used >= selectedSubscription.flow_total" tone="warning" title="本周期流量已用完">订阅仍在有效期内。可用的续费、流量包和重置操作以商品当前销售规格为准。</PageAlert>
+        <details class="quota-disclosure">
+          <summary>调整流量参数</summary>
+          <div class="quota-disclosure-content"><SubscriptionQuotaEditor :subscription="selectedSubscription" @saved="quotaSaved" /></div>
+        </details>
         <section class="detail-facts" aria-label="订阅业务快照">
           <div><span>套餐规格</span><strong>{{ selectedSubscription.plan_name || `套餐 #${selectedSubscription.plan_id}` }} / {{ selectedSubscription.sku_name || `SKU #${selectedSubscription.plan_sku_id}` }}</strong></div>
           <div><span>节点组</span><strong class="mono">#{{ selectedSubscription.node_group_id }}</strong></div>
@@ -101,6 +109,8 @@ const { data: selectedSubscription, loading: detailLoading, error: detailError }
 const trafficLink = computed(() => adminContextLink('/admin/traffic', userFilter.value ? { user_id: userFilter.value } : {}))
 const statusOptions = [{ label: '全部状态', value: '' }, { label: '有效', value: 'active' }, { label: '已到期', value: 'expired' }, { label: '已取消', value: 'canceled' }]
 const quotaOptions = [{ label: '全部配额', value: '' }, { label: '仍有余量', value: 'available' }, { label: '已经耗尽', value: 'exhausted' }]
+const advancedFilterCount = computed(() => [userFilter.value, expiresFrom.value || expiresTo.value].filter(Boolean).length)
+const activeFilterCount = computed(() => [queryFilter.value, statusFilter.value, quotaFilter.value].filter(Boolean).length + advancedFilterCount.value)
 const hasFilters = computed(() => Boolean(queryFilter.value || statusFilter.value || quotaFilter.value || userFilter.value || expiresFrom.value || expiresTo.value))
 const { items: subscriptions, total, loading, refreshing, error, load } = useRemoteTable<AdminSubscriptionListItem>({
   offset,
@@ -140,4 +150,11 @@ onMounted(async () => { await load(); await syncDetailFromRoute() })
 <style scoped>
 .page-alert,.subscription-metrics { margin-bottom: 16px; }.count-label { color: var(--muted); font-size: 12px; }.toolbar select { min-width: 180px; }.quota-cell { min-width: 190px; }.quota-cell > span,.quota-cell small { display: block; font-size: 10px; }.quota-cell small { margin-top: 6px; color: var(--muted); }.quota-cell .usage-track { height: 5px; margin-top: 7px; }
 .toolbar .p-select { min-width: 180px; }
+</style>
+
+<style scoped>
+.quota-disclosure { border-block: 1px solid var(--line); }
+.quota-disclosure summary { padding: 14px 0; font-size: 13px; font-weight: 600; cursor: pointer; }
+.quota-disclosure summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.quota-disclosure-content { padding: 0 0 16px; }
 </style>

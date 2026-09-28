@@ -20,17 +20,19 @@
       {{ actionError || error }}
     </p>
     <div class="plugins-toolbar">
-      <UiInput
-        v-model="query"
-        placeholder="搜索插件名称或 ID"
-        aria-label="搜索插件"
-      /><UiSelect v-model="surface" aria-label="页面位置" :options="surfaceOptions" /><UiButton variant="secondary" type="button" :loading="loading" :disabled="busy" @click="load">刷新</UiButton><span>{{ installedItems.length }} 个插件</span>
+      <WorkbenchFilterBar :active="hasFilters" :active-count="activeFilterCount" @clear="clearFilters">
+        <WorkbenchFilterInput v-model="query" label="搜索" placeholder="插件名称或 ID" />
+        <WorkbenchFilterSelect v-model="surface" label="页面位置" :options="surfaceOptions" />
+        <WorkbenchFilterSelect v-model="state" label="运行状态" :options="stateOptions" />
+        <WorkbenchFilterSelect v-model="business" label="扩展用途" :options="businessOptions" />
+      </WorkbenchFilterBar>
+      <UiButton variant="secondary" type="button" :loading="loading" :disabled="busy" @click="load">刷新</UiButton><span>{{ filtered.length }} / {{ installedItems.length }} 个插件</span>
     </div>
     <p v-if="loading && !installedItems.length">正在读取插件…</p>
-    <section v-else-if="!filtered.length" class="plugins-empty">
+    <section v-else-if="!error && !filtered.length" class="plugins-empty">
       <h2>{{ installedItems.length ? "没有匹配的插件" : "还没有安装插件" }}</h2>
-      <p>从插件市场选择扩展，或导入发布者提供的签名 .zbplugin 文件。</p>
-      <p>离线导入不需要连接市场，安装后默认停用。</p>
+      <template v-if="hasFilters"><p>没有符合当前名称、运行状态、扩展用途和页面位置的插件。</p><UiButton variant="secondary" @click="clearFilters">清除筛选</UiButton></template>
+      <template v-else><p>从插件市场选择扩展，或导入发布者提供的签名 .zbplugin 文件。</p><p>离线导入不需要连接市场，安装后默认停用。</p></template>
     </section>
     <div class="plugin-grid">
       <article v-for="plugin in filtered" :key="plugin.id" class="plugin-card">
@@ -81,8 +83,9 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AdminPageNavigation from '../components/AdminPageNavigation.vue'
-import UiInput from '../components/UiInput.vue'
-import UiSelect from '../components/UiSelect.vue'
+import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
+import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
+import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiButton from '../components/UiButton.vue'
 import PluginImportDialog from '../plugins/PluginImportDialog.vue'
@@ -99,8 +102,15 @@ const importOpen = ref(false)
 const surfaceOptions = [{ label: '所有页面位置', value: '' }, { label: '公开前台', value: 'public' }, { label: '用户前台', value: 'account' }, { label: '管理后台', value: 'admin' }]
 const query = computed({ get: () => String(route.query.q || ''), set: q => { void router.replace({ query: { ...route.query, q: q || undefined } }) } })
 const surface = computed({ get: () => String(route.query.surface || ''), set: surface => { void router.replace({ query: { ...route.query, surface: surface || undefined } }) } })
+const stateOptions = [{ label: '全部运行状态', value: '' }, ...['active', 'disabled', 'failed', 'incompatible'].map(value => ({ label: pluginStateLabel(value), value }))]
+const businessOptions = [{ label: '全部扩展用途', value: '' }, ...['第三方登录与注册', '服务扩展', '页面扩展'].map(value => ({ label: value, value }))]
+const state = computed({ get: () => String(route.query.state || ''), set: state => { void router.replace({ query: { ...route.query, state: state || undefined } }) } })
+const business = computed({ get: () => String(route.query.business || ''), set: business => { void router.replace({ query: { ...route.query, business: business || undefined } }) } })
+const activeFilterCount = computed(() => [query.value, surface.value, state.value, business.value].filter(Boolean).length)
+const hasFilters = computed(() => Boolean(query.value || surface.value || state.value || business.value))
+function clearFilters() { const { q, surface, state, business, ...rest } = route.query; void router.replace({ query: rest }) }
 const installedItems = computed(() => items.value.filter(p => p.state !== 'uninstalled'))
-const filtered = computed(() => installedItems.value.filter(p => `${p.name} ${p.id}`.toLowerCase().includes(query.value.toLowerCase()) && (!surface.value || p.manifest.surfaces.includes(surface.value as Surface))))
+const filtered = computed(() => installedItems.value.filter(p => `${p.name} ${p.id}`.toLowerCase().includes(query.value.trim().toLowerCase()) && (!surface.value || p.manifest.surfaces.includes(surface.value as Surface)) && (!state.value || p.state === state.value) && (!business.value || pluginBusinessLabel(p) === business.value)))
 function imported(plugin: Plugin) {
   importOpen.value = false
   void router.push({ path: pluginDetailPath(plugin.id), query: { imported: '1' } })

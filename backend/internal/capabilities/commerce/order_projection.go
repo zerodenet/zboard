@@ -6,9 +6,15 @@ import "time"
 // administration tables. Payment callback bodies and failure diagnostics are
 // detail-only and must never be returned by a list endpoint.
 type OrderListItem struct {
+	SubscriptionEndedAt        *time.Time `json:"subscription_ended_at,omitempty"`
+	SubscriptionEndReason      string     `json:"subscription_end_reason,omitempty"`
+	SubscriptionFinalFlowTotal int64      `json:"subscription_final_flow_total"`
+	SubscriptionFinalFlowUsed  int64      `json:"subscription_final_flow_used"`
+
 	PayableAmount  int64     `json:"payable_amount"`
 	ID             uint      `json:"id"`
 	UserID         uint      `json:"user_id"`
+	UserEmail      string    `json:"user_email,omitempty"`
 	SubscriptionID uint      `json:"subscription_id"`
 	PlanID         uint      `json:"plan_id"`
 	PlanSKUID      uint      `json:"plan_sku_id"`
@@ -62,8 +68,9 @@ type PaymentEventSummary struct {
 
 func SummarizeOrder(order Order) OrderListItem {
 	return OrderListItem{
-		PayableAmount: order.PayableAmount,
-		ID:            order.ID, UserID: order.UserID, SubscriptionID: order.SubscriptionID,
+		PayableAmount:       order.PayableAmount,
+		SubscriptionEndedAt: order.SubscriptionEndedAt, SubscriptionEndReason: order.SubscriptionEndReason, SubscriptionFinalFlowTotal: order.SubscriptionFinalFlowTotal, SubscriptionFinalFlowUsed: order.SubscriptionFinalFlowUsed,
+		ID: order.ID, UserID: order.UserID, SubscriptionID: order.SubscriptionID,
 		PlanID: order.PlanID, PlanSKUID: order.PlanSKUID, TradeNo: order.TradeNo,
 		OrderType: order.OrderType, AmountCents: order.AmountCents, Currency: order.Currency,
 		Status: order.Status, PlanName: order.PlanName, SKUName: order.SKUName,

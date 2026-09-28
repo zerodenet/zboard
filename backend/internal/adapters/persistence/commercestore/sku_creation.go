@@ -22,7 +22,7 @@ func (s SKUCreation) Create(ctx context.Context, actor uint, in commerce.Normali
 			return err
 		}
 		var plan model.Plan
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&plan, in.SKU.PlanID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("archived_at IS NULL").First(&plan, in.SKU.PlanID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return commerce.ErrNotFound
 			}

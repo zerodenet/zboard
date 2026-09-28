@@ -69,7 +69,7 @@
 .ui-number-field:focus-within { border-color: var(--ring); box-shadow: 0 0 0 3px var(--focus-ring); }
 .ui-number-field:has([aria-invalid='true']) { border-color: var(--destructive); }
 .ui-number-field-disabled { opacity: .55; }
-.ui-number-field .ui-number-input { width: 100%; min-width: 0; border: 0; box-shadow: none; background: transparent; }
+.ui-number-field .ui-number-input { width: 100%; min-width: 0; min-height: 34px; border: 0; box-shadow: none; background: transparent; }
 .ui-number-field .ui-number-input:focus { border: 0; box-shadow: none; }
 .ui-number-affix { flex: none; padding: 0 8px; color: var(--muted-foreground); font-size: 12px; white-space: nowrap; }
 .form-field-control > .ui-input, .form-field-control > .ui-textarea, .form-field-control > .ui-select, .form-field-control > .ui-number-field { width: 100%; }
@@ -119,6 +119,7 @@
 .ui-autocomplete-input { width: 100%; min-width: 0; min-height: 34px; padding: 6px 10px; border: 0; outline: 0; color: var(--foreground); background: transparent; font-size: 13px; }
 .ui-autocomplete-input::placeholder { color: var(--muted-foreground); }
 .ui-autocomplete-trigger, .ui-autocomplete-clear { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border: 0; border-left: 1px solid var(--border); color: var(--muted-foreground); background: transparent; }
+.ui-autocomplete-trigger .ui-icon { transform: rotate(90deg); }
 .ui-autocomplete-trigger:hover, .ui-autocomplete-clear:hover { color: var(--foreground); background: var(--muted-surface); }
 .ui-autocomplete-trigger:focus-visible, .ui-autocomplete-clear:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .ui-autocomplete-content { z-index: 1550; min-width: var(--reka-combobox-trigger-width); max-height: min(320px, var(--reka-combobox-content-available-height)); overflow: auto; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-floating); color: var(--foreground); background: var(--card); box-shadow: var(--shadow-md); }

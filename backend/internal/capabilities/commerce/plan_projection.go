@@ -9,7 +9,15 @@ type PlanGroupSummary struct {
 	IsEnabled bool   `json:"is_enabled"`
 }
 
+type PlanSalesOption struct {
+	Operation     string `json:"operation"`
+	Currency      string `json:"currency"`
+	MinPriceCents int64  `json:"min_price_cents"`
+	MaxPriceCents int64  `json:"max_price_cents"`
+}
+
 type PlanSummary struct {
+	SalesOptions   []PlanSalesOption `json:"sales_options,omitempty"`
 	TrafficBytes   int64             `json:"traffic_bytes"`
 	ID             uint              `json:"id"`
 	Name           string            `json:"name"`
@@ -49,6 +57,7 @@ type PlanCatalog struct {
 }
 
 type PlanSKUCounts struct {
+	SalesOptions   []PlanSalesOption
 	PlanID         uint
 	SKUCount       int64
 	ActiveSKUCount int64
@@ -66,6 +75,7 @@ func planGroupSummary(group *PlanGroupSummary) *PlanGroupSummary {
 func SummarizePlan(plan Plan, group *PlanGroupSummary, counts PlanSKUCounts) PlanSummary {
 	return PlanSummary{
 		TrafficBytes: plan.TrafficBytes,
+		SalesOptions: counts.SalesOptions,
 		ID:           plan.ID, Name: plan.Name, Slug: plan.Slug, Summary: plan.Summary,
 		NodeGroupID: plan.NodeGroupID, NodeGroup: planGroupSummary(group),
 		IsActive: plan.IsActive, SortOrder: plan.SortOrder, Revision: plan.Revision,

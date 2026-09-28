@@ -123,7 +123,7 @@
     />
 
     <template v-else-if="!detailLoading && !detailError">
-      <section v-if="operation === 'purchase'" class="commerce-hub-section" aria-labelledby="active-subscriptions-title">
+      <section v-if="operation === 'purchase' && (!subscriptionsLoaded || subscriptionLoading || subscriptionError || subscriptionTotal > 0)" class="commerce-hub-section" aria-labelledby="active-subscriptions-title">
         <div class="commerce-hub-heading">
           <div>
             <span>当前服务</span>
@@ -141,30 +141,31 @@
                 <span>订阅 #{{ subscription.id }}</span>
                 <h3>{{ subscription.plan_name }}</h3>
                 <p>{{ subscription.sku_name }}</p>
+                <p v-if="subscription.renewal_until">服务已停止 · 续费保留至 <TimeBadge :value="subscription.renewal_until" /></p>
               </div>
               <strong>{{ formatDate(subscription.end_at) }}</strong>
             </header>
             <dl>
-              <div><dt>剩余流量</dt><dd>{{ formatBytes(Math.max(0, subscription.flow_total - subscription.flow_used)) }}<span v-if="subscription.flow_used >= subscription.flow_total"> · 本周期流量已用完</span></dd></div>
+              <div><dt>{{ subscription.renewal_until ? '结束时剩余流量' : '剩余流量' }}</dt><dd>{{ formatBytes(Math.max(0, subscription.flow_total - subscription.flow_used)) }}<span v-if="subscription.flow_used >= subscription.flow_total"> · 本周期流量已用完</span></dd></div>
               <div><dt>设备数</dt><dd>{{ subscription.device_limit > 0 ? subscription.device_limit : '不限' }}</dd></div>
             </dl>
             <div class="commerce-subscription-actions">
-              <UiButton v-if="(subscription.status === 'active' && subscription.flow_used < subscription.flow_total) || isPermanentSubscription(subscription)" variant="secondary" type="button" @click="startOperation('renew', subscription.id)">{{ renewActionLabel(subscription) }}</UiButton>
-              <UiButton v-if="subscription.status === 'active' && subscription.flow_used < subscription.flow_total && !isPermanentSubscription(subscription)" variant="secondary" type="button" @click="startOperation('change', subscription.id)">切换套餐</UiButton>
-              <UiButton v-if="subscription.status === 'active' && subscription.flow_used < subscription.flow_total" variant="secondary" type="button" @click="startOperation('addon', subscription.id)">购买流量包</UiButton>
-              <UiButton v-if="!isPermanentSubscription(subscription) && new Date(subscription.end_at).getTime() > Date.now()" variant="secondary" type="button" @click="startOperation('reset', subscription.id)">重置流量</UiButton>
+              <UiButton v-if="subscription.can_renew" variant="secondary" type="button" @click="startOperation('renew', subscription.id)">{{ renewActionLabel(subscription) }}</UiButton>
+              <UiButton v-if="subscription.can_change" variant="secondary" type="button" @click="startOperation('change', subscription.id)">切换套餐</UiButton>
+              <UiButton v-if="subscription.can_addon" variant="secondary" type="button" @click="startOperation('addon', subscription.id)">购买流量包</UiButton>
+              <UiButton v-if="subscription.can_reset" variant="secondary" type="button" @click="startOperation('reset', subscription.id)">购买流量重置</UiButton>
             </div>
           </article>
         </div>
         <EmptyState
           v-else-if="subscriptionsLoaded && !subscriptionError"
           icon="plans"
-          title="当前没有有效订阅"
+          title="当前没有可操作订阅"
           description="从下方选择套餐即可创建新的订阅。"
         />
       </section>
 
-      <section v-else class="commerce-hub-section" aria-labelledby="target-subscription-title">
+      <section v-else-if="operation !== 'purchase'" class="commerce-hub-section" aria-labelledby="target-subscription-title">
         <div class="commerce-hub-heading">
           <div>
             <span>操作对象</span>
@@ -178,7 +179,7 @@
           <div>
             <span>订阅 #{{ selectedSubscription.id }}</span>
             <h3>{{ selectedSubscription.plan_name }}</h3>
-            <p>{{ selectedSubscription.sku_name }} · {{ selectedSubscription.status === 'expired' ? '额度已用完，可补充后恢复' : `到期 ${formatDate(selectedSubscription.end_at)}` }}</p>
+            <p>{{ selectedSubscription.sku_name }} · {{ selectedSubscription.status === 'expired' ? '服务已停止，可在保留期内续费恢复' : `到期 ${formatDate(selectedSubscription.end_at)}` }}</p>
           </div>
           <dl>
             <div><dt>剩余流量</dt><dd>{{ formatBytes(Math.max(0, selectedSubscription.flow_total - selectedSubscription.flow_used)) }}</dd></div>
@@ -275,6 +276,7 @@
 </template>
 
 <script setup lang="ts">
+import TimeBadge from '../../components/TimeBadge.vue'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createOrder, previewOrder, type OrderPreview, fetchAccountSubscriptionsPage, fetchPlanCatalogPage, type AdminSubscriptionListItem, type PlanCatalogItem, type PlanSKU, type CatalogOperation } from '../../api/client'
@@ -364,6 +366,7 @@ watch(() => [operation.value, selectedSKUID.value, targetSubscriptionID.value, s
 const checkoutPayable = computed(() => needsQuote.value ? quote.value?.payable_amount : selectedSKU.value?.price_cents)
 const currentOperation = computed(() => {
   const base = operationOptions.find(item => item.value === operation.value) || operationOptions[0]!
+  if (operation.value === 'renew' && selectedSubscription.value?.renewal_until) return { ...base, title: '续费恢复订阅', description: '服务已停止，付款完成后恢复服务并开始新的套餐周期和额度。' }
   return operation.value === 'renew' && isPermanentSubscription(selectedSubscription.value)
     ? { value: 'renew', label: '补充额度', title: '补充永久套餐额度', description: '选择同商品规格，为永久订阅补充套餐流量。' } : base
 })
@@ -391,6 +394,7 @@ function billingLabel(sku: PlanSKU) {
 }
 
 function renewalEffectLabel(sku: PlanSKU) {
+  if (operation.value === 'renew' && selectedSubscription.value?.renewal_until) return '恢复服务，并开始新的套餐周期和流量额度'
   return ({
     none: '不适用',
     extend_only: '只延长有效期，流量不叠加',
@@ -404,6 +408,7 @@ function isPermanentSubscription(subscription: AdminSubscriptionListItem | null 
 }
 
 function renewActionLabel(subscription: AdminSubscriptionListItem) {
+  if (subscription.renewal_until) return '续费恢复'
   return isPermanentSubscription(subscription) ? '补充额度' : '续费'
 }
 

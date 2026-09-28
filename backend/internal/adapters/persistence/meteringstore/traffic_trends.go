@@ -41,13 +41,21 @@ func (s TrafficTrends) Read(ctx context.Context, actor uint, q metering.TrafficT
 		}
 		load := func() (metering.TrafficTrendSnapshot, error) {
 			result := metering.TrafficTrendSnapshot{AsOf: time.Now().UTC()}
-			query := read.Model(&model.TrafficRecord{}).Where("record_at >= ? AND record_at < ?", q.Buckets[0].StartUTC, q.Buckets[len(q.Buckets)-1].EndUTC)
-			for _, f := range []struct {
-				column string
-				id     uint
-			}{{"user_id", q.UserID}, {"subscription_id", q.SubscriptionID}, {"node_id", q.NodeID}, {"protocol_endpoint_id", q.ProtocolEndpointID}} {
-				if f.id > 0 {
-					query = query.Where(f.column+" = ?", f.id)
+			query := TrafficAggregateSource(read, q.Buckets[0].StartUTC, q.Buckets[len(q.Buckets)-1].EndUTC, TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID})
+			// UTC-hour summaries cannot split local days at half/quarter-hour boundaries.
+			for _, bucket := range q.Buckets {
+				if !bucket.StartUTC.Equal(bucket.StartUTC.Truncate(time.Hour)) || !bucket.EndUTC.Equal(bucket.EndUTC.Truncate(time.Hour)) {
+					query = read.Model(&model.TrafficRecord{}).Select("*, 1 AS record_count").Where("record_at >= ? AND record_at < ?", q.Buckets[0].StartUTC, q.Buckets[len(q.Buckets)-1].EndUTC)
+					for _, filter := range []struct {
+						column string
+						id     uint
+					}{{"user_id", q.UserID}, {"subscription_id", q.SubscriptionID}, {"node_id", q.NodeID}, {"protocol_endpoint_id", q.ProtocolEndpointID}} {
+						if filter.id > 0 {
+							query = query.Where(filter.column+" = ?", filter.id)
+						}
+					}
+					query = read.Table("(?) AS traffic_aggregate", query)
+					break
 				}
 			}
 			expression := "DATE(record_at)"
@@ -61,7 +69,7 @@ func (s TrafficTrends) Read(ctx context.Context, actor uint, q metering.TrafficT
 				expression = "CASE " + strings.Join(parts, " ") + " ELSE NULL END"
 			}
 			var rows []metering.TrafficTrendAggregate
-			if err := query.Select(expression+" AS day, COALESCE(SUM(upload_bytes), 0) AS upload_bytes, COALESCE(SUM(download_bytes), 0) AS download_bytes, COALESCE(SUM(used_bytes), 0) AS used_bytes, COUNT(*) AS record_count", args...).Group("day").Order("day ASC").Scan(&rows).Error; err != nil {
+			if err := query.Select(expression+" AS day, COALESCE(SUM(upload_bytes), 0) AS upload_bytes, COALESCE(SUM(download_bytes), 0) AS download_bytes, COALESCE(SUM(used_bytes), 0) AS used_bytes, COALESCE(SUM(record_count), 0) AS record_count", args...).Group("day").Order("day ASC").Scan(&rows).Error; err != nil {
 				return result, err
 			}
 			result.Points, result.RecordCount = metering.BuildTrafficTrendPoints(q.From, q.Days, rows)

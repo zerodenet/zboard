@@ -134,6 +134,19 @@ func resolveDashboardPeriodInLocation(raw string, now time.Time, location *time.
 	}
 	comparisonShiftDays := 0
 	switch period.Range {
+	case dashboardRangeMonth:
+		start := time.Date(localNow.Year(), localNow.Month(), 1, 0, 0, 0, 0, location)
+		previousStart := start.AddDate(0, -1, 0)
+		period.From = start.UTC()
+		period.PreviousFrom = previousStart.UTC()
+		lastDay := start.AddDate(0, 0, -1).Day()
+		if localNow.Day() > lastDay {
+			// The previous calendar month is already complete by this day.
+			period.PreviousTo = start.UTC()
+		} else {
+			period.PreviousTo = time.Date(previousStart.Year(), previousStart.Month(), localNow.Day(), localNow.Hour(), localNow.Minute(), localNow.Second(), localNow.Nanosecond(), location).UTC()
+		}
+		return period, nil
 	case dashboardRangeToday:
 		period.From = startOfToday.UTC()
 		period.Bucket = "hour"
@@ -145,7 +158,7 @@ func resolveDashboardPeriodInLocation(raw string, now time.Time, location *time.
 		period.From = startOfToday.AddDate(0, 0, -29).UTC()
 		comparisonShiftDays = 30
 	default:
-		return dashboardPeriod{}, fmt.Errorf("range must be one of today, 7d, or 30d")
+		return dashboardPeriod{}, fmt.Errorf("range must be one of today, 7d, 30d, or month")
 	}
 	period.PreviousFrom = period.From.In(location).AddDate(0, 0, -comparisonShiftDays).UTC()
 	period.PreviousTo = localNow.AddDate(0, 0, -comparisonShiftDays).UTC()

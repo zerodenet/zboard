@@ -28,6 +28,13 @@ func (s AccountDirectory) List(ctx context.Context, q identity.AccountDirectoryQ
 	if q.IsAdmin != nil {
 		query = query.Where("is_admin = ?", *q.IsAdmin)
 	}
+	if q.EmailVerified != nil {
+		if *q.EmailVerified {
+			query = query.Where("email_verified_at IS NOT NULL")
+		} else {
+			query = query.Where("email_verified_at IS NULL")
+		}
+	}
 	if q.Search != "" {
 		like := fmt.Sprintf("%%%s%%", strings.ToLower(q.Search))
 		query = query.Where("LOWER(email) LIKE ? OR LOWER(account_name) LIKE ?", like, like)
@@ -75,7 +82,7 @@ func (s AccountDirectory) project(ctx context.Context, users []model.User, now t
 	}
 	var subscriptions []countRow
 	if err := s.DB.WithContext(ctx).Model(&model.Subscription{}).
-		Select(`user_id, COUNT(*) AS total_count, COALESCE(SUM(CASE WHEN status = ? AND end_at > ? AND flow_used < flow_total THEN 1 ELSE 0 END), 0) AS active_count`, "active", now).
+		Select(`user_id, COUNT(*) AS total_count, COALESCE(SUM(CASE WHEN status = ? AND end_at > ? AND ended_at IS NULL AND (ends_on_quota_exhaustion = ? OR flow_used < flow_total) THEN 1 ELSE 0 END), 0) AS active_count`, "active", now, false).
 		Where("user_id IN ?", ids).Group("user_id").Scan(&subscriptions).Error; err != nil {
 		return nil, err
 	}
@@ -113,7 +120,7 @@ func (s AccountDirectory) Detail(ctx context.Context, id uint, now time.Time) (i
 	}
 	var subs accountBusinessCounts
 	err := s.DB.WithContext(ctx).Model(&model.Subscription{}).
-		Select("COUNT(*) AS total_count, COALESCE(SUM(CASE WHEN status = ? AND end_at > ? AND flow_used < flow_total THEN 1 ELSE 0 END), 0) AS active_count", "active", now).
+		Select("COUNT(*) AS total_count, COALESCE(SUM(CASE WHEN status = ? AND end_at > ? AND ended_at IS NULL AND (ends_on_quota_exhaustion = ? OR flow_used < flow_total) THEN 1 ELSE 0 END), 0) AS active_count", "active", now, false).
 		Where("user_id = ?", id).Scan(&subs).Error
 	if err != nil {
 		return identity.AccountBusinessDetail{}, err

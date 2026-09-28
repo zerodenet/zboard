@@ -154,10 +154,23 @@ func TestCatalogSKUAnchorFindsSelectedSKUAfterFirstHundredWithinScope(t *testing
 	}
 }
 
+// Configure actual saleable operations rather than relying on lifecycle alone.
+func (f catalogFixture) managementSKUs(t testing.TB) {
+	t.Helper()
+	f.sku(t, 1, 1, skuOperationRenew)
+	addon := f.sku(t, 1, 1, skuOperationAddon)
+	if err := f.h.db.Model(&addon).Update("entitlement_mode", "traffic_addon").Error; err != nil {
+		t.Fatal(err)
+	}
+	f.plan(t, 2)
+	f.sku(t, 2, 1, skuOperationChange)
+}
+
 func TestSubscriptionManagementPagingAndExactIDRemainAccountScoped(t *testing.T) {
 	f := newCatalogFixture(t)
 	f.plan(t, 1)
 	sku := f.sku(t, 1, 1, skuOperationPurchase)
+	f.managementSKUs(t)
 	now := time.Now().UTC()
 	for id := uint(1); id <= 105; id++ {
 		sub := model.Subscription{ID: id, UserID: 1, PlanID: 1, PlanSKUID: sku.ID, NodeGroupID: f.group.ID, Status: subStatusActive, StartAt: now, EndAt: now.Add(time.Hour), FlowTotal: 100}
@@ -199,6 +212,7 @@ func TestSubscriptionManagementFilterPreservesPermanentRecoveryBoundary(t *testi
 	f := newCatalogFixture(t)
 	f.plan(t, 1)
 	sku := f.sku(t, 1, 1, skuOperationPurchase)
+	f.managementSKUs(t)
 	now := time.Now().UTC()
 	for index, item := range []struct {
 		status string
@@ -209,7 +223,7 @@ func TestSubscriptionManagementFilterPreservesPermanentRecoveryBoundary(t *testi
 		{subStatusExpired, perpetualSubscriptionEnd, 100},
 		{subStatusActive, perpetualSubscriptionEnd, 100},
 		{subStatusCanceled, perpetualSubscriptionEnd, 100},
-		{subStatusExpired, now.Add(-time.Hour), 0},
+		{subStatusExpired, now.Add(-8 * 24 * time.Hour), 0},
 		{subStatusActive, now.Add(time.Hour), 100},
 	} {
 		sub := model.Subscription{ID: uint(index + 1), UserID: 1, PlanID: 1, PlanSKUID: sku.ID,
@@ -223,11 +237,10 @@ func TestSubscriptionManagementFilterPreservesPermanentRecoveryBoundary(t *testi
 			Items []adminSubscriptionListItem
 			Total int
 		}
-		want := 1
-		if purpose == "renew" {
-			want = 3
-		}
-		if purpose == "manage" {
+		// Both unexpired timed subscriptions can change plans, even when the
+		// current cycle is exhausted. Permanent services remain excluded.
+		want := 2
+		if purpose == "renew" || purpose == "addon" || purpose == "manage" {
 			want = 4
 		}
 		status := f.get(t, "/api/v1/subscriptions?paged=true&eligible_for="+purpose, f.h.SubscriptionsHandler, &page)
@@ -235,7 +248,7 @@ func TestSubscriptionManagementFilterPreservesPermanentRecoveryBoundary(t *testi
 			t.Fatalf("%s status=%d total=%d want=%d", purpose, status, page.Total, want)
 		}
 		for _, item := range page.Items {
-			if item.ID > 3 && !(purpose == "manage" && item.ID == 6) {
+			if (purpose == "change" && item.ID != 1 && item.ID != 6) || (purpose != "change" && item.ID > 3 && item.ID != 6) {
 				t.Fatalf("ineligible subscription included: %d", item.ID)
 			}
 		}
@@ -276,5 +289,82 @@ func TestExplicitCatalogOperationKeepsAdminStorefrontScoped(t *testing.T) {
 	status = f.get(t, "/api/v1/plans?paged=true&include_inactive=true", f.h.PlanListCommerceHandler, &page)
 	if status != http.StatusOK || page.Total != 3 {
 		t.Fatalf("admin management status=%d total=%d", status, page.Total)
+	}
+}
+
+func TestSubscriptionOperationsFollowSaleableSKUsBeforePagination(t *testing.T) {
+	f := newCatalogFixture(t)
+	f.plan(t, 1)
+	f.plan(t, 2)
+	now := time.Now().UTC()
+	for id := uint(1); id <= 2; id++ {
+		purchase := f.sku(t, id, 10, skuOperationPurchase)
+		sub := model.Subscription{ID: id, UserID: 1, PlanID: id, PlanSKUID: purchase.ID, NodeGroupID: f.group.ID, Status: subStatusActive, StartAt: now, EndAt: now.Add(time.Hour), FlowTotal: 100, FlowUsed: 100, ResetQuotaBytes: 100}
+		if err := f.h.db.Create(&sub).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	type result struct {
+		Items []adminSubscriptionListItem
+		Total int64
+	}
+	read := func(path string) result {
+		t.Helper()
+		var page result
+		if code := f.get(t, path, f.h.SubscriptionsHandler, &page); code != http.StatusOK {
+			t.Fatal(code)
+		}
+		return page
+	}
+	// Lifecycle visibility is independent of purchase-management availability.
+	all := read("/api/v1/subscriptions?paged=true")
+	if all.Total != 2 || all.Items[0].CanReset || all.Items[0].CanRenew {
+		t.Fatalf("unconfigured flags/history: %+v", all)
+	}
+	for _, purpose := range []string{"manage", "reset", "renew", "change", "addon"} {
+		if page := read("/api/v1/subscriptions?paged=true&eligible_for=" + purpose); page.Total != 0 {
+			t.Fatalf("%s without SKU: %+v", purpose, page)
+		}
+	}
+	// A configured free reset is a valid SKU; absence is not the same as price zero.
+	reset := f.sku(t, 2, 0, "reset")
+	if err := f.h.db.Model(&reset).Updates(map[string]any{"entitlement_mode": "traffic_reset", "billing_mode": "one_time", "billing_unit": "once", "billing_value": 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, purpose := range []string{"manage", "reset"} {
+		page := read("/api/v1/subscriptions?paged=true&eligible_for=" + purpose + "&limit=1&offset=0")
+		if page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != 2 || !page.Items[0].CanReset || page.Items[0].CanRenew || page.Items[0].CanChange || page.Items[0].CanAddon {
+			t.Fatalf("%s: %+v", purpose, page)
+		}
+		if page := read("/api/v1/subscriptions?paged=true&eligible_for=" + purpose + "&limit=1&offset=1"); page.Total != 1 || len(page.Items) != 0 {
+			t.Fatalf("pagination after filter: %+v", page)
+		}
+	}
+	if page := read("/api/v1/subscriptions?paged=true&eligible_for=reset&subscription_id=1"); page.Total != 0 {
+		t.Fatal("buy-only direct reset target", page)
+	}
+	for _, state := range []struct {
+		name    string
+		model   any
+		values  map[string]any
+		restore map[string]any
+	}{
+		{"disabled SKU", &reset, map[string]any{"is_active": false}, map[string]any{"is_active": true}},
+		{"archived SKU", &reset, map[string]any{"archived_at": now}, map[string]any{"archived_at": nil}},
+		{"unpublished product", &model.Plan{ID: 2}, map[string]any{"is_active": false}, map[string]any{"is_active": true}},
+		{"archived product", &model.Plan{ID: 2}, map[string]any{"archived_at": now}, map[string]any{"archived_at": nil}},
+	} {
+		if err := f.h.db.Model(state.model).Updates(state.values).Error; err != nil {
+			t.Fatal(err)
+		}
+		if page := read("/api/v1/subscriptions?paged=true&eligible_for=manage"); page.Total != 0 {
+			t.Fatal(state.name, page)
+		}
+		if page := read("/api/v1/subscriptions?paged=true"); page.Total != 2 || page.Items[0].CanReset {
+			t.Fatal(state.name, "history/flags", page)
+		}
+		if err := f.h.db.Model(state.model).Updates(state.restore).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -80,6 +80,7 @@ type Services struct {
 	PlanUpdate                  commerce.PlanUpdate
 	SKUCreation                 commerce.SKUCreation
 	SKUUpdate                   commerce.SKUUpdate
+	CatalogDeletion             commerce.CatalogDeletion
 	Settings                    platform.Settings
 	SiteSettings                platform.SiteSettings
 	SiteCustomizationDefaults   platform.SiteCustomizationDefaults
@@ -161,6 +162,7 @@ func New(db *gorm.DB, secret string) *Services {
 	s.PlanCreation = commerce.PlanCreation{Repository: commercestore.PlanCreation{DB: db}}
 	s.PlanUpdate = commerce.PlanUpdate{Repository: commercestore.PlanUpdate{DB: db}}
 	s.SKUUpdate = commerce.SKUUpdate{Repository: commercestore.SKUUpdate{DB: db}}
+	s.CatalogDeletion = commerce.CatalogDeletion{Repository: commercestore.CatalogDeletion{DB: db}}
 	s.SKUCreation = commerce.SKUCreation{Repository: commercestore.SKUCreation{DB: db}}
 	s.Settings = platform.Settings{Repository: platformstore.Settings{DB: db}}
 	s.SiteSettings = platform.SiteSettings{Repository: platformstore.Settings{DB: db}}
@@ -176,7 +178,7 @@ func New(db *gorm.DB, secret string) *Services {
 	s.HistoryRetention = observability.HistoryRetention{Repository: observabilitystore.HistoryRetention{DB: db}}
 	s.Audit = observability.Audit{Repository: observabilitystore.Audit{DB: db}}
 	s.AuditDirectory = observability.AuditDirectory{Repository: observabilitystore.AuditDirectory{DB: db}}
-	s.Dashboard = observability.Dashboard{Repository: observabilitystore.Dashboard{DB: db}}
+	s.Dashboard = observability.Dashboard{Repository: observabilitystore.Dashboard{DB: db, ReadDatabase: s.trafficDatabase}}
 	s.EntityReferences = observability.EntityReferences{Repository: observabilitystore.EntityReferences{DB: db}}
 	s.OperationLogs = observability.OperationLogs{Repository: observabilitystore.OperationLogs{DB: db}}
 	s.ProtocolEndpointOrder = network.ProtocolEndpointOrder{Repository: networkstore.ProtocolEndpointOrder{DB: db}}

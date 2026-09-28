@@ -13,7 +13,7 @@
         v-bind="inputAttrs"
         v-model="query"
         class="ui-autocomplete-input"
-        :id="inputId"
+        :id="inputId || (attrs.id as string | undefined)"
         :placeholder="placeholder"
         :disabled="disabled"
         :display-value="displayValue"
@@ -83,6 +83,9 @@ watch(model, value => {
 }, { immediate: true })
 function updateQuery(value: string) {
   query.value = value
+  // Reka also emits while initializing or displaying a selected item. Those
+  // updates are not searches and must not cancel an in-flight ID lookup.
+  if (typeof model.value !== 'string' && value === displayValue(selectedValue.value)) return
   if (value !== displayValue(selectedValue.value)) model.value = value
   emit('complete', { query: value })
 }

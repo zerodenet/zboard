@@ -7,6 +7,7 @@
         <UiButton type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton>
       </template>
     </PageHeader>
+    <NodeSetupGuide />
 
     <UiTabs v-model="serviceKind" :items="[{value:'listener',label:'实际协议监听'},{value:'forward',label:'前置端口转发'}]" label="服务接入方式" />
     <NetworkEntries v-show="serviceKind === 'forward'" ref="forwardServices" embedded />
@@ -310,6 +311,7 @@
 </template>
 
 <script setup lang="ts">
+import NodeSetupGuide from '../components/NodeSetupGuide.vue'
 import NetworkEntries from './NetworkEntries.vue'
 import UiTabs from '../components/UiTabs.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'

@@ -25,7 +25,7 @@ func (s PlanDetails) read(ctx context.Context, actor, id uint, public bool) (com
 				return err
 			}
 		}
-		query := tx.Where("id = ?", id)
+		query := tx.Where("id = ? AND archived_at IS NULL", id)
 		if public {
 			query = query.Where("is_active = ?", true)
 		}
@@ -44,14 +44,15 @@ func (s PlanDetails) read(ctx context.Context, actor, id uint, public bool) (com
 		if found.RowsAffected > 0 {
 			out.Group = &group
 		}
-		counts := tx.Model(&model.PlanSKU{}).Where("plan_id = ?", id)
+		counts := tx.Model(&model.PlanSKU{}).Where("plan_id = ? AND archived_at IS NULL", id)
 		if public {
 			counts = counts.Where("is_active = ?", true).Where("EXISTS (SELECT 1 FROM plan_sku_operations WHERE plan_sku_operations.plan_sku_id = plan_skus.id AND plan_sku_operations.operation = ?)", "purchase")
 		}
-		if err := counts.Select("COUNT(*) AS sku_count, COALESCE(SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END), 0) AS active_sku_count").Scan(&out.Counts).Error; err != nil {
+		var row planSKUCountRow
+		if err := counts.Select("COUNT(*) AS sku_count, COALESCE(SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END), 0) AS active_sku_count").Scan(&row).Error; err != nil {
 			return err
 		}
-		out.Counts.PlanID = id
+		out.Counts = commerce.PlanSKUCounts{PlanID: id, SKUCount: row.SKUCount, ActiveSKUCount: row.ActiveSKUCount}
 		if public {
 			var sku model.PlanSKU
 			result := tx.Where("plan_id = ? AND is_active = ?", id, true).

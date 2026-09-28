@@ -82,6 +82,12 @@ func sourceValue(tx *gorm.DB, sub model.Subscription, currency string) (int64, t
 }
 func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, now time.Time) (commerce.OrderPreview, error) {
 	preview := commerce.OrderPreview{OrderType: order.OrderType, AmountCents: order.AmountCents, PayableAmount: order.PayableAmount, Currency: order.Currency, TrafficBytes: order.TrafficBytes}
+	if order.OrderType == "renewal" && !entitlements.CanRenewAt(entitlements.Subscription(sub), now) {
+		return preview, quoteError(entitlements.ErrRenewalWindow.Error())
+	}
+	if order.TargetSubscriptionID != nil && order.OrderType != "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now)) {
+		return preview, quoteError("订阅已结束，请续费恢复或新购套餐。")
+	}
 	if order.OrderType != "upgrade" && order.OrderType != "traffic_reset" {
 		return preview, nil
 	}
@@ -110,8 +116,8 @@ func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, n
 		if order.BillingUnit == "once" {
 			return preview, quoteError("保留原到期日的套餐切换不能使用永久规格。")
 		}
-		if sub.Status != "active" || sub.FlowUsed >= sub.FlowTotal {
-			return preview, quoteError("原订阅流量已耗尽，请先重置流量。")
+		if !entitlements.CanChangeAt(entitlements.Subscription(sub), now) {
+			return preview, quoteError("目标订阅已结束或不可切换，请新购套餐。")
 		}
 		if order.TrafficBytes < used {
 			return preview, quoteError("新套餐流量低于当前周期已用流量，请选择更大的套餐。")

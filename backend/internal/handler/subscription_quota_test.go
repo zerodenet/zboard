@@ -12,6 +12,76 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
 
+func quotaValue(value int64) *int64 { return &value }
+
+func TestAdminSubscriptionQuotaUsesLatestUsageForPartialUpdates(t *testing.T) {
+	f := newOrderFixture(t)
+	paid := f.paid(t, f.create(t, 0).ID)
+	// Traffic arrived after the administrator opened the detail page.
+	f.h.db.Model(&model.Subscription{}).Where("id = ?", paid.SubscriptionID).Update("flow_used", 600)
+	in := entitlements.SubscriptionQuotaInput{FlowTotal: quotaValue(2048), ExpectedFlowUsed: 0, Reason: "增加当前周期配额", IdempotencyKey: "partial-latest"}
+	if w := quotaRequest(t, f, paid.SubscriptionID, in); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var after model.Subscription
+	f.h.db.First(&after, paid.SubscriptionID)
+	if after.FlowTotal != 2048 || after.FlowUsed != 600 || after.ResetQuotaBytes != 1024 {
+		t.Fatal("latest usage overwritten", after)
+	}
+	var event model.QuotaEvent
+	f.h.db.Where("event_type = ?", "admin_quota").First(&event)
+	var detail struct {
+		Before map[string]int64
+		After  map[string]int64
+	}
+	if err := json.Unmarshal([]byte(event.Detail), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.Before["flow_used"] != 600 || detail.After["flow_used"] != 600 {
+		t.Fatal("audit did not use live state", event.Detail)
+	}
+	f.h.db.Model(&after).Update("flow_used", 700)
+	if w := quotaRequest(t, f, after.ID, in); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	f.h.db.First(&after, after.ID)
+	if after.FlowUsed != 700 {
+		t.Fatal("retry overwrote later traffic")
+	}
+	// Setting an explicit usage value is an intentional absolute override.
+	in = entitlements.SubscriptionQuotaInput{FlowUsed: quotaValue(30), Reason: "修正当前周期用量", IdempotencyKey: "usage-latest"}
+	if w := quotaRequest(t, f, after.ID, in); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	f.h.db.First(&after, after.ID)
+	if after.FlowUsed != 30 || after.FlowTotal != 2048 {
+		t.Fatal("explicit usage not applied", after)
+	}
+}
+
+func TestAdminSubscriptionQuotaAppliesDueResetBeforePartialEdit(t *testing.T) {
+	f := newOrderFixture(t)
+	paid := f.paid(t, f.create(t, 0).ID)
+	now := time.Now().UTC()
+	due := now.Add(-time.Hour)
+	f.h.db.Model(&model.Subscription{}).Where("id = ?", paid.SubscriptionID).Updates(map[string]any{
+		"start_at": now.AddDate(0, -1, 0), "end_at": now.AddDate(0, 1, 0),
+		"flow_used": 600, "reset_policy": 2, "next_reset_at": due,
+	})
+	in := entitlements.SubscriptionQuotaInput{FlowTotal: quotaValue(2048), Reason: "调整新周期配额", IdempotencyKey: "due-reset-partial"}
+	if w := quotaRequest(t, f, paid.SubscriptionID, in); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var after model.Subscription
+	f.h.db.First(&after, paid.SubscriptionID)
+	if after.FlowTotal != 2648 || after.FlowUsed != 600 || after.CycleStartUsed != 600 || after.ResetQuotaBytes != 1024 || after.NextResetAt == nil || !after.NextResetAt.After(now) {
+		t.Fatal("due reset or partial edit lost", after)
+	}
+	if w := quotaRequest(t, f, after.ID, entitlements.SubscriptionQuotaInput{Reason: "只有调整原因", IdempotencyKey: "no-changes"}); w.Code != 400 {
+		t.Fatal("empty patch accepted", w.Code)
+	}
+}
+
 func quotaRequest(t *testing.T, f orderFixture, id uint, in entitlements.SubscriptionQuotaInput) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(in)
@@ -39,7 +109,7 @@ func TestAdminSubscriptionQuotaRestoresUsageAndPreservesHistory(t *testing.T) {
 	if err := f.h.db.Create(&record).Error; err != nil {
 		t.Fatal(err)
 	}
-	in := entitlements.SubscriptionQuotaInput{FlowTotal: 2048, FlowUsed: 512, ResetQuotaBytes: 4096, ExpectedFlowTotal: 1024, ExpectedFlowUsed: 1024, ExpectedResetQuotaBytes: 1024, Reason: "客服修正计费用量", IdempotencyKey: "adjust-1"}
+	in := entitlements.SubscriptionQuotaInput{FlowTotal: quotaValue(2048), FlowUsed: quotaValue(512), ResetQuotaBytes: quotaValue(4096), ExpectedFlowTotal: 1024, ExpectedFlowUsed: 1024, ExpectedResetQuotaBytes: 1024, Reason: "客服修正计费用量", IdempotencyKey: "adjust-1"}
 	w := quotaRequest(t, f, before.ID, in)
 	if w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())
@@ -71,16 +141,16 @@ func TestAdminSubscriptionQuotaRestoresUsageAndPreservesHistory(t *testing.T) {
 	if count != 1 {
 		t.Fatal("audit missing", count)
 	}
-	in.FlowUsed++
+	*in.FlowUsed++
 	if w := quotaRequest(t, f, before.ID, in); w.Code != 409 {
 		t.Fatal("changed replay", w.Code)
 	}
-	in.IdempotencyKey = "stale"
-	if w := quotaRequest(t, f, before.ID, in); w.Code != 409 {
-		t.Fatal("concurrent change overwritten", w.Code)
+	in.IdempotencyKey = "latest"
+	if w := quotaRequest(t, f, before.ID, in); w.Code != 200 {
+		t.Fatal("latest values rejected", w.Code)
 	}
 	// Exhausting an unexpired service suspends credentials without expiring it.
-	in = entitlements.SubscriptionQuotaInput{FlowTotal: 2048, FlowUsed: 2048, ResetQuotaBytes: 4096, ExpectedFlowTotal: 2048, ExpectedFlowUsed: 512, ExpectedResetQuotaBytes: 4096, Reason: "设置当前周期用量", IdempotencyKey: "exhaust"}
+	in = entitlements.SubscriptionQuotaInput{FlowTotal: quotaValue(2048), FlowUsed: quotaValue(2048), ResetQuotaBytes: quotaValue(4096), ExpectedFlowTotal: 2048, ExpectedFlowUsed: 512, ExpectedResetQuotaBytes: 4096, Reason: "设置当前周期用量", IdempotencyKey: "exhaust"}
 	if w := quotaRequest(t, f, before.ID, in); w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())
 	}
@@ -106,17 +176,17 @@ func TestAdminSubscriptionQuotaRejectsUnauthorizedAndRollsBackPublicationFailure
 	f := newOrderFixture(t)
 	attachOrderPublishEndpoint(t, f)
 	paid := f.paid(t, f.create(t, 0).ID)
-	in := entitlements.SubscriptionQuotaInput{FlowTotal: 2000, FlowUsed: 0, ResetQuotaBytes: 1024, ExpectedFlowTotal: 1024, ExpectedFlowUsed: 0, ExpectedResetQuotaBytes: 1024, Reason: "客服调整配额", IdempotencyKey: "failure"}
+	in := entitlements.SubscriptionQuotaInput{FlowTotal: quotaValue(2000), FlowUsed: quotaValue(0), ResetQuotaBytes: quotaValue(1024), ExpectedFlowTotal: 1024, ExpectedFlowUsed: 0, ExpectedResetQuotaBytes: 1024, Reason: "客服调整配额", IdempotencyKey: "failure"}
 	f.h.db.Model(&model.User{}).Where("id = 1").Update("is_admin", false)
 	if w := quotaRequest(t, f, paid.SubscriptionID, in); w.Code != 403 {
 		t.Fatal("stale admin claim accepted", w.Code)
 	}
 	f.h.db.Model(&model.User{}).Where("id = 1").Update("is_admin", true)
-	in.FlowTotal = -1
+	in.FlowTotal = quotaValue(-1)
 	if w := quotaRequest(t, f, paid.SubscriptionID, in); w.Code != 400 {
 		t.Fatal("negative quota", w.Code)
 	}
-	in.FlowTotal = 2000
+	in.FlowTotal = quotaValue(2000)
 	clearPublishTestJobs(t, f)
 	rejectPublishInsert(t, f)
 	if w := quotaRequest(t, f, paid.SubscriptionID, in); w.Code != 500 {
@@ -138,7 +208,7 @@ func TestLegacyExhaustedSubscriptionIsVisibleBeforeAnyMutation(t *testing.T) {
 	f := newOrderFixture(t)
 	paid := f.paid(t, f.create(t, 0).ID)
 	f.h.db.Model(&model.Subscription{}).Where("id = ?", paid.SubscriptionID).Updates(map[string]any{"status": "expired", "flow_used": 1024})
-	for _, suffix := range []string{"&status=active", "&eligible_for=reset"} {
+	for _, suffix := range []string{"&status=active"} {
 		var page struct {
 			Items []adminSubscriptionListItem
 			Total int64
@@ -146,6 +216,13 @@ func TestLegacyExhaustedSubscriptionIsVisibleBeforeAnyMutation(t *testing.T) {
 		if code := f.get(t, "/api/v1/subscriptions?paged=true"+suffix, f.h.SubscriptionsHandler, &page); code != 200 || page.Total != 1 || page.Items[0].Status != "active" || page.Items[0].QuotaStatus != "exhausted" {
 			t.Fatal(code, page)
 		}
+	}
+	var resetPage struct {
+		Items []adminSubscriptionListItem
+		Total int64
+	}
+	if code := f.get(t, "/api/v1/subscriptions?paged=true&eligible_for=reset", f.h.SubscriptionsHandler, &resetPage); code != 200 || resetPage.Total != 0 {
+		t.Fatal("reset without a saleable SKU", code, resetPage)
 	}
 	var expiredPage struct {
 		Items []adminSubscriptionListItem
