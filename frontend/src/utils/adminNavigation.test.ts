@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { routes } from '../router'
-import { adminNavigation, resolveAdminNavigation } from './adminNavigation'
+import { adminNavigation, resolveAdminNavigation } from '../test/menuFixtures'
 
 describe('admin navigation inventory', () => {
   const pages = adminNavigation.flatMap(domain => domain.sections.flatMap(section => section.pages))
@@ -23,7 +23,7 @@ describe('admin navigation inventory', () => {
     expect(resolveAdminNavigation('/account')).toBeUndefined()
   })
   it('keeps maintenance in settings and announcements in operations', () => {
-    expect(resolveAdminNavigation('/admin/extensions/example.welcome/home')?.domain.id).toBe('settings')
+    expect(resolveAdminNavigation('/admin/extensions/example.welcome/home')).toBeUndefined()
     expect(resolveAdminNavigation('/admin/maintenance')?.domain.id).toBe('settings')
     expect(resolveAdminNavigation('/admin/announcements')?.domain.id).toBe('operations')
     expect(resolveAdminNavigation('/admin/settings/email')?.section.label).toBe('站点设置')

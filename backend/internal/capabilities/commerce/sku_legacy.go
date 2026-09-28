@@ -22,7 +22,7 @@ func BuildLegacySKU(planID uint, req LegacySKURequest) (SKU, error) {
 		fields["currency"] = "请输入币种。"
 	}
 	switch req.SKUType {
-	case "new", "renewal", "upgrade", "traffic_pack":
+	case "new", "renewal", "upgrade", "traffic_pack", "traffic_reset":
 	default:
 		fields["sku_type"] = "请选择有效的规格类型。"
 	}

@@ -68,6 +68,7 @@ describe('form feedback policy', () => {
       'plugins/PluginConfigDialog.vue',
       'views/Certificates.vue',
       'views/ManagedDNS.vue',
+      'views/Menus.vue',
       'views/NodeGroups.vue',
       'views/Nodes.vue',
       'views/Plans.vue',

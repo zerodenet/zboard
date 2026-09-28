@@ -36,7 +36,11 @@ func TestCompletionCapabilityRollsBackExhaustionAndReplays(t *testing.T) {
 	if err != nil || !exhausted || record.UsedBytes != 20 {
 		t.Fatalf("completion: %+v %t %v", record, exhausted, err)
 	}
-	assertAccountingTotal(t, h, credential.SubscriptionID, 20, subStatusExpired)
+	assertAccountingTotal(t, h, credential.SubscriptionID, 20, subStatusActive)
+	var current model.ProtocolCredential
+	if err := h.db.First(&current, credential.ID).Error; err != nil || current.Status != "expired" {
+		t.Fatal("exhaustion did not suspend credentials", current.Status, err)
+	}
 	var usage model.ProtocolEndpointUsageDaily
 	if err := h.db.First(&usage, "protocol_endpoint_id = ?", credential.ProtocolEndpointID).Error; err != nil || usage.UsedBytes != 20 || usage.RecordCount != 1 {
 		t.Fatalf("completion usage projection: %+v %v", usage, err)
@@ -45,7 +49,7 @@ func TestCompletionCapabilityRollsBackExhaustionAndReplays(t *testing.T) {
 	if err != nil || repeated.ID != record.ID {
 		t.Fatalf("replay: %+v %v", repeated, err)
 	}
-	assertAccountingTotal(t, h, credential.SubscriptionID, 20, subStatusExpired)
+	assertAccountingTotal(t, h, credential.SubscriptionID, 20, subStatusActive)
 	usage = model.ProtocolEndpointUsageDaily{}
 	if err := h.db.First(&usage, "protocol_endpoint_id = ?", credential.ProtocolEndpointID).Error; err != nil || usage.UsedBytes != 20 || usage.RecordCount != 1 {
 		t.Fatalf("replay changed usage projection: %+v %v", usage, err)

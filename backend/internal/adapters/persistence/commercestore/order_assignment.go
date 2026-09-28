@@ -2,12 +2,14 @@ package commercestore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"time"
 )
 
 type OrderAssignment struct{ DB *gorm.DB }
@@ -65,7 +67,7 @@ func (s OrderAssignment) Assign(ctx context.Context, actor uint, in commerce.Ass
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		created, err := createOrderInTransaction(tx, request.UserID, commerce.OrderCreateRequest{PlanSKUID: request.PlanSKUID, TargetSubscriptionID: request.TargetSubscriptionID, Channel: "admin_assignment"})
+		created, err := createOrderInTransaction(tx, request.UserID, commerce.OrderCreateRequest{PlanSKUID: request.PlanSKUID, TargetSubscriptionID: request.TargetSubscriptionID, Channel: "admin_assignment", QuoteFingerprint: request.QuoteFingerprint})
 		if err != nil {
 			return err
 		}
@@ -73,6 +75,20 @@ func (s OrderAssignment) Assign(ctx context.Context, actor uint, in commerce.Ass
 		if request.PayableAmount != nil {
 			order.PayableAmount = *request.PayableAmount
 			order.DiscountAmount = max(order.AmountCents-order.PayableAmount, 0)
+			if order.ChangeSnapshot != "" {
+				var snapshot changeSnapshot
+				if err := json.Unmarshal([]byte(order.ChangeSnapshot), &snapshot); err != nil {
+					return err
+				}
+				// An administrator override may waive more, or use less, of the quoted
+				// credit. Only credit actually applied transfers to the new entitlement.
+				snapshot.Credit = min(snapshot.Credit, order.DiscountAmount)
+				payload, err := json.Marshal(snapshot)
+				if err != nil {
+					return err
+				}
+				order.ChangeSnapshot = string(payload)
+			}
 		}
 		order.TradeNo = in.TradeNo
 		order.AssignedBy = actor
@@ -87,4 +103,24 @@ func (s OrderAssignment) Assign(ctx context.Context, actor uint, in commerce.Ass
 		return commerce.Order{}, err
 	}
 	return commerce.Order(order), nil
+}
+
+func (s OrderAssignment) Preview(ctx context.Context, actor, buyer uint, request commerce.OrderCreateRequest) (commerce.OrderPreview, error) {
+	var preview commerce.OrderPreview
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var administrator model.User
+		if err := tx.Select("id", "is_admin", "status").First(&administrator, actor).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return commerce.ErrOrderPermission
+			}
+			return err
+		}
+		if !administrator.IsAdmin || administrator.Status != "active" {
+			return commerce.ErrOrderPermission
+		}
+		var err error
+		_, preview, err = prepareOrder(tx, buyer, request, time.Now().UTC())
+		return err
+	})
+	return preview, err
 }

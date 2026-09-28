@@ -219,6 +219,36 @@ func runSQLiteMigrations(db *gorm.DB) error {
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0019_subscription_traffic_reset.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
 		return err
 	}
+	menuSQL, err := migrations.Files.ReadFile("sqlite/0020_menus.sql")
+	if err != nil {
+		return err
+	}
+	menuStatements, err := splitMigrationStatements(string(menuSQL))
+	if err != nil {
+		return err
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		for _, statement := range menuStatements {
+			if err := tx.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0020_menus.up.sql", AppliedAt: time.Now().UTC()}).Error
+	}); err != nil {
+		return err
+	}
+	if !db.Migrator().HasColumn(&model.Order{}, "ChangeSnapshot") {
+		payload, err := migrations.Files.ReadFile("sqlite/0021_order_change_snapshot.sql")
+		if err != nil {
+			return err
+		}
+		if err := db.Exec(string(payload)).Error; err != nil {
+			return err
+		}
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0021_order_change_snapshot.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
+	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {
 		return fmt.Errorf("record sqlite schema version: %w", err)
@@ -240,6 +270,7 @@ func MigrationTables(db *gorm.DB) ([]string, error) {
 		tables = append(tables, parsed.Schema.Table)
 	}
 	tables = append(tables,
+		"menu_revisions", "menu_nodes",
 		"job_execution_budget", "job_execution_groups", "job_dispatch_lanes", "job_runs", "job_attempts", "job_schedules",
 		"plugin_installations", "plugin_versions", "plugin_operations", "plugin_host_leases",
 		"subscription_flow_start_events", "fair_use_node_coverage", "fair_use_policies",

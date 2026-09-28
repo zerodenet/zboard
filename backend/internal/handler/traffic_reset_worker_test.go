@@ -130,6 +130,12 @@ func TestTrafficResetCatchupPreservesCurrentCycleUsageAndAddon(t *testing.T) {
 }
 
 func TestTrafficResetReactivatesQuotaExhaustedSubscription(t *testing.T) {
+	for _, status := range []string{subStatusActive, subStatusExpired} {
+		t.Run(status, func(t *testing.T) { testTrafficResetRestoresExhaustedCredentials(t, status) })
+	}
+}
+
+func testTrafficResetRestoresExhaustedCredentials(t *testing.T, status string) {
 	f := newOrderFixture(t)
 	endpoint := attachOrderPublishEndpoint(t, f)
 	if err := f.h.db.Model(&f.planRecord).Update("reset_policy", 1).Error; err != nil {
@@ -139,7 +145,7 @@ func TestTrafficResetReactivatesQuotaExhaustedSubscription(t *testing.T) {
 	clearPublishTestJobs(t, f)
 	now := time.Now().UTC()
 	if err := f.h.db.Model(&model.Subscription{}).Where("id = ?", paid.SubscriptionID).Updates(map[string]any{
-		"flow_total": 1536, "flow_used": 1536, "status": subStatusExpired,
+		"flow_total": 1536, "flow_used": 1536, "status": status,
 		"next_reset_at": now.Add(-time.Hour),
 	}).Error; err != nil {
 		t.Fatal(err)

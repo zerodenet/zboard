@@ -90,6 +90,8 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0017_protocol_endpoint_egress.up.sql",
 		"0018_subscription_mutations.up.sql",
 		"0019_subscription_traffic_reset.up.sql",
+		"0020_menus.up.sql",
+		"0021_order_change_snapshot.up.sql",
 	}
 	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
@@ -114,6 +116,8 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0017_protocol_endpoint_egress.down.sql",
 		"0018_subscription_mutations.down.sql",
 		"0019_subscription_traffic_reset.down.sql",
+		"0020_menus.down.sql",
+		"0021_order_change_snapshot.down.sql",
 	}
 	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)

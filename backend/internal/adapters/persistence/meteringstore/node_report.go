@@ -69,7 +69,7 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Joins("JOIN (SELECT node_group_id, protocol_endpoint_id FROM node_group_endpoints) AS node_group_endpoints ON node_group_endpoints.node_group_id = subscriptions.node_group_id").
-			Where("subscriptions.user_id = ? AND subscriptions.status = ? AND subscriptions.end_at > ? AND node_group_endpoints.protocol_endpoint_id = ?", in.UserID, "active", now, endpoint.ID).
+			Where("subscriptions.user_id = ? AND subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total AND node_group_endpoints.protocol_endpoint_id = ?", in.UserID, "active", now, endpoint.ID).
 			Order("end_at desc").First(&sub).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return metering.ErrSubscriptionNotFound
@@ -79,9 +79,6 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 
 		remaining := sub.FlowTotal - sub.FlowUsed
 		if remaining <= 0 {
-			if err := tx.Model(&sub).Update("status", "expired").Error; err != nil {
-				return err
-			}
 			quotaExhausted = true
 			return nil
 		}
@@ -97,9 +94,6 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 			used = remaining
 		}
 		sub.FlowUsed += used
-		if sub.FlowUsed >= sub.FlowTotal {
-			sub.Status = "expired"
-		}
 		if err := tx.Save(&sub).Error; err != nil {
 			return err
 		}
@@ -125,7 +119,10 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
-		return AddProtocolEndpointUsage(tx, []model.TrafficRecord{record})
+		if err := AddProtocolEndpointUsage(tx, []model.TrafficRecord{record}); err != nil {
+			return err
+		}
+		return s.Expire(tx, in.UserID, now)
 	})
 	if err != nil {
 		return metering.NodeReportResult{}, err

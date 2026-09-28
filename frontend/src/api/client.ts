@@ -1139,9 +1139,9 @@ export interface PlanSKU {
   name: string
   sku_type: string
   billing_mode?: 'periodic' | 'one_time'
-  entitlement_mode?: 'plan' | 'traffic_addon'
+  entitlement_mode?: 'plan' | 'traffic_addon' | 'traffic_reset'
   renewal_effect: 'none' | 'extend_only' | 'extend_and_add_quota' | 'add_quota_only'
-  allowed_operations?: Array<'purchase' | 'renew' | 'change' | 'addon'>
+  allowed_operations?: Array<'purchase' | 'renew' | 'change' | 'addon' | 'reset'>
   billing_unit: string
   billing_value: number
   price_cents: number
@@ -1214,7 +1214,7 @@ export async function fetchPlansPage(params: { includeInactive?: boolean; q?: st
   return normalizePageResult<PlanSummary>(unwrap(response), params.offset || 0, params.limit || 50)
 }
 
-export type CatalogOperation = 'purchase' | 'renew' | 'change' | 'addon'
+export type CatalogOperation = 'purchase' | 'renew' | 'change' | 'addon' | 'reset'
 
 export async function fetchPlanCatalogPage(params: { q?: string; offset?: number; limit?: number; operation?: CatalogOperation; planId?: number; excludePlanId?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<PlanCatalogItem>> {
   const query = new URLSearchParams()
@@ -1377,12 +1377,37 @@ export async function fetchAdminOrderPaymentEvents(orderId: number, params: { of
   return normalizePageResult<AdminPaymentEventSummary>(unwrap(response), params.offset || 0, params.limit || 50)
 }
 
-export async function createOrder(planSkuId: number, options: { channel?: string; orderType?: string; targetSubscriptionId?: number } = {}) {
+export interface OrderPreview {
+  order_type: string
+  amount_cents: number
+  credit_amount: number
+  payable_amount: number
+  currency: string
+  time_credit: number
+  traffic_credit: number
+  traffic_bytes: number
+  used_bytes: number
+  end_at?: string
+  quote_fingerprint: string
+}
+
+export async function previewAdminOrder(userId: number, planSkuId: number, targetSubscriptionId: number, options: ApiRequestOptions = {}): Promise<OrderPreview> {
+  const response = await api.post('/admin/orders/preview', { user_id: userId, plan_sku_id: planSkuId, target_subscription_id: targetSubscriptionId }, { signal: options.signal })
+  return unwrap(response)
+}
+
+export async function previewOrder(planSkuId: number, targetSubscriptionId: number, options: ApiRequestOptions = {}): Promise<OrderPreview> {
+  const response = await api.post('/orders/preview', { plan_sku_id: planSkuId, target_subscription_id: targetSubscriptionId }, { signal: options.signal })
+  return unwrap(response)
+}
+
+export async function createOrder(planSkuId: number, options: { channel?: string; orderType?: string; targetSubscriptionId?: number; quoteFingerprint?: string } = {}) {
 	const response = await api.post('/orders', {
 		plan_sku_id: planSkuId,
 		channel: options.channel || 'manual',
 		order_type: options.orderType || 'new',
-		target_subscription_id: options.targetSubscriptionId || undefined
+		target_subscription_id: options.targetSubscriptionId || undefined,
+    quote_fingerprint: options.quoteFingerprint || undefined
 	})
   return unwrap(response)
 }
@@ -1403,6 +1428,10 @@ export async function fetchSubscriptions(params: { userId?: number; status?: str
 }
 
 export interface AdminSubscriptionListItem {
+  quota_status?: 'available' | 'exhausted'
+  reset_quota_bytes?: number
+  reset_policy?: number
+  next_reset_at?: string | null
   id: number
   user_id: number
   user_email: string
@@ -1433,11 +1462,12 @@ export interface AdminSubscriptionDetail extends AdminSubscriptionListItem {
   total_credential_count: number
 }
 
-export async function fetchSubscriptionsPage(params: { q?: string; userId?: number; status?: string; quota?: string; expiresFrom?: string; expiresTo?: string; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminSubscriptionListItem>> {
+export async function fetchSubscriptionsPage(params: { q?: string; userId?: number; status?: string; eligibleFor?: Exclude<CatalogOperation, 'purchase'> | 'manage'; quota?: string; expiresFrom?: string; expiresTo?: string; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminSubscriptionListItem>> {
   const query = new URLSearchParams()
   appendPageParams(query, params)
   if (params.userId) query.set('user_id', String(params.userId))
   if (params.status) query.set('status', params.status)
+  if (params.eligibleFor) query.set('eligible_for', params.eligibleFor)
   if (params.quota) query.set('quota', params.quota)
   if (params.expiresFrom) query.set('expires_from', params.expiresFrom)
   if (params.expiresTo) query.set('expires_to', params.expiresTo)
@@ -1445,7 +1475,7 @@ export async function fetchSubscriptionsPage(params: { q?: string; userId?: numb
   return normalizePageResult<AdminSubscriptionListItem>(unwrap(response), params.offset || 0, params.limit || 50)
 }
 
-export async function fetchAccountSubscriptionsPage(params: { status?: string; offset?: number; limit?: number; q?: string; subscriptionId?: number; eligibleFor?: 'manage' | 'renew' | 'change' | 'addon' } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminSubscriptionListItem>> {
+export async function fetchAccountSubscriptionsPage(params: { status?: string; offset?: number; limit?: number; q?: string; subscriptionId?: number; eligibleFor?: 'manage' | 'renew' | 'change' | 'addon' | 'reset' } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminSubscriptionListItem>> {
   const query = new URLSearchParams()
   appendPageParams(query, params)
   if (params.status) query.set('status', String(params.status))
@@ -1453,6 +1483,20 @@ export async function fetchAccountSubscriptionsPage(params: { status?: string; o
   if (params.eligibleFor) query.set('eligible_for', params.eligibleFor)
   const response = await api.get(`/subscriptions?${query}`, { signal: options.signal })
   return normalizePageResult<AdminSubscriptionListItem>(requirePageResponse(unwrap(response)), params.offset || 0, params.limit || 25)
+}
+
+export interface SubscriptionQuotaUpdate {
+  flow_total: number
+  flow_used: number
+  reset_quota_bytes: number
+  expected_flow_total: number
+  expected_flow_used: number
+  expected_reset_quota_bytes: number
+  reason: string
+  idempotency_key: string
+}
+export async function updateSubscriptionQuota(id: number, input: SubscriptionQuotaUpdate): Promise<void> {
+  await api.put(`/admin/subscriptions/${id}/quota`, input)
 }
 
 export async function fetchAdminSubscriptionDetail(id: number, options: ApiRequestOptions = {}): Promise<AdminSubscriptionDetail> {
@@ -2382,6 +2426,7 @@ export interface AdminOrderAssignmentRequest {
   target_subscription_id?: number
   note: string
   request_id: string
+  quote_fingerprint?: string
 }
 export async function assignAdminOrder(payload: AdminOrderAssignmentRequest): Promise<AdminOrderDetail> {
   const response = await api.post('/admin/orders', payload)

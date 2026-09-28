@@ -70,7 +70,15 @@ describe('dashboard independent sections', () => {
     expect(wrapper!.text()).toContain('还没有订单')
     expect(wrapper!.findAllComponents(MetricCard).at(-1)!.props('value')).toBe(0)
   })
-  it('cancels every pending section on unmount', async () => {
+  it('shows an exhausted valid subscription and binds reset to that instance', async () => {
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([{ id: 61, status: 'active', plan_name: 'Exhausted monthly plan', end_at: '2027-01-01', flow_total: 100, flow_used: 100, reset_quota_bytes: 100 }]))
+    await open()
+    expect(wrapper!.text()).toContain('Exhausted monthly plan')
+    expect(wrapper!.text()).toContain('本周期流量已用完')
+    expect(wrapper!.find('a[href="/account/plans?operation=reset&subscription=61"]').exists()).toBe(true)
+    expect(wrapper!.findAllComponents(MetricCard)[1].props('value')).toBe(1)
+  })
+  it('cancels every pending section on unmount' , async () => {
     const late = deferred<any>()
     vi.mocked(fetchTrafficSummary).mockReturnValue(late.promise)
     vi.mocked(fetchAccountSubscriptionsPage).mockReturnValue(late.promise)

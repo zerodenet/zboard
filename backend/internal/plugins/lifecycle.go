@@ -106,6 +106,9 @@ func (m *Manager) commitCandidate(ctx context.Context, prev model.PluginInstalla
 		if err := tx.Save(&candidate.PluginInstallation).Error; err != nil {
 			return err
 		}
+		if err := registerMenuPages(tx, candidate.Manifest); err != nil {
+			return err
+		}
 		// A committed installation is the only version the host may run. Keep
 		// its metadata and discard the former rollback history atomically.
 		if err := tx.Where("plugin_id = ? AND id <> ?", candidate.ID, candidate.VersionID).Delete(&model.PluginVersion{}).Error; err != nil {

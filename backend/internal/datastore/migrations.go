@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/menustore"
 	"github.com/zerodenet/zboard/backend/migrations"
 	"gorm.io/gorm"
 )
@@ -120,6 +121,13 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
+	if err := runMigrations(db); err != nil {
+		return err
+	}
+	return menustore.Seed(db)
+}
+
+func runMigrations(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("database is required")
 	}

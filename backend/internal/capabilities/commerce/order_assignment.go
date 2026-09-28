@@ -17,6 +17,7 @@ type OrderAssignmentRequest struct {
 	TargetSubscriptionID uint   `json:"target_subscription_id"`
 	Note                 string `json:"note"`
 	RequestID            string `json:"request_id"`
+	QuoteFingerprint     string `json:"quote_fingerprint"`
 }
 
 type AssignedOrderInput struct {
@@ -25,6 +26,7 @@ type AssignedOrderInput struct {
 }
 type OrderAssignmentRepository interface {
 	Assign(context.Context, uint, AssignedOrderInput) (Order, error)
+	Preview(context.Context, uint, uint, OrderCreateRequest) (OrderPreview, error)
 }
 type OrderAssignment struct{ Repository OrderAssignmentRepository }
 
@@ -60,4 +62,11 @@ func (s OrderAssignment) Assign(ctx context.Context, actor uint, request OrderAs
 	}
 	in := AssignedOrderInput{Request: request, Fingerprint: fmt.Sprintf("%x", sha256.Sum256(payload)), TradeNo: fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("admin-assign:%d:%s", actor, request.RequestID))))}
 	return s.Repository.Assign(ctx, actor, in)
+}
+
+func (s OrderAssignment) Preview(ctx context.Context, actor, buyer uint, request OrderCreateRequest) (OrderPreview, error) {
+	if actor == 0 {
+		return OrderPreview{}, ErrOrderPermission
+	}
+	return s.Repository.Preview(ctx, actor, buyer, request)
 }

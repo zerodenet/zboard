@@ -109,6 +109,7 @@ type Subscription struct {
 }
 
 type Order struct {
+	ChangeSnapshot        string     `json:"-" gorm:"size:4096;not null;default:'';-:migration"`
 	AssignedBy            uint       `json:"-" gorm:"not null;default:0"`
 	AssignmentNote        string     `json:"-" gorm:"size:500;not null;default:''"`
 	AssignmentFingerprint string     `json:"-" gorm:"size:64;not null;default:''"`

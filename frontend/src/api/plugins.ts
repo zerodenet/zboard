@@ -1,6 +1,9 @@
 import { authenticatedAPI as api } from "./client";
+import { NAVIGATION_CHANGED } from '../utils/navigationEvents';
+const changedPlugin = (plugin: Plugin) => { if (typeof window !== 'undefined') window.dispatchEvent(new Event(NAVIGATION_CHANGED)); return plugin; };
 export type Surface = "public" | "account" | "admin";
 export interface PluginPage {
+  menu?: { parent_id?: string; icon?: string; position?: number; hidden?: boolean };
   id: string;
   surface: Surface;
   title: string;
@@ -86,7 +89,7 @@ export interface MarketDetail {
 }
 export const fetchMarketDetail = (id: string, version = '', signal?: AbortSignal) => api.get(`/admin/plugin-market/${encodeURIComponent(id)}`, { params: version ? { version } : undefined, signal, timeout: 60_000 }).then(data<MarketDetail>);
 export const previewMarketPlugin = (id: string, version: string, signal?: AbortSignal) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/inspect`, undefined, { params: { version }, signal, timeout: 60_000 }).then(data<ImportPreview>);
-export const confirmMarketPlugin = (id: string, version: string, preview: ImportPreview, trust: boolean) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/install`, { version, digest: preview.digest, fingerprint: trust ? preview.fingerprint : '' }, { timeout: 60_000 }).then(data<Plugin>);
+export const confirmMarketPlugin = (id: string, version: string, preview: ImportPreview, trust: boolean) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/install`, { version, digest: preview.digest, fingerprint: trust ? preview.fingerprint : '' }, { timeout: 60_000 }).then(data<Plugin>).then(changedPlugin);
 export interface PluginSession {
   token: string;
   bridge_token: string;
@@ -130,7 +133,7 @@ export const importPlugin = (file: File, preview?: ImportPreview, trust = false)
   headers: { 'Content-Type': 'application/octet-stream', 'X-Plugin-Public-Key': preview?.public_key || '',
     'X-Plugin-Digest': preview?.digest || '', 'X-Plugin-Trust-Fingerprint': trust ? preview?.fingerprint || '' : '' },
   timeout: 60_000,
-}).then(data<Plugin>);
+}).then(data<Plugin>).then(changedPlugin);
 export const pluginAction = (
   p: Plugin,
   action: string,
@@ -147,7 +150,7 @@ export const pluginAction = (
       },
       { timeout: 60_000 },
     )
-    .then(data<Plugin>);
+    .then(data<Plugin>).then(changedPlugin);
 export const fetchPluginConfig = (id: string, signal?: AbortSignal) =>
   api.get(`/admin/plugins/${id}/config`, { signal }).then(data<ConfigView>);
 export const savePluginConfig = (
@@ -184,7 +187,7 @@ export const installMarketPlugin = (entry: MarketEntry) =>
       { id: entry.id, digest: entry.sha256 },
       { timeout: 60_000 },
     )
-    .then(data<Plugin>);
+    .then(data<Plugin>).then(changedPlugin);
 export const fetchPluginPages = (surface: Surface, signal?: AbortSignal) =>
   api
     .get("/plugin-ui/catalog", { params: { surface }, signal })

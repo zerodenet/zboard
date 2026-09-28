@@ -11,10 +11,11 @@
 import { computed, inject } from 'vue'
 import { routeLocationKey } from 'vue-router'
 import { resolveAdminNavigation } from '../utils/adminNavigation'
+import { adminNavigation } from '../stores/navigation'
 
 withDefaults(defineProps<{ orientation?: 'horizontal' | 'vertical' }>(), { orientation: 'horizontal' })
 const route = inject(routeLocationKey, undefined)
-const current = computed(() => route?.path ? resolveAdminNavigation(route.path) : undefined)
+const current = computed(() => route?.path ? resolveAdminNavigation(route.path, adminNavigation.value) : undefined)
 const pages = computed(() => current.value?.section.pages || [])
 const sectionLabel = computed(() => current.value?.section.label || '当前分组')
 const activePage = computed(() => current.value?.page.to)

@@ -1,0 +1,1 @@
+ALTER TABLE orders ADD COLUMN change_snapshot TEXT NOT NULL DEFAULT '';

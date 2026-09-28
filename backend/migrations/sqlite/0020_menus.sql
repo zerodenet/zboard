@@ -1,0 +1,17 @@
+CREATE TABLE IF NOT EXISTS menu_revisions (surface VARCHAR(16) NOT NULL PRIMARY KEY, revision INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS menu_nodes (
+ id VARCHAR(191) NOT NULL PRIMARY KEY,
+ parent_id VARCHAR(191) NOT NULL DEFAULT '',
+ surface VARCHAR(16) NOT NULL,
+ label VARCHAR(160) NOT NULL,
+ icon VARCHAR(64) NOT NULL DEFAULT '',
+ path VARCHAR(512) NOT NULL DEFAULT '',
+ position INTEGER NOT NULL DEFAULT 0,
+ hidden BOOLEAN NOT NULL DEFAULT FALSE,
+ owner VARCHAR(16) NOT NULL,
+ plugin_id VARCHAR(160) NOT NULL DEFAULT '',
+ page_id VARCHAR(64) NOT NULL DEFAULT '',
+ `condition` VARCHAR(24) NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_menu_nodes_surface ON menu_nodes(surface);
+CREATE INDEX IF NOT EXISTS idx_menu_nodes_plugin_id ON menu_nodes(plugin_id);

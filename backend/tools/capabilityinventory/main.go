@@ -27,6 +27,8 @@ type Entry struct {
 }
 
 var explicitWriteOwners = map[string]string{
+	"h.services.SubscriptionQuota(h.credentialCipher, h.zeroMieruAccess).Update": "entitlements",
+	"h.services.Navigation.Save":                             "experience",
 	"entryMutations.Save":                                    "network",
 	"endpointMutations.Save":                                 "network",
 	"h.accountAdministration().Create":                       "identity",
@@ -52,6 +54,7 @@ var explicitWriteOwners = map[string]string{
 	"h.services.NodeActivity.Record":                         "network",
 	"h.services.NodeAdministration.Create":                   "resources",
 	"h.services.NodeAdministration.Update":                   "resources",
+	"h.services.OrderCreation.Preview":                       "commerce",
 	"h.services.OrderCreation.Create":                        "commerce",
 	"h.services.PlanCreation.Create":                         "commerce",
 	"h.services.PlanUpdate.Update":                           "commerce",
@@ -78,6 +81,8 @@ var explicitWriteOwners = map[string]string{
 // Model ownership is intentionally enumerated by exact type name. This is a
 // reviewed P0 ledger, not a package- or filename-prefix heuristic.
 var explicitModelOwners = map[string]string{
+	"MenuNode":                           "experience",
+	"MenuRevision":                       "experience",
 	"AccountRegistrationEvent":           "identity",
 	"Announcement":                       "experience",
 	"AnnouncementRead":                   "experience",
@@ -194,6 +199,8 @@ var explicitRoutePrefixes = []struct {
 	Owner  string
 }{
 	{"/api/zero/events", "metering"},
+	{"/api/v1/navigation", "experience"},
+	{"/api/v1/admin/menus", "experience"},
 	{"/api/v1/account/announcements", "experience"},
 	{"/api/v1/account/integrations", "identity"},
 	{"/api/v1/account/security", "identity"},

@@ -58,8 +58,8 @@ func TestClientAccessBindsTokenAndFencesUsageAfterRotation(t *testing.T) {
 		t.Fatalf("exhausted: %v", err)
 	}
 	var sub model.Subscription
-	if err := f.h.db.First(&sub, second.SubscriptionID).Error; err != nil || sub.Status != "expired" {
-		t.Fatal("expiry was not committed")
+	if err := f.h.db.First(&sub, second.SubscriptionID).Error; err != nil || sub.Status != "active" {
+		t.Fatal("exhaustion incorrectly expired the subscription")
 	}
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()

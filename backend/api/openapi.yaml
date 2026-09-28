@@ -23,6 +23,66 @@ tags:
   - name: traffic
   - name: tickets
 paths:
+  /api/v1/navigation:
+    get:
+      tags: [system]
+      summary: Read the current visible navigation registry
+      description: Returns persisted core, custom and plugin menu nodes in tree order. Hidden ancestors, empty groups, unavailable plugin pages and shortcuts to hidden registered pages are pruned. Public accepts guests; account requires a current authenticated user; admin requires a current administrator. With path, also returns page_available for the most specific registered core/plugin page and its detail routes. The frontend renders an unavailable notice without mounting a hidden page. Unregistered pages keep existing access checks; visibility never grants API access. Hidden plugin business pages cannot create or use UI sessions.
+      security: [{}, {bearerAuth: []}]
+      parameters:
+        - {in: query, name: surface, required: true, schema: {type: string, enum: [public, account, admin]}}
+        - {in: query, name: path, schema: {type: string, maxLength: 512}, description: Optional local page URL to check alongside navigation}
+      responses:
+        '200':
+          description: Current navigation; Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiResponse'}
+                  - {type: object, properties: {data: {$ref: '#/components/schemas/NavigationSnapshot'}}}
+        '400': {description: Unknown surface or invalid local page path}
+        '401': {description: Invalid authentication}
+        '403': {description: Surface not authorized}
+  /api/v1/admin/menus:
+    get:
+      tags: [admin]
+      summary: Read editable menu metadata including hidden and disabled plugin nodes
+      parameters:
+        - {in: query, name: surface, required: true, schema: {type: string, enum: [public, account, admin]}}
+      responses:
+        '200':
+          description: Menu registry snapshot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiResponse'}
+                  - {type: object, properties: {data: {$ref: '#/components/schemas/MenuSnapshot'}}}
+        '403': {description: Administrator required}
+    put:
+      tags: [admin]
+      summary: Atomically edit menu presentation and custom nodes
+      description: Requires the current surface revision and complete node list, with a maximum of 512 nodes and depth 8. Allows labels, icons, ordering, parent groups and visibility changes. Built-in/plugin owner, surface, target and access conditions cannot be changed; source nodes may be hidden but cannot be removed. Custom IDs must start with custom:, target paths must be local, and parent groups must exist on the same surface. Registry mutation and audit commit together. Concurrent plugin lifecycle changes invalidate a stale revision.
+      parameters:
+        - {in: query, name: surface, required: true, schema: {type: string, enum: [public, account, admin]}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MenuSnapshot'}
+      responses:
+        '200':
+          description: Saved snapshot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiResponse'}
+                  - {type: object, properties: {data: {$ref: '#/components/schemas/MenuSnapshot'}}}
+        '400': {description: Invalid tree or immutable source mutation}
+        '403': {description: Administrator required}
+        '409': {description: Stale registry revision; reload before retrying}
   /api/v1/admin/subscriptions/{id}/fair-use/evaluate:
     post:
       tags: [admin]
@@ -2969,7 +3029,7 @@ paths:
           description: |
             Admin-only flag. When true, inactive plans are returned for management.
         - { name: paged, in: query, schema: { type: boolean }, description: Return a bounded page object with plan entitlements and one primary SKU. Without an explicit operation administrators retain management filtering and counts. }
-        - { name: operation, in: query, schema: { type: string, enum: [purchase, renew, change, addon] }, description: "Select only active plans with an active SKU for this operation, including for administrators. Filtering precedes count and pagination; SKU counts and the primary lowest-price SKU use the same operation." }
+        - { name: operation, in: query, schema: { type: string, enum: [purchase, renew, change, addon, reset] }, description: "Select only active plans with an active SKU for this operation, including for administrators. Filtering precedes count and pagination; SKU counts and the primary lowest-price SKU use the same operation." }
         - { name: plan_id, in: query, schema: { type: integer, minimum: 1 }, description: Exact plan filter applied before pagination. }
         - { name: exclude_plan_id, in: query, schema: { type: integer, minimum: 1 }, description: Exclude the current plan before count and pagination for change candidates. }
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Search across name, slug and summary when paged=true." }
@@ -3042,8 +3102,8 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Search name, code or currency." }
-        - { name: sku_type, in: query, schema: { type: string, enum: [new, renewal, upgrade, traffic_pack] } }
-        - { name: operation, in: query, schema: { type: string, enum: [purchase, renew, change, addon] }, description: Overrides the legacy sku_type filter. }
+        - { name: sku_type, in: query, schema: { type: string, enum: [new, renewal, upgrade, traffic_pack, traffic_reset] } }
+        - { name: operation, in: query, schema: { type: string, enum: [purchase, renew, change, addon, reset] }, description: Overrides the legacy sku_type filter. }
         - { name: anchor_id, in: query, schema: { type: integer, minimum: 1 }, description: "Return the page containing this SKU in sort_order/id order, overriding offset. The anchor must belong to the active plan and current operation/search scope or the response is 404. The response page offset is authoritative." }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
@@ -3169,6 +3229,55 @@ paths:
                   - properties:
                       data:
                         $ref: "#/components/schemas/Order"
+  /api/v1/orders/preview:
+    post:
+      tags: [orders]
+      summary: Preview a server-priced order without creating it
+      description: "Authenticated buyer only. Target must belong to the buyer. Plan changes replace current-cycle quota, keep used traffic and expiry, and credit the smaller of remaining time and base-quota value from paid order history. Traffic resets restore the target's snapshotted base quota and keep plan, expiry and the next scheduled reset. Creating and settling recheck the target; stale orders must be canceled and recreated. No paid history means zero monetary credit. No subscription or order is created by this endpoint."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderCreateRequest" }
+      responses:
+        "200":
+          description: Quote
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/OrderPreview" }
+        "400": { description: Invalid or unavailable target or SKU }
+        "403": { description: Active buyer required }
+  /api/v1/admin/orders/preview:
+    post:
+      tags: [orders, admin]
+      summary: Preview a quote for a selected active user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/OrderCreateRequest"
+                - type: object
+                  required: [user_id]
+                  properties:
+                    user_id: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Quote
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/OrderPreview" }
+        "400": { description: Invalid recipient, target or SKU }
+        "403": { description: Current active administrator required }
   /api/v1/admin/orders:
     post:
       tags: [orders, admin]
@@ -3199,7 +3308,7 @@ paths:
       parameters:
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Match order/provider trade number, plan, SKU, channel or a numeric order/user/subscription ID." }
         - { name: status, in: query, schema: { type: string, enum: [attention, pending, paid, failed, canceled, success] }, description: "Use attention for the administrator work queue containing pending and failed orders." }
-        - { name: order_type, in: query, schema: { type: string, enum: [new, renewal, upgrade, traffic_pack] } }
+        - { name: order_type, in: query, schema: { type: string, enum: [new, renewal, upgrade, traffic_pack, traffic_reset] } }
         - { name: user_id, in: query, schema: { type: integer, format: int64 } }
         - { name: created_from, in: query, schema: { type: string, format: date }, description: "Inclusive order creation start date. Must be paired with created_to; the window cannot exceed 366 days." }
         - { name: created_to, in: query, schema: { type: string, format: date }, description: "Inclusive order creation end date. Must be paired with created_from." }
@@ -3392,7 +3501,7 @@ paths:
       parameters:
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: Paged reads only. Search plan/SKU names or exact subscription ID before count and pagination; restricted to the authenticated owner. }
         - { name: subscription_id, in: query, schema: { type: integer, minimum: 1 }, description: Exact target lookup within the current user's subscriptions and all other filters; an unavailable target produces an empty result. }
-        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon] }, description: "Read-only management filter applied before count and pagination. change/addon require effectively active subscriptions. manage/renew additionally include exhausted permanent subscriptions unless canceled. This filter does not replace order authorization." }
+        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: "Read-only management filter applied before count and pagination. change/addon require effectively active subscriptions. manage also includes exhausted timed subscriptions before expiry; renew includes exhausted permanent subscriptions; reset accepts active or exhausted timed subscriptions before expiry with a base quota. Canceled subscriptions are excluded. This filter does not replace order authorization." }
         - name: status
           in: query
           schema:
@@ -3419,6 +3528,7 @@ paths:
       tags: [subscriptions, admin]
       summary: List subscriptions across all users
       parameters:
+        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: Filter available targets for an entitlement operation before count and pagination. }
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Match user email, plan, SKU or a numeric subscription/user/plan ID." }
         - { name: status, in: query, schema: { type: string, enum: [active, expired, canceled] } }
         - { name: quota, in: query, schema: { type: string, enum: [available, exhausted] } }
@@ -3462,6 +3572,36 @@ paths:
                       data: { $ref: "#/components/schemas/AdminSubscriptionDetail" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/subscriptions/{id}/quota:
+    put:
+      tags: [subscriptions, admin]
+      summary: Edit current-cycle quota and usage, and the reset quota
+      description: Requires the original values to detect concurrent usage or reset. Preserves traffic records, plan and expiry; atomically audits the change, restores or suspends credentials and queues node publication. Retry with the same idempotency key and payload.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [flow_total, flow_used, reset_quota_bytes, expected_flow_total, expected_flow_used, expected_reset_quota_bytes, reason, idempotency_key]
+              properties:
+                flow_total: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                flow_used: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                reset_quota_bytes: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                expected_flow_total: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                expected_flow_used: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                expected_reset_quota_bytes: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                reason: { type: string, minLength: 3, maxLength: 255 }
+                idempotency_key: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200": { description: Quota saved and node publication queued }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/subscription/access:
     get:
       tags:
@@ -4648,6 +4788,34 @@ components:
           schema:
             $ref: "#/components/schemas/ApiResponse"
   schemas:
+    NavigationSnapshot:
+      allOf:
+        - {$ref: '#/components/schemas/MenuSnapshot'}
+        - type: object
+          properties:
+            page_available: {type: boolean, description: Present when path was supplied; false when the registered page or its ancestor is hidden or unavailable}
+    MenuSnapshot:
+      type: object
+      required: [revision, nodes]
+      properties:
+        revision: {type: integer, minimum: 1}
+        nodes: {type: array, maxItems: 512, items: {$ref: '#/components/schemas/MenuNode'}}
+    MenuNode:
+      type: object
+      required: [id, parent_id, surface, label, icon, path, position, hidden, owner, plugin_id, page_id, condition]
+      properties:
+        id: {type: string, maxLength: 191}
+        parent_id: {type: string, maxLength: 191, description: Empty for a root node}
+        surface: {type: string, enum: [public, account, admin]}
+        label: {type: string, maxLength: 160}
+        icon: {type: string, maxLength: 64}
+        path: {type: string, maxLength: 512, description: Empty for a group; otherwise a local URL}
+        position: {type: integer, minimum: -100000, maximum: 100000}
+        hidden: {type: boolean}
+        owner: {type: string, enum: [core, plugin, custom]}
+        plugin_id: {type: string}
+        page_id: {type: string}
+        condition: {type: string, description: Host-owned visibility condition}
     IntegrationCredentialIssue:
       type: object
       additionalProperties: false
@@ -4740,6 +4908,14 @@ components:
     "PluginPage":
       "type": "object"
       "properties":
+        menu:
+          type: object
+          description: Optional persisted menu placement for a business page. No new capability is required beyond the existing UI page admission. Omitted metadata preserves legacy page manifests. Parent must be a registered group on the same surface. Operator edits survive upgrades. Configuration pages cannot declare menu placement.
+          properties:
+            parent_id: {type: string, maxLength: 191}
+            icon: {type: string, maxLength: 64}
+            position: {type: integer, minimum: -100000, maximum: 100000}
+            hidden: {type: boolean}
         "id":
           "type": "string"
         "surface":
@@ -5885,15 +6061,15 @@ components:
         plan_id: { type: integer, format: int64 }
         code: { type: string }
         name: { type: string }
-        sku_type: { type: string, enum: [new, renewal, upgrade, traffic_pack] }
+        sku_type: { type: string, enum: [new, renewal, upgrade, traffic_pack, traffic_reset] }
         billing_mode: { type: string, enum: [periodic, one_time] }
-        entitlement_mode: { type: string, enum: [plan, traffic_addon] }
+        entitlement_mode: { type: string, enum: [plan, traffic_addon, traffic_reset], description: "traffic_reset is one_time/once quantity 1, reset-only, with no quota overrides. The target subscription supplies its base quota." }
         renewal_effect: { type: string, enum: [none, extend_only, extend_and_add_quota, add_quota_only], description: Fulfillment applied when an existing subscription purchases this SKU again. }
         allowed_operations:
           type: array
           minItems: 1
           uniqueItems: true
-          items: { type: string, enum: [purchase, renew, change, addon] }
+          items: { type: string, enum: [purchase, renew, change, addon, reset] }
         billing_unit: { type: string, enum: [day, month, year, once], description: "For plan entitlement, once means permanent quota with no traffic reset; for a traffic add-on, once means a single grant." }
         billing_value: { type: integer, minimum: 1 }
         price_cents: { type: integer, format: int64, minimum: 0 }
@@ -6482,7 +6658,7 @@ components:
           type: string
         order_type:
           type: string
-          enum: [new, renewal, upgrade, traffic_pack]
+          enum: [new, renewal, upgrade, traffic_pack, traffic_reset]
         target_subscription_id:
           type: integer
           format: int64
@@ -6575,6 +6751,9 @@ components:
           type: string
         status:
           type: string
+          description: Lifecycle status. Active unexpired subscriptions remain active when traffic is exhausted.
+        quota_status: { type: string, enum: [available, exhausted] }
+        reset_quota_bytes: { type: integer, format: int64, description: Base quota restored by scheduled or purchased traffic resets. }
         flow_total:
           type: integer
           format: int64
@@ -7561,9 +7740,24 @@ components:
         user_id: { type: integer, format: int64, minimum: 1 }
         plan_sku_id: { type: integer, format: int64, minimum: 1 }
         target_subscription_id: { type: integer, format: int64, minimum: 1, description: "Optional existing subscription belonging to the selected user, for renewal, plan change or traffic add-on." }
-        payable_amount: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991, description: "Optional override in integer minor units. Omitted uses the SKU price; zero is valid and still creates a pending order." }
+        payable_amount: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991, description: "Optional override in integer minor units. Omitted uses the server quote including remaining-entitlement credit; zero is valid and still creates a pending order." }
         note: { type: string, minLength: 1, maxLength: 500 }
+        quote_fingerprint: { type: string, description: "Quote assertion from the administrator preview." }
         request_id: { type: string, format: uuid, description: "Nonzero UUID, unique per administrator operation. Reuse only to retry an identical payload." }
+    OrderPreview:
+      type: object
+      properties:
+        order_type: { type: string, enum: [new, renewal, upgrade, traffic_pack, traffic_reset] }
+        amount_cents: { type: integer, format: int64 }
+        payable_amount: { type: integer, format: int64 }
+        credit_amount: { type: integer, format: int64, description: "For plan changes, minimum of remaining time value, remaining base-quota value and the new SKU price, based on paid order history. No cash refund for excess credit." }
+        time_credit: { type: integer, format: int64 }
+        traffic_credit: { type: integer, format: int64 }
+        currency: { type: string }
+        traffic_bytes: { type: integer, format: int64, description: "Replacement cycle quota for changes or restored base quota for resets." }
+        used_bytes: { type: integer, format: int64 }
+        end_at: { type: string, format: date-time, description: "Existing expiry retained by changes and resets." }
+        quote_fingerprint: { type: string, description: "Pass back when creating the order to reject a changed quote." }
     OrderCreateRequest:
       type: object
       required:
@@ -7574,12 +7768,13 @@ components:
           format: int64
         order_type:
           type: string
-          enum: [new, renewal, upgrade, traffic_pack]
+          enum: [new, renewal, upgrade, traffic_pack, traffic_reset]
         target_subscription_id:
           type: integer
           format: int64
         channel:
           type: string
+        quote_fingerprint: { type: string, description: "Optional optimistic assertion of the server quote. Never supplies or overrides price." }
     OrderCallbackRequest:
       type: object
       properties:

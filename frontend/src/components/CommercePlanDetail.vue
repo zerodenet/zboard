@@ -13,10 +13,10 @@
         </header>
 
         <div class="storefront-entitlement-grid">
-          <template v-if="mode === 'addon'">
+          <template v-if="mode === 'addon' || mode === 'reset'">
             <article>
-              <span>附加流量</span>
-              <strong>{{ selectedSku ? formatBytes(selectedSku.grant_traffic_bytes) : '按规格' }}</strong>
+              <span>{{ mode === 'reset' ? '恢复可用流量' : '附加流量' }}</span>
+              <strong>{{ mode === 'reset' ? (quote ? formatBytes(quote.traffic_bytes) : '按目标订阅套餐额度') : selectedSku ? formatBytes(selectedSku.grant_traffic_bytes) : '按规格' }}</strong>
             </article>
             <article>
               <span>速度</span>
@@ -98,13 +98,16 @@
           <div v-if="targetName"><dt>目标订阅</dt><dd>{{ targetName }}</dd></div>
           <div><dt>操作</dt><dd>{{ operationLabel }}</dd></div>
           <div><dt>规格</dt><dd>{{ selectedSku?.name || '请选择' }}</dd></div>
-          <div><dt>服务周期</dt><dd>{{ selectedSku ? billingLabel(selectedSku) : '—' }}</dd></div>
+          <div><dt>计费规格</dt><dd>{{ selectedSku ? billingLabel(selectedSku) : '—' }}</dd></div>
           <div v-if="mode === 'renew'"><dt>再次购买效果</dt><dd>{{ selectedSku ? renewalEffectLabel(selectedSku) : '—' }}</dd></div>
         </dl>
         <div class="storefront-order-summary__total">
           <span>应付金额</span>
-          <strong>{{ selectedSku ? formatCurrency(selectedSku.price_cents, selectedSku.currency) : '—' }}</strong>
+          <strong>{{ mode === 'change' || mode === 'reset' ? (quote ? formatCurrency(quote.payable_amount, quote.currency) : '正在核算…') : selectedSku ? formatCurrency(selectedSku.price_cents, selectedSku.currency) : '—' }}</strong>
+          <p v-if="mode === 'change' && quote">原套餐抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}；按剩余时间和剩余流量价值取较小值，抵扣最多为新规格价格，到期时间保持不变。</p>
+          <p v-if="mode === 'reset'">恢复一整份本周期套餐流量，剩余额度不会叠加。</p>
         </div>
+        <PageAlert v-if="quoteError" tone="danger" title="报价失败">{{ quoteError }}<UiButton variant="secondary" @click="$emit('retry-quote')">重新报价</UiButton></PageAlert>
         <div v-if="hasPurchasePolicies" class="storefront-policy-links">
           <strong><UiIcon name="info" />购买前请确认服务规则</strong>
           <p>以下文档可能影响服务使用、退款资格及公平使用限制，请在继续结算前阅读。</p>
@@ -118,7 +121,7 @@
             <span>我已阅读并同意以上与本次购买相关的服务规则</span>
           </label>
         </div>
-        <UiButton type="button" :disabled="loading || Boolean(error) || !selectedSku || (hasPurchasePolicies && !purchasePoliciesAccepted)" @click="$emit('continue')">
+        <UiButton type="button" :disabled="loading || quoteLoading || Boolean(quoteError) || ((mode === 'change' || mode === 'reset') && !quote) || Boolean(error) || !selectedSku || (hasPurchasePolicies && !purchasePoliciesAccepted)" @click="$emit('continue')">
           {{ continueLabel }}<UiIcon name="chevron" />
         </UiButton>
       </aside>
@@ -136,7 +139,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { PlanCatalogItem, PlanSKU } from '../api/client'
+import type { PlanCatalogItem, PlanSKU, OrderPreview } from '../api/client'
 import { useAppStore } from '../stores/app'
 import { formatBytes, formatCurrency } from '../utils/format'
 import { policyDocumentsFor } from '../utils/siteProfile'
@@ -155,7 +158,10 @@ const props = withDefaults(defineProps<{
   skuLimit?: number
   selectedSkuId?: number
   operationLabel?: string
-  mode?: 'purchase' | 'renew' | 'change' | 'addon'
+  mode?: 'purchase' | 'renew' | 'change' | 'addon' | 'reset'
+  quote?: OrderPreview | null
+  quoteLoading?: boolean
+  quoteError?: string
   targetName?: string
   loading?: boolean
   error?: string
@@ -178,6 +184,7 @@ defineEmits<{
   'select-sku': [sku: PlanSKU]
   'change-sku-page': [page: { offset: number; limit: number }]
   retry: []
+  'retry-quote': []
   continue: []
 }>()
 
@@ -206,6 +213,7 @@ function closePolicy() {
 
 function billingLabel(sku: PlanSKU) {
   const unit = ({ day: '天', month: '个月', year: '年', once: '次' } as Record<string, string>)[sku.billing_unit] || sku.billing_unit
+  if (sku.entitlement_mode === 'traffic_reset') return '一次性重置流量'
   if (sku.entitlement_mode === 'traffic_addon') return '一次性流量加购'
   if (sku.billing_unit === 'once') return '永久有效 · 流量用完为止'
   const period = `${sku.billing_value} ${unit}`

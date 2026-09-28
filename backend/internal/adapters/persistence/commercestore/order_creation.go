@@ -31,39 +31,50 @@ func (s OrderCreation) Create(ctx context.Context, buyer uint, request commerce.
 // createOrderInTransaction shares snapshot persistence across owned purchases and
 // administrator assignments after their caller has selected and authorized the buyer.
 func createOrderInTransaction(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest) (model.Order, error) {
+	order, _, err := prepareOrder(tx, buyer, request, time.Now().UTC())
+	if err != nil {
+		return model.Order{}, err
+	}
+	if err := tx.Create(&order).Error; err != nil {
+		return model.Order{}, err
+	}
+	return order, nil
+}
+
+func prepareOrder(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest, now time.Time) (out model.Order, preview commerce.OrderPreview, err error) {
 	if request.PlanSKUID == 0 {
-		return model.Order{}, &commerce.ValidationError{Message: "订单创建失败。", Fields: map[string]string{"plan_sku_id": "请选择销售规格。"}}
+		return model.Order{}, commerce.OrderPreview{}, &commerce.ValidationError{Message: "订单创建失败。", Fields: map[string]string{"plan_sku_id": "请选择销售规格。"}}
 	}
 	var user model.User
 	if buyer == 0 {
-		return model.Order{}, commerce.ErrBuyerUnavailable
+		return model.Order{}, commerce.OrderPreview{}, commerce.ErrBuyerUnavailable
 	}
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status").First(&user, buyer).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return model.Order{}, commerce.ErrBuyerUnavailable
+			return model.Order{}, commerce.OrderPreview{}, commerce.ErrBuyerUnavailable
 		}
-		return model.Order{}, err
+		return model.Order{}, commerce.OrderPreview{}, err
 	}
 	if user.Status != "active" {
-		return model.Order{}, commerce.ErrBuyerUnavailable
+		return model.Order{}, commerce.OrderPreview{}, commerce.ErrBuyerUnavailable
 	}
 	// Parentage is immutable. Do not use mutable price/availability read before
 	// the parent lock: an updater may commit while this transaction waits.
 	var identity model.PlanSKU
 	if err := tx.Select("id", "plan_id").First(&identity, request.PlanSKUID).Error; err != nil {
-		return model.Order{}, orderResourceError(err, "plan_sku_id", "销售规格不存在或已停止销售。")
+		return model.Order{}, commerce.OrderPreview{}, orderResourceError(err, "plan_sku_id", "销售规格不存在或已停止销售。")
 	}
 	var plan model.Plan
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("is_active = ?", true).First(&plan, identity.PlanID).Error; err != nil {
-		return model.Order{}, orderResourceError(err, "plan_sku_id", "商品不可购买。")
+		return model.Order{}, commerce.OrderPreview{}, orderResourceError(err, "plan_sku_id", "商品不可购买。")
 	}
 	var sku model.PlanSKU
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND plan_id = ? AND is_active = ?", request.PlanSKUID, plan.ID, true).First(&sku).Error; err != nil {
-		return model.Order{}, orderResourceError(err, "plan_sku_id", "销售规格不存在或已停止销售。")
+		return model.Order{}, commerce.OrderPreview{}, orderResourceError(err, "plan_sku_id", "销售规格不存在或已停止销售。")
 	}
 	var rows []model.PlanSKUOperation
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("plan_sku_id = ?", sku.ID).Order("operation asc").Find(&rows).Error; err != nil {
-		return model.Order{}, err
+		return model.Order{}, commerce.OrderPreview{}, err
 	}
 	operations := make([]string, 0, len(rows))
 	for _, row := range rows {
@@ -71,20 +82,20 @@ func createOrderInTransaction(tx *gorm.DB, buyer uint, request commerce.OrderCre
 	}
 	view := commerce.ProjectSKU(commerce.SKURecord{SKU: commerce.SKU(sku), Operations: operations})
 	var target *commerce.OrderTarget
+	var sub model.Subscription
 	if request.TargetSubscriptionID != 0 {
-		var sub model.Subscription
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "plan_id").Where("id = ? AND user_id = ?", request.TargetSubscriptionID, buyer).First(&sub).Error; err != nil {
-			return model.Order{}, orderResourceError(err, "target_subscription_id", "目标订阅不存在。")
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", request.TargetSubscriptionID, buyer).First(&sub).Error; err != nil {
+			return model.Order{}, commerce.OrderPreview{}, orderResourceError(err, "target_subscription_id", "目标订阅不存在。")
 		}
 		target = &commerce.OrderTarget{ID: sub.ID, PlanID: sub.PlanID}
 	}
 	terms, err := commerce.SnapshotOrderTerms(planView(plan), commerce.SKU(sku), view.EntitlementMode, view.AllowedOperations, target, request)
 	if err != nil {
-		return model.Order{}, err
+		return model.Order{}, commerce.OrderPreview{}, err
 	}
 	if terms.OrderType == "new" {
-		if err := CheckSubscriptionCapacity(tx, plan, time.Now().UTC()); err != nil {
-			return model.Order{}, err
+		if err := CheckSubscriptionCapacity(tx, plan, now); err != nil {
+			return model.Order{}, commerce.OrderPreview{}, err
 		}
 	}
 	order := model.Order{
@@ -96,10 +107,14 @@ func createOrderInTransaction(tx *gorm.DB, buyer uint, request commerce.OrderCre
 		BillingValue: terms.BillingValue, RenewalEffect: terms.RenewalEffect, TrafficBytes: terms.TrafficBytes,
 		DeviceLimit: terms.DeviceLimit, SpeedLimitMbps: terms.SpeedLimitMbps,
 	}
-	if err := tx.Create(&order).Error; err != nil {
-		return model.Order{}, err
+	preview, err = applyTargetQuote(tx, &order, sub, now)
+	if err != nil {
+		return model.Order{}, commerce.OrderPreview{}, err
 	}
-	return order, nil
+	if request.QuoteFingerprint != "" && request.QuoteFingerprint != preview.QuoteFingerprint {
+		return model.Order{}, commerce.OrderPreview{}, quoteError("价格或目标订阅已变化，请重新确认报价。")
+	}
+	return order, preview, nil
 }
 
 func orderResourceError(err error, field, message string) error {

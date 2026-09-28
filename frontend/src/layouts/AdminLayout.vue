@@ -11,6 +11,7 @@
         <button class="sidebar-close nav-icon-button" type="button" aria-label="关闭导航" @click="navigationOpen = false"><UiIcon name="close" /></button>
       </div>
 
+      <p v-if="menus.error.value" role="alert" class="menu-error">{{ menus.error.value }} <button type="button" @click="menus.load()">重试</button></p>
       <AdminNavigation @select-page="navigationOpen = false" />
 
       <AdminVersionStatus :info="systemInfo" />
@@ -47,7 +48,7 @@
         <RouterLink :to="returnTarget"><UiIcon name="chevron" />返回来源</RouterLink>
         <span>恢复上一个列表的筛选、页码和详情</span>
       </nav>
-      <main class="app-content admin-stripe-surface"><RouterView /></main>
+      <main class="app-content admin-stripe-surface"><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" @retry="menus.load()"><RouterView /></NavigationPage></main>
     </div>
     <div class="admin-task-layer" :inert="drawerModal"><TaskTray /></div>
   </div>
@@ -58,6 +59,7 @@ import { computed, onMounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuTrigger } from 'reka-ui'
 import AdminNavigation from '../components/AdminNavigation.vue'
+import NavigationPage from '../components/NavigationPage.vue'
 import AdminQuickSearch from '../components/AdminQuickSearch.vue'
 import AdminVersionStatus from '../components/AdminVersionStatus.vue'
 import TaskTray from '../components/TaskTray.vue'
@@ -65,17 +67,19 @@ import UiIcon from '../components/UiIcon.vue'
 import { useAdminDrawer } from '../composables/useAdminDrawer'
 import { useAppStore } from '../stores/app'
 import { resolveAdminNavigation } from '../utils/adminNavigation'
+import { adminNavigation, useNavigation } from '../stores/navigation'
 import { normalizeAdminReturnTo } from '../utils/navigation'
 import { fetchAdminSystemInfo, type AdminSystemInfo } from '../api/system'
 
 const app = useAppStore()
+const menus = useNavigation('admin')
 provide('admin-page-navigation', true)
 const route = useRoute()
 const router = useRouter()
 const sidebar = ref<HTMLElement | null>(null)
 const { open: navigationOpen, mobile, modal: drawerModal } = useAdminDrawer(sidebar)
 const currentTitle = computed(() => String(route.meta.title || '管理后台'))
-const currentSection = computed(() => resolveAdminNavigation(route.path)?.domain.label || '管理控制台')
+const currentSection = computed(() => resolveAdminNavigation(route.path, adminNavigation.value)?.domain.label || '管理控制台')
 const returnTarget = computed(() => normalizeAdminReturnTo(route.query.return_to))
 const userInitial = computed(() => (app.user.email || 'Z').slice(0, 1).toUpperCase())
 const systemInfo = ref<AdminSystemInfo | null>(null)

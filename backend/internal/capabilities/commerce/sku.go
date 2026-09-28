@@ -7,6 +7,7 @@ const (
 	skuBillingOneTime          = "one_time"
 	skuEntitlementPlan         = "plan"
 	skuEntitlementTrafficAddon = "traffic_addon"
+	skuEntitlementTrafficReset = "traffic_reset"
 	skuRenewalNone             = "none"
 	skuRenewalExtendOnly       = "extend_only"
 	skuRenewalExtendAndAdd     = "extend_and_add_quota"
@@ -16,6 +17,7 @@ const (
 	skuOperationRenew    = "renew"
 	skuOperationChange   = "change"
 	skuOperationAddon    = "addon"
+	skuOperationReset    = "reset"
 )
 
 var skuOperationOrder = map[string]int{
@@ -23,6 +25,7 @@ var skuOperationOrder = map[string]int{
 	skuOperationRenew:    1,
 	skuOperationChange:   2,
 	skuOperationAddon:    3,
+	skuOperationReset:    4,
 }
 
 type SKURequest struct {

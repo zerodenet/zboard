@@ -20,6 +20,8 @@ type SubscriptionSummary struct {
 	StartAt           time.Time  `json:"start_at"`
 	EndAt             time.Time  `json:"end_at"`
 	Status            string     `json:"status"`
+	QuotaStatus       string     `json:"quota_status"`
+	ResetQuotaBytes   int64      `json:"reset_quota_bytes"`
 	FlowTotal         int64      `json:"flow_total"`
 	FlowUsed          int64      `json:"flow_used"`
 	SpeedLimitMbps    int        `json:"speed_limit_mbps"`
@@ -89,7 +91,7 @@ func (s SubscriptionQueries) list(ctx context.Context, actor uint, admin bool, q
 		return fail("invalid status")
 	}
 	switch q.EligibleFor {
-	case "", "change", "addon", "manage", "renew":
+	case "", "change", "addon", "manage", "renew", "reset":
 	default:
 		return fail("invalid eligible_for")
 	}
@@ -129,9 +131,24 @@ func (s SubscriptionQueries) Detail(ctx context.Context, actor, id uint) (Subscr
 	}
 	return s.Repository.Detail(ctx, actor, id)
 }
+
+// Lifecycle and remaining traffic are independent. Older releases stored
+// quota exhaustion as expired; project those unexpired instances as active.
 func EffectiveStatus(sub Subscription, now time.Time) string {
-	if sub.Status == "active" && (!sub.EndAt.After(now) || sub.FlowUsed >= sub.FlowTotal) {
+	if sub.Status == "canceled" {
+		return "canceled"
+	}
+	if !sub.EndAt.After(now) && (sub.Status == "active" || sub.Status == "expired") {
 		return "expired"
 	}
+	if sub.Status == "expired" && sub.EndAt.After(now) && sub.FlowUsed >= sub.FlowTotal {
+		return "active"
+	}
 	return sub.Status
+}
+func QuotaStatus(sub Subscription) string {
+	if sub.FlowUsed >= sub.FlowTotal {
+		return "exhausted"
+	}
+	return "available"
 }

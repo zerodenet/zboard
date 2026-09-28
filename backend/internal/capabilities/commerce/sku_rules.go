@@ -13,12 +13,17 @@ func LegacySKUTypeOperation(value string) string {
 		return skuOperationChange
 	case "traffic_pack":
 		return skuOperationAddon
+	case "traffic_reset":
+		return skuOperationReset
 	default:
 		return skuOperationPurchase
 	}
 }
 
 func CompatibilitySKUType(entitlementMode string, operations []string) string {
+	if entitlementMode == skuEntitlementTrafficReset {
+		return "traffic_reset"
+	}
 	if entitlementMode == skuEntitlementTrafficAddon {
 		return "traffic_pack"
 	}
@@ -41,7 +46,7 @@ func NormalizeOperations(values []string, legacyType string) ([]string, error) {
 		operation := strings.ToLower(strings.TrimSpace(value))
 		if _, valid := skuOperationOrder[operation]; !valid {
 			return nil, validationError("销售规格校验失败。", map[string]string{
-				"allowed_operations": "可用场景只能包含新购、续费、套餐切换或附加购买。",
+				"allowed_operations": "可用场景只能包含新购、续费、套餐切换、附加购买或重置流量。",
 			})
 		}
 		if _, exists := seen[operation]; exists {
@@ -87,14 +92,16 @@ func NormalizeSKU(planID uint, request SKURequest) (NormalizedSKU, error) {
 	billingUnit := strings.ToLower(strings.TrimSpace(request.BillingUnit))
 	entitlementMode := strings.ToLower(strings.TrimSpace(request.EntitlementMode))
 	if entitlementMode == "" {
-		if strings.EqualFold(strings.TrimSpace(request.SKUType), "traffic_pack") || ContainsOperation(operations, skuOperationAddon) {
+		if strings.EqualFold(strings.TrimSpace(request.SKUType), "traffic_reset") || ContainsOperation(operations, skuOperationReset) {
+			entitlementMode = skuEntitlementTrafficReset
+		} else if strings.EqualFold(strings.TrimSpace(request.SKUType), "traffic_pack") || ContainsOperation(operations, skuOperationAddon) {
 			entitlementMode = skuEntitlementTrafficAddon
 		} else {
 			entitlementMode = skuEntitlementPlan
 		}
 	}
-	if entitlementMode != skuEntitlementPlan && entitlementMode != skuEntitlementTrafficAddon {
-		fields["entitlement_mode"] = "权益用途只能是套餐权益或流量加购。"
+	if entitlementMode != skuEntitlementPlan && entitlementMode != skuEntitlementTrafficAddon && entitlementMode != skuEntitlementTrafficReset {
+		fields["entitlement_mode"] = "权益用途只能是套餐权益、流量加购或重置流量。"
 	}
 	renewalEffect := strings.ToLower(strings.TrimSpace(request.RenewalEffect))
 	if entitlementMode == skuEntitlementTrafficAddon || !ContainsOperation(operations, skuOperationRenew) {
@@ -122,9 +129,26 @@ func NormalizeSKU(planID uint, request SKURequest) (NormalizedSKU, error) {
 		if request.DeviceLimit != 0 || request.SpeedLimitMbps != 0 {
 			fields["entitlements"] = "流量包只能增加流量，不能修改设备数或限速。"
 		}
+	} else if entitlementMode == skuEntitlementTrafficReset {
+		if billingMode != skuBillingOneTime {
+			fields["billing_mode"] = "重置流量必须使用一次性付费。"
+		}
+		if billingUnit != "once" || request.BillingValue != 1 {
+			fields["billing_unit"] = "重置流量必须使用一次性单位，数量为 1。"
+		}
+		if len(operations) != 1 || operations[0] != skuOperationReset {
+			fields["allowed_operations"] = "重置流量只能用于重置操作。"
+		}
+		if request.GrantTrafficBytes != 0 || request.TrafficBytes != 0 || request.DeviceLimit != 0 || request.SpeedLimitMbps != 0 {
+			fields["entitlements"] = "重置额度使用目标订阅的套餐额度，不能单独覆盖权益。"
+		}
+		grantTrafficBytes = 0
 	} else if entitlementMode == skuEntitlementPlan {
 		if billingMode == skuBillingPeriodic && billingUnit == "once" {
 			fields["billing_unit"] = "按周期付费不能使用永久有效；请改为一次性付费。"
+		}
+		if ContainsOperation(operations, skuOperationReset) {
+			fields["allowed_operations"] = "重置操作必须使用重置流量规格。"
 		}
 		if ContainsOperation(operations, skuOperationAddon) {
 			fields["allowed_operations"] = "套餐权益不能用于附加购买；请将权益用途改为流量加购。"

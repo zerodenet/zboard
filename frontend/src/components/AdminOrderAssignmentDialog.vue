@@ -19,8 +19,10 @@
         <AdminOrderLookup :key="`sku-${plan?.id || 0}-${operation}`" v-model="sku" :input-id="controlId" label="销售规格" placeholder="选择销售规格" :fetch-page="loadSKUs" :disabled="saving || !plan" />
       </FormField>
       <FormField v-slot="{ controlAttrs }" label="应付金额" name="assign-amount" required full :error="fields.payable_amount" :hint="sku?.sku ? `规格原价 ${formatCurrency(sku.sku.price_cents, sku.sku.currency)}；可调整本笔订单的付款金额。` : '请先选择销售规格。'">
-        <MoneyInput v-model="payableAmount" v-bind="controlAttrs" :currency="sku?.sku?.currency || 'CNY'" :min-cents="0" :max-cents="Number.MAX_SAFE_INTEGER" :step-cents="1" :disabled="saving || !sku" />
+        <MoneyInput v-model="payableAmount" v-bind="controlAttrs" :currency="sku?.sku?.currency || 'CNY'" :min-cents="0" :max-cents="Number.MAX_SAFE_INTEGER" :step-cents="1" :disabled="saving || !sku || quoteLoading" />
       </FormField>
+      <PageAlert v-if="quoteError" tone="danger" title="报价失败">{{ quoteError }}<UiButton variant="secondary" @click="quoteResource.load()">重新报价</UiButton></PageAlert>
+      <p v-if="quote && operation === 'change'">原套餐抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}，默认应付 {{ formatCurrency(quote.payable_amount, quote.currency) }}。</p>
       <PageAlert tone="info" title="等待用户付款">订单会出现在该用户的订单列表，付款确认后开通权益。<span v-if="sku?.sku">应付 {{ formatCurrency(payableAmount, sku.sku.currency) }}。</span></PageAlert>
       <FormField v-slot="{ controlAttrs }" label="分配原因" name="assign-note" required full :error="fields.note" hint="记录在管理员订单详情与审计日志中。">
         <UiTextarea v-model="note" v-bind="controlAttrs" :disabled="saving" :maxlength="500" rows="3" placeholder="例如：按客户要求代下单，选择月付规格" />
@@ -31,7 +33,8 @@
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { assignAdminOrder, fetchAdminUserDetail, fetchUsersPage, fetchSubscriptionsPage, fetchPlanCatalogPage, fetchPlanCatalogSKUs, type AdminOrderDetail, type CatalogOperation } from '../api/client'
+import { previewAdminOrder, type OrderPreview, assignAdminOrder, fetchAdminUserDetail, fetchUsersPage, fetchSubscriptionsPage, fetchPlanCatalogPage, fetchPlanCatalogSKUs, type AdminOrderDetail, type CatalogOperation } from '../api/client'
+import { useRemoteResource } from '../composables/useRemoteResource'
 import ModalDialog from './ModalDialog.vue'
 import FormField from './FormField.vue'
 import PageAlert from './PageAlert.vue'
@@ -49,19 +52,32 @@ const emit = defineEmits<{ close: []; assigned: [order: AdminOrderDetail] }>()
 const user = ref<AssignmentChoice | null>(null), target = ref<AssignmentChoice | null>(null), plan = ref<AssignmentChoice | null>(null), sku = ref<AssignmentChoice | null>(null)
 const operation = ref<CatalogOperation>('purchase'), note = ref('')
 const payableAmount = ref(0)
+const needsQuote = computed(() => operation.value === 'change' || operation.value === 'reset')
+const quoteResource = useRemoteResource<OrderPreview | null>({
+  initial: () => null,
+  fetch: ({ signal }) => previewAdminOrder(user.value!.id, sku.value!.id, target.value!.id, { signal }),
+  errorMessage: '报价失败，请重新选择目标订阅和规格。',
+})
+const { data: quote, loading: quoteLoading, error: quoteError } = quoteResource
 const saving = ref(false), userLoading = ref(false)
 const formElement = ref<HTMLElement | null>(null)
 const formErrors = useFormErrors()
 const { fields, formError, clear: clearErrors, applyValidation, applyApiError } = formErrors
-const operationOptions = [{ label: '新开订阅', value: 'purchase' }, { label: '续费 / 补充额度', value: 'renew' }, { label: '切换套餐', value: 'change' }, { label: '添加流量包', value: 'addon' }]
-const canSubmit = computed(() => !saving.value && !userLoading.value && !!user.value && !!plan.value && !!sku.value && !!note.value.trim() && Number.isSafeInteger(payableAmount.value) && payableAmount.value >= 0 && (operation.value === 'purchase' || !!target.value))
+const operationOptions = [{ label: '新开订阅', value: 'purchase' }, { label: '续费 / 补充额度', value: 'renew' }, { label: '切换套餐', value: 'change' }, { label: '添加流量包', value: 'addon' }, { label: '重置流量', value: 'reset' }]
+const canSubmit = computed(() => !saving.value && !userLoading.value && (!needsQuote.value || Boolean(quote.value)) && !!user.value && !!plan.value && !!sku.value && !!note.value.trim() && Number.isSafeInteger(payableAmount.value) && payableAmount.value >= 0 && (operation.value === 'purchase' || !!target.value))
 let hydration: AbortController | null = null
 let attempt: { signature: string; id: string } | null = null
 watch(user, () => { target.value = null; clearErrors('user_id') })
 watch(operation, () => { target.value = null; plan.value = null })
 watch(target, () => { plan.value = null; clearErrors('target_subscription_id') })
 watch(plan, () => { sku.value = null; clearErrors('plan_id') })
-watch(sku, value => { payableAmount.value = value?.sku?.price_cents || 0; clearErrors('plan_sku_id') })
+watch(() => [sku.value?.id, user.value?.id, target.value?.id, operation.value], async () => {
+  quoteResource.reset()
+  payableAmount.value = sku.value?.sku?.price_cents || 0
+  clearErrors('plan_sku_id')
+  if (needsQuote.value && user.value && sku.value && target.value && await quoteResource.load()) payableAmount.value = quote.value!.payable_amount
+})
+watch(quote, value => { if (value) payableAmount.value = value.payable_amount })
 watch(payableAmount, () => clearErrors('payable_amount'))
 watch(note, () => clearErrors('note'))
 watch(() => [props.open, props.userId] as const, async ([open, id]) => {
@@ -80,11 +96,11 @@ async function loadUsers(q: string, offset: number, signal: AbortSignal) {
 }
 async function loadTargets(q: string, offset: number, signal: AbortSignal) {
   if (!user.value) return { items: [], total: 0 }
-  const page = await fetchSubscriptionsPage({ q, offset, limit: 25, userId: user.value.id }, { signal })
+  const page = await fetchSubscriptionsPage({ q, offset, limit: 25, userId: user.value.id, eligibleFor: operation.value === 'purchase' ? undefined : operation.value }, { signal })
   return { ...page, items: page.items.map(item => ({ id: item.id, planId: item.plan_id, label: `#${item.id} · ${item.plan_name} / ${item.sku_name}` })) }
 }
 async function loadPlans(q: string, offset: number, signal: AbortSignal) {
-  const page = await fetchPlanCatalogPage({ q, offset, limit: 25, operation: operation.value, planId: operation.value === 'renew' || operation.value === 'addon' ? target.value?.planId : undefined, excludePlanId: operation.value === 'change' ? target.value?.planId : undefined }, { signal })
+  const page = await fetchPlanCatalogPage({ q, offset, limit: 25, operation: operation.value, planId: operation.value === 'renew' || operation.value === 'addon' || operation.value === 'reset' ? target.value?.planId : undefined, excludePlanId: operation.value === 'change' ? target.value?.planId : undefined }, { signal })
   return { ...page, items: page.items.map(item => ({ id: item.id, label: `${item.name} · #${item.id}` })) }
 }
 async function loadSKUs(q: string, offset: number, signal: AbortSignal) {
@@ -93,7 +109,7 @@ async function loadSKUs(q: string, offset: number, signal: AbortSignal) {
   return { ...page, items: page.items.map(item => ({ id: item.id, label: `${item.name} · ${formatCurrency(item.price_cents, item.currency)} · #${item.id}`, sku: item })) }
 }
 async function submit() {
-  if (saving.value || userLoading.value) return
+  if (saving.value || userLoading.value || (needsQuote.value && !quote.value)) return
   const validation: Record<string, string> = {}
   if (!user.value) validation.user_id = '请选择用户。'
   if (!plan.value) validation.plan_id = '请选择商品。'
@@ -103,12 +119,15 @@ async function submit() {
   if (!Number.isSafeInteger(payableAmount.value) || payableAmount.value < 0) validation.payable_amount = '应付金额必须为不小于 0 的整数分。'
   if (!await applyValidation(validation, formElement)) return
   if (saving.value) return
-  const payload = { user_id: user.value!.id, plan_sku_id: sku.value!.id, target_subscription_id: operation.value === 'purchase' ? undefined : target.value!.id, note: note.value.trim(), payable_amount: payableAmount.value }
+  const payload = { user_id: user.value!.id, plan_sku_id: sku.value!.id, target_subscription_id: operation.value === 'purchase' ? undefined : target.value!.id, note: note.value.trim(), payable_amount: payableAmount.value, ...(needsQuote.value ? { quote_fingerprint: quote.value?.quote_fingerprint } : {}) }
   const signature = JSON.stringify(payload)
   if (!attempt || attempt.signature !== signature) attempt = { signature, id: crypto.randomUUID() }
   saving.value = true; clearErrors()
   try { const order = await assignAdminOrder({ ...payload, request_id: attempt.id }); emit('assigned', order) }
-  catch (cause: any) { await applyApiError(cause, commerceErrorMessage(cause, '订单分配失败，请重试。'), formElement) }
+  catch (cause: any) {
+    await applyApiError(cause, commerceErrorMessage(cause, '订单分配失败，请重试。'), formElement)
+    if (needsQuote.value && cause?.response?.status === 400) { quoteResource.reset(); void quoteResource.load() }
+  }
   finally { saving.value = false }
 }
 onBeforeUnmount(() => hydration?.abort())

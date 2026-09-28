@@ -96,7 +96,7 @@ func NormalizeSKUQuery(q SKUQuery, public bool) (SKUQuery, error) {
 		legacy := strings.TrimSpace(q.LegacyType)
 		if legacy != "" {
 			switch legacy {
-			case "new", "renewal", "upgrade", "traffic_pack":
+			case "new", "renewal", "upgrade", "traffic_pack", "traffic_reset":
 				q.Operation = LegacySKUTypeOperation(legacy)
 			default:
 				return q, validationError("invalid sku_type", nil)
@@ -134,7 +134,9 @@ func ProjectSKU(record SKURecord) SKUView {
 		}
 	}
 	if sku.EntitlementMode == "" {
-		if sku.SKUType == "traffic_pack" {
+		if sku.SKUType == "traffic_reset" {
+			sku.EntitlementMode = "traffic_reset"
+		} else if sku.SKUType == "traffic_pack" {
 			sku.EntitlementMode = "traffic_addon"
 		} else {
 			sku.EntitlementMode = "plan"

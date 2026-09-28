@@ -3,7 +3,11 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AdminLayout from './AdminLayout.vue'
 import PageHeader from '../components/PageHeader.vue'
-import { adminNavigation } from '../utils/adminNavigation'
+import { adminNavigation, menuFixture } from '../test/menuFixtures'
+import { fetchNavigation } from '../api/menus'
+import { NAVIGATION_CHANGED } from '../utils/navigationEvents'
+
+vi.mock('../api/menus', async () => { const { menuFixture } = await import('../test/menuFixtures'); return { fetchNavigation: vi.fn(async (surface: 'admin' | 'account' | 'public') => menuFixture(surface)) } })
 
 const clearAuth = vi.hoisted(() => vi.fn())
 vi.mock('../stores/app', () => ({ useAppStore: () => ({ siteName: 'zboard', user: { email: 'admin@example.test' }, loadMe: vi.fn(), clear: clearAuth }) }))
@@ -19,7 +23,7 @@ async function setup(path: string, mobile = false) {
   const media = { matches: mobile, addEventListener: vi.fn((_event, listener) => { viewportListener = listener }), removeEventListener: vi.fn() }
   vi.stubGlobal('matchMedia', vi.fn(() => media))
   const pages = adminNavigation.flatMap(domain => domain.sections.flatMap(section => section.pages))
-  const router = createRouter({ history: createMemoryHistory(), routes: [...pages, { to: '/', label: '首页' }, { to: '/account', label: '个人中心' }].map(page => ({ path: page.to, component: { components: { PageHeader }, template: '<section class="standard-page"><PageHeader :title="String($route.meta.title)" /></section>' }, meta: { title: page.label } })) })
+  const router = createRouter({ history: createMemoryHistory(), routes: [...pages, { to: '/', label: '首页' }, { to: '/account', label: '个人中心' }, { to: '/admin/extensions/:pluginId/:pageId', label: '扩展' }].map(page => ({ path: page.to, component: { components: { PageHeader }, template: '<section class="standard-page"><PageHeader :title="String($route.meta.title)" /></section>' }, meta: { title: page.label } })) })
   await router.push(path)
   await router.isReady()
   const wrapper = mount(AdminLayout, { attachTo: document.body, global: { plugins: [router] } })
@@ -29,6 +33,79 @@ async function setup(path: string, mobile = false) {
 }
 
 describe('AdminLayout navigation', () => {
+  it('shows an unavailable notice without mounting a directly opened hidden page', async () => {
+    const value = menuFixture('admin')
+    value.nodes = value.nodes.filter(node => node.path !== '/admin/nodes')
+    value.page_available = false
+    vi.mocked(fetchNavigation).mockResolvedValueOnce(value)
+    const { wrapper, router } = await setup('/admin/nodes')
+    expect(router.currentRoute.value.path).toBe('/admin/nodes')
+    expect(wrapper.findAll('.domain-group.selected')).toHaveLength(0)
+    expect(wrapper.get('.topbar-context').text()).toBe('管理控制台')
+    expect(wrapper.find('.standard-page').exists()).toBe(false)
+    expect(wrapper.get('main').text()).toContain('页面不可用')
+    expect(fetchNavigation).toHaveBeenLastCalledWith('admin', expect.any(AbortSignal), '/admin/nodes')
+  })
+
+  it('removes the current page when refreshed navigation marks it hidden', async () => {
+    const { wrapper } = await setup('/admin/nodes')
+    expect(wrapper.find('.standard-page').exists()).toBe(true)
+    const value = menuFixture('admin')
+    value.nodes = value.nodes.filter(node => node.path !== '/admin/nodes')
+    value.page_available = false
+    vi.mocked(fetchNavigation).mockResolvedValueOnce(value)
+    window.dispatchEvent(new Event(NAVIGATION_CHANGED))
+    await flushPromises()
+    expect(wrapper.find('.standard-page').exists()).toBe(false)
+    expect(wrapper.get('main').text()).toContain('页面不可用')
+  })
+
+  it('keeps page content unmounted while a new path is checked and ignores late responses', async () => {
+    const { wrapper, router } = await setup('/admin/nodes')
+    let resolveOld!: (value: ReturnType<typeof menuFixture>) => void
+    vi.mocked(fetchNavigation).mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+    await router.push('/admin/protocols')
+    expect(wrapper.find('.standard-page').exists()).toBe(false)
+    expect(wrapper.get('main').text()).toContain('正在加载页面')
+    const hidden = menuFixture('admin'); hidden.page_available = false
+    vi.mocked(fetchNavigation).mockResolvedValueOnce(hidden)
+    await router.push('/admin/users')
+    await flushPromises()
+    resolveOld(menuFixture('admin'))
+    await flushPromises()
+    expect(wrapper.get('main').text()).toContain('页面不可用')
+    expect(wrapper.find('.standard-page').exists()).toBe(false)
+  })
+
+  it('shows a retry notice instead of page content when the initial check fails', async () => {
+    vi.mocked(fetchNavigation).mockRejectedValueOnce(new Error('offline'))
+    const { wrapper } = await setup('/admin/nodes')
+    expect(wrapper.find('.standard-page').exists()).toBe(false)
+    expect(wrapper.get('main').text()).toContain('暂时无法加载页面')
+    await wrapper.get('main button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.standard-page').exists()).toBe(true)
+  })
+
+  it('renders backend menu edits and plugin placement in sidebar, sibling tabs and search', async () => {
+    const value = menuFixture('admin')
+    value.nodes = value.nodes.filter(node => node.path !== '/admin/protocols')
+    value.nodes.find(node => node.id === 'infrastructure')!.label = '服务接入'
+    value.nodes.push({ ...value.nodes.find(node => node.path === '/admin/nodes')!, id: 'plugin:custom', label: '扩展控制台', path: '/admin/extensions/example/home', owner: 'plugin', plugin_id: 'example', page_id: 'home' })
+    vi.mocked(fetchNavigation).mockResolvedValueOnce(value)
+    const { wrapper } = await setup('/admin/nodes')
+    expect(wrapper.get('.domain-group.selected > .domain-link').text()).toContain('服务接入')
+    expect(wrapper.find('.admin-page-navigation-link[href="/admin/protocols"]').exists()).toBe(false)
+    expect(wrapper.get('.admin-page-navigation-link[href="/admin/extensions/example/home"]').text()).toBe('扩展控制台')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))
+    await flushPromises()
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="搜索管理页面"]')!
+    input.value = '扩展控制台'; input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    expect(document.querySelectorAll('.admin-quick-search-results a')).toHaveLength(1)
+    expect(document.querySelector('.admin-quick-search-results a')?.getAttribute('href')).toBe('/admin/extensions/example/home')
+  })
+
   it('searches admin pages from the topbar shortcut and follows a result', async () => {
     const { router } = await setup('/admin/dashboard')
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))

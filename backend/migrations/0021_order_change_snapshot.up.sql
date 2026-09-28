@@ -1,0 +1,1 @@
+ALTER TABLE orders ADD COLUMN change_snapshot VARCHAR(4096) NOT NULL DEFAULT '';

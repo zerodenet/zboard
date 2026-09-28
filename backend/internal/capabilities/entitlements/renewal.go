@@ -15,8 +15,11 @@ func RenewalForGrant(order GrantRequest) (Renewal, error) {
 	switch order.OrderType {
 	case "traffic_pack":
 		return Renewal{AddQuota: true}, nil
+	case "traffic_reset":
+		return Renewal{}, nil
 	case "upgrade":
-		return Renewal{ExtendPeriod: true, AddQuota: true}, nil
+		// A plan change replaces the current cycle's terms; it is not a renewal.
+		return Renewal{}, nil
 	case "renewal":
 		effect := strings.TrimSpace(order.RenewalEffect)
 		if effect == "" {

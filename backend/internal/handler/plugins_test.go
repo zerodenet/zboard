@@ -18,7 +18,9 @@ import (
 	"testing"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/internal/navigation"
 	"github.com/zerodenet/zboard/backend/internal/plugins"
+	"github.com/zeromicro/go-zero/rest/pathvar"
 )
 
 func TestPluginHTTPBoundaryAndRevokedAssets(t *testing.T) {
@@ -81,9 +83,60 @@ func TestPluginHTTPBoundaryAndRevokedAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := manager.CreateSession(v.ID, "welcome", "public", 0, false, false)
-	if err != nil {
-		t.Fatal(err)
+	// Follow the same binding as the browser: persisted menu -> route params ->
+	// session endpoint -> declared assets. No menu fixture or session shortcut.
+	readMenu := func() navigation.Snapshot {
+		t.Helper()
+		w := httptest.NewRecorder()
+		h.NavigationHandler(w, httptest.NewRequest("GET", "/api/v1/navigation?surface=public", nil))
+		var response struct {
+			Data navigation.Snapshot `json:"data"`
+		}
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &response) != nil {
+			t.Fatal("navigation failed", w.Code, w.Body)
+		}
+		return response.Data
+	}
+	var menu navigation.Node
+	for _, node := range readMenu().Nodes {
+		if node.PluginID == v.ID {
+			menu = node
+		}
+	}
+	if menu.PageID != "welcome" || menu.Owner != "plugin" || menu.Surface != "public" || menu.ID != navigation.PluginNodeID(v.ID, "public", "welcome") {
+		t.Fatal("installed page is not bound to its persisted menu", menu)
+	}
+	var stored model.MenuNode
+	if err := h.db.First(&stored, "id = ?", menu.ID).Error; err != nil || stored.PluginID != menu.PluginID || stored.PageID != menu.PageID {
+		t.Fatal("menu API does not reflect persisted binding", stored, err)
+	}
+	params := strings.Split(strings.TrimPrefix(menu.Path, "/"), "/")
+	if len(params) != 3 || params[0] != "extensions" || params[1] != menu.PluginID || params[2] != menu.PageID {
+		t.Fatal("menu route does not resolve to its page", menu)
+	}
+	openPage := func(page, surface string) *httptest.ResponseRecorder {
+		t.Helper()
+		body, _ := json.Marshal(map[string]string{"page": page, "surface": surface})
+		r := httptest.NewRequest("POST", "/api/v1/plugin-ui/"+params[1]+"/session", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+		h.PluginSessionHandler(w, pathvar.WithVars(r, map[string]string{"id": params[1]}))
+		return w
+	}
+	for _, target := range [][2]string{{"missing-page", "public"}, {params[2], "admin"}} {
+		if w := openPage(target[0], target[1]); w.Code != http.StatusForbidden {
+			t.Fatal("invalid page or unauthorized surface admitted", target, w.Code, w.Body)
+		}
+	}
+	response := openPage(params[2], menu.Surface)
+	var sessionResponse struct {
+		Data plugins.Session `json:"data"`
+	}
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &sessionResponse) != nil {
+		t.Fatal("menu page session failed", response.Code, response.Body)
+	}
+	s := sessionResponse.Data
+	if s.PluginID != menu.PluginID || s.PageID != menu.PageID || s.Surface != menu.Surface || s.Token == "" {
+		t.Fatal("session changed page binding", s)
 	}
 	asset := func() *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
@@ -112,6 +165,14 @@ func TestPluginHTTPBoundaryAndRevokedAssets(t *testing.T) {
 	}
 	if _, err := manager.Action(context.Background(), v.ID, "disable", "admin", v.Generation, false, ""); err != nil {
 		t.Fatal(err)
+	}
+	for _, node := range readMenu().Nodes {
+		if node.ID == menu.ID {
+			t.Fatal("disabled page remains navigable", node)
+		}
+	}
+	if w := openPage(params[2], menu.Surface); w.Code != http.StatusForbidden {
+		t.Fatal("disabled page issued a new session", w.Code, w.Body)
 	}
 	if w := asset(); w.Code != 404 {
 		t.Fatal("disabled plugin asset still served", w.Code)

@@ -367,11 +367,11 @@ func TestEffectiveSubscriptionStatusDoesNotRequirePersistence(t *testing.T) {
 			want: subStatusExpired,
 		},
 		{
-			name: "expired by quota",
+			name: "quota exhaustion preserves lifecycle",
 			subscription: model.Subscription{
 				Status: subStatusActive, EndAt: now.Add(time.Hour), FlowTotal: 100, FlowUsed: 100,
 			},
-			want: subStatusExpired,
+			want: subStatusActive,
 		},
 		{
 			name: "canceled remains canceled",

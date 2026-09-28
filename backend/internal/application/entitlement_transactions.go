@@ -70,3 +70,7 @@ func (s *Services) TrafficReset(cipher zeroadapter.Cipher, mieru bool) entitleme
 		Publish: networkstore.EnqueueSubscriptionPublications,
 	}
 }
+
+func (s *Services) SubscriptionQuota(cipher zeroadapter.Cipher, mieru bool) entitlements.SubscriptionQuota {
+	return entitlements.SubscriptionQuota{Repository: entitlementstore.SubscriptionQuota{DB: s.Identity.db, Issuer: zeroadapter.Issuer{Cipher: cipher, Mieru: mieru}, Publish: networkstore.EnqueueSubscriptionPublications}}
+}

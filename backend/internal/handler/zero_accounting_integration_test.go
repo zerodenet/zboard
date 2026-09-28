@@ -64,7 +64,7 @@ func checkAccountingBatchReplayOutOfOrderAndExhaustion(t *testing.T, h *handlers
 	if err := h.projectZeroNodeEvents(ctx, accountingBenchmarkEvents(credential, 2, 32)); err != nil {
 		t.Fatal(err)
 	}
-	assertAccountingTotal(t, h, credential.SubscriptionID, 1950, subStatusExpired)
+	assertAccountingTotal(t, h, credential.SubscriptionID, 1950, subStatusActive)
 	var pending model.NodeConfigPublish
 	if err := h.db.First(&pending, credential.NodeID).Error; err != nil || pending.Generation != 2 {
 		t.Fatalf("exhaustion publication: %+v %v", pending, err)

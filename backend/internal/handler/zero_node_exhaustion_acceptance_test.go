@@ -58,7 +58,7 @@ func TestRealZeroNodeExhaustionRevokesDataPlane(t *testing.T) {
 		if sub.FlowTotal != quota {
 			return fmt.Errorf("order captured wrong quota: %d", sub.FlowTotal)
 		}
-		if sub.Status != subStatusExpired {
+		if sub.Status != subStatusActive {
 			return fmt.Errorf("quota status=%s used=%d", sub.Status, sub.FlowUsed)
 		}
 		var ledger int64

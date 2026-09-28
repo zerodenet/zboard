@@ -3,6 +3,7 @@ package commerce
 import "time"
 
 type Order struct {
+	ChangeSnapshot        string     `json:"-"`
 	AssignedBy            uint       `json:"-"`
 	AssignmentNote        string     `json:"-"`
 	AssignmentFingerprint string     `json:"-"`

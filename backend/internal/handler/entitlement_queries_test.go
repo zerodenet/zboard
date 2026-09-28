@@ -22,14 +22,14 @@ func TestEntitlementQueriesAuthorityAndEffectiveState(t *testing.T) {
 		t.Fatal(err)
 	}
 	detail, err := service.Detail(ctx, 1, order.SubscriptionID)
-	if err != nil || detail.Status != "expired" || detail.PlanName == "" || detail.SKUName == "" {
+	if err != nil || detail.Status != "active" || detail.QuotaStatus != "exhausted" || detail.PlanName == "" || detail.SKUName == "" {
 		t.Fatalf("detail projection: %+v %v", detail, err)
 	}
 	var stored model.Subscription
 	if err := f.h.db.First(&stored, order.SubscriptionID).Error; err != nil || stored.Status != "active" {
 		t.Fatal("read unexpectedly mutated subscription")
 	}
-	page, err = service.Administrative(ctx, 1, entitlements.SubscriptionQuery{Status: "expired", Quota: "exhausted"})
+	page, err = service.Administrative(ctx, 1, entitlements.SubscriptionQuery{Status: "active", Quota: "exhausted"})
 	if err != nil || page.Total != 1 || len(page.Items) != 1 {
 		t.Fatalf("effective filtering: %+v %v", page, err)
 	}

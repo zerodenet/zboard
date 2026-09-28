@@ -7,6 +7,7 @@ type OrderCreateRequest struct {
 	OrderType            string `json:"order_type"` // Deprecated assertion; never overrides the derived operation.
 	TargetSubscriptionID uint   `json:"target_subscription_id"`
 	Channel              string `json:"channel"`
+	QuoteFingerprint     string `json:"quote_fingerprint"`
 }
 
 // OrderTarget contains only the subscription facts needed to select an operation.
@@ -31,6 +32,12 @@ func DeriveOrderType(planID uint, entitlementMode string, operations []string, t
 			return "", validationError("订单创建失败。", map[string]string{"plan_sku_id": "该规格不允许新购。"})
 		}
 		return "new", nil
+	}
+	if entitlementMode == skuEntitlementTrafficReset {
+		if target.PlanID != planID || !ContainsOperation(operations, skuOperationReset) {
+			return "", validationError("订单创建失败。", map[string]string{"plan_sku_id": "重置流量必须使用目标订阅所属商品的重置规格。"})
+		}
+		return "traffic_reset", nil
 	}
 	if entitlementMode == skuEntitlementTrafficAddon {
 		if !ContainsOperation(operations, skuOperationAddon) {

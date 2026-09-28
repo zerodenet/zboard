@@ -28,7 +28,7 @@
         label="有效订阅"
         :value="activeLoaded && !activeError ? activeSubscriptionTotal : '—'"
         icon="plans"
-        :status="activeLoading ? '加载中' : activeError ? '读取失败' : '服务中'"
+        :status="activeLoading ? '加载中' : activeError ? '读取失败' : '有效期内'"
         :tone="activeSubscriptionTotal ? 'success' : 'neutral'"
         icon-tone="success"
         meta="仅加载最近 3 条"
@@ -73,7 +73,7 @@
                   <TableText :value="sub.sku_name || `SKU #${sub.plan_sku_id}`" />
                 </div>
               </td>
-              <td class="value-cell"><strong>{{ formatBytes(remaining(sub)) }}</strong></td>
+              <td class="value-cell"><strong>{{ formatBytes(remaining(sub)) }}</strong><div v-if="sub.flow_used >= sub.flow_total"><small>本周期流量已用完</small><RouterLink v-if="(sub.reset_quota_bytes || 0) > 0 && !isPerpetualDate(sub.end_at)" class="button button-ghost button-sm" :to="`/account/plans?operation=reset&subscription=${sub.id}`">重置流量</RouterLink></div></td>
               <td data-column-priority="1"><TimeBadge :value="sub.end_at" mode="relative" /></td>
             </tr>
           </tbody>
@@ -159,7 +159,7 @@ import { useRemoteResource } from '../../composables/useRemoteResource'
 import UiButton from '../../components/UiButton.vue'
 import UiIcon from '../../components/UiIcon.vue'
 import { useAppStore } from '../../stores/app'
-import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/format'
+import { formatBytes, formatCurrency, formatUnknownValue, isPerpetualDate } from '../../utils/format'
 
 const app = useAppStore()
 const summaryResource = useRemoteResource<Record<string, any>>({

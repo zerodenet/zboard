@@ -60,14 +60,21 @@ func ExpireSubscriptionCredentials(tx *gorm.DB, subscriptionID uint, now time.Ti
 
 func ExpireInTransaction(tx *gorm.DB, userID uint, now time.Time) error {
 	query := tx.Model(&model.Subscription{}).
-		Where("status = ? AND (end_at <= ? OR flow_used >= flow_total)", "active", now)
+		Where("status = ? AND end_at > ? AND flow_used >= flow_total", "expired", now)
+	if userID != 0 {
+		query = query.Where("user_id = ?", userID)
+	}
+	if err := query.Update("status", "active").Error; err != nil {
+		return err
+	}
+	query = tx.Model(&model.Subscription{}).Where("status = ? AND end_at <= ?", "active", now)
 	if userID != 0 {
 		query = query.Where("user_id = ?", userID)
 	}
 	if err := query.Update("status", "expired").Error; err != nil {
 		return err
 	}
-	inactive := tx.Model(&model.Subscription{}).Select("id").Where("status <> ?", "active")
+	inactive := tx.Model(&model.Subscription{}).Select("id").Where("status <> ? OR end_at <= ? OR flow_used >= flow_total", "active", now)
 	if userID != 0 {
 		inactive = inactive.Where("user_id = ?", userID)
 	}

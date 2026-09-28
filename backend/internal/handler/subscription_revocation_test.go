@@ -74,6 +74,10 @@ func prepareGroupChange(t *testing.T) (orderFixture, model.Order, model.Protocol
 	}
 	f.group = group
 	plan := f.plan(t, 2)
+	plan.TrafficBytes = 2048
+	if err := f.h.db.Model(&plan).Update("traffic_bytes", plan.TrafficBytes).Error; err != nil {
+		t.Fatal(err)
+	}
 	sku := f.sku(t, plan.ID, 200, skuOperationChange)
 	f.planRecord, f.skuRecord = plan, sku
 	node := model.Node{Name: "replacement-node"}
@@ -96,7 +100,22 @@ func prepareGroupChange(t *testing.T) (orderFixture, model.Order, model.Protocol
 
 func TestPlanChangeRevokesOldGroupAndPublishesBothNodes(t *testing.T) {
 	f, change, oldEndpoint, newEndpoint := prepareGroupChange(t)
+	var before model.Subscription
+	if err := f.h.db.First(&before, *change.TargetSubscriptionID).Error; err != nil {
+		t.Fatal(err)
+	}
 	f.paid(t, change.ID)
+	var after model.Subscription
+	if err := f.h.db.First(&after, before.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if after.FlowTotal != 2048 || after.FlowUsed != before.FlowUsed || !after.EndAt.Equal(before.EndAt) {
+		t.Fatal("switch added old quota or extended the old period", before, after)
+	}
+	var event model.QuotaEvent
+	if err := f.h.db.Where("subscription_id = ? AND event_type = ?", after.ID, "plan_change").First(&event).Error; err != nil || event.DeltaBytes != 1024 {
+		t.Fatal("replacement quota ledger is incorrect", event, err)
+	}
 	var old model.ProtocolCredential
 	if err := f.h.db.Where("protocol_endpoint_id = ? AND subscription_id = ?", oldEndpoint.ID, *change.TargetSubscriptionID).First(&old).Error; err != nil {
 		t.Fatal(err)

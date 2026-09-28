@@ -55,7 +55,8 @@
               <div class="quota-cell">
                 <span>{{ formatBytes(sub.flow_used) }} / {{ formatBytes(sub.flow_total) }}</span>
                 <div class="usage-track"><i :style="{ width: `${percent(sub)}%` }"></i></div>
-                <small>剩余 {{ formatBytes(Math.max(0, sub.flow_total - sub.flow_used)) }}</small>
+                <small>{{ sub.flow_used >= sub.flow_total ? '本周期流量已用完' : `剩余 ${formatBytes(sub.flow_total - sub.flow_used)}` }}</small>
+                <small v-if="sub.next_reset_at">下次重置 <TimeBadge :value="sub.next_reset_at" /></small>
               </div>
             </td>
             <td data-column-priority="1"><TimeBadge :value="sub.end_at" /></td>
@@ -70,7 +71,8 @@
                 >
                   {{ sub.id === selectedSubscriptionID ? '正在管理' : '管理链接' }}
                 </UiButton>
-                <RouterLink class="button button-secondary button-sm" :to="`/account/plans?operation=renew&subscription=${sub.id}`">续费</RouterLink>
+                <RouterLink v-if="canReset(sub)" class="button button-secondary button-sm" :to="`/account/plans?operation=reset&subscription=${sub.id}`">重置流量</RouterLink>
+                <RouterLink v-if="sub.flow_used < sub.flow_total || new Date(sub.end_at).getUTCFullYear() >= 9999" class="button button-secondary button-sm" :to="`/account/plans?operation=renew&subscription=${sub.id}`">续费</RouterLink>
               </div>
             </td>
           </tr>
@@ -120,6 +122,7 @@
           {{ accessResource.error.value }}
           <UiButton variant="secondary" size="sm" type="button" @click="loadAccess">重试链接</UiButton>
         </PageAlert>
+        <PageAlert v-else-if="selectedSubscription.flow_used >= selectedSubscription.flow_total" tone="warning" title="本周期流量已用完">订阅尚未到期，可以购买重置流量或等待下次自动重置。<RouterLink v-if="canReset(selectedSubscription)" class="button button-secondary button-sm" :to="`/account/plans?operation=reset&subscription=${selectedSubscription.id}`">重置流量</RouterLink></PageAlert>
         <p v-else-if="!accessReady" role="status">{{ working ? '正在更新链接状态…' : '正在读取链接状态…' }}</p>
         <div v-else-if="access.configured" class="access-meta">
           <strong>{{ selectedSubscription.plan_name }} 的链接已启用</strong>
@@ -176,7 +179,7 @@
           <UiButton v-if="subscriptionUrl" variant="secondary" size="sm" type="button" @click="copy">
             <UiIcon name="copy" />{{ copyLabel }}
           </UiButton>
-          <UiButton variant="secondary" size="sm" type="button" :disabled="!accessReady || working" @click="ask(access.configured ? 'rotate' : 'generate')">
+          <UiButton variant="secondary" size="sm" type="button" :disabled="!accessReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask(access.configured ? 'rotate' : 'generate')">
             {{ access.configured ? '轮换此链接' : '生成此链接' }}
           </UiButton>
           <UiButton v-if="accessReady && access.configured" variant="danger" size="sm" type="button" :disabled="working" @click="ask('revoke')">吊销此链接</UiButton>
@@ -265,7 +268,7 @@ const selectedSubscriptionID = ref(Math.max(0, Number(route.query.subscription) 
 const statusOptions = [
   { label: '全部状态', value: '' },
   { label: '有效', value: 'active' },
-  { label: '已到期或耗尽', value: 'expired' },
+  { label: '已到期', value: 'expired' },
   { label: '已取消', value: 'canceled' },
 ]
 const templateQuery = ref('')
@@ -397,6 +400,11 @@ const confirmMessage = computed(() => kind.value === 'generate'
   : kind.value === 'rotate'
     ? '旧链接会立即失效，但不会影响账户下其他订阅。'
     : `吊销后只有${selectedLabel.value}无法继续拉取配置。`)
+
+function canReset(sub: AdminSubscriptionListItem) {
+  const end = new Date(sub.end_at)
+  return sub.status === 'active' && end.getTime() > Date.now() && end.getUTCFullYear() < 9999 && (sub.reset_quota_bytes || 0) > 0
+}
 
 function percent(sub: AdminSubscriptionListItem) {
   return sub.flow_total ? Math.min(100, Math.round(sub.flow_used / sub.flow_total * 100)) : 0

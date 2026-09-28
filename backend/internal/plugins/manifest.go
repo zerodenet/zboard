@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+
+	"github.com/zerodenet/zboard/backend/internal/navigation"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -33,10 +35,11 @@ type Requirements struct {
 	Bridge      int      `json:"ui_bridge"`
 }
 type Page struct {
-	ID      string `json:"id"`
-	Surface string `json:"surface"`
-	Title   string `json:"title"`
-	Purpose string `json:"purpose,omitempty"`
+	Menu    *navigation.Placement `json:"menu,omitempty"`
+	ID      string                `json:"id"`
+	Surface string                `json:"surface"`
+	Title   string                `json:"title"`
+	Purpose string                `json:"purpose,omitempty"`
 }
 type Slot struct {
 	ID         string `json:"id"`
@@ -199,6 +202,9 @@ func (m Manifest) Validate() error {
 		}
 		if p.Purpose == "configuration" && (p.Surface != "admin" || !(seen[ConfigCapability] || seen[ConfigReadCapability] || seen[ConfigWriteCapability])) {
 			return errors.New("configuration pages require admin config capability")
+		}
+		if p.Menu != nil && (!p.Menu.Valid() || p.Purpose == "configuration") {
+			return errors.New("invalid page menu placement")
 		}
 		pages[key] = true
 	}

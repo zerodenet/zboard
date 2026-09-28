@@ -78,7 +78,13 @@ func Fulfill(tx *gorm.DB, order entitlements.GrantRequest, policy entitlements.G
 	if _, err := EnsureCredentials(tx, sub, issuer); err != nil {
 		return model.Subscription{}, err
 	}
-	if err := RecordQuotaEvent(tx, sub, order.OrderType, grant.QuotaDelta, grant.BalanceBefore, grant.BalanceAfter, "order", strconv.FormatUint(uint64(order.ID), 10)); err != nil {
+	eventType := order.OrderType
+	if eventType == "upgrade" {
+		// Replacement is already represented by ResetQuotaBytes. A late reset
+		// must not replay this delta as an additional purchase of quota.
+		eventType = "plan_change"
+	}
+	if err := RecordQuotaEvent(tx, sub, eventType, grant.QuotaDelta, grant.BalanceBefore, grant.BalanceAfter, "order", strconv.FormatUint(uint64(order.ID), 10)); err != nil {
 		return model.Subscription{}, err
 	}
 	return sub, nil

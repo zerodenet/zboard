@@ -648,7 +648,7 @@ func (h *handlers) orderListStatusValues(status string, adminScope bool) ([]stri
 
 func isValidOrderType(orderType string) bool {
 	switch orderType {
-	case "new", "renewal", "upgrade", "traffic_pack":
+	case "new", "renewal", "upgrade", "traffic_pack", "traffic_reset":
 		return true
 	default:
 		return false

@@ -3,13 +3,13 @@
     <PageHeader title="订阅管理" description="查看全站服务实例、配额和到期状态；个人订阅链接仍由用户在个人中心管理。" eyebrow="Service Delivery">
       <template #actions><PageRefreshButton label="刷新订阅" :loading="loading" @click="load" /></template>
     </PageHeader>
-    <TransientFeedback :error="error" error-title="订阅数据加载失败" />
+    <TransientFeedback :success="quotaMessage" :error="error" success-title="订阅流量已更新" error-title="订阅数据加载失败" />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters><WorkbenchFilterBar :active="hasFilters" @clear="clearFilters"><WorkbenchFilterInput v-model="queryFilter" label="搜索" maxlength="128" placeholder="订阅 ID、邮箱、套餐或 SKU" @apply="applyFilters" /><WorkbenchFilterSelect v-model="statusFilter" label="订阅状态" :options="statusOptions" @apply="applyFilters" /><WorkbenchFilterSelect v-model="quotaFilter" label="配额状态" :options="quotaOptions" @apply="applyFilters" /><WorkbenchFilterInput v-model="userFilter" label="用户 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" /><WorkbenchFilterDate v-model:from="expiresFrom" v-model:to="expiresTo" label="到期日期" preset-direction="future" @apply="applyFilters" /></WorkbenchFilterBar></template>
       <template #actions><RouterLink class="button button-ghost button-sm" :to="trafficLink">查看流量<UiIcon name="chevron" /></RouterLink></template>
       <TableSkeleton v-if="loading && !subscriptions.length" label="正在加载订阅" :columns="7" />
-      <DataTable v-else-if="subscriptions.length" caption="订阅管理列表" :row-count="total" :min-width="1040"><thead><tr><th class="table-primary-column">订阅</th><th data-column-priority="2">用户</th><th>状态</th><th data-column-priority="2">套餐</th><th data-column-priority="1">流量配额</th><th data-column-priority="1">到期时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="sub in subscriptions" :key="sub.id"><td class="table-primary-column"><div class="cell-title"><strong class="mono">#{{ sub.id }}</strong><TableText :value="sub.user_email || `用户 #${sub.user_id}`" /></div></td><td data-column-priority="2"><div class="cell-title cell-related"><TableText :value="sub.user_email || `用户 #${sub.user_id}`" /><span class="mono">#{{ sub.user_id }}</span></div></td><td><StatusBadge :tone="statusTone(sub.status)">{{ statusName(sub.status) }}</StatusBadge></td><td data-column-priority="2"><div class="cell-title cell-related"><TableText :value="sub.plan_name || `套餐 #${sub.plan_id}`" /><TableText :value="sub.sku_name || `SKU #${sub.plan_sku_id}`" /></div></td><td data-column-priority="1"><div class="quota-cell"><span>{{ formatBytes(sub.flow_used) }} / {{ formatBytes(sub.flow_total) }}</span><div class="usage-track"><i :style="{ width: `${usagePercent(sub)}%` }"></i></div><small>剩余 {{ formatBytes(Math.max(0, sub.flow_total - sub.flow_used)) }}</small></div></td><td data-column-priority="1"><TimeBadge :value="sub.end_at" :tone="sub.status === 'expired' ? 'warning' : 'neutral'" /></td><td class="table-action-column"><RowActions :label="`订阅 #${sub.id} 的操作`" :trigger-key="`subscription-${sub.id}`"><UiButton variant="secondary" size="sm" type="button" :data-subscription-detail-trigger="sub.id" @click="openDetail(sub.id)">查看详情</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/fair-use', { subscription: String(sub.id) })">Fair Use 观测</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/traffic', { subscription_id: String(sub.id) })">流量记录</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(sub.user_id) })">用户订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/users', { user: String(sub.user_id) })">用户详情</RouterLink></RowActions></td></tr></tbody></DataTable>
+      <DataTable v-else-if="subscriptions.length" caption="订阅管理列表" :row-count="total" :min-width="1040"><thead><tr><th class="table-primary-column">订阅</th><th data-column-priority="2">用户</th><th>状态</th><th data-column-priority="2">套餐</th><th data-column-priority="1">流量配额</th><th data-column-priority="1">到期时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="sub in subscriptions" :key="sub.id"><td class="table-primary-column"><div class="cell-title"><strong class="mono">#{{ sub.id }}</strong><TableText :value="sub.user_email || `用户 #${sub.user_id}`" /></div></td><td data-column-priority="2"><div class="cell-title cell-related"><TableText :value="sub.user_email || `用户 #${sub.user_id}`" /><span class="mono">#{{ sub.user_id }}</span></div></td><td><StatusBadge :tone="statusTone(sub.status)">{{ statusName(sub.status) }}</StatusBadge></td><td data-column-priority="2"><div class="cell-title cell-related"><TableText :value="sub.plan_name || `套餐 #${sub.plan_id}`" /><TableText :value="sub.sku_name || `SKU #${sub.plan_sku_id}`" /></div></td><td data-column-priority="1"><div class="quota-cell"><span>{{ formatBytes(sub.flow_used) }} / {{ formatBytes(sub.flow_total) }}</span><div class="usage-track"><i :style="{ width: `${usagePercent(sub)}%` }"></i></div><small>{{ sub.flow_used >= sub.flow_total ? '本周期流量已用完' : `剩余 ${formatBytes(sub.flow_total - sub.flow_used)}` }}</small></div></td><td data-column-priority="1"><TimeBadge :value="sub.end_at" :tone="sub.status === 'expired' ? 'warning' : 'neutral'" /></td><td class="table-action-column"><RowActions :label="`订阅 #${sub.id} 的操作`" :trigger-key="`subscription-${sub.id}`"><UiButton variant="secondary" size="sm" type="button" :data-subscription-detail-trigger="sub.id" @click="openDetail(sub.id)">查看详情</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/fair-use', { subscription: String(sub.id) })">Fair Use 观测</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/traffic', { subscription_id: String(sub.id) })">流量记录</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(sub.user_id) })">用户订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/users', { user: String(sub.user_id) })">用户详情</RouterLink></RowActions></td></tr></tbody></DataTable>
       <EmptyState v-else icon="plans" title="没有匹配订阅" description="调整筛选条件后重试。" />
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
@@ -29,6 +29,7 @@
           <div><strong>{{ selectedSubscription.device_limit }}</strong><span>设备数</span></div>
           <div><strong>{{ selectedSubscription.speed_limit_mbps || '不限' }}</strong><span>{{ selectedSubscription.speed_limit_mbps ? 'Mbps 限速' : '速率' }}</span></div>
         </section>
+        <SubscriptionQuotaEditor :subscription="selectedSubscription" @saved="quotaSaved" @refresh="detailResource.load()" />
         <section class="detail-facts" aria-label="订阅业务快照">
           <div><span>套餐规格</span><strong>{{ selectedSubscription.plan_name || `套餐 #${selectedSubscription.plan_id}` }} / {{ selectedSubscription.sku_name || `SKU #${selectedSubscription.plan_sku_id}` }}</strong></div>
           <div><span>节点组</span><strong class="mono">#{{ selectedSubscription.node_group_id }}</strong></div>
@@ -52,6 +53,7 @@
 
 <script setup lang="ts">
 import TableText from '../components/TableText.vue'
+import SubscriptionQuotaEditor from '../components/SubscriptionQuotaEditor.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchAdminSubscriptionDetail, fetchSubscriptionsPage, type AdminSubscriptionDetail, type AdminSubscriptionListItem } from '../api/client'
@@ -89,6 +91,7 @@ const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 50)
 const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
 const detailID = ref(0)
+const quotaMessage = ref('')
 const detailResource = useRemoteResource<AdminSubscriptionDetail | null>({
   initial: () => null,
   fetch: ({ signal }) => fetchAdminSubscriptionDetail(detailID.value, { signal }),
@@ -96,7 +99,7 @@ const detailResource = useRemoteResource<AdminSubscriptionDetail | null>({
 })
 const { data: selectedSubscription, loading: detailLoading, error: detailError } = detailResource
 const trafficLink = computed(() => adminContextLink('/admin/traffic', userFilter.value ? { user_id: userFilter.value } : {}))
-const statusOptions = [{ label: '全部状态', value: '' }, { label: '有效', value: 'active' }, { label: '已到期或耗尽', value: 'expired' }, { label: '已取消', value: 'canceled' }]
+const statusOptions = [{ label: '全部状态', value: '' }, { label: '有效', value: 'active' }, { label: '已到期', value: 'expired' }, { label: '已取消', value: 'canceled' }]
 const quotaOptions = [{ label: '全部配额', value: '' }, { label: '仍有余量', value: 'available' }, { label: '已经耗尽', value: 'exhausted' }]
 const hasFilters = computed(() => Boolean(queryFilter.value || statusFilter.value || quotaFilter.value || userFilter.value || expiresFrom.value || expiresTo.value))
 const { items: subscriptions, total, loading, refreshing, error, load } = useRemoteTable<AdminSubscriptionListItem>({
@@ -106,8 +109,9 @@ const { items: subscriptions, total, loading, refreshing, error, load } = useRem
   errorMessage: (cause: any) => cause?.response?.data?.message || '订阅数据加载失败。',
   onOffsetCorrected: () => syncURL(true),
 })
+async function quotaSaved() { quotaMessage.value = '流量参数已保存'; await Promise.all([detailResource.load(), load()]) }
 function usagePercent(sub: AdminSubscriptionListItem) { return sub.flow_total ? Math.min(100, Math.round(sub.flow_used / sub.flow_total * 100)) : 0 }
-function statusName(status: string) { return ({ active: '有效', expired: '已失效', canceled: '已取消' } as Record<string, string>)[status] || formatUnknownValue('状态', status) }
+function statusName(status: string) { return ({ active: '有效', expired: '已到期', canceled: '已取消' } as Record<string, string>)[status] || formatUnknownValue('状态', status) }
 function statusTone(status: string): 'success' | 'warning' | 'neutral' { return status === 'active' ? 'success' : status === 'expired' ? 'warning' : 'neutral' }
 function resetPolicyName(value: number) { return ({ 0: '未设置（不重置）', 1: '每月 1 日', 2: '按购买日每月', 3: '每年 1 月 1 日', 4: '按购买日每年', 5: '不重置' } as Record<number, string>)[value] || formatUnknownValue('重置策略', value) }
 function trafficModeName(value: number) { return ({ 0: '上行 + 下行', 1: '仅上行', 2: '仅下行' } as Record<number, string>)[value] || formatUnknownValue('流量口径', value) }

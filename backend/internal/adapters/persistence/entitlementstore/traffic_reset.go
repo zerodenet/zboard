@@ -69,25 +69,21 @@ func (s TrafficReset) ResetDue(ctx context.Context, id uint, now time.Time) (boo
 		if sub.NextResetAt.After(now) {
 			return nil
 		}
-		wasInactive := sub.Status != "active"
+		wasInactive := !entitlements.AccessAvailable(entitlements.Subscription(sub), now)
 		if _, err := ApplyDueTrafficReset(tx, &sub, now); err != nil {
 			return err
 		}
-		if sub.FlowTotal > sub.FlowUsed {
-			sub.Status = "active"
-		} else {
-			sub.Status = "expired"
-		}
+		sub.Status = "active"
 		sub.UpdatedAt = now
 		if err := tx.Save(&sub).Error; err != nil {
 			return err
 		}
-		if wasInactive && sub.Status == "active" {
+		if wasInactive && sub.FlowUsed < sub.FlowTotal {
 			if _, err := EnsureCredentials(tx, sub, s.Issuer); err != nil {
 				return err
 			}
 		}
-		if sub.Status == "expired" {
+		if sub.FlowUsed >= sub.FlowTotal {
 			if err := ExpireSubscriptionCredentials(tx, sub.ID, now); err != nil {
 				return err
 			}

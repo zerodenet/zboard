@@ -59,4 +59,33 @@ describe('node shared pools',()=>{
   wrapper.unmount()
  })
 
+ it('shows successful and scheduled sync times and refreshes the successful time after sync',async()=>{
+  const previous='2026-09-28T01:30:00Z',latest='2026-09-28T02:40:00Z',next='2026-09-29T01:30:00Z'
+  const pool={id:3,node_id:7,name:'订阅池',revision:4,entry_count:1,subscription_configured:true,auto_sync:true,last_sync_at:previous,next_sync_at:next}
+  mocks.list.mockResolvedValueOnce([pool]).mockResolvedValueOnce([{...pool,last_sync_at:latest}])
+  const wrapper=render();await flushPromises()
+  expect(wrapper.text()).toContain('最近成功同步');expect(wrapper.text()).toContain('下次自动同步')
+  expect(wrapper.find(`time[datetime="${new Date(previous).toISOString()}"]`).exists()).toBe(true)
+  expect(wrapper.find(`time[datetime="${new Date(next).toISOString()}"]`).exists()).toBe(true)
+  await wrapper.findAll('button').find(b=>b.text()==='同步')!.trigger('click');await flushPromises()
+  expect(mocks.sync).toHaveBeenCalledWith(3,4)
+  expect(wrapper.find(`time[datetime="${new Date(latest).toISOString()}"]`).exists()).toBe(true)
+  expect(wrapper.find(`time[datetime="${new Date(previous).toISOString()}"]`).exists()).toBe(false)
+  wrapper.unmount()
+ })
+ it('keeps the last successful time visible on failure and distinguishes a never-synced pool',async()=>{
+  const previous='2026-09-28T01:30:00Z'
+  const pool={id:3,node_id:7,name:'同步失败池',revision:4,entry_count:1,subscription_configured:true,last_sync_at:previous}
+  const unsynced={id:4,node_id:7,name:'新订阅池',revision:1,entry_count:0,subscription_configured:true}
+  mocks.list.mockResolvedValueOnce([pool,unsynced]).mockResolvedValueOnce([{...pool,last_sync_error:'订阅下载失败'},unsynced])
+  mocks.sync.mockRejectedValueOnce(new Error('订阅下载失败'))
+  const wrapper=render();await flushPromises()
+  expect(wrapper.findAll('article')[1]!.text()).toContain('尚未同步成功')
+  expect(wrapper.text()).not.toContain('下次自动同步')
+  await wrapper.findAll('button').find(b=>b.text()==='同步')!.trigger('click');await flushPromises()
+  expect(wrapper.findAll('article')[0]!.text()).toContain('最近同步失败：订阅下载失败')
+  expect(wrapper.find(`time[datetime="${new Date(previous).toISOString()}"]`).exists()).toBe(true)
+  wrapper.unmount()
+ })
+
 })

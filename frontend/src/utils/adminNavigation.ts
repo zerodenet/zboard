@@ -1,84 +1,36 @@
+import type { MenuNode } from '../api/menus'
 export interface AdminNavigationPage { to: string; label: string }
-export interface AdminNavigationSection { label: string; icon: string; pages: AdminNavigationPage[] }
+export interface AdminNavigationSection { id: string; label: string; icon: string; pages: AdminNavigationPage[] }
 export interface AdminNavigationDomain {
   id: string
   label: string
-  shortLabel: string
   icon: string
-  description: string
+  to?: string
   sections: AdminNavigationSection[]
 }
 
-// Navigation only: resource ownership, route guards and permissions remain unchanged.
-export const adminNavigation: AdminNavigationDomain[] = [
-  { id: 'overview', label: '概览', shortLabel: '概览', icon: 'dashboard', description: '业务动态，一目了然', sections: [
-    { label: '工作台', icon: 'dashboard', pages: [{ to: '/admin/dashboard', label: '运营工作台' }] },
-  ] },
-  { id: 'customers', label: '用户与订阅', shortLabel: '客户', icon: 'users', description: '用户服务与权益管理', sections: [
-    { label: '客户服务', icon: 'users', pages: [
-      { to: '/admin/users', label: '用户管理' },
-      { to: '/admin/subscriptions', label: '订阅管理' },
-      { to: '/admin/tickets', label: '工单中心' },
-    ] },
-    { label: '用量观测', icon: 'activity', pages: [{ to: '/admin/fair-use', label: 'Fair Use 观测' }] },
-  ] },
-  { id: 'commerce', label: '商品与订单', shortLabel: '商业', icon: 'plans', description: '商品销售与订阅交付', sections: [
-    { label: '交易管理', icon: 'billing', pages: [
-      { to: '/admin/plans', label: '商品与套餐' },
-      { to: '/admin/orders', label: '订单管理' },
-    ] },
-    { label: '配置交付', icon: 'plans', pages: [
-      { to: '/admin/subscription-templates', label: '订阅模板' },
-      { to: '/admin/subscription-templates/rule-sets', label: '规则集' },
-    ] },
-  ] },
-  { id: 'infrastructure', label: '节点与协议', shortLabel: '节点', icon: 'nodes', description: '基础资源与服务接入', sections: [
-    { label: '服务资源', icon: 'nodes', pages: [
-      { to: '/admin/nodes', label: '节点资产' },
-      { to: '/admin/protocols', label: '协议服务' },
-      { to: '/admin/node-groups', label: '节点组' },
-      { to: '/admin/traffic', label: '流量与对账' },
-    ] },
-    { label: '接入配置', icon: 'settings', pages: [
-      { to: '/admin/providers', label: '外部供应商' },
-      { to: '/admin/dns-records', label: 'DNS 解析' },
-      { to: '/admin/certificates', label: '免费证书' },
-    ] },
-  ] },
-  { id: 'operations', label: '运营', shortLabel: '运营', icon: 'activity', description: '消息发布与运行追踪', sections: [
-    { label: '日常运营', icon: 'activity', pages: [
-      { to: '/admin/announcements', label: '站点公告' },
-      { to: '/admin/tasks', label: '运营任务' },
-      { to: '/admin/runtime-jobs', label: '后台任务' },
-    ] },
-    { label: '日志与审计', icon: 'audit', pages: [
-      { to: '/admin/operation-logs', label: '运行日志' },
-      { to: '/admin/audit-logs', label: '审计日志' },
-    ] },
-  ] },
-  { id: 'settings', label: '设置', shortLabel: '设置', icon: 'settings', description: '站点配置与系统管理', sections: [
-    { label: '站点设置', icon: 'settings', pages: [
-      { to: '/admin/settings/site', label: '站点与品牌' },
-      { to: '/admin/settings/registration', label: '注册与验证' },
-      { to: '/admin/settings/email', label: '邮件与运营模板' },
-      { to: '/admin/settings/legal', label: '法务与政策' },
-    ] },
-    { label: '扩展中心', icon: 'plans', pages: [{ to: '/admin/plugin-market', label: '插件市场' }, { to: '/admin/plugins', label: '插件管理' }] },
-    { label: '系统管理', icon: 'activity', pages: [
-      { to: '/admin/settings/runtime', label: '系统运行' },
-      { to: '/admin/maintenance', label: '系统维护' },
-      { to: '/admin/about', label: '关于 ZBoard' },
-    ] },
-  ] },
-]
+// The backend owns inventory and visibility. This projection only chooses the
+// admin presentation (sidebar groups and sibling page tabs).
+export function toAdminNavigation(nodes: MenuNode[]): AdminNavigationDomain[] {
+  const children = new Map<string, MenuNode[]>()
+  for (const node of nodes) children.set(node.parent_id, [...(children.get(node.parent_id) || []), node])
+  function pages(node: MenuNode, depth = 0): AdminNavigationPage[] {
+    if (depth > 8) return []
+    if (node.path) return [{ to: node.path, label: node.label }]
+    return (children.get(node.id) || []).flatMap(child => pages(child, depth + 1))
+  }
+  return (children.get('') || []).map(root => ({
+    id: root.id, label: root.label, icon: root.icon, to: root.path || undefined,
+    sections: (root.path ? [root] : children.get(root.id) || []).map(node => ({
+      id: node.id, label: node.label, icon: node.icon, pages: pages(node),
+    })).filter(section => section.pages.length),
+  })).filter(domain => domain.sections.length)
+}
 
-const entries = adminNavigation.flatMap(domain => domain.sections.flatMap(section =>
-  section.pages.map(page => ({ domain, section, page })),
-)).sort((left, right) => right.page.to.length - left.page.to.length)
-
-export function resolveAdminNavigation(path: string) {
-  const rawPath = path.split(/[?#]/, 1)[0]
-  const pathname = rawPath.startsWith('/admin/extensions/') ? '/admin/plugins' : rawPath
-  // Longest match prevents both templates and their rule-set page being selected.
+export function resolveAdminNavigation(path: string, domains: AdminNavigationDomain[]) {
+  const pathname = path.split(/[?#]/, 1)[0]
+  const entries = domains.flatMap(domain => domain.sections.flatMap(section =>
+    section.pages.map(page => ({ domain, section, page })),
+  )).sort((left, right) => right.page.to.length - left.page.to.length)
   return entries.find(({ page }) => pathname === page.to || pathname.startsWith(`${page.to}/`))
 }

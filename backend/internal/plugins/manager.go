@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/menustore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/security"
 	"gorm.io/gorm"
@@ -213,6 +214,14 @@ func (m *Manager) recoverWithContext(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if err := m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := m.guard(tx); err != nil {
+				return err
+			}
+			return registerMenuPages(tx, v.Manifest)
+		}); err != nil {
+			return err
+		}
 		if !r.Enabled && v.Admission.Accepted && !v.Data.MigrationRequired {
 			continue
 		}
@@ -302,6 +311,12 @@ func (m *Manager) updateInstallation(id string, values map[string]any) error {
 		if err := m.guard(tx); err != nil {
 			return err
 		}
-		return tx.Model(&model.PluginInstallation{}).Where("id = ?", id).Updates(values).Error
+		if err := tx.Model(&model.PluginInstallation{}).Where("id = ?", id).Updates(values).Error; err != nil {
+			return err
+		}
+		if values["state"] == "uninstalled" {
+			return menustore.SyncPlugin(tx, id, nil)
+		}
+		return nil
 	})
 }

@@ -19,10 +19,13 @@ const subscriptionSummaryColumns = `subscriptions.id, subscriptions.user_id, use
 			subscriptions.start_at, subscriptions.end_at,
 			CASE
 				WHEN subscriptions.status = 'active'
-					AND (subscriptions.end_at <= ? OR subscriptions.flow_used >= subscriptions.flow_total)
+					AND subscriptions.end_at <= ?
 				THEN 'expired'
+				WHEN subscriptions.status = 'expired' AND subscriptions.end_at > ? AND subscriptions.flow_used >= subscriptions.flow_total THEN 'active'
 				ELSE subscriptions.status
 			END AS status,
+			CASE WHEN subscriptions.flow_used >= subscriptions.flow_total THEN 'exhausted' ELSE 'available' END AS quota_status,
+			subscriptions.reset_quota_bytes,
 			subscriptions.flow_total - subscriptions.cycle_start_used AS flow_total,
 			subscriptions.flow_used - subscriptions.cycle_start_used AS flow_used,
 			subscriptions.speed_limit_mbps, subscriptions.device_limit,
@@ -61,7 +64,7 @@ func (s SubscriptionQueries) Detail(ctx context.Context, actor, id uint) (entitl
 		if err := subscriptionReader(tx, actor, true); err != nil {
 			return err
 		}
-		result := subscriptionJoins(tx.Table("subscriptions")).Select(subscriptionSummaryColumns, time.Now().UTC()).Where("subscriptions.id = ?", id).Scan(&out.SubscriptionSummary)
+		result := subscriptionJoins(tx.Table("subscriptions")).Select(subscriptionSummaryColumns, time.Now().UTC(), time.Now().UTC()).Where("subscriptions.id = ?", id).Scan(&out.SubscriptionSummary)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -135,7 +138,7 @@ func (s SubscriptionQueries) List(ctx context.Context, actor uint, admin bool, q
 			if err := query.Count(&out.Total).Error; err != nil {
 				return err
 			}
-			return query.Select(subscriptionSummaryColumns, now).Order("subscriptions.id desc").Offset(q.Offset).Limit(q.Limit).Scan(&out.Items).Error
+			return query.Select(subscriptionSummaryColumns, now, now).Order("subscriptions.id desc").Offset(q.Offset).Limit(q.Limit).Scan(&out.Items).Error
 		}
 		var rows []model.Subscription
 		if err := query.Select("subscriptions.*").Order("subscriptions.id desc").Find(&rows).Error; err != nil {
@@ -157,18 +160,24 @@ func (s SubscriptionQueries) List(ctx context.Context, actor uint, admin bool, q
 func subscriptionStatus(query *gorm.DB, status string, now time.Time) *gorm.DB {
 	switch status {
 	case "active":
-		return query.Where("subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", "active", now)
+		return query.Where("(subscriptions.status = ? OR (subscriptions.status = ? AND subscriptions.flow_used >= subscriptions.flow_total)) AND subscriptions.end_at > ?", "active", "expired", now)
 	case "expired":
-		return query.Where("(subscriptions.status = ? OR (subscriptions.status = ? AND (subscriptions.end_at <= ? OR subscriptions.flow_used >= subscriptions.flow_total)))", "expired", "active", now)
+		return query.Where("((subscriptions.status IN ? AND subscriptions.end_at <= ?) OR (subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total))", []string{"active", "expired"}, now, "expired", now)
 	default:
 		return query.Where("subscriptions.status = ?", status)
 	}
 }
 func subscriptionEligibility(query *gorm.DB, purpose string, now time.Time) *gorm.DB {
 	switch purpose {
-	case "change", "addon":
-		return subscriptionStatus(query, "active", now)
-	case "manage", "renew":
+	case "change":
+		return subscriptionStatus(query, "active", now).Where("subscriptions.end_at < ? AND subscriptions.flow_used < subscriptions.flow_total", entitlements.PerpetualEnd)
+	case "addon":
+		return subscriptionStatus(query, "active", now).Where("subscriptions.flow_used < subscriptions.flow_total")
+	case "reset":
+		return query.Where("subscriptions.status IN ? AND subscriptions.end_at > ? AND subscriptions.end_at < ? AND subscriptions.reset_quota_bytes > 0", []string{"active", "expired"}, now, entitlements.PerpetualEnd)
+	case "manage":
+		return query.Where("subscriptions.status IN ? AND subscriptions.end_at > ?", []string{"active", "expired"}, now)
+	case "renew":
 		return query.Where(`((subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total) OR (subscriptions.status IN ? AND subscriptions.end_at >= ? AND subscriptions.flow_used >= subscriptions.flow_total))`, "active", now, []string{"active", "expired"}, time.Date(entitlements.PerpetualEnd.Year(), time.January, 1, 0, 0, 0, 0, time.UTC))
 	}
 	return query

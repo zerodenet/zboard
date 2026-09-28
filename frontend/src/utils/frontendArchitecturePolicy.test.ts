@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { adminNavigation, resolveAdminNavigation } from './adminNavigation'
+import { adminNavigation, resolveAdminNavigation } from '../test/menuFixtures'
 
 const sourceRoot = join(import.meta.dirname, '..')
 const viewsRoot = join(sourceRoot, 'views')

@@ -7,6 +7,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/commercestore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/experiencestore"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/menustore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/messagingstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	zeroadapter "github.com/zerodenet/zboard/backend/internal/adapters/zero"
@@ -15,6 +16,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/capabilities/experience"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/messaging"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/navigation"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -32,6 +34,7 @@ import (
 )
 
 type Services struct {
+	Navigation                  navigation.Service
 	MessageTemplates            messaging.Templates
 	PrincipalCollection         metering.PrincipalCollection
 	FairUseObservationSeries    metering.ObservationSeriesService
@@ -113,6 +116,7 @@ type Services struct {
 func New(db *gorm.DB, secret string) *Services {
 	s := &Services{Identity: NewIdentity(db, secret), JobReviews: jobs.ReviewService{Repository: networkstore.JobReviews{DB: db}}}
 	s.trafficReadDB = db
+	s.Navigation = navigation.Service{Repository: menustore.Store{DB: db}}
 	s.MessageTemplates = messaging.Templates{Repository: messagingstore.Templates{DB: db}}
 	s.PrincipalCollection = metering.PrincipalCollection{Repository: meteringstore.PrincipalCollection{DB: db}}
 	s.FairUseObservationSeries = metering.ObservationSeriesService{Repository: meteringstore.ObservationSeries{DB: db}}

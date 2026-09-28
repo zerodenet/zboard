@@ -224,15 +224,18 @@ func TestSubscriptionManagementFilterPreservesPermanentRecoveryBoundary(t *testi
 			Total int
 		}
 		want := 1
-		if purpose == "manage" || purpose == "renew" {
+		if purpose == "renew" {
 			want = 3
+		}
+		if purpose == "manage" {
+			want = 4
 		}
 		status := f.get(t, "/api/v1/subscriptions?paged=true&eligible_for="+purpose, f.h.SubscriptionsHandler, &page)
 		if status != http.StatusOK || page.Total != want {
 			t.Fatalf("%s status=%d total=%d want=%d", purpose, status, page.Total, want)
 		}
 		for _, item := range page.Items {
-			if item.ID > 3 {
+			if item.ID > 3 && !(purpose == "manage" && item.ID == 6) {
 				t.Fatalf("ineligible subscription included: %d", item.ID)
 			}
 		}

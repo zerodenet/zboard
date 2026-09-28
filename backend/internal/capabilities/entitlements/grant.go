@@ -2,6 +2,7 @@ package entitlements
 
 import (
 	"errors"
+	"math"
 	"time"
 )
 
@@ -71,12 +72,32 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 	}
 	before := sub.FlowTotal - sub.FlowUsed
 	delta := int64(0)
-	if fulfillment.AddQuota {
+	if request.OrderType == "traffic_reset" {
+		if sub.PlanID != request.PlanID || (sub.Status != "active" && sub.Status != "expired") || !sub.EndAt.After(now) || IsPerpetualEnd(sub.EndAt) || request.TrafficBytes <= 0 || request.TrafficBytes != sub.ResetQuotaBytes || sub.FlowUsed > math.MaxInt64-request.TrafficBytes {
+			return Grant{}, errors.New("traffic reset requires a valid timed subscription and its base quota")
+		}
+		previousTotal := sub.FlowTotal
+		sub.FlowTotal = sub.FlowUsed + request.TrafficBytes
+		sub.CycleStartUsed = sub.FlowUsed
+		delta = sub.FlowTotal - previousTotal
+	} else if request.OrderType == "upgrade" {
+		if sub.Status != "active" || !sub.EndAt.After(now) {
+			return Grant{}, errors.New("plan change requires an active subscription")
+		}
+		_, cycleUsed := CycleQuota(sub)
+		baseline := sub.FlowUsed - cycleUsed
+		if request.TrafficBytes < cycleUsed || request.TrafficBytes > math.MaxInt64-baseline {
+			return Grant{}, errors.New("new plan quota cannot cover current-cycle usage")
+		}
+		previousTotal := sub.FlowTotal
+		sub.FlowTotal = baseline + request.TrafficBytes
+		delta = sub.FlowTotal - previousTotal
+	} else if fulfillment.AddQuota {
 		delta = request.TrafficBytes
 		sub.FlowTotal += delta
 	}
 	sub.Status = "active"
-	if request.OrderType != "traffic_pack" {
+	if request.OrderType != "traffic_pack" && request.OrderType != "traffic_reset" {
 		sub.PlanID = request.PlanID
 		sub.PlanSKUID = request.PlanSKUID
 		sub.NodeGroupID = policy.NodeGroupID

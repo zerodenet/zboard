@@ -228,3 +228,23 @@ describe('account subscription independent loading and access identity', () => {
     expect(replace).not.toHaveBeenCalled()
   })
 })
+
+ it('keeps an exhausted unexpired subscription visible with a reset link and no credential rotation', async () => {
+  vi.clearAllMocks()
+  const exhausted = { ...subscriptions[0], flow_used: 100, quota_status: 'exhausted', reset_quota_bytes: 100, next_reset_at: '2026-10-15T00:00:00Z' }
+  vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([exhausted]))
+  vi.mocked(fetchActiveSubscriptionTemplatesPage).mockResolvedValue(page([]))
+  vi.mocked(fetchAccountProtocolLoads).mockResolvedValue({ items: [], sampled_at: '', activity_window_seconds: 120 })
+  vi.mocked(fetchSubscriptionAccess).mockResolvedValue({ configured: false, subscription_id: exhausted.id })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }] })
+  await router.push('/account/subscription'); await router.isReady()
+  const wrapper = mount(AccountSubscription, { global: { plugins: [router] } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('本周期流量已用完')
+  expect(wrapper.text()).toContain('下次重置')
+  expect(wrapper.find('a[href="/account/plans?operation=reset&subscription=1"]').exists()).toBe(true)
+  const generate = wrapper.findAll('button').find(button => button.text().includes('生成此链接'))!
+  expect(generate.attributes('disabled')).toBeDefined()
+  expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
+  wrapper.unmount()
+ })

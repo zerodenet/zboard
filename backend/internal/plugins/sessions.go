@@ -81,6 +81,15 @@ func (m *Manager) CreateSession(id, pageID, surface string, userID uint, admin, 
 	if !found {
 		return Session{}, errors.New("plugin page not declared")
 	}
+	if purpose == "business" {
+		visible, err := m.menuPageVisible(id, pageID, surface)
+		if err != nil {
+			return Session{}, ErrUnavailable
+		}
+		if !visible {
+			return Session{}, ErrPermission
+		}
+	}
 	s := Session{Token: randomToken(), BridgeToken: randomToken(), PluginID: id, PageID: pageID, Surface: surface, Purpose: purpose, Entrypoint: v.Manifest.Components.UI[surface], Generation: v.Generation, ExpiresAt: time.Now().Add(10 * time.Minute), UserID: userID}
 	s.URL = "/api/v1/plugin-assets/" + s.Token + "/" + s.Entrypoint + "#bridge_token=" + s.BridgeToken
 	m.sessions[s.Token] = s
@@ -158,6 +167,15 @@ func (m *Manager) session(token string) (Session, error) {
 	}
 	if s.Generation != v.Generation || !hasCapability(v, PageCapability) || (s.Purpose == "configuration" && !configCanRead(v) && !configCanWrite(v)) || v.State == "uninstalled" || (s.Purpose != "configuration" && (!v.Enabled || v.State != "active")) {
 		return Session{}, ErrInvalidSession
+	}
+	if s.Purpose == "business" {
+		visible, err := m.menuPageVisible(s.PluginID, s.PageID, s.Surface)
+		if err != nil {
+			return Session{}, ErrUnavailable
+		}
+		if !visible {
+			return Session{}, ErrInvalidSession
+		}
 	}
 	return s, nil
 }

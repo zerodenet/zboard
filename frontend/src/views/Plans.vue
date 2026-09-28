@@ -231,7 +231,7 @@
                 <td data-column-priority="2"><span class="sku-operation-summary">{{ operationSummary(sku.allowed_operations) }}</span></td>
                 <td class="value-cell" data-column-priority="3">
                   <div class="cell-title cell-related">
-                    <TableText :value="sku.entitlement_mode === 'traffic_addon' ? `流量加购 · ${formatBytes(sku.grant_traffic_bytes)}` : '继承商品权益'" />
+                    <TableText :value="sku.entitlement_mode === 'traffic_reset' ? '恢复本周期套餐额度' : sku.entitlement_mode === 'traffic_addon' ? `流量加购 · ${formatBytes(sku.grant_traffic_bytes)}` : '继承商品权益'" />
                     <span v-if="skuOperationsFor(sku).includes('renew')">再次购买：{{ renewalEffectLabel(sku) }}</span>
                   </div>
                 </td>
@@ -317,8 +317,8 @@
                 </label>
               </div>
             </FormField>
-            <FormField v-slot="{ controlAttrs }" label="计费单位" name="create-plan-billing-unit" :hint="billingUnitHint(form.sku)" :error="createErrors.fields['sku.billing_unit']"><UiSelect v-model="form.sku.billing_unit" v-bind="controlAttrs" :options="billingUnitOptions" /></FormField>
-            <FormField v-slot="{ controlAttrs }" :label="form.sku.billing_unit === 'once' ? '永久额度' : '周期数量'" name="create-plan-billing-value" :error="createErrors.fields['sku.billing_value']" required><UiNumberInput v-model="form.sku.billing_value" v-bind="controlAttrs" :min="1" :disabled="form.sku.billing_unit === 'once'" inputmode="numeric" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="计费单位" name="create-plan-billing-unit" :hint="billingUnitHint(form.sku)" :error="createErrors.fields['sku.billing_unit']"><UiSelect v-model="form.sku.billing_unit" v-bind="controlAttrs" :options="billingUnitOptionsFor(form.sku)" /></FormField>
+            <FormField v-slot="{ controlAttrs }" :label="form.sku.entitlement_mode !== 'plan' ? '执行次数' : form.sku.billing_unit === 'once' ? '永久额度' : '周期数量'" name="create-plan-billing-value" :error="createErrors.fields['sku.billing_value']" required><UiNumberInput v-model="form.sku.billing_value" v-bind="controlAttrs" :min="1" :disabled="form.sku.billing_unit === 'once'" inputmode="numeric" /></FormField>
             <FormField v-if="skuOperationsFor(form.sku).includes('renew')" v-slot="{ controlAttrs }" label="再次购买效果" name="create-plan-renewal-effect" :hint="renewalEffectHint(form.sku)" :error="createErrors.fields['sku.renewal_effect']" required><UiSelect v-model="form.sku.renewal_effect" v-bind="controlAttrs" :options="renewalEffectOptions(form.sku)" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="价格" name="create-plan-price" hint="按所选币种的标准金额输入；系统以整数分保存。" :error="createErrors.fields['sku.price_cents']" required><MoneyInput v-model="form.sku.price_cents" v-bind="controlAttrs" :currency="form.sku.currency || 'CNY'" :min-cents="0" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="币种" name="create-plan-currency" :error="createErrors.fields['sku.currency']" required><UiInput v-model.trim="form.sku.currency" v-bind="controlAttrs" maxlength="8" /></FormField>
@@ -420,8 +420,8 @@
             </label>
           </div>
         </FormField>
-        <FormField v-slot="{ controlAttrs }" label="计费单位" name="edit-sku-billing-unit" :hint="billingUnitHint(skuDraft)" :error="skuErrors.fields.billing_unit"><UiSelect v-model="skuDraft.billing_unit" v-bind="controlAttrs" :options="billingUnitOptions" /></FormField>
-        <FormField v-slot="{ controlAttrs }" :label="skuDraft.billing_unit === 'once' ? '永久额度' : '周期数量'" name="edit-sku-billing-value" :error="skuErrors.fields.billing_value" required><UiNumberInput v-model="skuDraft.billing_value" v-bind="controlAttrs" :min="1" :disabled="skuDraft.billing_unit === 'once'" inputmode="numeric" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="计费单位" name="edit-sku-billing-unit" :hint="billingUnitHint(skuDraft)" :error="skuErrors.fields.billing_unit"><UiSelect v-model="skuDraft.billing_unit" v-bind="controlAttrs" :options="billingUnitOptionsFor(skuDraft)" /></FormField>
+        <FormField v-slot="{ controlAttrs }" :label="skuDraft.entitlement_mode !== 'plan' ? '执行次数' : skuDraft.billing_unit === 'once' ? '永久额度' : '周期数量'" name="edit-sku-billing-value" :error="skuErrors.fields.billing_value" required><UiNumberInput v-model="skuDraft.billing_value" v-bind="controlAttrs" :min="1" :disabled="skuDraft.billing_unit === 'once'" inputmode="numeric" /></FormField>
         <FormField v-if="skuOperationsFor(skuDraft).includes('renew')" v-slot="{ controlAttrs }" label="再次购买效果" name="edit-sku-renewal-effect" :hint="renewalEffectHint(skuDraft)" :error="skuErrors.fields.renewal_effect" required><UiSelect v-model="skuDraft.renewal_effect" v-bind="controlAttrs" :options="renewalEffectOptions(skuDraft)" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="币种" name="edit-sku-currency" :error="skuErrors.fields.currency" required><UiInput v-model.trim="skuDraft.currency" v-bind="controlAttrs" maxlength="8" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="价格" name="edit-sku-price" hint="按币种标准金额输入；系统以整数分保存。" :error="skuErrors.fields.price_cents"><MoneyInput v-model="skuDraft.price_cents" v-bind="controlAttrs" :currency="skuDraft.currency || 'CNY'" :min-cents="0" /></FormField>
@@ -530,9 +530,9 @@ const emptySKU = (planID = 0) => ({
   name: '',
   sku_type: 'new',
   billing_mode: 'periodic' as 'periodic' | 'one_time',
-  entitlement_mode: 'plan' as 'plan' | 'traffic_addon',
+  entitlement_mode: 'plan' as 'plan' | 'traffic_addon' | 'traffic_reset',
   renewal_effect: 'extend_only' as 'none' | 'extend_only' | 'extend_and_add_quota' | 'add_quota_only',
-  allowed_operations: ['purchase', 'renew'] as Array<'purchase' | 'renew' | 'change' | 'addon'>,
+  allowed_operations: ['purchase', 'renew'] as Array<'purchase' | 'renew' | 'change' | 'addon' | 'reset'>,
   billing_unit: 'month',
   billing_value: 1,
   price_cents: 0,
@@ -684,12 +684,14 @@ const billingModeOptions = [
 const entitlementModeOptions = [
   { label: '套餐权益', value: 'plan' },
   { label: '流量加购', value: 'traffic_addon' },
+  { label: '重置流量', value: 'traffic_reset' },
 ]
 const skuOperationOptions = [
   { label: '新购', value: 'purchase' as const, description: '允许用户创建新的独立订阅。' },
   { label: '续费', value: 'renew' as const, description: '允许延长有效期，或为永久套餐补充套餐流量。' },
   { label: '套餐切换', value: 'change' as const, description: '允许其他商品的订阅切换到当前商品。' },
   { label: '附加购买', value: 'addon' as const, description: '一次性增加目标订阅的附加权益。' },
+  { label: '重置流量', value: 'reset' as const, description: '恢复本周期套餐额度，到期和自动重置日期保持不变。' },
 ]
 const billingUnitOptions = [
   { label: '天', value: 'day' },
@@ -718,9 +720,9 @@ const trafficCalcOptions = [
   { label: '仅下行', value: 2 },
 ]
 const billingModes = ['periodic', 'one_time'] as const
-const entitlementModes = ['plan', 'traffic_addon'] as const
+const entitlementModes = ['plan', 'traffic_addon', 'traffic_reset'] as const
 const renewalEffects = ['none', 'extend_only', 'extend_and_add_quota', 'add_quota_only'] as const
-const skuOperations = ['purchase', 'renew', 'change', 'addon'] as const
+const skuOperations = ['purchase', 'renew', 'change', 'addon', 'reset'] as const
 const billingUnits = ['day', 'month', 'year', 'once'] as const
 const resetPolicies = [0, 1, 2, 3, 4, 5] as const
 const trafficCalcModes = [0, 1, 2] as const
@@ -988,7 +990,7 @@ async function syncDetailAndEditorsFromRoute() {
       Object.assign(skuDraft, JSON.parse(JSON.stringify(source)))
       skuDraft.allowed_operations = skuOperationsFor(skuDraft)
       skuDraft.billing_mode = skuDraft.billing_mode || (skuDraft.billing_unit === 'once' ? 'one_time' : 'periodic')
-      skuDraft.entitlement_mode = skuDraft.entitlement_mode || (skuDraft.sku_type === 'traffic_pack' ? 'traffic_addon' : 'plan')
+      skuDraft.entitlement_mode = skuDraft.entitlement_mode || (skuDraft.sku_type === 'traffic_reset' ? 'traffic_reset' : skuDraft.sku_type === 'traffic_pack' ? 'traffic_addon' : 'plan')
       syncSKUCommerceFields(skuDraft)
       skuErrors.clear()
       skuState.markClean()
@@ -1001,20 +1003,31 @@ async function syncDetailAndEditorsFromRoute() {
 
 function skuOperationsFor(sku: Pick<PlanSKU, 'sku_type' | 'allowed_operations'>) {
   if (sku.allowed_operations?.length) return sku.allowed_operations
-  const legacyOperation = ({ new: 'purchase', renewal: 'renew', upgrade: 'change', traffic_pack: 'addon' } as const)[sku.sku_type as 'new' | 'renewal' | 'upgrade' | 'traffic_pack']
-  return [legacyOperation || 'purchase'] as Array<'purchase' | 'renew' | 'change' | 'addon'>
+  const legacyOperation = ({ new: 'purchase', renewal: 'renew', upgrade: 'change', traffic_pack: 'addon', traffic_reset: 'reset' } as const)[sku.sku_type as 'new' | 'renewal' | 'upgrade' | 'traffic_pack' | 'traffic_reset']
+  return [legacyOperation || 'purchase'] as Array<'purchase' | 'renew' | 'change' | 'addon' | 'reset'>
 }
 
 function operationSummary(operations?: PlanSKU['allowed_operations']) {
   const values = operations?.length ? operations : ['purchase']
-  const labels: Record<string, string> = { purchase: '新购', renew: '续费', change: '套餐切换', addon: '附加购买' }
+  const labels: Record<string, string> = { purchase: '新购', renew: '续费', change: '套餐切换', addon: '附加购买', reset: '重置流量' }
   return values.map(value => labels[value] || value).join('、')
 }
 
 function syncSKUCommerceFields(sku: PlanSKU | ReturnType<typeof emptySKU>) {
+  if (sku.entitlement_mode === 'traffic_reset') {
+    sku.billing_mode = 'one_time'
+    sku.billing_unit = 'once'
+    sku.billing_value = 1
+    sku.allowed_operations = ['reset']
+    sku.sku_type = 'traffic_reset'
+    sku.renewal_effect = 'none'
+    sku.grant_traffic_bytes = 0
+    return
+  }
   if (sku.entitlement_mode === 'traffic_addon') {
     sku.billing_mode = 'one_time'
     sku.billing_unit = 'once'
+    sku.billing_value = 1
     sku.allowed_operations = ['addon']
     sku.sku_type = 'traffic_pack'
     sku.renewal_effect = 'none'
@@ -1023,7 +1036,7 @@ function syncSKUCommerceFields(sku: PlanSKU | ReturnType<typeof emptySKU>) {
   sku.entitlement_mode = 'plan'
   if (sku.billing_mode === 'periodic' && sku.billing_unit === 'once') sku.billing_unit = 'month'
   if (sku.billing_unit === 'once') sku.billing_value = 1
-  const operations = skuOperationsFor(sku).filter(operation => operation !== 'addon')
+  const operations = skuOperationsFor(sku).filter(operation => operation !== 'addon' && operation !== 'reset')
   sku.allowed_operations = operations.length ? operations : ['purchase']
   if (!sku.allowed_operations.includes('renew')) {
     sku.renewal_effect = 'none'
@@ -1042,14 +1055,14 @@ function syncSKUCommerceFields(sku: PlanSKU | ReturnType<typeof emptySKU>) {
 
 function skuOperationAvailable(
   sku: PlanSKU | ReturnType<typeof emptySKU>,
-  operation: 'purchase' | 'renew' | 'change' | 'addon',
+  operation: 'purchase' | 'renew' | 'change' | 'addon' | 'reset',
 ) {
-  return sku.entitlement_mode === 'traffic_addon' ? operation === 'addon' : operation !== 'addon'
+  return sku.entitlement_mode === 'traffic_reset' ? operation === 'reset' : sku.entitlement_mode === 'traffic_addon' ? operation === 'addon' : operation !== 'addon' && operation !== 'reset'
 }
 
 function toggleSKUOperation(
   sku: PlanSKU | ReturnType<typeof emptySKU>,
-  operation: 'purchase' | 'renew' | 'change' | 'addon',
+  operation: 'purchase' | 'renew' | 'change' | 'addon' | 'reset',
   enabled: boolean,
 ) {
   if (!skuOperationAvailable(sku, operation)) return
@@ -1062,13 +1075,19 @@ function toggleSKUOperation(
 
 function billingLabel(sku: PlanSKU) {
   const unit = ({ day: '天', month: '月', year: '年', once: '次' } as Record<string, string>)[sku.billing_unit] || sku.billing_unit
+  if (sku.entitlement_mode === 'traffic_reset') return '一次性重置流量'
   if (sku.entitlement_mode === 'traffic_addon') return '一次性流量加购'
   if (sku.billing_unit === 'once') return '永久有效 · 流量用完为止'
   const period = `${sku.billing_value} ${unit}`
   return sku.billing_mode === 'one_time' ? `一次性付费 · ${period}有效` : period
 }
 
+function billingUnitOptionsFor(sku: PlanSKU | ReturnType<typeof emptySKU>) {
+  return sku.entitlement_mode === 'traffic_addon' || sku.entitlement_mode === 'traffic_reset' ? [{ label: '一次', value: 'once' }] : billingUnitOptions
+}
+
 function billingUnitHint(sku: PlanSKU | ReturnType<typeof emptySKU>) {
+  if (sku.entitlement_mode === 'traffic_reset') return '恢复目标订阅的本周期套餐额度，保持原到期和自动重置日期；不会累加剩余流量。'
   if (sku.entitlement_mode === 'traffic_addon') return '一次性增加目标订阅的可用流量。'
   if (sku.billing_unit === 'once') return '永久有效，不按日历重置流量，套餐额度消耗完为止。'
   return sku.billing_mode === 'one_time'
@@ -1114,7 +1133,7 @@ function normalizeSKUInput(sku: Pick<PlanSKU, 'name' | 'code' | 'currency'>) {
 function skuValidation(sku: PlanSKU | ReturnType<typeof emptySKU>, prefix = '') {
   const field = (name: string) => `${prefix}${name}`
   const billingMode = sku.billing_mode || (sku.billing_unit === 'once' ? 'one_time' : 'periodic')
-  const entitlementMode = sku.entitlement_mode || (sku.sku_type === 'traffic_pack' ? 'traffic_addon' : 'plan')
+  const entitlementMode = sku.entitlement_mode || (sku.sku_type === 'traffic_reset' ? 'traffic_reset' : sku.sku_type === 'traffic_pack' ? 'traffic_addon' : 'plan')
   const operations = skuOperationsFor(sku)
   const billingUnitValid = isOneOf(sku.billing_unit, billingUnits)
   const operationsValid = operations.length > 0 && operations.every(operation => isOneOf(operation, skuOperations))
@@ -1137,12 +1156,14 @@ function skuValidation(sku: PlanSKU | ReturnType<typeof emptySKU>, prefix = '') 
       ? '请至少选择一个有效的可用场景。'
       : entitlementMode === 'traffic_addon' && (operations.length !== 1 || operations[0] !== 'addon')
         ? '流量加购只能用于附加购买。'
-        : entitlementMode === 'plan' && operations.includes('addon')
+        : entitlementMode === 'traffic_reset' && (operations.length !== 1 || operations[0] !== 'reset')
+          ? '重置流量只能用于重置操作。'
+        : entitlementMode === 'plan' && (operations.includes('addon') || operations.includes('reset'))
           ? '套餐权益不能用于附加购买。'
           : false,
     [field('billing_unit')]: !billingUnitValid
       ? '请选择有效的计费单位。'
-      : entitlementMode === 'traffic_addon' && sku.billing_unit !== 'once'
+      : (entitlementMode === 'traffic_addon' || entitlementMode === 'traffic_reset') && sku.billing_unit !== 'once'
         ? '流量加购必须使用一次性单位。'
         : entitlementMode === 'plan' && billingMode === 'periodic' && sku.billing_unit === 'once'
           ? '按周期付费不能使用永久有效；请改为一次性付费。'

@@ -138,7 +138,6 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		subscription.FlowUsed += charged
 		if subscription.FlowUsed >= subscription.FlowTotal {
 			subscription.FlowUsed = subscription.FlowTotal
-			subscription.Status = "expired"
 			result.Exhausted = true
 		}
 		batch.dirtySubscriptions[subscription.ID] = now

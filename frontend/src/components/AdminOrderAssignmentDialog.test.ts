@@ -5,8 +5,8 @@ import AdminOrderAssignmentDialog from './AdminOrderAssignmentDialog.vue'
 import AdminOrderLookup from './AdminOrderLookup.vue'
 import MoneyInput from './MoneyInput.vue'
 import UiSelect from './UiSelect.vue'
-const mocks = vi.hoisted(() => ({ assign: vi.fn(), user: vi.fn(), users: vi.fn(), targets: vi.fn(), plans: vi.fn(), skus: vi.fn() }))
-vi.mock('../api/client', () => ({ assignAdminOrder: mocks.assign, fetchAdminUserDetail: mocks.user, fetchUsersPage: mocks.users, fetchSubscriptionsPage: mocks.targets, fetchPlanCatalogPage: mocks.plans, fetchPlanCatalogSKUs: mocks.skus }))
+const mocks = vi.hoisted(() => ({ preview: vi.fn(), assign: vi.fn(), user: vi.fn(), users: vi.fn(), targets: vi.fn(), plans: vi.fn(), skus: vi.fn() }))
+vi.mock('../api/client', () => ({ previewAdminOrder: mocks.preview, assignAdminOrder: mocks.assign, fetchAdminUserDetail: mocks.user, fetchUsersPage: mocks.users, fetchSubscriptionsPage: mocks.targets, fetchPlanCatalogPage: mocks.plans, fetchPlanCatalogSKUs: mocks.skus }))
 const modal = defineComponent({ template: '<div><slot /><slot name="footer" /></div>' })
 const lookup = defineComponent({ props: ['modelValue', 'inputId', 'fetchPage'], emits: ['update:modelValue'], template: '<div />' })
 function render() { return mount(AdminOrderAssignmentDialog, { props: { open: true, userId: 7 }, global: { plugins: [], stubs: { ModalDialog: modal, AdminOrderLookup: lookup } } }) }
@@ -33,6 +33,19 @@ describe('administrator order assignment', () => {
     expect(mocks.assign).toHaveBeenCalledWith({ user_id: 7, plan_sku_id: 18, target_subscription_id: undefined, payable_amount: 1500, note: '按客户要求代下单', request_id: expect.any(String) })
     expect(wrapper.emitted('assigned')?.[0]?.[0]).toMatchObject({ id: 81, status: 'pending' })
     expect(wrapper.text()).toContain('创建待付款订单'); expect(wrapper.text()).not.toContain('免费开通')
+    wrapper.unmount()
+  })
+  it('defaults plan changes to the server payable amount', async () => {
+    mocks.preview.mockResolvedValue({ amount_cents: 2000, credit_amount: 1000, payable_amount: 1000, currency: 'CNY', quote_fingerprint: 'admin-quote' })
+    const wrapper = render(); await flushPromises()
+    wrapper.getComponent(UiSelect).vm.$emit('update:modelValue', 'change'); await flushPromises()
+    findLookup(wrapper, 'assign-target').vm.$emit('update:modelValue', { id: 30, label: '原订阅', planId: 11 }); await flushPromises()
+    await fill(wrapper)
+    expect(mocks.preview).toHaveBeenCalledWith(7, 18, 30, expect.anything())
+    expect(wrapper.getComponent(MoneyInput).props('modelValue')).toBe(1000)
+    expect(wrapper.text()).toContain('原套餐抵扣')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(mocks.assign).toHaveBeenCalledWith(expect.objectContaining({ payable_amount: 1000, quote_fingerprint: 'admin-quote' }))
     wrapper.unmount()
   })
   it('reuses the request ID after a network failure and changes it only for a different payload', async () => {

@@ -18,7 +18,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { adminNavigation } from '../utils/adminNavigation'
+import { adminNavigation } from '../stores/navigation'
 import ModalDialog from './ModalDialog.vue'
 import UiIcon from './UiIcon.vue'
 import UiInput from './UiInput.vue'
@@ -28,12 +28,12 @@ const open = ref(false)
 const query = ref('')
 const searchField = ref<HTMLElement | null>(null)
 function focusSearch() { searchField.value?.querySelector('input')?.focus() }
-const pages = adminNavigation.flatMap(domain => domain.sections.flatMap(section =>
+const pages = computed(() => adminNavigation.value.flatMap(domain => domain.sections.flatMap(section =>
   section.pages.map(page => ({ ...page, domain: domain.label, section: section.label })),
-))
+)))
 const matches = computed(() => {
   const term = query.value.trim().toLocaleLowerCase()
-  return (term ? pages.filter(page => `${page.label} ${page.domain} ${page.section}`.toLocaleLowerCase().includes(term)) : pages).slice(0, 12)
+  return (term ? pages.value.filter(page => `${page.label} ${page.domain} ${page.section}`.toLocaleLowerCase().includes(term)) : pages.value).slice(0, 12)
 })
 
 function focusResult(index: number) {

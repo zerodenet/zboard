@@ -122,7 +122,6 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 			subscription.FlowUsed += charged
 			if subscription.FlowUsed >= subscription.FlowTotal {
 				subscription.FlowUsed = subscription.FlowTotal
-				subscription.Status = "expired"
 				exhausted = true
 			}
 			if err := tx.Model(&subscription).Updates(map[string]interface{}{

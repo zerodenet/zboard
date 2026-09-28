@@ -1,23 +1,23 @@
 <template>
   <div class="admin-navigation">
     <nav class="domain-list" aria-label="管理端业务分区">
-      <section v-for="domain in adminNavigation" :key="domain.id" class="domain-group" :class="{ selected: domain.id === currentDomain.id, expanded: domain.id === expandedDomainId }">
-        <button type="button" class="domain-link"
+      <section v-for="domain in adminNavigation" :key="domain.id" class="domain-group" :class="{ selected: domain.id === currentDomain?.id, expanded: domain.id === expandedDomainId }">
+        <RouterLink v-if="domain.to" :to="domain.to" class="domain-link" :aria-label="domain.label" :aria-current="domain.id === currentDomain?.id ? 'page' : undefined" @click="$emit('selectPage')"><UiIcon :name="domain.icon" /><span>{{ domain.label }}</span></RouterLink>
+        <button v-else type="button" class="domain-link"
           :aria-label="domain.label" :aria-expanded="domain.id === expandedDomainId"
           :aria-controls="domain.id === expandedDomainId ? `domain-pages-${domain.id}` : undefined"
           @click="toggleDomain(domain.id)">
           <UiIcon :name="domain.icon" /><span>{{ domain.label }}</span><UiIcon name="chevron" class="domain-chevron" />
         </button>
         <Transition name="domain-reveal">
-        <div v-if="domain.id === expandedDomainId" :id="`domain-pages-${domain.id}`" class="domain-panel">
+        <div v-if="!domain.to && domain.id === expandedDomainId" :id="`domain-pages-${domain.id}`" class="domain-panel">
           <nav class="domain-pages" :aria-label="`${domain.label}页面`">
-            <section v-for="section in domain.sections" :key="section.label" class="page-section">
+            <section v-for="section in domain.sections" :key="section.id" class="page-section">
               <RouterLink :to="section.pages[0].to"
-                class="page-link" :class="{ selected: currentSection?.label === section.label }"
-                :aria-current="currentSection?.label === section.label ? 'page' : undefined"
+                class="page-link" :class="{ selected: currentSection?.id === section.id }"
+                :aria-current="currentSection?.id === section.id ? 'page' : undefined"
                 @click="$emit('selectPage')"><UiIcon :name="section.icon" />{{ section.label }}</RouterLink>
             </section>
-            <section class="page-section"><PluginNavigation surface="admin" /></section>
           </nav>
         </div>
         </Transition>
@@ -27,20 +27,20 @@
 </template>
 
 <script setup lang="ts">
-import PluginNavigation from '../plugins/PluginNavigation.vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import UiIcon from './UiIcon.vue'
-import { adminNavigation, resolveAdminNavigation } from '../utils/adminNavigation'
+import { resolveAdminNavigation } from '../utils/adminNavigation'
+import { adminNavigation } from '../stores/navigation'
 
 defineEmits<{ selectPage: [] }>()
 const route = useRoute()
-const current = computed(() => resolveAdminNavigation(route.path))
-const currentDomain = computed(() => current.value?.domain || adminNavigation[0])
+const current = computed(() => resolveAdminNavigation(route.path, adminNavigation.value))
+const currentDomain = computed(() => current.value?.domain)
 const currentSection = computed(() => current.value?.section)
-const expandedDomainId = ref<string | null>(currentDomain.value.id)
+const expandedDomainId = ref<string | null>(currentDomain.value?.id || null)
 function toggleDomain(id: string) { expandedDomainId.value = expandedDomainId.value === id ? null : id }
-watch(() => route.path, () => { expandedDomainId.value = currentDomain.value.id })
+watch(() => currentDomain.value?.id, id => { expandedDomainId.value = id || null })
 </script>
 
 <style scoped>
