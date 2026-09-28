@@ -41,7 +41,8 @@ func (s OrderSettlement) setPaid(tx *gorm.DB, order *model.Order, now time.Time)
 		}
 		return err
 	}
-	if err := tx.Model(order).Updates(map[string]interface{}{"status": "paid", "subscription_id": sub.ID, "paid_amount": order.PayableAmount, "paid_at": now, "fulfilled_at": now, "updated_at": now}).Error; err != nil {
+	if err := tx.Model(order).Updates(map[string]interface{}{"status": "paid", "subscription_id": sub.ID, "paid_amount": order.PayableAmount, "paid_at": now, "fulfilled_at": now, "updated_at": now,
+		"subscription_ended_at": nil, "subscription_end_reason": "", "subscription_final_flow_total": 0, "subscription_final_flow_used": 0}).Error; err != nil {
 		return err
 	}
 	order.Status = "paid"
@@ -50,5 +51,7 @@ func (s OrderSettlement) setPaid(tx *gorm.DB, order *model.Order, now time.Time)
 	order.PaidAt = &now
 	order.FulfilledAt = &now
 	order.UpdatedAt = now
+	order.SubscriptionEndedAt, order.SubscriptionEndReason = nil, ""
+	order.SubscriptionFinalFlowTotal, order.SubscriptionFinalFlowUsed = 0, 0
 	return nil
 }

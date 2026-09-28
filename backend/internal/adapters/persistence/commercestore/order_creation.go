@@ -107,7 +107,7 @@ func prepareOrder(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest, 
 		BillingValue: terms.BillingValue, RenewalEffect: terms.RenewalEffect, TrafficBytes: terms.TrafficBytes,
 		DeviceLimit: terms.DeviceLimit, SpeedLimitMbps: terms.SpeedLimitMbps,
 	}
-	preview, err = applyTargetQuote(tx, &order, sub, now)
+	preview, err = applyTargetQuote(tx, &order, sub, now, now)
 	if err != nil {
 		return model.Order{}, commerce.OrderPreview{}, err
 	}

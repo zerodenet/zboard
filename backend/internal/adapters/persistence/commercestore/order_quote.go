@@ -41,14 +41,14 @@ func (s OrderCreation) Preview(ctx context.Context, buyer uint, request commerce
 }
 func sourceValue(tx *gorm.DB, sub model.Subscription, currency string) (int64, time.Time, uint, error) {
 	var orders []model.Order
-	if err := tx.Select("id", "plan_id", "paid_amount", "refund_amount", "currency", "order_type", "change_snapshot", "paid_at", "fulfilled_at").Where("subscription_id = ? AND status = ? AND order_type IN ?", sub.ID, "paid", []string{"new", "renewal", "upgrade"}).Order("id desc").Find(&orders).Error; err != nil {
+	if err := tx.Select("id", "plan_id", "paid_amount", "refund_amount", "currency", "order_type", "change_snapshot", "paid_at", "fulfilled_at", "subscription_ended_at").Where("subscription_id = ? AND status = ? AND order_type IN ?", sub.ID, "paid", []string{"new", "renewal", "upgrade"}).Order("id desc").Find(&orders).Error; err != nil {
 		return 0, time.Time{}, 0, err
 	}
 	value := int64(0)
 	start := sub.StartAt
 	var root uint
 	for _, order := range orders {
-		if order.PlanID != sub.PlanID {
+		if order.PlanID != sub.PlanID || order.SubscriptionEndedAt != nil {
 			break
 		}
 		paid := max(int64(0), order.PaidAmount-order.RefundAmount)
@@ -68,19 +68,21 @@ func sourceValue(tx *gorm.DB, sub model.Subscription, currency string) (int64, t
 			}
 			value += paid + credit
 		}
+		// A grace-period recovery starts a new paid series; terminal historical
+		// orders cannot add their already-spent price to its transferable value.
+		root = order.ID
+		if order.PaidAt != nil {
+			start = *order.PaidAt
+		} else if order.FulfilledAt != nil {
+			start = *order.FulfilledAt
+		}
 		if order.OrderType == "new" || order.OrderType == "upgrade" {
-			root = order.ID
-			if order.PaidAt != nil {
-				start = *order.PaidAt
-			} else if order.FulfilledAt != nil {
-				start = *order.FulfilledAt
-			}
 			break
 		}
 	}
 	return value, start, root, nil
 }
-func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, now time.Time) (commerce.OrderPreview, error) {
+func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, now, creditAt time.Time) (commerce.OrderPreview, error) {
 	preview := commerce.OrderPreview{OrderType: order.OrderType, AmountCents: order.AmountCents, PayableAmount: order.PayableAmount, Currency: order.Currency, TrafficBytes: order.TrafficBytes}
 	if order.OrderType == "renewal" && !entitlements.CanRenewAt(entitlements.Subscription(sub), now) {
 		return preview, quoteError(entitlements.ErrRenewalWindow.Error())
@@ -97,7 +99,7 @@ func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, n
 	if sub.NextResetAt != nil && !sub.NextResetAt.After(now) {
 		return preview, quoteError("订阅流量周期正在重置，请刷新后重试。")
 	}
-	snapshot := changeSnapshot{PlanID: sub.PlanID, PlanSKUID: sub.PlanSKUID, EndAt: sub.EndAt, CycleStartUsed: sub.CycleStartUsed, ResetQuota: sub.ResetQuotaBytes, QuotedAt: now}
+	snapshot := changeSnapshot{PlanID: sub.PlanID, PlanSKUID: sub.PlanSKUID, EndAt: sub.EndAt, CycleStartUsed: sub.CycleStartUsed, ResetQuota: sub.ResetQuotaBytes, QuotedAt: creditAt}
 	if err := tx.Model(&model.QuotaEvent{}).Where("subscription_id = ?", sub.ID).Select("COALESCE(MAX(id), 0)").Scan(&snapshot.QuotaEventID).Error; err != nil {
 		return preview, err
 	}
@@ -127,7 +129,7 @@ func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, n
 			return preview, err
 		}
 		snapshot.SourceOrderID = root
-		preview.TimeCredit, preview.TrafficCredit = commerce.RemainingCredit(value, start, sub.EndAt, now, sub.ResetQuotaBytes, used)
+		preview.TimeCredit, preview.TrafficCredit = commerce.RemainingCredit(value, start, sub.EndAt, creditAt, sub.ResetQuotaBytes, used)
 		snapshot.Credit = min(preview.TimeCredit, preview.TrafficCredit, order.AmountCents)
 		order.DiscountAmount = snapshot.Credit
 		order.PayableAmount = order.AmountCents - snapshot.Credit
@@ -162,7 +164,7 @@ func validateTargetQuote(tx *gorm.DB, order model.Order, now time.Time) error {
 		return nil
 	}
 	var snapshot changeSnapshot
-	if order.ChangeSnapshot == "" || json.Unmarshal([]byte(order.ChangeSnapshot), &snapshot) != nil || order.TargetSubscriptionID == nil {
+	if order.ChangeSnapshot == "" || json.Unmarshal([]byte(order.ChangeSnapshot), &snapshot) != nil || order.TargetSubscriptionID == nil || snapshot.QuotedAt.IsZero() || snapshot.QuotedAt.After(now) {
 		return quoteError("该订单缺少有效报价，请取消后重新创建。")
 	}
 	var sub model.Subscription
@@ -174,9 +176,10 @@ func validateTargetQuote(tx *gorm.DB, order model.Order, now time.Time) error {
 	}
 	check := order
 	check.ChangeSnapshot = ""
-	// Settlement rechecks both remaining time and traffic. Pending orders
-	// cannot spend credit after its source entitlement has been consumed.
-	preview, err := applyTargetQuote(tx, &check, sub, now)
+	// Lock time valuation when the order is created. Recheck present lifecycle,
+	// consumption and paid/refunded source value, so waiting alone cannot reject
+	// an agreed price, but a consumed or changed source cannot spend old credit.
+	preview, err := applyTargetQuote(tx, &check, sub, now, snapshot.QuotedAt)
 	if err != nil {
 		return err
 	}

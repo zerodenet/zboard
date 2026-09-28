@@ -223,3 +223,66 @@ func TestPlanChangeAdministratorOverrideTransfersOnlyAppliedCredit(t *testing.T)
 		t.Fatal("unapplied old credit inflated value", next)
 	}
 }
+
+func TestPlanChangeWaitingForPaymentLocksTimeButRechecksConsumedAndRefundedValue(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		used   int64
+		refund int64
+		paid   bool
+	}{
+		{"waiting alone", 0, 0, true},
+		{"usage within locked time credit", 40 * quoteGB, 0, true},
+		{"usage consumes credited value", 60 * quoteGB, 0, false},
+		{"source was refunded", 0, 600, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, sub, root := preparePricedChange(t, 0, 15)
+			order := f.create(t, sub.ID)
+			if err := f.h.db.First(&order, order.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			// Move the whole quoted timeline back one day to simulate a payment
+			// delay without sleeping or changing its relative quoted entitlement.
+			var snapshot map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(order.ChangeSnapshot), &snapshot); err != nil {
+				t.Fatal(err)
+			}
+			var quotedAt time.Time
+			if err := json.Unmarshal(snapshot["QuotedAt"], &quotedAt); err != nil {
+				t.Fatal(err)
+			}
+			sub.StartAt, sub.EndAt = sub.StartAt.Add(-24*time.Hour), sub.EndAt.Add(-24*time.Hour)
+			snapshot["QuotedAt"], _ = json.Marshal(quotedAt.Add(-24 * time.Hour))
+			snapshot["EndAt"], _ = json.Marshal(sub.EndAt)
+			payload, err := json.Marshal(snapshot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := f.h.db.Model(&order).Updates(map[string]any{"change_snapshot": string(payload), "created_at": order.CreatedAt.Add(-24 * time.Hour)}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := f.h.db.Model(&root).Updates(map[string]any{"paid_at": sub.StartAt, "refund_amount": tc.refund}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := f.h.db.Model(&sub).Updates(map[string]any{"start_at": sub.StartAt, "end_at": sub.EndAt, "flow_used": tc.used}).Error; err != nil {
+				t.Fatal(err)
+			}
+			response := f.pay(t, order.ID, true)
+			if tc.paid && response.Code != http.StatusOK || !tc.paid && response.Code != http.StatusBadRequest {
+				t.Fatal(response.Code, response.Body.String())
+			}
+			var after model.Subscription
+			f.h.db.First(&after, sub.ID)
+			var stored model.Order
+			f.h.db.First(&stored, order.ID)
+			if tc.paid {
+				if stored.PaidAmount != order.PayableAmount || stored.DiscountAmount != order.DiscountAmount || after.FlowUsed != tc.used || after.FlowTotal != 150*quoteGB || !after.EndAt.Equal(sub.EndAt) {
+					t.Fatal("agreed terms changed at payment", stored, after)
+				}
+			} else if stored.Status != "pending" || after.PlanID != sub.PlanID || after.FlowTotal != sub.FlowTotal {
+				t.Fatal("changed credit was granted", stored, after)
+			}
+		})
+	}
+}
