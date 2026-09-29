@@ -1,27 +1,41 @@
 package handler
 
 import (
+	"context"
+	"github.com/zerodenet/zboard/backend/internal/model"
 	"os"
 	"strings"
 	"testing"
 )
 
 func TestBufferedZeroEventsRefreshConnectorLivenessOnReceipt(t *testing.T) {
-	source, err := os.ReadFile("zero_event_runtime.go")
-	if err != nil {
-		t.Fatalf("read zero_event_runtime.go: %v", err)
+	h, _ := accountingBenchmarkFixture(t)
+	node, runtime := receiptFixture(t, h)
+	response := receiptRequest(h, node.ID, "receipt-timestamp")
+	if response.Code != 200 {
+		t.Fatalf("receipt: %d %s", response.Code, response.Body.String())
 	}
-	text := string(source)
-	appendStart := strings.Index(text, "func (h *handlers) appendBufferedZeroEvent")
-	appendEnd := strings.Index(text[appendStart:], "func (h *handlers) recordBufferedZeroConnectorReceipt")
-	if appendStart < 0 || appendEnd < 0 {
-		t.Fatal("buffered event receipt functions are missing")
+	batch, err := runtime.spool.ReadBatch(context.Background(), 1)
+	if err != nil || len(batch.Events) != 1 {
+		t.Fatalf("durable receipt: %v", err)
 	}
-	appendSource := text[appendStart : appendStart+appendEnd]
-	persistAt := strings.Index(appendSource, ".spool.Append(ctx, envelope)")
-	touchAt := strings.Index(appendSource, "recordBufferedZeroConnectorReceipt(ctx, node, runtime)")
-	if persistAt < 0 || touchAt < 0 || touchAt <= persistAt {
-		t.Fatal("connector liveness must be refreshed only after the event is durably appended")
+	value, ok := runtime.receipts.Load(node.ID)
+	if !ok || !value.(bufferedConnectorReceipt).at.Equal(batch.Events[0].ReceivedAt) {
+		t.Fatal("pending heartbeat must use durable server receipt time")
+	}
+	var current model.Node
+	if err := h.db.First(&current, node.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if current.ConnectorLastSeenAt != nil {
+		t.Fatal("HTTP receipt synchronously wrote node metadata")
+	}
+	h.flushBufferedConnectorReceipts(context.Background(), runtime)
+	if err := h.db.First(&current, node.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !current.IsOnline || current.ConnectorLastSeenAt == nil || !current.ConnectorLastSeenAt.Equal(batch.Events[0].ReceivedAt) {
+		t.Fatal("consumer did not persist original receipt time")
 	}
 }
 

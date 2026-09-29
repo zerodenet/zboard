@@ -27,6 +27,7 @@ const (
 	zeroEventConsumerEmergencyBurstBatches = 32
 	zeroEventConsumerMinimumInterval       = 100 * time.Millisecond
 	zeroEventSQLiteBatchLimit              = 32
+	zeroEventMySQLBatchLimit               = 128
 	zeroConnectorReceiptPersistInterval    = 30 * time.Second
 )
 
@@ -38,6 +39,7 @@ type zeroEventRuntime struct {
 	cancel      context.CancelFunc
 	done        chan struct{}
 	lastReceipt sync.Map
+	receipts    sync.Map
 	metrics     zeroEventConsumerMetrics
 }
 
@@ -155,30 +157,14 @@ func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node network.Eve
 	if err := runtime.spool.Append(ctx, envelope); err != nil {
 		return true, fmt.Errorf("persist Zero event %s: %w", event, err)
 	}
-	if err := h.recordBufferedZeroConnectorReceipt(ctx, node, runtime); err != nil {
-		// The durable event has already been accepted. Liveness projection is
-		// deliberately best-effort here so a transient metadata write cannot make
-		// Core retry an event that is safely stored in the spool.
-		log.Printf("Zero connector receipt projection failed for node %d: %v", node.ID, err)
-	}
+	h.recordBufferedZeroConnectorReceipt(node, receivedAt, runtime)
 	return true, nil
 }
 
-func (h *handlers) recordBufferedZeroConnectorReceipt(ctx context.Context, node network.EventNode, runtime *zeroEventRuntime) error {
-	now := time.Now().UTC()
-	if previous, ok := runtime.lastReceipt.Load(node.ID); ok {
-		if last, ok := previous.(time.Time); ok && now.Sub(last) < zeroConnectorReceiptPersistInterval {
-			return nil
-		}
-	}
-	if err := h.services.NodeActivity.Record(ctx, node.ID, node.Credential, network.NodeActivityUpdate{At: now, Online: true, ConnectorSeen: true}); err != nil {
-		if !errors.Is(err, network.ErrNodeActivityCredential) {
-			return err
-		}
-		return errors.New("Zero event credential is no longer active")
-	}
-	runtime.lastReceipt.Store(node.ID, now)
-	return nil
+func (h *handlers) recordBufferedZeroConnectorReceipt(node network.EventNode, at time.Time, runtime *zeroEventRuntime) {
+	// The event is already durable. Enqueue only; database writes belong to the
+	// consumer so a locked node or exhausted pool never delays its HTTP receipt.
+	runtime.enqueueReceipt(bufferedConnectorReceipt{node: node, at: at})
 }
 
 func zeroBufferedFlowID(payload json.RawMessage) string {
@@ -200,6 +186,7 @@ func zeroBufferedFlowID(payload json.RawMessage) string {
 }
 
 func (h *handlers) consumeZeroEventCycle(ctx context.Context, runtime *zeroEventRuntime) error {
+	h.flushBufferedConnectorReceipts(ctx, runtime)
 	limit := zeroEventConsumerBatchLimit(runtime.config.MaxBatch, h.services.TrafficReadsUseSQLite())
 	burst := zeroEventConsumerBurst(runtime.spool.Status())
 	for index := 0; index < burst; index++ {
@@ -208,6 +195,7 @@ func (h *handlers) consumeZeroEventCycle(ctx context.Context, runtime *zeroEvent
 			runtime.metrics.failures.Add(1)
 			return err
 		}
+		h.flushBufferedConnectorReceipts(ctx, runtime)
 		if count < limit {
 			return nil
 		}
@@ -217,10 +205,13 @@ func (h *handlers) consumeZeroEventCycle(ctx context.Context, runtime *zeroEvent
 
 // SQLite shares a single connection with live authorization and management
 // reads. Keep transactions short; each committed batch retains its own durable
-// checkpoint. MySQL keeps the configured batch size.
+// checkpoint. MySQL batches are also bounded to limit accounting lock duration.
 func zeroEventConsumerBatchLimit(configured int, sqlite bool) int {
 	if sqlite && configured > zeroEventSQLiteBatchLimit {
 		return zeroEventSQLiteBatchLimit
+	}
+	if !sqlite && configured > zeroEventMySQLBatchLimit {
+		return zeroEventMySQLBatchLimit
 	}
 	return configured
 }

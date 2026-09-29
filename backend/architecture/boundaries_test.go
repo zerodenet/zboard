@@ -423,7 +423,7 @@ func TestRemainingHandlerWritesDelegateToCapabilities(t *testing.T) {
 	assertHandlerFunctionsDelegateWithoutPersistence(t, "../internal/handler/credential_expiry_worker.go", "CredentialExpiry", []string{"StartCredentialExpiryWorker", "runExpiredCredentialReconciliation"})
 	assertHandlerFunctionsDelegateWithoutPersistence(t, "../internal/handler/protocol_delivery_order.go", "ProtocolEndpointOrder", []string{"protocolEndpointOrderSnapshotHandler", "protocolEndpointOrderUpdateHandler"})
 	assertHandlerFunctionsDelegateWithoutPersistence(t, "../internal/handler/handlers.go", "NodeActivity", []string{"NodeConnectorHeartbeatHandler"})
-	assertHandlerFunctionsDelegateWithoutPersistence(t, "../internal/handler/zero_event_runtime.go", "NodeActivity", []string{"recordBufferedZeroConnectorReceipt"})
+	assertHandlerFunctionsDelegateWithoutPersistence(t, "../internal/handler/zero_connector_receipts.go", "NodeActivity", []string{"flushBufferedConnectorReceipts"})
 	assertHandlerFunctionsDelegateWithoutPersistence(t, "../internal/handler/zero_events.go", "NodeActivity", []string{"recordZeroConnectorActivity"})
 	assertHandlerFunctionsDelegateWithoutPersistence(t, "../internal/handler/ssh_execution.go", "SSHHostTrust", []string{"pinSSHHostKeyContext"})
 	for file, names := range map[string][]string{

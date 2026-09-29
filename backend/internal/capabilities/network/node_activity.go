@@ -46,3 +46,20 @@ func (s NodeActivity) Record(ctx context.Context, nodeID uint, credential string
 	}
 	return s.Repository.RecordNodeActivity(ctx, nodeID, credential, update)
 }
+
+// Receipt projection is auxiliary metadata: contention must not delay durable
+// event acceptance. False means the row is busy and the caller should retry.
+type ConnectorReceiptRepository interface {
+	TryConnectorReceipt(context.Context, uint, string, time.Time) (bool, error)
+}
+
+func (s NodeActivity) TryReceipt(ctx context.Context, nodeID uint, credential string, at time.Time) (bool, error) {
+	repo, ok := s.Repository.(ConnectorReceiptRepository)
+	if !ok {
+		return false, ErrNodeActivityUnavailable
+	}
+	if nodeID == 0 || strings.TrimSpace(credential) == "" || at.IsZero() {
+		return false, ErrNodeActivityInvalid
+	}
+	return repo.TryConnectorReceipt(ctx, nodeID, credential, at)
+}

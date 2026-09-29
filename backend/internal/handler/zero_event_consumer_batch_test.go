@@ -89,7 +89,7 @@ func TestConsumerBatchSizingPreservesConfiguredSmallerAndMySQLLimits(t *testing.
 		configured int
 		sqlite     bool
 		want       int
-	}{{2000, true, 32}, {8, true, 8}, {2000, false, 2000}} {
+	}{{2000, true, 32}, {8, true, 8}, {2000, false, 128}, {8, false, 8}} {
 		if got := zeroEventConsumerBatchLimit(item.configured, item.sqlite); got != item.want {
 			t.Fatalf("batch size=%d want=%d", got, item.want)
 		}

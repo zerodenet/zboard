@@ -25,14 +25,19 @@ type BufferedEventProjectionResult struct {
 func (s *Services) ProjectBufferedEvents(ctx context.Context, input BufferedEventProjection, cipher metering.CredentialDecryptor) (BufferedEventProjectionResult, error) {
 	result := BufferedEventProjectionResult{}
 	err := s.Identity.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Account first: waiting for an entitlement must not hold a node stats
+		// write lock. Both projections still commit or roll back together.
+		var err error
+		result.Exhausted, err = ApplyFlowBatch(tx, input.Flows, cipher)
+		if err != nil {
+			return err
+		}
 		for _, observation := range input.Nodes {
 			if err := ProjectNodeObservation(tx, observation); err != nil {
 				return err
 			}
 		}
-		var err error
-		result.Exhausted, err = ApplyFlowBatch(tx, input.Flows, cipher)
-		return err
+		return nil
 	})
 	if err != nil {
 		return result, err
