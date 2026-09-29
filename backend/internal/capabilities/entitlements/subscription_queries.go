@@ -141,13 +141,13 @@ func (s SubscriptionQueries) Detail(ctx context.Context, actor, id uint) (Subscr
 	return s.Repository.Detail(ctx, actor, id)
 }
 
-// Lifecycle and remaining traffic are independent. Older releases stored
-// quota exhaustion as expired; project those unexpired instances as active.
+// Cycle exhaustion does not end a service with future quota cycles. Older
+// releases stored it as expired; only restore those nonterminal instances.
 func EffectiveStatus(sub Subscription, now time.Time) string {
 	if sub.Status == "canceled" {
 		return "canceled"
 	}
-	if sub.EndedAt != nil {
+	if sub.EndedAt != nil || (sub.EndsOnQuotaExhaustion && sub.FlowUsed >= sub.FlowTotal) {
 		return "expired"
 	}
 	if !sub.EndAt.After(now) && (sub.Status == "active" || sub.Status == "expired") {

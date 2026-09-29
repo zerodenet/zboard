@@ -120,3 +120,27 @@ func TestQuotaTerminationRecordsFirstAccountingInstantAndMonthlyServiceStaysActi
 		t.Fatal("late traffic made canceled service renewable", canceled)
 	}
 }
+
+func TestFixedTimedQuotaEndsWithoutChangingMonthlyCyclePolicy(t *testing.T) {
+	now := time.Now().UTC()
+	for _, unit := range []string{"month", "year", "once"} {
+		grant, err := NewGrant(GrantRequest{BillingUnit: unit, BillingValue: 1, TrafficBytes: 100}, GrantPolicy{}, now)
+		if err != nil || !grant.Subscription.EndsOnQuotaExhaustion {
+			t.Fatal(grant, err)
+		}
+		sub := grant.Subscription
+		sub.FlowUsed = 100
+		if EffectiveStatus(sub, now) != "expired" || CanChangeAt(sub, now) {
+			t.Fatal("terminal service restored", sub)
+		}
+		for _, operation := range []string{"upgrade", "traffic_pack", "traffic_reset"} {
+			if _, err := ApplyGrant(sub, GrantRequest{OrderType: operation, PlanID: sub.PlanID, BillingUnit: "month", BillingValue: 1, TrafficBytes: 100}, GrantPolicy{}, now); err == nil {
+				t.Fatal("ended service accepted", operation)
+			}
+		}
+	}
+	grant, err := NewGrant(GrantRequest{BillingUnit: "month", BillingValue: 1, TrafficBytes: 100}, GrantPolicy{ResetPolicy: 2}, now)
+	if err != nil || grant.Subscription.EndsOnQuotaExhaustion {
+		t.Fatal("fixed monthly cycles terminated", grant, err)
+	}
+}

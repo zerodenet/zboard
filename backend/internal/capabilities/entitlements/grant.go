@@ -45,7 +45,7 @@ func NewGrant(request GrantRequest, policy GrantPolicy, now time.Time) (Grant, e
 		lifecycle = "renewable"
 	}
 	sub := Subscription{
-		Lifecycle: lifecycle, EndsOnQuotaExhaustion: request.BillingUnit == "once" && (reset == 0 || reset == 5),
+		Lifecycle: lifecycle, EndsOnQuotaExhaustion: quotaEndsService(request.BillingUnit, policy.IsRenewable, reset),
 		UserID: request.UserID, PlanID: request.PlanID, PlanSKUID: request.PlanSKUID,
 		NodeGroupID: policy.NodeGroupID, SubscriptionType: 1, StartAt: now, EndAt: end, Status: "active",
 		FlowTotal: request.TrafficBytes, ResetQuotaBytes: request.TrafficBytes, SpeedLimitMbps: request.SpeedLimitMbps, DeviceLimit: request.DeviceLimit,
@@ -67,7 +67,7 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 	if request.OrderType == "renewal" && (!CanRenewAt(sub, now) || sub.PlanID != request.PlanID) {
 		return Grant{}, ErrRenewalWindow
 	}
-	if request.OrderType != "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now)) {
+	if request.OrderType != "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now) || (sub.EndsOnQuotaExhaustion && sub.FlowUsed >= sub.FlowTotal)) {
 		return Grant{}, errors.New("subscription has ended")
 	}
 	if fulfillment.MakePermanent {
@@ -124,7 +124,7 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 		if policy.IsRenewable {
 			sub.Lifecycle = "renewable"
 		}
-		sub.EndsOnQuotaExhaustion = request.BillingUnit == "once"
+		sub.EndsOnQuotaExhaustion = quotaEndsService(request.BillingUnit, policy.IsRenewable, EffectiveResetPolicy(request.BillingUnit, policy.ResetPolicy))
 		sub.PlanID = request.PlanID
 		sub.PlanSKUID = request.PlanSKUID
 		sub.NodeGroupID = policy.NodeGroupID
@@ -149,4 +149,10 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 		}
 	}
 	return Grant{Subscription: sub, QuotaDelta: delta, BalanceBefore: before, BalanceAfter: before + delta}, nil
+}
+
+// Fixed quota services have no future cycle to restore their exhausted quota.
+// A sale's validity period can still be expressed in months or years.
+func quotaEndsService(billingUnit string, renewable bool, reset int16) bool {
+	return (billingUnit == "once" || !renewable) && (reset == 0 || reset == 5)
 }

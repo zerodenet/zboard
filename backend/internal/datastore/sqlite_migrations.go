@@ -283,6 +283,26 @@ func runSQLiteMigrations(db *gorm.DB) error {
 		return err
 	}
 
+	const fixedQuotaVersion = "0026_fixed_quota_lifecycle.up.sql"
+	var fixedQuotaApplied int64
+	if err := db.Model(&schemaMigration{}).Where("version = ?", fixedQuotaVersion).Count(&fixedQuotaApplied).Error; err != nil {
+		return err
+	}
+	if fixedQuotaApplied == 0 {
+		payload, err := migrations.Files.ReadFile(fixedQuotaVersion)
+		if err != nil {
+			return err
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Exec(string(payload)).Error; err != nil {
+				return err
+			}
+			return tx.Create(&schemaMigration{Version: fixedQuotaVersion, AppliedAt: time.Now().UTC()}).Error
+		}); err != nil {
+			return err
+		}
+	}
+
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {
 		return fmt.Errorf("record sqlite schema version: %w", err)

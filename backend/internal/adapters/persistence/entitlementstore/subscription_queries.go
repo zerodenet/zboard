@@ -19,7 +19,7 @@ const subscriptionSummaryColumns = `subscriptions.id, subscriptions.user_id, use
 			subscriptions.start_at, subscriptions.end_at, subscriptions.lifecycle, subscriptions.ends_on_quota_exhaustion, subscriptions.ended_at, subscriptions.end_reason,
 			CASE
  WHEN subscriptions.status = 'canceled' THEN 'canceled'
- WHEN subscriptions.ended_at IS NOT NULL THEN 'expired'
+ WHEN subscriptions.ended_at IS NOT NULL OR (subscriptions.ends_on_quota_exhaustion = TRUE AND subscriptions.flow_used >= subscriptions.flow_total) THEN 'expired'
 				WHEN subscriptions.status = 'active'
 					AND subscriptions.end_at <= ?
 				THEN 'expired'
@@ -99,6 +99,9 @@ func (s SubscriptionQueries) List(ctx context.Context, actor uint, admin bool, q
 		owner := q.UserID
 		if !admin {
 			owner = actor
+			// Current services exclude ended fixed instances before the asynchronous
+			// retirement worker runs. Their final state remains in order history.
+			query = query.Where("NOT (subscriptions.lifecycle = 'fixed' AND (subscriptions.ended_at IS NOT NULL OR subscriptions.end_at <= ? OR (subscriptions.ends_on_quota_exhaustion = ? AND subscriptions.flow_used >= subscriptions.flow_total)))", now, true)
 		}
 		if owner != 0 {
 			query = query.Where("subscriptions.user_id = ?", owner)
@@ -172,9 +175,9 @@ func (s SubscriptionQueries) List(ctx context.Context, actor uint, admin bool, q
 func subscriptionStatus(query *gorm.DB, status string, now time.Time) *gorm.DB {
 	switch status {
 	case "active":
-		return query.Where("subscriptions.ended_at IS NULL AND (subscriptions.status = ? OR (subscriptions.status = ? AND subscriptions.flow_used >= subscriptions.flow_total)) AND subscriptions.end_at > ?", "active", "expired", now)
+		return query.Where("subscriptions.ended_at IS NULL AND (subscriptions.ends_on_quota_exhaustion = FALSE OR subscriptions.flow_used < subscriptions.flow_total) AND (subscriptions.status = ? OR (subscriptions.status = ? AND subscriptions.flow_used >= subscriptions.flow_total)) AND subscriptions.end_at > ?", "active", "expired", now)
 	case "expired":
-		return query.Where("(subscriptions.ended_at IS NOT NULL OR (subscriptions.status IN ? AND subscriptions.end_at <= ?) OR (subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total))", []string{"active", "expired"}, now, "expired", now)
+		return query.Where("(subscriptions.ended_at IS NOT NULL OR (subscriptions.status IN ('active', 'expired') AND subscriptions.ends_on_quota_exhaustion = TRUE AND subscriptions.flow_used >= subscriptions.flow_total) OR (subscriptions.status IN ? AND subscriptions.end_at <= ?) OR (subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total))", []string{"active", "expired"}, now, "expired", now)
 	default:
 		return query.Where("subscriptions.status = ?", status)
 	}
