@@ -160,7 +160,7 @@ func (s *flowBatch) flush(tx *gorm.DB) error {
 			return err
 		}
 	}
-	if err := AddProtocolEndpointUsage(tx, s.usageRecords); err != nil {
+	if err := RecordUsageProjections(tx, s.usageRecords); err != nil {
 		return err
 	}
 	subscriptionIDs := make([]uint, 0, len(s.dirtySubscriptions))

@@ -36,6 +36,36 @@ jobs:
       - name: Build
         run: go build ./cmd/zboard
 
+  mysql:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: zboard-ci-root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pzboard-ci-root"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ZBOARD_TEST_MYSQL_DSN: root:zboard-ci-root@tcp(127.0.0.1:3306)/?parseTime=true&loc=UTC
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Test actual MySQL migrations and transactions
+        # MySQL 8.4 enables binary logging and defaults function trust to OFF.
+        # Recovery tests assert those settings and use schema-only accounts.
+        run: go test ./internal/datastore ./internal/handler -run MySQL -count=1 -timeout 15m
+
   zrs-compiler:
     runs-on: ubuntu-latest
     defaults:

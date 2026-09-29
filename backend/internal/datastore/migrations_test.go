@@ -95,6 +95,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0022_catalog_archive.up.sql",
 		"0023_subscription_lifecycle.up.sql",
 		"0024_traffic_usage_hourly.up.sql",
+		"0025_traffic_hourly_application.up.sql",
 	}
 	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
@@ -124,6 +125,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0022_catalog_archive.down.sql",
 		"0023_subscription_lifecycle.down.sql",
 		"0024_traffic_usage_hourly.down.sql",
+		"0025_traffic_hourly_application.down.sql",
 	}
 	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)

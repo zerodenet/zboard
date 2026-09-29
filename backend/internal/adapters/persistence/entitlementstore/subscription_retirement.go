@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 )
@@ -46,6 +47,11 @@ func retireSubscription(tx *gorm.DB, sub model.Subscription, now time.Time) erro
 	}
 	for _, record := range []any{&model.FlowUsage{}, &model.TrafficRecord{}, &model.QuotaEvent{}, &model.SubscriptionMutation{}, &model.SubscriptionMember{}, &model.SubscriptionToken{}, &model.ProtocolCredential{}} {
 		if err := tx.Where("subscription_id = ?", sub.ID).Delete(record).Error; err != nil {
+			return err
+		}
+	}
+	if !datastore.IsSQLite(tx) {
+		if err := tx.Exec("DELETE FROM traffic_usage_hourly WHERE subscription_id = ?", sub.ID).Error; err != nil {
 			return err
 		}
 	}

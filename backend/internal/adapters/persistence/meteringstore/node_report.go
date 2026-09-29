@@ -120,7 +120,7 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
-		if err := AddProtocolEndpointUsage(tx, []model.TrafficRecord{record}); err != nil {
+		if err := RecordUsageProjections(tx, []model.TrafficRecord{record}); err != nil {
 			return err
 		}
 		return s.Expire(tx, in.UserID, now)

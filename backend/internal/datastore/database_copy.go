@@ -34,7 +34,7 @@ func CopyApplicationData(source, target *gorm.DB) error {
 			return err
 		}
 	}
-	return nil
+	return RebuildMySQLTrafficHourly(target)
 }
 
 func copyTableRows(source, target *gorm.DB, table string) error {

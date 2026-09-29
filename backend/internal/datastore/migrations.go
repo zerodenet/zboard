@@ -171,6 +171,15 @@ func runMigrations(db *gorm.DB) error {
 		if applied > 0 {
 			continue
 		}
+		// Published 0024 used MySQL triggers requiring SUPER with binary logging.
+		// Its DDL may already be committed without a version row. The replacement
+		// reconciles both partial and completed installs without replaying that SQL.
+		if version == trafficHourlyVersion || version == trafficHourlyApplicationVersion {
+			if err := reconcileMySQLTrafficHourly(db); err != nil {
+				return fmt.Errorf("reconcile migration %s: %w", version, err)
+			}
+			continue
+		}
 		payload, err := migrations.Files.ReadFile(version)
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", version, err)

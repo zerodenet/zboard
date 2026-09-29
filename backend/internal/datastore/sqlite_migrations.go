@@ -277,6 +277,11 @@ func runSQLiteMigrations(db *gorm.DB) error {
 	if err := reconcileSQLiteTrafficHourly(db); err != nil {
 		return err
 	}
+	// 0025 replaces only MySQL's privileged triggers. SQLite keeps its atomic
+	// trigger implementation; record the engine-specific no-op for version parity.
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: trafficHourlyApplicationVersion, AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
+	}
 
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {
