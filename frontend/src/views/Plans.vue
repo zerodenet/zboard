@@ -162,7 +162,7 @@
         <dl class="detail-kv">
           <div><dt>商品状态</dt><dd><StatusBadge :tone="detailPlan.is_active ? 'success' : 'neutral'">{{ detailPlan.is_active ? '已发布' : '草稿' }}</StatusBadge></dd></div>
           <div><dt>商品 Slug</dt><dd class="mono">{{ detailPlan.slug }}</dd></div>
-          <div><dt>节点组</dt><dd>{{ detailPlan.node_group?.name || `#${detailPlan.node_group_id}` }}</dd></div>
+          <div><dt>权限组</dt><dd><RouterLink v-if="app.isAdmin" :to="withAdminReturnTo('/admin/node-groups', route.fullPath, { group: String(detailPlan.node_group_id) })">{{ detailPlan.node_group?.name || `#${detailPlan.node_group_id}` }} · 管理线路权限</RouterLink><span v-else>{{ detailPlan.node_group?.name || `#${detailPlan.node_group_id}` }}</span></dd></div>
           <div><dt>SKU 总数 / 可售</dt><dd>{{ detailPlan.sku_count }} / {{ detailPlan.active_sku_count }}</dd></div>
           <div><dt>流量配额</dt><dd>{{ formatBytes(detailPlan.traffic_bytes) }}</dd></div>
           <div><dt>速率限制</dt><dd>{{ detailPlan.speed_limit_mbps }} Mbps{{ detailPlan.speed_limit_mbps === 0 ? '（不限速）' : '' }}</dd></div>
@@ -439,6 +439,7 @@ import TableText from '../components/TableText.vue'
 import SKUCycleFields from '../components/SKUCycleFields.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
+import { withAdminReturnTo } from '../utils/navigation'
 import {
   createPlan,
   createPlanSKU,

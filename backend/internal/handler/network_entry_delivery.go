@@ -24,7 +24,7 @@ func (h *handlers) buildAuthorizedNetworkEntries(ctx context.Context, subscripti
 	}
 	entriesByGroup := make(map[uint][]model.NetworkEntry)
 	for _, row := range projection.Entries {
-		entriesByGroup[row.NodeGroupID] = append(entriesByGroup[row.NodeGroupID], model.NetworkEntry{ID: row.ID, NodeID: row.NodeID, EndpointID: row.EndpointID, Name: row.Name, Address: row.Address, Network: row.Network, Port: row.Port, PublicPort: row.PublicPort, Enabled: true})
+		entriesByGroup[row.NodeGroupID] = append(entriesByGroup[row.NodeGroupID], model.NetworkEntry{DeploymentMode: row.DeploymentMode, ID: row.ID, NodeID: row.NodeID, EndpointID: row.EndpointID, Name: row.Name, Address: row.Address, Network: row.Network, Port: row.Port, PublicPort: row.PublicPort, Enabled: true})
 	}
 	endpoints := make(map[uint]model.ProtocolEndpoint, len(projection.Endpoints))
 	for _, row := range projection.Endpoints {
@@ -53,7 +53,7 @@ func (h *handlers) buildAuthorizedNetworkEntries(ctx context.Context, subscripti
 			endpoint, endpointExists := endpoints[entry.EndpointID]
 			entryNode, entryNodeExists := nodes[entry.NodeID]
 			landing, landingExists := nodes[endpoint.NodeID]
-			if !endpointExists || !entryNodeExists || !landingExists || entryNode.ID == landing.ID {
+			if !endpointExists || !landingExists || entry.DeploymentMode != "external" && (!entryNodeExists || entryNode.ID == landing.ID) {
 				continue
 			}
 			if supported, _ := h.protocolKernelSupportForNode(endpoint.Protocol, landing); !supported {

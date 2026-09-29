@@ -1,0 +1,16 @@
+[
+  {"id": "customers", "parent_id": "", "surface": "admin", "label": "用户与订阅", "icon": "users", "path": "", "position": 10, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "admin:/admin/subscriptions", "parent_id": "customers.service", "surface": "admin", "label": "订阅管理", "icon": "users", "path": "/admin/subscriptions", "position": 10, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "commerce", "parent_id": "", "surface": "admin", "label": "商品与订单", "icon": "plans", "path": "", "position": 20, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "infrastructure", "parent_id": "", "surface": "admin", "label": "节点与协议", "icon": "nodes", "path": "", "position": 30, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "admin:/admin/nodes", "parent_id": "infrastructure.resources", "surface": "admin", "label": "节点资产", "icon": "nodes", "path": "/admin/nodes", "position": 0, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "admin:/admin/protocols", "parent_id": "infrastructure.resources", "surface": "admin", "label": "协议服务", "icon": "nodes", "path": "/admin/protocols", "position": 10, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "admin:/admin/node-groups", "parent_id": "infrastructure.resources", "surface": "admin", "label": "节点组", "icon": "nodes", "path": "/admin/node-groups", "position": 20, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "infrastructure.access", "parent_id": "infrastructure", "surface": "admin", "label": "接入配置", "icon": "settings", "path": "", "position": 10, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "operations.daily", "parent_id": "operations", "surface": "admin", "label": "日常运营", "icon": "activity", "path": "", "position": 0, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "admin:/admin/tasks", "parent_id": "operations.daily", "surface": "admin", "label": "运营任务", "icon": "activity", "path": "/admin/tasks", "position": 10, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "admin:/admin/runtime-jobs", "parent_id": "operations.daily", "surface": "admin", "label": "后台任务", "icon": "activity", "path": "/admin/runtime-jobs", "position": 20, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "operations.logs", "parent_id": "operations", "surface": "admin", "label": "日志与审计", "icon": "audit", "path": "", "position": 10, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "settings", "parent_id": "", "surface": "admin", "label": "设置", "icon": "settings", "path": "", "position": 50, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "settings.site", "parent_id": "settings", "surface": "admin", "label": "站点设置", "icon": "settings", "path": "", "position": 0, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""}
+]

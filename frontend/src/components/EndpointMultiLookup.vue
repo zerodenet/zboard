@@ -1,10 +1,11 @@
 <template>
   <div class="endpoint-lookup" role="group" tabindex="-1">
-    <div class="lookup-search"><UiIcon name="search" /><UiInput v-model.trim="search" :placeholder="placeholder" aria-label="搜索协议端点" maxlength="100" /></div>
+    <div class="lookup-search"><UiIcon name="search" /><UiInput v-model.trim="search" :placeholder="placeholder" :aria-label="`搜索${memberLabel}`" maxlength="100" /></div>
     <p v-if="error" class="lookup-error" role="alert"><UiIcon name="alert" />{{ error }}</p>
     <div class="lookup-scope">
-      <span aria-live="polite">{{ loading ? '正在解析筛选范围…' : `当前筛选 ${resultTotal} 个可用端点` }}</span>
+      <span aria-live="polite">{{ loading ? '正在解析筛选范围…' : `当前筛选 ${resultTotal} 个可用${memberLabel}` }}</span>
       <div class="lookup-scope-actions">
+        <UiButton variant="ghost" size="sm" type="button" :disabled="loading || Boolean(bulkAction) || !results.length" @click="invertPage">本页反选</UiButton>
         <UiButton variant="secondary" size="sm" type="button" :loading="bulkAction === 'add'" :disabled="loading || Boolean(bulkAction) || resultTotal === 0" @click="applyFilteredSelection('add')"><UiIcon name="plus" />全部加入</UiButton>
         <UiButton variant="ghost" size="sm" type="button" :loading="bulkAction === 'remove'" :disabled="loading || Boolean(bulkAction) || resultTotal === 0" @click="applyFilteredSelection('remove')"><UiIcon name="minus" />从待保存成员移除</UiButton>
       </div>
@@ -12,18 +13,19 @@
     <p v-if="bulkMessage" class="lookup-draft-status" role="status"><UiIcon name="info" />{{ bulkMessage }}</p>
     <div class="lookup-results" :aria-busy="loading">
       <label v-for="item in results" :key="item.id" :class="{ selected: selectedIDs.has(item.id) }">
-        <UiCheckbox :model-value="selectedIDs.has(item.id)" @update:model-value="toggle(item.id, Boolean($event))" />
-        <span><strong>{{ item.name }}</strong><small>{{ item.node_name || `节点 #${item.node_id}` }} · {{ item.protocol.toUpperCase() }} · {{ item.address }}:{{ item.public_port || item.port }}</small></span>
+        <UiCheckbox :disabled="loading || Boolean(bulkAction)" :model-value="selectedIDs.has(item.id)" @update:model-value="toggle(item.id, Boolean($event))" />
+        <span><strong>{{ item.name }}</strong><small>{{ serviceLocation(item) }} · {{ item.protocol.toUpperCase() }} · {{ item.address }}:{{ item.public_port || item.port }}</small></span>
         <em>{{ formatMultiplier(item.multiplier_milli) }}</em>
       </label>
-      <p v-if="!loading && !results.length" class="lookup-empty">{{ search ? '没有匹配的可用端点。' : '暂无可用端点。' }}</p>
+      <p v-if="!loading && !results.length" class="lookup-empty">{{ search ? `没有匹配的可用${memberLabel}。` : `暂无可用${memberLabel}。` }}</p>
       <p v-if="loading" class="lookup-empty">加载中…</p>
     </div>
+    <TablePager v-if="resultTotal > resultLimit" :total="resultTotal" :offset="resultOffset" :limit="resultLimit" :loading="loading" @change="changeResultPage" />
     <section class="lookup-selected">
-      <header><strong>已选 {{ modelValue.length }} 个端点</strong><small>搜索列表最多展示 25 条；“全部加入/移除”按一次服务端筛选快照处理，已选项每页 50 条</small></header>
-      <div v-if="modelValue.length" class="selection-chips"><span v-for="id in visibleSelectedIDs" :key="id">{{ selectedLabel(id) }}<UiButton variant="ghost" size="sm" icon type="button" :aria-label="`移除端点 ${id}`" @click="toggle(id, false)"><UiIcon name="close" /></UiButton></span></div>
-      <p v-else>请从上方搜索结果中选择端点。</p>
-      <nav v-if="selectedPageCount > 1" class="selected-pagination" aria-label="已选协议端点分页">
+      <header><strong>已选 {{ modelValue.length }} 个{{ memberLabel }}</strong><small>搜索列表最多展示 25 条；“全部加入/移除”按一次服务端筛选快照处理，已选项每页 50 条</small></header>
+      <div v-if="modelValue.length" class="selection-chips"><span v-for="id in visibleSelectedIDs" :key="id">{{ selectedLabel(id) }}<UiButton variant="ghost" size="sm" icon type="button" :aria-label="`移除${memberLabel} ${id}`" @click="toggle(id, false)"><UiIcon name="close" /></UiButton></span></div>
+      <p v-else>请从上方搜索结果中选择{{ memberLabel }}。</p>
+      <nav v-if="selectedPageCount > 1" class="selected-pagination" :aria-label="`已选${memberLabel}分页`">
         <span aria-live="polite">第 {{ selectedStart + 1 }}–{{ selectedEnd }} 项，共 {{ modelValue.length }} 项</span>
         <div><UiButton variant="ghost" size="sm" type="button" :disabled="selectedPage <= 1" @click="changeSelectedPage(-1)">上一页</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="selectedPage >= selectedPageCount" @click="changeSelectedPage(1)">下一页</UiButton></div>
       </nav>
@@ -38,10 +40,14 @@ import UiButton from './UiButton.vue'
 import UiCheckbox from './UiCheckbox.vue'
 import UiIcon from './UiIcon.vue'
 import UiInput from './UiInput.vue'
+import TablePager from './TablePager.vue'
 
-const props = withDefaults(defineProps<{ modelValue: number[]; placeholder?: string }>(), { placeholder: '搜索端点名称或地址' })
+const props = withDefaults(defineProps<{ modelValue: number[]; placeholder?: string; serviceKind?: 'listener' | 'forward' }>(), { placeholder: '搜索名称或地址', serviceKind: 'listener' })
 const emit = defineEmits<{ 'update:modelValue': [value: number[]] }>()
+const memberLabel = computed(() => props.serviceKind === 'forward' ? '前置入口' : '协议端点')
+const kindFilter = computed(() => props.serviceKind === 'forward' ? { serviceKind: 'forward' as const } : {})
 const search = ref('')
+const resultOffset = ref(0), resultLimit = ref(25)
 const loading = ref(false)
 const error = ref('')
 const results = ref<ProtocolEndpointListItem[]>([])
@@ -63,7 +69,12 @@ let hydrateController: AbortController | null = null
 let selectionController: AbortController | null = null
 
 function remember(items: ProtocolEndpointListItem[]) { const next = { ...known.value }; items.forEach(item => { next[item.id] = item }); known.value = next }
-function selectedLabel(id: number) { const item = known.value[id]; return item ? `${item.node_name || `节点 #${item.node_id}`} / ${item.name}` : `协议端点 #${id}` }
+function selectedLabel(id: number) { const item = known.value[id]; return item ? `${serviceLocation(item)} / ${item.name}` : `${memberLabel.value} #${id}` }
+function serviceLocation(item: ProtocolEndpointListItem) {
+  return item.forward ? `${item.forward.deployment_mode === 'external' ? '外部转发' : item.forward.node_name} → ${item.forward.endpoint_name}` : item.node_name || `服务器 #${item.node_id}`
+}
+function invertPage() { const next = new Set(props.modelValue); results.value.forEach(item => { if (!next.delete(item.id)) next.add(item.id) }); emit('update:modelValue', [...next]) }
+async function changeResultPage(page: { offset: number; limit: number }) { resultOffset.value = page.offset; resultLimit.value = page.limit; await loadResults() }
 function formatMultiplier(value: number) { return (Number(value || 1000) / 1000).toLocaleString('zh-CN', { maximumFractionDigits: 3 }) }
 function toggle(id: number, selected: boolean) { const next = new Set(props.modelValue); if (selected) next.add(id); else next.delete(id); emit('update:modelValue', [...next]) }
 function changeSelectedPage(delta: number) { selectedPage.value = Math.min(selectedPageCount.value, Math.max(1, selectedPage.value + delta)) }
@@ -71,7 +82,7 @@ function changeSelectedPage(delta: number) { selectedPage.value = Math.min(selec
 async function loadResults() {
   resultController?.abort(); resultController = new AbortController(); const controller = resultController
   const current = ++sequence; loading.value = true; error.value = ''
-  try { const page = await fetchProtocolEndpointsPage({ q: search.value || undefined, active: true, limit: 25 }, { signal: controller.signal }); if (current !== sequence || controller.signal.aborted) return; results.value = page.items; resultTotal.value = page.total; remember(page.items) }
+  try { const page = await fetchProtocolEndpointsPage({ ...kindFilter.value, q: search.value || undefined, active: true, limit: resultLimit.value, ...(resultOffset.value ? { offset: resultOffset.value } : {}) }, { signal: controller.signal }); if (current !== sequence || controller.signal.aborted) return; results.value = page.items; resultTotal.value = page.total; remember(page.items) }
   catch (e: any) { if (current !== sequence || controller.signal.aborted) return; error.value = e?.response?.data?.message || '协议端点搜索失败。'; results.value = []; resultTotal.value = 0 }
   finally { if (current === sequence) loading.value = false }
 }
@@ -84,7 +95,7 @@ async function applyFilteredSelection(operation: 'add' | 'remove') {
   bulkMessage.value = ''
   error.value = ''
   try {
-    const snapshot = await fetchProtocolEndpointSelection({ q: filter || undefined, active: true }, { signal: controller.signal })
+    const snapshot = await fetchProtocolEndpointSelection({ ...kindFilter.value, q: filter || undefined, active: true }, { signal: controller.signal })
     if (controller.signal.aborted || filter !== search.value) return
     const next = new Set(props.modelValue)
     let changed = 0
@@ -94,8 +105,8 @@ async function applyFilteredSelection(operation: 'add' | 'remove') {
     }
     emit('update:modelValue', [...next])
     bulkMessage.value = operation === 'add'
-      ? `筛选快照共 ${snapshot.total} 个端点，已加入 ${changed} 个待保存成员。`
-      : `筛选快照共 ${snapshot.total} 个端点，已从待保存成员移除 ${changed} 个。`
+      ? `筛选快照共 ${snapshot.total} 个${props.serviceKind === 'forward' ? '前置入口' : '端点'}，已加入 ${changed} 个待保存成员。`
+      : `筛选快照共 ${snapshot.total} 个${props.serviceKind === 'forward' ? '前置入口' : '端点'}，已从待保存成员移除 ${changed} 个。`
   } catch (e: any) {
     if (controller.signal.aborted) return
     error.value = e?.response?.data?.error?.fields?.q || e?.response?.data?.message || '协议端点筛选快照解析失败。'
@@ -107,9 +118,13 @@ async function hydrateSelected() {
   hydrateController?.abort(); hydrateController = new AbortController(); const controller = hydrateController
   const missing = visibleSelectedIDs.value.filter(id => !known.value[id])
   if (!missing.length) return
-  try { const page = await fetchProtocolEndpointsPage({ ids: missing, limit: selectedPageSize }, { signal: controller.signal }); if (controller.signal.aborted) return; remember(page.items) } catch (_) { if (controller.signal.aborted) return /* Numeric fallback labels remain usable. */ }
+  try { const page = await fetchProtocolEndpointsPage({ ...kindFilter.value, ids: missing, limit: selectedPageSize }, { signal: controller.signal }); if (controller.signal.aborted) return; remember(page.items) } catch (_) { if (controller.signal.aborted) return /* Numeric fallback labels remain usable. */ }
 }
 watch(search, () => {
+  resultOffset.value = 0
+  resultController?.abort()
+  sequence++
+  loading.value = true
   window.clearTimeout(timer)
   selectionController?.abort()
   bulkAction.value = ''

@@ -19,10 +19,14 @@ import (
 func networkEntryFixture(t *testing.T) (trafficReadFixture, model.Node, model.ProtocolEndpoint) {
 	t.Helper()
 	f := newTrafficReadFixture(t)
+	return seedNetworkEntryFixture(t, f)
+}
+func seedNetworkEntryFixture(t *testing.T, f trafficReadFixture) (trafficReadFixture, model.Node, model.ProtocolEndpoint) {
+	t.Helper()
 	now := time.Now().UTC()
 	a := model.Node{Name: "A", Address: "entry.example.test", IsEnabled: true, LastSeenAt: &now, Config: "{}"}
 	b := model.Node{Name: "B", Address: "landing.example.test", IsEnabled: true, LastSeenAt: &now, Config: "{}"}
-	for _, row := range []interface{}{&a, &b, &model.Installation{ID: 1, SiteURL: "https://panel.example.test"}} {
+	for _, row := range []interface{}{&a, &b, &model.Installation{ID: 1, SiteURL: "https://panel.example.test", InstalledAt: now}} {
 		if err := f.h.db.Create(row).Error; err != nil {
 			t.Fatal(err)
 		}

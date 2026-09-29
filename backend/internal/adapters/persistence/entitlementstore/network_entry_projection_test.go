@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestNetworkEntryProjectionUsesFixedBatchAndRequiresLandingGrant(t *testing.T) {
+func TestNetworkEntryProjectionUsesFixedBatchAndEntryGrant(t *testing.T) {
 	db, err := datastore.OpenWithDriver(datastore.DriverSQLite, filepath.Join(t.TempDir(), "network-entry-projection.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -51,8 +51,8 @@ func TestNetworkEntryProjectionUsesFixedBatchAndRequiresLandingGrant(t *testing.
 	}
 	store := NetworkEntryProjection{DB: db}
 	withoutGrant, err := store.LoadNetworkEntryProjection(context.Background(), []entitlements.NetworkEntryProjectionSubscription{{ID: credential.SubscriptionID, NodeGroupID: group.ID}}, now)
-	if err != nil || len(withoutGrant.Entries) != 0 {
-		t.Fatalf("projection without landing grant = %+v err=%v", withoutGrant, err)
+	if err != nil || len(withoutGrant.Entries) != 1 {
+		t.Fatalf("projection with entry-only grant = %+v err=%v", withoutGrant, err)
 	}
 	if err := db.Create(&model.NodeGroupEndpoint{NodeGroupID: group.ID, ProtocolEndpointID: endpoint.ID}).Error; err != nil {
 		t.Fatal(err)

@@ -128,13 +128,13 @@ describe('AdminLayout navigation', () => {
 
   it('shows just the URL-owned domain and one active page on a deep link', async () => {
     const { wrapper } = await setup('/admin/subscription-templates/rule-sets?search=test')
-    expect(wrapper.findAll('.domain-link')).toHaveLength(6)
-    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('商品与订单')
+    expect(wrapper.findAll('.domain-link')).toHaveLength(5)
+    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('订阅系统')
     expect(wrapper.findAll('.page-link[aria-current="page"]')).toHaveLength(1)
     expect(wrapper.get('.page-link.selected').text()).toBe('配置交付')
-    expect(wrapper.findAll('.page-link')).toHaveLength(2)
+    expect(wrapper.findAll('.page-link')).toHaveLength(3)
     expect(wrapper.get('.admin-page-navigation-link[aria-current="page"]').text()).toBe('规则集')
-    expect(wrapper.get('.topbar-context').text()).toBe('商品与订单')
+    expect(wrapper.get('.topbar-context').text()).toBe('订阅系统')
     expect(wrapper.get('.admin-build-info').text()).toContain('版本 0.3.0')
     expect(wrapper.get('.admin-build-info').text()).toContain('构建时间')
     expect(wrapper.find('.admin-account').exists()).toBe(false)
@@ -166,11 +166,11 @@ describe('AdminLayout navigation', () => {
     expect(router.currentRoute.value.path).toBe('/')
   })
 
-  it('expands all six domains without navigation, then follows the chosen section and browser history', async () => {
+  it('expands the overview and four core modules without navigation, then follows sections and browser history', async () => {
     const { wrapper, router } = await setup('/admin/users?page=3')
-    await wrapper.get('.domain-link[aria-label="用户与订阅"]').trigger('click')
+    await wrapper.get('.domain-link[aria-label="用户系统"]').trigger('click')
     expect(router.currentRoute.value.fullPath).toBe('/admin/users?page=3')
-    expect(wrapper.get('.domain-link[aria-label="用户与订阅"]').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('.domain-link[aria-label="用户系统"]').attributes('aria-expanded')).toBe('false')
     for (const domain of adminNavigation) {
       const previousRoute = router.currentRoute.value.fullPath
       await wrapper.get(`.domain-link[aria-label="${domain.label}"]`).trigger('click')
@@ -184,10 +184,10 @@ describe('AdminLayout navigation', () => {
     }
     router.back()
     await flushPromises()
-    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('运营')
+    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('节点系统')
     router.forward()
     await flushPromises()
-    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('设置')
+    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('服务系统')
   })
 
   it('keeps the mobile drawer open for domain selection, then closes for the page and restores focus', async () => {
@@ -201,7 +201,7 @@ describe('AdminLayout navigation', () => {
     expect(wrapper.get('.app-workspace').attributes('inert')).toBeDefined()
     expect(document.body.style.overflow).toBe('hidden')
     expect(document.activeElement).toBe(wrapper.get('.sidebar-close').element)
-    await wrapper.get('.domain-link[aria-label="节点与协议"]').trigger('click')
+    await wrapper.get('.domain-link[aria-label="节点系统"]').trigger('click')
     await flushPromises()
     expect(wrapper.classes()).toContain('nav-open')
     await wrapper.get('.page-link[href="/admin/nodes"]').trigger('click')

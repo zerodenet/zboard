@@ -16,6 +16,7 @@ type NetworkEntryQueries struct {
 }
 
 type networkEntryQueryRow struct {
+	DeploymentMode    string
 	ID                uint
 	ProxyPoolID       *uint
 	DeliverySortOrder *int
@@ -34,6 +35,8 @@ type networkEntryQueryRow struct {
 	ParentProtocolID  uint
 	LandingNodeID     uint
 	HasPath           bool
+	NodeEnabled       bool
+	NodeLastSeenAt    *time.Time
 	NodeName          string
 	EndpointName      string
 }
@@ -53,27 +56,36 @@ func (q NetworkEntryQueries) ListNetworkEntries(ctx context.Context, actor uint)
 	if q.DB == nil {
 		return nil, network.ErrNetworkEntryQueryUnavailable
 	}
-	err = q.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err := providerAdmin(tx, actor); err != nil {
-			if errors.Is(err, network.ErrProviderPermission) {
-				return network.ErrNetworkEntryQueryPermission
-			}
-			return err
+	if _, err := providerAdmin(q.DB.WithContext(ctx), actor); err != nil {
+		if errors.Is(err, network.ErrProviderPermission) {
+			return nil, network.ErrNetworkEntryQueryPermission
 		}
-
+		return nil, err
+	}
+	return q.loadEntries(ctx, nil)
+}
+func (q NetworkEntryQueries) loadEntries(ctx context.Context, ids []uint) (result []network.NetworkEntryListItem, err error) {
+	if q.DB == nil {
+		return nil, network.ErrNetworkEntryQueryUnavailable
+	}
+	err = q.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		rows := make([]networkEntryQueryRow, 0)
-		if err := tx.Table("network_entries").
-			Select(`network_entries.id, network_entries.proxy_pool_id, network_entries.delivery_sort_order,
+		rowsQuery := tx.Table("network_entries").
+			Select(`network_entries.deployment_mode, network_entries.id, network_entries.proxy_pool_id, network_entries.delivery_sort_order,
 				network_entries.network, network_entries.name, network_entries.node_id, network_entries.endpoint_id,
 				network_entries.address, network_entries.port, network_entries.public_port, network_entries.enabled,
 				network_entries.revision, network_entries.created_at, network_entries.updated_at,
 				'forward' AS service_kind, network_entries.endpoint_id AS parent_protocol_id,
 				protocol_endpoints.node_id AS landing_node_id,
 				CASE WHEN network_entries.path_config = '' THEN 0 ELSE 1 END AS has_path,
-				nodes.name AS node_name, protocol_endpoints.name AS endpoint_name`).
-			Joins("JOIN nodes ON nodes.id = network_entries.node_id").
+				nodes.is_enabled AS node_enabled, nodes.connector_last_seen_at AS node_last_seen_at, nodes.name AS node_name, protocol_endpoints.name AS endpoint_name`).
+			Joins("LEFT JOIN nodes ON nodes.id = network_entries.node_id").
 			Joins("JOIN protocol_endpoints ON protocol_endpoints.id = network_entries.endpoint_id").
-			Order("network_entries.id DESC").Scan(&rows).Error; err != nil {
+			Order("network_entries.id DESC")
+		if len(ids) > 0 {
+			rowsQuery = rowsQuery.Where("network_entries.id IN ?", ids)
+		}
+		if err := rowsQuery.Scan(&rows).Error; err != nil {
 			return err
 		}
 		result = make([]network.NetworkEntryListItem, 0, len(rows))
@@ -120,14 +132,14 @@ func (q NetworkEntryQueries) ListNetworkEntries(ctx context.Context, actor uint)
 		for _, row := range rows {
 			item := network.NetworkEntryListItem{
 				NetworkEntryRecord: network.NetworkEntryRecord{
-					ID: row.ID, ProxyPoolID: row.ProxyPoolID, DeliverySortOrder: row.DeliverySortOrder,
+					DeploymentMode: row.DeploymentMode, ID: row.ID, ProxyPoolID: row.ProxyPoolID, DeliverySortOrder: row.DeliverySortOrder,
 					Network: row.Network, Name: row.Name, NodeID: row.NodeID, EndpointID: row.EndpointID,
 					Address: row.Address, Port: row.Port, PublicPort: row.PublicPort, Enabled: row.Enabled,
 					Revision: row.Revision, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 				},
 				ServiceKind: row.ServiceKind, ParentProtocolID: row.ParentProtocolID,
 				LandingNodeID: row.LandingNodeID, HasPath: row.HasPath,
-				NodeName: row.NodeName, EndpointName: row.EndpointName,
+				NodeEnabled: row.NodeEnabled, NodeOnline: row.NodeEnabled && row.NodeLastSeenAt != nil && !row.NodeLastSeenAt.Before(time.Now().UTC().Add(-2*time.Minute)), NodeLastSeenAt: row.NodeLastSeenAt, NodeName: row.NodeName, EndpointName: row.EndpointName,
 				Memberships: make([]network.NetworkEntryMembership, 0), NodeGroupNames: make([]string, 0),
 			}
 			item.Memberships = append(item.Memberships, membershipsByEntry[row.ID]...)

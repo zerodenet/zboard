@@ -1684,28 +1684,34 @@ type protocolDeploymentListItem struct {
 }
 
 type protocolEndpointListItem struct {
-	ID                      uint                        `json:"id"`
-	NodeID                  uint                        `json:"node_id"`
-	NodeName                string                      `json:"node_name"`
-	Name                    string                      `json:"name"`
-	Protocol                string                      `json:"protocol"`
-	EgressProtocol          string                      `json:"egress_protocol,omitempty"`
-	Address                 string                      `json:"address"`
-	Port                    int                         `json:"port"`
-	PublicPort              int                         `json:"public_port"`
-	ParentProtocolID        *uint                       `json:"parent_protocol_id,omitempty"`
-	ManagedCertificateID    *uint                       `json:"managed_certificate_id,omitempty"`
-	MultiplierMilli         int64                       `json:"multiplier_milli"`
-	ManagedPrincipalReady   bool                        `json:"managed_principal_ready"`
-	MieruPrincipalReady     bool                        `json:"mieru_principal_ready"`
-	IsActive                bool                        `json:"is_active"`
-	SortOrder               int                         `json:"sort_order"`
-	LatestDeployment        *protocolDeploymentListItem `json:"latest_deployment,omitempty"`
-	Usage                   protocolEndpointUsage       `json:"usage"`
-	KernelSupported         bool                        `json:"kernel_supported"`
-	KernelUnsupportedReason string                      `json:"kernel_unsupported_reason,omitempty"`
-	CreatedAt               time.Time                   `json:"created_at"`
-	UpdatedAt               time.Time                   `json:"updated_at"`
+	ServiceKind             string                                  `json:"service_kind"`
+	Forward                 *networkcap.NetworkEntryListItem        `json:"forward,omitempty"`
+	NodeOnline              bool                                    `json:"node_online"`
+	NodeEnabled             bool                                    `json:"node_enabled"`
+	NodeLastSeenAt          *time.Time                              `json:"node_last_seen_at,omitempty"`
+	NodeGroupMemberships    []networkcap.ProtocolEndpointMembership `json:"node_group_memberships"`
+	ID                      uint                                    `json:"id"`
+	NodeID                  uint                                    `json:"node_id"`
+	NodeName                string                                  `json:"node_name"`
+	Name                    string                                  `json:"name"`
+	Protocol                string                                  `json:"protocol"`
+	EgressProtocol          string                                  `json:"egress_protocol,omitempty"`
+	Address                 string                                  `json:"address"`
+	Port                    int                                     `json:"port"`
+	PublicPort              int                                     `json:"public_port"`
+	ParentProtocolID        *uint                                   `json:"parent_protocol_id,omitempty"`
+	ManagedCertificateID    *uint                                   `json:"managed_certificate_id,omitempty"`
+	MultiplierMilli         int64                                   `json:"multiplier_milli"`
+	ManagedPrincipalReady   bool                                    `json:"managed_principal_ready"`
+	MieruPrincipalReady     bool                                    `json:"mieru_principal_ready"`
+	IsActive                bool                                    `json:"is_active"`
+	SortOrder               int                                     `json:"sort_order"`
+	LatestDeployment        *protocolDeploymentListItem             `json:"latest_deployment,omitempty"`
+	Usage                   protocolEndpointUsage                   `json:"usage"`
+	KernelSupported         bool                                    `json:"kernel_supported"`
+	KernelUnsupportedReason string                                  `json:"kernel_unsupported_reason,omitempty"`
+	CreatedAt               time.Time                               `json:"created_at"`
+	UpdatedAt               time.Time                               `json:"updated_at"`
 }
 
 func newProtocolEndpointListItem(endpoint model.ProtocolEndpoint, nodeName string, managedCertificateID *uint, deployment *model.ProtocolDeployment, usage protocolEndpointUsage, kernelSupported bool, kernelUnsupportedReason string) protocolEndpointListItem {
@@ -1828,27 +1834,42 @@ func (h *handlers) ProtocolDeploymentListHandler(w http.ResponseWriter, r *http.
 
 func (h *handlers) applyProtocolEndpointFilters(values url.Values) (networkcap.ProtocolEndpointInventoryQuery, error) {
 	query := networkcap.ProtocolEndpointInventoryQuery{}
+	query.ServiceKind = strings.TrimSpace(values.Get("service_kind"))
+	if query.ServiceKind != "" && query.ServiceKind != "all" && query.ServiceKind != "listener" && query.ServiceKind != "forward" {
+		return query, validationError("节点筛选条件校验失败。", map[string]string{"service_kind": "invalid service_kind"})
+	}
+	if query.ServiceKind == "all" && values.Get("ids") != "" {
+		return query, validationError("节点筛选条件校验失败。", map[string]string{"ids": "按 ID 查询时请选择直连或前置入口，不能混用两种编号。"})
+	}
+
 	if rawIDs := strings.TrimSpace(values.Get("ids")); rawIDs != "" {
 		parts := strings.Split(rawIDs, ",")
 		ids := make([]uint, 0, len(parts))
 		for _, part := range parts {
 			parsed, err := strconv.ParseUint(strings.TrimSpace(part), 10, 64)
 			if err != nil || parsed == 0 {
-				return networkcap.ProtocolEndpointInventoryQuery{}, errors.New("invalid ids")
+				return networkcap.ProtocolEndpointInventoryQuery{}, validationError("节点筛选条件校验失败。", map[string]string{"ids": "invalid ids"})
 			}
 			ids = append(ids, uint(parsed))
 		}
 		if len(ids) > 100 {
-			return networkcap.ProtocolEndpointInventoryQuery{}, errors.New("ids cannot contain more than 100 values")
+			return networkcap.ProtocolEndpointInventoryQuery{}, validationError("节点筛选条件校验失败。", map[string]string{"ids": "一次查询最多包含 100 个 ID。"})
 		}
 		query.IDs = ids
 	}
 	if nodeID := strings.TrimSpace(values.Get("node_id")); nodeID != "" {
 		parsed, err := strconv.ParseUint(nodeID, 10, 64)
 		if err != nil || parsed == 0 {
-			return networkcap.ProtocolEndpointInventoryQuery{}, errors.New("invalid node_id")
+			return networkcap.ProtocolEndpointInventoryQuery{}, validationError("节点筛选条件校验失败。", map[string]string{"node_id": "invalid node_id"})
 		}
 		query.NodeID = uint(parsed)
+	}
+	if raw := strings.TrimSpace(values.Get("node_group_id")); raw != "" {
+		parsed, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || parsed == 0 {
+			return networkcap.ProtocolEndpointInventoryQuery{}, validationError("节点筛选条件校验失败。", map[string]string{"node_group_id": "invalid node_group_id"})
+		}
+		query.GroupID = uint(parsed)
 	}
 	if search := strings.ToLower(strings.TrimSpace(values.Get("q"))); search != "" {
 		if len([]byte(search)) > 100 {
@@ -1858,20 +1879,20 @@ func (h *handlers) applyProtocolEndpointFilters(values url.Values) (networkcap.P
 	}
 	if protocol := strings.ToLower(strings.TrimSpace(values.Get("protocol"))); protocol != "" {
 		if !h.isProtocolSupported(protocol) {
-			return networkcap.ProtocolEndpointInventoryQuery{}, errors.New("invalid protocol")
+			return networkcap.ProtocolEndpointInventoryQuery{}, validationError("节点筛选条件校验失败。", map[string]string{"protocol": "invalid protocol"})
 		}
 		query.Protocol = protocol
 	}
 	if rawActive := strings.TrimSpace(values.Get("active")); rawActive != "" {
 		active, err := strconv.ParseBool(rawActive)
 		if err != nil {
-			return networkcap.ProtocolEndpointInventoryQuery{}, errors.New("invalid active")
+			return networkcap.ProtocolEndpointInventoryQuery{}, validationError("节点筛选条件校验失败。", map[string]string{"active": "invalid active"})
 		}
 		query.Active = &active
 	}
 	if deploymentStatus := strings.TrimSpace(values.Get("deployment_status")); deploymentStatus != "" {
 		if deploymentStatus != "running" && deploymentStatus != "succeeded" && deploymentStatus != "failed" && deploymentStatus != "never" {
-			return networkcap.ProtocolEndpointInventoryQuery{}, errors.New("invalid deployment_status")
+			return networkcap.ProtocolEndpointInventoryQuery{}, validationError("节点筛选条件校验失败。", map[string]string{"deployment_status": "invalid deployment_status"})
 		}
 		query.DeploymentStatus = deploymentStatus
 	}
@@ -1885,6 +1906,11 @@ func (h *handlers) ProtocolEndpointSelectionHandler(w http.ResponseWriter, r *ht
 	query, err := h.applyProtocolEndpointFilters(r.URL.Query())
 	if err != nil {
 		BadRequestError(w, err)
+		return
+	}
+
+	if query.ServiceKind == "all" {
+		BadRequest(w, "selection requires listener or forward service_kind")
 		return
 	}
 	ids, total, err := h.services.NetworkInventory.SelectProtocolEndpointIDs(r.Context(), query)
@@ -1949,7 +1975,34 @@ func (h *handlers) ProtocolEndpointListHandler(w http.ResponseWriter, r *http.Re
 			value := protocolDeploymentModel(*row.LatestDeployment)
 			deployment = &value
 		}
-		items = append(items, newProtocolEndpointListItem(endpoint, node.Name, row.ManagedCertificateID, deployment, protocolUsageModel(row.Usage), kernelSupported, kernelUnsupportedReason))
+		item := newProtocolEndpointListItem(endpoint, node.Name, row.ManagedCertificateID, deployment, protocolUsageModel(row.Usage), kernelSupported, kernelUnsupportedReason)
+		item.ServiceKind = "listener"
+		item.NodeEnabled = node.IsEnabled
+		item.NodeLastSeenAt = node.ConnectorLastSeenAt
+		item.NodeOnline = node.IsEnabled && node.ConnectorLastSeenAt != nil && !node.ConnectorLastSeenAt.Before(query.Now.Add(-2*time.Minute))
+		item.NodeGroupMemberships = row.Memberships
+		if row.Forward != nil {
+			entry := row.Forward
+			item.ServiceKind = "forward"
+			item.Forward = entry
+			parent := endpoint.ID
+			item.ParentProtocolID = &parent
+			if entry.DeploymentMode != "external" {
+				item.NodeEnabled = entry.NodeEnabled
+				item.NodeOnline = entry.NodeOnline
+				item.NodeLastSeenAt = entry.NodeLastSeenAt
+				item.NodeName = entry.NodeName
+				item.NodeID = entry.NodeID
+			}
+			item.ID = entry.ID
+			item.Name = entry.Name
+			item.Address = entry.Address
+			item.Port = entry.Port
+			item.PublicPort = entry.PublicPort
+			item.IsActive = entry.Enabled
+			item.NodeGroupMemberships = []networkcap.ProtocolEndpointMembership{}
+		}
+		items = append(items, item)
 	}
 	w.Header().Set("Server-Timing", fmt.Sprintf("protocol_inventory;dur=%d", time.Since(requestStartedAt).Milliseconds()))
 	if paged {
@@ -2136,7 +2189,7 @@ func (h *handlers) NodeGroupListHandler(w http.ResponseWriter, r *http.Request) 
 				IsEnabled:             group.IsEnabled,
 				Revision:              group.Revision,
 				ProtocolEndpointCount: row.ProtocolEndpointCount,
-				NetworkEntryCount:     len(group.NetworkEntryIDs),
+				NetworkEntryCount:     row.NetworkEntryCount,
 				PlanCount:             group.PlanCount,
 				CreatedAt:             group.CreatedAt,
 				UpdatedAt:             group.UpdatedAt,
@@ -2160,7 +2213,7 @@ type nodeGroupSummaryItem struct {
 	IsEnabled             bool      `json:"is_enabled"`
 	Revision              uint64    `json:"revision"`
 	ProtocolEndpointCount int64     `json:"protocol_endpoint_count"`
-	NetworkEntryCount     int       `json:"network_entry_count"`
+	NetworkEntryCount     int64     `json:"network_entry_count"`
 	PlanCount             int64     `json:"plan_count"`
 	CreatedAt             time.Time `json:"created_at"`
 	UpdatedAt             time.Time `json:"updated_at"`

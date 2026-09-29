@@ -13,6 +13,7 @@ import (
 )
 
 type networkEntryRequest struct {
+	DeploymentMode    string                                      `json:"deployment_mode"`
 	ProxyPoolID       *uint                                       `json:"proxy_pool_id"`
 	ParentProtocolID  uint                                        `json:"parent_protocol_id"`
 	MembershipChanges []protocolEndpointNodeGroupMembershipChange `json:"node_group_membership_changes"`
@@ -84,6 +85,7 @@ func (h *handlers) NetworkEntriesHandler(w http.ResponseWriter, r *http.Request)
 			resourceRemovalError(w, err)
 			return
 		}
+		h.StartAdminTaskWorker()
 		writeJSON(w, http.StatusOK, "入口已删除，已排队撤除节点配置。", nil)
 		return
 	}
@@ -124,7 +126,7 @@ func (h *handlers) NetworkEntriesHandler(w http.ResponseWriter, r *http.Request)
 	if request.PublicPort < 1 || request.PublicPort > 65535 {
 		fields["public_port"] = "对外端口必须为 1–65535。"
 	}
-	if request.NodeID == 0 {
+	if request.NodeID == 0 && request.DeploymentMode != "external" {
 		fields["node_id"] = "请选择入口节点 A。"
 	}
 	if request.EndpointID == 0 {
@@ -178,7 +180,7 @@ func (h *handlers) NetworkEntriesHandler(w http.ResponseWriter, r *http.Request)
 		})
 	}
 	result, err := entryMutations.Save(r.Context(), claims.UserID, networkcap.NetworkEntryMutationRequest{
-		ID: id, ExpectedRevision: request.Revision, NodeID: request.NodeID, EndpointID: request.EndpointID,
+		DeploymentMode: request.DeploymentMode, ID: id, ExpectedRevision: request.Revision, NodeID: request.NodeID, EndpointID: request.EndpointID,
 		Name: request.Name, Network: request.Network, Address: request.Address, Port: request.Port,
 		PublicPort: request.PublicPort, Enabled: request.Enabled, ReplaceProxyPool: request.ProxyPoolID != nil,
 		ProxyPoolID: poolID, ReplacePath: request.PathConfig != nil, Path: pathConfig,

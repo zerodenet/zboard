@@ -21,6 +21,7 @@ type NetworkEntryMutationValidation struct{ Message string }
 func (e *NetworkEntryMutationValidation) Error() string { return e.Message }
 
 type NetworkEntryRecord struct {
+	DeploymentMode    string    `json:"deployment_mode"`
 	ID                uint      `json:"id"`
 	ProxyPoolID       *uint     `json:"proxy_pool_id"`
 	DeliverySortOrder *int      `json:"delivery_sort_order,omitempty"`
@@ -56,6 +57,7 @@ type NetworkEntryMembershipChange struct {
 }
 
 type NetworkEntryMutationRequest struct {
+	DeploymentMode      string
 	ID                  uint
 	ExpectedRevision    uint64
 	NodeID              uint
@@ -127,6 +129,9 @@ func (s NetworkEntryMutations) Save(ctx context.Context, actor uint, request Net
 	if request.Network == "" {
 		request.Network = "tcp_udp"
 	}
+	if request.DeploymentMode == "" {
+		request.DeploymentMode = "managed"
+	}
 	if request.PublicPort == 0 {
 		request.PublicPort = request.Port
 	}
@@ -177,9 +182,13 @@ func (s NetworkEntryMutations) Save(ctx context.Context, actor uint, request Net
 		pathCiphertext = ""
 	}
 
+	if request.DeploymentMode == "external" {
+		poolID = nil
+		pathCiphertext = ""
+	}
 	change := NetworkEntryMutationChange{
 		Entry: NetworkEntryRecord{
-			ID: request.ID, ProxyPoolID: poolID, Network: request.Network, Name: request.Name,
+			DeploymentMode: request.DeploymentMode, ID: request.ID, ProxyPoolID: poolID, Network: request.Network, Name: request.Name,
 			NodeID: request.NodeID, EndpointID: request.EndpointID, Address: request.Address,
 			Port: request.Port, PublicPort: request.PublicPort, Enabled: request.Enabled,
 		},
@@ -229,6 +238,13 @@ func (s NetworkEntryMutations) Save(ctx context.Context, actor uint, request Net
 }
 
 func validateNetworkEntryMutationRequest(request NetworkEntryMutationRequest) error {
+	if request.DeploymentMode != "managed" && request.DeploymentMode != "external" {
+		return &NetworkEntryMutationValidation{Message: "请选择托管或外部转发"}
+	}
+	if request.DeploymentMode == "external" && (request.NodeID != 0 || request.ProxyPoolID != nil && *request.ProxyPoolID != 0 || strings.TrimSpace(request.Path) != "") {
+		return &NetworkEntryMutationValidation{Message: "外部转发只登记客户端入口，不配置入口节点或代理路径"}
+	}
+
 	if request.Network != "tcp" && request.Network != "tcp_udp" {
 		return &NetworkEntryMutationValidation{Message: "请选择 TCP 或 TCP/UDP 转发"}
 	}
@@ -241,7 +257,7 @@ func validateNetworkEntryMutationRequest(request NetworkEntryMutationRequest) er
 	if request.Port < 1 || request.Port > 65535 || request.PublicPort < 1 || request.PublicPort > 65535 {
 		return &NetworkEntryMutationValidation{Message: "监听端口和对外端口必须为 1–65535"}
 	}
-	if request.NodeID == 0 || request.EndpointID == 0 {
+	if (request.NodeID == 0 && request.DeploymentMode != "external") || request.EndpointID == 0 {
 		return &NetworkEntryMutationValidation{Message: "请选择入口节点 A 和 B 的落地协议"}
 	}
 	if len(request.MembershipChanges) > 100 {

@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="节点资产" description="管理承载服务器、连通状态与 Zero 内核，按服务器查看协议服务。" eyebrow="Infrastructure">
+    <PageHeader title="服务器管理" description="维护服务器资产、连通状态与 Zero 内核；客户端可用线路在节点协议中配置。" eyebrow="Infrastructure">
       <template #actions>
         <PageRefreshButton label="刷新节点资产" :loading="loading" @click="refresh" />
         <UiButton  type="button" @click="openCreate"><UiIcon name="plus" />登记 VPS</UiButton>

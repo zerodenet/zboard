@@ -1,20 +1,20 @@
 <template>
   <section class="standard-page protocols-page">
-    <PageHeader title="协议服务" description="协议配置可复用、复制并切换承载 VPS；运行参数变更才发布 Zero，名称、计费和交付顺序独立保存。" eyebrow="Infrastructure">
+    <PageHeader title="节点协议" description="管理直连协议与前置入口；权限组决定订阅下发哪些线路，认证和流量计费统一由父协议承担。" eyebrow="Infrastructure">
       <template #actions>
-        <PageRefreshButton label="刷新协议服务" :loading="loading" @click="serviceKind === 'forward' ? forwardServices?.load() : refresh()" />
+        <PageRefreshButton label="刷新协议服务" :loading="loading" @click="refresh()" />
         <UiButton variant="secondary" type="button" data-testid="protocol-delivery-order" @click="openOrdering"><UiIcon name="sort" />订阅展示顺序</UiButton>
         <UiButton type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton>
       </template>
     </PageHeader>
     <NodeSetupGuide />
 
-    <UiTabs v-model="serviceKind" :items="[{value:'listener',label:'实际协议监听'},{value:'forward',label:'前置端口转发'}]" label="服务接入方式" />
-    <NetworkEntries v-show="serviceKind === 'forward'" ref="forwardServices" embedded />
+    <UiTabs v-model="serviceKind" :items="[{value:'all',label:'全部节点协议'},{value:'listener',label:'直接协议'},{value:'forward',label:'前置转发'}]" label="服务接入方式" />
+    <NetworkEntries ref="forwardServices" embedded editor-only @saved="refresh()" />
     <ModalDialog :open="serviceTypeOpen" title="创建协议服务" @close="serviceTypeOpen=false">
-      <div class="stack"><p>选择服务接入方式。</p><UiButton @click="createService('listener')">实际协议监听</UiButton><p>在承载节点上运行协议，处理客户端握手和认证。</p><UiButton @click="createService('forward')">前置端口转发</UiButton><p>用 A 的一个端口承载 B 的父协议；A 默认直连 B，也可以使用 A 的共享代理池。</p></div>
+      <div class="stack"><p>选择服务接入方式。</p><UiButton @click="createService('listener')">实际协议监听</UiButton><p>在承载节点上运行协议，处理客户端握手和认证。</p><UiButton @click="createService('forward')">前置端口转发</UiButton><p>复用现有父协议，可登记外部转发地址，也可由面板托管入口服务器的 Zero 转发。</p></div>
     </ModalDialog>
-    <div v-show="serviceKind === 'listener'" class="protocol-listener-content">
+    <div class="protocol-listener-content">
     <TransientFeedback :success="message" :error="error" success-title="协议操作已完成" error-title="协议操作失败" />
     <PageAlert v-if="mieruUnavailableReason" tone="warning" title="Mieru 暂不可用">
       {{ mieruUnavailableReason }} 已有 Mieru 记录会保留供查看和停用，但不会进入新订阅或节点发布。
@@ -22,9 +22,10 @@
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing" :density="density" show-density @update:density="setDensity">
       <template #filters>
-        <WorkbenchFilterBar :active="Boolean(filters.q || filters.protocol || filters.active || filters.deployment)" @clear="resetFilters">
+        <WorkbenchFilterBar :active="Boolean(filters.q || filters.protocol || filters.active || filters.deployment || filters.node || filters.group)" @clear="resetFilters">
           <WorkbenchFilterInput v-model="filters.q" label="搜索" placeholder="服务名称或对外地址" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="filters.protocol" label="协议类型" :options="protocolFilterOptions" @apply="applyFilters" />
+          <NodeLookup v-model="filters.node" class="protocol-filter-lookup" placeholder="筛选服务器" aria-label="筛选服务器" @update:model-value="applyFilters" /><NodeGroupLookup v-model="filters.group" class="protocol-filter-lookup" placeholder="筛选节点组" aria-label="筛选节点组" :enabled-only="false" @update:model-value="applyFilters" />
           <WorkbenchFilterSelect v-model="filters.active" label="服务状态" :options="activeFilterOptions" @apply="applyFilters" />
           <StatusCountFilters label="按发布状态查看协议服务" :value="filters.deployment" :items="protocolStatusOverview" :loading="overviewLoading" @select="selectDeploymentStatus" />
         </WorkbenchFilterBar>
@@ -32,39 +33,37 @@
       <template #actions><UiButton :variant="groupedByNode ? 'secondary' : 'ghost'" size="sm" type="button" @click="setGroupedView(!groupedByNode)"><UiIcon name="nodes" />{{ groupedByNode ? '节点分组' : '按节点分组' }}</UiButton></template>
       <template #selection>
         <div v-if="selectedEndpointIDs.length || selectionAllMatching" class="bulk-action-bar">
-          <div><strong>已选择 {{ selectedEndpointCount }} 个协议服务</strong><span v-if="selectionAllMatching">范围：当前全部筛选结果</span><span v-else>范围：已勾选行</span><UiButton v-if="canSelectAllMatching" variant="ghost" size="sm" type="button" @click="selectAllMatching">选择全部 {{ total }} 条筛选结果</UiButton></div>
+          <div><strong>已选择 {{ selectedEndpointCount }} 个直接协议</strong><span v-if="selectionAllMatching">范围：当前全部筛选结果</span><span v-else>范围：已勾选行</span><UiButton v-if="canSelectAllMatching" variant="ghost" size="sm" type="button" @click="selectAllMatching">选择全部 {{ total }} 条筛选结果</UiButton></div>
           <div><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'deploy'" @click="runProtocolBatch('deploy')"><UiIcon name="play" />批量发布</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'enable'" @click="runProtocolBatch('enable')"><UiIcon name="check" />批量启用</UiButton><UiButton variant="danger" size="sm" type="button" :loading="bulkBusy === 'disable'" @click="runProtocolBatch('disable')">批量停用</UiButton><UiButton variant="ghost" size="sm" type="button" @click="clearSelection">清除</UiButton></div>
         </div>
       </template>
       <TableSkeleton v-if="(initialLoading || loading) && !endpoints.length" label="正在加载协议服务" :columns="8" />
-      <DataTable v-else-if="endpoints.length" caption="协议服务列表；可按服务、节点、协议和倍率排序，数量直接显示数字，时间保留精确时间提示" :row-count="total" :density="density" :min-width="1428" selectable table-class="protocol-table" @visible-column-count="visibleProtocolColumnCount = $event">
+      <DataTable v-else-if="endpoints.length" caption="协议服务列表；可按服务、节点、协议和倍率排序，数量直接显示数字，时间保留精确时间提示" :row-count="total" :density="density" :min-width="1180" selectable table-class="protocol-table" @visible-column-count="visibleProtocolColumnCount = $event">
           <colgroup><col v-for="(column, index) in protocolColumns" :key="index" :data-column-priority="column.priority" :style="column.width ? { width: `${column.width}px` } : undefined" /></colgroup>
           <thead><tr>
             <th class="selection-column"><UiCheckbox :model-value="allPageEndpointsSelected" :indeterminate="pageEndpointSelectionIndeterminate" :disabled="selectionAllMatching" aria-label="选择当前页全部协议服务" @update:model-value="toggleCurrentEndpointPage" /></th>
             <SortableHeader field="name" label="服务" :sort-field="effectiveSortField" :direction="effectiveSortDirection" pinned="start" @sort="setSort" />
-            <SortableHeader field="node_id" label="承载节点" :sort-field="effectiveSortField" :direction="effectiveSortDirection" :priority="2" @sort="setSort" />
-            <SortableHeader field="protocol" label="协议" :sort-field="effectiveSortField" :direction="effectiveSortDirection" :priority="2" @sort="setSort" />
-            <th data-column-priority="3">对外入口</th><th>服务状态</th><th>发布状态</th><th class="numeric-column" data-column-priority="3">活跃用户</th><th class="numeric-column" data-column-priority="3">活跃连接</th><th class="numeric-column" data-column-priority="3">今日流量</th>
+            <SortableHeader field="node_id" label="部署方式 / 服务器" :sort-field="effectiveSortField" :direction="effectiveSortDirection" @sort="setSort" />
+            <th>地址 / 内部端口</th><th>启用 / 发布</th><th data-column-priority="3">节点组</th><th class="numeric-column" data-column-priority="3">活跃用户</th><th class="numeric-column" data-column-priority="3">活跃连接</th><th class="numeric-column" data-column-priority="3">今日流量</th>
             <SortableHeader field="multiplier" label="倍率" :sort-field="effectiveSortField" :direction="effectiveSortDirection" numeric :priority="3" @sort="setSort" />
             <th data-column-priority="3">最近使用</th><th class="table-action-column"><span class="sr-only">操作</span></th>
           </tr></thead>
           <tbody>
-            <template v-for="(endpoint, index) in endpoints" :key="endpoint.id">
+            <template v-for="(endpoint, index) in endpoints" :key="`${endpoint.service_kind || 'listener'}-${endpoint.id}`">
             <tr v-if="groupedByNode && isFirstNodeGroup(index)" class="protocol-group-row"><td :colspan="visibleProtocolColumnCount"><div class="protocol-group-content"><UiIcon name="nodes" /><strong :title="endpoint.node_name || `VPS #${endpoint.node_id}`">{{ endpoint.node_name || `VPS #${endpoint.node_id}` }}</strong><span>节点 #{{ endpoint.node_id }}</span></div></td></tr>
-            <tr :class="{ 'batch-selected': isEndpointSelected(endpoint.id) }">
-              <td class="selection-column"><UiCheckbox :model-value="isEndpointSelected(endpoint.id)" :disabled="selectionAllMatching" :aria-label="`选择协议服务 ${endpoint.name}`" @update:model-value="toggleEndpointSelection(endpoint.id, $event)" /></td>
-              <td class="table-primary-column"><div class="cell-title"><strong :title="endpoint.name">{{ endpoint.name }}</strong><span>#{{ endpoint.id }}</span></div></td>
-              <td class="protocol-node-column" data-column-priority="2"><RouterLink :title="endpoint.node_name || `VPS #${endpoint.node_id}`" :to="adminContextLink('/admin/nodes', { node: String(endpoint.node_id) })">{{ endpoint.node_name || `VPS #${endpoint.node_id}` }}</RouterLink></td>
-              <td data-column-priority="2"><StatusBadge :tone="endpoint.kernel_supported ? 'info' : 'warning'" :icon="endpoint.kernel_supported ? 'activity' : 'alert'">{{ protocolLabel(endpoint.protocol) }}</StatusBadge></td>
-              <td data-column-priority="3"><EndpointAddress :address="endpoint.address" :port="endpoint.public_port || endpoint.port" /></td>
-              <td><StatusBadge v-if="!endpoint.kernel_supported" tone="warning" icon="alert">内核不支持</StatusBadge><StatusBadge v-else :tone="endpoint.is_active ? 'success' : 'neutral'" :icon="endpoint.is_active ? 'check' : 'minus'">{{ endpoint.is_active ? '运行中' : '已停用' }}</StatusBadge></td>
-              <td><StatusBadge :tone="deploymentTone(endpoint.latest_deployment?.status)" :icon="deploymentIcon(endpoint.latest_deployment?.status)">{{ deploymentLabel(endpoint.latest_deployment?.status) }}</StatusBadge></td>
-              <td class="numeric-column" data-column-priority="3">{{ formatNumber(endpoint.usage?.active_users) }}</td>
-              <td class="numeric-column" data-column-priority="3">{{ formatNumber(endpoint.usage?.active_flows) }}</td>
-              <td class="value-cell numeric-column" data-column-priority="3" :title="formatBytes(endpoint.usage?.used_bytes_today)">{{ formatCompactBytes(endpoint.usage?.used_bytes_today) }}</td>
+            <tr :class="{ 'batch-selected': endpoint.service_kind !== 'forward' && isEndpointSelected(endpoint.id) }">
+              <td class="selection-column"><UiCheckbox :model-value="endpoint.service_kind !== 'forward' && isEndpointSelected(endpoint.id)" :disabled="selectionAllMatching || endpoint.service_kind === 'forward'" :aria-label="`选择协议服务 ${endpoint.name}`" @update:model-value="toggleEndpointSelection(endpoint.id, $event)" /></td>
+              <td class="table-primary-column"><div class="cell-title"><strong :title="endpoint.name">{{ endpoint.name }}</strong><span>{{ endpoint.service_kind === 'forward' ? '入口' : '协议' }} #{{ endpoint.id }}<template v-if="endpoint.service_kind === 'forward'"> → 协议 #{{ endpoint.parent_protocol_id }}</template> · {{ protocolLabel(endpoint.protocol) }}</span></div></td>
+              <td class="protocol-node-column"><div class="cell-title"><RouterLink :to="adminContextLink('/admin/nodes', { node: String(endpoint.node_id) })">{{ endpoint.node_name || `VPS #${endpoint.node_id}` }}</RouterLink><span>{{ endpoint.service_kind === 'forward' ? (endpoint.forward?.deployment_mode === 'external' ? '外部转发 · 父服务器' : 'Zero 托管转发') : 'Zero 协议监听' }} · {{ endpoint.node_online ? '服务器在线' : endpoint.node_last_seen_at ? '服务器离线' : '未收到心跳' }}</span></div></td>
+              <td><div class="cell-title"><EndpointAddress :address="endpoint.address" :port="endpoint.public_port || endpoint.port" /><span>{{ endpoint.forward?.deployment_mode === 'external' ? '外部维护转发' : `内部端口 ${endpoint.port}` }}</span></div></td>
+              <td><div class="cell-title"><StatusBadge :tone="endpoint.is_active ? 'success' : 'neutral'">{{ endpoint.is_active ? '已启用' : '已停用' }}</StatusBadge><span v-if="endpoint.forward">{{ endpoint.forward.last_error ? '发布失败' : endpoint.forward.pending ? '等待发布' : endpoint.forward.deployment_mode === 'external' ? '外部维护 · 父协议' : '父协议' }} · {{ deploymentLabel(endpoint.latest_deployment?.status) }}</span><span v-else>{{ deploymentLabel(endpoint.latest_deployment?.status) }}</span></div></td>
+              <td data-column-priority="3"><TableText :value="endpoint.forward ? endpoint.forward.node_group_names?.join('、') || '未分配' : endpoint.node_group_memberships?.map(group=>group.name).join('、') || '未分配'" /></td>
+              <td class="numeric-column" data-column-priority="3" :title="endpoint.forward ? '父协议的在线用户，包含其他共享入口' : '在线用户'">{{ formatNumber(endpoint.usage?.active_users) }}</td>
+              <td class="numeric-column" data-column-priority="3" :title="endpoint.forward ? '父协议的活跃连接，包含其他共享入口' : '活跃连接'">{{ formatNumber(endpoint.usage?.active_flows) }}</td>
+              <td class="value-cell numeric-column" data-column-priority="3" :title="`${endpoint.forward ? '父协议合计（含其他入口）：' : ''}${formatBytes(endpoint.usage?.used_bytes_today)}`">{{ formatCompactBytes(endpoint.usage?.used_bytes_today) }}</td>
               <td class="numeric-column" data-column-priority="3">{{ formatMultiplierNumber(endpoint.multiplier_milli) }}</td>
               <td data-column-priority="3"><TimeBadge :value="endpoint.usage?.last_used_at" /></td>
-              <td class="table-action-column"><RowActions :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><RouterLink v-if="endpoint.latest_deployment?.has_error" class="button button-ghost button-sm" :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', status: 'failed', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink><UiButton variant="secondary" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton><UiButton variant="danger" size="sm" type="button" :loading="deletingID === endpoint.id" @click="removeEndpoint(endpoint)"><UiIcon name="trash" />删除</UiButton></RowActions></td>
+              <td class="table-action-column"><RowActions v-if="endpoint.forward" :label="`${endpoint.name} 的操作`"><UiButton size="sm" variant="ghost" @click="forwardServices?.edit(endpoint.forward)">编辑</UiButton><UiButton size="sm" variant="danger" @click="forwardServices?.remove(endpoint.forward)">删除</UiButton></RowActions><RowActions v-else :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><RouterLink v-if="endpoint.latest_deployment?.has_error" class="button button-ghost button-sm" :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', status: 'failed', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink><UiButton variant="secondary" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton><UiButton variant="danger" size="sm" type="button" :loading="deletingID === endpoint.id" @click="removeEndpoint(endpoint)"><UiIcon name="trash" />删除</UiButton></RowActions></td>
             </tr>
             </template>
           </tbody>
@@ -84,7 +83,7 @@
           {{ selectedEndpointDetail.kernel_unsupported_reason }} 该记录仅保留供查看；如仍处于启用状态，请编辑并将其停用。
         </PageAlert>
         <section class="detail-status-strip" aria-label="协议服务状态">
-          <StatusBadge :tone="selectedEndpointDetail.is_active ? 'success' : 'neutral'" :icon="selectedEndpointDetail.is_active ? 'check' : 'minus'">{{ selectedEndpointDetail.is_active ? '运行中' : '已停用' }}</StatusBadge>
+          <StatusBadge :tone="selectedEndpointDetail.is_active ? 'success' : 'neutral'" :icon="selectedEndpointDetail.is_active ? 'check' : 'minus'">{{ selectedEndpointDetail.is_active ? '已启用' : '已停用' }}</StatusBadge>
           <StatusBadge :tone="deploymentTone(selectedEndpointDetail.latest_deployment?.status)" :icon="deploymentIcon(selectedEndpointDetail.latest_deployment?.status)">{{ deploymentLabel(selectedEndpointDetail.latest_deployment?.status) }}</StatusBadge>
           <StatusBadge tone="info" icon="activity">{{ protocolLabel(selectedEndpointDetail.protocol) }}</StatusBadge>
         </section>
@@ -163,9 +162,9 @@
             <span class="protocol-order-position" aria-hidden="true">{{ index + 1 }}</span>
             <div class="protocol-order-content">
               <strong>{{ item.name }}</strong>
-              <span>{{ item.service_kind === 'forward' ? '前置入口' : '直连服务' }} #{{ item.id }} · {{ protocolLabel(item.protocol) }} · 节点 #{{ item.node_id }}</span>
+              <span>{{ item.service_kind === 'forward' ? '前置入口' : '直连服务' }} #{{ item.id }} · {{ protocolLabel(item.protocol) }} · {{ item.node_id ? `节点 #${item.node_id}` : '外部转发' }}</span>
             </div>
-            <StatusBadge :tone="item.is_active ? 'success' : 'neutral'">{{ item.is_active ? '运行中' : '已停用' }}</StatusBadge>
+            <StatusBadge :tone="item.is_active ? 'success' : 'neutral'">{{ item.is_active ? '已启用' : '已停用' }}</StatusBadge>
             <div class="protocol-order-actions">
               <UiButton variant="ghost" size="sm" type="button" :disabled="index === 0 || orderingSaving" :aria-label="`上移 ${item.name}`" @click="moveOrderingItem(index, -1)"><UiIcon name="arrow-up" /></UiButton>
               <UiButton variant="ghost" size="sm" type="button" :disabled="index === orderingItems.length - 1 || orderingSaving" :aria-label="`下移 ${item.name}`" @click="moveOrderingItem(index, 1)"><UiIcon name="arrow-down" /></UiButton>
@@ -312,6 +311,7 @@
 
 <script setup lang="ts">
 import NodeSetupGuide from '../components/NodeSetupGuide.vue'
+import TableText from '../components/TableText.vue'
 import NetworkEntries from './NetworkEntries.vue'
 import UiTabs from '../components/UiTabs.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
@@ -324,6 +324,7 @@ import DetailDrawer from '../components/DetailDrawer.vue'
 import EmptyState from '../components/EmptyState.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import MultiplierInput from '../components/MultiplierInput.vue'
+import NodeGroupLookup from '../components/NodeGroupLookup.vue'
 import NodeLookup from '../components/NodeLookup.vue'
 import NodeGroupMembershipEditor from '../components/NodeGroupMembershipEditor.vue'
 import PageAlert from '../components/PageAlert.vue'
@@ -358,12 +359,10 @@ import { isIntegerInRange } from '../utils/validation'
 
 // The service column takes remaining space; selection stays exactly 42px for sticky alignment.
 const protocolColumns: { width?: number; priority?: number }[] = [
-  { width: 42 }, {}, { width: 152, priority: 2 }, { width: 132, priority: 2 },
-  { width: 192, priority: 3 }, { width: 120 }, { width: 108 },
-  { width: 66, priority: 3 }, { width: 66, priority: 3 }, { width: 100, priority: 3 },
-  { width: 70, priority: 3 }, { width: 128, priority: 3 }, { width: 52 },
+ {width:42}, {}, {width:180}, {width:220}, {width:160}, {width:140,priority:3},
+ {width:66,priority:3},{width:66,priority:3},{width:100,priority:3},{width:70,priority:3},{width:128,priority:3},{width:52},
 ]
-const visibleProtocolColumnCount = ref(13)
+const visibleProtocolColumnCount = ref(12)
 const protocols = ['vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria2', 'mieru']
 const defaultMieruUnavailableReason = '面板暂时无法确认 Mieru 协议能力，请刷新后重试。'
 const protocolCapabilities = reactive<Record<string, ProtocolKernelCapability>>({
@@ -380,7 +379,7 @@ const protocolOptions = computed(() => protocols.map(value => ({
   disabled: !protocolCapabilities[value]?.supported,
 })))
 const protocolFilterOptions = [{ label: '全部协议', value: '' }, ...protocols.map(value => ({ label: protocolLabel(value), value }))]
-const activeFilterOptions = [{ label: '全部服务状态', value: '' }, { label: '运行中', value: 'active' }, { label: '已停用', value: 'inactive' }]
+const activeFilterOptions = [{ label: '全部服务状态', value: '' }, { label: '已启用', value: 'active' }, { label: '已停用', value: 'inactive' }]
 const vmessCipherOptions = [{ label: 'AES-128-GCM（推荐）', value: 'aes-128-gcm' }, { label: 'ChaCha20-Poly1305', value: 'chacha20-poly1305' }, { label: '不额外加密', value: 'none' }]
 const shadowsocksCipherOptions = [{ label: 'AES-128-GCM', value: 'aes-128-gcm' }, { label: 'AES-256-GCM', value: 'aes-256-gcm' }, { label: 'ChaCha20-Poly1305（推荐）', value: 'chacha20-ietf-poly1305' }]
 const egressProtocolOptions = [
@@ -402,17 +401,18 @@ const realityFingerprintOptions = [{ label: 'Chrome', value: 'chrome' }, { label
 const realityPresetOptions = [{ label: '通用兼容（推荐）', value: 'compatible' }, { label: '全球 CDN', value: 'cdn' }, { label: 'Apple 生态', value: 'apple' }]
 const wizardSteps = [{ id: 1, title: '节点与入口', caption: '选择 VPS' }, { id: 2, title: '服务参数', caption: '系统管凭证' }, { id: 3, title: '确认保存', caption: '检查变更' }]
 const route = useRoute()
-const serviceKind = ref(route.query.kind === 'forward' ? 'forward' : 'listener'), serviceTypeOpen=ref(false)
+const serviceKind = ref(route.query.kind === 'forward' ? 'forward' : route.query.kind === 'listener' ? 'listener' : 'all'), serviceTypeOpen=ref(false)
 const forwardServices=ref<InstanceType<typeof NetworkEntries>|null>(null)
 async function createService(kind:string) { serviceKind.value=kind;serviceTypeOpen.value=false;if(kind==='listener')await openCreate();else { await nextTick();forwardServices.value?.edit() } }
 const router = useRouter()
-watch(serviceKind,kind=>{ void router.replace({query:{...route.query,kind:kind==='forward'?'forward':undefined}}) })
-watch(()=>route.query.kind,kind=>{serviceKind.value=kind==='forward'?'forward':'listener'})
+watch(serviceKind,kind=>{ clearSelection(); offset.value=0; void router.replace({query:{...route.query,kind:kind==='all'?undefined:kind}}); void loadEndpoints() })
+watch(()=>route.query.kind,kind=>{serviceKind.value=kind==='forward'?'forward':kind==='listener'?'listener':'all'})
 const allowedPageSizes = [25, 50, 100]
 const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 50)
 const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
 const filters = reactive({
+ node: Number(route.query.node) || 0, group: Number(route.query.group) || 0,
   q: typeof route.query.q === 'string' ? route.query.q : '',
   protocol: typeof route.query.protocol === 'string' ? route.query.protocol : '',
   active: typeof route.query.active === 'string' ? route.query.active : '',
@@ -493,6 +493,8 @@ const { items: endpoints, total, loading, initialLoading, refreshing, error, loa
     active: filters.active ? filters.active === 'active' : undefined,
     deploymentStatus: filters.deployment || undefined,
     includeFacets: includeStatusFacets.value,
+    serviceKind: serviceKind.value,
+    nodeId: filters.node || undefined, groupId: filters.group || undefined,
     sort: groupedByNode.value ? 'node_id' : sortField.value,
     direction: groupedByNode.value ? 'asc' : sortDirection.value,
   }, { signal }),
@@ -507,8 +509,8 @@ const { items: endpoints, total, loading, initialLoading, refreshing, error, loa
       overviewCounts.never = Number(page.facets.never || 0)
     }
     if (!selectedEndpointDetail.value) return
-    const summary = page.items.find(item => item.id === selectedEndpointDetail.value?.id)
-    if (summary) selectedEndpointSummary.value = summary
+    const summary = page.items.find(item => item.service_kind !== 'forward' && item.id === selectedEndpointDetail.value?.id)
+    if (summary && summary.service_kind !== 'forward') selectedEndpointSummary.value = summary
   },
 })
 const overviewLoading = computed(() => loading.value)
@@ -524,7 +526,7 @@ const {
   togglePage: toggleCurrentEndpointPage,
   selectAllMatching,
   clear: clearSelection,
-} = useSelectionScope({ items: endpoints, total, key: endpoint => endpoint.id })
+} = useSelectionScope({ items: computed(()=>endpoints.value.filter(item=>item.service_kind!=='forward')), total: computed(()=>serviceKind.value === 'listener' && !filters.node && !filters.group ? total.value : endpoints.value.filter(item=>item.service_kind!=='forward').length), key: endpoint => endpoint.id })
 const { items: deployments, total: deploymentTotal, loading: deploymentLoading, error: deploymentError, load: loadDeployments } = useRemoteTable<any>({
   offset: deploymentOffset,
   limit: deploymentLimit,
@@ -588,7 +590,7 @@ const protocolStatusOverview = computed(() => [
 function protocolLabel(protocol: string) { return ({ socks5: 'SOCKS5', vmess: 'VMess', vless: 'VLESS', trojan: 'Trojan', shadowsocks: 'Shadowsocks', hysteria2: 'Hysteria 2', mieru: 'Mieru' } as Record<string, string>)[protocol] || protocol }
 function formatMultiplier(value: number) { return `${Number(value || 1000) / 1000}×` }
 function formatMultiplierNumber(value: number) { return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(Number(value || 1000) / 1000) }
-function deploymentLabel(status?: string) { return !status ? '等待首次发布' : status === 'succeeded' ? '已生效' : status === 'failed' ? '发布失败' : status === 'running' ? '发布中' : formatUnknownValue('状态', status) }
+function deploymentLabel(status?: string) { return !status ? '等待首次发布' : status === 'succeeded' ? '发布成功' : status === 'failed' ? '发布失败' : status === 'running' ? '发布中' : formatUnknownValue('状态', status) }
 function deploymentTone(status?: string): 'success' | 'warning' | 'danger' | 'neutral' { return status === 'succeeded' ? 'success' : status === 'failed' ? 'danger' : status === 'running' ? 'warning' : 'neutral' }
 function deploymentIcon(status?: string) { return status === 'succeeded' ? 'check' : status === 'failed' ? 'alert' : status === 'running' ? 'refresh' : 'minus' }
 function deploymentSummary(item: any) { return truncateOutput(normalizeOutput(item.error || item.output), 360) }
@@ -705,7 +707,9 @@ async function syncURL(replace = false) {
   const page = Math.floor(offset.value / limit.value) + 1
   const location = { query: {
     ...preserveAdminReturnTo(route.query.return_to),
+    ...(serviceKind.value !== 'all' ? {kind:serviceKind.value} : {}),
     ...(filters.q ? { q: filters.q } : {}),
+    ...(filters.node ? {node:String(filters.node)} : {}), ...(filters.group ? {group:String(filters.group)} : {}),
     ...(filters.protocol ? { protocol: filters.protocol } : {}),
     ...(filters.active ? { active: filters.active } : {}),
     ...(filters.deployment ? { deployment: filters.deployment } : {}),
@@ -722,7 +726,7 @@ async function syncURL(replace = false) {
   await (replace ? router.replace(location) : router.push(location))
 }
 async function applyFilters() { clearSelection(); offset.value = 0; await syncURL(); await refresh() }
-async function resetFilters() { Object.assign(filters, { q: '', protocol: '', active: '', deployment: '' }); await applyFilters() }
+async function resetFilters() { Object.assign(filters, { q: '', protocol: '', active: '', deployment: '', node:0,group:0 }); await applyFilters() }
 async function selectDeploymentStatus(value: string) {
   if (!['', 'succeeded', 'running', 'failed', 'never'].includes(value)) return
   if (filters.deployment === value) return
@@ -1223,7 +1227,7 @@ onMounted(async () => {
   const endpointID = Number(route.query.endpoint) || 0
   if (endpointID) await loadDetail(endpointID)
   protocolUsageRefreshTimer = window.setInterval(() => {
-    if (serviceKind.value === 'listener' && !loading.value && !saving.value) void loadEndpoints()
+    if (!loading.value && !saving.value) void loadEndpoints()
   }, protocolUsageRefreshIntervalMS)
 })
 onBeforeUnmount(() => {
@@ -1279,9 +1283,8 @@ onBeforeUnmount(() => {
   :deep(.protocol-table[data-show-secondary='false']){min-width:752px!important}
   :deep(.protocol-table[data-show-secondary='false'] col:nth-child(2)){width:180px!important}
   :deep(.protocol-table[data-show-secondary='false'] col:nth-child(3)){width:140px!important}
-  :deep(.protocol-table[data-show-secondary='false'] col:nth-child(4)){width:120px!important}
-  :deep(.protocol-table[data-show-secondary='false'] col:nth-child(6)){width:115px!important}
-  :deep(.protocol-table[data-show-secondary='false'] col:nth-child(7)){width:103px!important}
+  :deep(.protocol-table[data-show-secondary='false'] col:nth-child(4)){width:220px!important}
+  :deep(.protocol-table[data-show-secondary='false'] col:nth-child(5)){width:160px!important}
 }
 @media(max-width:720px){:deep(.protocol-table[data-show-secondary='false']){min-width:520px!important}}
 @media(max-width:900px){.protocol-grid,.guided-grid,.config-grid{grid-template-columns:1fr}.protocol-meta,.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-meta{row-gap:12px}}@media(max-width:680px){.protocol-grid{gap:8px}.protocol-card{border-inline:0;border-radius:0;box-shadow:none}.protocol-meta{background:transparent}.review-grid{grid-template-columns:1fr}.selected-node-card{grid-template-columns:auto minmax(0,1fr)}.selected-node-card .status-badge{grid-column:2}.input-with-action{grid-template-columns:1fr}.input-with-action input{border-radius:8px!important}.input-with-action button{min-height:36px;border:1px solid var(--line-strong);border-top:0;border-radius:0 0 8px 8px}}.protocol-mobile-detail-actions{display:none}@media(max-width:560px){.protocol-order-item{grid-template-columns:30px minmax(0,1fr) auto}.protocol-order-actions{grid-column:3;grid-row:1/3}:deep(.page-actions .ui-button:last-child){flex:1}.protocol-mobile-detail-actions{display:flex;flex-wrap:wrap;gap:7px}}
@@ -1299,4 +1302,5 @@ onBeforeUnmount(() => {
 .protocol-guidance p { max-width: 900px; margin: 5px 0 9px; line-height: 1.55; }
 :deep(.protocol-table th), :deep(.protocol-table td) { height: 48px; padding-block: 10px; font-size: 12px; }
 :deep(.protocol-table .cell-title strong) { font-size: 12px; font-weight: 600; }
+.protocol-filter-lookup{width:180px;max-width:100%}
 </style>

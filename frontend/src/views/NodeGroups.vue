@@ -1,48 +1,48 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="节点组" description="以节点组表达套餐的交付边界。列表仅展示可比较字段，端点成员在编辑器中按需远程搜索。" eyebrow="Delivery Boundary">
-      <template #actions><PageRefreshButton label="刷新节点组" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建节点组</UiButton></template>
+    <PageHeader title="权限组" description="权限组（节点组）定义套餐可用的直连与前置入口；保存后同步订阅凭据和交付配置。" eyebrow="Delivery Boundary">
+      <template #actions><PageRefreshButton label="刷新权限组" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建权限组</UiButton></template>
     </PageHeader>
 
-    <TransientFeedback :success="message" :error="error" success-title="节点组已更新" error-title="节点组操作失败" />
+    <TransientFeedback :success="message" :error="error" success-title="权限组已更新" error-title="权限组操作失败" />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
-      <template #filters><WorkbenchFilterBar :active="Boolean(search || enabledFilter)" :active-count="Number(Boolean(search)) + Number(Boolean(enabledFilter))" @clear="clearFilters"><WorkbenchFilterInput v-model="search" label="搜索" field-label="节点组名称或代码" placeholder="名称、代码或说明" @apply="applyFilters" /><WorkbenchFilterSelect v-model="enabledFilter" label="启用状态" :options="enabledOptions" @apply="applyFilters" /></WorkbenchFilterBar></template>
-      <TableSkeleton v-if="loading && !groups.length" label="正在加载节点组" :columns="7" />
-      <DataTable v-else-if="groups.length" caption="节点组列表；成员数量直接展示，完整成员仅在编辑时按需加载" :row-count="total" :min-width="900" table-class="group-table" :columns="groupColumns" :rows="groups">
+      <template #filters><WorkbenchFilterBar :active="Boolean(search || enabledFilter || groupID)" :active-count="Number(Boolean(search)) + Number(Boolean(enabledFilter)) + Number(Boolean(groupID))" @clear="clearFilters"><WorkbenchFilterInput v-model="search" label="搜索" field-label="权限组名称或代码" placeholder="名称、代码或说明" @apply="applyFilters" /><UiButton v-if="groupID" variant="ghost" size="sm" type="button" @click="clearGroupFilter">权限组 #{{ groupID }}<UiIcon name="close" /></UiButton><WorkbenchFilterSelect v-model="enabledFilter" label="启用状态" :options="enabledOptions" @apply="applyFilters" /></WorkbenchFilterBar></template>
+      <TableSkeleton v-if="loading && !groups.length" label="正在加载权限组" :columns="7" />
+      <DataTable v-else-if="groups.length" caption="权限组列表；成员数量直接展示，完整成员仅在编辑时按需加载" :row-count="total" :min-width="900" table-class="group-table" :columns="groupColumns" :rows="groups">
         <template #cell-name="{ row: group }"><div class="cell-title"><strong>{{ group.name }}</strong><TableText :value="group.description || '暂无说明'" /></div></template>
         <template #cell-code="{ row: group }"><TableText class="mono" :value="group.code" /></template>
         <template #cell-is_enabled="{ row: group }"><StatusBadge :tone="group.is_enabled ? 'success' : 'neutral'">{{ group.is_enabled ? '已启用' : '已停用' }}</StatusBadge></template>
-        <template #cell-protocol_endpoint_count="{ row: group }">{{ (group.protocol_endpoint_count || 0) + (group.network_entry_count || 0) }}</template>
+        <template #cell-protocol_endpoint_count="{ row: group }"><RouterLink :to="withAdminReturnTo('/admin/protocols', route.fullPath, { group: String(group.id) })">{{ group.protocol_endpoint_count || 0 }} 直连 / {{ group.network_entry_count || 0 }} 前置</RouterLink></template>
         <template #cell-plan_count="{ row: group }">{{ group.plan_count || 0 }}</template>
         <template #cell-updated_at="{ row: group }"><TimeBadge :value="group.updated_at" /></template>
         <template #cell-actions="{ row: group }"><UiButton variant="secondary" size="sm" type="button" :loading="editingID === group.id" :disabled="Boolean(editingID)" @click="openEdit(group)"><UiIcon name="edit" />编辑</UiButton></template>
       </DataTable>
-      <EmptyState v-else icon="nodes" title="没有匹配的节点组" description="调整筛选条件，或创建第一个节点组。"><template #actions><UiButton  type="button" @click="openCreate"><UiIcon name="plus" />创建节点组</UiButton></template></EmptyState>
+      <EmptyState v-else icon="nodes" title="没有匹配的权限组" description="调整筛选条件，或创建第一个权限组。"><template #actions><UiButton  type="button" @click="openCreate"><UiIcon name="plus" />创建权限组</UiButton></template></EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
-    <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑节点组' : '创建节点组'" description="独立选择直连服务和前置线路。前置线路不授予落地权限；使用前置线路仍需显式选择其落地协议。流量倍率沿用落地协议。" size="xl" :busy="saving" @close="closeEditor">
+    <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑权限组' : '创建权限组'" description="独立选择直连服务和前置线路。前置入口会生成父协议认证凭据，但不会下发父协议直连地址。协议参数与流量倍率沿用父协议。" size="xl" :busy="saving" @close="closeEditor">
       <form id="node-group-form" ref="formElement" class="group-editor" novalidate @submit.prevent="save">
         <section class="group-members">
           <header><strong>按需搜索成员</strong><p>列表只展示 25 条；批量加入或移除会解析一次最多 10000 个 ID 的服务端筛选快照，不逐页拼接详情。</p></header>
           <FormField v-slot="{ controlAttrs }" label="直连协议服务" name="node-group-endpoints" :error="editorErrors.fields.protocol_endpoint_ids" full><EndpointMultiLookup v-model="form.protocol_endpoint_ids" v-bind="controlAttrs" /></FormField>
-          <FormField label="前置线路" name="node-group-network-entries" :error="editorErrors.fields.network_entry_ids" full hint="这里只授予入口权限，不生成 B 凭据；需要使用该线路时，请同时显式授予 B 的协议权限。"><NetworkEntryMultiLookup v-model="form.network_entry_ids" /></FormField>
+          <FormField label="前置线路" name="node-group-network-entries" :error="editorErrors.fields.network_entry_ids" full hint="只选入口即可使用，不需要额外勾选父协议直连。"><NetworkEntryMultiLookup v-model="form.network_entry_ids" /></FormField>
         </section>
         <aside class="group-fields">
           <div v-if="form.id" class="group-editor-meta"><StatusBadge tone="neutral" icon="history">版本 {{ form.revision }}</StatusBadge><TimeBadge :value="form.updated_at" /></div>
-          <PageAlert v-if="revisionConflict" tone="warning" title="节点组已在其他会话更新">
+          <PageAlert v-if="revisionConflict" tone="warning" title="权限组已在其他会话更新">
             当前草稿基于旧版本，继续覆盖会丢失其他管理员的成员或字段修改。请重新加载最新版本后再编辑。
             <template #actions><UiButton variant="secondary" size="sm" type="button" :loading="editingID === form.id" @click="reloadEditor"><UiIcon name="refresh" />重新加载最新版本</UiButton></template>
           </PageAlert>
-          <PageAlert v-if="editorErrors.formError.value" tone="danger" title="无法保存节点组">{{ editorErrors.formError.value }}</PageAlert>
-          <FormField v-slot="{ controlAttrs }" label="节点组名称" name="node-group-name" :error="editorErrors.fields.name" required hint="用于运营识别和套餐选择。"><UiInput v-model.trim="form.name" v-bind="controlAttrs" placeholder="例如：香港标准线路" /></FormField>
+          <PageAlert v-if="editorErrors.formError.value" tone="danger" title="无法保存权限组">{{ editorErrors.formError.value }}</PageAlert>
+          <FormField v-slot="{ controlAttrs }" label="权限组名称" name="node-group-name" :error="editorErrors.fields.name" required hint="用于运营识别和套餐选择。"><UiInput v-model.trim="form.name" v-bind="controlAttrs" placeholder="例如：香港标准线路" /></FormField>
           <FormField v-slot="{ controlAttrs }" label="代码" name="node-group-code" :error="editorErrors.fields.code" hint="创建时可留空自动生成；编辑时保持稳定。"><UiInput v-model.trim="form.code" v-bind="controlAttrs" :disabled="Boolean(form.id)" placeholder="hong-kong-standard" /></FormField>
-          <FormField v-slot="{ controlAttrs }" label="用途说明" name="node-group-description" :error="editorErrors.fields.description" hint="说明该节点组的地域、性能或销售用途。"><UiTextarea v-model.trim="form.description" v-bind="controlAttrs" rows="5" maxlength="255" /></FormField>
-          <FormField v-slot="{ controlAttrs }" label="交付状态" name="node-group-enabled" :error="editorErrors.fields.is_enabled"><label class="check-field"><UiCheckbox v-model="form.is_enabled" v-bind="controlAttrs" /><span><strong>启用节点组</strong><br /><small class="field-hint">停用后，新套餐不能再选择该节点组。</small></span></label></FormField>
+          <FormField v-slot="{ controlAttrs }" label="用途说明" name="node-group-description" :error="editorErrors.fields.description" hint="说明该权限组的地域、性能或销售用途。"><UiTextarea v-model.trim="form.description" v-bind="controlAttrs" rows="5" maxlength="255" /></FormField>
+          <FormField v-slot="{ controlAttrs }" label="交付状态" name="node-group-enabled" :error="editorErrors.fields.is_enabled"><label class="check-field"><UiCheckbox v-model="form.is_enabled" v-bind="controlAttrs" /><span><strong>启用权限组</strong><br /><small class="field-hint">停用后，新套餐不能再选择该权限组。</small></span></label></FormField>
         </aside>
       </form>
-      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="node-group-form" type="submit" :loading="saving" :disabled="revisionConflict">保存节点组</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="node-group-form" type="submit" :loading="saving" :disabled="revisionConflict">保存权限组</UiButton></template>
     </ModalDialog>
   </section>
 </template>
@@ -72,13 +72,13 @@ import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import { useRemoteTable } from '../composables/useRemoteTable'
 import { confirmAction } from '../utils/feedback'
-import { preserveAdminReturnTo } from '../utils/navigation'
+import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 import { trackAdminTask } from '../utils/taskTracker'
 import { collectFieldErrors, isBlank, isSlug, isUtf8LengthInRange } from '../utils/validation'
 
 const route = useRoute()
 const groupColumns: DataTableColumn[] = [
-  { key: 'name', label: '节点组', primary: true },
+  { key: 'name', label: '权限组', primary: true },
   { key: 'code', label: '代码', priority: 2 },
   { key: 'is_enabled', label: '状态' },
   { key: 'protocol_endpoint_count', label: '服务数', align: 'right' },
@@ -88,6 +88,7 @@ const groupColumns: DataTableColumn[] = [
 ]
 const router = useRouter()
 const search = ref(String(route.query.q || ''))
+const groupID = ref(Number(route.query.group) || 0)
 const enabledFilter = ref(String(route.query.enabled || ''))
 const allowedPageSizes = [25, 50, 100]
 const initialLimit = Number(route.query.limit)
@@ -106,8 +107,8 @@ const editorState = useDirtyForm(() => form)
 useUnsavedChangesGuard(
   () => editorOpen.value && editorState.dirty.value,
   () => editorState.confirmDiscard({
-    title: '放弃节点组修改？',
-    message: '离开节点组管理后，尚未保存的字段和端点成员调整将丢失。',
+    title: '放弃权限组修改？',
+    message: '离开权限组管理后，尚未保存的字段和端点成员调整将丢失。',
     confirmText: '离开页面',
   }),
 )
@@ -121,15 +122,16 @@ const enabledOptions = [{ label: '全部状态', value: '' }, { label: '已启�
 const { items: groups, total, loading, refreshing, error, load: refresh } = useRemoteTable<any>({
   offset,
   limit,
-  fetchPage: ({ signal }) => fetchNodeGroupsPage({ q: search.value || undefined, enabled: enabledFilter.value === '' ? undefined : enabledFilter.value === 'true', offset: offset.value, limit: limit.value }, { signal }),
-  errorMessage: (cause: any) => cause?.response?.data?.message || '节点组加载失败。',
+  fetchPage: ({ signal }) => fetchNodeGroupsPage({ groupId: groupID.value || undefined, q: search.value || undefined, enabled: enabledFilter.value === '' ? undefined : enabledFilter.value === 'true', offset: offset.value, limit: limit.value }, { signal }),
+  errorMessage: (cause: any) => cause?.response?.data?.message || '权限组加载失败。',
   onOffsetCorrected: () => syncURL(true),
 })
 
 function generatedGroupCode(name: string) { const slug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40); return slug || `group-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}` }
-async function syncURL(replace = false) { const page = Math.floor(offset.value / limit.value) + 1; const location = { query: { ...preserveAdminReturnTo(route.query.return_to), ...(search.value ? { q: search.value } : {}), ...(enabledFilter.value ? { enabled: enabledFilter.value } : {}), ...(page > 1 ? { page: String(page) } : {}), ...(limit.value !== 50 ? { limit: String(limit.value) } : {}) } }; await (replace ? router.replace(location) : router.push(location)) }
+async function syncURL(replace = false) { const page = Math.floor(offset.value / limit.value) + 1; const location = { query: { ...preserveAdminReturnTo(route.query.return_to), ...(groupID.value ? { group: String(groupID.value) } : {}), ...(search.value ? { q: search.value } : {}), ...(enabledFilter.value ? { enabled: enabledFilter.value } : {}), ...(page > 1 ? { page: String(page) } : {}), ...(limit.value !== 50 ? { limit: String(limit.value) } : {}) } }; await (replace ? router.replace(location) : router.push(location)) }
 async function applyFilters() { offset.value = 0; await syncURL(); await refresh() }
-async function clearFilters() { search.value = ''; enabledFilter.value = ''; await applyFilters() }
+async function clearGroupFilter() { groupID.value = 0; await applyFilters() }
+async function clearFilters() { groupID.value = 0; search.value = ''; enabledFilter.value = ''; await applyFilters() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await refresh() }
 function openCreate() { Object.assign(form, emptyForm()); originalEndpointIDs.value = []; originalEntryIDs.value = []; revisionConflict.value = false; editorState.markClean(); editorErrors.clear(); editorOpen.value = true }
 async function openEdit(group: NodeGroupSummary) {
@@ -156,7 +158,7 @@ async function openEdit(group: NodeGroupSummary) {
     editorErrors.clear()
     editorOpen.value = true
   } catch (cause: any) {
-    error.value = cause?.response?.data?.message || '节点组详情加载失败，请稍后重试。'
+    error.value = cause?.response?.data?.message || '权限组详情加载失败，请稍后重试。'
   } finally {
     editingID.value = 0
   }
@@ -183,7 +185,7 @@ async function reloadEditor() {
     editorErrors.clear()
     editorState.markClean()
   } catch (cause: any) {
-    editorErrors.formError.value = cause?.response?.data?.message || '节点组最新版本加载失败，请稍后重试。'
+    editorErrors.formError.value = cause?.response?.data?.message || '权限组最新版本加载失败，请稍后重试。'
   } finally {
     editingID.value = 0
   }
@@ -194,18 +196,18 @@ async function save() {
 	form.code = form.code.trim().toLowerCase()
 	form.description = form.description.trim()
 	const valid = await editorErrors.applyValidation(collectFieldErrors({
-		name: !isUtf8LengthInRange(form.name, 1, 80, true) && '节点组名称需包含 1 到 80 个 UTF-8 字节。',
+		name: !isUtf8LengthInRange(form.name, 1, 80, true) && '权限组名称需包含 1 到 80 个 UTF-8 字节。',
 		code: !isBlank(form.code) && !isSlug(form.code, 80) && '代码只能包含小写字母、数字和单个连字符，且不能超过 80 个 UTF-8 字节。',
 		description: !isUtf8LengthInRange(form.description, 0, 255) && '用途说明不能超过 255 个 UTF-8 字节。',
-		protocol_endpoint_ids: form.is_enabled && !form.protocol_endpoint_ids.length && !form.network_entry_ids.length && '启用的节点组至少需要选择一个直连服务或前置线路。',
-	}), formElement, '请更正标记字段后再保存节点组。')
+		protocol_endpoint_ids: form.is_enabled && !form.protocol_endpoint_ids.length && !form.network_entry_ids.length && '启用的权限组至少需要选择一个直连服务或前置线路。',
+	}), formElement, '请更正标记字段后再保存权限组。')
 	if (!valid) return
 	const nextEndpointIDs = new Set(form.protocol_endpoint_ids)
 	const nextEntryIDs = new Set(form.network_entry_ids)
 	const removedEndpointCount = form.id ? originalEndpointIDs.value.filter(id => !nextEndpointIDs.has(id)).length + originalEntryIDs.value.filter(id => !nextEntryIDs.has(id)).length : 0
 	if (removedEndpointCount > 0 && !await confirmAction({
-		title: `从节点组移除 ${removedEndpointCount} 个服务？`,
-		message: '保存后，引用该节点组的套餐和订阅将立即停止交付这些直连服务或前置线路，并触发相关凭证与节点配置对齐。',
+		title: `从权限组移除 ${removedEndpointCount} 个服务？`,
+		message: '保存后，引用该权限组的套餐和订阅将立即停止交付这些直连服务或前置线路，并触发相关凭证与节点配置对齐。',
 		confirmText: '确认保存变更',
 		tone: 'danger',
 	})) return
@@ -215,15 +217,15 @@ async function save() {
 		const result = form.id ? await updateNodeGroup(form.id, payload) : await createNodeGroup(payload)
 		if (result.reconcile_task) trackAdminTask(result.reconcile_task)
 		editorOpen.value = false
-		message.value = result.reconcile_task ? `节点组已保存，凭证与节点配置对齐任务 #${result.reconcile_task.id} 已启动。` : '节点组已保存。'
+		message.value = result.reconcile_task ? `权限组已保存，凭证与节点配置对齐任务 #${result.reconcile_task.id} 已启动。` : '权限组已保存。'
 		await refresh()
 	}
 	catch (e: any) {
 		if (e?.response?.status === 409 || e?.response?.status === 428) {
 			revisionConflict.value = true
-			editorErrors.formError.value = '服务器版本已变化。请重新加载当前节点组，确认最新成员和字段后再保存。'
+			editorErrors.formError.value = '服务器版本已变化。请重新加载当前权限组，确认最新成员和字段后再保存。'
 		} else {
-			await editorErrors.applyApiError(e, '节点组保存失败，请检查表单内容。', formElement, nodeGroupFieldMap)
+			await editorErrors.applyApiError(e, '权限组保存失败，请检查表单内容。', formElement, nodeGroupFieldMap)
 		}
 	}
   finally { saving.value = false }

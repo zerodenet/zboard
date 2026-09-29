@@ -702,6 +702,12 @@ export async function fetchProtocolEndpoints(nodeId?: number) {
 }
 
 export interface ProtocolEndpointListItem {
+ service_kind?: 'listener' | 'forward'
+ forward?: NetworkEntry
+ node_online?: boolean
+ node_enabled?: boolean
+ node_last_seen_at?: string
+ node_group_memberships?: ProtocolEndpointNodeGroupMembership[]
 	id: number
 	node_id: number
 	node_name: string
@@ -746,21 +752,25 @@ export async function fetchProtocolEndpointsPage(params: {
 	limit?: number
 	q?: string
 	nodeId?: number
+ groupId?: number
 	protocol?: string
 	active?: boolean
 	deploymentStatus?: string
 	includeFacets?: boolean
+ serviceKind?: string
 	ids?: number[]
 	sort?: string
 	direction?: 'asc' | 'desc'
 } = {}, options: ApiRequestOptions = {}): Promise<PageResult<ProtocolEndpointListItem, Record<string, unknown>, ProtocolEndpointStatusFacets>> {
 	const query = new URLSearchParams()
 	appendPageParams(query, params)
+	if (params.groupId) query.set('node_group_id', String(params.groupId))
 	if (params.nodeId) query.set('node_id', String(params.nodeId))
 	if (params.protocol) query.set('protocol', params.protocol)
 	if (params.active !== undefined) query.set('active', String(params.active))
 	if (params.deploymentStatus) query.set('deployment_status', params.deploymentStatus)
-	if (params.includeFacets) query.set('include_facets', 'true')
+	if (params.serviceKind) query.set('service_kind', params.serviceKind)
+ if (params.includeFacets) query.set('include_facets', 'true')
 	if (params.ids?.length) query.set('ids', params.ids.join(','))
 	const response = await api.get(`/admin/protocol-endpoints?${query}`, { signal: options.signal })
 	return normalizePageResult<ProtocolEndpointListItem, Record<string, unknown>, ProtocolEndpointStatusFacets>(unwrap(response), params.offset || 0, params.limit || 50)
@@ -773,6 +783,8 @@ export interface ProtocolEndpointSelectionSnapshot {
 }
 
 export async function fetchProtocolEndpointSelection(params: {
+	serviceKind?: 'listener' | 'forward'
+	groupId?: number
 	q?: string
 	nodeId?: number
 	protocol?: string
@@ -780,6 +792,8 @@ export async function fetchProtocolEndpointSelection(params: {
 	deploymentStatus?: string
 } = {}, options: ApiRequestOptions = {}): Promise<ProtocolEndpointSelectionSnapshot> {
 	const query = new URLSearchParams()
+	if (params.serviceKind) query.set('service_kind', params.serviceKind)
+	if (params.groupId) query.set('node_group_id', String(params.groupId))
 	if (params.q) query.set('q', params.q)
 	if (params.nodeId) query.set('node_id', String(params.nodeId))
 	if (params.protocol) query.set('protocol', params.protocol)
@@ -2413,6 +2427,9 @@ export async function startDatabaseMigration(payload: { target_driver: 'mysql' |
 }
 
 export interface NetworkEntry {
+ deployment_mode?: 'managed' | 'external'
+ node_online?: boolean
+ node_last_seen_at?: string
   service_kind?: 'forward'; parent_protocol_id?: number; proxy_pool_id?: number | null; node_group_memberships?: ProtocolEndpointNodeGroupMembership[]
   id: number; name: string; node_id: number; node_name: string; landing_node_id: number; endpoint_id: number; endpoint_name: string
   address: string; port: number; public_port: number; enabled: boolean; has_path: boolean; revision: number

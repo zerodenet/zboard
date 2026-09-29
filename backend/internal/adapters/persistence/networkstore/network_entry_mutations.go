@@ -95,7 +95,7 @@ func (s NetworkEntryMutations) CommitNetworkEntryMutation(ctx context.Context, a
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", []uint{change.Entry.NodeID, endpoint.NodeID}).Order("id").Find(&nodes).Error; err != nil {
 			return err
 		}
-		if len(nodes) != 2 {
+		if change.Entry.DeploymentMode == "managed" && len(nodes) != 2 || change.Entry.DeploymentMode == "external" && len(nodes) != 1 {
 			return &network.NetworkEntryMutationValidation{Message: "A 与 B 必须是两个存在的不同节点"}
 		}
 		for _, node := range nodes {
@@ -139,14 +139,23 @@ func (s NetworkEntryMutations) CommitNetworkEntryMutation(ctx context.Context, a
 		if duplicateName > 0 {
 			return &network.NetworkEntryMutationValidation{Message: "同一个落地协议的入口名称不能重复"}
 		}
-		if err := networkEntryMutationPortAvailable(tx, change.Entry.NodeID, change.Entry.Port, change.Entry.ID); err != nil {
+		if err := func() error {
+			if change.Entry.DeploymentMode == "external" {
+				return nil
+			}
+			return networkEntryMutationPortAvailable(tx, change.Entry.NodeID, change.Entry.Port, change.Entry.ID)
+		}(); err != nil {
 			return err
 		}
 
 		row := networkEntryMutationModel(change.Entry, change.PathCiphertext)
 		if before == nil {
 			row.Revision = 1
-			if err := tx.Create(&row).Error; err != nil {
+			create := tx
+			if row.DeploymentMode == "external" {
+				create = create.Omit("node_id")
+			}
+			if err := create.Create(&row).Error; err != nil {
 				return err
 			}
 			if err := enqueueNetworkEntryMutationPublishes(tx, row, actor); err != nil {
@@ -155,10 +164,19 @@ func (s NetworkEntryMutations) CommitNetworkEntryMutation(ctx context.Context, a
 		} else {
 			row.Revision = previous.Revision + 1
 			row.CreatedAt = previous.CreatedAt
+			omitted := []string{"delivery_sort_order"}
+			if row.DeploymentMode == "external" {
+				omitted = append(omitted, "node_id")
+			}
 			update := tx.Model(&model.NetworkEntry{}).Where("id = ? AND revision = ?", previous.ID, previous.Revision).
-				Select("*").Omit("delivery_sort_order").Updates(&row)
+				Select("*").Omit(omitted...).Updates(&row)
 			if update.Error != nil {
 				return update.Error
+			}
+			if row.DeploymentMode == "external" {
+				if err := tx.Model(&model.NetworkEntry{}).Where("id = ?", row.ID).Update("node_id", nil).Error; err != nil {
+					return err
+				}
 			}
 			if update.RowsAffected != 1 {
 				return network.ErrNetworkEntryConflict
@@ -168,7 +186,7 @@ func (s NetworkEntryMutations) CommitNetworkEntryMutation(ctx context.Context, a
 					return err
 				}
 			}
-			if previous.NodeID != row.NodeID {
+			if previous.NodeID != 0 && previous.NodeID != row.NodeID {
 				if err := EnqueuePublication(tx, previous.NodeID, 0, actor); err != nil {
 					return err
 				}
@@ -178,6 +196,29 @@ func (s NetworkEntryMutations) CommitNetworkEntryMutation(ctx context.Context, a
 		taskIDs, err := applyNetworkEntryMembershipMutations(tx, admin, row, change)
 		if err != nil {
 			return err
+		}
+		// Topology or enablement changes affect every existing grant, even when
+		// the membership editor itself was unchanged.
+		if before != nil && (previous.EndpointID != row.EndpointID || previous.Enabled != row.Enabled) {
+			var groupIDs []uint
+			if err := tx.Model(&model.NodeGroupNetworkEntry{}).Where("network_entry_id = ?", row.ID).Pluck("node_group_id", &groupIDs).Error; err != nil {
+				return err
+			}
+			for _, groupID := range groupIDs {
+				var group model.NodeGroup
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&group, groupID).Error; err != nil {
+					return err
+				}
+				group.Revision++
+				if err := tx.Model(&group).Update("revision", group.Revision).Error; err != nil {
+					return err
+				}
+				taskID, err := persistNetworkEntryReconcileTask(tx, admin, group, row.EndpointID, change.CredentialProtocols, change.Now)
+				if err != nil {
+					return err
+				}
+				taskIDs = append(taskIDs, taskID)
+			}
 		}
 		action := "network_entry.create"
 		if before != nil {
@@ -213,7 +254,7 @@ func networkEntryMutationSnapshot(row model.NetworkEntry) network.NetworkEntryMu
 
 func networkEntryRecordView(row model.NetworkEntry) network.NetworkEntryRecord {
 	return network.NetworkEntryRecord{
-		ID: row.ID, ProxyPoolID: row.ProxyPoolID, DeliverySortOrder: row.DeliverySortOrder,
+		DeploymentMode: row.DeploymentMode, ID: row.ID, ProxyPoolID: row.ProxyPoolID, DeliverySortOrder: row.DeliverySortOrder,
 		Network: row.Network, Name: row.Name, NodeID: row.NodeID, EndpointID: row.EndpointID,
 		Address: row.Address, Port: row.Port, PublicPort: row.PublicPort, Enabled: row.Enabled,
 		Revision: row.Revision, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
@@ -222,7 +263,7 @@ func networkEntryRecordView(row model.NetworkEntry) network.NetworkEntryRecord {
 
 func networkEntryMutationModel(row network.NetworkEntryRecord, path string) model.NetworkEntry {
 	return model.NetworkEntry{
-		DeliverySortOrder: row.DeliverySortOrder, ProxyPoolID: row.ProxyPoolID, ID: row.ID,
+		DeploymentMode: row.DeploymentMode, DeliverySortOrder: row.DeliverySortOrder, ProxyPoolID: row.ProxyPoolID, ID: row.ID,
 		Network: row.Network, Name: row.Name, NodeID: row.NodeID, EndpointID: row.EndpointID,
 		Address: row.Address, Port: row.Port, PublicPort: row.PublicPort, Enabled: row.Enabled,
 		PathConfig: path, Revision: row.Revision, CreatedAt: row.CreatedAt,
@@ -253,6 +294,9 @@ func enqueueNetworkEntryMutationPublishes(tx *gorm.DB, entry model.NetworkEntry,
 	}
 	if err := EnqueueNodePublication(tx, endpoint.NodeID, endpoint.ID, actor); err != nil {
 		return err
+	}
+	if entry.NodeID == 0 {
+		return nil
 	}
 	return EnqueuePublication(tx, entry.NodeID, 0, actor)
 }
@@ -378,7 +422,7 @@ func persistNetworkEntryReconcileTask(tx *gorm.DB, admin model.User, group model
 	if err := tx.Model(&model.Subscription{}).Where("node_group_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total", group.ID, "active", now).Count(&activeSubscriptions).Error; err != nil {
 		return 0, err
 	}
-	if activeSubscriptions > 0 {
+	if activeSubscriptions > 0 && endpointID != 0 {
 		var endpoint model.ProtocolEndpoint
 		if err := tx.First(&endpoint, endpointID).Error; err != nil {
 			return 0, err

@@ -10,7 +10,7 @@ func EnqueueNodePublication(tx *gorm.DB, nodeID, endpointID, requestedBy uint) e
 		return nil
 	}
 	var entryNodes []uint
-	if err := tx.Model(&model.NetworkEntry{}).Where("endpoint_id IN (?)", tx.Model(&model.ProtocolEndpoint{}).Select("id").Where("node_id = ?", nodeID)).Distinct().Pluck("node_id", &entryNodes).Error; err != nil {
+	if err := tx.Model(&model.NetworkEntry{}).Where("node_id IS NOT NULL").Where("endpoint_id IN (?)", tx.Model(&model.ProtocolEndpoint{}).Select("id").Where("node_id = ?", nodeID)).Distinct().Pluck("node_id", &entryNodes).Error; err != nil {
 		return err
 	}
 	for _, entryNode := range entryNodes {
@@ -29,7 +29,7 @@ func EnqueueSubscriptionPublications(tx *gorm.DB, subscriptionID, requestedBy ui
 		EndpointID uint
 	}
 	if err := tx.Table("protocol_endpoints").Select("protocol_endpoints.node_id, MIN(protocol_endpoints.id) AS endpoint_id").
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
+		Joins(CredentialMembershipJoin("node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id")).
 		Joins("JOIN subscriptions ON subscriptions.node_group_id = node_group_endpoints.node_group_id").
 		Where("subscriptions.id = ? AND protocol_endpoints.is_active = ?", subscriptionID, true).
 		Group("protocol_endpoints.node_id").Order("protocol_endpoints.node_id").Scan(&nodes).Error; err != nil {

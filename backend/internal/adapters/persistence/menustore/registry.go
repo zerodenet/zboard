@@ -15,7 +15,8 @@ import (
 //go:embed defaults.json
 var defaultsJSON []byte
 
-// Seed registers missing built-ins once. It never overwrites operator edits.
+// Seed registers missing built-ins and evolves untouched default placements.
+// Operator edits and stable core/plugin identities are preserved.
 func Seed(db *gorm.DB) error {
 	var defaults []model.MenuNode
 	if err := json.Unmarshal(defaultsJSON, &defaults); err != nil {
@@ -27,7 +28,10 @@ func Seed(db *gorm.DB) error {
 				return err
 			}
 		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error; err != nil {
+			return err
+		}
+		return convergeDefaultPlacements(tx, defaults)
 	})
 }
 

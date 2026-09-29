@@ -63,7 +63,7 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 			Count              int64
 		}
 		var subscriptionCounts []subscriptionCountRow
-		if err := tx.Table("node_group_endpoints").
+		if err := tx.Table(CredentialMembershipSQL+" AS node_group_endpoints").
 			Select("node_group_endpoints.protocol_endpoint_id, COUNT(DISTINCT subscriptions.id) AS count").
 			Joins("JOIN subscriptions ON subscriptions.node_group_id = node_group_endpoints.node_group_id").
 			Where("node_group_endpoints.protocol_endpoint_id IN ?", endpointIDs).
@@ -92,7 +92,7 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		if err := tx.Table("protocol_credentials").
 			Select("protocol_credentials.id, protocol_credentials.subscription_id, protocol_credentials.protocol_endpoint_id, protocol_credentials.principal_key, protocol_credentials.secret, protocol_credentials.listen_port, protocol_credentials.public_port, subscriptions.updated_at AS subscription_updated_at, subscriptions.speed_limit_mbps, subscriptions.device_limit").
 			Joins("JOIN subscriptions ON subscriptions.id = protocol_credentials.subscription_id").
-			Joins("JOIN node_group_endpoints ON node_group_endpoints.node_group_id = subscriptions.node_group_id AND node_group_endpoints.protocol_endpoint_id = protocol_credentials.protocol_endpoint_id").
+			Joins(CredentialMembershipJoin("node_group_endpoints.node_group_id = subscriptions.node_group_id AND node_group_endpoints.protocol_endpoint_id = protocol_credentials.protocol_endpoint_id")).
 			Where("protocol_credentials.protocol_endpoint_id IN ?", endpointIDs).
 			Where("protocol_credentials.status = ? AND protocol_credentials.revoked_at IS NULL AND protocol_credentials.expires_at > ?", "active", now).
 			Where("subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", "active", now).
@@ -152,7 +152,7 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		}
 
 		var entries []model.NetworkEntry
-		if err := tx.Where("node_id = ? AND enabled = ?", nodeID, true).Order("id asc").Find(&entries).Error; err != nil {
+		if err := tx.Where("node_id = ? AND enabled = ? AND deployment_mode = ?", nodeID, true, "managed").Order("id asc").Find(&entries).Error; err != nil {
 			return err
 		}
 		landingIDs := make([]uint, 0, len(entries))

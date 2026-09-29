@@ -4,7 +4,9 @@ import (
 	"errors"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"sort"
+	"time"
 )
 
 // Exactly one selector is used by each owning resource transaction.
@@ -40,9 +42,14 @@ func RemoveTopologyEntries(tx *gorm.DB, actor uint, selection TopologySelection)
 	nodes := map[uint]bool{}
 	for _, entry := range entries {
 		ids = append(ids, entry.ID)
-		if entry.NodeID != selection.NodeID {
+		if entry.NodeID != 0 && entry.NodeID != selection.NodeID {
 			nodes[entry.NodeID] = true
 		}
+	}
+	// Capture affected groups before deleting their entry memberships.
+	var groupIDs []uint
+	if err := tx.Model(&model.NodeGroupNetworkEntry{}).Distinct().Where("network_entry_id IN ?", ids).Pluck("node_group_id", &groupIDs).Error; err != nil {
+		return 0, err
 	}
 	groups := tx.Model(&model.NodeGroupNetworkEntry{}).Select("node_group_id").Where("network_entry_id IN ?", ids)
 	if err := tx.Model(&model.NodeGroup{}).Where("id IN (?)", groups).Update("revision", gorm.Expr("revision + 1")).Error; err != nil {
@@ -54,6 +61,37 @@ func RemoveTopologyEntries(tx *gorm.DB, actor uint, selection TopologySelection)
 	if err := tx.Where("id IN ?", ids).Delete(&model.NetworkEntry{}).Error; err != nil {
 		return 0, err
 	}
+	var admin model.User
+	if err := tx.First(&admin, actor).Error; err != nil {
+		return 0, err
+	}
+	// Publish each surviving landing once and reconcile each group once.
+	// A removed node must never become a task target.
+	var reconcileEndpoint uint
+	var reconcileProtocol string
+	for _, entry := range entries {
+		var endpoint model.ProtocolEndpoint
+		if err := tx.First(&endpoint, entry.EndpointID).Error; err != nil {
+			return 0, err
+		}
+		if endpoint.NodeID != selection.NodeID {
+			nodes[endpoint.NodeID] = true
+			if reconcileEndpoint == 0 {
+				reconcileEndpoint = endpoint.ID
+				reconcileProtocol = endpoint.Protocol
+			}
+		}
+	}
+	for _, groupID := range groupIDs {
+		var group model.NodeGroup
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&group, groupID).Error; err != nil {
+			return 0, err
+		}
+		if _, err := persistNetworkEntryReconcileTask(tx, admin, group, reconcileEndpoint, []string{reconcileProtocol}, time.Now().UTC()); err != nil {
+			return 0, err
+		}
+	}
+
 	surviving := make([]uint, 0, len(nodes))
 	for node := range nodes {
 		surviving = append(surviving, node)

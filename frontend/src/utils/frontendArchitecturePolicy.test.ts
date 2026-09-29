@@ -77,7 +77,7 @@ describe('frontend architecture policy', () => {
     expect(routerSource).toContain("{ path: 'settings/runtime', component: () => import('../views/Settings.vue')")
     expect(layout).toContain('<AdminNavigation')
     expect(adminNavigation.map(domain => domain.id)).toEqual([
-      'overview', 'customers', 'commerce', 'infrastructure', 'operations', 'settings',
+      'overview', 'customers', 'commerce', 'infrastructure', 'settings',
     ])
     for (const section of ['site', 'registration', 'email', 'legal', 'runtime']) {
       const path = `/admin/settings/${section}`

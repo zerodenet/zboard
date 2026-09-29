@@ -3,6 +3,7 @@ package entitlementstore
 import (
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -12,7 +13,7 @@ import (
 func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer entitlements.CredentialIssuer) ([]model.ProtocolCredential, error) {
 	var endpoints []model.ProtocolEndpoint
 	if err := tx.Model(&model.ProtocolEndpoint{}).
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
+		Joins(networkstore.CredentialMembershipJoin("node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id")).
 		Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", subscription.NodeGroupID, true).
 		Order("protocol_endpoints.sort_order asc, protocol_endpoints.id asc").
 		Find(&endpoints).Error; err != nil {

@@ -3997,8 +3997,10 @@ paths:
       tags: [nodes, plans]
       operationId: resolveProtocolEndpointSelection
       summary: Resolve a bounded ID-only snapshot of the current protocol endpoint filter
-      description: Used by large node-group membership editors to add or remove every endpoint matching one server-side filter without paging through endpoint details. The response is capped at 10000 IDs and represents the result at resolved_at.
+      description: Used by large node-group membership editors to add or remove every endpoint matching one server-side filter without paging through endpoint details. The response is capped at 10000 IDs and represents the result at resolved_at. service_kind defaults to listener; forward resolves entry IDs. Mixed all selections are rejected because the two identity spaces can overlap.
       parameters:
+        - { name: service_kind, in: query, schema: { type: string, enum: [listener, forward], default: listener } }
+        - { name: node_group_id, in: query, schema: { type: integer, minimum: 1 } }
         - { name: q, in: query, schema: { type: string, maxLength: 100 } }
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol, in: query, schema: { type: string } }
@@ -4019,12 +4021,15 @@ paths:
     get:
       tags: [nodes]
       summary: List protocol endpoints for administration
+      description: Omitting service_kind keeps the legacy direct-endpoint list. all or forward returns typed services with independent forward IDs, a parent_protocol_id and a forward projection; forward traffic metrics belong to the parent listener. Server online is derived from recent connector receipt, never from is_active.
       parameters:
+        - { name: service_kind, in: query, schema: { type: string, enum: [listener, forward, all], default: listener } }
         - { name: paged, in: query, schema: { type: boolean } }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
         - { name: q, in: query, schema: { type: string } }
-        - { name: ids, in: query, schema: { type: string }, description: "Comma-separated endpoint IDs, at most 100, used to hydrate remote multi-select state." }
+        - { name: ids, in: query, schema: { type: string }, description: "Comma-separated IDs from the listener or forward namespace, at most 100, used to hydrate remote multi-select state. Not accepted with all." }
+        - { name: node_group_id, in: query, schema: { type: integer, minimum: 1 }, description: Filters direct and forward memberships independently. }
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol, in: query, schema: { type: string } }
         - { name: active, in: query, schema: { type: boolean } }
@@ -5385,13 +5390,14 @@ components:
         sync_interval_seconds: { type: integer, minimum: 300, maximum: 604800, default: 86400 }
     NetworkEntryRequest:
       type: object
-      required: [name, node_id, address, port, enabled]
+      required: [name, address, port, enabled]
       anyOf:
         - required: [parent_protocol_id]
         - required: [endpoint_id]
       properties:
         name: { type: string, maxLength: 80 }
-        node_id: { type: integer, format: int64, description: Entry node A }
+        deployment_mode: { type: string, enum: [managed, external], default: managed, description: External only registers an existing forward address and does not deploy Zero on A. }
+        node_id: { type: integer, format: int64, minimum: 0, description: Entry node A required for managed forwarding; zero or omitted for external forwarding. }
         endpoint_id: { type: integer, format: int64, description: Legacy alias for parent_protocol_id }
         parent_protocol_id: { type: integer, format: int64, description: Actual protocol listener on B; A only forwards opaque TCP or UDP }
         proxy_pool_id: { type: integer, minimum: 0, description: Node-local shared pool on A. Omit to preserve; zero clears the reference. }
@@ -6311,10 +6317,39 @@ components:
         started_at: { type: string, format: date-time, nullable: true }
         finished_at: { type: string, format: date-time, nullable: true }
         created_at: { type: string, format: date-time }
+    NetworkEntrySummary:
+      type: object
+      description: A separately authorized forwarding address. No encrypted path or proxy credentials are returned. External entries do not represent an entry server managed by the panel.
+      properties:
+        id: { type: integer, format: int64 }
+        deployment_mode: { type: string, enum: [managed, external] }
+        name: { type: string }
+        node_id: { type: integer, minimum: 0, description: Zero for an external entry. }
+        node_name: { type: string }
+        landing_node_id: { type: integer, format: int64 }
+        endpoint_id: { type: integer, format: int64 }
+        parent_protocol_id: { type: integer, format: int64 }
+        address: { type: string }
+        port: { type: integer }
+        public_port: { type: integer }
+        enabled: { type: boolean }
+        revision: { type: integer }
+        network: { type: string, enum: [tcp, tcp_udp] }
+        pending: { type: boolean }
+        last_error: { type: string }
+        has_path: { type: boolean }
+        node_group_names: { type: array, items: { type: string } }
+        node_group_memberships: { type: array, items: { $ref: "#/components/schemas/ProtocolEndpointNodeGroupMembership" } }
     ProtocolEndpointSummary:
       type: object
       required: [id, node_id, name, protocol, address, port, public_port, multiplier_milli, managed_principal_ready, mieru_principal_ready, kernel_supported, is_active, usage]
       properties:
+        service_kind: { type: string, enum: [listener, forward], description: Together with id forms a unique list-row identity. }
+        forward: { $ref: "#/components/schemas/NetworkEntrySummary" }
+        node_online: { type: boolean, description: Enabled server with a connector receipt in the last two minutes. External entries report the parent server; not proof of external forwarding reachability. }
+        node_enabled: { type: boolean }
+        node_last_seen_at: { type: string, format: date-time, nullable: true }
+        node_group_memberships: { type: array, items: { $ref: "#/components/schemas/ProtocolEndpointNodeGroupMembership" } }
         id: { type: integer, format: int64 }
         node_id: { type: integer, format: int64 }
         node_name: { type: string }
@@ -6502,7 +6537,7 @@ components:
               items: { $ref: "#/components/schemas/ProtocolEndpointSummary" }
             facets:
               type: object
-              description: Populated when include_facets=true. Counts use the current text, protocol, node and active-state filters; deployment-status counts deliberately ignore the selected deployment-status filter.
+              description: Populated when include_facets=true. Counts use the current text, protocol, node, node-group, service-kind and active-state filters; deployment-status counts deliberately ignore the selected deployment-status filter.
               properties:
                 all: { type: integer, format: int64, minimum: 0 }
                 succeeded: { type: integer, format: int64, minimum: 0 }

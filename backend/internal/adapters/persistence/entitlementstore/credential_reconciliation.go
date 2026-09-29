@@ -3,6 +3,7 @@ package entitlementstore
 import (
 	"context"
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
 	"sort"
 	"time"
 
@@ -26,7 +27,7 @@ func (s NodeCredentialReconciliation) ReconcileNode(ctx context.Context, nodeID 
 		return entitlements.ErrCredentialReconciliationUnavailable
 	}
 	var groupIDs []uint
-	if err := s.DB.WithContext(ctx).Model(&model.NodeGroupEndpoint{}).
+	if err := s.DB.WithContext(ctx).Table(networkstore.CredentialMembershipSQL+" AS node_group_endpoints").
 		Distinct("node_group_endpoints.node_group_id").
 		Joins("JOIN protocol_endpoints ON protocol_endpoints.id = node_group_endpoints.protocol_endpoint_id").
 		Where("protocol_endpoints.node_id = ? AND protocol_endpoints.is_active = ?", nodeID, true).
@@ -52,7 +53,7 @@ func (s GroupCredentialReconciliation) ReconcileGroup(ctx context.Context, group
 		activeSubscriptionIDs := tx.Model(&model.Subscription{}).
 			Select("id").
 			Where("node_group_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total", groupID, "active", now)
-		currentEndpointIDs := tx.Model(&model.NodeGroupEndpoint{}).
+		currentEndpointIDs := tx.Table(networkstore.CredentialMembershipSQL+" AS node_group_endpoints").
 			Select("protocol_endpoint_id").
 			Where("node_group_id = ?", groupID)
 		if err := tx.Model(&model.ProtocolCredential{}).
@@ -105,7 +106,7 @@ func (s GroupCredentialReconciliation) ensureSubscriptions(ctx context.Context, 
 func subscriptionCredentialsCurrent(db *gorm.DB, subscription model.Subscription, issuer entitlements.CredentialIssuer) (bool, error) {
 	var endpoints []model.ProtocolEndpoint
 	if err := db.Model(&model.ProtocolEndpoint{}).
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
+		Joins(networkstore.CredentialMembershipJoin("node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id")).
 		Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", subscription.NodeGroupID, true).
 		Order("protocol_endpoints.sort_order asc, protocol_endpoints.id asc").
 		Find(&endpoints).Error; err != nil {

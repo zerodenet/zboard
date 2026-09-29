@@ -11,7 +11,10 @@ import (
 	"gorm.io/gorm"
 )
 
-type Inventory struct{ DB *gorm.DB }
+type Inventory struct {
+	DB           *gorm.DB
+	ReadDatabase func() *gorm.DB
+}
 
 func nodeKernelRecord(row model.NodeKernelState) network.NodeKernelRecord {
 	return network.NodeKernelRecord{NodeID: row.NodeID, Status: row.Status, Phase: row.Phase, RecommendedAction: row.RecommendedAction,
@@ -185,7 +188,7 @@ func (s Inventory) AuthorizedProtocolEndpoints(ctx context.Context, userID uint,
 	var rows []model.ProtocolEndpoint
 	err := s.DB.WithContext(ctx).Model(&model.ProtocolEndpoint{}).
 		Select("DISTINCT protocol_endpoints.*").
-		Joins("JOIN node_group_endpoints ON node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id").
+		Joins(CredentialMembershipJoin("node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id")).
 		Joins("JOIN subscriptions ON subscriptions.node_group_id = node_group_endpoints.node_group_id").
 		Joins("JOIN nodes ON nodes.id = protocol_endpoints.node_id").
 		Where("subscriptions.user_id = ? AND subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", userID, "active", now).
@@ -233,6 +236,9 @@ func (s Inventory) endpointQuery(ctx context.Context, input network.ProtocolEndp
 	if input.NodeID != 0 {
 		q = q.Where("protocol_endpoints.node_id = ?", input.NodeID)
 	}
+	if input.GroupID != 0 {
+		q = q.Where("EXISTS (SELECT 1 FROM node_group_endpoints membership WHERE membership.protocol_endpoint_id = protocol_endpoints.id AND membership.node_group_id = ?)", input.GroupID)
+	}
 	if input.Search != "" {
 		p := "%" + input.Search + "%"
 		q = q.Where("LOWER(protocol_endpoints.name) LIKE ? OR LOWER(protocol_endpoints.address) LIKE ?", p, p)
@@ -257,6 +263,13 @@ func (s Inventory) endpointQuery(ctx context.Context, input network.ProtocolEndp
 }
 
 func (s Inventory) ListProtocolEndpoints(ctx context.Context, input network.ProtocolEndpointInventoryQuery) (network.ProtocolEndpointInventoryPage, error) {
+	// Reporting uses the existing deferred WAL read pool when available.
+	if s.ReadDatabase != nil {
+		s.DB = s.ReadDatabase()
+	}
+	if input.ServiceKind == "all" || input.ServiceKind == "forward" {
+		return s.listProtocolServices(ctx, input)
+	}
 	q := s.endpointQuery(ctx, input)
 	page := network.ProtocolEndpointInventoryPage{}
 	if input.Paged && input.IncludeStatusFacets {
@@ -300,7 +313,7 @@ func (s Inventory) ListProtocolEndpoints(ctx context.Context, input network.Prot
 	if err := q.Find(&rows).Error; err != nil {
 		return page, err
 	}
-	items, err := s.decorateEndpoints(ctx, rows, input.Now, false)
+	items, err := s.decorateEndpoints(ctx, rows, input.Now, input.ServiceKind == "listener")
 	page.Items = items
 	return page, err
 }
@@ -545,14 +558,36 @@ func deploymentRecord(r model.ProtocolDeployment) network.ProtocolDeploymentReco
 }
 
 func (s Inventory) SelectProtocolEndpointIDs(ctx context.Context, input network.ProtocolEndpointInventoryQuery) ([]uint, int64, error) {
+	if s.ReadDatabase != nil {
+		s.DB = s.ReadDatabase()
+	}
 	q := s.endpointQuery(ctx, input)
+	column := "protocol_endpoints.id"
+	if input.ServiceKind == "forward" {
+		q = s.serviceQuery(ctx, input)
+		column = "service.id"
+		if input.DeploymentStatus != "" {
+			latest := s.DB.WithContext(ctx).Model(&model.ProtocolDeployment{}).Select("protocol_endpoint_id, MAX(id) AS latest_id").Group("protocol_endpoint_id")
+			q = q.Joins("LEFT JOIN (?) AS latest ON latest.protocol_endpoint_id = service.endpoint_id", latest).
+				Joins("LEFT JOIN protocol_deployments AS deployment ON deployment.id = latest.latest_id").
+				Where("COALESCE(deployment.status, 'never') = ?", input.DeploymentStatus)
+		}
+	}
 	var total int64
-	if err := q.Count(&total).Error; err != nil {
+	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	var ids []uint
-	if err := q.Order("protocol_endpoints.id asc").Pluck("protocol_endpoints.id", &ids).Error; err != nil {
+	// Bound materialization before the handler reports an over-limit filter.
+	ids := []uint{}
+	if total > 10000 {
+		return ids, total, nil
+	}
+	if err := q.Order(column+" asc").Limit(10001).Pluck(column, &ids).Error; err != nil {
 		return nil, 0, err
+	}
+	// Concurrent additions between these reads cannot bypass the snapshot cap.
+	if int64(len(ids)) > total {
+		total = int64(len(ids))
 	}
 	return ids, total, nil
 }
@@ -610,6 +645,7 @@ func (s Inventory) ListNodeGroups(ctx context.Context, input network.NodeGroupIn
 		ids = append(ids, g.ID)
 	}
 	endpointCounts := map[uint]int64{}
+	entryCounts := map[uint]int64{}
 	type countRow struct {
 		NodeGroupID uint
 		Count       int64
@@ -629,7 +665,15 @@ func (s Inventory) ListNodeGroups(ctx context.Context, input network.NodeGroupIn
 			}
 		}
 		var entryLinks []model.NodeGroupNetworkEntry
-		if err := s.DB.WithContext(ctx).Where("node_group_id IN ?", ids).Order("sort_order, id").Find(&entryLinks).Error; err != nil {
+		if input.Paged {
+			var entryValues []countRow
+			if err := s.DB.WithContext(ctx).Model(&model.NodeGroupNetworkEntry{}).Select("node_group_id, COUNT(*) AS count").Where("node_group_id IN ?", ids).Group("node_group_id").Scan(&entryValues).Error; err != nil {
+				return page, err
+			}
+			for _, row := range entryValues {
+				entryCounts[row.NodeGroupID] = row.Count
+			}
+		} else if err := s.DB.WithContext(ctx).Where("node_group_id IN ?", ids).Order("sort_order, id").Find(&entryLinks).Error; err != nil {
 			return page, err
 		}
 		var plans []countRow
@@ -651,7 +695,7 @@ func (s Inventory) ListNodeGroups(ctx context.Context, input network.NodeGroupIn
 		}
 	}
 	for _, g := range groups {
-		page.Items = append(page.Items, network.NodeGroupInventoryItem{Group: nodeGroupRecord(g), ProtocolEndpointCount: endpointCounts[g.ID]})
+		page.Items = append(page.Items, network.NodeGroupInventoryItem{Group: nodeGroupRecord(g), ProtocolEndpointCount: endpointCounts[g.ID], NetworkEntryCount: entryCounts[g.ID]})
 	}
 	return page, nil
 }

@@ -24,15 +24,15 @@ func (s NetworkEntryProjection) LoadNetworkEntryProjection(ctx context.Context, 
 		}
 	}
 	type entryRow struct {
+		DeploymentMode                      string
 		ID, NodeGroupID, NodeID, EndpointID uint
 		Name, Address, Network              string
 		Port, PublicPort                    int
 	}
 	var entries []entryRow
 	if err := s.DB.WithContext(ctx).Table("node_group_network_entries AS membership").
-		Select("network_entries.id, membership.node_group_id, network_entries.node_id, network_entries.endpoint_id, network_entries.name, network_entries.address, network_entries.network, network_entries.port, network_entries.public_port").
+		Select("network_entries.deployment_mode, network_entries.id, membership.node_group_id, network_entries.node_id, network_entries.endpoint_id, network_entries.name, network_entries.address, network_entries.network, network_entries.port, network_entries.public_port").
 		Joins("JOIN network_entries ON network_entries.id = membership.network_entry_id").
-		Joins("JOIN node_group_endpoints AS landing_grant ON landing_grant.node_group_id = membership.node_group_id AND landing_grant.protocol_endpoint_id = network_entries.endpoint_id").
 		Where("membership.node_group_id IN ? AND network_entries.enabled = ?", groupIDs, true).
 		Order("membership.node_group_id asc, membership.sort_order asc, network_entries.id asc").Scan(&entries).Error; err != nil {
 		return result, err
@@ -41,7 +41,7 @@ func (s NetworkEntryProjection) LoadNetworkEntryProjection(ctx context.Context, 
 	nodeIDs := make([]uint, 0, len(entries)*2)
 	seenEndpoint, seenNode := map[uint]struct{}{}, map[uint]struct{}{}
 	for _, row := range entries {
-		result.Entries = append(result.Entries, entitlements.NetworkEntryProjectionEntry{ID: row.ID, NodeGroupID: row.NodeGroupID, NodeID: row.NodeID, EndpointID: row.EndpointID, Name: row.Name, Address: row.Address, Network: row.Network, Port: row.Port, PublicPort: row.PublicPort})
+		result.Entries = append(result.Entries, entitlements.NetworkEntryProjectionEntry{DeploymentMode: row.DeploymentMode, ID: row.ID, NodeGroupID: row.NodeGroupID, NodeID: row.NodeID, EndpointID: row.EndpointID, Name: row.Name, Address: row.Address, Network: row.Network, Port: row.Port, PublicPort: row.PublicPort})
 		if _, exists := seenEndpoint[row.EndpointID]; !exists {
 			seenEndpoint[row.EndpointID] = struct{}{}
 			endpointIDs = append(endpointIDs, row.EndpointID)

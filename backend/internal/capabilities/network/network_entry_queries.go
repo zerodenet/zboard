@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 var (
@@ -30,6 +31,9 @@ type NetworkEntryListItem struct {
 	LandingNodeID    uint                     `json:"landing_node_id"`
 	NodeGroupNames   []string                 `json:"node_group_names"`
 	HasPath          bool                     `json:"has_path"`
+	NodeEnabled      bool                     `json:"node_enabled"`
+	NodeOnline       bool                     `json:"node_online"`
+	NodeLastSeenAt   *time.Time               `json:"node_last_seen_at,omitempty"`
 	NodeName         string                   `json:"node_name"`
 	EndpointName     string                   `json:"endpoint_name"`
 	Pending          bool                     `json:"pending"`

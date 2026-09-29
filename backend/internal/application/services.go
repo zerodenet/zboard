@@ -134,7 +134,7 @@ func New(db *gorm.DB, secret string) *Services {
 	s.NetworkEntryQueries = network.NetworkEntryQueries{Repository: networkstore.NetworkEntryQueries{DB: db}}
 	s.NodeGroupMutations = network.NodeGroupMutations{Repository: networkstore.NodeGroupMutations{DB: db}}
 	s.NodeAdministration = network.NodeAdministration{Repository: networkstore.NodeAdministration{DB: db}}
-	s.NetworkInventory = network.Inventory{Repository: networkstore.Inventory{DB: db}}
+	s.NetworkInventory = network.Inventory{Repository: networkstore.Inventory{DB: db, ReadDatabase: s.trafficDatabase}}
 	s.ManagedPublicationInventory = network.ManagedPublicationInventory{Repository: networkstore.ManagedPublicationInventory{DB: db}}
 	s.NativeOperationStatus = network.NativeOperationStatus{Repository: networkstore.NativeOperationStatus{DB: db}}
 	s.DNSDeletion = network.DNSDeletion{Repository: networkstore.DNSDeletion{DB: db}}

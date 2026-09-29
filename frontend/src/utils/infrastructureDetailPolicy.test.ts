@@ -54,7 +54,7 @@ describe('infrastructure detail density policy', () => {
     expect(dns).toContain('to="/admin/providers"')
     expect(layout).toContain('<AdminNavigation')
     const infrastructure = adminNavigation.find(domain => domain.id === 'infrastructure')
-    const accessPages = infrastructure?.sections.find(section => section.label === '接入配置')?.pages
+    const accessPages = infrastructure?.sections.find(section => section.label === '兼容接入配置')?.pages
     expect(accessPages).toEqual(expect.arrayContaining([
       { to: '/admin/providers', label: '外部供应商' },
       { to: '/admin/dns-records', label: 'DNS 解析' },

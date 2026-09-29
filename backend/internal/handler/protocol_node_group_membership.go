@@ -91,7 +91,7 @@ func validateNodeGroupMembershipAvailability(tx *gorm.DB, group model.NodeGroup)
 	if activeEndpointCount > 0 {
 		return nil
 	}
-	// A group may describe entry access without granting its landing protocol.
+	// Forward membership grants parent authentication without direct delivery.
 	var entries int64
 	if err := tx.Model(&model.NodeGroupNetworkEntry{}).Joins("JOIN network_entries ON network_entries.id = node_group_network_entries.network_entry_id").Where("node_group_id = ? AND network_entries.enabled = ?", group.ID, true).Count(&entries).Error; err != nil {
 		return err

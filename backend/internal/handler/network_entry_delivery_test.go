@@ -12,7 +12,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
 
-func TestNetworkEntriesNeverGrantLandingCredentialsImplicitly(t *testing.T) {
+func TestNetworkEntryGrantAuthenticatesLandingWithoutExposingDirectAddress(t *testing.T) {
 	f, a, b := networkEntryFixture(t)
 	b.Protocol = "vless"
 	b.ClientConfig = `{"type":"vless","server":"landing.example.test","port":1443}`
@@ -38,13 +38,13 @@ func TestNetworkEntriesNeverGrantLandingCredentialsImplicitly(t *testing.T) {
 	}
 	var count int64
 	f.h.db.Model(&model.ProtocolCredential{}).Where("subscription_id = ?", sub.ID).Count(&count)
-	if count != 0 {
-		t.Fatal("entry implicitly created B credentials")
+	if count != 1 {
+		t.Fatal("entry grant must create one landing credential")
 	}
 	f.h.db.Where("1 = 1").Delete(&model.NodeConfigPublish{})
 	nodes, err := f.h.buildProjectedSubscriptionManifestNodes(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
-	if err != nil || len(nodes) != 0 {
-		t.Fatalf("entry-only subscription delivered credentials: %v %v", nodes, err)
+	if err != nil || len(nodes) != 1 || nodes[0].CredentialID == "" {
+		t.Fatalf("entry-only delivery: %v %v", nodes, err)
 	}
 	// Explicit B permission supplies one credential shared by direct and front.
 	if err := f.h.db.Create(&model.NodeGroupEndpoint{NodeGroupID: group.ID, ProtocolEndpointID: b.ID}).Error; err != nil {
@@ -62,18 +62,28 @@ func TestNetworkEntriesNeverGrantLandingCredentialsImplicitly(t *testing.T) {
 	if len(credentials) != 1 {
 		t.Fatalf("explicit B auth: %v", credentials)
 	}
-	// Removing only B must reject both delivery and runtime auth immediately,
-	// including still-active credential rows created before the removal.
+	// Removing direct access retains entry delivery and the shared credential.
 	if err := f.h.db.Where("node_group_id = ?", group.ID).Delete(&model.NodeGroupEndpoint{}).Error; err != nil {
 		t.Fatal(err)
 	}
 	nodes, err = f.h.buildProjectedSubscriptionManifestNodes(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
-	if err != nil || len(nodes) != 0 {
-		t.Fatalf("stale B credential leaked: %v %v", nodes, err)
+	if err != nil || len(nodes) != 1 {
+		t.Fatalf("retained entry lost delivery: %v %v", nodes, err)
 	}
 	credentials = activeEndpointCredentialsForTest(t, f.h, b.ID, now)
-	if len(credentials) != 0 {
-		t.Fatalf("removed B grant still authorizes: %v", credentials)
+	if len(credentials) != 1 {
+		t.Fatalf("retained entry lost runtime authorization: %v", credentials)
+	}
+	// Removal of the final grant rejects stale credentials immediately.
+	if err := f.h.db.Where("node_group_id = ?", group.ID).Delete(&model.NodeGroupNetworkEntry{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	nodes, err = f.h.buildProjectedSubscriptionManifestNodes(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
+	if err != nil || len(nodes) != 0 {
+		t.Fatalf("removed entry still delivered: %v %v", nodes, err)
+	}
+	if credentials = activeEndpointCredentialsForTest(t, f.h, b.ID, now); len(credentials) != 0 {
+		t.Fatalf("removed entry still authenticates: %v", credentials)
 	}
 	if err := f.h.reconcileNodeGroupCredentials(group.ID); err != nil {
 		t.Fatal(err)

@@ -77,7 +77,7 @@ describe('EndpointMultiLookup', () => {
     await flushPromises()
 
     const actions = wrapper.findAll('.lookup-scope-actions button')
-    await actions[0].trigger('click')
+    await actions.find(button => button.text().includes('全部加入'))!.trigger('click')
     await flushPromises()
 
     expect(fetchProtocolEndpointSelection).toHaveBeenCalledWith(
@@ -89,11 +89,30 @@ describe('EndpointMultiLookup', () => {
     expect(fetchProtocolEndpointsPage).toHaveBeenCalledTimes(2)
 
     await wrapper.setProps({ modelValue: [5, 1, 2, 3] })
-    await actions[1].trigger('click')
+    await actions.find(button => button.text().includes('从待保存成员移除'))!.trigger('click')
     await flushPromises()
 
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual([5])
     expect(wrapper.text()).toContain('已从待保存成员移除 3 个')
     expect(fetchProtocolEndpointsPage).toHaveBeenCalledTimes(2)
+  })
+
+  it('inverts only the visible page while retaining selections outside that page', async () => {
+    const wrapper = mount(EndpointMultiLookup, { props: { modelValue: [1, 99] } })
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === '本页反选')!.trigger('click')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual([99, 2, 3])
+    wrapper.unmount()
+  })
+
+  it('uses the forward identity scope for both selected hydration and bulk selection', async () => {
+    const wrapper = mount(EndpointMultiLookup, { props: { modelValue: [99], serviceKind: 'forward' } })
+    await flushPromises()
+    expect(fetchProtocolEndpointsPage).toHaveBeenCalledWith({ serviceKind: 'forward', ids: [99], limit: 50 }, expect.anything())
+    await wrapper.findAll('button').find(button => button.text().includes('全部加入'))!.trigger('click')
+    await flushPromises()
+    expect(fetchProtocolEndpointSelection).toHaveBeenCalledWith({ serviceKind: 'forward', q: undefined, active: true }, expect.anything())
+    expect(wrapper.text()).toContain('3 个前置入口')
+    wrapper.unmount()
   })
 })

@@ -1,13 +1,12 @@
 package handler
 
 import (
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 )
 
-// Only explicit protocol membership grants credentials. A forward target is
-// topology, never an implicit authorization edge.
-const credentialMembershipSQL = `(SELECT node_group_id, protocol_endpoint_id FROM node_group_endpoints)`
+const credentialMembershipSQL = networkstore.CredentialMembershipSQL
 
 func credentialMemberships(db *gorm.DB) *gorm.DB {
 	return db.Table(credentialMembershipSQL + " AS node_group_endpoints")

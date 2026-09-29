@@ -303,6 +303,14 @@ func runSQLiteMigrations(db *gorm.DB) error {
 		}
 	}
 
+	// The SQLite schema inventory above owns table rebuilding for nullable node_id.
+	// Record parity only after confirming the newly introduced mode column exists.
+	if !db.Migrator().HasColumn(&model.NetworkEntry{}, "deployment_mode") {
+		return fmt.Errorf("external forward schema is incomplete")
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0027_external_forward_entries.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
+	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {
 		return fmt.Errorf("record sqlite schema version: %w", err)

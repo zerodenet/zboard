@@ -67,6 +67,7 @@ type ProtocolUsageRecord struct {
 }
 
 type ProtocolEndpointInventoryItem struct {
+	Forward              *NetworkEntryListItem
 	Endpoint             ProtocolEndpointRecord
 	Node                 NodeAdministrationRecord
 	ManagedCertificateID *uint
@@ -76,6 +77,8 @@ type ProtocolEndpointInventoryItem struct {
 }
 
 type ProtocolEndpointInventoryQuery struct {
+	ServiceKind                        string
+	GroupID                            uint
 	IDs                                []uint
 	NodeID                             uint
 	Search, Protocol, DeploymentStatus string
@@ -133,6 +136,7 @@ type NodeGroupInventoryQuery struct {
 type NodeGroupInventoryItem struct {
 	Group                 NodeGroupRecord
 	ProtocolEndpointCount int64
+	NetworkEntryCount     int64
 }
 type NodeGroupInventoryPage struct {
 	Items []NodeGroupInventoryItem

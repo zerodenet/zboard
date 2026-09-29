@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchAccountSubscriptionsPage, fetchPlanCatalogPage, fetchPlanCatalogSKUs, fetchPlansPage, fetchTrafficSummary } from './client'
+import { fetchAccountSubscriptionsPage, fetchPlanCatalogPage, fetchPlanCatalogSKUs, fetchPlansPage, fetchTrafficSummary, fetchProtocolEndpointsPage, fetchProtocolEndpointSelection } from './client'
 import { fetchTrafficTrends } from './readModels'
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }))
@@ -17,6 +17,12 @@ describe('catalog paging API contract', () => {
     expect(params().get('operation')).toBe('purchase')
     await fetchPlansPage()
     expect(params().has('operation')).toBe(false)
+  })
+  it('preserves the same service namespace and group filter for pages, hydration and selection snapshots', async () => {
+    await fetchProtocolEndpointsPage({ serviceKind: 'forward', groupId: 7, ids: [9, 10], limit: 50 })
+    expect(Object.fromEntries(params())).toEqual({ paged: 'true', service_kind: 'forward', node_group_id: '7', ids: '9,10', limit: '50' })
+    await fetchProtocolEndpointSelection({ serviceKind: 'forward', groupId: 7, q: 'HK', active: true })
+    expect(Object.fromEntries(params())).toEqual({ service_kind: 'forward', node_group_id: '7', q: 'HK', active: 'true' })
   })
   it('forwards summary cancellation without changing its account/admin scope', async () => {
     const signal = new AbortController().signal
