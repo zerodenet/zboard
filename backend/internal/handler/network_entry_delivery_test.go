@@ -58,6 +58,29 @@ func TestNetworkEntryGrantAuthenticatesLandingWithoutExposingDirectAddress(t *te
 	if err != nil || len(nodes) != 2 || nodes[0].CredentialID == "" || nodes[0].CredentialID != nodes[1].CredentialID {
 		t.Fatalf("explicit A+B: %v %v", nodes, err)
 	}
+	stale := now.Add(-10 * time.Minute)
+	if err := f.h.db.Model(&model.Node{}).Where("id IN ?", []uint{a.ID, b.NodeID}).Update("last_seen_at", stale).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, nodeID := range []uint{a.ID, b.NodeID} {
+		if err := enqueueNodeConfigPublish(f.h.db, nodeID, b.ID, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nodes, err = f.h.buildProjectedSubscriptionManifestNodes(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
+	if err != nil || len(nodes) != 2 {
+		t.Fatalf("stale telemetry or pending publication removed working routes: %v %v", nodes, err)
+	}
+	if err := f.h.db.Model(&model.Node{}).Where("id = ?", b.NodeID).Update("last_seen_at", nil).Error; err != nil {
+		t.Fatal(err)
+	}
+	nodes, err = f.h.buildProjectedSubscriptionManifestNodes(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
+	if err != nil || len(nodes) != 0 {
+		t.Fatalf("never observed landing node became available: %v %v", nodes, err)
+	}
+	if err := f.h.db.Model(&model.Node{}).Where("id = ?", b.NodeID).Update("last_seen_at", stale).Error; err != nil {
+		t.Fatal(err)
+	}
 	credentials := activeEndpointCredentialsForTest(t, f.h, b.ID, now)
 	if len(credentials) != 1 {
 		t.Fatalf("explicit B auth: %v", credentials)

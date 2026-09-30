@@ -293,6 +293,8 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, 
 		nodes[id] = model.Node{ID: row.ID, Region: row.Region, IsEnabled: row.IsEnabled, LastSeenAt: row.LastSeenAt}
 	}
 	seenEndpoints := make(map[uint]struct{})
+	// A stale heartbeat means the control plane cannot observe the node; it
+	// must not erase already provisioned routes from a refreshed subscription.
 	for _, credential := range credentials {
 		groupID := subscriptionGroup[credential.SubscriptionID]
 		if _, member := memberships[groupID][credential.ProtocolEndpointID]; !member {
@@ -312,7 +314,7 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, 
 		if !exists {
 			continue
 		}
-		if !node.IsEnabled || node.LastSeenAt == nil || node.LastSeenAt.Before(now.Add(-nodeOnlineWindow)) || !filter.matchesEndpoint(endpoint, node) {
+		if !node.IsEnabled || node.LastSeenAt == nil || !filter.matchesEndpoint(endpoint, node) {
 			continue
 		}
 		if supported, _ := h.protocolKernelSupportForNode(endpoint.Protocol, node); !supported {
@@ -336,7 +338,7 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, 
 			continue
 		}
 		node, exists := nodes[endpoint.NodeID]
-		if !exists || !node.IsEnabled || node.LastSeenAt == nil || node.LastSeenAt.Before(now.Add(-nodeOnlineWindow)) || strings.TrimSpace(endpoint.ClientConfig) == "" {
+		if !exists || !node.IsEnabled || node.LastSeenAt == nil || strings.TrimSpace(endpoint.ClientConfig) == "" {
 			continue
 		}
 		if !filter.matchesEndpoint(endpoint, node) {

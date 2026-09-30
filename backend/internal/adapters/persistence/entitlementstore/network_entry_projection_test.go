@@ -62,8 +62,8 @@ func TestNetworkEntryProjectionUsesFixedBatchAndEntryGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := counter.count.Load(); got != 5 {
-		t.Fatalf("network entry projection query count = %d, want 5 fixed queries", got)
+	if got := counter.count.Load(); got != 4 {
+		t.Fatalf("network entry projection query count = %d, want 4 fixed queries", got)
 	}
 	if len(projection.Entries) != 1 || len(projection.Endpoints) != 1 || len(projection.Nodes) != 2 || len(projection.Credentials) != 1 {
 		t.Fatalf("projection = %+v", projection)

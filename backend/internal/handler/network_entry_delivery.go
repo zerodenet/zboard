@@ -34,10 +34,8 @@ func (h *handlers) buildAuthorizedNetworkEntries(ctx context.Context, subscripti
 	for _, row := range projection.Nodes {
 		nodes[row.ID] = model.Node{ID: row.ID, Region: row.Region, IsEnabled: row.IsEnabled, LifecycleStatus: row.LifecycleStatus, LastSeenAt: row.LastSeenAt}
 	}
-	pending := make(map[uint]struct{}, len(projection.PendingNodeIDs))
-	for _, nodeID := range projection.PendingNodeIDs {
-		pending[nodeID] = struct{}{}
-	}
+	// Publication work is an operational state. Keep existing authorized
+	// routes visible while ZBoard resumes a pending publish after restart.
 	type credentialKey struct{ subscriptionID, endpointID uint }
 	credentials := make(map[credentialKey]model.ProtocolCredential, len(projection.Credentials))
 	for _, row := range projection.Credentials {
@@ -63,12 +61,6 @@ func (h *handlers) buildAuthorizedNetworkEntries(ctx context.Context, subscripti
 			visibleEndpoint.Name = networkEntryDisplayName(entry.Name, endpoint.Name)
 			visibleEndpoint.Address = entry.Address
 			if !filter.matchesEndpoint(visibleEndpoint, landing) {
-				continue
-			}
-			if _, exists := pending[entry.NodeID]; exists {
-				continue
-			}
-			if _, exists := pending[endpoint.NodeID]; exists {
 				continue
 			}
 			base := subscriptionManifestNode{ID: endpoint.ID, NodeID: endpoint.NodeID, SubscriptionID: sub.ID,

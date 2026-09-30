@@ -162,9 +162,11 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	}
 	remoteActivated = true
 	output := remote.Output
-	connectorEventAt, connectorErr := h.services.ConnectorActivityObserver().Wait(ctx, node.ID, remote.ActivatedAt)
-	finished := time.Now().UTC()
-	output, lastHealthyAt := finalizeConnectorConfirmation(output, connectorEventAt, connectorErr, finished)
+	lastHealthyAt := time.Now().UTC()
+	if !strings.Contains(output, "ZBOARD_CONFIG_UNCHANGED="+configSHA) {
+		connectorEventAt, connectorErr := h.services.ConnectorActivityObserver().Wait(ctx, node.ID, remote.ActivatedAt)
+		output, lastHealthyAt = finalizeConnectorConfirmation(output, connectorEventAt, connectorErr, time.Now().UTC())
+	}
 	finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), network.KernelDetectionFinalizeTimeout)
 	defer cancel()
 	deploymentState, err = state.Complete(finalizeCtx, deploymentState, network.ConfigurationPublicationCompletion{

@@ -40,11 +40,10 @@ type NetworkEntryProjectionCredential struct {
 }
 
 type NetworkEntryProjectionData struct {
-	Entries        []NetworkEntryProjectionEntry
-	Endpoints      []NetworkEntryProjectionEndpoint
-	Nodes          []NetworkEntryProjectionNode
-	PendingNodeIDs []uint
-	Credentials    []NetworkEntryProjectionCredential
+	Entries     []NetworkEntryProjectionEntry
+	Endpoints   []NetworkEntryProjectionEndpoint
+	Nodes       []NetworkEntryProjectionNode
+	Credentials []NetworkEntryProjectionCredential
 }
 
 type NetworkEntryProjectionRepository interface {

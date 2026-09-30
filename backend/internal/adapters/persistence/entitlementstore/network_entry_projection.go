@@ -67,14 +67,11 @@ func (s NetworkEntryProjection) LoadNetworkEntryProjection(ctx context.Context, 
 	}
 	var nodes []model.Node
 	if err := s.DB.WithContext(ctx).Select("id", "region", "is_enabled", "lifecycle_status", "last_seen_at").
-		Where("id IN ? AND is_enabled = ? AND last_seen_at >= ? AND lifecycle_status <> ?", nodeIDs, true, now.Add(-2*time.Minute), "deleting").Find(&nodes).Error; err != nil {
+		Where("id IN ? AND is_enabled = ? AND last_seen_at IS NOT NULL AND lifecycle_status <> ?", nodeIDs, true, "deleting").Find(&nodes).Error; err != nil {
 		return result, err
 	}
 	for _, row := range nodes {
 		result.Nodes = append(result.Nodes, entitlements.NetworkEntryProjectionNode{ID: row.ID, Region: row.Region, IsEnabled: row.IsEnabled, LifecycleStatus: row.LifecycleStatus, LastSeenAt: row.LastSeenAt})
-	}
-	if err := s.DB.WithContext(ctx).Model(&model.NodeConfigPublish{}).Where("node_id IN ?", nodeIDs).Distinct().Pluck("node_id", &result.PendingNodeIDs).Error; err != nil {
-		return result, err
 	}
 	var credentials []model.ProtocolCredential
 	if err := s.DB.WithContext(ctx).Where("subscription_id IN ? AND protocol_endpoint_id IN ? AND status = ? AND revoked_at IS NULL AND expires_at > ?", subscriptionIDs, endpointIDs, "active", now).Find(&credentials).Error; err != nil {
