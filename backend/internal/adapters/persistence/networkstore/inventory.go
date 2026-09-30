@@ -504,10 +504,10 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 		measured := s.DB.WithContext(ctx).Raw("SELECT protocol_endpoint_id AS id FROM protocol_endpoint_usage_daily WHERE protocol_endpoint_id IN ? UNION SELECT protocol_endpoint_id AS id FROM protocol_endpoint_usage_resets WHERE protocol_endpoint_id IN ?", ids, ids)
 		latest := s.DB.WithContext(ctx).Model(&model.ProtocolEndpointUsageReset{}).Select("protocol_endpoint_id, MAX(id) AS id").Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id")
 		trafficErr = s.DB.WithContext(ctx).Table("(?) AS endpoint", measured).
-			Joins("LEFT JOIN protocol_endpoint_usage_daily AS usage ON usage.protocol_endpoint_id = endpoint.id").
+			Joins("LEFT JOIN protocol_endpoint_usage_daily AS usage_daily ON usage_daily.protocol_endpoint_id = endpoint.id").
 			Joins("LEFT JOIN (?) AS latest ON latest.protocol_endpoint_id = endpoint.id", latest).
 			Joins("LEFT JOIN protocol_endpoint_usage_resets AS reset ON reset.id = latest.id").
-			Select("endpoint.id AS protocol_endpoint_id, COALESCE(SUM(usage.used_bytes),0) AS used_bytes_total, COALESCE(SUM(CASE WHEN usage.usage_date = ? THEN usage.used_bytes ELSE 0 END),0) AS used_bytes_today, MAX(reset.baseline_total_bytes) AS baseline_total_bytes, MAX(reset.baseline_today_bytes) AS baseline_today_bytes, MAX(reset.reset_at) AS reset_at", day).
+			Select("endpoint.id AS protocol_endpoint_id, COALESCE(SUM(usage_daily.used_bytes),0) AS used_bytes_total, COALESCE(SUM(CASE WHEN usage_daily.usage_date = ? THEN usage_daily.used_bytes ELSE 0 END),0) AS used_bytes_today, MAX(reset.baseline_total_bytes) AS baseline_total_bytes, MAX(reset.baseline_today_bytes) AS baseline_today_bytes, MAX(reset.reset_at) AS reset_at", day).
 			Where("endpoint.id IN ?", ids).Group("endpoint.id").Scan(&traffic).Error
 	}()
 	wg.Wait()

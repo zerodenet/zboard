@@ -4246,7 +4246,7 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
       responses:
-        "200": { description: Latest completed periods, newest first }
+        "200": { description: Latest completed periods ordered newest first }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
     post:
