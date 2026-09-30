@@ -2,14 +2,17 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/plugins"
+	"github.com/zeromicro/go-zero/rest/pathvar"
 )
 
 type runtimeQueue = jobs.RuntimeQueueSummary
@@ -17,6 +20,13 @@ type runtimeQueue = jobs.RuntimeQueueSummary
 type runtimeStatusIssue struct {
 	Section string `json:"section"`
 	Message string `json:"message"`
+}
+
+func (h *handlers) AdminRuntimeRegisteredJobsHandler(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.requireAdmin(w, r); err != nil {
+		return
+	}
+	OK(w, h.services.Jobs.RegisteredJobs())
 }
 
 func (h *handlers) AdminRuntimeJobsHandler(w http.ResponseWriter, r *http.Request) {
@@ -108,8 +118,9 @@ func (h *handlers) AdminRuntimeJobsHandler(w http.ResponseWriter, r *http.Reques
 	}
 	data := map[string]any{
 		"as_of": now, "started_at": zboardProcessStartedAt, "observation_scope": "deployment",
-		"jobs": executionJobs, "queues": queues, "runtime": map[string]any{}, "issues": issues,
-		"plugin_host": host, "plugin_tasks": pluginTasks,
+		"jobs": executionJobs, "registered_jobs": h.services.Jobs.RegisteredJobs(), "queues": queues, "runtime": map[string]any{}, "issues": issues,
+		"read_duration_ms": map[string]int64{"queues": queueDuration.Milliseconds(), "runtime": diagnosticsDuration.Milliseconds(), "execution": executionDuration.Milliseconds(), "registration_messages": registrationDuration.Milliseconds(), "plugin_tasks": pluginTasksDuration.Milliseconds()},
+		"plugin_host":      host, "plugin_tasks": pluginTasks,
 		"admin_task_concurrency": adminTaskWorkers, "admin_item_concurrency": adminTaskWorkers * operationTaskWorkers,
 	}
 	if diagnosticsErr == nil {
@@ -164,4 +175,27 @@ func (h *handlers) AdminRuntimeQueueHandler(w http.ResponseWriter, r *http.Reque
 		page.Items[i].LastError = sanitizeAuditDetail(truncateTaskError(page.Items[i].LastError))
 	}
 	OK(w, pagedData(page.Items, page.Total, offset, limit))
+}
+
+func (h *handlers) AdminRuntimePublicationRetryHandler(w http.ResponseWriter, r *http.Request) {
+	claims, authErr := h.requireAdmin(w, r)
+	if authErr != nil {
+		return
+	}
+	id, err := strconv.ParseUint(pathvar.Vars(r)["id"], 10, 32)
+	if err != nil || id == 0 {
+		BadRequest(w, "节点编号无效")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.services.RuntimeQueues().RetryPublication(ctx, uint(id), claims.UserID, claims.Email, time.Now().UTC()); err != nil {
+		if errors.Is(err, jobs.ErrRuntimeQueueConflict) {
+			writeJSON(w, http.StatusConflict, "发布请求已被领取、完成或正在等待领取，请刷新", nil)
+			return
+		}
+		ServiceUnavailable(w, "重试请求保存失败")
+		return
+	}
+	OK(w, map[string]any{"node_id": id, "status": "queued"})
 }

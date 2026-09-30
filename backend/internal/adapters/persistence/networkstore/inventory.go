@@ -250,14 +250,8 @@ func (s Inventory) endpointQuery(ctx context.Context, input network.ProtocolEndp
 		q = q.Where("protocol_endpoints.is_active = ?", *input.Active)
 	}
 	if input.DeploymentStatus != "" {
-		latest := s.DB.WithContext(ctx).Model(&model.ProtocolDeployment{}).Select("MAX(id)").Group("protocol_endpoint_id")
-		if input.DeploymentStatus == "never" {
-			deployed := s.DB.WithContext(ctx).Model(&model.ProtocolDeployment{}).Select("DISTINCT protocol_endpoint_id")
-			q = q.Where("protocol_endpoints.id NOT IN (?)", deployed)
-		} else {
-			matching := s.DB.WithContext(ctx).Model(&model.ProtocolDeployment{}).Select("protocol_endpoint_id").Where("id IN (?) AND status = ?", latest, input.DeploymentStatus)
-			q = q.Where("protocol_endpoints.id IN (?)", matching)
-		}
+		q = s.withPublicationStatus(ctx, q, "protocol_endpoints.id", "protocol_endpoints.node_id").
+			Where(publicationStatusSQL+" = ?", publicationObservationTime(input.Now), publicationObservationTime(input.Now), input.DeploymentStatus)
 	}
 	return q
 }
@@ -281,6 +275,8 @@ func (s Inventory) ListProtocolEndpoints(ctx context.Context, input network.Prot
 		switch input.DeploymentStatus {
 		case "succeeded":
 			page.Total = facets.Succeeded
+		case "queued":
+			page.Total = facets.Queued
 		case "running":
 			page.Total = facets.Running
 		case "failed":
@@ -320,26 +316,23 @@ func (s Inventory) ListProtocolEndpoints(ctx context.Context, input network.Prot
 
 func (s Inventory) protocolEndpointStatusFacets(ctx context.Context, input network.ProtocolEndpointInventoryQuery) (network.ProtocolEndpointStatusFacets, error) {
 	input.DeploymentStatus = ""
-	latest := s.DB.WithContext(ctx).Model(&model.ProtocolDeployment{}).
-		Select("protocol_endpoint_id, MAX(id) AS latest_id").
-		Group("protocol_endpoint_id")
 	var row struct {
-		Total, Succeeded, Running, Failed, Never int64
+		Total, Succeeded, Queued, Running, Failed, Never int64
 	}
-	err := s.endpointQuery(ctx, input).
+	statusRows := s.withPublicationStatus(ctx, s.endpointQuery(ctx, input), "protocol_endpoints.id", "protocol_endpoints.node_id").
+		Select(publicationStatusSQL+" AS publication_status", publicationObservationTime(input.Now), publicationObservationTime(input.Now))
+	err := s.DB.WithContext(ctx).Table("(?) AS status_rows", statusRows).
 		Select(`COUNT(*) AS total,
-			COALESCE(SUM(CASE WHEN protocol_endpoint_deployment.status = 'succeeded' THEN 1 ELSE 0 END), 0) AS succeeded,
-			COALESCE(SUM(CASE WHEN protocol_endpoint_deployment.status = 'running' THEN 1 ELSE 0 END), 0) AS running,
-			COALESCE(SUM(CASE WHEN protocol_endpoint_deployment.status = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
-			COALESCE(SUM(CASE WHEN protocol_endpoint_deployment.id IS NULL THEN 1 ELSE 0 END), 0) AS never`).
-		Joins("LEFT JOIN (?) AS protocol_endpoint_latest ON protocol_endpoint_latest.protocol_endpoint_id = protocol_endpoints.id", latest).
-		Joins("LEFT JOIN protocol_deployments AS protocol_endpoint_deployment ON protocol_endpoint_deployment.id = protocol_endpoint_latest.latest_id").
-		Scan(&row).Error
+			COALESCE(SUM(CASE WHEN publication_status = 'succeeded' THEN 1 ELSE 0 END), 0) AS succeeded,
+			COALESCE(SUM(CASE WHEN publication_status = 'queued' THEN 1 ELSE 0 END), 0) AS queued,
+			COALESCE(SUM(CASE WHEN publication_status = 'running' THEN 1 ELSE 0 END), 0) AS running,
+			COALESCE(SUM(CASE WHEN publication_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
+			COALESCE(SUM(CASE WHEN publication_status = 'never' THEN 1 ELSE 0 END), 0) AS never`).Scan(&row).Error
 	if err != nil {
 		return network.ProtocolEndpointStatusFacets{}, err
 	}
 	return network.ProtocolEndpointStatusFacets{
-		All: row.Total, Succeeded: row.Succeeded, Running: row.Running, Failed: row.Failed, Never: row.Never,
+		All: row.Total, Succeeded: row.Succeeded, Queued: row.Queued, Running: row.Running, Failed: row.Failed, Never: row.Never,
 	}, nil
 }
 
@@ -367,11 +360,12 @@ func (s Inventory) decorateEndpoints(ctx context.Context, rows []model.ProtocolE
 	}
 	var usage map[uint]network.ProtocolUsageRecord
 	var latest map[uint]network.ProtocolDeploymentRecord
+	var publication map[uint]network.PublicationQueueRecord
 	var nodes []model.Node
 	var bindings []model.CertificateProtocolEndpoint
-	var usageErr, latestErr, nodesErr, bindingsErr error
+	var usageErr, latestErr, publicationErr, nodesErr, bindingsErr error
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(5)
 	go func() {
 		defer wg.Done()
 		usage, usageErr = s.protocolUsage(ctx, ids, now)
@@ -382,6 +376,10 @@ func (s Inventory) decorateEndpoints(ctx context.Context, rows []model.ProtocolE
 	}()
 	go func() {
 		defer wg.Done()
+		publication, publicationErr = s.publicationQueueStates(ctx, nodeIDs, now)
+	}()
+	go func() {
+		defer wg.Done()
 		nodesErr = s.DB.WithContext(ctx).Where("id IN ?", nodeIDs).Find(&nodes).Error
 	}()
 	go func() {
@@ -389,7 +387,7 @@ func (s Inventory) decorateEndpoints(ctx context.Context, rows []model.ProtocolE
 		bindingsErr = s.DB.WithContext(ctx).Where("protocol_endpoint_id IN ?", ids).Find(&bindings).Error
 	}()
 	wg.Wait()
-	for _, err := range []error{usageErr, latestErr, nodesErr, bindingsErr} {
+	for _, err := range []error{usageErr, latestErr, publicationErr, nodesErr, bindingsErr} {
 		if err != nil {
 			return nil, err
 		}
@@ -437,9 +435,32 @@ func (s Inventory) decorateEndpoints(ctx context.Context, rows []model.ProtocolE
 			copy := dep
 			item.LatestDeployment = &copy
 		}
+		if state, ok := publication[r.NodeID]; ok {
+			copy := state
+			item.Publication = &copy
+		}
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func (s Inventory) publicationQueueStates(ctx context.Context, nodeIDs []uint, now time.Time) (map[uint]network.PublicationQueueRecord, error) {
+	var rows []model.NodeConfigPublish
+	if err := s.DB.WithContext(ctx).Select("node_id,attempts,next_attempt_at,lease_until,lease_token,last_error").Where("node_id IN ?", nodeIDs).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	states := make(map[uint]network.PublicationQueueRecord, len(rows))
+	for _, row := range rows {
+		status := "queued"
+		switch {
+		case row.LeaseToken != "" && row.LeaseUntil.After(now):
+			status = "running"
+		case row.LeaseToken != "" || row.LastError != "" && row.NextAttemptAt.After(now):
+			status = "failed"
+		}
+		states[row.NodeID] = network.PublicationQueueRecord{Status: status, Attempts: row.Attempts, NextAttemptAt: row.NextAttemptAt, HasError: row.LastError != ""}
+	}
+	return states, nil
 }
 
 func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time) (map[uint]network.ProtocolUsageRecord, error) {
@@ -460,8 +481,10 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 	}
 	var credentials []credentialRow
 	type trafficRow struct {
-		ProtocolEndpointID             uint
-		UsedBytesToday, UsedBytesTotal int64
+		ProtocolEndpointID                     uint
+		UsedBytesToday, UsedBytesTotal         int64
+		BaselineTotalBytes, BaselineTodayBytes int64
+		ResetAt                                *time.Time
 	}
 	var traffic []trafficRow
 	day := now.UTC().Format("2006-01-02")
@@ -478,7 +501,14 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 	}()
 	go func() {
 		defer wg.Done()
-		trafficErr = s.DB.WithContext(ctx).Model(&model.ProtocolEndpointUsageDaily{}).Select("protocol_endpoint_id, COALESCE(SUM(used_bytes),0) AS used_bytes_total, COALESCE(SUM(CASE WHEN usage_date = ? THEN used_bytes ELSE 0 END),0) AS used_bytes_today", day).Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id").Scan(&traffic).Error
+		measured := s.DB.WithContext(ctx).Raw("SELECT protocol_endpoint_id AS id FROM protocol_endpoint_usage_daily WHERE protocol_endpoint_id IN ? UNION SELECT protocol_endpoint_id AS id FROM protocol_endpoint_usage_resets WHERE protocol_endpoint_id IN ?", ids, ids)
+		latest := s.DB.WithContext(ctx).Model(&model.ProtocolEndpointUsageReset{}).Select("protocol_endpoint_id, MAX(id) AS id").Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id")
+		trafficErr = s.DB.WithContext(ctx).Table("(?) AS endpoint", measured).
+			Joins("LEFT JOIN protocol_endpoint_usage_daily AS usage ON usage.protocol_endpoint_id = endpoint.id").
+			Joins("LEFT JOIN (?) AS latest ON latest.protocol_endpoint_id = endpoint.id", latest).
+			Joins("LEFT JOIN protocol_endpoint_usage_resets AS reset ON reset.id = latest.id").
+			Select("endpoint.id AS protocol_endpoint_id, COALESCE(SUM(usage.used_bytes),0) AS used_bytes_total, COALESCE(SUM(CASE WHEN usage.usage_date = ? THEN usage.used_bytes ELSE 0 END),0) AS used_bytes_today, MAX(reset.baseline_total_bytes) AS baseline_total_bytes, MAX(reset.baseline_today_bytes) AS baseline_today_bytes, MAX(reset.reset_at) AS reset_at", day).
+			Where("endpoint.id IN ?", ids).Group("endpoint.id").Scan(&traffic).Error
 	}()
 	wg.Wait()
 	for _, err := range []error{principalErr, credentialErr, trafficErr} {
@@ -530,8 +560,18 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 	}
 	for _, r := range traffic {
 		v := result[r.ProtocolEndpointID]
+		v.ResetAt = r.ResetAt
+		v.UsedBytesTotal = r.UsedBytesTotal - r.BaselineTotalBytes
+		if v.UsedBytesTotal < 0 {
+			v.UsedBytesTotal = 0
+		}
 		v.UsedBytesToday = r.UsedBytesToday
-		v.UsedBytesTotal = r.UsedBytesTotal
+		if r.ResetAt != nil && r.ResetAt.UTC().Format("2006-01-02") == day {
+			v.UsedBytesToday -= r.BaselineTodayBytes
+		}
+		if v.UsedBytesToday < 0 {
+			v.UsedBytesToday = 0
+		}
 		result[r.ProtocolEndpointID] = v
 	}
 	return result, nil
@@ -567,10 +607,9 @@ func (s Inventory) SelectProtocolEndpointIDs(ctx context.Context, input network.
 		q = s.serviceQuery(ctx, input)
 		column = "service.id"
 		if input.DeploymentStatus != "" {
-			latest := s.DB.WithContext(ctx).Model(&model.ProtocolDeployment{}).Select("protocol_endpoint_id, MAX(id) AS latest_id").Group("protocol_endpoint_id")
-			q = q.Joins("LEFT JOIN (?) AS latest ON latest.protocol_endpoint_id = service.endpoint_id", latest).
-				Joins("LEFT JOIN protocol_deployments AS deployment ON deployment.id = latest.latest_id").
-				Where("COALESCE(deployment.status, 'never') = ?", input.DeploymentStatus)
+			now := publicationObservationTime(input.Now)
+			q = s.withServicePublicationStatus(ctx, q).
+				Where(servicePublicationStatusSQL+" = ?", now, now, now, now, input.DeploymentStatus)
 		}
 	}
 	var total int64

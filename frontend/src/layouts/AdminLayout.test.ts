@@ -33,6 +33,28 @@ async function setup(path: string, mobile = false) {
 }
 
 describe('AdminLayout navigation', () => {
+  it('keeps sibling page tabs outside the page header at narrow widths', async () => {
+    const { wrapper, router } = await setup('/admin/nodes', true)
+    const tabs = wrapper.get('.app-workspace > .mobile-section-navigation')
+    expect(tabs.get('a[href="/admin/nodes"]').attributes('aria-current')).toBe('page')
+    await tabs.get('a[href="/admin/protocols"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/admin/protocols')
+    expect(wrapper.get('.app-workspace > .mobile-section-navigation a[aria-current="page"]').attributes('href')).toBe('/admin/protocols')
+  })
+
+  it('offers other visible domain pages when the current menu section has one page', async () => {
+    const menu = menuFixture('admin')
+    menu.nodes = menu.nodes.map(node => node.parent_id === 'infrastructure.resources' && node.path !== '/admin/nodes'
+      ? { ...node, parent_id: 'infrastructure.access' }
+      : node)
+    vi.mocked(fetchNavigation).mockResolvedValueOnce(menu)
+    const { wrapper } = await setup('/admin/nodes', true)
+    const tabs = wrapper.get('.app-workspace > .mobile-section-navigation')
+    expect(tabs.get('a[href="/admin/nodes"]').attributes('aria-current')).toBe('page')
+    expect(tabs.find('a[href="/admin/protocols"]').exists()).toBe(true)
+  })
+
   it('shows an unavailable notice without mounting a directly opened hidden page', async () => {
     const value = menuFixture('admin')
     value.nodes = value.nodes.filter(node => node.path !== '/admin/nodes')
@@ -75,6 +97,24 @@ describe('AdminLayout navigation', () => {
     await flushPromises()
     expect(wrapper.get('main').text()).toContain('页面不可用')
     expect(wrapper.find('.standard-page').exists()).toBe(false)
+  })
+
+  it('keeps a visible sibling page mounted during tab navigation, then applies a revoked menu result', async () => {
+    const { wrapper, router } = await setup('/admin/nodes')
+    let resolveCheck!: (value: ReturnType<typeof menuFixture>) => void
+    vi.mocked(fetchNavigation).mockImplementationOnce(() => new Promise(resolve => { resolveCheck = resolve }))
+    await wrapper.get('.admin-page-navigation-link[href="/admin/protocols"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/admin/protocols')
+    expect(wrapper.find('.standard-page').exists()).toBe(true)
+    expect(wrapper.get('main').text()).not.toContain('正在加载页面')
+    const hidden = menuFixture('admin')
+    hidden.nodes = hidden.nodes.filter(node => node.path !== '/admin/protocols')
+    hidden.page_available = false
+    resolveCheck(hidden)
+    await flushPromises()
+    expect(wrapper.find('.standard-page').exists()).toBe(false)
+    expect(wrapper.get('main').text()).toContain('页面不可用')
   })
 
   it('shows a retry notice instead of page content when the initial check fails', async () => {

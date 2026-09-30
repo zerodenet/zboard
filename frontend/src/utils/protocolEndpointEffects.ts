@@ -8,14 +8,14 @@ export function protocolEndpointMutationMessage(result: ProtocolEndpointMutation
     const endpointPublish = result.publish_status === 'queued'
     const membershipPublish = membership?.publish_status === 'queued'
     if (endpointPublish || membershipPublish) {
-      return `协议服务与 ${membershipChanges} 项节点组关联已保存；凭证协调任务 ${taskIDs || '已创建'}，受影响节点将在后台发布。`
+      return `协议服务与 ${membershipChanges} 项节点组关联已保存；凭证协调任务 ${taskIDs || '已创建'}，受影响节点的发布请求已入队。`
     }
     return `协议服务与 ${membershipChanges} 项节点组关联已保存；凭证协调任务 ${taskIDs || '已创建'}，当前没有活跃订阅凭证需要发布节点。`
   }
   if (result.publish_status === 'queued') {
     return copied
-      ? '协议配置已复制为独立服务，受影响节点的运行配置正在后台发布。'
-      : '协议服务已保存，受影响节点的运行配置正在后台发布。'
+      ? '协议配置已复制为独立服务，受影响节点的发布请求已入队。'
+      : '协议服务已保存，受影响节点的发布请求已入队。'
   }
   if (copied) return '协议配置已复制为独立服务；当前未启用，无需发布节点。'
   if (result.effect === 'delivery') return '协议服务已保存；交付配置已更新，无需发布节点。'

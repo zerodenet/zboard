@@ -121,6 +121,7 @@ var explicitModelOwners = map[string]string{
 	"ProtocolDeployment":                 "resources",
 	"ProtocolEndpoint":                   "resources",
 	"ProtocolEndpointUsageDaily":         "metering",
+	"ProtocolEndpointUsageReset":         "metering",
 	"ProviderAccount":                    "network",
 	"ProviderOperation":                  "network",
 	"QuotaEvent":                         "entitlements",

@@ -18,7 +18,8 @@ func (s AdminRuntimeQueue) Summary(ctx context.Context, now time.Time) (out jobs
  COALESCE(SUM(CASE WHEN status = 0 AND scheduled_at > ? THEN 1 ELSE 0 END),0) AS delayed,
  COALESCE(SUM(CASE WHEN status = 1 AND (locked_until IS NULL OR locked_until <= ?) THEN 1 ELSE 0 END),0) AS stale,
  COALESCE(SUM(CASE WHEN status = 0 AND scheduled_at IS NULL THEN 1 ELSE 0 END),0) AS drafts,
- COALESCE(SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END),0) AS failed`, now, now, now, now).Scan(&out).Error
+ COALESCE(SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END),0) AS failed,
+ MIN(CASE WHEN status = 0 AND scheduled_at IS NOT NULL AND scheduled_at <= ? THEN created_at END) AS oldest_at`, now, now, now, now, now).Scan(&out).Error
 	out.ID, out.Name = jobs.AdminRuntimeQueue, "运营任务"
 	return out, err
 }

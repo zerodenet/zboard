@@ -732,8 +732,10 @@ export interface ProtocolEndpointListItem {
 		last_used_at?: string
 		used_bytes_today: number
 		used_bytes_total: number
+		reset_at?: string
 	}
 	latest_deployment?: Pick<ProtocolDeployment, 'id' | 'status' | 'started_at' | 'finished_at' | 'created_at'> & { has_error: boolean }
+	publication?: { status: 'queued' | 'running' | 'failed'; attempts: number; next_attempt_at: string; has_error: boolean }
 	created_at: string
 	updated_at: string
 }
@@ -742,6 +744,7 @@ export interface ProtocolEndpointStatusFacets {
 	[key: string]: number
 	all: number
 	succeeded: number
+	queued: number
 	running: number
 	failed: number
 	never: number
@@ -839,6 +842,25 @@ export type ProtocolDeployment = {
 export async function fetchProtocolEndpoint(id: number) {
   const response = await api.get(`/admin/protocol-endpoints/${id}`)
   return unwrap(response)
+}
+
+export interface ProtocolEndpointUsageReset {
+	id: number
+	protocol_endpoint_id: number
+	actor_user_id: number
+	reset_at: string
+	period_used_bytes: number
+	reason: string
+}
+
+export async function fetchProtocolEndpointUsageResets(id: number): Promise<ProtocolEndpointUsageReset[]> {
+	const response = await api.get(`/admin/protocol-endpoints/${id}/usage-resets`)
+	return unwrap(response) || []
+}
+
+export async function resetProtocolEndpointUsage(id: number, reason: string): Promise<ProtocolEndpointUsageReset> {
+	const response = await api.post(`/admin/protocol-endpoints/${id}/usage-resets`, { reason })
+	return unwrap(response)
 }
 
 export interface CertificateOperation {

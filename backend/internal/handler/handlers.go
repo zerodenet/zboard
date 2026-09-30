@@ -1659,6 +1659,7 @@ type protocolEndpointAdminDetail struct {
 	EgressConfig            string                                `json:"egress_config,omitempty"`
 	ManagedCertificateID    *uint                                 `json:"managed_certificate_id,omitempty"`
 	LatestDeployment        *model.ProtocolDeployment             `json:"latest_deployment,omitempty"`
+	Publication             *networkcap.PublicationQueueRecord    `json:"publication,omitempty"`
 	Usage                   protocolEndpointUsage                 `json:"usage"`
 	KernelSupported         bool                                  `json:"kernel_supported"`
 	KernelUnsupportedReason string                                `json:"kernel_unsupported_reason,omitempty"`
@@ -1672,6 +1673,7 @@ type protocolEndpointUsage struct {
 	LastUsedAt        *time.Time `json:"last_used_at,omitempty"`
 	UsedBytesToday    int64      `json:"used_bytes_today"`
 	UsedBytesTotal    int64      `json:"used_bytes_total"`
+	ResetAt           *time.Time `json:"reset_at,omitempty"`
 }
 
 type protocolDeploymentListItem struct {
@@ -1707,6 +1709,7 @@ type protocolEndpointListItem struct {
 	IsActive                bool                                    `json:"is_active"`
 	SortOrder               int                                     `json:"sort_order"`
 	LatestDeployment        *protocolDeploymentListItem             `json:"latest_deployment,omitempty"`
+	Publication             *networkcap.PublicationQueueRecord      `json:"publication,omitempty"`
 	Usage                   protocolEndpointUsage                   `json:"usage"`
 	KernelSupported         bool                                    `json:"kernel_supported"`
 	KernelUnsupportedReason string                                  `json:"kernel_unsupported_reason,omitempty"`
@@ -1780,6 +1783,7 @@ func (h *handlers) ProtocolEndpointDetailHandler(w http.ResponseWriter, r *http.
 	detail := protocolEndpointAdminDetail{
 		ProtocolEndpoint: endpoint, Config: serverConfig, EgressConfig: egressConfig, ManagedCertificateID: item.ManagedCertificateID,
 		Usage: usage, KernelSupported: kernelSupported, KernelUnsupportedReason: kernelUnsupportedReason,
+		Publication:          item.Publication,
 		NodeGroupMemberships: memberships,
 	}
 	if item.LatestDeployment != nil {
@@ -1891,7 +1895,7 @@ func (h *handlers) applyProtocolEndpointFilters(values url.Values) (networkcap.P
 		query.Active = &active
 	}
 	if deploymentStatus := strings.TrimSpace(values.Get("deployment_status")); deploymentStatus != "" {
-		if deploymentStatus != "running" && deploymentStatus != "succeeded" && deploymentStatus != "failed" && deploymentStatus != "never" {
+		if deploymentStatus != "queued" && deploymentStatus != "running" && deploymentStatus != "succeeded" && deploymentStatus != "failed" && deploymentStatus != "never" {
 			return networkcap.ProtocolEndpointInventoryQuery{}, validationError("节点筛选条件校验失败。", map[string]string{"deployment_status": "invalid deployment_status"})
 		}
 		query.DeploymentStatus = deploymentStatus
@@ -1976,6 +1980,7 @@ func (h *handlers) ProtocolEndpointListHandler(w http.ResponseWriter, r *http.Re
 			deployment = &value
 		}
 		item := newProtocolEndpointListItem(endpoint, node.Name, row.ManagedCertificateID, deployment, protocolUsageModel(row.Usage), kernelSupported, kernelUnsupportedReason)
+		item.Publication = row.Publication
 		item.ServiceKind = "listener"
 		item.NodeEnabled = node.IsEnabled
 		item.NodeLastSeenAt = node.ConnectorLastSeenAt
@@ -2123,7 +2128,7 @@ func protocolDeploymentModel(r networkcap.ProtocolDeploymentRecord) model.Protoc
 	return model.ProtocolDeployment{ID: r.ID, NodeID: r.NodeID, ProtocolEndpointID: r.ProtocolEndpointID, ConfigRevision: r.ConfigRevision, DesiredConfigSHA256: r.DesiredConfigSHA256, AppliedConfigSHA256: r.AppliedConfigSHA256, Status: r.Status, RequestedBy: r.RequestedBy, Error: r.Error, Output: r.Output, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
 }
 func protocolUsageModel(r networkcap.ProtocolUsageRecord) protocolEndpointUsage {
-	return protocolEndpointUsage{ActiveFlows: r.ActiveFlows, ActiveUsers: r.ActiveUsers, ActiveCredentials: r.ActiveCredentials, LastUsedAt: r.LastUsedAt, UsedBytesToday: r.UsedBytesToday, UsedBytesTotal: r.UsedBytesTotal}
+	return protocolEndpointUsage{ActiveFlows: r.ActiveFlows, ActiveUsers: r.ActiveUsers, ActiveCredentials: r.ActiveCredentials, LastUsedAt: r.LastUsedAt, UsedBytesToday: r.UsedBytesToday, UsedBytesTotal: r.UsedBytesTotal, ResetAt: r.ResetAt}
 }
 func nodeAdministrationModel(r networkcap.NodeAdministrationRecord) model.Node {
 	return nodeInventoryModel(networkcap.NodeInventoryItem{Node: r})

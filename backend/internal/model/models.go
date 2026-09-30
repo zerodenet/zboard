@@ -558,6 +558,22 @@ type ProtocolEndpointUsageDaily struct {
 
 func (ProtocolEndpointUsageDaily) TableName() string { return "protocol_endpoint_usage_daily" }
 
+// ProtocolEndpointUsageReset starts a new admin-facing measurement period.
+// Daily usage and TrafficRecord remain intact for accounting and history.
+type ProtocolEndpointUsageReset struct {
+	ID                 uint      `json:"id" gorm:"primaryKey"`
+	ProtocolEndpointID uint      `json:"protocol_endpoint_id" gorm:"index;not null"`
+	ResetAt            time.Time `json:"reset_at" gorm:"index;not null"`
+	UsageDate          string    `json:"-" gorm:"type:date;not null"`
+	BaselineTotalBytes int64     `json:"-" gorm:"not null"`
+	BaselineTodayBytes int64     `json:"-" gorm:"not null"`
+	PeriodUsedBytes    int64     `json:"period_used_bytes" gorm:"not null"`
+	Reason             string    `json:"reason" gorm:"size:255;not null"`
+	ActorUserID        uint      `json:"actor_user_id" gorm:"not null"`
+}
+
+func (ProtocolEndpointUsageReset) TableName() string { return "protocol_endpoint_usage_resets" }
+
 type AuditLog struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
 	UserID    *uint     `json:"user_id,omitempty" gorm:"index"`

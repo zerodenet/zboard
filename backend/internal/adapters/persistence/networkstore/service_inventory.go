@@ -12,8 +12,8 @@ import (
 // Page identities before decorating either kind. Large inventories never load
 // every forward entry merely to merge and paginate them in the browser.
 func (s Inventory) serviceQuery(ctx context.Context, input network.ProtocolEndpointInventoryQuery) *gorm.DB {
-	const identities = `(SELECT 'listener' AS service_kind, endpoint.id, endpoint.id AS endpoint_id, endpoint.node_id, endpoint.name, endpoint.protocol, endpoint.address, endpoint.port, endpoint.public_port, endpoint.is_active, endpoint.multiplier_milli, endpoint.sort_order, endpoint.updated_at FROM protocol_endpoints AS endpoint
- UNION ALL SELECT 'forward' AS service_kind, entry.id, entry.endpoint_id, COALESCE(entry.node_id, endpoint.node_id) AS node_id, entry.name, endpoint.protocol, entry.address, entry.port, entry.public_port, entry.enabled AS is_active, endpoint.multiplier_milli, COALESCE(entry.delivery_sort_order,endpoint.sort_order) AS sort_order, entry.updated_at
+	const identities = `(SELECT 'listener' AS service_kind, endpoint.id, endpoint.id AS endpoint_id, endpoint.node_id, endpoint.node_id AS landing_node_id, endpoint.name, endpoint.protocol, endpoint.address, endpoint.port, endpoint.public_port, endpoint.is_active, endpoint.multiplier_milli, endpoint.sort_order, endpoint.updated_at FROM protocol_endpoints AS endpoint
+ UNION ALL SELECT 'forward' AS service_kind, entry.id, entry.endpoint_id, COALESCE(entry.node_id, endpoint.node_id) AS node_id, endpoint.node_id AS landing_node_id, entry.name, endpoint.protocol, entry.address, entry.port, entry.public_port, entry.enabled AS is_active, endpoint.multiplier_milli, COALESCE(entry.delivery_sort_order,endpoint.sort_order) AS sort_order, entry.updated_at
  FROM network_entries AS entry JOIN protocol_endpoints AS endpoint ON endpoint.id = entry.endpoint_id)`
 	identitySQL := identities
 	var identityArgs []any
@@ -50,24 +50,31 @@ func (s Inventory) serviceQuery(ctx context.Context, input network.ProtocolEndpo
 
 func (s Inventory) listProtocolServices(ctx context.Context, input network.ProtocolEndpointInventoryQuery) (network.ProtocolEndpointInventoryPage, error) {
 	q := s.serviceQuery(ctx, input)
-	latest := s.DB.WithContext(ctx).Model(&model.ProtocolDeployment{}).Select("protocol_endpoint_id, MAX(id) AS latest_id").Group("protocol_endpoint_id")
 	withDeployment := func(base *gorm.DB) *gorm.DB {
-		return base.Session(&gorm.Session{}).Joins("LEFT JOIN (?) AS latest ON latest.protocol_endpoint_id = service.endpoint_id", latest).Joins("LEFT JOIN protocol_deployments AS deployment ON deployment.id = latest.latest_id")
+		return s.withServicePublicationStatus(ctx, base)
 	}
-	const status = `COALESCE(deployment.status, 'never')`
 	var page network.ProtocolEndpointInventoryPage
-	var facets struct{ All, Succeeded, Running, Failed, Never int64 }
+	var facets struct{ All, Succeeded, Queued, Running, Failed, Never int64 }
 	if input.IncludeStatusFacets {
-		if err := withDeployment(q).Select("COUNT(*) AS `all`, COALESCE(SUM(CASE WHEN " + status + " = 'succeeded' THEN 1 ELSE 0 END),0) AS succeeded, COALESCE(SUM(CASE WHEN " + status + " = 'running' THEN 1 ELSE 0 END),0) AS running, COALESCE(SUM(CASE WHEN " + status + " = 'failed' THEN 1 ELSE 0 END),0) AS failed, COALESCE(SUM(CASE WHEN " + status + " = 'never' THEN 1 ELSE 0 END),0) AS never").Scan(&facets).Error; err != nil {
+		now := publicationObservationTime(input.Now)
+		statusRows := withDeployment(q).Select(servicePublicationStatusSQL+" AS publication_status", now, now, now, now)
+		if err := s.DB.WithContext(ctx).Table("(?) AS status_rows", statusRows).
+			Select(`COUNT(*) AS ` + "`all`" + `,
+ COALESCE(SUM(CASE WHEN publication_status = 'succeeded' THEN 1 ELSE 0 END),0) AS succeeded,
+ COALESCE(SUM(CASE WHEN publication_status = 'queued' THEN 1 ELSE 0 END),0) AS queued,
+ COALESCE(SUM(CASE WHEN publication_status = 'running' THEN 1 ELSE 0 END),0) AS running,
+ COALESCE(SUM(CASE WHEN publication_status = 'failed' THEN 1 ELSE 0 END),0) AS failed,
+ COALESCE(SUM(CASE WHEN publication_status = 'never' THEN 1 ELSE 0 END),0) AS never`).Scan(&facets).Error; err != nil {
 			return page, err
 		}
-		page.Facets = network.ProtocolEndpointStatusFacets{All: facets.All, Succeeded: facets.Succeeded, Running: facets.Running, Failed: facets.Failed, Never: facets.Never}
+		page.Facets = network.ProtocolEndpointStatusFacets{All: facets.All, Succeeded: facets.Succeeded, Queued: facets.Queued, Running: facets.Running, Failed: facets.Failed, Never: facets.Never}
 	}
 	if input.DeploymentStatus != "" {
-		q = withDeployment(q).Where(status+" = ?", input.DeploymentStatus)
+		now := publicationObservationTime(input.Now)
+		q = withDeployment(q).Where(servicePublicationStatusSQL+" = ?", now, now, now, now, input.DeploymentStatus)
 	}
 	if input.IncludeStatusFacets {
-		page.Total = map[string]int64{"": facets.All, "succeeded": facets.Succeeded, "running": facets.Running, "failed": facets.Failed, "never": facets.Never}[input.DeploymentStatus]
+		page.Total = map[string]int64{"": facets.All, "succeeded": facets.Succeeded, "queued": facets.Queued, "running": facets.Running, "failed": facets.Failed, "never": facets.Never}[input.DeploymentStatus]
 	} else if err := q.Session(&gorm.Session{}).Count(&page.Total).Error; err != nil {
 		return page, err
 	}

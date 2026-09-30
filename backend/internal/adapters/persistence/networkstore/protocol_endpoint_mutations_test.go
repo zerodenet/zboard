@@ -359,13 +359,13 @@ func TestProtocolEndpointMutationsRejectInvalidParentChain(t *testing.T) {
 }
 
 func TestProtocolEndpointMutationsRejectCredentialBreakingChanges(t *testing.T) {
-	for _, scenario := range []string{"protocol", "shadowsocks port"} {
+	for _, scenario := range []string{"protocol", "legacy shadowsocks port"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, _ := administrationFixture(t)
 			node, _, _, _ := seedProtocolEndpointMutationAuthority(t, db)
 			service := protocolEndpointMutationService(db)
 			request := protocolEndpointMutationRequest(node.ID)
-			if scenario == "shadowsocks port" {
+			if scenario == "legacy shadowsocks port" {
 				request.Protocol = "shadowsocks"
 			}
 			created, err := service.Save(context.Background(), 1, nil, request)
@@ -374,6 +374,11 @@ func TestProtocolEndpointMutationsRejectCredentialBreakingChanges(t *testing.T) 
 			}
 			if err := db.Create(&model.ProtocolCredential{ID: 90, SubscriptionID: 91, UserID: 2, ProtocolEndpointID: created.ProtocolEndpoint.ID, NodeID: node.ID, CredentialID: "credential-90", PrincipalKey: "principal-90", Secret: "enc:secret", ListenPort: 443, PublicPort: 443, Status: "active", ExpiresAt: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}).Error; err != nil {
 				t.Fatal(err)
+			}
+			if scenario == "legacy shadowsocks port" {
+				if err := db.Model(&model.ProtocolCredential{}).Where("id = ?", 90).Update("listen_port", 9443).Error; err != nil {
+					t.Fatal(err)
+				}
 			}
 			snapshot, err := service.Load(context.Background(), 1, created.ProtocolEndpoint.ID)
 			if err != nil {
@@ -386,11 +391,50 @@ func TestProtocolEndpointMutationsRejectCredentialBreakingChanges(t *testing.T) 
 				request.Port, request.PublicPort = 8443, 8443
 			}
 			_, err = service.Save(context.Background(), 1, &snapshot, request)
-			requireProtocolEndpointMutationField(t, err, "protocol")
+			field := "protocol"
+			if scenario == "legacy shadowsocks port" {
+				field = "port"
+			}
+			requireProtocolEndpointMutationField(t, err, field)
 			var endpoint model.ProtocolEndpoint
 			if err := db.First(&endpoint, created.ProtocolEndpoint.ID).Error; err != nil || endpoint.Protocol != created.ProtocolEndpoint.Protocol || endpoint.Port != 443 {
 				t.Fatalf("endpoint=%+v error=%v", endpoint, err)
 			}
 		})
+	}
+}
+
+func TestProtocolEndpointMutationsMigrateUnifiedShadowsocksPorts(t *testing.T) {
+	db, _ := administrationFixture(t)
+	node, _, _, _ := seedProtocolEndpointMutationAuthority(t, db)
+	service := protocolEndpointMutationService(db)
+	request := protocolEndpointMutationRequest(node.ID)
+	request.Protocol = "shadowsocks"
+	created, err := service.Save(context.Background(), 1, nil, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential := model.ProtocolCredential{SubscriptionID: 50, UserID: 2, ProtocolEndpointID: created.ProtocolEndpoint.ID, NodeID: node.ID, CredentialID: "unified-ss", PrincipalKey: "unified-ss", Secret: "enc:secret", ListenPort: 443, PublicPort: 443, Status: "active", ExpiresAt: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}
+	if err := db.Create(&credential).Error; err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := service.Load(context.Background(), 1, created.ProtocolEndpoint.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.ID = created.ProtocolEndpoint.ID
+	request.Port, request.PublicPort = 8443, 9443
+	updated, err := service.Save(context.Background(), 1, &snapshot, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ProtocolEndpoint.Port != 8443 || updated.ProtocolEndpoint.PublicPort != 9443 || updated.PublishStatus != network.ProtocolEndpointPublishQueued {
+		t.Fatalf("endpoint=%+v publish=%s", updated.ProtocolEndpoint, updated.PublishStatus)
+	}
+	if err := db.First(&credential, credential.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if credential.ListenPort != 8443 || credential.PublicPort != 9443 {
+		t.Fatalf("credential ports=%d/%d", credential.ListenPort, credential.PublicPort)
 	}
 }

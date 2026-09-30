@@ -24,7 +24,7 @@ function result(overrides: Partial<ProtocolEndpointMutationResult> = {}): Protoc
 describe('protocolEndpointMutationMessage', () => {
   it('distinguishes queued runtime publication from database-only saves', () => {
     expect(protocolEndpointMutationMessage(result({ effect: 'runtime', effects: ['runtime'], publish_status: 'queued', affected_node_ids: [3] })))
-      .toContain('正在后台发布')
+      .toContain('发布请求已入队')
     expect(protocolEndpointMutationMessage(result({ effect: 'delivery', effects: ['delivery'] })))
       .toContain('无需发布节点')
     expect(protocolEndpointMutationMessage(result({ effect: 'billing', effects: ['billing'] })))

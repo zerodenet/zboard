@@ -64,6 +64,14 @@ type ProtocolUsageRecord struct {
 	ActiveFlows, ActiveUsers, ActiveCredentials int64
 	LastUsedAt                                  *time.Time
 	UsedBytesToday, UsedBytesTotal              int64
+	ResetAt                                     *time.Time
+}
+
+type PublicationQueueRecord struct {
+	Status        string    `json:"status"`
+	Attempts      uint      `json:"attempts"`
+	NextAttemptAt time.Time `json:"next_attempt_at"`
+	HasError      bool      `json:"has_error"`
 }
 
 type ProtocolEndpointInventoryItem struct {
@@ -72,6 +80,7 @@ type ProtocolEndpointInventoryItem struct {
 	Node                 NodeAdministrationRecord
 	ManagedCertificateID *uint
 	LatestDeployment     *ProtocolDeploymentRecord
+	Publication          *PublicationQueueRecord
 	Usage                ProtocolUsageRecord
 	Memberships          []ProtocolEndpointMembership
 }
@@ -99,6 +108,7 @@ type ProtocolEndpointInventoryPage struct {
 type ProtocolEndpointStatusFacets struct {
 	All       int64 `json:"all"`
 	Succeeded int64 `json:"succeeded"`
+	Queued    int64 `json:"queued"`
 	Running   int64 `json:"running"`
 	Failed    int64 `json:"failed"`
 	Never     int64 `json:"never"`

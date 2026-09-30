@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 )
@@ -10,6 +11,12 @@ const (
 	AdminRuntimeQueue       = "admin_tasks"
 	PublicationRuntimeQueue = "node_publish"
 )
+
+var ErrRuntimeQueueConflict = errors.New("runtime queue item cannot be retried in its current state")
+
+type RuntimeQueueRetrySource interface {
+	Retry(context.Context, uint, uint, string, time.Time) error
+}
 
 type RuntimeQueueSummary struct {
 	OldestAt *time.Time `json:"oldest_at,omitempty"`
@@ -67,13 +74,14 @@ func (s RuntimeQueues) Summaries(ctx context.Context, now time.Time) ([]RuntimeQ
 		admin, adminErr = s.Admin.Summary(ctx, now)
 	}()
 	wg.Wait()
-	if publicationErr != nil {
-		return nil, publicationErr
+	result := make([]RuntimeQueueSummary, 0, 2)
+	if publicationErr == nil {
+		result = append(result, publication)
 	}
-	if adminErr != nil {
-		return nil, adminErr
+	if adminErr == nil {
+		result = append(result, admin)
 	}
-	return []RuntimeQueueSummary{publication, admin}, nil
+	return result, errors.Join(publicationErr, adminErr)
 }
 
 func (s RuntimeQueues) Page(ctx context.Context, name string, now time.Time, limit, offset int) (RuntimeQueuePage, error) {
@@ -94,4 +102,15 @@ func (s RuntimeQueues) Page(ctx context.Context, name string, now time.Time, lim
 	default:
 		return RuntimeQueuePage{}, ErrInvalid
 	}
+}
+
+func (s RuntimeQueues) RetryPublication(ctx context.Context, nodeID, actorID uint, actor string, now time.Time) error {
+	if nodeID == 0 || actorID == 0 {
+		return ErrInvalid
+	}
+	source, ok := s.Publication.(RuntimeQueueRetrySource)
+	if !ok {
+		return ErrInvalid
+	}
+	return source.Retry(ctx, nodeID, actorID, actor, now.UTC())
 }

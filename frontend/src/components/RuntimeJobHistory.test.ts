@@ -60,3 +60,15 @@ it('shows persisted attempts and requests durable cancellation for a running job
   expect(w.emitted('resolved')).toHaveLength(1)
   w.unmount()
 })
+
+it('shows a compact pending run without inventing a completion time', async () => {
+  api.history.mockResolvedValue({ items: [{ id: 'queued-1', owner: 'system', handler: 'sync', state: 'queued', attempts: 0, max_attempts: 3, planned_at: '2026-09-12T00:01:00Z', created_at: '2026-09-12T00:00:00Z', finished_at: null }], total: 1, offset: 0, limit: 25 })
+  const w = mount(RuntimeJobHistory, { props: { asOf: 'now', names: { sync: '同步任务' } } })
+  await flushPromises()
+  const row = w.get('tr.history-run')
+  expect(row.findAll('td')).toHaveLength(6)
+  expect(row.get('.history-times').text()).toContain('创建')
+  expect(row.get('.history-times').text()).not.toContain('完成')
+  expect(row.get('.history-controls').text()).toContain('取消任务')
+  w.unmount()
+})

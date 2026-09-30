@@ -15,6 +15,18 @@ export function moveProtocolEndpointOrder<T extends ProtocolEndpointOrderItem>(
   return next
 }
 
+export function moveProtocolEndpointOrderTo<T extends ProtocolEndpointOrderItem>(
+  items: readonly T[],
+  from: number,
+  to: number,
+): T[] {
+  if (from < 0 || from >= items.length || to < 0 || to >= items.length || from === to) return items.slice()
+  const next = items.slice()
+  const [item] = next.splice(from, 1)
+  next.splice(to, 0, item)
+  return next
+}
+
 export function protocolEndpointOrderChanged(
   current: readonly ProtocolEndpointOrderItem[],
   originalIds: readonly number[],

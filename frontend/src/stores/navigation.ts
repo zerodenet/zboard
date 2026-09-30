@@ -10,6 +10,12 @@ function state() { return { snapshot: shallowRef<NavigationSnapshot>({ revision:
 export const navigationState = { public: state(), account: state(), admin: state() }
 export const adminNavigation = computed(() => toAdminNavigation(navigationState.admin.snapshot.value.nodes))
 export { NAVIGATION_CHANGED } from '../utils/navigationEvents'
+let approvedTransitionPath = ''
+export function markApprovedNavigationTransition(path: string, event: MouseEvent) {
+  if ((event.button != null && event.button !== 0) || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  approvedTransitionPath = path
+  window.setTimeout(() => { if (approvedTransitionPath === path) approvedTransitionPath = '' }, 5000)
+}
 
 // Layouts own request lifecycle; every navigation consumer reads this shared
 // snapshot. Identity changes invalidate in-flight reads before clearing menus.
@@ -21,7 +27,8 @@ export function useNavigation(surface: Surface) {
   current.error.value = ''
   current.checkedPath.value = ''
   const ready = computed(() => current.checkedPath.value === route.path)
-  const pageAvailable = computed(() => ready.value && current.snapshot.value.page_available === true)
+  const cachedPath = ref('')
+  const pageAvailable = computed(() => ready.value && (cachedPath.value === route.path || current.snapshot.value.page_available === true))
   const pageError = computed(() => ready.value ? '' : current.error.value)
   const pageLoading = computed(() => !ready.value && !pageError.value)
   let controller: AbortController | undefined
@@ -40,6 +47,7 @@ export function useNavigation(surface: Surface) {
       if (disposed || request !== sequence) return
       current.snapshot.value = snapshot
       current.checkedPath.value = path
+      cachedPath.value = ''
       current.error.value = ''
     } catch (cause: any) {
       if (disposed || request !== sequence || controller?.signal.aborted) return
@@ -50,13 +58,19 @@ export function useNavigation(surface: Surface) {
   watch(() => app.token, () => {
     ++sequence
     controller?.abort()
+    approvedTransitionPath = ''
     current.snapshot.value = { revision: 0, nodes: [] }
     current.error.value = ''
     current.checkedPath.value = ''
+    cachedPath.value = ''
     refresh()
   })
   watch(() => route.path, () => {
-    current.checkedPath.value = ''
+    const path = route.path
+    const approved = surface === 'admin' && approvedTransitionPath === path && current.snapshot.value.nodes.some(node => node.path === path && node.owner !== 'custom')
+    approvedTransitionPath = ''
+    cachedPath.value = approved ? path : ''
+    current.checkedPath.value = approved ? path : ''
     current.error.value = ''
     void load()
   }, { flush: 'sync' })

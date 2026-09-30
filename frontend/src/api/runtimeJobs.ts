@@ -5,17 +5,21 @@ export interface RuntimeJob {
   last_finished_at: string | null; last_duration_ms: number; last_result: string; last_error: string; next_scan_at: string | null
 }
 export interface PluginTask extends RuntimeJob { plugin_id: string; plugin_name: string; task_id: string; timeout_seconds: number }
+export interface RegisteredJob { id: string; name: string; owner: string; interval_seconds: number; timeout_seconds: number }
 export interface RuntimeQueue { oldest_at?: string | null; id: string; name: string; pending: number; running: number; delayed: number; stale: number; drafts: number; failed: number }
 export interface QueueItem { id: number; kind: string; state: string; attempts: number; created_at: string; next_attempt_at: string | null; lease_until: string | null; last_error: string }
 export interface QueuePage { items: QueueItem[]; total: number; offset: number; limit: number }
 export interface RuntimeStatusIssue { section: 'queues' | 'runtime' | 'execution' | 'plugin_tasks' | 'registration_messages'; message: string }
 export interface RuntimeJobs {
-  as_of: string; started_at: string; observation_scope: string; jobs: RuntimeJob[]; queues: RuntimeQueue[]
+  as_of: string; started_at: string; observation_scope: string; jobs: RuntimeJob[]; registered_jobs?: RegisteredJob[]; queues: RuntimeQueue[]
   issues?: RuntimeStatusIssue[]
+  read_duration_ms?: Record<string, number>
   execution_queue?: { pending: number; running: number; delayed: number; unknown: number; maintenance_reserved?: boolean; pending_limit?: number; plugin_pending_limit?: number; plugin_owner_pending_limit?: number }; execution_concurrency?: number; external_execution_concurrency?: number; admin_task_concurrency: number; admin_item_concurrency: number
   plugin_tasks?: PluginTask[] | null; plugin_task_concurrency?: number
   plugin_host: { state: string; epoch: number; lease_until: string | null; renewal_failures: number; interval_seconds: number } | null
   runtime: { event_spool: { pending_events: number; pending_bytes: number; oldest_event_at?: string; pressure_level: string } | null }
 }
 export async function fetchRuntimeJobs(signal?: AbortSignal): Promise<RuntimeJobs> { return (await api.get('/admin/runtime-jobs', { signal })).data.data }
+export async function fetchRegisteredJobs(signal?: AbortSignal): Promise<RegisteredJob[]> { return (await api.get('/admin/runtime-jobs/registered', { signal })).data.data }
 export async function fetchRuntimeQueue(name: string, offset: number, signal?: AbortSignal): Promise<QueuePage> { return (await api.get('/admin/runtime-jobs/queue', { params: { name, offset, limit: 25 }, signal })).data.data }
+export async function retryNodePublication(nodeId: number): Promise<void> { await api.post(`/admin/runtime-jobs/queue/node_publish/${nodeId}/retry`) }

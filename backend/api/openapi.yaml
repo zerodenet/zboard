@@ -1869,7 +1869,7 @@ paths:
       tags: [admin]
       operationId: getAdminRuntimeJobs
       summary: Observe process-local job runs and durable queue counts
-      description: Administrator only. Execution observations reset on restart. Queue counts come from persistent storage; stale leases are a subset of pending or delayed publication records. A successful scan does not imply an empty queue. Independent section failures are returned in issues while unaffected runtime sections remain available; failed sections are omitted rather than represented by healthy-looking zero values.
+      description: Administrator only. Execution observations reset on restart. Queue counts come from persistent storage; stale leases are a subset of pending or delayed publication records. A successful scan does not imply an empty queue. Independent section failures are returned in issues while unaffected runtime sections remain available; failed sections are omitted rather than represented by healthy-looking zero values. read_duration_ms identifies slow or unavailable sections without requiring browser developer tools.
       responses:
         "200":
           description: Persistent deployment task observations, queue summaries, event spool and plugin host lease
@@ -1895,6 +1895,10 @@ paths:
                                 section: { type: string, enum: [queues, runtime, execution, plugin_tasks, registration_messages] }
                                 message: { type: string }
                           jobs: { type: array, items: { type: object } }
+                          registered_jobs:
+                            type: array
+                            description: Handlers registered in this process, independent of durable execution statistics.
+                            items: { $ref: "#/components/schemas/RegisteredRuntimeJob" }
                           queues: { type: array, items: { type: object } }
                           runtime: { type: object }
                           plugin_host: { type: object, nullable: true }
@@ -1919,6 +1923,26 @@ paths:
                           admin_item_concurrency: { type: integer }
         "403": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/runtime-jobs/registered:
+    get:
+      tags: [admin]
+      operationId: listRegisteredRuntimeJobs
+      summary: List handlers currently registered in this process
+      description: Administrator only. Reads the in-memory runtime registry without querying execution history or the database. An absent handler is not registered in this process.
+      responses:
+        "200":
+          description: Current built-in and plugin handler registrations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: integer }
+                  message: { type: string }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/RegisteredRuntimeJob" }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/admin/runtime-jobs/runs:
     get:
       tags: [admin]
@@ -2017,6 +2041,19 @@ paths:
         "200": { description: "Canonical page envelope with items, total, offset and limit" }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/runtime-jobs/queue/node_publish/{id}/retry:
+    post:
+      tags: [admin]
+      operationId: retryNodePublication
+      summary: Make a delayed or stale node publication eligible for immediate retry
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200": { description: Retry intent saved and audited; execution remains asynchronous }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
   /api/v1/admin/tasks:
     get:
@@ -4005,7 +4042,7 @@ paths:
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol, in: query, schema: { type: string } }
         - { name: active, in: query, schema: { type: boolean } }
-        - { name: deployment_status, in: query, schema: { type: string, enum: [running, succeeded, failed, never] } }
+        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, never] } }
       responses:
         "200":
           description: Stable ID-only selection snapshot
@@ -4033,8 +4070,8 @@ paths:
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol, in: query, schema: { type: string } }
         - { name: active, in: query, schema: { type: boolean } }
-        - { name: deployment_status, in: query, schema: { type: string, enum: [running, succeeded, failed, never] } }
-        - { name: include_facets, in: query, schema: { type: boolean, default: false }, description: "Include deployment-status counts for the current non-status filters in the paged response." }
+        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, never] } }
+        - { name: include_facets, in: query, schema: { type: boolean, default: false }, description: "Include current publication-state counts for the non-status filters in the paged response." }
         - { name: sort, in: query, schema: { type: string, enum: [sort_order, id, name, node_id, protocol, multiplier, updated_at] } }
         - { name: direction, in: query, schema: { type: string, enum: [asc, desc] } }
       responses:
@@ -4201,6 +4238,37 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/protocol-endpoints/{id}/usage-resets:
+    get:
+      tags: [nodes, admin]
+      summary: List the latest 20 completed protocol endpoint traffic measurement periods
+      description: Administrator only. Reset history records each completed period without changing traffic records, subscription quotas or billing.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200": { description: Latest completed periods, newest first }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [nodes, admin]
+      summary: Start a new protocol endpoint traffic measurement period
+      description: Administrator only. Stores the current daily projection as a baseline and audits the reason; does not clear immutable traffic records or alter subscription entitlements.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 255 }
+      responses:
+        "200": { description: New period baseline and completed prior-period usage }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v1/admin/protocol-endpoints/{id}/deploy:
     post:
       tags: [nodes]
@@ -5425,6 +5493,15 @@ components:
             outbound_groups: { type: array, items: { type: object } }
             target: { type: string }
 
+    RegisteredRuntimeJob:
+      type: object
+      required: [id, name, owner, interval_seconds, timeout_seconds]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        owner: { type: string, description: "system or plugin:<id>" }
+        interval_seconds: { type: integer, format: int64, minimum: 0 }
+        timeout_seconds: { type: integer, format: int64, minimum: 0 }
     ApiResponse:
       type: object
       properties:
@@ -5859,7 +5936,7 @@ components:
         protocol: { type: string }
         egress_protocol: { type: string, enum: [socks5, vless, vmess, trojan, shadowsocks, hysteria2, mieru], description: Omitted when this endpoint uses direct egress. }
         active: { type: boolean }
-        deployment_status: { type: string, enum: [running, succeeded, failed, never] }
+        deployment_status: { type: string, enum: [queued, running, succeeded, failed, never] }
     ProtocolBatchScopeRequest:
       type: object
       properties:
@@ -6304,6 +6381,7 @@ components:
             egress_config: { type: string, description: Decrypted administrator-only Zero outbound protocol JSON. Empty when direct egress is used. }
             managed_certificate_id: { type: integer, format: int64, nullable: true }
             latest_deployment: { $ref: "#/components/schemas/ProtocolDeploymentSummary" }
+            publication: { $ref: "#/components/schemas/PublicationQueueSummary" }
             usage: { type: object }
             node_group_memberships:
               type: array
@@ -6317,6 +6395,14 @@ components:
         started_at: { type: string, format: date-time, nullable: true }
         finished_at: { type: string, format: date-time, nullable: true }
         created_at: { type: string, format: date-time }
+    PublicationQueueSummary:
+      type: object
+      description: Current node publication request, if any. Takes precedence over latest_deployment when deciding the live state.
+      properties:
+        status: { type: string, enum: [queued, running, failed] }
+        attempts: { type: integer, minimum: 0 }
+        next_attempt_at: { type: string, format: date-time }
+        has_error: { type: boolean }
     NetworkEntrySummary:
       type: object
       description: A separately authorized forwarding address. No encrypted path or proxy credentials are returned. External entries do not represent an entry server managed by the panel.
@@ -6376,6 +6462,7 @@ components:
         is_active: { type: boolean }
         sort_order: { type: integer }
         latest_deployment: { $ref: "#/components/schemas/ProtocolDeploymentSummary" }
+        publication: { $ref: "#/components/schemas/PublicationQueueSummary" }
         usage:
           type: object
           properties:
@@ -6541,6 +6628,7 @@ components:
               properties:
                 all: { type: integer, format: int64, minimum: 0 }
                 succeeded: { type: integer, format: int64, minimum: 0 }
+                queued: { type: integer, format: int64, minimum: 0 }
                 running: { type: integer, format: int64, minimum: 0 }
                 failed: { type: integer, format: int64, minimum: 0 }
                 never: { type: integer, format: int64, minimum: 0 }

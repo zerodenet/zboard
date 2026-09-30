@@ -41,18 +41,22 @@ func (s *Store) NativeExecutionStatuses(ctx context.Context, handlers []string) 
 	for i := range counts {
 		byHandler[counts[i].Handler] = i
 	}
+	// Aggregate once, then join the rows at each handler's latest finish time.
+	// The previous correlated lookup reran its sort for every historical run.
+	latestTime := s.db.WithContext(ctx).Model(&Record{}).
+		Select("handler, MAX(finished_at) AS finished_at").
+		Where("owner = ? AND handler IN ? AND finished_at IS NOT NULL", "system", handlers).
+		Group("handler")
 	var latest []Record
 	if err := s.db.WithContext(ctx).Model(&Record{}).
-		Where("owner = ? AND handler IN ? AND finished_at IS NOT NULL", "system", handlers).
-		Where(`job_runs.id = (SELECT latest.id FROM job_runs AS latest
- WHERE latest.owner = job_runs.owner AND latest.handler = job_runs.handler AND latest.finished_at IS NOT NULL
- ORDER BY latest.finished_at DESC, latest.id DESC LIMIT 1)`).
-		Find(&latest).Error; err != nil {
+		Joins("JOIN (?) AS latest ON latest.handler = job_runs.handler AND latest.finished_at = job_runs.finished_at", latestTime).
+		Where("job_runs.owner = ? AND job_runs.handler IN ?", "system", handlers).
+		Order("job_runs.id DESC").Find(&latest).Error; err != nil {
 		return nil, err
 	}
 	for _, row := range latest {
 		index, ok := byHandler[row.Handler]
-		if !ok {
+		if !ok || counts[index].LastFinishedAt != nil {
 			continue
 		}
 		counts[index].LastState, counts[index].LastFinishedAt = row.State, row.FinishedAt

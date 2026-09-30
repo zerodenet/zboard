@@ -3,9 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zeromicro/go-zero/rest/pathvar"
 	"gorm.io/gorm"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,6 +20,11 @@ func TestRuntimeJobsRequiresAdminAndReportsDurableQueue(t *testing.T) {
 	h.AdminRuntimeJobsHandler(rec, announcementRequest("GET", "/api/v1/admin/runtime-jobs", token, ""))
 	if rec.Code != 403 {
 		t.Fatalf("nonadmin: %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	h.AdminRuntimeRegisteredJobsHandler(rec, announcementRequest("GET", "/api/v1/admin/runtime-jobs/registered", token, ""))
+	if rec.Code != 403 {
+		t.Fatalf("nonadmin registry: %d", rec.Code)
 	}
 	if err := h.db.Model(&model.User{}).Where("id = 1").Update("is_admin", true).Error; err != nil {
 		t.Fatal(err)
@@ -47,7 +55,7 @@ func TestRuntimeJobsRequiresAdminAndReportsDurableQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	q := body.Data.Queues[1]
-	if q.ID != "admin_tasks" || q.Pending != 1 || q.Delayed != 1 || q.Drafts != 1 {
+	if q.ID != "admin_tasks" || q.Pending != 1 || q.Delayed != 1 || q.Drafts != 1 || q.OldestAt == nil {
 		t.Fatalf("queue %+v", q)
 	}
 	rec = httptest.NewRecorder()
@@ -188,10 +196,15 @@ func TestRuntimeQueueDatabaseFailureIsNotAnEmptyQueue(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
+	foundPublication := false
 	for _, queue := range body.Data.Queues {
-		if queue.ID == "admin_tasks" || queue.ID == "node_publish" {
-			t.Fatalf("failed queues were presented as healthy: %+v", body.Data.Queues)
+		if queue.ID == "admin_tasks" {
+			t.Fatalf("failed queue was presented as healthy: %+v", body.Data.Queues)
 		}
+		foundPublication = foundPublication || queue.ID == "node_publish"
+	}
+	if !foundPublication {
+		t.Fatalf("healthy publication queue disappeared with failed admin queue: %+v", body.Data.Queues)
 	}
 	if len(body.Data.Issues) == 0 || body.Data.Issues[0].Section != "queues" {
 		t.Fatalf("queue failure missing from partial snapshot: %+v", body.Data.Issues)
@@ -202,6 +215,9 @@ func TestRuntimeExecutionFailureKeepsIndependentQueuesVisible(t *testing.T) {
 	h, _ := newAnnouncementTestHandlers(t)
 	h.db.Model(&model.User{}).Where("id = 1").Update("is_admin", true)
 	token, _, _ := h.issueToken(authClaims{UserID: 1, Email: "reader@example.test", IsAdmin: true})
+	if err := h.services.Jobs.Register(jobs.Definition{ID: "test_registered", Name: "已注册任务", Handler: "test_registered", Owner: "system", Timeout: time.Second}, func(context.Context, jobs.Run) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
 	if err := h.db.Exec("ALTER TABLE job_execution_budget RENAME TO hidden_job_execution_budget").Error; err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +231,9 @@ func TestRuntimeExecutionFailureKeepsIndependentQueuesVisible(t *testing.T) {
 		Data struct {
 			Queues         []runtimeQueue       `json:"queues"`
 			Issues         []runtimeStatusIssue `json:"issues"`
+			RegisteredJobs []jobs.RegisteredJob `json:"registered_jobs"`
 			ExecutionQueue json.RawMessage      `json:"execution_queue"`
+			ReadDurationMS map[string]int64     `json:"read_duration_ms"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -228,7 +246,67 @@ func TestRuntimeExecutionFailureKeepsIndependentQueuesVisible(t *testing.T) {
 	for _, issue := range body.Data.Issues {
 		foundIssue = foundIssue || issue.Section == "execution"
 	}
-	if !foundAdminQueue || !foundIssue || len(body.Data.ExecutionQueue) != 0 {
+	foundRegistered := false
+	for _, registered := range body.Data.RegisteredJobs {
+		foundRegistered = foundRegistered || registered.ID == "test_registered" && registered.Name == "已注册任务"
+	}
+	if !foundAdminQueue || !foundIssue || !foundRegistered || len(body.Data.ExecutionQueue) != 0 || body.Data.ReadDurationMS == nil {
 		t.Fatalf("independent sections were not isolated: queues=%+v issues=%+v execution_queue=%s", body.Data.Queues, body.Data.Issues, body.Data.ExecutionQueue)
+	}
+	rec = httptest.NewRecorder()
+	h.AdminRuntimeRegisteredJobsHandler(rec, announcementRequest("GET", "/api/v1/admin/runtime-jobs/registered", token, ""))
+	if rec.Code != 200 {
+		t.Fatalf("registered jobs: %d %s", rec.Code, rec.Body.String())
+	}
+	var registry struct {
+		Data []jobs.RegisteredJob `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &registry); err != nil || len(registry.Data) != 1 || registry.Data[0].ID != "test_registered" {
+		t.Fatalf("registry failed independently of execution status: %v %s", err, rec.Body.String())
+	}
+}
+
+func TestRuntimePublicationRetryRequiresAdminAndAudits(t *testing.T) {
+	h, token := newAnnouncementTestHandlers(t)
+	now := time.Now().UTC()
+	node := model.Node{Name: "retry", Address: "192.0.2.20", Config: "{}", IsEnabled: true}
+	if err := h.db.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	request := model.NodeConfigPublish{NodeID: node.ID, Generation: 1, NextAttemptAt: now.Add(time.Hour), LeaseUntil: now.Add(-time.Minute), LastError: "temporary failure"}
+	if err := h.db.Create(&request).Error; err != nil {
+		t.Fatal(err)
+	}
+	id := strconv.FormatUint(uint64(node.ID), 10)
+	route := "/api/v1/admin/runtime-jobs/queue/node_publish/" + id + "/retry"
+	invoke := func(token string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		r := pathvar.WithVars(announcementRequest("POST", route, token, ""), map[string]string{"id": id})
+		h.AdminRuntimePublicationRetryHandler(rec, r)
+		return rec
+	}
+	if rec := invoke(token); rec.Code != 403 {
+		t.Fatalf("non-admin retry = %d", rec.Code)
+	}
+	if err := h.db.Model(&model.User{}).Where("id = 1").Update("is_admin", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	token, _, _ = h.issueToken(authClaims{UserID: 1, Email: "admin@example.test", IsAdmin: true})
+	if rec := invoke(token); rec.Code != 200 {
+		t.Fatalf("retry = %d: %s", rec.Code, rec.Body.String())
+	}
+	var refreshed model.NodeConfigPublish
+	if err := h.db.First(&refreshed, "node_id = ?", node.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Generation != 2 || refreshed.NextAttemptAt.After(time.Now().UTC().Add(time.Second)) {
+		t.Fatalf("retry state = %+v", refreshed)
+	}
+	if rec := invoke(token); rec.Code != 409 {
+		t.Fatalf("duplicate retry = %d: %s", rec.Code, rec.Body.String())
+	}
+	var audits int64
+	if err := h.db.Model(&model.AuditLog{}).Where("action = ?", "node.publish.retry").Count(&audits).Error; err != nil || audits != 1 {
+		t.Fatalf("retry audits = %d, %v", audits, err)
 	}
 }

@@ -22,9 +22,9 @@ func (h *handlers) registerNativeJobs(runtime *jobs.Runtime) {
 	if err := h.services.RegisterFairUseJobs(); err != nil {
 		log.Printf("register Fair Use jobs: %v", err)
 	}
-	for _, kind := range []string{"certificate_operation", "dns_operation", "dns_reconcile"} {
+	for kind, name := range map[string]string{"certificate_operation": "证书操作", "dns_operation": "DNS 操作", "dns_reconcile": "DNS 配置对齐"} {
 		kind := kind
-		_ = runtime.Register(jobs.Definition{ID: kind, Handler: kind, Owner: "system", Revision: "1", Timeout: nativeJobTimeout(kind)}, func(ctx context.Context, run jobs.Run) error {
+		_ = runtime.Register(jobs.Definition{ID: kind, Handler: kind, Owner: "system", Name: name, Revision: "1", Timeout: nativeJobTimeout(kind)}, func(ctx context.Context, run jobs.Run) error {
 			var input nativeJobInput
 			if run.Owner != "system" || json.Unmarshal([]byte(run.Payload), &input) != nil || input.OperationID == 0 {
 				return jobs.ErrInvalid
@@ -52,7 +52,7 @@ func (h *handlers) registerNativeJobs(runtime *jobs.Runtime) {
 			return jobs.ErrUncertain
 		})
 	}
-	_ = runtime.Register(jobs.Definition{ID: network.NodeCleanupHandler, Handler: network.NodeCleanupHandler, Owner: "system", Revision: "1", Timeout: nativeJobTimeout(network.NodeCleanupHandler)}, h.executeNodeCleanupRun)
+	_ = runtime.Register(jobs.Definition{ID: network.NodeCleanupHandler, Handler: network.NodeCleanupHandler, Owner: "system", Name: "节点清理", Revision: "1", Timeout: nativeJobTimeout(network.NodeCleanupHandler)}, h.executeNodeCleanupRun)
 }
 
 func nativeJobTimeout(kind string) time.Duration {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"sync"
 	"time"
 )
@@ -23,6 +24,16 @@ type registration struct {
 	scheduling  sync.Mutex
 	ready       func(context.Context) (bool, error)
 	nextCheck   time.Time
+}
+
+// RegisteredJob describes a handler attached to this process. It is independent
+// of durable schedules and run history, which may be temporarily unavailable.
+type RegisteredJob struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Owner           string `json:"owner"`
+	IntervalSeconds int64  `json:"interval_seconds"`
+	TimeoutSeconds  int64  `json:"timeout_seconds"`
 }
 
 // Runtime is the single local execution pool for all registered capabilities.
@@ -141,6 +152,26 @@ func (r *Runtime) CancelActive(id string) {
 }
 func (r *Runtime) Schedules(ctx context.Context) ([]ScheduleView, error) {
 	return r.store.Schedules(ctx)
+}
+func (r *Runtime) RegisteredJobs() []RegisteredJob {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]RegisteredJob, 0, len(r.entries))
+	for _, entry := range r.entries {
+		d := entry.definition
+		name := d.Name
+		if name == "" {
+			name = d.ID
+		}
+		out = append(out, RegisteredJob{ID: d.ID, Name: name, Owner: d.Owner, IntervalSeconds: int64(d.Interval.Seconds()), TimeoutSeconds: int64(d.Timeout.Seconds())})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Owner == out[j].Owner {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Owner < out[j].Owner
+	})
+	return out
 }
 func (r *Runtime) Close() { r.mu.Lock(); r.cancel(); r.mu.Unlock(); r.done.Wait() }
 

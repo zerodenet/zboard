@@ -44,6 +44,7 @@
           </DropdownMenuPortal>
         </DropdownMenuRoot>
       </header>
+      <AdminPageNavigation v-if="mobile" class="mobile-section-navigation" />
       <nav v-if="returnTarget" class="context-return-bar" aria-label="跨资源返回">
         <RouterLink :to="returnTarget"><UiIcon name="chevron" />返回来源</RouterLink>
         <span>恢复上一个列表的筛选、页码和详情</span>
@@ -59,6 +60,7 @@ import { computed, onMounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuTrigger } from 'reka-ui'
 import AdminNavigation from '../components/AdminNavigation.vue'
+import AdminPageNavigation from '../components/AdminPageNavigation.vue'
 import NavigationPage from '../components/NavigationPage.vue'
 import AdminQuickSearch from '../components/AdminQuickSearch.vue'
 import AdminVersionStatus from '../components/AdminVersionStatus.vue'
@@ -131,6 +133,8 @@ function logout() { app.clear(); router.push('/') }
 @media (max-width: 1100px) and (min-width: 821px) { .admin-shell { grid-template-columns: 224px minmax(0, 1fr); } .admin-shell .topbar { padding-inline: 24px; } .admin-shell .app-content { padding-inline: 24px; } }
 @media (max-width: 1100px) { .topbar-account-name { display: none; } .topbar-account-trigger { padding-inline: 3px; } }
 @media (max-width: 820px) {
+  :deep(.page-header-navigation) { display: none; }
+  .mobile-section-navigation { position: sticky; top: 64px; z-index: calc(var(--z-topbar) - 1); max-width: 100vw; padding: 0 18px; background: var(--card); scrollbar-width: thin; }
   .admin-sidebar { width: min(320px, 92vw); }
   /* The global maintenance badge must not cover the drawer's account actions. */
   :global(.admin-shell.nav-open ~ .admin-maintenance-banner) { visibility: hidden; }
@@ -139,6 +143,6 @@ function logout() { app.clear(); router.push('/') }
   .context-return-bar { padding-inline: 18px; }
   .context-return-bar > span { display: none; }
 }
-@media (max-width: 560px) { .admin-shell .app-content { padding-inline: 14px; } }
+@media (max-width: 560px) { .admin-shell .app-content { padding-inline: 14px; } .mobile-section-navigation { padding-inline: 14px; } }
 @media (prefers-reduced-motion: reduce) { .admin-sidebar, .topbar-account-chevron { transition: none; } }
 </style>

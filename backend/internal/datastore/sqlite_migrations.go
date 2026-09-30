@@ -31,7 +31,7 @@ func databaseModels() []interface{} {
 		&model.NodeGroupEndpoint{}, &model.Subscription{}, &model.SubscriptionMutation{}, &model.Order{}, &model.PaymentEvent{},
 		&model.SubscriptionMember{}, &model.SubscriptionToken{}, &model.SubscriptionTemplate{},
 		&model.SubscriptionRuleSet{}, &model.SubscriptionTemplateRuleSetBinding{}, &model.ProtocolCredential{},
-		&model.FlowUsage{}, &model.TrafficRecord{}, &model.ProtocolEndpointUsageDaily{}, &model.AuditLog{}, &model.EmailTemplate{},
+		&model.FlowUsage{}, &model.TrafficRecord{}, &model.ProtocolEndpointUsageDaily{}, &model.ProtocolEndpointUsageReset{}, &model.AuditLog{}, &model.EmailTemplate{},
 		&model.RegistrationEmailChallenge{}, &model.AccountRegistrationEvent{}, &model.Ticket{}, &model.TicketMessage{}, &model.UserAPIToken{},
 		&model.Task{}, &model.TaskItem{}, &model.MailDeliveryAttempt{}, &model.ProtocolDeployment{}, &model.QuotaEvent{},
 		&model.NodeKernelState{}, &model.NodeOperation{}, &model.ProviderAccount{}, &model.ManagedDNSRecord{},
@@ -309,6 +309,9 @@ func runSQLiteMigrations(db *gorm.DB) error {
 		return fmt.Errorf("external forward schema is incomplete")
 	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0027_external_forward_entries.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0028_protocol_endpoint_usage_resets.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
 		return err
 	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}

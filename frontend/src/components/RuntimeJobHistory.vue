@@ -3,15 +3,16 @@
     <h2>执行记录</h2>
     <PageAlert v-if="error" tone="danger" title="执行记录未更新">{{ error }}</PageAlert>
     <p v-if="notice" role="status">{{ notice }}</p>
-    <DataTable caption="任务执行历史" :row-count="page?.total || 0" :min-width="800">
-      <thead><tr><th>任务</th><th>来源</th><th>状态</th><th>尝试</th><th>创建 / 完成</th><th>处理</th></tr></thead>
-      <tbody><template v-for="run in page?.items || []" :key="run.id"><tr>
-        <td>{{ names[run.handler] || taskName(run.handler) }}</td><td>{{ run.owner === 'system' ? 'ZBoard' : run.owner.replace(/^plugin:/, '') }}</td>
-        <td><StatusBadge :tone="run.state === 'unknown' ? 'warning' : run.state === 'failed' ? 'danger' : 'neutral'">{{ labels[run.state] || run.state }}</StatusBadge></td>
-        <td>{{ run.attempts || 0 }} / {{ run.max_attempts || 1 }}<template v-if="run.next_attempt_at"><br /><TimeBadge :value="run.next_attempt_at" /></template></td>
-        <td><small v-if="run.planned_at">计划 <TimeBadge :value="run.planned_at" /></small><TimeBadge :value="run.created_at" /><br /><TimeBadge :value="run.finished_at" /></td>
-        <td><button v-if="(run.attempts || 0) > 0" type="button" :disabled="attemptLoading === run.id" @click="toggleAttempts(run)">{{ attempts[run.id] ? '收起尝试' : '查看尝试' }}</button><button v-if="cancelable(run)" type="button" :disabled="canceling === run.id" @click="cancel(run)">{{ canceling === run.id ? '请求中…' : '取消任务' }}</button><button v-if="run.state === 'unknown' && run.owner === 'system' && run.handler === 'dns_operation'" type="button" :disabled="inspecting" @click="inspectDNS(run)">核验远端 DNS</button><button v-if="run.state === 'unknown'" type="button" @click="select(run)">记录核验结果</button><span v-if="(run.attempts || 0) === 0 && !cancelable(run) && run.state !== 'unknown'">—</span></td>
-      </tr><tr v-if="attempts[run.id]" class="attempt-row"><td colspan="6"><p v-if="attempts[run.id].items.length === 0">尚无执行尝试。</p><ol v-else><li v-for="attempt in attempts[run.id].items" :key="attempt.attempt_number"><strong>第 {{ attempt.attempt_number }} 次</strong> · {{ labels[attempt.state] || attempt.state }} · {{ attempt.worker }} · <TimeBadge :value="attempt.started_at" /> → <TimeBadge :value="attempt.finished_at" /></li></ol></td></tr></template></tbody>
+    <DataTable caption="任务执行历史" :row-count="page?.total || 0" :min-width="780" table-class="runtime-history-table">
+      <thead><tr><th>任务</th><th>来源</th><th>状态</th><th>尝试</th><th>时间</th><th>操作</th></tr></thead>
+      <tbody><template v-for="run in page?.items || []" :key="run.id"><tr class="history-run">
+        <td class="history-name"><strong :title="run.id">{{ names[run.handler] || taskName(run.handler) }}</strong></td>
+        <td class="history-owner">{{ run.owner === 'system' ? 'ZBoard' : run.owner.replace(/^plugin:/, '') }}</td>
+        <td class="history-state"><StatusBadge :tone="run.state === 'unknown' ? 'warning' : run.state === 'failed' ? 'danger' : run.state === 'succeeded' ? 'success' : 'neutral'">{{ labels[run.state] || run.state }}</StatusBadge></td>
+        <td class="history-attempts"><span class="mobile-label">尝试 </span>{{ run.attempts || 0 }} / {{ run.max_attempts || 1 }}<small v-if="run.next_attempt_at">下次 <TimeBadge :value="run.next_attempt_at" /></small></td>
+        <td class="history-times"><small v-if="run.planned_at && !run.finished_at">计划 <TimeBadge :value="run.planned_at" /></small><small>创建 <TimeBadge :value="run.created_at" /></small><small v-if="run.finished_at">完成 <TimeBadge :value="run.finished_at" /></small></td>
+        <td class="history-controls"><div class="history-actions"><UiButton v-if="(run.attempts || 0) > 0" variant="ghost" size="sm" type="button" :disabled="attemptLoading === run.id" @click="toggleAttempts(run)">{{ attempts[run.id] ? '收起尝试' : '查看尝试' }}</UiButton><UiButton v-if="cancelable(run)" variant="secondary" size="sm" type="button" :loading="canceling === run.id" @click="cancel(run)">取消任务</UiButton><UiButton v-if="run.state === 'unknown' && run.owner === 'system' && run.handler === 'dns_operation'" variant="ghost" size="sm" type="button" :disabled="inspecting" @click="inspectDNS(run)">核验远端 DNS</UiButton><UiButton v-if="run.state === 'unknown'" variant="secondary" size="sm" type="button" @click="select(run)">记录核验结果</UiButton><span v-if="(run.attempts || 0) === 0 && !cancelable(run) && run.state !== 'unknown'">—</span></div></td>
+      </tr><tr v-if="attempts[run.id]" class="attempt-row"><td colspan="6"><p v-if="attempts[run.id].items.length === 0">尚无执行尝试。</p><ol v-else><li v-for="attempt in attempts[run.id].items" :key="attempt.attempt_number"><strong>第 {{ attempt.attempt_number }} 次</strong> · {{ labels[attempt.state] || attempt.state }} · {{ attempt.worker }} · <TimeBadge :value="attempt.started_at" /><template v-if="attempt.finished_at"> → <TimeBadge :value="attempt.finished_at" /></template></li></ol></td></tr></template></tbody>
     </DataTable>
     <p v-if="page?.total === 0">暂无执行记录。</p>
     <TablePager v-if="page" :total="page.total" :offset="offset" :limit="25" :page-sizes="[25]" :loading="loading" @change="changePage" />
@@ -35,6 +36,7 @@ import PageAlert from './PageAlert.vue'
 import UiSelect from './UiSelect.vue'
 import UiTextarea from './UiTextarea.vue'
 import FormField from './FormField.vue'
+import UiButton from './UiButton.vue'
 import { useFormErrors } from '../composables/useFormState'
 import { collectFieldErrors } from '../utils/validation'
 const props = defineProps<{ asOf: string; names: Record<string, string> }>()
@@ -94,5 +96,35 @@ watch(() => props.asOf, () => void load(), { immediate: true })
 onBeforeUnmount(() => controller?.abort())
 </script>
 <style scoped>
-.history{display:grid;gap:1rem;min-width:0}.history h2{font-size:1.05rem;margin:0}.attempt-row td{background:var(--surface-soft)}.attempt-row ol{display:grid;gap:.35rem;margin:0;padding-left:1.25rem}.resolution{display:grid;gap:1rem;padding:1rem;border:1px solid var(--line);border-radius:12px}.resolution label{display:grid;gap:.5rem}.resolution p{color:var(--muted)}.resolution div{display:flex;gap:.75rem}button{font:inherit}
+.history { display: grid; gap: 1rem; min-width: 0; }
+.history h2 { margin: 0; font-size: 1.05rem; }
+.history-name strong, .history-attempts small, .history-times small { display: block; }
+.history-attempts small, .history-times small { margin-top: .25rem; color: var(--muted); font-size: .75rem; }
+.history-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+.history-controls { min-width: 9rem; }
+.mobile-label { display: none; }
+.attempt-row td { background: var(--surface-soft); }
+.attempt-row ol { display: grid; gap: .35rem; margin: 0; padding-left: 1.25rem; }
+.resolution { display: grid; gap: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; }
+.resolution label { display: grid; gap: .5rem; }
+.resolution p { color: var(--muted); }
+.resolution div { display: flex; gap: .75rem; }
+button { font: inherit; }
+@media (max-width: 760px) {
+  .history :deep(.runtime-history-table) { display: block; min-width: 0 !important; }
+  .history :deep(.runtime-history-table thead) { display: none; }
+  .history :deep(.runtime-history-table tbody) { display: grid; gap: .55rem; }
+  .history :deep(.runtime-history-table .history-run) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .35rem .65rem; padding: .7rem; border: 1px solid var(--line); border-radius: 8px; }
+  .history :deep(.runtime-history-table .history-run td) { display: block; min-width: 0; height: auto; padding: 0; border: 0; background: transparent; box-shadow: none; }
+  .history :deep(.runtime-history-table .history-name) { grid-column: 1; grid-row: 1; }
+  .history :deep(.runtime-history-table .history-state) { grid-column: 2; grid-row: 1; }
+  .history :deep(.runtime-history-table .history-owner) { grid-column: 1; grid-row: 2; color: var(--muted); font-size: .75rem; }
+  .history :deep(.runtime-history-table .history-attempts) { grid-column: 2; grid-row: 2; text-align: right; font-size: .75rem; }
+  .history :deep(.runtime-history-table .history-times) { grid-column: 1 / -1; grid-row: 3; display: flex; flex-wrap: wrap; gap: .25rem .8rem; }
+  .history :deep(.runtime-history-table .history-controls) { grid-column: 1 / -1; grid-row: 4; min-width: 0; }
+  .history-actions { justify-content: flex-end; }
+  .history :deep(.runtime-history-table .attempt-row) { display: block; border: 1px solid var(--line); border-radius: 8px; }
+  .history :deep(.runtime-history-table .attempt-row td) { display: block; height: auto; }
+  .mobile-label { display: inline; }
+}
 </style>

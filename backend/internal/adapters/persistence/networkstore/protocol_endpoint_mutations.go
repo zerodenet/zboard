@@ -339,8 +339,15 @@ func validateAndMigrateProtocolEndpointCredentials(tx *gorm.DB, previous, next m
 	if len(credentials) == 0 {
 		return nil
 	}
-	if !strings.EqualFold(previous.Protocol, next.Protocol) || strings.EqualFold(previous.Protocol, "shadowsocks") && (previous.Port != next.Port || previous.PublicPort != next.PublicPort) {
-		return &network.ProtocolEndpointMutationValidation{Message: "协议服务校验失败。", Fields: map[string]string{"protocol": "该服务已有订阅凭证；请创建新服务后迁移，不能直接更换协议或 Shadowsocks 端口。"}}
+	if !strings.EqualFold(previous.Protocol, next.Protocol) {
+		return &network.ProtocolEndpointMutationValidation{Message: "协议服务校验失败。", Fields: map[string]string{"protocol": "该服务已有订阅凭证；请创建新服务后迁移协议。"}}
+	}
+	if strings.EqualFold(previous.Protocol, "shadowsocks") && (previous.Port != next.Port || previous.PublicPort != next.PublicPort) {
+		for _, credential := range credentials {
+			if credential.ListenPort != previous.Port || credential.PublicPort != previous.PublicPort {
+				return &network.ProtocolEndpointMutationValidation{Message: "协议服务校验失败。", Fields: map[string]string{"port": "该 Shadowsocks 服务存在独立分配端口的历史凭证；请先迁移这些凭证，不能统一覆盖端口。"}}
+			}
+		}
 	}
 	return tx.Model(&model.ProtocolCredential{}).Where("protocol_endpoint_id = ?", next.ID).Updates(map[string]any{"node_id": next.NodeID, "listen_port": next.Port, "public_port": next.PublicPort}).Error
 }
