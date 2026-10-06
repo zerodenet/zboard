@@ -28,8 +28,11 @@ func TestProtocolEndpointUsageResetStartsNewPeriodWithoutChangingAccounting(t *t
 			t.Fatal(err)
 		}
 	}
-	periods := network.ProtocolEndpointUsagePeriods{Repository: ProtocolEndpointUsagePeriods{DB: db}}
-	first, err := periods.Reset(context.Background(), admin.ID, endpoint.ID, "更换服务器")
+	store := ProtocolEndpointUsagePeriods{DB: db}
+	periods := network.ProtocolEndpointUsagePeriods{Repository: store}
+	// Keep the reset boundary on the same clock as the usage fixture. The public
+	// capability deliberately uses wall time, which is not this test's date.
+	first, err := store.ResetProtocolEndpointUsage(context.Background(), admin.ID, endpoint.ID, "更换服务器", now)
 	if err != nil || first.PeriodUsedBytes != 150 {
 		t.Fatalf("first=%+v err=%v", first, err)
 	}
@@ -49,7 +52,7 @@ func TestProtocolEndpointUsageResetStartsNewPeriodWithoutChangingAccounting(t *t
 		t.Fatal(err)
 	}
 	assertUsage(40, 40)
-	second, err := periods.Reset(context.Background(), admin.ID, endpoint.ID, "更换端口")
+	second, err := store.ResetProtocolEndpointUsage(context.Background(), admin.ID, endpoint.ID, "更换端口", now)
 	if err != nil || second.PeriodUsedBytes != 40 {
 		t.Fatalf("second=%+v err=%v", second, err)
 	}
