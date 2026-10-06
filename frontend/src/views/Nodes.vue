@@ -96,14 +96,14 @@
 
         <article v-else-if="detailSection === 'kernel'" class="panel kernel-panel">
           <header class="panel-header">
-            <div><h2>Zero 内核自动化</h2><p>检测真实平台与服务状态，锁定当前部署契约指定的受信任制品后执行安装、升级或配置对齐；任一验收失败都会恢复上一版。</p></div>
+            <div><h2>Zero 内核自动化</h2><p>通过已验证的 SSH 安装、升级或对齐配置，失败自动回滚。</p></div>
             <StatusBadge :tone="kernelTone">{{ kernelStatusLabel }}</StatusBadge>
           </header>
           <div class="panel-body kernel-body">
             <div class="kernel-facts">
               <div><span>已安装版本</span><strong>{{ kernelState?.installed_version || '未检测' }}</strong></div>
-              <div><span>最新发布版</span><strong>{{ latestPublishedRelease?.tag || (releaseLoading ? '查询中…' : '未查询') }}</strong></div>
-              <div><span>本次目标版本</span><strong>{{ selectedRelease?.tag || '尚未选择' }}</strong></div>
+              <div v-if="kernelSource === 'online'"><span>最新发布版</span><strong>{{ latestPublishedRelease?.tag || (releaseLoading ? '查询中…' : '未查询') }}</strong></div>
+              <div><span>本次目标版本</span><strong>{{ kernelSource === 'offline' ? '本地文件' : selectedRelease?.tag || '尚未选择' }}</strong></div>
               <div><span>平台</span><strong>{{ [kernelState?.platform_os, kernelState?.architecture].filter(Boolean).join(' · ') || '未检测' }}</strong></div>
               <div><span>运行库</span><strong>{{ kernelState?.libc || '未检测' }}</strong></div>
               <div><span>systemd / 进程</span><StatusBadge :tone="serviceTone(kernelState?.service_status)" :icon="kernelState?.service_status === 'active' ? 'check' : 'alert'">{{ serviceLabel(kernelState?.service_status) }}</StatusBadge></div>
@@ -116,7 +116,9 @@
               <template v-else>ZBoard 会在 Zero 启动前自动生成并激活连接凭证；如果安装或验收失败，该凭证会随本次 generation 一起回滚，无需先到“连接凭证”手工生成。</template>
             </PageAlert>
             <OutputBlock v-if="kernelState?.last_error" :value="kernelState.last_error" label="内核错误" tone="danger" :max-length="360" />
-            <div class="kernel-release-picker">
+            <UiTabs :model-value="kernelSource" :items="[{ value: 'online', label: '在线版本' }, { value: 'offline', label: '本地上传' }]" label="内核来源" @update:model-value="changeKernelSource" />
+            <NodeKernelUpload v-if="kernelSource === 'offline'" :key="selectedNode.id" :node-id="selectedNode.id" :installed-version="kernelState?.installed_version" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at" @busy="offlineUploadBusy" @accepted="offlineUploadAccepted" />
+            <div v-else class="kernel-release-picker">
               <label for="node-kernel-release">安装版本</label>
               <UiSelect id="node-kernel-release" v-model="selectedReleaseVersion" :options="releaseOptions" :disabled="releaseLoading || Boolean(kernelBusy)" />
               <small v-if="selectedRelease">
@@ -128,10 +130,10 @@
             </div>
             <div class="kernel-actions">
               <UiButton variant="secondary" size="sm" type="button" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at" @click="detectKernel"><UiIcon name="search" />{{ kernelBusy === 'detect' ? '检测中…' : '检测内核' }}</UiButton>
-              <UiButton size="sm" type="button" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at || releaseLoading || !selectedReleaseVersion || !selectedReleaseCompatible || kernelState?.status === 'unsupported'" @click="reconcileKernel"><UiIcon name="play" />{{ kernelBusy === 'reconcile' ? kernelPhaseLabel(kernelState?.phase) : reconcileButtonLabel }}</UiButton>
+              <UiButton v-if="kernelSource === 'online'" size="sm" type="button" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at || releaseLoading || !selectedReleaseVersion || !selectedReleaseCompatible || kernelState?.status === 'unsupported'" @click="reconcileKernel"><UiIcon name="play" />{{ kernelBusy === 'reconcile' ? kernelPhaseLabel(kernelState?.phase) : reconcileButtonLabel }}</UiButton>
               <RouterLink v-if="kernelState?.last_error" class="button button-secondary button-sm" :to="adminContextLink('/admin/operation-logs', { source: 'node_kernel', status: 'failed', node_id: String(selectedNode.id) })"><UiIcon name="terminal" />查看运行日志</RouterLink>
               <small v-if="!selectedNode.ssh_verified_at">请先完成 SSH 验证，自动化不会绕过运维通道校验。</small>
-              <small v-else>现代 glibc 节点使用官方 GNU 制品，旧版 Linux 使用面板托管并校验 SHA-256 的 musl 制品；不会升级系统 libc，也不会自动降级内核。</small>
+              <small v-else-if="kernelSource === 'online'">现代 glibc 节点使用官方 GNU 制品，旧版 Linux 使用面板托管并校验 SHA-256 的 musl 制品；不会升级系统 libc，也不会自动降级内核。</small>
             </div>
             <div class="action-card">
               <div class="title-line"><strong>VPS 网络优化 · BBR</strong><StatusBadge :tone="bbrTone">{{ bbrStatusLabel }}</StatusBadge></div>
@@ -270,6 +272,9 @@
 </template>
 
 <script setup lang="ts">
+import { compareKernelVersions } from '../utils/kernelVersion'
+import NodeKernelUpload from '../components/NodeKernelUpload.vue'
+import type { AdminTask } from '../api/client'
 import NodeSetupGuide from '../components/NodeSetupGuide.vue'
 import NodeProxyPools from '../components/NodeProxyPools.vue'
 import TableText from '../components/TableText.vue'
@@ -398,7 +403,9 @@ const bbrStatusLabel = computed(() => {
   if (bbrState.value.active) return '已生效，未完整持久化'
   return bbrState.value.available ? '可启用' : '当前未提供'
 })
-const kernelBusy = ref<'' | 'detect' | 'reconcile'>('')
+const kernelSource = ref('online')
+const releaseError = ref('')
+const kernelBusy = ref<'' | 'detect' | 'reconcile' | 'upload'>('')
 const nodeEndpoints = ref<any[]>([]), nodeProtocolsLoading = ref(false), savingMultiplierID = ref(0)
 const nodeProtocolLimit = ref(allowedPageSizes.includes(Number(route.query.protocol_limit)) ? Number(route.query.protocol_limit) : 25)
 const nodeProtocolOffset = ref((Math.max(1, Number(route.query.protocol_page) || 1) - 1) * nodeProtocolLimit.value)
@@ -531,33 +538,6 @@ function controlTone(value?: string): 'success' | 'danger' | 'neutral' { return 
 function operationStatusLabel(value: string) { return ({ running: '执行中', succeeded: '已完成', failed: '执行失败' } as Record<string, string>)[value] || formatUnknownValue('状态', value) }
 function operationStatusTone(value: string): 'info' | 'success' | 'danger' { return value === 'running' ? 'info' : value === 'succeeded' ? 'success' : 'danger' }
 function kernelActionLabel(value?: string) { return ({ detect: '先检测', install: '安装', upgrade: '升级', repair: '修复', configure: '同步配置', check_release: '检查新版本', manual_review: '人工确认', none: '无需操作' } as Record<string, string>)[value || 'detect'] || formatUnknownValue('动作', value) }
-function compareKernelVersions(left: string, right: string) {
-  const parse = (value: string) => {
-    const [core, suffix = ''] = value.trim().replace(/^v/, '').split('-', 2)
-    return { numbers: core.split('.').map(item => Number(item) || 0), suffix }
-  }
-  const a = parse(left)
-  const b = parse(right)
-  for (let index = 0; index < Math.max(a.numbers.length, b.numbers.length); index += 1) {
-    const difference = (a.numbers[index] || 0) - (b.numbers[index] || 0)
-    if (difference) return difference > 0 ? 1 : -1
-  }
-  if (a.suffix === b.suffix) return 0
-  if (!a.suffix) return 1
-  if (!b.suffix) return -1
-  const leftIdentifiers = a.suffix.split('.')
-  const rightIdentifiers = b.suffix.split('.')
-  for (let index = 0; index < Math.min(leftIdentifiers.length, rightIdentifiers.length); index += 1) {
-    if (leftIdentifiers[index] === rightIdentifiers[index]) continue
-    const leftNumber = /^\d+$/.test(leftIdentifiers[index]) ? Number(leftIdentifiers[index]) : null
-    const rightNumber = /^\d+$/.test(rightIdentifiers[index]) ? Number(rightIdentifiers[index]) : null
-    if (leftNumber !== null && rightNumber !== null) return leftNumber > rightNumber ? 1 : -1
-    if (leftNumber !== null) return -1
-    if (rightNumber !== null) return 1
-    return leftIdentifiers[index].localeCompare(rightIdentifiers[index])
-  }
-  return leftIdentifiers.length === rightIdentifiers.length ? 0 : leftIdentifiers.length > rightIdentifiers.length ? 1 : -1
-}
 function operationLabel(value?: string) { return ({ detect: '环境检测', reconcile: '状态对齐', install: '安装', upgrade: '升级', downgrade: '降级', repair: '修复', configure: '配置同步', none: '状态确认' } as Record<string, string>)[value || 'reconcile'] || formatUnknownValue('操作', value) }
 function operationSummary(operation: NodeKernelOperation) { return truncateOutput(normalizeOutput(operation.result_summary || operation.error || kernelPhaseLabel(operation.phase)), 220) }
 async function runBatch(action: 'detect' | 'activate' | 'maintenance' | 'retire') {
@@ -653,7 +633,8 @@ async function loadLatestRelease(force = false) {
       selectedReleaseVersion.value = zeroReleases.value.find(releaseCompatible)?.version || ''
     }
   } catch (e: any) {
-    detailError.value = e?.response?.data?.message || 'Zero 已发布版本查询失败。'
+    releaseError.value = e?.response?.data?.message || 'Zero 已发布版本查询失败。'
+    if (kernelSource.value === 'online') detailError.value = releaseError.value
   } finally {
     releaseLoading.value = false
   }
@@ -716,6 +697,24 @@ function startKernelPolling(nodeID: number, taskID: number) {
       }
     } catch { /* TaskTray remains the durable progress surface if this page poll is interrupted. */ }
   }, 1500)
+}
+function changeKernelSource(value: string) {
+  if (kernelBusy.value) return
+  kernelSource.value = value
+  if (value === 'offline' && detailError.value === releaseError.value) detailError.value = ''
+  if (value === 'online') void loadLatestRelease()
+}
+function offlineUploadBusy(value: boolean) {
+  if (value) kernelBusy.value = 'upload'
+  else if (kernelBusy.value === 'upload') kernelBusy.value = ''
+}
+function offlineUploadAccepted(task: AdminTask, nodeId: number, target: string) {
+  trackAdminTask(task)
+  if (selectedNode.value?.id !== nodeId) return
+  kernelBusy.value = 'reconcile'
+  detailError.value = ''
+  detailMessage.value = `本地内核 ${target} 已上传，安装任务 #${task.id} 已接受。`
+  startKernelPolling(nodeId, task.id)
 }
 async function reconcileKernel() {
   if (!selectedNode.value || !selectedRelease.value) return
@@ -945,7 +944,7 @@ watch([() => selectedNode.value?.id, detailSection, nodeProtocolOffset, nodeProt
     nodeLoadError.value = ''
     nodeProtocolTotal.value = 0
   }
-  if (section === 'kernel') { void loadKernel(id); void loadLatestRelease(); void loadBBR(id) } else kernelRequests.invalidate()
+  if (section === 'kernel') { void loadKernel(id); if (kernelSource.value === 'online') void loadLatestRelease(); void loadBBR(id) } else kernelRequests.invalidate()
   if (section === 'protocols') void loadNodeProtocols(id); else { protocolRequests.invalidate(); nodeProtocolsLoading.value = false }
 }, { immediate: true })
 watch(detailSection, (section) => { if (selectedNode.value && String(route.query.tab || 'overview') !== section) void syncURL() })

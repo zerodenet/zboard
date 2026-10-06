@@ -45,11 +45,13 @@ type KernelRemoteDialer interface {
 }
 
 type KernelInstallRequest struct {
-	OperationID   uint
-	Binary        []byte
-	BinarySHA256  string
-	RuntimeConfig []byte
-	ConnectorKey  string
+	OperationID     uint
+	Binary          []byte
+	BinarySHA256    string
+	RuntimeConfig   []byte
+	ConnectorKey    string
+	UseSCP          bool
+	ExpectedVersion string
 }
 
 type KernelInstaller struct {
@@ -81,6 +83,10 @@ func (i KernelInstaller) Install(parent context.Context, request KernelInstallRe
 	if output, err := session.Run("install -d -m 0700 "+shellQuote(stage), false); err != nil {
 		return operationError(ctx, fmt.Errorf("create Zero staging directory: %w: %s", err, output))
 	}
+	if request.UseSCP {
+		// Best-effort cleanup also covers transfer or build_id failures before activation.
+		defer session.Run("rm -rf "+shellQuote(stage), false)
+	}
 	files := []struct {
 		path string
 		mode string
@@ -93,8 +99,33 @@ func (i KernelInstaller) Install(parent context.Context, request KernelInstallRe
 		{stage + "/cleanup-zero-node.sh", "0700", nodecleanup.Script},
 	}
 	for _, file := range files {
-		if err := session.Upload(file.path, file.mode, file.data); err != nil {
+		upload := session.Upload
+		if request.UseSCP {
+			scp, ok := session.(interface {
+				UploadSCP(string, string, []byte) error
+			})
+			if !ok {
+				return errors.New("remote session does not support required SCP transfer")
+			}
+			upload = scp.UploadSCP
+		}
+		if err := upload(file.path, file.mode, file.data); err != nil {
 			return operationError(ctx, fmt.Errorf("stage %s: %w", file.path, err))
+		}
+	}
+	if request.ExpectedVersion != "" {
+		output, err := session.Run("test \"$(sha256sum "+shellQuote(stage+"/zero")+" | awk '{print $1}')\" = "+shellQuote(request.BinarySHA256)+" && "+shellQuote(stage+"/zero")+" build_info", false)
+		if err != nil {
+			return operationError(ctx, fmt.Errorf("inspect uploaded kernel: %w", err))
+		}
+		actual := ""
+		for _, line := range strings.Split(output, "\n") {
+			if strings.HasPrefix(line, "build_id: ") {
+				actual = strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(line, "build_id: ")), "v")
+			}
+		}
+		if actual != request.ExpectedVersion {
+			return fmt.Errorf("uploaded kernel version %q does not match requested %q", actual, request.ExpectedVersion)
 		}
 	}
 	output, err := session.Run(BuildKernelInstallScript(stage, request.BinarySHA256, request.OperationID), true)

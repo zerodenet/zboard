@@ -88,7 +88,7 @@ func loadBatchResourceAction(tx *gorm.DB, task model.Task, claim network.BatchRe
 		}
 		return network.BatchResourceAction{}, err
 	}
-	action := network.BatchResourceAction{Kind: task.Type, TargetType: item.TargetType, ActorID: content.RequestedBy, TaskItemID: item.ID, Lifecycle: content.LifecycleStatus, KernelVersion: content.KernelVersion, AllowDowngrade: content.AllowDowngrade}
+	action := network.BatchResourceAction{Kind: task.Type, TargetType: item.TargetType, ActorID: content.RequestedBy, TaskItemID: item.ID, Lifecycle: content.LifecycleStatus, KernelVersion: content.KernelVersion, KernelArtifactID: content.KernelArtifactID, AllowDowngrade: content.AllowDowngrade}
 	switch task.Type {
 	case network.BatchNodeDetect, network.BatchNodeReconcile, network.BatchNodeLifecycle, network.BatchProtocolDeploy:
 		if item.TargetType != "node" {
@@ -203,5 +203,5 @@ func firstProtocolEndpoint(tx *gorm.DB, nodeID uint) (uint, error) {
 }
 
 func sameBatchResourceAction(left, right network.BatchResourceAction) bool {
-	return left.Kind == right.Kind && left.TargetType == right.TargetType && left.NodeID == right.NodeID && left.NodeGroupID == right.NodeGroupID && left.ActorID == right.ActorID && left.TaskItemID == right.TaskItemID && left.Lifecycle == right.Lifecycle && left.KernelVersion == right.KernelVersion && left.AllowDowngrade == right.AllowDowngrade && left.Active == right.Active && left.PublishEndpointID == right.PublishEndpointID && slices.Equal(left.EndpointIDs, right.EndpointIDs)
+	return left.Kind == right.Kind && left.TargetType == right.TargetType && left.NodeID == right.NodeID && left.NodeGroupID == right.NodeGroupID && left.ActorID == right.ActorID && left.TaskItemID == right.TaskItemID && left.Lifecycle == right.Lifecycle && left.KernelVersion == right.KernelVersion && left.KernelArtifactID == right.KernelArtifactID && left.AllowDowngrade == right.AllowDowngrade && left.Active == right.Active && left.PublishEndpointID == right.PublishEndpointID && slices.Equal(left.EndpointIDs, right.EndpointIDs)
 }

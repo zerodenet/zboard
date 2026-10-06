@@ -2907,9 +2907,38 @@ paths:
                 allow_downgrade:
                   type: boolean
       responses:
-        "200": { description: Reconciliation completed or no change was required }
+        "202": { description: Durable reconciliation task accepted }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{id}/kernel/upload:
+    post:
+      tags: [nodes, admin]
+      summary: Upload a local Zero kernel and enqueue an offline SCP installation
+      description: Admin only. Accepts a Linux x86_64 ELF executable or the official tar.gz containing zero, at most 128 MiB. Stores the binary by its computed SHA-256 in ZERO_ARTIFACT_DIR/kernel-uploads (must be writable and persistent, bounded to 1 GiB). A durable task uses verified SSH and actual SCP without GitHub requests. The target node must have scp, Linux x86_64 and systemd. The uploaded executable build_id must match version before activation. Existing configuration validation, health checks and rollback apply. Artifacts are retained for task retries; remove only unused files when storage is full.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file, version]
+              properties:
+                file: { type: string, format: binary }
+                version:
+                  type: string
+                  pattern: '^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$'
+                allow_downgrade: { type: boolean, default: false }
+                idempotency_key: { type: string, maxLength: 128 }
+      responses:
+        "202": { description: Immutable offline artifact stored and durable installation task accepted }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
   /api/v1/admin/kernel/releases/latest:
     get:
       tags: [nodes, admin]
