@@ -8,6 +8,8 @@ import (
 
 var ErrAcceptanceUnknown = errors.New("邮件接收结果待核验；确认是否已投递后再重试")
 
+var ErrAlertSuppressed = jobs.ErrBatchItemSkipped
+
 // Acceptance describes provider acknowledgement, never mailbox delivery/read.
 type Acceptance string
 

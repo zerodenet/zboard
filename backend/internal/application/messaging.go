@@ -28,6 +28,10 @@ func (s *Services) RegistrationMessages(cipher platform.SettingsCipher) messagin
 	return messaging.RegistrationEvents{Repository: messagingstore.RegistrationWelcome{DB: s.Identity.db, Cipher: cipher}}
 }
 
+func (s *Services) SubscriptionAlerts(cipher platform.SettingsCipher) messaging.SubscriptionAlerts {
+	return messaging.SubscriptionAlerts{Repository: messagingstore.SubscriptionAlerts{DB: s.Identity.db, Cipher: cipher}}
+}
+
 func (s *Services) RegistrationEventStatus() messaging.RegistrationStatus {
 	return messaging.RegistrationStatus{Repository: messagingstore.RegistrationStatus{DB: s.Identity.db}}
 }

@@ -155,6 +155,16 @@ set +a
 /usr/local/bin/zero validate "$stage/runtime.json" >/dev/null
 actual_sha="$(sha256sum "$stage/runtime.json" | awk '{print $1}')"
 test "$actual_sha" = "$expected_sha"
+if [ -f /etc/zerodenet/current.json ] && [ -f /etc/zerodenet/zero.env ] &&
+   [ "$(sha256sum /etc/zerodenet/current.json | awk '{print $1}')" = "$expected_sha" ] &&
+   cmp -s "$stage/zero.env" /etc/zerodenet/zero.env &&
+   systemctl is-active --quiet zero &&
+   /usr/local/bin/zero status --json --socket %s >/dev/null 2>&1; then
+  rm -rf "$stage"
+  printf 'ZBOARD_CONFIG_UNCHANGED=%%s\n' "$expected_sha"
+  printf 'ZBOARD_CONFIG_APPLIED=%%s\n' "$expected_sha"
+  exit 0
+fi
 install -d -m 0755 /etc/zerodenet/generations /var/lib/zerodenet/backups
 install -d -m 0700 "$backup"
 old_link="$(readlink /etc/zerodenet/current.json 2>/dev/null || true)"
@@ -183,7 +193,7 @@ test "$(sha256sum /etc/zerodenet/current.json | awk '{print $1}')" = "$expected_
 trap - EXIT
 rm -rf "$stage"
 printf 'ZBOARD_CONFIG_APPLIED=%%s\n' "$expected_sha"
-`, shellQuote(stage), shellQuote(generation), shellQuote(backup), shellQuote(expectedSHA), shellQuote(controlSocket))
+`, shellQuote(stage), shellQuote(generation), shellQuote(backup), shellQuote(expectedSHA), shellQuote(controlSocket), shellQuote(controlSocket))
 }
 
 func BuildConfigurationRollbackScript(deploymentID uint) string {

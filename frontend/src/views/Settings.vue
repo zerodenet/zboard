@@ -142,6 +142,11 @@
             </div>
           </UiSection>
 
+          <UiSection title="订阅告警" description="发送给订阅用户，各类默认关闭。需先启用运营邮件并配置 SMTP。">
+            <div class="config-list"><ConfigRow v-for="config in alertConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
+            <p class="muted">每个周期或到期阶段只提醒一次，同一用户共用频率限制。续费、恢复余量或关闭开关后，旧提醒会取消。投递结果可在运营任务中查看。</p>
+          </UiSection>
+
           <UiSection title="运营邮件模板" description="模板只负责可复用内容；真正的收件人、发送时机和执行进度在运营任务中确定。">
             <EmailTemplateManager mode="operational" @dirty="emailTemplateDirty = $event" />
           </UiSection>
@@ -239,9 +244,10 @@ const operationalConfigs = computed(() => configs.value
   .sort((a, b) => a.id - b.id))
 const policyDocumentsConfig = computed(() => operationalConfigs.value.find(item => policyDocumentsKeys.has(item.config_key)))
 const legalMetadataConfig = computed(() => operationalConfigs.value.find(item => legalMetadataKeys.has(item.config_key)))
+const alertConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key.startsWith('subscription_alert_')))
 const emailConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)))
 const emailConfigDirty = computed(() => emailConfigs.value.some(configDirty))
-const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && !dedicatedOperationsKeys.has(item.config_key) && !/smtp|email/i.test(item.config_key)))
+const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && !dedicatedOperationsKeys.has(item.config_key) && !item.config_key.startsWith('subscription_alert_') && !/smtp|email/i.test(item.config_key)))
 const visualConfigs = computed(() => configsForKeys(siteVisualKeys))
 const contentConfigs = computed(() => configsForKeys(siteContentKeys))
 const contactConfigs = computed(() => configsForKeys(siteContactKeys))

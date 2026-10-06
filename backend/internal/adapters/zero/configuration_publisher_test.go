@@ -3,6 +3,7 @@ package zero
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +23,31 @@ func TestConfigurationPublisherStagesAndActivatesThroughRemotePort(t *testing.T)
 	}
 	if !result.ActivatedAt.Equal(now) || len(session.runs) != 2 || len(session.uploads) != 2 || !session.runs[1].privileged || !strings.Contains(session.runs[1].command, "ZBOARD_CONFIG_APPLIED") {
 		t.Fatalf("result=%+v runs=%+v uploads=%+v", result, session.runs, session.uploads)
+	}
+}
+
+func TestConfigurationPublishSkipsRestartForHealthyMatchingRuntime(t *testing.T) {
+	script := BuildConfigurationPublishScript("/tmp/staged", strings.Repeat("a", 64), 8)
+	check := exec.Command("bash", "-n")
+	check.Stdin = strings.NewReader(script)
+	if output, err := check.CombinedOutput(); err != nil {
+		t.Fatalf("invalid publish script: %v %s", err, output)
+	}
+	guard := strings.Index(script, "cmp -s \"$stage/zero.env\" /etc/zerodenet/zero.env")
+	restart := strings.Index(script, "\nsystemctl restart zero\n")
+	if guard < 0 || restart < 0 || guard >= restart {
+		t.Fatal("unchanged configuration guard must precede the Zero restart")
+	}
+	for _, condition := range []string{
+		"sha256sum /etc/zerodenet/current.json",
+		"systemctl is-active --quiet zero",
+		"/usr/local/bin/zero status --json --socket '/run/zerodenet/control.sock'",
+		"ZBOARD_CONFIG_UNCHANGED=%s",
+		"exit 0",
+	} {
+		if !strings.Contains(script[:restart], condition) {
+			t.Fatalf("unchanged configuration guard is missing %q", condition)
+		}
 	}
 }
 

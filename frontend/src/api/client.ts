@@ -2118,7 +2118,7 @@ export interface AdminTaskSummary {
 }
 
 export interface AdminTaskItem {
-	delivery_state?: 'accepted' | 'not_accepted' | 'unknown' | ''
+	delivery_state?: 'accepted' | 'not_accepted' | 'unknown' | 'suppressed' | ''
 	id: number
 	task_id: number
 	target_type: string

@@ -46,7 +46,17 @@ func NormalizeSettingValue(config Setting, raw json.RawMessage) (string, error) 
 }
 
 func ValidateSettingValue(key, value string) error {
+	if minimum, maximum, ok := alertSettingBounds(key); ok {
+		number, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || number < minimum || number > maximum {
+			return fmt.Errorf("%s must be between %d and %d", key, minimum, maximum)
+		}
+	}
 	switch key {
+	case "subscription_alert_low_enabled", "subscription_alert_exhausted_enabled", "subscription_alert_expiring_enabled", "subscription_alert_expired_enabled":
+		if value != "true" && value != "false" {
+			return errors.New("subscription alert switch must be a boolean")
+		}
 	case "site_name":
 		if value == "" || len(value) > 80 {
 			return errors.New("site_name must contain 1 to 80 bytes")

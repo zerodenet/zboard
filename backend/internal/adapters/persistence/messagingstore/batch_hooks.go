@@ -1,6 +1,7 @@
 package messagingstore
 
 import (
+	"errors"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/messaging"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -26,5 +27,9 @@ func CompleteBatchItem(tx *gorm.DB, task model.Task, item model.TaskItem, outcom
 	if err := FinishMailAttempt(tx, task.ID, item.ID, item.Attempts, task.LockedBy, acceptance, now); err != nil {
 		return err
 	}
-	return tx.Model(&item).Update("delivery_state", acceptance).Error
+	state := string(acceptance)
+	if errors.Is(outcome.Cause, messaging.ErrAlertSuppressed) {
+		state = "suppressed"
+	}
+	return tx.Model(&item).Update("delivery_state", state).Error
 }
