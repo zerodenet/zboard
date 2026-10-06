@@ -73,6 +73,10 @@ func SettingInputSchemaFor(config Setting) SettingInputSchema {
 		schema.Control = "password"
 		schema.Placeholder = "输入新值以轮换"
 	}
+	if minimum, maximum, ok := alertSettingBounds(config.ConfigKey); ok {
+		step := int64(1)
+		return SettingInputSchema{Control: "integer", Min: &minimum, Max: &maximum, Step: &step}
+	}
 
 	switch config.ConfigKey {
 	case "site_name":

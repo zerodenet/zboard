@@ -20,6 +20,10 @@ func (h *handlers) enqueueAdminTask(id uint, claims *authClaims) error {
 // A bounded batch is acquired before execution. Pending intent is durable;
 // drafts have no scheduled_at and are never picked up automatically.
 func (h *handlers) StartAdminTaskWorker() {
+	h.startScheduledJob("subscription_alerts", time.Minute, func(ctx context.Context) error {
+		_, err := h.services.SubscriptionAlerts(h.credentialCipher).Process(ctx)
+		return err
+	})
 	h.startScheduledJob("registration_messages", adminTaskPoll, func(ctx context.Context) error {
 		_, err := h.services.RegistrationMessages(h.credentialCipher).Process(ctx)
 		return err

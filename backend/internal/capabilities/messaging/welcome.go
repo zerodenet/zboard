@@ -5,12 +5,13 @@ import "context"
 // EmailContent is the immutable template/site snapshot consumed by delivery.
 // Recipient identity is resolved from the core account at execution time.
 type EmailContent struct {
-	Subject          string `json:"subject"`
-	Body             string `json:"body"`
-	TemplateID       uint   `json:"template_id,omitempty"`
-	TemplateRevision uint64 `json:"template_revision,omitempty"`
-	SiteName         string `json:"site_name,omitempty"`
-	SiteURL          string `json:"site_url,omitempty"`
+	Alert            *SubscriptionAlertGuard `json:"subscription_alert,omitempty"`
+	Subject          string                  `json:"subject"`
+	Body             string                  `json:"body"`
+	TemplateID       uint                    `json:"template_id,omitempty"`
+	TemplateRevision uint64                  `json:"template_revision,omitempty"`
+	SiteName         string                  `json:"site_name,omitempty"`
+	SiteURL          string                  `json:"site_url,omitempty"`
 }
 type WelcomeReceipt struct {
 	TaskID  uint

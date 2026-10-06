@@ -5885,6 +5885,10 @@ components:
         task_id: { type: integer, format: int64 }
         target_type: { type: string, enum: [subscription, user, node, protocol_endpoint] }
         target_id: { type: string }
+        delivery_state:
+          type: string
+          enum: ["", accepted, not_accepted, unknown, suppressed]
+          description: suppressed means an obsolete subscription alert was deliberately skipped without SMTP submission; its reason is retained in error.
         status: { type: integer, enum: [0, 1, 2, 3] }
         attempts: { type: integer }
         error: { type: string }

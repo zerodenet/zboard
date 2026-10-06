@@ -45,12 +45,21 @@ func (s EmailExecution) Prepare(ctx context.Context, claim messaging.EmailExecut
 		if err != nil || id == 0 {
 			return messaging.ErrInvalidMessage
 		}
-		var user model.User
-		if err := tx.Where("id = ? AND status = ?", id, "active").First(&user).Error; err != nil {
-			return err
-		}
 		if err := json.Unmarshal([]byte(task.Content), &out.Content); err != nil {
 			return messaging.ErrInvalidMessage
+		}
+		recipientQuery := tx
+		if out.Content.Alert != nil {
+			recipientQuery = recipientQuery.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		var user model.User
+		if err := recipientQuery.Where("id = ? AND status = ?", id, "active").First(&user).Error; err != nil {
+			return err
+		}
+		if out.Content.Alert != nil {
+			if err := checkSubscriptionAlert(tx, user.ID, task.ID, out.Content.Alert); err != nil {
+				return err
+			}
 		}
 		out.Recipient = messaging.EmailRecipient{Email: user.Email, AccountName: user.AccountName, RegisteredAt: user.CreatedAt}
 		out.LeaseUntil = *task.LockedUntil

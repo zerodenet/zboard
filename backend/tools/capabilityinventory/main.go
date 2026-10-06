@@ -94,6 +94,8 @@ var explicitModelOwners = map[string]string{
 	"FlowUsage":                          "metering",
 	"Installation":                       "platform",
 	"MailDeliveryAttempt":                "messaging",
+	"SubscriptionAlert":                  "messaging",
+	"SubscriptionAlertScan":              "messaging",
 	"ManagedCertificate":                 "network",
 	"ManagedDNSRecord":                   "network",
 	"NetworkEntry":                       "resources",

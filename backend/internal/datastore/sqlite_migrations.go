@@ -33,7 +33,7 @@ func databaseModels() []interface{} {
 		&model.SubscriptionRuleSet{}, &model.SubscriptionTemplateRuleSetBinding{}, &model.ProtocolCredential{},
 		&model.FlowUsage{}, &model.TrafficRecord{}, &model.ProtocolEndpointUsageDaily{}, &model.ProtocolEndpointUsageReset{}, &model.AuditLog{}, &model.EmailTemplate{},
 		&model.RegistrationEmailChallenge{}, &model.AccountRegistrationEvent{}, &model.Ticket{}, &model.TicketMessage{}, &model.UserAPIToken{},
-		&model.Task{}, &model.TaskItem{}, &model.MailDeliveryAttempt{}, &model.ProtocolDeployment{}, &model.QuotaEvent{},
+		&model.Task{}, &model.TaskItem{}, &model.MailDeliveryAttempt{}, &model.SubscriptionAlert{}, &model.SubscriptionAlertScan{}, &model.ProtocolDeployment{}, &model.QuotaEvent{},
 		&model.NodeKernelState{}, &model.NodeOperation{}, &model.ProviderAccount{}, &model.ManagedDNSRecord{},
 		&model.ProviderOperation{}, &model.ManagedCertificate{}, &model.CertificateProtocolEndpoint{},
 		&model.CertificateOperation{}, &model.NodeConfigPublish{}, &model.NodeProxyPool{}, &model.NetworkEntry{}, &model.NodeGroupNetworkEntry{},
@@ -312,6 +312,9 @@ func runSQLiteMigrations(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0028_protocol_endpoint_usage_resets.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0029_subscription_alerts.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
 		return err
 	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}

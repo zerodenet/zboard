@@ -23,6 +23,40 @@ function config(overrides: Partial<SystemConfig>): SystemConfig {
 }
 
 describe('SettingsConfigRow', () => {
+  it('edits a subscription alert switch and saves through the existing config action', async () => {
+    const wrapper = mount(SettingsConfigRow, {
+      props: {
+        config: config({
+          config_key: 'subscription_alert_low_enabled', name: '余量不足提醒',
+          value: false, value_type: 'bool', input: { control: 'switch' },
+        }),
+        draft: false, dirty: true,
+      },
+    })
+    expect(wrapper.text()).toContain('已关闭')
+    await wrapper.get('[role="switch"]').trigger('click')
+    expect(wrapper.emitted('update:draft')?.at(-1)).toEqual([true])
+    await wrapper.setProps({ draft: true })
+    expect(wrapper.text()).toContain('已启用')
+    const save = wrapper.findAll('button').find(button => button.text().includes('保存'))!
+    await save.trigger('click')
+    expect(wrapper.emitted('save')).toHaveLength(1)
+  })
+
+  it('uses backend bounds for the shared subscriber alert interval', () => {
+    const wrapper = mount(SettingsConfigRow, {
+      props: {
+        config: config({
+          config_key: 'subscription_alert_interval_hours', name: '用户提醒间隔（小时）',
+          value: 24, input: { control: 'integer', min: 6, max: 168, step: 1 },
+        }),
+        draft: 24,
+      },
+    })
+    expect(wrapper.getComponent(UiNumberInput).props('min')).toBe(6)
+    expect(wrapper.getComponent(UiNumberInput).props('max')).toBe(168)
+  })
+
   it('renders the server-declared domain control with shared label and error semantics', () => {
     const wrapper = mount(SettingsConfigRow, {
       props: {

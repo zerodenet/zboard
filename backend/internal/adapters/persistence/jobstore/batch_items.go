@@ -62,7 +62,7 @@ func (s BatchItems) Complete(ctx context.Context, claim jobs.BatchItemClaim, att
 		}
 		now := time.Now().UTC()
 		status := int16(2)
-		if outcome.Cause != nil || outcome.Panicked {
+		if (outcome.Cause != nil && !errors.Is(outcome.Cause, jobs.ErrBatchItemSkipped)) || outcome.Panicked {
 			status = 3
 		}
 		if s.Hooks.Complete != nil {

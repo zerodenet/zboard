@@ -55,7 +55,9 @@ func (s BatchItemRunner) Run(ctx context.Context, claim BatchItemClaim) (failure
 					outcome.Message = outcome.Message[:len(outcome.Message)-1]
 				}
 			}
-			failures = append(failures, fmt.Sprintf("item %d: %s", claim.ItemID, outcome.Message))
+			if !errors.Is(outcome.Cause, ErrBatchItemSkipped) {
+				failures = append(failures, fmt.Sprintf("item %d: %s", claim.ItemID, outcome.Message))
+			}
 		}
 		finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
