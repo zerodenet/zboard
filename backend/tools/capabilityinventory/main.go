@@ -153,6 +153,7 @@ var ignoredInMemoryMutations = map[string]bool{
 }
 
 var explicitRuntimeSiteOwners = map[string]string{
+	"internal/adapters/zero/offline_artifact.go":              "resources",
 	"internal/adapters/persistence/networkstore/inventory.go": "network",
 	"internal/application/runtime_status.go":                  "jobs",
 	"internal/capabilities/jobs/jobs.go":                      "jobs",

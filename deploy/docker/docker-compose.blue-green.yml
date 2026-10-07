@@ -59,6 +59,10 @@ services:
         target: /var/lib/zboard/artifacts/rules
         read_only: false
       - type: bind
+        source: ${ZBOARD_KERNEL_UPLOAD_HOST_DIR:-./kernel-uploads}
+        target: /var/lib/zboard/artifacts/kernel-uploads
+        read_only: false
+      - type: bind
         source: ${ZBOARD_ZERO_EVENT_SPOOL_BLUE_HOST_DIR:-./zero-events-blue}
         target: /var/lib/zboard/zero-events
         read_only: false
@@ -115,6 +119,10 @@ services:
       - type: bind
         source: ${ZBOARD_MANAGED_RULE_HOST_DIR:-./managed-rules}
         target: /var/lib/zboard/artifacts/rules
+        read_only: false
+      - type: bind
+        source: ${ZBOARD_KERNEL_UPLOAD_HOST_DIR:-./kernel-uploads}
+        target: /var/lib/zboard/artifacts/kernel-uploads
         read_only: false
       - type: bind
         source: ${ZBOARD_ZERO_EVENT_SPOOL_GREEN_HOST_DIR:-./zero-events-green}

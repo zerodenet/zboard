@@ -197,3 +197,17 @@ func TestBatchProtocolDisableProtectsActivePlans(t *testing.T) {
 		t.Fatalf("active-plan endpoint was disabled: active=%t publications=%d err=%v", endpoint.IsActive, len(adapter.published), err)
 	}
 }
+
+func TestKernelOfflineArtifactSurvivesPersistedTaskReload(t *testing.T) {
+	db, _ := administrationFixture(t)
+	claim := seedResourceBatch(t, db, network.BatchNodeReconcile, network.BatchOperationContent{RequestedBy: 1, KernelVersion: "0.0.3-dev.1", KernelArtifactID: "abc123", AllowDowngrade: true}, model.Node{ID: 1, Name: "offline", Config: "{}", IsEnabled: true})
+	action, err := (BatchResourceExecution{DB: db}).Inspect(context.Background(), claim)
+	if err != nil || action.KernelArtifactID != "abc123" || action.KernelVersion != "0.0.3-dev.1" || !action.AllowDowngrade {
+		t.Fatalf("action=%+v err=%v", action, err)
+	}
+	altered := action
+	altered.KernelArtifactID = "other"
+	if sameBatchResourceAction(action, altered) {
+		t.Fatal("artifact changed without invalidating inspected action")
+	}
+}

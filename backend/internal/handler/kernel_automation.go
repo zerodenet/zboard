@@ -51,6 +51,7 @@ type zeroRelease struct {
 	ArtifactSHA256 string `json:"artifact_sha256"`
 	ArtifactSize   int64  `json:"artifact_size"`
 	LocalPath      string `json:"-"`
+	OfflineID      string `json:"-"`
 }
 
 type githubRelease struct {
@@ -93,8 +94,9 @@ type kernelProbe struct {
 }
 
 type preparedHandlerKernelReconciliation struct {
-	h    *handlers
-	node model.Node
+	h         *handlers
+	node      model.Node
+	offlineID string
 }
 
 func (h *handlers) PrepareKernelReconciliation(ctx context.Context, nodeID uint) (network.PreparedKernelReconciliation, error) {
@@ -120,6 +122,9 @@ func (p preparedHandlerKernelReconciliation) Probe(ctx context.Context) (network
 }
 
 func (p preparedHandlerKernelReconciliation) ResolveRelease(ctx context.Context, probe network.KernelProbe, version string) (network.PreparedKernelRelease, error) {
+	if p.offlineID != "" {
+		return p.h.prepareOfflineKernelRelease(ctx, p.node, p.offlineID, version)
+	}
 	release, err := p.h.resolveZeroRelease(ctx, kernelProbeFromCapability(probe), version)
 	if err != nil {
 		return nil, err
@@ -228,13 +233,27 @@ func (p *preparedHandlerKernelActivation) ConnectorSnapshot() network.KernelConn
 }
 
 func (p *preparedHandlerKernelActivation) Materialize(ctx context.Context) (network.PreparedKernelMaterialization, error) {
-	binary, binarySHA, err := downloadZeroBinary(ctx, p.release)
+	var binary []byte
+	var binarySHA string
+	var err error
+	if p.release.OfflineID != "" {
+		binary, err = p.h.offlineKernelStore().Load(ctx, p.release.OfflineID)
+		binarySHA = p.release.OfflineID
+	} else {
+		binary, binarySHA, err = downloadZeroBinary(ctx, p.release)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return &preparedHandlerKernelMaterialization{
 		h: p.h, node: p.node, binary: binary, binarySHA: binarySHA,
 		runtimeConfig: p.runtimeConfig, connectorKey: p.credential.Raw,
+		offlineVersion: func() string {
+			if p.release.OfflineID != "" {
+				return p.release.Version
+			}
+			return ""
+		}(),
 	}, nil
 }
 
@@ -255,17 +274,21 @@ func (p *preparedHandlerKernelActivation) InvalidateConnectorCredential() {
 }
 
 type preparedHandlerKernelMaterialization struct {
-	h             *handlers
-	node          model.Node
-	binary        []byte
-	binarySHA     string
-	runtimeConfig []byte
-	connectorKey  string
+	h              *handlers
+	node           model.Node
+	binary         []byte
+	binarySHA      string
+	runtimeConfig  []byte
+	connectorKey   string
+	offlineVersion string
 }
 
 func (p *preparedHandlerKernelMaterialization) BinarySHA256() string { return p.binarySHA }
 
 func (p *preparedHandlerKernelMaterialization) Install(ctx context.Context, operationID uint) error {
+	if p.offlineVersion != "" {
+		return (zeroadapter.KernelInstaller{Dialer: zeroKernelRemoteDialer{h: p.h, node: p.node}}).Install(ctx, zeroadapter.KernelInstallRequest{OperationID: operationID, Binary: p.binary, BinarySHA256: p.binarySHA, RuntimeConfig: p.runtimeConfig, ConnectorKey: p.connectorKey, UseSCP: true, ExpectedVersion: p.offlineVersion})
+	}
 	return p.h.installNodeKernel(ctx, p.node, operationID, p.binary, p.binarySHA, p.runtimeConfig, p.connectorKey)
 }
 

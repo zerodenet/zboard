@@ -40,6 +40,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		return nil, err
 	}
 	srv.Use(h.InstallationMiddleware)
+	srv.AddRoute(newRoute(http.MethodPost, "/api/v1/nodes/:id/kernel/upload", h.NodeKernelUploadHandler), rest.WithMaxBytes((128<<20)+(64<<10)), rest.WithTimeout(3*time.Minute))
 
 	srv.AddRoutes([]rest.Route{
 		newRoute(http.MethodGet, "/healthz", h.HealthHandler),

@@ -29,6 +29,7 @@ type BatchOperationContent struct {
 	Actor             string            `json:"actor"`
 	NodeGroupID       uint              `json:"node_group_id,omitempty"`
 	LifecycleStatus   string            `json:"lifecycle_status,omitempty"`
+	KernelArtifactID  string            `json:"kernel_artifact_id,omitempty"`
 	KernelVersion     string            `json:"kernel_version,omitempty"`
 	AllowDowngrade    bool              `json:"allow_downgrade,omitempty"`
 	IsActive          *bool             `json:"is_active,omitempty"`
@@ -48,6 +49,7 @@ type BatchResourceAction struct {
 	ActorID           uint
 	TaskItemID        uint
 	Lifecycle         string
+	KernelArtifactID  string
 	KernelVersion     string
 	AllowDowngrade    bool
 	EndpointIDs       []uint

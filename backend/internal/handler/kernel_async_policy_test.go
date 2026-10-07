@@ -29,7 +29,7 @@ func TestKernelBatchTaskCarriesPinnedVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(payload)
-	for _, expected := range []string{"context.WithoutCancel(ctx)", "KernelVersion", "AllowDowngrade", "Version: action.KernelVersion", "AllowDowngrade: action.AllowDowngrade", "KernelReconciliation(h).Reconcile"} {
+	for _, expected := range []string{"context.WithoutCancel(ctx)", "KernelVersion", "AllowDowngrade", "Version: action.KernelVersion", "AllowDowngrade: action.AllowDowngrade", "KernelReconciliation(preparer).Reconcile"} {
 		if !strings.Contains(source, expected) {
 			t.Fatalf("node reconcile background task lost %q", expected)
 		}

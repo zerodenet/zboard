@@ -32,6 +32,20 @@ func TestBatchRequestsRecheckAdministratorAndCommitTaskItemsAuditAtomically(t *t
 	if err != nil || receipt.ID == 0 || receipt.Total != 2 {
 		t.Fatalf("receipt = %+v err=%v", receipt, err)
 	}
+	repeated, err := store.SubmitBatchRequest(context.Background(), admin.ID, submission)
+	if err != nil || repeated.ID != receipt.ID {
+		t.Fatalf("lost-confirmation retry created a different task: %+v %v", repeated, err)
+	}
+	changed := submission
+	changed.Content = `{"action":"disable"}`
+	if _, err := store.SubmitBatchRequest(context.Background(), admin.ID, changed); err == nil {
+		t.Fatal("idempotency key accepted different intent")
+	}
+	changed = submission
+	changed.Targets = []jobs.BatchSubmissionTarget{{Type: "node", ID: 3}, {Type: "node", ID: 4}}
+	if _, err := store.SubmitBatchRequest(context.Background(), admin.ID, changed); err == nil {
+		t.Fatal("idempotency key accepted different targets")
+	}
 	var items, audits int64
 	if err := db.Model(&model.TaskItem{}).Where("task_id = ?", receipt.ID).Count(&items).Error; err != nil || items != 2 {
 		t.Fatalf("items=%d err=%v", items, err)

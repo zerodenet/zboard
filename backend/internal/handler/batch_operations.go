@@ -278,7 +278,11 @@ func (h *handlers) detectBatchNode(ctx context.Context, action network.BatchReso
 }
 
 func (h *handlers) reconcileBatchNode(ctx context.Context, action network.BatchResourceAction) error {
-	_, err := h.services.KernelReconciliation(h).Reconcile(ctx, network.KernelReconciliationRequest{NodeID: action.NodeID, ActorID: action.ActorID, Version: action.KernelVersion, AllowDowngrade: action.AllowDowngrade})
+	preparer := network.KernelReconciliationPreparer(h)
+	if action.KernelArtifactID != "" {
+		preparer = offlineKernelPreparer{h: h, id: action.KernelArtifactID}
+	}
+	_, err := h.services.KernelReconciliation(preparer).Reconcile(ctx, network.KernelReconciliationRequest{NodeID: action.NodeID, ActorID: action.ActorID, Version: action.KernelVersion, AllowDowngrade: action.AllowDowngrade})
 	return err
 }
 

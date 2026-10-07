@@ -138,3 +138,54 @@ func TestKernelInstallScriptsPersistAndConsumeRollbackMetadata(t *testing.T) {
 		t.Fatal("rollback overwrites the running executable directly")
 	}
 }
+
+type offlineKernelSession struct {
+	kernelRemoteSessionStub
+	scp     []kernelRemoteUpload
+	version string
+	scpErr  error
+}
+
+func (s *offlineKernelSession) UploadSCP(path, mode string, data []byte) error {
+	s.scp = append(s.scp, kernelRemoteUpload{path: path, mode: mode, data: data})
+	return s.scpErr
+}
+func (s *offlineKernelSession) Run(command string, privileged bool) (string, error) {
+	output, err := s.kernelRemoteSessionStub.Run(command, privileged)
+	if strings.HasSuffix(command, " build_info") {
+		return "build_id: " + s.version + "\n", err
+	}
+	return output, err
+}
+
+type offlineKernelDialer struct{ session KernelRemoteSession }
+
+func (d offlineKernelDialer) Dial(context.Context) (KernelRemoteSession, error) {
+	return d.session, nil
+}
+func TestOfflineKernelInstallerUsesSCPAndChecksVersionBeforeActivation(t *testing.T) {
+	for _, scenario := range []struct {
+		name, version string
+		scpErr        error
+		activate      bool
+	}{
+		{"valid", "0.0.3-dev.1", nil, true}, {"wrong version", "0.0.2", nil, false}, {"transfer rejected", "0.0.3-dev.1", errors.New("denied"), false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			session := &offlineKernelSession{version: scenario.version, scpErr: scenario.scpErr}
+			err := (KernelInstaller{Dialer: offlineKernelDialer{session: session}}).Install(context.Background(), KernelInstallRequest{OperationID: 12, Binary: []byte("binary"), BinarySHA256: strings.Repeat("a", 64), RuntimeConfig: []byte("{}"), ConnectorKey: "secret", UseSCP: true, ExpectedVersion: "0.0.3-dev.1"})
+			activated := false
+			for _, run := range session.runs {
+				if run.privileged {
+					activated = true
+				}
+			}
+			if activated != scenario.activate || (err == nil) != scenario.activate || len(session.uploads) != 0 || len(session.scp) == 0 {
+				t.Fatalf("activated=%v err=%v scp=%d stdin uploads=%d", activated, err, len(session.scp), len(session.uploads))
+			}
+			if !strings.HasPrefix(session.runs[len(session.runs)-1].command, "rm -rf ") {
+				t.Fatal("offline staging was not cleaned")
+			}
+		})
+	}
+}
