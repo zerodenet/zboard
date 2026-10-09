@@ -2,7 +2,7 @@ package version
 
 // Build-time variables can be replaced via -ldflags.
 var (
-	Version   = "v0.0.3-dev.202610090815"
+	Version   = "v0.0.3-dev.202610090820"
 	Commit    = "dev"
 	BuildTime = "1970-01-01T00:00:00Z"
 )

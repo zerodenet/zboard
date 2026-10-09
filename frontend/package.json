@@ -1,7 +1,7 @@
 {
   "name": "zboard-console",
   "private": true,
-  "version": "0.0.3-dev.202610090815",
+  "version": "0.0.3-dev.202610090820",
   "packageManager": "pnpm@11.9.0",
   "type": "module",
   "scripts": {
