@@ -86,6 +86,7 @@
               <article v-else class="ticket-message" :class="item.author_role">
                 <header><span class="message-avatar">{{ item.author_role === 'admin' ? 'A' : 'U' }}</span><div><strong>{{ item.author_role === 'admin' ? '管理员' : (admin ? item.author_email : '我') }}</strong><TimeBadge :value="item.created_at" mode="exact" /></div></header>
                 <p>{{ item.body }}</p>
+                <TicketAttachments :items="item.attachments" />
               </article>
             </template>
           </div>
@@ -93,7 +94,8 @@
           <form v-if="detail.ticket.status !== 'closed'" ref="replyFormElement" class="ticket-reply" novalidate @submit.prevent="sendReply">
             <PageAlert v-if="replyErrors.formError.value" tone="danger" title="回复未发送">{{ replyErrors.formError.value }}</PageAlert>
             <FormField v-slot="{ controlAttrs }" :label="admin ? '回复用户' : detail.ticket.status === 'resolved' ? '继续追问（将重新打开工单）' : '补充信息'" name="ticket-reply-body" :error="replyErrors.fields.body" required><UiTextarea v-model="replyBody" v-bind="controlAttrs" maxlength="5000" placeholder="清楚描述处理结果、复现信息或需要补充的内容…" /></FormField>
-            <footer><small>{{ replyBody.length }} / 5000</small><UiButton type="submit" :loading="saving" :disabled="!replyBody.trim()">发送回复</UiButton></footer>
+            <TicketAttachmentEditor v-model="replyAttachments" v-model:busy="replyUploading" :disabled="saving" />
+            <footer><small>{{ replyBody.length }} / 5000</small><UiButton type="submit" :loading="saving" :disabled="!replyBody.trim() || replyUploading">发送回复</UiButton></footer>
           </form>
           <div v-else class="closed-notice"><UiIcon name="check" /><div><strong>工单已关闭</strong><p>时间线保持只读。如有新问题，请创建新的工单。</p></div></div>
         </template>
@@ -103,15 +105,16 @@
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
-    <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="新建工单" description="请尽量一次性提供问题现象和复现信息。" size="lg" :busy="saving" @close="createOpen = false">
+    <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="新建工单" description="请尽量一次性提供问题现象和复现信息。" size="lg" :busy="saving || createUploading" @close="createOpen = false">
       <form id="create-ticket-form" ref="createFormElement" class="form-grid" novalidate @submit.prevent="submitTicket">
         <PageAlert v-if="createErrors.formError.value" class="field-full" tone="danger" title="无法提交工单">{{ createErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="问题主题" name="ticket-subject" :error="createErrors.fields.subject" required full><UiInput v-model.trim="draft.subject" v-bind="controlAttrs" maxlength="160" placeholder="例如：订阅导入后节点连接超时" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="问题分类" name="ticket-category" :error="createErrors.fields.category"><UiSelect v-model="draft.category" v-bind="controlAttrs" :options="categoryOptions" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="优先级" name="ticket-priority" :error="createErrors.fields.priority"><UiSelect v-model.number="draft.priority" v-bind="controlAttrs" :options="priorityOptions" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="问题描述" name="ticket-body" :error="createErrors.fields.body" hint="请勿提交密码、订阅凭证等敏感信息。" required full><UiTextarea v-model.trim="draft.body" v-bind="controlAttrs" maxlength="5000" placeholder="操作步骤、错误提示、发生时间，以及你已经尝试过的方法。" /></FormField>
+        <FormField label="附件（可选）" name="ticket-attachments" full><TicketAttachmentEditor v-model="draft.attachments" v-model:busy="createUploading" :disabled="saving" /></FormField>
       </form>
-      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="create-ticket-form" type="submit" :loading="saving">提交工单</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving || createUploading" @click="requestClose">取消</UiButton><UiButton form="create-ticket-form" type="submit" :loading="saving" :disabled="createUploading">提交工单</UiButton></template>
     </ModalDialog>
   </section>
 </template>
@@ -136,6 +139,9 @@ import StatusBadge from './StatusBadge.vue'
 import TablePager from './TablePager.vue'
 import TransientFeedback from './TransientFeedback.vue'
 import UiIcon from './UiIcon.vue'
+import TicketAttachmentEditor from './TicketAttachmentEditor.vue'
+import TicketAttachments from './TicketAttachments.vue'
+import type { TicketAttachment } from '../api/files'
 import WorkbenchFilterBar from './WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from './WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from './WorkbenchFilterSelect.vue'
@@ -154,6 +160,8 @@ const saving = ref(false)
 const message = ref('')
 const createOpen = ref(false)
 const replyBody = ref('')
+const replyAttachments = ref<TicketAttachment[]>([])
+const replyUploading = ref(false), createUploading = ref(false)
 const createFormElement = ref<HTMLElement | null>(null)
 const replyFormElement = ref<HTMLElement | null>(null)
 const createErrors = useFormErrors()
@@ -164,9 +172,9 @@ const allowedPageSizes = [25, 50, 100]
 const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 25)
 const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
-const draft = reactive<{ subject: string; category: TicketCategory; priority: 1 | 2; body: string }>({ subject: '', category: 'connection', priority: 1, body: '' })
+const draft = reactive<{ subject: string; category: TicketCategory; priority: 1 | 2; body: string; attachments: TicketAttachment[] }>({ subject: '', category: 'connection', priority: 1, body: '', attachments: [] })
 const createState = useDirtyForm(() => draft)
-const replyState = useDirtyForm(() => replyBody.value)
+const replyState = useDirtyForm(() => ({ body: replyBody.value, attachments: replyAttachments.value }))
 useUnsavedChangesGuard(
   () => (createOpen.value && createState.dirty.value) || replyState.dirty.value,
   async () => {
@@ -254,7 +262,7 @@ function clearDetailState() {
 }
 async function discardReplyForNavigation(message: string) {
   if (!await replyState.confirmDiscard({ title: '放弃未发送的回复？', message, confirmText: '放弃草稿' })) return false
-  replyBody.value = ''; replyErrors.clear(); replyState.markClean(); return true
+  replyBody.value = ''; replyAttachments.value = []; replyErrors.clear(); replyState.markClean(); return true
 }
 
 async function applyFilters() {
@@ -288,7 +296,7 @@ async function changePage(value: { offset: number; limit: number }) {
 
 async function openCreate() {
   if (!await discardReplyForNavigation('新建工单后，当前回复草稿将被清空。')) return
-  Object.assign(draft, { subject: '', category: 'connection', priority: 1, body: '' })
+  Object.assign(draft, { subject: '', category: 'connection', priority: 1, body: '', attachments: [] })
   createErrors.clear(); createState.markClean(); createOpen.value = true
 }
 
@@ -365,6 +373,7 @@ async function loadOlderMessages() {
 }
 
 async function submitTicket() {
+  if (saving.value || createUploading.value) return
   draft.subject = draft.subject.trim()
   draft.body = draft.body.trim()
   const valid = await createErrors.applyValidation(collectFieldErrors({
@@ -377,7 +386,7 @@ async function submitTicket() {
   saving.value = true; message.value = ''
   try {
     const created = await createTicket({ ...draft })
-    createOpen.value = false; Object.assign(draft, { subject: '', category: 'connection', priority: 1, body: '' })
+    createOpen.value = false; Object.assign(draft, { subject: '', category: 'connection', priority: 1, body: '', attachments: [] })
     createState.markClean()
     selectedTicketID.value = created.ticket.id
     detail.value = created
@@ -390,7 +399,7 @@ async function submitTicket() {
 }
 
 async function sendReply() {
-  if (!detail.value) return
+  if (!detail.value || saving.value || replyUploading.value) return
   replyBody.value = replyBody.value.trim()
   const valid = await replyErrors.applyValidation(collectFieldErrors({
     body: !isCharacterLengthInRange(replyBody.value, 1, 5000, true) && '回复需包含 1 到 5000 个字符。',
@@ -398,7 +407,7 @@ async function sendReply() {
   if (!valid) return
   saving.value = true; message.value = ''
   try {
-    detail.value = await replyTicket(detail.value.ticket.id, replyBody.value.trim(), admin.value); replyBody.value = ''; replyState.markClean()
+    detail.value = await replyTicket(detail.value.ticket.id, replyBody.value.trim(), admin.value, replyAttachments.value); replyBody.value = ''; replyAttachments.value = []; replyState.markClean()
     message.value = '回复已写入工单时间线。'; await loadTickets(); await scrollTimeline()
   } catch (e: any) { await replyErrors.applyApiError(e, '回复发送失败。', replyFormElement, { message: 'body', body: 'body' }) }
   finally { saving.value = false }

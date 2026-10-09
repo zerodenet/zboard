@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/security"
 	"net/mail"
 	"net/url"
 	"regexp"
@@ -42,7 +43,10 @@ func validateSiteSystemConfig(key, value string) error {
 	}
 
 	switch key {
-	case "site_logo_dark", "site_favicon":
+	case "site_logo", "site_logo_dark", "site_favicon":
+		if security.IsLocalSiteImageReference(value) {
+			return nil
+		}
 		return validateOptionalPublicURL(key, value)
 	case "site_support_url", "site_telegram_url":
 		return validateOptionalPublicURL(key, value)

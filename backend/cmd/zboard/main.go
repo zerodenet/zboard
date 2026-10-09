@@ -86,9 +86,11 @@ func main() {
 		serverOptions = append(serverOptions, rest.WithNotFoundHandler(staticFallbackHandler(webDir)))
 	}
 	server.ConfigureSafeHTTPLogging(&c.RestConf)
+	pluginHTTPTransport := server.ConfigurePluginHTTPTransport(&c.RestConf)
 	srv := rest.MustNewServer(c.RestConf, serverOptions...)
 	defer srv.Stop()
 	srv.Use(server.SafeAccessLogMiddleware)
+	srv.Use(pluginHTTPTransport)
 
 	log.Printf("starting zboard service")
 	log.Printf("version: %s", version.FullVersion())
@@ -106,6 +108,7 @@ func main() {
 		c.ZeroLocalVersion,
 		c.ZeroEventSpoolConfig(),
 		c.Plugins,
+		c.FileStorageDir,
 	)
 	if err != nil {
 		log.Fatalf("route registration failed: %v", err)

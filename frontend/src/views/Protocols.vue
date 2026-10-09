@@ -191,6 +191,7 @@
             <FormField v-slot="{ controlAttrs }" label="协议类型" name="protocol-type" :hint="form.id ? '已创建服务不直接切换协议，避免破坏现有用户凭证；如需更换请创建新服务。' : ''" :error="editorErrors.fields.protocol" required><UiSelect v-model="form.protocol" v-bind="controlAttrs" :options="protocolOptions" :disabled="Boolean(form.id)" @change="handleProtocolChange" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="服务名称" name="protocol-name" :error="editorErrors.fields.name" required><UiInput v-model.trim="form.name" v-bind="controlAttrs" placeholder="例如：香港 VLESS 01" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="对外地址" name="protocol-address" :hint="selectedNode?.address ? `已从 ${selectedNode.name} 自动带出，可按实际入口修改。` : '当前节点没有默认地址，请填写客户端可访问的域名或公网 IP。'" :error="editorErrors.fields.address" required full><div class="input-with-action"><UiInput v-model.trim="form.address" v-bind="controlAttrs" placeholder="域名或公网 IP" /><UiButton v-if="selectedNode?.address && form.address !== selectedNode.address" type="button" @click="useNodeAddress">使用节点地址</UiButton></div></FormField>
+            <FormField v-slot="{ controlAttrs }" label="监听地址" name="protocol-listen-address" hint="填写 VPS 本地 IP；0.0.0.0 监听 IPv4，:: 监听 IPv6。IPv6 通配是否同时接收 IPv4 取决于节点系统设置。" :error="editorErrors.fields.listen_address" required full><UiInput v-model.trim="form.listen_address" v-bind="controlAttrs" placeholder="0.0.0.0 或 ::" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="服务监听端口" name="protocol-port" hint="Zero 在 VPS 上实际监听的端口；保存后会同步凭证并发布节点配置。" :error="editorErrors.fields.port" required><PortInput v-model="form.port" v-bind="controlAttrs" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="客户端连接端口" name="protocol-public-port" hint="存在端口转发时可与监听端口不同；变更后用户需要更新订阅配置。" :error="editorErrors.fields.public_port" required><PortInput v-model="form.public_port" v-bind="controlAttrs" /></FormField>
           </div>
@@ -212,8 +213,9 @@
             <FormField v-if="supportsSelectableTransport && structured.transport === 'grpc'" v-slot="{ controlAttrs }" label="gRPC Service Name" name="protocol-grpc-service-name" :error="editorErrors.fields['structured.grpc_service_name']" required><UiInput v-model.trim="structured.grpc_service_name" v-bind="controlAttrs" placeholder="zboard" /></FormField>
             <template v-if="form.protocol === 'vless' && structured.security === 'reality'">
               <div class="generated-config-note field-full"><UiIcon name="shield" /><div><strong>VLESS + Reality</strong><p>面板生成匹配的 X25519 密钥与 short ID；私钥仅进入加密保存的服务端配置，订阅只下发公钥。</p></div><UiButton variant="secondary" type="button" :loading="realityKeyBusy" @click="regenerateRealityKeys">重新生成密钥</UiButton></div>
-              <FormField v-slot="{ controlAttrs }" label="一键场景模板" hint="模板会一次填入推荐 SNI、客户端指纹、成对密钥和 Short ID；应用后仍可按实际网络调整。" full><div class="input-with-action"><UiSelect v-model="realityPreset" v-bind="controlAttrs" :options="realityPresetOptions" /><UiButton variant="secondary" type="button" :loading="realityTemplateBusy" @click="applyRealityTemplate">应用模板</UiButton></div></FormField>
-              <FormField v-slot="{ controlAttrs }" label="伪装域名（SNI）" name="protocol-reality-server-name" :error="editorErrors.fields['structured.reality_server_name']" required><UiInput v-model.trim="structured.reality_server_name" v-bind="controlAttrs" placeholder="www.microsoft.com" /></FormField>
+              <FormField v-slot="{ controlAttrs }" label="一键场景模板" hint="模板填入预设 SNI、客户端指纹及新密钥；域名是否适合当前 VPS，可用下方在线探测确认。" full><div class="input-with-action"><UiSelect v-model="realityPreset" v-bind="controlAttrs" :options="realityPresetOptions" /><UiButton variant="secondary" type="button" :loading="realityTemplateBusy" @click="applyRealityTemplate">应用模板</UiButton></div></FormField>
+              <FormField v-slot="{ controlAttrs }" label="伪装域名（SNI）" name="protocol-reality-server-name" :error="editorErrors.fields['structured.reality_server_name']" required><div class="input-with-action"><UiInput v-model.trim="structured.reality_server_name" v-bind="controlAttrs" placeholder="输入域名或从 VPS 探测选择" /><UiButton variant="secondary" :disabled="!form.node_id" @click="realityProbeOpen = !realityProbeOpen">探测伪装域名</UiButton></div></FormField>
+              <RealityDomainProbe v-if="realityProbeOpen" class="field-full" :node-id="form.node_id" :node-name="selectedNode?.name" @select="structured.reality_server_name = $event" @close="realityProbeOpen = false" />
               <FormField v-slot="{ controlAttrs }" label="Short ID" name="protocol-reality-short-id" hint="2–16 位偶数长度十六进制字符串。" :error="editorErrors.fields['structured.reality_short_id']" required><UiInput v-model.trim="structured.reality_short_id" v-bind="controlAttrs" class="mono" /></FormField>
               <FormField v-slot="{ controlAttrs }" label="客户端指纹"><UiSelect v-model="structured.reality_fingerprint" v-bind="controlAttrs" :options="realityFingerprintOptions" /></FormField>
               <FormField v-slot="{ controlAttrs }" label="Reality 公钥" full><UiInput v-model.trim="structured.reality_public_key" v-bind="controlAttrs" class="mono" readonly /></FormField>
@@ -261,7 +263,7 @@
           <div class="review-grid">
             <article><span>承载节点</span><strong>{{ selectedNode?.name || '未选择' }}</strong><small>{{ selectedNode?.region || '未设置区域' }}</small></article>
             <article><span>协议服务</span><strong>{{ form.name }}</strong><small>{{ protocolLabel(form.protocol) }}</small></article>
-            <article><span>对外入口</span><strong class="mono">{{ form.address }}:{{ form.public_port }}</strong><small>VPS 监听 {{ form.port }}</small></article>
+            <article><span>对外入口</span><strong class="mono">{{ form.address }}:{{ form.public_port }}</strong><small>VPS 监听 {{ listenAddressPreview }}:{{ form.port }}</small></article>
             <article><span>流量出口</span><strong>{{ egress.enabled ? protocolLabel(egress.protocol) : 'Direct' }}</strong><small>{{ egress.enabled ? `${egress.server}:${egress.port}` : '节点直接访问目标' }}</small></article>
             <article><span>流量计费</span><strong>{{ formatMultiplier(form.multiplier_milli) }}</strong><small>前端自动换算，无需手动填写千分值</small></article>
           </div>
@@ -331,6 +333,7 @@ import SortableHeader from '../components/SortableHeader.vue'
 import TablePager from '../components/TablePager.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiIcon from '../components/UiIcon.vue'
+import RealityDomainProbe from '../components/RealityDomainProbe.vue'
 import UiStepNav from '../components/UiStepNav.vue'
 import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
@@ -428,7 +431,9 @@ const usageResetsLoading = ref(false), usageResetsError = ref('')
 const usageResetOpen = ref(false), usageResetSaving = ref(false), usageResetReason = ref(''), usageResetError = ref('')
 const deploymentOffset = ref((Math.max(1, Number(route.query.deployment_page) || 1) - 1) * 25)
 const deploymentLimit = ref(allowedPageSizes.includes(Number(route.query.deployment_limit)) ? Number(route.query.deployment_limit) : 25)
+const realityProbeOpen = ref(false)
 const saving = ref(false), realityKeyBusy = ref(false), realityTemplateBusy = ref(false), realityPreset = ref('compatible'), egressParsing = ref(false), egressImportError = ref(''), deployingID = ref(0), deletingID = ref(0), detailLoadingID = ref(0), editorOpen = ref(false), editorStep = ref(1)
+watch(editorOpen, () => { realityProbeOpen.value = false })
 const orderingOpen = ref(false), orderingLoading = ref(false), orderingSaving = ref(false), orderingError = ref(''), orderingVersion = ref('')
 const orderingDialogOpen = ref(false), orderingDragKey = ref(''), orderingDropKey = ref('')
 let orderingReturnPath = ''
@@ -446,16 +451,20 @@ const toggleTaskIDs = reactive<Record<number, number>>({})
 const message = ref(''), editorError = ref('')
 const protocolUsageRefreshIntervalMS = 15_000
 let protocolUsageRefreshTimer: number | undefined
-const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, managed_principal_ready: false, is_active: true, config: '{}', egress_config: '', client_config: '{}', optional_config: '{}', tags: '[]', node_group_memberships: [] as ProtocolEndpointNodeGroupMembership[] })
+const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', listen_address: '0.0.0.0', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, managed_principal_ready: false, is_active: true, config: '{}', egress_config: '', client_config: '{}', optional_config: '{}', tags: '[]', node_group_memberships: [] as ProtocolEndpointNodeGroupMembership[] })
 const emptyStructured = () => ({ credential: randomUUID(), username: 'subscriber', password: randomSecret(), cipher: 'aes-128-gcm', security: 'none', transport: 'tcp', transport_path: '/', grpc_service_name: 'zboard', cert_path: '', key_path: '', server_name: '', reality_private_key: '', reality_public_key: '', reality_short_id: '', reality_server_name: '', reality_fingerprint: 'chrome' })
 const emptyEgress = () => ({ enabled: false, mode: 'manual', import_text: '', protocol: 'socks5', server: '', port: 1080, username: '', password: '', cipher: 'chacha20-ietf-poly1305', id: '', server_name: '', insecure: false, base: {} as Record<string, any> })
 const form = reactive<any>(emptyForm())
+const listenAddressPreview = computed(() => {
+  const address = form.listen_address.replace(/^\[(.*)\]$/, '$1')
+  return address.includes(':') ? `[${address}]` : address
+})
 const structured = reactive<any>(emptyStructured())
 const egress = reactive<any>(emptyEgress())
 const protocolFormElement = ref<HTMLElement | null>(null)
 const editorErrors = useFormErrors()
 const protocolFieldMap: Record<string, string> = {
-  node_id: 'node_id', name: 'name', protocol: 'protocol', address: 'address', port: 'port', public_port: 'public_port',
+  node_id: 'node_id', name: 'name', protocol: 'protocol', address: 'address', listen_address: 'listen_address', port: 'port', public_port: 'public_port',
   multiplier_milli: 'multiplier_milli', sort_order: 'sort_order', parent_protocol_id: 'parent_protocol_id', managed_certificate_id: 'managed_certificate_id',
   config: 'config', egress_config: 'egress_config', client_config: 'client_config', optional_config: 'optional_config', tags: 'tags', is_active: 'is_active',
   node_group_membership_changes: 'node_group_membership_changes',
@@ -830,7 +839,6 @@ async function regenerateRealityKeys() {
     structured.reality_private_key = pair.private_key
     structured.reality_public_key = pair.public_key
     structured.reality_short_id = pair.short_id
-    if (!structured.reality_server_name) structured.reality_server_name = form.address || ''
   } catch (cause: any) {
     editorError.value = cause?.response?.data?.message || 'Reality 密钥生成失败。'
   } finally {
@@ -1013,6 +1021,7 @@ async function openEdit(endpoint: any) {
     Object.assign(form, emptyForm(), detail, {
       parent_protocol_id: detail.parent_protocol_id || 0,
       managed_certificate_id: detail.managed_certificate_id || 0,
+      listen_address: detail.listen_address || '0.0.0.0',
       config: detail.config || '{}',
       egress_config: detail.egress_config || '',
       client_config: detail.client_config || '{}',
@@ -1057,6 +1066,7 @@ async function openCopy(endpoint: ProtocolEndpointListItem) {
       name: `${detail.name} 副本`,
       is_active: true,
       parent_protocol_id: detail.parent_protocol_id || 0,
+      listen_address: detail.listen_address || '0.0.0.0',
       config: detail.config || '{}',
       egress_config: detail.egress_config || '',
       client_config: detail.client_config || '{}',
@@ -1110,7 +1120,7 @@ function readStructuredConfig() {
   structured.reality_private_key = server.reality?.private_key || ''
   structured.reality_public_key = client.reality?.public_key || ''
   structured.reality_short_id = client.reality?.short_id || server.reality?.short_ids?.[0] || ''
-  structured.reality_server_name = client.reality?.server_name || server.reality?.server_name || form.address || ''
+  structured.reality_server_name = client.reality?.server_name || server.reality?.server_name || ''
   structured.reality_fingerprint = client.reality?.client_fingerprint || 'chrome'
 }
 function buildGeneratedConfigs() {
@@ -1159,6 +1169,7 @@ async function validateStep(step: number) {
     if (!form.node_id) fields.node_id = '请选择承载 VPS。'
     if (!form.name.trim()) fields.name = '请输入服务名称。'
     if (!form.address.trim()) fields.address = '请输入客户端可访问的对外地址。'
+    if (!form.listen_address.trim()) fields.listen_address = '请输入 VPS 本地监听地址。'
     if (!isIntegerInRange(form.port, 1, 65535)) fields.port = '监听端口必须为 1–65535 之间的整数。'
     if (!isIntegerInRange(form.public_port, 1, 65535)) fields.public_port = '客户端连接端口必须为 1–65535 之间的整数。'
   }
@@ -1248,7 +1259,7 @@ async function save() {
   const saveStartedAt = performance.now()
   try {
     const creatingCopy = Boolean(copySourceID.value)
-    const payload = { node_id: form.node_id, name: form.name, protocol: form.protocol, address: form.address, port: form.port, public_port: form.public_port, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, parent_protocol_id: form.parent_protocol_id || null, managed_certificate_id: form.managed_certificate_id || null, is_active: Boolean(form.is_active), config: form.config, egress_config: form.egress_config || '', client_config: form.client_config, optional_config: form.optional_config || '{}', tags: form.tags || '[]', node_group_membership_changes: membershipChanges }
+    const payload = { node_id: form.node_id, name: form.name, protocol: form.protocol, address: form.address, listen_address: form.listen_address, port: form.port, public_port: form.public_port, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, parent_protocol_id: form.parent_protocol_id || null, managed_certificate_id: form.managed_certificate_id || null, is_active: Boolean(form.is_active), config: form.config, egress_config: form.egress_config || '', client_config: form.client_config, optional_config: form.optional_config || '{}', tags: form.tags || '[]', node_group_membership_changes: membershipChanges }
     const requestStartedAt = performance.now()
     const result = form.id ? await updateProtocolEndpoint(form.id, payload) : await createProtocolEndpoint(payload)
     const requestMS = performance.now() - requestStartedAt
@@ -1272,7 +1283,7 @@ async function save() {
     if (e?.response?.data) {
       const normalized = await editorErrors.applyApiError(e, '协议服务未能保存，请稍后重试；如持续失败，请检查服务端日志。', null, protocolFieldMap)
       const fields = Object.keys(normalized.fields)
-      if (fields.some(field => ['node_id', 'protocol', 'name', 'address', 'port', 'public_port'].includes(field))) editorStep.value = 1
+      if (fields.some(field => ['node_id', 'protocol', 'name', 'address', 'listen_address', 'port', 'public_port'].includes(field))) editorStep.value = 1
       else if (fields.includes('managed_certificate_id') || fields.includes('egress_config')) editorStep.value = 2
       else editorStep.value = 3
       await editorErrors.focusFirst(protocolFormElement)
@@ -1374,16 +1385,13 @@ onBeforeUnmount(() => {
 .selected-node-card{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:13px 14px;border:1px solid var(--primary-border);border-radius:10px;background:var(--surface-selected)}
 .selected-node-card strong{font-size:12px}
 .selected-node-card p{margin:3px 0 0;color:var(--muted);font-size:10px}
-.input-with-action{display:grid;grid-template-columns:minmax(0,1fr) auto}
-.input-with-action input{border-radius:8px 0 0 8px!important}
-.input-with-action button{padding:0 12px;border:1px solid var(--line-strong);border-left:0;border-radius:0 8px 8px 0;color:var(--primary);background:var(--surface-soft);font-size:10px;font-weight:700;white-space:nowrap;cursor:pointer}
-.input-with-action button:hover{background:var(--primary-soft)}
+.input-with-action{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px}
 .generated-config-note{display:flex;align-items:flex-start;gap:10px;padding:13px;border:1px solid var(--success-border);border-radius:10px;color:var(--success);background:var(--success-soft)}
 .generated-config-note>.ui-icon{margin-top:1px}
 .generated-config-note strong{font-size:11px}
 .generated-config-note p{margin:3px 0 0;font-size:9px;line-height:1.6}
 .endpoint-egress{display:grid;gap:14px;padding:15px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
-.endpoint-egress>header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.endpoint-egress>header strong,.endpoint-egress>header small{display:block}.endpoint-egress>header strong{font-size:12px}.endpoint-egress>header small{margin-top:4px;color:var(--muted);font-size:9px;line-height:1.6}.endpoint-egress-body{display:grid;gap:14px;padding-top:14px;border-top:1px solid var(--line)}.endpoint-egress-actions{display:flex;justify-content:flex-end}
+.endpoint-egress>header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 16px}.endpoint-egress>header>div{flex:1 1 240px;min-width:0}.endpoint-egress>header .check-field{align-items:center;flex:none}.endpoint-egress>header .ui-checkbox{margin-top:0}.endpoint-egress>header strong,.endpoint-egress>header small{display:block}.endpoint-egress>header strong{font-size:12px}.endpoint-egress>header small{margin-top:4px;color:var(--muted);font-size:9px;line-height:1.6}.endpoint-egress-body{display:grid;gap:14px;padding-top:14px;border-top:1px solid var(--line)}.endpoint-egress-actions{display:flex;justify-content:flex-end}
 .review-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .review-grid article{display:grid;gap:4px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
 .review-grid span,.review-grid small{color:var(--muted);font-size:9px}
@@ -1411,7 +1419,7 @@ onBeforeUnmount(() => {
   :deep(.protocol-table[data-show-secondary='false'] col:nth-child(6)){width:192px!important}
 }
 @media(max-width:720px){:deep(.protocol-table[data-show-secondary='false']){min-width:520px!important}}
-@media(max-width:900px){.protocol-grid,.guided-grid,.config-grid{grid-template-columns:1fr}.protocol-meta,.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-meta{row-gap:12px}}@media(max-width:680px){.protocol-grid{gap:8px}.protocol-card{border-inline:0;border-radius:0;box-shadow:none}.protocol-meta{background:transparent}.review-grid{grid-template-columns:1fr}.selected-node-card{grid-template-columns:auto minmax(0,1fr)}.selected-node-card .status-badge{grid-column:2}.input-with-action{grid-template-columns:1fr}.input-with-action input{border-radius:8px!important}.input-with-action button{min-height:36px;border:1px solid var(--line-strong);border-top:0;border-radius:0 0 8px 8px}}.protocol-mobile-detail-actions{display:none}@media(max-width:560px){.protocol-order-item{grid-template-columns:30px minmax(0,1fr) auto}.protocol-order-actions{grid-column:3;grid-row:1/3}:deep(.page-actions .ui-button:last-child){flex:1}.protocol-mobile-detail-actions{display:flex;flex-wrap:wrap;gap:7px}}
+@media(max-width:900px){.protocol-grid,.guided-grid,.config-grid{grid-template-columns:1fr}.protocol-meta,.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-meta{row-gap:12px}}@media(max-width:680px){.protocol-grid{gap:8px}.protocol-card{border-inline:0;border-radius:0;box-shadow:none}.protocol-meta{background:transparent}.review-grid{grid-template-columns:1fr}.selected-node-card{grid-template-columns:auto minmax(0,1fr)}.selected-node-card .status-badge{grid-column:2}.input-with-action{grid-template-columns:1fr}}.protocol-mobile-detail-actions{display:none}@media(max-width:560px){.protocol-order-item{grid-template-columns:30px minmax(0,1fr) auto}.protocol-order-actions{grid-column:3;grid-row:1/3}:deep(.page-actions .ui-button:last-child){flex:1}.protocol-mobile-detail-actions{display:flex;flex-wrap:wrap;gap:7px}}
 .protocol-editor .ui-select{min-height:var(--control-height)}
 .protocol-grid{grid-template-columns:1fr;gap:0;border-block:1px solid var(--line)}.protocol-card{border:0;border-radius:0}.protocol-card+.protocol-card{border-top:1px solid var(--line)}
 .selected-node-card{border-color:var(--primary-border);background:var(--primary-soft)}

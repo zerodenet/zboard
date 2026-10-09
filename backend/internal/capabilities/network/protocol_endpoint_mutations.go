@@ -32,6 +32,7 @@ type ProtocolEndpointRecord struct {
 	RuntimeKey            string    `json:"-"`
 	Protocol              string    `json:"protocol"`
 	Address               string    `json:"address"`
+	ListenAddress         string    `json:"listen_address"`
 	Port                  int       `json:"port"`
 	PublicPort            int       `json:"public_port"`
 	Cipher                int16     `json:"cipher"`
@@ -124,6 +125,7 @@ type ProtocolEndpointMutationRequest struct {
 	Name                 string
 	Protocol             string
 	Address              string
+	ListenAddress        *string
 	Port                 int
 	PublicPort           int
 	Cipher               int16
@@ -213,6 +215,17 @@ func (s ProtocolEndpointMutations) Save(ctx context.Context, actor uint, before 
 	if err := validateProtocolEndpointMutationRequest(request); err != nil {
 		return ProtocolEndpointMutationResult{}, err
 	}
+	listenRaw := ""
+	if before != nil {
+		listenRaw = before.Endpoint.ListenAddress
+	}
+	if request.ListenAddress != nil {
+		listenRaw = *request.ListenAddress
+	}
+	listenAddress, err := NormalizeProtocolListenAddress(listenRaw)
+	if err != nil {
+		return ProtocolEndpointMutationResult{}, err
+	}
 	egressProtocol, egressConfig, err := NormalizeProtocolEndpointEgressConfig(request.EgressConfig)
 	if err != nil {
 		return ProtocolEndpointMutationResult{}, err
@@ -235,7 +248,8 @@ func (s ProtocolEndpointMutations) Save(ctx context.Context, actor uint, before 
 	record := ProtocolEndpointRecord{
 		ID: request.ID, NodeID: request.NodeID, Name: request.Name,
 		Protocol: request.Protocol, Address: request.Address,
-		Port: request.Port, PublicPort: request.PublicPort, Cipher: request.Cipher,
+		ListenAddress: listenAddress,
+		Port:          request.Port, PublicPort: request.PublicPort, Cipher: request.Cipher,
 		ParentProtocolID: request.ParentProtocolID, MultiplierMilli: request.MultiplierMilli,
 		ServerConfig: request.ServerConfig, ServerCiphertext: ciphertext,
 		EgressProtocol: egressProtocol, EgressConfig: egressConfig, EgressCiphertext: egressCiphertext,
@@ -318,6 +332,11 @@ func ClassifyProtocolEndpointChange(before *ProtocolEndpointRecord, after Protoc
 		return ProtocolEndpointChangeEffects{Effect: ProtocolEndpointEffectManagement, Effects: []ProtocolEndpointEffect{ProtocolEndpointEffectManagement}, PublishStatus: ProtocolEndpointPublishNotRequired}
 	}
 	changed := map[ProtocolEndpointEffect]bool{}
+	beforeListen, _ := NormalizeProtocolListenAddress(before.ListenAddress)
+	afterListen, _ := NormalizeProtocolListenAddress(after.ListenAddress)
+	if beforeListen != afterListen {
+		changed[ProtocolEndpointEffectRuntime] = true
+	}
 	if canonicalEndpointJSON(before.Tags, "[]") != canonicalEndpointJSON(after.Tags, "[]") {
 		changed[ProtocolEndpointEffectManagement] = true
 	}

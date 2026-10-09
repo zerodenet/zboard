@@ -113,16 +113,13 @@ export const useAppStore = defineStore('app', {
       if (!this.token) {
         return
       }
-      try {
-        const user = await fetchMe()
-        if (user) {
-          this.setUser(user)
-        } else {
-          this.clear()
-        }
-      } catch (_) {
-        this.clear()
-      }
+      const token = this.token
+      // HTTP authentication failures are handled by the shared API boundary.
+      // A temporary network failure must not log out the user.
+      const user = await fetchMe()
+      if (this.token !== token) return
+      if (user) this.setUser(user)
+      else this.clear()
     },
     clear() {
       this.token = ''

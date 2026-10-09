@@ -56,6 +56,12 @@ func (s SettingUpdate) Update(ctx context.Context, actor uint, in platform.Setti
 		if err := platform.ValidateSettingValue(row.ConfigKey, value); err != nil {
 			return &platform.SettingValidation{Cause: err}
 		}
+		if (row.ConfigKey == "site_logo" || row.ConfigKey == "site_logo_dark" || row.ConfigKey == "site_favicon") && strings.HasPrefix(value, "/media/") {
+			var file model.StoredFile
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND purpose = ? AND deleted_at IS NULL", strings.TrimPrefix(value, "/media/"), "site").First(&file).Error; err != nil {
+				return &platform.SettingValidation{Cause: errors.New("uploaded site image is unavailable")}
+			}
+		}
 		stored := value
 		if row.IsSecret && value != "" {
 			stored, err = s.Cipher.Encrypt(value)

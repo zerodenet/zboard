@@ -50,19 +50,19 @@ describe('normalizeApiFormError', () => {
     })
   })
 
-  it('marks the auth session expired for canonical 401 responses', () => {
+  it('normalizes canonical 401 without changing the login lifecycle', () => {
     expect(isAuthSessionExpired()).toBe(false)
     normalizeApiErrorPayload({
       code: 401,
       message: '登录状态已失效。',
       error: { version: 1, code: 'unauthenticated' },
     })
-    expect(isAuthSessionExpired()).toBe(true)
+    expect(isAuthSessionExpired()).toBe(false)
   })
 
-  it('also recognizes the stable unauthenticated code when the numeric envelope is absent', () => {
+  it('keeps plugin and other credential errors free of login side effects', () => {
     normalizeApiErrorPayload({ error: { version: 1, code: 'unauthenticated' } })
-    expect(isAuthSessionExpired()).toBe(true)
+    expect(isAuthSessionExpired()).toBe(false)
   })
 
   it('does not expire the session for validation or forbidden responses', () => {

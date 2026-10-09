@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
 )
 
 func buildRoutePlugin(t *testing.T, version string) []byte {
@@ -82,11 +84,11 @@ func TestSignedManifestPublicRouteDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := manager.HandlePublicRoute(context.Background(), "GET", "/.well-known/example/v1/discovery", "", nil)
+	response, err := manager.HandlePublicRoute(context.Background(), &pluginv1.HTTPRequest{Method: "GET", Path: "/.well-known/example/v1/discovery"})
 	if err != nil || response.Status != 200 || string(response.Body) != `{"available":true}` {
 		t.Fatalf("route response = %+v, %v", response, err)
 	}
-	if _, err := manager.HandlePublicRoute(context.Background(), "GET", "/.well-known/example/v1/other", "", nil); !errors.Is(err, ErrRouteNotFound) {
+	if _, err := manager.HandlePublicRoute(context.Background(), &pluginv1.HTTPRequest{Method: "GET", Path: "/.well-known/example/v1/other"}); !errors.Is(err, ErrRouteNotFound) {
 		t.Fatalf("undeclared route error = %v", err)
 	}
 	conflict := installation
@@ -98,7 +100,7 @@ func TestSignedManifestPublicRouteDispatch(t *testing.T) {
 	if _, err := manager.Action(context.Background(), installation.ID, "disable", "admin", installation.Generation, false, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := manager.HandlePublicRoute(context.Background(), "GET", "/.well-known/example/v1/discovery", "", nil); !errors.Is(err, ErrRouteNotFound) {
+	if _, err := manager.HandlePublicRoute(context.Background(), &pluginv1.HTTPRequest{Method: "GET", Path: "/.well-known/example/v1/discovery"}); !errors.Is(err, ErrRouteNotFound) {
 		t.Fatalf("disabled route error = %v", err)
 	}
 }
@@ -144,17 +146,17 @@ func TestPublicRouteGenerationFollowsUpgradeAndUninstall(t *testing.T) {
 	if oldProcess == nil || !oldProcess.client.Exited() || manager.processes[first.ID] == oldProcess {
 		t.Fatal("upgrade did not revoke the previous route runtime generation")
 	}
-	if _, err := manager.HandlePublicRoute(context.Background(), "GET", "/.well-known/example/v1/discovery", "", nil); !errors.Is(err, ErrRouteNotFound) {
+	if _, err := manager.HandlePublicRoute(context.Background(), &pluginv1.HTTPRequest{Method: "GET", Path: "/.well-known/example/v1/discovery"}); !errors.Is(err, ErrRouteNotFound) {
 		t.Fatalf("upgraded plugin retained old route: %v", err)
 	}
-	if response, err := manager.HandlePublicRoute(context.Background(), "GET", "/.well-known/example/v2/discovery", "", nil); err != nil || response.Status != 200 {
+	if response, err := manager.HandlePublicRoute(context.Background(), &pluginv1.HTTPRequest{Method: "GET", Path: "/.well-known/example/v2/discovery"}); err != nil || response.Status != 200 {
 		t.Fatalf("replacement route unavailable: %+v %v", response, err)
 	}
 
 	if _, err := manager.Action(context.Background(), upgraded.ID, "uninstall", "admin", upgraded.Generation, false, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := manager.HandlePublicRoute(context.Background(), "GET", "/.well-known/example/v2/discovery", "", nil); !errors.Is(err, ErrRouteNotFound) {
+	if _, err := manager.HandlePublicRoute(context.Background(), &pluginv1.HTTPRequest{Method: "GET", Path: "/.well-known/example/v2/discovery"}); !errors.Is(err, ErrRouteNotFound) {
 		t.Fatalf("uninstalled plugin retained replacement route: %v", err)
 	}
 }

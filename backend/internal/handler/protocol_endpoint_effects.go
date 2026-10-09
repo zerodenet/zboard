@@ -24,6 +24,7 @@ type protocolEndpointEffectSnapshot struct {
 	Name                 string
 	Protocol             string
 	Address              string
+	ListenAddress        string
 	Port                 int
 	PublicPort           int
 	Cipher               int16
@@ -63,7 +64,8 @@ func classifyProtocolEndpointChange(before *protocolEndpointEffectSnapshot, afte
 func protocolEndpointEffectRecord(snapshot protocolEndpointEffectSnapshot) networkcap.ProtocolEndpointRecord {
 	return networkcap.ProtocolEndpointRecord{
 		NodeID: snapshot.NodeID, Name: snapshot.Name, Protocol: snapshot.Protocol, Address: snapshot.Address,
-		Port: snapshot.Port, PublicPort: snapshot.PublicPort, Cipher: snapshot.Cipher,
+		ListenAddress: snapshot.ListenAddress,
+		Port:          snapshot.Port, PublicPort: snapshot.PublicPort, Cipher: snapshot.Cipher,
 		ParentProtocolID: snapshot.ParentProtocolID, MultiplierMilli: snapshot.MultiplierMilli,
 		ServerConfig: snapshot.ServerConfig, EgressConfig: snapshot.EgressConfig, ClientConfig: snapshot.ClientConfig,
 		OptionalConfig: snapshot.OptionalConfig, Tags: snapshot.Tags, IsActive: snapshot.IsActive, SortOrder: snapshot.SortOrder,

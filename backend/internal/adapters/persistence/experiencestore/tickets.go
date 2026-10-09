@@ -23,7 +23,11 @@ func (s Tickets) CreateTicket(ctx context.Context, actor uint, input experience.
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&model.TicketMessage{TicketID: row.ID, AuthorID: &user.ID, AuthorRole: "user", Type: "message", Body: input.Body, CreatedAt: now}).Error; err != nil {
+		message := model.TicketMessage{TicketID: row.ID, AuthorID: &user.ID, AuthorRole: "user", Type: "message", Body: input.Body, CreatedAt: now}
+		if err := tx.Create(&message).Error; err != nil {
+			return err
+		}
+		if err := saveTicketAttachments(tx, user.ID, message.ID, input.Attachments); err != nil {
 			return err
 		}
 		id = row.ID
@@ -32,7 +36,7 @@ func (s Tickets) CreateTicket(ctx context.Context, actor uint, input experience.
 	return id, err
 }
 
-func (s Tickets) ReplyTicket(ctx context.Context, actor experience.TicketActor, id uint, body string, now time.Time) error {
+func (s Tickets) ReplyTicket(ctx context.Context, actor experience.TicketActor, id uint, body string, now time.Time, attachments ...experience.TicketAttachment) error {
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		user, err := currentExperienceUser(tx, actor.ID, actor.IsAdmin)
 		if err != nil {
@@ -52,7 +56,11 @@ func (s Tickets) ReplyTicket(ctx context.Context, actor experience.TicketActor, 
 		if actor.IsAdmin {
 			role, next = "admin", "pending_user"
 		}
-		if err := tx.Create(&model.TicketMessage{TicketID: ticket.ID, AuthorID: &user.ID, AuthorRole: role, Type: "message", Body: body, CreatedAt: now}).Error; err != nil {
+		message := model.TicketMessage{TicketID: ticket.ID, AuthorID: &user.ID, AuthorRole: role, Type: "message", Body: body, CreatedAt: now}
+		if err := tx.Create(&message).Error; err != nil {
+			return err
+		}
+		if err := saveTicketAttachments(tx, user.ID, message.ID, attachments); err != nil {
 			return err
 		}
 		previous := ticket.Status
@@ -175,16 +183,8 @@ func (s Tickets) TicketDetail(ctx context.Context, actor experience.TicketActor,
 	if !actor.IsAdmin && row.UserID != actor.ID {
 		return experience.TicketDetail{}, experience.ErrTicketForbidden
 	}
-	type messageRow struct {
-		model.TicketMessage
-		AuthorEmail string `gorm:"column:author_email"`
-	}
-	query := s.DB.WithContext(ctx).Table("ticket_messages").Select("ticket_messages.*, COALESCE(users.email, '') AS author_email").Joins("LEFT JOIN users ON users.id = ticket_messages.author_id").Where("ticket_messages.ticket_id = ?", id)
-	if beforeID > 0 {
-		query = query.Where("ticket_messages.id < ?", beforeID)
-	}
-	var messages []messageRow
-	if err := query.Order("ticket_messages.created_at DESC, ticket_messages.id DESC").Limit(limit + 1).Scan(&messages).Error; err != nil {
+	messages, err := loadTicketMessages(s.DB.WithContext(ctx), id, beforeID, limit+1)
+	if err != nil {
 		return experience.TicketDetail{}, err
 	}
 	hasOlder := len(messages) > limit
@@ -193,7 +193,9 @@ func (s Tickets) TicketDetail(ctx context.Context, actor experience.TicketActor,
 	}
 	result := make([]experience.TicketMessageView, 0, len(messages))
 	for index := len(messages) - 1; index >= 0; index-- {
-		result = append(result, experience.TicketMessageView{TicketMessage: ticketMessageView(messages[index].TicketMessage), AuthorEmail: messages[index].AuthorEmail})
+		message := ticketMessageView(messages[index].TicketMessage)
+		message.Attachments = messages[index].Attachments
+		result = append(result, experience.TicketMessageView{TicketMessage: message, AuthorEmail: messages[index].AuthorEmail})
 	}
 	oldest := uint(0)
 	if len(result) > 0 {

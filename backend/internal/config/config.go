@@ -42,6 +42,7 @@ type Config struct {
 	BootstrapAdminPassword              string          `json:"bootstrap_admin_password,optional"`
 	CredentialEncryptionKey             string          `json:"credential_encryption_key,optional"`
 	ZeroArtifactDir                     string          `json:"zero_artifact_dir,optional"`
+	FileStorageDir                      string          `json:"file_storage_dir,default=/var/lib/zboard/files"`
 	ZeroKernelContract                  string          `json:"zero_kernel_contract,default=legacy"`
 	ZeroLocalVersion                    string          `json:"zero_local_version,optional"`
 	ZeroEventSpoolMode                  string          `json:"zero_event_spool_mode,default=file"`
@@ -102,6 +103,7 @@ func (c *Config) ApplyEnvironment(getenv func(string) string) {
 	applyOverride(&c.BootstrapAdminPassword, getenv("ZBOARD_BOOTSTRAP_ADMIN_PASSWORD"))
 	applyOverride(&c.CredentialEncryptionKey, getenv("ZBOARD_CREDENTIAL_ENCRYPTION_KEY"))
 	applyOverride(&c.ZeroArtifactDir, getenv("ZBOARD_ZERO_ARTIFACT_DIR"))
+	applyOverride(&c.FileStorageDir, getenv("ZBOARD_FILE_STORAGE_DIR"))
 	applyOverride(&c.ZeroKernelContract, getenv("ZBOARD_ZERO_KERNEL_CONTRACT"))
 	applyOverride(&c.ZeroLocalVersion, getenv("ZBOARD_ZERO_LOCAL_VERSION"))
 	applyOverride(&c.ZeroEventSpoolMode, getenv("ZBOARD_ZERO_EVENT_SPOOL_MODE"))

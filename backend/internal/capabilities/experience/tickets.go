@@ -20,11 +20,12 @@ type TicketActor struct {
 }
 
 type NewTicket struct {
-	TicketNo string
-	Subject  string
-	Category string
-	Priority int16
-	Body     string
+	TicketNo    string
+	Subject     string
+	Category    string
+	Priority    int16
+	Body        string
+	Attachments []TicketAttachment
 }
 
 type Ticket struct {
@@ -43,15 +44,16 @@ type Ticket struct {
 }
 
 type TicketMessage struct {
-	ID         uint      `json:"id"`
-	TicketID   uint      `json:"ticket_id"`
-	AuthorID   *uint     `json:"author_id"`
-	AuthorRole string    `json:"author_role"`
-	Type       string    `json:"type"`
-	Body       string    `json:"body"`
-	FromStatus string    `json:"from_status"`
-	ToStatus   string    `json:"to_status"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID          uint               `json:"id"`
+	TicketID    uint               `json:"ticket_id"`
+	AuthorID    *uint              `json:"author_id"`
+	AuthorRole  string             `json:"author_role"`
+	Type        string             `json:"type"`
+	Body        string             `json:"body"`
+	FromStatus  string             `json:"from_status"`
+	ToStatus    string             `json:"to_status"`
+	CreatedAt   time.Time          `json:"created_at"`
+	Attachments []TicketAttachment `json:"attachments"`
 }
 
 type TicketSummary struct {
@@ -87,7 +89,7 @@ type TicketDetail struct {
 
 type TicketRepository interface {
 	CreateTicket(context.Context, uint, NewTicket, time.Time) (uint, error)
-	ReplyTicket(context.Context, TicketActor, uint, string, time.Time) error
+	ReplyTicket(context.Context, TicketActor, uint, string, time.Time, ...TicketAttachment) error
 	ChangeTicketStatus(context.Context, TicketActor, uint, string, bool, time.Time) error
 	ListTickets(context.Context, TicketQuery) (TicketPage, error)
 	TicketDetail(context.Context, TicketActor, uint, uint, int) (TicketDetail, error)
@@ -114,10 +116,15 @@ func (s Tickets) Create(ctx context.Context, actor uint, input NewTicket, now ti
 	if err := validateTicketText("message", input.Body, 1, 5000); err != nil {
 		return 0, err
 	}
+	var err error
+	input.Attachments, err = NormalizeTicketAttachments(input.Attachments)
+	if err != nil {
+		return 0, err
+	}
 	return s.Repository.CreateTicket(ctx, actor, input, now.UTC())
 }
 
-func (s Tickets) Reply(ctx context.Context, actor TicketActor, id uint, body string, now time.Time) error {
+func (s Tickets) Reply(ctx context.Context, actor TicketActor, id uint, body string, now time.Time, attachments ...TicketAttachment) error {
 	if actor.ID == 0 {
 		return ErrPermission
 	}
@@ -125,7 +132,11 @@ func (s Tickets) Reply(ctx context.Context, actor TicketActor, id uint, body str
 	if err := validateTicketText("message", body, 1, 5000); err != nil {
 		return err
 	}
-	return s.Repository.ReplyTicket(ctx, actor, id, body, now.UTC())
+	attachments, err := NormalizeTicketAttachments(attachments)
+	if err != nil {
+		return err
+	}
+	return s.Repository.ReplyTicket(ctx, actor, id, body, now.UTC(), attachments...)
 }
 
 func (s Tickets) ChangeStatus(ctx context.Context, actor TicketActor, id uint, status string, adminOverride bool, now time.Time) error {

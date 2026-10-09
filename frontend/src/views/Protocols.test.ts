@@ -7,6 +7,7 @@ import FormField from '../components/FormField.vue'
 import NodeGroupMembershipEditor from '../components/NodeGroupMembershipEditor.vue'
 import NodeGroupLookup from '../components/NodeGroupLookup.vue'
 import WorkbenchFilterLookup from '../components/WorkbenchFilterLookup.vue'
+import RealityDomainProbe from '../components/RealityDomainProbe.vue'
 import { fetchProtocolEndpoint, fetchProtocolEndpointUsageResets, fetchProtocolEndpointsPage, getVersion, resetProtocolEndpointUsage, saveNetworkEntry, updateProtocolEndpointsBatch } from '../api/client'
 import { trackedTaskSummaries } from '../utils/taskTracker'
 
@@ -21,6 +22,7 @@ vi.mock('../api/client', async (importOriginal) => ({
   fetchProtocolDeployments: vi.fn(async () => ({ items: [], total: 0 })),
   fetchNodesPage: vi.fn(async () => ({ items: [{ id: 1, name: 'Fixture VPS', address: '192.0.2.1', is_enabled: true, kernel_state: { installed_version: '0.0.1-rc.1' } }] })),
   fetchManagedCertificatesPage: vi.fn(async () => ({ items: [] })),
+  generateRealityKeyPair: vi.fn(async () => ({ private_key: 'private-fixture', public_key: 'public-fixture', short_id: '0123456789abcdef' })),
   fetchNodeGroupsPage: vi.fn(async () => ({ items: [], total: 0 })),
   createProtocolEndpoint: mocks.create,
   fetchSubscriptionDeliveryOrder: mocks.order,
@@ -79,11 +81,11 @@ describe('Protocol creation and actionable errors', () => {
     expect(wrapper.find('page-alert-stub[title="当前内核不支持所选协议"]').exists()).toBe(false)
     await wrapper.get('#protocol-form').trigger('submit')
     await flushPromises()
-    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ protocol: 'mieru', is_active: true }))
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ protocol: 'mieru', is_active: true, listen_address: '0.0.0.0' }))
     wrapper.unmount()
   })
   it('copies to an enabled draft and lets the user select groups before saving', async () => {
-    const source = { id: 7, node_id: 1, name: 'Source', protocol: 'vless', address: '192.0.2.1', port: 443, public_port: 443, is_active: true, kernel_supported: true }
+    const source = { id: 7, node_id: 1, name: 'Source', protocol: 'vless', address: '192.0.2.1', listen_address: '::', port: 443, public_port: 443, is_active: true, kernel_supported: true }
     vi.mocked(fetchProtocolEndpointsPage).mockResolvedValue({ items: [source], total: 1 } as any)
     vi.mocked(fetchProtocolEndpoint).mockResolvedValue({ ...source, config: '{"type":"vless","users":[]}', client_config: '{"type":"vless"}', node_group_memberships: [{ ...membership, node_group_id: 3 }] } as any)
     const wrapper = await render()
@@ -105,7 +107,24 @@ describe('Protocol creation and actionable errors', () => {
     await flushPromises()
     await wrapper.get('#protocol-form').trigger('submit')
     await flushPromises()
-    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Source 副本', is_active: true, node_group_membership_changes: [{ node_group_id: 9, expected_revision: 7, member: true }] }))
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Source 副本', is_active: true, listen_address: '::', node_group_membership_changes: [{ node_group_id: 9, expected_revision: 7, member: true }] }))
+    wrapper.unmount()
+  })
+  it.each(['::', '[::]'])('saves IPv6 listen address %s independently from the public endpoint', async (listenAddress) => {
+    const wrapper = await render()
+    await click(wrapper, '创建协议服务')
+    await click(wrapper, '实际协议监听')
+    wrapper.findAllComponents({ name: 'UiInput' })[0].vm.$emit('update:modelValue', 'IPv6 fixture')
+    const field = wrapper.findAllComponents(FormField).find(item => item.props('name') === 'protocol-listen-address')!
+    field.getComponent({ name: 'UiInput' }).vm.$emit('update:modelValue', listenAddress)
+    await flushPromises()
+    await click(wrapper, '下一步')
+    await click(wrapper, '下一步')
+    expect(wrapper.text()).toContain('[::]:443')
+    expect(wrapper.text()).not.toContain('[[::]]')
+    await wrapper.get('#protocol-form').trigger('submit')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ listen_address: listenAddress, address: '192.0.2.1', port: 443, public_port: 443 }))
     wrapper.unmount()
   })
   it('saves the reviewed protocol together with the selected node group', async () => {
@@ -138,6 +157,28 @@ describe('Protocol creation and actionable errors', () => {
       protocol: 'vless',
       egress_config: JSON.stringify({ type: 'socks5', server: 'proxy.example', port: 1080, username: 'user', password: 'pass' }, null, 2),
     }))
+    wrapper.unmount()
+  })
+  it('opens VPS domain probing from the SNI field and preserves key material on selection', async () => {
+    const wrapper = await render()
+    await click(wrapper, '创建协议服务')
+    await click(wrapper, '实际协议监听')
+    await click(wrapper, '下一步')
+    const state = wrapper.vm as any
+    state.structured.security = 'reality'
+    await flushPromises()
+    expect(state.structured.reality_server_name).toBe('')
+    const keys = { privateKey: state.structured.reality_private_key, publicKey: state.structured.reality_public_key, shortID: state.structured.reality_short_id }
+    await click(wrapper, '探测伪装域名')
+    const probe = wrapper.getComponent(RealityDomainProbe)
+    expect(probe.props('nodeId')).toBe(1)
+    probe.vm.$emit('select', 'verified.example')
+    await flushPromises()
+    expect(state.structured.reality_server_name).toBe('verified.example')
+    expect({ privateKey: state.structured.reality_private_key, publicKey: state.structured.reality_public_key, shortID: state.structured.reality_short_id }).toEqual(keys)
+    probe.vm.$emit('close')
+    await flushPromises()
+    expect(wrapper.findComponent(RealityDomainProbe).exists()).toBe(false)
     wrapper.unmount()
   })
   it('shows the specific field failure and keeps the group selection for correction', async () => {

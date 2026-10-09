@@ -121,11 +121,39 @@ message CertificateIssueRequest {
 }
 message CertificateIssueResult { bytes fullchain_pem = 1; }
 message HTTPRequest {
+ // Set by the host after matching the signed, admitted route registration.
  string route_id = 1;
  string method = 2;
  string path = 3;
  string content_type = 4;
  bytes body = 5;
+ // Transport-observed request data; query and body are not parsed or rewritten.
+ string raw_query = 6;
+ map<string, HTTPHeaderValues> headers = 7;
+ string host = 8;
+ string request_uri = 9;
+ string raw_path = 10;
+ string scheme = 11;
+ string remote_addr = 12;
+ string proto = 13;
+ int64 content_length = 14;
+ repeated string transfer_encoding = 15;
+ map<string, HTTPHeaderValues> trailers = 16;
+ bool force_query = 17;
+ HTTPConnectionTLS tls = 18;
+}
+// HTTP field values can contain non-UTF-8 octets. Bytes avoid transcoding them.
+message HTTPHeaderValues { repeated bytes values = 1; }
+message HTTPCertificateChain { repeated bytes certificates = 1; }
+message HTTPConnectionTLS {
+ uint32 version = 1;
+ uint32 cipher_suite = 2;
+ string server_name = 3;
+ string negotiated_protocol = 4;
+ bool handshake_complete = 5;
+ bool did_resume = 6;
+ repeated bytes peer_certificates = 7;
+ repeated HTTPCertificateChain verified_chains = 8;
 }
 message HTTPResponse {
  uint32 status = 1;

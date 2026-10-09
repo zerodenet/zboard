@@ -11,7 +11,7 @@
         <button class="sidebar-close nav-icon-button" type="button" aria-label="关闭导航" @click="navigationOpen = false"><UiIcon name="close" /></button>
       </div>
 
-      <p v-if="menus.error.value" role="alert" class="menu-error">{{ menus.error.value }} <button type="button" @click="menus.load()">重试</button></p>
+      <NavigationNotice v-if="menus.error.value && !menus.pageError.value" :message="menus.error.value" :loading="menus.loading.value" @retry="menus.load()" />
       <AdminNavigation @select-page="navigationOpen = false" />
 
       <AdminVersionStatus :info="systemInfo" />
@@ -49,7 +49,7 @@
         <RouterLink :to="returnTarget"><UiIcon name="chevron" />返回来源</RouterLink>
         <span>恢复上一个列表的筛选、页码和详情</span>
       </nav>
-      <main class="app-content admin-stripe-surface"><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" @retry="menus.load()"><RouterView /></NavigationPage></main>
+      <main class="app-content admin-stripe-surface"><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" :failure="menus.failure.value" :retrying="menus.loading.value" @retry="menus.load()"><RouterView /></NavigationPage></main>
     </div>
     <div class="admin-task-layer" :inert="drawerModal"><TaskTray /></div>
   </div>
@@ -61,6 +61,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuTrigger } from 'reka-ui'
 import AdminNavigation from '../components/AdminNavigation.vue'
 import AdminPageNavigation from '../components/AdminPageNavigation.vue'
+import NavigationNotice from '../components/NavigationNotice.vue'
 import NavigationPage from '../components/NavigationPage.vue'
 import AdminQuickSearch from '../components/AdminQuickSearch.vue'
 import AdminVersionStatus from '../components/AdminVersionStatus.vue'
@@ -86,7 +87,7 @@ const returnTarget = computed(() => normalizeAdminReturnTo(route.query.return_to
 const userInitial = computed(() => (app.user.email || 'Z').slice(0, 1).toUpperCase())
 const systemInfo = ref<AdminSystemInfo | null>(null)
 onMounted(() => {
-  void app.loadMe()
+  void app.loadMe().catch(() => undefined)
   void fetchAdminSystemInfo().then(info => { systemInfo.value = info }).catch(() => { /* Version metadata is optional in local previews. */ })
 })
 watch(() => route.fullPath, () => { navigationOpen.value = false })

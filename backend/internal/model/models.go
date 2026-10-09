@@ -371,6 +371,7 @@ type ProtocolEndpoint struct {
 	RuntimeKey            string    `json:"-" gorm:"size:36;uniqueIndex;not null"`
 	Protocol              string    `json:"protocol" gorm:"size:32;not null"`
 	Address               string    `json:"address" gorm:"size:255;not null"`
+	ListenAddress         string    `json:"listen_address" gorm:"size:64;not null;default:0.0.0.0"`
 	Port                  int       `json:"port" gorm:"not null"`
 	PublicPort            int       `json:"public_port" gorm:"not null"`
 	Cipher                int16     `json:"cipher" gorm:"not null;default:0"`

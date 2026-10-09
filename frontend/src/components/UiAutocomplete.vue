@@ -68,6 +68,7 @@ const model = defineModel<any>()
 const selectedValue = computed(() => model.value && typeof model.value === 'object' ? model.value : undefined)
 const query = ref('')
 const emit = defineEmits<{
+  open: []
   complete: [event: { query: string }]
   'item-select': [event: { value: any }]
   clear: []
@@ -96,7 +97,8 @@ function selectItem(value: any) {
   emit('item-select', { value })
 }
 async function handleOpenChange(open: boolean) {
-  if (open || !props.forceSelection) return
+  if (open) { emit('open'); return }
+  if (!props.forceSelection) return
   await nextTick()
   clearUnselected()
 }

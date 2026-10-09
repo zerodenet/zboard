@@ -36,6 +36,7 @@ type RuntimeConfigurationEndpoint struct {
 	NodeID                  uint
 	Protocol                string
 	Address                 string
+	ListenAddress           string
 	Port                    int
 	PublicPort              int
 	MieruPrincipalReady     bool

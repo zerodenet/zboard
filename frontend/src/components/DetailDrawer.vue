@@ -12,6 +12,7 @@
           <UiButton ref="closeButton" variant="ghost" icon class="icon-button" type="button" aria-label="关闭详情" @click="emit('close')"><UiIcon name="close" /></UiButton>
         </header>
         <div class="detail-drawer-body"><slot /></div>
+        <div ref="taskTrayHost" class="task-tray-host" />
       </DialogContent>
     </DialogPortal>
   </DialogRoot>
@@ -20,11 +21,13 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
+import { useTaskTrayHost } from '../composables/taskTrayHost'
 import UiButton from './UiButton.vue'
 import UiIcon from './UiIcon.vue'
 
 const props = withDefaults(defineProps<{ open: boolean; title: string; eyebrow?: string; description?: string; returnFocusSelector?: string }>(), { eyebrow: '', description: '', returnFocusSelector: '' })
 const emit = defineEmits<{ close: [] }>()
+const taskTrayHost = useTaskTrayHost()
 const closeButton = ref<InstanceType<typeof UiButton> | null>(null)
 let previousFocus: HTMLElement | null = null
 let returnFocusSelector = ''
@@ -70,3 +73,7 @@ function restoreFocus() {
   returnFocusSelector = ''
 }
 </script>
+
+<style scoped>
+.task-tray-host { display: contents; }
+</style>

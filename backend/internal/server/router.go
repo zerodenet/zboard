@@ -24,8 +24,13 @@ func newRoute(method, path string, fn func(http.ResponseWriter, *http.Request)) 
 
 // RegisterRoutes binds transports and starts application services after
 // application.PrepareDatabaseSchema has completed. It never changes the schema.
-func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string, zeroEventSpoolConfig zeroevent.Config, pluginOptions plugins.Options) (func() error, error) {
+func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string, zeroEventSpoolConfig zeroevent.Config, pluginOptions plugins.Options, fileStorageDir ...string) (func() error, error) {
 	services := application.New(db, jwtSecret)
+	directory := ""
+	if len(fileStorageDir) > 0 {
+		directory = fileStorageDir[0]
+	}
+	services.ConfigureFileStorage(directory)
 	initialized := false
 	defer func() {
 		if !initialized {
@@ -40,9 +45,16 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		return nil, err
 	}
 	srv.Use(h.InstallationMiddleware)
+	srv.AddRoute(newRoute(http.MethodPost, "/api/v1/files", h.FileUploadHandler), rest.WithMaxBytes((5<<20)+(64<<10)), rest.WithTimeout(time.Minute))
+	srv.AddRoute(newRoute(http.MethodGet, "/media/:id", h.FileGetHandler), rest.WithTimeout(time.Minute))
+	srv.AddRoute(newRoute(http.MethodHead, "/media/:id", h.FileGetHandler), rest.WithTimeout(time.Minute))
+	srv.AddRoute(newRoute(http.MethodGet, "/api/v1/files/:id", h.FileGetHandler), rest.WithTimeout(time.Minute))
+	srv.AddRoute(newRoute(http.MethodHead, "/api/v1/files/:id", h.FileGetHandler), rest.WithTimeout(time.Minute))
 	srv.AddRoute(newRoute(http.MethodPost, "/api/v1/nodes/:id/kernel/upload", h.NodeKernelUploadHandler), rest.WithMaxBytes((128<<20)+(64<<10)), rest.WithTimeout(3*time.Minute))
+	srv.AddRoute(newRoute(http.MethodPost, "/api/v1/admin/protocol-endpoints/reality-probe", h.ProtocolRealityProbeHandler), rest.WithTimeout(25*time.Second))
 
 	srv.AddRoutes([]rest.Route{
+		newRoute(http.MethodDelete, "/api/v1/files/:id", h.FileDeleteHandler),
 		newRoute(http.MethodGet, "/healthz", h.HealthHandler),
 		newRoute(http.MethodGet, "/api/v1/navigation", h.NavigationHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/menus", h.AdminMenusHandler),
@@ -358,7 +370,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	publicPluginPath := "/.well-known"
 	for depth := 1; depth <= 6; depth++ {
 		publicPluginPath += fmt.Sprintf("/:part%d", depth)
-		srv.AddRoute(pluginRoute(http.MethodGet, publicPluginPath, h.PluginPublicRouteHandler), rest.WithTimeout(20*time.Second))
+		srv.AddRoute(pluginRoute(http.MethodGet, publicPluginPath, h.PluginPublicRouteHandler), rest.WithMaxBytes(plugins.MaxPublicRouteBodyBytes), rest.WithTimeout(20*time.Second))
 		srv.AddRoute(pluginRoute(http.MethodPost, publicPluginPath, h.PluginPublicRouteHandler), rest.WithMaxBytes(plugins.MaxPublicRouteBodyBytes), rest.WithTimeout(20*time.Second))
 	}
 

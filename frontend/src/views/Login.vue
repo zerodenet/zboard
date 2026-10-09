@@ -8,6 +8,7 @@
     <main class="auth-main">
       <form ref="formElement" class="auth-card stack" novalidate @submit.prevent="submit">
         <div><p class="page-eyebrow">欢迎回来</p><h2>登录账户</h2><p>使用你的邮箱和密码继续。</p></div>
+        <PageAlert v-if="route.query.reason === 'session-expired'" tone="warning" title="登录已过期">请重新登录以继续操作，登录后会返回刚才的页面。</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="邮箱地址" name="login-email" :error="formErrors.fields.email" required full><UiInput v-model.trim="email" v-bind="controlAttrs" type="email" autocomplete="email" placeholder="name@example.com" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="密码" name="login-password" hint="密码长度为 12–72 个 UTF-8 字节。" :error="formErrors.fields.password" required full><UiInput v-model="password" v-bind="controlAttrs" type="password" minlength="12" maxlength="72" autocomplete="current-password" placeholder="请输入密码" /></FormField>
         <PageAlert v-if="formErrors.formError.value" tone="danger" title="登录未完成">{{ formErrors.formError.value }}</PageAlert>

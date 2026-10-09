@@ -5,16 +5,16 @@
       <UiButton variant="ghost" icon class="icon-button account-menu" type="button" :aria-label="menuOpen ? '关闭用户导航' : '打开用户导航'" :aria-expanded="menuOpen" aria-controls="account-navigation" @click="menuOpen = !menuOpen"><UiIcon :name="menuOpen ? 'close' : 'menu'" /></UiButton>
       <nav id="account-navigation" :class="{ open: menuOpen }" aria-label="用户中心导航">
         <NavigationLinks surface="account" @select-page="menuOpen = false" />
-        <button v-if="menus.error.value" type="button" @click="menus.load()">重新加载菜单</button>
       </nav>
       <div class="account-identity"><span class="avatar">{{ userInitial }}</span><div><strong>{{ app.user.email }}</strong><span v-if="app.isAdmin">已授予管理员权限</span></div><UiButton variant="ghost" icon class="icon-button" type="button" aria-label="退出登录" title="退出登录" @click="logout"><UiIcon name="logout" /></UiButton></div>
     </header>
-    <main class="account-content"><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" @retry="menus.load()"><RouterView /></NavigationPage></main>
+    <main class="account-content"><NavigationNotice v-if="menus.error.value && !menus.pageError.value" :message="menus.error.value" :loading="menus.loading.value" @retry="menus.load()" /><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" :failure="menus.failure.value" :retrying="menus.loading.value" @retry="menus.load()"><RouterView /></NavigationPage></main>
   </div>
 </template>
 
 <script setup lang="ts">
 import NavigationLinks from '../components/NavigationLinks.vue'
+import NavigationNotice from '../components/NavigationNotice.vue'
 import NavigationPage from '../components/NavigationPage.vue'
 import { useNavigation } from '../stores/navigation'
 import { computed, ref, watch } from 'vue'

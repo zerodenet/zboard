@@ -88,9 +88,9 @@ func SettingInputSchemaFor(config Setting) SettingInputSchema {
 	case "site_desc":
 		maxBytes := 500
 		schema = SettingInputSchema{Control: "textarea", MaxBytes: &maxBytes, Placeholder: "用于公开页面的简短站点说明"}
-	case "site_logo":
+	case "site_logo", "site_logo_dark", "site_favicon":
 		maxBytes := 2048
-		schema = SettingInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "https://cdn.example.com/logo.png"}
+		schema = SettingInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "填写 HTTP/HTTPS URL 或上传本地图片"}
 	case "subscribe_url":
 		maxBytes := 2048
 		schema = SettingInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "留空时使用站点地址生成"}

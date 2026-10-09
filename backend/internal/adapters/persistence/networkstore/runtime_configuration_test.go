@@ -37,7 +37,7 @@ func TestRuntimeConfigurationLoadsConsistentNodeProjection(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	endpointA := model.ProtocolEndpoint{ID: 1, NodeID: nodeA.ID, Name: "runtime-vless", RuntimeKey: "runtime-vless", Protocol: "vless", Address: "a.example.test", Port: 443, PublicPort: 8443, ServerConfig: "cipher-a", IsActive: true, SortOrder: 2}
+	endpointA := model.ProtocolEndpoint{ID: 1, NodeID: nodeA.ID, Name: "runtime-vless", RuntimeKey: "runtime-vless", Protocol: "vless", Address: "a.example.test", ListenAddress: "::", Port: 443, PublicPort: 8443, ServerConfig: "cipher-a", IsActive: true, SortOrder: 2}
 	endpointB := model.ProtocolEndpoint{ID: 2, NodeID: nodeB.ID, Name: "runtime-vmess", RuntimeKey: "runtime-vmess", Protocol: "vmess", Address: "b.example.test", Port: 444, PublicPort: 8444, ServerConfig: "cipher-b", IsActive: true}
 	for _, record := range []interface{}{&endpointA, &endpointB} {
 		if err := db.Create(record).Error; err != nil {
@@ -82,7 +82,7 @@ func TestRuntimeConfigurationLoadsConsistentNodeProjection(t *testing.T) {
 		t.Fatalf("snapshot mismatch: %+v", snapshot)
 	}
 	endpoint := snapshot.Endpoints[0]
-	if endpoint.ID != endpointA.ID || endpoint.ServerConfig != "cipher-a" || endpoint.ActiveSubscriptionCount != 1 || len(endpoint.Credentials) != 1 {
+	if endpoint.ID != endpointA.ID || endpoint.ListenAddress != "::" || endpoint.ServerConfig != "cipher-a" || endpoint.ActiveSubscriptionCount != 1 || len(endpoint.Credentials) != 1 {
 		t.Fatalf("endpoint projection mismatch: %+v", endpoint)
 	}
 	credential := endpoint.Credentials[0]

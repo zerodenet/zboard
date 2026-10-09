@@ -1,23 +1,28 @@
 <template>
-  <aside v-if="taskIDs.length" class="task-tray" aria-label="后台任务" aria-live="polite">
-    <header><div><UiIcon name="tasks" /><strong>后台任务</strong><span>{{ activeCount ? `${activeCount} 个执行中` : '已产生最终结果' }}</span></div><RouterLink :to="taskLink()">全部任务</RouterLink></header>
-    <div class="task-tray-list">
-      <article v-for="id in taskIDs" :key="id">
-        <template v-if="tasks[id]">
-          <div class="task-tray-heading"><div><strong>{{ taskTypeLabel(tasks[id].type) }}</strong><span>#{{ id }}</span></div><StatusBadge :tone="taskTone(tasks[id])" :icon="taskIcon(tasks[id])">{{ taskStatusLabel(tasks[id]) }}</StatusBadge></div>
-          <div class="task-progress" role="progressbar" :aria-valuemin="0" :aria-valuemax="tasks[id].total" :aria-valuenow="tasks[id].current"><span :style="{ width: progress(tasks[id]) + '%' }"></span></div>
-          <div class="task-tray-meta"><span>{{ tasks[id].current }} / {{ tasks[id].total }}</span><TimeBadge :value="tasks[id].finished_at || tasks[id].started_at || tasks[id].created_at" /></div>
-          <p v-if="tasks[id].errors">{{ firstError(tasks[id].errors) }}</p>
-          <div class="task-tray-actions"><RouterLink :to="taskLink(id)">查看详情</RouterLink><UiButton v-if="tasks[id].status >= 2" variant="ghost" size="sm" type="button" @click="dismissTrackedTask(id)">关闭</UiButton></div>
-        </template>
-        <div v-else class="task-loading"><span></span><span>正在读取任务 #{{ id }}…</span><UiButton variant="ghost" size="sm" type="button" aria-label="移除无法读取的任务" @click="dismissTrackedTask(id)">关闭</UiButton></div>
-      </article>
-    </div>
-  </aside>
+  <Teleport :to="activeTaskTrayHost || 'body'" :disabled="!activeTaskTrayHost">
+    <aside v-if="taskIDs.length" class="task-tray" aria-label="后台任务" aria-live="polite">
+      <header><div><UiIcon name="tasks" /><strong>后台任务</strong><span>{{ activeCount ? `${activeCount} 个执行中` : '已产生最终结果' }}</span></div><RouterLink :to="taskLink()">全部任务</RouterLink></header>
+      <div class="task-tray-list">
+        <article v-for="id in taskIDs" :key="id">
+          <template v-if="tasks[id]">
+            <div class="task-tray-heading"><div><strong>{{ taskTypeLabel(tasks[id].type) }}</strong><span>#{{ id }}</span></div><StatusBadge :tone="taskTone(tasks[id])" :icon="taskIcon(tasks[id])">{{ taskStatusLabel(tasks[id]) }}</StatusBadge></div>
+            <div class="task-progress" role="progressbar" :aria-valuemin="0" :aria-valuemax="tasks[id].total" :aria-valuenow="tasks[id].current"><span :style="{ width: progress(tasks[id]) + '%' }"></span></div>
+            <div class="task-tray-meta"><span>{{ tasks[id].current }} / {{ tasks[id].total }}</span><TimeBadge :value="tasks[id].finished_at || tasks[id].started_at || tasks[id].created_at" /></div>
+            <p v-if="tasks[id].errors">{{ firstError(tasks[id].errors) }}</p>
+            <div class="task-tray-actions"><RouterLink :to="taskLink(id)">查看详情</RouterLink><UiButton v-if="tasks[id].status >= 2" variant="ghost" size="sm" type="button" @click="dismissTrackedTask(id)">关闭</UiButton></div>
+          </template>
+          <div v-else class="task-loading"><span></span><span>正在读取任务 #{{ id }}…</span><UiButton variant="ghost" size="sm" type="button" aria-label="移除无法读取的任务" @click="dismissTrackedTask(id)">关闭</UiButton></div>
+        </article>
+      </div>
+    </aside>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { activeTaskTrayHost } from '../composables/taskTrayHost'
+import UiButton from './UiButton.vue'
+import TimeBadge from './TimeBadge.vue'
 import { useRoute } from 'vue-router'
 import { fetchAdminTask, type AdminTask } from '../api/client'
 import { dismissTrackedTask, trackedTaskIDs, trackedTaskSummaries, updateTrackedTask } from '../utils/taskTracker'

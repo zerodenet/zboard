@@ -112,7 +112,7 @@ func (s ProtocolEndpointMutations) CommitProtocolEndpointMutation(ctx context.Co
 				return err
 			}
 			update := tx.Model(&model.ProtocolEndpoint{}).Where("id = ?", previous.ID).
-				Select("node_id", "name", "runtime_key", "protocol", "address", "port", "public_port", "cipher", "parent_protocol_id", "multiplier_milli", "managed_principal_ready", "mieru_principal_ready", "server_config", "egress_protocol", "egress_config", "client_config", "optional_config", "tags", "is_active").
+				Select("node_id", "name", "runtime_key", "protocol", "address", "listen_address", "port", "public_port", "cipher", "parent_protocol_id", "multiplier_milli", "managed_principal_ready", "mieru_principal_ready", "server_config", "egress_protocol", "egress_config", "client_config", "optional_config", "tags", "is_active").
 				Updates(&row)
 			if update.Error != nil {
 				return update.Error
@@ -193,7 +193,7 @@ func protocolEndpointMutationSnapshot(row model.ProtocolEndpoint, certificateID 
 func protocolEndpointMutationRecord(row model.ProtocolEndpoint) network.ProtocolEndpointRecord {
 	return network.ProtocolEndpointRecord{
 		ID: row.ID, NodeID: row.NodeID, Name: row.Name, RuntimeKey: row.RuntimeKey,
-		Protocol: row.Protocol, Address: row.Address, Port: row.Port, PublicPort: row.PublicPort,
+		Protocol: row.Protocol, Address: row.Address, ListenAddress: row.ListenAddress, Port: row.Port, PublicPort: row.PublicPort,
 		Cipher: row.Cipher, ParentProtocolID: row.ParentProtocolID, MultiplierMilli: row.MultiplierMilli,
 		ManagedPrincipalReady: row.ManagedPrincipalReady, MieruPrincipalReady: row.MieruPrincipalReady,
 		ServerCiphertext: row.ServerConfig, EgressProtocol: row.EgressProtocol, EgressCiphertext: row.EgressConfig,
@@ -205,7 +205,7 @@ func protocolEndpointMutationRecord(row model.ProtocolEndpoint) network.Protocol
 func protocolEndpointMutationModel(row network.ProtocolEndpointRecord) model.ProtocolEndpoint {
 	return model.ProtocolEndpoint{
 		ID: row.ID, NodeID: row.NodeID, Name: row.Name, RuntimeKey: row.RuntimeKey,
-		Protocol: row.Protocol, Address: row.Address, Port: row.Port, PublicPort: row.PublicPort,
+		Protocol: row.Protocol, Address: row.Address, ListenAddress: row.ListenAddress, Port: row.Port, PublicPort: row.PublicPort,
 		Cipher: row.Cipher, ParentProtocolID: row.ParentProtocolID, MultiplierMilli: row.MultiplierMilli,
 		ManagedPrincipalReady: row.ManagedPrincipalReady, MieruPrincipalReady: row.MieruPrincipalReady,
 		ServerConfig: row.ServerCiphertext, EgressProtocol: row.EgressProtocol, EgressConfig: row.EgressCiphertext,

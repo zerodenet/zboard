@@ -8,11 +8,13 @@ import (
 	"time"
 
 	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
+	"google.golang.org/protobuf/proto"
 )
 
-const MaxPublicRouteBodyBytes = 8 << 20
+const MaxPublicRouteBodyBytes = pluginv1.MaxHTTPBodyBytes
 
 var ErrRouteNotFound = errors.New("plugin public route not found")
+var ErrRouteRequestTooLarge = errors.New("plugin public route request is too large")
 
 type PublicRouteResponse struct {
 	Status      int
@@ -50,10 +52,18 @@ func (m *Manager) validatePublicRouteRegistrationLocked(candidate Installation) 
 	return nil
 }
 
-func (m *Manager) HandlePublicRoute(ctx context.Context, method, routePath, contentType string, body []byte) (PublicRouteResponse, error) {
-	if len(body) > MaxPublicRouteBodyBytes {
-		return PublicRouteResponse{}, errors.New("plugin public route body is too large")
+func (m *Manager) HandlePublicRoute(ctx context.Context, request *pluginv1.HTTPRequest) (PublicRouteResponse, error) {
+	if m == nil {
+		return PublicRouteResponse{}, ErrUnavailable
 	}
+	if request == nil {
+		return PublicRouteResponse{}, ErrRouteNotFound
+	}
+	if len(request.Body) > MaxPublicRouteBodyBytes || proto.Size(request)-len(request.Body) > pluginv1.MaxHTTPMetadataBytes {
+		return PublicRouteResponse{}, ErrRouteRequestTooLarge
+	}
+	request = proto.Clone(request).(*pluginv1.HTTPRequest)
+	method, routePath := request.Method, request.Path
 	m.mu.Lock()
 	if m.lost.Load() {
 		m.mu.Unlock()
@@ -87,9 +97,8 @@ func (m *Manager) HandlePublicRoute(ctx context.Context, method, routePath, cont
 
 	callContext, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	response, err := target.api.HandleHTTP(callContext, &pluginv1.HTTPRequest{
-		RouteId: routeID, Method: method, Path: routePath, ContentType: contentType, Body: body,
-	})
+	request.RouteId = routeID
+	response, err := target.api.HandleHTTP(callContext, request)
 	if err != nil || response == nil {
 		return PublicRouteResponse{}, ErrUnavailable
 	}

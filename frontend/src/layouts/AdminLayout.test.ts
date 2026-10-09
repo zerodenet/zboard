@@ -10,7 +10,7 @@ import { NAVIGATION_CHANGED } from '../utils/navigationEvents'
 vi.mock('../api/menus', async () => { const { menuFixture } = await import('../test/menuFixtures'); return { fetchNavigation: vi.fn(async (surface: 'admin' | 'account' | 'public') => menuFixture(surface)) } })
 
 const clearAuth = vi.hoisted(() => vi.fn())
-vi.mock('../stores/app', () => ({ useAppStore: () => ({ siteName: 'zboard', user: { email: 'admin@example.test' }, loadMe: vi.fn(), clear: clearAuth }) }))
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ siteName: 'zboard', user: { email: 'admin@example.test' }, loadMe: vi.fn(async () => undefined), clear: clearAuth }) }))
 vi.mock('../components/TaskTray.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('../api/system', () => ({ fetchAdminSystemInfo: vi.fn(async () => ({ release_version: '0.3.0', build_time: '2026-09-24T00:00:00Z' })) }))
 vi.mock('../api/releaseUpdates', async importOriginal => ({ ...(await importOriginal<typeof import('../api/releaseUpdates')>()), fetchZBoardReleases: vi.fn(async () => [{ tag_name: 'v0.3.0', html_url: 'https://github.com/zerodenet/zboard/releases/tag/v0.3.0', prerelease: false, draft: false, published_at: '2026-09-24T00:00:00Z' }]) }))
@@ -23,7 +23,7 @@ async function setup(path: string, mobile = false) {
   const media = { matches: mobile, addEventListener: vi.fn((_event, listener) => { viewportListener = listener }), removeEventListener: vi.fn() }
   vi.stubGlobal('matchMedia', vi.fn(() => media))
   const pages = adminNavigation.flatMap(domain => domain.sections.flatMap(section => section.pages))
-  const router = createRouter({ history: createMemoryHistory(), routes: [...pages, { to: '/', label: '首页' }, { to: '/account', label: '个人中心' }, { to: '/admin/extensions/:pluginId/:pageId', label: '扩展' }].map(page => ({ path: page.to, component: { components: { PageHeader }, template: '<section class="standard-page"><PageHeader :title="String($route.meta.title)" /></section>' }, meta: { title: page.label } })) })
+  const router = createRouter({ history: createMemoryHistory(), routes: [...pages, { to: '/', label: '首页' }, { to: '/login', label: '登录' }, { to: '/account', label: '个人中心' }, { to: '/admin/extensions/:pluginId/:pageId', label: '扩展' }].map(page => ({ path: page.to, component: { components: { PageHeader }, template: '<section class="standard-page"><PageHeader :title="String($route.meta.title)" /></section>' }, meta: { title: page.label } })) })
   await router.push(path)
   await router.isReady()
   const wrapper = mount(AdminLayout, { attachTo: document.body, global: { plugins: [router] } })
@@ -125,6 +125,42 @@ describe('AdminLayout navigation', () => {
     await wrapper.get('main button').trigger('click')
     await flushPromises()
     expect(wrapper.find('.standard-page').exists()).toBe(true)
+  })
+
+  it('keeps loaded content during a connectivity failure and clears the warning on recovery', async () => {
+    const { wrapper } = await setup('/admin/nodes')
+    vi.mocked(fetchNavigation).mockRejectedValueOnce(new Error('offline'))
+    window.dispatchEvent(new Event(NAVIGATION_CHANGED))
+    await flushPromises()
+    expect(wrapper.find('.standard-page').exists()).toBe(true)
+    expect(wrapper.get('.navigation-notice').text()).toContain('当前内容已保留')
+    expect(wrapper.get('main').text()).not.toContain('暂时无法加载页面')
+    await wrapper.get('.navigation-notice button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.navigation-notice').exists()).toBe(false)
+  })
+
+  it('revokes cached page approval on 403 without clearing the login', async () => {
+    const { wrapper } = await setup('/admin/nodes')
+    vi.mocked(fetchNavigation).mockRejectedValueOnce({ response: { status: 403 } })
+    window.dispatchEvent(new Event(NAVIGATION_CHANGED))
+    await flushPromises()
+    expect(wrapper.find('.standard-page').exists()).toBe(false)
+    expect(wrapper.get('main').text()).toContain('访问权限不足')
+    expect(wrapper.get('main a').attributes('href')).toBe('/account')
+    expect(clearAuth).not.toHaveBeenCalled()
+    await wrapper.get('main button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.standard-page').exists()).toBe(true)
+  })
+
+  it('offers login with the original location when navigation returns 401', async () => {
+    vi.mocked(fetchNavigation).mockRejectedValueOnce({ response: { status: 401 } })
+    const { wrapper } = await setup('/admin/nodes?page=3')
+    expect(wrapper.get('main').text()).toContain('登录已过期')
+    expect(wrapper.find('main button').exists()).toBe(false)
+    expect(wrapper.get('main a').attributes('href')).toContain('redirect=/admin/nodes?page=3')
+    expect(wrapper.get('main a').attributes('href')).toContain('reason=session-expired')
   })
 
   it('renders backend menu edits and plugin placement in sidebar, sibling tabs and search', async () => {

@@ -7,13 +7,13 @@
         <strong>{{ profile.name }}</strong>
       </RouterLink>
       <UiButton variant="ghost" icon class="icon-button public-menu" type="button" :aria-label="menuOpen ? '关闭站点导航' : '打开站点导航'" :aria-expanded="menuOpen" aria-controls="public-navigation" @click="menuOpen = !menuOpen"><UiIcon :name="menuOpen ? 'close' : 'menu'" /></UiButton>
-      <nav id="public-navigation" :class="{ open: menuOpen }" aria-label="站点导航"><NavigationLinks surface="public" :icons="false" @select-page="menuOpen = false" /><button v-if="menus.error.value" type="button" @click="menus.load()">重新加载菜单</button></nav>
+      <nav id="public-navigation" :class="{ open: menuOpen }" aria-label="站点导航"><NavigationLinks surface="public" :icons="false" @select-page="menuOpen = false" /></nav>
       <div class="public-actions">
         <RouterLink v-if="app.isAuthenticated" class="button button-secondary button-sm" :to="landingPath">进入{{ app.isAdmin ? '管理后台' : '用户中心' }}</RouterLink>
         <template v-else><RouterLink class="button button-ghost button-sm" to="/login">登录</RouterLink><RouterLink v-if="app.installation?.allow_registration" class="button button-sm" to="/register">免费注册</RouterLink></template>
       </div>
     </header>
-    <main><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" @retry="menus.load()"><RouterView /></NavigationPage></main>
+    <main><NavigationNotice v-if="menus.error.value && !menus.pageError.value" :message="menus.error.value" :loading="menus.loading.value" @retry="menus.load()" /><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" :failure="menus.failure.value" :retrying="menus.loading.value" @retry="menus.load()"><RouterView /></NavigationPage></main>
     <footer class="public-footer">
       <div class="public-footer__identity">
         <RouterLink class="public-brand" to="/">
@@ -43,6 +43,7 @@
 
 <script setup lang="ts">
 import NavigationLinks from '../components/NavigationLinks.vue'
+import NavigationNotice from '../components/NavigationNotice.vue'
 import NavigationPage from '../components/NavigationPage.vue'
 import { useNavigation } from '../stores/navigation'
 import { computed, ref } from 'vue'

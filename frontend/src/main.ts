@@ -4,7 +4,7 @@ import { createRouter, createWebHistory, isNavigationFailure, NavigationFailureT
 import App from './App.vue'
 import { routes } from './router'
 import { useAppStore } from './stores/app'
-import { AUTH_SESSION_EXPIRED_EVENT, resetAuthSessionExpired } from './utils/authSession'
+import { installAuthSessionNavigation } from './utils/authSessionNavigation'
 import { applySiteMetadata } from './utils/siteProfile'
 import { accountPurchaseRoute } from './utils/commerceNavigation'
 import { finishNavigationProgress, navigationProgressGeneration, startNavigationProgress, waitForPagePaint } from './composables/navigationProgress'
@@ -68,22 +68,7 @@ const resolveMeta = (to: RouteLocationNormalized) => {
 
 const roleLanding = (store: ReturnType<typeof useAppStore>) => store.isAdmin ? '/admin/dashboard' : '/account'
 
-window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, () => {
-  const store = useAppStore(pinia)
-  const current = router.currentRoute.value
-  store.clear()
-
-  // Initial navigation is still covered by the route guard below. For an already
-  // mounted protected route, move immediately instead of leaving a dead screen
-  // that only recovers after a manual refresh.
-  if (!current.meta.requiresAuth) {
-    resetAuthSessionExpired()
-    return
-  }
-
-  void router.replace({ path: '/login', query: { redirect: current.fullPath } })
-    .finally(resetAuthSessionExpired)
-})
+installAuthSessionNavigation(router, () => useAppStore(pinia).clear())
 
 router.beforeEach((to, from) => {
   if (from.matched.length && to.fullPath !== from.fullPath) startNavigationProgress()
@@ -104,7 +89,7 @@ router.beforeEach(async (to) => {
     return store.isAuthenticated ? roleLanding(store) : '/login'
   }
   if (store.token && !store.user.email) {
-    await store.loadMe()
+    await store.loadMe().catch(() => undefined)
   }
 	try { await store.loadSystemStatus() } catch (_) { /* API calls retain the last known state. */ }
 

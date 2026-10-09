@@ -140,7 +140,8 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		for _, endpoint := range endpoints {
 			item := network.RuntimeConfigurationEndpoint{
 				ID: endpoint.ID, NodeID: endpoint.NodeID, Protocol: endpoint.Protocol, Address: endpoint.Address,
-				Port: endpoint.Port, PublicPort: endpoint.PublicPort, MieruPrincipalReady: endpoint.MieruPrincipalReady,
+				ListenAddress: endpoint.ListenAddress,
+				Port:          endpoint.Port, PublicPort: endpoint.PublicPort, MieruPrincipalReady: endpoint.MieruPrincipalReady,
 				ServerConfig: endpoint.ServerConfig, EgressConfig: endpoint.EgressConfig, ActiveSubscriptionCount: activeSubscriptionCount[endpoint.ID],
 				Credentials: credentialsByEndpoint[endpoint.ID],
 			}

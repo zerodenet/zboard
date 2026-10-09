@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
+	"github.com/zerodenet/zboard/backend/internal/security"
 	"net/url"
 	"strconv"
 	"strings"
@@ -61,7 +62,18 @@ func ValidateSettingValue(key, value string) error {
 		if value == "" || len(value) > 80 {
 			return errors.New("site_name must contain 1 to 80 bytes")
 		}
-	case "site_url", "subscribe_url", "site_logo", "subscription_camouflage_url":
+	case "site_logo", "site_logo_dark", "site_favicon":
+		if value == "" || security.IsLocalSiteImageReference(value) {
+			return nil
+		}
+		if len(value) > 2048 {
+			return fmt.Errorf("%s must not exceed 2048 bytes", key)
+		}
+		parsed, err := url.ParseRequestURI(value)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.Fragment != "" || strings.Contains(value, "#") {
+			return fmt.Errorf("%s must be an HTTP/HTTPS URL or an uploaded site image", key)
+		}
+	case "site_url", "subscribe_url", "subscription_camouflage_url":
 		if value == "" && key != "site_url" {
 			return nil
 		}

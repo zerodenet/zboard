@@ -22,7 +22,79 @@ tags:
   - name: subscriptions
   - name: traffic
   - name: tickets
+  - name: files
 paths:
+  /api/v1/files:
+    post:
+      tags: [files]
+      summary: Upload a local site image or private ticket attachment
+      description: Authenticated users upload ticket files; site images require an administrator. One file per multipart request, up to 5 MiB for tickets or 2 MiB for images. Content and extension are checked. Storage quotas are 100 MiB per uploader and 1 GiB total. Files are immutable and retained in the configured persistent directory.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, purpose]
+              properties:
+                file: {type: string, format: binary}
+                purpose: {type: string, enum: [site, ticket]}
+      responses:
+        '200':
+          description: Stored file reference; upload alone does not submit a ticket or save site settings
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiResponse'}
+                  - {type: object, properties: {data: {$ref: '#/components/schemas/StoredFile'}}}
+        '400': {description: Invalid file, multipart body, size, format or quota}
+        '401': {description: Authentication required}
+        '403': {description: Site images require administrator access}
+        '503': {description: Upload capacity is temporarily full}
+  /api/v1/files/{id}:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [files]
+      summary: Download a local file with current authorization
+      description: Ticket files are readable by the ticket owner and administrators; an unsubmitted file is readable by its uploader and administrators. Responses use attachment disposition and private no-store caching. No tokens are accepted in URL parameters.
+      responses:
+        '200': {description: Raw file bytes}
+        '401': {description: Authentication required}
+        '403': {description: File access denied}
+        '404': {description: File does not exist or was deleted}
+    head:
+      tags: [files]
+      summary: Read file headers with the same authorization as GET
+      responses:
+        '200': {description: File headers}
+    delete:
+      tags: [files]
+      summary: Delete an unused file owned by the caller, or as an administrator
+      description: Referenced ticket files and configured site images are protected. Repeated deletion is safe.
+      responses:
+        '200': {description: Deleted}
+        '401': {description: Authentication required}
+        '403': {description: Not the uploader or an administrator}
+        '409': {description: File is referenced by a ticket message or site setting}
+  /media/{id}:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [files]
+      security: []
+      summary: Read a public uploaded site image
+      description: Only site-purpose images are accessible here. SVG uses a restrictive CSP; uploaded ticket files are never exposed by this route.
+      responses:
+        '200': {description: Raw image bytes}
+        '404': {description: No public image exists for this identity}
+    head:
+      tags: [files]
+      security: []
+      summary: Read public site image headers
+      responses:
+        '200': {description: Image headers}
   /api/v1/navigation:
     get:
       tags: [system]
@@ -4205,6 +4277,39 @@ paths:
                   - $ref: "#/components/schemas/ApiResponse"
                   - properties:
                       data: { $ref: "#/components/schemas/RealityTemplate" }
+  /api/v1/admin/protocol-endpoints/reality-probe:
+    post:
+      tags: [nodes, admin]
+      summary: Probe candidate Reality domains from the selected VPS
+      description: Admin only. Uses the verified node SSH channel without system privileges or software installation. Makes concurrent bounded TLS handshakes to port 443 using TLS 1.3, X25519, h2 ALPN and hostname/certificate verification. Results are advisory and do not save or publish configuration. Requires OpenSSL with TLS 1.3 and GNU timeout/date on the VPS; the SSH probe has a 20-second deadline and the HTTP route has a 25-second timeout.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [node_id]
+              properties:
+                node_id: { type: integer, minimum: 1 }
+                domains:
+                  type: array
+                  maxItems: 12
+                  description: Complete ASCII domain names only. An empty list uses maintained candidates.
+                  items: { type: string, maxLength: 253 }
+      responses:
+        "200":
+          description: Current probe results from the selected VPS
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/RealityProbeSnapshot" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v1/admin/protocol-endpoints/{id}:
     get:
       tags: [nodes]
@@ -5635,6 +5740,36 @@ components:
     TicketCategory:
       type: string
       enum: [connection, billing, account, other]
+    StoredFile:
+      type: object
+      required: [id, name, url, purpose, size, content_type, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        url: {type: string, description: '/media/{id} for public site images; /api/v1/files/{id} for private ticket files'}
+        purpose: {type: string, enum: [site, ticket]}
+        size: {type: integer, format: int64}
+        content_type: {type: string}
+        created_at: {type: string, format: date-time}
+    TicketAttachmentInput:
+      type: object
+      description: Specify either a locally uploaded file_id or an external HTTP/HTTPS URL. External links are stored without downloading them. Local files must be unreferenced ticket uploads owned by the message author.
+      oneOf:
+        - required: [file_id]
+        - required: [url]
+      properties:
+        file_id: {type: string, format: uuid}
+        url: {type: string, format: uri, maxLength: 2048}
+        name: {type: string, maxLength: 255}
+    TicketAttachment:
+      type: object
+      properties:
+        id: {type: integer, format: int64}
+        file_id: {type: string, format: uuid}
+        url: {type: string}
+        name: {type: string}
+        size: {type: integer, format: int64}
+        content_type: {type: string}
     TicketCreateRequest:
       type: object
       required: [subject, category, body]
@@ -5643,11 +5778,13 @@ components:
         category: { $ref: "#/components/schemas/TicketCategory" }
         priority: { type: integer, enum: [1, 2], default: 1 }
         body: { type: string, minLength: 1, maxLength: 5000 }
+        attachments: {type: array, maxItems: 5, items: {$ref: "#/components/schemas/TicketAttachmentInput"}}
     TicketReplyRequest:
       type: object
       required: [body]
       properties:
         body: { type: string, minLength: 1, maxLength: 5000 }
+        attachments: {type: array, maxItems: 5, items: {$ref: "#/components/schemas/TicketAttachmentInput"}}
     TicketStatusRequest:
       type: object
       required: [status]
@@ -5692,6 +5829,7 @@ components:
         from_status: { type: string }
         to_status: { type: string }
         created_at: { type: string, format: date-time }
+        attachments: {type: array, maxItems: 5, items: {$ref: "#/components/schemas/TicketAttachment"}}
     TicketDetail:
       type: object
       required: [ticket, messages, has_older_messages]
@@ -6352,6 +6490,7 @@ components:
         name: { type: string }
         protocol: { type: string }
         address: { type: string }
+        listen_address: { type: string, default: "0.0.0.0", description: Local IPv4 or IPv6 listen address, independent of the public subscription address. }
         port: { type: integer, minimum: 1, maximum: 65535 }
         public_port: { type: integer, minimum: 1, maximum: 65535 }
         cipher: { type: integer }
@@ -7908,6 +8047,10 @@ components:
           description: Protocol names are checked against panel support; generated configuration must pass validation and activation on the selected node. No minimum Zero release number is imposed.
         address:
           type: string
+        listen_address:
+          type: string
+          maxLength: 64
+          description: Local IPv4 or IPv6 literal, optionally bracketed for IPv6. Omitted on create or empty means 0.0.0.0; omitted on update preserves the existing value. Domains, ports and CIDRs are not accepted. Changing this field queues runtime publication.
         port:
           type: integer
           minimum: 1
@@ -7978,6 +8121,22 @@ components:
             label: { type: string }
             server_name: { type: string }
             client_fingerprint: { type: string, enum: [chrome, safari] }
+    RealityProbeSnapshot:
+      type: object
+      required: [node_id, sampled_at, items]
+      properties:
+        node_id: { type: integer }
+        sampled_at: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            type: object
+            required: [server_name, available, status, latency_ms]
+            properties:
+              server_name: { type: string }
+              available: { type: boolean }
+              status: { type: string, enum: [available, timeout, certificate, unsupported, unreachable] }
+              latency_ms: { type: integer, minimum: 0, description: DNS, TCP and TLS handshake elapsed time in milliseconds. }
     AccountProtocolLoadSnapshot:
       type: object
       required: [sampled_at, activity_window_seconds, items]

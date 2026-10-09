@@ -260,6 +260,7 @@ type protocolEndpointWriteReq struct {
 	Name                       string                                      `json:"name"`
 	Protocol                   string                                      `json:"protocol"`
 	Address                    string                                      `json:"address"`
+	ListenAddress              *string                                     `json:"listen_address"`
 	Port                       int                                         `json:"port"`
 	PublicPort                 int                                         `json:"public_port"`
 	Cipher                     int16                                       `json:"cipher"`
@@ -337,6 +338,7 @@ type handlers struct {
 	jwtSecret               string
 	credentialCipher        *security.CredentialCipher
 	zeroArtifactDir         string
+	fileUploadSlots         chan struct{}
 	zeroNativeAccess        bool
 	zeroMieruAccess         bool
 	zeroLocalVersion        string
@@ -371,6 +373,7 @@ func NewHandlers(services *application.Services, db *gorm.DB, jwtSecret string, 
 		jwtSecret:        jwtSecret,
 		credentialCipher: credentialCipher,
 		zeroArtifactDir:  strings.TrimSpace(zeroArtifactDir),
+		fileUploadSlots:  make(chan struct{}, 4),
 		zeroNativeAccess: nativeContract,
 		zeroMieruAccess:  nativeContract,
 		zeroLocalVersion: localVersion,
@@ -1580,7 +1583,7 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		capabilityMembershipChanges = append(capabilityMembershipChanges, networkcap.ProtocolEndpointMembershipChange{NodeGroupID: change.NodeGroupID, ExpectedRevision: change.ExpectedRevision, Member: change.Member})
 	}
 	result, transactionErr := endpointMutations.Save(r.Context(), claims.UserID, existingMutationSnapshot, networkcap.ProtocolEndpointMutationRequest{
-		ID: endpointID, NodeID: req.NodeID, Name: req.Name, Protocol: protocol, Address: req.Address,
+		ID: endpointID, NodeID: req.NodeID, Name: req.Name, Protocol: protocol, Address: req.Address, ListenAddress: req.ListenAddress,
 		Port: req.Port, PublicPort: req.PublicPort, Cipher: req.Cipher, ParentProtocolID: req.ParentProtocolID,
 		ManagedCertificateID: req.ManagedCertificateID, MultiplierMilli: req.MultiplierMilli, IsActive: req.IsActive,
 		ServerConfig: req.Config, EgressConfig: req.EgressConfig, ClientConfig: req.ClientConfig, OptionalConfig: req.OptionalConfig, Tags: req.Tags,
@@ -1699,6 +1702,7 @@ type protocolEndpointListItem struct {
 	Protocol                string                                  `json:"protocol"`
 	EgressProtocol          string                                  `json:"egress_protocol,omitempty"`
 	Address                 string                                  `json:"address"`
+	ListenAddress           string                                  `json:"listen_address"`
 	Port                    int                                     `json:"port"`
 	PublicPort              int                                     `json:"public_port"`
 	ParentProtocolID        *uint                                   `json:"parent_protocol_id,omitempty"`
@@ -1720,7 +1724,7 @@ type protocolEndpointListItem struct {
 func newProtocolEndpointListItem(endpoint model.ProtocolEndpoint, nodeName string, managedCertificateID *uint, deployment *model.ProtocolDeployment, usage protocolEndpointUsage, kernelSupported bool, kernelUnsupportedReason string) protocolEndpointListItem {
 	item := protocolEndpointListItem{
 		ID: endpoint.ID, NodeID: endpoint.NodeID, NodeName: nodeName, Name: endpoint.Name,
-		Protocol: endpoint.Protocol, EgressProtocol: endpoint.EgressProtocol, Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
+		Protocol: endpoint.Protocol, EgressProtocol: endpoint.EgressProtocol, Address: endpoint.Address, ListenAddress: endpoint.ListenAddress, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
 		ParentProtocolID: endpoint.ParentProtocolID, ManagedCertificateID: managedCertificateID, MultiplierMilli: endpoint.MultiplierMilli,
 		ManagedPrincipalReady: endpoint.ManagedPrincipalReady, MieruPrincipalReady: endpoint.MieruPrincipalReady, IsActive: endpoint.IsActive, SortOrder: endpoint.SortOrder, Usage: usage,
 		KernelSupported: kernelSupported, KernelUnsupportedReason: kernelUnsupportedReason,
@@ -2122,7 +2126,7 @@ func (h *handlers) loadProtocolEndpointNodes(endpoints []model.ProtocolEndpoint)
 }
 
 func protocolEndpointRecordModel(r networkcap.ProtocolEndpointRecord) model.ProtocolEndpoint {
-	return model.ProtocolEndpoint{ID: r.ID, NodeID: r.NodeID, Name: r.Name, RuntimeKey: r.RuntimeKey, Protocol: r.Protocol, Address: r.Address, Port: r.Port, PublicPort: r.PublicPort, Cipher: r.Cipher, ParentProtocolID: r.ParentProtocolID, MultiplierMilli: r.MultiplierMilli, ManagedPrincipalReady: r.ManagedPrincipalReady, MieruPrincipalReady: r.MieruPrincipalReady, ServerConfig: r.ServerCiphertext, EgressProtocol: r.EgressProtocol, EgressConfig: r.EgressCiphertext, ClientConfig: r.ClientConfig, OptionalConfig: r.OptionalConfig, Tags: r.Tags, IsActive: r.IsActive, SortOrder: r.SortOrder, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
+	return model.ProtocolEndpoint{ID: r.ID, NodeID: r.NodeID, Name: r.Name, RuntimeKey: r.RuntimeKey, Protocol: r.Protocol, Address: r.Address, ListenAddress: r.ListenAddress, Port: r.Port, PublicPort: r.PublicPort, Cipher: r.Cipher, ParentProtocolID: r.ParentProtocolID, MultiplierMilli: r.MultiplierMilli, ManagedPrincipalReady: r.ManagedPrincipalReady, MieruPrincipalReady: r.MieruPrincipalReady, ServerConfig: r.ServerCiphertext, EgressProtocol: r.EgressProtocol, EgressConfig: r.EgressCiphertext, ClientConfig: r.ClientConfig, OptionalConfig: r.OptionalConfig, Tags: r.Tags, IsActive: r.IsActive, SortOrder: r.SortOrder, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
 }
 func protocolDeploymentModel(r networkcap.ProtocolDeploymentRecord) model.ProtocolDeployment {
 	return model.ProtocolDeployment{ID: r.ID, NodeID: r.NodeID, ProtocolEndpointID: r.ProtocolEndpointID, ConfigRevision: r.ConfigRevision, DesiredConfigSHA256: r.DesiredConfigSHA256, AppliedConfigSHA256: r.AppliedConfigSHA256, Status: r.Status, RequestedBy: r.RequestedBy, Error: r.Error, Output: r.Output, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}

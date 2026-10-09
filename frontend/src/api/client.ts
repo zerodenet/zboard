@@ -1,7 +1,9 @@
 import axios from 'axios'
+import { expireAuthSession, resetAuthSessionExpired } from '../utils/authSession'
 import { normalizeApiErrorPayload } from '../utils/apiError'
 import { appendQueryID, type QueryID } from './queryID'
 import { requirePageResponse } from './pageResponse'
+import type { TicketAttachment } from './files'
 
 export const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 
@@ -26,6 +28,17 @@ api.interceptors.response.use(
   response => response,
   (cause) => {
     if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data)
+    const token = getAuthToken()
+    const config = cause?.config
+    // Only the credential used by this request can invalidate the current login.
+    // Password confirmations and plugin proofs have their own expiry lifecycle.
+    if (cause?.response?.status === 401 && token && config?.headers?.Authorization === `Bearer ${token}` && config.url !== '/auth/login') {
+      if (config.headers['X-Plugin-Session'] || config.url?.startsWith('/account/security/')) {
+        verifyAuthSession(token)
+      } else {
+        expireAuthSession()
+      }
+    }
 		const maintenance = cause?.response?.status === 503 ? cause?.response?.data?.data?.maintenance : null
 		if (maintenance && typeof window !== 'undefined') {
 			window.dispatchEvent(new CustomEvent(MAINTENANCE_STATE_EVENT, { detail: maintenance }))
@@ -34,11 +47,20 @@ api.interceptors.response.use(
   },
 )
 
+let sessionVerification: { token: string; promise: Promise<void> } | undefined
+function verifyAuthSession(token: string) {
+  if (sessionVerification?.token === token) return
+  const promise = api.get('/auth/me').then(() => undefined).catch(() => undefined)
+    .finally(() => { if (sessionVerification?.promise === promise) sessionVerification = undefined })
+  sessionVerification = { token, promise }
+}
+
 export function getAuthToken() {
   return localStorage.getItem(tokenKey) || ''
 }
 
 export function setAuthToken(token: string) {
+  resetAuthSessionExpired()
   localStorage.setItem(tokenKey, token)
 }
 
@@ -696,6 +718,24 @@ export async function generateRealityTemplate(preset = 'compatible'): Promise<Re
 	return unwrap(response)
 }
 
+export interface RealityProbeResult {
+	server_name: string
+	available: boolean
+	status: 'available' | 'timeout' | 'certificate' | 'unsupported' | 'unreachable'
+	latency_ms: number
+}
+
+export interface RealityProbeSnapshot {
+	node_id: number
+	sampled_at: string
+	items: RealityProbeResult[]
+}
+
+export async function probeRealityDomains(nodeID: number, domains: string[], signal?: AbortSignal): Promise<RealityProbeSnapshot> {
+	const response = await api.post('/admin/protocol-endpoints/reality-probe', { node_id: nodeID, domains }, { signal })
+	return unwrap(response)
+}
+
 export async function fetchProtocolEndpoints(nodeId?: number) {
 	const response = await api.get(nodeId ? `/admin/protocol-endpoints?node_id=${nodeId}` : '/admin/protocol-endpoints')
 	return unwrap(response) || []
@@ -714,6 +754,7 @@ export interface ProtocolEndpointListItem {
 	name: string
 	protocol: string
 	address: string
+	listen_address?: string
 	port: number
 	public_port: number
 	parent_protocol_id?: number
@@ -2263,6 +2304,7 @@ export interface TicketMessage {
 	author_email: string
 	type: 'message' | 'status'
 	body: string
+	attachments?: TicketAttachment[]
 	from_status: string
 	to_status: string
 	created_at: string
@@ -2296,13 +2338,17 @@ export async function fetchTicket(id: number, admin = false, options: ApiRequest
 	return unwrap(response)
 }
 
-export async function createTicket(payload: { subject: string; category: TicketCategory; priority: 1 | 2; body: string }): Promise<TicketDetail> {
-	const response = await api.post('/tickets', payload)
+function attachmentInputs(items: TicketAttachment[] = []) {
+ return items.map(item => item.file_id ? { file_id: item.file_id } : { name: item.name, url: item.url })
+}
+
+export async function createTicket(payload: { subject: string; category: TicketCategory; priority: 1 | 2; body: string; attachments?: TicketAttachment[] }): Promise<TicketDetail> {
+	const response = await api.post('/tickets', { ...payload, attachments: attachmentInputs(payload.attachments) })
 	return unwrap(response)
 }
 
-export async function replyTicket(id: number, body: string, admin = false): Promise<TicketDetail> {
-	const response = await api.post(`${admin ? '/admin' : ''}/tickets/${id}/messages`, { body })
+export async function replyTicket(id: number, body: string, admin = false, attachments: TicketAttachment[] = []): Promise<TicketDetail> {
+	const response = await api.post(`${admin ? '/admin' : ''}/tickets/${id}/messages`, { body, attachments: attachmentInputs(attachments) })
 	return unwrap(response)
 }
 

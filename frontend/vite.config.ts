@@ -32,6 +32,7 @@ export default defineConfig({
     host: true,
     proxy: apiProxyTarget
       ? {
+          '/media': { target: apiProxyTarget, changeOrigin: true, secure: false },
           '/api/v1': {
             target: apiProxyTarget,
             changeOrigin: true,

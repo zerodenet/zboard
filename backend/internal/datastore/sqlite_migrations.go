@@ -33,6 +33,7 @@ func databaseModels() []interface{} {
 		&model.SubscriptionRuleSet{}, &model.SubscriptionTemplateRuleSetBinding{}, &model.ProtocolCredential{},
 		&model.FlowUsage{}, &model.TrafficRecord{}, &model.ProtocolEndpointUsageDaily{}, &model.ProtocolEndpointUsageReset{}, &model.AuditLog{}, &model.EmailTemplate{},
 		&model.RegistrationEmailChallenge{}, &model.AccountRegistrationEvent{}, &model.Ticket{}, &model.TicketMessage{}, &model.UserAPIToken{},
+		&model.StoredFile{}, &model.TicketAttachment{},
 		&model.Task{}, &model.TaskItem{}, &model.MailDeliveryAttempt{}, &model.SubscriptionAlert{}, &model.SubscriptionAlertScan{}, &model.ProtocolDeployment{}, &model.QuotaEvent{},
 		&model.NodeKernelState{}, &model.NodeOperation{}, &model.ProviderAccount{}, &model.ManagedDNSRecord{},
 		&model.ProviderOperation{}, &model.ManagedCertificate{}, &model.CertificateProtocolEndpoint{},
@@ -318,8 +319,17 @@ func runSQLiteMigrations(db *gorm.DB) error {
 		return err
 	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}
+	if !db.Migrator().HasColumn(&model.ProtocolEndpoint{}, "listen_address") {
+		return fmt.Errorf("protocol endpoint listen address schema is incomplete")
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0030_protocol_endpoint_listen_address.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
+	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {
 		return fmt.Errorf("record sqlite schema version: %w", err)
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0031_files_and_ticket_attachments.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
 	}
 	return nil
 }

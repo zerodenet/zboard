@@ -131,10 +131,10 @@
 .ui-dropdown-content .ui-dropdown-item { width: 100%; min-height: 34px; display: flex; align-items: center; justify-content: flex-start; gap: 7px; padding: 6px 9px; border: 0; border-radius: 5px; color: var(--foreground); background: transparent; box-shadow: none; font-size: 12px; font-weight: 500; line-height: 1.4; text-align: left; text-decoration: none; outline: 0; cursor: pointer; }
 .ui-dropdown-content .ui-dropdown-item:is(:hover, [data-highlighted]):not([data-disabled]) { color: var(--foreground); background: var(--muted-surface); }
 .ui-dropdown-item[data-disabled] { opacity: .55; cursor: not-allowed; }
-.ui-checkbox { width: 16px; height: 16px; display: inline-grid; place-items: center; flex: none; border: 1px solid var(--input); border-radius: 4px; color: var(--primary-foreground); background: var(--card); }
+.ui-checkbox { width: 16px; height: 16px; display: inline-grid; place-items: center; flex: none; padding: 0; line-height: 1; border: 1px solid var(--input); border-radius: 4px; color: var(--primary-foreground); background: var(--card); }
 .ui-checkbox[data-state='checked'], .ui-checkbox[data-state='indeterminate'] { border-color: var(--primary); background: var(--primary); }
-.ui-checkbox-indicator { font-size: 12px; line-height: 1; }
-.ui-checkbox[data-state='unchecked'] .ui-checkbox-indicator { visibility: hidden; }
+.ui-checkbox-indicator { display: grid; place-items: center; width: 12px; height: 12px; }
+.ui-checkbox .ui-checkbox-indicator .ui-icon { width: 12px; height: 12px; }
 .ui-switch { width: 32px; height: 18px; display: inline-flex; align-items: center; flex: none; padding: 2px; border: 1px solid var(--input); border-radius: 999px; background: var(--muted-surface); cursor: pointer; transition: background-color .15s ease-out; }
 .ui-switch[data-state='checked'] { border-color: var(--primary); background: var(--primary); }
 .ui-switch[data-disabled] { opacity: .5; cursor: not-allowed; }

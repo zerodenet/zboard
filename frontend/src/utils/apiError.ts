@@ -1,4 +1,3 @@
-import { expireAuthSession } from './authSession'
 import { normalizeOutput } from './output'
 
 export interface NormalizedApiFormError {
@@ -37,7 +36,6 @@ export function normalizeApiErrorPayload(payload: unknown): Record<string, any> 
   }
 
   if (!source.error || typeof source.error !== 'object' || Array.isArray(source.error)) {
-    if (Number(source.code) === 401) expireAuthSession()
     return normalized
   }
 
@@ -57,7 +55,6 @@ export function normalizeApiErrorPayload(payload: unknown): Record<string, any> 
     code,
     fields,
   }
-  if (Number(source.code) === 401 || code === 'unauthenticated') expireAuthSession()
   return normalized
 }
 

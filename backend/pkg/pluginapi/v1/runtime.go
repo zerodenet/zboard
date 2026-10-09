@@ -27,5 +27,7 @@ func ClientMap() map[string]hcplugin.Plugin {
 	return map[string]hcplugin.Plugin{"control": &ControlPlugin{}}
 }
 func Serve(impl PluginControlServer) {
-	hcplugin.Serve(&hcplugin.ServeConfig{HandshakeConfig: Handshake, Plugins: map[string]hcplugin.Plugin{"control": &ControlPlugin{Impl: impl}}, GRPCServer: hcplugin.DefaultGRPCServer})
+	hcplugin.Serve(&hcplugin.ServeConfig{HandshakeConfig: Handshake, Plugins: map[string]hcplugin.Plugin{"control": &ControlPlugin{Impl: impl}}, GRPCServer: func(options []grpc.ServerOption) *grpc.Server {
+		return hcplugin.DefaultGRPCServer(append(options, grpc.MaxRecvMsgSize(MaxControlMessageBytes), grpc.MaxSendMsgSize(MaxControlMessageBytes)))
+	}})
 }

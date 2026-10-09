@@ -27,6 +27,8 @@ type Entry struct {
 }
 
 var explicitWriteOwners = map[string]string{
+	"h.services.Files.Upload": "experience",
+	"h.services.Files.Delete": "experience",
 	"h.services.SubscriptionQuota(h.credentialCipher, h.zeroMieruAccess).Update": "entitlements",
 	"h.services.Navigation.Save":                             "experience",
 	"entryMutations.Save":                                    "network",
@@ -140,6 +142,8 @@ var explicitModelOwners = map[string]string{
 	"TaskItem":                           "jobs",
 	"Ticket":                             "experience",
 	"TicketMessage":                      "experience",
+	"StoredFile":                         "experience",
+	"TicketAttachment":                   "experience",
 	"TrafficRecord":                      "metering",
 	"User":                               "identity",
 	"UserAPIToken":                       "identity",
@@ -203,6 +207,8 @@ var explicitRoutePrefixes = []struct {
 	Owner  string
 }{
 	{"/api/zero/events", "metering"},
+	{"/api/v1/files", "experience"},
+	{"/media", "experience"},
 	{"/api/v1/navigation", "experience"},
 	{"/api/v1/admin/menus", "experience"},
 	{"/api/v1/account/announcements", "experience"},

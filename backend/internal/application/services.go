@@ -69,6 +69,7 @@ type Services struct {
 	NetworkEntryProjection       entitlements.NetworkEntryProjection
 	Announcements                experience.Announcements
 	Tickets                      experience.Tickets
+	Files                        experience.Files
 	OrderQueries                 commerce.OrderQueries
 	OrderAssignment              commerce.OrderAssignment
 	OrderCancellation            commerce.OrderCancellation
@@ -153,6 +154,7 @@ func New(db *gorm.DB, secret string) *Services {
 	s.NetworkEntryProjection = entitlements.NetworkEntryProjection{Repository: entitlementstore.NetworkEntryProjection{DB: db}}
 	s.Announcements = experience.Announcements{Repository: experiencestore.Announcements{DB: db}}
 	s.Tickets = experience.Tickets{Repository: experiencestore.Tickets{DB: db}}
+	s.Files = experience.Files{Repository: experiencestore.Files{DB: db}}
 	s.OrderQueries = commerce.OrderQueries{Repository: commercestore.OrderQueries{DB: db}}
 	s.OrderAssignment = commerce.OrderAssignment{Repository: commercestore.OrderAssignment{DB: db}}
 	s.OrderCancellation = commerce.OrderCancellation{Repository: commercestore.OrderCancellation{DB: db}}

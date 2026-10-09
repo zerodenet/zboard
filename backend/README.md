@@ -2,6 +2,11 @@
 
 `backend/` stores all server-side capabilities of zboard.
 
+Native plugins implement signed, admitted public HTTP routes through the
+[`pluginapi/v1` request contract](pkg/pluginapi/v1/http.md). The route owner receives
+the original query, body, multi-value headers and connection metadata and owns
+parsing, authentication, signature verification and its business response.
+
 ## Start backend
 
 The example config intentionally contains no datasource, JWT secret, or credential-encryption key.
@@ -38,6 +43,66 @@ advertises a protocol minimum version.
 An rc.4-or-newer `native-local` artifact enables the same Mieru behavior
 automatically. The panel's stable `credential_id` is database metadata and is
 never serialized into Zero user configuration.
+
+## Local uploads and external URLs
+
+Site Logo, dark Logo and favicon accept external HTTP/HTTPS URLs or local image
+uploads. Uploading fills the image field; save the settings group to publish it.
+PNG, JPEG, GIF, WebP, ICO and non-active SVG are supported, up to 2 MiB each.
+
+New tickets and user/admin replies accept up to five attachments per message.
+Attach local images, PDF, UTF-8 TXT/LOG or ZIP files up to 5 MiB each, or add
+external HTTP/HTTPS links. External links are retained without server-side fetch.
+Local files are associated with the message in the same transaction; invalid,
+foreign or already-used references reject the entire message. Downloads verify
+current ticket ownership/admin status and use private no-store responses.
+
+`POST /api/v1/files` accepts multipart `file` and `purpose=site|ticket`; only
+administrators may upload public site images. Images use public `/media/{id}`
+URLs. Ticket files use authenticated `GET /api/v1/files/{id}` and never appear
+on the public image route. `DELETE /api/v1/files/{id}` removes unused uploads;
+files referenced by a ticket or current site setting cannot be deleted.
+Quotas are 100 MiB per uploader and 1 GiB overall. Draft attachments removed or
+discarded in the editor are deleted; submitted ticket evidence is retained.
+
+Set `file_storage_dir` or `ZBOARD_FILE_STORAGE_DIR` to a writable persistent
+directory (default `/var/lib/zboard/files`). Docker compositions bind
+`ZBOARD_FILE_HOST_DIR` (default `./files`) there; blue/green services share it.
+Backups/restores must include both the database metadata and this directory.
+For standalone development, a project-local directory can be configured. Reverse
+proxies must forward `/media/` and allow 6 MiB requests to `/api/v1/files`.
+
+## Protocol listen addresses
+
+Protocol service creation/editing exposes `listen_address` separately from the
+public subscription `address`. Use `0.0.0.0` for IPv4 wildcard listening, `::` for
+IPv6 wildcard listening, or a specific local IPv4/IPv6 address assigned to the VPS.
+IPv6 wildcard dual-stack behavior follows the node's OS socket configuration.
+Domains, ports, CIDRs and scoped IPv6 addresses are rejected.
+
+Old records and creates without the field retain `0.0.0.0`. Updates that omit it
+preserve the current bind; an explicitly empty value restores the legacy default.
+Changing it queues node runtime publication without changing client addresses,
+ports or credentials. The renderer brackets IPv6 in Zero's `listen.address` for
+compatibility with the current kernel's address/port joining. Bootstrap control
+listening remains local. Direct outbound address-family policy is independent.
+
+## Reality domain probing
+
+The VLESS Reality editor exposes **探测伪装域名** beside the SNI field.
+`POST /api/v1/admin/protocol-endpoints/reality-probe` accepts a selected `node_id`
+and up to 12 candidate `domains`; an empty list uses maintained candidates.
+It uses the node's verified SSH channel to make concurrent TLS handshakes to
+port 443, checking TLS 1.3, X25519, h2 ALPN and certificate/hostname verification.
+The VPS needs OpenSSL with TLS 1.3 and GNU coreutils (`timeout` and `date`).
+The operation runs without system privileges or software installation, with a
+five-second deadline per candidate and a twenty-second overall SSH deadline.
+
+Results contain the source node, sample time, candidate domain, status and elapsed
+milliseconds. Selecting a passing domain fills only the draft SNI and preserves
+key material. Static scenario templates remain available separately. The public
+node entrance address is not implicitly used as the Reality target. Probing does
+not save or publish configuration; client connectivity still requires validation.
 
 With an empty database the backend remains available in installation mode. Open the
 frontend `/setup` route to configure the site and first administrator. The database,

@@ -178,6 +178,15 @@ func applyRuntimeCertificate(protocol map[string]interface{}, protocolType strin
 }
 
 func (r RuntimeConfigurationRenderer) renderEndpoint(endpoint network.RuntimeConfigurationEndpoint, protocol map[string]interface{}, suppressMieruFallback bool) ([]map[string]interface{}, error) {
+	listenAddress, err := network.NormalizeProtocolListenAddress(endpoint.ListenAddress)
+	if err != nil {
+		return nil, err
+	}
+	// The current kernel joins listen.address and port as strings. Supply IPv6
+	// in brackets so it receives a valid socket address without kernel changes.
+	if strings.Contains(listenAddress, ":") {
+		listenAddress = "[" + listenAddress + "]"
+	}
 	credentials := endpoint.Credentials
 	if endpoint.ActiveSubscriptionCount > 0 && len(credentials) == 0 {
 		return nil, fmt.Errorf("protocol endpoint %d has %d active subscriptions but no active credentials after reconciliation", endpoint.ID, endpoint.ActiveSubscriptionCount)
@@ -188,7 +197,7 @@ func (r RuntimeConfigurationRenderer) renderEndpoint(endpoint network.RuntimeCon
 		if err := r.configureShadowsocks(protocol, credentials); err != nil {
 			return nil, err
 		}
-		return []map[string]interface{}{runtimeInbound(endpoint.ID, endpoint.Port, fmt.Sprintf("endpoint-%d", endpoint.ID), protocol)}, nil
+		return []map[string]interface{}{runtimeInbound(listenAddress, endpoint.Port, fmt.Sprintf("endpoint-%d", endpoint.ID), protocol)}, nil
 	case "vless", "vmess":
 		users := make([]interface{}, 0, len(credentials))
 		defaultCipher, defaultFlow := "aes-128-gcm", ""
@@ -220,7 +229,7 @@ func (r RuntimeConfigurationRenderer) renderEndpoint(endpoint network.RuntimeCon
 			users = append(users, user)
 		}
 		protocol["users"] = users
-		return []map[string]interface{}{runtimeInbound(endpoint.ID, endpoint.Port, fmt.Sprintf("endpoint-%d", endpoint.ID), protocol)}, nil
+		return []map[string]interface{}{runtimeInbound(listenAddress, endpoint.Port, fmt.Sprintf("endpoint-%d", endpoint.ID), protocol)}, nil
 	case "trojan", "hysteria2":
 		users := make([]interface{}, 0, len(credentials))
 		for _, credential := range credentials {
@@ -240,7 +249,7 @@ func (r RuntimeConfigurationRenderer) renderEndpoint(endpoint network.RuntimeCon
 		}
 		delete(protocol, "password")
 		protocol["users"] = users
-		return []map[string]interface{}{runtimeInbound(endpoint.ID, endpoint.Port, fmt.Sprintf("endpoint-%d", endpoint.ID), protocol)}, nil
+		return []map[string]interface{}{runtimeInbound(listenAddress, endpoint.Port, fmt.Sprintf("endpoint-%d", endpoint.ID), protocol)}, nil
 	case "mieru":
 		users := make([]interface{}, 0, len(credentials)+1)
 		for _, credential := range credentials {
@@ -265,9 +274,9 @@ func (r RuntimeConfigurationRenderer) renderEndpoint(endpoint network.RuntimeCon
 			return []map[string]interface{}{}, nil
 		}
 		protocol["users"] = users
-		return []map[string]interface{}{runtimeInbound(endpoint.ID, endpoint.Port, fmt.Sprintf("endpoint-%d", endpoint.ID), protocol)}, nil
+		return []map[string]interface{}{runtimeInbound(listenAddress, endpoint.Port, fmt.Sprintf("endpoint-%d", endpoint.ID), protocol)}, nil
 	default:
-		return []map[string]interface{}{runtimeInbound(endpoint.ID, endpoint.Port, fmt.Sprintf("endpoint-%d", endpoint.ID), protocol)}, nil
+		return []map[string]interface{}{runtimeInbound(listenAddress, endpoint.Port, fmt.Sprintf("endpoint-%d", endpoint.ID), protocol)}, nil
 	}
 }
 
@@ -359,8 +368,8 @@ func mieruEndpointPassword(protocol map[string]interface{}) string {
 	return strings.TrimSpace(password)
 }
 
-func runtimeInbound(_ uint, port int, tag string, protocol map[string]interface{}) map[string]interface{} {
-	return map[string]interface{}{"tag": tag, "listen": map[string]interface{}{"address": "0.0.0.0", "port": port}, "protocol": protocol}
+func runtimeInbound(address string, port int, tag string, protocol map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{"tag": tag, "listen": map[string]interface{}{"address": address, "port": port}, "protocol": protocol}
 }
 
 func BootstrapControlInbound() map[string]interface{} {

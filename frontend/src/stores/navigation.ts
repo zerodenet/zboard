@@ -4,9 +4,11 @@ import { useRoute } from 'vue-router'
 import { NAVIGATION_CHANGED } from '../utils/navigationEvents'
 import type { Surface } from '../api/plugins'
 import { useAppStore } from './app'
+import { normalizeApiErrorMessage } from '../utils/apiError'
 import { toAdminNavigation } from '../utils/adminNavigation'
 
-function state() { return { snapshot: shallowRef<NavigationSnapshot>({ revision: 0, nodes: [] }), error: ref(''), loading: ref(false), checkedPath: ref('') } }
+export type NavigationFailure = '' | 'session-expired' | 'forbidden' | 'network'
+function state() { return { snapshot: shallowRef<NavigationSnapshot>({ revision: 0, nodes: [] }), error: ref(''), failure: ref<NavigationFailure>(''), loading: ref(false), checkedPath: ref('') } }
 export const navigationState = { public: state(), account: state(), admin: state() }
 export const adminNavigation = computed(() => toAdminNavigation(navigationState.admin.snapshot.value.nodes))
 export { NAVIGATION_CHANGED } from '../utils/navigationEvents'
@@ -25,6 +27,7 @@ export function useNavigation(surface: Surface) {
   const current = navigationState[surface]
   current.snapshot.value = { revision: 0, nodes: [] }
   current.error.value = ''
+  current.failure.value = ''
   current.checkedPath.value = ''
   const ready = computed(() => current.checkedPath.value === route.path)
   const cachedPath = ref('')
@@ -49,9 +52,20 @@ export function useNavigation(surface: Surface) {
       current.checkedPath.value = path
       cachedPath.value = ''
       current.error.value = ''
+      current.failure.value = ''
     } catch (cause: any) {
       if (disposed || request !== sequence || controller?.signal.aborted) return
-      current.error.value = cause?.response?.data?.message || '菜单暂不可用，请重试'
+      const status = Number(cause?.response?.status)
+      current.failure.value = status === 401 ? 'session-expired' : status === 403 ? 'forbidden' : 'network'
+      if (status === 401 || status === 403) {
+        // A previous approval cannot outlive an explicit access denial.
+        current.snapshot.value = { revision: 0, nodes: [] }
+        current.checkedPath.value = ''
+        cachedPath.value = ''
+      }
+      current.error.value = status === 401 ? '登录已过期，请重新登录。'
+        : status === 403 ? '访问授权已失效或当前账户没有权限。'
+        : normalizeApiErrorMessage(cause, '连接暂时中断，请检查网络后重试。')
     } finally { if (request === sequence) current.loading.value = false }
   }
   function refresh() { if (!document.hidden) void load() }
@@ -61,6 +75,7 @@ export function useNavigation(surface: Surface) {
     approvedTransitionPath = ''
     current.snapshot.value = { revision: 0, nodes: [] }
     current.error.value = ''
+    current.failure.value = ''
     current.checkedPath.value = ''
     cachedPath.value = ''
     refresh()
@@ -72,6 +87,7 @@ export function useNavigation(surface: Surface) {
     cachedPath.value = approved ? path : ''
     current.checkedPath.value = approved ? path : ''
     current.error.value = ''
+    current.failure.value = ''
     void load()
   }, { flush: 'sync' })
   onMounted(() => {

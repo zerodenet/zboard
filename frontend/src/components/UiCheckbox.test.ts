@@ -26,5 +26,6 @@ describe('UiCheckbox', () => {
     expect(control.attributes('aria-label')).toBe('选择当前页节点')
     expect(control.attributes('disabled')).toBeDefined()
     expect(control.attributes('aria-checked')).toBe('mixed')
+    wrapper.unmount()
   })
 })
