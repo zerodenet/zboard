@@ -48,7 +48,7 @@ paths:
                 allOf:
                   - {$ref: '#/components/schemas/ApiResponse'}
                   - {type: object, properties: {data: {$ref: '#/components/schemas/StoredFile'}}}
-        '400': {description: Invalid file, multipart body, size, format or quota}
+        '400': {description: "Invalid file, multipart body, size, format or quota"}
         '401': {description: Authentication required}
         '403': {description: Site images require administrator access}
         '503': {description: Upload capacity is temporarily full}
@@ -6490,7 +6490,7 @@ components:
         name: { type: string }
         protocol: { type: string }
         address: { type: string }
-        listen_address: { type: string, default: "0.0.0.0", description: Local IPv4 or IPv6 listen address, independent of the public subscription address. }
+        listen_address: { type: string, default: "0.0.0.0", description: "Local IPv4 or IPv6 listen address, independent of the public subscription address." }
         port: { type: integer, minimum: 1, maximum: 65535 }
         public_port: { type: integer, minimum: 1, maximum: 65535 }
         cipher: { type: integer }
@@ -8136,7 +8136,7 @@ components:
               server_name: { type: string }
               available: { type: boolean }
               status: { type: string, enum: [available, timeout, certificate, unsupported, unreachable] }
-              latency_ms: { type: integer, minimum: 0, description: DNS, TCP and TLS handshake elapsed time in milliseconds. }
+              latency_ms: { type: integer, minimum: 0, description: "DNS, TCP and TLS handshake elapsed time in milliseconds." }
     AccountProtocolLoadSnapshot:
       type: object
       required: [sampled_at, activity_window_seconds, items]
