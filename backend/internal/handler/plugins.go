@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -23,16 +24,22 @@ func (h *handlers) SetPluginManager(m *plugins.Manager) {
 }
 func pluginError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		writeCapabilityError(w, http.StatusGatewayTimeout, "plugin request timed out", "deadline_exceeded")
+	case errors.Is(err, plugins.ErrRateLimited):
+		writeCapabilityError(w, http.StatusTooManyRequests, err.Error(), "rate_limited")
+	case errors.Is(err, plugins.ErrInvalidSession):
+		writeCapabilityError(w, http.StatusForbidden, err.Error(), "session_expired")
 	case errors.Is(err, plugins.ErrPermission):
-		Forbidden(w, err.Error())
+		writeCapabilityError(w, http.StatusForbidden, err.Error(), "permission_denied")
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		NotFound(w)
 	case errors.Is(err, plugins.ErrConflict):
-		writeJSON(w, http.StatusConflict, err.Error(), nil)
+		writeCapabilityError(w, http.StatusConflict, err.Error(), "conflict")
 	case errors.Is(err, plugins.ErrUnavailable):
-		writeJSON(w, http.StatusServiceUnavailable, err.Error(), nil)
+		writeCapabilityError(w, http.StatusServiceUnavailable, err.Error(), "unavailable")
 	default:
-		BadRequest(w, err.Error())
+		writeCapabilityError(w, http.StatusBadRequest, err.Error(), "invalid_argument")
 	}
 }
 func pluginBody(w http.ResponseWriter, r *http.Request, out any) bool {
@@ -41,7 +48,7 @@ func pluginBody(w http.ResponseWriter, r *http.Request, out any) bool {
 		err = plugins.DecodeStrict(raw, out)
 	}
 	if err != nil {
-		BadRequest(w, "invalid or oversized plugin request")
+		writeCapabilityError(w, http.StatusBadRequest, "invalid or oversized plugin request", "invalid_argument")
 		return false
 	}
 	return true

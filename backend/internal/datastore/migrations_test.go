@@ -102,6 +102,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0029_subscription_alerts.up.sql",
 		"0030_protocol_endpoint_listen_address.up.sql",
 		"0031_files_and_ticket_attachments.up.sql",
+		"0032_order_creation_idempotency.up.sql",
 	}
 	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
@@ -138,6 +139,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0029_subscription_alerts.down.sql",
 		"0030_protocol_endpoint_listen_address.down.sql",
 		"0031_files_and_ticket_attachments.down.sql",
+		"0032_order_creation_idempotency.down.sql",
 	}
 	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)

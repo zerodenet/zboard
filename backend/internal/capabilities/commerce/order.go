@@ -3,6 +3,8 @@ package commerce
 import "time"
 
 type Order struct {
+	CreationKey                *string    `json:"-"`
+	CreationFingerprint        string     `json:"-"`
 	SubscriptionEndedAt        *time.Time `json:"subscription_ended_at,omitempty"`
 	SubscriptionEndReason      string     `json:"subscription_end_reason,omitempty"`
 	SubscriptionFinalFlowTotal int64      `json:"subscription_final_flow_total"`

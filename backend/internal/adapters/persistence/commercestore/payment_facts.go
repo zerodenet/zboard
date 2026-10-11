@@ -99,5 +99,8 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 		out.OrderID, out.Status = order.ID, order.Status
 		return nil
 	})
+	if uniqueViolation(err) {
+		return commerce.PaymentFactResult{}, commerce.ErrPaymentFactConflict
+	}
 	return out, err
 }

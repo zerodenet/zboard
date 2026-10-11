@@ -12,6 +12,7 @@ import (
 
 const MeteringReadCapability = "zboard.metering.read.v1"
 const CommerceOrdersReadCapability = "zboard.commerce.orders.read.v1"
+const CommercePaymentsWriteCapability = "zboard.commerce.payments.write.v1"
 
 // OperationCapability is the single mapping from catalog operations to exact
 // manifest grants for both page sessions and native host calls.
@@ -19,6 +20,8 @@ func OperationCapability(operation string) string {
 	switch operation {
 	case "metering.usage.query":
 		return MeteringReadCapability
+	case "commerce.payments.record":
+		return CommercePaymentsWriteCapability
 	case "commerce.orders.list":
 		return CommerceOrdersReadCapability
 	case "account.self.get":
@@ -66,6 +69,9 @@ type capabilityAdmissionWindow struct {
 func (a SessionAuthority) Resolve(ctx context.Context, c catalog.Credential, operation string) (catalog.Grant, error) {
 	if err := ctx.Err(); err != nil {
 		return catalog.Grant{}, err
+	}
+	if operation == "commerce.payments.record" {
+		return catalog.Grant{}, catalog.ErrDenied
 	}
 	requiredCapability := OperationCapability(operation)
 	if a.Manager == nil || c.Kind != "plugin_session" || a.UserID == 0 || requiredCapability == "" {

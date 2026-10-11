@@ -62,6 +62,8 @@ var slotSurfaces = map[string]string{
 	"auth.login.methods":            "public",
 	"account.security.identities":   "account",
 	"admin.user.identities":         "admin",
+	"account.checkout.payment":      "account",
+	"account.orders.payment":        "account",
 	"account.overview.cards":        "account",
 	"account.subscriptions.actions": "account",
 	"admin.user.actions":            "admin",
@@ -140,7 +142,7 @@ func (m Manifest) Validate() error {
 			PageCapability, ConfigCapability, ConfigReadCapability, ConfigWriteCapability,
 			IdentityCapability, StorageCapability, StorageReadCapability, StorageWriteCapability,
 			HTTPRouteCapability, AccountAssertionCapability, SubscriptionProjectionCapability, MessageProjectionCapability,
-			TaskCapability, MeteringReadCapability, CommerceOrdersReadCapability, DNSProviderCapability, CertificateProviderCapability,
+			TaskCapability, MeteringReadCapability, CommerceOrdersReadCapability, CommercePaymentsWriteCapability, DNSProviderCapability, CertificateProviderCapability,
 			AccountSelfReadCapability, AccountAdminReadCapability, SubscriptionReadCapability, SubscriptionConfigReadCapability, SubscriptionAdminReadCapability,
 			SubscriptionQuotaWriteCapability, SubscriptionTermWriteCapability, SubscriptionStatusWriteCapability,
 			MessageReadCapability, MessageAckCapability, UISlotCapability,
@@ -169,9 +171,12 @@ func (m Manifest) Validate() error {
 				accountPage = true
 			}
 		}
-		if !seen[PageCapability] || !accountPage {
-			return errors.New("commerce order read capability requires an account business page")
+		if !seen[PageCapability] || (!accountPage && !hasPaymentContribution(m)) {
+			return errors.New("commerce order read capability requires an account business page or payment contribution")
 		}
+	}
+	if seen[CommercePaymentsWriteCapability] && (m.Components.Server == nil || !seen[CommerceOrdersReadCapability] || !hasPaymentContribution(m)) {
+		return errors.New("payment facts require a native runtime, order read grant and payment contribution")
 	}
 	if len(m.Surfaces) > 3 || len(m.Contributions.Pages) > 24 || len(m.Contributions.Slots) > 24 || len(m.Contributions.HTTPRoutes) > 8 || len(m.Files) == 0 || len(m.Files) > 512 {
 		return errors.New("plugin contribution limits exceeded")

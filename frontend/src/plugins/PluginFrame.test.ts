@@ -255,3 +255,27 @@ describe("plugin iframe boundary", () => {
   });
 
 });
+
+describe('checkout slot boundary', () => {
+  it('supplies the host order selector and enables its own slot action without browser identity overrides', async () => {
+    mocks.revoke.mockResolvedValue({})
+    mocks.createSlot.mockResolvedValue({ ...session, purpose: 'slot', slot: 'account.checkout.payment' })
+    const slot = { id: 'checkout', surface: 'account' as const, slot: 'account.checkout.payment', title: 'Payment', entrypoint: 'ui/payment.html' }
+    const wrapper = mount(PluginFrame, { props: { pluginId: 'example.payment', surface: 'account', slot, checkout: { currency: 'CNY', order_id: 73 } } })
+    await flushPromises()
+    mocks.bridge.mockClear()
+    send(wrapper, 'checkout.context', { order_id: 999, actor_id: 999, currency: 'USD' })
+    await flushPromises()
+    expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), 'checkout.context', { order_id: 73 }, expect.any(AbortSignal))
+    mocks.bridge.mockClear()
+    send(wrapper, 'page.call', { action: 'provider.options', payload: {}, plugin_id: 'other', actor_id: 'forged' })
+    await flushPromises()
+    expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), 'page.call', { action: 'provider.options', payload: {} }, expect.any(AbortSignal))
+    mocks.bridge.mockClear()
+    send(wrapper, 'checkout.call', { order_id: 999, action: 'fake.pay' })
+    await flushPromises()
+    expect(mocks.bridge).not.toHaveBeenCalled()
+    expect(wrapper.get('iframe').attributes('sandbox')).toBe('allow-scripts')
+    wrapper.unmount()
+  })
+})

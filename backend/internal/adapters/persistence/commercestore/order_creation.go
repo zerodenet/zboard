@@ -2,6 +2,7 @@ package commercestore
 
 import (
 	"context"
+
 	"errors"
 	"time"
 
@@ -19,7 +20,7 @@ func (s OrderCreation) Create(ctx context.Context, buyer uint, request commerce.
 	var out model.Order
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		out, err = createOrderInTransaction(tx, buyer, request)
+		out, err = createOwnedOrder(tx, buyer, request)
 		return err
 	})
 	if err != nil {

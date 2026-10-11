@@ -930,7 +930,7 @@ paths:
   "/api/v1/plugin-ui/bridge":
     "post":
       "tags": ["plugins"]
-      "summary": "Invoke an explicitly allowed page or configuration operation"
+      "summary": "Invoke an explicitly allowed page, slot or configuration operation"
       parameters:
         - name: X-ZBoard-Account-Confirmation
           in: header
@@ -954,6 +954,8 @@ paths:
           "description": "Stale installation generation, configuration revision or catalog digest"
         "503":
           "description": "Plugin host lease lost or runtime unavailable"
+        "504":
+          "description": "error.code=deadline_exceeded; plugin action timed out"
       "security": [{}, {"bearerAuth": []}]
       "requestBody":
         "required": true
@@ -964,19 +966,24 @@ paths:
               "properties":
                 "type":
                   "type": "string"
-                  "enum": ["context.load", "config.load", "config.save", "config.test", "storage.get", "storage.put", "storage.delete", "identity.providers.list", "identity.bindings.list", "identity.login.start", "identity.bind.start", "identity.binding.unlink"]
+                  "enum": ["context.load", "capabilities.list", "capabilities.invoke", "page.call", "checkout.context", "checkout.call", "config.revision", "config.load", "config.save", "config.test", "storage.head", "storage.get", "storage.put", "storage.delete", "identity.providers.list", "identity.bindings.list", "identity.login.start", "identity.bind.start", "identity.binding.unlink"]
                 "revision":
                   "type": "integer"
                   "minimum": 0
                 "config":
                   "type": "object"
+                order_id: { type: integer, format: int64, minimum: 1, description: Owned order selector required by checkout.context and checkout.call. }
+                action: { type: string, pattern: "^[a-z0-9][a-z0-9.-]{0,63}$" }
+                payload: {}
+                operation: { type: string }
+                input: {}
                 key: {type: string, maxLength: 128}
                 value: {}
                 provider_id: {type: string, maxLength: 193}
                 identity_id: {type: string, maxLength: 64}
                 password: {type: string, format: password}
               "required": ["type"]
-      "description": "Storage methods require an administrator page session and host-admitted zboard.storage.v1. Identity methods require a declared identity slot and are always scoped to the session plugin; account targets are the actor and administrator targets are fixed when the slot session is created. context.load returns only the admitted page/slot context. Config methods require an administrator configuration session. No core commands, bearer tokens, SQL or node APIs are exposed."
+      "description": "Authenticated account/admin slot actions use page.call with host-owned actor and contribution identity. Payment slots additionally support checkout.context and checkout.call with a positive owned order_id; action names and payloads belong to the plugin. Browser payment-fact writes remain forbidden. Structured error.code distinguishes session_expired, permission_denied, invalid_argument, conflict, rate_limited, unavailable and deadline_exceeded. Storage methods require an administrator page session and host-admitted zboard.storage.v1. Identity methods require a declared identity slot and are always scoped to the session plugin; account targets are the actor and administrator targets are fixed when the slot session is created. context.load returns only the admitted page/slot context. Config methods require an administrator configuration session. No core commands, bearer tokens, SQL or node APIs are exposed."
     "parameters": [{"name": "X-Plugin-Session", "in": "header", "required": true, "schema": {"type": "string"}}]
   "/api/v1/plugin-assets/{token}/{part1}":
     "get":
@@ -3338,6 +3345,7 @@ paths:
       summary: List orders owned by the current user
       description: This self-service route remains user-scoped even when the current user also has administrator permission. The commerce capability rechecks the current active account; list queries select only summary fields and exclude raw payment callbacks and failure diagnostics. Use paged=true for the bounded account workbench contract. The legacy array remains available for existing callers.
       parameters:
+        - { name: id, in: query, schema: { type: integer, format: int64, minimum: 1 }, description: Exact optional order selector; ownership remains the current account. Unknown or foreign IDs produce an empty list. }
         - name: status
           in: query
           schema:
@@ -8267,6 +8275,12 @@ components:
       required:
         - plan_sku_id
       properties:
+        idempotency_key:
+          type: string
+          minLength: 8
+          maxLength: 80
+          pattern: "^[a-zA-Z0-9_-]{8,80}$"
+          description: Optional buyer-scoped creation intent. Identical retries recover the original order, including after SKU or price changes; different business input with the same key is rejected.
         plan_sku_id:
           type: integer
           format: int64

@@ -29,6 +29,7 @@
     {"name": "zboard.identity.provider.v1", "owner": "identity", "source": "internal/plugins/identity.go"},
     {"name": "zboard.task.v1", "owner": "jobs", "source": "internal/plugins/tasks.go"},
     {"name": "zboard.metering.read.v1", "owner": "metering", "source": "internal/plugins/capabilities.go"},
+    {"name": "zboard.commerce.payments.write.v1", "owner": "commerce", "source": "internal/plugins/capabilities.go"},
     {"name": "zboard.commerce.orders.read.v1", "owner": "commerce", "source": "internal/plugins/capabilities.go"},
     {"name": "zboard.dns.provider.v1", "owner": "network", "source": "internal/plugins/dns_provider.go"},
     {"name": "zboard.certificate.provider.v1", "owner": "network", "source": "internal/plugins/certificate_provider.go"},
@@ -81,7 +82,7 @@
       "name": "commerce.payments.record",
       "owner": "commerce",
       "source": "internal/application/commerce_catalog.go",
-      "plugin_capability": "",
+      "plugin_capability": "zboard.commerce.payments.write.v1",
       "external_http": true,
       "note": "Records a payment fact verified by an external integration; checkout, callbacks, signatures, and provider SDKs remain outside ZBoard."
     }

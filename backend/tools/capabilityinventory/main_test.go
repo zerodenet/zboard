@@ -241,9 +241,9 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 	}
 	want := map[string]int{
 		"plugin_rpc":               16,
-		"plugin_capability":        29,
+		"plugin_capability":        30,
 		"host_operation":           16,
-		"plugin_host_operation":    15,
+		"plugin_host_operation":    16,
 		"external_http_scope":      3,
 		"cross_domain_transaction": 10,
 	}

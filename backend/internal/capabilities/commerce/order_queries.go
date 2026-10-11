@@ -7,6 +7,7 @@ import (
 )
 
 type OrderQuery struct {
+	ID                        uint
 	UserID                    uint
 	Search, OrderType, Status string
 	From, To                  time.Time

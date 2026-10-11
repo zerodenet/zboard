@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	zeroadapter "github.com/zerodenet/zboard/backend/internal/adapters/zero"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/experience"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
@@ -32,10 +33,16 @@ type PluginSubscriptionProjector interface {
 type PluginHostServices struct {
 	services  *Services
 	projector PluginSubscriptionProjector
+	cipher    zeroadapter.Cipher
+	mieru     bool
 }
 
 func NewPluginHostServices(services *Services, projector PluginSubscriptionProjector) *PluginHostServices {
 	return &PluginHostServices{services: services, projector: projector}
+}
+
+func (s *PluginHostServices) SetCommerceExecution(cipher zeroadapter.Cipher, mieru bool) {
+	s.cipher, s.mieru = cipher, mieru
 }
 
 func (s *PluginHostServices) PluginPrincipal(_ context.Context, pluginID string, userID uint) (string, error) {
@@ -80,7 +87,7 @@ func (s *PluginHostServices) CallPluginHost(ctx context.Context, pluginID, capab
 	case plugins.AccountSelfReadCapability, plugins.AccountAdminReadCapability,
 		plugins.SubscriptionReadCapability, plugins.SubscriptionConfigReadCapability, plugins.SubscriptionAdminReadCapability,
 		plugins.SubscriptionQuotaWriteCapability, plugins.SubscriptionTermWriteCapability, plugins.SubscriptionStatusWriteCapability,
-		plugins.MessageReadCapability, plugins.MessageAckCapability:
+		plugins.MessageReadCapability, plugins.MessageAckCapability, plugins.CommerceOrdersReadCapability, plugins.CommercePaymentsWriteCapability:
 		return s.callBusinessCapability(ctx, pluginID, capability, operation, payload)
 	default:
 		return nil, pluginHostError("forbidden")
@@ -327,4 +334,16 @@ func projectPluginMessage(item experience.AnnouncementReadItem, includeBody bool
 
 func pluginHostError(code string) *pluginv1.HostCallError {
 	return &pluginv1.HostCallError{Code: code}
+}
+
+func (s *PluginHostServices) PluginActor(ctx context.Context, pluginID string, userID uint) (string, bool, error) {
+	account, err := s.services.Identity.Accounts.Me(ctx, identity.Principal{ID: userID})
+	if err != nil {
+		if errors.Is(err, identity.ErrUnavailable) {
+			return "", false, plugins.ErrPermission
+		}
+		return "", false, plugins.ErrUnavailable
+	}
+	token, err := s.principalToken(pluginID, userID)
+	return token, account.IsAdmin, err
 }

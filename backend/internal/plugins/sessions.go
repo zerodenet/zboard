@@ -168,6 +168,15 @@ func (m *Manager) session(token string) (Session, error) {
 	if s.Generation != v.Generation || !hasCapability(v, PageCapability) || (s.Purpose == "configuration" && !configCanRead(v) && !configCanWrite(v)) || v.State == "uninstalled" || (s.Purpose != "configuration" && (!v.Enabled || v.State != "active")) {
 		return Session{}, ErrInvalidSession
 	}
+	if s.Purpose == "slot" {
+		found := false
+		for _, c := range v.Manifest.Contributions.Slots {
+			found = found || (c.ID == s.SlotID && c.Slot == s.Slot && c.Surface == s.Surface && c.Entrypoint == s.Entrypoint)
+		}
+		if !found || !slotCapabilityAllowed(v, s.Slot) {
+			return Session{}, ErrInvalidSession
+		}
+	}
 	if s.Purpose == "business" {
 		visible, err := m.menuPageVisible(s.PluginID, s.PageID, s.Surface)
 		if err != nil {
@@ -250,6 +259,9 @@ func slotCapabilityAllowed(v Installation, name string) bool {
 	}
 	if identitySlots[name] {
 		return hasCapability(v, IdentityCapability)
+	}
+	if paymentSlot(name) {
+		return v.Manifest.Components.Server != nil && hasCapability(v, UISlotCapability) && hasCapability(v, CommerceOrdersReadCapability) && hasCapability(v, CommercePaymentsWriteCapability)
 	}
 	return hasCapability(v, UISlotCapability)
 }

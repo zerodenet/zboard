@@ -44,6 +44,9 @@ func (s OrderQueries) List(ctx context.Context, actor uint, admin bool, q commer
 		} else if q.UserID != 0 {
 			query = query.Where("orders.user_id = ?", q.UserID)
 		}
+		if q.ID != 0 {
+			query = query.Where("orders.id = ?", q.ID)
+		}
 		if admin && q.Search != "" {
 			pattern := "%" + strings.ToLower(q.Search) + "%"
 			condition := `LOWER(orders.trade_no) LIKE ? OR LOWER(COALESCE(orders.provider_trade_no, '')) LIKE ? OR LOWER(orders.plan_name) LIKE ? OR LOWER(orders.sku_name) LIKE ? OR LOWER(orders.channel) LIKE ? OR LOWER(users.email) LIKE ?`

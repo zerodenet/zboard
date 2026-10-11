@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/zerodenet/zboard/backend/internal/application"
 	"strconv"
 	"strings"
 	"time"
@@ -82,4 +83,8 @@ func pluginSubscriptionFormat(value string) (string, bool) {
 	value = normalizeSubscriptionRenderer(value)
 	_, ok := subscriptionRenderer(value)
 	return value, ok
+}
+
+func (h *handlers) ConfigureNativePluginHost(host *application.PluginHostServices) {
+	host.SetCommerceExecution(h.credentialCipher, h.zeroMieruAccess)
 }

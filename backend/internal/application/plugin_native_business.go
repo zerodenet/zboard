@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/catalog"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
@@ -26,7 +27,13 @@ func (a nativePluginAuthority) Admit(ctx context.Context, _ catalog.Credential, 
 		return catalog.ErrDenied
 	}
 	account, err := a.accounts.Me(ctx, identity.Principal{ID: grant.Principal.AccountID})
-	if err != nil || (grant.Administrative && !account.IsAdmin) {
+	if err != nil {
+		if errors.Is(err, identity.ErrUnavailable) {
+			return catalog.ErrDenied
+		}
+		return catalog.ErrUnavailable
+	}
+	if grant.Administrative && !account.IsAdmin {
 		return catalog.ErrDenied
 	}
 	return nil
@@ -44,9 +51,44 @@ func (s *PluginHostServices) callBusinessCapability(ctx context.Context, pluginI
 	if json.Unmarshal(input["principal_id"], &token) != nil || token == "" || len(token) > 256 {
 		return nil, pluginHostError("invalid_request")
 	}
-	userID, account, callErr := s.principal(ctx, pluginID, token)
-	if callErr != nil {
-		return nil, callErr
+	var userID uint
+	var account identity.PublicAccount
+	provider := ""
+	if strings.HasPrefix(token, "p2.") {
+		if capability != plugins.CommerceOrdersReadCapability && capability != plugins.CommercePaymentsWriteCapability {
+			return nil, pluginHostError("forbidden")
+		}
+		scoped, err := s.checkoutPrincipal(ctx, pluginID, token)
+		if err != nil {
+			if errors.Is(err, plugins.ErrPermission) {
+				return nil, pluginHostError("forbidden")
+			}
+			return nil, pluginHostError("temporary_unavailable")
+		}
+		userID = scoped.AccountID
+		account = identity.PublicAccount{ID: userID}
+		field := "id"
+		if operation == "commerce.payments.record" {
+			field = "order_id"
+		}
+		var selected uint
+		if value, exists := input[field]; exists && json.Unmarshal(value, &selected) != nil {
+			return nil, pluginHostError("invalid_request")
+		}
+		if selected != 0 && selected != scoped.OrderID {
+			return nil, pluginHostError("forbidden")
+		}
+		input[field], _ = json.Marshal(scoped.OrderID)
+		provider = scoped.Identity
+	} else {
+		if capability == plugins.CommercePaymentsWriteCapability {
+			return nil, pluginHostError("forbidden")
+		}
+		var callErr *pluginv1.HostCallError
+		userID, account, callErr = s.principal(ctx, pluginID, token)
+		if callErr != nil {
+			return nil, callErr
+		}
 	}
 	admin := plugins.IsAdministrativeOperation(operation)
 	if admin && !account.IsAdmin {
@@ -58,10 +100,13 @@ func (s *PluginHostServices) callBusinessCapability(ctx context.Context, pluginI
 		return nil, pluginHostError("invalid_request")
 	}
 	subject := sha256.Sum256([]byte(pluginID + "\x00" + token))
-	grant := catalog.Grant{Principal: catalog.Principal{Kind: "plugin_session", Subject: "plugin:" + hex.EncodeToString(subject[:]), AccountID: userID, PluginID: pluginID, Generation: 1}, Administrative: admin}
+	grant := catalog.Grant{Principal: catalog.Principal{Kind: "native_plugin", PaymentProvider: provider, Subject: "plugin:" + hex.EncodeToString(subject[:]), AccountID: userID, PluginID: pluginID, Generation: 1}, Administrative: admin}
 	authority := nativePluginAuthority{grant: grant, accounts: s.services.Identity.Accounts}
 	registry := catalog.New(authority, authority)
 	if err := s.services.RegisterPluginBusinessCapabilities(registry, s.projector); err != nil {
+		return nil, pluginHostError("temporary_unavailable")
+	}
+	if err := s.services.RegisterCommerceCapabilities(registry, s.cipher, s.mieru); err != nil {
 		return nil, pluginHostError("temporary_unavailable")
 	}
 	result, err := registry.Invoke(ctx, catalog.Credential{Kind: "native_plugin"}, operation, raw)
@@ -71,6 +116,12 @@ func (s *PluginHostServices) callBusinessCapability(ctx context.Context, pluginI
 			return nil, pluginHostError("forbidden")
 		case errors.Is(err, catalog.ErrInput):
 			return nil, pluginHostError("invalid_request")
+		case errors.Is(err, catalog.ErrRateLimited):
+			return nil, pluginHostError("rate_limited")
+		case errors.Is(err, context.DeadlineExceeded):
+			return nil, pluginHostError("deadline_exceeded")
+		case errors.Is(err, catalog.ErrUnknown):
+			return nil, pluginHostError("capability_unavailable")
 		case errors.Is(err, catalog.ErrConflict):
 			return nil, pluginHostError("conflict")
 		default:

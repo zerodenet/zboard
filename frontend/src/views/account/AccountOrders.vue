@@ -54,6 +54,7 @@
             <td><StatusBadge :tone="tone(item.status)">{{ label(item.status) }}</StatusBadge></td>
             <td data-column-priority="2"><TimeBadge :value="item.created_at" /></td>
             <td class="table-action-column">
+              <UiButton v-if="['pending', 'failed'].includes(item.status)" variant="secondary" size="sm" type="button" @click="openPayment(item.id)">支付</UiButton>
               <UiButton
                 v-if="item.status === 'pending'"
                 variant="danger"
@@ -85,11 +86,13 @@
       </template>
     </DataWorkbench>
 
+    <CheckoutPayment v-if="paymentOrder" name="account.orders.payment" :order-id="paymentOrder" currency="" :preferred-plugin="returnPlugin" :reconcile-on-load="Boolean(returnPlugin)" @paid="load" />
+
     <aside class="account-notice">
       <UiIcon name="clock" />
       <div>
-        <strong>当前采用人工确认流程</strong>
-        <p>订单创建后保持“待支付”状态，管理员确认收款后会自动生成订阅。用户端不会提供虚假的即时支付按钮。</p>
+        <strong>订单付款确认</strong>
+        <p>订单以本站核对后的状态为准。没有在线支付方式时，可联系管理员确认收款。</p>
       </div>
     </aside>
 
@@ -107,6 +110,7 @@
 </template>
 
 <script setup lang="ts">
+import CheckoutPayment from '../../plugins/CheckoutPayment.vue'
 import TableText from '../../components/TableText.vue'
 import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -130,6 +134,14 @@ import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/for
 
 const route = useRoute()
 const router = useRouter()
+const returnedOrder = Number(route.query.payment_order)
+const paymentOrder = ref(Number.isSafeInteger(returnedOrder) && returnedOrder > 0 ? returnedOrder : 0)
+const returnPlugin = ref(String(route.query.payment_plugin || ''))
+async function openPayment(id: number) {
+  paymentOrder.value = id
+  returnPlugin.value = ''
+  await router.replace({ query: { ...route.query, payment_order: String(id), payment_plugin: undefined } })
+}
 const allowedPageSizes = [25, 50, 100]
 const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 25)
@@ -221,6 +233,8 @@ async function doCancel() {
 }
 
 watch(() => route.fullPath, async () => {
+  const order = Number(route.query.payment_order)
+  if (Number.isSafeInteger(order) && order > 0) { paymentOrder.value = order; returnPlugin.value = String(route.query.payment_plugin || '') }
   const nextStatus = String(route.query.status || '')
   const rawLimit = Number(route.query.limit)
   const nextLimit = allowedPageSizes.includes(rawLimit) ? rawLimit : 25

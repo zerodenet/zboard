@@ -4,12 +4,41 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestOwnedOrderHTTPFilterPreservesAccountScope(t *testing.T) {
+	f := newOrderFixture(t)
+	own := f.create(t, 0)
+	f.create(t, 0)
+	buyer := assignmentBuyer(t, f)
+	other, err := f.h.services.OrderAssignment.Assign(t.Context(), 1, assignmentRequest(f, buyer.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var page struct {
+		Items []commerce.OrderListItem `json:"items"`
+		Total int64                    `json:"total"`
+	}
+	path := fmt.Sprintf("/api/v1/orders?paged=true&id=%d&limit=1", own.ID)
+	if code := f.get(t, path, f.h.OrderListHandler, &page); code != 200 || page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != own.ID {
+		t.Fatalf("exact owned lookup: %d %+v", code, page)
+	}
+	path = fmt.Sprintf("/api/v1/orders?paged=true&id=%d&user_id=%d&limit=1", other.ID, buyer.ID)
+	if code := f.get(t, path, f.h.OrderListHandler, &page); code != 200 || page.Total != 0 || len(page.Items) != 0 {
+		t.Fatalf("admin claim/forged owner broadened self-service: %d %+v", code, page)
+	}
+	for _, selector := range []string{"id=", "id=0", "id=-1", "id=abc", "id=18446744073709551616", "id=1&id=2"} {
+		if code := f.get(t, "/api/v1/orders?paged=true&"+selector, f.h.OrderListHandler, &page); code != 400 {
+			t.Fatalf("invalid selector %q: %d", selector, code)
+		}
+	}
+}
 
 func TestCommerceOrderQueriesScopePaginationAndDiagnostics(t *testing.T) {
 	f := newOrderFixture(t)

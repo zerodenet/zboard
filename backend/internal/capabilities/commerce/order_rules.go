@@ -3,6 +3,7 @@ package commerce
 import "strings"
 
 type OrderCreateRequest struct {
+	IdempotencyKey       string `json:"idempotency_key,omitempty"`
 	PlanSKUID            uint   `json:"plan_sku_id"`
 	OrderType            string `json:"order_type"` // Deprecated assertion; never overrides the derived operation.
 	TargetSubscriptionID uint   `json:"target_subscription_id"`

@@ -7,6 +7,22 @@ import AccountOrders from './AccountOrders.vue'
 vi.mock('../../api/client', () => ({ cancelOrder: vi.fn(), fetchAccountOrdersPage: vi.fn() }))
 
 describe('account order terminal subscription history', () => {
+  it('replaces the return order when a different payment is selected and clears the old plugin hint', async () => {
+    vi.mocked(fetchAccountOrdersPage).mockResolvedValue({
+      items: [{ id: 1, status: 'pending', created_at: '', amount_cents: 100, currency: 'CNY' }, { id: 2, status: 'pending', created_at: '', amount_cents: 100, currency: 'CNY' }],
+      total: 2, offset: 0, limit: 25,
+      page: { offset: 0, limit: 25, total: 2, next_cursor: null, previous_cursor: null }, aggregates: {}, facets: {},
+    } as any)
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/orders', component: AccountOrders }] })
+    await router.push('/account/orders?payment_order=1&payment_plugin=old.plugin'); await router.isReady()
+    const wrapper = mount(AccountOrders, { global: { plugins: [router], stubs: { CheckoutPayment: true } } }); await flushPromises()
+    await wrapper.findAll('button').filter(button => button.text() === '支付')[1].trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.query.payment_order).toBe('2')
+    expect(router.currentRoute.value.query.payment_plugin).toBeUndefined()
+    expect(wrapper.get('checkout-payment-stub').attributes('orderid')).toBe('2')
+    expect(wrapper.get('checkout-payment-stub').attributes('preferredplugin')).toBe('')
+    wrapper.unmount()
+  })
   it('shows the final service state after its instance has been cleaned', async () => {
     vi.mocked(fetchAccountOrdersPage).mockResolvedValue({
       items: [{

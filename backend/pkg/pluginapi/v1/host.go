@@ -17,6 +17,8 @@ import (
 const MaxHostCallBytes = 8 << 20
 
 const (
+	CommerceOrdersReadCapability      = "zboard.commerce.orders.read.v1"
+	CommercePaymentsWriteCapability   = "zboard.commerce.payments.write.v1"
 	ConfigReadCapability              = "zboard.config.read.v1"
 	ConfigWriteCapability             = "zboard.config.write.v1"
 	StorageReadCapability             = "zboard.storage.read.v1"
@@ -145,7 +147,7 @@ func HostClientFromEnvironment() (*HostClient, error) {
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 	}, MaxIdleConns: 2}
-	return &HostClient{client: &http.Client{Transport: transport, Timeout: 10 * time.Second}, token: token}, nil
+	return &HostClient{client: &http.Client{Transport: transport, Timeout: 35 * time.Second}, token: token}, nil
 }
 
 func (c *HostClient) Close() { c.client.CloseIdleConnections() }
@@ -173,9 +175,6 @@ func (c *HostClient) Call(ctx context.Context, capability, operation string, pay
 		return err
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("plugin host denied or unavailable (HTTP %d)", response.StatusCode)
-	}
 	raw, err = io.ReadAll(io.LimitReader(response.Body, MaxHostCallBytes+1))
 	if err != nil {
 		return err
@@ -185,10 +184,16 @@ func (c *HostClient) Call(ctx context.Context, capability, operation string, pay
 	}
 	var result HostCallResponse
 	if err := json.Unmarshal(raw, &result); err != nil {
+		if response.StatusCode != http.StatusOK {
+			return fmt.Errorf("plugin host denied or unavailable (HTTP %d)", response.StatusCode)
+		}
 		return err
 	}
 	if result.Error != nil {
 		return result.Error
+	}
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("plugin host denied or unavailable (HTTP %d)", response.StatusCode)
 	}
 	if out == nil {
 		return nil

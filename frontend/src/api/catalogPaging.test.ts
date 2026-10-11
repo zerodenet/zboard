@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchAccountSubscriptionsPage, fetchPlanCatalogPage, fetchPlanCatalogSKUs, fetchPlansPage, fetchTrafficSummary, fetchProtocolEndpointsPage, fetchProtocolEndpointSelection } from './client'
+import { fetchAccountOrder, fetchAccountOrdersPage, fetchAccountSubscriptionsPage, fetchPlanCatalogPage, fetchPlanCatalogSKUs, fetchPlansPage, fetchTrafficSummary, fetchProtocolEndpointsPage, fetchProtocolEndpointSelection } from './client'
 import { fetchTrafficTrends } from './readModels'
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }))
@@ -50,6 +50,23 @@ describe('catalog paging API contract', () => {
     await fetchAccountSubscriptionsPage({ subscriptionId: 201, eligibleFor: 'renew', offset: 0, limit: 1 })
     expect(Object.fromEntries(params())).toEqual({ paged: 'true', subscription_id: '201', eligible_for: 'renew', offset: '0', limit: '1' })
     expect(get.mock.calls.at(-1)![0]).toMatch(/^\/subscriptions\?/)
+  })
+  it('reads a host receipt through the bounded owned list independently of plugin sessions', async () => {
+    const signal = new AbortController().signal
+    get.mockResolvedValue({ data: { data: { items: [{ id: 73, status: 'paid' }], total: 1, offset: 0, limit: 1 } } })
+    expect((await fetchAccountOrder(73, { signal })).status).toBe('paid')
+    expect(Object.fromEntries(params())).toEqual({ paged: 'true', offset: '0', limit: '1', id: '73' })
+    expect(get.mock.calls.at(-1)![0]).toMatch(/^\/orders\?/)
+    expect(get.mock.calls.at(-1)![1].signal).toBe(signal)
+    for (const items of [[], [{ id: 74, status: 'paid' }], [{ id: 73, status: null }]]) {
+      get.mockResolvedValue({ data: { data: { items, total: items.length, offset: 0, limit: 1 } } })
+      await expect(fetchAccountOrder(73)).rejects.toThrow('订单不存在')
+    }
+    get.mockClear()
+    await expect(fetchAccountOrder(0)).rejects.toThrow('订单编号无效')
+    expect(get).not.toHaveBeenCalled()
+    await fetchAccountOrdersPage({ id: 9 })
+    expect(params().get('id')).toBe('9')
   })
   it('sends subscription search before pagination', async () => {
     await fetchAccountSubscriptionsPage({ q: 'Historical plan', offset: 100, limit: 25 })

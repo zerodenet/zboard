@@ -79,6 +79,7 @@
               </template>
             </dl>
           </section>
+          <CheckoutPayment name="account.checkout.payment" :key="checkoutIntent" :currency="selectedSKU.currency" :create-order="ensureOrder" :disabled="creating || quoteLoading || (needsQuote && !quote)" @paid="router.push('/account/orders')" />
         </div>
 
         <aside class="purchase-checkout__summary">
@@ -276,6 +277,9 @@
 </template>
 
 <script setup lang="ts">
+import CheckoutPayment from '../../plugins/CheckoutPayment.vue'
+import { ensureCheckoutOrder, restoreCheckoutIntent, newCheckoutIntent } from '../../composables/checkoutOrder'
+import { useAppStore } from '../../stores/app'
 import TimeBadge from '../../components/TimeBadge.vue'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -306,6 +310,8 @@ const operationOptions = [
 ]
 const orderTypeByOperation = { purchase: 'new', renew: 'renewal', change: 'upgrade', addon: 'traffic_pack', reset: 'traffic_reset' }
 const route = useRoute(), router = useRouter()
+const app = useAppStore()
+const checkoutIntent = computed(() => String(route.query.checkout_intent || restoreCheckoutIntent(localStorage, `zboard-checkout-active:${app.user.id}:${operation.value}:${selectedSKU.value?.id || 0}:${targetSubscriptionID.value}`)))
 const operation = ref<PurchaseOperation>('purchase')
 const targetSubscriptionID = ref(0)
 const planOffset = ref(0), planLimit = ref(9)
@@ -462,7 +468,7 @@ async function changeSKUPage(value: { offset: number; limit: number }) {
   if (await detail.changePage(value)) await detailURL()
 }
 async function retryDetail() { if (await detail.retry()) await detailURL() }
-function openCheckout() { if (selectedSKU.value && (!needsQuote.value || quote.value)) return detailURL('checkout') }
+async function openCheckout() { if (selectedSKU.value && (!needsQuote.value || quote.value)) { await detailURL('checkout'); await router.replace({ query: { ...route.query, checkout_intent: newCheckoutIntent() } }) } }
 function backToDetail() { return detailURL() }
 
 // Route transitions have their own generation: a late target lookup cannot
@@ -526,6 +532,11 @@ async function applyRoute(force = false) {
 function refreshAll() { actionError.value = ''; return applyRoute(true) }
 watch(() => route.fullPath, () => { void applyRoute() }, { immediate: true })
 
+async function ensureOrder(): Promise<number> {
+  if (!app.user.id || !selectedSKU.value || (needsQuote.value && !quote.value) || (operation.value !== 'purchase' && !selectedSubscription.value)) throw new Error('请确认规格、目标订阅和报价。')
+  const request = { skuId: selectedSKU.value.id, orderType: orderTypeByOperation[operation.value], targetSubscriptionId: operation.value === 'purchase' ? undefined : selectedSubscription.value?.id, quoteFingerprint: needsQuote.value ? quote.value?.quote_fingerprint : undefined }
+  return ensureCheckoutOrder(localStorage, `zboard-checkout:${app.user.id}:${checkoutIntent.value}`, request, (saved, key) => { const { skuId, ...options } = saved; return createOrder(skuId, { ...options, idempotencyKey: key }) })
+}
 async function submitOrder() {
   if (creating.value || !selectedPlan.value || !selectedSKU.value || (needsQuote.value && !quote.value)) return
   if (operation.value !== 'purchase' && !selectedSubscription.value) {
@@ -535,11 +546,7 @@ async function submitOrder() {
   creating.value = true
   checkoutError.value = ''
   try {
-    await createOrder(selectedSKU.value.id, {
-      orderType: orderTypeByOperation[operation.value],
-      targetSubscriptionId: operation.value === 'purchase' ? undefined : selectedSubscription.value?.id,
-      quoteFingerprint: needsQuote.value ? quote.value?.quote_fingerprint : undefined,
-    })
+    await ensureOrder()
     await router.push('/account/orders')
   } catch (cause: any) {
     checkoutError.value = commerceErrorMessage(cause, '订单创建失败，请检查当前套餐和规格是否仍可购买。')

@@ -234,7 +234,7 @@ export const pluginBridge = (
     .post(
       "/plugin-ui/bridge",
       { ...payload, type },
-      { headers: { "X-Plugin-Session": session.token, ...(confirmation ? { "X-ZBoard-Account-Confirmation": confirmation } : {}) }, signal },
+      { timeout: 35_000, headers: { "X-Plugin-Session": session.token, ...(confirmation ? { "X-ZBoard-Account-Confirmation": confirmation } : {}) }, signal },
     )
     .then(data<Record<string, unknown>>);
 export const pluginPagePath = (surface: Surface, id: string, page: string) =>

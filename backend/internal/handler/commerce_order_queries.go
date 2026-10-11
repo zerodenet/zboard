@@ -25,6 +25,18 @@ func (h *handlers) OrderListHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	q := commerce.OrderQuery{Status: r.URL.Query().Get("status"), LegacyArray: !wantsPagedList(r)}
+	if values, present := r.URL.Query()["id"]; present {
+		if len(values) != 1 {
+			BadRequest(w, "invalid id")
+			return
+		}
+		id, parseErr := strconv.ParseUint(values[0], 10, strconv.IntSize)
+		if parseErr != nil || id == 0 {
+			BadRequest(w, "invalid id")
+			return
+		}
+		q.ID = uint(id)
+	}
 	if admin {
 		if value := strings.TrimSpace(r.URL.Query().Get("user_id")); value != "" {
 			id, e := strconv.ParseUint(value, 10, 64)

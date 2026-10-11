@@ -109,14 +109,11 @@ func (h *handlers) PluginBridgeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := h.pluginManager.CheckSession(r.Header.Get("X-Plugin-Session"), c.UserID, c.IsAdmin)
 	if err != nil {
-		if errors.Is(err, plugins.ErrInvalidSession) {
-			Forbidden(w, "invalid plugin session")
-		} else {
-			pluginError(w, err)
-		}
+		pluginError(w, err)
 		return
 	}
 	var body struct {
+		OrderID    uint            `json:"order_id"`
 		Type       string          `json:"type"`
 		Operation  string          `json:"operation"`
 		Input      json.RawMessage `json:"input"`
@@ -195,6 +192,24 @@ func (h *handlers) PluginBridgeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(body.Type, "storage.") {
 		result, err := h.pluginManager.SessionStorage(r.Header.Get("X-Plugin-Session"), c.UserID, c.IsAdmin, plugins.StorageRequest{Type: body.Type, Key: body.Key, Revision: body.Revision, Value: body.Value})
+		if err != nil {
+			pluginError(w, err)
+			return
+		}
+		OK(w, result)
+		return
+	}
+	if body.Type == "checkout.context" {
+		result, err := h.pluginManager.CheckoutContext(r.Context(), r.Header.Get("X-Plugin-Session"), c.UserID, c.IsAdmin, body.OrderID)
+		if err != nil {
+			pluginError(w, err)
+			return
+		}
+		OK(w, result)
+		return
+	}
+	if body.Type == "checkout.call" {
+		result, err := h.pluginManager.SessionCheckoutAction(r.Context(), r.Header.Get("X-Plugin-Session"), c.UserID, c.IsAdmin, body.OrderID, body.Action, body.Payload)
 		if err != nil {
 			pluginError(w, err)
 			return

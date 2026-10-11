@@ -1,0 +1,151 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent, onMounted } from 'vue'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import CheckoutPayment from './CheckoutPayment.vue'
+const mocks = vi.hoisted(() => ({ slots: vi.fn(), action: vi.fn(), context: vi.fn(), order: vi.fn() }))
+vi.mock('../api/plugins', () => ({ fetchPluginSlots: mocks.slots }))
+vi.mock('../api/client', () => ({ fetchAccountOrder: mocks.order }))
+const slot = (id: string) => ({ plugin_id: id, generation: 1, slot: { id: 'checkout', slot: 'account.checkout.payment', title: id, surface: 'account', entrypoint: 'ui/pay.html' } })
+const Frame = defineComponent({
+  props: ['pluginId'], emits: ['checkoutOptions', 'unavailable'],
+  setup(props, { emit, expose }) {
+    expose({ checkoutAction: mocks.action, checkoutContext: mocks.context })
+    onMounted(() => emit('checkoutOptions', [{ id: 'option', title: `Pay ${props.pluginId}`, prepare_action: 'pay.prepare', reconcile_action: 'pay.reconcile', disabled: props.pluginId === 'unavailable' }]))
+    return () => null
+  },
+})
+const open = (props = {}) => mount(CheckoutPayment, { props: { name: 'account.checkout.payment', currency: 'CNY', ...props }, global: { stubs: { PluginFrame: Frame } } })
+describe('payment contributions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    mocks.slots.mockResolvedValue([slot('plugin.one'), slot('plugin.two')])
+    mocks.action.mockResolvedValue({ checkout_url: 'https://cashier.example/pay', status: 'paid' })
+    mocks.context.mockResolvedValue({ status: 'pending' })
+    mocks.order.mockImplementation(async id => ({ id, status: 'pending', payable_amount: 100, currency: 'CNY' }))
+  })
+  it('discovers multiple plugins asynchronously and retries discovery locally', async () => {
+    mocks.slots.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = open()
+    await flushPromises()
+    expect(wrapper.text()).toContain('支付方式加载失败')
+    await wrapper.findAll('button')[0].trigger('click'); await flushPromises()
+    expect(wrapper.findAll('input[type=radio]')).toHaveLength(2)
+    expect(wrapper.text()).toContain('plugin.one')
+    expect(wrapper.text()).toContain('plugin.two')
+    wrapper.unmount()
+  })
+  it('rejects unavailable options and coalesces clicks while keeping the same order for retries', async () => {
+    let done!: (order: number) => void
+    const create = vi.fn(() => new Promise<number>(resolve => { done = resolve }))
+    const popup = { closed: false, opener: null, close: vi.fn(), location: { replace: vi.fn() } }
+    vi.spyOn(window, 'open').mockReturnValue(popup as any)
+    const wrapper = open({ createOrder: create })
+    await flushPromises()
+    const pay = wrapper.findAll('button').find(button => button.text() === '前往支付')!
+    await pay.trigger('click'); await pay.trigger('click')
+    expect(create).toHaveBeenCalledOnce()
+    expect(window.open).toHaveBeenCalledTimes(1)
+    done(19); await flushPromises()
+    expect(mocks.action).toHaveBeenCalledWith(19, 'pay.prepare', { option_id: 'option' })
+    await wrapper.findAll('button').find(button => button.text() === '重新打开支付窗口')!.trigger('click'); await flushPromises()
+    expect(create).toHaveBeenCalledOnce()
+    expect(mocks.action).toHaveBeenLastCalledWith(19, 'pay.prepare', { option_id: 'option' })
+    wrapper.unmount(); vi.restoreAllMocks()
+    mocks.slots.mockResolvedValue([slot('unavailable')])
+    const unavailable = open({ orderId: 19 }); await flushPromises()
+    expect(unavailable.find('input').attributes('disabled')).toBeDefined()
+    expect(unavailable.findAll('button').find(button => button.text() === '前往支付')!.attributes('disabled')).toBeDefined()
+    unavailable.unmount()
+  })
+  it('return reconciliation uses the owning plugin and only host order status proves success', async () => {
+    const wrapper = open({ name: 'account.orders.payment', orderId: 33, preferredPlugin: 'plugin.two', reconcileOnLoad: true })
+    await flushPromises()
+    expect(mocks.action).toHaveBeenCalledWith(33, 'pay.reconcile', { option_id: 'option' })
+    expect(wrapper.emitted('paid')).toBeUndefined()
+    expect(wrapper.text()).toContain('尚未确认到账')
+    mocks.order.mockImplementation(async id => ({ id, status: 'paid', payable_amount: 100, currency: 'CNY' }))
+    await wrapper.findAll('button').find(button => button.text() === '已支付，确认')!.trigger('click'); await flushPromises()
+    expect(wrapper.emitted('paid')).toEqual([[33]])
+    wrapper.unmount()
+  })
+  it('restores the payment method for an existing order without creating a new order', async () => {
+    localStorage.setItem('zboard-payment-choice:44', JSON.stringify({ plugin: 'plugin.two', option: 'option' }))
+    const create = vi.fn()
+    const popup = { closed: false, opener: null, close: vi.fn(), location: { replace: vi.fn() } }
+    vi.spyOn(window, 'open').mockReturnValue(popup as any)
+    const wrapper = open({ orderId: 44, createOrder: create }); await flushPromises()
+    expect(wrapper.findAll('input')[1].element.checked).toBe(true)
+    await wrapper.findAll('button').find(button => button.text() === '前往支付')!.trigger('click'); await flushPromises()
+    expect(create).not.toHaveBeenCalled()
+    expect(mocks.action).toHaveBeenCalledWith(44, 'pay.prepare', { option_id: 'option' })
+    expect(popup.location.replace).toHaveBeenCalledWith('https://cashier.example/pay')
+    wrapper.unmount(); vi.restoreAllMocks()
+  })
+  it('discards a pending preparation when the user switches orders and closes its blank window', async () => {
+    let context!: (value: any) => void
+    const popup = { closed: false, opener: null, close: vi.fn(), location: { replace: vi.fn() } }
+    vi.spyOn(window, 'open').mockReturnValue(popup as any)
+    const wrapper = open({ orderId: 44 }); await flushPromises()
+    mocks.order.mockImplementationOnce(() => new Promise(resolve => { context = resolve }))
+    await wrapper.findAll('button').find(button => button.text() === '前往支付')!.trigger('click')
+    await wrapper.setProps({ orderId: 45 }); await flushPromises()
+    context({ status: 'paid' }); await flushPromises()
+    expect(mocks.action).not.toHaveBeenCalled()
+    expect(wrapper.emitted('paid')).toBeUndefined()
+    expect(wrapper.text()).toContain('订单 #45')
+    expect(popup.close).toHaveBeenCalledOnce()
+    expect(popup.location.replace).not.toHaveBeenCalled()
+    wrapper.unmount(); vi.restoreAllMocks()
+  })
+  it('reads host settlement after a lost plugin response instead of displaying a payment failure', async () => {
+    const wrapper = open({ orderId: 51 }); await flushPromises()
+    mocks.action.mockImplementationOnce(async () => {
+      mocks.order.mockImplementation(async id => ({ id, status: 'paid', payable_amount: 100, currency: 'CNY' }))
+      throw new Error('response lost')
+    })
+    await wrapper.findAll('button').find(button => button.text() === '已支付，确认')!.trigger('click'); await flushPromises()
+    expect(wrapper.emitted('paid')).toEqual([[51]])
+    expect(wrapper.text()).toContain('ZBoard 已确认订单完成')
+    expect(wrapper.text()).not.toContain('response lost')
+    wrapper.unmount()
+  })
+  it('can confirm a host receipt after all payment contributions are unavailable', async () => {
+    mocks.slots.mockResolvedValue([])
+    const wrapper = open({ orderId: 52 }); await flushPromises()
+    mocks.order.mockImplementation(async id => ({ id, status: 'paid', payable_amount: 100, currency: 'CNY' }))
+    await wrapper.findAll('button').find(button => button.text() === '已支付，确认')!.trigger('click'); await flushPromises()
+    expect(mocks.action).not.toHaveBeenCalled()
+    expect(wrapper.emitted('paid')).toEqual([[52]])
+    wrapper.unmount()
+  })
+  it('keeps the saved disabled method available for historical reconciliation only', async () => {
+    localStorage.setItem('zboard-payment-choice:53', JSON.stringify({ plugin: 'unavailable', option: 'option' }))
+    mocks.slots.mockResolvedValue([slot('unavailable')])
+    const wrapper = open({ orderId: 53 }); await flushPromises()
+    const pay = wrapper.findAll('button').find(button => button.text() === '前往支付')!
+    expect(pay.attributes('disabled')).toBeDefined()
+    await pay.trigger('click'); expect(mocks.action).not.toHaveBeenCalled()
+    await wrapper.findAll('button').find(button => button.text() === '已支付，确认')!.trigger('click'); await flushPromises()
+    expect(mocks.action).toHaveBeenCalledWith(53, 'pay.reconcile', { option_id: 'option' })
+    expect(wrapper.emitted('paid')).toBeUndefined()
+    wrapper.unmount()
+  })
+  it('does not accept a claimed paid response when the host read fails', async () => {
+    const wrapper = open({ orderId: 54 }); await flushPromises()
+    mocks.action.mockImplementationOnce(async () => { mocks.order.mockRejectedValue(new Error('host offline')); return { status: 'paid' } })
+    await wrapper.findAll('button').find(button => button.text() === '已支付，确认')!.trigger('click'); await flushPromises()
+    expect(wrapper.emitted('paid')).toBeUndefined()
+    expect(wrapper.text()).toContain('host offline')
+    wrapper.unmount()
+  })
+  it('will not open payment for a canceled host order', async () => {
+    mocks.order.mockImplementation(async id => ({ id, status: 'canceled', payable_amount: 100, currency: 'CNY' }))
+    const popup = vi.spyOn(window, 'open')
+    const wrapper = open({ orderId: 55 }); await flushPromises()
+    expect(wrapper.findAll('button').find(button => button.text() === '前往支付')!.attributes('disabled')).toBeDefined()
+    expect(popup).not.toHaveBeenCalled()
+    expect(mocks.action).not.toHaveBeenCalled()
+    wrapper.unmount(); vi.restoreAllMocks()
+  })
+})

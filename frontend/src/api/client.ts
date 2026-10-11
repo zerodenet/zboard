@@ -1447,12 +1447,21 @@ export async function fetchOrdersPage(params: { q?: string; status?: string; ord
   return normalizePageResult<AdminOrderListItem>(unwrap(response), params.offset || 0, params.limit || 50)
 }
 
-export async function fetchAccountOrdersPage(params: { status?: string; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminOrderListItem>> {
+export async function fetchAccountOrdersPage(params: { id?: number; status?: string; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminOrderListItem>> {
   const query = new URLSearchParams()
   appendPageParams(query, params)
+  if (params.id !== undefined) query.set('id', String(params.id))
   if (params.status) query.set('status', params.status)
   const response = await api.get(`/orders?${query}`, { signal: options.signal })
   return normalizePageResult<AdminOrderListItem>(unwrap(response), params.offset || 0, params.limit || 25)
+}
+
+export async function fetchAccountOrder(id: number, options: ApiRequestOptions = {}): Promise<AdminOrderListItem> {
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('订单编号无效。')
+  const page = await fetchAccountOrdersPage({ id, offset: 0, limit: 1 }, options)
+  const order = page.items[0]
+  if (page.items.length !== 1 || order?.id !== id || typeof order.status !== 'string') throw new Error('订单不存在或当前账户无权查看。')
+  return order
 }
 
 export async function fetchAdminOrderDetail(id: number, options: ApiRequestOptions = {}): Promise<AdminOrderDetail> {
@@ -1491,13 +1500,14 @@ export async function previewOrder(planSkuId: number, targetSubscriptionId: numb
   return unwrap(response)
 }
 
-export async function createOrder(planSkuId: number, options: { channel?: string; orderType?: string; targetSubscriptionId?: number; quoteFingerprint?: string } = {}) {
+export async function createOrder(planSkuId: number, options: { channel?: string; orderType?: string; targetSubscriptionId?: number; quoteFingerprint?: string; idempotencyKey?: string } = {}) {
 	const response = await api.post('/orders', {
 		plan_sku_id: planSkuId,
 		channel: options.channel || 'manual',
 		order_type: options.orderType || 'new',
 		target_subscription_id: options.targetSubscriptionId || undefined,
-    quote_fingerprint: options.quoteFingerprint || undefined
+    quote_fingerprint: options.quoteFingerprint || undefined,
+    idempotency_key: options.idempotencyKey || undefined
 	})
   return unwrap(response)
 }

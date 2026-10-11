@@ -336,7 +336,9 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	}
 	h.SetPluginManager(pluginManager)
 	if pluginManager != nil {
-		pluginManager.SetHostServices(application.NewPluginHostServices(services, h))
+		hostServices := application.NewPluginHostServices(services, h)
+		h.ConfigureNativePluginHost(hostServices)
+		pluginManager.SetHostServices(hostServices)
 	}
 	pluginRoute := func(method, path string, fn http.HandlerFunc) rest.Route {
 		return newRoute(method, path, h.PluginGuard(fn))

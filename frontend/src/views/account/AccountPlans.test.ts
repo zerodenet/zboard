@@ -7,6 +7,7 @@ import CommercePlanCard from '../../components/CommercePlanCard.vue'
 import TablePager from '../../components/TablePager.vue'
 import AccountPlans from './AccountPlans.vue'
 
+vi.mock('../../stores/app', () => ({ useAppStore: () => ({ user: { id: 1 } }) }))
 vi.mock('../../api/client', () => ({
   previewOrder: vi.fn(), createOrder: vi.fn(), fetchAccountSubscriptionsPage: vi.fn(),
   fetchPlanCatalogItem: vi.fn(), fetchPlanCatalogPage: vi.fn(), fetchPlanCatalogSKUs: vi.fn(),
@@ -30,6 +31,8 @@ describe('account catalog bounded reads and route isolation', () => {
   let router: Router
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
+    vi.mocked(createOrder).mockResolvedValue({ id: 71 })
     vi.mocked(previewOrder).mockResolvedValue({ order_type: 'upgrade', amount_cents: 1500, credit_amount: 1000, payable_amount: 500, currency: 'CNY', time_credit: 1000, traffic_credit: 1000, traffic_bytes: 150 * 1024 ** 3, used_bytes: 0, end_at: '2027-01-01T00:00:00Z', quote_fingerprint: 'quote-token' })
     vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId
       ? page([subscription(params.subscriptionId)]) : page([subscription(105)], 105, params?.offset, params?.limit))
@@ -48,7 +51,7 @@ describe('account catalog bounded reads and route isolation', () => {
     ] })
     await router.push(path)
     await router.isReady()
-    wrapper = mount(AccountPlans, { global: { plugins: [router], stubs: { CommercePlanDetail: true } } })
+    wrapper = mount(AccountPlans, { global: { plugins: [router], stubs: { CommercePlanDetail: true, CheckoutPayment: true } } })
     await flushPromises()
   }
   it('renders nine cards with two reads and no per-card SKU request', async () => {
@@ -94,7 +97,7 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(createOrder).not.toHaveBeenCalled()
     await wrapper!.findAll('button').find(item => item.text() === '确认创建订单')!.trigger('click')
     await flushPromises()
-    expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'upgrade', targetSubscriptionId: 105, quoteFingerprint: 'exhausted-change' })
+    expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'upgrade', targetSubscriptionId: 105, quoteFingerprint: 'exhausted-change', idempotencyKey: expect.any(String) })
   })
   it('hides an empty management section while keeping the purchase catalog', async () => {
     vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([]))
@@ -201,7 +204,7 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('原套餐抵扣')
     await wrapper!.findAll('button').find(item => item.text() === '确认创建订单')!.trigger('click')
     await flushPromises()
-    expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'upgrade', targetSubscriptionId: 1, quoteFingerprint: 'quote-token' })
+    expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'upgrade', targetSubscriptionId: 1, quoteFingerprint: 'quote-token', idempotencyKey: expect.any(String) })
     expect(router.currentRoute.value.path).toBe('/account/orders')
   })
   it('offers reset for an exhausted timed subscription and uses its reset SKU', async () => {
@@ -221,7 +224,7 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(wrapper!.text()).toContain('保持不变')
     await wrapper!.findAll('button').find(item => item.text() === '确认创建订单')!.trigger('click')
     await flushPromises()
-    expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'traffic_reset', targetSubscriptionId: 105, quoteFingerprint: 'reset-token' })
+    expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'traffic_reset', targetSubscriptionId: 105, quoteFingerprint: 'reset-token', idempotencyKey: expect.any(String) })
   })
   it('ignores a late quote after returning to the overview', async () => {
     const late = deferred<any>()

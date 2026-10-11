@@ -116,6 +116,8 @@ type Subscription struct {
 }
 
 type Order struct {
+	CreationKey                *string    `json:"-" gorm:"size:64;uniqueIndex"`
+	CreationFingerprint        string     `json:"-" gorm:"size:64;not null;default:''"`
 	SubscriptionEndedAt        *time.Time `json:"subscription_ended_at,omitempty"`
 	SubscriptionEndReason      string     `json:"subscription_end_reason,omitempty" gorm:"size:20;not null;default:''"`
 	SubscriptionFinalFlowTotal int64      `json:"subscription_final_flow_total" gorm:"not null;default:0"`

@@ -32,6 +32,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { paymentSlots, paymentOptions, type PaymentOption } from "./checkout";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { accountConfirmation, clearAccountConfirmation, confirmAccountPassword } from "../api/accountSecurity";
 import UiButton from "../components/UiButton.vue";
@@ -54,8 +55,9 @@ const props = defineProps<{
   configuration?: boolean;
   title?: string;
   optional?: boolean;
+  checkout?: { currency: string; order_id?: number };
 }>();
-const emit = defineEmits<{ ready: [] }>();
+const emit = defineEmits<{ ready: []; checkoutOptions: [options: PaymentOption[]]; unavailable: [] }>();
 const app = useAppStore();
 const frame = ref<HTMLIFrameElement | null>(null),
   session = ref<PluginSession | null>(null),
@@ -106,6 +108,7 @@ function cancelPasswordConfirmation() {
   reject?.(new Error("confirmation cancelled"));
 }
 function clear() {
+  emit("unavailable");
   if (slotResizeTimer) clearTimeout(slotResizeTimer);
   slotResizeTimer = undefined;
   if (passwordConfirmation.value) cancelPasswordConfirmation();
@@ -180,6 +183,11 @@ async function receive(event: MessageEvent) {
     return;
   }
   if (message.type === "plugin.ready") return;
+  if (message.type === "checkout.options" && props.slot && paymentSlots.includes(props.slot.slot)) {
+    try { emit("checkoutOptions", paymentOptions(message.options)); revealSlot(); }
+    catch { emit("unavailable"); }
+    return;
+  }
   if (
     typeof message.request_id !== "string" ||
     !/^[a-zA-Z0-9_-]{1,80}$/.test(message.request_id) ||
@@ -188,7 +196,7 @@ async function receive(event: MessageEvent) {
   )
     return;
   if (
-    !["capabilities.list", "capabilities.invoke", "context.load", "config.revision", "config.load", "config.save", "config.test", "storage.head", "storage.get", "storage.put", "storage.delete", "page.call", "identity.providers.list", "identity.bindings.list", "identity.login.start", "identity.bind.start", "identity.binding.unlink"].includes(
+    !["checkout.context", "capabilities.list", "capabilities.invoke", "context.load", "config.revision", "config.load", "config.save", "config.test", "storage.head", "storage.get", "storage.put", "storage.delete", "page.call", "identity.providers.list", "identity.bindings.list", "identity.login.start", "identity.bind.start", "identity.binding.unlink"].includes(
       message.type,
     )
   )
@@ -208,7 +216,7 @@ async function receive(event: MessageEvent) {
       );
   };
   try {
-    if (message.type.startsWith("capabilities.") && (props.surface !== "account" || s.purpose !== "business")) throw new Error("denied");
+    if (message.type.startsWith("capabilities.") && (props.surface !== "account" || !["business", "slot"].includes(s.purpose))) throw new Error("denied");
     if (message.type.startsWith("config.") && s.purpose !== "configuration")
       throw new Error("denied");
     if (message.type.startsWith("storage.") && props.surface !== "admin") throw new Error("denied");
@@ -231,6 +239,13 @@ async function receive(event: MessageEvent) {
         ? { revision: message.revision, config: message.config }
         : {};
     if (JSON.stringify(payload).length > 65_536) throw new Error("too large");
+    if (message.type === "checkout.context") {
+      if (!props.slot || !paymentSlots.includes(props.slot.slot) || !props.checkout) throw new Error("denied");
+      const context = props.checkout.order_id
+        ? await pluginBridge(s, "checkout.context", { order_id: props.checkout.order_id }, controller.signal)
+        : { currency: props.checkout.currency, currency_precision: 2, order_id: null };
+      respond({ ok: true, result: context }); return;
+    }
     const result = confirmedPassword
       ? await pluginBridge(s, message.type, payload, controller.signal, confirmedPassword)
       : await pluginBridge(s, message.type, payload, controller.signal);
@@ -244,7 +259,7 @@ async function receive(event: MessageEvent) {
     respond({ ok: true, result });
   } catch (cause: any) {
     if (cause?.response?.status === 401) clearAccountConfirmation();
-    respond({ ok: false, error: cause?.response?.data?.message || "操作已取消或未完成，请重试。" });
+    respond({ ok: false, error: cause?.response?.data?.message || "操作已取消或未完成，请重试。", code: cause?.response?.data?.error?.code || "temporary_unavailable" });
   } finally {
     if (current === generation) pending.delete(message.request_id);
   }
@@ -269,6 +284,15 @@ async function verify() {
     verifying = false;
   }
 }
+async function checkoutAction(orderId: number, action: string, payload: Record<string, unknown>) {
+  if (!session.value || error.value || !props.slot || !paymentSlots.includes(props.slot.slot)) throw new Error("支付扩展不可用，请重试加载。");
+  return pluginBridge(session.value, "checkout.call", { order_id: orderId, action, payload }, controller.signal);
+}
+async function checkoutContext(orderId: number) {
+  if (!session.value || error.value) throw new Error("支付扩展不可用。");
+  return pluginBridge(session.value, "checkout.context", { order_id: orderId }, controller.signal);
+}
+defineExpose({ checkoutAction, checkoutContext });
 watch(
   () => [props.pluginId, props.pageId, props.slot?.id, props.slot?.slot, props.surface, props.configuration, props.targetUserId],
   load,

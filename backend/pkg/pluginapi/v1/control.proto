@@ -162,6 +162,11 @@ message HTTPResponse {
  int64 retry_after = 4;
 }
 message PageActionRequest {
+ string slot_id = 7;
+ string slot = 8;
+ string purpose = 9;
+ // Host-generated order context. Never accepted from the plugin UI.
+ bytes checkout_json = 10;
  string page_id = 1;
  string surface = 2;
  string actor_id = 3;
