@@ -1,15 +1,18 @@
 import { onScopeDispose, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { fetchPlugins, pluginAction, type Plugin } from '../api/plugins'
+import { fetchPlugins, pluginAction, type Plugin, type PluginLifecycleAction } from '../api/plugins'
 import { useRemoteResource } from '../composables/useRemoteResource'
 import { confirmAction } from '../utils/feedback'
+import { normalizeApiErrorMessage } from '../utils/apiError'
 
 export const pluginDetailPath = (id: string) => `/admin/plugins/${encodeURIComponent(id)}`
 export const hasPluginCapability = (p: Plugin, c: string) => !!p.admission?.accepted && p.admission.capabilities.includes(c) && p.manifest.capabilities.includes(c)
 export const canPluginRun = (p: Plugin) => !!p.admission?.accepted && (!p.manifest.components.server || hasPluginCapability(p, 'zboard.config.v1')) && !!p.data?.compatible && !p.data.migration_required
 export const hasPluginConfig = (p: Plugin) => hasPluginCapability(p, 'zboard.config.v1') && p.state !== 'uninstalled'
 export const actionLabels: Record<string, string> = {
-  purge_data: '清除插件数据', import: '导入', install: '安装', enable: '启用', disable: '停用', uninstall: '卸载', rollback: '恢复版本', configure: '保存配置', config: '保存配置', test: '测试配置',
+  // Historical audit rows remain readable; this is not an executable action.
+  rollback: '历史版本恢复',
+  purge_data: '清除插件数据', import: '导入', install: '安装', enable: '启用', disable: '停用', uninstall: '卸载', configure: '保存配置', config: '保存配置', test: '测试配置',
 }
 
 export function usePluginDetail() {
@@ -31,7 +34,7 @@ export function usePluginActions(refresh: () => Promise<unknown>) {
   const busy = ref(false), error = ref(''), message = ref('')
   let disposed = false
   onScopeDispose(() => { disposed = true })
-  async function act(plugin: Plugin, action: string, versionID = '') {
+  async function act(plugin: Plugin, action: PluginLifecycleAction) {
     if (busy.value) return
     busy.value = true
     const pluginId = route.params.pluginId
@@ -42,19 +45,18 @@ export function usePluginActions(refresh: () => Promise<unknown>) {
         title: `${actionLabels[action]} ${plugin.name}`,
         message: action === 'purge_data' ? '永久清除该插件配置和私有数据，保留核心账户、第三方身份绑定、操作与迁移记录。'
           : action === 'uninstall' ? '系统将停止插件、撤销会话并删除程序和页面，保留配置、私有数据与操作记录。'
-          : action === 'rollback' ? '恢复所选版本后保持停用；系统会校验旧版本的数据和配置兼容性，失败则保留当前版本。'
           : action === 'disable' ? '停用后，插件页面和登录入口将不可用。已提交的核心业务仍由系统继续处理。'
           : '启用后，通过宿主校验的插件页面和服务将可用。',
         tone: action === 'purge_data' || action === 'uninstall' ? 'danger' : 'primary',
         confirmText: actionLabels[action],
       })
       if (!confirmed || !current()) return
-      await pluginAction(plugin, action, false, versionID)
+      await pluginAction(plugin, action)
       if (!current()) return
       message.value = `${actionLabels[action]}已完成。`
       await refresh()
     } catch (cause: any) {
-      if (current()) error.value = cause?.response?.data?.message || '插件操作失败，请刷新状态后重试。'
+      if (current()) error.value = normalizeApiErrorMessage(cause, '插件操作失败，请刷新状态后重试。', 'plugin-management')
     } finally { busy.value = false }
   }
   return { busy, error, message, act }

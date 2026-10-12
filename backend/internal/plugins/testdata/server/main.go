@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 
@@ -17,6 +18,7 @@ type server struct {
 }
 
 var pluginCapabilities = "zboard.config.v1"
+var startupFailureFile string
 
 func (s *server) GetInfo(context.Context, *pluginv1.Empty) (*pluginv1.Info, error) {
 	return &pluginv1.Info{Id: "example.server", Version: "1.0.0", Protocol: 1, Capabilities: strings.Split(pluginCapabilities, ",")}, nil
@@ -50,4 +52,11 @@ func (s *server) TestConfig(context.Context, *pluginv1.ConfigRequest) (*pluginv1
 	defer s.mu.Unlock()
 	return &pluginv1.HealthResult{Healthy: s.value["healthy"] != false}, nil
 }
-func main() { pluginv1.Serve(&server{}) }
+func main() {
+	if startupFailureFile != "" {
+		if _, err := os.Stat(startupFailureFile); err == nil {
+			os.Exit(1)
+		}
+	}
+	pluginv1.Serve(&server{})
+}

@@ -43,6 +43,28 @@ beforeEach(() => {
 })
 afterEach(() => { mounted.splice(0).forEach(w => w.unmount()); document.body.innerHTML = '' })
 describe('plugin management navigation', () => {
+  it('lists retained versions without advertising the removed rollback operation', async () => {
+    const { wrapper } = await render('/admin/plugins/zboard.oauth?tab=versions')
+    expect(wrapper.text()).toContain('v0.1.0')
+    expect(wrapper.text()).not.toContain('恢复此版本')
+    expect(wrapper.text()).not.toContain('恢复旧版本')
+    expect(wrapper.find('a[href="/admin/plugin-market/zboard.oauth"]').exists()).toBe(true)
+  })
+  it.each([
+    ['plugin changed; refresh and retry', '插件状态或配置已更新，请刷新后再操作。'],
+    ['admin required', '此操作需要管理员权限'],
+    ['plugin capability is outside the host admission scope', '插件未通过宿主能力准入'],
+    ['plugin API or runtime is incompatible', '运行平台与当前宿主不兼容'],
+    ['plugin lifecycle data preparation is incomplete or incompatible', '数据准备尚未完成'],
+    ['plugin process failed to start', '插件进程启动失败'],
+  ])('shows the host failure without a false success: %s', async (message, expected) => {
+    mocks.action.mockRejectedValueOnce({ response: { data: { message } } })
+    const { wrapper } = await render('/admin/plugins/zboard.oauth')
+    await clickText(wrapper, '启用插件')
+    expect(wrapper.text()).toContain(expected)
+    expect(wrapper.text()).not.toContain('启用已完成')
+    expect(wrapper.findAll('button').some(button => button.text() === '启用插件')).toBe(true)
+  })
   it('keeps retained uninstall records out of the installed plugin list', async () => {
     const removed = { ...plugin('removed'), name: '已卸载插件', state: 'uninstalled' }
     mocks.list.mockResolvedValue([plugin(), removed])
@@ -162,7 +184,7 @@ describe('plugin management navigation', () => {
     expect(wrapper.text()).not.toContain('能力授权')
     expect(wrapper.text()).toContain('由 ZBoard 根据插件声明、调用身份和站点策略约束')
     await clickText(wrapper, '启用插件')
-    expect(mocks.action).toHaveBeenCalledWith(plugin(), 'enable', false, '')
+    expect(mocks.action).toHaveBeenCalledWith(plugin(), 'enable')
   })
   it('shows host migration status without exposing a manual migration action', async () => {
     const migrating = plugin()
@@ -181,7 +203,7 @@ describe('plugin management navigation', () => {
     mocks.list.mockResolvedValue([active])
     const { wrapper } = await render('/admin/plugins/zboard.oauth')
     await clickText(wrapper, '卸载插件')
-    expect(mocks.action).toHaveBeenCalledWith(active, 'uninstall', false, '')
+    expect(mocks.action).toHaveBeenCalledWith(active, 'uninstall')
   })
   it('protects a dirty advanced configuration from switching to a different plugin', async () => {
     const { wrapper, router } = await render('/admin/plugins/zboard.oauth/configuration')

@@ -1,4 +1,7 @@
 import { normalizeOutput } from './output'
+import { pluginManagementErrorMessage } from './pluginManagementErrors'
+
+type ApiErrorScope = 'plugin-management'
 
 export interface NormalizedApiFormError {
   code: string
@@ -27,12 +30,12 @@ export function normalizeApiMessage(value: unknown, fallback: string) {
   return localizedApiMessage(value) || fallback
 }
 
-export function normalizeApiErrorPayload(payload: unknown): Record<string, any> {
+export function normalizeApiErrorPayload(payload: unknown, scope?: ApiErrorScope): Record<string, any> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return { message: '' }
   const source = payload as Record<string, any>
   const normalized: Record<string, any> = {
     ...source,
-    message: localizedApiMessage(source.message),
+    message: localizedApiMessage(source.message) || (scope === 'plugin-management' ? pluginManagementErrorMessage(normalizeApiText(source.message, 500)) : ''),
   }
 
   if (!source.error || typeof source.error !== 'object' || Array.isArray(source.error)) {
@@ -58,8 +61,8 @@ export function normalizeApiErrorPayload(payload: unknown): Record<string, any> 
   return normalized
 }
 
-export function normalizeApiErrorMessage(cause: any, fallback: string) {
-  const response = normalizeApiErrorPayload(cause?.response?.data)
+export function normalizeApiErrorMessage(cause: any, fallback: string, scope?: ApiErrorScope) {
+  const response = normalizeApiErrorPayload(cause?.response?.data, scope)
   return normalizeApiMessage(response.message, fallback)
 }
 

@@ -41,12 +41,11 @@
         </div>
       </section>
       <section v-else-if="tab === 'versions'" class="plugin-detail">
-        <h2>版本管理</h2><p>选择发布者提供的 stable、rc 或 dev 版本，请使用“切换发布版本”。下方列出本机保留的历史版本。</p><p>安装和升级时由系统自动完成数据迁移。恢复旧版本前请先停用；系统会校验数据与配置，失败时保留当前版本。</p>
+        <h2>版本管理</h2><p>选择发布者提供的 stable、rc 或 dev 版本，请使用“切换发布版本”。下方列出本机保留的历史版本。</p><p>安装和升级时由系统自动完成数据迁移，并校验配置和数据兼容性。</p>
         <p v-if="!plugin.versions.length">暂无保留的版本。</p>
         <div v-for="version in plugin.versions" :key="version.id" class="plugin-history">
           <span><strong>v{{ version.version }}</strong><small>{{ formatDateTime(version.created_at) }}</small><small>{{ version.digest }}</small></span>
           <span v-if="version.id === plugin.version_id" class="plugin-status">当前版本</span>
-          <UiButton v-else variant="secondary" :disabled="busy || plugin.enabled || plugin.state === 'uninstalled'" @click="act(plugin, 'rollback', version.id)">恢复此版本</UiButton>
         </div>
         <PluginDataPanel :plugin="plugin" />
       </section>

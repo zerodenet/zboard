@@ -27,7 +27,8 @@ api.interceptors.request.use((cfg) => {
 api.interceptors.response.use(
   response => response,
   (cause) => {
-    if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data)
+    const pluginManagement = /^\/(?:api\/v1\/)?admin\/(?:plugins|plugin-market)(?:\/|\?|$)/.test(cause?.config?.url || '')
+    if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data, pluginManagement ? 'plugin-management' : undefined)
     const token = getAuthToken()
     const config = cause?.config
     // Only the credential used by this request can invalidate the current login.

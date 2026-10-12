@@ -5,6 +5,7 @@ import App from './App.vue'
 import { routes } from './router'
 import { useAppStore } from './stores/app'
 import { installAuthSessionNavigation } from './utils/authSessionNavigation'
+import { installFrontendLoadRecovery } from './utils/frontendLoadRecovery'
 import { applySiteMetadata } from './utils/siteProfile'
 import { accountPurchaseRoute } from './utils/commerceNavigation'
 import { finishNavigationProgress, navigationProgressGeneration, startNavigationProgress, waitForPagePaint } from './composables/navigationProgress'
@@ -55,6 +56,7 @@ app.component('FormField', FormField)
 app.component('TimeBadge', TimeBadge)
 const pinia = createPinia()
 app.use(pinia)
+installFrontendLoadRecovery(router)
 app.use(router)
 
 const resolveMeta = (to: RouteLocationNormalized) => {

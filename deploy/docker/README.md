@@ -4,12 +4,14 @@ For a first installation, start with the [installation guide (Chinese)](https://
 
 ## Required host directories
 
+`ZBOARD_FILE_HOST_DIR` (default `./files`, relative to the Compose directory) stores uploaded site logos, icons, and ticket attachments. Every application container must mount this directory read-write at `/var/lib/zboard/files`, matching `ZBOARD_FILE_STORAGE_DIR`. `prepare-host-dirs.sh` creates it with mode `0700`. Keep this host path stable when changing release directories, Compose projects, or images; an absolute path such as `/srv/zboard/files` makes this explicit. Blue and green instances must share the same upload directory.
+
 Zboard uses two different storage trust boundaries under `/var/lib/zboard/artifacts`:
 
 - `ZBOARD_ZERO_ARTIFACT_HOST_DIR` contains trusted Zero binaries and checksum files. It is mounted read-only.
 - `ZBOARD_MANAGED_RULE_HOST_DIR` contains managed Zero Rule IR sources and compiled ZRS artifacts. It is mounted read-write and must persist across container replacement.
 
-Prepare both directories before the first deployment:
+Prepare the persistent directories before the first deployment:
 
 ```bash
 cd deploy/docker
@@ -19,6 +21,7 @@ sh ./prepare-host-dirs.sh
 Custom locations can be supplied through the same environment variables used by Compose:
 
 ```bash
+ZBOARD_FILE_HOST_DIR=/srv/zboard/files \
 ZBOARD_ZERO_ARTIFACT_HOST_DIR=/srv/zboard/artifacts \
 ZBOARD_MANAGED_RULE_HOST_DIR=/srv/zboard/managed-rules \
 sh ./prepare-host-dirs.sh
@@ -57,12 +60,41 @@ Do not make the complete artifact directory writable. Managed rules are the only
 
 Blue and green application instances must mount the same `ZBOARD_MANAGED_RULE_HOST_DIR`. Using separate directories causes database metadata and rule files to diverge after a traffic switch.
 
+## Upgrading deployments that lack upload persistence
+
+Changing only the image tag keeps the old Compose mount layout. Add the upload mount to the existing application service before its next replacement:
+
+```yaml
+services:
+  zboard:
+    environment:
+      ZBOARD_FILE_STORAGE_DIR: /var/lib/zboard/files
+    volumes:
+      - type: bind
+        source: /srv/zboard/files
+        target: /var/lib/zboard/files
+        read_only: false
+```
+
+Retain all existing environment settings and other mounts. Before replacing an unmounted container, pause new uploads and copy its `/var/lib/zboard/files` contents into the chosen host directory with `docker cp`. If the old container was already deleted, its writable-layer files cannot be recovered from the application image or database; use a file backup or upload the originals again. Do not replace the container until the copy is complete. Applying a new mount to an empty host directory hides any files left in the old container.
+
+After applying the updated Compose configuration, check the running container rather than only the YAML:
+
+```bash
+container_id=$(docker compose -f docker-compose.release.yml --env-file .env.release ps -q zboard)
+docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/zboard/files"}}{{.Type}} {{.Source}} -> {{.Destination}} writable={{.RW}}{{end}}{{end}}' "$container_id"
+```
+
+The output must identify the intended durable host directory and `writable=true`. Upload a small file, replace the container using the same configuration, then verify that its original URL still returns the same content.
+
 ## Backup and restore
 
 The database stores managed-rule metadata and revisions, while the canonical source and compiled ZRS files live in `ZBOARD_MANAGED_RULE_HOST_DIR`. A recoverable backup therefore requires both:
 
 1. a consistent Zboard database backup;
 2. an archive or snapshot of `ZBOARD_MANAGED_RULE_HOST_DIR` from the same backup window.
+
+Uploaded files are also split between database metadata and filesystem blobs. Back up `ZBOARD_FILE_HOST_DIR` in the same recovery window and restore it with the database, keeping UUID filenames unchanged. A database backup alone restores `/media/<id>` and ticket references but cannot restore their contents. Include the upload directory when backing up or moving the application host.
 
 Example filesystem backup:
 

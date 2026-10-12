@@ -1,0 +1,6 @@
+[
+  {"action":"enable","body":{"generation":1,"accept_untested":false}},
+  {"action":"disable","body":{"generation":2,"accept_untested":false}},
+  {"action":"uninstall","body":{"generation":3,"accept_untested":false}},
+  {"action":"purge_data","body":{"generation":4,"accept_untested":false}}
+]

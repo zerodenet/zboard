@@ -134,11 +134,11 @@ export const importPlugin = (file: File, preview?: ImportPreview, trust = false)
     'X-Plugin-Digest': preview?.digest || '', 'X-Plugin-Trust-Fingerprint': trust ? preview?.fingerprint || '' : '' },
   timeout: 60_000,
 }).then(data<Plugin>).then(changedPlugin);
+export type PluginLifecycleAction = 'enable' | 'disable' | 'uninstall' | 'purge_data';
 export const pluginAction = (
   p: Plugin,
-  action: string,
+  action: PluginLifecycleAction,
   acceptUntested = false,
-  versionID = "",
 ) =>
   api
     .post(
@@ -146,7 +146,6 @@ export const pluginAction = (
       {
         generation: p.generation,
         accept_untested: acceptUntested,
-        version_id: versionID,
       },
       { timeout: 60_000 },
     )

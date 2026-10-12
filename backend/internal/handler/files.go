@@ -53,6 +53,8 @@ func (h *handlers) FileUploadHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) FileGetHandler(w http.ResponseWriter, r *http.Request) {
+	// Missing blobs must not leave cached 404s after storage is restored.
+	w.Header().Set("Cache-Control", "no-store")
 	publicOnly := strings.HasPrefix(r.URL.Path, "/media/")
 	actor := experience.TicketActor{}
 	if !publicOnly {

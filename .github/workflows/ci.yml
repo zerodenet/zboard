@@ -135,7 +135,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Prepare host directories
         run: |
+          sh scripts/tests/prepare-host-dirs-test.sh
           sh deploy/docker/prepare-host-dirs.sh
+          test -d deploy/docker/files
           test ! -e deploy/docker/data
           ZBOARD_DATABASE_DRIVER=sqlite sh deploy/docker/prepare-host-dirs.sh
           test -d deploy/docker/data
@@ -152,6 +154,17 @@ jobs:
               touch /var/lib/zboard/artifacts/rules/.write-test
               rm /var/lib/zboard/artifacts/rules/.write-test
             '
+      - name: Verify uploads survive container replacement
+        run: |
+          docker run --rm --network none \
+            --mount type=bind,source="$PWD/deploy/docker/files",target=/var/lib/zboard/files \
+            alpine:3.20 sh -c 'printf "retained upload\n" > /var/lib/zboard/files/.upload-persistence-check'
+          docker run --rm --network none \
+            --mount type=bind,source="$PWD/deploy/docker/files",target=/var/lib/zboard/files \
+            alpine:3.20 sh -c '
+              test "$(cat /var/lib/zboard/files/.upload-persistence-check)" = "retained upload"
+              rm /var/lib/zboard/files/.upload-persistence-check
+            '
       - name: Validate Compose configurations
         run: |
           docker compose -f deploy/docker/docker-compose.yml config >/dev/null
@@ -164,6 +177,21 @@ jobs:
               config >/dev/null
           docker compose -f deploy/docker/docker-compose.validation.yml config >/dev/null
           docker compose -f deploy/docker/docker-compose.blue-green.yml config >/dev/null
+      - name: Verify upload mounts in every deployment layout
+        run: |
+          for file in \
+            deploy/docker/docker-compose.yml \
+            deploy/docker/docker-compose.release.yml \
+            deploy/docker/docker-compose.validation.yml \
+            deploy/docker/docker-compose.blue-green.yml; do
+            docker compose --profile '*' -f "$file" config --format json | python3 deploy/docker/verify-upload-mounts.py
+          done
+          ZBOARD_DATABASE_DRIVER=sqlite \
+            ZBOARD_DATA_SOURCE=/var/lib/zboard/data/zboard.db \
+            docker compose \
+              -f deploy/docker/docker-compose.release.yml \
+              -f deploy/docker/docker-compose.sqlite.yml \
+              config --format json | python3 deploy/docker/verify-upload-mounts.py
       - name: Verify managed rule mount contract
         run: |
           for file in \

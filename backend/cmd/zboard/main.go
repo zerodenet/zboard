@@ -4,9 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -122,40 +120,6 @@ func main() {
 	}
 
 	srv.Start()
-}
-
-func staticFallbackHandler(webDir string) http.Handler {
-	webDir = filepath.Clean(webDir)
-	fileServer := http.FileServer(http.Dir(webDir))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			http.NotFound(w, r)
-			return
-		}
-
-		if strings.HasSuffix(r.URL.Path, "/") {
-			r.URL.Path = "/"
-		} else {
-			cleaned := strings.TrimPrefix(filepath.Clean(r.URL.Path), "/")
-			candidate := filepath.Join(webDir, cleaned)
-			if !fileExists(candidate) {
-				r.URL.Path = "/"
-			}
-		}
-
-		if r.URL.Path == "" {
-			r.URL.Path = "/"
-		}
-		fileServer.ServeHTTP(w, r)
-	})
-}
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return !info.IsDir()
 }
 
 func createBootstrapAdminIfNeeded(db *gorm.DB, adminConfig cfgpkg.BootstrapAdmin, environment string) error {

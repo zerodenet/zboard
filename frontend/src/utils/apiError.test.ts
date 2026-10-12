@@ -5,6 +5,14 @@ import { normalizeApiErrorMessage, normalizeApiErrorPayload, normalizeApiFormErr
 beforeEach(() => resetAuthSessionExpired())
 
 describe('normalizeApiFormError', () => {
+  it('translates known plugin failures only inside the plugin management scope', () => {
+    const payload = { message: 'plugin process failed to start', error: { version: 1, code: 'invalid_argument' } }
+    expect(normalizeApiErrorPayload(payload).message).toBe('')
+    expect(normalizeApiErrorPayload(payload, 'plugin-management').message).toContain('插件进程启动失败')
+    expect(normalizeApiErrorPayload({ message: 'database password=secret' }, 'plugin-management').message).toBe('')
+    expect(normalizeApiErrorPayload({ message: 'plugin process failed to start: secret' }, 'plugin-management').message).toBe('')
+    expect(normalizeApiErrorPayload({ message: '__proto__' }, 'plugin-management').message).toBe('')
+  })
   it('accepts versioned field errors and maps only declared form fields', () => {
     const result = normalizeApiFormError({ response: { data: {
       message: '用户信息校验失败。',

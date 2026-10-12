@@ -113,7 +113,8 @@ func TestSiteImageUploadAndSettingsKeepPublicAndPrivateFilesSeparate(t *testing.
 	if err := f.h.db.Create(&model.Installation{ID: 1, SiteURL: "https://panel.example"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	f.h.services.ConfigureFileStorage(t.TempDir())
+	directory := t.TempDir()
+	f.h.services.ConfigureFileStorage(directory)
 	logo := `<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h10v10"/></svg>`
 	makeUpload := func(token string) *httptest.ResponseRecorder {
 		var body bytes.Buffer
@@ -142,6 +143,20 @@ func TestSiteImageUploadAndSettingsKeepPublicAndPrivateFilesSeparate(t *testing.
 	f.h.FileGetHandler(get, httptest.NewRequest("GET", data.Data.URL, nil))
 	if get.Code != 200 || get.Body.String() != logo || get.Header().Get("Content-Type") != "image/svg+xml" || !strings.Contains(get.Header().Get("Content-Security-Policy"), "sandbox") {
 		t.Fatal("public image failed", get.Code, get.Header())
+	}
+	// Replacing a service must reuse the durable directory. Metadata alone
+	// cannot serve a missing blob, and that temporary failure must not be cached.
+	f.h.services.ConfigureFileStorage(t.TempDir())
+	missing := httptest.NewRecorder()
+	f.h.FileGetHandler(missing, httptest.NewRequest("GET", data.Data.URL, nil))
+	if missing.Code != 404 || missing.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("missing blob produced a cacheable failure", missing.Code, missing.Header())
+	}
+	f.h.services.ConfigureFileStorage(directory)
+	restored := httptest.NewRecorder()
+	f.h.FileGetHandler(restored, httptest.NewRequest("GET", data.Data.URL, nil))
+	if restored.Code != 200 || restored.Body.String() != logo || restored.Header().Get("Cache-Control") != "public, max-age=3600" {
+		t.Fatal("durable blob did not survive service replacement", restored.Code, restored.Header())
 	}
 	for _, key := range []string{"site_logo", "site_logo_dark", "site_favicon"} {
 		if err := f.h.db.Where("config_key = ?", key).FirstOrCreate(&model.SystemConfig{ConfigKey: key, Name: key, ValueType: "string", IsPublic: true, Revision: 1}).Error; err != nil {

@@ -8,12 +8,18 @@
   />
   <template v-else>
     <Transition name="boot-fade">
-      <div v-if="bootVisible" class="app-boot" role="status" aria-live="polite">
+      <div v-if="bootVisible && !frontendLoadFailure" class="app-boot" role="status" aria-live="polite">
         <span class="app-boot-mark" aria-hidden="true">Z</span>
         <span>正在载入页面…</span>
         <span class="app-boot-track" aria-hidden="true"><span /></span>
       </div>
     </Transition>
+    <div v-if="frontendLoadFailure" class="app-load-failure" :class="{ 'app-load-failure-initial': !route.matched.length }" role="alert">
+      <strong>{{ frontendLoadFailure === 'assets' ? '页面资源加载失败' : '暂时无法打开页面' }}</strong>
+      <p>{{ frontendLoadFailure === 'assets' ? '页面可能已更新，或网络暂时不可用。请重新加载后再试。' : '请检查网络连接后重新加载。' }}</p>
+      <UiButton @click="reloadFrontend">重新加载</UiButton>
+      <UiButton v-if="route.matched.length" variant="secondary" @click="frontendLoadFailure = null">留在当前页面</UiButton>
+    </div>
     <AnnouncementStack v-if="showAnnouncementPrompt" :items="app.announcements" />
     <RouterView />
   </template>
@@ -32,6 +38,7 @@ import MaintenanceScreen from './components/MaintenanceScreen.vue'
 import { MAINTENANCE_STATE_EVENT, type MaintenanceState } from './api/client'
 import { useAppStore } from './stores/app'
 import { waitForPagePaint } from './composables/navigationProgress'
+import { frontendLoadFailure, reloadFrontend } from './utils/frontendLoadRecovery'
 
 const app = useAppStore()
 const route = useRoute()
@@ -67,6 +74,10 @@ onBeforeUnmount(() => { window.clearInterval(statusTimer); window.removeEventLis
 .app-boot-mark { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 10px; color: var(--foreground); background: var(--surface); font-size: 18px; font-weight: 700; }
 .app-boot-track { width: 96px; height: 2px; overflow: hidden; border-radius: 999px; background: var(--line); }
 .app-boot-track span { display: block; width: 35%; height: 100%; border-radius: inherit; background: var(--primary); animation: boot-progress 1.1s ease-in-out infinite alternate; }
+.app-load-failure { position: fixed; z-index: 1101; right: 20px; bottom: 20px; max-width: min(420px, calc(100vw - 40px)); padding: 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--foreground); box-shadow: 0 8px 24px var(--floating-shadow); }
+.app-load-failure p { margin: 12px 0 20px; color: var(--muted); font-size: 14px; }
+.app-load-failure .ui-button + .ui-button { margin-left: 8px; }
+.app-load-failure-initial { inset: 0; max-width: none; display: grid; place-content: center; justify-items: center; border: 0; border-radius: 0; background: var(--page); box-shadow: none; padding: 24px; text-align: center; }
 @keyframes boot-reveal { from { opacity: 0; } to { opacity: 1; } }
 @keyframes boot-progress { from { transform: translateX(0); } to { transform: translateX(185%); } }
 @media (prefers-reduced-motion: reduce) { .app-boot, .app-boot-track span { animation: none; } .boot-fade-leave-active { transition: none; } }
