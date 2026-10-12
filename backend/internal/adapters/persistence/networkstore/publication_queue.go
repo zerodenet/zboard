@@ -58,12 +58,20 @@ func (s PublicationQueue) Renew(ctx context.Context, item network.Publication, u
 func (s PublicationQueue) Complete(ctx context.Context, item network.Publication, now time.Time, failure error) error {
 	db := s.DB.WithContext(ctx)
 	owned := db.Where("node_id = ? AND lease_token = ? AND generation = ?", item.NodeID, item.LeaseToken, item.Generation)
+	message := ""
+	if failure != nil {
+		runes := []rune(failure.Error())
+		if len(runes) > 1000 {
+			runes = runes[:1000]
+		}
+		message = string(runes)
+	}
 	var result *gorm.DB
 	if failure == nil {
 		result = owned.Delete(&model.NodeConfigPublish{})
 	} else if network.IsConfigurationCapabilityDeferral(failure) {
 		result = owned.Model(&model.NodeConfigPublish{}).Updates(map[string]interface{}{
-			"deferred": true, "last_error": network.TruncateKernelError(failure.Error()),
+			"deferred": true, "last_error": message,
 			"next_attempt_at": now.Add(network.PublicationCapabilityRecheck), "lease_token": "", "lease_until": publicationIdleLease,
 		})
 	} else {
@@ -71,13 +79,9 @@ func (s PublicationQueue) Complete(ctx context.Context, item network.Publication
 		if attempts > 32 {
 			attempts = 32
 		}
-		message := []rune(failure.Error())
-		if len(message) > 1000 {
-			message = message[:1000]
-		}
 		result = owned.Model(&model.NodeConfigPublish{}).Updates(map[string]interface{}{
 			"deferred": false,
-			"attempts": attempts, "last_error": string(message), "next_attempt_at": now.Add(network.PublicationRetryDelay(item.Attempts)),
+			"attempts": attempts, "last_error": message, "next_attempt_at": now.Add(network.PublicationRetryDelay(item.Attempts)),
 			"lease_token": "", "lease_until": publicationIdleLease,
 		})
 	}

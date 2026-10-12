@@ -3,6 +3,8 @@ package networkstore
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,5 +117,32 @@ func TestCapabilityDeferralRetainsIntentWithoutFailureBackoffAndResumesOnEdit(t 
 	}
 	if held.Deferred || held.EndpointID != 12 || held.Generation != item.Generation+1 {
 		t.Fatalf("edit did not resume intent: %+v", held)
+	}
+}
+
+func TestDeferredCapabilityReasonFitsTheQueueStorageLimit(t *testing.T) {
+	db, _ := administrationFixture(t)
+	if err := db.Create(&model.Node{ID: 1, Name: "long-reason", Config: "{}"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := EnqueuePublication(db, 1, 11, 0); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Add(time.Second)
+	q := PublicationQueue{DB: db}
+	item, ok, err := q.Claim(context.Background(), now)
+	if err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	failure := fmt.Errorf("%w：%s", network.ErrConfigurationCapabilityUnavailable, strings.Repeat("未支持的设置", 500))
+	if err := q.Complete(context.Background(), item, now, failure); err != nil {
+		t.Fatal(err)
+	}
+	var held model.NodeConfigPublish
+	if err := db.First(&held, "node_id = ?", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !held.Deferred || len([]rune(held.LastError)) != 1000 || held.Attempts != 0 {
+		t.Fatalf("invalid deferred reason: chars=%d deferred=%t attempts=%d", len([]rune(held.LastError)), held.Deferred, held.Attempts)
 	}
 }
