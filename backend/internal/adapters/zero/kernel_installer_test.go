@@ -104,6 +104,9 @@ func TestKernelInstallerStagesAndActivatesThroughRemotePort(t *testing.T) {
 	if session.runs[0].privileged || !strings.Contains(session.runs[0].command, "/tmp/zboard-zero-stage-id") {
 		t.Fatalf("staging command=%+v", session.runs[0])
 	}
+	if !session.runs[2].privileged || session.runs[2].command != "'/tmp/zboard-zero-stage-id/zero' connector state --json '/tmp/zboard-zero-stage-id/runtime.json'" {
+		t.Fatalf("persistent-state preflight command=%+v", session.runs[2])
+	}
 	if !session.runs[3].privileged || !strings.Contains(session.runs[3].command, "ZBOARD_KERNEL_ACTIVATED") {
 		t.Fatalf("activation command=%+v", session.runs[1])
 	}
@@ -123,13 +126,31 @@ func TestKernelInstallerDoesNotRequireUnusedConnectorOrVersionFloor(t *testing.T
 	}
 	activated := false
 	for _, run := range session.runs {
-		if strings.Contains(run.command, "connector-state") {
+		if strings.Contains(run.command, " connector ") || strings.Contains(run.command, "connector-state") {
 			t.Fatal("unused connector capability required")
 		}
 		activated = activated || strings.Contains(run.command, "systemctl restart zero")
 	}
 	if !activated {
 		t.Fatal("compatible operator-selected binary was not installed")
+	}
+}
+
+func TestKernelInstallerLeavesRunningKernelUntouchedWhenPersistentStatePreflightFails(t *testing.T) {
+	session := &kernelRemoteSessionStub{runErrorAt: 3, runErrorOutput: `{"compatible":false,"connector_files":[{"status":"incompatible"}]}`}
+	err := (KernelInstaller{Dialer: &kernelRemoteDialerStub{session: session}, NewStageID: func() string { return "stage-id" }}).Install(context.Background(), KernelInstallRequest{
+		OperationID: 41, Binary: []byte("binary"), BinarySHA256: strings.Repeat("a", 64), RuntimeConfig: []byte(`{"inbounds":[]}`), ConnectorKey: "secret",
+	})
+	if err == nil || !strings.Contains(err.Error(), "persistent-state preflight failed; kernel left unchanged") || !strings.Contains(err.Error(), `"compatible":false`) {
+		t.Fatalf("preflight failure lost: %v", err)
+	}
+	if len(session.runs) != 3 || session.closed != 1 {
+		t.Fatalf("runs=%+v closed=%d", session.runs, session.closed)
+	}
+	for _, run := range session.runs {
+		if strings.Contains(run.command, "systemctl") || strings.Contains(run.command, "ZBOARD_KERNEL_ACTIVATED") || strings.Contains(run.command, "/usr/local/bin/zero") {
+			t.Fatalf("preflight failure touched current runtime: %s", run.command)
+		}
 	}
 }
 

@@ -132,7 +132,7 @@ func (i KernelInstaller) Install(parent context.Context, request KernelInstallRe
 		}
 	}
 	if capabilities.Features["connector"] || !capabilities.FeaturesDeclared {
-		if output, err := session.Run(shellQuote(stage+"/zero")+" connector-state "+shellQuote(stage+"/runtime.json")+" --json", true); err != nil {
+		if output, err := session.Run(shellQuote(stage+"/zero")+" connector state --json "+shellQuote(stage+"/runtime.json"), true); err != nil {
 			return operationError(ctx, fmt.Errorf("Zero persistent-state preflight failed; kernel left unchanged: %w: %s", err, truncateOutput(output)))
 		}
 	}
