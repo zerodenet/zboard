@@ -72,3 +72,48 @@ func TestPublicationQueuePersistsFailureAndBackoff(t *testing.T) {
 		t.Fatalf("retry state: item=%+v ok=%t err=%v state=%+v", retry, ok, err, state)
 	}
 }
+
+func TestCapabilityDeferralRetainsIntentWithoutFailureBackoffAndResumesOnEdit(t *testing.T) {
+	db, _ := administrationFixture(t)
+	if err := db.Create(&model.Node{ID: 1, Name: "compatibility", Config: "{}"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := EnqueuePublication(db, 1, 11, 0); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Add(time.Second)
+	q := PublicationQueue{DB: db}
+	item, ok, err := q.Claim(context.Background(), now)
+	if err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if err := q.Complete(context.Background(), item, now, network.ErrConfigurationCapabilityUnavailable); err != nil {
+		t.Fatal(err)
+	}
+	var held model.NodeConfigPublish
+	if err := db.First(&held, "node_id = ?", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !held.Deferred || held.Attempts != 0 || held.Generation != item.Generation {
+		t.Fatalf("intent not held: %+v", held)
+	}
+	if _, ok, err := q.Claim(context.Background(), now.Add(time.Minute)); err != nil || ok {
+		t.Fatalf("capability miss entered retry loop: %t %v", ok, err)
+	}
+	if _, ok, err := q.Claim(context.Background(), now.Add(network.PublicationCapabilityRecheck)); err != nil || !ok {
+		t.Fatalf("capability reevaluation absent: %t %v", ok, err)
+	}
+	if err := EnqueuePublication(db, 1, 12, 0); err != nil {
+		t.Fatal(err)
+	}
+	// The first deferral cannot overwrite this newer generation or its lease.
+	if err := q.Complete(context.Background(), item, now, network.ErrConfigurationCapabilityUnavailable); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&held, "node_id = ?", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if held.Deferred || held.EndpointID != 12 || held.Generation != item.Generation+1 {
+		t.Fatalf("edit did not resume intent: %+v", held)
+	}
+}

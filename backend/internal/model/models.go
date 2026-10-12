@@ -85,6 +85,9 @@ type PlanSKU struct {
 }
 
 type Subscription struct {
+	KernelPolicyRevision    uint64 `json:"-" gorm:"not null;default:0"`
+	KernelPolicyFingerprint string `json:"-" gorm:"size:64;not null;default:''"`
+
 	Lifecycle             string     `json:"lifecycle" gorm:"size:20;not null;default:renewable"`
 	EndsOnQuotaExhaustion bool       `json:"ends_on_quota_exhaustion" gorm:"not null;default:false"`
 	EndedAt               *time.Time `json:"ended_at,omitempty" gorm:"index"`

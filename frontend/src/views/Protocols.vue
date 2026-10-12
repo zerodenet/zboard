@@ -36,6 +36,7 @@
     </ModalDialog>
     <div class="protocol-listener-content">
     <TransientFeedback :success="message" :error="error" success-title="协议操作已完成" error-title="协议操作失败" />
+    <PageAlert v-if="deferredMessage" tone="warning" title="新设置暂未生效">{{ deferredMessage }}<template #actions><UiButton variant="ghost" size="sm" @click="deferredMessage = ''">知道了</UiButton></template></PageAlert>
     <PageAlert v-if="mieruUnavailableReason" tone="warning" title="Mieru 暂不可用">
       {{ mieruUnavailableReason }} 已有 Mieru 记录会保留供查看和停用，但不会进入新订阅或节点发布。
     </PageAlert>
@@ -80,7 +81,7 @@
               <td data-column-priority="3"><TableText :value="endpoint.forward ? endpoint.forward.node_group_names?.join('、') || '未分配' : endpoint.node_group_memberships?.map(group=>group.name).join('、') || '未分配'" /></td>
               <td class="numeric-column" data-column-priority="3">{{ formatMultiplierNumber(endpoint.multiplier_milli) }}</td>
               <td data-column-priority="3"><TimeBadge :value="endpoint.usage?.last_used_at" /></td>
-              <td class="table-action-column"><RowActions v-if="endpoint.forward" :label="`${endpoint.name} 的操作`"><UiButton size="sm" variant="ghost" @click="forwardServices?.edit(endpoint.forward)">编辑</UiButton><UiButton size="sm" variant="danger" @click="forwardServices?.remove(endpoint.forward)">删除</UiButton></RowActions><RowActions v-else :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><RouterLink v-if="endpoint.latest_deployment?.has_error" class="button button-ghost button-sm" :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', status: 'failed', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink><UiButton variant="secondary" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton><UiButton variant="danger" size="sm" type="button" :loading="deletingID === endpoint.id" @click="removeEndpoint(endpoint)"><UiIcon name="trash" />删除</UiButton></RowActions></td>
+              <td class="table-action-column"><RowActions v-if="endpoint.forward" :label="`${endpoint.name} 的操作`"><UiButton size="sm" variant="ghost" @click="forwardServices?.edit(endpoint.forward)">编辑</UiButton><UiButton size="sm" variant="danger" @click="forwardServices?.remove(endpoint.forward)">删除</UiButton></RowActions><RowActions v-else :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><RouterLink v-if="endpoint.latest_deployment?.has_error" class="button button-ghost button-sm" :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink><UiButton variant="secondary" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton><UiButton variant="danger" size="sm" type="button" :loading="deletingID === endpoint.id" @click="removeEndpoint(endpoint)"><UiIcon name="trash" />删除</UiButton></RowActions></td>
             </tr>
             </template>
           </tbody>
@@ -106,7 +107,7 @@
         <div v-if="selectedEndpointSummary" class="protocol-mobile-detail-actions" aria-label="协议服务操作">
           <UiButton variant="secondary" size="sm" type="button" @click="editSelectedEndpoint"><UiIcon name="edit" />编辑服务</UiButton>
           <UiButton variant="secondary" size="sm" type="button" :disabled="!selectedEndpointDetail.kernel_supported" :title="selectedEndpointDetail.kernel_unsupported_reason" @click="copySelectedEndpoint"><UiIcon name="copy" />复制配置</UiButton>
-          <RouterLink v-if="selectedEndpointSummary.latest_deployment?.has_error" class="button button-ghost button-sm" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', status: 'failed', protocol_endpoint_id: String(selectedEndpointSummary.id) })"><UiIcon name="terminal" />失败日志</RouterLink>
+          <RouterLink v-if="selectedEndpointSummary.latest_deployment?.has_error" class="button button-ghost button-sm" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', protocol_endpoint_id: String(selectedEndpointSummary.id) })"><UiIcon name="terminal" />发布记录</RouterLink>
           <UiButton variant="secondary" size="sm" type="button" :disabled="!selectedEndpointDetail.kernel_supported" :title="selectedEndpointDetail.kernel_unsupported_reason" :loading="deployingID === selectedEndpointSummary.id" @click="deploy(selectedEndpointSummary)"><UiIcon name="play" />发布配置</UiButton>
         </div>
         <section class="panel detail-facts">
@@ -230,7 +231,7 @@
             </template>
             <div class="generated-config-note field-full"><UiIcon name="check" /><div><strong>配置由系统生成</strong><p>系统会把服务参数转换为 Zero 配置，并在订阅开通、续费、到期时自动更新节点；原始 JSON 仅在最后一步的高级设置中提供。</p></div></div>
             <section class="endpoint-egress field-full">
-              <header><div><strong>出口配置（可选）</strong><small>不启用时，这个协议入口仍由节点直接访问目标；启用后只影响当前入口。</small></div><label class="check-field"><UiCheckbox v-model="egress.enabled" /><span>为此入口指定代理出口</span></label></header>
+              <header><div><strong>出口配置（可选）</strong><small>默认使用 Direct · auto；自定义设置只影响当前入口。</small></div><label class="check-field"><UiCheckbox v-model="egress.enabled" /><span>自定义此入口出口</span></label></header>
               <div v-if="egress.enabled" class="endpoint-egress-body">
                 <UiTabs v-model="egress.mode" :items="[{ value: 'manual', label: '逐项填写' }, { value: 'import', label: '解析分享链接' }]" label="出口配置方式" />
                 <template v-if="egress.mode === 'import'">
@@ -242,8 +243,13 @@
                 </template>
                 <div v-else class="guided-grid compact-grid">
                   <FormField v-slot="{ controlAttrs }" label="出口协议" required><UiSelect v-model="egress.protocol" v-bind="controlAttrs" :options="egressProtocolOptions" /></FormField>
-                  <FormField v-slot="{ controlAttrs }" label="出口服务器" name="protocol-egress-server" :error="editorErrors.fields['egress.server']" required><UiInput v-model.trim="egress.server" v-bind="controlAttrs" placeholder="proxy.example.com" /></FormField>
-                  <FormField v-slot="{ controlAttrs }" label="出口端口" name="protocol-egress-port" :error="editorErrors.fields['egress.port']" required><PortInput v-model="egress.port" v-bind="controlAttrs" /></FormField>
+                  <template v-if="egress.protocol === 'direct'">
+                    <FormField v-slot="{ controlAttrs }" label="出站地址族" hint="仅 IPv4 / IPv6 是硬约束，失败时不会回退到另一地址族。"><UiSelect v-model="egress.address_family" v-bind="controlAttrs" :options="[{ label: '自动（auto）', value: 'auto' }, { label: '仅 IPv4', value: 'only_ipv4' }, { label: '仅 IPv6', value: 'only_ipv6' }]" /></FormField>
+                    <FormField v-slot="{ controlAttrs }" label="出口网卡（可选）" hint="填写当前 VPS 的实际网卡名称；留空由系统选择。"><UiInput v-model.trim="egress.interface" v-bind="controlAttrs" placeholder="例如 eth0" /></FormField>
+                    <FormField v-slot="{ controlAttrs }" label="源 IP（可选）" hint="必须属于当前 VPS；指定网卡时还必须属于该网卡。"><UiInput v-model.trim="egress.source_ip" v-bind="controlAttrs" placeholder="本机 IPv4 或 IPv6 地址" /></FormField>
+                  </template>
+                  <FormField v-if="egress.protocol !== 'direct'" v-slot="{ controlAttrs }" label="出口服务器" name="protocol-egress-server" :error="editorErrors.fields['egress.server']" required><UiInput v-model.trim="egress.server" v-bind="controlAttrs" placeholder="proxy.example.com" /></FormField>
+                  <FormField v-if="egress.protocol !== 'direct'" v-slot="{ controlAttrs }" label="出口端口" name="protocol-egress-port" :error="editorErrors.fields['egress.port']" required><PortInput v-model="egress.port" v-bind="controlAttrs" /></FormField>
                   <FormField v-if="['socks5', 'mieru'].includes(egress.protocol)" v-slot="{ controlAttrs }" label="用户名（可选）"><UiInput v-model.trim="egress.username" v-bind="controlAttrs" autocomplete="off" /></FormField>
                   <FormField v-if="['shadowsocks', 'trojan', 'hysteria2', 'mieru'].includes(egress.protocol) || egress.protocol === 'socks5'" v-slot="{ controlAttrs }" :label="egress.protocol === 'socks5' ? '密码（可选）' : '密码'" name="protocol-egress-password" :error="editorErrors.fields['egress.password']" :required="egress.protocol !== 'socks5'"><UiInput v-model="egress.password" v-bind="controlAttrs" type="password" autocomplete="new-password" /></FormField>
                   <FormField v-if="egress.protocol === 'shadowsocks'" v-slot="{ controlAttrs }" label="加密方式" required><UiSelect v-model="egress.cipher" v-bind="controlAttrs" :options="shadowsocksCipherOptions" /></FormField>
@@ -251,7 +257,7 @@
                   <FormField v-if="egress.protocol === 'vmess'" v-slot="{ controlAttrs }" label="VMess 加密方式"><UiSelect v-model="egress.cipher" v-bind="controlAttrs" :options="vmessCipherOptions" /></FormField>
                   <FormField v-if="['vless', 'vmess', 'trojan', 'hysteria2'].includes(egress.protocol)" v-slot="{ controlAttrs }" label="TLS / Reality 域名（可选）"><UiInput v-model.trim="egress.server_name" v-bind="controlAttrs" :placeholder="egress.server" /></FormField>
                   <FormField v-if="['vless', 'vmess', 'trojan', 'hysteria2'].includes(egress.protocol)" label="证书校验"><div class="check-field"><UiCheckbox v-model="egress.insecure" /><span>允许不安全证书</span></div></FormField>
-                  <PageAlert v-if="Object.keys(egress.base || {}).some(key => !['type', 'server', 'port', 'username', 'password', 'cipher', 'id', 'server_name', 'sni', 'insecure'].includes(key))" tone="info" title="已保留导入扩展参数">TLS、Reality、WebSocket、gRPC 等扩展字段会原样保留；上方修改只覆盖对应基础字段。</PageAlert>
+                  <PageAlert v-if="Object.keys(egress.base || {}).some(key => !['type', 'server', 'port', 'username', 'password', 'cipher', 'id', 'server_name', 'sni', 'insecure', 'dial'].includes(key))" tone="info" title="已保留导入扩展参数">TLS、Reality、WebSocket、gRPC 等扩展字段会原样保留；上方修改只覆盖对应基础字段。</PageAlert>
                 </div>
               </div>
             </section>
@@ -382,6 +388,7 @@ const activeFilterOptions = [{ label: '全部服务状态', value: '' }, { label
 const vmessCipherOptions = [{ label: 'AES-128-GCM（推荐）', value: 'aes-128-gcm' }, { label: 'ChaCha20-Poly1305', value: 'chacha20-poly1305' }, { label: '不额外加密', value: 'none' }]
 const shadowsocksCipherOptions = [{ label: 'AES-128-GCM', value: 'aes-128-gcm' }, { label: 'AES-256-GCM', value: 'aes-256-gcm' }, { label: 'ChaCha20-Poly1305（推荐）', value: 'chacha20-ietf-poly1305' }]
 const egressProtocolOptions = [
+  { label: 'Direct（直接出站）', value: 'direct' },
   { label: 'SOCKS5', value: 'socks5' },
   { label: 'Shadowsocks', value: 'shadowsocks' },
   { label: 'VLESS', value: 'vless' },
@@ -448,12 +455,12 @@ const membershipReloading = ref(false)
 const bulkBusy = ref<'' | 'deploy' | 'enable' | 'disable'>('')
 const toggleBusyKeys = reactive(new Set<string>())
 const toggleTaskIDs = reactive<Record<number, number>>({})
-const message = ref(''), editorError = ref('')
+const message = ref(''), editorError = ref(''), deferredMessage = ref('')
 const protocolUsageRefreshIntervalMS = 15_000
 let protocolUsageRefreshTimer: number | undefined
 const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', listen_address: '0.0.0.0', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, managed_principal_ready: false, is_active: true, config: '{}', egress_config: '', client_config: '{}', optional_config: '{}', tags: '[]', node_group_memberships: [] as ProtocolEndpointNodeGroupMembership[] })
 const emptyStructured = () => ({ credential: randomUUID(), username: 'subscriber', password: randomSecret(), cipher: 'aes-128-gcm', security: 'none', transport: 'tcp', transport_path: '/', grpc_service_name: 'zboard', cert_path: '', key_path: '', server_name: '', reality_private_key: '', reality_public_key: '', reality_short_id: '', reality_server_name: '', reality_fingerprint: 'chrome' })
-const emptyEgress = () => ({ enabled: false, mode: 'manual', import_text: '', protocol: 'socks5', server: '', port: 1080, username: '', password: '', cipher: 'chacha20-ietf-poly1305', id: '', server_name: '', insecure: false, base: {} as Record<string, any> })
+const emptyEgress = () => ({ enabled: false, mode: 'manual', import_text: '', protocol: 'direct', address_family: 'auto', interface: '', source_ip: '', server: '', port: 1080, username: '', password: '', cipher: 'chacha20-ietf-poly1305', id: '', server_name: '', insecure: false, base: {} as Record<string, any> })
 const form = reactive<any>(emptyForm())
 const listenAddressPreview = computed(() => {
   const address = form.listen_address.replace(/^\[(.*)\]$/, '$1')
@@ -582,9 +589,9 @@ const effectiveSortDirection = computed<'asc' | 'desc'>(() => groupedByNode.valu
 function protocolLabel(protocol: string) { return ({ socks5: 'SOCKS5', vmess: 'VMess', vless: 'VLESS', trojan: 'Trojan', shadowsocks: 'Shadowsocks', hysteria2: 'Hysteria 2', mieru: 'Mieru' } as Record<string, string>)[protocol] || protocol }
 function formatMultiplier(value: number) { return `${Number(value || 1000) / 1000}×` }
 function formatMultiplierNumber(value: number) { return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(Number(value || 1000) / 1000) }
-function deploymentLabel(status?: string) { return status === 'succeeded' ? '成功' : status === 'failed' ? '失败' : status === 'running' ? '执行中' : status === 'queued' ? '等待执行' : formatUnknownValue('任务状态', status) }
-function deploymentTone(status?: string): 'success' | 'warning' | 'danger' | 'neutral' { return status === 'succeeded' ? 'success' : status === 'failed' ? 'danger' : status === 'running' || status === 'queued' ? 'warning' : 'neutral' }
-function deploymentIcon(status?: string) { return status === 'succeeded' ? 'check' : status === 'failed' ? 'alert' : status === 'running' ? 'refresh' : status === 'queued' ? 'clock' : 'minus' }
+function deploymentLabel(status?: string) { return status === 'succeeded' ? '成功' : status === 'failed' ? '失败' : status === 'deferred' ? '保持现状（待适配）' : status === 'running' ? '执行中' : status === 'queued' ? '等待执行' : formatUnknownValue('任务状态', status) }
+function deploymentTone(status?: string): 'success' | 'warning' | 'danger' | 'neutral' { return status === 'succeeded' ? 'success' : status === 'failed' ? 'danger' : status === 'running' || status === 'queued' || status === 'deferred' ? 'warning' : 'neutral' }
+function deploymentIcon(status?: string) { return status === 'succeeded' ? 'check' : status === 'failed' ? 'alert' : status === 'running' ? 'refresh' : status === 'queued' || status === 'deferred' ? 'clock' : 'minus' }
 function deploymentSummary(item: any) { return truncateOutput(normalizeOutput(item.error || item.output), 360) }
 function isFirstNodeGroup(index: number) { return index === 0 || endpoints.value[index - 1]?.node_id !== endpoints.value[index]?.node_id }
 function protocolBatchScope() { return selectionAllMatching.value ? { all_matching: true, filters: { q: filters.q || undefined, protocol: filters.protocol || undefined, active: filters.active ? filters.active === 'active' : undefined } } : { protocol_endpoint_ids: selectedEndpointIDs.value } }
@@ -628,7 +635,7 @@ async function toggleEndpoint(endpoint: ProtocolEndpointListItem, enabled: boole
       await saveNetworkEntry(entry.id, {
         deployment_mode: entry.deployment_mode || 'managed', network: entry.network, name: entry.name,
         node_id: entry.node_id, parent_protocol_id: entry.endpoint_id, endpoint_id: entry.endpoint_id,
-        address: entry.address, port: entry.port, public_port: entry.public_port,
+        address: entry.address, listen_address: entry.listen_address, port: entry.port, public_port: entry.public_port,
         enabled, revision: entry.revision, node_group_membership_changes: [],
       })
       message.value = `${entry.name} 已${enabled ? '启用' : '停用'}；节点发布状态请以列表结果为准。`
@@ -650,7 +657,7 @@ function parseObject(value: string) { try { const parsed = JSON.parse(value || '
 function readEgressConfig() {
   const config: any = parseObject(form.egress_config)
   const protocol = String(config.type || '').toLowerCase()
-  if (!protocol || protocol === 'direct') {
+  if (!protocol) {
     Object.assign(egress, emptyEgress())
     return
   }
@@ -659,6 +666,9 @@ function readEgressConfig() {
   Object.assign(egress, emptyEgress(), {
     enabled: true,
     protocol,
+    address_family: config.dial?.address_family || 'auto',
+    interface: config.dial?.interface || '',
+    source_ip: config.dial?.source_ip || '',
     server: config.server || '',
     port: Number(config.port || (protocol === 'socks5' ? 1080 : 443)),
     username: config.username || '',
@@ -673,6 +683,13 @@ function readEgressConfig() {
 function buildEgressConfig() {
   if (!egress.enabled) {
     form.egress_config = ''
+    return
+  }
+  if (egress.protocol === 'direct') {
+    const dial: Record<string, string> = { address_family: egress.address_family || 'auto' }
+    if (String(egress.interface || '').trim()) dial.interface = String(egress.interface).trim()
+    if (String(egress.source_ip || '').trim()) dial.source_ip = String(egress.source_ip).trim()
+    form.egress_config = JSON.stringify({ type: 'direct', dial }, null, 2)
     return
   }
   const base = String(egress.base?.type || '').toLowerCase() === egress.protocol ? JSON.parse(JSON.stringify(egress.base)) : {}
@@ -824,7 +841,7 @@ function handleNodeSelect(node: AdminNodeListItem | null) {
   selectedNode.value = node
   if (previousNodeID && node?.id !== previousNodeID) { form.parent_protocol_id = 0; form.managed_certificate_id = 0 }
   void loadManagedCertificates(node?.id || 0)
-  if (!form.id && !copySourceID.value && node?.address) form.address = node.address
+  if (!form.id && !copySourceID.value && node?.address) { form.address = node.address; if (['', '0.0.0.0', '::'].includes(form.listen_address)) form.listen_address = node.address.includes(':') ? '::' : '0.0.0.0' }
   if (!form.id && !copySourceID.value) suggestName()
 }
 function useNodeAddress() { if (selectedNode.value?.address) form.address = selectedNode.value.address }
@@ -1188,7 +1205,7 @@ async function validateStep(step: number) {
       if (!/^[0-9a-fA-F]{2,16}$/.test(structured.reality_short_id) || structured.reality_short_id.length % 2 !== 0) fields['structured.reality_short_id'] = 'Short ID 必须是 2–16 位偶数长度十六进制字符串。'
       if (!structured.reality_server_name.trim()) fields['structured.reality_server_name'] = '请输入 Reality 伪装域名。'
     }
-    if (egress.enabled) {
+    if (egress.enabled && egress.protocol !== 'direct') {
       if (!String(egress.server || '').trim()) fields['egress.server'] = '请输入出口服务器地址。'
       if (!isIntegerInRange(egress.port, 1, 65535)) fields['egress.port'] = '出口端口必须为 1–65535 之间的整数。'
       if (['shadowsocks', 'trojan', 'hysteria2', 'mieru'].includes(egress.protocol) && !String(egress.password || '')) fields['egress.password'] = '请输入出口密码。'
@@ -1296,8 +1313,16 @@ async function deploy(endpoint: ProtocolEndpointListItem) {
     error.value = endpoint.kernel_unsupported_reason || '当前内核不支持发布此协议。'
     return
   }
-  deployingID.value = endpoint.id; error.value = ''; message.value = ''
-  try { const result = await deployProtocolEndpoint(endpoint.id); message.value = `${endpoint.name} 的完整配置已在 ${endpoint.node_name || `VPS #${endpoint.node_id}`} 生效，耗时 ${result.latency_ms || 0}ms，并已通过 Zero 状态与心跳检查。`; await refresh() }
+  deployingID.value = endpoint.id; error.value = ''; message.value = ''; deferredMessage.value = ''
+  try {
+    const result = await deployProtocolEndpoint(endpoint.id)
+    if (result.deployment?.status === 'deferred') {
+      deferredMessage.value = `${endpoint.name} 的新设置暂未生效，节点保持当前配置。${result.deployment.error || '等待内核能力适配。'}`
+    } else {
+      message.value = `${endpoint.name} 的完整配置已在 ${endpoint.node_name || `VPS #${endpoint.node_id}`} 生效，耗时 ${result.latency_ms || 0}ms，并已通过 Zero 状态与心跳检查。`
+    }
+    await refresh()
+  }
   catch (e: any) { error.value = e?.response?.data?.message || '配置发布失败，节点已尝试回滚；请检查发布记录、SSH 和 Zero 状态。'; await refresh() }
   finally { deployingID.value = 0 }
 }

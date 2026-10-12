@@ -16,6 +16,7 @@ type NetworkEntryQueries struct {
 }
 
 type networkEntryQueryRow struct {
+	ListenAddress     string
 	DeploymentMode    string
 	ID                uint
 	ProxyPoolID       *uint
@@ -73,7 +74,7 @@ func (q NetworkEntryQueries) loadEntries(ctx context.Context, ids []uint) (resul
 		rowsQuery := tx.Table("network_entries").
 			Select(`network_entries.deployment_mode, network_entries.id, network_entries.proxy_pool_id, network_entries.delivery_sort_order,
 				network_entries.network, network_entries.name, network_entries.node_id, network_entries.endpoint_id,
-				network_entries.address, network_entries.port, network_entries.public_port, network_entries.enabled,
+				network_entries.address, network_entries.listen_address, network_entries.port, network_entries.public_port, network_entries.enabled,
 				network_entries.revision, network_entries.created_at, network_entries.updated_at,
 				'forward' AS service_kind, network_entries.endpoint_id AS parent_protocol_id,
 				protocol_endpoints.node_id AS landing_node_id,
@@ -134,7 +135,7 @@ func (q NetworkEntryQueries) loadEntries(ctx context.Context, ids []uint) (resul
 				NetworkEntryRecord: network.NetworkEntryRecord{
 					DeploymentMode: row.DeploymentMode, ID: row.ID, ProxyPoolID: row.ProxyPoolID, DeliverySortOrder: row.DeliverySortOrder,
 					Network: row.Network, Name: row.Name, NodeID: row.NodeID, EndpointID: row.EndpointID,
-					Address: row.Address, Port: row.Port, PublicPort: row.PublicPort, Enabled: row.Enabled,
+					Address: row.Address, ListenAddress: row.ListenAddress, Port: row.Port, PublicPort: row.PublicPort, Enabled: row.Enabled,
 					Revision: row.Revision, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 				},
 				ServiceKind: row.ServiceKind, ParentProtocolID: row.ParentProtocolID,

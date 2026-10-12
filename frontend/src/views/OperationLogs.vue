@@ -90,7 +90,7 @@ const detailLoadingKey = ref('')
 const detailError = ref('')
 let detailController: AbortController | null = null
 const sourceOptions = [{ label: '全部来源', value: '' }, { label: '协议发布', value: 'protocol_publish' }, { label: '节点内核', value: 'node_kernel' }, { label: '后台任务', value: 'task' }]
-const statusOptions = [{ label: '全部状态', value: '' }, { label: '等待中', value: 'queued' }, { label: '执行中', value: 'running' }, { label: '成功', value: 'succeeded' }, { label: '失败', value: 'failed' }]
+const statusOptions = [{ label: '全部状态', value: '' }, { label: '等待中', value: 'queued' }, { label: '执行中', value: 'running' }, { label: '成功', value: 'succeeded' }, { label: '失败', value: 'failed' }, { label: '保持现状（待适配）', value: 'deferred' }]
 const hasFilters = computed(() => Boolean(source.value || status.value || nodeID.value || endpointID.value))
 const { items, total, nextCursor, previousCursor, loading, refreshing, error, load } = useCursorTable<OperationLog>({
   fetchPage: ({ signal }) => fetchOperationLogs({ source: source.value || undefined, status: status.value || undefined, nodeId: nodeID.value || undefined, protocolEndpointId: endpointID.value || undefined, cursor: cursor.value || undefined, from: from.value, to: to.value, limit: limit.value }, { signal }),
@@ -99,7 +99,7 @@ const { items, total, nextCursor, previousCursor, loading, refreshing, error, lo
 
 function sourceLabel(value: string) { return ({ protocol_publish: '协议发布', node_kernel: '节点内核', task: '后台任务' } as Record<string,string>)[value] || formatUnknownValue('来源', value) }
 function sourceIcon(value: string) { return value === 'task' ? 'tasks' : value === 'node_kernel' ? 'nodes' : 'activity' }
-function statusLabel(value: string) { return ({ queued: '等待中', running: '执行中', succeeded: '成功', failed: '失败' } as Record<string,string>)[value] || formatUnknownValue('状态', value) }
+function statusLabel(value: string) { return ({ queued: '等待中', running: '执行中', succeeded: '成功', failed: '失败', deferred: '保持现状（待适配）' } as Record<string,string>)[value] || formatUnknownValue('状态', value) }
 function statusTone(value: string): 'neutral' | 'info' | 'success' | 'danger' { return value === 'succeeded' ? 'success' : value === 'failed' ? 'danger' : value === 'running' ? 'info' : 'neutral' }
 function selectedLogKey() { return selectedItem.value ? `${selectedItem.value.source}:${selectedItem.value.id}` : '' }
 async function syncURL(replace = false) { const location = { query: { ...preserveAdminReturnTo(route.query.return_to), ...(source.value ? { source: source.value } : {}), ...(status.value ? { status: status.value } : {}), ...(nodeID.value ? { node_id: String(nodeID.value) } : {}), ...(endpointID.value ? { protocol_endpoint_id: String(endpointID.value) } : {}), from: from.value, to: to.value, ...(cursor.value ? { cursor: cursor.value } : {}), ...(limit.value !== 50 ? { limit: String(limit.value) } : {}), ...(selectedLogKey() ? { log: selectedLogKey() } : {}) } }; await (replace ? router.replace(location) : router.push(location)) }

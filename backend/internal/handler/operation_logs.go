@@ -68,7 +68,7 @@ func (h *handlers) OperationLogsHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
-	if status != "" && status != "queued" && status != "running" && status != "succeeded" && status != "failed" {
+	if status != "" && status != "queued" && status != "running" && status != "succeeded" && status != "failed" && status != "deferred" {
 		BadRequest(w, "invalid status")
 		return
 	}

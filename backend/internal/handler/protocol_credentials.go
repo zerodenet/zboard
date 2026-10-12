@@ -285,14 +285,8 @@ func (h *handlers) ReconcileMieruEndpointCredentials() error {
 		}
 	}
 	if !h.zeroMieruAccess {
-		for _, endpoint := range endpoints {
-			if !endpoint.MieruPrincipalReady {
-				continue
-			}
-			if _, exists := changedNodes[endpoint.NodeID]; !exists {
-				changedNodes[endpoint.NodeID] = endpoint.ID
-			}
-		}
+		// Artifact selection mode is not the installed kernel's capability.
+		// Never reverse a successfully published Mieru readiness fact on startup.
 		if err := h.queueMieruEndpointPublications(changedNodes); err != nil {
 			return err
 		}

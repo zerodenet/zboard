@@ -221,6 +221,12 @@ func (s KernelReconciliationState) CompleteKernelReconciliation(ctx context.Cont
 		if err := enqueueMieruReadinessPublication(tx, operation.NodeID); err != nil {
 			return err
 		}
+		// Explicit kernel installation/reconciliation can change available
+		// capabilities. Wake pending compatibility checks without losing intent.
+		if err := tx.Model(&model.NodeConfigPublish{}).Where("node_id = ? AND deferred = ?", operation.NodeID, true).
+			Updates(map[string]interface{}{"deferred": false, "generation": gorm.Expr("generation + 1"), "attempts": 0, "next_attempt_at": now, "last_error": ""}).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&row).Updates(map[string]interface{}{"status": "succeeded", "phase": "completed", "result_summary": summary, "error": "", "finished_at": now}).Error; err != nil {
 			return err
 		}
@@ -241,6 +247,20 @@ func (s KernelReconciliationState) CompleteKernelReconciliation(ctx context.Cont
 
 func (s KernelReconciliationState) FailKernelReconciliation(ctx context.Context, operation network.KernelOperation, phase string, failure error, unsupported bool, now time.Time) error {
 	return (KernelDetection{DB: s.DB}).FailDetection(ctx, operation, phase, failure, unsupported, now)
+}
+
+func (s KernelReconciliationState) DeferKernelReconciliation(ctx context.Context, operation network.KernelOperation, cause error, now time.Time) error {
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		state, row, err := lockOwnedKernelOperation(tx, operation)
+		if err != nil {
+			return err
+		}
+		message := network.TruncateKernelError(cause.Error())
+		if err := tx.Model(&row).Updates(map[string]interface{}{"status": "deferred", "phase": "configuration_deferred", "error": message, "result_summary": message, "finished_at": now}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&state).Updates(map[string]interface{}{"phase": "configuration_deferred", "active_operation_id": nil}).Error
+	})
 }
 
 func enqueueMieruReadinessPublication(tx *gorm.DB, nodeID uint) error {

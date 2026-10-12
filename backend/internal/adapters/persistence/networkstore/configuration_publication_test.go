@@ -74,6 +74,39 @@ func TestConfigurationPublicationPersistsLifecycleAndReadiness(t *testing.T) {
 	}
 }
 
+func TestCapabilityDeferralPreservesAppliedConfigurationHealthAndReadiness(t *testing.T) {
+	store, node, endpoint := configurationPublicationFixture(t)
+	ctx, now := context.Background(), time.Now().UTC()
+	oldSHA := strings.Repeat("b", 64)
+	if err := store.DB.Create(&model.NodeKernelState{NodeID: node.ID, Status: "healthy", Phase: "idle", ServiceStatus: "active", ControlStatus: "healthy", AppliedConfigSHA256: oldSHA, LastHealthyAt: &now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB.Model(&endpoint).Update("mieru_principal_ready", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	start, err := store.BeginConfigurationPublication(ctx, network.ConfigurationPublicationRequest{NodeID: node.ID, TriggerEndpointID: endpoint.ID}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deployment, err := store.SetConfigurationPublicationDesired(ctx, start.Deployment, strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deferred, err := store.DeferConfigurationPublication(ctx, deployment, "Direct dial unavailable", "current retained", now.Add(time.Second))
+	if err != nil || deferred.Status != "deferred" || deferred.AppliedConfigSHA256 != "" {
+		t.Fatalf("deferred=%+v err=%v", deferred, err)
+	}
+	var state model.NodeKernelState
+	var current model.ProtocolEndpoint
+	var currentNode model.Node
+	store.DB.First(&state, "node_id = ?", node.ID)
+	store.DB.First(&current, endpoint.ID)
+	store.DB.First(&currentNode, node.ID)
+	if state.Status != "healthy" || state.AppliedConfigSHA256 != oldSHA || state.DesiredConfigSHA256 != strings.Repeat("a", 64) || !current.MieruPrincipalReady || currentNode.NodeCredential != "old" || currentNode.LastSyncAt != nil {
+		t.Fatalf("deferral mutated runtime facts: state=%+v endpoint=%+v node=%+v", state, current, currentNode)
+	}
+}
+
 func TestConfigurationPublicationAllowsNullableTriggerEndpoint(t *testing.T) {
 	store, node, _ := configurationPublicationFixture(t)
 	started, err := store.BeginConfigurationPublication(context.Background(), network.ConfigurationPublicationRequest{NodeID: node.ID}, time.Now().UTC())
@@ -105,6 +138,9 @@ func TestConfigurationPublicationFailureAndCredentialRestoreAreFenced(t *testing
 		t.Fatal(err)
 	}
 	snapshot := network.KernelConnectorSnapshot{Credential: network.KernelEncryptedCredential{Ciphertext: "old", Prefix: "old-prefix"}, Version: "0.0.14", ActiveFlows: 2}
+	if err := store.DB.Model(&model.Node{}).Where("id = ?", node.ID).Updates(map[string]interface{}{"version": "0.0.3", "active_flows": 8}).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := store.RestoreConfigurationConnectorCredential(ctx, started.Deployment, snapshot); err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +159,7 @@ func TestConfigurationPublicationFailureAndCredentialRestoreAreFenced(t *testing
 	if err := store.DB.First(&state, "node_id = ?", node.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if storedNode.NodeCredential != "old" || storedNode.Version != "0.0.14" || storedNode.ActiveFlows != 2 || state.Status != "apply_failed" {
+	if storedNode.NodeCredential != "old" || storedNode.Version != "0.0.3" || storedNode.ActiveFlows != 8 || state.Status != "apply_failed" {
 		t.Fatalf("node=%+v state=%+v", storedNode, state)
 	}
 	if err := store.ActivateConfigurationConnectorCredential(ctx, started.Deployment, network.KernelEncryptedCredential{Ciphertext: "stale", Prefix: "stale"}); !errors.Is(err, network.ErrConfigurationDeploymentLost) {

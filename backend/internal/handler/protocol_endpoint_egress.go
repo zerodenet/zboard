@@ -53,6 +53,9 @@ func parseProtocolEndpointEgress(input string) (protocolEndpointEgressParseResul
 		}
 		if nested, ok := document["protocol"].(map[string]interface{}); ok {
 			protocol = nested
+			if dial, exists := document["dial"]; exists {
+				protocol["dial"] = dial
+			}
 		} else {
 			protocol = document
 		}
@@ -99,7 +102,10 @@ func parseProtocolEndpointEgress(input string) (protocolEndpointEgressParseResul
 		return protocolEndpointEgressParseResult{}, err
 	}
 	if canonical == "" {
-		return protocolEndpointEgressParseResult{}, errors.New("导入内容不是代理出口。")
+		if protocol["type"] == "direct" {
+			return protocolEndpointEgressParseResult{Protocol: "direct", Config: map[string]interface{}{"type": "direct"}}, nil
+		}
+		return protocolEndpointEgressParseResult{}, errors.New("导入内容不是有效出口。")
 	}
 	if err := json.Unmarshal([]byte(canonical), &protocol); err != nil {
 		return protocolEndpointEgressParseResult{}, err

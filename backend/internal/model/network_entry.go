@@ -4,6 +4,7 @@ import "time"
 
 // NetworkEntry forwards opaque protocol traffic. Authentication and charging remain at EndpointID.
 type NetworkEntry struct {
+	ListenAddress     string            `json:"listen_address" gorm:"size:64;not null;default:0.0.0.0"`
 	DeploymentMode    string            `json:"deployment_mode" gorm:"size:16;not null;default:managed"`
 	DeliverySortOrder *int              `json:"delivery_sort_order,omitempty"`
 	ProxyPoolID       *uint             `json:"proxy_pool_id" gorm:"index"`

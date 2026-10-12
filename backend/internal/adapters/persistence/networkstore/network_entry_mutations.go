@@ -256,7 +256,7 @@ func networkEntryRecordView(row model.NetworkEntry) network.NetworkEntryRecord {
 	return network.NetworkEntryRecord{
 		DeploymentMode: row.DeploymentMode, ID: row.ID, ProxyPoolID: row.ProxyPoolID, DeliverySortOrder: row.DeliverySortOrder,
 		Network: row.Network, Name: row.Name, NodeID: row.NodeID, EndpointID: row.EndpointID,
-		Address: row.Address, Port: row.Port, PublicPort: row.PublicPort, Enabled: row.Enabled,
+		Address: row.Address, ListenAddress: row.ListenAddress, Port: row.Port, PublicPort: row.PublicPort, Enabled: row.Enabled,
 		Revision: row.Revision, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 }
@@ -265,7 +265,7 @@ func networkEntryMutationModel(row network.NetworkEntryRecord, path string) mode
 	return model.NetworkEntry{
 		DeploymentMode: row.DeploymentMode, DeliverySortOrder: row.DeliverySortOrder, ProxyPoolID: row.ProxyPoolID, ID: row.ID,
 		Network: row.Network, Name: row.Name, NodeID: row.NodeID, EndpointID: row.EndpointID,
-		Address: row.Address, Port: row.Port, PublicPort: row.PublicPort, Enabled: row.Enabled,
+		Address: row.Address, ListenAddress: row.ListenAddress, Port: row.Port, PublicPort: row.PublicPort, Enabled: row.Enabled,
 		PathConfig: path, Revision: row.Revision, CreatedAt: row.CreatedAt,
 	}
 }

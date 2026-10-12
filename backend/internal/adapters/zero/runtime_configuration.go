@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -16,15 +15,11 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 )
 
-const genericConnectorSince = "0.0.15-rc.2"
-
-var runtimeVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$`)
-
 type RuntimeConfigurationRenderRequest struct {
-	NodeID                uint
-	APIKey                string
-	ZeroVersion           string
-	NativeConnector       bool
+	NodeID uint
+	APIKey string
+	// Explicit wire contract; never inferred from a product version. Empty uses zero.event.v1.
+	ConnectorContract     string
 	SuppressMieruFallback bool
 	Now                   time.Time
 	Snapshot              network.RuntimeConfigurationSnapshot
@@ -95,7 +90,12 @@ func (r RuntimeConfigurationRenderer) Render(request RuntimeConfigurationRenderR
 				return nil, "", fmt.Errorf("protocol endpoint %d egress config is invalid JSON: %w", endpoint.ID, err)
 			}
 			tag := fmt.Sprintf("endpoint-%d-egress", endpoint.ID)
-			outbounds = append(outbounds, map[string]interface{}{"tag": tag, "protocol": egressProtocol})
+			outbound := map[string]interface{}{"tag": tag, "protocol": egressProtocol}
+			if dial, exists := egressProtocol["dial"]; exists {
+				delete(egressProtocol, "dial")
+				outbound["dial"] = dial
+			}
+			outbounds = append(outbounds, outbound)
 			routeRules = append(routeRules, map[string]interface{}{
 				"condition": map[string]interface{}{"type": "inbound", "values": []string{fmt.Sprintf("endpoint-%d", endpoint.ID)}},
 				"action":    map[string]interface{}{"type": "route", "outbound": tag},
@@ -117,15 +117,18 @@ func (r RuntimeConfigurationRenderer) Render(request RuntimeConfigurationRenderR
 		inbounds = append(inbounds, BootstrapControlInbound())
 	}
 	config["inbounds"] = inbounds
-	if request.NativeConnector || UsesGenericConnector(request.ZeroVersion) {
+	if request.ConnectorContract == "" || request.ConnectorContract == "zero.event.v1" {
 		config["api"] = ConnectorAPIConfig(panelURL, request.NodeID, request.APIKey, parsedURL.Scheme == "http")
-	} else {
+	} else if request.ConnectorContract == "legacy.push" {
 		config["api"] = LegacyEventAPIConfig(panelURL, request.NodeID, parsedURL.Scheme == "http")
 		config["push"] = map[string]interface{}{
 			"url": panelURL, "node_id": strconv.FormatUint(uint64(request.NodeID), 10),
 			"api_key_env": "ZERO_PANEL_API_KEY", "heartbeat_interval_seconds": 30,
 			"pull_commands": true, "command_poll_interval_seconds": 10,
 		}
+	}
+	if request.ConnectorContract != "" && request.ConnectorContract != "zero.event.v1" && request.ConnectorContract != "legacy.push" {
+		return nil, "", errors.New("unknown Connector wire contract")
 	}
 	payload, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -182,8 +185,8 @@ func (r RuntimeConfigurationRenderer) renderEndpoint(endpoint network.RuntimeCon
 	if err != nil {
 		return nil, err
 	}
-	// The current kernel joins listen.address and port as strings. Supply IPv6
-	// in brackets so it receives a valid socket address without kernel changes.
+	// Both bare and bracketed literals are accepted by the v0.0.3 kernel.
+	// Preserve existing emitted endpoint spelling for unchanged listeners.
 	if strings.Contains(listenAddress, ":") {
 		listenAddress = "[" + listenAddress + "]"
 	}
@@ -289,9 +292,9 @@ func (r RuntimeConfigurationRenderer) decryptCredential(credential network.Runti
 }
 
 func managedAccessUserFields(credential network.RuntimeConfigurationCredential) (map[string]interface{}, error) {
-	policyRevision := uint64(credential.SubscriptionID)
-	if timestamp := credential.SubscriptionUpdatedAt.UTC().UnixMilli(); timestamp > 0 {
-		policyRevision = uint64(timestamp)
+	policyRevision := credential.PolicyRevision
+	if policyRevision == 0 {
+		return nil, fmt.Errorf("subscription %d kernel policy has not been prepared", credential.SubscriptionID)
 	}
 	user := map[string]interface{}{"principal_key": credential.PrincipalKey, "policy_revision": policyRevision}
 	if credential.SoleActiveCredential && credential.SpeedLimitMbps > 0 {
@@ -553,8 +556,12 @@ func (r RuntimeConfigurationRenderer) appendNetworkEntries(config map[string]int
 		if entry.Network == "tcp" && entry.Landing.Protocol == "hysteria2" {
 			return fmt.Errorf("入口 %d 的 Hysteria2 落地需要 TCP/UDP 转发", entry.ID)
 		}
+		listenAddress, err := network.NormalizeProtocolListenAddress(entry.ListenAddress)
+		if err != nil {
+			return err
+		}
 		inbounds = append(inbounds, map[string]interface{}{
-			"tag": networkEntryTag(entry.ID), "listen": map[string]interface{}{"address": "0.0.0.0", "port": entry.Port},
+			"tag": networkEntryTag(entry.ID), "listen": map[string]interface{}{"address": listenAddress, "port": entry.Port},
 			"udp":      map[string]interface{}{"enabled": entry.Network != "tcp"},
 			"protocol": map[string]interface{}{"type": "direct", "target": entry.Landing.Address, "port": port},
 		})
@@ -629,89 +636,4 @@ func LegacyEventAPIConfig(panelURL string, nodeID uint, allowInsecure bool) map[
 		eventSink["allow_insecure"] = true
 	}
 	return map[string]interface{}{"event_sinks": []interface{}{eventSink}}
-}
-
-func UsesGenericConnector(version string) bool {
-	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
-	if !runtimeVersionPattern.MatchString(version) {
-		return false
-	}
-	return (compareRuntimeVersions(version, "0.0.1") >= 0 && compareRuntimeVersions(version, "0.0.4-0") < 0) || compareRuntimeVersions(version, genericConnectorSince) >= 0
-}
-
-func compareRuntimeVersions(left, right string) int {
-	type parsedVersion struct {
-		core       [3]int
-		prerelease []string
-	}
-	parse := func(raw string) (parsedVersion, bool) {
-		var result parsedVersion
-		versionParts := strings.SplitN(strings.TrimPrefix(strings.TrimSpace(raw), "v"), "-", 2)
-		parts := strings.Split(versionParts[0], ".")
-		if len(parts) != 3 {
-			return result, false
-		}
-		for index, part := range parts {
-			value, err := strconv.Atoi(part)
-			if err != nil || value < 0 {
-				return result, false
-			}
-			result.core[index] = value
-		}
-		if len(versionParts) == 2 {
-			result.prerelease = strings.Split(versionParts[1], ".")
-		}
-		return result, true
-	}
-	l, lok := parse(left)
-	r, rok := parse(right)
-	if !lok || !rok {
-		return 0
-	}
-	for index := range l.core {
-		if l.core[index] < r.core[index] {
-			return -1
-		}
-		if l.core[index] > r.core[index] {
-			return 1
-		}
-	}
-	if len(l.prerelease) == 0 && len(r.prerelease) == 0 {
-		return 0
-	}
-	if len(l.prerelease) == 0 {
-		return 1
-	}
-	if len(r.prerelease) == 0 {
-		return -1
-	}
-	limit := len(l.prerelease)
-	if len(r.prerelease) < limit {
-		limit = len(r.prerelease)
-	}
-	for index := 0; index < limit; index++ {
-		li, lerr := strconv.Atoi(l.prerelease[index])
-		ri, rerr := strconv.Atoi(r.prerelease[index])
-		switch {
-		case lerr == nil && rerr == nil && li < ri:
-			return -1
-		case lerr == nil && rerr == nil && li > ri:
-			return 1
-		case lerr == nil && rerr != nil:
-			return -1
-		case lerr != nil && rerr == nil:
-			return 1
-		case l.prerelease[index] < r.prerelease[index]:
-			return -1
-		case l.prerelease[index] > r.prerelease[index]:
-			return 1
-		}
-	}
-	if len(l.prerelease) < len(r.prerelease) {
-		return -1
-	}
-	if len(l.prerelease) > len(r.prerelease) {
-		return 1
-	}
-	return 0
 }

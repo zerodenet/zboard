@@ -8,7 +8,7 @@ import NodeGroupMembershipEditor from '../components/NodeGroupMembershipEditor.v
 import NodeGroupLookup from '../components/NodeGroupLookup.vue'
 import WorkbenchFilterLookup from '../components/WorkbenchFilterLookup.vue'
 import RealityDomainProbe from '../components/RealityDomainProbe.vue'
-import { fetchProtocolEndpoint, fetchProtocolEndpointUsageResets, fetchProtocolEndpointsPage, getVersion, resetProtocolEndpointUsage, saveNetworkEntry, updateProtocolEndpointsBatch } from '../api/client'
+import { deployProtocolEndpoint, fetchProtocolEndpoint, fetchProtocolEndpointUsageResets, fetchProtocolEndpointsPage, getVersion, resetProtocolEndpointUsage, saveNetworkEntry, updateProtocolEndpointsBatch } from '../api/client'
 import { trackedTaskSummaries } from '../utils/taskTracker'
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), order: vi.fn(), saveOrder: vi.fn() }))
@@ -28,6 +28,7 @@ vi.mock('../api/client', async (importOriginal) => ({
   fetchSubscriptionDeliveryOrder: mocks.order,
   updateSubscriptionDeliveryOrder: mocks.saveOrder,
   saveNetworkEntry: vi.fn(),
+  deployProtocolEndpoint: vi.fn(),
   updateProtocolEndpointsBatch: vi.fn(),
 }))
 vi.mock('../utils/feedback', () => ({ confirmAction: vi.fn(async () => true), notify: vi.fn() }))
@@ -68,6 +69,33 @@ describe('Protocol creation and actionable errors', () => {
     vi.mocked(fetchProtocolEndpointsPage).mockResolvedValue({ items: [], total: 0 } as any)
     vi.mocked(getVersion).mockResolvedValue({ protocol_capabilities: {} } as any)
     mocks.create.mockResolvedValue({ protocol_endpoint: { id: 10 }, publish_status: 'queued', timing: {} })
+  })
+
+  it('saves constrained Direct egress without proxy server or credential fields', async () => {
+    const wrapper = await render()
+    await click(wrapper, '创建协议服务'); await click(wrapper, '实际协议监听')
+    wrapper.findAllComponents({ name: 'UiInput' })[0].vm.$emit('update:modelValue', 'IPv6 Direct')
+    await click(wrapper, '下一步')
+    const state = (wrapper.vm as any).$.setupState
+    Object.assign(state.egress, { enabled: true, protocol: 'direct', address_family: 'only_ipv6', interface: 'eth1', source_ip: '2001:db8::5' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('出站地址族')
+    expect(wrapper.text()).not.toContain('出口服务器')
+    await click(wrapper, '下一步'); await wrapper.get('#protocol-form').trigger('submit'); await flushPromises()
+    expect(JSON.parse(mocks.create.mock.calls[0][0].egress_config)).toEqual({ type: 'direct', dial: { address_family: 'only_ipv6', interface: 'eth1', source_ip: '2001:db8::5' } })
+    wrapper.unmount()
+  })
+
+  it('suggests IPv6 listening for a newly selected IPv6 VPS', async () => {
+    const wrapper = await render()
+    await click(wrapper, '创建协议服务'); await click(wrapper, '实际协议监听')
+    const state = (wrapper.vm as any).$.setupState
+    state.handleNodeSelect({ id: 1, name: 'IPv6 VPS', address: '2001:db8::8' })
+    expect(state.form.listen_address).toBe('::')
+    state.form.listen_address = '2001:db8::9'
+    state.handleNodeSelect({ id: 1, name: 'IPv6 VPS', address: '2001:db8::8' })
+    expect(state.form.listen_address).toBe('2001:db8::9')
+    wrapper.unmount()
   })
   it('allows Mieru on reset release numbers even when an older API advertises a minimum', async () => {
     vi.mocked(getVersion).mockResolvedValue({ protocol_capabilities: { mieru: { supported: true, minimum_zero_version: '0.0.15-rc.4' } } } as any)
@@ -353,5 +381,20 @@ it('allows editing Shadowsocks ports and resets only the selected service measur
   await flushPromises()
   await click(wrapper, '确认重置')
   expect(resetProtocolEndpointUsage).toHaveBeenCalledWith(8, '更换端口')
+  wrapper.unmount()
+})
+
+
+it('shows capability deferral as preserved runtime rather than publication failure', async () => {
+  vi.mocked(fetchProtocolEndpointsPage).mockResolvedValue({ items: [{ id: 8, service_kind: 'listener', node_id: 1, name: 'IPv6 入口', protocol: 'vless', is_active: true, kernel_supported: true, latest_deployment: { id: 9, status: 'deferred', has_error: true }, publication: { status: 'deferred', attempts: 0, has_error: true } }], total: 1 } as any)
+  vi.mocked(deployProtocolEndpoint).mockResolvedValue({ deployment: { status: 'deferred', error: 'only_ipv6 尚不可用' }, latency_ms: 0 })
+  const wrapper = await render()
+  expect(wrapper.find('button[aria-label="发布协议服务 IPv6 入口"]').attributes('disabled')).toBeUndefined()
+  await wrapper.get('button[aria-label="发布协议服务 IPv6 入口"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('新设置暂未生效，节点保持当前配置')
+  expect(wrapper.getComponent({ name: 'TransientFeedback' }).props('success')).toBe('')
+  expect(wrapper.find('router-link-stub').exists()).toBe(true)
+  expect(wrapper.text()).not.toContain('发布失败')
   wrapper.unmount()
 })

@@ -157,7 +157,7 @@
             </section>
             <div v-if="kernelOperations.length" class="kernel-history">
               <div v-for="operation in kernelOperations.slice(0, 5)" :key="operation.id">
-                <StatusBadge :tone="operationStatusTone(operation.status)" :icon="operation.status === 'succeeded' ? 'check' : operation.status === 'running' ? 'refresh' : 'alert'">{{ operationStatusLabel(operation.status) }}</StatusBadge>
+                <StatusBadge :tone="operationStatusTone(operation.status)" :icon="operation.status === 'succeeded' ? 'check' : operation.status === 'running' ? 'refresh' : operation.status === 'deferred' ? 'clock' : 'alert'">{{ operationStatusLabel(operation.status) }}</StatusBadge>
                 <div><strong>{{ operationLabel(operation.operation_type) }} · #{{ operation.id }}</strong><p>{{ operationSummary(operation) }}</p></div>
                 <TimeBadge :value="operation.created_at" />
               </div>
@@ -535,8 +535,8 @@ function serviceLabel(value?: string) { return ({ active: '运行中', inactive:
 function controlLabel(value?: string) { return value === 'healthy' ? '健康' : value === 'unavailable' ? '不可用' : !value || value === 'unknown' ? '未检测' : formatUnknownValue('状态', value) }
 function serviceTone(value?: string): 'success' | 'warning' | 'danger' | 'neutral' { return value === 'active' ? 'success' : value === 'inactive' || value === 'not_found' ? 'warning' : value === 'failed' ? 'danger' : 'neutral' }
 function controlTone(value?: string): 'success' | 'danger' | 'neutral' { return value === 'healthy' ? 'success' : value === 'unavailable' ? 'danger' : 'neutral' }
-function operationStatusLabel(value: string) { return ({ running: '执行中', succeeded: '已完成', failed: '执行失败' } as Record<string, string>)[value] || formatUnknownValue('状态', value) }
-function operationStatusTone(value: string): 'info' | 'success' | 'danger' { return value === 'running' ? 'info' : value === 'succeeded' ? 'success' : 'danger' }
+function operationStatusLabel(value: string) { return ({ running: '执行中', succeeded: '已完成', failed: '执行失败', deferred: '保持现状（待适配）' } as Record<string, string>)[value] || formatUnknownValue('状态', value) }
+function operationStatusTone(value: string): 'info' | 'success' | 'danger' | 'warning' { return value === 'running' ? 'info' : value === 'succeeded' ? 'success' : value === 'deferred' ? 'warning' : 'danger' }
 function kernelActionLabel(value?: string) { return ({ detect: '先检测', install: '安装', upgrade: '升级', repair: '修复', configure: '同步配置', check_release: '检查新版本', manual_review: '人工确认', none: '无需操作' } as Record<string, string>)[value || 'detect'] || formatUnknownValue('动作', value) }
 function operationLabel(value?: string) { return ({ detect: '环境检测', reconcile: '状态对齐', install: '安装', upgrade: '升级', downgrade: '降级', repair: '修复', configure: '配置同步', none: '状态确认' } as Record<string, string>)[value || 'reconcile'] || formatUnknownValue('操作', value) }
 function operationSummary(operation: NodeKernelOperation) { return truncateOutput(normalizeOutput(operation.result_summary || operation.error || kernelPhaseLabel(operation.phase)), 220) }
@@ -578,7 +578,7 @@ async function submitBatchKernelRollout() {
   } catch (e: any) { error.value = e?.response?.data?.message || 'Zero 批量升级任务创建失败。' }
   finally { bulkBusy.value = '' }
 }
-function kernelPhaseLabel(value?: string) { return ({ queued: '排队中…', detecting: '检测中…', resolving_release: '匹配制品…', preparing_connector_credential: '准备连接凭证…', downloading: '校验制品…', staging: '暂存并切换…', verifying: '本地健康检查…', waiting_connector_event: '等待 Connector 事件…', waiting_heartbeat: '等待兼容心跳…', completed: '已完成' } as Record<string, string>)[value || 'queued'] || '处理中…' }
+function kernelPhaseLabel(value?: string) { return ({ queued: '排队中…', detecting: '检测中…', resolving_release: '匹配制品…', preparing_connector_credential: '准备连接凭证…', downloading: '校验制品…', staging: '暂存并切换…', verifying: '本地健康检查…', waiting_connector_event: '等待 Connector 事件…', waiting_heartbeat: '等待兼容心跳…', completed: '已完成', configuration_deferred: '新设置待适配，保持当前配置' } as Record<string, string>)[value || 'queued'] || '处理中…' }
 
 async function loadKernel(nodeID?: number) {
   const request = kernelRequests.begin()

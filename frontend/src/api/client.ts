@@ -512,7 +512,7 @@ export interface NodeKernelOperation {
   id: number
   node_id: number
   operation_type: string
-  status: 'running' | 'succeeded' | 'failed'
+  status: 'running' | 'succeeded' | 'failed' | 'deferred'
   phase: string
   desired_version: string
   result_summary: string
@@ -523,6 +523,7 @@ export interface NodeKernelOperation {
 export interface ZeroRelease {
   version: string
   tag: string
+  prerelease: boolean
   artifact_url: string
   artifact_sha256: string
   artifact_size: number
@@ -776,7 +777,7 @@ export interface ProtocolEndpointListItem {
 		reset_at?: string
 	}
 	latest_deployment?: Pick<ProtocolDeployment, 'id' | 'status' | 'started_at' | 'finished_at' | 'created_at'> & { has_error: boolean }
-	publication?: { status: 'queued' | 'running' | 'failed'; attempts: number; next_attempt_at: string; has_error: boolean }
+	publication?: { status: 'queued' | 'running' | 'failed' | 'deferred'; attempts: number; next_attempt_at: string; has_error: boolean }
 	created_at: string
 	updated_at: string
 }
@@ -872,7 +873,7 @@ export type ProtocolDeployment = {
   protocol_endpoint_id: number
   node_id: number
   config_revision: number
-  status: 'running' | 'succeeded' | 'failed'
+  status: 'running' | 'succeeded' | 'failed' | 'deferred'
   output?: string
   error?: string
   started_at?: string
@@ -2011,7 +2012,7 @@ export interface OperationLog {
 	id: number
 	source: 'protocol_publish' | 'node_kernel' | 'task'
 	action: string
-	status: 'queued' | 'running' | 'succeeded' | 'failed'
+	status: 'queued' | 'running' | 'succeeded' | 'failed' | 'deferred'
 	target_type: string
 	target_id: number
 	node_id?: number
@@ -2505,6 +2506,7 @@ export async function startDatabaseMigration(payload: { target_driver: 'mysql' |
 }
 
 export interface NetworkEntry {
+ listen_address?: string
  deployment_mode?: 'managed' | 'external'
  node_online?: boolean
  node_last_seen_at?: string

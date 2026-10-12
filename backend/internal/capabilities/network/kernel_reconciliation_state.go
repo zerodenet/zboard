@@ -56,6 +56,7 @@ type KernelReconciliationRepository interface {
 	BlockKernelDowngrade(context.Context, KernelOperation, KernelProbe, KernelRelease, string, string, time.Time) error
 	CompleteKernelReconciliation(context.Context, KernelOperation, KernelProbe, KernelRelease, string, string, string, bool, bool, string, time.Time) (KernelReconciliationResult, error)
 	FailKernelReconciliation(context.Context, KernelOperation, string, error, bool, time.Time) error
+	DeferKernelReconciliation(context.Context, KernelOperation, error, time.Time) error
 }
 
 type KernelReconciliationState struct {
@@ -142,6 +143,9 @@ func (s KernelReconciliationState) Complete(ctx context.Context, operation Kerne
 func (s KernelReconciliationState) Fail(ctx context.Context, operation KernelOperation, failure error) error {
 	if s.Repository == nil || operation.ID == 0 || failure == nil {
 		return ErrKernelReconciliationUnavailable
+	}
+	if IsConfigurationCapabilityDeferral(failure) {
+		return s.Repository.DeferKernelReconciliation(ctx, operation, failure, s.now())
 	}
 	return s.Repository.FailKernelReconciliation(ctx, operation, operation.Phase, failure, errors.Is(failure, ErrKernelPlatformUnsupported), s.now())
 }

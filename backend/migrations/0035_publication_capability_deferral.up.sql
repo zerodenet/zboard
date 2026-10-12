@@ -1,0 +1,1 @@
+ALTER TABLE node_config_publishes ADD COLUMN deferred BOOLEAN NOT NULL DEFAULT FALSE;

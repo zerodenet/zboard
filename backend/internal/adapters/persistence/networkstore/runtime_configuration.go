@@ -77,20 +77,20 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		}
 
 		type credentialRow struct {
-			ID                    uint
-			SubscriptionID        uint
-			ProtocolEndpointID    uint
-			PrincipalKey          string
-			Secret                string
-			ListenPort            int
-			PublicPort            int
-			SubscriptionUpdatedAt time.Time
-			SpeedLimitMbps        int
-			DeviceLimit           int
+			ID                 uint
+			SubscriptionID     uint
+			ProtocolEndpointID uint
+			PrincipalKey       string
+			Secret             string
+			ListenPort         int
+			PublicPort         int
+			PolicyRevision     uint64
+			SpeedLimitMbps     int
+			DeviceLimit        int
 		}
 		var credentials []credentialRow
 		if err := tx.Table("protocol_credentials").
-			Select("protocol_credentials.id, protocol_credentials.subscription_id, protocol_credentials.protocol_endpoint_id, protocol_credentials.principal_key, protocol_credentials.secret, protocol_credentials.listen_port, protocol_credentials.public_port, subscriptions.updated_at AS subscription_updated_at, subscriptions.speed_limit_mbps, subscriptions.device_limit").
+			Select("protocol_credentials.id, protocol_credentials.subscription_id, protocol_credentials.protocol_endpoint_id, protocol_credentials.principal_key, protocol_credentials.secret, protocol_credentials.listen_port, protocol_credentials.public_port, subscriptions.kernel_policy_revision AS policy_revision, subscriptions.speed_limit_mbps, subscriptions.device_limit").
 			Joins("JOIN subscriptions ON subscriptions.id = protocol_credentials.subscription_id").
 			Joins(CredentialMembershipJoin("node_group_endpoints.node_group_id = subscriptions.node_group_id AND node_group_endpoints.protocol_endpoint_id = protocol_credentials.protocol_endpoint_id")).
 			Where("protocol_credentials.protocol_endpoint_id IN ?", endpointIDs).
@@ -131,7 +131,7 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		for _, row := range credentials {
 			credentialsByEndpoint[row.ProtocolEndpointID] = append(credentialsByEndpoint[row.ProtocolEndpointID], network.RuntimeConfigurationCredential{
 				ID: row.ID, SubscriptionID: row.SubscriptionID, PrincipalKey: row.PrincipalKey, Secret: row.Secret,
-				ListenPort: row.ListenPort, PublicPort: row.PublicPort, SubscriptionUpdatedAt: row.SubscriptionUpdatedAt,
+				ListenPort: row.ListenPort, PublicPort: row.PublicPort, PolicyRevision: row.PolicyRevision,
 				SpeedLimitMbps: row.SpeedLimitMbps, DeviceLimit: row.DeviceLimit,
 				SoleActiveCredential: activeCredentialCount[row.SubscriptionID] == 1,
 			})
@@ -199,7 +199,7 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		result.NetworkEntries = make([]network.RuntimeConfigurationNetworkEntry, 0, len(entries))
 		for _, entry := range entries {
 			item := network.RuntimeConfigurationNetworkEntry{
-				ID: entry.ID, NodeID: entry.NodeID, EndpointID: entry.EndpointID, Network: entry.Network,
+				ID: entry.ID, NodeID: entry.NodeID, EndpointID: entry.EndpointID, Network: entry.Network, ListenAddress: entry.ListenAddress,
 				Port: entry.Port, ProxyPoolID: entry.ProxyPoolID, PathConfig: entry.PathConfig,
 			}
 			if landing, exists := landingByID[entry.EndpointID]; exists {

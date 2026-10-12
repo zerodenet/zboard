@@ -93,12 +93,18 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	fail := func(cause error, output string) (model.ProtocolDeployment, time.Duration, error) {
 		if credentialActivated && !remoteActivated {
 			if restoreErr := restoreCredential(); restoreErr != nil {
-				cause = errors.Join(cause, fmt.Errorf("restore generated connector credential: %w", restoreErr))
+				cause = errors.Join(cause, network.ErrConfigurationPublicationCommit, fmt.Errorf("restore generated connector credential: %w", restoreErr))
 			}
 		}
 		finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), network.KernelDetectionFinalizeTimeout)
 		defer cancel()
-		failed, failureErr := state.Fail(finalizeCtx, deploymentState, cause, output)
+		var failed network.ConfigurationDeployment
+		var failureErr error
+		if network.IsConfigurationCapabilityDeferral(cause) {
+			failed, failureErr = state.Defer(finalizeCtx, deploymentState, cause, output)
+		} else {
+			failed, failureErr = state.Fail(finalizeCtx, deploymentState, cause, output)
+		}
 		if failed.ID != 0 {
 			deploymentState = failed
 			deployment = configurationDeploymentModel(failed)
@@ -112,7 +118,7 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	if err != nil {
 		return fail(fmt.Errorf("detect installed Zero before publishing config: %w", err), "")
 	}
-	if !probe.Installed || strings.TrimSpace(probe.Version) == "" {
+	if !probe.Installed {
 		return fail(fmt.Errorf("detect installed Zero before publishing config: Zero is not installed"), "")
 	}
 	// Readiness commits only after the target accepts and activates this config.
@@ -158,6 +164,9 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 		ConnectorKey: credential.Raw,
 	})
 	if err != nil {
+		// An SSH failure can lose the acknowledgement after config.apply commits.
+		// Keep the generated credential stable for durable recovery in that case.
+		remoteActivated = remote.Committed || remote.MayHaveApplied
 		return fail(err, remote.Output)
 	}
 	remoteActivated = true

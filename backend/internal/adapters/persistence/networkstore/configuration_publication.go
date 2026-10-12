@@ -62,7 +62,7 @@ func (s ConfigurationPublicationState) SetConfigurationPublicationDesired(ctx co
 			return err
 		}
 		if err := tx.Model(&state).Updates(map[string]interface{}{
-			"status": "publishing", "phase": "applying_config", "desired_config_sha256": configSHA, "last_error": "",
+			"phase": "applying_config", "desired_config_sha256": configSHA,
 		}).Error; err != nil {
 			return err
 		}
@@ -89,7 +89,12 @@ func (s ConfigurationPublicationState) RestoreConfigurationConnectorCredential(c
 		if _, err := lockConfigurationDeployment(tx, deployment); err != nil {
 			return err
 		}
-		return restoreConnectorSnapshot(tx, deployment.NodeID, snapshot)
+		// Config publication never restarts the process. Restore only credential
+		// state; concurrent heartbeat/traffic observations remain authoritative.
+		return tx.Model(&model.Node{}).Where("id = ?", deployment.NodeID).Updates(map[string]interface{}{
+			"node_credential": snapshot.Credential.Ciphertext, "node_credential_prefix": snapshot.Credential.Prefix,
+			"node_credential_revoked_at": snapshot.RevokedAt,
+		}).Error
 	})
 }
 
@@ -171,6 +176,31 @@ func (s ConfigurationPublicationState) FailConfigurationPublication(ctx context.
 			return err
 		}
 		row.Status, row.Output, row.Error, row.FinishedAt = "failed", output, message, &now
+		out = configurationDeploymentView(row)
+		return nil
+	})
+	return
+}
+
+func (s ConfigurationPublicationState) DeferConfigurationPublication(ctx context.Context, deployment network.ConfigurationDeployment, message, output string, now time.Time) (out network.ConfigurationDeployment, err error) {
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		row, err := lockConfigurationDeployment(tx, deployment)
+		if err != nil {
+			return err
+		}
+		state, err := lockOrCreateKernelState(tx, deployment.NodeID)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&row).Updates(map[string]interface{}{"status": "deferred", "output": output, "error": message, "finished_at": now}).Error; err != nil {
+			return err
+		}
+		// Desired intent remains pending. Applied digest, health, readiness and
+		// node timestamps describe the unchanged runtime and must stay intact.
+		if err := tx.Model(&state).Update("phase", "configuration_deferred").Error; err != nil {
+			return err
+		}
+		row.Status, row.Output, row.Error, row.FinishedAt = "deferred", output, message, &now
 		out = configurationDeploymentView(row)
 		return nil
 	})

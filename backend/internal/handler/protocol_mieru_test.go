@@ -4,12 +4,91 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
+
+func TestStartupDoesNotRepublishReadyManagedNodes(t *testing.T) {
+	h := openPublishTestHandlers(t, filepath.Join(t.TempDir(), "managed-startup.db"))
+	h.zeroMieruAccess = true
+	for index, protocol := range []string{"trojan", "hysteria2"} {
+		nodeID := uint(index + 1)
+		if err := h.db.Create(&model.Node{ID: nodeID, Name: protocol, LifecycleStatus: "active"}).Error; err != nil {
+			t.Fatal(err)
+		}
+		endpoint := model.ProtocolEndpoint{ID: nodeID, NodeID: nodeID, Name: protocol, RuntimeKey: fmt.Sprintf("00000000-0000-4000-8000-%012d", nodeID), Protocol: protocol, Address: "node.example", Port: 443, PublicPort: 443, IsActive: true, ManagedPrincipalReady: true, OptionalConfig: "{}", Tags: "[]"}
+		if err := h.db.Create(&endpoint).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		if err := h.ReconcileMieruEndpointCredentials(); err != nil {
+			t.Fatal(err)
+		}
+		var count int64
+		if err := h.db.Model(&model.NodeConfigPublish{}).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("startup queued ready nodes: count=%d error=%v", count, err)
+		}
+	}
+	// An incomplete migration still queues work. Subsequent startup must leave
+	// that durable intent intact after a successful publication marks it ready.
+	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", 1).Update("managed_principal_ready", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.ReconcileMieruEndpointCredentials(); err != nil {
+		t.Fatal(err)
+	}
+	var pending model.NodeConfigPublish
+	if err := h.db.First(&pending, "node_id = ?", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pending.EndpointID != 1 {
+		t.Fatalf("migration target=%+v", pending)
+	}
+	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", 1).Update("managed_principal_ready", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.ReconcileMieruEndpointCredentials(); err != nil {
+		t.Fatal(err)
+	}
+	var retained model.NodeConfigPublish
+	if err := h.db.First(&retained, "node_id = ?", 1).Error; err != nil || retained.Generation != pending.Generation {
+		t.Fatalf("startup changed pending intent: before=%+v after=%+v error=%v", pending, retained, err)
+	}
+}
+
+func TestLegacyArtifactModeDoesNotRepublishReadyMieruAtStartup(t *testing.T) {
+	h := openPublishTestHandlers(t, filepath.Join(t.TempDir(), "ready-mieru.db"))
+	node := model.Node{ID: 51, Name: "native-mieru", LifecycleStatus: "active"}
+	if err := h.db.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	server, client, err := prepareMieruEndpointConfigsWithExisting(`{"type":"mieru","users":[]}`, `{"type":"mieru"}`, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cipher, err := h.credentialCipher.Encrypt(server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := model.ProtocolEndpoint{ID: 52, NodeID: 51, Name: "ready", RuntimeKey: "00000000-0000-4000-8000-000000000052", Protocol: "mieru", Address: "node.example", Port: 2443, PublicPort: 2443, IsActive: true, MieruPrincipalReady: true, ServerConfig: cipher, ClientConfig: client, OptionalConfig: "{}", Tags: "[]"}
+	if err := h.db.Create(&endpoint).Error; err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := h.ReconcileMieruEndpointCredentials(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var count int64
+	if err := h.db.Model(&model.NodeConfigPublish{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("healthy Mieru republished because host artifact mode is legacy: %d %v", count, err)
+	}
+}
 
 func TestPrepareMieruEndpointConfigsGeneratesAndHidesCredential(t *testing.T) {
 	h, err := newTestHandlers(nil, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")

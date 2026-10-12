@@ -47,6 +47,12 @@ func (s *configurationPublicationRepositoryStub) FailConfigurationPublication(_ 
 	return deployment, s.failurePersistence
 }
 
+func (s *configurationPublicationRepositoryStub) DeferConfigurationPublication(_ context.Context, deployment ConfigurationDeployment, message, output string, _ time.Time) (ConfigurationDeployment, error) {
+	s.failure, s.failureOutput = message, output
+	deployment.Status = "deferred"
+	return deployment, s.failurePersistence
+}
+
 func TestConfigurationPublicationStateDelegatesFencedLifecycle(t *testing.T) {
 	repository := &configurationPublicationRepositoryStub{start: ConfigurationPublicationStart{Deployment: ConfigurationDeployment{ID: 7, NodeID: 3}}}
 	state := ConfigurationPublicationState{Repository: repository, Now: func() time.Time { return time.Unix(10, 0) }}

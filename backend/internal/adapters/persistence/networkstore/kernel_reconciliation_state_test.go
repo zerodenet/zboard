@@ -34,6 +34,54 @@ func healthyKernelProbe() network.KernelProbe {
 	}
 }
 
+func TestKernelCapabilityDeferralDoesNotInvalidateExistingRuntime(t *testing.T) {
+	store, admin, node, _ := kernelReconciliationFixture(t)
+	now := time.Now().UTC()
+	if err := store.DB.Create(&model.NodeKernelState{NodeID: node.ID, Status: "healthy", AppliedConfigSHA256: "old-config", ServiceStatus: "active", ControlStatus: "healthy"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	operation, err := store.BeginReconciliation(context.Background(), network.KernelDetectionRequest{NodeID: node.ID, ActorID: admin.ID}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeferKernelReconciliation(context.Background(), operation, network.ErrConfigurationCapabilityUnavailable, now); err != nil {
+		t.Fatal(err)
+	}
+	var state model.NodeKernelState
+	var result model.NodeOperation
+	store.DB.First(&state, "node_id = ?", node.ID)
+	store.DB.First(&result, operation.ID)
+	if state.Status != "healthy" || state.AppliedConfigSHA256 != "old-config" || state.ActiveOperationID != nil || result.Status != "deferred" {
+		t.Fatalf("runtime changed: %+v operation=%+v", state, result)
+	}
+}
+
+func TestExplicitKernelCompletionResumesDeferredPublication(t *testing.T) {
+	store, admin, node, endpoint := kernelReconciliationFixture(t)
+	ctx, now := context.Background(), time.Now().UTC()
+	if err := store.DB.Model(&endpoint).Update("mieru_principal_ready", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB.Create(&model.NodeConfigPublish{NodeID: node.ID, EndpointID: endpoint.ID, Generation: 4, Attempts: 3, Deferred: true, NextAttemptAt: now.Add(network.PublicationCapabilityRecheck), LeaseUntil: publicationIdleLease}).Error; err != nil {
+		t.Fatal(err)
+	}
+	op, err := store.BeginReconciliation(ctx, network.KernelDetectionRequest{NodeID: node.ID, ActorID: admin.ID}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := healthyKernelProbe()
+	if _, err := store.CompleteKernelReconciliation(ctx, op, probe, network.KernelRelease{Version: probe.Version}, probe.BinarySHA256, probe.ConfigSHA256, "confirmed", true, true, "", now); err != nil {
+		t.Fatal(err)
+	}
+	var pending model.NodeConfigPublish
+	if err := store.DB.First(&pending, "node_id = ?", node.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pending.Deferred || pending.Generation != 5 || pending.Attempts != 0 || pending.NextAttemptAt.After(now) {
+		t.Fatalf("capabilities not reevaluated: %+v", pending)
+	}
+}
+
 func TestKernelReconciliationPersistsFencedLifecycleAndPublication(t *testing.T) {
 	store, admin, node, endpoint := kernelReconciliationFixture(t)
 	ctx := context.Background()

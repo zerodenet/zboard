@@ -3021,9 +3021,9 @@ paths:
   /api/v1/admin/kernel/releases/latest:
     get:
       tags: [nodes, admin]
-      summary: Resolve the latest stable official Zero Linux x86_64 release
+      summary: Resolve the configured or pinned supported Zero Linux x86_64 release
       responses:
-        "200": { description: "Immutable release tag, URL, size and artifact SHA-256" }
+        "200": { description: "Immutable release tag, prerelease status, URL, size and artifact SHA-256. The current default is a pinned v0.0.3 dev build, not a final release." }
         "403": { $ref: "#/components/responses/Error" }
   /api/v1/admin/kernel/releases:
     get:
@@ -4151,7 +4151,7 @@ paths:
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol, in: query, schema: { type: string } }
         - { name: active, in: query, schema: { type: boolean } }
-        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, never] } }
+        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, deferred, never] } }
       responses:
         "200":
           description: Stable ID-only selection snapshot
@@ -4179,7 +4179,7 @@ paths:
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol, in: query, schema: { type: string } }
         - { name: active, in: query, schema: { type: boolean } }
-        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, never] } }
+        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, deferred, never] } }
         - { name: include_facets, in: query, schema: { type: boolean, default: false }, description: "Include current publication-state counts for the non-status filters in the paged response." }
         - { name: sort, in: query, schema: { type: string, enum: [sort_order, id, name, node_id, protocol, multiplier, updated_at] } }
         - { name: direction, in: query, schema: { type: string, enum: [asc, desc] } }
@@ -4452,7 +4452,7 @@ paths:
       parameters:
         - { in: query, name: node_id, schema: { type: integer, format: int64 } }
         - { in: query, name: protocol_endpoint_id, schema: { type: integer, format: int64 } }
-        - { in: query, name: status, schema: { type: string, enum: [running, succeeded, failed] } }
+        - { in: query, name: status, schema: { type: string, enum: [running, succeeded, failed, deferred] } }
         - { in: query, name: offset, schema: { type: integer, minimum: 0 } }
         - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 200 } }
       responses:
@@ -5011,7 +5011,7 @@ paths:
       description: Operational output is separate from the security and business audit trail. Results are merged newest first across existing durable operation records.
       parameters:
         - { name: source, in: query, schema: { type: string, enum: [protocol_publish, node_kernel, task] } }
-        - { name: status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed] } }
+        - { name: status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, deferred] } }
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol_endpoint_id, in: query, schema: { type: integer, format: int64 } }
         - { name: cursor, in: query, schema: { type: string }, description: Opaque bidirectional history cursor returned by page.next_cursor or page.previous_cursor. }
@@ -5621,6 +5621,7 @@ components:
               expected_revision: { type: integer, minimum: 1 }
               member: { type: boolean }
         address: { type: string, description: Client-visible address of A }
+        listen_address: { type: string, description: "Local IPv4 or IPv6 listen address for managed forwarding. Defaults to 0.0.0.0 on create; omitted on update preserves the stored address. :: does not promise portable dual-stack acceptance." }
         port: { type: integer, minimum: 1, maximum: 65535 }
         public_port: { type: integer, minimum: 1, maximum: 65535, description: Defaults to port }
         enabled: { type: boolean }
@@ -6113,9 +6114,9 @@ components:
         q: { type: string, maxLength: 100 }
         node_id: { type: integer, format: int64, minimum: 1 }
         protocol: { type: string }
-        egress_protocol: { type: string, enum: [socks5, vless, vmess, trojan, shadowsocks, hysteria2, mieru], description: Omitted when this endpoint uses direct egress. }
+        egress_protocol: { type: string, enum: [direct, socks5, vless, vmess, trojan, shadowsocks, hysteria2, mieru], description: Omitted for default Direct auto egress. }
         active: { type: boolean }
-        deployment_status: { type: string, enum: [queued, running, succeeded, failed, never] }
+        deployment_status: { type: string, enum: [queued, running, succeeded, failed, deferred, never] }
     ProtocolBatchScopeRequest:
       type: object
       properties:
@@ -6558,7 +6559,7 @@ components:
           required: [config, usage, kernel_supported, node_group_memberships]
           properties:
             config: { type: string, description: Decrypted administrator-only server configuration. }
-            egress_config: { type: string, description: Decrypted administrator-only Zero outbound protocol JSON. Empty when direct egress is used. }
+            egress_config: { type: string, description: Administrator-only outbound protocol JSON. Direct may contain dial constraints. Empty means default Direct auto. }
             managed_certificate_id: { type: integer, format: int64, nullable: true }
             latest_deployment: { $ref: "#/components/schemas/ProtocolDeploymentSummary" }
             publication: { $ref: "#/components/schemas/PublicationQueueSummary" }
@@ -6570,7 +6571,7 @@ components:
       type: object
       properties:
         id: { type: integer, format: int64 }
-        status: { type: string, enum: [running, succeeded, failed] }
+        status: { type: string, enum: [running, succeeded, failed, deferred] }
         has_error: { type: boolean }
         started_at: { type: string, format: date-time, nullable: true }
         finished_at: { type: string, format: date-time, nullable: true }
@@ -6579,7 +6580,7 @@ components:
       type: object
       description: Current node publication request, if any. Takes precedence over latest_deployment when deciding the live state.
       properties:
-        status: { type: string, enum: [queued, running, failed] }
+        status: { type: string, enum: [queued, running, failed, deferred] }
         attempts: { type: integer, minimum: 0 }
         next_attempt_at: { type: string, format: date-time }
         has_error: { type: boolean }
@@ -6596,6 +6597,7 @@ components:
         endpoint_id: { type: integer, format: int64 }
         parent_protocol_id: { type: integer, format: int64 }
         address: { type: string }
+        listen_address: { type: string, description: Local managed-entry listen address }
         port: { type: integer }
         public_port: { type: integer }
         enabled: { type: boolean }
@@ -6621,7 +6623,7 @@ components:
         node_name: { type: string }
         name: { type: string }
         protocol: { type: string }
-        egress_protocol: { type: string, enum: [socks5, vless, vmess, trojan, shadowsocks, hysteria2, mieru] }
+        egress_protocol: { type: string, enum: [direct, socks5, vless, vmess, trojan, shadowsocks, hysteria2, mieru] }
         address: { type: string }
         port: { type: integer, minimum: 1, maximum: 65535 }
         public_port: { type: integer, minimum: 1, maximum: 65535 }
@@ -7741,7 +7743,7 @@ components:
         id: { type: integer, format: int64 }
         source: { type: string, enum: [protocol_publish, node_kernel, task] }
         action: { type: string }
-        status: { type: string, enum: [queued, running, succeeded, failed] }
+        status: { type: string, enum: [queued, running, succeeded, failed, deferred] }
         target_type: { type: string }
         target_id: { type: integer, format: int64 }
         node_id: { type: integer, format: int64 }
@@ -8082,7 +8084,7 @@ components:
           description: Zero inbound protocol JSON object. Its type field must match protocol.
         egress_config:
           type: string
-          description: Optional Zero outbound protocol JSON object. Empty means direct. When set, only this endpoint's inbound tag is routed through this single outbound.
+          description: 'Optional outbound protocol JSON. Empty means Direct auto. Direct accepts dial with address_family (auto, only_ipv4, only_ipv6), optional interface, and concrete source_ip. Dial is generated at outbound level and is not accepted on proxy protocols. Only this endpoint uses the selected outbound.'
         client_config:
           type: string
           description: Valid client JSON published through the subscription manifest.

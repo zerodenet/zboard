@@ -25,9 +25,10 @@
         <p v-if="formError" class="entry-error" role="alert">{{ formError }}</p>
         <FormField label="入口名称" required full hint="客户端订阅直接显示此名称，不再追加落地协议名称。展示位置可在「订阅展示顺序」中调整。"><UiInput v-model.trim="form.name" maxlength="80" placeholder="例如：香港入口" /></FormField>
         <FormField label="转发部署方式" full><UiSelect v-model="form.deployment_mode" :options="[{label:'外部已部署转发',value:'external'},{label:'面板托管 Zero 转发',value:'managed'}]" /></FormField>
-        <FormField v-if="form.deployment_mode === 'managed'" label="入口节点 A" required><NodeLookup v-model="form.node_id" @select="node => { if(node && !editing) form.address = node.address || '' }" /></FormField>
+        <FormField v-if="form.deployment_mode === 'managed'" label="入口节点 A" required><NodeLookup v-model="form.node_id" @select="node => { if(node && !editing) { form.address = node.address || ''; form.listen_address = String(node.address || '').includes(':') ? '::' : '0.0.0.0' } }" /></FormField>
         <FormField label="落地节点 B" required><NodeLookup v-model="landingNode" /></FormField>
         <FormField label="父协议（B 的实际协议）" required full :hint="endpointError || '入口继承父协议的握手参数与用户凭据，交付范围独立管理。'"><UiSelect v-model="form.endpoint_id" :options="endpointOptions" :disabled="!landingNode || endpointLoading" placeholder="选择落地协议" /></FormField>
+        <FormField v-if="form.deployment_mode === 'managed'" label="入口本地监听地址" hint="0.0.0.0 监听 IPv4；:: 监听 IPv6。IPv6 通配是否同时接收 IPv4 取决于节点系统。" required full><UiInput v-model.trim="form.listen_address" placeholder="0.0.0.0 或 ::" /></FormField>
         <FormField label="客户端入口地址" required full :hint="form.deployment_mode === 'external' ? '填写外部转发的客户端地址，面板不部署入口服务器。' : '客户端连接的 IP 或域名，面板会发布 A 的转发配置。'"><UiInput v-model.trim="form.address" placeholder="entry.example.com" /></FormField>
         <FormField v-if="form.deployment_mode === 'managed'" label="A 的监听端口" required><PortInput v-model="form.port" /></FormField>
         <FormField label="客户端入口端口" required hint="存在端口映射时填写映射后的端口。"><PortInput v-model="form.public_port" /></FormField>
@@ -68,7 +69,7 @@ const emit=defineEmits<{saved:[]}>()
 const entries = ref<NetworkEntry[]>([]), loading = ref(false), saving = ref(false), open = ref(false)
 const error = ref(''), message = ref(''), formError = ref(''), endpointError = ref(''), endpointLoading = ref(false)
 const editing = ref<NetworkEntry | null>(null), landingNode = ref(0), endpointOptions = ref<{label: string; value: number}[]>([])
-const form = reactive({deployment_mode: 'external' as 'external' | 'managed', network: 'tcp_udp', name: '', node_id: 0, endpoint_id: 0, address: '', port: 10000, public_port: 10000, enabled: true})
+const form = reactive({deployment_mode: 'external' as 'external' | 'managed', network: 'tcp_udp', name: '', node_id: 0, endpoint_id: 0, address: '', listen_address: '0.0.0.0', port: 10000, public_port: 10000, enabled: true})
 const pathMode = ref('direct')
 const poolID=ref(0),poolLoading=ref(false),poolError=ref(''),poolOptions=ref<{label:string;value:number}[]>([])
 const memberships=ref<ProtocolEndpointNodeGroupMembership[]>([]),originalMemberships=ref<ProtocolEndpointNodeGroupMembership[]>([])
@@ -87,7 +88,7 @@ watch(landingNode, async id => {
 })
 function edit(entry?: NetworkEntry) {
   editing.value = entry || null; landingNode.value = entry?.landing_node_id || 0; formError.value = ''; pathMode.value = entry?.proxy_pool_id ? 'pool' : entry?.has_path ? 'keep' : 'direct';poolID.value=entry?.proxy_pool_id||0;memberships.value=(entry?.node_group_memberships||[]).map(item=>({...item}));originalMemberships.value=memberships.value.map(item=>({...item}))
-  Object.assign(form, entry ? {deployment_mode: entry.deployment_mode || 'managed', network: entry.network || 'tcp_udp', name: entry.name, node_id: entry.node_id, endpoint_id: entry.endpoint_id, address: entry.address, port: entry.port, public_port: entry.public_port, enabled: entry.enabled} : {deployment_mode: 'external', network: 'tcp_udp', name: '', node_id: 0, endpoint_id: 0, address: '', port: 10000, public_port: 10000, enabled: true})
+  Object.assign(form, entry ? {deployment_mode: entry.deployment_mode || 'managed', network: entry.network || 'tcp_udp', name: entry.name, node_id: entry.node_id, endpoint_id: entry.endpoint_id, address: entry.address, listen_address: entry.listen_address || '0.0.0.0', port: entry.port, public_port: entry.public_port, enabled: entry.enabled} : {deployment_mode: 'external', network: 'tcp_udp', name: '', node_id: 0, endpoint_id: 0, address: '', listen_address: '0.0.0.0', port: 10000, public_port: 10000, enabled: true})
   open.value = true
 }
 async function save() {

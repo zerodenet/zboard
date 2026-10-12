@@ -80,6 +80,9 @@ func (s GroupCredentialReconciliation) ensureSubscriptions(ctx context.Context, 
 			return err
 		}
 		if current {
+			if err := reconcileKernelPolicy(ctx, s.DB, subscription.ID); err != nil {
+				return err
+			}
 			continue
 		}
 		err = RunCredentialTransaction(ctx, s.DB, func(tx *gorm.DB) error {
@@ -87,11 +90,17 @@ func (s GroupCredentialReconciliation) ensureSubscriptions(ctx context.Context, 
 			return err
 		})
 		if err == nil {
+			if err := reconcileKernelPolicy(ctx, s.DB, subscription.ID); err != nil {
+				return err
+			}
 			continue
 		}
 		if errors.Is(err, ErrCredentialLockTimeout) {
 			current, checkErr := subscriptionCredentialsCurrent(s.DB.WithContext(ctx), subscription, s.Issuer)
 			if checkErr == nil && current {
+				if err := reconcileKernelPolicy(ctx, s.DB, subscription.ID); err != nil {
+					return err
+				}
 				continue
 			}
 			if checkErr != nil {

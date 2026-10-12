@@ -11,6 +11,7 @@ var (
 	ErrConfigurationPublicationUnavailable = errors.New("configuration publication state capability unavailable")
 	ErrConfigurationDeploymentLost         = errors.New("configuration deployment ownership lost")
 	ErrConfigurationPublicationCommit      = errors.New("configuration publication state commit failed")
+	ErrConfigurationCapabilityUnavailable  = errors.New("当前内核不支持本次设置，现有运行配置保持不变")
 )
 
 type ConfigurationPublicationRequest struct {
@@ -58,6 +59,7 @@ type ConfigurationPublicationRepository interface {
 	RestoreConfigurationConnectorCredential(context.Context, ConfigurationDeployment, KernelConnectorSnapshot) error
 	CompleteConfigurationPublication(context.Context, ConfigurationDeployment, ConfigurationPublicationCompletion, time.Time) (ConfigurationDeployment, error)
 	FailConfigurationPublication(context.Context, ConfigurationDeployment, string, string, time.Time) (ConfigurationDeployment, error)
+	DeferConfigurationPublication(context.Context, ConfigurationDeployment, string, string, time.Time) (ConfigurationDeployment, error)
 }
 
 type ConfigurationPublicationState struct {
@@ -111,6 +113,22 @@ func (s ConfigurationPublicationState) Fail(ctx context.Context, deployment Conf
 		return failed, errors.Join(cause, ErrConfigurationPublicationCommit, err)
 	}
 	return failed, cause
+}
+
+func (s ConfigurationPublicationState) Defer(ctx context.Context, deployment ConfigurationDeployment, cause error, output string) (ConfigurationDeployment, error) {
+	if s.Repository == nil || deployment.ID == 0 || !errors.Is(cause, ErrConfigurationCapabilityUnavailable) {
+		return ConfigurationDeployment{}, ErrConfigurationPublicationUnavailable
+	}
+	deferred, err := s.Repository.DeferConfigurationPublication(ctx, deployment, TruncateKernelError(cause.Error()), strings.TrimSpace(output), s.now())
+	if err != nil {
+		return deferred, errors.Join(cause, ErrConfigurationPublicationCommit, err)
+	}
+	return deferred, cause
+}
+
+func IsConfigurationCapabilityDeferral(err error) bool {
+	return errors.Is(err, ErrConfigurationCapabilityUnavailable) &&
+		!errors.Is(err, ErrConfigurationPublicationCommit) && !errors.Is(err, ErrPublicationLeaseLost) && !errors.Is(err, ErrPublicationFinalize)
 }
 
 func (s ConfigurationPublicationState) now() time.Time {

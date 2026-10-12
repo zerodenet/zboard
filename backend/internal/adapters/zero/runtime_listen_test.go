@@ -17,7 +17,7 @@ func TestRuntimeRendererUsesIndependentListenAddressForEveryProtocol(t *testing.
 				endpoint := network.RuntimeConfigurationEndpoint{
 					ID: 1, Protocol: kind, ListenAddress: address, Address: "public.example", Port: 443, PublicPort: 8443,
 					MieruPrincipalReady: true, ActiveSubscriptionCount: 1,
-					Credentials: []network.RuntimeConfigurationCredential{{ID: 1, PrincipalKey: "subscription:1", Secret: "enc:secret", SoleActiveCredential: true}},
+					Credentials: []network.RuntimeConfigurationCredential{{PolicyRevision: 1, ID: 1, PrincipalKey: "subscription:1", Secret: "enc:secret", SoleActiveCredential: true}},
 				}
 				protocol := map[string]interface{}{"type": kind}
 				if kind == "shadowsocks" {
@@ -51,7 +51,7 @@ func TestRuntimeRendererUsesIndependentListenAddressForEveryProtocol(t *testing.
 
 func TestRuntimeRendererRejectsInvalidListenAndKeepsBootstrapLocal(t *testing.T) {
 	renderer := RuntimeConfigurationRenderer{Cipher: runtimeConfigurationCipher{}}
-	request := RuntimeConfigurationRenderRequest{NodeID: 1, APIKey: "secret", NativeConnector: true, Now: time.Now(), Snapshot: network.RuntimeConfigurationSnapshot{SiteURL: "https://panel.example"}}
+	request := RuntimeConfigurationRenderRequest{NodeID: 1, APIKey: "secret", Now: time.Now(), Snapshot: network.RuntimeConfigurationSnapshot{SiteURL: "https://panel.example"}}
 	request.Snapshot.Endpoints = []network.RuntimeConfigurationEndpoint{{ID: 1, Protocol: "vless", Port: 443, ListenAddress: "example.com", ServerConfig: `enc:{"type":"vless"}`}}
 	if _, _, err := renderer.Render(request); err == nil {
 		t.Fatal("invalid stored listen address was published")

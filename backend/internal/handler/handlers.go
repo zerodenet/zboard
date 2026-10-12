@@ -1649,7 +1649,7 @@ func (h *handlers) ProtocolEndpointDeployHandler(w http.ResponseWriter, r *http.
 	ctx, cancel := context.WithTimeout(context.Background(), nodeConfigPublishTimeout)
 	defer cancel()
 	deployment, elapsed, err := h.publishNodeConfig(ctx, endpointID, claims.UserID)
-	if err != nil {
+	if err != nil && !networkcap.IsConfigurationCapabilityDeferral(err) {
 		BadRequest(w, "protocol publish failed: "+err.Error())
 		return
 	}

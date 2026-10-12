@@ -446,7 +446,7 @@ func (s Inventory) decorateEndpoints(ctx context.Context, rows []model.ProtocolE
 
 func (s Inventory) publicationQueueStates(ctx context.Context, nodeIDs []uint, now time.Time) (map[uint]network.PublicationQueueRecord, error) {
 	var rows []model.NodeConfigPublish
-	if err := s.DB.WithContext(ctx).Select("node_id,attempts,next_attempt_at,lease_until,lease_token,last_error").Where("node_id IN ?", nodeIDs).Find(&rows).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Select("node_id,attempts,deferred,next_attempt_at,lease_until,lease_token,last_error").Where("node_id IN ?", nodeIDs).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	states := make(map[uint]network.PublicationQueueRecord, len(rows))
@@ -455,6 +455,8 @@ func (s Inventory) publicationQueueStates(ctx context.Context, nodeIDs []uint, n
 		switch {
 		case row.LeaseToken != "" && row.LeaseUntil.After(now):
 			status = "running"
+		case row.Deferred:
+			status = "deferred"
 		case row.LeaseToken != "" || row.LastError != "" && row.NextAttemptAt.After(now):
 			status = "failed"
 		}

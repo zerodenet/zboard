@@ -81,3 +81,16 @@ func TestPublicationRetryDelayIsBounded(t *testing.T) {
 		t.Fatal("unexpected publication retry policy")
 	}
 }
+
+func TestCapabilityDeferralIsPersistedWithoutFailingTheJobsRun(t *testing.T) {
+	store := &publicationStoreStub{}
+	q := PublicationQueue{Store: store, Executor: publicationExecutorFunc(func(context.Context, Publication) error { return ErrConfigurationCapabilityUnavailable })}
+	err := q.Execute(context.Background(), Publication{NodeID: 1, Generation: 1, LeaseToken: "lease"})
+	if err != nil || !errors.Is(store.completed, ErrConfigurationCapabilityUnavailable) {
+		t.Fatalf("execute=%v completed=%v", err, store.completed)
+	}
+	store.completionErr = errors.New("persist unavailable")
+	if err := q.Execute(context.Background(), Publication{NodeID: 1, Generation: 1, LeaseToken: "lease"}); !errors.Is(err, ErrPublicationFinalize) {
+		t.Fatalf("lost durable outcome swallowed: %v", err)
+	}
+}

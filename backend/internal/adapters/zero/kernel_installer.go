@@ -113,23 +113,34 @@ func (i KernelInstaller) Install(parent context.Context, request KernelInstallRe
 			return operationError(ctx, fmt.Errorf("stage %s: %w", file.path, err))
 		}
 	}
-	if request.ExpectedVersion != "" {
+	var capabilities NativeBuildInfo
+	{
 		output, err := session.Run("test \"$(sha256sum "+shellQuote(stage+"/zero")+" | awk '{print $1}')\" = "+shellQuote(request.BinarySHA256)+" && "+shellQuote(stage+"/zero")+" build_info", false)
 		if err != nil {
 			return operationError(ctx, fmt.Errorf("inspect uploaded kernel: %w", err))
 		}
-		actual := ""
-		for _, line := range strings.Split(output, "\n") {
-			if strings.HasPrefix(line, "build_id: ") {
-				actual = strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(line, "build_id: ")), "v")
-			}
+		info, infoErr := ParseNativeBuildInfo(output, request.RuntimeConfig)
+		if infoErr != nil {
+			return infoErr
 		}
-		if actual != request.ExpectedVersion {
-			return fmt.Errorf("uploaded kernel version %q does not match requested %q", actual, request.ExpectedVersion)
+		capabilities = info
+		if info.FeaturesDeclared && !info.Features["status-api"] {
+			return fmt.Errorf("%w：本次托管安装需要控制接口，未替换当前内核", ErrConfigurationCapabilityUnavailable)
+		}
+		if request.ExpectedVersion != "" && info.Version != request.ExpectedVersion {
+			return fmt.Errorf("uploaded kernel version %q does not match requested %q", info.Version, request.ExpectedVersion)
+		}
+	}
+	if capabilities.Features["connector"] || !capabilities.FeaturesDeclared {
+		if output, err := session.Run(shellQuote(stage+"/zero")+" connector-state "+shellQuote(stage+"/runtime.json")+" --json", true); err != nil {
+			return operationError(ctx, fmt.Errorf("Zero persistent-state preflight failed; kernel left unchanged: %w: %s", err, truncateOutput(output)))
 		}
 	}
 	output, err := session.Run(BuildKernelInstallScript(stage, request.BinarySHA256, request.OperationID), true)
 	if err != nil {
+		if configurationConfirmedUnapplied(output) && unsupportedConfigurationCapability(output) {
+			return fmt.Errorf("%w：%s", ErrConfigurationCapabilityUnavailable, truncateOutput(output))
+		}
 		return operationError(ctx, fmt.Errorf("activate Zero (automatic rollback attempted): %w: %s", err, truncateOutput(output)))
 	}
 	return operationError(ctx, nil)
@@ -189,7 +200,10 @@ set -a
 . "$stage/zero.env"
 set +a
 "$stage/zero" build_info >/dev/null
-"$stage/zero" validate "$stage/runtime.json" >/dev/null
+if ! "$stage/zero" validate "$stage/runtime.json" >/dev/null; then
+  printf 'ZBOARD_CONFIG_VALIDATION_REJECTED_CURRENT_UNCHANGED\n' >&2
+  exit 1
+fi
 install -d -m 0755 /usr/local/bin /etc/zerodenet/generations /var/lib/zerodenet/backups
 install -d -m 0700 "$backup"
 had_bin=0; had_env=0; had_service=0; old_active=0; old_enabled=0

@@ -63,7 +63,7 @@ func TestProtocolListenAddressPersistsPublishesAndSurvivesLegacyUpdate(t *testin
 		t.Fatalf("publication source lost listener: %+v %v", snapshot, err)
 	}
 	rendered, _, err := (zero.RuntimeConfigurationRenderer{Cipher: f.h.credentialCipher}).Render(zero.RuntimeConfigurationRenderRequest{
-		NodeID: node.ID, APIKey: "fixture", NativeConnector: true, Now: time.Now(), Snapshot: snapshot,
+		NodeID: node.ID, APIKey: "fixture", Now: time.Now(), Snapshot: snapshot,
 	})
 	if err != nil {
 		t.Fatal(err)

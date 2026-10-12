@@ -12,5 +12,5 @@ import (
 func EnqueuePublication(tx *gorm.DB, nodeID, endpointID, actor uint) error {
 	now := time.Now().UTC()
 	item := model.NodeConfigPublish{NodeID: nodeID, EndpointID: endpointID, RequestedBy: actor, Generation: 1, NextAttemptAt: now, LeaseUntil: time.Unix(0, 0).UTC()}
-	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "node_id"}}, DoUpdates: clause.Assignments(map[string]any{"endpoint_id": endpointID, "requested_by": actor, "generation": gorm.Expr("generation + 1"), "attempts": 0, "last_error": "", "next_attempt_at": now, "updated_at": now})}).Create(&item).Error
+	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "node_id"}}, DoUpdates: clause.Assignments(map[string]any{"endpoint_id": endpointID, "requested_by": actor, "generation": gorm.Expr("generation + 1"), "attempts": 0, "deferred": false, "last_error": "", "next_attempt_at": now, "updated_at": now})}).Create(&item).Error
 }

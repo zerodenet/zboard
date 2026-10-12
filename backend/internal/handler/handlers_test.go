@@ -1266,23 +1266,16 @@ func TestProtocolCredentialContractIsExplicitlyStaged(t *testing.T) {
 	}
 }
 
-func TestZeroConfigPublishScriptValidatesSwitchesAndChecksHealth(t *testing.T) {
+func TestZeroConfigPublishScriptValidatesAndHotAppliesWithoutServiceRestart(t *testing.T) {
 	script := zeroadapter.BuildConfigurationPublishScript("/tmp/stage", strings.Repeat("a", 64), 91)
-	for _, required := range []string{
-		`zero validate "$stage/runtime.json"`,
-		`mv -Tf /etc/zerodenet/current.json.next /etc/zerodenet/current.json`,
-		`systemctl restart zero`,
-		`zero status --json --socket`,
-		`rollback()`,
-		`$backup/old_link`,
-	} {
+	for _, required := range []string{`zero validate "$stage/runtime.json"`, `zero reload "$stage/runtime.json" --socket`, `systemctl is-active --quiet zero`, `zero status --json --socket`, `zboard-config.receipt`, `$backup/runtime.json`} {
 		if !strings.Contains(script, required) {
-			t.Fatalf("publish script is missing %q", required)
+			t.Fatalf("publish script missing %q", required)
 		}
 	}
 	rollback := zeroadapter.BuildConfigurationRollbackScript(91)
-	if !strings.Contains(rollback, "config-91.json") || !strings.Contains(rollback, "systemctl restart zero") {
-		t.Fatalf("unexpected rollback script: %s", rollback)
+	if !strings.Contains(rollback, "config-91") || !strings.Contains(rollback, "zero reload") || strings.Contains(rollback, "systemctl restart") || strings.Contains(script, "systemctl restart") {
+		t.Fatal("configuration lifecycle can restart the kernel")
 	}
 }
 

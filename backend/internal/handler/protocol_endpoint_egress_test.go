@@ -2,6 +2,16 @@ package handler
 
 import "testing"
 
+func TestImportNativeDirectOutboundKeepsTopLevelDial(t *testing.T) {
+	result, err := parseProtocolEndpointEgress(`{"tag":"direct-ipv6","protocol":{"type":"direct"},"dial":{"address_family":"only_ipv6","source_ip":"2001:db8::1"}}`)
+	if err != nil || result.Protocol != "direct" {
+		t.Fatalf("%+v %v", result, err)
+	}
+	if result.Config["dial"].(map[string]interface{})["address_family"] != "only_ipv6" {
+		t.Fatal("native import discarded dial policy")
+	}
+}
+
 func TestParseProtocolEndpointEgressSupportsSocksAndZeroJSON(t *testing.T) {
 	socks, err := parseProtocolEndpointEgress("socks5://user:pass@proxy.example:1080")
 	if err != nil || socks.Protocol != "socks5" || socks.Config["server"] != "proxy.example" || socks.Config["port"] != float64(1080) || socks.Config["username"] != "user" {

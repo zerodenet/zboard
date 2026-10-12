@@ -14,6 +14,7 @@ import (
 const controlSocket = "/run/zerodenet/control.sock"
 
 type ConfigurationPublishRequest struct {
+	Namespace     string
 	DeploymentID  uint
 	RuntimeConfig []byte
 	ConfigSHA256  string
@@ -21,8 +22,10 @@ type ConfigurationPublishRequest struct {
 }
 
 type ConfigurationPublishResult struct {
-	Output      string
-	ActivatedAt time.Time
+	Output         string
+	ActivatedAt    time.Time
+	Committed      bool
+	MayHaveApplied bool
 }
 
 type ConfigurationPublisher struct {
@@ -32,7 +35,7 @@ type ConfigurationPublisher struct {
 }
 
 func (p ConfigurationPublisher) Publish(ctx context.Context, request ConfigurationPublishRequest) (ConfigurationPublishResult, error) {
-	if p.Dialer == nil || request.DeploymentID == 0 || len(request.RuntimeConfig) == 0 || !kernelSHA256Pattern.MatchString(request.ConfigSHA256) || request.ConnectorKey == "" {
+	if p.Dialer == nil || (request.Namespace != "" && request.Namespace != "kernel") || request.DeploymentID == 0 || len(request.RuntimeConfig) == 0 || !kernelSHA256Pattern.MatchString(request.ConfigSHA256) || request.ConnectorKey == "" {
 		return ConfigurationPublishResult{}, errors.New("invalid Zero configuration publication request")
 	}
 	session, err := p.Dialer.Dial(ctx)
@@ -42,13 +45,27 @@ func (p ConfigurationPublisher) Publish(ctx context.Context, request Configurati
 	defer session.Close()
 	stop := context.AfterFunc(ctx, func() { _ = session.Close() })
 	defer stop()
+	info, err := session.Run("/usr/local/bin/zero build-info", true)
+	if err != nil {
+		if unsupportedConfigurationCapability(info) {
+			return ConfigurationPublishResult{Output: info}, fmt.Errorf("%w：%s", ErrConfigurationCapabilityUnavailable, truncateOutput(info))
+		}
+		return ConfigurationPublishResult{}, operationError(ctx, err)
+	}
+	capabilities, err := ParseNativeBuildInfo(info, request.RuntimeConfig)
+	if err != nil {
+		return ConfigurationPublishResult{}, err
+	}
+	if capabilities.FeaturesDeclared && !capabilities.Features["status-api"] {
+		return ConfigurationPublishResult{}, fmt.Errorf("%w：当前内核未编译配置热更新控制接口", ErrConfigurationCapabilityUnavailable)
+	}
 	if RequiresDirectInboundUDP(request.RuntimeConfig) {
-		output, err := session.Run("/usr/local/bin/zero build-info", true)
-		if err != nil || !SupportsDirectInboundUDP(output) {
+		output := info
+		if !SupportsDirectInboundUDP(output) {
 			if err := ctx.Err(); err != nil {
 				return ConfigurationPublishResult{Output: strings.TrimSpace(output)}, err
 			}
-			return ConfigurationPublishResult{Output: strings.TrimSpace(output)}, fmt.Errorf("入口节点的 Zero 未声明 direct 入站 UDP 能力，请升级内核或关闭入口 UDP 转发。: %s", truncateOutput(output))
+			return ConfigurationPublishResult{Output: strings.TrimSpace(output)}, fmt.Errorf("%w：未确认 direct 入站 UDP 能力，未应用入口 UDP 设置", ErrConfigurationCapabilityUnavailable)
 		}
 	}
 	stageID := uuid.NewString()
@@ -72,14 +89,46 @@ func (p ConfigurationPublisher) Publish(ctx context.Context, request Configurati
 	if p.Now != nil {
 		activatedAt = p.Now().UTC()
 	}
-	output, err := session.Run(BuildConfigurationPublishScript(stage, request.ConfigSHA256, request.DeploymentID), true)
+	script := BuildConfigurationPublishScript(stage, request.ConfigSHA256, request.DeploymentID)
+	if request.Namespace == "kernel" {
+		script = buildConfigurationPublishScript(stage, request.ConfigSHA256, request.DeploymentID, "kernel-config")
+	}
+	output, err := session.Run(script, true)
 	if err != nil {
-		return ConfigurationPublishResult{Output: strings.TrimSpace(output), ActivatedAt: activatedAt}, operationError(ctx, fmt.Errorf("activate Zero config (rollback attempted): %w: %s", err, truncateOutput(output)))
+		if configurationConfirmedUnapplied(output) && (strings.Contains(output, "ZBOARD_CONFIG_HOT_APPLY_UNAVAILABLE") || unsupportedConfigurationCapability(output)) {
+			return ConfigurationPublishResult{Output: strings.TrimSpace(output)}, fmt.Errorf("%w：%s", ErrConfigurationCapabilityUnavailable, truncateOutput(output))
+		}
+		return ConfigurationPublishResult{Output: strings.TrimSpace(output), ActivatedAt: activatedAt, Committed: strings.Contains(output, "ZBOARD_CONFIG_COMMITTED="+request.ConfigSHA256), MayHaveApplied: !configurationConfirmedUnapplied(output)}, operationError(ctx, fmt.Errorf("apply Zero config without restarting the service: %w: %s", err, truncateOutput(output)))
 	}
 	if err := operationError(ctx, nil); err != nil {
-		return ConfigurationPublishResult{}, err
+		return ConfigurationPublishResult{MayHaveApplied: true}, err
+	}
+	if !strings.Contains(output, "ZBOARD_CONFIG_APPLIED="+request.ConfigSHA256) {
+		return ConfigurationPublishResult{MayHaveApplied: true}, errors.New("Zero configuration apply was not confirmed")
 	}
 	return ConfigurationPublishResult{Output: strings.TrimSpace(output), ActivatedAt: activatedAt}, nil
+}
+
+func unsupportedConfigurationCapability(output string) bool {
+	message := strings.ToLower(output)
+	for _, fact := range []string{"unknown field", "not compiled", "unsupported config schema", "unrecognized subcommand", "unknown command"} {
+		if strings.Contains(message, fact) {
+			return true
+		}
+	}
+	return false
+}
+
+func configurationConfirmedUnapplied(output string) bool {
+	if strings.Contains(output, "ZBOARD_CONFIG_COMMITTED=") {
+		return false
+	}
+	for _, marker := range []string{"ZBOARD_CONFIG_SERVICE_UNAVAILABLE", "ZBOARD_CONFIG_CONTROL_UNAVAILABLE", "ZBOARD_CONFIG_HOT_APPLY_UNAVAILABLE", "ZBOARD_CONFIG_VALIDATION_REJECTED_CURRENT_UNCHANGED"} {
+		if strings.Contains(output, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func RequiresDirectInboundUDP(raw []byte) bool {
@@ -136,80 +185,4 @@ func SupportsDirectInboundUDP(output string) bool {
 		}
 	}
 	return false
-}
-
-func BuildConfigurationPublishScript(stage, expectedSHA string, deploymentID uint) string {
-	generation := fmt.Sprintf("/etc/zerodenet/generations/config-%d.json", deploymentID)
-	backup := fmt.Sprintf("/var/lib/zerodenet/backups/config-%d", deploymentID)
-	return fmt.Sprintf(`set -eu
-stage=%s
-generation=%s
-backup=%s
-expected_sha=%s
-test "$(id -u)" = "0"
-test -x /usr/local/bin/zero
-command -v systemctl >/dev/null
-set -a
-. "$stage/zero.env"
-set +a
-/usr/local/bin/zero validate "$stage/runtime.json" >/dev/null
-actual_sha="$(sha256sum "$stage/runtime.json" | awk '{print $1}')"
-test "$actual_sha" = "$expected_sha"
-if [ -f /etc/zerodenet/current.json ] && [ -f /etc/zerodenet/zero.env ] &&
-   [ "$(sha256sum /etc/zerodenet/current.json | awk '{print $1}')" = "$expected_sha" ] &&
-   cmp -s "$stage/zero.env" /etc/zerodenet/zero.env &&
-   systemctl is-active --quiet zero &&
-   /usr/local/bin/zero status --json --socket %s >/dev/null 2>&1; then
-  rm -rf "$stage"
-  printf 'ZBOARD_CONFIG_UNCHANGED=%%s\n' "$expected_sha"
-  printf 'ZBOARD_CONFIG_APPLIED=%%s\n' "$expected_sha"
-  exit 0
-fi
-install -d -m 0755 /etc/zerodenet/generations /var/lib/zerodenet/backups
-install -d -m 0700 "$backup"
-old_link="$(readlink /etc/zerodenet/current.json 2>/dev/null || true)"
-had_env=0
-if [ -f /etc/zerodenet/zero.env ]; then cp -a /etc/zerodenet/zero.env "$backup/zero.env"; had_env=1; fi
-printf '%%s\n' "$old_link" > "$backup/old_link"
-printf '%%s\n' "$had_env" > "$backup/had_env"
-rollback() {
-  if [ -n "$old_link" ]; then ln -sfn "$old_link" /etc/zerodenet/current.json; else rm -f /etc/zerodenet/current.json; fi
-  if [ "$had_env" = "1" ]; then cp -a "$backup/zero.env" /etc/zerodenet/zero.env; else rm -f /etc/zerodenet/zero.env; fi
-  systemctl restart zero >/dev/null 2>&1 || true
-}
-trap 'rc=$?; if [ "$rc" != "0" ]; then rollback; fi; exit "$rc"' EXIT
-install -m 0600 "$stage/runtime.json" "$generation"
-install -m 0600 "$stage/zero.env" /etc/zerodenet/zero.env
-ln -sfn "$generation" /etc/zerodenet/current.json.next
-mv -Tf /etc/zerodenet/current.json.next /etc/zerodenet/current.json
-systemctl restart zero
-healthy=0
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  if systemctl is-active --quiet zero && /usr/local/bin/zero status --json --socket %s >/dev/null 2>&1; then healthy=1; break; fi
-  sleep 1
-done
-test "$healthy" = "1"
-test "$(sha256sum /etc/zerodenet/current.json | awk '{print $1}')" = "$expected_sha"
-trap - EXIT
-rm -rf "$stage"
-printf 'ZBOARD_CONFIG_APPLIED=%%s\n' "$expected_sha"
-`, shellQuote(stage), shellQuote(generation), shellQuote(backup), shellQuote(expectedSHA), shellQuote(controlSocket), shellQuote(controlSocket))
-}
-
-func BuildConfigurationRollbackScript(deploymentID uint) string {
-	generation := fmt.Sprintf("/etc/zerodenet/generations/config-%d.json", deploymentID)
-	backup := fmt.Sprintf("/var/lib/zerodenet/backups/config-%d", deploymentID)
-	return fmt.Sprintf(`set -eu
-generation=%s
-backup=%s
-test "$(id -u)" = "0"
-test -d "$backup"
-old_link="$(cat "$backup/old_link" 2>/dev/null || true)"
-had_env="$(cat "$backup/had_env" 2>/dev/null || printf 0)"
-if [ -n "$old_link" ]; then ln -sfn "$old_link" /etc/zerodenet/current.json; else rm -f /etc/zerodenet/current.json; fi
-if [ "$had_env" = "1" ]; then cp -a "$backup/zero.env" /etc/zerodenet/zero.env; else rm -f /etc/zerodenet/zero.env; fi
-rm -f "$generation"
-systemctl restart zero
-printf 'ZBOARD_CONFIG_ROLLED_BACK=1\n'
-`, shellQuote(generation), shellQuote(backup))
 }

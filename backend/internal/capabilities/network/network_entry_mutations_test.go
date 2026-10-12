@@ -6,6 +6,25 @@ import (
 	"testing"
 )
 
+func TestNetworkEntryUpdatePreservesOmittedIPv6ListenAddress(t *testing.T) {
+	repository := &networkEntryMutationRepositoryStub{snapshot: NetworkEntryMutationSnapshot{Entry: NetworkEntryRecord{ID: 5, NodeID: 1, EndpointID: 2, Revision: 4, ListenAddress: "::"}}}
+	service := NetworkEntryMutations{Repository: repository, Cipher: proxyPoolMutationCipher{}, Inspector: proxyPoolMutationInspectorFunc(func(context.Context, string, bool) (ProxyPoolConfigurationFacts, error) {
+		return ProxyPoolConfigurationFacts{SupportsDatagram: true}, nil
+	})}
+	request := NetworkEntryMutationRequest{ID: 5, ExpectedRevision: 4, NodeID: 1, EndpointID: 2, Name: "entry", Address: "entry.example", Port: 10000, PublicPort: 10000, Enabled: true}
+	if _, err := service.Save(context.Background(), 7, request); err != nil {
+		t.Fatal(err)
+	}
+	if repository.change.Entry.ListenAddress != "::" {
+		t.Fatal("omitted listen address reset IPv6")
+	}
+	invalid := "2001:db8::1%eth0"
+	request.ListenAddress = &invalid
+	if _, err := service.Save(context.Background(), 7, request); err == nil {
+		t.Fatal("unsupported scoped listen address admitted")
+	}
+}
+
 type networkEntryMutationRepositoryStub struct {
 	snapshot NetworkEntryMutationSnapshot
 	pool     NetworkEntryProxyPoolSnapshot

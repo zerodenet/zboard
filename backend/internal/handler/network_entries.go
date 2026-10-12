@@ -13,6 +13,7 @@ import (
 )
 
 type networkEntryRequest struct {
+	ListenAddress     *string                                     `json:"listen_address"`
 	DeploymentMode    string                                      `json:"deployment_mode"`
 	ProxyPoolID       *uint                                       `json:"proxy_pool_id"`
 	ParentProtocolID  uint                                        `json:"parent_protocol_id"`
@@ -181,7 +182,7 @@ func (h *handlers) NetworkEntriesHandler(w http.ResponseWriter, r *http.Request)
 	}
 	result, err := entryMutations.Save(r.Context(), claims.UserID, networkcap.NetworkEntryMutationRequest{
 		DeploymentMode: request.DeploymentMode, ID: id, ExpectedRevision: request.Revision, NodeID: request.NodeID, EndpointID: request.EndpointID,
-		Name: request.Name, Network: request.Network, Address: request.Address, Port: request.Port,
+		Name: request.Name, Network: request.Network, Address: request.Address, ListenAddress: request.ListenAddress, Port: request.Port,
 		PublicPort: request.PublicPort, Enabled: request.Enabled, ReplaceProxyPool: request.ProxyPoolID != nil,
 		ProxyPoolID: poolID, ReplacePath: request.PathConfig != nil, Path: pathConfig,
 		MembershipChanges: membershipChanges, CredentialProtocols: h.storedSubscriptionCredentialProtocols(),

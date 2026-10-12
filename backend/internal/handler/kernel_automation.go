@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,9 +26,9 @@ import (
 )
 
 const (
-	zeroReleaseAPI       = "https://api.github.com/repos/zerodenet/zero/releases/latest"
-	zeroReleasesAPI      = "https://api.github.com/repos/zerodenet/zero/releases?per_page=30"
-	zeroReleaseByTagAPI  = "https://api.github.com/repos/zerodenet/zero/releases/tags/"
+	zeroReleaseAPI       = "https://api.github.com/repos/zerodenet/core/releases/latest"
+	zeroReleasesAPI      = "https://api.github.com/repos/zerodenet/core/releases?per_page=30"
+	zeroReleaseByTagAPI  = "https://api.github.com/repos/zerodenet/core/releases/tags/"
 	zeroLinuxGNUAsset    = "zero-linux-x86_64.tar.gz"
 	zeroLinuxMuslAsset   = "zero-linux-x86_64-musl.tar.gz"
 	zeroArtifactMaxBytes = 128 << 20
@@ -47,6 +49,7 @@ var (
 type zeroRelease struct {
 	Version        string `json:"version"`
 	Tag            string `json:"tag"`
+	Prerelease     bool   `json:"prerelease"`
 	ArtifactURL    string `json:"artifact_url"`
 	ArtifactSHA256 string `json:"artifact_sha256"`
 	ArtifactSize   int64  `json:"artifact_size"`
@@ -248,6 +251,7 @@ func (p *preparedHandlerKernelActivation) Materialize(ctx context.Context) (netw
 	return &preparedHandlerKernelMaterialization{
 		h: p.h, node: p.node, binary: binary, binarySHA: binarySHA,
 		runtimeConfig: p.runtimeConfig, connectorKey: p.credential.Raw,
+		targetVersion: p.release.Version,
 		offlineVersion: func() string {
 			if p.release.OfflineID != "" {
 				return p.release.Version
@@ -274,26 +278,51 @@ func (p *preparedHandlerKernelActivation) InvalidateConnectorCredential() {
 }
 
 type preparedHandlerKernelMaterialization struct {
-	h              *handlers
-	node           model.Node
-	binary         []byte
-	binarySHA      string
-	runtimeConfig  []byte
-	connectorKey   string
-	offlineVersion string
+	h                 *handlers
+	node              model.Node
+	binary            []byte
+	binarySHA         string
+	runtimeConfig     []byte
+	connectorKey      string
+	offlineVersion    string
+	targetVersion     string
+	configurationOnly bool
+	preserveRuntime   bool
 }
 
 func (p *preparedHandlerKernelMaterialization) BinarySHA256() string { return p.binarySHA }
 
 func (p *preparedHandlerKernelMaterialization) Install(ctx context.Context, operationID uint) error {
+	// Same-binary configuration reconciliation must not turn a canonical JSON
+	// difference into a reinstall/restart of an active kernel.
+	probe, err := p.h.probeNodeKernelContext(ctx, p.node)
+	if err != nil {
+		return err
+	}
+	if probe.Installed && probe.BinarySHA256 == p.binarySHA && probe.Version == p.targetVersion && probe.ServiceStatus == "active" {
+		p.configurationOnly = true
+		sum := sha256.Sum256(p.runtimeConfig)
+		result, err := (zeroadapter.ConfigurationPublisher{Dialer: zeroKernelRemoteDialer{h: p.h, node: p.node}}).Publish(ctx, zeroadapter.ConfigurationPublishRequest{Namespace: "kernel", DeploymentID: operationID, RuntimeConfig: p.runtimeConfig, ConfigSHA256: hex.EncodeToString(sum[:]), ConnectorKey: p.connectorKey})
+		p.preserveRuntime = err == nil || result.MayHaveApplied
+		return err
+	}
+
 	if p.offlineVersion != "" {
 		return (zeroadapter.KernelInstaller{Dialer: zeroKernelRemoteDialer{h: p.h, node: p.node}}).Install(ctx, zeroadapter.KernelInstallRequest{OperationID: operationID, Binary: p.binary, BinarySHA256: p.binarySHA, RuntimeConfig: p.runtimeConfig, ConnectorKey: p.connectorKey, UseSCP: true, ExpectedVersion: p.offlineVersion})
 	}
-	return p.h.installNodeKernel(ctx, p.node, operationID, p.binary, p.binarySHA, p.runtimeConfig, p.connectorKey)
+	return p.h.installNodeKernel(ctx, p.node, operationID, p.binary, p.binarySHA, p.runtimeConfig, p.connectorKey, p.targetVersion)
 }
 
 func (p *preparedHandlerKernelMaterialization) Rollback(ctx context.Context, operationID uint) error {
+	if p.configurationOnly {
+		return errors.New("native configuration rollback belongs to the apply transaction")
+	}
+
 	return p.h.rollbackNodeKernel(ctx, p.node, operationID)
+}
+
+func (p *preparedHandlerKernelMaterialization) PreservesRuntimeOnFailure() bool {
+	return p.configurationOnly && p.preserveRuntime
 }
 
 func (h *handlers) LatestKernelReleaseHandler(w http.ResponseWriter, r *http.Request) {
@@ -325,7 +354,7 @@ func (h *handlers) KernelReleasesHandler(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		OK(w, []zeroReleaseOption{{
-			Version: release.Version, Tag: release.Tag, GNUAvailable: false, MuslAvailable: true,
+			Version: release.Version, Tag: release.Tag, Prerelease: release.Prerelease, GNUAvailable: false, MuslAvailable: true,
 		}})
 		return
 	}
@@ -435,6 +464,9 @@ func resolveLatestZeroRelease(parent context.Context) (zeroRelease, error) {
 }
 
 func fetchZeroRelease(parent context.Context, version string) (githubRelease, context.Context, *http.Client, context.CancelFunc, error) {
+	if version == "" {
+		version = zeroadapter.NativeBaselineVersion
+	}
 	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	client := zeroHTTPClient()
 	endpoint := zeroReleaseAPI
@@ -471,10 +503,6 @@ func fetchZeroRelease(parent context.Context, version string) (githubRelease, co
 		cancel()
 		return githubRelease{}, nil, nil, nil, errors.New("selected Zero release is not a published semantic version")
 	}
-	if version == "" && (payload.Prerelease || !stableZeroTagPattern.MatchString(payload.TagName)) {
-		cancel()
-		return githubRelease{}, nil, nil, nil, errors.New("latest Zero release is not a stable version")
-	}
 	if version != "" && payload.TagName != "v"+version {
 		cancel()
 		return githubRelease{}, nil, nil, nil, errors.New("GitHub returned a different Zero release than requested")
@@ -506,6 +534,7 @@ func resolveGitHubZeroReleaseAsset(ctx context.Context, client *http.Client, pay
 	}
 	return zeroRelease{
 		Version: strings.TrimPrefix(payload.TagName, "v"), Tag: payload.TagName,
+		Prerelease:  zeroReleaseIsPrerelease(payload.TagName, payload.Prerelease),
 		ArtifactURL: archiveURL, ArtifactSHA256: strings.ToLower(fields[0]), ArtifactSize: archiveSize,
 	}, nil
 }
@@ -558,6 +587,12 @@ func listInstallableZeroReleases(parent context.Context) ([]zeroReleaseOption, e
 	return releases, nil
 }
 
+// A semantic prerelease cannot become stable because registry metadata omitted
+// its flag. Conversely, an explicitly marked prerelease remains a prerelease.
+func zeroReleaseIsPrerelease(tag string, declared bool) bool {
+	return declared || !stableZeroTagPattern.MatchString(tag)
+}
+
 func installableZeroReleaseOptions(payload []githubRelease) []zeroReleaseOption {
 	releases := make([]zeroReleaseOption, 0, len(payload))
 	for _, release := range payload {
@@ -566,7 +601,7 @@ func installableZeroReleaseOptions(payload []githubRelease) []zeroReleaseOption 
 		}
 		option := zeroReleaseOption{
 			Version: strings.TrimPrefix(release.TagName, "v"),
-			Tag:     release.TagName, PublishedAt: release.PublishedAt, Prerelease: release.Prerelease,
+			Tag:     release.TagName, PublishedAt: release.PublishedAt, Prerelease: zeroReleaseIsPrerelease(release.TagName, release.Prerelease),
 		}
 		legacyMuslAsset := fmt.Sprintf("zero-%s-linux-x86_64-musl.tar.gz", release.TagName)
 		var gnuArchive, gnuChecksum bool
@@ -619,7 +654,7 @@ func (h *handlers) resolveZeroRelease(ctx context.Context, probe kernelProbe, ve
 	if muslErr == nil {
 		return musl, nil
 	}
-	official := zeroRelease{Version: strings.TrimPrefix(payload.TagName, "v"), Tag: payload.TagName}
+	official := zeroRelease{Version: strings.TrimPrefix(payload.TagName, "v"), Tag: payload.TagName, Prerelease: zeroReleaseIsPrerelease(payload.TagName, payload.Prerelease)}
 	managed, err := resolveManagedZeroRelease(h.zeroArtifactDir, official)
 	if err != nil {
 		return zeroRelease{}, fmt.Errorf(
@@ -644,7 +679,9 @@ func resolveManagedZeroRelease(artifactDir string, official zeroRelease) (zeroRe
 	if !managedZeroArtifactPattern.MatchString(name) {
 		return zeroRelease{}, errors.New("the managed artifact name is invalid")
 	}
-	return resolveManagedZeroArtifact(artifactDir, name, official.Version, official.Tag)
+	release, err := resolveManagedZeroArtifact(artifactDir, name, official.Version, official.Tag)
+	release.Prerelease = zeroReleaseIsPrerelease(official.Tag, official.Prerelease)
+	return release, err
 }
 
 func resolveLocalNativeZeroRelease(artifactDir, version string) (zeroRelease, error) {
@@ -698,6 +735,7 @@ func resolveManagedZeroArtifact(artifactDir, name, version, tag string) (zeroRel
 	return zeroRelease{
 		Version:        version,
 		Tag:            tag,
+		Prerelease:     zeroReleaseIsPrerelease(tag, false),
 		ArtifactURL:    "managed://" + name,
 		ArtifactSHA256: strings.ToLower(fields[0]),
 		ArtifactSize:   info.Size(),
@@ -830,7 +868,7 @@ func (h *handlers) compileNodeRuntimeConfigWithOptionsContext(ctx context.Contex
 		return nil, "", fmt.Errorf("load node runtime configuration source: %w", err)
 	}
 	return (zeroadapter.RuntimeConfigurationRenderer{Cipher: h.credentialCipher}).Render(zeroadapter.RuntimeConfigurationRenderRequest{
-		NodeID: node.ID, APIKey: apiKey, ZeroVersion: zeroVersion, NativeConnector: h.zeroNativeAccess,
+		NodeID: node.ID, APIKey: apiKey,
 		SuppressMieruFallback: suppressMieruFallback, Now: now, Snapshot: snapshot,
 	})
 }
@@ -854,10 +892,10 @@ func (h *handlers) nodeConnectorCredential(node model.Node) (pendingNodeCredenti
 	return pendingNodeCredential{Raw: raw, Encrypted: encrypted, Prefix: prefix, IsNew: true}, nil
 }
 
-func (h *handlers) installNodeKernel(ctx context.Context, node model.Node, operationID uint, binary []byte, binarySHA string, runtimeConfig []byte, apiKey string) error {
+func (h *handlers) installNodeKernel(ctx context.Context, node model.Node, operationID uint, binary []byte, binarySHA string, runtimeConfig []byte, apiKey, expectedVersion string) error {
 	installer := zeroadapter.KernelInstaller{Dialer: zeroKernelRemoteDialer{h: h, node: node}}
 	return installer.Install(ctx, zeroadapter.KernelInstallRequest{
-		OperationID: operationID, Binary: binary, BinarySHA256: binarySHA, RuntimeConfig: runtimeConfig, ConnectorKey: apiKey,
+		OperationID: operationID, Binary: binary, BinarySHA256: binarySHA, RuntimeConfig: runtimeConfig, ConnectorKey: apiKey, ExpectedVersion: expectedVersion,
 	})
 }
 
@@ -904,11 +942,21 @@ fi
 printf 'ZBOARD_INSTALLED=1\n'
 printf 'ZBOARD_VERSION=%s\n' "$("$zero_path" build_info 2>/dev/null | awk -F': ' '$1 == "build_id" {print $2; exit}')"
 printf 'ZBOARD_BINARY_SHA=%s\n' "$(sha256sum "$zero_path" | awk '{print $1}')"
-if [ -f /etc/zerodenet/current.json ]; then printf 'ZBOARD_CONFIG_SHA=%s\n' "$(sha256sum /etc/zerodenet/current.json | awk '{print $1}')"; else printf 'ZBOARD_CONFIG_SHA=\n'; fi
+file_sha=""
+if [ -f /etc/zerodenet/current.json ]; then file_sha="$(sha256sum /etc/zerodenet/current.json | awk '{print $1}')"; fi
 service_status="$(systemctl is-active zero 2>/dev/null || true)"
 if [ -z "$service_status" ]; then service_status=unknown; fi
 printf 'ZBOARD_SERVICE=%s\n' "$service_status"
-if [ "$service_status" = "active" ] && "$zero_path" status --json --socket /run/zerodenet/control.sock >/dev/null 2>&1; then printf 'ZBOARD_CONTROL=healthy\n'; else printf 'ZBOARD_CONTROL=unavailable\n'; fi`
+if [ "$service_status" = "active" ] && status_json="$("$zero_path" status --json --socket /run/zerodenet/control.sock 2>/dev/null)"; then
+  printf 'ZBOARD_CONTROL=healthy\n'
+  core=$(printf '%s\n' "$status_json" | sed -n 's/^    "core_instance_id": "\([A-Za-z0-9_-]*\)",\{0,1\}$/\1/p')
+  revision=$(printf '%s\n' "$status_json" | sed -n 's/^    "config_revision": \([0-9]*\),\{0,1\}$/\1/p')
+  if [ -n "$core" ] && [ -n "$revision" ] && [ -f /var/lib/zerodenet/zboard-config.receipt ]; then
+    read -r desired applied instance recorded_revision < /var/lib/zerodenet/zboard-config.receipt || true
+    if [ "${applied:-}" = "$file_sha" ] && [ "${instance:-}" = "$core" ] && [ "${recorded_revision:-}" = "$revision" ]; then file_sha=$desired; fi
+  fi
+else printf 'ZBOARD_CONTROL=unavailable\n'; fi
+printf 'ZBOARD_CONFIG_SHA=%s\n' "$file_sha"`
 	output, _, err := h.execSSHCommandWithPrivilegeContext(ctx, node, command, true)
 	if err != nil {
 		return kernelProbe{}, fmt.Errorf("probe Zero over SSH: %w: %s", err, truncateKernelError(output))

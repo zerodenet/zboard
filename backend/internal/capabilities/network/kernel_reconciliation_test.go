@@ -7,6 +7,17 @@ import (
 	"time"
 )
 
+func TestNativeKernelVersionLineMigrationDoesNotRequireDowngrade(t *testing.T) {
+	for _, old := range []string{"0.0.4", "0.0.15-rc.4", "0.0.16"} {
+		if CompareKernelVersions(old, "0.0.3-dev.202610102233") != -1 || CompareKernelVersions("0.0.3-dev.202610102233", old) != 1 {
+			t.Fatalf("line migration misclassified: %s", old)
+		}
+	}
+	if CompareKernelVersions("0.0.3-dev.202610102233", "0.0.3-dev.202610100641") != 1 {
+		t.Fatal("native downgrade protection lost")
+	}
+}
+
 type kernelReconciliationPreparerStub struct {
 	prepared PreparedKernelReconciliation
 	nodeID   uint
@@ -98,6 +109,25 @@ func (s *preparedKernelMaterializationStub) Install(context.Context, uint) error
 func (s *preparedKernelMaterializationStub) Rollback(context.Context, uint) error {
 	s.rolledBack = true
 	return s.rollbackErr
+}
+
+type runtimeKeepingMaterialization struct {
+	*preparedKernelMaterializationStub
+}
+
+func (runtimeKeepingMaterialization) PreservesRuntimeOnFailure() bool { return true }
+
+func TestConfirmedNativeConfigurationIsNotRolledBackOnLostVerification(t *testing.T) {
+	want := errors.New("verification response lost")
+	repository := &kernelReconciliationRepositoryStub{operation: KernelOperation{ID: 7, NodeID: 4}}
+	base := &preparedKernelMaterializationStub{sha: "same-binary"}
+	activation := &preparedKernelActivationStub{configSHA: "new-config", credential: KernelEncryptedCredential{Ciphertext: "new-key", Prefix: "new-prefix"}, newCredential: true, materialization: runtimeKeepingMaterialization{base}, verifyErr: want}
+	prepared := &preparedKernelReconciliationStub{probe: KernelProbe{OperatingSystem: "linux", Architecture: "x86_64", Systemd: true, Installed: true, Version: "0.0.3", BinarySHA256: "same-binary", ConfigSHA256: "old-config", ServiceStatus: "active", ControlStatus: "healthy"}, release: &preparedKernelReleaseStub{descriptor: KernelRelease{Version: "0.0.3"}, activation: activation}}
+	service := KernelReconciliation{State: KernelReconciliationState{Repository: repository}, Preparer: &kernelReconciliationPreparerStub{prepared: prepared}}
+	_, err := service.Reconcile(context.Background(), KernelReconciliationRequest{NodeID: 4, ActorID: 2, Version: "0.0.3"})
+	if !errors.Is(err, want) || !base.installed || base.rolledBack || repository.connectorRestored || activation.invalidations != 1 {
+		t.Fatalf("runtime or credential undone after native confirmation: rollback=%t restored=%t invalidations=%d error=%v", base.rolledBack, repository.connectorRestored, activation.invalidations, err)
+	}
 }
 
 func TestKernelReconciliationOwnsPreparationTimeoutAndFailureFinalization(t *testing.T) {

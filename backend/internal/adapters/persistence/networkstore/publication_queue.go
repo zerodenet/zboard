@@ -61,6 +61,11 @@ func (s PublicationQueue) Complete(ctx context.Context, item network.Publication
 	var result *gorm.DB
 	if failure == nil {
 		result = owned.Delete(&model.NodeConfigPublish{})
+	} else if network.IsConfigurationCapabilityDeferral(failure) {
+		result = owned.Model(&model.NodeConfigPublish{}).Updates(map[string]interface{}{
+			"deferred": true, "last_error": network.TruncateKernelError(failure.Error()),
+			"next_attempt_at": now.Add(network.PublicationCapabilityRecheck), "lease_token": "", "lease_until": publicationIdleLease,
+		})
 	} else {
 		attempts := item.Attempts + 1
 		if attempts > 32 {
@@ -71,6 +76,7 @@ func (s PublicationQueue) Complete(ctx context.Context, item network.Publication
 			message = message[:1000]
 		}
 		result = owned.Model(&model.NodeConfigPublish{}).Updates(map[string]interface{}{
+			"deferred": false,
 			"attempts": attempts, "last_error": string(message), "next_attempt_at": now.Add(network.PublicationRetryDelay(item.Attempts)),
 			"lease_token": "", "lease_until": publicationIdleLease,
 		})
@@ -93,6 +99,7 @@ func publicationFromModel(item model.NodeConfigPublish) network.Publication {
 	return network.Publication{
 		NodeID: item.NodeID, EndpointID: item.EndpointID, RequestedBy: item.RequestedBy,
 		Generation: item.Generation, Attempts: item.Attempts, LastError: item.LastError,
+		Deferred:      item.Deferred,
 		NextAttemptAt: item.NextAttemptAt, LeaseUntil: item.LeaseUntil, LeaseToken: item.LeaseToken,
 	}
 }

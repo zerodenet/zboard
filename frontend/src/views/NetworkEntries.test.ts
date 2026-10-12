@@ -9,6 +9,14 @@ function render() { return mount(NetworkEntries, {global: {plugins: [], stubs: {
 async function click(wrapper: ReturnType<typeof render>, text: string) { await wrapper.findAll('button').find(button => button.text() === text)!.trigger('click'); await flushPromises() }
 describe('Network entry management', () => {
  beforeEach(() => {vi.clearAllMocks();mocks.pools.mockResolvedValue([{id: 8, name: "A 的共享池"}]);mocks.list.mockResolvedValue([entry]);mocks.save.mockResolvedValue(entry);mocks.endpoints.mockResolvedValue([{id: 3, name: '日本 B SS', is_active: true}]);mocks.confirm.mockResolvedValue(true)})
+ it('preserves managed IPv6 listening independently of the public address', async () => {
+  mocks.list.mockResolvedValue([{...entry, deployment_mode: 'managed', listen_address: '::'}])
+  const wrapper=render();await flushPromises();await click(wrapper,'编辑')
+  expect((wrapper.find('input[placeholder="0.0.0.0 或 ::"]').element as HTMLInputElement).value).toBe('::')
+  await click(wrapper,'保存并发布')
+  expect(mocks.save).toHaveBeenCalledWith(7,expect.objectContaining({listen_address:'::',address:entry.address}))
+  wrapper.unmount()
+ })
  it('loads B selection when editing and preserves encrypted path without resending it', async () => {
   const wrapper = render(); await flushPromises(); await click(wrapper, '编辑')
   expect(mocks.endpoints).toHaveBeenCalledWith(2)
