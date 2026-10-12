@@ -83,6 +83,9 @@ func TestMySQLPublishQueueConcurrencyAndRecovery(t *testing.T) {
 	if err := datastore.RunMigrations(h.db); err != nil {
 		t.Fatal(err)
 	}
+	if !h.db.Migrator().HasColumn(&model.NodeConfigPublish{}, "Deferred") {
+		t.Fatal("recreated publication table lost the already-applied capability column")
+	}
 	var node model.Node
 	if err := h.db.First(&node, 1).Error; err != nil || node.Name != "mysql-publish" {
 		t.Fatalf("upgrade lost node: %v", err)
@@ -200,4 +203,38 @@ func TestMySQLPublishQueueConcurrencyAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertNoPublishClaim(t, h, now.Add(time.Hour))
+}
+
+func TestMySQLPublicationColumnMigrationsRestoreMissingBaselineTables(t *testing.T) {
+	h, _ := newMySQLPublishHandlers(t)
+	if err := h.db.Create(&model.Node{ID: 1, Name: "preserved-node", Config: "{}"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a recorded older baseline whose publication resources are absent,
+	// with the new column migrations still pending. Each migration must see the
+	// original table first, without pre-adding columns and duplicating its ALTER.
+	for _, name := range []string{"node_group_network_entries", "network_entries", "node_config_publishes"} {
+		if err := h.db.Migrator().DropTable(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.db.Exec("DELETE FROM schema_migrations WHERE version IN ?", []string{"0034_network_entry_listen_address.up.sql", "0035_publication_capability_deferral.up.sql"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := datastore.RunMigrations(h.db); err != nil {
+		t.Fatal(err)
+	}
+	if err := datastore.RunMigrations(h.db); err != nil {
+		t.Fatalf("repeated migration failed: %v", err)
+	}
+	if !h.db.Migrator().HasColumn(&model.NetworkEntry{}, "ListenAddress") || !h.db.Migrator().HasColumn(&model.NodeConfigPublish{}, "Deferred") {
+		t.Fatal("current publication columns absent")
+	}
+	var node model.Node
+	if err := h.db.First(&node, 1).Error; err != nil || node.Name != "preserved-node" {
+		t.Fatalf("unrelated node data changed: %+v %v", node, err)
+	}
+	if err := enqueueNodeConfigPublish(h.db, 1, 0, 0); err != nil {
+		t.Fatal(err)
+	}
 }

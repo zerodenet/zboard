@@ -14,25 +14,27 @@ func ReconcileNodePublishSchema(db *gorm.DB) error {
 	if IsSQLite(db) {
 		return nil
 	}
-	payload, err := migrations.Files.ReadFile(preReleaseBaselineVersion)
+	statements, err := nodePublicationBaselineStatements()
 	if err != nil {
 		return err
 	}
-	statements, err := splitMigrationStatements(string(payload))
-	if err != nil {
-		return err
-	}
-	found := 0
 	for _, statement := range statements {
-		if strings.HasPrefix(statement, "CREATE TABLE `node_proxy_pools`") || strings.HasPrefix(statement, "CREATE TABLE `node_config_publishes`") || strings.HasPrefix(statement, "CREATE TABLE `network_entries`") || strings.HasPrefix(statement, "CREATE TABLE `node_group_network_entries`") {
-			found++
-			if err := db.Exec(strings.Replace(statement, "CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1)).Error; err != nil {
-				return err
-			}
+		if err := db.Exec(strings.Replace(statement, "CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1)).Error; err != nil {
+			return err
 		}
 	}
-	if found != 4 {
-		return fmt.Errorf("node publication or network entry schema missing from baseline")
+	for _, column := range []struct {
+		model any
+		field string
+	}{
+		{&model.NodeConfigPublish{}, "Deferred"},
+		{&model.NetworkEntry{}, "ListenAddress"},
+	} {
+		if !db.Migrator().HasColumn(column.model, column.field) {
+			if err := db.Migrator().AddColumn(column.model, column.field); err != nil {
+				return fmt.Errorf("reconcile publication column %s: %w", column.field, err)
+			}
+		}
 	}
 	if !db.Migrator().HasColumn(&model.NetworkEntry{}, "DeliverySortOrder") {
 		if err := db.Migrator().AddColumn(&model.NetworkEntry{}, "DeliverySortOrder"); err != nil {
@@ -62,4 +64,27 @@ func ReconcileNodePublishSchema(db *gorm.DB) error {
 		return nil
 	}
 	return db.Exec("ALTER TABLE protocol_deployments MODIFY COLUMN protocol_endpoint_id bigint unsigned NULL DEFAULT NULL").Error
+}
+
+// The original table shape must exist before append-only column migrations.
+// Current model columns are reconciled only after those migrations complete.
+func nodePublicationBaselineStatements() ([]string, error) {
+	payload, err := migrations.Files.ReadFile(preReleaseBaselineVersion)
+	if err != nil {
+		return nil, err
+	}
+	all, err := splitMigrationStatements(string(payload))
+	if err != nil {
+		return nil, err
+	}
+	var statements []string
+	for _, statement := range all {
+		if strings.HasPrefix(statement, "CREATE TABLE `node_proxy_pools`") || strings.HasPrefix(statement, "CREATE TABLE `node_config_publishes`") || strings.HasPrefix(statement, "CREATE TABLE `network_entries`") || strings.HasPrefix(statement, "CREATE TABLE `node_group_network_entries`") {
+			statements = append(statements, statement)
+		}
+	}
+	if len(statements) != 4 {
+		return nil, fmt.Errorf("node publication or network entry schema missing from baseline")
+	}
+	return statements, nil
 }
