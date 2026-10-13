@@ -277,7 +277,9 @@ func (h *handlers) PluginAssetHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' "+scope+"; style-src 'unsafe-inline' "+scope+"; img-src data: "+scope+"; font-src "+scope+"; connect-src 'none'; form-action 'none'; frame-src 'none'; base-uri 'none'; frame-ancestors 'self'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "no-store")
+	// Signed plugin assets must retain their verified bytes through proxies.
+	// In particular, injected analytics cannot run inside this isolated frame.
+	w.Header().Set("Cache-Control", "no-store, no-transform")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	kind := mime.TypeByExtension(path.Ext(parts[1]))
 	if kind == "" {

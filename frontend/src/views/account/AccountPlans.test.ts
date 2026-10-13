@@ -1,3 +1,5 @@
+import { defineComponent, onMounted } from 'vue'
+import { fetchPluginSlots } from '../../api/plugins'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,8 +10,10 @@ import TablePager from '../../components/TablePager.vue'
 import AccountPlans from './AccountPlans.vue'
 
 vi.mock('../../stores/app', () => ({ useAppStore: () => ({ user: { id: 1 } }) }))
+vi.mock('../../api/plugins', () => ({ fetchPluginSlots: vi.fn() }))
+const paymentAction = vi.fn()
 vi.mock('../../api/client', () => ({
-  previewOrder: vi.fn(), createOrder: vi.fn(), fetchAccountSubscriptionsPage: vi.fn(),
+  previewOrder: vi.fn(), createOrder: vi.fn(), fetchAccountOrder: vi.fn(async id => ({ id, status: 'pending', payable_amount: 100, currency: 'CNY' })), fetchAccountSubscriptionsPage: vi.fn(),
   fetchPlanCatalogItem: vi.fn(), fetchPlanCatalogPage: vi.fn(), fetchPlanCatalogSKUs: vi.fn(),
 }))
 function deferred<T>() {
@@ -31,6 +35,8 @@ describe('account catalog bounded reads and route isolation', () => {
   let router: Router
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(fetchPluginSlots).mockResolvedValue([])
+    paymentAction.mockResolvedValue({ checkout_url: 'https://cashier.example/pay' })
     localStorage.clear()
     vi.mocked(createOrder).mockResolvedValue({ id: 71 })
     vi.mocked(previewOrder).mockResolvedValue({ order_type: 'upgrade', amount_cents: 1500, credit_amount: 1000, payable_amount: 500, currency: 'CNY', time_credit: 1000, traffic_credit: 1000, traffic_bytes: 150 * 1024 ** 3, used_bytes: 0, end_at: '2027-01-01T00:00:00Z', quote_fingerprint: 'quote-token' })
@@ -51,9 +57,35 @@ describe('account catalog bounded reads and route isolation', () => {
     ] })
     await router.push(path)
     await router.isReady()
-    wrapper = mount(AccountPlans, { global: { plugins: [router], stubs: { CommercePlanDetail: true, CheckoutPayment: true } } })
+    wrapper = mount(AccountPlans, { global: { plugins: [router], stubs: { CommercePlanDetail: true, PluginFrame: defineComponent({ emits: ['checkoutOptions'], setup(_, { emit, expose }) { expose({ checkoutAction: paymentAction }); onMounted(() => emit('checkoutOptions', [{ id: 'card', title: '测试支付', prepare_action: 'pay.prepare', reconcile_action: 'pay.check' }])); return () => null } }) } } })
     await flushPromises()
   }
+  it('places methods below the amount and pays with one click without a separate create button', async () => {
+    vi.mocked(fetchPluginSlots).mockResolvedValue([{ plugin_id: 'example.payment', generation: 1, slot: { id: 'pay', slot: 'account.checkout.payment', title: '支付通道', surface: 'account', entrypoint: 'ui/pay.html' } }] as any)
+    const popup = { closed: false, opener: null, close: vi.fn(), location: { replace: vi.fn() } }
+    const reserve = vi.spyOn(window, 'open').mockReturnValue(popup as any)
+    await open('/account/plans?plan=1')
+    wrapper!.getComponent(CommercePlanDetail).vm.$emit('continue'); await flushPromises()
+    expect(wrapper!.find('.purchase-checkout__summary .checkout-payment').exists()).toBe(true)
+    expect(wrapper!.find('.purchase-checkout__main .checkout-payment').exists()).toBe(false)
+    expect(wrapper!.text()).not.toContain('确认创建订单')
+    expect(createOrder).not.toHaveBeenCalled()
+    await wrapper!.findAll('button').find(b => b.text() === '确认并支付')!.trigger('click'); await flushPromises()
+    expect(reserve).toHaveBeenCalledOnce()
+    expect(createOrder).toHaveBeenCalledOnce()
+    expect(paymentAction).toHaveBeenCalledWith(71, 'pay.prepare', { option_id: 'card' })
+    expect(popup.location.replace).toHaveBeenCalledWith('https://cashier.example/pay')
+    expect(router.currentRoute.value.path).toBe('/account/plans')
+    reserve.mockRestore()
+  })
+  it('does not fall back to order-only creation when payment discovery fails', async () => {
+    vi.mocked(fetchPluginSlots).mockRejectedValue(new Error('offline'))
+    await open('/account/plans?plan=1')
+    wrapper!.getComponent(CommercePlanDetail).vm.$emit('continue'); await flushPromises()
+    expect(wrapper!.text()).not.toContain('确认创建订单')
+    expect(wrapper!.findAll('button').find(b => b.text() === '确认并支付')!.attributes('disabled')).toBeDefined()
+    expect(createOrder).not.toHaveBeenCalled()
+  })
   it('renders nine cards with two reads and no per-card SKU request', async () => {
     await open()
     expect(wrapper!.findAllComponents(CommercePlanCard)).toHaveLength(9)

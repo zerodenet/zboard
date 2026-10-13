@@ -6,6 +6,21 @@ export interface PaymentOption {
   reconcile_action: string
   disabled?: boolean
 }
+export interface PaymentStatus { state: 'loading' | 'ready' | 'empty' | 'error'; code?: string }
+export function paymentStatus(value: unknown): PaymentStatus {
+  const status = value as PaymentStatus
+  if (!status || !['loading', 'ready', 'empty', 'error'].includes(status.state)
+    || (status.code !== undefined && (typeof status.code !== 'string' || !/^[a-z0-9_]{1,64}$/.test(status.code)))) throw new Error('invalid payment status')
+  return { state: status.state, code: status.code }
+}
+export function paymentStatusMessage(code?: string) {
+  if (['session_unavailable', 'session_expired', 'permission_denied', 'forbidden', 'invalid_session'].includes(code || '')) return '支付扩展的会话或授权已失效，请重新加载。'
+  if (code === 'provider_metadata_missing') return '支付渠道的收款信息尚未就绪，请联系管理员。'
+  if (code === 'host_capability_missing') return '支付功能尚未就绪，请联系管理员检查插件授权。'
+  if (['bridge_timeout', 'deadline_exceeded'].includes(code || '')) return '支付方式加载超时，请重试。'
+  if (code === 'invalid_argument' || code === 'invalid_response') return '支付扩展返回的数据不符合接口要求，请联系管理员。'
+  return '暂时无法加载支付方式，请重试。'
+}
 export interface CheckoutContext {
   order_id: number
   currency: string

@@ -257,6 +257,20 @@ describe("plugin iframe boundary", () => {
 });
 
 describe('checkout slot boundary', () => {
+  it('only accepts payment status from the authenticated owning iframe', async () => {
+    mocks.revoke.mockResolvedValue({})
+    mocks.createSlot.mockResolvedValue({ ...session, purpose: 'slot', slot: 'account.checkout.payment' })
+    const slot = { id: 'checkout', surface: 'account' as const, slot: 'account.checkout.payment', title: 'Payment', entrypoint: 'ui/payment.html' }
+    const wrapper = mount(PluginFrame, { props: { pluginId: 'example.payment', surface: 'account', slot } })
+    await flushPromises()
+    send(wrapper, 'checkout.status', { state: 'error', code: 'deadline_exceeded' }, {} as Window)
+    expect(wrapper.emitted('checkoutStatus')).toBeUndefined()
+    send(wrapper, 'checkout.status', { state: 'error', code: 'deadline_exceeded' })
+    expect(wrapper.emitted('checkoutStatus')).toEqual([[{ state: 'error', code: 'deadline_exceeded' }]])
+    send(wrapper, 'checkout.status', { state: 'paid', code: '<script>' })
+    expect(wrapper.emitted('checkoutStatus')).toHaveLength(1)
+    wrapper.unmount()
+  })
   it('supplies the host order selector and enables its own slot action without browser identity overrides', async () => {
     mocks.revoke.mockResolvedValue({})
     mocks.createSlot.mockResolvedValue({ ...session, purpose: 'slot', slot: 'account.checkout.payment' })

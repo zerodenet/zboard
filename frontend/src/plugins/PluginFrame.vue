@@ -1,11 +1,11 @@
 <template>
-  <section v-if="!optional || !error" class="plugin-frame" :class="{ 'plugin-frame--slot': !!slot, 'plugin-frame--slot-pending': !!slot && !slotReady && !error }">
+  <section v-if="(!optional || !error) && (!managed || !error)" class="plugin-frame" :class="{ 'plugin-frame--slot': !!slot, 'plugin-frame--slot-pending': !!slot && !slotReady && !error }">
     <div v-if="error" class="plugin-state" role="alert">
       <div><strong>暂时无法显示此内容</strong><p>{{ error }}</p></div>
       <UiButton variant="secondary" size="sm" @click="load">重新加载</UiButton>
     </div>
     <div v-else-if="!session && !slot" class="plugin-state" role="status">正在加载…</div>
-    <div v-if="connectionWarning && !optional" class="plugin-state plugin-state--connection" role="status">
+    <div v-if="connectionWarning && !optional && !managed" class="plugin-state plugin-state--connection" role="status">
       <p>连接暂时中断，正在尝试恢复。</p>
       <UiButton variant="secondary" size="sm" @click="verify">重试连接</UiButton>
     </div>
@@ -32,7 +32,7 @@
   </section>
 </template>
 <script setup lang="ts">
-import { paymentSlots, paymentOptions, type PaymentOption } from "./checkout";
+import { paymentSlots, paymentOptions, paymentStatus, type PaymentOption, type PaymentStatus } from "./checkout";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { accountConfirmation, clearAccountConfirmation, confirmAccountPassword } from "../api/accountSecurity";
 import UiButton from "../components/UiButton.vue";
@@ -55,9 +55,10 @@ const props = defineProps<{
   configuration?: boolean;
   title?: string;
   optional?: boolean;
+  managed?: boolean;
   checkout?: { currency: string; order_id?: number };
 }>();
-const emit = defineEmits<{ ready: []; checkoutOptions: [options: PaymentOption[]]; unavailable: [] }>();
+const emit = defineEmits<{ ready: []; checkoutOptions: [options: PaymentOption[]]; checkoutStatus: [status: PaymentStatus]; unavailable: [] }>();
 const app = useAppStore();
 const frame = ref<HTMLIFrameElement | null>(null),
   session = ref<PluginSession | null>(null),
@@ -126,6 +127,7 @@ function clear() {
 async function load() {
   clear();
   error.value = "";
+  if (props.checkout) emit("checkoutStatus", { state: "loading" });
   const current = generation;
   try {
     const value = props.slot
@@ -183,6 +185,11 @@ async function receive(event: MessageEvent) {
     return;
   }
   if (message.type === "plugin.ready") return;
+  if (message.type === "checkout.status" && props.slot && paymentSlots.includes(props.slot.slot)) {
+    try { emit("checkoutStatus", paymentStatus(message)); }
+    catch { emit("unavailable"); }
+    return;
+  }
   if (message.type === "checkout.options" && props.slot && paymentSlots.includes(props.slot.slot)) {
     try { emit("checkoutOptions", paymentOptions(message.options)); revealSlot(); }
     catch { emit("unavailable"); }
@@ -244,7 +251,7 @@ async function receive(event: MessageEvent) {
       const context = props.checkout.order_id
         ? await pluginBridge(s, "checkout.context", { order_id: props.checkout.order_id }, controller.signal)
         : { currency: props.checkout.currency, currency_precision: 2, order_id: null };
-      respond({ ok: true, result: context }); return;
+      respond({ ok: true, result: { ...context, presentation: 'host' } }); return;
     }
     const result = confirmedPassword
       ? await pluginBridge(s, message.type, payload, controller.signal, confirmedPassword)

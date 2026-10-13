@@ -147,6 +147,9 @@ func TestPluginHTTPBoundaryAndRevokedAssets(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Security-Policy"), "connect-src 'none'") || strings.Contains(w.Header().Get("Content-Security-Policy"), "allow-same-origin") {
 		t.Fatal(w.Code, w.Header())
 	}
+	if w.Header().Get("Cache-Control") != "no-store, no-transform" || w.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatal("signed assets must disallow proxy rewrites and support sandboxed module loading", w.Header())
+	}
 	for _, typ := range []string{"users.credentials.rotate", "core.command", "config.save"} {
 		r := httptest.NewRequest("POST", "/api/v1/plugin-ui/bridge", strings.NewReader(`{"type":"`+typ+`"}`))
 		r.Header.Set("X-Plugin-Session", s.Token)

@@ -64,6 +64,22 @@ Duplicate/invalid methods are rejected. Report height via `ui.resize`; the host
 bounds it to 0–1000 px for slots. Waiting and confirmation controls also exist
 outside the iframe, avoiding clipping and preserving browser user activation.
 
+On the confirmation page, methods appear below the payable amount. When a
+payment contribution is available, the host provides one confirm-and-pay action;
+it does not offer a separate order-only action. Methods are selected before the
+click creates the business order. Failed discovery or an unavailable enabled
+contribution never falls back to order-only creation. The order-only action is
+available only after successful discovery returns no admitted contributions.
+
+The checkout context additionally includes `presentation: "host"`. In that mode,
+the host renders methods, status, retry and confirmation controls. A contribution
+can report `checkout.status` with `state` equal to `loading`, `ready`, `empty` or
+`error`, and an optional bounded error `code` (`^[a-z0-9_]{1,64}$`). Messages retain
+the exact iframe/token checks. Status never settles an order. Report `ui.resize`
+with height zero when no additional plugin content is needed; no fixed empty
+payment frame is required. Older contributions may keep their own content.
+The host bounds an unresponsive method load to 35 seconds and permits local retry.
+
 A `checkout.context` request uses the ordinary request/response bridge. Before
 order creation it returns display currency, precision `2`, and null `order_id`.
 After creation it returns the **host-selected** owned order's context. A child

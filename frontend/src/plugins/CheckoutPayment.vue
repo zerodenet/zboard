@@ -1,19 +1,22 @@
 <template>
-  <section class="checkout-payment" :data-plugin-slot="name" aria-label="支付方式">
-    <header><h3>支付方式</h3><UiButton variant="secondary" size="sm" :disabled="busy || loading" @click="load">重新加载支付方式</UiButton></header>
+  <section class="checkout-payment" :class="{ 'checkout-payment--embedded': embedded }" :data-plugin-slot="name" aria-label="支付方式">
+    <header><h3>支付方式</h3></header>
     <p v-if="loading" role="status">正在加载支付方式，订单内容可继续查看。</p>
-    <p v-if="error" role="alert">{{ error }}</p>
+    <PageAlert v-if="error" tone="danger">{{ error }}</PageAlert>
     <p v-if="!loading && !contributions.length && !error && !paid && !canceled">暂无在线支付方式，可创建订单后联系管理员确认收款。</p>
     <div v-for="contribution in contributions" :key="key(contribution)" class="checkout-payment__provider">
-      <strong>{{ contribution.slot.title }}</strong>
+      <strong v-if="contributions.length > 1">{{ contribution.slot.title }}</strong>
       <PluginFrame
         :ref="value => setFrame(key(contribution), value)"
         :plugin-id="contribution.plugin_id" :slot="contribution.slot" surface="account"
-        :title="contribution.slot.title" :checkout="{ currency, order_id: currentOrder || undefined }"
+        :title="contribution.slot.title" managed :checkout="{ currency, order_id: currentOrder || undefined }"
         @checkout-options="value => receiveOptions(key(contribution), value)"
-        @unavailable="delete options[key(contribution)]"
+        @checkout-status="value => receiveStatus(key(contribution), value)"
+        @unavailable="receiveStatus(key(contribution), { state: 'error', code: 'session_unavailable' })"
       />
-      <p v-if="!options[key(contribution)]" role="status">等待扩展提供可用方式；如未响应，可重新加载。</p>
+      <PageAlert v-if="statuses[key(contribution)]?.state === 'error'" tone="danger">{{ paymentStatusMessage(statuses[key(contribution)].code) }}</PageAlert>
+      <p v-else-if="!options[key(contribution)]" role="status">正在加载支付方式…</p>
+      <p v-else-if="!options[key(contribution)].length">暂无可用支付方式，请联系管理员。</p>
       <label v-for="option in options[key(contribution)] || []" :key="option.id">
         <input v-model="selected" type="radio" :value="`${key(contribution)}:${option.id}`" :disabled="busy || option.disabled || paid" name="payment-option">
         {{ option.title }}<span v-if="option.disabled">（暂不可用）</span>
@@ -21,8 +24,10 @@
     </div>
     <p v-if="currentOrder" class="checkout-payment__state" role="status">订单 #{{ currentOrder }} · {{ paid ? '已完成付款' : canceled ? '已取消，请重新下单。' : waiting ? '等待付款；完成后请核对结果。' : '支付重试将使用此订单。' }}</p>
     <p v-if="confirmedOrder">订单应付 {{ formatCurrency(confirmedOrder.amount, confirmedOrder.currency) }}</p>
-    <div v-if="contributions.length || currentOrder" class="checkout-payment__actions">
-      <UiButton v-if="contributions.length" type="button" :loading="busy" :disabled="busy || disabled || !choice || choice.option.disabled || paid || canceled" @click="pay">{{ waiting ? '重新打开支付窗口' : '前往支付' }}</UiButton>
+    <UiButton v-if="canRetry" type="button" variant="secondary" size="sm" :disabled="busy || loading" @click="load">重新加载支付方式</UiButton>
+    <div class="checkout-payment__actions">
+      <UiButton v-if="contributions.length || loading || error" type="button" :loading="busy" :disabled="busy || disabled || !choice || choice.option.disabled || paid || canceled" @click="pay">{{ waiting ? '重新打开支付窗口' : currentOrder ? '继续支付' : '确认并支付' }}</UiButton>
+      <UiButton v-else-if="createOnly && !currentOrder" type="button" :loading="busy" :disabled="busy || disabled" @click="orderOnly">确认创建订单</UiButton>
       <UiButton v-if="currentOrder && !paid" type="button" variant="secondary" :disabled="busy" @click="reconcile">已支付，确认</UiButton>
     </div>
     <p v-if="paid">ZBoard 已确认订单完成。</p>
@@ -34,18 +39,24 @@ import { fetchPluginSlots, type CatalogSlot } from '../api/plugins'
 import { fetchAccountOrder } from '../api/client'
 import UiButton from '../components/UiButton.vue'
 import PluginFrame from './PluginFrame.vue'
+import PageAlert from '../components/PageAlert.vue'
 import { formatCurrency } from '../utils/format'
-import { startPayment, type PaymentOption } from './checkout'
+import { startPayment, paymentStatusMessage, type PaymentOption, type PaymentStatus } from './checkout'
 
-const props = defineProps<{ name: string; currency: string; orderId?: number; createOrder?: () => Promise<number>; preferredPlugin?: string; reconcileOnLoad?: boolean; disabled?: boolean }>()
+const props = defineProps<{ name: string; currency: string; orderId?: number; createOrder?: () => Promise<number>; createOnly?: () => Promise<void>; embedded?: boolean; preferredPlugin?: string; reconcileOnLoad?: boolean; disabled?: boolean }>()
 const emit = defineEmits<{ paid: [id: number]; created: [id: number] }>()
 type Frame = { checkoutAction(id: number, action: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> }
 const frames = shallowReactive(new Map<string, Frame>())
 const contributions = ref<CatalogSlot[]>([]), options = reactive<Record<string, PaymentOption[]>>({})
-const loading = ref(false), busy = ref(false), error = ref(''), selected = ref('')
+const statuses = reactive<Record<string, PaymentStatus>>({})
+const canRetry = computed(() => !busy.value && (Boolean(error.value) || contributions.value.some(c => ['error', 'empty'].includes(statuses[key(c)]?.state))))
+const loading = ref(true), busy = ref(false), error = ref(''), selected = ref('')
 const confirmedOrder = ref<{ amount: number; currency: string }>()
 const currentOrder = ref(props.orderId || 0), waiting = ref(false), paid = ref(false)
 const canceled = ref(false)
+const optionTimers = new Map<string, ReturnType<typeof setTimeout>>()
+function clearOptionTimers() { for (const timer of optionTimers.values()) clearTimeout(timer); optionTimers.clear() }
+function finishOptions(id: string) { clearTimeout(optionTimers.get(id)); optionTimers.delete(id) }
 let controller = new AbortController(), generation = 0, restored = false
 function savedChoice() {
   if (!currentOrder.value) return undefined
@@ -60,7 +71,26 @@ const choice = computed(() => {
   return undefined
 })
 function setFrame(id: string, value: unknown) { if (value) frames.set(id, value as Frame); else frames.delete(id) }
+function receiveStatus(id: string, status: PaymentStatus) {
+  if (!contributions.value.some(c => key(c) === id)) return
+  if (status.state !== 'loading') finishOptions(id)
+  else if (!optionTimers.has(id)) {
+    const current = generation
+    optionTimers.set(id, setTimeout(() => { if (current === generation && !options[id]) receiveStatus(id, { state: 'error', code: 'bridge_timeout' }) }, 35_000))
+  }
+  statuses[id] = status
+  if (status.state === 'error' || status.state === 'loading') delete options[id]
+}
+async function orderOnly() {
+  if (busy.value || props.disabled || loading.value || error.value || contributions.value.length || !props.createOnly) return
+  busy.value = true
+  try { await props.createOnly() }
+  finally { busy.value = false }
+}
 function receiveOptions(id: string, values: PaymentOption[]) {
+  if (!contributions.value.some(c => key(c) === id)) return
+  finishOptions(id)
+  statuses[id] = { state: values.length ? 'ready' : 'empty' }
   options[id] = values
   const contribution = contributions.value.find(c => key(c) === id)
   if (!choice.value && (!preferred.value || preferred.value === contribution?.plugin_id)) {
@@ -75,16 +105,26 @@ function receiveOptions(id: string, values: PaymentOption[]) {
 }
 async function load() {
   if (busy.value) return
+  clearOptionTimers()
   controller.abort(); controller = new AbortController(); const current = ++generation
   restored = false
   loading.value = true; error.value = ''; contributions.value = []; selected.value = ''
   for (const id of Object.keys(options)) delete options[id]
+  for (const id of Object.keys(statuses)) delete statuses[id]
   if (currentOrder.value) void refreshOrder(currentOrder.value, current).catch(() => {
     if (current === generation) error.value = '订单状态暂时无法读取，请重新核对。'
   })
   try {
     const values = await fetchPluginSlots('account', props.name, controller.signal)
-    if (current === generation) contributions.value = values
+    if (current === generation) {
+      contributions.value = values
+      for (const c of values) {
+        const id = key(c)
+        optionTimers.set(id, setTimeout(() => {
+          if (current === generation && !options[id]) receiveStatus(id, { state: 'error', code: 'bridge_timeout' })
+        }, 35_000))
+      }
+    }
   } catch { if (current === generation) error.value = '支付方式加载失败，请局部重试。' }
   finally { if (current === generation) loading.value = false }
 }
@@ -155,14 +195,19 @@ watch(() => [props.name, props.orderId, props.preferredPlugin], () => {
   currentOrder.value = props.orderId || 0; waiting.value = false; paid.value = false; canceled.value = false; restored = false; void load()
 })
 onMounted(load)
-onBeforeUnmount(() => { generation++; controller.abort() })
+onBeforeUnmount(() => { generation++; controller.abort(); clearOptionTimers() })
 </script>
 <style scoped>
 .checkout-payment { display: grid; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; }
+.checkout-payment--embedded { padding: 16px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+.checkout-payment--embedded :deep(.ui-button) { width: 100%; }
+.checkout-payment--embedded .checkout-payment__actions { display: grid; }
 .checkout-payment header, .checkout-payment__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .checkout-payment header { justify-content: space-between; }
 .checkout-payment h3, .checkout-payment p { margin: 0; }
 .checkout-payment__provider { display: grid; gap: 8px; min-width: 0; }
-.checkout-payment__provider label { display: flex; align-items: center; gap: 8px; }
+.checkout-payment__provider label { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-md); cursor: pointer; }
+.checkout-payment__provider label:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
+.checkout-payment h3 { font-size: 14px; }
 .checkout-payment__state { padding: 12px; background: var(--surface-soft); border-radius: 8px; }
 </style>

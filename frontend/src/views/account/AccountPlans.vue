@@ -79,7 +79,6 @@
               </template>
             </dl>
           </section>
-          <CheckoutPayment name="account.checkout.payment" :key="checkoutIntent" :currency="selectedSKU.currency" :create-order="ensureOrder" :disabled="creating || quoteLoading || (needsQuote && !quote)" @paid="router.push('/account/orders')" />
         </div>
 
         <aside class="purchase-checkout__summary">
@@ -93,8 +92,8 @@
           </dl>
           <PageAlert v-if="checkoutError" tone="danger" title="无法创建订单">{{ checkoutError }}</PageAlert>
           <PageAlert v-if="quoteError" tone="danger" title="报价失败">{{ quoteError }}<UiButton variant="secondary" @click="quoteResource.load()">重新报价</UiButton></PageAlert>
-          <UiButton type="button" :loading="creating || quoteLoading" :disabled="needsQuote && !quote" @click="submitOrder">确认创建订单</UiButton>
-          <p>订单创建后可在“我的订单”中查看状态。</p>
+          <CheckoutPayment name="account.checkout.payment" :key="checkoutIntent" embedded :currency="selectedSKU.currency" :create-order="ensureOrder" :create-only="submitOrder" :disabled="creating || quoteLoading || (needsQuote && !quote)" @paid="router.push('/account/orders')" />
+          <p>订单及付款进度可在“我的订单”中查看。</p>
         </aside>
       </div>
     </section>
@@ -379,7 +378,7 @@ const currentOperation = computed(() => {
 const loading = computed(() => subscriptionLoading.value || planLoading.value || detailLoading.value || creating.value)
 const catalogVisible = computed(() => operation.value === 'purchase' || Boolean(selectedSubscription.value))
 const pageTitle = computed(() => checkoutOpen.value ? '确认订单' : selectedPlan.value?.name || currentOperation.value.title)
-const pageDescription = computed(() => checkoutOpen.value ? '核对订单内容后创建订单。' : selectedPlan.value ? '选择规格并继续结算。' : currentOperation.value.description)
+const pageDescription = computed(() => checkoutOpen.value ? '核对订单内容并选择支付方式。' : selectedPlan.value ? '选择规格并继续结算。' : currentOperation.value.description)
 const catalogTitle = computed(() => ({
   purchase: '购买新的订阅', renew: `${selectedSubscription.value?.plan_name || ''} ${currentOperation.value.label}`,
   change: '选择新的套餐', addon: `${selectedSubscription.value?.plan_name || ''} 流量包`, reset: '购买流量重置',
