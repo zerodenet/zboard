@@ -152,3 +152,10 @@ func (s sshSession) combinedOutput(command string) ([]byte, error) {
 func (s sshSession) close() error {
 	return s.Close()
 }
+
+func (s sshSession) stdinPipe() (io.WriteCloser, error) { return s.Session.StdinPipe() }
+func (s sshSession) start(command string) error         { return s.Session.Start(command) }
+func (s sshSession) wait() error                        { return s.Session.Wait() }
+func (s sshSession) setOutput(stdout, stderr io.Writer) {
+	s.Session.Stdout, s.Session.Stderr = stdout, stderr
+}

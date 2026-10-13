@@ -93,7 +93,11 @@ func (p ConfigurationPublisher) Publish(ctx context.Context, request Configurati
 	if request.Namespace == "kernel" {
 		script = buildConfigurationPublishScript(stage, request.ConfigSHA256, request.DeploymentID, "kernel-config")
 	}
-	output, err := session.Run(script, true)
+	// This command owns a separate remote process group and a stdin lifeline.
+	// Give its watchdog time to stop CLI children and release flock before SSH
+	// closes; closing the transport alone leaves remote commands orphaned.
+	stop()
+	output, err := session.RunWithLifetime(ctx, script, true)
 	if err != nil {
 		if configurationConfirmedUnapplied(output) && (strings.Contains(output, "ZBOARD_CONFIG_HOT_APPLY_UNAVAILABLE") || unsupportedConfigurationCapability(output)) {
 			return ConfigurationPublishResult{Output: strings.TrimSpace(output)}, fmt.Errorf("%w：%s", ErrConfigurationCapabilityUnavailable, truncateOutput(output))

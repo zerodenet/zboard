@@ -44,6 +44,13 @@ type kernelRemoteRun struct {
 	privileged bool
 }
 
+func (s *kernelRemoteSessionStub) RunWithLifetime(ctx context.Context, command string, privileged bool) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return s.Run(command, privileged)
+}
+
 type kernelRemoteUpload struct {
 	path string
 	mode string

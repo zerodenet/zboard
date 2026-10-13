@@ -256,3 +256,9 @@ func (d localNativeDialer) Upload(path, mode string, data []byte) error {
 	return os.WriteFile(d.replace(path), data, 0600)
 }
 func (d localNativeDialer) Close() error { return nil }
+
+func (d localNativeDialer) RunWithLifetime(ctx context.Context, script string, privileged bool) (string, error) {
+	// Disposable local acceptance processes have no remote transport. Production
+	// SSH lifetime/group cleanup is exercised separately with a real SSH server.
+	return d.Run(script, privileged)
+}

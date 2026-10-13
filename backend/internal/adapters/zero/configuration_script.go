@@ -21,6 +21,7 @@ install -d -m 0700 /var/lib/zerodenet
 exec 9>/var/lib/zerodenet/config-publication.lock
 flock -w 20 9
 trap 'rm -rf "$stage"' EXIT
+trap 'exit 143' HUP INT TERM
 test -f /etc/zerodenet/current.json
 if ! systemctl is-active --quiet zero; then
   printf 'ZBOARD_CONFIG_SERVICE_UNAVAILABLE\n' >&2

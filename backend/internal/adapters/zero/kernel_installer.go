@@ -36,6 +36,7 @@ var kernelSHA256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type KernelRemoteSession interface {
 	Run(command string, privileged bool) (string, error)
+	RunWithLifetime(context.Context, string, bool) (string, error)
 	Upload(path, mode string, payload []byte) error
 	Close() error
 }
