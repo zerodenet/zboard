@@ -7,20 +7,19 @@ import AccountOrders from './AccountOrders.vue'
 vi.mock('../../api/client', () => ({ cancelOrder: vi.fn(), fetchAccountOrdersPage: vi.fn() }))
 
 describe('account order terminal subscription history', () => {
-  it('replaces the return order when a different payment is selected and clears the old plugin hint', async () => {
+  it('redirects legacy payment returns to the matching order detail without mounting payment on the list', async () => {
     vi.mocked(fetchAccountOrdersPage).mockResolvedValue({
       items: [{ id: 1, status: 'pending', created_at: '', amount_cents: 100, currency: 'CNY' }, { id: 2, status: 'pending', created_at: '', amount_cents: 100, currency: 'CNY' }],
       total: 2, offset: 0, limit: 25,
       page: { offset: 0, limit: 25, total: 2, next_cursor: null, previous_cursor: null }, aggregates: {}, facets: {},
     } as any)
-    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/orders', component: AccountOrders }] })
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/orders', component: AccountOrders }, { path: '/account/orders/:id', component: { template: '<div />' } }] })
     await router.push('/account/orders?payment_order=1&payment_plugin=old.plugin'); await router.isReady()
     const wrapper = mount(AccountOrders, { global: { plugins: [router], stubs: { CheckoutPayment: true } } }); await flushPromises()
-    await wrapper.findAll('button').filter(button => button.text() === '支付')[1].trigger('click'); await flushPromises()
-    expect(router.currentRoute.value.query.payment_order).toBe('2')
-    expect(router.currentRoute.value.query.payment_plugin).toBeUndefined()
-    expect(wrapper.get('checkout-payment-stub').attributes('orderid')).toBe('2')
-    expect(wrapper.get('checkout-payment-stub').attributes('preferredplugin')).toBe('')
+    expect(router.currentRoute.value.path).toBe('/account/orders/1')
+    expect(router.currentRoute.value.query).toEqual({ payment_plugin: 'old.plugin' })
+    expect(wrapper.find('checkout-payment-stub').exists()).toBe(false)
+    expect(wrapper.findAll('a').find(link => link.text() === '详情／支付' && link.attributes('href') === '/account/orders/2')).toBeDefined()
     wrapper.unmount()
   })
   it('shows the final service state after its instance has been cleaned', async () => {
@@ -53,6 +52,8 @@ describe('account order terminal subscription history', () => {
     expect(wrapper.text()).toContain('最终用量')
     expect(wrapper.text()).toContain('已支付')
     expect(wrapper.text()).toContain('¥5.00')
+    expect(wrapper.find('[data-plugin-slot]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/account/orders/1"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })

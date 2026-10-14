@@ -59,7 +59,7 @@ import { pluginActionFailure, type PluginActionFailure } from '../utils/pluginAc
 import { formatCurrency } from '../utils/format'
 import { startPayment, paymentStatusMessage, type PaymentOption, type PaymentStatus } from './checkout'
 
-const props = defineProps<{ name: string; currency: string; orderId?: number; createOrder?: () => Promise<number>; createOnly?: () => Promise<void>; embedded?: boolean; preferredPlugin?: string; reconcileOnLoad?: boolean; disabled?: boolean }>()
+const props = withDefaults(defineProps<{ name: string; currency: string; orderId?: number; createOrder?: () => Promise<number>; createOnly?: () => Promise<void>; embedded?: boolean; preferredPlugin?: string; reconcileOnLoad?: boolean; openOnLoad?: boolean; disabled?: boolean }>(), { openOnLoad: true })
 const emit = defineEmits<{ paid: [id: number]; created: [id: number] }>()
 const paymentTriggerId = `checkout-payment-${useId()}`
 type Frame = { checkoutAction(id: number, action: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> }
@@ -70,7 +70,7 @@ const canRetry = computed(() => !busy.value && (Boolean(error.value) || contribu
 const loading = ref(true), busy = ref(false), error = ref(''), selected = ref('')
 const confirmedOrder = ref<{ amount: number; currency: string }>()
 const currentOrder = ref(props.orderId || 0), waiting = ref(false), paid = ref(false)
-const paymentDialogOpen = ref(Boolean(props.orderId)), paymentError = ref(''), checking = ref(false)
+const paymentDialogOpen = ref(Boolean(props.orderId) && props.openOnLoad !== false), paymentError = ref(''), checking = ref(false)
 const actionFailure = ref<PluginActionFailure>(), rejectedAction = ref('')
 const canceled = ref(false)
 const optionTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -220,7 +220,7 @@ async function reconcile() {
 }
 watch(() => [props.name, props.orderId, props.preferredPlugin], () => {
   generation++; controller.abort(); busy.value = false; confirmedOrder.value = undefined
-  paymentDialogOpen.value = Boolean(props.orderId); paymentError.value = ''; checking.value = false
+  paymentDialogOpen.value = Boolean(props.orderId) && props.openOnLoad !== false; paymentError.value = ''; checking.value = false
   actionFailure.value = undefined; rejectedAction.value = ''
   currentOrder.value = props.orderId || 0; waiting.value = false; paid.value = false; canceled.value = false; restored = false; void load()
 })

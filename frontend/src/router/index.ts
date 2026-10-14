@@ -29,6 +29,7 @@ export const routes: RouteRecordRaw[] = [
       { path: 'integrations', component: () => import('../views/account/AccountIntegrations.vue'), meta: { title: '外部集成' } },
       { path: 'plans', component: () => import('../views/account/AccountPlans.vue'), meta: { title: '购买套餐' } },
       { path: 'orders', component: () => import('../views/account/AccountOrders.vue'), meta: { title: '我的订单' } },
+      { path: 'orders/:id', component: () => import('../views/account/AccountOrderDetail.vue'), meta: { title: '订单详情' } },
       { path: 'subscription', component: () => import('../views/account/AccountSubscription.vue'), meta: { title: '订阅配置' } },
       { path: 'traffic', component: () => import('../views/account/AccountTraffic.vue'), meta: { title: '流量明细' } },
       { path: 'announcements', component: () => import('../views/account/AccountAnnouncements.vue'), meta: { title: '公告中心' } },

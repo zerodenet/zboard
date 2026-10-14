@@ -17,6 +17,13 @@ const Frame = defineComponent({
 const Modal = defineComponent({ props: ['open', 'title'], emits: ['close'], template: '<section v-if="open" role="dialog"><h2>{{ title }}</h2><slot/><slot name="footer"/></section>' })
 const open = (props = {}) => mount(CheckoutPayment, { props: { name: 'account.checkout.payment', currency: 'CNY', ...props }, global: { stubs: { PluginFrame: Frame, ModalDialog: Modal } } })
 describe('payment contributions', () => {
+  it('opens payment confirmation from a specific order detail only on user action', async () => {
+    const wrapper = open({ orderId: 27, openOnLoad: false }); await flushPromises()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    await wrapper.findAll('button').find(button => button.text() === '查看支付状态')!.trigger('click'); await flushPromises()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('订单 #27')
+    wrapper.unmount()
+  })
   it.each([true, false])('closes the reserved window and respects public retryable=%s without success navigation', async retryable => {
     const create = vi.fn().mockResolvedValue(65)
     const popup = { closed: false, opener: null, close: vi.fn(), location: { replace: vi.fn() } }

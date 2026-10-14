@@ -40,7 +40,7 @@
         <tbody>
           <tr v-for="item in orders" :key="item.id">
             <td class="table-primary-column">
-              <div class="cell-title"><strong>#{{ item.id }}</strong><TableText :value="item.trade_no" /></div>
+              <div class="cell-title"><RouterLink :to="`/account/orders/${item.id}`"><strong>#{{ item.id }}</strong></RouterLink><TableText :value="item.trade_no" /></div>
             </td>
             <td>
               <div class="cell-title cell-related">
@@ -54,7 +54,7 @@
             <td><StatusBadge :tone="tone(item.status)">{{ label(item.status) }}</StatusBadge></td>
             <td data-column-priority="2"><TimeBadge :value="item.created_at" /></td>
             <td class="table-action-column">
-              <UiButton v-if="['pending', 'failed'].includes(item.status)" variant="secondary" size="sm" type="button" @click="openPayment(item.id)">支付</UiButton>
+              <RouterLink class="button button-secondary button-sm" :to="`/account/orders/${item.id}`">{{ ['pending', 'failed'].includes(item.status) ? '详情／支付' : '详情' }}</RouterLink>
               <UiButton
                 v-if="item.status === 'pending'"
                 variant="danger"
@@ -86,8 +86,6 @@
       </template>
     </DataWorkbench>
 
-    <CheckoutPayment v-if="paymentOrder" name="account.orders.payment" :order-id="paymentOrder" currency="" :preferred-plugin="returnPlugin" :reconcile-on-load="Boolean(returnPlugin)" @paid="load" />
-
     <aside class="account-notice">
       <UiIcon name="clock" />
       <div>
@@ -110,7 +108,6 @@
 </template>
 
 <script setup lang="ts">
-import CheckoutPayment from '../../plugins/CheckoutPayment.vue'
 import TableText from '../../components/TableText.vue'
 import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -134,14 +131,14 @@ import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/for
 
 const route = useRoute()
 const router = useRouter()
-const returnedOrder = Number(route.query.payment_order)
-const paymentOrder = ref(Number.isSafeInteger(returnedOrder) && returnedOrder > 0 ? returnedOrder : 0)
-const returnPlugin = ref(String(route.query.payment_plugin || ''))
-async function openPayment(id: number) {
-  paymentOrder.value = id
-  returnPlugin.value = ''
-  await router.replace({ query: { ...route.query, payment_order: String(id), payment_plugin: undefined } })
-}
+// Existing plugin return URLs remain valid, but payment belongs to one order.
+watch(() => route.query.payment_order, order => {
+  const id = Number(order)
+  if (!Number.isSafeInteger(id) || id <= 0) return
+  void router.replace({ path: `/account/orders/${id}`, query: {
+    ...(typeof route.query.payment_plugin === 'string' ? { payment_plugin: route.query.payment_plugin } : {}),
+  } })
+}, { immediate: true })
 const allowedPageSizes = [25, 50, 100]
 const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 25)
@@ -233,8 +230,6 @@ async function doCancel() {
 }
 
 watch(() => route.fullPath, async () => {
-  const order = Number(route.query.payment_order)
-  if (Number.isSafeInteger(order) && order > 0) { paymentOrder.value = order; returnPlugin.value = String(route.query.payment_plugin || '') }
   const nextStatus = String(route.query.status || '')
   const rawLimit = Number(route.query.limit)
   const nextLimit = allowedPageSizes.includes(rawLimit) ? rawLimit : 25
