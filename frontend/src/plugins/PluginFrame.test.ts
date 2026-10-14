@@ -48,6 +48,26 @@ function send(
   window.dispatchEvent(event);
 }
 describe("plugin iframe boundary", () => {
+  it('preserves public plugin error details without changing the bridge sender identity', async () => {
+    const wrapper = mount(PluginFrame, { attachTo: document.body, props: { pluginId: 'example.welcome', pageId: 'home', surface: 'account' } }); await flushPromises()
+    const posted = vi.spyOn(wrapper.get('iframe').element.contentWindow!, 'postMessage')
+    mocks.bridge.mockRejectedValueOnce({ response: { status: 422, data: { code: 422, message: 'Resource busy', error: { version: 1, source: 'plugin', code: 'plugin_action_rejected', plugin_code: 'session_expired', retryable: false } } } })
+    send(wrapper, 'page.call', { action: 'resource.use', payload: {} }); await flushPromises()
+    expect(posted).toHaveBeenCalledWith(expect.objectContaining({ source: 'zboard-plugin-host', ok: false, code: 'plugin_action_rejected', source_kind: 'plugin', plugin_code: 'session_expired', error: 'Resource busy', retryable: false }), '*')
+    expect(mocks.bridge).toHaveBeenCalledOnce()
+    expect(wrapper.find('iframe').exists()).toBe(true)
+    wrapper.unmount()
+  })
+  it('rejects a managed action result after the frame session is replaced', async () => {
+    let resolve!: (value: any) => void
+    const wrapper = mount(PluginFrame, { props: { pluginId: 'example.welcome', surface: 'account', slot: { id: 'checkout', slot: 'account.checkout.payment', surface: 'account', title: 'Checkout', entrypoint: 'ui/index.html' }, checkout: { currency: 'CNY' } } }); await flushPromises()
+    mocks.bridge.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    const attempt = (wrapper.vm as any).checkoutAction(1, 'resource.use', {}).catch((cause: Error) => cause)
+    await wrapper.setProps({ pluginId: 'example.replaced' }); await flushPromises()
+    resolve({ checkout_url: 'https://example.test' })
+    expect((await attempt).message).toContain('会话已失效')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     security.proof = '';
     security.confirm.mockImplementation(async () => { security.proof = 'host-proof'; return security.proof });

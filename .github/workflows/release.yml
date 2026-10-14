@@ -46,6 +46,13 @@ jobs:
           git diff --exit-code -- go.mod go.sum
           go test ./...
           go vet ./...
+      - name: Verify plugin SDK submodule
+        working-directory: backend/pkg/pluginapi
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go test ./...
+          go vet ./...
       - name: Build binary
         working-directory: backend
         run: |

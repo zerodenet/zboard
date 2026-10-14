@@ -66,7 +66,8 @@ func newPluginLifecycleFixture(t *testing.T, archive []byte, keys map[string]str
 		"/api/v1/auth/login":    h.LoginHandler, "/api/v1/auth/me": h.MeHandler,
 		"/api/v1/setup/status": h.SetupStatusHandler, "/api/v1/system/status": h.SystemStatusHandler,
 		"/api/v1/system/configs": h.PublicSystemConfigsHandler, "/api/v1/navigation": h.NavigationHandler,
-		"/api/v1/plugin-ui/bridge": h.PluginBridgeHandler,
+		"/api/v1/plugin-ui/bridge":  h.PluginBridgeHandler,
+		"/api/v1/plugin-ui/session": h.PluginRevokeSessionHandler,
 	} {
 		mux.HandleFunc(path, handler)
 	}
@@ -98,11 +99,19 @@ func newPluginLifecycleFixture(t *testing.T, archive []byte, keys map[string]str
 	}))
 	mux.HandleFunc("/api/v1/plugin-ui/", func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/plugin-ui/"), "/")
-		if len(parts) != 2 || parts[1] != "session" {
+		if len(parts) != 2 {
 			http.NotFound(w, r)
 			return
 		}
-		h.PluginSessionHandler(w, pathvar.WithVars(r, map[string]string{"id": parts[0]}))
+		r = pathvar.WithVars(r, map[string]string{"id": parts[0]})
+		switch parts[1] {
+		case "session":
+			h.PluginSessionHandler(w, r)
+		case "slot-session":
+			h.PluginSlotSessionHandler(w, r)
+		default:
+			http.NotFound(w, r)
+		}
 	})
 	mux.HandleFunc("/api/v1/plugin-assets/", h.PluginAssetHandler)
 	f.server = httptest.NewServer(mux)

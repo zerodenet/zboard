@@ -4,6 +4,7 @@
       <DialogOverlay class="ui-dialog-overlay" />
       <DialogContent
         class="app-dialog ui-dialog-content"
+        aria-modal="true"
         :class="{ 'app-dialog-fixed': fixedBody }"
         :style="dialogStyle"
         :close-on-escape="!busy"

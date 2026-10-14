@@ -5678,6 +5678,15 @@ components:
           description: Field-path to localized actionable message. Present when code is validation_failed.
           additionalProperties:
             type: string
+        source:
+          type: string
+          enum: [plugin]
+          description: Present for explicitly public plugin action rejections. The host retains ownership of error.code and the HTTP status.
+        plugin_code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{0,63}$'
+          maxLength: 64
+          description: Opaque plugin-owned reason when code is plugin_action_rejected. This HTTP 422 rejection includes a public message and a required retryable flag.
     PageMetadata:
       type: object
       required: [offset, limit, total, next_cursor, previous_cursor]

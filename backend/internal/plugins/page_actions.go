@@ -89,21 +89,26 @@ func (m *Manager) sessionAction(ctx context.Context, token string, userID uint, 
 		SlotId: session.SlotID, Slot: session.Slot, Purpose: session.Purpose, CheckoutJson: checkoutJSON, PageId: session.PageID, Surface: session.Surface, ActorId: actorID,
 		ActorAdmin: admin, Action: action, PayloadJson: payload,
 	})
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || status.Code(err) == codes.DeadlineExceeded {
-			return nil, context.DeadlineExceeded
-		}
-		return nil, ErrUnavailable
-	}
-	if response == nil {
-		return nil, ErrUnavailable
-	}
+	// Revocation and generation changes take precedence over either success or
+	// public plugin rejection, including responses arriving after an upgrade.
 	m.mu.Lock()
 	_, sessionErr := m.session(token)
 	stillActive := m.processes[session.PluginID] == process
 	m.mu.Unlock()
 	if sessionErr != nil || !stillActive {
 		return nil, ErrInvalidSession
+	}
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || status.Code(err) == codes.DeadlineExceeded {
+			return nil, context.DeadlineExceeded
+		}
+		if failure, ok := pluginv1.ParseActionError(err); ok {
+			return nil, failure
+		}
+		return nil, ErrUnavailable
+	}
+	if response == nil {
+		return nil, ErrUnavailable
 	}
 	result := json.RawMessage(response.ResultJson)
 	if len(result) == 0 || len(result) > MaxPageActionBytes || !json.Valid(result) {

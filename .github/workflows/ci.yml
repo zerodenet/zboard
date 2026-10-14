@@ -25,6 +25,13 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: Test
         run: go test ./...
+      - name: Verify plugin SDK submodule
+        working-directory: backend/pkg/pluginapi
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go test ./...
+          go vet ./...
       - name: Test offline node cleanup
         run: go test ./internal/nodecleanup -count=1
       - name: Verify pure-Go SQLite path

@@ -33,6 +33,7 @@
 </template>
 <script setup lang="ts">
 import { paymentSlots, paymentOptions, paymentStatus, type PaymentOption, type PaymentStatus } from "./checkout";
+import { pluginActionFailure } from '../utils/pluginActionError';
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { accountConfirmation, clearAccountConfirmation, confirmAccountPassword } from "../api/accountSecurity";
 import UiButton from "../components/UiButton.vue";
@@ -256,6 +257,7 @@ async function receive(event: MessageEvent) {
     const result = confirmedPassword
       ? await pluginBridge(s, message.type, payload, controller.signal, confirmedPassword)
       : await pluginBridge(s, message.type, payload, controller.signal);
+    if (current !== generation || session.value?.token !== s.token) return;
     if (message.type === "identity.login.start" || message.type === "identity.bind.start") {
       const raw = typeof result.authorization_url === "string" ? result.authorization_url : "";
       const target = new URL(raw);
@@ -266,7 +268,10 @@ async function receive(event: MessageEvent) {
     respond({ ok: true, result });
   } catch (cause: any) {
     if (cause?.response?.status === 401) clearAccountConfirmation();
-    respond({ ok: false, error: cause?.response?.data?.message || "操作已取消或未完成，请重试。", code: cause?.response?.data?.error?.code || "temporary_unavailable" });
+    const failure = pluginActionFailure(cause);
+    respond(failure
+      ? { ok: false, error: failure.message, code: failure.code, source_kind: failure.source, plugin_code: failure.plugin_code, retryable: failure.retryable }
+      : { ok: false, error: cause?.response?.data?.message || "操作已取消或未完成，请重试。", code: cause?.response?.data?.error?.code || "temporary_unavailable" });
   } finally {
     if (current === generation) pending.delete(message.request_id);
   }
@@ -293,11 +298,23 @@ async function verify() {
 }
 async function checkoutAction(orderId: number, action: string, payload: Record<string, unknown>) {
   if (!session.value || error.value || !props.slot || !paymentSlots.includes(props.slot.slot)) throw new Error("支付扩展不可用，请重试加载。");
-  return pluginBridge(session.value, "checkout.call", { order_id: orderId, action, payload }, controller.signal);
+  return currentSessionCall("checkout.call", { order_id: orderId, action, payload });
 }
 async function checkoutContext(orderId: number) {
   if (!session.value || error.value) throw new Error("支付扩展不可用。");
-  return pluginBridge(session.value, "checkout.context", { order_id: orderId }, controller.signal);
+  return currentSessionCall("checkout.context", { order_id: orderId });
+}
+async function currentSessionCall(type: string, payload: Record<string, unknown>) {
+  const s = session.value, current = generation;
+  if (!s) throw new Error("扩展会话已失效，请重新加载。");
+  try {
+    const result = await pluginBridge(s, type, payload, controller.signal);
+    if (current !== generation || session.value?.token !== s.token) throw new Error("扩展会话已失效，请重新加载。");
+    return result;
+  } catch (cause) {
+    if (current !== generation || session.value?.token !== s.token) throw new Error("扩展会话已失效，请重新加载。");
+    throw cause;
+  }
 }
 defineExpose({ checkoutAction, checkoutContext });
 watch(

@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/zerodenet/zboard/backend/internal/plugins"
+	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
 	"github.com/zeromicro/go-zero/rest/pathvar"
 	"gorm.io/gorm"
 )
@@ -23,6 +24,7 @@ func (h *handlers) SetPluginManager(m *plugins.Manager) {
 	}
 }
 func pluginError(w http.ResponseWriter, err error) {
+	var failure *pluginv1.ActionError
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		writeCapabilityError(w, http.StatusGatewayTimeout, "plugin request timed out", "deadline_exceeded")
@@ -38,6 +40,15 @@ func pluginError(w http.ResponseWriter, err error) {
 		writeCapabilityError(w, http.StatusConflict, err.Error(), "conflict")
 	case errors.Is(err, plugins.ErrUnavailable):
 		writeCapabilityError(w, http.StatusServiceUnavailable, err.Error(), "unavailable")
+	case errors.As(err, &failure):
+		// Revalidate even local errors; only explicitly public, bounded values
+		// may leave the host. The plugin cannot select the HTTP/host error code.
+		value, ok := pluginv1.ParseActionError(failure)
+		if !ok {
+			writeCapabilityError(w, http.StatusServiceUnavailable, "plugin service unavailable", "unavailable")
+			return
+		}
+		writeJSONResponse(w, http.StatusUnprocessableEntity, value.Message, nil, &APIError{Version: 1, Code: "plugin_action_rejected", Source: "plugin", PluginCode: value.Code, Retryable: &value.Retryable})
 	default:
 		writeCapabilityError(w, http.StatusBadRequest, err.Error(), "invalid_argument")
 	}

@@ -21,10 +21,12 @@ type APIResponse struct {
 }
 
 type APIError struct {
-	Version   int               `json:"version"`
-	Code      string            `json:"code"`
-	Retryable *bool             `json:"retryable,omitempty"`
-	Fields    map[string]string `json:"fields,omitempty"`
+	Version    int               `json:"version"`
+	Code       string            `json:"code"`
+	Retryable  *bool             `json:"retryable,omitempty"`
+	Fields     map[string]string `json:"fields,omitempty"`
+	Source     string            `json:"source,omitempty"`
+	PluginCode string            `json:"plugin_code,omitempty"`
 }
 
 type requestValidationError struct {

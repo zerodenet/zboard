@@ -1,5 +1,6 @@
 import { normalizeOutput } from './output'
 import { pluginManagementErrorMessage } from './pluginManagementErrors'
+import { readPluginActionFailure } from './pluginActionError'
 
 type ApiErrorScope = 'plugin-management'
 
@@ -33,9 +34,14 @@ export function normalizeApiMessage(value: unknown, fallback: string) {
 export function normalizeApiErrorPayload(payload: unknown, scope?: ApiErrorScope): Record<string, any> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return { message: '' }
   const source = payload as Record<string, any>
+  const actionFailure = readPluginActionFailure(source)
+  if (source.error?.source === 'plugin' || source.error?.code === 'plugin_action_rejected') {
+    if (!actionFailure) return { message: '', error: { version: 1, code: 'unavailable', retryable: false } }
+    return { code: 422, message: actionFailure.message, error: { version: 1, code: actionFailure.code, source: actionFailure.source, plugin_code: actionFailure.plugin_code, retryable: actionFailure.retryable } }
+  }
   const normalized: Record<string, any> = {
     ...source,
-    message: localizedApiMessage(source.message) || (scope === 'plugin-management' ? pluginManagementErrorMessage(normalizeApiText(source.message, 500)) : ''),
+    message: actionFailure?.message || localizedApiMessage(source.message) || (scope === 'plugin-management' ? pluginManagementErrorMessage(normalizeApiText(source.message, 500)) : ''),
   }
 
   if (!source.error || typeof source.error !== 'object' || Array.isArray(source.error)) {
@@ -62,6 +68,8 @@ export function normalizeApiErrorPayload(payload: unknown, scope?: ApiErrorScope
 }
 
 export function normalizeApiErrorMessage(cause: any, fallback: string, scope?: ApiErrorScope) {
+  const actionFailure = readPluginActionFailure(cause?.response?.data)
+  if (actionFailure) return actionFailure.message
   const response = normalizeApiErrorPayload(cause?.response?.data, scope)
   return normalizeApiMessage(response.message, fallback)
 }

@@ -210,6 +210,10 @@ unavailability; use bounded retries. Never record local paid state until the
 host acknowledges the fact. A lost response is recovered by retrying the exact
 same fact, not by generating a new event identity.
 
+Plugin-owned action rejection uses the separate [public action error
+contract](actions.md), not `HostCallError`. It applies to page and slot actions
+without defining any channel-specific business state or retry policy.
+
 Proto fields and SDK helpers are additive within protocol/bridge v1. Older
 plugins ignore new fields. Older hosts reject the new payment grant/slots;
 plugins should publish a suitable host version range and use host discovery.
