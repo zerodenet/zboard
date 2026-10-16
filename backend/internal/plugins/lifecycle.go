@@ -93,6 +93,9 @@ func (m *Manager) commitCandidate(ctx context.Context, prev model.PluginInstalla
 		if err := m.guard(tx); err != nil {
 			return err
 		}
+		if err := lockPreviousInstallation(tx, prev, candidate.ID); err != nil {
+			return err
+		}
 		version := model.PluginVersion{ID: pack.Digest, PluginID: candidate.ID, Version: candidate.Version, Digest: pack.Digest, Publisher: pack.Publisher, Manifest: string(pack.RawManifest)}
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&version).Error; err != nil {
 			return err

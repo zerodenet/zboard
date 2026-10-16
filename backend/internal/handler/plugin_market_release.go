@@ -33,14 +33,15 @@ func (h *handlers) AdminPluginMarketInstallHandler(w http.ResponseWriter, r *htt
 		return
 	}
 	var body struct {
-		Version     string `json:"version"`
-		Digest      string `json:"digest"`
-		Fingerprint string `json:"fingerprint"`
+		Version            string `json:"version"`
+		Digest             string `json:"digest"`
+		Fingerprint        string `json:"fingerprint"`
+		PublisherMigration string `json:"publisher_migration"`
 	}
 	if !pluginBody(w, r, &body) {
 		return
 	}
-	item, err := h.pluginManager.InstallMarketConfirmed(r.Context(), pathvar.Vars(r)["id"], body.Version, body.Digest, body.Fingerprint, claims.Email)
+	item, err := h.pluginManager.InstallMarketConfirmed(r.Context(), pathvar.Vars(r)["id"], body.Version, body.Digest, body.Fingerprint, claims.Email, body.PublisherMigration)
 	if err != nil {
 		pluginError(w, err)
 		return

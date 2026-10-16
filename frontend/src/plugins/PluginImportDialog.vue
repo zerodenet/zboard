@@ -20,10 +20,18 @@
         <p>{{ preview.manifest.description }}</p>
         <p>使用范围：{{ preview.manifest.surfaces.map(surfaceLabel).join('、') || '后台服务' }}</p>
         <p>所需能力：{{ preview.manifest.capabilities.map(capabilityLabel).join('、') }}</p>
+        <p class="plugin-key-fingerprint">安装包摘要：{{ preview.digest }}</p>
         <p class="plugin-key-fingerprint">签名指纹：{{ preview.fingerprint }}</p>
         <PageAlert v-if="!preview.compatibility.compatible" tone="danger">{{ preview.compatibility.reason }}</PageAlert>
         <PageAlert v-else-if="!preview.trusted" tone="warning">首次安装此来源。签名有效，但发布者身份尚未经本站确认。确认来源后，仅为此插件保存信任。</PageAlert>
         <p v-else>签名来源已受信任。</p>
+        <PageAlert v-if="preview.publisher_migration" tone="warning">
+          <strong>同签名密钥的发布者迁移</strong>
+          <p class="plugin-key-fingerprint">{{ preview.publisher_migration.from_publisher }} → {{ preview.publisher_migration.to_publisher }}</p>
+          <p>{{ preview.publisher_migration.previous_state === 'uninstalled' ? '将重装已卸载的插件，保持停用。' : '将更新当前安装，保留原启停状态。' }} 配置、私有数据及历史业务记录继续保留，插件身份与签名密钥不变。</p>
+          <p>失败保留原安装和数据，可重新检查安装包后重试。不提供旧包回滚；恢复其他版本须重新导入，仍需通过数据兼容性检查。</p>
+          <label><input v-model="migratePublisher" type="checkbox" :disabled="busy" /> 我已核对签名指纹，确认迁移此插件的发布者并保留数据</label>
+        </PageAlert>
         <PageAlert v-if="preview.compatibility.warning" tone="warning">{{ preview.compatibility.warning }}</PageAlert>
         <label v-if="!preview.trusted"><input v-model="trust" type="checkbox" :disabled="busy" /> 我已确认来源，信任此插件的签名密钥</label>
       </div>
@@ -31,7 +39,7 @@
     </div>
     <template #footer>
       <UiButton variant="secondary" :disabled="busy" @click="$emit('close')">取消</UiButton>
-      <UiButton :disabled="(!file && !marketId) || busy || (!!preview && (!preview.compatibility.compatible || (!preview.trusted && !trust)))" :loading="busy" @click="submit">{{ preview ? (marketId ? '确认安装' : '确认导入') : '查看插件' }}</UiButton>
+      <UiButton :disabled="(!file && !marketId) || busy || (!!preview && (!preview.compatibility.compatible || (!preview.trusted && !trust) || (!!preview.publisher_migration && !migratePublisher)))" :loading="busy" @click="submit">{{ preview ? (marketId ? '确认安装' : '确认导入') : '查看插件' }}</UiButton>
     </template>
   </ModalDialog>
 </template>
@@ -47,18 +55,18 @@ import { formatCompactBytes } from '../utils/format'
 const props = defineProps<{ open: boolean; marketId?: string; marketVersion?: string }>()
 const emit = defineEmits<{ close: []; imported: [plugin: Plugin] }>()
 const file = ref<File | null>(null), error = ref(''), busy = ref(false)
-const preview = ref<ImportPreview | null>(null), publicKey = ref(''), trust = ref(false)
+const preview = ref<ImportPreview | null>(null), publicKey = ref(''), trust = ref(false), migratePublisher = ref(false)
 let generation = 0
 let controller: AbortController | undefined
 onScopeDispose(() => { generation++; controller?.abort() })
 watch(() => [props.open, props.marketId, props.marketVersion], () => {
   generation++; controller?.abort(); busy.value = false
-  file.value = null; error.value = ''; preview.value = null; publicKey.value = ''; trust.value = false
+  file.value = null; error.value = ''; preview.value = null; publicKey.value = ''; trust.value = false; migratePublisher.value = false
   if (props.open && props.marketId) void submit()
 }, { immediate: true })
 function select(files: File[]) {
   const chosen = files[0]
-  error.value = ''; file.value = null; preview.value = null; trust.value = false
+  error.value = ''; file.value = null; preview.value = null; trust.value = false; migratePublisher.value = false
   if (!chosen) return
   if (!chosen.name.toLowerCase().endsWith('.zbplugin') || chosen.size > 32 * 1024 * 1024) {
     error.value = '请选择不超过 32 MiB 的 .zbplugin 文件。'; return
@@ -72,10 +80,14 @@ async function submit() {
   busy.value = true; error.value = ''
   try {
     if (!preview.value) { const result = props.marketId ? await previewMarketPlugin(props.marketId, props.marketVersion || '', controller.signal) : await previewPlugin(file.value!, publicKey.value); if (request === generation) preview.value = result; return }
-    if (!preview.value.compatibility.compatible || (!preview.value.trusted && !trust.value)) return
-    const plugin = props.marketId ? await confirmMarketPlugin(props.marketId, props.marketVersion || '', preview.value, trust.value) : await importPlugin(file.value!, preview.value, trust.value); if (request === generation) emit('imported', plugin)
+    if (!preview.value.compatibility.compatible || (!preview.value.trusted && !trust.value) || (preview.value.publisher_migration && !migratePublisher.value)) return
+    const consent: [boolean?] = preview.value.publisher_migration ? [migratePublisher.value] : []
+    const plugin = props.marketId ? await confirmMarketPlugin(props.marketId, props.marketVersion || '', preview.value, trust.value, ...consent) : await importPlugin(file.value!, preview.value, trust.value, ...consent); if (request === generation) emit('imported', plugin)
   }
-  catch (cause: any) { if (request === generation) error.value = cause?.response?.data?.message || '导入失败，请检查插件包和发布者签名后重试。' }
+  catch (cause: any) { if (request === generation) {
+    error.value = cause?.response?.data?.message || '导入失败，请检查插件包和发布者签名后重试。'
+    if (cause?.response?.status === 409) { preview.value = null; trust.value = false; migratePublisher.value = false; error.value = '插件状态或安装包已变化，请重新查看安装包并确认。' }
+  } }
   finally { if (request === generation) busy.value = false }
 }
 </script>

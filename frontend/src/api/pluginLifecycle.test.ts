@@ -1,7 +1,7 @@
 import axios, { AxiosError, type AxiosAdapter } from 'axios'
 import { afterEach, describe, expect, it } from 'vitest'
 import { authenticatedAPI } from './client'
-import { pluginAction, type Plugin, type PluginLifecycleAction } from './plugins'
+import { pluginAction, importPlugin, type ImportPreview, type Plugin, type PluginLifecycleAction } from './plugins'
 import requests from './testdata/pluginLifecycleRequests.json'
 import { normalizeApiErrorMessage } from '../utils/apiError'
 
@@ -40,4 +40,21 @@ describe('plugin lifecycle HTTP request contract', () => {
     const cause = await pluginAction({ id: 'example.server', generation: 1 } as Plugin, 'enable').catch(error => error)
     expect(normalizeApiErrorMessage(cause, '未知失败', 'plugin-management')).toContain(expected)
   })
+})
+
+it('binds offline publisher migration to the reviewed archive and verified key without implying activation', async () => {
+ const requests: Array<Record<string, string>> = []
+ authenticatedAPI.defaults.adapter = (async config => {
+   requests.push(config.headers.toJSON() as Record<string, string>)
+   return { status: 200, statusText: 'OK', config, headers: {}, data: { data: { id: 'example.plugin' } } }
+ }) satisfies AxiosAdapter
+ const file = new File(['archive'], 'plugin.zbplugin')
+ const preview = { digest: 'digest', public_key: 'key', fingerprint: 'fingerprint', publisher_migration: { confirmation: 'state-binding' } } as ImportPreview
+ await importPlugin(file, preview, false)
+ await importPlugin(file, preview, false, true)
+ expect(requests[0]['X-Plugin-Publisher-Migration']).toBe('')
+ expect(requests[1]['X-Plugin-Publisher-Migration']).toBe('state-binding')
+ expect(requests[1]['X-Plugin-Trust-Fingerprint']).toBe('fingerprint')
+ expect(requests[1]['X-Plugin-Digest']).toBe('digest')
+ expect(requests[1]['X-Plugin-Public-Key']).toBe('key')
 })

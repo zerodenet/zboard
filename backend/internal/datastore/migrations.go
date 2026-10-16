@@ -124,6 +124,9 @@ func RunMigrations(db *gorm.DB) error {
 	if err := runMigrations(db); err != nil {
 		return err
 	}
+	if err := reconcilePluginOperationSchema(db); err != nil {
+		return err
+	}
 	return menustore.Seed(db)
 }
 

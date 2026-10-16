@@ -97,7 +97,7 @@ func (h *handlers) AdminPluginsHandler(w http.ResponseWriter, r *http.Request) {
 		OK(w, preview)
 		return
 	}
-	item, err := h.pluginManager.ImportConfirmed(raw, claims.Email, publicKey, r.Header.Get("X-Plugin-Digest"), r.Header.Get("X-Plugin-Trust-Fingerprint"))
+	item, err := h.pluginManager.ImportConfirmed(raw, claims.Email, publicKey, r.Header.Get("X-Plugin-Digest"), r.Header.Get("X-Plugin-Trust-Fingerprint"), r.Header.Get("X-Plugin-Publisher-Migration"))
 	if err != nil {
 		pluginError(w, err)
 		return

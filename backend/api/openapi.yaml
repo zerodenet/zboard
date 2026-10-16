@@ -500,6 +500,14 @@ paths:
     "post":
       "tags": ["plugins"]
       "summary": "Install or upgrade a signed package with host-owned admission and atomic data migration"
+      description: Set inspect=true to verify without installation and receive the same preview as the market inspection route. For import, submit the inspected archive digest. Unknown publishers additionally require the verified key fingerprint. Same-plugin same-key publisher changes require separate explicit confirmation bound to the current retained installation; key changes remain forbidden. Uninstalled retained-data reinstalls stay disabled.
+      parameters:
+        - { name: inspect, in: query, schema: { type: boolean } }
+        - { name: X-Plugin-Public-Key, in: header, schema: { type: string } }
+        - { name: X-Plugin-Digest, in: header, schema: { type: string } }
+        - { name: X-Plugin-Trust-Fingerprint, in: header, schema: { type: string } }
+        - { name: X-Plugin-Publisher-Migration, in: header, description: "Preview publisher_migration.confirmation, sent only after explicit migration consent", schema: { type: string } }
+
       "responses":
         "200":
           "description": "Success; response data is described below"
@@ -720,6 +728,17 @@ paths:
                           fingerprint: { type: string }
                           trusted: { type: boolean }
                           compatibility: { type: object }
+                          publisher_migration:
+                            type: object
+                            description: Present only for the same plugin ID and pinned signing key with a changed publisher label. Inspection does not mutate installation or trust.
+                            properties:
+                              from_publisher: { type: string }
+                              to_publisher: { type: string }
+                              from_version_id: { type: string }
+                              previous_state: { type: string }
+                              generation: { type: integer }
+                              confirmation: { type: string, description: State binding submitted only after explicit administrator migration consent }
+
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
@@ -727,7 +746,7 @@ paths:
     post:
       tags: [plugins]
       summary: Confirm the inspected package and install through the host lifecycle
-      description: Re-fetches and validates the selected package. The digest must match the preview. Marketplace publishers use the admitted plugin-scoped key; unknown offline publishers require explicit fingerprint confirmation. Existing key pins remain mandatory and fresh installations remain disabled.
+      description: Re-fetches and validates the selected package. The digest must match the preview. Marketplace publishers use the admitted plugin-scoped key; unknown offline publishers require explicit fingerprint confirmation. Existing key pins remain mandatory and fresh installations remain disabled. Same-key publisher migration additionally requires the preview publisher_migration.confirmation and exact fingerprint, even for trusted marketplaces. Stale confirmations return 409. Retained-data reinstalls stay disabled; configuration, private data and applied migration history are preserved.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       requestBody:
@@ -741,6 +760,7 @@ paths:
                 version: { type: string, description: Exact published version selected during inspection }
                 digest: { type: string }
                 fingerprint: { type: string }
+                publisher_migration: { type: string, description: Explicit migration confirmation from the inspected current installation }
       responses:
         "200":
           description: Installed plugin
@@ -5296,6 +5316,10 @@ components:
     "PluginOperation":
       "type": "object"
       "properties":
+        previous_publisher: { type: string }
+        publisher: { type: string }
+        signing_key_fingerprint: { type: string }
+        package_digest: { type: string }
         "id":
           "type": "string"
         "plugin_id":

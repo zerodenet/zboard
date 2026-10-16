@@ -18,6 +18,7 @@
           <a v-if="detail.entry.security" class="plugin-text-link" :href="detail.entry.security" target="_blank" rel="noopener noreferrer">安全联系</a>
         </div>
         <p v-if="detail.installed">本地版本 v{{ detail.installed.version }} · {{ pluginStateLabel(detail.installed.state) }}</p>
+        <p v-if="detail.installed?.state === 'uninstalled'">重新安装会复用保留的配置和私有数据，完成后保持停用。</p>
         <p v-if="detail.notice" role="status">{{ detail.notice }}</p>
         <template v-if="selectedRelease">
           <div class="release-selectors">
@@ -27,7 +28,7 @@
           <p>已选 {{ channelLabel(selectedRelease.channel) }} v{{ selectedRelease.version }} · 服务器平台 {{ detail.platform }}</p>
           <p v-if="!hostArtifact" role="status">此版本没有适用于当前服务器的安装包，或超过 32 MiB 安装上限。你仍可下载发行包。</p>
           <div class="plugin-card-actions">
-            <UiButton :disabled="!hostArtifact || samePackage || loading || !!error" @click="installOpen = true">{{ samePackage ? '当前版本已安装' : detail.installed ? '切换到此版本' : '在线安装' }}</UiButton>
+            <UiButton :disabled="!hostArtifact || samePackage || loading || !!error" @click="installOpen = true">{{ samePackage ? '当前版本已安装' : detail.installed?.state === 'uninstalled' ? '重新安装' : detail.installed ? '切换到此版本' : '在线安装' }}</UiButton>
             <RouterLink v-if="detail.installed" class="button button-secondary" :to="`/admin/plugins/${encodeURIComponent(id)}`">管理插件</RouterLink>
           </div>
           <p>安装前会展示包内清单、兼容性与签名指纹。新安装默认停用，随后可进入管理页配置、启用或卸载。</p>

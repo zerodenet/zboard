@@ -53,7 +53,7 @@
         <header><h2>最近操作</h2><UiButton variant="secondary" :disabled="opsLoading" @click="loadOperations">刷新记录</UiButton></header>
         <PageAlert v-if="opsError" tone="danger">{{ opsError }}</PageAlert>
         <p v-if="opsLoading" role="status">正在读取操作记录…</p><p v-else-if="!operations.length && !opsError">暂无操作记录。</p>
-        <div v-for="op in visibleOperations" :key="op.id" class="plugin-history"><span><strong>{{ actionLabels[op.action] || op.action }}</strong> · {{ operationStateLabels[op.state] || op.state }}<small>{{ op.actor }} · {{ formatDateTime(op.created_at) }}</small></span><span>{{ op.message }}</span></div>
+        <div v-for="op in visibleOperations" :key="op.id" class="plugin-history"><span><strong>{{ actionLabels[op.action] || op.action }}</strong> · {{ operationStateLabels[op.state] || op.state }}<small>{{ op.actor }} · {{ formatDateTime(op.created_at) }}</small></span><span><span v-if="op.previous_publisher" class="plugin-operation-identity">{{ op.previous_publisher }} → {{ op.publisher }}<small>签名指纹：{{ op.signing_key_fingerprint }}</small><small>安装包摘要：{{ op.package_digest }}</small></span>{{ op.message }}</span></div>
         <div v-if="operations.length > 10" class="plugins-actions plugin-operation-paging">
           <span>最近 {{ operations.length }} 条 · 第 {{ operationPage }} / {{ operationPages }} 页</span>
           <UiButton variant="secondary" :disabled="operationPage <= 1" @click="operationPage--">上一页</UiButton>
