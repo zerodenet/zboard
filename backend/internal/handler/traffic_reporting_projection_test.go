@@ -81,7 +81,7 @@ func checkTrafficSummaryProjection(t *testing.T, h *handlers, credential model.P
 	assert(1920, 960)
 	abort := errors.New("abort accounting transaction")
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		record := model.TrafficRecord{UserID: subscription.UserID, NodeID: credential.NodeID, ReportID: "rolled-back", Nonce: "rolled-back", UsedBytes: 100, At: time.Now().UTC()}
+		record := model.TrafficRecord{UserID: subscription.UserID, SubscriptionID: credential.SubscriptionID, NodeID: credential.NodeID, ProtocolEndpointID: credential.ProtocolEndpointID, ReportID: "rolled-back", Nonce: "rolled-back", UsedBytes: 100, At: time.Now().UTC()}
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}

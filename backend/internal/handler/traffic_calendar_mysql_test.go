@@ -13,11 +13,7 @@ import (
 )
 
 func TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
-	user := model.User{Email: "calendar@example.test", Password: "unused", Status: "active", IsAdmin: true}
-	if err := h.db.Create(&user).Error; err != nil {
-		t.Fatal(err)
-	}
+	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
 	for _, timezone := range []string{"UTC", "Asia/Shanghai", "Asia/Kathmandu", "Australia/Lord_Howe", "America/New_York"} {
 		t.Run(timezone, func(t *testing.T) {
 			location, err := time.LoadLocation(timezone)
@@ -25,7 +21,7 @@ func TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries(t *testing.T)
 				t.Fatal(err)
 			}
 			from := time.Date(2026, 10, 31, 0, 0, 0, 0, location)
-			q := metering.TrafficTrendQuery{Administrative: true, UserID: user.ID, ProtocolEndpointID: 3, From: from, Days: 3, Timezone: timezone}
+			q := metering.TrafficTrendQuery{Administrative: true, UserID: credential.UserID, ProtocolEndpointID: credential.ProtocolEndpointID, From: from, Days: 3, Timezone: timezone}
 			var records []model.TrafficRecord
 			for i := 0; i < q.Days; i++ {
 				day := from.AddDate(0, 0, i)
@@ -33,7 +29,7 @@ func TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries(t *testing.T)
 				q.Buckets = append(q.Buckets, bucket)
 				for j, at := range []time.Time{bucket.StartUTC.Add(-time.Millisecond), bucket.StartUTC, bucket.StartUTC.Add(12 * time.Hour), bucket.EndUTC.Add(-time.Millisecond), bucket.EndUTC} {
 					id := fmt.Sprintf("%s-%d-%d", timezone, i, j)
-					records = append(records, model.TrafficRecord{UserID: user.ID, NodeID: 1, ProtocolEndpointID: 3, ReportID: id, Nonce: id, At: at, UploadBytes: 3, DownloadBytes: 7, UsedBytes: 17})
+					records = append(records, model.TrafficRecord{UserID: credential.UserID, SubscriptionID: credential.SubscriptionID, NodeID: credential.NodeID, ProtocolEndpointID: credential.ProtocolEndpointID, ReportID: id, Nonce: id, At: at, UploadBytes: 3, DownloadBytes: 7, UsedBytes: 17})
 				}
 			}
 			if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -44,13 +40,13 @@ func TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries(t *testing.T)
 			}); err != nil {
 				t.Fatal(err)
 			}
-			out, err := h.services.TrafficTrends(nil).Read(context.Background(), user.ID, q)
+			out, err := h.services.TrafficTrends(nil).Read(context.Background(), credential.UserID, q)
 			if err != nil || len(out.Snapshot.Points) != q.Days {
 				t.Fatalf("calendar: %+v: %v", out, err)
 			}
 			for i, bucket := range q.Buckets {
 				var expected metering.TrafficTrendAggregate
-				if err := h.db.Model(&model.TrafficRecord{}).Where("user_id = ? AND protocol_endpoint_id = ? AND record_at >= ? AND record_at < ?", user.ID, 3, bucket.StartUTC, bucket.EndUTC).
+				if err := h.db.Model(&model.TrafficRecord{}).Where("user_id = ? AND protocol_endpoint_id = ? AND record_at >= ? AND record_at < ?", credential.UserID, credential.ProtocolEndpointID, bucket.StartUTC, bucket.EndUTC).
 					Select("SUM(used_bytes) AS used_bytes, SUM(upload_bytes) AS upload_bytes, SUM(download_bytes) AS download_bytes, COUNT(*) AS record_count").Scan(&expected).Error; err != nil {
 					t.Fatal(err)
 				}
