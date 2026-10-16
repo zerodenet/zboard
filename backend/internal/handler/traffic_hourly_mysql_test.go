@@ -64,6 +64,10 @@ func TestMySQLTrafficHourlyDatabaseTransferRebuildsLedgerProjection(t *testing.T
 	if err := source.projectZeroNodeEvents(context.Background(), accountingBenchmarkEvents(credential, 0, 1)); err != nil {
 		t.Fatal(err)
 	}
+	retirement := model.NodeRetirement{NodeID: 4100, NodeName: "removed-node", Mode: "retire", State: "failed", RunID: "retirement-run", Attempt: 2, Steps: `[{"kind":"dns","id":1,"state":"succeeded"}]`, LastError: "retry remote cleanup"}
+	if err := source.db.Create(&retirement).Error; err != nil {
+		t.Fatal(err)
+	}
 	target, _ := newMySQLPublishHandlers(t)
 	copy := func(abort error) error {
 		return datastore.WithMigrationSource(context.Background(), source.db, func(snapshot *gorm.DB) error {
@@ -96,8 +100,19 @@ func TestMySQLTrafficHourlyDatabaseTransferRebuildsLedgerProjection(t *testing.T
 		t.Fatal(err)
 	}
 	assert(0)
+	var retirementCount int64
+	if err := target.db.Model(&model.NodeRetirement{}).Count(&retirementCount).Error; err != nil || retirementCount != 0 {
+		t.Fatalf("aborted transfer committed retirement history: %d %v", retirementCount, err)
+	}
 	if err := copy(nil); err != nil {
 		t.Fatal(err)
 	}
 	assert(30)
+	var restored model.NodeRetirement
+	if err := target.db.First(&restored, "node_id = ?", retirement.NodeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if restored.State != retirement.State || restored.RunID != retirement.RunID || restored.Attempt != retirement.Attempt || restored.Steps != retirement.Steps || restored.LastError != retirement.LastError {
+		t.Fatalf("transfer lost retirement progress: %+v", restored)
+	}
 }
