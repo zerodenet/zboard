@@ -3,17 +3,17 @@
     <form id="assign-order-form" ref="formElement" class="modal-form" novalidate @submit.prevent="submit">
       <PageAlert v-if="formErrors.formError.value" tone="danger" title="订单分配失败">{{ formErrors.formError.value }}</PageAlert>
       <FormField v-slot="{ controlId }" label="用户" name="assign-user" required full :error="fields.user_id">
-        <AdminOrderLookup v-model="user" :input-id="controlId" label="用户" placeholder="输入邮箱搜索用户" :fetch-page="loadUsers" :disabled="saving || userLoading" />
+        <AdminOrderLookup v-model="user" :input-id="controlId" label="用户" placeholder="选择用户，或输入邮箱搜索" :fetch-page="loadUsers" :disabled="saving || userLoading" />
         <small v-if="userLoading">正在加载用户…</small>
       </FormField>
       <FormField v-slot="{ controlAttrs }" label="权益操作" name="assign-operation" full>
         <UiSelect v-model="operation" v-bind="controlAttrs" :options="operationOptions" :disabled="saving" />
       </FormField>
       <FormField v-if="operation !== 'purchase'" v-slot="{ controlId }" label="目标订阅" name="assign-target" required full :error="fields.target_subscription_id">
-        <AdminOrderLookup :key="`target-${user?.id || 0}-${operation}`" v-model="target" :input-id="controlId" label="目标订阅" placeholder="搜索该用户的订阅" :fetch-page="loadTargets" :disabled="saving || !user" />
+        <AdminOrderLookup :key="`target-${user?.id || 0}-${operation}`" v-model="target" :input-id="controlId" label="目标订阅" placeholder="选择该用户的订阅，或输入关键词搜索" :fetch-page="loadTargets" :disabled="saving || !user" />
       </FormField>
       <FormField v-slot="{ controlId }" label="商品" name="assign-plan" required full :error="fields.plan_id">
-        <AdminOrderLookup :key="`plan-${operation}-${target?.id || 0}`" v-model="plan" :input-id="controlId" label="商品" placeholder="输入商品名称搜索" :fetch-page="loadPlans" :disabled="saving || (operation !== 'purchase' && !target)" />
+        <AdminOrderLookup :key="`plan-${operation}-${target?.id || 0}`" v-model="plan" :input-id="controlId" label="商品" placeholder="选择商品，或输入名称搜索" :fetch-page="loadPlans" :disabled="saving || (operation !== 'purchase' && !target)" />
       </FormField>
       <FormField v-slot="{ controlId }" label="销售规格" name="assign-sku" required full :error="fields.plan_sku_id">
         <AdminOrderLookup :key="`sku-${plan?.id || 0}-${operation}`" v-model="sku" :input-id="controlId" label="销售规格" placeholder="选择销售规格" :fetch-page="loadSKUs" :disabled="saving || !plan" />

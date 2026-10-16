@@ -31,7 +31,7 @@
           <ComboboxItem v-for="(option, index) in suggestions" :key="option.id ?? option.value ?? index" class="ui-autocomplete-option" :value="option">
             <slot name="option" :option="option">{{ displayValue(option) }}</slot>
           </ComboboxItem>
-          <div v-if="!suggestions.length && !loading" class="ui-autocomplete-empty">没有匹配结果</div>
+          <div v-if="!suggestions.length" class="ui-autocomplete-empty" :role="loading ? 'status' : undefined">{{ loading ? '正在加载选项…' : '没有匹配结果' }}</div>
         </ComboboxViewport>
         <div v-if="$slots.footer" class="ui-autocomplete-footer"><slot name="footer" /></div>
       </ComboboxContent>
