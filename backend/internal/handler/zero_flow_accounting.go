@@ -3,7 +3,6 @@ package handler
 import (
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
-	"sort"
 	"strings"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -22,50 +21,6 @@ type zeroBufferedFlowKey struct {
 
 func zeroFlowUsageKey(instance, flow string) string { return metering.FlowUsageKey(instance, flow) }
 func zeroFlowUsageRuntimeScoped(key string) bool    { return metering.RuntimeScopedFlow(key) }
-
-func aggregateZeroFlowEvents(events []zeroevent.Envelope) []zeroevent.Envelope {
-	latest := make(map[zeroBufferedFlowKey]zeroevent.Envelope)
-	for _, event := range events {
-		if event.Type != "flow.updated" || event.NodeID == 0 {
-			continue
-		}
-		flowID := strings.TrimSpace(event.FlowID)
-		if flowID == "" {
-			flowID = zeroBufferedFlowID(event.Payload)
-		}
-		if flowID == "" {
-			continue
-		}
-		key := zeroBufferedFlowKey{
-			NodeID:         event.NodeID,
-			CoreInstanceID: strings.TrimSpace(event.CoreInstanceID),
-			FlowID:         flowID,
-		}
-		current, exists := latest[key]
-		if !exists || zeroEventNewer(event, current) {
-			event.FlowID = flowID
-			latest[key] = event
-		}
-	}
-	keys := make([]zeroBufferedFlowKey, 0, len(latest))
-	for key := range latest {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].NodeID != keys[j].NodeID {
-			return keys[i].NodeID < keys[j].NodeID
-		}
-		if keys[i].CoreInstanceID != keys[j].CoreInstanceID {
-			return keys[i].CoreInstanceID < keys[j].CoreInstanceID
-		}
-		return keys[i].FlowID < keys[j].FlowID
-	})
-	result := make([]zeroevent.Envelope, 0, len(keys))
-	for _, key := range keys {
-		result = append(result, latest[key])
-	}
-	return result
-}
 
 func zeroBufferedEnvelopeAsEvent(event zeroevent.Envelope) zeroEventEnvelope {
 	occurredAtMillis := int64(0)

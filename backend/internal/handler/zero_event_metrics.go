@@ -10,25 +10,29 @@ import (
 const eventLatencyBucketMillis = 100
 
 type zeroEventConsumerMetrics struct {
-	batches   atomic.Uint64
-	events    atomic.Uint64
-	failures  atomic.Uint64
-	processNS atomic.Uint64
-	missing   atomic.Uint64
-	maximumMS atomic.Uint64
-	latencies [601]atomic.Uint64 // 100ms upper bounds through 60s plus overflow.
+	batches        atomic.Uint64
+	events         atomic.Uint64
+	projectedFlows atomic.Uint64
+	flowUpdates    atomic.Uint64
+	failures       atomic.Uint64
+	processNS      atomic.Uint64
+	missing        atomic.Uint64
+	maximumMS      atomic.Uint64
+	latencies      [601]atomic.Uint64 // 100ms upper bounds through 60s plus overflow.
 }
 
 type zeroEventConsumerSnapshot struct {
-	Batches             uint64  `json:"batches"`
-	ProcessedEnvelopes  uint64  `json:"processed_envelopes"`
-	Failures            uint64  `json:"failures"`
-	ProcessingSeconds   float64 `json:"processing_seconds"`
-	MissingReceiveTime  uint64  `json:"missing_receive_time"`
-	LatencySamples      uint64  `json:"latency_samples"`
-	LatencyBucketMillis int     `json:"latency_bucket_ms"`
-	P95UpperMillis      *uint64 `json:"p95_upper_ms"`
-	MaximumMillis       uint64  `json:"maximum_ms"`
+	Batches              uint64  `json:"batches"`
+	ProcessedEnvelopes   uint64  `json:"processed_envelopes"`
+	ProjectedFlowSamples uint64  `json:"projected_flow_samples"`
+	CoalescedFlowUpdates uint64  `json:"coalesced_flow_updates"`
+	Failures             uint64  `json:"failures"`
+	ProcessingSeconds    float64 `json:"processing_seconds"`
+	MissingReceiveTime   uint64  `json:"missing_receive_time"`
+	LatencySamples       uint64  `json:"latency_samples"`
+	LatencyBucketMillis  int     `json:"latency_bucket_ms"`
+	P95UpperMillis       *uint64 `json:"p95_upper_ms"`
+	MaximumMillis        uint64  `json:"maximum_ms"`
 }
 
 func (m *zeroEventConsumerMetrics) committed(events []zeroevent.Envelope, elapsed time.Duration, now time.Time) {
@@ -72,6 +76,9 @@ func (m *zeroEventConsumerMetrics) snapshot() zeroEventConsumerSnapshot {
 	result.Batches = m.batches.Load()
 	result.ProcessingSeconds = float64(m.processNS.Load()) / float64(time.Second)
 	result.MaximumMillis = m.maximumMS.Load()
+	result.ProjectedFlowSamples = m.projectedFlows.Load()
+	flowUpdates := m.flowUpdates.Load()
+	result.CoalescedFlowUpdates = flowUpdates - min(flowUpdates, result.ProjectedFlowSamples)
 	if result.LatencySamples > 0 {
 		target, seen := (result.LatencySamples*95+99)/100, uint64(0)
 		for i, count := range counts {

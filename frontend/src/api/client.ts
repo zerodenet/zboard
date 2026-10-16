@@ -399,8 +399,8 @@ export async function fetchNodesPage(params: {
 	return normalizePageResult<AdminNodeListItem>(unwrap(response), params.offset || 0, params.limit || 50)
 }
 
-export async function fetchNode(id: number): Promise<AdminNodeDetail> {
-	const response = await api.get(`/nodes/${id}`)
+export async function fetchNode(id: number, options: ApiRequestOptions = {}): Promise<AdminNodeDetail> {
+	const response = await api.get(`/nodes/${id}`, { signal: options.signal })
 	return unwrap(response)
 }
 
@@ -442,8 +442,8 @@ export interface NodeLoadSnapshot {
 	latency_ms: number
 }
 
-export async function fetchNodeLoad(id: number): Promise<NodeLoadSnapshot> {
-	const response = await api.get(`/nodes/${id}/load`)
+export async function fetchNodeLoad(id: number, options: ApiRequestOptions = {}): Promise<NodeLoadSnapshot> {
+	const response = await api.get(`/nodes/${id}/load`, { signal: options.signal })
 	return unwrap(response)
 }
 
@@ -539,8 +539,8 @@ export interface ZeroReleaseOption {
   musl_available: boolean
 }
 
-export async function fetchNodeKernel(nodeId: number): Promise<{ state: NodeKernelState; operations: NodeKernelOperation[] }> {
-  const response = await api.get(`/nodes/${nodeId}/kernel`)
+export async function fetchNodeKernel(nodeId: number, options: ApiRequestOptions = {}): Promise<{ state: NodeKernelState; operations: NodeKernelOperation[] }> {
+  const response = await api.get(`/nodes/${nodeId}/kernel`, { signal: options.signal })
   return unwrap(response)
 }
 
@@ -559,8 +559,8 @@ export async function fetchLatestZeroRelease(): Promise<ZeroRelease> {
   return unwrap(response)
 }
 
-export async function fetchZeroReleases(): Promise<ZeroReleaseOption[]> {
-  const response = await api.get('/admin/kernel/releases')
+export async function fetchZeroReleases(options: ApiRequestOptions = {}): Promise<ZeroReleaseOption[]> {
+  const response = await api.get('/admin/kernel/releases', { signal: options.signal })
   return unwrap(response)
 }
 
@@ -1869,6 +1869,21 @@ export async function fetchTrafficSummary(admin = false, options: ApiRequestOpti
   return unwrap(response) || {}
 }
 
+export interface TrafficQuotaSnapshot {
+  remaining_bytes: number
+  scope_user: number
+  as_of: string
+}
+
+export async function fetchTrafficQuota(admin = false, options: ApiRequestOptions = {}): Promise<TrafficQuotaSnapshot> {
+  const response = await api.get(`${admin ? '/admin' : ''}/traffic/summary?view=quota`, { signal: options.signal })
+  const data = unwrap(response)
+  if (!data || !Number.isFinite(data.remaining_bytes) || data.remaining_bytes < 0 || !Number.isFinite(data.scope_user) || !data.as_of) {
+    throw new Error('剩余流量响应不完整。')
+  }
+  return data
+}
+
 export async function fetchTrafficRecords(params: { userId?: number; nodeId?: number; protocolEndpointId?: number; subscriptionId?: number } = {}, admin = false) {
   const query = new URLSearchParams()
   if (params.userId) {
@@ -2225,8 +2240,8 @@ export async function runAdminTask(id: number) {
 	return unwrap(response)
 }
 
-export async function fetchAdminTask(id: number, summary = true): Promise<AdminTask> {
-	const response = await api.get(`/admin/tasks/${id}${summary ? '?summary=true' : ''}`)
+export async function fetchAdminTask(id: number, summary = true, options: ApiRequestOptions = {}): Promise<AdminTask> {
+	const response = await api.get(`/admin/tasks/${id}${summary ? '?summary=true' : ''}`, { signal: options.signal })
 	return unwrap(response)
 }
 

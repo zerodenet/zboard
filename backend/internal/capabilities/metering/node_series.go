@@ -10,10 +10,10 @@ import (
 const NodeSeriesNodeLimit = 8
 
 type NodeSeriesQuery struct {
-	Administrative                 bool
-	UserID, SubscriptionID, NodeID uint
-	Bucket                         string
-	From, To                       time.Time
+	Administrative                                     bool
+	UserID, SubscriptionID, NodeID, ProtocolEndpointID uint
+	Bucket                                             string
+	From, To                                           time.Time
 }
 type NodeSeriesPoint struct {
 	RecordAt      time.Time `json:"record_at"`

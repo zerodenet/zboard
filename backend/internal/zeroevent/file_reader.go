@@ -55,8 +55,9 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 	checkpoint := s.checkpoint
 	s.mu.RUnlock()
 	batch := Batch{Next: checkpoint}
+	budget := eventReadBudget{remaining: 8 << 20}
 	for _, segment := range segments {
-		if len(batch.Events) >= limit {
+		if len(batch.Events) >= limit || budget.remaining <= 0 {
 			break
 		}
 		if checkpoint.Segment != 0 && segment.sequence < checkpoint.Segment {
@@ -66,7 +67,7 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 		if segment.sequence == checkpoint.Segment {
 			start = checkpoint
 		}
-		events, next, err := s.readSegmentBatch(ctx, segment, start, limit-len(batch.Events))
+		events, next, err := s.readSegmentBatchBudget(ctx, segment, start, limit-len(batch.Events), &budget)
 		if err != nil {
 			return Batch{}, err
 		}
@@ -101,7 +102,14 @@ func readRawSegmentBatch(ctx context.Context, segment segmentFile, startRecord u
 	return readRawSegmentBatchAt(ctx, segment, startRecord, limit, 0, 0)
 }
 
+// A window is bounded by serialized bytes as well as count. One oversized
+// legacy record is still admitted so the queue cannot become permanently stuck.
+type eventReadBudget struct{ remaining int64 }
+
 func readRawSegmentBatchAt(ctx context.Context, segment segmentFile, startRecord uint64, limit int, index uint64, offset int64) ([]Envelope, uint64, error) {
+	return readRawSegmentBatchBudget(ctx, segment, startRecord, limit, index, offset, nil)
+}
+func readRawSegmentBatchBudget(ctx context.Context, segment segmentFile, startRecord uint64, limit int, index uint64, offset int64, budget *eventReadBudget) ([]Envelope, uint64, error) {
 	file, err := os.Open(segment.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -128,11 +136,11 @@ func readRawSegmentBatchAt(ctx context.Context, segment segmentFile, startRecord
 		index++
 	}
 	events := make([]Envelope, 0, limit)
-	for len(events) < limit {
+	for len(events) < limit && (budget == nil || budget.remaining > 0) {
 		if err := ctx.Err(); err != nil {
 			return nil, index, err
 		}
-		event, _, err := readRecord(reader)
+		event, size, err := readRecord(reader)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 				break
@@ -140,6 +148,9 @@ func readRawSegmentBatchAt(ctx context.Context, segment segmentFile, startRecord
 			return nil, index, fmt.Errorf("read event record from %s: %w", filepath.Base(segment.path), err)
 		}
 		events = append(events, event)
+		if budget != nil {
+			budget.remaining -= size
+		}
 		index++
 	}
 	return events, index, nil

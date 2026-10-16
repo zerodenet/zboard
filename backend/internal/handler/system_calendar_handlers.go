@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,13 @@ func (h *handlers) TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler(w h
 	recorded := httptest.NewRecorder()
 	h.trafficTrends(recorded, r, true)
 	if recorded.Code != http.StatusOK {
+		copyRecordedResponse(w, recorded)
+		return
+	}
+	// Principal scope observations describe whole users/subscriptions. They
+	// cannot answer a node/endpoint-filtered peak; keep it unknown rather than
+	// attaching a broader account's connection count to a narrower traffic view.
+	if r.URL.Query().Get("node_id") != "" || r.URL.Query().Get("protocol_endpoint_id") != "" {
 		copyRecordedResponse(w, recorded)
 		return
 	}
@@ -198,9 +206,25 @@ func (h *handlers) DashboardOverviewSystemCalendarHandler(w http.ResponseWriter,
 		return
 	}
 
-	response, err := h.loadDashboardOverview(r.Context(), period, now, location)
+	view := r.URL.Query().Get("view")
+	if view != "" && view != "current" && view != "statistics" && view != "trend" {
+		BadRequest(w, "invalid dashboard view")
+		return
+	}
+	budget := 8 * time.Second
+	if view == "current" {
+		budget = 3 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), budget)
+	defer cancel()
+	var response any
+	if view == "" {
+		response, err = h.loadDashboardOverview(ctx, period, now, location)
+	} else {
+		response, err = h.loadDashboardView(ctx, period, now, location, view)
+	}
 	if err != nil {
-		ServerError(w, err)
+		dashboardReadError(w, err)
 		return
 	}
 	OK(w, response)

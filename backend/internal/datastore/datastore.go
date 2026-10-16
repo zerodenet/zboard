@@ -56,6 +56,7 @@ func OpenWithDriver(driver, dataSource string, options ...PoolConfig) (*gorm.DB,
 		return nil, err
 	}
 
+	db.Logger = readTimingLogger{db.Logger}
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, err

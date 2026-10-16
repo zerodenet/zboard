@@ -1969,6 +1969,11 @@ paths:
       operationId: getAdminRuntimeJobs
       summary: Observe process-local job runs and durable queue counts
       description: Administrator only. Execution observations reset on restart. Queue counts come from persistent storage; stale leases are a subset of pending or delayed publication records. A successful scan does not imply an empty queue. Independent section failures are returned in issues while unaffected runtime sections remain available; failed sections are omitted rather than represented by healthy-looking zero values. read_duration_ms identifies slow or unavailable sections without requiring browser developer tools.
+      parameters:
+        - name: view
+          in: query
+          description: Read only this partition; omitted retains the full legacy snapshot. Unrequested sections are absent and must not be interpreted as healthy or empty. Each view has an independent 5 second database budget.
+          schema: { type: string, enum: [execution, queues, runtime, plugins] }
       responses:
         "200":
           description: Persistent deployment task observations, queue summaries, event spool and plugin host lease
@@ -1986,7 +1991,7 @@ paths:
                           observation_scope: { type: string, enum: [deployment] }
                           issues:
                             type: array
-                            description: Runtime sections that could not be refreshed in this snapshot. Unlisted sections were read successfully.
+                            description: Requested runtime sections that could not be refreshed. Unrequested sections are not observed by focused views.
                             items:
                               type: object
                               required: [section, message]
@@ -4706,6 +4711,8 @@ paths:
         - traffic
       summary: Traffic summary for the current user
       description: This self-service route remains user-scoped even when the current user also has administrator permission.
+      parameters:
+        - { name: view, in: query, schema: { type: string, enum: [quota] }, description: Read only current remaining quota across all eligible subscriptions without historical usage statistics. }
       responses:
         "200":
           description: Traffic summary
@@ -4716,12 +4723,15 @@ paths:
                   - $ref: "#/components/schemas/ApiResponse"
                   - properties:
                       data:
-                        $ref: "#/components/schemas/TrafficSummary"
+                        anyOf:
+                          - $ref: "#/components/schemas/TrafficSummary"
+                          - $ref: "#/components/schemas/TrafficQuota"
   /api/v1/admin/traffic/summary:
     get:
       tags: [traffic, admin]
       summary: Traffic summary across all users or one selected user
       parameters:
+        - { name: view, in: query, schema: { type: string, enum: [quota] }, description: Read only current quota without historical statistics. }
         - { name: user_id, in: query, schema: { type: integer, format: int64 } }
       responses:
         "200": { description: Administrative traffic summary }
@@ -4743,7 +4753,8 @@ paths:
           schema:
             type: integer
             format: int64
-        - { name: view, in: query, schema: { type: string, enum: [raw, node_series, usage_summary] }, description: Use node_series for the read-only time-by-node chart projection. }
+        - { name: view, in: query, schema: { type: string, enum: [raw, node_series, usage_summary, breakdown] }, description: Use node_series for the read-only time-by-node chart projection. }
+        - { name: dimension, in: query, schema: { type: string, enum: [user, node, subscription, protocol_endpoint], default: user }, description: "For view=breakdown: rank grouped usage by this dimension. Pagination does not change full-window totals. ID 0 preserves unattributed usage." }
         - { name: include_totals, in: query, schema: { type: boolean, default: true }, description: "Grouped pages only. Set false to skip full-window statistics; page.total, total and aggregates are null. Read view=usage_summary separately." }
         - { name: bucket, in: query, schema: { type: string, enum: [minute, hour, day], default: hour }, description: Aggregation precision for paged records and node_series. }
         - { name: paged, in: query, schema: { type: boolean } }
@@ -4768,6 +4779,7 @@ paths:
                           - $ref: "#/components/schemas/TrafficRecordPage"
                           - $ref: "#/components/schemas/TrafficUsagePage"
                           - $ref: "#/components/schemas/TrafficUsageStatistics"
+                          - $ref: "#/components/schemas/TrafficBreakdown"
   /api/v1/admin/traffic/records:
     get:
       tags: [traffic, admin]
@@ -4778,7 +4790,8 @@ paths:
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol_endpoint_id, in: query, schema: { type: integer, format: int64 } }
         - { name: subscription_id, in: query, schema: { type: integer, format: int64 } }
-        - { name: view, in: query, schema: { type: string, enum: [raw, node_series, usage_summary] }, description: Use node_series for the read-only time-by-node chart and ranking projection. }
+        - { name: view, in: query, schema: { type: string, enum: [raw, node_series, usage_summary, breakdown] }, description: Use node_series for the read-only time-by-node chart and ranking projection. }
+        - { name: dimension, in: query, schema: { type: string, enum: [user, node, subscription, protocol_endpoint], default: user }, description: "For view=breakdown: rank grouped usage by this dimension. Pagination does not change full-window totals. ID 0 preserves unattributed usage." }
         - { name: include_totals, in: query, schema: { type: boolean, default: true }, description: "Grouped pages only. Set false to skip full-window statistics; page.total, total and aggregates are null. Read view=usage_summary separately." }
         - { name: bucket, in: query, schema: { type: string, enum: [minute, hour, day], default: hour }, description: Aggregation precision for paged records and node_series. }
         - { name: paged, in: query, schema: { type: boolean } }
@@ -4803,6 +4816,7 @@ paths:
                           - $ref: "#/components/schemas/TrafficRecordPage"
                           - $ref: "#/components/schemas/TrafficUsagePage"
                           - $ref: "#/components/schemas/TrafficUsageStatistics"
+                          - $ref: "#/components/schemas/TrafficBreakdown"
         "403": { $ref: "#/components/responses/Error" }
   /api/v1/traffic/reconciliation:
     get:
@@ -4967,9 +4981,10 @@ paths:
     get:
       tags: [admin]
       summary: Read period metrics and comparable previous period
-      description: Administrator only. Calendar boundaries use the configured system timezone. Today compares the same elapsed portion of yesterday; 7d and 30d compare the selected window shifted back by 7 and 30 calendar days. Traffic uses billed bytes, not wire bytes.
+      description: Administrator only. Calendar boundaries use the configured system timezone. Today compares the same elapsed portion of yesterday; 7d and 30d compare the selected window shifted back by 7 and 30 calendar days. Traffic uses billed bytes, not wire bytes. Omit view for the compatible full snapshot. Current state uses the authority pool without order or traffic history; statistics and trend are independent reporting reads. as_of is the read start time, not a Connector event watermark. Current reads have a 3 second budget; other overview reads have an 8 second budget.
       parameters:
         - {name: range, in: query, schema: {type: string, enum: [today, 7d, 30d, month], default: 7d}}
+        - {name: view, in: query, schema: {type: string, enum: [current, statistics, trend]}, description: Omit for the legacy full snapshot.}
       responses:
         '200':
           description: Current period facts
@@ -4978,10 +4993,11 @@ paths:
               schema:
                 allOf:
                   - {$ref: '#/components/schemas/ApiResponse'}
-                  - {type: object, properties: {data: {$ref: '#/components/schemas/DashboardOverview'}}}
-        '400': {description: Invalid range}
+                  - {type: object, properties: {data: {oneOf: [{$ref: '#/components/schemas/DashboardOverview'}, {$ref: '#/components/schemas/DashboardCurrent'}, {$ref: '#/components/schemas/DashboardStatistics'}, {$ref: '#/components/schemas/DashboardTrend'}]}}}
+        '400': {description: Invalid range or view}
         '401': {description: Authentication required}
         '403': {description: Administrator required}
+        '504': {description: Read budget exceeded; error.code is deadline_exceeded}
   /api/v1/admin/dashboard/traffic-rankings:
     get:
       tags: [admin]
@@ -7413,6 +7429,41 @@ components:
         secondary: { type: string }
         status: { type: string }
         missing: { type: boolean }
+    TrafficBreakdownCounters:
+      type: object
+      required: [raw_bytes, upload_bytes, download_bytes, used_bytes, record_count]
+      properties:
+        raw_bytes: { type: integer, format: int64 }
+        upload_bytes: { type: integer, format: int64 }
+        download_bytes: { type: integer, format: int64 }
+        used_bytes: { type: integer, format: int64 }
+        record_count: { type: integer, format: int64 }
+    TrafficBreakdown:
+      type: object
+      description: Read-only scoped dimension statistics from hourly usage and exact partial-hour boundaries. Ordered by billed bytes descending then ID ascending. Totals, page rows and names share one database snapshot; identical requests may reuse a display snapshot for up to two seconds. Current authorization is checked before cache access. Missing objects retain their usage; ID 0 denotes unattributed usage. The self-service route always restricts all dimensions to the current user's records.
+      required: [dimension, from, to, as_of, items, total, totals, offset, limit]
+      properties:
+        dimension: { type: string, enum: [user, node, subscription, protocol_endpoint] }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        as_of: { type: string, format: date-time }
+        total: { type: integer, format: int64, minimum: 0 }
+        offset: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1, maximum: 200 }
+        totals: { $ref: "#/components/schemas/TrafficBreakdownCounters" }
+        items:
+          type: array
+          maxItems: 200
+          items:
+            allOf:
+              - $ref: "#/components/schemas/TrafficBreakdownCounters"
+              - type: object
+                required: [id, name, missing]
+                properties:
+                  id: { type: integer, format: int64, minimum: 0 }
+                  name: { type: string }
+                  secondary: { type: string }
+                  missing: { type: boolean }
     TrafficUsageStatistics:
       type: object
       required: [total, aggregates, bucket, as_of]
@@ -7621,6 +7672,8 @@ components:
           properties:
             batches: { type: integer, format: int64 }
             processed_envelopes: { type: integer, format: int64 }
+            projected_flow_samples: { type: integer, format: int64 }
+            coalesced_flow_updates: { type: integer, format: int64 }
             failures: { type: integer, format: int64 }
             processing_seconds: { type: number }
             missing_receive_time: { type: integer, format: int64 }
@@ -7668,6 +7721,7 @@ components:
         as_of: {type: string, format: date-time}
     DashboardOverview:
       type: object
+      required: [period, as_of, business, service, subscriptions, attention, infrastructure, coverage, trend]
       properties:
         period: {$ref: '#/components/schemas/DashboardPeriod'}
         as_of: {type: string, format: date-time}
@@ -7737,6 +7791,62 @@ components:
               paid_orders: {type: integer, format: int64}
               new_orders: {type: integer, format: int64}
               renew_orders: {type: integer, format: int64}
+    DashboardCurrent:
+      type: object
+      additionalProperties: false
+      required: [as_of, active_subscriptions, service, subscriptions, attention, infrastructure, coverage]
+      properties:
+        as_of: {type: string, format: date-time}
+        active_subscriptions: {type: integer, format: int64}
+        service:
+          type: object
+          properties:
+            active_subscriptions: {type: integer, format: int64, nullable: true}
+            active_flows: {type: integer, format: int64, nullable: true}
+            online_nodes: {type: integer, format: int64}
+            enabled_nodes: {type: integer, format: int64}
+        subscriptions: {$ref: '#/components/schemas/DashboardOverview/properties/subscriptions'}
+        attention: {$ref: '#/components/schemas/DashboardOverview/properties/attention'}
+        infrastructure: {$ref: '#/components/schemas/DashboardOverview/properties/infrastructure'}
+        coverage: {$ref: '#/components/schemas/DashboardOverview/properties/coverage'}
+    DashboardStatistics:
+      type: object
+      additionalProperties: false
+      required: [period, as_of, business, traffic]
+      properties:
+        period: {$ref: '#/components/schemas/DashboardPeriod'}
+        as_of: {type: string, format: date-time}
+        business:
+          type: object
+          properties:
+            revenue_cents: {type: integer, format: int64}
+            previous_revenue_cents: {type: integer, format: int64}
+            paid_orders: {type: integer, format: int64}
+            previous_paid_orders: {type: integer, format: int64}
+            new_users: {type: integer, format: int64}
+            previous_new_users: {type: integer, format: int64}
+            new_orders: {type: integer, format: int64}
+            renew_orders: {type: integer, format: int64}
+            previous_renew_orders: {type: integer, format: int64}
+            new_subscriptions: {type: integer, format: int64}
+            previous_new_subscriptions: {type: integer, format: int64}
+            currency: {type: string}
+            mixed_currency: {type: boolean}
+        traffic:
+          type: object
+          properties:
+            traffic_bytes: {type: integer, format: int64}
+            previous_traffic_bytes: {type: integer, format: int64}
+    DashboardTrend:
+      type: object
+      additionalProperties: false
+      required: [period, as_of, trend, currency, mixed_currency]
+      properties:
+        currency: {type: string}
+        mixed_currency: {type: boolean}
+        period: {$ref: '#/components/schemas/DashboardPeriod'}
+        as_of: {type: string, format: date-time}
+        trend: {$ref: '#/components/schemas/DashboardOverview/properties/trend'}
     DashboardMetrics:
       type: object
       properties:
@@ -7889,6 +7999,13 @@ components:
           format: int64
         as_of:
           type: string
+    TrafficQuota:
+      type: object
+      required: [remaining_bytes, scope_user, as_of]
+      properties:
+        remaining_bytes: { type: integer, format: int64, minimum: 0 }
+        scope_user: { type: integer, format: int64 }
+        as_of: { type: string, format: date-time }
     TrafficReportResult:
       type: object
       properties:

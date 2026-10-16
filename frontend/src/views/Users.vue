@@ -289,11 +289,11 @@ watch(() => route.fullPath, async () => {
   const nextSortField = resolveSortField(route.query.sort, userSortFields, 'created_at')
   const nextSortDirection = resolveSortDirection(route.query.direction, 'desc')
   if (nextAdmin !== adminFilter.value || nextVerified !== verifiedFilter.value || nextSearch !== search.value || nextStatus !== statusFilter.value || nextLimit !== limit.value || nextOffset !== offset.value || nextSortField !== sortField.value || nextSortDirection !== sortDirection.value) {
-    search.value = nextSearch; statusFilter.value = nextStatus; adminFilter.value = nextAdmin; verifiedFilter.value = nextVerified; limit.value = nextLimit; offset.value = nextOffset; sortField.value = nextSortField; sortDirection.value = nextSortDirection; await refresh()
+    search.value = nextSearch; statusFilter.value = nextStatus; adminFilter.value = nextAdmin; verifiedFilter.value = nextVerified; limit.value = nextLimit; offset.value = nextOffset; sortField.value = nextSortField; sortDirection.value = nextSortDirection; void refresh()
   }
   await syncDetailFromRoute()
 })
-onMounted(async () => { await refresh(); await syncDetailFromRoute() })
+onMounted(() => { void refresh(); void syncDetailFromRoute() })
 </script>
 
 <style scoped>

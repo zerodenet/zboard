@@ -44,12 +44,16 @@ func (s Records) Read(ctx context.Context, actor uint, q metering.RecordsQuery) 
 		}
 		var records []model.TrafficRecord
 		if q.Paged {
-			if err := base().Select("COALESCE(SUM(raw_bytes), 0) AS raw_bytes, COALESCE(SUM(used_bytes), 0) AS used_bytes, COUNT(DISTINCT user_id) AS user_count, COUNT(DISTINCT NULLIF(subscription_id, 0)) AS subscription_count, COUNT(DISTINCT node_id) AS node_count, COUNT(DISTINCT protocol_endpoint_id) AS protocol_endpoint_count").Scan(&out.Aggregates).Error; err != nil {
+			// Count and sums share one scan and snapshot. Detail pagination still
+			// reads authoritative rows; cursor movement never changes the totals.
+			var statistics struct {
+				metering.RecordAggregates `gorm:"embedded"`
+				Total                     int64
+			}
+			if err := base().Select("COUNT(*) AS total, COALESCE(SUM(raw_bytes), 0) AS raw_bytes, COALESCE(SUM(used_bytes), 0) AS used_bytes, COUNT(DISTINCT user_id) AS user_count, COUNT(DISTINCT NULLIF(subscription_id, 0)) AS subscription_count, COUNT(DISTINCT node_id) AS node_count, COUNT(DISTINCT protocol_endpoint_id) AS protocol_endpoint_count").Scan(&statistics).Error; err != nil {
 				return err
 			}
-			if err := base().Count(&out.Total).Error; err != nil {
-				return err
-			}
+			out.Aggregates, out.Total = statistics.RecordAggregates, statistics.Total
 			query := base()
 			if q.Cursor == nil && q.Offset > 0 {
 				if err := query.Order("record_at desc, id desc").Offset(q.Offset).Limit(q.Limit).Find(&records).Error; err != nil {

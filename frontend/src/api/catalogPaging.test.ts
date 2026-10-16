@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchAccountOrder, fetchAccountOrdersPage, fetchAccountSubscriptionsPage, fetchPlanCatalogPage, fetchPlanCatalogSKUs, fetchPlansPage, fetchTrafficSummary, fetchProtocolEndpointsPage, fetchProtocolEndpointSelection } from './client'
+import { fetchAccountOrder, fetchAccountOrdersPage, fetchAccountSubscriptionsPage, fetchPlanCatalogPage, fetchPlanCatalogSKUs, fetchPlansPage, fetchTrafficSummary, fetchTrafficQuota, fetchProtocolEndpointsPage, fetchProtocolEndpointSelection } from './client'
 import { fetchTrafficTrends } from './readModels'
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }))
@@ -30,6 +30,19 @@ describe('catalog paging API contract', () => {
     expect(get).toHaveBeenLastCalledWith('/traffic/summary', { signal })
     await fetchTrafficSummary(true, { signal })
     expect(get).toHaveBeenLastCalledWith('/admin/traffic/summary', { signal })
+  })
+  it('requests only current quota and rejects incomplete quota responses', async () => {
+    const signal = new AbortController().signal
+    const snapshot = { remaining_bytes: 900, scope_user: 1, as_of: '2026-10-16T00:00:00Z' }
+    get.mockResolvedValue({ data: { data: snapshot } })
+    expect(await fetchTrafficQuota(false, { signal })).toEqual(snapshot)
+    expect(get).toHaveBeenLastCalledWith('/traffic/summary?view=quota', { signal })
+    await fetchTrafficQuota(true, { signal })
+    expect(get).toHaveBeenLastCalledWith('/admin/traffic/summary?view=quota', { signal })
+    for (const data of [null, {}, { ...snapshot, remaining_bytes: -1 }, { ...snapshot, remaining_bytes: '900' }]) {
+      get.mockResolvedValue({ data: { data } })
+      await expect(fetchTrafficQuota()).rejects.toThrow('剩余流量响应不完整')
+    }
   })
   it('sends operation and plan filters before page selection with request cancellation', async () => {
     const controller = new AbortController()

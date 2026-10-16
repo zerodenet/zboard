@@ -1,8 +1,19 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="流量与对账" description="按真实业务对象查看按天、小时或分钟聚合的流量趋势、节点排行和计费明细；原始记录仍保留用于审计与对账。" eyebrow="Usage Operations">
+    <PageHeader title="流量与对账" description="按用户、节点、订阅和协议端点查看流量汇总与趋势，按需下钻计费明细和对账。" eyebrow="Usage Operations">
       <template #actions><PageRefreshButton label="刷新流量与对账" :loading="loading" @click="load" /></template>
     </PageHeader>
+    <UiTabs :model-value="section" label="流量视图" :items="[{ value: 'summary', label: '统计概览' }, { value: 'details', label: '明细与对账' }]" @update:model-value="changeSection" />
+    <WorkbenchFilterBar :active="hasFilters" :loading="loading" @clear="clearFilters">
+      <WorkbenchFilterSelect v-model="bucket" label="汇总粒度" :options="bucketOptions" @apply="applyFilters" />
+      <WorkbenchFilterInput v-model="filters.userId" label="用户 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
+      <WorkbenchFilterInput v-model="filters.nodeId" label="节点 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
+      <WorkbenchFilterInput v-model="filters.subscriptionId" label="订阅 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
+      <WorkbenchFilterInput v-model="filters.protocolEndpointId" label="协议端点 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
+      <WorkbenchFilterDate v-model:from="from" v-model:to="to" label="记录日期" @apply="applyFilters" />
+    </WorkbenchFilterBar>
+    <TrafficBreakdown v-if="section === 'summary'" v-bind="breakdownScope" :dimension="dimension" :refresh-token="refreshToken" @update:dimension="changeDimension" @drilldown="drilldown" />
+    <template v-if="section === 'details'">
     <TransientFeedback :error="referenceError" error-title="关联对象名称加载失败" />
     <UiButton v-if="referenceError" variant="secondary" @click="referenceResource.load()">重试关联名称</UiButton>
 
@@ -16,6 +27,7 @@
       <MetricCard label="计费流量" :value="statisticsReady ? formatBytes(recordAggregates.used_bytes || 0) : '—'" icon="billing" status="计费汇总" tone="info" icon-tone="warning" meta="已应用实际计费倍率" />
       <MetricCard label="关联订阅" :value="statisticsReady ? formatNumber(recordAggregates.subscription_count || 0) : '—'" icon="plans" status="覆盖范围" tone="info" icon-tone="success" :meta="statisticsReady ? `${formatNumber(recordAggregates.user_count || 0)} 个用户 · ${formatNumber(recordAggregates.node_count || 0)} 个节点` : '区间统计尚未就绪'" />
     </UiMetricStrip>
+    </template>
 
     <PageAlert v-if="trendError" tone="danger" title="流量趋势加载失败">{{ trendError }} <UiButton variant="secondary" @click="trendResource.load()">重试趋势</UiButton></PageAlert>
     <TrafficObservabilityChart v-else
@@ -29,16 +41,8 @@
     <PageAlert v-if="nodeSeriesError" tone="danger" title="节点流量排行加载失败">{{ nodeSeriesError }} <UiButton variant="secondary" @click="nodeSeriesResource.load()">重试节点流量</UiButton></PageAlert>
     <NodeTrafficChart v-else :data="nodeSeries" :loading="nodeSeriesLoading || !nodeSeriesLoaded" show-ranking />
 
+    <template v-if="section === 'details'">
     <DataWorkbench :total="recordTotal" :loading="recordLoading" :refreshing="recordRefreshing">
-      <template #filters>
-        <WorkbenchFilterBar :active="hasFilters" :loading="recordLoading" @clear="clearFilters">
-          <WorkbenchFilterSelect v-model="bucket" label="汇总粒度" :options="bucketOptions" @apply="applyFilters" />
-          <WorkbenchFilterInput v-model="filters.userId" label="用户 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
-          <WorkbenchFilterInput v-model="filters.nodeId" label="节点 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
-          <WorkbenchFilterInput v-model="filters.subscriptionId" label="订阅 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
-          <WorkbenchFilterDate v-model:from="from" v-model:to="to" label="记录日期" @apply="applyFilters" />
-        </WorkbenchFilterBar>
-      </template>
       <template #actions><div class="workbench-actions"><UiButton variant="ghost" size="sm" type="button" @click="showYesterday">查看昨日</UiButton><span class="workbench-note">默认跨全部用户按节点统计；用户筛选仅在需要下钻时使用</span></div></template>
 
       <PageAlert v-if="recordError" tone="danger" title="流量记录加载失败">{{ recordError }} <UiButton variant="secondary" @click="loadRecords()">重试记录</UiButton></PageAlert>
@@ -125,6 +129,7 @@
       <EmptyState v-else-if="reconciliationLoaded && !reconciliationLoading && !reconciliationError" icon="shield" :title="reconciliationMode === 'issues' ? '当前没有对账异常' : '没有对账结果'" description="订阅累计用量与上报记录汇总一致。" />
       <template #footer><TablePager :total="reconciliationTotal" :offset="reconciliationOffset" :limit="reconciliationLimit" :loading="reconciliationLoading" @change="changeReconciliationPage" /></template>
     </DataWorkbench>
+    </template>
   </section>
 </template>
 
@@ -132,7 +137,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchTrafficReconciliationPage, type TrafficReconciliationAggregates, type TrafficReconciliationItem } from '../api/client'
-import { fetchTrafficNodeSeries, type TrafficNodeSeries, type TrafficUsageBucket } from '../api/trafficUsage'
+import { fetchTrafficNodeSeries, type TrafficDimension, type TrafficNodeSeries, type TrafficUsageBucket } from '../api/trafficUsage'
 import { emptyEntityReferenceResponse, fetchAdminEntityReferences, fetchTrafficTrends, type EntityReferenceResponse, type TrafficTrendResult } from '../api/readModels'
 import CursorPager from '../components/CursorPager.vue'
 import DataTable from '../components/DataTable.vue'
@@ -157,6 +162,8 @@ import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import UiMetricStrip from '../components/UiMetricStrip.vue'
 import UiButton from '../components/UiButton.vue'
+import UiTabs from '../components/UiTabs.vue'
+import TrafficBreakdown from './TrafficBreakdown.vue'
 import NodeTrafficChart from './account/NodeTrafficChart.vue'
 import TrafficObservabilityChart from './account/TrafficObservabilityChart.vue'
 import { resolveHistoryRange } from '../composables/historyState'
@@ -167,7 +174,15 @@ import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 
 const route = useRoute()
 const router = useRouter()
-const filters = reactive({ userId: String(route.query.user_id || ''), nodeId: String(route.query.node_id || ''), subscriptionId: String(route.query.subscription_id || '') })
+const filters = reactive({ userId: String(route.query.user_id || ''), nodeId: String(route.query.node_id || ''), subscriptionId: String(route.query.subscription_id || ''), protocolEndpointId: String(route.query.protocol_endpoint_id || '') })
+const section = ref(route.query.section === 'details' || route.query.cursor ? 'details' : 'summary')
+const refreshToken = ref(0)
+const dimension = ref<TrafficDimension>(normalizeDimension(route.query.dimension))
+const breakdownScope = computed(() => ({
+  userId: String(route.query.user_id || ''), nodeId: String(route.query.node_id || ''),
+  subscriptionId: String(route.query.subscription_id || ''), protocolEndpointId: String(route.query.protocol_endpoint_id || ''),
+  ...resolveHistoryRange(route.query, 7),
+}))
 const bucket = ref<TrafficUsageBucket>(normalizeBucket(route.query.bucket))
 const bucketOptions = [{ label: '按天', value: 'day' }, { label: '按小时', value: 'hour' }, { label: '按分钟', value: 'minute' }]
 const bucketLabel = computed(() => bucket.value === 'minute' ? '分钟' : bucket.value === 'day' ? '天' : '小时')
@@ -205,7 +220,7 @@ const nodeSeriesResource = useRemoteResource<TrafficNodeSeries | null>({
 const { data: references, loading: referenceLoading, error: referenceError } = referenceResource
 const { data: trafficTrend, loading: trendLoading, error: trendError, loaded: trendLoaded } = trendResource
 const { data: nodeSeries, loading: nodeSeriesLoading, error: nodeSeriesError, loaded: nodeSeriesLoaded } = nodeSeriesResource
-const hasFilters = computed(() => Boolean(filters.userId || filters.nodeId || filters.subscriptionId || bucket.value !== 'hour'))
+const hasFilters = computed(() => Boolean(filters.userId || filters.nodeId || filters.subscriptionId || filters.protocolEndpointId || bucket.value !== 'hour'))
 const reconciliationOptions = [{ label: '仅异常', value: 'issues' }, { label: '全部结果', value: 'all' }]
 const recordTable = useTrafficUsageTable(() => ({ ...queryParams(), bucket: bucket.value, cursor: recordCursor.value || undefined, from: from.value, to: to.value, limit: recordLimit.value }), true)
 const reconciliationTable = useRemoteTable<TrafficReconciliationItem, TrafficReconciliationAggregates>({
@@ -226,7 +241,15 @@ const { items: reconciliation, total: reconciliationTotal, aggregates: reconcili
   hasLoaded: reconciliationLoaded, load: loadReconciliation } = reconciliationTable
 // Each completed page can resolve its names immediately, without waiting for
 // the other table or charts; replacing either snapshot invalidates old labels.
-watch([records, reconciliation], () => {
+const referenceIdentity = computed(() => {
+  const ids = (values: Array<number | undefined>) => [...new Set(values.filter((id): id is number => typeof id === 'number' && Number.isFinite(id)))].sort((a, b) => a - b)
+  return JSON.stringify([
+    ids([...records.value.map(item => item.user_id), ...reconciliation.value.map(item => item.user_id)]),
+    ids([...records.value.map(item => item.subscription_id), ...reconciliation.value.map(item => item.subscription_id)].filter((id): id is number => Boolean(id))),
+    ids(records.value.map(item => item.node_id)), ids(reconciliation.value.map(item => item.plan_id)),
+  ])
+})
+watch(referenceIdentity, () => {
   referenceResource.reset()
   if (records.value.length || reconciliation.value.length) void referenceResource.load()
 })
@@ -238,8 +261,9 @@ function formatMultiplier(value: number) { return (Number(value || 1000) / 1000)
 function resultName(result: string) { return ({ matched: '一致', missing_records: '缺少记录', over_recorded: '记录超额', legacy: '历史数据' } as Record<string, string>)[result] || formatUnknownValue('结果', result) }
 function resultTone(result: string): 'success' | 'warning' | 'danger' { return result === 'matched' ? 'success' : result === 'legacy' ? 'warning' : 'danger' }
 function subscriptionStatusName(status: string) { return ({ active: '有效', expired: '已失效', canceled: '已取消' } as Record<string, string>)[status] || formatUnknownValue('状态', status) }
-function queryParams() { return { userId: filters.userId || undefined, nodeId: filters.nodeId || undefined, subscriptionId: filters.subscriptionId || undefined } }
+function queryParams() { return { userId: filters.userId || undefined, nodeId: filters.nodeId || undefined, subscriptionId: filters.subscriptionId || undefined, protocolEndpointId: filters.protocolEndpointId || undefined } }
 function normalizeBucket(value: unknown): TrafficUsageBucket { return value === 'minute' || value === 'day' ? value : 'hour' }
+function normalizeDimension(value: unknown): TrafficDimension { return value === 'node' || value === 'subscription' || value === 'protocol_endpoint' ? value : 'user' }
 function emptyTrafficTrend(): TrafficTrendResult { return { from: '', to: '', points: [], record_count: 0, connection_sample_count: 0, peak_connections: null, truncated: false, subscriptions: [], as_of: '' } }
 function chartBucket(): TrafficUsageBucket {
   return trafficNodeBucket(bucket.value, from.value, to.value, Boolean(filters.nodeId))
@@ -258,14 +282,40 @@ const loadTrendQuery = keyedLoad(trendKey, trendResource)
 const loadNodeQuery = keyedLoad(() => JSON.stringify([trendKey(), chartBucket()]), nodeSeriesResource)
 
 async function loadChanged(force = false) {
-  await Promise.all([loadRecordQuery(force), recordTable.loadStatistics(force), loadReconciliationQuery(force), loadTrendQuery(force), loadNodeQuery(force)])
+  await Promise.all([...(section.value === 'details' ? [loadRecordQuery(force), recordTable.loadStatistics(force), loadReconciliationQuery(force)] : []), loadTrendQuery(force), loadNodeQuery(force)])
 }
-async function load() { await loadChanged(true) }
+async function load() {
+  refreshToken.value++
+  if (records.value.length || reconciliation.value.length) void referenceResource.load()
+  await loadChanged(true)
+}
+async function changeDimension(value: TrafficDimension) { dimension.value = normalizeDimension(value); await syncURL() }
+async function changeSection(value: string) {
+  section.value = value === 'details' ? 'details' : 'summary'
+  if (section.value === 'summary') {
+    recordCursor.value = ''
+    recordTable.reset(); recordStatistics.reset(); reconciliationTable.reset(); referenceResource.reset()
+  }
+  await syncURL()
+  await loadChanged(true)
+}
+async function drilldown(dimension: TrafficDimension, id: number, details: boolean) {
+  if (!id) return
+  const field = ({ user: 'userId', node: 'nodeId', subscription: 'subscriptionId', protocol_endpoint: 'protocolEndpointId' } as const)[dimension]
+  filters[field] = String(id)
+  const enteringDetails = details && section.value !== 'details'
+  if (details) section.value = 'details'
+  normalizeRange(); recordCursor.value = ''; reconciliationOffset.value = 0
+  await syncURL()
+  await loadChanged(enteringDetails)
+}
 async function syncURL(replace = false) {
   const reconciliationPage = Math.floor(reconciliationOffset.value / reconciliationLimit.value) + 1
   const location = { query: {
     ...preserveAdminReturnTo(route.query.return_to),
-    ...(filters.userId ? { user_id: filters.userId } : {}), ...(filters.nodeId ? { node_id: filters.nodeId } : {}), ...(filters.subscriptionId ? { subscription_id: filters.subscriptionId } : {}),
+    ...(section.value === 'details' ? { section: 'details' } : {}),
+    ...(dimension.value !== 'user' ? { dimension: dimension.value } : {}),
+    ...(filters.userId ? { user_id: filters.userId } : {}), ...(filters.nodeId ? { node_id: filters.nodeId } : {}), ...(filters.subscriptionId ? { subscription_id: filters.subscriptionId } : {}), ...(filters.protocolEndpointId ? { protocol_endpoint_id: filters.protocolEndpointId } : {}),
     ...(bucket.value !== 'hour' ? { bucket: bucket.value } : {}),
     from: from.value, to: to.value, ...(recordCursor.value ? { cursor: recordCursor.value } : {}), ...(recordLimit.value !== 50 ? { limit: String(recordLimit.value) } : {}), ...(reconciliationMode.value === 'all' ? { reconciliation: 'all' } : {}), ...(reconciliationPage > 1 ? { reconciliation_page: String(reconciliationPage) } : {}), ...(reconciliationLimit.value !== 25 ? { reconciliation_limit: String(reconciliationLimit.value) } : {})
   } }
@@ -273,7 +323,7 @@ async function syncURL(replace = false) {
 }
 function normalizeRange() { const range = resolveHistoryRange({ from: from.value, to: to.value }, 7); from.value = range.from; to.value = range.to }
 async function applyFilters() { normalizeRange(); recordCursor.value = ''; reconciliationOffset.value = 0; await syncURL(); await loadChanged() }
-async function clearFilters() { Object.assign(filters, { userId: '', nodeId: '', subscriptionId: '' }); bucket.value = 'hour'; recordCursor.value = ''; reconciliationOffset.value = 0; await syncURL(); await loadChanged() }
+async function clearFilters() { Object.assign(filters, { userId: '', nodeId: '', subscriptionId: '', protocolEndpointId: '' }); bucket.value = 'hour'; recordCursor.value = ''; reconciliationOffset.value = 0; await syncURL(); await loadChanged() }
 async function showYesterday() {
   const yesterday = new Date()
   yesterday.setUTCDate(yesterday.getUTCDate() - 1)
@@ -291,16 +341,22 @@ async function changeRecordCursor(value: string | null) { if (!value) return; re
 async function changeRecordLimit(value: number) { recordLimit.value = allowedPageSizes.includes(value) ? value : 50; recordCursor.value = ''; await syncURL(); await loadChanged() }
 async function changeReconciliationPage(value: { offset: number; limit: number }) { reconciliationOffset.value = value.offset; reconciliationLimit.value = value.limit; await syncURL(); await loadChanged() }
 watch(() => route.fullPath, async () => {
-  const nextFilters = { userId: String(route.query.user_id || ''), nodeId: String(route.query.node_id || ''), subscriptionId: String(route.query.subscription_id || '') }
+  const nextFilters = { userId: String(route.query.user_id || ''), nodeId: String(route.query.node_id || ''), subscriptionId: String(route.query.subscription_id || ''), protocolEndpointId: String(route.query.protocol_endpoint_id || '') }
+  const nextSection = route.query.section === 'details' || route.query.cursor ? 'details' : 'summary'
+  const nextDimension = normalizeDimension(route.query.dimension)
   const nextBucket: TrafficUsageBucket = normalizeBucket(route.query.bucket)
   const rawRecordLimit = Number(route.query.limit), nextRecordLimit = allowedPageSizes.includes(rawRecordLimit) ? rawRecordLimit : 50, nextRecordCursor = String(route.query.cursor || ''), nextRange = resolveHistoryRange(route.query, 7)
   const rawReconciliationLimit = Number(route.query.reconciliation_limit), nextReconciliationLimit = allowedPageSizes.includes(rawReconciliationLimit) ? rawReconciliationLimit : 25, nextReconciliationOffset = (Math.max(1, Number(route.query.reconciliation_page) || 1) - 1) * nextReconciliationLimit
   const nextMode = route.query.reconciliation === 'all' ? 'all' : 'issues'
-  if (Object.keys(nextFilters).some(key => nextFilters[key as keyof typeof nextFilters] !== filters[key as keyof typeof filters]) || nextBucket !== bucket.value || nextRecordLimit !== recordLimit.value || nextRecordCursor !== recordCursor.value || nextRange.from !== from.value || nextRange.to !== to.value || nextReconciliationLimit !== reconciliationLimit.value || nextReconciliationOffset !== reconciliationOffset.value || nextMode !== reconciliationMode.value) {
-    Object.assign(filters, nextFilters); bucket.value = nextBucket; recordLimit.value = nextRecordLimit; recordCursor.value = nextRecordCursor; from.value = nextRange.from; to.value = nextRange.to; reconciliationLimit.value = nextReconciliationLimit; reconciliationOffset.value = nextReconciliationOffset; reconciliationMode.value = nextMode; await loadChanged()
+  if (nextDimension !== dimension.value || nextSection !== section.value || Object.keys(nextFilters).some(key => nextFilters[key as keyof typeof nextFilters] !== filters[key as keyof typeof filters]) || nextBucket !== bucket.value || nextRecordLimit !== recordLimit.value || nextRecordCursor !== recordCursor.value || nextRange.from !== from.value || nextRange.to !== to.value || nextReconciliationLimit !== reconciliationLimit.value || nextReconciliationOffset !== reconciliationOffset.value || nextMode !== reconciliationMode.value) {
+    const enteringDetails = nextSection === 'details' && section.value !== 'details'
+    section.value = nextSection
+    dimension.value = nextDimension
+    if (nextSection === 'summary') { recordTable.reset(); recordStatistics.reset(); reconciliationTable.reset(); referenceResource.reset() }
+    Object.assign(filters, nextFilters); bucket.value = nextBucket; recordLimit.value = nextRecordLimit; recordCursor.value = nextRecordCursor; from.value = nextRange.from; to.value = nextRange.to; reconciliationLimit.value = nextReconciliationLimit; reconciliationOffset.value = nextReconciliationOffset; reconciliationMode.value = nextMode; await loadChanged(enteringDetails)
   }
 })
-onMounted(async () => { if (!route.query.from || !route.query.to || route.query.page) await syncURL(true); await load() })
+onMounted(async () => { if (!route.query.from || !route.query.to || route.query.page) await syncURL(true); await loadChanged(true) })
 </script>
 
 <style scoped>

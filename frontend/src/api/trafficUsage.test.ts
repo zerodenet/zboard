@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchTrafficUsagePage, fetchTrafficUsageStatistics } from './trafficUsage'
+import { fetchTrafficBreakdown, fetchTrafficNodeSeries, fetchTrafficUsagePage, fetchTrafficUsageStatistics } from './trafficUsage'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -51,5 +51,29 @@ describe('traffic usage page projection', () => {
   it('keeps absent references empty instead of borrowing unrelated chart labels', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { items: [], total: 0 } }) }))
     expect((await fetchTrafficUsagePage()).facets).toEqual({})
+  })
+  it('loads bounded dimension statistics with all filters and cancellation', async () => {
+    const counters = { raw_bytes: 10, used_bytes: 20, upload_bytes: 3, download_bytes: 7, record_count: 1 }
+    const data = { dimension: 'node', items: [{ id: 0, name: '', missing: true, ...counters }], totals: counters, total: 1, offset: 0, limit: 25, as_of: '2026-10-16T00:00:00Z' }
+    const fetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ data }) }).mockResolvedValueOnce({ ok: true, json: async () => ({ data: {} }) })
+    vi.stubGlobal('fetch', fetch)
+    const signal = new AbortController().signal
+    expect(await fetchTrafficBreakdown({ dimension: 'node', userId: '12', subscriptionId: 2, protocolEndpointId: 3, from: '2026-10-01', to: '2026-10-16', offset: 0, limit: 25 }, true, { signal })).toEqual(data)
+    expect(fetch.mock.calls[0]![0]).toContain('view=breakdown&dimension=node')
+    expect(fetch.mock.calls[0]![0]).toContain('user_id=12&subscription_id=2&protocol_endpoint_id=3')
+    expect(fetch.mock.calls[0]![1].signal).toBe(signal)
+    await expect(fetchTrafficBreakdown({ dimension: 'node' })).rejects.toThrow('响应不完整')
+  })
+  it('rejects invalid dimension filters before making any request', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    await expect(fetchTrafficBreakdown({ dimension: 'node', userId: 'not-an-id' })).rejects.toThrow()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+  it('keeps endpoint drilldown on the node chart', async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: {} }) })
+    vi.stubGlobal('fetch', fetch)
+    await fetchTrafficNodeSeries({ protocolEndpointId: 123 }, true)
+    expect(fetch.mock.calls[0]![0]).toContain('protocol_endpoint_id=123')
   })
 })

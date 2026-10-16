@@ -78,7 +78,12 @@ func (h *handlers) trafficNodeSeriesHandler(w http.ResponseWriter, r *http.Reque
 		BadRequest(w, err.Error())
 		return
 	}
-	result, err := h.services.NodeSeries().Read(r.Context(), claims.UserID, metering.NodeSeriesQuery{Administrative: adminScope, UserID: userID, SubscriptionID: subscriptionID, NodeID: nodeID, Bucket: bucket.Name, From: window.From, To: window.To})
+	endpointID, err := positiveQueryID(r.URL.Query(), "protocol_endpoint_id")
+	if err != nil {
+		BadRequest(w, err.Error())
+		return
+	}
+	result, err := h.services.NodeSeries().Read(r.Context(), claims.UserID, metering.NodeSeriesQuery{Administrative: adminScope, UserID: userID, SubscriptionID: subscriptionID, NodeID: nodeID, ProtocolEndpointID: endpointID, Bucket: bucket.Name, From: window.From, To: window.To})
 	if err != nil {
 		writePrincipalTrendError(w, err)
 		return

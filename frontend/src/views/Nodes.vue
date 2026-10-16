@@ -53,7 +53,8 @@
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
-    <DetailDrawer :open="Boolean(selectedNode)" :title="selectedNode?.name || '节点详情'" eyebrow="Node asset" :description="selectedNode ? `${selectedNode.region || '未设置区域'} · ${selectedNode.address || '未设置地址'}` : ''" @close="closeDetail">
+    <DetailDrawer :open="Boolean(selectedNodeID)" :title="selectedNode?.name || '节点详情'" eyebrow="Node asset" :description="selectedNode ? `${selectedNode.region || '未设置区域'} · ${selectedNode.address || '未设置地址'}` : ''" @close="closeDetail">
+      <RemoteReadStatus label="节点详情" :phase="detailResource.phase.value" :error="detailResource.error.value" :last-success-at="detailResource.lastSuccessAt.value" @retry="detailResource.load()" />
       <main v-if="selectedNode" class="stack node-detail">
         <TransientFeedback :success="detailMessage" :error="detailError" success-title="节点操作已完成" error-title="节点操作失败" />
         <article class="panel node-summary">
@@ -84,7 +85,7 @@
           <StatusOverviewItem icon="activity" label="Zero 内核" :description="kernelDescription" :tone="kernelTone" :status="kernelStatusLabel" />
           <article class="node-load-summary">
             <header><div><strong>主机资源</strong><p>仅在点击“刷新资源”时通过已验证的 SSH 通道读取；页面不会自动采样。</p></div><UiButton variant="secondary" size="sm" type="button" :loading="nodeLoadLoading" :disabled="!selectedNode.ssh_host || !selectedNode.ssh_user" @click="loadNodeLoad(selectedNode.id)"><UiIcon name="refresh" />刷新资源</UiButton></header>
-            <PageAlert v-if="nodeLoadError" tone="warning" title="暂时无法读取负载">{{ nodeLoadError }}</PageAlert>
+            <RemoteReadStatus label="主机资源" :phase="loadResource.phase.value" :error="nodeLoadError" :last-success-at="loadResource.lastSuccessAt.value" @retry="loadNodeLoad(selectedNodeID)" />
             <div v-if="nodeLoad" class="node-load-grid">
               <div><span>系统负载（1 / 5 / 15 分钟）</span><strong>{{ nodeLoad.load_average_1.toFixed(2) }} / {{ nodeLoad.load_average_5.toFixed(2) }} / {{ nodeLoad.load_average_15.toFixed(2) }}</strong><small>{{ formatNumber(nodeLoad.cpu_core_count) }} 核 · 1 分钟负载率 {{ formatLoadRatio(nodeLoad) }}</small></div>
               <div><span>内存</span><strong>{{ formatBytes(nodeLoad.memory_total_bytes - nodeLoad.memory_available_bytes) }} / {{ formatBytes(nodeLoad.memory_total_bytes) }}</strong><small>可用 {{ formatBytes(nodeLoad.memory_available_bytes) }}</small></div>
@@ -100,6 +101,8 @@
             <StatusBadge :tone="kernelTone">{{ kernelStatusLabel }}</StatusBadge>
           </header>
           <div class="panel-body kernel-body">
+            <RemoteReadStatus label="内核状态" :phase="kernelResource.phase.value" :error="kernelResource.error.value" :last-success-at="kernelResource.lastSuccessAt.value" @retry="loadKernel(selectedNodeID)" />
+            <RemoteReadStatus label="任务进度" :phase="operationResource.phase.value" :error="operationResource.error.value" :last-success-at="operationResource.lastSuccessAt.value" @retry="startKernelPolling(kernelPollScope.nodeID, kernelPollScope.taskID)" />
             <div class="kernel-facts">
               <div><span>已安装版本</span><strong>{{ kernelState?.installed_version || '未检测' }}</strong></div>
               <div v-if="kernelSource === 'online'"><span>最新发布版</span><strong>{{ latestPublishedRelease?.tag || (releaseLoading ? '查询中…' : '未查询') }}</strong></div>
@@ -117,6 +120,7 @@
             </PageAlert>
             <OutputBlock v-if="kernelState?.last_error" :value="kernelState.last_error" label="内核错误" tone="danger" :max-length="360" />
             <UiTabs :model-value="kernelSource" :items="[{ value: 'online', label: '在线版本' }, { value: 'offline', label: '本地上传' }]" label="内核来源" @update:model-value="changeKernelSource" />
+            <RemoteReadStatus v-if="kernelSource === 'online'" label="可用版本" :phase="releasesResource.phase.value" :error="releaseError" :last-success-at="releasesResource.lastSuccessAt.value" @retry="loadLatestRelease(true)" />
             <NodeKernelUpload v-if="kernelSource === 'offline'" :key="selectedNode.id" :node-id="selectedNode.id" :installed-version="kernelState?.installed_version" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at" @busy="offlineUploadBusy" @accepted="offlineUploadAccepted" />
             <div v-else class="kernel-release-picker">
               <label for="node-kernel-release">安装版本</label>
@@ -137,6 +141,7 @@
             </div>
             <div class="action-card">
               <div class="title-line"><strong>VPS 网络优化 · BBR</strong><StatusBadge :tone="bbrTone">{{ bbrStatusLabel }}</StatusBadge></div>
+              <RemoteReadStatus label="BBR 状态" :phase="bbrResource.phase.value" :error="bbrResource.error.value" :last-success-at="bbrResource.lastSuccessAt.value" @retry="loadBBR(selectedNodeID)" />
               <p v-if="bbrState">当前拥塞控制 <code>{{ bbrState.congestion_control || '未知' }}</code> · qdisc <code>{{ bbrState.default_qdisc || '未知' }}</code> · Linux {{ bbrState.kernel_release || '未知' }}<template v-if="bbrState.persistent"> · 已持久化</template></p>
               <p v-else-if="bbrLoading">正在通过已验证 SSH 读取 BBR 状态…</p>
               <p v-else-if="!selectedNode.ssh_verified_at">完成 SSH 验证后可检测和启用 BBR。</p>
@@ -168,6 +173,7 @@
         <NodeProxyPools v-else-if="detailSection === 'pools'" :key="selectedNode.id" :node-id="selectedNode.id" />
         <section v-else-if="detailSection === 'protocols'" class="panel node-protocols">
           <header class="panel-header"><div><h2>协议服务与倍率</h2><p>倍率属于这台 VPS 承载的协议端点。修改只影响后续流量计费与订阅展示，不会重启 Zero。</p></div><span class="count-label">{{ formatNumber(nodeProtocolTotal) }}</span></header>
+          <RemoteReadStatus label="协议服务" :phase="protocolsResource.phase.value" :error="protocolsResource.error.value" :last-success-at="protocolsResource.lastSuccessAt.value" @retry="loadNodeProtocols(selectedNodeID)" />
           <DataTable v-if="nodeEndpoints.length" caption="当前节点协议服务与计费倍率" :row-count="nodeProtocolTotal" :min-width="820">
             <thead>
               <tr>
@@ -193,7 +199,7 @@
             </tbody>
           </DataTable>
           <div v-else-if="nodeProtocolsLoading" class="panel-body muted">正在加载协议服务…</div>
-          <EmptyState v-else icon="activity" title="这台 VPS 还没有协议服务" description="请先在协议服务页面创建并绑定端点。" />
+          <EmptyState v-else-if="protocolsResource.loaded.value && !protocolsResource.error.value" icon="activity" title="这台 VPS 还没有协议服务" description="请先在协议服务页面创建并绑定端点。" />
           <TablePager v-if="nodeProtocolTotal" :total="nodeProtocolTotal" :offset="nodeProtocolOffset" :limit="nodeProtocolLimit" :loading="nodeProtocolsLoading" @change="changeNodeProtocolPage" />
         </section>
 
@@ -309,6 +315,8 @@ import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import UiTabs from '../components/UiTabs.vue'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
+import RemoteReadStatus from '../components/RemoteReadStatus.vue'
+import { useRemoteResource } from '../composables/useRemoteResource'
 import { useRemoteTable } from '../composables/useRemoteTable'
 import { useSelectionScope } from '../composables/useSelectionScope'
 import { nextSortDirection, resolveSortDirection, resolveSortField, resolveTableDensity } from '../composables/tableState'
@@ -316,7 +324,6 @@ import { confirmAction } from '../utils/feedback'
 import { formatBytes, formatNumber, formatUnknownValue } from '../utils/format'
 import { normalizeOutput, truncateOutput } from '../utils/output'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
-import { createRequestGuard } from '../utils/request'
 import { trackAdminTask, updateTrackedTask } from '../utils/taskTracker'
 import { collectFieldErrors, isBlank, isIntegerInRange, isOneOf } from '../utils/validation'
 import { compactZeroVersion } from '../utils/zeroVersion'
@@ -343,10 +350,21 @@ const lifecycleFilterOptions = [{ label: '全部生命周期', value: '' }, ...l
 const connectorFilterOptions = [{ label: '全部连接状态', value: '' }, { label: 'Connector 在线', value: 'online' }, { label: 'Connector 离线', value: 'offline' }]
 const sshAuthOptions = [{ label: '密码', value: 'password' }, { label: '私钥', value: 'private_key' }]
 const sshPrivilegeOptions = [{ label: '直接登录 root', value: 'none' }, { label: 'sudo 提权', value: 'sudo' }, { label: 'su 切换 root', value: 'su' }]
-const selectedNode = ref<AdminNodeDetail | null>(null)
-const nodeLoad = ref<NodeLoadSnapshot | null>(null)
-const nodeLoadLoading = ref(false)
-const nodeLoadError = ref('')
+const selectedNodeID = ref(0)
+const detailResource = useRemoteResource<AdminNodeDetail | null>({
+  initial: () => null, fetch: ({ signal }) => fetchNode(selectedNodeID.value, { signal }),
+  errorMessage: '节点详情加载失败。', timeoutMs: 10_000,
+})
+const { data: selectedNode } = detailResource
+const detailLoadingID = computed(() => detailResource.loading.value ? selectedNodeID.value : 0)
+function openNodeDetail(id: number) {
+  if (selectedNodeID.value !== id) { detailResource.reset(); selectedNodeID.value = id }
+  if (id) return detailResource.load()
+}
+
+const loadResource = useRemoteResource<NodeLoadSnapshot | null>({ initial: () => null,
+  fetch: ({ signal }) => fetchNodeLoad(selectedNodeID.value, { signal }), errorMessage: '节点负载读取失败。' })
+const { data: nodeLoad, loading: nodeLoadLoading, error: nodeLoadError } = loadResource
 const diagnosticsOpen = ref(false)
 const detailSection = ref<'overview' | 'kernel' | 'pools' | 'protocols' | 'credentials'>('overview')
 const nodeDetailTabs = [
@@ -356,7 +374,7 @@ const nodeDetailTabs = [
   { value: 'protocols', label: '协议与倍率', icon: 'plans' },
   { value: 'credentials', label: '连接凭证', icon: 'key' },
 ]
-const saving = ref(false), testingNode = ref(0), detailLoadingID = ref(0)
+const saving = ref(false), testingNode = ref(0)
 const bulkBusy = ref<'' | 'detect' | 'reconcile' | 'activate' | 'maintenance' | 'retire'>('')
 const message = ref('')
 const detailMessage = ref('')
@@ -365,9 +383,20 @@ const createOpen = ref(false), editOpen = ref(false), sshOpen = ref(false)
 const batchKernelOpen = ref(false), batchReleaseVersion = ref(''), batchAllowDowngrade = ref(false)
 const terminalOpen = ref(false), terminalNode = ref<any>(null)
 const kernelState = ref<NodeKernelState | null>(null), kernelOperations = ref<NodeKernelOperation[]>([])
-const bbrState = ref<NodeBBRState | null>(null), bbrLoading = ref(false), bbrBusy = ref(false)
+const bbrBusy = ref(false)
+const bbrResource = useRemoteResource<NodeBBRState | null>({ initial: () => null,
+  fetch: async ({ signal }) => (await fetchNodeSystemActions(selectedNodeID.value, { signal })).bbr,
+  errorMessage: 'BBR 状态读取失败。' })
+const { data: bbrState, loading: bbrLoading } = bbrResource
+const kernelResource = useRemoteResource<Awaited<ReturnType<typeof fetchNodeKernel>> | null>({ initial: () => null,
+  fetch: ({ signal }) => fetchNodeKernel(selectedNodeID.value, { signal }), errorMessage: '内核状态加载失败。', timeoutMs: 10_000 })
+watch(selectedNodeID, () => {
+  kernelResource.reset(); bbrResource.reset(); loadResource.reset(); protocolsResource.reset(); stopKernelPolling(); kernelBusy.value = ''
+}, { flush: 'sync' })
 const pendingBBRNodeID = ref(0)
-const zeroReleases = ref<ZeroReleaseOption[]>([]), releaseLoading = ref(false)
+const releasesResource = useRemoteResource<ZeroReleaseOption[]>({ initial: () => [],
+  fetch: ({ signal }) => fetchZeroReleases({ signal }), errorMessage: 'Zero 已发布版本查询失败。', timeoutMs: 10_000 })
+const { data: zeroReleases, loading: releaseLoading, error: releaseError } = releasesResource
 const selectedReleaseVersion = ref('')
 const latestPublishedRelease = computed(() => zeroReleases.value[0] || null)
 const selectedRelease = computed(() => zeroReleases.value.find(item => item.version === selectedReleaseVersion.value) || null)
@@ -405,16 +434,27 @@ const bbrStatusLabel = computed(() => {
   return bbrState.value.available ? '可启用' : '当前未提供'
 })
 const kernelSource = ref('online')
-const releaseError = ref('')
 const kernelBusy = ref<'' | 'detect' | 'reconcile' | 'upload'>('')
-const nodeEndpoints = ref<any[]>([]), nodeProtocolsLoading = ref(false), savingMultiplierID = ref(0)
+const savingMultiplierID = ref(0)
 const nodeProtocolLimit = ref(allowedPageSizes.includes(Number(route.query.protocol_limit)) ? Number(route.query.protocol_limit) : 25)
 const nodeProtocolOffset = ref((Math.max(1, Number(route.query.protocol_page) || 1) - 1) * nodeProtocolLimit.value)
-const nodeProtocolTotal = ref(0)
 const multiplierDrafts = reactive<Record<number, number>>({})
-const kernelRequests = createRequestGuard()
-const protocolRequests = createRequestGuard()
+const protocolsResource = useRemoteTable<any>({ offset: nodeProtocolOffset, limit: nodeProtocolLimit,
+  fetchPage: ({ signal }) => fetchProtocolEndpointsPage({ nodeId: selectedNodeID.value, offset: nodeProtocolOffset.value, limit: nodeProtocolLimit.value }, { signal }),
+  errorMessage: '节点协议服务加载失败。', onOffsetCorrected: () => syncURL(true),
+  onPageLoaded: page => { for (const endpoint of page.items) multiplierDrafts[endpoint.id] = Number(endpoint.multiplier_milli || 1000) },
+})
+const { items: nodeEndpoints, total: nodeProtocolTotal, loading: nodeProtocolsLoading } = protocolsResource
 let kernelPollTimer: number | undefined
+let kernelPollScope = { nodeID: 0, taskID: 0 }
+const operationResource = useRemoteResource<{ task: AdminTask; result: Awaited<ReturnType<typeof fetchNodeKernel>> } | null>({
+  initial: () => null, timeoutMs: 10_000, errorMessage: '任务进度读取失败，可在后台任务中查看。',
+  fetch: async ({ signal }) => {
+    const { nodeID, taskID } = kernelPollScope
+    const [task, result] = await Promise.all([fetchAdminTask(taskID, true, { signal }), fetchNodeKernel(nodeID, { signal })])
+    return { task, result }
+  },
+})
 const createForm = reactive({ name: '', region: '', address: '', remark: '', enable_bbr: false })
 const editForm = reactive({ id: 0, name: '', region: '', address: '', remark: '', lifecycle_status: 'active', is_enabled: true })
 const sshForm = reactive({ node_id: 0, ssh_host: '', ssh_port: 22, ssh_user: 'root', ssh_auth_method: 'password' as 'password' | 'private_key', original_auth_method: 'password' as 'password' | 'private_key', ssh_password: '', ssh_private_key: '', ssh_private_key_passphrase: '', clearPassphrase: false, hasCredential: false, ssh_privilege_mode: 'none' as 'none' | 'sudo' | 'su', ssh_privilege_password: '', hasPrivilegePassword: false, passwordlessSudo: false })
@@ -582,28 +622,17 @@ async function submitBatchKernelRollout() {
 function kernelPhaseLabel(value?: string) { return ({ queued: '排队中…', detecting: '检测中…', resolving_release: '匹配制品…', preparing_connector_credential: '准备连接凭证…', downloading: '校验制品…', staging: '暂存并切换…', verifying: '本地健康检查…', waiting_connector_event: '等待 Connector 事件…', waiting_heartbeat: '等待兼容心跳…', completed: '已完成', configuration_deferred: '新设置待适配，保持当前配置' } as Record<string, string>)[value || 'queued'] || '处理中…' }
 
 async function loadKernel(nodeID?: number) {
-  const request = kernelRequests.begin()
-  if (!nodeID) { kernelState.value = null; kernelOperations.value = []; return }
-  try {
-    const result = await fetchNodeKernel(nodeID)
-    if (!kernelRequests.isCurrent(request) || selectedNode.value?.id !== nodeID || detailSection.value !== 'kernel') return
-    kernelState.value = result.state
-    kernelOperations.value = result.operations || []
-  } catch (e: any) {
-    if (kernelRequests.isCurrent(request) && selectedNode.value?.id === nodeID) detailError.value = e?.response?.data?.message || '内核状态加载失败。'
+  if (!nodeID || selectedNodeID.value !== nodeID || detailSection.value !== 'kernel') return
+  if (await kernelResource.load()) {
+    kernelState.value = kernelResource.data.value?.state || null
+    kernelOperations.value = kernelResource.data.value?.operations || []
+  } else if (['unauthorized', 'forbidden'].includes(kernelResource.errorKind.value)) {
+    kernelState.value = null; kernelOperations.value = []
   }
 }
 async function loadBBR(nodeID?: number) {
-  if (!nodeID || !selectedNode.value?.ssh_verified_at) { bbrState.value = null; return }
-  bbrLoading.value = true
-  try {
-    const snapshot = await fetchNodeSystemActions(nodeID)
-    if (selectedNode.value?.id === nodeID) bbrState.value = snapshot.bbr
-  } catch (e: any) {
-    if (selectedNode.value?.id === nodeID) detailError.value = e?.response?.data?.message || 'BBR 状态读取失败。'
-  } finally {
-    if (selectedNode.value?.id === nodeID) bbrLoading.value = false
-  }
+  if (!nodeID || selectedNodeID.value !== nodeID || !selectedNode.value?.ssh_verified_at) return
+  await bbrResource.load()
 }
 async function applyBBR() {
   if (!selectedNode.value?.ssh_verified_at) return
@@ -625,84 +654,52 @@ async function applyBBR() {
     await loadBBR(nodeID)
   } finally { bbrBusy.value = false }
 }
+let releasesRead: Promise<boolean> | undefined
 async function loadLatestRelease(force = false) {
   if (zeroReleases.value.length && !force) return
-  releaseLoading.value = true
-  try {
-    zeroReleases.value = await fetchZeroReleases()
-    if (!zeroReleases.value.some(item => item.version === selectedReleaseVersion.value && releaseCompatible(item))) {
-      selectedReleaseVersion.value = zeroReleases.value.find(releaseCompatible)?.version || ''
-    }
-  } catch (e: any) {
-    releaseError.value = e?.response?.data?.message || 'Zero 已发布版本查询失败。'
-    if (kernelSource.value === 'online') detailError.value = releaseError.value
-  } finally {
-    releaseLoading.value = false
-  }
+  // The drawer and batch chooser share one version read and await its result.
+  releasesRead ||= releasesResource.load().finally(() => { releasesRead = undefined })
+  await releasesRead
 }
 async function loadNodeProtocols(nodeID?: number) {
-  const request = protocolRequests.begin()
-  if (!nodeID) { nodeEndpoints.value = []; nodeProtocolTotal.value = 0; return }
-  nodeProtocolsLoading.value = true
-  try {
-    const page = await fetchProtocolEndpointsPage({ nodeId: nodeID, offset: nodeProtocolOffset.value, limit: nodeProtocolLimit.value })
-    if (!protocolRequests.isCurrent(request) || selectedNode.value?.id !== nodeID || detailSection.value !== 'protocols') return
-    nodeProtocolTotal.value = page.total
-    if (nodeProtocolOffset.value >= page.total && nodeProtocolOffset.value > 0) {
-      nodeProtocolOffset.value = Math.max(0, Math.floor(Math.max(0, page.total - 1) / nodeProtocolLimit.value) * nodeProtocolLimit.value)
-      await syncURL(true)
-      return
-    }
-    nodeEndpoints.value = page.items
-    for (const endpoint of nodeEndpoints.value) multiplierDrafts[endpoint.id] = Number(endpoint.multiplier_milli || 1000)
-  } catch (e: any) {
-    if (protocolRequests.isCurrent(request) && selectedNode.value?.id === nodeID) detailError.value = e?.response?.data?.message || '节点协议服务加载失败。'
-  } finally {
-    if (protocolRequests.isCurrent(request)) nodeProtocolsLoading.value = false
-  }
+  if (!nodeID || selectedNodeID.value !== nodeID || detailSection.value !== 'protocols') return
+  await protocolsResource.load()
 }
 async function loadNodeLoad(nodeID?: number) {
-  if (!nodeID || nodeLoadLoading.value) return
-  nodeLoadLoading.value = true
-  nodeLoadError.value = ''
-  try {
-    const snapshot = await fetchNodeLoad(nodeID)
-    if (selectedNode.value?.id === nodeID) nodeLoad.value = snapshot
-  } catch (cause: any) {
-    if (selectedNode.value?.id === nodeID) nodeLoadError.value = cause?.response?.data?.message || '节点负载读取失败。'
-  } finally {
-    if (selectedNode.value?.id === nodeID) nodeLoadLoading.value = false
-  }
+  if (!nodeID || selectedNodeID.value !== nodeID || nodeLoadLoading.value) return
+  await loadResource.load()
 }
 function formatLoadRatio(snapshot: NodeLoadSnapshot) { return snapshot.cpu_core_count > 0 ? `${(snapshot.load_average_1 / snapshot.cpu_core_count * 100).toFixed(0)}%` : '—' }
 function formatUptime(seconds: number) { const days = Math.floor(seconds / 86400); const hours = Math.floor(seconds % 86400 / 3600); const minutes = Math.floor(seconds % 3600 / 60); return days ? `${days} 天 ${hours} 小时` : hours ? `${hours} 小时 ${minutes} 分钟` : `${minutes} 分钟` }
 async function saveMultiplier(endpoint: any) { const milli = Math.round(Number(multiplierDrafts[endpoint.id])); if (!Number.isFinite(milli) || milli < 1 || milli > 100000) { detailError.value = '计费倍率必须在 0.001× 到 100× 之间。'; return }; savingMultiplierID.value = endpoint.id; detailError.value = ''; detailMessage.value = ''; try { const updated = await updateProtocolEndpointMultiplier(endpoint.id, milli); endpoint.multiplier_milli = updated.multiplier_milli; multiplierDrafts[endpoint.id] = updated.multiplier_milli; detailMessage.value = `${endpoint.name} 的计费倍率已更新为 ${updated.multiplier_milli / 1000}×。` } catch (e: any) { detailError.value = e?.response?.data?.message || '计费倍率保存失败。' } finally { savingMultiplierID.value = 0 } }
 async function detectKernel() { if (!selectedNode.value) return; kernelBusy.value = 'detect'; detailError.value = ''; detailMessage.value = ''; try { const result = await detectNodeKernel(selectedNode.value.id); kernelState.value = result.state; detailMessage.value = 'Zero 内核检测完成，页面显示的是服务器真实状态。'; await loadKernel(selectedNode.value.id) } catch (e: any) { detailError.value = e?.response?.data?.message || 'Zero 内核检测失败。'; await loadKernel(selectedNode.value.id) } finally { kernelBusy.value = '' } }
-function stopKernelPolling() { if (kernelPollTimer !== undefined) { window.clearInterval(kernelPollTimer); kernelPollTimer = undefined } }
+function stopKernelPolling() {
+  if (kernelPollTimer !== undefined) { window.clearInterval(kernelPollTimer); kernelPollTimer = undefined }
+  operationResource.reset()
+}
 function startKernelPolling(nodeID: number, taskID: number) {
   stopKernelPolling()
+  kernelPollScope = { nodeID, taskID }
   kernelPollTimer = window.setInterval(async () => {
-    try {
-      const [task, result] = await Promise.all([fetchAdminTask(taskID), fetchNodeKernel(nodeID)])
-      updateTrackedTask(task)
-      if (selectedNode.value?.id === nodeID) {
-        kernelState.value = result.state
-        kernelOperations.value = result.operations || []
-      }
-      if (task.status >= 2) {
-        stopKernelPolling()
-        kernelBusy.value = ''
-        if (task.status === 2) detailMessage.value = `Zero 后台任务 #${taskID} 已完成并通过节点验收。`
-        else detailError.value = task.errors || `Zero 后台任务 #${taskID} 执行失败，请查看任务详情。`
-        await refresh()
-      }
-    } catch { /* TaskTray remains the durable progress surface if this page poll is interrupted. */ }
+    if (operationResource.loading.value || document.hidden || !operationResource.canAutoRefresh.value) return
+    if (!await operationResource.load()) return
+    const snapshot = operationResource.data.value
+    if (!snapshot || selectedNodeID.value !== nodeID) return
+    const { task, result } = snapshot
+    updateTrackedTask(task)
+    kernelState.value = result.state
+    kernelOperations.value = result.operations || []
+    if (task.status >= 2) {
+      stopKernelPolling(); kernelBusy.value = ''
+      if (task.status === 2) detailMessage.value = `Zero 后台任务 #${taskID} 已完成并通过节点验收。`
+      else detailError.value = task.errors || `Zero 后台任务 #${taskID} 执行失败，请查看任务详情。`
+      void refresh()
+    }
   }, 1500)
 }
 function changeKernelSource(value: string) {
   if (kernelBusy.value) return
   kernelSource.value = value
-  if (value === 'offline' && detailError.value === releaseError.value) detailError.value = ''
   if (value === 'online') void loadLatestRelease()
 }
 function offlineUploadBusy(value: boolean) {
@@ -761,7 +758,7 @@ async function syncURL(replace = false) {
     ...(limit.value !== 50 ? { limit: String(limit.value) } : {}),
     ...(selectedNode.value && detailSection.value === 'protocols' && nodeProtocolOffset.value > 0 ? { protocol_page: String(Math.floor(nodeProtocolOffset.value / nodeProtocolLimit.value) + 1) } : {}),
     ...(selectedNode.value && detailSection.value === 'protocols' && nodeProtocolLimit.value !== 25 ? { protocol_limit: String(nodeProtocolLimit.value) } : {}),
-    ...(selectedNode.value ? { node: String(selectedNode.value.id), tab: detailSection.value } : {}),
+    ...(selectedNodeID.value ? { node: String(selectedNodeID.value), tab: detailSection.value } : {}),
   } }
   await (replace ? router.replace(location) : router.push(location))
 }
@@ -772,15 +769,13 @@ async function setSort(field: string) { const next = resolveSortField(field, nod
 async function setDensity(value: 'compact' | 'comfortable') { density.value = value; await syncURL(true) }
 async function selectNode(node: AdminNodeListItem, section: typeof detailSection.value = 'overview') {
   diagnosticsOpen.value = false
-  detailLoadingID.value = node.id; error.value = ''
   detailError.value = ''; detailMessage.value = ''
-  try {
-    const detail = await fetchNode(node.id)
-    nodeProtocolOffset.value = 0; nodeProtocolLimit.value = 25; selectedNode.value = detail; detailSection.value = section; await syncURL()
-  } catch (e: any) { error.value = e?.response?.data?.message || '节点详情加载失败。' }
-  finally { detailLoadingID.value = 0 }
+  nodeProtocolOffset.value = 0; nodeProtocolLimit.value = 25; detailSection.value = section
+  void openNodeDetail(node.id)
+  await syncURL()
 }
-async function closeDetail() { diagnosticsOpen.value = false; selectedNode.value = null; detailError.value = ''; detailMessage.value = ''; nodeProtocolOffset.value = 0; bbrState.value = null; await syncURL() }
+async function closeDetail() { diagnosticsOpen.value = false; selectedNodeID.value = 0; detailResource.reset(); detailError.value = ''; detailMessage.value = ''; nodeProtocolOffset.value = 0; bbrState.value = null; await syncURL() }
+
 async function downloadCleanupScript() {
  try {
   const content=await fetchNodeCleanupScript()
@@ -815,7 +810,7 @@ async function create() {
     const wantsBBR = createForm.enable_bbr
     const node = await createNode({ name: createForm.name, region: createForm.region, address: createForm.address, remark: createForm.remark })
     Object.assign(createForm, { name: '', region: '', address: '', remark: '', enable_bbr: false })
-    createOpen.value = false; offset.value = 0; await refresh(); selectedNode.value = await fetchNode(node.id); await syncURL(true)
+    createOpen.value = false; offset.value = 0; await refresh(); await openNodeDetail(node.id); await syncURL(true)
     pendingBBRNodeID.value = wantsBBR ? node.id : 0
     message.value = wantsBBR
       ? 'VPS 已登记；请完成 SSH 配置。验证通过后将继续 Zero 初始化，并尝试启用 BBR。'
@@ -857,7 +852,7 @@ async function runNodeOnboardingAfterSSHSave(nodeID: number) {
     const result = await testNodeSSH(nodeID)
     message.value = `SSH 验证成功（${result.latency_ms || 0}ms），正在准备 Zero 初始化…`
     await refresh()
-    if (selectedNode.value?.id === nodeID) selectedNode.value = await fetchNode(nodeID)
+    if (selectedNode.value?.id === nodeID) await detailResource.load()
   } catch (e: any) {
     detailError.value = e?.response?.data?.message || 'SSH 配置已保存，但验证失败；修正 SSH 后再继续 Zero 初始化。'
     message.value = 'VPS 已登记，但 SSH 尚未验证，Zero 初始化未开始。'
@@ -906,19 +901,19 @@ async function saveSSH() {
     await runNodeOnboardingAfterSSHSave(nodeID)
   } catch (e: any) { await sshErrors.applyApiError(e, 'SSH 配置保存失败，请检查表单内容。', sshFormElement, sshFieldMap) } finally { saving.value = false }
 }
-async function testSSH(id: number) { testingNode.value = id; detailError.value = ''; detailMessage.value = ''; try { const result = await testNodeSSH(id); detailMessage.value = `SSH 验证成功，耗时 ${result.latency_ms || 0}ms；主机身份已自动校验。`; await refresh(); if (selectedNode.value?.id === id) selectedNode.value = await fetchNode(id); if (detailSection.value === 'kernel') await loadBBR(id) } catch (e: any) { detailError.value = e?.response?.data?.message || 'SSH 验证失败。' } finally { testingNode.value = 0 } }
+async function testSSH(id: number) { testingNode.value = id; detailError.value = ''; detailMessage.value = ''; try { const result = await testNodeSSH(id); detailMessage.value = `SSH 验证成功，耗时 ${result.latency_ms || 0}ms；主机身份已自动校验。`; await refresh(); if (selectedNode.value?.id === id) await detailResource.load(); if (detailSection.value === 'kernel') await loadBBR(id) } catch (e: any) { detailError.value = e?.response?.data?.message || 'SSH 验证失败。' } finally { testingNode.value = 0 } }
 async function resetSSHHostKey(node: any) { if (!await confirmAction({ title: '重新信任主机', message: '仅当 VPS 已重装或主机密钥已确认更换时继续。重置后，下一次 SSH 连接会自动登记新的主机身份。', confirmText: '清除旧身份', tone: 'danger' })) return; detailError.value = ''; detailMessage.value = ''; try { await resetNodeSSHHostKey(node.id); detailMessage.value = '已清除旧主机身份；下一次 SSH 连接将自动重新登记。'; bbrState.value = null; await refresh() } catch (e: any) { detailError.value = e?.response?.data?.message || '重新信任主机失败。' } }
 async function refreshSelectedNodeAfterCredentialChange(nodeID: number, patch: Partial<AdminNodeDetail>) {
-  if (selectedNode.value?.id === nodeID) Object.assign(selectedNode.value, patch)
+  if (selectedNode.value?.id === nodeID) selectedNode.value = { ...selectedNode.value, ...patch }
   await refresh()
   if (selectedNode.value?.id !== nodeID) return
-  try { selectedNode.value = await fetchNode(nodeID) } catch { /* Keep the successful response patch if detail refresh is temporarily unavailable. */ }
+  try { await detailResource.load() } catch { /* Keep the successful response patch if detail refresh is temporarily unavailable. */ }
 }
 async function closeSecretModal() {
   const nodeID = secretModal.nodeID
   Object.assign(secretModal, { title: '', value: '', copied: false, nodeID: 0 })
   if (!nodeID || selectedNode.value?.id !== nodeID) return
-  try { selectedNode.value = await fetchNode(nodeID) } catch { /* The successful response patch already keeps the drawer accurate. */ }
+  try { await detailResource.load() } catch { /* The successful response patch already keeps the drawer accurate. */ }
 }
 async function rotateConnector(node: any) { if (node.node_credential_prefix && !await confirmAction({ title: '轮换 Zero 凭证', message: '轮换后旧 Zero 连接凭证会立即失效，节点需要应用新配置。', confirmText: '确认轮换', tone: 'danger' })) return; detailError.value = ''; try { const result = await rotateNodeConnectorCredential(node.id); const config = JSON.stringify({ push: { url: window.location.origin, node_id: result.node_id, api_key: result.api_key, heartbeat_interval_seconds: 30, pull_commands: true, command_poll_interval_seconds: 10 } }, null, 2); Object.assign(secretModal, { title: 'Zero 主动连接配置', value: config, copied: false, nodeID: node.id }); await refreshSelectedNodeAfterCredentialChange(node.id, { node_credential_prefix: result.api_key_prefix, node_credential_revoked_at: undefined }) } catch (e: any) { detailError.value = e?.response?.data?.message || 'Zero 连接凭证操作失败。' } }
 async function revokeConnector(node: any) { if (!await confirmAction({ title: '吊销 Zero 凭证', message: '吊销后节点将无法继续向面板发送心跳或领取命令。', confirmText: '确认吊销', tone: 'danger' })) return; detailError.value = ''; detailMessage.value = ''; try { await revokeNodeConnectorCredential(node.id); detailMessage.value = 'Zero 连接凭证已吊销。'; await refreshSelectedNodeAfterCredentialChange(node.id, { node_credential_revoked_at: new Date().toISOString(), connector_online: false }) } catch (e: any) { detailError.value = e?.response?.data?.message || '吊销失败。' } }
@@ -937,8 +932,8 @@ watch([() => selectedNode.value?.id, detailSection, nodeProtocolOffset, nodeProt
     nodeLoadError.value = ''
     nodeProtocolTotal.value = 0
   }
-  if (section === 'kernel') { void loadKernel(id); if (kernelSource.value === 'online') void loadLatestRelease(); void loadBBR(id) } else kernelRequests.invalidate()
-  if (section === 'protocols') void loadNodeProtocols(id); else { protocolRequests.invalidate(); nodeProtocolsLoading.value = false }
+  if (id && section === 'kernel') { void loadKernel(id); if (kernelSource.value === 'online') void loadLatestRelease(); void loadBBR(id) } else { kernelResource.invalidate(); bbrResource.invalidate() }
+  if (section === 'protocols') void loadNodeProtocols(id); else protocolsResource.invalidate()
 }, { immediate: true })
 watch(detailSection, (section) => { if (selectedNode.value && String(route.query.tab || 'overview') !== section) void syncURL() })
 watch([zeroReleases, () => kernelState.value?.libc], () => {
@@ -962,34 +957,21 @@ watch(() => route.fullPath, async () => {
   const sortChanged = nextSortField !== sortField.value || nextSortDirection !== sortDirection.value
   const listChanged = resolvedLimit !== limit.value || resolvedOffset !== offset.value || filterChanged || sortChanged
   density.value = nextDensity
-  if (listChanged) { if (filterChanged || sortChanged) clearSelection(); limit.value = resolvedLimit; offset.value = resolvedOffset; sortField.value = nextSortField; sortDirection.value = nextSortDirection; Object.assign(filters, nextFilters); await refresh() }
+  if (listChanged) { if (filterChanged || sortChanged) clearSelection(); limit.value = resolvedLimit; offset.value = resolvedOffset; sortField.value = nextSortField; sortDirection.value = nextSortDirection; Object.assign(filters, nextFilters); void refresh() }
   const nextProtocolLimitValue = Number(route.query.protocol_limit)
   const nextProtocolLimit = allowedPageSizes.includes(nextProtocolLimitValue) ? nextProtocolLimitValue : 25
   const nextProtocolOffset = (Math.max(1, Number(route.query.protocol_page) || 1) - 1) * nextProtocolLimit
   if (nextProtocolLimit !== nodeProtocolLimit.value || nextProtocolOffset !== nodeProtocolOffset.value) { nodeProtocolLimit.value = nextProtocolLimit; nodeProtocolOffset.value = nextProtocolOffset }
-  const nodeID = Number(route.query.node) || 0
-  if (!nodeID) selectedNode.value = null
-  else if (selectedNode.value?.id !== nodeID) {
-    const localNode = nodes.value.find(node => node.id === nodeID)
-    if (localNode) {
-      try { selectedNode.value = await fetchNode(localNode.id) } catch { selectedNode.value = null }
-    }
-    else {
-      try { selectedNode.value = await fetchNode(nodeID) } catch { selectedNode.value = null }
-    }
-  }
-  const tab = typeof route.query.tab === 'string' ? route.query.tab : 'overview'
-  if (['overview', 'kernel', 'pools', 'protocols', 'credentials'].includes(tab)) detailSection.value = tab as typeof detailSection.value
+  restoreNodeDetail()
 })
-onMounted(async () => {
-  await refresh()
-  const nodeID = Number(route.query.node) || 0
-  if (nodeID) {
-    try { selectedNode.value = await fetchNode(nodeID) } catch { selectedNode.value = null }
-  }
+function restoreNodeDetail() {
   const tab = typeof route.query.tab === 'string' ? route.query.tab : 'overview'
-  if (['overview', 'kernel', 'pools', 'protocols', 'credentials'].includes(tab)) detailSection.value = tab as typeof detailSection.value
-})
+  detailSection.value = ['overview', 'kernel', 'pools', 'protocols', 'credentials'].includes(tab) ? tab as typeof detailSection.value : 'overview'
+  const nodeID = Math.max(0, Number(route.query.node) || 0)
+  if (selectedNodeID.value !== nodeID) void openNodeDetail(nodeID)
+}
+onMounted(() => { void refresh(); restoreNodeDetail() })
+
 onBeforeUnmount(stopKernelPolling)
 </script>
 

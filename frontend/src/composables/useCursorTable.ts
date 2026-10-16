@@ -1,5 +1,5 @@
-import { computed, getCurrentScope, onScopeDispose, ref, shallowRef } from 'vue'
-import { createRequestGuard } from '../utils/request'
+import { computed } from 'vue'
+import { useRemoteResource } from './useRemoteResource'
 
 export interface CursorTablePage<
   T,
@@ -35,75 +35,23 @@ export function useCursorTable<
   A extends Record<string, unknown> = Record<string, unknown>,
   F extends Record<string, unknown> = Record<string, unknown>,
 >(options: CursorTableOptions<T, A, F>) {
-  const items = shallowRef<T[]>([])
-  const total = ref(0)
-  const aggregates = shallowRef<A>({} as A)
-  const facets = shallowRef<F>({} as F)
-  const nextCursor = ref<string | null>(null)
-  const previousCursor = ref<string | null>(null)
-  const initialLoading = ref(false)
-  const refreshing = ref(false)
-  const hasLoaded = ref(false)
-  const error = ref('')
-  const requests = createRequestGuard()
-  let controller: AbortController | null = null
-  let disposed = false
-  const loading = computed(() => initialLoading.value || refreshing.value)
-
-  async function load(): Promise<boolean> {
-    if (disposed) return false
-    controller?.abort()
-    controller = new AbortController()
-    const currentController = controller
-    const request = requests.begin()
-    if (hasLoaded.value) refreshing.value = true
-    else initialLoading.value = true
-    error.value = ''
-    try {
-      const page = await options.fetchPage({ signal: currentController.signal })
-      if (!requests.isCurrent(request)) return false
-      items.value = page.items
-      total.value = page.total
-      aggregates.value = (page.aggregates || {}) as A
-      facets.value = (page.facets || {}) as F
-      nextCursor.value = page.page.next_cursor
-      previousCursor.value = page.page.previous_cursor
-      hasLoaded.value = true
-      await options.onPageLoaded?.(page)
-      return requests.isCurrent(request)
-    } catch (cause) {
-      if (!requests.isCurrent(request) || currentController.signal.aborted) return false
-      error.value = typeof options.errorMessage === 'function' ? options.errorMessage(cause) : options.errorMessage
-      return false
-    } finally {
-      if (requests.isCurrent(request)) {
-        initialLoading.value = false
-        refreshing.value = false
-      }
-    }
-  }
-
-  function invalidate() {
-    controller?.abort()
-    controller = null
-    requests.invalidate()
-    initialLoading.value = false
-    refreshing.value = false
-  }
-
-  function reset() {
-    invalidate()
-    items.value = []
-    total.value = 0
-    aggregates.value = {} as A
-    facets.value = {} as F
-    hasLoaded.value = false
-    error.value = ''
-    nextCursor.value = null
-    previousCursor.value = null
-  }
-
-  if (getCurrentScope()) onScopeDispose(() => { disposed = true; invalidate() })
-
-  return { items, total, aggregates, facets, nextCursor, previousCursor, loading, initialLoading, refreshing, hasLoaded, error, load, invalidate, reset }
+  type Page = CursorTablePage<T, A, F>
+  const resource = useRemoteResource<Page>({
+    initial: () => ({ items: [], total: 0, page: { next_cursor: null, previous_cursor: null }, aggregates: {} as A, facets: {} as F }),
+    errorMessage: options.errorMessage,
+    fetch: async ({ signal }) => {
+      const page = await options.fetchPage({ signal })
+      if (signal.aborted) throw new Error('read cancelled')
+      if (options.onPageLoaded) await options.onPageLoaded(page)
+      return { ...page, aggregates: (page.aggregates || {}) as A, facets: (page.facets || {}) as F }
+    },
+  })
+  const items = computed({ get: () => resource.data.value.items, set: (items: T[]) => { resource.data.value = { ...resource.data.value, items } } })
+  const total = computed({ get: () => resource.data.value.total, set: (total: number) => { resource.data.value = { ...resource.data.value, total } } })
+  const aggregates = computed({ get: () => resource.data.value.aggregates as A, set: (aggregates: A) => { resource.data.value = { ...resource.data.value, aggregates } } })
+  const facets = computed({ get: () => resource.data.value.facets as F, set: (facets: F) => { resource.data.value = { ...resource.data.value, facets } } })
+  const nextCursor = computed({ get: () => resource.data.value.page.next_cursor, set: (next_cursor: string | null) => { resource.data.value = { ...resource.data.value, page: { ...resource.data.value.page, next_cursor } } } })
+  const previousCursor = computed({ get: () => resource.data.value.page.previous_cursor, set: (previous_cursor: string | null) => { resource.data.value = { ...resource.data.value, page: { ...resource.data.value.page, previous_cursor } } } })
+  const initialLoading = computed(() => resource.loading.value && !resource.loaded.value)
+  return { ...resource, items, total, aggregates, facets, nextCursor, previousCursor, initialLoading, hasLoaded: resource.loaded }
 }

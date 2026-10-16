@@ -124,8 +124,8 @@ func TestMySQLConsumerBoundsTransactionsAndDrainsBacklog(t *testing.T) {
 		}
 	}
 	for _, limit := range spool.limits {
-		if limit != 128 {
-			t.Fatalf("unbounded MySQL transaction: %d", limit)
+		if limit != 2000 {
+			t.Fatalf("unbounded MySQL read window: %d", limit)
 		}
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, int64(count*30), subStatusActive)

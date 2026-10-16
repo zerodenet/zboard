@@ -113,6 +113,20 @@ func (h *handlers) zeroEventHandler(w http.ResponseWriter, r *http.Request) {
 	// High-frequency buffered events are fully validated before durable append.
 	// After validation, any Append error is a storage/service failure and must
 	// stay retryable instead of being misclassified as a client-side 400.
+	if buffered, err := h.appendBufferedZeroEvent(r.Context(), node, event); buffered {
+		if err != nil {
+			writeZeroEventRequestError(w, err)
+			return
+		}
+		state.buffered = true
+		OK(w, map[string]interface{}{
+			"accepted": true,
+			"buffered": true,
+			"event_id": event.EventID,
+		})
+		return
+	}
+
 	switch event.EventType {
 	case "stats.sampled":
 		if _, err := parseZeroStatsProjection(event.Payload); err != nil {
@@ -129,19 +143,6 @@ func (h *handlers) zeroEventHandler(w http.ResponseWriter, r *http.Request) {
 			BadRequest(w, "flow event has no attributable principal_key")
 			return
 		}
-	}
-	if buffered, err := h.appendBufferedZeroEvent(r.Context(), node, event); buffered {
-		if err != nil {
-			ServerError(w, err)
-			return
-		}
-		state.buffered = true
-		OK(w, map[string]interface{}{
-			"accepted": true,
-			"buffered": true,
-			"event_id": event.EventID,
-		})
-		return
 	}
 
 	// Legacy mode intentionally keeps the old synchronous path as the migration

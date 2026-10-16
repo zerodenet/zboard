@@ -45,9 +45,9 @@ function normalizeNodeSystemActionError(cause: any): never {
   throw cause
 }
 
-export async function fetchNodeSystemActions(nodeId: number): Promise<NodeSystemActionsSnapshot> {
+export async function fetchNodeSystemActions(nodeId: number, options: { signal?: AbortSignal } = {}): Promise<NodeSystemActionsSnapshot> {
   try {
-    const response = await axios.get(`${API_BASE}/nodes/${nodeId}/system-actions`, nodeSystemActionConfig())
+    const response = await axios.get(`${API_BASE}/nodes/${nodeId}/system-actions`, { ...nodeSystemActionConfig(), signal: options.signal })
     return response.data?.data as NodeSystemActionsSnapshot
   } catch (cause: any) {
     return normalizeNodeSystemActionError(cause)

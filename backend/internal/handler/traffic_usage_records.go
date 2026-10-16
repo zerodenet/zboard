@@ -46,6 +46,10 @@ type trafficUsageBucket struct {
 // an aggregation dimension because multiple endpoints on one node with the same
 // multiplier describe the same user-facing usage slice.
 func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Request) {
+	if r != nil && r.URL != nil && r.URL.Query().Get("view") == "breakdown" {
+		h.trafficBreakdownHandler(w, r)
+		return
+	}
 	if r != nil && r.URL != nil && strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("view")), "node_series") {
 		h.trafficNodeSeriesHandler(w, r)
 		return

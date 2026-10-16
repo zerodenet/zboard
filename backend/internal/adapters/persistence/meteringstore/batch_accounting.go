@@ -19,6 +19,9 @@ type BatchAccounting struct {
 // Apply shares the event-consumer transaction, including node projections.
 // Batch caches never escape this call or survive a commit/rollback.
 func (s BatchAccounting) Apply(tx *gorm.DB, events []metering.FlowSample) ([]metering.FlowAccountingResult, error) {
+	if err := validateFlowWindowReports(tx, events); err != nil {
+		return nil, err
+	}
 	batch := newFlowBatch(tx)
 	if err := batch.loadReports(tx, events); err != nil {
 		return nil, err
@@ -102,7 +105,11 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		previousUpload = usage.UploadBytes
 		previousDownload = usage.DownloadBytes
 	}
-	charge, err := metering.CalculateCharge(metering.FlowCounters{Raw: cumulativeRaw, Upload: flow.BytesUp, Download: flow.BytesDown}, metering.FlowCounters{Raw: previousRaw, Upload: previousUpload, Download: previousDownload}, endpoint.MultiplierMilli, subscription.FlowTotal, subscription.FlowUsed)
+	cursorSequence := uint64(0)
+	if found && !legacy && metering.RuntimeScopedFlow(usage.FlowID) {
+		cursorSequence = usage.Revision
+	}
+	charge, err := metering.ChargeSample(in, metering.FlowCounters{Raw: previousRaw, Upload: previousUpload, Download: previousDownload}, cursorSequence, subscription.TrafficCalcMode, endpoint.MultiplierMilli, subscription.FlowTotal, subscription.FlowUsed)
 	if err != nil {
 		return result, err
 	}
@@ -129,7 +136,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		ProtocolMultiplierMilli: endpoint.MultiplierMilli,
 		UsedBytes:               charged,
 		At:                      recordAt,
-		Meta:                    fmt.Sprintf(`{"source_id":%q,"core_instance_id":%q,"sequence":%d,"credential_id":%q,"buffered":true}`, event.SourceID, event.CoreInstanceID, event.Sequence, credential.CredentialID),
+		Meta:                    fmt.Sprintf(`{"source_id":%q,"core_instance_id":%q,"sequence":%d,"credential_id":%q,"buffered":true,"accounting_samples":%d,"first_sequence":%d,"rounding_numerator":%d}`, event.SourceID, event.CoreInstanceID, event.Sequence, credential.CredentialID, charge.AccountingSamples, charge.FirstSequence, charge.RoundingNumerator),
 	}
 	if err := batch.appendRecord(tx, record); err != nil {
 		return result, err

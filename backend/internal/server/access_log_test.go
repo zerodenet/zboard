@@ -1,11 +1,16 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
+	"context"
+	"github.com/zerodenet/zboard/backend/internal/readtiming"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/rest"
@@ -74,4 +79,57 @@ func TestSafeAccessLogMiddlewarePreservesStatusAndResponse(t *testing.T) {
 	if !strings.Contains(logged, `"level":"error"`) {
 		t.Fatalf("5xx access log is not error-level: %s", logged)
 	}
+}
+
+func TestSafeTimingHeadersDoNotBufferStreamingAndPreserveExistingTiming(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	SafeAccessLogMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		finish := readtiming.Start(r.Context(), "current_state")
+		finish()
+		w.Header().Add("Server-Timing", "existing;dur=1")
+		_, _ = w.Write([]byte("first"))
+		w.(http.Flusher).Flush()
+		if recorder.Body.String() != "first" || !recorder.Flushed {
+			t.Fatal("stream was buffered")
+		}
+		_, _ = w.Write([]byte("second"))
+	})(recorder, httptest.NewRequest(http.MethodGet, "/?secret=hidden", nil))
+	header := strings.Join(recorder.Result().Header.Values("Server-Timing"), ", ")
+	for _, want := range []string{"current_state;dur=", "app_headers;dur=", "existing;dur=1"} {
+		if !strings.Contains(header, want) {
+			t.Fatal(header)
+		}
+	}
+	if recorder.Body.String() != "firstsecond" {
+		t.Fatal(recorder.Body.String())
+	}
+}
+
+func TestSafeResponseWriterPreservesUpgradeAndUnwrap(t *testing.T) {
+	underlying := &upgradeResponseWriter{ResponseRecorder: httptest.NewRecorder()}
+	_, recorder := readtiming.NewContext(context.Background())
+	writer := &statusResponseWriter{ResponseWriter: underlying, timings: recorder, startedAt: time.Now()}
+	if writer.Unwrap() != underlying {
+		t.Fatal("lost response controller access")
+	}
+	connection, _, err := writer.Hijack()
+	if err != nil || connection == nil || writer.statusCode != 101 {
+		t.Fatal(err)
+	}
+	connection.Close()
+	underlying.other.Close()
+	if err := writer.Push("/test", nil); err != http.ErrNotSupported {
+		t.Fatal(err)
+	}
+}
+
+type upgradeResponseWriter struct {
+	*httptest.ResponseRecorder
+	other net.Conn
+}
+
+func (w *upgradeResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	connection, other := net.Pipe()
+	w.other = other
+	return connection, bufio.NewReadWriter(bufio.NewReader(connection), bufio.NewWriter(connection)), nil
 }

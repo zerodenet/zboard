@@ -56,7 +56,7 @@ it('keeps long queue errors out of the table and opens the complete error on dem
 it('shows the registered catalog even if the summary request fails', async () => {
  const w = await render(new Error('summary offline'))
  expect(w.get('section[aria-label="已注册任务"]').text()).toContain('订阅到期处理')
- expect(w.text()).toContain('运行状态未更新')
+ expect(w.text()).toContain('执行状态未更新')
  expect(api.registered).toHaveBeenCalledTimes(1)
 })
 it('does not present an unavailable registry as zero registered tasks', async () => {
@@ -77,7 +77,7 @@ it('loads the overview when leaving the default queue focus', async () => {
  const w = await render(snapshot, '/?queue=admin_tasks')
  expect(api.jobs).not.toHaveBeenCalled()
  await w.vm.$router.push('/'); await flushPromises()
- expect(api.jobs).toHaveBeenCalledTimes(1)
+ expect(api.jobs).toHaveBeenCalledTimes(4)
  expect(w.text()).toContain('待处理队列')
 })
 it('shows a queue read failure without calling the queue empty and retries that queue', async () => {
@@ -94,14 +94,16 @@ it('shows a queue read failure without calling the queue empty and retries that 
 it('retains the last snapshot on refresh failure and cancels requests when leaving', async () => {
  const w = await render(); api.jobs.mockRejectedValue(new Error('offline'))
  await w.get('button[aria-label="刷新后台任务"]').trigger('click'); await flushPromises()
- expect(w.text()).toContain('运行状态未更新'); expect(w.text()).toContain('订阅到期处理')
+ expect(w.text()).toContain('执行状态未更新'); expect(w.text()).toContain('订阅到期处理')
  expect(w.text()).toContain('重试')
+ api.jobs.mockReturnValue(new Promise(() => {}))
+ await w.get('button[aria-label="刷新后台任务"]').trigger('click'); await flushPromises()
  const signal = api.jobs.mock.calls.at(-1)![0] as AbortSignal; w.unmount(); wrapper = undefined; expect(signal.aborted).toBe(true)
 })
 
 it('keeps usable sections visible when one runtime partition fails', async () => {
  const w = await render({ ...snapshot, jobs: [], execution_queue: undefined, issues: [{ section: 'execution', message: '任务执行状态读取失败' }] })
- expect(w.text()).toContain('1 项状态不可用')
+ expect(w.text()).toContain('运行状态：任务执行状态读取失败')
  expect(w.text()).toContain('任务执行状态读取失败')
  expect(w.text()).toContain('执行统计未取得')
  expect(w.get('section[aria-label="已注册任务"]').text()).toContain('订阅到期处理')
@@ -152,5 +154,34 @@ it('retries a delayed node publication and refreshes its persisted queue state',
   await w.findAll('button').find(button => button.text() === '立即重试')!.trigger('click'); await flushPromises()
   expect(api.retry).toHaveBeenCalledWith(42)
   expect(api.queue).toHaveBeenCalledTimes(3)
-  expect(api.jobs).toHaveBeenCalledTimes(1)
+  expect(api.jobs).toHaveBeenCalledTimes(4)
+})
+
+it('shows queue details before a stalled runtime diagnostics response and polls them independently', async () => {
+ vi.useFakeTimers()
+ const pending = new Promise(() => {})
+ const w = await render(pending)
+ expect(w.get('section[aria-label="队列明细"]').text()).toContain('此队列暂无待处理任务')
+ expect(w.text()).toContain('运行状态：加载中')
+ await vi.advanceTimersByTimeAsync(15_001)
+ expect(api.queue.mock.calls.length).toBeGreaterThanOrEqual(2)
+})
+
+it('renders execution and queue counts while diagnostics and plugin reads never settle', async () => {
+ const w = await render()
+ api.jobs.mockImplementation((_signal, view) => ['runtime', 'plugins'].includes(view) ? new Promise(() => {}) : Promise.resolve(snapshot))
+ await w.get('button[aria-label="刷新后台任务"]').trigger('click'); await flushPromises()
+ expect(w.get('section[aria-label="已注册任务"]').text()).toContain('等待下轮')
+ expect(w.get('section[aria-label="业务待处理概览"]').text()).toContain('运营任务')
+ expect(w.get('section[aria-label="业务待处理概览"]').text()).toContain('7')
+ expect(api.jobs.mock.calls.slice(-4).map(call => call[1]).sort()).toEqual(['execution', 'plugins', 'queues', 'runtime'])
+})
+it('retains previous queue counts and marks only that partition stale after a failed read', async () => {
+ const w = await render()
+ api.jobs.mockImplementation((_signal, view) => view === 'queues' ? Promise.resolve({ issues: [{ section: 'queues', message: 'queue database unavailable' }] }) : Promise.resolve(snapshot))
+ await w.get('button[aria-label="刷新后台任务"]').trigger('click'); await flushPromises()
+ expect(w.text()).toContain('更新失败，显示上次结果')
+ expect(w.text()).toContain('queue database unavailable')
+ expect(w.get('section[aria-label="业务待处理概览"]').text()).toContain('7')
+ expect(w.get('section[aria-label="已注册任务"]').text()).toContain('等待下轮')
 })

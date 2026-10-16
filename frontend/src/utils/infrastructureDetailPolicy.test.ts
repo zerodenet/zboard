@@ -78,7 +78,7 @@ describe('infrastructure detail density policy', () => {
     const nodes = readFileSync(join(views, 'Nodes.vue'), 'utf8')
 
     expect(nodes).toContain('v-model="selectedReleaseVersion"')
-    expect(nodes).toContain('fetchZeroReleases()')
+    expect(nodes).toContain('fetchZeroReleases({ signal })')
     expect(nodes).toContain('const latestPublishedRelease = computed(() => zeroReleases.value[0] || null)')
     expect(nodes).toContain('selectedReleaseVersion.value = zeroReleases.value.find(releaseCompatible)?.version ||')
     expect(nodes).not.toContain('没有可安装的稳定版本')
@@ -93,6 +93,6 @@ describe('infrastructure detail density policy', () => {
     expect(nodes).toContain('<template #footer><UiButton type="button" @click="closeSecretModal">完成</UiButton></template>')
     expect(nodes).toContain('node_credential_prefix: result.api_key_prefix')
     expect(nodes).toContain('traffic_secret_prefix: result.secret_prefix')
-    expect(nodes).toContain('selectedNode.value = await fetchNode(nodeID)')
+    expect(nodes).toContain('await detailResource.load()')
   })
 })

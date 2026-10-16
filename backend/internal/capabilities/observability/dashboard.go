@@ -89,13 +89,15 @@ type DashboardTrendPoint struct {
 }
 
 type DashboardSnapshot struct {
-	Business       DashboardBusiness
-	Service        DashboardService
-	Subscriptions  DashboardSubscriptionHealth
-	Attention      DashboardAttention
-	Infrastructure DashboardInfrastructure
-	Coverage       DashboardCoverage
-	Trend          []DashboardTrendPoint
+	Business           DashboardBusiness
+	Service            DashboardService
+	Subscriptions      DashboardSubscriptionHealth
+	Attention          DashboardAttention
+	Infrastructure     DashboardInfrastructure
+	Coverage           DashboardCoverage
+	Trend              []DashboardTrendPoint
+	TrendCurrency      string
+	TrendMixedCurrency bool
 }
 
 type DashboardTotals struct {
@@ -166,4 +168,21 @@ func (s Dashboard) Totals(ctx context.Context, now time.Time) (DashboardTotals, 
 		return DashboardTotals{}, ErrDashboardInvalid
 	}
 	return s.Repository.LoadDashboardTotals(ctx, now.UTC())
+}
+
+// DashboardViewRepository separates authoritative current state from historical
+// statistics and charts. Legacy complete reads remain available through Load.
+type DashboardViewRepository interface {
+	LoadDashboardView(context.Context, DashboardPeriod, time.Time, []DashboardTrendBucket, string) (DashboardSnapshot, error)
+}
+
+func (s Dashboard) View(ctx context.Context, period DashboardPeriod, now time.Time, buckets []DashboardTrendBucket, view string) (DashboardSnapshot, error) {
+	repository, ok := s.Repository.(DashboardViewRepository)
+	if !ok || now.IsZero() || period.From.IsZero() || period.To.Before(period.From) || period.PreviousFrom.IsZero() || period.PreviousTo.Before(period.PreviousFrom) {
+		return DashboardSnapshot{}, ErrDashboardInvalid
+	}
+	if view != "current" && view != "statistics" && view != "trend" {
+		return DashboardSnapshot{}, ErrDashboardInvalid
+	}
+	return repository.LoadDashboardView(ctx, period, now.UTC(), buckets, view)
 }

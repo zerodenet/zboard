@@ -1870,12 +1870,33 @@ func TestDashboardHTTPUsesObservabilityReadModel(t *testing.T) {
 		}
 		return true
 	})
-	calendar, err := os.ReadFile("../internal/handler/system_calendar_handlers.go")
+	calendar, err := parser.ParseFile(token.NewFileSet(), "../internal/handler/system_calendar_handlers.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(calendar), "loadDashboardOverview(r.Context(), period, now, location)") {
-		t.Error("system-calendar dashboard bypasses the shared observability read model")
+	uses := map[string]bool{}
+	for _, declaration := range calendar.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Name.Name != "DashboardOverviewSystemCalendarHandler" {
+			continue
+		}
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			method, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if receiver, ok := method.X.(*ast.Ident); ok && receiver.Name == "h" {
+				uses[method.Sel.Name] = true
+			}
+			return true
+		})
+	}
+	if !uses["loadDashboardOverview"] || !uses["loadDashboardView"] {
+		t.Error("system-calendar dashboard bypasses the shared complete or focused observability read model")
 	}
 	handlers, err := parser.ParseFile(token.NewFileSet(), "../internal/handler/handlers.go", nil, 0)
 	if err != nil {

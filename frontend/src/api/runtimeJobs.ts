@@ -19,7 +19,12 @@ export interface RuntimeJobs {
   plugin_host: { state: string; epoch: number; lease_until: string | null; renewal_failures: number; interval_seconds: number } | null
   runtime: { event_spool: { pending_events: number; pending_bytes: number; oldest_event_at?: string; pressure_level: string } | null }
 }
-export async function fetchRuntimeJobs(signal?: AbortSignal): Promise<RuntimeJobs> { return (await api.get('/admin/runtime-jobs', { signal })).data.data }
+export type RuntimeJobsView = 'execution' | 'queues' | 'runtime' | 'plugins'
+export function fetchRuntimeJobs(signal?: AbortSignal): Promise<RuntimeJobs>
+export function fetchRuntimeJobs(signal: AbortSignal | undefined, view: RuntimeJobsView): Promise<Partial<RuntimeJobs>>
+export async function fetchRuntimeJobs(signal?: AbortSignal, view?: RuntimeJobsView): Promise<Partial<RuntimeJobs>> {
+ return (await api.get('/admin/runtime-jobs', { signal, params: view ? { view } : undefined })).data.data
+}
 export async function fetchRegisteredJobs(signal?: AbortSignal): Promise<RegisteredJob[]> { return (await api.get('/admin/runtime-jobs/registered', { signal })).data.data }
 export async function fetchRuntimeQueue(name: string, offset: number, signal?: AbortSignal): Promise<QueuePage> { return (await api.get('/admin/runtime-jobs/queue', { params: { name, offset, limit: 25 }, signal })).data.data }
 export async function retryNodePublication(nodeId: number): Promise<void> { await api.post(`/admin/runtime-jobs/queue/node_publish/${nodeId}/retry`) }

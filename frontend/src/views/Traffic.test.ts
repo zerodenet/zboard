@@ -16,7 +16,7 @@ vi.mock('../api/client', () => ({
   fetchTrafficReconciliationPage: vi.fn(), fetchTrafficSummary: vi.fn(),
   fetchAccountSubscriptionsPage: vi.fn(),
 }))
-vi.mock('../api/trafficUsage', () => ({ fetchTrafficUsagePage: vi.fn(), fetchTrafficUsageStatistics: vi.fn(), fetchTrafficNodeSeries: vi.fn() }))
+vi.mock('../api/trafficUsage', () => ({ fetchTrafficUsagePage: vi.fn(), fetchTrafficUsageStatistics: vi.fn(), fetchTrafficNodeSeries: vi.fn(), fetchTrafficBreakdown: vi.fn() }))
 vi.mock('../api/readModels', async importOriginal => ({
   ...await importOriginal<typeof import('../api/readModels')>(),
   fetchAdminEntityReferences: vi.fn(), fetchTrafficTrends: vi.fn(),
@@ -44,7 +44,7 @@ function references(id: number) {
 describe.each([false, true])('traffic independent reads (admin=%s)', admin => {
   let wrapper: VueWrapper | undefined, router: Router
   const path = admin ? '/admin/traffic' : '/account/traffic'
-  const range = '?from=2026-09-01&to=2026-09-02'
+  const range = '?from=2026-09-01&to=2026-09-02' + (admin ? '&section=details' : '')
   beforeEach(() => {
     vi.resetAllMocks()
     vi.mocked(fetchTrafficSummary).mockResolvedValue({})
@@ -122,7 +122,7 @@ describe.each([false, true])('traffic independent reads (admin=%s)', admin => {
   })
   it('coarsens long node-chart windows without changing the record table bucket', async () => {
     await open()
-    await router.push(path + '?from=2026-01-01&to=2026-02-01&bucket=minute')
+    await router.push(path + '?from=2026-01-01&to=2026-02-01&bucket=minute' + (admin ? '&section=details' : ''))
     await flushPromises()
     expect(fetchTrafficNodeSeries).toHaveBeenLastCalledWith(expect.objectContaining({ bucket: 'day' }), admin, expect.anything())
     expect(fetchTrafficUsagePage).toHaveBeenLastCalledWith(expect.objectContaining({ bucket: 'minute' }), admin, expect.anything())

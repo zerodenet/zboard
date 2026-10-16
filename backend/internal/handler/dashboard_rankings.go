@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/zerodenet/zboard/backend/internal/readtiming"
 	"net/http"
 	"time"
 )
@@ -19,7 +20,9 @@ func (h *handlers) DashboardTrafficRankingsHandler(w http.ResponseWriter, r *htt
 		BadRequest(w, "dimension must be nodes or users")
 		return
 	}
+	finish := readtiming.Start(r.Context(), "dashboard_rankings")
 	response, err := h.services.Dashboard.Rankings(r.Context(), period, dimension)
+	finish()
 	if err != nil {
 		ServerError(w, err)
 		return

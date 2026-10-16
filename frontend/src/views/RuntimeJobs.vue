@@ -3,7 +3,12 @@
     <PageHeader :title="queueFocused ? `${queueName}队列` : '后台任务'" eyebrow="Operations">
       <template #actions><RouterLink class="task-link" :to="queueFocused ? '/admin/runtime-jobs' : '/admin/tasks'">{{ queueFocused ? '全部后台任务' : '运营任务' }}</RouterLink><PageRefreshButton label="刷新后台任务" :loading="loading || (queueFocused && queueLoading)" @click="refresh" /></template>
     </PageHeader>
-    <div v-if="error && !queueFocused" class="runtime-error" role="alert"><strong>运行状态未更新</strong><span>{{ error }}</span><UiButton variant="ghost" size="sm" :loading="loading" @click="refresh">重试</UiButton></div>
+    <RemoteReadStatus v-if="!queueFocused" label="运行状态" :phase="runtimeResource.phase.value" :error="error" :last-success-at="runtimeResource.lastSuccessAt.value" @retry="runtimeResource.load()" />
+    <template v-if="!queueFocused">
+      <RemoteReadStatus label="业务队列" :phase="summariesResource.phase.value" :error="summariesResource.error.value" :last-success-at="summariesResource.lastSuccessAt.value" @retry="summariesResource.load()" />
+      <RemoteReadStatus label="事件与进程诊断" :phase="diagnosticsResource.phase.value" :error="diagnosticsResource.error.value" :last-success-at="diagnosticsResource.lastSuccessAt.value" @retry="diagnosticsResource.load()" />
+      <RemoteReadStatus label="插件状态" :phase="pluginsResource.phase.value" :error="pluginsResource.error.value" :last-success-at="pluginsResource.lastSuccessAt.value" @retry="pluginsResource.load()" />
+    </template>
     <section v-if="!queueFocused" class="registered-section" aria-label="已注册任务">
       <div class="runtime-heading"><h2>已注册任务</h2><span v-if="registeredJobs">本实例 · {{ registeredJobs.length }} 个</span></div>
       <p v-if="registryLoading && !registeredJobs" role="status">正在读取任务名录…</p>
@@ -20,7 +25,7 @@
       </div>
     </section>
     <p v-if="!data && loading && !queueFocused" role="status">正在读取运行状态…</p>
-    <template v-if="data || queueFocused">
+    <template v-if="data || queueFocused || queuePage || queueLoading || queueError">
       <template v-if="data && !queueFocused">
       <div class="runtime-meta"><span>更新 <TimeBadge :value="data.as_of" /></span><div v-if="data.issues?.length" class="runtime-issue"><strong>{{ data.issues.length }} 项状态不可用</strong><details><summary>原因</summary><p v-for="issue in data.issues" :key="issue.section">{{ issueText(issue) }}</p></details><UiButton variant="ghost" size="sm" :loading="loading" @click="refresh">重试</UiButton></div></div>
       <section v-if="data.execution_queue" class="execution-strip" aria-label="全局执行队列"><strong>执行队列</strong><span>等待 {{ data.execution_queue.pending }}</span><span>执行中 {{ data.execution_queue.running }}</span><span>延后 {{ data.execution_queue.delayed }}</span><span v-if="data.execution_queue.unknown">待核验 {{ data.execution_queue.unknown }}</span><span v-if="data.execution_queue.maintenance_reserved">维护中</span></section>
@@ -34,7 +39,7 @@
       </section>
       <details class="runtime-diagnostics"><summary>执行明细与插件状态</summary>
       <section class="runtime-section">
-        <div class="runtime-heading"><h2>任务执行情况</h2><span>共享执行名额 {{ data.execution_concurrency || 4 }} 个 · 外部操作最多占用 {{ data.external_execution_concurrency || 3 }} 个</span></div>
+        <div class="runtime-heading"><h2>任务执行情况</h2><span>共享执行名额 {{ data.execution_concurrency ?? '—' }} 个 · 外部操作最多占用 {{ data.external_execution_concurrency ?? '—' }} 个</span></div>
         <DataTable caption="后台任务执行情况" :row-count="data.jobs.length" :min-width="1000">
           <thead><tr><th>任务</th><th>执行周期</th><th>运行状态</th><th>最近结果</th><th>最近完成 / 耗时</th><th>下次扫描</th><th>执行 / 失败</th></tr></thead>
           <tbody><tr v-for="job in data.jobs" :key="job.id"><td><strong>{{ job.name }}</strong><small v-if="job.last_error" class="job-error">{{ job.last_error }}</small></td><td>{{ interval(job) }}<small v-if="job.timezone">{{ job.timezone }} · {{ job.misfire_policy === 'skip' ? '错过跳过' : '错过合并一次' }}</small></td><td><StatusBadge :tone="tone(job.state)">{{ state(job.state) }}<template v-if="job.running"> · {{ job.running }}</template></StatusBadge></td><td><StatusBadge :tone="tone(job.last_result)">{{ state(job.last_result) }}</StatusBadge></td><td><TimeBadge :value="job.last_finished_at" /><small v-if="job.last_finished_at">{{ duration(job.last_duration_ms) }}</small></td><td><TimeBadge v-if="job.next_scan_at" :value="job.next_scan_at" /><span v-else>{{ job.state === 'running' ? '已保留下次计划' : '等待事件或扫描' }}</span></td><td>{{ job.runs }} / {{ job.failures }}<small v-if="job.missed_runs">跳过 {{ job.missed_runs }}</small></td></tr></tbody>
@@ -43,7 +48,7 @@
         <p v-else-if="!data.jobs.length">暂无执行记录。</p>
       </section>
       <section class="runtime-section" aria-label="插件任务">
-        <div class="runtime-heading"><h2>插件任务</h2><span>来自插件注册 · 每插件串行，与内置任务共用 {{ data.execution_concurrency || data.plugin_task_concurrency || 4 }} 个执行名额</span></div>
+        <div class="runtime-heading"><h2>插件任务</h2><span>来自插件注册 · 每插件串行，与内置任务共用 {{ data.execution_concurrency ?? '—' }} 个执行名额</span></div>
         <p v-if="sectionIssue('plugin_tasks')" class="detail-note">插件任务状态暂不可用；插件宿主租约仍按已取得的状态展示。</p>
         <p v-else-if="!data.plugin_host" class="detail-note">插件宿主不可用，暂时无法读取注册任务。</p>
         <template v-else-if="pluginTasks.length">
@@ -58,7 +63,7 @@
       </section>
       </details>
       </template>
-      <section v-if="selected && (queueFocused || data?.queues?.length)" class="runtime-section" aria-label="队列明细">
+      <section v-if="selected && (queueFocused || data?.queues?.length || queuePage || queueLoading || queueError)" class="runtime-section" aria-label="队列明细">
         <div v-if="!queueFocused" class="runtime-heading"><h2>{{ queueName }}队列</h2></div>
         <div v-else-if="queuePage" class="focused-summary"><span>{{ queuePage.total }} 条队列记录</span><span>每 15 秒刷新</span></div>
         <PageAlert v-if="queueError || retryError" tone="danger" title="队列操作未完成">{{ retryError || queueError }}<template #actions><UiButton variant="secondary" size="sm" :loading="queueLoading" @click="reloadQueue">重新读取队列</UiButton></template></PageAlert>
@@ -71,7 +76,7 @@
       </section>
       <template v-if="data && !queueFocused">
       <details class="runtime-diagnostics" @toggle="setHistoryOpen"><summary>执行历史与插件通讯</summary>
-      <RuntimeJobHistory v-if="historyOpen" :as-of="data.as_of" :names="Object.fromEntries([...data.jobs, ...pluginTasks].map(job => [job.id, job.name]))" @resolved="refresh" />
+      <RuntimeJobHistory v-if="historyOpen && data.as_of" :as-of="data.as_of" :names="Object.fromEntries([...data.jobs, ...pluginTasks].map(job => [job.id, job.name]))" @resolved="refresh" />
       <section class="runtime-section plugin-status"><div><h2>插件通讯</h2><p>宿主每 10 秒续约与检查；短暂数据库故障会在有效租约内重试。</p></div><template v-if="data.plugin_host"><StatusBadge :tone="data.plugin_host.state === 'active' ? 'success' : 'warning'">{{ data.plugin_host.state === 'active' ? '持有运行租约' : '等待接管 / 恢复' }}</StatusBadge><span>租约到期 <TimeBadge :value="data.plugin_host.lease_until" /></span><span>累计续约失败 {{ data.plugin_host.renewal_failures }}</span></template><span v-else>插件宿主不可用</span><RouterLink to="/admin/plugins">查看各插件状态 →</RouterLink><p class="detail-note">宿主租约表示执行权有效，具体插件的配置、进程及业务连通性请在插件管理中检查。</p></section>
       </details>
       </template>
@@ -80,6 +85,8 @@
   </section>
 </template>
 <script setup lang="ts">
+import { useRemoteResource } from '../composables/useRemoteResource'
+import RemoteReadStatus from '../components/RemoteReadStatus.vue'
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { fetchRegisteredJobs, fetchRuntimeJobs, fetchRuntimeQueue, retryNodePublication, type RuntimeJobs, type RuntimeJob, type QueuePage, type RegisteredJob } from '../api/runtimeJobs'
@@ -94,9 +101,43 @@ import TimeBadge from '../components/TimeBadge.vue'
 import TablePager from '../components/TablePager.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import OutputBlock from '../components/OutputBlock.vue'
-const data = ref<RuntimeJobs | null>(null), queuePage = ref<QueuePage | null>(null)
-const loading = ref(false), queueLoading = ref(false), error = ref(''), queueError = ref(''), retryError = ref(''), retryingID = ref(0)
-const registeredJobs = ref<RegisteredJob[] | null>(null), registryLoading = ref(false), registryError = ref('')
+function runtimeView(view: 'execution' | 'queues' | 'runtime' | 'plugins', message: string) {
+ return useRemoteResource<Partial<RuntimeJobs> | null>({ initial: () => null,
+  fetch: async ({ signal }) => {
+   const result = await fetchRuntimeJobs(signal, view)
+   const sections = view === 'queues' ? ['queues', 'registration_messages'] : view === 'plugins' ? ['plugin_tasks'] : [view]
+   const issues = result.issues?.filter(issue => sections.includes(issue.section)) || []
+   if (issues.length) throw { response: { status: 503, data: { message: issues.map(issue => issue.message).join('；') } } }
+   return { ...result, issues }
+  }, errorMessage: message, timeoutMs: 8_000 })
+}
+const runtimeResource = runtimeView('execution', '执行状态未更新，请稍后重试。')
+const summariesResource = runtimeView('queues', '业务队列概览未更新，请稍后重试。')
+const diagnosticsResource = runtimeView('runtime', '事件队列与进程诊断未更新，请稍后重试。')
+const pluginsResource = runtimeView('plugins', '插件状态未更新，请稍后重试。')
+const runtimeViews = [runtimeResource, summariesResource, diagnosticsResource, pluginsResource]
+const data = computed(() => {
+ if (!runtimeViews.some(resource => resource.data.value)) return null
+ const execution = runtimeResource.data.value, queues = summariesResource.data.value
+ const diagnostics = diagnosticsResource.data.value, plugins = pluginsResource.data.value
+ return { ...execution, as_of: execution?.as_of, started_at: execution?.started_at || '',
+  jobs: execution?.jobs || [], queues: queues?.queues || [], runtime: diagnostics?.runtime || { event_spool: null },
+  plugin_host: plugins?.plugin_host, plugin_tasks: plugins?.plugin_tasks,
+  issues: runtimeViews.flatMap(resource => resource.data.value?.issues || []),
+  read_duration_ms: Object.assign({}, ...runtimeViews.map(resource => resource.data.value?.read_duration_ms)),
+ }
+})
+const queueResource = useRemoteResource<QueuePage | null>({ initial: () => null, fetch: ({ signal }) => fetchRuntimeQueue(selected.value, offset.value, signal), errorMessage: '读取失败，请稍后重试。' })
+const registryResource = useRemoteResource<RegisteredJob[] | null>({ initial: () => null, fetch: async ({ signal }) => {
+ try { return await fetchRegisteredJobs(signal) } catch (cause: any) {
+  if (cause?.response?.status === 404) throw { response: { status: 404, data: { message: '当前后端尚未提供任务名录接口。' } } }
+  throw cause
+ }
+}, errorMessage: '任务名录读取失败。' })
+const { loading, error } = runtimeResource
+const { data: queuePage, loading: queueLoading, error: queueError } = queueResource
+const { data: registeredJobs, loading: registryLoading, error: registryError } = registryResource
+const retryError = ref(''), retryingID = ref(0)
 const queueFailure = ref<{ title: string; detail: string } | null>(null)
 const route = useRoute()
 const router = useRouter()
@@ -111,7 +152,7 @@ const pluginTasks = computed(() => data.value?.plugin_tasks || [])
 const statusByID = computed(() => new Map([...(data.value?.jobs || []), ...pluginTasks.value].map(job => [job.id, job])))
 const historyOpen = ref(false)
 const pluginTaskPage = computed(() => pluginTasks.value.slice(Math.min(pluginOffset.value, Math.max(0, Math.ceil(pluginTasks.value.length / 25) - 1) * 25), pluginOffset.value + 25))
-let controller: AbortController | undefined, queueController: AbortController | undefined, registryController: AbortController | undefined, timer: ReturnType<typeof setInterval> | undefined
+let timer: ReturnType<typeof setInterval> | undefined
 const labels: Record<string, string> = { idle: '等待下轮', running: '执行中', paused: '维护暂停', stopped: '已停止', succeeded: '成功', failed: '失败', never: '尚未执行', pending: '等待执行', delayed: '延后执行', stale: '租约失效', draft: '未入队', queued: '到期等待', unknown: '结果待核验', yielded: '继续处理', disabled: '已禁用', unavailable: '不可执行', interrupted: '已中断', canceled: '已取消' }
 function state(value: string) { return labels[value] || value }
 function tone(value: string): 'neutral' | 'success' | 'danger' | 'warning' | 'info' { return value === 'succeeded' ? 'success' : value === 'failed' ? 'danger' : ['unknown', 'stale', 'paused', 'stopped', 'interrupted', 'unavailable'].includes(value) ? 'warning' : value === 'running' ? 'info' : 'neutral' }
@@ -119,56 +160,38 @@ function duration(ms: number) { return ms < 1000 ? `${ms} 毫秒` : `${(ms / 100
 function interval(job: RuntimeJob) { const n = job.interval_seconds; const value = n >= 3600 ? `${n / 3600} 小时` : n >= 60 ? `${n / 60} 分钟` : `${n} 秒`; return n <= 0 ? (job.kind === 'on_demand' ? '按需执行' : '事件驱动') : job.kind === 'queue' ? `唤醒 / ${value}轮询` : `每 ${value}` }
 function registeredCadence(seconds: number) { return seconds <= 0 ? '按需' : seconds >= 3600 ? `每 ${seconds / 3600} 小时` : seconds >= 60 ? `每 ${seconds / 60} 分钟` : `每 ${seconds} 秒` }
 function registeredOwner(owner: string) { return owner === 'system' ? '内置' : pluginTasks.value.find(task => `plugin:${task.plugin_id}` === owner)?.plugin_name || owner.replace(/^plugin:/, '插件 · ') }
-function registeredStatus(id: string) { if (error.value || sectionIssue(id.startsWith('plugin:') ? 'plugin_tasks' : 'execution')) return undefined; return statusByID.value.get(id) }
+function registeredStatus(id: string) { if (sectionIssue(id.startsWith('plugin:') ? 'plugin_tasks' : 'execution')) return undefined; return statusByID.value.get(id) }
 function setHistoryOpen(event: Event) { historyOpen.value = (event.target as HTMLDetailsElement).open }
 function bytes(n: number) { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB` }
-function sectionIssue(section: string) { return data.value?.issues?.some(issue => issue.section === section) || false }
+function sectionIssue(section: string) {
+ const resource = section === 'execution' ? runtimeResource : section === 'runtime' ? diagnosticsResource : section === 'plugin_tasks' ? pluginsResource : summariesResource
+ return !resource.data.value || !!resource.error.value || data.value?.issues?.some(issue => issue.section === section)
+}
 function issueText(issue: { section: string; message: string }) { const ms = data.value?.read_duration_ms?.[issue.section]; return typeof ms === 'number' && Number.isFinite(ms) ? `${issue.message}（读取 ${ms} 毫秒）` : issue.message }
 function requestError(cause: any, fallback: string) { return cause?.response?.data?.message || fallback }
-async function refreshRegisteredJobs() {
-  if (registryLoading.value) return
-  const current = new AbortController(); registryController = current; registryLoading.value = true
-  try { const result = await fetchRegisteredJobs(current.signal); if (!current.signal.aborted) { registeredJobs.value = result; registryError.value = '' } }
-  catch (cause: any) { if (!current.signal.aborted) { registeredJobs.value = null; registryError.value = cause?.response?.status === 404 ? '当前后端尚未提供任务名录接口。' : requestError(cause, '任务名录读取失败。') } }
-  finally { if (registryController === current) registryLoading.value = false }
-}
+async function refreshRegisteredJobs() { if (!registryLoading.value) await registryResource.load() }
 async function refreshQueue() {
-  if (!selected.value) { queuePage.value = null; queueError.value = ''; return }
-  queueController?.abort(); const current = new AbortController(); queueController = current; queueLoading.value = true
-  try { const result = await fetchRuntimeQueue(selected.value, offset.value, current.signal); if (!current.signal.aborted) { queuePage.value = result; queueError.value = '' } }
-  catch (cause: any) { if (!current.signal.aborted) { queuePage.value = null; queueError.value = requestError(cause, '读取失败，请稍后重试。') } }
-  finally { if (queueController === current) queueLoading.value = false }
+ if (!selected.value) { queueResource.reset(); return }
+ await queueResource.load()
 }
 async function refresh() {
-  if (queueFocused.value) { await refreshQueue(); return }
-  if (loading.value) return
-  void refreshRegisteredJobs()
-  loading.value = true; const current = new AbortController(); controller = current
-  let loaded = false
-  try {
-    const result = await fetchRuntimeJobs(current.signal)
-    if (!current.signal.aborted) {
-      result.jobs ||= []
-      result.queues ||= []
-      data.value = result; error.value = ''; loaded = true
-      if (!isKnownQueue(selected.value) && !result.queues.some(queue => queue.id === selected.value)) {
-        selected.value = result.queues[0]?.id || ''; offset.value = 0; queuePage.value = null; queueError.value = ''
-      }
-    }
-  }
-  catch (cause: any) { if (!current.signal.aborted) error.value = requestError(cause, '暂时无法读取后台执行情况。') }
-  finally { if (!current.signal.aborted) loading.value = false }
-  if (!current.signal.aborted && loaded && !queueFocused.value) await refreshQueue()
+ if (queueFocused.value) { await refreshQueue(); return }
+ // Queue details and the registered catalogue cannot wait for diagnostics.
+ void refreshRegisteredJobs()
+ if (!queueLoading.value) void refreshQueue()
+ await Promise.all(runtimeViews.filter(resource => !resource.loading.value).map(resource => resource.load()))
 }
-function selectQueue(id: string) { if (id === selected.value) return; selected.value = id; offset.value = 0; queuePage.value = null; queueFailure.value = null; queueError.value = ''; void router.replace({ query: { ...route.query, queue: id } }); void refreshQueue() }
+
+function selectQueue(id: string) { if (id === selected.value) return; selected.value = id; offset.value = 0; queueResource.reset(); queueFailure.value = null; void router.replace({ query: { ...route.query, queue: id } }); void refreshQueue() }
 watch(() => route.query.queue, (queue, previousQueue) => {
+  if (isKnownQueue(queue)) { runtimeViews.forEach(resource => resource.invalidate()); registryResource.invalidate() }
   if (isKnownQueue(queue) && queue !== selected.value) selectQueue(queue)
   else if (isKnownQueue(queue) && !isKnownQueue(previousQueue) && !queueLoading.value && !queuePage.value) void refreshQueue()
   else if (!isKnownQueue(queue) && isKnownQueue(previousQueue)) {
-    selected.value = 'admin_tasks'; offset.value = 0; queuePage.value = null; queueError.value = ''; void refresh()
+    selected.value = 'admin_tasks'; offset.value = 0; queueResource.reset(); void refresh()
   }
 })
-function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; void refreshQueue() }
+function changePage(value: { offset: number; limit: number }) { queueResource.reset(); offset.value = value.offset; void refreshQueue() }
 function reloadQueue() { retryError.value = ''; void refreshQueue() }
 async function retryPublication(id: number) {
   if (retryingID.value) return
@@ -177,8 +200,17 @@ async function retryPublication(id: number) {
   catch (cause: any) { retryError.value = requestError(cause, '重试请求未保存，请刷新队列后再试。') }
   finally { retryingID.value = 0 }
 }
-onMounted(() => { void refresh(); timer = setInterval(() => { if (!document.hidden && !queueLoading.value) void refresh() }, 15000) })
-onBeforeUnmount(() => { clearInterval(timer); controller?.abort(); queueController?.abort(); registryController?.abort() })
+onMounted(() => {
+ void refresh()
+ timer = setInterval(() => {
+  if (document.hidden) return
+  if (!queueLoading.value && queueResource.canAutoRefresh.value) void refreshQueue()
+  if (queueFocused.value) return
+  for (const resource of runtimeViews) if (!resource.loading.value && resource.canAutoRefresh.value) void resource.load()
+  if (!registryLoading.value && registryResource.canAutoRefresh.value) void refreshRegisteredJobs()
+ }, 15000)
+})
+onBeforeUnmount(() => { clearInterval(timer); runtimeViews.forEach(resource => resource.invalidate()); queueResource.invalidate(); registryResource.invalidate() })
 </script>
 <style scoped>
 .global-queue .queue-counts{flex-wrap:wrap;gap:1.5rem 3rem}.global-queue h2{font-size:1.05rem;margin:0}.runtime-jobs{display:grid;gap:1.5rem}.snapshot-note,.runtime-heading{display:flex;flex-wrap:wrap;gap:.75rem;justify-content:space-between;align-items:center}.snapshot-note,.runtime-heading>span,.detail-note,.plugin-status p{color:var(--muted);font-size:.85rem}.queue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}.queue-card{display:flex;flex-direction:column;gap:1.25rem;text-align:left;padding:1.25rem;border:1px solid var(--line);border-radius:var(--radius-lg,12px);background:var(--surface);color:var(--text);font:inherit}.queue-card:is(button){cursor:pointer}.queue-card.selected{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}.queue-title{display:flex;justify-content:space-between;gap:.5rem;font-weight:600}.queue-title>span,.queue-foot{font-size:.78rem;color:var(--muted)}.queue-counts{display:flex;gap:1.5rem}.queue-counts>span{display:grid;gap:.3rem;font-size:.8rem}.queue-counts strong{font-size:1.6rem;font-weight:650}.runtime-section{display:grid;gap:1rem;min-width:0}.runtime-section h2{margin:0;font-size:1.05rem}.runtime-section td small{display:block;color:var(--muted);margin-top:.35rem}.runtime-section .job-error,.queue-error{max-width:26rem;white-space:normal;overflow-wrap:anywhere}.runtime-section .job-error{color:var(--danger)}.detail-note{line-height:1.7;margin:0}.plugin-status{padding:1.25rem;border:1px solid var(--line);border-radius:12px;grid-template-columns:repeat(2,minmax(0,1fr));align-items:center}.plugin-status .detail-note{grid-column:1/-1}.plugin-queue-summary{display:flex;flex-wrap:wrap;gap:1.25rem;color:var(--muted);font-size:.85rem}.plugin-queue-summary strong{color:var(--text)}.task-link{white-space:nowrap}@media(max-width:1000px){.queue-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.spool-card{grid-column:1/-1}}@media(max-width:600px){.queue-grid,.plugin-status{grid-template-columns:1fr}.spool-card{grid-column:auto}.queue-counts{justify-content:space-between}.snapshot-note{font-size:.78rem}.runtime-heading{align-items:flex-start}.queue-card{padding:1rem}}

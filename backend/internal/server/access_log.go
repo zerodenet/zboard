@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/readtiming"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/rest"
 	"github.com/zeromicro/go-zero/rest/httpx"
@@ -30,12 +31,13 @@ func ConfigureSafeHTTPLogging(config *rest.RestConf) {
 func SafeAccessLogMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		startedAt := time.Now()
-		writer := &statusResponseWriter{ResponseWriter: w}
-		next(writer, r)
+		ctx, timings := readtiming.NewContext(r.Context())
+		writer := &statusResponseWriter{ResponseWriter: w, startedAt: startedAt, timings: timings}
+		next(writer, r.WithContext(ctx))
 		if writer.statusCode == 0 {
 			writer.statusCode = http.StatusOK
 		}
-		const logFormat = "[HTTP] %d - %s %s - %s - %s"
+		const logFormat = "[HTTP] %d - %s %s - %s - %s - timings=%s"
 		logger := logx.WithContext(r.Context())
 		arguments := []any{
 			writer.statusCode,
@@ -43,6 +45,7 @@ func SafeAccessLogMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			sanitizeAccessLogPath(r.URL.Path),
 			httpx.GetRemoteAddr(r),
 			time.Since(startedAt).Round(time.Microsecond),
+			timings.Header(),
 		}
 		if writer.statusCode >= http.StatusInternalServerError {
 			logger.Errorf(logFormat, arguments...)
@@ -69,11 +72,24 @@ func sanitizeAccessLogPath(path string) string {
 type statusResponseWriter struct {
 	http.ResponseWriter
 	statusCode int
+	startedAt  time.Time
+	timings    *readtiming.Recorder
 }
 
 func (w *statusResponseWriter) WriteHeader(statusCode int) {
 	if w.statusCode != 0 {
 		return
+	}
+	// Informational responses must not commit the final status or timings.
+	if statusCode >= 100 && statusCode < 200 && statusCode != http.StatusSwitchingProtocols {
+		w.ResponseWriter.WriteHeader(statusCode)
+		return
+	}
+	if w.timings != nil {
+		if phases := w.timings.Header(); phases != "" {
+			w.Header().Add("Server-Timing", phases)
+		}
+		w.Header().Add("Server-Timing", fmt.Sprintf("app_headers;dur=%.3f", float64(time.Since(w.startedAt))/float64(time.Millisecond)))
 	}
 	w.statusCode = statusCode
 	w.ResponseWriter.WriteHeader(statusCode)

@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"errors"
+	"github.com/zerodenet/zboard/backend/internal/readtiming"
 	"net/http"
 	"strings"
 	"time"
@@ -79,6 +81,7 @@ func (h *handlers) loadDashboardOverview(ctx context.Context, period dashboardPe
 	for _, bucket := range calendarBuckets {
 		buckets = append(buckets, observability.DashboardTrendBucket{Key: bucket.Key, StartUTC: bucket.StartUTC, EndUTC: bucket.EndUTC})
 	}
+	defer readtiming.Start(ctx, "dashboard_full")()
 	snapshot, err := h.services.Dashboard.Load(ctx, period, now, buckets)
 	if err != nil {
 		return dashboardOverviewResponse{}, err
@@ -136,4 +139,46 @@ func normalizeDashboardBucketKey(bucket, raw string) string {
 		}
 	}
 	return ""
+}
+
+// Focused views omit unrelated fields entirely, so missing history cannot look
+// like a zero current value. as_of is the read start, not an event watermark.
+func (h *handlers) loadDashboardView(ctx context.Context, period dashboardPeriod, now time.Time, location *time.Location, view string) (any, error) {
+	buckets := []observability.DashboardTrendBucket{}
+	if view == "trend" {
+		for _, b := range dashboardCalendarBuckets(period, location) {
+			buckets = append(buckets, observability.DashboardTrendBucket{Key: b.Key, StartUTC: b.StartUTC, EndUTC: b.EndUTC})
+		}
+	}
+	defer readtiming.Start(ctx, "dashboard_"+view)()
+	snapshot, err := h.services.Dashboard.View(ctx, period, now, buckets, view)
+	if err != nil {
+		return nil, err
+	}
+	switch view {
+	case "current":
+		return map[string]any{"as_of": now, "active_subscriptions": snapshot.Business.ActiveSubscriptions,
+			"service":       map[string]any{"active_subscriptions": snapshot.Service.ActiveSubscriptions, "active_flows": snapshot.Service.ActiveFlows, "online_nodes": snapshot.Service.OnlineNodes, "enabled_nodes": snapshot.Service.EnabledNodes},
+			"subscriptions": snapshot.Subscriptions, "attention": snapshot.Attention, "infrastructure": snapshot.Infrastructure, "coverage": snapshot.Coverage}, nil
+	case "statistics":
+		b := snapshot.Business
+		return map[string]any{"as_of": now, "period": period, "business": map[string]any{
+			"revenue_cents": b.RevenueCents, "previous_revenue_cents": b.PreviousRevenueCents, "paid_orders": b.PaidOrders, "previous_paid_orders": b.PreviousPaidOrders,
+			"new_orders": b.NewOrders, "renew_orders": b.RenewOrders, "previous_renew_orders": b.PreviousRenewOrders, "new_users": b.NewUsers, "previous_new_users": b.PreviousNewUsers,
+			"new_subscriptions": b.NewSubscriptions, "previous_new_subscriptions": b.PreviousNewSubscriptions, "currency": b.Currency, "mixed_currency": b.MixedCurrency},
+			"traffic": map[string]int64{"traffic_bytes": snapshot.Service.TrafficBytes, "previous_traffic_bytes": snapshot.Service.PreviousTrafficBytes}}, nil
+	default:
+		return map[string]any{"as_of": now, "period": period, "trend": snapshot.Trend, "currency": snapshot.TrendCurrency, "mixed_currency": snapshot.TrendMixedCurrency}, nil
+	}
+}
+
+func dashboardReadError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		writeCapabilityError(w, http.StatusGatewayTimeout, "工作台读取超时，请重试。", "deadline_exceeded")
+	case errors.Is(err, context.Canceled):
+		writeCapabilityError(w, http.StatusRequestTimeout, "工作台读取已取消。", "deadline_exceeded")
+	default:
+		writeCapabilityError(w, http.StatusInternalServerError, "工作台暂时无法读取，请重试。", "unavailable")
+	}
 }

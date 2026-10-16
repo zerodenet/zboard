@@ -24,26 +24,31 @@ type BufferedEventProjectionResult struct {
 // intentionally committed separately so it remains fail-open.
 func (s *Services) ProjectBufferedEvents(ctx context.Context, input BufferedEventProjection, cipher metering.CredentialDecryptor) (BufferedEventProjectionResult, error) {
 	result := BufferedEventProjectionResult{}
-	err := s.Identity.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Account first: waiting for an entitlement must not hold a node stats
-		// write lock. Both projections still commit or roll back together.
-		var err error
-		result.Exhausted, err = ApplyFlowBatch(tx, input.Flows, cipher)
-		if err != nil {
-			return err
-		}
-		for _, observation := range input.Nodes {
-			if err := ProjectNodeObservation(tx, observation); err != nil {
+	var err error
+	if len(input.Flows) > 0 || len(input.Nodes) > 0 {
+		err = s.Identity.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Account first: waiting for an entitlement must not hold a node stats
+			// write lock. Both projections still commit or roll back together.
+			var err error
+			result.Exhausted, err = ApplyFlowBatch(tx, input.Flows, cipher)
+			if err != nil {
 				return err
 			}
-		}
-		return nil
-	})
+			for _, observation := range input.Nodes {
+				if err := ProjectNodeObservation(tx, observation); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
 	if err != nil {
 		return result, err
 	}
-	result.CoverageErr = s.Identity.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return ProjectFairUseCoverage(tx, input.Coverage)
-	})
+	if len(input.Coverage) > 0 {
+		result.CoverageErr = s.Identity.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			return ProjectFairUseCoverage(tx, input.Coverage)
+		})
+	}
 	return result, nil
 }

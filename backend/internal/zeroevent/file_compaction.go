@@ -3,6 +3,7 @@ package zeroevent
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math"
@@ -23,6 +24,11 @@ type semanticCompactionKey struct {
 	nodeID         uint64
 	coreInstanceID string
 	flowID         string
+	principalKey   string
+	sourceID       string
+	configRevision uint64
+	minute         int64
+	payloadHash    [32]byte
 }
 
 type semanticCompactionLatest struct {
@@ -362,6 +368,14 @@ func semanticKey(event Envelope, cfg CompactionConfig) (semanticCompactionKey, b
 			nodeID:         event.NodeID,
 			coreInstanceID: instanceID,
 			flowID:         flowID,
+			// Changed cumulative counters are accounting facts: the consumer
+			// retains their rounded deltas. Pressure compaction may only
+			// supersede identical payloads within one accounting boundary.
+			principalKey:   event.PrincipalKey,
+			sourceID:       event.SourceID,
+			configRevision: event.ConfigRevision,
+			minute:         event.OccurredAt.Unix() / 60,
+			payloadHash:    sha256.Sum256(event.Payload),
 		}, true, true
 	case "stats.sampled":
 		if !cfg.MergeNodeStats {

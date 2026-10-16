@@ -18,6 +18,18 @@ describe.each(['offset', 'cursor'])('remote table lifecycle (%s)', kind => {
       ? useRemoteTable({ offset: ref(0), limit: ref(25), fetchPage, errorMessage: 'failed' })
       : useCursorTable({ fetchPage, errorMessage: 'failed' })
   }
+  it('clears revoked data and reports the same permission state for either pagination mode', async () => {
+    const fetchPage = vi.fn().mockResolvedValueOnce(page(1)).mockRejectedValueOnce({ response: { status: 403 } })
+    const state = table(fetchPage)
+    await state.load()
+    expect(state.lastSuccessAt.value).toBeTruthy()
+    await state.load()
+    expect(state.phase.value).toBe('forbidden')
+    expect(state.items.value).toEqual([])
+    expect(state.aggregates.value).toEqual({})
+    expect(state.hasLoaded.value).toBe(false)
+    expect(state.canAutoRefresh.value).toBe(false)
+  })
   it('clears rows, aggregates and facets together and ignores a late old-filter read', async () => {
     const late = deferred<ReturnType<typeof page>>()
     const fetchPage = vi.fn().mockResolvedValueOnce(page(1)).mockReturnValueOnce(late.promise)

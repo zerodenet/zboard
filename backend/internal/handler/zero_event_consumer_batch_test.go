@@ -14,6 +14,7 @@ type checkpointTestSpool struct {
 	zeroevent.EventSpool
 	events    []zeroevent.Envelope
 	position  int
+	readCap   int
 	limits    []int
 	commitErr error
 	complete  context.CancelFunc
@@ -24,6 +25,9 @@ func (s *checkpointTestSpool) ReadBatch(ctx context.Context, limit int) (zeroeve
 		return zeroevent.Batch{}, err
 	}
 	s.limits = append(s.limits, limit)
+	if s.readCap > 0 {
+		limit = min(limit, s.readCap)
+	}
 	end := min(s.position+limit, len(s.events))
 	return zeroevent.Batch{Events: s.events[s.position:end], Next: zeroevent.Checkpoint{Record: uint64(end)}}, nil
 }
@@ -39,9 +43,11 @@ func (s *checkpointTestSpool) Commit(_ context.Context, next zeroevent.Checkpoin
 	return nil
 }
 
-func (s *checkpointTestSpool) Status() zeroevent.Status { return zeroevent.Status{} }
+func (s *checkpointTestSpool) Status() zeroevent.Status {
+	return zeroevent.Status{PendingEvents: int64(len(s.events) - s.position)}
+}
 
-func TestSQLiteConsumerShortTransactionsContinueAfterFullBurst(t *testing.T) {
+func TestSQLiteConsumerDrainsWindowThroughShortTransactions(t *testing.T) {
 	h, credential := accountingBenchmarkFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -57,12 +63,12 @@ func TestSQLiteConsumerShortTransactionsContinueAfterFullBurst(t *testing.T) {
 			break
 		}
 	}
-	if spool.position != count || len(spool.limits) != zeroEventConsumerBurstBatches+1 {
+	if spool.position != count || len(spool.limits) != 1 {
 		t.Fatalf("consumer stalled after full burst: position=%d reads=%v", spool.position, spool.limits)
 	}
 	for _, limit := range spool.limits {
-		if limit != zeroEventSQLiteBatchLimit {
-			t.Fatalf("SQLite transaction limit=%d", limit)
+		if limit != 2000 {
+			t.Fatalf("SQLite read window limit=%d", limit)
 		}
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, int64(count*30), subStatusActive)
@@ -100,4 +106,17 @@ func TestConsumerBatchSizingPreservesConfiguredSmallerAndMySQLLimits(t *testing.
 	if got := zeroEventConsumerNextInterval(time.Hour, zeroevent.Status{}, false); got != time.Hour {
 		t.Fatalf("idle interval=%s", got)
 	}
+}
+
+func TestConsumerContinuesByteLimitedWindowOnlyWhenPending(t *testing.T) {
+	h, credential := accountingBenchmarkFixture(t)
+	spool := &checkpointTestSpool{events: accountingBenchmarkEvents(credential, 0, 3), readCap: 2}
+	runtime := &zeroEventRuntime{spool: spool, config: zeroevent.ConsumerConfig{MaxBatch: 2000}}
+	if err := h.consumeZeroEventCycle(context.Background(), runtime); !errors.Is(err, capabilityjobs.ErrContinue) || spool.position != 2 {
+		t.Fatalf("byte-limited backlog stalled: position=%d err=%v", spool.position, err)
+	}
+	if err := h.consumeZeroEventCycle(context.Background(), runtime); err != nil || spool.position != 3 {
+		t.Fatalf("drained window kept yielding: position=%d err=%v", spool.position, err)
+	}
+	assertAccountingTotal(t, h, credential.SubscriptionID, 90, subStatusActive)
 }

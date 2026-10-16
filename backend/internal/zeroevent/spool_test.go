@@ -19,7 +19,7 @@ func TestDefaultConfig(t *testing.T) {
 	if c.Flush.Interval != 10*time.Millisecond || c.Flush.MaxBatch != 256 {
 		t.Fatalf("unexpected flush defaults: %+v", c.Flush)
 	}
-	if c.Consumer.CommitInterval != 5*time.Second || c.Consumer.MaxBatch != 2000 {
+	if c.Consumer.CommitInterval != time.Second || c.Consumer.MaxBatch != 2000 {
 		t.Fatalf("unexpected consumer defaults: %+v", c.Consumer)
 	}
 	if !c.Compression.Enabled || c.Compression.Algorithm != CompressionZstd || c.Compression.Level != 1 || c.Compression.BlockSize != 2<<20 {

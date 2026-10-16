@@ -4,6 +4,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -56,22 +57,30 @@ func AddProtocolEndpointUsage(tx *gorm.DB, records []model.TrafficRecord) error 
 		}
 		return keys[i].UsageDate < keys[j].UsageDate
 	})
-	for _, key := range keys {
-		row := rows[key]
-		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "protocol_endpoint_id"}, {Name: "usage_date"}},
-			DoUpdates: clause.Assignments(map[string]any{
-				"raw_bytes":      gorm.Expr("raw_bytes + ?", row.RawBytes),
-				"upload_bytes":   gorm.Expr("upload_bytes + ?", row.UploadBytes),
-				"download_bytes": gorm.Expr("download_bytes + ?", row.DownloadBytes),
-				"used_bytes":     gorm.Expr("used_bytes + ?", row.UsedBytes),
-				"record_count":   gorm.Expr("record_count + ?", row.RecordCount),
-				"last_record_at": gorm.Expr("CASE WHEN last_record_at < ? THEN ? ELSE last_record_at END", row.LastRecordAt, row.LastRecordAt),
-				"updated_at":     row.UpdatedAt,
-			}),
-		}).Create(row).Error; err != nil {
-			return err
-		}
+	if len(keys) == 0 {
+		return nil
 	}
-	return nil
+	batch := make([]model.ProtocolEndpointUsageDaily, 0, len(keys))
+	for _, key := range keys {
+		batch = append(batch, *rows[key])
+	}
+	// Keep one atomic delta per endpoint/day, but send bounded batches instead
+	// of one round trip per key. Sorted keys preserve the writers' lock order.
+	incoming := func(column string) string {
+		if datastore.IsSQLite(tx) {
+			return "excluded." + column
+		}
+		return "VALUES(" + column + ")"
+	}
+	updates := make(map[string]any)
+	for _, column := range []string{"raw_bytes", "upload_bytes", "download_bytes", "used_bytes", "record_count"} {
+		updates[column] = gorm.Expr(column + " + " + incoming(column))
+	}
+	last := incoming("last_record_at")
+	updates["last_record_at"] = gorm.Expr("CASE WHEN last_record_at < " + last + " THEN " + last + " ELSE last_record_at END")
+	updates["updated_at"] = gorm.Expr(incoming("updated_at"))
+	return tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "protocol_endpoint_id"}, {Name: "usage_date"}},
+		DoUpdates: clause.Assignments(updates),
+	}).CreateInBatches(&batch, 100).Error
 }

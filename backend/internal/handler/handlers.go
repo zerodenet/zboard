@@ -20,6 +20,7 @@ import (
 	networkcap "github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/platform"
+	"github.com/zerodenet/zboard/backend/internal/readtiming"
 	"io"
 	"net/http"
 	"net/url"
@@ -349,6 +350,7 @@ type handlers struct {
 	trafficStatisticsCache  trafficSnapshotCache[trafficUsageStatistics]
 	trafficIncrementalStats *meteringstore.IncrementalCache
 	trafficTrendsCache      trafficSnapshotCache[trafficTrendSnapshot]
+	trafficBreakdownCache   trafficSnapshotCache[metering.BreakdownSnapshot]
 	expiryReconcileMu       sync.Mutex
 	lastExpiryReconcile     time.Time
 	deletionMu              sync.Mutex
@@ -2460,6 +2462,20 @@ func (h *handlers) TrafficSummaryHandler(w http.ResponseWriter, r *http.Request)
 			userFilter = 0
 		}
 	}
+	switch r.URL.Query().Get("view") {
+	case "quota":
+		result, err := h.services.UsageQuota().Read(r.Context(), claims.UserID, metering.UsageSummaryQuery{Administrative: adminScope, UserID: userFilter})
+		if err != nil {
+			writePrincipalTrendError(w, err)
+			return
+		}
+		OK(w, result)
+		return
+	case "":
+	default:
+		BadRequest(w, "invalid traffic summary view")
+		return
+	}
 	result, err := h.services.UsageSummary().Read(r.Context(), claims.UserID, metering.UsageSummaryQuery{Administrative: adminScope, UserID: userFilter})
 	if err != nil {
 		writePrincipalTrendError(w, err)
@@ -2933,6 +2949,7 @@ func nodeReportSignature(secret, nodeID, timestamp, nonce string, body []byte) [
 }
 
 func (h *handlers) requireAdmin(w http.ResponseWriter, r *http.Request) (authClaims, error) {
+	defer readtiming.Start(r.Context(), "admin_auth")()
 	claims, err := h.authFromRequest(r)
 	if err != nil {
 		Unauthorized(w, err.Error())

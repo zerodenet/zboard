@@ -30,3 +30,27 @@ func (s UsageSummary) Read(ctx context.Context, actor uint, q UsageSummaryQuery)
 	}
 	return s.Repository.Read(ctx, actor, q)
 }
+
+// UsageQuota reads current entitlements without requesting historical statistics.
+type UsageQuotaSnapshot struct {
+	RemainingBytes int64  `json:"remaining_bytes"`
+	ScopeUser      uint   `json:"scope_user"`
+	AsOf           string `json:"as_of"`
+}
+type UsageQuotaRepository interface {
+	ReadQuota(context.Context, uint, UsageSummaryQuery) (UsageQuotaSnapshot, error)
+}
+type UsageQuota struct{ Repository UsageQuotaRepository }
+
+func (s UsageQuota) Read(ctx context.Context, actor uint, q UsageSummaryQuery) (UsageQuotaSnapshot, error) {
+	if err := ctx.Err(); err != nil {
+		return UsageQuotaSnapshot{}, err
+	}
+	if actor == 0 {
+		return UsageQuotaSnapshot{}, ErrTrendPermission
+	}
+	if !q.Administrative {
+		q.UserID = actor
+	}
+	return s.Repository.ReadQuota(ctx, actor, q)
+}

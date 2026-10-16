@@ -3,6 +3,7 @@ package observabilitystore
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -113,6 +114,38 @@ func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
 		t.Fatalf("trend = %+v", result.Trend)
 	}
 
+	for _, view := range []string{"current", "statistics", "trend"} {
+		counter.queries.Store(0)
+		focused, err := (observability.Dashboard{Repository: Dashboard{DB: counted}}).View(context.Background(), period, now, buckets, view)
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch view {
+		case "current":
+			if focused.Business.ActiveSubscriptions != result.Business.ActiveSubscriptions || !reflect.DeepEqual(focused.Service.ActiveFlows, result.Service.ActiveFlows) || focused.Attention != result.Attention || focused.Subscriptions != result.Subscriptions || focused.Infrastructure != result.Infrastructure {
+				t.Fatalf("current facts changed: %+v", focused)
+			}
+			if counter.queries.Load() != 2 {
+				t.Fatalf("current queries=%d", counter.queries.Load())
+			}
+		case "statistics":
+			// Current subscription counts intentionally live in a different response.
+			want := result.Business
+			want.ActiveSubscriptions = 0
+			want.ExpiringWithin3Days = 0
+			if focused.Business != want || focused.Service.TrafficBytes != result.Service.TrafficBytes || focused.Service.PreviousTrafficBytes != result.Service.PreviousTrafficBytes {
+				t.Fatalf("statistics changed: %+v", focused)
+			}
+			if counter.queries.Load() != 3 {
+				t.Fatalf("statistics queries=%d", counter.queries.Load())
+			}
+		case "trend":
+			if !reflect.DeepEqual(focused.Trend, result.Trend) || counter.queries.Load() != 1 {
+				t.Fatalf("trend=%+v", focused)
+			}
+		}
+	}
+
 	counter.queries.Store(0)
 	totals, err := (observability.Dashboard{Repository: Dashboard{DB: counted}}).Totals(context.Background(), now)
 	if err != nil {
@@ -130,4 +163,21 @@ func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
 	if totals.PendingTickets != 1 || totals.FailedDeployments != 1 || totals.ProtocolEndpoints != 1 || totals.ActiveProtocolEndpoints != 1 || totals.SSHVerifiedNodes != 1 || totals.TrafficReadyNodes != 1 {
 		t.Fatalf("operational totals = %+v", totals)
 	}
+	// Independent trend currency must be derived from its own rows, including
+	// different currencies in separate buckets and then in the same bucket.
+	otherPaid := now.Add(-90 * time.Minute)
+	other := model.Order{TradeNo: "trend-usd", Status: "paid", PaidAt: &otherPaid, PaidAmount: 500, Currency: "USD", OrderType: "new"}
+	if err := db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		snapshot, err := (observability.Dashboard{Repository: Dashboard{DB: db}}).View(context.Background(), period, now, buckets, "trend")
+		if err != nil || !snapshot.TrendMixedCurrency || snapshot.TrendCurrency != "" {
+			t.Fatalf("mixed trend=%+v err=%v", snapshot, err)
+		}
+		if err := db.Model(&other).Update("paid_at", paidAt).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
 }

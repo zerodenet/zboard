@@ -199,7 +199,7 @@ func DefaultConfig() Config {
 			MaxBatch: 256,
 		},
 		Consumer: ConsumerConfig{
-			CommitInterval: 5 * time.Second,
+			CommitInterval: time.Second,
 			MaxBatch:       2000,
 		},
 		Compression: CompressionConfig{

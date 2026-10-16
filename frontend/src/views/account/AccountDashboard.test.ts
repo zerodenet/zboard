@@ -1,12 +1,12 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchAccountOrdersPage, fetchAccountSubscriptionsPage, fetchTrafficSummary } from '../../api/client'
+import { fetchAccountOrdersPage, fetchAccountSubscriptionsPage, fetchTrafficQuota } from '../../api/client'
 import MetricCard from '../../components/MetricCard.vue'
 import AccountDashboard from './AccountDashboard.vue'
 
 vi.mock('../../api/client', () => ({
-  fetchAccountOrdersPage: vi.fn(), fetchAccountSubscriptionsPage: vi.fn(), fetchTrafficSummary: vi.fn(),
+  fetchAccountOrdersPage: vi.fn(), fetchAccountSubscriptionsPage: vi.fn(), fetchTrafficQuota: vi.fn(),
 }))
 vi.mock('../../stores/app', () => ({ useAppStore: () => ({ user: { email: 'fixture@example.test' } }) }))
 function deferred<T>() {
@@ -19,7 +19,7 @@ describe('dashboard independent sections', () => {
   let wrapper: VueWrapper | undefined
   beforeEach(() => {
     vi.resetAllMocks()
-    vi.mocked(fetchTrafficSummary).mockResolvedValue({ remaining_bytes: 2048, total_used_bytes: 1024 })
+    vi.mocked(fetchTrafficQuota).mockResolvedValue({ remaining_bytes: 2048, scope_user: 1, as_of: '2026-10-16T00:00:00Z' })
     vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([{ id: 1, plan_name: 'Fixture service', end_at: '2027-01-01', flow_total: 2048 }], 20))
     vi.mocked(fetchAccountOrdersPage).mockImplementation(async params => params?.status ? page([], 7)
       : page([{ id: 2, plan_name: 'Fixture order', amount_cents: 100, currency: 'CNY', status: 'pending' }], 15))
@@ -33,13 +33,37 @@ describe('dashboard independent sections', () => {
     await flushPromises()
   }
   it('renders successful sections while another summary remains pending', async () => {
-    vi.mocked(fetchTrafficSummary).mockReturnValue(deferred<any>().promise)
+    vi.mocked(fetchTrafficQuota).mockReturnValue(deferred<any>().promise)
     await open()
     expect(wrapper!.text()).toContain('Fixture service')
     expect(wrapper!.text()).toContain('Fixture order')
     const cards = wrapper!.findAllComponents(MetricCard)
     expect(cards.map(card => card.props('value'))).toEqual(['—', 20, 7])
     expect(wrapper!.text()).not.toContain('还没有订单')
+  })
+  it('shows the complete quota rather than summing the three visible subscriptions', async () => {
+    await open()
+    expect(wrapper!.findAllComponents(MetricCard)[0].props('value')).toBe('2.00 KB')
+    expect(wrapper!.text()).toContain('全部有效订阅的可用流量合计')
+    expect(wrapper!.text()).not.toContain('累计使用')
+    expect(fetchTrafficQuota).toHaveBeenCalledWith(false, { signal: expect.any(AbortSignal) })
+    expect(fetchAccountSubscriptionsPage).toHaveBeenCalledWith({ status: 'active', offset: 0, limit: 3 }, { signal: expect.any(AbortSignal) })
+  })
+  it('keeps the last confirmed quota visible during a slow refresh and after a refresh failure', async () => {
+    await open()
+    const slow = deferred<any>()
+    vi.mocked(fetchTrafficQuota).mockReturnValueOnce(slow.promise)
+    await wrapper!.findAll('button').find(button => button.text().trim().includes('刷新'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper!.findAllComponents(MetricCard)[0].props('value')).toBe('2.00 KB')
+    expect(wrapper!.findAllComponents(MetricCard)[0].props('status')).toBe('更新中')
+    slow.resolve({ remaining_bytes: 1024, scope_user: 1, as_of: '2026-10-16T00:00:01Z' })
+    await flushPromises()
+    vi.mocked(fetchTrafficQuota).mockRejectedValueOnce(new Error('offline'))
+    await wrapper!.findAll('button').find(button => button.text().trim().includes('刷新'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper!.findAllComponents(MetricCard)[0].props('value')).toBe('1.00 KB')
+    expect(wrapper!.findAllComponents(MetricCard)[0].props('status')).toBe('更新失败')
   })
   it('shows pending or failed reads as unknown rather than empty lists or zero counts', async () => {
     vi.mocked(fetchAccountSubscriptionsPage).mockReturnValue(deferred<any>().promise)
@@ -59,7 +83,7 @@ describe('dashboard independent sections', () => {
     await flushPromises()
     expect(wrapper!.text()).toContain('Fixture service')
     expect(fetchAccountSubscriptionsPage).toHaveBeenCalledTimes(2)
-    expect(fetchTrafficSummary).toHaveBeenCalledOnce()
+    expect(fetchTrafficQuota).toHaveBeenCalledOnce()
     expect(fetchAccountOrdersPage).toHaveBeenCalledTimes(2)
   })
   it('renders genuine successful empty states only after each read succeeds', async () => {
@@ -86,12 +110,12 @@ describe('dashboard independent sections', () => {
   })
   it('cancels every pending section on unmount' , async () => {
     const late = deferred<any>()
-    vi.mocked(fetchTrafficSummary).mockReturnValue(late.promise)
+    vi.mocked(fetchTrafficQuota).mockReturnValue(late.promise)
     vi.mocked(fetchAccountSubscriptionsPage).mockReturnValue(late.promise)
     vi.mocked(fetchAccountOrdersPage).mockReturnValue(late.promise)
     await open()
     const signals = [
-      vi.mocked(fetchTrafficSummary).mock.calls[0]?.[1]?.signal,
+      vi.mocked(fetchTrafficQuota).mock.calls[0]?.[1]?.signal,
       vi.mocked(fetchAccountSubscriptionsPage).mock.calls[0]?.[1]?.signal,
       ...vi.mocked(fetchAccountOrdersPage).mock.calls.map(call => call[1]?.signal),
     ]

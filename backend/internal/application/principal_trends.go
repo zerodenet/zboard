@@ -85,6 +85,15 @@ func (s *Services) UsageSummary() metering.UsageSummary {
 	return metering.UsageSummary{Repository: meteringstore.UsageSummary{DB: s.Identity.db, ReadDB: s.trafficDatabase()}}
 }
 
+// Entitlement totals share the live account read path, not the history pool.
+func (s *Services) UsageQuota() metering.UsageQuota {
+	return metering.UsageQuota{Repository: meteringstore.UsageSummary{DB: s.Identity.db}}
+}
+
+func (s *Services) TrafficBreakdown(cache metering.BreakdownCache) metering.Breakdown {
+	return metering.Breakdown{Repository: meteringstore.Breakdown{DB: s.Identity.db, ReadDB: s.trafficDatabase(), Cache: cache}}
+}
+
 func (s *Services) NodeSeries() metering.NodeSeries {
 	return metering.NodeSeries{Repository: meteringstore.NodeSeries{DB: s.Identity.db, ReadDB: s.trafficDatabase()}}
 }

@@ -39,7 +39,7 @@ describe('traffic view HTTP read boundaries', () => {
   afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.unstubAllGlobals() })
   async function open(admin: boolean) {
     router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
-    await router.push((admin ? '/admin/traffic' : '/account/traffic') + range)
+    await router.push((admin ? '/admin/traffic' : '/account/traffic') + range + (admin ? '&section=details' : ''))
     await router.isReady()
     wrapper = mount(admin ? Traffic : AccountTraffic, { global: {
       plugins: [router], stubs: { NodeTrafficChart: true, TrafficObservabilityChart: true },
@@ -54,14 +54,14 @@ describe('traffic view HTTP read boundaries', () => {
     await open(admin)
     const fetchCount = vi.mocked(fetch).mock.calls.length, getCount = get.mock.calls.length
     const path = router.currentRoute.value.path
-    await router.push(`${path}${range}&${field}=not-an-id`); await flushPromises()
+    await router.push(`${path}${range}${admin ? '&section=details' : ''}&${field}=not-an-id`); await flushPromises()
     expect(fetch).toHaveBeenCalledTimes(fetchCount)
     expect(get).toHaveBeenCalledTimes(getCount)
     expect(wrapper!.getComponent(CursorPager).props('count')).toBe(0)
     expect(wrapper!.getComponent(CursorPager).props('total')).toBeUndefined()
     expect(wrapper!.text()).toContain('流量记录加载失败')
     expect(wrapper!.text()).not.toContain('还没有流量使用明细')
-    await router.push(`${path}${range}&${field}=130`); await flushPromises()
+    await router.push(`${path}${range}${admin ? '&section=details' : ''}&${field}=130`); await flushPromises()
     expect(wrapper!.getComponent(CursorPager).props('count')).toBe(1)
     expect(wrapper!.text()).not.toContain('流量记录加载失败')
     expect(vi.mocked(fetch).mock.calls.at(-1)![0]).toContain(`${field}=130`)
@@ -69,7 +69,7 @@ describe('traffic view HTTP read boundaries', () => {
   it.each([false, true])('renders a malformed HTTP page as an error, not empty history (admin=%s)', async admin => {
     await open(admin)
     malformedPage = true
-    await router.push(`${router.currentRoute.value.path}${range}&cursor=next`); await flushPromises()
+    await router.push(`${router.currentRoute.value.path}${range}${admin ? '&section=details' : ''}&cursor=next`); await flushPromises()
     expect(wrapper!.getComponent(CursorPager).props('count')).toBe(0)
     expect(wrapper!.text()).toContain('流量记录加载失败')
     expect(wrapper!.text()).not.toContain('还没有流量使用明细')

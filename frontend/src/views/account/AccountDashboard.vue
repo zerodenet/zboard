@@ -12,21 +12,21 @@
       </template>
     </PageHeader>
 
-    <PageAlert v-if="summaryError" tone="danger" title="流量汇总加载失败">{{ summaryError }} <UiButton variant="secondary" @click="summaryResource.load()">重试流量汇总</UiButton></PageAlert>
+    <RemoteReadStatus label="剩余流量" :phase="quotaResource.phase.value" :error="quotaError" :last-success-at="quotaResource.lastSuccessAt.value" @retry="quotaResource.load()" />
     <PageAlert v-if="pendingError" tone="danger" title="待处理订单统计加载失败">{{ pendingError }} <UiButton variant="secondary" @click="pendingResource.load()">重试订单统计</UiButton></PageAlert>
 
     <UiMetricStrip :columns="3">
       <MetricCard
         label="剩余流量"
-        :value="summaryLoaded && !summaryError ? formatBytes(summary.remaining_bytes) : '—'"
+        :value="quotaLoaded ? formatBytes(quota.remaining_bytes) : '—'"
         icon="activity"
-        :status="summaryLoading ? '加载中' : summaryError ? '读取失败' : '流量'"
+        :status="quotaLoading ? (quotaLoaded ? '更新中' : '加载中') : quotaError ? '更新失败' : '可用'"
         tone="info"
-        :meta="summaryLoaded && !summaryError ? `累计使用 ${formatBytes(summary.total_used_bytes)}` : '尚未取得汇总'"
+        :meta="quotaLoaded ? (quotaError ? '上次成功读取的可用流量' : '全部有效订阅的可用流量合计') : quotaError ? '尚未取得额度' : '正在读取订阅额度'"
       />
       <MetricCard
         label="有效订阅"
-        :value="activeLoaded && !activeError ? activeSubscriptionTotal : '—'"
+        :value="activeLoaded ? activeSubscriptionTotal : '—'"
         icon="plans"
         :status="activeLoading ? '加载中' : activeError ? '读取失败' : '有效期内'"
         :tone="activeSubscriptionTotal ? 'success' : 'neutral'"
@@ -35,7 +35,7 @@
       />
       <MetricCard
         label="待处理订单"
-        :value="pendingLoaded && !pendingError ? pendingOrderTotal : '—'"
+        :value="pendingLoaded ? pendingOrderTotal : '—'"
         icon="billing"
         :status="pendingLoading ? '加载中' : pendingError ? '读取失败' : '待支付'"
         :tone="pendingOrderTotal ? 'warning' : 'neutral'"
@@ -142,7 +142,8 @@ import { computed, onMounted } from 'vue'
 import {
   fetchAccountOrdersPage,
   fetchAccountSubscriptionsPage,
-  fetchTrafficSummary,
+  fetchTrafficQuota,
+  type TrafficQuotaSnapshot,
   type AdminOrderListItem,
   type AdminSubscriptionListItem,
 } from '../../api/client'
@@ -152,6 +153,7 @@ import PageHeader from '../../components/PageHeader.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import TimeBadge from '../../components/TimeBadge.vue'
 import PageAlert from '../../components/PageAlert.vue'
+import RemoteReadStatus from '../../components/RemoteReadStatus.vue'
 import MetricCard from '../../components/MetricCard.vue'
 import UiMetricStrip from '../../components/UiMetricStrip.vue'
 import UiSection from '../../components/UiSection.vue'
@@ -162,8 +164,8 @@ import { useAppStore } from '../../stores/app'
 import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/format'
 
 const app = useAppStore()
-const summaryResource = useRemoteResource<Record<string, any>>({
-  initial: () => ({}), fetch: ({ signal }) => fetchTrafficSummary(false, { signal }), errorMessage: '流量汇总加载失败。',
+const quotaResource = useRemoteResource<TrafficQuotaSnapshot>({
+  initial: () => ({ remaining_bytes: 0, scope_user: 0, as_of: '' }), fetch: ({ signal }) => fetchTrafficQuota(false, { signal }), errorMessage: '剩余流量加载失败。',
 })
 const activeResource = useRemoteResource({
   initial: () => ({ items: [] as AdminSubscriptionListItem[], total: 0 }),
@@ -179,7 +181,7 @@ const pendingResource = useRemoteResource({
   fetch: async ({ signal }) => (await fetchAccountOrdersPage({ status: 'pending', offset: 0, limit: 1 }, { signal })).total,
   errorMessage: '待处理订单统计加载失败。',
 })
-const { data: summary, loading: summaryLoading, error: summaryError, loaded: summaryLoaded } = summaryResource
+const { data: quota, loading: quotaLoading, error: quotaError, loaded: quotaLoaded } = quotaResource
 const { loading: activeLoading, error: activeError, loaded: activeLoaded } = activeResource
 const { loading: ordersLoading, error: ordersError, loaded: ordersLoaded } = ordersResource
 const { data: pendingOrderTotal, loading: pendingLoading, error: pendingError, loaded: pendingLoaded } = pendingResource
@@ -187,7 +189,7 @@ const activeSubscriptions = computed(() => activeResource.data.value.items)
 const activeSubscriptionTotal = computed(() => activeResource.data.value.total)
 const orders = computed(() => ordersResource.data.value.items)
 const recentOrderTotal = computed(() => ordersResource.data.value.total)
-const loading = computed(() => summaryLoading.value || activeLoading.value || ordersLoading.value || pendingLoading.value)
+const loading = computed(() => quotaLoading.value || activeLoading.value || ordersLoading.value || pendingLoading.value)
 function remaining(sub: AdminSubscriptionListItem) {
   return Math.max(0, (sub.flow_total || 0) - (sub.flow_used || 0))
 }
@@ -202,7 +204,7 @@ function orderLabel(status: string) {
 }
 
 async function load() {
-  await Promise.all([summaryResource.load(), activeResource.load(), ordersResource.load(), pendingResource.load()])
+  await Promise.all([quotaResource.load(), activeResource.load(), ordersResource.load(), pendingResource.load()])
 }
 
 onMounted(load)
