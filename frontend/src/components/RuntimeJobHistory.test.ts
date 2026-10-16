@@ -1,9 +1,19 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { expect, it, vi } from 'vitest'
+import { createRouter, createMemoryHistory } from 'vue-router'
 import RuntimeJobHistory from './RuntimeJobHistory.vue'
 import UiSelect from './UiSelect.vue'
 const api = vi.hoisted(() => ({ history: vi.fn(), attempts: vi.fn(), cancel: vi.fn(), resolve: vi.fn(), reconcile: vi.fn() }))
 vi.mock('../api/runtimeHistory', () => ({ fetchRunHistory: api.history, fetchRunAttempts: api.attempts, cancelRun: api.cancel, resolveRun: api.resolve, reconcileDNSRun: api.reconcile }))
+it('links a retained retirement history to the node progress page after node removal', async () => {
+  api.history.mockResolvedValue({ items: [{ id: 'retire-7', owner: 'system', handler: 'node_retirement', node_id: 7, state: 'succeeded', created_at: '2026-10-15T00:00:00Z', finished_at: '2026-10-15T00:01:00Z' }], total: 1, offset: 0, limit: 25 })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }, { path: '/admin/nodes', component: { template: '<div />' } }] })
+  await router.push('/'); await router.isReady()
+  const w = mount(RuntimeJobHistory, { props: { asOf: 'now', names: {} }, global: { plugins: [router] } }); await flushPromises()
+  expect(w.get('a').attributes('href')).toBe('/admin/nodes?retirement=7')
+  expect(w.text()).toContain('节点退役')
+  w.unmount()
+})
 it('requires verification evidence and saves the selected outcome before refreshing', async () => {
   api.history.mockResolvedValue({ items: [{ id: 'run-1', owner: 'plugin:example.sync', handler: 'sync', state: 'unknown', created_at: '2026-09-12T00:00:00Z', finished_at: null }], total: 1, offset: 0, limit: 25 })
   api.resolve.mockResolvedValue(undefined)

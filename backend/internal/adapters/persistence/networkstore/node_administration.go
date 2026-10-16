@@ -133,7 +133,7 @@ func (s NodeAdministration) UpdateNodeSSHConfiguration(ctx context.Context, acto
 			return err
 		}
 		row, err := lockNodeAdministration(tx, id)
-		if err != nil {
+		if err != nil && !(errors.Is(err, network.ErrNodeAdministrationDeleting) && retirementSSHRepairAllowed(tx, row, change)) {
 			return err
 		}
 		updates := map[string]any{

@@ -18,8 +18,10 @@ import (
 )
 
 type NodeRemoval struct {
-	DB     *gorm.DB
-	Cipher network.ProviderCredentialCipher
+	DB                   *gorm.DB
+	Cipher               network.ProviderCredentialCipher
+	SkipRemote           bool
+	FinalizingRetirement bool
 }
 
 func (s NodeRemoval) RemoveNode(ctx context.Context, actor, id uint) (out network.NodeRemovalFacts, err error) {
@@ -30,6 +32,15 @@ func (s NodeRemoval) RemoveNode(ctx context.Context, actor, id uint) (out networ
 		var node model.Node
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, id).Error; err != nil {
 			return removalError(err)
+		}
+		if !s.FinalizingRetirement {
+			var active int64
+			if err := tx.Model(&model.NodeRetirement{}).Where("node_id = ? AND state <> ?", id, "succeeded").Count(&active).Error; err != nil {
+				return err
+			}
+			if active > 0 {
+				return &network.ResourceRemovalBlocked{Blockers: map[string]int64{"node_retirement": active}}
+			}
 		}
 		user, err := providerAdmin(tx, actor)
 		if err != nil {
@@ -122,7 +133,7 @@ func (s NodeRemoval) RemoveNode(ctx context.Context, actor, id uint) (out networ
 			return err
 		}
 
-		if strings.TrimSpace(node.SSHHost) != "" {
+		if !s.SkipRemote && strings.TrimSpace(node.SSHHost) != "" {
 			if s.Cipher == nil {
 				return errors.New("node cleanup cipher is unavailable")
 			}

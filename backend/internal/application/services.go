@@ -256,7 +256,11 @@ func (s *Services) MieruEndpointConfigurations(cipher network.ProviderCredential
 }
 
 func (s *Services) NodeRemoval(cipher network.ProviderCredentialCipher) network.NodeRemoval {
-	return network.NodeRemoval{Store: networkstore.NodeRemoval{DB: s.Identity.db, Cipher: cipher}}
+	return network.NodeRemoval{Store: networkstore.NodeRemoval{DB: s.Identity.db, Cipher: cipher, SkipRemote: true}}
+}
+
+func (s *Services) NodeRetirement(remote network.RetirementRemote) network.NodeRetirement {
+	return network.NodeRetirement{Repository: networkstore.NodeRetirement{DB: s.Identity.db}, Remote: remote}
 }
 
 func (s *Services) SubscriptionRuleSets(content entitlements.RuleSetContentStore) entitlements.SubscriptionRuleSets {

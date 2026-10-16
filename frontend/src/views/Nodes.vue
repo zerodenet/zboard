@@ -68,7 +68,7 @@
             <UiButton variant="secondary" size="sm" type="button" :disabled="!selectedNode.ssh_host || !selectedNode.ssh_user" @click="openTerminal(selectedNode)"><UiIcon name="terminal" />打开终端</UiButton>
             <UiButton variant="secondary" size="sm" type="button" :disabled="!selectedNode.ssh_verified_at" @click="diagnosticsOpen = true"><UiIcon name="search" />运行诊断</UiButton>
             <UiButton v-if="selectedNode.ssh_host_key_fingerprint" variant="danger" size="sm" type="button" @click="resetSSHHostKey(selectedNode)">重新信任主机</UiButton>
-            <UiButton variant="danger" size="sm" type="button" :loading="deletingNode" @click="removeNode(selectedNode)"><UiIcon name="trash" />删除节点</UiButton>
+            <UiButton variant="danger" size="sm" type="button" @click="removeNode(selectedNode)"><UiIcon name="trash" />退役／移除管理</UiButton>
           </div>
         </article>
 
@@ -149,7 +149,7 @@
             </div>
             <section class="kernel-history" aria-label="离线节点清理">
               <h3>离线节点清理</h3>
-              <p>删除面板记录不会停止远端进程。可提前下载脚本，网站不可用时通过 SSH 在节点本机执行；无需面板登录凭据。</p>
+              <p>“退役并清理”会提交远端清理任务；“仅移除面板管理”会保留远端资源。网站不可用时，也可通过 SSH 在节点本机执行离线脚本。</p>
               <UiButton variant="secondary" size="sm" type="button" @click="downloadCleanupScript">下载清理脚本</UiButton>
               <p>停机并关闭自动启动：<code>sudo sh cleanup-zero-node.sh stop --yes</code></p>
               <p>彻底卸载内核、配置和事件队列：<code>sudo sh cleanup-zero-node.sh uninstall --yes</code></p>
@@ -267,6 +267,7 @@
     </ModalDialog>
 
     <NodeRuntimeDiagnosticsModal :open="diagnosticsOpen" :node-id="selectedNode?.id || 0" :node-name="selectedNode?.name" :ssh-ready="Boolean(selectedNode?.ssh_verified_at)" @close="diagnosticsOpen = false" />
+    <NodeRetirementDialog :open="retirementOpen" :node-id="retirementTarget?.id || 0" :node-name="retirementTarget?.name || ''" @close="closeRetirement" @completed="retirementCompleted" />
     <SshTerminalDialog :open="terminalOpen" :node="terminalNode" @close="terminalOpen = false" />
   </section>
 </template>
@@ -274,13 +275,14 @@
 <script setup lang="ts">
 import { compareKernelVersions } from '../utils/kernelVersion'
 import NodeKernelUpload from '../components/NodeKernelUpload.vue'
+import NodeRetirementDialog from '../components/NodeRetirementDialog.vue'
 import type { AdminTask } from '../api/client'
 import NodeSetupGuide from '../components/NodeSetupGuide.vue'
 import NodeProxyPools from '../components/NodeProxyPools.vue'
 import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createNode, createNodeBatchOperation, deleteNode, fetchNodeCleanupScript, detectNodeKernel, fetchAdminTask, fetchNode, fetchNodeKernel, fetchNodeLoad, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type NodeLoadSnapshot, type ZeroReleaseOption } from '../api/client'
+import { createNode, createNodeBatchOperation, fetchNodeCleanupScript, detectNodeKernel, fetchAdminTask, fetchNode, fetchNodeKernel, fetchNodeLoad, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type NodeLoadSnapshot, type ZeroReleaseOption } from '../api/client'
 import { enableNodeBBR, fetchNodeSystemActions, type NodeBBRState } from '../api/nodeSystemActions'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EndpointAddress from '../components/EndpointAddress.vue'
@@ -342,7 +344,6 @@ const connectorFilterOptions = [{ label: '全部连接状态', value: '' }, { la
 const sshAuthOptions = [{ label: '密码', value: 'password' }, { label: '私钥', value: 'private_key' }]
 const sshPrivilegeOptions = [{ label: '直接登录 root', value: 'none' }, { label: 'sudo 提权', value: 'sudo' }, { label: 'su 切换 root', value: 'su' }]
 const selectedNode = ref<AdminNodeDetail | null>(null)
-const deletingNode = ref(false)
 const nodeLoad = ref<NodeLoadSnapshot | null>(null)
 const nodeLoadLoading = ref(false)
 const nodeLoadError = ref('')
@@ -526,7 +527,7 @@ const kernelStatusLabel = computed(() => ({
 } as Record<string, string>)[kernelState.value?.status || 'unknown'] || formatUnknownValue('状态', kernelState.value?.status))
 const kernelDescription = computed(() => kernelState.value?.installed_version ? `Zero ${kernelState.value.installed_version} · ${serviceLabel(kernelState.value.service_status)}` : kernelStatusLabel.value)
 const reconcileButtonLabel = computed(() => kernelState.value?.status === 'unsupported' ? '当前制品不兼容' : kernelState.value?.status === 'not_installed' ? '自动安装' : kernelState.value?.recommended_action === 'configure' ? '应用配置' : '安装 / 升级 / 修复')
-function lifecycleLabel(value?: string) { return ({ active: '正常', maintenance: '维护', retired: '退役', deleting: '待完成删除' } as Record<string, string>)[value || ''] || formatUnknownValue('状态', value) }
+function lifecycleLabel(value?: string) { return ({ active: '正常', maintenance: '维护', retired: '退役', deleting: '退役处理中' } as Record<string, string>)[value || ''] || formatUnknownValue('状态', value) }
 function lifecycleTone(node: any): 'success' | 'warning' | 'neutral' { return node.lifecycle_status === 'maintenance' ? 'warning' : node.lifecycle_status === 'retired' ? 'neutral' : node.is_enabled ? 'success' : 'neutral' }
 function kernelListLabel(value?: string) { return ({ unknown: '未检测', not_installed: '未安装', healthy: '健康', degraded: '异常', failed: '失败', unsupported: '不兼容', publishing: '发布中', apply_failed: '应用失败' } as Record<string, string>)[value || 'unknown'] || formatUnknownValue('状态', value) }
 function kernelListTone(value?: string): 'success' | 'warning' | 'danger' | 'neutral' { if (value === 'healthy') return 'success'; if (!value || value === 'unknown') return 'neutral'; if (value === 'not_installed' || value === 'unsupported' || value === 'publishing') return 'warning'; return 'danger' }
@@ -748,6 +749,7 @@ function adminContextLink(path: string, query: Record<string, string>) { return 
 async function syncURL(replace = false) {
   const page = Math.floor(offset.value / limit.value) + 1
   const location = { query: {
+    ...(retirementOpen.value && retirementTarget.value ? { retirement: String(retirementTarget.value.id) } : {}),
     ...preserveAdminReturnTo(route.query.return_to),
     ...(filters.q ? { q: filters.q } : {}),
     ...(filters.lifecycle ? { lifecycle: filters.lifecycle } : {}),
@@ -787,27 +789,18 @@ async function downloadCleanupScript() {
   setTimeout(()=>URL.revokeObjectURL(url),1000)
  } catch(cause:any) { detailError.value=cause?.response?.data?.message||'清理脚本下载失败。' }
 }
-async function removeNode(node: AdminNodeDetail) {
-  if (!await confirmAction({
-    title: '删除节点资产？',
-    message: `将永久删除“${node.name}”以及 zboard 中由该节点承载的协议服务、证书、DNS 管理记录和运行状态。同时清理相关前置入口、节点组关联和共享代理池。此操作不连接 SSH 或供应商，远端 Zero、证书文件和 DNS 记录保留；如需停机或卸载，请先保存清理脚本。历史流量、任务与审计记录保留。`,
-    confirmText: '确认删除',
-    tone: 'danger',
-  })) return
-  deletingNode.value = true
-  detailError.value = ''
-  detailMessage.value = ''
-  try {
-    await deleteNode(node.id)
-    if (pendingBBRNodeID.value === node.id) pendingBBRNodeID.value = 0
-    await closeDetail()
-    message.value = `节点“${node.name}”的面板记录及关联已删除；远端进程和供应商资源未清理。`
-    await refresh()
-  } catch (e: any) {
-    detailError.value = e?.response?.data?.message || '节点删除失败。'
-  } finally {
-    deletingNode.value = false
-  }
+const retirementOpen = ref(false), retirementTarget = ref<{ id: number; name: string } | null>(null)
+async function removeNode(node: AdminNodeDetail) { retirementTarget.value = node; retirementOpen.value = true; await syncURL(true) }
+async function closeRetirement() { retirementOpen.value = false; await syncURL(true) }
+watch(() => route.query.retirement, value => {
+  const id = Number(value)
+  if (Number.isSafeInteger(id) && id > 0) { if (retirementTarget.value?.id !== id) retirementTarget.value = { id, name: `#${id}` }; retirementOpen.value = true }
+  else retirementOpen.value = false
+}, { immediate: true })
+async function retirementCompleted() {
+  if (selectedNode.value?.id === retirementTarget.value?.id) await closeDetail()
+  message.value = '节点退役处理完成，清理结果可在退役任务中核对。'
+  await refresh()
 }
 async function changeNodeProtocolPage(value: { offset: number; limit: number }) { nodeProtocolOffset.value = value.offset; nodeProtocolLimit.value = value.limit; await syncURL() }
 function openCreate() { pendingBBRNodeID.value = 0; Object.assign(createForm, { name: '', region: '', address: '', remark: '', enable_bbr: false }); createErrors.clear(); createState.markClean(); createOpen.value = true }

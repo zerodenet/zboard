@@ -53,6 +53,7 @@ func (h *handlers) registerNativeJobs(runtime *jobs.Runtime) {
 		})
 	}
 	_ = runtime.Register(jobs.Definition{ID: network.NodeCleanupHandler, Handler: network.NodeCleanupHandler, Owner: "system", Name: "节点清理", Revision: "1", Timeout: nativeJobTimeout(network.NodeCleanupHandler)}, h.executeNodeCleanupRun)
+	_ = runtime.Register(jobs.Definition{ID: network.NodeRetirementHandler, Handler: network.NodeRetirementHandler, Owner: "system", Name: "节点退役", Revision: "1", Timeout: 10 * time.Minute}, h.executeNodeRetirement)
 }
 
 func nativeJobTimeout(kind string) time.Duration {

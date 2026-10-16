@@ -2756,6 +2756,53 @@ paths:
       responses:
         "200": { description: Node asset deleted }
         "409": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/nodes/{id}/retirement:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      tags: [admin, nodes]
+      summary: Read durable node retirement progress
+      description: Admin only. Available after the node is removed. Includes per-resource completed, retained, failed or pending steps; never includes credentials. Expired execution leases remain uncertain until explicitly reconciled by a bounded safe retry.
+      responses:
+        "200":
+          description: Retirement status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/NodeRetirement" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin, nodes]
+      summary: Start or explicitly retry node retirement
+      description: "Admin only. retire cleans exclusively owned DNS, managed certificate files and remote Zero before removing panel records. detach removes panel management without remote operations. Shared or externally changed DNS and custom certificate paths are retained; a shared SSH host blocks full retirement. Credentials and unfinished resource records survive failures. Completed steps are not replayed. The remote event-state directory is retained. Active work cannot switch modes; a failed retirement may explicitly switch to detach. Historical traffic, task and audit records remain."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [mode]
+              properties:
+                mode: { type: string, enum: [retire, detach] }
+      responses:
+        "202":
+          description: Durable retirement accepted or existing intent returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/NodeRetirement" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/v1/admin/node-cleanup-script:
     get:
       tags: [admin, nodes]
@@ -5659,6 +5706,28 @@ components:
           $ref: "#/components/schemas/ApiErrorDetail"
         timestamp:
           type: string
+    NodeRetirement:
+      type: object
+      required: [node_id, node_name, mode, state, run_id, attempt, steps]
+      properties:
+        node_id: { type: integer, format: int64 }
+        node_name: { type: string }
+        mode: { type: string, enum: [retire, detach] }
+        state: { type: string }
+        run_id: { type: string }
+        attempt: { type: integer, minimum: 1 }
+        last_error: { type: string }
+        steps:
+          type: array
+          items:
+            type: object
+            required: [kind, id, label, state]
+            properties:
+              kind: { type: string, enum: [dns, certificate, zero] }
+              id: { type: integer, format: int64 }
+              label: { type: string }
+              state: { type: string, enum: [pending, running, succeeded, retained, failed] }
+              message: { type: string }
     ApiErrorDetail:
       type: object
       description: Versioned machine-readable detail included on HTTP error responses. The top-level message remains for backward compatibility.

@@ -17,7 +17,7 @@ import (
 func nodeCleanupCommand() string {
 	// The remote deadline survives an SSH disconnect. Use the embedded script,
 	// not an unverified copy already present on the VPS. No secrets enter argv.
-	return "timeout -k 5 150 sh -c " + shellQuote(string(nodecleanup.Script)) + " zboard-cleanup uninstall --yes"
+	return "timeout -k 5 150 sh -c " + shellQuote(string(nodecleanup.Script)) + " zboard-cleanup uninstall --yes --keep-state"
 }
 
 func (h *handlers) executeNodeCleanupRun(ctx context.Context, run jobs.Run) error {

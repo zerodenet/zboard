@@ -17,12 +17,13 @@ func nodeRemovalBlockers(tx *gorm.DB, nodeID uint, endpointIDs []uint) (map[stri
 	dnsIDs := tx.Model(&model.ManagedDNSRecord{}).Select("id").Where("node_id = ?", nodeID)
 	certIDs := tx.Model(&model.ManagedCertificate{}).Select("id").Where("node_id = ?", nodeID)
 	queries := map[string]*gorm.DB{
-		"kernel_operations":      tx.Model(&model.NodeOperation{}).Where("node_id = ? AND status = ?", nodeID, "running"),
-		"protocol_deployments":   tx.Model(&model.ProtocolDeployment{}).Where("node_id = ? AND status = ?", nodeID, "running"),
-		"certificate_operations": tx.Model(&model.CertificateOperation{}).Where("node_id = ? OR managed_certificate_id IN (?)", nodeID, certIDs).Where("status = ? OR EXISTS (?)", "running", unconfirmedOperationEvidence(tx, network.CertificateOperation)),
-		"dns_operations":         tx.Model(&model.ProviderOperation{}).Where("resource_type = ? AND resource_id IN (?)", "dns_record", dnsIDs).Where("status = ? OR EXISTS (?)", "running", unconfirmedOperationEvidence(tx, network.DNSOperation)),
-		"active_dns":             tx.Model(&model.ManagedDNSRecord{}).Where("node_id = ? AND status = ?", nodeID, "syncing"),
-		"active_certificates":    tx.Model(&model.ManagedCertificate{}).Where("node_id = ? AND status IN ?", nodeID, []string{"issuing", "renewing"}),
+		"shared_certificate_references": tx.Table("certificate_protocol_endpoints AS c").Joins("JOIN managed_certificates AS m ON m.id = c.managed_certificate_id").Joins("JOIN protocol_endpoints AS p ON p.id = c.protocol_endpoint_id").Where("m.node_id = ? AND p.node_id <> ?", nodeID, nodeID),
+		"kernel_operations":             tx.Model(&model.NodeOperation{}).Where("node_id = ? AND status = ?", nodeID, "running"),
+		"protocol_deployments":          tx.Model(&model.ProtocolDeployment{}).Where("node_id = ? AND status = ?", nodeID, "running"),
+		"certificate_operations":        tx.Model(&model.CertificateOperation{}).Where("node_id = ? OR managed_certificate_id IN (?)", nodeID, certIDs).Where("status = ? OR EXISTS (?)", "running", unconfirmedOperationEvidence(tx, network.CertificateOperation)),
+		"dns_operations":                tx.Model(&model.ProviderOperation{}).Where("resource_type = ? AND resource_id IN (?)", "dns_record", dnsIDs).Where("status = ? OR EXISTS (?)", "running", unconfirmedOperationEvidence(tx, network.DNSOperation)),
+		"active_dns":                    tx.Model(&model.ManagedDNSRecord{}).Where("node_id = ? AND status = ?", nodeID, "syncing"),
+		"active_certificates":           tx.Model(&model.ManagedCertificate{}).Where("node_id = ? AND status IN ?", nodeID, []string{"issuing", "renewing"}),
 	}
 	targets := make([]string, 0, len(endpointIDs))
 	for _, id := range endpointIDs {

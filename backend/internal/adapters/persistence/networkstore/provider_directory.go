@@ -96,6 +96,8 @@ func providerDeletionBlockers(tx *gorm.DB, id uint) (map[string]int64, error) {
 	certKeys := concat("certificate_operation:", "id").Model(&model.CertificateOperation{}).Where("managed_certificate_id IN (?)", certIDs)
 	pending := tx.Model(&jobstore.Record{}).Where("owner = ? AND state NOT IN ?", "system", []jobs.State{jobs.Succeeded, jobs.Failed, jobs.Canceled}).Where("resource IN (?) OR resource IN (?) OR resource IN (?) OR `key` IN (?) OR `key` IN (?)", dnsResources, inspections, certResources, dnsKeys, certKeys)
 	queries := map[string]*gorm.DB{
+		"retiring_dns":           tx.Model(&model.ManagedDNSRecord{}).Where("provider_account_id = ? AND node_id IN (?)", id, tx.Model(&model.NodeRetirement{}).Select("node_id").Where("state <> ?", "succeeded")),
+		"retiring_certificates":  tx.Model(&model.ManagedCertificate{}).Where("provider_account_id = ? AND node_id IN (?)", id, tx.Model(&model.NodeRetirement{}).Select("node_id").Where("state <> ?", "succeeded")),
 		"running_operations":     tx.Model(&model.ProviderOperation{}).Where("provider_account_id = ? AND status = ?", id, "running"),
 		"certificate_operations": tx.Model(&model.CertificateOperation{}).Where("managed_certificate_id IN (?) AND status = ?", certIDs, "running"),
 		"active_certificates":    tx.Model(&model.ManagedCertificate{}).Where("provider_account_id = ? AND status IN ?", id, []string{"issuing", "renewing"}),

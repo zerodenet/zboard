@@ -37,6 +37,7 @@ func (h *handlers) AdminRuntimeHistoryHandler(w http.ResponseWriter, r *http.Req
 		PlannedAt     *time.Time `json:"planned_at,omitempty"`
 		CreatedAt     time.Time  `json:"created_at"`
 		FinishedAt    *time.Time `json:"finished_at"`
+		NodeID        uint       `json:"node_id,omitempty"`
 	}
 	out := make([]row, 0, len(rows))
 	for _, v := range rows {
@@ -45,7 +46,13 @@ func (h *handlers) AdminRuntimeHistoryHandler(w http.ResponseWriter, r *http.Req
 			value := v.NotBefore
 			next = &value
 		}
-		out = append(out, row{ID: v.ID, Owner: v.Owner, Handler: v.Handler, State: v.State, Attempts: v.Attempt, MaxAttempts: v.MaxAttempts, NextAttemptAt: next, PlannedAt: v.PlannedAt, CreatedAt: v.CreatedAt, FinishedAt: v.FinishedAt})
+		var retirement struct {
+			NodeID uint `json:"node_id"`
+		}
+		if v.Owner == "system" && v.Handler == "node_retirement" {
+			_ = json.Unmarshal([]byte(v.Payload), &retirement)
+		}
+		out = append(out, row{ID: v.ID, Owner: v.Owner, Handler: v.Handler, State: v.State, Attempts: v.Attempt, MaxAttempts: v.MaxAttempts, NextAttemptAt: next, PlannedAt: v.PlannedAt, CreatedAt: v.CreatedAt, FinishedAt: v.FinishedAt, NodeID: retirement.NodeID})
 	}
 	OK(w, pagedData(out, total, offset, limit))
 }
