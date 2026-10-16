@@ -31,14 +31,18 @@ type PluginVersion struct {
 }
 
 type PluginOperation struct {
-	ID        string    `gorm:"primaryKey;size:64" json:"id"`
-	PluginID  string    `gorm:"size:160;not null;index" json:"plugin_id"`
-	Action    string    `gorm:"size:32;not null" json:"action"`
-	State     string    `gorm:"size:24;not null" json:"state"`
-	Actor     string    `gorm:"size:191;not null" json:"actor"`
-	Message   string    `gorm:"type:text;not null" json:"message"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	PreviousPublisher     string    `gorm:"size:160;not null;default:''" json:"previous_publisher,omitempty"`
+	Publisher             string    `gorm:"size:160;not null;default:''" json:"publisher,omitempty"`
+	SigningKeyFingerprint string    `gorm:"size:64;not null;default:''" json:"signing_key_fingerprint,omitempty"`
+	PackageDigest         string    `gorm:"size:64;not null;default:''" json:"package_digest,omitempty"`
+	ID                    string    `gorm:"primaryKey;size:64" json:"id"`
+	PluginID              string    `gorm:"size:160;not null;index" json:"plugin_id"`
+	Action                string    `gorm:"size:32;not null" json:"action"`
+	State                 string    `gorm:"size:24;not null" json:"state"`
+	Actor                 string    `gorm:"size:191;not null" json:"actor"`
+	Message               string    `gorm:"type:text;not null" json:"message"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 type PluginHostLease struct {

@@ -89,7 +89,7 @@ export interface MarketDetail {
 }
 export const fetchMarketDetail = (id: string, version = '', signal?: AbortSignal) => api.get(`/admin/plugin-market/${encodeURIComponent(id)}`, { params: version ? { version } : undefined, signal, timeout: 60_000 }).then(data<MarketDetail>);
 export const previewMarketPlugin = (id: string, version: string, signal?: AbortSignal) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/inspect`, undefined, { params: { version }, signal, timeout: 60_000 }).then(data<ImportPreview>);
-export const confirmMarketPlugin = (id: string, version: string, preview: ImportPreview, trust: boolean) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/install`, { version, digest: preview.digest, fingerprint: trust ? preview.fingerprint : '' }, { timeout: 60_000 }).then(data<Plugin>).then(changedPlugin);
+export const confirmMarketPlugin = (id: string, version: string, preview: ImportPreview, trust: boolean, migratePublisher = false) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/install`, { version, digest: preview.digest, fingerprint: trust || migratePublisher ? preview.fingerprint : '', publisher_migration: migratePublisher ? preview.publisher_migration?.confirmation || '' : '' }, { timeout: 60_000 }).then(data<Plugin>).then(changedPlugin);
 export interface PluginSession {
   token: string;
   bridge_token: string;
@@ -125,13 +125,15 @@ export interface ImportPreview {
   manifest: Plugin['manifest'] & { id: string; name: string; version: string };
   publisher: string; public_key: string; fingerprint: string; digest: string; trusted: boolean;
   compatibility: Plugin['compatibility'];
+  publisher_migration?: { from_publisher: string; to_publisher: string; from_version_id: string; previous_state: string; generation: number; confirmation: string };
 }
 export const previewPlugin = (file: File, publicKey = '') => api.post('/admin/plugins', file, {
   params: { inspect: true }, headers: { 'Content-Type': 'application/octet-stream', 'X-Plugin-Public-Key': publicKey.trim() }, timeout: 60_000,
 }).then(data<ImportPreview>);
-export const importPlugin = (file: File, preview?: ImportPreview, trust = false) => api.post('/admin/plugins', file, {
+export const importPlugin = (file: File, preview?: ImportPreview, trust = false, migratePublisher = false) => api.post('/admin/plugins', file, {
   headers: { 'Content-Type': 'application/octet-stream', 'X-Plugin-Public-Key': preview?.public_key || '',
-    'X-Plugin-Digest': preview?.digest || '', 'X-Plugin-Trust-Fingerprint': trust ? preview?.fingerprint || '' : '' },
+    'X-Plugin-Digest': preview?.digest || '', 'X-Plugin-Trust-Fingerprint': trust || migratePublisher ? preview?.fingerprint || '' : '',
+    'X-Plugin-Publisher-Migration': migratePublisher ? preview?.publisher_migration?.confirmation || '' : '' },
   timeout: 60_000,
 }).then(data<Plugin>).then(changedPlugin);
 export type PluginLifecycleAction = 'enable' | 'disable' | 'uninstall' | 'purge_data';
@@ -170,6 +172,7 @@ export const fetchPluginOperations = (id: string, signal?: AbortSignal) =>
         Array<{
           id: string;
           action: string;
+          previous_publisher?: string; publisher?: string; signing_key_fingerprint?: string; package_digest?: string;
           state: string;
           actor: string;
           message: string;

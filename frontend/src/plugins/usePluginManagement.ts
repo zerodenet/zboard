@@ -12,7 +12,7 @@ export const hasPluginConfig = (p: Plugin) => hasPluginCapability(p, 'zboard.con
 export const actionLabels: Record<string, string> = {
   // Historical audit rows remain readable; this is not an executable action.
   rollback: '历史版本恢复',
-  purge_data: '清除插件数据', import: '导入', install: '安装', enable: '启用', disable: '停用', uninstall: '卸载', configure: '保存配置', config: '保存配置', test: '测试配置',
+  publisher_migration: '发布者迁移', purge_data: '清除插件数据', import: '导入', install: '安装', enable: '启用', disable: '停用', uninstall: '卸载', configure: '保存配置', config: '保存配置', test: '测试配置',
 }
 
 export function usePluginDetail() {

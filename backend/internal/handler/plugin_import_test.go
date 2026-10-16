@@ -3,6 +3,7 @@ package handler
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -117,5 +118,66 @@ func TestLegacyOfflineImportUsesPreviewConfirmationWithoutHostConfiguration(t *t
 	}
 	if installed.Enabled || !installed.LocalTrust || installed.SigningKey != publicKey {
 		t.Fatal(installed)
+	}
+	// Exercise the same actual HTTP import path after uninstall with retained
+	// identity. No consumer payment route or core business record is invoked.
+	removed, err := manager.Action(context.Background(), installed.ID, "uninstall", "admin@example.test", installed.Generation, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files["signature.json"], _ = json.Marshal(plugins.Signature{Algorithm: "ed25519", KeyID: "formal.publisher", Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(priv, files["manifest.json"]))})
+	archive.Reset()
+	writer = zip.NewWriter(&archive)
+	for name, data := range files {
+		file, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := file.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	w = request("?inspect=true", "", "")
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &envelope) != nil {
+		t.Fatal("migration preview failed", w.Code, w.Body.String())
+	}
+	preview = envelope.Data
+	if preview.PublisherMigration == nil || preview.PublisherMigration.FromPublisher != "example" || preview.PublisherMigration.ToPublisher != "formal.publisher" || preview.PublisherMigration.PreviousState != "uninstalled" {
+		t.Fatal(preview)
+	}
+	if w := request("", preview.Digest, preview.Fingerprint); w.Code != 400 {
+		t.Fatal("migration without consent accepted", w.Code, w.Body.String())
+	}
+	r := announcementRequest(http.MethodPost, "/api/v1/admin/plugins", token, archive.String())
+	r.Header.Set("Content-Type", "application/octet-stream")
+	r.Header.Set("X-Plugin-Public-Key", publicKey)
+	r.Header.Set("X-Plugin-Digest", preview.Digest)
+	r.Header.Set("X-Plugin-Trust-Fingerprint", preview.Fingerprint)
+	r.Header.Set("X-Plugin-Publisher-Migration", preview.PublisherMigration.Confirmation)
+	w = httptest.NewRecorder()
+	h.AdminPluginsHandler(w, r)
+	if w.Code != 200 {
+		t.Fatal("confirmed HTTP migration failed", w.Code, w.Body.String())
+	}
+	var result struct{ Data plugins.Installation }
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Data.Enabled || result.Data.Publisher != "formal.publisher" || result.Data.Generation != removed.Generation+1 || result.Data.SigningKey != publicKey {
+		t.Fatal(result.Data)
+	}
+	// An identical replay is stale, rather than an implicit second installation.
+	r = announcementRequest(http.MethodPost, "/api/v1/admin/plugins", token, archive.String())
+	r.Header.Set("X-Plugin-Public-Key", publicKey)
+	r.Header.Set("X-Plugin-Digest", preview.Digest)
+	r.Header.Set("X-Plugin-Trust-Fingerprint", preview.Fingerprint)
+	r.Header.Set("X-Plugin-Publisher-Migration", preview.PublisherMigration.Confirmation)
+	w = httptest.NewRecorder()
+	h.AdminPluginsHandler(w, r)
+	if w.Code != 409 {
+		t.Fatal("replayed migration accepted", w.Code, w.Body.String())
 	}
 }
