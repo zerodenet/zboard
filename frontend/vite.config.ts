@@ -2,6 +2,11 @@ import { defineConfig } from 'vite'
 import path from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
+import { readFileSync } from 'node:fs'
+import { versionedAssetsDirectory, verifyBuildAssets } from './buildAssets'
+
+const packageVersion: string = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
+const assetsDirectory = versionedAssetsDirectory(packageVersion)
 
 const API_BASE = process.env.VITE_API_BASE || '/api/v1'
 const apiProxyTarget = (() => {
@@ -15,9 +20,15 @@ const apiProxyTarget = (() => {
 })()
 
 export default defineConfig({
-  plugins: [vue(), tailwindcss()],
+  plugins: [vue(), tailwindcss(), {
+    name: 'verify-frontend-assets',
+    enforce: 'post',
+    generateBundle(_options, bundle) { verifyBuildAssets(assetsDirectory, bundle) },
+  }],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   build: {
+    // Unchanged CSS hashes must not reuse an older release's cached failure.
+    assetsDir: assetsDirectory,
     rollupOptions: {
       output: {
         manualChunks(id) {
