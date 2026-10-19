@@ -3,6 +3,7 @@ package meteringstore
 import (
 	"crypto/subtle"
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -30,18 +31,42 @@ func ResolveCompletionCredential(tx *gorm.DB, cipher metering.CredentialDecrypto
 // records or logs. Completed flows may reference a credential that has already
 // expired, so ownership lookup intentionally includes historical credentials.
 func matchCredentialSecret(tx *gorm.DB, cipher metering.CredentialDecryptor, nodeID uint, provided string) (model.ProtocolCredential, error) {
+
+	var match model.ProtocolCredential
+	digest := entitlements.RetiredPrincipalHash(nodeID, provided)
+	if digest != "" {
+		var retired []model.ProtocolCredential
+		if err := tx.Where("node_id = ? AND retired_principal_hash = ? AND status = ? AND secret = ?", nodeID, digest, "revoked", "").Order("id DESC").Limit(2).Find(&retired).Error; err != nil {
+			return match, err
+		}
+		if len(retired) > 1 {
+			return match, metering.ErrPrincipalAmbiguous
+		}
+		if len(retired) == 1 {
+			match = retired[0]
+		}
+	}
 	var credentials []model.ProtocolCredential
-	if err := tx.Where("node_id = ?", nodeID).Order("id DESC").Find(&credentials).Error; err != nil {
+	if err := tx.Where("node_id = ? AND secret <> ?", nodeID, "").Order("id DESC").Find(&credentials).Error; err != nil {
 		return model.ProtocolCredential{}, err
 	}
 	for _, credential := range credentials {
+		if cipher == nil {
+			continue
+		}
 		secret, err := cipher.Decrypt(credential.Secret)
 		if err != nil {
 			continue
 		}
 		if len(secret) == len(provided) && subtle.ConstantTimeCompare([]byte(secret), []byte(provided)) == 1 {
-			return credential, nil
+			if match.ID != 0 && match.ID != credential.ID {
+				return model.ProtocolCredential{}, metering.ErrPrincipalAmbiguous
+			}
+			match = credential
 		}
+	}
+	if match.ID != 0 {
+		return match, nil
 	}
 	return model.ProtocolCredential{}, gorm.ErrRecordNotFound
 }

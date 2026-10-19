@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -172,11 +173,12 @@ func (s SubscriptionTermination) Terminate(ctx context.Context, actor, id uint, 
 		}
 		// Explicit unsubscribe has no recovery window. Retain cumulative identities
 		// and history; verified cash arriving after cancellation cannot revive it.
+		finalTotal, finalUsed := entitlements.CycleQuota(entitlements.Subscription(sub))
 		for _, order := range orders {
 			if order.SubscriptionEndedAt != nil && order.Status != "pending" {
 				continue
 			} // Preserve earlier terminated-term history.
-			updates := map[string]any{"subscription_ended_at": now, "subscription_end_reason": "canceled", "subscription_final_flow_total": sub.FlowTotal, "subscription_final_flow_used": sub.FlowUsed, "updated_at": now}
+			updates := map[string]any{"subscription_ended_at": now, "subscription_end_reason": "canceled", "subscription_final_flow_total": finalTotal, "subscription_final_flow_used": finalUsed, "updated_at": now}
 			if order.Status == "pending" {
 				if err := releaseOrderFunding(tx, order, "canceled", now); err != nil {
 					return err

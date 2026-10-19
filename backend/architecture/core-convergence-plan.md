@@ -296,3 +296,23 @@ P2-10追加验证与真实修正：取消状态、end_reason已传入列表/详�
 完整后端在读模型修正后通过（/tmp/zboard-termination-backend-ready.log，handler120.158s）；最新插入保护源码的最终完整检查在运行，完成后另记。vet/build均通过；CGO=0 SQLite8.675s。前端原CI范围894通过、8既有skip，最终类型检查/build15.98s。反馈策略首次将本地confirm函数名识别为原生对话框，改名后规则不变，全量通过；OpenAPI首次两处描述漏引号已修正，最终有效、282既有warnings。未改六项前端排除。3b4e9a8六项CI全部成功：https://github.com/zerodenet/zboard/actions/runs/39307410949 。无SDK改动，其最终复核仍由当前CI执行。
 
 P2-10提交前最终完整后端通过（/tmp/zboard-termination-backend-commit.log，handler118.357s），包含最终READ COMMITTED保护源码；最终vet/build通过。安全源码清单与日志摘要见validation/2026-10-19-subscription-unsubscribe.json。所有上述变更仅在隔离环境核验，P2整体及P3–P7仍未完成。提交后核对同一Draft PR的最终head CI，不将此前绿色替代新head结果。
+
+### P2/P4 独立前置 — 最终终止保留业务及计量恢复事实（2026-10-19，验证中）
+
+原retireSubscription会删除Subscription、ProtocolCredential、FlowUsage、TrafficRecord、QuotaEvent、SubscriptionMutation、SubscriptionMember、SubscriptionToken及MySQL小时汇总，既丢业务历史又抹掉累计游标/去重。现在到期/单次额度服务最终结束写入明确ended状态，不再删除上述数据或汇总。默认7天内的可续费expired仍保持原恢复规则，未到期的普通周期耗尽仍不终止；最终ended没有恢复截止日、不能被续费、旧重置任务或迟到现金复活。用户当前服务列表排除最终ended，管理员可筛选/查看历史，终止历史不再提供配额编辑。先前已经结束的订单摘要不被后续结束覆盖。
+
+终止事务调用commerce唯一预留释放路径，取消关联待付单，并修复关联旧canceled/failed但仍reserved的资金。保留TargetSubscriptionID，迟到真实渠道款按收据进余额，不能因清空目标而变成新购。期末快照、取消/释放、凭据材料清理、token撤销、审计和原持久发布意图同事务；缺少参与者拒绝执行，SQL/密钥失败整笔回滚，现有任务保留错误供恢复。业务和网络仍分开，ended不等于旧连接已经断开。
+
+核查确认当前Zero Shadowsocks可能以认证密码作为上报主体，直接删密文会失去迟到匹配。0044只新增私有retired_principal_hash及(node_id,hash)索引。终止时先用现有CredentialCipher解密随机机器凭据，保存带版本域和节点范围的SHA256归属摘要，再清除ProtocolCredential.secret、撤销状态和订阅token密文；保留CredentialID/PrincipalKey、token哈希及来源引用。摘要不能用于节点认证、不进入公开JSON或日志。已认证节点的迟到计量可按摘要归属，保持原累计游标。当前加密凭据与退休摘要同时匹配不同身份时返回明确归属冲突，不能取最新一条给任意订阅扣量。原业务封顶不变：专项原始累计60字节、计费30字节，超用不变成欠费。本批清理规范凭据/token密文，不宣称原始spool、未映射观察或诊断中的敏感材料已完成P4保留治理。
+
+0044没有批量改写历史成交/计量；只有实际最终终止事务生成摘要并销毁对应密文。已记录迁移但凭据表/摘要字段缺失时在AutoMigrate前报错要求恢复；字段已存在、索引未完成的中断DDL可补索引且保留非空摘要。down保留全部恢复依据。曾清除凭据密文后，旧二进制无法靠新摘要匹配密码主体的迟到事件；回滚必须停消费并保留持久缓冲，优先前向修复，不能删摘要/游标或丢弃重放事实。不是自动部署或生产迁移。
+
+同时补足上一批多次付费重置后的真实退款：SQLite/MySQL执行两次100分重置，再使用一半额度，最终200分退款实际分成原单100分、两个重置单各50分；一个余额账目，原单预算封顶。订单末期摘要使用当前周期100总额/50用量，不把累计计量130误写为本周期用量；累计原始状态仍在快照/计量身份中保留。没有改变收费、舍入或已批准重置规则。
+
+专项通过：SQLite/MySQL终止后原游标身份保持、原事件/迟到事件重复不多扣、原始量/计费量分别可核、摘要跨节点拒绝、密码主体归属歧义拒绝、另一份订阅不受影响、预留释放、迟到真实渠道款仅入余额；最终审计SQL失败还原原密文/摘要/钱包/状态/发布意图。新库、重复迁移、非空摘要下索引中断、已记录字段丢失保护通过。旧小时汇总测试从“删除为零”改为“历史原值保留”，保留故障原子断言，并用上述真实重放测试约束，不增加skip/排除。
+
+当前完整后端通过（handler181.260s），vet/build及CGO=0 SQLite14.313s通过；前端原CI范围895通过、8既有skip，build22.00s；OpenAPI有效、282既有warnings。完整MySQL仍运行，提交后单独核对head CI。上一批a01a611六项CI已全部成功：https://github.com/zerodenet/zboard/actions/runs/39311655936 。本批没有内核修改、生产操作或严格停服/容量承诺。
+
+剩余：恢复窗口仍固定默认7天尚未可配；完整换购/自动续费需先解决新权益与旧凭据/迟到计量的代次隔离，不能将旧累计用量扣入新权益。计量/诊断数据当前保留且仍有事务耦合，尚未实现安全归档、有界保留或独立投影；原始主体诊断规范化也需继续。P2整体、P3–P7未完成。
+
+本批提交前最终完整MySQL8.4通过（datastore71.065s、handler359.151s，/tmp/zboard-retirement-mysql-full.log），完整后端181.260s、vet/build、纯Go SQLite及前端/OpenAPI均完成。源码/日志摘要见validation/2026-10-19-retirement-recovery.json。尚未声称当前新head CI通过，提交后单独核对；所有先前失败证据保留，未扩张任何排除。

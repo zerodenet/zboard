@@ -18,14 +18,14 @@ func (h *handlers) StartCredentialExpiryWorker() {
 		// Drain a bounded burst so mass expiries do not wait another interval per batch.
 		for batch := 0; batch < 10; batch++ {
 			now := time.Now().UTC()
-			expired, err := h.services.CredentialExpiry().ExpireDue(ctx, now, credentialExpiryReconcileBatchSize)
+			expired, err := h.services.CredentialExpiry(h.credentialCipher).ExpireDue(ctx, now, credentialExpiryReconcileBatchSize)
 			if err != nil {
 				return err
 			}
 			if len(expired) > 0 {
 			}
 			// Subscription count, not credential fanout, determines whether work remains.
-			due, err := h.services.CredentialExpiry().HasDue(ctx, time.Now().UTC())
+			due, err := h.services.CredentialExpiry(h.credentialCipher).HasDue(ctx, time.Now().UTC())
 			if err != nil {
 				return err
 			}
@@ -47,7 +47,7 @@ func (h *handlers) runExpiredCredentialReconciliation(now time.Time) error {
 	if started.IsZero() {
 		started = time.Now().UTC()
 	}
-	expired, err := h.services.CredentialExpiry().ExpireDue(context.Background(), started, credentialExpiryReconcileBatchSize)
+	expired, err := h.services.CredentialExpiry(h.credentialCipher).ExpireDue(context.Background(), started, credentialExpiryReconcileBatchSize)
 	if err != nil {
 		return err
 	}

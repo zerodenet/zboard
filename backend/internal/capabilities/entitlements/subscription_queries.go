@@ -95,7 +95,7 @@ func (s SubscriptionQueries) list(ctx context.Context, actor uint, admin bool, q
 		return fail("q must not exceed 128 bytes")
 	}
 	switch q.Status {
-	case "", "active", "expired", "canceled":
+	case "", "active", "expired", "canceled", "ended":
 	default:
 		return fail("invalid status")
 	}
@@ -144,8 +144,8 @@ func (s SubscriptionQueries) Detail(ctx context.Context, actor, id uint) (Subscr
 // Cycle exhaustion does not end a service with future quota cycles. Older
 // releases stored it as expired; only restore those nonterminal instances.
 func EffectiveStatus(sub Subscription, now time.Time) string {
-	if sub.Status == "canceled" {
-		return "canceled"
+	if sub.Status == "canceled" || sub.Status == "ended" {
+		return sub.Status
 	}
 	if sub.EndedAt != nil || (sub.EndsOnQuotaExhaustion && sub.FlowUsed >= sub.FlowTotal) {
 		return "expired"

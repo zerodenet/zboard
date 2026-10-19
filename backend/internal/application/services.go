@@ -279,8 +279,8 @@ func (s *Services) SubscriptionRuleSets(content entitlements.RuleSetContentStore
 	return entitlements.SubscriptionRuleSets{Repository: entitlementstore.SubscriptionRuleSets{DB: s.Identity.db, Content: content}}
 }
 
-func (s *Services) CredentialExpiry() entitlements.CredentialExpiry {
-	return entitlements.CredentialExpiry{Repository: entitlementstore.CredentialExpiry{DB: s.Identity.db, Publish: networkstore.EnqueueNodePublication}}
+func (s *Services) CredentialExpiry(cipher zeroadapter.Cipher) entitlements.CredentialExpiry {
+	return entitlements.CredentialExpiry{Repository: entitlementstore.CredentialExpiry{DB: s.Identity.db, Cipher: cipher, Publish: networkstore.EnqueueNodePublication, BeforeRetire: commercestore.CancelRetiredSubscriptionOrders}}
 }
 
 func RequestNodePublication(tx *gorm.DB, nodeID, endpointID, actor uint) error {

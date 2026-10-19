@@ -33,7 +33,7 @@ func RecordQuotaExhaustion(sub Subscription, now time.Time) Subscription {
 }
 
 func RenewalDeadline(sub Subscription, now time.Time) *time.Time {
-	if sub.Status == "canceled" || sub.EndReason == "canceled" {
+	if sub.Status == "canceled" || sub.Status == "ended" || sub.EndReason == "canceled" {
 		return nil
 	}
 	if sub.Lifecycle != "renewable" && sub.Lifecycle != "" {

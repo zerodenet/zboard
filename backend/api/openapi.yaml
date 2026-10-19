@@ -4176,7 +4176,7 @@ paths:
       parameters:
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: Paged reads only. Search plan/SKU names or exact subscription ID before count and pagination; restricted to the authenticated owner. }
         - { name: subscription_id, in: query, schema: { type: integer, minimum: 1 }, description: Exact target lookup within the current user's subscriptions and all other filters; an unavailable target produces an empty result. }
-        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: "Read-only filter applied before count and pagination. Each operation requires a compatible active, unarchived SKU on a published product and an eligible subscription. manage requires at least one such operation. Renewable ended subscriptions remain renewal candidates strictly before the seven-day deadline; single-use nonrenewable instances are removed after their terminal summary is saved to orders. This filter does not replace order authorization." }
+        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: "Read-only filter applied before count and pagination. Each operation requires a compatible active, unarchived SKU on a published product and an eligible subscription. manage requires at least one such operation. Renewable ended subscriptions remain renewal candidates strictly before the seven-day deadline; finalized instances retain business and metering identities outside the current-service list after their terminal summary is saved to orders. This filter does not replace order authorization." }
         - name: status
           in: query
           schema:
@@ -4205,7 +4205,7 @@ paths:
       parameters:
         - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: Filter targets with a compatible saleable SKU before count and pagination. }
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Match user email, plan, SKU or a numeric subscription/user/plan ID." }
-        - { name: status, in: query, schema: { type: string, enum: [active, expired, canceled] } }
+        - { name: status, in: query, schema: { type: string, enum: [active, expired, canceled, ended] } }
         - { name: quota, in: query, schema: { type: string, enum: [available, exhausted] } }
         - { name: user_id, in: query, schema: { type: integer, format: int64 } }
         - { name: expires_from, in: query, schema: { type: string, format: date }, description: "Inclusive subscription expiration start date. Must be paired with expires_to; the window cannot exceed 366 days." }

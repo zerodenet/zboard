@@ -27,7 +27,7 @@ func TestReadExpiryPersistsRevocationBeforeWorkerSkipsSubscription(t *testing.T)
 	if err := expireSubscriptions(f.h.db, paid.UserID, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.h.services.CredentialExpiry().ExpireDue(context.Background(), now, 200); err != nil {
+	if _, err := f.h.services.CredentialExpiry(f.h.credentialCipher).ExpireDue(context.Background(), now, 200); err != nil {
 		t.Fatal(err)
 	}
 	var job model.NodeConfigPublish

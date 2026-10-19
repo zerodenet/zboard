@@ -18,7 +18,7 @@ const subscriptionSummaryColumns = `subscriptions.id, subscriptions.user_id, use
 			subscriptions.node_group_id, subscriptions.subscription_type,
 			subscriptions.start_at, subscriptions.end_at, subscriptions.lifecycle, subscriptions.ends_on_quota_exhaustion, subscriptions.ended_at, subscriptions.end_reason,
 			CASE
- WHEN subscriptions.status = 'canceled' THEN 'canceled'
+ WHEN subscriptions.status IN ('canceled','ended') THEN subscriptions.status
  WHEN subscriptions.ended_at IS NOT NULL OR (subscriptions.ends_on_quota_exhaustion = TRUE AND subscriptions.flow_used >= subscriptions.flow_total) THEN 'expired'
 				WHEN subscriptions.status = 'active'
 					AND subscriptions.end_at <= ?
@@ -99,6 +99,8 @@ func (s SubscriptionQueries) List(ctx context.Context, actor uint, admin bool, q
 		owner := q.UserID
 		if !admin {
 			owner = actor
+			// Finalized instances remain historical evidence, outside current services.
+			query = query.Where("subscriptions.status <> ?", "ended")
 			// Current services exclude ended fixed instances before the asynchronous
 			// retirement worker runs. Their final state remains in order history.
 			query = query.Where("NOT (subscriptions.lifecycle = 'fixed' AND (subscriptions.ended_at IS NOT NULL OR subscriptions.end_at <= ? OR (subscriptions.ends_on_quota_exhaustion = ? AND subscriptions.flow_used >= subscriptions.flow_total)))", now, true)

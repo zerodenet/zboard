@@ -121,6 +121,9 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
+	if err := preflightRetiredPrincipalSchema(db); err != nil {
+		return err
+	}
 	if err := preflightSubscriptionValueSchema(db); err != nil {
 		return err
 	}
@@ -161,6 +164,9 @@ func RunMigrations(db *gorm.DB) error {
 		return err
 	}
 	if err := reconcileSubscriptionValueSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileRetiredPrincipalSchema(db); err != nil {
 		return err
 	}
 	if err := reconcileNodeRetirementSchema(db); err != nil {
@@ -222,6 +228,12 @@ func runMigrations(db *gorm.DB) error {
 		if version == trafficHourlyVersion || version == trafficHourlyApplicationVersion {
 			if err := reconcileMySQLTrafficHourly(db); err != nil {
 				return fmt.Errorf("reconcile migration %s: %w", version, err)
+			}
+			continue
+		}
+		if version == retiredPrincipalSchemaVersion {
+			if err := reconcileRetiredPrincipalSchema(db); err != nil {
+				return err
 			}
 			continue
 		}

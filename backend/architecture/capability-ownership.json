@@ -89,6 +89,21 @@
   ],
   "cross_domain_transactions": [
     {
+      "id": "entitlements.subscription_retirement",
+      "owner": "entitlements",
+      "source": "internal/adapters/persistence/entitlementstore/credential_expiry.go",
+      "symbol": "CredentialExpiry.ExpireDueCredentials",
+      "participants": [
+        "entitlements",
+        "commerce",
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Roll back final lifecycle status, cancellation/reservation release, credential recovery digest and secret destruction, token revocation, audit and publication intent together. Preserve metering cursors, deduplication records, quota events and existing terminal order snapshots.",
+      "outbox": "Existing node publication intents commit with authorization revocation; transport execution remains separate."
+    },
+    {
       "id": "commerce.subscription_unsubscribe",
       "owner": "commerce",
       "source": "internal/adapters/persistence/commercestore/subscription_termination.go",

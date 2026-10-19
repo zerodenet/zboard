@@ -36,6 +36,15 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 	if order.SubscriptionEndedAt != nil && order.TargetSubscriptionID == nil && order.OrderType != "new" {
 		return quoteError(entitlements.ErrRenewalWindow.Error())
 	}
+	if order.SubscriptionEndedAt != nil && order.TargetSubscriptionID != nil {
+		var target model.Subscription
+		if err := tx.Select("id", "status").Where("id = ? AND user_id = ?", *order.TargetSubscriptionID, order.UserID).First(&target).Error; err != nil {
+			return quoteError(entitlements.ErrRenewalWindow.Error())
+		}
+		if target.Status == "ended" || target.Status == "canceled" {
+			return quoteError(entitlements.ErrRenewalWindow.Error())
+		}
+	}
 	var plan model.Plan
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&plan, order.PlanID).Error; err != nil {
 		return err

@@ -79,6 +79,17 @@ func assertSubscriptionValueRead(t *testing.T, f orderFixture) {
 	if err != nil || quote.TotalMinor != 200 {
 		t.Fatalf("post-reset use: %+v %v", quote, err)
 	}
+	receipt, err := f.h.services.SubscriptionTermination.Terminate(t.Context(), 1, fact.SubscriptionID, commerce.SubscriptionTerminationRequest{QuoteFingerprint: quote.Fingerprint, IdempotencyKey: "unsubscribe-after-multiple-resets"})
+	if err != nil || receipt.AmountMinor != 200 {
+		t.Fatalf("multi-source reset settlement %+v %v", receipt, err)
+	}
+	walletMatches(t, f, 9000, 0, 8)
+	for orderID, refund := range map[uint]int64{root.ID: 100, reset.ID: 50, reset2.ID: 50} {
+		var original model.Order
+		if err := f.h.db.First(&original, orderID).Error; err != nil || original.RefundAmount != refund || original.SubscriptionFinalFlowTotal != 100 || original.SubscriptionFinalFlowUsed != 50 {
+			t.Fatalf("per-order source or cycle summary %+v %v", original, err)
+		}
+	}
 	// Manual marking is retained as a business record, not invented cash proof.
 	manualFixture := f
 	manualFixture.skuRecord = rootSKUForValue(t, f, root.PlanSKUID)

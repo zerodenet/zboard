@@ -12,12 +12,14 @@ import (
 )
 
 type CredentialExpiry struct {
-	DB      *gorm.DB
-	Publish func(*gorm.DB, uint, uint, uint) error
+	DB           *gorm.DB
+	Cipher       entitlements.AccessCipher
+	Publish      func(*gorm.DB, uint, uint, uint) error
+	BeforeRetire func(*gorm.DB, model.Subscription, time.Time) error
 }
 
 func (s CredentialExpiry) ExpireDueCredentials(ctx context.Context, now time.Time, limit int) (out []entitlements.ExpiredCredential, err error) {
-	if s.DB == nil || s.Publish == nil {
+	if s.DB == nil || s.Publish == nil || s.BeforeRetire == nil {
 		return nil, entitlements.ErrCredentialExpiryUnavailable
 	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -53,7 +55,10 @@ func (s CredentialExpiry) ExpireDueCredentials(ctx context.Context, now time.Tim
 				return err
 			}
 			if cleanup {
-				if err := retireSubscription(tx, sub, now); err != nil {
+				if err := s.BeforeRetire(tx, sub, now); err != nil {
+					return err
+				}
+				if err := retireSubscription(tx, sub, s.Cipher, now); err != nil {
 					return err
 				}
 			}
