@@ -398,3 +398,12 @@ it('shows capability deferral as preserved runtime rather than publication failu
   expect(wrapper.text()).not.toContain('发布失败')
   wrapper.unmount()
 })
+
+it('keeps applied configuration separate from pending existing connection revocation', async () => {
+  vi.mocked(fetchProtocolEndpointsPage).mockResolvedValue({ items: [{ id: 8, service_kind: 'listener', node_id: 1, name: '原生流控', protocol: 'vless', address: 'node.example', port: 443, is_active: true, kernel_supported: true, latest_deployment: { id: 9, status: 'succeeded' }, publication: { status: 'connections_pending', attempts: 0, has_error: true } }], total: 1 } as any)
+  const wrapper = await render()
+  expect(wrapper.text()).toContain('配置已应用；旧连接撤权待核验')
+  expect(wrapper.text()).not.toContain('发布失败')
+  expect(vi.mocked(deployProtocolEndpoint)).not.toHaveBeenCalled()
+  wrapper.unmount()
+})

@@ -332,3 +332,19 @@ P2-10提交前最终完整后端通过（/tmp/zboard-termination-backend-commit.
 P2仍部分：完整新权益换购、通用消费退款、恢复窗口可配、自动续费、优惠协议及套餐历史同步未完成。P3仍缺逐凭据交付确认与原生flows.close实际接入；旧连接失败验收保留。P4–P7继续按前置条件推进，未以本批金额公式宣称整体架构完成。仅ZBoard，无真实退款调账、core修改、生产迁移、发布或合并。
 
 P2-12提交前最终完整MySQL通过：datastore63.330s、handler327.675s（/tmp/zboard-renewal-value-mysql-full.log）；完整后端154.204s、vet/build、CGO=0 SQLite6.447s通过。没有前端实现或SDK变更，ae8b629全部六项CI成功：https://github.com/zerodenet/zboard/actions/runs/39314466074 ，其中前端保持895通过及8既有skip。本批新head仍需另查CI，不把前一提交绿色替代新证据。金额算例/来源/时钟复现摘要见validation/2026-10-19-renewal-value-continuity.json。
+
+## P3-01：原生旧连接撤权与独立恢复阶段（2026-10-19）
+
+P2 仍为部分完成，沿其节点撤权前置推进这一小闭环。代码位于 `adapters/zero/flow_control.go`、`networkstore/connection_revocation.go`、`handler/node_connection_revocation.go` 和现有 publication queue。配置发布确认后持久推进 connections 阶段，受代次/租约栅栏保护。关闭命令与确认丢失只保留连接核验，不重新发布配置。旧连接确认和成功审计/出队分别具有原生查询与数据库事务依据。
+
+0045 为 SQLite/MySQL 增加两个辅助字段；保留既有 reconciling/suspended 及近期事件队列所有权处理。覆盖新库、重复迁移、部分 DDL、迁移已记录但字段缺失与原意图/租约保留；缺少 SHA 证据时回到精确配置核验路径，不凭空补应用成功。详见 `core-convergence-upgrade.md`。前端协议服务列表和 OpenAPI 区分配置已应用、连接仍待核验。
+
+已实现的范围约束：持久凭据/订阅授权复核，订阅锁先于凭据锁，SQLite 写入栅栏，稳定主体的索引查询及有界旧协议 secret/hash 兼容归属，未知/歧义不关闭，单原生连接的进程/配置身份栅栏，分页不冒充完整覆盖，ACK 不冒充已关闭。成功审计失败回滚保留任务。删除节点也不能伪造关闭成功。没有修改 core、客户端、支付插件或生产数据。
+
+仍未完成：每凭据已确认交付投影、恢复/换购的权益代次与旧计量隔离、所有协议真实关闭验收、原生能力差异的完整管理入口、失联授权期限能力。P2 的新完整权益换购、通用退款、可配置恢复窗口、自动续费与优惠契约也仍有前置；本批原生换组测试只证明资源授权/连接范围，不证明新换购金额规则已完成。P4/P6 的读模型解耦、保留和容量边界继续待测，不能用本批隔离撤权时间宣称容量完成。
+
+本批验证和源码对应关系另记 `validation/2026-10-19-native-connection-revocation.json`；原始隔离目录含测试 SSH 密钥及配置，不进入版本控制。
+
+最终专项/阶段检查：`GOMAXPROCS=2 go test -p 2 ./...` 全通过（handler148.840s），`go vet -p 2 ./...`、`go build -p 2 ./cmd/zboard` 通过；CGO=0 SQLite13.237s通过。真实MySQL8.4全量规定命令通过，datastore62.489s、handler339.455s；新增并发/审计/迁移专项另通过（networkstore26.798s、handler19.038s）。前端按原有CI排除项896通过、8项既有跳过，build通过；OpenAPI有效，282项既有警告。原生基础关闭测试和五个节点场景全部通过：到期、耗尽、换组、配置发布故障恢复，以及连接阶段独立崩溃恢复。后者真实禁止socket转发、确认旧连接仍传输，杀掉worker后恢复；发布记录仍为2条、旧连接EOF、独立订阅可用。初版故障注入因隔离SSH配置未Include drop-in而未成立，已保留失败记录并修正为实际配置及真实拒绝断言，没有放宽产品校验。只做隔离本地/沙箱和公开内核验收，不宣称生产、所有协议或容量完成。
+
+2efd38c六项CI已全成功：https://github.com/zerodenet/zboard/actions/runs/39317996365 。本批推送后以PR78对应提交的CI为准；不会自动合并、发布或执行生产迁移。下一小阶段仍需先固化恢复/换购的权益与计量代次边界及每凭据交付确认，再完成P2剩余交易/生命周期，不把本批节点换组验收当作金额与权益规则的替代。

@@ -11,7 +11,8 @@ case "$scenario" in
   exhaustion) test_name=TestRealZeroNodeExhaustionRevokesDataPlane ;;
   group_change) test_name=TestRealZeroNodeGroupChangeReplacesDataPlaneAccess ;;
   recovery) test_name=TestRealZeroNodeFailedPublicationSurvivesPublisherCrash ;;
-  *) echo 'NODE_SCENARIO must be expiry, exhaustion, group_change or recovery' >&2; exit 1 ;;
+  connection_recovery) test_name=TestRealZeroConnectionVerificationSurvivesPublisherCrash ;;
+  *) echo 'NODE_SCENARIO must be expiry, exhaustion, group_change, recovery or connection_recovery' >&2; exit 1 ;;
 esac
 mkdir -p "$root/.codex-local-artifacts/acceptance"
 output=$(mktemp -d "$root/.codex-local-artifacts/acceptance/zero-revocation-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")

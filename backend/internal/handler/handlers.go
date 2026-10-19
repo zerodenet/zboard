@@ -1902,7 +1902,7 @@ func (h *handlers) applyProtocolEndpointFilters(values url.Values) (networkcap.P
 		query.Active = &active
 	}
 	if deploymentStatus := strings.TrimSpace(values.Get("deployment_status")); deploymentStatus != "" {
-		if deploymentStatus != "queued" && deploymentStatus != "running" && deploymentStatus != "succeeded" && deploymentStatus != "failed" && deploymentStatus != "never" && deploymentStatus != "deferred" && deploymentStatus != "reconciling" && deploymentStatus != "suspended" {
+		if deploymentStatus != "queued" && deploymentStatus != "running" && deploymentStatus != "succeeded" && deploymentStatus != "failed" && deploymentStatus != "never" && deploymentStatus != "deferred" && deploymentStatus != "reconciling" && deploymentStatus != "suspended" && deploymentStatus != "connections_pending" {
 			return networkcap.ProtocolEndpointInventoryQuery{}, validationError("节点筛选条件校验失败。", map[string]string{"deployment_status": "invalid deployment_status"})
 		}
 		query.DeploymentStatus = deploymentStatus

@@ -2,7 +2,11 @@ package networkstore
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"gorm.io/gorm/clause"
 	"time"
 
 	"github.com/google/uuid"
@@ -69,7 +73,32 @@ func (s PublicationQueue) Complete(ctx context.Context, item network.Publication
 	}
 	var result *gorm.DB
 	if failure == nil {
-		result = owned.Delete(&model.NodeConfigPublish{})
+		completionErr := db.Transaction(func(tx *gorm.DB) error {
+			var held model.NodeConfigPublish
+			find := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND lease_token = ? AND generation = ?", item.NodeID, item.LeaseToken, item.Generation).Limit(1).Find(&held)
+			if find.Error != nil {
+				return find.Error
+			}
+			if find.RowsAffected == 0 {
+				return nil
+			}
+			if held.Phase == "connections" {
+				detail, _ := json.Marshal(map[string]any{"generation": held.Generation, "applied_config_sha256": held.AppliedConfigSHA256, "scope": "native_managed_principals", "confirmation": "same_connection_active_queries"})
+				if err := tx.Create(&model.AuditLog{Actor: "node_publish_worker", Action: "node.connection_revocation_verified", Target: fmt.Sprint(item.NodeID), Detail: string(detail), CreatedAt: now}).Error; err != nil {
+					return err
+				}
+			}
+			return tx.Where("node_id = ? AND lease_token = ? AND generation = ?", item.NodeID, item.LeaseToken, item.Generation).Delete(&model.NodeConfigPublish{}).Error
+		})
+		if completionErr != nil {
+			return completionErr
+		}
+		return db.Model(&model.NodeConfigPublish{}).Where("node_id = ? AND lease_token = ?", item.NodeID, item.LeaseToken).Updates(map[string]interface{}{"lease_token": "", "lease_until": publicationIdleLease, "next_attempt_at": now}).Error
+
+	} else if errors.Is(failure, network.ErrConnectionRevocationPending) {
+		result = owned.Model(&model.NodeConfigPublish{}).Updates(map[string]interface{}{
+			"last_error": message, "next_attempt_at": now.Add(network.PublicationRecheckInterval), "lease_token": "", "lease_until": publicationIdleLease,
+		})
 	} else if errors.Is(failure, network.ErrConfigurationOutcomeUnknown) {
 		result = owned.Model(&model.NodeConfigPublish{}).Updates(map[string]interface{}{
 			"reconciling": true, "suspended": false, "last_error": message,
@@ -112,8 +141,20 @@ var publicationIdleLease = time.Unix(0, 0).UTC()
 func publicationFromModel(item model.NodeConfigPublish) network.Publication {
 	return network.Publication{
 		NodeID: item.NodeID, EndpointID: item.EndpointID, RequestedBy: item.RequestedBy,
+		Phase: item.Phase, AppliedConfigSHA256: item.AppliedConfigSHA256,
 		Generation: item.Generation, Attempts: item.Attempts, LastError: item.LastError,
 		Deferred: item.Deferred, Reconciling: item.Reconciling, Suspended: item.Suspended,
 		NextAttemptAt: item.NextAttemptAt, LeaseUntil: item.LeaseUntil, LeaseToken: item.LeaseToken,
 	}
+}
+
+// MarkConfigurationApplied advances only this lease and generation. A newer
+// business intent must retain its configuration phase and cannot be erased.
+func (s PublicationQueue) MarkConfigurationApplied(ctx context.Context, item network.Publication, sha string) (bool, error) {
+	decoded, decodeErr := hex.DecodeString(sha)
+	if decodeErr != nil || len(decoded) != 32 {
+		return false, network.ErrConfigurationPublicationCommit
+	}
+	result := s.DB.WithContext(ctx).Model(&model.NodeConfigPublish{}).Where("node_id = ? AND lease_token = ? AND generation = ?", item.NodeID, item.LeaseToken, item.Generation).Updates(map[string]any{"phase": "connections", "applied_config_sha256": sha, "reconciling": false, "deferred": false, "attempts": 0, "last_error": ""})
+	return result.RowsAffected == 1, result.Error
 }

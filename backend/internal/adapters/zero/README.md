@@ -98,3 +98,17 @@ IPv4 ingress to IPv6 egress, IPv6 listening, loopback source/interface binding,
 and failure without address-family/interface fallback. Supply a checksum-verified
 release binary. An absent binary or unavailable host IPv6 is an explicit skip;
 unit tests alone are not production or cross-platform connection evidence.
+
+Native connection control additionally consumes the existing `zero.api.v1`
+principal registry, principal-filtered active flows and `flows.close`. The
+adapter owns framing, process/configuration identity checks and bounded closure
+verification. Its authorization callback comes from the application boundary;
+business authorization and database locks remain outside this adapter. A close
+ACK alone is not confirmation, and a truncated page never proves an ID absent.
+Configuration application remains a separate exact-SHA verification.
+
+The optional SSH stream-local channel uses the node's existing socket access.
+Failure or missing privilege retains the connection-verification phase without
+invalidating applied configuration, widening socket permissions or installing
+an agent. Public-kernel acceptance is opt-in; normal tests use bounded fake
+streams and never contact configured nodes.

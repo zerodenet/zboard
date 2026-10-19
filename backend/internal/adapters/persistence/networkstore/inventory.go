@@ -448,13 +448,15 @@ func (s Inventory) decorateEndpoints(ctx context.Context, rows []model.ProtocolE
 
 func (s Inventory) publicationQueueStates(ctx context.Context, nodeIDs []uint, now time.Time) (map[uint]network.PublicationQueueRecord, error) {
 	var rows []model.NodeConfigPublish
-	if err := s.DB.WithContext(ctx).Select("node_id,attempts,deferred,reconciling,suspended,next_attempt_at,lease_until,lease_token,last_error").Where("node_id IN ?", nodeIDs).Find(&rows).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Select("node_id,phase,attempts,deferred,reconciling,suspended,next_attempt_at,lease_until,lease_token,last_error").Where("node_id IN ?", nodeIDs).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	states := make(map[uint]network.PublicationQueueRecord, len(rows))
 	for _, row := range rows {
 		status := "queued"
 		switch {
+		case row.Phase == "connections":
+			status = "connections_pending"
 		case row.LeaseToken != "" && row.LeaseUntil.After(now):
 			status = "running"
 		case row.Reconciling:

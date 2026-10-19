@@ -778,7 +778,7 @@ export interface ProtocolEndpointListItem {
 		reset_at?: string
 	}
 	latest_deployment?: Pick<ProtocolDeployment, 'id' | 'status' | 'started_at' | 'finished_at' | 'created_at'> & { has_error: boolean }
-	publication?: { status: 'queued' | 'running' | 'failed' | 'deferred' | 'reconciling' | 'suspended'; attempts: number; next_attempt_at: string; has_error: boolean }
+	publication?: { status: 'queued' | 'running' | 'failed' | 'deferred' | 'reconciling' | 'suspended' | 'connections_pending'; attempts: number; next_attempt_at: string; has_error: boolean }
 	created_at: string
 	updated_at: string
 }

@@ -168,6 +168,8 @@ var ignoredInMemoryMutations = map[string]bool{
 }
 
 var explicitRuntimeSiteOwners = map[string]string{
+	"internal/adapters/ssh/remote_session.go":                 "network",
+	"internal/adapters/zero/flow_control.go":                  "network",
 	"internal/adapters/ssh/remote_lifetime.go":                "network",
 	"internal/adapters/zero/offline_artifact.go":              "resources",
 	"internal/adapters/persistence/networkstore/inventory.go": "network",

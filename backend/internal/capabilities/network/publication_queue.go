@@ -24,6 +24,7 @@ var (
 type Publication struct {
 	NodeID, EndpointID, RequestedBy uint
 	Generation                      uint64
+	Phase, AppliedConfigSHA256      string
 	Attempts                        uint
 	LastError                       string
 	Reconciling, Suspended          bool

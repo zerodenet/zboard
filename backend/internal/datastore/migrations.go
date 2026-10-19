@@ -169,6 +169,9 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileRetiredPrincipalSchema(db); err != nil {
 		return err
 	}
+	if err := reconcilePublicationConnectionSchema(db); err != nil {
+		return err
+	}
 	if err := reconcileNodeRetirementSchema(db); err != nil {
 		return err
 	}
@@ -228,6 +231,12 @@ func runMigrations(db *gorm.DB) error {
 		if version == trafficHourlyVersion || version == trafficHourlyApplicationVersion {
 			if err := reconcileMySQLTrafficHourly(db); err != nil {
 				return fmt.Errorf("reconcile migration %s: %w", version, err)
+			}
+			continue
+		}
+		if version == publicationConnectionSchemaVersion {
+			if err := reconcilePublicationConnectionSchema(db); err != nil {
+				return err
 			}
 			continue
 		}

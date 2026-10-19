@@ -4666,7 +4666,7 @@ paths:
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol, in: query, schema: { type: string } }
         - { name: active, in: query, schema: { type: boolean } }
-        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, deferred, never] } }
+        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, deferred, reconciling, suspended, connections_pending, never] } }
       responses:
         "200":
           description: Stable ID-only selection snapshot
@@ -4694,7 +4694,7 @@ paths:
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol, in: query, schema: { type: string } }
         - { name: active, in: query, schema: { type: boolean } }
-        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, deferred, never] } }
+        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, deferred, reconciling, suspended, connections_pending, never] } }
         - { name: include_facets, in: query, schema: { type: boolean, default: false }, description: "Include current publication-state counts for the non-status filters in the paged response." }
         - { name: sort, in: query, schema: { type: string, enum: [sort_order, id, name, node_id, protocol, multiplier, updated_at] } }
         - { name: direction, in: query, schema: { type: string, enum: [asc, desc] } }
@@ -6678,7 +6678,7 @@ components:
         protocol: { type: string }
         egress_protocol: { type: string, enum: [direct, socks5, vless, vmess, trojan, shadowsocks, hysteria2, mieru], description: Omitted for default Direct auto egress. }
         active: { type: boolean }
-        deployment_status: { type: string, enum: [queued, running, succeeded, failed, deferred, never] }
+        deployment_status: { type: string, enum: [queued, running, succeeded, failed, deferred, reconciling, suspended, connections_pending, never] }
     ProtocolBatchScopeRequest:
       type: object
       properties:
@@ -7140,9 +7140,9 @@ components:
         created_at: { type: string, format: date-time }
     PublicationQueueSummary:
       type: object
-      description: Current node publication request, if any. Takes precedence over latest_deployment when deciding the live state.
+      description: Current node publication request. connections_pending means configuration application is confirmed while existing managed connection revocation remains unverified; it is not a configuration application failure.
       properties:
-        status: { type: string, enum: [queued, running, failed, deferred] }
+        status: { type: string, enum: [queued, running, failed, deferred, reconciling, suspended, connections_pending] }
         attempts: { type: integer, minimum: 0 }
         next_attempt_at: { type: string, format: date-time }
         has_error: { type: boolean }

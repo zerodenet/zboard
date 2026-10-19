@@ -21,11 +21,31 @@ func (h *handlers) StartNodePublishWorker() { h.startNodePublishWorker(h.publish
 
 func (h *handlers) publishQueuedNode(ctx context.Context, item model.NodeConfigPublish) error {
 	target, active, err := h.services.NodePublicationTargets().Resolve(ctx, publicationCapability(item))
-	if err != nil || !active {
+	if err != nil {
 		return err
 	}
-	_, _, err = h.publishNodeConfigForNode(ctx, target.NodeID, target.EndpointID, target.RequestedBy)
-	return err
+	if !active {
+		if item.Phase == "connections" {
+			return network.ErrConnectionRevocationPending
+		}
+		return nil
+	}
+	sha := item.AppliedConfigSHA256
+	if item.Phase != "connections" {
+		deployment, _, publishErr := h.publishNodeConfigForNode(ctx, target.NodeID, target.EndpointID, target.RequestedBy)
+		if publishErr != nil {
+			return publishErr
+		}
+		sha = deployment.AppliedConfigSHA256
+		advanced, advanceErr := h.services.MarkPublicationConfigurationApplied(ctx, publicationCapability(item), sha)
+		if advanceErr != nil {
+			return advanceErr
+		}
+		if !advanced {
+			return network.ErrKernelOperationRunning
+		}
+	}
+	return h.revokeNodeConnections(ctx, target.NodeID, sha)
 }
 
 func (h *handlers) startNodePublishWorker(publish func(context.Context, model.NodeConfigPublish) error) {

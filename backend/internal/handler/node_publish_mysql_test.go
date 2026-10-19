@@ -83,7 +83,7 @@ func TestMySQLPublishQueueConcurrencyAndRecovery(t *testing.T) {
 	if err := datastore.RunMigrations(h.db); err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"Deferred", "Reconciling", "Suspended"} {
+	for _, field := range []string{"Deferred", "Reconciling", "Suspended", "Phase", "AppliedConfigSHA256"} {
 		if !h.db.Migrator().HasColumn(&model.NodeConfigPublish{}, field) {
 			t.Fatalf("recreated publication table lost the already-applied column %s", field)
 		}
@@ -232,7 +232,7 @@ func TestMySQLPublicationColumnMigrationsRestoreMissingBaselineTables(t *testing
 	if !h.db.Migrator().HasColumn(&model.NetworkEntry{}, "ListenAddress") {
 		t.Fatal("current network entry listen column absent")
 	}
-	for _, field := range []string{"Deferred", "Reconciling", "Suspended"} {
+	for _, field := range []string{"Deferred", "Reconciling", "Suspended", "Phase", "AppliedConfigSHA256"} {
 		if !h.db.Migrator().HasColumn(&model.NodeConfigPublish{}, field) {
 			t.Fatalf("current publication column %s absent", field)
 		}
@@ -269,5 +269,53 @@ func TestMySQLPublicationSchemaReconciliationPreservesOutcomeState(t *testing.T)
 	}
 	if !pending.Reconciling || !pending.Suspended {
 		t.Fatalf("migration changed existing outcome state: %+v", pending)
+	}
+}
+
+func TestMySQLConnectionPhaseMigrationPreservesIntentAndRepairsPartialDDL(t *testing.T) {
+	h, _ := newMySQLPublishHandlers(t)
+	if err := h.db.Create(&model.Node{ID: 1, Name: "connection-phase", Config: "{}"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := enqueueNodeConfigPublish(h.db, 1, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.Repeat("a", 64)
+	if err := h.db.Model(&model.NodeConfigPublish{}).Where("node_id = ?", 1).Updates(map[string]any{"phase": "connections", "applied_config_sha256": sha, "generation": 7, "lease_token": "phase-owner", "reconciling": true, "suspended": true}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := datastore.RunMigrations(h.db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var pending model.NodeConfigPublish
+	if err := h.db.First(&pending, 1).Error; err != nil || pending.Phase != "connections" || pending.AppliedConfigSHA256 != sha || pending.Generation != 7 || pending.LeaseToken != "phase-owner" || !pending.Reconciling || !pending.Suspended {
+		t.Fatal("state changed", pending, err)
+	}
+	// Simulate interruption after the first ALTER but before migration recording.
+	if err := h.db.Exec("DELETE FROM schema_migrations WHERE version = ?", "0045_publication_connection_phase.up.sql").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Migrator().DropColumn(&model.NodeConfigPublish{}, "AppliedConfigSHA256"); err != nil {
+		t.Fatal(err)
+	}
+	if err := datastore.RunMigrations(h.db); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.First(&pending, 1).Error; err != nil || pending.Phase != "" || pending.AppliedConfigSHA256 != "" || pending.Generation != 7 || pending.LeaseToken != "phase-owner" || !pending.Reconciling || !pending.Suspended {
+		t.Fatal("partial DDL lost intent or invented application proof", pending, err)
+	}
+	// Already-recorded migration with a missing phase column must recover too.
+	if err := h.db.Migrator().DropColumn(&model.NodeConfigPublish{}, "Phase"); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := datastore.RunMigrations(h.db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !h.db.Migrator().HasColumn(&model.NodeConfigPublish{}, "Phase") {
+		t.Fatal("recorded partial table not repaired")
 	}
 }

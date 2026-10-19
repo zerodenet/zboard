@@ -12,6 +12,7 @@ import (
 // precedence over the endpoint's previous deployment record.
 const publicationStatusSQL = `CASE
  WHEN publication.node_id IS NOT NULL THEN CASE
+  WHEN publication.phase = 'connections' THEN 'connections_pending'
   WHEN publication.lease_token <> '' AND publication.lease_until > ? THEN 'running'
   WHEN publication.reconciling = true THEN 'reconciling'
   WHEN publication.suspended = true THEN 'suspended'
@@ -24,6 +25,7 @@ const publicationStatusSQL = `CASE
 // landing node. The combined service list must reflect either pending request.
 const servicePublicationStatusSQL = `CASE
  WHEN publication.node_id IS NOT NULL OR landing_publication.node_id IS NOT NULL THEN CASE
+  WHEN (publication.node_id IS NULL OR publication.phase = 'connections') AND (landing_publication.node_id IS NULL OR landing_publication.phase = 'connections') THEN 'connections_pending'
   WHEN (publication.lease_token <> '' AND publication.lease_until > ?) OR (landing_publication.lease_token <> '' AND landing_publication.lease_until > ?) THEN 'running'
   WHEN publication.reconciling = true OR landing_publication.reconciling = true THEN 'reconciling'
   WHEN publication.suspended = true OR landing_publication.suspended = true THEN 'suspended'

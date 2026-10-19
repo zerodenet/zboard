@@ -2,9 +2,11 @@ package ssh
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"regexp"
 	"strings"
 
@@ -158,4 +160,44 @@ func (s sshSession) start(command string) error         { return s.Session.Start
 func (s sshSession) wait() error                        { return s.Session.Wait() }
 func (s sshSession) setOutput(stdout, stderr io.Writer) {
 	s.Session.Stdout, s.Session.Stderr = stdout, stderr
+}
+
+// OpenControlSocket uses standard SSH stream-local forwarding. It does not
+// widen socket permissions or install a node-side helper.
+func (s *RemoteSession) OpenControlSocket(ctx context.Context, path string) (net.Conn, error) {
+	if s == nil || s.client == nil || path != "/run/zerodenet/control.sock" {
+		return nil, errors.New("native control socket unavailable")
+	}
+	client, ok := s.client.(sshClient)
+	if !ok {
+		return nil, errors.New("SSH stream-local forwarding unavailable")
+	}
+	type outcome struct {
+		conn net.Conn
+		err  error
+	}
+	done := make(chan outcome)
+	go func() {
+		conn, err := client.Dial("unix", path)
+		select {
+		case done <- outcome{conn, err}:
+		case <-ctx.Done():
+			if conn != nil {
+				conn.Close()
+			}
+		}
+	}()
+	select {
+	case r := <-done:
+		if ctx.Err() != nil {
+			if r.conn != nil {
+				r.conn.Close()
+			}
+			return nil, ctx.Err()
+		}
+		return r.conn, r.err
+	case <-ctx.Done():
+		_ = s.Close()
+		return nil, ctx.Err()
+	}
 }
