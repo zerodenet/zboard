@@ -27,9 +27,6 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 		return out, err
 	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := orderReader(tx, authority.AccountID, false); err != nil {
-			return err
-		}
 		var order model.Order
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", fact.OrderID, authority.AccountID).First(&order).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -37,10 +34,16 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 			}
 			return err
 		}
+		// Match cancellation and administrator settlement: lock the order before
+		// its account. The opposite order can deadlock a provider callback with
+		// a manual confirmation of the same order on MySQL.
+		if err := orderReader(tx, authority.AccountID, authority.RequireAdministrator); err != nil {
+			return err
+		}
 		var existing model.PaymentEvent
 		existingErr := tx.Where("provider = ? AND provider_event_id = ?", authority.Provider, fact.ProviderEventID).First(&existing).Error
 		if existingErr == nil {
-			if existing.OrderID != order.ID || existing.EventType != fact.Status || existing.AmountMinor != fact.AmountMinor || existing.Payload != string(payload) {
+			if existing.OrderID != order.ID || existing.EventType != fact.Status || existing.AmountMinor != fact.AmountMinor || !samePaymentFact(existing.Payload, fact) {
 				return commerce.ErrPaymentFactConflict
 			}
 			out = commerce.PaymentFactResult{OrderID: order.ID, Status: order.Status}
@@ -103,4 +106,17 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 		return commerce.PaymentFactResult{}, commerce.ErrPaymentFactConflict
 	}
 	return out, err
+}
+
+// MySQL's JSON column normalizes whitespace and object ordering. Replay
+// identity is the immutable payment fact, never the database's JSON spelling.
+func samePaymentFact(payload string, fact commerce.PaymentFact) bool {
+	var stored commerce.PaymentFact
+	if json.Unmarshal([]byte(payload), &stored) != nil {
+		return false
+	}
+	return stored.OrderID == fact.OrderID && stored.ProviderEventID == fact.ProviderEventID &&
+		stored.ProviderTradeNo == fact.ProviderTradeNo && stored.Status == fact.Status &&
+		stored.AmountMinor == fact.AmountMinor && stored.Currency == fact.Currency &&
+		stored.OccurredAt.Equal(fact.OccurredAt)
 }

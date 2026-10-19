@@ -10,8 +10,9 @@ import (
 var ErrPaymentFactConflict = errors.New("payment fact conflict")
 
 type PaymentFactAuthority struct {
-	AccountID uint
-	Provider  string
+	AccountID            uint
+	Provider             string
+	RequireAdministrator bool
 }
 
 type PaymentFact struct {

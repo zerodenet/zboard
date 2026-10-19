@@ -5189,6 +5189,7 @@ components:
         name: { type: string, minLength: 1, maxLength: 120 }
         scopes:
           type: array
+          description: commerce.payments.record requires a currently active administrator at issuance and invocation. Ordinary accounts submit payments through admitted native payment plugins.
           minItems: 1
           maxItems: 32
           items: { type: string, enum: [metering.usage.query, commerce.orders.list, commerce.payments.record] }

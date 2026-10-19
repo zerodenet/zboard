@@ -53,7 +53,7 @@ func (s *Services) RegisterCommerceCapabilities(registry *catalog.Registry, ciph
 	}
 	payment := catalog.Descriptor{
 		Name: "commerce.payments.record", Version: "1.0", Owner: "commerce", Kind: "command", Sensitivity: "payment_fact",
-		Authorization: "Integration credential or approved native process with an order-bound host grant; the authenticated account must own the order.",
+		Authorization: "Administrator-owned integration credential or approved native process with an order-bound host grant; the authenticated account must own the order. Ordinary accounts cannot self-issue payment authority.",
 		Idempotency:   "provider_event_id is exactly-once within the integration identity or stable signed plugin identity; identical retry succeeds, changed content conflicts", Execution: "synchronous_transactional", TimeoutMillis: 30000, Quota: "64 KiB input; one payment fact", RateLimitPerMinute: 120,
 		ErrorCodes: []string{"unauthenticated", "permission_denied", "invalid_argument", "conflict", "rate_limited", "unavailable", "deadline_exceeded"}, Compatibility: "Additive response fields within v1; breaking changes require a new major version", Deprecation: "none",
 		InputSchema:  json.RawMessage(`{"type":"object","additionalProperties":false,"required":["order_id","provider_event_id","provider_trade_no","status","amount_minor","currency","occurred_at"],"properties":{"order_id":{"type":"integer","minimum":1},"provider_event_id":{"type":"string","minLength":1,"maxLength":128},"provider_trade_no":{"type":"string","minLength":1,"maxLength":128},"status":{"enum":["paid","failed"]},"amount_minor":{"type":"integer","minimum":1},"currency":{"type":"string","minLength":3,"maxLength":3},"occurred_at":{"type":"string","format":"date-time"}}}`),
@@ -77,7 +77,7 @@ func (s *Services) RegisterCommerceCapabilities(registry *catalog.Registry, ciph
 		if err != nil {
 			return nil, err
 		}
-		out, err := facts.Record(ctx, commerce.PaymentFactAuthority{AccountID: grant.Principal.AccountID, Provider: provider}, in)
+		out, err := facts.Record(ctx, commerce.PaymentFactAuthority{AccountID: grant.Principal.AccountID, Provider: provider, RequireAdministrator: grant.Principal.Kind == "integration"}, in)
 		if err != nil {
 			var invalid *commerce.ValidationError
 			switch {

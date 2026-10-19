@@ -94,3 +94,22 @@
 ### P0 — 2026-10-19
 
 实际交付：本文件与决策文件；代码审计发现自签支付事实权限缺口、锁价/换购与余额缺失、计量投影/明细耦合。无业务行为或数据库变更。当前固定 Go/Node/pnpm 已准备，MySQL 8.4 隔离容器可 ping；Go 首轮检查因默认缓存只读及部分模块代理 403 未完成，正在在工作区缓存恢复依赖。前端固定安装成功。未将环境阻断标为测试失败或业务通过。提交、PR、最终命令结果随下一批追加。
+
+### P1-1 — 支付信任与跨库幂等恢复（2026-10-19）
+
+实际代码：`identity.IntegrationScopeRequiresAdministrator`、identitystore 签发/Resolve/原子 Admit 及 commerce 最终事务重验，关闭普通用户自签支付事实入口；已有普通用户旧 scope 也拒绝执行，只读 scope 不变。管理员集成仍只处理本人订单；已准入 native 支付插件继续通过订单绑定宿主授权服务普通用户。新增行为测试同时跑普通/管理员 native 插件、旧角色/旧授权、真实 HTTP 签发与调用，以及 SQLite/MySQL 事件→订单→权益→凭据→quota event→outbox 原子回滚/恢复重放。
+
+真实 MySQL 新回归发现 JSON 列规范化使原始字符串比较拒绝相同事实重放，已改为对不可变字段逐项比较（时间按同一瞬间），变金额/币种/交易号/时间仍冲突。回调改为先锁订单再核验账户，与管理员结算/取消顺序一致；实库八路混合管理员确认与支付事实竞争验证只履约一次、只发布一代。业务凭据状态不代替远端确认，支付不会生成已成功部署记录。
+
+数据迁移：无 schema 变更、无数据删除。兼容差异是普通用户既有支付写 scope 即时失效，需使用已准入 native 支付插件；管理员权限撤销也立即生效。不能以回滚二进制恢复有越权风险的自签入口。MySQL JSON 已有事实继续按内容幂等，不重写历史。
+
+验证（Go 1.26.8 / Node 22.23.0 / pnpm 11.9.0，云端，无生产操作）：
+
+- `GOMAXPROCS=2 go test -p 2 ./...` 通过；最终日志 `/tmp/zboard-p1-backend-verified.log`，handler 113.261s。环境驱动的真实 Zero 节点验收未配置，不算通过。
+- `ZBOARD_TEST_MYSQL_DSN=<隔离127.0.0.1:33060> GOMAXPROCS=2 go test -p 2 ./internal/datastore ./internal/handler -run MySQL -count=1 -timeout 15m` 通过；`/tmp/zboard-p1-mysql-final.log`，datastore 37.388s、handler 113.261s。包含近期缺表已记账发布字段恢复回归；不是 SQLite 或 DryRun 替代。
+- `go vet -p 2 ./...`、`go build -p 2 -o /tmp/zboard-p1 ./cmd/zboard`、`CGO_ENABLED=0 go test -p 2 ./internal/datastore -run SQLite -count=1` 通过。
+- 前端 frozen/copy 安装、当前 CI 原六项排除 test：871 通过、8 个原有 skip；build 通过。无新增排除。`/tmp/zboard-frontend-p1.log`、`/tmp/zboard-frontend-p1-build.log`。
+- Redocly 1.34.3 OpenAPI 通过，282 项既有警告；`git diff --check` 通过。SDK 未改动，独立 test/vet/tidy 另行记录。
+- 依赖代理对部分 Go zip 返回 403；从其真实 Git/GitLab 上游同 tag 获取到工作区缓存，现代 C 模块仅重写 module zip 根路径后由 Go 按原 go.sum 校验成功；仓库 go.mod/go.sum 未改。最初错误测试把业务凭据 active 当交付确认，已修正为核对真实 deployment，未改业务状态语义。
+
+提交对应 `fix: secure payment fact authority and replay across databases`；Draft PR https://github.com/zerodenet/zboard/pull/78。本批关闭 P1 的两个真实缺口，不代表 P2 金融规则或全部真实节点端到端已完成。下一批 P2 优先基础锁价。非整除周期实付余分与跨付费周期锁价两项已提出具体案例，等待业务答复；其他工作继续。余额/优惠协议/失联期限内核能力与 P2–P7 其余差距仍按上表执行。

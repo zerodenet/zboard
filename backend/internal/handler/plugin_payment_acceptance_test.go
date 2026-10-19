@@ -22,7 +22,21 @@ import (
 )
 
 func TestSignedPaymentPluginsUseHostOrdersAndIdempotentSettlement(t *testing.T) {
+	for _, admin := range []bool{false, true} {
+		t.Run(fmt.Sprintf("administrator=%t", admin), func(t *testing.T) { exerciseSignedPaymentPlugins(t, admin) })
+	}
+}
+
+func exerciseSignedPaymentPlugins(t *testing.T, admin bool) {
 	f := newOrderFixture(t)
+	if err := f.h.db.Model(&model.User{}).Where("id = ?", 1).Update("is_admin", admin).Error; err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := f.h.issueToken(authClaims{UserID: 1, Email: "reader@example.test", IsAdmin: admin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.token = token
 	endpoint := attachOrderPublishEndpoint(t, f)
 	if err := f.h.db.Create(&model.Installation{ID: 1, SiteURL: "https://panel.example.test"}).Error; err != nil {
 		t.Fatal(err)
@@ -64,22 +78,22 @@ func TestSignedPaymentPluginsUseHostOrdersAndIdempotentSettlement(t *testing.T) 
 		}
 		installations = append(installations, installation)
 	}
-	slots, err := manager.Slots("account", plugins.CheckoutPaymentSlot, 1, true)
+	slots, err := manager.Slots("account", plugins.CheckoutPaymentSlot, 1, admin)
 	if err != nil || len(slots) != 2 {
 		t.Fatalf("discovery: %+v %v", slots, err)
 	}
-	pages, err := manager.Pages("account", 1, true)
+	pages, err := manager.Pages("account", 1, admin)
 	if err != nil || len(pages) != 0 {
 		t.Fatalf("payment plugins added business pages: %+v %v", pages, err)
 	}
-	session, err := manager.CreateSlotSession(installations[0].ID, "checkout", plugins.CheckoutPaymentSlot, "account", 1, true, 1)
+	session, err := manager.CreateSlotSession(installations[0].ID, "checkout", plugins.CheckoutPaymentSlot, "account", 1, admin, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	order := f.create(t, 0)
 	action := func(s plugins.Session, kind string, payload any) json.RawMessage {
 		body, _ := json.Marshal(payload)
-		result, err := manager.SessionCheckoutAction(t.Context(), s.Token, 1, true, order.ID, kind, body)
+		result, err := manager.SessionCheckoutAction(t.Context(), s.Token, 1, admin, order.ID, kind, body)
 		if err != nil {
 			t.Fatalf("%s: %v", kind, err)
 		}
@@ -147,7 +161,7 @@ func TestSignedPaymentPluginsUseHostOrdersAndIdempotentSettlement(t *testing.T) 
 		t.Fatal("unverified browser return fulfilled order")
 	}
 	paid.Store(true)
-	orderSession, err := manager.CreateSlotSession(installations[0].ID, "order", plugins.OrderPaymentSlot, "account", 1, true, 1)
+	orderSession, err := manager.CreateSlotSession(installations[0].ID, "order", plugins.OrderPaymentSlot, "account", 1, admin, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +188,7 @@ func TestSignedPaymentPluginsUseHostOrdersAndIdempotentSettlement(t *testing.T) 
 			if i == 1 {
 				s = orderSession
 			}
-			raw, err := manager.SessionCheckoutAction(context.Background(), s.Token, 1, true, order.ID, "mock.reconcile", json.RawMessage(`{}`))
+			raw, err := manager.SessionCheckoutAction(context.Background(), s.Token, 1, admin, order.ID, "mock.reconcile", json.RawMessage(`{}`))
 			if err != nil || !strings.Contains(string(raw), `"status":"paid"`) {
 				failures <- fmt.Sprintf("%s %v", raw, err)
 			}
@@ -208,7 +222,7 @@ func TestSignedPaymentPluginsUseHostOrdersAndIdempotentSettlement(t *testing.T) 
 		t.Logf("SDK settlement: order=%d status=%s subscription=%d provider=%s", stored.ID, stored.Status, stored.SubscriptionID, stored.Channel)
 	}
 	checkSettled()
-	competing, err := manager.CreateSlotSession(installations[1].ID, "checkout", plugins.CheckoutPaymentSlot, "account", 1, true, 1)
+	competing, err := manager.CreateSlotSession(installations[1].ID, "checkout", plugins.CheckoutPaymentSlot, "account", 1, admin, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +262,7 @@ func TestSignedPaymentPluginsUseHostOrdersAndIdempotentSettlement(t *testing.T) 
 	if _, err := manager.Action(t.Context(), current.ID, "disable", "admin", current.Generation, false, ""); err != nil {
 		t.Fatal(err)
 	}
-	slots, err = manager.Slots("account", plugins.CheckoutPaymentSlot, 1, true)
+	slots, err = manager.Slots("account", plugins.CheckoutPaymentSlot, 1, admin)
 	if err != nil || len(slots) != 1 || slots[0].PluginID != installations[1].ID {
 		t.Fatalf("disable isolation: %+v %v", slots, err)
 	}
@@ -258,7 +272,7 @@ func TestSignedPaymentPluginsUseHostOrdersAndIdempotentSettlement(t *testing.T) 
 	if err := f.h.db.Where("plugin_id = ?", installations[1].ID).Delete(&model.PluginAuthorization{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	slots, err = manager.Slots("account", plugins.CheckoutPaymentSlot, 1, true)
+	slots, err = manager.Slots("account", plugins.CheckoutPaymentSlot, 1, admin)
 	if err != nil || len(slots) != 0 {
 		t.Fatalf("revoked contribution remained: %+v %v", slots, err)
 	}
