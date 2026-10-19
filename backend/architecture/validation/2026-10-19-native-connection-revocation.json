@@ -40,6 +40,7 @@
       "test_binary_sha256": "abb813b74aad22889637931318e005a01ba2ae80be20ad8cd3fd7de75571788f",
       "runtime_migration_script_files_compared": 1021,
       "differences_from_current_runtime": [
+        "backend/internal/adapters/persistence/networkstore/publication_status.go",
         "backend/internal/handler/node_publish_worker.go",
         "scripts/acceptance-node.sh"
       ]
@@ -65,6 +66,7 @@
       "test_binary_sha256": "abb813b74aad22889637931318e005a01ba2ae80be20ad8cd3fd7de75571788f",
       "runtime_migration_script_files_compared": 1021,
       "differences_from_current_runtime": [
+        "backend/internal/adapters/persistence/networkstore/publication_status.go",
         "backend/internal/handler/node_publish_worker.go",
         "scripts/acceptance-node.sh"
       ]
@@ -90,6 +92,7 @@
       "test_binary_sha256": "abb813b74aad22889637931318e005a01ba2ae80be20ad8cd3fd7de75571788f",
       "runtime_migration_script_files_compared": 1021,
       "differences_from_current_runtime": [
+        "backend/internal/adapters/persistence/networkstore/publication_status.go",
         "backend/internal/handler/node_publish_worker.go",
         "scripts/acceptance-node.sh"
       ]
@@ -117,6 +120,7 @@
       "test_binary_sha256": "abb813b74aad22889637931318e005a01ba2ae80be20ad8cd3fd7de75571788f",
       "runtime_migration_script_files_compared": 1021,
       "differences_from_current_runtime": [
+        "backend/internal/adapters/persistence/networkstore/publication_status.go",
         "backend/internal/handler/node_publish_worker.go",
         "scripts/acceptance-node.sh"
       ]
@@ -143,10 +147,12 @@
       "source_file_count": 1609,
       "test_binary_sha256": "bc6fbca6997d010fa3a9b6279c8031b6b9843c9b3d6e2fae4524c342c20e14f0",
       "runtime_migration_script_files_compared": 1021,
-      "differences_from_current_runtime": []
+      "differences_from_current_runtime": [
+        "backend/internal/adapters/persistence/networkstore/publication_status.go"
+      ]
     }
   ],
-  "source_note": "Final connection_recovery runtime/migrations/runner exactly match current runtime. Earlier four scenarios precede the deleting-node refusal guard and fifth scenario runner; their differences are listed. Later changes are architecture evidence only. Raw directories contain test SSH keys/configuration and are intentionally untracked.",
+  "source_note": "Final connection_recovery runtime/migrations/runner match da894e2. The subsequent combined front/landing publication read-model correction is separately tested on SQLite/MySQL; it changes no enforcement behavior. Earlier four scenarios precede the deleting-node refusal guard and fifth scenario runner. Differences against current runtime are listed. Raw directories contain test keys/configuration and remain untracked.",
   "corrected_injection_failure": {
     "evidence_directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T204024Z-u8veAc",
     "passed": false,
@@ -185,5 +191,13 @@
       "CPU/RSS/storage/index/buffer growth",
       "quota-exhaustion-to-closure distribution and observable cross-node overuse"
     ]
+  },
+  "native_runtime_commit": "da894e2f4f318f9b4201cfeec8728be5a1a3cf6f",
+  "combined_readmodel_followup": {
+    "behavior": "Connection-only errors on either node cannot turn the other queued configuration into failed; actual configuration errors remain failed; both connection phases remain connections_pending.",
+    "sqlite": "PASS 0.150s",
+    "mysql84_random_db": "PASS 3.454s",
+    "migration": "none",
+    "current_head_full_checks": "Full backend/vet/build running locally and exact-head CI tracked on PR78."
   }
 }

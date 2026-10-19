@@ -177,3 +177,54 @@ func TestConnectionRevocationSecretAttributionRetainsNodeScope(t *testing.T) {
 		t.Fatal("retired hash crossed node scope")
 	}
 }
+
+func TestCombinedPublicationMySQLAndSQLiteDoesNotCallConnectionPendingConfigFailure(t *testing.T) {
+	db, _ := administrationFixture(t)
+	for _, node := range []model.Node{{ID: 1, Name: "front", Config: "{}"}, {ID: 2, Name: "landing", Config: "{}"}} {
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := EnqueuePublication(db, node.ID, 0, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond).Add(time.Second)
+	if err := db.Model(&model.NodeConfigPublish{}).Where("node_id = ?", 1).Updates(map[string]any{"phase": "connections", "applied_config_sha256": strings.Repeat("a", 64), "last_error": "connection verification pending", "next_attempt_at": now.Add(time.Minute)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	status := func() string {
+		var row struct{ Status string }
+		err := db.Table("node_config_publishes AS publication").Joins("LEFT JOIN protocol_deployments AS deployment ON deployment.id = 0").Joins("LEFT JOIN node_config_publishes AS landing_publication ON landing_publication.node_id = ?", 2).Where("publication.node_id = ?", 1).Select(servicePublicationStatusSQL+" AS status", now, now, now, now).Scan(&row).Error
+		if err != nil {
+			t.Fatal(err)
+		}
+		return row.Status
+	}
+	if got := status(); got != "queued" {
+		t.Fatal("connection verification became configuration failure", got)
+	}
+	if err := db.Model(&model.NodeConfigPublish{}).Where("node_id = ?", 2).Updates(map[string]any{"last_error": "configuration rejected", "next_attempt_at": now.Add(time.Minute)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := status(); got != "failed" {
+		t.Fatal("real configuration failure was hidden", got)
+	}
+	if err := db.Model(&model.NodeConfigPublish{}).Where("node_id = ?", 2).Updates(map[string]any{"phase": "connections", "applied_config_sha256": strings.Repeat("b", 64)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := status(); got != "connections_pending" {
+		t.Fatal("dual connection verification misclassified", got)
+	}
+	if err := db.Model(&model.NodeConfigPublish{}).Where("node_id = ?", 1).Updates(map[string]any{"phase": "", "last_error": "", "next_attempt_at": now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := status(); got != "queued" {
+		t.Fatal("landing connection verification became front configuration failure", got)
+	}
+	if err := db.Model(&model.NodeConfigPublish{}).Where("node_id = ?", 1).Updates(map[string]any{"last_error": "configuration rejected", "next_attempt_at": now.Add(time.Minute)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := status(); got != "failed" {
+		t.Fatal("front configuration failure was hidden", got)
+	}
+}
