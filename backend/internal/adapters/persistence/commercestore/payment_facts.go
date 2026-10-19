@@ -59,7 +59,7 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 		if (order.Channel != "" && order.Channel != "manual" && order.Channel != channel) || (order.ProviderTradeNo != nil && *order.ProviderTradeNo != fact.ProviderTradeNo) {
 			return commerce.ErrPaymentFactConflict
 		}
-		if !commerce.OrderTransitionAllowed(order.Status, fact.Status, false) {
+		if !commerce.OrderTransitionAllowed(order.Status, fact.Status, false) && !(order.OrderType == "topup" && order.Status == "canceled" && fact.Status == "paid") {
 			return commerce.ErrOrderTransition
 		}
 		now := time.Now().UTC()
@@ -70,11 +70,11 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 		previous := order.Status
 		if fact.Status == "paid" {
 			settlement := OrderSettlement{DB: s.DB, Issuer: s.Issuer}
-			if err := settlement.setPaid(tx, &order, now); err != nil {
+			if err := settlement.setVerifiedPaid(tx, &order, now); err != nil {
 				return err
 			}
 			out.Fulfilled = previous != "paid"
-			if out.Fulfilled {
+			if out.Fulfilled && order.SubscriptionID != 0 {
 				if err := networkstore.EnqueueSubscriptionPublications(tx, order.SubscriptionID, authority.AccountID); err != nil {
 					return err
 				}

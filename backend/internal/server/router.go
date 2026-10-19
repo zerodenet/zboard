@@ -234,6 +234,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/admin/plan-skus/:id", h.PlanSKUGetCommerceHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/plan-skus/:id", h.PlanSKUUpdateCommerceHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/plan-skus/:id", h.PlanSKUDeleteCommerceHandler),
+		newRoute(http.MethodGet, "/api/v1/account/wallet", h.WalletHandler),
+		newRoute(http.MethodPost, "/api/v1/account/wallet/topups", h.WalletTopUpHandler),
 		newRoute(http.MethodGet, "/api/v1/orders", h.OrderListHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/orders", h.OrderListHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/orders", h.AdminOrderAssignHandler),

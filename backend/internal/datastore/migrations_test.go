@@ -108,6 +108,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0035_publication_capability_deferral.up.sql",
 		"0036_configuration_outcome_reconciliation.up.sql",
 		"0037_commercial_purchase_snapshot.up.sql",
+		"0038_wallet_topups.up.sql",
 	}
 	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
@@ -150,6 +151,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0035_publication_capability_deferral.down.sql",
 		"0036_configuration_outcome_reconciliation.down.sql",
 		"0037_commercial_purchase_snapshot.down.sql",
+		"0038_wallet_topups.down.sql",
 	}
 	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)

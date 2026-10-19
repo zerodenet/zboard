@@ -58,7 +58,7 @@
 | metering | TrafficRecord、FlowUsage 累计游标；meteringstore | 去重/游标/计费/扣额/撤权/outbox（当前还耦合图表投影） | spool fsync 后 ACK，消费后 checkpoint，失败重放 | hourly/endpoint/current/coverage；观察不改业务授权 |
 | jobs/extensions | run/attempt/lease、plugin installation/generation | 原子领取/fencing、重试记录/周期槽 | 插件 RPC、慢外部动作；取消不等于撤销副作用 | 持久历史和执行预算 |
 | experience | tickets/replies/files；experiencestore | 权限/回复/附件关联 | 外部客服插件未接入 | 用户/管理员各自工单 |
-| wallet（待建） | 不把 QuotaEvent 流量余额当货币余额 | 预留/扣款/退款/权益/撤权意图应单事务 | 外部出款另记，不自动执行 | 余额/来源/审计，P2 |
+| wallet（P2-3 起） | WalletAccount、WalletEntry；commercestore | 可信充值事实/支付事件/订单/余额/不可变账本/审计同事务；消费预留等仍待建 | 外部出款另记，不自动执行 | 按币种余额/来源/分页账本，不把流量余额当货币 |
 
 ## 实施顺序和退出条件
 
@@ -143,3 +143,16 @@ MySQL/SQLite 覆盖新库、旧表加列、DDL 完成但未记账、已有记账
 - 原周期锁价提交 2d3bc721 的六项 CI 已全部成功：https://github.com/zerodenet/zboard/actions/runs/39275681051 。本批新提交另查 CI。
 
 提交对应 `feat: snapshot purchased policies and preserve renewal quota schedules`，沿 PR #78 追加。真实 Zero 节点、外部真实支付渠道仍未验证；本批不构成整个 P2 完成。下一批继续货币余额、可信充值事实与账务身份，再贯通预留、余额购买/补差、消费退款和残值结算。非整除周期分摊与跨周期锁价的具体决策仍待答复，依赖该口径的部分不自行推算，其他工作继续。
+
+
+### P2-3 — 可信充值、货币账本及实际入口（2026-10-19）
+
+新增 0038：按用户/币种独立的 WalletAccount 和追加 WalletEntry，余额、预留、变动前后值及原订单来源均用 int64 最小币种单位。数据库约束不允许负余额、负预留或预留超过余额；账务外键阻止删除来源订单和用户。普通用户只能查看自己的余额和分页账本、幂等创建待支付充值单，不能指定拥有者或支付状态；严格 64KiB JSON 入口拒绝多余字段。充值没有套餐、SKU 或订阅，不制造虚拟商品；MySQL 仅放宽 orders.plan_sku_id 可空。
+
+充值只通过已准入 native 支付插件或受控管理员支付事实入口确认；人工修改订单状态不能制造充值资金。可信事件、订单支付、余额和账本在同一事务提交，账本注入失败全部回滚；同订单事件重放或同渠道交易的新事件不重复入账。已取消充值的真实迟到支付进入余额，不生成订阅/凭据/额度/发布任务。用户 UI 新增余额导航、按币种读数和账本、充值并进入现有支付插件订单页；丢失创建响应用原意图标识与原金额重试，换账户隔离草稿，不自动重放写操作。余额/账本 HTTP 使用整数字符串，前端 BigInt 格式化避免大余额精度丢失；充值输入限制在精确整数范围。
+
+迁移兼容：新库、重复迁移、空 schema DDL 中断、旧 SKU NOT NULL 都有双库测试；原订单保留。已记录 0038 而任一金融表缺失，或未记账但残缺表已有金融数据时，启动明确失败并要求恢复核账；不会静默创建空账本冒充零余额。0038 down 保留资金证据；升级/回滚限制追加在说明文档，未执行生产操作。
+
+验证：完整后端 go test -p 2 ./... 通过（/tmp/zboard-wallet-backend-verified.log）；vet 通过、build 通过、CGO=0 SQLite 7.682s。真实 MySQL 8.4 全专项 datastore 55.116s、handler 199.566s（/tmp/zboard-wallet-mysql-final.log）；严格输入新增专项双库通过 5.495s。普通账户真实签名测试插件 checkout→渠道测试服务器→事实→入账→重放通过；不表示外部真实支付渠道已验收。前端原 CI 范围 877 通过、8 原有 skip（/tmp/zboard-wallet-frontend-verified.log），类型检查/build 通过；OpenAPI 通过、282 既有 warning。首次全量发现新路由能力归属与导航旧数量断言需更新，已补 commerce 归属及实际余额导航断言后重跑通过，没有新增排除或删除边界。61a40b0 的六项 CI 全成功：https://github.com/zerodenet/zboard/actions/runs/39278007317 。本批 exact-head CI 提交后核查。
+
+当前边界：此批完成充值和账本，尚不能余额付款/预留/退款/换购/自动续费。跨不同渠道实际重复付款的收据归属仍需独立凭证账务设计，不能宣称覆盖所有迟到支付。下一批先固化已确认的累计比例 half-up 分摊与真实周期依据，再继续消费预留及现金收据边界；P2 整体及 P3–P7 未完成。用户已确认余分及跨周期价格口径，见决策补充，历史“待答复”记录不再是阻塞。

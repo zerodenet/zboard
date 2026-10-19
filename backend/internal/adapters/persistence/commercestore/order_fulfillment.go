@@ -12,6 +12,9 @@ import (
 )
 
 func (s OrderSettlement) setPaid(tx *gorm.DB, order *model.Order, now time.Time) error {
+	if order.OrderType == "topup" {
+		return quoteError("余额充值只能由已核验的支付渠道事实入账。")
+	}
 	if order.Status == "paid" {
 		return nil
 	}
@@ -63,12 +66,33 @@ func (s OrderSettlement) setPaid(tx *gorm.DB, order *model.Order, now time.Time)
 		}
 		return err
 	}
-	if err := tx.Model(order).Updates(map[string]interface{}{"status": "paid", "subscription_id": sub.ID, "paid_amount": order.PayableAmount, "paid_at": now, "fulfilled_at": now, "updated_at": now,
+	return markOrderPaid(tx, order, sub.ID, now)
+}
+
+func (s OrderSettlement) setVerifiedPaid(tx *gorm.DB, order *model.Order, now time.Time) error {
+	if order.OrderType != "topup" {
+		return s.setPaid(tx, order, now)
+	}
+	if order.Status == "paid" {
+		return nil
+	}
+	if err := creditTopUp(tx, *order, now); err != nil {
+		return err
+	}
+	return markOrderPaid(tx, order, 0, now)
+}
+
+func markOrderPaid(tx *gorm.DB, order *model.Order, subscriptionID uint, now time.Time) error {
+	var subscriptionValue any
+	if subscriptionID != 0 {
+		subscriptionValue = subscriptionID
+	}
+	if err := tx.Model(order).Updates(map[string]interface{}{"status": "paid", "subscription_id": subscriptionValue, "paid_amount": order.PayableAmount, "paid_at": now, "fulfilled_at": now, "updated_at": now,
 		"subscription_ended_at": nil, "subscription_end_reason": "", "subscription_final_flow_total": 0, "subscription_final_flow_used": 0}).Error; err != nil {
 		return err
 	}
 	order.Status = "paid"
-	order.SubscriptionID = sub.ID
+	order.SubscriptionID = subscriptionID
 	order.PaidAmount = order.PayableAmount
 	order.PaidAt = &now
 	order.FulfilledAt = &now

@@ -3410,6 +3410,62 @@ paths:
         "500": { description: "error.code=commerce_persistence_failed; changes and audit roll back together." }
         "409": { $ref: "#/components/responses/Error" }
         "428": { $ref: "#/components/responses/Error" }
+  /api/v1/account/wallet:
+    get:
+      tags: [orders]
+      operationId: readAccountWallet
+      summary: Read the current account's wallet and bounded ledger page
+      description: Authoritative balances are separate for each currency. Monetary values are decimal integer strings in currency minor units, preserving int64 precision. No historical traffic or chart query is required.
+      parameters:
+        - { name: currency, in: query, required: true, schema: { type: string, pattern: '^[A-Z]{3}$' } }
+        - { name: after, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200':
+          description: Current account wallet; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletPage' }
+        '400': { description: Invalid currency or pagination }
+        '401': { description: Authentication required }
+        '403': { description: Current active account required }
+        '500': { description: Financial facts unavailable; balance is not reported as zero }
+  /api/v1/account/wallet/topups:
+    post:
+      tags: [orders]
+      operationId: createAccountWalletTopUp
+      summary: Create an idempotent unpaid wallet top-up order
+      description: Creates no balance or subscription. The admitted native payment plugin verifies its provider receipt and invokes the same trusted payment-fact capability. Ordinary browser sessions and unverified manual order transitions cannot credit a top-up.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amount_minor, currency, idempotency_key]
+              properties:
+                amount_minor: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+                currency: { type: string, pattern: '^[A-Z]{3}$' }
+                idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
+      responses:
+        '200':
+          description: Pending order, or the original order for an identical retry
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/Order' }
+        '400': { description: Invalid amount or a changed idempotent request }
+        '401': { description: Authentication required }
+        '403': { description: Current active account required }
+        '500': { description: Creation unavailable; retry with the same intent }
   /api/v1/orders:
     get:
       tags:
@@ -3540,7 +3596,7 @@ paths:
       parameters:
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Match customer email, order/provider trade number, plan, SKU, channel or a numeric order/user/subscription ID." }
         - { name: status, in: query, schema: { type: string, enum: [attention, pending, paid, failed, canceled, success] }, description: "Use attention for the administrator work queue containing pending and failed orders." }
-        - { name: order_type, in: query, schema: { type: string, enum: [new, renewal, upgrade, traffic_pack, traffic_reset] } }
+        - { name: order_type, in: query, schema: { type: string, enum: [new, renewal, upgrade, traffic_pack, traffic_reset, topup] } }
         - { name: user_id, in: query, schema: { type: integer, format: int64 } }
         - { name: created_from, in: query, schema: { type: string, format: date }, description: "Inclusive order creation start date. Must be paired with created_to; the window cannot exceed 366 days." }
         - { name: created_to, in: query, schema: { type: string, format: date }, description: "Inclusive order creation end date. Must be paired with created_from." }
@@ -7162,7 +7218,7 @@ components:
           type: string
         order_type:
           type: string
-          enum: [new, renewal, upgrade, traffic_pack, traffic_reset]
+          enum: [new, renewal, upgrade, traffic_pack, traffic_reset, topup]
         target_subscription_id:
           type: integer
           format: int64
@@ -8569,3 +8625,27 @@ components:
           minimum: 0
         meta:
           type: string
+
+    WalletEntry:
+      type: object
+      required: [id, kind, balance_delta, reserved_delta, balance_after, reserved_after, reason, created_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        kind: { type: string }
+        balance_delta: { type: string, pattern: '^-?[0-9]+$' }
+        reserved_delta: { type: string, pattern: '^-?[0-9]+$' }
+        balance_after: { type: string, pattern: '^[0-9]+$' }
+        reserved_after: { type: string, pattern: '^[0-9]+$' }
+        source_order_id: { type: integer, minimum: 1 }
+        reason: { type: string }
+        created_at: { type: string, format: date-time }
+    WalletPage:
+      type: object
+      required: [currency, balance_minor, reserved_minor, available_minor, entries, has_more]
+      properties:
+        currency: { type: string }
+        balance_minor: { type: string, pattern: '^[0-9]+$' }
+        reserved_minor: { type: string, pattern: '^[0-9]+$' }
+        available_minor: { type: string, pattern: '^[0-9]+$' }
+        entries: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/WalletEntry' } }
+        has_more: { type: boolean }
