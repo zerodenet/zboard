@@ -156,3 +156,14 @@ MySQL/SQLite 覆盖新库、旧表加列、DDL 完成但未记账、已有记账
 验证：完整后端 go test -p 2 ./... 通过（/tmp/zboard-wallet-backend-verified.log）；vet 通过、build 通过、CGO=0 SQLite 7.682s。真实 MySQL 8.4 全专项 datastore 55.116s、handler 199.566s（/tmp/zboard-wallet-mysql-final.log）；严格输入新增专项双库通过 5.495s。普通账户真实签名测试插件 checkout→渠道测试服务器→事实→入账→重放通过；不表示外部真实支付渠道已验收。前端原 CI 范围 877 通过、8 原有 skip（/tmp/zboard-wallet-frontend-verified.log），类型检查/build 通过；OpenAPI 通过、282 既有 warning。首次全量发现新路由能力归属与导航旧数量断言需更新，已补 commerce 归属及实际余额导航断言后重跑通过，没有新增排除或删除边界。61a40b0 的六项 CI 全成功：https://github.com/zerodenet/zboard/actions/runs/39278007317 。本批 exact-head CI 提交后核查。
 
 当前边界：此批完成充值和账本，尚不能余额付款/预留/退款/换购/自动续费。跨不同渠道实际重复付款的收据归属仍需独立凭证账务设计，不能宣称覆盖所有迟到支付。下一批先固化已确认的累计比例 half-up 分摊与真实周期依据，再继续消费预留及现金收据边界；P2 整体及 P3–P7 未完成。用户已确认余分及跨周期价格口径，见决策补充，历史“待答复”记录不再是阻塞。
+
+
+### P2-4 — 实际成交周期锁价与新报价确认（2026-10-19）
+
+落实已确认口径：每份订阅的当前新购/换购系列内，已实际成交的币种与付费周期分别读取第一笔基础价。新周期没有历史价格时用当前目录预览，返回 price_basis=current_catalog / requires_price_acceptance=true；必须携带当前预览指纹才能创建，旧报价或目录改价拒绝。成交后该周期锁价，原月付锁价仍保留；不同独立订阅不借价。不推算旧年价，不用实付折扣替换基础价，缺原购买依据的旧订阅仍需工单核实。
+
+实际修改包含 commerce quote/creation/settlement、购买依据查询、OpenAPI、真实详情页说明及行为测试。支付等待期间的新周期目录涨价不重写已确认订单。没有 schema/数据回填；兼容/回滚说明已追加。SQLite/MySQL 专项同时覆盖首次年付确认、旧指纹拒绝、成交年价锁定、返回原月价及独立订阅隔离。
+
+验证：完整后端 test 通过（/tmp/zboard-period-backend.log，handler 110.819s），vet/build、CGO=0 SQLite 5.900s 通过；SQLite/MySQL 锁价专项通过 9.702s。23 项前端专项、类型检查/build 通过；全量前端及真实 MySQL 最终结果随批次追加。没有新增排除。此批解决跨周期价格口径，不表示已完成周期残值、消费、退订、自动续费及后续阶段；下一步补真实渠道收据身份与取消/迟到支付的余额归属。
+
+P2-4 最终全量：MySQL 8.4 datastore 46.251s、handler 189.328s 通过（/tmp/zboard-period-mysql-full.log）；前端原 CI 范围 877 通过、8 既有 skip（/tmp/zboard-period-frontend-full.log）；OpenAPI 合法、282 既有 warnings。无生产迁移或跨仓库变更。

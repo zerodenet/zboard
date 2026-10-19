@@ -41,8 +41,8 @@ func (s OrderSettlement) setPaid(tx *gorm.DB, order *model.Order, now time.Time)
 	// A catalog edit while payment is pending cannot change its renewal agreement.
 	renewalPrice := order.AmountCents
 	if order.OrderType == "renewal" && order.TargetSubscriptionID != nil {
-		source, err := renewalPurchase(tx, *order.TargetSubscriptionID, order.UserID, order.PlanID)
-		if err == nil && compatibleRenewalPurchase(source, *order) {
+		source, purchased, err := renewalPriceAgreement(tx, *order, *order.TargetSubscriptionID)
+		if err == nil && purchased {
 			renewalPrice = source.AmountCents
 		} else if err != nil {
 			// Already-created legacy orders keep their agreed payment/fulfillment

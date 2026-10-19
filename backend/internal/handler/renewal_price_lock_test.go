@@ -91,7 +91,7 @@ func assertRenewalPriceLock(t *testing.T, f orderFixture) {
 	}
 }
 
-func TestRenewalExplainsMissingHistoricalPriceAndChangedPeriod(t *testing.T) {
+func TestRenewalExplainsMissingHistoricalPriceAndQuotesNewPeriod(t *testing.T) {
 	f := newOrderFixture(t)
 	legacy := model.Subscription{UserID: 1, PlanID: f.planRecord.ID, PlanSKUID: f.skuRecord.ID, NodeGroupID: f.group.ID, StartAt: time.Now().UTC(), EndAt: time.Now().UTC().Add(time.Hour), Status: "active", FlowTotal: 1024, RenewalPriceMinor: 100, Config: "{}"}
 	if err := f.h.db.Create(&legacy).Error; err != nil {
@@ -106,8 +106,72 @@ func TestRenewalExplainsMissingHistoricalPriceAndChangedPeriod(t *testing.T) {
 	if err := f.h.db.Model(&f.skuRecord).Update("billing_unit", "year").Error; err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.h.services.OrderCreation.Preview(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, TargetSubscriptionID: paid.SubscriptionID})
-	if !errors.As(err, &invalid) {
-		t.Fatalf("invented cross-period price: %v", err)
+	quote, err := f.h.services.OrderCreation.Preview(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, TargetSubscriptionID: paid.SubscriptionID})
+	if err != nil || !quote.RequiresPriceAcceptance || quote.PriceBasis != "current_catalog" || quote.AmountCents != f.skuRecord.PriceCents {
+		t.Fatalf("new period must use an explicit current quote: %+v %v", quote, err)
+	}
+}
+
+func TestRenewalNewPeriodRequiresAcceptanceAndKeepsBothAgreements(t *testing.T) {
+	assertRenewalNewPeriodAgreement(t, newOrderFixture(t))
+}
+func TestMySQLRenewalNewPeriodRequiresAcceptanceAndKeepsBothAgreements(t *testing.T) {
+	assertRenewalNewPeriodAgreement(t, newMySQLOrderFixture(t))
+}
+func assertRenewalNewPeriodAgreement(t *testing.T, f orderFixture) {
+	t.Helper()
+	if err := f.h.db.Model(&f.skuRecord).Update("price_cents", 1200).Error; err != nil {
+		t.Fatal(err)
+	}
+	paid := f.paid(t, f.create(t, 0).ID)
+	if err := f.h.db.Model(&f.skuRecord).Updates(map[string]any{"billing_unit": "year", "price_cents": 10000}).Error; err != nil {
+		t.Fatal(err)
+	}
+	request := commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, TargetSubscriptionID: paid.SubscriptionID}
+	quote, err := f.h.services.OrderCreation.Preview(t.Context(), 1, request)
+	if err != nil || quote.AmountCents != 10000 || !quote.RequiresPriceAcceptance {
+		t.Fatalf("unbought year inferred from month: %+v %v", quote, err)
+	}
+	var invalid *commerce.ValidationError
+	if _, err := f.h.services.OrderCreation.Create(t.Context(), 1, request); !errors.As(err, &invalid) {
+		t.Fatalf("new price accepted without confirmation: %v", err)
+	}
+	request.QuoteFingerprint = quote.QuoteFingerprint
+	if err := f.h.db.Model(&f.skuRecord).Update("price_cents", 11000).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.h.services.OrderCreation.Create(t.Context(), 1, request); !errors.As(err, &invalid) {
+		t.Fatalf("stale annual quote accepted: %v", err)
+	}
+	request.QuoteFingerprint = ""
+	quote, err = f.h.services.OrderCreation.Preview(t.Context(), 1, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.QuoteFingerprint = quote.QuoteFingerprint
+	renewal, err := f.h.services.OrderCreation.Create(t.Context(), 1, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.h.db.Model(&f.skuRecord).Update("price_cents", 18000).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.paid(t, renewal.ID)
+	request.QuoteFingerprint = ""
+	agreed, err := f.h.services.OrderCreation.Preview(t.Context(), 1, request)
+	if err != nil || agreed.AmountCents != 11000 || agreed.RequiresPriceAcceptance || agreed.PriceBasis != "purchased_period" {
+		t.Fatalf("actual annual agreement lost: %+v %v", agreed, err)
+	}
+	if err := f.h.db.Model(&f.skuRecord).Updates(map[string]any{"billing_unit": "month", "price_cents": 2400}).Error; err != nil {
+		t.Fatal(err)
+	}
+	monthly, err := f.h.services.OrderCreation.Preview(t.Context(), 1, request)
+	if err != nil || monthly.AmountCents != 1200 || monthly.RequiresPriceAcceptance {
+		t.Fatalf("annual agreement replaced original monthly lock: %+v %v", monthly, err)
+	}
+	independent := f.paid(t, f.create(t, 0).ID)
+	other, err := f.h.services.OrderCreation.Preview(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, TargetSubscriptionID: independent.SubscriptionID})
+	if err != nil || other.AmountCents != 2400 {
+		t.Fatalf("independent price agreement mixed: %+v %v", other, err)
 	}
 }

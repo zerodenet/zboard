@@ -32,9 +32,12 @@ func (s OrderCreation) Create(ctx context.Context, buyer uint, request commerce.
 // createOrderInTransaction shares snapshot persistence across owned purchases and
 // administrator assignments after their caller has selected and authorized the buyer.
 func createOrderInTransaction(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest) (model.Order, error) {
-	order, _, err := prepareOrder(tx, buyer, request, time.Now().UTC())
+	order, preview, err := prepareOrder(tx, buyer, request, time.Now().UTC())
 	if err != nil {
 		return model.Order{}, err
+	}
+	if preview.RequiresPriceAcceptance && request.QuoteFingerprint == "" {
+		return model.Order{}, quoteError("该币种或付费周期尚无购买锁价，请先查看并明确确认当前新报价。")
 	}
 	if err := tx.Create(&order).Error; err != nil {
 		return model.Order{}, err

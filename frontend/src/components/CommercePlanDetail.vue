@@ -104,7 +104,8 @@
         <div class="storefront-order-summary__total">
           <span>应付金额</span>
           <strong>{{ mode === 'renew' || mode === 'change' || mode === 'reset' ? (quote ? formatCurrency(quote.payable_amount, quote.currency) : '正在核算…') : selectedSku ? formatCurrency(selectedSku.price_cents, selectedSku.currency) : '—' }}</strong>
-          <p v-if="mode === 'renew'">续费按原购买基础价报价；规格列表显示当前目录参考价。</p>
+          <p v-if="mode === 'renew' && quote?.requires_price_acceptance">此币种或付费周期尚无购买锁价；继续即确认本次显示的新报价，成交后按本次基础价锁定该周期续费。原周期锁价仍保留。</p>
+          <p v-else-if="mode === 'renew'">续费按已购币种和周期的基础价报价；规格列表显示当前目录参考价。</p>
           <p v-if="mode === 'change' && quote">原套餐抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}；按剩余时间和剩余流量价值取较小值，抵扣最多为新规格价格，到期时间保持不变。</p>
           <p v-if="mode === 'reset'">恢复一整份本周期套餐流量，剩余额度不会叠加。</p>
         </div>

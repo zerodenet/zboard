@@ -7,17 +7,19 @@ import (
 
 // OrderPreview is a server-owned quote; amounts are currency minor units.
 type OrderPreview struct {
-	OrderType        string     `json:"order_type"`
-	AmountCents      int64      `json:"amount_cents"`
-	CreditAmount     int64      `json:"credit_amount"`
-	PayableAmount    int64      `json:"payable_amount"`
-	Currency         string     `json:"currency"`
-	TimeCredit       int64      `json:"time_credit"`
-	TrafficCredit    int64      `json:"traffic_credit"`
-	TrafficBytes     int64      `json:"traffic_bytes"`
-	UsedBytes        int64      `json:"used_bytes"`
-	EndAt            *time.Time `json:"end_at,omitempty"`
-	QuoteFingerprint string     `json:"quote_fingerprint"`
+	OrderType               string     `json:"order_type"`
+	AmountCents             int64      `json:"amount_cents"`
+	CreditAmount            int64      `json:"credit_amount"`
+	PayableAmount           int64      `json:"payable_amount"`
+	Currency                string     `json:"currency"`
+	TimeCredit              int64      `json:"time_credit"`
+	TrafficCredit           int64      `json:"traffic_credit"`
+	TrafficBytes            int64      `json:"traffic_bytes"`
+	UsedBytes               int64      `json:"used_bytes"`
+	EndAt                   *time.Time `json:"end_at,omitempty"`
+	QuoteFingerprint        string     `json:"quote_fingerprint"`
+	PriceBasis              string     `json:"price_basis,omitempty"`
+	RequiresPriceAcceptance bool       `json:"requires_price_acceptance,omitempty"`
 }
 
 // RemainingCredit values the same paid entitlement along both constraints.

@@ -88,12 +88,14 @@ func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, n
 		return preview, quoteError(entitlements.ErrRenewalWindow.Error())
 	}
 	if order.OrderType == "renewal" {
-		source, err := renewalPurchase(tx, sub.ID, order.UserID, order.PlanID)
+		source, purchased, err := renewalPriceAgreement(tx, *order, sub.ID)
 		if err != nil {
 			return preview, err
 		}
-		if !compatibleRenewalPurchase(source, *order) {
-			return preview, quoteError("购买时锁价仅有原币种与付费周期的依据，跨币种或周期续费暂不可自动报价。")
+		preview.PriceBasis = "purchased_period"
+		if !purchased {
+			preview.PriceBasis = "current_catalog"
+			preview.RequiresPriceAcceptance = true
 		}
 		order.AmountCents, order.PayableAmount = source.AmountCents, source.AmountCents
 		preview.AmountCents, preview.PayableAmount = order.AmountCents, order.PayableAmount
@@ -104,7 +106,8 @@ func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, n
 			Currency, Unit      string
 			Period              int
 			EndAt               time.Time
-		}{source.ID, sub.ID, order.PlanSKUID, source.AmountCents, order.Currency, order.BillingUnit, order.BillingValue, sub.EndAt})
+			Purchased           bool
+		}{source.ID, sub.ID, order.PlanSKUID, source.AmountCents, order.Currency, order.BillingUnit, order.BillingValue, sub.EndAt, purchased})
 		if err != nil {
 			return preview, err
 		}

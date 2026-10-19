@@ -8537,6 +8537,8 @@ components:
     OrderPreview:
       type: object
       properties:
+        price_basis: { type: string, enum: [purchased_period, current_catalog], description: "Renewals use the first purchased base price for this currency and billing period within the current subscription purchase series. Unpurchased periods use an explicitly accepted current quote." }
+        requires_price_acceptance: { type: boolean, description: "True when this currency/period has no historical agreement; creation must include the exact preview quote_fingerprint." }
         order_type: { type: string, enum: [new, renewal, upgrade, traffic_pack, traffic_reset] }
         amount_cents: { type: integer, format: int64 }
         payable_amount: { type: integer, format: int64 }

@@ -25,3 +25,27 @@ func compatibleRenewalPurchase(source, order model.Order) bool {
 	return source.AmountCents >= 0 && source.Currency != "" && source.BillingUnit != "" && source.BillingValue > 0 &&
 		source.Currency == order.Currency && source.BillingUnit == order.BillingUnit && source.BillingValue == order.BillingValue
 }
+
+// Each actually purchased currency/period has its own agreement within the
+// current purchase/replacement series. Never extrapolate an unpurchased period
+// or borrow another subscription's agreement.
+func renewalPriceAgreement(tx *gorm.DB, order model.Order, subscriptionID uint) (model.Order, bool, error) {
+	root, err := renewalPurchase(tx, subscriptionID, order.UserID, order.PlanID)
+	if err != nil {
+		return model.Order{}, false, err
+	}
+	var source model.Order
+	err = tx.Select("id", "amount_cents", "currency", "billing_unit", "billing_value").
+		Where("subscription_id = ? AND user_id = ? AND plan_id = ? AND status = ? AND order_type IN ? AND id >= ? AND currency = ? AND billing_unit = ? AND billing_value = ?", subscriptionID, order.UserID, order.PlanID, "paid", []string{"new", "upgrade", "renewal"}, root.ID, order.Currency, order.BillingUnit, order.BillingValue).
+		Order("id asc").First(&source).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return order, false, nil
+	}
+	if err != nil {
+		return model.Order{}, false, err
+	}
+	if !compatibleRenewalPurchase(source, order) {
+		return model.Order{}, false, quoteError("已购周期价格依据不完整，请通过工单核实。")
+	}
+	return source, true, nil
+}

@@ -1479,6 +1479,8 @@ export async function fetchAdminOrderPaymentEvents(orderId: number, params: { of
 }
 
 export interface OrderPreview {
+  price_basis?: 'purchased_period' | 'current_catalog'
+  requires_price_acceptance?: boolean
   order_type: string
   amount_cents: number
   credit_amount: number
