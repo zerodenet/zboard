@@ -484,6 +484,7 @@ type SubscriptionTemplateRuleSetBinding struct {
 // Secrets are encrypted at rest; observable events carry only CredentialID and
 // PrincipalKey so a kernel event can be attributed without exposing the secret.
 type ProtocolCredential struct {
+	DeliveryRequired       bool       `json:"-" gorm:"not null;default:false;-:migration"`
 	PrincipalDigest        string     `json:"-" gorm:"size:64;not null;default:'';-:migration"`
 	SecretPrincipalDigest  string     `json:"-" gorm:"size:64;not null;default:'';-:migration"`
 	PrincipalLookupVersion uint8      `json:"-" gorm:"not null;default:0;-:migration"`
@@ -789,6 +790,7 @@ type AnnouncementRead struct {
 }
 
 type ProtocolDeployment struct {
+	CredentialTargets   string     `json:"-" gorm:"type:text;not null;default:'';-:migration"`
 	ID                  uint       `json:"id" gorm:"primaryKey;index:idx_protocol_deployments_endpoint_latest,priority:2"`
 	ProtocolEndpointID  uint       `json:"protocol_endpoint_id" gorm:"index;index:idx_protocol_deployments_endpoint_latest,priority:1;default:null"`
 	NodeID              uint       `json:"node_id" gorm:"index;not null"`

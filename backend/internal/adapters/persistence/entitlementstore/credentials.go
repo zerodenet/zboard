@@ -103,6 +103,7 @@ func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer enti
 			Status:             targetStatus,
 			ExpiresAt:          subscription.EndAt,
 		}
+		credential.DeliveryRequired = true
 		credential.SecretPrincipalDigest = entitlements.RetiredPrincipalHash(endpoint.NodeID, secret)
 		credential.PrincipalLookupVersion = 1
 		if err := tx.Create(&credential).Error; err != nil {

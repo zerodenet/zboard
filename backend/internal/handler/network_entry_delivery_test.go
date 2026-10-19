@@ -14,6 +14,23 @@ import (
 
 func TestNetworkEntryGrantAuthenticatesLandingWithoutExposingDirectAddress(t *testing.T) {
 	f, a, b := networkEntryFixture(t)
+	assertNetworkEntryCredentialDelivery(t, f, a, b)
+}
+func TestMySQLNetworkEntryCredentialDeliveryRequiresBothNodes(t *testing.T) {
+	h, _ := newMySQLPublishHandlers(t)
+	user := model.User{ID: 1, Email: "entry-delivery@example.test", Password: "hash", Status: userStatusActive, IsAdmin: true}
+	if err := h.db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := h.issueToken(authClaims{UserID: 1, Email: user.Email, IsAdmin: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, a, b := seedNetworkEntryFixture(t, trafficReadFixture{h: h, admin: token, token: token})
+	assertNetworkEntryCredentialDelivery(t, f, a, b)
+}
+func assertNetworkEntryCredentialDelivery(t *testing.T, f trafficReadFixture, a model.Node, b model.ProtocolEndpoint) {
+	t.Helper()
 	b.Protocol = "vless"
 	b.ClientConfig = `{"type":"vless","server":"landing.example.test","port":1443}`
 	b.ServerConfig, _ = f.h.credentialCipher.Encrypt(`{"type":"vless","users":[]}`)
@@ -29,7 +46,15 @@ func TestNetworkEntryGrantAuthenticatesLandingWithoutExposingDirectAddress(t *te
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	sub := model.Subscription{UserID: 1, NodeGroupID: group.ID, Status: subStatusActive, EndAt: now.Add(time.Hour), FlowTotal: 1000}
+	plan := model.Plan{Name: "entry-delivery-plan", Slug: "entry-delivery-plan", NodeGroupID: group.ID, TrafficBytes: 1000}
+	if err := f.h.db.Create(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	sku := model.PlanSKU{PlanID: plan.ID, Name: "Monthly", Code: "entry-delivery-monthly", BillingUnit: "month", BillingValue: 1, PriceCents: 100, Currency: "CNY"}
+	if err := f.h.db.Create(&sku).Error; err != nil {
+		t.Fatal(err)
+	}
+	sub := model.Subscription{PlanID: plan.ID, PlanSKUID: sku.ID, StartAt: now, Config: "{}", UserID: 1, NodeGroupID: group.ID, Status: subStatusActive, EndAt: now.Add(time.Hour), FlowTotal: 1000}
 	if err := f.h.db.Create(&sub).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -41,6 +66,16 @@ func TestNetworkEntryGrantAuthenticatesLandingWithoutExposingDirectAddress(t *te
 	if count != 1 {
 		t.Fatal("entry grant must create one landing credential")
 	}
+	pending, err := f.h.buildProjectedSubscriptionManifestNodes(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
+	if err != nil || len(pending) != 0 {
+		t.Fatal("unconfirmed listener became available", len(pending), err)
+	}
+	confirmTestCredentialConfiguration(t, f.h, b.NodeID)
+	pending, err = f.h.buildProjectedSubscriptionManifestNodes(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
+	if err != nil || len(pending) != 0 {
+		t.Fatal("landing confirmation stood in for new listener delivery", len(pending), err)
+	}
+	confirmTestCredentialConfiguration(t, f.h, a.ID)
 	f.h.db.Where("1 = 1").Delete(&model.NodeConfigPublish{})
 	nodes, err := f.h.buildProjectedSubscriptionManifestNodes(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
 	if err != nil || len(nodes) != 1 || nodes[0].CredentialID == "" {
@@ -71,12 +106,22 @@ func TestNetworkEntryGrantAuthenticatesLandingWithoutExposingDirectAddress(t *te
 	if err != nil || len(nodes) != 2 {
 		t.Fatalf("stale telemetry or pending publication removed working routes: %v %v", nodes, err)
 	}
+	if err := f.h.db.Model(&model.NetworkEntry{}).Where("id = ?", entry.ID).Update("public_port", entry.PublicPort+1).Error; err != nil {
+		t.Fatal(err)
+	}
+	changed, err := f.h.buildProjectedSubscriptionManifestNodes(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
+	if err != nil || len(changed) != 1 || changed[0].NetworkEntryID != 0 {
+		t.Fatal("old proof exposed changed listener binding or erased independent direct grant", len(changed), err)
+	}
+	if err := f.h.db.Model(&model.NetworkEntry{}).Where("id = ?", entry.ID).Update("public_port", entry.PublicPort).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := f.h.db.Model(&model.Node{}).Where("id = ?", b.NodeID).Update("last_seen_at", nil).Error; err != nil {
 		t.Fatal(err)
 	}
 	nodes, err = f.h.buildProjectedSubscriptionManifestNodes(context.Background(), []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
-	if err != nil || len(nodes) != 0 {
-		t.Fatalf("never observed landing node became available: %v %v", nodes, err)
+	if err != nil || len(nodes) != 2 {
+		t.Fatalf("missing observation erased confirmed landing credentials: nodes=%d error=%v", len(nodes), err)
 	}
 	if err := f.h.db.Model(&model.Node{}).Where("id = ?", b.NodeID).Update("last_seen_at", stale).Error; err != nil {
 		t.Fatal(err)

@@ -245,7 +245,7 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 13,
+		"cross_domain_transaction": 14,
 	}
 	counts := map[string]int{}
 	controlledDebit, unsubscribe, retirement := false, false, false

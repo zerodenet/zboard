@@ -4332,7 +4332,7 @@ paths:
       tags:
         - subscriptions
       summary: Fetch a client-specific subscription response
-      description: When template is omitted or set to auto, the server selects the built-in ZNet Sink, Clash/Mihomo or sing-box template from User-Agent and falls back to the canonical zboard.subscription/v1 manifest. ZNet Sink and native JSON are delivered as Base64 text; Clash and sing-box retain their client-native representations. An explicit template slug or native always takes precedence over User-Agent.
+      description: When template is omitted or set to auto, the server selects the built-in ZNet Sink, Clash/Mihomo or sing-box template from User-Agent and falls back to the canonical zboard.subscription/v1 manifest. ZNet Sink and native JSON are delivered as Base64 text; Clash and sing-box retain their client-native representations. An explicit template slug or native always takes precedence over User-Agent. The canonical manifest may include delivery_status on a protocol endpoint, with confirmed, legacy_unknown or external_unverified values. Newly issued managed credentials and new managed forwarding listeners are excluded until their own frozen configuration bindings are confirmed. Missing runtime observations do not remove previously confirmed access; business revocation and explicit administrator stops still apply. External forwarding registration does not claim panel verification of external delivery.
       parameters:
         - in: path
           name: token

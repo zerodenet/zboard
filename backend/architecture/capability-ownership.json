@@ -89,6 +89,16 @@
   ],
   "cross_domain_transactions": [
     {
+      "id": "resources.configuration_delivery_confirmation",
+      "owner": "resources",
+      "source": "internal/adapters/persistence/networkstore/configuration_publication.go",
+      "symbol": "ConfigurationPublicationState.CompleteConfigurationPublication",
+      "participants": ["resources", "network", "entitlements"],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback applied state and binding projections together; retain the immutable target and reconcile an unknown remote outcome before any repeat delivery.",
+      "outbox": "The existing NodeConfigPublish intent advances to its separately recoverable connection verification phase. Schema recovery only reconstructs confirmed projections and requeues unconfirmed bindings through the same publication writer."
+    },
+    {
       "id": "entitlements.subscription_retirement",
       "owner": "entitlements",
       "source": "internal/adapters/persistence/entitlementstore/credential_expiry.go",

@@ -242,6 +242,9 @@ func (s KernelReconciliationState) CompleteKernelReconciliation(ctx context.Cont
 			}
 		}
 
+		if err := enqueueUnconfirmedCredentialPublication(tx, operation.NodeID); err != nil {
+			return err
+		}
 		if err := enqueueMieruReadinessPublication(tx, operation.NodeID); err != nil {
 			return err
 		}

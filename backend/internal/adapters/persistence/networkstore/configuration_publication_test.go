@@ -15,12 +15,12 @@ import (
 func configurationPublicationFixture(t *testing.T) (*ConfigurationPublicationState, model.Node, model.ProtocolEndpoint) {
 	t.Helper()
 	db, _ := administrationFixture(t)
-	node := model.Node{ID: 1, Name: "publish-node", LifecycleStatus: "active", NodeCredential: "old", NodeCredentialPrefix: "old-prefix"}
+	node := model.Node{ID: 1, Name: "publish-node", Config: "{}", LifecycleStatus: "active", NodeCredential: "old", NodeCredentialPrefix: "old-prefix"}
 	endpoint := model.ProtocolEndpoint{
 		ID: 1, NodeID: node.ID, Name: "mieru", Protocol: "mieru", Address: "node.example.test", Port: 443, PublicPort: 443,
 		MultiplierMilli: 1000, ServerConfig: "{}", ClientConfig: "{}", OptionalConfig: "{}", Tags: "[]", IsActive: true,
 	}
-	for _, row := range []interface{}{&node, &endpoint} {
+	for _, row := range []interface{}{&model.User{ID: 7, Email: "publication-admin@example.test", Password: "hash", Status: "active", IsAdmin: true}, &node, &endpoint} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatal(err)
 		}

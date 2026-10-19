@@ -23,7 +23,9 @@ func (h *handlers) buildAuthorizedNetworkEntries(ctx context.Context, subscripti
 		return nil, err
 	}
 	entriesByGroup := make(map[uint][]model.NetworkEntry)
+	entryDelivery := map[uint]string{}
 	for _, row := range projection.Entries {
+		entryDelivery[row.ID] = row.DeliveryStatus
 		entriesByGroup[row.NodeGroupID] = append(entriesByGroup[row.NodeGroupID], model.NetworkEntry{DeploymentMode: row.DeploymentMode, ID: row.ID, NodeID: row.NodeID, EndpointID: row.EndpointID, Name: row.Name, Address: row.Address, Network: row.Network, Port: row.Port, PublicPort: row.PublicPort, Enabled: true})
 	}
 	endpoints := make(map[uint]model.ProtocolEndpoint, len(projection.Endpoints))
@@ -38,13 +40,18 @@ func (h *handlers) buildAuthorizedNetworkEntries(ctx context.Context, subscripti
 	// routes visible while ZBoard resumes a pending publish after restart.
 	type credentialKey struct{ subscriptionID, endpointID uint }
 	credentials := make(map[credentialKey]model.ProtocolCredential, len(projection.Credentials))
+	delivery := map[credentialKey]string{}
 	for _, row := range projection.Credentials {
+		delivery[credentialKey{row.SubscriptionID, row.ProtocolEndpointID}] = row.DeliveryStatus
 		credentials[credentialKey{row.SubscriptionID, row.ProtocolEndpointID}] = model.ProtocolCredential{SubscriptionID: row.SubscriptionID, ProtocolEndpointID: row.ProtocolEndpointID, CredentialID: row.CredentialID, Secret: row.SecretCiphertext, ListenPort: row.ListenPort, PublicPort: row.PublicPort, Status: protocolCredentialStatusActive}
 	}
 	result := []subscriptionManifestNode{}
 	seen := map[uint]bool{}
 	for _, sub := range subscriptions {
 		for _, entry := range entriesByGroup[sub.NodeGroupID] {
+			if entry.DeploymentMode != "external" && entryDelivery[entry.ID] == "pending" {
+				continue
+			}
 			if seen[entry.ID] {
 				continue
 			}
@@ -57,6 +64,12 @@ func (h *handlers) buildAuthorizedNetworkEntries(ctx context.Context, subscripti
 			if supported, _ := h.protocolKernelSupportForNode(endpoint.Protocol, landing); !supported {
 				continue
 			}
+			if landing.LastSeenAt == nil && delivery[credentialKey{sub.ID, endpoint.ID}] != "confirmed" {
+				continue
+			}
+			if entry.DeploymentMode != "external" && entryNode.LastSeenAt == nil && entryDelivery[entry.ID] != "confirmed" {
+				continue
+			}
 			visibleEndpoint := endpoint
 			visibleEndpoint.Name = networkEntryDisplayName(entry.Name, endpoint.Name)
 			visibleEndpoint.Address = entry.Address
@@ -66,6 +79,9 @@ func (h *handlers) buildAuthorizedNetworkEntries(ctx context.Context, subscripti
 			base := subscriptionManifestNode{ID: endpoint.ID, NodeID: endpoint.NodeID, SubscriptionID: sub.ID,
 				Name: endpoint.Name, Region: landing.Region, Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
 				Protocol: endpoint.Protocol, MultiplierMilli: endpoint.MultiplierMilli}
+			if delivery[credentialKey{sub.ID, endpoint.ID}] == "pending" {
+				continue
+			}
 			if h.endpointDeliversSubscriptionCredential(endpoint) {
 				credential, exists := credentials[credentialKey{sub.ID, endpoint.ID}]
 				if !exists {
@@ -76,12 +92,18 @@ func (h *handlers) buildAuthorizedNetworkEntries(ctx context.Context, subscripti
 					return nil, err
 				}
 				base.Config, base.CredentialID = config, credential.CredentialID
+				base.DeliveryStatus = delivery[credentialKey{sub.ID, endpoint.ID}]
 			} else {
 				config, err := h.endpointSubscriptionClientConfig(endpoint)
 				if err != nil {
 					return nil, err
 				}
 				base.Config = config
+			}
+			if entry.DeploymentMode == "external" {
+				base.DeliveryStatus = "external_unverified"
+			} else if base.DeliveryStatus != "confirmed" || entryDelivery[entry.ID] != "confirmed" {
+				base.DeliveryStatus = "legacy_unknown"
 			}
 			front, err := projectNetworkEntry(base, entry)
 			if err != nil {

@@ -866,12 +866,17 @@ func (h *handlers) compileNodeRuntimeConfigContext(ctx context.Context, node mod
 }
 
 func (h *handlers) compileNodeRuntimeConfigWithOptionsContext(ctx context.Context, node model.Node, apiKey, zeroVersion string, suppressMieruFallback bool) ([]byte, string, error) {
+	payload, sha, _, err := h.compileNodeRuntimeConfigWithCredentialTargets(ctx, node, apiKey, zeroVersion, suppressMieruFallback)
+	return payload, sha, err
+}
+
+func (h *handlers) compileNodeRuntimeConfigWithCredentialTargets(ctx context.Context, node model.Node, apiKey, zeroVersion string, suppressMieruFallback bool) ([]byte, string, network.ConfigurationDeliveryTargets, error) {
 	now := time.Now().UTC()
 	snapshot, err := h.services.RuntimeConfigurationSource().Load(ctx, node.ID, now, h.runtimeCredentialProtocols())
 	if err != nil {
-		return nil, "", fmt.Errorf("load node runtime configuration source: %w", err)
+		return nil, "", network.ConfigurationDeliveryTargets{}, fmt.Errorf("load node runtime configuration source: %w", err)
 	}
-	return (zeroadapter.RuntimeConfigurationRenderer{Cipher: h.credentialCipher}).Render(zeroadapter.RuntimeConfigurationRenderRequest{
+	return (zeroadapter.RuntimeConfigurationRenderer{Cipher: h.credentialCipher}).RenderWithCredentialTargets(zeroadapter.RuntimeConfigurationRenderRequest{
 		NodeID: node.ID, APIKey: apiKey,
 		SuppressMieruFallback: suppressMieruFallback, Now: now, Snapshot: snapshot,
 	})

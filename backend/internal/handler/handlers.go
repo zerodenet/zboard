@@ -285,6 +285,7 @@ type protocolEndpointSelectionSnapshot struct {
 }
 
 type subscriptionManifestNode struct {
+	DeliveryStatus      string          `json:"delivery_status,omitempty"`
 	NetworkEntryID      uint            `json:"network_entry_id,omitempty"`
 	NetworkEntryNetwork string          `json:"network_entry_network,omitempty"`
 	ID                  uint            `json:"id"`
