@@ -81,6 +81,16 @@ func (s KernelDetection) CompleteDetection(ctx context.Context, operation networ
 		if assessment.Status == "healthy" {
 			stateUpdates["last_healthy_at"] = now
 		}
+		var pending int64
+		if err := tx.Model(&model.ProtocolDeployment{}).Where("node_id = ? AND status = ?", operation.NodeID, "reconciling").Count(&pending).Error; err != nil {
+			return err
+		}
+		if pending > 0 {
+			stateUpdates["status"], stateUpdates["phase"], stateUpdates["recommended_action"] = "reconciling", "awaiting_configuration", "reconcile_configuration"
+			delete(stateUpdates, "applied_config_sha256")
+			delete(stateUpdates, "last_error")
+		}
+
 		if err := tx.Model(&state).Updates(stateUpdates).Error; err != nil {
 			return err
 		}
@@ -108,17 +118,23 @@ func (s KernelDetection) FailDetection(ctx context.Context, operation network.Ke
 			return err
 		}
 		status, action := "failed", "retry"
+		outcome, terminalPhase := "failed", "idle"
+		var finishedAt *time.Time = &now
+		if errors.Is(failure, network.ErrConfigurationOutcomeUnknown) {
+			status, action, phase = "reconciling", "reconcile_configuration", "awaiting_configuration"
+			outcome, terminalPhase, finishedAt = "reconciling", phase, nil
+		}
 		if unsupported {
 			status, action = "unsupported", "manual_review"
 		}
 		message := network.TruncateKernelError(failure.Error())
 		if err := tx.Model(&row).Updates(map[string]interface{}{
-			"status": "failed", "phase": phase, "error": message, "finished_at": now,
+			"status": outcome, "phase": phase, "error": message, "finished_at": finishedAt,
 		}).Error; err != nil {
 			return err
 		}
 		return tx.Model(&state).Updates(map[string]interface{}{
-			"status": status, "phase": "idle", "recommended_action": action,
+			"status": status, "phase": terminalPhase, "recommended_action": action,
 			"last_error": message, "active_operation_id": nil,
 		}).Error
 	})

@@ -47,6 +47,15 @@ func (s *configurationPublicationRepositoryStub) FailConfigurationPublication(_ 
 	return deployment, s.failurePersistence
 }
 
+func (s *configurationPublicationRepositoryStub) UncertainConfigurationPublication(_ context.Context, deployment ConfigurationDeployment, message, output string, _ time.Time) (ConfigurationDeployment, error) {
+	s.failure, s.failureOutput = message, output
+	deployment.Status = "reconciling"
+	return deployment, s.failurePersistence
+}
+func (s *configurationPublicationRepositoryStub) ResolveConfigurationPublication(context.Context, ConfigurationDeployment, bool, string, time.Time) error {
+	return s.failurePersistence
+}
+
 func (s *configurationPublicationRepositoryStub) DeferConfigurationPublication(_ context.Context, deployment ConfigurationDeployment, message, output string, _ time.Time) (ConfigurationDeployment, error) {
 	s.failure, s.failureOutput = message, output
 	deployment.Status = "deferred"

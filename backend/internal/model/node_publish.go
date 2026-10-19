@@ -10,6 +10,8 @@ type NodeConfigPublish struct {
 	RequestedBy   uint      `gorm:"not null"`
 	Generation    uint64    `gorm:"not null;default:1"`
 	Attempts      uint      `gorm:"not null"`
+	Reconciling   bool      `gorm:"not null;default:false"`
+	Suspended     bool      `gorm:"not null;default:false"`
 	Deferred      bool      `gorm:"not null;default:false"`
 	NextAttemptAt time.Time `gorm:"not null;index:idx_node_publish_due,priority:1"`
 	LeaseUntil    time.Time `gorm:"not null;index:idx_node_publish_due,priority:2"`

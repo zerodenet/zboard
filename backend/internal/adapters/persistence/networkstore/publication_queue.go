@@ -2,6 +2,7 @@ package networkstore
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,7 +16,7 @@ type PublicationQueue struct{ DB *gorm.DB }
 func (s PublicationQueue) Pending(ctx context.Context, now time.Time) (bool, error) {
 	var row struct{ Present int }
 	err := s.DB.WithContext(ctx).Model(&model.NodeConfigPublish{}).
-		Where("lease_until <= ? AND next_attempt_at <= ?", now, now).
+		Where("suspended = ? AND lease_until <= ? AND next_attempt_at <= ?", false, now, now).
 		Select("1 AS present").Limit(1).Scan(&row).Error
 	return row.Present == 1, err
 }
@@ -24,7 +25,7 @@ func (s PublicationQueue) Claim(ctx context.Context, now time.Time) (network.Pub
 	db := s.DB.WithContext(ctx)
 	for attempt := 0; attempt < 4; attempt++ {
 		var item model.NodeConfigPublish
-		read := db.Where("next_attempt_at <= ? AND lease_until <= ?", now, now).
+		read := db.Where("suspended = ? AND next_attempt_at <= ? AND lease_until <= ?", false, now, now).
 			Order("next_attempt_at, node_id").Limit(1).Find(&item)
 		if read.Error != nil {
 			return network.Publication{}, false, read.Error
@@ -35,7 +36,7 @@ func (s PublicationQueue) Claim(ctx context.Context, now time.Time) (network.Pub
 		token := uuid.NewString()
 		until := now.Add(network.PublicationLease)
 		result := db.Model(&model.NodeConfigPublish{}).
-			Where("node_id = ? AND generation = ? AND lease_until <= ? AND next_attempt_at <= ?", item.NodeID, item.Generation, now, now).
+			Where("node_id = ? AND generation = ? AND suspended = ? AND lease_until <= ? AND next_attempt_at <= ?", item.NodeID, item.Generation, false, now, now).
 			Updates(map[string]interface{}{"lease_token": token, "lease_until": until})
 		if result.Error != nil {
 			return network.Publication{}, false, result.Error
@@ -69,18 +70,27 @@ func (s PublicationQueue) Complete(ctx context.Context, item network.Publication
 	var result *gorm.DB
 	if failure == nil {
 		result = owned.Delete(&model.NodeConfigPublish{})
+	} else if errors.Is(failure, network.ErrConfigurationOutcomeUnknown) {
+		result = owned.Model(&model.NodeConfigPublish{}).Updates(map[string]interface{}{
+			"reconciling": true, "suspended": false, "last_error": message,
+			"next_attempt_at": now.Add(network.PublicationRecheckInterval), "lease_token": "", "lease_until": publicationIdleLease,
+		})
+	} else if errors.Is(failure, network.ErrKernelOperationRunning) {
+		result = owned.Model(&model.NodeConfigPublish{}).Updates(map[string]interface{}{
+			"next_attempt_at": now.Add(network.PublicationRecheckInterval), "lease_token": "", "lease_until": publicationIdleLease,
+		})
 	} else if network.IsConfigurationCapabilityDeferral(failure) {
 		result = owned.Model(&model.NodeConfigPublish{}).Updates(map[string]interface{}{
-			"deferred": true, "last_error": message,
+			"deferred": true, "reconciling": false, "suspended": false, "last_error": message,
 			"next_attempt_at": now.Add(network.PublicationCapabilityRecheck), "lease_token": "", "lease_until": publicationIdleLease,
 		})
 	} else {
 		attempts := item.Attempts + 1
-		if attempts > 32 {
-			attempts = 32
+		if attempts > network.PublicationFailureLimit {
+			attempts = network.PublicationFailureLimit
 		}
 		result = owned.Model(&model.NodeConfigPublish{}).Updates(map[string]interface{}{
-			"deferred": false,
+			"deferred": false, "reconciling": false, "suspended": attempts >= network.PublicationFailureLimit,
 			"attempts": attempts, "last_error": message, "next_attempt_at": now.Add(network.PublicationRetryDelay(item.Attempts)),
 			"lease_token": "", "lease_until": publicationIdleLease,
 		})
@@ -103,7 +113,7 @@ func publicationFromModel(item model.NodeConfigPublish) network.Publication {
 	return network.Publication{
 		NodeID: item.NodeID, EndpointID: item.EndpointID, RequestedBy: item.RequestedBy,
 		Generation: item.Generation, Attempts: item.Attempts, LastError: item.LastError,
-		Deferred:      item.Deferred,
+		Deferred: item.Deferred, Reconciling: item.Reconciling, Suspended: item.Suspended,
 		NextAttemptAt: item.NextAttemptAt, LeaseUntil: item.LeaseUntil, LeaseToken: item.LeaseToken,
 	}
 }

@@ -20,6 +20,7 @@ type ConfigurationPublicationRequest struct {
 	// that remove the last runtime listener from a node.
 	TriggerEndpointID uint
 	RequestedBy       uint
+	KernelOperationID uint
 }
 
 type ConfigurationDeployment struct {
@@ -54,6 +55,8 @@ type ConfigurationPublicationCompletion struct {
 
 type ConfigurationPublicationRepository interface {
 	BeginConfigurationPublication(context.Context, ConfigurationPublicationRequest, time.Time) (ConfigurationPublicationStart, error)
+	UncertainConfigurationPublication(context.Context, ConfigurationDeployment, string, string, time.Time) (ConfigurationDeployment, error)
+	ResolveConfigurationPublication(context.Context, ConfigurationDeployment, bool, string, time.Time) error
 	SetConfigurationPublicationDesired(context.Context, ConfigurationDeployment, string) (ConfigurationDeployment, error)
 	ActivateConfigurationConnectorCredential(context.Context, ConfigurationDeployment, KernelEncryptedCredential) error
 	RestoreConfigurationConnectorCredential(context.Context, ConfigurationDeployment, KernelConnectorSnapshot) error
@@ -113,6 +116,24 @@ func (s ConfigurationPublicationState) Fail(ctx context.Context, deployment Conf
 		return failed, errors.Join(cause, ErrConfigurationPublicationCommit, err)
 	}
 	return failed, cause
+}
+
+func (s ConfigurationPublicationState) Uncertain(ctx context.Context, deployment ConfigurationDeployment, cause error, output string) (ConfigurationDeployment, error) {
+	if s.Repository == nil || deployment.ID == 0 || !errors.Is(cause, ErrConfigurationOutcomeUnknown) {
+		return ConfigurationDeployment{}, ErrConfigurationPublicationUnavailable
+	}
+	pending, err := s.Repository.UncertainConfigurationPublication(ctx, deployment, TruncateKernelError(cause.Error()), strings.TrimSpace(output), s.now())
+	if err != nil {
+		return pending, errors.Join(cause, ErrConfigurationPublicationCommit, err)
+	}
+	return pending, cause
+}
+
+func (s ConfigurationPublicationState) Resolve(ctx context.Context, deployment ConfigurationDeployment, applied bool, output string) error {
+	if s.Repository == nil || deployment.ID == 0 || deployment.Status != "reconciling" {
+		return ErrConfigurationPublicationUnavailable
+	}
+	return s.Repository.ResolveConfigurationPublication(ctx, deployment, applied, strings.TrimSpace(output), s.now())
 }
 
 func (s ConfigurationPublicationState) Defer(ctx context.Context, deployment ConfigurationDeployment, cause error, output string) (ConfigurationDeployment, error) {

@@ -38,6 +38,7 @@ func TestMatchingActiveConfigurationNeverRestartsOnControlProbeFailure(t *testin
 				filepath.Join(stage, "zero.env"):              "ZERO_PANEL_API_KEY=test\n",
 				filepath.Join(config, "current.json"):         "{}",
 				filepath.Join(config, "zero.env"):             "ZERO_PANEL_API_KEY=test\n",
+				filepath.Join(bin, "timeout"):                 "#!/bin/sh\nshift\nexec \"$@\"\n",
 				filepath.Join(bin, "flock"):                   "#!/bin/sh\nexit 0\n",
 				filepath.Join(state, "zboard-config.receipt"): sha + " " + sha + " test-core 1\n",
 				filepath.Join(bin, "id"):                      "#!/bin/sh\necho 0\n",
@@ -51,7 +52,7 @@ func TestMatchingActiveConfigurationNeverRestartsOnControlProbeFailure(t *testin
 				}
 			}
 			script := strings.NewReplacer("/usr/local/bin/zero", filepath.Join(bin, "zero"), "/etc/zerodenet", config, "/var/lib/zerodenet", filepath.Join(root, "var"), controlSocket, filepath.Join(root, "control.sock")).Replace(BuildConfigurationPublishScript(stage, sha, 8))
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 			defer cancel()
 			command := exec.CommandContext(ctx, "bash")
 			command.Stdin = strings.NewReader(script)

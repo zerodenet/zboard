@@ -1208,7 +1208,7 @@ func TestManagedDNSHandlersDelegatePersistenceAndExecutionOwnership(t *testing.T
 
 func TestNodePublicationAndKernelReconciliationUseNodeCredentialCapability(t *testing.T) {
 	for file, function := range map[string]string{
-		"../internal/handler/node_config_publish.go": "publishNodeConfigForNodeLocked",
+		"../internal/handler/node_config_publish.go": "publishNodeConfigWithOwnerLocked",
 		"../internal/handler/kernel_automation.go":   "PrepareActivation",
 	} {
 		f, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
@@ -1468,7 +1468,7 @@ func TestConfigurationPublicationDelegatesStateLifecycleToCapability(t *testing.
 		if fn.Name.Name == "restoreGeneratedNodeCredential" || fn.Name.Name == "buildZeroConfigPublishScript" || fn.Name.Name == "buildZeroConfigRollbackScript" {
 			t.Errorf("configuration publication implementation returned to handler through %s", fn.Name.Name)
 		}
-		if fn.Name.Name != "publishNodeConfigForNodeLocked" {
+		if fn.Name.Name != "publishNodeConfigForNodeLocked" && fn.Name.Name != "publishNodeConfigWithOwnerLocked" {
 			continue
 		}
 		ast.Inspect(fn.Body, func(n ast.Node) bool {

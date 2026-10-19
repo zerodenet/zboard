@@ -32,6 +32,7 @@ type kernelRemoteSessionStub struct {
 	runErrorAt     int
 	runErrorOutput string
 	uploadErr      int
+	eventStateMode string
 }
 
 const nativeTestBuildInfo = `build_id: 0.0.3-dev.202610102233
@@ -70,6 +71,12 @@ func (s *kernelRemoteSessionStub) Run(command string, privileged bool) (string, 
 			return s.buildInfo, nil
 		}
 		return nativeTestBuildInfo, nil
+	}
+	if strings.HasSuffix(command, "\nevent_state_mode\n") {
+		if s.eventStateMode != "" {
+			return s.eventStateMode, nil
+		}
+		return "preserve", nil
 	}
 	if strings.Contains(command, "expected_sha=") {
 		for _, line := range strings.Split(command, "\n") {

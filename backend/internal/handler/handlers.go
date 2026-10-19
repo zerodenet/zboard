@@ -1672,6 +1672,7 @@ type protocolEndpointAdminDetail struct {
 }
 
 type protocolEndpointUsage struct {
+	ObservedAt        *time.Time `json:"observed_at,omitempty"`
 	ActiveFlows       int64      `json:"active_flows"`
 	ActiveUsers       int64      `json:"active_users"`
 	ActiveCredentials int64      `json:"active_credentials"`
@@ -1901,7 +1902,7 @@ func (h *handlers) applyProtocolEndpointFilters(values url.Values) (networkcap.P
 		query.Active = &active
 	}
 	if deploymentStatus := strings.TrimSpace(values.Get("deployment_status")); deploymentStatus != "" {
-		if deploymentStatus != "queued" && deploymentStatus != "running" && deploymentStatus != "succeeded" && deploymentStatus != "failed" && deploymentStatus != "never" {
+		if deploymentStatus != "queued" && deploymentStatus != "running" && deploymentStatus != "succeeded" && deploymentStatus != "failed" && deploymentStatus != "never" && deploymentStatus != "deferred" && deploymentStatus != "reconciling" && deploymentStatus != "suspended" {
 			return networkcap.ProtocolEndpointInventoryQuery{}, validationError("节点筛选条件校验失败。", map[string]string{"deployment_status": "invalid deployment_status"})
 		}
 		query.DeploymentStatus = deploymentStatus
@@ -2134,7 +2135,7 @@ func protocolDeploymentModel(r networkcap.ProtocolDeploymentRecord) model.Protoc
 	return model.ProtocolDeployment{ID: r.ID, NodeID: r.NodeID, ProtocolEndpointID: r.ProtocolEndpointID, ConfigRevision: r.ConfigRevision, DesiredConfigSHA256: r.DesiredConfigSHA256, AppliedConfigSHA256: r.AppliedConfigSHA256, Status: r.Status, RequestedBy: r.RequestedBy, Error: r.Error, Output: r.Output, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
 }
 func protocolUsageModel(r networkcap.ProtocolUsageRecord) protocolEndpointUsage {
-	return protocolEndpointUsage{ActiveFlows: r.ActiveFlows, ActiveUsers: r.ActiveUsers, ActiveCredentials: r.ActiveCredentials, LastUsedAt: r.LastUsedAt, UsedBytesToday: r.UsedBytesToday, UsedBytesTotal: r.UsedBytesTotal, ResetAt: r.ResetAt}
+	return protocolEndpointUsage{ObservedAt: r.ObservedAt, ActiveFlows: r.ActiveFlows, ActiveUsers: r.ActiveUsers, ActiveCredentials: r.ActiveCredentials, LastUsedAt: r.LastUsedAt, UsedBytesToday: r.UsedBytesToday, UsedBytesTotal: r.UsedBytesTotal, ResetAt: r.ResetAt}
 }
 func nodeAdministrationModel(r networkcap.NodeAdministrationRecord) model.Node {
 	return nodeInventoryModel(networkcap.NodeInventoryItem{Node: r})

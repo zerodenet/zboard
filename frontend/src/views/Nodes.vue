@@ -552,7 +552,7 @@ const kernelTone = computed<'success' | 'warning' | 'danger' | 'neutral'>(() => 
   const status = kernelState.value?.status || 'unknown'
   if (status === 'healthy') return 'success'
   if (status === 'unknown') return 'neutral'
-  if (status === 'not_installed' || status === 'unsupported' || status === 'publishing') return 'warning'
+  if (status === 'not_installed' || status === 'unsupported' || status === 'publishing' || status === 'reconciling') return 'warning'
   return 'danger'
 })
 const kernelStatusLabel = computed(() => ({
@@ -564,21 +564,22 @@ const kernelStatusLabel = computed(() => ({
   unsupported: '制品不兼容',
   publishing: '配置发布中',
   apply_failed: '配置应用失败',
+  reconciling: '配置结果待核对',
 } as Record<string, string>)[kernelState.value?.status || 'unknown'] || formatUnknownValue('状态', kernelState.value?.status))
 const kernelDescription = computed(() => kernelState.value?.installed_version ? `Zero ${kernelState.value.installed_version} · ${serviceLabel(kernelState.value.service_status)}` : kernelStatusLabel.value)
 const reconcileButtonLabel = computed(() => kernelState.value?.status === 'unsupported' ? '当前制品不兼容' : kernelState.value?.status === 'not_installed' ? '自动安装' : kernelState.value?.recommended_action === 'configure' ? '应用配置' : '安装 / 升级 / 修复')
 function lifecycleLabel(value?: string) { return ({ active: '正常', maintenance: '维护', retired: '退役', deleting: '退役处理中' } as Record<string, string>)[value || ''] || formatUnknownValue('状态', value) }
 function lifecycleTone(node: any): 'success' | 'warning' | 'neutral' { return node.lifecycle_status === 'maintenance' ? 'warning' : node.lifecycle_status === 'retired' ? 'neutral' : node.is_enabled ? 'success' : 'neutral' }
-function kernelListLabel(value?: string) { return ({ unknown: '未检测', not_installed: '未安装', healthy: '健康', degraded: '异常', failed: '失败', unsupported: '不兼容', publishing: '发布中', apply_failed: '应用失败' } as Record<string, string>)[value || 'unknown'] || formatUnknownValue('状态', value) }
-function kernelListTone(value?: string): 'success' | 'warning' | 'danger' | 'neutral' { if (value === 'healthy') return 'success'; if (!value || value === 'unknown') return 'neutral'; if (value === 'not_installed' || value === 'unsupported' || value === 'publishing') return 'warning'; return 'danger' }
+function kernelListLabel(value?: string) { return ({ unknown: '未检测', not_installed: '未安装', healthy: '健康', degraded: '异常', failed: '失败', unsupported: '不兼容', publishing: '发布中', apply_failed: '应用失败', reconciling: '待核对' } as Record<string, string>)[value || 'unknown'] || formatUnknownValue('状态', value) }
+function kernelListTone(value?: string): 'success' | 'warning' | 'danger' | 'neutral' { if (value === 'healthy') return 'success'; if (!value || value === 'unknown') return 'neutral'; if (value === 'not_installed' || value === 'unsupported' || value === 'publishing' || value === 'reconciling') return 'warning'; return 'danger' }
 function sshDescription(node: any) { if (!node.ssh_host) return '尚未配置'; const auth = node.ssh_auth_method === 'private_key' ? '私钥' : '密码'; const privilege = ({ none: 'root 直连', sudo: 'sudo 提权', su: 'su 提权' } as Record<string,string>)[node.ssh_privilege_mode || 'none']; const host = node.ssh_host_key_fingerprint ? '主机身份已固定' : '等待首次连接'; return `${auth}认证 · ${privilege} · ${host}` }
 function serviceLabel(value?: string) { return ({ active: '运行中', inactive: '已停止', failed: '启动失败', not_found: '未安装', unknown: '未检测' } as Record<string, string>)[value || 'unknown'] || formatUnknownValue('状态', value) }
 function controlLabel(value?: string) { return value === 'healthy' ? '健康' : value === 'unavailable' ? '不可用' : !value || value === 'unknown' ? '未检测' : formatUnknownValue('状态', value) }
 function serviceTone(value?: string): 'success' | 'warning' | 'danger' | 'neutral' { return value === 'active' ? 'success' : value === 'inactive' || value === 'not_found' ? 'warning' : value === 'failed' ? 'danger' : 'neutral' }
 function controlTone(value?: string): 'success' | 'danger' | 'neutral' { return value === 'healthy' ? 'success' : value === 'unavailable' ? 'danger' : 'neutral' }
-function operationStatusLabel(value: string) { return ({ running: '执行中', succeeded: '已完成', failed: '执行失败', deferred: '保持现状（待适配）' } as Record<string, string>)[value] || formatUnknownValue('状态', value) }
-function operationStatusTone(value: string): 'info' | 'success' | 'danger' | 'warning' { return value === 'running' ? 'info' : value === 'succeeded' ? 'success' : value === 'deferred' ? 'warning' : 'danger' }
-function kernelActionLabel(value?: string) { return ({ detect: '先检测', install: '安装', upgrade: '升级', repair: '修复', configure: '同步配置', check_release: '检查新版本', manual_review: '人工确认', none: '无需操作' } as Record<string, string>)[value || 'detect'] || formatUnknownValue('动作', value) }
+function operationStatusLabel(value: string) { return ({ running: '执行中', succeeded: '已完成', failed: '执行失败', deferred: '保持现状（待适配）', reconciling: '结果待核对', superseded: '已由后续配置接替' } as Record<string, string>)[value] || formatUnknownValue('状态', value) }
+function operationStatusTone(value: string): 'info' | 'success' | 'danger' | 'warning' { return value === 'running' ? 'info' : value === 'succeeded' ? 'success' : value === 'deferred' || value === 'reconciling' || value === 'superseded' ? 'warning' : 'danger' }
+function kernelActionLabel(value?: string) { return ({ detect: '先检测', install: '安装', upgrade: '升级', repair: '修复', configure: '同步配置', reconcile_configuration: '核对配置结果', check_release: '检查新版本', manual_review: '人工确认', none: '无需操作' } as Record<string, string>)[value || 'detect'] || formatUnknownValue('动作', value) }
 function operationLabel(value?: string) { return ({ detect: '环境检测', reconcile: '状态对齐', install: '安装', upgrade: '升级', downgrade: '降级', repair: '修复', configure: '配置同步', none: '状态确认' } as Record<string, string>)[value || 'reconcile'] || formatUnknownValue('操作', value) }
 function operationSummary(operation: NodeKernelOperation) { return truncateOutput(normalizeOutput(operation.result_summary || operation.error || kernelPhaseLabel(operation.phase)), 220) }
 async function runBatch(action: 'detect' | 'activate' | 'maintenance' | 'retire') {
@@ -619,7 +620,7 @@ async function submitBatchKernelRollout() {
   } catch (e: any) { error.value = e?.response?.data?.message || 'Zero 批量升级任务创建失败。' }
   finally { bulkBusy.value = '' }
 }
-function kernelPhaseLabel(value?: string) { return ({ queued: '排队中…', detecting: '检测中…', resolving_release: '匹配制品…', preparing_connector_credential: '准备连接凭证…', downloading: '校验制品…', staging: '暂存并切换…', verifying: '本地健康检查…', waiting_connector_event: '等待 Connector 事件…', waiting_heartbeat: '等待兼容心跳…', completed: '已完成', configuration_deferred: '新设置待适配，保持当前配置' } as Record<string, string>)[value || 'queued'] || '处理中…' }
+function kernelPhaseLabel(value?: string) { return ({ queued: '排队中…', detecting: '检测中…', resolving_release: '匹配制品…', preparing_connector_credential: '准备连接凭证…', downloading: '校验制品…', staging: '暂存并切换…', verifying: '本地健康检查…', waiting_connector_event: '等待 Connector 事件…', waiting_heartbeat: '等待兼容心跳…', completed: '已完成', awaiting_configuration: '配置结果待核对，暂停重复下发', configuration_deferred: '新设置待适配，保持当前配置' } as Record<string, string>)[value || 'queued'] || '处理中…' }
 
 async function loadKernel(nodeID?: number) {
   if (!nodeID || selectedNodeID.value !== nodeID || detailSection.value !== 'kernel') return

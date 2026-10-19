@@ -61,7 +61,7 @@ func (s BatchScopes) Protocols(ctx context.Context, all bool, ids []uint, filter
 	if len(filter.Query) > 100 {
 		return nil, errors.New("search keyword is too long")
 	}
-	if status := filter.DeploymentStatus; status != "" && status != "running" && status != "succeeded" && status != "failed" && status != "never" {
+	if status := filter.DeploymentStatus; status != "" && status != "running" && status != "succeeded" && status != "failed" && status != "never" && status != "queued" && status != "deferred" && status != "reconciling" && status != "suspended" {
 		return nil, errors.New("invalid deployment_status")
 	}
 	return s.resolve(ctx, func() ([]uint, error) {

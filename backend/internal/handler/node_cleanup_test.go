@@ -45,3 +45,12 @@ func TestNodeCleanupRejectsInvalidIntentAndReusedHostBeforeDial(t *testing.T) {
 		t.Fatalf("reused host error=%v", err)
 	}
 }
+
+func TestDeletedNodeCleanupRemovesPersistentEventState(t *testing.T) {
+	command := nodeCleanupCommand()
+	// Check the invocation, since the embedded help legitimately documents
+	// --keep-state for an operator who explicitly wants to retain a queue.
+	if !strings.HasSuffix(command, " zboard-cleanup uninstall --yes") {
+		t.Fatal("deleted node cleanup must remove queues together with the installation")
+	}
+}

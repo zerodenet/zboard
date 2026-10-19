@@ -12,7 +12,7 @@ describe('protocol business load and Reality assistance', () => {
     const admin = source('views', 'Protocols.vue')
     expect(account).toContain('fetchAccountProtocolLoads')
     expect(account).toContain('协议实时负载')
-    expect(account).toContain('Zero Principal 当前态')
+    expect(account).toContain('上报延迟不会移除协议')
     expect(account).toContain('item.active_users')
     expect(account).toContain('item.active_flows')
     expect(account).toContain('protocolLoadRefreshIntervalMS')

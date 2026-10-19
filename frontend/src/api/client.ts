@@ -489,7 +489,7 @@ export async function resetNodeSSHHostKey(nodeId: number) {
 
 export interface NodeKernelState {
   node_id: number
-  status: 'unknown' | 'not_installed' | 'healthy' | 'degraded' | 'failed' | 'unsupported' | 'publishing' | 'apply_failed'
+  status: 'unknown' | 'not_installed' | 'healthy' | 'degraded' | 'failed' | 'unsupported' | 'publishing' | 'apply_failed' | 'reconciling'
   phase: string
   recommended_action: string
   platform_os: string
@@ -513,7 +513,7 @@ export interface NodeKernelOperation {
   id: number
   node_id: number
   operation_type: string
-  status: 'running' | 'succeeded' | 'failed' | 'deferred'
+  status: 'running' | 'succeeded' | 'failed' | 'deferred' | 'reconciling' | 'superseded'
   phase: string
   desired_version: string
   result_summary: string
@@ -778,7 +778,7 @@ export interface ProtocolEndpointListItem {
 		reset_at?: string
 	}
 	latest_deployment?: Pick<ProtocolDeployment, 'id' | 'status' | 'started_at' | 'finished_at' | 'created_at'> & { has_error: boolean }
-	publication?: { status: 'queued' | 'running' | 'failed' | 'deferred'; attempts: number; next_attempt_at: string; has_error: boolean }
+	publication?: { status: 'queued' | 'running' | 'failed' | 'deferred' | 'reconciling' | 'suspended'; attempts: number; next_attempt_at: string; has_error: boolean }
 	created_at: string
 	updated_at: string
 }
@@ -874,7 +874,7 @@ export type ProtocolDeployment = {
   protocol_endpoint_id: number
   node_id: number
   config_revision: number
-  status: 'running' | 'succeeded' | 'failed' | 'deferred'
+  status: 'running' | 'succeeded' | 'failed' | 'deferred' | 'reconciling' | 'superseded'
   output?: string
   error?: string
   started_at?: string
@@ -1618,6 +1618,10 @@ export async function fetchSubscriptionAccess() {
 }
 
 export interface AccountProtocolLoadItem {
+	connector_online: boolean
+	connector_last_seen_at?: string
+	load_fresh: boolean
+	load_observed_at?: string
 	protocol_endpoint_id: number
 	name: string
 	region: string

@@ -115,6 +115,25 @@ describe('account subscription independent loading and access identity', () => {
     expect(wrapper!.text()).toContain('暂无可用协议')
   })
 
+  it('keeps delayed protocols visible and distinguishes unknown load from a measured zero', async () => {
+    vi.mocked(fetchAccountProtocolLoads).mockResolvedValue({ sampled_at: '', activity_window_seconds: 120, items: [
+      { protocol_endpoint_id: 27, name: '日本 SS [02]', region: '日本', protocol: 'shadowsocks', connector_online: false, load_fresh: false, load_observed_at: '2026-10-01T00:00:00Z', active_users: 9, active_flows: 99 },
+      { protocol_endpoint_id: 26, name: 'Fresh zero', region: '美国', protocol: 'vless', connector_online: true, load_fresh: true, load_observed_at: new Date().toISOString(), active_users: 0, active_flows: 0 },
+      { protocol_endpoint_id: 25, name: 'No observations', region: '', protocol: 'hysteria2', connector_online: true, load_fresh: false, active_users: 0, active_flows: 0 },
+    ] })
+    await open()
+    const rows = wrapper!.findAll('tbody tr')
+    const stale = rows.find(row => row.text().includes('日本 SS [02]'))!
+    expect(stale.text()).toContain('上报延迟')
+    expect(stale.text()).toContain('负载数据已过期')
+    expect(stale.findAll('td').slice(2, 4).map(td => td.text())).toEqual(['—', '—'])
+    const fresh = rows.find(row => row.text().includes('Fresh zero'))!
+    expect(fresh.text()).toContain('上报正常')
+    expect(fresh.findAll('td').slice(2, 4).map(td => td.text())).toEqual(['0', '0'])
+    expect(rows.find(row => row.text().includes('No observations'))!.text()).toContain('暂无负载数据')
+    expect(wrapper!.text()).not.toContain('暂无可用协议')
+  })
+
   it('immediately hides the previous link and rejects a late response after selection changes', async () => {
     const old = deferred<SubscriptionAccess>(), current = deferred<SubscriptionAccess>()
     vi.mocked(fetchSubscriptionAccess).mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise)

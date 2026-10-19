@@ -73,6 +73,7 @@ type preparedKernelActivationStub struct {
 	connectorAt     time.Time
 	connectorErr    error
 	invalidations   int
+	lastSeenAt      *time.Time
 }
 
 func (s *preparedKernelActivationStub) ConfigSHA256() string { return s.configSHA }
@@ -80,7 +81,7 @@ func (s *preparedKernelActivationStub) ConnectorCredential() (KernelEncryptedCre
 	return s.credential, s.newCredential
 }
 func (s *preparedKernelActivationStub) ConnectorSnapshot() KernelConnectorSnapshot {
-	return KernelConnectorSnapshot{Credential: KernelEncryptedCredential{Ciphertext: "old", Prefix: "old-prefix"}}
+	return KernelConnectorSnapshot{Credential: KernelEncryptedCredential{Ciphertext: "old", Prefix: "old-prefix"}, LastSeenAt: s.lastSeenAt}
 }
 func (s *preparedKernelActivationStub) Materialize(context.Context) (PreparedKernelMaterialization, error) {
 	return s.materialization, nil
@@ -109,6 +110,29 @@ func (s *preparedKernelMaterializationStub) Install(context.Context, uint) error
 func (s *preparedKernelMaterializationStub) Rollback(context.Context, uint) error {
 	s.rolledBack = true
 	return s.rollbackErr
+}
+
+func TestMatchingKernelStillInitializesNeverObservedNode(t *testing.T) {
+	for _, observed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "new node", true: "observed node"}[observed], func(t *testing.T) {
+			repository := &kernelReconciliationRepositoryStub{operation: KernelOperation{ID: 7, NodeID: 4}}
+			materialization := &preparedKernelMaterializationStub{sha: "same-binary"}
+			probe := KernelProbe{OperatingSystem: "linux", Architecture: "x86_64", Systemd: true, Installed: true, Version: "0.0.3", BinarySHA256: "same-binary", ConfigSHA256: "same-config", ServiceStatus: "active", ControlStatus: "healthy"}
+			activation := &preparedKernelActivationStub{configSHA: "same-config", materialization: materialization, verified: probe, connectorAt: time.Now()}
+			if observed {
+				now := time.Now()
+				activation.lastSeenAt = &now
+			}
+			prepared := &preparedKernelReconciliationStub{probe: probe, release: &preparedKernelReleaseStub{descriptor: KernelRelease{Version: "0.0.3"}, activation: activation}}
+			service := KernelReconciliation{State: KernelReconciliationState{Repository: repository}, Preparer: &kernelReconciliationPreparerStub{prepared: prepared}}
+			if _, err := service.Reconcile(context.Background(), KernelReconciliationRequest{NodeID: 4, ActorID: 1, Version: "0.0.3"}); err != nil {
+				t.Fatal(err)
+			}
+			if materialization.installed == observed {
+				t.Fatalf("observed=%t installed=%t", observed, materialization.installed)
+			}
+		})
+	}
 }
 
 type runtimeKeepingMaterialization struct {

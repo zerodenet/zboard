@@ -36,6 +36,7 @@ func TestNativePublicationPreservesTrafficAcrossPublisherProcesses(t *testing.T)
 	for name, body := range map[string]string{
 		"id":        "#!/bin/sh\necho 0\n",
 		"flock":     "#!/bin/sh\nexit 0\n",
+		"timeout":   "#!/bin/sh\nshift\nexec \"$@\"\n",
 		"sha256sum": "#!/bin/sh\nexec shasum -a 256 \"$@\"\n",
 		"systemctl": "#!/bin/sh\nif [ \"$1\" = is-active ]; then exit 0; fi\necho service-mutated >> " + shellQuote(filepath.Join(root, "mutations")) + "\nexit 1\n",
 	} {

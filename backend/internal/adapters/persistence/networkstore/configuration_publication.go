@@ -28,6 +28,54 @@ func (s ConfigurationPublicationState) BeginConfigurationPublication(ctx context
 				return err
 			}
 		}
+		if state, err := lockOrCreateKernelState(tx, node.ID); err != nil {
+			return err
+		} else if state.ActiveOperationID != nil && *state.ActiveOperationID != request.KernelOperationID {
+			var owner model.NodeOperation
+			if err := tx.First(&owner, *state.ActiveOperationID).Error; err != nil {
+				return err
+			}
+			if owner.Status == "running" {
+				// A configure attempt is bounded by the ten-minute kernel
+				// operation budget plus cleanup. After panel exit, release
+				// only this expired configuration owner into reconciliation.
+				if owner.OperationType != "configure" || now.Sub(owner.UpdatedAt) <= network.KernelReconciliationTimeout+time.Minute {
+					return network.ErrKernelOperationRunning
+				}
+				if err := tx.Model(&owner).Updates(map[string]interface{}{"status": "reconciling", "phase": "awaiting_configuration"}).Error; err != nil {
+					return err
+				}
+			}
+			if err := tx.Model(&state).Update("active_operation_id", nil).Error; err != nil {
+				return err
+			}
+		}
+		// Reuse unresolved intent after timeouts or a panel crash. A restarted
+		// worker must reconcile it before creating a new remote transaction.
+		var pending model.ProtocolDeployment
+		if err := tx.Where("node_id = ? AND status IN ?", node.ID, []string{"running", "reconciling"}).Order("id").Limit(1).Find(&pending).Error; err != nil {
+			return err
+		}
+		if pending.ID != 0 {
+			if pending.Status == "running" && pending.StartedAt != nil && now.Sub(*pending.StartedAt) < network.PublicationLease {
+				return network.ErrKernelOperationRunning
+			}
+			if pending.DesiredConfigSHA256 != "" {
+				if pending.Status == "running" {
+					if err := tx.Model(&pending).Update("status", "reconciling").Error; err != nil {
+						return err
+					}
+					pending.Status = "reconciling"
+				}
+				out.Deployment = configurationDeploymentView(pending)
+				return nil
+			}
+			// No desired digest was persisted; remote execution could not start.
+			if err := tx.Model(&pending).Updates(map[string]interface{}{"status": "interrupted", "finished_at": now}).Error; err != nil {
+				return err
+			}
+		}
+
 		requestedBy := optionalUint(request.RequestedBy)
 		row := model.ProtocolDeployment{
 			ProtocolEndpointID: request.TriggerEndpointID, NodeID: node.ID, ConfigRevision: uint64(now.UnixNano()),

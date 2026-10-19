@@ -53,6 +53,9 @@ type KernelInstallRequest struct {
 	ConnectorKey    string
 	UseSCP          bool
 	ExpectedVersion string
+	// Only an already observed node may adopt queues from an older installation
+	// that predates the event-state ownership marker.
+	PreserveLegacyEventState bool
 }
 
 type KernelInstaller struct {
@@ -132,7 +135,11 @@ func (i KernelInstaller) Install(parent context.Context, request KernelInstallRe
 			return fmt.Errorf("uploaded kernel version %q does not match requested %q", info.Version, request.ExpectedVersion)
 		}
 	}
-	if capabilities.Features["connector"] || !capabilities.FeaturesDeclared {
+	preserveEventState, err := prepareKernelEventState(session, stage, request)
+	if err != nil {
+		return operationError(ctx, err)
+	}
+	if preserveEventState && (capabilities.Features["connector"] || !capabilities.FeaturesDeclared) {
 		if output, err := session.Run(shellQuote(stage+"/zero")+" connector state --json "+shellQuote(stage+"/runtime.json"), true); err != nil {
 			return operationError(ctx, fmt.Errorf("Zero persistent-state preflight failed; kernel left unchanged: %w: %s", err, truncateOutput(output)))
 		}
@@ -195,6 +202,7 @@ test "$(id -u)" = "0"
 test "$(uname -s)" = "Linux"
 test "$(uname -m)" = "x86_64"
 command -v systemctl >/dev/null
+command -v flock >/dev/null
 actual_sha="$(sha256sum "$stage/zero" | awk '{print $1}')"
 test "$actual_sha" = "$expected_sha"
 set -a
@@ -206,7 +214,11 @@ if ! "$stage/zero" validate "$stage/runtime.json" >/dev/null; then
   exit 1
 fi
 install -d -m 0755 /usr/local/bin /etc/zerodenet/generations /var/lib/zerodenet/backups
+exec 9>/var/lib/zerodenet/config-publication.lock
+flock -w 20 9
 install -d -m 0700 "$backup"
+%s
+validate_event_state_plan
 had_bin=0; had_env=0; had_service=0; old_active=0; old_enabled=0
 old_link="$(readlink /etc/zerodenet/current.json 2>/dev/null || true)"
 if [ -f /usr/local/bin/zero ]; then cp -a /usr/local/bin/zero "$backup/zero"; had_bin=1; fi
@@ -221,6 +233,7 @@ printf '%%s\n' "$old_active" > "$backup/old_active"
 printf '%%s\n' "$old_enabled" > "$backup/old_enabled"
 printf '%%s\n' "$old_link" > "$backup/old_link"
 rollback() {
+  if [ "${event_state_touched:-0}" = 1 ]; then restore_event_state || return 1; fi
   if [ "$had_bin" = "1" ]; then
     install -m 0755 "$backup/zero" /usr/local/bin/zero.rollback
     mv -f /usr/local/bin/zero.rollback /usr/local/bin/zero
@@ -235,6 +248,7 @@ rollback() {
   if [ "$old_active" = "1" ]; then systemctl restart zero >/dev/null 2>&1 || true; else systemctl stop zero >/dev/null 2>&1 || true; fi
 }
 trap 'rc=$?; if [ "$rc" != "0" ]; then rollback; fi; exit "$rc"' EXIT
+prepare_event_state
 install -m 0755 "$stage/zero" /usr/local/bin/zero.next
 mv -f /usr/local/bin/zero.next /usr/local/bin/zero
 install -m 0600 "$stage/runtime.json" "$generation"
@@ -250,7 +264,7 @@ install -m 0755 "$stage/cleanup-zero-node.sh" /usr/local/sbin/zboard-zero-cleanu
 trap - EXIT
 rm -rf "$stage"
 printf 'ZBOARD_KERNEL_ACTIVATED=1\n'
-`, shellQuote(stage), shellQuote(generation), shellQuote(backup), shellQuote(binarySHA))
+`, shellQuote(stage), shellQuote(generation), shellQuote(backup), shellQuote(binarySHA), kernelEventStateShell)
 }
 
 func BuildKernelRollbackScript(operationID uint) string {
@@ -261,6 +275,9 @@ backup=%s
 generation=%s
 test "$(id -u)" = "0"
 test -d "$backup"
+exec 9>/var/lib/zerodenet/config-publication.lock
+flock -w 20 9
+%s
 for key in had_bin had_env had_service old_active old_enabled old_link; do test -f "$backup/$key"; done
 had_bin="$(cat "$backup/had_bin")"
 had_env="$(cat "$backup/had_env")"
@@ -269,6 +286,7 @@ old_active="$(cat "$backup/old_active")"
 old_enabled="$(cat "$backup/old_enabled")"
 old_link="$(cat "$backup/old_link")"
 case "$had_bin$had_env$had_service$old_active$old_enabled" in *[!01]*) exit 1;; esac
+restore_event_state
 if [ "$had_bin" = "1" ]; then
   install -m 0755 "$backup/zero" /usr/local/bin/zero.rollback
   mv -f /usr/local/bin/zero.rollback /usr/local/bin/zero
@@ -283,7 +301,7 @@ systemctl daemon-reload
 if [ "$old_enabled" = "1" ]; then systemctl enable zero >/dev/null; else systemctl disable zero >/dev/null 2>&1 || true; fi
 if [ "$old_active" = "1" ]; then systemctl restart zero; else systemctl stop zero >/dev/null 2>&1 || true; fi
 printf 'ZBOARD_KERNEL_ROLLED_BACK=1\n'
-`, shellQuote(backup), shellQuote(generation))
+`, shellQuote(backup), shellQuote(generation), kernelEventStateShell)
 }
 
 func shellQuote(value string) string {

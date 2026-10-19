@@ -2,8 +2,6 @@ package handler
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -293,22 +291,28 @@ type preparedHandlerKernelMaterialization struct {
 func (p *preparedHandlerKernelMaterialization) BinarySHA256() string { return p.binarySHA }
 
 func (p *preparedHandlerKernelMaterialization) Install(ctx context.Context, operationID uint) error {
-	// Same-binary configuration reconciliation must not turn a canonical JSON
-	// difference into a reinstall/restart of an active kernel.
+	// An already observed node can reconcile a matching binary without restart.
+	// First initialization must establish event-state ownership even on a VPS
+	// where an earlier node installed the same kernel binary.
 	probe, err := p.h.probeNodeKernelContext(ctx, p.node)
 	if err != nil {
 		return err
 	}
-	if probe.Installed && probe.BinarySHA256 == p.binarySHA && probe.Version == p.targetVersion && probe.ServiceStatus == "active" {
+	if p.node.LastSeenAt != nil && probe.Installed && probe.BinarySHA256 == p.binarySHA && probe.Version == p.targetVersion && probe.ServiceStatus == "active" {
 		p.configurationOnly = true
-		sum := sha256.Sum256(p.runtimeConfig)
-		result, err := (zeroadapter.ConfigurationPublisher{Dialer: zeroKernelRemoteDialer{h: p.h, node: p.node}}).Publish(ctx, zeroadapter.ConfigurationPublishRequest{Namespace: "kernel", DeploymentID: operationID, RuntimeConfig: p.runtimeConfig, ConfigSHA256: hex.EncodeToString(sum[:]), ConnectorKey: p.connectorKey})
-		p.preserveRuntime = err == nil || result.MayHaveApplied
+
+		// Share publication ownership, durable unknown outcomes and receipt
+		// reconciliation with ordinary configuration delivery.
+		deployment, _, err := p.h.publishNodeConfigWithOwnerLocked(ctx, p.node.ID, 0, 0, operationID, false, time.Now())
+		p.preserveRuntime = err == nil || errors.Is(err, network.ErrConfigurationOutcomeUnknown)
+		if err == nil && deployment.AppliedConfigSHA256 == "" {
+			return network.ConfigurationOutcomeUnknown(errors.New("missing applied configuration digest"))
+		}
 		return err
 	}
 
 	if p.offlineVersion != "" {
-		return (zeroadapter.KernelInstaller{Dialer: zeroKernelRemoteDialer{h: p.h, node: p.node}}).Install(ctx, zeroadapter.KernelInstallRequest{OperationID: operationID, Binary: p.binary, BinarySHA256: p.binarySHA, RuntimeConfig: p.runtimeConfig, ConnectorKey: p.connectorKey, UseSCP: true, ExpectedVersion: p.offlineVersion})
+		return (zeroadapter.KernelInstaller{Dialer: zeroKernelRemoteDialer{h: p.h, node: p.node}}).Install(ctx, zeroadapter.KernelInstallRequest{OperationID: operationID, Binary: p.binary, BinarySHA256: p.binarySHA, RuntimeConfig: p.runtimeConfig, ConnectorKey: p.connectorKey, UseSCP: true, ExpectedVersion: p.offlineVersion, PreserveLegacyEventState: p.node.LastSeenAt != nil})
 	}
 	return p.h.installNodeKernel(ctx, p.node, operationID, p.binary, p.binarySHA, p.runtimeConfig, p.connectorKey, p.targetVersion)
 }
@@ -895,7 +899,7 @@ func (h *handlers) nodeConnectorCredential(node model.Node) (pendingNodeCredenti
 func (h *handlers) installNodeKernel(ctx context.Context, node model.Node, operationID uint, binary []byte, binarySHA string, runtimeConfig []byte, apiKey, expectedVersion string) error {
 	installer := zeroadapter.KernelInstaller{Dialer: zeroKernelRemoteDialer{h: h, node: node}}
 	return installer.Install(ctx, zeroadapter.KernelInstallRequest{
-		OperationID: operationID, Binary: binary, BinarySHA256: binarySHA, RuntimeConfig: runtimeConfig, ConnectorKey: apiKey, ExpectedVersion: expectedVersion,
+		OperationID: operationID, Binary: binary, BinarySHA256: binarySHA, RuntimeConfig: runtimeConfig, ConnectorKey: apiKey, ExpectedVersion: expectedVersion, PreserveLegacyEventState: node.LastSeenAt != nil,
 	})
 }
 

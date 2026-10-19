@@ -107,6 +107,8 @@ func TestShellUninstallScopesFilesAndRequiresCertificateOptIn(t *testing.T) {
 	root := t.TempDir()
 	config := fixtureFile(t, root, "etc/zerodenet/current.json", "{}")
 	queue := fixtureFile(t, root, "var/lib/zerodenet/event-outbox.jsonl", "pending")
+	owner := fixtureFile(t, root, "var/lib/zerodenet/zboard-event-state.owner", "previous node")
+	archived := fixtureFile(t, root, "var/lib/zerodenet/backups/42/event-state.outbox", "historical queue")
 	cert := fixtureFile(t, root, "etc/zboard/certificates/1/key.pem", "key")
 	owned := fixtureFile(t, root, "etc/letsencrypt/renewal/zboard-1.conf", "renewal")
 	other := fixtureFile(t, root, "etc/letsencrypt/renewal/other.conf", "other")
@@ -114,7 +116,7 @@ func TestShellUninstallScopesFilesAndRequiresCertificateOptIn(t *testing.T) {
 	if output, err := runFixture(t, root, "uninstall", "--yes"); err != nil {
 		t.Fatalf("%v: %s", err, output)
 	}
-	if exists(config) || exists(queue) || !exists(cert) || !exists(owned) {
+	if exists(config) || exists(queue) || exists(owner) || exists(archived) || !exists(cert) || !exists(owned) {
 		t.Fatal("wrong default removal scope")
 	}
 	for i := 0; i < 2; i++ {

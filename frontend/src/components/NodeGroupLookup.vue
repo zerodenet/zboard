@@ -3,22 +3,28 @@
     <UiAutocomplete
       v-model="selection"
       v-bind="attrs"
+      :input-id="typeof attrs.id === 'string' ? attrs.id : undefined"
       :suggestions="suggestions"
       option-label="name"
       :disabled="disabled"
-      :loading="loading"
+      :loading="listLoading || selectionLoading"
       :placeholder="placeholder"
       force-selection
       dropdown
       fluid
+      @open="openList"
       @complete="search"
       @item-select="selectItem"
       @clear="clear"
     >
       <template #option="{ option }">
-        <div class="lookup-option">
-          <strong>{{ option.name }}</strong>
-          <small>{{ option.code }} · {{ option.protocol_endpoint_count || 0 }} 个协议端点</small>
+        <div class="lookup-option"><strong>{{ option.name }}</strong><small>{{ option.code }} · {{ option.protocol_endpoint_count || 0 }} 个协议端点</small></div>
+      </template>
+      <template v-if="total > pageSize || loadError" #footer>
+        <div class="node-lookup-footer">
+          <small>已显示 {{ suggestions.length }} / {{ total }} 个节点组</small>
+          <UiButton v-if="loadError" variant="ghost" size="sm" :loading="listLoading" @click="loadList(false)">重试</UiButton>
+          <UiButton v-else-if="hasMore" variant="ghost" size="sm" :loading="listLoading" @click="loadList(true)">加载更多</UiButton>
         </div>
       </template>
     </UiAutocomplete>
@@ -27,64 +33,97 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref, useAttrs, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, useAttrs, watch } from 'vue'
 import { fetchNodeGroupsPage, type NodeGroupSummary } from '../api/client'
 import UiAutocomplete from './UiAutocomplete.vue'
+import UiButton from './UiButton.vue'
 
 defineOptions({ inheritAttrs: false })
-type NodeGroupOption = NodeGroupSummary
-
 const attrs = useAttrs()
-const props = withDefaults(defineProps<{ modelValue: number; disabled?: boolean; placeholder?: string; enabledOnly?: boolean }>(), {
-  disabled: false,
-  placeholder: '输入名称、代码或说明搜索节点组',
-  enabledOnly: true,
-})
-const emit = defineEmits<{ 'update:modelValue': [value: number]; select: [value: NodeGroupOption | null] }>()
-const selection = ref<NodeGroupOption | null>(null)
-const suggestions = ref<NodeGroupOption[]>([])
-const loading = ref(false)
+const props = withDefaults(defineProps<{ modelValue: number; disabled?: boolean; placeholder?: string; enabledOnly?: boolean }>(), { disabled: false, enabledOnly: true, placeholder: '选择节点组，或输入名称、代码搜索' })
+const emit = defineEmits<{ 'update:modelValue': [value: number]; select: [value: NodeGroupSummary | null] }>()
+const selection = ref<NodeGroupSummary | string | null>(null)
+const suggestions = ref<NodeGroupSummary[]>([])
+const listLoading = ref(false)
+const selectionLoading = ref(false)
 const loadError = ref('')
-let requestSequence = 0
-let controller: AbortController | null = null
+const query = ref('')
+const total = ref(0)
+const pageSize = 25
+const nextOffset = ref(0)
+const hasMore = computed(() => nextOffset.value < total.value)
+let listSequence = 0
+let listController: AbortController | undefined
+let selectionController: AbortController | undefined
 
-async function load(params: { q?: string; groupId?: number }) {
-  controller?.abort()
-  controller = new AbortController()
-  const currentController = controller
-  const sequence = ++requestSequence
-  loading.value = true
+async function loadList(append = false) {
+  if (append && (listLoading.value || !hasMore.value)) return
+  listController?.abort()
+  const controller = new AbortController()
+  listController = controller
+  const sequence = ++listSequence
+  const offset = append ? nextOffset.value : 0
+  listLoading.value = true
   loadError.value = ''
+  if (!append) { suggestions.value = []; total.value = 0; nextOffset.value = 0 }
   try {
-    const page = await fetchNodeGroupsPage({
-      q: params.q,
-      groupId: params.groupId,
-      enabled: params.groupId ? undefined : props.enabledOnly || undefined,
-      limit: params.groupId ? 1 : 25,
-    }, { signal: currentController.signal })
-    if (sequence !== requestSequence) return
-    suggestions.value = page.items
-    if (params.groupId) {
-      selection.value = page.items[0] || null
-      emit('select', selection.value)
-    }
+    const page = await fetchNodeGroupsPage({ q: query.value || undefined, offset, limit: pageSize, enabled: props.enabledOnly || undefined }, { signal: controller.signal })
+    if (sequence !== listSequence || controller.signal.aborted) return
+    const items = append ? [...suggestions.value, ...page.items] : page.items
+    suggestions.value = [...new Map(items.map(node => [node.id, node])).values()]
+    total.value = page.page.total
+    nextOffset.value = page.items.length ? offset + page.items.length : total.value
   } catch {
-    if (sequence === requestSequence && !currentController.signal.aborted) {
-      suggestions.value = []
-      loadError.value = '节点组检索失败，请稍后重试。'
-    }
+    if (sequence !== listSequence || controller.signal.aborted) return
+    loadError.value = '节点组列表加载失败，请重试。'
   } finally {
-    if (sequence === requestSequence) loading.value = false
+    if (sequence === listSequence) listLoading.value = false
   }
 }
 
-function search(event: { query: string }) { void load({ q: event.query.trim() }) }
-function selectItem(event: { value: NodeGroupOption }) { emit('update:modelValue', event.value.id); emit('select', event.value) }
-function clear() { selection.value = null; emit('update:modelValue', 0); emit('select', null) }
-
+// Hydrating the selected ID must not restrict the list or cancel browsing.
+async function loadSelection(id: number) {
+  selectionController?.abort()
+  const controller = new AbortController()
+  selectionController = controller
+  selectionLoading.value = true
+  try {
+    const page = await fetchNodeGroupsPage({ groupId: id, limit: 1 }, { signal: controller.signal })
+    if (controller.signal.aborted || props.modelValue !== id) return
+    const node = page.items[0] || null
+    if (typeof selection.value !== 'string') selection.value = node
+    emit('select', node)
+  } catch {
+    if (!controller.signal.aborted) loadError.value = '当前节点组加载失败，请重新选择节点组。'
+  } finally {
+    if (selectionController === controller) selectionLoading.value = false
+  }
+}
+function openList() {
+  query.value = typeof selection.value === 'string' ? selection.value.trim() : ''
+  void loadList()
+}
+function search(event: { query: string }) { query.value = event.query.trim(); void loadList() }
+function selectItem(event: { value: NodeGroupSummary }) { emit('update:modelValue', event.value.id); emit('select', event.value) }
+function clear() {
+  selectionController?.abort()
+  selectionLoading.value = false
+  selection.value = null
+  query.value = ''
+  emit('update:modelValue', 0)
+  emit('select', null)
+  void loadList()
+}
 watch(() => props.modelValue, id => {
-  if (!id) { selection.value = null; return }
-  if (selection.value?.id !== id) void load({ groupId: id })
+  selectionController?.abort()
+  selectionLoading.value = false
+  if (!id) selection.value = null
+  else if (typeof selection.value !== 'object' || selection.value?.id !== id) void loadSelection(id)
 }, { immediate: true })
-onBeforeUnmount(() => controller?.abort())
+onBeforeUnmount(() => { listController?.abort(); selectionController?.abort() })
 </script>
+
+<style scoped>
+.node-lookup-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.node-lookup-footer small { color: var(--muted-foreground); }
+</style>

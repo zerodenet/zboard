@@ -38,7 +38,7 @@ func publicationCapability(item model.NodeConfigPublish) network.Publication {
 	return network.Publication{
 		NodeID: item.NodeID, EndpointID: item.EndpointID, RequestedBy: item.RequestedBy,
 		Generation: item.Generation, Attempts: item.Attempts, LastError: item.LastError,
-		Deferred:      item.Deferred,
+		Deferred: item.Deferred, Reconciling: item.Reconciling, Suspended: item.Suspended,
 		NextAttemptAt: item.NextAttemptAt, LeaseUntil: item.LeaseUntil, LeaseToken: item.LeaseToken,
 	}
 }
@@ -47,7 +47,7 @@ func publicationModel(item network.Publication) model.NodeConfigPublish {
 	return model.NodeConfigPublish{
 		NodeID: item.NodeID, EndpointID: item.EndpointID, RequestedBy: item.RequestedBy,
 		Generation: item.Generation, Attempts: item.Attempts, LastError: item.LastError,
-		Deferred:      item.Deferred,
+		Deferred: item.Deferred, Reconciling: item.Reconciling, Suspended: item.Suspended,
 		NextAttemptAt: item.NextAttemptAt, LeaseUntil: item.LeaseUntil, LeaseToken: item.LeaseToken,
 	}
 }

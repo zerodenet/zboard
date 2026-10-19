@@ -41,6 +41,14 @@ func (s KernelReconciliationState) BeginReconciliation(ctx context.Context, requ
 				return network.ErrKernelOperationRunning
 			}
 		}
+		var publishing int64
+		if err := tx.Model(&model.ProtocolDeployment{}).Where("node_id = ? AND status = ? AND started_at > ?", request.NodeID, "running", now.Add(-network.PublicationLease)).Count(&publishing).Error; err != nil {
+			return err
+		}
+		if publishing > 0 {
+			return network.ErrKernelOperationRunning
+		}
+
 		row := model.NodeOperation{NodeID: request.NodeID, OperationType: "reconcile", Status: "running", Phase: "queued", RequestedBy: actor.ID, StartedAt: &now}
 		if err := tx.Create(&row).Error; err != nil {
 			return err
@@ -218,13 +226,29 @@ func (s KernelReconciliationState) CompleteKernelReconciliation(ctx context.Cont
 				return err
 			}
 		}
+		// A verified, explicit binary installation ended the previous process.
+		// This also releases legacy unknown outcomes that had no remote guard.
+		// A same-binary configure action must still prove its own receipt.
+		if changed && row.OperationType != "configure" {
+			resolved := tx.Model(&model.ProtocolDeployment{}).Where("node_id = ? AND status = ? AND created_at <= ?", operation.NodeID, "reconciling", row.StartedAt).
+				Updates(map[string]interface{}{"status": "superseded", "finished_at": now, "error": "", "output": "Previous process ended by a verified kernel installation; latest configuration remains queued"})
+			if resolved.Error != nil {
+				return resolved.Error
+			}
+			if resolved.RowsAffected > 0 {
+				if err := EnqueuePublication(tx, operation.NodeID, 0, row.RequestedBy); err != nil {
+					return err
+				}
+			}
+		}
+
 		if err := enqueueMieruReadinessPublication(tx, operation.NodeID); err != nil {
 			return err
 		}
 		// Explicit kernel installation/reconciliation can change available
 		// capabilities. Wake pending compatibility checks without losing intent.
-		if err := tx.Model(&model.NodeConfigPublish{}).Where("node_id = ? AND deferred = ?", operation.NodeID, true).
-			Updates(map[string]interface{}{"deferred": false, "generation": gorm.Expr("generation + 1"), "attempts": 0, "next_attempt_at": now, "last_error": ""}).Error; err != nil {
+		if err := tx.Model(&model.NodeConfigPublish{}).Where("node_id = ? AND (deferred = ? OR suspended = ?)", operation.NodeID, true, true).
+			Updates(map[string]interface{}{"deferred": false, "suspended": false, "generation": gorm.Expr("generation + 1"), "attempts": 0, "next_attempt_at": now, "last_error": ""}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&row).Updates(map[string]interface{}{"status": "succeeded", "phase": "completed", "result_summary": summary, "error": "", "finished_at": now}).Error; err != nil {

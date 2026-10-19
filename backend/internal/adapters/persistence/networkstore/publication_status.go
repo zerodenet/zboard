@@ -13,6 +13,8 @@ import (
 const publicationStatusSQL = `CASE
  WHEN publication.node_id IS NOT NULL THEN CASE
   WHEN publication.lease_token <> '' AND publication.lease_until > ? THEN 'running'
+  WHEN publication.reconciling = true THEN 'reconciling'
+  WHEN publication.suspended = true THEN 'suspended'
   WHEN publication.deferred = true THEN 'deferred'
   WHEN publication.lease_token <> '' OR (publication.last_error <> '' AND publication.next_attempt_at > ?) THEN 'failed'
   ELSE 'queued' END
@@ -23,6 +25,8 @@ const publicationStatusSQL = `CASE
 const servicePublicationStatusSQL = `CASE
  WHEN publication.node_id IS NOT NULL OR landing_publication.node_id IS NOT NULL THEN CASE
   WHEN (publication.lease_token <> '' AND publication.lease_until > ?) OR (landing_publication.lease_token <> '' AND landing_publication.lease_until > ?) THEN 'running'
+  WHEN publication.reconciling = true OR landing_publication.reconciling = true THEN 'reconciling'
+  WHEN publication.suspended = true OR landing_publication.suspended = true THEN 'suspended'
   WHEN publication.deferred = true OR landing_publication.deferred = true THEN 'deferred'
   WHEN (publication.lease_token <> '' OR (publication.last_error <> '' AND publication.next_attempt_at > ?)) OR
        (landing_publication.lease_token <> '' OR (landing_publication.last_error <> '' AND landing_publication.next_attempt_at > ?)) THEN 'failed'

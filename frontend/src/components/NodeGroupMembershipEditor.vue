@@ -1,7 +1,7 @@
 <template>
   <div class="membership-editor">
     <div class="membership-add">
-      <NodeGroupLookup v-model="candidateID" :disabled="!canAdd" placeholder="搜索并选择要关联的节点组" @select="addSelectedGroup" />
+      <NodeGroupLookup v-model="candidateID" :disabled="!canAdd" placeholder="选择要关联的节点组（可搜索）" @select="addSelectedGroup" />
     </div>
     <p v-if="!canAdd" class="membership-note">协议服务停用时不能新增节点组关联；已有关联仍可移除。</p>
     <p v-else class="membership-note">选中后立即加入下方关联列表，保存协议服务时生效。</p>

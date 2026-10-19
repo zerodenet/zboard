@@ -7,6 +7,8 @@ import (
 )
 
 const (
+	PublicationFailureLimit      = 8
+	PublicationRecheckInterval   = 30 * time.Second
 	PublicationLease             = 3 * time.Minute
 	PublicationTimeout           = 2 * time.Minute
 	PublicationFinalizeTimeout   = 5 * time.Second
@@ -24,6 +26,7 @@ type Publication struct {
 	Generation                      uint64
 	Attempts                        uint
 	LastError                       string
+	Reconciling, Suspended          bool
 	Deferred                        bool
 	NextAttemptAt, LeaseUntil       time.Time
 	LeaseToken                      string

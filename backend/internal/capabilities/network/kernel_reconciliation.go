@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const KernelReconciliationTimeout = 10 * time.Minute
+
 type KernelReconciliationRequest struct {
 	NodeID, ActorID uint
 	Version         string
@@ -79,7 +81,7 @@ func (s KernelReconciliation) Reconcile(ctx context.Context, request KernelRecon
 	}
 	timeout := s.Timeout
 	if timeout <= 0 {
-		timeout = 10 * time.Minute
+		timeout = KernelReconciliationTimeout
 	}
 	executionCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -174,6 +176,11 @@ func (s KernelReconciliation) execute(ctx context.Context, operation *KernelOper
 	}
 	binarySHA := materialization.BinarySHA256()
 	action := ClassifyKernelAction(probe, release.Version, binarySHA, configSHA)
+	// A matching runtime can belong to a previous occupant of this machine.
+	// First initialization must still establish ownership of persistent queues.
+	if action == "none" && activation.ConnectorSnapshot().LastSeenAt == nil {
+		action = "repair"
+	}
 	if action == "manual_review" && request.AllowDowngrade {
 		action = "downgrade"
 	}

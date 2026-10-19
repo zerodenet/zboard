@@ -91,7 +91,7 @@
       </template>
     </DataWorkbench>
 
-    <UiSection title="协议实时负载" description="仅显示当前有效套餐可使用的协议；优先使用 Zero Principal 当前态，旧版内核回退到最近两分钟的会话事件。">
+    <UiSection title="协议实时负载" description="显示当前有效套餐授权的协议，上报延迟不会移除协议。人数和连接数仅展示最近两分钟的负载数据。">
       <template #meta><TimeBadge :value="protocolLoads.sampled_at" /></template>
       <div class="panel-body">
         <PageAlert v-if="protocolLoadResource.error.value" tone="danger" title="协议实时负载加载失败">
@@ -100,10 +100,18 @@
         </PageAlert>
         <p v-if="protocolLoadResource.loading.value" role="status">正在读取协议实时负载…</p>
         <DataTable v-if="protocolLoads.items.length" caption="可用协议实时负载" :row-count="protocolLoads.items.length" :min-width="720">
-          <thead><tr><th class="table-primary-column">使用位置</th><th>协议</th><th class="numeric-column">活跃用户</th><th class="numeric-column">活跃连接</th><th data-column-priority="2">最近活动</th></tr></thead>
-          <tbody><tr v-for="item in protocolLoads.items" :key="item.protocol_endpoint_id"><td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><TableText :value="item.region || '未设置区域'" /></div></td><td><StatusBadge :tone="item.active_flows ? 'success' : 'neutral'" icon="activity">{{ item.protocol.toUpperCase() }}</StatusBadge></td><td class="numeric-column">{{ item.active_users }}</td><td class="numeric-column">{{ item.active_flows }}</td><td data-column-priority="2"><TimeBadge :value="item.last_activity_at" /></td></tr></tbody>
+          <thead><tr><th class="table-primary-column">使用位置</th><th>协议</th><th class="numeric-column">活跃用户</th><th class="numeric-column">活跃连接</th><th data-column-priority="2">负载更新</th></tr></thead>
+          <tbody>
+            <tr v-for="item in protocolLoads.items" :key="item.protocol_endpoint_id">
+              <td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><TableText :value="item.region || '未设置区域'" /><StatusBadge :tone="item.connector_online ? 'success' : 'warning'" icon="activity">{{ item.connector_online ? '上报正常' : '上报延迟' }}</StatusBadge></div></td>
+              <td><StatusBadge tone="neutral" icon="activity">{{ item.protocol.toUpperCase() }}</StatusBadge></td>
+              <td class="numeric-column">{{ item.load_fresh ? item.active_users : '—' }}</td>
+              <td class="numeric-column">{{ item.load_fresh ? item.active_flows : '—' }}</td>
+              <td data-column-priority="2"><TimeBadge v-if="item.load_fresh" :value="item.load_observed_at" /><span v-else>{{ item.load_observed_at ? '负载数据已过期' : '暂无负载数据' }}</span></td>
+            </tr>
+          </tbody>
         </DataTable>
-        <EmptyState v-else-if="protocolLoadResource.loaded.value && !protocolLoadResource.error.value && !protocolLoadResource.loading.value" icon="activity" title="暂无可用协议" description="拥有有效套餐且节点在线后，会在这里显示对应协议的实时使用人数和连接数。" />
+        <EmptyState v-else-if="protocolLoadResource.loaded.value && !protocolLoadResource.error.value && !protocolLoadResource.loading.value" icon="activity" title="暂无可用协议" description="当前没有有效套餐授权的协议。节点上报延迟不会影响已授权协议的展示。" />
       </div>
     </UiSection>
 

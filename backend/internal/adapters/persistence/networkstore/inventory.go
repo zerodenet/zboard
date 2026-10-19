@@ -185,6 +185,8 @@ func (s Inventory) NodeDiagnosticEndpoints(ctx context.Context, nodeID uint) ([]
 }
 
 func (s Inventory) AuthorizedProtocolEndpoints(ctx context.Context, userID uint, now time.Time) ([]network.ProtocolEndpointRecord, error) {
+	// Entitlement survives delayed Connector receipts, just as subscription delivery
+	// does. Freshness is response metadata, not a reason to hide a provisioned route.
 	var rows []model.ProtocolEndpoint
 	err := s.DB.WithContext(ctx).Model(&model.ProtocolEndpoint{}).
 		Select("DISTINCT protocol_endpoints.*").
@@ -192,7 +194,7 @@ func (s Inventory) AuthorizedProtocolEndpoints(ctx context.Context, userID uint,
 		Joins("JOIN subscriptions ON subscriptions.node_group_id = node_group_endpoints.node_group_id").
 		Joins("JOIN nodes ON nodes.id = protocol_endpoints.node_id").
 		Where("subscriptions.user_id = ? AND subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total", userID, "active", now).
-		Where("protocol_endpoints.is_active = ? AND nodes.is_enabled = ? AND nodes.last_seen_at >= ?", true, true, now.Add(-2*time.Minute)).
+		Where("protocol_endpoints.is_active = ? AND nodes.is_enabled = ? AND nodes.last_seen_at IS NOT NULL", true, true).
 		Order("protocol_endpoints.sort_order asc, protocol_endpoints.id asc").Find(&rows).Error
 	if err != nil {
 		return nil, err
@@ -446,7 +448,7 @@ func (s Inventory) decorateEndpoints(ctx context.Context, rows []model.ProtocolE
 
 func (s Inventory) publicationQueueStates(ctx context.Context, nodeIDs []uint, now time.Time) (map[uint]network.PublicationQueueRecord, error) {
 	var rows []model.NodeConfigPublish
-	if err := s.DB.WithContext(ctx).Select("node_id,attempts,deferred,next_attempt_at,lease_until,lease_token,last_error").Where("node_id IN ?", nodeIDs).Find(&rows).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Select("node_id,attempts,deferred,reconciling,suspended,next_attempt_at,lease_until,lease_token,last_error").Where("node_id IN ?", nodeIDs).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	states := make(map[uint]network.PublicationQueueRecord, len(rows))
@@ -455,6 +457,10 @@ func (s Inventory) publicationQueueStates(ctx context.Context, nodeIDs []uint, n
 		switch {
 		case row.LeaseToken != "" && row.LeaseUntil.After(now):
 			status = "running"
+		case row.Reconciling:
+			status = "reconciling"
+		case row.Suspended:
+			status = "suspended"
 		case row.Deferred:
 			status = "deferred"
 		case row.LeaseToken != "" || row.LastError != "" && row.NextAttemptAt.After(now):
@@ -495,7 +501,7 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
-		principalErr = s.DB.WithContext(ctx).Table("principal_flow_currents").Select("protocol_endpoint_id, COALESCE(SUM(active_flows),0) AS active_flows, COUNT(DISTINCT CASE WHEN active_flows > 0 AND user_id > 0 THEN user_id END) AS active_users, COUNT(*) AS observation_count, MAX(observed_at) AS last_observed_at").Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id").Scan(&principal).Error
+		principalErr = s.DB.WithContext(ctx).Table("principal_flow_currents").Select("protocol_endpoint_id, COALESCE(SUM(CASE WHEN observed_at >= ? THEN active_flows ELSE 0 END),0) AS active_flows, COUNT(DISTINCT CASE WHEN observed_at >= ? AND active_flows > 0 AND user_id > 0 THEN user_id END) AS active_users, COUNT(*) AS observation_count, MAX(observed_at) AS last_observed_at", now.Add(-2*time.Minute), now.Add(-2*time.Minute)).Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id").Scan(&principal).Error
 	}()
 	go func() {
 		defer wg.Done()
@@ -528,6 +534,7 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 		v.ActiveFlows = r.ActiveFlows
 		v.ActiveUsers = r.ActiveUsers
 		v.LastUsedAt = r.LastObservedAt
+		v.ObservedAt = r.LastObservedAt
 		result[r.ProtocolEndpointID] = v
 	}
 	legacy := make([]uint, 0)
@@ -540,15 +547,17 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 		type row struct {
 			ProtocolEndpointID       uint
 			ActiveFlows, ActiveUsers int64
+			ObservedAt               *time.Time
 		}
 		var values []row
-		if err := s.DB.WithContext(ctx).Model(&model.FlowUsage{}).Select("flow_usages.protocol_endpoint_id, COUNT(*) AS active_flows, COUNT(DISTINCT subscriptions.user_id) AS active_users").Joins("JOIN subscriptions ON subscriptions.id = flow_usages.subscription_id").Where("flow_usages.protocol_endpoint_id IN ? AND flow_usages.status = ? AND flow_usages.last_seen_at >= ?", legacy, "active", now.Add(-2*time.Minute)).Group("flow_usages.protocol_endpoint_id").Scan(&values).Error; err != nil {
+		if err := s.DB.WithContext(ctx).Model(&model.FlowUsage{}).Select("flow_usages.protocol_endpoint_id, COUNT(*) AS active_flows, COUNT(DISTINCT subscriptions.user_id) AS active_users, MAX(flow_usages.last_seen_at) AS observed_at").Joins("JOIN subscriptions ON subscriptions.id = flow_usages.subscription_id").Where("flow_usages.protocol_endpoint_id IN ? AND flow_usages.status = ? AND flow_usages.last_seen_at >= ?", legacy, "active", now.Add(-2*time.Minute)).Group("flow_usages.protocol_endpoint_id").Scan(&values).Error; err != nil {
 			return nil, err
 		}
 		for _, r := range values {
 			v := result[r.ProtocolEndpointID]
 			v.ActiveFlows = r.ActiveFlows
 			v.ActiveUsers = r.ActiveUsers
+			v.ObservedAt = r.ObservedAt
 			result[r.ProtocolEndpointID] = v
 		}
 	}

@@ -63,8 +63,10 @@ type ProtocolDeploymentRecord struct {
 type ProtocolUsageRecord struct {
 	ActiveFlows, ActiveUsers, ActiveCredentials int64
 	LastUsedAt                                  *time.Time
-	UsedBytesToday, UsedBytesTotal              int64
-	ResetAt                                     *time.Time
+	// ObservedAt describes load observations, independently of credential use.
+	ObservedAt                     *time.Time
+	UsedBytesToday, UsedBytesTotal int64
+	ResetAt                        *time.Time
 }
 
 type PublicationQueueRecord struct {

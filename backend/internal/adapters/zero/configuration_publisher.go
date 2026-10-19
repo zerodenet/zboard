@@ -9,16 +9,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 )
 
 const controlSocket = "/run/zerodenet/control.sock"
 
 type ConfigurationPublishRequest struct {
-	Namespace     string
-	DeploymentID  uint
-	RuntimeConfig []byte
-	ConfigSHA256  string
-	ConnectorKey  string
+	Namespace              string
+	DeploymentID           uint
+	RuntimeConfig          []byte
+	ConfigSHA256           string
+	ConnectorKey           string
+	RequireEventStateOwner bool
 }
 
 type ConfigurationPublishResult struct {
@@ -85,6 +87,9 @@ func (p ConfigurationPublisher) Publish(ctx context.Context, request Configurati
 	if err := session.Upload(stage+"/zero.env", "0600", []byte("ZERO_PANEL_API_KEY="+request.ConnectorKey+"\n")); err != nil {
 		return ConfigurationPublishResult{}, operationError(ctx, err)
 	}
+	if err := stageKernelEventStateGuard(session, stage, request.RuntimeConfig, request.RequireEventStateOwner); err != nil {
+		return ConfigurationPublishResult{}, operationError(ctx, err)
+	}
 	activatedAt := time.Now().UTC()
 	if p.Now != nil {
 		activatedAt = p.Now().UTC()
@@ -102,13 +107,17 @@ func (p ConfigurationPublisher) Publish(ctx context.Context, request Configurati
 		if configurationConfirmedUnapplied(output) && (strings.Contains(output, "ZBOARD_CONFIG_HOT_APPLY_UNAVAILABLE") || unsupportedConfigurationCapability(output)) {
 			return ConfigurationPublishResult{Output: strings.TrimSpace(output)}, fmt.Errorf("%w：%s", ErrConfigurationCapabilityUnavailable, truncateOutput(output))
 		}
-		return ConfigurationPublishResult{Output: strings.TrimSpace(output), ActivatedAt: activatedAt, Committed: strings.Contains(output, "ZBOARD_CONFIG_COMMITTED="+request.ConfigSHA256), MayHaveApplied: !configurationConfirmedUnapplied(output)}, operationError(ctx, fmt.Errorf("apply Zero config without restarting the service: %w: %s", err, truncateOutput(output)))
+		cause := operationError(ctx, fmt.Errorf("apply Zero config without restarting the service: %w: %s", err, truncateOutput(output)))
+		if !configurationConfirmedUnapplied(output) {
+			cause = network.ConfigurationOutcomeUnknown(cause)
+		}
+		return ConfigurationPublishResult{Output: strings.TrimSpace(output), ActivatedAt: activatedAt, Committed: strings.Contains(output, "ZBOARD_CONFIG_COMMITTED="+request.ConfigSHA256), MayHaveApplied: !configurationConfirmedUnapplied(output)}, cause
 	}
 	if err := operationError(ctx, nil); err != nil {
-		return ConfigurationPublishResult{MayHaveApplied: true}, err
+		return ConfigurationPublishResult{MayHaveApplied: true}, network.ConfigurationOutcomeUnknown(err)
 	}
 	if !strings.Contains(output, "ZBOARD_CONFIG_APPLIED="+request.ConfigSHA256) {
-		return ConfigurationPublishResult{MayHaveApplied: true}, errors.New("Zero configuration apply was not confirmed")
+		return ConfigurationPublishResult{MayHaveApplied: true}, network.ConfigurationOutcomeUnknown(errors.New("Zero configuration apply was not confirmed"))
 	}
 	return ConfigurationPublishResult{Output: strings.TrimSpace(output), ActivatedAt: activatedAt}, nil
 }
@@ -124,10 +133,10 @@ func unsupportedConfigurationCapability(output string) bool {
 }
 
 func configurationConfirmedUnapplied(output string) bool {
-	if strings.Contains(output, "ZBOARD_CONFIG_COMMITTED=") {
+	if strings.Contains(output, "ZBOARD_CONFIG_COMMITTED=") || strings.Contains(output, "ZBOARD_CONFIG_PHASE=reload") || strings.Contains(output, "ZBOARD_CONFIG_OUTCOME_UNKNOWN=") {
 		return false
 	}
-	for _, marker := range []string{"ZBOARD_CONFIG_SERVICE_UNAVAILABLE", "ZBOARD_CONFIG_CONTROL_UNAVAILABLE", "ZBOARD_CONFIG_HOT_APPLY_UNAVAILABLE", "ZBOARD_CONFIG_VALIDATION_REJECTED_CURRENT_UNCHANGED"} {
+	for _, marker := range []string{"ZBOARD_CONFIG_SERVICE_UNAVAILABLE", "ZBOARD_CONFIG_CONTROL_UNAVAILABLE", "ZBOARD_CONFIG_HOT_APPLY_UNAVAILABLE", "ZBOARD_CONFIG_VALIDATION_REJECTED_CURRENT_UNCHANGED", "ZBOARD_EVENT_STATE_INITIALIZATION_REQUIRED"} {
 		if strings.Contains(output, marker) {
 			return true
 		}
