@@ -18,6 +18,7 @@ import (
 )
 
 type PaymentFacts struct {
+	Now    func() time.Time
 	DB     *gorm.DB
 	Issuer entitlements.CredentialIssuer
 }
@@ -87,7 +88,7 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 				return commerce.ErrPaymentFactConflict
 			}
 		}
-		now := time.Now().UTC()
+		now := commerceNow(s.Now)
 		event := model.PaymentEvent{OrderID: order.ID, Provider: authority.Provider, ProviderEventID: fact.ProviderEventID, EventType: fact.Status, AmountMinor: fact.AmountMinor, SignatureValid: true, Payload: string(payload), CreatedAt: fact.OccurredAt.UTC()}
 		if err := tx.Create(&event).Error; err != nil {
 			return err

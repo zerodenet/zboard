@@ -7,6 +7,7 @@ import (
 	"errors"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -16,9 +17,9 @@ import (
 
 var creationKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{8,80}$`)
 
-func createOwnedOrder(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest) (model.Order, error) {
+func createOwnedOrder(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest, clocks ...func() time.Time) (model.Order, error) {
 	if request.IdempotencyKey == "" {
-		return createOrderInTransaction(tx, buyer, request)
+		return createOrderInTransaction(tx, buyer, request, clocks...)
 	}
 	invalid := func() error {
 		return &commerce.ValidationError{Message: "订单创建请求已变化，请重新确认。", Fields: map[string]string{"idempotency_key": "重复请求必须使用原始创建参数。"}}
@@ -52,7 +53,7 @@ func createOwnedOrder(tx *gorm.DB, buyer uint, request commerce.OrderCreateReque
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.Order{}, err
 	}
-	order, err := createOrderInTransaction(tx, buyer, request)
+	order, err := createOrderInTransaction(tx, buyer, request, clocks...)
 	if err != nil {
 		return model.Order{}, err
 	}

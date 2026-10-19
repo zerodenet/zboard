@@ -1,0 +1,76 @@
+{
+  "recorded_at_utc": "2026-10-19T20:16:49.467541+00:00",
+  "repository": "zerodenet/zboard",
+  "branch": "codex/core-convergence",
+  "previous_commit": "ae8b6296f5c49efb9f99ba590ab5af88424c3c81",
+  "source_manifest_sha256": "a51660d18d15f9a81642c0c2a130a3e9b2f95c6c4b372e41867d424153abd130",
+  "source_file_count": 2052,
+  "source_manifest_definition": "Same sorted Go/module/Vue/TypeScript/SQL/YAML and selected ownership/package JSON definition as earlier evidence; excludes validation JSON.",
+  "approved_rule": "Preserve old current residual plus actual new payment; no retrospective discount of new money by already consumed quota; no quota restoration/reset-date movement.",
+  "example_minor": {
+    "original_annual_actual_paid": 12000,
+    "old_current_paid_slice": 600,
+    "old_remaining": 120,
+    "renewal_actual_paid": 1000,
+    "new_current_allocation": 419,
+    "new_future_allocation": 581,
+    "settled_current_basis": 539,
+    "immediate_unsubscribe": 1120,
+    "after_repeated_renewal": 2120
+  },
+  "local_checks": {
+    "backend_handler_seconds": 154.204,
+    "mysql_datastore_seconds": 63.33,
+    "mysql_handler_seconds": 327.675,
+    "focused_db_seconds": 11.243,
+    "sqlite_pure_go_seconds": 6.447,
+    "vet": "passed",
+    "build": "passed",
+    "openapi_valid": true,
+    "openapi_existing_warnings": 282
+  },
+  "evidence": {
+    "domain": {
+      "path": "/tmp/zboard-renewal-value-domain.log",
+      "sha256": "b6ea614a4042e6641d9d7bc79b75ab204cebebca35c59075cfa47cb736ce095f"
+    },
+    "focused_sqlite_mysql": {
+      "path": "/tmp/zboard-renewal-value-final-focused.log",
+      "sha256": "b9827195473a1e918457bb8d332a79819e3812fb94c235e3a30dadd467d63301"
+    },
+    "backend": {
+      "path": "/tmp/zboard-renewal-value-backend-full.log",
+      "sha256": "f2b4010988ee7915c747bbd310ea299b863b2ca0ea5f6748b9ee2203bb484151"
+    },
+    "mysql": {
+      "path": "/tmp/zboard-renewal-value-mysql-full.log",
+      "sha256": "c4250cb3186a22e2f4ed6fd09eec1b3068abf92e0b0b676f323b3d612812053b"
+    },
+    "vet": {
+      "path": "/tmp/zboard-renewal-value-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "sqlite_pure_go": {
+      "path": "/tmp/zboard-renewal-value-sqlite-pure.log",
+      "sha256": "60cc941d007196fde40bd6a3ee959edcadfbf23f0f76d7b7958f0f72399a2363"
+    },
+    "openapi": {
+      "path": "/tmp/zboard-renewal-value-openapi.log",
+      "sha256": "c7f0c9e757a7d82ced388b60cf6e8776b6b6bd5e19d6e3f32fca199369dc7383"
+    }
+  },
+  "simulation": "Controlled trusted clock and isolated DB/application financial facts; no live channel payment, real refund or balance adjustment.",
+  "repeatability": "Fixed purchased year 2025-10-19 through 2026-10-19; renewal/cancellation at 2026-10-05; default production clock remains time.Now().UTC().",
+  "migration": "none",
+  "frontend_sdk_changes": false,
+  "previous_exact_ci_all_six": "https://github.com/zerodenet/zboard/actions/runs/39314466074",
+  "new_head_ci": "pending after push",
+  "remaining": [
+    "full fresh-term change and entitlement/credential epoch isolation",
+    "generic approved consumption refund",
+    "configurable recovery window and wallet auto-renewal",
+    "historical plan synchronization and discount agreement bridge",
+    "native flows.close integration and credential delivery confirmation",
+    "P4-P7 completion"
+  ]
+}

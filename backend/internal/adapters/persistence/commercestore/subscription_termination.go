@@ -16,7 +16,10 @@ import (
 	"time"
 )
 
-type SubscriptionTermination struct{ DB *gorm.DB }
+type SubscriptionTermination struct {
+	DB  *gorm.DB
+	Now func() time.Time
+}
 
 func terminationReceipt(row model.SubscriptionValueSettlement) commerce.SubscriptionTerminationReceipt {
 	return commerce.SubscriptionTerminationReceipt{ID: row.ID, SubscriptionID: row.SubscriptionID, Currency: row.Currency, AmountMinor: row.WalletMinor, WalletEntryID: row.EntryID, Status: "canceled", RevocationStatus: "pending_verification", CreatedAt: row.CreatedAt}
@@ -85,7 +88,7 @@ func (s SubscriptionTermination) Terminate(ctx context.Context, actor, id uint, 
 				return commerce.ErrSubscriptionQuoteChanged
 			}
 		}
-		now := time.Now().UTC()
+		now := commerceNow(s.Now)
 		projection, currency, err := readSubscriptionValue(tx, sub, now)
 		if err != nil {
 			return err

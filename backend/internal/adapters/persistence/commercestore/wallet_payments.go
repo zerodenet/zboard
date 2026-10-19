@@ -17,6 +17,7 @@ import (
 const orderFundingLifetime = 30 * time.Minute
 
 type WalletPayments struct {
+	Now    func() time.Time
 	DB     *gorm.DB
 	Issuer entitlements.CredentialIssuer
 }
@@ -90,7 +91,7 @@ func (s WalletPayments) Read(ctx context.Context, actor, id uint) (out commerce.
 			return resourceError(err)
 		}
 		var err error
-		out, err = fundingView(tx, order, time.Now().UTC())
+		out, err = fundingView(tx, order, commerceNow(s.Now))
 		return err
 	})
 	return
@@ -157,7 +158,7 @@ func (s WalletPayments) Configure(ctx context.Context, actor, id uint, in commer
 		if err := orderReader(tx, actor, false); err != nil {
 			return err
 		}
-		now := time.Now().UTC()
+		now := commerceNow(s.Now)
 		if err := configureOrderFunding(tx, order, in, now); err != nil {
 			return err
 		}
@@ -220,7 +221,7 @@ func (s WalletPayments) Pay(ctx context.Context, actor, id uint) (out commerce.W
 		if order.Status == "paid" && fund.State == "captured" && order.Channel == "wallet" {
 			return nil
 		}
-		now := time.Now().UTC()
+		now := commerceNow(s.Now)
 		if (order.Status != "pending" && order.Status != "failed") || fund.State != "reserved" || !fund.ExpiresAt.After(now) {
 			return quoteError("余额预留已失效，请核对余额后重新创建订单。")
 		}

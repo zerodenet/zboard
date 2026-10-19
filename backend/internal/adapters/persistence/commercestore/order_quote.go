@@ -34,7 +34,7 @@ func (s OrderCreation) Preview(ctx context.Context, buyer uint, request commerce
 	var preview commerce.OrderPreview
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		_, preview, err = prepareOrder(tx, buyer, request, time.Now().UTC())
+		_, preview, err = prepareOrder(tx, buyer, request, commerceNow(s.Now))
 		return err
 	})
 	return preview, err

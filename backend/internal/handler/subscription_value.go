@@ -15,8 +15,6 @@ func subscriptionValueError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, "用量、权益或残值已变化，请重新核对报价后确认。", nil)
 	case errors.Is(err, commerce.ErrSubscriptionSettlementConflict):
 		writeJSON(w, http.StatusConflict, "退订记录或请求已变化，请先核对订阅和余额流水。", nil)
-	case errors.Is(err, commerce.ErrValueRenewalOverlap):
-		writeJSON(w, http.StatusConflict, "续费覆盖了已开始的流量周期，残值规则需要核对，请通过工单处理。", nil)
 	case errors.Is(err, commerce.ErrSubscriptionValueCyclePending):
 		writeJSON(w, http.StatusConflict, "流量周期正在重置，请稍后重新核对残值。", nil)
 	case errors.Is(err, commerce.ErrSubscriptionValueUnavailable):

@@ -14,13 +14,16 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type OrderCreation struct{ DB *gorm.DB }
+type OrderCreation struct {
+	DB  *gorm.DB
+	Now func() time.Time
+}
 
 func (s OrderCreation) Create(ctx context.Context, buyer uint, request commerce.OrderCreateRequest) (commerce.Order, error) {
 	var out model.Order
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		out, err = createOwnedOrder(tx, buyer, request)
+		out, err = createOwnedOrder(tx, buyer, request, s.Now)
 		return err
 	})
 	if err != nil {
@@ -31,8 +34,12 @@ func (s OrderCreation) Create(ctx context.Context, buyer uint, request commerce.
 
 // createOrderInTransaction shares snapshot persistence across owned purchases and
 // administrator assignments after their caller has selected and authorized the buyer.
-func createOrderInTransaction(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest) (model.Order, error) {
-	order, preview, err := prepareOrder(tx, buyer, request, time.Now().UTC())
+func createOrderInTransaction(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest, clocks ...func() time.Time) (model.Order, error) {
+	var clock func() time.Time
+	if len(clocks) > 0 {
+		clock = clocks[0]
+	}
+	order, preview, err := prepareOrder(tx, buyer, request, commerceNow(clock))
 	if err != nil {
 		return model.Order{}, err
 	}

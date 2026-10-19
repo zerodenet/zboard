@@ -4,32 +4,31 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"math"
 	"math/big"
 	"sort"
 	"time"
 )
 
-var ErrValueRenewalOverlap = errors.New("renewal adds paid value to an already-started quota cycle; agreement required")
-
 // ValueProjection is a refundable value calculation, not a wallet credit.
 // A settlement must bind its fingerprint and consume its source budgets in the
 // same transaction as lifecycle termination and durable revocation intent.
 type ValueProjection struct {
-	RootOrderID  uint           `json:"root_order_id"`
-	CurrentMinor int64          `json:"current_minor,string"`
-	FutureMinor  int64          `json:"future_minor,string"`
-	TotalMinor   int64          `json:"total_minor,string"`
-	Sources      map[uint]int64 `json:"-"`
-	Fingerprint  string         `json:"fingerprint"`
-	CurrentCycle ValueCycle     `json:"-"`
+	ValuationModel string         `json:"valuation_model"`
+	RootOrderID    uint           `json:"root_order_id"`
+	CurrentMinor   int64          `json:"current_minor,string"`
+	FutureMinor    int64          `json:"future_minor,string"`
+	TotalMinor     int64          `json:"total_minor,string"`
+	Sources        map[uint]int64 `json:"-"`
+	Fingerprint    string         `json:"fingerprint"`
+	CurrentCycle   ValueCycle     `json:"-"`
 }
 type valueBasisEvidence struct {
-	Basis      RemainingValueBasis
-	CycleStart time.Time
-	TotalQuota int64
-	Sources    map[uint]int64
+	TimeOnlyWhenExhausted bool
+	Basis                 RemainingValueBasis
+	CycleStart            time.Time
+	TotalQuota            int64
+	Sources               map[uint]int64
 }
 type valueFrame struct {
 	periods []PaidValuePeriod
@@ -160,6 +159,15 @@ func (f valueFrame) project(s EntitlementValueState, at time.Time) (ValueProject
 			basis.QuotaBytes += change
 		}
 		value := int64(0)
+		if f.basis != nil && f.basis.TimeOnlyWhenExhausted && f.basis.CycleStart.Equal(c.StartAt) && f.basis.Basis.EndAt.Equal(c.EndAt) && basis.QuotaBytes <= 0 {
+			if s.FlowUsed != basis.UsedAtBasis {
+				return out, ErrValueEvidence
+			}
+			value, err = basis.TimeRemaining(at)
+			if err != nil {
+				return out, err
+			}
+		}
 		if basis.QuotaBytes > 0 {
 			value, err = basis.Remaining(at, s.FlowUsed)
 			if err != nil {
@@ -251,6 +259,10 @@ func ProjectEntitlementValue(records []EntitlementValueSnapshot, current Entitle
 		}
 		switch s.Mode {
 		case "extended_term":
+			if s.Before.FlowUsed != s.After.FlowUsed || s.Before.FlowTotal != s.After.FlowTotal || s.Before.CycleStartUsed != s.After.CycleStartUsed || s.Before.ResetPolicy != s.After.ResetPolicy || !sameValueReset(s.Before.NextResetAt, s.After.NextResetAt) {
+				return empty, ErrValueEvidence
+			}
+			priorFrame := frame
 			if !s.TermStartAt.Equal(s.Before.EndAt) || !s.TermEndAt.Equal(s.After.EndAt) || !s.After.EndAt.After(s.Before.EndAt) {
 				return empty, ErrValueEvidence
 			}
@@ -268,9 +280,25 @@ func ProjectEntitlementValue(records []EntitlementValueSnapshot, current Entitle
 				}
 				added := sources[n][s.OrderID]
 				if !c.EndAt.Equal(before.CurrentCycle.EndAt) || added > 0 {
-					// This fee-affecting overlap is explicitly awaiting agreement.
-					// Do not silently reprice old consumption or new paid rights.
-					return empty, ErrValueRenewalOverlap
+					// Preserve the settled old remainder, add only actual new
+					// current-cycle cash, then consume from this new instant.
+					// Remaining quota is not replenished by a time extension.
+					if before.CurrentMinor > math.MaxInt64-added {
+						return empty, ErrValueEvidence
+					}
+					shares, err := currentProjectionSources(before, priorFrame, *s.Before, eventAt)
+					if err != nil {
+						return empty, err
+					}
+					if err := addValueAmounts(shares, map[uint]int64{s.OrderID: added}); err != nil {
+						return empty, err
+					}
+					totalQuota, err := quotaForValue(s.After)
+					if err != nil {
+						return empty, err
+					}
+					remaining := max(int64(0), s.After.FlowTotal-s.After.FlowUsed)
+					frame.basis = &valueBasisEvidence{CycleStart: c.StartAt, TotalQuota: totalQuota, Sources: shares, TimeOnlyWhenExhausted: remaining == 0, Basis: RemainingValueBasis{At: eventAt, EndAt: c.EndAt, AmountMinor: before.CurrentMinor + added, UsedAtBasis: s.After.FlowUsed, QuotaBytes: remaining}}
 				}
 				break
 			}
@@ -304,6 +332,7 @@ func ProjectEntitlementValue(records []EntitlementValueSnapshot, current Entitle
 	if err != nil {
 		return empty, err
 	}
+	out.ValuationModel = "remaining_value_basis_v1"
 	out.RootOrderID = records[0].OrderID
 	payload, err := json.Marshal(struct {
 		Records []EntitlementValueSnapshot
@@ -353,4 +382,11 @@ func currentProjectionSources(quote ValueProjection, frame valueFrame, state Ent
 		return nil, ErrValueEvidence
 	}
 	return out, nil
+}
+
+func sameValueReset(left, right *time.Time) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Equal(*right)
 }

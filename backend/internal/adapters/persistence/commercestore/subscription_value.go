@@ -3,7 +3,6 @@ package commercestore
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -11,7 +10,10 @@ import (
 	"time"
 )
 
-type SubscriptionValues struct{ DB *gorm.DB }
+type SubscriptionValues struct {
+	DB  *gorm.DB
+	Now func() time.Time
+}
 
 func (s SubscriptionValues) Read(ctx context.Context, actor, id uint) (out commerce.SubscriptionValueQuote, err error) {
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -25,7 +27,7 @@ func (s SubscriptionValues) Read(ctx context.Context, actor, id uint) (out comme
 		if sub.Status != "active" && sub.Status != "expired" {
 			return commerce.ErrSubscriptionValueUnavailable
 		}
-		projection, currency, err := readSubscriptionValue(tx, sub, time.Now().UTC())
+		projection, currency, err := readSubscriptionValue(tx, sub, commerceNow(s.Now))
 		if err != nil {
 			return err
 		}
@@ -68,9 +70,6 @@ func readSubscriptionValue(tx *gorm.DB, sub model.Subscription, at time.Time) (c
 	}
 	projection, err := commerce.ProjectEntitlementValue(records, entitlementValueState(sub), currency, at)
 	if err != nil {
-		if errors.Is(err, commerce.ErrValueRenewalOverlap) {
-			return commerce.ValueProjection{}, currency, err
-		}
 		return commerce.ValueProjection{}, currency, fmt.Errorf("%w: %v", commerce.ErrSubscriptionValueUnavailable, err)
 	}
 	for id, amount := range projection.Sources {

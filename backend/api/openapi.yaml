@@ -4119,7 +4119,7 @@ paths:
       tags: [subscriptions]
       operationId: quoteOwnedSubscriptionValue
       summary: Quote cash-backed remaining value for an owned subscription
-      description: Only verified paid entitlement snapshots are valued. Missing legacy evidence, pending quota-cycle reset, or an unresolved overlapping-renewal valuation returns an explanatory conflict. No remote disconnection is implied by business termination.
+      description: Only verified paid entitlement snapshots are valued. Extending renewal preserves the settled current remainder plus actual new cash without restoring quota. Missing legacy evidence, quota-changing legacy effects, or a pending quota-cycle reset returns an explanatory conflict. No remote disconnection is implied by business termination.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
       responses:
@@ -4143,7 +4143,7 @@ paths:
       tags: [subscriptions]
       operationId: terminateOwnedSubscription
       summary: Permanently terminate an owned subscription and refund remaining value to wallet
-      description: Only verified paid entitlement snapshots are valued. Missing legacy evidence, pending quota-cycle reset, or an unresolved overlapping-renewal valuation returns an explanatory conflict. No remote disconnection is implied by business termination.
+      description: Only verified paid entitlement snapshots are valued. Extending renewal preserves the settled current remainder plus actual new cash without restoring quota. Missing legacy evidence, quota-changing legacy effects, or a pending quota-cycle reset returns an explanatory conflict. No remote disconnection is implied by business termination.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
       requestBody:

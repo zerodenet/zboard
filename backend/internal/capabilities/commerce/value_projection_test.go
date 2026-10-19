@@ -133,7 +133,7 @@ func TestValueProjectionUnverifiedFactsAndCurrencyNeverBecomeZeroQuotes(t *testi
 	}
 }
 
-func TestValueProjectionFutureRenewalIsPreservedAndCurrentOverlapRequiresAgreement(t *testing.T) {
+func TestValueProjectionFutureRenewalAndCurrentRemainderArePreserved(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	root := projectionPurchase(t, start, "month", 1, 1000, 1)
 	before := root.After
@@ -180,7 +180,94 @@ func TestValueProjectionFutureRenewalIsPreservedAndCurrentOverlapRequiresAgreeme
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ProjectEntitlementValue([]EntitlementValueSnapshot{root, renewal}, after, "CNY", renewal.QuotaEventAt); !errors.Is(err, ErrValueRenewalOverlap) {
-		t.Fatalf("unapproved current-cycle renewal value %v", err)
+	out, err = ProjectEntitlementValue([]EntitlementValueSnapshot{root, renewal}, after, "CNY", renewal.QuotaEventAt)
+	if err != nil || out.CurrentMinor != 473 || out.FutureMinor != 643 || out.TotalMinor != 1116 {
+		t.Fatalf("current remainder repriced %+v %v", out, err)
 	}
+
+}
+
+func projectionRenewal(t *testing.T, root EntitlementValueSnapshot, before EntitlementValueState, id uint, at time.Time, paid int64) EntitlementValueSnapshot {
+	t.Helper()
+	after := before
+	end, err := entitlements.AddBillingPeriod(before.EndAt, "month", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after.EndAt = end
+	periods, err := UniformPaidPeriods(before.EndAt, end, "month", 1, paid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return EntitlementValueSnapshot{Version: 1, OrderID: id, SubscriptionID: root.SubscriptionID, QuotaEventID: id, QuotaEventAt: at, Currency: "CNY", ActualPaidMinor: paid, PaymentVerified: true, PaymentBasis: "verified_cash_or_wallet", Kind: "renewal", Mode: "extended_term", CapturedAt: at, TermStartAt: before.EndAt, TermEndAt: end, BillingUnit: "month", BillingValue: 1, AllocationModel: "uniform_paid_units_v1", PaidPeriods: periods, Before: &before, After: after}
+}
+func TestValueProjectionApprovedOverlappingRenewalExampleAndSources(t *testing.T) {
+	start := time.Date(2025, 10, 19, 0, 0, 0, 0, time.UTC)
+	at := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
+	root := projectionPurchase(t, start, "year", 1, 12000, 1)
+	before := root.After
+	before.FlowUsed = 80
+	before.NextResetAt = entitlements.NextTrafficResetAfter(start, 1, at)
+	old, err := ProjectEntitlementValue([]EntitlementValueSnapshot{root}, before, "CNY", at)
+	if err != nil || old.TotalMinor != 120 {
+		t.Fatalf("old remainder %+v %v", old, err)
+	}
+	one := projectionRenewal(t, root, before, 2, at, 1000)
+	out, err := ProjectEntitlementValue([]EntitlementValueSnapshot{root, one}, one.After, "CNY", at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertProjectionConserves(t, out, 1120)
+	if out.CurrentMinor != 539 || out.FutureMinor != 581 || out.Sources[1] != 120 || out.Sources[2] != 1000 {
+		t.Fatalf("approved 1.20 + 10.00 example %+v", out)
+	}
+	two := projectionRenewal(t, root, one.After, 3, at, 1000)
+	repeated, err := ProjectEntitlementValue([]EntitlementValueSnapshot{two, root, one}, two.After, "CNY", at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertProjectionConserves(t, repeated, 2120)
+	if repeated.CurrentMinor != 539 || repeated.FutureMinor != 1581 || repeated.Sources[1] != 120 || repeated.Sources[2] != 1000 || repeated.Sources[3] != 1000 {
+		t.Fatalf("repeated renewal duplicated or consumed prior value %+v", repeated)
+	}
+	consumed := one.After
+	consumed.FlowUsed = 90
+	out, err = ProjectEntitlementValue([]EntitlementValueSnapshot{root, one}, consumed, "CNY", at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertProjectionConserves(t, out, 851)
+	if out.CurrentMinor != 270 || out.FutureMinor != 581 {
+		t.Fatalf("new consumption was not relative to remaining 20 bytes %+v", out)
+	}
+	out, err = ProjectEntitlementValue([]EntitlementValueSnapshot{root, one}, one.After, "CNY", at.AddDate(0, 0, 13))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertProjectionConserves(t, out, 860)
+	reset := resetProjectionFact(root, one.After, 3, 3, at, 100)
+	out, err = ProjectEntitlementValue([]EntitlementValueSnapshot{root, one, reset}, reset.After, "CNY", at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertProjectionConserves(t, out, 1220)
+	if out.CurrentMinor != 639 || out.FutureMinor != 581 {
+		t.Fatalf("separate paid reset repriced future or revived consumed value %+v", out)
+	}
+	exhausted := before
+	exhausted.FlowUsed = 100
+	noQuota := projectionRenewal(t, root, exhausted, 2, at, 1000)
+	out, err = ProjectEntitlementValue([]EntitlementValueSnapshot{root, noQuota}, noQuota.After, "CNY", at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertProjectionConserves(t, out, 1000)
+	if noQuota.After.FlowTotal != 100 || noQuota.After.FlowUsed != 100 || out.CurrentMinor != 419 || out.FutureMinor != 581 {
+		t.Fatalf("renewal granted quota or consumed new cash retroactively %+v", out)
+	}
+	out, err = ProjectEntitlementValue([]EntitlementValueSnapshot{root, noQuota}, noQuota.After, "CNY", at.AddDate(0, 0, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertProjectionConserves(t, out, 984)
 }

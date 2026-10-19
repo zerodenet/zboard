@@ -163,18 +163,31 @@ type RemainingValueBasis struct {
 	QuotaBytes  int64     `json:"quota_bytes"`
 }
 
-func (b RemainingValueBasis) Remaining(now time.Time, cumulativeUsed int64) (int64, error) {
-	if b.At.IsZero() || !b.EndAt.After(b.At) || b.EndAt.Unix() <= b.At.Unix() || b.AmountMinor < 0 || b.UsedAtBasis < 0 || b.QuotaBytes <= 0 || cumulativeUsed < b.UsedAtBasis || now.Before(b.At) {
+// TimeRemaining is also used when an extending renewal has no remaining
+// billable quota. New cash is not retroactively consumed by exhausted old quota;
+// no quota is granted and time still elapses against the settled basis.
+func (b RemainingValueBasis) TimeRemaining(now time.Time) (int64, error) {
+	if b.At.IsZero() || !b.EndAt.After(b.At) || b.EndAt.Unix() <= b.At.Unix() || b.AmountMinor < 0 || now.Before(b.At) {
 		return 0, ErrValueEvidence
 	}
 	if !now.Before(b.EndAt) {
 		return 0, nil
 	}
+	return cumulativeHalfUp(b.AmountMinor, exactTimeSpan(now, b.EndAt), exactTimeSpan(b.At, b.EndAt)), nil
+}
+func (b RemainingValueBasis) Remaining(now time.Time, cumulativeUsed int64) (int64, error) {
+	if b.UsedAtBasis < 0 || b.QuotaBytes <= 0 || cumulativeUsed < b.UsedAtBasis {
+		return 0, ErrValueEvidence
+	}
+	timeValue, err := b.TimeRemaining(now)
+	if err != nil {
+		return 0, err
+	}
 	used := cumulativeUsed - b.UsedAtBasis
-	timeValue := cumulativeHalfUp(b.AmountMinor, exactTimeSpan(now, b.EndAt), exactTimeSpan(b.At, b.EndAt))
 	flowValue := proportionalValue(b.AmountMinor, b.QuotaBytes-min(used, b.QuotaBytes), b.QuotaBytes)
 	return min(timeValue, flowValue), nil
 }
+
 func (b RemainingValueBasis) PaidReset(now time.Time, cumulativeUsed, actualPaidMinor, restoredQuota int64) (RemainingValueBasis, int64, error) {
 	before, err := b.Remaining(now, cumulativeUsed)
 	if err != nil || (!now.Before(b.EndAt) || b.EndAt.Unix() <= now.Unix()) || actualPaidMinor < 0 || restoredQuota <= 0 || before > math.MaxInt64-actualPaidMinor {
