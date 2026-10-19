@@ -77,7 +77,7 @@ func (s SubscriptionQueries) Detail(ctx context.Context, actor, id uint) (entitl
 		if err := tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ?", id).Count(&out.TotalCredentialCount).Error; err != nil {
 			return err
 		}
-		out.RenewalUntil = entitlements.RenewalDeadline(entitlements.Subscription{Lifecycle: out.Lifecycle, EndAt: out.EndAt, EndedAt: out.EndedAt}, time.Now().UTC())
+		out.RenewalUntil = entitlements.RenewalDeadline(entitlements.Subscription{Lifecycle: out.Lifecycle, EndAt: out.EndAt, EndedAt: out.EndedAt, Status: out.Status, EndReason: out.EndReason}, time.Now().UTC())
 		return tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ? AND status = ?", id, "active").Count(&out.ActiveCredentialCount).Error
 	})
 	if err != nil {
@@ -151,7 +151,7 @@ func (s SubscriptionQueries) List(ctx context.Context, actor uint, admin bool, q
 			}
 			for index := range out.Items {
 				item := &out.Items[index]
-				item.RenewalUntil = entitlements.RenewalDeadline(entitlements.Subscription{Lifecycle: item.Lifecycle, EndAt: item.EndAt, EndedAt: item.EndedAt}, now)
+				item.RenewalUntil = entitlements.RenewalDeadline(entitlements.Subscription{Lifecycle: item.Lifecycle, EndAt: item.EndAt, EndedAt: item.EndedAt, Status: item.Status, EndReason: item.EndReason}, now)
 			}
 			return nil
 		}
@@ -177,7 +177,7 @@ func subscriptionStatus(query *gorm.DB, status string, now time.Time) *gorm.DB {
 	case "active":
 		return query.Where("subscriptions.ended_at IS NULL AND (subscriptions.ends_on_quota_exhaustion = FALSE OR subscriptions.flow_used < subscriptions.flow_total) AND (subscriptions.status = ? OR (subscriptions.status = ? AND subscriptions.flow_used >= subscriptions.flow_total)) AND subscriptions.end_at > ?", "active", "expired", now)
 	case "expired":
-		return query.Where("(subscriptions.ended_at IS NOT NULL OR (subscriptions.status IN ('active', 'expired') AND subscriptions.ends_on_quota_exhaustion = TRUE AND subscriptions.flow_used >= subscriptions.flow_total) OR (subscriptions.status IN ? AND subscriptions.end_at <= ?) OR (subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total))", []string{"active", "expired"}, now, "expired", now)
+		return query.Where("subscriptions.status IN ('active', 'expired') AND (subscriptions.ended_at IS NOT NULL OR (subscriptions.status IN ('active', 'expired') AND subscriptions.ends_on_quota_exhaustion = TRUE AND subscriptions.flow_used >= subscriptions.flow_total) OR (subscriptions.status IN ? AND subscriptions.end_at <= ?) OR (subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total))", []string{"active", "expired"}, now, "expired", now)
 	default:
 		return query.Where("subscriptions.status = ?", status)
 	}

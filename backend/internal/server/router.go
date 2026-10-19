@@ -263,6 +263,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPost, "/api/v1/admin/orders/:id/cancel", h.OrderCancelHandler),
 		newRoute(http.MethodPost, "/api/v1/orders/:id/pay-callback", h.OrderPayCallbackCommerceHandler),
 		newRoute(http.MethodGet, "/api/v1/subscriptions", h.SubscriptionsHandler),
+		newRoute(http.MethodGet, "/api/v1/subscriptions/:id/value", h.SubscriptionValueHandler),
+		newRoute(http.MethodPost, "/api/v1/subscriptions/:id/unsubscribe", h.SubscriptionValueHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions", h.SubscriptionsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id", h.AdminSubscriptionGetHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/subscriptions/:id/quota", h.AdminSubscriptionQuotaHandler),

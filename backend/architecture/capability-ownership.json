@@ -89,6 +89,21 @@
   ],
   "cross_domain_transactions": [
     {
+      "id": "commerce.subscription_unsubscribe",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/subscription_termination.go",
+      "symbol": "SubscriptionTermination.Terminate",
+      "participants": [
+        "commerce",
+        "entitlements",
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Roll back cash-source budgets, refund ledger, pending-order reservation release, permanent subscription termination, credential/token revocation and audit together. Repeated owner-scoped request identities return the original settlement; changed value quotes require explicit reconfirmation.",
+      "outbox": "Credential revocation persists existing node publication intents in the same transaction; remote disconnection remains separately verified."
+    },
+    {
       "id": "commerce.controlled_wallet_debit",
       "owner": "commerce",
       "source": "internal/adapters/persistence/commercestore/wallet_adjustments.go",

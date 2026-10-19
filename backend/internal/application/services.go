@@ -75,6 +75,8 @@ type Services struct {
 	OrderCancellation            commerce.OrderCancellation
 	OrderCreation                commerce.OrderCreation
 	Wallet                       commerce.Wallet
+	SubscriptionValues           commerce.SubscriptionValues
+	SubscriptionTermination      commerce.SubscriptionTermination
 	WalletAdjustments            commerce.WalletAdjustments
 	PaymentCheckout              commerce.PaymentCheckout
 	PaymentReceipts              commerce.PaymentReceipts
@@ -164,6 +166,8 @@ func New(db *gorm.DB, secret string) *Services {
 	s.OrderCancellation = commerce.OrderCancellation{Repository: commercestore.OrderCancellation{DB: db}}
 	s.OrderCreation = commerce.OrderCreation{Repository: commercestore.OrderCreation{DB: db}}
 	s.Wallet = commerce.Wallet{Repository: commercestore.Wallet{DB: db}}
+	s.SubscriptionValues = commerce.SubscriptionValues{Repository: commercestore.SubscriptionValues{DB: db}}
+	s.SubscriptionTermination = commerce.SubscriptionTermination{Repository: commercestore.SubscriptionTermination{DB: db}}
 	s.WalletAdjustments = commerce.WalletAdjustments{Repository: commercestore.WalletAdjustments{DB: db}}
 	s.PaymentCheckout = commerce.PaymentCheckout{Repository: commercestore.PaymentCheckout{DB: db}}
 	s.PaymentReceipts = commerce.PaymentReceipts{Repository: commercestore.PaymentReceipts{DB: db}}

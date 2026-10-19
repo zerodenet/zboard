@@ -144,3 +144,12 @@ func TestFixedTimedQuotaEndsWithoutChangingMonthlyCyclePolicy(t *testing.T) {
 		t.Fatal("fixed monthly cycles terminated", grant, err)
 	}
 }
+
+func TestExplicitCancellationHasNoRenewalDeadline(t *testing.T) {
+	now := time.Now().UTC()
+	ended := now
+	sub := Subscription{Status: "canceled", Lifecycle: "renewable", EndedAt: &ended, EndAt: now.Add(24 * time.Hour), EndReason: "canceled"}
+	if CanRenewAt(sub, now) || RenewalDeadline(sub, now) != nil {
+		t.Fatal("explicit cancellation entered a recovery window")
+	}
+}

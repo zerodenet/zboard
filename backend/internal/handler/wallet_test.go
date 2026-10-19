@@ -163,6 +163,9 @@ func assertWalletLostSchema(t *testing.T, f orderFixture) {
 	// Inject physical ledger loss in this isolated test database. MySQL
 	// otherwise correctly prevents dropping the referenced financial table.
 	if !datastore.IsSQLite(f.h.db) {
+		if err := f.h.db.Migrator().DropConstraint(&model.SubscriptionValueSettlement{}, "Entry"); err != nil {
+			t.Fatal(err)
+		}
 		if err := f.h.db.Migrator().DropConstraint(&model.PaymentReceipt{}, "WalletEntry"); err != nil {
 			t.Fatal(err)
 		}
@@ -226,6 +229,9 @@ func assertWalletInterrupted(t *testing.T, f orderFixture, mysql bool) {
 	// Inject physical ledger loss in this isolated test database. MySQL
 	// otherwise correctly prevents dropping the referenced financial table.
 	if !datastore.IsSQLite(f.h.db) {
+		if err := f.h.db.Migrator().DropConstraint(&model.SubscriptionValueSettlement{}, "Entry"); err != nil {
+			t.Fatal(err)
+		}
 		if err := f.h.db.Migrator().DropConstraint(&model.PaymentReceipt{}, "WalletEntry"); err != nil {
 			t.Fatal(err)
 		}

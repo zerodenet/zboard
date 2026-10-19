@@ -113,6 +113,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0040_order_funding.up.sql",
 		"0041_wallet_adjustments.up.sql",
 		"0042_entitlement_value_snapshot.up.sql",
+		"0043_subscription_value_settlements.up.sql",
 	}
 	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
@@ -160,6 +161,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0040_order_funding.down.sql",
 		"0041_wallet_adjustments.down.sql",
 		"0042_entitlement_value_snapshot.down.sql",
+		"0043_subscription_value_settlements.down.sql",
 	}
 	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)

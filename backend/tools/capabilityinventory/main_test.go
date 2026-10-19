@@ -245,18 +245,24 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 11,
+		"cross_domain_transaction": 12,
 	}
 	counts := map[string]int{}
-	controlledDebit := false
+	controlledDebit, unsubscribe := false, false
 	for _, row := range rows {
 		counts[row.Kind]++
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.controlled_wallet_debit" && row.Owner == "commerce" {
 			controlledDebit = true
 		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.subscription_unsubscribe" && row.Owner == "commerce" {
+			unsubscribe = true
+		}
 		if row.Owner == "unassigned" {
 			t.Errorf("unassigned inventory evidence: %+v", row)
 		}
+	}
+	if !unsubscribe {
+		t.Error("unsubscribe settlement lost its commerce transaction ownership")
 	}
 	if !controlledDebit {
 		t.Error("controlled wallet debit lost its commerce transaction ownership")

@@ -4114,6 +4114,59 @@ paths:
       responses:
         "200": { description: Order canceled }
         "403": { $ref: "#/components/responses/Error" }
+  /api/v1/subscriptions/{id}/value:
+    get:
+      tags: [subscriptions]
+      operationId: quoteOwnedSubscriptionValue
+      summary: Quote cash-backed remaining value for an owned subscription
+      description: Only verified paid entitlement snapshots are valued. Missing legacy evidence, pending quota-cycle reset, or an unresolved overlapping-renewal valuation returns an explanatory conflict. No remote disconnection is implied by business termination.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: Read-only quote with current and future paid value
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/SubscriptionValueQuote' }
+        "401": { description: Authentication required }
+        "403": { description: Current account is not active }
+        "404": { description: Subscription unavailable to this owner }
+        "409": { description: "Changed quote, conflicting settlement, or financial history requiring review" }
+  /api/v1/subscriptions/{id}/unsubscribe:
+    post:
+      tags: [subscriptions]
+      operationId: terminateOwnedSubscription
+      summary: Permanently terminate an owned subscription and refund remaining value to wallet
+      description: Only verified paid entitlement snapshots are valued. Missing legacy evidence, pending quota-cycle reset, or an unresolved overlapping-renewal valuation returns an explanatory conflict. No remote disconnection is implied by business termination.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscriptionTerminationRequest' }
+      responses:
+        "200":
+          description: Idempotent committed settlement; authorization revoked and delivery pending verification
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/SubscriptionTerminationReceipt' }
+        "401": { description: Authentication required }
+        "403": { description: Current account is not active }
+        "404": { description: Subscription unavailable to this owner }
+        "409": { description: "Changed quote, conflicting settlement, or financial history requiring review" }
   /api/v1/subscriptions:
     get:
       tags:
@@ -9006,6 +9059,36 @@ components:
         meta:
           type: string
 
+    SubscriptionValueQuote:
+      type: object
+      required: [subscription_id, root_order_id, currency, current_minor, future_minor, total_minor, quote_fingerprint]
+      properties:
+        subscription_id: { type: integer, minimum: 1 }
+        root_order_id: { type: integer, minimum: 1 }
+        currency: { type: string }
+        current_minor: { type: string, pattern: '^[0-9]+$' }
+        future_minor: { type: string, pattern: '^[0-9]+$' }
+        total_minor: { type: string, pattern: '^[0-9]+$' }
+        quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+    SubscriptionTerminationRequest:
+      type: object
+      additionalProperties: false
+      required: [quote_fingerprint, idempotency_key]
+      properties:
+        quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+        idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
+    SubscriptionTerminationReceipt:
+      type: object
+      required: [id, subscription_id, currency, amount_minor, status, revocation_status, created_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        subscription_id: { type: integer, minimum: 1 }
+        currency: { type: string }
+        amount_minor: { type: string, pattern: '^[0-9]+$' }
+        wallet_entry_id: { type: integer, minimum: 1 }
+        status: { type: string, enum: [canceled] }
+        revocation_status: { type: string, enum: [pending_verification] }
+        created_at: { type: string, format: date-time }
     WalletEntry:
       type: object
       required: [id, kind, balance_delta, reserved_delta, balance_after, reserved_after, reason, created_at]
