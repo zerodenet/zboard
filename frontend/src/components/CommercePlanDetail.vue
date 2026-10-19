@@ -103,7 +103,8 @@
         </dl>
         <div class="storefront-order-summary__total">
           <span>应付金额</span>
-          <strong>{{ mode === 'change' || mode === 'reset' ? (quote ? formatCurrency(quote.payable_amount, quote.currency) : '正在核算…') : selectedSku ? formatCurrency(selectedSku.price_cents, selectedSku.currency) : '—' }}</strong>
+          <strong>{{ mode === 'renew' || mode === 'change' || mode === 'reset' ? (quote ? formatCurrency(quote.payable_amount, quote.currency) : '正在核算…') : selectedSku ? formatCurrency(selectedSku.price_cents, selectedSku.currency) : '—' }}</strong>
+          <p v-if="mode === 'renew'">续费按原购买基础价报价；规格列表显示当前目录参考价。</p>
           <p v-if="mode === 'change' && quote">原套餐抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}；按剩余时间和剩余流量价值取较小值，抵扣最多为新规格价格，到期时间保持不变。</p>
           <p v-if="mode === 'reset'">恢复一整份本周期套餐流量，剩余额度不会叠加。</p>
         </div>
@@ -121,7 +122,7 @@
             <span>我已阅读并同意以上与本次购买相关的服务规则</span>
           </label>
         </div>
-        <UiButton type="button" :disabled="loading || quoteLoading || Boolean(quoteError) || ((mode === 'change' || mode === 'reset') && !quote) || Boolean(error) || !selectedSku || (hasPurchasePolicies && !purchasePoliciesAccepted)" @click="$emit('continue')">
+        <UiButton type="button" :disabled="loading || quoteLoading || Boolean(quoteError) || ((mode === 'renew' || mode === 'change' || mode === 'reset') && !quote) || Boolean(error) || !selectedSku || (hasPurchasePolicies && !purchasePoliciesAccepted)" @click="$emit('continue')">
           {{ continueLabel }}<UiIcon name="chevron" />
         </UiButton>
       </aside>
@@ -159,6 +160,7 @@ const props = withDefaults(defineProps<{
   selectedSkuId?: number
   operationLabel?: string
   mode?: 'purchase' | 'renew' | 'change' | 'addon' | 'reset'
+  renewalRecovering?: boolean
   quote?: OrderPreview | null
   quoteLoading?: boolean
   quoteError?: string
@@ -221,6 +223,8 @@ function billingLabel(sku: PlanSKU) {
 }
 
 function renewalEffectLabel(sku: PlanSKU) {
+  if (props.renewalRecovering) return '恢复服务，并开始新的套餐周期和流量额度'
+  if (sku.billing_unit !== 'once') return '只延长有效期，保留当前用量和流量重置日期'
   return ({
     none: '不适用',
     extend_only: '只延长有效期，流量不叠加',

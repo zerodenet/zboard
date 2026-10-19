@@ -76,6 +76,11 @@ func SnapshotOrderTerms(plan Plan, sku SKU, entitlementMode string, operations [
 		BillingValue: sku.BillingValue, RenewalEffect: sku.RenewalEffect,
 		TrafficBytes: plan.TrafficBytes, DeviceLimit: plan.DeviceLimit, SpeedLimitMbps: plan.SpeedLimitMbps,
 	}
+	if orderType == "renewal" && sku.BillingUnit != "once" {
+		// New timed renewals extend the term. Restoring quota early is a separate
+		// sale; legacy pending orders retain their already-snapshotted effect.
+		terms.RenewalEffect = "extend_only"
+	}
 	if terms.Channel == "" {
 		terms.Channel = "manual"
 	}

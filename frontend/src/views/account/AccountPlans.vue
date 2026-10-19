@@ -107,6 +107,7 @@
       :operation-label="currentOperation.label"
       :mode="operation"
       :quote="quote"
+      :renewal-recovering="operation === 'renew' && !!selectedSubscription?.renewal_until"
       :quote-loading="quoteLoading"
       :quote-error="quoteError"
       @retry-quote="quoteResource.load()"
@@ -401,6 +402,7 @@ function billingLabel(sku: PlanSKU) {
 
 function renewalEffectLabel(sku: PlanSKU) {
   if (operation.value === 'renew' && selectedSubscription.value?.renewal_until) return '恢复服务，并开始新的套餐周期和流量额度'
+  if (sku.billing_unit !== 'once') return '只延长有效期，保留当前用量和流量重置日期'
   return ({
     none: '不适用',
     extend_only: '只延长有效期，流量不叠加',

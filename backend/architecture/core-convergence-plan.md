@@ -126,3 +126,20 @@
 验证：完整后端 `go test -p 2 ./...` 通过（`/tmp/zboard-p2-backend-final.log`）；真实 MySQL 8.4 全专项通过（`/tmp/zboard-p2-mysql.log`，datastore 41.527s、handler 121.472s）；锁价 SQLite/MySQL 专项通过。vet/build、CGO=0 SQLite 通过。前端当前 CI 范围 872 通过、8 既有 skip；22 项 AccountPlans 专项及类型检查/生产构建通过；无新增排除。SDK 单独 tidy 无模块差异、test/vet 通过。P1 完整六项 CI 已通过：https://github.com/zerodenet/zboard/actions/runs/39274663770 。本批提交后 CI 另查。
 
 本批只关闭原周期锁价及等待付款涨价缺口；优惠插件、余额、真实周期分摊、换购新期限/余额返还、自助退订、恢复配置、自动续费及 P3–P7 未完成。下一批在不依赖金额分摊决定的范围内固化购买策略快照及增量迁移。
+
+### P2-2 — 购买策略快照、迁移恢复与提前续费（2026-10-19）
+
+新增真实迁移 0037 和 orders.purchase_snapshot（版本 1）。新单捕获原基础价/币种/付费周期、续费效果、可续费约定、重置策略、计量方式和家庭限制；已有订单额度/速度/设备列继续保留。付款等待期间目录变化不能替换已购策略。接入组当前关系与资源容量仍按资源权威判断。报价指纹纳入已购策略及额度/速度/设备，策略变化后必须重新确认。
+
+新限时续费统一 extend_only，不因旧 SKU 配置立即加一份流量；提前续费保持计量方式与原定重置日。升级前已有空快照的订单保留原 renewal_effect 兼容行为，有单独实库回归。新快照缺字段、版本未知或与金额/币种/周期冲突不按目录现值降级履约。详情与结算页均显示锁价报价；详情等待报价时不能继续，当前目录参考价与续费应付金额有解释，恢复续费与提前续费效果分别展示。
+
+MySQL/SQLite 覆盖新库、旧表加列、DDL 完成但未记账、已有记账但缺列、重复启动；保留现有金额、实付、订阅关联与已保存快照，不伪造丢失历史。未改发布过的 0001–0036。0037 down 保留证据，不删除新列。旧二进制对未知迁移收据及新待支付单存在兼容限制，不能声称可直接回退；详见 [当前增量升级/回滚说明](core-convergence-upgrade.md)。无生产迁移、部署或合并。
+
+最终验证：
+
+- 断连前已启动的完整后端测试最终 exit 0（`/tmp/zboard-p2-snapshot-backend-final.log`，handler 100.685s），真实 MySQL 8.4 全专项 exit 0（`/tmp/zboard-p2-snapshot-mysql-final.log`，datastore 43.550s、handler 157.161s）。恢复后先读结果，没有重复不确定操作。
+- 前端新增组件测试最初因 mock 缺 siteProfile.policyDocuments 失败，业务代码没有放宽处理。补齐夹具后 23 项专项通过；完整原 CI 范围 873 通过、8 既有 skip，185 test files 通过、2 既有 skip（`/tmp/zboard-p2-snapshot-frontend-fixed.log`）。没有新增排除。
+- 最终 go vet、后端 build、CGO=0 SQLite（4.808s）、前端类型检查与 build、git diff --check 通过。SDK 未改；P1 已单独 tidy/test/vet 通过。
+- 原周期锁价提交 2d3bc721 的六项 CI 已全部成功：https://github.com/zerodenet/zboard/actions/runs/39275681051 。本批新提交另查 CI。
+
+提交对应 `feat: snapshot purchased policies and preserve renewal quota schedules`，沿 PR #78 追加。真实 Zero 节点、外部真实支付渠道仍未验证；本批不构成整个 P2 完成。下一批继续货币余额、可信充值事实与账务身份，再贯通预留、余额购买/补差、消费退款和残值结算。非整除周期分摊与跨周期锁价的具体决策仍待答复，依赖该口径的部分不自行推算，其他工作继续。

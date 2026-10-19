@@ -112,6 +112,10 @@ func prepareOrder(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest, 
 	if err != nil {
 		return model.Order{}, commerce.OrderPreview{}, err
 	}
+	if err := capturePurchaseSnapshot(tx, &order, plan, sub); err != nil {
+		return model.Order{}, commerce.OrderPreview{}, err
+	}
+	bindPurchaseQuote(&preview, order)
 	if request.QuoteFingerprint != "" && request.QuoteFingerprint != preview.QuoteFingerprint {
 		return model.Order{}, commerce.OrderPreview{}, quoteError("价格或目标订阅已变化，请重新确认报价。")
 	}

@@ -52,6 +52,10 @@ func (s OrderSettlement) setPaid(tx *gorm.DB, order *model.Order, now time.Time)
 		}
 	}
 	policy := entitlements.GrantPolicy{NodeGroupID: plan.NodeGroupID, IsRenewable: plan.IsRenewable && renewalSKUs > 0, RenewalPriceMinor: renewalPrice, FamilyLimit: plan.FamilyLimit, ResetPolicy: plan.ResetPolicy, TrafficCalcMode: plan.TrafficCalcMode, MaxActiveSubscriptions: plan.MaxActiveSubscriptions}
+	policy, err := applyPurchaseSnapshot(*order, policy)
+	if err != nil {
+		return err
+	}
 	sub, err := entitlementstore.Fulfill(tx, request, policy, s.Issuer, now)
 	if err != nil {
 		if errors.Is(err, entitlements.ErrRenewalWindow) {
