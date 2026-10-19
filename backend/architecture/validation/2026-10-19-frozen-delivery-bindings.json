@@ -246,9 +246,12 @@
       "networkstore_seconds": 32.737
     },
     "expanded_ci_mysql": {
-      "status": "running",
+      "status": "passed",
       "log": "/tmp/zboard-delivery-ci-mysql-expanded.log",
-      "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m"
+      "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+      "datastore_seconds": 44.274,
+      "handler_seconds": 336.6,
+      "networkstore_seconds": 75.844
     },
     "pure_go_sqlite": {
       "status": "passed",
@@ -274,6 +277,18 @@
       "head": "ab7814b1926d26593beac8464852ce626e71a2f7",
       "six_jobs": "success",
       "url": "https://github.com/zerodenet/zboard/actions/runs/39331843769"
+    },
+    "exact_head_ci": {
+      "commit": "abfe0aa02f1036a334dca79c8f593c0ef26755ee",
+      "url": "https://github.com/zerodenet/zboard/actions/runs/39339110344",
+      "jobs": {
+        "backend": "success",
+        "frontend": "success",
+        "mysql": "success",
+        "contract": "success",
+        "compose": "success",
+        "zrs-compiler": "success"
+      }
     }
   },
   "external_read_only": {

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -26,6 +27,9 @@ func completionNonce(id string) string {
 	return hex.EncodeToString(digest[:])
 }
 func (s CompletionAccounting) Complete(ctx context.Context, in metering.CompletedFlow) (metering.TrafficRecord, bool, error) {
+	if err := (credentialstore.PrincipalIndex{DB: s.DB, Cipher: s.Cipher}).Prepare(ctx, in.NodeID); err != nil {
+		return metering.TrafficRecord{}, false, err
+	}
 	event, flow := in, in
 	var record model.TrafficRecord
 	exhausted := false

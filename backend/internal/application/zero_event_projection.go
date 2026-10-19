@@ -2,6 +2,8 @@ package application
 
 import (
 	"context"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
+	"sort"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
@@ -24,6 +26,22 @@ type BufferedEventProjectionResult struct {
 // intentionally committed separately so it remains fail-open.
 func (s *Services) ProjectBufferedEvents(ctx context.Context, input BufferedEventProjection, cipher metering.CredentialDecryptor) (BufferedEventProjectionResult, error) {
 	result := BufferedEventProjectionResult{}
+	// Commit legacy attribution projection progress independently. Rolling back
+	// a later sample must not force a large node to restart its backfill forever.
+	nodes := make(map[uint]bool)
+	for _, flow := range input.Flows {
+		nodes[flow.NodeID] = true
+	}
+	ids := make([]uint, 0, len(nodes))
+	for id := range nodes {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for _, id := range ids {
+		if err := (credentialstore.PrincipalIndex{DB: s.Identity.db, Cipher: cipher}).Prepare(ctx, id); err != nil {
+			return result, err
+		}
+	}
 	var err error
 	if len(input.Flows) > 0 || len(input.Nodes) > 0 {
 		err = s.Identity.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

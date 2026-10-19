@@ -3,6 +3,7 @@ package meteringstore
 import (
 	"crypto/subtle"
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -10,63 +11,55 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Completion and buffered updates remain attributable after a subscription or
-// credential has expired. The node event itself is authenticated, so historical
-// credentials can be used for ownership resolution without re-enabling access.
+// Historical ownership is independent of current authorization. SQL contains
+// only node-scoped digests; a Shadowsocks password is compared only in memory.
+// Production accounting prepares the index before starting its transaction.
 func ResolveCompletionCredential(tx *gorm.DB, cipher metering.CredentialDecryptor, nodeID uint, principal string) (model.ProtocolCredential, error) {
-	var credential model.ProtocolCredential
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("principal_key = ? AND node_id = ?", principal, nodeID).
-		Order("id DESC").
-		First(&credential).Error
-	if err == nil || !errors.Is(err, gorm.ErrRecordNotFound) {
-		return credential, err
+	index := credentialstore.PrincipalIndex{DB: tx, Cipher: cipher}
+	var candidate model.ProtocolCredential
+	var err error
+	if _, transactional := tx.Statement.ConnPool.(gorm.TxCommitter); transactional {
+		candidate, err = index.LookupPrepared(tx.Statement.Context, nodeID, principal)
+	} else {
+		candidate, err = index.Lookup(tx.Statement.Context, nodeID, principal)
 	}
-	return matchCredentialSecret(tx, cipher, nodeID, principal)
-}
-
-// Current Zero Shadowsocks events use the authenticated password as the
-// protocol principal. Match it only in memory, then immediately replace it
-// with the stable panel principal; the password is never persisted in traffic
-// records or logs. Completed flows may reference a credential that has already
-// expired, so ownership lookup intentionally includes historical credentials.
-func matchCredentialSecret(tx *gorm.DB, cipher metering.CredentialDecryptor, nodeID uint, provided string) (model.ProtocolCredential, error) {
-
-	var match model.ProtocolCredential
-	digest := entitlements.RetiredPrincipalHash(nodeID, provided)
-	if digest != "" {
-		var retired []model.ProtocolCredential
-		if err := tx.Where("node_id = ? AND retired_principal_hash = ? AND status = ? AND secret = ?", nodeID, digest, "revoked", "").Order("id DESC").Limit(2).Find(&retired).Error; err != nil {
-			return match, err
-		}
-		if len(retired) > 1 {
-			return match, metering.ErrPrincipalAmbiguous
-		}
-		if len(retired) == 1 {
-			match = retired[0]
-		}
+	if errors.Is(err, credentialstore.ErrPrincipalIndexPending) {
+		return model.ProtocolCredential{}, metering.ErrPrincipalAmbiguous
 	}
-	var credentials []model.ProtocolCredential
-	if err := tx.Where("node_id = ? AND secret <> ?", nodeID, "").Order("id DESC").Find(&credentials).Error; err != nil {
+	if err != nil {
 		return model.ProtocolCredential{}, err
 	}
-	for _, credential := range credentials {
-		if cipher == nil {
-			continue
-		}
-		secret, err := cipher.Decrypt(credential.Secret)
-		if err != nil {
-			continue
-		}
-		if len(secret) == len(provided) && subtle.ConstantTimeCompare([]byte(secret), []byte(provided)) == 1 {
-			if match.ID != 0 && match.ID != credential.ID {
-				return model.ProtocolCredential{}, metering.ErrPrincipalAmbiguous
-			}
-			match = credential
+	// Fulfillment, retirement and reconciliation lock subscription before
+	// credential. Re-read both after acquiring these same locks.
+	if tx.Dialector.Name() == "sqlite" {
+		if err := tx.Model(&model.Subscription{}).Where("id = ?", candidate.SubscriptionID).UpdateColumn("kernel_policy_revision", gorm.Expr("kernel_policy_revision")).Error; err != nil {
+			return model.ProtocolCredential{}, err
 		}
 	}
-	if match.ID != 0 {
-		return match, nil
+	var subscription model.Subscription
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&subscription, candidate.SubscriptionID).Error; err != nil {
+		return model.ProtocolCredential{}, err
 	}
-	return model.ProtocolCredential{}, gorm.ErrRecordNotFound
+	var row model.ProtocolCredential
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID).First(&row, candidate.ID).Error; err != nil {
+		return model.ProtocolCredential{}, err
+	}
+	if row.SubscriptionID != subscription.ID || !completionPrincipalMatches(cipher, nodeID, principal, row) {
+		return model.ProtocolCredential{}, metering.ErrPrincipalAmbiguous
+	}
+	return row, nil
+}
+
+func completionPrincipalMatches(cipher metering.CredentialDecryptor, nodeID uint, principal string, row model.ProtocolCredential) bool {
+	if row.PrincipalKey != "" && row.PrincipalKey == principal {
+		return true
+	}
+	if row.RetiredPrincipalHash != "" && row.RetiredPrincipalHash == entitlements.RetiredPrincipalHash(nodeID, principal) {
+		return true
+	}
+	if cipher == nil || row.Secret == "" {
+		return false
+	}
+	plain, err := cipher.Decrypt(row.Secret)
+	return err == nil && len(plain) == len(principal) && subtle.ConstantTimeCompare([]byte(plain), []byte(principal)) == 1
 }

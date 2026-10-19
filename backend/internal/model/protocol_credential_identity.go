@@ -40,3 +40,14 @@ func newProtocolPrincipalKey() (string, error) {
 	}
 	return "principal:" + hex.EncodeToString(payload), nil
 }
+
+// Source identity changes invalidate derived lookup coverage in the same
+// write. A later lookup can recover the index without trusting stale aliases.
+func (credential *ProtocolCredential) BeforeUpdate(tx *gorm.DB) error {
+	if tx.Statement.Changed("NodeID", "PrincipalKey", "Secret", "RetiredPrincipalHash") {
+		tx.Statement.SetColumn("PrincipalLookupVersion", uint8(0))
+		tx.Statement.SetColumn("PrincipalDigest", "")
+		tx.Statement.SetColumn("SecretPrincipalDigest", "")
+	}
+	return nil
+}

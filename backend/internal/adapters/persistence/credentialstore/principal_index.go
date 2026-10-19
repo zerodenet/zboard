@@ -28,14 +28,42 @@ func (s PrincipalIndex) Lookup(ctx context.Context, node uint, provided string) 
 	if s.DB == nil || node == 0 || provided == "" {
 		return model.ProtocolCredential{}, ErrPrincipalIndexPending
 	}
+	if err := s.Prepare(ctx, node); err != nil {
+		return model.ProtocolCredential{}, err
+	}
+	return s.LookupPrepared(ctx, node, provided)
+}
+
+// Prepare commits bounded legacy projection work before the accounting
+// transaction. An incomplete node stays pending while the next retry resumes.
+func (s PrincipalIndex) Prepare(ctx context.Context, node uint) error {
+	if s.DB == nil || node == 0 {
+		return ErrPrincipalIndexPending
+	}
 	for batch := 0; batch < principalBackfillBatches; batch++ {
 		count, err := s.backfill(ctx, node)
 		if err != nil {
-			return model.ProtocolCredential{}, err
+			return err
 		}
 		if count < principalBackfillBatch {
 			break
 		}
+	}
+	var remaining []uint
+	if err := s.DB.WithContext(ctx).Model(&model.ProtocolCredential{}).Table(principalIndexTable(s.DB, "idx_credential_lookup_backfill")).Where("node_id = ? AND principal_lookup_version = ?", node, 0).Limit(1).Pluck("id", &remaining).Error; err != nil {
+		return err
+	}
+	if len(remaining) > 0 {
+		return ErrPrincipalIndexPending
+	}
+	return nil
+}
+
+// LookupPrepared never writes or starts a nested backfill transaction. Callers
+// must prepare this node before entering their authority transaction.
+func (s PrincipalIndex) LookupPrepared(ctx context.Context, node uint, provided string) (model.ProtocolCredential, error) {
+	if s.DB == nil || node == 0 || provided == "" {
+		return model.ProtocolCredential{}, ErrPrincipalIndexPending
 	}
 	var remaining []uint
 	if err := s.DB.WithContext(ctx).Model(&model.ProtocolCredential{}).Table(principalIndexTable(s.DB, "idx_credential_lookup_backfill")).Where("node_id = ? AND principal_lookup_version = ?", node, 0).Limit(1).Pluck("id", &remaining).Error; err != nil {
@@ -44,12 +72,16 @@ func (s PrincipalIndex) Lookup(ctx context.Context, node uint, provided string) 
 	if len(remaining) > 0 {
 		return model.ProtocolCredential{}, ErrPrincipalIndexPending
 	}
+
 	digest := entitlements.RetiredPrincipalHash(node, provided)
 	var ids []uint
 	query := "SELECT id FROM " + principalIndexTable(s.DB, "idx_credential_principal_digest") + " WHERE node_id = ? AND principal_digest = ? UNION SELECT id FROM " + principalIndexTable(s.DB, "idx_credential_secret_digest") + " WHERE node_id = ? AND secret_principal_digest = ? UNION SELECT id FROM " + principalIndexTable(s.DB, "idx_credential_retired_principal") + " WHERE node_id = ? AND retired_principal_hash = ? LIMIT 2"
 
 	if err := s.DB.WithContext(ctx).Raw(query, node, digest, node, digest, node, digest).Scan(&ids).Error; err != nil {
 		return model.ProtocolCredential{}, err
+	}
+	if len(ids) == 0 {
+		return model.ProtocolCredential{}, gorm.ErrRecordNotFound
 	}
 	if len(ids) != 1 {
 		return model.ProtocolCredential{}, ErrPrincipalIndexPending
