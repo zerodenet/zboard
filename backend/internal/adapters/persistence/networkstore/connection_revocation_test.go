@@ -22,6 +22,7 @@ func TestConnectionRevocationMySQLAndSQLiteFencesRenewal(t *testing.T) {
 		&model.Plan{ID: 1, Name: "scope", Slug: "scope", NodeGroupID: 1},
 		&model.PlanSKU{ID: 1, PlanID: 1, Code: "scope", Name: "scope", BillingUnit: "month", BillingValue: 1, Currency: "CNY"},
 		&model.ProtocolEndpoint{ID: 1, NodeID: 1, Name: "scope", RuntimeKey: "scope", Protocol: "vless", Address: "test", Port: 443, PublicPort: 443, OptionalConfig: "{}", Tags: "[]"},
+		&model.NodeGroupEndpoint{NodeGroupID: 1, ProtocolEndpointID: 1},
 		&model.Subscription{ID: 1, UserID: 1, PlanID: 1, PlanSKUID: 1, NodeGroupID: 1, Status: "active", FlowTotal: 100, Config: "{}", StartAt: now.Add(-time.Hour), EndAt: now.Add(-time.Minute)},
 		&model.ProtocolCredential{ID: 1, SubscriptionID: 1, UserID: 1, NodeID: 1, ProtocolEndpointID: 1, CredentialID: "scope", PrincipalKey: "scope", Secret: "opaque", Status: "active", ExpiresAt: now.Add(time.Hour)},
 	} {

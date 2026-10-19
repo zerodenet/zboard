@@ -11,6 +11,25 @@ import (
 )
 
 func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer entitlements.CredentialIssuer) ([]model.ProtocolCredential, error) {
+	if _, transactional := tx.Statement.ConnPool.(gorm.TxCommitter); !transactional {
+		var result []model.ProtocolCredential
+		err := tx.Transaction(func(inner *gorm.DB) error {
+			var err error
+			result, err = EnsureCredentials(inner, subscription, issuer)
+			return err
+		})
+		return result, err
+	}
+	// Reconciliation jobs may carry a snapshot taken before retirement, renewal
+	// or plan change. Only the locked current business state can grant access.
+	var current model.Subscription
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, subscription.ID).Error; err != nil {
+		return nil, err
+	}
+	if current.Status != "active" || current.FlowUsed >= current.FlowTotal {
+		return nil, nil
+	}
+	subscription = current
 	var endpoints []model.ProtocolEndpoint
 	if err := tx.Model(&model.ProtocolEndpoint{}).
 		Joins(networkstore.CredentialMembershipJoin("node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id")).

@@ -367,3 +367,22 @@ SQLite及真实MySQL8.4保留5001凭据专项通过；实际执行的SQL经EXPLA
 发现并修复了先于BeforeCreate生成稳定摘要的错误：模型会将旧subscription:endpoint格式转为随机opaque主体，旧计算顺序造成原生两个场景待核验。加入真实购买/签发后稳定主体及密码归属行为测试，保留原opaque身份规则，未绕过核验；修正后换组和连接独立崩溃恢复在公开固定版本Zero上通过，恢复前后均2条部署。两次失败记录保留。原生通过对应构建清单，此后仅增加SQL索引提示、计划断言和修正纯领域依赖方向；最后源码有双库实际查询、纯Go及完整后端验证，不能将早先原生二进制称为最后源码完全一致。架构检查曾发现capability依赖model，已改为model依赖纯领域摘要函数，未放宽架构规则。
 
 最终完整后端、vet/build通过（handler126.749s）；纯Go专项networkstore19.714s、handler5.953s及datastore SQLite4.076s通过。完整MySQLdatastore80.365s、handler393.721s通过，其后SQL提示/依赖方向更改有双库专项复核（SQLite4.209s/MySQL14.449s，另连接专项MySQL22.499s），新head完整CI另记。没有前端/SDK/OpenAPI实现变更；上一head a2ed4e1全部六项CI通过：https://github.com/zerodenet/zboard/actions/runs/39324962993 。P2/P3仍部分，接续旧任务重新授权保护、组并发与逐凭据交付确认，之后继续P4–P7。
+
+
+## P3-03：旧快照签发与重新入组撤权栅栏（2026-10-19）
+
+EnsureCredentials不再信任组同步任务捕获的Subscription快照：进入真实事务、先锁定并重读订阅，只按当前active且额度未耗尽的状态、当前组和期限签发。终止后重放旧active快照不恢复已销毁密文/退休摘要；提前续费后不缩回旧期限；实际旧换组操作后不恢复旧组。这里只保护既有换组任务，不宣称P2新的完整时长换购已完成。可信测试时钟不由HTTP提供，本批也未改已批准金额口径。
+
+原生撤权在SQLite先取得写栅栏；MySQL先节点SHARE、订阅UPDATE、凭据UPDATE，再对仍有业务权益的当前组取得SHARE。节点SHARE与商业签发的外键共享锁兼容，避免倒置成节点UPDATE等待。基础设施修改已有节点UPDATE锁先行；组成员修改已有组UPDATE锁。关闭命令在这些栅栏内完成，使用现有3秒原生命令上下文，未延长产品超时。当前组已移除端点时，即便凭据投影仍active也可撤权；当前组重新授予时，旧revoked/expired投影不能单独作为关闭依据，保留待核验。业务已取消、到期、额度耗尽或管理员停用节点仍明确禁止。普通心跳/观测新鲜度不参与此授权判断。
+
+双连接SQLite/MySQL专项通过：真实NodeGroupMutation及持久重整任务与原生命令并发，入组提交在命令返回后完成；入组后未重整的旧投影不关闭，重整为active后保留，直接移除成员而凭据未更新时仍撤权。真实购买/续费、终止清密文、旧换组后重放快照在两库验证，不绕过数据库唯一约束。新增换组夹具先因重复节点名、再因缺失独立runtime_key失败，已改同节点不同端点的合法数据，原失败日志保留，无skip/宽松schema。
+
+公开固定Zero构建再次通过换组及连接阶段崩溃恢复：旧连接EOF、独立订阅仍可用，连接恢复前后部署记录均2，真实worker替换14→22，恢复时无新业务请求。构建前后源码清单一致；此后仅扩充当前组回归测试，运行实现未变。详见validation/2026-10-19-credential-regrant-fences.json。不是全协议、生产或容量验收。
+
+完整后端（handler158.821s/networkstore50.497s）、vet/build通过；之后新增换组断言专项SQLite0.659s、真实MySQL16.511s通过。纯Go SQLite datastore10.704s、networkstore1.188s、handler0.547s通过，新增测试随后双库复核。规定完整MySQL命令仍在运行，最终结果提交前/后另记。无迁移、前端/SDK/OpenAPI变更，历史数据无需回填；回滚不清除0044–0046事实/队列，旧版本会重新暴露本批旧任务/成员竞态，不应在有相关在途任务时直接退回。
+
+接续：冻结配置的逐凭据确认，恢复/新完整权益换购的计量代次隔离，随后P2余额自动续费/恢复窗口等及P4–P7。P2/P3整体仍部分，不能以本批完成替代后续验收。
+
+P3-03规定完整MySQL8.4检查通过：datastore80.940s、handler397.757s，随后网络并发/索引专项10.500s通过（/tmp/zboard-regrant-mysql-full.log）。后加的当前组快照断言单独MySQL16.511s通过，没有增加排除。
+
+P3-03提交前最终完整后端（含新增组快照测试）、vet/build通过：/tmp/zboard-regrant-backend-commit.log。上一批4c6aab1全部六项CI成功：https://github.com/zerodenet/zboard/actions/runs/39330389671 。本批新head CI提交后单独跟踪，不以旧head代替。
