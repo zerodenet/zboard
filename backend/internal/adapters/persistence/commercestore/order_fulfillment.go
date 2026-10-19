@@ -74,6 +74,9 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 	if err != nil {
 		return err
 	}
+	if err := validateRenewalTarget(tx, *order); err != nil {
+		return err
+	}
 	sub, err := entitlementstore.Fulfill(tx, request, policy, s.Issuer, now)
 	if err != nil {
 		if errors.Is(err, entitlements.ErrRenewalWindow) {

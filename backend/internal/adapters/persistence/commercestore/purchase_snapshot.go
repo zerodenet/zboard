@@ -10,6 +10,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func bindPurchaseQuote(preview *commerce.OrderPreview, order model.Order) {
@@ -35,6 +36,8 @@ func capturePurchaseSnapshot(tx *gorm.DB, order *model.Order, plan model.Plan, s
 		// Early renewal must not move the existing quota schedule or change the
 		// metering interpretation when a catalog policy was edited meanwhile.
 		snapshot.ResetPolicy, snapshot.TrafficCalcMode = sub.ResetPolicy, sub.TrafficCalcMode
+		target := renewalTargetSnapshot(sub)
+		snapshot.RenewalTarget = &target
 	}
 	payload, err := json.Marshal(snapshot)
 	if err != nil {
@@ -67,9 +70,46 @@ func applyPurchaseSnapshot(order model.Order, policy entitlements.GrantPolicy) (
 		snapshot.ResetPolicy < 0 || snapshot.ResetPolicy > 5 || snapshot.TrafficCalcMode < 0 || snapshot.TrafficCalcMode > 2 || snapshot.FamilyLimit < 0 {
 		return policy, invalidPurchaseSnapshot()
 	}
+	if raw, present := fields["renewal_target"]; present && (bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || snapshot.RenewalTarget == nil || order.OrderType != "renewal" || snapshot.RenewalTarget.EndAt.IsZero()) {
+		return policy, invalidPurchaseSnapshot()
+	}
 	policy.IsRenewable, policy.ResetPolicy = snapshot.Renewable, snapshot.ResetPolicy
 	policy.TrafficCalcMode, policy.FamilyLimit = snapshot.TrafficCalcMode, snapshot.FamilyLimit
 	return policy, nil
+}
+
+func renewalTargetSnapshot(sub model.Subscription) commerce.RenewalTargetSnapshot {
+	return commerce.RenewalTargetSnapshot{StartAt: sub.StartAt, EndAt: sub.EndAt, PlanSKUID: sub.PlanSKUID, ResetQuotaBytes: sub.ResetQuotaBytes, ResetPolicy: sub.ResetPolicy, TrafficCalcMode: sub.TrafficCalcMode, DeviceLimit: sub.DeviceLimit, SpeedLimitMbps: sub.SpeedLimitMbps, FamilyLimit: sub.FamilyLimit}
+}
+func validateRenewalTarget(tx *gorm.DB, order model.Order) error {
+	if order.OrderType != "renewal" || order.PurchaseSnapshot == "" {
+		return nil
+	}
+	var snapshot commerce.PurchaseSnapshot
+	if json.Unmarshal([]byte(order.PurchaseSnapshot), &snapshot) != nil {
+		return invalidPurchaseSnapshot()
+	}
+	// Previously confirmed legacy orders keep their original agreement. Never
+	// backfill a target revision that was not actually captured at checkout.
+	if snapshot.RenewalTarget == nil {
+		return nil
+	}
+	if order.TargetSubscriptionID == nil {
+		return invalidPurchaseSnapshot()
+	}
+	var sub model.Subscription
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", *order.TargetSubscriptionID, order.UserID).First(&sub).Error; err != nil {
+		return orderResourceError(err, "target_subscription_id", "目标订阅不存在。")
+	}
+	current, expected := renewalTargetSnapshot(sub), *snapshot.RenewalTarget
+	if !current.StartAt.Equal(expected.StartAt) || !current.EndAt.Equal(expected.EndAt) {
+		return quoteError("该订阅期限已由其他操作变更，请核对订单并重新确认续费。")
+	}
+	current.StartAt, current.EndAt = expected.StartAt, expected.EndAt
+	if current != expected {
+		return quoteError("该订阅权益已变化，请重新确认续费报价。")
+	}
+	return nil
 }
 
 func invalidPurchaseSnapshot() error {
