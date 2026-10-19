@@ -49,6 +49,11 @@ func (s OrderSettlement) Apply(ctx context.Context, actor uint, command commerce
 				}
 			}
 		} else if previous != command.Status {
+			if command.Status == "canceled" || command.Status == "failed" {
+				if err := releaseOrderFunding(tx, *order, command.Status, now); err != nil {
+					return err
+				}
+			}
 			order.Status = command.Status
 			order.UpdatedAt = now
 			updates["status"] = order.Status

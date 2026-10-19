@@ -7,6 +7,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"time"
 )
 
 type PaymentCheckout struct{ DB *gorm.DB }
@@ -21,10 +22,24 @@ func (s PaymentCheckout) Open(ctx context.Context, actor, id uint, provider stri
 			return err
 		}
 		out = commerce.Order(order)
+		fund, configured, err := findOrderFunding(tx, order)
+		if err != nil {
+			return err
+		}
+		cash := order.PayableAmount
+		canPrepare := true
+		if configured {
+			cash = fund.CashMinor
+			canPrepare = fund.State == "reserved" && fund.ExpiresAt.After(time.Now().UTC())
+			if !canPrepare && (order.Status == "pending" || order.Status == "failed") {
+				out.Status = "canceled"
+			}
+		}
+		out.PayableAmount = cash
 		var attempt model.PaymentAttempt
-		err := tx.Where("order_id = ? AND provider = ?", id, provider).First(&attempt).Error
+		err = tx.Where("order_id = ? AND provider = ?", id, provider).First(&attempt).Error
 		if err == nil {
-			if attempt.AmountMinor != order.PayableAmount || attempt.Currency != order.Currency {
+			if attempt.AmountMinor != cash || attempt.Currency != order.Currency {
 				return commerce.ErrPaymentFactConflict
 			}
 			permitted = true
@@ -39,10 +54,10 @@ func (s PaymentCheckout) Open(ctx context.Context, actor, id uint, provider stri
 		if order.Status != "pending" && order.Status != "failed" && !bound {
 			return nil
 		}
-		if order.PayableAmount <= 0 {
+		if cash <= 0 || (!canPrepare && !bound) {
 			return nil
 		}
-		if err := tx.Create(&model.PaymentAttempt{OrderID: id, Provider: provider, AmountMinor: order.PayableAmount, Currency: order.Currency}).Error; err != nil {
+		if err := tx.Create(&model.PaymentAttempt{OrderID: id, Provider: provider, AmountMinor: cash, Currency: order.Currency}).Error; err != nil {
 			return err
 		}
 		permitted = true

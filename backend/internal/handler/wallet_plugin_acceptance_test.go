@@ -13,16 +13,22 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/application"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/plugins"
 )
 
 func TestOrdinaryAccountTopUpUsesSignedNativePaymentPlugin(t *testing.T) {
 	for _, canceled := range []bool{false, true} {
-		t.Run(fmt.Sprintf("canceled=%v", canceled), func(t *testing.T) { assertOrdinaryNativeTopUp(t, canceled) })
+		t.Run(fmt.Sprintf("canceled=%v", canceled), func(t *testing.T) { assertOrdinaryNativeTopUp(t, canceled, false) })
 	}
 }
-func assertOrdinaryNativeTopUp(t *testing.T, canceled bool) {
+func TestOrdinaryAccountMixedPaymentUsesSignedNativePaymentPlugin(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("canceled=%v", canceled), func(t *testing.T) { assertOrdinaryNativeTopUp(t, canceled, true) })
+	}
+}
+func assertOrdinaryNativeTopUp(t *testing.T, canceled, mixed bool) {
 	f := newOrderFixture(t)
 	if err := f.h.db.Model(&model.User{}).Where("id = ?", 1).Update("is_admin", false).Error; err != nil {
 		t.Fatal(err)
@@ -32,7 +38,17 @@ func assertOrdinaryNativeTopUp(t *testing.T, canceled bool) {
 		t.Fatal(err)
 	}
 	f.token = token
-	order := createTopUp(t, f, 12000, "ordinary-topup-intent")
+	var order model.Order
+	if mixed {
+		priceForFunding(t, f, 5000)
+		fundTestWallet(t, f, 3000)
+		order = f.create(t, 0)
+		if _, err := fundingService(f).Configure(t.Context(), 1, order.ID, commerce.FundingRequest{UseBalance: true}); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		order = createTopUp(t, f, 12000, "ordinary-topup-intent")
+	}
 	if err := f.h.db.Create(&model.Installation{ID: 1, SiteURL: "https://panel.example.test"}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -80,17 +96,32 @@ func assertOrdinaryNativeTopUp(t *testing.T, canceled bool) {
 	}
 	for i := 0; i < 2; i++ {
 		result, err := manager.SessionCheckoutAction(t.Context(), session.Token, 1, false, order.ID, "mock.reconcile", json.RawMessage(`{}`))
-		if err != nil || !strings.Contains(string(result), `"status":"paid"`) {
+		status := "paid"
+		if mixed && canceled {
+			status = "canceled"
+		}
+		if err != nil || !strings.Contains(string(result), `"status":"`+status+`"`) {
 			t.Fatalf("native receipt: %s %v", result, err)
 		}
 	}
 	wallet, err := f.h.services.Wallet.Read(t.Context(), 1, "CNY", 0, 50)
-	if err != nil || wallet.BalanceMinor != 12000 || len(wallet.Entries) != 1 {
+	balance, entries := int64(12000), 1
+	if mixed {
+		balance, entries = 0, 3
+		if canceled {
+			balance, entries = 5000, 4
+		}
+	}
+	if err != nil || wallet.BalanceMinor != balance || wallet.ReservedMinor != 0 || len(wallet.Entries) != entries {
 		t.Fatalf("native topup: %+v %v", wallet, err)
 	}
 	for _, table := range []string{"subscriptions", "protocol_credentials", "node_config_publishes"} {
 		var count int64
-		if err := f.h.db.Table(table).Count(&count).Error; err != nil || count != 0 {
+		want := int64(0)
+		if mixed && !canceled && table == "subscriptions" {
+			want = 1
+		}
+		if err := f.h.db.Table(table).Count(&count).Error; err != nil || count != want {
 			t.Fatalf("topup granted %s: %d %v", table, count, err)
 		}
 	}

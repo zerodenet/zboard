@@ -38,6 +38,9 @@ func (s *PluginHostServices) PluginCheckout(ctx context.Context, pluginID, ident
 	if o.Status != "pending" && o.Status != "paid" && o.Status != "failed" && !(o.Status == "canceled" && permitted) {
 		return pluginv1.CheckoutContext{}, "", plugins.ErrConflict
 	}
+	if (o.Status == "pending" || o.Status == "failed") && !permitted {
+		return pluginv1.CheckoutContext{}, "", plugins.ErrConflict
+	}
 	var installation model.Installation
 	if err := s.services.Identity.db.WithContext(ctx).First(&installation, 1).Error; err != nil {
 		return pluginv1.CheckoutContext{}, "", plugins.ErrUnavailable

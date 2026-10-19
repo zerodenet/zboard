@@ -3,7 +3,9 @@
     <header><h3>支付方式</h3></header>
     <p v-if="loading" role="status">正在加载支付方式，订单内容可继续查看。</p>
     <PageAlert v-if="error" tone="danger">{{ error }}</PageAlert>
-    <p v-if="!loading && !contributions.length && !error && !paid && !canceled">暂无在线支付方式，可创建订单后联系管理员确认收款。</p>
+    <p v-if="!loading && !contributions.length && !error && !paid && !canceled && !handoffToFunding">暂无在线支付方式，可创建订单后联系管理员确认收款。</p>
+    <p v-if="handoffToFunding">先创建待付款订单，再核对余额与渠道补差。</p>
+    <PageAlert v-if="handoffToFunding && paymentError" tone="danger">{{ paymentError }}</PageAlert>
     <div v-for="contribution in contributions" :key="key(contribution)" class="checkout-payment__provider">
       <strong v-if="contributions.length > 1">{{ contribution.slot.title }}</strong>
       <PluginFrame
@@ -24,7 +26,8 @@
     </div>
     <UiButton v-if="canRetry" type="button" variant="secondary" size="sm" :disabled="busy || loading" @click="load">重新加载支付方式</UiButton>
     <div class="checkout-payment__actions">
-      <UiButton v-if="currentOrder" :id="paymentTriggerId" type="button" @click="paymentDialogOpen = true">{{ paid ? '查看支付结果' : '查看支付状态' }}</UiButton>
+      <UiButton v-if="handoffToFunding" type="button" :loading="busy" :disabled="busy || disabled" @click="handoff">{{ currentOrder ? '继续选择付款方式' : '创建订单并选择付款方式' }}</UiButton>
+      <UiButton v-else-if="currentOrder" :id="paymentTriggerId" type="button" @click="paymentDialogOpen = true">{{ paid ? '查看支付结果' : '查看支付状态' }}</UiButton>
       <UiButton v-else-if="contributions.length || loading || error" :id="paymentTriggerId" type="button" :loading="busy" :disabled="busy || disabled || !choice || choice.option.disabled" @click="pay">确认并支付</UiButton>
       <UiButton v-else-if="createOnly && !currentOrder" type="button" :loading="busy" :disabled="busy || disabled" @click="orderOnly">确认创建订单</UiButton>
     </div>
@@ -33,6 +36,7 @@
         <p v-if="currentOrder" class="checkout-payment__state" role="status">订单 #{{ currentOrder }} · {{ paid ? '已完成付款' : canceled ? '已取消，请重新下单。' : waiting ? '等待付款；完成后请核对结果。' : busy ? '正在准备支付或核对结果…' : '支付重试将使用此订单。' }}</p>
         <p v-else role="status">{{ busy ? '正在创建订单并打开支付窗口…' : '订单尚未创建，可重新确认并支付。' }}</p>
         <p v-if="confirmedOrder">订单应付 {{ formatCurrency(confirmedOrder.amount, confirmedOrder.currency) }}</p>
+        <p v-if="channelAmountMinor !== undefined">本次渠道补差 {{ formatWalletMoney(channelAmountMinor, currency) }}</p>
         <p v-if="choice">支付方式：{{ choice.option.title }}</p>
         <PageAlert v-if="paymentError" tone="danger">{{ paymentError }}</PageAlert>
         <p v-if="actionFailure && !actionFailure.retryable" class="checkout-payment__hint">此插件动作不支持直接重试，可更换支付方式或核对本站订单状态。</p>
@@ -57,9 +61,10 @@ import PageAlert from '../components/PageAlert.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import { pluginActionFailure, type PluginActionFailure } from '../utils/pluginActionError'
 import { formatCurrency } from '../utils/format'
+import { formatWalletMoney } from '../utils/walletMoney'
 import { startPayment, paymentStatusMessage, type PaymentOption, type PaymentStatus } from './checkout'
 
-const props = withDefaults(defineProps<{ name: string; currency: string; orderId?: number; createOrder?: () => Promise<number>; createOnly?: () => Promise<void>; embedded?: boolean; preferredPlugin?: string; reconcileOnLoad?: boolean; openOnLoad?: boolean; disabled?: boolean }>(), { openOnLoad: true })
+const props = withDefaults(defineProps<{ name: string; currency: string; orderId?: number; actorId?: number; handoffToFunding?: boolean; channelAmountMinor?: string; createOrder?: () => Promise<number>; createOnly?: () => Promise<void>; embedded?: boolean; preferredPlugin?: string; reconcileOnLoad?: boolean; openOnLoad?: boolean; disabled?: boolean }>(), { openOnLoad: true })
 const emit = defineEmits<{ paid: [id: number]; created: [id: number] }>()
 const paymentTriggerId = `checkout-payment-${useId()}`
 type Frame = { checkoutAction(id: number, action: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> }
@@ -70,7 +75,7 @@ const canRetry = computed(() => !busy.value && (Boolean(error.value) || contribu
 const loading = ref(true), busy = ref(false), error = ref(''), selected = ref('')
 const confirmedOrder = ref<{ amount: number; currency: string }>()
 const currentOrder = ref(props.orderId || 0), waiting = ref(false), paid = ref(false)
-const paymentDialogOpen = ref(Boolean(props.orderId) && props.openOnLoad !== false), paymentError = ref(''), checking = ref(false)
+const paymentDialogOpen = ref(!props.handoffToFunding && Boolean(props.orderId) && props.openOnLoad !== false), paymentError = ref(''), checking = ref(false)
 const actionFailure = ref<PluginActionFailure>(), rejectedAction = ref('')
 const canceled = ref(false)
 const optionTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -128,8 +133,21 @@ function receiveOptions(id: string, values: PaymentOption[]) {
     void reconcile()
   }
 }
+async function handoff() {
+  if (busy.value || props.disabled) return
+  const current = generation
+  busy.value = true; paymentError.value = ''
+  try {
+    const id = currentOrder.value || await props.createOrder?.()
+    if (current !== generation) return
+    if (!Number.isSafeInteger(id) || !id || id < 1) throw new Error('订单创建结果暂无法确认，请在我的订单核对。')
+    currentOrder.value = id; emit('created', id)
+  } catch (cause: any) { if (current === generation) paymentError.value = cause?.response?.data?.message || cause?.message || '订单创建结果暂无法确认，请核对原订单后重试。' }
+  finally { if (current === generation) busy.value = false }
+}
 async function load() {
   if (busy.value) return
+  if (props.handoffToFunding) { generation++; controller.abort(); clearOptionTimers(); contributions.value = []; loading.value = false; return }
   clearOptionTimers()
   controller.abort(); controller = new AbortController(); const current = ++generation
   restored = false
@@ -218,9 +236,9 @@ async function reconcile() {
   } catch (cause: any) { if (current === generation) paymentError.value = cause?.response?.data?.message || cause?.message || '核对暂时不可用，请稍后重试。' }
   finally { if (current === generation) { busy.value = false; checking.value = false } }
 }
-watch(() => [props.name, props.orderId, props.preferredPlugin], () => {
+watch(() => [props.name, props.orderId, props.preferredPlugin, props.actorId], () => {
   generation++; controller.abort(); busy.value = false; confirmedOrder.value = undefined
-  paymentDialogOpen.value = Boolean(props.orderId) && props.openOnLoad !== false; paymentError.value = ''; checking.value = false
+  paymentDialogOpen.value = !props.handoffToFunding && Boolean(props.orderId) && props.openOnLoad !== false; paymentError.value = ''; checking.value = false
   actionFailure.value = undefined; rejectedAction.value = ''
   currentOrder.value = props.orderId || 0; waiting.value = false; paid.value = false; canceled.value = false; restored = false; void load()
 })

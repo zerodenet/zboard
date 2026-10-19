@@ -3466,6 +3466,91 @@ paths:
         '401': { description: Authentication required }
         '403': { description: Current active account required }
         '500': { description: Creation unavailable; retry with the same intent }
+  /api/v1/orders/{id}/funding:
+    get:
+      operationId: readOrderFunding
+      tags: [orders]
+      summary: Read owned order funding and available currency balance
+      description: Read-only. Does not reserve, release, deduct or fulfill. Unknown financial facts are errors, not zero balances. Monetary amounts are exact integer strings.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        '200':
+          description: Current immutable split or unconfigured quote
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/OrderFunding' }
+        '400': { description: Invalid or unsupported funding input }
+        '401': { description: Authentication required }
+        '403': { description: Current active owner required }
+        '404': { description: Unknown or foreign order }
+        '409': { description: "Funding split frozen, expired, or conflicting with an existing payment attempt" }
+        '500': { description: No partial financial commit; recover the same order after checking status }
+    post:
+      operationId: configureOrderFunding
+      tags: [orders]
+      summary: Explicitly freeze a channel-only or wallet-plus-channel funding split
+      description: Current owner only. One split per order, identical retries recover it without additional reservation. A new split reserves min(available balance, order payable) only when use_balance is true. Channel admission fixes its expected cash amount; a wallet split cannot change a prior channel attempt or recorded failure. Thirty-minute reservation expiry is persisted. Top-ups cannot consume wallet funds.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                use_balance: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Frozen split and durable reservation
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/OrderFunding' }
+        '400': { description: Invalid or unsupported funding input }
+        '401': { description: Authentication required }
+        '403': { description: Current active owner required }
+        '404': { description: Unknown or foreign order }
+        '409': { description: "Funding split frozen, expired, or conflicting with an existing payment attempt" }
+        '500': { description: No partial financial commit; recover the same order after checking status }
+  /api/v1/orders/{id}/wallet-pay:
+    post:
+      operationId: payOwnedOrderFromWallet
+      tags: [orders]
+      summary: Confirm an entirely wallet-funded or zero-amount owned order
+      description: Explicit current-owner command. Does not accept browser-supplied amounts, prices or paid status. Requires a live split with zero cash supplement. Wallet capture, order, entitlements, credentials, quota event, publication intent and audit commit atomically. Repeated successful calls do not charge or fulfill twice. Actual node configuration remains an independent recoverable delivery task.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200':
+          description: Authoritative business settlement result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletPaymentResult' }
+        '400': { description: Invalid or unsupported funding input }
+        '401': { description: Authentication required }
+        '403': { description: Current active owner required }
+        '404': { description: Unknown or foreign order }
+        '409': { description: "Funding split frozen, expired, or conflicting with an existing payment attempt" }
+        '500': { description: No partial financial commit; recover the same order after checking status }
   /api/v1/orders/{id}/payment-receipts:
     get:
       operationId: readOwnedPaymentReceipts
@@ -8621,6 +8706,30 @@ components:
         note: { type: string, minLength: 1, maxLength: 500 }
         quote_fingerprint: { type: string, description: "Quote assertion from the administrator preview." }
         request_id: { type: string, format: uuid, description: "Nonzero UUID, unique per administrator operation. Reuse only to retry an identical payload." }
+    OrderFunding:
+      type: object
+      required: [order_id, configured, use_balance, currency, amount_minor, available_minor, wallet_minor, cash_minor, state, expired]
+      properties:
+        order_id: { type: integer, format: int64 }
+        configured: { type: boolean }
+        use_balance: { type: boolean }
+        currency: { type: string }
+        amount_minor: { type: string, pattern: '^[0-9]+$', description: Full agreed order price }
+        available_minor: { type: string, pattern: '^[0-9]+$', description: Current wallet balance excluding every live reservation }
+        wallet_minor: { type: string, pattern: '^[0-9]+$', description: Frozen wallet contribution; historical value remains after capture or release }
+        cash_minor: { type: string, pattern: '^[0-9]+$', description: Frozen amount the channel may collect; wallet_minor plus cash_minor equals amount_minor }
+        state: { type: string, enum: [unconfigured, reserved, captured, released] }
+        expires_at: { type: string, format: date-time }
+        expired: { type: boolean, description: Expired reservations remain visible until transactionally released; expiry never invents available money }
+        release_reason: { type: string }
+    WalletPaymentResult:
+      type: object
+      required: [order_id, subscription_id, status, fulfilled]
+      properties:
+        order_id: { type: integer, format: int64 }
+        subscription_id: { type: integer, format: int64 }
+        status: { type: string }
+        fulfilled: { type: boolean, description: True only for this call performing business fulfillment }
     PaymentReceiptSummary:
       type: object
       required: [id, amount_minor, currency, disposition, created_at]

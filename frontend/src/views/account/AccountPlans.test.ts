@@ -54,37 +54,36 @@ describe('account catalog bounded reads and route isolation', () => {
     router = createRouter({ history: createMemoryHistory(), routes: [
       { path: '/account/plans', component: { template: '<div />' } },
       { path: '/account/orders', component: { template: '<div />' } },
+      { path: '/account/orders/:id', component: { template: '<div />' } },
     ] })
     await router.push(path)
     await router.isReady()
     wrapper = mount(AccountPlans, { global: { plugins: [router], stubs: { CommercePlanDetail: true, PluginFrame: defineComponent({ emits: ['checkoutOptions'], setup(_, { emit, expose }) { expose({ checkoutAction: paymentAction }); onMounted(() => emit('checkoutOptions', [{ id: 'card', title: '测试支付', prepare_action: 'pay.prepare', reconcile_action: 'pay.check' }])); return () => null } }) } } })
     await flushPromises()
   }
-  it('places methods below the amount and pays with one click without a separate create button', async () => {
-    vi.mocked(fetchPluginSlots).mockResolvedValue([{ plugin_id: 'example.payment', generation: 1, slot: { id: 'pay', slot: 'account.checkout.payment', title: '支付通道', surface: 'account', entrypoint: 'ui/pay.html' } }] as any)
-    const popup = { closed: false, opener: null, close: vi.fn(), location: { replace: vi.fn() } }
-    const reserve = vi.spyOn(window, 'open').mockReturnValue(popup as any)
+  it('creates an order below the confirmed amount before handing off to funding, without collecting cash', async () => {
+    const reserve = vi.spyOn(window, 'open').mockReturnValue(null)
     await open('/account/plans?plan=1')
     wrapper!.getComponent(CommercePlanDetail).vm.$emit('continue'); await flushPromises()
     expect(wrapper!.find('.purchase-checkout__summary .checkout-payment').exists()).toBe(true)
     expect(wrapper!.find('.purchase-checkout__main .checkout-payment').exists()).toBe(false)
-    expect(wrapper!.text()).not.toContain('确认创建订单')
     expect(createOrder).not.toHaveBeenCalled()
-    await wrapper!.findAll('button').find(b => b.text() === '确认并支付')!.trigger('click'); await flushPromises()
-    expect(reserve).toHaveBeenCalledOnce()
+    expect(fetchPluginSlots).not.toHaveBeenCalled()
+    await wrapper!.findAll('button').find(button => button.text() === '创建订单并选择付款方式')!.trigger('click'); await flushPromises()
     expect(createOrder).toHaveBeenCalledOnce()
-    expect(paymentAction).toHaveBeenCalledWith(71, 'pay.prepare', { option_id: 'card' })
-    expect(popup.location.replace).toHaveBeenCalledWith('https://cashier.example/pay')
-    expect(router.currentRoute.value.path).toBe('/account/plans')
+    expect(router.currentRoute.value.path).toBe('/account/orders/71')
+    expect(paymentAction).not.toHaveBeenCalled()
+    expect(reserve).not.toHaveBeenCalled()
     reserve.mockRestore()
   })
-  it('does not fall back to order-only creation when payment discovery fails', async () => {
+  it('defers plugin discovery until funding selection and never automatically creates or collects', async () => {
     vi.mocked(fetchPluginSlots).mockRejectedValue(new Error('offline'))
     await open('/account/plans?plan=1')
     wrapper!.getComponent(CommercePlanDetail).vm.$emit('continue'); await flushPromises()
-    expect(wrapper!.text()).not.toContain('确认创建订单')
-    expect(wrapper!.findAll('button').find(b => b.text() === '确认并支付')!.attributes('disabled')).toBeDefined()
+    expect(fetchPluginSlots).not.toHaveBeenCalled()
     expect(createOrder).not.toHaveBeenCalled()
+    expect(wrapper!.findAll('button').find(button => button.text() === '创建订单并选择付款方式')!.attributes('disabled')).toBeUndefined()
+    expect(paymentAction).not.toHaveBeenCalled()
   })
   it('renders nine cards with two reads and no per-card SKU request', async () => {
     await open()
@@ -127,7 +126,7 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('15.00')
     expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('0.00')
     expect(createOrder).not.toHaveBeenCalled()
-    await wrapper!.findAll('button').find(item => item.text() === '确认创建订单')!.trigger('click')
+    await wrapper!.findAll('button').find(item => item.text() === '创建订单并选择付款方式')!.trigger('click')
     await flushPromises()
     expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'upgrade', targetSubscriptionId: 105, quoteFingerprint: 'exhausted-change', idempotencyKey: expect.any(String) })
   })
@@ -143,7 +142,7 @@ describe('account catalog bounded reads and route isolation', () => {
   it('accepts a public purchase selection directly at the account checkout', async () => {
     await open('/account/plans?operation=purchase&plan=1&sku=105&step=checkout')
     expect(wrapper!.find('.purchase-checkout').exists()).toBe(true)
-    expect(wrapper!.text()).toContain('确认创建订单')
+    expect(wrapper!.text()).toContain('创建订单并选择付款方式')
     expect(router.currentRoute.value.query.sku).toBe('105')
   })
   it('does not block catalog rendering on a slow subscription list', async () => {
@@ -235,7 +234,7 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(previewOrder).toHaveBeenCalledWith(1, 1, expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('0.60')
     expect(wrapper!.get('.purchase-checkout__product').text()).toContain('原购买基础价')
-    await wrapper!.findAll('button').find(item => item.text() === '确认创建订单')!.trigger('click')
+    await wrapper!.findAll('button').find(item => item.text() === '创建订单并选择付款方式')!.trigger('click')
     await flushPromises()
     expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'renewal', targetSubscriptionId: 1, quoteFingerprint: 'renewal-lock', idempotencyKey: expect.any(String) })
   })
@@ -244,10 +243,10 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(previewOrder).toHaveBeenCalledWith(1, 1, expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('5.00')
     expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('原套餐抵扣')
-    await wrapper!.findAll('button').find(item => item.text() === '确认创建订单')!.trigger('click')
+    await wrapper!.findAll('button').find(item => item.text() === '创建订单并选择付款方式')!.trigger('click')
     await flushPromises()
     expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'upgrade', targetSubscriptionId: 1, quoteFingerprint: 'quote-token', idempotencyKey: expect.any(String) })
-    expect(router.currentRoute.value.path).toBe('/account/orders')
+    expect(router.currentRoute.value.path).toBe('/account/orders/71')
   })
   it('offers reset for an exhausted timed subscription and uses its reset SKU', async () => {
     const exhausted = { ...subscription(105), status: 'expired', flow_used: 100, can_renew: false, can_change: false, can_addon: false }
@@ -264,7 +263,7 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(wrapper!.text()).toContain('恢复可用流量')
     expect(wrapper!.text()).toContain('100 GB')
     expect(wrapper!.text()).toContain('保持不变')
-    await wrapper!.findAll('button').find(item => item.text() === '确认创建订单')!.trigger('click')
+    await wrapper!.findAll('button').find(item => item.text() === '创建订单并选择付款方式')!.trigger('click')
     await flushPromises()
     expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'traffic_reset', targetSubscriptionId: 105, quoteFingerprint: 'reset-token', idempotencyKey: expect.any(String) })
   })

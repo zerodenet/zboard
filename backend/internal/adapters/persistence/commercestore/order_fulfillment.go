@@ -12,11 +12,26 @@ import (
 )
 
 func (s OrderSettlement) setPaid(tx *gorm.DB, order *model.Order, now time.Time) error {
+	return s.setPaidWithFunding(tx, order, now, false)
+}
+func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now time.Time, fundingConfirmed bool) error {
 	if order.OrderType == "topup" {
 		return quoteError("余额充值只能由已核验的支付渠道事实入账。")
 	}
 	if order.Status == "paid" {
 		return nil
+	}
+	fund, configured, err := findOrderFunding(tx, *order)
+	if err != nil {
+		return err
+	}
+	if configured {
+		if fund.State != "reserved" || !fund.ExpiresAt.After(now) {
+			return commerce.ErrFundingConflict
+		}
+		if fund.WalletMinor > 0 && !fundingConfirmed {
+			return quoteError("该订单已预留余额，只能通过余额付款或核验渠道补差完成。")
+		}
 	}
 	if order.SubscriptionEndedAt != nil && order.TargetSubscriptionID == nil && order.OrderType != "new" {
 		return quoteError(entitlements.ErrRenewalWindow.Error())
@@ -55,7 +70,7 @@ func (s OrderSettlement) setPaid(tx *gorm.DB, order *model.Order, now time.Time)
 		}
 	}
 	policy := entitlements.GrantPolicy{NodeGroupID: plan.NodeGroupID, IsRenewable: plan.IsRenewable && renewalSKUs > 0, RenewalPriceMinor: renewalPrice, FamilyLimit: plan.FamilyLimit, ResetPolicy: plan.ResetPolicy, TrafficCalcMode: plan.TrafficCalcMode, MaxActiveSubscriptions: plan.MaxActiveSubscriptions}
-	policy, err := applyPurchaseSnapshot(*order, policy)
+	policy, err = applyPurchaseSnapshot(*order, policy)
 	if err != nil {
 		return err
 	}
@@ -66,12 +81,15 @@ func (s OrderSettlement) setPaid(tx *gorm.DB, order *model.Order, now time.Time)
 		}
 		return err
 	}
+	if err := captureOrderFunding(tx, *order, now); err != nil {
+		return err
+	}
 	return markOrderPaid(tx, order, sub.ID, now)
 }
 
 func (s OrderSettlement) setVerifiedPaid(tx *gorm.DB, order *model.Order, now time.Time) error {
 	if order.OrderType != "topup" {
-		return s.setPaid(tx, order, now)
+		return s.setPaidWithFunding(tx, order, now, true)
 	}
 	if order.Status == "paid" {
 		return nil

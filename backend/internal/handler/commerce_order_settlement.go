@@ -44,6 +44,8 @@ func (h *handlers) writeOrderSettlement(w http.ResponseWriter, out commerce.Sett
 		BadRequest(w, "order not found")
 	case errors.Is(err, commerce.ErrOrderPermission):
 		Forbidden(w, "需要当前有效的管理员权限。")
+	case errors.Is(err, commerce.ErrFundingConflict):
+		writeJSON(w, http.StatusConflict, "资金分配已失效，请重新核对订单。", nil)
 	case errors.Is(err, commerce.ErrOrderTransition):
 		if callback {
 			BadRequest(w, errOrderTransitionRejected.Error())

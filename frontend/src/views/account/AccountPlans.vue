@@ -93,7 +93,7 @@
           </dl>
           <PageAlert v-if="checkoutError" tone="danger" title="无法创建订单">{{ checkoutError }}</PageAlert>
           <PageAlert v-if="quoteError" tone="danger" title="报价失败">{{ quoteError }}<UiButton variant="secondary" @click="quoteResource.load()">重新报价</UiButton></PageAlert>
-          <CheckoutPayment name="account.checkout.payment" :key="checkoutIntent" embedded :currency="selectedSKU.currency" :create-order="ensureOrder" :create-only="submitOrder" :disabled="creating || quoteLoading || (needsQuote && !quote)" @paid="router.push('/account/orders')" />
+          <CheckoutPayment name="account.checkout.payment" :key="checkoutIntent" embedded handoff-to-funding :actor-id="app.user.id" :currency="selectedSKU.currency" :create-order="ensureOrder" :create-only="submitOrder" :disabled="creating || quoteLoading || (needsQuote && !quote)" @paid="router.push('/account/orders')" @created="id => router.push(`/account/orders/${id}`)" />
           <p>订单及付款进度可在“我的订单”中查看。</p>
         </aside>
       </div>

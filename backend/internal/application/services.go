@@ -283,6 +283,9 @@ func RequestNodePublication(tx *gorm.DB, nodeID, endpointID, actor uint) error {
 func (s *Services) OrderSettlement(cipher zeroadapter.Cipher, mieru bool) commerce.OrderSettlement {
 	return commerce.OrderSettlement{Repository: commercestore.OrderSettlement{DB: s.Identity.db, Issuer: zeroadapter.Issuer{Cipher: cipher, Mieru: mieru}}}
 }
+func (s *Services) WalletPayments(cipher zeroadapter.Cipher, mieru bool) commerce.WalletPayments {
+	return commerce.WalletPayments{Repository: commercestore.WalletPayments{DB: s.Identity.db, Issuer: zeroadapter.Issuer{Cipher: cipher, Mieru: mieru}}}
+}
 
 func (s *Services) OrderAccess(cipher zeroadapter.Cipher) commerce.OrderAccess {
 	return commerce.OrderAccess{Repository: commercestore.OrderAccess{DB: s.Identity.db, Cipher: cipher}}

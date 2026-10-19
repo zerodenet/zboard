@@ -60,7 +60,19 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 		if !errors.Is(existingErr, gorm.ErrRecordNotFound) {
 			return existingErr
 		}
-		if fact.AmountMinor != order.PayableAmount || !strings.EqualFold(fact.Currency, order.Currency) {
+		fund, configured, err := findOrderFunding(tx, order)
+		if err != nil {
+			return err
+		}
+		expected := order.PayableAmount
+		if configured {
+			expected = fund.CashMinor
+		}
+		// Pre-host integrations may have collected the original full quote
+		// before a wallet split existed. Preserve verified whole-order cash,
+		// without capturing the wallet or using it to fulfill a changed split.
+		unplannedWhole := configured && authority.RequireAdministrator && !authority.RequireAttempt && fact.Status == "paid" && fact.AmountMinor == order.PayableAmount && fact.AmountMinor != expected
+		if (fact.AmountMinor != expected && !unplannedWhole) || !strings.EqualFold(fact.Currency, order.Currency) {
 			return commerce.ErrPaymentFactConflict
 		}
 		if authority.RequireAttempt {
@@ -91,13 +103,16 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 				return err
 			}
 			out.Status = "failed"
+			if err := releaseOrderFunding(tx, order, "payment_failed", now); err != nil {
+				return err
+			}
 		} else {
 			receipt, fresh, err := acceptPaymentReceipt(tx, order, authority, fact, now)
 			if err != nil {
 				return err
 			}
 			if fresh {
-				if err := s.applyReceipt(tx, &order, &receipt, now); err != nil {
+				if err := s.applyReceipt(tx, &order, &receipt, now, unplannedWhole); err != nil {
 					return err
 				}
 				out.Fulfilled = receipt.Disposition == "fulfilled" || receipt.Disposition == "wallet_topup"
@@ -140,7 +155,7 @@ func acceptPaymentReceipt(tx *gorm.DB, order model.Order, authority commerce.Pay
 	return receipt, err == nil && receipt.Disposition != "legacy_applied", err
 }
 
-func (s PaymentFacts) applyReceipt(tx *gorm.DB, order *model.Order, receipt *model.PaymentReceipt, now time.Time) error {
+func (s PaymentFacts) applyReceipt(tx *gorm.DB, order *model.Order, receipt *model.PaymentReceipt, now time.Time, unplannedWhole bool) error {
 	if order.PaidAmount > 0 && order.ProviderTradeNo == nil && order.Channel != "wallet" && order.OrderType != "topup" {
 		// Legacy/manual payment has no verifiable channel receipt identity. Keep
 		// collected money visible for reconciliation; never invent a second value.
@@ -148,6 +163,26 @@ func (s PaymentFacts) applyReceipt(tx *gorm.DB, order *model.Order, receipt *mod
 		return tx.Model(receipt).Update("disposition", receipt.Disposition).Error
 	}
 	fulfill := order.Status == "pending" || order.Status == "failed" || (order.OrderType == "topup" && order.Status == "canceled")
+	fund, configured, err := findOrderFunding(tx, *order)
+	if err != nil {
+		return err
+	}
+	if configured && (unplannedWhole || fund.State != "reserved" || !fund.ExpiresAt.After(now)) {
+		reason := "expired"
+		if unplannedWhole {
+			reason = "funding_mismatch"
+		}
+		if err := releaseOrderFunding(tx, *order, reason, now); err != nil {
+			return err
+		}
+		fulfill = false
+		if order.Status == "pending" || order.Status == "failed" {
+			if err := tx.Model(order).Updates(map[string]any{"status": "canceled", "canceled_at": now, "updated_at": now}).Error; err != nil {
+				return err
+			}
+			order.Status = "canceled"
+		}
+	}
 	if fulfill {
 		// Validation can become stale after real collection. Roll back entitlement
 		// changes only; retain the actual receipt and credit cash to its owner.
@@ -192,6 +227,9 @@ func (s PaymentFacts) applyReceipt(tx *gorm.DB, order *model.Order, receipt *mod
 		}
 	}
 	if !fulfill {
+		if err := releaseOrderFunding(tx, *order, "fulfillment_unavailable", now); err != nil {
+			return err
+		}
 		entryID, err := appendWalletCredit(tx, *order, walletKey("payment-receipt:"+strconv.FormatUint(uint64(receipt.ID), 10)), "payment_credit", "已核验的迟到或重复渠道付款转入余额", receipt.AmountMinor, now)
 		if err != nil {
 			return err

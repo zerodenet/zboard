@@ -39,10 +39,13 @@ func (s OrderCancellation) Cancel(ctx context.Context, actor, id uint, admin, fo
 			return commerce.ErrOrderNotCancelable
 		}
 		if order.Status == "canceled" {
-			return nil
+			return releaseOrderFunding(tx, order, "canceled", time.Now().UTC())
 		}
 		previous := order.Status
 		now := time.Now().UTC()
+		if err := releaseOrderFunding(tx, order, "canceled", now); err != nil {
+			return err
+		}
 		order.Status = "canceled"
 		order.UpdatedAt = now
 		order.CanceledAt = &now

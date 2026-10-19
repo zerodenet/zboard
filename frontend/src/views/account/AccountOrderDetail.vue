@@ -30,7 +30,8 @@
           <p v-if="order.status === 'paid'">本站已确认这笔订单付款完成。</p>
           <RouterLink v-if="order.status === 'paid' && order.order_type === 'topup'" :to="{ path: '/account/wallet', query: { currency: order.currency } }">充值已进入站内余额，查看余额与流水</RouterLink>
           <p v-else-if="order.status === 'canceled'">此订单已取消，不可继续支付。</p>
-          <CheckoutPayment v-if="payable && !error" :key="order.id" name="account.orders.payment" embedded :order-id="order.id" :currency="order.currency" :preferred-plugin="returnPlugin" :reconcile-on-load="Boolean(returnPlugin)" :open-on-load="Boolean(returnPlugin)" @paid="load" />
+          <OrderFundingPayment v-if="payable && !error && order.order_type !== 'topup'" :order-id="order.id" :currency="order.currency" :preferred-plugin="returnPlugin" @changed="load" />
+          <CheckoutPayment v-if="payable && !error && order.order_type === 'topup'" :key="order.id" name="account.orders.payment" embedded :order-id="order.id" :currency="order.currency" :preferred-plugin="returnPlugin" :reconcile-on-load="Boolean(returnPlugin)" :open-on-load="Boolean(returnPlugin)" @paid="load" />
           <p v-if="payable" class="order-detail-hint">付款结果以本站核对后的订单状态为准。</p>
         </div>
       </UiSection>
@@ -51,6 +52,7 @@ import UiButton from '../../components/UiButton.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import TimeBadge from '../../components/TimeBadge.vue'
 import CheckoutPayment from '../../plugins/CheckoutPayment.vue'
+import OrderFundingPayment from '../../components/OrderFundingPayment.vue'
 import PaymentReceipts from '../../components/PaymentReceipts.vue'
 import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/format'
 

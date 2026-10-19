@@ -246,6 +246,9 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/admin/orders/:id/payment-receipts", h.PaymentReceiptsHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/orders/:id/payment-receipts/resolve", h.ResolvePaymentReceiptHandler),
 		newRoute(http.MethodGet, "/api/v1/orders/:id/payment-receipts", h.PaymentReceiptsHandler),
+		newRoute(http.MethodGet, "/api/v1/orders/:id/funding", h.OrderFundingHandler),
+		newRoute(http.MethodPost, "/api/v1/orders/:id/funding", h.OrderFundingHandler),
+		newRoute(http.MethodPost, "/api/v1/orders/:id/wallet-pay", h.WalletPayOrderHandler),
 		newRoute(http.MethodPost, "/api/v1/orders", h.OrderCreateCommerceValidatedHandler),
 		newRoute(http.MethodPost, "/api/v1/orders/preview", h.OrderPreviewHandler),
 		newRoute(http.MethodPost, "/api/v1/orders/:id/pay", h.OrderPayCommerceHandler),
@@ -386,6 +389,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	h.StartAdminTaskWorker()
 	h.StartNodePublishWorker()
 	h.StartTrafficResetWorker()
+	h.StartWalletReservationWorker()
 	h.StartProxyPoolSubscriptionWorker()
 	h.StartFairUseEvaluationWorker()
 	h.StartCertificateRenewalWorker()
