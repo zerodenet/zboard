@@ -87,6 +87,31 @@ func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, n
 	if order.OrderType == "renewal" && !entitlements.CanRenewAt(entitlements.Subscription(sub), now) {
 		return preview, quoteError(entitlements.ErrRenewalWindow.Error())
 	}
+	if order.OrderType == "renewal" {
+		source, err := renewalPurchase(tx, sub.ID, order.UserID, order.PlanID)
+		if err != nil {
+			return preview, err
+		}
+		if !compatibleRenewalPurchase(source, *order) {
+			return preview, quoteError("购买时锁价仅有原币种与付费周期的依据，跨币种或周期续费暂不可自动报价。")
+		}
+		order.AmountCents, order.PayableAmount = source.AmountCents, source.AmountCents
+		preview.AmountCents, preview.PayableAmount = order.AmountCents, order.PayableAmount
+		preview.EndAt = &sub.EndAt
+		token, err := json.Marshal(struct {
+			Source, Target, SKU uint
+			Base                int64
+			Currency, Unit      string
+			Period              int
+			EndAt               time.Time
+		}{source.ID, sub.ID, order.PlanSKUID, source.AmountCents, order.Currency, order.BillingUnit, order.BillingValue, sub.EndAt})
+		if err != nil {
+			return preview, err
+		}
+		sum := sha256.Sum256(token)
+		preview.QuoteFingerprint = hex.EncodeToString(sum[:])
+		return preview, nil
+	}
 	if order.TargetSubscriptionID != nil && order.OrderType != "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now)) {
 		return preview, quoteError("订阅已结束，请续费恢复或新购套餐。")
 	}

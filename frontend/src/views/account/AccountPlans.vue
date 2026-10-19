@@ -51,6 +51,7 @@
                 <small>{{ selectedPlan.slug }}</small>
                 <h3>{{ selectedPlan.name }}</h3>
                 <p>{{ selectedSKU.name }} · {{ billingLabel(selectedSKU) }}</p>
+                <p v-if="operation === 'renew' && quote">按原购买基础价续费，金额以本次报价为准。</p>
                 <p v-if="operation === 'change' && quote">原价 {{ formatCurrency(quote.amount_cents, quote.currency) }} · 抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}</p>
               </div>
               <strong>{{ checkoutPayable == null ? '正在核算…' : formatCurrency(checkoutPayable, selectedSKU.currency) }}</strong>
@@ -357,7 +358,7 @@ const { items: plans, total: planTotal, loading: planLoading, error: planError }
 const detail = useCatalogDetail()
 const { plan: selectedPlan, skus: detailSKUs, selectedSkuId: selectedSKUID, selectedSku: selectedSKU,
   loading: detailLoading, error: detailError, total: skuTotal, offset: skuOffset, limit: skuLimit } = detail
-const needsQuote = computed(() => operation.value === 'change' || operation.value === 'reset')
+const needsQuote = computed(() => operation.value === 'renew' || operation.value === 'change' || operation.value === 'reset')
 const quoteResource = useRemoteResource<OrderPreview | null>({
   initial: () => null,
   fetch: ({ signal }) => previewOrder(selectedSKUID.value, targetSubscriptionID.value, { signal }),

@@ -229,6 +229,16 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(fetchPlanCatalogSKUs).not.toHaveBeenCalled()
     expect(wrapper!.text()).toContain('购买新的订阅')
   })
+  it('shows the server renewal price and binds its confirmation instead of the current SKU price', async () => {
+    vi.mocked(previewOrder).mockResolvedValue({ order_type: 'renewal', amount_cents: 60, payable_amount: 60, credit_amount: 0, currency: 'CNY', time_credit: 0, traffic_credit: 0, traffic_bytes: 100, used_bytes: 1, quote_fingerprint: 'renewal-lock' })
+    await open('/account/plans?operation=renew&subscription=1&plan=1&step=checkout')
+    expect(previewOrder).toHaveBeenCalledWith(1, 1, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('0.60')
+    expect(wrapper!.get('.purchase-checkout__product').text()).toContain('原购买基础价')
+    await wrapper!.findAll('button').find(item => item.text() === '确认创建订单')!.trigger('click')
+    await flushPromises()
+    expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'renewal', targetSubscriptionId: 1, quoteFingerprint: 'renewal-lock', idempotencyKey: expect.any(String) })
+  })
   it('uses the server credit and binds the quote to order creation', async () => {
     await open('/account/plans?operation=change&subscription=1&plan=2&step=checkout')
     expect(previewOrder).toHaveBeenCalledWith(1, 1, expect.objectContaining({ signal: expect.any(AbortSignal) }))

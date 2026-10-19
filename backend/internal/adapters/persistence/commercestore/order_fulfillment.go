@@ -3,6 +3,7 @@ package commercestore
 import (
 	"errors"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -33,7 +34,24 @@ func (s OrderSettlement) setPaid(tx *gorm.DB, order *model.Order, now time.Time)
 	if err := tx.Model(&model.PlanSKUOperation{}).Joins("JOIN plan_skus ON plan_skus.id = plan_sku_operations.plan_sku_id").Where("plan_skus.plan_id = ? AND plan_skus.archived_at IS NULL AND plan_sku_operations.operation = 'renew'", plan.ID).Count(&renewalSKUs).Error; err != nil {
 		return err
 	}
-	policy := entitlements.GrantPolicy{NodeGroupID: plan.NodeGroupID, IsRenewable: plan.IsRenewable && renewalSKUs > 0, RenewalPriceMinor: sku.PriceCents, FamilyLimit: plan.FamilyLimit, ResetPolicy: plan.ResetPolicy, TrafficCalcMode: plan.TrafficCalcMode, MaxActiveSubscriptions: plan.MaxActiveSubscriptions}
+	// The order's base price predates discounts and is immutable after checkout.
+	// A catalog edit while payment is pending cannot change its renewal agreement.
+	renewalPrice := order.AmountCents
+	if order.OrderType == "renewal" && order.TargetSubscriptionID != nil {
+		source, err := renewalPurchase(tx, *order.TargetSubscriptionID, order.UserID, order.PlanID)
+		if err == nil && compatibleRenewalPurchase(source, *order) {
+			renewalPrice = source.AmountCents
+		} else if err != nil {
+			// Already-created legacy orders keep their agreed payment/fulfillment
+			// terms. Missing historical snapshots block new automatic quotes, not
+			// settlement of these existing commercial commitments.
+			var invalid *commerce.ValidationError
+			if !errors.As(err, &invalid) {
+				return err
+			}
+		}
+	}
+	policy := entitlements.GrantPolicy{NodeGroupID: plan.NodeGroupID, IsRenewable: plan.IsRenewable && renewalSKUs > 0, RenewalPriceMinor: renewalPrice, FamilyLimit: plan.FamilyLimit, ResetPolicy: plan.ResetPolicy, TrafficCalcMode: plan.TrafficCalcMode, MaxActiveSubscriptions: plan.MaxActiveSubscriptions}
 	sub, err := entitlementstore.Fulfill(tx, request, policy, s.Issuer, now)
 	if err != nil {
 		if errors.Is(err, entitlements.ErrRenewalWindow) {

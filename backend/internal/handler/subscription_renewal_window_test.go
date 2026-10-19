@@ -32,6 +32,9 @@ func TestExpiredSubscriptionCanRenewWithinSevenDaysAndRecoversItsPeriodAndQuota(
 		t.Fatal(err)
 	}
 	renewed := f.paid(t, f.create(t, paid.SubscriptionID).ID)
+	if renewed.AmountCents != paid.AmountCents || renewed.PaidAmount != paid.AmountCents {
+		t.Fatal("recovery discarded the purchased base price", renewed)
+	}
 	if renewed.SubscriptionID != paid.SubscriptionID {
 		t.Fatal("renewal created another instance")
 	}
@@ -56,7 +59,7 @@ func TestExpiredSubscriptionCanRenewWithinSevenDaysAndRecoversItsPeriodAndQuota(
 	}
 	f.planRecord, f.skuRecord = plan, f.sku(t, plan.ID, 500, "change")
 	quote := previewPricedOrder(t, f, sub.ID)
-	if quote.TrafficCredit != renewed.PaidAmount || quote.CreditAmount < 199 || quote.CreditAmount > 200 || quote.PayableAmount != 500-quote.CreditAmount {
+	if quote.TrafficCredit != renewed.PaidAmount || quote.CreditAmount < renewed.PaidAmount-1 || quote.CreditAmount > renewed.PaidAmount || quote.PayableAmount != 500-quote.CreditAmount {
 		t.Fatal("recovered service reused the ended period's paid value", quote, renewed)
 	}
 }

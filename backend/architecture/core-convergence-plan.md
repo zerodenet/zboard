@@ -105,7 +105,7 @@
 
 验证（Go 1.26.8 / Node 22.23.0 / pnpm 11.9.0，云端，无生产操作）：
 
-- `GOMAXPROCS=2 go test -p 2 ./...` 通过；最终日志 `/tmp/zboard-p1-backend-verified.log`，handler 113.261s。环境驱动的真实 Zero 节点验收未配置，不算通过。
+- `GOMAXPROCS=2 go test -p 2 ./...` 通过；最终日志 `/tmp/zboard-p1-backend-verified.log`，handler 88.422s。环境驱动的真实 Zero 节点验收未配置，不算通过。
 - `ZBOARD_TEST_MYSQL_DSN=<隔离127.0.0.1:33060> GOMAXPROCS=2 go test -p 2 ./internal/datastore ./internal/handler -run MySQL -count=1 -timeout 15m` 通过；`/tmp/zboard-p1-mysql-final.log`，datastore 37.388s、handler 113.261s。包含近期缺表已记账发布字段恢复回归；不是 SQLite 或 DryRun 替代。
 - `go vet -p 2 ./...`、`go build -p 2 -o /tmp/zboard-p1 ./cmd/zboard`、`CGO_ENABLED=0 go test -p 2 ./internal/datastore -run SQLite -count=1` 通过。
 - 前端 frozen/copy 安装、当前 CI 原六项排除 test：871 通过、8 个原有 skip；build 通过。无新增排除。`/tmp/zboard-frontend-p1.log`、`/tmp/zboard-frontend-p1-build.log`。
@@ -113,3 +113,16 @@
 - 依赖代理对部分 Go zip 返回 403；从其真实 Git/GitLab 上游同 tag 获取到工作区缓存，现代 C 模块仅重写 module zip 根路径后由 Go 按原 go.sum 校验成功；仓库 go.mod/go.sum 未改。最初错误测试把业务凭据 active 当交付确认，已修正为核对真实 deployment，未改业务状态语义。
 
 提交对应 `fix: secure payment fact authority and replay across databases`；Draft PR https://github.com/zerodenet/zboard/pull/78。本批关闭 P1 的两个真实缺口，不代表 P2 金融规则或全部真实节点端到端已完成。下一批 P2 优先基础锁价。非整除周期实付余分与跨付费周期锁价两项已提出具体案例，等待业务答复；其他工作继续。余额/优惠协议/失联期限内核能力与 P2–P7 其余差距仍按上表执行。
+
+
+### P2-1 — 原周期基础锁价闭环（2026-10-19）
+
+原购买/最近换购订单的 AmountCents、币种、付费单位与数值作为实际锁价依据；首次折扣与实付保持原字段。报价/创建均使用此依据并生成目标/原单/期限/价格指纹，前端续费入口改为请求并展示服务端报价。履约不再把等待付款期间的目录涨价写成续费基础价；旧已创建订单仍按其原承诺结算，但不覆盖可核实的基础锁价。
+
+专项覆盖：基础 120 元、首次实付 100 元、目录先后涨到 200/300 元，原订阅报价与后续基础保持 120；新独立订阅使用新价；已用/当前额度/原定重置日不被本次提前续费重置，历史基础/优惠/报价/实付不变；报价目标期限变化须重新确认。缺原单依据的旧数据明确拒绝自动报价而不拿现价伪造历史。原币种/周期之外的锁价规则仍待业务答复，相关新自动报价暂返回可解释错误；不重写旧待支付单。
+
+修改：commercestore/renewal_price、order_quote、order_fulfillment，AccountPlans 实际入口与前后端行为测试。无 schema/数据迁移，无批量历史回填；回滚前应保留已创建订单报价并防止旧版本按目录价创建新续费单。原恢复窗口测试原先假定涨价后按现价收 200 分，已改为断言原价 100 分，同时保留“结束周期实付不得重复计入残值”边界；未删除/跳过用例。
+
+验证：完整后端 `go test -p 2 ./...` 通过（`/tmp/zboard-p2-backend-final.log`）；真实 MySQL 8.4 全专项通过（`/tmp/zboard-p2-mysql.log`，datastore 41.527s、handler 121.472s）；锁价 SQLite/MySQL 专项通过。vet/build、CGO=0 SQLite 通过。前端当前 CI 范围 872 通过、8 既有 skip；22 项 AccountPlans 专项及类型检查/生产构建通过；无新增排除。SDK 单独 tidy 无模块差异、test/vet 通过。P1 完整六项 CI 已通过：https://github.com/zerodenet/zboard/actions/runs/39274663770 。本批提交后 CI 另查。
+
+本批只关闭原周期锁价及等待付款涨价缺口；优惠插件、余额、真实周期分摊、换购新期限/余额返还、自助退订、恢复配置、自动续费及 P3–P7 未完成。下一批在不依赖金额分摊决定的范围内固化购买策略快照及增量迁移。
