@@ -349,7 +349,13 @@ func validateAndMigrateProtocolEndpointCredentials(tx *gorm.DB, previous, next m
 			}
 		}
 	}
-	return tx.Model(&model.ProtocolCredential{}).Where("protocol_endpoint_id = ?", next.ID).Updates(map[string]any{"node_id": next.NodeID, "listen_port": next.Port, "public_port": next.PublicPort}).Error
+	updates := map[string]any{"node_id": next.NodeID, "listen_port": next.Port, "public_port": next.PublicPort}
+	if previous.NodeID != next.NodeID {
+		updates["principal_lookup_version"] = 0
+		updates["principal_digest"] = ""
+		updates["secret_principal_digest"] = ""
+	}
+	return tx.Model(&model.ProtocolCredential{}).Where("protocol_endpoint_id = ?", next.ID).Updates(updates).Error
 }
 
 func removedProtocolEndpointMemberships(changes []network.ProtocolEndpointMembershipChange) map[uint]bool {

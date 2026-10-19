@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"gorm.io/gorm"
 )
 
@@ -18,14 +19,17 @@ const protocolPrincipalRandomBytes = 16
 func (credential *ProtocolCredential) BeforeCreate(_ *gorm.DB) error {
 	current := strings.TrimSpace(credential.PrincipalKey)
 	legacy := fmt.Sprintf("subscription:%d:endpoint:%d", credential.SubscriptionID, credential.ProtocolEndpointID)
-	if current != "" && current != legacy {
-		return nil
+
+	if current == "" || current == legacy {
+		key, err := newProtocolPrincipalKey()
+		if err != nil {
+			return err
+		}
+		credential.PrincipalKey = key
 	}
-	key, err := newProtocolPrincipalKey()
-	if err != nil {
-		return err
-	}
-	credential.PrincipalKey = key
+	// Identity normalization precedes derived indexing. A digest calculated by
+	// the caller before this hook could otherwise describe the legacy key.
+	credential.PrincipalDigest = entitlements.RetiredPrincipalHash(credential.NodeID, credential.PrincipalKey)
 	return nil
 }
 

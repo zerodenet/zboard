@@ -40,6 +40,11 @@ func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer enti
 				"expires_at":  subscription.EndAt,
 				"revoked_at":  nil,
 			}
+			if credential.NodeID != endpoint.NodeID {
+				updates["principal_lookup_version"] = 0
+				updates["principal_digest"] = ""
+				updates["secret_principal_digest"] = ""
+			}
 			if err := tx.Model(&credential).Updates(updates).Error; err != nil {
 				return nil, err
 			}
@@ -79,6 +84,8 @@ func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer enti
 			Status:             targetStatus,
 			ExpiresAt:          subscription.EndAt,
 		}
+		credential.SecretPrincipalDigest = entitlements.RetiredPrincipalHash(endpoint.NodeID, secret)
+		credential.PrincipalLookupVersion = 1
 		if err := tx.Create(&credential).Error; err != nil {
 			return nil, err
 		}

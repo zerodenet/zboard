@@ -484,23 +484,26 @@ type SubscriptionTemplateRuleSetBinding struct {
 // Secrets are encrypted at rest; observable events carry only CredentialID and
 // PrincipalKey so a kernel event can be attributed without exposing the secret.
 type ProtocolCredential struct {
-	RetiredPrincipalHash string     `json:"-" gorm:"size:64;not null;default:'';-:migration"`
-	ID                   uint       `json:"id" gorm:"primaryKey"`
-	SubscriptionID       uint       `json:"subscription_id" gorm:"uniqueIndex:ux_protocol_credential_subscription_endpoint,priority:1;index;not null"`
-	UserID               uint       `json:"user_id" gorm:"index;not null"`
-	ProtocolEndpointID   uint       `json:"protocol_endpoint_id" gorm:"uniqueIndex:ux_protocol_credential_subscription_endpoint,priority:2;index;not null"`
-	NodeID               uint       `json:"node_id" gorm:"index;not null"`
-	CredentialID         string     `json:"credential_id" gorm:"size:96;uniqueIndex;not null"`
-	PrincipalKey         string     `json:"principal_key" gorm:"size:128;uniqueIndex;not null"`
-	Secret               string     `json:"-" gorm:"type:text;not null"`
-	ListenPort           int        `json:"listen_port" gorm:"not null"`
-	PublicPort           int        `json:"public_port" gorm:"not null"`
-	Status               string     `json:"status" gorm:"size:20;index;not null;default:active"`
-	ExpiresAt            time.Time  `json:"expires_at" gorm:"index;not null"`
-	LastUsedAt           *time.Time `json:"last_used_at,omitempty"`
-	RevokedAt            *time.Time `json:"revoked_at,omitempty"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	PrincipalDigest        string     `json:"-" gorm:"size:64;not null;default:'';-:migration"`
+	SecretPrincipalDigest  string     `json:"-" gorm:"size:64;not null;default:'';-:migration"`
+	PrincipalLookupVersion uint8      `json:"-" gorm:"not null;default:0;-:migration"`
+	RetiredPrincipalHash   string     `json:"-" gorm:"size:64;not null;default:'';-:migration"`
+	ID                     uint       `json:"id" gorm:"primaryKey"`
+	SubscriptionID         uint       `json:"subscription_id" gorm:"uniqueIndex:ux_protocol_credential_subscription_endpoint,priority:1;index;not null"`
+	UserID                 uint       `json:"user_id" gorm:"index;not null"`
+	ProtocolEndpointID     uint       `json:"protocol_endpoint_id" gorm:"uniqueIndex:ux_protocol_credential_subscription_endpoint,priority:2;index;not null"`
+	NodeID                 uint       `json:"node_id" gorm:"index;not null"`
+	CredentialID           string     `json:"credential_id" gorm:"size:96;uniqueIndex;not null"`
+	PrincipalKey           string     `json:"principal_key" gorm:"size:128;uniqueIndex;not null"`
+	Secret                 string     `json:"-" gorm:"type:text;not null"`
+	ListenPort             int        `json:"listen_port" gorm:"not null"`
+	PublicPort             int        `json:"public_port" gorm:"not null"`
+	Status                 string     `json:"status" gorm:"size:20;index;not null;default:active"`
+	ExpiresAt              time.Time  `json:"expires_at" gorm:"index;not null"`
+	LastUsedAt             *time.Time `json:"last_used_at,omitempty"`
+	RevokedAt              *time.Time `json:"revoked_at,omitempty"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
 // FlowUsage is the idempotent cursor for Zero flow.updated/flow.completed

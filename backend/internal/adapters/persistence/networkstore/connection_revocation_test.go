@@ -246,15 +246,23 @@ func TestConnectionPrincipalMySQLAndSQLiteNeverBecomesSQLParameter(t *testing.T)
 			t.Fatal(err)
 		}
 	}
-	if err := db.Callback().Query().After("gorm:query").Register("test_no_raw_principal_sql", func(query *gorm.DB) {
+	assertNoPrincipal := func(query *gorm.DB) {
 		for _, value := range query.Statement.Vars {
 			if text, ok := value.(string); ok && text == secret {
 				t.Error("raw protocol principal reached SQL parameters")
 			}
 		}
-	}); err != nil {
+	}
+	if err := db.Callback().Query().After("gorm:query").Register("test_no_raw_principal_sql", assertNoPrincipal); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Callback().Row().After("gorm:row").Register("test_no_raw_principal_row", assertNoPrincipal); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Callback().Raw().After("gorm:raw").Register("test_no_raw_principal_exec", assertNoPrincipal); err != nil {
+		t.Fatal(err)
+	}
+
 	called := false
 	forbidden, err := (ConnectionRevocation{DB: db, Cipher: connectionTestCipher{}}).WithRevokedPrincipal(context.Background(), 1, secret, func() error { called = true; return nil })
 	if err != nil || !forbidden || !called {

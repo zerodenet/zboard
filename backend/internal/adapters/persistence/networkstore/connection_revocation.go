@@ -3,6 +3,7 @@ package networkstore
 import (
 	"context"
 	"crypto/subtle"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
@@ -21,34 +22,11 @@ func (s ConnectionRevocation) WithRevokedPrincipal(ctx context.Context, nodeID u
 	if s.DB == nil || nodeID == 0 || principal == "" || close == nil {
 		return false, network.ErrConnectionRevocationPending
 	}
-	// This is authoritative credential inventory, never traffic diagnostics or a
-	// potentially stale online projection. Bound the compatibility secret lookup.
-	var candidates []model.ProtocolCredential
-	// Protocol principals can be raw passwords. Never bind them into SQL:
-	// errors/slow-query logs may interpolate parameters. Match only in memory.
-	if err := s.DB.WithContext(ctx).Where("node_id = ?", nodeID).Order("id").Limit(4097).Find(&candidates).Error; err != nil {
-		return false, err
+	candidate, err := (credentialstore.PrincipalIndex{DB: s.DB, Cipher: s.Cipher}).Lookup(ctx, nodeID, principal)
+	if err != nil {
+		return false, network.ErrConnectionRevocationPending
 	}
 
-	if len(candidates) > 4096 {
-		return false, network.ErrConnectionRevocationPending
-	}
-	var candidate model.ProtocolCredential
-	for _, row := range candidates {
-		if err := ctx.Err(); err != nil {
-			return false, err
-		}
-		if !s.matches(nodeID, principal, row) {
-			continue
-		}
-		if candidate.ID != 0 && candidate.ID != row.ID {
-			return false, network.ErrConnectionRevocationPending
-		}
-		candidate = row
-	}
-	if candidate.ID == 0 {
-		return false, network.ErrConnectionRevocationPending
-	} // Unknown ownership is not complete revocation evidence.
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Commerce, expiry, quota and credential reconciliation use subscription
 		// before credential lock order. Recheck after acquiring both locks.
