@@ -230,3 +230,17 @@ P2-5 最终结果：完整后端 /tmp/zboard-receipt-backend-final.log 通过，
 完整检查结果在本批提交前追加。没有真实外部出款、生产迁移或跨仓库修改。74a059c的CI六项已全部成功：https://github.com/zerodenet/zboard/actions/runs/39294289166 。P2整体仍未完成：真实周期残值、完整换购/退订退款、自动续费及优惠宿主仍须继续；两个收费口径问题未答复，相关算法继续暂停，独立工作继续。P3–P7仍按前置条件推进，不能以本批管理页或新表宣称整体完成。
 
 P2-8提交前验证：完整后端最终源码检查通过（/tmp/zboard-adjustment-backend-final.log，handler178.738s；补入事务清单断言后/tmp/zboard-adjustment-backend-exact.log再次全部通过）。vet/build通过，CGO=0 SQLite5.273s。真实MySQL8.4首轮全量datastore59.843s、handler442.620s（/tmp/zboard-adjustment-mysql.log），新增HTTP/模式恢复双库专项6.975s通过（/tmp/zboard-adjustment-extra-final.log）；包含全部新增专项的第二轮全量仍在运行，结果另记，不把它提前当作通过。同期重叠检查增加了隔离实例负载，上述耗时不能作为容量或性能改进证据。前端原CI范围889通过、8既有skip；补充损坏草稿后的4项专项全部通过；最终类型检查/build19.12s通过。事务归属清单新增真实边界后同步数量11并断言具体commerce标识，复核通过。未增加排除，未修改其他仓库或生产数据。提交/PR/CI随此独立批次记录，暂不预先宣称新head CI通过。
+
+### P1/P3 独立边界补强 — 发布目标摘要不可替换（2026-10-19）
+
+核查发现configuration_publication持久化完成边界仅凭部署ID/运行中状态可接受不同ConfigSHA，未再次校验已持久目标；这是应用能力调用边界的实际缺口，不能依靠健康状态或调用方恰好传对摘要保证。现将单一部署身份下的desired_config_sha256固定：首次持久化后，相同值可幂等重试，不同值拒绝。完成前同时核对数据库目标、调用方冻结目标和已确认结果摘要；任一缺失/不一致均拒绝，且不能写就绪标记、applied摘要、成功状态或节点同步时间。
+
+这是独立交付一致性保护，复用既有原生核验/结果未知先reconcile/持久任务规则；不修改Zero/Connector，不将心跳或健康检查作为目标确认。无schema/数据回填/生产操作。失败仍进入原有未知结果恢复；目标更新应创建新的部署身份，不覆盖未决目标。回退会丢失此额外防护，已有未决交付需核对后再允许旧worker接手。
+
+SQLite存储与真实MySQL应用能力专项均验证：未保存目标时健康不能确认、同目标重复保存、不同目标拒绝替换、错误结果摘要、旧调用方摘要、拒绝时无副作用、正确确认及完成后旧回包拒绝。现有发布/确认丢失/面板重启/队列恢复专项通过。完整检查在提交前追加。
+
+边界仍有缺口：现有端点级readiness并不是逐凭据交付证明，编译期间新增端点/新凭据的精确确认快照和兼容路径仍待P3实施；不能把本次摘要保护宣称为完整P3。实际内核失联授权期限/续期/到期执行能力尚未由公开工件隔离实测证明，不提供假执行保证。P2两项收费决策仍待答复；该独立补强不绕过后续换购/退订/计量跨权益代次的一致性前置要求。
+
+P2-8最后一轮真实MySQL完整检查已通过：/tmp/zboard-adjustment-mysql-final.log，datastore91.640s、handler347.821s，包含全部新增HTTP和schema恢复专项。014a072已推送同一Draft PR78：https://github.com/zerodenet/zboard/pull/78 。其CI run39297631523提交后仍queued，尚不宣称通过。
+
+摘要补强最终验证：/tmp/zboard-config-target-backend.log完整后端通过（handler132.406s），vet/build通过，CGO=0 SQLite4.808s；/tmp/zboard-config-target-mysql.log真实MySQL8.4全量datastore55.204s、handler244.360s通过，新增MySQL目标确认专项2.748s通过。本批没有前端/SDK/OpenAPI/Compose/规则工具改动，沿用前批本地相关验证，新head提交后由现有六项CI再核对。当前014a072 CI已in_progress，非完成状态。

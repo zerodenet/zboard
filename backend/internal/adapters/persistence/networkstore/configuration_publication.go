@@ -102,6 +102,12 @@ func (s ConfigurationPublicationState) SetConfigurationPublicationDesired(ctx co
 		if err != nil {
 			return err
 		}
+		// A deployment identity names one immutable remote configuration intent.
+		// Replaying that intent is safe; replacing its digest would let an old
+		// completion claim a different target after acknowledgement loss.
+		if row.DesiredConfigSHA256 != "" && row.DesiredConfigSHA256 != configSHA {
+			return network.ErrConfigurationDeploymentLost
+		}
 		state, err := lockOrCreateKernelState(tx, deployment.NodeID)
 		if err != nil {
 			return err
@@ -151,6 +157,12 @@ func (s ConfigurationPublicationState) CompleteConfigurationPublication(ctx cont
 		row, err := lockConfigurationDeployment(tx, deployment)
 		if err != nil {
 			return err
+		}
+		// Health and an extant deployment ID do not prove the desired config.
+		// Check both the caller's frozen intent and its reported result before
+		// any readiness, applied-state or node timestamp can be committed.
+		if row.DesiredConfigSHA256 == "" || deployment.DesiredConfigSHA256 != row.DesiredConfigSHA256 || completion.ConfigSHA != row.DesiredConfigSHA256 {
+			return network.ErrConfigurationDeploymentLost
 		}
 		state, err := lockOrCreateKernelState(tx, deployment.NodeID)
 		if err != nil {
