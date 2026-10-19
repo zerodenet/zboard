@@ -32,6 +32,10 @@ func capturePurchaseSnapshot(tx *gorm.DB, order *model.Order, plan model.Plan, s
 		return err
 	}
 	snapshot := commerce.PurchaseSnapshot{Version: 1, BasePriceMinor: order.AmountCents, Currency: order.Currency, BillingUnit: order.BillingUnit, BillingValue: order.BillingValue, RenewalEffect: order.RenewalEffect, Renewable: plan.IsRenewable && renewalSKUs > 0, ResetPolicy: plan.ResetPolicy, TrafficCalcMode: plan.TrafficCalcMode, FamilyLimit: plan.FamilyLimit}
+	snapshot.ValueAllocationModel = "uniform_paid_units_v1"
+	if order.OrderType == "traffic_reset" {
+		snapshot.ValueAllocationModel = "paid_reset_continuity_v1"
+	}
 	if order.OrderType == "renewal" {
 		// Early renewal must not move the existing quota schedule or change the
 		// metering interpretation when a catalog policy was edited meanwhile.
@@ -69,6 +73,15 @@ func applyPurchaseSnapshot(order model.Order, policy entitlements.GrantPolicy) (
 		snapshot.RenewalEffect != order.RenewalEffect ||
 		snapshot.ResetPolicy < 0 || snapshot.ResetPolicy > 5 || snapshot.TrafficCalcMode < 0 || snapshot.TrafficCalcMode > 2 || snapshot.FamilyLimit < 0 {
 		return policy, invalidPurchaseSnapshot()
+	}
+	if raw, present := fields["value_allocation_model"]; present {
+		expected := "uniform_paid_units_v1"
+		if order.OrderType == "traffic_reset" {
+			expected = "paid_reset_continuity_v1"
+		}
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || snapshot.ValueAllocationModel != expected {
+			return policy, invalidPurchaseSnapshot()
+		}
 	}
 	if raw, present := fields["renewal_target"]; present && (bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || snapshot.RenewalTarget == nil || order.OrderType != "renewal" || snapshot.RenewalTarget.EndAt.IsZero()) {
 		return policy, invalidPurchaseSnapshot()

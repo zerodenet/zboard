@@ -119,6 +119,7 @@ type Subscription struct {
 }
 
 type Order struct {
+	EntitlementValueSnapshot   string     `json:"-" gorm:"type:text;not null;default:'';-:migration"`
 	PurchaseSnapshot           string     `json:"-" gorm:"size:2048;not null;default:''"`
 	CreationKey                *string    `json:"-" gorm:"size:64;uniqueIndex"`
 	CreationFingerprint        string     `json:"-" gorm:"size:64;not null;default:''"`

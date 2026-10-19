@@ -3,6 +3,7 @@ package commerce
 import "time"
 
 type Order struct {
+	EntitlementValueSnapshot   string     `json:"-"`
 	PurchaseSnapshot           string     `json:"-"`
 	CreationKey                *string    `json:"-"`
 	CreationFingerprint        string     `json:"-"`

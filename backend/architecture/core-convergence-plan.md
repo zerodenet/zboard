@@ -244,3 +244,19 @@ SQLite存储与真实MySQL应用能力专项均验证：未保存目标时健康
 P2-8最后一轮真实MySQL完整检查已通过：/tmp/zboard-adjustment-mysql-final.log，datastore91.640s、handler347.821s，包含全部新增HTTP和schema恢复专项。014a072已推送同一Draft PR78：https://github.com/zerodenet/zboard/pull/78 。其CI run39297631523提交后仍queued，尚不宣称通过。
 
 摘要补强最终验证：/tmp/zboard-config-target-backend.log完整后端通过（handler132.406s），vet/build通过，CGO=0 SQLite4.808s；/tmp/zboard-config-target-mysql.log真实MySQL8.4全量datastore55.204s、handler244.360s通过，新增MySQL目标确认专项2.748s通过。本批没有前端/SDK/OpenAPI/Compose/规则工具改动，沿用前批本地相关验证，新head提交后由现有六项CI再核对。当前014a072 CI已in_progress，非完成状态。
+
+执行补充：上述两项收费问题已经由用户授权按推荐推进，明确记录在core-convergence-decisions.md“本轮建议细化已获授权”。历史待答复段落保留作为阶段时间记录，不再作为当前阻塞。下一P2批次先保存真实履约起止/实际付款来源及价值证据，再基于这些事实实现周期分摊、重置连续性和完整换购/退订；不得从现价、当前余额或不完整旧订单伪造历史。82da0ff已提交推送，CI run39298492970当前queued。
+
+### P2-9 — 真实履约价值事实与已确认分摊算法（2026-10-19）
+
+新增0042：orders.entitlement_value_snapshot，旧行保持空值表示未知，不从当前套餐或现有订阅补历史。新购买策略在报价/创建时固定value_allocation_model；旧已确认订单缺该字段仍可按原承诺履约，但不伪造均匀分摊。可信支付事实/真实余额扣款和人工标记付款分别记录，人工记录不自动成为已核实现金。零新增付款只记录零现金，旧换购抵扣来源不完整时明确legacy_transfer_unproven，优惠不成为现金依据。
+
+价值快照在现有履约事务内保存真实订单/订阅、实付金额/币种、付款来源可信性、履约前后期限/累计用量/周期基线、实际覆盖的付费区间及分摊约定。复用已有QuotaEvent ID/时间作为权益事务的顺序证据，不按订单创建时间或可能早于锁等待的支付时间猜顺序。FulfillWithPrevious返回实际到期/周期重置处理后的前状态；已有Fulfill调用保持兼容。MySQL datetime(3)以事务内回读的真实落库时间为准，避免Go纳秒与数据库毫秒造成假不一致。快照写入失败，支付事件/独立收据/订单/余额/权益/凭据/额度/发布意图整体回滚；支付重放或目录改价不覆盖事实，HTTP继续隐藏私有快照。
+
+计算层保留原报价Unix秒粒度和整数half-up规则，使用big.Int避免乘法溢出。已确认均匀付费月按累计比例取相邻差额；SplitPaidValue接受明确非均匀实付单元，按实际时间交集分入流量周期，逐来源严格守恒。120元年付10月19日、日历月重置首段419分，13个流量片段仍合计12000分；100分/12期各8或9分。年度月重置90/92元、年度共享24元算例通过，未额外计未来月份。付费重置按旧残值+本次实付重建剩余价值，重置瞬间不二次折损，后续以新基线按时间/流量双约束消耗；多次重置、回退计数拒绝和溢出保护通过。
+
+实际接入范围是新购/续费/重置的持久化事实及计算函数，尚未把新算法接入旧换购/退订结算或新增退款UI。尤其不能以这些算例单测宣称完整换购或退订已完成。下一批以该事实实现统一价值读取/结算、防重复返值身份，并在完整新权益前补齐跨凭据代次计量边界。旧缺失来源、未核实人工付款、非均匀约定缺失等必须给出可解释状态，不能猜零或按现价退款。
+
+验证：完整后端/tmp/zboard-value-capture-backend-ready.log通过（handler116.977s），vet/build通过，CGO=0 SQLite4.299s。真实MySQL8.4全量/tmp/zboard-value-capture-mysql-final.log datastore78.146s、handler296.626s通过；追加的现有额度事件时间只复制同事务既有事实，提交前另做定向实库复核。专项涵盖实际cash/wallet来源、人工付款不伪证、落库时间、提前续费不改用量/重置日、付费重置前后状态、写失败整笔回滚、重放不改事实、重复迁移保留、新库/DDL中断及已记录缺列拒绝。本批无前端/SDK/OpenAPI/部署配置变化；测试夹具的独立修复另批记录。82da0ff的六项CI已全部通过：https://github.com/zerodenet/zboard/actions/runs/39298492970 。无真实用户调账、银行出款或生产迁移。
+
+P2-9提交前最后定向实库复核通过：/tmp/zboard-value-capture-commit-check.log，handler36.586s、commerce0.004s，包含新额度事件ID/时间记录、付款/余额/续费/重置、丢列恢复与整笔回滚。最终完整后端/tmp/zboard-value-capture-backend-ready.log、vet/build已通过；新head CI提交后另核对，不提前宣称成功。隔离节点验收夹具修复不混入此金融事实提交；已保存真实失败结果，后续单独报告。
