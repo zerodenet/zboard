@@ -3410,6 +3410,168 @@ paths:
         "500": { description: "error.code=commerce_persistence_failed; changes and audit roll back together." }
         "409": { $ref: "#/components/responses/Error" }
         "428": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/users/{id}/wallet:
+    get:
+      tags: [admin, orders]
+      operationId: readAdministrativeWallet
+      summary: Read a selected account wallet
+      description: Reads authoritative balances and a bounded ledger page. Every call rechecks the current administrator role. Missing financial evidence is not shown as zero.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: currency, in: query, required: true, schema: { type: string, pattern: '^[A-Z]{3}$' } }
+        - { name: after, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: Administrator-only result; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletPage' }
+        '400': { description: Invalid request or insufficient unreserved funds }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: User or adjustment not found }
+        '409': { description: Conflicting intent or incompatible confirmed payout result }
+        '500': { description: Financial facts unavailable; no partial ledger change acknowledged }
+  /api/v1/admin/wallet-adjustments:
+    get:
+      tags: [admin, orders]
+      operationId: listWalletAdjustments
+      summary: List controlled wallet debits
+      description: Bounded reverse chronological page for one user and currency. External payout observations remain separate from wallet entries.
+      parameters:
+        - { name: user_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: currency, in: query, required: true, schema: { type: string, pattern: '^[A-Z]{3}$' } }
+        - { name: after, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: Administrator-only result; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletAdjustmentPage' }
+        '400': { description: Invalid request or insufficient unreserved funds }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: User or adjustment not found }
+        '409': { description: Conflicting intent or incompatible confirmed payout result }
+        '500': { description: Financial facts unavailable; no partial ledger change acknowledged }
+    post:
+      tags: [admin, orders]
+      operationId: debitAdministrativeWallet
+      summary: Create a ticketed controlled wallet debit
+      description: Atomically decreases only unreserved balance and records amount, reason, current administrator, same-user ticket, ledger identity and audit. Executes no external payout. Identical retries return the original adjustment; changed requests conflict.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WalletDebitRequest' }
+      responses:
+        '200':
+          description: Administrator-only result; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletAdjustment' }
+        '400': { description: Invalid request or insufficient unreserved funds }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: User or adjustment not found }
+        '409': { description: Conflicting intent or incompatible confirmed payout result }
+        '500': { description: Financial facts unavailable; no partial ledger change acknowledged }
+  /api/v1/admin/wallet-adjustments/{id}:
+    get:
+      tags: [admin, orders]
+      operationId: readWalletAdjustment
+      summary: Read a controlled debit and its payout observations
+      description: Includes at most the latest 50 private manual payout observations. No provider credentials or automatic transfer is involved.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Administrator-only result; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletAdjustment' }
+        '400': { description: Invalid request or insufficient unreserved funds }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: User or adjustment not found }
+        '409': { description: Conflicting intent or incompatible confirmed payout result }
+        '500': { description: Financial facts unavailable; no partial ledger change acknowledged }
+  /api/v1/admin/wallet-adjustments/{id}/payout-results:
+    post:
+      tags: [admin, orders]
+      operationId: recordWalletPayoutResult
+      summary: Record a manually verified external payout result
+      description: Records unknown or confirmed succeeded/failed observations without changing wallet balances. Confirmed outcomes require an external reference or supporting note. Conflicting final outcomes are rejected; repeated identical intents are idempotent.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WalletPayoutRequest' }
+      responses:
+        '200':
+          description: Administrator-only result; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletAdjustment' }
+        '400': { description: Invalid request or insufficient unreserved funds }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: User or adjustment not found }
+        '409': { description: Conflicting intent or incompatible confirmed payout result }
+        '500': { description: Financial facts unavailable; no partial ledger change acknowledged }
+  /api/v1/admin/wallet-adjustments/{id}/reverse:
+    post:
+      tags: [admin, orders]
+      operationId: reverseFailedWalletDebit
+      summary: Restore a debit after confirmed external payout failure
+      description: Explicit administrator action restores the exact original debit once. Pending, unknown or successful external outcomes cannot be reversed. Repeated reversals return the original result without new credit.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WalletReversalRequest' }
+      responses:
+        '200':
+          description: Administrator-only result; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletAdjustment' }
+        '400': { description: Invalid request or insufficient unreserved funds }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: User or adjustment not found }
+        '409': { description: Conflicting intent or incompatible confirmed payout result }
+        '500': { description: Financial facts unavailable; no partial ledger change acknowledged }
   /api/v1/account/wallet:
     get:
       tags: [orders]
@@ -8866,4 +9028,67 @@ components:
         reserved_minor: { type: string, pattern: '^[0-9]+$' }
         available_minor: { type: string, pattern: '^[0-9]+$' }
         entries: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/WalletEntry' } }
+        has_more: { type: boolean }
+    WalletDebitRequest:
+      type: object
+      additionalProperties: false
+      required: [user_id, currency, amount_minor, ticket_id, reason, idempotency_key]
+      properties:
+        user_id: { type: integer, minimum: 1 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        amount_minor: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+        ticket_id: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 3, maxLength: 400 }
+        idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
+    WalletPayoutRequest:
+      type: object
+      additionalProperties: false
+      required: [outcome, occurred_at, idempotency_key]
+      properties:
+        outcome: { type: string, enum: [unknown, succeeded, failed] }
+        reference: { type: string, maxLength: 128 }
+        note: { type: string, maxLength: 500 }
+        occurred_at: { type: string, format: date-time }
+        idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
+    WalletReversalRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 400 }
+    WalletPayoutObservation:
+      type: object
+      required: [id, actor_id, outcome, reference, note, occurred_at, created_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        actor_id: { type: integer, minimum: 1 }
+        outcome: { type: string, enum: [unknown, succeeded, failed] }
+        reference: { type: string }
+        note: { type: string }
+        occurred_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+    WalletAdjustment:
+      type: object
+      required: [id, user_id, currency, amount_minor, reason, ticket_id, actor_id, entry_id, external_status, created_at, updated_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        user_id: { type: integer, minimum: 1 }
+        currency: { type: string }
+        amount_minor: { type: string, pattern: '^[0-9]+$' }
+        reason: { type: string }
+        ticket_id: { type: integer, minimum: 1 }
+        actor_id: { type: integer, minimum: 1 }
+        entry_id: { type: integer, minimum: 1 }
+        reversal_entry_id: { type: integer, minimum: 1 }
+        reversal_actor_id: { type: integer, minimum: 1 }
+        reversal_reason: { type: string }
+        external_status: { type: string, enum: [pending, unknown, succeeded, failed] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        results: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/WalletPayoutObservation' } }
+    WalletAdjustmentPage:
+      type: object
+      required: [items, has_more]
+      properties:
+        items: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/WalletAdjustment' } }
         has_more: { type: boolean }

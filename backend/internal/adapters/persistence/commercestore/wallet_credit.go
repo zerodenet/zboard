@@ -22,29 +22,45 @@ func addWalletMinor(value, delta int64) (int64, bool) {
 	}
 	return value + delta, true
 }
+
+type walletEntrySource struct {
+	UserID   uint
+	Currency string
+	OrderID  *uint
+}
+
+func equalWalletOrder(left, right *uint) bool {
+	return (left == nil && right == nil) || (left != nil && right != nil && *left == *right)
+}
 func appendWalletChange(tx *gorm.DB, order model.Order, key, kind, reason string, balanceDelta, reservedDelta int64, now time.Time) (uint, error) {
+	if order.ID == 0 {
+		return 0, commerce.ErrWalletUnavailable
+	}
+	return appendWalletEntry(tx, walletEntrySource{UserID: order.UserID, Currency: order.Currency, OrderID: &order.ID}, key, kind, reason, balanceDelta, reservedDelta, now)
+}
+func appendWalletEntry(tx *gorm.DB, source walletEntrySource, key, kind, reason string, balanceDelta, reservedDelta int64, now time.Time) (uint, error) {
 	if balanceDelta == 0 && reservedDelta == 0 {
 		return 0, commerce.ErrWalletUnavailable
 	}
-	if currency, err := commerce.NormalizeWalletCurrency(order.Currency); err != nil || currency != order.Currency {
+	if currency, err := commerce.NormalizeWalletCurrency(source.Currency); err != nil || currency != source.Currency {
 		return 0, commerce.ErrPaymentFactConflict
 	}
 	// A missing account with a surviving ledger is lost financial evidence;
 	// do not recreate a zero summary before replaying or crediting another fact.
-	if _, err := walletAvailable(tx, order, false); err != nil {
+	if _, err := walletAvailable(tx, source.UserID, source.Currency, false); err != nil {
 		return 0, err
 	}
-	account := model.WalletAccount{UserID: order.UserID, Currency: order.Currency, Revision: 1}
+	account := model.WalletAccount{UserID: source.UserID, Currency: source.Currency, Revision: 1}
 	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&account).Error; err != nil {
 		return 0, err
 	}
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND currency = ?", order.UserID, order.Currency).First(&account).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND currency = ?", source.UserID, source.Currency).First(&account).Error; err != nil {
 		return 0, err
 	}
 	var existing model.WalletEntry
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("entry_key = ?", key).First(&existing).Error
 	if err == nil {
-		if existing.UserID != order.UserID || existing.Currency != order.Currency || existing.BalanceDelta != balanceDelta || existing.ReservedDelta != reservedDelta || existing.Kind != kind || existing.SourceOrderID == nil || *existing.SourceOrderID != order.ID {
+		if existing.UserID != source.UserID || existing.Currency != source.Currency || existing.BalanceDelta != balanceDelta || existing.ReservedDelta != reservedDelta || existing.Kind != kind || !equalWalletOrder(existing.SourceOrderID, source.OrderID) {
 			return 0, commerce.ErrPaymentFactConflict
 		}
 		return existing.ID, nil
@@ -64,10 +80,10 @@ func appendWalletChange(tx *gorm.DB, order model.Order, key, kind, reason string
 	if !ok || reservedAfter > balanceAfter {
 		return 0, commerce.ErrWalletUnavailable
 	}
-	entry := model.WalletEntry{EntryKey: key, UserID: order.UserID, Currency: order.Currency, Kind: kind, BalanceDelta: balanceDelta, ReservedDelta: reservedDelta, BalanceBefore: account.BalanceMinor, BalanceAfter: balanceAfter, ReservedBefore: account.ReservedMinor, ReservedAfter: reservedAfter, SourceOrderID: &order.ID, Reason: reason, CreatedAt: now}
+	entry := model.WalletEntry{EntryKey: key, UserID: source.UserID, Currency: source.Currency, Kind: kind, BalanceDelta: balanceDelta, ReservedDelta: reservedDelta, BalanceBefore: account.BalanceMinor, BalanceAfter: balanceAfter, ReservedBefore: account.ReservedMinor, ReservedAfter: reservedAfter, SourceOrderID: source.OrderID, Reason: reason, CreatedAt: now}
 	if err := tx.Create(&entry).Error; err != nil {
 		return 0, err
 	}
-	err = tx.Model(&model.WalletAccount{}).Where("user_id = ? AND currency = ?", order.UserID, order.Currency).Updates(map[string]any{"balance_minor": entry.BalanceAfter, "reserved_minor": entry.ReservedAfter, "revision": gorm.Expr("revision + 1"), "updated_at": now}).Error
+	err = tx.Model(&model.WalletAccount{}).Where("user_id = ? AND currency = ?", source.UserID, source.Currency).Updates(map[string]any{"balance_minor": entry.BalanceAfter, "reserved_minor": entry.ReservedAfter, "revision": gorm.Expr("revision + 1"), "updated_at": now}).Error
 	return entry.ID, err
 }

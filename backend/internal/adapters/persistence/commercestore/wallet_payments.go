@@ -34,16 +34,16 @@ func findOrderFunding(tx *gorm.DB, order model.Order) (fund model.OrderFunding, 
 	}
 	return fund, true, nil
 }
-func walletAvailable(tx *gorm.DB, order model.Order, lock bool) (int64, error) {
+func walletAvailable(tx *gorm.DB, userID uint, currency string, lock bool) (int64, error) {
 	var account model.WalletAccount
-	query := tx.Where("user_id = ? AND currency = ?", order.UserID, order.Currency)
+	query := tx.Where("user_id = ? AND currency = ?", userID, currency)
 	if lock {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
 	if err := query.First(&account).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			var present struct{ Found int }
-			if err := tx.Model(&model.WalletEntry{}).Where("user_id = ? AND currency = ?", order.UserID, order.Currency).Select("1 AS found").Limit(1).Scan(&present).Error; err != nil {
+			if err := tx.Model(&model.WalletEntry{}).Where("user_id = ? AND currency = ?", userID, currency).Select("1 AS found").Limit(1).Scan(&present).Error; err != nil {
 				return 0, err
 			}
 			if present.Found == 1 {
@@ -59,7 +59,7 @@ func walletAvailable(tx *gorm.DB, order model.Order, lock bool) (int64, error) {
 	return account.BalanceMinor - account.ReservedMinor, nil
 }
 func fundingView(tx *gorm.DB, order model.Order, now time.Time) (out commerce.OrderFundingView, err error) {
-	available, err := walletAvailable(tx, order, false)
+	available, err := walletAvailable(tx, order.UserID, order.Currency, false)
 	if err != nil {
 		return out, err
 	}
@@ -118,7 +118,7 @@ func configureOrderFunding(tx *gorm.DB, order model.Order, in commerce.FundingRe
 	if order.PayableAmount < 0 {
 		return commerce.ErrWalletRange
 	}
-	available, err := walletAvailable(tx, order, true)
+	available, err := walletAvailable(tx, order.UserID, order.Currency, true)
 	if err != nil {
 		return err
 	}

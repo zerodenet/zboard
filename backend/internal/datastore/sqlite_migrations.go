@@ -28,7 +28,7 @@ func databaseModels() []interface{} {
 		&model.PluginAuthorization{}, &model.PluginData{}, &model.PluginMigration{},
 		&model.User{}, &model.ExternalIdentity{}, &model.Installation{}, &model.SystemConfig{}, &model.Announcement{}, &model.AnnouncementRead{},
 		&model.Plan{}, &model.PlanSKU{}, &model.PlanSKUOperation{}, &model.Node{}, &model.NodeGroup{}, &model.ProtocolEndpoint{},
-		&model.NodeGroupEndpoint{}, &model.Subscription{}, &model.SubscriptionMutation{}, &model.Order{}, &model.PaymentEvent{}, &model.WalletAccount{}, &model.WalletEntry{}, &model.PaymentAttempt{}, &model.PaymentReceipt{}, &model.OrderFunding{},
+		&model.NodeGroupEndpoint{}, &model.Subscription{}, &model.SubscriptionMutation{}, &model.Order{}, &model.PaymentEvent{}, &model.WalletAccount{}, &model.WalletEntry{}, &model.PaymentAttempt{}, &model.PaymentReceipt{}, &model.OrderFunding{}, &model.WalletAdjustment{}, &model.WalletPayoutResult{},
 		&model.SubscriptionMember{}, &model.SubscriptionToken{}, &model.SubscriptionTemplate{},
 		&model.SubscriptionRuleSet{}, &model.SubscriptionTemplateRuleSetBinding{}, &model.ProtocolCredential{},
 		&model.FlowUsage{}, &model.TrafficRecord{}, &model.ProtocolEndpointUsageDaily{}, &model.ProtocolEndpointUsageReset{}, &model.AuditLog{}, &model.EmailTemplate{},

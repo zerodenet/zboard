@@ -166,6 +166,11 @@ func assertWalletLostSchema(t *testing.T, f orderFixture) {
 		if err := f.h.db.Migrator().DropConstraint(&model.PaymentReceipt{}, "WalletEntry"); err != nil {
 			t.Fatal(err)
 		}
+		for _, relation := range []string{"Entry", "ReversalEntry"} {
+			if err := f.h.db.Migrator().DropConstraint(&model.WalletAdjustment{}, relation); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	if err := f.h.db.Exec("DROP TABLE wallet_entries").Error; err != nil {
 		t.Fatal(err)
@@ -223,6 +228,11 @@ func assertWalletInterrupted(t *testing.T, f orderFixture, mysql bool) {
 	if !datastore.IsSQLite(f.h.db) {
 		if err := f.h.db.Migrator().DropConstraint(&model.PaymentReceipt{}, "WalletEntry"); err != nil {
 			t.Fatal(err)
+		}
+		for _, relation := range []string{"Entry", "ReversalEntry"} {
+			if err := f.h.db.Migrator().DropConstraint(&model.WalletAdjustment{}, relation); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	if err := f.h.db.Exec("DROP TABLE wallet_entries").Error; err != nil {

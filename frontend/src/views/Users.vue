@@ -59,6 +59,7 @@
           <div><span>更新时间</span><TimeBadge :value="selectedUserDetail.updated_at" /></div>
           <div><span>邮箱验证</span><TimeBadge :value="selectedUserDetail.email_verified_at" /></div>
         </section>
+        <AdminWalletPanel :user-id="selectedUserDetail.id" />
         <PluginSlot name="admin.user.identities" surface="admin" :target-user-id="selectedUserDetail.id" />
         <PluginSlot name="admin.user.actions" surface="admin" :target-user-id="selectedUserDetail.id" />
         <div class="detail-action-row">
@@ -100,6 +101,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createAdminUser, fetchAdminUserDetail, fetchUsersPage, updateAdminUser, type AdminUserDetail, type AdminUserListItem } from '../api/client'
+import AdminWalletPanel from '../components/AdminWalletPanel.vue'
 import DataTable from '../components/DataTable.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'

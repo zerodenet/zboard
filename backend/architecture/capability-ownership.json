@@ -89,6 +89,20 @@
   ],
   "cross_domain_transactions": [
     {
+      "id": "commerce.controlled_wallet_debit",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/wallet_adjustments.go",
+      "symbol": "WalletAdjustments.Debit",
+      "participants": [
+        "commerce",
+        "experience",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback available-balance debit, immutable ledger, same-user ticketed adjustment and audit together; a global request identity prevents duplicate debits. External payout observations do not move money; failed-payout reversal restores the original debit once.",
+      "outbox": "No external payout is executed or queued; manual external observations remain distinct facts."
+    },
+    {
       "id": "commerce.payment_fact_settlement",
       "owner": "commerce",
       "source": "internal/adapters/persistence/commercestore/payment_facts.go",

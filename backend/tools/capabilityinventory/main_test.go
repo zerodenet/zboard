@@ -245,14 +245,21 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 10,
+		"cross_domain_transaction": 11,
 	}
 	counts := map[string]int{}
+	controlledDebit := false
 	for _, row := range rows {
 		counts[row.Kind]++
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.controlled_wallet_debit" && row.Owner == "commerce" {
+			controlledDebit = true
+		}
 		if row.Owner == "unassigned" {
 			t.Errorf("unassigned inventory evidence: %+v", row)
 		}
+	}
+	if !controlledDebit {
+		t.Error("controlled wallet debit lost its commerce transaction ownership")
 	}
 	for kind, expected := range want {
 		if counts[kind] != expected {

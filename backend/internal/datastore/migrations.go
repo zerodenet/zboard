@@ -121,6 +121,9 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
+	if err := preflightWalletAdjustmentSchema(db); err != nil {
+		return err
+	}
 	if err := preflightOrderFundingSchema(db); err != nil {
 		return err
 	}
@@ -143,6 +146,9 @@ func RunMigrations(db *gorm.DB) error {
 		return err
 	}
 	if err := reconcileOrderFundingSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileWalletAdjustmentSchema(db); err != nil {
 		return err
 	}
 	if err := reconcileNodeRetirementSchema(db); err != nil {
@@ -204,6 +210,12 @@ func runMigrations(db *gorm.DB) error {
 		if version == trafficHourlyVersion || version == trafficHourlyApplicationVersion {
 			if err := reconcileMySQLTrafficHourly(db); err != nil {
 				return fmt.Errorf("reconcile migration %s: %w", version, err)
+			}
+			continue
+		}
+		if version == walletAdjustmentSchemaVersion {
+			if err := reconcileWalletAdjustmentSchema(db); err != nil {
+				return err
 			}
 			continue
 		}

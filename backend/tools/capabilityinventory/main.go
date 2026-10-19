@@ -116,6 +116,8 @@ var explicitModelOwners = map[string]string{
 	"WalletEntry":                        "commerce",
 	"PaymentAttempt":                     "commerce",
 	"PaymentReceipt":                     "commerce",
+	"WalletAdjustment":                   "commerce",
+	"WalletPayoutResult":                 "commerce",
 	"OrderFunding":                       "commerce",
 	"Plan":                               "commerce",
 	"PlanSKU":                            "commerce",
@@ -245,6 +247,7 @@ var explicitRoutePrefixes = []struct {
 	{"/api/v1/admin/node-proxy-pools", "network"},
 	{"/api/v1/admin/operation-logs", "observability"},
 	{"/api/v1/admin/orders", "commerce"},
+	{"/api/v1/admin/wallet-adjustments", "commerce"},
 	{"/api/v1/admin/plan-skus", "commerce"},
 	{"/api/v1/admin/plans", "commerce"},
 	{"/api/v1/admin/plugin-market", "extensions"},
@@ -287,6 +290,9 @@ var explicitRoutePrefixes = []struct {
 }
 
 func routeOwner(path string) string {
+	if path == "/api/v1/admin/users/:id/wallet" {
+		return "commerce"
+	}
 	for _, item := range explicitRoutePrefixes {
 		if path == item.Prefix || strings.HasPrefix(path, item.Prefix+"/") {
 			return item.Owner

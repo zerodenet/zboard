@@ -23,23 +23,37 @@ func walletKey(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
 }
-func (s Wallet) Read(ctx context.Context, actor uint, currency string, after uint, limit int) (out commerce.WalletPage, err error) {
+func (s Wallet) Read(ctx context.Context, actor uint, currency string, after uint, limit int) (commerce.WalletPage, error) {
+	return s.readFor(ctx, actor, actor, false, currency, after, limit)
+}
+func (s Wallet) readFor(ctx context.Context, actor, owner uint, admin bool, currency string, after uint, limit int) (out commerce.WalletPage, err error) {
 	out = commerce.WalletPage{Currency: currency, Entries: []commerce.WalletEntry{}}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := orderReader(tx, actor, false); err != nil {
+		if err := orderReader(tx, actor, admin); err != nil {
 			return err
 		}
+		if owner != actor {
+			var user model.User
+			if err := tx.Unscoped().Select("id").First(&user, owner).Error; err != nil {
+				return resourceError(err)
+			}
+		}
 		var account model.WalletAccount
-		err := tx.Where("user_id = ? AND currency = ?", actor, currency).First(&account).Error
+		err := tx.Where("user_id = ? AND currency = ?", owner, currency).First(&account).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		if account.BalanceMinor < 0 || account.ReservedMinor < 0 || account.ReservedMinor > account.BalanceMinor {
 			return commerce.ErrWalletUnavailable
 		}
+		if account.UserID == 0 {
+			if _, err := walletAvailable(tx, owner, currency, false); err != nil {
+				return err
+			}
+		}
 		out.BalanceMinor, out.ReservedMinor, out.AvailableMinor = account.BalanceMinor, account.ReservedMinor, account.BalanceMinor-account.ReservedMinor
 		var entries []model.WalletEntry
-		query := tx.Where("user_id = ? AND currency = ?", actor, currency)
+		query := tx.Where("user_id = ? AND currency = ?", owner, currency)
 		if after != 0 {
 			query = query.Where("id < ?", after)
 		}
