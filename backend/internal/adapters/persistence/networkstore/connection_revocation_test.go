@@ -6,6 +6,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"gorm.io/gorm"
 	"strings"
 	"testing"
 	"time"
@@ -226,5 +227,37 @@ func TestCombinedPublicationMySQLAndSQLiteDoesNotCallConnectionPendingConfigFail
 	}
 	if got := status(); got != "failed" {
 		t.Fatal("front configuration failure was hidden", got)
+	}
+}
+
+func TestConnectionPrincipalMySQLAndSQLiteNeverBecomesSQLParameter(t *testing.T) {
+	db, _ := administrationFixture(t)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	secret := "raw-protocol-password-for-sql-boundary-test"
+	for _, row := range []any{
+		&model.User{ID: 1, Email: "principal-sql@example.test", Password: "hash", Status: "active"},
+		&model.Node{ID: 1, Name: "scope", Config: "{}"}, &model.NodeGroup{ID: 1, Name: "scope", Code: "scope"},
+		&model.Plan{ID: 1, Name: "scope", Slug: "scope", NodeGroupID: 1}, &model.PlanSKU{ID: 1, PlanID: 1, Code: "scope", Name: "scope", BillingUnit: "month", BillingValue: 1, Currency: "CNY"},
+		&model.ProtocolEndpoint{ID: 1, NodeID: 1, Name: "scope", RuntimeKey: "scope", Protocol: "shadowsocks", Address: "test", Port: 443, PublicPort: 443, OptionalConfig: "{}", Tags: "[]"},
+		&model.Subscription{ID: 1, UserID: 1, PlanID: 1, PlanSKUID: 1, NodeGroupID: 1, Status: "canceled", FlowTotal: 100, Config: "{}", StartAt: now.Add(-time.Hour), EndAt: now.Add(-time.Minute)},
+		&model.ProtocolCredential{ID: 1, SubscriptionID: 1, UserID: 1, NodeID: 1, ProtocolEndpointID: 1, CredentialID: "scope", PrincipalKey: "subscription:1:endpoint:1", Secret: "encrypted:" + secret, Status: "revoked", ExpiresAt: now.Add(time.Hour)},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Callback().Query().After("gorm:query").Register("test_no_raw_principal_sql", func(query *gorm.DB) {
+		for _, value := range query.Statement.Vars {
+			if text, ok := value.(string); ok && text == secret {
+				t.Error("raw protocol principal reached SQL parameters")
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	forbidden, err := (ConnectionRevocation{DB: db, Cipher: connectionTestCipher{}}).WithRevokedPrincipal(context.Background(), 1, secret, func() error { called = true; return nil })
+	if err != nil || !forbidden || !called {
+		t.Fatal("owned revoked principal not attributed", forbidden, called, err)
 	}
 }

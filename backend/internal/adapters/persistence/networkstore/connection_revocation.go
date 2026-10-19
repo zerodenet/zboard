@@ -24,13 +24,10 @@ func (s ConnectionRevocation) WithRevokedPrincipal(ctx context.Context, nodeID u
 	// This is authoritative credential inventory, never traffic diagnostics or a
 	// potentially stale online projection. Bound the compatibility secret lookup.
 	var candidates []model.ProtocolCredential
-	if err := s.DB.WithContext(ctx).Where("node_id = ? AND principal_key = ?", nodeID, principal).Limit(2).Find(&candidates).Error; err != nil {
+	// Protocol principals can be raw passwords. Never bind them into SQL:
+	// errors/slow-query logs may interpolate parameters. Match only in memory.
+	if err := s.DB.WithContext(ctx).Where("node_id = ?", nodeID).Order("id").Limit(4097).Find(&candidates).Error; err != nil {
 		return false, err
-	}
-	if len(candidates) == 0 {
-		if err := s.DB.WithContext(ctx).Where("node_id = ?", nodeID).Order("id").Limit(4097).Find(&candidates).Error; err != nil {
-			return false, err
-		}
 	}
 
 	if len(candidates) > 4096 {

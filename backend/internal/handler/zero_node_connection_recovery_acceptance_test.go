@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	cryptossh "golang.org/x/crypto/ssh"
 	"net"
 	"testing"
 	"time"
@@ -40,27 +43,35 @@ func TestRealZeroConnectionVerificationSurvivesPublisherCrash(t *testing.T) {
 	}
 
 	t.Cleanup(restore)
+	run(`/usr/sbin/sshd -T | { flow_test_forbidden=no; while IFS= read -r setting; do case "$setting" in "allowstreamlocalforwarding no") flow_test_forbidden=yes ;; esac; done; test "$flow_test_forbidden" = yes; }`)
+	run("test -S /run/zerodenet/control.sock && /usr/local/bin/zero status --json --socket /run/zerodenet/control.sock >/dev/null")
 
 	node, err := f.h.loadNode(endpoint.NodeID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	probe, _, err := f.h.dialNodeSSH(node)
-	if err != nil {
-		t.Fatal(err)
-	}
-	forwarded, denied := probe.Dial("unix", "/run/zerodenet/control.sock")
-	probe.Close()
-	if denied == nil {
-		forwarded.Close()
-		t.Fatal("native socket forwarding denial was not injected")
-	}
-	sshAddress, _ := realZeroAddresses(t)
-	if conn, err := net.DialTimeout("tcp", sshAddress, time.Second); err != nil {
-		t.Fatal("SSH exec channel must remain reachable", err)
-	} else {
-		conn.Close()
-	}
+	waitRealZero(t, 10*time.Second, "reloaded SSH listener and explicit stream-local denial", func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		probe, _, err := f.h.dialNodeSSHContext(ctx, node)
+		if err != nil {
+			return err
+		}
+		defer probe.Close()
+		stop := context.AfterFunc(ctx, func() { probe.Close() })
+		defer stop()
+		forwarded, denied := probe.Dial("unix", "/run/zerodenet/control.sock")
+		if denied == nil {
+			forwarded.Close()
+			return fmt.Errorf("native socket forwarding denial was not injected")
+		}
+		var channelError *cryptossh.OpenChannelError
+		if !errors.As(denied, &channelError) || (channelError.Reason != cryptossh.Prohibited && channelError.Reason != cryptossh.ConnectionFailed) {
+			return fmt.Errorf("native forwarding did not return a channel-open refusal")
+		}
+		return nil
+	})
+
 	if err := f.h.db.Model(&model.Subscription{}).Where("id = ?", paid.SubscriptionID).Update("end_at", time.Now().Add(-time.Second)).Error; err != nil {
 		t.Fatal(err)
 	}
