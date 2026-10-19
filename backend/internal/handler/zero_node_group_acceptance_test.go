@@ -14,6 +14,7 @@ func TestRealZeroNodeGroupChangeReplacesDataPlaneAccess(t *testing.T) {
 	paid := f.paid(t, f.create(t, 0).ID)
 	control := f.paid(t, f.create(t, 0).ID)
 	oldSecret, controlSecret := realZeroSecret(t, f, paid.SubscriptionID), realZeroSecret(t, f, control.SubscriptionID)
+	initializeRealZeroNode(t, f, oldEndpoint)
 	f.h.StartNodePublishWorker()
 	t.Cleanup(f.h.CloseNodePublishWorker)
 	waitRealZero(t, 90*time.Second, "old group initially usable", func() error { return realZeroEcho(oldSecret) })

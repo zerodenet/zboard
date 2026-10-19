@@ -15,6 +15,7 @@ func TestRealZeroNodeFailedPublicationSurvivesPublisherCrash(t *testing.T) {
 	paid := f.paid(t, f.create(t, 0).ID)
 	control := f.paid(t, f.create(t, 0).ID)
 	secret, controlSecret := realZeroSecret(t, f, paid.SubscriptionID), realZeroSecret(t, f, control.SubscriptionID)
+	initializeRealZeroNode(t, f, endpoint)
 	f.h.StartNodePublishWorker()
 	t.Cleanup(f.h.CloseNodePublishWorker)
 	waitRealZero(t, 90*time.Second, "initial recovery fixture publication", func() error {

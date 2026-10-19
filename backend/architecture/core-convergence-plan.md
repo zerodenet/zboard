@@ -260,3 +260,15 @@ P2-8最后一轮真实MySQL完整检查已通过：/tmp/zboard-adjustment-mysql-
 验证：完整后端/tmp/zboard-value-capture-backend-ready.log通过（handler116.977s），vet/build通过，CGO=0 SQLite4.299s。真实MySQL8.4全量/tmp/zboard-value-capture-mysql-final.log datastore78.146s、handler296.626s通过；追加的现有额度事件时间只复制同事务既有事实，提交前另做定向实库复核。专项涵盖实际cash/wallet来源、人工付款不伪证、落库时间、提前续费不改用量/重置日、付费重置前后状态、写失败整笔回滚、重放不改事实、重复迁移保留、新库/DDL中断及已记录缺列拒绝。本批无前端/SDK/OpenAPI/部署配置变化；测试夹具的独立修复另批记录。82da0ff的六项CI已全部通过：https://github.com/zerodenet/zboard/actions/runs/39298492970 。无真实用户调账、银行出款或生产迁移。
 
 P2-9提交前最后定向实库复核通过：/tmp/zboard-value-capture-commit-check.log，handler36.586s、commerce0.004s，包含新额度事件ID/时间记录、付款/余额/续费/重置、丢列恢复与整笔回滚。最终完整后端/tmp/zboard-value-capture-backend-ready.log、vet/build已通过；新head CI提交后另核对，不提前宣称成功。隔离节点验收夹具修复不混入此金融事实提交；已保存真实失败结果，后续单独报告。
+
+### P1/P3/P7 隔离公开内核验收夹具与真实结果（2026-10-19）
+
+只读取得公开Zero v0.0.3-dev.202610102233（源码71b3db1ff5b01dbb50576b36c6ba6d76922c67c7），Linux musl归档22265565字节，SHA256 bc25696355a09d9a1e9d96879689c8a8d01bf11372331bf51ba051d04389a1ea，解包二进制1f75740f1f5c1fefb7cb3aae219c7cbfe3365bd2dce33f58216a1001dc47268b。发布元数据/大小/摘要与二进制build-info一致；不宣称tag签名已验证。未修改core或任何客户端。
+
+实际执行揭示并修复测试夹具前置问题：云端Docker缓存改用工作区；可选NODE_PROXY_CA_FILE仅接受公开CA证书并校验格式/记录摘要，保持TLS验证，APT索引失败直接失败；代理主机在Docker中用已解析地址（不记录认证值）。测试公钥装入容器后明确root所有权与0600并校验，不关闭OpenSSH StrictModes/主机指纹。隔离/tmp明确允许执行已校验安装工件。夹具通过真实ZBoard安装器初始化事件队列所有权，不假设LastSeen或放宽日常发布守卫。构建保留完整日志；driver失败仍生成passed=false结构结果。退出先停止HTTP接纳并用5秒有界Shutdown完成已接收持久写入，再停节点和spool；保留所有HTTP错误断言，未忽略500。此前强制关闭/先停发送者会取消在途接收，真实发现并保留了失败记录。
+
+真实公开内核的publisher崩溃恢复场景已通过：9a52b1c基础加此批夹具及价值只读扩展的源码清单/测试二进制摘要已记录。停止SSH接入、首次发布失败后杀死真实独立publisher进程，持久generation/attempt保留，替代进程无新业务请求自行恢复。SSH恢复至三次新连接拒绝16.824116757秒，另一独立订阅正向控制持续可用，driver退出0。该数值只属于此隔离场景，不是吞吐/停服SLA。安全结果摘要见validation/2026-10-19-native-publisher-recovery.json；原始证据在云端.codex-local-artifacts/acceptance/zero-revocation-20261019T185608Z-dBmLDM，含测试临时凭据，不提交原始目录。
+
+另一expiry场景仍明确失败：被撤权凭据的新连接拒绝且正向控制可用，约31.628秒后已建立旧连接仍转发12字节。因此不宣称已全部断开、不删除断言或改为skip。只读同工件源码确认crates/api/src/command.rs有flows.close(flow_id)，流记录含auth.principal_key；当前是ZBoard尚未接入原生连接终止和核验的真实缺口。后续需在同一内核连接/运行代次内核对流归属后终止，不能误关其他订阅或全节点重启代替。其余exhaustion/group_change与容量验收未完成，P3/P7未完成。
+
+专项Go发布/原生适配回归通过（/tmp/zboard-native-fixture-regression.log handler14.646s、adapter0.057s），常规RealZero测试只编译且按原隔离环境门槛跳过；实际恢复通过来自上述外部runner，二者分别报告。9a52b1c六项CI已全部通过：https://github.com/zerodenet/zboard/actions/runs/39302953914 。该夹具批次提交后另核对head CI。没有真实用户调账、出款、生产迁移、部署或合并。
