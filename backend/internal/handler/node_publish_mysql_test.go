@@ -83,8 +83,10 @@ func TestMySQLPublishQueueConcurrencyAndRecovery(t *testing.T) {
 	if err := datastore.RunMigrations(h.db); err != nil {
 		t.Fatal(err)
 	}
-	if !h.db.Migrator().HasColumn(&model.NodeConfigPublish{}, "Deferred") {
-		t.Fatal("recreated publication table lost the already-applied capability column")
+	for _, field := range []string{"Deferred", "Reconciling", "Suspended"} {
+		if !h.db.Migrator().HasColumn(&model.NodeConfigPublish{}, field) {
+			t.Fatalf("recreated publication table lost the already-applied column %s", field)
+		}
 	}
 	var node model.Node
 	if err := h.db.First(&node, 1).Error; err != nil || node.Name != "mysql-publish" {
@@ -227,8 +229,13 @@ func TestMySQLPublicationColumnMigrationsRestoreMissingBaselineTables(t *testing
 	if err := datastore.RunMigrations(h.db); err != nil {
 		t.Fatalf("repeated migration failed: %v", err)
 	}
-	if !h.db.Migrator().HasColumn(&model.NetworkEntry{}, "ListenAddress") || !h.db.Migrator().HasColumn(&model.NodeConfigPublish{}, "Deferred") {
-		t.Fatal("current publication columns absent")
+	if !h.db.Migrator().HasColumn(&model.NetworkEntry{}, "ListenAddress") {
+		t.Fatal("current network entry listen column absent")
+	}
+	for _, field := range []string{"Deferred", "Reconciling", "Suspended"} {
+		if !h.db.Migrator().HasColumn(&model.NodeConfigPublish{}, field) {
+			t.Fatalf("current publication column %s absent", field)
+		}
 	}
 	var node model.Node
 	if err := h.db.First(&node, 1).Error; err != nil || node.Name != "preserved-node" {
@@ -236,5 +243,31 @@ func TestMySQLPublicationColumnMigrationsRestoreMissingBaselineTables(t *testing
 	}
 	if err := enqueueNodeConfigPublish(h.db, 1, 0, 0); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMySQLPublicationSchemaReconciliationPreservesOutcomeState(t *testing.T) {
+	h, _ := newMySQLPublishHandlers(t)
+	if err := h.db.Create(&model.Node{ID: 1, Name: "preserved-outcome", Config: "{}"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := enqueueNodeConfigPublish(h.db, 1, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Model(&model.NodeConfigPublish{}).Where("node_id = ?", 1).
+		Updates(map[string]interface{}{"reconciling": true, "suspended": true}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := datastore.RunMigrations(h.db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var pending model.NodeConfigPublish
+	if err := h.db.First(&pending, 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !pending.Reconciling || !pending.Suspended {
+		t.Fatalf("migration changed existing outcome state: %+v", pending)
 	}
 }

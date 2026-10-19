@@ -28,6 +28,8 @@ func ReconcileNodePublishSchema(db *gorm.DB) error {
 		field string
 	}{
 		{&model.NodeConfigPublish{}, "Deferred"},
+		{&model.NodeConfigPublish{}, "Reconciling"},
+		{&model.NodeConfigPublish{}, "Suspended"},
 		{&model.NetworkEntry{}, "ListenAddress"},
 	} {
 		if !db.Migrator().HasColumn(column.model, column.field) {
