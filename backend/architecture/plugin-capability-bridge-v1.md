@@ -32,3 +32,6 @@ parent.postMessage({
 当前不授予管理页面、公共页面、身份 slot 或后台原生进程此能力，也不继承用户管理员角色。后台原生进程主体、受限系统授权及任务关联调用仍待实现；现有私有存储 Unix socket API 保持原范围。
 
 支付插件不能让宿主创建 checkout、承接渠道回调或执行验签。上述流程完全属于插件；需要落账时，插件后端使用用户显式签发且包含 `commerce.payments.record` scope 的外部集成凭据提交已验证事实。该命令不会暴露给 iframe/browser plugin_session。
+
+
+> 2026-10-19：本轮产品决策与 P0–P7 验收以 [核心收敛决策](core-convergence-decisions.md) 和 [实现证据/差距](core-convergence-plan.md) 为准。本文历史阶段与完成记录保留，不代替当前实现验证。

@@ -1666,3 +1666,6 @@ P2 的入口复核守卫扩展到 admin task、node publish、Zero event consume
 另建立真实 0001–0013 旧库样本，保留一条运行中的 Run、Schedule 与旧单 Attempt，再使用正式 `-migrate-only` 入口连续执行两次升级。0014/0015 均只记录一次，旧数据保留，旧 Attempt 回填为序号 1，迁移后可新增序号 2；`job_dispatch_lanes`、`job_dispatch_ready` 与 `job_schedule_planned` 均存在，Run/Schedule 默认回填为 core、UTC、fire_once。由此关闭 P1 的本地真实 MySQL 双连接与升级程序门禁；生产部署仍必须单独备份，并由一个 `-migrate-only` 实例先迁移，不能让蓝绿实例并发争抢非事务 DDL。
 
 P1 代码与真实 MySQL 行为约 99%，剩余生产观察归入 RC/P5；P2 仍约 96%，宿主重启、真实积压容量、P95 与保留策略必须使用 RC 产物验收。支付插件本体不属于本次 RC 前置条件。当前尚未推送、打标签、部署或切换生产服务。
+
+
+> 2026-10-19：本轮产品决策与 P0–P7 验收以 [核心收敛决策](core-convergence-decisions.md) 和 [实现证据/差距](core-convergence-plan.md) 为准。本文历史阶段与完成记录保留，不代替当前实现验证。
