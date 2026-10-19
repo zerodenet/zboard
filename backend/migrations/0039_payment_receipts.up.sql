@@ -1,0 +1,36 @@
+CREATE TABLE payment_attempts (
+ id bigint unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ order_id bigint unsigned NOT NULL,
+ provider varchar(32) NOT NULL,
+ amount_minor bigint NOT NULL,
+ currency varchar(16) NOT NULL,
+ created_at datetime(3) NOT NULL,
+ UNIQUE KEY ux_payment_attempt(order_id,provider),
+ CONSTRAINT fk_payment_attempts_order FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE payment_receipts (
+ receipt_key varchar(64) NOT NULL,
+ id bigint unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ provider varchar(32) NOT NULL,
+ provider_trade_no varchar(128) NOT NULL,
+ order_id bigint unsigned NOT NULL,
+ amount_minor bigint NOT NULL,
+ currency varchar(16) NOT NULL,
+ disposition varchar(32) NOT NULL,
+ wallet_entry_id bigint unsigned DEFAULT NULL,
+ created_at datetime(3) NOT NULL,
+ processed_at datetime(3) NOT NULL,
+ resolved_by bigint unsigned DEFAULT NULL,
+ ticket_id bigint unsigned DEFAULT NULL,
+ resolution_reason varchar(500) NOT NULL DEFAULT '',
+ resolved_at datetime(3) DEFAULT NULL,
+ KEY idx_payment_receipts_resolved_by(resolved_by),
+ KEY idx_payment_receipts_ticket_id(ticket_id),
+ CONSTRAINT fk_payment_receipts_resolver FOREIGN KEY(resolved_by) REFERENCES users(id) ON DELETE RESTRICT,
+ CONSTRAINT fk_payment_receipts_ticket FOREIGN KEY(ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT,
+ UNIQUE KEY idx_payment_receipts_receipt_key(receipt_key),
+ KEY idx_payment_receipts_order_id(order_id),
+ KEY idx_payment_receipts_wallet_entry_id(wallet_entry_id),
+ CONSTRAINT fk_payment_receipts_order FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE RESTRICT,
+ CONSTRAINT fk_payment_receipts_wallet_entry FOREIGN KEY(wallet_entry_id) REFERENCES wallet_entries(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

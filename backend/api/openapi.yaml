@@ -3466,6 +3466,93 @@ paths:
         '401': { description: Authentication required }
         '403': { description: Current active account required }
         '500': { description: Creation unavailable; retry with the same intent }
+  /api/v1/orders/{id}/payment-receipts:
+    get:
+      operationId: readOwnedPaymentReceipts
+      tags: [orders]
+      summary: Read safe cash receipt ownership for an owned order
+      description: Bounded independent cash receipts; excludes raw provider responses and secrets. Administrator reads include normalized provider/trade references and ticketed resolution notes; account reads omit those private fields.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: after, in: query, schema: { type: integer, format: int64, minimum: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: Cash ownership facts, independently of order fulfillment status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/PaymentReceiptPage' }
+        '400': { description: Invalid pagination }
+        '401': { description: Authentication required }
+        '403': { description: Current account or administrator permission required }
+        '404': { description: Unknown or foreign order }
+        '500': { description: Receipt facts unavailable; never interpreted as zero cash }
+  /api/v1/admin/orders/{id}/payment-receipts:
+    get:
+      operationId: readAdminPaymentReceipts
+      tags: [orders]
+      summary: Read safe cash receipt ownership for an order as administrator
+      description: Bounded independent cash receipts; excludes raw provider responses and secrets. Administrator reads include normalized provider/trade references and ticketed resolution notes; account reads omit those private fields.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: after, in: query, schema: { type: integer, format: int64, minimum: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: Cash ownership facts, independently of order fulfillment status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/PaymentReceiptPage' }
+        '400': { description: Invalid pagination }
+        '401': { description: Authentication required }
+        '403': { description: Current account or administrator permission required }
+        '404': { description: Unknown or foreign order }
+        '500': { description: Receipt facts unavailable; never interpreted as zero cash }
+  /api/v1/admin/orders/{id}/payment-receipts/resolve:
+    post:
+      operationId: resolvePaymentReceipt
+      tags: [orders]
+      summary: Resolve a legacy cash receipt using a same-owner support ticket
+      description: Current administrator only. Exactly-once receipt disposition, ledger credit and audit share a transaction. Only review_required receipts can be resolved. Identical retries return the original result; changed decisions conflict. Does not revive or alter subscription entitlements, delete evidence, or send money outside the panel.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [receipt_id, ticket_id, decision, reason]
+              properties:
+                receipt_id: { type: integer, format: int64, minimum: 1 }
+                ticket_id: { type: integer, format: int64, minimum: 1 }
+                decision: { type: string, enum: [credit_wallet, already_applied] }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        '200':
+          description: Resolved receipt and optional immutable wallet entry reference
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/PaymentReceiptSummary' }
+        '400': { description: Invalid input or ticket ownership }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator required }
+        '404': { description: Unknown order or receipt }
+        '409': { description: Receipt already applied or conflicting resolution }
+        '500': { description: No partial receipt or ledger commit; retry the same decision }
   /api/v1/orders:
     get:
       tags:
@@ -8534,6 +8621,26 @@ components:
         note: { type: string, minLength: 1, maxLength: 500 }
         quote_fingerprint: { type: string, description: "Quote assertion from the administrator preview." }
         request_id: { type: string, format: uuid, description: "Nonzero UUID, unique per administrator operation. Reuse only to retry an identical payload." }
+    PaymentReceiptSummary:
+      type: object
+      required: [id, amount_minor, currency, disposition, created_at]
+      properties:
+        provider: { type: string, maxLength: 32, description: Administrator-only stable channel authority identity }
+        provider_trade_no: { type: string, maxLength: 128, description: Administrator-only normalized trade reference for reconciliation; never a raw callback or credential }
+        id: { type: integer, format: int64 }
+        amount_minor: { type: string, pattern: '^[0-9]+$', description: Exact currency minor units }
+        currency: { type: string }
+        disposition: { type: string, enum: [fulfilled, wallet_topup, wallet_credit, legacy_applied, review_required] }
+        wallet_entry_id: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+        ticket_id: { type: integer, format: int64, description: Administrator-only resolution ticket }
+        resolution_reason: { type: string, description: Administrator-only reconciliation basis }
+    PaymentReceiptPage:
+      type: object
+      required: [items, has_more]
+      properties:
+        items: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/PaymentReceiptSummary' } }
+        has_more: { type: boolean }
     OrderPreview:
       type: object
       properties:

@@ -35,6 +35,7 @@
         </div>
       </UiSection>
     </div>
+    <PaymentReceipts v-if="order" :order-id="order.id" @changed="load" />
   </section>
 </template>
 
@@ -50,6 +51,7 @@ import UiButton from '../../components/UiButton.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import TimeBadge from '../../components/TimeBadge.vue'
 import CheckoutPayment from '../../plugins/CheckoutPayment.vue'
+import PaymentReceipts from '../../components/PaymentReceipts.vue'
 import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/format'
 
 const route = useRoute()

@@ -12,7 +12,7 @@ async function open(path = '/account/orders/27') {
     { path: '/account/orders', component: { template: '<div />' } },
   ] })
   await router.push(path); await router.isReady()
-  const wrapper = mount(AccountOrderDetail, { global: { plugins: [router], stubs: { CheckoutPayment: true } } })
+  const wrapper = mount(AccountOrderDetail, { global: { plugins: [router], stubs: { CheckoutPayment: true, PaymentReceipts: true } } })
   await flushPromises()
   return { wrapper, router }
 }

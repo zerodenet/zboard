@@ -114,6 +114,8 @@ var explicitModelOwners = map[string]string{
 	"PaymentEvent":                       "commerce",
 	"WalletAccount":                      "commerce",
 	"WalletEntry":                        "commerce",
+	"PaymentAttempt":                     "commerce",
+	"PaymentReceipt":                     "commerce",
 	"Plan":                               "commerce",
 	"PlanSKU":                            "commerce",
 	"PlanSKUOperation":                   "commerce",

@@ -64,6 +64,7 @@
           <div><span>履约时间</span><TimeBadge :value="selectedOrder.fulfilled_at" /></div>
           <div><span>更新时间</span><TimeBadge :value="selectedOrder.updated_at" /></div>
         </section>
+        <PaymentReceipts :order-id="selectedOrder.id" admin @changed="detailResource.load()" />
         <section class="payment-events stack" aria-label="支付事件时间线">
           <header class="detail-section-header"><div><h3>支付事件</h3><p>仅展示规范化事件摘要；回调原文不会进入前端。</p></div><span>{{ paymentEventTotal }}</span></header>
           <PageAlert v-if="paymentEventError" tone="danger" title="支付事件加载失败">{{ paymentEventError }}</PageAlert>
@@ -91,6 +92,7 @@
 </template>
 
 <script setup lang="ts">
+import PaymentReceipts from '../components/PaymentReceipts.vue'
 import AdminOrderAssignmentDialog from '../components/AdminOrderAssignmentDialog.vue'
 import TableText from '../components/TableText.vue'
 import { computed, onMounted, ref, watch } from 'vue'

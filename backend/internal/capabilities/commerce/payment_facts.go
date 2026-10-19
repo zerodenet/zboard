@@ -13,6 +13,7 @@ type PaymentFactAuthority struct {
 	AccountID            uint
 	Provider             string
 	RequireAdministrator bool
+	RequireAttempt       bool
 }
 
 type PaymentFact struct {
@@ -26,9 +27,10 @@ type PaymentFact struct {
 }
 
 type PaymentFactResult struct {
-	OrderID   uint   `json:"order_id"`
-	Status    string `json:"status"`
-	Fulfilled bool   `json:"fulfilled"`
+	OrderID     uint   `json:"order_id"`
+	Status      string `json:"status"`
+	Fulfilled   bool   `json:"fulfilled"`
+	Disposition string `json:"disposition,omitempty"`
 }
 
 type PaymentFactRepository interface {

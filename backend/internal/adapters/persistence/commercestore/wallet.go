@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"time"
 
@@ -110,34 +109,6 @@ func creditTopUp(tx *gorm.DB, order model.Order, now time.Time) error {
 	if _, err := commerce.NormalizeWalletCurrency(order.Currency); err != nil {
 		return err
 	}
-	key := walletKey("topup-order:" + strconv.FormatUint(uint64(order.ID), 10))
-	account := model.WalletAccount{UserID: order.UserID, Currency: order.Currency, Revision: 1}
-	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&account).Error; err != nil {
-		return err
-	}
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND currency = ?", order.UserID, order.Currency).First(&account).Error; err != nil {
-		return err
-	}
-	var existing model.WalletEntry
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("entry_key = ?", key).First(&existing).Error
-	if err == nil {
-		if existing.UserID != order.UserID || existing.Currency != order.Currency || existing.BalanceDelta != order.PayableAmount || existing.Kind != "topup" {
-			return commerce.ErrPaymentFactConflict
-		}
-		return nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
-	}
-	if account.BalanceMinor < 0 || account.ReservedMinor < 0 || account.ReservedMinor > account.BalanceMinor {
-		return commerce.ErrWalletUnavailable
-	}
-	if account.BalanceMinor > math.MaxInt64-order.PayableAmount {
-		return commerce.ErrWalletRange
-	}
-	entry := model.WalletEntry{EntryKey: key, UserID: order.UserID, Currency: order.Currency, Kind: "topup", BalanceDelta: order.PayableAmount, BalanceBefore: account.BalanceMinor, BalanceAfter: account.BalanceMinor + order.PayableAmount, ReservedBefore: account.ReservedMinor, ReservedAfter: account.ReservedMinor, SourceOrderID: &order.ID, Reason: "已核验的渠道充值入账", CreatedAt: now}
-	if err := tx.Create(&entry).Error; err != nil {
-		return err
-	}
-	return tx.Model(&model.WalletAccount{}).Where("user_id = ? AND currency = ?", order.UserID, order.Currency).Updates(map[string]any{"balance_minor": entry.BalanceAfter, "revision": gorm.Expr("revision + 1"), "updated_at": now}).Error
+	_, err := appendWalletCredit(tx, order, walletKey("topup-order:"+strconv.FormatUint(uint64(order.ID), 10)), "topup", "已核验的渠道充值入账", order.PayableAmount, now)
+	return err
 }

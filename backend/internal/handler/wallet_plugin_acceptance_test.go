@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,6 +18,11 @@ import (
 )
 
 func TestOrdinaryAccountTopUpUsesSignedNativePaymentPlugin(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("canceled=%v", canceled), func(t *testing.T) { assertOrdinaryNativeTopUp(t, canceled) })
+	}
+}
+func assertOrdinaryNativeTopUp(t *testing.T, canceled bool) {
 	f := newOrderFixture(t)
 	if err := f.h.db.Model(&model.User{}).Where("id = ?", 1).Update("is_admin", false).Error; err != nil {
 		t.Fatal(err)
@@ -66,6 +72,11 @@ func TestOrdinaryAccountTopUpUsesSignedNativePaymentPlugin(t *testing.T) {
 	}
 	if _, err := manager.SessionCheckoutAction(t.Context(), session.Token, 1, false, order.ID, "mock.prepare", json.RawMessage(`{}`)); err != nil {
 		t.Fatal(err)
+	}
+	if canceled {
+		if _, err := f.h.services.OrderCancellation.Owned(t.Context(), 1, order.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for i := 0; i < 2; i++ {
 		result, err := manager.SessionCheckoutAction(t.Context(), session.Token, 1, false, order.ID, "mock.reconcile", json.RawMessage(`{}`))

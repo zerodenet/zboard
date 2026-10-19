@@ -74,7 +74,7 @@ func assertPaymentIntegrationTrust(t *testing.T, f orderFixture) {
 	if invoke.Code != http.StatusUnauthorized {
 		t.Fatalf("ordinary fact accepted: %d %s", invoke.Code, invoke.Body.String())
 	}
-	for _, table := range []string{"payment_events", "subscriptions", "protocol_credentials", "node_config_publishes"} {
+	for _, table := range []string{"payment_events", "payment_receipts", "subscriptions", "protocol_credentials", "node_config_publishes"} {
 		var count int64
 		if err := f.h.db.Table(table).Count(&count).Error; err != nil || count != 0 {
 			t.Fatalf("denial changed %s: %d %v", table, count, err)
@@ -121,7 +121,7 @@ func assertPaymentFactRecovery(t *testing.T, f orderFixture, mysql bool) {
 	if out := invoke(); out.Code != http.StatusInternalServerError {
 		t.Fatalf("outbox failure: %d %s", out.Code, out.Body.String())
 	}
-	for _, table := range []string{"payment_events", "subscriptions", "protocol_credentials", "quota_events", "node_config_publishes"} {
+	for _, table := range []string{"payment_events", "payment_receipts", "subscriptions", "protocol_credentials", "quota_events", "node_config_publishes"} {
 		var count int64
 		if err := f.h.db.Table(table).Count(&count).Error; err != nil || count != 0 {
 			t.Fatalf("failed transaction committed %s: %d %v", table, count, err)
@@ -152,7 +152,7 @@ func assertPaymentFactRecovery(t *testing.T, f orderFixture, mysql bool) {
 			t.Fatalf("changed replay accepted: %d %s", out.Code, out.Body.String())
 		}
 	}
-	for _, table := range []string{"payment_events", "subscriptions", "protocol_credentials", "quota_events", "node_config_publishes"} {
+	for _, table := range []string{"payment_events", "payment_receipts", "subscriptions", "protocol_credentials", "quota_events", "node_config_publishes"} {
 		var count int64
 		if err := f.h.db.Table(table).Count(&count).Error; err != nil || count != 1 {
 			t.Fatalf("replay duplicated %s: %d %v", table, count, err)

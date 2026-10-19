@@ -160,6 +160,13 @@ func TestMySQLWalletSchemaRefusesLostFinancialEvidence(t *testing.T) {
 }
 func assertWalletLostSchema(t *testing.T, f orderFixture) {
 	t.Helper()
+	// Inject physical ledger loss in this isolated test database. MySQL
+	// otherwise correctly prevents dropping the referenced financial table.
+	if !datastore.IsSQLite(f.h.db) {
+		if err := f.h.db.Migrator().DropConstraint(&model.PaymentReceipt{}, "WalletEntry"); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := f.h.db.Exec("DROP TABLE wallet_entries").Error; err != nil {
 		t.Fatal(err)
 	}
@@ -210,6 +217,13 @@ func assertWalletInterrupted(t *testing.T, f orderFixture, mysql bool) {
 	original := f.create(t, 0)
 	if err := f.h.db.Exec("DELETE FROM schema_migrations WHERE version = ?", "0038_wallet_topups.up.sql").Error; err != nil {
 		t.Fatal(err)
+	}
+	// Inject physical ledger loss in this isolated test database. MySQL
+	// otherwise correctly prevents dropping the referenced financial table.
+	if !datastore.IsSQLite(f.h.db) {
+		if err := f.h.db.Migrator().DropConstraint(&model.PaymentReceipt{}, "WalletEntry"); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := f.h.db.Exec("DROP TABLE wallet_entries").Error; err != nil {
 		t.Fatal(err)
