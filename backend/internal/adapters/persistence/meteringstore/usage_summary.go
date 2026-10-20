@@ -24,6 +24,9 @@ func (s UsageSummary) Read(ctx context.Context, actor uint, q metering.UsageSumm
 		read = s.DB
 	}
 	err := read.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := EnsureHourlyUsageReady(tx, TrafficScope{UserID: q.UserID}, time.Time{}, time.Time{}); err != nil {
+			return err
+		}
 		scope := func(query *gorm.DB) *gorm.DB {
 			if q.UserID > 0 {
 				return query.Where("user_id = ?", q.UserID)
@@ -31,7 +34,7 @@ func (s UsageSummary) Read(ctx context.Context, actor uint, q metering.UsageSumm
 			return query
 		}
 		// Both windows contain whole UTC hours, including the open hour. The
-		// projection is updated in the accounting transaction, so it includes
+		// projection has no unprocessed fact in this snapshot, so it includes
 		// newly committed and late-arriving usage without scanning the ledger.
 		// Preserve the existing unbounded upper edge (including future records).
 		var usage struct{ TotalUsedBytes, UsedBytesToday int64 }

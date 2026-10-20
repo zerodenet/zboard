@@ -24,7 +24,7 @@ func (l *usageProjectionSQLCount) Trace(context.Context, time.Time, func() (stri
 	}
 }
 
-// Reproduce with -benchtime=1x -count=5. This measures only one daily recovery
+// Reproduce with -benchtime=1x -count=5. This measures one hourly/daily recovery
 // batch on local SQLite, not event acceptance, billing, HTTP or capacity. Fixture
 // insertion is outside the timer; SQL excludes driver BEGIN/COMMIT calls.
 func BenchmarkUsageProjectionRecovery200(b *testing.B) {
@@ -65,6 +65,9 @@ func BenchmarkUsageProjectionRecovery200(b *testing.B) {
 		Records int64
 	}
 	if err := db.Model(&model.ProtocolEndpointUsageDaily{}).Select("SUM(used_bytes) AS used, SUM(record_count) AS records").Scan(&usage).Error; err != nil || usage.Used != int64(b.N)*2200 || usage.Records != int64(b.N)*200 {
+		b.Fatal(usage, err)
+	}
+	if err := db.Table("traffic_usage_hourly").Select("SUM(used_bytes) AS used, SUM(record_count) AS records").Scan(&usage).Error; err != nil || usage.Used != int64(b.N)*2200 || usage.Records != int64(b.N)*200 {
 		b.Fatal(usage, err)
 	}
 	b.ReportMetric(float64(trace.count)/float64(b.N), "SQL/batch")

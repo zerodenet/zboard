@@ -5278,6 +5278,12 @@ paths:
                         anyOf:
                           - $ref: "#/components/schemas/TrafficSummary"
                           - $ref: "#/components/schemas/TrafficQuota"
+        "503":
+          description: Hourly statistics are still updating; error.code is usage_projection_pending. Current quota remains available with view=quota.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
   /api/v1/admin/traffic/summary:
     get:
       tags: [traffic, admin]
@@ -5288,6 +5294,12 @@ paths:
       responses:
         "200": { description: Administrative traffic summary }
         "403": { $ref: "#/components/responses/Error" }
+        "503":
+          description: Hourly statistics are still updating; error.code is usage_projection_pending. Current quota remains available with view=quota.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
   /api/v1/traffic/records:
     get:
       tags:
@@ -5332,6 +5344,12 @@ paths:
                           - $ref: "#/components/schemas/TrafficUsagePage"
                           - $ref: "#/components/schemas/TrafficUsageStatistics"
                           - $ref: "#/components/schemas/TrafficBreakdown"
+        "503":
+          description: Hourly statistics are still updating; error.code is usage_projection_pending. No complete statistics value is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
   /api/v1/admin/traffic/records:
     get:
       tags: [traffic, admin]
@@ -5370,6 +5388,12 @@ paths:
                           - $ref: "#/components/schemas/TrafficUsageStatistics"
                           - $ref: "#/components/schemas/TrafficBreakdown"
         "403": { $ref: "#/components/responses/Error" }
+        "503":
+          description: Hourly statistics are still updating; error.code is usage_projection_pending. No complete statistics value is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
   /api/v1/traffic/reconciliation:
     get:
       tags:
@@ -5560,6 +5584,12 @@ paths:
         '401': {description: Authentication required}
         '403': {description: Administrator required}
         '504': {description: Read budget exceeded; error.code is deadline_exceeded}
+        "503":
+          description: Hourly statistics are still updating; error.code is usage_projection_pending. Current business state and revenue trend remain available through their independent views.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
   /api/v1/admin/dashboard/traffic-rankings:
     get:
       tags: [admin]
@@ -5580,6 +5610,12 @@ paths:
         '400': {description: Invalid range}
         '401': {description: Authentication required}
         '403': {description: Administrator required}
+        "503":
+          description: Hourly statistics are still updating; error.code is usage_projection_pending. No complete statistics value is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
   /api/v1/admin/audit-logs:
     get:
       tags:

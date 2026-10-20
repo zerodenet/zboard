@@ -1,6 +1,7 @@
 package datastore_test
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -243,6 +244,9 @@ func verifyHourlyAccounting(t *testing.T, db *gorm.DB) {
 	}
 	if err := db.Transaction(write); err != nil {
 		t.Fatal(err)
+	}
+	if count, err := (meteringstore.UsageProjectionWorker{DB: db}).Drain(context.Background(), 200); err != nil || count != 2 {
+		t.Fatal(count, err)
 	}
 	assertHourlyTotals(t, db, 5, 156, 62, 94, 94)
 	// A duplicate fails before the projection; the transaction cannot add twice.

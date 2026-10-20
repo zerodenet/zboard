@@ -40,6 +40,7 @@ func TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries(t *testing.T)
 			}); err != nil {
 				t.Fatal(err)
 			}
+			drainUsageProjections(t, h.db)
 			out, err := h.services.TrafficTrends(nil).Read(context.Background(), credential.UserID, q)
 			if err != nil || len(out.Snapshot.Points) != q.Days {
 				t.Fatalf("calendar: %+v: %v", out, err)

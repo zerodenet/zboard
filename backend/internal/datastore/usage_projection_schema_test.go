@@ -30,7 +30,7 @@ func TestSQLiteUsageProjectionSchemaPreservesInterruptedQueueAndRefusesLostSourc
 		t.Fatal(err)
 	}
 	pending := model.MeteringUsageProjectionPending{TrafficRecordID: 1, ProtocolEndpointID: 7, CreatedAt: time.Now().UTC()}
-	if err := db.Create(&pending).Error; err != nil {
+	if err := db.Omit("HourlyPending", "UserID", "SubscriptionID", "NodeID", "RecordAt").Create(&pending).Error; err != nil {
 		t.Fatal(err)
 	}
 	// Simulate MySQL-style interruption after DDL but before the version mark.

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"gorm.io/gorm/logger"
 )
 
@@ -27,6 +28,9 @@ func BenchmarkTrafficReportingAggregation(b *testing.B) {
 INSERT INTO traffic_records(user_id,subscription_id,node_id,report_id,nonce,used_bytes,raw_bytes,record_at)
 SELECT i%2+1, i%2+1, 1, CAST(i AS TEXT), CAST(i AS TEXT), 1000, 1200,
 datetime(?, '+' || CAST(i*604800/100000 AS INTEGER) || ' seconds') || '.001' FROM samples`, from.Format("2006-01-02 15:04:05")).Error; err != nil {
+		b.Fatal(err)
+	}
+	if err := db.Transaction(datastore.RebuildTrafficHourly); err != nil {
 		b.Fatal(err)
 	}
 	var buckets int64

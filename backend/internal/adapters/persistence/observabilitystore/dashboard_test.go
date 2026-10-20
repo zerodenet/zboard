@@ -26,7 +26,7 @@ func (l *dashboardQueryCounter) Trace(ctx context.Context, begin time.Time, fc f
 	l.Interface.Trace(ctx, begin, fc, err)
 }
 
-func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
+func TestDashboardProjectionPreservesFactsAndBoundedPendingChecks(t *testing.T) {
 	db, err := datastore.OpenWithDriver(datastore.DriverSQLite, filepath.Join(t.TempDir(), "dashboard.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +84,9 @@ func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err := db.Transaction(datastore.RebuildTrafficHourly); err != nil {
+		t.Fatal(err)
+	}
 	counter := &dashboardQueryCounter{Interface: db.Config.Logger}
 	counted := db.Session(&gorm.Session{Logger: counter})
 	period := observability.DashboardPeriod{Range: "today", From: now.Add(-2 * time.Hour), To: now, PreviousFrom: now.Add(-26 * time.Hour), PreviousTo: now.Add(-24 * time.Hour), Bucket: "hour", Timezone: "UTC"}
@@ -95,8 +98,8 @@ func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
 	if result.Business.NewUsers != 1 || result.Business.PreviousNewUsers != 0 || result.Business.PreviousRenewOrders != 1 {
 		t.Fatalf("comparison facts = %+v", result.Business)
 	}
-	if got := counter.queries.Load(); got != 4 {
-		t.Fatalf("dashboard used %d queries, want 4", got)
+	if got := counter.queries.Load(); got != 6 {
+		t.Fatalf("dashboard used %d queries, want 4 aggregates and 2 indexed pending probes", got)
 	}
 	if result.Business.RevenueCents != 120 || result.Business.PreviousRevenueCents != 70 || result.Business.PaidOrders != 1 || !result.Business.MixedCurrency {
 		t.Fatalf("business = %+v", result.Business)
@@ -136,7 +139,7 @@ func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
 			if focused.Business != want || focused.Service.TrafficBytes != result.Service.TrafficBytes || focused.Service.PreviousTrafficBytes != result.Service.PreviousTrafficBytes {
 				t.Fatalf("statistics changed: %+v", focused)
 			}
-			if counter.queries.Load() != 3 {
+			if counter.queries.Load() != 5 {
 				t.Fatalf("statistics queries=%d", counter.queries.Load())
 			}
 		case "trend":

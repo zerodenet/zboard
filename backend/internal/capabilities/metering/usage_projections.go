@@ -1,8 +1,13 @@
 package metering
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
-// UsageProjections advances auxiliary daily statistics after authoritative
+var ErrUsageProjectionPending = errors.New("流量统计正在更新，已结算用量和当前配额不受影响，请稍后重试统计查询。")
+
+// UsageProjections advances auxiliary hourly/daily statistics after authoritative
 // metering facts and their durable projection intents have committed.
 type UsageProjections struct{ Repository UsageProjectionRepository }
 

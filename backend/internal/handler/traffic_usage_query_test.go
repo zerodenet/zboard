@@ -45,6 +45,7 @@ func (f trafficReadFixture) seedUsage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	rebuildFixtureHourly(t, f.h.db)
 }
 
 func TestTrafficUsageCursorPreservesCompleteBucketAndScope(t *testing.T) {

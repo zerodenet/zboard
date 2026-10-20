@@ -40,6 +40,7 @@ func checkTrafficSummaryProjection(t *testing.T, h *handlers, credential model.P
 	h.services.SetTrafficReadDatabaseForTest(read.Session(&gorm.Session{Logger: trace}))
 	assert := func(total, today int64) {
 		t.Helper()
+		drainUsageProjections(t, h.db)
 		trace.queries = nil
 		out, err := h.services.UsageSummary().Read(context.Background(), subscription.UserID, metering.UsageSummaryQuery{})
 		if err != nil || out.TotalUsedBytes != total || out.UsedBytesToday != today || out.RemainingBytes != subscription.FlowTotal-total {
@@ -60,7 +61,7 @@ func checkTrafficSummaryProjection(t *testing.T, h *handlers, credential model.P
 	}
 	assert(0, 0)
 	ctx := context.Background()
-	// The open UTC hour is visible as soon as the accounting batch commits.
+	// The open UTC hour is visible after the independent worker commits.
 	current := accountingBenchmarkEvents(credential, 0, 32)
 	if err := h.projectZeroNodeEvents(ctx, current); err != nil {
 		t.Fatal(err)
@@ -70,7 +71,7 @@ func checkTrafficSummaryProjection(t *testing.T, h *handlers, credential model.P
 		t.Fatal(err)
 	}
 	assert(960, 960)
-	// Late delivery updates its historical bucket without waiting for a job.
+	// Late delivery updates its historical bucket through the same worker.
 	late := accountingBenchmarkEvents(credential, 1, 32)
 	for i := range late {
 		late[i].OccurredAt = time.Now().UTC().Truncate(24 * time.Hour).Add(-time.Hour)
@@ -139,6 +140,7 @@ func TestTrafficSummarySnapshotDoesNotBlockOrMixConcurrentSettlement(t *testing.
 	if err := f.h.db.Create(&record).Error; err != nil {
 		t.Fatal(err)
 	}
+	rebuildFixtureHourly(t, f.h.db)
 	closeRead, err := f.h.ConfigureTrafficReads()
 	if err != nil {
 		t.Fatal(err)
@@ -153,7 +155,10 @@ func TestTrafficSummarySnapshotDoesNotBlockOrMixConcurrentSettlement(t *testing.
 				return err
 			}
 			record := model.TrafficRecord{UserID: 1, NodeID: 1, SubscriptionID: 1, ReportID: "during", Nonce: "during", UsedBytes: 70, At: time.Now().UTC()}
-			return tx.Create(&record).Error
+			if err := tx.Create(&record).Error; err != nil {
+				return err
+			}
+			return meteringstore.RecordUsageProjections(tx, []model.TrafficRecord{record})
 		}); err != nil {
 			t.Fatal("reporting blocked settlement:", err)
 		}
@@ -167,6 +172,15 @@ func TestTrafficSummarySnapshotDoesNotBlockOrMixConcurrentSettlement(t *testing.
 		t.Fatalf("summary mixed snapshots: %+v: %v", first, err)
 	}
 	next, err := service.Read(context.Background(), 1, metering.UsageSummaryQuery{})
+	if !errors.Is(err, metering.ErrUsageProjectionPending) {
+		t.Fatalf("new pending settlement appeared as complete statistics: %+v %v", next, err)
+	}
+	quota, err := f.h.services.UsageQuota().Read(context.Background(), 1, metering.UsageSummaryQuery{})
+	if err != nil || quota.RemainingBytes != 900 {
+		t.Fatal("current quota waited on statistics", quota, err)
+	}
+	drainUsageProjections(t, f.h.db)
+	next, err = service.Read(context.Background(), 1, metering.UsageSummaryQuery{})
 	if err != nil || next.TotalUsedBytes != 100 || next.RemainingBytes != 900 {
 		t.Fatalf("summary did not observe committed settlement: %+v: %v", next, err)
 	}

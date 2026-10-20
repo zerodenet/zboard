@@ -92,6 +92,7 @@ func TestTrafficBreakdownRetainsMissingAndUnattributedObjectsAndExactEdges(t *te
 			t.Fatal(err)
 		}
 	}
+	rebuildFixtureHourly(t, f.h.db)
 	q := metering.BreakdownQuery{Administrative: true, Dimension: "node", From: from, To: from.Add(2 * time.Hour), Limit: 50}
 	out, err := f.h.services.TrafficBreakdown(nil).Read(context.Background(), 99, q)
 	if err != nil || out.Total != 2 || out.Totals.UsedBytes != 20 || out.Totals.UploadBytes != 6 || out.Totals.DownloadBytes != 14 {
@@ -114,6 +115,7 @@ func TestMySQLTrafficBreakdownReadsCommittedAccountingInEveryDimension(t *testin
 	if err := h.projectZeroNodeEvents(context.Background(), accountingBenchmarkEvents(credential, 0, 16)); err != nil {
 		t.Fatal(err)
 	}
+	drainUsageProjections(t, h.db)
 	var subscription model.Subscription
 	if err := h.db.First(&subscription, credential.SubscriptionID).Error; err != nil {
 		t.Fatal(err)
@@ -145,6 +147,7 @@ func TestTrafficBreakdownDoesNotRevealForeignSubscriptionNames(t *testing.T) {
 	if err := f.h.db.Create(&model.TrafficRecord{UserID: 1, SubscriptionID: 2, NodeID: 1, At: at, UsedBytes: 10}).Error; err != nil {
 		t.Fatal(err)
 	}
+	rebuildFixtureHourly(t, f.h.db)
 	q := metering.BreakdownQuery{Dimension: "subscription", From: at.Truncate(24 * time.Hour), To: at.Truncate(24 * time.Hour).Add(24 * time.Hour), Limit: 25}
 	self, err := f.h.services.TrafficBreakdown(nil).Read(context.Background(), 1, q)
 	if err != nil || self.Total != 1 || !self.Items[0].Missing || self.Items[0].Name != "" || self.Totals.UsedBytes != 10 {

@@ -2,6 +2,7 @@ package observabilitystore
 
 import (
 	"context"
+	"database/sql"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"time"
 
@@ -141,11 +142,30 @@ CROSS JOIN
 }
 
 func (s Dashboard) LoadDashboard(ctx context.Context, period observability.DashboardPeriod, now time.Time, buckets []observability.DashboardTrendBucket) (observability.DashboardSnapshot, error) {
-	return s.loadDashboard(ctx, period, now, buckets, "")
+	return s.loadDashboardSnapshot(ctx, period, now, buckets, "")
 }
 
 func (s Dashboard) LoadDashboardView(ctx context.Context, period observability.DashboardPeriod, now time.Time, buckets []observability.DashboardTrendBucket, view string) (observability.DashboardSnapshot, error) {
-	return s.loadDashboard(ctx, period, now, buckets, view)
+	return s.loadDashboardSnapshot(ctx, period, now, buckets, view)
+}
+
+func (s Dashboard) loadDashboardSnapshot(ctx context.Context, period observability.DashboardPeriod, now time.Time, buckets []observability.DashboardTrendBucket, view string) (out observability.DashboardSnapshot, err error) {
+	// Current business health and revenue-only charts do not wait for auxiliary
+	// traffic statistics. Reads which do use hourly data share its readiness
+	// check and aggregates in one snapshot, including during worker commits.
+	if view == "current" || view == "trend" {
+		return s.loadDashboard(ctx, period, now, buckets, view)
+	}
+	err = s.readDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, window := range [][2]time.Time{{period.From, period.To}, {period.PreviousFrom, period.PreviousTo}} {
+			if err := meteringstore.EnsureHourlyUsageReady(tx, meteringstore.TrafficScope{}, window[0], window[1]); err != nil {
+				return err
+			}
+		}
+		out, err = (Dashboard{DB: tx, ReadDB: tx}).loadDashboard(ctx, period, now, buckets, view)
+		return err
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return
 }
 
 func (s Dashboard) loadDashboard(ctx context.Context, period observability.DashboardPeriod, now time.Time, buckets []observability.DashboardTrendBucket, view string) (observability.DashboardSnapshot, error) {

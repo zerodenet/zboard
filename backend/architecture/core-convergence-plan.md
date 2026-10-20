@@ -19,7 +19,7 @@
 | P2-12 永久单额度 | 部分实现（双库专项通过） | 37c07dc；可信单次来源100/100/20→80；多次增购未定义分配，精确CI另记 |
 | P2-13/P5-02 获批消费退款 | 部分实现（双库命令、前端行为/构建通过） | 271bd20、e4d49ca；活跃权益部分退款待产品规则，浏览器联合退款验收仍缺 |
 | P2-14 套餐历史额度 | 部分实现（SQLite竞争、常规MySQL、前端通过） | 新guard/竞争MySQL已在d7独立快照37.242s通过，精确全套待验证；混合加购及1000上限明确拒绝 |
-| P4-01 日统计投影 | 部分实现（双库专项通过） | cf1c8be、46911a8；完整回归发现并保留修复夹具；hourly仍推进，无归档 |
+| P4-01/02 日/小时统计投影 | 部分实现（双库专项通过） | 0053/0054持久独立队列；小时最终实库16.127s/48.444s；完整精确提交待验证，online/coverage及归档仍缺 |
 | P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
 | 其余P2及P3–P7 | 部分实现/未完成 | 优惠协议、套餐变组历史授权、小时/在线统计、容量/伸缩、完整迁移及生产前联合验收持续推进 |
 
@@ -620,3 +620,16 @@ P2-14最新实库补证：d7dc8ca独立源码快照的全部TestMySQLPlanQuota37
 2026-10-20再次fetch develop仍7c7283fb34840883fccaba1de6e0a98edb24dfb1，无增量或正式迁移号冲突。新增OpenAPI描述的两处逗号流式YAML遗漏引号由完整Redocly识别5个struct错误，已修复，仅保留原282警告，不新增忽略。
 
 验收工具补强：tools/acceptance/verify现在分别记录accounting_passed、pending_usage_projections及statistics_passed，完整排空验收不再把额度已结算当统计已完成。真实SQLite夹具中配额/ledger一致而pending1时明确失败且accounting仍true，独立Drain后通过；TestVerifier两项1.155s通过。此为验收边界代码，尚未构成P6持续容量证明。
+
+
+## P4-02：小时统计独立投影（2026-10-20，双库专项通过）
+
+0054在现有0053可靠队列上保存小时待处理标识及用户/订阅/节点/端点/UTC小时范围。结算不再写hourly；独立worker在1–200事实内将已结算整数delta汇入hourly/daily并删除对应意图，同事务保留重试依据。旧0053意图小时标识false，保留已写hourly，防止重播双加；正式迁移/恢复显式移除旧触发器。没有改倍率或舍入，也不把易失入队当可靠接收。
+
+各统计读在同一快照、缓存前用索引探测对应完整UTC小时的pending；既有精确边界读取继续按原规则。积压返回503/usage_projection_pending；核心quota及工作台current、收入trend独立可用。半小时和45分钟时区的多日期区间由至多366窗口覆盖，不以宽泛整段检查冒充日桶范围。新增维护flag -prepare-hourly-rollback在HTTP/任务启动前检查0054、空队列及完整hourly；只显式恢复SQLite旧触发器，普通启动不会自动降级。升级/回退见core-convergence-upgrade.md。
+
+真实MySQL专项发现独立投影在默认RR读少于200条时持队尾范围锁，慢hourly upsert会挡住新结算意图。仅该辅助worker改用READ COMMITTED；实库锁住hourly桶时下一核心批仍准确提交quota240，再解锁收敛。SQLite保留单写者边界，不声称投影慢写绝不占其写槽。
+
+最终四包SQLite专项2.543s/0.634s/1.552s/3.787s通过；真实MySQL datastore16.127s、handler48.444s通过，包括0053并发/故障、0054部分DDL、丢失证据拒绝、空派生恢复、三方向复制、半/刻小时时区及gap竞争。OpenAPI Redocly有效，282原警告。CLI编译和最终提交的完整后端/实库/CI随后核对。新1000意图元数据及5索引SQLite319488B，原0053为65536B；仅存储样本，不是容量收益。详见core-convergence-hourly-projection-evidence.md及validation/2026-10-20-hourly-projection.json。
+
+本批没有归档原始事实、在线/覆盖投影拆分、伸缩或生产验收，不以统计解耦宣称P4/P6/P7整体完成。容量基准另固定在7ca9f63作为此变更前起点。最近基线fetch仍7c7283f，保留发布未知先核验与队列恢复修复。

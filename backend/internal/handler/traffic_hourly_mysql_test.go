@@ -16,6 +16,7 @@ func TestMySQLHourlyRetirementAndAuditFailureRemainAtomic(t *testing.T) {
 	if err := h.projectZeroNodeEvents(context.Background(), accountingBenchmarkEvents(credential, 0, 1)); err != nil {
 		t.Fatal(err)
 	}
+	drainUsageProjections(t, h.db)
 	if err := h.db.Model(&model.Subscription{}).Where("id = ?", credential.SubscriptionID).Updates(map[string]any{"lifecycle": "fixed", "ends_on_quota_exhaustion": true, "flow_total": 30}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -107,6 +108,15 @@ func TestMySQLTrafficHourlyDatabaseTransferRebuildsLedgerProjection(t *testing.T
 	if err := copy(nil); err != nil {
 		t.Fatal(err)
 	}
+	var pending int64
+	if err := target.db.Table("metering_usage_projection_pending").Count(&pending).Error; err != nil || pending != 1 {
+		t.Fatal("transfer lost pending checkpoint", pending, err)
+	}
+	var projected int64
+	if err := target.db.Table("traffic_usage_hourly").Select("COALESCE(SUM(used_bytes),0)").Scan(&projected).Error; err != nil || projected != 0 {
+		t.Fatal("transfer pre-applied pending hourly usage", projected, err)
+	}
+	drainUsageProjections(t, target.db)
 	assert(30)
 	var restored model.NodeRetirement
 	if err := target.db.First(&restored, "node_id = ?", retirement.NodeID).Error; err != nil {

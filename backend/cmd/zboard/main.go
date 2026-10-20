@@ -24,9 +24,13 @@ import (
 
 var configFile = flag.String("f", "etc/zboard.yaml", "the config file")
 var migrateOnly = flag.Bool("migrate-only", false, "prepare the complete database schema and exit")
+var prepareHourlyRollback = flag.Bool("prepare-hourly-rollback", false, "after stopping all writers and draining usage projections, prepare hourly statistics for a pre-0054 binary and exit")
 
 func main() {
 	flag.Parse()
+	if *migrateOnly && *prepareHourlyRollback {
+		log.Fatal("migrate-only and prepare-hourly-rollback are mutually exclusive")
+	}
 
 	var c cfgpkg.Config
 	conf.MustLoad(*configFile, &c)
@@ -52,6 +56,13 @@ func main() {
 	}
 	if err := datastore.Ping(db); err != nil {
 		log.Fatalf("database ping failed: %v", err)
+	}
+	if *prepareHourlyRollback {
+		if err := datastore.PrepareHourlyProjectionRollback(db); err != nil {
+			log.Fatalf("hourly projection rollback preparation failed: %v", err)
+		}
+		log.Printf("hourly projection rollback prepared; keep writers stopped until the pre-0054 binary is installed")
+		return
 	}
 	if err := application.PrepareDatabaseSchema(db); err != nil {
 		log.Fatalf("database migrate failed: %v", err)

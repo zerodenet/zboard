@@ -192,3 +192,20 @@ Down保留列、约束、Version2快照、资金/关闭代次和凭据历史。�
 0052 records administrator-approved historical consumption refunds. Stop writers before binary rollback, retain approval IDs, original paid budgets, wallet and audit together; do not run destructive rollback after money was credited. Active-term partial refunds are currently refused pending an entitlement rule. Default legal text now follows wallet refunds, while saved site policies are preserved for administrator review.
 
 0053 separates daily statistics from authoritative metering with a durable pending queue. Stop old synchronous writers during cutover; do not run both versions concurrently. Keep existing daily aggregates unchanged and never backfill the additive projection from all historical traffic. Back up/copy pending rows and referenced traffic facts together. Before rolling back to synchronous writers, stop settlement, drain the queue with the new worker and verify it is empty; the down migration preserves recovery evidence. Missing recorded queue/columns cause startup refusal. Hourly/online projections remain coupled and no diagnostic archival is enabled.
+
+
+## 0054：小时统计独立投影与显式降级准备
+
+0054沿用0053可靠队列，新增hourly_pending、用户/订阅/节点范围、实际投影UTC小时及五条范围索引。升级前停止所有旧同步写入者及worker，并一致备份数据库与本地持久缓冲。旧0053待处理行的hourly_pending=false表示小时增量已写，不能重放；新事实显式true，小时与daily增量和队列删除由独立事务共同提交。保留现有hourly数值，移除旧SQLite/MySQL小时触发器，避免双写。已记录却丢队列、字段或时间依据时拒绝启动，不能补空。缺失的派生hourly表可由已确认事实重建，排除尚待小时投影的事实。
+
+小时统计积压时相应统计读返回503/usage_projection_pending，不提供完整数值。当前额度view=quota和工作台current、收入trend不等待该投影。SQLite仍为单写者，投影写事务会占用该写槽；MySQL投影worker采用READ COMMITTED避开队列尾端范围锁，权威结算事务的隔离级别不变。此差异不构成双库等性能承诺。
+
+降级须先停止所有writer及worker，在当前版本独立排空可靠队列，确认小时与daily数据完整。保留0054迁移记录、队列和来源，不能运行破坏性down或删除pending。然后使用当前二进制显式执行维护入口：
+
+```sh
+zboard -f /path/to/zboard.yaml -prepare-hourly-rollback
+```
+
+该命令不启动HTTP/任务执行器，与-migrate-only互斥。它核查0054来源、空队列和可恢复统计状态；SQLite恢复旧同步小时触发器，MySQL保留旧应用写入路径所需的表。命令成功后继续保持停写，再启动明确兼容这些业务事实的旧版本。普通当前版本启动仍会移除这些触发器；不可在维护命令后又启动当前写入者，再同时启动旧程序。0054的统计降级准备不替代0043–0052金融/凭据语义的各自限制。
+
+本节说明代码提供的升级/回退路径，实库及专项结果单独记录；未执行生产迁移或生产降级。

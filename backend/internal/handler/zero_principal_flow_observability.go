@@ -267,6 +267,10 @@ func (h *handlers) readPrincipalTrends(r *http.Request, buckets []systemCalendar
 	return h.services.PrincipalTrends().Read(r.Context(), claims.UserID, metering.PrincipalTrendQuery{Administrative: admin, UserID: user, SubscriptionID: subscription, Buckets: converted})
 }
 func writePrincipalTrendError(w http.ResponseWriter, err error) {
+	if errors.Is(err, metering.ErrUsageProjectionPending) {
+		writeCapabilityError(w, http.StatusServiceUnavailable, err.Error(), "usage_projection_pending")
+		return
+	}
 	if errors.Is(err, metering.ErrTrendPermission) {
 		Forbidden(w, "当前账号无权读取此趋势。")
 		return

@@ -34,6 +34,11 @@ func usageProjectionDB(t testing.TB, path string) *gorm.DB {
 			t.Fatal(err)
 		}
 	}
+	if !db.Migrator().HasTable("traffic_usage_hourly") {
+		if err := datastore.RebuildTrafficHourly(db); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return db
 }
 

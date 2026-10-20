@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 )
 
@@ -174,6 +175,8 @@ func (h *handlers) loadDashboardView(ctx context.Context, period dashboardPeriod
 
 func dashboardReadError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, metering.ErrUsageProjectionPending):
+		writeCapabilityError(w, http.StatusServiceUnavailable, err.Error(), "usage_projection_pending")
 	case errors.Is(err, context.DeadlineExceeded):
 		writeCapabilityError(w, http.StatusGatewayTimeout, "工作台读取超时，请重试。", "deadline_exceeded")
 	case errors.Is(err, context.Canceled):

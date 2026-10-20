@@ -111,6 +111,7 @@ func (f trafficReadFixture) seedReconciliation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	rebuildFixtureHourly(t, f.h.db)
 }
 
 type reconciliationTestPage struct {
