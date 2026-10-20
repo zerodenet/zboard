@@ -150,3 +150,14 @@ HTTP p95, acceptance-to-settlement lag, queue growth, CPU/RSS, database/index/fi
 growth, slow-database behavior, quota-to-revocation latency or observed overuse.
 Those require a separately scheduled sustained workload with fixed resource
 budgets before P6 or bounded retention can be accepted.
+
+### Integration regression found by the complete backend run
+
+The first complete run at cf1c8be found one failed pre-existing networkstore test:
+its synthetic daily totals referenced endpoint 9 without creating that endpoint,
+while the new bounded pending probe starts from selected actual endpoint rows.
+The fixture now creates its physical node and endpoint, retaining raw ledger
+9999 versus daily 31+47 assertions. The targeted test passed in 0.216s. No
+production read was changed and no assertion/exclusion was removed. All other
+packages passed in that run, including handler188.071s and plugins70.988s; the
+complete regression and exact-head CI remain separately tracked.
