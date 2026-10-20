@@ -9,6 +9,12 @@ type EventPosition struct {
 	ID, CoreInstanceID       string
 	Sequence, ConfigRevision uint64
 	OccurredAt               time.Time
+	// SourceID is sender-declared routing metadata, not verified identity or
+	// proof of the installed runtime or applied configuration.
+	SourceID string
+	// ReceivedAt preserves the recorded receiver time. Zero means unknown;
+	// a replay or mapping must not substitute its current time.
+	ReceivedAt time.Time
 }
 type NodeStats struct{ ActiveSessions, BytesUp, BytesDown uint64 }
 type NodeObservation struct {

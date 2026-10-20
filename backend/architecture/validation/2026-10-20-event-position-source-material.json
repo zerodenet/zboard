@@ -1,0 +1,115 @@
+{
+  "baseline": "3c44aa0dd375e532251036aaa08bb2bf686dafe4",
+  "files": {
+    "backend/internal/capabilities/network/node_observation.go": "63689dfe46228be99a9cbe3538eac4f5b5e4fc34aa6ec41f6cfe81ac726e23d3",
+    "backend/internal/capabilities/network/node_observation_test.go": "02a61193a3e7d3c2087f9dac63bb7661fb39cbccfc329bf282c11f1f8a2227e5",
+    "backend/internal/handler/zero_event_runtime.go": "7ad3be79ad1793ee1bbd5c34d5833674d467f60db9860042f260327192b6d081",
+    "backend/internal/handler/zero_event_runtime_test.go": "d9477cba2bf5b29b727397a9a74584b7c98c7bd5b752b2cf3cfe7b96c2e20c0b"
+  },
+  "results": [
+    {
+      "name": "gofmt",
+      "command": [
+        "/workspace/toolchains/go/bin/gofmt",
+        "-w",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/event-position-source-patch/verify-clone/backend/internal/capabilities/network/node_observation.go",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/event-position-source-patch/verify-clone/backend/internal/capabilities/network/node_observation_test.go",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/event-position-source-patch/verify-clone/backend/internal/handler/zero_event_runtime.go",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/event-position-source-patch/verify-clone/backend/internal/handler/zero_event_runtime_test.go"
+      ],
+      "cwd": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/event-position-source-patch/verify-clone/backend",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "elapsed_seconds": 0.004
+    },
+    {
+      "name": "old-mapping-expected-failure",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-p",
+        "1",
+        "./internal/handler",
+        "-run",
+        "^(TestZeroNodeObservationPreservesIndependentSourceMaterial|TestZeroNodeObservationDoesNotInventStatsSource|TestNetworkEventPositionKeepsLegacyZeroMaterialStable)$",
+        "-count=1"
+      ],
+      "cwd": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/event-position-source-patch/verify-clone/backend",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "elapsed_seconds": 32.174
+    },
+    {
+      "name": "fixed-network",
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "./internal/capabilities/network",
+        "-run",
+        "^(TestEventComparisonsIgnoreSourceMetadata)$",
+        "-count=1"
+      ],
+      "cwd": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/event-position-source-patch/verify-clone/backend",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "elapsed_seconds": 1.419
+    },
+    {
+      "name": "fixed-handler",
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "./internal/handler",
+        "-run",
+        "^(TestZeroNodeObservationPreservesIndependentSourceMaterial|TestZeroNodeObservationDoesNotInventStatsSource|TestNetworkEventPositionKeepsLegacyZeroMaterialStable|TestAggregateZeroNodeEventsCoalescesNodeWrites|TestZeroEventNewerUsesSequenceWithinCoreInstance|TestZeroEnvelopeNewerThanCursorRejectsLateOldSequence|TestZeroEnvelopeNewerThanCursorUsesTimeAcrossCoreInstances)$",
+        "-count=1"
+      ],
+      "cwd": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/event-position-source-patch/verify-clone/backend",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "elapsed_seconds": 16.772
+    },
+    {
+      "name": "fixed-race-count3",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-p",
+        "1",
+        "./internal/capabilities/network",
+        "./internal/handler",
+        "-run",
+        "^(TestEventComparisonsIgnoreSourceMetadata|TestZeroNodeObservationPreservesIndependentSourceMaterial|TestZeroNodeObservationDoesNotInventStatsSource|TestNetworkEventPositionKeepsLegacyZeroMaterialStable|TestAggregateZeroNodeEventsCoalescesNodeWrites|TestZeroEventNewerUsesSequenceWithinCoreInstance|TestZeroEnvelopeNewerThanCursorRejectsLateOldSequence|TestZeroEnvelopeNewerThanCursorUsesTimeAcrossCoreInstances)$",
+        "-count=3"
+      ],
+      "cwd": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/event-position-source-patch/verify-clone/backend",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "elapsed_seconds": 41.372
+    }
+  ],
+  "comparator_bodies_unchanged": true,
+  "main_unchanged": true,
+  "formatted_source_unchanged_after_validation": true,
+  "race_repetitions": 3,
+  "controlled_old_mapping_expected_failed_leaf_tests": 3,
+  "formatted_patch_sha256": "4946b1bf7115adab96fc415e4f3592cfb60306d06af8bf6dc4970bfe2b3d3360",
+  "limits": "Only internal typed source preservation; no durable handoff, DB cursor/spool/schema/public protocol or financial/permission changes; no full suite/MySQL/load.",
+  "private_receipt_sha256": "649c26ac1e4a30eb3fc6611ebcc7d3f68501568872d623099a22e68f9ce48b46",
+  "freeze_receipt_sha256": "838c03b66983d1bb076d91c3dcef02db34f4638b710f3049f265d348accd5c3c",
+  "raw_evidence_sha256": {
+    "fixed-race-count3.log": "6141421bac7f53457c3db4026f9e7fdae4621ef4d7a11d7d974f6e7e446d9ee5",
+    "gofmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "fixed-handler.log": "1a1f6a0062c698644814ed858364bcdf29e88989d733d4c5011324f6d163140f",
+    "fixed-network.log": "6171f0e33557614716aacec91b10b9f1efc583da05302415237d551b539bbab9",
+    "main-apply-check.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "old-mapping-expected-failure.log": "db34467b6e7053210a5056c0abc235059d235fe7f741914a07828f2bfd0ac857"
+  },
+  "integration_note": "Main combines this exact four-file patch with independently tested additive MySQL batches; complete combined-source validation pending."
+}

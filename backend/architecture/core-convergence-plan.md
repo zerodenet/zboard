@@ -1145,3 +1145,14 @@ pair2 is slower, so no stable startup/CI fix is claimed. Existing empty-SHA
 verification, partial-DDL receipts and audit evidence survive. No business rule,
 permission or production migration changes. Candidate whole backend, current CI
 and original capacity must still run. [Behavior, rollback and evidence](core-convergence-audit-phase-column-batches.md).
+
+### P4 retain independent event source material (2026-10-20)
+
+Internal observation mapping now preserves each selected Latest/Stats event's own
+sender-declared SourceID and recorded ReceivedAt, including legacy unknown zero.
+Source is not installation/configuration/authorization proof. Comparators remain
+byte-identical, ordering/aggregation/financial rules and DB/spool/public schemas
+unchanged. Controlled old mapping fails3 source assertions; fixed aggregation,
+comparison and race3 pass. No stats sample is invented for a flow-only batch.
+[Evidence and remaining durable-handoff boundaries](core-convergence-event-source-material.md).
+Combined-source full backend/MySQL/current CI/capacity remain separate checks.

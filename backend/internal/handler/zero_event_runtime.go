@@ -365,7 +365,7 @@ func aggregateZeroNodeEvents(events []zeroevent.Envelope) map[uint]zeroNodeProje
 }
 
 func networkEventPosition(event zeroevent.Envelope) network.EventPosition {
-	return network.EventPosition{ID: event.ID, CoreInstanceID: event.CoreInstanceID, Sequence: event.Sequence, ConfigRevision: event.ConfigRevision, OccurredAt: event.OccurredAt}
+	return network.EventPosition{ID: event.ID, CoreInstanceID: event.CoreInstanceID, Sequence: event.Sequence, ConfigRevision: event.ConfigRevision, OccurredAt: event.OccurredAt, SourceID: event.SourceID, ReceivedAt: event.ReceivedAt}
 }
 func zeroNodeObservation(projection zeroNodeProjection) network.NodeObservation {
 	input := network.NodeObservation{NodeID: projection.NodeID, Latest: networkEventPosition(projection.Latest), Stats: network.NodeStats(projection.Stats)}
