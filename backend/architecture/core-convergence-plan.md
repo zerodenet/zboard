@@ -1049,3 +1049,18 @@ and share one Latest/Stats cursor. Kernel rollback/legacy writers and accepted
 host-owner identity require evidence before durable asynchronous handoff. The
 private proposal is unimplemented;0059 has not been allocated or added. Source
 facts/rounding/dedup remain protected; this audit does not close P4 or P6.
+
+### P5 actual closed-order refund browser path (2026-10-20)
+
+Two opt-in acceptance tools exercise actual purchase/payment fact, nonempty
+credential/token issuance, explicit future-clock expiry, owner linked ticket,
+admin ownership rejection/approval, read-only reload and two explicit same-key
+replays. Exact31e72db plus only these tools passes32 browser checks in9.61s:
+1000 paid remains unchanged,300 refunded/wallet credited once, terminal rights,
+payment and metering full-column hashes unchanged. Five screenshots and three
+prior harness failures are preserved. Built UI/source/binary are hash-bound;
+all external attempts are blocked before network. No production rule, migration,
+active partial-refund policy, live gateway or remote delivery is added/proven.
+See [scope and reproduction](core-convergence-consumption-refund-browser.md) and
+[receipt](validation/2026-10-20-consumption-refund-browser.json). P7's current
+source MySQL900s failure remains independent and unresolved.
