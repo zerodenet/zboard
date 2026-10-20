@@ -38,7 +38,14 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 		prepared, prepareErr := (credentialstore.PrincipalIndex{DB: s.DB, Cipher: s.Cipher}).PrepareBounded(ctx, in.NodeID, remaining)
 		remaining -= prepared
 		if prepareErr != nil {
-			return metering.TrafficRecord{}, false, prepareErr
+			err = prepareErr
+			// A concurrent canonical change may invalidate coverage before the
+			// preparation's final read, as well as after it. Retry only that
+			// recoverable state within the same attempt and row budgets.
+			if errors.Is(err, credentialstore.ErrPrincipalIndexIncomplete) && remaining > 0 {
+				continue
+			}
+			return metering.TrafficRecord{}, false, err
 		}
 		event, flow := in, in
 		record = model.TrafficRecord{}
