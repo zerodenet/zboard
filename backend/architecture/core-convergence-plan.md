@@ -885,3 +885,15 @@ latency guard is included. CI adds whole jobstore MySQL between existing core
 and copy commands, preserving their exact scope/timeouts and sequential copy.
 Current core/copy and final-source checks remain pending; see
 validation/2026-10-20-mysql-job-runtime.json.
+
+### P6/P7 shutdown boundary and real MySQL follow-up (2026-10-20)
+
+3690113 quiet sequential original MySQL core passes (datastore122.713s,
+handler898.699s, networkstore100.099s), followed by copy113.698s. The unchanged
+handler15-minute limit has only1.301s margin; this is not capacity headroom.
+3690113 and7ef3bc5 CI each pass MySQL/frontend/contract/compose/compiler, but
+backend fails the stale audited `cancelPluginTasks` name after local cleanup
+became `detachPluginTasks`. The AST inventory now follows that real entrypoint;
+existence and all private-worker/timer prohibitions remain. Whole architecture
+tests pass0.666s. Final-source full checks remain required and historical failures
+remain evidence; see validation/2026-10-20-shutdown-boundary-followup.json.

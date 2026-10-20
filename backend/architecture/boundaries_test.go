@@ -211,7 +211,7 @@ func TestMigratedBusinessEntrypointsDoNotStartPrivateWorkers(t *testing.T) {
 		"../internal/handler/zero_event_runtime.go":       {"ConfigureZeroEventSpool"},
 		"../internal/handler/database_migration.go":       {"AdminDatabaseMigrationStartHandler"},
 		"../internal/handler/admin_operations.go":         {"executeTaskItems", "executeTaskItemsContext"},
-		"../internal/plugins/tasks_runtime.go":            {"syncTaskRegistrations", "SetTaskRuntime", "cancelPluginTasks"},
+		"../internal/plugins/tasks_runtime.go":            {"syncTaskRegistrations", "SetTaskRuntime", "detachPluginTasks"},
 	} {
 		f, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
 		if err != nil {
