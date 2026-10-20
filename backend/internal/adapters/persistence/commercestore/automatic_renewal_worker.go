@@ -2,6 +2,7 @@ package commercestore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -44,7 +45,15 @@ func (s AutomaticRenewals) Process(ctx context.Context, limit int) (processed in
 		if err != nil {
 			return processed, err
 		}
-		err = s.processAutomaticRenewal(ctx, prepared)
+		var evaluated *automaticDiscountEvaluation
+		var evaluationErr error
+		if prepared.AgreementVersion == 2 {
+			evaluated, evaluationErr = s.evaluateAutomaticDiscount(ctx, prepared.UserID, prepared.SubscriptionID, prepared.PlanSKUID)
+			if ctx.Err() != nil {
+				return processed, ctx.Err()
+			}
+		}
+		err = s.processAutomaticRenewalPrepared(ctx, prepared, evaluated, evaluationErr)
 		if errors.Is(err, errAutomaticHistoryBound) {
 			// The financial transaction has rolled back and released its order
 			// locks. Isolate a known bounded-history item without pretending its
@@ -118,7 +127,7 @@ func (s AutomaticRenewals) pauseAutomaticHistoryItem(ctx context.Context, prepar
 	})
 }
 
-func (s AutomaticRenewals) processAutomaticRenewal(ctx context.Context, prepared model.SubscriptionAutomaticRenewal) error {
+func (s AutomaticRenewals) processAutomaticRenewalPrepared(ctx context.Context, prepared model.SubscriptionAutomaticRenewal, evaluated *automaticDiscountEvaluation, evaluationErr error) error {
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// SQLite has no SELECT FOR UPDATE; acquire its writer lock before any
 		// read. MySQL acquires the singleton row's current exclusive read.
@@ -154,7 +163,7 @@ func (s AutomaticRenewals) processAutomaticRenewal(ctx context.Context, prepared
 			return err
 		}
 		var plan model.Plan
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&plan, identity.PlanID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&plan, identity.PlanID).Error; err != nil {
 			return err
 		}
 		var sku model.PlanSKU
@@ -174,6 +183,9 @@ func (s AutomaticRenewals) processAutomaticRenewal(ctx context.Context, prepared
 		}
 		now = commerceNow(s.Now)
 		if !agreement.Enabled || agreement.NextAttemptAt.After(now) || sub.EndAt.After(now) {
+			return errAutomaticRenewalHeadChanged
+		}
+		if !sameAutomaticPreparation(agreement, prepared) {
 			return errAutomaticRenewalHeadChanged
 		}
 		if guard.Sequence == math.MaxUint64 {
@@ -209,8 +221,50 @@ func (s AutomaticRenewals) processAutomaticRenewal(ctx context.Context, prepared
 		if !entitlements.CanRenewAt(entitlements.Subscription(sub), now, grace) {
 			return finish("window_closed", "订阅已结束、主动退订或超过续费恢复窗口，自动扣款已停止。", true)
 		}
-		order, offer, root, digest, err := automaticRenewalQuote(tx, agreement.UserID, sub, agreement.PlanSKUID, now)
+		var accepted *checkoutDiscount
+		if agreement.AgreementVersion == 2 {
+			digest, err := validateAutomaticRecurringApproval(agreement.ApprovalSnapshot, agreement.UserID, sub.ID, agreement.PlanSKUID, agreement.RootOrderID)
+			if err != nil || digest != agreement.AgreementDigest {
+				return finish("conditions_changed", "已批准的长期优惠扣款证据缺失或损坏，请重新核对授权。", true)
+			}
+			var approved automaticRecurringApprovalSnapshot
+			if json.Unmarshal([]byte(agreement.ApprovalSnapshot), &approved) != nil {
+				return finish("conditions_changed", "长期优惠授权证据无法核验，请重新确认。", true)
+			}
+			var currentSKU model.PlanSKU
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&currentSKU, agreement.PlanSKUID).Error; err != nil {
+				return err
+			}
+			root, err := renewalPurchase(tx, sub.ID, agreement.UserID, sub.PlanID)
+			if err != nil {
+				return finish("agreement_unavailable", "已购长期优惠来源暂不可核验，未扣款。", false)
+			}
+			if !plan.IsRenewable || root.ID != approved.RootOrderID || currentSKU.Currency != approved.Currency || currentSKU.BillingUnit != approved.BillingUnit || currentSKU.BillingValue != approved.BillingValue || currentSKU.RenewalEffect != approved.RenewalEffect {
+				return finish("conditions_changed", "购买系列或续费周期已变化，请重新核对授权。", true)
+			}
+			if errors.Is(evaluationErr, commerce.ErrDiscountConfirmationRequired) || errors.Is(evaluationErr, errAutomaticConditionsChanged) {
+				return finish("conditions_changed", "长期优惠需要重新明确确认，自动扣款已停止。", true)
+			}
+			if evaluationErr != nil || evaluated == nil || !hasCheckoutOffer(evaluated.Discount) {
+				return finish("agreement_unavailable", "长期优惠暂不可核验，未扣款；恢复窗口内每5分钟重新检查，仍可关闭授权。", false)
+			}
+			if evaluated.Digest != agreement.AgreementDigest || evaluated.Approval != agreement.ApprovalSnapshot {
+				return finish("conditions_changed", "长期优惠价格、条款或提供方配置已变化，请重新核对并开启自动续费。", true)
+			}
+			accepted = evaluated.Discount
+		} else if agreement.AgreementVersion != 1 {
+			return finish("conditions_changed", "自动扣款协议版本不受支持，请重新核对授权。", true)
+		} else if agreement.ApprovalSnapshot != "" {
+			return finish("conditions_changed", "自动扣款协议证据与版本不一致，请重新核对授权。", true)
+		}
+		order, offer, root, digest, err := automaticRenewalQuote(tx, agreement.UserID, sub, agreement.PlanSKUID, now, accepted)
 		if err != nil {
+			if accepted != nil {
+				var invalid *commerce.ValidationError
+				if errors.As(err, &invalid) || errors.Is(err, commerce.ErrSubscriptionQuoteChanged) || errors.Is(err, commerce.ErrDiscountQuoteInvalid) {
+					return errAutomaticRenewalHeadChanged
+				}
+			}
 			var invalid *commerce.ValidationError
 			if errors.As(err, &invalid) {
 				return finish("agreement_unavailable", invalid.Message, false)
@@ -233,7 +287,7 @@ func (s AutomaticRenewals) processAutomaticRenewal(ctx context.Context, prepared
 			return err
 		}
 		key := "auto_" + walletKey(fmt.Sprintf("%d/%s/%d", sub.ID, sub.EndAt.UTC().Format(time.RFC3339Nano), sub.EntitlementEpoch))
-		created, err := createOwnedOrder(tx, agreement.UserID, commerce.OrderCreateRequest{IdempotencyKey: key, PlanSKUID: agreement.PlanSKUID, TargetSubscriptionID: sub.ID, QuoteFingerprint: offer.QuoteFingerprint}, s.Now)
+		created, err := createOwnedOrderWithDiscount(tx, agreement.UserID, commerce.OrderCreateRequest{IdempotencyKey: key, PlanSKUID: agreement.PlanSKUID, TargetSubscriptionID: sub.ID, QuoteFingerprint: offer.QuoteFingerprint}, accepted, s.Now)
 		if err == nil {
 			err = configureOrderFunding(tx, created, commerce.FundingRequest{UseBalance: true}, commerceNow(s.Now))
 		}
@@ -243,7 +297,8 @@ func (s AutomaticRenewals) processAutomaticRenewal(ctx context.Context, prepared
 		}
 		if err != nil {
 			var invalid *commerce.ValidationError
-			if !errors.As(err, &invalid) && !errors.Is(err, entitlements.ErrCapacity) {
+			discountChanged := accepted != nil && (errors.Is(err, commerce.ErrDiscountQuoteInvalid) || errors.Is(err, commerce.ErrSubscriptionQuoteChanged))
+			if !errors.As(err, &invalid) && !errors.Is(err, entitlements.ErrCapacity) && !discountChanged {
 				return err
 			}
 			if rollback := tx.RollbackTo("automatic_renewal_payment").Error; rollback != nil {

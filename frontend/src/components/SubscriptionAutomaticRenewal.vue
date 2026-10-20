@@ -2,7 +2,7 @@
   <UiSection :title="`订阅 #${subscriptionId} 的余额自动续费`" description="每份订阅独立开启，默认关闭；仅扣站内可用余额，不调用外部支付渠道。">
     <div class="panel-body stack">
       <PageAlert v-if="error" tone="danger" title="自动续费需要核对">{{ error }}</PageAlert>
-      <PageAlert v-if="view" :tone="['insufficient_balance', 'history_review_required'].includes(view.state) ? 'warning' : 'info'" :title="view.state === 'history_review_required' ? '本项自动扣款已暂停' : view.enabled ? '已开启' : '已关闭'">
+      <PageAlert v-if="view" :tone="['insufficient_balance', 'history_review_required', 'conditions_changed', 'agreement_unavailable', 'discount_unavailable', 'confirmation_required'].includes(view.state) ? 'warning' : 'info'" :title="['history_review_required', 'conditions_changed', 'confirmation_required'].includes(view.state) ? '本项自动扣款已暂停' : view.enabled ? '已开启' : '已关闭'">
         {{ view.message }}
         <span v-if="view.last_order_id">最近订单 #{{ view.last_order_id }}。</span>
         <span v-if="view.enabled && view.next_attempt_at">下次检查 <TimeBadge :value="view.next_attempt_at" />。</span>
@@ -16,7 +16,15 @@
         <span>第 {{ page + 1 }} 页，共 {{ total }} 个续费规格</span>
         <UiButton variant="secondary" size="sm" :disabled="loading || saving || (page + 1) * pageSize >= total" @click="loadSKUs(page + 1)">下一页规格</UiButton>
       </div>
-      <p v-if="offer">确认该规格每 {{ offer.billing_value }} {{ periodLabel(offer.billing_unit) }} 的基础续费价格为 {{ formatWalletMoney(offer.base_price_minor, offer.currency) }}。无法核验的优惠约定会暂停自动扣款。</p>
+      <div v-if="offer">
+        <p>确认该规格每 {{ offer.billing_value }} {{ periodLabel(offer.billing_unit) }} 的基础续费价格为 {{ formatWalletMoney(offer.base_price_minor, offer.currency) }}。无法核验的优惠约定会暂停自动扣款。</p>
+        <template v-if="offer.agreement_version === 2">
+          <p>沿用原订阅的长期优惠约定，本次核对优惠 {{ formatWalletMoney(offer.discount_amount_minor!, offer.currency) }}，每次仅从可用站内余额扣除 {{ formatWalletMoney(offer.payable_amount_minor!, offer.currency) }}。</p>
+          <p>扣款金额、协议或优惠提供方配置变化时暂停扣款，需要您重新确认；提供方暂不可用时不会按基础价扣款。</p>
+          <p v-if="offer.discount?.offer.message">{{ offer.discount.offer.message }}</p>
+          <p>本次报价有效至 <TimeBadge :value="offer.discount!.offer.expires_at" />，开启前会重新核对。</p>
+        </template>
+      </div>
       <div class="inline-actions">
         <UiButton variant="secondary" :disabled="loading || saving" @click="reload">核对当前状态</UiButton>
         <UiButton v-if="offer" :disabled="loading || saving || !view || offer.plan_sku_id !== sku" :loading="saving" @click="save(true)">确认此规格并开启余额自动续费</UiButton>
@@ -27,10 +35,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useAppStore } from '../stores/app'
 import { fetchPlanCatalogSKUs, type PlanSKU } from '../api/client'
 import { fetchAutomaticRenewal, setAutomaticRenewal, type AutomaticRenewalView, type AutomaticRenewalOffer } from '../api/automaticRenewal'
+import { AutomaticRenewalOfferError, checkedAutomaticRenewalOffer } from '../api/automaticRenewalOffer'
 import { commerceErrorMessage } from '../utils/commerceErrors'
 import { formatWalletMoney } from '../utils/walletMoney'
 import UiSection from './UiSection.vue'
@@ -46,6 +55,19 @@ const view = ref<AutomaticRenewalView | null>(null), offer = ref<AutomaticRenewa
 const sku = ref(0), rows = ref<PlanSKU[]>([]), selected = ref<PlanSKU | null>(null)
 const loading = ref(false), saving = ref(false), error = ref(''), page = ref(0), total = ref(0), pageSize = 25
 let generation = 0, offerRequest = 0, pageRequest = 0
+let offerExpiryTimer: ReturnType<typeof setTimeout> | undefined
+watch(offer, value => {
+  clearTimeout(offerExpiryTimer)
+  if (value?.agreement_version !== 2) return
+  const expires = Date.parse(value.discount!.offer.expires_at)
+  const schedule = () => {
+    const remaining = expires - Date.now()
+    if (remaining <= 0) { offer.value = null; error.value = '优惠报价已过期，请重新核对当前状态后确认。'; return }
+    offerExpiryTimer = setTimeout(schedule, Math.min(remaining, 2_147_483_647))
+  }
+  schedule()
+}, { flush: 'sync' })
+onScopeDispose(() => clearTimeout(offerExpiryTimer))
 const skuOptions = computed(() => {
   const items = selected.value && !rows.value.some(row => row.id === selected.value?.id) ? [selected.value, ...rows.value] : rows.value
   return items.map(row => ({ value: row.id, label: `${row.name} · 每${row.billing_value}${periodLabel(row.billing_unit)}` }))
@@ -66,9 +88,10 @@ async function reload() {
   try {
     const next = checked(await fetchAutomaticRenewal(props.subscriptionId))
     if (version !== generation) return
-    view.value = next; offer.value = next.offer || null; sku.value = next.offer?.plan_sku_id || next.plan_sku_id
+    view.value = next; sku.value = next.offer?.plan_sku_id || next.plan_sku_id
+    offer.value = next.offer ? checkedAutomaticRenewalOffer(next.offer) : null
     await loadSKUs(0, version, true)
-  } catch (cause) { if (version === generation) error.value = commerceErrorMessage(cause, '当前状态无法核对，请明确刷新后再操作。') }
+  } catch (cause) { if (version === generation) error.value = commerceErrorMessage(cause, cause instanceof AutomaticRenewalOfferError ? cause.message : '当前状态无法核对，请明确刷新后再操作。') }
   finally { if (version === generation) loading.value = false }
 }
 async function loadSKUs(nextPage: number, expected = generation, initial = false) {
@@ -91,12 +114,16 @@ async function loadOffer() {
   try {
     const next = checked(await fetchAutomaticRenewal(props.subscriptionId, requestedSKU))
     if (version !== generation || request !== offerRequest || sku.value !== requestedSKU) return
-    view.value = next; offer.value = next.offer || null
-  } catch (cause) { if (version === generation && request === offerRequest) error.value = commerceErrorMessage(cause, '该规格报价无法核对，尚未更改自动续费。') }
+    view.value = next; offer.value = next.offer ? checkedAutomaticRenewalOffer(next.offer) : null
+  } catch (cause) { if (version === generation && request === offerRequest) error.value = commerceErrorMessage(cause, cause instanceof AutomaticRenewalOfferError ? cause.message : '该规格报价无法核对，尚未更改自动续费。') }
   finally { if (version === generation && request === offerRequest) loading.value = false }
 }
 async function save(enabled: boolean) {
   if (loading.value || saving.value || !view.value || !actor.value || (enabled && (!offer.value || offer.value.plan_sku_id !== sku.value))) return
+  if (enabled) {
+    try { checkedAutomaticRenewalOffer(offer.value!) }
+    catch (cause) { offer.value = null; error.value = cause instanceof Error ? cause.message : '优惠报价无法核对。'; return }
+  }
   const version = generation, id = props.subscriptionId
   const request = { enabled, plan_sku_id: enabled ? sku.value : view.value.plan_sku_id, quote_fingerprint: enabled ? offer.value!.quote_fingerprint : '', expected_revision: view.value.revision }
   saving.value = true; error.value = ''

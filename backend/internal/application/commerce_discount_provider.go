@@ -32,6 +32,12 @@ func (p CommerceDiscountProvider) Quote(ctx context.Context, provider string, in
 	}
 	out, err := p.Native.EvaluateCommerceDiscount(ctx, provider, in)
 	if err != nil {
+		if ctx.Err() != nil {
+			return commerce.DiscountQuote{}, ctx.Err()
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return commerce.DiscountQuote{}, errors.Join(commerce.ErrDiscountQuoteUnavailable, err)
+		}
 		if errors.Is(err, plugins.ErrUnavailable) || errors.Is(err, plugins.ErrConflict) || errors.Is(err, plugins.ErrRateLimited) {
 			return commerce.DiscountQuote{}, errors.Join(commerce.ErrDiscountQuoteUnavailable, err)
 		}
@@ -53,5 +59,6 @@ func (s *Services) ConfigureCommerceDiscountProvider(native NativeCommerceDiscou
 	if native != nil {
 		quoter = CommerceDiscountProvider{Native: native}
 	}
+	s.commerceDiscountQuoter = quoter
 	s.OrderCreation = commerce.OrderCreation{Repository: commercestore.OrderCreation{DB: s.Identity.db, Discounts: quoter}}
 }

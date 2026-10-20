@@ -1,4 +1,5 @@
 import { authenticatedAPI as api } from './client'
+import type { DiscountQuote } from './commerceDiscounts'
 
 export interface AutomaticRenewalOffer {
   plan_sku_id: number
@@ -7,6 +8,10 @@ export interface AutomaticRenewalOffer {
   billing_unit: string
   billing_value: number
   quote_fingerprint: string
+  agreement_version?: 1 | 2
+  discount_amount_minor?: string
+  payable_amount_minor?: string
+  discount?: DiscountQuote
 }
 export interface AutomaticRenewalView {
   subscription_id: number

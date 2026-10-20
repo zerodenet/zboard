@@ -17,9 +17,10 @@ import (
 )
 
 type AutomaticRenewals struct {
-	DB     *gorm.DB
-	Issuer entitlements.CredentialIssuer
-	Now    func() time.Time
+	DB        *gorm.DB
+	Issuer    entitlements.CredentialIssuer
+	Now       func() time.Time
+	Discounts commerce.DiscountQuoter
 }
 
 var errAutomaticHistoryBound = fmt.Errorf("automatic renewal related-order limit exceeded: %w", commerce.ErrSubscriptionValueUnavailable)
@@ -71,12 +72,19 @@ func automaticRenewalView(row model.SubscriptionAutomaticRenewal, subscription u
 // Consent binds a purchased price/period and the actual offered terms. Changes
 // to the paid series or material terms require fresh consent. A missing discount
 // agreement cannot silently become a higher automatic charge.
-func automaticRenewalQuote(tx *gorm.DB, owner uint, sub model.Subscription, sku uint, now time.Time) (model.Order, commerce.AutomaticRenewalOffer, uint, string, error) {
-	order, preview, err := prepareOrder(tx, owner, commerce.OrderCreateRequest{PlanSKUID: sku, TargetSubscriptionID: sub.ID}, now)
+func automaticRenewalQuote(tx *gorm.DB, owner uint, sub model.Subscription, sku uint, now time.Time, discounts ...*checkoutDiscount) (model.Order, commerce.AutomaticRenewalOffer, uint, string, error) {
+	var discount *checkoutDiscount
+	if len(discounts) > 0 {
+		discount = discounts[0]
+	}
+	if hasCheckoutOffer(discount) {
+		discount.AcceptedAt = now
+	}
+	order, preview, err := prepareOrderWithDiscount(tx, owner, commerce.OrderCreateRequest{PlanSKUID: sku, TargetSubscriptionID: sub.ID}, now, discount)
 	if err != nil {
 		return order, commerce.AutomaticRenewalOffer{}, 0, "", err
 	}
-	if order.OrderType != "renewal" || preview.RequiresPriceAcceptance || order.BillingUnit == "once" || order.RenewalEffect != "extend_only" {
+	if order.OrderType != "renewal" || (preview.RequiresPriceAcceptance && !hasCheckoutOffer(discount)) || preview.PriceBasis != "purchased_period" || order.BillingUnit == "once" || order.RenewalEffect != "extend_only" {
 		return order, commerce.AutomaticRenewalOffer{}, 0, "", quoteError("仅能为已经购买并锁价的续费周期开启自动续费；其他周期请先手动核对购买。")
 	}
 	root, err := renewalPurchase(tx, sub.ID, owner, sub.PlanID)
@@ -89,6 +97,11 @@ func automaticRenewalQuote(tx *gorm.DB, owner uint, sub model.Subscription, sku 
 	var evidence commerce.EntitlementValueSnapshot
 	if json.Unmarshal([]byte(root.EntitlementValueSnapshot), &evidence) != nil || evidence.Version != 1 || !evidence.PaymentVerified || evidence.LegacyTransferUnproven || evidence.OrderID != root.ID || evidence.SubscriptionID != sub.ID {
 		return order, commerce.AutomaticRenewalOffer{}, 0, "", quoteError("原购买缺少可核对的实付与权益快照，请通过工单核实后再开启自动续费。")
+	}
+	if hasCheckoutOffer(discount) {
+		_, digest, err := automaticRecurringApproval(order, *discount)
+		quote := discount.Quote
+		return order, commerce.AutomaticRenewalOffer{AgreementVersion: 2, PlanSKUID: sku, Currency: order.Currency, BasePriceMinor: order.AmountCents, DiscountAmountMinor: order.DiscountAmount, PayableAmountMinor: order.PayableAmount, BillingUnit: order.BillingUnit, BillingValue: order.BillingValue, QuoteFingerprint: preview.QuoteFingerprint, Discount: &quote}, root.ID, digest, err
 	}
 	// A verified first-purchase reduction explicitly ends after that purchase.
 	// Unknown or recurring reductions continue to pause automatic charging.
@@ -116,11 +129,18 @@ func automaticRenewalQuote(tx *gorm.DB, owner uint, sub model.Subscription, sku 
 		return order, commerce.AutomaticRenewalOffer{}, 0, "", err
 	}
 	digest := sha256.Sum256(encoded)
-	offer := commerce.AutomaticRenewalOffer{PlanSKUID: sku, Currency: order.Currency, BasePriceMinor: order.AmountCents, BillingUnit: order.BillingUnit, BillingValue: order.BillingValue, QuoteFingerprint: preview.QuoteFingerprint}
+	offer := commerce.AutomaticRenewalOffer{AgreementVersion: 1, PayableAmountMinor: order.PayableAmount, PlanSKUID: sku, Currency: order.Currency, BasePriceMinor: order.AmountCents, BillingUnit: order.BillingUnit, BillingValue: order.BillingValue, QuoteFingerprint: preview.QuoteFingerprint}
 	return order, offer, root.ID, hex.EncodeToString(digest[:]), nil
 }
 
 func (s AutomaticRenewals) Read(ctx context.Context, owner, subscription, sku uint) (out commerce.AutomaticRenewalView, err error) {
+	prepared, prepErr := s.evaluateAutomaticDiscount(ctx, owner, subscription, sku)
+	if prepErr != nil {
+		return s.readAutomaticWithoutOffer(ctx, owner, subscription, prepErr)
+	}
+	if prepared != nil {
+		sku = prepared.SKU
+	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		user, err := automaticRenewalScope(tx, owner, subscription)
 		if err != nil {
@@ -144,7 +164,7 @@ func (s AutomaticRenewals) Read(ctx context.Context, owner, subscription, sku ui
 				sku = sub.PlanSKUID
 			}
 		}
-		_, offer, _, _, err := automaticRenewalQuote(tx, owner, sub, sku, commerceNow(s.Now))
+		_, offer, _, _, err := automaticRenewalQuote(tx, owner, sub, sku, commerceNow(s.Now), automaticAccepted(prepared))
 		var invalid *commerce.ValidationError
 		if errors.As(err, &invalid) {
 			out.Message = invalid.Message
@@ -168,6 +188,10 @@ func (s AutomaticRenewals) Set(ctx context.Context, owner, subscription uint, in
 	if !in.Enabled {
 		return s.disableAutomaticConsent(ctx, owner, subscription, in.ExpectedRevision)
 	}
+	prepared, err := s.evaluateAutomaticDiscount(ctx, owner, subscription, in.PlanSKUID)
+	if err != nil {
+		return out, err
+	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		user, err := automaticRenewalScope(tx, owner, subscription)
 		if err != nil {
@@ -181,7 +205,7 @@ func (s AutomaticRenewals) Set(ctx context.Context, owner, subscription uint, in
 			return resourceError(err)
 		}
 		now := commerceNow(s.Now)
-		_, offer, root, digest, err := automaticRenewalQuote(tx, owner, sub, in.PlanSKUID, now)
+		order, offer, root, digest, err := automaticRenewalQuote(tx, owner, sub, in.PlanSKUID, now, automaticAccepted(prepared))
 		if err != nil {
 			return err
 		}
@@ -198,7 +222,20 @@ func (s AutomaticRenewals) Set(ctx context.Context, owner, subscription uint, in
 		if row.Revision != in.ExpectedRevision {
 			return commerce.ErrSubscriptionQuoteChanged
 		}
+		if accepted := automaticAccepted(prepared); hasCheckoutOffer(accepted) {
+			if err := validateCheckoutOffer(accepted.Context, accepted.Quote, accepted.Quote.Provider.PluginID, commerceNow(s.Now)); err != nil {
+				return err
+			}
+		}
 		row.PlanSKUID, row.RootOrderID, row.AgreementDigest = in.PlanSKUID, root, digest
+		row.AgreementVersion, row.ApprovalSnapshot = 1, ""
+		if hasCheckoutOffer(automaticAccepted(prepared)) {
+			row.ApprovalSnapshot, _, err = automaticRecurringApproval(order, *prepared.Discount)
+			if err != nil {
+				return err
+			}
+			row.AgreementVersion = 2
+		}
 		row.State, row.Message = "waiting", "到期后使用站内可用余额续费；余额不足时保留提醒并在恢复窗口内重试。"
 		row.NextAttemptAt = maxTime(sub.EndAt, now)
 		row.SubscriptionID, row.UserID, row.Enabled = subscription, owner, true
@@ -212,7 +249,7 @@ func (s AutomaticRenewals) Set(ctx context.Context, owner, subscription uint, in
 		} else if err := tx.Save(&row).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&model.AuditLog{UserID: &owner, Actor: fmt.Sprintf("user:%d", owner), Action: "commerce.auto_renew.consent", Target: fmt.Sprintf("subscription:%d", subscription), Detail: fmt.Sprintf("enabled=%t sku=%d revision=%d", row.Enabled, row.PlanSKUID, row.Revision)}).Error; err != nil {
+		if err := tx.Create(&model.AuditLog{UserID: &owner, Actor: fmt.Sprintf("user:%d", owner), Action: "commerce.auto_renew.consent", Target: fmt.Sprintf("subscription:%d", subscription), Detail: fmt.Sprintf("enabled=%t sku=%d revision=%d agreement_version=%d approval_digest=%s", row.Enabled, row.PlanSKUID, row.Revision, row.AgreementVersion, row.AgreementDigest)}).Error; err != nil {
 			return err
 		}
 		out = automaticRenewalView(row, subscription)

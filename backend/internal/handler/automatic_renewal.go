@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -9,6 +10,19 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/capabilities/catalog"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 )
+
+func automaticRenewalError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, commerce.ErrDiscountQuoteUnavailable):
+		writeCapabilityError(w, http.StatusServiceUnavailable, "长期优惠当前不可核验，请先核对当前自动续费状态后重新报价。", "discount_unavailable")
+	case errors.Is(err, commerce.ErrDiscountQuoteInvalid):
+		writeCapabilityError(w, http.StatusBadGateway, "长期优惠报价未通过校验，请重新核对当前状态。", "discount_invalid")
+	case errors.Is(err, commerce.ErrDiscountConfirmationRequired):
+		writeCapabilityError(w, http.StatusConflict, "长期优惠协议需要重新明确确认，请核对原授权和最新报价。", "discount_confirmation_required")
+	default:
+		subscriptionValueError(w, err)
+	}
+}
 
 func (h *handlers) AutomaticRenewalHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
@@ -34,7 +48,7 @@ func (h *handlers) AutomaticRenewalHandler(w http.ResponseWriter, r *http.Reques
 		}
 		out, err := service.Read(r.Context(), claims.UserID, id, uint(sku))
 		if err != nil {
-			subscriptionValueError(w, err)
+			automaticRenewalError(w, err)
 			return
 		}
 		OK(w, out)
@@ -52,7 +66,7 @@ func (h *handlers) AutomaticRenewalHandler(w http.ResponseWriter, r *http.Reques
 	}
 	out, err := service.Set(r.Context(), claims.UserID, id, in)
 	if err != nil {
-		subscriptionValueError(w, err)
+		automaticRenewalError(w, err)
 		return
 	}
 	OK(w, out)

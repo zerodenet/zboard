@@ -16,12 +16,16 @@ type AutomaticRenewalRequest struct {
 }
 
 type AutomaticRenewalOffer struct {
-	PlanSKUID        uint   `json:"plan_sku_id"`
-	Currency         string `json:"currency"`
-	BasePriceMinor   int64  `json:"base_price_minor,string"`
-	BillingUnit      string `json:"billing_unit"`
-	BillingValue     int    `json:"billing_value"`
-	QuoteFingerprint string `json:"quote_fingerprint"`
+	AgreementVersion    int            `json:"agreement_version"`
+	DiscountAmountMinor int64          `json:"discount_amount_minor,string"`
+	PayableAmountMinor  int64          `json:"payable_amount_minor,string"`
+	Discount            *DiscountQuote `json:"discount,omitempty"`
+	PlanSKUID           uint           `json:"plan_sku_id"`
+	Currency            string         `json:"currency"`
+	BasePriceMinor      int64          `json:"base_price_minor,string"`
+	BillingUnit         string         `json:"billing_unit"`
+	BillingValue        int            `json:"billing_value"`
+	QuoteFingerprint    string         `json:"quote_fingerprint"`
 }
 
 type AutomaticRenewalView struct {

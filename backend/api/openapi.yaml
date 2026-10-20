@@ -4206,7 +4206,7 @@ paths:
       tags: [subscriptions]
       operationId: getOwnedAutomaticRenewal
       summary: Read per-subscription wallet renewal consent and an explicitly selected period quote
-      description: Default off. Only an owned subscription, a purchased locked period, verified purchase evidence, and a renewable SKU can produce an offer. Unknown historical discount agreements explain why automatic debit is unavailable. No order or debit is created by this read. Insufficient balance is retained as a visible account notice. An over-bound historical item remains readable with no unsafe offer, and its owner can always withdraw future debit consent without settling that history.
+      description: Default off. Only an owned subscription, a purchased locked period, verified purchase evidence, and a renewable SKU can produce an offer. V2 recurring offers include host-owned decimal-string base, reduction and payable amounts plus the verified ongoing agreement. Provider evaluation runs outside financial transactions. Unavailable or unverified terms return the readable current consent without an unsafe offer; they never become an undiscounted approval. No order or debit is created by this read. Insufficient balance remains a visible account notice. An over-bound historical item remains readable and its owner can always withdraw consent without a provider call or history settlement.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
         - { name: plan_sku_id, in: query, schema: { type: integer, minimum: 1 } }
@@ -4229,7 +4229,7 @@ paths:
       tags: [subscriptions]
       operationId: setOwnedAutomaticRenewal
       summary: Explicitly enable or disable wallet-only renewal for one owned subscription
-      description: No immediate charge. Enabling binds a current server quote, purchased price and period, paid series and offered entitlement terms. Revision conflicts require an explicit refresh. The background job processes due subscriptions in stable account, expiry and subscription-ID order, commits each through the same wallet payment and fulfillment transaction, and retries insufficient funds in five minutes while the recovery window remains open. Ending the window, unsubscribe or replacement stops old consent. No external payment channel is invoked. A known historical safety-bound failure rolls back its financial transaction, records only a paused non-charge result and stable sequence separately, and lets neighboring subscriptions proceed. It is retried in 30 minutes only while the recovery window is open.
+      description: No immediate charge. Enabling obtains a fresh quote outside the financial transaction, then rechecks consent revision, purchased price/period, paid source and offered terms. V2 stores the exact approved stable base, discount, payable, agreement and provider configuration identity; changed terms or identity pause debit until explicit approval. Transient provider failure never charges full price. The job evaluates providers outside the scan/financial transaction, then reselects the same due head under the existing guard before committing through ordinary wallet payment/fulfillment. Stable account, expiry and subscription-ID order is retained; RPC completion speed cannot choose who spends balance first. Insufficient funds or unavailable offers retry in five minutes within the recovery window. Window closure, unsubscribe or replacement stops old consent. No external payment channel is invoked. A known historical safety-bound failure rolls back finance, records a paused non-charge result and stable sequence separately, lets neighboring subscriptions proceed and retries in 30 minutes only within the recovery window. Disabling requires no provider call.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
       requestBody:
@@ -4254,6 +4254,8 @@ paths:
         "403": { description: Account unavailable }
         "404": { description: Subscription unavailable to this owner }
         "409": { description: Consent revision or quote changed; read and confirm again }
+        "502": { description: Provider quote invalid; verify current consent before another explicit request }
+        "503": { description: Provider quote unavailable; no undiscounted approval fallback }
   /api/v1/subscriptions/{id}/value:
     get:
       tags: [subscriptions]
@@ -9495,11 +9497,15 @@ components:
         quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
     AutomaticRenewalOffer:
       type: object
-      required: [plan_sku_id, currency, base_price_minor, billing_unit, billing_value, quote_fingerprint]
+      required: [agreement_version, plan_sku_id, currency, base_price_minor, discount_amount_minor, payable_amount_minor, billing_unit, billing_value, quote_fingerprint]
       properties:
+        agreement_version: { type: integer, enum: [1, 2], description: V1 undiscounted renewal or V2 explicitly approved recurring discount. }
         plan_sku_id: { type: integer, minimum: 1 }
         currency: { type: string }
         base_price_minor: { type: string, pattern: '^[0-9]+$' }
+        discount_amount_minor: { type: string, pattern: '^[0-9]+$', description: Host-owned exact reduction; zero for V1. }
+        payable_amount_minor: { type: string, pattern: '^[0-9]+$', description: Exact recurring debit amount approved separately from the locked base. }
+        discount: { $ref: '#/components/schemas/CommerceDiscountQuote' }
         billing_unit: { type: string, enum: [day, month, year] }
         billing_value: { type: integer, minimum: 1 }
         quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }

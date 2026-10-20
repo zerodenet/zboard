@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import SubscriptionAutomaticRenewal from './SubscriptionAutomaticRenewal.vue'
 import { fetchAutomaticRenewal, setAutomaticRenewal } from '../api/automaticRenewal'
 import { fetchPlanCatalogSKUs } from '../api/client'
+import type { AutomaticRenewalOffer } from '../api/automaticRenewal'
 
 const state = vi.hoisted(() => ({ app: null as any }))
 vi.mock('../stores/app', () => ({ useAppStore: () => state.app }))
@@ -80,4 +81,49 @@ it('keeps a paused historical item readable and revocable without an unsafe quot
  vi.mocked(setAutomaticRenewal).mockResolvedValue({ ...enabled, enabled: false, revision: 2, state: 'disabled', message: '已关闭' })
  const wrapper = open(); await flushPromises(); expect(wrapper.text()).toContain('本项自动扣款已暂停'); expect(wrapper.text()).toContain('本次未扣款')
  await click(wrapper, '关闭余额自动续费'); expect(setAutomaticRenewal).toHaveBeenCalledWith(7, expect.objectContaining({ enabled: false, expected_revision: 1 })); wrapper.unmount()
+})
+
+function recurringOffer(): AutomaticRenewalOffer {
+  return { ...offer, agreement_version: 2, discount_amount_minor: '2000', payable_amount_minor: '10000',
+    discount: { provider: { plugin_id: 'native.quote', signing_key_fingerprint: 'private-signature', package_digest: 'private-package', generation: 1, config_revision: 1 }, offer: { status: 'available', currency: 'CNY', discount_minor: 2000, input_fingerprint: 'private-context', expires_at: '2099-01-01T00:00:00Z', message: '原长期优惠', agreement: { id: 'long', version: '1', scope: 'recurring', terms_hash: 'private-terms-hash', terms_json: '{"private":"rules"}' } } } }
+}
+it('shows recurring base, reduction and actual automatic debit before explicit consent without sending pricing evidence', async () => {
+  vi.mocked(fetchAutomaticRenewal).mockResolvedValue({ ...initial, offer: recurringOffer() })
+  const wrapper = open(); await flushPromises()
+  expect(wrapper.text()).toContain('基础续费价格为 CNY 120.00')
+  expect(wrapper.text()).toContain('本次核对优惠 CNY 20.00')
+  expect(wrapper.text()).toContain('每次仅从可用站内余额扣除 CNY 100.00')
+  expect(wrapper.text()).toContain('不会按基础价扣款')
+  expect(wrapper.text()).not.toMatch(/private-|"private"/)
+  expect(setAutomaticRenewal).not.toHaveBeenCalled()
+  await click(wrapper, '确认此规格并开启余额自动续费')
+  expect(setAutomaticRenewal).toHaveBeenCalledTimes(1)
+  expect(setAutomaticRenewal).toHaveBeenLastCalledWith(7, { enabled: true, plan_sku_id: 3, quote_fingerprint: offer.quote_fingerprint, expected_revision: 0 })
+  wrapper.unmount()
+})
+it('retains revocation when a malformed recurring quote cannot be approved', async () => {
+  const invalid = recurringOffer(); invalid.payable_amount_minor = '12000'
+  vi.mocked(fetchAutomaticRenewal).mockResolvedValue({ ...enabled, offer: invalid, state: 'discount_unavailable', message: '优惠不可用，本次不扣款' })
+  const wrapper = open(); await flushPromises()
+  expect(wrapper.text()).toContain('长期优惠自动续费报价无法确认')
+  expect(wrapper.text()).not.toContain('确认此规格并开启')
+  await click(wrapper, '关闭余额自动续费')
+  expect(setAutomaticRenewal).toHaveBeenCalledTimes(1)
+  expect(setAutomaticRenewal).toHaveBeenLastCalledWith(7, { enabled: false, plan_sku_id: 3, quote_fingerprint: '', expected_revision: 1 })
+  wrapper.unmount()
+})
+it('expires a recurring approval without replaying a write or disabling current consent', async () => {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+  const value = recurringOffer(); value.discount!.offer.expires_at = new Date(Date.now() + 1000).toISOString()
+  vi.mocked(fetchAutomaticRenewal).mockResolvedValue({ ...enabled, offer: value })
+  const wrapper = open()
+  try {
+    await flushPromises()
+    expect(wrapper.text()).toContain('确认此规格并开启')
+    await vi.advanceTimersByTimeAsync(1100); await flushPromises()
+    expect(wrapper.text()).toContain('优惠报价已过期')
+    expect(wrapper.text()).not.toContain('确认此规格并开启')
+    expect(wrapper.text()).toContain('关闭余额自动续费')
+    expect(setAutomaticRenewal).not.toHaveBeenCalled()
+  } finally { wrapper.unmount(); vi.useRealTimers() }
 })

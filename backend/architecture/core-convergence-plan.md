@@ -782,3 +782,16 @@ become1 with unchanged writes. MySQL keeps its original scalar path. No schema
 or retention changes; source-only rollback. Fixed-source full-path measurement,
 full checks and original capacity gates remain pending. See the accounting SQL
 measurement document and validation/2026-10-20-sqlite-cursor-cohort.json.
+
+### P2/P5 recurring automatic renewal (2026-10-20)
+
+Explicit V2 recurring consent now binds stable per-period debit, entitlement
+terms and provider identity. Outside-transaction RPC is revalidated against the
+current source/consent/queue; changed terms pause for explicit approval, temporary
+unavailability never debits the base, and withdrawal needs no provider.0057
+preserves V1 and refuses missing recorded approval authority. SQLite and actual
+MySQL migration, concurrency and signed-native HTTP/wallet/two-debit tests pass.
+Actual UI displays exact base/reduction/debit and blocks expired proposals;
+the original frontend scope passes200 files/1086 tests with8 unchanged skips,
+typecheck/build and OpenAPI pass. Complete new-head backend/CI and live browser
+remain pending. See core-convergence-automatic-recurring.md and its receipt.

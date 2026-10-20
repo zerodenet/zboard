@@ -244,3 +244,18 @@ selection and reconcile pending discounted orders with a compatible binary befor
 binary rollback: an older strict snapshot reader may refuse new discount evidence.
 Do not truncate terms, clear snapshots or infer old prices. This describes release
 preparation only; no production migration is authorized or executed.
+
+### 0057 automatic recurring approval authority
+
+Adds agreement_version default1 and private approval_snapshot TEXT to existing
+subscription consent; V1 rows retain their meaning. Missing recorded authority
+columns/table refuse startup before SQLite AutoMigrate. Unrecorded partial DDL
+with new authority requires restoration; empty old V1 structure can complete.
+Invalid individual approvals do not become a global startup outage: automatic
+execution isolates them without charging, and users may still withdraw consent.
+
+Down preserves fields and evidence. Stop automatic execution before rollback;
+retain approvals, paid snapshots, wallet/audit and outstanding intents. Do not
+convert V2 consent to V1 or let an incompatible worker charge it. Verify refusal
+on an isolated copy before any binary rollback. No production migration occurred.
+See core-convergence-automatic-recurring.md for the transaction and plugin limits.

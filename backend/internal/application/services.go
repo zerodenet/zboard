@@ -35,6 +35,7 @@ import (
 )
 
 type Services struct {
+	commerceDiscountQuoter       commerce.DiscountQuoter
 	DiscountProviders            commerce.DiscountProviderChoices
 	Navigation                   navigation.Service
 	MessageTemplates             messaging.Templates
@@ -304,7 +305,7 @@ func (s *Services) WalletPayments(cipher zeroadapter.Cipher, mieru bool) commerc
 }
 
 func (s *Services) AutomaticRenewals(cipher zeroadapter.Cipher, mieru bool) commerce.AutomaticRenewals {
-	return commerce.AutomaticRenewals{Repository: commercestore.AutomaticRenewals{DB: s.Identity.db, Issuer: zeroadapter.Issuer{Cipher: cipher, Mieru: mieru}}}
+	return commerce.AutomaticRenewals{Repository: commercestore.AutomaticRenewals{DB: s.Identity.db, Issuer: zeroadapter.Issuer{Cipher: cipher, Mieru: mieru}, Discounts: s.commerceDiscountQuoter}}
 }
 
 func (s *Services) OrderAccess(cipher zeroadapter.Cipher) commerce.OrderAccess {

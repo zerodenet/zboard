@@ -19,6 +19,34 @@ type nativeCommerceQuoteStub struct {
 	err   error
 }
 
+type nativeCommerceQuoteFunc func(context.Context, string, commerce.DiscountQuoteContext) (commerce.DiscountQuote, error)
+
+func (f nativeCommerceQuoteFunc) EvaluateCommerceDiscount(ctx context.Context, id string, in commerce.DiscountQuoteContext) (commerce.DiscountQuote, error) {
+	return f(ctx, id, in)
+}
+
+func TestCommerceDiscountAdapterDistinguishesProviderDeadlineFromCallerCancellation(t *testing.T) {
+	in := commerce.DiscountQuoteContext{Version: 1, BuyerID: 7, Operation: "new", PlanID: 1, PlanSKUID: 2, BasePriceMinor: 12000, Currency: "CNY", BillingUnit: "month", BillingValue: 1, InputFingerprint: strings.Repeat("a", 64)}
+	adapter := CommerceDiscountProvider{Native: &nativeCommerceQuoteStub{err: context.DeadlineExceeded}}
+	if _, err := adapter.Quote(t.Context(), "example.quote", in); !errors.Is(err, commerce.ErrDiscountQuoteUnavailable) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("provider deadline lost unavailable explanation", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	adapter.Native = nativeCommerceQuoteFunc(func(context.Context, string, commerce.DiscountQuoteContext) (commerce.DiscountQuote, error) {
+		cancel()
+		return commerce.DiscountQuote{}, context.DeadlineExceeded
+	})
+	if _, err := adapter.Quote(ctx, "example.quote", in); !errors.Is(err, context.Canceled) || errors.Is(err, commerce.ErrDiscountQuoteUnavailable) {
+		t.Fatal("caller cancellation reclassified as provider outage", err)
+	}
+	dbErr := errors.New("repository unavailable")
+	adapter.Native = &nativeCommerceQuoteStub{err: dbErr}
+	if _, err := adapter.Quote(t.Context(), "example.quote", in); err != dbErr || errors.Is(err, commerce.ErrDiscountQuoteUnavailable) {
+		t.Fatal("unrelated failure reclassified", err)
+	}
+}
+
 func (s *nativeCommerceQuoteStub) EvaluateCommerceDiscount(_ context.Context, _ string, _ commerce.DiscountQuoteContext) (commerce.DiscountQuote, error) {
 	s.calls++
 	return s.quote, s.err
