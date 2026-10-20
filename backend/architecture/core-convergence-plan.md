@@ -680,3 +680,11 @@ P4正常异步积压现在是显式未知的pending读状态，scope/from/to及n
 P7新CI39466880437的d98后端保留真实失败：SSH node_deadline在包装shell EOF后立即观察到子进程R，后续SDK/vet/build在该job跳过。旧测试本地五次48.263s未复现；同一九秒总清理预算内观察实际子进程终止后，所有SSH测试五次49.921s通过。不是延长超时或自动重跑CI：原两个独立九秒等待收紧成一个九秒deadline，仍检查存活失败、锁释放和无关进程存活，无生产wrapper改动。记录validation/2026-10-20-ssh-lifetime-observation.json，精确新CI另验。
 
 308689e固定clean clone完整后端202.331s、vet3.203s、build1.808s、CGO_ENABLED=0 SQLite12.543s全通过；不是d98 CI成功替代。真实MySQL仍执行。OpenAPI最终有效、282既有警告；趋势/日历/Principal组合12.225s通过。所有新原始日志位于持久ignored recovery-validation目录。
+
+## P4-03 / P6-02：修复后的固定源容量结果（2026-10-20）
+
+308689e38cff794865b633cde7193656ca2ecd4c精确clean源已通过全部六项CI39467975060；本机完整Go202.331s/vet/build/pureSQLite及原MySQL核心823.311s、顺序copy113.401s均通过。原超时15m未增加。d98的SSH测试失败仍保留，后来20791f2仅收紧为同一九秒观察预算，需其独立CI。
+
+17:59:16–18:00:48 UTC暂停其余编译/测试后，原1CPU/1GiB/no-extra-swap/20events秒/4readers/60秒负载与所有gate完全未改，fixed308复测全部通过：1201unique、1274eventHTTP、948业务读取全0错误，trend158/0错误/p95 5ms，eventp9517ms，账本/配额/预计9833472一致、最终projection pending0、停机spool0、drain5秒；9项源码/产物绑定全真。首个重试因PATH漏既有docker在load前停止，失败log保留。
+
+原4df的112/157 trend503失败不改写，独立报告core-convergence-capacity-hourly-repaired.md和validation/2026-10-20-hourly-repaired-capacity.json提供对比。原client未统计pending/complete比例，负载期间比例未知，200不等于完整图表；最终drain统计验证单列。CPU采样峰14.82%、working set36.78MiB、RSS61.14MiB，仅短样本，不代表伸缩收益或容量上限。SQL批写/执行延迟、quota-stop/overuse、插件繁忙、独立worker/归档仍未完成，P4/P6/P7不整体完成。
