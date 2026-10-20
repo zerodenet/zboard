@@ -637,3 +637,12 @@ P2-14最新实库补证：d7dc8ca独立源码快照的全部TestMySQLPlanQuota37
 P4-02提交53a056d32633dcbda9b243553d85a88fe9fc2090已推至原Draft PR78，独立CI39369974199进行中。前一7ca9f63d0cf12a03713f3a242c508dcbf82e4856的backend/frontend/mysql/contract/compose/zrs-compiler现全部成功：https://github.com/zerodenet/zboard/actions/runs/39368858465 。53a检查尚未结束，不以父提交绿灯替代。
 
 P4-02完整CI39369974199保留失败：handler224.517s中的两个旧历史夹具直接插TrafficRecord，缺少0054后独立hourly物化；timezone额外77在原seed重建后插入、ranking10行从未物化。精确clean53复现0.348s失败后，仅这两处在历史插入完成时rebuild，所有时区/缓存/AsOf/分页截断/权限/SQL边界断言保留，同快照两fixture修复0.359s通过。没有加入生产rawfallback或删断言。完整最终CI仍继续验证，不把专项当整套成功。
+
+
+## P6-01：固定源码的单进程短基准（2026-10-20）
+
+先建立0054之前的精确7ca9f63基准：独立clean标准clone、1CPU/1GiB/不加swap、2节点/20订阅/2000历史/20unique事件每秒/4readers、60秒。原负载/报告/内存/磁盘/错误率阈值均未改；外层只读绑定全部源码、runner、二进制及补充RSS/dbstat，默认仅preflight，显式execute单次运行。首轮因Docker默认配置只读在load前失败；第二轮仅改既有可写DOCKER_CONFIG后，全部原gate及9项绑定通过，失败证据保留。
+
+实际1201唯一事件/60.539s，1274事件HTTP及945业务读取全部0错误；事件p95=18ms、读取p95=3–16ms，账本/配额/预计值9833472bytes一致，最终统计pending0、停机spool0，drain5s。working set采样峰37.46MiB、RSS采样峰63.46MiB；最后runtime接收→投影/检查点p95上界2000ms/max2124ms。详细采样口径、增长、原命令、哈希及缺口见core-convergence-capacity-baseline.md。没有测SQL执行p95或每批写入量，不能用pool等待/BlockIO替代。
+
+此为可复现的小规模起点，不是容量上限、生产承诺、P6完成或独立worker收益证明。0054尚未作同条件容量比较，53a完整CI两历史fixture问题已单独4dfb664修复；外层准许精确修复源准备，后续新窗口运行后才记录结果。并发交易、配额到停服/超用、插件繁忙、worker崩溃/扩缩及持续增长仍继续。所有临时服务/负载/编译退出后才移交数据库测试，未动生产。
