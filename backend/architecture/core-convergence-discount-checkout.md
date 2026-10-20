@@ -200,3 +200,18 @@ passed/2existing skipped,168.01s. Eight-file narrow suite123/123 passed. Vue-tsc
 and Vite13.99s passed. The earlier TS2532 in a test helper and its repair remain
 in separate logs. No exclusion or skip was added. Browser/live-server joint
 acceptance and exact combined commit CI still require their own evidence.
+
+## Full-check recovery failure and compatibility fix
+
+de0f2ab fullGo failed after288.369s: the legacy0037 old-schema/missing-column
+fixture retained the newer0055 receipt, correctly triggering the new lost-evidence
+guard. The fixture now removes only0055's receipt to represent its actual legacy
+upgrade target; all original paid-history and missing-column assertions remain.
+The first realMySQL rerun then found an actual ordering gap: unrecorded0055 ran
+before the outer0037 reconciliation for a recorded-but-missing legacy column.
+0055 now explicitly invokes that existing recovery path before expansion, while
+already-recorded0055 still refuses invented lost evidence. The real failing
+MySQL27.195s log and first fullGo failure are retained. A later shared-source
+attempt could not compile in-progress V2 work and did not execute database tests;
+subsequent validation uses the isolated committed checkout. These failures are
+not marked as passes, and exact fixed-source validation follows separately.

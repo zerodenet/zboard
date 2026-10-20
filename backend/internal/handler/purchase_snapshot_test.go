@@ -133,6 +133,13 @@ func assertPurchaseSnapshotMigration(t *testing.T, f orderFixture, state string)
 	t.Helper()
 	order := f.paid(t, f.create(t, 0).ID)
 	const version = "0037_commercial_purchase_snapshot.up.sql"
+	// These cases model the pre-0055 legacy snapshot schema. A completed 0055
+	// can contain accepted discount evidence and deliberately refuses a lost
+	// column before AutoMigrate (covered separately on SQLite and real MySQL).
+	// Keep 0037's recorded-missing-column recovery assertion unchanged.
+	if err := f.h.db.Exec("DELETE FROM schema_migrations WHERE version = ?", "0055_discount_purchase_snapshot.up.sql").Error; err != nil {
+		t.Fatal(err)
+	}
 	if state == "interrupted_after_ddl" || state == "old_schema" {
 		if err := f.h.db.Exec("DELETE FROM schema_migrations WHERE version = ?", version).Error; err != nil {
 			t.Fatal(err)

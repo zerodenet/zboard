@@ -132,5 +132,15 @@
       "exact-commit complete backend/SQLite/MySQL/newCI"
     ]
   },
-  "frontend_recovery": "All operations persist original confirmation facts independently from wire request. Unknown results retain original request/key, suppress new quotes and show unknown for legacy missing facts. JSON null is corrupted intent, not absence. Nine new regressions failed before fix; final suite passes."
+  "frontend_recovery": "All operations persist original confirmation facts independently from wire request. Unknown results retain original request/key, suppress new quotes and show unknown for legacy missing facts. JSON null is corrupted intent, not absence. Nine new regressions failed before fix; final suite passes.",
+  "comprehensive_failure": {
+    "source": "de0f2ab290f132dffff6ad7840d3d207c0305689",
+    "command": "GOMAXPROCS=2 go test -p 2 ./...",
+    "exit_code": 1,
+    "wall_seconds": 288.369,
+    "failure": "TestSQLitePurchaseSnapshotMigrationAndRecovery: old_schema and recorded_missing_column fixtures retained the newer0055 receipt while removing0037 snapshot column",
+    "retained_log": "backend-full-de0f2ab.log",
+    "additional_real_mysql_failure": "After correcting the legacy receipt fixture, actual MySQL exposed0055 applying before outer0037 recovery; reconcileDiscountSnapshotSchema must invoke existing0037 recovery before expansion when0055 is not yet applied.",
+    "fixed_validation": "Pending isolated committed-source rerun. Shared-working-tree attempt encountered in-progress V2 compile changes before database execution; log preserved."
+  }
 }

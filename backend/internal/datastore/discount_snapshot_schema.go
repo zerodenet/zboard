@@ -36,7 +36,12 @@ func reconcileDiscountSnapshotSchema(db *gorm.DB) error {
 		return err
 	}
 	if !db.Migrator().HasColumn("orders", "purchase_snapshot") {
-		return fmt.Errorf("discount snapshot requires the existing purchase snapshot column")
+		// A legacy database can have recorded 0037 while its column is missing.
+		// Recover through the existing compatibility path before applying 0055.
+		// The preflight above still forbids inventing lost post-0055 evidence.
+		if err := reconcilePurchaseSnapshotSchema(db); err != nil {
+			return err
+		}
 	}
 	if !IsSQLite(db) {
 		var dataType string
