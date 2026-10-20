@@ -1,0 +1,60 @@
+{
+  "sources": [
+    {
+      "source": "ffb45c383894b4b00bf95d3641f5367ed42be4bb",
+      "run_id": 39512890526,
+      "conclusion": "success",
+      "jobs": {
+        "backend": "success",
+        "frontend": "success",
+        "mysql": "success",
+        "compose": "success",
+        "contract": "success",
+        "zrs-compiler": "success"
+      },
+      "mysql_seconds": {
+        "datastore": 137.4,
+        "handler": 698.624,
+        "networkstore": 81.883,
+        "jobstore": 87.419,
+        "platformstore_copy": 79.781
+      },
+      "run_url": "https://github.com/zerodenet/zboard/actions/runs/39512890526",
+      "raw_log_sha256": "a5a87335df7e197b0153810aff1399404675444eb3cc9a9ae74dddc2c3a37964"
+    },
+    {
+      "source": "e9021b2b698cbb06d402a20b7ead28c696a8befa",
+      "run_id": 39512955945,
+      "conclusion": "failure",
+      "jobs": {
+        "backend": "success",
+        "frontend": "success",
+        "mysql": "failure",
+        "compose": "success",
+        "contract": "success",
+        "zrs-compiler": "success"
+      },
+      "mysql_seconds": {
+        "datastore": 181.082,
+        "handler": 900.024,
+        "networkstore": 113.385
+      },
+      "failure": "handler package reached unchanged15m timeout",
+      "running_test_at_alarm": "TestMySQLBufferedReceiptRevalidatesCredentialAfterContention (3s)",
+      "unexecuted": [
+        "CI mysql jobstore command",
+        "CI mysql platformstore copy command"
+      ],
+      "run_url": "https://github.com/zerodenet/zboard/actions/runs/39512955945",
+      "raw_log_sha256": "113637c8ed895996ffaef78c92f50fc96a76d187e429e6a0505c6b4f39dcd99a"
+    }
+  ],
+  "limits": [
+    "New e902 CI is failed; ffb success does not accept it.",
+    "Four fewer ALTERs and21 fewer SELECTs do not establish stable full-suite time margin.",
+    "The test active for3s at the package alarm is not evidence it caused900s elapsed.",
+    "Expected injected SQL errors in raw logs are not classified as failed assertions.",
+    "No CI/test exclusion/timeout/permission or database-setting change.",
+    "No automatic rerun of failed CI; later source will be tested anew."
+  ]
+}

@@ -8888,6 +8888,14 @@ components:
         notice:
           type: string
     NodeConnectorHeartbeat:
+      description: >-
+        Canonical legacy heartbeat producers send all six required fields. For
+        compatibility with older senders, the heartbeat intake also accepts
+        omitted or null numeric observations without replacing stored values;
+        an explicitly provided zero remains a measured zero. This permissive
+        intake does not make partial or null payloads canonical schema instances.
+        Receipt time and reported build/counters do not prove an installed runtime,
+        applied configuration, or credential delivery.
       type: object
       required: [node_id, build_id, uptime_seconds, active_flows, bytes_up, bytes_down]
       properties:

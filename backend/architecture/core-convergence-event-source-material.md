@@ -30,3 +30,24 @@ with node stats and Latest/Stats still share a DB cursor. Durable auxiliary inte
 independent stats ordering, fault isolation, lifecycle/tombstones and bounded
 retention remain P4 work. No legacy facts are fabricated. Rollback to an older
 binary needs no schema changes but resumes discarding the two fields at mapping.
+
+The exact clean e9021b2 ordinary clone passed full Go284.126s, vet3.580s,
+build1.900s and pure-Go SQLite22.278s, GOMAXPROCS2/-p2. The
+[source-specific backend receipt](validation/2026-10-20-source-material-backend-checks.json)
+keeps every raw log hash. Full local MySQL and capacity were not run for this
+intermediate source; the next integrated source will receive those full checks.
+CI for e902 remains a separate result. Compilation cache was cleaned only after
+this runner exited, so later compile wall times must reflect cache rebuilding.
+
+A subsequent [read-only source audit](validation/2026-10-20-node-observation-source-audit.json)
+found another prerequisite for independent Stats progress. After a fresh flow100,
+explicit node-ID reuse can leave an old cursor but no Stats floor; queued stats99
+would pass an independent empty Stats slot and update the replacement asset.
+This is a source-derived counterexample, not an executed reproduction. Normal
+HTTP creation uses auto-increment, but restore/import and deletion need an
+incarnation/tombstone boundary before this gate can change. Current credentials,
+remote CoreID/SourceID, copied CreatedAt and missing legacy receiver time cannot
+invent that ownership. Copy omits migration receipts, and partial/current/legacy
+source schemas need distinct handling. Existing cursor-first versus deletion
+node-first locks must be reconciled with actual MySQL tests. No0059 or new cursor
+has been added, and the actual stats-failure/accounting rollback remains in place.

@@ -213,12 +213,12 @@ type authenticatedNodeReport struct {
 }
 
 type nodeConnectorHeartbeat struct {
-	NodeID        string `json:"node_id"`
-	BuildID       string `json:"build_id"`
-	UptimeSeconds uint64 `json:"uptime_seconds"`
-	ActiveFlows   uint64 `json:"active_flows"`
-	BytesUp       uint64 `json:"bytes_up"`
-	BytesDown     uint64 `json:"bytes_down"`
+	NodeID        string  `json:"node_id"`
+	BuildID       string  `json:"build_id"`
+	UptimeSeconds *uint64 `json:"uptime_seconds"`
+	ActiveFlows   *uint64 `json:"active_flows"`
+	BytesUp       *uint64 `json:"bytes_up"`
+	BytesDown     *uint64 `json:"bytes_down"`
 }
 
 type trafficReconciliationItem = metering.ReconciliationItem
@@ -1314,8 +1314,8 @@ func (h *handlers) NodeConnectorHeartbeatHandler(w http.ResponseWriter, r *http.
 	}
 	now := time.Now().UTC()
 	activity := networkcap.NodeActivityUpdate{
-		At: now, Online: true, ConnectorSeen: true, UptimeSeconds: &heartbeat.UptimeSeconds,
-		ActiveFlows: &heartbeat.ActiveFlows, BytesUp: &heartbeat.BytesUp, BytesDown: &heartbeat.BytesDown,
+		At: now, Online: true, ConnectorSeen: true, UptimeSeconds: heartbeat.UptimeSeconds,
+		ActiveFlows: heartbeat.ActiveFlows, BytesUp: heartbeat.BytesUp, BytesDown: heartbeat.BytesDown,
 	}
 	if heartbeat.BuildID != "" {
 		activity.Version = &heartbeat.BuildID

@@ -1156,3 +1156,20 @@ unchanged. Controlled old mapping fails3 source assertions; fixed aggregation,
 comparison and race3 pass. No stats sample is invented for a flow-only batch.
 [Evidence and remaining durable-handoff boundaries](core-convergence-event-source-material.md).
 Combined-source full backend/MySQL/current CI/capacity remain separate checks.
+
+New CI outcomes after the two production batches are distinct: ffb45c3 passes
+all six jobs (handler698.624s); e9021b2 passes five but MySQL handler reaches the
+unchanged900s limit. Datastore181.082s/network113.385s pass in the failed run;
+CI jobstore/copy are unexecuted. The active receipt test had run only3s at the
+package alarm and is not assigned causality. [Exact new CI receipt](validation/2026-10-20-batches-source-material-ci.json).
+No older green accepts e902, and the additive counts do not prove stable margin.
+
+### P4/P5 preserve missing legacy heartbeat numbers (2026-10-20)
+
+Four internal numeric pointers now pass missing/null as nil to existing activity
+writes, preserving known observations while explicit0 still updates. Existing
+partial200/liveness/build behavior and credential fences remain. Canonical
+OpenAPI required6/types unchanged, compatibility exception documented. Controlled
+old17 expected failures; fixed parser/SQLite66, actualMySQL25 and race3 198 pass.
+Both fixture failures remain; exact newsource full backend/15mMySQL/CI/original
+capacity still required. [Scope, evidence and rollback](core-convergence-heartbeat-presence.md).
