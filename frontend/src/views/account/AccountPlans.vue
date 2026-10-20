@@ -37,27 +37,29 @@
         <li class="complete"><span>2</span>选择规格</li>
         <li class="active"><span>3</span>确认订单</li>
       </ol>
+      <PageAlert v-if="attemptError" tone="danger" title="订单恢复记录无法核对">{{ attemptError }}</PageAlert>
+      <p v-if="checkoutAttempt" role="status">上次创建请求已保存。恢复将沿用原订单内容和原确认金额；请恢复上次订单或前往“我的订单”核对。</p>
 
       <div class="purchase-checkout__layout">
         <div class="purchase-checkout__main">
           <section class="purchase-checkout__section">
             <header>
-              <span>{{ currentOperation.label }}</span>
+              <span>{{ checkoutAttempt ? '已提交订单' : currentOperation.label }}</span>
               <h2>订单确认</h2>
             </header>
 
             <article class="purchase-checkout__product">
               <div>
-                <small>{{ selectedPlan.slug }}</small>
-                <h3>{{ selectedPlan.name }}</h3>
-                <p>{{ selectedSKU.name }} · {{ billingLabel(selectedSKU) }}</p>
+                <small v-if="!checkoutAttempt">{{ selectedPlan.slug }}</small>
+                <h3>{{ checkoutPlanName }}</h3>
+                <p>{{ checkoutSKUName }}<template v-if="!checkoutAttempt"> · {{ billingLabel(selectedSKU) }}</template><template v-else-if="savedConfirmation?.billing"> · {{ savedConfirmation.billing }}</template></p>
                 <p v-if="operation === 'renew' && quote">按原购买基础价续费，金额以本次报价为准。</p>
                 <p v-if="operation === 'change' && quote">原价 {{ formatCurrency(quote.amount_cents, quote.currency) }} · 抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}</p>
               </div>
-              <strong>{{ checkoutPayable == null ? '正在核算…' : formatCurrency(checkoutPayable, selectedSKU.currency) }}</strong>
+              <strong>{{ checkoutAmountLabel }}</strong>
             </article>
 
-            <dl class="purchase-checkout__details">
+            <dl v-if="!checkoutAttempt && !attemptError" class="purchase-checkout__details">
               <div v-if="selectedSubscription"><dt>目标订阅</dt><dd>{{ selectedSubscription.plan_name }} / #{{ selectedSubscription.id }}</dd></div>
               <div><dt>订单类型</dt><dd>{{ currentOperation.label }}</dd></div>
               <div><dt>规格</dt><dd>{{ selectedSKU.name }}</dd></div>
@@ -80,12 +82,41 @@
               </template>
             </dl>
           </section>
+          <section v-if="operation === 'purchase' && !attemptError && (!checkoutAttempt || discountConfirmation)" class="purchase-checkout__section" aria-label="新购优惠">
+            <h3>优惠</h3>
+            <template v-if="checkoutAttempt && discountConfirmation">
+              <p>已确认优惠：{{ discountConfirmation.name }}。{{ discountConfirmation.message }}</p>
+              <p>本次优惠仅限首单，续费基础价为 {{ formatCurrency(discountConfirmation.basePrice, discountConfirmation.currency) }}。</p>
+            </template>
+            <template v-else>
+              <p v-if="discountProvidersLoading" role="status">正在读取可用优惠…</p>
+              <PageAlert v-if="discountProvidersError" tone="danger" title="优惠列表读取失败">{{ discountProvidersError }} 不使用优惠仍可继续购买。<UiButton variant="secondary" :disabled="creating" @click="providerResource.load()">重试优惠列表</UiButton></PageAlert>
+              <FormField label="优惠方案" name="purchase-discount-provider" v-slot="{ controlAttrs }">
+                <UiSelect v-model="discountProviderId" v-bind="controlAttrs" :disabled="creating || discountProvidersLoading" :options="discountProviderOptions" />
+              </FormField>
+              <p v-if="selectedDiscountProvider">{{ selectedDiscountProvider.description }}</p>
+              <template v-if="discountProviderId">
+                <FormField label="优惠码（可选）" name="purchase-discount-code" v-slot="{ controlAttrs }">
+                  <UiInput v-model="discountCode" v-bind="controlAttrs" maxlength="256" autocomplete="off" :disabled="creating" />
+                </FormField>
+                <UiButton type="button" variant="secondary" :disabled="creating || discountLoading || !selectedDiscountProvider || Boolean(discountProvidersError)" @click="loadDiscountQuote">核对优惠</UiButton>
+                <p v-if="discountLoading" role="status">正在核对本次优惠…</p>
+                <PageAlert v-if="discountError" tone="danger" title="优惠报价失败">{{ discountError }}</PageAlert>
+                <p v-if="discountExpired" role="status">优惠报价已过期，请重新核对优惠后确认。</p>
+                <p v-if="discountQuote">{{ discountQuote.discount?.offer.message }}<br>优惠有效至 <TimeBadge :value="discountQuote.discount!.offer.expires_at" />。本次优惠仅限首单，续费基础价为 {{ formatCurrency(discountQuote.base_price_minor!, discountQuote.currency) }}。</p>
+              </template>
+            </template>
+          </section>
         </div>
 
         <aside class="purchase-checkout__summary">
           <span>{{ quote?.change_mode === 'full_term' ? '新套餐完整价格' : '应付金额' }}</span>
-          <strong>{{ checkoutPayable == null ? '正在核算…' : formatCurrency(checkoutPayable, selectedSKU.currency) }}</strong>
+          <strong>{{ checkoutAmountLabel }}</strong>
           <dl>
+            <template v-if="discountConfirmation">
+              <div><dt>基础价格</dt><dd>{{ formatCurrency(discountConfirmation.basePrice, discountConfirmation.currency) }}</dd></div>
+              <div><dt>本次优惠</dt><dd>−{{ formatCurrency(discountConfirmation.discountAmount, discountConfirmation.currency) }}</dd></div>
+            </template>
             <div v-if="operation === 'change' && quote"><dt>规格原价</dt><dd>{{ formatCurrency(quote.amount_cents, quote.currency) }}</dd></div>
             <div v-if="operation === 'change' && quote"><dt>{{ quote.change_mode === 'full_term' ? '旧权益用于本单' : '原套餐抵扣' }}</dt><dd>−{{ formatCurrency(quote.credit_amount, quote.currency) }}</dd></div>
             <template v-if="operation === 'change' && quote?.change_mode === 'full_term'">
@@ -93,12 +124,14 @@
               <div><dt>结余入余额</dt><dd>{{ formatWalletMoney(quote.surplus_amount ?? '0', quote.currency) }}</dd></div>
               <div><dt>另需支付</dt><dd>{{ formatWalletMoney(quote.additional_amount ?? '0', quote.currency) }}</dd></div>
             </template>
-            <div><dt>商品</dt><dd>{{ selectedPlan.name }}</dd></div>
-            <div><dt>规格</dt><dd>{{ selectedSKU.name }}</dd></div>
+            <div><dt>商品</dt><dd>{{ checkoutPlanName }}</dd></div>
+            <div><dt>规格</dt><dd>{{ checkoutSKUName }}</dd></div>
           </dl>
           <PageAlert v-if="checkoutError" tone="danger" title="无法创建订单">{{ checkoutError }}</PageAlert>
-          <PageAlert v-if="quoteError" tone="danger" title="报价失败">{{ quoteError }}<UiButton variant="secondary" @click="quoteResource.load()">重新报价</UiButton></PageAlert>
-          <CheckoutPayment name="account.checkout.payment" :key="checkoutIntent" embedded handoff-to-funding :actor-id="app.user.id" :currency="selectedSKU.currency" :create-order="ensureOrder" :create-only="submitOrder" :disabled="creating || quoteLoading || (needsQuote && !quote)" @paid="router.push('/account/orders')" @created="id => router.push(`/account/orders/${id}`)" />
+          <PageAlert v-if="!checkoutAttempt && !attemptError && quoteError" tone="danger" title="报价失败">{{ quoteError }}<UiButton variant="secondary" @click="quoteResource.load()">重新报价</UiButton></PageAlert>
+          <p v-else-if="!checkoutAttempt && !attemptError && needsQuote && !quote" role="status">请核对本次报价后确认订单。<UiButton variant="secondary" :disabled="quoteLoading" @click="quoteResource.load()">重新报价</UiButton></p>
+          <CheckoutPayment v-show="!checkoutAttempt" name="account.checkout.payment" :key="checkoutIntent" embedded handoff-to-funding :actor-id="app.user.id" :currency="selectedSKU.currency" :create-order="ensureOrder" :create-only="submitOrder" :disabled="creating || quoteLoading || (needsQuote && !quote) || Boolean(attemptError) || (discountRequired && (!discountQuote || discountLoading || Boolean(discountError) || Boolean(discountProvidersError)))" @paid="router.push('/account/orders')" @created="id => router.push(`/account/orders/${id}`)" />
+          <UiButton v-if="checkoutAttempt" :disabled="creating || Boolean(attemptError)" :loading="creating" @click="restoreOrder">恢复上次订单</UiButton>
           <p>订单及付款进度可在“我的订单”中查看。</p>
         </aside>
       </div>
@@ -284,7 +317,7 @@
 
 <script setup lang="ts">
 import CheckoutPayment from '../../plugins/CheckoutPayment.vue'
-import { ensureCheckoutOrder, restoreCheckoutIntent, newCheckoutIntent } from '../../composables/checkoutOrder'
+import { ensureCheckoutOrder, isDefiniteOrderRejection, readCheckoutOrderDraft, restoreCheckoutIntent, newCheckoutIntent, type OrderDraft } from '../../composables/checkoutOrder'
 import { useAppStore } from '../../stores/app'
 import TimeBadge from '../../components/TimeBadge.vue'
 import { computed, onScopeDispose, ref, watch } from 'vue'
@@ -297,6 +330,10 @@ import PageAlert from '../../components/PageAlert.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import TablePager from '../../components/TablePager.vue'
 import UiButton from '../../components/UiButton.vue'
+import UiInput from '../../components/UiInput.vue'
+import UiSelect from '../../components/UiSelect.vue'
+import FormField from '../../components/FormField.vue'
+import { fetchDiscountProviders, previewDiscountOrder, type DiscountProvider, type OrderDiscountSelection } from '../../api/commerceDiscounts'
 import UiIcon from '../../components/UiIcon.vue'
 import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../../components/WorkbenchFilterInput.vue'
@@ -365,18 +402,85 @@ const { items: plans, total: planTotal, loading: planLoading, error: planError }
 const detail = useCatalogDetail()
 const { plan: selectedPlan, skus: detailSKUs, selectedSkuId: selectedSKUID, selectedSku: selectedSKU,
   loading: detailLoading, error: detailError, total: skuTotal, offset: skuOffset, limit: skuLimit } = detail
+interface DiscountConfirmation { name: string; basePrice: number; discountAmount: number; payable: number; currency: string; message: string }
+interface CheckoutConfirmation {
+  version: 1; skuId: number; orderType: string; quoteFingerprint?: string
+  payable: number; currency: string; planName: string; skuName: string; billing: string
+  discount?: DiscountConfirmation
+}
+interface CheckoutRequest { skuId: number; orderType: string; targetSubscriptionId?: number; quoteFingerprint?: string; discount?: OrderDiscountSelection; confirmation?: CheckoutConfirmation }
+const checkoutScope = computed(() => `zboard-checkout:${app.user.id}:${checkoutIntent.value}`)
+const checkoutAttempt = ref<OrderDraft<CheckoutRequest> | null>(null)
+const attemptError = ref('')
+function refreshCheckoutAttempt() {
+  try { checkoutAttempt.value = readCheckoutOrderDraft<CheckoutRequest>(localStorage, checkoutScope.value); attemptError.value = '' }
+  catch (cause: any) { checkoutAttempt.value = null; attemptError.value = cause.message }
+}
+watch(() => [app.user.id, checkoutScope.value, checkoutOpen.value], refreshCheckoutAttempt, { flush: 'sync', immediate: true })
+const discountProviderId = ref(''), discountCode = ref(''), discountExpired = ref(false)
+const providerResource = useRemoteResource<DiscountProvider[]>({ initial: () => [], fetch: ({ signal }) => fetchDiscountProviders(signal), errorMessage: '优惠列表暂时无法读取，请重试。' })
+const { data: discountProviders, loading: discountProvidersLoading, error: discountProvidersError } = providerResource
+const discountProviderOptions = computed(() => [{ value: '', label: '不使用优惠' }, ...discountProviders.value.map(provider => ({ value: provider.provider_id, label: provider.name, disabled: Boolean(discountProvidersError.value) }))])
+const selectedDiscountProvider = computed(() => discountProviders.value.find(provider => provider.provider_id === discountProviderId.value))
+const discountRequired = computed(() => operation.value === 'purchase' && Boolean(discountProviderId.value))
+const discountResource = useRemoteResource<OrderPreview | null>({
+  initial: () => null,
+  fetch: ({ signal }) => previewDiscountOrder(selectedSKUID.value, selectedSKU.value!.currency, { provider_id: discountProviderId.value, selection: discountCode.value }, signal),
+  errorMessage: (cause: any) => commerceErrorMessage(cause, cause?.message || '优惠报价失败，请重新核对。'),
+})
+const { data: discountQuote, loading: discountLoading, error: discountError } = discountResource
+let discountExpiryTimer: ReturnType<typeof setTimeout> | undefined
+watch(discountQuote, value => {
+  clearTimeout(discountExpiryTimer)
+  if (value?.discount) discountExpiryTimer = setTimeout(() => { discountResource.reset(); discountExpired.value = true }, Math.min(2_147_483_647, Math.max(0, Date.parse(value.discount.offer.expires_at) - Date.now())))
+})
+onScopeDispose(() => clearTimeout(discountExpiryTimer))
+watch(() => [app.user.id, operation.value, selectedSKUID.value, selectedPlan.value?.id], () => {
+  discountProviderId.value = ''; discountCode.value = ''; discountResource.reset(); discountExpired.value = false
+}, { flush: 'sync' })
+watch(() => [discountProviderId.value, discountCode.value], () => { discountResource.reset(); discountExpired.value = false }, { flush: 'sync' })
+watch(() => [app.user.id, checkoutOpen.value, operation.value], () => {
+  providerResource.reset()
+  if (checkoutOpen.value && operation.value === 'purchase' && !checkoutAttempt.value) void providerResource.load()
+})
+async function loadDiscountQuote() {
+  if (checkoutAttempt.value || creating.value || !discountRequired.value || !selectedDiscountProvider.value || discountProvidersError.value) return
+  discountResource.reset(); discountExpired.value = false
+  await discountResource.load()
+}
+const savedConfirmation = computed(() => {
+  const request = checkoutAttempt.value?.request, value = request?.confirmation
+  return value && value.version === 1 && value.skuId === request?.skuId && value.orderType === request?.orderType
+    && value.quoteFingerprint === request?.quoteFingerprint && Number.isSafeInteger(value.payable) && value.payable >= 0
+    && typeof value.currency === 'string' && /^[A-Z]{3}$/.test(value.currency)
+    ? value : undefined
+})
+const discountConfirmation = computed<DiscountConfirmation | undefined>(() => checkoutAttempt.value
+  ? checkoutAttempt.value.request.discount ? savedConfirmation.value?.discount : undefined
+  : discountQuote.value ? {
+  name: selectedDiscountProvider.value?.name || '本次优惠', basePrice: discountQuote.value.base_price_minor!, discountAmount: discountQuote.value.discount_amount!,
+  payable: discountQuote.value.payable_amount, currency: discountQuote.value.currency, message: discountQuote.value.discount?.offer.message || '',
+} : undefined)
 const needsQuote = computed(() => operation.value === 'renew' || operation.value === 'change' || operation.value === 'reset')
 const quoteResource = useRemoteResource<OrderPreview | null>({
   initial: () => null,
   fetch: ({ signal }) => previewOrder(selectedSKUID.value, targetSubscriptionID.value, { signal }),
   errorMessage: '报价失败，请重新确认套餐和规格。',
 })
-const { data: quote, loading: quoteLoading, error: quoteError } = quoteResource
+const { data: currentQuote, loading: quoteLoading, error: quoteError } = quoteResource
+const quote = computed(() => checkoutAttempt.value || attemptError.value ? null : currentQuote.value)
+watch(() => Boolean(checkoutAttempt.value || attemptError.value), locked => { if (locked) quoteResource.reset() }, { flush: 'sync' })
 watch(() => [operation.value, selectedSKUID.value, targetSubscriptionID.value, selectedPlan.value?.id], () => {
   quoteResource.reset()
-  if (needsQuote.value && selectedSKU.value && selectedSubscription.value) void quoteResource.load()
+  if (!checkoutAttempt.value && !attemptError.value && needsQuote.value && selectedSKU.value && selectedSubscription.value) void quoteResource.load()
 })
-const checkoutPayable = computed(() => needsQuote.value ? quote.value?.payable_amount : selectedSKU.value?.price_cents)
+const checkoutPayable = computed(() => checkoutAttempt.value ? savedConfirmation.value?.payable : discountConfirmation.value?.payable ?? (discountRequired.value ? undefined : needsQuote.value ? quote.value?.payable_amount : selectedSKU.value?.price_cents))
+const checkoutCurrency = computed(() => savedConfirmation.value?.currency || quote.value?.currency || selectedSKU.value?.currency || 'CNY')
+const checkoutAmountLabel = computed(() => checkoutAttempt.value || attemptError.value
+  ? savedConfirmation.value ? formatCurrency(savedConfirmation.value.payable, savedConfirmation.value.currency) : '金额未知，请核对原订单'
+  : checkoutPayable.value == null ? '正在核算…' : formatCurrency(checkoutPayable.value, checkoutCurrency.value))
+const checkoutPlanName = computed(() => checkoutAttempt.value ? savedConfirmation.value?.planName || '原商品待核对' : selectedPlan.value?.name)
+const checkoutSKUName = computed(() => checkoutAttempt.value ? savedConfirmation.value?.skuName || '原规格待核对' : selectedSKU.value?.name)
 const currentOperation = computed(() => {
   const base = operationOptions.find(item => item.value === operation.value) || operationOptions[0]!
   if (operation.value === 'renew' && selectedSubscription.value?.renewal_until) return { ...base, title: '续费恢复订阅', description: '服务已停止，付款完成后恢复服务并开始新的套餐周期和额度。' }
@@ -541,9 +645,49 @@ function refreshAll() { actionError.value = ''; return applyRoute(true) }
 watch(() => route.fullPath, () => { void applyRoute() }, { immediate: true })
 
 async function ensureOrder(): Promise<number> {
-  if (!app.user.id || !selectedSKU.value || (needsQuote.value && !quote.value) || (operation.value !== 'purchase' && !selectedSubscription.value)) throw new Error('请确认规格、目标订阅和报价。')
-  const request = { skuId: selectedSKU.value.id, orderType: orderTypeByOperation[operation.value], targetSubscriptionId: operation.value === 'purchase' ? undefined : selectedSubscription.value?.id, quoteFingerprint: needsQuote.value ? quote.value?.quote_fingerprint : undefined }
-  return ensureCheckoutOrder(localStorage, `zboard-checkout:${app.user.id}:${checkoutIntent.value}`, request, (saved, key) => { const { skuId, ...options } = saved; return createOrder(skuId, { ...options, idempotencyKey: key }) })
+  const requestScope = checkoutScope.value
+  const sameScope = () => checkoutScope.value === requestScope
+  refreshCheckoutAttempt()
+  if (attemptError.value) throw new Error(attemptError.value)
+  if (!checkoutAttempt.value && (!app.user.id || !selectedSKU.value || (needsQuote.value && !quote.value) || (operation.value !== 'purchase' && !selectedSubscription.value))) throw new Error('请确认规格、目标订阅和报价。')
+  if (!checkoutAttempt.value && discountRequired.value && (!discountQuote.value || discountError.value || discountLoading.value || discountProvidersError.value || Date.parse(discountQuote.value.discount!.offer.expires_at) <= Date.now())) {
+    discountResource.reset()
+    throw new Error('请重新核对有效优惠报价后确认订单。')
+  }
+  const request: CheckoutRequest = checkoutAttempt.value?.request || { skuId: selectedSKU.value!.id, orderType: orderTypeByOperation[operation.value], targetSubscriptionId: operation.value === 'purchase' ? undefined : selectedSubscription.value?.id, quoteFingerprint: discountRequired.value ? discountQuote.value!.quote_fingerprint : needsQuote.value ? quote.value?.quote_fingerprint : undefined,
+    ...(discountRequired.value ? { discount: { provider_id: discountProviderId.value, selection: discountCode.value } } : {}) }
+  if (!checkoutAttempt.value) {
+    const payable = checkoutPayable.value
+    if (!Number.isSafeInteger(payable) || payable! < 0) throw new Error('本次订单金额尚未核对，请重新确认报价。')
+    request.confirmation = { version: 1, skuId: request.skuId, orderType: request.orderType, quoteFingerprint: request.quoteFingerprint,
+      payable: payable!, currency: checkoutCurrency.value, planName: selectedPlan.value!.name, skuName: selectedSKU.value!.name, billing: billingLabel(selectedSKU.value!),
+      ...(discountRequired.value ? { discount: discountConfirmation.value } : {}) }
+  }
+  creating.value = true; checkoutError.value = ''
+  try {
+    const result = ensureCheckoutOrder(localStorage, requestScope, request, (saved, key) => { const { skuId, confirmation: _confirmation, ...options } = saved; return createOrder(skuId, { ...options, idempotencyKey: key }) })
+    refreshCheckoutAttempt()
+    return await result
+  } catch (cause) {
+    const message = commerceErrorMessage(cause, '订单创建结果暂无法确认，请恢复上次订单或到“我的订单”核对。')
+    if (isDefiniteOrderRejection(cause)) {
+      localStorage.removeItem(requestScope)
+      if (sameScope()) {
+        discountResource.reset()
+        if (needsQuote.value) quoteResource.reset()
+        await router.replace({ query: { ...route.query, checkout_intent: newCheckoutIntent() } })
+        checkoutError.value = `${message} 请重新核对报价后确认创建。`
+      }
+    } else if (sameScope()) checkoutError.value = message
+    throw cause
+  }
+  finally { refreshCheckoutAttempt(); creating.value = false }
+}
+async function restoreOrder() {
+  if (creating.value) return
+  const scope = checkoutScope.value
+  try { const id = await ensureOrder(); if (checkoutScope.value === scope) await router.push(`/account/orders/${id}`) }
+  catch { /* The original request and its error stay visible for explicit recovery. */ }
 }
 async function submitOrder() {
   if (creating.value || !selectedPlan.value || !selectedSKU.value || (needsQuote.value && !quote.value)) return
@@ -556,9 +700,8 @@ async function submitOrder() {
   try {
     await ensureOrder()
     await router.push('/account/orders')
-  } catch (cause: any) {
-    checkoutError.value = commerceErrorMessage(cause, '订单创建失败，请检查当前套餐和规格是否仍可购买。')
-    if (needsQuote.value) { quoteResource.reset(); void quoteResource.load() }
+  } catch {
+    // ensureOrder owns the visible failure and preserves the submitted intent.
   } finally {
     creating.value = false
   }

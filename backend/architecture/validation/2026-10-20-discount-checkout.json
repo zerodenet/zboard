@@ -123,7 +123,7 @@
     "inventory_seconds": 0.415,
     "openapi": "valid;282 existing warnings",
     "channel_boundary": "Payment may set Order.Channel to wallet; channel excluded from commercial input hash; complete original request remains bound by idempotency. Actual before-fix failure preserved.",
-    "frontend": "Initial full1050 pass/8 existing skips, build12.68s; additional all-operation unknown-result quote isolation review pending its final rerun",
+    "frontend": "Final reviewed source: original six-exclusion suite1058 passed/8 existing skips,199 files passed/2 existing skipped,168.01s;123/123 narrow;vue-tsc+Vite13.99s. Browser/live-server joint acceptance not run.",
     "migration": "0055 expands MySQL purchase_snapshot to TEXT; SQLite remains TEXT; receipt-before-AutoMigrate lost-evidence guard; no destructive shrink on rollback",
     "remaining": [
       "recurring and non-new discount checkout",
@@ -131,5 +131,6 @@
       "browser joint acceptance",
       "exact-commit complete backend/SQLite/MySQL/newCI"
     ]
-  }
+  },
+  "frontend_recovery": "All operations persist original confirmation facts independently from wire request. Unknown results retain original request/key, suppress new quotes and show unknown for legacy missing facts. JSON null is corrupted intent, not absence. Nine new regressions failed before fix; final suite passes."
 }

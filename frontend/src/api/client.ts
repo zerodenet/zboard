@@ -1491,6 +1491,9 @@ export async function fetchAdminOrderPaymentEvents(orderId: number, params: { of
 }
 
 export interface OrderPreview {
+  base_price_minor?: number
+  discount_amount?: number
+  discount?: import('./commerceDiscounts').DiscountQuote
   price_basis?: 'purchased_period' | 'current_catalog'
   requires_price_acceptance?: boolean
   order_type: string
@@ -1517,19 +1520,20 @@ export async function previewAdminOrder(userId: number, planSkuId: number, targe
   return unwrap(response)
 }
 
-export async function previewOrder(planSkuId: number, targetSubscriptionId: number, options: ApiRequestOptions = {}): Promise<OrderPreview> {
-  const response = await api.post('/orders/preview', { plan_sku_id: planSkuId, target_subscription_id: targetSubscriptionId }, { signal: options.signal })
+export async function previewOrder(planSkuId: number, targetSubscriptionId: number, options: ApiRequestOptions & { discount?: import('./commerceDiscounts').OrderDiscountSelection } = {}): Promise<OrderPreview> {
+  const response = await api.post('/orders/preview', { plan_sku_id: planSkuId, target_subscription_id: targetSubscriptionId, ...(options.discount ? { discount: options.discount } : {}) }, { signal: options.signal })
   return unwrap(response)
 }
 
-export async function createOrder(planSkuId: number, options: { channel?: string; orderType?: string; targetSubscriptionId?: number; quoteFingerprint?: string; idempotencyKey?: string } = {}) {
+export async function createOrder(planSkuId: number, options: { channel?: string; orderType?: string; targetSubscriptionId?: number; quoteFingerprint?: string; idempotencyKey?: string; discount?: import('./commerceDiscounts').OrderDiscountSelection } = {}) {
 	const response = await api.post('/orders', {
 		plan_sku_id: planSkuId,
 		channel: options.channel || 'manual',
 		order_type: options.orderType || 'new',
 		target_subscription_id: options.targetSubscriptionId || undefined,
     quote_fingerprint: options.quoteFingerprint || undefined,
-    idempotency_key: options.idempotencyKey || undefined
+    idempotency_key: options.idempotencyKey || undefined,
+    ...(options.discount ? { discount: options.discount } : {})
 	})
   return unwrap(response)
 }

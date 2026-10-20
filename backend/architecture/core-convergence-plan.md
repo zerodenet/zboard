@@ -696,3 +696,5 @@ P7新CI39466880437的d98后端保留真实失败：SSH node_deadline在包装she
 真实签名native+HTTP+SQLite联合验收发现付款方式转wallet会破坏不应依赖可变付款方式的商业hash，已修复而保留完整原request幂等绑定和身份/金额/条款约束。实际10000钱包捕获/权益，停插件幂等恢复，新请求503，目录涨至15000后仍12000续费，逐订阅许可及wallet-only worker一次履约、重放无副作用均验证。SQLite2.317s、真实MySQL handler9.204s/schema11.037s通过；最终root组合0.004/0.233/2.254s，HTTP错误契约0.217s、inventory0.415s、OpenAPI282原警告通过。
 
 归档/恢复/旧优惠不会因新版本伪造历史。有限券消费保留外部能力缺口，不将read-only评估当reserve/commit；recurring、其他operation优惠、真实外部优惠插件、浏览器联合验收及最终精确全套仍未完成。前端独立小批完成review后追加。详见core-convergence-discount-checkout.md及结构化validation；没有生产迁移/发布。
+
+P2-16后端已提交de0f2ab并推送、冻结完整检查中。P5首单优惠实际入口及全部operation未知订单恢复已完成：明确使用原确认金额/原key/request，legacy缺事实金额未知，不用后来的quote或残值冒充；存储JSONnull视为损坏。9个新增边界先失败后修复，最终前端原六排除1058通过/8既有skip，199文件通过/2既有skip，123专项、vue-tsc/build13.99s通过。浏览器联合验收未跑，不能由组件测试替代；独立前端批次跟随原分支。

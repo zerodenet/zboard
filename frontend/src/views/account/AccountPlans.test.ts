@@ -1,16 +1,20 @@
-import { defineComponent, onMounted } from 'vue'
+import { defineComponent, onMounted, reactive } from 'vue'
 import { fetchPluginSlots } from '../../api/plugins'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { previewOrder, createOrder, fetchAccountSubscriptionsPage, fetchPlanCatalogItem, fetchPlanCatalogPage, fetchPlanCatalogSKUs } from '../../api/client'
+import { previewOrder, createOrder, fetchAccountSubscriptionsPage, fetchPlanCatalogItem, fetchPlanCatalogPage, fetchPlanCatalogSKUs, type OrderPreview } from '../../api/client'
 import CommercePlanDetail from '../../components/CommercePlanDetail.vue'
 import CommercePlanCard from '../../components/CommercePlanCard.vue'
 import TablePager from '../../components/TablePager.vue'
 import AccountPlans from './AccountPlans.vue'
+import UiSelect from '../../components/UiSelect.vue'
+import { fetchDiscountProviders } from '../../api/commerceDiscounts'
 
-vi.mock('../../stores/app', () => ({ useAppStore: () => ({ user: { id: 1 } }) }))
+const actor = reactive({ id: 1 })
+vi.mock('../../stores/app', () => ({ useAppStore: () => ({ user: actor }) }))
 vi.mock('../../api/plugins', () => ({ fetchPluginSlots: vi.fn() }))
+vi.mock('../../api/commerceDiscounts', async importOriginal => ({ ...await importOriginal<typeof import('../../api/commerceDiscounts')>(), fetchDiscountProviders: vi.fn() }))
 const paymentAction = vi.fn()
 vi.mock('../../api/client', () => ({
   previewOrder: vi.fn(), createOrder: vi.fn(), fetchAccountOrder: vi.fn(async id => ({ id, status: 'pending', payable_amount: 100, currency: 'CNY' })), fetchAccountSubscriptionsPage: vi.fn(),
@@ -29,13 +33,23 @@ function subscription(id: number) {
 function page(items: any[], total = items.length, offset = 0, limit = 25) {
   return { items, total, page: { offset, limit, total }, aggregates: {}, facets: {} } as any
 }
+const discountProvider = { provider_id: 'native.offer', name: '新客礼遇', description: '首次购买享专属价格', operation: 'new', agreement_scope: 'initial_only' } as const
+function discountedQuote(expiresAt = '2099-01-01T00:00:00Z'): OrderPreview {
+  return { order_type: 'new', amount_cents: 100, base_price_minor: 100, discount_amount: 20, credit_amount: 0, payable_amount: 80, currency: 'CNY', time_credit: 0, traffic_credit: 0, traffic_bytes: 100, used_bytes: 0, quote_fingerprint: 'discount-quote',
+    discount: { provider: { plugin_id: discountProvider.provider_id, signing_key_fingerprint: 'secret-signature', package_digest: 'secret-digest', generation: 1, config_revision: 1 }, offer: { status: 'available', input_fingerprint: 'private-input', currency: 'CNY', discount_minor: 20, expires_at: expiresAt, message: '欢迎首次购买', agreement: { id: 'first', version: '1', scope: 'initial_only', terms_hash: 'private-hash', terms_json: '{"private":"rules"}' } } } }
+}
+function rejectedOrder(status: number, code: string, fields: Record<string, string> = {}) {
+  return { response: { status, data: { message: '本次订单未创建', error: { version: 1, code, fields } } } }
+}
 
 describe('account catalog bounded reads and route isolation', () => {
   let wrapper: VueWrapper | undefined
   let router: Router
   beforeEach(() => {
     vi.clearAllMocks()
+    actor.id = 1
     vi.mocked(fetchPluginSlots).mockResolvedValue([])
+    vi.mocked(fetchDiscountProviders).mockResolvedValue([])
     paymentAction.mockResolvedValue({ checkout_url: 'https://cashier.example/pay' })
     localStorage.clear()
     vi.mocked(createOrder).mockResolvedValue({ id: 71 })
@@ -49,7 +63,7 @@ describe('account catalog bounded reads and route isolation', () => {
       return page([sku(offset + 1), sku(offset + 2), sku(offset + 3), sku(offset + 4), sku(offset + 5)], 105, offset, params?.limit)
     })
   })
-  afterEach(() => { wrapper?.unmount(); wrapper = undefined })
+  afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers() })
   async function open(path = '/account/plans') {
     router = createRouter({ history: createMemoryHistory(), routes: [
       { path: '/account/plans', component: { template: '<div />' } },
@@ -61,6 +75,208 @@ describe('account catalog bounded reads and route isolation', () => {
     wrapper = mount(AccountPlans, { global: { plugins: [router], stubs: { CommercePlanDetail: true, PluginFrame: defineComponent({ emits: ['checkoutOptions'], setup(_, { emit, expose }) { expose({ checkoutAction: paymentAction }); onMounted(() => emit('checkoutOptions', [{ id: 'card', title: '测试支付', prepare_action: 'pay.prepare', reconcile_action: 'pay.check' }])); return () => null } }) } } })
     await flushPromises()
   }
+  async function click(text: string) { await wrapper!.findAll('button').find(button => button.text() === text)!.trigger('click'); await flushPromises() }
+  async function selectDiscount(code = 'WELCOME') {
+    const picker = wrapper!.findAllComponents(UiSelect).find(select => (select.props('options') || []).some(option => option.value === discountProvider.provider_id))!
+    picker.vm.$emit('update:modelValue', discountProvider.provider_id); await flushPromises()
+    await wrapper!.get('#purchase-discount-code').setValue(code)
+    await flushPromises()
+  }
+  async function discountedCheckout(expiresAt?: string) {
+    vi.mocked(fetchDiscountProviders).mockResolvedValue([discountProvider])
+    vi.mocked(previewOrder).mockResolvedValue(discountedQuote(expiresAt))
+    await open('/account/plans?plan=1&step=checkout')
+    await selectDiscount(); await click('核对优惠')
+  }
+  it('keeps normal purchase available when the independent discount directory fails', async () => {
+    vi.mocked(fetchDiscountProviders).mockRejectedValue(new Error('offline'))
+    await open('/account/plans?plan=1&step=checkout')
+    expect(wrapper!.text()).toContain('优惠列表读取失败')
+    expect(previewOrder).not.toHaveBeenCalled()
+    expect(wrapper!.findAll('button').find(button => button.text() === '创建订单并选择付款方式')!.attributes('disabled')).toBeUndefined()
+    await click('创建订单并选择付款方式')
+    expect(createOrder).toHaveBeenCalledOnce()
+    expect(vi.mocked(createOrder).mock.calls[0]![1]).not.toHaveProperty('discount')
+  })
+  it('defaults to no discount and shows named choices without requiring a provider identifier', async () => {
+    vi.mocked(fetchDiscountProviders).mockResolvedValue([discountProvider])
+    await open('/account/plans?plan=1&step=checkout')
+    expect(wrapper!.text()).toContain('不使用优惠')
+    expect(wrapper!.find('input[name="purchase-discount-provider"]').exists()).toBe(false)
+    expect(previewOrder).not.toHaveBeenCalled()
+    await selectDiscount('')
+    expect(wrapper!.text()).toContain(discountProvider.description)
+    expect(wrapper!.get('#purchase-discount-code').attributes('maxlength')).toBe('256')
+    expect(wrapper!.findAll('button').find(button => button.text() === '创建订单并选择付款方式')!.attributes('disabled')).toBeDefined()
+  })
+  it('confirms server amounts and first-purchase terms before sending only references and the final fingerprint', async () => {
+    await discountedCheckout()
+    expect(previewOrder).toHaveBeenCalledWith(1, 0, { discount: { provider_id: discountProvider.provider_id, selection: 'WELCOME' }, signal: expect.any(AbortSignal) })
+    expect(wrapper!.text()).toContain('欢迎首次购买')
+    expect(wrapper!.text()).toContain('本次优惠仅限首单，续费基础价为 ¥1.00')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('0.80')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('本次优惠')
+    expect(wrapper!.text()).not.toMatch(/secret-signature|secret-digest|private-hash|private-input|private.*rules/)
+    expect(createOrder).not.toHaveBeenCalled()
+    await click('创建订单并选择付款方式')
+    expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'new', targetSubscriptionId: undefined, quoteFingerprint: 'discount-quote', discount: { provider_id: discountProvider.provider_id, selection: 'WELCOME' }, idempotencyKey: expect.any(String) })
+    expect(router.currentRoute.value.path).toBe('/account/orders/71')
+    expect(paymentAction).not.toHaveBeenCalled()
+  })
+  it('clears a confirmed quote on code edits and keeps failed previews from restoring its price', async () => {
+    await discountedCheckout()
+    await wrapper!.get('#purchase-discount-code').setValue('CHANGED'); await flushPromises()
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('正在核算')
+    vi.mocked(previewOrder).mockRejectedValue(rejectedOrder(503, 'discount_unavailable'))
+    await click('核对优惠')
+    expect(wrapper!.text()).toContain('优惠报价失败')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).not.toContain('0.80')
+    expect(createOrder).not.toHaveBeenCalled()
+  })
+  it('expires a displayed quote and requires a fresh explicit preview before creation', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    await discountedCheckout(new Date(Date.now() + 1000).toISOString())
+    await vi.advanceTimersByTimeAsync(1001); await flushPromises()
+    expect(wrapper!.text()).toContain('优惠报价已过期')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).not.toContain('0.80')
+    expect(wrapper!.findAll('button').find(button => button.text() === '创建订单并选择付款方式')!.attributes('disabled')).toBeDefined()
+    expect(createOrder).not.toHaveBeenCalled()
+    expect(previewOrder).toHaveBeenCalledOnce()
+  })
+  it.each(['renew', 'change', 'addon', 'reset'])('does not advertise first-purchase discounts for %s', async operation => {
+    await open(`/account/plans?operation=${operation}&subscription=1&plan=1&step=checkout`)
+    expect(wrapper!.find('[aria-label="新购优惠"]').exists()).toBe(false)
+    expect(fetchDiscountProviders).not.toHaveBeenCalled()
+  })
+  it('ignores an old discount quote after changing the SKU', async () => {
+    vi.mocked(fetchDiscountProviders).mockResolvedValue([discountProvider])
+    const late = deferred<OrderPreview>()
+    vi.mocked(previewOrder).mockReturnValue(late.promise)
+    await open('/account/plans?plan=1&step=checkout'); await selectDiscount(); await click('核对优惠')
+    await router.push('/account/plans?plan=1&sku=2&step=checkout'); await flushPromises()
+    late.resolve(discountedQuote()); await flushPromises()
+    expect(wrapper!.text()).not.toContain('欢迎首次购买')
+    expect(wrapper!.text()).toContain('不使用优惠')
+    expect(createOrder).not.toHaveBeenCalled()
+    expect(vi.mocked(previewOrder).mock.calls[0]![2]!.signal?.aborted).toBe(true)
+  })
+  it('clears prior-identity discounts before showing another account checkout', async () => {
+    await discountedCheckout()
+    actor.id = 2; await flushPromises()
+    expect(wrapper!.text()).not.toContain('欢迎首次购买')
+    expect(wrapper!.text()).toContain('不使用优惠')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).not.toContain('0.80')
+    expect(createOrder).not.toHaveBeenCalled()
+  })
+  it('restores an uncertain discounted request after reload without previewing or creating automatically', async () => {
+    await discountedCheckout()
+    vi.mocked(createOrder).mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce({ id: 71 })
+    await click('创建订单并选择付款方式')
+    const original = vi.mocked(createOrder).mock.calls[0]
+    wrapper!.unmount(); wrapper = undefined
+    await open('/account/plans?plan=1&step=checkout')
+    expect(wrapper!.text()).toContain('恢复上次订单')
+    expect(wrapper!.text()).toContain('新客礼遇')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('0.80')
+    expect(createOrder).toHaveBeenCalledOnce()
+    expect(previewOrder).toHaveBeenCalledOnce()
+    await click('恢复上次订单')
+    expect(vi.mocked(createOrder).mock.calls[1]).toEqual(original)
+  })
+  it.each(['renew', 'change'] as const)('retains the original %s confirmation after unknown creation and reload without showing or fetching a replacement quote', async operation => {
+    const initial: OrderPreview = { order_type: operation === 'renew' ? 'renewal' : 'upgrade', amount_cents: 1500, credit_amount: 1000, payable_amount: 500, currency: 'CNY', time_credit: 1000, traffic_credit: 1000, traffic_bytes: 150, used_bytes: 0, quote_fingerprint: 'original-confirmation' }
+    vi.mocked(previewOrder).mockResolvedValue(initial)
+    vi.mocked(createOrder).mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce({ id: 71 })
+    const path = `/account/plans?operation=${operation}&subscription=1&plan=${operation === 'change' ? 2 : 1}&step=checkout`
+    await open(path)
+    await click('创建订单并选择付款方式')
+    const original = vi.mocked(createOrder).mock.calls[0]
+    expect(wrapper!.text()).toContain('恢复将沿用原订单内容和原确认金额')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('5.00')
+    expect(wrapper!.text()).not.toContain('已确认优惠')
+    expect(previewOrder).toHaveBeenCalledOnce()
+    vi.mocked(previewOrder).mockResolvedValue({ ...initial, amount_cents: 9999, credit_amount: 8888, payable_amount: 1111, change_mode: 'full_term', settlement_amount: '777777', surplus_amount: '666666', additional_amount: '1111', quote_fingerprint: 'replacement-must-not-be-used' })
+    wrapper!.unmount(); wrapper = undefined
+    await open(path)
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('5.00')
+    expect(wrapper!.text()).not.toMatch(/99\.99|88\.88|11\.11|7777\.77|6666\.66/)
+    expect(wrapper!.text()).not.toContain('旧权益结算总额')
+    expect(previewOrder).toHaveBeenCalledOnce()
+    expect(createOrder).toHaveBeenCalledOnce()
+    await click('恢复上次订单')
+    expect(vi.mocked(createOrder).mock.calls[1]).toEqual(original)
+    expect(vi.mocked(createOrder).mock.calls[1]![1]).not.toHaveProperty('confirmation')
+  })
+  it.each(['purchase', 'renew', 'change', 'addon', 'reset'] as const)('shows an unknown original amount for a legacy %s attempt without borrowing a fresh SKU or quote price', async operation => {
+    const intent = 'a'.repeat(32)
+    const orderType = { purchase: 'new', renew: 'renewal', change: 'upgrade', addon: 'traffic_pack', reset: 'traffic_reset' }[operation]
+    const request = { skuId: 1, orderType, ...(operation === 'purchase' ? {} : { targetSubscriptionId: 1, quoteFingerprint: 'legacy-confirmed' }) }
+    localStorage.setItem(`zboard-checkout:1:${intent}`, JSON.stringify({ key: 'original-key', request }))
+    await open(`/account/plans?operation=${operation}&plan=${operation === 'change' ? 2 : 1}&step=checkout&checkout_intent=${intent}${operation === 'purchase' ? '' : '&subscription=1'}`)
+    expect(wrapper!.text()).toContain('恢复将沿用原订单内容和原确认金额')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('金额未知，请核对原订单')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).not.toContain('¥1.00')
+    expect(wrapper!.text()).not.toContain('原套餐抵扣')
+    expect(previewOrder).not.toHaveBeenCalled()
+    expect(createOrder).not.toHaveBeenCalled()
+    await click('恢复上次订单')
+    const { skuId, ...options } = request
+    expect(createOrder).toHaveBeenCalledWith(skuId, { ...options, idempotencyKey: 'original-key' })
+  })
+  it('blocks a stored JSON null recovery record without overwriting it or creating', async () => {
+    const intent = 'b'.repeat(32), scope = `zboard-checkout:1:${intent}`
+    localStorage.setItem(scope, 'null')
+    await open(`/account/plans?operation=renew&subscription=1&plan=1&step=checkout&checkout_intent=${intent}`)
+    expect(wrapper!.text()).toContain('订单创建记录不完整')
+    expect(wrapper!.findAll('button').find(button => button.text() === '创建订单并选择付款方式')!.attributes('disabled')).toBeDefined()
+    expect(localStorage.getItem(scope)).toBe('null')
+    expect(previewOrder).not.toHaveBeenCalled()
+    expect(createOrder).not.toHaveBeenCalled()
+  })
+  it.each(['unavailable', 'requires_confirmation'] as const)('does not provide a checkbox override for a %s preview', async status => {
+    vi.mocked(fetchDiscountProviders).mockResolvedValue([discountProvider])
+    const quote = discountedQuote(); quote.discount!.offer.status = status
+    vi.mocked(previewOrder).mockResolvedValue(quote)
+    await open('/account/plans?plan=1&step=checkout'); await selectDiscount(); await click('核对优惠')
+    expect(wrapper!.text()).toContain('优惠报价失败')
+    expect(wrapper!.find('input[type="checkbox"]').exists()).toBe(false)
+    expect(wrapper!.findAll('button').find(button => button.text() === '创建订单并选择付款方式')!.attributes('disabled')).toBeDefined()
+    expect(createOrder).not.toHaveBeenCalled()
+  })
+  it.each([
+    new Error('response lost'), rejectedOrder(500, 'internal_error'), rejectedOrder(409, 'conflict'),
+    rejectedOrder(400, 'validation_failed', { idempotency_key: '原请求不同，请核对已有订单' }),
+  ])('preserves uncertain or conflicting creation requests for explicit recovery', async failure => {
+    await discountedCheckout()
+    vi.mocked(createOrder).mockRejectedValueOnce(failure).mockResolvedValueOnce({ id: 71 })
+    await click('创建订单并选择付款方式')
+    const first = vi.mocked(createOrder).mock.calls[0]
+    expect(wrapper!.text()).toContain('恢复上次订单')
+    expect(wrapper!.find('#purchase-discount-code').exists()).toBe(false)
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('0.80')
+    expect(previewOrder).toHaveBeenCalledOnce()
+    expect(createOrder).toHaveBeenCalledOnce()
+    await click('恢复上次订单')
+    expect(vi.mocked(createOrder).mock.calls[1]).toEqual(first)
+    expect(router.currentRoute.value.path).toBe('/account/orders/71')
+  })
+  it.each([[400, 'validation_failed'], [503, 'discount_unavailable'], [502, 'discount_invalid']] as const)('releases a guaranteed rollback %s/%s and requires a new quote and explicit creation with a new key', async (status, code) => {
+    await discountedCheckout()
+    vi.mocked(createOrder).mockRejectedValueOnce(rejectedOrder(status, code)).mockResolvedValueOnce({ id: 71 })
+    await click('创建订单并选择付款方式')
+    const first = vi.mocked(createOrder).mock.calls[0]![1]!
+    expect(wrapper!.text()).not.toContain('恢复上次订单')
+    expect(wrapper!.text()).toContain('请重新核对报价后确认创建')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).not.toContain('0.80')
+    expect(createOrder).toHaveBeenCalledOnce()
+    expect(previewOrder).toHaveBeenCalledOnce()
+    vi.mocked(previewOrder).mockResolvedValue({ ...discountedQuote(), quote_fingerprint: 'replacement-quote' })
+    await click('核对优惠')
+    expect(createOrder).toHaveBeenCalledOnce()
+    await click('创建订单并选择付款方式')
+    expect(vi.mocked(createOrder).mock.calls[1]![1]!.idempotencyKey).not.toBe(first.idempotencyKey)
+    expect(vi.mocked(createOrder).mock.calls[1]![1]!.quoteFingerprint).toBe('replacement-quote')
+  })
   it('shows full new term, exact residual and wallet surplus before an explicit order action', async () => {
     vi.mocked(previewOrder).mockResolvedValue({ order_type: 'upgrade', change_mode: 'full_term', amount_cents: 2000, credit_amount: 2000, payable_amount: 2000, settlement_amount: '9007199254740993', current_residual: '9007199254740993', future_residual: '0', surplus_amount: '9007199254738993', additional_amount: '0', currency: 'CNY', time_credit: 0, traffic_credit: 0, traffic_bytes: 100, used_bytes: 0, end_at: '2027-02-01T00:00:00Z', quote_fingerprint: 'full-term-quote' })
     await open('/account/plans?plan=1&operation=change&subscription=105')

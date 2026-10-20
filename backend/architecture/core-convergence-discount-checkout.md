@@ -175,3 +175,28 @@ generic internal_error; corrected assertions now preserve omitted data and the
 established commerce_persistence_failed uncertain-outcome classification. The
 failed test log remains. New exact-source full backend/dual-database/CI checks
 follow this commit; frontend integration/review is a separate append batch.
+
+## P5 purchase and recovery entry
+
+The actual account purchase view now offers named providers and optional codes,
+defaulting to no discount. Preview/create validate provider, operation, currency,
+amounts, expiry and final fingerprint; plugin JSON/hashes/signatures are not UI
+copy. Unavailable providers cannot silently create a full-price order. Other
+operations retain their current sale rules and do not advertise this initial-only
+entry. Ordinary purchases remain usable if the optional catalog fails.
+
+Review found another real financial display boundary: an unknown creation result
+could retain its original request but display a newly fetched renewal/change
+quote. All operations now persist versioned original confirmation facts, strip
+them from the API request and recover only the original key/request. During an
+unknown attempt, current quote/residual displays and automatic requoting stop.
+Legacy intents lacking valid confirmation facts show unknown original amounts;
+a stored JSON null is corruption, not absence. Only exact versioned no-commit
+rejections release the failed intent; idempotency-key conflicts remain uncertain.
+Nine regression cases failed before the fix and their log is preserved.
+
+Final original CI frontend command:1058tests passed/8existing skipped,199files
+passed/2existing skipped,168.01s. Eight-file narrow suite123/123 passed. Vue-tsc
+and Vite13.99s passed. The earlier TS2532 in a test helper and its repair remain
+in separate logs. No exclusion or skip was added. Browser/live-server joint
+acceptance and exact combined commit CI still require their own evidence.
