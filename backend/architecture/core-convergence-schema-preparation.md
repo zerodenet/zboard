@@ -120,3 +120,21 @@ versioned phase is still broad: no specific SQL cause or CI fix is proven. Sourc
 overlay and benchmark hashes remain stable; no DB settings, published migration,
 timeout, fixture boundary or permissions changed. See the
 [diagnostic receipt](validation/2026-10-20-schema-stage-diagnostic.json).
+
+## Rejected module-cache timing probe (not measured)
+
+A follow-up private diagnostic attempted to time the existing GORM metadata
+Scan calls through Go source overlays. Go rejected replacements beneath
+GOMODCACHE before compilation: `Files beneath GOMODCACHE ... must not be
+replaced.` The command ran once, exited1 in0.005343s, and performed zero schema
+samples or SQL operations. Every original module/clone file hash remained
+unchanged. No module-cache write, GO environment/replace change, installation,
+permission change or retry was used to bypass the restriction.
+
+The prepared instrumentation and rejection are retained in the
+[blocked receipt](validation/2026-10-20-gorm-metadata-probe-blocked.json).
+The earlier successful stage measurements remain separate. They cannot supply
+missing per-Scan latency. An application-owned diagnostic driver wrapper is only
+being evaluated; its driver/query/row-consumption timings would be different
+metrics, requiring explicit interface/SQL/setup equivalence and overhead limits.
+No new performance result or CI fix follows from this rejected attempt.

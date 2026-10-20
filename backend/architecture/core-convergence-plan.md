@@ -1077,3 +1077,32 @@ first MySQL empty-JSON fixture failure are preserved; the fixture now uses valid
 JSON. No migration, remote rollback verification or async handoff is introduced.
 See [behavior and limits](core-convergence-kernel-rollback-observations.md).
 The new production commit requires full backend and current CI verification.
+
+### P7 rejected finer-grained migration probe (2026-10-20)
+
+Go rejected a private source overlay beneath GOMODCACHE before compilation.
+One command/exit1, zero samples/SQL; original module and fixed31 clone hashes
+remain unchanged. The denied path was stopped without module/GO-setting/replace
+or permission changes. Prepared instrumentation is not measured evidence. See
+[exact blocker](validation/2026-10-20-gorm-metadata-probe-blocked.json); the prior
+successful stage attribution remains distinct, and P7 MySQL remains unresolved.
+
+Exact clean cabce7c full Go299.750s/vet3.723s/build2.009s/pure-Go SQLite21.544s
+now pass without concurrent local load. [Whole-source receipt](validation/2026-10-20-kernel-rollback-final-checks.json).
+The original complete MySQL and new CI remain separate outstanding checks.
+
+### P5 independent subscription support entry (2026-10-20)
+
+Each account subscription row now opens TicketCenter with only that row's positive
+safe-integer subscription_id/new context, including expired/ended history. The
+managed credential selection is not reused, and no ticket/financial/credential
+write is automatic. Actual component/router tests22 pass; unchanged original
+six exclusions full frontend1112 pass/8 existing skip, typecheck/build pass.
+No migration or backend permission/policy change. This new shortcut has no separate
+Chromium acceptance; see [receipt](validation/2026-10-20-subscription-ticket-shortcut.json).
+
+Both5c8918a and122f227 new CI runs have all six successes, with MySQL handler
+881.409s and791.717s respectively; actual jobstore/copy run and pass there.
+Prior31e72db local/CI900s failures remain, despite equivalent production source;
+no stable margin or causal speedup is inferred. These do not acceptcabce7c or a
+later source. See [CI receipts](validation/2026-10-20-test-only-ci-success.json).

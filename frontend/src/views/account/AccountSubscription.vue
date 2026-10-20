@@ -82,6 +82,7 @@
                 <UiButton v-if="['active', 'expired'].includes(sub.status)" variant="secondary" size="sm" type="button" @click="terminationTarget = sub.id">核对退订</UiButton>
                 <UiButton variant="secondary" size="sm" type="button" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }">余额自动续费</UiButton>
                 <RouterLink v-if="sub.can_renew" class="button button-secondary button-sm" :to="`/account/plans?operation=renew&subscription=${sub.id}`">{{ sub.renewal_until ? '续费恢复' : '续费' }}</RouterLink>
+                <RouterLink v-if="Number.isSafeInteger(sub.id) && sub.id > 0" class="button button-secondary button-sm" :to="{ path: '/account/tickets', query: { new: '1', subscription_id: String(sub.id) } }">就此订阅提交工单</RouterLink>
               </div>
             </td>
           </tr>

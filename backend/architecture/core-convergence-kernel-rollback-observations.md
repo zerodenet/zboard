@@ -53,3 +53,9 @@ and node observation writes still share a transaction, and Latest/Stats still
 share a cursor. Legacy activity writers, install-host ownership, per-node fault
 isolation, persistent byte bounds and migration/recovery proofs must be resolved
 before asynchronous projection can be claimed. P4/P6 are not completed here.
+
+The exact clean cabce7c ordinary clone subsequently passed complete Go299.750s,
+vet3.723s, build2.009s and pure-Go SQLite21.544s with GOMAXPROCS2/-p2 and no
+concurrent local load. The [whole-source receipt](validation/2026-10-20-kernel-rollback-final-checks.json)
+binds every raw log. This is not the original full MySQL or new CI result;
+prior handler900s failures and the outstanding P4/P6 gaps remain.
