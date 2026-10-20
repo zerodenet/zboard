@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
@@ -21,17 +22,18 @@ func TestAccountingBenchmarkObserverCountsOnlyNumericEvidence(t *testing.T) {
 		{" UPDATE private SET value = 'private'", 2, nil},
 		{"DELETE FROM private", -1, errors.New("test failure")},
 		{"PRAGMA journal_mode", 1, nil},
+		{"SELECT absent FROM private", 0, gorm.ErrRecordNotFound},
 	} {
 		counter.Trace(context.Background(), time.Now().Add(-time.Millisecond), func() (string, int64) { return item.sql, item.rows }, item.err)
 	}
-	if counter.queries.Load() != 5 || counter.reads.Load() != 1 || counter.writes.Load() != 3 || counter.rows.Load() != 5 || counter.unknown.Load() != 1 || counter.errors.Load() != 1 {
+	if counter.queries.Load() != 6 || counter.reads.Load() != 2 || counter.writes.Load() != 3 || counter.rows.Load() != 5 || counter.unknown.Load() != 1 || counter.errors.Load() != 1 || counter.misses.Load() != 1 {
 		t.Fatal("SQL evidence conflated selected rows, unknown affected rows, and DML", counter)
 	}
 	var samples uint64
 	for i := range counter.latency {
 		samples += counter.latency[i].Load()
 	}
-	if samples != 5 || counter.totalNS.Load() == 0 || counter.maxNS.Load() == 0 {
+	if samples != 6 || counter.totalNS.Load() == 0 || counter.maxNS.Load() == 0 {
 		t.Fatal("missing bounded client latency evidence")
 	}
 }

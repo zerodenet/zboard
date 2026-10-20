@@ -759,3 +759,15 @@ suite:199 files/1069 tests passed,8 existing test skips unchanged,160.55s;
 vue-tsc and Vite build passed(Vite12.00s). Sources stayed frozen through both
 checks. New combined-source backend/CI and live browser acceptance remain
 independent requirements.
+
+### P6 SQL cost baseline, not worker completion (2026-10-20)
+
+Fixed clean7b10068 microbenchmark completed ten repetitions with exact replay/
+ledger assertions.32 distinct cumulative flows per FullBatch cost87 SQL
+(48SELECT/39DML),101 logical affected rows,200us client SQL p95 upper bound
+and12.54–17.15ms batch p95. RSS58,056KiB includes fixtures; shared4CPU/16GiB
+cgroup differs from the constrained HTTP profile. Normal first-read misses
+were explicitly separated from actual errors in a test-only follow-up, with
+original output retained. No wall-time improvement, MySQL throughput, worker
+benefit or full P6 claim follows. See core-convergence-accounting-sql-measurement.md
+and validation/2026-10-20-accounting-sql-baseline.json.

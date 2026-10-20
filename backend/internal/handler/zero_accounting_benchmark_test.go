@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -25,6 +26,7 @@ type accountingQueryCounter struct {
 	rows    atomic.Uint64
 	unknown atomic.Uint64
 	errors  atomic.Uint64
+	misses  atomic.Uint64
 	totalNS atomic.Uint64
 	maxNS   atomic.Uint64
 	latency [1001]atomic.Uint64 // 100us upper bounds through 100ms, then overflow.
@@ -48,7 +50,9 @@ func (l *accountingQueryCounter) Trace(_ context.Context, begin time.Time, state
 			}
 		}
 	}
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		l.misses.Add(1)
+	} else if err != nil {
 		l.errors.Add(1)
 	}
 	l.queries.Add(1)
@@ -71,6 +75,7 @@ func (l *accountingQueryCounter) report(b *testing.B) {
 	b.ReportMetric(float64(l.rows.Load())/n, "affected-write-rows/batch")
 	b.ReportMetric(float64(l.unknown.Load())/n, "unknown-write-rows/batch")
 	b.ReportMetric(float64(l.errors.Load())/n, "SQL-errors/batch")
+	b.ReportMetric(float64(l.misses.Load())/n, "expected-read-misses/batch")
 	if queries == 0 {
 		return
 	}
