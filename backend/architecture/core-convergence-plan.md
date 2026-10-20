@@ -668,3 +668,11 @@ MySQL外层locking SELECT无法让派生UNION membership变成当前读，现分
 前端实际套餐页解释范围同步与quota选项，严格可重试503保留表单/组/revision且无自动写重放；Plans+NodeGroupLookup18项通过，完整原CI范围961通过/8既有skip，vue-tsc/build11.64s通过。新跨域权威事务commerce.plan_group_sync进入第19条归属清单；完整精确提交backend/实库/CI及公开原生远端交付仍需另验，无新schema或生产操作。
 
 Git HTTPS令牌失效后，已使用现有授权GitHub app按完全相同tree上传两批：容量基准c9ef80c（原云端2073edc同tree）、迁移重试38ddd91（原2321ec8同tree）。仅commit元数据改变，本地按相同tree对齐，所有待集成工作保留；更新原codex分支核对expected_head并保持fast-forward/Draft，未合并发布。
+
+## P2-15 / P4-03：云端恢复后的独立小批次（2026-10-20）
+
+原分支d98b018已正常推送并触发独立CI39466880437；未推送内容及全部待集成源码已先备份至/workspace/zboard-recovery-20261020T173121Z。云端恢复后/tmp旧日志丢失，不将中断的旧完整Go测试声称通过。P2只读优惠provider及SDK/native重验后提交778e5d6；独立服务与cap进入17RPC/31cap清单，宿主操作仍16。交易快照、订单、续费接线尚未完成，明确见独立provider evidence。
+
+P4正常异步积压现在是显式未知的pending读状态，scope/from/to及null统计、no-store、pending/complete header贯穿API、两个decorator和前端。仅typed pending改为200；DB故障/权限/取消仍失败，不在请求中drain或扫描raw、不增加另一条计费路径。前端冷pending未知，同scope保留旧完整as_of，身份/日期/filter/timezone隔离；新日期范围先失败2例后修复。专项104通过、原完整前端1010通过/8既有skip、build14.11s；后端pending1.131s通过。参见core-convergence-pending-statistics-evidence.md。
+
+原4df小时投影容量比较112/157趋势503完整失败记录仍保留于core-convergence-capacity-hourly-comparison.md。新固定源码尚需完整后端/真实MySQL/新CI/原阈值容量复测，200不等于完整图表可用。无迁移、生产动作或完成全部阶段宣称。

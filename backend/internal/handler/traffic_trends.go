@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"net/http"
 	"strings"
@@ -61,6 +62,12 @@ func (h *handlers) trafficTrends(w http.ResponseWriter, r *http.Request, systemC
 		q.Buckets = append(q.Buckets, metering.TrendBucket{Key: b.Key, StartUTC: b.StartUTC, EndUTC: b.EndUTC})
 	}
 	result, err := h.services.TrafficTrends(trafficTrendCacheAdapter{&h.trafficTrendsCache}).Read(r.Context(), claims.UserID, q)
+	if errors.Is(err, metering.ErrUsageProjectionPending) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Zboard-Statistics-State", "pending")
+		writeJSONResponse(w, http.StatusOK, "流量统计正在更新，当前配额不受影响。", trafficTrendResponse{ProjectionPending: true, Scope: q.Scope(claims.UserID), From: from.Format("2006-01-02"), To: to.Format("2006-01-02")}, nil)
+		return
+	}
 	if err != nil {
 		writePrincipalTrendError(w, err)
 		return
@@ -69,5 +76,6 @@ func (h *handlers) trafficTrends(w http.ResponseWriter, r *http.Request, systemC
 	for _, v := range result.Subscriptions {
 		refs = append(refs, entityReference{ID: v.ID, Kind: "subscription", DisplayName: v.DisplayName, Secondary: v.Secondary, Status: v.Status})
 	}
-	OK(w, trafficTrendResponse{From: from.Format("2006-01-02"), To: to.Format("2006-01-02"), Points: result.Snapshot.Points, RecordCount: result.Snapshot.RecordCount, Subscriptions: refs, AsOf: result.Snapshot.AsOf})
+	w.Header().Set("X-Zboard-Statistics-State", "complete")
+	OK(w, trafficTrendResponse{Scope: q.Scope(claims.UserID), From: from.Format("2006-01-02"), To: to.Format("2006-01-02"), Points: result.Snapshot.Points, RecordCount: result.Snapshot.RecordCount, Subscriptions: refs, AsOf: result.Snapshot.AsOf})
 }

@@ -67,6 +67,18 @@ type TrafficTrendData struct {
 	Snapshot      TrafficTrendSnapshot
 	Subscriptions []TrafficTrendReference
 }
+
+// TrafficTrendScope identifies the authorized calendar view, independently of
+// whether its asynchronous statistics are currently complete.
+type TrafficTrendScope struct {
+	Administrative     bool   `json:"administrative"`
+	UserID             uint   `json:"user_id"`
+	SubscriptionID     uint   `json:"subscription_id"`
+	NodeID             uint   `json:"node_id"`
+	ProtocolEndpointID uint   `json:"protocol_endpoint_id"`
+	TimeZone           string `json:"time_zone"`
+}
+
 type TrafficTrendQuery struct {
 	Administrative                                     bool
 	UserID, SubscriptionID, NodeID, ProtocolEndpointID uint
@@ -76,6 +88,15 @@ type TrafficTrendQuery struct {
 	Timezone                                           string
 	Buckets                                            []TrendBucket
 }
+
+func (q TrafficTrendQuery) Scope(actor uint) TrafficTrendScope {
+	userID := q.UserID
+	if !q.Administrative {
+		userID = actor
+	}
+	return TrafficTrendScope{Administrative: q.Administrative, UserID: userID, SubscriptionID: q.SubscriptionID, NodeID: q.NodeID, ProtocolEndpointID: q.ProtocolEndpointID, TimeZone: q.Timezone}
+}
+
 type TrafficTrendCache interface {
 	Get(context.Context, [32]byte, func() (TrafficTrendSnapshot, error)) (TrafficTrendSnapshot, error)
 }

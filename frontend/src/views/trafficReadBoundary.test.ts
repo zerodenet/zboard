@@ -1,5 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { createPinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CursorPager from '../components/CursorPager.vue'
 import Traffic from './Traffic.vue'
@@ -19,7 +20,7 @@ describe('traffic view HTTP read boundaries', () => {
     malformedPage = false
     get.mockReset()
     get.mockImplementation(async (path: string) => ({ data: { data: path.includes('/trends')
-      ? { points: [], subscriptions: [], peak_connections: null, record_count: 0, connection_sample_count: 0, truncated: false }
+      ? { points: [], subscriptions: [], peak_connections: null, record_count: 0, connection_sample_count: 0, truncated: false, as_of: '2026-09-01T00:00:00Z' }
       : path.includes('/entity-references')
         ? { users: {}, subscriptions: {}, nodes: {}, plans: {}, plan_skus: {}, orders: {}, protocol_endpoints: {}, targets: {} }
         : { items: [], total: 0, aggregates: {} },
@@ -42,7 +43,7 @@ describe('traffic view HTTP read boundaries', () => {
     await router.push((admin ? '/admin/traffic' : '/account/traffic') + range + (admin ? '&section=details' : ''))
     await router.isReady()
     wrapper = mount(admin ? Traffic : AccountTraffic, { global: {
-      plugins: [router], stubs: { NodeTrafficChart: true, TrafficObservabilityChart: true },
+      plugins: [router, createPinia()], stubs: { NodeTrafficChart: true, TrafficObservabilityChart: true },
     } })
     await flushPromises()
     expect(wrapper.getComponent(CursorPager).props('count')).toBe(1)

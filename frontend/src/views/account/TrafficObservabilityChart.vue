@@ -8,18 +8,29 @@
       <div class="observability-status">
         <span v-if="recordCount">已汇总 {{ recordCount.toLocaleString('zh-CN') }} 条原始记录</span>
         <span v-if="truncated" class="observability-warning">当前范围数据已截断</span>
+        <span v-if="snapshotAvailable && asOf">完整统计时间：<TimeBadge :value="asOf" /></span>
+        <UiButton variant="ghost" size="sm" :disabled="loading" @click="emit('refresh')">刷新趋势</UiButton>
       </div>
     </header>
 
-    <div v-if="loading" class="observability-loading" aria-live="polite">
+    <p v-if="projectionPending" class="observability-warning" role="status">
+      统计更新中。{{ snapshotAvailable ? '以下保留上次完整统计及其时间，当前统计尚未完成。' : '当前范围统计未知，请稍后刷新；不代表没有流量活动。' }}
+    </p>
+
+    <div v-if="loading && !snapshotAvailable" class="observability-loading" aria-live="polite">
       <UiIcon name="refresh" />
       正在加载趋势数据…
+    </div>
+
+    <div v-else-if="projectionPending && !snapshotAvailable" class="observability-empty">
+      <UiIcon name="activity" />
+      <strong>当前范围统计未知</strong>
     </div>
 
     <div v-else-if="!points.length" class="observability-empty">
       <UiIcon name="activity" />
       <div>
-        <strong>当前范围没有可绘制的数据</strong>
+        <strong>{{ projectionPending ? '上次完整统计没有可绘制的数据' : '当前范围没有可绘制的数据' }}</strong>
         <p>节点产生计费记录后，这里会显示流量和最高连接数趋势。</p>
       </div>
     </div>
@@ -211,6 +222,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import UiIcon from '../../components/UiIcon.vue'
+import UiButton from '../../components/UiButton.vue'
+import TimeBadge from '../../components/TimeBadge.vue'
 import { formatBytes } from '../../utils/format'
 import type { TrafficObservabilityPoint } from './trafficObservability'
 
@@ -220,12 +233,19 @@ const props = withDefaults(defineProps<{
   truncated?: boolean
   recordCount?: number
   peakConnections?: number | null
+  projectionPending?: boolean
+  snapshotAvailable?: boolean
+  asOf?: string
 }>(), {
   loading: false,
   truncated: false,
   recordCount: 0,
   peakConnections: null,
+  projectionPending: false,
+  snapshotAvailable: true,
+  asOf: '',
 })
+const emit = defineEmits<{ refresh: [] }>()
 
 const chartWidth = 720
 const chartHeight = 238

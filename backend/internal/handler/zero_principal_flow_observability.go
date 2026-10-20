@@ -214,6 +214,12 @@ func (h *handlers) TrafficTrendsWithPrincipalFlowsHandler(w http.ResponseWriter,
 		copyRecordedResponse(w, recorded)
 		return
 	}
+	if trafficTrendIsPending(wire.Data) {
+		// Pending numeric fields and as_of are null. Copy the exact response
+		// before unmarshalling into the complete numeric DTO or reading Principals.
+		copyRecordedResponse(w, recorded)
+		return
+	}
 	var response trafficTrendResponse
 	if err := json.Unmarshal(wire.Data, &response); err != nil {
 		copyRecordedResponse(w, recorded)
@@ -240,6 +246,7 @@ func (h *handlers) TrafficTrendsWithPrincipalFlowsHandler(w http.ResponseWriter,
 		return
 	}
 	applyPrincipalFlowTrendRows(&response, rows)
+	w.Header().Set("X-Zboard-Statistics-State", "complete")
 	writeJSONResponse(w, http.StatusOK, wire.Message, response, wire.Error)
 }
 
