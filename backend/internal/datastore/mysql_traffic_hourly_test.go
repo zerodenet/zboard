@@ -25,7 +25,7 @@ const hourlyAppVersion = "0025_traffic_hourly_application.up.sql"
 
 // Never touch the supplied schema: root is used only to provision a disposable
 // schema and an account with ALL on that schema, without any global privilege.
-func hourlyMySQLFixture(t *testing.T) (*gorm.DB, *sql.DB) {
+func hourlyMySQLFixture(t testing.TB) (*gorm.DB, *sql.DB) {
 	t.Helper()
 	dsn := os.Getenv("ZBOARD_TEST_MYSQL_DSN")
 	if dsn == "" {

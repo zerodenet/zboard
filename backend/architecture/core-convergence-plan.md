@@ -842,3 +842,14 @@ assertion (handler669.241s);33b local full MySQL also failed it and later timed
 out at the unchanged15-minute limit, leaving copy tests unexecuted. Those failures
 remain evidence. See validation/2026-10-20-retention-clock-precision.json;
 new-head full validation remains required.
+
+### P4/P7 schema preparation DDL reduction (2026-10-20)
+
+Fresh projection tables declare their existing indexes inline; missing traffic
+read indexes are repaired in one ALTER per table. Exact index names/order,
+partial-table recovery, permission errors and rows remain verified in SQLite
+and actual MySQL. One quiet controlled fresh-start comparison observes82 to78
+ALTERs and5.159s to4.579s; no CI timeout success follows from one pair. Published
+migrations, original timeouts and test scope are unchanged. See
+core-convergence-schema-preparation.md and its validation receipt; full new-head
+checks and sequential copy remain required.
