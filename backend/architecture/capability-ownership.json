@@ -133,7 +133,7 @@
       "id": "commerce.automatic_renewal",
       "owner": "commerce",
       "source": "internal/adapters/persistence/commercestore/automatic_renewal_worker.go",
-      "symbol": "AutomaticRenewals.processAutomaticRenewal",
+      "symbol": "AutomaticRenewals.processAutomaticRenewalPrepared",
       "participants": [
         "commerce",
         "entitlements",

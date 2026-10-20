@@ -88,3 +88,11 @@ matcher and hidden local validation message; both were corrected, retaining
 the failure log. Full backend, new CI and live browser joint acceptance remain
 separate requirements. See validation/2026-10-20-automatic-recurring.json;
 P2–P7 remain incomplete beyond this slice.
+
+The fixed e5accd9 full backend run failed the ownership inventory after all
+business packages passed: the explicit transaction entry still named the old
+method. It now names `AutomaticRenewals.processAutomaticRenewalPrepared`, the
+actual final transaction. The inventory's19-transaction requirement and its
+automatic-renewal ownership assertion remain unchanged. The failed full run
+and its unexecuted subsequent checks are retained; a corrected full run is
+required, not inferred from targeted business tests.
