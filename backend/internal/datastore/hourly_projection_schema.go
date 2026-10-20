@@ -86,11 +86,25 @@ func reconcileHourlyProjectionSchema(db *gorm.DB) error {
 		if err != nil {
 			return err
 		}
+		var additions []string
 		for i, column := range hourlyProjectionColumns {
 			if !present[column] {
+				if !IsSQLite(tx) {
+					prefix := "ALTER TABLE " + usageProjectionTable + " "
+					if !strings.HasPrefix(statements[i], prefix+"ADD COLUMN "+column+" ") {
+						return fmt.Errorf("unexpected hourly projection column DDL for %s", column)
+					}
+					additions = append(additions, strings.TrimPrefix(statements[i], prefix))
+					continue
+				}
 				if err := tx.Exec(statements[i]).Error; err != nil {
 					return err
 				}
+			}
+		}
+		if len(additions) > 0 {
+			if err := tx.Exec("ALTER TABLE " + usageProjectionTable + " " + strings.Join(additions, ", ")).Error; err != nil {
+				return err
 			}
 		}
 		for _, statement := range statements[len(hourlyProjectionColumns):] {

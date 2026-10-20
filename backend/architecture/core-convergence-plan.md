@@ -979,3 +979,17 @@ See validation/2026-10-20-post-shutdown-original-capacity.json.58f full backend 
 running;4e1a78d CI passes five jobs but original15m MySQL handler times out while
 accounting replay is running4s, so later jobstore/copy are unexecuted there. That
 new failure remains open; do not substitute this capacity pass for DB validation.
+
+### P7 hourly recovery DDL reduction, no timing improvement claimed (2026-10-20)
+
+Only missing0054 MySQL columns are grouped; CREATE INDEX/trigger permissions,
+authority preflight and published SQL remain unchanged. SQLite and five actual
+MySQL cases pass. Old-source complete regression fails only the5/3 separate
+ALTER counts; the earlier fixture-comment parsing failure remains separately.
+Three full Prepare samples confirm79→75 ALTER/15 unchanged CREATE_INDEX, but
+median3.795→4.007s does not show a time improvement. Original15m acceptance is
+still required, not inferred.58f prior source full Go/vet/build/pure-Go SQLite
+passes; c4 and191 CI succeed while4e times out. None substitutes for this new
+change. See schema-preparation document and validation/2026-10-20-hourly-column-
+batch.json. The next independently measured candidate batches baseline metadata
+queries without dropping table/column/type/index checks or caching across DDL.

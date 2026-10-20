@@ -47,3 +47,23 @@ more separate DDL operations. No destructive migration or data cleanup is added.
 Current full backend, original three-package MySQL15-minute checks and copy
 checks must still run at the new commit. Earlier timeout failures and unexecuted
 copy checks are retained; this measurement does not mark P7 or that CI gate done.
+
+##0054 partial column recovery batching
+
+The current0054 owned reconciler now collects only missing MySQL column ADDs
+from the unchanged embedded asset into one ALTER. SQLite remains per-column.
+Index-only repairs retain CREATE INDEX and their existing permission contract;
+explicit trigger drops, authority preflight, legacy false/hourly true meaning,
+rebuild and receipt order remain. Partial prefixes, repeated recovery, real1142
+refusal, exact definitions and source/hourly/daily preservation pass actual MySQL.
+An initial new test fixture parsed a comment semicolon incorrectly; that failure
+is retained separately from the corrected old-source batch-count regression.
+
+Three complete fresh Prepare calls per source observe79→75 ALTER while
+CREATE_INDEX stays15. Old seconds3.965/3.795/3.549; new4.076/4.007/3.706. This
+sample does not show startup time improvement (new median is higher) and cannot
+mark the original15-minute suite fixed. Only the operation-count reduction is
+verified. The58f source before this change passes full Go286.586s/vet/build/
+pure-Go SQLite19.505s and original mixed gates; it does not accept this new DDL.
+4e CI's15m MySQL timeout and191 CI's later complete success both remain recorded.
+See validation/2026-10-20-hourly-column-batch.json; new-source full checks remain.
