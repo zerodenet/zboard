@@ -1,0 +1,220 @@
+{
+  "source": "58f0748e4fcdf3800f6632ff2698c7cee15b1c20",
+  "stage": "P4/P6 exact post-shutdown/continuation/source-column code; unchanged original mixed gates",
+  "original_gates_passed": true,
+  "source_binding": {
+    "checkout_commit_unchanged": true,
+    "checkout_still_clean": true,
+    "source_before_after_equal": true,
+    "source-sha256.txt_matches_observer": true,
+    "source-after-build-sha256.txt_matches_observer": true,
+    "zboard_binary_before_after_equal": true,
+    "acceptance_binary_before_after_equal": true,
+    "acceptance-load.py_copy_matches_source": true,
+    "acceptance-report.py_copy_matches_source": true
+  },
+  "runner_sha256": {
+    "scripts/acceptance-mixed.sh": "e526b44d5a81e306f34a4b069e40fdd29b908c55f4bc45a070ef558722a259f6",
+    "scripts/acceptance-load.py": "3a8d946d14e96b3262f7ee831c4da0dcd96f31d31a1fe2ce2b8525a90e00af12",
+    "scripts/acceptance-report.py": "d8c9e0ab163a29a62fb296ddb30e5c22b6efe68cab3d1f94bfc7395082d06021"
+  },
+  "observer_sha256": "44d366168c638df5283eb12095873cf6fc86a14293ac22c2c82fc663c6015b0d",
+  "window": {
+    "started": "2026-10-20T21:01:59.441086+00:00",
+    "finished": "2026-10-20T21:03:41.434174+00:00"
+  },
+  "profile": {
+    "NODES": "2",
+    "SUBSCRIPTIONS": "20",
+    "HISTORY_RECORDS": "2000",
+    "DURATION_SECONDS": "60",
+    "EVENT_RATE": "20",
+    "READERS": "4",
+    "cpu": 1,
+    "memory_bytes": 1073741824,
+    "memory_swap_bytes": 1073741824,
+    "GOMAXPROCS": 1
+  },
+  "elapsed_seconds": 60.538908797998374,
+  "unique_events": 1201,
+  "generator_dropped": 0,
+  "undelivered_jobs": 0,
+  "latencies": [
+    {
+      "path": "/api/v1/admin/users?paged=true&limit=50&offset=0",
+      "budget_ms": 250,
+      "count": 157,
+      "errors": 0,
+      "p50_ms": 1,
+      "p95_ms": 10,
+      "p99_ms": 19,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/subscriptions?paged=true&limit=50&offset=0",
+      "budget_ms": 250,
+      "count": 158,
+      "errors": 0,
+      "p50_ms": 2,
+      "p95_ms": 10,
+      "p99_ms": 30,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/subscriptions/1",
+      "budget_ms": 250,
+      "count": 158,
+      "errors": 0,
+      "p50_ms": 2,
+      "p95_ms": 13,
+      "p99_ms": 21,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/traffic/records?paged=true&bucket=hour&limit=50&offset=0",
+      "budget_ms": 250,
+      "count": 158,
+      "errors": 0,
+      "p50_ms": 9,
+      "p95_ms": 19,
+      "p99_ms": 27,
+      "passed": true
+    },
+    {
+      "path": "/api/zero/events",
+      "budget_ms": 250,
+      "count": 1274,
+      "errors": 0,
+      "p50_ms": 12,
+      "p95_ms": 17,
+      "p99_ms": 29,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/traffic/trends",
+      "budget_ms": 1000,
+      "count": 157,
+      "errors": 0,
+      "p50_ms": 1,
+      "p95_ms": 9,
+      "p99_ms": 25,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/traffic/reconciliation?paged=true&limit=50&offset=0",
+      "budget_ms": 1000,
+      "count": 156,
+      "errors": 0,
+      "p50_ms": 3,
+      "p95_ms": 9,
+      "p99_ms": 28,
+      "passed": true
+    }
+  ],
+  "business_http_count": 944,
+  "events_http_count": 1274,
+  "runtime_diagnostics": {
+    "samples": 7,
+    "last_consumer": {
+      "batches": 34,
+      "processed_envelopes": 1264,
+      "projected_flow_samples": 778,
+      "coalesced_flow_updates": 486,
+      "failures": 0,
+      "processing_seconds": 0.967132853,
+      "missing_receive_time": 0,
+      "latency_samples": 1264,
+      "latency_bucket_ms": 100,
+      "p95_upper_ms": 2000,
+      "maximum_ms": 2054
+    },
+    "maximum_sampled_pending_events": 38,
+    "database_wait_deltas": {
+      "accounting_db": {
+        "wait_count": 289,
+        "wait_seconds": 0.785659729
+      },
+      "traffic_read_db": {
+        "wait_count": 0,
+        "wait_seconds": 0
+      }
+    }
+  },
+  "sampled_peak_cpu_percent": 15.57,
+  "sampled_peak_working_set_mib": 36.99,
+  "rss_observations": {
+    "samples": 23,
+    "errors": [],
+    "available": true,
+    "first_rss_kib": 41568,
+    "last_rss_kib": 62132,
+    "sampled_peak_rss_kib": 62132
+  },
+  "sqlite_space": {
+    "available": true,
+    "scope": "stopped exported SQLite only; not a live SQL latency measurement",
+    "page_size": 4096,
+    "page_count": 1466,
+    "freelist_pages": 0,
+    "allocated_bytes": 6004736,
+    "objects": {
+      "index": {
+        "bytes": 3936256,
+        "pages": 961
+      },
+      "internal": {
+        "bytes": 126976,
+        "pages": 31
+      },
+      "table": {
+        "bytes": 1941504,
+        "pages": 474
+      }
+    }
+  },
+  "during_load_minimum_disk_free_bytes": 2205278208,
+  "drain_seconds": 5,
+  "verification": {
+    "accounting_passed": true,
+    "expected_total": 9833472,
+    "ledger_total": 9833472,
+    "mismatches": null,
+    "passed": true,
+    "pending_usage_projections": 0,
+    "statistics_passed": true,
+    "subscription_total": 9833472
+  },
+  "stopped_spool": {
+    "pending_events": 0,
+    "pending_bytes": 0,
+    "storage_bytes": 566163,
+    "pressure_level": "normal",
+    "disk_free_bytes": 2025328640
+  },
+  "container_exit": {
+    "ExitCode": 0,
+    "OOMKilled": false
+  },
+  "pending_complete_ratio": "unknown: original client does not count response-body states; HTTP200 does not prove continuously complete charts",
+  "historical_failure": "Original4dfb664 trend112/157 HTTP503 retained; e5 passing run remains separate",
+  "limitations": [
+    "One60-second single-process SQLite synthetic-event profile; not production or24h stability/capacity ceiling",
+    "No live kernel connection scale or exhaustion-to-remote-stop/overuse measurement in this load; native isolated evidence is separate",
+    "Database connection waits are recorded, not per-query SQL latency or bytes; SQL measurements use separate microbenchmarks",
+    "No MySQL capacity, busy-plugin interference, independent worker or autoscaling proof"
+  ],
+  "evidence_hashes": {
+    "acceptance-result.json": "6e1044b1d040a999195c2fab048e8132d1f049b6015b20dd0290d32cce2170ce",
+    "baseline-binding.json": "4d7153fbf4860ed9773793bc579dc9420b0697c933b91ed8722ed66150de72c9",
+    "preflight.json": "aa0e9dc7ad47ab6156eb4d0d80780c86d55ae1b5ddae914ba62f329ac7c7ae48",
+    "verification.json": "9502f8430a523ba388600dc2c5283bb6673d776327c32a7efdba8571de69e328",
+    "spool-verification.json": "42f0edb90223abae0302a09c4184dc63c4d88b638bed22b6b0a764f6316595aa"
+  },
+  "commands": "GOMAXPROCS=1 DOCKER_CONFIG=<existing isolated config> python3 scripts/acceptance-capacity-baseline.py --checkout <clean fixed58f0748 clone> --revision 58f0748e4fcdf3800f6632ff2698c7cee15b1c20 --go-bin <Go1.26.8>/go --execute",
+  "change_to_controller": "Append this exact58f0748 source pin only; original default pin, all three runners, parameters, budgets and gates unchanged",
+  "remaining_at_recording": [
+    "58f full backend/vet/build/pure-Go SQLite running",
+    "Final original MySQL core/jobstore/copy and current CI",
+    "4e CI original15m timeout retained; jobstore/copy unexecuted in that CI"
+  ]
+}

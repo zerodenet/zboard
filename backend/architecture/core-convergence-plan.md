@@ -964,3 +964,18 @@ calendar cases pass. Five isolated SQLite200×32KiB samples retain all facts and
 not HTTP/worker throughput or authority archival. Full final-source checks and
 original capacity gates remain required. See core-convergence-projection-source-
 columns.md and validation/2026-10-20-projection-source-columns.json.
+
+### P4/P6 fixed58f0748 original capacity gates (2026-10-20)
+
+With local shutdown, pure continuation and narrow projection source changes,
+fixed clean58f0748 passes all unchanged original1CPU/1GiB/20events/s/4readers/60s
+gates.1201unique,1274 event HTTP and944 business reads have zero errors; trends
+157/0/p95=9ms. Expected/ledger/quota9,833,472 match, final projection and spool
+pending0, drain5s; all9 source/binary bindings hold. Original runner hashes and
+thresholds remain unchanged; controller only adds the exact source pin.
+Historical112/157 HTTP503 remains recorded. Pending/complete response-body ratio
+is still unknown; one short run is not MySQL/24h/worker or scaling acceptance.
+See validation/2026-10-20-post-shutdown-original-capacity.json.58f full backend is
+running;4e1a78d CI passes five jobs but original15m MySQL handler times out while
+accounting replay is running4s, so later jobstore/copy are unexecuted there. That
+new failure remains open; do not substitute this capacity pass for DB validation.

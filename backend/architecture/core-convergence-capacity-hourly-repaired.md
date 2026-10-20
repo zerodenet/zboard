@@ -1,5 +1,13 @@
 # Repaired hourly statistics: fixed-source original-gate comparison
 
+Later fixed58f0748 (after local shutdown/continuation/source-column changes) also
+passes every unchanged original gate on2026-10-20: trends157/0/p95=9ms,
+1274 event HTTP and944 business reads have zero errors, exact9,833,472-byte
+accounting and final pending0. See
+[the separate source-bound receipt](validation/2026-10-20-post-shutdown-original-capacity.json).
+This supplements the older308/e5 samples below; it does not erase their timing
+or historical failures or establish MySQL/independent-worker capacity.
+
 Source308689e38cff794865b633cde7193656ca2ecd4c passed every original mixed-load
 acceptance gate and all nine source/binary/runner bindings. The earlier4dfb664
 comparison remains failed with112/157 trend503 responses in
