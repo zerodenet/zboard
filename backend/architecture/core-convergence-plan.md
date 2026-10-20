@@ -878,3 +878,10 @@ its shared local MySQL run times out at the original15m and copy runs separately
 Those older results do not accept this new integration. Actual MySQL, full new
 source and independent-worker/scaling remain pending. See process-ownership
 document and validation/2026-10-20-process-shutdown-integration.json.
+
+3690113 actual MySQL whole jobstore passes126.507s and failed-spool-start foreign
+task protection passes three repetitions24.703s wall. The unchanged dispatch
+latency guard is included. CI adds whole jobstore MySQL between existing core
+and copy commands, preserving their exact scope/timeouts and sequential copy.
+Current core/copy and final-source checks remain pending; see
+validation/2026-10-20-mysql-job-runtime.json.

@@ -156,3 +156,12 @@ no individual assertion failure precedes that timeout, and sequential copy is
 still running. Other compilations/tests shared that local run; no causal timing
 guarantee is inferred. Both results remain recorded. Neither older green CI nor
 these targeted proofs accepts the current new source or completes P6/P7.
+
+The frozen3690113 source subsequently passes the entire jobstore package against
+actual MySQL8.4 in126.507s (128.774s wall), including generic DSN-selected tests
+and the unchanged dispatch latency guard. Its failed-spool-start foreign task
+protection also passes three MySQL repetitions24.703s wall. CI now adds that
+whole jobstore command between the unchanged original core15-minute command and
+the unchanged sequential copy command. The same-source core/copy run is still
+pending, and no independent-worker or autoscaling claim follows. See
+[MySQL receipt](validation/2026-10-20-mysql-job-runtime.json).
