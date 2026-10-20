@@ -245,10 +245,10 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 15,
+		"cross_domain_transaction": 16,
 	}
 	counts := map[string]int{}
-	controlledDebit, unsubscribe, retirement, replacement := false, false, false, false
+	controlledDebit, unsubscribe, retirement, replacement, automatic := false, false, false, false, false
 	for _, row := range rows {
 		counts[row.Kind]++
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.controlled_wallet_debit" && row.Owner == "commerce" {
@@ -256,6 +256,9 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		}
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.subscription_unsubscribe" && row.Owner == "commerce" {
 			unsubscribe = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.automatic_renewal" && row.Owner == "commerce" {
+			automatic = true
 		}
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.full_term_replacement" && row.Owner == "commerce" {
 			replacement = true
@@ -266,6 +269,9 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		if row.Owner == "unassigned" {
 			t.Errorf("unassigned inventory evidence: %+v", row)
 		}
+	}
+	if !automatic {
+		t.Fatal("automatic renewal transaction must retain explicit ownership evidence")
 	}
 	if !retirement {
 		t.Error("retirement lost its entitlement transaction ownership")

@@ -15,7 +15,7 @@ func relatedSubscriptionOrders(tx *gorm.DB, user, subscription uint) *gorm.DB {
 // Read immutable checkout identity before beginning the authority transaction.
 // A non-locking read inside MySQL's transaction would establish a stale repeatable
 // read snapshot before waiting on the order, breaking ordinary payment replay.
-func readFullReplacementIdentity(db *gorm.DB, id, expectedBuyer uint) (*model.Order, error) {
+func readSubscriptionSettlementIdentity(db *gorm.DB, id, expectedBuyer uint) (*model.Order, error) {
 	var identity model.Order
 	query := db.Where("id = ?", id)
 	if expectedBuyer != 0 {
@@ -28,12 +28,26 @@ func readFullReplacementIdentity(db *gorm.DB, id, expectedBuyer uint) (*model.Or
 		return nil, err
 	}
 	full, err := fullReplacementSnapshot(identity)
-	if err != nil || full == nil {
+	if err != nil || (full == nil && (identity.OrderType != "renewal" || identity.TargetSubscriptionID == nil || identity.Status == "paid")) {
 		return nil, err
 	}
 	return &identity, nil
 }
-func validateReplacementIdentity(current model.Order, prepared *model.Order) error {
+func validateSubscriptionSettlementIdentity(current model.Order, prepared *model.Order) error {
+	// A paid renewal replay has no old-term mutation. Keep its original
+	// idempotent path independent of the number of historical target orders.
+	// If its state changed since the outside read, require the full identity.
+	if prepared == nil && current.OrderType == "renewal" && current.Status == "paid" {
+		return nil
+	}
+	currentRenewal := current.OrderType == "renewal" && current.TargetSubscriptionID != nil
+	preparedRenewal := prepared != nil && prepared.OrderType == "renewal" && prepared.TargetSubscriptionID != nil
+	if currentRenewal || preparedRenewal {
+		if !currentRenewal || !preparedRenewal || current.ID != prepared.ID || current.UserID != prepared.UserID || *current.TargetSubscriptionID != *prepared.TargetSubscriptionID || current.PurchaseSnapshot != prepared.PurchaseSnapshot {
+			return commerce.ErrSubscriptionQuoteChanged
+		}
+		return nil
+	}
 	full, err := fullReplacementSnapshot(current)
 	if err != nil {
 		return err
@@ -47,10 +61,11 @@ func validateReplacementIdentity(current model.Order, prepared *model.Order) err
 	return nil
 }
 
-// Full changes consume older paid sources. Acquire all related orders in the
-// same order as unsubscribe, before user/subscription locks, then verify the
-// pre-read immutable identity against the locked current order.
-func lockFullReplacementScope(tx *gorm.DB, identity *model.Order, actor uint, admin bool) error {
+// Full changes consume older paid sources, and recovery renewals finalize
+// historical orders. Both acquire all related orders in the same order as
+// unsubscribe and automatic renewal, before user/subscription locks. Verify
+// the pre-read immutable target against the current locked order.
+func lockSubscriptionSettlementScope(tx *gorm.DB, identity *model.Order, actor uint, admin bool) error {
 	if identity == nil {
 		return nil
 	}
@@ -65,7 +80,7 @@ func lockFullReplacementScope(tx *gorm.DB, identity *model.Order, actor uint, ad
 	for _, locked := range orders {
 		if locked.ID == identity.ID {
 			found = true
-			if err := validateReplacementIdentity(locked, identity); err != nil {
+			if err := validateSubscriptionSettlementIdentity(locked, identity); err != nil {
 				return err
 			}
 			break

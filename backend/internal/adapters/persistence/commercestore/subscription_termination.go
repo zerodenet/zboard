@@ -145,6 +145,9 @@ func (s SubscriptionTermination) Terminate(ctx context.Context, actor, id uint, 
 		if err := entitlementstore.TerminateInTransaction(tx, sub, strconv.FormatUint(uint64(row.ID), 10), now); err != nil {
 			return err
 		}
+		if err := stopAutomaticRenewal(tx, sub.ID, "window_closed", "订阅已主动退订，自动扣款已停止。", now); err != nil {
+			return err
+		}
 		if err := tx.Create(&model.AuditLog{UserID: &actor, Actor: user.Email, Action: "subscription.unsubscribe", Target: fmt.Sprintf("subscription:%d", id), Detail: fmt.Sprintf("settlement=%d currency=%s wallet_minor=%d delivery=pending_verification", row.ID, currency, total)}).Error; err != nil {
 			return err
 		}

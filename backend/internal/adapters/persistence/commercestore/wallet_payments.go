@@ -239,62 +239,75 @@ func captureOrderFunding(tx *gorm.DB, order model.Order, now time.Time) error {
 	return tx.Model(&fund).Updates(map[string]any{"state": "captured", "captured_at": now, "updated_at": now}).Error
 }
 func (s WalletPayments) Pay(ctx context.Context, actor, id uint) (out commerce.WalletPaymentResult, err error) {
-	identity, err := readFullReplacementIdentity(s.DB.WithContext(ctx), id, actor)
+	identity, err := readSubscriptionSettlementIdentity(s.DB.WithContext(ctx), id, actor)
 	if err != nil {
 		return out, err
 	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockFullReplacementScope(tx, identity, actor, false); err != nil {
+		if err := lockSubscriptionSettlementScope(tx, identity, actor, false); err != nil {
 			return err
 		}
 		var order model.Order
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, actor).First(&order).Error; err != nil {
 			return resourceError(err)
 		}
-		if err := validateReplacementIdentity(order, identity); err != nil {
+		if err := validateSubscriptionSettlementIdentity(order, identity); err != nil {
 			return err
 		}
 		if err := orderReader(tx, actor, false); err != nil {
 			return err
 		}
-		fund, exists, err := findOrderFunding(tx, order)
-		if err != nil {
-			return err
-		}
-		if !exists || order.OrderType == "topup" || fund.CashMinor != 0 {
-			return quoteError("此订单尚未由余额覆盖，请先确认付款分配或完成渠道补差。")
-		}
-		out = commerce.WalletPaymentResult{OrderID: order.ID, SubscriptionID: order.SubscriptionID, Status: order.Status}
-		if order.Status == "paid" && fund.State == "captured" && order.Channel == "wallet" {
-			return nil
-		}
-		now := commerceNow(s.Now)
-		if (order.Status != "pending" && order.Status != "failed") || fund.State != "reserved" || !fund.ExpiresAt.After(now) {
-			return quoteError("余额预留已失效，请核对余额后重新创建订单。")
-		}
-		settlement := OrderSettlement{DB: s.DB, Issuer: s.Issuer, Now: s.Now}
-		if err := settlement.setPaidWithFunding(tx, &order, now, true); err != nil {
-			return err
-		}
-		if err := tx.Model(&order).Update("channel", "wallet").Error; err != nil {
-			return err
-		}
-		if order.SubscriptionID != 0 {
-			if err := networkstore.EnqueueSubscriptionPublications(tx, order.SubscriptionID, actor); err != nil {
-				return err
-			}
-		}
-		if err := tx.Create(&model.AuditLog{UserID: &actor, Actor: fmt.Sprintf("user:%d", actor), Action: "commerce.wallet.pay", Target: fmt.Sprintf("order:%d", id), Detail: fmt.Sprintf("amount_minor:%d currency:%s", order.PayableAmount, order.Currency)}).Error; err != nil {
-			return err
-		}
-		out = commerce.WalletPaymentResult{OrderID: id, SubscriptionID: order.SubscriptionID, Status: order.Status, Fulfilled: true}
-		return nil
+		out, err = s.payReservedWalletOrder(tx, &order, actor, false)
+		return err
 	})
 	if errors.Is(err, entitlements.ErrCapacity) {
 		err = commerce.ErrSubscriptionCapacity
 	}
 	return
 }
+
+// payReservedWalletOrder is the shared manual/automatic wallet payment path.
+// The caller holds the current order and active owner locks, has validated the
+// replacement identity where applicable, and owns the surrounding transaction.
+func (s WalletPayments) payReservedWalletOrder(tx *gorm.DB, order *model.Order, actor uint, automatic bool) (out commerce.WalletPaymentResult, err error) {
+	fund, exists, err := findOrderFunding(tx, *order)
+	if err != nil {
+		return out, err
+	}
+	if !exists || order.OrderType == "topup" || fund.CashMinor != 0 {
+		return out, quoteError("此订单尚未由余额覆盖，请先确认付款分配或完成渠道补差。")
+	}
+	out = commerce.WalletPaymentResult{OrderID: order.ID, SubscriptionID: order.SubscriptionID, Status: order.Status}
+	if order.Status == "paid" && fund.State == "captured" && order.Channel == "wallet" {
+		return out, nil
+	}
+	now := commerceNow(s.Now)
+	if (order.Status != "pending" && order.Status != "failed") || fund.State != "reserved" || !fund.ExpiresAt.After(now) {
+		return out, quoteError("余额预留已失效，请核对余额后重新创建订单。")
+	}
+	settlement := OrderSettlement{DB: s.DB, Issuer: s.Issuer, Now: s.Now}
+	if err := settlement.setPaidWithFunding(tx, order, now, true); err != nil {
+		return out, err
+	}
+	if err := tx.Model(order).Update("channel", "wallet").Error; err != nil {
+		return out, err
+	}
+	if order.SubscriptionID != 0 {
+		if err := networkstore.EnqueueSubscriptionPublications(tx, order.SubscriptionID, actor); err != nil {
+			return out, err
+		}
+	}
+	auditActor := fmt.Sprintf("user:%d", actor)
+	if automatic {
+		auditActor = "system"
+	}
+	if err := tx.Create(&model.AuditLog{UserID: &actor, Actor: auditActor, Action: "commerce.wallet.pay", Target: fmt.Sprintf("order:%d", order.ID), Detail: fmt.Sprintf("amount_minor:%d currency:%s", order.PayableAmount, order.Currency)}).Error; err != nil {
+		return out, err
+	}
+	out = commerce.WalletPaymentResult{OrderID: order.ID, SubscriptionID: order.SubscriptionID, Status: order.Status, Fulfilled: true}
+	return out, nil
+}
+
 func (s WalletPayments) Expire(ctx context.Context, now time.Time, limit int) (processed int, err error) {
 	var ids []uint
 	if err := s.DB.WithContext(ctx).Model(&model.OrderFunding{}).Where("state = ? AND expires_at <= ?", "reserved", now).Order("expires_at asc, order_id asc").Limit(limit).Pluck("order_id", &ids).Error; err != nil {

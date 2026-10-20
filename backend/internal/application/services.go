@@ -293,6 +293,10 @@ func (s *Services) WalletPayments(cipher zeroadapter.Cipher, mieru bool) commerc
 	return commerce.WalletPayments{Repository: commercestore.WalletPayments{DB: s.Identity.db, Issuer: zeroadapter.Issuer{Cipher: cipher, Mieru: mieru}}}
 }
 
+func (s *Services) AutomaticRenewals(cipher zeroadapter.Cipher, mieru bool) commerce.AutomaticRenewals {
+	return commerce.AutomaticRenewals{Repository: commercestore.AutomaticRenewals{DB: s.Identity.db, Issuer: zeroadapter.Issuer{Cipher: cipher, Mieru: mieru}}}
+}
+
 func (s *Services) OrderAccess(cipher zeroadapter.Cipher) commerce.OrderAccess {
 	return commerce.OrderAccess{Repository: commercestore.OrderAccess{DB: s.Identity.db, Cipher: cipher}}
 }

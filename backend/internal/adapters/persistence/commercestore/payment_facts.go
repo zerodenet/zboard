@@ -28,12 +28,12 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 	if err != nil {
 		return out, err
 	}
-	identity, err := readFullReplacementIdentity(s.DB.WithContext(ctx), fact.OrderID, authority.AccountID)
+	identity, err := readSubscriptionSettlementIdentity(s.DB.WithContext(ctx), fact.OrderID, authority.AccountID)
 	if err != nil {
 		return out, err
 	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockFullReplacementScope(tx, identity, authority.AccountID, authority.RequireAdministrator); err != nil {
+		if err := lockSubscriptionSettlementScope(tx, identity, authority.AccountID, authority.RequireAdministrator); err != nil {
 			return err
 		}
 		var order model.Order
@@ -43,7 +43,7 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 			}
 			return err
 		}
-		if err := validateReplacementIdentity(order, identity); err != nil {
+		if err := validateSubscriptionSettlementIdentity(order, identity); err != nil {
 			return err
 		}
 		// Match cancellation/administrator settlement: order before account.

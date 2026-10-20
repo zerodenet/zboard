@@ -100,6 +100,9 @@ func settleFullReplacement(tx *gorm.DB, order model.Order, snapshot changeSnapsh
 			return err
 		}
 	}
+	if err := stopAutomaticRenewal(tx, sub.ID, "conditions_changed", "已换购新的套餐，请重新核对并开启余额自动续费。", now); err != nil {
+		return err
+	}
 	return tx.Create(&model.AuditLog{UserID: &order.UserID, Actor: fmt.Sprintf("user:%d", order.UserID), Action: "subscription.change.settle", Target: fmt.Sprintf("order:%d", order.ID), Detail: fmt.Sprintf("settlement=%d residual=%d applied=%d surplus=%d currency=%s", row.ID, total, snapshot.Applied, snapshot.Surplus, order.Currency)}).Error
 }
 

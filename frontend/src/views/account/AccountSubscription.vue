@@ -73,6 +73,7 @@
                 </UiButton>
                 <RouterLink v-if="canReset(sub)" class="button button-secondary button-sm" :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink>
                 <UiButton v-if="['active', 'expired'].includes(sub.status)" variant="secondary" size="sm" type="button" @click="terminationTarget = sub.id">核对退订</UiButton>
+                <UiButton variant="secondary" size="sm" type="button" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }">余额自动续费</UiButton>
                 <RouterLink v-if="sub.can_renew" class="button button-secondary button-sm" :to="`/account/plans?operation=renew&subscription=${sub.id}`">{{ sub.renewal_until ? '续费恢复' : '续费' }}</RouterLink>
               </div>
             </td>
@@ -93,6 +94,7 @@
     </DataWorkbench>
 
     <SubscriptionTermination v-if="terminationTarget" :subscription-id="terminationTarget" @settled="loadAll" />
+    <SubscriptionAutomaticRenewal v-if="automaticTarget" :subscription-id="automaticTarget.id" :plan-id="automaticTarget.planId" />
 
     <UiSection title="协议实时负载" description="显示当前有效套餐授权的协议，上报延迟不会移除协议。人数和连接数仅展示最近两分钟的负载数据。">
       <template #meta><TimeBadge :value="protocolLoads.sampled_at" /></template>
@@ -222,6 +224,7 @@
 
 <script setup lang="ts">
 import SubscriptionTermination from '../../components/SubscriptionTermination.vue'
+import SubscriptionAutomaticRenewal from '../../components/SubscriptionAutomaticRenewal.vue'
 import PluginSlot from '../../plugins/PluginSlot.vue'
 import TableText from '../../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -270,6 +273,7 @@ import {
 } from '../../utils/subscriptionDelivery'
 
 const terminationTarget = ref(0)
+const automaticTarget = ref<{ id: number; planId: number } | null>(null)
 const route = useRoute()
 const router = useRouter()
 const allowedPageSizes = [25, 50, 100]

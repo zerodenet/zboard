@@ -13,6 +13,9 @@ import (
 // uses the sole wallet release path. Keep target identity for late verified
 // payments; clearing a target must never turn renewal into a new purchase.
 func CancelRetiredSubscriptionOrders(tx *gorm.DB, sub model.Subscription, now time.Time) error {
+	if err := stopAutomaticRenewal(tx, sub.ID, "window_closed", "订阅恢复窗口已结束，自动扣款已停止。", now); err != nil {
+		return err
+	}
 	var orders []model.Order
 	held := tx.Model(&model.OrderFunding{}).Select("1").Where("order_fundings.order_id = orders.id AND order_fundings.state = ?", "reserved")
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND (target_subscription_id = ? OR subscription_id = ?)", sub.UserID, sub.ID, sub.ID).Where("(status = 'pending' OR (status IN ('canceled','failed') AND EXISTS (?)))", held).Order("id ASC").Limit(1001).Find(&orders).Error; err != nil {

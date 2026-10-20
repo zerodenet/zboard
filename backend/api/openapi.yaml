@@ -4114,6 +4114,59 @@ paths:
       responses:
         "200": { description: Order canceled }
         "403": { $ref: "#/components/responses/Error" }
+  /api/v1/subscriptions/{id}/automatic-renewal:
+    get:
+      tags: [subscriptions]
+      operationId: getOwnedAutomaticRenewal
+      summary: Read per-subscription wallet renewal consent and an explicitly selected period quote
+      description: Default off. Only an owned subscription, a purchased locked period, verified purchase evidence, and a renewable SKU can produce an offer. Unknown historical discount agreements explain why automatic debit is unavailable. No order or debit is created by this read. Insufficient balance is retained as a visible account notice.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: plan_sku_id, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: Current consent, status and available server quote
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/AutomaticRenewalView' }
+        "401": { description: Authentication required }
+        "403": { description: Account unavailable }
+        "404": { description: Subscription unavailable to this owner }
+    put:
+      tags: [subscriptions]
+      operationId: setOwnedAutomaticRenewal
+      summary: Explicitly enable or disable wallet-only renewal for one owned subscription
+      description: No immediate charge. Enabling binds a current server quote, purchased price and period, paid series and offered entitlement terms. Revision conflicts require an explicit refresh. The background job processes due subscriptions in stable account, expiry and subscription-ID order, commits each through the same wallet payment and fulfillment transaction, and retries insufficient funds in five minutes while the recovery window remains open. Ending the window, unsubscribe or replacement stops old consent. No external payment channel is invoked.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AutomaticRenewalRequest' }
+      responses:
+        "200":
+          description: Committed consent state
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/AutomaticRenewalView' }
+        "400": { description: Invalid input or unavailable purchased-period agreement }
+        "401": { description: Authentication required }
+        "403": { description: Account unavailable }
+        "404": { description: Subscription unavailable to this owner }
+        "409": { description: Consent revision or quote changed; read and confirm again }
   /api/v1/subscriptions/{id}/value:
     get:
       tags: [subscriptions]
@@ -4176,7 +4229,7 @@ paths:
       parameters:
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: Paged reads only. Search plan/SKU names or exact subscription ID before count and pagination; restricted to the authenticated owner. }
         - { name: subscription_id, in: query, schema: { type: integer, minimum: 1 }, description: Exact target lookup within the current user's subscriptions and all other filters; an unavailable target produces an empty result. }
-        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: "Read-only filter applied before count and pagination. Each operation requires a compatible active, unarchived SKU on a published product and an eligible subscription. manage requires at least one such operation. Renewable ended subscriptions remain renewal candidates strictly before the seven-day deadline; finalized instances retain business and metering identities outside the current-service list after their terminal summary is saved to orders. This filter does not replace order authorization." }
+        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: "Read-only filter applied before count and pagination. Each operation requires a compatible active, unarchived SKU on a published product and an eligible subscription. manage requires at least one such operation. Renewable ended subscriptions remain renewal candidates strictly before the administrator-configured recovery deadline (default seven days); finalized instances retain business and metering identities outside the current-service list after their terminal summary is saved to orders. This filter does not replace order authorization." }
         - name: status
           in: query
           schema:
@@ -9091,6 +9144,38 @@ components:
         future_minor: { type: string, pattern: '^[0-9]+$' }
         total_minor: { type: string, pattern: '^[0-9]+$' }
         quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+    AutomaticRenewalOffer:
+      type: object
+      required: [plan_sku_id, currency, base_price_minor, billing_unit, billing_value, quote_fingerprint]
+      properties:
+        plan_sku_id: { type: integer, minimum: 1 }
+        currency: { type: string }
+        base_price_minor: { type: string, pattern: '^[0-9]+$' }
+        billing_unit: { type: string, enum: [day, month, year] }
+        billing_value: { type: integer, minimum: 1 }
+        quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+    AutomaticRenewalRequest:
+      type: object
+      additionalProperties: false
+      required: [enabled, plan_sku_id, quote_fingerprint, expected_revision]
+      properties:
+        enabled: { type: boolean }
+        plan_sku_id: { type: integer, minimum: 0 }
+        quote_fingerprint: { type: string, description: A current 64-character server quote is required when enabling; empty when disabling. }
+        expected_revision: { type: integer, minimum: 0 }
+    AutomaticRenewalView:
+      type: object
+      required: [subscription_id, enabled, plan_sku_id, revision, state, message]
+      properties:
+        subscription_id: { type: integer, minimum: 1 }
+        enabled: { type: boolean }
+        plan_sku_id: { type: integer, minimum: 0 }
+        revision: { type: integer, minimum: 0 }
+        state: { type: string }
+        message: { type: string }
+        last_order_id: { type: integer, minimum: 1 }
+        next_attempt_at: { type: string, format: date-time }
+        offer: { $ref: '#/components/schemas/AutomaticRenewalOffer' }
     SubscriptionTerminationRequest:
       type: object
       additionalProperties: false

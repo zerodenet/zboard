@@ -89,6 +89,21 @@
   ],
   "cross_domain_transactions": [
     {
+      "id": "commerce.automatic_renewal",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/automatic_renewal_worker.go",
+      "symbol": "AutomaticRenewals.processAutomaticRenewal",
+      "participants": [
+        "commerce",
+        "entitlements",
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback stable queue sequence, explicit consent attempt state, order, existing wallet reservation/capture, actual paid value snapshot, quota/credential epoch, audit and publication intent together. Known business failures roll back the payment savepoint before retaining an explanatory non-charge status.",
+      "outbox": "Reuse the same reserved-wallet payment and native publication-intent writer as manual payment; never call external payment channels."
+    },
+    {
       "id": "commerce.full_term_replacement",
       "owner": "commerce",
       "source": "internal/adapters/persistence/commercestore/full_replacement_settlement.go",
