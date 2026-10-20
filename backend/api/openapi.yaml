@@ -3437,6 +3437,62 @@ paths:
         '404': { description: User or adjustment not found }
         '409': { description: Conflicting intent or incompatible confirmed payout result }
         '500': { description: Financial facts unavailable; no partial ledger change acknowledged }
+  /api/v1/admin/orders/{id}/consumption-refunds:
+    post:
+      tags: [admin, orders]
+      operationId: approveConsumptionRefund
+      summary: Credit an approved consumption refund to the internal wallet
+      description: Requires a current active administrator and an account-owned ticket. Only clearly terminated purchase entitlements are supported. Consumes the original actual-paid budget less previous refunds and conversions; never refunds a top-up, discounts or another entitlement. Approval identity, wallet credit, source budget and audit commit atomically. No external payout occurs.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [idempotency_key, amount_minor, ticket_id, reason]
+              properties:
+                idempotency_key: { type: string, minLength: 8, maxLength: 80 }
+                amount_minor: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+                ticket_id: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 3, maxLength: 400 }
+      responses:
+        '200':
+          description: Persisted approval; identical replay returns the same result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/ConsumptionRefund' }
+        '400': { description: Invalid request or unsupported funding }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: Original order or owned ticket not found }
+        '409': { description: Conflicting approval, unavailable historical evidence, insufficient refundable budget or active entitlement requiring review }
+  /api/v1/admin/consumption-refunds/{id}:
+    get:
+      tags: [admin, orders]
+      operationId: readConsumptionRefund
+      summary: Read an approved consumption refund
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Administrator-only approval fact; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/ConsumptionRefund' }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: Approval not found }
   /api/v1/admin/wallet-adjustments:
     get:
       tags: [admin, orders]
@@ -8492,6 +8548,20 @@ components:
             items:
               type: array
               items: { $ref: "#/components/schemas/OperationLog" }
+    ConsumptionRefund:
+      type: object
+      required: [id, order_id, user_id, currency, amount_minor, ticket_id, actor_id, reason, entry_id, created_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        order_id: { type: integer, minimum: 1 }
+        user_id: { type: integer, minimum: 1 }
+        currency: { type: string }
+        amount_minor: { type: string, pattern: '^[1-9][0-9]*$', description: Exact integer minor units encoded as a decimal string. }
+        ticket_id: { type: integer, minimum: 1 }
+        actor_id: { type: integer, minimum: 1 }
+        reason: { type: string }
+        entry_id: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
     TrafficSummary:
       type: object
       properties:

@@ -89,6 +89,20 @@
   ],
   "cross_domain_transactions": [
     {
+      "id": "commerce.consumption_refund",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/consumption_refunds.go",
+      "symbol": "ConsumptionRefunds.Approve",
+      "participants": [
+        "commerce",
+        "experience",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback trusted original paid-source budget consumption, wallet credit, approval identity and audit together; reject active entitlements pending a confirmed partial-refund rule.",
+      "outbox": "No external payout or payment-provider call; approved consumption refunds credit the internal wallet only."
+    },
+    {
       "id": "commerce.automatic_renewal",
       "owner": "commerce",
       "source": "internal/adapters/persistence/commercestore/automatic_renewal_worker.go",

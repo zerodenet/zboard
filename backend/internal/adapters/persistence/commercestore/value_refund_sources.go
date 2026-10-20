@@ -1,6 +1,7 @@
 package commercestore
 
 import (
+	"encoding/json"
 	"errors"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -31,34 +32,14 @@ func refundValueSources(tx *gorm.DB, actor uint, currency string, settlementID u
 		if !ok || order.Status != "paid" || order.Currency != currency || order.UserID != actor || amount <= 0 || amount > order.PaidAmount || order.RefundAmount != 0 {
 			return 0, commerce.ErrSubscriptionValueUnavailable
 		}
-		basisFP := walletKey(order.EntitlementValueSnapshot)
-		var budget model.OrderValueBudget
-		e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("order_id = ?", orderID).First(&budget).Error
-		if errors.Is(e, gorm.ErrRecordNotFound) {
-			var surviving int64
-			if err := tx.Model(&model.SubscriptionValueSettlementSource{}).Where("order_id = ?", orderID).Count(&surviving).Error; err != nil {
-				return 0, err
-			}
-			if surviving != 0 {
-				return 0, commerce.ErrSubscriptionValueUnavailable
-			}
-			budget = model.OrderValueBudget{OrderID: orderID, UserID: actor, Currency: currency, FundingMinor: order.PaidAmount, FundingFingerprint: basisFP, Revision: 1, CreatedAt: now, UpdatedAt: now}
-			if err := tx.Create(&budget).Error; err != nil {
-				return 0, err
-			}
-		} else if e != nil {
-			return 0, e
+		budget, err := lockOrderRefundBudget(tx, order, now)
+		if err != nil {
+			return 0, err
 		}
-		if budget.UserID != actor || budget.Currency != currency || budget.FundingMinor != order.PaidAmount || budget.FundingFingerprint != basisFP || budget.RefundedMinor != order.RefundAmount || budget.RefundedMinor < 0 || budget.ConvertedMinor < 0 || budget.RefundedMinor > budget.FundingMinor || budget.ConvertedMinor > budget.FundingMinor-budget.RefundedMinor || amount > budget.FundingMinor-budget.RefundedMinor-budget.ConvertedMinor {
-			return 0, commerce.ErrSubscriptionSettlementConflict
-		}
-		if err := tx.Model(&model.OrderValueBudget{}).Where("order_id = ?", orderID).Updates(map[string]any{"refunded_minor": budget.RefundedMinor + amount, "revision": gorm.Expr("revision + 1"), "updated_at": now}).Error; err != nil {
+		if err := consumeOrderRefundBudget(tx, order, budget, amount, now); err != nil {
 			return 0, err
 		}
 		if err := tx.Create(&model.SubscriptionValueSettlementSource{SettlementID: settlementID, OrderID: orderID, AmountMinor: amount}).Error; err != nil {
-			return 0, err
-		}
-		if err := tx.Model(&model.Order{}).Where("id = ?", orderID).Updates(map[string]any{"refund_amount": amount, "updated_at": now}).Error; err != nil {
 			return 0, err
 		}
 		var valid bool
@@ -68,4 +49,47 @@ func refundValueSources(tx *gorm.DB, actor uint, currency string, settlementID u
 		}
 	}
 	return total, nil
+}
+
+// The caller holds the source order lock. Every outgoing consumption refund,
+// replacement and unsubscribe consumes this same actual-paid budget.
+func lockOrderRefundBudget(tx *gorm.DB, order model.Order, now time.Time) (model.OrderValueBudget, error) {
+	var budget model.OrderValueBudget
+	var fact commerce.EntitlementValueSnapshot
+	if order.Status != "paid" || order.OrderType == "topup" || order.PaidAmount <= 0 || order.FulfilledAt == nil || json.Unmarshal([]byte(order.EntitlementValueSnapshot), &fact) != nil || fact.Version != 1 || !fact.PaymentVerified || fact.OrderID != order.ID || fact.SubscriptionID != order.SubscriptionID || fact.Currency != order.Currency || fact.ActualPaidMinor != order.PaidAmount {
+		return budget, commerce.ErrSubscriptionValueUnavailable
+	}
+	basisFP := walletKey(order.EntitlementValueSnapshot)
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("order_id = ?", order.ID).First(&budget).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Never manufacture an opening balance when the surviving order/journal
+		// proves that a previous refund already consumed part of the source.
+		var surviving int64
+		if err := tx.Model(&model.SubscriptionValueSettlementSource{}).Where("order_id = ?", order.ID).Count(&surviving).Error; err != nil {
+			return budget, err
+		}
+		if surviving != 0 || order.RefundAmount != 0 {
+			return budget, commerce.ErrSubscriptionValueUnavailable
+		}
+		budget = model.OrderValueBudget{OrderID: order.ID, UserID: order.UserID, Currency: order.Currency, FundingMinor: order.PaidAmount, FundingFingerprint: basisFP, Revision: 1, CreatedAt: now, UpdatedAt: now}
+		if err := tx.Create(&budget).Error; err != nil {
+			return budget, err
+		}
+	} else if err != nil {
+		return budget, err
+	}
+	if budget.UserID != order.UserID || budget.Currency != order.Currency || budget.FundingMinor != order.PaidAmount || budget.FundingFingerprint != basisFP || budget.RefundedMinor != order.RefundAmount || budget.RefundedMinor < 0 || budget.ConvertedMinor < 0 || budget.RefundedMinor > budget.FundingMinor || budget.ConvertedMinor > budget.FundingMinor-budget.RefundedMinor {
+		return budget, commerce.ErrSubscriptionSettlementConflict
+	}
+	return budget, nil
+}
+
+func consumeOrderRefundBudget(tx *gorm.DB, order model.Order, budget model.OrderValueBudget, amount int64, now time.Time) error {
+	if amount <= 0 || amount > budget.FundingMinor-budget.RefundedMinor-budget.ConvertedMinor {
+		return commerce.ErrSubscriptionSettlementConflict
+	}
+	if err := tx.Model(&model.OrderValueBudget{}).Where("order_id = ?", order.ID).Updates(map[string]any{"refunded_minor": budget.RefundedMinor + amount, "revision": gorm.Expr("revision + 1"), "updated_at": now}).Error; err != nil {
+		return err
+	}
+	return tx.Model(&model.Order{}).Where("id = ?", order.ID).Updates(map[string]any{"refund_amount": budget.RefundedMinor + amount, "refunded_at": now, "updated_at": now}).Error
 }
