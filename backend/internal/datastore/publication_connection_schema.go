@@ -15,10 +15,16 @@ func reconcilePublicationConnectionSchema(db *gorm.DB) error {
 			return err
 		}
 	}
-	for _, field := range []string{"Phase", "AppliedConfigSHA256"} {
-		if !db.Migrator().HasColumn(&model.NodeConfigPublish{}, field) {
-			if err := db.Migrator().AddColumn(&model.NodeConfigPublish{}, field); err != nil {
-				return err
+	if db.Dialector.Name() == DriverMySQL {
+		if err := addMissingMySQLModelColumns(db, &model.NodeConfigPublish{}, []string{"Phase", "AppliedConfigSHA256"}); err != nil {
+			return err
+		}
+	} else {
+		for _, field := range []string{"Phase", "AppliedConfigSHA256"} {
+			if !db.Migrator().HasColumn(&model.NodeConfigPublish{}, field) {
+				if err := db.Migrator().AddColumn(&model.NodeConfigPublish{}, field); err != nil {
+					return err
+				}
 			}
 		}
 	}

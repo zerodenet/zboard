@@ -1124,3 +1124,24 @@ All Rows close; actual2067 queries+trailing probe reconcile2068SELECT,75ALTER an
 SCHEMATA spans8.2–9.4%; these include instrumentation/setup differences and are
 not original Scan timing, A/B improvement or proof of a CI fix. The prior rejected
 module probe remains separate. [Receipt](validation/2026-10-20-schema-driver-diagnostic.json).
+
+Current-source CI follow-up: cabce7c all six jobs pass, including original handler
+871.468s ([receipt](validation/2026-10-20-kernel-rollback-ci.json)); a82d673 also
+passes all six with handler657.053s ([receipt](validation/2026-10-20-subscription-ticket-ci.json)).
+These are source-specific outcomes; prior31 timeouts remain, timing variation is
+not a causal improvement, and neither result accepts3c44 or later changes.
+
+The subsequent exact3c44aa0 [CI run](https://github.com/zerodenet/zboard/actions/runs/39510641950)
+also passes all six jobs, handler708.257s; [receipt](validation/2026-10-20-diagnostic-support-ci.json).
+No migration batching/source-material candidate is included in that source.
+
+### P7 audit/phase MySQL additive batches (2026-10-20)
+
+Two existing recovery paths now add their missing model columns in one ALTER per
+table on MySQL; SQLite and published migrations remain unchanged. Actual recovery
+matrices, metadata failure/close tests and race3 pass. Three alternating original
+whole Prepare pairs measure75→71 ALTER and2068→2047 SELECT,15 indexes unchanged;
+pair2 is slower, so no stable startup/CI fix is claimed. Existing empty-SHA
+verification, partial-DDL receipts and audit evidence survive. No business rule,
+permission or production migration changes. Candidate whole backend, current CI
+and original capacity must still run. [Behavior, rollback and evidence](core-convergence-audit-phase-column-batches.md).

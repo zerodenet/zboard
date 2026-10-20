@@ -1,0 +1,51 @@
+{
+  "source": "3c44aa0dd375e532251036aaa08bb2bf686dafe4",
+  "run_id": 39510641950,
+  "run_url": "https://github.com/zerodenet/zboard/actions/runs/39510641950",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 118930501001,
+      "name": "mysql",
+      "conclusion": "success"
+    },
+    {
+      "id": 118930501137,
+      "name": "backend",
+      "conclusion": "success"
+    },
+    {
+      "id": 118930501233,
+      "name": "frontend",
+      "conclusion": "success"
+    },
+    {
+      "id": 118930501301,
+      "name": "zrs-compiler",
+      "conclusion": "success"
+    },
+    {
+      "id": 118930501348,
+      "name": "compose",
+      "conclusion": "success"
+    },
+    {
+      "id": 118930501559,
+      "name": "contract",
+      "conclusion": "success"
+    }
+  ],
+  "mysql_seconds": {
+    "datastore": 130.459,
+    "handler": 708.257,
+    "networkstore": 87.478,
+    "jobstore": 98.115,
+    "platformstore_copy": 87.01
+  },
+  "raw_log_sha256": "8048a6f84a607836da3332ad6929de7934be7f648611695ca37f7b0caf98ea98",
+  "limits": [
+    "Original commands,900s handler timeout and existing frontend exclusions unchanged",
+    "Acceptance of 3c44aa0 only; new migration batching/source-material candidates not included",
+    "Earlier31 local/CI900s failures retained; variable per-run duration is not a causal fix or stable margin"
+  ]
+}

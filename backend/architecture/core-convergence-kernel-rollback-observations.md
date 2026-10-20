@@ -59,3 +59,10 @@ vet3.723s, build2.009s and pure-Go SQLite21.544s with GOMAXPROCS2/-p2 and no
 concurrent local load. The [whole-source receipt](validation/2026-10-20-kernel-rollback-final-checks.json)
 binds every raw log. This is not the original full MySQL or new CI result;
 prior handler900s failures and the outstanding P4/P6 gaps remain.
+
+The exact cabce7c [CI run](https://github.com/zerodenet/zboard/actions/runs/39508446918)
+subsequently passed all six jobs, including original full MySQL datastore152.619s,
+handler871.468s, network97.870s, jobstore119.129s and platform-copy104.375s. The
+[CI receipt](validation/2026-10-20-kernel-rollback-ci.json) binds the raw log. Only
+28.532s remain below the unchanged handler900s limit in this run; earlier timeouts
+remain and this does not establish stable headroom or validate later source.

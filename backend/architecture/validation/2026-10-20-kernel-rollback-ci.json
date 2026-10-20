@@ -1,0 +1,52 @@
+{
+  "source": "cabce7c67feb4cd76b20b456f65e907fc087968b",
+  "run_id": 39508446918,
+  "run_url": "https://github.com/zerodenet/zboard/actions/runs/39508446918",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 118923192351,
+      "name": "backend",
+      "conclusion": "success"
+    },
+    {
+      "id": 118923192543,
+      "name": "contract",
+      "conclusion": "success"
+    },
+    {
+      "id": 118923192645,
+      "name": "mysql",
+      "conclusion": "success"
+    },
+    {
+      "id": 118923192654,
+      "name": "compose",
+      "conclusion": "success"
+    },
+    {
+      "id": 118923192704,
+      "name": "zrs-compiler",
+      "conclusion": "success"
+    },
+    {
+      "id": 118923192808,
+      "name": "frontend",
+      "conclusion": "success"
+    }
+  ],
+  "mysql_seconds": {
+    "datastore": 152.619,
+    "handler": 871.468,
+    "networkstore": 97.87,
+    "jobstore": 119.129,
+    "copy": 104.375
+  },
+  "limits": [
+    "Actual original full CI commands, no timeout/exclusion changes",
+    "Handler retains only28.532s under900s; no stable margin claim",
+    "Not acceptance of a82d673,3c44aa0 or later source",
+    "Earlier31 local/CI timeouts and all unexecuted stages remain separate evidence"
+  ],
+  "raw_log_sha256": "9ecbca0103cd5b56e442aedaae766ec329c6cf19679420fad52f0d094458a4c5"
+}
