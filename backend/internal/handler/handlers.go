@@ -2634,21 +2634,23 @@ func (h *handlers) trafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 			q.Cursor = &metering.RecordCursor{At: cursor.At, ID: cursor.ID, Direction: cursor.Direction}
 		}
 	}
-	result, err := h.services.Records().Read(r.Context(), claims.UserID, q)
+	if !paged {
+		result, err := h.services.Records().Read(r.Context(), claims.UserID, q)
+		if err != nil {
+			writePrincipalTrendError(w, err)
+			return
+		}
+		OK(w, result.Records)
+		return
+	}
+	result, err := h.services.Records().ReadSummaryPage(r.Context(), claims.UserID, q)
 	if err != nil {
 		writePrincipalTrendError(w, err)
 		return
 	}
-	if !paged {
-		OK(w, result.Records)
-		return
-	}
-	records := make([]model.TrafficRecord, 0, len(result.Records))
-	for _, record := range result.Records {
-		records = append(records, model.TrafficRecord(record))
-	}
+	records := result.Records
 	if cursor == nil && q.Offset > 0 {
-		data := pagedData(trafficRecordSummaries(records), result.Total, q.Offset, q.Limit)
+		data := pagedData(records, result.Total, q.Offset, q.Limit)
 		data["aggregates"] = result.Aggregates
 		OK(w, data)
 		return
@@ -2661,7 +2663,7 @@ func (h *handlers) trafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	data := cursorPagedData(trafficRecordSummaries(records), result.Total, q.Limit, nextCursor, previousCursor)
+	data := cursorPagedData(records, result.Total, q.Limit, nextCursor, previousCursor)
 	data["aggregates"] = result.Aggregates
 	OK(w, data)
 }

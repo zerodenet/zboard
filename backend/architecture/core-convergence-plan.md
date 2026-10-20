@@ -21,7 +21,7 @@
 | P2-14/P3 套餐历史额度与接入组 | 部分实现（双库/前端/后续完整CI覆盖） | d98b018已恢复上传，5964c53六项CI包含该历史；混合加购及1000上限明确拒绝，当前HEAD新验收独立记录 |
 | P2 优惠首购/连续续费 | 部分实现（签名native/双库/真实浏览器） | 0055/0057购买及扣款批准证据；提供方不可用不回退原价；4e1a78d真实Chromium21项/实际100元扣款；其他可售操作及有限券消费契约仍缺 |
 | P4-01/02 日/小时统计投影 | 部分实现（双库、固定原阈值容量通过） | 0053/0054持久独立队列；pending显式unknown，e5原20events/s及157次trends零错误；原112/157失败保留，当前新HEAD容量未验 |
-| P4 计量SQL/保留 | 部分实现（精确核账/专项通过） | SQLite累计游标cohort32→1次SELECT，87→56总SQL/写入舍入不变；0056仅诊断有界清理，RawTrafficRecord仍是去重/恢复权威不可归档 |
+| P4 计量SQL/保留 | 部分实现（精确核账/专项通过） | SQLite累计游标cohort32→1次SELECT，87→56总SQL/写入舍入不变；0056仅诊断有界清理，TrafficRecord仍是去重/恢复权威不可归档 |
 | P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
 | P5 工单业务关联 | 已实现且验证（隔离范围） | 4e1a78d/0058；双库实际DDL/权限/首消息回滚/锁序，33专项/1108完整frontend/build/OpenAPI通过；当前完整backend/CI待验 |
 | P6 进程关闭/队列所有权前置 | 部分实现（真实子进程、SQLite/race、MySQL） | file-spool内核锁、local Drain/Detach和实际server/plugin cleanup；3690113原MySQL及copy通过，7ef CI MySQL通过；无独立worker或伸缩器 |
@@ -1007,3 +1007,18 @@ jobstore/copy are unexecuted there, preserved separately from58f success.
 No schema migration, metadata cache or financial/authorization changes. New-source
 full acceptance remains pending. See
 [receipt](validation/2026-10-20-baseline-metadata-batch.json).
+
+
+### P4 explicit raw record summary reads (2026-10-20)
+
+Typed Records.ReadSummaryPage narrows only raw+paged diagnostic reads to11 fields;
+original full Read with/without pagination, accounting facts/Meta/CreatedAt and
+shared scope/snapshot/cursor/permission semantics remain. Seven regressions/race
+and one original real MySQL fixture4.293s pass. Old wide-page assertion, time-
+representation and FK-fixture failures are retained. Five×100-page SQLite samples
+keep3 SELECT/0DML with median allocations7,296,596→517,263B and52.253→1.942ms.
+Only the diagnostic read slice is measured, not core quota/settlement or capacity.
+No migration or authority archival; Meta still contains rounding proof. Benchmark
+source is tracked for reproduction; final source whole checks/CI remain pending.
+See [read boundary](core-convergence-records-summary-reads.md) and
+[receipt](validation/2026-10-20-records-summary-reads.json).

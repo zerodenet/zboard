@@ -11,6 +11,32 @@ import (
 type Records struct{ DB, ReadDB *gorm.DB }
 
 func (s Records) Read(ctx context.Context, actor uint, q metering.RecordsQuery) (metering.RecordsSnapshot, error) {
+	return s.read(ctx, actor, q, nil)
+}
+
+func (s Records) ReadSummaryPage(ctx context.Context, actor uint, q metering.RecordsQuery) (metering.RecordsSummaryPage, error) {
+	if !q.Paged {
+		return metering.RecordsSummaryPage{}, &metering.PolicyValidation{Fields: map[string]string{"query": "summary requires pagination"}}
+	}
+	full, err := s.read(ctx, actor, q, []string{"id", "user_id", "subscription_id", "node_id", "protocol_endpoint_id", "raw_bytes", "upload_bytes", "download_bytes", "protocol_multiplier_milli", "used_bytes", "record_at"})
+	if err != nil {
+		return metering.RecordsSummaryPage{}, err
+	}
+	out := metering.RecordsSummaryPage{Records: make([]metering.TrafficRecordSummary, 0, len(full.Records)), Total: full.Total, Aggregates: full.Aggregates, HasMore: full.HasMore}
+	for _, record := range full.Records {
+		out.Records = append(out.Records, metering.TrafficRecordSummary{
+			ID: record.ID, UserID: record.UserID, SubscriptionID: record.SubscriptionID,
+			NodeID: record.NodeID, ProtocolEndpointID: record.ProtocolEndpointID,
+			RawBytes: record.RawBytes, UploadBytes: record.UploadBytes, DownloadBytes: record.DownloadBytes,
+			ProtocolMultiplierMilli: record.ProtocolMultiplierMilli, UsedBytes: record.UsedBytes, At: record.At,
+		})
+	}
+	return out, nil
+}
+
+// Full and explicitly summarized pages share authorization, scope, statistics
+// and one read snapshot. Only the bounded page's selected columns differ.
+func (s Records) read(ctx context.Context, actor uint, q metering.RecordsQuery, columns []string) (metering.RecordsSnapshot, error) {
 	if err := authorizeReportingRead(ctx, s.DB, actor, q.Administrative); err != nil {
 		return metering.RecordsSnapshot{}, err
 	}
@@ -55,6 +81,9 @@ func (s Records) Read(ctx context.Context, actor uint, q metering.RecordsQuery) 
 			}
 			out.Aggregates, out.Total = statistics.RecordAggregates, statistics.Total
 			query := base()
+			if len(columns) > 0 {
+				query = query.Select(columns)
+			}
 			if q.Cursor == nil && q.Offset > 0 {
 				if err := query.Order("record_at desc, id desc").Offset(q.Offset).Limit(q.Limit).Find(&records).Error; err != nil {
 					return err
