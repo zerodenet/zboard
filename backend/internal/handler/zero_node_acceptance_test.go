@@ -99,7 +99,7 @@ func TestRealZeroNodeExpiryRevokesDataPlane(t *testing.T) {
 func realZeroSecret(t *testing.T, f orderFixture, subscriptionID uint) string {
 	t.Helper()
 	var credential model.ProtocolCredential
-	if err := f.h.db.Where("subscription_id = ?", subscriptionID).First(&credential).Error; err != nil {
+	if err := f.h.db.Where("subscription_id = ? AND current_scope = ?", subscriptionID, 1).First(&credential).Error; err != nil {
 		t.Fatal(err)
 	}
 	secret, err := f.h.credentialCipher.Decrypt(credential.Secret)

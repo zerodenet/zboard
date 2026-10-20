@@ -135,6 +135,7 @@ var explicitModelOwners = map[string]string{
 	"PluginMigration":                    "extensions",
 	"PluginOperation":                    "extensions",
 	"PluginVersion":                      "extensions",
+	"ClosedEntitlement":                  "entitlements",
 	"ProtocolCredential":                 "entitlements",
 	"ProtocolDeployment":                 "resources",
 	"ProtocolEndpoint":                   "resources",

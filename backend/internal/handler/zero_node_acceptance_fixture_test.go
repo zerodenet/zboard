@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -109,6 +110,27 @@ func newRealZeroNodeControlledFixture(t *testing.T) (orderFixture, model.Protoco
 		f.h.ZeroEventHandler(observed, r)
 		if observed.status >= 400 {
 			failures.Add(1)
+			var response struct{ Message string }
+			category := "unclassified"
+			if json.Unmarshal(observed.errorBody, &response) == nil {
+				switch {
+				case strings.Contains(response.Message, "principal index"), strings.Contains(response.Message, "coverage requires preparation"):
+					category = "principal_projection_pending"
+				case strings.Contains(response.Message, "ambiguous ownership"):
+					category = "principal_ownership_pending"
+				case strings.Contains(response.Message, "database is locked"):
+					category = "sqlite_busy"
+				case strings.Contains(response.Message, "context deadline exceeded"):
+					category = "deadline"
+				case strings.Contains(response.Message, "counters regressed"):
+					category = "counter_regression"
+				case strings.Contains(response.Message, "sequence is older"):
+					category = "old_sequence"
+				}
+			}
+			// Only fixed categories are emitted; never log response/event bodies,
+			// authentication headers or wire principals, which can be passwords.
+			t.Logf("real_zero_receiver_error status=%d category=%s", observed.status, category)
 			if observed.status < len(failureCodes) {
 				failureCodes[observed.status].Add(1)
 			}
@@ -165,7 +187,15 @@ func newRealZeroNodeControlledFixture(t *testing.T) (orderFixture, model.Protoco
 
 type zeroNodeResponseStatus struct {
 	http.ResponseWriter
-	status int
+	status    int
+	errorBody []byte
+}
+
+func (w *zeroNodeResponseStatus) Write(p []byte) (int, error) {
+	if w.status >= 400 && len(w.errorBody) < 8192 {
+		w.errorBody = append(w.errorBody, p[:min(len(p), 8192-len(w.errorBody))]...)
+	}
+	return w.ResponseWriter.Write(p)
 }
 
 func (w *zeroNodeResponseStatus) WriteHeader(status int) {

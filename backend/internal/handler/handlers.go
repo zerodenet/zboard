@@ -2754,6 +2754,9 @@ func (h *handlers) TrafficReportHandler(w http.ResponseWriter, r *http.Request) 
 		switch {
 		case errors.Is(err, errNodeReportCredentialChanged):
 			Unauthorized(w, "invalid node report authentication")
+		case errors.Is(err, metering.ErrNodeReportNeedsPrincipal):
+			writeJSON(w, http.StatusConflict, err.Error(), nil)
+			return
 		case errors.Is(err, errNodeReportNonceReplayed):
 			BadRequest(w, "report nonce was already used")
 		case errors.Is(err, errSubscriptionNotFound):

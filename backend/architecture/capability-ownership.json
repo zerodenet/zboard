@@ -159,7 +159,7 @@
       "symbol": "OrderSettlement.Apply",
       "participants": ["commerce", "entitlements", "resources", "observability"],
       "atomicity": "single_database_transaction",
-      "compensation": "Rollback order transition, entitlement fulfillment, audit row, and publication intent together; repeated paid settlement is idempotent.",
+      "compensation": "Rollback order transition, entitlement fulfillment, closed quota epoch, old credential retirement, fresh credential issuance, audit row, and publication intent together; repeated paid settlement is idempotent.",
       "outbox": "NodeConfigPublish intents are committed with a newly fulfilled subscription."
     },
     {
@@ -169,7 +169,7 @@
       "symbol": "CompletionAccounting.Complete",
       "participants": ["metering", "entitlements", "resources"],
       "atomicity": "single_database_transaction",
-      "compensation": "Rollback traffic, usage cursor, quota deduction, credential expiry, and publication intents together; node_id plus report_id deduplicates replay.",
+      "compensation": "Rollback traffic, usage cursor, current or closed-epoch quota deduction, credential expiry, and publication intents together; node_id plus report_id deduplicates replay. Closed-epoch usage never mutates current entitlement quota or expiration.",
       "outbox": "When quota is exhausted, NodeConfigPublish intents are inserted before commit and delivered asynchronously."
     },
     {

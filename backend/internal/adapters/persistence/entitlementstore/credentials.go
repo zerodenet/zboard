@@ -47,9 +47,12 @@ func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer enti
 		targetStatus := issuer.Status(endpoint.Protocol, endpoint.MieruPrincipalReady)
 		var credential model.ProtocolCredential
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("subscription_id = ? AND protocol_endpoint_id = ?", subscription.ID, endpoint.ID).
+			Where("subscription_id = ? AND protocol_endpoint_id = ? AND current_scope = ?", subscription.ID, endpoint.ID, 1).
 			First(&credential).Error
 		if err == nil {
+			if credential.EntitlementEpoch != subscription.EntitlementEpoch {
+				return nil, errors.New("credential entitlement epoch mismatch")
+			}
 			updates := map[string]interface{}{
 				"user_id":     subscription.UserID,
 				"node_id":     endpoint.NodeID,
@@ -90,12 +93,17 @@ func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer enti
 			return nil, err
 		}
 		listenPort, publicPort := endpoint.Port, endpoint.PublicPort
+		credentialID := fmt.Sprintf("subscription-%d-endpoint-%d", subscription.ID, endpoint.ID)
+		if subscription.EntitlementEpoch > 0 {
+			credentialID += fmt.Sprintf("-epoch-%d", subscription.EntitlementEpoch)
+		}
 		credential = model.ProtocolCredential{
+			EntitlementEpoch:   subscription.EntitlementEpoch,
 			SubscriptionID:     subscription.ID,
 			UserID:             subscription.UserID,
 			ProtocolEndpointID: endpoint.ID,
 			NodeID:             endpoint.NodeID,
-			CredentialID:       fmt.Sprintf("subscription-%d-endpoint-%d", subscription.ID, endpoint.ID),
+			CredentialID:       credentialID,
 			PrincipalKey:       fmt.Sprintf("subscription:%d:endpoint:%d", subscription.ID, endpoint.ID),
 			Secret:             encryptedSecret,
 			ListenPort:         listenPort,

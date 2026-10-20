@@ -77,6 +77,18 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 			return err
 		}
 
+		// This legacy signed API identifies a user and endpoint, not an immutable
+		// credential/period. It cannot distinguish delayed traffic after recovery
+		// or independent subscriptions sharing that endpoint. Reject attribution
+		// rather than select the latest entitlement and charge the wrong quota.
+		var owners []uint
+		if err := tx.Model(&model.Subscription{}).Select("subscriptions.id").Where("subscriptions.user_id = ?", in.UserID).
+			Where("EXISTS (SELECT 1 FROM node_group_endpoints e WHERE e.node_group_id = subscriptions.node_group_id AND e.protocol_endpoint_id = ?) OR EXISTS (SELECT 1 FROM protocol_credentials c WHERE c.subscription_id = subscriptions.id AND c.node_id = ? AND c.protocol_endpoint_id = ?)", endpoint.ID, lockedNode.ID, endpoint.ID).Limit(2).Pluck("subscriptions.id", &owners).Error; err != nil {
+			return err
+		}
+		if sub.EntitlementEpoch != 0 || len(owners) != 1 || owners[0] != sub.ID {
+			return metering.ErrNodeReportNeedsPrincipal
+		}
 		remaining := sub.FlowTotal - sub.FlowUsed
 		if remaining <= 0 {
 			quotaExhausted = true
@@ -102,6 +114,7 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 			return err
 		}
 		record = model.TrafficRecord{
+			EntitlementEpoch:        sub.EntitlementEpoch,
 			UserID:                  in.UserID,
 			SubscriptionID:          sub.ID,
 			NodeID:                  lockedNode.ID,

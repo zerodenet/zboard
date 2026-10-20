@@ -23,10 +23,20 @@ func ResolveCompletionCredential(tx *gorm.DB, cipher metering.CredentialDecrypto
 	} else {
 		candidate, err = index.Lookup(tx.Statement.Context, nodeID, principal)
 	}
+	if errors.Is(err, credentialstore.ErrPrincipalIndexIncomplete) {
+		return model.ProtocolCredential{}, err
+	}
 	if errors.Is(err, credentialstore.ErrPrincipalIndexPending) {
 		return model.ProtocolCredential{}, metering.ErrPrincipalAmbiguous
 	}
 	if err != nil {
+		return model.ProtocolCredential{}, err
+	}
+	// Commerce locks the user before the subscription. Traffic-record foreign
+	// keys acquire a user SHARE lock too; acquire it before the subscription to
+	// avoid retaining a subscription while waiting for a commerce user lock.
+	var owner model.User
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Select("id").First(&owner, candidate.UserID).Error; err != nil {
 		return model.ProtocolCredential{}, err
 	}
 	// Fulfillment, retirement and reconciliation lock subscription before
@@ -37,8 +47,11 @@ func ResolveCompletionCredential(tx *gorm.DB, cipher metering.CredentialDecrypto
 		}
 	}
 	var subscription model.Subscription
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&subscription, candidate.SubscriptionID).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "user_id").First(&subscription, candidate.SubscriptionID).Error; err != nil {
 		return model.ProtocolCredential{}, err
+	}
+	if subscription.UserID != owner.ID {
+		return model.ProtocolCredential{}, metering.ErrPrincipalAmbiguous
 	}
 	var row model.ProtocolCredential
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID).First(&row, candidate.ID).Error; err != nil {

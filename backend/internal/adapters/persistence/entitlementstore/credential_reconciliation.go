@@ -131,7 +131,7 @@ func subscriptionCredentialsCurrent(db *gorm.DB, subscription model.Subscription
 		return true, nil
 	}
 	var credentials []model.ProtocolCredential
-	if err := db.Where("subscription_id = ? AND protocol_endpoint_id IN ?", subscription.ID, endpointIDs).Find(&credentials).Error; err != nil {
+	if err := db.Where("subscription_id = ? AND protocol_endpoint_id IN ? AND current_scope = ? AND entitlement_epoch = ?", subscription.ID, endpointIDs, 1, subscription.EntitlementEpoch).Find(&credentials).Error; err != nil {
 		return false, err
 	}
 	credentialsByEndpoint := make(map[uint]model.ProtocolCredential, len(credentials))

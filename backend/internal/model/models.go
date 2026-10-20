@@ -85,6 +85,7 @@ type PlanSKU struct {
 }
 
 type Subscription struct {
+	EntitlementEpoch        uint64 `json:"-" gorm:"not null;default:0;-:migration"`
 	KernelPolicyRevision    uint64 `json:"-" gorm:"not null;default:0"`
 	KernelPolicyFingerprint string `json:"-" gorm:"size:64;not null;default:''"`
 
@@ -484,15 +485,17 @@ type SubscriptionTemplateRuleSetBinding struct {
 // Secrets are encrypted at rest; observable events carry only CredentialID and
 // PrincipalKey so a kernel event can be attributed without exposing the secret.
 type ProtocolCredential struct {
+	EntitlementEpoch       uint64     `json:"-" gorm:"not null;default:0;-:migration"`
+	CurrentScope           *uint8     `json:"-" gorm:"default:1;-:migration"`
 	DeliveryRequired       bool       `json:"-" gorm:"not null;default:false;-:migration"`
 	PrincipalDigest        string     `json:"-" gorm:"size:64;not null;default:'';-:migration"`
 	SecretPrincipalDigest  string     `json:"-" gorm:"size:64;not null;default:'';-:migration"`
 	PrincipalLookupVersion uint8      `json:"-" gorm:"not null;default:0;-:migration"`
 	RetiredPrincipalHash   string     `json:"-" gorm:"size:64;not null;default:'';-:migration"`
 	ID                     uint       `json:"id" gorm:"primaryKey"`
-	SubscriptionID         uint       `json:"subscription_id" gorm:"uniqueIndex:ux_protocol_credential_subscription_endpoint,priority:1;index;not null"`
+	SubscriptionID         uint       `json:"subscription_id" gorm:"index;not null"`
 	UserID                 uint       `json:"user_id" gorm:"index;not null"`
-	ProtocolEndpointID     uint       `json:"protocol_endpoint_id" gorm:"uniqueIndex:ux_protocol_credential_subscription_endpoint,priority:2;index;not null"`
+	ProtocolEndpointID     uint       `json:"protocol_endpoint_id" gorm:"index;not null"`
 	NodeID                 uint       `json:"node_id" gorm:"index;not null"`
 	CredentialID           string     `json:"credential_id" gorm:"size:96;uniqueIndex;not null"`
 	PrincipalKey           string     `json:"principal_key" gorm:"size:128;uniqueIndex;not null"`
@@ -532,6 +535,7 @@ type FlowUsage struct {
 }
 
 type TrafficRecord struct {
+	EntitlementEpoch        uint64    `json:"-" gorm:"not null;default:0;-:migration"`
 	ID                      uint      `json:"id" gorm:"primaryKey"`
 	UserID                  uint      `json:"user_id" gorm:"index"`
 	SubscriptionID          uint      `json:"subscription_id,omitempty" gorm:"index"`
@@ -808,14 +812,15 @@ type ProtocolDeployment struct {
 }
 
 type QuotaEvent struct {
-	ID             uint      `json:"id" gorm:"primaryKey"`
-	SubscriptionID uint      `json:"subscription_id" gorm:"index;uniqueIndex:ux_quota_event_reference,priority:1;not null"`
-	EventType      string    `json:"event_type" gorm:"size:24;uniqueIndex:ux_quota_event_reference,priority:2;not null"`
-	DeltaBytes     int64     `json:"delta_bytes"`
-	BalanceBefore  int64     `json:"balance_before"`
-	BalanceAfter   int64     `json:"balance_after"`
-	ReferenceType  string    `json:"reference_type" gorm:"size:32;uniqueIndex:ux_quota_event_reference,priority:3;not null"`
-	ReferenceID    string    `json:"reference_id" gorm:"size:128;uniqueIndex:ux_quota_event_reference,priority:4;not null"`
-	Detail         string    `json:"detail" gorm:"type:json"`
-	CreatedAt      time.Time `json:"created_at"`
+	EntitlementEpoch uint64    `json:"-" gorm:"not null;default:0;-:migration"`
+	ID               uint      `json:"id" gorm:"primaryKey"`
+	SubscriptionID   uint      `json:"subscription_id" gorm:"index;uniqueIndex:ux_quota_event_reference,priority:1;not null"`
+	EventType        string    `json:"event_type" gorm:"size:24;uniqueIndex:ux_quota_event_reference,priority:2;not null"`
+	DeltaBytes       int64     `json:"delta_bytes"`
+	BalanceBefore    int64     `json:"balance_before"`
+	BalanceAfter     int64     `json:"balance_after"`
+	ReferenceType    string    `json:"reference_type" gorm:"size:32;uniqueIndex:ux_quota_event_reference,priority:3;not null"`
+	ReferenceID      string    `json:"reference_id" gorm:"size:128;uniqueIndex:ux_quota_event_reference,priority:4;not null"`
+	Detail           string    `json:"detail" gorm:"type:json"`
+	CreatedAt        time.Time `json:"created_at"`
 }

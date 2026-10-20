@@ -128,15 +128,15 @@ func ApplyDueTrafficReset(tx *gorm.DB, sub *model.Subscription, now time.Time) (
 	var usedSince int64
 	if err := tx.Model(&model.TrafficRecord{}).
 		Select("COALESCE(SUM(used_bytes), 0)").
-		Where("subscription_id = ? AND created_at >= ? AND created_at <= ?", sub.ID, cycleStart, now).
+		Where("subscription_id = ? AND entitlement_epoch = ? AND created_at >= ? AND created_at <= ?", sub.ID, sub.EntitlementEpoch, cycleStart, now).
 		Scan(&usedSince).Error; err != nil {
 		return false, err
 	}
 	var grantsSince int64
 	if err := tx.Model(&model.QuotaEvent{}).
 		Select("COALESCE(SUM(delta_bytes), 0)").
-		Where("subscription_id = ? AND event_type IN ? AND created_at >= ? AND created_at <= ?",
-			sub.ID, []string{"traffic_pack", "renewal", "upgrade", "task_adjustment"}, cycleStart, now).
+		Where("subscription_id = ? AND entitlement_epoch = ? AND event_type IN ? AND created_at >= ? AND created_at <= ?",
+			sub.ID, sub.EntitlementEpoch, []string{"traffic_pack", "renewal", "upgrade", "task_adjustment"}, cycleStart, now).
 		Scan(&grantsSince).Error; err != nil {
 		return false, err
 	}

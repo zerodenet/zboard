@@ -54,7 +54,7 @@ func (s ConnectionRevocation) WithRevokedPrincipal(ctx context.Context, nodeID u
 			return network.ErrConnectionRevocationPending
 		}
 		now := time.Now().UTC()
-		forbidden = !node.IsEnabled || sub.Status != "active" || !sub.EndAt.After(now) || sub.FlowUsed >= sub.FlowTotal
+		forbidden = credential.EntitlementEpoch != sub.EntitlementEpoch || credential.CurrentScope == nil || *credential.CurrentScope != 1 || !node.IsEnabled || sub.Status != "active" || !sub.EndAt.After(now) || sub.FlowUsed >= sub.FlowTotal
 		if !forbidden {
 			// Credential reconciliation is asynchronous. A revoked projection may
 			// predate a regrant, so current group membership is authoritative. The

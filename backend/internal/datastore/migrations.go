@@ -121,6 +121,9 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
+	if err := preflightEntitlementEpochSchema(db); err != nil {
+		return err
+	}
 	if err := preflightCredentialDeliverySchema(db); err != nil {
 		return err
 	}
@@ -187,6 +190,9 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcilePluginOperationSchema(db); err != nil {
 		return err
 	}
+	if err := reconcileEntitlementEpochSchema(db); err != nil {
+		return err
+	}
 	return menustore.Seed(db)
 }
 
@@ -240,6 +246,12 @@ func runMigrations(db *gorm.DB) error {
 		if version == trafficHourlyVersion || version == trafficHourlyApplicationVersion {
 			if err := reconcileMySQLTrafficHourly(db); err != nil {
 				return fmt.Errorf("reconcile migration %s: %w", version, err)
+			}
+			continue
+		}
+		if version == entitlementEpochSchemaVersion {
+			if err := reconcileEntitlementEpochSchema(db); err != nil {
+				return err
 			}
 			continue
 		}

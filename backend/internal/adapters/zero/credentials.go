@@ -34,6 +34,8 @@ func (i Issuer) Status(protocol string, principalReady bool) string {
 	}
 	return "active"
 }
+func (i Issuer) Decrypt(secret string) (string, error) { return i.Cipher.Decrypt(secret) }
+
 func (i Issuer) Encrypt(secret string) (string, error) { return i.Cipher.Encrypt(secret) }
 
 func (i Issuer) Secret(protocol, serverConfig string) (string, error) {

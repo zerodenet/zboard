@@ -348,7 +348,7 @@ func MigrationTables(db *gorm.DB) ([]string, error) {
 		tables = append(tables, parsed.Schema.Table)
 	}
 	tables = append(tables,
-		"credential_delivery_confirmations", "node_credential_delivery_states", "network_entry_delivery_confirmations",
+		"credential_delivery_confirmations", "node_credential_delivery_states", "network_entry_delivery_confirmations", "closed_entitlements",
 		"menu_revisions", "menu_nodes",
 		"job_execution_budget", "job_execution_groups", "job_dispatch_lanes", "job_runs", "job_attempts", "job_schedules",
 		"plugin_installations", "plugin_versions", "plugin_operations", "plugin_host_leases",

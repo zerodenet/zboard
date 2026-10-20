@@ -9,6 +9,7 @@ import (
 var ErrPrincipalAmbiguous = errors.New("credential principal has ambiguous ownership; reconcile before settlement")
 
 type TrafficRecord struct {
+	EntitlementEpoch        uint64    `json:"-"`
 	ID                      uint      `json:"id"`
 	UserID                  uint      `json:"user_id"`
 	SubscriptionID          uint      `json:"subscription_id,omitempty"`

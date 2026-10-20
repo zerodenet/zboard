@@ -5341,6 +5341,10 @@ paths:
         - traffic
       summary: Submit a signed node traffic report
       description: |
+        This legacy user/endpoint contract returns 409 when ownership spans multiple
+        historical subscriptions or a recovered period; use authenticated principal
+        flow events for period-safe accounting.
+
         This endpoint is authenticated by a node report credential, not by a user bearer token.
         Compute SHA-256 over the exact request body, then sign the following UTF-8 canonical string
         with HMAC-SHA256 using the node secret:
@@ -5392,6 +5396,12 @@ paths:
             schema:
               $ref: "#/components/schemas/TrafficReportRequest"
       responses:
+        "409":
+          description: Legacy report cannot identify one subscription period
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
         "200":
           description: Traffic report result; duplicate is true when an earlier report was reused without another deduction.
           content:

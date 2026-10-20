@@ -69,13 +69,16 @@ func FulfillWithPrevious(tx *gorm.DB, order entitlements.GrantRequest, policy en
 	previousGroupID := sub.NodeGroupID
 	// Recovery must close the previous period even when the expiry worker has
 	// not run yet. Preserve its historical orders before restoring this instance.
-	if order.OrderType == "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now)) {
+	recovering := order.OrderType == "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now))
+	if recovering {
 		if err := endSubscription(tx, &sub, now); err != nil {
 			return model.Subscription{}, nil, err
 		}
 	}
-	if _, err := ApplyDueTrafficReset(tx, &sub, now); err != nil {
-		return model.Subscription{}, nil, err
+	if !recovering {
+		if _, err := ApplyDueTrafficReset(tx, &sub, now); err != nil {
+			return model.Subscription{}, nil, err
+		}
 	}
 	prior := sub
 	previous = &prior
@@ -84,6 +87,12 @@ func FulfillWithPrevious(tx *gorm.DB, order entitlements.GrantRequest, policy en
 		return model.Subscription{}, nil, err
 	}
 	sub = model.Subscription(grant.Subscription)
+	if recovering {
+		if err := closeEntitlement(tx, prior, order.ID, issuer, now); err != nil {
+			return model.Subscription{}, nil, err
+		}
+		sub.EntitlementEpoch = prior.EntitlementEpoch + 1
+	}
 
 	if err := tx.Save(&sub).Error; err != nil {
 		return model.Subscription{}, nil, err

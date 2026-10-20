@@ -130,3 +130,33 @@ func assertMeteringPrincipalIndex(t *testing.T, f orderFixture) {
 	assertAccountingTotal(t, h, target.SubscriptionID, 60, subStatusActive)
 	t.Logf("retained_credentials=%d independently_committed_backfill_limit=1024 target_charged=60 ambiguous_extra_charge=0", history+1)
 }
+
+func TestLegacyTrafficReportCannotMixIndependentSubscriptions(t *testing.T) {
+	assertLegacyTrafficOwnership(t, newOrderFixture(t))
+}
+func TestMySQLLegacyTrafficReportCannotMixIndependentSubscriptions(t *testing.T) {
+	assertLegacyTrafficOwnership(t, newMySQLOrderFixture(t))
+}
+func assertLegacyTrafficOwnership(t *testing.T, f orderFixture) {
+	h, first := accountingFixtureFromOrder(t, f)
+	if err := h.db.Model(&model.Node{}).Where("id = ?", first.NodeID).Update("traffic_secret", "legacy-fixture-key").Error; err != nil {
+		t.Fatal(err)
+	}
+	report := metering.AuthenticatedNodeReport{NodeID: first.NodeID, UserID: first.UserID, ProtocolEndpointID: first.ProtocolEndpointID, ExpectedCredential: "legacy-fixture-key", Timestamp: time.Now().UTC(), Nonce: "legacy-unique-nonce", ReportID: "legacy-unique-report", DownloadBytes: 10}
+	accepted, err := h.services.NodeReports().Record(t.Context(), report)
+	if err != nil || accepted.Record.UsedBytes != 10 {
+		t.Fatal("unambiguous legacy report failed", err)
+	}
+	second := f.paid(t, f.create(t, 0).ID)
+	replay, err := h.services.NodeReports().Record(t.Context(), report)
+	if err != nil || !replay.Duplicate || replay.Record.ID != accepted.Record.ID {
+		t.Fatal("known legacy receipt lost idempotency", err)
+	}
+	report.Nonce = "legacy-ambiguous-nonce"
+	report.ReportID = "legacy-ambiguous-report"
+	if _, err := h.services.NodeReports().Record(t.Context(), report); !errors.Is(err, metering.ErrNodeReportNeedsPrincipal) {
+		t.Fatal("legacy report chose an arbitrary independent subscription", err)
+	}
+	assertAccountingTotal(t, h, first.SubscriptionID, 10, subStatusActive)
+	assertAccountingTotal(t, h, second.SubscriptionID, 0, subStatusActive)
+}

@@ -23,6 +23,7 @@ type zeroFlowReportKey struct {
 }
 
 type zeroFlowCredentialRef struct {
+	EntitlementEpoch   uint64
 	ID                 uint
 	SubscriptionID     uint
 	ProtocolEndpointID uint
@@ -34,6 +35,8 @@ type zeroFlowCredentialRef struct {
 // Locked subscription pointers include every preceding charge in that batch.
 // No authentication or entitlement snapshot survives a commit or rollback.
 type flowBatch struct {
+	closed             map[entitlementQuotaKey]*model.ClosedEntitlement
+	dirtyClosed        map[entitlementQuotaKey]time.Time
 	batchReports       bool
 	credentials        map[zeroFlowPrincipal]zeroFlowCredentialRef
 	subscriptions      map[uint]*model.Subscription
@@ -47,6 +50,8 @@ type flowBatch struct {
 
 func newFlowBatch(tx *gorm.DB) *flowBatch {
 	return &flowBatch{
+		closed:             make(map[entitlementQuotaKey]*model.ClosedEntitlement),
+		dirtyClosed:        make(map[entitlementQuotaKey]time.Time),
 		batchReports:       datastore.IsSQLite(tx),
 		credentials:        make(map[zeroFlowPrincipal]zeroFlowCredentialRef),
 		subscriptions:      make(map[uint]*model.Subscription),
@@ -123,7 +128,7 @@ func (s *flowBatch) credential(cipher metering.CredentialDecryptor, tx *gorm.DB,
 	if err != nil {
 		return zeroFlowCredentialRef{}, err
 	}
-	ref := zeroFlowCredentialRef{credential.ID, credential.SubscriptionID, credential.ProtocolEndpointID, credential.PrincipalKey, credential.CredentialID}
+	ref := zeroFlowCredentialRef{credential.EntitlementEpoch, credential.ID, credential.SubscriptionID, credential.ProtocolEndpointID, credential.PrincipalKey, credential.CredentialID}
 	s.credentials[key] = ref
 	return ref, nil
 }
@@ -174,6 +179,22 @@ func (s *flowBatch) flush(tx *gorm.DB) error {
 			"flow_used": sub.FlowUsed, "status": sub.Status, "updated_at": s.dirtySubscriptions[id],
 			"ended_at": sub.EndedAt, "end_reason": sub.EndReason,
 		}).Error; err != nil {
+			return err
+		}
+	}
+	closedKeys := make([]entitlementQuotaKey, 0, len(s.dirtyClosed))
+	for key := range s.dirtyClosed {
+		closedKeys = append(closedKeys, key)
+	}
+	sort.Slice(closedKeys, func(i, j int) bool {
+		if closedKeys[i].SubscriptionID != closedKeys[j].SubscriptionID {
+			return closedKeys[i].SubscriptionID < closedKeys[j].SubscriptionID
+		}
+		return closedKeys[i].Epoch < closedKeys[j].Epoch
+	})
+	for _, key := range closedKeys {
+		row := s.closed[key]
+		if err := tx.Model(&model.ClosedEntitlement{}).Where("subscription_id = ? AND epoch = ?", key.SubscriptionID, key.Epoch).Updates(map[string]any{"flow_used": row.FlowUsed, "updated_at": s.dirtyClosed[key]}).Error; err != nil {
 			return err
 		}
 	}

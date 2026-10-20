@@ -7,12 +7,13 @@ artifact=${ZERO_ARTIFACT_DIR:?Set ZERO_ARTIFACT_DIR to a verified Linux Zero art
 artifact=$(cd "$artifact" && pwd)
 scenario=${NODE_SCENARIO:-expiry}
 case "$scenario" in
+  renewal_epoch) test_name=TestRealZeroRecoveredPeriodRotatesAccessAndClosesOldFlow ;;
   expiry) test_name=TestRealZeroNodeExpiryRevokesDataPlane ;;
   exhaustion) test_name=TestRealZeroNodeExhaustionRevokesDataPlane ;;
   group_change) test_name=TestRealZeroNodeGroupChangeReplacesDataPlaneAccess ;;
   recovery) test_name=TestRealZeroNodeFailedPublicationSurvivesPublisherCrash ;;
   connection_recovery) test_name=TestRealZeroConnectionVerificationSurvivesPublisherCrash ;;
-  *) echo 'NODE_SCENARIO must be expiry, exhaustion, group_change, recovery or connection_recovery' >&2; exit 1 ;;
+  *) echo 'NODE_SCENARIO must be expiry, exhaustion, group_change, recovery, connection_recovery or renewal_epoch' >&2; exit 1 ;;
 esac
 mkdir -p "$root/.codex-local-artifacts/acceptance"
 output=$(mktemp -d "$root/.codex-local-artifacts/acceptance/zero-revocation-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")

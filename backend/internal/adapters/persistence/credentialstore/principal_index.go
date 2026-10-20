@@ -3,6 +3,7 @@ package credentialstore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -12,9 +13,11 @@ import (
 )
 
 var ErrPrincipalIndexPending = errors.New("credential principal index is incomplete or ambiguous")
+var ErrPrincipalIndexIncomplete = fmt.Errorf("%w: coverage requires preparation", ErrPrincipalIndexPending)
 
 const principalBackfillBatch = 256
 const principalBackfillBatches = 4
+const PrincipalIndexWorkLimit = principalBackfillBatch * principalBackfillBatches
 
 type PrincipalIndex struct {
 	DB     *gorm.DB
@@ -37,26 +40,37 @@ func (s PrincipalIndex) Lookup(ctx context.Context, node uint, provided string) 
 // Prepare commits bounded legacy projection work before the accounting
 // transaction. An incomplete node stays pending while the next retry resumes.
 func (s PrincipalIndex) Prepare(ctx context.Context, node uint) error {
+	_, err := s.PrepareBounded(ctx, node, PrincipalIndexWorkLimit)
+	return err
+}
+
+// PrepareBounded lets a caller share one row budget across transaction retries.
+// Returned work includes a failed batch conservatively; retries cannot bypass
+// the1024-row node/request bound by repeatedly starting new preparation calls.
+func (s PrincipalIndex) PrepareBounded(ctx context.Context, node uint, budget int) (prepared int, err error) {
 	if s.DB == nil || node == 0 {
-		return ErrPrincipalIndexPending
+		return 0, ErrPrincipalIndexPending
 	}
-	for batch := 0; batch < principalBackfillBatches; batch++ {
-		count, err := s.backfill(ctx, node)
+	budget = max(0, min(budget, PrincipalIndexWorkLimit))
+	for prepared < budget {
+		limit := min(principalBackfillBatch, budget-prepared)
+		count, err := s.backfill(ctx, node, limit)
+		prepared += count
 		if err != nil {
-			return err
+			return prepared, err
 		}
-		if count < principalBackfillBatch {
+		if count < limit {
 			break
 		}
 	}
 	var remaining []uint
 	if err := s.DB.WithContext(ctx).Model(&model.ProtocolCredential{}).Table(principalIndexTable(s.DB, "idx_credential_lookup_backfill")).Where("node_id = ? AND principal_lookup_version = ?", node, 0).Limit(1).Pluck("id", &remaining).Error; err != nil {
-		return err
+		return prepared, err
 	}
 	if len(remaining) > 0 {
-		return ErrPrincipalIndexPending
+		return prepared, ErrPrincipalIndexIncomplete
 	}
-	return nil
+	return prepared, nil
 }
 
 // LookupPrepared never writes or starts a nested backfill transaction. Callers
@@ -70,7 +84,7 @@ func (s PrincipalIndex) LookupPrepared(ctx context.Context, node uint, provided 
 		return model.ProtocolCredential{}, err
 	}
 	if len(remaining) > 0 {
-		return model.ProtocolCredential{}, ErrPrincipalIndexPending
+		return model.ProtocolCredential{}, ErrPrincipalIndexIncomplete
 	}
 
 	digest := entitlements.RetiredPrincipalHash(node, provided)
@@ -100,10 +114,10 @@ func (s PrincipalIndex) LookupPrepared(ctx context.Context, node uint, provided 
 	return row, err
 }
 
-func (s PrincipalIndex) backfill(ctx context.Context, node uint) (count int, err error) {
+func (s PrincipalIndex) backfill(ctx context.Context, node uint, limit int) (count int, err error) {
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var rows []model.ProtocolCredential
-		if err := tx.Table(principalIndexTable(tx, "idx_credential_lookup_backfill")).Select("id", "node_id", "principal_key", "secret", "retired_principal_hash").Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND principal_lookup_version = ?", node, 0).Order("id").Limit(principalBackfillBatch).Find(&rows).Error; err != nil {
+		if err := tx.Table(principalIndexTable(tx, "idx_credential_lookup_backfill")).Select("id", "node_id", "principal_key", "secret", "retired_principal_hash").Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND principal_lookup_version = ?", node, 0).Order("id").Limit(limit).Find(&rows).Error; err != nil {
 			return err
 		}
 		count = len(rows)
