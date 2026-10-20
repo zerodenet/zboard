@@ -25,7 +25,7 @@
 | P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
 | P5 工单业务关联 | 已实现且验证（隔离范围） | 4e1a78d/0058；双库实际DDL/权限/首消息回滚/锁序，33专项/1108完整frontend/build/OpenAPI通过；当前完整backend/CI待验 |
 | P6 进程关闭/队列所有权前置 | 部分实现（真实子进程、SQLite/race、MySQL） | file-spool内核锁、local Drain/Detach和实际server/plugin cleanup；3690113原MySQL及copy通过，7ef CI MySQL通过；无独立worker或伸缩器 |
-| P7 当前提交验证 | 部分实现/未完成 | 369/7ef CI backend过时审计名失败已由d6修正，当前全量独立验收；不以旧绿灯代替新提交，保留所有历史失败/未执行 |
+| P7 当前提交验证 | 部分实现/未完成 | 31e72db完整Go/vet/build/纯Go SQLite与原容量通过；原MySQL handler本地/CI900s超时，jobstore/copy本地通过；旧超时及CI未执行项保留 |
 | 其余P2及P3–P7 | 部分实现/未完成 | 活跃部分退款/永久多次增购决策、其他操作优惠/外部券契约、完整计量保留、持续增长/资源竞争/独立worker/伸缩、最终综合回归 |
 
 ## 需求—实现—差距表
@@ -1022,3 +1022,30 @@ No migration or authority archival; Meta still contains rounding proof. Benchmar
 source is tracked for reproduction; final source whole checks/CI remain pending.
 See [read boundary](core-convergence-records-summary-reads.md) and
 [receipt](validation/2026-10-20-records-summary-reads.json).
+
+
+### P4/P7 fixed31 original verification (2026-10-20)
+
+Exact clean31e72db passes full Go/vet/build/pure-Go SQLite and all original
+1CPU/1GiB/20events/s/4readers/60s mixed gates.1201unique,1274event HTTP and937
+business reads have zero errors; trends156/0/p95=15ms, exact expected/ledger/quota
+9,833,472 match, final usage/spool pending0. Nine source/binary bindings hold;
+original scripts/thresholds unchanged. Pending/complete chart ratio is unknown.
+One RSS probe failed while21 samples remain available; final captured container
+state is stopped/exit0/noOOM. This is a short SQLite simulation, not MySQL,
+plugin contention, live connections/overuse or scaling proof. See
+[capacity receipt](validation/2026-10-20-records-original-capacity.json).
+
+New-source MySQL handler fails original900s locally and in CI, while datastore/
+network and independent local jobstore/copy pass. CI's later commands are
+unexecuted, retained alongsidec722's six-job success; P7 remains failed. A private
+three-sample diagnostic attributes93% stage time to the broad versioned phase,
+not a specific SQL or proven cause; no optimization is inferred. See
+[whole checks](validation/2026-10-20-records-final-checks.json) and
+[stage diagnosis](validation/2026-10-20-schema-stage-diagnostic.json).
+
+Further P4 audit confirms node observation writes can still roll back accounting
+and share one Latest/Stats cursor. Kernel rollback/legacy writers and accepted
+host-owner identity require evidence before durable asynchronous handoff. The
+private proposal is unimplemented;0059 has not been allocated or added. Source
+facts/rounding/dedup remain protected; this audit does not close P4 or P6.

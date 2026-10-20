@@ -2,8 +2,9 @@
 
 `acceptance-capacity-baseline.py` observes exactly one execution of the unchanged
 mixed-load runner at an explicitly fixed revision. The default is
-`7ca9f63d0cf12a03713f3a242c508dcbf82e4856`; the only allowed comparison revision
-is `53a056d32633dcbda9b243553d85a88fe9fc2090`. It refuses a different or dirty
+`7ca9f63d0cf12a03713f3a242c508dcbf82e4856`; the first comparison revision
+is `53a056d32633dcbda9b243553d85a88fe9fc2090`; subsequent exact pins are listed
+in the controller and recorded below. It refuses a different or dirty
 checkout. It does not reset a checkout, retry a load, change
 acceptance thresholds, start extra workers, or remove evidence. The original
 runner owns its isolated containers, volume, and normal cleanup.
@@ -56,8 +57,10 @@ The original gates cover HTTP error/count/p95, constrained container resources,
 working set, disk headroom and spool pressure, exact usage/ledger reconciliation,
 projection and durable-spool drain, and runtime observations. Preserve their
 actual values and failures in the report. The runtime consumer latency histogram
-has 100 ms buckets and ends after projection/checkpoint commit; database pool
-waits are not SQL execution latency.
+has 100 ms buckets and ends after the event accounting/network projection
+transaction and durable-spool checkpoint. It does not include the independently
+drained usage-statistics queue or prove chart freshness. Database pool waits
+are not SQL execution latency.
 
 This is a short single-process SQLite comparison point. It does not establish a
 capacity ceiling, MySQL behavior, long-term growth, SQL statements or logical
@@ -82,3 +85,17 @@ pending/complete responses, so those proportions are unknown for this comparison
 final drained verification is recorded separately and does not establish graph
 availability throughout load. Selecting this source is preparation, not proof of
 a passing run. No extra observer HTTP requests are added to the original load.
+
+
+The current narrow-metadata/explicit-record-summary comparison source is
+`31e72db8c6fbbbedddbd006cd5887c39c3d6cd44`. It is an explicit additional pin;
+the default and all original mixed/load/report thresholds and sources remain.
+A new fixed-source run is required; earlier58f/e5 passes and112/157 historical
+503 failures are preserved. Selection alone is not a passing load or final CI.
+
+
+Fixed31e72db has now passed the original profile and all nine bindings. The
+[receipt](../backend/architecture/validation/2026-10-20-records-original-capacity.json)
+keeps actual metrics and the one supplemental RSS probe error; prior failures
+and earlier passing runs remain separate. MySQL15m acceptance is still failed
+locally and in its CI, so this capacity result does not close P7.

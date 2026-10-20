@@ -91,3 +91,32 @@ while subsequent jobstore/copy commands did not run there. That failure and the
 4e failure remain evidence despite58f's earlier full success. The current source
 requires its own whole backend, original MySQL, capacity and CI checks. See the
 [metadata receipt](validation/2026-10-20-baseline-metadata-batch.json).
+
+
+## Fixed31 acceptance and stage attribution
+
+Source31e72db full Go301.326s/vet3.997s/build2.088s/pure-Go SQLite22.416s pass.
+Actual MySQL datastore157.274s and networkstore104.134s pass, while handler hits
+900.029s at WalletReservationCompetition (last test2s). Independent jobstore
+136.580s and copy117.918s then pass; neither was silently skipped. CI39502621208
+also has five successes and a MySQL15m timeout, leaving its later jobstore/copy
+commands unexecuted. Priorc722 CI succeeds all six, handler875.129s; that does
+not accept31 or establish stable margin. See the
+[full result](validation/2026-10-20-records-final-checks.json).
+
+An exact clean31 clone then measures three actual complete Prepare calls using
+a private diagnostic overlay with unchanged step order. Versioned migrations
+occupy93.03–93.51% of stage time:3.790065/3.505053/3.492524s. Their per-session
+raw counts are69ALTER/15CREATE_INDEX/103CREATE_TABLE/1722SELECT, including one
+trailing ID probe in the stage SELECT count. These are statement counters, not
+physical-table counts or individual SQL latency. The other six preparation
+stages each stay below56ms in these samples. Complete tail inventory consumes
+0.125/0.115/0.113s and300 production SELECTs; the handler fixture omits this tail.
+
+Whole instrumented calls are4.070512/3.776920/3.746530s, including diagnostic
+probes/output, with raw2084SELECT =2067production +16stage-ID probes +1outer probe.
+Do not compare this to uninstrumented startup as a regression/improvement. The
+versioned phase is still broad: no specific SQL cause or CI fix is proven. Source,
+overlay and benchmark hashes remain stable; no DB settings, published migration,
+timeout, fixture boundary or permissions changed. See the
+[diagnostic receipt](validation/2026-10-20-schema-stage-diagnostic.json).
