@@ -10,7 +10,7 @@ import (
 // been settled by commerce; this grant never carries them into the new service.
 // The cumulative counter remains an internal baseline, not spendable quota.
 func replacementGrant(previous Subscription, request GrantRequest, policy GrantPolicy, now time.Time) (Grant, error) {
-	if request.OrderType != "upgrade" || !CanChangeAt(previous, now) || request.UserID != previous.UserID || (request.TargetSubscriptionID != nil && *request.TargetSubscriptionID != previous.ID) {
+	if request.OrderType != "upgrade" || !CanReplaceAt(previous, now) || request.UserID != previous.UserID || (request.TargetSubscriptionID != nil && *request.TargetSubscriptionID != previous.ID) {
 		return Grant{}, errors.New("full replacement requires an eligible owned subscription")
 	}
 	if previous.FlowUsed < 0 || request.TrafficBytes < 0 || previous.FlowUsed > math.MaxInt64-request.TrafficBytes {

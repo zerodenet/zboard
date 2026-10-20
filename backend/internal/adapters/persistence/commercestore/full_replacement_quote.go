@@ -33,7 +33,7 @@ func fullReplacementSnapshot(order model.Order) (*changeSnapshot, error) {
 
 func quoteFullReplacement(tx *gorm.DB, order *model.Order, sub model.Subscription, now, creditAt time.Time) (commerce.OrderPreview, error) {
 	empty := commerce.OrderPreview{}
-	if order.OrderType != "upgrade" || order.TargetSubscriptionID == nil || *order.TargetSubscriptionID != sub.ID || order.UserID != sub.UserID || !entitlements.CanChangeAt(entitlements.Subscription(sub), now) {
+	if order.OrderType != "upgrade" || order.TargetSubscriptionID == nil || *order.TargetSubscriptionID != sub.ID || order.UserID != sub.UserID || !entitlements.CanReplaceAt(entitlements.Subscription(sub), now) {
 		return empty, quoteError("请选择尚未结束且允许换购的订阅。")
 	}
 	if order.PayableAmount < 0 || creditAt.IsZero() || creditAt.After(now) || sub.NextResetAt != nil && !sub.NextResetAt.After(now) {

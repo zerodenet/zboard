@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"strconv"
@@ -83,11 +84,15 @@ func captureEntitlementValue(tx *gorm.DB, order *model.Order, sub model.Subscrip
 		snap.AllocationModel = "purchase_value_policy_unavailable"
 	}
 	if snap.AllocationModel == "uniform_paid_units_v1" && snap.PaymentVerified && (snap.Mode == "new_term" || snap.Mode == "extended_term" || snap.Mode == "recovery_term" || snap.Mode == "replacement_term") {
-		periods, allocationErr := commerce.UniformPaidPeriods(snap.TermStartAt, snap.TermEndAt, snap.BillingUnit, snap.BillingValue, snap.ActualPaidMinor)
-		if allocationErr == nil {
-			snap.PaidPeriods = periods
+		if snap.BillingUnit == "once" && snap.BillingValue == 1 && entitlements.IsPerpetualEnd(snap.TermEndAt) && (sub.ResetPolicy == 0 || sub.ResetPolicy == 5) && sub.NextResetAt == nil && snap.Mode != "extended_term" {
+			snap.AllocationModel = commerce.PerpetualQuotaAllocation
 		} else {
-			snap.AllocationModel = "value_requires_review"
+			periods, allocationErr := commerce.UniformPaidPeriods(snap.TermStartAt, snap.TermEndAt, snap.BillingUnit, snap.BillingValue, snap.ActualPaidMinor)
+			if allocationErr == nil {
+				snap.PaidPeriods = periods
+			} else {
+				snap.AllocationModel = "value_requires_review"
+			}
 		}
 	}
 	payload, err := json.Marshal(snap)

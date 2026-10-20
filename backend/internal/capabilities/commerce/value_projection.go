@@ -8,6 +8,8 @@ import (
 	"math/big"
 	"sort"
 	"time"
+
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 )
 
 // ValueProjection is a refundable value calculation, not a wallet credit.
@@ -233,6 +235,9 @@ func ProjectEntitlementValue(records []EntitlementValueSnapshot, current Entitle
 		return empty, ErrValueEvidence
 	}
 	records = records[root:]
+	if entitlements.IsPerpetualEnd(current.EndAt) {
+		return projectPerpetualQuotaValue(records, current, currency, at)
+	}
 	frame := valueFrame{anchor: records[0].After.StartAt, end: records[0].After.EndAt}
 	var last EntitlementValueSnapshot
 	for i, s := range records {
@@ -334,13 +339,17 @@ func ProjectEntitlementValue(records []EntitlementValueSnapshot, current Entitle
 	}
 	out.ValuationModel = "remaining_value_basis_v1"
 	out.RootOrderID = records[0].OrderID
+	return fingerprintValueProjection(records, current, out)
+}
+
+func fingerprintValueProjection(records []EntitlementValueSnapshot, current EntitlementValueState, out ValueProjection) (ValueProjection, error) {
 	payload, err := json.Marshal(struct {
 		Records []EntitlementValueSnapshot
 		State   EntitlementValueState
 		Quote   ValueProjection
 	}{records, current, out})
 	if err != nil {
-		return empty, err
+		return ValueProjection{}, err
 	}
 	sum := sha256.Sum256(payload)
 	out.Fingerprint = hex.EncodeToString(sum[:])

@@ -20,6 +20,18 @@ func CanChangeAt(sub Subscription, now time.Time) bool {
 		(sub.Status == "active" || (sub.Status == "expired" && sub.FlowTotal > 0 && sub.FlowUsed >= sub.FlowTotal))
 }
 
+// CanReplaceAt purchases a fresh term after commerce settles the old rights.
+// A perpetual total-quota service can be settled by remaining quota, while the
+// legacy keep-the-old-end-date change continues to require a timed service.
+func CanReplaceAt(sub Subscription, now time.Time) bool {
+	if !IsPerpetualEnd(sub.EndAt) {
+		return CanChangeAt(sub, now)
+	}
+	return sub.EndedAt == nil && sub.EndAt.After(now) && sub.Status == "active" &&
+		(sub.ResetPolicy == 0 || sub.ResetPolicy == 5) && sub.NextResetAt == nil &&
+		sub.FlowTotal > 0 && sub.FlowUsed >= 0 && sub.FlowUsed < sub.FlowTotal
+}
+
 // Persist the terminal instant with accounting, so worker delays cannot extend
 // the renewal window. Monthly quota exhaustion is not a terminal event.
 func RecordQuotaExhaustion(sub Subscription, now time.Time) Subscription {

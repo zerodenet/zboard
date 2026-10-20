@@ -23,9 +23,9 @@ func subscriptionOperationPredicate(operation string, now time.Time, configuredG
 		catalog = "operation_plan.id = subscriptions.plan_id AND operation_plan.is_renewable = ? AND operation_sku.entitlement_mode = 'plan'"
 		args = append(args, true)
 	case "change":
-		lifecycle = "subscriptions.ended_at IS NULL AND (subscriptions.ends_on_quota_exhaustion = FALSE OR subscriptions.flow_used < subscriptions.flow_total) AND (subscriptions.status = 'active' OR (subscriptions.status = 'expired' AND subscriptions.flow_total > 0 AND subscriptions.flow_used >= subscriptions.flow_total)) AND subscriptions.end_at > ? AND subscriptions.end_at < ?"
-		args = []any{now, entitlements.PerpetualEnd}
-		catalog = "operation_plan.id <> subscriptions.plan_id AND operation_sku.entitlement_mode = 'plan' AND operation_sku.billing_unit <> 'once'"
+		lifecycle = "subscriptions.ended_at IS NULL AND subscriptions.end_at > ? AND ((subscriptions.end_at < ? AND (subscriptions.ends_on_quota_exhaustion = FALSE OR subscriptions.flow_used < subscriptions.flow_total) AND (subscriptions.status = 'active' OR (subscriptions.status = 'expired' AND subscriptions.flow_total > 0 AND subscriptions.flow_used >= subscriptions.flow_total))) OR (subscriptions.end_at >= ? AND subscriptions.status = 'active' AND subscriptions.reset_policy IN (0, 5) AND subscriptions.next_reset_at IS NULL AND subscriptions.flow_used >= 0 AND subscriptions.flow_used < subscriptions.flow_total))"
+		args = []any{now, entitlements.PerpetualEnd, entitlements.PerpetualEnd}
+		catalog = "operation_plan.id <> subscriptions.plan_id AND operation_sku.entitlement_mode = 'plan'"
 	case "addon":
 		lifecycle = "subscriptions.ended_at IS NULL AND (subscriptions.ends_on_quota_exhaustion = FALSE OR subscriptions.flow_used < subscriptions.flow_total) AND (subscriptions.status = 'active' OR (subscriptions.status = 'expired' AND subscriptions.flow_used >= subscriptions.flow_total)) AND subscriptions.end_at > ?"
 		args = []any{now}
