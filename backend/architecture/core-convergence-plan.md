@@ -495,3 +495,5 @@ P2-07 exact-head CI补记：5d16133df41fcdbfc168c43dc2bbc7e7e4a9ee40的backend/f
 当前仍未完成：每订阅默认关闭的余额自动续费及不足提醒、通用消费退款/优惠协议、管理员套餐历史同步；一次性无期限额度的残值口径已提出具体100元/100GB/已用20GB算例，仅该金额决策等待回答，限时订阅与恢复窗口不受阻。P3历史资源归属及更多协议能力、同代次重置的迟到计量、P4独立接收/读模型/诊断保留、P5完整会话工单、P6基准与受控本机伸缩、P7综合故障容量/整套迁移复制失败重试仍继续，不能以该子批宣称P2–P7完成。此次没有生产迁移、外部仓库写入或新内核能力承诺。
 
 P2-08最终本地检查追加：完整后端通过(handler198.636s、application5.884s，未变包可命中Go缓存)，vet/build通过；纯Go SQLite7.174s；最新前端build17.31s。最新全套MySQL仍等待终态；外部生产支付、原生内核及容量没有本批新增验收证明。
+
+P2-08实库最终终态：实际MySQL8.4全范围通过，datastore93.013s、handler535.407s、networkstore105.742s。实现292f7740a1b923396ecbcb5997517591edeb35ee已推至原codex/core-convergence分支及Draft PR78；exact-head CI https://github.com/zerodenet/zboard/actions/runs/39356295685 起初排队，另跟踪终态。下一子批余额自动续费已开始，尚未对外宣称完成。

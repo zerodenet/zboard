@@ -26,7 +26,7 @@
     "final_backend_full": "PASS; handler198.636s,application5.884s; other unchanged packages may use Go cache",
     "final_vet_build": "PASS",
     "final_pure_go_sqlite": "PASS7.174s",
-    "final_actual_mysql_full": "RUNNING"
+    "final_actual_mysql_full": "PASS: actual MySQL8.4 datastore93.013s,handler535.407s,networkstore105.742s; random isolated schemas"
   },
   "reproduction": {
     "environment": "Original cloud container; Go1.26.8,Node22.23.0,pnpm11.9.0,MySQL8.4 isolated container/random schemas; GOMAXPROCS2",
@@ -63,5 +63,10 @@
   ],
   "external_capabilities": "No other repository changed; no new core capability or external plugin completion claim",
   "capacity": "No throughput/p95/overuse/capacity claim from these correctness tests",
-  "production_actions": "None; no merge,release,deploy,or production migration"
+  "production_actions": "None; no merge,release,deploy,or production migration",
+  "implementation_commit": "292f7740a1b923396ecbcb5997517591edeb35ee",
+  "exact_head_ci": {
+    "run": "https://github.com/zerodenet/zboard/actions/runs/39356295685",
+    "status": "queued at02:00UTC; follow-up remote state tracked separately"
+  }
 }
