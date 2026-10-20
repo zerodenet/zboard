@@ -1,6 +1,6 @@
 {
   "stage": "P2-14 optional historical base quota synchronization",
-  "status": "SQLite, nominal MySQL and full frontend pass; latest guard/concurrency MySQL pending",
+  "status": "SQLite, latest actual MySQL and full frontend passed; exact-commit full CI pending",
   "behavior": [
     "sync_traffic_quota defaults false and requires explicit traffic_bytes.",
     "Preserve cumulative used bytes, cycle baseline, start/end/reset dates, reset policy, purchased price snapshots and full historical orders.",
@@ -17,12 +17,12 @@
     "frontend_Plans": "10 tests pass",
     "full_frontend": "959 passed / 8 existing skipped; same original six exclusions",
     "typecheck_build": "pass12.45s",
-    "ownership_and_OpenAPI": "capability inventory0.476s and api0.151s passed"
+    "ownership_and_OpenAPI": "capability inventory0.476s and api0.151s passed",
+    "MySQL_latest_guard_and_actual_wait_competition": "pass37.242s at isolated d7dc8ca source snapshot; paid add-on preservation, both wallet renewal orders and both metering orders; actual performance_schema waits"
   },
   "transaction": "Existing PlanUpdate writer; single database transaction, durable publication intents. No new service or schema.",
   "rollback": "Binary rollback preserves completed quota changes and historical events. Reverse a business quota decision with a new explicit revision; do not erase usage or financial evidence.",
   "unverified": [
-    "Latest mixed-add-on and deterministic concurrency wrappers still need real MySQL slot.",
     "Full exact-commit backend/CI pending.",
     "Historical subscription group replacement is separate P3 work."
   ]
