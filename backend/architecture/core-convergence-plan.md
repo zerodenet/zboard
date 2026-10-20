@@ -1064,3 +1064,16 @@ active partial-refund policy, live gateway or remote delivery is added/proven.
 See [scope and reproduction](core-convergence-consumption-refund-browser.md) and
 [receipt](validation/2026-10-20-consumption-refund-browser.json). P7's current
 source MySQL900s failure remains independent and unresolved.
+
+### P3/P4 installation rollback preserves later observations (2026-10-20)
+
+Kernel credential rollback previously rewound nine runtime observation fields
+while preserving the later event cursor. The existing fenced transaction now
+restores only its existing three credential identity fields; authorization,
+encryption, installation and credential rules are unchanged. Real event/heartbeat
+interleaving, full persisted-map comparison, persistence rollback, equal/older
+replay and lost-operation fencing cover the boundary. Old-source regression and
+first MySQL empty-JSON fixture failure are preserved; the fixture now uses valid
+JSON. No migration, remote rollback verification or async handoff is introduced.
+See [behavior and limits](core-convergence-kernel-rollback-observations.md).
+The new production commit requires full backend and current CI verification.

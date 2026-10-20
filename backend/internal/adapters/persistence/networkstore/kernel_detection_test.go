@@ -15,7 +15,7 @@ func kernelDetectionFixture(t *testing.T) (*KernelDetection, model.User, model.N
 	t.Helper()
 	db, _ := administrationFixture(t)
 	admin := model.User{ID: 1, Email: "kernel-admin@example.test", Password: "hash", IsAdmin: true, Status: "active"}
-	node := model.Node{ID: 1, Name: "kernel-node", LifecycleStatus: "active"}
+	node := model.Node{ID: 1, Name: "kernel-node", Config: "{}", LifecycleStatus: "active"}
 	for _, record := range []interface{}{&admin, &node} {
 		if err := db.Create(record).Error; err != nil {
 			t.Fatal(err)
