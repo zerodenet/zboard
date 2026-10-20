@@ -1094,7 +1094,9 @@ The original complete MySQL and new CI remain separate outstanding checks.
 ### P5 independent subscription support entry (2026-10-20)
 
 Each account subscription row now opens TicketCenter with only that row's positive
-safe-integer subscription_id/new context, including expired/ended history. The
+safe-integer subscription_id/new context for API-visible rows, including recovery-
+window expired instances. Finalized ended/fixed instances remain hidden by the
+existing owner list contract; their support path remains the historical order. The
 managed credential selection is not reused, and no ticket/financial/credential
 write is automatic. Actual component/router tests22 pass; unchanged original
 six exclusions full frontend1112 pass/8 existing skip, typecheck/build pass.
@@ -1106,3 +1108,19 @@ Both5c8918a and122f227 new CI runs have all six successes, with MySQL handler
 Prior31e72db local/CI900s failures remain, despite equivalent production source;
 no stable margin or causal speedup is inferred. These do not acceptcabce7c or a
 later source. See [CI receipts](validation/2026-10-20-test-only-ci-success.json).
+
+P5 shortcut scope clarification: a proposed terminal-row Chromium follow-up is
+blocked before compilation/browser launch by the existing owner query exclusion
+ofended/finalized-fixed services. No production read permission or lifecycle was
+changed. Component-provided ended-row coverage is defensive rendering only; the
+new shortcut does not expose terminal history through the account service list.
+
+### P7 actual driver-level migration diagnosis (2026-10-20)
+
+A separate ZBoard-owned diagnostic wrapper (no external module replacement) runs
+three fresh-schema original Prepare calls with unchanged SQL/fixture/DSN flags.
+All Rows close; actual2067 queries+trailing probe reconcile2068SELECT,75ALTER and
+15CREATE_INDEX remain. DDL driver spans account for70.7–73.9%, database-name/
+SCHEMATA spans8.2–9.4%; these include instrumentation/setup differences and are
+not original Scan timing, A/B improvement or proof of a CI fix. The prior rejected
+module probe remains separate. [Receipt](validation/2026-10-20-schema-driver-diagnostic.json).

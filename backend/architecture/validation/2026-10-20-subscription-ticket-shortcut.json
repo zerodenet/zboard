@@ -87,5 +87,7 @@
     "Existing TicketCenter dirty-draft, permission, explicit-submit behavior reused; no backend or policy change.",
     "No Go/MySQL/capacity tests run in this batch."
   ],
-  "private_receipt_sha256": "c547d03a5c908b5a41701b04adeb15ec8b50d615fe3f53f25cc9949925eee302"
+  "private_receipt_sha256": "c547d03a5c908b5a41701b04adeb15ec8b50d615fe3f53f25cc9949925eee302",
+  "backend_read_contract_clarification": "Existing owner service lists exclude ended and finalized fixed instances. Component-supplied ended DTO tests prove defensive rendering only, not API accessibility. Shortcut applies to returned current/recovery-window rows; historical-order support remains the terminal path.",
+  "additional_terminal_row_browser": "Blocked before compilation/browser launch by existing owner read contract; no production, fixture, lifecycle or payment modification."
 }

@@ -138,3 +138,32 @@ missing per-Scan latency. An application-owned diagnostic driver wrapper is only
 being evaluated; its driver/query/row-consumption timings would be different
 metrics, requiring explicit interface/SQL/setup equivalence and overhead limits.
 No new performance result or CI fix follows from this rejected attempt.
+
+## Application-owned driver diagnostic (separate measured metric)
+
+A later diagnostic wraps the pinned MySQL driver from a private ZBoard benchmark
+overlay only. No external module overlay/cache write, DSN flag, SQL argument,
+fixture, privilege or production Prepare change is involved. A copied-config,
+same-DSN diagnostic pool is initialized outside the timer; the original fixture
+pool stays idle. Driver query/prepare/row-consumption spans are not original
+Scan-body timings. Wrapper classification/clock/atomic cost remains in the whole
+instrumented operation, and Rows lifetime includes caller gaps and must not be
+added to its component spans.
+
+Three fresh-schema samples pass in4.027388/3.782094/3.849677s; every before/after
+session assertion holds, all Rows close and original75ALTER/15CREATE_INDEX/2068
+SELECT metrics remain. Driver actual queries2067 + trailing ID probe1 reconcile.
+Each sample has622 DATABASE queries (one is the intentional hourly migration
+query),621 SCHEMATA resolvers, and295/168/61 table/column/index COUNT queries.
+ErrSkip attempts and actual fallback prepared queries are distinct, avoiding
+double counting; every driver failure count is0.
+
+Name-query/prepare/consume spans total0.375371/0.354684/0.315014s, about8.2–9.4%
+of whole time. ALTER/CREATE_TABLE/CREATE_INDEX spans total2.866168/2.674599/
+2.846805s, about70.7–73.9%. This narrows investigation toward DDL; it identifies
+neither an automatically removable cost nor a CI timeout cause.117 CREATE_TABLE
+statements are not117 unique physical tables. No candidate A/B, production
+optimization or speedup is measured here. The proposed same-table additive batch
+is a separate future slice. See the [diagnostic receipt](validation/2026-10-20-schema-driver-diagnostic.json).
+The private overlay is an investigation artifact; the original tracked whole
+Prepare benchmark remains the reproducible uninstrumented comparison tool.
