@@ -137,7 +137,7 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 			}
 			out.Status, out.Disposition = order.Status, receipt.Disposition
 		}
-		if err := tx.Model(&event).Update("processed_at", now).Error; err != nil {
+		if err := tx.Model(&event).Update("processed_at", commerceNow(s.Now)).Error; err != nil {
 			return err
 		}
 		actor := authority.AccountID
@@ -207,7 +207,7 @@ func (s PaymentFacts) applyReceipt(tx *gorm.DB, order *model.Order, receipt *mod
 		if err := tx.SavePoint("payment_fulfillment").Error; err != nil {
 			return err
 		}
-		settlement := OrderSettlement{DB: s.DB, Issuer: s.Issuer}
+		settlement := OrderSettlement{DB: s.DB, Issuer: s.Issuer, Now: s.Now}
 		err := settlement.setVerifiedPaid(tx, order, now)
 		if err == nil {
 			receipt.Disposition = "fulfilled"
@@ -227,6 +227,7 @@ func (s PaymentFacts) applyReceipt(tx *gorm.DB, order *model.Order, receipt *mod
 				return err
 			}
 		} else {
+			now = commerceNow(s.Now)
 			var invalid *commerce.ValidationError
 			if !errors.As(err, &invalid) && !errors.Is(err, entitlements.ErrCapacity) {
 				return err
@@ -237,7 +238,16 @@ func (s PaymentFacts) applyReceipt(tx *gorm.DB, order *model.Order, receipt *mod
 			if err := tx.First(order, order.ID).Error; err != nil {
 				return err
 			}
-			if err := tx.Model(order).Updates(map[string]any{"status": "canceled", "canceled_at": now, "failure_reason": "付款已核验，权益条件已变化，款项已转入站内余额，请重新确认订单。", "updated_at": now}).Error; err != nil {
+			reason := "付款已核验，权益条件已变化，款项已转入站内余额，请重新确认订单。"
+			if invalid != nil {
+				switch invalid.Message {
+				case entitlements.ErrGrantTargetRequired.Error():
+					reason = "付款已核验，但历史订单缺少独立订阅目标；款项已转入余额，请通过工单核对。"
+				case entitlements.ErrRenewalWindow.Error():
+					reason = "付款已核验，但订阅已结束或已超过续费恢复窗口；款项已转入余额，请重新确认可售操作。"
+				}
+			}
+			if err := tx.Model(order).Updates(map[string]any{"status": "canceled", "canceled_at": now, "failure_reason": reason, "updated_at": now}).Error; err != nil {
 				return err
 			}
 			order.Status = "canceled"

@@ -153,3 +153,33 @@ func TestExplicitCancellationHasNoRenewalDeadline(t *testing.T) {
 		t.Fatal("explicit cancellation entered a recovery window")
 	}
 }
+
+func TestConfiguredRecoveryWindowsAndTerminalFences(t *testing.T) {
+	ended := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	sub := Subscription{ID: 1, UserID: 1, PlanID: 2, Status: "expired", Lifecycle: "renewable", StartAt: ended.AddDate(0, -1, 0), EndAt: ended, EndedAt: &ended, EndReason: "expired", FlowTotal: 100, FlowUsed: 60, ResetQuotaBytes: 100}
+	for _, days := range []int{0, 3, 7, 14, 3650} {
+		grace := time.Duration(days) * 24 * time.Hour
+		deadline := ended.Add(grace)
+		got := RenewalDeadline(sub, ended, grace)
+		if got == nil || !got.Equal(deadline) || CanRenewAt(sub, deadline, grace) {
+			t.Fatal("wrong configured boundary", days, got)
+		}
+		if days > 0 && !CanRenewAt(sub, deadline.Add(-time.Nanosecond), grace) {
+			t.Fatal("window ended early", days)
+		}
+	}
+	grace := 14 * 24 * time.Hour
+	now := ended.Add(8 * 24 * time.Hour)
+	request := GrantRequest{UserID: 1, PlanID: 2, PlanSKUID: 4, OrderType: "renewal", BillingUnit: "month", BillingValue: 1, RenewalEffect: "extend_only", TrafficBytes: 100}
+	policy := GrantPolicy{IsRenewable: true, RecoveryGracePeriod: &grace, ResetPolicy: 1}
+	grant, err := ApplyGrant(sub, request, policy, now)
+	if err != nil || !grant.Subscription.StartAt.Equal(now) || !grant.Subscription.EndAt.Equal(now.AddDate(0, 1, 0)) {
+		t.Fatal("configured recovery did not purchase full term", grant, err)
+	}
+	for _, status := range []string{"canceled", "ended"} {
+		sub.Status = status
+		if CanRenewAt(sub, now, 3650*24*time.Hour) || RenewalDeadline(sub, now, 3650*24*time.Hour) != nil {
+			t.Fatal("a longer policy resurrected a terminal subscription", status)
+		}
+	}
+}

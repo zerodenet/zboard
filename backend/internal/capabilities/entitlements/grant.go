@@ -20,6 +20,7 @@ type GrantRequest struct {
 	SpeedLimitMbps, DeviceLimit           int
 }
 type GrantPolicy struct {
+	RecoveryGracePeriod          *time.Duration
 	MaxActiveSubscriptions       int
 	NodeGroupID                  uint
 	IsRenewable                  bool
@@ -68,8 +69,12 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 	if !policy.IsRenewable && request.OrderType == "renewal" {
 		return Grant{}, errors.New("plan does not support renewal")
 	}
+	grace := RenewalGracePeriod
+	if policy.RecoveryGracePeriod != nil {
+		grace = *policy.RecoveryGracePeriod
+	}
 	recovering := request.OrderType == "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now))
-	if request.OrderType == "renewal" && (!CanRenewAt(sub, now) || sub.PlanID != request.PlanID) {
+	if request.OrderType == "renewal" && (!CanRenewAt(sub, now, grace) || sub.PlanID != request.PlanID) {
 		return Grant{}, ErrRenewalWindow
 	}
 	if request.OrderType != "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now) || (sub.EndsOnQuotaExhaustion && sub.FlowUsed >= sub.FlowTotal)) {

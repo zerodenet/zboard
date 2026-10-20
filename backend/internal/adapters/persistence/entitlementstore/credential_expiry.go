@@ -23,15 +23,19 @@ func (s CredentialExpiry) ExpireDueCredentials(ctx context.Context, now time.Tim
 		return nil, entitlements.ErrCredentialExpiryUnavailable
 	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		grace, err := RecoveryGracePeriod(tx)
+		if err != nil {
+			return err
+		}
 		var subscriptions []model.Subscription
-		if err := subscriptionLifecycleDue(tx.Clauses(clause.Locking{Strength: "UPDATE"}), now).Order("id asc").Limit(limit).Find(&subscriptions).Error; err != nil {
+		if err := subscriptionLifecycleDue(tx.Clauses(clause.Locking{Strength: "UPDATE"}), now, grace).Order("id asc").Limit(limit).Find(&subscriptions).Error; err != nil {
 			return err
 		}
 		for _, sub := range subscriptions {
 			if err := endSubscription(tx, &sub, now); err != nil {
 				return err
 			}
-			deadline := entitlements.RenewalDeadline(entitlements.Subscription(sub), now)
+			deadline := entitlements.RenewalDeadline(entitlements.Subscription(sub), now, grace)
 			cleanup := deadline == nil || !deadline.After(now)
 			var credentials []model.ProtocolCredential
 			query := tx.Where("subscription_id = ?", sub.ID)
@@ -74,7 +78,11 @@ func (s CredentialExpiry) HasDueCredentials(ctx context.Context, now time.Time) 
 	}
 	var id uint
 	query := s.DB.WithContext(ctx).Model(&model.Subscription{}).Select("id").Limit(1)
-	err := subscriptionLifecycleDue(query, now).Scan(&id).Error
+	grace, err := RecoveryGracePeriod(s.DB.WithContext(ctx))
+	if err != nil {
+		return false, err
+	}
+	err = subscriptionLifecycleDue(query, now, grace).Scan(&id).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, err
 	}

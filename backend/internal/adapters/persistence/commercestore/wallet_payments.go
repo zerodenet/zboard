@@ -272,7 +272,7 @@ func (s WalletPayments) Pay(ctx context.Context, actor, id uint) (out commerce.W
 		if (order.Status != "pending" && order.Status != "failed") || fund.State != "reserved" || !fund.ExpiresAt.After(now) {
 			return quoteError("余额预留已失效，请核对余额后重新创建订单。")
 		}
-		settlement := OrderSettlement{DB: s.DB, Issuer: s.Issuer}
+		settlement := OrderSettlement{DB: s.DB, Issuer: s.Issuer, Now: s.Now}
 		if err := settlement.setPaidWithFunding(tx, &order, now, true); err != nil {
 			return err
 		}

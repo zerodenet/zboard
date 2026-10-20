@@ -1,0 +1,67 @@
+{
+  "scope": "P2-08 configurable renewal recovery sub-batch; P2-P7 overall incomplete",
+  "base_commit": "5d16133df41fcdbfc168c43dc2bbc7e7e4a9ee40",
+  "develop_verified": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+  "draft_pr": "https://github.com/zerodenet/zboard/pull/78",
+  "migration": "0050_subscription_recovery_policy",
+  "actual_behaviors": [
+    "Administrator-private integer recovery window, default7 days, range0..3650; zero has no grace",
+    "Quote, SQL eligibility/deadline, grant and credential cleanup share policy",
+    "Current shared policy read serializes authority transaction; trusted decision time refreshes after locks",
+    "Verified cash arriving after window or reservation expiry becomes traceable wallet credit once, without old entitlement resurrection",
+    "Legacy non-new order with missing explicit subscription target cannot choose another subscription or manufacture one",
+    "Recorded migration with missing or invalid policy fails closed before schema/default recovery; generic defaults never recreate it",
+    "Copy clearing and writes are one transaction; rollback retains initialized policy, success retains source custom policy and historical projections"
+  ],
+  "financial_and_state_boundary": "Existing authoritative funding/settlement/grant/outbox transactions; no second debit writer, no new payment trust entry",
+  "verified_checks": {
+    "domain_and_schema": "PASS10.883s; additional domain/store/handler focused passes16.162s and5.580s",
+    "mysql_post_lock_deadline_and_funding_expiry": "PASS28.451s including latest verified-cash lock wait fixture",
+    "database_copy_sqlite_and_actual_mysql": "PASS21.505s; atomic rollback and source14days/revision9 preserved",
+    "initial_backend_full": "FAIL only application copy test after unrealistic transaction-external defaults clear; corrected to actual atomic copy; failure log retained",
+    "initial_actual_mysql_full": "PASS datastore106.719s,handler581.255s,networkstore146.384s; final latest cash-clock additions being checked separately",
+    "frontend_ci_scope": "PASS899 tests,8 existing skipped; no new exclusion",
+    "frontend_latest_build": "PASS17.31s",
+    "openapi": "VALID282 existing warnings",
+    "final_backend_full": "PASS; handler198.636s,application5.884s; other unchanged packages may use Go cache",
+    "final_vet_build": "PASS",
+    "final_pure_go_sqlite": "PASS7.174s",
+    "final_actual_mysql_full": "RUNNING"
+  },
+  "reproduction": {
+    "environment": "Original cloud container; Go1.26.8,Node22.23.0,pnpm11.9.0,MySQL8.4 isolated container/random schemas; GOMAXPROCS2",
+    "backend": [
+      "go test -p 2 ./...",
+      "go vet -p 2 ./...",
+      "go build -p 2 ./cmd/zboard",
+      "CGO_ENABLED=0 go test -p 2 ./internal/datastore -run SQLite -count=1"
+    ],
+    "mysql": "ZBOARD_TEST_MYSQL_DSN=<isolated-test-instance> go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+    "copy": "go test -p 2 ./internal/application -run 'DatabaseCopyPreserves|DatabaseSnapshotUsesSingleConnection' -count=1 -timeout 3m (with isolated MySQL DSN)",
+    "frontend": "Existing CI test scope with exactly six baseline exclusions, then pnpm build; lockfile unchanged, earlier frozen/copy install retained",
+    "openapi": "redocly/cli:1.34.3 lint backend/api/openapi.yaml"
+  },
+  "failures_retained": [
+    "Initial recovery fixture chose future2027 cash timestamp; corrected purchase year to2025, future-cash guard preserved",
+    "Initial database-copy fixture removed critical default outside copy transaction; now matches production transaction and asserts rollback",
+    "MySQL copied config got a different primary key; reused GORM destination added stale primary-key predicate. Reset destination before explicit key lookup; value/revision checks retained"
+  ],
+  "compatibility_and_rollback": [
+    "First upgrade seeds old7day behavior; custom value and revision survive interruption/repetition",
+    "Down migration retains policy; restoring old code with hardcoded7day eligibility is unsafe after policy changes without maintenance reconciliation",
+    "Already ended/canceled subscriptions remain terminal after extension; credentials erased by authorized cleanup are not recreated",
+    "Historical unbound non-new pending orders need ticket review; verified money is credited once, not discarded"
+  ],
+  "not_verified_or_complete": [
+    "No production migration or payment provider acceptance",
+    "No new native Zero run for this policy-only batch; previous pinned Zero results are separate prior-source evidence",
+    "Expired email historical lookback remains7days; it is independent of renewal eligibility",
+    "Balance automatic renewal, insufficient-funds notices and new opt-in UI remain next P2 work",
+    "No finite-period formula guessed for perpetual single-use quota; explicit100currency/100GB/20GB-used question pending",
+    "Whole MigrationCopier retry after failed prepared target can be rejected by nonempty seeded rows; pre-existing target ownership/recovery gap remains P7",
+    "General refunds, discount agreements, historical plan sync; P3 other protocols/history, P4 receive/read-model/retention, P5 sessions/tickets, P6 scaling/capacity, P7 comprehensive validation remain incomplete"
+  ],
+  "external_capabilities": "No other repository changed; no new core capability or external plugin completion claim",
+  "capacity": "No throughput/p95/overuse/capacity claim from these correctness tests",
+  "production_actions": "None; no merge,release,deploy,or production migration"
+}

@@ -19,6 +19,16 @@ func Fulfill(tx *gorm.DB, order entitlements.GrantRequest, policy entitlements.G
 // before this grant. Commerce uses it to record actual paid term/value evidence
 // in the same transaction, without reconstructing old state from today's plan.
 func FulfillWithPrevious(tx *gorm.DB, order entitlements.GrantRequest, policy entitlements.GrantPolicy, issuer entitlements.CredentialIssuer, now time.Time) (model.Subscription, *model.Subscription, error) {
+	if order.OrderType != "new" && order.TargetSubscriptionID == nil {
+		return model.Subscription{}, nil, entitlements.ErrGrantTargetRequired
+	}
+	if order.OrderType == "renewal" && policy.RecoveryGracePeriod == nil {
+		grace, err := RecoveryGracePeriod(tx)
+		if err != nil {
+			return model.Subscription{}, nil, err
+		}
+		policy.RecoveryGracePeriod = &grace
+	}
 	if err := ExpireInTransaction(tx, order.UserID, now); err != nil {
 		return model.Subscription{}, nil, err
 	}
@@ -33,10 +43,6 @@ func FulfillWithPrevious(tx *gorm.DB, order entitlements.GrantRequest, policy en
 	} else if order.TargetSubscriptionID != nil {
 		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND user_id = ?", *order.TargetSubscriptionID, order.UserID).First(&sub).Error
-	} else {
-		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("user_id = ? AND plan_sku_id = ? AND status = ? AND end_at > ? AND flow_used < flow_total", order.UserID, order.PlanSKUID, "active", now).
-			Order("end_at desc").First(&sub).Error
 	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.Subscription{}, nil, err

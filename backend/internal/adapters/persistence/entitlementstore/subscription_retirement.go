@@ -10,12 +10,16 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func subscriptionLifecycleDue(query *gorm.DB, now time.Time) *gorm.DB {
+func subscriptionLifecycleDue(query *gorm.DB, now time.Time, configuredGrace ...time.Duration) *gorm.DB {
+	grace := entitlements.RenewalGracePeriod
+	if len(configuredGrace) > 0 {
+		grace = configuredGrace[0]
+	}
 	return query.Where(`status IN ('active', 'expired') AND (
   (ended_at IS NULL AND (end_at <= ? OR (ends_on_quota_exhaustion = ? AND flow_used >= flow_total)))
   OR (ended_at IS NOT NULL AND (lifecycle <> 'renewable' OR ended_at <= ?
     OR EXISTS (SELECT 1 FROM orders WHERE (orders.subscription_id = subscriptions.id OR orders.target_subscription_id = subscriptions.id) AND orders.subscription_ended_at IS NULL)
-    OR EXISTS (SELECT 1 FROM protocol_credentials WHERE protocol_credentials.subscription_id = subscriptions.id AND protocol_credentials.status IN ('active', 'prepared')))))`, now, true, now.Add(-entitlements.RenewalGracePeriod))
+    OR EXISTS (SELECT 1 FROM protocol_credentials WHERE protocol_credentials.subscription_id = subscriptions.id AND protocol_credentials.status IN ('active', 'prepared')))))`, now, true, now.Add(-grace))
 }
 
 func endSubscription(tx *gorm.DB, sub *model.Subscription, now time.Time) error {

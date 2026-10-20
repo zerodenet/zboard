@@ -6449,7 +6449,7 @@ components:
       required: [id, config_key, name, value_type, is_public, is_secret, configured, revision, input]
       properties:
         id: { type: integer, format: int64 }
-        config_key: { type: string }
+        config_key: { type: string, description: "Administrator setting identity. subscription_renewal_grace_days defaults to 7, accepts 0–3650 integer days, and controls renewal eligibility and final credential retirement. Zero disables post-expiry recovery. Shortening can finalize older subscriptions; extending never revives already-ended or canceled services. This policy is initialized by migration0050 and must be restored if its recorded source is lost." }
         name: { type: string }
         value:
           description: Omitted for secret configuration.

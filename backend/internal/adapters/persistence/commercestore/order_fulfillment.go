@@ -21,6 +21,9 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 	if order.Status == "paid" {
 		return nil
 	}
+	if order.OrderType != "new" && order.TargetSubscriptionID == nil {
+		return quoteError(entitlements.ErrGrantTargetRequired.Error())
+	}
 	full, err := fullReplacementSnapshot(*order)
 	if err != nil {
 		return err
@@ -62,6 +65,24 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&sku, order.PlanSKUID).Error; err != nil {
 		return err
 	}
+	var recoveryGrace *time.Duration
+	if order.OrderType == "renewal" {
+		grace, err := entitlementstore.RecoveryGracePeriod(tx)
+		if err != nil {
+			return err
+		}
+		recoveryGrace = &grace
+		var locked model.Subscription
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ? AND user_id = ?", *order.TargetSubscriptionID, order.UserID).First(&locked).Error; err != nil {
+			return orderResourceError(err, "target_subscription_id", "目标订阅不存在。")
+		}
+	}
+	// Locks or configuration changes may have delayed this decision. Evaluate
+	// eligibility and reservation expiry with a fresh trusted clock after them.
+	now = commerceNow(s.Now)
+	if configured && fund.State == "reserved" && !fund.ExpiresAt.After(now) {
+		return quoteError("付款资金预留已失效，请核对余额并重新确认订单。")
+	}
 	if err := validateTargetQuote(tx, *order, now); err != nil {
 		return err
 	}
@@ -88,7 +109,7 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 			}
 		}
 	}
-	policy := entitlements.GrantPolicy{NodeGroupID: plan.NodeGroupID, IsRenewable: plan.IsRenewable && renewalSKUs > 0, RenewalPriceMinor: renewalPrice, FamilyLimit: plan.FamilyLimit, ResetPolicy: plan.ResetPolicy, TrafficCalcMode: plan.TrafficCalcMode, MaxActiveSubscriptions: plan.MaxActiveSubscriptions}
+	policy := entitlements.GrantPolicy{RecoveryGracePeriod: recoveryGrace, NodeGroupID: plan.NodeGroupID, IsRenewable: plan.IsRenewable && renewalSKUs > 0, RenewalPriceMinor: renewalPrice, FamilyLimit: plan.FamilyLimit, ResetPolicy: plan.ResetPolicy, TrafficCalcMode: plan.TrafficCalcMode, MaxActiveSubscriptions: plan.MaxActiveSubscriptions}
 	policy, err = applyPurchaseSnapshot(*order, policy)
 	if err != nil {
 		return err
@@ -103,7 +124,7 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 	}
 	sub, previous, err := entitlementstore.FulfillWithPrevious(tx, request, policy, s.Issuer, now)
 	if err != nil {
-		if errors.Is(err, entitlements.ErrRenewalWindow) {
+		if errors.Is(err, entitlements.ErrRenewalWindow) || errors.Is(err, entitlements.ErrGrantTargetRequired) {
 			return quoteError(err.Error())
 		}
 		return err

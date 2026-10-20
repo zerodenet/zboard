@@ -13,6 +13,7 @@ import (
 )
 
 type OrderSettlement struct {
+	Now    func() time.Time
 	DB     *gorm.DB
 	Issuer entitlements.CredentialIssuer
 }

@@ -8,6 +8,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -92,8 +93,14 @@ func sourceValue(tx *gorm.DB, sub model.Subscription, currency string) (int64, t
 }
 func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, now, creditAt time.Time) (commerce.OrderPreview, error) {
 	preview := commerce.OrderPreview{OrderType: order.OrderType, AmountCents: order.AmountCents, PayableAmount: order.PayableAmount, Currency: order.Currency, TrafficBytes: order.TrafficBytes}
-	if order.OrderType == "renewal" && !entitlements.CanRenewAt(entitlements.Subscription(sub), now) {
-		return preview, quoteError(entitlements.ErrRenewalWindow.Error())
+	if order.OrderType == "renewal" {
+		grace, err := entitlementstore.RecoveryGracePeriod(tx)
+		if err != nil {
+			return preview, err
+		}
+		if !entitlements.CanRenewAt(entitlements.Subscription(sub), now, grace) {
+			return preview, quoteError(entitlements.ErrRenewalWindow.Error())
+		}
 	}
 	if order.OrderType == "renewal" {
 		source, purchased, err := renewalPriceAgreement(tx, *order, sub.ID)

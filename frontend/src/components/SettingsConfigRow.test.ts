@@ -142,3 +142,16 @@ describe('SettingsConfigRow', () => {
     expect(json.emitted('update:draft')?.at(-1)).toEqual(['{"retry":5}'])
   })
 })
+
+it('allows an explicit zero-day recovery window with its server-declared bounds and cleanup explanation', async () => {
+  const wrapper = mount(SettingsConfigRow, { props: { config: config({ config_key: 'subscription_renewal_grace_days', name: '订阅续费恢复窗口（天）', value: 7, description: '0表示不保留恢复窗口；缩短后会结束超过新期限的订阅并清理凭据。', input: { control: 'integer', min: 0, max: 3650, step: 1 } }), draft: 7, dirty: true } })
+  expect(wrapper.text()).toContain('清理凭据')
+  expect(wrapper.getComponent(UiNumberInput).props('min')).toBe(0)
+  expect(wrapper.getComponent(UiNumberInput).props('max')).toBe(3650)
+  wrapper.getComponent(UiNumberInput).vm.$emit('update:modelValue', 0)
+  expect(wrapper.emitted('update:draft')?.at(-1)).toEqual([0])
+  await wrapper.setProps({ draft: 0 })
+  expect(wrapper.emitted('save')).toBeUndefined()
+  await wrapper.findAll('button').find(button => button.text().includes('保存'))!.trigger('click')
+  expect(wrapper.emitted('save')).toHaveLength(1)
+})

@@ -31,9 +31,12 @@ type fullReplacementFixture struct {
 }
 
 func newFullReplacementFixture(t *testing.T, base orderFixture, shared bool, used int64, months int) fullReplacementFixture {
+	return newFullReplacementFixtureInYear(t, base, shared, used, months, 2026)
+}
+func newFullReplacementFixtureInYear(t *testing.T, base orderFixture, shared bool, used int64, months, year int) fullReplacementFixture {
 	t.Helper()
 	attachOrderPublishEndpoint(t, base)
-	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	at := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 	clock := func() time.Time { return at }
 	db := base.h.db.Session(&gorm.Session{NowFunc: clock})
 	policy := int16(1)
@@ -76,7 +79,7 @@ func newFullReplacementFixture(t *testing.T, base orderFixture, shared bool, use
 	if err := db.Where("subscription_id = ? AND current_scope = ?", paid.SubscriptionID, 1).First(&credential).Error; err != nil {
 		t.Fatal(err)
 	}
-	at = time.Date(2026, 1+time.Month(months), 1, 0, 0, 0, 0, time.UTC)
+	at = time.Date(year, 1+time.Month(months), 1, 0, 0, 0, 0, time.UTC)
 	if !shared {
 		if _, err := (entitlementstore.TrafficReset{DB: db, Issuer: issuer, Publish: networkstore.EnqueueSubscriptionPublications}).ResetDue(t.Context(), paid.SubscriptionID, at); err != nil {
 			t.Fatal(err)

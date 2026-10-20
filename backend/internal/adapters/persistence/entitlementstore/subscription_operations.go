@@ -9,13 +9,17 @@ import (
 
 // These read projections describe saleable operations, not authorization grants.
 // The same predicates filter candidates before count/pagination and populate UI hints.
-func subscriptionOperationPredicate(operation string, now time.Time) (string, []any) {
+func subscriptionOperationPredicate(operation string, now time.Time, configuredGrace ...time.Duration) (string, []any) {
+	grace := entitlements.RenewalGracePeriod
+	if len(configuredGrace) > 0 {
+		grace = configuredGrace[0]
+	}
 	var lifecycle, catalog string
 	var args []any
 	switch operation {
 	case "renew":
 		lifecycle = "subscriptions.lifecycle = 'renewable' AND subscriptions.status IN ('active', 'expired') AND ((subscriptions.ended_at IS NULL AND subscriptions.end_at > ?) OR COALESCE(subscriptions.ended_at, subscriptions.end_at) > ?)"
-		args = []any{now, now.Add(-entitlements.RenewalGracePeriod)}
+		args = []any{now, now.Add(-grace)}
 		catalog = "operation_plan.id = subscriptions.plan_id AND operation_plan.is_renewable = ? AND operation_sku.entitlement_mode = 'plan'"
 		args = append(args, true)
 	case "change":
@@ -37,11 +41,11 @@ func subscriptionOperationPredicate(operation string, now time.Time) (string, []
 	return "(" + predicate + ")", append(args, true, true, operation)
 }
 
-func subscriptionSummarySelect(now time.Time) (string, []any) {
+func subscriptionSummarySelect(now time.Time, configuredGrace ...time.Duration) (string, []any) {
 	columns := []string{subscriptionSummaryColumns}
 	args := []any{now, now}
 	for _, operation := range []string{"renew", "change", "addon", "reset"} {
-		predicate, values := subscriptionOperationPredicate(operation, now)
+		predicate, values := subscriptionOperationPredicate(operation, now, configuredGrace...)
 		columns = append(columns, "CASE WHEN "+predicate+" THEN 1 ELSE 0 END AS can_"+operation)
 		args = append(args, values...)
 	}
