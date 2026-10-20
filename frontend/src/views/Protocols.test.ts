@@ -384,6 +384,22 @@ it('allows editing Shadowsocks ports and resets only the selected service measur
   wrapper.unmount()
 })
 
+it('shows pending traffic statistics as unknown and waits before resetting the period', async () => {
+  const endpoint = { id: 8, service_kind: 'listener', node_id: 1, name: '统计积压入口', protocol: 'vless', address: 'edge.example.test', port: 443, public_port: 443, is_active: true, kernel_supported: true, usage: { active_users: 2, active_flows: 4, used_bytes_today: null, used_bytes_total: null, traffic_projection_pending: true } }
+  vi.mocked(fetchProtocolEndpointsPage).mockResolvedValue({ items: [endpoint], total: 1 } as any)
+  vi.mocked(fetchProtocolEndpoint).mockResolvedValue({ ...endpoint, config: '{}', client_config: '{}', node_group_memberships: [] } as any)
+  vi.mocked(fetchProtocolEndpointUsageResets).mockResolvedValue([])
+  const wrapper = await render()
+  expect(wrapper.text()).toContain('统计更新中')
+  await wrapper.get('button[aria-label="查看协议服务 统计积压入口"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('已结算流量不受影响')
+  const reset = wrapper.findAll('button').find(button => button.text().includes('重置统计'))
+  expect(reset?.attributes('disabled')).toBeDefined()
+  expect(resetProtocolEndpointUsage).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
 
 it('shows capability deferral as preserved runtime rather than publication failure', async () => {
   vi.mocked(fetchProtocolEndpointsPage).mockResolvedValue({ items: [{ id: 8, service_kind: 'listener', node_id: 1, name: 'IPv6 入口', protocol: 'vless', is_active: true, kernel_supported: true, latest_deployment: { id: 9, status: 'deferred', has_error: true }, publication: { status: 'deferred', attempts: 0, has_error: true } }], total: 1 } as any)

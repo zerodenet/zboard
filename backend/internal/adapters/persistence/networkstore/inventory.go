@@ -495,6 +495,7 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 		UsedBytesToday, UsedBytesTotal         int64
 		BaselineTotalBytes, BaselineTodayBytes int64
 		ResetAt                                *time.Time
+		TrafficProjectionPending               bool
 	}
 	var traffic []trafficRow
 	day := now.UTC().Format("2006-01-02")
@@ -511,13 +512,15 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 	}()
 	go func() {
 		defer wg.Done()
-		measured := s.DB.WithContext(ctx).Raw("SELECT protocol_endpoint_id AS id FROM protocol_endpoint_usage_daily WHERE protocol_endpoint_id IN ? UNION SELECT protocol_endpoint_id AS id FROM protocol_endpoint_usage_resets WHERE protocol_endpoint_id IN ?", ids, ids)
+		// Each selected endpoint needs only one indexed pending EXISTS probe;
+		// never enumerate a growing projection backlog to render this page.
+		measured := s.DB.WithContext(ctx).Model(&model.ProtocolEndpoint{}).Select("id").Where("id IN ?", ids)
 		latest := s.DB.WithContext(ctx).Model(&model.ProtocolEndpointUsageReset{}).Select("protocol_endpoint_id, MAX(id) AS id").Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id")
 		trafficErr = s.DB.WithContext(ctx).Table("(?) AS endpoint", measured).
 			Joins("LEFT JOIN protocol_endpoint_usage_daily AS usage_daily ON usage_daily.protocol_endpoint_id = endpoint.id").
 			Joins("LEFT JOIN (?) AS latest ON latest.protocol_endpoint_id = endpoint.id", latest).
 			Joins("LEFT JOIN protocol_endpoint_usage_resets AS reset ON reset.id = latest.id").
-			Select("endpoint.id AS protocol_endpoint_id, COALESCE(SUM(usage_daily.used_bytes),0) AS used_bytes_total, COALESCE(SUM(CASE WHEN usage_daily.usage_date = ? THEN usage_daily.used_bytes ELSE 0 END),0) AS used_bytes_today, MAX(reset.baseline_total_bytes) AS baseline_total_bytes, MAX(reset.baseline_today_bytes) AS baseline_today_bytes, MAX(reset.reset_at) AS reset_at", day).
+			Select("endpoint.id AS protocol_endpoint_id, COALESCE(SUM(usage_daily.used_bytes),0) AS used_bytes_total, COALESCE(SUM(CASE WHEN usage_daily.usage_date = ? THEN usage_daily.used_bytes ELSE 0 END),0) AS used_bytes_today, MAX(reset.baseline_total_bytes) AS baseline_total_bytes, MAX(reset.baseline_today_bytes) AS baseline_today_bytes, MAX(reset.reset_at) AS reset_at, EXISTS (SELECT 1 FROM metering_usage_projection_pending pending WHERE pending.protocol_endpoint_id = endpoint.id) AS traffic_projection_pending", day).
 			Where("endpoint.id IN ?", ids).Group("endpoint.id").Scan(&traffic).Error
 	}()
 	wg.Wait()
@@ -574,6 +577,7 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 	for _, r := range traffic {
 		v := result[r.ProtocolEndpointID]
 		v.ResetAt = r.ResetAt
+		v.TrafficProjectionPending = r.TrafficProjectionPending
 		v.UsedBytesTotal = r.UsedBytesTotal - r.BaselineTotalBytes
 		if v.UsedBytesTotal < 0 {
 			v.UsedBytesTotal = 0

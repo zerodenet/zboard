@@ -164,6 +164,9 @@ func (s *flowBatch) flush(tx *gorm.DB) error {
 		if err := tx.CreateInBatches(&s.records, 100).Error; err != nil {
 			return err
 		}
+		// SQLite defers inserts to this boundary. Use the copies populated
+		// with real ledger IDs when persisting daily projection intents.
+		s.usageRecords = s.records
 	}
 	if err := RecordUsageProjections(tx, s.usageRecords); err != nil {
 		return err

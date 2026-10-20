@@ -1673,14 +1673,15 @@ type protocolEndpointAdminDetail struct {
 }
 
 type protocolEndpointUsage struct {
-	ObservedAt        *time.Time `json:"observed_at,omitempty"`
-	ActiveFlows       int64      `json:"active_flows"`
-	ActiveUsers       int64      `json:"active_users"`
-	ActiveCredentials int64      `json:"active_credentials"`
-	LastUsedAt        *time.Time `json:"last_used_at,omitempty"`
-	UsedBytesToday    int64      `json:"used_bytes_today"`
-	UsedBytesTotal    int64      `json:"used_bytes_total"`
-	ResetAt           *time.Time `json:"reset_at,omitempty"`
+	ObservedAt               *time.Time `json:"observed_at,omitempty"`
+	ActiveFlows              int64      `json:"active_flows"`
+	ActiveUsers              int64      `json:"active_users"`
+	ActiveCredentials        int64      `json:"active_credentials"`
+	LastUsedAt               *time.Time `json:"last_used_at,omitempty"`
+	UsedBytesToday           int64      `json:"used_bytes_today"`
+	UsedBytesTotal           int64      `json:"used_bytes_total"`
+	TrafficProjectionPending bool       `json:"traffic_projection_pending,omitempty"`
+	ResetAt                  *time.Time `json:"reset_at,omitempty"`
 }
 
 type protocolDeploymentListItem struct {
@@ -2136,7 +2137,7 @@ func protocolDeploymentModel(r networkcap.ProtocolDeploymentRecord) model.Protoc
 	return model.ProtocolDeployment{ID: r.ID, NodeID: r.NodeID, ProtocolEndpointID: r.ProtocolEndpointID, ConfigRevision: r.ConfigRevision, DesiredConfigSHA256: r.DesiredConfigSHA256, AppliedConfigSHA256: r.AppliedConfigSHA256, Status: r.Status, RequestedBy: r.RequestedBy, Error: r.Error, Output: r.Output, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
 }
 func protocolUsageModel(r networkcap.ProtocolUsageRecord) protocolEndpointUsage {
-	return protocolEndpointUsage{ObservedAt: r.ObservedAt, ActiveFlows: r.ActiveFlows, ActiveUsers: r.ActiveUsers, ActiveCredentials: r.ActiveCredentials, LastUsedAt: r.LastUsedAt, UsedBytesToday: r.UsedBytesToday, UsedBytesTotal: r.UsedBytesTotal, ResetAt: r.ResetAt}
+	return protocolEndpointUsage{ObservedAt: r.ObservedAt, ActiveFlows: r.ActiveFlows, ActiveUsers: r.ActiveUsers, ActiveCredentials: r.ActiveCredentials, LastUsedAt: r.LastUsedAt, UsedBytesToday: r.UsedBytesToday, UsedBytesTotal: r.UsedBytesTotal, TrafficProjectionPending: r.TrafficProjectionPending, ResetAt: r.ResetAt}
 }
 func nodeAdministrationModel(r networkcap.NodeAdministrationRecord) model.Node {
 	return nodeInventoryModel(networkcap.NodeInventoryItem{Node: r})

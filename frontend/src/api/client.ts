@@ -784,8 +784,9 @@ export interface ProtocolEndpointListItem {
 		active_users: number
 		active_credentials: number
 		last_used_at?: string
-		used_bytes_today: number
-		used_bytes_total: number
+		used_bytes_today: number | null
+		used_bytes_total: number | null
+		traffic_projection_pending?: boolean
 		reset_at?: string
 	}
 	latest_deployment?: Pick<ProtocolDeployment, 'id' | 'status' | 'started_at' | 'finished_at' | 'created_at'> & { has_error: boolean }

@@ -66,6 +66,7 @@ type ProtocolUsageRecord struct {
 	// ObservedAt describes load observations, independently of credential use.
 	ObservedAt                     *time.Time
 	UsedBytesToday, UsedBytesTotal int64
+	TrafficProjectionPending       bool
 	ResetAt                        *time.Time
 }
 

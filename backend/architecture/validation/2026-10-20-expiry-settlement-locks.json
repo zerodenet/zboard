@@ -35,5 +35,18 @@
     "commit": "665578daa74affb1135014101021d69eeba1036f",
     "run": 39362524094,
     "conclusion": "success"
+  },
+  "full_backend": {
+    "commit": "3c01868b920029dcfe0a82670ee497a253abb6bb",
+    "status": "all packages passed across original run and exact-source retry of only environmental VCS failures",
+    "retained_environment_failure": "Go 1.26 vcs root detection ignores worktree .git files, reached sandbox /workspace/.git and failed plugin fixture builds; replaced verification worktree with standard .git-directory local shared clone at identical commit, without disabling VCS stamping or skipping tests.",
+    "retry_packages": {
+      "handler_seconds": 172.99,
+      "plugins_seconds": 74.501
+    },
+    "vet": "pass go vet -p 2 ./...",
+    "build": "pass go build -p 2 ./cmd/zboard",
+    "pure_go_sqlite": "pass 7.160s",
+    "full_mysql": "exact-head CI pending; targeted real MySQL already passed"
   }
 }

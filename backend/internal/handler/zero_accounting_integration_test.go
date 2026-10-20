@@ -54,6 +54,7 @@ func checkAccountingBatchReplayOutOfOrderAndExhaustion(t *testing.T, h *handlers
 		t.Fatalf("replayed/old events persisted: count=%d error=%v", count, err)
 	}
 	var projected int64
+	drainUsageProjections(t, h.db)
 	if err := h.db.Model(&model.ProtocolEndpointUsageDaily{}).Where("protocol_endpoint_id = ?", credential.ProtocolEndpointID).Select("COALESCE(SUM(used_bytes),0)").Scan(&projected).Error; err != nil || projected != 1920 {
 		t.Fatalf("batch usage projection: %d %v", projected, err)
 	}
@@ -76,6 +77,7 @@ func checkAccountingBatchReplayOutOfOrderAndExhaustion(t *testing.T, h *handlers
 	if err := h.db.First(&current, credential.ID).Error; err != nil || current.Status != "expired" {
 		t.Fatalf("credential not expired: status=%s error=%v", current.Status, err)
 	}
+	drainUsageProjections(t, h.db)
 	if err := h.db.Model(&model.ProtocolEndpointUsageDaily{}).Where("protocol_endpoint_id = ?", credential.ProtocolEndpointID).Select("COALESCE(SUM(used_bytes),0)").Scan(&projected).Error; err != nil || projected != 1950 {
 		t.Fatalf("exhausted usage projection: %d %v", projected, err)
 	}

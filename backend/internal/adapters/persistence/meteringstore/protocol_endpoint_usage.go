@@ -16,8 +16,8 @@ type endpointUsageKey struct {
 }
 
 // AddProtocolEndpointUsage applies ledger deltas to the bounded daily read
-// projection. Callers invoke it only after the corresponding TrafficRecord
-// insert succeeds and inside the same transaction.
+// projection. Runtime callers use the independent UsageProjectionWorker, which
+// commits these deltas with pending-intent removal, never with quota settlement.
 func AddProtocolEndpointUsage(tx *gorm.DB, records []model.TrafficRecord) error {
 	if len(records) == 0 {
 		return nil

@@ -42,6 +42,7 @@ func TestCompletionCapabilityRollsBackExhaustionAndReplays(t *testing.T) {
 		t.Fatal("exhaustion did not suspend credentials", current.Status, err)
 	}
 	var usage model.ProtocolEndpointUsageDaily
+	drainUsageProjections(t, h.db)
 	if err := h.db.First(&usage, "protocol_endpoint_id = ?", credential.ProtocolEndpointID).Error; err != nil || usage.UsedBytes != 20 || usage.RecordCount != 1 {
 		t.Fatalf("completion usage projection: %+v %v", usage, err)
 	}

@@ -403,6 +403,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	h.StartTrafficResetWorker()
 	h.StartWalletReservationWorker()
 	h.StartAutomaticRenewalWorker()
+	h.StartUsageProjectionWorker()
 	h.StartProxyPoolSubscriptionWorker()
 	h.StartFairUseEvaluationWorker()
 	h.StartCertificateRenewalWorker()

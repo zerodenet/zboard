@@ -186,3 +186,9 @@ Down保留列、约束、Version2快照、资金/关闭代次和凭据历史。�
 继续使用0051既有字段，无数据回填或历史金额改写。暂停项保留enabled意图、版本、最近检查/到期边界、30分钟重验日期与审计序号；到期终态则关闭许可并递增版本。关闭入口不依赖历史订单的可估值性；已完成的付款不会因关闭而自动退款。新列表字段均为可选只读结果与时间，不替代业务/交付状态。
 
 回滚至7aba6d6需先停领并排空执行器，保留许可、顺序与审计记录。旧程序可读既有字段，但会重新出现超限项阻塞/不可读取关闭的限制；不会凭新暂停状态发放权益或反转已完成付款。完整退款与商业事实沿原写入路径核对，不能清空历史或提高上限掩盖问题。
+
+### 0052/0053 incremental approval and projection evidence
+
+0052 records administrator-approved historical consumption refunds. Stop writers before binary rollback, retain approval IDs, original paid budgets, wallet and audit together; do not run destructive rollback after money was credited. Active-term partial refunds are currently refused pending an entitlement rule. Default legal text now follows wallet refunds, while saved site policies are preserved for administrator review.
+
+0053 separates daily statistics from authoritative metering with a durable pending queue. Stop old synchronous writers during cutover; do not run both versions concurrently. Keep existing daily aggregates unchanged and never backfill the additive projection from all historical traffic. Back up/copy pending rows and referenced traffic facts together. Before rolling back to synchronous writers, stop settlement, drain the queue with the new worker and verify it is empty; the down migration preserves recovery evidence. Missing recorded queue/columns cause startup refusal. Hourly/online projections remain coupled and no diagnostic archival is enabled.

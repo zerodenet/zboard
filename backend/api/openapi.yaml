@@ -7333,8 +7333,9 @@ components:
             active_users: { type: integer, format: int64, minimum: 0, description: Distinct users with an active Zero flow seen during the two-minute activity window. }
             active_credentials: { type: integer, format: int64, minimum: 0 }
             last_used_at: { type: string, format: date-time, nullable: true }
-            used_bytes_today: { type: integer, format: int64, minimum: 0 }
-            used_bytes_total: { type: integer, format: int64, minimum: 0 }
+            used_bytes_today: { type: integer, format: int64, minimum: 0, nullable: true, description: Null while committed daily projection work is pending. }
+            used_bytes_total: { type: integer, format: int64, minimum: 0, nullable: true, description: Null while committed daily projection work is pending. }
+            traffic_projection_pending: { type: boolean, description: Committed traffic facts await daily projection; usage totals must be treated as unknown. }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     SubscriptionDeliveryOrderItem:

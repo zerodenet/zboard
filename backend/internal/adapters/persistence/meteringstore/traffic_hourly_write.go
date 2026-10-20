@@ -19,12 +19,14 @@ type hourlyUsageKey struct {
 }
 
 // RecordUsageProjections runs only after successful ledger insertion, in the
-// same accounting transaction. Duplicate reports never reach this boundary.
+// same accounting transaction. Daily charts consume durable pending intents in
+// a separate transaction. Hourly projection remains synchronous (SQLite also
+// maintains it through ledger triggers) until its own compatible cutover.
 func RecordUsageProjections(tx *gorm.DB, records []model.TrafficRecord) error {
 	if err := addMySQLTrafficHourly(tx, records); err != nil {
 		return err
 	}
-	return AddProtocolEndpointUsage(tx, records)
+	return EnqueueUsageProjections(tx, records)
 }
 
 func addMySQLTrafficHourly(tx *gorm.DB, records []model.TrafficRecord) error {

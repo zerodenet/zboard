@@ -7,10 +7,13 @@ import (
 )
 
 func (h *handlers) jobReadiness(id string) func(context.Context) (bool, error) {
-	if id != "admin_tasks" && id != "event_consumer" && !strings.HasPrefix(id, "node_publish_") {
+	if id != "admin_tasks" && id != "event_consumer" && id != "usage_projection" && !strings.HasPrefix(id, "node_publish_") {
 		return nil
 	}
 	return func(ctx context.Context) (bool, error) {
+		if id == "usage_projection" {
+			return h.services.UsageProjections.HasPending(ctx)
+		}
 		if id == "event_consumer" {
 			value, ok := zeroEventRuntimeRegistry.Load(h)
 			if !ok {
