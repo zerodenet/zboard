@@ -3,6 +3,7 @@ package entitlementstore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
@@ -11,24 +12,73 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+type CredentialExpiryScope struct {
+	Lock     func(*gorm.DB) error
+	Validate func(*gorm.DB, []model.Subscription) error
+}
+
 type CredentialExpiry struct {
 	DB           *gorm.DB
 	Cipher       entitlements.AccessCipher
 	Publish      func(*gorm.DB, uint, uint, uint) error
 	BeforeRetire func(*gorm.DB, model.Subscription, time.Time) error
+	PrepareScope func(context.Context, []model.Subscription) (CredentialExpiryScope, error)
 }
 
 func (s CredentialExpiry) ExpireDueCredentials(ctx context.Context, now time.Time, limit int) (out []entitlements.ExpiredCredential, err error) {
-	if s.DB == nil || s.Publish == nil || s.BeforeRetire == nil {
+	if s.DB == nil || s.Publish == nil || s.BeforeRetire == nil || s.PrepareScope == nil {
 		return nil, entitlements.ErrCredentialExpiryUnavailable
 	}
+	grace, err := RecoveryGracePeriod(s.DB.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	var candidates []model.Subscription
+	if err := subscriptionLifecycleDue(s.DB.WithContext(ctx), now, grace).Select("id", "user_id").Order("id ASC").Limit(limit).Find(&candidates).Error; err != nil {
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	var scope CredentialExpiryScope
+	for {
+		scope, err = s.PrepareScope(ctx, candidates)
+		if errors.Is(err, entitlements.ErrCredentialExpiryScopeBudget) && len(candidates) > 1 {
+			candidates = candidates[:(len(candidates)+1)/2]
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		break
+	}
+	if scope.Lock == nil || scope.Validate == nil {
+		return nil, entitlements.ErrCredentialExpiryUnavailable
+	}
+	ids := make([]uint, 0, len(candidates))
+	owners := map[uint]uint{}
+	for _, sub := range candidates {
+		ids = append(ids, sub.ID)
+		owners[sub.ID] = sub.UserID
+	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := scope.Lock(tx); err != nil {
+			return err
+		}
 		grace, err := RecoveryGracePeriod(tx)
 		if err != nil {
 			return err
 		}
 		var subscriptions []model.Subscription
-		if err := subscriptionLifecycleDue(tx.Clauses(clause.Locking{Strength: "UPDATE"}), now, grace).Order("id asc").Limit(limit).Find(&subscriptions).Error; err != nil {
+		if err := subscriptionLifecycleDue(tx.Clauses(clause.Locking{Strength: "UPDATE"}), now, grace).Where("id IN ?", ids).Order("id asc").Limit(limit).Find(&subscriptions).Error; err != nil {
+			return err
+		}
+		for _, sub := range subscriptions {
+			if owners[sub.ID] != sub.UserID {
+				return fmt.Errorf("expiry subscription owner changed before lock; retry")
+			}
+		}
+		if err := scope.Validate(tx, subscriptions); err != nil {
 			return err
 		}
 		for _, sub := range subscriptions {

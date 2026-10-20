@@ -17,12 +17,20 @@ func CancelRetiredSubscriptionOrders(tx *gorm.DB, sub model.Subscription, now ti
 		return err
 	}
 	var orders []model.Order
+	var ids []uint
 	held := tx.Model(&model.OrderFunding{}).Select("1").Where("order_fundings.order_id = orders.id AND order_fundings.state = ?", "reserved")
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND (target_subscription_id = ? OR subscription_id = ?)", sub.UserID, sub.ID, sub.ID).Where("(status = 'pending' OR (status IN ('canceled','failed') AND EXISTS (?)))", held).Order("id ASC").Limit(1001).Find(&orders).Error; err != nil {
+	if err := tx.Model(&model.Order{}).Where("user_id = ? AND (target_subscription_id = ? OR subscription_id = ?)", sub.UserID, sub.ID, sub.ID).Where("(status = 'pending' OR (status IN ('canceled','failed') AND EXISTS (?)))", held).Order("id ASC").Limit(1001).Pluck("id", &ids).Error; err != nil {
 		return err
 	}
-	if len(orders) > 1000 {
+	if len(ids) > 1000 {
 		return commerce.ErrFundingConflict
+	}
+	// Lifecycle scope already owns these current orders and the user. Point
+	// reads avoid acquiring another secondary-index range in reverse order.
+	if len(ids) > 0 {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", ids).Order("id ASC").Find(&orders).Error; err != nil {
+			return err
+		}
 	}
 	for _, order := range orders {
 		if err := releaseOrderFunding(tx, order, "subscription_ended", now); err != nil {

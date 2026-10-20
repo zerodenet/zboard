@@ -26,6 +26,9 @@ func TestRetirementPreservesHistoricalIdentitiesAndRenewableWindow(t *testing.T)
 	if err := datastore.RunMigrations(db); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Create(&model.User{ID: 1, Email: "retirement@example.test", Status: "active"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC()
 	ended := now.Add(-time.Hour)
 	subs := []model.Subscription{
@@ -59,7 +62,9 @@ func TestRetirementPreservesHistoricalIdentitiesAndRenewableWindow(t *testing.T)
 		t.Fatal(err)
 	}
 	failure := errors.New("publication failed")
-	service := entitlementstore.CredentialExpiry{DB: db, Cipher: cipher, BeforeRetire: commercestore.CancelRetiredSubscriptionOrders, Publish: func(tx *gorm.DB, node, endpoint, actor uint) error { return failure }}
+	service := entitlementstore.CredentialExpiry{DB: db, PrepareScope: func(ctx context.Context, candidates []model.Subscription) (entitlementstore.CredentialExpiryScope, error) {
+		return commercestore.PrepareLifecycleClosureScope(db.WithContext(ctx), candidates)
+	}, Cipher: cipher, BeforeRetire: commercestore.CancelRetiredSubscriptionOrders, Publish: func(tx *gorm.DB, node, endpoint, actor uint) error { return failure }}
 	if _, err := service.ExpireDueCredentials(context.Background(), now, 10); !errors.Is(err, failure) {
 		t.Fatal(err)
 	}

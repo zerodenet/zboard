@@ -16,6 +16,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/capabilities/experience"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/messaging"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/navigation"
 	"log"
 	"sync"
@@ -280,7 +281,9 @@ func (s *Services) SubscriptionRuleSets(content entitlements.RuleSetContentStore
 }
 
 func (s *Services) CredentialExpiry(cipher zeroadapter.Cipher) entitlements.CredentialExpiry {
-	return entitlements.CredentialExpiry{Repository: entitlementstore.CredentialExpiry{DB: s.Identity.db, Cipher: cipher, Publish: networkstore.EnqueueNodePublication, BeforeRetire: commercestore.CancelRetiredSubscriptionOrders}}
+	return entitlements.CredentialExpiry{Repository: entitlementstore.CredentialExpiry{DB: s.Identity.db, Cipher: cipher, Publish: networkstore.EnqueueNodePublication, BeforeRetire: commercestore.CancelRetiredSubscriptionOrders, PrepareScope: func(ctx context.Context, subscriptions []model.Subscription) (entitlementstore.CredentialExpiryScope, error) {
+		return commercestore.PrepareLifecycleClosureScope(s.Identity.db.WithContext(ctx), subscriptions)
+	}}}
 }
 
 func RequestNodePublication(tx *gorm.DB, nodeID, endpointID, actor uint) error {

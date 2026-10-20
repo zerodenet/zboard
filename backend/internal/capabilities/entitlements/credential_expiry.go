@@ -7,6 +7,7 @@ import (
 )
 
 var ErrCredentialExpiryUnavailable = errors.New("credential expiry unavailable")
+var ErrCredentialExpiryScopeBudget = errors.New("credential expiry batch exceeds current order-lock budget")
 
 type ExpiredCredential struct {
 	ID                 uint

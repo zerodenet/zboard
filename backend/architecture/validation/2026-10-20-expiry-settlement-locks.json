@@ -1,0 +1,39 @@
+{
+  "stage": "P2/P3-11 expiry versus renewal settlement",
+  "status": "targeted verified; full checks pending on isolated commit",
+  "behavior": [
+    "Prepare immutable affected order IDs outside transaction, lock exact order primary keys then owners, then current policy and subscriptions.",
+    "Reject newly committed checkout membership after owner wait without financial or lifecycle mutation.",
+    "Update ended order summaries by known primary IDs to avoid MySQL OR scan locking unrelated orders."
+  ],
+  "schema": "none",
+  "tests": [
+    {
+      "command": "go test -p 2 ./internal/handler -run TestMySQL(ExpiryCoordinatesOrderLocksBeforeSubscriptionLocks|AutomaticRenewalVersusCredentialExpiry|ExpiryRejectsCheckoutCommittedDuringOwnerLockWait)$ -count=3 -timeout 5m",
+      "database": "isolated MySQL 8.4 random schemas",
+      "result": "pass",
+      "seconds": 35.278
+    },
+    {
+      "command": "go test -p 1 ./internal/adapters/persistence/entitlementstore -run TestCredentialExpiry|TestRetirement -count=1",
+      "database": "SQLite",
+      "result": "pass",
+      "seconds": 0.314
+    }
+  ],
+  "retained_failures": [
+    "Old lock order failed deterministic lock-order assertion three times.",
+    "Initial membership locking returned MySQL 3572; subsequent version exposed actual 1213 cycle.",
+    "Private InnoDB evidence identified broad OR UPDATE versus broad order lock query; not committed because SQL may contain credentials."
+  ],
+  "limits": [
+    "4096 affected open order identities per expiry transaction; multi-subscription batches halve when exceeded; single oversized item requires operator review.",
+    "Existing retirement pending order limit remains 1000.",
+    "No current-batch public kernel test, performance guarantee, full backend or full database claim yet."
+  ],
+  "previous_ci": {
+    "commit": "665578daa74affb1135014101021d69eeba1036f",
+    "run": 39362524094,
+    "conclusion": "success"
+  }
+}

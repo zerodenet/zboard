@@ -26,7 +26,10 @@ func TestCredentialExpiryCommitsRevocationAndPublicationAtomically(t *testing.T)
 	}
 	now := time.Now().UTC()
 	service := func(failure error) entitlements.CredentialExpiry {
-		return entitlements.CredentialExpiry{Repository: CredentialExpiry{DB: db, BeforeRetire: func(*gorm.DB, model.Subscription, time.Time) error { return nil }, Publish: func(tx *gorm.DB, nodeID, endpointID, actor uint) error {
+		return entitlements.CredentialExpiry{Repository: CredentialExpiry{DB: db, PrepareScope: func(context.Context, []model.Subscription) (CredentialExpiryScope, error) {
+			// This domain-only fixture has no commercial records or account mutations.
+			return CredentialExpiryScope{Lock: func(*gorm.DB) error { return nil }, Validate: func(*gorm.DB, []model.Subscription) error { return nil }}, nil
+		}, BeforeRetire: func(*gorm.DB, model.Subscription, time.Time) error { return nil }, Publish: func(tx *gorm.DB, nodeID, endpointID, actor uint) error {
 			if failure != nil {
 				return failure
 			}
