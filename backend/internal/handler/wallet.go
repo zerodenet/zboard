@@ -10,6 +10,9 @@ import (
 )
 
 func walletError(w http.ResponseWriter, err error) {
+	if writeResourceBusy(w, err) {
+		return
+	}
 	var invalid *commerce.ValidationError
 	switch {
 	case errors.Is(err, commerce.ErrOrderPermission):

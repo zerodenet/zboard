@@ -30,12 +30,8 @@ func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer enti
 		return nil, nil
 	}
 	subscription = current
-	var endpoints []model.ProtocolEndpoint
-	if err := tx.Model(&model.ProtocolEndpoint{}).
-		Joins(networkstore.CredentialMembershipJoin("node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id")).
-		Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", subscription.NodeGroupID, true).
-		Order("protocol_endpoints.sort_order asc, protocol_endpoints.id asc").
-		Find(&endpoints).Error; err != nil {
+	endpoints, err := networkstore.CurrentCredentialEndpoints(tx, subscription.NodeGroupID)
+	if err != nil {
 		return nil, err
 	}
 

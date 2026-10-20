@@ -7,6 +7,7 @@ import SKUCycleFields from '../components/SKUCycleFields.vue'
 import TableText from '../components/TableText.vue'
 import UiCheckbox from '../components/UiCheckbox.vue'
 import FormField from '../components/FormField.vue'
+import NodeGroupLookup from '../components/NodeGroupLookup.vue'
 import { fetchPlanDetail, fetchPlanSKU, fetchPlanSKUs, fetchPlansPage, updatePlan, updatePlanSKU, deletePlan, deletePlanSKU } from '../api/client'
 import { confirmAction } from '../utils/feedback'
 
@@ -87,6 +88,46 @@ it('sends explicit historical quota synchronization and retains its draft on fai
   expect(updatePlan).toHaveBeenCalledWith(1, expect.objectContaining({ sync_traffic_quota: true, traffic_bytes: plan.traffic_bytes }))
   expect(view.get('#edit-plan-sync-traffic-quota').attributes('aria-checked')).toBe('true')
   expect(view.find('#edit-plan-form').exists()).toBe(true)
+})
+it('explains automatic group synchronization independently of the optional quota checkbox', async () => {
+  const view = await open('&editor=plan')
+  const editor = view.get('#edit-plan-form')
+  expect(editor.text()).toContain('所有未结束订阅的接入范围自动同步')
+  expect(editor.text()).toContain('共有且已确认交付的接入点继续保留')
+  expect(editor.text()).toContain('新增接入点需等待配置交付核验后才能使用')
+  expect(editor.text()).toContain('此选项只控制流量配额')
+  const group = view.getComponent(NodeGroupLookup)
+  group.vm.$emit('update:modelValue', 9)
+  await flushPromises()
+  expect(editor.get('#edit-plan-sync-traffic-quota').attributes('aria-checked')).toBe('false')
+  await editor.trigger('submit'); await flushPromises()
+  expect(updatePlan).toHaveBeenCalledWith(1, expect.objectContaining({ node_group_id: 9, sync_traffic_quota: false, expected_revision: plan.revision }))
+})
+it('keeps a group-change draft and original revision on retryable 503 until an explicit retry', async () => {
+  vi.mocked(updatePlan).mockRejectedValueOnce({ response: { status: 503, data: { message: 'resource contention', error: { version: 1, code: 'unavailable', retryable: true } } } })
+  const view = await open('&editor=plan')
+  const editor = view.get('#edit-plan-form')
+  const group = view.getComponent(NodeGroupLookup)
+  group.vm.$emit('update:modelValue', 9)
+  editor.get('#edit-plan-name').getComponent({ name: 'UiInput' }).vm.$emit('update:modelValue', 'Changed name')
+  await editor.get('#edit-plan-sync-traffic-quota').trigger('click')
+  await editor.trigger('submit'); await flushPromises()
+  expect(updatePlan).toHaveBeenCalledTimes(1)
+  expect(updatePlan).toHaveBeenLastCalledWith(1, expect.objectContaining({ name: 'Changed name', node_group_id: 9, sync_traffic_quota: true, expected_revision: plan.revision }))
+  const firstPayload = structuredClone(vi.mocked(updatePlan).mock.calls[0][1])
+  expect(view.find('#edit-plan-form').exists()).toBe(true)
+  expect(group.props('modelValue')).toBe(9)
+  expect(editor.get('#edit-plan-name').attributes('modelvalue')).toBe('Changed name')
+  expect(editor.get('#edit-plan-sync-traffic-quota').attributes('aria-checked')).toBe('true')
+  expect(editor.get('.editor-version-meta').text()).toContain('版本 1')
+  expect(editor.text()).toContain('请稍后再次点击“保存商品”重试')
+  await flushPromises()
+  expect(updatePlan).toHaveBeenCalledTimes(1)
+  expect(fetchPlanDetail).toHaveBeenCalledTimes(1)
+  await editor.trigger('submit'); await flushPromises()
+  expect(updatePlan).toHaveBeenCalledTimes(2)
+  expect(updatePlan).toHaveBeenLastCalledWith(1, firstPayload)
+  expect(view.find('#edit-plan-form').exists()).toBe(false)
 })
 it('deletes an inactive SKU and reloads the counts', async () => {
   vi.mocked(fetchPlanSKUs).mockResolvedValue({ items: [{ ...sku, is_active: false }], total: 1 } as any)

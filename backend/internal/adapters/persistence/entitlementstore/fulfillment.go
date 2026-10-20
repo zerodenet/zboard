@@ -2,6 +2,7 @@ package entitlementstore
 
 import (
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -28,6 +29,23 @@ func FulfillWithPrevious(tx *gorm.DB, order entitlements.GrantRequest, policy en
 			return model.Subscription{}, nil, err
 		}
 		policy.RecoveryGracePeriod = &grace
+	}
+	// The grant policy is the current locked plan's actual access group. Acquire
+	// its current endpoint identities before expiry/recovery/replacement can lock
+	// old credentials; endpoint placement edits take the same endpoint-first order.
+	targetGroupID := policy.NodeGroupID
+	if order.TargetSubscriptionID != nil {
+		var identity model.Subscription
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "node_group_id").Where("user_id = ?", order.UserID).First(&identity, *order.TargetSubscriptionID).Error; err != nil {
+			return model.Subscription{}, nil, err
+		}
+		// Extra quota and early reset do not replace the subscription's scope.
+		if order.OrderType == "traffic_pack" || order.OrderType == "traffic_reset" {
+			targetGroupID = identity.NodeGroupID
+		}
+	}
+	if _, err := networkstore.LockCurrentCredentialEndpointRoutes(tx, targetGroupID); err != nil {
+		return model.Subscription{}, nil, err
 	}
 	if err := ExpireInTransaction(tx, order.UserID, now); err != nil {
 		return model.Subscription{}, nil, err

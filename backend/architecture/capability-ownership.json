@@ -89,6 +89,16 @@
   ],
   "cross_domain_transactions": [
     {
+      "id": "commerce.plan_group_sync",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/plan_group_sync.go",
+      "symbol": "synchronizePlanGroup",
+      "participants": ["commerce", "entitlements", "resources", "observability"],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback the plan revision, every eligible subscription group, credential revocations, publication intents and audit together. Shared authorized endpoints retain their confirmed binding. Preserve quota, paid terms, reset dates and historical orders; the bounded transaction refuses oversized updates.",
+      "outbox": "Old-node revocations and current-group publications are durable before commit; the existing publication worker prepares and verifies new bindings. Immediate resource contention rolls back and permits an explicit retry of the unchanged intent."
+    },
+    {
       "id": "commerce.plan_quota_sync",
       "owner": "commerce",
       "source": "internal/adapters/persistence/commercestore/plan_quota_sync.go",

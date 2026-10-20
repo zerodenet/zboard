@@ -10,6 +10,7 @@ import (
 	zeroadapter "github.com/zerodenet/zboard/backend/internal/adapters/zero"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/catalog"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 )
 
 type orderListCapabilityInput struct {
@@ -85,6 +86,8 @@ func (s *Services) RegisterCommerceCapabilities(registry *catalog.Registry, ciph
 				return nil, catalog.ErrInput
 			case errors.Is(err, commerce.ErrOrderPermission):
 				return nil, catalog.ErrDenied
+			case errors.Is(err, network.ErrResourcesBusy):
+				return nil, catalog.ErrUnavailable
 			case errors.Is(err, commerce.ErrPaymentFactConflict), errors.Is(err, commerce.ErrOrderTransition):
 				return nil, catalog.ErrConflict
 			default:

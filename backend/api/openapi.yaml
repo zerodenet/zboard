@@ -3379,7 +3379,7 @@ paths:
       tags:
         - plans
       summary: Update plan fields and toggle active state
-      description: Requires a current active administrator and expected_revision. Field changes, revision and audit commit atomically. Publishing or changing the group of a published product validates enabled explicit protocol membership; published products retain a purchasable SKU.
+      description: Requires a current active administrator and expected_revision. Field changes, revision and audit commit atomically. Publishing or changing the group of a published product validates enabled explicit protocol membership; published products retain a purchasable SKU. Changing node_group_id also updates all eligible unended subscriptions independently of sync_traffic_quota; access revocations and publication intents share that transaction. Shared confirmed endpoints remain available and new endpoints require delivery verification. Updates affecting more than 1000 subscriptions are refused atomically.
       parameters:
         - name: id
           in: path
@@ -3410,6 +3410,8 @@ paths:
         "500": { description: "error.code=commerce_persistence_failed; changes and audit roll back together." }
         "409": { $ref: "#/components/responses/Error" }
         "428": { $ref: "#/components/responses/Error" }
+        "503":
+          description: "Current resources are being changed; error.code=unavailable and error.retryable=true. Retry-After is 1 second. The transaction rolls back; retain the original request and expected_revision for an explicit retry after checking current state."
   /api/v1/admin/users/{id}/wallet:
     get:
       tags: [admin, orders]
@@ -9073,7 +9075,7 @@ components:
         sort_order: { type: integer }
         is_active:
           type: boolean
-        node_group_id: { type: integer, format: int64, description: Replaces the plan delivery boundary with another node group. }
+        node_group_id: { type: integer, format: int64, description: "Replaces current plan access scope for existing eligible subscriptions as well as future purchases. This automatic access update is independent of optional quota synchronization. Shared confirmed endpoints are retained; new endpoints await verified delivery. More than 1000 affected subscriptions reject the whole change." }
         traffic_bytes: { type: integer, format: int64, minimum: 1 }
         sync_traffic_quota: { type: boolean, default: false, description: "Explicitly synchronize base quota to at most 1000 eligible unended subscriptions. Requires traffic_bytes. Preserves used traffic, end date, reset date, purchased prices and orders. Mixed add-on quota or unknown baselines reject the whole update for review." }
         speed_limit_mbps: { type: integer, minimum: 0 }

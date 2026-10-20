@@ -245,13 +245,16 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 18,
+		"cross_domain_transaction": 19,
 	}
 	counts := map[string]int{}
 	controlledDebit, unsubscribe, retirement, replacement, automatic := false, false, false, false, false
-	consumptionRefund, planQuotaSync := false, false
+	consumptionRefund, planQuotaSync, planGroupSync := false, false, false
 	for _, row := range rows {
 		counts[row.Kind]++
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.plan_group_sync" && row.Owner == "commerce" {
+			planGroupSync = true
+		}
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.plan_quota_sync" && row.Owner == "commerce" {
 			planQuotaSync = true
 		}
@@ -279,6 +282,9 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 	}
 	if !automatic {
 		t.Fatal("automatic renewal transaction must retain explicit ownership evidence")
+	}
+	if !planGroupSync {
+		t.Fatal("plan group synchronization must retain its explicit transaction ownership")
 	}
 	if !planQuotaSync {
 		t.Fatal("plan quota synchronization must retain its explicit transaction ownership")

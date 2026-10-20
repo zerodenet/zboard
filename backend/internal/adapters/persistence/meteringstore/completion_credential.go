@@ -53,6 +53,13 @@ func ResolveCompletionCredential(tx *gorm.DB, cipher metering.CredentialDecrypto
 	if subscription.UserID != owner.ID {
 		return model.ProtocolCredential{}, metering.ErrPrincipalAmbiguous
 	}
+	// A traffic-record insert checks these parents before quota publication.
+	// Immediate reads avoid retaining a credential while waiting for an endpoint
+	// edit that itself must migrate that same credential. Historical activity and
+	// source attribution remain subject to the current credential recheck below.
+	if err := credentialstore.LockCurrentEndpointParents(tx, nodeID, candidate.ProtocolEndpointID); err != nil {
+		return model.ProtocolCredential{}, err
+	}
 	var row model.ProtocolCredential
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID).First(&row, candidate.ID).Error; err != nil {
 		return model.ProtocolCredential{}, err

@@ -655,3 +655,16 @@ P4-02完整CI39369974199保留失败：handler224.517s中的两个旧历史夹�
 原跨driverMySQL完整专项108.804s通过；同实例跨库实验107.429s阻塞/终止保留，确认是源FTWRL全局锁，公开API原本已拒同driver。适配层新增真实UUID预检在任何目的写入前拒绝；最新实库4.132s、SQLite最终8.215s、两包vet及Windows helper交叉编译通过。Windows实际运行未验，当前精确整合的完整backend/CI仍待完成。新platformstore实库测试进入CI，并在原事务竞态后顺序执行，原参数/门槛不变。
 
 upgrade与独立evidence/validation记录全部边界、失败和重现。preparing/无收据旧失败目标不猜测接管，completed供人工核对源确认丢失；这不代表P7整体发布准备完成。后续仍需最终升级/联合业务故障/容量及剩余功能验收；无生产操作。
+
+
+## P3-07：套餐存量接入范围与当前拓扑并发（2026-10-20）
+
+修改套餐接入组时，同事务自动更新最多1000份符合当前业务/恢复窗口的存量订阅，不依赖默认关闭的quota同步开关。期限/流量/重置日/锁价/历史订单保持；旧组外凭据撤销及原节点发布意图、新组发布意图与套餐revision/逐订阅审计同成败。当前共享端点保留已确认绑定，新端点通过既有签发/发布核验后可用；不把目录组启用开关改成大范围存量撤权。
+
+MySQL外层locking SELECT无法让派生UNION membership变成当前读，现分别读取直接及forward当前范围，Ensure锁后复核规范订阅，Revoke用确切当前ID集合；空组明确撤全部。转发路由覆盖同node全部当前端点及显式新ID，旧RR快照仍能投递到新前置。新增SHARE使用NOWAIT避免持有凭据后反向等待；只识别3572为可重试资源忙，1213等保留失败。确切Node/Endpoint FK父在创建凭据/计量事实前同样立即核对，不扩为全组计量锁或新增另一条结算路径。HTTP及native宿主复用现有unavailable/temporary_unavailable契约，不将竞争误认支付事实无效或假成功。
+
+最终MySQL原全P3专项70.762s通过，SQLite/Go组合handler10.205s/network0.007s通过，另两个包只是编译、没有匹配测试。真实节点/凭据锁等待、旧RR后新增shared确认保留、replacement/recovery、钱包/支付事实竞争、同意图幂等及buffer失败checkpoint0/解除后一次计费均有测试。首轮69.803s及中间36.210s失败、导入环未执行DB均保留，未延长超时或放行死锁。详见core-convergence-group-evidence.md及validation/2026-10-20-plan-group-sync.json。
+
+前端实际套餐页解释范围同步与quota选项，严格可重试503保留表单/组/revision且无自动写重放；Plans+NodeGroupLookup18项通过，完整原CI范围961通过/8既有skip，vue-tsc/build11.64s通过。新跨域权威事务commerce.plan_group_sync进入第19条归属清单；完整精确提交backend/实库/CI及公开原生远端交付仍需另验，无新schema或生产操作。
+
+Git HTTPS令牌失效后，已使用现有授权GitHub app按完全相同tree上传两批：容量基准c9ef80c（原云端2073edc同tree）、迁移重试38ddd91（原2321ec8同tree）。仅commit元数据改变，本地按相同tree对齐，所有待集成工作保留；更新原codex分支核对expected_head并保持fast-forward/Draft，未合并发布。

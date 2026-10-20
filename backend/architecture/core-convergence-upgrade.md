@@ -222,3 +222,10 @@ preparing、没有可信收据的旧失败目标及completed结果不被自动�
 现有公开迁移入口不允许同driver迁移；适配层额外按实际MySQL server UUID拒绝同实例跨库，原因是既有源FLUSH TABLES WITH READ LOCK会阻塞目标写入。预检发生在收据/DDL写入之前，不靠host文本猜测。源快照锁保持，未贸然放宽。SQLite↔隔离MySQL实际复制/故障恢复已验证，跨独立MySQL实例与Windows运行仍未验证。
 
 真实MySQL同实例实验曾阻塞并明确终止，失败证据保留；只清理该测试两个随机库，确认锁及owned session已释放。最新UUID拒绝4.132s、SQLite8.215s、两包vet通过，原跨driver全专项108.804s通过；精确整合提交完整检查另记。CI把新platformstore实库包安排在原MySQL事务竞态命令之后，防止源全服务器读锁污染其他时延/等待断言；原-p2/-count1/-timeout15m保持。详见core-convergence-migration-retry-evidence.md及validation/2026-10-20-migration-retry.json。未执行生产迁移。
+
+
+## P3-07：无schema变更的套餐接入范围同步
+
+新的套餐换组事务会立即更新已有未结束/恢复窗口中的订阅范围，独立于quota同步；同组共享的已确认凭据保留。核对原/新node_group_id、逐订阅审计、撤权与新组发布意图；付款/额度/历史订单不重写。超过1000份或资源竞争整笔拒绝，没有部分成功。暂时资源忙返回可重试unavailable，保留原请求/版本；浏览器不自动重放，可信事件/缓冲按原身份重试，失败不推进checkpoint。
+
+回退程序不会自动恢复旧组或撤销已发的配置，不删除审计/确认/队列。业务回退应在当前版本明确创建新的套餐revision并同步目标范围，再按原生核验核对远端；不要倒回数据库或把旧观察当确认。降级旧代码可能重新出现旧RR范围和并发锁问题，先停在途写入与worker，优先前向修复。此处仅准备隔离验证和说明，无生产迁移/发布。

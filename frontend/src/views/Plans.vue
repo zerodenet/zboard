@@ -371,10 +371,13 @@
         </section>
         <section class="form-section">
           <div class="form-section-title"><span>2</span><div><h3>套餐策略</h3><p>定义所有 SKU 共享的权限上限和流量口径。</p></div></div>
+          <PageAlert title="更换节点组会同步现有订阅">
+            保存节点组变更后，本套餐所有未结束订阅的接入范围自动同步，无需勾选流量配额同步。两组共有且已确认交付的接入点继续保留；新增接入点需等待配置交付核验后才能使用，移出范围的接入点将撤权。
+          </PageAlert>
           <div class="form-grid form-grid-3">
             <FormField v-slot="{ controlAttrs }" label="节点组" name="edit-plan-node-group" hint="按需检索，不预载全部节点组。" :error="planErrors.fields.node_group_id" required><NodeGroupLookup v-model="planDraft.node_group_id" v-bind="controlAttrs" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="流量配额" name="edit-plan-traffic" :error="planErrors.fields.traffic_bytes" required><ByteSizeInput v-model="planDraft.traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
-            <FormField v-slot="{ controlAttrs }" label="历史订阅额度" name="edit-plan-sync-traffic-quota" hint="可同步最多 1000 份仍有效的订阅；保留已用流量、有效期、原重置日期和续费锁价。下调至已用量以下时剩余额度为零。" :error="planErrors.fields.sync_traffic_quota" full><label class="check-field"><UiCheckbox v-model="planDraft.sync_traffic_quota" v-bind="controlAttrs" /><span>将本次流量配额同步到现有订阅</span></label></FormField>
+            <FormField v-slot="{ controlAttrs }" label="历史订阅额度" name="edit-plan-sync-traffic-quota" hint="此选项只控制流量配额，不影响更换节点组时的接入范围同步。可同步最多 1000 份仍有效的订阅；保留已用流量、有效期、原重置日期和续费锁价。下调至已用量以下时剩余额度为零。" :error="planErrors.fields.sync_traffic_quota" full><label class="check-field"><UiCheckbox v-model="planDraft.sync_traffic_quota" v-bind="controlAttrs" /><span>将本次流量配额同步到现有订阅</span></label></FormField>
             <FormField v-slot="{ controlAttrs }" label="速率限制" name="edit-plan-speed" hint="0 表示不限速。" :error="planErrors.fields.speed_limit_mbps"><UiNumberInput v-model="planDraft.speed_limit_mbps" v-bind="controlAttrs" :min="0" suffix=" Mbps" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="设备数" name="edit-plan-device-limit" :error="planErrors.fields.device_limit" required><UiNumberInput v-model="planDraft.device_limit" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="最大有效订阅" name="edit-plan-max-subscriptions" :error="planErrors.fields.max_active_subscriptions"><UiNumberInput v-model="planDraft.max_active_subscriptions" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
@@ -1426,6 +1429,12 @@ async function savePlan() {
     if (cause?.response?.status === 409 || cause?.response?.status === 428) {
       planRevisionConflict.value = true
       planErrors.formError.value = '服务器版本已变化。请重新加载最新商品信息后再保存。'
+      notify('无法保存商品', planErrors.formError.value, 'danger')
+    } else if (cause?.response?.status === 503
+      && cause.response.data?.error?.version === 1
+      && cause.response.data.error.code === 'unavailable'
+      && cause.response.data.error.retryable === true) {
+      planErrors.set({}, '服务暂不可用，已保留当前表单、节点组选择和原版本。请稍后再次点击“保存商品”重试。')
       notify('无法保存商品', planErrors.formError.value, 'danger')
     } else {
       const failure = await planErrors.applyApiError(cause, '商品保存失败，请检查表单内容。', planFormElement, planFieldMap)

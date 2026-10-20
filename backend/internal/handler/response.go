@@ -129,5 +129,8 @@ func ServiceUnavailable(w http.ResponseWriter, message string) {
 }
 
 func ServerError(w http.ResponseWriter, err error) {
+	if writeResourceBusy(w, err) {
+		return
+	}
 	writeJSON(w, http.StatusInternalServerError, err.Error(), nil)
 }
