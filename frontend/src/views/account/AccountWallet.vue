@@ -20,8 +20,8 @@
     </UiSection>
     <UiSection title="余额流水">
       <DataTable v-if="wallet?.entries.length" caption="余额流水" :min-width="650">
-        <thead><tr><th>时间</th><th>业务</th><th>金额变动</th><th>变动后余额</th><th>来源</th></tr></thead>
-        <tbody><tr v-for="entry in wallet.entries" :key="entry.id"><td><TimeBadge :value="entry.created_at" /></td><td>{{ entry.reason }}</td><td>{{ money(entry.balance_delta) }}</td><td>{{ money(entry.balance_after) }}</td><td><RouterLink v-if="entry.source_order_id" :to="`/account/orders/${entry.source_order_id}`">订单 #{{ entry.source_order_id }}</RouterLink></td></tr></tbody>
+        <thead><tr><th>时间</th><th>业务</th><th>金额变动</th><th>变动后余额</th><th>来源</th><th>支持</th></tr></thead>
+        <tbody><tr v-for="entry in wallet.entries" :key="entry.id"><td><TimeBadge :value="entry.created_at" /></td><td>{{ entry.reason }}</td><td>{{ money(entry.balance_delta) }}</td><td>{{ money(entry.balance_after) }}</td><td><RouterLink v-if="entry.source_order_id" :to="`/account/orders/${entry.source_order_id}`">订单 #{{ entry.source_order_id }}</RouterLink></td><td><RouterLink v-if="Number.isSafeInteger(entry.id) && entry.id > 0" :to="{ path: '/account/tickets', query: { new: '1', wallet_entry_id: String(entry.id) } }">就此流水提交工单</RouterLink></td></tr></tbody>
       </DataTable>
       <p v-else-if="wallet">暂无该币种余额流水。</p>
       <UiButton v-if="wallet?.has_more" variant="secondary" :disabled="loading" @click="older">较早流水</UiButton>

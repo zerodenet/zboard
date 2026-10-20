@@ -3,6 +3,7 @@
     <PageHeader :title="order ? `订单 #${order.id}` : '订单详情'" description="查看这笔订单的商品、金额和付款状态。" eyebrow="ORDER">
       <template #actions>
         <RouterLink class="button button-secondary" to="/account/orders">返回我的订单</RouterLink>
+        <RouterLink v-if="orderSupportRoute" class="button button-secondary" :to="orderSupportRoute">就此订单提交工单</RouterLink>
         <UiButton variant="secondary" type="button" :disabled="loading" @click="load">刷新订单</UiButton>
       </template>
     </PageHeader>
@@ -68,6 +69,8 @@ const { data: order, loading, error, load, reset } = useRemoteResource<AdminOrde
   errorMessage: '订单不存在、当前账户无权查看或暂时无法加载，请重试。',
 })
 const payable = computed(() => order.value && ['pending', 'failed'].includes(order.value.status))
+const orderSupportRoute = computed(() => order.value && !error.value && Number.isSafeInteger(order.value.id) && order.value.id > 0
+  ? { path: '/account/tickets', query: { new: '1', order_id: String(order.value.id) } } : null)
 const statusLabel = computed(() => {
   const status = order.value?.status || ''
   return ({ pending: '待支付', paid: '已支付', failed: '失败', canceled: '已取消' } as Record<string, string>)[status] || formatUnknownValue('状态', status)

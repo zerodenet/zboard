@@ -641,18 +641,21 @@ type RegistrationEmailChallenge struct {
 // status is denormalized here for queue queries; every transition is also
 // recorded in TicketMessage so the full history remains traceable.
 type Ticket struct {
-	ID            uint       `json:"id" gorm:"primaryKey"`
-	TicketNo      string     `json:"ticket_no" gorm:"size:32;uniqueIndex;not null"`
-	UserID        uint       `json:"user_id" gorm:"index;not null"`
-	Subject       string     `json:"subject" gorm:"size:160;not null"`
-	Category      string     `json:"category" gorm:"size:32;index;not null"`
-	Priority      int16      `json:"priority" gorm:"index;not null;default:1"`
-	Status        string     `json:"status" gorm:"size:24;index;not null;default:open"`
-	LastMessageAt time.Time  `json:"last_message_at" gorm:"index;not null"`
-	ResolvedAt    *time.Time `json:"resolved_at"`
-	ClosedAt      *time.Time `json:"closed_at"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID             uint       `json:"id" gorm:"primaryKey"`
+	TicketNo       string     `json:"ticket_no" gorm:"size:32;uniqueIndex;not null"`
+	UserID         uint       `json:"user_id" gorm:"index;not null"`
+	OrderID        *uint      `json:"-"`
+	SubscriptionID *uint      `json:"-"`
+	WalletEntryID  *uint      `json:"-"`
+	Subject        string     `json:"subject" gorm:"size:160;not null"`
+	Category       string     `json:"category" gorm:"size:32;index;not null"`
+	Priority       int16      `json:"priority" gorm:"index;not null;default:1"`
+	Status         string     `json:"status" gorm:"size:24;index;not null;default:open"`
+	LastMessageAt  time.Time  `json:"last_message_at" gorm:"index;not null"`
+	ResolvedAt     *time.Time `json:"resolved_at"`
+	ClosedAt       *time.Time `json:"closed_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 // TicketMessage contains both human replies and system status events.

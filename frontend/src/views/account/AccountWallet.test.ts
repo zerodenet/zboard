@@ -9,13 +9,22 @@ vi.mock('../../stores/app', () => ({ useAppStore: () => reactive(state) }))
 vi.mock('../../api/wallet', () => ({ createWalletTopUp: vi.fn(), fetchWallet: vi.fn() }))
 function page(balance = '12000') { return { currency: 'CNY', balance_minor: balance, available_minor: balance, reserved_minor: '0', entries: [], has_more: false } }
 async function open() {
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/wallet', component: AccountWallet }, { path: '/account/orders/:id', component: { template: '<div />' } }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/wallet', component: AccountWallet }, { path: '/account/orders', component: { template: '<div />' } }, { path: '/account/orders/:id', component: { template: '<div />' } }, { path: '/account/tickets', component: { template: '<div />' } }] })
   await router.push('/account/wallet'); await router.isReady()
   const wrapper = mount(AccountWallet, { global: { plugins: [router] } }); await flushPromises()
   return { wrapper, router }
 }
 beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); reactive(state).user.id = 1; vi.mocked(fetchWallet).mockResolvedValue(page()); vi.mocked(createWalletTopUp).mockResolvedValue({ id: 91 }) })
 describe('wallet account and top-up intent', () => {
+  it('links the actual wallet entry to an unsubmitted ticket without changing money or creating orders', async () => {
+    vi.mocked(fetchWallet).mockResolvedValue({ ...page(), entries: [{ id: 8, kind: 'credit', balance_delta: '100', reserved_delta: '0', balance_after: '12000', reserved_after: '0', source_order_id: 27, reason: '余额核对', created_at: '2026-10-20T00:00:00Z' }] })
+    const { wrapper, router } = await open()
+    const support = wrapper.findAll('a').find(link => link.text() === '就此流水提交工单')!
+    expect(support.attributes('href')).toBe('/account/tickets?new=1&wallet_entry_id=8')
+    expect(router.currentRoute.value.path).toBe('/account/wallet')
+    expect(createWalletTopUp).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('recovers a lost creation response using the same amount and idempotency key', async () => {
     vi.mocked(createWalletTopUp).mockRejectedValueOnce(new Error('lost response'))
     const { wrapper, router } = await open()

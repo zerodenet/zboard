@@ -908,3 +908,17 @@ admitted handler. Old source fails both continuation cases; corrected SQLite,
 three race repetitions and actual MySQL pass. No migration, task deletion,
 accounting change or increased throughput is claimed. See
 validation/2026-10-20-periodic-continuation.json; final-source full checks remain.
+
+### P5 linked support conversation (2026-10-20)
+
+Actual order details and wallet entries now prefill a new support conversation;
+optional immutable order/subscription/wallet-entry context is owner-validated and
+committed with its first message. No financial or permission authority follows
+from a link. Old NULL context stays unknown; 0058 refuses lost historical fields
+before AutoMigrate. Actual SQLite/MySQL migration, ownership, rollback and source
+order lock tests pass; user-first lock draft fails real MySQL NOWAIT3572.
+Dirty reply and create drafts survive query context, with explicit discard only;
+new behavior tests,1108 full frontend tests/original exclusions, build and OpenAPI
+pass. Two initial narrow failures are retained. Direct subscription-list shortcut,
+final-source whole backend/CI and hardened browser validation remain separate.
+See core-convergence-ticket-context.md and validation/2026-10-20-ticket-context.json.

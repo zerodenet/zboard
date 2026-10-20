@@ -10,6 +10,7 @@ async function open(path = '/account/orders/27') {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/account/orders/:id', component: AccountOrderDetail },
     { path: '/account/orders', component: { template: '<div />' } },
+    { path: '/account/tickets', component: { template: '<div />' } },
   ] })
   await router.push(path); await router.isReady()
   const wrapper = mount(AccountOrderDetail, { global: { plugins: [router], stubs: { CheckoutPayment: true, OrderFundingPayment: true, PaymentReceipts: true } } })
@@ -74,5 +75,17 @@ describe('account order detail payment ownership', () => {
     expect(wrapper.find('order-funding-payment-stub').exists()).toBe(false)
     expect(wrapper.text()).toContain('订单不存在')
     wrapper.unmount()
+  })
+  it('links only the loaded account order to a new unsubmitted ticket context', async () => {
+    const { wrapper, router } = await open()
+    const support = wrapper.findAll('a').find(link => link.text() === '就此订单提交工单')!
+    expect(support.attributes('href')).toBe('/account/tickets?new=1&order_id=27')
+    expect(router.currentRoute.value.path).toBe('/account/orders/27')
+    expect(support.attributes('href')).not.toContain('user_id')
+    wrapper.unmount()
+    vi.mocked(fetchAccountOrder).mockRejectedValue(new Error('inaccessible'))
+    const unavailable = await open()
+    expect(unavailable.wrapper.text()).not.toContain('就此订单提交工单')
+    unavailable.wrapper.unmount()
   })
 })

@@ -6611,6 +6611,14 @@ components:
         priority: { type: integer, enum: [1, 2], default: 1 }
         body: { type: string, minLength: 1, maxLength: 5000 }
         attachments: {type: array, maxItems: 5, items: {$ref: "#/components/schemas/TicketAttachmentInput"}}
+        references: {$ref: "#/components/schemas/TicketReferences"}
+    TicketReferences:
+      type: object
+      description: Optional immutable support context. Every referenced record must belong to the ticket creator; references grant no additional access or financial authority.
+      properties:
+        order_id: {type: integer, format: int64, minimum: 1}
+        subscription_id: {type: integer, format: int64, minimum: 1}
+        wallet_entry_id: {type: integer, format: int64, minimum: 1}
     TicketReplyRequest:
       type: object
       required: [body]
@@ -6639,6 +6647,7 @@ components:
         closed_at: { type: string, format: date-time, nullable: true }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+        references: {$ref: "#/components/schemas/TicketReferences"}
     TicketPage:
       allOf:
         - $ref: "#/components/schemas/PageEnvelope"

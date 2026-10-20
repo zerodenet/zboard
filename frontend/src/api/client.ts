@@ -2338,6 +2338,12 @@ export async function updateProtocolEndpointsBatch(payload: {
 export type TicketStatus = 'open' | 'pending_admin' | 'pending_user' | 'resolved' | 'closed'
 export type TicketCategory = 'connection' | 'billing' | 'account' | 'other'
 
+export interface TicketReferences {
+	order_id?: number
+	subscription_id?: number
+	wallet_entry_id?: number
+}
+
 export interface Ticket {
 	id: number
 	ticket_no: string
@@ -2353,6 +2359,7 @@ export interface Ticket {
 	closed_at?: string | null
 	created_at: string
 	updated_at: string
+	references?: TicketReferences | null
 }
 
 export interface TicketMessage {
@@ -2401,7 +2408,7 @@ function attachmentInputs(items: TicketAttachment[] = []) {
  return items.map(item => item.file_id ? { file_id: item.file_id } : { name: item.name, url: item.url })
 }
 
-export async function createTicket(payload: { subject: string; category: TicketCategory; priority: 1 | 2; body: string; attachments?: TicketAttachment[] }): Promise<TicketDetail> {
+export async function createTicket(payload: { subject: string; category: TicketCategory; priority: 1 | 2; body: string; attachments?: TicketAttachment[]; references?: TicketReferences }): Promise<TicketDetail> {
 	const response = await api.post('/tickets', { ...payload, attachments: attachmentInputs(payload.attachments) })
 	return unwrap(response)
 }

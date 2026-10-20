@@ -15,11 +15,23 @@ type Tickets struct{ DB *gorm.DB }
 
 func (s Tickets) CreateTicket(ctx context.Context, actor uint, input experience.NewTicket, now time.Time) (id uint, err error) {
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		row := model.Ticket{TicketNo: input.TicketNo, UserID: actor, Subject: input.Subject, Category: input.Category, Priority: input.Priority, Status: "open", LastMessageAt: now}
+		// Financial settlement/termination takes source orders before the owner.
+		// Do not hold the user's SHARE lock while waiting for that source order.
+		if input.References != nil {
+			var err error
+			row.OrderID, err = ownedTicketReference(tx, "orders", actor, input.References.OrderID)
+			if err != nil {
+				return err
+			}
+		}
 		user, err := currentExperienceUser(tx, actor, false)
 		if err != nil {
 			return err
 		}
-		row := model.Ticket{TicketNo: input.TicketNo, UserID: user.ID, Subject: input.Subject, Category: input.Category, Priority: input.Priority, Status: "open", LastMessageAt: now}
+		if err := bindTicketReferences(tx, &row, input.References); err != nil {
+			return err
+		}
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
@@ -127,7 +139,50 @@ func createTicketStatusEvent(tx *gorm.DB, ticketID, authorID uint, role, from, t
 }
 
 func ticketView(row model.Ticket) experience.Ticket {
-	return experience.Ticket{ID: row.ID, TicketNo: row.TicketNo, UserID: row.UserID, Subject: row.Subject, Category: row.Category, Priority: row.Priority, Status: row.Status, LastMessageAt: row.LastMessageAt, ResolvedAt: row.ResolvedAt, ClosedAt: row.ClosedAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
+	out := experience.Ticket{ID: row.ID, TicketNo: row.TicketNo, UserID: row.UserID, Subject: row.Subject, Category: row.Category, Priority: row.Priority, Status: row.Status, LastMessageAt: row.LastMessageAt, ResolvedAt: row.ResolvedAt, ClosedAt: row.ClosedAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
+	if row.OrderID != nil || row.SubscriptionID != nil || row.WalletEntryID != nil {
+		out.References = &experience.TicketReferences{OrderID: row.OrderID, SubscriptionID: row.SubscriptionID, WalletEntryID: row.WalletEntryID}
+	}
+	return out
+}
+
+func bindTicketReferences(tx *gorm.DB, ticket *model.Ticket, refs *experience.TicketReferences) error {
+	if refs == nil {
+		return nil
+	}
+	for _, ref := range []struct {
+		table  string
+		input  *uint
+		target **uint
+	}{
+		{"subscriptions", refs.SubscriptionID, &ticket.SubscriptionID},
+		{"wallet_entries", refs.WalletEntryID, &ticket.WalletEntryID},
+	} {
+		var err error
+		*ref.target, err = ownedTicketReference(tx, ref.table, ticket.UserID, ref.input)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ownedTicketReference(tx *gorm.DB, table string, owner uint, input *uint) (*uint, error) {
+	if input == nil {
+		return nil, nil
+	}
+	id := *input
+	var target struct{ ID uint }
+	result := tx.Table(table).Clauses(clause.Locking{Strength: "SHARE"}).Select("id").Where("id = ? AND user_id = ?", id, owner).Limit(1).Find(&target)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if id == 0 || result.RowsAffected != 1 {
+		// Same response for a missing record and another account's record;
+		// references never become an existence or authorization oracle.
+		return nil, fmt.Errorf("%w: 关联记录不存在或不属于当前账户。", experience.ErrInvalid)
+	}
+	return &id, nil
 }
 
 func ticketMessageView(row model.TicketMessage) experience.TicketMessage {

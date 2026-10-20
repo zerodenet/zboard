@@ -259,3 +259,18 @@ retain approvals, paid snapshots, wallet/audit and outstanding intents. Do not
 convert V2 consent to V1 or let an incompatible worker charge it. Verify refusal
 on an isolated copy before any binary rollback. No production migration occurred.
 See core-convergence-automatic-recurring.md for the transaction and plugin limits.
+
+### 0058 owner-scoped support context
+
+Adds nullable order_id/subscription_id/wallet_entry_id to tickets. Existing NULL
+context stays unknown. References and initial conversation share the existing
+ticket transaction; no payment, balance or subscription facts change. Formal
+SQLite/MySQL DDL and interrupted empty partial recovery are exercised on actual
+drivers. Before SQLite AutoMigrate, missing recorded fields or incomplete fields
+already containing context refuse startup for restoration instead of replacing
+evidence with NULL. Repeated intact migrations preserve historical tickets.
+
+Down retains columns and receipt. Older strict migration inventories may refuse
+0058; use a compatible fix, retain historical context and verify recovery on an
+isolated copy. Never delete receipt/context to force rollback. No production
+migration occurred. See core-convergence-ticket-context.md and validation receipt.
