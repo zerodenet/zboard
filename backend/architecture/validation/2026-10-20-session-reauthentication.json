@@ -26,8 +26,18 @@
   "migration": "none",
   "rollback": "Frontend binary rollback only; no stored credentials or drafts added. Optional navigation hints expire after ten minutes and are consumed once.",
   "unverified": [
-    "Real-browser focus/inert while multiple dialogs are present.",
-    "Real OIDC provider end-to-end; third-party full-page flow deliberately does not promise draft restoration."
+    "Real OIDC provider end-to-end; third-party full-page flow deliberately does not promise draft restoration.",
+    "MySQL-specific session race and successful financial browser fulfillment."
   ],
-  "baseline_warning": "Existing HappyDOM iframe abort warnings retain passing PluginFrame tests; no new skip."
+  "baseline_warning": "Existing HappyDOM iframe abort warnings retain passing PluginFrame tests; no new skip.",
+  "real_browser": {
+    "report": "../core-convergence-session-browser-acceptance.md",
+    "completed_utc": "2026-10-20 04:10:02 UTC",
+    "browser": "Chromium154.0.8037.57",
+    "backend_scope": "cf1c8be311b9b6bb6f8d103da3233705208db53c / migration0053",
+    "result": "pass; concurrent genuine401, real focus/inert, same DOM/draft/URL, scroll350->350, financial no-replay, account isolation and current permission revocation",
+    "frontend_build_manifest": "284dbada4cc34d905bdb8565b7b1bbbf49ce7fe934479d29bfefcd527dcb4e78",
+    "retained_failure": "Original focus restoration scrolled350->348; preventScroll repair retained strict assertion and passed.",
+    "source_note": "Exact artifact and working-tree manifest bind scope; newer backend0054 or P3 changes are not included."
+  }
 }

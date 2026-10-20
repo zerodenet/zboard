@@ -3472,7 +3472,7 @@ paths:
         '401': { description: Authentication required }
         '403': { description: Current administrator role required }
         '404': { description: Original order or owned ticket not found }
-        '409': { description: Conflicting approval, unavailable historical evidence, insufficient refundable budget or active entitlement requiring review }
+        '409': { description: "Conflicting approval, unavailable historical evidence, insufficient refundable budget or active entitlement requiring review" }
   /api/v1/admin/consumption-refunds/{id}:
     get:
       tags: [admin, orders]
@@ -9039,7 +9039,7 @@ components:
           type: boolean
         node_group_id: { type: integer, format: int64, description: Replaces the plan delivery boundary with another node group. }
         traffic_bytes: { type: integer, format: int64, minimum: 1 }
-        sync_traffic_quota: { type: boolean, default: false, description: Explicitly synchronize base quota to at most 1000 eligible unended subscriptions. Requires traffic_bytes. Preserves used traffic, end date, reset date, purchased prices and orders. Mixed add-on quota or unknown baselines reject the whole update for review. }
+        sync_traffic_quota: { type: boolean, default: false, description: "Explicitly synchronize base quota to at most 1000 eligible unended subscriptions. Requires traffic_bytes. Preserves used traffic, end date, reset date, purchased prices and orders. Mixed add-on quota or unknown baselines reject the whole update for review." }
         speed_limit_mbps: { type: integer, minimum: 0 }
         max_active_subscriptions: { type: integer, minimum: 0 }
         is_renewable: { type: boolean }

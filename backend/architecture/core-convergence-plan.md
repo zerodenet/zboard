@@ -20,7 +20,7 @@
 | P2-13/P5-02 获批消费退款 | 部分实现（双库命令、前端行为/构建通过） | 271bd20、e4d49ca；活跃权益部分退款待产品规则，浏览器联合退款验收仍缺 |
 | P2-14 套餐历史额度 | 部分实现（SQLite竞争、常规MySQL、前端通过） | 新guard/竞争MySQL已在d7独立快照37.242s通过，精确全套待验证；混合加购及1000上限明确拒绝 |
 | P4-01 日统计投影 | 部分实现（双库专项通过） | cf1c8be、46911a8；完整回归发现并保留修复夹具；hourly仍推进，无归档 |
-| P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP会话验收推进，外部OIDC草稿不承诺恢复 |
+| P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
 | 其余P2及P3–P7 | 部分实现/未完成 | 优惠协议、套餐变组历史授权、小时/在线统计、容量/伸缩、完整迁移及生产前联合验收持续推进 |
 
 ## 需求—实现—差距表
@@ -610,3 +610,11 @@ P2-14最新实库补证：d7dc8ca独立源码快照的全部TestMySQLPlanQuota37
 完整cf1c8be回归保留失败：后端只有旧networkstore夹具缺端点，已46911a8修复并专项0.216s；实际MySQL datastore63.039s、networkstore72.672s通过，handler669.966s有两项旧账本故障注入在DROP阶段被新增退款外键拦截，未执行到原断言。测试库现明确拆ConsumptionRefund.Entry约束后，原两项9.648s通过，仍保留正式外键与“拒绝伪造空账本”断言，不以整套失败标全通过。新精确head CI随后追踪。cf1c8be vet/build通过，纯Go SQLite7.282s通过。
 
 37c07dc永久单额度的六项CI现全部成功：https://github.com/zerodenet/zboard/actions/runs/39365887035 。cf1c8be失败CI39366455494作为上述整合问题证据保留，修复提交不得借父级成功标绿。
+
+## P5-03：真实浏览器会话与页面位置验收（2026-10-20）
+
+在云端Chromium154/真实loopback HTTP/新SQLite夹具完成单入口重新认证、inert/Tab焦点圈/Escape、原DOM草稿URL及焦点恢复。实际定位原restoreFocus滚动350→348，最小修改focus({preventScroll:true})后同断言350→350；既有ModalDialog2测试及vue-tsc/build11.27s通过。失效充值POST仅一次，新充值单0/钱包流水0；换账户同路由草稿清理，原管理员降权后me200、管理API403且旧编辑器移除。没有伪造成功响应。
+
+证据将后端固定cf1c8be(0053)与188文件前端产物manifest绑定，真实跑完前后相同；不把新0054/P3、成功退款、外部OIDC或生产当作通过。脚本仅临时夹具改exp/权限，敏感数据与失败证据保留忽略目录，提交只含脱敏报告和可复现脚本。详见core-convergence-session-browser-acceptance.md及scripts/acceptance-session-browser.md。
+
+04:xx再次fetch develop仍7c7283fb34840883fccaba1de6e0a98edb24dfb1，无增量或正式迁移号冲突。新增OpenAPI描述的两处逗号流式YAML遗漏引号由完整Redocly识别5个struct错误，已修复，仅保留原282警告，不新增忽略。
