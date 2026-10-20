@@ -89,8 +89,14 @@ func (h *handlers) CloseBackgroundJobs() {
 		ids = append(ids, id)
 	}
 	jobs.mu.Unlock()
-	for _, id := range ids {
-		h.closeScheduledJob(id)
-	}
+	// Process shutdown stops only this runtime. RemoveJob is a global handler
+	// revocation: it cancels durable work owned by other processes as well.
+	// Keep that operation for explicit domain/plugin disable, never scale-down.
 	h.services.Close()
+	for _, id := range ids {
+		jobs.observations.Waiting(id, "stopped", nil)
+	}
+	jobs.mu.Lock()
+	clear(jobs.loops)
+	jobs.mu.Unlock()
 }

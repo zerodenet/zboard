@@ -808,3 +808,14 @@ Historical503 and all intermediate failures remain preserved. Receipts:
 validation/2026-10-20-latest-original-capacity.json and
 validation/2026-10-20-accounting-sql-cohort.json. Fixed e5 full backend and actual
 MySQL checks are running; prior green CI is not their substitute.
+
+### P6 local shutdown prerequisite (2026-10-20)
+
+Normal shutdown no longer globally revokes each registered handler. A foreign
+active lease and queued intent survive and complete under their original
+fences; explicit handler disable remains global. The old implementation fails
+the deterministic behavioral regression, while corrected SQLite repetitions
+and actual MySQL pass. No schema/financial writer or independent worker is
+added. Spool ownership, bounded drain, resource guards and measured process
+benefit remain required. See core-convergence-process-ownership.md and its
+validation receipt.
