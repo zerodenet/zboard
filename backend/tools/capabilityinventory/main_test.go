@@ -240,8 +240,8 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]int{
-		"plugin_rpc":               16,
-		"plugin_capability":        30,
+		"plugin_rpc":               17,
+		"plugin_capability":        31,
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
@@ -319,6 +319,13 @@ func TestNewContractEvidenceCannotBypassOwnershipLedger(t *testing.T) {
  rpc Future
  (Empty) returns (Empty);
 }`,
+		"pkg/pluginapi/v1/future.proto": `// service Pretend { rpc Comment(Empty) returns (Empty); }
+option description = "rpc Fake(Empty) returns (Empty)";
+service Independent {
+ /* rpc Hidden(Empty) returns (Empty); */
+ rpc Added(Empty) returns (Empty) { option description = "rpc Nested()"; }
+}
+service Another { rpc Next(Empty) returns (Empty); }`,
 		"internal/plugins/capabilities.go": `package plugins
 const KnownCapability = "zboard.known.v1"
 const FutureCapability = "zboard.future.v1"
@@ -373,13 +380,23 @@ func Commit() {}`,
 		t.Fatal(err)
 	}
 	futureKinds := map[string]bool{}
+	independent := map[string]bool{}
 	for _, row := range rows {
+		if row.Kind == "plugin_rpc" && row.File == "pkg/pluginapi/v1/future.proto" {
+			if row.Owner != "unassigned" {
+				t.Fatalf("new service inherited ownership: %+v", row)
+			}
+			independent[row.Symbol] = true
+		}
 		if row.Symbol == "PluginControl.Future" || row.Symbol == "zboard.future.v1" || row.Symbol == "future.read" {
 			if row.Owner != "unassigned" {
 				t.Fatalf("future evidence inherited ownership: %+v", row)
 			}
 			futureKinds[row.Kind] = true
 		}
+	}
+	if len(independent) != 2 || !independent["Independent.Added"] || !independent["Another.Next"] {
+		t.Fatalf("independent services not inventoried exactly: %v", independent)
 	}
 	for _, kind := range []string{"plugin_rpc", "plugin_capability", "host_operation", "plugin_host_operation", "external_http_scope"} {
 		if !futureKinds[kind] {
