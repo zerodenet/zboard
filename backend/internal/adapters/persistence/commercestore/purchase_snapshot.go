@@ -17,16 +17,22 @@ func bindPurchaseQuote(preview *commerce.OrderPreview, order model.Order) {
 	if preview.QuoteFingerprint == "" {
 		return
 	}
+	policy := order.PurchaseSnapshot
+	var snapshot commerce.PurchaseSnapshot
+	if json.Unmarshal([]byte(policy), &snapshot) == nil && snapshot.Discount != nil {
+		stable, _ := json.Marshal(commerce.PurchaseQuotePolicy(snapshot))
+		policy = string(stable)
+	}
 	payload, _ := json.Marshal(struct {
 		Original, Policy string
 		Traffic          int64
 		Speed, Devices   int
-	}{preview.QuoteFingerprint, order.PurchaseSnapshot, order.TrafficBytes, order.SpeedLimitMbps, order.DeviceLimit})
+	}{preview.QuoteFingerprint, policy, order.TrafficBytes, order.SpeedLimitMbps, order.DeviceLimit})
 	sum := sha256.Sum256(payload)
 	preview.QuoteFingerprint = hex.EncodeToString(sum[:])
 }
 
-func capturePurchaseSnapshot(tx *gorm.DB, order *model.Order, plan model.Plan, sub model.Subscription) error {
+func capturePurchaseSnapshot(tx *gorm.DB, order *model.Order, plan model.Plan, sub model.Subscription, discounts ...*checkoutDiscount) error {
 	var renewalSKUs int64
 	if err := tx.Model(&model.PlanSKUOperation{}).Joins("JOIN plan_skus ON plan_skus.id = plan_sku_operations.plan_sku_id").Where("plan_skus.plan_id = ? AND plan_skus.archived_at IS NULL AND plan_sku_operations.operation = 'renew'", plan.ID).Count(&renewalSKUs).Error; err != nil {
 		return err
@@ -43,9 +49,20 @@ func capturePurchaseSnapshot(tx *gorm.DB, order *model.Order, plan model.Plan, s
 		target := renewalTargetSnapshot(sub)
 		snapshot.RenewalTarget = &target
 	}
+	if len(discounts) != 0 && discounts[0] != nil {
+		discount := discounts[0]
+		snapshot.Discount = &commerce.PurchaseDiscountSnapshot{Version: 1, Context: discount.Context, Quote: discount.Quote, FinalPriceMinor: order.PayableAmount, AcceptedAt: discount.AcceptedAt}
+		if commerce.ValidatePurchaseDiscount(commerce.Order(*order), snapshot) != nil {
+			return invalidPurchaseSnapshot()
+		}
+	}
 	payload, err := json.Marshal(snapshot)
 	if err != nil {
 		return err
+	}
+	// Keep the complete accepted evidence bounded; never truncate terms.
+	if len(payload) > commerce.MaxPurchaseSnapshotBytes {
+		return discountCheckoutError("优惠条款超出当前购买快照的存储范围，请选择其他优惠或联系管理员核对。")
 	}
 	order.PurchaseSnapshot = string(payload)
 	return nil
@@ -85,6 +102,12 @@ func applyPurchaseSnapshot(order model.Order, policy entitlements.GrantPolicy) (
 	}
 	if raw, present := fields["renewal_target"]; present && (bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || snapshot.RenewalTarget == nil || order.OrderType != "renewal" || snapshot.RenewalTarget.EndAt.IsZero()) {
 		return policy, invalidPurchaseSnapshot()
+	}
+	if raw, present := fields["discount"]; present {
+		strict, err := commerce.DecodePurchaseSnapshot(order.PurchaseSnapshot)
+		if err != nil || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || commerce.ValidatePurchaseDiscount(commerce.Order(order), strict) != nil {
+			return policy, invalidPurchaseSnapshot()
+		}
 	}
 	policy.IsRenewable, policy.ResetPolicy = snapshot.Renewable, snapshot.ResetPolicy
 	policy.TrafficCalcMode, policy.FamilyLimit = snapshot.TrafficCalcMode, snapshot.FamilyLimit

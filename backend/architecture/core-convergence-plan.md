@@ -688,3 +688,11 @@ P7新CI39466880437的d98后端保留真实失败：SSH node_deadline在包装she
 17:59:16–18:00:48 UTC暂停其余编译/测试后，原1CPU/1GiB/no-extra-swap/20events秒/4readers/60秒负载与所有gate完全未改，fixed308复测全部通过：1201unique、1274eventHTTP、948业务读取全0错误，trend158/0错误/p95 5ms，eventp9517ms，账本/配额/预计9833472一致、最终projection pending0、停机spool0、drain5秒；9项源码/产物绑定全真。首个重试因PATH漏既有docker在load前停止，失败log保留。
 
 原4df的112/157 trend503失败不改写，独立报告core-convergence-capacity-hourly-repaired.md和validation/2026-10-20-hourly-repaired-capacity.json提供对比。原client未统计pending/complete比例，负载期间比例未知，200不等于完整图表；最终drain统计验证单列。CPU采样峰14.82%、working set36.78MiB、RSS61.14MiB，仅短样本，不代表伸缩收益或容量上限。SQL批写/执行延迟、quota-stop/overuse、插件繁忙、独立worker/归档仍未完成，P4/P6/P7不整体完成。
+
+## P2-16：首单优惠购买、真实支付履约与锁价续费（2026-10-20）
+
+复用唯一创建/支付/履约路径，新增明确单provider引用及锁外RPC、两短事务重验；幂等已创建订单先恢复，不依赖插件仍可用。基础12000/优惠2000/应付10000及version1完整条款证据分开保存，创建须确认最终报价fingerprint；未知旧优惠与recurring仍fail-closed。0055仅扩大购买快照为TEXT，60KiB有界不截断；已记迁移后丢失快照列在AutoMigrate前要求恢复，原字段/数据不伪造，down保留宽列。
+
+真实签名native+HTTP+SQLite联合验收发现付款方式转wallet会破坏不应依赖可变付款方式的商业hash，已修复而保留完整原request幂等绑定和身份/金额/条款约束。实际10000钱包捕获/权益，停插件幂等恢复，新请求503，目录涨至15000后仍12000续费，逐订阅许可及wallet-only worker一次履约、重放无副作用均验证。SQLite2.317s、真实MySQL handler9.204s/schema11.037s通过；最终root组合0.004/0.233/2.254s，HTTP错误契约0.217s、inventory0.415s、OpenAPI282原警告通过。
+
+归档/恢复/旧优惠不会因新版本伪造历史。有限券消费保留外部能力缺口，不将read-only评估当reserve/commit；recurring、其他operation优惠、真实外部优惠插件、浏览器联合验收及最终精确全套仍未完成。前端独立小批完成review后追加。详见core-convergence-discount-checkout.md及结构化validation；没有生产迁移/发布。

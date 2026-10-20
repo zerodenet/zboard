@@ -3858,6 +3858,35 @@ paths:
         '404': { description: Unknown order or receipt }
         '409': { description: Receipt already applied or conflicting resolution }
         '500': { description: No partial receipt or ledger commit; retry the same decision }
+  /api/v1/commerce/discount-providers:
+    get:
+      operationId: listCommerceDiscountProviders
+      tags: [orders]
+      summary: List available first-purchase discount providers
+      description: Authenticated, bounded choices from admitted signed active configured native installations. Names and descriptions are presentation only; selection is an optional provider-owned code, never a browser price or payment fact. No host or available provider returns an empty array. Current checkout supports new/initial_only offers only; discovery never authorizes a charge.
+      responses:
+        "200":
+          description: Up to 200 current provider choices; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        maxItems: 200
+                        items:
+                          type: object
+                          required: [provider_id, name, description, operation, agreement_scope]
+                          properties:
+                            provider_id: { type: string }
+                            name: { type: string }
+                            description: { type: string }
+                            operation: { type: string, enum: [new] }
+                            agreement_scope: { type: string, enum: [initial_only] }
+        "401": { $ref: "#/components/responses/Error" }
+        "503": { description: "Provider catalog unavailable; ordinary undiscounted purchases remain independent." }
   /api/v1/orders:
     get:
       tags:
@@ -9314,6 +9343,9 @@ components:
     OrderPreview:
       type: object
       properties:
+        base_price_minor: { type: integer, format: int64, description: Locked base before discount and residual credit. }
+        discount_amount: { type: integer, format: int64, minimum: 0 }
+        discount: { $ref: "#/components/schemas/CommerceDiscountQuote" }
         price_basis: { type: string, enum: [purchased_period, current_catalog], description: "Renewals use the first purchased base price for this currency and billing period within the current subscription purchase series. Unpurchased periods use an explicitly accepted current quote." }
         requires_price_acceptance: { type: boolean, description: "True for full-term changes or when this currency/period has no historical agreement; creation must include the exact preview quote_fingerprint." }
         order_type: { type: string, enum: [new, renewal, upgrade, traffic_pack, traffic_reset] }
@@ -9333,11 +9365,50 @@ components:
         used_bytes: { type: integer, format: int64 }
         end_at: { type: string, format: date-time, description: "For full_term change, estimated expiry from a full new period; actual start is successful fulfillment. Resets and legacy pending changes retain existing expiry." }
         quote_fingerprint: { type: string, description: "Pass back when creating the order to reject a changed quote." }
+    CommerceDiscountQuote:
+      type: object
+      required: [provider, offer]
+      properties:
+        provider:
+          type: object
+          required: [plugin_id, signing_key_fingerprint, package_digest, generation, config_revision]
+          properties:
+            plugin_id: { type: string }
+            signing_key_fingerprint: { type: string }
+            package_digest: { type: string }
+            generation: { type: integer, format: int64 }
+            config_revision: { type: integer, format: int64 }
+        offer:
+          type: object
+          required: [status, input_fingerprint, currency, discount_minor, expires_at]
+          properties:
+            status: { type: string, enum: [available, unavailable, requires_confirmation] }
+            input_fingerprint: { type: string }
+            currency: { type: string }
+            discount_minor: { type: integer, format: int64, minimum: 0 }
+            expires_at: { type: string, format: date-time }
+            message: { type: string, maxLength: 512 }
+            agreement:
+              type: object
+              required: [id, version, scope, terms_hash, terms_json]
+              properties:
+                id: { type: string }
+                version: { type: string }
+                scope: { type: string, enum: [initial_only, recurring] }
+                terms_hash: { type: string }
+                terms_json: { type: string, description: "Opaque bounded plugin-owned rule evidence; never rendered as executable content or treated as payment authority." }
+    OrderDiscountSelection:
+      type: object
+      required: [provider_id]
+      properties:
+        provider_id: { type: string, maxLength: 160 }
+        selection: { type: string, maxLength: 256, description: Optional code interpreted by the explicitly selected provider. }
     OrderCreateRequest:
       type: object
       required:
         - plan_sku_id
       properties:
+        discount: { $ref: "#/components/schemas/OrderDiscountSelection" }
         idempotency_key:
           type: string
           minLength: 8
@@ -9355,7 +9426,7 @@ components:
           format: int64
         channel:
           type: string
-        quote_fingerprint: { type: string, description: "Optional optimistic assertion of the server quote. Never supplies or overrides price." }
+        quote_fingerprint: { type: string, description: "Optimistic assertion of the server quote. Required for discounted purchases. Never supplies or overrides price. Identical idempotent retries recover the original order before calling the provider." }
     OrderCallbackRequest:
       type: object
       properties:

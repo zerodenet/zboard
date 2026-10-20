@@ -2,23 +2,26 @@ package commerce
 
 import "time"
 
+const MaxPurchaseSnapshotBytes = 60 << 10
+
 // PurchaseSnapshot contains policies missing from the original order columns.
 // Version zero/empty is legacy and must never be backfilled from today's plan.
 // Access group membership and current capacity remain resource policy, not
 // immutable commercial snapshots.
 type PurchaseSnapshot struct {
-	ValueAllocationModel string                 `json:"value_allocation_model,omitempty"`
-	Version              int                    `json:"version"`
-	BasePriceMinor       int64                  `json:"base_price_minor"`
-	Currency             string                 `json:"currency"`
-	BillingUnit          string                 `json:"billing_unit"`
-	BillingValue         int                    `json:"billing_value"`
-	RenewalEffect        string                 `json:"renewal_effect"`
-	Renewable            bool                   `json:"renewable"`
-	ResetPolicy          int16                  `json:"reset_policy"`
-	TrafficCalcMode      int16                  `json:"traffic_calc_mode"`
-	FamilyLimit          int                    `json:"family_limit"`
-	RenewalTarget        *RenewalTargetSnapshot `json:"renewal_target,omitempty"`
+	Discount             *PurchaseDiscountSnapshot `json:"discount,omitempty"`
+	ValueAllocationModel string                    `json:"value_allocation_model,omitempty"`
+	Version              int                       `json:"version"`
+	BasePriceMinor       int64                     `json:"base_price_minor"`
+	Currency             string                    `json:"currency"`
+	BillingUnit          string                    `json:"billing_unit"`
+	BillingValue         int                       `json:"billing_value"`
+	RenewalEffect        string                    `json:"renewal_effect"`
+	Renewable            bool                      `json:"renewable"`
+	ResetPolicy          int16                     `json:"reset_policy"`
+	TrafficCalcMode      int16                     `json:"traffic_calc_mode"`
+	FamilyLimit          int                       `json:"family_limit"`
+	RenewalTarget        *RenewalTargetSnapshot    `json:"renewal_target,omitempty"`
 }
 
 // Business facts only: metering counters and runtime observations cannot make

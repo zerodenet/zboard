@@ -40,6 +40,9 @@ func quoteError(message string) error {
 	return &commerce.ValidationError{Message: message, Fields: map[string]string{"target_subscription_id": message}}
 }
 func (s OrderCreation) Preview(ctx context.Context, buyer uint, request commerce.OrderCreateRequest) (commerce.OrderPreview, error) {
+	if request.Discount != nil {
+		return s.previewDiscounted(ctx, buyer, request)
+	}
 	var preview commerce.OrderPreview
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error

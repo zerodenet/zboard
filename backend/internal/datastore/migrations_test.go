@@ -125,6 +125,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0052_consumption_refunds.up.sql",
 		"0053_metering_usage_projection_pending.up.sql",
 		"0054_hourly_usage_projection.up.sql",
+		"0055_discount_purchase_snapshot.up.sql",
 	}
 	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
@@ -184,6 +185,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0052_consumption_refunds.down.sql",
 		"0053_metering_usage_projection_pending.down.sql",
 		"0054_hourly_usage_projection.down.sql",
+		"0055_discount_purchase_snapshot.down.sql",
 	}
 	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)

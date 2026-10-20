@@ -35,6 +35,7 @@ import (
 )
 
 type Services struct {
+	DiscountProviders            commerce.DiscountProviderChoices
 	Navigation                   navigation.Service
 	MessageTemplates             messaging.Templates
 	PrincipalCollection          metering.PrincipalCollection

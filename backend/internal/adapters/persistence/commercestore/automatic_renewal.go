@@ -90,12 +90,16 @@ func automaticRenewalQuote(tx *gorm.DB, owner uint, sub model.Subscription, sku 
 	if json.Unmarshal([]byte(root.EntitlementValueSnapshot), &evidence) != nil || evidence.Version != 1 || !evidence.PaymentVerified || evidence.LegacyTransferUnproven || evidence.OrderID != root.ID || evidence.SubscriptionID != sub.ID {
 		return order, commerce.AutomaticRenewalOffer{}, 0, "", quoteError("原购买缺少可核对的实付与权益快照，请通过工单核实后再开启自动续费。")
 	}
-	var discounted int64
-	if err := tx.Model(&model.Order{}).Where("subscription_id = ? AND user_id = ? AND id >= ? AND status = ? AND order_type IN ? AND (discount_amount <> 0 OR payable_amount <> amount_cents)", sub.ID, owner, root.ID, "paid", []string{"new", "renewal", "upgrade"}).Count(&discounted).Error; err != nil {
+	// A verified first-purchase reduction explicitly ends after that purchase.
+	// Unknown or recurring reductions continue to pause automatic charging.
+	var discounted []model.Order
+	if err := tx.Where("subscription_id = ? AND user_id = ? AND id >= ? AND status = ? AND order_type IN ? AND (discount_amount <> 0 OR payable_amount <> amount_cents)", sub.ID, owner, root.ID, "paid", []string{"new", "renewal", "upgrade"}).Find(&discounted).Error; err != nil {
 		return order, commerce.AutomaticRenewalOffer{}, 0, "", err
 	}
-	if discounted != 0 {
-		return order, commerce.AutomaticRenewalOffer{}, 0, "", quoteError("历史优惠的首次或长期约定尚未接入可核验报价，自动续费暂停，请手动核对；不会恢复原价扣款。")
+	for _, historical := range discounted {
+		if !knownInitialPurchaseDiscount(historical) {
+			return order, commerce.AutomaticRenewalOffer{}, 0, "", quoteError("历史优惠的首次或长期约定尚未接入可核验报价，自动续费暂停，请手动核对；不会恢复原价扣款。")
+		}
 	}
 	var policy commerce.PurchaseSnapshot
 	if json.Unmarshal([]byte(order.PurchaseSnapshot), &policy) != nil {

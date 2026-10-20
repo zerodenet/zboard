@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/commercestore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/plugins"
 )
@@ -43,3 +44,14 @@ func (p CommerceDiscountProvider) Quote(ctx context.Context, provider string, in
 }
 
 var _ commerce.DiscountQuoter = CommerceDiscountProvider{}
+
+// ConfigureCommerceDiscountProvider is composition-only; an absent native host
+// leaves explicit discount requests unavailable while ordinary orders proceed.
+// Call during startup before serving requests.
+func (s *Services) ConfigureCommerceDiscountProvider(native NativeCommerceDiscountProvider) {
+	var quoter commerce.DiscountQuoter
+	if native != nil {
+		quoter = CommerceDiscountProvider{Native: native}
+	}
+	s.OrderCreation = commerce.OrderCreation{Repository: commercestore.OrderCreation{DB: s.Identity.db, Discounts: quoter}}
+}

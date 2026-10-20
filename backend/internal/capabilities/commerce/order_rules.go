@@ -2,13 +2,19 @@ package commerce
 
 import "strings"
 
+type OrderDiscountSelection struct {
+	ProviderID string `json:"provider_id"`
+	Selection  string `json:"selection,omitempty"`
+}
+
 type OrderCreateRequest struct {
-	IdempotencyKey       string `json:"idempotency_key,omitempty"`
-	PlanSKUID            uint   `json:"plan_sku_id"`
-	OrderType            string `json:"order_type"` // Deprecated assertion; never overrides the derived operation.
-	TargetSubscriptionID uint   `json:"target_subscription_id"`
-	Channel              string `json:"channel"`
-	QuoteFingerprint     string `json:"quote_fingerprint"`
+	Discount             *OrderDiscountSelection `json:"discount,omitempty"`
+	IdempotencyKey       string                  `json:"idempotency_key,omitempty"`
+	PlanSKUID            uint                    `json:"plan_sku_id"`
+	OrderType            string                  `json:"order_type"` // Deprecated assertion; never overrides the derived operation.
+	TargetSubscriptionID uint                    `json:"target_subscription_id"`
+	Channel              string                  `json:"channel"`
+	QuoteFingerprint     string                  `json:"quote_fingerprint"`
 }
 
 // OrderTarget contains only the subscription facts needed to select an operation.

@@ -1,0 +1,135 @@
+{
+  "stage": "P2 initial-only new-purchase discount checkout",
+  "status": "Core initial-only new purchase, startup/HTTP/native integration, 0055 and frontend implementation; scoped dual-database and frontend checks pass; exact-commit comprehensive checks pending",
+  "request": {
+    "discount": {
+      "provider_id": "explicit admitted installation ID",
+      "selection": "optional rule reference"
+    }
+  },
+  "preview_additions": [
+    "base_price_minor",
+    "discount_amount",
+    "discount"
+  ],
+  "snapshot": {
+    "column": "orders.purchase_snapshot",
+    "maximum_bytes": 61440,
+    "fields": [
+      "discount.context",
+      "discount.quote.provider",
+      "discount.quote.offer",
+      "discount.final_price_minor",
+      "discount.accepted_at"
+    ],
+    "base_minor": 12000,
+    "reduction_minor": 2000,
+    "final_minor": 10000,
+    "sample_bytes": {
+      "pure_minimal": 1239,
+      "actual_sqlite_short_terms": 1259,
+      "actual_sqlite_7900_character_terms": 9156
+    },
+    "evidence_version": 1
+  },
+  "transactions": [
+    "Existing identical idempotent order returned before provider evaluation",
+    "Short baseline transaction fully released before provider RPC",
+    "Fresh create transaction repeats buyer/SKU/operation/capacity/policy/price validation",
+    "Discount applied before target/residual allocation; only new purchase admitted",
+    "Fresh clock after financial locks and before insert rechecks offer expiry"
+  ],
+  "fingerprint": {
+    "bound": [
+      "host input and fingerprint",
+      "base/reduction/final",
+      "original purchase policy",
+      "provider ID",
+      "signing key fingerprint",
+      "package digest",
+      "generation",
+      "configuration revision",
+      "agreement ID/version/scope/exact terms and hash"
+    ],
+    "excluded_transient": [
+      "offer expiry",
+      "acceptance clock",
+      "explanatory message"
+    ],
+    "fresh_offer_on_every_create": true
+  },
+  "renewal": {
+    "base_price_minor": 12000,
+    "historical_initial_only": "Requires strict valid evidence plus existing verified-payment and explicit consent gates",
+    "unknown_or_recurring": "fail_closed",
+    "worker_changed": false
+  },
+  "tests": [
+    {
+      "command": "go test -p 1 ./internal/capabilities/commerce ./internal/adapters/persistence/commercestore ./internal/application -run '^Test(PurchaseDiscount|DiscountCheckout|CommerceDiscountAdapter)' -count=1 -v -timeout 3m",
+      "result": "pass",
+      "seconds": {
+        "commerce": 0.004,
+        "commercestore": 0.262,
+        "application": 0.009
+      },
+      "log": ".codex-local-artifacts/recovery-validation/discount-checkout-tests.log"
+    },
+    {
+      "command": "go test -p 1 ./internal/capabilities/commerce ./internal/adapters/persistence/commercestore -count=1 -timeout 3m",
+      "result": "pass",
+      "seconds": {
+        "commerce": 0.007,
+        "commercestore": 0.218
+      },
+      "log": ".codex-local-artifacts/recovery-validation/discount-checkout-package-tests.log"
+    },
+    {
+      "command": "go vet -p 1 ./internal/capabilities/commerce ./internal/adapters/persistence/commercestore ./internal/application",
+      "result": "pass",
+      "exit_code": 0,
+      "log": ".codex-local-artifacts/recovery-validation/discount-checkout-vet.log"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass"
+    }
+  ],
+  "environment": {
+    "go": "1.26.8",
+    "gomaxprocs": 1,
+    "scope": "shared working tree, not final exact-commit check",
+    "mysql_used": false,
+    "native_process_used": false,
+    "database": "temporary SQLite, single connection"
+  },
+  "limits": [
+    "Only available initial_only offers for derived new purchases are admitted",
+    "No finite-use coupon reserve/commit/release or consumption semantics",
+    "Renewal price query test explicitly simulates paid facts; real payment/fulfillment/automatic-worker acceptance remains integration work",
+    "Root owns migration0055, startup/HTTP/native integration, frontend/OpenAPI and final frozen-source global checks",
+    "No phase-wide P2 completion claim"
+  ],
+  "root_integration": {
+    "mysql_schema_package_seconds": 11.037,
+    "mysql_native_http_wallet_auto_seconds": 9.204,
+    "sqlite_native_http_wallet_auto_seconds": 2.317,
+    "final_integrated_packages_seconds": {
+      "commerce": 0.004,
+      "commercestore": 0.233,
+      "handler": 2.254
+    },
+    "http_error_contract_seconds": 0.217,
+    "inventory_seconds": 0.415,
+    "openapi": "valid;282 existing warnings",
+    "channel_boundary": "Payment may set Order.Channel to wallet; channel excluded from commercial input hash; complete original request remains bound by idempotency. Actual before-fix failure preserved.",
+    "frontend": "Initial full1050 pass/8 existing skips, build12.68s; additional all-operation unknown-result quote isolation review pending its final rerun",
+    "migration": "0055 expands MySQL purchase_snapshot to TEXT; SQLite remains TEXT; receipt-before-AutoMigrate lost-evidence guard; no destructive shrink on rollback",
+    "remaining": [
+      "recurring and non-new discount checkout",
+      "finite-use coupon reserve/commit/release external capability",
+      "browser joint acceptance",
+      "exact-commit complete backend/SQLite/MySQL/newCI"
+    ]
+  }
+}

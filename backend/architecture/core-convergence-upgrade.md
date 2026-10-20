@@ -229,3 +229,18 @@ preparing、没有可信收据的旧失败目标及completed结果不被自动�
 新的套餐换组事务会立即更新已有未结束/恢复窗口中的订阅范围，独立于quota同步；同组共享的已确认凭据保留。核对原/新node_group_id、逐订阅审计、撤权与新组发布意图；付款/额度/历史订单不重写。超过1000份或资源竞争整笔拒绝，没有部分成功。暂时资源忙返回可重试unavailable，保留原请求/版本；浏览器不自动重放，可信事件/缓冲按原身份重试，失败不推进checkpoint。
 
 回退程序不会自动恢复旧组或撤销已发的配置，不删除审计/确认/队列。业务回退应在当前版本明确创建新的套餐revision并同步目标范围，再按原生核验核对远端；不要倒回数据库或把旧观察当确认。降级旧代码可能重新出现旧RR范围和并发锁问题，先停在途写入与worker，优先前向修复。此处仅准备隔离验证和说明，无生产迁移/发布。
+
+### 0055 purchase discount evidence (pending final validation)
+
+MySQL orders.purchase_snapshot expands from VARCHAR(2048) to TEXT DEFAULT ('');
+SQLite retains TEXT. Application evidence is bounded to60KiB. Existing snapshot
+bytes and payment/rights values are untouched. Retry after DDL-before-receipt is
+idempotent; already-wider TEXT/MEDIUMTEXT/LONGTEXT never narrows. After a completed
+0055, missing orders/purchase_snapshot requires restoration before startup; this
+guard protects purchase facts independently of the existing publication recovery.
+
+The down script deliberately retains the wider column. Disable new discount
+selection and reconcile pending discounted orders with a compatible binary before
+binary rollback: an older strict snapshot reader may refuse new discount evidence.
+Do not truncate terms, clear snapshots or infer old prices. This describes release
+preparation only; no production migration is authorized or executed.

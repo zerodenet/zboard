@@ -15,11 +15,15 @@ import (
 )
 
 type OrderCreation struct {
-	DB  *gorm.DB
-	Now func() time.Time
+	DB        *gorm.DB
+	Now       func() time.Time
+	Discounts commerce.DiscountQuoter
 }
 
 func (s OrderCreation) Create(ctx context.Context, buyer uint, request commerce.OrderCreateRequest) (commerce.Order, error) {
+	if request.Discount != nil {
+		return s.createDiscounted(ctx, buyer, request)
+	}
 	var out model.Order
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
@@ -39,15 +43,27 @@ func createOrderInTransaction(tx *gorm.DB, buyer uint, request commerce.OrderCre
 	if len(clocks) > 0 {
 		clock = clocks[0]
 	}
-	order, preview, err := prepareOrder(tx, buyer, request, commerceNow(clock))
+	return createOrderWithDiscountInTransaction(tx, buyer, request, nil, clock)
+}
+
+func createOrderWithDiscountInTransaction(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest, discount *checkoutDiscount, clock func() time.Time) (model.Order, error) {
+	order, preview, err := prepareOrderWithDiscount(tx, buyer, request, commerceNow(clock), discount)
 	if err != nil {
 		return model.Order{}, err
 	}
 	if preview.RequiresPriceAcceptance && request.QuoteFingerprint == "" {
+		if request.Discount != nil {
+			return model.Order{}, discountCheckoutError("请先确认优惠后的完整订单报价。")
+		}
 		if preview.ChangeMode == "full_term" {
 			return model.Order{}, quoteError("请先确认旧权益结算和完整新期间的换购报价。")
 		}
 		return model.Order{}, quoteError("该币种或付费周期尚无购买锁价，请先查看并明确确认当前新报价。")
+	}
+	if discount != nil {
+		if err := refreshDiscountAcceptance(&order, *discount, commerceNow(clock)); err != nil {
+			return model.Order{}, err
+		}
 	}
 	if err := tx.Create(&order).Error; err != nil {
 		return model.Order{}, err
@@ -56,6 +72,13 @@ func createOrderInTransaction(tx *gorm.DB, buyer uint, request commerce.OrderCre
 }
 
 func prepareOrder(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest, now time.Time) (out model.Order, preview commerce.OrderPreview, err error) {
+	return prepareOrderWithDiscount(tx, buyer, request, now, nil)
+}
+
+func prepareOrderWithDiscount(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest, now time.Time, discount *checkoutDiscount) (out model.Order, preview commerce.OrderPreview, err error) {
+	if request.Discount != nil && discount == nil {
+		return out, preview, discountCheckoutError("优惠报价必须在订单事务之外取得并重新核验。")
+	}
 	if request.PlanSKUID == 0 {
 		return model.Order{}, commerce.OrderPreview{}, &commerce.ValidationError{Message: "订单创建失败。", Fields: map[string]string{"plan_sku_id": "请选择销售规格。"}}
 	}
@@ -121,6 +144,15 @@ func prepareOrder(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest, 
 		BillingValue: terms.BillingValue, RenewalEffect: terms.RenewalEffect, TrafficBytes: terms.TrafficBytes,
 		DeviceLimit: terms.DeviceLimit, SpeedLimitMbps: terms.SpeedLimitMbps,
 	}
+	if discount != nil {
+		// Capture the undiscounted policy before any residual allocation.
+		if err := capturePurchaseSnapshot(tx, &order, plan, sub); err != nil {
+			return out, preview, err
+		}
+		if err := applyCheckoutDiscount(&order, request, *discount, now); err != nil {
+			return out, preview, err
+		}
+	}
 	if order.OrderType == "upgrade" {
 		preview, err = quoteFullReplacement(tx, &order, sub, now, now)
 	} else {
@@ -129,8 +161,15 @@ func prepareOrder(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest, 
 	if err != nil {
 		return model.Order{}, commerce.OrderPreview{}, err
 	}
-	if err := capturePurchaseSnapshot(tx, &order, plan, sub); err != nil {
+	if err := capturePurchaseSnapshot(tx, &order, plan, sub, discount); err != nil {
 		return model.Order{}, commerce.OrderPreview{}, err
+	}
+	preview.BasePriceMinor, preview.DiscountAmount = order.AmountCents, order.DiscountAmount
+	if discount != nil {
+		quote := discount.Quote
+		preview.Discount = &quote
+		preview.RequiresPriceAcceptance = true
+		preview.QuoteFingerprint = discount.Context.InputFingerprint
 	}
 	bindPurchaseQuote(&preview, order)
 	if request.QuoteFingerprint != "" && request.QuoteFingerprint != preview.QuoteFingerprint {

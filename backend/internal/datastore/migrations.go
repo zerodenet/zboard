@@ -121,6 +121,9 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
+	if err := preflightDiscountSnapshotSchema(db); err != nil {
+		return err
+	}
 	if err := preflightHourlyProjectionSchema(db); err != nil {
 		return err
 	}
@@ -173,6 +176,9 @@ func RunMigrations(db *gorm.DB) error {
 		return err
 	}
 	if err := reconcilePurchaseSnapshotSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileDiscountSnapshotSchema(db); err != nil {
 		return err
 	}
 	if err := reconcileWalletSchema(db); err != nil {
@@ -383,6 +389,12 @@ func runMigrations(db *gorm.DB) error {
 		}
 		if version == walletSchemaVersion {
 			if err := reconcileWalletSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == discountSnapshotSchemaVersion {
+			if err := reconcileDiscountSnapshotSchema(db); err != nil {
 				return err
 			}
 			continue
