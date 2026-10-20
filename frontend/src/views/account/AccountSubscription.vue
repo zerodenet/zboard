@@ -44,7 +44,14 @@
         <tbody>
           <tr v-for="sub in subscriptions" :key="sub.id" :class="{ 'selected-subscription-row': sub.id === selectedSubscriptionID }">
             <td class="table-primary-column"><strong class="mono">#{{ sub.id }}</strong></td>
-            <td><StatusBadge :tone="subTone(sub.status)">{{ sub.end_reason === 'exhausted' ? '已用完' : subLabel(sub.status) }}</StatusBadge></td>
+            <td>
+              <StatusBadge :tone="subTone(sub.status)">{{ sub.end_reason === 'exhausted' ? '已用完' : subLabel(sub.status) }}</StatusBadge>
+              <div v-if="automaticNeedsAttention(sub.automatic_renewal_state)">
+                <StatusBadge tone="warning">{{ sub.automatic_renewal_state === 'insufficient_balance' ? '上次自动续费余额不足' : '自动续费需要核对' }}</StatusBadge>
+                <small>上次结果：{{ sub.automatic_renewal_message || '请核对该订阅的余额自动续费状态。' }}</small>
+                <small v-if="sub.automatic_renewal_checked_at">最近检查 <TimeBadge :value="sub.automatic_renewal_checked_at" /></small>
+              </div>
+            </td>
             <td data-column-priority="2">
               <div class="cell-title cell-related">
                 <TableText :value="sub.plan_name || `套餐 #${sub.plan_id}`" />
@@ -274,6 +281,9 @@ import {
 
 const terminationTarget = ref(0)
 const automaticTarget = ref<{ id: number; planId: number } | null>(null)
+function automaticNeedsAttention(state?: string) {
+  return Boolean(state && !['waiting', 'renewed', 'disabled', 'window_closed'].includes(state))
+}
 const route = useRoute()
 const router = useRouter()
 const allowedPageSizes = [25, 50, 100]

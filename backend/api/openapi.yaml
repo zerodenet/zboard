@@ -4119,7 +4119,7 @@ paths:
       tags: [subscriptions]
       operationId: getOwnedAutomaticRenewal
       summary: Read per-subscription wallet renewal consent and an explicitly selected period quote
-      description: Default off. Only an owned subscription, a purchased locked period, verified purchase evidence, and a renewable SKU can produce an offer. Unknown historical discount agreements explain why automatic debit is unavailable. No order or debit is created by this read. Insufficient balance is retained as a visible account notice.
+      description: Default off. Only an owned subscription, a purchased locked period, verified purchase evidence, and a renewable SKU can produce an offer. Unknown historical discount agreements explain why automatic debit is unavailable. No order or debit is created by this read. Insufficient balance is retained as a visible account notice. An over-bound historical item remains readable with no unsafe offer, and its owner can always withdraw future debit consent without settling that history.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
         - { name: plan_sku_id, in: query, schema: { type: integer, minimum: 1 } }
@@ -4142,7 +4142,7 @@ paths:
       tags: [subscriptions]
       operationId: setOwnedAutomaticRenewal
       summary: Explicitly enable or disable wallet-only renewal for one owned subscription
-      description: No immediate charge. Enabling binds a current server quote, purchased price and period, paid series and offered entitlement terms. Revision conflicts require an explicit refresh. The background job processes due subscriptions in stable account, expiry and subscription-ID order, commits each through the same wallet payment and fulfillment transaction, and retries insufficient funds in five minutes while the recovery window remains open. Ending the window, unsubscribe or replacement stops old consent. No external payment channel is invoked.
+      description: No immediate charge. Enabling binds a current server quote, purchased price and period, paid series and offered entitlement terms. Revision conflicts require an explicit refresh. The background job processes due subscriptions in stable account, expiry and subscription-ID order, commits each through the same wallet payment and fulfillment transaction, and retries insufficient funds in five minutes while the recovery window remains open. Ending the window, unsubscribe or replacement stops old consent. No external payment channel is invoked. A known historical safety-bound failure rolls back its financial transaction, records only a paused non-charge result and stable sequence separately, and lets neighboring subscriptions proceed. It is retried in 30 minutes only while the recovery window is open.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
       requestBody:
@@ -7805,6 +7805,9 @@ components:
         - type: object
           description: Bounded administration-list projection; subscription config is intentionally omitted.
           properties:
+            automatic_renewal_state: { type: string, readOnly: true, description: Last persisted per-subscription automatic renewal result; not a live balance or business authorization. }
+            automatic_renewal_message: { type: string, readOnly: true }
+            automatic_renewal_checked_at: { type: string, format: date-time, readOnly: true, description: Time of the last automatic-renewal attempt; absent when no attempt exists. }
             user_email: { type: string, format: email }
             plan_name: { type: string }
             sku_name: { type: string }

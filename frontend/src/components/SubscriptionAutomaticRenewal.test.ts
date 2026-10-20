@@ -74,3 +74,10 @@ it('isolates accounts and discards an old account response', async () => {
   expect(setAutomaticRenewal).not.toHaveBeenCalled()
   wrapper.unmount()
 })
+
+it('keeps a paused historical item readable and revocable without an unsafe quote', async () => {
+ vi.mocked(fetchAutomaticRenewal).mockResolvedValue({ ...enabled, state: 'history_review_required', message: '历史超过安全核对上限，本次未扣款' })
+ vi.mocked(setAutomaticRenewal).mockResolvedValue({ ...enabled, enabled: false, revision: 2, state: 'disabled', message: '已关闭' })
+ const wrapper = open(); await flushPromises(); expect(wrapper.text()).toContain('本项自动扣款已暂停'); expect(wrapper.text()).toContain('本次未扣款')
+ await click(wrapper, '关闭余额自动续费'); expect(setAutomaticRenewal).toHaveBeenCalledWith(7, expect.objectContaining({ enabled: false, expected_revision: 1 })); wrapper.unmount()
+})

@@ -1538,6 +1538,10 @@ export async function fetchSubscriptions(params: { userId?: number; status?: str
 }
 
 export interface AdminSubscriptionListItem {
+  /** Persisted per-subscription renewal notice; an absent row has no consent. */
+  automatic_renewal_state?: string
+  automatic_renewal_message?: string
+  automatic_renewal_checked_at?: string | null
   lifecycle?: 'renewable' | 'fixed'
   ends_on_quota_exhaustion?: boolean
   ended_at?: string | null

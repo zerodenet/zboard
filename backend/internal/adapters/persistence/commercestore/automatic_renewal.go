@@ -22,17 +22,19 @@ type AutomaticRenewals struct {
 	Now    func() time.Time
 }
 
+var errAutomaticHistoryBound = fmt.Errorf("automatic renewal related-order limit exceeded: %w", commerce.ErrSubscriptionValueUnavailable)
+
 // Existing payment and unsubscribe writers lock orders before their owner.
 // Consent changes and automatic debits follow that order too. A newly inserted
 // target order requires a fresh attempt, rather than being missed by an old RR
 // snapshot or introducing an inverse account/order wait.
 func automaticRenewalScope(tx *gorm.DB, owner, subscription uint) (model.User, error) {
 	var orders []model.Order
-	if err := relatedSubscriptionOrders(tx, owner, subscription).Clauses(clause.Locking{Strength: "UPDATE"}).Find(&orders).Error; err != nil {
+	if err := relatedSubscriptionOrders(tx, owner, subscription).Select("id").Clauses(clause.Locking{Strength: "UPDATE"}).Find(&orders).Error; err != nil {
 		return model.User{}, err
 	}
 	if len(orders) > 1000 {
-		return model.User{}, commerce.ErrSubscriptionValueUnavailable
+		return model.User{}, errAutomaticHistoryBound
 	}
 	var user model.User
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status").First(&user, owner).Error; err != nil {
@@ -150,10 +152,18 @@ func (s AutomaticRenewals) Read(ctx context.Context, owner, subscription, sku ui
 		out.Offer = &offer
 		return nil
 	})
+	if errors.Is(err, errAutomaticHistoryBound) {
+		// The failed transaction has released its bounded order locks. A
+		// consent/status read needs no financial history or new debit quote.
+		return s.readAutomaticConsentWithoutHistory(ctx, owner, subscription)
+	}
 	return
 }
 
 func (s AutomaticRenewals) Set(ctx context.Context, owner, subscription uint, in commerce.AutomaticRenewalRequest) (out commerce.AutomaticRenewalView, err error) {
+	if !in.Enabled {
+		return s.disableAutomaticConsent(ctx, owner, subscription, in.ExpectedRevision)
+	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		user, err := automaticRenewalScope(tx, owner, subscription)
 		if err != nil {
@@ -167,22 +177,15 @@ func (s AutomaticRenewals) Set(ctx context.Context, owner, subscription uint, in
 			return resourceError(err)
 		}
 		now := commerceNow(s.Now)
-		var offer commerce.AutomaticRenewalOffer
-		var root uint
-		var digest string
-		if in.Enabled {
-			_, offer, root, digest, err = automaticRenewalQuote(tx, owner, sub, in.PlanSKUID, now)
-			if err != nil {
-				return err
-			}
-			if offer.QuoteFingerprint != in.QuoteFingerprint {
-				return commerce.ErrSubscriptionQuoteChanged
-			}
-		} else if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", subscription, owner).First(&sub).Error; err != nil {
-			return resourceError(err)
+		_, offer, root, digest, err := automaticRenewalQuote(tx, owner, sub, in.PlanSKUID, now)
+		if err != nil {
+			return err
+		}
+		if offer.QuoteFingerprint != in.QuoteFingerprint {
+			return commerce.ErrSubscriptionQuoteChanged
 		}
 		// Cleanup also uses subscription -> consent. Read the current revision
-		// only after the subscription lock, including when disabling consent.
+		// only after the subscription lock when granting debit consent.
 		var row model.SubscriptionAutomaticRenewal
 		lookup := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("subscription_id = ? AND user_id = ?", subscription, owner).First(&row).Error
 		if lookup != nil && !errors.Is(lookup, gorm.ErrRecordNotFound) {
@@ -191,18 +194,10 @@ func (s AutomaticRenewals) Set(ctx context.Context, owner, subscription uint, in
 		if row.Revision != in.ExpectedRevision {
 			return commerce.ErrSubscriptionQuoteChanged
 		}
-		if !in.Enabled && errors.Is(lookup, gorm.ErrRecordNotFound) {
-			out = automaticRenewalView(row, subscription)
-			return nil
-		}
-		if in.Enabled {
-			row.PlanSKUID, row.RootOrderID, row.AgreementDigest = in.PlanSKUID, root, digest
-			row.State, row.Message = "waiting", "到期后使用站内可用余额续费；余额不足时保留提醒并在恢复窗口内重试。"
-			row.NextAttemptAt = maxTime(sub.EndAt, now)
-		} else {
-			row.State, row.Message = "disabled", "已关闭余额自动续费。"
-		}
-		row.SubscriptionID, row.UserID, row.Enabled = subscription, owner, in.Enabled
+		row.PlanSKUID, row.RootOrderID, row.AgreementDigest = in.PlanSKUID, root, digest
+		row.State, row.Message = "waiting", "到期后使用站内可用余额续费；余额不足时保留提醒并在恢复窗口内重试。"
+		row.NextAttemptAt = maxTime(sub.EndAt, now)
+		row.SubscriptionID, row.UserID, row.Enabled = subscription, owner, true
 		row.Revision++
 		row.UpdatedAt = now
 		if errors.Is(lookup, gorm.ErrRecordNotFound) {
@@ -216,6 +211,79 @@ func (s AutomaticRenewals) Set(ctx context.Context, owner, subscription uint, in
 		if err := tx.Create(&model.AuditLog{UserID: &owner, Actor: fmt.Sprintf("user:%d", owner), Action: "commerce.auto_renew.consent", Target: fmt.Sprintf("subscription:%d", subscription), Detail: fmt.Sprintf("enabled=%t sku=%d revision=%d", row.Enabled, row.PlanSKUID, row.Revision)}).Error; err != nil {
 			return err
 		}
+		out = automaticRenewalView(row, subscription)
+		return nil
+	})
+	return
+}
+
+func ownedAutomaticConsent(tx *gorm.DB, owner, subscription uint, lock bool) (model.SubscriptionAutomaticRenewal, error) {
+	if err := orderReader(tx, owner, false); err != nil {
+		return model.SubscriptionAutomaticRenewal{}, err
+	}
+	var sub model.Subscription
+	if err := tx.Select("id").Where("id = ? AND user_id = ?", subscription, owner).First(&sub).Error; err != nil {
+		return model.SubscriptionAutomaticRenewal{}, resourceError(err)
+	}
+	var row model.SubscriptionAutomaticRenewal
+	query := tx.Where("subscription_id = ? AND user_id = ?", subscription, owner)
+	if lock {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	err := query.First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return row, nil
+	}
+	return row, err
+}
+
+func (s AutomaticRenewals) readAutomaticConsentWithoutHistory(ctx context.Context, owner, subscription uint) (out commerce.AutomaticRenewalView, err error) {
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		row, err := ownedAutomaticConsent(tx, owner, subscription, false)
+		if err != nil {
+			return err
+		}
+		out = automaticRenewalView(row, subscription)
+		if row.Enabled {
+			out.State = "history_review_required"
+			out.Message = automaticHistoryReviewMessage
+		}
+		return nil
+	})
+	return
+}
+
+// Revoking future debit permission does not settle value, acquire old orders,
+// or change a subscription. User SHARE -> consent UPDATE matches payment's
+// owner-before-consent order without an inverse subscription/order wait.
+func (s AutomaticRenewals) disableAutomaticConsent(ctx context.Context, owner, subscription uint, revision uint64) (out commerce.AutomaticRenewalView, err error) {
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if tx.Dialector.Name() == "sqlite" {
+			// Acquire its writer reservation before a read snapshot. The no-op
+			// changes no consent; all authorization checks remain in this TX.
+			if err := tx.Exec("UPDATE subscription_automatic_renewals SET revision = revision WHERE subscription_id = ? AND user_id = ?", subscription, owner).Error; err != nil {
+				return err
+			}
+		}
+		row, err := ownedAutomaticConsent(tx, owner, subscription, true)
+		if err != nil {
+			return err
+		}
+		if row.Revision != revision {
+			return commerce.ErrSubscriptionQuoteChanged
+		}
+		if row.Revision == 0 {
+			out = automaticRenewalView(row, subscription)
+			return nil
+		}
+		now := commerceNow(s.Now)
+		if err := tx.Model(&row).Updates(map[string]any{"enabled": false, "state": "disabled", "message": "已关闭余额自动续费。", "revision": gorm.Expr("revision + 1"), "updated_at": now}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&model.AuditLog{UserID: &owner, Actor: fmt.Sprintf("user:%d", owner), Action: "commerce.auto_renew.consent", Target: fmt.Sprintf("subscription:%d", subscription), Detail: fmt.Sprintf("enabled=false sku=%d revision=%d", row.PlanSKUID, revision+1)}).Error; err != nil {
+			return err
+		}
+		row.Enabled, row.State, row.Message, row.Revision = false, "disabled", "已关闭余额自动续费。", revision+1
 		out = automaticRenewalView(row, subscription)
 		return nil
 	})

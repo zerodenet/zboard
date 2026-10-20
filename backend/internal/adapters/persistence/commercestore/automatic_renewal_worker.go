@@ -17,6 +17,8 @@ import (
 
 var errAutomaticRenewalHeadChanged = errors.New("automatic renewal queue changed before owner lock")
 
+const automaticHistoryReviewMessage = "关联订单超过安全核对上限，本项自动扣款已暂停且未扣款；仍可关闭授权。请通过工单核对历史，系统仅在恢复窗口内每30分钟重新检查。"
+
 func automaticRenewalHead(db *gorm.DB, now time.Time) (model.SubscriptionAutomaticRenewal, error) {
 	var head model.SubscriptionAutomaticRenewal
 	err := db.Table("subscription_automatic_renewals AS a").Select("a.*").
@@ -43,6 +45,12 @@ func (s AutomaticRenewals) Process(ctx context.Context, limit int) (processed in
 			return processed, err
 		}
 		err = s.processAutomaticRenewal(ctx, prepared)
+		if errors.Is(err, errAutomaticHistoryBound) {
+			// The financial transaction has rolled back and released its order
+			// locks. Isolate a known bounded-history item without pretending its
+			// money or entitlement has been reconciled.
+			err = s.pauseAutomaticHistoryItem(ctx, prepared)
+		}
 		if errors.Is(err, errAutomaticRenewalHeadChanged) {
 			continue
 		}
@@ -52,6 +60,62 @@ func (s AutomaticRenewals) Process(ctx context.Context, limit int) (processed in
 		processed++
 	}
 	return processed, nil
+}
+
+func (s AutomaticRenewals) pauseAutomaticHistoryItem(ctx context.Context, prepared model.SubscriptionAutomaticRenewal) error {
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if tx.Dialector.Name() == "sqlite" {
+			if err := tx.Exec("UPDATE automatic_renewal_scans SET sequence = sequence WHERE id = 1").Error; err != nil {
+				return err
+			}
+		}
+		var guard model.AutomaticRenewalScan
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&guard, 1).Error; err != nil {
+			return err
+		}
+		grace, err := entitlementstore.RecoveryGracePeriod(tx)
+		if err != nil {
+			return err
+		}
+		var sub model.Subscription
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", prepared.SubscriptionID, prepared.UserID).First(&sub).Error; err != nil {
+			return err
+		}
+		now := commerceNow(s.Now)
+		head, err := automaticRenewalHead(tx, now)
+		if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && (head.SubscriptionID != prepared.SubscriptionID || head.UserID != prepared.UserID)) {
+			return errAutomaticRenewalHeadChanged
+		}
+		if err != nil {
+			return err
+		}
+		var row model.SubscriptionAutomaticRenewal
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("subscription_id = ? AND user_id = ?", prepared.SubscriptionID, prepared.UserID).First(&row).Error; err != nil {
+			return err
+		}
+		if !row.Enabled || row.NextAttemptAt.After(now) {
+			return errAutomaticRenewalHeadChanged
+		}
+		if guard.Sequence == math.MaxUint64 {
+			return fmt.Errorf("automatic renewal ordering sequence exhausted")
+		}
+		guard.Sequence++
+		if err := tx.Model(&guard).Update("sequence", guard.Sequence).Error; err != nil {
+			return err
+		}
+		row.State, row.Message = "history_review_required", automaticHistoryReviewMessage
+		row.LastAttemptAt, row.AttemptedEndAt = &now, &sub.EndAt
+		row.AttemptSequence, row.NextAttemptAt, row.UpdatedAt = guard.Sequence, now.Add(30*time.Minute), now
+		if !entitlements.CanRenewAt(entitlements.Subscription(sub), now, grace) {
+			row.Enabled = false
+			row.Revision++
+			row.State, row.Message = "window_closed", "订阅已结束或超过恢复窗口，自动扣款已停止。"
+		}
+		if err := tx.Save(&row).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.AuditLog{UserID: &row.UserID, Actor: "system", Action: "commerce.auto_renew." + row.State, Target: fmt.Sprintf("subscription:%d", sub.ID), Detail: fmt.Sprintf("sequence=%d consent_revision=%d no_charge=true", guard.Sequence, row.Revision)}).Error
+	})
 }
 
 func (s AutomaticRenewals) processAutomaticRenewal(ctx context.Context, prepared model.SubscriptionAutomaticRenewal) error {

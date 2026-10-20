@@ -2,7 +2,7 @@
   <UiSection :title="`订阅 #${subscriptionId} 的余额自动续费`" description="每份订阅独立开启，默认关闭；仅扣站内可用余额，不调用外部支付渠道。">
     <div class="panel-body stack">
       <PageAlert v-if="error" tone="danger" title="自动续费需要核对">{{ error }}</PageAlert>
-      <PageAlert v-if="view" :tone="view.state === 'insufficient_balance' ? 'warning' : 'info'" :title="view.enabled ? '已开启' : '已关闭'">
+      <PageAlert v-if="view" :tone="['insufficient_balance', 'history_review_required'].includes(view.state) ? 'warning' : 'info'" :title="view.state === 'history_review_required' ? '本项自动扣款已暂停' : view.enabled ? '已开启' : '已关闭'">
         {{ view.message }}
         <span v-if="view.last_order_id">最近订单 #{{ view.last_order_id }}。</span>
         <span v-if="view.enabled && view.next_attempt_at">下次检查 <TimeBadge :value="view.next_attempt_at" />。</span>

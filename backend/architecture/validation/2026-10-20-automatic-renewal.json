@@ -32,7 +32,7 @@
     "initial_backend_full": "PASS handler226.162s,application6.522s,capabilityinventory1.096s; vet/build pass; pure-Go SQLite7.636s; preceded final paid-replay guard",
     "final_backend_full": "PASS handler175.493s,capabilityinventory0.633s; unchanged packages may use Go cache; final vet/build pass; pure-Go SQLite7.791s",
     "initial_actual_mysql_full": "PASS actual MySQL8.4 datastore101.730s,handler646.578s,networkstore136.118s; this binary preceded only final paid-replay guard. That guard separately passed actual SQLite/MySQL5.591s. Exact-head CI must verify full final source.",
-    "final_exact_head_ci": "PENDING after commit/push"
+    "final_exact_head_ci": "SUCCESS all six jobs at https://github.com/zerodenet/zboard/actions/runs/39359911624 including actual MySQL on final paid-replay source"
   },
   "reproduction": {
     "backend": [
@@ -95,5 +95,7 @@
     "frontend/src/components/SubscriptionAutomaticRenewal.test.ts": "8aac0fec69bf75aa07950a2c996ffef5f18c3b7e33ad73e6a4a9db97ea2ae872",
     "frontend/src/components/SubscriptionAutomaticRenewal.vue": "6ef3bb77a427f35f1bbc2393f26a38de2cef48e16d522cbe99131420d733334d",
     "frontend/src/views/account/AccountSubscription.vue": "6defb82e317307d272a881ab327e0819869e021da5a04c18023c990cf3cc8b51"
-  }
+  },
+  "implementation_commit": "7aba6d61b6c53e6b7b7a0cd879fd44e6ae6cc8d7",
+  "follow_up": "P2-10 separately addresses historical-bound queue isolation, consent withdrawal and timestamped main-list notices; the original7aba6d6 limits remain historical evidence."
 }

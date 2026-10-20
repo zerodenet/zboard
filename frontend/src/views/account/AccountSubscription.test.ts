@@ -67,6 +67,19 @@ describe('account subscription independent loading and access identity', () => {
     return match!
   }
 
+  it('shows the last renewal notice in its own row without blocking access', async () => {
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([
+      { ...subscriptions[0], automatic_renewal_state: 'insufficient_balance', automatic_renewal_message: '余额不足，本次未扣款', automatic_renewal_checked_at: '2026-10-20T00:00:00Z' },
+      subscriptions[1],
+    ]))
+    await open()
+    const rows = wrapper!.findAll('tbody tr')
+    expect(rows[0]!.text()).toContain('上次自动续费余额不足')
+    expect(rows[0]!.text()).toContain('最近检查')
+    expect(rows[1]!.text()).not.toContain('余额不足')
+    expect(fetchSubscriptionAccess).toHaveBeenCalledWith(1, expect.anything())
+  })
+
   it('resolves a deep-linked subscription outside both the preview and current list page', async () => {
     vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId
       ? page([{ ...subscriptions[0], id: 201, plan_name: 'Old subscription' }])

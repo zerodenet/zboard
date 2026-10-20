@@ -13,6 +13,9 @@ import (
 )
 
 const subscriptionSummaryColumns = `subscriptions.id, subscriptions.user_id, users.email AS user_email,
+			COALESCE(subscription_automatic_renewals.state, '') AS automatic_renewal_state,
+			COALESCE(subscription_automatic_renewals.message, '') AS automatic_renewal_message,
+			subscription_automatic_renewals.last_attempt_at AS automatic_renewal_checked_at,
 			subscriptions.plan_id, plans.name AS plan_name,
 			subscriptions.plan_sku_id, plan_skus.name AS sku_name,
 			subscriptions.node_group_id, subscriptions.subscription_type,
@@ -69,7 +72,7 @@ func subscriptionReader(tx *gorm.DB, actor uint, admin bool) error {
 	return nil
 }
 func subscriptionJoins(query *gorm.DB) *gorm.DB {
-	return query.Joins("LEFT JOIN users ON users.id = subscriptions.user_id").Joins("LEFT JOIN plans ON plans.id = subscriptions.plan_id").Joins("LEFT JOIN plan_skus ON plan_skus.id = subscriptions.plan_sku_id")
+	return query.Joins("LEFT JOIN users ON users.id = subscriptions.user_id").Joins("LEFT JOIN plans ON plans.id = subscriptions.plan_id").Joins("LEFT JOIN plan_skus ON plan_skus.id = subscriptions.plan_sku_id").Joins("LEFT JOIN subscription_automatic_renewals ON subscription_automatic_renewals.subscription_id = subscriptions.id AND subscription_automatic_renewals.user_id = subscriptions.user_id")
 }
 func (s SubscriptionQueries) Detail(ctx context.Context, actor, id uint) (entitlements.SubscriptionDetail, error) {
 	var out entitlements.SubscriptionDetail

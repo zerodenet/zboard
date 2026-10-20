@@ -100,7 +100,7 @@
         "observability"
       ],
       "atomicity": "single_database_transaction",
-      "compensation": "Rollback stable queue sequence, explicit consent attempt state, order, existing wallet reservation/capture, actual paid value snapshot, quota/credential epoch, audit and publication intent together. Known business failures roll back the payment savepoint before retaining an explanatory non-charge status.",
+      "compensation": "Rollback stable queue sequence, explicit consent attempt state, order, existing wallet reservation/capture, actual paid value snapshot, quota/credential epoch, audit and publication intent together. Known business failures roll back the payment savepoint before retaining an explanatory non-charge status. A specifically identified history-bound failure rolls back the entire financial attempt before a separate sequence/status-only transaction; it never claims value or payment was reconciled.",
       "outbox": "Reuse the same reserved-wallet payment and native publication-intent writer as manual payment; never call external payment channels."
     },
     {
