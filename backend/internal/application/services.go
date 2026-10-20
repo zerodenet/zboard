@@ -41,6 +41,7 @@ type Services struct {
 	PrincipalCollection          metering.PrincipalCollection
 	UsageProjections             metering.UsageProjections
 	FairUseObservationSeries     metering.ObservationSeriesService
+	FairUseObservationRetention  metering.ObservationRetention
 	FairUseFlowCollection        metering.FlowCollection
 	FairUseEvaluationRequests    metering.EvaluationRequests
 	FairUseEvaluator             metering.Evaluator
@@ -134,6 +135,7 @@ func New(db *gorm.DB, secret string) *Services {
 	s.PrincipalCollection = metering.PrincipalCollection{Repository: meteringstore.PrincipalCollection{DB: db}}
 	s.UsageProjections = metering.UsageProjections{Repository: meteringstore.UsageProjectionWorker{DB: db}}
 	s.FairUseObservationSeries = metering.ObservationSeriesService{Repository: meteringstore.ObservationSeries{DB: db}}
+	s.FairUseObservationRetention = metering.ObservationRetention{Repository: meteringstore.ObservationRetention{DB: db}}
 	s.FairUseFlowCollection = metering.FlowCollection{Repository: meteringstore.FlowCollection{DB: db}}
 	s.FairUseEvaluationRequests = metering.EvaluationRequests{Repository: meteringstore.EvaluationRequests{DB: db}}
 	s.FairUseEvaluator = metering.Evaluator{Source: meteringstore.EvaluationSource{DB: db}, Sampler: meteringstore.Telemetry{DB: db}, Repository: meteringstore.EvaluationWriter{DB: db}}

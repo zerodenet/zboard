@@ -714,3 +714,17 @@ and actual signed-native admission/reconfiguration test passed (19.391s).
 This does not prove the exact CI scheduler ordering or replace new CI. No schema,
 financial writer or external plugin changed. The old CI failure and both local
 logs remain recorded in [the validation receipt](validation/2026-10-20-discount-transport-deadline.json).
+
+### P4 diagnostic maintenance transaction boundary (2026-10-20)
+
+Removed inline unbounded diagnostic deletes from receive/evaluation transactions.
+The existing fair_use cycle independently attempts two bounded, point-locked
+retention transactions and evaluation, exposing failures through existing task
+observations. Added 0056 global evaluation time/PK index and recovery after
+EXPLAIN exposed a full-scan/sort discovery gap; published migrations untouched.
+SQLite fault/replay/state invariance, bounded cutoff/revalidation, migration
+recovery and post-index EXPLAIN tests pass. Real MySQL counterparts are present
+but still await the isolated slot; complete backend/new CI/capacity remain
+pending. Traffic ledger/cursor/projection authorities are not archived.
+See [ownership, migration, rollback and limits](core-convergence-observation-retention.md)
+and [exact validation receipt](validation/2026-10-20-observation-retention.json).

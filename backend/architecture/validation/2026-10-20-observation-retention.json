@@ -1,0 +1,105 @@
+{
+  "task": "Move fifteen-day Fair Use diagnostic cleanup out of receive/evaluation transactions",
+  "final_validation_head": "ddf9624",
+  "source_frozen": false,
+  "source_files": [
+    "backend/internal/adapters/persistence/meteringstore/retention.go",
+    "backend/internal/adapters/persistence/meteringstore/flow_retention.go",
+    "backend/internal/adapters/persistence/meteringstore/observation_retention.go",
+    "backend/internal/adapters/persistence/meteringstore/observation_retention_test.go",
+    "backend/internal/capabilities/metering/observation_retention.go",
+    "backend/internal/capabilities/metering/observation_retention_test.go",
+    "backend/internal/handler/fair_use_evaluator.go",
+    "backend/internal/handler/fair_use_observation_retention_test.go",
+    "backend/internal/application/services.go"
+  ],
+  "composition": {
+    "services_field": "FairUseObservationRetention metering.ObservationRetention",
+    "constructor": "s.FairUseObservationRetention = metering.ObservationRetention{Repository: meteringstore.ObservationRetention{DB: db}}",
+    "services_diff": "Only the one field and one constructor assignment; agreed before editing.",
+    "scheduler": "Existing fair_use cycle every 15 seconds; no new job or task framework. Retention and evaluation errors are joined and independent work continues."
+  },
+  "data_responsibility": {
+    "subscription_flow_start_events": "Auxiliary flow.started diagnostics after the authoritative Zero observability path accepts the event; used by Telemetry and ObservationSeries. Not settlement authorization or billing identity.",
+    "subscription_fair_use_events": "Derived evaluation explanation events; queried by authorized FairUseObservations.Events. Current evaluation state remains in the separate subscription_fair_use_states table.",
+    "authoritative_facts": "TrafficRecord, FlowUsage, node cursors and projection intents remain untouched; no cleanup of publication, business audit, entitlement, order or evaluation-state rows.",
+    "diagnostic_identity_limit": "The existing unique(node_id,event_id) identity is retained only while its raw diagnostic row exists. After fifteen-day pruning, a late flow.started replay can be counted diagnostically again. No permanent per-connection identity table was added; financial replay remains unchanged."
+  },
+  "bounds": {
+    "threshold": "UTC now minus 15*24 hours; strict less-than; raw uses received_at, evaluation events use occurred_at.",
+    "per_cycle_per_table": "At most 1000 candidate IDs, point-locked rows and deleted rows; one independent short READ COMMITTED transaction per table, no drain loop.",
+    "discovery": "Unlocked query outside the write transaction, ordered by its time column ASC then id ASC; candidate IDs sorted in Go before primary-key locking.",
+    "cutoff_revalidation": "The timestamp is reread under the exact-PK row lock and checked before deletion. DELETE contains primary keys only, not a temporal range.",
+    "raw_index": "Existing idx_subscription_flow_start_received(received_at) supports the discovery ordering; SQLite EXPLAIN shows a covering-index range search.",
+    "evaluation_discovery_limitation": "Existing indexes lead with subscription_id or event_type, not global occurred_at. SQLite EXPLAIN shows a composite-index SCAN and temporary ORDER BY B-tree. LIMIT bounds candidate output, not scanned/sorted work. No global scan bound or full P4/archive safety claim is made, and no migration was added.",
+    "backlog": "Rows older than the threshold can remain until later bounded cycles; the fifteen-day cutoff is preserved, not an immediate full-purge guarantee."
+  },
+  "validation": {
+    "environment": "PATH=/workspace/toolchains/go/bin:$PATH GOPATH=/workspace/toolchains/gopath GOCACHE=/workspace/toolchains/cache/go-build GOMAXPROCS=1",
+    "final_command": "go test -p 1 -v ./internal/capabilities/metering ./internal/adapters/persistence/meteringstore ./internal/handler -run '^(TestObservationRetention|TestFairUseObservationRetention|TestFairUseEvaluationPersistenceAndAuthorizedQueries|TestFairUseEvaluationCandidateScanSupportsSQLite|TestCompletionCapabilityRollsBackExhaustionAndReplays|TestAccountingDailyProjectionFailureDoesNotBlockSettlementOrReplay)' -count=1",
+    "working_directory": "/workspace/zboard/backend",
+    "exit_code": 0,
+    "passed_top_level_tests": 14,
+    "passed_subtests": 6,
+    "package_seconds": {
+      "capabilities/metering": 0.002,
+      "meteringstore": 0.063,
+      "handler": 2.019
+    },
+    "log": "p4-observation-retention-final.log",
+    "checks": [
+      "1000/5/0 batch boundaries, exact cutoff retained, recent received/occurred rows retained, repeated empty execution.",
+      "Discovery outside TX and without locking, exact-PK locking revalidation, a timestamp refreshed after discovery retained.",
+      "Both-table delete-trigger rollback, insertion does not issue DELETE, successful independent table commits despite the other's failure, invalid batch limits rejected.",
+      "Cleanup failure still evaluates; scan/evaluation failure does not undo cleanup; joined errors and existing task Registry failures/last_error remain visible.",
+      "With delete failures installed, fresh authoritative settlement still commits 120 to 240 bytes and evaluation still commits; failed and successful cleanup leave protected financial/state/queue/publication/audit snapshots unchanged.",
+      "Late replay after diagnostic pruning leaves billing at 240 and protected snapshots unchanged; a removed diagnostic identity can reappear once and current duplicates are ignored.",
+      "Existing fair-use authorized queries, policy rejection, completion rollback/replay and projection-failure accounting regressions pass."
+    ],
+    "initial_handler_fixture_failure": "The first combined fixture used DefaultPolicy revision 0 while the DB defaulted it to 1, correctly producing ErrEvaluationPolicyChanged. The test was corrected to read the persisted policy through EvaluationSource.Snapshot; no production policy logic was changed.",
+    "other_logs": [
+      "p4-observation-retention-core-store.log",
+      "p4-observation-retention-handler.log",
+      "p4-observation-retention-handler-final.log"
+    ],
+    "formatting": "gofmt on owned files and gofmt -d services.go clean",
+    "whitespace": "git diff --check passed"
+  },
+  "not_run": [
+    "MySQL tests or EXPLAIN/lock-wait experiments",
+    "native integration",
+    "capacity/load",
+    "full backend suite"
+  ],
+  "scope": "Only the nine assigned files; no frontend/P2/SDK/migration/documentation/runner changes, no commit/push/branch changes or subdelegation.",
+  "execution_blockers": [],
+  "root_additions": {
+    "migration": "0056_observation_retention_index.up.sql",
+    "recovery": "fresh/old, DDL-before-receipt, recorded missing index, repeat, exact definition; diagnostic bytes retained",
+    "sqlite_explain": "global covering time/PK index search; no temporary B-tree",
+    "post_index_command": "GOMAXPROCS=1 go test -p 1 ./internal/capabilities/metering ./internal/adapters/persistence/meteringstore ./internal/handler ./internal/datastore -run '^(TestObservationRetention|TestFairUseObservationRetention|TestFairUseEvaluationPersistenceAndAuthorizedQueries|TestFairUseEvaluationCandidateScanSupportsSQLite|TestCompletionCapabilityRollsBackExhaustionAndReplays|TestAccountingDailyProjectionFailureDoesNotBlockSettlementOrReplay|TestSQLiteObservationRetentionIndexMigrationAndRecovery|TestMigrationInventory)' -count=1 -timeout 3m",
+    "post_index_exit": 0,
+    "package_seconds": [
+      0.002,
+      0.068,
+      1.815,
+      0.918
+    ],
+    "final_review_exit": 0,
+    "final_review_seconds": [
+      0.528,
+      1.061
+    ],
+    "inventory_and_embedded_sql_exit": 0,
+    "inventory_and_embedded_sql_seconds": 0.015,
+    "mysql_tests": "included, not yet executed; isolated core/copy suite at e9e582f owns server slot",
+    "no_production_migration": true
+  },
+  "source_note": "Initial agent freeze receipt retained above; root subsequently added migration/index recovery and real-MySQL test wrappers. Full batch validation pending.",
+  "private_logs_sha256": {
+    "p4-observation-retention-final.log": "0a6a117af1b8c1795cc8f9ccbed3eee2faab2c6027ed2de181cf3b76e1b4c30d",
+    "p4-observation-retention-index-final.log": "5d5cc03dfdd1950023be75474b5abdd2088c23ed3856d39281c2f53c7351fc30",
+    "p4-index-final-handler-review.log": "b5eeb65b777ca91faabd43c434db39bfc44c7eeb199e89aed4642790455b5573",
+    "observation-retention-inventory.log": "b3a2f24a97ea0185115d4e17a9d628a7a9f0d7d44b223163e726843940da6a2f"
+  }
+}
