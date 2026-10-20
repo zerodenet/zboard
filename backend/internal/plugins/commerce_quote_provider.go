@@ -9,6 +9,8 @@ import (
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const CommerceQuoteProviderCapability = "zboard.commerce.quote.provider.v1"
@@ -115,6 +117,15 @@ func callCommerceQuoteProvider(ctx context.Context, before Installation, client 
 	result, callErr := client.EvaluateCommerceQuote(callCtx, &pluginv1.CommerceQuoteRequest{ContextJson: raw, Generation: before.Generation, ConfigRevision: before.ConfigRevision})
 	if callCtx.Err() != nil {
 		return commerce.DiscountQuote{}, callCtx.Err()
+	}
+	// gRPC can observe its deadline before the local context timer goroutine
+	// runs. Preserve that terminal result instead of reporting an unavailable
+	// provider (or accepting a concurrently returned result).
+	switch status.Code(callErr) {
+	case codes.DeadlineExceeded:
+		return commerce.DiscountQuote{}, context.DeadlineExceeded
+	case codes.Canceled:
+		return commerce.DiscountQuote{}, context.Canceled
 	}
 	// Disabled/replaced/reconfigured/revoked results cannot cross the host boundary.
 	if err := checkCurrent(); err != nil {

@@ -698,3 +698,19 @@ P7新CI39466880437的d98后端保留真实失败：SSH node_deadline在包装she
 归档/恢复/旧优惠不会因新版本伪造历史。有限券消费保留外部能力缺口，不将read-only评估当reserve/commit；recurring、其他operation优惠、真实外部优惠插件、浏览器联合验收及最终精确全套仍未完成。前端独立小批完成review后追加。详见core-convergence-discount-checkout.md及结构化validation；没有生产迁移/发布。
 
 P2-16后端已提交de0f2ab并推送、冻结完整检查中。P5首单优惠实际入口及全部operation未知订单恢复已完成：明确使用原确认金额/原key/request，legacy缺事实金额未知，不用后来的quote或残值冒充；存储JSONnull视为损坏。9个新增边界先失败后修复，最终前端原六排除1058通过/8既有skip，199文件通过/2既有skip，123专项、vue-tsc/build13.99s通过。浏览器联合验收未跑，不能由组件测试替代；独立前端批次跟随原分支。
+
+### Native discount transport deadline regression (2026-10-20)
+
+The e9e582f backend CI failed the signed-native twenty-millisecond timeout
+assertion: it returned `plugin service unavailable`, while the same clean-source
+local full suite passed. A deterministic transport stub now reproduces the
+missing classification without waiting for a local timer: the old provider
+implementation fails both gRPC DeadlineExceeded and Canceled subcases. The host
+now preserves those terminal transport outcomes as context errors, before any
+result can be accepted; other transport failures retain the current-authority
+fence and unavailable classification. No timeout, gate or rejection was relaxed.
+Five repetitions of the new regression, existing deadline/response boundaries
+and actual signed-native admission/reconfiguration test passed (19.391s).
+This does not prove the exact CI scheduler ordering or replace new CI. No schema,
+financial writer or external plugin changed. The old CI failure and both local
+logs remain recorded in [the validation receipt](validation/2026-10-20-discount-transport-deadline.json).

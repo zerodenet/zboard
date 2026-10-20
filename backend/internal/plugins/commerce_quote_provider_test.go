@@ -16,10 +16,38 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/model"
 	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type commerceQuoteRPCStub struct {
 	call func(context.Context, *pluginv1.CommerceQuoteRequest) (*pluginv1.CommerceQuoteResult, error)
+}
+
+func TestCommerceQuoteTransportDeadlineBeforeLocalTimer(t *testing.T) {
+	before, in, _ := commerceQuoteFixture(t)
+	for _, item := range []struct {
+		code codes.Code
+		want error
+	}{
+		{codes.DeadlineExceeded, context.DeadlineExceeded},
+		{codes.Canceled, context.Canceled},
+		{codes.Unavailable, ErrUnavailable},
+	} {
+		t.Run(item.code.String(), func(t *testing.T) {
+			checked := false
+			client := commerceQuoteRPCStub{call: func(ctx context.Context, _ *pluginv1.CommerceQuoteRequest) (*pluginv1.CommerceQuoteResult, error) {
+				if ctx.Err() != nil {
+					t.Fatal("test must precede the local timer")
+				}
+				return nil, status.Error(item.code, "transport terminal result")
+			}}
+			out, err := callCommerceQuoteProvider(context.Background(), before, client, in, func() error { checked = true; return nil })
+			if !errors.Is(err, item.want) || out.Provider.PluginID != "" || (item.code == codes.Unavailable && !checked) {
+				t.Fatalf("lost terminal RPC result or current-authority fence: %v %+v", err, out)
+			}
+		})
+	}
 }
 
 func (s commerceQuoteRPCStub) EvaluateCommerceQuote(ctx context.Context, in *pluginv1.CommerceQuoteRequest, _ ...grpc.CallOption) (*pluginv1.CommerceQuoteResult, error) {
