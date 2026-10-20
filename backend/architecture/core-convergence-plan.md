@@ -771,3 +771,14 @@ were explicitly separated from actual errors in a test-only follow-up, with
 original output retained. No wall-time improvement, MySQL throughput, worker
 benefit or full P6 claim follows. See core-convergence-accounting-sql-measurement.md
 and validation/2026-10-20-accounting-sql-baseline.json.
+
+### P4 SQLite cursor cohort (2026-10-20)
+
+Transaction-local prefetch now follows existing ownership locks, queries at
+most200 exact runtime/legacy keys at once and retains per-sample validation,
+rounding and individual cursor persistence. Eight repository tests plus nine
+existing integration cases pass; a32-flow scalar control's32 cursor SELECTs
+become1 with unchanged writes. MySQL keeps its original scalar path. No schema
+or retention changes; source-only rollback. Fixed-source full-path measurement,
+full checks and original capacity gates remain pending. See the accounting SQL
+measurement document and validation/2026-10-20-sqlite-cursor-cohort.json.

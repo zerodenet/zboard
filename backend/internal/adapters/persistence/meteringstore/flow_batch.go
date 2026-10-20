@@ -17,6 +17,11 @@ type zeroFlowPrincipal struct {
 	principal string
 }
 
+type zeroFlowUsageKey struct {
+	nodeID uint
+	flowID string
+}
+
 type zeroFlowReportKey struct {
 	nodeID   uint
 	reportID string
@@ -35,6 +40,11 @@ type zeroFlowCredentialRef struct {
 // Locked subscription pointers include every preceding charge in that batch.
 // No authentication or entitlement snapshot survives a commit or rollback.
 type flowBatch struct {
+	// SQLite owns the writer slot for this transaction. Cohorts are loaded only
+	// after ordinary ownership/credential locks; rows remain live in sample order.
+	usageCohorts       map[zeroFlowPrincipal][]metering.FlowSample
+	usageLoaded        map[zeroFlowPrincipal]bool
+	usages             map[zeroFlowUsageKey]model.FlowUsage
 	closed             map[entitlementQuotaKey]*model.ClosedEntitlement
 	dirtyClosed        map[entitlementQuotaKey]time.Time
 	batchReports       bool
@@ -53,6 +63,9 @@ func newFlowBatch(tx *gorm.DB) *flowBatch {
 		closed:             make(map[entitlementQuotaKey]*model.ClosedEntitlement),
 		dirtyClosed:        make(map[entitlementQuotaKey]time.Time),
 		batchReports:       datastore.IsSQLite(tx),
+		usageCohorts:       make(map[zeroFlowPrincipal][]metering.FlowSample),
+		usageLoaded:        make(map[zeroFlowPrincipal]bool),
+		usages:             make(map[zeroFlowUsageKey]model.FlowUsage),
 		credentials:        make(map[zeroFlowPrincipal]zeroFlowCredentialRef),
 		subscriptions:      make(map[uint]*model.Subscription),
 		endpoints:          make(map[uint]model.ProtocolEndpoint),
@@ -63,6 +76,12 @@ func newFlowBatch(tx *gorm.DB) *flowBatch {
 }
 
 func (s *flowBatch) loadReports(tx *gorm.DB, events []metering.FlowSample) error {
+	if s.batchReports {
+		for _, event := range events {
+			key := zeroFlowPrincipal{event.NodeID, event.PrincipalKey}
+			s.usageCohorts[key] = append(s.usageCohorts[key], event)
+		}
+	}
 	if !s.batchReports {
 		return nil
 	}
@@ -213,4 +232,57 @@ func (s *flowBatch) flush(tx *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+// loadUsage follows the existing attribution and quota locks. Never enable this
+// map for MySQL: legacy keys and report identities follow database collation.
+func (s *flowBatch) loadUsage(tx *gorm.DB, in metering.FlowSample, credential uint, current metering.FlowCounters) (model.FlowUsage, bool, bool, error) {
+	if !s.batchReports {
+		return LoadFlowUsage(tx, in.NodeID, in.CoreInstanceID, in.FlowID, credential, in.Revision, current)
+	}
+	cohort := zeroFlowPrincipal{in.NodeID, in.PrincipalKey}
+	if !s.usageLoaded[cohort] {
+		keys := make([]string, 0, 2*len(s.usageCohorts[cohort]))
+		seen := make(map[string]bool)
+		for _, sample := range s.usageCohorts[cohort] {
+			for _, key := range []string{metering.FlowUsageKey(sample.CoreInstanceID, sample.FlowID), sample.FlowID} {
+				if !seen[key] {
+					seen[key] = true
+					keys = append(keys, key)
+				}
+			}
+		}
+		sort.Strings(keys)
+		for start := 0; start < len(keys); start += 200 {
+			var rows []model.FlowUsage
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND flow_id IN ?", in.NodeID, keys[start:min(start+200, len(keys))]).Order("flow_id").Find(&rows).Error; err != nil {
+				return model.FlowUsage{}, false, false, err
+			}
+			for _, row := range rows {
+				s.usages[zeroFlowUsageKey{row.NodeID, row.FlowID}] = row
+			}
+		}
+		s.usageLoaded[cohort] = true
+	}
+	key := metering.FlowUsageKey(in.CoreInstanceID, in.FlowID)
+	candidates := make([]model.FlowUsage, 0, 2)
+	if row, ok := s.usages[zeroFlowUsageKey{in.NodeID, key}]; ok {
+		candidates = append(candidates, row)
+	}
+	if key != in.FlowID {
+		if row, ok := s.usages[zeroFlowUsageKey{in.NodeID, in.FlowID}]; ok {
+			candidates = append(candidates, row)
+		}
+	}
+	return selectFlowUsage(candidates, key, in.FlowID, credential, in.Revision, current)
+}
+
+func (s *flowBatch) rememberUsage(previous string, row model.FlowUsage) {
+	if !s.batchReports {
+		return
+	}
+	if previous != "" && previous != row.FlowID {
+		delete(s.usages, zeroFlowUsageKey{row.NodeID, previous})
+	}
+	s.usages[zeroFlowUsageKey{row.NodeID, row.FlowID}] = row
 }

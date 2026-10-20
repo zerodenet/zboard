@@ -84,7 +84,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 	if err != nil {
 		return result, err
 	}
-	usage, found, legacy, err := LoadFlowUsage(tx, result.NodeID, event.CoreInstanceID, flow.FlowID, credential.ID, flow.Revision, metering.FlowCounters{Raw: cumulativeRaw, Upload: flow.BytesUp, Download: flow.BytesDown})
+	usage, found, legacy, err := batch.loadUsage(tx, in, credential.ID, metering.FlowCounters{Raw: cumulativeRaw, Upload: flow.BytesUp, Download: flow.BytesDown})
 	if err != nil {
 		return result, err
 	}
@@ -163,6 +163,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		}
 	}
 
+	previousUsageKey := usage.FlowID
 	usageKey := metering.FlowUsageKey(event.CoreInstanceID, flow.FlowID)
 	usage.ProtocolCredentialID = credential.ID
 	usage.NodeID = result.NodeID
@@ -190,6 +191,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		return result, err
 	}
 
+	batch.rememberUsage(previousUsageKey, usage)
 	batch.touched[credential.ID] = now
 	if result.Exhausted {
 		if s.EnqueuePublications == nil {

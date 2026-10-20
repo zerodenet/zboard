@@ -80,9 +80,32 @@ from actual errors; one classification-only run reproduced87 SQL/101 rows,
 0 actual errors and0.01 expected misses. Its1.408s run was concurrent with full
 checks and is not a performance comparison.
 
-A possible SQLite-only cursor-prefetch slice would reduce32 cursor queries to
-one after existing ownership locks while preserving sequential validation and
-all39 DML. That87→56 estimate is not yet an implementation or measurement.
-MySQL collation and missing-row locking semantics require their own validation;
-no corresponding MySQL gain, extra-worker benefit or autoscaling success is
-claimed. The next comparison needs its own fixed source and quiet window.
+## SQLite cursor cohorts
+
+The next production slice loads runtime and legacy cursor candidates together
+only after the existing credential, subscription and quota ownership locks.
+Exact input node/principal cohorts and at most200 keys per SELECT bound each
+query. Processing remains in input order, with the same continuation, principal,
+sequence, regression and per-sample charge validation. The transaction-local
+cache changes only after each individual cursor write succeeds and removes a
+migrated legacy alias. It never survives rollback or commit.
+
+Eight repository tests with seven subcases passed in0.417s; nine existing
+accounting/window/closed-epoch integration tests passed in3.494s. The integrated
+main source repeated the eight tests in0.275s. A real scalar control makes32
+cursor SELECTs versus the cohort's1, with the same37 DML/99 logical affected
+rows at the accounting-only boundary. Including unchanged node/coverage writes
+adds2 DML/2 rows.205 samples/410 candidate keys use3 SELECTs, each at most200.
+Completed/stale events, rounding, runtime changes, legacy migration, principal
+conflicts, exhaustion, closed epochs, failed final writes and replay are covered.
+
+The MySQL path remains the original scalar database lookup: its collation and
+missing-row lock semantics cannot be replaced by Go string equality. No schema,
+queue ownership, cursor write batching, retention or financial writer changes.
+Reverting this slice requires no data conversion. The initial failed test-file
+path produced no tests and is retained as a failed attempt, not validation.
+See [the cohort receipt](validation/2026-10-20-sqlite-cursor-cohort.json).
+
+The full-path87→56 statement count and any wall-time/HTTP gain still require a
+new fixed-source quiet measurement. No MySQL throughput, extra-worker benefit
+or autoscaling success is claimed.
