@@ -897,3 +897,14 @@ became `detachPluginTasks`. The AST inventory now follows that real entrypoint;
 existence and all private-worker/timer prohibitions remain. Whole architecture
 tests pass0.666s. Final-source full checks remain required and historical failures
 remain evidence; see validation/2026-10-20-shutdown-boundary-followup.json.
+
+### P4/P6 cooperative periodic continuation (2026-10-20)
+
+The application wrapper previously marked `ErrContinue` as a failed retry.
+Direct and wrapped continuation now preserve Yielded; real retry-safe failure
+remains RetryWait and uncertain work remains Unknown. Actual application/runtime/
+store tests assert persistent outcomes plus bounded Drain without canceling an
+admitted handler. Old source fails both continuation cases; corrected SQLite,
+three race repetitions and actual MySQL pass. No migration, task deletion,
+accounting change or increased throughput is claimed. See
+validation/2026-10-20-periodic-continuation.json; final-source full checks remain.
