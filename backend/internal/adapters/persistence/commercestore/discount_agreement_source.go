@@ -21,6 +21,7 @@ import (
 type discountSourceScope struct {
 	Buyer, Target uint
 	IDs           []uint
+	Recurring     bool
 }
 
 func selectedDiscountSourceIDs(db *gorm.DB, buyer, target, plan uint, currency, unit string, period int) ([]uint, error) {
@@ -68,7 +69,16 @@ func prepareDiscountSourceScope(db *gorm.DB, buyer uint, request commerce.OrderC
 	}
 	ids, err := selectedDiscountSourceIDs(db, buyer, scope.Target, sub.PlanID, sku.Currency, sku.BillingUnit, sku.BillingValue)
 	scope.IDs = ids
-	return scope, err
+	if err != nil || len(ids) == 0 {
+		return scope, err
+	}
+	var root model.Order
+	if err := db.Select("purchase_snapshot").First(&root, ids[0]).Error; err != nil {
+		return nil, err
+	}
+	policy, err := commerce.DecodePurchaseSnapshot(root.PurchaseSnapshot)
+	scope.Recurring = err == nil && policy.Discount != nil && policy.Discount.Version == 2 && policy.Discount.Quote.Offer.Agreement != nil && policy.Discount.Quote.Offer.Agreement.Scope == "recurring"
+	return scope, nil
 }
 
 func discountSourceReadError(err error) error {
@@ -83,7 +93,7 @@ func discountSourceReadError(err error) error {
 // exact PK locking read is current under InnoDB RR. This matches payment,
 // refund and replacement's source-order-before-owner order.
 func lockPreparedDiscountSources(tx *gorm.DB, scope *discountSourceScope) error {
-	if scope == nil || len(scope.IDs) == 0 {
+	if scope == nil || !scope.Recurring || len(scope.IDs) == 0 {
 		return nil
 	}
 	if tx.Dialector.Name() == "sqlite" {
@@ -123,10 +133,19 @@ func readDiscountAgreementSource(tx *gorm.DB, order model.Order, sub model.Subsc
 			}
 		}
 	}
-	// Sources already held before owner are reentrant here. Internal callers
-	// without a prepared scope may only acquire exact source PKs immediately.
+	// Only recurring quotes need the additional preselected source locks. A
+	// normal/initial-only checkout must retain the original owner-first path:
+	// expiry/termination may already hold old orders while waiting on that owner,
+	// and need to detect the newly inserted checkout after their owner wait.
+	// Its first consistent snapshot is after owner, and all supported commercial
+	// writers acquire that owner before changing paid evidence.
 	var selected []model.Order
-	if err := tx.Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"}).Where("id IN ?", ids).Order("id ASC").Find(&selected).Error; err != nil {
+	read := tx
+	if scope != nil && scope.Recurring {
+		// Reentrant current read of the exact PKs acquired before owner.
+		read = read.Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"})
+	}
+	if err := read.Where("id IN ?", ids).Order("id ASC").Find(&selected).Error; err != nil {
 		return nil, discountSourceReadError(err)
 	}
 	var root model.Order
@@ -153,6 +172,9 @@ func readDiscountAgreementSource(tx *gorm.DB, order model.Order, sub model.Subsc
 	}
 	rootPolicy, rootErr := commerce.DecodePurchaseSnapshot(root.PurchaseSnapshot)
 	recurring := rootErr == nil && rootPolicy.Discount != nil && rootPolicy.Discount.Version == 2 && rootPolicy.Discount.Quote.Offer.Agreement != nil && rootPolicy.Discount.Quote.Offer.Agreement.Scope == "recurring"
+	if recurring && scope != nil && !scope.Recurring {
+		return nil, commerce.ErrSubscriptionQuoteChanged
+	}
 	if !recurring {
 		for _, row := range series {
 			var policy commerce.PurchaseSnapshot

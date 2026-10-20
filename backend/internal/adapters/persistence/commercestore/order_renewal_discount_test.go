@@ -280,6 +280,41 @@ func TestRecurringSQLiteFinancialTransactionsLockSourcesBeforeOwnerAndSnapshot(t
 	}
 }
 
+func TestInitialOnlyCheckoutDoesNotLockPaidSourcesBehindLifecycleOwnerWait(t *testing.T) {
+	db, service, _, root, sub := recurringSQLiteFixture(t)
+	// Explicit synthetic full-price history; unlike a real V1 discount this
+	// fixture has no reduction or provider agreement to inherit.
+	policy, err := commerce.DecodePurchaseSnapshot(root.PurchaseSnapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy.Discount = nil
+	raw, _ := json.Marshal(policy)
+	if err := db.Model(&root).Updates(map[string]any{"purchase_snapshot": string(raw), "discount_amount": 0, "payable_amount": root.AmountCents, "paid_amount": root.AmountCents}).Error; err != nil {
+		t.Fatal(err)
+	}
+	locks := 0
+	if err := db.Callback().Query().Before("gorm:query").Register("test:legacy-source-locks", func(tx *gorm.DB) {
+		if tx.Statement.Table == "orders" {
+			if _, ok := tx.Statement.Clauses["FOR"]; ok {
+				locks++
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Callback().Query().Remove("test:legacy-source-locks")
+	request := commerce.OrderCreateRequest{PlanSKUID: 1, TargetSubscriptionID: sub.ID}
+	preview, err := service.Preview(t.Context(), 1, request)
+	if err != nil || preview.PayableAmount != root.AmountCents || locks != 0 {
+		t.Fatal("ordinary renewal retained recurring-only source locks", preview.PayableAmount, locks, err)
+	}
+	request.QuoteFingerprint = preview.QuoteFingerprint
+	if _, err := service.Create(t.Context(), 1, request); err != nil || locks != 0 {
+		t.Fatal("ordinary checkout cannot retain lifecycle source locks", locks, err)
+	}
+}
+
 func TestRecurringSQLiteInternalAutomaticPathAndBrokenSeriesStayClosed(t *testing.T) {
 	db, _, _, root, sub := recurringSQLiteFixture(t)
 	var invalid *commerce.ValidationError

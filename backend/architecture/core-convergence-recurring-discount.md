@@ -101,3 +101,25 @@ expired quotes, lost creation/reload and same-key recovery. The original six-exc
 1069 tests, 8 unchanged test skips, 160.55s); vue-tsc and Vite build passed
 (Vite12.00s). Browser/live joint acceptance remains pending. OpenAPI lint is valid with its existing 282 warnings. See the
 [validation receipt](validation/2026-10-20-recurring-discount.json).
+
+## Ordinary renewal lock regression and correction
+
+The first full CI for ec55e01 and 7b10068 failed the MySQL job: ordinary
+checkout inherited recurring-only source-order locks. This prevented expiry
+and termination from reaching their existing owner-wait membership fence.
+The local 7b10068 full run also exceeded the original 15-minute MySQL limit;
+its subsequent database-copy checks were not executed. These failures remain
+recorded, rather than being replaced by earlier green CI.
+
+Preselection now identifies verified V2 recurring roots before the transaction.
+Only those roots acquire the additional source locks before owner. Ordinary and
+V1 checkout retain their established owner-first path and first consistent read
+after owner. A root changing into a recurring agreement after preselection
+requires a new quote; it cannot acquire an inverse-order lock later.
+
+The two unchanged historical MySQL race tests and the V2 source-before-owner
+test passed together on isolated MySQL 8.4 in 15.973 seconds. No timeout,
+deadlock retry or existing assertion was relaxed. A SQLite regression also
+checks that ordinary preview/create do not take recurring source locks.
+Full checks and CI for the correcting commit remain required. See the
+[correction receipt](validation/2026-10-20-ordinary-renewal-lock-correction.json).
