@@ -374,6 +374,7 @@
           <div class="form-grid form-grid-3">
             <FormField v-slot="{ controlAttrs }" label="节点组" name="edit-plan-node-group" hint="按需检索，不预载全部节点组。" :error="planErrors.fields.node_group_id" required><NodeGroupLookup v-model="planDraft.node_group_id" v-bind="controlAttrs" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="流量配额" name="edit-plan-traffic" :error="planErrors.fields.traffic_bytes" required><ByteSizeInput v-model="planDraft.traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="历史订阅额度" name="edit-plan-sync-traffic-quota" hint="可同步最多 1000 份仍有效的订阅；保留已用流量、有效期、原重置日期和续费锁价。下调至已用量以下时剩余额度为零。" :error="planErrors.fields.sync_traffic_quota" full><label class="check-field"><UiCheckbox v-model="planDraft.sync_traffic_quota" v-bind="controlAttrs" /><span>将本次流量配额同步到现有订阅</span></label></FormField>
             <FormField v-slot="{ controlAttrs }" label="速率限制" name="edit-plan-speed" hint="0 表示不限速。" :error="planErrors.fields.speed_limit_mbps"><UiNumberInput v-model="planDraft.speed_limit_mbps" v-bind="controlAttrs" :min="0" suffix=" Mbps" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="设备数" name="edit-plan-device-limit" :error="planErrors.fields.device_limit" required><UiNumberInput v-model="planDraft.device_limit" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="最大有效订阅" name="edit-plan-max-subscriptions" :error="planErrors.fields.max_active_subscriptions"><UiNumberInput v-model="planDraft.max_active_subscriptions" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
@@ -562,6 +563,7 @@ const emptyPlanForm = () => ({
   sku: emptySKU(),
 })
 const emptyPlanDraft = () => ({
+  sync_traffic_quota: false,
   id: 0,
   name: '',
   slug: '',
@@ -637,6 +639,7 @@ const createPlanFieldMap: Record<string, string> = {
   'skus.0.grant_traffic_bytes': 'sku.grant_traffic_bytes',
 }
 const planFieldMap: Record<string, string> = {
+  sync_traffic_quota: 'sync_traffic_quota',
   name: 'name',
   slug: 'slug',
   summary: 'summary',
@@ -1332,6 +1335,7 @@ async function closePlanEditor() {
 
 function assignPlanDraft(detail: PlanDetail) {
   Object.assign(planDraft, {
+    sync_traffic_quota: false,
     id: detail.id,
     name: detail.name,
     slug: detail.slug,
@@ -1382,6 +1386,7 @@ function planValidation() {
 }
 
 async function savePlan() {
+  const syncTrafficQuota = planDraft.sync_traffic_quota
   planDraft.name = planDraft.name.trim()
   planDraft.slug = planDraft.slug.trim().toLowerCase()
   planDraft.summary = planDraft.summary.trim()
@@ -1400,6 +1405,7 @@ async function savePlan() {
       description: planDraft.description,
       node_group_id: planDraft.node_group_id,
       traffic_bytes: planDraft.traffic_bytes,
+      sync_traffic_quota: syncTrafficQuota,
       speed_limit_mbps: planDraft.speed_limit_mbps,
       max_active_subscriptions: planDraft.max_active_subscriptions,
       is_renewable: planDraft.is_renewable,
@@ -1414,7 +1420,7 @@ async function savePlan() {
     planEditorState.markClean()
     planEditorOpen.value = false
     await setRoute({ editor: null }, true)
-    message.value = '商品信息和套餐策略已保存。'
+    message.value = syncTrafficQuota ? '商品已保存，符合条件的历史订阅流量配额已同步。' : '商品信息和套餐策略已保存。'
     await refreshAll()
   } catch (cause: any) {
     if (cause?.response?.status === 409 || cause?.response?.status === 428) {

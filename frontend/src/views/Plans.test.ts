@@ -71,6 +71,23 @@ it('saves false renewal and publication values', async () => {
   await view.get('#edit-plan-form').trigger('submit'); await flushPromises()
   expect(updatePlan).toHaveBeenCalledWith(1, expect.objectContaining({ is_renewable: false, is_active: false }))
 })
+it('keeps historical quota synchronization off unless explicitly selected', async () => {
+  const view = await open('&editor=plan')
+  const control = view.get('#edit-plan-sync-traffic-quota')
+  expect(control.attributes('aria-checked')).toBe('false')
+  expect(view.text()).toContain('保留已用流量、有效期、原重置日期和续费锁价')
+  await view.get('#edit-plan-form').trigger('submit'); await flushPromises()
+  expect(updatePlan).toHaveBeenCalledWith(1, expect.objectContaining({ sync_traffic_quota: false, traffic_bytes: plan.traffic_bytes, expected_revision: plan.revision }))
+})
+it('sends explicit historical quota synchronization and retains its draft on failure', async () => {
+  vi.mocked(updatePlan).mockRejectedValueOnce(new Error('temporary save failure'))
+  const view = await open('&editor=plan')
+  await view.get('#edit-plan-sync-traffic-quota').trigger('click')
+  await view.get('#edit-plan-form').trigger('submit'); await flushPromises()
+  expect(updatePlan).toHaveBeenCalledWith(1, expect.objectContaining({ sync_traffic_quota: true, traffic_bytes: plan.traffic_bytes }))
+  expect(view.get('#edit-plan-sync-traffic-quota').attributes('aria-checked')).toBe('true')
+  expect(view.find('#edit-plan-form').exists()).toBe(true)
+})
 it('deletes an inactive SKU and reloads the counts', async () => {
   vi.mocked(fetchPlanSKUs).mockResolvedValue({ items: [{ ...sku, is_active: false }], total: 1 } as any)
   const view = await open('')

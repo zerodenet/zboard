@@ -1,0 +1,29 @@
+{
+  "stage": "P2-14 optional historical base quota synchronization",
+  "status": "SQLite, nominal MySQL and full frontend pass; latest guard/concurrency MySQL pending",
+  "behavior": [
+    "sync_traffic_quota defaults false and requires explicit traffic_bytes.",
+    "Preserve cumulative used bytes, cycle baseline, start/end/reset dates, reset policy, purchased price snapshots and full historical orders.",
+    "Set current total to cycle baseline plus new base quota, update future reset quota; remaining reads clamp at zero.",
+    "Expire unavailable credentials and retain publication intents with quota events, plan revision and audit in one transaction.",
+    "Existing reconciliation restores eligible credentials after quota increases.",
+    "Reject more than 1000 affected subscriptions, overflow, missing baselines or mixed add-on quota as a whole; never discard separately bought rights.",
+    "Ended, unsubscribed and elapsed subscriptions are not revived."
+  ],
+  "validation": {
+    "SQLite_normal_and_guards": "pass handler1.073s, commerce unit suite passed",
+    "MySQL_normal_and_rollback": "pass7.235s before latest mixed-source guard",
+    "SQLite_actual_wait_competition": "pass0.891s; both submission orders for renewal/usage; exactly one paid renewal, exact25-byte usage, replay idempotency and stale replacement rejection",
+    "frontend_Plans": "10 tests pass",
+    "full_frontend": "959 passed / 8 existing skipped; same original six exclusions",
+    "typecheck_build": "pass12.45s",
+    "ownership_and_OpenAPI": "capability inventory0.476s and api0.151s passed"
+  },
+  "transaction": "Existing PlanUpdate writer; single database transaction, durable publication intents. No new service or schema.",
+  "rollback": "Binary rollback preserves completed quota changes and historical events. Reverse a business quota decision with a new explicit revision; do not erase usage or financial evidence.",
+  "unverified": [
+    "Latest mixed-add-on and deterministic concurrency wrappers still need real MySQL slot.",
+    "Full exact-commit backend/CI pending.",
+    "Historical subscription group replacement is separate P3 work."
+  ]
+}

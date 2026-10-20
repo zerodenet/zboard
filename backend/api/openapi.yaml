@@ -9039,6 +9039,7 @@ components:
           type: boolean
         node_group_id: { type: integer, format: int64, description: Replaces the plan delivery boundary with another node group. }
         traffic_bytes: { type: integer, format: int64, minimum: 1 }
+        sync_traffic_quota: { type: boolean, default: false, description: Explicitly synchronize base quota to at most 1000 eligible unended subscriptions. Requires traffic_bytes. Preserves used traffic, end date, reset date, purchased prices and orders. Mixed add-on quota or unknown baselines reject the whole update for review. }
         speed_limit_mbps: { type: integer, minimum: 0 }
         max_active_subscriptions: { type: integer, minimum: 0 }
         is_renewable: { type: boolean }

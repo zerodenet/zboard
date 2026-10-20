@@ -89,6 +89,21 @@
   ],
   "cross_domain_transactions": [
     {
+      "id": "commerce.plan_quota_sync",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/plan_quota_sync.go",
+      "symbol": "synchronizePlanTrafficQuota",
+      "participants": [
+        "commerce",
+        "entitlements",
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback plan revision, all eligible current quota changes, credential expiration, quota events, publication intents and administrator audit together. Preserve historical orders, actual payment, used bytes, end dates and scheduled reset dates. Bound or mixed-source failures reject the entire update.",
+      "outbox": "Existing subscription publication intents are persisted in the plan update transaction; credential restoration uses the existing reconciliation path."
+    },
+    {
       "id": "commerce.consumption_refund",
       "owner": "commerce",
       "source": "internal/adapters/persistence/commercestore/consumption_refunds.go",
