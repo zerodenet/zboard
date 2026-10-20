@@ -73,3 +73,12 @@ python3 -m unittest discover -s scripts -p 'test_acceptance_report.py'
 ```
 
 The corrected 0054 comparison source is `4dfb6642c87d1900882afdc90d4467369e98fce1`. It retains the 53a056d runtime and only materializes two directly inserted historical test fixtures, with CI failure/fix evidence. The observer accepts this exact revision explicitly; its inclusion is preparation, not a passing capacity or complete-CI result. Keep the old 7ca baseline selected by default.
+
+The repaired hourly/pending read contract is pinned separately at
+`308689e38cff794865b633cde7193656ca2ecd4c`. Its default remains the old baseline;
+this pin does not change any original mixed/load/report runner or gate. Pending
+HTTP200 explicitly means unknown statistics. The original client does not count
+pending/complete responses, so those proportions are unknown for this comparison;
+final drained verification is recorded separately and does not establish graph
+availability throughout load. Selecting this source is preparation, not proof of
+a passing run. No extra observer HTTP requests are added to the original load.
