@@ -783,33 +783,64 @@ func validatePreReleaseBaselineSchema(db *sql.DB) error {
 		return fmt.Errorf("pre-release baseline schema is incomplete: found %d of %d required tables", tableCount, len(preReleaseBaselineTables))
 	}
 
+	// These snapshots belong only to this validation phase. Keep the original
+	// ordered invariant checks; never reuse metadata across DDL or preparation.
+	conditions := make([]string, 0, len(preReleaseBaselineColumns))
+	args = make([]interface{}, 0, 2*len(preReleaseBaselineColumns))
 	for _, expected := range preReleaseBaselineColumns {
-		var columnType string
-		if err := db.QueryRow(
-			"SELECT column_type FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
-			expected.table,
-			expected.column,
-		).Scan(&columnType); err != nil {
-			if err == sql.ErrNoRows {
-				return fmt.Errorf("pre-release baseline schema is missing column %s.%s", expected.table, expected.column)
-			}
-			return fmt.Errorf("inspect pre-release baseline column %s.%s: %w", expected.table, expected.column, err)
+		conditions = append(conditions, "(table_name = ? AND column_name = ?)")
+		args = append(args, expected.table, expected.column)
+	}
+	columnRows, err := db.Query("SELECT table_name, column_name, column_type FROM information_schema.columns WHERE table_schema = DATABASE() AND ("+strings.Join(conditions, " OR ")+")", args...)
+	if err != nil {
+		return fmt.Errorf("inspect pre-release baseline columns: %w", err)
+	}
+	columnTypes := make(map[[2]string]string, len(preReleaseBaselineColumns))
+	for columnRows.Next() {
+		var table, column, columnType string
+		if err := columnRows.Scan(&table, &column, &columnType); err != nil {
+			columnRows.Close()
+			return fmt.Errorf("inspect pre-release baseline columns: %w", err)
+		}
+		columnTypes[[2]string{strings.ToLower(table), strings.ToLower(column)}] = columnType
+	}
+	if err := columnRows.Err(); err != nil {
+		return fmt.Errorf("inspect pre-release baseline columns: %w", err)
+	}
+	for _, expected := range preReleaseBaselineColumns {
+		columnType, present := columnTypes[[2]string{expected.table, expected.column}]
+		if !present {
+			return fmt.Errorf("pre-release baseline schema is missing column %s.%s", expected.table, expected.column)
 		}
 		if !strings.EqualFold(strings.TrimSpace(columnType), expected.columnType) {
 			return fmt.Errorf("pre-release baseline column %s.%s has type %s, want %s", expected.table, expected.column, columnType, expected.columnType)
 		}
 	}
 
+	conditions = make([]string, 0, len(preReleaseBaselineIndexes))
+	args = make([]interface{}, 0, 2*len(preReleaseBaselineIndexes))
 	for _, expected := range preReleaseBaselineIndexes {
-		var count int
-		if err := db.QueryRow(
-			"SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?",
-			expected.table,
-			expected.index,
-		).Scan(&count); err != nil {
-			return fmt.Errorf("inspect pre-release baseline index %s.%s: %w", expected.table, expected.index, err)
+		conditions = append(conditions, "(table_name = ? AND index_name = ?)")
+		args = append(args, expected.table, expected.index)
+	}
+	indexRows, err := db.Query("SELECT DISTINCT table_name, index_name FROM information_schema.statistics WHERE table_schema = DATABASE() AND ("+strings.Join(conditions, " OR ")+")", args...)
+	if err != nil {
+		return fmt.Errorf("inspect pre-release baseline indexes: %w", err)
+	}
+	indexes := make(map[[2]string]bool, len(preReleaseBaselineIndexes))
+	for indexRows.Next() {
+		var table, index string
+		if err := indexRows.Scan(&table, &index); err != nil {
+			indexRows.Close()
+			return fmt.Errorf("inspect pre-release baseline indexes: %w", err)
 		}
-		if count == 0 {
+		indexes[[2]string{strings.ToLower(table), strings.ToLower(index)}] = true
+	}
+	if err := indexRows.Err(); err != nil {
+		return fmt.Errorf("inspect pre-release baseline indexes: %w", err)
+	}
+	for _, expected := range preReleaseBaselineIndexes {
+		if !indexes[[2]string{expected.table, expected.index}] {
 			return fmt.Errorf("pre-release baseline schema is missing index %s.%s", expected.table, expected.index)
 		}
 	}

@@ -27,8 +27,8 @@ func BenchmarkMySQLSchemaPreparation(b *testing.B) {
 	pool.SetMaxIdleConns(1)
 	pool.SetConnMaxLifetime(0)
 	pool.SetConnMaxIdleTime(0)
-	counters := func() (uint64, uint64, uint64) {
-		var connectionID, alterations, indexes uint64
+	counters := func() (uint64, uint64, uint64, uint64) {
+		var connectionID, alterations, indexes, selects uint64
 		var variable string
 		if err := pool.QueryRow("SELECT CONNECTION_ID()").Scan(&connectionID); err != nil {
 			b.Fatal(err)
@@ -39,9 +39,12 @@ func BenchmarkMySQLSchemaPreparation(b *testing.B) {
 		if err := pool.QueryRow("SHOW SESSION STATUS LIKE 'Com_create_index'").Scan(&variable, &indexes); err != nil {
 			b.Fatal(err)
 		}
-		return connectionID, alterations, indexes
+		if err := pool.QueryRow("SHOW SESSION STATUS LIKE 'Com_select'").Scan(&variable, &selects); err != nil {
+			b.Fatal(err)
+		}
+		return connectionID, alterations, indexes, selects
 	}
-	beforeID, before, indexesBefore := counters()
+	beforeID, before, indexesBefore, selectsBefore := counters()
 	b.ResetTimer()
 	b.StartTimer()
 	err = application.PrepareDatabaseSchema(db)
@@ -50,13 +53,15 @@ func BenchmarkMySQLSchemaPreparation(b *testing.B) {
 		b.Fatal(err)
 	}
 	elapsed := b.Elapsed()
-	afterID, after, indexesAfter := counters()
-	if beforeID != afterID || after < before || indexesAfter < indexesBefore {
+	afterID, after, indexesAfter, selectsAfter := counters()
+	if beforeID != afterID || after < before || indexesAfter < indexesBefore || selectsAfter < selectsBefore {
 		b.Fatalf("schema preparation changed MySQL session: id %d→%d, ALTER count %d→%d", beforeID, afterID, before, after)
 	}
 	b.ReportMetric(float64(after-before), "ALTER/op")
 	b.ReportMetric(float64(indexesAfter-indexesBefore), "CREATE_INDEX/op")
+	b.ReportMetric(float64(selectsAfter-selectsBefore), "SELECT/op")
 	b.ReportMetric(elapsed.Seconds(), "s/prepare")
 	b.Logf("one PrepareDatabaseSchema call, same MySQL session %d, Com_alter_table %d→%d", beforeID, before, after)
 	b.Logf("same MySQL session %d, Com_create_index %d→%d", beforeID, indexesBefore, indexesAfter)
+	b.Logf("same MySQL session %d, Com_select %d→%d (complete preparation plus trailing connection-ID probe, not one validator)", beforeID, selectsBefore, selectsAfter)
 }

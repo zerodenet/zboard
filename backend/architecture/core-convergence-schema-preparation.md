@@ -48,7 +48,7 @@ Current full backend, original three-package MySQL15-minute checks and copy
 checks must still run at the new commit. Earlier timeout failures and unexecuted
 copy checks are retained; this measurement does not mark P7 or that CI gate done.
 
-##0054 partial column recovery batching
+## 0054 partial column recovery batching
 
 The current0054 owned reconciler now collects only missing MySQL column ADDs
 from the unchanged embedded asset into one ALTER. SQLite remains per-column.
@@ -67,3 +67,27 @@ verified. The58f source before this change passes full Go286.586s/vet/build/
 pure-Go SQLite19.505s and original mixed gates; it does not accept this new DDL.
 4e CI's15m MySQL timeout and191 CI's later complete success both remain recorded.
 See validation/2026-10-20-hourly-column-batch.json; new-source full checks remain.
+
+
+## Baseline metadata reads
+
+Pre-release adoption still checks the same table inventory, then all16 required
+column identities/strict types in their original order, then all12 index
+identities. Only the metadata fetching is batched: one column query and one index
+query, local to this invocation. Query/Scan/Rows.Err failures propagate with phase
+context; metadata is never reused across DDL. Published migrations are unchanged.
+
+The actual MySQL validator alone performs29→3 SELECTs and zero ALTERs. Missing
+column, wrong signedness, missing index, case-insensitive legacy identities,
+older compatible shape and unknown/unversioned-chain refusal all pass, retaining
+marker data and exact migration history. Fault injection and three race runs pass.
+Three complete fresh Prepare calls per source observe2094→2068 SELECTs including
+the trailing connection-ID probe; ALTER75 and CREATE_INDEX15 are unchanged.
+Median3.628→3.719s shows no startup time improvement and no proof of resolving CI's
+15-minute timeout. Source revert restores individual reads with identical schema.
+
+The00f85fb CI also timed out in MySQL handler900.017s; the other five jobs passed,
+while subsequent jobstore/copy commands did not run there. That failure and the
+4e failure remain evidence despite58f's earlier full success. The current source
+requires its own whole backend, original MySQL, capacity and CI checks. See the
+[metadata receipt](validation/2026-10-20-baseline-metadata-batch.json).

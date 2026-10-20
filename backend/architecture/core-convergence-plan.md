@@ -993,3 +993,17 @@ passes; c4 and191 CI succeed while4e times out. None substitutes for this new
 change. See schema-preparation document and validation/2026-10-20-hourly-column-
 batch.json. The next independently measured candidate batches baseline metadata
 queries without dropping table/column/type/index checks or caching across DDL.
+
+
+### P7 baseline metadata batching with unchanged adoption guards (2026-10-20)
+
+One invocation batches only exact required column/index metadata and preserves
+ordered strict validation, legacy-chain refusal, errors and data/history. Actual
+MySQL validator SELECTs29→3; complete Prepare SELECTs2094→2068, ALTER75 and
+CREATE_INDEX15 unchanged. Query/Scan/Rows.Err faults and race pass. Three timing
+samples per source show no startup improvement (median3.628→3.719s), so no claim
+of fixing the15m gate.00f CI has five successes plus a MySQL900.017s timeout;
+jobstore/copy are unexecuted there, preserved separately from58f success.
+No schema migration, metadata cache or financial/authorization changes. New-source
+full acceptance remains pending. See
+[receipt](validation/2026-10-20-baseline-metadata-batch.json).
