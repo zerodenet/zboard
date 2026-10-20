@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"github.com/zerodenet/zboard/backend/internal/application"
 	"github.com/zerodenet/zboard/backend/internal/jobrun"
 	"log"
@@ -77,6 +78,26 @@ func (h *handlers) closeScheduledJob(id string) {
 	bg.mu.Unlock()
 	bg.observations.Waiting(id, "stopped", nil)
 }
+
+func (h *handlers) detachScheduledJob(id string) {
+	bg := h.backgroundJobs()
+	h.services.Jobs.Detach(id)
+	bg.mu.Lock()
+	delete(bg.loops, id)
+	bg.mu.Unlock()
+	bg.observations.Waiting(id, "stopped", nil)
+}
+
+// Shutdown stops this process's admission before waiting for local work. If the
+// drain budget expires, Close interrupts local execution and still waits for its
+// completion fences before file-spool ownership or database readers are closed.
+// Explicit domain/plugin disable remains a separate global revocation action.
+func (h *handlers) Shutdown(ctx context.Context) error {
+	err := h.services.Jobs.Drain(ctx)
+	h.CloseBackgroundJobs()
+	return errors.Join(err, h.CloseZeroEventSpool())
+}
+
 func (h *handlers) CloseBackgroundJobs() {
 	// Closing an unused adapter must not register handlers or start the pool.
 	h.jobRuntimeOnce.Do(func() {

@@ -106,3 +106,53 @@ and full backend remain required. The actual route/plugin shutdown path still
 has explicit global-disable calls to replace; this API alone does not complete
 process shutdown integration, an independent worker, or autoscaling. See
 [receipt](validation/2026-10-20-runtime-drain.json).
+
+## Actual server and plugin-host shutdown integration
+
+The route cleanup previously called explicit CloseNodePublishWorker, traffic,
+proxy and Fair Use disable functions, and CloseZeroEventSpool globally disabled
+history/expiry/consumer jobs. Thus the earlier local CloseBackgroundJobs change
+alone did not protect foreign intent. The actual RegisterRoutes cleanup now
+drains the shared Runtime, closes/waits its local execution, then closes the
+spool, plugin host and traffic readers. The10-second drain allowance leaves
+room inside the existing30-second container grace period for cancellation,
+completion fences and file flush. A timed-out drain returns its error; fallback
+Close still waits for cooperative local completion. This is not a hard bound
+on an uncooperative handler or failing storage. HTTP stop is the existing
+go-zero signal/Start-return path, not evidence inferred from srv.Stop alone.
+
+Runtime.Detach cancels/waits a local registration and scheduling write without
+CancelHandler. It keeps generation checks and does not hold the scheduling lock
+while waiting for a handler that might finish a registered request. Spool local
+close and failed startup use Detach; explicit administrator/domain disable APIs
+retain global cancellation. A failed attempt to take an already owned spool
+therefore cannot revoke another process's expiry/history work.
+
+Manager.Close, lost-host task synchronization and lost-host supervision likewise
+detach only local plugin registrations. Process/session cleanup no longer hides
+global cancellation. Lost-host supervision waits outside the manager mutex, so
+a canceled handler can take that mutex to finish. Explicit plugin disable,
+replacement and uninstall still globally fence their tasks. Detach waits the
+handler; Runtime Drain/Close additionally waits executor Finish before releasing
+shared local file/database resources.
+
+The old actual route callback and spool-startup cleanup fail real SQLite lease
+and queued-intent regressions (0.296s/0.211s); three old plugin paths likewise
+fail0.849s. Corrected server/handler scenarios pass three repetitions0.792s/
+2.193s, with focused race23.526s/59.034s. A stricter final admission latch passes
+three normal repetitions3.111s and race19.014s. It proves an active handler
+retains the spool lock until completion and an uncommitted event survives the
+new owner's recovery. Drain deadline fallback retains unknown, never a false
+success. Three Detach latch cases and five plugin lifecycle cases pass, with
+jobs/plugin focused race1.355s/178.669s and unchanged explicit-revocation control.
+The plugin fixtures are actual SQLite/Store/Manager behavior, not a live external
+plugin channel; new native/full-source and actual MySQL checks remain separate.
+See [receipt](validation/2026-10-20-process-shutdown-integration.json).
+
+Fixed9109284 (before this integration) passes full Go372.265s, vet/build and
+pure-Go SQLite23.872s. Fixed5964c53 CI passes all six jobs, but its local original
+MySQL handler suite reaches900.022s while a wallet-reservation case is running;
+no individual assertion failure precedes that timeout, and sequential copy is
+still running. Other compilations/tests shared that local run; no causal timing
+guarantee is inferred. Both results remain recorded. Neither older green CI nor
+these targeted proofs accepts the current new source or completes P6/P7.

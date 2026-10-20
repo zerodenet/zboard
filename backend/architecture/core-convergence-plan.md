@@ -865,3 +865,16 @@ pass. The earlier full race dispatch latency guard failure is retained. Final
 source MySQL/full checks and actual router/plugin shutdown integration remain
 required, not an independent-worker/autoscaling claim. See process-ownership
 document and validation/2026-10-20-runtime-drain.json.
+
+### P6 actual process cleanup integration (2026-10-20)
+
+The actual route closure and spool startup/close still used global-disable
+operations; plugin Close/lost-host cleanup did too. They now use local Drain/
+Detach with manager waits outside its mutex, preserving explicit domain/plugin
+revocation. Old actual callbacks fail deterministic foreign lease/pending guards;
+corrected SQLite, spool ownership/recovery, timeout-unknown and race cases pass.
+9109284 full Go/vet/build/pure-Go SQLite passes;5964c53 CI is all green while
+its shared local MySQL run times out at the original15m and copy runs separately.
+Those older results do not accept this new integration. Actual MySQL, full new
+source and independent-worker/scaling remain pending. See process-ownership
+document and validation/2026-10-20-process-shutdown-integration.json.

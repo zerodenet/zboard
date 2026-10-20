@@ -137,6 +137,33 @@ func (r *Runtime) Deactivate(ctx context.Context, id string) error {
 	return err
 }
 
+// Detach stops only this process's registration. Durable pending intent and
+// foreign leases remain available to other runtimes; explicit permission or
+// configuration revocation must still use Deactivate.
+func (r *Runtime) Detach(id string) {
+	r.mu.Lock()
+	entry := r.entries[id]
+	if entry != nil {
+		// Handler admission checks and active.Add use the same mutex, so after
+		// canceling here no new Add can race the initially empty active.Wait.
+		entry.cancel()
+	}
+	r.mu.Unlock()
+	if entry == nil {
+		return
+	}
+	// Do not hold scheduling while waiting for a handler: the handler may be
+	// finishing its own registered request. Canceled requests cannot submit.
+	entry.active.Wait()
+	entry.scheduling.Lock()
+	r.mu.Lock()
+	if r.entries[id] == entry {
+		delete(r.entries, id)
+	}
+	r.mu.Unlock()
+	entry.scheduling.Unlock()
+}
+
 func (r *Runtime) deactivate(ctx context.Context, id string) (*registration, error) {
 	for {
 		r.mu.Lock()

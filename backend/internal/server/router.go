@@ -410,26 +410,25 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	h.StartCertificateRenewalWorker()
 	h.StartDNSPublicObservationWorker()
 	if err := services.RegisterDatabaseMigrationJobs(credentialCipher); err != nil {
+		h.CloseBackgroundJobs()
 		if pluginManager != nil {
 			pluginManager.Close()
 		}
 		_ = h.CloseZeroEventSpool()
-		h.CloseBackgroundJobs()
 		_ = closeTrafficReads()
 		return nil, err
 	}
 	services.StartWork()
 	initialized = true
 	return func() error {
+		// Leave room within the default30-second container grace period for local
+		// interruption/completion fences, plugin teardown and durable file flush.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err := h.Shutdown(ctx)
 		if pluginManager != nil {
 			pluginManager.Close()
 		}
-		h.CloseNodePublishWorker()
-		h.CloseTrafficResetWorker()
-		h.CloseProxyPoolSubscriptionWorker()
-		h.CloseFairUseEvaluationWorker()
-		err := h.CloseZeroEventSpool()
-		h.CloseBackgroundJobs()
 		return errors.Join(err, closeTrafficReads())
 	}, nil
 }

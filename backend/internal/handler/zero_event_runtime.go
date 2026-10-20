@@ -55,7 +55,7 @@ type zeroNodeProjection struct {
 func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 	h.StartCredentialExpiryWorker()
 	if err := h.ReconcileHistoryRetentionDefaults(); err != nil {
-		h.CloseCredentialExpiryWorker()
+		h.detachScheduledJob("credential_expiry")
 		return err
 	}
 	h.StartHistoryRetentionWorker()
@@ -64,15 +64,15 @@ func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 	}
 	spool, err := zeroevent.NewFileSpool(cfg)
 	if err != nil {
-		h.CloseHistoryRetentionWorker()
-		h.CloseCredentialExpiryWorker()
+		h.detachScheduledJob("history_retention")
+		h.detachScheduledJob("credential_expiry")
 		return err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := spool.Start(ctx); err != nil {
 		cancel()
-		h.CloseHistoryRetentionWorker()
-		h.CloseCredentialExpiryWorker()
+		h.detachScheduledJob("history_retention")
+		h.detachScheduledJob("credential_expiry")
 		return err
 	}
 	runtime := &zeroEventRuntime{
@@ -84,8 +84,8 @@ func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 	if _, loaded := zeroEventRuntimeRegistry.LoadOrStore(h, runtime); loaded {
 		cancel()
 		_ = spool.Close()
-		h.CloseHistoryRetentionWorker()
-		h.CloseCredentialExpiryWorker()
+		h.detachScheduledJob("history_retention")
+		h.detachScheduledJob("credential_expiry")
 		return errors.New("Zero event spool is already configured")
 	}
 	h.backgroundJobs().observations.Register("event_consumer", jobNames["event_consumer"], "queue", cfg.Consumer.CommitInterval, 1)
@@ -95,14 +95,16 @@ func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 }
 
 func (h *handlers) CloseZeroEventSpool() error {
-	h.CloseHistoryRetentionWorker()
-	h.CloseCredentialExpiryWorker()
+	// File-spool configuration and ownership are local to this process. Closing
+	// it or failing startup must never revoke another process's durable tasks.
+	h.detachScheduledJob("history_retention")
+	h.detachScheduledJob("credential_expiry")
 	value, ok := zeroEventRuntimeRegistry.LoadAndDelete(h)
 	if !ok {
 		return nil
 	}
 	runtime := value.(*zeroEventRuntime)
-	h.closeScheduledJob("event_consumer")
+	h.detachScheduledJob("event_consumer")
 	runtime.cancel()
 	close(runtime.done)
 	if err := runtime.spool.Close(); err != nil {
