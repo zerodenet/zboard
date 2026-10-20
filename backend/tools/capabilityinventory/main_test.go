@@ -319,7 +319,9 @@ func TestNewContractEvidenceCannotBypassOwnershipLedger(t *testing.T) {
  rpc Future
  (Empty) returns (Empty);
 }`,
-		"pkg/pluginapi/v1/future.proto": `// service Pretend { rpc Comment(Empty) returns (Empty); }
+		"pkg/pluginapi/v1/future.proto": `package example.service;
+option service = "description";
+// service Pretend { rpc Comment(Empty) returns (Empty); }
 option description = "rpc Fake(Empty) returns (Empty)";
 service Independent {
  /* rpc Hidden(Empty) returns (Empty); */

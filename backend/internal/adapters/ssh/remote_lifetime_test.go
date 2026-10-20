@@ -180,6 +180,10 @@ func TestRemoteLifetimeStopsOnlyOwnedChildrenAndReleasesLock(t *testing.T) {
 			if pid == 0 {
 				t.Fatal("nested command did not start")
 			}
+			// The command exit, SSH EOF and SIGKILL delivery to grandchildren
+			// are independent observations. Keep one existing nine-second cleanup
+			// budget for all of them; an EOF alone does not prove child cleanup.
+			cleanupDeadline := time.Now().Add(9 * time.Second)
 			if cause == "cancellation" {
 				cancel()
 			} else if cause == "transport loss" {
@@ -190,19 +194,33 @@ func TestRemoteLifetimeStopsOnlyOwnedChildrenAndReleasesLock(t *testing.T) {
 				if err == nil || (cause == "cancellation" && !errors.Is(err, context.Canceled)) {
 					t.Fatalf("termination error=%v", err)
 				}
-			case <-time.After(9 * time.Second):
+			case <-time.After(time.Until(cleanupDeadline)):
 				t.Fatal("command did not terminate within cleanup budget")
 			}
 			select {
 			case <-serverDone:
-			case <-time.After(9 * time.Second):
+			case <-time.After(time.Until(cleanupDeadline)):
 				t.Fatal("remote command group survived transport/deadline")
 			}
-			if state, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat"); err == nil {
+			for {
+				state, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+				if errors.Is(err, os.ErrNotExist) {
+					break
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
 				fields := strings.Fields(string(state)[strings.LastIndex(string(state), ")")+1:])
-				if len(fields) > 0 && fields[0] != "Z" {
+				if len(fields) > 0 && fields[0] == "Z" {
+					break
+				}
+				if len(fields) == 0 {
+					t.Fatalf("unrecognized child state: %s", state)
+				}
+				if !time.Now().Before(cleanupDeadline) {
 					t.Fatalf("nested CLI still alive: %s", fields[0])
 				}
+				time.Sleep(10 * time.Millisecond)
 			}
 			lock, err := os.OpenFile(lockPath, os.O_RDWR, 0600)
 			if err != nil {

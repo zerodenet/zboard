@@ -676,3 +676,7 @@ Git HTTPS令牌失效后，已使用现有授权GitHub app按完全相同tree上
 P4正常异步积压现在是显式未知的pending读状态，scope/from/to及null统计、no-store、pending/complete header贯穿API、两个decorator和前端。仅typed pending改为200；DB故障/权限/取消仍失败，不在请求中drain或扫描raw、不增加另一条计费路径。前端冷pending未知，同scope保留旧完整as_of，身份/日期/filter/timezone隔离；新日期范围先失败2例后修复。专项104通过、原完整前端1010通过/8既有skip、build14.11s；后端pending1.131s通过。参见core-convergence-pending-statistics-evidence.md。
 
 原4df小时投影容量比较112/157趋势503完整失败记录仍保留于core-convergence-capacity-hourly-comparison.md。新固定源码尚需完整后端/真实MySQL/新CI/原阈值容量复测，200不等于完整图表可用。无迁移、生产动作或完成全部阶段宣称。
+
+P7新CI39466880437的d98后端保留真实失败：SSH node_deadline在包装shell EOF后立即观察到子进程R，后续SDK/vet/build在该job跳过。旧测试本地五次48.263s未复现；同一九秒总清理预算内观察实际子进程终止后，所有SSH测试五次49.921s通过。不是延长超时或自动重跑CI：原两个独立九秒等待收紧成一个九秒deadline，仍检查存活失败、锁释放和无关进程存活，无生产wrapper改动。记录validation/2026-10-20-ssh-lifetime-observation.json，精确新CI另验。
+
+308689e固定clean clone完整后端202.331s、vet3.203s、build1.808s、CGO_ENABLED=0 SQLite12.543s全通过；不是d98 CI成功替代。真实MySQL仍执行。OpenAPI最终有效、282既有警告；趋势/日历/Principal组合12.225s通过。所有新原始日志位于持久ignored recovery-validation目录。

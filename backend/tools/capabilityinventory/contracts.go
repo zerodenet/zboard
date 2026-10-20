@@ -319,14 +319,16 @@ func scanPluginRPCs(root string) ([]contractEvidence, error) {
 		var scanErr error
 		tokens.Error = func(s *scanner.Scanner, message string) { scanErr = fmt.Errorf("%s: %s", s.Position, message) }
 		depth, serviceDepth := 0, 0
+		declarationStart := true
 		service, pendingService := "", ""
 		for tok := tokens.Scan(); tok != scanner.EOF; tok = tokens.Scan() {
 			switch {
-			case tok == scanner.Ident && tokens.TokenText() == "service" && depth == 0:
+			case tok == scanner.Ident && tokens.TokenText() == "service" && depth == 0 && declarationStart:
 				if tokens.Scan() != scanner.Ident {
 					return nil, fmt.Errorf("%s: expected service name", tokens.Position)
 				}
 				pendingService = tokens.TokenText()
+				declarationStart = false
 			case tok == '{':
 				depth++
 				if pendingService != "" {
@@ -337,6 +339,9 @@ func scanPluginRPCs(root string) ([]contractEvidence, error) {
 					service, serviceDepth = "", 0
 				}
 				depth--
+				if depth == 0 {
+					declarationStart = true
+				}
 			case tok == scanner.Ident && tokens.TokenText() == "rpc" && service != "" && depth == serviceDepth:
 				line := tokens.Position.Line
 				if tokens.Scan() != scanner.Ident {
@@ -347,6 +352,10 @@ func scanPluginRPCs(root string) ([]contractEvidence, error) {
 					return nil, fmt.Errorf("%s: expected RPC request", tokens.Position)
 				}
 				result = append(result, contractEvidence{Name: service + "." + name, Source: filepath.ToSlash(rel), Line: line})
+			default:
+				if depth == 0 {
+					declarationStart = tok == ';'
+				}
 			}
 		}
 		if scanErr != nil {
