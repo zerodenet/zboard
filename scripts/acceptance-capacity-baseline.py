@@ -19,7 +19,7 @@ import threading
 import time
 
 PIN = '7ca9f63d0cf12a03713f3a242c508dcbf82e4856'
-REVISIONS = (PIN, '53a056d32633dcbda9b243553d85a88fe9fc2090', '4dfb6642c87d1900882afdc90d4467369e98fce1', '308689e38cff794865b633cde7193656ca2ecd4c')
+REVISIONS = (PIN, '53a056d32633dcbda9b243553d85a88fe9fc2090', '4dfb6642c87d1900882afdc90d4467369e98fce1', '308689e38cff794865b633cde7193656ca2ecd4c', 'e5accd905897f9ea9eaa7ceb3dc69ede95762094')
 RUNNERS = ['scripts/acceptance-mixed.sh', 'scripts/acceptance-load.py', 'scripts/acceptance-report.py']
 
 

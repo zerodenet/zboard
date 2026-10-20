@@ -1,0 +1,198 @@
+{
+  "stage": "P4/P6 exact latest transaction/cohort source, unchanged original mixed gates",
+  "source": "e5accd905897f9ea9eaa7ceb3dc69ede95762094",
+  "original_gates_passed": true,
+  "source_binding": {
+    "checkout_commit_unchanged": true,
+    "checkout_still_clean": true,
+    "source_before_after_equal": true,
+    "source-sha256.txt_matches_observer": true,
+    "source-after-build-sha256.txt_matches_observer": true,
+    "zboard_binary_before_after_equal": true,
+    "acceptance_binary_before_after_equal": true,
+    "acceptance-load.py_copy_matches_source": true,
+    "acceptance-report.py_copy_matches_source": true
+  },
+  "runner_sha256": {
+    "scripts/acceptance-mixed.sh": "e526b44d5a81e306f34a4b069e40fdd29b908c55f4bc45a070ef558722a259f6",
+    "scripts/acceptance-load.py": "3a8d946d14e96b3262f7ee831c4da0dcd96f31d31a1fe2ce2b8525a90e00af12",
+    "scripts/acceptance-report.py": "d8c9e0ab163a29a62fb296ddb30e5c22b6efe68cab3d1f94bfc7395082d06021"
+  },
+  "observer_sha256": "bce0bbe3f1a4ef0f2b47fb80a9ee74277f1f87e9b9833da75e0d9b6e1c3b8bfd",
+  "window": {
+    "started": "2026-10-20T19:18:17.989999+00:00",
+    "finished": "2026-10-20T19:19:55.968678+00:00"
+  },
+  "profile": {
+    "NODES": "2",
+    "SUBSCRIPTIONS": "20",
+    "HISTORY_RECORDS": "2000",
+    "DURATION_SECONDS": "60",
+    "EVENT_RATE": "20",
+    "READERS": "4",
+    "cpu": 1,
+    "memory_bytes": 1073741824,
+    "memory_swap_bytes": 1073741824,
+    "GOMAXPROCS": 1
+  },
+  "elapsed_seconds": 60.53849111399995,
+  "unique_events": 1201,
+  "generator_dropped": 0,
+  "undelivered_jobs": 0,
+  "latencies": [
+    {
+      "path": "/api/v1/admin/users?paged=true&limit=50&offset=0",
+      "budget_ms": 250,
+      "count": 157,
+      "errors": 0,
+      "p50_ms": 1,
+      "p95_ms": 4,
+      "p99_ms": 10,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/subscriptions/1",
+      "budget_ms": 250,
+      "count": 158,
+      "errors": 0,
+      "p50_ms": 2,
+      "p95_ms": 9,
+      "p99_ms": 14,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/subscriptions?paged=true&limit=50&offset=0",
+      "budget_ms": 250,
+      "count": 158,
+      "errors": 0,
+      "p50_ms": 2,
+      "p95_ms": 8,
+      "p99_ms": 16,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/traffic/records?paged=true&bucket=hour&limit=50&offset=0",
+      "budget_ms": 250,
+      "count": 158,
+      "errors": 0,
+      "p50_ms": 9,
+      "p95_ms": 15,
+      "p99_ms": 26,
+      "passed": true
+    },
+    {
+      "path": "/api/zero/events",
+      "budget_ms": 250,
+      "count": 1274,
+      "errors": 0,
+      "p50_ms": 12,
+      "p95_ms": 17,
+      "p99_ms": 29,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/traffic/trends",
+      "budget_ms": 1000,
+      "count": 157,
+      "errors": 0,
+      "p50_ms": 1,
+      "p95_ms": 9,
+      "p99_ms": 17,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/traffic/reconciliation?paged=true&limit=50&offset=0",
+      "budget_ms": 1000,
+      "count": 156,
+      "errors": 0,
+      "p50_ms": 3,
+      "p95_ms": 10,
+      "p99_ms": 14,
+      "passed": true
+    }
+  ],
+  "business_http_count": 944,
+  "events_http_count": 1274,
+  "runtime_diagnostics": {
+    "samples": 7,
+    "last_consumer": {
+      "batches": 32,
+      "processed_envelopes": 1249,
+      "projected_flow_samples": 753,
+      "coalesced_flow_updates": 496,
+      "failures": 0,
+      "processing_seconds": 0.946773449,
+      "missing_receive_time": 0,
+      "latency_samples": 1249,
+      "latency_bucket_ms": 100,
+      "p95_upper_ms": 2000,
+      "maximum_ms": 2229
+    },
+    "maximum_sampled_pending_events": 30,
+    "database_wait_deltas": {
+      "accounting_db": {
+        "wait_count": 169,
+        "wait_seconds": 0.5196420300000001
+      },
+      "traffic_read_db": {
+        "wait_count": 0,
+        "wait_seconds": 0
+      }
+    }
+  },
+  "sampled_peak_cpu_percent": 16.25,
+  "sampled_peak_working_set_mib": 37.75,
+  "sampled_peak_rss_kib": 63928,
+  "rss_samples": 23,
+  "rss_observer_errors": [],
+  "sqlite_space": {
+    "available": true,
+    "scope": "stopped exported SQLite only; not a live SQL latency measurement",
+    "page_size": 4096,
+    "page_count": 1481,
+    "freelist_pages": 0,
+    "allocated_bytes": 6066176,
+    "objects": {
+      "index": {
+        "bytes": 3989504,
+        "pages": 974
+      },
+      "internal": {
+        "bytes": 126976,
+        "pages": 31
+      },
+      "table": {
+        "bytes": 1949696,
+        "pages": 476
+      }
+    }
+  },
+  "minimum_disk_free_bytes": 6543933440,
+  "drain_seconds": 5,
+  "verification": {
+    "passed": true,
+    "accounting_passed": true,
+    "statistics_passed": true,
+    "expected_total": 9833472,
+    "ledger_total": 9833472,
+    "subscription_total": 9833472,
+    "pending_usage_projections": 0
+  },
+  "stopped_spool": {
+    "pending_events": 0,
+    "pending_bytes": 0,
+    "storage_bytes": 566167,
+    "pressure_level": "normal"
+  },
+  "container_exit": {
+    "ExitCode": 0,
+    "OOMKilled": false
+  },
+  "pending_complete_ratio": "unknown; original client does not count body states; HTTP200 does not prove continuously complete charts",
+  "historical_failure": "4dfb664 original trend112/157 HTTP503 retained in earlier report",
+  "limits": [
+    "60-second single-process SQLite profile, not production SLO, archive growth bound or capacity ceiling",
+    "No MySQL capacity, busy-plugin resource interference or independent-worker/autoscaling claim",
+    "SQL microbenchmark measured separately, not inferred SQL bytes or server latency here"
+  ]
+}

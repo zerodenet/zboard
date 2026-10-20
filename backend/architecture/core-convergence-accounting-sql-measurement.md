@@ -109,3 +109,27 @@ See [the cohort receipt](validation/2026-10-20-sqlite-cursor-cohort.json).
 The full-path87→56 statement count and any wall-time/HTTP gain still require a
 new fixed-source quiet measurement. No MySQL throughput, extra-worker benefit
 or autoscaling success is claimed.
+
+## Fixed 35d20df cohort execution
+
+A separate clean fixed checkout and compiled binary completed five100-batch
+FullBatch and five CoverageOnly repetitions in8.633s. Every replay assertion
+passed. FullBatch now measures56 SQL (17SELECT/39DML),101 affected write rows,
+0 actual errors and0.01 expected first-read misses per batch. Allocation was
+1,352,393–1,352,740B/batch and13,382–13,387 allocations; RSS peaked56,624KiB
+including fixtures. Source and binary hashes are in
+[the measured receipt](validation/2026-10-20-accounting-sql-cohort.json).
+
+FullBatch p95 was10.20–14.92ms and p99 11.35–26.70ms. Timed throughput ranged
+3,499–4,124events/s. Individual SQL client mean106.7–126.7us and p95 upper
+400–500us are higher than the earlier small scalar-query measurements, while
+there are31 fewer reads. The sampled tail still varies; these separate quiet
+windows do not establish a latency guarantee or production capacity. Coverage
+remains2 SQL/1 affected write row and contributes no billable accounting rate.
+
+The first measurement itself passed, but result extraction rejected a separate
+benchmark heading amid untimed fixture logs. Its raw output remains preserved;
+the independent rerun recorded resources before parsing and accepted all ten
+result rows. No financial state, runner gate or production logic was changed to
+make a measurement pass. Original HTTP gates and current full checks are still
+independent requirements.

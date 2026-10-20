@@ -65,3 +65,33 @@ original realMySQL suite(823.311s), followed sequentially by realMySQL copy suit
 (113.401s). All six CI jobs passed for this source in
 https://github.com/zerodenet/zboard/actions/runs/39467975060 . Later commits require
 their own validation; no production rollout, migration, release or merge occurred.
+
+## Latest transaction/cohort source e5accd9
+
+The clean e5accd905897f9ea9eaa7ceb3dc69ede95762094 checkout repeated the
+unchanged original profile on2026-10-20 19:18:17–19:19:55UTC. All original gates
+and nine bindings passed. Only the supplemental controller's explicit revision
+allowlist was extended; original mixed/load/report script hashes and thresholds
+remain identical. No other local tests, builds or loads ran during this window.
+
+1201 unique events over60.538s produced1274 event requests and944 business
+reads, all with0 errors/drops/undelivered jobs. Trends157 requests had0 errors,
+p95=9ms; event p95=17ms and remaining read p95=4–15ms. Working set peaked37.75MiB,
+sampled RSS63,928KiB and CPU16.25%, with no OOM and exit0. These are observations
+of one short run, not a capacity ceiling or a guaranteed improvement over308.
+
+Expected, ledger and subscription totals again equal9,833,472bytes. Final
+statistics verify and pending projection count0 passed after5s drain. Shutdown
+spool pending events/bytes were0, with566,167 retained bytes. The stopped SQLite
+export allocated6,066,176bytes, including3,989,504index bytes. Last sampled runtime
+receive-to-projection/checkpoint p95 upper bound was2000ms, maximum2229ms and
+maximum sampled backlog30; this does not cover every final envelope.
+
+As before, during-load pending/complete body proportions remain unknown. The
+first drain verification was still behind and the original runner waited for
+exact reconciliation; only its final verified result is passed. Historical
+112/157 trend503 failure and intermediate drain output remain intact. See the
+[latest structured receipt](validation/2026-10-20-latest-original-capacity.json).
+Full new-head backend/MySQL/CI, long growth, busy plugins and independent-worker
+execution remain separate requirements. Private evidence is retained in the
+verify clone's baseline-controller-95y35zed and mixed-20261020T191817Z-hakN5Z.

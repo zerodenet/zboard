@@ -795,3 +795,16 @@ Actual UI displays exact base/reduction/debit and blocks expired proposals;
 the original frontend scope passes200 files/1086 tests with8 unchanged skips,
 typecheck/build and OpenAPI pass. Complete new-head backend/CI and live browser
 remain pending. See core-convergence-automatic-recurring.md and its receipt.
+
+### P4/P6 latest-source original gates (2026-10-20)
+
+Fixed clean e5accd9 repeated all original1CPU/1GiB/20events/s/4readers/60s gates
+and nine bindings successfully: trend157/0errors/p95=9ms, event1274/0errors/
+p95=17ms, exact9,833,472byte ledger/quota totals, final projection/spool pending0.
+The32-flow cohort microbenchmark separately measures56SQL/39DML/101affected
+rows, five exact replay repetitions, with variable tail latency. Neither short
+run proves sustained growth bounds or independent-worker/autoscaling benefit.
+Historical503 and all intermediate failures remain preserved. Receipts:
+validation/2026-10-20-latest-original-capacity.json and
+validation/2026-10-20-accounting-sql-cohort.json. Fixed e5 full backend and actual
+MySQL checks are running; prior green CI is not their substitute.
