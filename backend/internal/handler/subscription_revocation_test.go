@@ -91,14 +91,14 @@ func prepareGroupChange(t *testing.T) (orderFixture, model.Order, model.Protocol
 	if err := f.h.db.Create(&model.NodeGroupEndpoint{NodeGroupID: group.ID, ProtocolEndpointID: endpoint.ID}).Error; err != nil {
 		t.Fatal(err)
 	}
-	change := f.create(t, paid.SubscriptionID)
+	change := createLegacyChange(t, f, paid.SubscriptionID)
 	if change.OrderType != "upgrade" {
 		t.Fatalf("change type = %s", change.OrderType)
 	}
 	return f, change, oldEndpoint, endpoint
 }
 
-func TestPlanChangeRevokesOldGroupAndPublishesBothNodes(t *testing.T) {
+func TestLegacyPendingPlanChangeRevokesOldGroupAndPublishesBothNodes(t *testing.T) {
 	f, change, oldEndpoint, newEndpoint := prepareGroupChange(t)
 	var before model.Subscription
 	if err := f.h.db.First(&before, *change.TargetSubscriptionID).Error; err != nil {
@@ -139,7 +139,7 @@ func TestPlanChangeRevokesOldGroupAndPublishesBothNodes(t *testing.T) {
 	}
 }
 
-func TestPlanChangeRevocationFailurePreservesOriginalEntitlement(t *testing.T) {
+func TestLegacyPendingPlanChangeRevocationFailurePreservesOriginalEntitlement(t *testing.T) {
 	f, change, oldEndpoint, _ := prepareGroupChange(t)
 	rejectPublishInsert(t, f)
 	if w := f.pay(t, change.ID, false); w.Code != 500 {
@@ -159,7 +159,7 @@ func TestPlanChangeRevocationFailurePreservesOriginalEntitlement(t *testing.T) {
 	}
 }
 
-func TestPlanChangeRetainsEndpointSharedByBothGroups(t *testing.T) {
+func TestLegacyPendingPlanChangeRetainsEndpointSharedByBothGroups(t *testing.T) {
 	f, change, oldEndpoint, _ := prepareGroupChange(t)
 	if err := f.h.db.Create(&model.NodeGroupEndpoint{NodeGroupID: f.group.ID, ProtocolEndpointID: oldEndpoint.ID}).Error; err != nil {
 		t.Fatal(err)

@@ -12,18 +12,23 @@ type FundingRequest struct {
 	UseBalance bool `json:"use_balance"`
 }
 type OrderFundingView struct {
-	OrderID        uint       `json:"order_id"`
-	Configured     bool       `json:"configured"`
-	UseBalance     bool       `json:"use_balance"`
-	Currency       string     `json:"currency"`
-	AmountMinor    int64      `json:"amount_minor,string"`
-	AvailableMinor int64      `json:"available_minor,string"`
-	WalletMinor    int64      `json:"wallet_minor,string"`
-	CashMinor      int64      `json:"cash_minor,string"`
-	State          string     `json:"state"`
-	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
-	Expired        bool       `json:"expired"`
-	ReleaseReason  string     `json:"release_reason,omitempty"`
+	ChangeMode       string     `json:"change_mode,omitempty"`
+	SettlementMinor  int64      `json:"settlement_minor,string"`
+	SurplusMinor     int64      `json:"surplus_minor,string"`
+	EntitlementMinor int64      `json:"entitlement_minor,string"`
+	ReservedMinor    int64      `json:"reserved_minor,string"`
+	OrderID          uint       `json:"order_id"`
+	Configured       bool       `json:"configured"`
+	UseBalance       bool       `json:"use_balance"`
+	Currency         string     `json:"currency"`
+	AmountMinor      int64      `json:"amount_minor,string"`
+	AvailableMinor   int64      `json:"available_minor,string"`
+	WalletMinor      int64      `json:"wallet_minor,string"`
+	CashMinor        int64      `json:"cash_minor,string"`
+	State            string     `json:"state"`
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	Expired          bool       `json:"expired"`
+	ReleaseReason    string     `json:"release_reason,omitempty"`
 }
 type WalletPaymentResult struct {
 	OrderID        uint   `json:"order_id"`

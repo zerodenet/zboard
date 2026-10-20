@@ -129,7 +129,7 @@ type Order struct {
 	SubscriptionFinalFlowTotal int64      `json:"subscription_final_flow_total" gorm:"not null;default:0"`
 	SubscriptionFinalFlowUsed  int64      `json:"subscription_final_flow_used" gorm:"not null;default:0"`
 
-	ChangeSnapshot        string     `json:"-" gorm:"size:4096;not null;default:'';-:migration"`
+	ChangeSnapshot        string     `json:"-" gorm:"type:longtext;not null;default:'';-:migration"`
 	AssignedBy            uint       `json:"-" gorm:"not null;default:0"`
 	AssignmentNote        string     `json:"-" gorm:"size:500;not null;default:''"`
 	AssignmentFingerprint string     `json:"-" gorm:"size:64;not null;default:''"`

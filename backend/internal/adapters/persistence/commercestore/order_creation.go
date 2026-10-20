@@ -44,6 +44,9 @@ func createOrderInTransaction(tx *gorm.DB, buyer uint, request commerce.OrderCre
 		return model.Order{}, err
 	}
 	if preview.RequiresPriceAcceptance && request.QuoteFingerprint == "" {
+		if preview.ChangeMode == "full_term" {
+			return model.Order{}, quoteError("请先确认旧权益结算和完整新期间的换购报价。")
+		}
 		return model.Order{}, quoteError("该币种或付费周期尚无购买锁价，请先查看并明确确认当前新报价。")
 	}
 	if err := tx.Create(&order).Error; err != nil {
@@ -118,7 +121,11 @@ func prepareOrder(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest, 
 		BillingValue: terms.BillingValue, RenewalEffect: terms.RenewalEffect, TrafficBytes: terms.TrafficBytes,
 		DeviceLimit: terms.DeviceLimit, SpeedLimitMbps: terms.SpeedLimitMbps,
 	}
-	preview, err = applyTargetQuote(tx, &order, sub, now, now)
+	if order.OrderType == "upgrade" {
+		preview, err = quoteFullReplacement(tx, &order, sub, now, now)
+	} else {
+		preview, err = applyTargetQuote(tx, &order, sub, now, now)
+	}
 	if err != nil {
 		return model.Order{}, commerce.OrderPreview{}, err
 	}

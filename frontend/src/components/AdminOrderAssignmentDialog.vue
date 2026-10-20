@@ -22,7 +22,8 @@
         <MoneyInput v-model="payableAmount" v-bind="controlAttrs" :currency="sku?.sku?.currency || 'CNY'" :min-cents="0" :max-cents="Number.MAX_SAFE_INTEGER" :step-cents="1" :disabled="saving || !sku || quoteLoading" />
       </FormField>
       <PageAlert v-if="quoteError" tone="danger" title="报价失败">{{ quoteError }}<UiButton variant="secondary" @click="quoteResource.load()">重新报价</UiButton></PageAlert>
-      <p v-if="quote && operation === 'change'">原套餐抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}，默认应付 {{ formatCurrency(quote.payable_amount, quote.currency) }}。</p>
+      <p v-if="quote?.change_mode === 'full_term' && operation === 'change'">完整新套餐价格 {{ formatCurrency(quote.payable_amount, quote.currency) }}；旧权益结算 {{ formatWalletMoney(quote.settlement_amount ?? '0', quote.currency) }}，结余 {{ formatWalletMoney(quote.surplus_amount ?? '0', quote.currency) }} 入余额。最终资金分配和履约会重新核对。</p>
+      <p v-else-if="quote && operation === 'change'">原套餐抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}，默认应付 {{ formatCurrency(quote.payable_amount, quote.currency) }}。</p>
       <PageAlert tone="info" title="等待用户付款">订单会出现在该用户的订单列表，付款确认后开通权益。<span v-if="sku?.sku">应付 {{ formatCurrency(payableAmount, sku.sku.currency) }}。</span></PageAlert>
       <FormField v-slot="{ controlAttrs }" label="分配原因" name="assign-note" required full :error="fields.note" hint="记录在管理员订单详情与审计日志中。">
         <UiTextarea v-model="note" v-bind="controlAttrs" :disabled="saving" :maxlength="500" rows="3" placeholder="例如：按客户要求代下单，选择月付规格" />
@@ -46,6 +47,7 @@ import AdminOrderLookup from './AdminOrderLookup.vue'
 import type { AssignmentChoice } from '../utils/adminOrderAssignment'
 import { commerceErrorMessage } from '../utils/commerceErrors'
 import { useFormErrors } from '../composables/useFormState'
+import { formatWalletMoney } from '../utils/walletMoney'
 import { formatCurrency } from '../utils/format'
 const props = defineProps<{ open: boolean; userId?: number }>()
 const emit = defineEmits<{ close: []; assigned: [order: AdminOrderDetail] }>()

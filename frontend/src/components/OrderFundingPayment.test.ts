@@ -74,3 +74,18 @@ describe('order funding decisions', () => {
     wrapper.unmount()
   })
 })
+
+it('explains deferred old value and confirms the full replacement only on an explicit action', async () => {
+  vi.mocked(fetchOrderFunding).mockResolvedValue({ ...mixed, amount_minor: '2000', wallet_minor: '2000', cash_minor: '0', change_mode: 'full_term', settlement_minor: '9000', surplus_minor: '7000', entitlement_minor: '2000', reserved_minor: '0' })
+  const wrapper = open(); await flushPromises()
+  expect(wrapper.text()).toContain('旧权益结算 CNY 90.00')
+  expect(wrapper.text()).toContain('结余入余额 CNY 70.00')
+  expect(wrapper.text()).toContain('现有余额实际预留 CNY 0.00')
+  expect(wrapper.text()).toContain('尚未入账或预留')
+  expect(wrapper.find('checkout-payment-stub').exists()).toBe(false)
+  expect(payOrderFromWallet).not.toHaveBeenCalled()
+  await wrapper.findAll('button').find(button => button.text() === '确认结算旧权益并购买新套餐')!.trigger('click'); await flushPromises()
+  expect(payOrderFromWallet).toHaveBeenCalledTimes(1)
+  expect(payOrderFromWallet).toHaveBeenCalledWith(27)
+  wrapper.unmount()
+})

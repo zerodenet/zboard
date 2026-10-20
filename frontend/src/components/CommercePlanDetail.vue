@@ -102,11 +102,16 @@
           <div v-if="mode === 'renew'"><dt>再次购买效果</dt><dd>{{ selectedSku ? renewalEffectLabel(selectedSku) : '—' }}</dd></div>
         </dl>
         <div class="storefront-order-summary__total">
-          <span>应付金额</span>
+          <span>{{ quote?.change_mode === 'full_term' ? '新套餐完整价格' : '应付金额' }}</span>
           <strong>{{ mode === 'renew' || mode === 'change' || mode === 'reset' ? (quote ? formatCurrency(quote.payable_amount, quote.currency) : '正在核算…') : selectedSku ? formatCurrency(selectedSku.price_cents, selectedSku.currency) : '—' }}</strong>
           <p v-if="mode === 'renew' && quote?.requires_price_acceptance">此币种或付费周期尚无购买锁价；继续即确认本次显示的新报价，成交后按本次基础价锁定该周期续费。原周期锁价仍保留。</p>
           <p v-else-if="mode === 'renew'">续费按已购币种和周期的基础价报价；规格列表显示当前目录参考价。</p>
-          <p v-if="mode === 'change' && quote">原套餐抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}；按剩余时间和剩余流量价值取较小值，抵扣最多为新规格价格，到期时间保持不变。</p>
+          <template v-if="mode === 'change' && quote?.change_mode === 'full_term'">
+            <p>旧权益结算 {{ formatWalletMoney(quote.settlement_amount ?? '0', quote.currency) }}（当前周期 {{ formatWalletMoney(quote.current_residual ?? '0', quote.currency) }}，未来周期 {{ formatWalletMoney(quote.future_residual ?? '0', quote.currency) }}）。</p>
+            <p>用于本单 {{ formatCurrency(quote.credit_amount, quote.currency) }}，结余入余额 {{ formatWalletMoney(quote.surplus_amount ?? '0', quote.currency) }}，另需支付 {{ formatWalletMoney(quote.additional_amount ?? '0', quote.currency) }}。</p>
+            <p>履约成功时旧权益终止，新套餐获得完整新期间和流量；保留订阅地址，旧剩余时间及流量不再叠加。上方为新套餐完整价格。</p>
+          </template>
+          <p v-else-if="mode === 'change' && quote">历史报价：原套餐抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}，保留原到期时间。</p>
           <p v-if="mode === 'reset'">恢复一整份本周期套餐流量，剩余额度不会叠加。</p>
         </div>
         <PageAlert v-if="quoteError" tone="danger" title="报价失败">{{ quoteError }}<UiButton variant="secondary" @click="$emit('retry-quote')">重新报价</UiButton></PageAlert>
@@ -143,6 +148,7 @@
 import { computed, ref, watch } from 'vue'
 import type { PlanCatalogItem, PlanSKU, OrderPreview } from '../api/client'
 import { useAppStore } from '../stores/app'
+import { formatWalletMoney } from '../utils/walletMoney'
 import { formatBytes, formatCurrency } from '../utils/format'
 import { policyDocumentsFor } from '../utils/siteProfile'
 import LegalContentDialog from './LegalContentDialog.vue'

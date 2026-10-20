@@ -23,10 +23,20 @@ type settlementRecord struct {
 
 func (s OrderSettlement) Apply(ctx context.Context, actor uint, command commerce.SettlementCommand) (commerce.SettlementResult, error) {
 	var result settlementRecord
-	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	identity, err := readFullReplacementIdentity(s.DB.WithContext(ctx), command.OrderID, 0)
+	if err != nil {
+		return commerce.SettlementResult{}, err
+	}
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockFullReplacementScope(tx, identity, actor, true); err != nil {
+			return err
+		}
 		order := &result.Order
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(order, command.OrderID).Error; err != nil {
 			return resourceError(err)
+		}
+		if err := validateReplacementIdentity(*order, identity); err != nil {
+			return err
 		}
 		administrator, err := lockSettlementUsers(tx, order.UserID, actor)
 		if err != nil {

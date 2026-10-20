@@ -21,6 +21,11 @@ func (s PaymentCheckout) Open(ctx context.Context, actor, id uint, provider stri
 		if err := orderReader(tx, actor, false); err != nil {
 			return err
 		}
+		if order.Status == "pending" || order.Status == "failed" {
+			if err := configureFullReplacementFundingIfMissing(tx, order, time.Now().UTC()); err != nil {
+				return err
+			}
+		}
 		out = commerce.Order(order)
 		fund, configured, err := findOrderFunding(tx, order)
 		if err != nil {

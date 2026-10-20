@@ -225,7 +225,7 @@ func ProjectEntitlementValue(records []EntitlementValueSnapshot, current Entitle
 	sort.Slice(records, func(i, j int) bool { return records[i].QuotaEventID < records[j].QuotaEventID })
 	root := -1
 	for i, s := range records {
-		if (s.Mode == "new_term" || s.Mode == "recovery_term") && s.After.StartAt.Equal(current.StartAt) {
+		if (s.Mode == "new_term" || s.Mode == "recovery_term" || s.Mode == "replacement_term") && s.After.StartAt.Equal(current.StartAt) {
 			root = i
 		}
 	}
@@ -244,7 +244,7 @@ func ProjectEntitlementValue(records []EntitlementValueSnapshot, current Entitle
 		}
 		eventAt := s.QuotaEventAt.UTC()
 		if i == 0 {
-			if (s.Mode != "new_term" && s.Mode != "recovery_term") || !s.TermStartAt.Equal(s.After.StartAt) || !s.TermEndAt.Equal(s.After.EndAt) {
+			if (s.Mode != "new_term" && s.Mode != "recovery_term" && s.Mode != "replacement_term") || !s.TermStartAt.Equal(s.After.StartAt) || !s.TermEndAt.Equal(s.After.EndAt) {
 				return empty, ErrValueEvidence
 			}
 			if err := appendValuePeriods(&frame, s); err != nil {

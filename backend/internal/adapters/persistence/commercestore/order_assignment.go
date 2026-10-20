@@ -82,7 +82,13 @@ func (s OrderAssignment) Assign(ctx context.Context, actor uint, in commerce.Ass
 				}
 				// An administrator override may waive more, or use less, of the quoted
 				// credit. Only credit actually applied transfers to the new entitlement.
-				snapshot.Credit = min(snapshot.Credit, order.DiscountAmount)
+				if snapshot.Version == 2 && snapshot.FullTerm {
+					snapshot.Applied = min(snapshot.Residual, order.PayableAmount)
+					snapshot.Credit = snapshot.Applied
+					snapshot.Surplus = snapshot.Residual - snapshot.Applied
+				} else {
+					snapshot.Credit = min(snapshot.Credit, order.DiscountAmount)
+				}
 				payload, err := json.Marshal(snapshot)
 				if err != nil {
 					return err

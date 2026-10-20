@@ -80,6 +80,11 @@ func FulfillWithPrevious(tx *gorm.DB, order entitlements.GrantRequest, policy en
 			return model.Subscription{}, nil, err
 		}
 	}
+	if order.ReplaceTerm && sub.PlanID != order.PlanID {
+		if err := CheckCapacity(tx, order.PlanID, policy.MaxActiveSubscriptions, now); err != nil {
+			return model.Subscription{}, nil, err
+		}
+	}
 	prior := sub
 	previous = &prior
 	grant, err := entitlements.ApplyGrant(entitlements.Subscription(sub), order, policy, now)
@@ -87,7 +92,7 @@ func FulfillWithPrevious(tx *gorm.DB, order entitlements.GrantRequest, policy en
 		return model.Subscription{}, nil, err
 	}
 	sub = model.Subscription(grant.Subscription)
-	if recovering {
+	if recovering || order.ReplaceTerm {
 		if err := closeEntitlement(tx, prior, order.ID, issuer, now); err != nil {
 			return model.Subscription{}, nil, err
 		}

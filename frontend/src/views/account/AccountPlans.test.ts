@@ -61,6 +61,17 @@ describe('account catalog bounded reads and route isolation', () => {
     wrapper = mount(AccountPlans, { global: { plugins: [router], stubs: { CommercePlanDetail: true, PluginFrame: defineComponent({ emits: ['checkoutOptions'], setup(_, { emit, expose }) { expose({ checkoutAction: paymentAction }); onMounted(() => emit('checkoutOptions', [{ id: 'card', title: '测试支付', prepare_action: 'pay.prepare', reconcile_action: 'pay.check' }])); return () => null } }) } } })
     await flushPromises()
   }
+  it('shows full new term, exact residual and wallet surplus before an explicit order action', async () => {
+    vi.mocked(previewOrder).mockResolvedValue({ order_type: 'upgrade', change_mode: 'full_term', amount_cents: 2000, credit_amount: 2000, payable_amount: 2000, settlement_amount: '9007199254740993', current_residual: '9007199254740993', future_residual: '0', surplus_amount: '9007199254738993', additional_amount: '0', currency: 'CNY', time_credit: 0, traffic_credit: 0, traffic_bytes: 100, used_bytes: 0, end_at: '2027-02-01T00:00:00Z', quote_fingerprint: 'full-term-quote' })
+    await open('/account/plans?plan=1&operation=change&subscription=105')
+    wrapper!.getComponent(CommercePlanDetail).vm.$emit('continue'); await flushPromises()
+    expect(wrapper!.text()).toContain('新套餐完整价格')
+    expect(wrapper!.text()).toContain('CNY 90071992547409.93')
+    expect(wrapper!.text()).toContain('CNY 90071992547389.93')
+    expect(wrapper!.text()).toContain('按履约时间起算')
+    expect(createOrder).not.toHaveBeenCalled()
+    expect(paymentAction).not.toHaveBeenCalled()
+  })
   it('creates an order below the confirmed amount before handing off to funding, without collecting cash', async () => {
     const reserve = vi.spyOn(window, 'open').mockReturnValue(null)
     await open('/account/plans?plan=1')

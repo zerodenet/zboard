@@ -1484,6 +1484,12 @@ export interface OrderPreview {
   order_type: string
   amount_cents: number
   credit_amount: number
+  change_mode?: 'full_term'
+  settlement_amount?: string
+  current_residual?: string
+  future_residual?: string
+  surplus_amount?: string
+  additional_amount?: string
   payable_amount: number
   currency: string
   time_credit: number

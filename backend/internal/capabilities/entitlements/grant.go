@@ -9,6 +9,8 @@ import (
 // GrantRequest is a commercial snapshot accepted by the entitlement owner.
 // Payment authorization and idempotent order settlement remain caller duties.
 type GrantRequest struct {
+	// ReplaceTerm is set only from the core-owned full-change checkout snapshot.
+	ReplaceTerm                           bool
 	ID                                    uint
 	TargetSubscriptionID                  *uint
 	UserID, PlanID, PlanSKUID             uint
@@ -56,6 +58,9 @@ func NewGrant(request GrantRequest, policy GrantPolicy, now time.Time) (Grant, e
 }
 
 func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now time.Time) (Grant, error) {
+	if request.ReplaceTerm {
+		return replacementGrant(sub, request, policy, now)
+	}
 	fulfillment, err := RenewalForGrant(request)
 	if err != nil {
 		return Grant{}, err

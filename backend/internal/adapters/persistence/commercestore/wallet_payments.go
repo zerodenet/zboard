@@ -30,8 +30,17 @@ func findOrderFunding(tx *gorm.DB, order model.Order) (fund model.OrderFunding, 
 	if err != nil {
 		return fund, false, err
 	}
-	if fund.UserID != order.UserID || fund.Currency != order.Currency || fund.AmountMinor != order.PayableAmount || fund.AmountMinor < 0 || fund.WalletMinor < 0 || fund.CashMinor < 0 || fund.WalletMinor > fund.AmountMinor || fund.AmountMinor-fund.WalletMinor != fund.CashMinor {
+	if fund.UserID != order.UserID || fund.Currency != order.Currency || fund.AmountMinor != order.PayableAmount || fund.AmountMinor < 0 || fund.WalletMinor < 0 || fund.CashMinor < 0 || fund.WalletMinor > fund.AmountMinor || fund.AmountMinor-fund.WalletMinor != fund.CashMinor || fund.EntitlementMinor < 0 || fund.EntitlementMinor > fund.WalletMinor {
 		return fund, false, commerce.ErrWalletUnavailable
+	}
+	if fund.EntitlementMinor > 0 {
+		snapshot, err := fullReplacementSnapshot(order)
+		if err != nil {
+			return fund, false, err
+		}
+		if snapshot == nil || snapshot.Applied != fund.EntitlementMinor {
+			return fund, false, commerce.ErrWalletUnavailable
+		}
 	}
 	return fund, true, nil
 }
@@ -64,15 +73,29 @@ func fundingView(tx *gorm.DB, order model.Order, now time.Time) (out commerce.Or
 	if err != nil {
 		return out, err
 	}
+	snapshot, quoteErr := fullReplacementSnapshot(order)
+	if quoteErr != nil {
+		return out, quoteErr
+	}
 	out = commerce.OrderFundingView{OrderID: order.ID, Currency: order.Currency, AmountMinor: order.PayableAmount, CashMinor: order.PayableAmount, AvailableMinor: available, State: "unconfigured"}
 	fund, exists, err := findOrderFunding(tx, order)
 	if err != nil {
 		return out, err
 	}
+	if snapshot != nil {
+		out.ChangeMode = "full_term"
+		out.SettlementMinor = snapshot.Residual
+		out.SurplusMinor = snapshot.Surplus
+		out.EntitlementMinor = snapshot.Applied
+		out.WalletMinor = snapshot.Applied
+		out.CashMinor = order.PayableAmount - snapshot.Applied
+	}
 	if exists {
 		out.Configured = true
 		out.UseBalance = fund.UseBalance
 		out.WalletMinor = fund.WalletMinor
+		out.EntitlementMinor = fund.EntitlementMinor
+		out.ReservedMinor = fund.WalletMinor - fund.EntitlementMinor
 		out.CashMinor = fund.CashMinor
 		out.State = fund.State
 		out.ExpiresAt = &fund.ExpiresAt
@@ -123,11 +146,21 @@ func configureOrderFunding(tx *gorm.DB, order model.Order, in commerce.FundingRe
 	if err != nil {
 		return err
 	}
-	wallet := int64(0)
-	if in.UseBalance {
-		wallet = min(available, order.PayableAmount)
+	entitlement := int64(0)
+	snapshot, err := fullReplacementSnapshot(order)
+	if err != nil {
+		return err
 	}
-	if wallet > 0 {
+	if snapshot != nil {
+		entitlement = snapshot.Applied
+	}
+	wallet := entitlement
+	reserved := int64(0)
+	if in.UseBalance {
+		reserved = min(available, order.PayableAmount-entitlement)
+		wallet += reserved
+	}
+	if reserved > 0 {
 		var attempts, events int64
 		if err := tx.Model(&model.PaymentAttempt{}).Where("order_id = ?", order.ID).Count(&attempts).Error; err != nil {
 			return err
@@ -138,11 +171,11 @@ func configureOrderFunding(tx *gorm.DB, order model.Order, in commerce.FundingRe
 		if attempts > 0 || events > 0 || order.ProviderTradeNo != nil {
 			return quoteError("此订单已发起渠道付款，不能改变补差金额。请先核对或取消，再创建新订单使用余额。")
 		}
-		if _, err := appendWalletChange(tx, order, walletKey("reserve-order:"+strconv.FormatUint(uint64(order.ID), 10)), "reserve", "订单付款预留余额", 0, wallet, now); err != nil {
+		if _, err := appendWalletChange(tx, order, walletKey("reserve-order:"+strconv.FormatUint(uint64(order.ID), 10)), "reserve", "订单付款预留余额", 0, reserved, now); err != nil {
 			return err
 		}
 	}
-	fund = model.OrderFunding{OrderID: order.ID, UserID: order.UserID, Currency: order.Currency, UseBalance: in.UseBalance, AmountMinor: order.PayableAmount, WalletMinor: wallet, CashMinor: order.PayableAmount - wallet, State: "reserved", ExpiresAt: now.Add(orderFundingLifetime), CreatedAt: now, UpdatedAt: now}
+	fund = model.OrderFunding{EntitlementMinor: entitlement, OrderID: order.ID, UserID: order.UserID, Currency: order.Currency, UseBalance: in.UseBalance, AmountMinor: order.PayableAmount, WalletMinor: wallet, CashMinor: order.PayableAmount - wallet, State: "reserved", ExpiresAt: now.Add(orderFundingLifetime), CreatedAt: now, UpdatedAt: now}
 	if err := tx.Create(&fund).Error; err != nil {
 		return err
 	}
@@ -179,8 +212,9 @@ func releaseOrderFunding(tx *gorm.DB, order model.Order, reason string, now time
 	if fund.State != "reserved" {
 		return commerce.ErrWalletUnavailable
 	}
-	if fund.WalletMinor > 0 {
-		if _, err := appendWalletChange(tx, order, walletKey("release-order:"+strconv.FormatUint(uint64(order.ID), 10)), "reserve_release", "订单取消、失败或失效释放余额", 0, -fund.WalletMinor, now); err != nil {
+	reserved := fund.WalletMinor - fund.EntitlementMinor
+	if reserved > 0 {
+		if _, err := appendWalletChange(tx, order, walletKey("release-order:"+strconv.FormatUint(uint64(order.ID), 10)), "reserve_release", "订单取消、失败或失效释放余额", 0, -reserved, now); err != nil {
 			return err
 		}
 	}
@@ -194,6 +228,9 @@ func captureOrderFunding(tx *gorm.DB, order model.Order, now time.Time) error {
 	if fund.State != "reserved" || !fund.ExpiresAt.After(now) {
 		return commerce.ErrFundingConflict
 	}
+	if err := verifyReplacementReservation(tx, order, fund); err != nil {
+		return err
+	}
 	if fund.WalletMinor > 0 {
 		if _, err := appendWalletChange(tx, order, walletKey("capture-order:"+strconv.FormatUint(uint64(order.ID), 10)), "purchase", "订单余额付款", -fund.WalletMinor, -fund.WalletMinor, now); err != nil {
 			return err
@@ -202,10 +239,20 @@ func captureOrderFunding(tx *gorm.DB, order model.Order, now time.Time) error {
 	return tx.Model(&fund).Updates(map[string]any{"state": "captured", "captured_at": now, "updated_at": now}).Error
 }
 func (s WalletPayments) Pay(ctx context.Context, actor, id uint) (out commerce.WalletPaymentResult, err error) {
+	identity, err := readFullReplacementIdentity(s.DB.WithContext(ctx), id, actor)
+	if err != nil {
+		return out, err
+	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockFullReplacementScope(tx, identity, actor, false); err != nil {
+			return err
+		}
 		var order model.Order
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, actor).First(&order).Error; err != nil {
 			return resourceError(err)
+		}
+		if err := validateReplacementIdentity(order, identity); err != nil {
+			return err
 		}
 		if err := orderReader(tx, actor, false); err != nil {
 			return err

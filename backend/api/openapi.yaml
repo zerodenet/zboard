@@ -8935,6 +8935,11 @@ components:
       type: object
       required: [order_id, configured, use_balance, currency, amount_minor, available_minor, wallet_minor, cash_minor, state, expired]
       properties:
+        change_mode: { type: string, enum: [full_term] }
+        settlement_minor: { type: string, pattern: '^[0-9]+$', description: Gross old entitlement residual credited only at atomic fulfillment }
+        surplus_minor: { type: string, pattern: '^[0-9]+$', description: Old residual exceeding the full new price }
+        entitlement_minor: { type: string, pattern: '^[0-9]+$', description: Deferred old residual contribution; not existing wallet cash }
+        reserved_minor: { type: string, pattern: '^[0-9]+$', description: Existing wallet cash actually reserved before fulfillment }
         order_id: { type: integer, format: int64 }
         configured: { type: boolean }
         use_balance: { type: boolean }
@@ -8979,17 +8984,23 @@ components:
       type: object
       properties:
         price_basis: { type: string, enum: [purchased_period, current_catalog], description: "Renewals use the first purchased base price for this currency and billing period within the current subscription purchase series. Unpurchased periods use an explicitly accepted current quote." }
-        requires_price_acceptance: { type: boolean, description: "True when this currency/period has no historical agreement; creation must include the exact preview quote_fingerprint." }
+        requires_price_acceptance: { type: boolean, description: "True for full-term changes or when this currency/period has no historical agreement; creation must include the exact preview quote_fingerprint." }
         order_type: { type: string, enum: [new, renewal, upgrade, traffic_pack, traffic_reset] }
         amount_cents: { type: integer, format: int64 }
         payable_amount: { type: integer, format: int64 }
-        credit_amount: { type: integer, format: int64, description: "For plan changes, minimum of remaining time value, remaining base-quota value and the new SKU price, based on paid order history. No cash refund for excess credit." }
+        change_mode: { type: string, enum: [full_term] }
+        settlement_amount: { type: string, pattern: '^[0-9]+$', description: Total old residual from actual paid allocation }
+        current_residual: { type: string, pattern: '^[0-9]+$' }
+        future_residual: { type: string, pattern: '^[0-9]+$' }
+        surplus_amount: { type: string, pattern: '^[0-9]+$', description: Old residual exceeding the new full price enters wallet }
+        additional_amount: { type: string, pattern: '^[0-9]+$', description: Full new price minus old residual applied; existing wallet may fund this portion }
+        credit_amount: { type: integer, format: int64, description: Old residual applied to the full new purchase price; not a discount }
         time_credit: { type: integer, format: int64 }
         traffic_credit: { type: integer, format: int64 }
         currency: { type: string }
         traffic_bytes: { type: integer, format: int64, description: "Replacement cycle quota for changes or restored base quota for resets." }
         used_bytes: { type: integer, format: int64 }
-        end_at: { type: string, format: date-time, description: "Existing expiry retained by changes and resets." }
+        end_at: { type: string, format: date-time, description: "For full_term change, estimated expiry from a full new period; actual start is successful fulfillment. Resets and legacy pending changes retain existing expiry." }
         quote_fingerprint: { type: string, description: "Pass back when creating the order to reject a changed quote." }
     OrderCreateRequest:
       type: object

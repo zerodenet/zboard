@@ -72,7 +72,7 @@
               </template>
               <div v-else-if="operation === 'renew'"><dt>再次购买效果</dt><dd>{{ renewalEffectLabel(selectedSKU) }}</dd></div>
               <template v-else-if="operation !== 'addon'">
-                <div v-if="operation === 'change' && quote"><dt>到期时间</dt><dd>{{ formatDate(quote.end_at!) }}（保持不变）</dd></div>
+                <div v-if="operation === 'change' && quote"><dt>到期时间</dt><dd>{{ formatDate(quote.end_at!) }}{{ quote.change_mode === 'full_term' ? '（按履约时间起算，此处为预计日期）' : '（保持不变）' }}</dd></div>
                 <div v-if="operation === 'change' && quote"><dt>本周期已用</dt><dd>{{ formatBytes(quote.used_bytes) }}</dd></div>
                 <div><dt>套餐流量</dt><dd>{{ formatBytes(selectedPlan.traffic_bytes) }}</dd></div>
                 <div><dt>设备数</dt><dd>{{ selectedPlan.device_limit > 0 ? `${selectedPlan.device_limit} 台` : '不限设备' }}</dd></div>
@@ -83,11 +83,16 @@
         </div>
 
         <aside class="purchase-checkout__summary">
-          <span>应付金额</span>
+          <span>{{ quote?.change_mode === 'full_term' ? '新套餐完整价格' : '应付金额' }}</span>
           <strong>{{ checkoutPayable == null ? '正在核算…' : formatCurrency(checkoutPayable, selectedSKU.currency) }}</strong>
           <dl>
             <div v-if="operation === 'change' && quote"><dt>规格原价</dt><dd>{{ formatCurrency(quote.amount_cents, quote.currency) }}</dd></div>
-            <div v-if="operation === 'change' && quote"><dt>原套餐抵扣</dt><dd>−{{ formatCurrency(quote.credit_amount, quote.currency) }}</dd></div>
+            <div v-if="operation === 'change' && quote"><dt>{{ quote.change_mode === 'full_term' ? '旧权益用于本单' : '原套餐抵扣' }}</dt><dd>−{{ formatCurrency(quote.credit_amount, quote.currency) }}</dd></div>
+            <template v-if="operation === 'change' && quote?.change_mode === 'full_term'">
+              <div><dt>旧权益结算总额</dt><dd>{{ formatWalletMoney(quote.settlement_amount ?? '0', quote.currency) }}</dd></div>
+              <div><dt>结余入余额</dt><dd>{{ formatWalletMoney(quote.surplus_amount ?? '0', quote.currency) }}</dd></div>
+              <div><dt>另需支付</dt><dd>{{ formatWalletMoney(quote.additional_amount ?? '0', quote.currency) }}</dd></div>
+            </template>
             <div><dt>商品</dt><dd>{{ selectedPlan.name }}</dd></div>
             <div><dt>规格</dt><dd>{{ selectedSKU.name }}</dd></div>
           </dl>
@@ -299,6 +304,7 @@ import { useCatalogDetail } from '../../composables/useCatalogDetail'
 import { useRemoteResource } from '../../composables/useRemoteResource'
 import { useRemoteTable } from '../../composables/useRemoteTable'
 import { commerceErrorMessage } from '../../utils/commerceErrors'
+import { formatWalletMoney } from '../../utils/walletMoney'
 import { formatBytes, formatCurrency, isPerpetualDate } from '../../utils/format'
 
 type PurchaseOperation = CatalogOperation

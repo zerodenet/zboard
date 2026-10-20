@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/application"
-	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
 
@@ -127,11 +126,7 @@ func assertCredentialReconciliationChangedGroup(t *testing.T, f orderFixture) {
 		t.Fatal(err)
 	}
 	f.skuRecord = f.sku(t, f.planRecord.ID, 200, skuOperationChange)
-	quote := previewPricedOrder(t, f, stale.ID)
-	order, err := f.h.services.OrderCreation.Create(context.Background(), 1, commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, TargetSubscriptionID: stale.ID, QuoteFingerprint: quote.QuoteFingerprint})
-	if err != nil {
-		t.Fatal(err)
-	}
+	order := createLegacyChange(t, f, stale.ID)
 	f.paid(t, order.ID)
 	credentials, err := application.EnsureSubscriptionCredentials(f.h.db, stale, f.h.credentialCipher, true)
 	if err != nil || len(credentials) != 1 || credentials[0].ProtocolEndpointID != newEndpoint.ID {

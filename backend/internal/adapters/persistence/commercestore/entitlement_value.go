@@ -57,9 +57,18 @@ func captureEntitlementValue(tx *gorm.DB, order *model.Order, sub model.Subscrip
 			snap.TermEndAt = *sub.NextResetAt
 		}
 	case "upgrade":
-		snap.Mode = "legacy_change"
-		snap.LegacyTransferUnproven = order.ChangeSnapshot != ""
-		snap.AllocationModel = "legacy_value_requires_review"
+		full, err := fullReplacementSnapshot(*order)
+		if err != nil {
+			return err
+		}
+		if full != nil {
+			snap.Mode = "replacement_term"
+			snap.TermStartAt = sub.StartAt
+		} else {
+			snap.Mode = "legacy_change"
+			snap.LegacyTransferUnproven = order.ChangeSnapshot != ""
+			snap.AllocationModel = "legacy_value_requires_review"
+		}
 	default:
 		snap.AllocationModel = "legacy_value_requires_review"
 	}
@@ -73,7 +82,7 @@ func captureEntitlementValue(tx *gorm.DB, order *model.Order, sub model.Subscrip
 	if json.Unmarshal([]byte(order.PurchaseSnapshot), &purchase) != nil || purchase.ValueAllocationModel == "" {
 		snap.AllocationModel = "purchase_value_policy_unavailable"
 	}
-	if snap.AllocationModel == "uniform_paid_units_v1" && snap.PaymentVerified && (snap.Mode == "new_term" || snap.Mode == "extended_term" || snap.Mode == "recovery_term") {
+	if snap.AllocationModel == "uniform_paid_units_v1" && snap.PaymentVerified && (snap.Mode == "new_term" || snap.Mode == "extended_term" || snap.Mode == "recovery_term" || snap.Mode == "replacement_term") {
 		periods, allocationErr := commerce.UniformPaidPeriods(snap.TermStartAt, snap.TermEndAt, snap.BillingUnit, snap.BillingValue, snap.ActualPaidMinor)
 		if allocationErr == nil {
 			snap.PaidPeriods = periods

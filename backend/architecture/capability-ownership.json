@@ -89,6 +89,21 @@
   ],
   "cross_domain_transactions": [
     {
+      "id": "commerce.full_term_replacement",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/full_replacement_settlement.go",
+      "symbol": "settleFullReplacement",
+      "participants": [
+        "commerce",
+        "entitlements",
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback actual-paid source budgets, gross residual wallet credit, deferred reservation and capture, prior-order termination/cancellation, closed quota epoch, retired and fresh credentials, full new purchase evidence, audit and publication intent together. Legacy pending orders retain their pre-upgrade unversioned agreement.",
+      "outbox": "Existing NodeConfigPublish intents persist with fulfillment; unknown remote outcomes retain native result verification and do not repeat financial settlement."
+    },
+    {
       "id": "resources.configuration_delivery_confirmation",
       "owner": "resources",
       "source": "internal/adapters/persistence/networkstore/configuration_publication.go",

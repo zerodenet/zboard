@@ -21,6 +21,15 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 	if order.Status == "paid" {
 		return nil
 	}
+	full, err := fullReplacementSnapshot(*order)
+	if err != nil {
+		return err
+	}
+	if full != nil {
+		if err := configureFullReplacementFundingIfMissing(tx, *order, now); err != nil {
+			return err
+		}
+	}
 	fund, configured, err := findOrderFunding(tx, *order)
 	if err != nil {
 		return err
@@ -57,6 +66,7 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 		return err
 	}
 	request := entitlements.GrantRequest{ID: order.ID, TargetSubscriptionID: order.TargetSubscriptionID, UserID: order.UserID, PlanID: order.PlanID, PlanSKUID: order.PlanSKUID, OrderType: order.OrderType, BillingUnit: order.BillingUnit, BillingValue: order.BillingValue, RenewalEffect: order.RenewalEffect, TrafficBytes: order.TrafficBytes, SpeedLimitMbps: order.SpeedLimitMbps, DeviceLimit: order.DeviceLimit}
+	request.ReplaceTerm = full != nil
 	var renewalSKUs int64
 	if err := tx.Model(&model.PlanSKUOperation{}).Joins("JOIN plan_skus ON plan_skus.id = plan_sku_operations.plan_sku_id").Where("plan_skus.plan_id = ? AND plan_skus.archived_at IS NULL AND plan_sku_operations.operation = 'renew'", plan.ID).Count(&renewalSKUs).Error; err != nil {
 		return err
@@ -85,6 +95,11 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 	}
 	if err := validateRenewalTarget(tx, *order); err != nil {
 		return err
+	}
+	if full != nil {
+		if err := settleFullReplacement(tx, *order, *full, now); err != nil {
+			return err
+		}
 	}
 	sub, previous, err := entitlementstore.FulfillWithPrevious(tx, request, policy, s.Issuer, now)
 	if err != nil {

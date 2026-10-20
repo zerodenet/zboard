@@ -156,3 +156,11 @@ Down保留辅助列/索引，不清理凭据、退休摘要或累计游标。旧
 恢复后订阅ID/token地址不变，客户端应更新内容获取新凭据；提前续费不更换当前凭据。旧user/endpoint报告不能证明恢复期间或多订阅归属时返回409，认证principal事件继续可用；不能凭版本号承诺所有内核/协议已验证。
 
 0048 down保留事实，不逆转付款、重启旧密文或删除历史。恢复之后不能直接启动仍强制旧双列唯一约束的程序：旧自动迁移会失败，旧逻辑可能选到历史凭据。停相关写入/消费者、保留SQL和本地持久缓冲、核对新旧额度/计量/凭据，优先前向修复，不删历史以迁就旧约束。
+
+## 0049：完整换购的待结算贡献
+
+新建换购订单包含私有Version2/full-term报价快照、真实来源金额、原代次及原QuotedAt。升级前的无版本待付款订单继续原协议，不把旧折抵猜作可退现金。0049给order_fundings增加entitlement_minor及范围检查（0≤entitlement≤wallet）；同时将MySQL orders.change_snapshot从4096字符扩为LONGTEXT，保存有界多来源报价；SQLite已有TEXT不变。旧资金预留默认0，wallet仍为新订单总钱包贡献，实际付款前现金预留为wallet-entitlement。正式SQLite/MySQL语句由恢复路径复用，先DDL/约束后记录版本；已有资金预留在重复启动及DDL中断后保持。迁移记录已存在而金额来源列或orders.change_snapshot丢失时拒绝启动并要求恢复，不能补零掩盖。
+
+结算审计的AmountMinor是旧总残值，AppliedMinor用于新订单，WalletMinor为净结余（Amount=Applied+Wallet）；EntryID引用**总额**退款流水。钱包中还会出现该订单的抵扣预留和完整扣款，不能再将净结余额重复充值。新订单PaidAmount为完整新成交价，旧订单PaidAmount不变，RefundAmount/来源预算仅增加实际释放的旧残值。结算后立即退订按新成交实付估值，商业折扣不能变成余额。
+
+Down保留列、约束、Version2快照、资金/关闭代次和凭据历史。旧二进制不理解待结算贡献，会误释放并不存在的现金预留，也可能按旧保留期限方式处理新订单；不能直接降级继续处理Version2订单。先停面板/worker和付款写入，完整备份数据库、发布队列及本地持久缓冲，核对所有Version2订单的reserved/captured/released和收款归属，再前向修复或制定保留新语义的恢复程序。不能删资金记录/迁移记录后启动旧版。本轮只操作隔离测试库，未执行生产迁移。

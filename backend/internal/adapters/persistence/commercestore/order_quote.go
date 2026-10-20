@@ -18,6 +18,14 @@ import (
 // A paid change carries the consumed credit into the new entitlement's value.
 // Binding its source also prevents two pending orders from spending it twice.
 type changeSnapshot struct {
+	Version                    int            `json:",omitempty"`
+	FullTerm                   bool           `json:",omitempty"`
+	EntitlementEpoch           uint64         `json:",omitempty"`
+	Residual                   int64          `json:",omitempty"`
+	Applied                    int64          `json:",omitempty"`
+	Surplus                    int64          `json:",omitempty"`
+	ValueFingerprint           string         `json:",omitempty"`
+	Sources                    map[uint]int64 `json:",omitempty"`
 	PlanID, PlanSKUID          uint
 	EndAt                      time.Time
 	CycleStartUsed, ResetQuota int64
@@ -188,6 +196,11 @@ func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, n
 }
 
 func validateTargetQuote(tx *gorm.DB, order model.Order, now time.Time) error {
+	if full, err := fullReplacementSnapshot(order); err != nil {
+		return err
+	} else if full != nil {
+		return validateFullReplacementQuote(tx, order, *full, now)
+	}
 	if order.OrderType != "upgrade" && order.OrderType != "traffic_reset" {
 		return nil
 	}

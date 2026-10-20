@@ -11,7 +11,6 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sort"
 	"strconv"
 	"time"
 )
@@ -107,59 +106,9 @@ func (s SubscriptionTermination) Terminate(ctx context.Context, actor, id uint, 
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
-		indexed := map[uint]model.Order{}
-		for _, order := range orders {
-			indexed[order.ID] = order
-		}
-		ids := make([]uint, 0, len(projection.Sources))
-		for orderID, amount := range projection.Sources {
-			if amount > 0 {
-				ids = append(ids, orderID)
-			}
-		}
-		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-		var total int64
-		for _, orderID := range ids {
-			order, ok := indexed[orderID]
-			amount := projection.Sources[orderID]
-			if !ok || order.Status != "paid" || order.Currency != currency || order.UserID != actor || amount <= 0 || amount > order.PaidAmount || order.RefundAmount != 0 {
-				return commerce.ErrSubscriptionValueUnavailable
-			}
-			basisFP := walletKey(order.EntitlementValueSnapshot)
-			var budget model.OrderValueBudget
-			e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("order_id = ?", orderID).First(&budget).Error
-			if errors.Is(e, gorm.ErrRecordNotFound) {
-				var surviving int64
-				if err := tx.Model(&model.SubscriptionValueSettlementSource{}).Where("order_id = ?", orderID).Count(&surviving).Error; err != nil {
-					return err
-				}
-				if surviving != 0 {
-					return commerce.ErrSubscriptionValueUnavailable
-				}
-				budget = model.OrderValueBudget{OrderID: orderID, UserID: actor, Currency: currency, FundingMinor: order.PaidAmount, FundingFingerprint: basisFP, Revision: 1, CreatedAt: now, UpdatedAt: now}
-				if err := tx.Create(&budget).Error; err != nil {
-					return err
-				}
-			} else if e != nil {
-				return e
-			}
-			if budget.UserID != actor || budget.Currency != currency || budget.FundingMinor != order.PaidAmount || budget.FundingFingerprint != basisFP || budget.RefundedMinor < 0 || budget.ConvertedMinor < 0 || budget.RefundedMinor > budget.FundingMinor || budget.ConvertedMinor > budget.FundingMinor-budget.RefundedMinor || amount > budget.FundingMinor-budget.RefundedMinor-budget.ConvertedMinor {
-				return commerce.ErrSubscriptionSettlementConflict
-			}
-			if err := tx.Model(&model.OrderValueBudget{}).Where("order_id = ?", orderID).Updates(map[string]any{"refunded_minor": budget.RefundedMinor + amount, "revision": gorm.Expr("revision + 1"), "updated_at": now}).Error; err != nil {
-				return err
-			}
-			if err := tx.Create(&model.SubscriptionValueSettlementSource{SettlementID: row.ID, OrderID: orderID, AmountMinor: amount}).Error; err != nil {
-				return err
-			}
-			if err := tx.Model(&model.Order{}).Where("id = ?", orderID).Updates(map[string]any{"refund_amount": amount, "updated_at": now}).Error; err != nil {
-				return err
-			}
-			var valid bool
-			total, valid = addWalletMinor(total, amount)
-			if !valid {
-				return commerce.ErrWalletRange
-			}
+		total, err := refundValueSources(tx, actor, currency, row.ID, projection.Sources, orders, now)
+		if err != nil {
+			return err
 		}
 		if total != projection.TotalMinor {
 			return commerce.ErrSubscriptionValueUnavailable

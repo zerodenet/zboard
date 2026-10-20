@@ -28,12 +28,22 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 	if err != nil {
 		return out, err
 	}
+	identity, err := readFullReplacementIdentity(s.DB.WithContext(ctx), fact.OrderID, authority.AccountID)
+	if err != nil {
+		return out, err
+	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockFullReplacementScope(tx, identity, authority.AccountID, authority.RequireAdministrator); err != nil {
+			return err
+		}
 		var order model.Order
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", fact.OrderID, authority.AccountID).First(&order).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return commerce.ErrOrderPermission
 			}
+			return err
+		}
+		if err := validateReplacementIdentity(order, identity); err != nil {
 			return err
 		}
 		// Match cancellation/administrator settlement: order before account.
@@ -65,14 +75,21 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 		if err != nil {
 			return err
 		}
+		full, err := fullReplacementSnapshot(order)
+		if err != nil {
+			return err
+		}
 		expected := order.PayableAmount
+		if full != nil {
+			expected -= full.Applied
+		}
 		if configured {
 			expected = fund.CashMinor
 		}
 		// Pre-host integrations may have collected the original full quote
 		// before a wallet split existed. Preserve verified whole-order cash,
 		// without capturing the wallet or using it to fulfill a changed split.
-		unplannedWhole := configured && authority.RequireAdministrator && !authority.RequireAttempt && fact.Status == "paid" && fact.AmountMinor == order.PayableAmount && fact.AmountMinor != expected
+		unplannedWhole := (configured || full != nil) && authority.RequireAdministrator && !authority.RequireAttempt && fact.Status == "paid" && fact.AmountMinor == order.PayableAmount && fact.AmountMinor != expected
 		if (fact.AmountMinor != expected && !unplannedWhole) || !strings.EqualFold(fact.Currency, order.Currency) {
 			return commerce.ErrPaymentFactConflict
 		}

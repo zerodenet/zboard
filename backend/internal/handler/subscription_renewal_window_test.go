@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
@@ -58,9 +59,8 @@ func TestExpiredSubscriptionCanRenewWithinSevenDaysAndRecoversItsPeriodAndQuota(
 		t.Fatal(err)
 	}
 	f.planRecord, f.skuRecord = plan, f.sku(t, plan.ID, 500, "change")
-	quote := previewPricedOrder(t, f, sub.ID)
-	if quote.TrafficCredit != renewed.PaidAmount || quote.CreditAmount < renewed.PaidAmount-1 || quote.CreditAmount > renewed.PaidAmount || quote.PayableAmount != 500-quote.CreditAmount {
-		t.Fatal("recovered service reused the ended period's paid value", quote, renewed)
+	if _, err := f.h.services.OrderCreation.Preview(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, TargetSubscriptionID: sub.ID}); err == nil {
+		t.Fatal("manually acknowledged recovery fabricated verified residual value")
 	}
 }
 

@@ -245,10 +245,10 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 14,
+		"cross_domain_transaction": 15,
 	}
 	counts := map[string]int{}
-	controlledDebit, unsubscribe, retirement := false, false, false
+	controlledDebit, unsubscribe, retirement, replacement := false, false, false, false
 	for _, row := range rows {
 		counts[row.Kind]++
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.controlled_wallet_debit" && row.Owner == "commerce" {
@@ -256,6 +256,9 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		}
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.subscription_unsubscribe" && row.Owner == "commerce" {
 			unsubscribe = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.full_term_replacement" && row.Owner == "commerce" {
+			replacement = true
 		}
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "entitlements.subscription_retirement" && row.Owner == "entitlements" {
 			retirement = true
@@ -266,6 +269,9 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 	}
 	if !retirement {
 		t.Error("retirement lost its entitlement transaction ownership")
+	}
+	if !replacement {
+		t.Error("full replacement lost its commerce transaction ownership")
 	}
 	if !unsubscribe {
 		t.Error("unsubscribe settlement lost its commerce transaction ownership")

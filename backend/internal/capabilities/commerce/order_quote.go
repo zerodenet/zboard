@@ -7,6 +7,12 @@ import (
 
 // OrderPreview is a server-owned quote; amounts are currency minor units.
 type OrderPreview struct {
+	ChangeMode              string     `json:"change_mode,omitempty"`
+	SettlementAmount        int64      `json:"settlement_amount,string,omitempty"`
+	CurrentResidual         int64      `json:"current_residual,string,omitempty"`
+	FutureResidual          int64      `json:"future_residual,string,omitempty"`
+	SurplusAmount           int64      `json:"surplus_amount,string,omitempty"`
+	AdditionalAmount        int64      `json:"additional_amount,string,omitempty"`
 	OrderType               string     `json:"order_type"`
 	AmountCents             int64      `json:"amount_cents"`
 	CreditAmount            int64      `json:"credit_amount"`
