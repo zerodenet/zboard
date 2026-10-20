@@ -18,10 +18,15 @@
 | P2/P3-11 到期锁顺序 | 已实现且验证（隔离故障范围） | 3c01868六项CI39365297348；旧OR扫描死锁与事务等待重验 |
 | P2-12 永久单额度 | 部分实现（双库专项通过） | 37c07dc；可信单次来源100/100/20→80；多次增购未定义分配，精确CI另记 |
 | P2-13/P5-02 获批消费退款 | 部分实现（双库命令、前端行为/构建通过） | 271bd20、e4d49ca；活跃权益部分退款待产品规则，浏览器联合退款验收仍缺 |
-| P2-14 套餐历史额度 | 部分实现（SQLite竞争、常规MySQL、前端通过） | 新guard/竞争MySQL已在d7独立快照37.242s通过，精确全套待验证；混合加购及1000上限明确拒绝 |
-| P4-01/02 日/小时统计投影 | 部分实现（双库专项通过） | 0053/0054持久独立队列；小时最终实库16.127s/48.444s；完整精确提交待验证，online/coverage及归档仍缺 |
+| P2-14/P3 套餐历史额度与接入组 | 部分实现（双库/前端/后续完整CI覆盖） | d98b018已恢复上传，5964c53六项CI包含该历史；混合加购及1000上限明确拒绝，当前HEAD新验收独立记录 |
+| P2 优惠首购/连续续费 | 部分实现（签名native/双库/真实浏览器） | 0055/0057购买及扣款批准证据；提供方不可用不回退原价；4e1a78d真实Chromium21项/实际100元扣款；其他可售操作及有限券消费契约仍缺 |
+| P4-01/02 日/小时统计投影 | 部分实现（双库、固定原阈值容量通过） | 0053/0054持久独立队列；pending显式unknown，e5原20events/s及157次trends零错误；原112/157失败保留，当前新HEAD容量未验 |
+| P4 计量SQL/保留 | 部分实现（精确核账/专项通过） | SQLite累计游标cohort32→1次SELECT，87→56总SQL/写入舍入不变；0056仅诊断有界清理，RawTrafficRecord仍是去重/恢复权威不可归档 |
 | P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
-| 其余P2及P3–P7 | 部分实现/未完成 | 优惠协议、套餐变组历史授权、小时/在线统计、容量/伸缩、完整迁移及生产前联合验收持续推进 |
+| P5 工单业务关联 | 已实现且验证（隔离范围） | 4e1a78d/0058；双库实际DDL/权限/首消息回滚/锁序，33专项/1108完整frontend/build/OpenAPI通过；当前完整backend/CI待验 |
+| P6 进程关闭/队列所有权前置 | 部分实现（真实子进程、SQLite/race、MySQL） | file-spool内核锁、local Drain/Detach和实际server/plugin cleanup；3690113原MySQL及copy通过，7ef CI MySQL通过；无独立worker或伸缩器 |
+| P7 当前提交验证 | 部分实现/未完成 | 369/7ef CI backend过时审计名失败已由d6修正，当前全量独立验收；不以旧绿灯代替新提交，保留所有历史失败/未执行 |
+| 其余P2及P3–P7 | 部分实现/未完成 | 活跃部分退款/永久多次增购决策、其他操作优惠/外部券契约、完整计量保留、持续增长/资源竞争/独立worker/伸缩、最终综合回归 |
 
 ## 需求—实现—差距表
 
@@ -922,3 +927,16 @@ new behavior tests,1108 full frontend tests/original exclusions, build and OpenA
 pass. Two initial narrow failures are retained. Direct subscription-list shortcut,
 final-source whole backend/CI and hardened browser validation remain separate.
 See core-convergence-ticket-context.md and validation/2026-10-20-ticket-context.json.
+
+### P5 actual recurring browser acceptance (2026-10-20)
+
+Fixed4e1a78d plus the two acceptance files uses current built frontend and actual
+signed native fixture/HTTP/SQLite/Chromium. All21 checks pass6.53s:120 base/20
+discount/100 debit visible, four explicit consent writes, one real400→300 wallet
+debit, replay0, disabled provider creates no order/funding/debit and withdrawal
+remains available. All188 built files and tracked source/binary hashes are bound;
+private screenshots/auth/logs stay outside Git. Old wrong-cwd failure and7.56s
+result remain separate. This is selected real handlers, not full production router
+or natural billing-term passage. Guard rejection paths are reviewed, not fault-
+injected. See validation/2026-10-20-recurring-browser.json for commands and limits;
+full final-source backend/MySQL/CI and P6 remain incomplete.
