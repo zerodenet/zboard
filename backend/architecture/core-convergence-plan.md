@@ -853,3 +853,15 @@ ALTERs and5.159s to4.579s; no CI timeout success follows from one pair. Publishe
 migrations, original timeouts and test scope are unchanged. See
 core-convergence-schema-preparation.md and its validation receipt; full new-head
 checks and sequential copy remain required.
+
+### P6 bounded local drain (2026-10-20)
+
+Drain stops local admission, waits without canceling admitted work, and honors
+its context while Claim/scheduling/maintenance storage calls block. Registration
+identity fences stale handler snapshots; the runtime wrapper now forwards remote
+cancellation polling with unchanged unknown-result classification. Old-source
+deterministic regressions fail; integrated SQLite/Go runtime race repetitions
+pass. The earlier full race dispatch latency guard failure is retained. Final
+source MySQL/full checks and actual router/plugin shutdown integration remain
+required, not an independent-worker/autoscaling claim. See process-ownership
+document and validation/2026-10-20-runtime-drain.json.

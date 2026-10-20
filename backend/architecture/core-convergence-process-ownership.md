@@ -73,3 +73,36 @@ fully before an older binary starts; an old binary does not cooperate with this
 fence. Copying an active directory or sharing it with an older process remains
 unsafe. Current full backend, transport integration and new CI remain separate
 checks; package race tests do not prove independent-worker correctness.
+
+## Bounded runtime drain and remote cancellation
+
+Runtime.Drain stops new local scheduling and claims, rejects registration, and
+waits for admitted work without canceling it. Its context limits the wait;
+expiry retains the local handler and durable outcome. Close remains the explicit
+local interruption fallback. A Claim already inside persistence is in flight,
+and existing uncertain-result and completion fences remain authoritative.
+
+Lifecycle mutexes no longer cover waits for a Claim, schedule/global cancellation
+or a maintenance database read. A canceled registration stays as a same-name
+fence until explicit global cancellation completes; cached handler snapshots
+must still match that registration object at claim admission. Storage errors
+remain visible. The runtime's Store wrapper now forwards the optional durable
+cancellation observer, so another process's cancel_requested actually reaches
+the executor poll; canceled execution still becomes unknown rather than a false
+safe-cancellation claim.
+
+Five deterministic old-source latch cases fail (2.255s); corrected whole jobs
+package passes0.580s and ten focused race repetitions pass6.800s. An additional
+real SQLite two-Store cancellation regression fails against the old wrapper
+(3.921s including compilation) and passes with the correction. Integrated focused
+jobs/jobstore race tests pass three repetitions,2.760s/10.602s respectively
+(20.181s wall). The earlier unrestricted package race run remains failed because
+the existing dispatch p95 guard measured802.696ms over its unchanged500ms gate;
+no data race was reported, and that guard has not been weakened or excluded.
+
+Earlier actual MySQL drain repetitions passed before the lifecycle corrections;
+they are not acceptance of this final source. New-source whole jobstore MySQL
+and full backend remain required. The actual route/plugin shutdown path still
+has explicit global-disable calls to replace; this API alone does not complete
+process shutdown integration, an independent worker, or autoscaling. See
+[receipt](validation/2026-10-20-runtime-drain.json).
