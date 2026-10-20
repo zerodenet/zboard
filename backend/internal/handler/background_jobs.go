@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/zerodenet/zboard/backend/internal/application"
+	capabilityjobs "github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/jobrun"
 	"log"
 	"strings"
@@ -34,7 +35,7 @@ func (h *handlers) observeJob(id, kind string, interval time.Duration, concurren
 	finish := r.Begin(id)
 	return func(err error) {
 		message := ""
-		if err != nil {
+		if err != nil && !capabilityjobs.IsContinuation(err) {
 			message = sanitizeAuditDetail(truncateTaskError(err.Error()))
 		}
 		finish(message)

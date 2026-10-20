@@ -940,3 +940,15 @@ result remain separate. This is selected real handlers, not full production rout
 or natural billing-term passage. Guard rejection paths are reviewed, not fault-
 injected. See validation/2026-10-20-recurring-browser.json for commands and limits;
 full final-source backend/MySQL/CI and P6 remain incomplete.
+
+### P4/P6 continuation cannot erase terminal causes (2026-10-20)
+
+The Executor also cleared errors joined with ErrContinue, losing uncertainty or
+failure before completion classification. A small shared predicate now accepts
+only pure wrapped/joined continuation, preserving ordinary failures, unknown,
+cancellation and explicit retry across Executor/application/local observation.
+Old source fails real Executor and SQLite durable outcome assertions; correction,
+three race repetitions and11-case actual MySQL periodic test26.192s pass. Local
+success describes one bounded invocation, never completed backlog. No past states
+are rewritten or side effects replayed; full new-source checks remain required.
+See validation/2026-10-20-continuation-outcomes.json.

@@ -33,8 +33,17 @@ func assertPeriodicContinuationPreservesExecutionOutcome(t *testing.T, h *handle
 	}{
 		{name: "continue", result: jobs.ErrContinue, state: jobs.Yielded},
 		{name: "wrapped_continue", result: fmt.Errorf("more backlog: %w", jobs.ErrContinue), state: jobs.Yielded},
+		{name: "joined_continue", result: errors.Join(jobs.ErrContinue, jobs.ErrContinue), state: jobs.Yielded},
 		{name: "failure", result: errors.New("retry-safe scan failure"), state: jobs.RetryWait},
+		{name: "joined_failure", result: errors.Join(jobs.ErrContinue, errors.New("retry-safe scan failure")), state: jobs.RetryWait},
 		{name: "uncertain", result: fmt.Errorf("scan result: %w", jobs.ErrUncertain), state: jobs.Unknown, failures: 1},
+		{name: "continue_uncertain", result: errors.Join(jobs.ErrContinue, jobs.ErrUncertain), state: jobs.Unknown, failures: 1},
+		{name: "continue_deadline", result: errors.Join(jobs.ErrContinue, context.DeadlineExceeded), state: jobs.Unknown, failures: 1},
+		{name: "continue_context_canceled", result: errors.Join(jobs.ErrContinue, context.Canceled), state: jobs.Unknown, failures: 1},
+		// Canceled without a persisted cancel_requested lease is fenced to
+		// unknown by the real Store, even when the executor reports canceled.
+		{name: "continue_canceled", result: errors.Join(jobs.ErrContinue, jobs.ErrCanceled), state: jobs.Unknown, failures: 1},
+		{name: "retry_continue", result: jobs.Retry(jobs.ErrContinue), state: jobs.RetryWait},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			// A separate composition root exercises the real application wrapper,

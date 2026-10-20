@@ -1,0 +1,51 @@
+{
+  "base": "19149cf",
+  "scope": "Keep joined failures/uncertainty/cancellation authoritative when a bounded task also requests continuation",
+  "change": "Shared jobs.IsContinuation accepts only wrapped/joined ErrContinue leaves and excludes explicit Retryable; Executor, periodic application wrapper and process-local observer reuse it.",
+  "before": {
+    "command": "GOMAXPROCS=1 go test -p 1 -overlay ../.codex-local-artifacts/recovery-validation/continuation-outcomes/before-overlay.json ./internal/capabilities/jobs ./internal/handler -run 'TestExecutorContinuationPreservesJoinedTerminalOutcome|TestSQLitePeriodicContinuationPreservesExecutionOutcome|TestPeriodicObservationPreservesContinuationAndFailureMeaning' -count=1 -v",
+    "result": "expected failure",
+    "jobs_seconds": 0.002,
+    "handler_seconds": 0.745,
+    "detail": [
+      "Executor cleared joined ordinary error/uncertainty/deadline/cancellation and finished yielded",
+      "Actual SQLite app/Store persisted yielded instead of retry_wait/unknown",
+      "Local observation counted pure continuation as failure"
+    ],
+    "fixture_or_compile_failure": false
+  },
+  "fixed": [
+    {
+      "scope": "Same focused Executor/app/Store/observation tests",
+      "result": "pass",
+      "jobs_seconds": 0.002,
+      "handler_seconds": 0.686
+    },
+    {
+      "scope": "Same focused tests, -race -count=3",
+      "result": "pass",
+      "jobs_seconds": 1.014,
+      "handler_seconds": 32.711
+    },
+    {
+      "command": "GOMAXPROCS=1 ZBOARD_TEST_MYSQL_DSN=<isolated MySQL8.4> go test -p 1 ./internal/handler -run '^TestMySQLPeriodicContinuationPreservesExecutionOutcome$' -count=1 -timeout 2m",
+      "result": "pass",
+      "handler_seconds": 26.192
+    }
+  ],
+  "behavior": [
+    "Pure/wrapped/pure-joined continuation -> Yielded and no local failure",
+    "Joined ordinary failure retains deterministic retry; explicit Retry(ErrContinue) retains retry",
+    "Joined unknown/deadline/context cancellation -> Unknown; explicit cancellation remains subject to durable Store request/token fence",
+    "Drain stops new local claims and waits for durable completion without canceling admitted handler",
+    "Process-local succeeded means this bounded invocation succeeded, not whole backlog complete"
+  ],
+  "migration": "None. No rewrite of past task states, financial facts, publication or accounting identities.",
+  "rollback": "Code revert restores incorrect cleared outcomes. Previously incorrectly yielded work needs domain/external evidence; do not bulk mark it successful or reset/replay side effects.",
+  "remaining": [
+    "Full final-source backend/MySQL/CI",
+    "Projection still uses bounded200-row batches and existing scheduler; no100ms dispatch or faster backlog guarantee",
+    "Independent worker and autoscaling not implemented"
+  ],
+  "production_actions": false
+}

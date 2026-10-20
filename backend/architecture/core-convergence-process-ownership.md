@@ -165,3 +165,26 @@ whole jobstore command between the unchanged original core15-minute command and
 the unchanged sequential copy command. The same-source core/copy run is still
 pending, and no independent-worker or autoscaling claim follows. See
 [MySQL receipt](validation/2026-10-20-mysql-job-runtime.json).
+
+Subsequent3690113 quiet original MySQL core and copy both pass, including handler
+898.699s under the unchanged900s package limit; the small margin is not capacity
+headroom.369/7ef CI MySQL passes while backend fails a stale audited plugin cleanup
+name. d6c40e7 updates that name with all private-worker/timer prohibitions retained.
+These later results supplement, not erase, the historical timeout above. See
+validation/2026-10-20-shutdown-boundary-followup.json.
+
+## Continuation and terminal result boundaries
+
+Periodic cooperative continuation no longer consumes a failure retry or marks
+local observations failed. More critically, joined uncertainty, deadline,
+cancellation or ordinary failure must not be cleared because ErrContinue is also
+present. Executor/application/observer share a small pure-continuation predicate;
+explicit Retry remains Retry. The existing Store cancellation/token fence still
+determines whether a canceled execution is provably canceled or Unknown.
+
+Actual Executor and SQLite app/Store regressions fail old source; corrected normal,
+race and actual MySQL tests pass. Already incorrectly yielded historical work is
+not automatically rewritten or replayed: verify domain and remote outcome first.
+This changes no queue identity or schema. It does not change the existing1-second
+scheduler/poll cadence, prove100ms dispatch or introduce independent workers.
+See validation/2026-10-20-continuation-outcomes.json.

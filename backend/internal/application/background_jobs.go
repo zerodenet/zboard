@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
@@ -52,7 +51,7 @@ func (s *Services) RegisterPeriodicJob(job PeriodicJob) error {
 		ReconcileAfterLoss: job.ReconcileAfterLoss,
 	}, func(ctx context.Context, _ jobs.Run) error {
 		err := job.Run(ctx)
-		if err != nil && job.RetryFailures && !errors.Is(err, jobs.ErrContinue) {
+		if err != nil && job.RetryFailures && !jobs.IsContinuation(err) {
 			return jobs.Retry(err)
 		}
 		return err
