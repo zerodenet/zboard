@@ -3,6 +3,7 @@ package commercestore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -13,9 +14,18 @@ import (
 )
 
 type checkoutDiscount struct {
+	Version    int
+	Source     *commerce.DiscountSourceSnapshot
+	Scope      *discountSourceScope
+	Baseline   bool
+	GuardOnly  bool
 	Context    commerce.DiscountQuoteContext
 	Quote      commerce.DiscountQuote
 	AcceptedAt time.Time
+}
+
+func hasCheckoutOffer(discount *checkoutDiscount) bool {
+	return discount != nil && !discount.Baseline && !discount.GuardOnly
 }
 
 func discountCheckoutError(message string) error {
@@ -78,7 +88,11 @@ func (s OrderCreation) evaluateDiscount(ctx context.Context, buyer uint, request
 	if err := validateCheckoutOffer(in, quote, request.Discount.ProviderID, commerceNow(s.Now)); err != nil {
 		return nil, checkoutDiscount{}, err
 	}
-	return nil, checkoutDiscount{Context: in, Quote: quote}, nil
+	version := 1
+	if quote.Offer.Agreement.Scope == "recurring" {
+		version = 2
+	}
+	return nil, checkoutDiscount{Version: version, Context: in, Quote: quote}, nil
 }
 
 func validateCheckoutOffer(in commerce.DiscountQuoteContext, quote commerce.DiscountQuote, provider string, now time.Time) error {
@@ -86,28 +100,52 @@ func validateCheckoutOffer(in commerce.DiscountQuoteContext, quote commerce.Disc
 		return commerce.ErrDiscountQuoteInvalid
 	}
 	if quote.Offer.Status != "available" {
-		return discountCheckoutError("优惠当前不可直接接受，请重新核对优惠条款或稍后重试。")
+		invalid := &commerce.ValidationError{Message: "优惠状态为" + quote.Offer.Status + "，当前不能接受；请先核对协议。", Fields: map[string]string{"discount_status": quote.Offer.Status}}
+		if quote.Offer.Status == "requires_confirmation" {
+			return errors.Join(commerce.ErrDiscountConfirmationRequired, invalid)
+		}
+		return invalid
 	}
-	if in.Operation != "new" || quote.Offer.Agreement == nil || quote.Offer.Agreement.Scope != "initial_only" {
-		return discountCheckoutError("本次购买仅接入新购的首次优惠约定；长期优惠须另行确认。")
+	if quote.Offer.Agreement == nil || (in.Operation != "new" && in.Operation != "renewal") || (in.Operation == "renewal" && quote.Offer.Agreement.Scope != "recurring") {
+		return discountCheckoutError("当前购买操作不支持该优惠协议范围。")
 	}
 	return nil
 }
 
-func applyCheckoutDiscount(order *model.Order, request commerce.OrderCreateRequest, accepted checkoutDiscount, now time.Time) error {
-	if request.Discount == nil {
-		return commerce.ErrDiscountQuoteInvalid
+func applyCheckoutDiscount(order *model.Order, request commerce.OrderCreateRequest, accepted checkoutDiscount, now time.Time, sources ...*commerce.DiscountSourceSnapshot) error {
+	var in commerce.DiscountQuoteContext
+	var err error
+	provider := accepted.Quote.Provider.PluginID
+	selection := accepted.Context.Selection
+	if accepted.Version == 2 {
+		var source *commerce.DiscountSourceSnapshot
+		if len(sources) > 0 {
+			source = sources[0]
+		}
+		var policy commerce.PurchaseSnapshot
+		if json.Unmarshal([]byte(order.PurchaseSnapshot), &policy) != nil {
+			return invalidPurchaseSnapshot()
+		}
+		in, err = commerce.NewRecurringDiscountContext(commerce.Order(*order), policy, selection, source)
+		if source != nil && (provider != source.ProviderID || accepted.Quote.Provider.SigningKeyFingerprint != source.SigningKeyFingerprint) {
+			return commerce.ErrDiscountQuoteInvalid
+		}
+	} else {
+		if request.Discount == nil {
+			return commerce.ErrDiscountQuoteInvalid
+		}
+		provider = request.Discount.ProviderID
+		in, err = checkoutDiscountContext(*order, request.Discount.Selection)
 	}
-	in, err := checkoutDiscountContext(*order, request.Discount.Selection)
 	if err != nil {
 		return err
 	}
 	before, _ := json.Marshal(accepted.Context)
 	current, _ := json.Marshal(in)
 	if string(before) != string(current) {
-		return discountCheckoutError("商品价格、权益或购买条件已变化，请重新确认优惠报价。")
+		return discountCheckoutError("商品、协议来源或目标订阅已变化，请重新确认优惠报价。")
 	}
-	if err := validateCheckoutOffer(in, accepted.Quote, request.Discount.ProviderID, now); err != nil {
+	if err := validateCheckoutOffer(in, accepted.Quote, provider, now); err != nil {
 		return err
 	}
 	order.DiscountAmount = accepted.Quote.Offer.DiscountMinor
@@ -157,7 +195,7 @@ func (s OrderCreation) previewDiscounted(ctx context.Context, buyer uint, reques
 
 func knownInitialPurchaseDiscount(order model.Order) bool {
 	policy, err := commerce.DecodePurchaseSnapshot(order.PurchaseSnapshot)
-	if err != nil || commerce.ValidatePurchaseDiscount(commerce.Order(order), policy) != nil {
+	if err != nil || policy.Discount == nil || policy.Discount.Version != 1 || policy.Discount.Quote.Offer.Agreement == nil || policy.Discount.Quote.Offer.Agreement.Scope != "initial_only" || commerce.ValidatePurchaseDiscount(commerce.Order(order), policy) != nil {
 		return false
 	}
 	// Reuse fulfillment's policy and presence checks as well as the monetary

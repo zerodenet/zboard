@@ -13,11 +13,12 @@ import (
 // PurchaseDiscountSnapshot records acceptance, independently from payment and
 // entitlement value. Base, reduction and final price retain distinct meanings.
 type PurchaseDiscountSnapshot struct {
-	Version         int                  `json:"version"`
-	Context         DiscountQuoteContext `json:"context"`
-	Quote           DiscountQuote        `json:"quote"`
-	FinalPriceMinor int64                `json:"final_price_minor"`
-	AcceptedAt      time.Time            `json:"accepted_at"`
+	Version         int                     `json:"version"`
+	Context         DiscountQuoteContext    `json:"context"`
+	Quote           DiscountQuote           `json:"quote"`
+	FinalPriceMinor int64                   `json:"final_price_minor"`
+	AcceptedAt      time.Time               `json:"accepted_at"`
+	Source          *DiscountSourceSnapshot `json:"source,omitempty"`
 }
 
 // NewPurchaseDiscountContext binds all current commercial facts, excluding
@@ -53,7 +54,10 @@ func NewPurchaseDiscountContext(order Order, policy PurchaseSnapshot, selection 
 // Presence of an arbitrary discount field is never renewal authority.
 func ValidatePurchaseDiscount(order Order, policy PurchaseSnapshot) error {
 	saved := policy.Discount
-	if saved == nil || saved.Version != 1 || saved.AcceptedAt.IsZero() || saved.Quote.Offer.Status != "available" ||
+	if saved != nil && saved.Version == 2 {
+		return ValidateRecurringPurchaseDiscount(order, policy)
+	}
+	if saved == nil || saved.Source != nil || saved.Version != 1 || saved.AcceptedAt.IsZero() || saved.Quote.Offer.Status != "available" ||
 		saved.Quote.Offer.Agreement == nil || saved.Quote.Offer.Agreement.Scope != "initial_only" ||
 		ValidateDiscountQuote(saved.Context, saved.Quote, saved.AcceptedAt) != nil {
 		return ErrDiscountQuoteInvalid

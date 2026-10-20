@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/commercestore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
@@ -20,12 +23,20 @@ func assertRenewalPriceLock(t *testing.T, f orderFixture) {
 	if err := f.h.db.Model(&f.skuRecord).Updates(map[string]any{"price_cents": 12000, "renewal_effect": "extend_only"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	initial := f.create(t, 0)
-	// A first-order discount is a separate fact. It cannot replace the basic
-	// agreement or be converted to transferable cash by this lock-price change.
-	if err := f.h.db.Model(&initial).Updates(map[string]any{"discount_amount": 2000, "payable_amount": 10000}).Error; err != nil {
+	// Exercise a genuinely accepted V1 first-purchase quote. A bare historical
+	// SQL reduction has no agreement and must not be used as this fixture.
+	creator := commerce.OrderCreation{Repository: commercestore.OrderCreation{DB: f.h.db, Discounts: priceLockInitialDiscount{}}}
+	initialRequest := commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, Discount: &commerce.OrderDiscountSelection{ProviderID: "price-lock.fixture", Selection: "initial"}}
+	initialQuote, err := creator.Preview(t.Context(), 1, initialRequest)
+	if err != nil {
 		t.Fatal(err)
 	}
+	initialRequest.QuoteFingerprint = initialQuote.QuoteFingerprint
+	purchased, err := creator.Create(t.Context(), 1, initialRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := model.Order(purchased)
 	if err := f.h.db.Model(&f.skuRecord).Update("price_cents", 20000).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -173,5 +184,29 @@ func assertRenewalNewPeriodAgreement(t *testing.T, f orderFixture) {
 	other, err := f.h.services.OrderCreation.Preview(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, TargetSubscriptionID: independent.SubscriptionID})
 	if err != nil || other.AmountCents != 2400 {
 		t.Fatalf("independent price agreement mixed: %+v %v", other, err)
+	}
+}
+
+// This in-memory provider exercises checkout evidence, not native admission.
+// Native signatures and real wallet funding have their own acceptance fixture.
+type priceLockInitialDiscount struct{}
+
+func (priceLockInitialDiscount) Quote(_ context.Context, provider string, in commerce.DiscountQuoteContext) (commerce.DiscountQuote, error) {
+	terms := `{"discount_minor":2000}`
+	hash, _ := commerce.DiscountTermsHash(terms)
+	return commerce.DiscountQuote{Provider: commerce.DiscountProviderIdentity{PluginID: provider, SigningKeyFingerprint: strings.Repeat("a", 64), PackageDigest: strings.Repeat("b", 64), Generation: 1, ConfigRevision: 1}, Offer: commerce.DiscountOffer{Status: "available", InputFingerprint: in.InputFingerprint, Currency: in.Currency, DiscountMinor: 2000, ExpiresAt: time.Now().Add(time.Minute), Agreement: &commerce.DiscountAgreement{ID: "initial", Version: "1", Scope: "initial_only", TermsJSON: terms, TermsHash: hash}}}, nil
+}
+
+func TestRenewalUnknownHistoricalDiscountCannotFallBackToBase(t *testing.T) {
+	f := newOrderFixture(t)
+	initial := f.create(t, 0)
+	if err := f.h.db.Model(&initial).Updates(map[string]any{"discount_amount": 20, "payable_amount": 80}).Error; err != nil {
+		t.Fatal(err)
+	}
+	paid := f.paid(t, initial.ID)
+	var invalid *commerce.ValidationError
+	_, err := f.h.services.OrderCreation.Preview(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, TargetSubscriptionID: paid.SubscriptionID})
+	if !errors.As(err, &invalid) {
+		t.Fatal("unknown historical reduction became a full-price renewal quote", err)
 	}
 }

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchDiscountProviders, previewDiscountOrder } from './commerceDiscounts'
-import { createOrder } from './client'
+import { fetchDiscountProviders, previewDiscountOrder, validateDiscountOrderQuote } from './commerceDiscounts'
+import { createOrder, type OrderPreview } from './client'
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
 vi.mock('axios', () => ({ default: { create: () => ({ get, post,
@@ -25,6 +25,22 @@ describe('purchase discount API boundaries', () => {
     get.mockResolvedValue({ data: { data: value } })
     await expect(fetchDiscountProviders()).rejects.toThrow('优惠列表读取失败')
   })
+  it('accepts quote-required discovery without claiming its eventual agreement scope', async () => {
+    const choice = { ...provider, agreement_scope: 'quote_required' }
+    get.mockResolvedValue({ data: { data: [choice] } })
+    expect(await fetchDiscountProviders()).toEqual([choice])
+  })
+  it('accepts an available recurring initial purchase only after actual preview', async () => {
+    const value = quote(); value.discount.offer.agreement.scope = 'recurring'
+    post.mockResolvedValue({ data: { data: value } })
+    expect(await previewDiscountOrder(3, 'CNY', discount)).toBe(value)
+  })
+  it('validates inherited renewal facts independently of catalog price and discovery', () => {
+    const value = quote(); value.order_type = 'renewal'; value.discount.offer.agreement.scope = 'recurring'
+    expect(validateDiscountOrderQuote(value as OrderPreview, { orderType: 'renewal' })).toBe(value)
+    value.discount.offer.agreement.scope = 'initial_only'
+    expect(() => validateDiscountOrderQuote(value as OrderPreview, { orderType: 'renewal' })).toThrow('继承的优惠报价不可确认')
+  })
   it('sends references only in preview and final fingerprint plus references in creation', async () => {
     const signal = new AbortController().signal, value = quote()
     post.mockResolvedValueOnce({ data: { data: value } }).mockResolvedValueOnce({ data: { data: { id: 7 } } })
@@ -41,7 +57,7 @@ describe('purchase discount API boundaries', () => {
   it.each(['provider', 'scope', 'currency', 'price', 'discount', 'expiry', 'fingerprint'])('rejects an inconsistent or stale %s', async field => {
     const value = quote()
     if (field === 'provider') value.discount.provider.plugin_id = 'another'
-    if (field === 'scope') value.discount.offer.agreement.scope = 'recurring'
+    if (field === 'scope') value.discount.offer.agreement.scope = 'unknown'
     if (field === 'currency') value.currency = 'USD'
     if (field === 'price') value.base_price_minor = 101
     if (field === 'discount') value.discount_amount = 200

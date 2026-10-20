@@ -49,9 +49,9 @@ func capturePurchaseSnapshot(tx *gorm.DB, order *model.Order, plan model.Plan, s
 		target := renewalTargetSnapshot(sub)
 		snapshot.RenewalTarget = &target
 	}
-	if len(discounts) != 0 && discounts[0] != nil {
+	if len(discounts) != 0 && hasCheckoutOffer(discounts[0]) {
 		discount := discounts[0]
-		snapshot.Discount = &commerce.PurchaseDiscountSnapshot{Version: 1, Context: discount.Context, Quote: discount.Quote, FinalPriceMinor: order.PayableAmount, AcceptedAt: discount.AcceptedAt}
+		snapshot.Discount = &commerce.PurchaseDiscountSnapshot{Version: discount.Version, Source: discount.Source, Context: discount.Context, Quote: discount.Quote, FinalPriceMinor: order.PayableAmount, AcceptedAt: discount.AcceptedAt}
 		if commerce.ValidatePurchaseDiscount(commerce.Order(*order), snapshot) != nil {
 			return invalidPurchaseSnapshot()
 		}

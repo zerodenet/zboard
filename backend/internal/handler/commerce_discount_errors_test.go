@@ -20,8 +20,9 @@ func (s rejectedDiscountOrders) Preview(context.Context, uint, commerce.OrderCre
 	return commerce.OrderPreview{}, s.err
 }
 
-// These versioned errors are also the frontend's explicit no-commit contract.
-// Unknown server/transport errors must never acquire this classification.
+// Versioned rejection codes preserve the frontend's recovery boundaries.
+// In particular, 409 and idempotency conflicts do not prove that another
+// concurrent request with the same identity has not already committed.
 func TestCommerceDiscountHTTPRejectionContract(t *testing.T) {
 	f := newOrderFixture(t)
 	for _, test := range []struct {
@@ -32,6 +33,8 @@ func TestCommerceDiscountHTTPRejectionContract(t *testing.T) {
 	}{
 		{"unavailable", commerce.ErrDiscountQuoteUnavailable, 503, "discount_unavailable"},
 		{"invalid", commerce.ErrDiscountQuoteInvalid, 502, "discount_invalid"},
+		{"source-conflict", fmt.Errorf("source: %w", commerce.ErrSubscriptionQuoteChanged), 409, "subscription_quote_changed"},
+		{"agreement-confirmation", commerce.ErrDiscountConfirmationRequired, 409, "discount_confirmation_required"},
 		{"changed", &commerce.ValidationError{Message: "quote changed", Fields: map[string]string{"quote_fingerprint": "confirm again"}}, 400, "validation_failed"},
 		{"idempotency", &commerce.ValidationError{Message: "existing intent", Fields: map[string]string{"idempotency_key": "original request required"}}, 400, "validation_failed"},
 		{"storage", fmt.Errorf("private storage failure"), 500, "commerce_persistence_failed"},

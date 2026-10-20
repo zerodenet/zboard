@@ -53,7 +53,7 @@ func TestDiscountCheckoutPureRejectsNonAvailableOrUnboundOffers(t *testing.T) {
 				quote.Offer.ExpiresAt = now
 			}
 			err := validateCheckoutOffer(in, quote, "example.quote", now)
-			if (err == nil) != (variant == "valid") {
+			if (err == nil) != (variant == "valid" || variant == "recurring") {
 				t.Fatalf("%s: %v", variant, err)
 			}
 		})

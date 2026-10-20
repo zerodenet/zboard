@@ -38,6 +38,13 @@ function discountedQuote(expiresAt = '2099-01-01T00:00:00Z'): OrderPreview {
   return { order_type: 'new', amount_cents: 100, base_price_minor: 100, discount_amount: 20, credit_amount: 0, payable_amount: 80, currency: 'CNY', time_credit: 0, traffic_credit: 0, traffic_bytes: 100, used_bytes: 0, quote_fingerprint: 'discount-quote',
     discount: { provider: { plugin_id: discountProvider.provider_id, signing_key_fingerprint: 'secret-signature', package_digest: 'secret-digest', generation: 1, config_revision: 1 }, offer: { status: 'available', input_fingerprint: 'private-input', currency: 'CNY', discount_minor: 20, expires_at: expiresAt, message: '欢迎首次购买', agreement: { id: 'first', version: '1', scope: 'initial_only', terms_hash: 'private-hash', terms_json: '{"private":"rules"}' } } } }
 }
+function recurringRenewalQuote(expiresAt = '2099-01-01T00:00:00Z'): OrderPreview {
+  const value = discountedQuote(expiresAt)
+  value.order_type = 'renewal'; value.currency = 'USD'; value.amount_cents = 60; value.base_price_minor = 60; value.payable_amount = 40
+  value.quote_fingerprint = 'inherited-renewal'; value.discount!.offer.currency = 'USD'
+  value.discount!.offer.agreement!.scope = 'recurring'; value.discount!.offer.message = '原长期会员约定'
+  return value
+}
 function rejectedOrder(status: number, code: string, fields: Record<string, string> = {}) {
   return { response: { status, data: { message: '本次订单未创建', error: { version: 1, code, fields } } } }
 }
@@ -148,6 +155,84 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(wrapper!.find('[aria-label="新购优惠"]').exists()).toBe(false)
     expect(fetchDiscountProviders).not.toHaveBeenCalled()
   })
+  it('confirms recurring purchase scope from the actual quote and explains locked base rather than a fixed discount', async () => {
+    vi.mocked(fetchDiscountProviders).mockResolvedValue([{ ...discountProvider, agreement_scope: 'quote_required' }])
+    const value = discountedQuote(); value.discount!.offer.agreement!.scope = 'recurring'
+    vi.mocked(previewOrder).mockResolvedValue(value)
+    await open('/account/plans?plan=1&step=checkout'); await selectDiscount()
+    expect(wrapper!.text()).not.toContain('长期优惠约定：')
+    await click('核对优惠')
+    expect(wrapper!.text()).toContain('长期优惠约定：续费基础价已锁定为 ¥1.00')
+    expect(wrapper!.text()).toContain('不保证固定')
+    expect(wrapper!.text()).not.toContain('本次优惠仅限首单')
+    vi.mocked(createOrder).mockRejectedValue(new Error('unknown response'))
+    await click('创建订单并选择付款方式')
+    expect(createOrder).toHaveBeenCalledWith(1, expect.objectContaining({ quoteFingerprint: 'discount-quote', discount: { provider_id: discountProvider.provider_id, selection: 'WELCOME' } }))
+    expect(wrapper!.text()).toContain('长期优惠约定：续费基础价已锁定为 ¥1.00')
+    expect(wrapper!.text()).not.toContain('本次优惠仅限首单')
+    expect(wrapper!.text()).toContain('原确认优惠有效至')
+  })
+  it('shows inherited recurring renewal amounts and preserves its scope and currency on unknown reload without browser discount references', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    const originalExpiry = new Date(Date.now() + 1000).toISOString()
+    vi.mocked(previewOrder).mockResolvedValue(recurringRenewalQuote(originalExpiry))
+    vi.mocked(createOrder).mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce({ id: 71 })
+    const path = '/account/plans?operation=renew&subscription=1&plan=1&step=checkout'
+    await open(path)
+    expect(wrapper!.get('[aria-label="继承优惠"]').text()).toContain('续费基础价已锁定为 US$0.60')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('US$0.40')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).not.toContain('¥1.00')
+    expect(wrapper!.find('#purchase-discount-code').exists()).toBe(false)
+    expect(fetchDiscountProviders).not.toHaveBeenCalled()
+    expect(previewOrder).toHaveBeenCalledWith(1, 1, { signal: expect.any(AbortSignal) })
+    await click('创建订单并选择付款方式')
+    const original = vi.mocked(createOrder).mock.calls[0]!
+    expect(original[1]).not.toHaveProperty('discount')
+    expect(original[1]).not.toHaveProperty('confirmation')
+    expect(original[1]).toMatchObject({ orderType: 'renewal', quoteFingerprint: 'inherited-renewal' })
+    const draft = JSON.parse(localStorage.getItem(Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)!).find(key => key.startsWith('zboard-checkout:'))!)!)
+    expect(draft.request.confirmation.discount).toMatchObject({ scope: 'recurring', basePrice: 60, payable: 40, currency: 'USD', expiresAt: originalExpiry })
+    await vi.advanceTimersByTimeAsync(1001); await flushPromises()
+    vi.mocked(previewOrder).mockResolvedValue({ ...recurringRenewalQuote(), payable_amount: 9999 })
+    wrapper!.unmount(); wrapper = undefined; await open(path)
+    expect(previewOrder).toHaveBeenCalledOnce()
+    expect(wrapper!.get('[aria-label="继承优惠"]').text()).toContain('长期优惠约定')
+    expect(wrapper!.get('[aria-label="继承优惠"]').text()).toContain('原确认优惠有效至')
+    expect(wrapper!.text()).not.toContain('继承的优惠报价已过期')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('US$0.40')
+    expect(wrapper!.text()).not.toContain('99.99')
+    await click('恢复上次订单')
+    expect(vi.mocked(createOrder).mock.calls[1]).toEqual(original)
+  })
+  it('expires inherited renewal discounts and requires an explicit successful quote before creating', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    vi.mocked(previewOrder).mockResolvedValue(recurringRenewalQuote(new Date(Date.now() + 1000).toISOString()))
+    await open('/account/plans?operation=renew&subscription=1&plan=1&step=checkout')
+    await vi.advanceTimersByTimeAsync(1001); await flushPromises()
+    expect(wrapper!.text()).toContain('继承的优惠报价已过期')
+    expect(wrapper!.findAll('button').find(button => button.text() === '创建订单并选择付款方式')!.attributes('disabled')).toBeDefined()
+    expect(createOrder).not.toHaveBeenCalled()
+    vi.mocked(previewOrder).mockRejectedValue(rejectedOrder(409, 'subscription_quote_changed'))
+    await click('重新报价')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).not.toContain('US$0.40')
+    expect(createOrder).not.toHaveBeenCalled()
+    vi.mocked(previewOrder).mockResolvedValue(recurringRenewalQuote())
+    await click('重新报价')
+    expect(createOrder).not.toHaveBeenCalled()
+    await click('创建订单并选择付款方式')
+    expect(createOrder).toHaveBeenCalledOnce()
+  })
+  it.each(['initial_only', 'unavailable', 'requires_confirmation'] as const)('blocks invalid inherited renewal %s without ordinary-price fallback', async invalid => {
+    const value = recurringRenewalQuote()
+    if (invalid === 'initial_only') value.discount!.offer.agreement!.scope = invalid
+    else value.discount!.offer.status = invalid
+    vi.mocked(previewOrder).mockResolvedValue(value)
+    await open('/account/plans?operation=renew&subscription=1&plan=1&step=checkout')
+    expect(wrapper!.text()).toContain('继承的优惠报价不可确认')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).not.toContain('¥1.00')
+    expect(wrapper!.findAll('button').find(button => button.text() === '创建订单并选择付款方式')!.attributes('disabled')).toBeDefined()
+    expect(createOrder).not.toHaveBeenCalled()
+  })
   it('ignores an old discount quote after changing the SKU', async () => {
     vi.mocked(fetchDiscountProviders).mockResolvedValue([discountProvider])
     const late = deferred<OrderPreview>()
@@ -244,7 +329,7 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(createOrder).not.toHaveBeenCalled()
   })
   it.each([
-    new Error('response lost'), rejectedOrder(500, 'internal_error'), rejectedOrder(409, 'conflict'),
+    new Error('response lost'), rejectedOrder(500, 'internal_error'), rejectedOrder(409, 'conflict'), rejectedOrder(409, 'subscription_quote_changed'), rejectedOrder(409, 'discount_confirmation_required'),
     rejectedOrder(400, 'validation_failed', { idempotency_key: '原请求不同，请核对已有订单' }),
   ])('preserves uncertain or conflicting creation requests for explicit recovery', async failure => {
     await discountedCheckout()

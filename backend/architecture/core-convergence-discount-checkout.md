@@ -215,3 +215,12 @@ MySQL27.195s log and first fullGo failure are retained. A later shared-source
 attempt could not compile in-progress V2 work and did not execute database tests;
 subsequent validation uses the isolated committed checkout. These failures are
 not marked as passes, and exact fixed-source validation follows separately.
+
+## Subsequent manual recurring increment
+
+The initial-only scope and discovery statement above describe the original MVP.
+The [V2 manual recurring increment](core-convergence-recurring-discount.md) now
+adds strictly verified recurring new/manual renewal paths and uses
+`agreement_scope: quote_required` in discovery. It retains the V1 evidence/hash
+and the earlier failure record; it does not enable automatic recurring debit or
+claim historical/unsupported series are safe to reprice.

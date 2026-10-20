@@ -45,7 +45,7 @@ func (m *Manager) ListCommerceDiscountProviders(ctx context.Context) ([]commerce
 		if len(choices) == 200 {
 			return nil, ErrUnavailable // Never silently return a partial catalog.
 		}
-		choices = append(choices, commerce.DiscountProviderChoice{ProviderID: id, Name: installation.Manifest.Name, Description: installation.Manifest.Description, Operation: "new", AgreementScope: "initial_only"})
+		choices = append(choices, commerce.DiscountProviderChoice{ProviderID: id, Name: installation.Manifest.Name, Description: installation.Manifest.Description, Operation: "new", AgreementScope: "quote_required"})
 	}
 	return choices, nil
 }

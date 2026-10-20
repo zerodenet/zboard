@@ -8,7 +8,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -40,6 +39,9 @@ func quoteError(message string) error {
 	return &commerce.ValidationError{Message: message, Fields: map[string]string{"target_subscription_id": message}}
 }
 func (s OrderCreation) Preview(ctx context.Context, buyer uint, request commerce.OrderCreateRequest) (commerce.OrderPreview, error) {
+	if request.TargetSubscriptionID != 0 {
+		return s.previewRenewalAwareOrder(ctx, buyer, request)
+	}
 	if request.Discount != nil {
 		return s.previewDiscounted(ctx, buyer, request)
 	}
@@ -94,44 +96,21 @@ func sourceValue(tx *gorm.DB, sub model.Subscription, currency string) (int64, t
 	}
 	return value, start, root, nil
 }
-func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, now, creditAt time.Time) (commerce.OrderPreview, error) {
+func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, now, creditAt time.Time, resolutions ...*renewalPriceResolution) (commerce.OrderPreview, error) {
 	preview := commerce.OrderPreview{OrderType: order.OrderType, AmountCents: order.AmountCents, PayableAmount: order.PayableAmount, Currency: order.Currency, TrafficBytes: order.TrafficBytes}
 	if order.OrderType == "renewal" {
-		grace, err := entitlementstore.RecoveryGracePeriod(tx)
-		if err != nil {
-			return preview, err
+		var resolved *renewalPriceResolution
+		if len(resolutions) > 0 {
+			resolved = resolutions[0]
 		}
-		if !entitlements.CanRenewAt(entitlements.Subscription(sub), now, grace) {
-			return preview, quoteError(entitlements.ErrRenewalWindow.Error())
+		if resolved == nil {
+			var err error
+			resolved, err = resolveOrderRenewalPrice(tx, order, sub, now)
+			if err != nil {
+				return preview, err
+			}
 		}
-	}
-	if order.OrderType == "renewal" {
-		source, purchased, err := renewalPriceAgreement(tx, *order, sub.ID)
-		if err != nil {
-			return preview, err
-		}
-		preview.PriceBasis = "purchased_period"
-		if !purchased {
-			preview.PriceBasis = "current_catalog"
-			preview.RequiresPriceAcceptance = true
-		}
-		order.AmountCents, order.PayableAmount = source.AmountCents, source.AmountCents
-		preview.AmountCents, preview.PayableAmount = order.AmountCents, order.PayableAmount
-		preview.EndAt = &sub.EndAt
-		token, err := json.Marshal(struct {
-			Source, Target, SKU uint
-			Base                int64
-			Currency, Unit      string
-			Period              int
-			EndAt               time.Time
-			Purchased           bool
-		}{source.ID, sub.ID, order.PlanSKUID, source.AmountCents, order.Currency, order.BillingUnit, order.BillingValue, sub.EndAt, purchased})
-		if err != nil {
-			return preview, err
-		}
-		sum := sha256.Sum256(token)
-		preview.QuoteFingerprint = hex.EncodeToString(sum[:])
-		return preview, nil
+		return quoteResolvedRenewal(*order, sub, *resolved)
 	}
 	if order.TargetSubscriptionID != nil && order.OrderType != "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now)) {
 		return preview, quoteError("订阅已结束，请续费恢复或新购套餐。")

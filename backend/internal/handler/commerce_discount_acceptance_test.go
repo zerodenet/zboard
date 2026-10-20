@@ -122,7 +122,7 @@ func assertCommerceDiscountNativeHTTPWalletAndAutomaticRenewal(t *testing.T, f o
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response, choices := list(f.token); response.Code != 200 || len(choices) != 1 || choices[0].Name != "首单优惠" || choices[0].ProviderID != installation.ID || choices[0].AgreementScope != "initial_only" || strings.Contains(response.Body.String(), "signing_key") || strings.Contains(response.Body.String(), "config_revision") {
+	if response, choices := list(f.token); response.Code != 200 || len(choices) != 1 || choices[0].Name != "首单优惠" || choices[0].ProviderID != installation.ID || choices[0].AgreementScope != "quote_required" || strings.Contains(response.Body.String(), "signing_key") || strings.Contains(response.Body.String(), "config_revision") {
 		t.Fatal("public discovery lost scope or leaked installation internals", response.Code, choices)
 	}
 	request := commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, IdempotencyKey: "native-first-discount", Discount: &commerce.OrderDiscountSelection{ProviderID: installation.ID}}

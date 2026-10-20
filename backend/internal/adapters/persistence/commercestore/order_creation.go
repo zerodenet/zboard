@@ -21,6 +21,9 @@ type OrderCreation struct {
 }
 
 func (s OrderCreation) Create(ctx context.Context, buyer uint, request commerce.OrderCreateRequest) (commerce.Order, error) {
+	if request.TargetSubscriptionID != 0 {
+		return s.createRenewalAwareOrder(ctx, buyer, request)
+	}
 	if request.Discount != nil {
 		return s.createDiscounted(ctx, buyer, request)
 	}
@@ -52,7 +55,7 @@ func createOrderWithDiscountInTransaction(tx *gorm.DB, buyer uint, request comme
 		return model.Order{}, err
 	}
 	if preview.RequiresPriceAcceptance && request.QuoteFingerprint == "" {
-		if request.Discount != nil {
+		if hasCheckoutOffer(discount) {
 			return model.Order{}, discountCheckoutError("请先确认优惠后的完整订单报价。")
 		}
 		if preview.ChangeMode == "full_term" {
@@ -60,7 +63,7 @@ func createOrderWithDiscountInTransaction(tx *gorm.DB, buyer uint, request comme
 		}
 		return model.Order{}, quoteError("该币种或付费周期尚无购买锁价，请先查看并明确确认当前新报价。")
 	}
-	if discount != nil {
+	if hasCheckoutOffer(discount) {
 		if err := refreshDiscountAcceptance(&order, *discount, commerceNow(clock)); err != nil {
 			return model.Order{}, err
 		}
@@ -76,7 +79,7 @@ func prepareOrder(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest, 
 }
 
 func prepareOrderWithDiscount(tx *gorm.DB, buyer uint, request commerce.OrderCreateRequest, now time.Time, discount *checkoutDiscount) (out model.Order, preview commerce.OrderPreview, err error) {
-	if request.Discount != nil && discount == nil {
+	if request.Discount != nil && !hasCheckoutOffer(discount) && (discount == nil || !discount.Baseline) {
 		return out, preview, discountCheckoutError("优惠报价必须在订单事务之外取得并重新核验。")
 	}
 	if request.PlanSKUID == 0 {
@@ -144,19 +147,41 @@ func prepareOrderWithDiscount(tx *gorm.DB, buyer uint, request commerce.OrderCre
 		BillingValue: terms.BillingValue, RenewalEffect: terms.RenewalEffect, TrafficBytes: terms.TrafficBytes,
 		DeviceLimit: terms.DeviceLimit, SpeedLimitMbps: terms.SpeedLimitMbps,
 	}
-	if discount != nil {
+	var renewal *renewalPriceResolution
+	var source *commerce.DiscountSourceSnapshot
+	if order.OrderType == "renewal" {
+		renewal, err = resolveOrderRenewalPrice(tx, &order, sub, now)
+		if err != nil {
+			return out, preview, err
+		}
+		var scope *discountSourceScope
+		if discount != nil {
+			scope = discount.Scope
+		}
+		source, err = readDiscountAgreementSource(tx, order, sub, scope)
+		if err != nil {
+			return out, preview, err
+		}
+		if discount != nil && discount.Baseline {
+			discount.Source = source
+		}
+		if source != nil && !hasCheckoutOffer(discount) && (discount == nil || !discount.Baseline) {
+			return out, preview, discountCheckoutError("该订阅已有长期优惠协议，必须取得有效的人工续费报价；不会回退原价。")
+		}
+	}
+	if hasCheckoutOffer(discount) {
 		// Capture the undiscounted policy before any residual allocation.
 		if err := capturePurchaseSnapshot(tx, &order, plan, sub); err != nil {
 			return out, preview, err
 		}
-		if err := applyCheckoutDiscount(&order, request, *discount, now); err != nil {
+		if err := applyCheckoutDiscount(&order, request, *discount, now, source); err != nil {
 			return out, preview, err
 		}
 	}
 	if order.OrderType == "upgrade" {
 		preview, err = quoteFullReplacement(tx, &order, sub, now, now)
 	} else {
-		preview, err = applyTargetQuote(tx, &order, sub, now, now)
+		preview, err = applyTargetQuote(tx, &order, sub, now, now, renewal)
 	}
 	if err != nil {
 		return model.Order{}, commerce.OrderPreview{}, err
@@ -165,7 +190,7 @@ func prepareOrderWithDiscount(tx *gorm.DB, buyer uint, request commerce.OrderCre
 		return model.Order{}, commerce.OrderPreview{}, err
 	}
 	preview.BasePriceMinor, preview.DiscountAmount = order.AmountCents, order.DiscountAmount
-	if discount != nil {
+	if hasCheckoutOffer(discount) {
 		quote := discount.Quote
 		preview.Discount = &quote
 		preview.RequiresPriceAcceptance = true

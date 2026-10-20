@@ -42,6 +42,13 @@ func (s *server) EvaluateCommerceQuote(ctx context.Context, request *pluginv1.Co
 	}
 	terms := `{"discount_minor":2000,"kind":"read-only-fixture"}`
 	hash, _ := pluginv1.CommerceDiscountTermsHash(terms)
-	return pluginv1.CommerceDiscountResult(pluginv1.CommerceDiscountOffer{Status: "available", InputFingerprint: in.InputFingerprint, Currency: in.Currency, DiscountMinor: 2000, ExpiresAt: time.Now().Add(time.Minute), Agreement: &pluginv1.CommerceDiscountAgreement{ID: "fixture", Version: "1", Scope: "initial_only", TermsHash: hash, TermsJSON: terms}})
+	agreement := pluginv1.CommerceDiscountAgreement{ID: "fixture", Version: "1", Scope: "initial_only", TermsHash: hash, TermsJSON: terms}
+	if in.Selection == "recurring" {
+		agreement.Scope = "recurring"
+	}
+	if in.Agreement != nil {
+		agreement = *in.Agreement
+	}
+	return pluginv1.CommerceDiscountResult(pluginv1.CommerceDiscountOffer{Status: "available", InputFingerprint: in.InputFingerprint, Currency: in.Currency, DiscountMinor: 2000, ExpiresAt: time.Now().Add(time.Minute), Agreement: &agreement})
 }
 func main() { pluginv1.Serve(&server{}) }

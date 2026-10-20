@@ -63,8 +63,11 @@ passed again (0.528s/1.061s); migration inventory and embedded SQL parsing passe
 temporary sort. Exact commands and historical failures are recorded in the
 [validation receipt](validation/2026-10-20-observation-retention.json).
 
-Real MySQL schema/EXPLAIN, delete-failure accounting, and paused point-lock
-receive/settlement tests are included but await their isolated database slot.
+The subsequent isolated MySQL 8.4 run passed the actual schema/recovery/EXPLAIN,
+delete-failure accounting and paused point-lock receive/settlement tests, together
+with the recurring payment tests (datastore 7.775s, handler 23.996s; total
+34.133s). Fresh reception and authoritative settlement committed while old-row
+maintenance was paused under its actual point locks.
 Full backend, new CI, capacity and long-duration retention validation are still
 required; earlier commits' green CI is not evidence for this batch.
 

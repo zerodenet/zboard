@@ -3862,8 +3862,8 @@ paths:
     get:
       operationId: listCommerceDiscountProviders
       tags: [orders]
-      summary: List available first-purchase discount providers
-      description: Authenticated, bounded choices from admitted signed active configured native installations. Names and descriptions are presentation only; selection is an optional provider-owned code, never a browser price or payment fact. No host or available provider returns an empty array. Current checkout supports new/initial_only offers only; discovery never authorizes a charge.
+      summary: List available new-purchase discount providers
+      description: Authenticated, bounded choices from admitted signed active configured native installations. Names and descriptions are presentation only; selection is an optional provider-owned code, never a browser price or payment fact. No host or available provider returns an empty array. Discovery performs no evaluation and reports quote_required; the actual verified offer determines initial_only or recurring scope. Manual recurring renewal inherits the strictly verified paid agreement and provider, including when the browser omits discount. Unavailable or unverified terms never silently revert to full price. Discovery never authorizes a charge.
       responses:
         "200":
           description: Up to 200 current provider choices; no-store
@@ -3884,7 +3884,7 @@ paths:
                             name: { type: string }
                             description: { type: string }
                             operation: { type: string, enum: [new] }
-                            agreement_scope: { type: string, enum: [initial_only] }
+                            agreement_scope: { type: string, enum: [quote_required] }
         "401": { $ref: "#/components/responses/Error" }
         "503": { description: "Provider catalog unavailable; ordinary undiscounted purchases remain independent." }
   /api/v1/orders:

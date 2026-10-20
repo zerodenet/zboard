@@ -4,6 +4,8 @@ import "context"
 
 // A public choice contains no installation configuration or authority material.
 // Availability is revalidated for every quote; discovery cannot authorize funds.
+// AgreementScope is quote_required: listing performs no provider evaluation and
+// therefore cannot predict a provider's actual initial-only or recurring terms.
 type DiscountProviderChoice struct {
 	ProviderID     string `json:"provider_id"`
 	Name           string `json:"name"`

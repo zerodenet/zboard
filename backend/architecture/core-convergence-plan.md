@@ -728,3 +728,34 @@ but still await the isolated slot; complete backend/new CI/capacity remain
 pending. Traffic ledger/cursor/projection authorities are not archived.
 See [ownership, migration, rollback and limits](core-convergence-observation-retention.md)
 and [exact validation receipt](validation/2026-10-20-observation-retention.json).
+
+### P2 manual recurring paid agreement chain (2026-10-20)
+
+Added V2 recurring new/manual renewal evidence, strict paid-source continuity,
+source-PK-before-owner locking and outside-transaction provider evaluation.
+Purchased base remains locked; omitted browser discount cannot opt out or fall
+back when the provider is unavailable. V1 input hash stays unchanged and
+automatic recurring debit remains closed. Discovery now says quote_required;
+the actual verified offer determines scope. Actual UI retains ongoing terms,
+locked base/current reduction/payable and original unknown-result recovery.
+Pure/store/vet, SQLite signed-native→HTTP→trusted wallet→two renewals, and three
+frontend files/89 tests pass. New MySQL RR/native tests are present but not yet
+executed; complete frontend/build and final backend/new CI remain pending.
+See [transaction order, compatibility and actual boundaries](core-convergence-recurring-discount.md)
+and [validation](validation/2026-10-20-recurring-discount.json).
+
+Subsequent validation: e9e582f clean-source full backend/vet/build/pure-Go SQLite
+passed; original MySQL core862.347s (within unchanged15m) then copy125.028s
+passed. Its native deadline CI failure is retained; ddf9624's new six-job CI
+39475083101 passed after the independently reproduced transport-error fix.
+P2/P4's new actual MySQL schema/EXPLAIN, cleanup-failure accounting, paused
+point-lock reception/settlement, signed-native manual recurring chain and
+source-lock-before-owner RR concurrency tests then all passed in34.133s
+(datastore7.775s/handler23.996s). These targeted working-source tests do not
+replace full checks and new CI for the upcoming combined commit.
+
+The P2 recurring frontend source then passed the complete original-six-exclusion
+suite:199 files/1069 tests passed,8 existing test skips unchanged,160.55s;
+vue-tsc and Vite build passed(Vite12.00s). Sources stayed frozen through both
+checks. New combined-source backend/CI and live browser acceptance remain
+independent requirements.

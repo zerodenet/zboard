@@ -101,5 +101,17 @@
     "p4-observation-retention-index-final.log": "5d5cc03dfdd1950023be75474b5abdd2088c23ed3856d39281c2f53c7351fc30",
     "p4-index-final-handler-review.log": "b5eeb65b777ca91faabd43c434db39bfc44c7eeb199e89aed4642790455b5573",
     "observation-retention-inventory.log": "b3a2f24a97ea0185115d4e17a9d628a7a9f0d7d44b223163e726843940da6a2f"
-  }
+  },
+  "subsequent_actual_mysql_targeted_validation": {
+    "source_head": "30c6208db631ccd035fc321a40551289be098645",
+    "working_tree": "frozen P2 recurring plus committed P4; source manifest pending clean commit",
+    "command": "go test -p 1 ./internal/datastore ./internal/handler -run ^TestMySQL(ObservationRetentionIndexMigrationAndRecovery|FairUseObservationRetentionDoesNotChangeCommittedAccountingOrEvaluation|ObservationRetentionPointLocksAllowFreshReceiveAndSettlement|CommerceRecurringDiscountNativeHTTPWalletAndManualRenewals|RecurringDiscountPreviewWaitsBeforeOwnerAndRejectsStaleQuote)$ -count=1 -timeout 5m",
+    "exit_code": 0,
+    "seconds": 34.133,
+    "mysql": "isolated MySQL 8.4; random fixture schemas; no core/copy concurrent suite",
+    "private_log_sha256": "9584d61bb30a791effa19d370cb3825cceef5152cbdd3bcf0e365a7931479e52",
+    "datastore_seconds": 7.775,
+    "handler_seconds": 23.996
+  },
+  "root_final_handler_datastore_vet_exit": 0
 }
