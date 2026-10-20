@@ -213,3 +213,54 @@ outside this batch. Complete backend/vet/build, full real-DB CI, frontend and
 contract checks must run on the final integrated commit. Sustained growth, queue
 lag, CPU/RSS, core p95, quota-to-revocation delay, overuse and controlled scaling
 remain P6 measurements, not conclusions from these unit and fault tests.
+
+## Exact-commit CI failure and fixture follow-up
+
+The first exact-commit backend CI for
+`53a056d32633dcbda9b243553d85a88fe9fc2090` failed two existing handler tests
+(handler runner 224.517s). The original
+[CI run 39369974199, job 118455402109](https://github.com/zerodenet/zboard/actions/runs/39369974199/job/118455402109)
+and its failures are retained; the targeted successes above did not cover these
+two test names.
+
+* `TestTrafficProductionTrendRouteReusesFactsAndSeparatesTimezoneChanges`
+  directly inserted an extra 77-byte historical fact after `seedUsage` had
+  already rebuilt its seven historical facts. With 0054 there is no synchronous
+  insert trigger. The UTC result correctly excluded this earlier-day fact; the
+  freshly computed Shanghai result also lacked its absent hourly bucket, giving
+  1,209 bytes/7 records instead of 1,286/8. This was not reuse of the UTC cache.
+* `TestTrafficUsagePageReferencesAreBoundedIndependentAndAccountScoped` directly
+  seeded ten settled historical facts, without projection intents or hourly
+  buckets. Its hourly node ranking was consequently empty before its raw-page
+  scope/reference assertions could run.
+
+A clean independent checkout of exact 53a056d reproduced both failures without
+other changes, handler 0.348s. Log:
+`/tmp/zboard-53a-hourly-ci-repro.log`. The minimal fix explicitly calls the existing
+`rebuildFixtureHourly` after each historical seed is complete. It changes no
+production code, cache logic, permission rule or raw fallback. Every original
+timezone/AsOf/cache assertion, node limit/truncation assertion, foreign/deleted
+subscription label assertion and exact five-query boundary is unchanged.
+
+```sh
+GOMAXPROCS=1 go test -p 1 ./internal/handler \
+  -run '^TestTraffic(ProductionTrendRouteReusesFactsAndSeparatesTimezoneChanges|UsagePageReferencesAreBoundedIndependentAndAccountScoped)$' \
+  -count=1 -timeout 3m
+```
+
+Exact 53a056d plus only these two fixture edits passed, handler 0.359s. Log:
+`/tmp/zboard-53a-hourly-ci-fixture-fixed.log`. Both modified test files matched
+the main integration workspace byte-for-byte:
+
+* `traffic_calendar_snapshot_test.go`: SHA256
+  `28bdf583d52379e2287a624248803dafea99f75e67a0364f915031aace3837aa`.
+* `traffic_usage_query_test.go`: SHA256
+  `d731dd62a8a0f251ab26f8117a9a9793f8b35fb2960bea18c8b6f94fec86d7db`.
+
+The temporary patch is retained as
+`/tmp/zboard-53a-hourly-ci-fixture-fix.patch`; the verification checkout was
+restored to clean 53a056d after the comparison. An initial shared-workspace run
+was blocked at compilation by a separate concurrent P3 import-cycle intermediate
+state, not a test assertion. Its owner has removed that cycle; rerunning in the
+shared workspace awaits the scheduled P3 test slot. No shared-workspace or full
+CI pass is claimed from the independent two-test result.

@@ -189,6 +189,9 @@ func TestTrafficUsagePageReferencesAreBoundedIndependentAndAccountScoped(t *test
 			t.Fatal(err)
 		}
 	}
+	// Materialize these directly seeded, settled historical facts before
+	// checking the independent hourly ranking and raw-page reference scopes.
+	rebuildFixtureHourly(t, f.h.db)
 	var series trafficNodeSeriesResponse
 	f.get(t, "/api/v1/traffic/records?view=node_series&bucket=hour&from=2026-09-01&to=2026-09-01", false, f.h.TrafficUsageRecordsHandler, &series)
 	if len(series.Nodes) != 8 || !series.Truncated {

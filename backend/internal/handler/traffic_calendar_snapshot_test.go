@@ -20,6 +20,9 @@ func TestTrafficProductionTrendRouteReusesFactsAndSeparatesTimezoneChanges(t *te
 	if err := f.h.db.Create(&extra).Error; err != nil {
 		t.Fatal(err)
 	}
+	// This extra settled historical fact is inserted after seedUsage's
+	// projection rebuild; 0054 no longer projects direct inserts by trigger.
+	rebuildFixtureHourly(t, f.h.db)
 	path := "/api/v1/admin/traffic/trends?from=2026-09-01&to=2026-09-01"
 	var first, repeated, shanghai trafficTrendResponse
 	f.get(t, path, true, f.h.TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler, &first)

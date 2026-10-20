@@ -633,3 +633,7 @@ P2-14最新实库补证：d7dc8ca独立源码快照的全部TestMySQLPlanQuota37
 最终四包SQLite专项2.543s/0.634s/1.552s/3.787s通过；真实MySQL datastore16.127s、handler48.444s通过，包括0053并发/故障、0054部分DDL、丢失证据拒绝、空派生恢复、三方向复制、半/刻小时时区及gap竞争。OpenAPI Redocly有效，282原警告。CLI编译和最终提交的完整后端/实库/CI随后核对。新1000意图元数据及5索引SQLite319488B，原0053为65536B；仅存储样本，不是容量收益。详见core-convergence-hourly-projection-evidence.md及validation/2026-10-20-hourly-projection.json。
 
 本批没有归档原始事实、在线/覆盖投影拆分、伸缩或生产验收，不以统计解耦宣称P4/P6/P7整体完成。容量基准另固定在7ca9f63作为此变更前起点。最近基线fetch仍7c7283f，保留发布未知先核验与队列恢复修复。
+
+P4-02提交53a056d32633dcbda9b243553d85a88fe9fc2090已推至原Draft PR78，独立CI39369974199进行中。前一7ca9f63d0cf12a03713f3a242c508dcbf82e4856的backend/frontend/mysql/contract/compose/zrs-compiler现全部成功：https://github.com/zerodenet/zboard/actions/runs/39368858465 。53a检查尚未结束，不以父提交绿灯替代。
+
+P4-02完整CI39369974199保留失败：handler224.517s中的两个旧历史夹具直接插TrafficRecord，缺少0054后独立hourly物化；timezone额外77在原seed重建后插入、ranking10行从未物化。精确clean53复现0.348s失败后，仅这两处在历史插入完成时rebuild，所有时区/缓存/AsOf/分页截断/权限/SQL边界断言保留，同快照两fixture修复0.359s通过。没有加入生产rawfallback或删断言。完整最终CI仍继续验证，不把专项当整套成功。

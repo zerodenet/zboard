@@ -71,6 +71,33 @@
     "cgroup_cpu_max": "400000 100000",
     "cgroup_memory_max_bytes": 17179869184
   },
+  "ci_failure_and_fixture_followup": {
+    "original_commit": "53a056d32633dcbda9b243553d85a88fe9fc2090",
+    "ci_run": 39369974199,
+    "ci_job": 118455402109,
+    "original_handler_seconds": 224.517,
+    "original_result": "fail: two existing historical fixture tests omitted explicit hourly materialization after 0054 trigger cutover",
+    "tests": ["TestTrafficProductionTrendRouteReusesFactsAndSeparatesTimezoneChanges", "TestTrafficUsagePageReferencesAreBoundedIndependentAndAccountScoped"],
+    "clean_exact_commit_reproduction": {
+      "result": "same two failures",
+      "handler_seconds": 0.348,
+      "log": "/tmp/zboard-53a-hourly-ci-repro.log"
+    },
+    "fix": "Two explicit rebuildFixtureHourly calls after direct settled historical seed insertion; no production change and no original assertion changed.",
+    "command": "GOMAXPROCS=1 go test -p 1 ./internal/handler -run '^TestTraffic(ProductionTrendRouteReusesFactsAndSeparatesTimezoneChanges|UsagePageReferencesAreBoundedIndependentAndAccountScoped)$' -count=1 -timeout 3m",
+    "exact_commit_plus_only_two_fixture_edits": {
+      "result": "pass",
+      "handler_seconds": 0.359,
+      "log": "/tmp/zboard-53a-hourly-ci-fixture-fixed.log",
+      "temporary_patch": "/tmp/zboard-53a-hourly-ci-fixture-fix.patch",
+      "verification_checkout_restored_clean": true
+    },
+    "matched_main_and_verification_test_file_sha256": {
+      "traffic_calendar_snapshot_test.go": "28bdf583d52379e2287a624248803dafea99f75e67a0364f915031aace3837aa",
+      "traffic_usage_query_test.go": "d731dd62a8a0f251ab26f8117a9a9793f8b35fb2960bea18c8b6f94fec86d7db"
+    },
+    "shared_workspace_result": "Initial setup blocked by a concurrent P3 import-cycle intermediate state; owner fixed cycle, rerun waits for its test slot. No main/full-CI pass claimed."
+  },
   "limits": [
     "No production migration, deployment or rollback executed.",
     "Online/coverage projections are not fully isolated; authoritative raw/cursor/dedup state is not archived.",
