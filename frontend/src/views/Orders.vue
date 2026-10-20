@@ -65,6 +65,7 @@
           <div><span>更新时间</span><TimeBadge :value="selectedOrder.updated_at" /></div>
         </section>
         <PaymentReceipts :order-id="selectedOrder.id" admin @changed="detailResource.load()" />
+        <AdminConsumptionRefund v-if="selectedOrder.status === 'paid' && selectedOrder.order_type !== 'topup'" :order="selectedOrder" @changed="onConsumptionRefunded" />
         <section class="payment-events stack" aria-label="支付事件时间线">
           <header class="detail-section-header"><div><h3>支付事件</h3><p>仅展示规范化事件摘要；回调原文不会进入前端。</p></div><span>{{ paymentEventTotal }}</span></header>
           <PageAlert v-if="paymentEventError" tone="danger" title="支付事件加载失败">{{ paymentEventError }}</PageAlert>
@@ -93,6 +94,8 @@
 
 <script setup lang="ts">
 import PaymentReceipts from '../components/PaymentReceipts.vue'
+import AdminConsumptionRefund from '../components/AdminConsumptionRefund.vue'
+import type { ConsumptionRefund } from '../api/consumptionRefunds'
 import AdminOrderAssignmentDialog from '../components/AdminOrderAssignmentDialog.vue'
 import TableText from '../components/TableText.vue'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -133,6 +136,10 @@ async function onAssigned(order: AdminOrderDetail) {
   message.value = `已为用户 #${order.user_id} 创建待付款订单 #${order.id}。`
   await router.replace({ query: { ...preserveAdminReturnTo(route.query.return_to), user_id: String(order.user_id), order: String(order.id) } })
   await load()
+}
+async function onConsumptionRefunded(refund: ConsumptionRefund) {
+  message.value = `退款 #${refund.id} 已退入用户 #${refund.user_id} 的站内余额。`
+  await Promise.all([load(), ...(detailID.value === refund.order_id ? [detailResource.load()] : [])])
 }
 const queryFilter = ref(String(route.query.q || ''))
 const statusFilter = ref(String(route.query.status || ''))
