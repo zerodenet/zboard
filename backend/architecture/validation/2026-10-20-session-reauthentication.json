@@ -1,0 +1,33 @@
+{
+  "stage": "P5-01 global session reauthentication",
+  "status": "targeted and full frontend pass; exact-commit CI pending",
+  "behavior": [
+    "One global dialog retains original route/component tree for same-account email/password reauthentication.",
+    "Verify core identity and current permissions before restoring reads; remount and isolate context on another account or permission change.",
+    "Never queue or replay writes; reject business calls while suspended and ignore late responses using old credentials.",
+    "Discover configured third-party login contributions; explicit full-page login warns drafts will be lost and uses bounded same-account permission-checked return path."
+  ],
+  "validation": {
+    "targeted": "15 files / 103 tests passed; final incremental useRemoteResource 15 passed",
+    "full_frontend": "194 files passed, 2 existing skipped; 933 tests passed, 8 existing skipped",
+    "duration_seconds": 139.43,
+    "exclusions": [
+      "src/theme/designTokens.test.ts",
+      "src/views/commercePurchaseExperience.test.ts",
+      "src/utils/adminRowActionsAudit.test.ts",
+      "src/utils/catalogScalePolicy.test.ts",
+      "src/utils/formPolicy.test.ts",
+      "src/utils/frontendArchitecturePolicy.test.ts"
+    ],
+    "frozen_install": "pass --frozen-lockfile --package-import-method=copy",
+    "build": "vue-tsc and vite passed; vite 13.46s",
+    "scope_note": "Full frontend checkout also included independently verified daily pending display and corrected default refund text; exact-commit CI remains separate."
+  },
+  "migration": "none",
+  "rollback": "Frontend binary rollback only; no stored credentials or drafts added. Optional navigation hints expire after ten minutes and are consumed once.",
+  "unverified": [
+    "Real-browser focus/inert while multiple dialogs are present.",
+    "Real OIDC provider end-to-end; third-party full-page flow deliberately does not promise draft restoration."
+  ],
+  "baseline_warning": "Existing HappyDOM iframe abort warnings retain passing PluginFrame tests; no new skip."
+}

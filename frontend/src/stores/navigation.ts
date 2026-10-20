@@ -6,6 +6,7 @@ import type { Surface } from '../api/plugins'
 import { useAppStore } from './app'
 import { normalizeApiErrorMessage } from '../utils/apiError'
 import { toAdminNavigation } from '../utils/adminNavigation'
+import { AUTH_SESSION_RESTORED_EVENT, isAuthSessionExpired } from '../utils/authSession'
 
 export type NavigationFailure = '' | 'session-expired' | 'forbidden' | 'network'
 function state() { return { snapshot: shallowRef<NavigationSnapshot>({ revision: 0, nodes: [] }), error: ref(''), failure: ref<NavigationFailure>(''), loading: ref(false), checkedPath: ref('') } }
@@ -39,7 +40,7 @@ export function useNavigation(surface: Surface) {
   let timer: ReturnType<typeof setInterval> | undefined
   let disposed = false
   async function load() {
-    if (disposed) return
+    if (disposed || app.reauthRequired) return
     const request = ++sequence
     const path = route.path
     controller?.abort()
@@ -57,7 +58,7 @@ export function useNavigation(surface: Surface) {
       if (disposed || request !== sequence || controller?.signal.aborted) return
       const status = Number(cause?.response?.status)
       current.failure.value = status === 401 ? 'session-expired' : status === 403 ? 'forbidden' : 'network'
-      if (status === 401 || status === 403) {
+      if (status === 403 || (status === 401 && !isAuthSessionExpired())) {
         // A previous approval cannot outlive an explicit access denial.
         current.snapshot.value = { revision: 0, nodes: [] }
         current.checkedPath.value = ''
@@ -73,6 +74,12 @@ export function useNavigation(surface: Surface) {
     ++sequence
     controller?.abort()
     approvedTransitionPath = ''
+    // Keep the mounted editor during expiry and same-account recovery. The
+    // refreshed navigation response still revokes a denied page immediately.
+    if (app.reauthRequired || current.checkedPath.value === route.path && app.token) {
+      refresh()
+      return
+    }
     current.snapshot.value = { revision: 0, nodes: [] }
     current.error.value = ''
     current.failure.value = ''
@@ -95,6 +102,7 @@ export function useNavigation(surface: Surface) {
     timer = setInterval(refresh, 30_000)
     window.addEventListener('focus', refresh)
     window.addEventListener(NAVIGATION_CHANGED, refresh)
+    window.addEventListener(AUTH_SESSION_RESTORED_EVENT, refresh)
     document.addEventListener('visibilitychange', refresh)
   })
   onBeforeUnmount(() => {
@@ -105,6 +113,7 @@ export function useNavigation(surface: Surface) {
     if (timer) clearInterval(timer)
     window.removeEventListener('focus', refresh)
     window.removeEventListener(NAVIGATION_CHANGED, refresh)
+    window.removeEventListener(AUTH_SESSION_RESTORED_EVENT, refresh)
     document.removeEventListener('visibilitychange', refresh)
   })
   return { ...current, load, pageAvailable, pageLoading, pageError }

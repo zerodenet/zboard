@@ -1,5 +1,5 @@
-import axios from 'axios'
-import { expireAuthSession, resetAuthSessionExpired } from '../utils/authSession'
+import axios, { AxiosError } from 'axios'
+import { expireAuthSession, isAuthSessionExpired, resetAuthSessionExpired } from '../utils/authSession'
 import { normalizeApiErrorPayload } from '../utils/apiError'
 import { appendQueryID, type QueryID } from './queryID'
 import { requirePageResponse } from './pageResponse'
@@ -16,6 +16,11 @@ export const api = axios.create({
 })
 
 api.interceptors.request.use((cfg) => {
+  const loginMethods = cfg.method === 'get' && cfg.url === '/plugin-ui/slots' && cfg.params?.surface === 'public' && cfg.params?.slot === 'auth.login.methods'
+  // Reauthentication only verifies identity. Never queue or replay business calls.
+  if (isAuthSessionExpired() && cfg.url !== '/auth/login' && cfg.url !== '/auth/me' && !loginMethods) {
+    throw new AxiosError('登录已过期，请重新登录后确认并重试操作。', 'AUTH_SESSION_EXPIRED', cfg)
+  }
   const token = localStorage.getItem(tokenKey)
   if (token) {
     cfg.headers = cfg.headers || {}
@@ -25,7 +30,13 @@ api.interceptors.request.use((cfg) => {
 })
 
 api.interceptors.response.use(
-  response => response,
+  response => {
+    const credential = response.config.headers?.Authorization
+    if (typeof credential === 'string' && credential.startsWith('Bearer ') && credential !== `Bearer ${getAuthToken()}`) {
+      throw new AxiosError('登录身份已变化，请刷新后核对操作结果。', 'AUTH_SESSION_CHANGED', response.config)
+    }
+    return response
+  },
   (cause) => {
     const pluginManagement = /^\/(?:api\/v1\/)?admin\/(?:plugins|plugin-market)(?:\/|\?|$)/.test(cause?.config?.url || '')
     if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data, pluginManagement ? 'plugin-management' : undefined)
@@ -60,8 +71,8 @@ export function getAuthToken() {
   return localStorage.getItem(tokenKey) || ''
 }
 
-export function setAuthToken(token: string) {
-  resetAuthSessionExpired()
+export function setAuthToken(token: string, resetExpiry = true) {
+  if (resetExpiry) resetAuthSessionExpired()
   localStorage.setItem(tokenKey, token)
 }
 

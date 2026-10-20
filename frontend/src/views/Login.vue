@@ -33,6 +33,7 @@ import PageAlert from '../components/PageAlert.vue'
 import { useFormErrors } from '../composables/useFormState'
 import { useAppStore } from '../stores/app'
 import { collectFieldErrors, isEmail, isUtf8LengthInRange } from '../utils/validation'
+import { clearAuthReturnPath } from '../utils/authReturnPath'
 const email = ref('')
 const password = ref('')
 const loading = ref(false)
@@ -54,6 +55,7 @@ async function submit() {
   try {
     const result = await login(email.value, password.value)
     store.setToken(result.auth.token); store.setUser(result.user)
+    clearAuthReturnPath()
     await store.loadSystemStatus(true).catch(() => undefined)
     const requested = typeof route.query.redirect === 'string' ? route.query.redirect : ''
     const accountRequest = requested === '/account' || requested.startsWith('/account/')

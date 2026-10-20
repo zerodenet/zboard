@@ -23,6 +23,7 @@ import PageAlert from '../components/PageAlert.vue'
 import FormField from '../components/FormField.vue'
 import AuthLegalLinks from '../components/AuthLegalLinks.vue'
 import { useAppStore } from '../stores/app'
+import { consumeAuthReturnPath } from '../utils/authReturnPath'
 const route = useRoute(), router = useRouter(), store = useAppStore()
 const failed = ref(false), registering = ref(false), busy = ref(false), email = ref(''), code = ref(''), cooldown = ref(0)
 const formElement = ref<HTMLElement | null>(null), formErrors = useFormErrors()
@@ -35,7 +36,8 @@ async function accept(result: IdentityLoginResult) {
   if (!result.auth?.token || !result.user) throw new Error('missing login result')
   store.setToken(result.auth.token); store.setUser(result.user)
   await store.loadSystemStatus(true).catch(() => undefined)
-  await router.replace(result.user.is_admin ? '/admin/dashboard' : '/account')
+  const requested = consumeAuthReturnPath(result.user.id, result.user.is_admin)
+  await router.replace(requested || (result.user.is_admin ? '/admin/dashboard' : '/account'))
 }
 const callbackErrors: Record<string, string> = {
   invalid_response: '授权服务返回的信息不完整，请重新发起登录。',

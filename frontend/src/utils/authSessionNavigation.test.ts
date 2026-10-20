@@ -18,6 +18,19 @@ async function setup(path: string) {
   return { router, clear }
 }
 describe('expired session navigation', () => {
+  it('suspends a protected page in place when in-page authentication is available', async () => {
+    const { router } = await setup('/admin/nodes?page=3#details')
+    cleanup.splice(0).forEach(dispose => dispose())
+    const clear = vi.fn(), suspend = vi.fn()
+    cleanup.push(installAuthSessionNavigation(router, clear, suspend))
+    expireAuthSession()
+    expireAuthSession()
+    await Promise.resolve()
+    expect(router.currentRoute.value.fullPath).toBe('/admin/nodes?page=3#details')
+    expect(suspend).toHaveBeenCalledOnce()
+    expect(clear).not.toHaveBeenCalled()
+    expect(isAuthSessionExpired()).toBe(true)
+  })
   it('replaces a protected page with login and retains its query and hash', async () => {
     const { router, clear } = await setup('/admin/nodes?page=3#details')
     const dirtyGuard = vi.fn(() => isAuthSessionExpired())
