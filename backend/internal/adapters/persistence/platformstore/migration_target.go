@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/platform"
@@ -11,9 +12,9 @@ import (
 	"gorm.io/gorm"
 )
 
-type MigrationTargets struct{}
+type MigrationTargets struct{ DB *gorm.DB }
 
-func (MigrationTargets) Check(ctx context.Context, target platform.MigrationTarget) error {
+func (s MigrationTargets) Check(ctx context.Context, target platform.MigrationTarget) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -24,6 +25,7 @@ func (MigrationTargets) Check(ctx context.Context, target platform.MigrationTarg
 	if err != nil {
 		return migrationCheckError(platform.ErrMigrationTargetConnection, err)
 	}
+	db = db.WithContext(ctx)
 	pool, err := db.DB()
 	if err != nil {
 		return err
@@ -31,6 +33,25 @@ func (MigrationTargets) Check(ctx context.Context, target platform.MigrationTarg
 	defer pool.Close()
 	if err := pool.PingContext(ctx); err != nil {
 		return migrationCheckError(platform.ErrMigrationTargetConnection, err)
+	}
+	if err := ensureMigrationTopologySupported(s.DB, db); err != nil {
+		return err
+	}
+	if db.Migrator().HasTable(migrationPreparationTable) {
+		if s.DB == nil {
+			return platform.ErrMigrationTargetOccupied
+		}
+		receipt, err := loadMigrationPreparation(db.WithContext(ctx), false)
+		if err != nil {
+			return migrationCheckError(platform.ErrMigrationTargetOccupied, err)
+		}
+		if err := verifyPreparationSource(s.DB.WithContext(ctx), receipt); err != nil {
+			return migrationCheckError(platform.ErrMigrationTargetOccupied, err)
+		}
+		if err := verifyPreparationManifest(db.WithContext(ctx), receipt, false); err != nil {
+			return migrationCheckError(platform.ErrMigrationTargetOccupied, err)
+		}
+		return nil
 	}
 	if err := EnsureMigrationTargetEmpty(db.WithContext(ctx)); err != nil {
 		return migrationCheckError(platform.ErrMigrationTargetOccupied, err)
@@ -44,24 +65,16 @@ func OpenMigrationTarget(ctx context.Context, driver, dataSource string) (*gorm.
 	return datastore.OpenWithDriverContext(connect, driver, dataSource, datastore.PoolConfig{MaxOpenConnections: 1, MaxIdleConnections: 1})
 }
 func EnsureMigrationTargetEmpty(db *gorm.DB) error {
-	tables, err := datastore.MigrationTables(db)
+	tables, err := db.Migrator().GetTables()
 	if err != nil {
 		return err
-	}
-	present, err := db.Migrator().GetTables()
-	if err != nil {
-		return err
-	}
-	exists := map[string]bool{}
-	for _, table := range present {
-		exists[table] = true
 	}
 	for _, table := range tables {
-		if !exists[table] {
+		if table == "schema_migrations" || (datastore.IsSQLite(db) && strings.HasPrefix(table, "sqlite_")) {
 			continue
 		}
 		var count int64
-		if err := db.Table(table).Count(&count).Error; err != nil {
+		if err := db.Table(migrationQuote(db, table)).Count(&count).Error; err != nil {
 			return fmt.Errorf("inspect target table %s: %w", table, err)
 		}
 		if count > 0 {

@@ -71,7 +71,11 @@ jobs:
       - name: Test actual MySQL migrations and transactions
         # MySQL 8.4 enables binary logging and defaults function trust to OFF.
         # Recovery tests assert those settings and use schema-only accounts.
-        run: go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m
+        # Snapshot-copy tests acquire MySQL's server-wide source read lock.
+        # Run them after transaction races so they cannot distort those waits.
+        run: |
+          go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m
+          go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m
 
   zrs-compiler:
     runs-on: ubuntu-latest

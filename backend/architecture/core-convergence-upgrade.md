@@ -209,3 +209,16 @@ zboard -f /path/to/zboard.yaml -prepare-hourly-rollback
 该命令不启动HTTP/任务执行器，与-migrate-only互斥。它核查0054来源、空队列和可恢复统计状态；SQLite恢复旧同步小时触发器，MySQL保留旧应用写入路径所需的表。命令成功后继续保持停写，再启动明确兼容这些业务事实的旧版本。普通当前版本启动仍会移除这些触发器；不可在维护命令后又启动当前写入者，再同时启动旧程序。0054的统计降级准备不替代0043–0052金融/凭据语义的各自限制。
 
 本节说明代码提供的升级/回退路径，实库及专项结果单独记录；未执行生产迁移或生产降级。
+
+
+## P7：已验证目标准备收据与失败重试
+
+数据库复制为新目标创建本地zboard_migration_preparation收据，不新增0055，也不加入应用数据复制清单。收据在初始化前绑定256位随机token、源/目标实际物理身份及源任务nonce/run；初始化完成后严格核对当前代码实际默认行，再封存完整schema/seed指纹。SQLite与MySQL实际seed分别验证；自定义配置、菜单、模板、账本、其他业务数据不能作为默认初始化行被清除。MySQL新基线只在进程内所有权核验通过且仅有该收据/空迁移记录时可初始化；普通启动的未知旧库保护保持。
+
+prepared目标可在同源的原任务或新任务中重试；清空任何目标行之前，同一目标事务重验token、原任务nonce、物理身份、schema/seed并锁住已有行和空InnoDB范围。数据复制、目标任务/run成功及收据completed同事务。MySQL须InnoDB及RR/Serializable；RC不提供必要空范围保护而拒绝。SQLite须支持稳定物理身份的持久文件，不接受内存DB；Windows只做过helper交叉编译，没有实机证明。
+
+preparing、没有可信收据的旧失败目标及completed结果不被自动接管。DDL中断或所有权/指纹不符时保持目标原样，先核对源任务、备份与物理库，再制定恢复，不删除收据/业务数据或伪造prepared。目标提交而源确认丢失时，completed与目标任务提供核对依据；不能再次复制覆盖目标，也不会自动切换datasource。此协议不删除源数据或代替备份。
+
+现有公开迁移入口不允许同driver迁移；适配层额外按实际MySQL server UUID拒绝同实例跨库，原因是既有源FLUSH TABLES WITH READ LOCK会阻塞目标写入。预检发生在收据/DDL写入之前，不靠host文本猜测。源快照锁保持，未贸然放宽。SQLite↔隔离MySQL实际复制/故障恢复已验证，跨独立MySQL实例与Windows运行仍未验证。
+
+真实MySQL同实例实验曾阻塞并明确终止，失败证据保留；只清理该测试两个随机库，确认锁及owned session已释放。最新UUID拒绝4.132s、SQLite8.215s、两包vet通过，原跨driver全专项108.804s通过；精确整合提交完整检查另记。CI把新platformstore实库包安排在原MySQL事务竞态命令之后，防止源全服务器读锁污染其他时延/等待断言；原-p2/-count1/-timeout15m保持。详见core-convergence-migration-retry-evidence.md及validation/2026-10-20-migration-retry.json。未执行生产迁移。

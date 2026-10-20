@@ -261,7 +261,7 @@ func runMigrations(db *gorm.DB) error {
 	if err := validateMigrationInventory(versions); err != nil {
 		return err
 	}
-	if err := preparePreReleaseMigrationHistory(sqlDB, versions); err != nil {
+	if err := preparePreReleaseMigrationHistory(sqlDB, versions, ownedMigrationPreparationChecks(db)...); err != nil {
 		return err
 	}
 	if err := prepareNodePublicationMigrationTables(sqlDB); err != nil {
@@ -464,7 +464,7 @@ func isPreReleaseBaselineOnly(versions []string) bool {
 	return len(versions) == 1 && versions[0] == preReleaseBaselineVersion
 }
 
-func preparePreReleaseMigrationHistory(db *sql.DB, versions []string) error {
+func preparePreReleaseMigrationHistory(db *sql.DB, versions []string, preparationProof ...func() error) error {
 	if len(versions) == 0 || versions[0] != preReleaseBaselineVersion {
 		return nil
 	}
@@ -489,6 +489,15 @@ func preparePreReleaseMigrationHistory(db *sql.DB, versions []string) error {
 			return fmt.Errorf("inspect unversioned database: %w", err)
 		}
 		if applicationTables > 0 {
+			if applicationTables == 1 && len(preparationProof) == 1 && preparationProof[0] != nil {
+				var receiptTables int
+				if err := db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'zboard_migration_preparation'").Scan(&receiptTables); err != nil {
+					return fmt.Errorf("inspect owned migration preparation: %w", err)
+				}
+				if receiptTables == 1 {
+					return preparationProof[0]()
+				}
+			}
 			return fmt.Errorf("unversioned pre-release database cannot adopt the squashed %s baseline; migrate it through %s with the previous v0.0.1 build or recreate the database", preReleaseBaselineVersion, preSquashTerminalVersion)
 		}
 		return nil
