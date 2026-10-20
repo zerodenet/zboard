@@ -71,7 +71,9 @@ func (s UsageProjectionWorker) Drain(ctx context.Context, limit int) (int, error
 			ids = append(ids, row.TrafficRecordID)
 		}
 		var records []model.TrafficRecord
-		if err := tx.Where("id IN ?", ids).Order("id").Find(&records).Error; err != nil {
+		// Projection needs only immutable scope, time and settled deltas. In
+		// particular, do not load each fact's unrelated, variable-size Meta.
+		if err := tx.Select([]string{"id", "user_id", "subscription_id", "node_id", "protocol_endpoint_id", "record_at", "raw_bytes", "upload_bytes", "download_bytes", "used_bytes", "protocol_multiplier_milli"}).Where("id IN ?", ids).Order("id").Find(&records).Error; err != nil {
 			return err
 		}
 		if len(records) != len(pending) {

@@ -952,3 +952,15 @@ three race repetitions and11-case actual MySQL periodic test26.192s pass. Local
 success describes one bounded invocation, never completed backlog. No past states
 are rewritten or side effects replayed; full new-source checks remain required.
 See validation/2026-10-20-continuation-outcomes.json.
+
+### P4 bounded projection source loading (2026-10-20)
+
+The200-fact limit did not bound unrelated variable-size Meta loaded by SELECT*.
+Projection now selects its11 required fields only, preserving source evidence,
+settled deltas and the existing transaction. Old source loads Meta and fails the
+behavior check; corrected projection/race and four real MySQL recovery/competition/
+calendar cases pass. Five isolated SQLite200×32KiB samples retain all facts and
+5SQL/batch, median allocations7,380,432→681,360B. This is source-load evidence,
+not HTTP/worker throughput or authority archival. Full final-source checks and
+original capacity gates remain required. See core-convergence-projection-source-
+columns.md and validation/2026-10-20-projection-source-columns.json.
