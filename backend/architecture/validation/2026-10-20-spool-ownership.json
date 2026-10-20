@@ -1,0 +1,15 @@
+{
+  "base": "33b35d3",
+  "scope": "Kernel-enforced exclusive file-spool directory ownership before recovery; release after all local file operations drain",
+  "validation": [
+    {"command": "GOMAXPROCS=1 go test -p 1 ./internal/zeroevent -count=1", "result": "pass", "seconds": 1.466},
+    {"command": "GOMAXPROCS=1 go test -race -p 1 ./internal/zeroevent -count=1", "result": "pass", "seconds": 14.206},
+    {"command": "git diff --check -- backend/internal/zeroevent", "result": "pass"}
+  ],
+  "behavior": ["Same-process duplicate objects and directory aliases refuse ownership", "Real subprocess contention and SIGKILL release retain the same lock inode", "Checkpoint continuation replays only uncommitted events", "Failed startup releases ownership for retry", "Parent cancellation retains ownership while existing object can Commit", "Two concurrent Close calls wait for in-flight ReadBatch and Compact", "Close waits for actual in-flight Commit before releasing lock", "Never-started and zero-value Close remain concurrent-safe"],
+  "migration": "None; permanent .owner.lock is retained; no event/checkpoint transformation",
+  "rollback": "Stop the owner completely before an older binary starts; retain lock file, events and checkpoint; old binaries do not cooperate with the new fence",
+  "limits": ["Linux local filesystem executed", "Darwin/BSD flock implementation not executed", "Windows/other platforms explicitly unsupported before file-spool recovery", "Advisory coordination requires cooperating versions and stable lock inode", "Network filesystems and external lock-file replacement not validated", "Not an independent-worker or autoscaler implementation"],
+  "remaining": ["Current full backend, transport integration and new CI", "DB-only worker graceful drain and recovery", "Resource guards and actual process benefit"],
+  "production_migration_executed": false
+}

@@ -819,3 +819,13 @@ and actual MySQL pass. No schema/financial writer or independent worker is
 added. Spool ownership, bounded drain, resource guards and measured process
 benefit remain required. See core-convergence-process-ownership.md and its
 validation receipt.
+
+### P6 spool ownership prerequisite (2026-10-20)
+
+File-spool Start now takes a permanent-inode kernel lock before any reserve,
+checkpoint or recovery write. Close retains it through all background workers
+and in-flight file operations; process death releases it. Linux real child
+process contention/SIGKILL/checkpoint takeover and close races pass; complete
+zeroevent1.466s and race14.206s pass. No worker or autoscaler is claimed; platform,
+filesystem and legacy-binary limits are explicit in the process-ownership
+document and validation/2026-10-20-spool-ownership.json.
