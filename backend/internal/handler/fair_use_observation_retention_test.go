@@ -105,7 +105,9 @@ func TestMySQLFairUseObservationRetentionDoesNotChangeCommittedAccountingOrEvalu
 func assertObservationRetentionPreservesAccounting(t *testing.T, h *handlers, credential model.ProtocolCredential) {
 	t.Helper()
 	ctx := context.Background()
-	now := time.Now().UTC()
+	// Exercise the exact interval boundary at the persisted DATETIME(3)
+	// precision, rather than allowing MySQL to round a fractional millisecond.
+	now := time.Now().UTC().Truncate(time.Millisecond)
 	maintenanceNow := now.Add(16 * 24 * time.Hour)
 	events := accountingBenchmarkEvents(credential, 0, 4)
 	if err := h.projectZeroNodeEvents(ctx, events); err != nil {

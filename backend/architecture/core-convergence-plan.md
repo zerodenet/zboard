@@ -829,3 +829,16 @@ process contention/SIGKILL/checkpoint takeover and close races pass; complete
 zeroevent1.466s and race14.206s pass. No worker or autoscaler is claimed; platform,
 filesystem and legacy-binary limits are explicit in the process-ownership
 document and validation/2026-10-20-spool-ownership.json.
+
+### P4/P7 retention fixture precision correction (2026-10-20)
+
+The exact60-second retention/evaluation regression now starts its fixture clock
+at persisted DATETIME(3) precision. MySQL can round a fractional millisecond
+forward; this previously made the unchanged exact-boundary assertion run too
+early. A deterministic submillisecond old-clock overlay fails; corrected SQLite
+and actual MySQL pass three repetitions. Production intervals, retention and
+accounting are unchanged.7018 CI passed five jobs but MySQL failed this same
+assertion (handler669.241s);33b local full MySQL also failed it and later timed
+out at the unchanged15-minute limit, leaving copy tests unexecuted. Those failures
+remain evidence. See validation/2026-10-20-retention-clock-precision.json;
+new-head full validation remains required.
