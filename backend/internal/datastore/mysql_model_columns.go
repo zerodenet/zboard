@@ -37,25 +37,7 @@ func addMissingMySQLModelColumns(db *gorm.DB, value any, names []string) error {
 		}
 		fields = append(fields, field)
 	}
-	present, err := func() (present map[string]bool, err error) {
-		// Unlike ColumnTypes, this does not SELECT from the target table or
-		// introduce a target-table SELECT permission requirement. These two
-		// startup reconcilers operate in the database selected by RunMigrations.
-		rows, err := db.Raw("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?", stmt.Table).Rows()
-		if err != nil {
-			return nil, err
-		}
-		defer func() { err = errors.Join(err, rows.Close()) }()
-		present = make(map[string]bool)
-		for rows.Next() {
-			var name string
-			if err := rows.Scan(&name); err != nil {
-				return nil, err
-			}
-			present[strings.ToLower(name)] = true
-		}
-		return present, rows.Err()
-	}()
+	present, err := mysqlColumnNames(db, stmt.Table)
 	if err != nil {
 		return fmt.Errorf("inspect %s columns: %w", stmt.Table, err)
 	}
@@ -77,4 +59,24 @@ func addMissingMySQLModelColumns(db *gorm.DB, value any, names []string) error {
 		return nil
 	}
 	return db.Exec("ALTER TABLE ? "+strings.Join(parts, ", "), args...).Error
+}
+
+// mysqlColumnNames is a call-local snapshot for the two additive audit/phase
+// callers and the principal derived-column repair. Consume and close all rows
+// before any caller may invalidate data or issue DDL.
+func mysqlColumnNames(db *gorm.DB, table string) (present map[string]bool, err error) {
+	rows, err := db.Raw("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?", table).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	present = make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		present[strings.ToLower(name)] = true
+	}
+	return present, rows.Err()
 }

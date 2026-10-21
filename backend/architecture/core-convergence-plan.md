@@ -25,7 +25,7 @@
 | P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
 | P5 工单业务关联 | 已实现且验证（隔离范围） | 4e1a78d/0058双库实际DDL/权限/首消息回滚/锁序；a82每行独立订阅关联入口及完整frontend201files/1112pass/8既有skip、build通过；01eb完整backend与六项CI覆盖。终止历史仍由原订单入口关联，无服务列表权限扩张 |
 | P6 进程关闭/队列所有权前置 | 部分实现（真实子进程、SQLite/race、MySQL） | file-spool内核锁、local Drain/Detach和实际server/plugin cleanup；3690113原MySQL及copy通过，7ef CI MySQL通过；无独立worker或伸缩器 |
-| P7 当前提交验证 | 部分实现/未完成 | 精确01eb完整Go/vet/build/纯Go SQLite、六项新CI39515537970及原容量通过；本地原mysql-core的handler900.019s超时（datastore156.828s/network103.014s通过），jobstore131.560s/copy111.709s独立通过。31/e902失败及当时CI未执行项保留；四次DDL减少不证明稳定CI裕量 |
+| P7 当前提交验证 | 部分实现/未完成 | 最新收据提交c61新CI39520446048五项成功/MySQL handler900.017s失败，CI jobstore/copy未执行；01eb完整backend/新CI/原容量及独立本地follow-ups为该来源证据，不替代新源。当前主体派生修复双库/旧故障/race3专项通过，完整backend/MySQL/新CI待验；31/e902/local失败均保留 |
 | 其余P2及P3–P7 | 部分实现/未完成 | 活跃部分退款/永久多次增购决策、其他操作优惠/外部券契约、完整计量保留、持续增长/资源竞争/独立worker/伸缩、最终综合回归 |
 
 ## 需求—实现—差距表
@@ -1202,3 +1202,28 @@ only an application-owned benchmark overlay is used. Three derived principal
 columns are a narrow candidate, not a completed optimization. Instrumented3.871s
 is not original performance, A/B improvement or CI cause.
 [Actual attribution and limits](core-convergence-ddl-attribution.md).
+
+
+### P3/P4/P7 derived principal repair before DDL (2026-10-21)
+
+The original repair could commit ADD then fail its coverage invalidation; retry
+would see complete columns and leave falseversion1 with an empty derived digest.
+Both actual SQLite and MySQL original-function comparisons fail exactly the two
+critical leaf assertions. The integrated patch reads/closes metadata first,
+invalidates existing coverage before ADD or uses a missing version's DEFAULT0,
+then keeps index repair/0046receipt last. Canonical identity/ciphertext/financial
+facts/backfill/permissions/published SQL stay unchanged. Complete legitimatev1
+including empty secret digest is preserved. No new migration or marker.
+
+Fixed5-case matrices on both DBs, actual encrypted-secret lookup through a rebuilt
+digest, metadata failure/type/Vars/quoting and5001-row bounded-index regressions
+pass. Race3 passes, wall389.547s; one original fresh Prepare has69ALTER/15INDEX/
+2031SELECT, not a stable performance or900s fix. Full new-source backend, original
+MySQL15m and newCI remain pending. Old complete wrongv1 and known-partial database
+copy remain explicit limits. [Behavior/evidence/rollback](core-convergence-principal-lookup-recovery.md).
+
+The parent evidence commit's exact newCI39520446048 has five successes but MySQL
+handler900.017s timeout (datastore177.951s/network121.119s pass). Its last wallet
+test was active0s inside fixture preflight; no causal assignment. CI jobstore/copy
+are unexecuted, distinct from the01eb local follow-ups that actually passed.
+[Source-bound failed CI receipt](validation/2026-10-21-heartbeat-evidence-ci.json).
