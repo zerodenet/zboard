@@ -1,0 +1,450 @@
+{
+  "status": "DIAGNOSTIC_ONLY_NO_PRODUCTION_CHANGE",
+  "source_baseline": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+  "method": "One fresh seven-function run in original isolatedMySQL8.4; timing-only wrappers around73 repository-owned schema calls; no SQL/args/errors/order changed, no module cache/toolchain edits",
+  "static": {
+    "status": "STATIC_ONLY_NOT_EXECUTED",
+    "baseline": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+    "baseline_source_sha256": "9e3a7e9d98ff9659d585f97a94e685caf09ab917f886250bb118fa43dd884188",
+    "instrumented_overlay_sha256": "ec1a76809e3df80d3d2f8e55912fb00c4c73d4dba99dda78672a1d0ff8ca8ab5",
+    "labels": [
+      "L124:preflightNodeAssetSchema",
+      "L127:preflightTicketReferenceSchema",
+      "L130:preflightAutomaticRecurringApprovalSchema",
+      "L133:preflightDiscountSnapshotSchema",
+      "L136:preflightHourlyProjectionSchema",
+      "L139:preflightUsageProjectionSchema",
+      "L142:preflightConsumptionRefundSchema",
+      "L145:preflightAutomaticRenewalSchema",
+      "L148:preflightSubscriptionRecoveryPolicy",
+      "L151:preflightEntitlementFundingSchema",
+      "L154:preflightEntitlementEpochSchema",
+      "L157:preflightCredentialDeliverySchema",
+      "L160:preflightRetiredPrincipalSchema",
+      "L163:preflightSubscriptionValueSchema",
+      "L166:preflightEntitlementValueSchema",
+      "L169:preflightWalletAdjustmentSchema",
+      "L172:preflightOrderFundingSchema",
+      "L175:preflightPaymentReceiptSchema",
+      "L178:preflightWalletSchema",
+      "L181:runMigrations",
+      "L184:reconcileEntitlementValueSchema",
+      "L187:reconcilePurchaseSnapshotSchema",
+      "L190:reconcileDiscountSnapshotSchema",
+      "L193:reconcileWalletSchema",
+      "L196:reconcilePaymentReceiptSchema",
+      "L199:reconcileOrderFundingSchema",
+      "L202:reconcileWalletAdjustmentSchema",
+      "L205:reconcileSubscriptionValueSchema",
+      "L208:reconcileRetiredPrincipalSchema",
+      "L211:reconcilePublicationConnectionSchema",
+      "L214:reconcileCredentialDeliverySchema",
+      "L217:reconcilePrincipalLookupSchema",
+      "L220:reconcileNodeRetirementSchema",
+      "L223:reconcilePluginOperationSchema",
+      "L226:reconcileEntitlementEpochSchema",
+      "L229:reconcileEntitlementFundingSchema",
+      "L232:reconcileSubscriptionRecoveryPolicy",
+      "L235:reconcileAutomaticRenewalSchema",
+      "L238:reconcileAutomaticRecurringApprovalSchema",
+      "L241:reconcileNodeAssetSchema",
+      "L244:reconcileTicketReferenceSchema",
+      "L247:reconcileConsumptionRefundSchema",
+      "L250:reconcileUsageProjectionSchema",
+      "L253:reconcileHourlyProjectionSchema",
+      "L256:reconcileObservationRetentionSchema",
+      "L294:prepareNodePublicationMigrationTables",
+      "L307:reconcileNodeAssetSchema",
+      "L313:reconcileTicketReferenceSchema",
+      "L319:reconcileAutomaticRecurringApprovalSchema",
+      "L325:reconcileObservationRetentionSchema",
+      "L331:reconcileAutomaticRenewalSchema",
+      "L337:reconcileConsumptionRefundSchema",
+      "L343:reconcileUsageProjectionSchema",
+      "L349:reconcileHourlyProjectionSchema",
+      "L358:reconcileMySQLTrafficHourly",
+      "L364:reconcileSubscriptionRecoveryPolicy",
+      "L370:reconcileEntitlementFundingSchema",
+      "L376:reconcileEntitlementEpochSchema",
+      "L382:reconcileCredentialDeliverySchema",
+      "L388:reconcilePrincipalLookupSchema",
+      "L394:reconcilePublicationConnectionSchema",
+      "L400:reconcileRetiredPrincipalSchema",
+      "L406:reconcileSubscriptionValueSchema",
+      "L412:reconcileEntitlementValueSchema",
+      "L418:reconcileWalletAdjustmentSchema",
+      "L424:reconcileOrderFundingSchema",
+      "L430:reconcilePaymentReceiptSchema",
+      "L436:reconcileWalletSchema",
+      "L442:reconcileDiscountSnapshotSchema",
+      "L448:reconcilePurchaseSnapshotSchema",
+      "L471:finalizePreReleaseBaselineSchema",
+      "L477:reconcilePlanSKUCommerceSchema",
+      "L480:validatePreReleaseBaselineSchema"
+    ],
+    "method": "timing-only wrapper around repository-owned schema calls; originalSQL/arguments/errors/order preserved. Ordinary clone source overlay, no module cache or toolchain change",
+    "gate": "Single fresh seven-function run must retain70ALTER/15INDEX/117CREATE/1739SELECT before any timing interpretation"
+  },
+  "execution": {
+    "status": "PASS",
+    "stage": "phase-probe",
+    "source_base": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+    "source_sha256": {
+      "backend/internal/datastore/migrations.go": "ac256cdefdd17b108129acc1691a182241ff91e74864cc62f821976deb2eafb6",
+      "backend/internal/datastore/mysql_empty_lifecycle_migration.go": "dde82b2ebc0780cdb5d606619f173f5631fa4cdabace4da7a073e2433fe826c4",
+      "backend/internal/datastore/mysql_empty_lifecycle_migration_test.go": "a40c02c08822f00b8ffc7184f023876043f2a9188f0d8e2675ae3da771373780",
+      "backend/internal/datastore/mysql_empty_lifecycle_integration_test.go": "7a220626b2566e126cf3ef33ff4567a4e86e1c8fd05acbb972dc0eb33afe0a93"
+    },
+    "environment": {
+      "GOMAXPROCS": 1,
+      "p": 1,
+      "mysql": "actual isolated8.4; DSN private child environment"
+    },
+    "cases": [
+      {
+        "name": "phase-probe",
+        "command": [
+          "go",
+          "test",
+          "-p",
+          "1",
+          "-json",
+          "-count=1",
+          "-overlay",
+          "controlled-repository-source/phase-source.json",
+          "-run",
+          "^$",
+          "-bench",
+          "^BenchmarkMySQLFreshStartupLifecycleDDL$",
+          "-benchtime=1x",
+          "-v",
+          "./internal/datastore"
+        ],
+        "started_utc": "2026-10-21T02:49:11.648122+00:00",
+        "exit_code": 0,
+        "wall_seconds": 13.346,
+        "raw_sha256": "0c57bf5ba58c4c57352c5741169c26f01c00ae527c4b18c45d63ec7aaeb56713",
+        "finished_utc": "2026-10-21T02:49:24.995398+00:00",
+        "failed": [],
+        "skipped": [],
+        "passed_top_level": [],
+        "schema_elapsed": "3.555813278s",
+        "session_command_delta": {
+          "Com_alter_table": 70,
+          "Com_create_index": 15,
+          "Com_create_table": 117,
+          "Com_select": 1739
+        },
+        "phases": [
+          {
+            "name": "L124:preflightNodeAssetSchema",
+            "seconds": 0.000875699
+          },
+          {
+            "name": "L127:preflightTicketReferenceSchema",
+            "seconds": 0.005298205
+          },
+          {
+            "name": "L130:preflightAutomaticRecurringApprovalSchema",
+            "seconds": 0.003705663
+          },
+          {
+            "name": "L133:preflightDiscountSnapshotSchema",
+            "seconds": 0.001256399
+          },
+          {
+            "name": "L136:preflightHourlyProjectionSchema",
+            "seconds": 0.00127002
+          },
+          {
+            "name": "L139:preflightUsageProjectionSchema",
+            "seconds": 0.002480951
+          },
+          {
+            "name": "L142:preflightConsumptionRefundSchema",
+            "seconds": 0.004662444
+          },
+          {
+            "name": "L145:preflightAutomaticRenewalSchema",
+            "seconds": 0.004989323
+          },
+          {
+            "name": "L148:preflightSubscriptionRecoveryPolicy",
+            "seconds": 0.001183981
+          },
+          {
+            "name": "L151:preflightEntitlementFundingSchema",
+            "seconds": 0.00114986
+          },
+          {
+            "name": "L154:preflightEntitlementEpochSchema",
+            "seconds": 0.002534251
+          },
+          {
+            "name": "L157:preflightCredentialDeliverySchema",
+            "seconds": 0.001311852
+          },
+          {
+            "name": "L160:preflightRetiredPrincipalSchema",
+            "seconds": 0.001520915
+          },
+          {
+            "name": "L163:preflightSubscriptionValueSchema",
+            "seconds": 0.008544662
+          },
+          {
+            "name": "L166:preflightEntitlementValueSchema",
+            "seconds": 0.001220787
+          },
+          {
+            "name": "L169:preflightWalletAdjustmentSchema",
+            "seconds": 0.006062829
+          },
+          {
+            "name": "L172:preflightOrderFundingSchema",
+            "seconds": 0.002289205
+          },
+          {
+            "name": "L175:preflightPaymentReceiptSchema",
+            "seconds": 0.007446519
+          },
+          {
+            "name": "L178:preflightWalletSchema",
+            "seconds": 0.003655618
+          },
+          {
+            "name": "L294:prepareNodePublicationMigrationTables",
+            "seconds": 0.000254831
+          },
+          {
+            "name": "L358:reconcileMySQLTrafficHourly",
+            "seconds": 0.022976224
+          },
+          {
+            "name": "L448:reconcilePurchaseSnapshotSchema",
+            "seconds": 0.03340613
+          },
+          {
+            "name": "L436:reconcileWalletSchema",
+            "seconds": 0.060311516
+          },
+          {
+            "name": "L430:reconcilePaymentReceiptSchema",
+            "seconds": 0.046486186
+          },
+          {
+            "name": "L424:reconcileOrderFundingSchema",
+            "seconds": 0.017973306
+          },
+          {
+            "name": "L418:reconcileWalletAdjustmentSchema",
+            "seconds": 0.057139787
+          },
+          {
+            "name": "L412:reconcileEntitlementValueSchema",
+            "seconds": 0.048382283
+          },
+          {
+            "name": "L406:reconcileSubscriptionValueSchema",
+            "seconds": 0.073820949
+          },
+          {
+            "name": "L400:reconcileRetiredPrincipalSchema",
+            "seconds": 0.043496595
+          },
+          {
+            "name": "L394:reconcilePublicationConnectionSchema",
+            "seconds": 0.018631995
+          },
+          {
+            "name": "L388:reconcilePrincipalLookupSchema",
+            "seconds": 0.060335192
+          },
+          {
+            "name": "L382:reconcileCredentialDeliverySchema",
+            "seconds": 0.123372916
+          },
+          {
+            "name": "L376:reconcileEntitlementEpochSchema",
+            "seconds": 0.168425948
+          },
+          {
+            "name": "L370:reconcileEntitlementFundingSchema",
+            "seconds": 0.075076472
+          },
+          {
+            "name": "L364:reconcileSubscriptionRecoveryPolicy",
+            "seconds": 0.006334575
+          },
+          {
+            "name": "L331:reconcileAutomaticRenewalSchema",
+            "seconds": 0.04185978
+          },
+          {
+            "name": "L337:reconcileConsumptionRefundSchema",
+            "seconds": 0.040074024
+          },
+          {
+            "name": "L343:reconcileUsageProjectionSchema",
+            "seconds": 0.01727458
+          },
+          {
+            "name": "L349:reconcileHourlyProjectionSchema",
+            "seconds": 0.060733308
+          },
+          {
+            "name": "L442:reconcileDiscountSnapshotSchema",
+            "seconds": 0.044563679
+          },
+          {
+            "name": "L325:reconcileObservationRetentionSchema",
+            "seconds": 0.059361996
+          },
+          {
+            "name": "L319:reconcileAutomaticRecurringApprovalSchema",
+            "seconds": 0.051831621
+          },
+          {
+            "name": "L313:reconcileTicketReferenceSchema",
+            "seconds": 0.0418089
+          },
+          {
+            "name": "L307:reconcileNodeAssetSchema",
+            "seconds": 0.042889755
+          },
+          {
+            "name": "L471:finalizePreReleaseBaselineSchema",
+            "seconds": 0.007837033
+          },
+          {
+            "name": "L477:reconcilePlanSKUCommerceSchema",
+            "seconds": 0.003163843
+          },
+          {
+            "name": "L480:validatePreReleaseBaselineSchema",
+            "seconds": 0.002921971
+          },
+          {
+            "name": "L181:runMigrations",
+            "seconds": 3.002183861
+          },
+          {
+            "name": "L184:reconcileEntitlementValueSchema",
+            "seconds": 0.005287018
+          },
+          {
+            "name": "L187:reconcilePurchaseSnapshotSchema",
+            "seconds": 0.001991409
+          },
+          {
+            "name": "L190:reconcileDiscountSnapshotSchema",
+            "seconds": 0.004838298
+          },
+          {
+            "name": "L193:reconcileWalletSchema",
+            "seconds": 0.008717846
+          },
+          {
+            "name": "L196:reconcilePaymentReceiptSchema",
+            "seconds": 0.032978761
+          },
+          {
+            "name": "L199:reconcileOrderFundingSchema",
+            "seconds": 0.020972272
+          },
+          {
+            "name": "L202:reconcileWalletAdjustmentSchema",
+            "seconds": 0.046712404
+          },
+          {
+            "name": "L205:reconcileSubscriptionValueSchema",
+            "seconds": 0.034393076
+          },
+          {
+            "name": "L208:reconcileRetiredPrincipalSchema",
+            "seconds": 0.008096941
+          },
+          {
+            "name": "L211:reconcilePublicationConnectionSchema",
+            "seconds": 0.002254863
+          },
+          {
+            "name": "L214:reconcileCredentialDeliverySchema",
+            "seconds": 0.039620501
+          },
+          {
+            "name": "L217:reconcilePrincipalLookupSchema",
+            "seconds": 0.003299175
+          },
+          {
+            "name": "L220:reconcileNodeRetirementSchema",
+            "seconds": 0.006890367
+          },
+          {
+            "name": "L223:reconcilePluginOperationSchema",
+            "seconds": 0.013732612
+          },
+          {
+            "name": "L226:reconcileEntitlementEpochSchema",
+            "seconds": 0.025896793
+          },
+          {
+            "name": "L229:reconcileEntitlementFundingSchema",
+            "seconds": 0.014609454
+          },
+          {
+            "name": "L232:reconcileSubscriptionRecoveryPolicy",
+            "seconds": 0.003618833
+          },
+          {
+            "name": "L235:reconcileAutomaticRenewalSchema",
+            "seconds": 0.015237462
+          },
+          {
+            "name": "L238:reconcileAutomaticRecurringApprovalSchema",
+            "seconds": 0.009394553
+          },
+          {
+            "name": "L241:reconcileNodeAssetSchema",
+            "seconds": 0.001102499
+          },
+          {
+            "name": "L244:reconcileTicketReferenceSchema",
+            "seconds": 0.011613471
+          },
+          {
+            "name": "L247:reconcileConsumptionRefundSchema",
+            "seconds": 0.015043438
+          },
+          {
+            "name": "L250:reconcileUsageProjectionSchema",
+            "seconds": 0.00893493
+          },
+          {
+            "name": "L253:reconcileHourlyProjectionSchema",
+            "seconds": 0.018827594
+          },
+          {
+            "name": "L256:reconcileObservationRetentionSchema",
+            "seconds": 0.004273853
+          }
+        ],
+        "status": "PASS",
+        "source_unchanged": true
+      }
+    ]
+  },
+  "receipt_sha256": "2a15bbdfddd8355ebde41c018226bbe0a0a4d6dcd8c0426e13871c3afc981152",
+  "interpretation": {
+    "schema_seconds": 3.555813278,
+    "runMigrations_seconds": 3.002183861,
+    "counts_match_uninstrumented_baseline": true,
+    "counts": {
+      "ALTER": 70,
+      "CREATE_INDEX": 15,
+      "CREATE_TABLE": 117,
+      "SELECT": 1739
+    },
+    "limits": "n1 nested spans overlap; do not sum parents/children or infer whole-handler startup fraction/900s cause; notA/B/perf guarantee. Source/runtime0f/681 CI failures retained."
+  }
+}

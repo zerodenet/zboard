@@ -115,3 +115,10 @@ The next reviewed exact comparison pin is
 recovery on top of invalidate-before-DDL). The default pin, original three
 runners, resource budget, workload and gates are unchanged. Execution/result
 are separate from adding the pin; no load result is inferred here.
+
+The asset admission foundation source is pinned separately at
+`68176675bd3b4f7c759ec266f563d350d44bfd3b`. This adds only the explicit allowed
+source to the observer; the default pin, three original runners, load profile and
+gates stay unchanged. Its targeted dual-database/race results and preceding0f
+capacity do not replace a new exact-source run. The quiet window follows complete
+backend checks; execution and all failures must be recorded separately.

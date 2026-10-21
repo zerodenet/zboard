@@ -954,7 +954,29 @@
       "authenticated HTTP durable append stamp one test",
       "legacy owned copy target labels one leaf"
     ],
-    "unexpected_setup_or_compile_failure_is_not_evidence": true
+    "unexpected_setup_or_compile_failure_is_not_evidence": true,
+    "baseline_files": {
+      "backend/internal/datastore/database_copy.go": {
+        "baseline_sha256": "d8314e7b1a7a9baf177fc02bf14b4ee75ad46a756f66e9b44ce66e801b8034f4",
+        "overlay_json_sha256": "b2ff0ff15155b84c5ff13fe876a295671a3cdf896a27977e78f204ac6d5a9eaa",
+        "exact_baseline_bytes_confirmed": true
+      },
+      "backend/internal/zeroevent/file_compaction.go": {
+        "baseline_sha256": "d3fa09aaab0ad2af789e3f2383e6c7e893cafb42f87a4f30c809f52e8564c3cd",
+        "overlay_json_sha256": "dbcca01a52884c395b5d40bd332dc85c5e2bf44462559c909e660de7dbbad9d1",
+        "exact_baseline_bytes_confirmed": true
+      },
+      "backend/internal/handler/zero_event_projection_window.go": {
+        "baseline_sha256": "66082c3fa09d8831bcd4bd1fb60a59943ace0f5f8b344a3af03443483fe6a744",
+        "overlay_json_sha256": "6d0511bfeb0d4f610bf1b64ab88ed7c571690b454fe146a30697605896ee1b17",
+        "exact_baseline_bytes_confirmed": true
+      },
+      "backend/internal/handler/zero_event_runtime.go": {
+        "baseline_sha256": "7ad3be79ad1793ee1bbd5c34d5833674d467f60db9860042f260327192b6d081",
+        "overlay_json_sha256": "540205f114e89531ba81e7cf08b5423106c42c42336c734d7faf2840f46e3f1a",
+        "exact_baseline_bytes_confirmed": true
+      }
+    }
   },
   "final_fixed_scope": {
     "actual_sqlite": [

@@ -105,3 +105,29 @@ pending; previous0f results belong only to0f.
 No benchmark, long-term growth bound, independent auxiliary handoff, authority
 retention policy, worker or autoscaler is delivered by this increment. Existing
 financial-policy questions and external capability gaps remain unchanged.
+
+
+Integrated6817667 full backend passes: Go301.855s, vet3.926s, build2.078s,
+CGO-disabled SQLite22.346s. [Exact-source backend receipt](validation/2026-10-21-node-asset-backend.json).
+The first original capacity attempt was blocked before offered load by unchanged
+normal-pressure disk headroom (759451648B). All9bindings pass; latency/counts are
+unmeasured. The [failed preflight](validation/2026-10-21-node-asset-capacity-preflight-failure.json)
+is retained. With no active Go tools, official build-cache cleanup recovered
+4.1GiB; a separate same-source/observer attempt is in progress with unchanged gates.
+NewCI39531386103 currently has five successful jobs, MySQL still pending. Original
+local MySQL has not yet run. No earlier source acceptance substitutes these results.
+
+The new original capacity result now passes:1274event requests and940business
+reads/zeroHTTPerrors; hourly157/p95=20ms. First10drain mismatches remain, original
+5s retry then exact9,833,472B; queues empty. Source, observer and both binaries
+are identical across the disk-blocked preflight and successful load.
+[Capacity receipt](validation/2026-10-21-node-asset-original-capacity.json).
+NewCI39531386103 is final:five jobs pass, MySQLhandler900.024s timeout;
+datastore184.150s/network143.669s pass. CIjobstore/copy do not run.
+[Failed newCI receipt](validation/2026-10-21-node-asset-ci.json). Original local
+MySQL remains pending; no source acceptance or P7 completion is inferred.
+
+The local original run is final:handler900.025s fails;datastore155.586s/
+network130.686s and independentjobstore125.359s/copy187.273s pass.
+[Exact-source local receipt](validation/2026-10-21-node-asset-mysql-local.json).
+No fullMySQL or stableP7 claim is made.

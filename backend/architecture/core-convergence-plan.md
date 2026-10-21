@@ -20,14 +20,14 @@
 | P2-13/P5-02 获批消费退款 | 部分实现（双库、真实浏览器隔离闭环） | 122f227：真实Chromium32项，终止历史订单退款300一次入账及两次同键重放；活跃权益部分退款仍待产品规则，非真实渠道/生产验收 |
 | P2-14/P3 套餐历史额度与接入组 | 部分实现（双库/前端/后续完整CI覆盖） | d98b018已恢复上传，5964c53六项CI包含该历史；混合加购及1000上限明确拒绝，当前HEAD新验收独立记录 |
 | P2 优惠首购/连续续费 | 部分实现（签名native/双库/真实浏览器） | 0055/0057购买及扣款批准证据；提供方不可用不回退原价；4e1a78d真实Chromium21项/实际100元扣款；其他可售操作及有限券消费契约仍缺 |
-| P4-01/02 日/小时统计投影 | 部分实现（双库、固定原阈值容量通过） | 0053/0054持久独立队列，pending显式unknown；精确0f原20events/s、1274事件及942业务读零错误，小时158次/p95=20ms，首次10订阅核账不符后原5s drain通过；01eb157/p95=22ms及原112/157失败保留，完整图表比例/长期增长仍未知 |
+| P4-01/02 日/小时统计投影 | 部分实现（双库、固定原阈值容量通过） | 0053/0054持久独立队列，pending显式unknown；精确681原20events/s、1274事件及940业务读零错，hour157/p95=20ms，首次10项核账不符后原5s drain通过。首次原磁盘预检失败保留，源码/二进制不变恢复余量后通过；历史112/157失败及完整图表比例/长期增长未知保留 |
 | P4 计量SQL/保留 | 部分实现（精确核账/专项通过） | SQLite累计游标cohort32→1次SELECT，87→56总SQL/写入舍入不变；58f/31为保持谓词与顺序的窄投影读取，e902保留独立来源材料、01eb保留缺失心跳计数；NodeStats仍耦合结算，独立Stats游标/资产隔离门未实现；0059仅未来入队身份与当前段/窗口混合来源保序；0056仅诊断清理，TrafficRecord不可归档 |
 | P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
 | P5 工单业务关联 | 已实现且验证（隔离范围） | 4e1a78d/0058双库实际DDL/权限/首消息回滚/锁序；a82每行独立订阅关联入口及完整frontend201files/1112pass/8既有skip、build通过；01eb完整backend与六项CI覆盖。终止历史仍由原订单入口关联，无服务列表权限扩张 |
 | P6 进程关闭/队列所有权前置 | 部分实现（真实子进程、SQLite/race、MySQL） | file-spool内核锁、local Drain/Detach和实际server/plugin cleanup；3690113原MySQL及copy通过，7ef CI MySQL通过；无独立worker或伸缩器 |
 | P3/P4 派生主体索引恢复/复制 | 部分实现（双库专项通过） | a9先失效再DDL修复已完整backend/新CI六项通过；已知缺派生列的源库复制到目标时显式version0，旧公共复制三叶断言复现、15真实复制/回滚、201行合同及重点race3通过，新集成源码完整检查待验；完整旧错误v1不猜测修复 |
 | P3/P4 节点资产入队来源 | 部分实现（双库专项/race3通过） | 0059未来身份、认证捕获、可选v1队列成员及混合来源保序；9旧源码断言叶复现、SQLite/MySQL迁移/管理/复制及重点race3通过。未启用独立Stats、删除隔离或辅助投影解耦；新集成完整检查及CI待验 |
-| P7 当前提交验证 | 部分实现/未完成 | 0f491e1完整backend与原阈值容量通过，1274事件/942业务读零错误，小时158/p95=20ms；新CI39525675188六项通过但handler892.176s仅余7.824s，本地handler900.023s失败、独立jobstore124.763s/copy148.095s通过。a9完整backend/六项CI通过但同源本地handler900.017s失败、独立jobstore/copy通过；c61/31/e902/local历史失败保留，未证明稳定启动 |
+| P7 当前提交验证 | 部分实现/未完成 | 6817667完整backend与恢复原磁盘余量后的原容量通过：1274事件/940业务读零错，hour157/p95=20ms。新CI39531386103五项通过但MySQL handler900.024s超时，datastore184.150s/network143.669s通过，CI jobstore/copy未执行；本地handler900.025s失败，独立jobstore125.359s/copy187.273s通过。0f/a9绿灯与本地失败分别保留，未证明稳定启动 |
 | 其余P2及P3–P7 | 部分实现/未完成 | 活跃部分退款/永久多次增购决策、其他操作优惠/外部券契约、完整计量保留、持续增长/资源竞争/独立worker/伸缩、最终综合回归 |
 
 ## 需求—实现—差距表
@@ -1313,3 +1313,47 @@ network99.435s、publiccopy rollback42.567s通过。原spool51项通过/1原help
 新集成源码的完整backend、原MySQL、原容量与新CI仍待验；0f验收不能替代。
 本片没有启用当前资产/删除门、独立Stats游标或辅助投影持久交接，旧观察失败
 仍可回滚结算，TrafficRecord仍不可归档。P4/P6/P7及待决财务规则继续保持未完成。
+
+
+6817667 integrated-source follow-up: full Go301.855s/vet3.926s/build2.078s/
+pure-Go SQLite22.346s pass. Original constrained capacity also passes at unchanged
+1CPU/1GiB/20events/s/4readers:1274eventHTTP/940business reads zero errors,
+hourly157/p95=20ms. First10drain mismatches remain; original5s retry reaches exact
+9,833,472B with empty pending/spool. Initial disk preflight759451648B blocked
+before load; official rebuildableGo cache cleanup recovered4.1GiB, next preflight
+3311079424B. Source/observer/both binaries identical across attempts. This is
+one actual60s load, not hiding a failed HTTP run. [Exact receipt](validation/2026-10-21-node-asset-original-capacity.json).
+
+NewCI39531386103 five jobs pass, MySQLhandler900.024s fails; datastore184.150s/
+network143.669s pass and subsequent CIjobstore/copy do not execute. Last3s receipt
+case is still in fixture hourly projection initialization, not its assertion and
+not package-wide cause proof. [New-source failedCI receipt](validation/2026-10-21-node-asset-ci.json).
+Original local three-command MySQL is still running; no retry/timeout/skip changes.
+
+Original681 local core is now complete:handler900.025s fails,datastore155.586s/
+network130.686s pass. Last1s exhausted-pool receipt fixture is still checking
+migration versions; this does not identify the cumulative timeout cause. Original
+independent jobstore then copy proceed sequentially, without retry or widened timeout.
+
+Original681 local three-command run is final: independentjobstore125.359s and
+copy187.273s actually pass after failedcore. [Local receipt](validation/2026-10-21-node-asset-mysql-local.json).
+P7 remains incomplete, with all new-source failure stacks and old-source failures retained.
+
+### 2026-10-21 P7实验：空业务表0023加列合并，未集成
+
+私有候选保持原SQL文件不变，可靠确认orders/subscriptions都空时才将8个连续ADD
+合成2个ALTER，原索引/两次UPDATE仍执行；非空、不熟悉形状或元数据失败不走
+快路径。pure与实际MySQL空/非空schema/default/index/data等价合同通过。三对
+交错顺序fresh七函数测量baseline3.534533/3.252400/3.250252s，candidate
+3.429657/3.245770/4.281068s；实际session ALTER70→64、SELECT1739→1740，
+CREATE117/INDEX15不变。但耗时区间重叠且第三次更慢，未证明稳定收益；不集成
+或重跑调参，不声称修复900s。4份源码、精确基线overlay与所有原始日志保留。
+[完整实验记录](validation/2026-10-21-empty-lifecycle-startup-experiment.json)。
+这是真实MySQL session命令计数，不能与早先GORM trace2031 SELECT直接比较。
+后续单次phase计时只用于诊断，须确认SQL命令计数与基线完全相同后解释。
+
+The subsequent timing-only repository-source probe passes its exact baseline
+SQL-count gate70ALTER/15INDEX/117CREATE/1739SELECT. One fresh seven-function schema
+run is3.555813278s, nestedrunMigrations3.002183861s. [Phase diagnostic](validation/2026-10-21-migration-phase-diagnostic.json).
+Nested spans overlap, this is not a whole-handler fraction or900s cause proof.
+No module-cache/toolchain change, no production change, no threshold relaxation.

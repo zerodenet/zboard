@@ -1,0 +1,125 @@
+{
+  "status": "BLOCKED_BEFORE_LOAD_DISK_HEADROOM",
+  "source": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+  "original_binding": {
+    "passed": false,
+    "expected_revision": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+    "started_at": "2026-10-21T02:14:47.987551+00:00",
+    "finished_at": "2026-10-21T02:15:18.347024+00:00",
+    "parameters": {
+      "NODES": "2",
+      "SUBSCRIPTIONS": "20",
+      "HISTORY_RECORDS": "2000",
+      "DURATION_SECONDS": "60",
+      "EVENT_RATE": "20",
+      "READERS": "4"
+    },
+    "original_runner_exit": 1,
+    "original_acceptance_passed": null,
+    "hash_binding": {
+      "checkout_commit_unchanged": true,
+      "checkout_still_clean": true,
+      "source_before_after_equal": true,
+      "source-sha256.txt_matches_observer": true,
+      "source-after-build-sha256.txt_matches_observer": true,
+      "zboard_binary_before_after_equal": true,
+      "acceptance_binary_before_after_equal": true,
+      "acceptance-load.py_copy_matches_source": true,
+      "acceptance-report.py_copy_matches_source": true
+    },
+    "rss_observations": {
+      "container_id": "80e29b8e436d48d3f07bf0a1554874810f70b227d2b460f98ca527aea5bc6ef8",
+      "samples": 1,
+      "errors": [
+        "CalledProcessError"
+      ],
+      "available": true,
+      "first_rss_kib": 36104,
+      "last_rss_kib": 36104,
+      "sampled_peak_rss_kib": 36104
+    },
+    "sqlite_space": {
+      "available": true,
+      "scope": "stopped exported SQLite only; not a live SQL latency measurement",
+      "page_size": 4096,
+      "page_count": 1205,
+      "freelist_pages": 6,
+      "allocated_bytes": 4935680,
+      "objects": {
+        "index": {
+          "bytes": 3334144,
+          "pages": 814
+        },
+        "internal": {
+          "bytes": 126976,
+          "pages": 31
+        },
+        "table": {
+          "bytes": 1449984,
+          "pages": 354
+        }
+      }
+    },
+    "original_evidence_directory": "/workspace/zboard-node-asset-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T021447Z-2cjY1d",
+    "note": "Supplemental RSS/dbstat do not replace or relax any original gate. One short single-process run; no worker scaling or capacity ceiling claim."
+  },
+  "storage_preflight": {
+    "at": "2026-10-21T02:15:16.070541657Z",
+    "disk_free_bytes": 759451648,
+    "files": {
+      "events/.emergency-reserve": 268435456,
+      "events/.owner.lock": 0,
+      "fixture.json": 2898,
+      "zboard.db": 4935680,
+      "zboard.db-shm": 32768,
+      "zboard.db-wal": 4494952,
+      "zboard.json": 579
+    }
+  },
+  "server_ready": {
+    "code": 200,
+    "message": "ok",
+    "data": {
+      "db": true,
+      "ready": true,
+      "service": "zboard"
+    },
+    "timestamp": "2026-10-21T02:15:16Z"
+  },
+  "offered_load_executed": false,
+  "request_counts_latency_reconciliation": "NOT MEASURED; no load/result/verification logs created",
+  "reason": "Insufficient free Docker disk for normal-pressure acceptance; evidence preserved.",
+  "raw_sha256": {
+    "baseline-controller-oxe03y20/baseline-binding.json": "e7e1ef88bb75026d7a40d94511bc673f55180916da26eae2f4736163a83206b2",
+    "baseline-controller-oxe03y20/preflight.json": "16d3152cfce5aafc12ef043c27b39694e639e561c2a5d0edaf97406c11bc54b5",
+    "baseline-controller-oxe03y20/binary-after.json": "e2a711d74e1cf8659ab9c97b03bdf942e5127c4ebc8a2f509ea57987c16ad2a1",
+    "baseline-controller-oxe03y20/source-before.sha256": "c24c0bcaf4698d360c1163b4dc82fc8e49a5980cdf817f8e6857c05d07da13d0",
+    "baseline-controller-oxe03y20/source-after.sha256": "c24c0bcaf4698d360c1163b4dc82fc8e49a5980cdf817f8e6857c05d07da13d0",
+    "baseline-controller-oxe03y20/rss.jsonl": "3275ed1818071cd7d2a1009c19d77b73b389dc679bdd1eb54f2a0b1d4d9cc255",
+    "baseline-controller-oxe03y20/runner.log": "ff34fe707cf9721767a99291428a13db987d0d338f78edb83769fc92b2422f94",
+    "mixed-20261021T021447Z-2cjY1d/storage-preflight.json": "39911423455679e96793f53b0538d7ffc6acba0c7d5670d5557f902b44ea0a0e",
+    "mixed-20261021T021447Z-2cjY1d/ready.json": "1ea88454bbc3fe3d39d45608a20451b19e923ccc4fa675d356687a98f4aa4e75",
+    "mixed-20261021T021447Z-2cjY1d/server.log": "cec655a0c9c7bfe9afe5c271df871c795f473d9d93ef76a1f6bc9b50f3a52173",
+    "mixed-20261021T021447Z-2cjY1d/container.json": "ff9e56a6428a288b4a1879e8fad38a9113da57eb73c0062ccf0c7a9cc518dfd0",
+    "mixed-20261021T021447Z-2cjY1d/zboard": "99bab29824ab2ca7e4de51d5729b8ffcc4d16366392fcce98baa7f92f99e1663",
+    "mixed-20261021T021447Z-2cjY1d/acceptance": "2b24c5136e687d9889572324142caef8ada81484b4790c8ca25e71f69e06d8cf",
+    "mixed-20261021T021447Z-2cjY1d/source-sha256.txt": "c24c0bcaf4698d360c1163b4dc82fc8e49a5980cdf817f8e6857c05d07da13d0",
+    "mixed-20261021T021447Z-2cjY1d/source-after-build-sha256.txt": "c24c0bcaf4698d360c1163b4dc82fc8e49a5980cdf817f8e6857c05d07da13d0"
+  },
+  "recovery_plan": {
+    "action": "Official go clean -cache after verifying no active Go/compile/link/cgo processes; reproducible cache only",
+    "go_cache_before": "3.3GiB (du human rounded)",
+    "workspace_free_before": "896MiB (df human rounded); isolated container earlier759451648B",
+    "protected": "No database, private evidence, spool, checkpoint, dedup, source, credentials, Docker settings, or original threshold is removed/relaxed",
+    "next_attempt": "Only after materially restored disk and exact source recheck; preserve this failure independently"
+  },
+  "recovery_completed": {
+    "action": "go clean -cache",
+    "exit_code": 0,
+    "active_go_tools_before": 0,
+    "workspace_free_after": "4.1GiB (df human rounded)",
+    "evidence_preserved": true,
+    "original_runners_or_gates_changed": false,
+    "new_attempt": "baseline-controller-xi9bacbn / mixed-20261021T021648Z-vGIv0P; source/observer identical; result pending"
+  }
+}
