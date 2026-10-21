@@ -51,6 +51,24 @@ func copyTableRows(source, target *gorm.DB, table string) error {
 	if err != nil {
 		return fmt.Errorf("read source column types %s: %w", table, err)
 	}
+	// Only known missing derived columns invalidate copied coverage. A complete
+	// source may legitimately contain empty digests; do not infer corruption
+	// from values or rewrite canonical credentials/source data.
+	resetPrincipalLookup := false
+	lookupVersionColumn := "principal_lookup_version"
+	if table == "protocol_credentials" {
+		present := make(map[string]bool, 3)
+		for _, column := range columns {
+			name := strings.ToLower(column)
+			present[name] = true
+			if name == "principal_lookup_version" {
+				// Reuse its actual map key, including case, to avoid inserting
+				// two case-equivalent destination columns.
+				lookupVersionColumn = column
+			}
+		}
+		resetPrincipalLookup = !present["principal_digest"] || !present["secret_principal_digest"] || !present["principal_lookup_version"]
+	}
 	batch := make([]map[string]interface{}, 0, 200)
 	for rows.Next() {
 		values := make([]interface{}, len(columns))
@@ -76,6 +94,11 @@ func copyTableRows(source, target *gorm.DB, table string) error {
 			} else {
 				record[column] = values[index]
 			}
+		}
+		if resetPrincipalLookup {
+			// Target INSERT belongs to the caller's existing copy transaction.
+			// A missing version uses the prepared target's standard column name.
+			record[lookupVersionColumn] = int64(0)
 		}
 		batch = append(batch, record)
 		if len(batch) == cap(batch) {

@@ -1,7 +1,8 @@
 # Principal lookup recovery must invalidate before DDL
 
 Status: the reviewed four-file patch is integrated after isolated targeted
-validation. Full backend/MySQL/new CI remain pending for this production change.
+validation. Exact a9aae16 full backend and all six new CI jobs pass; the original
+local MySQL core fails at its original900s alarm; independent follow-ups pass.
 Parent `c61df99` contains the earlier source-bound acceptance records; its new
 CI fails MySQL at the original900s limit and does not accept this implementation.
 
@@ -80,3 +81,18 @@ global credential UPDATE already existed and only its order changes. Three-to-on
 ADD arithmetic alone is not proof that the original900s regression gate is fixed.
 Independent Stats ordering/asset identity, durable auxiliary handoff, authoritative
 retention and P6 worker/scaling remain separate incomplete work.
+
+
+## Exact a9aae16 full backend follow-up
+
+The clean ordinary clone passes Go288.313s, vet3.568s, build1.845s and
+pure-Go SQLite21.967s, GOMAXPROCS2/-p2. [Exact command/log-hash receipt](validation/2026-10-21-principal-recovery-backend.json).
+Original3-command local MySQL has finished separately: datastore152.038s and
+network112.003s pass, handler900.017s times out; independent jobstore120.268s and
+copy108.349s run afterward and pass. The active2s test remained in fixture formal
+migration Exec; the statement ID/cause is unknown. [Local MySQL receipt](validation/2026-10-21-principal-recovery-mysql-local.json). Exact-source new
+[CI39522585804](https://github.com/zerodenet/zboard/actions/runs/39522585804)
+passes all six jobs, with MySQL datastore158.643s/handler809.717s/network113.348s/
+jobstore104.071s/copy94.612s. [CI receipt](validation/2026-10-21-principal-recovery-ci.json).
+Original timeout/exclusions remain unchanged. One pass with90.283s handler margin
+does not prove stable startup improvement; earlier timeouts remain failed evidence.

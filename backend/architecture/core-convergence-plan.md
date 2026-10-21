@@ -25,7 +25,8 @@
 | P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
 | P5 工单业务关联 | 已实现且验证（隔离范围） | 4e1a78d/0058双库实际DDL/权限/首消息回滚/锁序；a82每行独立订阅关联入口及完整frontend201files/1112pass/8既有skip、build通过；01eb完整backend与六项CI覆盖。终止历史仍由原订单入口关联，无服务列表权限扩张 |
 | P6 进程关闭/队列所有权前置 | 部分实现（真实子进程、SQLite/race、MySQL） | file-spool内核锁、local Drain/Detach和实际server/plugin cleanup；3690113原MySQL及copy通过，7ef CI MySQL通过；无独立worker或伸缩器 |
-| P7 当前提交验证 | 部分实现/未完成 | 最新收据提交c61新CI39520446048五项成功/MySQL handler900.017s失败，CI jobstore/copy未执行；01eb完整backend/新CI/原容量及独立本地follow-ups为该来源证据，不替代新源。当前主体派生修复双库/旧故障/race3专项通过，完整backend/MySQL/新CI待验；31/e902/local失败均保留 |
+| P3/P4 派生主体索引恢复/复制 | 部分实现（双库专项通过） | a9先失效再DDL修复已完整backend/新CI六项通过；已知缺派生列的源库复制到目标时显式version0，旧公共复制三叶断言复现、15真实复制/回滚、201行合同及重点race3通过，新集成源码完整检查待验；完整旧错误v1不猜测修复 |
+| P7 当前提交验证 | 部分实现/未完成 | a9aae16完整backend与新CI39522585804六项通过，CI handler809.717s；同源本地core handler900.017s失败、datastore152.038s/network112.003s通过，独立jobstore120.268s/copy108.349s通过。c61/31/e902/local失败保留，未证明稳定启动；01eb原容量不替代a9容量 |
 | 其余P2及P3–P7 | 部分实现/未完成 | 活跃部分退款/永久多次增购决策、其他操作优惠/外部券契约、完整计量保留、持续增长/资源竞争/独立worker/伸缩、最终综合回归 |
 
 ## 需求—实现—差距表
@@ -1227,3 +1228,40 @@ handler900.017s timeout (datastore177.951s/network121.119s pass). Its last walle
 test was active0s inside fixture preflight; no causal assignment. CI jobstore/copy
 are unexecuted, distinct from the01eb local follow-ups that actually passed.
 [Source-bound failed CI receipt](validation/2026-10-21-heartbeat-evidence-ci.json).
+
+
+Exact a9aae16 follow-up: clean ordinary clone full backend passes; new
+CI39522585804 all six jobs pass, handler809.717s. The same-source original local
+core fails at900.017s, datastore152.038s/network112.003s pass; independent
+jobstore120.268s/copy108.349s actually run and pass afterward. Last active test
+was2s into fixture formal migration Exec, not proof of its business-body cause.
+Original commands/timeouts/exclusions unchanged and no retry. These are
+[source-specific backend](validation/2026-10-21-principal-recovery-backend.json),
+[CI](validation/2026-10-21-principal-recovery-ci.json) and
+[local MySQL](validation/2026-10-21-principal-recovery-mysql-local.json) evidence.
+No stable startup/900s fix or comprehensive P7 completion is claimed.
+
+### P3/P4 known-partial principal lookup copy (2026-10-21)
+
+The owned snapshot/identity/quiescence guards did not reject a source missing a
+derived principal lookup column. Its stored version1 could be copied into a
+fully prepared destination whose missing digest defaulted empty; later startup
+could not distinguish it from a legitimately complete empty digest. The narrow
+copy transform now uses the existing physical column list and explicitly writes
+version0 in each existing200-row target INSERT only when one of the three
+derived fields is missing. Complete sources preserve every version/value.
+Canonical identity, cipher bytes, source credentials, original copy transaction,
+task/run/preparation completion, FK/session restoration and rollback remain.
+There is no new query, schema, after-copy UPDATE, migration or second writer.
+
+The exact old production file plus new public tests fails one SQLite and two
+cross-driver leaves only after actual owned copy succeeds. Fixed normal tests
+cover5SQLite and10MySQL cross-driver real copy/rollback fixtures, plus the201-row
+200+1 INSERT contract. Focused SQLite race3 covers the table contract, public
+missing-secret case and completion rollback. MySQL-to-MySQL is not a new matrix;
+complete old wrongversion1 remains undiagnosable. New-source full backend,
+original MySQL and new CI are pending; the a9 acceptance above belongs to a9.
+
+[Copy behavior/rollback](core-convergence-principal-copy-recovery.md) and
+[targeted command/hash receipt](validation/2026-10-21-principal-copy-recovery.json)
+retain the original assertions, exact15normal fixtures and focusedrace scope.

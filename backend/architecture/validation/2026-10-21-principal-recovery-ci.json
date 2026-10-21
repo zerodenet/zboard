@@ -1,0 +1,54 @@
+{
+  "source": "a9aae1621ce04e303de248747903f3637c1c61b4",
+  "run_id": 39522585804,
+  "run_url": "https://github.com/zerodenet/zboard/actions/runs/39522585804",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 118969696128,
+      "name": "zrs-compiler",
+      "conclusion": "success"
+    },
+    {
+      "id": 118969696441,
+      "name": "compose",
+      "conclusion": "success"
+    },
+    {
+      "id": 118969696529,
+      "name": "mysql",
+      "conclusion": "success"
+    },
+    {
+      "id": 118969696626,
+      "name": "frontend",
+      "conclusion": "success"
+    },
+    {
+      "id": 118969696705,
+      "name": "contract",
+      "conclusion": "success"
+    },
+    {
+      "id": 118969696714,
+      "name": "backend",
+      "conclusion": "success"
+    }
+  ],
+  "mysql": {
+    "datastore_seconds": 158.643,
+    "handler_seconds": 809.717,
+    "networkstore_seconds": 113.348,
+    "jobstore_seconds": 104.071,
+    "platformstore_copy_seconds": 94.612,
+    "original_timeout_minutes": 15
+  },
+  "raw_log_sha256": "540dca16eb03afda004a113b147139c2ed884959236a1c1a796fc50354626bea",
+  "limits": [
+    "Exact-source six-job success; no timeout, exclusions or test-assertion changes.",
+    "Local same-source original MySQL is recorded separately, not inferred from CI.",
+    "One successful handler run with90.283s margin does not establish stable startup improvement; preceding31/e902/c61/local900s failures are retained.",
+    "No new capacity acceptance; the original fixed-budget01eb capacity report belongs to01eb, not this binary.",
+    "P4 durable auxiliary handoff, retention and P6 scaling/P7 comprehensive release acceptance remain incomplete."
+  ]
+}
