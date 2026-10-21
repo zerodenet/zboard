@@ -14,20 +14,26 @@ import (
 )
 
 func TestAutomaticRenewalOverBoundItemKeepsNeighborsAndRevocationAvailable(t *testing.T) {
-	assertAutomaticOverBoundIsolation(t, newOrderFixture(t), false)
+	base := newOrderFixture(t)
+	prepareTestMaintenanceSource(t, base.h)
+	assertAutomaticOverBoundIsolation(t, base, false)
 }
 func TestMySQLAutomaticRenewalOverBoundItemKeepsNeighborsAndRevocationAvailable(t *testing.T) {
 	assertAutomaticOverBoundIsolation(t, newMySQLBusinessOrderFixture(t), false)
 }
 func TestAutomaticRenewalOverBoundWindowStillCloses(t *testing.T) {
-	assertAutomaticOverBoundIsolation(t, newOrderFixture(t), true)
+	base := newOrderFixture(t)
+	prepareTestMaintenanceSource(t, base.h)
+	assertAutomaticOverBoundIsolation(t, base, true)
 }
 func TestMySQLAutomaticRenewalOverBoundWindowStillCloses(t *testing.T) {
 	assertAutomaticOverBoundIsolation(t, newMySQLBusinessOrderFixture(t), true)
 }
 
 func TestAutomaticRenewalConsentWithdrawalRace(t *testing.T) {
-	assertAutomaticConsentWithdrawalRace(t, newOrderFixture(t))
+	base := newOrderFixture(t)
+	prepareTestMaintenanceSource(t, base.h)
+	assertAutomaticConsentWithdrawalRace(t, base)
 }
 func TestMySQLAutomaticRenewalConsentWithdrawalRace(t *testing.T) {
 	assertAutomaticConsentWithdrawalRace(t, newMySQLBusinessOrderFixture(t))

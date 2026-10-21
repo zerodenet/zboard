@@ -16,6 +16,7 @@ import (
 
 func TestSQLitePeriodicContinuationPreservesExecutionOutcome(t *testing.T) {
 	h, _ := newAnnouncementTestHandlers(t)
+	prepareTestMaintenanceSource(t, h)
 	assertPeriodicContinuationPreservesExecutionOutcome(t, h)
 }
 

@@ -9,6 +9,7 @@ import (
 
 func TestTrafficResetRestoresBaseQuotaWithoutRepeatingAddon(t *testing.T) {
 	f := newOrderFixture(t)
+	prepareTestMaintenanceSource(t, f.h)
 	if err := f.h.db.Model(&f.planRecord).Update("reset_policy", 2).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +74,7 @@ func TestTrafficResetRestoresBaseQuotaWithoutRepeatingAddon(t *testing.T) {
 
 func TestTrafficResetCatchupPreservesCurrentCycleUsageAndAddon(t *testing.T) {
 	f := newOrderFixture(t)
+	prepareTestMaintenanceSource(t, f.h)
 	if err := f.h.db.Model(&f.planRecord).Update("reset_policy", 2).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -137,6 +139,7 @@ func TestTrafficResetReactivatesQuotaExhaustedSubscription(t *testing.T) {
 
 func testTrafficResetRestoresExhaustedCredentials(t *testing.T, status string) {
 	f := newOrderFixture(t)
+	prepareTestMaintenanceSource(t, f.h)
 	endpoint := attachOrderPublishEndpoint(t, f)
 	if err := f.h.db.Model(&f.planRecord).Update("reset_policy", 1).Error; err != nil {
 		t.Fatal(err)
@@ -214,6 +217,7 @@ func TestTrafficResetCalendarAndLeapDaySchedules(t *testing.T) {
 
 func TestTrafficResetRepairsMissingScheduleWithoutEarlyGrant(t *testing.T) {
 	f := newOrderFixture(t)
+	prepareTestMaintenanceSource(t, f.h)
 	if err := f.h.db.Model(&f.planRecord).Update("reset_policy", 2).Error; err != nil {
 		t.Fatal(err)
 	}

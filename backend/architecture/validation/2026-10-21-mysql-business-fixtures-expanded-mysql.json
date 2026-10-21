@@ -1,0 +1,58 @@
+{
+  "source": "c923d1b5cc2f95370a1b795dc9cd277886020839",
+  "phase": "mysql",
+  "started_utc": "2026-10-21T05:51:40.818669+00:00",
+  "finished_utc": "2026-10-21T06:10:42.273711+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "mysql-core",
+      "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 794.555,
+      "log": "mysql-core-c923d1b-final.log",
+      "raw_log_bytes": 229,
+      "raw_log_sha256": "ce0c80563ffd5f4ff79581dfa332f16948375a85cf67cb2596c0f5710f6ad087",
+      "package_outcomes": [
+        "ok  \tgithub.com/zerodenet/zboard/backend/internal/datastore\t167.774s",
+        "ok  \tgithub.com/zerodenet/zboard/backend/internal/handler\t792.924s",
+        "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore\t169.455s"
+      ]
+    },
+    {
+      "name": "mysql-jobstore",
+      "command": "go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 124.96,
+      "log": "mysql-jobstore-c923d1b-final.log",
+      "raw_log_bytes": 89,
+      "raw_log_sha256": "d9477d32eca43312005e254d966708b4bdf1ceec746dc82cd720dfc507cbf1c0",
+      "package_outcomes": [
+        "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore\t124.479s"
+      ]
+    },
+    {
+      "name": "mysql-copy",
+      "command": "go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 221.939,
+      "log": "mysql-copy-c923d1b-final.log",
+      "raw_log_bytes": 94,
+      "raw_log_sha256": "0b1ab076a107b48c9713ddc56577eafb2bfa7940fd682f47e3c923daceeda88d",
+      "package_outcomes": [
+        "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore\t221.440s"
+      ]
+    }
+  ],
+  "scope": "Exact c923 clean cloud checkout; original actual MySQL8.4 core/jobstore/copy commands, independent and sequential. Original15m package timeout unchanged. Not production.",
+  "limits": [
+    "One local pass and same-source green CI do not establish long-run capacity, missing feature completion oracceptance of unexecuted heads.",
+    "Parent907 CI900.021s failure and earlier failed sources remain separately recorded."
+  ]
+}

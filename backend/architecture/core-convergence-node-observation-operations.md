@@ -54,3 +54,12 @@ Only SQLite/MySQL isolated tests, Vue component/request behavior tests and
 contract/build checks are claimed; no production migration or browser/kernel
 end-to-end acceptance was performed for this new drawer. Full integrated
 backend and exact-head CI status are recorded separately in the phase plan.
+
+
+1012实际Chromium154验收已执行：真实fixture登录、held默认、applied两页各50且不重叠、
+计数原字符串/时间、关闭重开首屏、独立节点抽屉及读请求审计通过。二进制/PID/端口、
+535个前端输入、实际served index/assets均有绑定，原完整容量export前后不变。
+第一次最终隔离审计因原版本检查GET被拦截而失败，原失败保留；第二脚本仍阻断所有
+跨站请求，仅准确识别固定公共版本GET的预期阻断，其他异常仍失败，无mock/种数。
+[两次原始结果及脚本差异](validation/2026-10-21-node-observation-operations-browser.json)。
+实际小计数不证明2^53边界，该边界仍由专项双库合同证明；不宣称生产或长期容量通过。

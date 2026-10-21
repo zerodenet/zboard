@@ -60,6 +60,7 @@ func TestFairUseObservationRetentionCycleIndependentFailuresRemainVisible(t *tes
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, _ := newAnnouncementTestHandlers(t)
+			prepareTestMaintenanceSource(t, h)
 			retention := &observationRetentionProbe{rawErr: tc.raw}
 			evaluation := &observationEvaluationProbe{scanErr: tc.scan, evaluateErr: tc.evaluation}
 			h.services.FairUseObservationRetention = metering.ObservationRetention{Repository: retention}

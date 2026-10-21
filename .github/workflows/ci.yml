@@ -74,7 +74,7 @@ jobs:
         # Snapshot-copy tests acquire MySQL's server-wide source read lock.
         # Run them after transaction races so they cannot distort those waits.
         run: |
-          go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m
+          go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore ./internal/application -run MySQL -count=1 -timeout 15m
           # Generic jobstore fixtures select actual MySQL from the same DSN;
           # run the whole package, including lease, cancellation and drain races.
           go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m

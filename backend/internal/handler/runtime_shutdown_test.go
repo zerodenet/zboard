@@ -16,6 +16,7 @@ import (
 
 func TestShutdownWaitsForExecutionBeforeReleasingSpoolAndRetainsPendingEvent(t *testing.T) {
 	h, _ := newAnnouncementTestHandlers(t)
+	prepareTestMaintenanceSource(t, h)
 	cfg := zeroevent.DefaultConfig()
 	cfg.Directory = t.TempDir()
 	cfg.Storage.MinFreeSpace, cfg.Storage.EmergencyReserve = 0, 0
@@ -106,6 +107,7 @@ func TestShutdownWaitsForExecutionBeforeReleasingSpoolAndRetainsPendingEvent(t *
 
 func TestShutdownDrainDeadlineInterruptsOnlyLocalWorkAndPreservesUnknownResult(t *testing.T) {
 	h, _ := newAnnouncementTestHandlers(t)
+	prepareTestMaintenanceSource(t, h)
 	entered := make(chan struct{})
 	h.startScheduledJob("shutdown_timeout", time.Hour, func(call context.Context) error {
 		close(entered)

@@ -44,7 +44,9 @@ func expiredRecoveryFixture(t *testing.T, base orderFixture) fullReplacementFixt
 	return f
 }
 func TestConfiguredRecoveryQuoteListFulfillmentAndCleanup(t *testing.T) {
-	assertConfiguredRecovery(t, newOrderFixture(t))
+	base := newOrderFixture(t)
+	prepareTestMaintenanceSource(t, base.h)
+	assertConfiguredRecovery(t, base)
 }
 func TestMySQLConfiguredRecoveryQuoteListFulfillmentAndCleanup(t *testing.T) {
 	assertConfiguredRecovery(t, newMySQLOrderFixture(t))
@@ -95,7 +97,9 @@ func assertConfiguredRecovery(t *testing.T, base orderFixture) {
 	}
 }
 func TestRecoveryWindowChangeKeepsLateCashWithoutRestoringService(t *testing.T) {
-	assertRecoveryLateCash(t, newOrderFixture(t))
+	base := newOrderFixture(t)
+	prepareTestMaintenanceSource(t, base.h)
+	assertRecoveryLateCash(t, base)
 }
 func TestMySQLRecoveryWindowChangeKeepsLateCashWithoutRestoringService(t *testing.T) {
 	assertRecoveryLateCash(t, newMySQLOrderFixture(t))
@@ -131,6 +135,7 @@ func assertRecoveryLateCash(t *testing.T, base orderFixture) {
 }
 func TestRecoveryPolicyCorruptionNeverDefaultsAndNeverResurrectsTerminal(t *testing.T) {
 	f := expiredRecoveryFixture(t, newOrderFixture(t))
+	prepareTestMaintenanceSource(t, f.base.h)
 	setRecoveryPolicy(t, f, 0)
 	if _, err := f.base.h.services.CredentialExpiry(f.base.h.credentialCipher).ExpireDue(t.Context(), *f.at, 20); err != nil {
 		t.Fatal(err)
@@ -251,7 +256,9 @@ func TestMySQLRecoveryDeadlineRefreshesAfterPolicyLockWait(t *testing.T) {
 	}
 }
 func TestLegacyUnboundRenewalCannotPickAnotherSubscription(t *testing.T) {
-	assertUnboundLegacyRenewal(t, newOrderFixture(t))
+	base := newOrderFixture(t)
+	prepareTestMaintenanceSource(t, base.h)
+	assertUnboundLegacyRenewal(t, base)
 }
 func TestMySQLLegacyUnboundRenewalCannotPickAnotherSubscription(t *testing.T) {
 	assertUnboundLegacyRenewal(t, newMySQLOrderFixture(t))

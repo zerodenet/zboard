@@ -1,0 +1,210 @@
+{
+  "source": "1012bf56d78caf2e29420c8f56b5c3c72b5be585",
+  "scope": "Actual Chromium154 SPA, original1012 capacity executable, exact frontend source535-input byte equality and built dist, clean source/PID/socket/executable/served index+assets binding. Complete independent full fixture copy; stopped original unchanged. No mocked responses, seed writes, parts/repair/requeue/delete.",
+  "first_attempt_retained_failed": {
+    "status": "failed",
+    "passed": false,
+    "stage": "final_read_only_audit",
+    "checks": {
+      "clean_exact_backend_checkout": true,
+      "binary_hash_bound": true,
+      "live_owned_process_and_executable": true,
+      "origin_listener_owned_by_bound_pid": true,
+      "frontend_dist_hash_bound": true,
+      "served_spa_index_matches_bound_dist": true,
+      "actual_fixture_admin_login": true,
+      "actual_current_admin": true,
+      "queue_http_200_0": true,
+      "queue_does_not_change_node_route": true,
+      "default_held_request_limit50": true,
+      "queue_http_200_1": true,
+      "queue_http_200_2": true,
+      "applied_second_page_nonempty": true,
+      "applied_pages_unique_and_nonoverlapping": true,
+      "counts_rendered_as_exact_decimal_strings": true,
+      "queue_http_200_3": true,
+      "reopen_keeps_status_but_refreshes_first_page": true,
+      "node_drawer_uses_real_fixture_asset": true,
+      "opening_node_does_not_fetch_observation_queue": true,
+      "closing_node_preserves_unrelated_route": true,
+      "exactly_one_actual_fixture_login": true,
+      "no_api_mutation_except_actual_login": true,
+      "no_blocked_external_or_forbidden_request": false
+    },
+    "limits": [
+      "root-owned separately started full copy; original capacity instance is not restarted or modified",
+      "no DB/spool/seed/repair/requeue/delete action; real SPA plus real HTTP only",
+      "source-to-binary provenance is supplied by root private binding; live binary bytes/PID/port and clean checkout are independently checked",
+      "two applied pages prove nonoverlap, not whole-queue snapshot consistency or bounded DB scans",
+      "exact displayed decimal strings do not imply a 2^53 fixture unless such a value is actually observed",
+      "no resource/load/throughput or production acceptance claim"
+    ],
+    "chromium_version": "154.0.8037.57",
+    "observed_large_decimal": false,
+    "failure_code": "no_blocked_external_or_forbidden_request"
+  },
+  "first_blocked_requests": [
+    {
+      "method": "GET",
+      "path": "/repos/zerodenet/zboard/releases",
+      "query_keys": [
+        "per_page"
+      ],
+      "same_origin": false,
+      "blocked_before_network": true
+    }
+  ],
+  "private_harness_audit_correction": {
+    "before_sha256": "78d181785cbabdc33143d8d4242c2bcc1113075874d43c2cd9873cdd4ecfbeb5",
+    "after_sha256": "4a2352896628929373b9ab72b11b2a34e8c916531bdf4ff74fad92eaffe00dcb",
+    "first_failure": "Final audit rejected one pre-existing AdminVersionStatus optional public release GET that the isolation guard blocked. All actual queue/pagination/rendering/node-separation checks had passed. Original first run remains failed.",
+    "source_evidence": [
+      "frontend/src/api/releaseUpdates.ts: RELEASES_API plus per_page=100",
+      "frontend/src/components/AdminVersionStatus.vue"
+    ],
+    "actual_boundary": "Guard still aborts every cross-origin request before network. No response is mocked. New audit distinguishes exactly GET https://api.github.com/repos/zerodenet/zboard/releases?per_page=100 with no auth/cookie from unexpected/forbidden requests; all writes/unknown paths remain fatal. Product, original CI and capacity harness unchanged."
+  },
+  "second_attempt": {
+    "status": "passed",
+    "passed": true,
+    "stage": "complete",
+    "checks": {
+      "clean_exact_backend_checkout": true,
+      "binary_hash_bound": true,
+      "live_owned_process_and_executable": true,
+      "origin_listener_owned_by_bound_pid": true,
+      "frontend_dist_hash_bound": true,
+      "served_spa_index_matches_bound_dist": true,
+      "actual_fixture_admin_login": true,
+      "actual_current_admin": true,
+      "queue_http_200_0": true,
+      "queue_does_not_change_node_route": true,
+      "default_held_request_limit50": true,
+      "queue_http_200_1": true,
+      "queue_http_200_2": true,
+      "applied_second_page_nonempty": true,
+      "applied_pages_unique_and_nonoverlapping": true,
+      "counts_rendered_as_exact_decimal_strings": true,
+      "queue_http_200_3": true,
+      "reopen_keeps_status_but_refreshes_first_page": true,
+      "node_drawer_uses_real_fixture_asset": true,
+      "opening_node_does_not_fetch_observation_queue": true,
+      "closing_node_preserves_unrelated_route": true,
+      "exactly_one_actual_fixture_login": true,
+      "no_api_mutation_except_actual_login": true,
+      "all_cross_origin_requests_blocked_before_network": true,
+      "no_unexpected_blocked_or_forbidden_request": true,
+      "no_node_or_reason_queue_filters": true,
+      "real_bound_frontend_assets_loaded": true,
+      "no_uncaught_spa_error": true,
+      "frontend_dist_unchanged_after_browser": true,
+      "backend_binary_unchanged_after_browser": true
+    },
+    "limits": [
+      "root-owned separately started full copy; original capacity instance is not restarted or modified",
+      "no DB/spool/seed/repair/requeue/delete action; real SPA plus real HTTP only",
+      "source-to-binary provenance is supplied by root private binding; live binary bytes/PID/port and clean checkout are independently checked",
+      "two applied pages prove nonoverlap, not whole-queue snapshot consistency or bounded DB scans",
+      "exact displayed decimal strings do not imply a 2^53 fixture unless such a value is actually observed",
+      "no resource/load/throughput or production acceptance claim"
+    ],
+    "chromium_version": "154.0.8037.57",
+    "observed_large_decimal": false,
+    "expected_blocked_public_release_reads": 1
+  },
+  "request_counts": {
+    "total": 80,
+    "same_origin": 79,
+    "blocked_external": 1,
+    "queue_GET": 4
+  },
+  "root_copy_and_stop_proofs": {
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-root-20261021T064351Z/root-receipt.json": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-root-20261021T064351Z/root-receipt.json",
+      "bytes": 3701,
+      "sha256": "a3cedfb6d8f9593c58916315ac1c193ed09a677e8607a98b8879ae0433b06cee"
+    },
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/root-receipt.json": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/root-receipt.json",
+      "bytes": 3407,
+      "sha256": "30b31dd0741ef67a7dfeca8c747b066e0f8fa19857cc409cc435f22ab72e53a4"
+    }
+  },
+  "frontend_source_binding": {
+    "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-frontend-input-binding.json",
+    "bytes": 63221,
+    "sha256": "f898cf6376247e79eca5b95022a988ff7d5c94c2e0d5e06d91d650b0871f58b6"
+  },
+  "private_artifact_proofs": {
+    "browser/auth-me.json": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/browser/auth-me.json",
+      "bytes": 242,
+      "sha256": "5142413a2cd385ff72d8d7dea09547a5389e65f9695c1806040178a2d4d7b1a8"
+    },
+    "browser/binding-public.json": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/browser/binding-public.json",
+      "bytes": 31146,
+      "sha256": "b0b1f315046ee4022d0f284637e3e73ccc4f8737bb616966e937f0632d8d18e2"
+    },
+    "browser/network-private.json": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/browser/network-private.json",
+      "bytes": 31576,
+      "sha256": "71bc73483cfc9d8aa543e6be967cb846a679e364a442db47974aa344b602d623"
+    },
+    "browser/queue-00-held.json": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/browser/queue-00-held.json",
+      "bytes": 116,
+      "sha256": "1f7967b0e5c40835cc3a760d3402b48331a68a7fc8d05e05c87db40f44cee1a9"
+    },
+    "browser/queue-00-held.png": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/browser/queue-00-held.png",
+      "bytes": 131690,
+      "sha256": "8495b5b84db1bf925688ba64ce7574ae87a8c840a27855b045252dd0ee3df5e6"
+    },
+    "browser/queue-01-applied.json": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/browser/queue-01-applied.json",
+      "bytes": 18547,
+      "sha256": "55392c935d6ec6f156c8d2e524e1f5ff1fba6e24825099e5601ce1a95cbef563"
+    },
+    "browser/queue-01-applied.png": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/browser/queue-01-applied.png",
+      "bytes": 284190,
+      "sha256": "bc35c77f5dba4f67c08ac79e13028179f0d3d9a139eeb51bd926add14b82897a"
+    },
+    "browser/queue-02-applied.json": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/browser/queue-02-applied.json",
+      "bytes": 18548,
+      "sha256": "627546da395385e73efb546b6ec163b148b6c82c4c797be8bd910cf8f7e4c8a8"
+    },
+    "browser/queue-02-applied.png": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/browser/queue-02-applied.png",
+      "bytes": 300574,
+      "sha256": "3b7e076f83b5e94d2f9d55bee42b88ab9721da4f8a2203b7a2d28994f1ef6103"
+    },
+    "browser/queue-03-applied.json": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/browser/queue-03-applied.json",
+      "bytes": 18547,
+      "sha256": "0f63bf0c7ea781114c1720b55e4cb62561091f18d8d359972c57ab37b872cc19"
+    },
+    "browser/queue-03-applied.png": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/browser/queue-03-applied.png",
+      "bytes": 283609,
+      "sha256": "6db15e394c674b77e5f40aeb494f69749bc69dc1c42961eb6de97fd36c0ad253"
+    },
+    "browser/receipt.json": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/browser/receipt.json",
+      "bytes": 2174,
+      "sha256": "f8cabf02265d1d2d5c96610054ee4f0665b6a122746f62d4acff783d52212225"
+    },
+    "browser/spa-index.html": {
+      "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-followup-20261021T064713Z/browser/spa-index.html",
+      "bytes": 644,
+      "sha256": "472b2fe81a2763bc1d2b327776eeaace1a1c7c5aba9800b2186cb3f636392fc7"
+    }
+  },
+  "limits": [
+    "First run remains failed at final isolation audit; second audit explicitly accepts only pre-existing public release GET blocked before network, never mocks success or permits external traffic.",
+    "Large decimal boundary not observed in actual fixture; precision proven only by separate unit/dualDB tests.",
+    "Only actual isolated UI/read behavior and one real generated fixture login proved; not production, external payment, archive, freshness, native kernel or worker scaling acceptance."
+  ]
+}

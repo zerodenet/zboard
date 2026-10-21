@@ -13,6 +13,7 @@ import (
 
 func TestCreateProtocolWithNodeGroupMembership(t *testing.T) {
 	f := newTrafficReadFixture(t)
+	prepareTestMaintenanceSource(t, f.h)
 	node := model.Node{Name: "membership-node", Address: "192.0.2.1", Config: "{}"}
 	group := model.NodeGroup{Name: "group", Code: "group", IsEnabled: true, Revision: 1}
 	for _, record := range []interface{}{&node, &group} {
