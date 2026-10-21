@@ -119,3 +119,38 @@ focused race3 pass; [follow-up receipt](validation/2026-10-21-node-observation-c
 Fixed integrated full checks/capacity/CI require new evidence; a82 local
 vet/build/pureSQLite and originalMySQL/capacity were not executed after its Go
 failure. No exclusions, timeout or assertion boundary was relaxed.
+
+Exact follow-up `ae2aadb3d9d5fc50c2fd9706b25815e17578376a` now passes all four
+original backend commands in a clean ordinary cloud clone: full Go339.057s,
+vet13.212s, build1.946s, pure-Go SQLite39.185s. The
+[full backend receipt](validation/2026-10-21-node-observation-final-backend.json)
+binds each raw log. Its new CI backend, frontend, contract, compose and
+zrs-compiler pass; MySQL and original constrained capacity remain separate checks.
+The [first integrated CI](validation/2026-10-21-node-observation-first-ci.json)
+is final failed evidence, including both the credential assertion and the
+independent MySQL handler900.019s timeout; later CI jobstore/copy did not execute.
+
+The [exact ae2 CI](validation/2026-10-21-node-observation-final-ci.json) is now
+complete: all six jobs pass. Actual MySQL datastore144.020s/network143.066s/
+handler723.526s, then jobstore92.546s and owned-copy159.289s execute and pass.
+Earlier900s failures remain; one successful run is not timing-stability proof.
+
+The [new original capacity run](validation/2026-10-21-node-observation-original-capacity.json)
+passes unchanged1CPU/1GiB/20events/s/4readers/60s gates. Hourly158 requests,
+zero errors, p95=27ms under250ms;1274 event requests and942 business reads have
+zero errors. The first drain has three quota mismatches and20 pending usage facts;
+the original5-second retry reaches exact9,833,472B and empty pending/spool.
+All1274 observation intents apply,591857B material, no invalid lengths/headers
+or missing state refs. This flow-only fixture advances Latest for2 nodes but
+correctly leaves Stats/current-counter source unknown. Approximate maximum
+header-created-to-ACK3539.993ms is not receive-to-settle or freshness latency.
+
+Four disk preflights stopped before offered load. All five attempts bind the
+same source/observer/both binaries; only the last actually offered load. Official
+Go/npm rebuildable-cache cleanup and lossless gzip archival of stopped exports'
+allocation reserve files recovered space. Every archive's decompressed hash is
+verified; databases, event material/checkpoints, source and binaries remain.
+The first archival atime comparison failed before unlink, and its verified
+recovery is recorded. Earlier hourly157/112503 failures remain separately.
+One short SQLite load does not validate MySQL capacity, long-term retention,
+real Stats throughput, plugin-busy behavior or standalone-worker autoscaling.

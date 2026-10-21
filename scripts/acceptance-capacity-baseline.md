@@ -129,3 +129,9 @@ The durable node observation handoff comparison pin is
 change. Its targeted dual-database/race/HTTP checks are separate from a new
 source-specific capacity run. All old disk-preflight/hourly503/drain failures
 remain evidence; this pin alone is not capacity or P6/P7 acceptance.
+
+
+The final heartbeat credential-fence comparison pin is
+`ae2aadb3d9d5fc50c2fd9706b25815e17578376a`. The a82 pin was preparation only;
+its local capacity was not executed after the full-Go regression. New ae2 full
+checks/capacity remain separate. All three original runners and gates are unchanged.

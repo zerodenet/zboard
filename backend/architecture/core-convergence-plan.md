@@ -1369,3 +1369,17 @@ P4仍缺held运营恢复、总队列/数据库增长及安全归档，P6独立wo
 
 
 P4-12完整检查追补：a82e5b6 full-Go297.342s失败，handler195.907s；旧凭据轮换后仍获200及4项owner缺失是真实新代码回归，原失败保留，后续vet/build/CGOSQLite及本地原MySQL/容量未执行。新CI39540048932 backend同样失败，另四项已通过、MySQL执行中。修复恢复最终条件写入后再投影，零变更MySQL重验凭据；三模型/lifecycle及两项独立事务补齐权属。双库专项和重点race3通过，[修复证据](validation/2026-10-21-node-observation-credential-fence.json)；修复后的完整检查另跑，不把专项或a82失败替代新头验收。
+
+ae2aadb完整后端四项均通过：full-Go339.057s/vet13.212s/build1.946s/
+CGO0SQLite39.185s，见[本次精确源码记录](validation/2026-10-21-node-observation-final-backend.json)。
+a82 CI最终失败，MySQL除旧凭据断言外另有handler900.019s超时，后续jobstore/copy
+未执行；见[保留的失败CI](validation/2026-10-21-node-observation-first-ci.json)。
+ae2原阈值容量与原MySQL三命令仍需独立证据，不以专项或旧头CI代替。
+
+ae2新CI39541657823六项全部通过，MySQLhandler723.526s，随后jobstore92.546s/
+ownedcopy159.289s实际完成；[本头CI](validation/2026-10-21-node-observation-final-ci.json)。
+原约束容量也通过：小时158次零错/p9527ms，942业务读与1274事件HTTP零错，
+原5s重试后9,833,472B精确一致；1274辅助意图全部应用，flow-only的Stats来源仍
+正确未知。[完整容量证据](validation/2026-10-21-node-observation-original-capacity.json)
+保留四次无负载磁盘预检失败、全部相同源码/二进制绑定与无损归档校验；不声称
+长时增长、MySQL容量、Stats吞吐或P6伸缩完成。本地原MySQL三命令正在独立运行。
