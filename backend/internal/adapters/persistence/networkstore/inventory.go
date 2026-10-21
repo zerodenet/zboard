@@ -25,7 +25,7 @@ func nodeKernelRecord(row model.NodeKernelState) network.NodeKernelRecord {
 }
 
 func (s Inventory) ListNodes(ctx context.Context, input network.NodeInventoryQuery) (network.NodeInventoryPage, error) {
-	query := s.DB.WithContext(ctx).Model(&model.Node{})
+	query := withObservationEvidence(s.DB.WithContext(ctx).Model(&model.Node{}))
 	if input.ID != 0 {
 		query = query.Where("nodes.id = ?", input.ID)
 	}
@@ -136,7 +136,7 @@ func (s Inventory) decorateNodes(ctx context.Context, rows []model.Node, counts 
 
 func (s Inventory) Node(ctx context.Context, id uint) (network.NodeInventoryItem, error) {
 	var row model.Node
-	if err := s.DB.WithContext(ctx).First(&row, id).Error; err != nil {
+	if err := withObservationEvidence(s.DB.WithContext(ctx).Model(&model.Node{})).Where("nodes.id = ?", id).First(&row).Error; err != nil {
 		return network.NodeInventoryItem{}, inventoryError(err)
 	}
 	items, err := s.decorateNodes(ctx, []model.Node{row}, true)

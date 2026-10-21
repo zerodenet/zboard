@@ -274,3 +274,27 @@ Down retains columns and receipt. Older strict migration inventories may refuse
 0058; use a compatible fix, retain historical context and verify recovery on an
 isolated copy. Never delete receipt/context to force rollback. No production
 migration occurred. See core-convergence-ticket-context.md and validation receipt.
+
+
+### 0060 durable node observation handoff (targeted validated)
+
+Adds node_observation_intents, immutable60KiB parts and per-asset independent
+Latest/Stats state, without nodes/financial foreign keys. Migrate with old
+consumers/counter writers quiescent. Receipt is last after old cursors are imported
+only as unattributed floors. Recorded structural evidence loss refuses startup
+before SQLite AutoMigrate/copy. Do not reconstruct old attribution from current
+labels. Partial empty initialization can resume; actual metadata read failures
+propagate. A conflicting ready index refuses; missing valid index can recover.
+
+Owned copy retains all dispositions, leases, tokens, raw parts, refs and tombstones;
+legacy floor import and completion share the owned target transaction. Cross-engine
+cached timestamps use millisecond precision, while immutable source material and
+receiver comparison stamp preserve original nanoseconds. Billing identities,
+rounding and report/checkpoint boundaries are unchanged.
+
+Down deliberately retains0060 tables, receipt and material. An old binary cannot
+drain these intents or maintain source state. Concurrent old/new writers and
+old-write/roll-forward are unsupported. Preserve a coherent database/spool backup
+and compatible recovery plan; never delete source facts to force binary rollback.
+No production migration/deploy occurred. See [handoff behavior and limits](core-convergence-node-observation-handoff.md)
+and its targeted receipt. New integrated full checks and CI are separate gates.

@@ -345,7 +345,22 @@ export async function fetchNodes() {
   return unwrap(response) || []
 }
 
+export interface NodeCounterEvidence {
+	known: boolean
+	source: string
+	latest_source_known: boolean
+	stats_source_known: boolean
+	latest_reference?: string
+	stats_reference?: string
+	counter_received_at?: string | null
+	latest_occurred_at?: string | null
+	latest_received_at?: string | null
+	stats_occurred_at?: string | null
+	stats_received_at?: string | null
+}
+
 export interface AdminNodeListItem {
+	observation?: NodeCounterEvidence
 	id: number
 	name: string
 	region: string

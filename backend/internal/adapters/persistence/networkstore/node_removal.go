@@ -10,6 +10,7 @@ import (
 
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -164,6 +165,9 @@ func (s NodeRemoval) RemoveNode(ctx context.Context, actor, id uint) (out networ
 			remoteCleanupRunID = run.ID
 		}
 
+		if err := observationstore.Tombstone(tx, node.ID, node.AssetTag); err != nil {
+			return err
+		}
 		if err := tx.Delete(&node).Error; err != nil {
 			return err
 		}

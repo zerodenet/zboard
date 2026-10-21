@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Orders from './Orders.vue'
 import Nodes from './Nodes.vue'
+import NodeCounterObservation from '../components/NodeCounterObservation.vue'
 import OrderSubscriptionDialog from '../components/OrderSubscriptionDialog.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 vi.mock('../api/subscriptionAccess', () => ({ fetchOrderSubscriptionAccess: vi.fn() }))
@@ -69,6 +70,18 @@ async function render(testCase: typeof cases[number]) {
   await flushPromises()
   return { router, wrapper }
 }
+
+it('passes only the selected node counter evidence to its detail view', async () => {
+  const observation = { known: true, latest_source_known: true, stats_source_known: true, source: 'buffered_stats', counter_received_at: '2026-10-01T10:20:30Z' }
+  mocks.detail.mockResolvedValueOnce({ ...detail(1), observation })
+  const { router, wrapper } = await render(cases.find(testCase => testCase.name === 'nodes')!)
+  expect(wrapper.getComponent(NodeCounterObservation).props('observation')).toEqual(observation)
+  await router.push({ query: { node: '2' } })
+  await flushPromises()
+  expect(wrapper.get('[data-detail] h2').text()).toBe('node-2')
+  expect(wrapper.getComponent(NodeCounterObservation).props('observation')).toBeUndefined()
+  expect(mocks.detail.mock.calls.map(call => call[0])).toEqual([1, 2])
+})
 
 describe.each(cases)('$name detail lifecycle', testCase => {
   it('opens linked details while the filtered list is still pending', async () => {

@@ -26,6 +26,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observabilitystore"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
@@ -40,6 +41,7 @@ type Services struct {
 	Navigation                   navigation.Service
 	MessageTemplates             messaging.Templates
 	PrincipalCollection          metering.PrincipalCollection
+	NodeObservations             network.ObservationProjections
 	UsageProjections             metering.UsageProjections
 	FairUseObservationSeries     metering.ObservationSeriesService
 	FairUseObservationRetention  metering.ObservationRetention
@@ -134,6 +136,7 @@ func New(db *gorm.DB, secret string) *Services {
 	s.Navigation = navigation.Service{Repository: menustore.Store{DB: db}}
 	s.MessageTemplates = messaging.Templates{Repository: messagingstore.Templates{DB: db}}
 	s.PrincipalCollection = metering.PrincipalCollection{Repository: meteringstore.PrincipalCollection{DB: db}}
+	s.NodeObservations = network.ObservationProjections{Repository: observationstore.Worker{DB: db}}
 	s.UsageProjections = metering.UsageProjections{Repository: meteringstore.UsageProjectionWorker{DB: db}}
 	s.FairUseObservationSeries = metering.ObservationSeriesService{Repository: meteringstore.ObservationSeries{DB: db}}
 	s.FairUseObservationRetention = metering.ObservationRetention{Repository: meteringstore.ObservationRetention{DB: db}}

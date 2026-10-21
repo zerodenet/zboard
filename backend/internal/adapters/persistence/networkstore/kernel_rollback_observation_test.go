@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -54,10 +55,13 @@ func kernelRollbackPreservesObservedRuntime(t *testing.T) {
 	// A real received event and heartbeat arrive after the operation's snapshot.
 	// Neither is evidence that the operation's desired configuration was applied.
 	newer := oldSeen.Add(30 * time.Second)
-	position := network.EventPosition{CoreInstanceID: "observed-runtime", Sequence: 50, ConfigRevision: 4, OccurredAt: newer}
+	position := network.EventPosition{AssetTag: node.AssetTag, ReceivedAt: newer, CoreInstanceID: "observed-runtime", Sequence: 50, ConfigRevision: 4, OccurredAt: newer}
 	observation := network.NodeObservation{NodeID: node.ID, Latest: position, StatsEvent: &position,
 		Stats: network.NodeStats{ActiveSessions: 55, BytesUp: 66, BytesDown: 77}}
 	if err := store.DB.Transaction(func(tx *gorm.DB) error { return ProjectObservation(tx, observation) }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (observationstore.Worker{DB: store.DB}).Drain(ctx, 32, observationstore.MaxDrainBytes); err != nil {
 		t.Fatal(err)
 	}
 	version, uptime := "new-observed", uint64(42)
@@ -87,7 +91,7 @@ func kernelRollbackPreservesObservedRuntime(t *testing.T) {
 	}
 	// Full persisted maps include private fields omitted by the public model JSON.
 	latestNode := row(&model.Node{}, "id = ?", node.ID)
-	latestCursor := digest(row(&ObservationCursor{}, "node_id = ?", node.ID))
+	latestCursor := digest(row(&model.NodeObservationState{}, "node_id = ? AND asset_tag = ?", node.ID, node.AssetTag))
 	callback := "test:fail_rollback_credential_update"
 	injected := errors.New("credential restore persistence failure")
 	if err := store.DB.Callback().Update().Before("gorm:update").Register(callback, func(tx *gorm.DB) {
@@ -106,7 +110,7 @@ func kernelRollbackPreservesObservedRuntime(t *testing.T) {
 	if err := store.RestoreKernelConnectorCredential(ctx, operation, snapshot); !errors.Is(err, injected) {
 		t.Fatalf("restore failure: %v", err)
 	}
-	if digest(row(&model.Node{}, "id = ?", node.ID)) != digest(latestNode) || digest(row(&ObservationCursor{}, "node_id = ?", node.ID)) != latestCursor {
+	if digest(row(&model.Node{}, "id = ?", node.ID)) != digest(latestNode) || digest(row(&model.NodeObservationState{}, "node_id = ? AND asset_tag = ?", node.ID, node.AssetTag)) != latestCursor {
 		t.Fatal("failed restore changed node or observation cursor")
 	}
 	if err := store.DB.Callback().Update().Remove(callback); err != nil {
@@ -130,7 +134,7 @@ func kernelRollbackPreservesObservedRuntime(t *testing.T) {
 	if digest(current) != digest(latestNode) {
 		t.Fatal("credential rollback rewound independently received node observations")
 	}
-	if digest(row(&ObservationCursor{}, "node_id = ?", node.ID)) != latestCursor {
+	if digest(row(&model.NodeObservationState{}, "node_id = ? AND asset_tag = ?", node.ID, node.AssetTag)) != latestCursor {
 		t.Fatal("credential rollback changed the observation cursor")
 	}
 	// Equal/older delivery remains a no-op against the preserved current values.
@@ -142,6 +146,9 @@ func kernelRollbackPreservesObservedRuntime(t *testing.T) {
 	observation.Latest.OccurredAt = newer.Add(-time.Second)
 	observation.StatsEvent = &observation.Latest
 	if err := store.DB.Transaction(func(tx *gorm.DB) error { return ProjectObservation(tx, observation) }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (observationstore.Worker{DB: store.DB}).Drain(ctx, 32, observationstore.MaxDrainBytes); err != nil {
 		t.Fatal(err)
 	}
 	beforeStale := row(&model.Node{}, "id = ?", node.ID)
@@ -159,7 +166,7 @@ func kernelRollbackPreservesObservedRuntime(t *testing.T) {
 	if err := store.RestoreKernelConnectorCredential(ctx, operation, snapshot); !errors.Is(err, network.ErrKernelOperationLost) {
 		t.Fatalf("stale restore: %v", err)
 	}
-	if digest(row(&model.Node{}, "id = ?", node.ID)) != frozen || digest(row(&ObservationCursor{}, "node_id = ?", node.ID)) != latestCursor {
+	if digest(row(&model.Node{}, "id = ?", node.ID)) != frozen || digest(row(&model.NodeObservationState{}, "node_id = ? AND asset_tag = ?", node.ID, node.AssetTag)) != latestCursor {
 		t.Fatal("stale restore changed node or cursor")
 	}
 }

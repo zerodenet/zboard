@@ -330,7 +330,7 @@ func (h *handlers) invalidateZeroEventCredential(nodeID uint) {
 
 func (h *handlers) recordZeroConnectorActivity(ctx context.Context, node network.EventNode, event zeroEventEnvelope) error {
 	now := time.Now().UTC()
-	activity := network.NodeActivityUpdate{At: now, Online: true, ConnectorSeen: true}
+	activity := network.NodeActivityUpdate{At: now, Online: true, ConnectorSeen: true, CounterWriter: network.CounterWriterLegacyConnector}
 	switch event.EventType {
 	case "engine.started":
 		var payload struct {

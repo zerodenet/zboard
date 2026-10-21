@@ -9,7 +9,6 @@ import (
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/zeroevent"
-	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -32,7 +31,14 @@ func TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	events := accountingBenchmarkEvents(credential, 0, 1)
-	events = append(events, zeroevent.Envelope{ID: "stats-lock-order", NodeID: uint64(node.ID), Type: "stats.sampled", CoreInstanceID: "benchmark-core", Sequence: 2, OccurredAt: time.Now().UTC(), Payload: []byte(`{"active_sessions":3,"bytes_up":100,"bytes_down":200}`)})
+	var asset model.Node
+	if err := h.db.First(&asset, credential.NodeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	for i := range events {
+		events[i].AssetTag = asset.AssetTag
+	}
+	events = append(events, zeroevent.Envelope{ID: "stats-lock-order", NodeID: uint64(node.ID), AssetTag: asset.AssetTag, ReceivedAt: time.Now().UTC(), Type: "stats.sampled", CoreInstanceID: "benchmark-core", Sequence: 2, OccurredAt: time.Now().UTC(), Payload: []byte(`{"active_sessions":3,"bytes_up":100,"bytes_down":200}`)})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
@@ -69,44 +75,17 @@ func TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock(t *testing.T) {
 		t.Fatal(projectionErr)
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 30, subStatusActive)
+	if _, err := h.services.NodeObservations.Drain(context.Background(), 32, 8*1024*1024); err != nil {
+		t.Fatal(err)
+	}
 	if err := h.db.First(&node, node.ID).Error; err != nil || node.ActiveFlows != 3 {
-		t.Fatalf("stats not committed with accounting: %v", err)
+		t.Fatalf("committed observation intent did not apply after accounting: %v", err)
 	}
 }
 
-func TestMySQLNodeStatsFailureStillRollsBackAccounting(t *testing.T) {
+func TestMySQLNodeStatsFailureRetainsSettlementAndRetriesProjection(t *testing.T) {
 	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
-	injected := errors.New("fixture stats write failure")
-	const callback = "test:stats-write-failure"
-	if err := h.db.Callback().Update().Before("gorm:update").Register(callback, func(tx *gorm.DB) {
-		if tx.Statement.Table == "nodes" {
-			tx.AddError(injected)
-		}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { h.db.Callback().Update().Remove(callback) })
-	events := accountingBenchmarkEvents(credential, 0, 1)
-	events = append(events, zeroevent.Envelope{ID: "stats-failure", NodeID: uint64(credential.NodeID), Type: "stats.sampled", Sequence: 2, OccurredAt: time.Now().UTC(), Payload: []byte(`{"active_sessions":3,"bytes_up":100,"bytes_down":200}`)})
-	if err := h.projectZeroNodeEvents(context.Background(), events); !errors.Is(err, injected) {
-		t.Fatalf("missing injected failure: %v", err)
-	}
-	assertAccountingTotal(t, h, credential.SubscriptionID, 0, subStatusActive)
-	for _, table := range []string{"traffic_records", "flow_usages", "traffic_usage_hourly", "zero_event_node_cursors"} {
-		var count int64
-		if err := h.db.Table(table).Count(&count).Error; err != nil || count != 0 {
-			t.Fatalf("rollback left %s rows=%d error=%v", table, count, err)
-		}
-	}
-	h.db.Callback().Update().Remove(callback)
-	if err := h.projectZeroNodeEvents(context.Background(), events); err != nil {
-		t.Fatal(err)
-	}
-	assertAccountingTotal(t, h, credential.SubscriptionID, 30, subStatusActive)
-	if err := h.projectZeroNodeEvents(context.Background(), events); err != nil {
-		t.Fatal(err)
-	}
-	assertAccountingTotal(t, h, credential.SubscriptionID, 30, subStatusActive)
+	assertObservationSettlementHandoff(t, h, credential)
 }
 
 func TestMySQLConsumerBoundsTransactionsAndDrainsBacklog(t *testing.T) {

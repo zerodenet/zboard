@@ -2,6 +2,9 @@ package networkstore
 
 import (
 	"context"
+	"errors"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore"
+	"gorm.io/gorm/clause"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -35,14 +38,26 @@ func (s NodeActivity) RecordNodeActivity(ctx context.Context, nodeID uint, crede
 	if update.BytesDown != nil {
 		values["bytes_down"] = *update.BytesDown
 	}
-	result := s.DB.WithContext(ctx).Model(&model.Node{}).
-		Where("id = ? AND is_enabled = ? AND node_credential = ? AND node_credential_revoked_at IS NULL", nodeID, true, credential).
-		Updates(values)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return network.ErrNodeActivityCredential
-	}
-	return nil
+
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var node model.Node
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_enabled = ? AND node_credential = ? AND node_credential_revoked_at IS NULL", nodeID, true, credential).First(&node).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return network.ErrNodeActivityCredential
+		}
+		if err != nil {
+			return err
+		}
+		if update.ActiveFlows != nil || update.BytesUp != nil || update.BytesDown != nil {
+			source := "unknown"
+			switch update.CounterWriter {
+			case network.CounterWriterHeartbeat, network.CounterWriterLegacyConnector:
+				source = string(update.CounterWriter)
+			}
+			if err := observationstore.CounterOverride(tx, node.ID, node.AssetTag, source, update.At); err != nil {
+				return err
+			}
+		}
+		return tx.Model(&model.Node{}).Where("id = ?", nodeID).Updates(values).Error
+	})
 }

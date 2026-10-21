@@ -405,6 +405,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	h.StartWalletReservationWorker()
 	h.StartAutomaticRenewalWorker()
 	h.StartUsageProjectionWorker()
+	h.StartNodeObservationWorker()
 	h.StartProxyPoolSubscriptionWorker()
 	h.StartFairUseEvaluationWorker()
 	h.StartCertificateRenewalWorker()

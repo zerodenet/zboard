@@ -9,6 +9,7 @@ import (
 
 	"github.com/zerodenet/zboard/backend/internal/application"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/zeroevent"
 )
 
@@ -26,28 +27,47 @@ func (h *handlers) projectZeroNodeEventsWithMerge(ctx context.Context, events []
 		return 0, err
 	}
 	limit := zeroEventConsumerBatchLimit(zeroEventReadWindowLimit, h.services.TrafficReadsUseSQLite())
-	projections := aggregateZeroNodeEvents(events)
-	for start := 0; start < len(samples); start += limit {
-		input := application.BufferedEventProjection{Flows: samples[start:min(start+limit, len(samples))]}
-		selected := make(map[uint]bool)
-		for _, sample := range input.Flows {
-			selected[sample.NodeID] = true
+	sources := make([]network.ObservationSource, 0, len(events))
+	for _, event := range events {
+		if event.NodeID == 0 {
+			continue
 		}
-		nodes := make([]uint, 0, len(selected))
-		for node := range selected {
-			nodes = append(nodes, node)
-		}
-		sort.Slice(nodes, func(i, j int) bool { return nodes[i] < nodes[j] })
-		for _, node := range nodes {
-			if projection, ok := projections[node]; ok {
-				input.Nodes = append(input.Nodes, zeroNodeObservation(projection))
+		o := network.NodeObservation{NodeID: uint(event.NodeID), Latest: networkEventPosition(event)}
+		if event.Type == "stats.sampled" {
+			if stats, err := parseZeroStatsProjection(event.Payload); err == nil {
+				position := o.Latest
+				o.StatsEvent = &position
+				o.Stats = network.NodeStats{ActiveSessions: stats.ActiveSessions, BytesUp: stats.BytesUp, BytesDown: stats.BytesDown}
 			}
 		}
+		sources = append(sources, network.ObservationSource{Observation: o, Kind: event.Type, PrincipalKey: event.PrincipalKey, FlowID: event.FlowID, Payload: event.Payload})
+	}
+	for start := 0; start < len(samples); start += limit {
+		input := application.BufferedEventProjection{Flows: samples[start:min(start+limit, len(samples))]}
+		// Retain the original source for each report/checkpoint settled in this
+		// existing authority batch. The financial window/merge/keys are unchanged.
+		type report struct {
+			node uint
+			id   string
+		}
+		selected := map[report]bool{}
+		for _, sample := range input.Flows {
+			selected[report{sample.NodeID, sample.EventID}] = true
+			for _, point := range sample.Checkpoints {
+				selected[report{sample.NodeID, point.ReportID}] = true
+			}
+		}
+		remaining := sources[:0]
+		for _, source := range sources {
+			if source.Kind == "flow.updated" && selected[report{source.Observation.NodeID, source.Observation.Latest.ID}] {
+				input.Sources = append(input.Sources, source)
+			} else {
+				remaining = append(remaining, source)
+			}
+		}
+		sources = remaining
 		if _, err := h.services.ProjectBufferedEvents(ctx, input, h.credentialCipher); err != nil {
 			return 0, err
-		}
-		for _, node := range nodes {
-			delete(projections, node)
 		}
 	}
 	coverage := make(map[uint][]metering.NodeCoverageEvent)
@@ -64,11 +84,9 @@ func (h *handlers) projectZeroNodeEventsWithMerge(ctx context.Context, events []
 	}
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i] < nodes[j] })
 	for start := 0; start < len(nodes); start += limit {
-		input := application.BufferedEventProjection{}
+		input := application.BufferedEventProjection{Sources: sources}
+		sources = nil
 		for _, node := range nodes[start:min(start+limit, len(nodes))] {
-			if projection, ok := projections[node]; ok {
-				input.Nodes = append(input.Nodes, zeroNodeObservation(projection))
-			}
 			input.Coverage = append(input.Coverage, coverage[node]...)
 		}
 		result, err := h.services.ProjectBufferedEvents(ctx, input, h.credentialCipher)

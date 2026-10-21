@@ -702,9 +702,10 @@ func (h *handlers) NodeListHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
-	nodes := make([]model.Node, 0, len(page.Items))
+	nodes := make([]nodeLegacyListItem, 0, len(page.Items))
 	for _, item := range page.Items {
-		nodes = append(nodes, nodeInventoryModel(item))
+		node := nodeInventoryModel(item)
+		nodes = append(nodes, nodeLegacyListItem{Node: node, Observation: nodeObservationEvidence(node)})
 	}
 	for index := range nodes {
 		nodes[index].IsOnline = nodes[index].LastSeenAt != nil && nodes[index].LastSeenAt.After(cutoff)
@@ -715,21 +716,22 @@ func (h *handlers) NodeListHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type nodeListItem struct {
-	ID                   uint                   `json:"id"`
-	Name                 string                 `json:"name"`
-	Region               string                 `json:"region"`
-	Address              string                 `json:"address"`
-	Status               int16                  `json:"status"`
-	LifecycleStatus      string                 `json:"lifecycle_status"`
-	IsEnabled            bool                   `json:"is_enabled"`
-	ConnectorLastSeenAt  *time.Time             `json:"connector_last_seen_at,omitempty"`
-	ConnectorOnline      bool                   `json:"connector_online"`
-	SSHConfigured        bool                   `json:"ssh_configured"`
-	SSHVerifiedAt        *time.Time             `json:"ssh_verified_at,omitempty"`
-	KernelState          *model.NodeKernelState `json:"kernel_state,omitempty"`
-	EnabledProtocolCount int64                  `json:"enabled_protocol_count"`
-	CreatedAt            time.Time              `json:"created_at"`
-	UpdatedAt            time.Time              `json:"updated_at"`
+	ID                   uint                       `json:"id"`
+	Name                 string                     `json:"name"`
+	Region               string                     `json:"region"`
+	Address              string                     `json:"address"`
+	Status               int16                      `json:"status"`
+	LifecycleStatus      string                     `json:"lifecycle_status"`
+	IsEnabled            bool                       `json:"is_enabled"`
+	ConnectorLastSeenAt  *time.Time                 `json:"connector_last_seen_at,omitempty"`
+	ConnectorOnline      bool                       `json:"connector_online"`
+	SSHConfigured        bool                       `json:"ssh_configured"`
+	SSHVerifiedAt        *time.Time                 `json:"ssh_verified_at,omitempty"`
+	KernelState          *model.NodeKernelState     `json:"kernel_state,omitempty"`
+	Observation          networkcap.CounterEvidence `json:"observation"`
+	EnabledProtocolCount int64                      `json:"enabled_protocol_count"`
+	CreatedAt            time.Time                  `json:"created_at"`
+	UpdatedAt            time.Time                  `json:"updated_at"`
 }
 
 type nodeDetailItem struct {
@@ -764,6 +766,7 @@ func newNodeListItem(node model.Node, enabledProtocolCount int64, cutoff time.Ti
 		SSHConfigured:        node.SSHHost != "" && node.SSHUser != "",
 		SSHVerifiedAt:        node.SSHVerifiedAt,
 		KernelState:          node.KernelState,
+		Observation:          nodeObservationEvidence(node),
 		EnabledProtocolCount: enabledProtocolCount,
 		CreatedAt:            node.CreatedAt, UpdatedAt: node.UpdatedAt,
 	}
@@ -878,6 +881,17 @@ func (h *handlers) NodeDetailHandler(w http.ResponseWriter, r *http.Request) {
 func nodeInventoryModel(item networkcap.NodeInventoryItem) model.Node {
 	r := item.Node
 	node := model.Node{ID: r.ID, Name: r.Name, Region: r.Region, Address: r.Address, NodeCredentialPrefix: r.NodeCredentialPrefix, NodeCredentialRevokedAt: r.NodeCredentialRevokedAt, CommunicationProtocol: r.CommunicationProtocol, Status: r.Status, LifecycleStatus: r.LifecycleStatus, Config: r.Config, IsEnabled: r.IsEnabled, Remark: r.Remark, IsOnline: r.IsOnline, LastSeenAt: r.LastSeenAt, LastSyncAt: r.LastSyncAt, Version: r.Version, SSHHost: r.SSHHost, SSHPort: r.SSHPort, SSHUser: r.SSHUser, SSHAuthMethod: r.SSHAuthMethod, SSHPrivilegeMode: r.SSHPrivilegeMode, SSHPrivilegeConfigured: r.SSHPrivilegeConfigured, SSHHostKeyFingerprint: r.SSHHostKeyFingerprint, SSHVerifiedAt: r.SSHVerifiedAt, ConnectorLastSeenAt: r.ConnectorLastSeenAt, ConnectorOnline: r.ConnectorOnline, UptimeSeconds: r.UptimeSeconds, ActiveFlows: r.ActiveFlows, BytesUp: r.BytesUp, BytesDown: r.BytesDown, TrafficSecretPrefix: r.TrafficSecretPrefix, TrafficSecretRevokedAt: r.TrafficSecretRevokedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
+	node.ObservationKnown = r.Observation.Known
+	node.ObservationSource = r.Observation.Source
+	node.ObservationLatestSourceKnown = r.Observation.LatestSourceKnown
+	node.ObservationStatsSourceKnown = r.Observation.StatsSourceKnown
+	node.ObservationLatestReference = r.Observation.LatestReference
+	node.ObservationStatsReference = r.Observation.StatsReference
+	node.ObservationCounterReceivedAt = r.Observation.CounterReceivedAt
+	node.ObservationLatestOccurredAt = r.Observation.LatestOccurredAt
+	node.ObservationLatestReceivedAt = r.Observation.LatestReceivedAt
+	node.ObservationStatsOccurredAt = r.Observation.StatsOccurredAt
+	node.ObservationStatsReceivedAt = r.Observation.StatsReceivedAt
 	if item.KernelState != nil {
 		k := item.KernelState
 		node.KernelState = &model.NodeKernelState{NodeID: k.NodeID, Status: k.Status, Phase: k.Phase, RecommendedAction: k.RecommendedAction, PlatformOS: k.PlatformOS, Architecture: k.Architecture, Libc: k.Libc, DesiredVersion: k.DesiredVersion, InstalledVersion: k.InstalledVersion, DesiredSHA256: k.DesiredSHA256, InstalledSHA256: k.InstalledSHA256, DesiredConfigSHA256: k.DesiredConfigSHA256, AppliedConfigSHA256: k.AppliedConfigSHA256, ServiceStatus: k.ServiceStatus, ControlStatus: k.ControlStatus, LastError: k.LastError, ActiveOperationID: k.ActiveOperationID, LastDetectedAt: k.LastDetectedAt, LastHealthyAt: k.LastHealthyAt, CreatedAt: k.CreatedAt, UpdatedAt: k.UpdatedAt}
@@ -1315,7 +1329,8 @@ func (h *handlers) NodeConnectorHeartbeatHandler(w http.ResponseWriter, r *http.
 	now := time.Now().UTC()
 	activity := networkcap.NodeActivityUpdate{
 		At: now, Online: true, ConnectorSeen: true, UptimeSeconds: heartbeat.UptimeSeconds,
-		ActiveFlows: heartbeat.ActiveFlows, BytesUp: heartbeat.BytesUp, BytesDown: heartbeat.BytesDown,
+		CounterWriter: networkcap.CounterWriterHeartbeat,
+		ActiveFlows:   heartbeat.ActiveFlows, BytesUp: heartbeat.BytesUp, BytesDown: heartbeat.BytesDown,
 	}
 	if heartbeat.BuildID != "" {
 		activity.Version = &heartbeat.BuildID

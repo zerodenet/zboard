@@ -7037,6 +7037,23 @@ components:
         active_flows: { type: integer, format: int64, minimum: 0 }
         bytes_up: { type: integer, format: int64, minimum: 0 }
         bytes_down: { type: integer, format: int64, minimum: 0 }
+        observation: { $ref: "#/components/schemas/NodeCounterEvidence" }
+    NodeCounterEvidence:
+      type: object
+      required: [known, latest_source_known, stats_source_known, source]
+      description: Receiver-side provenance of node counter values, separate from freshness, online status, authorization and applied configuration. Missing legacy attribution remains unknown. Cached times use millisecond precision; retained immutable source material preserves original nanoseconds.
+      properties:
+        known: { type: boolean, description: Current counters have a buffered Stats source consistent with the latest recorded runtime identity. This is not runtime attestation. }
+        latest_source_known: { type: boolean }
+        stats_source_known: { type: boolean }
+        source: { type: string, description: "Counter writer or disposition, such as unknown, buffered_stats, historical_stats, heartbeat, legacy_connector, invalid_reference or deleted." }
+        latest_reference: { type: string, description: Opaque retained source reference; not a credential. }
+        stats_reference: { type: string, description: Opaque retained source reference; not a credential. }
+        counter_received_at: { type: string, format: date-time, nullable: true, description: Recorded receiver time of the current counter writer; never projection execution time. }
+        latest_occurred_at: { type: string, format: date-time, nullable: true }
+        latest_received_at: { type: string, format: date-time, nullable: true }
+        stats_occurred_at: { type: string, format: date-time, nullable: true }
+        stats_received_at: { type: string, format: date-time, nullable: true }
     NodeSummary:
       type: object
       required: [id, name, lifecycle_status, is_enabled, connector_online, ssh_configured, enabled_protocol_count]
@@ -7050,6 +7067,7 @@ components:
         is_enabled: { type: boolean }
         connector_last_seen_at: { type: string, format: date-time, nullable: true }
         connector_online: { type: boolean }
+        observation: { $ref: "#/components/schemas/NodeCounterEvidence" }
         ssh_configured: { type: boolean }
         ssh_verified_at: { type: string, format: date-time, nullable: true }
         kernel_state: { type: object, nullable: true }

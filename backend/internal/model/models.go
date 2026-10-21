@@ -170,47 +170,60 @@ type Order struct {
 
 type Node struct {
 	// AssetTag identifies this panel asset, not a host, runtime or credential.
-	AssetTag                string           `json:"-" gorm:"size:64;not null;default:'';<-:create"`
-	ID                      uint             `json:"id" gorm:"primaryKey"`
-	Name                    string           `json:"name" gorm:"size:64;uniqueIndex"`
-	Region                  string           `json:"region" gorm:"size:32"`
-	Address                 string           `json:"address" gorm:"size:128"`
-	NodeCredential          string           `json:"-" gorm:"type:text"`
-	NodeCredentialPrefix    string           `json:"node_credential_prefix,omitempty" gorm:"size:12"`
-	NodeCredentialRevokedAt *time.Time       `json:"node_credential_revoked_at,omitempty"`
-	CommunicationProtocol   int16            `json:"communication_protocol" gorm:"not null;default:1"`
-	Status                  int16            `json:"status" gorm:"not null;default:0"`
-	LifecycleStatus         string           `json:"lifecycle_status" gorm:"size:20;not null;default:active"`
-	Config                  string           `json:"config" gorm:"type:json"`
-	IsEnabled               bool             `json:"is_enabled" gorm:"not null;default:true"`
-	Remark                  string           `json:"remark" gorm:"size:255"`
-	IsOnline                bool             `json:"is_online" gorm:"default:false"`
-	LastSeenAt              *time.Time       `json:"last_seen_at"`
-	LastSyncAt              *time.Time       `json:"last_sync_at"`
-	Version                 string           `json:"version" gorm:"size:64"`
-	SSHHost                 string           `json:"ssh_host" gorm:"size:64"`
-	SSHPort                 int              `json:"ssh_port" gorm:"default:22"`
-	SSHUser                 string           `json:"ssh_user" gorm:"size:64"`
-	SSHAuthMethod           string           `json:"ssh_auth_method" gorm:"size:20;not null;default:password"`
-	SSHPwd                  string           `json:"-" gorm:"column:ssh_pwd;type:text"`
-	SSHPrivateKeyPassphrase string           `json:"-" gorm:"type:text"`
-	SSHPrivilegeMode        string           `json:"ssh_privilege_mode" gorm:"size:16;not null;default:none"`
-	SSHPrivilegePassword    string           `json:"-" gorm:"type:text"`
-	SSHPrivilegeConfigured  bool             `json:"ssh_privilege_password_configured" gorm:"-"`
-	SSHHostKeyFingerprint   string           `json:"ssh_host_key_fingerprint" gorm:"size:128"`
-	SSHVerifiedAt           *time.Time       `json:"ssh_verified_at,omitempty"`
-	ConnectorLastSeenAt     *time.Time       `json:"connector_last_seen_at,omitempty"`
-	ConnectorOnline         bool             `json:"connector_online" gorm:"-"`
-	UptimeSeconds           uint64           `json:"uptime_seconds"`
-	ActiveFlows             uint64           `json:"active_flows"`
-	BytesUp                 uint64           `json:"bytes_up"`
-	BytesDown               uint64           `json:"bytes_down"`
-	TrafficSecret           string           `json:"-" gorm:"column:traffic_secret;type:text"`
-	TrafficSecretPrefix     string           `json:"traffic_secret_prefix,omitempty" gorm:"size:12"`
-	TrafficSecretRevokedAt  *time.Time       `json:"traffic_secret_revoked_at,omitempty"`
-	CreatedAt               time.Time        `json:"created_at"`
-	UpdatedAt               time.Time        `json:"updated_at"`
-	KernelState             *NodeKernelState `json:"kernel_state,omitempty" gorm:"foreignKey:NodeID"`
+	AssetTag                string     `json:"-" gorm:"size:64;not null;default:'';<-:create"`
+	ID                      uint       `json:"id" gorm:"primaryKey"`
+	Name                    string     `json:"name" gorm:"size:64;uniqueIndex"`
+	Region                  string     `json:"region" gorm:"size:32"`
+	Address                 string     `json:"address" gorm:"size:128"`
+	NodeCredential          string     `json:"-" gorm:"type:text"`
+	NodeCredentialPrefix    string     `json:"node_credential_prefix,omitempty" gorm:"size:12"`
+	NodeCredentialRevokedAt *time.Time `json:"node_credential_revoked_at,omitempty"`
+	CommunicationProtocol   int16      `json:"communication_protocol" gorm:"not null;default:1"`
+	Status                  int16      `json:"status" gorm:"not null;default:0"`
+	LifecycleStatus         string     `json:"lifecycle_status" gorm:"size:20;not null;default:active"`
+	Config                  string     `json:"config" gorm:"type:json"`
+	IsEnabled               bool       `json:"is_enabled" gorm:"not null;default:true"`
+	Remark                  string     `json:"remark" gorm:"size:255"`
+	IsOnline                bool       `json:"is_online" gorm:"default:false"`
+	LastSeenAt              *time.Time `json:"last_seen_at"`
+	LastSyncAt              *time.Time `json:"last_sync_at"`
+	Version                 string     `json:"version" gorm:"size:64"`
+	SSHHost                 string     `json:"ssh_host" gorm:"size:64"`
+	SSHPort                 int        `json:"ssh_port" gorm:"default:22"`
+	SSHUser                 string     `json:"ssh_user" gorm:"size:64"`
+	SSHAuthMethod           string     `json:"ssh_auth_method" gorm:"size:20;not null;default:password"`
+	SSHPwd                  string     `json:"-" gorm:"column:ssh_pwd;type:text"`
+	SSHPrivateKeyPassphrase string     `json:"-" gorm:"type:text"`
+	SSHPrivilegeMode        string     `json:"ssh_privilege_mode" gorm:"size:16;not null;default:none"`
+	SSHPrivilegePassword    string     `json:"-" gorm:"type:text"`
+	SSHPrivilegeConfigured  bool       `json:"ssh_privilege_password_configured" gorm:"-"`
+	SSHHostKeyFingerprint   string     `json:"ssh_host_key_fingerprint" gorm:"size:128"`
+	SSHVerifiedAt           *time.Time `json:"ssh_verified_at,omitempty"`
+	ConnectorLastSeenAt     *time.Time `json:"connector_last_seen_at,omitempty"`
+	ConnectorOnline         bool       `json:"connector_online" gorm:"-"`
+	UptimeSeconds           uint64     `json:"uptime_seconds"`
+	// Read-only joined evidence. Never persisted/updated through Node ORM or
+	// confused with defaults on a newly created/legacy observation source.
+	ObservationKnown             bool             `json:"-" gorm:"->;-:migration"`
+	ObservationLatestSourceKnown bool             `json:"-" gorm:"->;-:migration"`
+	ObservationStatsSourceKnown  bool             `json:"-" gorm:"->;-:migration"`
+	ObservationSource            string           `json:"-" gorm:"->;-:migration"`
+	ObservationLatestReference   string           `json:"-" gorm:"->;-:migration"`
+	ObservationStatsReference    string           `json:"-" gorm:"->;-:migration"`
+	ObservationCounterReceivedAt *time.Time       `json:"-" gorm:"->;-:migration"`
+	ObservationLatestOccurredAt  *time.Time       `json:"-" gorm:"->;-:migration"`
+	ObservationLatestReceivedAt  *time.Time       `json:"-" gorm:"->;-:migration"`
+	ObservationStatsOccurredAt   *time.Time       `json:"-" gorm:"->;-:migration"`
+	ObservationStatsReceivedAt   *time.Time       `json:"-" gorm:"->;-:migration"`
+	ActiveFlows                  uint64           `json:"active_flows"`
+	BytesUp                      uint64           `json:"bytes_up"`
+	BytesDown                    uint64           `json:"bytes_down"`
+	TrafficSecret                string           `json:"-" gorm:"column:traffic_secret;type:text"`
+	TrafficSecretPrefix          string           `json:"traffic_secret_prefix,omitempty" gorm:"size:12"`
+	TrafficSecretRevokedAt       *time.Time       `json:"traffic_secret_revoked_at,omitempty"`
+	CreatedAt                    time.Time        `json:"created_at"`
+	UpdatedAt                    time.Time        `json:"updated_at"`
+	KernelState                  *NodeKernelState `json:"kernel_state,omitempty" gorm:"foreignKey:NodeID"`
 }
 
 type NodeKernelState struct {

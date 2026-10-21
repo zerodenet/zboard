@@ -22,6 +22,10 @@ func CopyApplicationData(source, target *gorm.DB) error {
 	}
 	// Reject recorded identity loss even when the source nodes table itself
 	// is absent and the legacy table loop would otherwise skip it.
+	_, observationReceipt, err := observationSchema(source)
+	if err != nil {
+		return err
+	}
 	if err := preflightNodeAssetSchema(source); err != nil {
 		return err
 	}
@@ -37,6 +41,14 @@ func CopyApplicationData(source, target *gorm.DB) error {
 			return fmt.Errorf("migration destination is missing source table %s", table)
 		}
 		if err := copyTableRows(source, target, table); err != nil {
+			return err
+		}
+	}
+	// A prepared target has already recorded0060 before source data arrives.
+	// Only a genuinely legacy source imports its copied old cursor, in this same
+	// owned target transaction; never infer missing recorded source authority.
+	if !observationReceipt {
+		if err := importObservationFloors(target); err != nil {
 			return err
 		}
 	}

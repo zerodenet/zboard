@@ -21,7 +21,7 @@
 | P2-14/P3 套餐历史额度与接入组 | 部分实现（双库/前端/后续完整CI覆盖） | d98b018已恢复上传，5964c53六项CI包含该历史；混合加购及1000上限明确拒绝，当前HEAD新验收独立记录 |
 | P2 优惠首购/连续续费 | 部分实现（签名native/双库/真实浏览器） | 0055/0057购买及扣款批准证据；提供方不可用不回退原价；4e1a78d真实Chromium21项/实际100元扣款；其他可售操作及有限券消费契约仍缺 |
 | P4-01/02 日/小时统计投影 | 部分实现（双库、固定原阈值容量通过） | 0053/0054持久独立队列，pending显式unknown；精确681原20events/s、1274事件及940业务读零错，hour157/p95=20ms，首次10项核账不符后原5s drain通过。首次原磁盘预检失败保留，源码/二进制不变恢复余量后通过；历史112/157失败及完整图表比例/长期增长未知保留 |
-| P4 计量SQL/保留 | 部分实现（精确核账/专项通过） | SQLite累计游标cohort32→1次SELECT，87→56总SQL/写入舍入不变；58f/31为保持谓词与顺序的窄投影读取，e902保留独立来源材料、01eb保留缺失心跳计数；NodeStats仍耦合结算，独立Stats游标/资产隔离门未实现；0059仅未来入队身份与当前段/窗口混合来源保序；0056仅诊断清理，TrafficRecord不可归档 |
+| P4 计量SQL/保留 | 部分实现（精确核账/专项通过） | SQLite累计游标cohort32→1次SELECT，87→56总SQL/写入舍入不变；58f/31为保持谓词与顺序的窄投影读取，e902保留独立来源材料、01eb保留缺失心跳计数；0060辅助来源与财务同事务持久交接、独立Stats/Latest及资产删除隔离已通过双库专项与race3，实际HTTP/前端已接；新集成完整检查/原容量/CI待验。0056仅诊断清理，TrafficRecord不可归档；held恢复/总增长无界仍缺 |
 | P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
 | P5 工单业务关联 | 已实现且验证（隔离范围） | 4e1a78d/0058双库实际DDL/权限/首消息回滚/锁序；a82每行独立订阅关联入口及完整frontend201files/1112pass/8既有skip、build通过；01eb完整backend与六项CI覆盖。终止历史仍由原订单入口关联，无服务列表权限扩张 |
 | P6 进程关闭/队列所有权前置 | 部分实现（真实子进程、SQLite/race、MySQL） | file-spool内核锁、local Drain/Detach和实际server/plugin cleanup；3690113原MySQL及copy通过，7ef CI MySQL通过；无独立worker或伸缩器 |
@@ -1357,3 +1357,12 @@ SQL-count gate70ALTER/15INDEX/117CREATE/1739SELECT. One fresh seven-function sch
 run is3.555813278s, nestedrunMigrations3.002183861s. [Phase diagnostic](validation/2026-10-21-migration-phase-diagnostic.json).
 Nested spans overlap, this is not a whole-handler fraction or900s cause proof.
 No module-cache/toolchain change, no production change, no threshold relaxation.
+
+
+### P4-12/P5：可靠节点观察交接（2026-10-21，专项通过）
+
+财务结算事务仅追加原始来源头/材料，不再写节点计数；独立worker按node→asset-state→精确token/lease ACK应用。意图追加失败保留原spool重放，后续观察失败不回滚账务。Stats99不被Latest100吞掉，旧资产/删除/未知来源保留held材料；心跳/兼容入口明确区分计数写入者，存活标记不冒充Stats来源。节点分页/详情/兼容HTTP与前端入口已接，数值与来源同一SELECT读取。原2000窗口、财务合并/报告身份/first_sequence/舍入及151既有SQL字节不变。
+
+0060、双库故障/来源矩阵、实际HTTP、两方向四模式ownedcopy及重点race3通过；前端原CI范围202files1124pass/原8skip与build通过，后加节点切换断言45focused/typecheck通过。完整命令、50源码hash、旧候选失败与测试夹具400见[专项记录](validation/2026-10-21-node-observation-handoff.json)及[行为/迁移/回退](core-convergence-node-observation-handoff.md)。新集成完整backend、原MySQL三命令、原阈值容量和新CI待验，不能借旧绿灯。a470实际CI五项通过/MySQLhandler900.018s失败、CIjobstore/copy未执行，见[本次旧头精确CI](validation/2026-10-21-node-asset-metadata-ci.json)。
+
+P4仍缺held运营恢复、总队列/数据库增长及安全归档，P6独立worker/伸缩器与P7稳定全量验收仍未完成。财务未决规则和外部内核/优惠契约限制保持；无生产迁移/部署/合并/发布。

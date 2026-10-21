@@ -354,6 +354,7 @@ func MigrationTables(db *gorm.DB) ([]string, error) {
 		"plugin_installations", "plugin_versions", "plugin_operations", "plugin_host_leases",
 		"subscription_flow_start_events", "fair_use_node_coverage", "fair_use_policies",
 		"subscription_fair_use_states", "subscription_fair_use_events",
+		"node_observation_intents", "node_observation_parts", "node_observation_states",
 		"zero_event_node_cursors", "principal_flow_node_generations", "principal_flow_observations",
 		"principal_flow_currents", "principal_flow_scope_currents", "principal_flow_scope_observations",
 	)
