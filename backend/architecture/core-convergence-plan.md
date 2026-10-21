@@ -1423,3 +1423,23 @@ partialDDL、复制及含迁移尾检的用例仍走原准备。无生产/SQL变
 真实MySQL70业务+4合同154.905s通过；新增7个争用入口race/count3共21顶层执行
 71.105s通过，零skip。[精确范围及命令](validation/2026-10-21-mysql-business-fixtures-expanded.json)。
 本次完整backend/原MySQL/新CI待验，不从单例setup收益推定整包稳定通过900s。
+
+### 2026-10-21 P4/P5：有界观察队列管理员入口
+
+新增应用capability/持久化适配/GET admin/node-observation-intents及节点页独立drawer。
+默认held/50、上限100、状态绑定规范游标和LIMIT+1；不COUNT/OFFSET、不加载parts、
+不按当前节点存在性丢弃历史。当前active管理员DB谓词复核，DTO不含凭据/租约token/
+资产标签/原始source；诊断计数全程decimal string，真实2^53+1及MySQLuint64最大值
+无精度丢失。队列时间、当前资产关系与material_verified=false不冒充在线/新鲜度/配置确认。
+
+真实SQLite/MySQL store+HTTP与各race/count3通过；最终Go/API/route合同通过。
+前端原6排除完整204文件/1140测试通过，既有2文件/8测试跳过（nativeHTTP及真实内核
+需独立环境）；构建通过。Redocly1.34.3原规则通过。新测试括号/浅挂载、类型断言及
+YAML逗号产生的5结构错误均按冻结源码保留，修正后重验，不增加排除或抑制规则。
+5000历史资产/60header的实际MySQL同数据plan：状态join由node_id单键每次5001行
+变为node_id+asset_tag复合单行，仍保留BINARY字节栅栏；每条ANALYZE仅一次执行，
+不当作HTTPp95或大队列增长证明。[行为/回退](core-convergence-node-observation-operations.md)、
+[精确源码与失败/通过证据](validation/2026-10-21-node-observation-operations.json)。
+无迁移、财务写或repair/requeue/delete。applied未引用parts仍被迟到重放校验依赖，
+本批不清理任何源材料/头/receipt/游标/墓碑；P4安全归档、运营恢复及总增长仍未完成。
+该feature集成后完整backend/新头CI待验，c923测试批自己的整包检查另行留证。

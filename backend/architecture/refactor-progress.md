@@ -1719,3 +1719,5 @@ ae2aadb追补：原后端四命令通过、新CI六项通过、原约束容量�
 [P7范围/兼容](core-convergence-mysql-business-fixtures.md)及当前计划，不声称P7完成。
 
 2026-10-21：P7业务fixture由40显式扩展至70顶层/75独立业务schema；原业务/锁/迁移断言不变，实际74用例及新增7入口race3通过。907本地完整backend/原MySQL全通过但同头CI900.021s失败并存，当前整包待验；见[新范围及证据](validation/2026-10-21-mysql-business-fixtures-expanded.json)。
+
+2026-10-21：P4/P5只读观察队列capability/API/节点页drawer实装，真实双库/race3及原前端完整套件/构建/合同通过；保留3类新候选失败，无parts删除/新迁移/新财务写，完整集成验收待完成。见[行为和限制](core-convergence-node-observation-operations.md)。

@@ -263,6 +263,7 @@ var explicitRoutePrefixes = []struct {
 	{"/api/v1/admin/node-cleanup-script", "resources"},
 	{"/api/v1/admin/node-groups", "resources"},
 	{"/api/v1/admin/node-operations", "resources"},
+	{"/api/v1/admin/node-observation-intents", "resources"},
 	{"/api/v1/admin/nodes", "resources"},
 	{"/api/v1/admin/node-proxy-pools", "network"},
 	{"/api/v1/admin/operation-logs", "observability"},

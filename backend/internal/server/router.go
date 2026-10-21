@@ -145,6 +145,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPut, "/api/v1/admin/network-entries/:id", h.NetworkEntriesHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/network-entries/:id", h.NetworkEntriesHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/node-cleanup-script", h.NodeCleanupScriptHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/node-observation-intents", h.NodeObservationIntentsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/nodes/:id/retirement", h.NodeRetirementHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/nodes/:id/retirement", h.NodeRetirementHandler),
 		newRoute(http.MethodGet, "/api/v1/nodes", h.NodeListHandler),

@@ -24,6 +24,37 @@ tags:
   - name: tickets
   - name: files
 paths:
+  /api/v1/admin/node-observation-intents:
+    get:
+      tags: [admin, nodes]
+      operationId: listNodeObservationIntents
+      summary: Read global node observation queue metadata
+      description: |
+        Requires a current active administrator. Includes retained history for deleted assets.
+        Single status only; keyset pages use available_at then opaque SHA256 id. No count,
+        offset, node or reason filtering. Reads headers only, never parts or raw source identities.
+        Queue timestamps are not sample times or freshness evidence. Metadata does not reverify
+        retained material. There is no retry, lease-reset, repair or deletion operation.
+      parameters:
+        - {in: query, name: status, schema: {type: string, enum: [held, pending, claimed, applied], default: held}}
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+        - in: query
+          name: cursor
+          schema: {type: string, minLength: 1, maxLength: 512}
+          description: Opaque canonical v1 cursor bound to the selected status and UTC millisecond position; duplicate or unsupported parameters are rejected.
+      responses:
+        '200':
+          description: A bounded metadata page, without a total count or material verification claim
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiResponse'}
+                  - {type: object, properties: {data: {$ref: '#/components/schemas/ObservationIntentPage'}}}
+        '400': {description: 'Invalid status, limit, cursor or unsupported/duplicate query parameter'}
+        '401': {description: Authentication required or inactive session}
+        '403': {description: Current administrator permission required}
+        '500': {description: Database query failure; not an empty successful page}
   /api/v1/files:
     post:
       tags: [files]
@@ -5857,6 +5888,33 @@ components:
           schema:
             $ref: "#/components/schemas/ApiResponse"
   schemas:
+    ObservationIntentPage:
+      type: object
+      additionalProperties: false
+      required: [items, status, has_more]
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/ObservationIntentItem'}}
+        status: {type: string, enum: [held, pending, claimed, applied]}
+        has_more: {type: boolean}
+        next_cursor: {type: string, maxLength: 512, description: 'Present only when another page exists; pages reflect live queue metadata, not a historical snapshot'}
+    ObservationIntentItem:
+      type: object
+      additionalProperties: false
+      required: [id, node_id, status, reason, asset_relation, attempts, material_bytes, part_count, enqueued_at, available_at, disposition_updated_at, material_verified]
+      properties:
+        id: {type: string, pattern: '^[0-9a-f]{64}$', description: Opaque complete-material reference; displaying it is not revalidation}
+        node_id: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Historical numeric node identifier; not a link or attribution to a current asset with a reused id}
+        status: {type: string, enum: [held, pending, claimed, applied]}
+        reason: {type: string, maxLength: 64, description: Disposition code; clients must use a safe fixed fallback for unknown codes}
+        asset_relation: {type: string, enum: [unknown, same_asset, different_asset, node_missing, asset_deleted], description: Current metadata relationship only; not credential or runtime attestation}
+        attempts: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Exact unsigned diagnostic count encoded as decimal text}
+        material_bytes: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Exact unsigned diagnostic count encoded as decimal text}
+        part_count: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Exact unsigned diagnostic count encoded as decimal text}
+        enqueued_at: {type: string, format: date-time, description: 'Queue insertion time, not event/sample time'}
+        available_at: {type: string, format: date-time, description: Scheduling availability time; pending may retry automatically}
+        disposition_updated_at: {type: string, format: date-time, description: 'Queue disposition update time, not event/sample time'}
+        lease_until: {type: string, format: date-time, description: Present only for claimed metadata; the endpoint cannot revoke or extend a lease}
+        material_verified: {type: boolean, enum: [false], description: This endpoint never reads or revalidates retained parts}
     NavigationSnapshot:
       allOf:
         - {$ref: '#/components/schemas/MenuSnapshot'}

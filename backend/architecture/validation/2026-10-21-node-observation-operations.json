@@ -1,0 +1,1099 @@
+{
+  "overlay_base": "24bd247f1694f650a4420f300645d706efd57d61",
+  "final_frozen_source": {
+    "backend/api/openapi.yaml": "edab80330573ccfcd974cebb660cf7519eff024dee45956b45efc459f0dcb1e5",
+    "backend/api/openapi_node_observation_operations_test.go": "f2a70995255b350af248f14774ab9311b15772115918b6216fac20444863941f",
+    "backend/internal/adapters/persistence/networkstore/node_observation_operations.go": "49eda435248eccc597abcb1c50034ae9f3601b0646e7d6163a560a50d642712c",
+    "backend/internal/adapters/persistence/networkstore/node_observation_operations_test.go": "216884e13260711f3df53c6da1f7f3c13193573ac630fdd08d315d75aee33aaa",
+    "backend/internal/application/services.go": "af20c1e477ad3ce87a9ddf84c51c997f74517384d565fd84314ad794fd080c57",
+    "backend/internal/capabilities/network/node_observation_operations.go": "1fc7deb7685fd311a2a1896628233bfddbf21b8d8c62832abf97f14e1538e996",
+    "backend/internal/capabilities/network/node_observation_operations_test.go": "1f18e7246c6691e868eea8981974fb94156a12662c4377bece27b7d95b23a7e3",
+    "backend/internal/handler/node_observation_operations.go": "5c0f26a00d11cfd7681561ac879d07afbc2e41f0cd935eb8e27e70b884b63776",
+    "backend/internal/handler/node_observation_operations_test.go": "fc6d3d8b7167f5665d043ab67f680e8bc42959092ff7fb426893772f91306301",
+    "backend/internal/server/router.go": "ea838a0eef8a699441fba1699c51b73e02bc4ead132870013c09c4445f054b32",
+    "backend/tools/capabilityinventory/main.go": "7d371092cd3eab48dc831524d0265672db23d3ccfe521c04a14971afc78c9447",
+    "backend/tools/capabilityinventory/node_observation_operations_test.go": "a7a564bc0869e2b473da03c1314ff89a4fe6ba6b4751374de0ff4082cc40bc0a",
+    "frontend/src/api/nodeObservationIntents.test.ts": "307ff544c38c8e935a6fab37a995d9417ca5cc5073449a62c81bfc7df4c3bdef",
+    "frontend/src/api/nodeObservationIntents.ts": "aa9a3438754d8254f81e7e6be9f1a801f8f6c5aa6e9992d5c3ad2392edf38d21",
+    "frontend/src/components/NodeObservationQueue.test.ts": "a57ad598f564281e05c572240d9cbd72cae49936e21db3983d989f561a396213",
+    "frontend/src/components/NodeObservationQueue.vue": "c5cb0396b6a37abfaac2e4a6cbabbc58fe5ee40fe27483891ce765f4b7fcb30a",
+    "frontend/src/views/Nodes.vue": "69bb24f72e6c9bc88dfcd1cc892106b41a64a0d41f0d0415c4ded6da21caee09",
+    "frontend/src/views/adminDetailLifecycle.test.ts": "c730d7870f260244582153e469c9081dddec6b4bba71d3202cffd93feb02e146"
+  },
+  "final_manifest_sha256": "a93ff213ca39c4bd52f4abfee3b9d75ad2d3ae24948ee46a0a1370be8da35cf7",
+  "patch_sha256": "31aa618e54d443133f70538a9041e0bad3c6cc91539f59211e82d7091580dc5b",
+  "scope": "Read-only admin metadata capability/HTTP/actual Vue entry. No schema, financial write, repair/requeue/delete or retention change. Source dependency closures above are byte-identical to final: production Go is freeze02, frontend final freeze04, spec/API test final freeze05.",
+  "checks": [
+    {
+      "freeze": "observation-operations-freeze02",
+      "phase": "sqlite",
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "2",
+        "-json",
+        "./internal/adapters/persistence/networkstore",
+        "./internal/handler",
+        "-run",
+        "^TestObservationIntentOperations",
+        "-count=1",
+        "-timeout=15m"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 15.051,
+      "raw_log_bytes": 12648,
+      "raw_log_sha256": "b31f331cf286a66de2a5716cc6cf0c9b151f97335c821ad5a7c354506fb92a63",
+      "outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestObservationIntentOperationsHeadersOnly",
+          "Elapsed": 0.25
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Elapsed": 0.255
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestObservationIntentOperationsHTTP",
+          "Elapsed": 0.18
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Elapsed": 0.191
+        }
+      ],
+      "required_final_sources": {
+        "backend/internal/adapters/persistence/networkstore/node_observation_operations.go": "49eda435248eccc597abcb1c50034ae9f3601b0646e7d6163a560a50d642712c",
+        "backend/internal/adapters/persistence/networkstore/node_observation_operations_test.go": "216884e13260711f3df53c6da1f7f3c13193573ac630fdd08d315d75aee33aaa",
+        "backend/internal/application/services.go": "af20c1e477ad3ce87a9ddf84c51c997f74517384d565fd84314ad794fd080c57",
+        "backend/internal/capabilities/network/node_observation_operations.go": "1fc7deb7685fd311a2a1896628233bfddbf21b8d8c62832abf97f14e1538e996",
+        "backend/internal/capabilities/network/node_observation_operations_test.go": "1f18e7246c6691e868eea8981974fb94156a12662c4377bece27b7d95b23a7e3",
+        "backend/internal/handler/node_observation_operations.go": "5c0f26a00d11cfd7681561ac879d07afbc2e41f0cd935eb8e27e70b884b63776",
+        "backend/internal/handler/node_observation_operations_test.go": "fc6d3d8b7167f5665d043ab67f680e8bc42959092ff7fb426893772f91306301",
+        "backend/internal/server/router.go": "ea838a0eef8a699441fba1699c51b73e02bc4ead132870013c09c4445f054b32",
+        "backend/tools/capabilityinventory/main.go": "7d371092cd3eab48dc831524d0265672db23d3ccfe521c04a14971afc78c9447",
+        "backend/tools/capabilityinventory/node_observation_operations_test.go": "a7a564bc0869e2b473da03c1314ff89a4fe6ba6b4751374de0ff4082cc40bc0a"
+      }
+    },
+    {
+      "freeze": "observation-operations-freeze02",
+      "phase": "mysql",
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "2",
+        "-json",
+        "./internal/adapters/persistence/networkstore",
+        "./internal/handler",
+        "-run",
+        "^TestMySQLObservationIntentOperations",
+        "-count=1",
+        "-timeout=15m"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 6.232,
+      "raw_log_bytes": 12893,
+      "raw_log_sha256": "0a2f28ef64f6a1067e2f21ea37cf4fe16f3573bf248e79b554b198780ec4429c",
+      "outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestMySQLObservationIntentOperationsHeadersOnly",
+          "Elapsed": 4.83
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Elapsed": 4.839
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLObservationIntentOperationsHTTP",
+          "Elapsed": 4.71
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Elapsed": 4.732
+        }
+      ],
+      "required_final_sources": {
+        "backend/internal/adapters/persistence/networkstore/node_observation_operations.go": "49eda435248eccc597abcb1c50034ae9f3601b0646e7d6163a560a50d642712c",
+        "backend/internal/adapters/persistence/networkstore/node_observation_operations_test.go": "216884e13260711f3df53c6da1f7f3c13193573ac630fdd08d315d75aee33aaa",
+        "backend/internal/application/services.go": "af20c1e477ad3ce87a9ddf84c51c997f74517384d565fd84314ad794fd080c57",
+        "backend/internal/capabilities/network/node_observation_operations.go": "1fc7deb7685fd311a2a1896628233bfddbf21b8d8c62832abf97f14e1538e996",
+        "backend/internal/capabilities/network/node_observation_operations_test.go": "1f18e7246c6691e868eea8981974fb94156a12662c4377bece27b7d95b23a7e3",
+        "backend/internal/handler/node_observation_operations.go": "5c0f26a00d11cfd7681561ac879d07afbc2e41f0cd935eb8e27e70b884b63776",
+        "backend/internal/handler/node_observation_operations_test.go": "fc6d3d8b7167f5665d043ab67f680e8bc42959092ff7fb426893772f91306301",
+        "backend/internal/server/router.go": "ea838a0eef8a699441fba1699c51b73e02bc4ead132870013c09c4445f054b32",
+        "backend/tools/capabilityinventory/main.go": "7d371092cd3eab48dc831524d0265672db23d3ccfe521c04a14971afc78c9447",
+        "backend/tools/capabilityinventory/node_observation_operations_test.go": "a7a564bc0869e2b473da03c1314ff89a4fe6ba6b4751374de0ff4082cc40bc0a"
+      }
+    },
+    {
+      "freeze": "observation-operations-freeze02",
+      "phase": "race-sqlite",
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "2",
+        "-json",
+        "-race",
+        "./internal/adapters/persistence/networkstore",
+        "./internal/handler",
+        "-run",
+        "^TestObservationIntentOperations",
+        "-count=3",
+        "-timeout=15m"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 39.716,
+      "raw_log_bytes": 36086,
+      "raw_log_sha256": "a275c3e423c9bb0ffb3ffaa6241316b7726c0e1c478c126808d1633476598f3b",
+      "outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestObservationIntentOperationsHeadersOnly",
+          "Elapsed": 5.27
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestObservationIntentOperationsHeadersOnly",
+          "Elapsed": 5.37
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestObservationIntentOperationsHeadersOnly",
+          "Elapsed": 5.91
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Elapsed": 17.586
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestObservationIntentOperationsHTTP",
+          "Elapsed": 4.62
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestObservationIntentOperationsHTTP",
+          "Elapsed": 4.62
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestObservationIntentOperationsHTTP",
+          "Elapsed": 4.86
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Elapsed": 15.156
+        }
+      ],
+      "required_final_sources": {
+        "backend/internal/adapters/persistence/networkstore/node_observation_operations.go": "49eda435248eccc597abcb1c50034ae9f3601b0646e7d6163a560a50d642712c",
+        "backend/internal/adapters/persistence/networkstore/node_observation_operations_test.go": "216884e13260711f3df53c6da1f7f3c13193573ac630fdd08d315d75aee33aaa",
+        "backend/internal/application/services.go": "af20c1e477ad3ce87a9ddf84c51c997f74517384d565fd84314ad794fd080c57",
+        "backend/internal/capabilities/network/node_observation_operations.go": "1fc7deb7685fd311a2a1896628233bfddbf21b8d8c62832abf97f14e1538e996",
+        "backend/internal/capabilities/network/node_observation_operations_test.go": "1f18e7246c6691e868eea8981974fb94156a12662c4377bece27b7d95b23a7e3",
+        "backend/internal/handler/node_observation_operations.go": "5c0f26a00d11cfd7681561ac879d07afbc2e41f0cd935eb8e27e70b884b63776",
+        "backend/internal/handler/node_observation_operations_test.go": "fc6d3d8b7167f5665d043ab67f680e8bc42959092ff7fb426893772f91306301",
+        "backend/internal/server/router.go": "ea838a0eef8a699441fba1699c51b73e02bc4ead132870013c09c4445f054b32",
+        "backend/tools/capabilityinventory/main.go": "7d371092cd3eab48dc831524d0265672db23d3ccfe521c04a14971afc78c9447",
+        "backend/tools/capabilityinventory/node_observation_operations_test.go": "a7a564bc0869e2b473da03c1314ff89a4fe6ba6b4751374de0ff4082cc40bc0a"
+      }
+    },
+    {
+      "freeze": "observation-operations-freeze02",
+      "phase": "race-mysql",
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "2",
+        "-json",
+        "-race",
+        "./internal/adapters/persistence/networkstore",
+        "./internal/handler",
+        "-run",
+        "^TestMySQLObservationIntentOperations",
+        "-count=3",
+        "-timeout=15m"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 19.908,
+      "raw_log_bytes": 35966,
+      "raw_log_sha256": "be4ccb4981f70e3c2627c3dd62601bb58aee25b7b76ff6daa39761cb1d4df355",
+      "outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestMySQLObservationIntentOperationsHeadersOnly",
+          "Elapsed": 5.96
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLObservationIntentOperationsHTTP",
+          "Elapsed": 5.69
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestMySQLObservationIntentOperationsHeadersOnly",
+          "Elapsed": 5.99
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLObservationIntentOperationsHTTP",
+          "Elapsed": 5.67
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestMySQLObservationIntentOperationsHeadersOnly",
+          "Elapsed": 5.71
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLObservationIntentOperationsHTTP",
+          "Elapsed": 5.38
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Elapsed": 18.69
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Elapsed": 17.784
+        }
+      ],
+      "required_final_sources": {
+        "backend/internal/adapters/persistence/networkstore/node_observation_operations.go": "49eda435248eccc597abcb1c50034ae9f3601b0646e7d6163a560a50d642712c",
+        "backend/internal/adapters/persistence/networkstore/node_observation_operations_test.go": "216884e13260711f3df53c6da1f7f3c13193573ac630fdd08d315d75aee33aaa",
+        "backend/internal/application/services.go": "af20c1e477ad3ce87a9ddf84c51c997f74517384d565fd84314ad794fd080c57",
+        "backend/internal/capabilities/network/node_observation_operations.go": "1fc7deb7685fd311a2a1896628233bfddbf21b8d8c62832abf97f14e1538e996",
+        "backend/internal/capabilities/network/node_observation_operations_test.go": "1f18e7246c6691e868eea8981974fb94156a12662c4377bece27b7d95b23a7e3",
+        "backend/internal/handler/node_observation_operations.go": "5c0f26a00d11cfd7681561ac879d07afbc2e41f0cd935eb8e27e70b884b63776",
+        "backend/internal/handler/node_observation_operations_test.go": "fc6d3d8b7167f5665d043ab67f680e8bc42959092ff7fb426893772f91306301",
+        "backend/internal/server/router.go": "ea838a0eef8a699441fba1699c51b73e02bc4ead132870013c09c4445f054b32",
+        "backend/tools/capabilityinventory/main.go": "7d371092cd3eab48dc831524d0265672db23d3ccfe521c04a14971afc78c9447",
+        "backend/tools/capabilityinventory/node_observation_operations_test.go": "a7a564bc0869e2b473da03c1314ff89a4fe6ba6b4751374de0ff4082cc40bc0a"
+      }
+    },
+    {
+      "freeze": "observation-operations-freeze02",
+      "phase": "plan",
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "2",
+        "-json",
+        "./internal/adapters/persistence/networkstore",
+        "-run",
+        "^TestMySQLObservationOperationsPlanRoot$",
+        "-count=1",
+        "-timeout=15m"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 6.676,
+      "raw_log_bytes": 23663,
+      "raw_log_sha256": "1e9b410fe30436a2b8ae9b3fef215ed3afd81e88b7d6c2759facbbcedeb7f446",
+      "outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestMySQLObservationOperationsPlanRoot",
+          "Elapsed": 3.92
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Elapsed": 3.934
+        }
+      ],
+      "required_final_sources": {
+        "backend/internal/adapters/persistence/networkstore/node_observation_operations.go": "49eda435248eccc597abcb1c50034ae9f3601b0646e7d6163a560a50d642712c",
+        "backend/internal/adapters/persistence/networkstore/node_observation_operations_test.go": "216884e13260711f3df53c6da1f7f3c13193573ac630fdd08d315d75aee33aaa",
+        "backend/internal/application/services.go": "af20c1e477ad3ce87a9ddf84c51c997f74517384d565fd84314ad794fd080c57",
+        "backend/internal/capabilities/network/node_observation_operations.go": "1fc7deb7685fd311a2a1896628233bfddbf21b8d8c62832abf97f14e1538e996",
+        "backend/internal/capabilities/network/node_observation_operations_test.go": "1f18e7246c6691e868eea8981974fb94156a12662c4377bece27b7d95b23a7e3",
+        "backend/internal/handler/node_observation_operations.go": "5c0f26a00d11cfd7681561ac879d07afbc2e41f0cd935eb8e27e70b884b63776",
+        "backend/internal/handler/node_observation_operations_test.go": "fc6d3d8b7167f5665d043ab67f680e8bc42959092ff7fb426893772f91306301",
+        "backend/internal/server/router.go": "ea838a0eef8a699441fba1699c51b73e02bc4ead132870013c09c4445f054b32",
+        "backend/tools/capabilityinventory/main.go": "7d371092cd3eab48dc831524d0265672db23d3ccfe521c04a14971afc78c9447",
+        "backend/tools/capabilityinventory/node_observation_operations_test.go": "a7a564bc0869e2b473da03c1314ff89a4fe6ba6b4751374de0ff4082cc40bc0a"
+      }
+    },
+    {
+      "freeze": "observation-operations-freeze05",
+      "phase": "pure",
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "2",
+        "-json",
+        "./api",
+        "./internal/capabilities/network",
+        "./tools/capabilityinventory",
+        "-run",
+        "ObservationIntent",
+        "-count=1",
+        "-timeout=5m"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 0.417,
+      "raw_log_bytes": 14199,
+      "raw_log_sha256": "94017a0e1b12862d6558000bceba7b2a5c9345de89235f557964a699e3711ed0",
+      "outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/network",
+          "Test": "TestObservationIntentCursorIsVersionedCanonicalAndStatusBound/space",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/network",
+          "Test": "TestObservationIntentCursorIsVersionedCanonicalAndStatusBound/notUTC",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/network",
+          "Test": "TestObservationIntentCursorIsVersionedCanonicalAndStatusBound/submillisecond",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/network",
+          "Test": "TestObservationIntentCursorIsVersionedCanonicalAndStatusBound/zero",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/network",
+          "Test": "TestObservationIntentCursorIsVersionedCanonicalAndStatusBound/id",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/network",
+          "Test": "TestObservationIntentCursorIsVersionedCanonicalAndStatusBound/version",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/network",
+          "Test": "TestObservationIntentCursorIsVersionedCanonicalAndStatusBound/unknown",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/network",
+          "Test": "TestObservationIntentCursorIsVersionedCanonicalAndStatusBound/duplicate",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/network",
+          "Test": "TestObservationIntentCursorIsVersionedCanonicalAndStatusBound",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/network",
+          "Test": "TestObservationIntentInvalidQueryDoesNotReachRepository",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/network",
+          "Elapsed": 0.005
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/api",
+          "Test": "TestObservationIntentOpenAPIIsReadOnlyBoundedMetadata",
+          "Elapsed": 0.04
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/api",
+          "Elapsed": 0.042
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/tools/capabilityinventory",
+          "Test": "TestObservationIntentOperationsRouteOwnership",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/tools/capabilityinventory",
+          "Elapsed": 0.003
+        }
+      ],
+      "required_final_sources": {
+        "backend/api/openapi.yaml": "edab80330573ccfcd974cebb660cf7519eff024dee45956b45efc459f0dcb1e5",
+        "backend/api/openapi_node_observation_operations_test.go": "f2a70995255b350af248f14774ab9311b15772115918b6216fac20444863941f",
+        "backend/internal/adapters/persistence/networkstore/node_observation_operations.go": "49eda435248eccc597abcb1c50034ae9f3601b0646e7d6163a560a50d642712c",
+        "backend/internal/adapters/persistence/networkstore/node_observation_operations_test.go": "216884e13260711f3df53c6da1f7f3c13193573ac630fdd08d315d75aee33aaa",
+        "backend/internal/application/services.go": "af20c1e477ad3ce87a9ddf84c51c997f74517384d565fd84314ad794fd080c57",
+        "backend/internal/capabilities/network/node_observation_operations.go": "1fc7deb7685fd311a2a1896628233bfddbf21b8d8c62832abf97f14e1538e996",
+        "backend/internal/capabilities/network/node_observation_operations_test.go": "1f18e7246c6691e868eea8981974fb94156a12662c4377bece27b7d95b23a7e3",
+        "backend/internal/handler/node_observation_operations.go": "5c0f26a00d11cfd7681561ac879d07afbc2e41f0cd935eb8e27e70b884b63776",
+        "backend/internal/handler/node_observation_operations_test.go": "fc6d3d8b7167f5665d043ab67f680e8bc42959092ff7fb426893772f91306301",
+        "backend/internal/server/router.go": "ea838a0eef8a699441fba1699c51b73e02bc4ead132870013c09c4445f054b32",
+        "backend/tools/capabilityinventory/main.go": "7d371092cd3eab48dc831524d0265672db23d3ccfe521c04a14971afc78c9447",
+        "backend/tools/capabilityinventory/node_observation_operations_test.go": "a7a564bc0869e2b473da03c1314ff89a4fe6ba6b4751374de0ff4082cc40bc0a"
+      }
+    },
+    {
+      "freeze": "observation-operations-freeze04",
+      "phase": "focused",
+      "command": [
+        "pnpm",
+        "test",
+        "--no-file-parallelism",
+        "src/components/NodeObservationQueue.test.ts",
+        "src/api/nodeObservationIntents.test.ts",
+        "src/views/adminDetailLifecycle.test.ts"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 5.122,
+      "raw_log_bytes": 602,
+      "raw_log_sha256": "e60d549e01462364700c24a5d920e95e1835dca19dd69c6ed133413f41277291",
+      "outcomes": null,
+      "required_final_sources": {
+        "backend/internal/server/router.go": "ea838a0eef8a699441fba1699c51b73e02bc4ead132870013c09c4445f054b32",
+        "frontend/src/api/nodeObservationIntents.test.ts": "307ff544c38c8e935a6fab37a995d9417ca5cc5073449a62c81bfc7df4c3bdef",
+        "frontend/src/api/nodeObservationIntents.ts": "aa9a3438754d8254f81e7e6be9f1a801f8f6c5aa6e9992d5c3ad2392edf38d21",
+        "frontend/src/components/NodeObservationQueue.test.ts": "a57ad598f564281e05c572240d9cbd72cae49936e21db3983d989f561a396213",
+        "frontend/src/components/NodeObservationQueue.vue": "c5cb0396b6a37abfaac2e4a6cbabbc58fe5ee40fe27483891ce765f4b7fcb30a",
+        "frontend/src/views/Nodes.vue": "69bb24f72e6c9bc88dfcd1cc892106b41a64a0d41f0d0415c4ded6da21caee09",
+        "frontend/src/views/adminDetailLifecycle.test.ts": "c730d7870f260244582153e469c9081dddec6b4bba71d3202cffd93feb02e146"
+      }
+    },
+    {
+      "freeze": "observation-operations-freeze04",
+      "phase": "full",
+      "command": [
+        "pnpm",
+        "test",
+        "--no-file-parallelism",
+        "--exclude",
+        "src/theme/designTokens.test.ts",
+        "--exclude",
+        "src/views/commercePurchaseExperience.test.ts",
+        "--exclude",
+        "src/utils/adminRowActionsAudit.test.ts",
+        "--exclude",
+        "src/utils/catalogScalePolicy.test.ts",
+        "--exclude",
+        "src/utils/formPolicy.test.ts",
+        "--exclude",
+        "src/utils/frontendArchitecturePolicy.test.ts"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 142.031,
+      "raw_log_bytes": 48744,
+      "raw_log_sha256": "f7291e7dd5516c41d772541fbd6ba7978d3a23e6eb1b072e94d295a9abc1b8c7",
+      "outcomes": null,
+      "required_final_sources": {
+        "backend/internal/server/router.go": "ea838a0eef8a699441fba1699c51b73e02bc4ead132870013c09c4445f054b32",
+        "frontend/src/api/nodeObservationIntents.test.ts": "307ff544c38c8e935a6fab37a995d9417ca5cc5073449a62c81bfc7df4c3bdef",
+        "frontend/src/api/nodeObservationIntents.ts": "aa9a3438754d8254f81e7e6be9f1a801f8f6c5aa6e9992d5c3ad2392edf38d21",
+        "frontend/src/components/NodeObservationQueue.test.ts": "a57ad598f564281e05c572240d9cbd72cae49936e21db3983d989f561a396213",
+        "frontend/src/components/NodeObservationQueue.vue": "c5cb0396b6a37abfaac2e4a6cbabbc58fe5ee40fe27483891ce765f4b7fcb30a",
+        "frontend/src/views/Nodes.vue": "69bb24f72e6c9bc88dfcd1cc892106b41a64a0d41f0d0415c4ded6da21caee09",
+        "frontend/src/views/adminDetailLifecycle.test.ts": "c730d7870f260244582153e469c9081dddec6b4bba71d3202cffd93feb02e146"
+      }
+    },
+    {
+      "freeze": "observation-operations-freeze04",
+      "phase": "build",
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 29.054,
+      "raw_log_bytes": 25374,
+      "raw_log_sha256": "0f60f3be76684b2f4abcd10542d582b502938657a709d7688008a047599d9fbb",
+      "outcomes": null,
+      "required_final_sources": {
+        "backend/internal/server/router.go": "ea838a0eef8a699441fba1699c51b73e02bc4ead132870013c09c4445f054b32",
+        "frontend/src/api/nodeObservationIntents.test.ts": "307ff544c38c8e935a6fab37a995d9417ca5cc5073449a62c81bfc7df4c3bdef",
+        "frontend/src/api/nodeObservationIntents.ts": "aa9a3438754d8254f81e7e6be9f1a801f8f6c5aa6e9992d5c3ad2392edf38d21",
+        "frontend/src/components/NodeObservationQueue.test.ts": "a57ad598f564281e05c572240d9cbd72cae49936e21db3983d989f561a396213",
+        "frontend/src/components/NodeObservationQueue.vue": "c5cb0396b6a37abfaac2e4a6cbabbc58fe5ee40fe27483891ce765f4b7fcb30a",
+        "frontend/src/views/Nodes.vue": "69bb24f72e6c9bc88dfcd1cc892106b41a64a0d41f0d0415c4ded6da21caee09",
+        "frontend/src/views/adminDetailLifecycle.test.ts": "c730d7870f260244582153e469c9081dddec6b4bba71d3202cffd93feb02e146"
+      }
+    }
+  ],
+  "frontend_frozen_install": {
+    "command": [
+      "pnpm",
+      "install",
+      "--frozen-lockfile",
+      "--package-import-method=copy",
+      "--store-dir",
+      "/workspace/toolchains/pnpm-store"
+    ],
+    "exit_code": 0,
+    "wall_seconds": 5.097,
+    "dependency_manifests": {
+      "package.json": "1809054bad855c8ad87a2acef2aff76ac96ef410c4022632ee134b1442b1fed1",
+      "pnpm-lock.yaml": "cb92db6b02c7850a6ff2478fd65f045a84e1c2e51f7031b8ad756d3589efb446"
+    },
+    "raw_log_sha256": "10f8016484a88c61bdf452873cef8f44b767df83c8e05a5337e50eb981cd3383"
+  },
+  "frontend_full_totals": [
+    "Test Files  204 passed | 2 skipped (206)",
+    "Tests  1140 passed | 8 skipped (1148)",
+    "Duration  141.21s (transform 6.03s, setup 0ms, collect 48.11s, tests 29.21s, environment 33.38s, prepare 9.31s)"
+  ],
+  "existing_frontend_skips": [
+    {
+      "file": "src/plugins/PluginActionHTTP.test.ts",
+      "tests": 7,
+      "reason": "ZBOARD_ACTION_ACCEPTANCE_URL not configured for this unit-suite command; signed real-HTTP acceptance is a separate test."
+    },
+    {
+      "file": "src/utils/networkEntryPathKernel.test.ts",
+      "tests": 1,
+      "reason": "ZBOARD_ZERO_VALIDATE_BIN not configured for this command; actual kernel acceptance is separate."
+    }
+  ],
+  "openapi_lint": {
+    "command": [
+      "node",
+      "/workspace/toolchains/cache/npm/_npx/6499ed86cd904bee/node_modules/@redocly/cli/bin/cli.js",
+      "lint",
+      "backend/api/openapi.yaml"
+    ],
+    "cli_version": "1.34.3",
+    "exit_code": 0,
+    "wall_seconds": 3.34,
+    "openapi_sha256": "edab80330573ccfcd974cebb660cf7519eff024dee45956b45efc459f0dcb1e5",
+    "log_sha256": "7669331963cfff7d2d1c24650f53236fa671f28fc9ce0a1f6b1e31694eca01b4",
+    "finished_utc": "2026-10-21T05:40:49.550556+00:00"
+  },
+  "retained_new_failures": [
+    {
+      "freeze": "observation-operations-freeze02",
+      "phase": "focused",
+      "exit_code": 1,
+      "reason": "New test missing closing brace and shallow PageHeader named actions slot not rendered; 2 files failed, 37 tests passed.",
+      "receipt_sha256": "8ab2079b133500aa9cc319a8db8fb882b89065402bff9135d39d5c976cababa7",
+      "raw_log_sha256": "17b647526a8eeb4b210e666a1a33a7b1024fa3ac0179fd6d1fc4341740fe4174"
+    },
+    {
+      "freeze": "observation-operations-freeze03",
+      "phase": "build",
+      "exit_code": 2,
+      "reason": "New test indexed typeof type assertion rejected by vue-tsc TS1005; full suite had already passed204 files/1140 tests.",
+      "receipt_sha256": "c9a1e87370e780ce853abe8aea5975e90818a9f38f9cd0b33a11acd08567dade",
+      "raw_log_sha256": "b1fa00b79115d27ff5e70196eb6014494c9adcc47101910db3a56c0831ddaef1"
+    },
+    {
+      "freeze": "observation-operations-freeze04",
+      "phase": "openapi",
+      "exit_code": 1,
+      "reason": "Unquoted commas in four new inline YAML descriptions produced5 OpenAPI struct errors. Original rules unchanged; quoted strings and strengthened semantic contract fixed them.",
+      "receipt_sha256": "d0822a583f5719a300cc456d066fa810fc7444cd92f6e13ef1862b05263228c9",
+      "raw_log_sha256": "4d6cc8d832156ebc164c352c292548a709a3da55685a9896125c1125b575416a"
+    }
+  ],
+  "mysql_query_plans": [
+    {
+      "analyze": "-> Limit: 21 row(s)  (actual time=87.1..87.1 rows=21 loops=1)\n    -> Sort: intents.available_at, intents.id, limit input to 21 row(s) per chunk  (actual time=87..87 rows=21 loops=1)\n        -> Stream results  (cost=27.3 rows=60) (actual time=0.997..87 rows=60 loops=1)\n            -> Nested loop left join  (cost=27.3 rows=60) (actual time=0.992..86.7 rows=60 loops=1)\n                -> Left hash join (current_node.id = intents.node_id)  (cost=6.28 rows=60) (actual time=0.0469..0.126 rows=60 loops=1)\n                    -> Filter: (intents.`status` = 'held')  (cost=6.25 rows=60) (actual time=0.0155..0.0679 rows=60 loops=1)\n                        -> Table scan on intents  (cost=6.25 rows=60) (actual time=0.0148..0.0503 rows=60 loops=1)\n                    -> Hash\n                        -> Table scan on current_node  (cost=0.00617 rows=1) (actual time=0.00224..0.00304 rows=1 loops=1)\n                -> Filter: (cast(state.asset_tag as char charset binary) = cast(intents.asset_tag as char charset binary))  (cost=0.252 rows=1) (actual time=0.831..1.44 rows=1 loops=60)\n                    -> Index lookup on state using PRIMARY (node_id=intents.node_id)  (cost=0.252 rows=1) (actual time=0.00252..0.884 rows=5001 loops=60)\n",
+      "headers": 60,
+      "historical_states": 5000,
+      "limit": 20,
+      "mode": "original_cast_only",
+      "page": 1,
+      "plan": {
+        "query_block": {
+          "cost_info": {
+            "query_cost": "33.52"
+          },
+          "ordering_operation": {
+            "nested_loop": [
+              {
+                "table": {
+                  "access_type": "ALL",
+                  "attached_condition": "(`isolated_test_schema`.`intents`.`status` = 'held')",
+                  "cost_info": {
+                    "data_read_per_join": "24K",
+                    "eval_cost": "6.00",
+                    "prefix_cost": "6.25",
+                    "read_cost": "0.25"
+                  },
+                  "filtered": "100.00",
+                  "possible_keys": [
+                    "idx_node_observation_ready"
+                  ],
+                  "rows_examined_per_scan": 60,
+                  "rows_produced_per_join": 60,
+                  "table_name": "intents",
+                  "used_columns": [
+                    "id",
+                    "node_id",
+                    "asset_tag",
+                    "status",
+                    "available_at",
+                    "lease_until",
+                    "material_bytes",
+                    "part_count",
+                    "attempts",
+                    "reason",
+                    "created_at",
+                    "updated_at"
+                  ]
+                }
+              },
+              {
+                "table": {
+                  "access_type": "ALL",
+                  "attached_condition": "<if>(is_not_null_compl(current_node), (`isolated_test_schema`.`current_node`.`id` = `isolated_test_schema`.`intents`.`node_id`), true)",
+                  "cost_info": {
+                    "data_read_per_join": "232K",
+                    "eval_cost": "6.00",
+                    "prefix_cost": "12.52",
+                    "read_cost": "0.27"
+                  },
+                  "filtered": "100.00",
+                  "possible_keys": [
+                    "PRIMARY"
+                  ],
+                  "rows_examined_per_scan": 1,
+                  "rows_produced_per_join": 60,
+                  "table_name": "current_node",
+                  "used_columns": [
+                    "id",
+                    "asset_tag"
+                  ],
+                  "using_join_buffer": "hash join"
+                }
+              },
+              {
+                "table": {
+                  "access_type": "ref",
+                  "attached_condition": "<if>(is_not_null_compl(state), (cast(`isolated_test_schema`.`state`.`asset_tag` as char charset binary) = cast(`isolated_test_schema`.`intents`.`asset_tag` as char charset binary)), true)",
+                  "cost_info": {
+                    "data_read_per_join": "30K",
+                    "eval_cost": "6.00",
+                    "prefix_cost": "33.52",
+                    "read_cost": "15.00"
+                  },
+                  "filtered": "100.00",
+                  "key": "PRIMARY",
+                  "key_length": "8",
+                  "possible_keys": [
+                    "PRIMARY"
+                  ],
+                  "ref": [
+                    "isolated_test_schema.intents.node_id"
+                  ],
+                  "rows_examined_per_scan": 1,
+                  "rows_produced_per_join": 60,
+                  "table_name": "state",
+                  "used_columns": [
+                    "node_id",
+                    "asset_tag",
+                    "deleted"
+                  ],
+                  "used_key_parts": [
+                    "node_id"
+                  ]
+                }
+              }
+            ],
+            "using_filesort": true,
+            "using_temporary_table": true
+          },
+          "select_id": 1
+        }
+      },
+      "scope": "same actual random schema/data; separate optimizer estimates and one EXPLAIN ANALYZE execution per query; not HTTP p95 or global queue-growth bound",
+      "sql_sha256": "07710a5959bb817e39f55d6f2a0d975f59dffdc22b939e00221c91f1acf41ad6"
+    },
+    {
+      "analyze": "-> Limit: 21 row(s)  (actual time=0.159..0.161 rows=21 loops=1)\n    -> Sort: intents.available_at, intents.id, limit input to 21 row(s) per chunk  (actual time=0.159..0.16 rows=21 loops=1)\n        -> Stream results  (cost=27.3 rows=60) (actual time=0.0376..0.143 rows=60 loops=1)\n            -> Nested loop left join  (cost=27.3 rows=60) (actual time=0.0336..0.101 rows=60 loops=1)\n                -> Left hash join (current_node.id = intents.node_id)  (cost=6.28 rows=60) (actual time=0.0235..0.0577 rows=60 loops=1)\n                    -> Filter: (intents.`status` = 'held')  (cost=6.25 rows=60) (actual time=0.0117..0.0384 rows=60 loops=1)\n                        -> Table scan on intents  (cost=6.25 rows=60) (actual time=0.0113..0.0322 rows=60 loops=1)\n                    -> Hash\n                        -> Table scan on current_node  (cost=0.00617 rows=1) (actual time=0.00545..0.00693 rows=1 loops=1)\n                -> Filter: (cast(state.asset_tag as char charset binary) = cast(intents.asset_tag as char charset binary))  (cost=0.252 rows=1) (actual time=500e-6..576e-6 rows=1 loops=60)\n                    -> Single-row index lookup on state using PRIMARY (node_id=intents.node_id, asset_tag=intents.asset_tag)  (cost=0.252 rows=1) (actual time=281e-6..307e-6 rows=1 loops=60)\n",
+      "headers": 60,
+      "historical_states": 5000,
+      "limit": 20,
+      "mode": "with_equal_and_cast",
+      "page": 1,
+      "plan": {
+        "query_block": {
+          "cost_info": {
+            "query_cost": "33.52"
+          },
+          "ordering_operation": {
+            "nested_loop": [
+              {
+                "table": {
+                  "access_type": "ALL",
+                  "attached_condition": "(`isolated_test_schema`.`intents`.`status` = 'held')",
+                  "cost_info": {
+                    "data_read_per_join": "24K",
+                    "eval_cost": "6.00",
+                    "prefix_cost": "6.25",
+                    "read_cost": "0.25"
+                  },
+                  "filtered": "100.00",
+                  "possible_keys": [
+                    "idx_node_observation_ready"
+                  ],
+                  "rows_examined_per_scan": 60,
+                  "rows_produced_per_join": 60,
+                  "table_name": "intents",
+                  "used_columns": [
+                    "id",
+                    "node_id",
+                    "asset_tag",
+                    "status",
+                    "available_at",
+                    "lease_until",
+                    "material_bytes",
+                    "part_count",
+                    "attempts",
+                    "reason",
+                    "created_at",
+                    "updated_at"
+                  ]
+                }
+              },
+              {
+                "table": {
+                  "access_type": "ALL",
+                  "attached_condition": "<if>(is_not_null_compl(current_node), (`isolated_test_schema`.`current_node`.`id` = `isolated_test_schema`.`intents`.`node_id`), true)",
+                  "cost_info": {
+                    "data_read_per_join": "232K",
+                    "eval_cost": "6.00",
+                    "prefix_cost": "12.52",
+                    "read_cost": "0.27"
+                  },
+                  "filtered": "100.00",
+                  "possible_keys": [
+                    "PRIMARY"
+                  ],
+                  "rows_examined_per_scan": 1,
+                  "rows_produced_per_join": 60,
+                  "table_name": "current_node",
+                  "used_columns": [
+                    "id",
+                    "asset_tag"
+                  ],
+                  "using_join_buffer": "hash join"
+                }
+              },
+              {
+                "table": {
+                  "access_type": "eq_ref",
+                  "attached_condition": "<if>(is_not_null_compl(state), (cast(`isolated_test_schema`.`state`.`asset_tag` as char charset binary) = cast(`isolated_test_schema`.`intents`.`asset_tag` as char charset binary)), true)",
+                  "cost_info": {
+                    "data_read_per_join": "30K",
+                    "eval_cost": "6.00",
+                    "prefix_cost": "33.52",
+                    "read_cost": "15.00"
+                  },
+                  "filtered": "100.00",
+                  "key": "PRIMARY",
+                  "key_length": "74",
+                  "possible_keys": [
+                    "PRIMARY"
+                  ],
+                  "ref": [
+                    "isolated_test_schema.intents.node_id",
+                    "isolated_test_schema.intents.asset_tag"
+                  ],
+                  "rows_examined_per_scan": 1,
+                  "rows_produced_per_join": 60,
+                  "table_name": "state",
+                  "used_columns": [
+                    "node_id",
+                    "asset_tag",
+                    "deleted"
+                  ],
+                  "used_key_parts": [
+                    "node_id",
+                    "asset_tag"
+                  ]
+                }
+              }
+            ],
+            "using_filesort": true,
+            "using_temporary_table": true
+          },
+          "select_id": 1
+        }
+      },
+      "scope": "same actual random schema/data; separate optimizer estimates and one EXPLAIN ANALYZE execution per query; not HTTP p95 or global queue-growth bound",
+      "sql_sha256": "8b1f207c76803c8dea7f047471d6f0dfb701cdc611383ae2be9081a628260334"
+    },
+    {
+      "analyze": "-> Limit: 21 row(s)  (actual time=56.9..56.9 rows=21 loops=1)\n    -> Sort: intents.available_at, intents.id, limit input to 21 row(s) per chunk  (actual time=56.9..56.9 rows=21 loops=1)\n        -> Stream results  (cost=18.7 rows=41) (actual time=0.939..56.9 rows=40 loops=1)\n            -> Nested loop left join  (cost=18.7 rows=41) (actual time=0.935..56.8 rows=40 loops=1)\n                -> Left hash join (current_node.id = intents.node_id)  (cost=4.37 rows=41) (actual time=0.0394..0.106 rows=40 loops=1)\n                    -> Filter: ((intents.`status` = 'held') and ((intents.available_at > TIMESTAMP'2026-10-21 00:00:00') or ((intents.available_at = TIMESTAMP'2026-10-21 00:00:00') and (intents.id > '4cd963dad2d2ed471f893c594b8c98fe47fe827ea5fbc48a62eb89a96a9251ce'))))  (cost=6.25 rows=41) (actual time=0.033..0.0841 rows=40 loops=1)\n                        -> Table scan on intents  (cost=6.25 rows=60) (actual time=0.00668..0.0344 rows=60 loops=1)\n                    -> Hash\n                        -> Table scan on current_node  (cost=0.00887 rows=1) (actual time=0.00262..0.00315 rows=1 loops=1)\n                -> Filter: (cast(state.asset_tag as char charset binary) = cast(intents.asset_tag as char charset binary))  (cost=0.252 rows=1) (actual time=0.811..1.42 rows=1 loops=40)\n                    -> Index lookup on state using PRIMARY (node_id=intents.node_id)  (cost=0.252 rows=1) (actual time=0.00241..0.867 rows=5001 loops=40)\n",
+      "headers": 60,
+      "historical_states": 5000,
+      "limit": 20,
+      "mode": "original_cast_only",
+      "page": 2,
+      "plan": {
+        "query_block": {
+          "cost_info": {
+            "query_cost": "24.96"
+          },
+          "ordering_operation": {
+            "nested_loop": [
+              {
+                "table": {
+                  "access_type": "ALL",
+                  "attached_condition": "((`isolated_test_schema`.`intents`.`status` = 'held') and ((`isolated_test_schema`.`intents`.`available_at` > TIMESTAMP'2026-10-21 00:00:00') or ((`isolated_test_schema`.`intents`.`available_at` = TIMESTAMP'2026-10-21 00:00:00') and (`isolated_test_schema`.`intents`.`id` > '4cd963dad2d2ed471f893c594b8c98fe47fe827ea5fbc48a62eb89a96a9251ce'))))",
+                  "cost_info": {
+                    "data_read_per_join": "16K",
+                    "eval_cost": "4.10",
+                    "prefix_cost": "6.25",
+                    "read_cost": "2.15"
+                  },
+                  "filtered": "68.33",
+                  "possible_keys": [
+                    "PRIMARY",
+                    "idx_node_observation_ready"
+                  ],
+                  "rows_examined_per_scan": 60,
+                  "rows_produced_per_join": 41,
+                  "table_name": "intents",
+                  "used_columns": [
+                    "id",
+                    "node_id",
+                    "asset_tag",
+                    "status",
+                    "available_at",
+                    "lease_until",
+                    "material_bytes",
+                    "part_count",
+                    "attempts",
+                    "reason",
+                    "created_at",
+                    "updated_at"
+                  ]
+                }
+              },
+              {
+                "table": {
+                  "access_type": "ALL",
+                  "attached_condition": "<if>(is_not_null_compl(current_node), (`isolated_test_schema`.`current_node`.`id` = `isolated_test_schema`.`intents`.`node_id`), true)",
+                  "cost_info": {
+                    "data_read_per_join": "158K",
+                    "eval_cost": "4.10",
+                    "prefix_cost": "10.61",
+                    "read_cost": "0.26"
+                  },
+                  "filtered": "100.00",
+                  "possible_keys": [
+                    "PRIMARY"
+                  ],
+                  "rows_examined_per_scan": 1,
+                  "rows_produced_per_join": 41,
+                  "table_name": "current_node",
+                  "used_columns": [
+                    "id",
+                    "asset_tag"
+                  ],
+                  "using_join_buffer": "hash join"
+                }
+              },
+              {
+                "table": {
+                  "access_type": "ref",
+                  "attached_condition": "<if>(is_not_null_compl(state), (cast(`isolated_test_schema`.`state`.`asset_tag` as char charset binary) = cast(`isolated_test_schema`.`intents`.`asset_tag` as char charset binary)), true)",
+                  "cost_info": {
+                    "data_read_per_join": "20K",
+                    "eval_cost": "4.10",
+                    "prefix_cost": "24.96",
+                    "read_cost": "10.25"
+                  },
+                  "filtered": "100.00",
+                  "key": "PRIMARY",
+                  "key_length": "8",
+                  "possible_keys": [
+                    "PRIMARY"
+                  ],
+                  "ref": [
+                    "isolated_test_schema.intents.node_id"
+                  ],
+                  "rows_examined_per_scan": 1,
+                  "rows_produced_per_join": 41,
+                  "table_name": "state",
+                  "used_columns": [
+                    "node_id",
+                    "asset_tag",
+                    "deleted"
+                  ],
+                  "used_key_parts": [
+                    "node_id"
+                  ]
+                }
+              }
+            ],
+            "using_filesort": true,
+            "using_temporary_table": true
+          },
+          "select_id": 1
+        }
+      },
+      "scope": "same actual random schema/data; separate optimizer estimates and one EXPLAIN ANALYZE execution per query; not HTTP p95 or global queue-growth bound",
+      "sql_sha256": "35df31816882c980b4cd73dc938fd32cdde672b7ba17fc73117b70b0c2deb643"
+    },
+    {
+      "analyze": "-> Limit: 21 row(s)  (actual time=0.13..0.133 rows=21 loops=1)\n    -> Sort: intents.available_at, intents.id, limit input to 21 row(s) per chunk  (actual time=0.13..0.131 rows=21 loops=1)\n        -> Stream results  (cost=18.7 rows=41) (actual time=0.04..0.116 rows=40 loops=1)\n            -> Nested loop left join  (cost=18.7 rows=41) (actual time=0.0365..0.087 rows=40 loops=1)\n                -> Left hash join (current_node.id = intents.node_id)  (cost=4.37 rows=41) (actual time=0.0291..0.0568 rows=40 loops=1)\n                    -> Filter: ((intents.`status` = 'held') and ((intents.available_at > TIMESTAMP'2026-10-21 00:00:00') or ((intents.available_at = TIMESTAMP'2026-10-21 00:00:00') and (intents.id > '4cd963dad2d2ed471f893c594b8c98fe47fe827ea5fbc48a62eb89a96a9251ce'))))  (cost=6.25 rows=41) (actual time=0.0194..0.0421 rows=40 loops=1)\n                        -> Table scan on intents  (cost=6.25 rows=60) (actual time=0.0102..0.0301 rows=60 loops=1)\n                    -> Hash\n                        -> Table scan on current_node  (cost=0.00887 rows=1) (actual time=0.00404..0.00471 rows=1 loops=1)\n                -> Filter: (cast(state.asset_tag as char charset binary) = cast(intents.asset_tag as char charset binary))  (cost=0.252 rows=1) (actual time=524e-6..601e-6 rows=1 loops=40)\n                    -> Single-row index lookup on state using PRIMARY (node_id=intents.node_id, asset_tag=intents.asset_tag)  (cost=0.252 rows=1) (actual time=297e-6..322e-6 rows=1 loops=40)\n",
+      "headers": 60,
+      "historical_states": 5000,
+      "limit": 20,
+      "mode": "with_equal_and_cast",
+      "page": 2,
+      "plan": {
+        "query_block": {
+          "cost_info": {
+            "query_cost": "24.96"
+          },
+          "ordering_operation": {
+            "nested_loop": [
+              {
+                "table": {
+                  "access_type": "ALL",
+                  "attached_condition": "((`isolated_test_schema`.`intents`.`status` = 'held') and ((`isolated_test_schema`.`intents`.`available_at` > TIMESTAMP'2026-10-21 00:00:00') or ((`isolated_test_schema`.`intents`.`available_at` = TIMESTAMP'2026-10-21 00:00:00') and (`isolated_test_schema`.`intents`.`id` > '4cd963dad2d2ed471f893c594b8c98fe47fe827ea5fbc48a62eb89a96a9251ce'))))",
+                  "cost_info": {
+                    "data_read_per_join": "16K",
+                    "eval_cost": "4.10",
+                    "prefix_cost": "6.25",
+                    "read_cost": "2.15"
+                  },
+                  "filtered": "68.33",
+                  "possible_keys": [
+                    "PRIMARY",
+                    "idx_node_observation_ready"
+                  ],
+                  "rows_examined_per_scan": 60,
+                  "rows_produced_per_join": 41,
+                  "table_name": "intents",
+                  "used_columns": [
+                    "id",
+                    "node_id",
+                    "asset_tag",
+                    "status",
+                    "available_at",
+                    "lease_until",
+                    "material_bytes",
+                    "part_count",
+                    "attempts",
+                    "reason",
+                    "created_at",
+                    "updated_at"
+                  ]
+                }
+              },
+              {
+                "table": {
+                  "access_type": "ALL",
+                  "attached_condition": "<if>(is_not_null_compl(current_node), (`isolated_test_schema`.`current_node`.`id` = `isolated_test_schema`.`intents`.`node_id`), true)",
+                  "cost_info": {
+                    "data_read_per_join": "158K",
+                    "eval_cost": "4.10",
+                    "prefix_cost": "10.61",
+                    "read_cost": "0.26"
+                  },
+                  "filtered": "100.00",
+                  "possible_keys": [
+                    "PRIMARY"
+                  ],
+                  "rows_examined_per_scan": 1,
+                  "rows_produced_per_join": 41,
+                  "table_name": "current_node",
+                  "used_columns": [
+                    "id",
+                    "asset_tag"
+                  ],
+                  "using_join_buffer": "hash join"
+                }
+              },
+              {
+                "table": {
+                  "access_type": "eq_ref",
+                  "attached_condition": "<if>(is_not_null_compl(state), (cast(`isolated_test_schema`.`state`.`asset_tag` as char charset binary) = cast(`isolated_test_schema`.`intents`.`asset_tag` as char charset binary)), true)",
+                  "cost_info": {
+                    "data_read_per_join": "20K",
+                    "eval_cost": "4.10",
+                    "prefix_cost": "24.96",
+                    "read_cost": "10.25"
+                  },
+                  "filtered": "100.00",
+                  "key": "PRIMARY",
+                  "key_length": "74",
+                  "possible_keys": [
+                    "PRIMARY"
+                  ],
+                  "ref": [
+                    "isolated_test_schema.intents.node_id",
+                    "isolated_test_schema.intents.asset_tag"
+                  ],
+                  "rows_examined_per_scan": 1,
+                  "rows_produced_per_join": 41,
+                  "table_name": "state",
+                  "used_columns": [
+                    "node_id",
+                    "asset_tag",
+                    "deleted"
+                  ],
+                  "used_key_parts": [
+                    "node_id",
+                    "asset_tag"
+                  ]
+                }
+              }
+            ],
+            "using_filesort": true,
+            "using_temporary_table": true
+          },
+          "select_id": 1
+        }
+      },
+      "scope": "same actual random schema/data; separate optimizer estimates and one EXPLAIN ANALYZE execution per query; not HTTP p95 or global queue-growth bound",
+      "sql_sha256": "72ba13115aaad9efc2dcbabaa10d4e19354e75db9f8a10e34bbff7be654eb9dc"
+    }
+  ],
+  "limits": [
+    "No drawer-specific real-browser, production or external-kernel acceptance.",
+    "No aggregate HTTP p95, global queue-growth or archive/crop safety claim; each EXPLAIN ANALYZE is one execution.",
+    "Applied unreferenced parts still required by replay validation. No materials, headers, receipts, cursors or tombstones deleted.",
+    "Integrated full backend and exact new-head CI pending; historical CI failures retained."
+  ]
+}

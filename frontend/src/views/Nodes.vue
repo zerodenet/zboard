@@ -2,11 +2,13 @@
   <section class="standard-page">
     <PageHeader title="服务器管理" description="维护服务器资产、连通状态与 Zero 内核；客户端可用线路在节点协议中配置。" eyebrow="Infrastructure">
       <template #actions>
+        <UiButton variant="secondary" type="button" @click="observationQueueOpen = true">观察队列</UiButton>
         <PageRefreshButton label="刷新节点资产" :loading="loading" @click="refresh" />
         <UiButton  type="button" @click="openCreate"><UiIcon name="plus" />登记 VPS</UiButton>
       </template>
     </PageHeader>
     <NodeSetupGuide />
+    <NodeObservationQueue :open="observationQueueOpen" @close="observationQueueOpen = false" />
 
     <TransientFeedback :success="message" :error="error" success-title="节点操作已完成" error-title="节点操作失败" />
 
@@ -309,6 +311,7 @@ import SortableHeader from '../components/SortableHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import StatusOverviewItem from '../components/StatusOverviewItem.vue'
 import NodeCounterObservation from '../components/NodeCounterObservation.vue'
+import NodeObservationQueue from '../components/NodeObservationQueue.vue'
 import TablePager from '../components/TablePager.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiIcon from '../components/UiIcon.vue'
@@ -367,6 +370,7 @@ function openNodeDetail(id: number) {
 const loadResource = useRemoteResource<NodeLoadSnapshot | null>({ initial: () => null,
   fetch: ({ signal }) => fetchNodeLoad(selectedNodeID.value, { signal }), errorMessage: '节点负载读取失败。' })
 const { data: nodeLoad, loading: nodeLoadLoading, error: nodeLoadError } = loadResource
+const observationQueueOpen = ref(false)
 const diagnosticsOpen = ref(false)
 const detailSection = ref<'overview' | 'kernel' | 'pools' | 'protocols' | 'credentials'>('overview')
 const nodeDetailTabs = [
