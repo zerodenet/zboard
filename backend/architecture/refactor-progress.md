@@ -1717,3 +1717,5 @@ ae2aadb追补：原后端四命令通过、新CI六项通过、原约束容量�
 入口使用已验证物理schema/seed快照，原迁移/权限/恢复/复制路径保留；实际44用例
 与重点race3通过，paired3单例收益明确但整包净收益待验。见
 [P7范围/兼容](core-convergence-mysql-business-fixtures.md)及当前计划，不声称P7完成。
+
+2026-10-21：P7业务fixture由40显式扩展至70顶层/75独立业务schema；原业务/锁/迁移断言不变，实际74用例及新增7入口race3通过。907本地完整backend/原MySQL全通过但同头CI900.021s失败并存，当前整包待验；见[新范围及证据](validation/2026-10-21-mysql-business-fixtures-expanded.json)。

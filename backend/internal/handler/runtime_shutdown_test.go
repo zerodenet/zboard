@@ -146,7 +146,7 @@ func TestMySQLSpoolStartupFailurePreservesOtherProcessTasks(t *testing.T) {
 	if os.Getenv("ZBOARD_TEST_MYSQL_DSN") == "" {
 		t.Skip("set ZBOARD_TEST_MYSQL_DSN for isolated real MySQL")
 	}
-	assertSpoolStartupFailurePreservesOtherProcessTasks(t, newMySQLOrderFixture(t).h)
+	assertSpoolStartupFailurePreservesOtherProcessTasks(t, newMySQLBusinessOrderFixture(t).h)
 }
 
 func assertSpoolStartupFailurePreservesOtherProcessTasks(t *testing.T, h *handlers) {

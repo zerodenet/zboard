@@ -17,7 +17,7 @@ func TestNetworkEntryGrantAuthenticatesLandingWithoutExposingDirectAddress(t *te
 	assertNetworkEntryCredentialDelivery(t, f, a, b)
 }
 func TestMySQLNetworkEntryCredentialDeliveryRequiresBothNodes(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	user := model.User{ID: 1, Email: "entry-delivery@example.test", Password: "hash", Status: userStatusActive, IsAdmin: true}
 	if err := h.db.Create(&user).Error; err != nil {
 		t.Fatal(err)

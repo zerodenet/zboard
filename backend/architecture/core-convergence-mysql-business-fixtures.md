@@ -1,7 +1,7 @@
 # P7: explicit MySQL business fixtures
 
 Repeated seven-step schema preparation is unnecessary for a business test whose
-assertions concern already-initialized transactions. Forty explicitly reviewed
+assertions concern already-initialized transactions. Seventy explicitly reviewed
 top-level tests now use independent random schemas restored from an immutable
 in-process snapshot of the actual preparation. This changes test setup only.
 The original publish/order factories remain; initialization, permissions,
@@ -54,3 +54,23 @@ conversion. Each test owns/cleans only its random schema. Original0001 bootstrap
 retains its published historical FK0/1 statements; clone install always requires
 FK1 and never changes it. Future initialization changes require renewing this
 explicit fixture contract and actual schema/seed equivalence evidence.
+
+
+## Explicit expansion to70 business tests
+
+The second batch substitutes only30 additional reviewed top-level factory
+expressions in9 test files: receipt4, automatic-renewal10, plan-group7,
+plan-quota5, network2 and runtime2. It adds35 independent business schemas;
+combined70 business tests own75 schemas. Additional template contracts are
+outside that75. No shared factory is switched and no original helper/assertion,
+lock probe, timeout, trigger, plugin/native operation or migration tail changes.
+Original40 and the snapshot implementation remain byte-identical.
+
+Actual MySQL70 business+4 contracts pass in154.905s command wall. Seven added
+contention paths pass race/count3,21 top-level executions,71.105s command wall;
+zero skips. This is selected-suite correctness evidence, not a measured full
+900s result. Current integrated full backend/original MySQL/new CI remain pending.
+[Exact33-source scope and execution](validation/2026-10-21-mysql-business-fixtures-expanded.json).
+The parent907 local full Go/vet/build/CGO0SQLite and all three original MySQL
+commands passed; its CI still timed out at900.021s. Both results are retained,
+not replaced by prior ae2 green CI or this selected-suite pass.

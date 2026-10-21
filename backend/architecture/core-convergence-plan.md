@@ -1406,3 +1406,20 @@ wall通过、零skip。paired3准备原3.649/3.329/3.330s→候选1.179/1.185/1.
 [精确源码/全部失败与测量](validation/2026-10-21-mysql-business-fixtures.json)、
 [范围及回退](core-convergence-mysql-business-fixtures.md)。新提交完整backend、
 原MySQL三命令和新CI待验；P7与P2/P4/P6未完成部分仍保留。
+
+90734ed本地完整backend四项全部通过（test289.983s、vet13.242s、build1.903s、
+CGO0SQLite27.951s），[精确后端记录](validation/2026-10-21-mysql-business-fixtures-final-backend.json)。
+原MySQL三命令也全部实际通过：handler856.802s/datastore166.291s/network167.524s，
+随后jobstore125.670s/copy215.891s（包耗时），[本地实库记录](validation/2026-10-21-mysql-business-fixtures-final-mysql.json)。
+同源码CI39547192685仍为五项通过、MySQLhandler900.021s超时，CI后续jobstore/copy
+未执行，[保留的失败](validation/2026-10-21-mysql-business-fixtures-first-ci.json)。
+不得用本地一次通过或ae2旧CI六绿替代本头CI；P7稳定性仍未验收。
+
+### 2026-10-21 P7：业务fixture显式扩展
+
+新增9个test文件30处显式factory表达式，合计70个顶层业务/75个独立业务schema；
+模板合同额外建库不计入75。原40入口/快照helper字节不变；迁移、权限、缺表、
+partialDDL、复制及含迁移尾检的用例仍走原准备。无生产/SQL变更。
+真实MySQL70业务+4合同154.905s通过；新增7个争用入口race/count3共21顶层执行
+71.105s通过，零skip。[精确范围及命令](validation/2026-10-21-mysql-business-fixtures-expanded.json)。
+本次完整backend/原MySQL/新CI待验，不从单例setup收益推定整包稳定通过900s。

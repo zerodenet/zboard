@@ -115,7 +115,7 @@ func TestPlanQuotaSyncPreservesUsageDatesAndFinancialHistory(t *testing.T) {
 	assertPlanQuotaSync(t, newOrderFixture(t))
 }
 func TestMySQLPlanQuotaSyncPreservesUsageDatesAndFinancialHistory(t *testing.T) {
-	assertPlanQuotaSync(t, newMySQLOrderFixture(t))
+	assertPlanQuotaSync(t, newMySQLBusinessOrderFixture(t))
 }
 func assertPlanQuotaSync(t *testing.T, base orderFixture) {
 	t.Helper()
@@ -208,7 +208,7 @@ func TestPlanQuotaSyncRollsBackPlanQuotaAndPublicationTogether(t *testing.T) {
 	assertPlanQuotaSyncRollback(t, newOrderFixture(t))
 }
 func TestMySQLPlanQuotaSyncRollsBackPlanQuotaAndPublicationTogether(t *testing.T) {
-	assertPlanQuotaSyncRollback(t, newMySQLOrderFixture(t))
+	assertPlanQuotaSyncRollback(t, newMySQLBusinessOrderFixture(t))
 }
 func assertPlanQuotaSyncRollback(t *testing.T, base orderFixture) {
 	t.Helper()
@@ -338,7 +338,7 @@ func TestPlanQuotaSyncPreservesPaidAddonByRefusingAmbiguousSync(t *testing.T) {
 	assertPlanQuotaSyncAddonGuard(t, newOrderFixture(t))
 }
 func TestMySQLPlanQuotaSyncPreservesPaidAddonByRefusingAmbiguousSync(t *testing.T) {
-	assertPlanQuotaSyncAddonGuard(t, newMySQLOrderFixture(t))
+	assertPlanQuotaSyncAddonGuard(t, newMySQLBusinessOrderFixture(t))
 }
 func assertPlanQuotaSyncAddonGuard(t *testing.T, base orderFixture) {
 	t.Helper()
@@ -399,7 +399,7 @@ func TestPlanQuotaSyncConcurrentWalletRenewal(t *testing.T) {
 	assertPlanQuotaSyncRenewalRace(t, func(t *testing.T) orderFixture { return newOrderFixture(t) })
 }
 func TestMySQLPlanQuotaSyncConcurrentWalletRenewal(t *testing.T) {
-	assertPlanQuotaSyncRenewalRace(t, newMySQLOrderFixture)
+	assertPlanQuotaSyncRenewalRace(t, newMySQLBusinessOrderFixture)
 }
 func assertPlanQuotaSyncRenewalRace(t *testing.T, fixture func(*testing.T) orderFixture) {
 	t.Helper()
@@ -495,7 +495,7 @@ func TestPlanQuotaSyncConcurrentOriginalMetering(t *testing.T) {
 	assertPlanQuotaSyncMeteringRace(t, func(t *testing.T) orderFixture { return newOrderFixture(t) })
 }
 func TestMySQLPlanQuotaSyncConcurrentOriginalMetering(t *testing.T) {
-	assertPlanQuotaSyncMeteringRace(t, newMySQLOrderFixture)
+	assertPlanQuotaSyncMeteringRace(t, newMySQLBusinessOrderFixture)
 }
 func assertPlanQuotaSyncMeteringRace(t *testing.T, fixture func(*testing.T) orderFixture) {
 	t.Helper()

@@ -32,7 +32,7 @@ func TestPlanGroupSyncBoundRejectsWholeChange(t *testing.T) {
 	assertPlanGroupSyncBound(t, newOrderFixture(t))
 }
 func TestMySQLPlanGroupSyncBoundRejectsWholeChange(t *testing.T) {
-	assertPlanGroupSyncBound(t, newMySQLOrderFixture(t))
+	assertPlanGroupSyncBound(t, newMySQLBusinessOrderFixture(t))
 }
 func assertPlanGroupSyncBound(t *testing.T, base orderFixture) {
 	t.Helper()
@@ -74,7 +74,7 @@ func TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait(t *te
 			name = "forward"
 		}
 		t.Run(name, func(t *testing.T) {
-			base := newMySQLOrderFixture(t)
+			base := newMySQLBusinessOrderFixture(t)
 			f := newFullReplacementFixture(t, base, false, 0, 0)
 			admin := planQuotaRaceAdmin(t, f)
 			pending, err := f.orders.Create(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: base.skuRecord.ID, IdempotencyKey: "pending-new-before-late-membership"})
@@ -264,7 +264,7 @@ func TestPlanGroupSyncPreservesSharedAndFencesOldDelivery(t *testing.T) {
 	assertPlanGroupSyncDelivery(t, newOrderFixture(t))
 }
 func TestMySQLPlanGroupSyncPreservesSharedAndFencesOldDelivery(t *testing.T) {
-	assertPlanGroupSyncDelivery(t, newMySQLOrderFixture(t))
+	assertPlanGroupSyncDelivery(t, newMySQLBusinessOrderFixture(t))
 }
 func assertPlanGroupSyncDelivery(t *testing.T, base orderFixture) {
 	t.Helper()
@@ -412,7 +412,7 @@ func TestPlanGroupSyncPublicationFailureRollsBackEverything(t *testing.T) {
 	assertPlanGroupSyncRollback(t, newOrderFixture(t))
 }
 func TestMySQLPlanGroupSyncPublicationFailureRollsBackEverything(t *testing.T) {
-	assertPlanGroupSyncRollback(t, newMySQLOrderFixture(t))
+	assertPlanGroupSyncRollback(t, newMySQLBusinessOrderFixture(t))
 }
 func assertPlanGroupSyncRollback(t *testing.T, base orderFixture) {
 	t.Helper()
@@ -467,7 +467,7 @@ func TestPlanGroupSyncPendingOrdersUseCurrentGroup(t *testing.T) {
 	assertPlanGroupPendingOrders(t, func(t *testing.T) orderFixture { return newOrderFixture(t) })
 }
 func TestMySQLPlanGroupSyncPendingOrdersUseCurrentGroup(t *testing.T) {
-	assertPlanGroupPendingOrders(t, newMySQLOrderFixture)
+	assertPlanGroupPendingOrders(t, newMySQLBusinessOrderFixture)
 }
 func assertPlanGroupPendingOrders(t *testing.T, fixture func(*testing.T) orderFixture) {
 	t.Helper()
@@ -542,7 +542,7 @@ func TestPlanGroupSyncChangesRecoverableScopeWithoutRevivingTerminalSubscription
 	assertPlanGroupLifecycleScope(t, newOrderFixture(t))
 }
 func TestMySQLPlanGroupSyncChangesRecoverableScopeWithoutRevivingTerminalSubscriptions(t *testing.T) {
-	assertPlanGroupLifecycleScope(t, newMySQLOrderFixture(t))
+	assertPlanGroupLifecycleScope(t, newMySQLBusinessOrderFixture(t))
 }
 func assertPlanGroupLifecycleScope(t *testing.T, base orderFixture) {
 	t.Helper()
@@ -602,7 +602,7 @@ func assertPlanGroupLifecycleScope(t *testing.T, base orderFixture) {
 // Revocation must use current membership and must not transiently revoke a
 // confirmed shared credential in the hope a later Ensure will restore it.
 func TestMySQLPlanGroupSyncKeepsConfirmedSharedMembershipAddedAfterSnapshot(t *testing.T) {
-	base := newMySQLOrderFixture(t)
+	base := newMySQLBusinessOrderFixture(t)
 	f := newPlanGroupFixture(t, base)
 	confirmTestCredentialConfiguration(t, base.h, f.shared.NodeID)
 	var sharedBefore model.ProtocolCredential

@@ -38,7 +38,7 @@ func TestAutomaticRenewalDefaultOffAndSingleRecovery(t *testing.T) {
 	assertAutomaticRenewalRecovery(t, newOrderFixture(t))
 }
 func TestMySQLAutomaticRenewalDefaultOffAndSingleRecovery(t *testing.T) {
-	assertAutomaticRenewalRecovery(t, newMySQLOrderFixture(t))
+	assertAutomaticRenewalRecovery(t, newMySQLBusinessOrderFixture(t))
 }
 func assertAutomaticRenewalRecovery(t *testing.T, base orderFixture) {
 	f := expiredRecoveryFixture(t, base)
@@ -79,7 +79,7 @@ func TestAutomaticRenewalShortenedWindowStopsWithoutCharging(t *testing.T) {
 	assertAutomaticRenewalClosedWindow(t, newOrderFixture(t))
 }
 func TestMySQLAutomaticRenewalShortenedWindowStopsWithoutCharging(t *testing.T) {
-	assertAutomaticRenewalClosedWindow(t, newMySQLOrderFixture(t))
+	assertAutomaticRenewalClosedWindow(t, newMySQLBusinessOrderFixture(t))
 }
 func assertAutomaticRenewalClosedWindow(t *testing.T, base orderFixture) {
 	f := expiredRecoveryFixture(t, base)
@@ -137,7 +137,7 @@ func TestAutomaticRenewalStableWalletCompetitionAndTopUpRetry(t *testing.T) {
 	assertAutomaticRenewalCompetition(t, newOrderFixture(t))
 }
 func TestMySQLAutomaticRenewalStableWalletCompetitionAndTopUpRetry(t *testing.T) {
-	assertAutomaticRenewalCompetition(t, newMySQLOrderFixture(t))
+	assertAutomaticRenewalCompetition(t, newMySQLBusinessOrderFixture(t))
 }
 func assertAutomaticRenewalCompetition(t *testing.T, base orderFixture) {
 	f := newFullReplacementFixtureInYear(t, base, false, 0, 0, 2025)
@@ -279,7 +279,7 @@ func TestAutomaticRenewalHTTPRejectsForgedAmountsAndOtherOwners(t *testing.T) {
 }
 
 func TestMySQLAutomaticRenewalVersusManualVerifiedCash(t *testing.T) {
-	f := expiredRecoveryFixture(t, newMySQLOrderFixture(t))
+	f := expiredRecoveryFixture(t, newMySQLBusinessOrderFixture(t))
 	setRecoveryPolicy(t, f, 14)
 	service := automaticRenewalsFor(f)
 	enableAutomaticRenewal(t, f, service)
@@ -324,7 +324,7 @@ func TestAutomaticRenewalKeepsBasePriceAndRequiresConsentForNewTerms(t *testing.
 	assertAutomaticRenewalTerms(t, newOrderFixture(t))
 }
 func TestMySQLAutomaticRenewalKeepsBasePriceAndRequiresConsentForNewTerms(t *testing.T) {
-	assertAutomaticRenewalTerms(t, newMySQLOrderFixture(t))
+	assertAutomaticRenewalTerms(t, newMySQLBusinessOrderFixture(t))
 }
 func assertAutomaticRenewalTerms(t *testing.T, base orderFixture) {
 	f := expiredRecoveryFixture(t, base)
@@ -390,7 +390,7 @@ func TestAutomaticRenewalUnknownHistoricalDiscountNeverRevertsToFullPrice(t *tes
 }
 
 func TestMySQLAutomaticRenewalVersusUnsubscribe(t *testing.T) {
-	f := expiredRecoveryFixture(t, newMySQLOrderFixture(t))
+	f := expiredRecoveryFixture(t, newMySQLBusinessOrderFixture(t))
 	setRecoveryPolicy(t, f, 14)
 	service := automaticRenewalsFor(f)
 	enableAutomaticRenewal(t, f, service)
@@ -451,7 +451,7 @@ func TestAutomaticRenewalPaidWalletReplayDoesNotLockEntireHistory(t *testing.T) 
 	assertAutomaticPaidReplayHistory(t, newOrderFixture(t))
 }
 func TestMySQLAutomaticRenewalPaidWalletReplayDoesNotLockEntireHistory(t *testing.T) {
-	assertAutomaticPaidReplayHistory(t, newMySQLOrderFixture(t))
+	assertAutomaticPaidReplayHistory(t, newMySQLBusinessOrderFixture(t))
 }
 func assertAutomaticPaidReplayHistory(t *testing.T, base orderFixture) {
 	f := expiredRecoveryFixture(t, base)

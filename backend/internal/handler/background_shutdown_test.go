@@ -15,7 +15,7 @@ func TestBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent(t *testing.T
 }
 
 func TestMySQLBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent(t *testing.T) {
-	assertBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent(t, newMySQLOrderFixture(t).h)
+	assertBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent(t, newMySQLBusinessOrderFixture(t).h)
 }
 
 func assertBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent(t *testing.T, h *handlers) {
