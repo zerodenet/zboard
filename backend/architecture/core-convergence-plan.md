@@ -6,7 +6,7 @@
 
 只用：**已实现且验证**（明确范围与本轮命令）、**实现未验证**（当前代码存在，本轮未跑）、**部分实现**、**未实现**、**外部能力不足**。生产和外部端到端未验收不能由单元/沙箱测试替代。下表是 P0 代码审计起始状态；后续批次在末节追加测试结果，不修改历史记录成虚假通过。
 
-## 当前接续索引（2026-10-20）
+## 当前接续索引（2026-10-21）
 
 以下为当前子批状态；后面的P0表及历次记录保留原时间语境。
 
@@ -17,15 +17,15 @@
 | P2-09/10 自动续费与许可关闭 | 已实现且验证（站内提醒及历史上限边界） | 7aba6d6、665578d六项CI；主动通知投递及超限项本身的历史估值仍缺 |
 | P2/P3-11 到期锁顺序 | 已实现且验证（隔离故障范围） | 3c01868六项CI39365297348；旧OR扫描死锁与事务等待重验 |
 | P2-12 永久单额度 | 部分实现（双库专项通过） | 37c07dc；可信单次来源100/100/20→80；多次增购未定义分配，精确CI另记 |
-| P2-13/P5-02 获批消费退款 | 部分实现（双库命令、前端行为/构建通过） | 271bd20、e4d49ca；活跃权益部分退款待产品规则，浏览器联合退款验收仍缺 |
+| P2-13/P5-02 获批消费退款 | 部分实现（双库、真实浏览器隔离闭环） | 122f227：真实Chromium32项，终止历史订单退款300一次入账及两次同键重放；活跃权益部分退款仍待产品规则，非真实渠道/生产验收 |
 | P2-14/P3 套餐历史额度与接入组 | 部分实现（双库/前端/后续完整CI覆盖） | d98b018已恢复上传，5964c53六项CI包含该历史；混合加购及1000上限明确拒绝，当前HEAD新验收独立记录 |
 | P2 优惠首购/连续续费 | 部分实现（签名native/双库/真实浏览器） | 0055/0057购买及扣款批准证据；提供方不可用不回退原价；4e1a78d真实Chromium21项/实际100元扣款；其他可售操作及有限券消费契约仍缺 |
-| P4-01/02 日/小时统计投影 | 部分实现（双库、固定原阈值容量通过） | 0053/0054持久独立队列；pending显式unknown，e5原20events/s及157次trends零错误；原112/157失败保留，当前新HEAD容量未验 |
-| P4 计量SQL/保留 | 部分实现（精确核账/专项通过） | SQLite累计游标cohort32→1次SELECT，87→56总SQL/写入舍入不变；0056仅诊断有界清理，TrafficRecord仍是去重/恢复权威不可归档 |
+| P4-01/02 日/小时统计投影 | 部分实现（双库、固定原阈值容量通过） | 0053/0054持久独立队列，pending显式unknown；精确01eb原20events/s、1274事件及942业务读零错误，小时157次/p95=22ms，首次drain失败后原5s重试核账通过；原112/157失败保留，未证明完整图表比例/长期增长 |
+| P4 计量SQL/保留 | 部分实现（精确核账/专项通过） | SQLite累计游标cohort32→1次SELECT，87→56总SQL/写入舍入不变；58f/31为保持谓词与顺序的窄投影读取，e902保留独立来源材料、01eb保留缺失心跳计数；NodeStats仍耦合结算，独立Stats游标/资产代次未实现；0056仅诊断清理，TrafficRecord不可归档 |
 | P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
-| P5 工单业务关联 | 已实现且验证（隔离范围） | 4e1a78d/0058；双库实际DDL/权限/首消息回滚/锁序，33专项/1108完整frontend/build/OpenAPI通过；当前完整backend/CI待验 |
+| P5 工单业务关联 | 已实现且验证（隔离范围） | 4e1a78d/0058双库实际DDL/权限/首消息回滚/锁序；a82每行独立订阅关联入口及完整frontend201files/1112pass/8既有skip、build通过；01eb完整backend与六项CI覆盖。终止历史仍由原订单入口关联，无服务列表权限扩张 |
 | P6 进程关闭/队列所有权前置 | 部分实现（真实子进程、SQLite/race、MySQL） | file-spool内核锁、local Drain/Detach和实际server/plugin cleanup；3690113原MySQL及copy通过，7ef CI MySQL通过；无独立worker或伸缩器 |
-| P7 当前提交验证 | 部分实现/未完成 | 31e72db完整Go/vet/build/纯Go SQLite与原容量通过；原MySQL handler本地/CI900s超时，jobstore/copy本地通过；旧超时及CI未执行项保留 |
+| P7 当前提交验证 | 部分实现/未完成 | 精确01eb完整Go/vet/build/纯Go SQLite、六项新CI39515537970及原容量通过；本地原mysql-core的handler900.019s超时（datastore156.828s/network103.014s通过），jobstore131.560s/copy111.709s独立通过。31/e902失败及当时CI未执行项保留；四次DDL减少不证明稳定CI裕量 |
 | 其余P2及P3–P7 | 部分实现/未完成 | 活跃部分退款/永久多次增购决策、其他操作优惠/外部券契约、完整计量保留、持续增长/资源竞争/独立worker/伸缩、最终综合回归 |
 
 ## 需求—实现—差距表
@@ -1173,3 +1173,32 @@ OpenAPI required6/types unchanged, compatibility exception documented. Controlle
 old17 expected failures; fixed parser/SQLite66, actualMySQL25 and race3 198 pass.
 Both fixture failures remain; exact newsource full backend/15mMySQL/CI/original
 capacity still required. [Scope, evidence and rollback](core-convergence-heartbeat-presence.md).
+
+Exact01ebcde now passes full backend (original runner interrupted after Go/vet;
+only pending build/pureSQLite resumed), all six newCI jobs, and original60s
+1CPU/1GiB capacity with all9bindings.1201unique/1274eventHTTP/942businessreads
+zero errors, trends156/0/p95=10ms, final9,833,472B exact and queues0 after an
+original5s drain retry. Pending/complete proportions remain unknown, historical
+112/157503 and e902900s failure retained. [Backend](validation/2026-10-20-heartbeat-backend-checks.json),
+[CI](validation/2026-10-20-heartbeat-ci.json), [capacity](validation/2026-10-20-heartbeat-original-capacity.json).
+Local original mysql-core failed at handler900.019s; datastore156.828s and
+networkstore103.014s pass. The last test was active1s inside fixture versioned
+migration Exec, not proven causal. Independent jobstore131.560s/copy111.709s pass after the failure;
+[local MySQL receipt](validation/2026-10-21-heartbeat-mysql-local.json).
+The exact CI success and local timeout are separate outcomes; P4/P6/P7 remain incomplete.
+
+
+### P7 exact-source local result and actual DDL attribution (2026-10-21)
+
+Exact01eb local original handler reaches900.019s; datastore156.828s/network103.014s
+pass. Independent jobstore131.560s/copy111.709s then pass. NewCI all6 and original
+capacity passing remain separate evidence, not replacements for this local fail.
+No timeout, exclusion, published migration or fixture-template change.
+
+One subsequent isolated diagnostic attributes actual71ALTER/117CREATE_TABLE/
+15CREATE_INDEX and2047SELECT, with complete detail/table/category/session
+reconciliation and openRows0. Parser tests pass before the one fresh SQL sample;
+only an application-owned benchmark overlay is used. Three derived principal
+columns are a narrow candidate, not a completed optimization. Instrumented3.871s
+is not original performance, A/B improvement or CI cause.
+[Actual attribution and limits](core-convergence-ddl-attribution.md).

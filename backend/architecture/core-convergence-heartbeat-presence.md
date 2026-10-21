@@ -56,3 +56,36 @@ the same response. Missing/null numbers preserve last known observations instead
 of inventing zero. Binary rollback requires no DDL but reintroduces the overwrite.
 Missing samples still need separate freshness/state handling; no async projection,
 Stats ordering, asset incarnation or P4/P6 completion is claimed.
+
+## Exact01ebcde acceptance follow-up
+
+The clean ordinary clone passed full Go294.950s and vet13.007s. A cloud restart
+ended the outer runner before build/SQLite logs existed; the original process
+was defunct. Its persisted receipt/logs were protected, and only the two pending
+checks resumed: build2.381s and pure-Go SQLite37.698s pass. The
+[backend receipt](validation/2026-10-20-heartbeat-backend-checks.json) records that
+interruption and each actual command. No successful Go/vet command was repeated.
+
+The exact [new CI](https://github.com/zerodenet/zboard/actions/runs/39515537970)
+passes all six jobs, including original MySQL handler759.718s and actual
+jobstore/copy commands; [receipt](validation/2026-10-20-heartbeat-ci.json).
+Earlier e902 handler900s failure remains and no stable timing margin is claimed.
+
+The original constrained profile also passes all nine bindings:1201unique,
+1274event requests and942business reads, zero errors. Trends156/0/p95=10ms,
+hourly157/0/p95=22ms; final expected/ledger/quota9,833,472B and both queues0.
+The first drain check saw21 pending facts and three subscription mismatches;
+its original5s retry then reconciled. SampledCPU18.98%, working set35.88MiB;
+22 valid RSS probes peak62,116KiB plus one failed probe retained. Stopped SQLite
+allocation6,094,848B, indexes3,989,504B. Runtime p95 upper2s/max2069ms covers the
+core transaction/checkpoint only. Pending/complete chart proportions remain
+unknown. Full scope/raw hashes and limits are in the
+[capacity receipt](validation/2026-10-20-heartbeat-original-capacity.json).
+This is one60s SQLite simulation, with no MySQL-capacity/plugin-busy/scaling proof.
+Local original mysql-core fails at handler900.019s; datastore156.828s and
+networkstore103.014s pass. The active receipt test had run only1s and was still
+inside fixture versioned-migration Exec, so it is not assigned causality.
+Independent jobstore131.560s/copy111.709s then pass;
+[local MySQL receipt](validation/2026-10-21-heartbeat-mysql-local.json).
+This local failure remains separate from the exact successful CI and does not
+permit a timeout/exclusion change.

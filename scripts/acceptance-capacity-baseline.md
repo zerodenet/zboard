@@ -99,3 +99,13 @@ Fixed31e72db has now passed the original profile and all nine bindings. The
 keeps actual metrics and the one supplemental RSS probe error; prior failures
 and earlier passing runs remain separate. MySQL15m acceptance is still failed
 locally and in its CI, so this capacity result does not close P7.
+
+The heartbeat/source-material comparison pin is
+`01ebcde72befca5f491e96c9b4c8b03fe125118a`. Its original60s profile and nine
+bindings pass; [receipt](../backend/architecture/validation/2026-10-20-heartbeat-original-capacity.json).
+Trends156/0/p95=10ms and final exact accounting do not prove complete charts
+throughout load: pending/complete response proportions remain unknown. The
+first drain verification's21pending facts and original5s retry, and one failed
+supplemental RSS probe, remain recorded. The explicit e902 pin was preparation
+only; no local e902 capacity run was performed. Defaults, three original runners
+and every original gate remain unchanged.
