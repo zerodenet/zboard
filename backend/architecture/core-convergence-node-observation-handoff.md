@@ -106,3 +106,16 @@ and six exclusions unchanged; build passed. One later selected-node integration
 test plus the new component pass45focused tests and typecheck; runtime sources
 are unchanged from that build. New integrated full backend/MySQL/capacity and CI
 remain pending and require their own exact source. No prior CI substitutes.
+
+
+The first integrateda82e5b6 full backend and exact CI backend failed: final
+heartbeat UPDATE lost its credential predicate, and four inventory owners were
+missing. These are retained in the [first full failure](validation/2026-10-21-node-observation-first-backend-failure.json),
+not dismissed as old test expectations. The follow-up restores the conditional
+write before provenance, preserves a credential rotation while rejecting an old
+request, and distinguishes valid MySQL zero-change replay. Ownership inventory
+and distinct producer/apply transactions are explicit. SQLite/actualMySQL and
+focused race3 pass; [follow-up receipt](validation/2026-10-21-node-observation-credential-fence.json).
+Fixed integrated full checks/capacity/CI require new evidence; a82 local
+vet/build/pureSQLite and originalMySQL/capacity were not executed after its Go
+failure. No exclusions, timeout or assertion boundary was relaxed.

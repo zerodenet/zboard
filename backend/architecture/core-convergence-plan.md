@@ -1366,3 +1366,6 @@ No module-cache/toolchain change, no production change, no threshold relaxation.
 0060、双库故障/来源矩阵、实际HTTP、两方向四模式ownedcopy及重点race3通过；前端原CI范围202files1124pass/原8skip与build通过，后加节点切换断言45focused/typecheck通过。完整命令、50源码hash、旧候选失败与测试夹具400见[专项记录](validation/2026-10-21-node-observation-handoff.json)及[行为/迁移/回退](core-convergence-node-observation-handoff.md)。新集成完整backend、原MySQL三命令、原阈值容量和新CI待验，不能借旧绿灯。a470实际CI五项通过/MySQLhandler900.018s失败、CIjobstore/copy未执行，见[本次旧头精确CI](validation/2026-10-21-node-asset-metadata-ci.json)。
 
 P4仍缺held运营恢复、总队列/数据库增长及安全归档，P6独立worker/伸缩器与P7稳定全量验收仍未完成。财务未决规则和外部内核/优惠契约限制保持；无生产迁移/部署/合并/发布。
+
+
+P4-12完整检查追补：a82e5b6 full-Go297.342s失败，handler195.907s；旧凭据轮换后仍获200及4项owner缺失是真实新代码回归，原失败保留，后续vet/build/CGOSQLite及本地原MySQL/容量未执行。新CI39540048932 backend同样失败，另四项已通过、MySQL执行中。修复恢复最终条件写入后再投影，零变更MySQL重验凭据；三模型/lifecycle及两项独立事务补齐权属。双库专项和重点race3通过，[修复证据](validation/2026-10-21-node-observation-credential-fence.json)；修复后的完整检查另跑，不把专项或a82失败替代新头验收。

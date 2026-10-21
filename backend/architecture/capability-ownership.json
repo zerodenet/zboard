@@ -312,6 +312,32 @@
       "atomicity": "joins_calling_domain_transaction",
       "compensation": "The calling transaction rolls back the intent; committed failures retain the row for leased retry while newer requests coalesce by generation.",
       "outbox": "NodeConfigPublish is the durable outbox record; the shared jobs runtime leases and delivers it to the Zero adapter."
+    },
+    {
+      "id": "metering.buffered_observation_handoff",
+      "owner": "metering",
+      "source": "internal/application/zero_event_projection.go",
+      "symbol": "Services.ProjectBufferedEvents",
+      "participants": [
+        "metering",
+        "resources"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Roll back original financial facts and immutable observation header/parts together when durable handoff fails; leave original spool checkpoint replayable. Later auxiliary node projection failures never roll back settled accounting.",
+      "outbox": "NodeObservationIntent and immutable parts carry exact receiver-side source; no nodes or observation-state lock is acquired by the authority producer."
+    },
+    {
+      "id": "resources.node_observation_projection",
+      "owner": "resources",
+      "source": "internal/adapters/persistence/observationstore/worker.go",
+      "symbol": "Worker.apply",
+      "participants": [
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "A short claim releases queue lock before node application. Apply locks node then exact asset state then owned token/lease ACK; lost ownership rolls back counters and refs while retaining complete source for recovery.",
+      "outbox": "Pending/claimed/held/applied intent and material remain durable; no financial ledger, credential or generic job-ledger locks are acquired by this auxiliary projection."
     }
   ]
 }

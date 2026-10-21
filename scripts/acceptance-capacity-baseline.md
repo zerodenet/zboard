@@ -122,3 +122,10 @@ source to the observer; the default pin, three original runners, load profile an
 gates stay unchanged. Its targeted dual-database/race results and preceding0f
 capacity do not replace a new exact-source run. The quiet window follows complete
 backend checks; execution and all failures must be recorded separately.
+
+
+The durable node observation handoff comparison pin is
+`a82e5b60c74d58821884bb703eaa97c2532682f3`. It adds no runner or threshold
+change. Its targeted dual-database/race/HTTP checks are separate from a new
+source-specific capacity run. All old disk-preflight/hourly503/drain failures
+remain evidence; this pin alone is not capacity or P6/P7 acceptance.

@@ -218,6 +218,10 @@ func assertHeartbeatPresence(t *testing.T, h *handlers) {
 			t.Fatal("rotation did not fence in-flight old credential", w.Code)
 		}
 		heartbeatPresenceOnlyChanges(t, rotatedRow, heartbeatPresenceSnapshot(t, h.db, node.ID), nil)
+		var states int64
+		if err := h.db.Model(&model.NodeObservationState{}).Where("node_id = ?", node.ID).Count(&states).Error; err != nil || states != 0 {
+			t.Fatal("rejected old credential wrote observation provenance", states, err)
+		}
 	})
 	t.Run("storage failure remains an error without partial observation", func(t *testing.T) {
 		node := newNode(t)

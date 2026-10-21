@@ -245,13 +245,20 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 19,
+		"cross_domain_transaction": 21,
 	}
 	counts := map[string]int{}
 	controlledDebit, unsubscribe, retirement, replacement, automatic := false, false, false, false, false
 	consumptionRefund, planQuotaSync, planGroupSync := false, false, false
+	observationHandoff, observationApply := false, false
 	for _, row := range rows {
 		counts[row.Kind]++
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "metering.buffered_observation_handoff" && row.Owner == "metering" && row.File == "internal/application/zero_event_projection.go" {
+			observationHandoff = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.node_observation_projection" && row.Owner == "resources" && row.File == "internal/adapters/persistence/observationstore/worker.go" {
+			observationApply = true
+		}
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.plan_group_sync" && row.Owner == "commerce" {
 			planGroupSync = true
 		}
@@ -282,6 +289,9 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 	}
 	if !automatic {
 		t.Fatal("automatic renewal transaction must retain explicit ownership evidence")
+	}
+	if !observationHandoff || !observationApply {
+		t.Error("financial handoff and auxiliary apply must retain distinct transaction ownership")
 	}
 	if !planGroupSync {
 		t.Fatal("plan group synchronization must retain its explicit transaction ownership")
