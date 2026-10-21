@@ -1,0 +1,336 @@
+{
+  "source": "0f491e151079ca88b224d86baaeeae6a9211b120",
+  "profile": {
+    "cpu": 1,
+    "memory_mib": 1024,
+    "extra_swap": false,
+    "NODES": "2",
+    "SUBSCRIPTIONS": "20",
+    "HISTORY_RECORDS": "2000",
+    "DURATION_SECONDS": "60",
+    "EVENT_RATE": "20",
+    "READERS": "4"
+  },
+  "binding": {
+    "passed": true,
+    "expected_revision": "0f491e151079ca88b224d86baaeeae6a9211b120",
+    "started_at": "2026-10-21T01:15:29.995205+00:00",
+    "finished_at": "2026-10-21T01:17:05.314835+00:00",
+    "parameters": {
+      "NODES": "2",
+      "SUBSCRIPTIONS": "20",
+      "HISTORY_RECORDS": "2000",
+      "DURATION_SECONDS": "60",
+      "EVENT_RATE": "20",
+      "READERS": "4"
+    },
+    "original_runner_exit": 0,
+    "original_acceptance_passed": true,
+    "hash_binding": {
+      "checkout_commit_unchanged": true,
+      "checkout_still_clean": true,
+      "source_before_after_equal": true,
+      "source-sha256.txt_matches_observer": true,
+      "source-after-build-sha256.txt_matches_observer": true,
+      "zboard_binary_before_after_equal": true,
+      "acceptance_binary_before_after_equal": true,
+      "acceptance-load.py_copy_matches_source": true,
+      "acceptance-report.py_copy_matches_source": true
+    },
+    "rss_observations": {
+      "container_id": "1e3ce9bc2eacc895e58e01ef3f49ca2fa22a58b60ecc5515a66979b4df843108",
+      "samples": 23,
+      "errors": [],
+      "available": true,
+      "first_rss_kib": 52252,
+      "last_rss_kib": 60352,
+      "sampled_peak_rss_kib": 63112
+    },
+    "sqlite_space": {
+      "available": true,
+      "scope": "stopped exported SQLite only; not a live SQL latency measurement",
+      "page_size": 4096,
+      "page_count": 1481,
+      "freelist_pages": 0,
+      "allocated_bytes": 6066176,
+      "objects": {
+        "index": {
+          "bytes": 3977216,
+          "pages": 971
+        },
+        "internal": {
+          "bytes": 126976,
+          "pages": 31
+        },
+        "table": {
+          "bytes": 1961984,
+          "pages": 479
+        }
+      }
+    },
+    "original_evidence_directory": "/workspace/zboard-principal-copy-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T011530Z-Il0bkx",
+    "note": "Supplemental RSS/dbstat do not replace or relax any original gate. One short single-process run; no worker scaling or capacity ceiling claim."
+  },
+  "original_acceptance": {
+    "passed": true,
+    "failures": [],
+    "latencies": [
+      {
+        "path": "/api/v1/admin/subscriptions/1",
+        "budget_ms": 250,
+        "count": 158,
+        "errors": 0,
+        "p50_ms": 2,
+        "p95_ms": 13,
+        "p99_ms": 21,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/users?paged=true&limit=50&offset=0",
+        "budget_ms": 250,
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 15,
+        "p99_ms": 28,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/subscriptions?paged=true&limit=50&offset=0",
+        "budget_ms": 250,
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 2,
+        "p95_ms": 14,
+        "p99_ms": 22,
+        "passed": true
+      },
+      {
+        "path": "/api/zero/events",
+        "budget_ms": 250,
+        "count": 1274,
+        "errors": 0,
+        "p50_ms": 12,
+        "p95_ms": 16,
+        "p99_ms": 28,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/traffic/records?paged=true&bucket=hour&limit=50&offset=0",
+        "budget_ms": 250,
+        "count": 158,
+        "errors": 0,
+        "p50_ms": 9,
+        "p95_ms": 20,
+        "p99_ms": 38,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/traffic/trends",
+        "budget_ms": 1000,
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 9,
+        "p99_ms": 22,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/traffic/reconciliation?paged=true&limit=50&offset=0",
+        "budget_ms": 1000,
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 3,
+        "p95_ms": 18,
+        "p99_ms": 39,
+        "passed": true
+      }
+    ],
+    "sampled_peak_working_set_mib": 35.23,
+    "resource_samples": 15,
+    "minimum_disk_free_bytes": 2418679808,
+    "spool_pressure_levels": [
+      "normal"
+    ],
+    "runtime_diagnostics": {
+      "samples": 7,
+      "last_consumer": {
+        "batches": 36,
+        "processed_envelopes": 1245,
+        "projected_flow_samples": 765,
+        "coalesced_flow_updates": 480,
+        "failures": 0,
+        "processing_seconds": 0.900192735,
+        "missing_receive_time": 0,
+        "latency_samples": 1245,
+        "latency_bucket_ms": 100,
+        "p95_upper_ms": 2000,
+        "maximum_ms": 2065
+      },
+      "maximum_sampled_pending_events": 26,
+      "database_wait_deltas": {
+        "accounting_db": {
+          "wait_count": 388,
+          "wait_seconds": 1.023454875
+        },
+        "traffic_read_db": {
+          "wait_count": 0,
+          "wait_seconds": 0
+        }
+      }
+    },
+    "drain_seconds": 5,
+    "note": "Client-observed HTTP latency includes Docker loopback transport; this short run does not prove 24h stability."
+  },
+  "load": {
+    "started_at": "2026-10-21T01:15:57.196389+00:00",
+    "elapsed_seconds": 60.53603634799947,
+    "offered_unique_events": 1201,
+    "generator_dropped": 0,
+    "undelivered_jobs": 0,
+    "max_schedule_lag_seconds": 0.007655089000763837,
+    "metrics": {
+      "/api/v1/auth/login": {
+        "count": 1,
+        "errors": 0,
+        "p50_ms": 64,
+        "p95_ms": 64,
+        "p99_ms": 64
+      },
+      "/api/v1/admin/subscriptions/1": {
+        "count": 158,
+        "errors": 0,
+        "p50_ms": 2,
+        "p95_ms": 13,
+        "p99_ms": 21
+      },
+      "/api/v1/admin/users?paged=true&limit=50&offset=0": {
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 15,
+        "p99_ms": 28
+      },
+      "/api/v1/admin/subscriptions?paged=true&limit=50&offset=0": {
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 2,
+        "p95_ms": 14,
+        "p99_ms": 22
+      },
+      "/api/zero/events": {
+        "count": 1274,
+        "errors": 0,
+        "p50_ms": 12,
+        "p95_ms": 16,
+        "p99_ms": 28
+      },
+      "/api/v1/admin/traffic/records?paged=true&bucket=hour&limit=50&offset=0": {
+        "count": 158,
+        "errors": 0,
+        "p50_ms": 9,
+        "p95_ms": 20,
+        "p99_ms": 38
+      },
+      "/api/v1/admin/traffic/trends": {
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 9,
+        "p99_ms": 22
+      },
+      "/api/v1/admin/traffic/reconciliation?paged=true&limit=50&offset=0": {
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 3,
+        "p95_ms": 18,
+        "p99_ms": 39
+      }
+    },
+    "failures": [],
+    "diagnostic_metrics": {
+      "/api/v1/admin/system-info?include_runtime=true": {
+        "count": 7,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 1,
+        "p99_ms": 1
+      }
+    },
+    "diagnostic_failures": []
+  },
+  "business_read_count": 942,
+  "sampled_peak_cpu_percent": 16.03,
+  "final_verification": {
+    "accounting_passed": true,
+    "expected_total": 9833472,
+    "ledger_total": 9833472,
+    "mismatches": null,
+    "passed": true,
+    "pending_usage_projections": 0,
+    "run_id": "ef162840-7a1e-4a51-b988-0cdb589c6fbb",
+    "statistics_passed": true,
+    "subscription_total": 9833472,
+    "verified_at": "2026-10-21T01:17:02.894188952Z"
+  },
+  "final_spool": {
+    "passed": true,
+    "status": {
+      "driver": "file",
+      "pending_events": 0,
+      "pending_bytes": 0,
+      "segments": 1,
+      "storage_bytes": 566176,
+      "disk_free_bytes": 2238541824,
+      "storage_usage_ratio": 0.00010545849800109863,
+      "pressure_level": "normal",
+      "warning": false,
+      "compact": false,
+      "emergency": false,
+      "emergency_reserve_available": true,
+      "compression_algorithm": "none",
+      "compressed_segments": 0,
+      "compressed_original_bytes": 0,
+      "compressed_stored_bytes": 0,
+      "compression_ratio": 0,
+      "compression_savings_ratio": 0,
+      "compaction_runs": 0,
+      "compacted_segments": 0,
+      "compacted_events": 0,
+      "compacted_flow_updates": 0,
+      "compacted_node_stats": 0,
+      "compaction_bytes_saved": 0,
+      "compaction_unsafe_skipped": 0
+    },
+    "unconsumed_event_found": false,
+    "verified_at": "2026-10-21T01:17:04.225110405Z"
+  },
+  "final_container_state": {
+    "Status": "exited",
+    "Running": false,
+    "OOMKilled": false,
+    "ExitCode": 0,
+    "Error": ""
+  },
+  "raw_hashes": {
+    "baseline-controller-6q68u9r1/baseline-binding.json": "fcf72a45a884c045dcaba1125e06bce2939f115c89d1f71704c8d7c476a7c525",
+    "baseline-controller-6q68u9r1/preflight.json": "f7c0a4c1555d275e96004f54f9f4720ebe6790a7f6644639d7db4a376424e674",
+    "mixed-20261021T011530Z-Il0bkx/acceptance-result.json": "fa8e3b8bbd04ee7ac5885b208058cf1117841db24beeafb4551e074d493f6124",
+    "mixed-20261021T011530Z-Il0bkx/data/load-result.json": "e7d52b64a7aaea0862b58bee7494547c1566afc86ab2789696b2db9976f61d78",
+    "mixed-20261021T011530Z-Il0bkx/data/verification.json": "53af2e0aba0adbb660ccf1d456914806416d58fe01c9f9b6d28a29750e7d54be",
+    "mixed-20261021T011530Z-Il0bkx/data/spool-verification.json": "9516d9ef5fe45f846c8755a5e39abe01c28a96bf18bb82256b92c698c70b7841",
+    "mixed-20261021T011530Z-Il0bkx/verification.log": "ab3b1dc2b23ef9a1b412f1a8a96283eedaab3127cbc055e5d904ecc23e5a590e",
+    "mixed-20261021T011530Z-Il0bkx/container-stats.jsonl": "fbf566081792bbf29fc3296cf56e633233874899d2ec101caa0ce2362d1e1f6c",
+    "mixed-20261021T011530Z-Il0bkx/container.json": "c565a3bb9b80d1bee32a8759664bc501f157b0f8d62c8f9dd3988b13d4873d0b"
+  },
+  "limits": [
+    "Original60s SQLite profile and all9 bindings pass; original three runners/resource budget/gates unchanged. Only observer explicit0f pin added; six observer unit checks pass.",
+    "First drain verification reports10 subscription mismatches; original5s drain retry then exact9,833,472B expected/ledger/quota, pending0. Initial failure remains in verification.log; no load rerun.",
+    "RSS23samples/no probe errors is distinct from original container working set.",
+    "Runtime last sample1245envelopes precedes1274final HTTP requests; it is not a final counter.",
+    "Hourly pending/complete proportions unknown: HTTP200/p95 do not establish complete chart availability.",
+    "Latency histogram covers core transaction+checkpoint, not independent statistics freshness, SQL execution latency, quota-stop confirmation or overuse delay.",
+    "No MySQL capacity, plugin-busy,24h/growth/zero-overuse, standalone worker/scaling or completeP4/P6/P7 claim.",
+    "Original112/157503 and subsequent failed runs remain separate failed evidence."
+  ]
+}

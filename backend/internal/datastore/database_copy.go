@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"strings"
 )
@@ -18,6 +19,11 @@ func CopyApplicationData(source, target *gorm.DB) error {
 	sourceTables, err := migrationTableSet(source)
 	if err != nil {
 		return fmt.Errorf("inspect source tables: %w", err)
+	}
+	// Reject recorded identity loss even when the source nodes table itself
+	// is absent and the legacy table loop would otherwise skip it.
+	if err := preflightNodeAssetSchema(source); err != nil {
+		return err
 	}
 	targetTables, err := migrationTableSet(target)
 	if err != nil {
@@ -38,6 +44,17 @@ func CopyApplicationData(source, target *gorm.DB) error {
 }
 
 func copyTableRows(source, target *gorm.DB, table string) error {
+	// Classify before opening source Rows: migration sources can be pinned to a
+	// single connection. Never query a receipt while that connection streams.
+	legacyNodeAssets := false
+	if table == "nodes" {
+		state, err := inspectNodeAssetSchema(source)
+		if err != nil {
+			return fmt.Errorf("classify copied node assets: %w", err)
+		}
+		legacyNodeAssets = !state.column
+	}
+
 	rows, err := source.Table(table).Rows()
 	if err != nil {
 		return fmt.Errorf("read source table %s: %w", table, err)
@@ -99,6 +116,15 @@ func copyTableRows(source, target *gorm.DB, table string) error {
 			// Target INSERT belongs to the caller's existing copy transaction.
 			// A missing version uses the prepared target's standard column name.
 			record[lookupVersionColumn] = int64(0)
+		}
+		if legacyNodeAssets {
+			// No source column AND no0059receipt: establish target-only future labels,
+			// in the caller's owned target transaction. Never stamp old spool material.
+			tag, err := model.NewNodeAssetTag()
+			if err != nil {
+				return err
+			}
+			record["asset_tag"] = tag
 		}
 		batch = append(batch, record)
 		if len(batch) == cap(batch) {

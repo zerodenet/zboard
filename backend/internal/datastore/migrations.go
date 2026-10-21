@@ -121,6 +121,9 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
+	if err := preflightNodeAssetSchema(db); err != nil {
+		return err
+	}
 	if err := preflightTicketReferenceSchema(db); err != nil {
 		return err
 	}
@@ -235,6 +238,9 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileAutomaticRecurringApprovalSchema(db); err != nil {
 		return err
 	}
+	if err := reconcileNodeAssetSchema(db); err != nil {
+		return err
+	}
 	if err := reconcileTicketReferenceSchema(db); err != nil {
 		return err
 	}
@@ -295,6 +301,12 @@ func runMigrations(db *gorm.DB) error {
 			return fmt.Errorf("check migration %s: %w", version, err)
 		}
 		if applied > 0 {
+			continue
+		}
+		if version == nodeAssetSchemaVersion {
+			if err := reconcileNodeAssetSchema(db); err != nil {
+				return err
+			}
 			continue
 		}
 		if version == ticketReferenceSchemaVersion {

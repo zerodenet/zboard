@@ -167,6 +167,7 @@ func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node network.Eve
 	envelope := zeroevent.Envelope{
 		ID:             strings.TrimSpace(event.EventID),
 		NodeID:         uint64(node.ID),
+		AssetTag:       node.AssetTag,
 		SourceID:       strings.TrimSpace(event.SourceID),
 		PrincipalKey:   principal,
 		Type:           event.EventType,
@@ -365,7 +366,7 @@ func aggregateZeroNodeEvents(events []zeroevent.Envelope) map[uint]zeroNodeProje
 }
 
 func networkEventPosition(event zeroevent.Envelope) network.EventPosition {
-	return network.EventPosition{ID: event.ID, CoreInstanceID: event.CoreInstanceID, Sequence: event.Sequence, ConfigRevision: event.ConfigRevision, OccurredAt: event.OccurredAt, SourceID: event.SourceID, ReceivedAt: event.ReceivedAt}
+	return network.EventPosition{AssetTag: event.AssetTag, ID: event.ID, CoreInstanceID: event.CoreInstanceID, Sequence: event.Sequence, ConfigRevision: event.ConfigRevision, OccurredAt: event.OccurredAt, SourceID: event.SourceID, ReceivedAt: event.ReceivedAt}
 }
 func zeroNodeObservation(projection zeroNodeProjection) network.NodeObservation {
 	input := network.NodeObservation{NodeID: projection.NodeID, Latest: networkEventPosition(projection.Latest), Stats: network.NodeStats(projection.Stats)}

@@ -20,13 +20,14 @@
 | P2-13/P5-02 获批消费退款 | 部分实现（双库、真实浏览器隔离闭环） | 122f227：真实Chromium32项，终止历史订单退款300一次入账及两次同键重放；活跃权益部分退款仍待产品规则，非真实渠道/生产验收 |
 | P2-14/P3 套餐历史额度与接入组 | 部分实现（双库/前端/后续完整CI覆盖） | d98b018已恢复上传，5964c53六项CI包含该历史；混合加购及1000上限明确拒绝，当前HEAD新验收独立记录 |
 | P2 优惠首购/连续续费 | 部分实现（签名native/双库/真实浏览器） | 0055/0057购买及扣款批准证据；提供方不可用不回退原价；4e1a78d真实Chromium21项/实际100元扣款；其他可售操作及有限券消费契约仍缺 |
-| P4-01/02 日/小时统计投影 | 部分实现（双库、固定原阈值容量通过） | 0053/0054持久独立队列，pending显式unknown；精确01eb原20events/s、1274事件及942业务读零错误，小时157次/p95=22ms，首次drain失败后原5s重试核账通过；原112/157失败保留，未证明完整图表比例/长期增长 |
-| P4 计量SQL/保留 | 部分实现（精确核账/专项通过） | SQLite累计游标cohort32→1次SELECT，87→56总SQL/写入舍入不变；58f/31为保持谓词与顺序的窄投影读取，e902保留独立来源材料、01eb保留缺失心跳计数；NodeStats仍耦合结算，独立Stats游标/资产代次未实现；0056仅诊断清理，TrafficRecord不可归档 |
+| P4-01/02 日/小时统计投影 | 部分实现（双库、固定原阈值容量通过） | 0053/0054持久独立队列，pending显式unknown；精确0f原20events/s、1274事件及942业务读零错误，小时158次/p95=20ms，首次10订阅核账不符后原5s drain通过；01eb157/p95=22ms及原112/157失败保留，完整图表比例/长期增长仍未知 |
+| P4 计量SQL/保留 | 部分实现（精确核账/专项通过） | SQLite累计游标cohort32→1次SELECT，87→56总SQL/写入舍入不变；58f/31为保持谓词与顺序的窄投影读取，e902保留独立来源材料、01eb保留缺失心跳计数；NodeStats仍耦合结算，独立Stats游标/资产隔离门未实现；0059仅未来入队身份与当前段/窗口混合来源保序；0056仅诊断清理，TrafficRecord不可归档 |
 | P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
 | P5 工单业务关联 | 已实现且验证（隔离范围） | 4e1a78d/0058双库实际DDL/权限/首消息回滚/锁序；a82每行独立订阅关联入口及完整frontend201files/1112pass/8既有skip、build通过；01eb完整backend与六项CI覆盖。终止历史仍由原订单入口关联，无服务列表权限扩张 |
 | P6 进程关闭/队列所有权前置 | 部分实现（真实子进程、SQLite/race、MySQL） | file-spool内核锁、local Drain/Detach和实际server/plugin cleanup；3690113原MySQL及copy通过，7ef CI MySQL通过；无独立worker或伸缩器 |
 | P3/P4 派生主体索引恢复/复制 | 部分实现（双库专项通过） | a9先失效再DDL修复已完整backend/新CI六项通过；已知缺派生列的源库复制到目标时显式version0，旧公共复制三叶断言复现、15真实复制/回滚、201行合同及重点race3通过，新集成源码完整检查待验；完整旧错误v1不猜测修复 |
-| P7 当前提交验证 | 部分实现/未完成 | a9aae16完整backend与新CI39522585804六项通过，CI handler809.717s；同源本地core handler900.017s失败、datastore152.038s/network112.003s通过，独立jobstore120.268s/copy108.349s通过。c61/31/e902/local失败保留，未证明稳定启动；01eb原容量不替代a9容量 |
+| P3/P4 节点资产入队来源 | 部分实现（双库专项/race3通过） | 0059未来身份、认证捕获、可选v1队列成员及混合来源保序；9旧源码断言叶复现、SQLite/MySQL迁移/管理/复制及重点race3通过。未启用独立Stats、删除隔离或辅助投影解耦；新集成完整检查及CI待验 |
+| P7 当前提交验证 | 部分实现/未完成 | 0f491e1完整backend与原阈值容量通过，1274事件/942业务读零错误，小时158/p95=20ms；新CI39525675188六项通过但handler892.176s仅余7.824s，本地handler900.023s失败、独立jobstore124.763s/copy148.095s通过。a9完整backend/六项CI通过但同源本地handler900.017s失败、独立jobstore/copy通过；c61/31/e902/local历史失败保留，未证明稳定启动 |
 | 其余P2及P3–P7 | 部分实现/未完成 | 活跃部分退款/永久多次增购决策、其他操作优惠/外部券契约、完整计量保留、持续增长/资源竞争/独立worker/伸缩、最终综合回归 |
 
 ## 需求—实现—差距表
@@ -1265,3 +1266,50 @@ original MySQL and new CI are pending; the a9 acceptance above belongs to a9.
 [Copy behavior/rollback](core-convergence-principal-copy-recovery.md) and
 [targeted command/hash receipt](validation/2026-10-21-principal-copy-recovery.json)
 retain the original assertions, exact15normal fixtures and focusedrace scope.
+
+Exact0f491e1 follow-up: full Go291.377s/vet3.766s/build1.858s/pure-Go
+SQLite21.010s pass; [backend receipt](validation/2026-10-21-principal-copy-backend.json).
+The [original constrained capacity](validation/2026-10-21-principal-copy-original-capacity.json)
+also passes at the same1CPU/1GiB/20events/s/4readers/gates, with942business
+reads and hourly158/p95=20ms/zeroerrors. Original10initial drain mismatches
+remain; original5s drain then exact9,833,472B ledger/quota. No load retry.
+Original local MySQL three commands and newCI39525675188 MySQL remain pending.
+
+Exact0f newCI39525675188 all six jobs pass, handler892.176s/only7.824s margin;
+[CI receipt](validation/2026-10-21-principal-copy-ci.json). Local original handler
+times out at900.023s; datastore153.679s/network114.327s pass and independent
+jobstore124.763s passes, copy still pending. Last4s ZeroEventWindow test is in
+actual validateFlowWindowReports SQL, not fixture setup; no last-test causality
+is asserted. No timeout/retry/exclusions change or stableP7 claim.
+
+The original0f three-command local run is complete: independent jobstore124.763s
+and copy148.095s pass after failed core900.023s.
+[Exact local command/log-hash receipt](validation/2026-10-21-principal-copy-mysql-local.json).
+The five-job statement above is an earlier pending snapshot; final exact newCI
+39525675188 all six jobs succeed, with only7.824s handler margin. The source
+remains partially accepted and P7 unresolved, not silently retried or widened.
+
+
+### 2026-10-21 P3/P4：节点资产入队来源基础（部分完成）
+
+已核对最新develop仍为7c7283f，并保留d98、49b及7c恢复行为。新增0059，
+已有148个SQL文件逐字保持。新建Node由服务端生成隐藏标签；旧库只初始化未来
+捕获身份，收据后置，部分初始化可恢复，已记录单行unknown不猜测，已记录
+缺表/缺列先于AutoMigrate拒绝。原owned复制事务保留current标签与unknown，
+legacy只在目标原INSERT生成future标签，完成失败整笔回滚并安全重试。
+
+实际认证捕获标签进入私有v1队列，外部wire/payload不可提供，旧无标签保持
+unknown。Latest/Stats分别携带本身来源。当前段/窗口内混合标签时保留全部原序
+样本，避免A/B/A或跨其他flow倒移；原财务报告身份、取整和检查点不变。
+详见[行为/迁移/回滚及限制](core-convergence-node-asset-foundation.md)与
+[逐条命令/源哈希/失败记录](validation/2026-10-21-node-asset-foundation.json)。
+
+9个旧源码业务断言叶真实复现；实际SQLite、MySQL schema6.103s/network13.322s/
+双向copy8fixtures36.764s通过。重点race-count3：pure24.375s、handler73.916s、
+network99.435s、publiccopy rollback42.567s通过。原spool51项通过/1原helper跳过，
+跨进程父测试实际执行。两处缺counter和两处JSON表示比较的测试失败全部保留，
+只修正测试，无生产实现变动；不能将这些夹具失败当旧实现缺陷。
+
+新集成源码的完整backend、原MySQL、原容量与新CI仍待验；0f验收不能替代。
+本片没有启用当前资产/删除门、独立Stats游标或辅助投影持久交接，旧观察失败
+仍可回滚结算，TrafficRecord仍不可归档。P4/P6/P7及待决财务规则继续保持未完成。

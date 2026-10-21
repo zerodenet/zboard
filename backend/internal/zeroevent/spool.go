@@ -18,8 +18,10 @@ const (
 )
 
 type Envelope struct {
-	ID             string          `json:"id,omitempty"`
-	NodeID         uint64          `json:"node_id"`
+	ID     string `json:"id,omitempty"`
+	NodeID uint64 `json:"node_id"`
+	// Panel admission metadata, never copied from the Zero wire envelope.
+	AssetTag       string          `json:"asset_tag,omitempty"`
 	SourceID       string          `json:"source_id,omitempty"`
 	PrincipalKey   string          `json:"principal_key,omitempty"`
 	Type           string          `json:"type"`

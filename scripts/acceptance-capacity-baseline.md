@@ -109,3 +109,9 @@ first drain verification's21pending facts and original5s retry, and one failed
 supplemental RSS probe, remain recorded. The explicit e902 pin was preparation
 only; no local e902 capacity run was performed. Defaults, three original runners
 and every original gate remain unchanged.
+
+The next reviewed exact comparison pin is
+`0f491e151079ca88b224d86baaeeae6a9211b120` (known-partial principal copy
+recovery on top of invalidate-before-DDL). The default pin, original three
+runners, resource budget, workload and gates are unchanged. Execution/result
+are separate from adding the pin; no load result is inferred here.

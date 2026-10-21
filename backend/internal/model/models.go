@@ -169,6 +169,8 @@ type Order struct {
 }
 
 type Node struct {
+	// AssetTag identifies this panel asset, not a host, runtime or credential.
+	AssetTag                string           `json:"-" gorm:"size:64;not null;default:'';<-:create"`
 	ID                      uint             `json:"id" gorm:"primaryKey"`
 	Name                    string           `json:"name" gorm:"size:64;uniqueIndex"`
 	Region                  string           `json:"region" gorm:"size:32"`
