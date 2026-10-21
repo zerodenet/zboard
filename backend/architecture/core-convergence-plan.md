@@ -1383,3 +1383,26 @@ ownedcopy159.289s实际完成；[本头CI](validation/2026-10-21-node-observatio
 正确未知。[完整容量证据](validation/2026-10-21-node-observation-original-capacity.json)
 保留四次无负载磁盘预检失败、全部相同源码/二进制绑定与无损归档校验；不声称
 长时增长、MySQL容量、Stats吞吐或P6伸缩完成。本地原MySQL三命令正在独立运行。
+
+本地ae2原三命令最终：core handler900.019s超时、datastore169.240s/network168.592s
+通过；随后独立jobstore120.078s/copy216.211s（命令wall）实际通过，
+[原始本地记录](validation/2026-10-21-node-observation-mysql-local.json)。
+收据头24bd247自己的新CI39543508030五项通过，但MySQLhandler900.024s超时，
+后续CIjobstore/copy未执行；[精确新头失败](validation/2026-10-21-node-observation-metadata-ci.json)。
+ae2六绿不替代24新头验收。两次末尾夹具栈只定位超时瞬间，不能当作累计根因。
+P7未完成，原超时/断言/排除均保留；业务测试fixture候选仍需真实等价性与收益证据。
+
+### 2026-10-21 P7：显式业务测试准备隔离
+
+40个已逐个审查的顶层业务用例选择独立随机schema快照夹具，保留原首次初始化、
+权限、迁移/partialDDL/丢表及复制真实路径；原业务assert、失败trigger、锁与
+fixture后真实reconcile不动。无生产Go/SQL改动。原始FK自引用拒绝、DDL文字差异、
+软删除误用及未被执行的patch产物错误全部保留；物理元数据与完整seed/结构合同
+通过，真实collation改变仍不等价，FK/CHECK/SET NULL真实验证通过。
+
+真实MySQL6合同通过；重点race3共18顶层执行通过；40原业务+4合同98.688s命令
+wall通过、零skip。paired3准备原3.649/3.329/3.330s→候选1.179/1.185/1.581s，
+另计一次3.701sbootstrap与新合同成本。只是单例setup收益，不宣称整包已过900s。
+[精确源码/全部失败与测量](validation/2026-10-21-mysql-business-fixtures.json)、
+[范围及回退](core-convergence-mysql-business-fixtures.md)。新提交完整backend、
+原MySQL三命令和新CI待验；P7与P2/P4/P6未完成部分仍保留。

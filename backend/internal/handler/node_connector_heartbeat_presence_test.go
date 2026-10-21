@@ -22,7 +22,7 @@ func TestNodeConnectorHeartbeatPreservesMissingObservations(t *testing.T) {
 
 func TestMySQLNodeConnectorHeartbeatPreservesMissingObservations(t *testing.T) {
 	// One real isolated schema/Prepare for the whole matrix, not per case.
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	assertHeartbeatPresence(t, h)
 }
 

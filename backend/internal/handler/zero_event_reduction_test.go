@@ -169,7 +169,7 @@ func TestBufferedEventsPersistOnlyPanelFieldsAndResolvedPrincipal(t *testing.T) 
 }
 
 func TestMySQLZeroEventWindowPreservesRoundedAccountingAndReplay(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", credential.ProtocolEndpointID).Update("multiplier_milli", 1500).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestZeroEventWindowRejectsRegressedCountersWithoutCheckpointAdvance(t *test
 }
 
 func TestMySQLZeroWindowFallsBackForDatabaseEquivalentReportIDs(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", credential.ProtocolEndpointID).Update("multiplier_milli", 1500).Error; err != nil {
 		t.Fatal(err)
 	}

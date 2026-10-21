@@ -10,7 +10,7 @@ import (
 )
 
 func TestMySQLAccountingUserForeignKeyDoesNotInvertCommerceLockOrder(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	held := h.db.Begin()
 	if held.Error != nil {
 		t.Fatal(held.Error)

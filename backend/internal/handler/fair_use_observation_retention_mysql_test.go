@@ -12,7 +12,7 @@ import (
 )
 
 func TestMySQLObservationRetentionPointLocksAllowFreshReceiveAndSettlement(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	old := metering.FlowStart{NodeID: credential.NodeID, EventID: "old-diagnostic", CoreInstanceID: "retention-lock", PrincipalKey: credential.PrincipalKey, OccurredAt: now, ReceivedAt: now.Add(-16 * 24 * time.Hour)}
 	if err := h.services.FairUseFlowCollection.Record(t.Context(), old); err != nil {

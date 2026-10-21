@@ -13,7 +13,7 @@ func TestCredentialReconciliationSQLiteUsesCurrentSubscription(t *testing.T) {
 	assertCredentialReconciliationCurrentSubscription(t, newOrderFixture(t))
 }
 func TestCredentialReconciliationMySQLUsesCurrentSubscription(t *testing.T) {
-	assertCredentialReconciliationCurrentSubscription(t, newMySQLOrderFixture(t))
+	assertCredentialReconciliationCurrentSubscription(t, newMySQLBusinessOrderFixture(t))
 }
 func assertCredentialReconciliationCurrentSubscription(t *testing.T, f orderFixture) {
 	t.Helper()
@@ -58,7 +58,7 @@ func TestCredentialReconciliationSQLitePreservesRenewedExpiry(t *testing.T) {
 	assertCredentialReconciliationRenewedExpiry(t, newOrderFixture(t))
 }
 func TestCredentialReconciliationMySQLPreservesRenewedExpiry(t *testing.T) {
-	assertCredentialReconciliationRenewedExpiry(t, newMySQLOrderFixture(t))
+	assertCredentialReconciliationRenewedExpiry(t, newMySQLBusinessOrderFixture(t))
 }
 func assertCredentialReconciliationRenewedExpiry(t *testing.T, f orderFixture) {
 	t.Helper()
@@ -99,7 +99,7 @@ func TestCredentialReconciliationSQLitePreservesChangedGroup(t *testing.T) {
 	assertCredentialReconciliationChangedGroup(t, newOrderFixture(t))
 }
 func TestCredentialReconciliationMySQLPreservesChangedGroup(t *testing.T) {
-	assertCredentialReconciliationChangedGroup(t, newMySQLOrderFixture(t))
+	assertCredentialReconciliationChangedGroup(t, newMySQLBusinessOrderFixture(t))
 }
 func assertCredentialReconciliationChangedGroup(t *testing.T, f orderFixture) {
 	t.Helper()

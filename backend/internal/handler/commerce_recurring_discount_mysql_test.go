@@ -19,7 +19,7 @@ import (
 // This needs real InnoDB RR and performance_schema: SQLite cannot establish
 // snapshot freshness or demonstrate the absence of an opposite owner lock.
 func TestMySQLRecurringDiscountPreviewWaitsBeforeOwnerAndRejectsStaleQuote(t *testing.T) {
-	f := newMySQLOrderFixture(t)
+	f := newMySQLBusinessOrderFixture(t)
 	recurringNativeSetup(t, f)
 	f.token, _, _ = f.h.issueToken(authClaims{UserID: 1, Email: "reader@example.test"})
 	var isolation string

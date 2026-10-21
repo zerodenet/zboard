@@ -112,7 +112,7 @@ func TestEntitlementValueEvidenceFailureRollsBackPayment(t *testing.T) {
 	assertValueEvidenceFailure(t, newOrderFixture(t))
 }
 func TestMySQLEntitlementValueEvidenceFailureRollsBackPayment(t *testing.T) {
-	assertValueEvidenceFailure(t, newMySQLOrderFixture(t))
+	assertValueEvidenceFailure(t, newMySQLBusinessOrderFixture(t))
 }
 func assertValueEvidenceFailure(t *testing.T, f orderFixture) {
 	order := f.create(t, 0)
@@ -160,7 +160,7 @@ func TestRenewalAndResetCaptureActualBeforeAndAfter(t *testing.T) {
 	assertRenewalAndResetValueCapture(t, newOrderFixture(t))
 }
 func TestMySQLRenewalAndResetCaptureActualBeforeAndAfter(t *testing.T) {
-	assertRenewalAndResetValueCapture(t, newMySQLOrderFixture(t))
+	assertRenewalAndResetValueCapture(t, newMySQLBusinessOrderFixture(t))
 }
 func assertRenewalAndResetValueCapture(t *testing.T, f orderFixture) {
 	if err := f.h.db.Model(&f.planRecord).Update("reset_policy", 2).Error; err != nil {

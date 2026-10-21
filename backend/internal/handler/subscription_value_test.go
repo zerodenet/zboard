@@ -20,7 +20,7 @@ func TestSubscriptionValueReadsVerifiedPaidFacts(t *testing.T) {
 	assertSubscriptionValueRead(t, newOrderFixture(t))
 }
 func TestMySQLSubscriptionValueReadsVerifiedPaidFacts(t *testing.T) {
-	assertSubscriptionValueRead(t, newMySQLOrderFixture(t))
+	assertSubscriptionValueRead(t, newMySQLBusinessOrderFixture(t))
 }
 func assertSubscriptionValueRead(t *testing.T, f orderFixture) {
 	if err := f.h.db.Model(&f.planRecord).Updates(map[string]any{"traffic_bytes": 100, "reset_policy": 2}).Error; err != nil {
@@ -117,7 +117,7 @@ func TestSubscriptionTerminationSettlesOnceAndRevokesOnlyItsSubscription(t *test
 	assertSubscriptionTermination(t, newOrderFixture(t))
 }
 func TestMySQLSubscriptionTerminationSettlesOnceAndRevokesOnlyItsSubscription(t *testing.T) {
-	assertSubscriptionTermination(t, newMySQLOrderFixture(t))
+	assertSubscriptionTermination(t, newMySQLBusinessOrderFixture(t))
 }
 func assertSubscriptionTermination(t *testing.T, f orderFixture) {
 	attachOrderPublishEndpoint(t, f)

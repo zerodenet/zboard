@@ -20,7 +20,7 @@ func TestObservationHTTPReadsKeepCounterSource(t *testing.T) {
 	assertObservationHTTPReads(t, h)
 }
 func TestMySQLObservationHTTPReadsKeepCounterSource(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	assertObservationHTTPReads(t, h)
 }
 func assertObservationHTTPReads(t *testing.T, h *handlers) {

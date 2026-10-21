@@ -47,7 +47,7 @@ func TestWalletMixedPaymentMatchesFrozenCashAndCapturesOnce(t *testing.T) {
 	assertMixedFunding(t, newOrderFixture(t))
 }
 func TestMySQLWalletMixedPaymentMatchesFrozenCashAndCapturesOnce(t *testing.T) {
-	assertMixedFunding(t, newMySQLOrderFixture(t))
+	assertMixedFunding(t, newMySQLBusinessOrderFixture(t))
 }
 func assertMixedFunding(t *testing.T, f orderFixture) {
 	t.Helper()
@@ -187,7 +187,7 @@ func TestWalletOnlyPaymentRollsBackAndRacesWithoutDoubleSpend(t *testing.T) {
 	assertWalletOnly(t, newOrderFixture(t), false)
 }
 func TestMySQLWalletOnlyPaymentRollsBackAndRacesWithoutDoubleSpend(t *testing.T) {
-	assertWalletOnly(t, newMySQLOrderFixture(t), true)
+	assertWalletOnly(t, newMySQLBusinessOrderFixture(t), true)
 }
 func assertWalletOnly(t *testing.T, f orderFixture, mysql bool) {
 	t.Helper()
@@ -303,7 +303,7 @@ func TestWalletReservationCompetitionCannotOverspend(t *testing.T) {
 	assertFundingCompetition(t, newOrderFixture(t))
 }
 func TestMySQLWalletReservationCompetitionCannotOverspend(t *testing.T) {
-	assertFundingCompetition(t, newMySQLOrderFixture(t))
+	assertFundingCompetition(t, newMySQLBusinessOrderFixture(t))
 }
 func assertFundingCompetition(t *testing.T, f orderFixture) {
 	t.Helper()
@@ -350,7 +350,7 @@ func TestWalletPaymentCancellationRaceHasOneFinancialOutcome(t *testing.T) {
 	assertFundingCancelRace(t, newOrderFixture(t))
 }
 func TestMySQLWalletPaymentCancellationRaceHasOneFinancialOutcome(t *testing.T) {
-	assertFundingCancelRace(t, newMySQLOrderFixture(t))
+	assertFundingCancelRace(t, newMySQLBusinessOrderFixture(t))
 }
 func assertFundingCancelRace(t *testing.T, f orderFixture) {
 	t.Helper()
@@ -395,7 +395,7 @@ func TestWalletFundingRetainsLegacyWholeCashWithoutCapturingBalance(t *testing.T
 	assertLegacyWholeFunding(t, newOrderFixture(t))
 }
 func TestMySQLWalletFundingRetainsLegacyWholeCashWithoutCapturingBalance(t *testing.T) {
-	assertLegacyWholeFunding(t, newMySQLOrderFixture(t))
+	assertLegacyWholeFunding(t, newMySQLBusinessOrderFixture(t))
 }
 func assertLegacyWholeFunding(t *testing.T, f orderFixture) {
 	t.Helper()
@@ -495,7 +495,7 @@ func TestWalletFundingKeepsOwnerScopeAndCannotRechargeItself(t *testing.T) {
 	assertFundingOwner(t, newOrderFixture(t))
 }
 func TestMySQLWalletFundingKeepsOwnerScopeAndCannotRechargeItself(t *testing.T) {
-	assertFundingOwner(t, newMySQLOrderFixture(t))
+	assertFundingOwner(t, newMySQLBusinessOrderFixture(t))
 }
 func assertFundingOwner(t *testing.T, f orderFixture) {
 	t.Helper()
@@ -569,7 +569,7 @@ func TestWalletFundingNeverCombinesDifferentCurrencies(t *testing.T) {
 	assertFundingCurrency(t, newOrderFixture(t))
 }
 func TestMySQLWalletFundingNeverCombinesDifferentCurrencies(t *testing.T) {
-	assertFundingCurrency(t, newMySQLOrderFixture(t))
+	assertFundingCurrency(t, newMySQLBusinessOrderFixture(t))
 }
 func assertFundingCurrency(t *testing.T, f orderFixture) {
 	t.Helper()

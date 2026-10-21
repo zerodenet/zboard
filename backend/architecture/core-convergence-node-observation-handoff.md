@@ -154,3 +154,14 @@ The first archival atime comparison failed before unlink, and its verified
 recovery is recorded. Earlier hourly157/112503 failures remain separately.
 One short SQLite load does not validate MySQL capacity, long-term retention,
 real Stats throughput, plugin-busy behavior or standalone-worker autoscaling.
+
+Final [original local MySQL](validation/2026-10-21-node-observation-mysql-local.json)
+on exact ae2 retains the handler900.019s timeout, datastore169.240s and
+network168.592s pass. Last2s receipt case is still in real RunMigrations fixture
+preparation; no assertion failure is reported, and this is not cumulative cause
+proof. Independent jobstore120.078s and copy216.211s command wall times pass
+sequentially after core failure. The [metadata24bd247 CI](validation/2026-10-21-node-observation-metadata-ci.json)
+has its own final result: five jobs pass, MySQL handler900.024s fails;
+datastore196.554s/network187.261s pass, later CI jobstore/copy do not execute.
+The ae2 six-job success is not substituted for this newer head. P7 timing
+stability remains open; all original15m gates and assertions are retained.

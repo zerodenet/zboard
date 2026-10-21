@@ -14,12 +14,12 @@ func TestAccountingBatchReplayOutOfOrderAndExhaustion(t *testing.T) {
 }
 
 func TestMySQLAccountingBatchReplayOutOfOrderAndExhaustion(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	checkAccountingBatchReplayOutOfOrderAndExhaustion(t, h, credential)
 }
 
 func TestMySQLAccountingPreservesReportCollationIdempotency(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	events := accountingBenchmarkEvents(credential, 0, 2)
 	events[0].ID, events[1].ID = "Case-Event", "case-event"
 	if err := h.projectZeroNodeEvents(context.Background(), events); err != nil {

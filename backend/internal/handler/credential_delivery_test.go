@@ -13,7 +13,7 @@ func TestCredentialDeliverySQLiteDoesNotExposeNewPurchaseBeforeItsConfirmation(t
 	assertPurchasedCredentialDelivery(t, newOrderFixture(t))
 }
 func TestCredentialDeliveryMySQLDoesNotExposeNewPurchaseBeforeItsConfirmation(t *testing.T) {
-	assertPurchasedCredentialDelivery(t, newMySQLOrderFixture(t))
+	assertPurchasedCredentialDelivery(t, newMySQLBusinessOrderFixture(t))
 }
 
 func assertPurchasedCredentialDelivery(t *testing.T, f orderFixture) {

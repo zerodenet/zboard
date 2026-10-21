@@ -13,7 +13,7 @@ import (
 )
 
 func TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	node, _ := receiptFixture(t, h)
 	// Use the same billable node; receiptFixture supplies a separate authenticated
 	// node only for spool setup, not for the lock assertion.
@@ -84,12 +84,12 @@ func TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock(t *testing.T) {
 }
 
 func TestMySQLNodeStatsFailureRetainsSettlementAndRetriesProjection(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	assertObservationSettlementHandoff(t, h, credential)
 }
 
 func TestMySQLConsumerBoundsTransactionsAndDrainsBacklog(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	count := zeroEventConsumerBurstBatches*zeroEventMySQLBatchLimit + 1
 	spool := &checkpointTestSpool{events: accountingBenchmarkEvents(credential, 0, count)}
 	runtime := &zeroEventRuntime{spool: spool, config: zeroevent.ConsumerConfig{MaxBatch: 2000}}

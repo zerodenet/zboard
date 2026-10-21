@@ -25,7 +25,7 @@ func newMySQLOrderFixture(t *testing.T) orderFixture {
 }
 
 func TestMySQLOrderSettlementPublicationAndExpiry(t *testing.T) {
-	f := newMySQLOrderFixture(t)
+	f := newMySQLBusinessOrderFixture(t)
 	endpoint := attachOrderPublishEndpoint(t, f)
 	order := f.create(t, 0)
 	if err := f.h.db.Exec(`CREATE TRIGGER reject_publish BEFORE INSERT ON node_config_publishes
@@ -121,7 +121,7 @@ func TestMySQLOrderSettlementPublicationAndExpiry(t *testing.T) {
 }
 
 func TestMySQLConcurrentSettlementRespectsPlanCapacity(t *testing.T) {
-	f := newMySQLOrderFixture(t)
+	f := newMySQLBusinessOrderFixture(t)
 	if err := f.h.db.Model(&f.planRecord).Update("max_active_subscriptions", 1).Error; err != nil {
 		t.Fatal(err)
 	}

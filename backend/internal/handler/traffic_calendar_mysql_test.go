@@ -13,7 +13,7 @@ import (
 )
 
 func TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	for _, timezone := range []string{"UTC", "Asia/Shanghai", "Asia/Kathmandu", "Australia/Lord_Howe", "America/New_York"} {
 		t.Run(timezone, func(t *testing.T) {
 			location, err := time.LoadLocation(timezone)

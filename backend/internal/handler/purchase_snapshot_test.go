@@ -15,7 +15,7 @@ func TestPurchaseSnapshotSurvivesCatalogEditsAndEarlyRenewal(t *testing.T) {
 	assertPurchaseSnapshot(t, newOrderFixture(t))
 }
 func TestMySQLPurchaseSnapshotSurvivesCatalogEditsAndEarlyRenewal(t *testing.T) {
-	assertPurchaseSnapshot(t, newMySQLOrderFixture(t))
+	assertPurchaseSnapshot(t, newMySQLBusinessOrderFixture(t))
 }
 func assertPurchaseSnapshot(t *testing.T, f orderFixture) {
 	t.Helper()

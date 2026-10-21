@@ -15,7 +15,7 @@ import (
 )
 
 func TestMySQLHourlyProjectionFailureAndRebuildPreservePendingCheckpoint(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	ctx := context.Background()
 	if err := h.db.Exec(`CREATE TRIGGER reject_hourly_chart BEFORE INSERT ON traffic_usage_hourly FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='hourly chart unavailable'`).Error; err != nil {
 		t.Fatal(err)
@@ -61,7 +61,7 @@ func TestMySQLHourlyProjectionFailureAndRebuildPreservePendingCheckpoint(t *test
 }
 
 func TestMySQLSlowHourlyProjectionDoesNotHoldCoreIntentInsertGap(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	ctx := context.Background()
 	if err := h.projectZeroNodeEvents(ctx, accountingBenchmarkEvents(credential, 0, 4)); err != nil {
 		t.Fatal(err)

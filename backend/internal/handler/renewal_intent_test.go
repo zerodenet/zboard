@@ -12,7 +12,7 @@ func TestRenewalIntentCannotConsumeTheSameTargetTwice(t *testing.T) {
 	assertRenewalIntent(t, newOrderFixture(t))
 }
 func TestMySQLRenewalIntentCannotConsumeTheSameTargetTwice(t *testing.T) {
-	assertRenewalIntent(t, newMySQLOrderFixture(t))
+	assertRenewalIntent(t, newMySQLBusinessOrderFixture(t))
 }
 func assertRenewalIntent(t *testing.T, f orderFixture) {
 	t.Helper()

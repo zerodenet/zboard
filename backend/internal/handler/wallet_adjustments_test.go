@@ -122,7 +122,7 @@ func TestControlledWalletAdjustmentRollback(t *testing.T) {
 	assertAdjustmentRollback(t, newOrderFixture(t))
 }
 func TestMySQLControlledWalletAdjustmentRollback(t *testing.T) {
-	assertAdjustmentRollback(t, newMySQLOrderFixture(t))
+	assertAdjustmentRollback(t, newMySQLBusinessOrderFixture(t))
 }
 func assertAdjustmentRollback(t *testing.T, f orderFixture) {
 	fundTestWallet(t, f, 1000)
@@ -148,7 +148,7 @@ func assertAdjustmentRollback(t *testing.T, f orderFixture) {
 	walletMatches(t, f, 500, 0, 2)
 }
 func TestMySQLControlledWalletAdjustmentConcurrent(t *testing.T) {
-	f := newMySQLOrderFixture(t)
+	f := newMySQLBusinessOrderFixture(t)
 	fundTestWallet(t, f, 1000)
 	ticket := adjustmentTicket(t, f)
 	s := f.h.services.WalletAdjustments

@@ -16,7 +16,7 @@ func TestRenewalUsesPurchasedBasePriceAndPreservesHistory(t *testing.T) {
 	assertRenewalPriceLock(t, newOrderFixture(t))
 }
 func TestMySQLRenewalUsesPurchasedBasePriceAndPreservesHistory(t *testing.T) {
-	assertRenewalPriceLock(t, newMySQLOrderFixture(t))
+	assertRenewalPriceLock(t, newMySQLBusinessOrderFixture(t))
 }
 func assertRenewalPriceLock(t *testing.T, f orderFixture) {
 	t.Helper()
@@ -127,7 +127,7 @@ func TestRenewalNewPeriodRequiresAcceptanceAndKeepsBothAgreements(t *testing.T) 
 	assertRenewalNewPeriodAgreement(t, newOrderFixture(t))
 }
 func TestMySQLRenewalNewPeriodRequiresAcceptanceAndKeepsBothAgreements(t *testing.T) {
-	assertRenewalNewPeriodAgreement(t, newMySQLOrderFixture(t))
+	assertRenewalNewPeriodAgreement(t, newMySQLBusinessOrderFixture(t))
 }
 func assertRenewalNewPeriodAgreement(t *testing.T, f orderFixture) {
 	t.Helper()

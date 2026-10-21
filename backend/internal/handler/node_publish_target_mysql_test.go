@@ -10,7 +10,7 @@ import (
 )
 
 func TestMySQLPublicationCannotReplaceOrConfirmADifferentTarget(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	node := model.Node{Name: "immutable-target", LifecycleStatus: "active", Config: "{}"}
 	if err := h.db.Create(&node).Error; err != nil {
 		t.Fatal(err)

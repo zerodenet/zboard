@@ -13,7 +13,7 @@ import (
 )
 
 func TestMySQLUsageProjectionCompetingWorkersAndCheckpointRecovery(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	ctx := context.Background()
 	if err := h.projectZeroNodeEvents(ctx, accountingBenchmarkEvents(credential, 0, 8)); err != nil {
 		t.Fatal(err)
