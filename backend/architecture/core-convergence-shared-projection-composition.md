@@ -31,3 +31,8 @@ P6 前置子批。application 的 UsageProjectionJob/NodeObservationJob 返回�
 无独立 worker 命令/进程、额外并发或伸缩器。未来投影 worker 仍须先用只读前置检查，不能 PrepareSchema/补默认/bootstrap/打开HTTP、spool或插件；只组合被选定任务，不能借 handler.backgroundJobs 注册其他执行器。维护门禁仍有既有1秒缓存，Drain超时后Close仍等待本地完成，均不承诺新硬期限。
 
 既有 core:<id> 和全局预算互斥不能证明同队列多进程吞吐收益。必须先测得隔离收益，再扩展 worker；插件忙负载/慢DB/持续增长/平滑伸缩仍待验，P6/P7未完成。P4 source/parts重放与安全保留仍独立未解决。
+
+
+a092精确提交已有自己的六项CI和本地完整MySQL三命令全通过，见计划末节及
+final-ci/final-mysql收据。接续发现的既有周期panic观察误报另见
+[专门修复](core-convergence-periodic-panic-observation.md)，该新头仍需自己的验收。

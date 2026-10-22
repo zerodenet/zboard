@@ -24,10 +24,10 @@
 | P4 计量SQL/保留 | 部分实现（原容量、双库/竞态、两个新头完整CI通过） | 累计游标cohort32→1次SELECT/原舍入不变；0060可靠来源交接和独立Stats/Latest、删除/复用资产隔离实装，ae2完整CI/原容量通过。1012只读队列API/实际节点页drawer及精度/权限/分页有界读取通过，自己的CI39551804875六项全通过。0056仅诊断清理，TrafficRecord及applied未引用parts仍有重放依赖；安全归档/held恢复/总增长仍缺 |
 | P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
 | P5 工单业务关联 | 已实现且验证（隔离范围） | 4e1a78d/0058双库实际DDL/权限/首消息回滚/锁序；a82每行独立订阅关联入口及完整frontend201files/1112pass/8既有skip、build通过；01eb完整backend与六项CI覆盖。终止历史仍由原订单入口关联，无服务列表权限扩张 |
-| P6 进程关闭/队列所有权前置 | 部分实现（只读检查六项CI、共享组合冻结双库/竞态及完整后端通过） | file-spool内核锁、local Drain/Detach与server/plugin cleanup保留；376只读检查自己的CI39707391997六绿/本地完整MySQL通过。两类默认入口共享application定义的7文件冻结验证通过；精确提交后CI/完整MySQL另记，无独立worker或伸缩收益 |
+| P6 进程关闭/队列所有权前置 | 部分实现（只读检查及共享组合各自六项CI、本地完整MySQL通过；panic观察修复双库/竞态及完整后端通过） | file-spool锁、local Drain/Detach和关闭边界保留；376只读检查、a092两类默认入口共享定义均独立验收。周期panic观察误报经旧反例复现后修正，新头CI/完整MySQL另记；无独立worker、伸缩或收益证明 |
 | P3/P4 派生主体索引恢复/复制 | 部分实现（双库专项、完整检查及后续CI通过） | a9先失效再DDL修复；0f已知缺派生列复制显式version0，15真实复制/回滚、201行合同及重点race3通过并纳入后续新头CI。完整旧错误v1不猜测修复，未知源事实不补零 |
 | P3/P4 节点资产入队来源 | 部分实现（双库/race3、完整新头CI和原容量通过） | 0059认证捕获资产来源、可选v1成员/混合来源保序；0060独立Stats/Latest及删除墓碑、精确token/lease、credential最终写栅栏由a82/ae2实装验证。1012管理员元数据入口保留历史关系而非当前来源证明；无外部租约期限支持或原始材料裁剪 |
-| P7 当前提交验证 | 部分实现/未完成 | 376自己的CI39707391997六项及本地完整MySQL三命令通过，b58/1012/c923结果按各自精确head保留。共享组合本地完整后端及双库/race3通过，精确提交后独立CI/完整MySQL以PR和接续记录为准；376容量两次磁盘预检退出、未执行负载，历史900s/112次503失败保留，整体P7未完成 |
+| P7 当前提交验证 | 部分实现/未完成 | a092自己的CI39711529585六项及本地完整MySQL三命令通过；376/b58/1012/c923结果各按精确head保留。panic修复冻结双库/race3及完整后端通过，提交后独立CI/完整MySQL另见PR与接续收据。376容量两次预检未进负载，旧900s/112次503及环境操作失败保留，整体P7未完成 |
 | 其余P2及P3–P7 | 部分实现/未完成 | 活跃部分退款/永久多次增购决策、其他操作优惠/外部券契约、完整计量保留、持续增长/资源竞争/独立worker/伸缩、最终综合回归 |
 
 ## 需求—实现—差距表
@@ -1555,3 +1555,27 @@ SQLite52.008s/MySQL36.857s专项、两套race/count3为345.223s/107.316s全部�
 [冻结7文件/完整命令、包及skip结果](validation/2026-10-22-shared-projection-composition.json)。
 提交后精确CI和完整MySQL独立记录，不由376六绿替代；全局预算/core资源互斥及
 维护门禁既有1s缓存保持，没有证据证明多进程收益，尚不实施独立worker或伸缩器。
+
+
+a092f968精确提交最终回归：本地完整MySQL三命令全通过，core826.762s
+（handler802.608s/datastore165.039s/network171.861s/application19.896s），
+jobstore124.223s/copy226.498s命令wall；
+[实库记录](validation/2026-10-22-shared-projection-composition-final-mysql.json)。
+自己的[CI39711529585](https://github.com/zerodenet/zboard/actions/runs/39711529585)
+六项全通过（MySQLhandler815.488s/application24.186s/jobstore124.325s/copy222.271s），
+[完整精确CI及前端204files/1140pass、8既有环境skip](validation/2026-10-22-shared-projection-composition-final-ci.json)。
+
+### 2026-10-22 P6前置：周期panic的观察结果
+
+既有Executor已将panic对应run/attempt/schedule记unknown，但周期shell具名err仍nil，
+进程内观察器误报succeeded/Failures0。相同新测试在旧a092实际失败三个入口，
+18.144s/raw Go exit1，均已先核对durable unknown/单run/单attempt，原失败保留。
+修复只记录Run是否正常返回，未返回用固定安全错误完成观察，不recover/读取panic值；
+原panic继续由唯一Executor完成unknown，不增重试或改业务/交付结果。无SQL或迁移。
+
+SQLite19.699s/MySQL49.670s专项、race/count3为409.351s/138.558s通过；
+完整backend346.315s/vet11.411s/build2.049s/CGO0SQLite38.792s通过。
+[行为/回退/范围](core-convergence-periodic-panic-observation.md)、
+[两文件冻结、旧反例与全部本地结果](validation/2026-10-22-periodic-panic-observation.json)。
+新头自己的CI与完整MySQL在提交后独立验收，不借a092六绿；OS进程崩溃/
+SIGKILL、外部渠道和内核不由该panic probe验收。P6/P7其余能力未完成。

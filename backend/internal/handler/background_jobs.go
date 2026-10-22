@@ -70,8 +70,19 @@ func (h *handlers) startPeriodicJob(job application.PeriodicJob) {
 	run := job.Run
 	job.Run = func(ctx context.Context) (err error) {
 		finish := h.observeJob(job.ID, "periodic", job.Interval, 1)
-		defer func() { finish(err) }()
-		return run(ctx)
+		returned := false
+		defer func() {
+			if !returned {
+				// Preserve the panic for Executor's existing Unknown outcome.
+				// Never inspect or expose the handler's panic material.
+				finish(errors.New("job handler did not return; result requires verification"))
+				return
+			}
+			finish(err)
+		}()
+		err = run(ctx)
+		returned = true
+		return err
 	}
 	err := h.services.RegisterPeriodicJob(job)
 	if err != nil {
