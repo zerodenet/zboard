@@ -24,7 +24,7 @@
 | P4 计量SQL/保留 | 部分实现（原容量、双库/竞态、两个新头完整CI通过） | 累计游标cohort32→1次SELECT/原舍入不变；0060可靠来源交接和独立Stats/Latest、删除/复用资产隔离实装，ae2完整CI/原容量通过。1012只读队列API/实际节点页drawer及精度/权限/分页有界读取通过，自己的CI39551804875六项全通过。0056仅诊断清理，TrafficRecord及applied未引用parts仍有重放依赖；安全归档/held恢复/总增长仍缺 |
 | P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
 | P5 工单业务关联 | 已实现且验证（隔离范围） | 4e1a78d/0058双库实际DDL/权限/首消息回滚/锁序；a82每行独立订阅关联入口及完整frontend201files/1112pass/8既有skip、build通过；01eb完整backend与六项CI覆盖。终止历史仍由原订单入口关联，无服务列表权限扩张 |
-| P6 进程关闭/队列所有权前置 | 部分实现（真实子进程、SQLite/race、MySQL） | file-spool内核锁、local Drain/Detach和实际server/plugin cleanup；3690113原MySQL及copy通过，7ef CI MySQL通过；无独立worker或伸缩器 |
+| P6 进程关闭/队列所有权前置 | 部分实现（本地关闭及只读检查命令专项双库通过，新头CI待验） | file-spool内核锁、local Drain/Detach和实际server/plugin cleanup；3690113原MySQL及copy通过，7ef CI MySQL通过；无独立worker或伸缩器 |
 | P3/P4 派生主体索引恢复/复制 | 部分实现（双库专项、完整检查及后续CI通过） | a9先失效再DDL修复；0f已知缺派生列复制显式version0，15真实复制/回滚、201行合同及重点race3通过并纳入后续新头CI。完整旧错误v1不猜测修复，未知源事实不补零 |
 | P3/P4 节点资产入队来源 | 部分实现（双库/race3、完整新头CI和原容量通过） | 0059认证捕获资产来源、可选v1成员/混合来源保序；0060独立Stats/Latest及删除墓碑、精确token/lease、credential最终写栅栏由a82/ae2实装验证。1012管理员元数据入口保留历史关系而非当前来源证明；无外部租约期限支持或原始材料裁剪 |
 | P7 当前提交验证 | 部分实现/未完成 | c923本地完整backend四项及原MySQL三命令通过（handler792.924s），自己的CI39551414306六项通过（handler793.032s）。1012观察队列自己的CI39551804875也六项通过（handler795.368s，独立jobstore/copy实际完成）。907及更早900s失败保留，不拿新通过改写历史。最新未提交维护源候选只归入其独立验证，P7容量/升级/剩余能力仍不完整 |
@@ -1484,3 +1484,41 @@ CI仅将application加入原首条MySQL命令，原三条次序、阈值及既�
 跨站请求，仅准确识别固定公共版本GET的预期阻断，其他异常仍失败，无mock/种数。
 [两次原始结果及脚本差异](validation/2026-10-21-node-observation-operations-browser.json)。
 实际小计数不证明2^53边界，该边界仍由专项双库合同证明；不宣称生产或长期容量通过。
+
+
+### 2026-10-22 原云端恢复核对
+
+原主工作区仍为b58df695687066bdb430c8dca4b6a0a08a73cc5f，同一分支/PR78；
+远端develop仍7c7283f，d98b018/38ddd913仍为祖先。11文件P6静态候选、冻结manifest/
+patch及旧日志完整保留，先按哈希备份再继续。没有转到Mac或其他仓库。
+
+b58精确本地完整MySQL三命令全部实际结束：core829.470s（handler804.963s/
+datastore165.817s/network174.930s/application5.637s），jobstore132.385s、
+copy241.937s命令wall，[本地记录](validation/2026-10-22-maintenance-source-final-mysql.json)。
+自己的CI39557761184六项全通过，实际MySQLhandler634.579s/application4.654s/
+jobstore88.842s/copy157.918s，[精确CI](validation/2026-10-22-maintenance-source-final-ci.json)。
+只证明b58；P6候选及后续新头仍需自己的实际编译、双库和CI。
+
+P6首次执行发现静态稿缺collation结构字段导致build失败；其次SQLite实际拒绝0024
+既有TEXT小时键，并暴露命令fixture的无效全配置零值及失败清理相互影响。失败日志
+和冻结源码保留，修正物理兼容及测试准备/cleanup后重验，不放宽断言或阈值。
+
+
+### 2026-10-22 P6前置：可执行只读投影数据库检查
+
+新增-check-projection-database实际命令，互斥现有迁移/回滚模式，在凭据/Prepare/
+bootstrap/Services/HTTP/spool之前退出。只验投影实际12receipt/物理列、PK、索引、
+来源FK和旧writer/预算/维护源；历史receipt保留，不认证整库或未来版本。
+SQLite使用既有文件ro/query_only/deferred，拒绝_pragma/immutable/nolock等不能
+证明实时只读的路径；MySQL使用既有DSN READ ONLY事务，完整grant证据拒绝REVOKE/
+角色/不明限制，不创建账号或改权限。维护复用b58既有strict读取与legacy回退。
+
+最终freeze05真实MySQL13.701s及race3/46.953s通过，SQLite最终race3/111.838s通过；
+完整backend206.061s（42未变包Go缓存，handler196.579s实际重跑）、vet0.631s/
+build0.244s/CGO0SQLite17.988s通过。之前freeze04完整backend281.652s及其余通过另保留。
+构建后二进制实际SQLite命令保持DB/WAL哈希；MySQL正常/坏schema实际命令均符合预期，
+所有行/DDL前后相同且临时库DROP确认，不启动bootstrap/凭据迁移/本地存储。
+[行为/回退/限制](core-convergence-projection-database-check.md)、
+[冻结源码/全部失败与通过](validation/2026-10-22-projection-database-check.json)。
+独立SELECT-only账号实际权限未验证，parser反例不冒充实库权限证明。无迁移；新头
+完整MySQL/CI待验，b58六绿不能代替本头。共享投影组合/独立worker/伸缩收益仍未实现。
