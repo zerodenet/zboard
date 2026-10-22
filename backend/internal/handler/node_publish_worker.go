@@ -73,16 +73,24 @@ func (h *handlers) CloseNodePublishWorker() {
 	}
 }
 
-func (h *handlers) executeNodePublish(parent context.Context, item model.NodeConfigPublish, publish func(context.Context) error) error {
+func (h *handlers) executeNodePublish(parent context.Context, item model.NodeConfigPublish, publish func(context.Context) error) (failure error) {
 	finishObservation := h.observeJob("node_publish", "queue", nodePublishPollInterval, nodeConfigPublishWorkerCount)
+	returned := false
+	defer func() {
+		if !returned {
+			finishObservation(errors.New("job handler did not return; result requires verification"))
+			return
+		}
+		finishObservation(failure)
+	}()
 	executor := publicationExecutorFunc(func(ctx context.Context, _ network.Publication) error { return publish(ctx) })
-	failure := h.services.NodePublication(executor).Execute(parent, publicationCapability(item))
-	defer func() { finishObservation(failure) }()
+	failure = h.services.NodePublication(executor).Execute(parent, publicationCapability(item))
 	if errors.Is(failure, network.ErrPublicationLeaseLost) || errors.Is(failure, network.ErrPublicationFinalize) {
 		log.Printf("retain node publication for lease recovery: node_id=%d error=%v", item.NodeID, failure)
 	} else if failure != nil {
 		log.Printf("node publication scheduled for retry: node_id=%d error=%v", item.NodeID, failure)
 	}
+	returned = true
 	return failure
 }
 

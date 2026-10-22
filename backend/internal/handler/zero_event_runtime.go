@@ -307,19 +307,28 @@ func (h *handlers) consumeZeroEventBatchMeasured(ctx context.Context, spool zero
 		return 0, nil
 	}
 	finishObservation := h.observeJob("event_consumer", "queue", 0, 1)
+	observed := false
+	defer func() {
+		if !observed {
+			finishObservation(errors.New("job handler did not return; result requires verification"))
+		}
+	}()
 	projected, err := h.projectZeroNodeEventsBounded(ctx, batch.Events)
 	if errors.Is(err, metering.ErrFlowWindowNeedsIndividualReports) {
 		projected, err = h.projectZeroNodeEventsWithMerge(ctx, batch.Events, false)
 	}
 	if err != nil {
 		finishObservation(err)
+		observed = true
 		return 0, err
 	}
 	if err := spool.Commit(ctx, batch.Next); err != nil {
 		finishObservation(err)
+		observed = true
 		return 0, fmt.Errorf("commit Zero event checkpoint: %w", err)
 	}
 	finishObservation(nil)
+	observed = true
 	if metrics != nil {
 		metrics.committed(batch.Events, time.Since(started), time.Now().UTC())
 		metrics.projectedFlows.Add(uint64(projected))

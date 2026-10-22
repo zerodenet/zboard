@@ -19,3 +19,8 @@
 ## 范围与未完成
 
 仅修复仍在同一进程内被既有Executor接住的panic之观察。SIGKILL/进程崩溃、真实内核或支付插件不由这些probe测试验收，外部执行是否成功仍需原核验。无新worker/伸缩器或已证实容量收益。P4安全保留、持续增长、资源竞争与P6/P7其余验收保持未完成。
+
+
+a7精确提交自己的六项CI及本地完整MySQL三命令已全部通过，见计划末节及
+final-ci/final-mysql收据。接续发布/消费队列的未结束观察另见
+[专门修复](core-convergence-queue-panic-observation.md)，仍以各自精确新头验收。
