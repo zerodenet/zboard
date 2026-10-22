@@ -6,7 +6,7 @@
 
 只用：**已实现且验证**（明确范围与本轮命令）、**实现未验证**（当前代码存在，本轮未跑）、**部分实现**、**未实现**、**外部能力不足**。生产和外部端到端未验收不能由单元/沙箱测试替代。下表是 P0 代码审计起始状态；后续批次在末节追加测试结果，不修改历史记录成虚假通过。
 
-## 当前接续索引（2026-10-21）
+## 当前接续索引（2026-10-22）
 
 以下为当前子批状态；后面的P0表及历次记录保留原时间语境。
 
@@ -24,10 +24,10 @@
 | P4 计量SQL/保留 | 部分实现（原容量、双库/竞态、两个新头完整CI通过） | 累计游标cohort32→1次SELECT/原舍入不变；0060可靠来源交接和独立Stats/Latest、删除/复用资产隔离实装，ae2完整CI/原容量通过。1012只读队列API/实际节点页drawer及精度/权限/分页有界读取通过，自己的CI39551804875六项全通过。0056仅诊断清理，TrafficRecord及applied未引用parts仍有重放依赖；安全归档/held恢复/总增长仍缺 |
 | P5-01 全局会话 | 部分实现（完整前端验证） | 415a426；真实Chromium/HTTP/SQLite验收已通过（独立cf后端+产物绑定），外部OIDC草稿不承诺恢复 |
 | P5 工单业务关联 | 已实现且验证（隔离范围） | 4e1a78d/0058双库实际DDL/权限/首消息回滚/锁序；a82每行独立订阅关联入口及完整frontend201files/1112pass/8既有skip、build通过；01eb完整backend与六项CI覆盖。终止历史仍由原订单入口关联，无服务列表权限扩张 |
-| P6 进程关闭/队列所有权前置 | 部分实现（本地关闭及只读检查命令专项双库通过，新头CI待验） | file-spool内核锁、local Drain/Detach和实际server/plugin cleanup；3690113原MySQL及copy通过，7ef CI MySQL通过；无独立worker或伸缩器 |
+| P6 进程关闭/队列所有权前置 | 部分实现（只读检查六项CI、共享组合冻结双库/竞态及完整后端通过） | file-spool内核锁、local Drain/Detach与server/plugin cleanup保留；376只读检查自己的CI39707391997六绿/本地完整MySQL通过。两类默认入口共享application定义的7文件冻结验证通过；精确提交后CI/完整MySQL另记，无独立worker或伸缩收益 |
 | P3/P4 派生主体索引恢复/复制 | 部分实现（双库专项、完整检查及后续CI通过） | a9先失效再DDL修复；0f已知缺派生列复制显式version0，15真实复制/回滚、201行合同及重点race3通过并纳入后续新头CI。完整旧错误v1不猜测修复，未知源事实不补零 |
 | P3/P4 节点资产入队来源 | 部分实现（双库/race3、完整新头CI和原容量通过） | 0059认证捕获资产来源、可选v1成员/混合来源保序；0060独立Stats/Latest及删除墓碑、精确token/lease、credential最终写栅栏由a82/ae2实装验证。1012管理员元数据入口保留历史关系而非当前来源证明；无外部租约期限支持或原始材料裁剪 |
-| P7 当前提交验证 | 部分实现/未完成 | c923本地完整backend四项及原MySQL三命令通过（handler792.924s），自己的CI39551414306六项通过（handler793.032s）。1012观察队列自己的CI39551804875也六项通过（handler795.368s，独立jobstore/copy实际完成）。907及更早900s失败保留，不拿新通过改写历史。最新未提交维护源候选只归入其独立验证，P7容量/升级/剩余能力仍不完整 |
+| P7 当前提交验证 | 部分实现/未完成 | 376自己的CI39707391997六项及本地完整MySQL三命令通过，b58/1012/c923结果按各自精确head保留。共享组合本地完整后端及双库/race3通过，精确提交后独立CI/完整MySQL以PR和接续记录为准；376容量两次磁盘预检退出、未执行负载，历史900s/112次503失败保留，整体P7未完成 |
 | 其余P2及P3–P7 | 部分实现/未完成 | 活跃部分退款/永久多次增购决策、其他操作优惠/外部券契约、完整计量保留、持续增长/资源竞争/独立worker/伸缩、最终综合回归 |
 
 ## 需求—实现—差距表
@@ -1522,3 +1522,36 @@ build0.244s/CGO0SQLite17.988s通过。之前freeze04完整backend281.652s及其�
 [冻结源码/全部失败与通过](validation/2026-10-22-projection-database-check.json)。
 独立SELECT-only账号实际权限未验证，parser反例不冒充实库权限证明。无迁移；新头
 完整MySQL/CI待验，b58六绿不能代替本头。共享投影组合/独立worker/伸缩收益仍未实现。
+
+
+376a3cfd精确提交最终回归：本地完整MySQL三命令全部通过，core825.328s
+（handler802.583s/datastore158.097s/network169.856s/application19.769s），
+jobstore130.035s、copy230.053s命令wall；
+[本地实库记录](validation/2026-10-22-projection-database-check-final-mysql.json)。
+自己的[CI39707391997](https://github.com/zerodenet/zboard/actions/runs/39707391997)
+六项全通过，实际MySQLhandler807.318s/application20.371s/jobstore125.401s/
+copy222.494s，[精确CI记录](validation/2026-10-22-projection-database-check-final-ci.json)。
+以上只证明376，不替代后续共享组合候选、新head或生产验收。
+
+
+376精确原容量两次尝试均在实际60秒负载前退出：原磁盘预检要求1,677,721,600B，
+实际分别1,345,019,904B及1,152,761,856B；源码/二进制绑定通过不代表容量通过。
+[两次失败/未执行记录](validation/2026-10-22-projection-database-check-original-capacity.json)。
+只对已停止的独立副本物理应急预留持锁后做可恢复无损归档，其余DB/WAL/事件/
+checkpoint和owner-lock inode核对不变。未降低磁盘门槛或更改原runner；原1012容量
+通过及112/157 HTTP503历史失败均不改写，本头容量仍未验收。
+
+
+### 2026-10-22 P6前置：默认投影共享组合
+
+usage/node-observation两个真实默认入口复用application PeriodicJob定义，RegisterPeriodicJob
+仍为唯一durable identity/policy组合。原1s/30m/200及32/8MiB、immediate/retry/
+reconcile、零值规划、observer和重复注册/关闭边界保留。无新SQL、模型、迁移、
+财务写入、worker进程或扩缩。原170个handler MySQL函数及154份SQL不变。
+
+SQLite52.008s/MySQL36.857s专项、两套race/count3为345.223s/107.316s全部通过；
+完整backend344.307s/vet11.729s/build1.894s/CGO0SQLite38.355s通过。
+[实际入口/回退/剩余](core-convergence-shared-projection-composition.md)、
+[冻结7文件/完整命令、包及skip结果](validation/2026-10-22-shared-projection-composition.json)。
+提交后精确CI和完整MySQL独立记录，不由376六绿替代；全局预算/core资源互斥及
+维护门禁既有1s缓存保持，没有证据证明多进程收益，尚不实施独立worker或伸缩器。

@@ -1,15 +1,7 @@
 package handler
 
-import (
-	"context"
-	"time"
-)
-
 func (h *handlers) StartNodeObservationWorker() {
-	h.startScheduledJob("node_observation", time.Second, func(ctx context.Context) error {
-		_, err := h.services.NodeObservations.Drain(ctx, 32, 8*1024*1024)
-		return err
-	})
+	h.startPeriodicJob(h.services.NodeObservationJob())
 }
 
 // This is an explicit global administrative stop. Process shutdown uses the

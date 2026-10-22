@@ -4,19 +4,21 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/zerodenet/zboard/backend/internal/application"
 )
 
 func (h *handlers) jobReadiness(id string) func(context.Context) (bool, error) {
-	if id != "admin_tasks" && id != "event_consumer" && id != "usage_projection" && id != "node_observation" && !strings.HasPrefix(id, "node_publish_") {
+	if id == application.NodeObservationJobID {
+		return h.services.NodeObservationJob().Ready
+	}
+	if id == application.UsageProjectionJobID {
+		return h.services.UsageProjectionJob().Ready
+	}
+	if id != "admin_tasks" && id != "event_consumer" && !strings.HasPrefix(id, "node_publish_") {
 		return nil
 	}
 	return func(ctx context.Context) (bool, error) {
-		if id == "node_observation" {
-			return h.services.NodeObservations.HasPending(ctx)
-		}
-		if id == "usage_projection" {
-			return h.services.UsageProjections.HasPending(ctx)
-		}
 		if id == "event_consumer" {
 			value, ok := zeroEventRuntimeRegistry.Load(h)
 			if !ok {

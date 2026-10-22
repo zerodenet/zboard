@@ -1,0 +1,3246 @@
+{
+  "source_base": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+  "recorded_utc": "2026-10-22T02:26:44.684129+00:00",
+  "status": "frozen candidate verified by sequential local checks; exact post-commit CI and full MySQL reported separately",
+  "source_manifest": {
+    "status": "freeze01-static-only-not-compiled",
+    "base_head": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+    "clone": "/workspace/zboard-shared-projection-composition-verify",
+    "frozen_utc": "2026-10-22T01:55:50.092782+00:00",
+    "files": {
+      "backend/internal/application/projection_jobs.go": "afedb0317b55cc3e612a4a580135004ebcfb1c1d39faf7ef6a8370cacacc99ad",
+      "backend/internal/application/projection_jobs_test.go": "40a69ef05837a799c1315b1f8c96882ddc9715f7b260a4578253b2fd2e16e6f8",
+      "backend/internal/handler/background_jobs.go": "5900f9c64bba7e5b719a4415a18b903fbc9bea4587dd89a58b691ed2bc72c6d5",
+      "backend/internal/handler/job_readiness.go": "8aff7fd7cb561117496be0d3a219e07a27f0cc4558b21854a2d1c3c74198e86c",
+      "backend/internal/handler/node_observation_worker.go": "eedf0300bf01a54a40164ccf4ab3a7281961dcd0af582dce30b62946978ff518",
+      "backend/internal/handler/projection_job_composition_test.go": "d8e1937fa022e66244d28fdc8a134c4d1b0b5371153ce301b9ec2943f931dfad",
+      "backend/internal/handler/usage_projection_worker.go": "42216aa60fa345db1ccfe86be61d71bd22e2234e8e358a4eed8f8a4e3eba06b6"
+    },
+    "file_count": 7,
+    "production_file_count": 5,
+    "test_file_count": 2,
+    "source_manifest_sha256": "cfae8c47136543613359a989aec530f16e54444bd17d44437a390b53462995bb",
+    "source_manifest_encoding": "sha256 UTF-8 json.dumps(files,sort_keys=True,separators=(comma,colon))",
+    "patch_sha256": "9649084a24697d03f7d3db38246e5a575beb61f19c0b0773138214b852f90ee3",
+    "static_checks_sha256": "eb335e1d11b620ac7434766eb14208847982a374210bf6aba811eca32dc6933a",
+    "scope": "share two application PeriodicJob definitions and connect default handler entrypoints; no worker command",
+    "policy": {
+      "usage_projection": {
+        "name": "\u8ba1\u91cf\u7edf\u8ba1\u6295\u5f71",
+        "count": 200
+      },
+      "node_observation": {
+        "name": "\u8282\u70b9\u89c2\u5bdf\u6295\u5f71",
+        "count": 32,
+        "bytes": 8388608
+      },
+      "shared": {
+        "interval_seconds": 1,
+        "timeout_seconds": 1800,
+        "immediate": true,
+        "retry_failures": true,
+        "reconcile_after_loss": true,
+        "external": false,
+        "timezone": "",
+        "misfire_policy": "",
+        "first_planned_at": "zero",
+        "owner": "system",
+        "resource": "core:<id>",
+        "revision": "1",
+        "max_attempts": 3,
+        "retry_backoff_seconds": 1
+      }
+    },
+    "validation_status": "No Go compilation/test/vet, SQL, Node, Docker, browser or benchmark executed",
+    "limits": [
+      "Default topology unchanged; no worker command/process/autoscaling",
+      "Same core resource/global budget permits no same-queue parallelism claim",
+      "WorkPaused retains its existing one-second cache; no forced fresh SQL per claim",
+      "This is an equivalence refactor; old implementations may pass equivalent behavior tests, not expected failure controls",
+      "New explicit MySQL contract wrapper uses the existing business fixture once; no existing factory/opt-in/assertion changes",
+      "Projection SQL, authority, migrations, models, runtime/ledger lifecycle and spool/plugin ownership unchanged"
+    ]
+  },
+  "static_checks": {
+    "validation_status": "STATIC_ONLY_NOT_EXECUTED",
+    "formatting": "gofmt7 files parse/format only",
+    "diff_check": "PASS",
+    "patch_reverse_check": "PASS",
+    "generic_periodic_literal_fields_unchanged": true,
+    "protected_handler_function_bodies_unchanged": [
+      "backgroundJobs",
+      "observeJob",
+      "closeScheduledJob",
+      "detachScheduledJob",
+      "Shutdown",
+      "CloseBackgroundJobs"
+    ],
+    "explicit_node_stop_body_unchanged": true,
+    "protected_source_files_unchanged": [
+      "backend/cmd/zboard/main.go",
+      "backend/internal/application/services.go",
+      "backend/internal/application/background_jobs.go",
+      "backend/internal/application/maintenance.go",
+      "backend/internal/capabilities/jobs/runtime.go",
+      "backend/internal/adapters/persistence/jobstore/store.go",
+      "backend/internal/adapters/persistence/jobstore/schedules.go",
+      "backend/internal/handler/application_test.go",
+      "backend/internal/handler/node_publish_mysql_test.go",
+      "backend/internal/handler/order_mysql_test.go"
+    ],
+    "existing_mysql_top_level_functions_unchanged": 170,
+    "published_sql_count": 154,
+    "published_sql_unchanged": true,
+    "cli_worker_or_autoscale_added": false,
+    "tests_executed": []
+  },
+  "static_proof_sha256": {
+    "manifest.json": "0df7790f8aeab94b47cc67538c7ea838474e1ad68674f351749ac9ead1470c2c",
+    "candidate.patch": "9649084a24697d03f7d3db38246e5a575beb61f19c0b0773138214b852f90ee3",
+    "static-checks.json": "eb335e1d11b620ac7434766eb14208847982a374210bf6aba811eca32dc6933a",
+    "protected-functions.json": "3516baf4e595cbf42f4c46a9e30516cac99dd241f4d7671683586e11f7ce089c",
+    "mysql-functions-unchanged.json": "272960a265a2659099f761956bd7e1f7611fa48917f697e6d7cead9c9d550cce"
+  },
+  "checks": [
+    {
+      "source_base": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+      "frozen_source_manifest": "cfae8c47136543613359a989aec530f16e54444bd17d44437a390b53462995bb",
+      "phase": "sqlite",
+      "actual_mysql": false,
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "2",
+        "-json",
+        "./internal/application",
+        "./internal/handler",
+        "./internal/capabilities/jobs",
+        "./internal/adapters/persistence/jobstore",
+        "-run",
+        "ProjectionJobDefinitions|ProjectionDefinitionsKeepLive|ServicesAndProjection|SQLiteDefaultProjectionJobs|ProjectionGenericReadiness|ProjectionFailedRegistration|PeriodicContinuation|PeriodicObservation|BackgroundShutdown|Shutdown|ApplicationOwnsWorkGate|Drain|Detach|Foreign",
+        "-count=1",
+        "-timeout=15m"
+      ],
+      "started_utc": "2026-10-22T02:10:22.974983+00:00",
+      "exit_code": 0,
+      "wall_seconds": 52.008,
+      "raw_log_sha256": "764b79bfce0d635ccfca805e9ae1d1295d8b0b60e9f1b89c17af68e3f8d4746b",
+      "raw_log_bytes": 96271,
+      "source_unchanged": true,
+      "finished_utc": "2026-10-22T02:11:14.983657+00:00",
+      "test_outcome_counts": {
+        "pass": 51,
+        "skip": 7
+      },
+      "package_outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Elapsed": 2.208
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/jobs",
+          "Elapsed": 0.181
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore",
+          "Elapsed": 0.072
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Elapsed": 10.481
+        }
+      ],
+      "skipped_test_outcomes": [
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAccountingUserForeignKeyDoesNotInvertCommerceLockOrder",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBusinessTemplateEnforcesForeignKeysAndChecks",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore",
+          "Test": "TestMySQLRuntimeDrainPreservesInFlightAndPendingWork",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPeriodicContinuationPreservesExecutionOutcome",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupResourceBusyOnCredentialNodeForeignKey",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumerBoundsTransactionsAndDrainsBacklog",
+          "Elapsed": 0
+        }
+      ],
+      "new_test_outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract/usage_projection",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract/node_observation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionDefinitionsKeepLiveCapabilityAndErrorSemantics",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestServicesAndProjectionDefinitionsDoNotPrepareOrRegister",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestSQLiteDefaultProjectionJobsUseSharedComposition",
+          "Elapsed": 1.21
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestProjectionGenericReadinessDelegatesSharedDefinitions",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestProjectionFailedRegistrationDoesNotMarkLoopActive",
+          "Elapsed": 0.17
+        }
+      ],
+      "raw_receipt_sha256": "39fe372e3d5422694e551732982b7e55b0fa5ac37ded7a242e15ad42803e0280",
+      "raw_receipt_private_path": "/workspace/zboard-shared-projection-composition-verify/.codex-local-artifacts/shared-projection-composition/freeze01/root-sqlite-attempt1/receipt.json",
+      "go_cache_output_lines": []
+    },
+    {
+      "source_base": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+      "frozen_source_manifest": "cfae8c47136543613359a989aec530f16e54444bd17d44437a390b53462995bb",
+      "phase": "mysql",
+      "actual_mysql": true,
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "2",
+        "-json",
+        "./internal/handler",
+        "-run",
+        "^(TestMySQLDefaultProjectionJobsUseSharedComposition|TestMySQLPeriodicContinuationPreservesExecutionOutcome|TestMySQLBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent)$",
+        "-count=1",
+        "-timeout=15m"
+      ],
+      "started_utc": "2026-10-22T02:11:15.029605+00:00",
+      "exit_code": 0,
+      "wall_seconds": 36.857,
+      "raw_log_sha256": "e5fde3c306d5b7b024f361583532d4c919064a6dcbe6f31d239de9996e632fb9",
+      "raw_log_bytes": 30128,
+      "source_unchanged": true,
+      "finished_utc": "2026-10-22T02:11:51.886839+00:00",
+      "test_outcome_counts": {
+        "pass": 14
+      },
+      "package_outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Elapsed": 35.517
+        }
+      ],
+      "skipped_test_outcomes": [],
+      "new_test_outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLDefaultProjectionJobsUseSharedComposition",
+          "Elapsed": 3.87
+        }
+      ],
+      "raw_receipt_sha256": "b55618936c5f24308d1360368bd7f1126e5cd6d460efd291a955aba4dc6d7450",
+      "raw_receipt_private_path": "/workspace/zboard-shared-projection-composition-verify/.codex-local-artifacts/shared-projection-composition/freeze01/root-mysql-attempt1/receipt.json",
+      "go_cache_output_lines": []
+    },
+    {
+      "source_base": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+      "frozen_source_manifest": "cfae8c47136543613359a989aec530f16e54444bd17d44437a390b53462995bb",
+      "phase": "race-sqlite",
+      "actual_mysql": false,
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "2",
+        "-json",
+        "-race",
+        "./internal/application",
+        "./internal/handler",
+        "./internal/capabilities/jobs",
+        "./internal/adapters/persistence/jobstore",
+        "-run",
+        "ProjectionJobDefinitions|ProjectionDefinitionsKeepLive|ServicesAndProjection|SQLiteDefaultProjectionJobs|ProjectionGenericReadiness|ProjectionFailedRegistration|PeriodicContinuation|PeriodicObservation|BackgroundShutdown|Shutdown|ApplicationOwnsWorkGate|Drain|Detach|Foreign",
+        "-count=3",
+        "-timeout=15m"
+      ],
+      "started_utc": "2026-10-22T02:11:51.933352+00:00",
+      "exit_code": 0,
+      "wall_seconds": 345.223,
+      "raw_log_sha256": "a5c7b71840ee19fdb43e5a7bb2f9269d55c990fcf9662ed9170e082579584990",
+      "raw_log_bytes": 290718,
+      "source_unchanged": true,
+      "finished_utc": "2026-10-22T02:17:37.157139+00:00",
+      "test_outcome_counts": {
+        "pass": 153,
+        "skip": 21
+      },
+      "package_outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Elapsed": 23.502
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/jobs",
+          "Elapsed": 1.596
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore",
+          "Elapsed": 1.5430000000000001
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Elapsed": 256.372
+        }
+      ],
+      "skipped_test_outcomes": [
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore",
+          "Test": "TestMySQLRuntimeDrainPreservesInFlightAndPendingWork",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore",
+          "Test": "TestMySQLRuntimeDrainPreservesInFlightAndPendingWork",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore",
+          "Test": "TestMySQLRuntimeDrainPreservesInFlightAndPendingWork",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAccountingUserForeignKeyDoesNotInvertCommerceLockOrder",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBusinessTemplateEnforcesForeignKeysAndChecks",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPeriodicContinuationPreservesExecutionOutcome",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupResourceBusyOnCredentialNodeForeignKey",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumerBoundsTransactionsAndDrainsBacklog",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAccountingUserForeignKeyDoesNotInvertCommerceLockOrder",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBusinessTemplateEnforcesForeignKeysAndChecks",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPeriodicContinuationPreservesExecutionOutcome",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupResourceBusyOnCredentialNodeForeignKey",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumerBoundsTransactionsAndDrainsBacklog",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAccountingUserForeignKeyDoesNotInvertCommerceLockOrder",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBusinessTemplateEnforcesForeignKeysAndChecks",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPeriodicContinuationPreservesExecutionOutcome",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupResourceBusyOnCredentialNodeForeignKey",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumerBoundsTransactionsAndDrainsBacklog",
+          "Elapsed": 0
+        }
+      ],
+      "new_test_outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract/usage_projection",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract/node_observation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionDefinitionsKeepLiveCapabilityAndErrorSemantics",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestServicesAndProjectionDefinitionsDoNotPrepareOrRegister",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract/usage_projection",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract/node_observation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionDefinitionsKeepLiveCapabilityAndErrorSemantics",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestServicesAndProjectionDefinitionsDoNotPrepareOrRegister",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract/usage_projection",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract/node_observation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionDefinitionsKeepLiveCapabilityAndErrorSemantics",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestServicesAndProjectionDefinitionsDoNotPrepareOrRegister",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestSQLiteDefaultProjectionJobsUseSharedComposition",
+          "Elapsed": 6.93
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestProjectionGenericReadinessDelegatesSharedDefinitions",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestProjectionFailedRegistrationDoesNotMarkLoopActive",
+          "Elapsed": 4.67
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestSQLiteDefaultProjectionJobsUseSharedComposition",
+          "Elapsed": 6.77
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestProjectionGenericReadinessDelegatesSharedDefinitions",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestProjectionFailedRegistrationDoesNotMarkLoopActive",
+          "Elapsed": 4.73
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestSQLiteDefaultProjectionJobsUseSharedComposition",
+          "Elapsed": 6.79
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestProjectionGenericReadinessDelegatesSharedDefinitions",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestProjectionFailedRegistrationDoesNotMarkLoopActive",
+          "Elapsed": 4.54
+        }
+      ],
+      "raw_receipt_sha256": "d9d16f6f911d77075016318ced6c3818be094182f7967896fb95b616bd1dcc58",
+      "raw_receipt_private_path": "/workspace/zboard-shared-projection-composition-verify/.codex-local-artifacts/shared-projection-composition/freeze01/root-race-sqlite-attempt1/receipt.json",
+      "go_cache_output_lines": []
+    },
+    {
+      "source_base": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+      "frozen_source_manifest": "cfae8c47136543613359a989aec530f16e54444bd17d44437a390b53462995bb",
+      "phase": "race-mysql",
+      "actual_mysql": true,
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "2",
+        "-json",
+        "-race",
+        "./internal/handler",
+        "-run",
+        "^(TestMySQLDefaultProjectionJobsUseSharedComposition|TestMySQLPeriodicContinuationPreservesExecutionOutcome|TestMySQLBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent)$",
+        "-count=3",
+        "-timeout=15m"
+      ],
+      "started_utc": "2026-10-22T02:17:37.212068+00:00",
+      "exit_code": 0,
+      "wall_seconds": 107.316,
+      "raw_log_sha256": "a0a0b33dd559a6b07513b33d15610be6d84b4c144231f244dc61f835a1e56109",
+      "raw_log_bytes": 89558,
+      "source_unchanged": true,
+      "finished_utc": "2026-10-22T02:19:24.528541+00:00",
+      "test_outcome_counts": {
+        "pass": 42
+      },
+      "package_outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Elapsed": 104.919
+        }
+      ],
+      "skipped_test_outcomes": [],
+      "new_test_outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLDefaultProjectionJobsUseSharedComposition",
+          "Elapsed": 3.65
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLDefaultProjectionJobsUseSharedComposition",
+          "Elapsed": 3.86
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLDefaultProjectionJobsUseSharedComposition",
+          "Elapsed": 3.63
+        }
+      ],
+      "raw_receipt_sha256": "1c3f4fdef79723c4cb7555944142a9de47ad7cc11869fba6e19377256f7480e5",
+      "raw_receipt_private_path": "/workspace/zboard-shared-projection-composition-verify/.codex-local-artifacts/shared-projection-composition/freeze01/root-race-mysql-attempt1/receipt.json",
+      "go_cache_output_lines": []
+    },
+    {
+      "source_base": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+      "frozen_source_manifest": "cfae8c47136543613359a989aec530f16e54444bd17d44437a390b53462995bb",
+      "phase": "full",
+      "actual_mysql": false,
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "2",
+        "-json",
+        "./..."
+      ],
+      "started_utc": "2026-10-22T02:19:48.493942+00:00",
+      "exit_code": 0,
+      "wall_seconds": 344.307,
+      "raw_log_sha256": "131d215cda077b0c540a3ad89094e6c43208de001f0765638e10b84996a7fffd",
+      "raw_log_bytes": 7815494,
+      "source_unchanged": true,
+      "finished_utc": "2026-10-22T02:25:32.809412+00:00",
+      "test_outcome_counts": {
+        "pass": 3080,
+        "skip": 346
+      },
+      "package_outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/api",
+          "Elapsed": 0.123
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/architecture",
+          "Elapsed": 0.464
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/cmd/zboard",
+          "Elapsed": 0.547
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/localfiles",
+          "Elapsed": 0.004
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/commercestore",
+          "Elapsed": 0.596
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/experiencestore",
+          "Elapsed": 0.862
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore",
+          "Elapsed": 2.968
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/identitystore",
+          "Elapsed": 4.525
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/menustore",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/messagingstore",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore",
+          "Elapsed": 3.618
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore",
+          "Elapsed": 7.466
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/observabilitystore",
+          "Elapsed": 1.22
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore",
+          "Elapsed": 0.027
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Elapsed": 24.874
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/pluginstore",
+          "Elapsed": 0.416
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/publicationstore",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/smtp",
+          "Elapsed": 0.006
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/ssh",
+          "Elapsed": 9.923
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/zero",
+          "Elapsed": 2.101
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Elapsed": 7.211
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/catalog",
+          "Elapsed": 0.003
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/commerce",
+          "Elapsed": 0.014
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/entitlements",
+          "Elapsed": 0.003
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/experience",
+          "Elapsed": 0.022
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/identity",
+          "Elapsed": 0.19
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/jobs",
+          "Elapsed": 0.682
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/messaging",
+          "Elapsed": 0.004
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/metering",
+          "Elapsed": 0.003
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/network",
+          "Elapsed": 0.022
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/observability",
+          "Elapsed": 0.002
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/capabilities/platform",
+          "Elapsed": 0.004
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/config",
+          "Elapsed": 0.011
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Elapsed": 64.732
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Elapsed": 20.733
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/jobrun",
+          "Elapsed": 0.002
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/model",
+          "Elapsed": 0.006
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/navigation",
+          "Elapsed": 1.121
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/nodecleanup",
+          "Elapsed": 0.318
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/plugins",
+          "Elapsed": 71.267
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/readtiming",
+          "Elapsed": 0.002
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/security",
+          "Elapsed": 0.002
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/server",
+          "Elapsed": 0.231
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/version",
+          "Elapsed": 0.002
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/zeroevent",
+          "Elapsed": 1.475
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/migrations",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/pkg/capabilityapi/v1",
+          "Elapsed": 0.002
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/tools/acceptance",
+          "Elapsed": 1.057
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/tools/capabilityinventory",
+          "Elapsed": 0.383
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/tools/pluginpackager",
+          "Elapsed": 0.012
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Elapsed": 201.679
+        }
+      ],
+      "skipped_test_outcomes": [
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/menustore",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/messagingstore",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore",
+          "Test": "TestMySQLRuntimeDrainPreservesInFlightAndPendingWork",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore",
+          "Test": "TestMySQLRuntimeObservesCancellationFromOtherStore",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRecoversOwnedPreparedTargetAfterSQLFailure/false",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRecoversOwnedPreparedTargetAfterSQLFailure/true",
+          "Elapsed": 0.2
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNewTaskResumesSameSourcePreparation/false",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNewTaskResumesSameSourcePreparation/true",
+          "Elapsed": 0.18
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsUnownedAndChangedTargets/unowned_seed",
+          "Elapsed": 0.21
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsUnownedAndChangedTargets/unknown_data",
+          "Elapsed": 0.22
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsUnownedAndChangedTargets/sqlite_prefix_data",
+          "Elapsed": 0.2
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsUnownedAndChangedTargets/business_insert",
+          "Elapsed": 0.19
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsUnownedAndChangedTargets/seed_change",
+          "Elapsed": 0.2
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsUnownedAndChangedTargets/schema_change",
+          "Elapsed": 0.22
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsUnownedAndChangedTargets/wrong_source",
+          "Elapsed": 0.2
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsUnownedAndChangedTargets/wrong_target",
+          "Elapsed": 0.19
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsUnownedAndChangedTargets/source_task_changed",
+          "Elapsed": 0.2
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsUnownedAndChangedTargets/preparing",
+          "Elapsed": 0.22
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsUnownedAndChangedTargets/missing_receipt",
+          "Elapsed": 0.21
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsUnownedAndChangedTargets/between_check_and_copy",
+          "Elapsed": 0.21
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierInterruptedPreparationStaysUncertain",
+          "Elapsed": 0.21
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierCompletionFailureRollsBackCopiedRowsAndReceipt",
+          "Elapsed": 0.2
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierDoesNotClaimBusinessWritesAsInitialization/custom_config",
+          "Elapsed": 0.21
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierDoesNotClaimBusinessWritesAsInitialization/changed_menu",
+          "Elapsed": 0.2
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierDoesNotClaimBusinessWritesAsInitialization/changed_default",
+          "Elapsed": 0.21
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierDoesNotClaimBusinessWritesAsInitialization/changed_budget",
+          "Elapsed": 0.18
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierDoesNotClaimBusinessWritesAsInitialization/changed_email",
+          "Elapsed": 0.22
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierDoesNotClaimBusinessWritesAsInitialization/changed_subscription",
+          "Elapsed": 0.22
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierOwnedBaselineProofCannotBeForgedByStoredRows/invalid_token",
+          "Elapsed": 0.21
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierOwnedBaselineProofCannotBeForgedByStoredRows/wrong_source",
+          "Elapsed": 0.2
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierOwnedBaselineProofCannotBeForgedByStoredRows/wrong_target",
+          "Elapsed": 0.2
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierOwnedBaselineProofCannotBeForgedByStoredRows/unknown_table",
+          "Elapsed": 0.21
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierOwnedBaselineProofCannotBeForgedByStoredRows/ordinary_without_proof",
+          "Elapsed": 0.2
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierOwnedBaselineProofCannotBeForgedByStoredRows/expired_claim",
+          "Elapsed": 0.2
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsSameServerBeforeAnyTargetWrites",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierLocksEmptyTargetRangesBeforeClear",
+          "Elapsed": 0.19
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierRejectsReadCommittedBeforeClear",
+          "Elapsed": 0.21
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeAssetFoundation/false/current_including_unknown",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeAssetFoundation/false/legacy_future_labels",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeAssetFoundation/false/recorded_column_loss",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeAssetFoundation/false/legacy_completion_rollback",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeAssetFoundation/true/current_including_unknown",
+          "Elapsed": 0.17
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeAssetFoundation/true/legacy_future_labels",
+          "Elapsed": 0.18
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeAssetFoundation/true/recorded_column_loss",
+          "Elapsed": 0.2
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeAssetFoundation/true/legacy_completion_rollback",
+          "Elapsed": 0.19
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestMySQLKernelRollbackPreservesObservedRuntime",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeObservationHandoff/false/current_pending_held_tombstone",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeObservationHandoff/false/legacy_unattributed_floor",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeObservationHandoff/false/recorded_material_loss",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeObservationHandoff/false/owned_completion_rollback",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeObservationHandoff/true/current_pending_held_tombstone",
+          "Elapsed": 0.18
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeObservationHandoff/true/legacy_unattributed_floor",
+          "Elapsed": 0.18
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeObservationHandoff/true/recorded_material_loss",
+          "Elapsed": 0.21
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestMySQLNodeActivityIdenticalReplayKeepsCredentialFence",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierNodeObservationHandoff/true/owned_completion_rollback",
+          "Elapsed": 0.27
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierPrincipalLookupCoverage/false/complete_v1_and_legal_empty_digest",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierPrincipalLookupCoverage/false/missing_secret_digest",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierPrincipalLookupCoverage/false/missing_version",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierPrincipalLookupCoverage/false/missing_both_digests",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierPrincipalLookupCoverage/true/complete_v1_and_legal_empty_digest",
+          "Elapsed": 0.18
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestMySQLNodeAssetFoundationPersistence",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierPrincipalLookupCoverage/true/missing_secret_digest",
+          "Elapsed": 0.18
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierPrincipalLookupCoverage/true/missing_version",
+          "Elapsed": 0.19
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierPrincipalLookupCoverage/true/missing_both_digests",
+          "Elapsed": 0.19
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierPrincipalLookupCompletionRollback/false",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore",
+          "Test": "TestMySQLMigrationCopierPrincipalLookupCompletionRollback/true",
+          "Elapsed": 0.21
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestMySQLNodeObservationHandoff",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestMySQLObservationBusyNodeReleasesClaimBeforeNode",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestMySQLObservationClaimLossRollsBackNodeAndState",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestMySQLObservationIntentOperationsHeadersOnly",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/publicationstore",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "Test": "TestLedgerCoordinationDefersSnapshotUntilDomainLock",
+          "Elapsed": 0.19
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/zero",
+          "Test": "TestNativeDirectIPv6SourceInterfaceAndListen",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/zero",
+          "Test": "TestNativeFlowControlClosesOnlyRevokedPrincipal",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/zero",
+          "Test": "TestNativePublicationPreservesTrafficAcrossPublisherProcesses",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/zero",
+          "Test": "TestNativePublisherChild",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestDatabaseSnapshotUsesSingleConnectionAndCommitsCopiedTask/sqlite",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestDatabaseSnapshotUsesSingleConnectionAndCommitsCopiedTask/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestCopyDestinationRestoresConstraintsOnFailureAndPanic/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestCopyDestinationCancellationReleasesConnection/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestPrepareDatabaseSchemaFreshAndRepeatPreserveProjectionData/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestPrepareDatabaseSchemaUpgradesPreviouslyMigratedDatabase",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestDatabaseCopyPreservesProjectionRowsAndRejectsMissingDestination/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestMySQLMaintenanceSourceFailsClosedAndRecovers",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestMySQLPreparedProjectionDatabaseReadOnly",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLAuditColumnBatchPreservesRecovery",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLAutomaticRecurringApprovalMigrationPreservesAuthority",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLBaselineMetadataBatchRetainsLegacyValidationAndGuards",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLDiscountSnapshotMigrationPreservesEvidence",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLEntitlementFundingMigrationRecovery",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLFixedQuotaMigrationRepairsAlreadyUpgradedInstances",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLHourlyProjectionBatchesMissingColumnsWithoutChangingCutover",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLHourlyProjectionCopyPreservesUnprojectedBoundary/sqlite_to_mysql",
+          "Elapsed": 0.2
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLHourlyProjectionCopyPreservesUnprojectedBoundary/mysql_to_sqlite",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLHourlyProjectionCopyPreservesUnprojectedBoundary/mysql_to_mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLHourlyMigrationRecoversUnprivilegedBinlogInstall/committed_statements_0",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLHourlyMigrationRecoversUnprivilegedBinlogInstall/committed_statements_1",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLHourlyMigrationRecoversUnprivilegedBinlogInstall/committed_statements_3",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLHourlyMigrationRecoversUnprivilegedBinlogInstall/committed_statements_6",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLHourlyMigrationRecoversUnprivilegedBinlogInstall/committed_statements_7",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLHourlyMigrationRecoversUnprivilegedBinlogInstall/committed_statements_10",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLHourlyUpgradeRejectsHiddenLegacyTrigger",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLNodeAssetOwnedMigration",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLNodeObservationOwnedMigration",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLNodeRetirementSchemaUpgradeRetainsTaskProgress",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLObservationRetentionIndexMigrationAndRecovery",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLRecoveryPolicyInitializationAndLostSource",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLTicketReferenceMigrationPreservesHistoryAndRefusesLostContext",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Test": "TestMySQLZeroEventFreshIndexesAvoidAlterAndRecoverOldTables",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestAutomaticRecurringChromiumAcceptance",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRecurringContinuousRenewalsKeepApprovalAndPaidSource",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRecurringStableWalletCompetition",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRecurringSignedNativeHTTPWalletAndTwoAutomaticDebits",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLExpiryCoordinatesOrderLocksBeforeSubscriptionLocks",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalVersusCredentialExpiry",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLExpiryRejectsCheckoutCommittedDuringOwnerLockWait",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalOverBoundItemKeepsNeighborsAndRevocationAvailable",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalOverBoundWindowStillCloses",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalConsentWithdrawalRace",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalDefaultOffAndSingleRecovery",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalShortenedWindowStopsWithoutCharging",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalStableWalletCompetitionAndTopUpRetry",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalMigrationPreservesConsentAndRefusesLostSource",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalVersusManualVerifiedCash",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalKeepsBasePriceAndRequiresConsentForNewTerms",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalVersusUnsubscribe",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalPaidWalletReplayDoesNotLockEntireHistory",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLCommerceDiscountNativeHTTPWalletAndAutomaticRenewal",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCommerceOrderCreationAuthorityAndRollback/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLCommerceOrderCreationReadsCommittedSKUAfterParentLock/price",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLCommerceOrderCreationReadsCommittedSKUAfterParentLock/disabled",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLCommerceOrderCreationReadsCommittedSKUAfterParentLock/operation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCommercePlanCreationAtomicityAndDefaults/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCommercePlanDetailsScopeAndPrice/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCommercePlanListingScopesAndLegacy/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCommercePlanUpdateRevisionAndAtomicity/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLCommerceRecurringDiscountNativeHTTPWalletAndManualRenewals",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRecurringDiscountPreviewWaitsBeforeOwnerAndRejectsStaleQuote",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCommerceSKUCreationAuthorityAndAtomicity/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCommerceSKUQueriesVisibilityAndAuthority/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCommerceSKUUpdatePublicationAndAtomicity/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCommercePublicationAndSKUDisableShareAuthority/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLCompletionResumesPrincipalProjectionRaceBeforeAccounting",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLCompletionResumesInvalidationDuringPreparation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestConsumptionRefundChromiumAcceptance",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundSchemaRecovery",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundSchemaPreservesApprovedEvidence",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundFundingSourcesAndReplay/0",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundFundingSourcesAndReplay/300",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundFundingSourcesAndReplay/1000",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundRetainsOtherOrderReservations",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundRejectsActiveAndUnknownSources",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundFailureRollsBackAllFacts/consumption_refunds",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundFailureRollsBackAllFacts/audit_logs",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundFailureRollsBackAllFacts/wallet_entries",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundConcurrentReplayAndBudget",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundOldReplacementLeavesNewRightsUnchanged",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundProtectsConvertedAndUnprovenBudgets",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumptionRefundRacesUnsubscribeWithoutReturningValueTwice",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCredentialDeliveryMySQLDoesNotExposeNewPurchaseBeforeItsConfirmation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCredentialReconciliationMySQLUsesCurrentSubscription",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCredentialReconciliationMySQLPreservesRenewedExpiry",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCredentialReconciliationMySQLPreservesChangedGroup",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLDatabaseMigrationUsesSharedRuntimeAndRetainsCompletedRun",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLClosedEpochLateTrafficDoesNotPolluteCurrentScheduledReset",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLEntitlementEpochFormalAndInterruptedUpgradePreservesSources/formal",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLEntitlementEpochFormalAndInterruptedUpgradePreservesSources/partial_columns",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLEntitlementEpochFormalAndInterruptedUpgradePreservesSources/partial_index",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRecoveredEntitlementKeepsLateUsageAndRevocationInOldEpoch",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLActualEntitlementValueCapture",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLEntitlementValueSnapshotLossFailsBeforeRecreation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLEntitlementValueEvidenceFailureRollsBackPayment",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRenewalAndResetCaptureActualBeforeAndAfter",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLExternalForwardEntryGrantDeliveryAndRemoval",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLObservationRetentionPointLocksAllowFreshReceiveAndSettlement",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLFairUseObservationRetentionDoesNotChangeCommittedAccountingOrEvaluation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLFullReplacementApprovedResidualExamples/three_complete_months",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLFullReplacementApprovedResidualExamples/third_month_eighty_percent",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLFullReplacementApprovedResidualExamples/annual_shared_eighty_percent",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLFullReplacementMixedPaymentAndCanceledLatePayment/false",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLFullReplacementMixedPaymentAndCanceledLatePayment/true",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLFullReplacementConcurrentFinancialTransitions/duplicate_payment",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLFullReplacementConcurrentFinancialTransitions/two_changes",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLFullReplacementConcurrentFinancialTransitions/unsubscribe",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLFullReplacementConcurrentFinancialTransitions/cancel",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLFullReplacementConcurrentFinancialTransitions/cash_cancel",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLFullReplacementAdministratorDiscountNeverBecomesBalance",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLHourlyProjectionFailureAndRebuildPreservePendingCheckpoint",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLSlowHourlyProjectionDoesNotHoldCoreIntentInsertGap",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLHourlyProjectionSchemaResumesPartialDDLAndRefusesLostCoverage",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLHourlyProjectionCalendarGuardMatchesHalfQuarterHourEdges/Asia/Kolkata",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLHourlyProjectionCalendarGuardMatchesHalfQuarterHourEdges/Asia/Kathmandu",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestNativeKernelAccessConfigValidatesWithCurrentZero",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMieruPrincipalContractValidatesWithOptInZero",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCurrentZeroDeliversNativeConnectorEvent",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestManagedRuleProviderRepositoryCompatibility",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLMeteringPrincipalIndexResumesHistoryAndRejectsAmbiguousOwnership",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLLegacyTrafficReportCannotMixIndependentSubscriptions",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAccountingUserForeignKeyDoesNotInvertCommerceLockOrder",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMigrationCapabilityAdmissionIsAtomicAndRechecksAuthority/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMigrationExecutionRequiresClaimAndFinalizesUncertainty/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMigrationInspectionPermissionsAndSafeProjection/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLMigrationPreflightUsesSingleSourceConnection",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLMigrationPreflightChecksEmptyTargetAndRedactsPassword",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBusinessTemplatePreservesCompleteSchemaSeedsAndIsolation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBusinessTemplateEnforcesForeignKeysAndChecks",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBusinessTemplatePartialInstallDoesNotModifyOtherSchema",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBusinessTemplateRejectsUnexpectedTrigger",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNetworkEntryCredentialDeliveryRequiresBothNodes",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestNetworkEntryRealTCPUDPForwarding",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLObservationIntentOperationsHTTP",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLObservationHTTPReadsKeepCounterSource",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPublishQueueConcurrencyAndRecovery",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPublicationColumnMigrationsRestoreMissingBaselineTables",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPublicationSchemaReconciliationPreservesOutcomeState",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConnectionPhaseMigrationPreservesIntentAndRepairsPartialDDL",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPublicationCannotReplaceOrConfirmADifferentTarget",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLOrderSettlementPublicationAndExpiry",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConcurrentSettlementRespectsPlanCapacity",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPaymentIntegrationRequiresCurrentAdministrator",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPaymentFactRollsBackAndReplaysWithDurablePublication",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPaymentFactRacesAdministratorConfirmation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/zeroevent",
+          "Test": "TestFileSpoolOwnershipProcessHelper",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPaymentReceiptOwnsCashAcrossEventsAndChannels",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPaymentReceiptPreservesLateRenewalCashWithoutRevival",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPaymentReceiptManualHistoryRequiresTicketedResolution",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPaymentReceiptLegacySuccessHistoryRequiresReview",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/migrations",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPaymentReceiptMigrationProtectsRecordedCash",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPaymentReceiptMigrationRefusesLostFinancialColumn",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPeriodicContinuationPreservesExecutionOutcome",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPerpetualValuePurchaseMeteringAndIdempotentUnsubscribe/0",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPerpetualValuePurchaseMeteringAndIdempotentUnsubscribe/20",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPerpetualValuePurchaseMeteringAndIdempotentUnsubscribe/100",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPerpetualValueTrustedHistoricalSnapshotCompatibility",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPerpetualValueFullReplacementStartsCompleteNewTerm/month",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPerpetualValueFullReplacementStartsCompleteNewTerm/once",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupResourceBusyKeepsPaymentIntentAndRetriesExactlyOnce/wallet",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupResourceBusyKeepsPaymentIntentAndRetriesExactlyOnce/payment_fact",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupResourceBusyDoesNotAdvanceBufferedCheckpoint",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupResourceBusyOnCredentialNodeForeignKey",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupNodeWidePublicationRetainsEveryForwardRoute",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupRemovalRacesEndpointMutationWithoutReverseLocks",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSharedEndpointMutationRacesReplacementPayment",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSharedEndpointMutationRacesRecoveryPayment",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncBoundRejectsWholeChange",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait/direct",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait/forward",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncPreservesSharedAndFencesOldDelivery",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncPublicationFailureRollsBackEverything",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncPendingOrdersUseCurrentGroup/new",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncPendingOrdersUseCurrentGroup/renewal",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncPendingOrdersUseCurrentGroup/upgrade",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncChangesRecoverableScopeWithoutRevivingTerminalSubscriptions",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncKeepsConfirmedSharedMembershipAddedAfterSnapshot",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncPreservesUsageDatesAndFinancialHistory",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncRollsBackPlanQuotaAndPublicationTogether",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncPreservesPaidAddonByRefusingAmbiguousSync",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal/sync_first",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal/renewal_first",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering/sync_first",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering/metering_first",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestPlatformMaintenanceAuthorityAndLegacySettings/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestPluginActionErrorsFullHTTPUIBridge",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestPluginActionErrorBrowserFixture",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestPluginManagementBrowserFixture",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLDefaultProjectionJobsUseSharedComposition",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCurrentZeroAcceptsVLESSRealityEndpoint",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPurchaseSnapshotSurvivesCatalogEditsAndEarlyRenewal",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPurchaseSnapshotMigrationAndRecovery/repeat",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPurchaseSnapshotMigrationAndRecovery/interrupted_after_ddl",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPurchaseSnapshotMigrationAndRecovery/old_schema",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPurchaseSnapshotMigrationAndRecovery/recorded_missing_column",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConfiguredRecoveryQuoteListFulfillmentAndCleanup",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRecoveryWindowChangeKeepsLateCashWithoutRestoringService",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRecoveryDeadlineRefreshesAfterPolicyLockWait",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLLegacyUnboundRenewalCannotPickAnotherSubscription",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLVerifiedCashWaitPastFundingExpiryBecomesWalletCredit",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRenewalIntentCannotConsumeTheSameTargetTwice",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRenewalUsesPurchasedBasePriceAndPreservesHistory",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRenewalNewPeriodRequiresAcceptanceAndKeepsBothAgreements",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLApprovedRenewalValueContinuityAndImmediateUnsubscribe/single",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLApprovedRenewalValueContinuityAndImmediateUnsubscribe/repeated",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLApprovedRenewalValueConcurrentPaymentAndUnsubscribe",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRetiredPrincipalRecoverySchemaPreservesEvidence",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLSpoolStartupFailurePreservesOtherProcessTasks",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLLegacyExhaustedFixedServiceDisappearsBeforeCleanupAndHealthyServiceRemains",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRetirementRetainsLateMeteringIdentityAndReleasesReservations",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLSubscriptionValueReadsVerifiedPaidFacts",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLSubscriptionTerminationSettlesOnceAndRevokesOnlyItsSubscription",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLSubscriptionTerminationFailuresAndConcurrency",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLSubscriptionValueSchemaRecoveryPreservesFinancialEvidence",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLSubscriptionTerminationRacesVerifiedRenewal",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLSubscriptionTerminationFencesCheckoutInsertionAtReadCommitted",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestPlatformSettingsVisibilityAndCurrentAuthority/mysql",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTicketReferenceOrderWaitDoesNotHoldOwner",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTicketReferencesEnforceOwnerAndCommitWithConversation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTrafficBreakdownReadsCommittedAccountingInEveryDimension",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLEndpointUsageBatchesKeepPerKeyDeltasAndRollback",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTrafficFirstPagePreservesPartialBucketsAndFallsBack",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLHourlyRetirementAndAuditFailureRemainAtomic",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTrafficHourlyDatabaseTransferRebuildsLedgerProjection",
+          "Elapsed": 0.18
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTrafficQuotaMatchesFullSummaryWithoutHistoryDependency",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTrafficRecordsSummaryKeepsFullEvidenceAndRawPageContract",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTrafficSummaryReadsLiveAccountingProjection",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLUsageProjectionCompetingWorkersAndCheckpointRecovery",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLUsageProjectionSchemaPreservesInterruptedIntentsAndRefusesLostQueue",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLControlledWalletAdjustment",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLControlledWalletAdjustmentRollback",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLControlledWalletAdjustmentConcurrent",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletAdjustmentSchemaRecovery",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletMixedPaymentMatchesFrozenCashAndCapturesOnce",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletReservationsReleaseBeforeLateCash/canceled",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletReservationsReleaseBeforeLateCash/failed",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletReservationsReleaseBeforeLateCash/expired",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletReservationsReleaseBeforeLateCash/expired_without_worker",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletOnlyPaymentRollsBackAndRacesWithoutDoubleSpend",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletReservationCompetitionCannotOverspend",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletPaymentCancellationRaceHasOneFinancialOutcome",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletFundingRetainsLegacyWholeCashWithoutCapturingBalance",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletFundingMigrationRetainsReservationsAndRefusesMissingEvidence",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletFundingCompletesUnrecordedDDLAndPreservesOrders",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletFundingKeepsOwnerScopeAndCannotRechargeItself",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletFundingRefusesLostAccountWithExistingLedger",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletFundingNeverCombinesDifferentCurrencies",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletTopUpVerifiedAccountingAndRecovery",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletSchemaRefusesLostFinancialEvidence",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletMigrationRepeatRetainsFinancialFacts",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletMigrationCompletesInterruptedEmptySchema",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAccountingBatchReplayOutOfOrderAndExhaustion",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAccountingPreservesReportCollationIdempotency",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBufferedReceiptsDoNotWaitForLockedNode",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBufferedReceiptsDoNotWaitForExhaustedPool",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBufferedReceiptRevalidatesCredentialAfterContention",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBufferedReceiptCannotUndoStopWithinSameMillisecond",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLZeroEventWindowPreservesRoundedAccountingAndReplay",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLZeroWindowFallsBackForDatabaseEquivalentReportIDs",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestRealZeroNodeExpiryRevokesDataPlane",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestRealZeroConnectionVerificationSurvivesPublisherCrash",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestRealZeroRecoveredPeriodRotatesAccessAndClosesOldFlow",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestRealZeroNodeExhaustionRevokesDataPlane",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestRealZeroNodeGroupChangeReplacesDataPlaneAccess",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestRealZeroPublisherProcess",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestRealZeroNodeFailedPublicationSurvivesPublisherCrash",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeStatsFailureRetainsSettlementAndRetriesProjection",
+          "Elapsed": 0
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumerBoundsTransactionsAndDrainsBacklog",
+          "Elapsed": 0
+        }
+      ],
+      "new_test_outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract/usage_projection",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract/node_observation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionJobDefinitionsPreserveExistingContract",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestProjectionDefinitionsKeepLiveCapabilityAndErrorSemantics",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/application",
+          "Test": "TestServicesAndProjectionDefinitionsDoNotPrepareOrRegister",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestSQLiteDefaultProjectionJobsUseSharedComposition",
+          "Elapsed": 2.21
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLDefaultProjectionJobsUseSharedComposition",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestProjectionGenericReadinessDelegatesSharedDefinitions",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestProjectionFailedRegistrationDoesNotMarkLoopActive",
+          "Elapsed": 0.17
+        }
+      ],
+      "raw_receipt_sha256": "1e99ca9a0fb3da03ffc8ceef72fc6434c87844db59b1ede6c471394fb4c900a7",
+      "raw_receipt_private_path": "/workspace/zboard-shared-projection-composition-verify/.codex-local-artifacts/shared-projection-composition/freeze01/root-full-attempt1/receipt.json",
+      "go_cache_output_lines": []
+    },
+    {
+      "source_base": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+      "frozen_source_manifest": "cfae8c47136543613359a989aec530f16e54444bd17d44437a390b53462995bb",
+      "phase": "vet",
+      "actual_mysql": false,
+      "command": [
+        "go",
+        "vet",
+        "-p",
+        "2",
+        "./..."
+      ],
+      "started_utc": "2026-10-22T02:25:32.860603+00:00",
+      "exit_code": 0,
+      "wall_seconds": 11.729,
+      "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_log_bytes": 0,
+      "source_unchanged": true,
+      "finished_utc": "2026-10-22T02:25:44.589444+00:00",
+      "test_outcome_counts": {},
+      "package_outcomes": [],
+      "skipped_test_outcomes": [],
+      "new_test_outcomes": [],
+      "raw_receipt_sha256": "3862b6b3b22a131263ed4c64250134e84040eed10b9939bb8ca7375e72bc63c3",
+      "raw_receipt_private_path": "/workspace/zboard-shared-projection-composition-verify/.codex-local-artifacts/shared-projection-composition/freeze01/root-vet-attempt1/receipt.json",
+      "go_cache_output_lines": []
+    },
+    {
+      "source_base": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+      "frozen_source_manifest": "cfae8c47136543613359a989aec530f16e54444bd17d44437a390b53462995bb",
+      "phase": "build",
+      "actual_mysql": false,
+      "command": [
+        "go",
+        "build",
+        "-p",
+        "2",
+        "./cmd/zboard"
+      ],
+      "started_utc": "2026-10-22T02:25:44.643719+00:00",
+      "exit_code": 0,
+      "wall_seconds": 1.894,
+      "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_log_bytes": 0,
+      "source_unchanged": true,
+      "finished_utc": "2026-10-22T02:25:46.537380+00:00",
+      "test_outcome_counts": {},
+      "package_outcomes": [],
+      "skipped_test_outcomes": [],
+      "new_test_outcomes": [],
+      "raw_receipt_sha256": "8a5466a130e086b0bae236b82340c2d5c38318295644d460350ffe7f021954e3",
+      "raw_receipt_private_path": "/workspace/zboard-shared-projection-composition-verify/.codex-local-artifacts/shared-projection-composition/freeze01/root-build-attempt1/receipt.json",
+      "go_cache_output_lines": []
+    },
+    {
+      "source_base": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+      "frozen_source_manifest": "cfae8c47136543613359a989aec530f16e54444bd17d44437a390b53462995bb",
+      "phase": "cgo0",
+      "actual_mysql": false,
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "2",
+        "-json",
+        "./internal/datastore",
+        "-run",
+        "SQLite",
+        "-count=1"
+      ],
+      "started_utc": "2026-10-22T02:25:46.579253+00:00",
+      "exit_code": 0,
+      "wall_seconds": 38.355,
+      "raw_log_sha256": "b2af9275127394103542b1174aac5bdcdcbf03598b10d29d14e1d7df8313b463",
+      "raw_log_bytes": 62951,
+      "source_unchanged": true,
+      "finished_utc": "2026-10-22T02:26:24.934969+00:00",
+      "test_outcome_counts": {
+        "pass": 42
+      },
+      "package_outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "Elapsed": 17.376
+        }
+      ],
+      "skipped_test_outcomes": [],
+      "new_test_outcomes": [],
+      "raw_receipt_sha256": "f568dfa94e2db8d702fe9ec91e456121f20ee1c35ac2c9a99587da009ed8e182",
+      "raw_receipt_private_path": "/workspace/zboard-shared-projection-composition-verify/.codex-local-artifacts/shared-projection-composition/freeze01/root-cgo0-attempt1/receipt.json",
+      "go_cache_output_lines": []
+    }
+  ],
+  "limits": [
+    "No independent worker process/CLI, parallelism increase, autoscaler or throughput benefit implemented or inferred.",
+    "Domain repository probes isolate composition; Runtime, jobstore, durable completion and actual SQLite/MySQL are real. Existing domain tests are unchanged.",
+    "No-DSN groups preserve existing MySQL opt-in skips; distinct actual-MySQL focused/race groups must have no skip.",
+    "Full backend Go cache results are disclosed; cleared reproducible compiler cache between race and full to fit disk, no authority artifacts removed.",
+    "Exact376 original capacity attempts stopped at unchanged storage preflight before load; this candidate has no new capacity claim.",
+    "No SDK/frontend/OpenAPI/Compose changes; exact-head CI remains required. No production or external payment/kernel acceptance inferred."
+  ]
+}
