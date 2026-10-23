@@ -4,3 +4,8 @@ export interface SubscriptionTerminationRequest { quote_fingerprint: string; ide
 export interface SubscriptionTerminationReceipt { id: number; subscription_id: number; currency: string; amount_minor: string; wallet_entry_id?: number; status: string; revocation_status: string; created_at: string }
 export async function fetchSubscriptionValue(id: number): Promise<SubscriptionValueQuote> { const { data } = await api.get(`/subscriptions/${id}/value`); return data.data }
 export async function terminateSubscription(id: number, request: SubscriptionTerminationRequest): Promise<SubscriptionTerminationReceipt> { const { data } = await api.post(`/subscriptions/${id}/unsubscribe`, request); return data.data }
+
+export interface AdministrativeSubscriptionValueQuote extends SubscriptionValueQuote { user_id: number; max_refund_minor: string }
+export interface AdministrativeSubscriptionTerminationRequest extends SubscriptionTerminationRequest { amount_minor: number; reason: string }
+export async function fetchAdministrativeSubscriptionValue(id: number): Promise<AdministrativeSubscriptionValueQuote> { const { data } = await api.get(`/admin/subscriptions/${id}/value`); return data.data }
+export async function administrativelyTerminateSubscription(id: number, request: AdministrativeSubscriptionTerminationRequest): Promise<SubscriptionTerminationReceipt> { const { data } = await api.post(`/admin/subscriptions/${id}/unsubscribe`, request); return data.data }

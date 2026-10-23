@@ -38,6 +38,7 @@
           <summary>调整流量参数</summary>
           <div class="quota-disclosure-content"><SubscriptionQuotaEditor :subscription="selectedSubscription" @saved="quotaSaved" /></div>
         </details>
+        <SubscriptionTermination v-if="['active', 'expired'].includes(selectedSubscription.status)" :subscription-id="selectedSubscription.id" administrative @settled="load(); detailResource.load()" />
         <section class="detail-facts" aria-label="订阅业务快照">
           <div><span>套餐规格</span><strong>{{ selectedSubscription.plan_name || `套餐 #${selectedSubscription.plan_id}` }} / {{ selectedSubscription.sku_name || `SKU #${selectedSubscription.plan_sku_id}` }}</strong></div>
           <div><span>节点组</span><strong class="mono">#{{ selectedSubscription.node_group_id }}</strong></div>
@@ -62,6 +63,7 @@
 <script setup lang="ts">
 import TableText from '../components/TableText.vue'
 import SubscriptionQuotaEditor from '../components/SubscriptionQuotaEditor.vue'
+import SubscriptionTermination from '../components/SubscriptionTermination.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchAdminSubscriptionDetail, fetchSubscriptionsPage, type AdminSubscriptionDetail, type AdminSubscriptionListItem } from '../api/client'

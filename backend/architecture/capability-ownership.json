@@ -126,7 +126,7 @@
         "observability"
       ],
       "atomicity": "single_database_transaction",
-      "compensation": "Rollback trusted original paid-source budget consumption, wallet credit, approval identity and audit together; reject active entitlements pending a confirmed partial-refund rule.",
+      "compensation": "Rollback trusted original paid-source budget consumption, wallet credit, approval identity and audit together; reject active entitlements here and direct whole termination to the shared subscription settlement transaction.",
       "outbox": "No external payout or payment-provider call; approved consumption refunds credit the internal wallet only."
     },
     {
@@ -188,7 +188,7 @@
       "id": "commerce.subscription_unsubscribe",
       "owner": "commerce",
       "source": "internal/adapters/persistence/commercestore/subscription_termination.go",
-      "symbol": "SubscriptionTermination.Terminate",
+      "symbol": "SubscriptionTermination.terminate",
       "participants": [
         "commerce",
         "entitlements",
@@ -196,7 +196,7 @@
         "observability"
       ],
       "atomicity": "single_database_transaction",
-      "compensation": "Roll back cash-source budgets, refund ledger, pending-order reservation release, permanent subscription termination, credential/token revocation and audit together. Repeated owner-scoped request identities return the original settlement; changed value quotes require explicit reconfirmation.",
+      "compensation": "Roll back cash-source budgets, refund ledger, pending-order reservation release, permanent subscription termination, credential/token revocation and audit together. Owner and administrator entrances share this sole transaction. Administrative approval verifies current permission, audits default/actual amounts and reason, and allows zero without a refund entry; source budgets cap all overrides at actual paid money. Repeated scoped identities return the original settlement; changed value quotes require explicit reconfirmation.",
       "outbox": "Credential revocation persists existing node publication intents in the same transaction; remote disconnection remains separately verified."
     },
     {

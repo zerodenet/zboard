@@ -18,7 +18,14 @@ type SubscriptionValueQuote struct {
 	TotalMinor     int64  `json:"total_minor,string"`
 	Fingerprint    string `json:"quote_fingerprint"`
 }
+type AdministrativeSubscriptionValueQuote struct {
+	SubscriptionValueQuote
+	UserID         uint  `json:"user_id"`
+	MaxRefundMinor int64 `json:"max_refund_minor,string"`
+}
+
 type SubscriptionValuesRepository interface {
+	ReadForAdministrator(context.Context, uint, uint) (AdministrativeSubscriptionValueQuote, error)
 	Read(context.Context, uint, uint) (SubscriptionValueQuote, error)
 }
 type SubscriptionValues struct{ Repository SubscriptionValuesRepository }
@@ -34,4 +41,17 @@ func (s SubscriptionValues) Read(ctx context.Context, actor, subscription uint) 
 		return SubscriptionValueQuote{}, ErrSubscriptionValueUnavailable
 	}
 	return s.Repository.Read(ctx, actor, subscription)
+}
+
+func (s SubscriptionValues) ReadForAdministrator(ctx context.Context, actor, subscription uint) (AdministrativeSubscriptionValueQuote, error) {
+	if actor == 0 {
+		return AdministrativeSubscriptionValueQuote{}, ErrOrderPermission
+	}
+	if subscription == 0 {
+		return AdministrativeSubscriptionValueQuote{}, ErrNotFound
+	}
+	if s.Repository == nil {
+		return AdministrativeSubscriptionValueQuote{}, ErrSubscriptionValueUnavailable
+	}
+	return s.Repository.ReadForAdministrator(ctx, actor, subscription)
 }

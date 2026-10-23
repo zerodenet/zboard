@@ -4340,6 +4340,59 @@ paths:
         "403": { description: Current account is not active }
         "404": { description: Subscription unavailable to this owner }
         "409": { description: "Changed quote, conflicting settlement, or financial history requiring review" }
+  /api/v1/admin/subscriptions/{id}/value:
+    get:
+      tags: [subscriptions]
+      operationId: quoteAdministrativeSubscriptionValue
+      summary: Quote default remaining value and actual-paid refund limit for administrators
+      description: Administrators may approve a custom nonnegative refund, including zero, up to verified unrefunded and unconverted actual payment. Omission uses the default residual. Actor, reason, default residual and actual amount are audited atomically with permanent rights termination. Zero creates no refund entry or external funds operation. Only verified paid entitlement snapshots are valued. Extending renewal preserves the settled current remainder plus actual new cash without restoring quota. Missing legacy evidence, quota-changing legacy effects, or a pending quota-cycle reset returns an explanatory conflict. No remote disconnection is implied by business termination.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: Read-only quote with current and future paid value
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/AdministrativeSubscriptionValueQuote' }
+        "401": { description: Authentication required }
+        "403": { description: Current account must be an active administrator }
+        "404": { description: Subscription not found }
+        "409": { description: "Changed quote, conflicting settlement, or financial history requiring review" }
+  /api/v1/admin/subscriptions/{id}/unsubscribe:
+    post:
+      tags: [subscriptions]
+      operationId: terminateAdministrativeSubscription
+      summary: Administratively terminate all remaining rights with an approved wallet refund
+      description: Administrators may approve a custom nonnegative refund, including zero, up to verified unrefunded and unconverted actual payment. Omission uses the default residual. Actor, reason, default residual and actual amount are audited atomically with permanent rights termination. Zero creates no refund entry or external funds operation. Only verified paid entitlement snapshots are valued. Extending renewal preserves the settled current remainder plus actual new cash without restoring quota. Missing legacy evidence, quota-changing legacy effects, or a pending quota-cycle reset returns an explanatory conflict. No remote disconnection is implied by business termination.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdministrativeSubscriptionTerminationRequest' }
+      responses:
+        "200":
+          description: Idempotent committed settlement; authorization revoked and delivery pending verification
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/SubscriptionTerminationReceipt' }
+        "401": { description: Authentication required }
+        "403": { description: Current account must be an active administrator }
+        "404": { description: Subscription not found }
+        "409": { description: "Changed quote, conflicting settlement, or financial history requiring review" }
   /api/v1/subscriptions:
     get:
       tags:
@@ -9631,6 +9684,23 @@ components:
       properties:
         quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
         idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
+    AdministrativeSubscriptionValueQuote:
+      allOf:
+        - $ref: '#/components/schemas/SubscriptionValueQuote'
+        - type: object
+          required: [user_id, max_refund_minor]
+          properties:
+            user_id: { type: integer, minimum: 1 }
+            max_refund_minor: { type: string, pattern: '^[0-9]+$' }
+    AdministrativeSubscriptionTerminationRequest:
+      type: object
+      additionalProperties: false
+      required: [quote_fingerprint, idempotency_key, reason]
+      properties:
+        quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+        idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
+        amount_minor: { type: integer, minimum: 0, maximum: 9007199254740991, description: Omit to use the default residual. Zero terminates without a refund. The server also enforces the actual-paid source limit. }
+        reason: { type: string, minLength: 3, maxLength: 400, description: Server validates 3–400 UTF-8 bytes after trimming. }
     SubscriptionTerminationReceipt:
       type: object
       required: [id, subscription_id, currency, amount_minor, status, revocation_status, created_at]

@@ -61,3 +61,41 @@ func (h *handlers) SubscriptionValueHandler(w http.ResponseWriter, r *http.Reque
 	}
 	OK(w, out)
 }
+
+func (h *handlers) AdminSubscriptionValueHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	actor, err := h.requireAdmin(w, r)
+	if err != nil {
+		return
+	}
+	id, err := parsePathID(r.URL.Path, "/api/v1/admin/subscriptions/")
+	if err != nil {
+		BadRequest(w, "订阅编号无效。")
+		return
+	}
+	if r.Method == http.MethodGet {
+		out, err := h.services.SubscriptionValues.ReadForAdministrator(r.Context(), actor.UserID, id)
+		if err != nil {
+			subscriptionValueError(w, err)
+			return
+		}
+		OK(w, out)
+		return
+	}
+	raw, err := integrationBody(w, r)
+	if err != nil {
+		BadRequest(w, "退订请求无效。")
+		return
+	}
+	in, err := catalog.DecodeObject[commerce.AdministrativeSubscriptionTerminationRequest](raw)
+	if err != nil {
+		BadRequest(w, "退订请求包含无效或多余字段。")
+		return
+	}
+	out, err := h.services.SubscriptionTermination.TerminateForAdministrator(r.Context(), actor.UserID, id, in)
+	if err != nil {
+		subscriptionValueError(w, err)
+		return
+	}
+	OK(w, out)
+}
