@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	zeroActivationVerificationTimeout  = 45 * time.Second
+	// Large durable outboxes are replayed before Zero exposes its control socket.
+	zeroActivationVerificationTimeout  = 3 * time.Minute
 	zeroActivationVerificationInterval = time.Second
 	zeroActivationHealthySamples       = 3
 )
@@ -23,7 +24,15 @@ func kernelActivationProbeHealthy(probe kernelProbe, expectedBinarySHA string) b
 }
 
 func (h *handlers) verifyNodeKernelStable(parent context.Context, node model.Node, expectedBinarySHA string) (kernelProbe, error) {
-	ctx, cancel := context.WithTimeout(parent, zeroActivationVerificationTimeout)
+	return verifyKernelActivation(parent, expectedBinarySHA, zeroActivationVerificationTimeout, zeroActivationVerificationInterval,
+		func(ctx context.Context) (kernelProbe, error) { return h.probeNodeKernelContext(ctx, node) },
+		func() string { return h.captureZeroActivationFailure(node) })
+}
+
+func verifyKernelActivation(parent context.Context, expectedBinarySHA string, timeout, interval time.Duration,
+	probeKernel func(context.Context) (kernelProbe, error), captureFailure func() string,
+) (kernelProbe, error) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	consecutiveHealthy := 0
@@ -31,7 +40,7 @@ func (h *handlers) verifyNodeKernelStable(parent context.Context, node model.Nod
 	var lastProbeErr error
 
 	for {
-		probe, err := h.probeNodeKernelContext(ctx, node)
+		probe, err := probeKernel(ctx)
 		if err != nil {
 			lastProbeErr = err
 			consecutiveHealthy = 0
@@ -40,7 +49,7 @@ func (h *handlers) verifyNodeKernelStable(parent context.Context, node model.Nod
 			lastProbeErr = nil
 			if kernelActivationProbeHealthy(probe, expectedBinarySHA) {
 				consecutiveHealthy++
-				if consecutiveHealthy >= zeroActivationHealthySamples {
+				if consecutiveHealthy >= zeroActivationHealthySamples && ctx.Err() == nil {
 					return probe, nil
 				}
 			} else {
@@ -50,20 +59,20 @@ func (h *handlers) verifyNodeKernelStable(parent context.Context, node model.Nod
 
 		select {
 		case <-ctx.Done():
-			summary := h.captureZeroActivationFailure(node)
+			summary := captureFailure()
 			if lastProbeErr != nil {
-				return last, fmt.Errorf("Zero did not become stable within %s (last probe error: %v)%s", zeroActivationVerificationTimeout, lastProbeErr, formatZeroActivationSummary(summary))
+				return last, fmt.Errorf("Zero did not become stable within %s (last probe error: %v)%s", timeout, lastProbeErr, formatZeroActivationSummary(summary))
 			}
 			return last, fmt.Errorf(
 				"Zero did not become stable within %s (installed=%t sha_match=%t service=%s control=%s)%s",
-				zeroActivationVerificationTimeout,
+				timeout,
 				last.Installed,
 				last.BinarySHA256 == expectedBinarySHA,
 				last.ServiceStatus,
 				last.ControlStatus,
 				formatZeroActivationSummary(summary),
 			)
-		case <-time.After(zeroActivationVerificationInterval):
+		case <-time.After(interval):
 		}
 	}
 }
