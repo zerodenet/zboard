@@ -117,7 +117,16 @@ func projectPerpetualQuotaValue(records []EntitlementValueSnapshot, current Enti
 		ids[s.OrderID] = true
 		last = s
 	}
-	if !samePerpetualStateIdentity(current, last.After) || current.FlowUsed < last.After.FlowUsed || current.FlowTotal != last.After.FlowTotal {
+	finalIdentity := current
+	if current.EndedAt != nil {
+		// Normal exhausted lifecycle is evidence of zero remaining rights. Keep the
+		// original terminal state in the quote fingerprint, never reopen a term.
+		if current.EndReason != "exhausted" || current.FlowUsed < current.FlowTotal {
+			return empty, ErrValueEvidence
+		}
+		finalIdentity.EndedAt = nil
+	}
+	if !samePerpetualStateIdentity(finalIdentity, last.After) || current.FlowUsed < last.After.FlowUsed || current.FlowTotal != last.After.FlowTotal {
 		return empty, ErrValueEvidence
 	}
 	consume(current.FlowUsed - last.After.FlowUsed)
@@ -136,6 +145,9 @@ func projectPerpetualQuotaValue(records []EntitlementValueSnapshot, current Enti
 		}
 	}
 	out.TotalMinor = out.CurrentMinor
+	if current.EndedAt != nil && out.TotalMinor != 0 {
+		return empty, ErrValueEvidence
+	}
 	return fingerprintValueProjection(records, current, out)
 }
 

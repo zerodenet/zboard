@@ -1619,3 +1619,7 @@ checkpointTestSpool只隔离注入点，不能冒充真实内核、FileSpool ACK
 当前可用磁盘约27MB，清理构建缓存申请待答复未执行；未启动新容量、本批本地整包后端/整包MySQL或race3，不挪用旧结果。遗留无估值证据/超过1000来源/周期待重置的零额终止仍缺，不填零绕过，其他P4/P6/P7缺口保留。详见[实际行为、兼容、回退及验证](core-convergence-administrative-termination.md)。
 
 本批最终完整前端204files/1144pass/8既有skip、build30.269s通过；首轮is_admin/isAdmin字段错误的build exit2保留，修正后整套重跑。两项原财务待决不再阻塞；管理员覆盖与整份退订已实装，遗留无证据零额终止仍是明确缺口，未借旧CI标完成。
+
+### 2026-10-23 P2后续复核：正常耗尽与FIFO证据
+
+新增FIFO曾要求当前EndedAt为空，错误拒绝真实计量写入的正常exhausted终态。同一新增测试在49dc实际失败exit1；修复仅接受确实已耗尽且估值为0的最终态，指纹保留原终态，不恢复任何权益。完整commerce count1通过；两批真实钱包购买→计量200→系统耗尽→0元整份终止的SQLite/MySQL回归已加入，新头CI须独立执行。本机20MB不安全链接handler，本地双库/整包未执行，不借49dc/e4通过。[修复与证据](core-convergence-fifo-exhaustion.md)。
