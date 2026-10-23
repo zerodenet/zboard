@@ -96,6 +96,8 @@ func ObservationIntentNextCursor(status string, at time.Time, id string) (string
 // These are queue metadata times, not event/sample time or a freshness claim.
 // A header/source reference is not verification of retained material integrity.
 type ObservationIntentItem struct {
+	RetainedBytes        string     `json:"retained_bytes"`
+	MaterialRetiredAt    *time.Time `json:"material_retired_at,omitempty"`
 	ID                   string     `json:"id"`
 	NodeID               string     `json:"node_id"`
 	Status               string     `json:"status"`

@@ -1675,3 +1675,7 @@ c19最终完整本地后端四项/前端1154pass与8既有skip/build通过，自
 ### 2026-10-23：P7实库开销修复与P2旧取消入口
 
 bc6ff19c44a291aaae2508c19612addf63348e8e完整本地后端四项、原MySQL三组及自身CI39961211813六项均通过；28d原900.022s失败及redo警告保留，未修改15m/覆盖或配置。[精确终态](validation/2026-10-23-mysql-payment-business-setup-final.json)。随后实际应用旧status.cancel的零退款整份终止桥接，复用现有commerce唯一事务，保持原权限和历史身份；专项双库、SQLite/真实MySQL race/count3已通过；完整新头验收另待。[实现、兼容与未完成项](core-convergence-legacy-cancellation.md)。本记录不关闭整体P2/P4/P6/P7。
+
+### 2026-10-23：P4无引用辅助材料回收
+
+e1ae956完整本地后端/原MySQL三组及自身CI39969113021六项已结束通过，[精确终态](validation/2026-10-23-legacy-cancellation-final.json)。之后实际新增0061材料退役标记、索引复查、兼容重放、每源原子回收、默认共享执行器及元数据入口；保留身份和所有当前引用，不触及财务/计量游标。最终Go37顶层/真实MySQL9顶层零skip通过，前端原范围1172pass/8既有skip/build通过；当前race与精确新头完整验收仍待。[实现、迁移/回退与真实限制](core-convergence-observation-material-retention.md)。header/held/pending/引用材料总增长及核心诊断归档未完成；P4/P6/P7仍不能关闭。

@@ -90,17 +90,23 @@ func Enqueue(tx *gorm.DB, source network.ObservationSource) (string, error) {
 		header.Status = "held"
 		header.Reason = "unattributed_legacy_floor"
 	}
-	result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&header)
+	result := tx.Omit("MaterialRetiredAt", "MaterialReviewAt").Clauses(clause.OnConflict{DoNothing: true}).Create(&header)
 	if result.Error != nil {
 		return "", result.Error
 	}
 	if result.RowsAffected == 0 {
 		var old model.NodeObservationIntent
-		if err := tx.First(&old, "id = ?", id).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).First(&old, "id = ?", id).Error; err != nil {
 			return "", err
 		}
 		if old.MaterialBytes != header.MaterialBytes || old.PartCount != header.PartCount || old.NodeID != header.NodeID || old.AssetTag != header.AssetTag {
 			return "", errors.New("observation source header conflict")
+		}
+		if old.MaterialRetiredAt != nil {
+			if err := validateRetiredReceipt(tx, old); err != nil {
+				return "", err
+			}
+			return id, nil
 		}
 		// Replayed immutable content may already be applied/held. Validate retained
 		// parts without resetting disposition, lease, counters or retry state.
@@ -125,6 +131,10 @@ func Enqueue(tx *gorm.DB, source network.ObservationSource) (string, error) {
 // Each size is checked BEFORE fetching a blob; a forged cached total/ordinal
 // cannot trigger a huge driver allocation. No LIMIT alone is a byte budget.
 func walkParts(tx *gorm.DB, h model.NodeObservationIntent, accept func([]byte) error) error {
+	if h.MaterialRetiredAt != nil {
+		return invalid("observation material explicitly retired")
+	}
+
 	if h.PartCount == 0 || h.PartCount > (h.MaterialBytes+PartBytes-1)/PartBytes {
 		return invalid("invalid observation part count")
 	}
@@ -196,4 +206,21 @@ func readReference(tx *gorm.DB, id string) (network.ObservationSource, error) {
 		return network.ObservationSource{}, err
 	}
 	return readSource(tx, h)
+}
+
+// A compact receipt preserves canonical immutable identity after unreferenced
+// auxiliary parts retire. Caller has locked the header and matched the incoming
+// complete canonical hash/node/asset/size/count; no freshness or cursor changes.
+func validateRetiredReceipt(tx *gorm.DB, h model.NodeObservationIntent) error {
+	if h.MaterialRetiredAt == nil || h.Status != "applied" || h.Token != "" || !h.LeaseUntil.Equal(epoch) || h.MaterialBytes == 0 || h.MaterialBytes > uint64(MaxApplyBytes) || h.PartCount != (h.MaterialBytes+PartBytes-1)/PartBytes || h.MaterialRetiredAt.Before(h.CreatedAt) || h.MaterialRetiredAt.Before(h.UpdatedAt) {
+		return invalid("invalid compact observation receipt")
+	}
+	var count int64
+	if err := tx.Model(&model.NodeObservationPart{}).Where("intent_id = ?", h.ID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 0 {
+		return invalid("compact receipt still has material parts")
+	}
+	return nil
 }

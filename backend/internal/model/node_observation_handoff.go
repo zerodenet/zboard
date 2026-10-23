@@ -5,19 +5,22 @@ import "time"
 // These tables intentionally have no nodes/financial FK. Deleting a node must
 // retain pending sources, held evidence and its exact-asset tombstone.
 type NodeObservationIntent struct {
-	ID            string    `gorm:"primaryKey;size:64"`
-	NodeID        uint      `gorm:"not null"`
-	AssetTag      string    `gorm:"size:64;not null"`
-	Status        string    `gorm:"size:24;not null;index:idx_node_observation_ready,priority:1"`
-	AvailableAt   time.Time `gorm:"not null;index:idx_node_observation_ready,priority:2"`
-	Token         string    `gorm:"size:64;not null;default:''"`
-	LeaseUntil    time.Time `gorm:"not null"`
-	MaterialBytes uint64    `gorm:"not null"`
-	PartCount     uint64    `gorm:"not null"`
-	Attempts      uint64    `gorm:"not null;default:0"`
-	Reason        string    `gorm:"size:64;not null;default:''"`
-	CreatedAt     time.Time `gorm:"not null"`
-	UpdatedAt     time.Time `gorm:"not null"`
+	// Original material size/count and identity stay immutable after retirement.
+	MaterialRetiredAt *time.Time `gorm:"-:migration"`
+	MaterialReviewAt  time.Time  `gorm:"not null;default:('1970-01-01 00:00:00.000');-:migration"`
+	ID                string     `gorm:"primaryKey;size:64"`
+	NodeID            uint       `gorm:"not null"`
+	AssetTag          string     `gorm:"size:64;not null"`
+	Status            string     `gorm:"size:24;not null;index:idx_node_observation_ready,priority:1"`
+	AvailableAt       time.Time  `gorm:"not null;index:idx_node_observation_ready,priority:2"`
+	Token             string     `gorm:"size:64;not null;default:''"`
+	LeaseUntil        time.Time  `gorm:"not null"`
+	MaterialBytes     uint64     `gorm:"not null"`
+	PartCount         uint64     `gorm:"not null"`
+	Attempts          uint64     `gorm:"not null;default:0"`
+	Reason            string     `gorm:"size:64;not null;default:''"`
+	CreatedAt         time.Time  `gorm:"not null"`
+	UpdatedAt         time.Time  `gorm:"not null"`
 }
 
 func (NodeObservationIntent) TableName() string { return "node_observation_intents" }

@@ -1,3 +1,5 @@
+> 下面保留0060阶段契约；当前0061无引用材料回收、兼容重放和回退边界见[新阶段说明](../../../../architecture/core-convergence-observation-material-retention.md)。原身份与当前引用不因回收删除。
+
 # Node observation handoff (0060)
 
 Targeted SQLite/MySQL transaction, migration, owned-copy and focused race

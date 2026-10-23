@@ -160,7 +160,11 @@ func (w Worker) retry(ctx context.Context, h model.NodeObservationIntent, reason
 }
 func ownedAck(tx *gorm.DB, h model.NodeObservationIntent, status, reason string) error {
 	now := clockNow()
-	r := tx.Model(&model.NodeObservationIntent{}).Where("id = ? AND node_id = ? AND asset_tag = ? AND material_bytes = ? AND part_count = ? AND status = ? AND token = ? AND lease_until > ?", h.ID, h.NodeID, h.AssetTag, h.MaterialBytes, h.PartCount, "claimed", h.Token, now).Updates(map[string]any{"status": status, "reason": reason, "token": "", "lease_until": epoch, "updated_at": now})
+	updates := map[string]any{"status": status, "reason": reason, "token": "", "lease_until": epoch, "updated_at": now}
+	if status == "applied" {
+		updates["material_review_at"] = now.Add(MaterialMinimumAge)
+	}
+	r := tx.Model(&model.NodeObservationIntent{}).Where("id = ? AND node_id = ? AND asset_tag = ? AND material_bytes = ? AND part_count = ? AND status = ? AND token = ? AND lease_until > ? AND material_retired_at IS NULL", h.ID, h.NodeID, h.AssetTag, h.MaterialBytes, h.PartCount, "claimed", h.Token, now).Updates(updates)
 	if r.Error != nil {
 		return r.Error
 	}

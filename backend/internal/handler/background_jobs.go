@@ -20,7 +20,7 @@ type backgroundJobs struct {
 	loops        map[string]*scheduledJob
 }
 
-var jobNames = map[string]string{application.NodeObservationJobID: application.NodeObservationJobName, application.UsageProjectionJobID: application.UsageProjectionJobName, "automatic_renewal": "余额自动续费", "wallet_reservations": "余额预留到期释放", "subscription_alerts": "订阅告警扫描", "credential_expiry": "订阅到期处理", "traffic_reset": "订阅流量重置", "fair_use": "公平使用评估", "certificate_renewal": "证书续期扫描", "dns_observation": "DNS 公网核验", "history_retention": "历史记录清理", "proxy_pool_sync": "代理池订阅同步", "node_publish": "节点配置发布", "admin_tasks": "运营任务执行", "registration_messages": "注册消息处理", "event_consumer": "流量事件入账"}
+var jobNames = map[string]string{"node_observation_material_retention": "节点观察材料保留", application.NodeObservationJobID: application.NodeObservationJobName, application.UsageProjectionJobID: application.UsageProjectionJobName, "automatic_renewal": "余额自动续费", "wallet_reservations": "余额预留到期释放", "subscription_alerts": "订阅告警扫描", "credential_expiry": "订阅到期处理", "traffic_reset": "订阅流量重置", "fair_use": "公平使用评估", "certificate_renewal": "证书续期扫描", "dns_observation": "DNS 公网核验", "history_retention": "历史记录清理", "proxy_pool_sync": "代理池订阅同步", "node_publish": "节点配置发布", "admin_tasks": "运营任务执行", "registration_messages": "注册消息处理", "event_consumer": "流量事件入账"}
 
 func (h *handlers) backgroundJobs() *backgroundJobs {
 	h.jobRuntimeOnce.Do(func() {
@@ -49,8 +49,8 @@ func (h *handlers) startScheduledJob(id string, interval time.Duration, run func
 	h.startPeriodicJob(application.PeriodicJob{
 		ID: id, Name: name, Interval: interval, Timeout: 30 * time.Minute, Immediate: true,
 		External:           id == "admin_tasks" || strings.HasPrefix(id, "node_publish_"),
-		ReconcileAfterLoss: id == "subscription_alerts" || id == "registration_messages" || id == "event_consumer" || id == "usage_projection" || id == "node_observation" || id == "admin_tasks" || id == "automatic_renewal" || id == "wallet_reservations" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
-		RetryFailures:      id == "subscription_alerts" || id == "registration_messages" || id == "event_consumer" || id == "usage_projection" || id == "node_observation" || id == "admin_tasks" || id == "automatic_renewal" || id == "wallet_reservations" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
+		ReconcileAfterLoss: id == "subscription_alerts" || id == "registration_messages" || id == "event_consumer" || id == "usage_projection" || id == "node_observation" || id == "node_observation_material_retention" || id == "admin_tasks" || id == "automatic_renewal" || id == "wallet_reservations" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
+		RetryFailures:      id == "subscription_alerts" || id == "registration_messages" || id == "event_consumer" || id == "usage_projection" || id == "node_observation" || id == "node_observation_material_retention" || id == "admin_tasks" || id == "automatic_renewal" || id == "wallet_reservations" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
 		Ready:              h.jobReadiness(id),
 		Run:                run,
 	})

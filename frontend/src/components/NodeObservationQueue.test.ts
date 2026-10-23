@@ -48,6 +48,21 @@ describe('global observation queue', () => {
     expect(wrapper.text()).toContain('未重新验证保留材料')
     wrapper.unmount()
   })
+  it.each(['0', undefined])('distinguishes original bytes from retired retained metadata %s', async retained => {
+    const next = page('applied', 'e'.repeat(64), false)
+    next.items[0].material_bytes = '18446744073709551615'
+    next.items[0].retained_bytes = retained
+    next.items[0].material_retired_at = '2026-10-22T01:00:00.000Z'
+    mocks.read.mockResolvedValueOnce(page('held', 'h'.repeat(64), false)).mockResolvedValueOnce(next)
+    const wrapper = render(); await flushPromises()
+    await wrapper.find('select').setValue('applied'); await flushPromises()
+    const text = wrapper.get('tbody td:nth-child(4)').text()
+    expect(text).toContain('原始 18446744073709551615 字节')
+    expect(text).toContain(`登记保留 ${retained ?? '未知'} 字节`)
+    expect(text).toContain('原材料已到期回收，回执身份保留')
+    expect(wrapper.text()).toContain('未重新验证保留材料')
+    wrapper.unmount()
+  })
   it('uses a fixed fallback for an unfamiliar asset relation', async () => {
     const result = page()
     result.items[0].asset_relation = 'toString' as ObservationIntentPage['items'][number]['asset_relation']

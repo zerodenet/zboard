@@ -340,6 +340,19 @@
       "outbox": "NodeObservationIntent and immutable parts carry exact receiver-side source; no nodes or observation-state lock is acquired by the authority producer."
     },
     {
+      "id": "resources.observation_material_retirement",
+      "owner": "resources",
+      "source": "internal/adapters/persistence/observationstore/retention.go",
+      "symbol": "MaterialRetention.Retire",
+      "participants": [
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction_per_source",
+      "compensation": "Node then exact asset state then immutable header locks; recheck applied ownership, minimum age, all pinned references and canonical parts. Delete only unreferenced auxiliary parts and commit the explicit retired marker atomically. Rollback leaves all original material replayable. Review scheduling is auxiliary; no billing, authorization, spool checkpoint or source identity is removed.",
+      "outbox": "No external side effect or financial write. The durable original header remains the exact replay receipt; worker and in-process executor use the same repository."
+    },
+    {
       "id": "resources.node_observation_projection",
       "owner": "resources",
       "source": "internal/adapters/persistence/observationstore/worker.go",

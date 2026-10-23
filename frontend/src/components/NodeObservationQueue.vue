@@ -27,7 +27,7 @@
               <td><code>{{ item.id }}</code><div>节点编号 {{ item.node_id }} · {{ statusLabel(item.status) }}</div></td>
               <td>{{ reasonLabel(item.reason, item.status) }}<div v-if="canRetry(item)"><UiButton variant="secondary" :disabled="retryBusy || submitted.has(candidateKey(item))" @click="selectRetry(item)">核对重试</UiButton></div></td>
               <td>{{ assetLabel(item.asset_relation) }}</td>
-              <td>{{ item.material_bytes }} 字节 / {{ item.part_count }} 段<div>领取尝试 {{ item.attempts }}</div></td>
+              <td>原始 {{ item.material_bytes }} 字节 / {{ item.part_count }} 段<div>登记保留 {{ item.retained_bytes ?? (item.material_retired_at ? '未知' : item.material_bytes) }} 字节</div><div v-if="item.material_retired_at">原材料已到期回收，回执身份保留</div><div>领取尝试 {{ item.attempts }}</div></td>
               <td><div>入队 <TimeBadge :value="item.enqueued_at" /></div><div>调度可用 <TimeBadge :value="item.available_at" /></div><div>处置更新 <TimeBadge :value="item.disposition_updated_at" /></div><div v-if="item.status === 'claimed' && item.lease_until">租约截至 <TimeBadge :value="item.lease_until" /></div></td>
             </tr></tbody>
           </table>

@@ -8,6 +8,8 @@ export interface ObservationIntentItem {
   reason: string
   asset_relation: 'unknown' | 'same_asset' | 'different_asset' | 'node_missing' | 'asset_deleted'
   attempts: string
+  retained_bytes?: string
+  material_retired_at?: string
   material_bytes: string
   part_count: string
   enqueued_at: string

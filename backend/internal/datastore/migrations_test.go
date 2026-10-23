@@ -131,6 +131,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0058_ticket_references.up.sql",
 		"0059_node_asset_identity.up.sql",
 		"0060_node_observation_handoff.up.sql",
+		"0061_node_observation_material_retention.up.sql",
 	}
 	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
@@ -196,6 +197,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0058_ticket_references.down.sql",
 		"0059_node_asset_identity.down.sql",
 		"0060_node_observation_handoff.down.sql",
+		"0061_node_observation_material_retention.down.sql",
 	}
 	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)

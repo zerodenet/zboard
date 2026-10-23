@@ -121,6 +121,9 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
+	if err := preflightObservationMaterialSchema(db); err != nil {
+		return err
+	}
 	if err := preflightNodeObservationSchema(db); err != nil {
 		return err
 	}
@@ -247,6 +250,9 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileNodeObservationSchema(db); err != nil {
 		return err
 	}
+	if err := reconcileObservationMaterialSchema(db); err != nil {
+		return err
+	}
 	if err := reconcileTicketReferenceSchema(db); err != nil {
 		return err
 	}
@@ -307,6 +313,12 @@ func runMigrations(db *gorm.DB) error {
 			return fmt.Errorf("check migration %s: %w", version, err)
 		}
 		if applied > 0 {
+			continue
+		}
+		if version == nodeObservationMaterialVersion {
+			if err := reconcileObservationMaterialSchema(db); err != nil {
+				return err
+			}
 			continue
 		}
 		if version == nodeObservationSchemaVersion {

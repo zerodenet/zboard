@@ -34,7 +34,7 @@ func (s ObservationIntentOperations) ListObservationIntents(ctx context.Context,
 			stateMatch = "state.asset_tag = intents.asset_tag AND BINARY state.asset_tag = BINARY intents.asset_tag"
 		}
 		relation := "CASE WHEN intents.asset_tag = '' THEN 'unknown' WHEN state.deleted = 1 THEN 'asset_deleted' WHEN current_node.id IS NULL THEN 'node_missing' WHEN current_node.asset_tag = '' THEN 'unknown' WHEN " + match + " THEN 'same_asset' ELSE 'different_asset' END AS asset_relation"
-		query := tx.Table("node_observation_intents AS intents").Select("intents.id,intents.node_id,intents.status,intents.reason,intents.attempts,intents.material_bytes,intents.part_count,intents.created_at AS enqueued_at,intents.available_at,intents.updated_at AS disposition_updated_at,intents.lease_until,"+relation).
+		query := tx.Table("node_observation_intents AS intents").Select("intents.id,intents.node_id,intents.status,intents.reason,intents.attempts,intents.material_bytes,intents.part_count,intents.material_retired_at,CASE WHEN intents.material_retired_at IS NULL THEN intents.material_bytes ELSE 0 END AS retained_bytes,intents.created_at AS enqueued_at,intents.available_at,intents.updated_at AS disposition_updated_at,intents.lease_until,"+relation).
 			Joins("LEFT JOIN nodes AS current_node ON current_node.id = intents.node_id").
 			Joins("LEFT JOIN node_observation_states AS state ON state.node_id = intents.node_id AND "+stateMatch).
 			Where("intents.status = ?", q.Status)

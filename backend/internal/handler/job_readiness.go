@@ -9,6 +9,9 @@ import (
 )
 
 func (h *handlers) jobReadiness(id string) func(context.Context) (bool, error) {
+	if id == "node_observation_material_retention" {
+		return h.services.NodeObservationMaterialRetentionJob().Ready
+	}
 	if id == application.NodeObservationJobID {
 		return h.services.NodeObservationJob().Ready
 	}

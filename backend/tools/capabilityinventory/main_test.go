@@ -245,15 +245,19 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 22,
+		"cross_domain_transaction": 23,
 	}
 	counts := map[string]int{}
 	controlledDebit, unsubscribe, retirement, replacement, automatic := false, false, false, false, false
 	consumptionRefund, planQuotaSync, planGroupSync := false, false, false
 	observationHandoff, observationApply := false, false
 	observationRetry, observationRetryWrite := false, false
+	materialRetirement := false
 	for _, row := range rows {
 		counts[row.Kind]++
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.observation_material_retirement" && row.Owner == "resources" && row.File == "internal/adapters/persistence/observationstore/retention.go" {
+			materialRetirement = true
+		}
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.node_observation_retry" && row.Owner == "resources" && row.File == "internal/adapters/persistence/networkstore/node_observation_retry.go" {
 			observationRetry = true
 		}
@@ -293,6 +297,9 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		if row.Owner == "unassigned" {
 			t.Errorf("unassigned inventory evidence: %+v", row)
 		}
+	}
+	if !materialRetirement {
+		t.Error("observation material retirement must retain explicit bounded source transaction ownership")
 	}
 	if !automatic {
 		t.Fatal("automatic renewal transaction must retain explicit ownership evidence")

@@ -6013,7 +6013,7 @@ components:
     ObservationIntentItem:
       type: object
       additionalProperties: false
-      required: [id, node_id, status, reason, asset_relation, attempts, material_bytes, part_count, enqueued_at, available_at, disposition_updated_at, material_verified]
+      required: [id, node_id, status, reason, asset_relation, attempts, material_bytes, retained_bytes, part_count, enqueued_at, available_at, disposition_updated_at, material_verified]
       properties:
         id: {type: string, pattern: '^[0-9a-f]{64}$', description: Opaque complete-material reference; displaying it is not revalidation}
         node_id: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Historical numeric node identifier; not a link or attribution to a current asset with a reused id}
@@ -6021,7 +6021,9 @@ components:
         reason: {type: string, maxLength: 64, description: Disposition code; clients must use a safe fixed fallback for unknown codes}
         asset_relation: {type: string, enum: [unknown, same_asset, different_asset, node_missing, asset_deleted], description: Current metadata relationship only; not credential or runtime attestation}
         attempts: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Exact unsigned diagnostic count encoded as decimal text}
-        material_bytes: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Exact unsigned diagnostic count encoded as decimal text}
+        retained_bytes: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Declared retained logical material bytes from lifecycle metadata; not a physical disk or blob integrity measurement}
+        material_retired_at: {type: string, format: date-time, description: Present only after unreferenced auxiliary parts retire atomically; original digest and size remain as the replay receipt}
+        material_bytes: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Original immutable material byte count encoded as decimal text}
         part_count: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Exact unsigned diagnostic count encoded as decimal text}
         enqueued_at: {type: string, format: date-time, description: 'Queue insertion time, not event/sample time'}
         available_at: {type: string, format: date-time, description: Scheduling availability time; pending may retry automatically}

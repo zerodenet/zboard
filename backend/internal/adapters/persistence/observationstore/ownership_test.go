@@ -13,6 +13,7 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/migrations"
 	"gorm.io/gorm"
 )
 
@@ -38,6 +39,17 @@ func ownershipFixture(t *testing.T) (*gorm.DB, *gorm.DB, model.Node) {
 	}
 	if err := a.AutoMigrate(&model.NodeObservationIntent{}, &model.NodeObservationPart{}, &model.NodeObservationState{}); err != nil {
 		t.Fatal(err)
+	}
+	raw, err := migrations.Files.ReadFile("sqlite/0061_node_observation_material_retention.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range strings.Split(string(raw), ";") {
+		if strings.TrimSpace(statement) != "" {
+			if err := a.Exec(statement).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	node := model.Node{ID: 8, AssetTag: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", IsEnabled: true}
 	if err := a.Table("nodes").Create(map[string]any{"id": node.ID, "asset_tag": node.AssetTag, "is_enabled": true}).Error; err != nil {

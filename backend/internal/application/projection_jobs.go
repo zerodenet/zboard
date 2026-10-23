@@ -36,3 +36,14 @@ func (s *Services) NodeObservationJob() PeriodicJob {
 		Run:   func(ctx context.Context) error { _, err := s.NodeObservations.Drain(ctx, 32, 8*1024*1024); return err },
 	}
 }
+
+// Material retention is independent of apply and authority. Readiness and every
+// retirement use the original bounded DB ownership/recovery executor.
+func (s *Services) NodeObservationMaterialRetentionJob() PeriodicJob {
+	return PeriodicJob{ID: "node_observation_material_retention", Name: "节点观察材料保留", Interval: time.Second, Timeout: time.Minute, Immediate: true, ReconcileAfterLoss: true, RetryFailures: true,
+		Ready: func(ctx context.Context) (bool, error) { return s.NodeObservationMaterialRetention.HasPending(ctx) },
+		Run: func(ctx context.Context) error {
+			_, err := s.NodeObservationMaterialRetention.Retire(ctx, 32, 8*1024*1024)
+			return err
+		}}
+}

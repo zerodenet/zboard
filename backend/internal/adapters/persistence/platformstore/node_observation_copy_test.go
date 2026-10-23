@@ -21,7 +21,7 @@ func TestMySQLMigrationCopierNodeObservationHandoff(t *testing.T) {
 	}
 }
 func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
-	for _, mode := range []string{"current_pending_held_tombstone", "legacy_unattributed_floor", "recorded_material_loss", "owned_completion_rollback"} {
+	for _, mode := range []string{"current_pending_held_tombstone", "retired_receipt", "legacy_unattributed_floor", "recorded_material_loss", "recorded_marker_loss", "owned_completion_rollback"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newMigrationCopyFixture(t, sourceMySQL, targetMySQL)
 			node := model.Node{Name: "handoff-copy", Config: "{}", IsEnabled: true}
@@ -31,13 +31,37 @@ func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
 			at := time.Unix(1700000000, 0).UTC()
 			p := network.EventPosition{AssetTag: node.AssetTag, ID: "copy-stats", CoreInstanceID: "exact-runtime", Sequence: 99, OccurredAt: at, ReceivedAt: at}
 			source := network.ObservationSource{Observation: network.NodeObservation{NodeID: node.ID, Latest: p, StatsEvent: &p, Stats: network.NodeStats{ActiveSessions: 3}}, Kind: "stats.sampled", Payload: []byte(`{"active_sessions":3,"bytes_up":0,"bytes_down":0,"raw":"\u0000\u00ff"}`)}
-			if err := f.source.Transaction(func(tx *gorm.DB) error { _, err := observationstore.Enqueue(tx, source); return err }); err != nil {
+			original := source
+			var originalID string
+			if err := f.source.Transaction(func(tx *gorm.DB) error {
+				var err error
+				originalID, err = observationstore.Enqueue(tx, source)
+				return err
+			}); err != nil {
 				t.Fatal(err)
 			}
 			// One applied source and its tombstone, one held unknown source, one pending
 			// source prove that no disposition/lease/reference is silently regenerated.
 			if _, err := (observationstore.Worker{DB: f.source}).Drain(context.Background(), 32, observationstore.MaxDrainBytes); err != nil {
 				t.Fatal(err)
+			}
+			if mode == "retired_receipt" {
+				newer := source
+				next := p
+				next.ID = "copy-newer"
+				next.Sequence = 100
+				newer.Observation.Latest = next
+				newer.Observation.StatsEvent = &next
+				if err := f.source.Transaction(func(tx *gorm.DB) error { _, err := observationstore.Enqueue(tx, newer); return err }); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := (observationstore.Worker{DB: f.source}).Drain(t.Context(), 32, observationstore.MaxDrainBytes); err != nil {
+					t.Fatal(err)
+				}
+				now := time.Now().UTC().Add(8 * 24 * time.Hour)
+				if out, err := (observationstore.MaterialRetention{DB: f.source, Now: func() time.Time { return now }}).Retire(t.Context(), 32, observationstore.MaxDrainBytes); err != nil || out.Retired != 1 {
+					t.Fatal("real compact source setup", out, err)
+				}
 			}
 			if err := f.source.Transaction(func(tx *gorm.DB) error { return observationstore.Tombstone(tx, node.ID, node.AssetTag) }); err != nil {
 				t.Fatal(err)
@@ -60,7 +84,7 @@ func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
 				t.Fatal(err)
 			}
 			if mode == "legacy_unattributed_floor" {
-				if err := f.source.Exec("DELETE FROM schema_migrations WHERE version = ?", "0060_node_observation_handoff.up.sql").Error; err != nil {
+				if err := f.source.Exec("DELETE FROM schema_migrations WHERE version IN ?", []string{"0060_node_observation_handoff.up.sql", "0061_node_observation_material_retention.up.sql"}).Error; err != nil {
 					t.Fatal(err)
 				}
 				for _, table := range []string{"node_observation_states", "node_observation_parts", "node_observation_intents"} {
@@ -69,6 +93,13 @@ func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
 					}
 				}
 				if err := f.source.Table("zero_event_node_cursors").Create(map[string]any{"node_id": node.ID, "core_instance_id": "unattributed", "sequence": 88, "config_revision": 1, "occurred_at": at, "updated_at": at}).Error; err != nil {
+					t.Fatal(err)
+				}
+			} else if mode == "recorded_marker_loss" {
+				if err := f.source.Migrator().DropIndex("node_observation_intents", "idx_observation_material_review"); err != nil {
+					t.Fatal(err)
+				}
+				if err := f.source.Migrator().DropColumn("node_observation_intents", "material_retired_at"); err != nil {
 					t.Fatal(err)
 				}
 			} else if mode == "recorded_material_loss" {
@@ -98,6 +129,11 @@ func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
 					h[i].LeaseUntil = h[i].LeaseUntil.UTC()
 					h[i].CreatedAt = h[i].CreatedAt.UTC()
 					h[i].UpdatedAt = h[i].UpdatedAt.UTC()
+					h[i].MaterialReviewAt = h[i].MaterialReviewAt.UTC()
+					if h[i].MaterialRetiredAt != nil {
+						v := h[i].MaterialRetiredAt.UTC()
+						h[i].MaterialRetiredAt = &v
+					}
 				}
 				for i := range s {
 					s[i].UpdatedAt = s[i].UpdatedAt.UTC()
@@ -111,7 +147,7 @@ func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
 				return []any{h, p, s}
 			}
 			var before any
-			if mode != "legacy_unattributed_floor" && mode != "recorded_material_loss" {
+			if mode != "legacy_unattributed_floor" && mode != "recorded_material_loss" && mode != "recorded_marker_loss" {
 				before = snapshot(f.source)
 			}
 			injected := errors.New("owned handoff completion failure")
@@ -139,7 +175,7 @@ func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
 			}
 			err := copier.Copy(context.Background(), f.target, f.task.ID, f.claim.Run.ID)
 			target := f.destination(t)
-			if mode == "recorded_material_loss" || mode == "owned_completion_rollback" {
+			if mode == "recorded_material_loss" || mode == "recorded_marker_loss" || mode == "owned_completion_rollback" {
 				if err == nil {
 					t.Fatal("lost material/owned completion accepted")
 				}
@@ -153,6 +189,17 @@ func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
 			} else {
 				if err != nil {
 					t.Fatal(err)
+				}
+				if mode == "retired_receipt" {
+					if err := target.Transaction(func(tx *gorm.DB) error {
+						got, err := observationstore.Enqueue(tx, original)
+						if err == nil && got != originalID {
+							return fmt.Errorf("compact copied replay changed identity")
+						}
+						return err
+					}); err != nil {
+						t.Fatal("copied compact receipt cannot replay", err)
+					}
 				}
 				if mode == "legacy_unattributed_floor" {
 					var floor model.NodeObservationState
