@@ -9685,13 +9685,20 @@ components:
         quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
         idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
     AdministrativeSubscriptionValueQuote:
-      allOf:
-        - $ref: '#/components/schemas/SubscriptionValueQuote'
-        - type: object
-          required: [user_id, max_refund_minor]
-          properties:
-            user_id: { type: integer, minimum: 1 }
-            max_refund_minor: { type: string, pattern: '^[0-9]+$' }
+      type: object
+      required: [subscription_id, user_id, currency, current_minor, future_minor, total_minor, quote_fingerprint, max_refund_minor, valuation_status]
+      properties:
+        subscription_id: { type: integer, minimum: 1 }
+        user_id: { type: integer, minimum: 1 }
+        currency: { type: string, description: Empty when historical payment currency is unknown. }
+        root_order_id: { type: integer, minimum: 1, description: Present only with a verified paid entitlement root. }
+        current_minor: { type: string, nullable: true, pattern: '^[0-9]+$' }
+        future_minor: { type: string, nullable: true, pattern: '^[0-9]+$' }
+        total_minor: { type: string, nullable: true, pattern: '^[0-9]+$' }
+        quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+        max_refund_minor: { type: string, pattern: '^[0-9]+$', description: Zero-only operational limit when valuation is unavailable; not evidence of zero actual payment. }
+        valuation_status: { type: string, enum: [verified, unavailable] }
+        message: { type: string }
     AdministrativeSubscriptionTerminationRequest:
       type: object
       additionalProperties: false
@@ -9699,12 +9706,13 @@ components:
       properties:
         quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
         idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
-        amount_minor: { type: integer, minimum: 0, maximum: 9007199254740991, description: Omit to use the default residual. Zero terminates without a refund. The server also enforces the actual-paid source limit. }
+        amount_minor: { type: integer, minimum: 0, maximum: 9007199254740991, description: Omit to use a verified default residual. An unavailable valuation requires explicit zero and never infers original payment. Zero terminates without a refund. The server also enforces the actual-paid source limit. }
         reason: { type: string, minLength: 3, maxLength: 400, description: Server validates 3–400 UTF-8 bytes after trimming. }
     SubscriptionTerminationReceipt:
       type: object
       required: [id, subscription_id, currency, amount_minor, status, revocation_status, created_at]
       properties:
+        record_kind: { type: string, enum: [entitlement_mutation], description: Identifies the durable zero-money entitlement command instead of a financial settlement. Omitted for existing value-settlement receipts. }
         id: { type: integer, minimum: 1 }
         subscription_id: { type: integer, minimum: 1 }
         currency: { type: string }

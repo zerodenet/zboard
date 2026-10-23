@@ -94,3 +94,46 @@ it('same-account reauthentication preserves an unsubmitted administrator approva
  expect(administrativelyTerminateSubscription).not.toHaveBeenCalled()
  wrapper.unmount()
 })
+
+it('unknown historical value requires explicit zero and keeps the unknown default after a lost response', async () => {
+ state.app.user.isAdmin = true
+ vi.mocked(fetchAdministrativeSubscriptionValue).mockResolvedValue({ subscription_id: 7, user_id: 27, currency: '', current_minor: null, future_minor: null, total_minor: null, quote_fingerprint: 'c'.repeat(64), max_refund_minor: '0', valuation_status: 'unavailable', message: '原始成交证据缺失。' })
+ vi.mocked(administrativelyTerminateSubscription).mockRejectedValueOnce(new Error('lost response'))
+ let wrapper = mount(SubscriptionTermination, { props: { subscriptionId: 7, administrative: true } })
+ await click(wrapper, '核对退订残值')
+ expect(wrapper.text()).toContain('默认残值未知')
+ expect(wrapper.text()).not.toContain('合计')
+ const inputs = wrapper.findAll('input')
+ expect(inputs[0]!.element.value).toBe('')
+ await inputs[1]!.setValue('管理员确认未知残值但不退款')
+ for (const invalid of ['', '0.01', '-1']) {
+  await inputs[0]!.setValue(invalid)
+  expect(wrapper.findAll('button').at(-1)!.attributes('disabled')).toBeDefined()
+ }
+ await inputs[0]!.setValue('0')
+ await click(wrapper, '确认终止订阅（不退款）')
+ const original = vi.mocked(administrativelyTerminateSubscription).mock.calls[0]![1]
+ expect(original.amount_minor).toBe(0)
+ expect(terminateSubscription).not.toHaveBeenCalled()
+ wrapper.unmount()
+ wrapper = mount(SubscriptionTermination, { props: { subscriptionId: 7, administrative: true } })
+ await flushPromises()
+ expect(administrativelyTerminateSubscription).toHaveBeenCalledOnce()
+ expect(wrapper.text()).toContain('原默认残值 金额未知')
+ vi.mocked(administrativelyTerminateSubscription).mockResolvedValueOnce({ ...result, currency: '', amount_minor: '0', record_kind: 'entitlement_mutation' })
+ await click(wrapper, '核对并重试原退订请求')
+ expect(administrativelyTerminateSubscription).toHaveBeenLastCalledWith(7, original)
+ expect(wrapper.text()).toContain('权益终止记录 #9')
+ expect(wrapper.text()).toContain('本次未退款')
+ wrapper.unmount()
+})
+it('rejects an unavailable quote that replaces unknown historical value with zero', async () => {
+ state.app.user.isAdmin = true
+ vi.mocked(fetchAdministrativeSubscriptionValue).mockResolvedValue({ ...quote, user_id: 27, valuation_status: 'unavailable', max_refund_minor: '0', total_minor: '0' })
+ const wrapper = mount(SubscriptionTermination, { props: { subscriptionId: 7, administrative: true } })
+ await click(wrapper, '核对退订残值')
+ expect(wrapper.text()).toContain('残值暂时无法核对，请稍后重试。')
+ expect(wrapper.findAll('input')).toHaveLength(0)
+ expect(administrativelyTerminateSubscription).not.toHaveBeenCalled()
+ wrapper.unmount()
+})

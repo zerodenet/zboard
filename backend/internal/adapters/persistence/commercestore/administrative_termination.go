@@ -3,7 +3,9 @@ package commercestore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
+	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -22,15 +24,11 @@ func (s SubscriptionValues) ReadForAdministrator(ctx context.Context, actor, id 
 		if sub.Status != "active" && sub.Status != "expired" {
 			return commerce.ErrSubscriptionValueUnavailable
 		}
-		value, currency, err := readSubscriptionValue(tx, sub, commerceNow(s.Now))
-		if err != nil {
-			return err
+		var valueErr error
+		out, _, _, valueErr = prepareAdministrativeValue(tx, sub, commerceNow(s.Now))
+		if valueErr != nil {
+			return valueErr
 		}
-		limits, maximum, err := administrativeRefundLimits(tx, sub, value, currency)
-		if err != nil {
-			return err
-		}
-		out = commerce.AdministrativeSubscriptionValueQuote{SubscriptionValueQuote: commerce.SubscriptionValueQuote{SubscriptionID: sub.ID, Currency: currency, RootOrderID: value.RootOrderID, CurrentMinor: value.CurrentMinor, FutureMinor: value.FutureMinor, TotalMinor: value.TotalMinor, Fingerprint: administrativeValueFingerprint(value.Fingerprint, limits, maximum)}, UserID: sub.UserID, MaxRefundMinor: maximum}
 		return nil
 	})
 	return
@@ -124,5 +122,60 @@ func administrativeValueFingerprint(defaultFingerprint string, limits map[uint]i
 		Limits  map[uint]int64
 		Maximum int64
 	}{defaultFingerprint, limits, maximum})
+	return walletKey(string(raw))
+}
+
+func prepareAdministrativeValue(tx *gorm.DB, sub model.Subscription, now time.Time) (commerce.AdministrativeSubscriptionValueQuote, commerce.ValueProjection, map[uint]int64, error) {
+	value, currency, err := readSubscriptionValue(tx, sub, now)
+	var limits map[uint]int64
+	var maximum int64
+	if err == nil {
+		limits, maximum, err = administrativeRefundLimits(tx, sub, value, currency)
+	}
+	if err != nil {
+		if !errors.Is(err, commerce.ErrSubscriptionValueUnavailable) && !errors.Is(err, commerce.ErrSubscriptionValueCyclePending) {
+			return commerce.AdministrativeSubscriptionValueQuote{}, value, nil, err
+		}
+		var orders []model.Order
+		if err := tx.Where("user_id = ? AND (subscription_id = ? OR target_subscription_id = ?)", sub.UserID, sub.ID, sub.ID).Order("id ASC").Limit(1001).Find(&orders).Error; err != nil {
+			return commerce.AdministrativeSubscriptionValueQuote{}, value, nil, err
+		}
+		if len(orders) > 1000 {
+			return commerce.AdministrativeSubscriptionValueQuote{}, value, nil, commerce.ErrSubscriptionValueUnavailable
+		}
+		reason := "historical_value_unavailable"
+		if errors.Is(err, commerce.ErrSubscriptionValueCyclePending) {
+			reason = "quota_reset_pending"
+		}
+		fp := unpricedTerminationFingerprint(sub, orders, reason)
+		return commerce.AdministrativeSubscriptionValueQuote{SubscriptionID: sub.ID, UserID: sub.UserID, Fingerprint: fp, ValuationStatus: "unavailable", Message: "默认残值及可退实付尚无法核对；只能明确输入0元终止权益，未将未知价值视为0。"}, value, nil, nil
+	}
+	return commerce.AdministrativeSubscriptionValueQuote{SubscriptionID: sub.ID, UserID: sub.UserID, Currency: currency, RootOrderID: &value.RootOrderID, CurrentMinor: &value.CurrentMinor, FutureMinor: &value.FutureMinor, TotalMinor: &value.TotalMinor, Fingerprint: administrativeValueFingerprint(value.Fingerprint, limits, maximum), MaxRefundMinor: maximum, ValuationStatus: "verified"}, value, limits, nil
+}
+
+func unpricedTerminationFingerprint(sub model.Subscription, orders []model.Order, reason string) string {
+	type orderBoundary struct {
+		ID             uint
+		Status         string
+		SubscriptionID uint
+		Target         *uint
+		Paid, Refund   int64
+		Evidence       string
+		EndedAt        *time.Time
+	}
+	rows := make([]orderBoundary, 0, len(orders))
+	for _, order := range orders {
+		rows = append(rows, orderBoundary{order.ID, order.Status, order.SubscriptionID, order.TargetSubscriptionID, order.PaidAmount, order.RefundAmount, walletKey(order.PurchaseSnapshot + "\x00" + order.EntitlementValueSnapshot), order.SubscriptionEndedAt})
+	}
+	raw, _ := json.Marshal(struct {
+		Model        string
+		Subscription uint
+		Owner        uint
+		Group        uint
+		Epoch        uint64
+		State        commerce.EntitlementValueState
+		Reason       string
+		Orders       []orderBoundary
+	}{"admin_zero_unpriced_v1", sub.ID, sub.UserID, sub.NodeGroupID, sub.EntitlementEpoch, entitlementValueState(sub), reason, rows})
 	return walletKey(string(raw))
 }

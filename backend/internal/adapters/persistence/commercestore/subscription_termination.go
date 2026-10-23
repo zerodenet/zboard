@@ -70,7 +70,7 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 		var user model.User
 		if administrative != nil {
 			var authErr error
-			user, authErr = lockSettlementUsers(tx, owner, actor)
+			user, authErr = lockSettlementUsersMode(tx, owner, actor, true)
 			if authErr != nil {
 				return authErr
 			}
@@ -84,6 +84,24 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 		}
 		var old model.SubscriptionValueSettlement
 		lookupErr := tx.Where("request_key = ?", key).First(&old).Error
+		if administrative != nil {
+			var mutation model.SubscriptionMutation
+			mutationErr := tx.Where("idempotency_key = ?", key).First(&mutation).Error
+			if mutationErr == nil {
+				if lookupErr == nil {
+					return commerce.ErrSubscriptionSettlementConflict
+				}
+				if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+					return lookupErr
+				}
+				var replayErr error
+				out, replayErr = unpricedTerminationReplay(tx, mutation, actor, owner, id, fingerprint)
+				return replayErr
+			}
+			if !errors.Is(mutationErr, gorm.ErrRecordNotFound) {
+				return mutationErr
+			}
+		}
 		if lookupErr == nil {
 			if old.UserID != owner || old.ActorID != actor || old.SubscriptionID != id || old.RequestFingerprint != fingerprint {
 				return commerce.ErrSubscriptionSettlementConflict
@@ -120,31 +138,47 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 			}
 		}
 		now := commerceNow(s.Now)
-		projection, currency, err := readSubscriptionValue(tx, sub, now)
-		if err != nil {
-			return err
-		}
-		defaultMinor := projection.TotalMinor
-		sources := projection.Sources
-		quoteFingerprint := projection.Fingerprint
+		var projection commerce.ValueProjection
+		var currency, quoteFingerprint string
+		var sources map[uint]int64
 		if administrative != nil {
-			limits, maxRefund, err := administrativeRefundLimits(tx, sub, projection, currency)
+			quote, value, limits, err := prepareAdministrativeValue(tx, sub, now)
 			if err != nil {
 				return err
 			}
-			quoteFingerprint = administrativeValueFingerprint(projection.Fingerprint, limits, maxRefund)
-			amount := defaultMinor
+			if quote.Fingerprint != in.QuoteFingerprint {
+				return commerce.ErrSubscriptionQuoteChanged
+			}
+			if quote.ValuationStatus == "unavailable" {
+				if administrative.AmountMinor == nil || *administrative.AmountMinor != 0 {
+					return commerce.ErrSubscriptionValueUnavailable
+				}
+				var zeroErr error
+				out, zeroErr = settleUnpricedTermination(tx, sub, orders, user, actor, owner, key, fingerprint, *administrative, quote, now)
+				return zeroErr
+			}
+			projection, currency, quoteFingerprint = value, quote.Currency, quote.Fingerprint
+			amount := value.TotalMinor
 			if administrative.AmountMinor != nil {
 				amount = *administrative.AmountMinor
 			}
-			sources, err = commerce.AllocateAdministrativeRefund(amount, projection.Sources, limits)
+			sources, err = commerce.AllocateAdministrativeRefund(amount, value.Sources, limits)
 			if err != nil {
 				return err
 			}
+		} else {
+			var valueErr error
+			projection, currency, valueErr = readSubscriptionValue(tx, sub, now)
+			if valueErr != nil {
+				return valueErr
+			}
+			quoteFingerprint, sources = projection.Fingerprint, projection.Sources
 		}
 		if quoteFingerprint != in.QuoteFingerprint {
 			return commerce.ErrSubscriptionQuoteChanged
 		}
+		defaultMinor := projection.TotalMinor
+
 		payload, err := json.Marshal(struct {
 			Value   commerce.ValueProjection
 			Sources map[uint]int64
@@ -185,38 +219,14 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 				return err
 			}
 		}
-		// Explicit unsubscribe has no recovery window. Retain cumulative identities
-		// and history; verified cash arriving after cancellation cannot revive it.
-		finalTotal, finalUsed := entitlements.CycleQuota(entitlements.Subscription(sub))
-		for _, order := range orders {
-			if order.SubscriptionEndedAt != nil && order.Status != "pending" {
-				continue
-			} // Preserve earlier terminated-term history.
-			updates := map[string]any{"subscription_ended_at": now, "subscription_end_reason": "canceled", "subscription_final_flow_total": finalTotal, "subscription_final_flow_used": finalUsed, "updated_at": now}
-			if order.Status == "pending" {
-				if err := releaseOrderFunding(tx, order, "canceled", now); err != nil {
-					return err
-				}
-				updates["status"] = "canceled"
-				updates["canceled_at"] = now
-			}
-			if err := tx.Model(&model.Order{}).Where("id = ?", order.ID).Updates(updates).Error; err != nil {
-				return err
-			}
-		}
-		if err := entitlementstore.TerminateInTransaction(tx, sub, strconv.FormatUint(uint64(row.ID), 10), now); err != nil {
-			return err
-		}
-		if err := stopAutomaticRenewal(tx, sub.ID, "window_closed", "订阅已主动退订，自动扣款已停止。", now); err != nil {
-			return err
-		}
 		detail := fmt.Sprintf("settlement=%d currency=%s wallet_minor=%d delivery=pending_verification", row.ID, currency, total)
 		if administrative != nil {
 			detail += fmt.Sprintf(" actor_id=%d owner_id=%d default_minor=%d actual_minor=%d reason=%q", actor, owner, defaultMinor, total, administrative.Reason)
 		}
-		if err := tx.Create(&model.AuditLog{UserID: &actor, Actor: user.Email, Action: "subscription.unsubscribe", Target: fmt.Sprintf("subscription:%d", id), Detail: detail}).Error; err != nil {
+		if err := finishSubscriptionTermination(tx, sub, orders, user, actor, "subscription_value_settlement", strconv.FormatUint(uint64(row.ID), 10), detail, now); err != nil {
 			return err
 		}
+
 		out = terminationReceipt(row)
 		return nil
 	})
@@ -224,4 +234,33 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 		return commerce.SubscriptionTerminationReceipt{}, err
 	}
 	return out, nil
+}
+
+func finishSubscriptionTermination(tx *gorm.DB, sub model.Subscription, orders []model.Order, user model.User, actor uint, referenceType, reference, detail string, now time.Time) error {
+	// Explicit unsubscribe has no recovery window. Retain cumulative identities
+	// and history; verified cash arriving after cancellation cannot revive it.
+	finalTotal, finalUsed := entitlements.CycleQuota(entitlements.Subscription(sub))
+	for _, order := range orders {
+		if order.SubscriptionEndedAt != nil && order.Status != "pending" {
+			continue
+		} // Preserve earlier terminated-term history.
+		updates := map[string]any{"subscription_ended_at": now, "subscription_end_reason": "canceled", "subscription_final_flow_total": finalTotal, "subscription_final_flow_used": finalUsed, "updated_at": now}
+		if order.Status == "pending" {
+			if err := releaseOrderFunding(tx, order, "canceled", now); err != nil {
+				return err
+			}
+			updates["status"] = "canceled"
+			updates["canceled_at"] = now
+		}
+		if err := tx.Model(&model.Order{}).Where("id = ?", order.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+	}
+	if err := entitlementstore.TerminateWithReferenceInTransaction(tx, sub, referenceType, reference, now); err != nil {
+		return err
+	}
+	if err := stopAutomaticRenewal(tx, sub.ID, "window_closed", "订阅已主动退订，自动扣款已停止。", now); err != nil {
+		return err
+	}
+	return tx.Create(&model.AuditLog{UserID: &actor, Actor: user.Email, Action: "subscription.unsubscribe", Target: fmt.Sprintf("subscription:%d", sub.ID), Detail: detail}).Error
 }

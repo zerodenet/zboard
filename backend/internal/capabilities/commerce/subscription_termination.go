@@ -23,6 +23,7 @@ type AdministrativeSubscriptionTerminationRequest struct {
 }
 
 type SubscriptionTerminationReceipt struct {
+	RecordKind       string    `json:"record_kind,omitempty"`
 	ID               uint      `json:"id"`
 	SubscriptionID   uint      `json:"subscription_id"`
 	Currency         string    `json:"currency"`

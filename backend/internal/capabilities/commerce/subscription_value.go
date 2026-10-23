@@ -19,9 +19,17 @@ type SubscriptionValueQuote struct {
 	Fingerprint    string `json:"quote_fingerprint"`
 }
 type AdministrativeSubscriptionValueQuote struct {
-	SubscriptionValueQuote
-	UserID         uint  `json:"user_id"`
-	MaxRefundMinor int64 `json:"max_refund_minor,string"`
+	SubscriptionID  uint   `json:"subscription_id"`
+	UserID          uint   `json:"user_id"`
+	Currency        string `json:"currency"`
+	RootOrderID     *uint  `json:"root_order_id,omitempty"`
+	CurrentMinor    *int64 `json:"current_minor,string"`
+	FutureMinor     *int64 `json:"future_minor,string"`
+	TotalMinor      *int64 `json:"total_minor,string"`
+	Fingerprint     string `json:"quote_fingerprint"`
+	MaxRefundMinor  int64  `json:"max_refund_minor,string"`
+	ValuationStatus string `json:"valuation_status"`
+	Message         string `json:"message,omitempty"`
 }
 
 type SubscriptionValuesRepository interface {

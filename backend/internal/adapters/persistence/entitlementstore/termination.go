@@ -10,6 +10,12 @@ import (
 // usage, cumulative metering identities and credentials remain attributable;
 // credential and subscription-token revocation is committed with delivery intent.
 func TerminateInTransaction(tx *gorm.DB, sub model.Subscription, reference string, now time.Time) error {
+	return TerminateWithReferenceInTransaction(tx, sub, "subscription_value_settlement", reference, now)
+}
+
+// TerminateWithReferenceInTransaction is the same rights writer for a financial
+// settlement or an explicitly approved zero-money entitlement command.
+func TerminateWithReferenceInTransaction(tx *gorm.DB, sub model.Subscription, referenceType, reference string, now time.Time) error {
 	if err := tx.Model(&model.Subscription{}).Where("id = ?", sub.ID).Updates(map[string]any{"status": "canceled", "ended_at": now, "end_reason": "canceled", "updated_at": now}).Error; err != nil {
 		return err
 	}
@@ -24,5 +30,5 @@ func TerminateInTransaction(tx *gorm.DB, sub model.Subscription, reference strin
 	if before < 0 {
 		before = 0
 	}
-	return RecordQuotaEvent(tx, sub, "unsubscribe", -before, before, 0, "subscription_value_settlement", reference)
+	return RecordQuotaEvent(tx, sub, "unsubscribe", -before, before, 0, referenceType, reference)
 }

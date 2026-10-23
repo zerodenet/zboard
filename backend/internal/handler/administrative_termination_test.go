@@ -34,7 +34,7 @@ func assertAdministrativeTermination(t *testing.T, fixture func(*testing.T) orde
 				t.Fatal(err)
 			}
 			quote, err := f.h.services.SubscriptionValues.ReadForAdministrator(t.Context(), admin.ID, root.SubscriptionID)
-			if err != nil || quote.TotalMinor != 8000 || quote.MaxRefundMinor != 10000 || quote.UserID != 1 {
+			if err != nil || (quote.TotalMinor == nil || *quote.TotalMinor != 8000) || quote.MaxRefundMinor != 10000 || quote.UserID != 1 {
 				t.Fatalf("admin quote %+v %v", quote, err)
 			}
 			if _, err := f.h.services.SubscriptionValues.ReadForAdministrator(t.Context(), ordinary.ID, root.SubscriptionID); !errors.Is(err, commerce.ErrOrderPermission) {
