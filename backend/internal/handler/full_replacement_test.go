@@ -121,7 +121,7 @@ func TestMySQLFullReplacementApprovedResidualExamples(t *testing.T) {
 		residual, surplus int64
 	}{{"three_complete_months", false, 0, 3, 9000, 7000}, {"third_month_eighty_percent", false, 80, 2, 9200, 7200}, {"annual_shared_eighty_percent", true, 80, 2, 2400, 400}} {
 		t.Run(item.name, func(t *testing.T) {
-			assertFullReplacementExample(t, newMySQLOrderFixture(t), item.shared, item.used, item.months, item.residual, item.surplus)
+			assertFullReplacementExample(t, newMySQLBusinessOrderFixture(t), item.shared, item.used, item.months, item.residual, item.surplus)
 		})
 	}
 }
@@ -355,7 +355,7 @@ func TestFullReplacementMixedPaymentAndCanceledLatePayment(t *testing.T) {
 }
 func TestMySQLFullReplacementMixedPaymentAndCanceledLatePayment(t *testing.T) {
 	for _, cancel := range []bool{false, true} {
-		t.Run(fmt.Sprint(cancel), func(t *testing.T) { assertFullReplacementMixedPayment(t, newMySQLOrderFixture(t), cancel) })
+		t.Run(fmt.Sprint(cancel), func(t *testing.T) { assertFullReplacementMixedPayment(t, newMySQLBusinessOrderFixture(t), cancel) })
 	}
 }
 func assertFullReplacementMixedPayment(t *testing.T, base orderFixture, cancel bool) {
@@ -464,7 +464,7 @@ func TestFullReplacementPaymentDelayPreservesAgreedTimeValue(t *testing.T) {
 func TestMySQLFullReplacementConcurrentFinancialTransitions(t *testing.T) {
 	for _, scenario := range []string{"duplicate_payment", "two_changes", "unsubscribe", "cancel", "cash_cancel"} {
 		t.Run(scenario, func(t *testing.T) {
-			f := newFullReplacementFixture(t, newMySQLOrderFixture(t), false, 0, 3)
+			f := newFullReplacementFixture(t, newMySQLBusinessOrderFixture(t), false, 0, 3)
 			if scenario == "cash_cancel" {
 				if err := f.db.Model(&model.PlanSKU{}).Where("id = ?", f.target).Update("price_cents", 30000).Error; err != nil {
 					t.Fatal(err)
@@ -577,7 +577,7 @@ func TestFullReplacementAdministratorDiscountNeverBecomesBalance(t *testing.T) {
 	assertReplacementAdministratorDiscount(t, newOrderFixture(t))
 }
 func TestMySQLFullReplacementAdministratorDiscountNeverBecomesBalance(t *testing.T) {
-	assertReplacementAdministratorDiscount(t, newMySQLOrderFixture(t))
+	assertReplacementAdministratorDiscount(t, newMySQLBusinessOrderFixture(t))
 }
 func assertReplacementAdministratorDiscount(t *testing.T, f orderFixture) {
 	attachOrderPublishEndpoint(t, f)

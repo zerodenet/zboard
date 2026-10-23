@@ -74,3 +74,7 @@ zero skips. This is selected-suite correctness evidence, not a measured full
 The parent907 local full Go/vet/build/CGO0SQLite and all three original MySQL
 commands passed; its CI still timed out at900.021s. Both results are retained,
 not replaced by prior ae2 green CI or this selected-suite pass.
+
+## 2026-10-23 支付业务回归的显式准备收敛
+
+28d CI整包900.022s超时保留，本地完整三组通过不覆盖该失败。27个已审查业务构造点继续复用本夹具，全部原断言/触发器/锁场景/191个匹配测试名称保持；原初始化/迁移/权限路径不改。新配对实库基准在同一100MiB redo下逐份验证完整等价，准备中位数3.620→1.155s，额外模板4.478s独立报告；32项专项零skip通过。新头完整检查及原CI门槛仍须独立验收。[范围、测量、回退及限制](core-convergence-mysql-payment-business-setup.md)。

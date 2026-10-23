@@ -15,7 +15,7 @@ import (
 )
 
 func TestMySQLExpiryCoordinatesOrderLocksBeforeSubscriptionLocks(t *testing.T) {
-	f := expiredRecoveryFixture(t, newMySQLOrderFixture(t))
+	f := expiredRecoveryFixture(t, newMySQLBusinessOrderFixture(t))
 	setRecoveryPolicy(t, f, 14)
 	type expiryMarker struct{}
 	var ordersLocked, reversed atomic.Bool
@@ -44,7 +44,7 @@ func TestMySQLExpiryCoordinatesOrderLocksBeforeSubscriptionLocks(t *testing.T) {
 }
 
 func TestMySQLAutomaticRenewalVersusCredentialExpiry(t *testing.T) {
-	f := expiredRecoveryFixture(t, newMySQLOrderFixture(t))
+	f := expiredRecoveryFixture(t, newMySQLBusinessOrderFixture(t))
 	setRecoveryPolicy(t, f, 14)
 	service := automaticRenewalsFor(f)
 	enableAutomaticRenewal(t, f, service)
@@ -82,7 +82,7 @@ func TestMySQLAutomaticRenewalVersusCredentialExpiry(t *testing.T) {
 }
 
 func TestMySQLExpiryRejectsCheckoutCommittedDuringOwnerLockWait(t *testing.T) {
-	f := expiredRecoveryFixture(t, newMySQLOrderFixture(t))
+	f := expiredRecoveryFixture(t, newMySQLBusinessOrderFixture(t))
 	setRecoveryPolicy(t, f, 14)
 	checkout := f.db.Begin()
 	if checkout.Error != nil {

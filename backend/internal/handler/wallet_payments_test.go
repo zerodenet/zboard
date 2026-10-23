@@ -121,7 +121,7 @@ func TestWalletReservationsReleaseBeforeLateCash(t *testing.T) {
 }
 func TestMySQLWalletReservationsReleaseBeforeLateCash(t *testing.T) {
 	for _, reason := range []string{"canceled", "failed", "expired", "expired_without_worker"} {
-		t.Run(reason, func(t *testing.T) { assertFundingRelease(t, newMySQLOrderFixture(t), reason) })
+		t.Run(reason, func(t *testing.T) { assertFundingRelease(t, newMySQLBusinessOrderFixture(t), reason) })
 	}
 }
 func assertFundingRelease(t *testing.T, f orderFixture, reason string) {

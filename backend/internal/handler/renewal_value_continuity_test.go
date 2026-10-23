@@ -102,7 +102,7 @@ func TestMySQLApprovedRenewalValueContinuityAndImmediateUnsubscribe(t *testing.T
 		if repeated {
 			name = "repeated"
 		}
-		t.Run(name, func(t *testing.T) { assertRenewalValueContinuity(t, newMySQLOrderFixture(t), repeated) })
+		t.Run(name, func(t *testing.T) { assertRenewalValueContinuity(t, newMySQLBusinessOrderFixture(t), repeated) })
 	}
 }
 func assertRenewalValueContinuity(t *testing.T, base orderFixture, repeated bool) {
@@ -157,7 +157,7 @@ func TestApprovedRenewalValueConcurrentPaymentAndUnsubscribe(t *testing.T) {
 	assertRenewalValueRace(t, newOrderFixture(t))
 }
 func TestMySQLApprovedRenewalValueConcurrentPaymentAndUnsubscribe(t *testing.T) {
-	assertRenewalValueRace(t, newMySQLOrderFixture(t))
+	assertRenewalValueRace(t, newMySQLBusinessOrderFixture(t))
 }
 func assertRenewalValueRace(t *testing.T, base orderFixture) {
 	f := newRenewalValueFixture(t, base)

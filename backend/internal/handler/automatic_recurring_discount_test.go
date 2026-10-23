@@ -125,7 +125,7 @@ func TestAutomaticRecurringSQLiteContinuousRenewalsKeepApprovalAndPaidSource(t *
 	assertAutomaticRecurringContinuous(t, newOrderFixture(t))
 }
 func TestMySQLAutomaticRecurringContinuousRenewalsKeepApprovalAndPaidSource(t *testing.T) {
-	assertAutomaticRecurringContinuous(t, newMySQLOrderFixture(t))
+	assertAutomaticRecurringContinuous(t, newMySQLBusinessOrderFixture(t))
 }
 func assertAutomaticRecurringContinuous(t *testing.T, base orderFixture) {
 	f := newAutomaticRecurringFixture(t, base, 50000)
@@ -419,7 +419,7 @@ func TestAutomaticRecurringSQLiteStableWalletCompetition(t *testing.T) {
 	assertAutomaticRecurringCompetition(t, newOrderFixture(t))
 }
 func TestMySQLAutomaticRecurringStableWalletCompetition(t *testing.T) {
-	assertAutomaticRecurringCompetition(t, newMySQLOrderFixture(t))
+	assertAutomaticRecurringCompetition(t, newMySQLBusinessOrderFixture(t))
 }
 func assertAutomaticRecurringCompetition(t *testing.T, base orderFixture) {
 	f := newAutomaticRecurringFixture(t, base, 30000)

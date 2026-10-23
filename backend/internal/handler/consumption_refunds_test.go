@@ -73,7 +73,7 @@ func TestConsumptionRefundFundingSourcesAndReplay(t *testing.T) {
 }
 func TestMySQLConsumptionRefundFundingSourcesAndReplay(t *testing.T) {
 	for _, wallet := range []int64{0, 300, 1000} {
-		t.Run(fmt.Sprint(wallet), func(t *testing.T) { assertConsumptionRefundSources(t, newMySQLOrderFixture(t), wallet) })
+		t.Run(fmt.Sprint(wallet), func(t *testing.T) { assertConsumptionRefundSources(t, newMySQLBusinessOrderFixture(t), wallet) })
 	}
 }
 func assertConsumptionRefundSources(t *testing.T, f orderFixture, wallet int64) {
@@ -146,7 +146,7 @@ func TestConsumptionRefundRetainsOtherOrderReservations(t *testing.T) {
 	assertConsumptionRefundReservations(t, newOrderFixture(t))
 }
 func TestMySQLConsumptionRefundRetainsOtherOrderReservations(t *testing.T) {
-	assertConsumptionRefundReservations(t, newMySQLOrderFixture(t))
+	assertConsumptionRefundReservations(t, newMySQLBusinessOrderFixture(t))
 }
 func assertConsumptionRefundReservations(t *testing.T, f orderFixture) {
 	order := refundPaidOrder(t, f, 1000)
@@ -218,7 +218,7 @@ func TestConsumptionRefundFailureRollsBackAllFacts(t *testing.T) {
 }
 func TestMySQLConsumptionRefundFailureRollsBackAllFacts(t *testing.T) {
 	for _, target := range []string{"consumption_refunds", "audit_logs", "wallet_entries"} {
-		t.Run(target, func(t *testing.T) { assertConsumptionRefundRollback(t, newMySQLOrderFixture(t), target) })
+		t.Run(target, func(t *testing.T) { assertConsumptionRefundRollback(t, newMySQLBusinessOrderFixture(t), target) })
 	}
 }
 func assertConsumptionRefundRollback(t *testing.T, f orderFixture, target string) {
@@ -263,7 +263,7 @@ func TestConsumptionRefundConcurrentReplayAndBudget(t *testing.T) {
 	assertConsumptionRefundConcurrency(t, newOrderFixture(t))
 }
 func TestMySQLConsumptionRefundConcurrentReplayAndBudget(t *testing.T) {
-	assertConsumptionRefundConcurrency(t, newMySQLOrderFixture(t))
+	assertConsumptionRefundConcurrency(t, newMySQLBusinessOrderFixture(t))
 }
 func assertConsumptionRefundConcurrency(t *testing.T, f orderFixture) {
 	order := refundPaidOrder(t, f, 0)
@@ -345,7 +345,7 @@ func TestConsumptionRefundOldReplacementLeavesNewRightsUnchanged(t *testing.T) {
 	assertConsumptionRefundOldReplacement(t, newOrderFixture(t))
 }
 func TestMySQLConsumptionRefundOldReplacementLeavesNewRightsUnchanged(t *testing.T) {
-	assertConsumptionRefundOldReplacement(t, newMySQLOrderFixture(t))
+	assertConsumptionRefundOldReplacement(t, newMySQLBusinessOrderFixture(t))
 }
 func assertConsumptionRefundOldReplacement(t *testing.T, base orderFixture) {
 	f := newFullReplacementFixture(t, base, false, 0, 3)
@@ -386,7 +386,7 @@ func TestConsumptionRefundProtectsConvertedAndUnprovenBudgets(t *testing.T) {
 	assertConsumptionRefundBudgetProtection(t, newOrderFixture(t))
 }
 func TestMySQLConsumptionRefundProtectsConvertedAndUnprovenBudgets(t *testing.T) {
-	assertConsumptionRefundBudgetProtection(t, newMySQLOrderFixture(t))
+	assertConsumptionRefundBudgetProtection(t, newMySQLBusinessOrderFixture(t))
 }
 func assertConsumptionRefundBudgetProtection(t *testing.T, f orderFixture) {
 	order := refundPaidOrder(t, f, 0)
@@ -419,7 +419,7 @@ func TestConsumptionRefundRacesUnsubscribeWithoutReturningValueTwice(t *testing.
 	assertConsumptionRefundUnsubscribeRace(t, newOrderFixture(t))
 }
 func TestMySQLConsumptionRefundRacesUnsubscribeWithoutReturningValueTwice(t *testing.T) {
-	assertConsumptionRefundUnsubscribeRace(t, newMySQLOrderFixture(t))
+	assertConsumptionRefundUnsubscribeRace(t, newMySQLBusinessOrderFixture(t))
 }
 func assertConsumptionRefundUnsubscribeRace(t *testing.T, f orderFixture) {
 	order := refundPaidOrder(t, f, 0)

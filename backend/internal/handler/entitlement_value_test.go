@@ -26,7 +26,7 @@ func TestActualEntitlementValueCapture(t *testing.T) {
 	assertActualEntitlementValueCapture(t, newOrderFixture(t))
 }
 func TestMySQLActualEntitlementValueCapture(t *testing.T) {
-	assertActualEntitlementValueCapture(t, newMySQLOrderFixture(t))
+	assertActualEntitlementValueCapture(t, newMySQLBusinessOrderFixture(t))
 }
 func assertActualEntitlementValueCapture(t *testing.T, f orderFixture) {
 	priceForFunding(t, f, 12000)

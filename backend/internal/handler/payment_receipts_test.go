@@ -20,7 +20,7 @@ func TestPaymentReceiptOwnsCashAcrossEventsAndChannels(t *testing.T) {
 	assertPaymentReceipts(t, newOrderFixture(t))
 }
 func TestMySQLPaymentReceiptOwnsCashAcrossEventsAndChannels(t *testing.T) {
-	assertPaymentReceipts(t, newMySQLOrderFixture(t))
+	assertPaymentReceipts(t, newMySQLBusinessOrderFixture(t))
 }
 func receiptService(f orderFixture) commerce.PaymentFacts {
 	return commerce.PaymentFacts{Repository: commercestore.PaymentFacts{DB: f.h.db, Issuer: zeroadapter.Issuer{Cipher: f.h.credentialCipher}}}
@@ -133,7 +133,7 @@ func TestPaymentReceiptPreservesLateRenewalCashWithoutRevival(t *testing.T) {
 	assertLateRenewalReceipt(t, newOrderFixture(t))
 }
 func TestMySQLPaymentReceiptPreservesLateRenewalCashWithoutRevival(t *testing.T) {
-	assertLateRenewalReceipt(t, newMySQLOrderFixture(t))
+	assertLateRenewalReceipt(t, newMySQLBusinessOrderFixture(t))
 }
 func assertLateRenewalReceipt(t *testing.T, f orderFixture) {
 	t.Helper()
@@ -169,13 +169,13 @@ func TestPaymentReceiptManualHistoryRequiresTicketedResolution(t *testing.T) {
 	assertReceiptResolution(t, newOrderFixture(t), "paid")
 }
 func TestMySQLPaymentReceiptManualHistoryRequiresTicketedResolution(t *testing.T) {
-	assertReceiptResolution(t, newMySQLOrderFixture(t), "paid")
+	assertReceiptResolution(t, newMySQLBusinessOrderFixture(t), "paid")
 }
 func TestPaymentReceiptLegacySuccessHistoryRequiresReview(t *testing.T) {
 	assertReceiptResolution(t, newOrderFixture(t), "success")
 }
 func TestMySQLPaymentReceiptLegacySuccessHistoryRequiresReview(t *testing.T) {
-	assertReceiptResolution(t, newMySQLOrderFixture(t), "success")
+	assertReceiptResolution(t, newMySQLBusinessOrderFixture(t), "success")
 }
 func assertReceiptResolution(t *testing.T, f orderFixture, status string) {
 	t.Helper()

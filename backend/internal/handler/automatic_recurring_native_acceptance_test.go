@@ -40,7 +40,7 @@ func TestAutomaticRecurringSignedNativeHTTPWalletAndTwoAutomaticDebits(t *testin
 }
 
 func TestMySQLAutomaticRecurringSignedNativeHTTPWalletAndTwoAutomaticDebits(t *testing.T) {
-	assertAutomaticRecurringSignedNativeHTTPWalletAndTwoAutomaticDebits(t, newMySQLOrderFixture(t))
+	assertAutomaticRecurringSignedNativeHTTPWalletAndTwoAutomaticDebits(t, newMySQLBusinessOrderFixture(t))
 }
 
 func assertAutomaticRecurringSignedNativeHTTPWalletAndTwoAutomaticDebits(t *testing.T, f orderFixture) {

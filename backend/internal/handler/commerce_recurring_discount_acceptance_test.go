@@ -127,7 +127,7 @@ func TestCommerceRecurringDiscountNativeHTTPWalletAndManualRenewals(t *testing.T
 }
 
 func TestMySQLCommerceRecurringDiscountNativeHTTPWalletAndManualRenewals(t *testing.T) {
-	assertCommerceRecurringDiscountNativeHTTPWalletAndManualRenewals(t, newMySQLOrderFixture(t))
+	assertCommerceRecurringDiscountNativeHTTPWalletAndManualRenewals(t, newMySQLBusinessOrderFixture(t))
 }
 
 func assertCommerceRecurringDiscountNativeHTTPWalletAndManualRenewals(t *testing.T, f orderFixture) {
