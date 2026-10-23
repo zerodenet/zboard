@@ -245,14 +245,21 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 21,
+		"cross_domain_transaction": 22,
 	}
 	counts := map[string]int{}
 	controlledDebit, unsubscribe, retirement, replacement, automatic := false, false, false, false, false
 	consumptionRefund, planQuotaSync, planGroupSync := false, false, false
 	observationHandoff, observationApply := false, false
+	observationRetry, observationRetryWrite := false, false
 	for _, row := range rows {
 		counts[row.Kind]++
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.node_observation_retry" && row.Owner == "resources" && row.File == "internal/adapters/persistence/networkstore/node_observation_retry.go" {
+			observationRetry = true
+		}
+		if row.Kind == "write_candidate" && row.Symbol == "h.services.ObservationIntents.Retry" && row.Owner == "resources" && row.File == "internal/handler/node_observation_retry.go" {
+			observationRetryWrite = true
+		}
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "metering.buffered_observation_handoff" && row.Owner == "metering" && row.File == "internal/application/zero_event_projection.go" {
 			observationHandoff = true
 		}
@@ -289,6 +296,9 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 	}
 	if !automatic {
 		t.Fatal("automatic renewal transaction must retain explicit ownership evidence")
+	}
+	if !observationRetry || !observationRetryWrite {
+		t.Error("controlled observation retry must retain explicit transaction and HTTP write ownership")
 	}
 	if !observationHandoff || !observationApply {
 		t.Error("financial handoff and auxiliary apply must retain distinct transaction ownership")
