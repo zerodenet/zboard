@@ -86,6 +86,12 @@ func (s OrderCreation) evaluateRenewal(ctx context.Context, buyer uint, request 
 	if err != nil {
 		return nil, err
 	}
+	if order.OrderType != "renewal" {
+		if request.Discount == nil {
+			return nil, nil
+		}
+		return s.evaluateOperationDiscount(ctx, order, request)
+	}
 	if marker.Source == nil {
 		if request.Discount != nil {
 			return nil, discountCheckoutError("该续费尚无可继承的已付款长期优惠协议，不能从页面选择重建。")

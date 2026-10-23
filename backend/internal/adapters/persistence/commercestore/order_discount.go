@@ -106,8 +106,24 @@ func validateCheckoutOffer(in commerce.DiscountQuoteContext, quote commerce.Disc
 		}
 		return invalid
 	}
-	if quote.Offer.Agreement == nil || (in.Operation != "new" && in.Operation != "renewal") || (in.Operation == "renewal" && quote.Offer.Agreement.Scope != "recurring") {
-		return discountCheckoutError("当前购买操作不支持该优惠协议范围。")
+	if quote.Offer.Agreement == nil {
+		return discountCheckoutError("当前购买操作缺少可核对的优惠约定。")
+	}
+	switch in.Operation {
+	case "new":
+		if quote.Offer.Agreement.Scope != "initial_only" && quote.Offer.Agreement.Scope != "recurring" {
+			return commerce.ErrDiscountQuoteInvalid
+		}
+	case "renewal":
+		if quote.Offer.Agreement.Scope != "recurring" {
+			return commerce.ErrDiscountQuoteInvalid
+		}
+	case "upgrade", "traffic_reset", "traffic_pack":
+		if quote.Offer.Agreement.Scope != commerce.OperationDiscountScope {
+			return discountCheckoutError("本次操作仅支持明确的本单优惠，不继承或替换续费约定。")
+		}
+	default:
+		return commerce.ErrDiscountQuoteInvalid
 	}
 	return nil
 }
@@ -117,7 +133,17 @@ func applyCheckoutDiscount(order *model.Order, request commerce.OrderCreateReque
 	var err error
 	provider := accepted.Quote.Provider.PluginID
 	selection := accepted.Context.Selection
-	if accepted.Version == 2 {
+	if accepted.Version == 3 {
+		if request.Discount == nil {
+			return commerce.ErrDiscountQuoteInvalid
+		}
+		provider = request.Discount.ProviderID
+		var policy commerce.PurchaseSnapshot
+		if json.Unmarshal([]byte(order.PurchaseSnapshot), &policy) != nil {
+			return invalidPurchaseSnapshot()
+		}
+		in, err = commerce.NewOperationDiscountContext(commerce.Order(*order), policy, request.Discount.Selection)
+	} else if accepted.Version == 2 {
 		var source *commerce.DiscountSourceSnapshot
 		if len(sources) > 0 {
 			source = sources[0]

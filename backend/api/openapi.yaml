@@ -3947,8 +3947,8 @@ paths:
     get:
       operationId: listCommerceDiscountProviders
       tags: [orders]
-      summary: List available new-purchase discount providers
-      description: Authenticated, bounded choices from admitted signed active configured native installations. Names and descriptions are presentation only; selection is an optional provider-owned code, never a browser price or payment fact. No host or available provider returns an empty array. Discovery performs no evaluation and reports quote_required; the actual verified offer determines initial_only or recurring scope. Manual recurring renewal inherits the strictly verified paid agreement and provider, including when the browser omits discount. Unavailable or unverified terms never silently revert to full price. Discovery never authorizes a charge.
+      summary: List admitted discount quote providers
+      description: Authenticated, bounded choices from admitted signed active configured native installations. Names and descriptions are presentation only; selection is an optional provider-owned code, never a browser price or payment fact. No host or available provider returns an empty array. Discovery performs no evaluation and reports quote_required; operations lists host-admitted quote operations, not a promise that the provider offers a discount. The legacy operation remains new. The actual verified offer determines initial_only or recurring for new purchase, and must explicitly be order_only for upgrade, traffic_reset or traffic_pack. Those operations require an owned eligible target and confirmed final quote. A one-order offer never changes renewal consent or the undiscounted base, and replacement credit is computed against its discounted price. Manual recurring renewal inherits the strictly verified paid agreement and provider, including when the browser omits discount. Unavailable or unverified terms never silently revert to full price. Discovery never authorizes a charge.
       responses:
         "200":
           description: Up to 200 current provider choices; no-store
@@ -3963,12 +3963,18 @@ paths:
                         maxItems: 200
                         items:
                           type: object
-                          required: [provider_id, name, description, operation, agreement_scope]
+                          required: [provider_id, name, description, operation, operations, agreement_scope]
                           properties:
                             provider_id: { type: string }
                             name: { type: string }
                             description: { type: string }
                             operation: { type: string, enum: [new] }
+                            operations:
+                              type: array
+                              minItems: 1
+                              maxItems: 4
+                              uniqueItems: true
+                              items: { type: string, enum: [new, upgrade, traffic_reset, traffic_pack] }
                             agreement_scope: { type: string, enum: [quote_required] }
         "401": { $ref: "#/components/responses/Error" }
         "503": { description: "Provider catalog unavailable; ordinary undiscounted purchases remain independent." }
@@ -9596,7 +9602,7 @@ components:
               properties:
                 id: { type: string }
                 version: { type: string }
-                scope: { type: string, enum: [initial_only, recurring] }
+                scope: { type: string, enum: [initial_only, recurring, order_only] }
                 terms_hash: { type: string }
                 terms_json: { type: string, description: "Opaque bounded plugin-owned rule evidence; never rendered as executable content or treated as payment authority." }
     OrderDiscountSelection:

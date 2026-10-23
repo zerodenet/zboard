@@ -39,6 +39,7 @@
       </ol>
       <PageAlert v-if="attemptError" tone="danger" title="订单恢复记录无法核对">{{ attemptError }}</PageAlert>
       <p v-if="checkoutAttempt" role="status">上次创建请求已保存。恢复将沿用原订单内容和原确认金额；请恢复上次订单或前往“我的订单”核对。</p>
+      <p v-if="savedTargetSubscriptionID">原请求目标订阅：#{{ savedTargetSubscriptionID }}</p>
 
       <div class="purchase-checkout__layout">
         <div class="purchase-checkout__main">
@@ -82,7 +83,7 @@
               </template>
             </dl>
           </section>
-          <section v-if="operation === 'purchase' && !attemptError && (!checkoutAttempt || discountConfirmation)" class="purchase-checkout__section" aria-label="新购优惠">
+          <section v-if="selectableDiscount && !attemptError && (!checkoutAttempt || discountConfirmation)" class="purchase-checkout__section" :aria-label="operation === 'purchase' ? '新购优惠' : '本单优惠'">
             <h3>优惠</h3>
             <template v-if="checkoutAttempt && discountConfirmation">
               <p>已确认优惠：{{ discountConfirmation.name }}。{{ discountConfirmation.message }}</p>
@@ -341,7 +342,7 @@ import UiButton from '../../components/UiButton.vue'
 import UiInput from '../../components/UiInput.vue'
 import UiSelect from '../../components/UiSelect.vue'
 import FormField from '../../components/FormField.vue'
-import { fetchDiscountProviders, previewDiscountOrder, validateDiscountOrderQuote, type DiscountProvider, type OrderDiscountSelection } from '../../api/commerceDiscounts'
+import { fetchDiscountProviders, previewDiscountOrder, previewOperationDiscountOrder, validateDiscountOrderQuote, type DiscountProvider, type OrderDiscountSelection } from '../../api/commerceDiscounts'
 import UiIcon from '../../components/UiIcon.vue'
 import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../../components/WorkbenchFilterInput.vue'
@@ -410,7 +411,7 @@ const { items: plans, total: planTotal, loading: planLoading, error: planError }
 const detail = useCatalogDetail()
 const { plan: selectedPlan, skus: detailSKUs, selectedSkuId: selectedSKUID, selectedSku: selectedSKU,
   loading: detailLoading, error: detailError, total: skuTotal, offset: skuOffset, limit: skuLimit } = detail
-interface DiscountConfirmation { name: string; basePrice: number; discountAmount: number; payable: number; currency: string; message: string; scope?: 'initial_only' | 'recurring'; expiresAt?: string }
+interface DiscountConfirmation { name: string; basePrice: number; discountAmount: number; payable: number; currency: string; message: string; scope?: 'initial_only' | 'recurring' | 'order_only'; expiresAt?: string }
 interface CheckoutConfirmation {
   version: 1; skuId: number; orderType: string; quoteFingerprint?: string
   payable: number; currency: string; planName: string; skuName: string; billing: string
@@ -419,6 +420,10 @@ interface CheckoutConfirmation {
 interface CheckoutRequest { skuId: number; orderType: string; targetSubscriptionId?: number; quoteFingerprint?: string; discount?: OrderDiscountSelection; confirmation?: CheckoutConfirmation }
 const checkoutScope = computed(() => `zboard-checkout:${app.user.id}:${checkoutIntent.value}`)
 const checkoutAttempt = ref<OrderDraft<CheckoutRequest> | null>(null)
+const savedTargetSubscriptionID = computed(() => {
+  const id = checkoutAttempt.value?.request.targetSubscriptionId
+  return Number.isSafeInteger(id) && id! > 0 ? id : undefined
+})
 const attemptError = ref('')
 function refreshCheckoutAttempt() {
   try { checkoutAttempt.value = readCheckoutOrderDraft<CheckoutRequest>(localStorage, checkoutScope.value); attemptError.value = '' }
@@ -428,12 +433,16 @@ watch(() => [app.user.id, checkoutScope.value, checkoutOpen.value], refreshCheck
 const discountProviderId = ref(''), discountCode = ref(''), discountExpired = ref(false)
 const providerResource = useRemoteResource<DiscountProvider[]>({ initial: () => [], fetch: ({ signal }) => fetchDiscountProviders(signal), errorMessage: '优惠列表暂时无法读取，请重试。' })
 const { data: discountProviders, loading: discountProvidersLoading, error: discountProvidersError } = providerResource
-const discountProviderOptions = computed(() => [{ value: '', label: '不使用优惠' }, ...discountProviders.value.map(provider => ({ value: provider.provider_id, label: provider.name, disabled: Boolean(discountProvidersError.value) }))])
-const selectedDiscountProvider = computed(() => discountProviders.value.find(provider => provider.provider_id === discountProviderId.value))
-const discountRequired = computed(() => operation.value === 'purchase' && Boolean(discountProviderId.value))
+const selectableDiscount = computed(() => ['purchase', 'change', 'reset', 'addon'].includes(operation.value))
+const operationProviders = computed(() => discountProviders.value.filter(provider => operation.value === 'purchase' || provider.operations?.includes(orderTypeByOperation[operation.value] as 'upgrade' | 'traffic_reset' | 'traffic_pack')))
+const discountProviderOptions = computed(() => [{ value: '', label: '不使用优惠' }, ...operationProviders.value.map(provider => ({ value: provider.provider_id, label: provider.name, disabled: Boolean(discountProvidersError.value) }))])
+const selectedDiscountProvider = computed(() => operationProviders.value.find(provider => provider.provider_id === discountProviderId.value))
+const discountRequired = computed(() => selectableDiscount.value && Boolean(discountProviderId.value))
 const discountResource = useRemoteResource<OrderPreview | null>({
   initial: () => null,
-  fetch: ({ signal }) => previewDiscountOrder(selectedSKUID.value, selectedSKU.value!.currency, { provider_id: discountProviderId.value, selection: discountCode.value }, signal),
+  fetch: ({ signal }) => operation.value === 'purchase'
+    ? previewDiscountOrder(selectedSKUID.value, selectedSKU.value!.currency, { provider_id: discountProviderId.value, selection: discountCode.value }, signal)
+    : previewOperationDiscountOrder(selectedSKUID.value, targetSubscriptionID.value, orderTypeByOperation[operation.value] as 'upgrade' | 'traffic_reset' | 'traffic_pack', selectedSKU.value!.currency, { provider_id: discountProviderId.value, selection: discountCode.value }, signal),
   errorMessage: (cause: any) => commerceErrorMessage(cause, cause?.message || '优惠报价失败，请重新核对。'),
 })
 const { data: discountQuote, loading: discountLoading, error: discountError } = discountResource
@@ -443,13 +452,13 @@ watch(discountQuote, value => {
   if (value?.discount) discountExpiryTimer = setTimeout(() => { discountResource.reset(); discountExpired.value = true }, Math.min(2_147_483_647, Math.max(0, Date.parse(value.discount.offer.expires_at) - Date.now())))
 })
 onScopeDispose(() => clearTimeout(discountExpiryTimer))
-watch(() => [app.user.id, operation.value, selectedSKUID.value, selectedPlan.value?.id], () => {
+watch(() => [app.user.id, operation.value, selectedSKUID.value, targetSubscriptionID.value, selectedPlan.value?.id], () => {
   discountProviderId.value = ''; discountCode.value = ''; discountResource.reset(); discountExpired.value = false
 }, { flush: 'sync' })
 watch(() => [discountProviderId.value, discountCode.value], () => { discountResource.reset(); discountExpired.value = false }, { flush: 'sync' })
 watch(() => [app.user.id, checkoutOpen.value, operation.value], () => {
   providerResource.reset()
-  if (checkoutOpen.value && operation.value === 'purchase' && !checkoutAttempt.value) void providerResource.load()
+  if (checkoutOpen.value && selectableDiscount.value && !checkoutAttempt.value) void providerResource.load()
 })
 async function loadDiscountQuote() {
   if (checkoutAttempt.value || creating.value || !discountRequired.value || !selectedDiscountProvider.value || discountProvidersError.value) return
@@ -476,8 +485,9 @@ const quoteResource = useRemoteResource<OrderPreview | null>({
   },
   errorMessage: (cause: any) => commerceErrorMessage(cause, cause?.message || '报价失败，请重新确认套餐和规格。'),
 })
-const { data: currentQuote, loading: quoteLoading, error: quoteError } = quoteResource
-const quote = computed(() => checkoutAttempt.value || attemptError.value || quoteError.value ? null : currentQuote.value)
+const { data: currentQuote, loading: quoteLoading, error: baselineQuoteError } = quoteResource
+const quoteError = computed(() => discountRequired.value ? '' : baselineQuoteError.value)
+const quote = computed(() => checkoutAttempt.value || attemptError.value ? null : discountRequired.value && operation.value !== 'purchase' ? discountError.value ? null : discountQuote.value : quoteError.value ? null : currentQuote.value)
 const renewalDiscountExpired = ref(false)
 let renewalExpiryTimer: ReturnType<typeof setTimeout> | undefined
 watch(currentQuote, value => {
@@ -486,6 +496,7 @@ watch(currentQuote, value => {
 })
 onScopeDispose(() => clearTimeout(renewalExpiryTimer))
 async function loadQuote() {
+  if (discountRequired.value && operation.value !== 'purchase') return loadDiscountQuote()
   if (checkoutAttempt.value || attemptError.value || creating.value) return
   quoteResource.reset(); renewalDiscountExpired.value = false
   await quoteResource.load()
@@ -497,9 +508,9 @@ watch(() => [app.user.id, operation.value, selectedSKUID.value, targetSubscripti
 })
 const discountConfirmation = computed<DiscountConfirmation | undefined>(() => {
   if (checkoutAttempt.value) return savedConfirmation.value?.discount
-  const value = operation.value === 'purchase' ? discountQuote.value : operation.value === 'renew' ? quote.value : null
+  const value = discountRequired.value ? discountQuote.value : operation.value === 'renew' ? quote.value : null
   if (!value?.discount) return undefined
-  return { name: operation.value === 'purchase' ? selectedDiscountProvider.value?.name || '本次优惠' : '原长期优惠约定',
+  return { name: operation.value !== 'renew' ? selectedDiscountProvider.value?.name || '本次优惠' : '原长期优惠约定',
     basePrice: value.base_price_minor!, discountAmount: value.discount_amount!, payable: value.payable_amount,
     currency: value.currency, message: value.discount.offer.message || '', scope: value.discount.offer.agreement!.scope,
     expiresAt: value.discount.offer.expires_at }
@@ -510,7 +521,9 @@ const discountAgreementLabel = computed(() => {
   const base = formatCurrency(value.basePrice, value.currency)
   return value.scope === 'recurring'
     ? `长期优惠约定：续费基础价已锁定为 ${base}；后续续费沿用该约定，优惠金额以每次有效报价为准，不保证固定。`
-    : value.scope === 'initial_only' ? `本次优惠仅限首单，续费基础价为 ${base}。` : '原优惠约定范围请核对原订单。'
+    : value.scope === 'initial_only' ? `本次优惠仅限首单，续费基础价为 ${base}。`
+    : value.scope === 'order_only' ? operation.value === 'change' ? `本次优惠仅用于本单，换购后的续费基础价为 ${base}。` : '本次优惠仅用于本单，不改变原订阅的续费基础价。'
+    : '原优惠约定范围请核对原订单。'
 })
 const checkoutPayable = computed(() => checkoutAttempt.value ? savedConfirmation.value?.payable : discountConfirmation.value?.payable ?? (discountRequired.value ? undefined : needsQuote.value ? quote.value?.payable_amount : selectedSKU.value?.price_cents))
 const checkoutCurrency = computed(() => savedConfirmation.value?.currency || quote.value?.currency || selectedSKU.value?.currency || 'CNY')

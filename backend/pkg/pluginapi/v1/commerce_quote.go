@@ -37,7 +37,7 @@ type CommerceDiscountContext struct {
 type CommerceDiscountAgreement struct {
 	ID        string `json:"id"`
 	Version   string `json:"version"`
-	Scope     string `json:"scope"` // initial_only or recurring
+	Scope     string `json:"scope"` // initial_only, recurring or order_only
 	TermsHash string `json:"terms_hash"`
 	TermsJSON string `json:"terms_json"`
 }

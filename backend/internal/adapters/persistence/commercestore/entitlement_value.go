@@ -57,6 +57,23 @@ func captureEntitlementValue(tx *gorm.DB, order *model.Order, sub model.Subscrip
 		if sub.NextResetAt != nil && sub.NextResetAt.Before(snap.TermEndAt) {
 			snap.TermEndAt = *sub.NextResetAt
 		}
+	case "traffic_pack":
+		// Capture this grant's actual paid quota and unchanged term. Historical
+		// unsupported records are never reconstructed from today's catalog.
+		snap.AllocationModel = "legacy_value_requires_review"
+		sameReset := previous != nil && ((previous.NextResetAt == nil && sub.NextResetAt == nil) ||
+			(previous.NextResetAt != nil && sub.NextResetAt != nil && previous.NextResetAt.Equal(*sub.NextResetAt)))
+		if previous != nil && snap.PaymentVerified && !entitlements.IsPerpetualEnd(sub.EndAt) &&
+			sub.StartAt.Equal(previous.StartAt) && sub.EndAt.Equal(previous.EndAt) &&
+			sub.PlanID == previous.PlanID && sub.PlanSKUID == previous.PlanSKUID &&
+			sub.ResetPolicy == previous.ResetPolicy && sub.ResetQuotaBytes == previous.ResetQuotaBytes && sameReset &&
+			sub.FlowUsed == previous.FlowUsed && sub.CycleStartUsed == previous.CycleStartUsed &&
+			order.TrafficBytes > 0 && sub.FlowTotal > previous.FlowTotal && sub.FlowTotal-previous.FlowTotal == order.TrafficBytes {
+			snap.Mode, snap.AllocationModel = "timed_quota_addition", commerce.TimedQuotaAdditionAllocation
+			if sub.NextResetAt != nil && sub.NextResetAt.Before(snap.TermEndAt) {
+				snap.TermEndAt = *sub.NextResetAt
+			}
+		}
 	case "upgrade":
 		full, err := fullReplacementSnapshot(*order)
 		if err != nil {

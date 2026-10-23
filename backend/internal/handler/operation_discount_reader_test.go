@@ -23,10 +23,10 @@ func assertOperationDiscountReader(t *testing.T, base orderFixture) {
 	if err := f.db.Create(&model.PlanSKUOperation{PlanSKUID: f.target, Operation: "renew"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	// This is a future accepted-order fixture. It does not pretend that this
-	// reader-only increment already admits a live native one-order checkout.
+	// This manually constructed accepted snapshot isolates compatibility reading.
+	// Native checkout is exercised separately; an absent quoter must fail closed.
 	if _, err := f.orders.Preview(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.target, TargetSubscriptionID: f.subscription, Discount: &commerce.OrderDiscountSelection{ProviderID: "compat.reader.quote", Selection: "one"}}); err == nil {
-		t.Fatal("reader increment unexpectedly admitted a new one-order offer")
+		t.Fatal("absent quoter unexpectedly admitted a new one-order offer")
 	}
 	created := confirmedReplacement(t, f, "compatible-one-order-snapshot")
 	var order model.Order

@@ -170,6 +170,18 @@ func prepareOrderWithDiscount(tx *gorm.DB, buyer uint, request commerce.OrderCre
 		}
 	}
 	if hasCheckoutOffer(discount) {
+		if discount.Version == 3 {
+			// Bind the existing target facts before asking the selected offer to
+			// change its purchase cost; final allocation is recomputed below.
+			if order.OrderType == "upgrade" {
+				_, err = quoteFullReplacement(tx, &order, sub, now, now)
+			} else {
+				_, err = applyTargetQuote(tx, &order, sub, now, now, renewal)
+			}
+			if err != nil {
+				return out, preview, err
+			}
+		}
 		// Capture the undiscounted policy before any residual allocation.
 		if err := capturePurchaseSnapshot(tx, &order, plan, sub); err != nil {
 			return out, preview, err

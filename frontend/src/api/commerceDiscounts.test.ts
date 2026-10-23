@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchDiscountProviders, previewDiscountOrder, validateDiscountOrderQuote } from './commerceDiscounts'
+import { fetchDiscountProviders, previewDiscountOrder, previewOperationDiscountOrder, validateDiscountOrderQuote } from './commerceDiscounts'
 import { createOrder, type OrderPreview } from './client'
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
@@ -73,4 +73,37 @@ describe('purchase discount API boundaries', () => {
     post.mockRejectedValue(cause)
     await expect(previewDiscountOrder(3, 'CNY', discount)).rejects.toBe(cause)
   })
+  it.each(['upgrade', 'traffic_reset', 'traffic_pack'] as const)('accepts only a bound order-only %s quote and preserves target references', async operation => {
+    const value: any = quote(); value.order_type = operation; value.discount.offer.agreement.scope = 'order_only'
+    if (operation === 'upgrade') Object.assign(value, { change_mode: 'full_term', credit_amount: 80, settlement_amount: '9007199254740993', surplus_amount: '9007199254740913', additional_amount: '0' })
+    post.mockResolvedValue({ data: { data: value } })
+    expect(await previewOperationDiscountOrder(3, 71, operation, 'CNY', discount)).toBe(value)
+    expect(post).toHaveBeenLastCalledWith('/orders/preview', { plan_sku_id: 3, target_subscription_id: 71, discount }, { signal: undefined })
+    value.discount.offer.agreement.scope = 'initial_only'
+    await expect(previewOperationDiscountOrder(3, 71, operation, 'CNY', discount)).rejects.toThrow('优惠报价不可确认')
+    value.discount.offer.agreement.scope = 'recurring'
+    await expect(previewOperationDiscountOrder(3, 71, operation, 'CNY', discount)).rejects.toThrow('优惠报价不可确认')
+  })
+  it('rejects order-only scope for new purchase or inherited renewal', () => {
+    const value: any = quote(); value.discount.offer.agreement.scope = 'order_only'
+    expect(() => validateDiscountOrderQuote(value, { orderType: 'new' })).toThrow()
+    value.order_type = 'renewal'
+    expect(() => validateDiscountOrderQuote(value, { orderType: 'renewal' })).toThrow()
+  })
+  it.each(['surplus', 'additional', 'credit', 'overflow', 'legacy'])('rejects an inconsistent %s replacement allocation', async field => {
+    const value: any = quote(); value.order_type = 'upgrade'; value.discount.offer.agreement.scope = 'order_only'
+    Object.assign(value, { change_mode: 'full_term', credit_amount: 80, settlement_amount: '90', surplus_amount: '10', additional_amount: '0' })
+    if (field === 'surplus') value.surplus_amount = '11'
+    if (field === 'additional') value.additional_amount = '1'
+    if (field === 'credit') value.credit_amount = 79
+    if (field === 'overflow') value.settlement_amount = '9223372036854775808'
+    if (field === 'legacy') delete value.change_mode
+    post.mockResolvedValue({ data: { data: value } })
+    await expect(previewOperationDiscountOrder(3, 71, 'upgrade', 'CNY', discount)).rejects.toThrow()
+  })
+  it.each([{ operations: ['upgrade', 'upgrade'] }, { operations: ['new', 'new', 'new'] }, { operations: ['renewal'] }])('rejects malformed/duplicate operation discovery %j', async ({ operations }) => {
+    get.mockResolvedValue({ data: { data: [{ ...provider, operations }] } })
+    await expect(fetchDiscountProviders()).rejects.toThrow('优惠列表读取失败')
+  })
+
 })

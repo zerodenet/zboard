@@ -153,7 +153,9 @@ describe('account catalog bounded reads and route isolation', () => {
   it.each(['renew', 'change', 'addon', 'reset'])('does not advertise first-purchase discounts for %s', async operation => {
     await open(`/account/plans?operation=${operation}&subscription=1&plan=1&step=checkout`)
     expect(wrapper!.find('[aria-label="新购优惠"]').exists()).toBe(false)
-    expect(fetchDiscountProviders).not.toHaveBeenCalled()
+    if (operation === 'renew') expect(fetchDiscountProviders).not.toHaveBeenCalled()
+    else expect(fetchDiscountProviders).toHaveBeenCalledOnce()
+    expect(wrapper!.findAllComponents(UiSelect).some(select => (select.props('options') || []).some(option => option.value === discountProvider.provider_id))).toBe(false)
   })
   it('confirms recurring purchase scope from the actual quote and explains locked base rather than a fixed discount', async () => {
     vi.mocked(fetchDiscountProviders).mockResolvedValue([{ ...discountProvider, agreement_scope: 'quote_required' }])
@@ -604,4 +606,50 @@ describe('account catalog bounded reads and route isolation', () => {
     expect(wrapper!.findComponent(CommercePlanDetail).exists()).toBe(false)
     expect(createOrder).not.toHaveBeenCalled()
   })
+  it.each([['change', 'upgrade'], ['reset', 'traffic_reset'], ['addon', 'traffic_pack']] as const)('confirms only a one-order %s offer and submits the original target and quote', async (operation, orderType) => {
+    vi.mocked(fetchDiscountProviders).mockResolvedValue([{ ...discountProvider, agreement_scope: 'quote_required', operations: ['new', 'upgrade', 'traffic_reset', 'traffic_pack'] }])
+    const value = discountedQuote(); value.order_type = orderType; value.discount!.offer.agreement!.scope = 'order_only'; value.discount!.offer.message = '本单优惠已核对'
+    if (operation === 'change') Object.assign(value, { change_mode: 'full_term', credit_amount: 80, settlement_amount: '9000', surplus_amount: '8920', additional_amount: '0' })
+    vi.mocked(previewOrder).mockImplementation(async (_sku, _target, options) => options?.discount ? value : { ...value, discount: undefined, discount_amount: 0, payable_amount: 100 })
+    await open(`/account/plans?operation=${operation}&subscription=1&plan=${operation === 'change' ? 2 : 1}&step=checkout`)
+    await selectDiscount()
+    expect(wrapper!.findAll('button').find(button => button.text() === '创建订单并选择付款方式')!.attributes('disabled')).toBeDefined()
+    await click('核对优惠')
+    expect(previewOrder).toHaveBeenLastCalledWith(1, 1, { signal: expect.any(AbortSignal), discount: { provider_id: discountProvider.provider_id, selection: 'WELCOME' } })
+    expect(wrapper!.get('[aria-label="本单优惠"]').text()).toContain('本次优惠仅用于本单')
+    expect(wrapper!.text()).not.toContain('本次优惠仅限首单')
+    if (operation === 'change') {
+      expect(wrapper!.text()).toContain('换购后的续费基础价为 ¥1.00')
+      expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('89.20')
+    } else expect(wrapper!.text()).toContain('不改变原订阅的续费基础价')
+    vi.mocked(createOrder).mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce({ id: 71 })
+    await click('创建订单并选择付款方式')
+    const original = vi.mocked(createOrder).mock.calls[0]
+    expect(original).toEqual([1, expect.objectContaining({ targetSubscriptionId: 1, orderType, quoteFingerprint: 'discount-quote', discount: { provider_id: discountProvider.provider_id, selection: 'WELCOME' } })])
+    const calls = vi.mocked(previewOrder).mock.calls.length
+    wrapper!.unmount(); wrapper = undefined
+    await open(`/account/plans?operation=${operation}&subscription=1&plan=${operation === 'change' ? 2 : 1}&step=checkout`)
+    expect(createOrder).toHaveBeenCalledOnce()
+    expect(vi.mocked(previewOrder).mock.calls).toHaveLength(calls)
+    expect(wrapper!.text()).toContain('已确认优惠')
+    expect(wrapper!.text()).toContain('原请求目标订阅：#1')
+    await click('恢复上次订单')
+    expect(vi.mocked(createOrder).mock.calls[1]).toEqual(original)
+    expect(paymentAction).not.toHaveBeenCalled()
+  })
+  it('isolates a late one-order quote when the target subscription changes', async () => {
+    vi.mocked(fetchDiscountProviders).mockResolvedValue([{ ...discountProvider, agreement_scope: 'quote_required', operations: ['new', 'upgrade'] }])
+    const pending = deferred<OrderPreview>()
+    vi.mocked(previewOrder).mockImplementation(async (_sku, _target, options) => options?.discount ? pending.promise : { order_type: 'upgrade', amount_cents: 100, credit_amount: 0, payable_amount: 100, currency: 'CNY', quote_fingerprint: 'baseline', time_credit: 0, traffic_credit: 0, traffic_bytes: 100, used_bytes: 0 })
+    await open('/account/plans?operation=change&subscription=1&plan=2&step=checkout')
+    await selectDiscount(); await click('核对优惠')
+    await router.replace({ query: { ...router.currentRoute.value.query, subscription: '3' } }); await flushPromises()
+    const value = discountedQuote(); value.order_type = 'upgrade'; value.discount!.offer.agreement!.scope = 'order_only'; value.discount!.offer.message = 'OLD TARGET OFFER'
+    Object.assign(value, { change_mode: 'full_term', credit_amount: 80, settlement_amount: '90', surplus_amount: '10', additional_amount: '0' })
+    pending.resolve(value); await flushPromises()
+    expect(wrapper!.text()).not.toContain('OLD TARGET OFFER')
+    expect(wrapper!.text()).not.toContain('本次优惠仅用于本单')
+    expect(createOrder).not.toHaveBeenCalled()
+  })
+
 })

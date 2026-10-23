@@ -33,11 +33,13 @@ failure, timeout, disable, admission loss, reconfiguration and generation change
 produce no accepted offer. The host allows at most 60 evaluations per provider
 per minute and a three-second RPC deadline (a shorter caller deadline wins).
 
-Agreement scope is `initial_only` or `recurring`. Initial-only offers cannot
-apply to renewals. Base price and actual paid value remain separate: base120,
-initial reduction20 and payment100 must not redefine renewal base as100. Core
-transaction integration and automatic-renewal agreement persistence are a later
-batch; this contract alone does not enable a discounted purchase.
+Agreement scope is `initial_only`, `recurring` or `order_only`. Initial-only
+offers apply only to new purchases; recurring renewal inherits a verified paid
+agreement; target-operation order-only offers are described below. Base price
+and actual paid value remain separate: base120, initial reduction20 and payment100
+must not redefine renewal base as100. Core validates and persists accepted
+agreements through its order/automatic-renewal capabilities. This read-only
+contract alone never creates an order, charges money or issues entitlement.
 
 `terms_json` is an opaque UTF-8 JSON **string** (maximum8KiB), not an embedded
 object or executable rule. `terms_hash` is lowercase SHA256 of its compact JSON
@@ -72,3 +74,28 @@ PATH=/tmp/zboard-quote-proto-tools:$PATH /tmp/zboard-protoc-3.18.1/bin/protoc \
   --go_out=. --go_opt=paths=source_relative \
   --go-grpc_out=. --go-grpc_opt=paths=source_relative v1/commerce_quote.proto
 ```
+
+## Target-operation one-order offers
+
+The host also admits an explicitly selected `order_only` offer for `upgrade`,
+`traffic_reset` and `traffic_pack`. Their context has the owned target and a
+core-generated fingerprint; providers must echo it and may decline unsupported
+operations. `initial_only` cannot be reused for these actions, and `recurring`
+cannot grant a new recurring agreement through a reset, add-on or replacement.
+Discovery advertises only candidate operations and always requires evaluation.
+
+For a replacement, the offer reduces the complete new term's undiscounted cost
+before the original actual-paid residual is allocated. Credit is distinct from
+a promotion. The accepted base remains the replacement's undiscounted renewal
+base; this one-order reduction is neither repeated on renewal nor refundable
+as invented principal. Reset/add-on offers leave the existing renewal base
+unchanged. The host validates target facts again after this read-only RPC,
+never holds a financial transaction across it, and requires a confirmed final
+quote before committing. Existing accepted orders can recover and be paid
+without a provider RPC. New unverified offers never fall back to full price.
+
+This is the same read-only v1 transport, without redemption, coupon reservation,
+commit or release. A provider requiring finite-use coupon coordination remains
+unsupported by this contract; do not consume a coupon during evaluation. The
+implementation and reader-first rollback boundary are recorded in
+`backend/architecture/core-convergence-operation-discount-checkout.md`.

@@ -12,6 +12,10 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 )
 
+// TimedQuotaAdditionAllocation retains actual current-cycle value at a quota
+// addition, rather than repricing consumed old quota or future paid periods.
+const TimedQuotaAdditionAllocation = "timed_quota_addition_v1"
+
 // ValueProjection is a refundable value calculation, not a wallet credit.
 // A settlement must bind its fingerprint and consume its source budgets in the
 // same transaction as lifecycle termination and durable revocation intent.
@@ -307,6 +311,35 @@ func ProjectEntitlementValue(records []EntitlementValueSnapshot, current Entitle
 				}
 				break
 			}
+		case "timed_quota_addition":
+			if s.Kind != "traffic_pack" || s.AllocationModel != TimedQuotaAdditionAllocation || len(s.PaidPeriods) != 0 ||
+				!s.TermStartAt.Equal(s.CapturedAt) || !s.TermEndAt.After(eventAt) ||
+				!s.Before.StartAt.Equal(s.After.StartAt) || !s.Before.EndAt.Equal(s.After.EndAt) ||
+				s.Before.PlanID != s.After.PlanID || s.Before.PlanSKUID != s.After.PlanSKUID ||
+				s.Before.ResetPolicy != s.After.ResetPolicy || s.Before.ResetQuotaBytes != s.After.ResetQuotaBytes ||
+				!sameValueReset(s.Before.NextResetAt, s.After.NextResetAt) ||
+				s.After.FlowUsed != s.Before.FlowUsed || s.After.CycleStartUsed != s.Before.CycleStartUsed ||
+				s.After.FlowTotal <= s.Before.FlowTotal || !s.TermEndAt.Equal(before.CurrentCycle.EndAt) ||
+				before.CurrentMinor > math.MaxInt64-s.ActualPaidMinor {
+				return empty, ErrValueEvidence
+			}
+			shares, err := currentProjectionSources(before, frame, *s.Before, eventAt)
+			if err != nil {
+				return empty, err
+			}
+			if err := addValueAmounts(shares, map[uint]int64{s.OrderID: s.ActualPaidMinor}); err != nil {
+				return empty, err
+			}
+			quota, err := quotaForValue(s.After)
+			if err != nil {
+				return empty, err
+			}
+			remaining := max(int64(0), s.After.FlowTotal-s.After.FlowUsed)
+			if remaining == 0 {
+				return empty, ErrValueEvidence
+			}
+			frame.basis = &valueBasisEvidence{CycleStart: before.CurrentCycle.StartAt, TotalQuota: quota, Sources: shares,
+				Basis: RemainingValueBasis{At: eventAt, EndAt: before.CurrentCycle.EndAt, AmountMinor: before.CurrentMinor + s.ActualPaidMinor, UsedAtBasis: s.After.FlowUsed, QuotaBytes: remaining}}
 		case "paid_reset":
 			if s.AllocationModel != "reset_value_continuity_v1" || !s.Before.EndAt.Equal(s.After.EndAt) || s.Before.NextResetAt == nil || s.After.NextResetAt == nil || !s.Before.NextResetAt.Equal(*s.After.NextResetAt) || s.After.FlowUsed != s.Before.FlowUsed || s.After.CycleStartUsed != s.After.FlowUsed || before.CurrentMinor > math.MaxInt64-s.ActualPaidMinor {
 				return empty, ErrValueEvidence
