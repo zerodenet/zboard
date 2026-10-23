@@ -17,23 +17,7 @@ import (
 
 // A paid change carries the consumed credit into the new entitlement's value.
 // Binding its source also prevents two pending orders from spending it twice.
-type changeSnapshot struct {
-	Version                    int            `json:",omitempty"`
-	FullTerm                   bool           `json:",omitempty"`
-	EntitlementEpoch           uint64         `json:",omitempty"`
-	Residual                   int64          `json:",omitempty"`
-	Applied                    int64          `json:",omitempty"`
-	Surplus                    int64          `json:",omitempty"`
-	ValueFingerprint           string         `json:",omitempty"`
-	Sources                    map[uint]int64 `json:",omitempty"`
-	PlanID, PlanSKUID          uint
-	EndAt                      time.Time
-	CycleStartUsed, ResetQuota int64
-	SourceOrderID              uint
-	QuotaEventID               uint
-	QuotedAt                   time.Time
-	Credit                     int64
-}
+type changeSnapshot = commerce.SubscriptionChangeSnapshot
 
 func quoteError(message string) error {
 	return &commerce.ValidationError{Message: message, Fields: map[string]string{"target_subscription_id": message}}

@@ -185,7 +185,7 @@ func readDiscountAgreementSource(tx *gorm.DB, order model.Order, sub model.Subsc
 				return nil, invalidPurchaseSnapshot()
 			}
 			if evidencePresent || policy.Discount != nil || row.DiscountAmount != 0 || row.PayableAmount != row.AmountCents {
-				if !knownInitialPurchaseDiscount(row) {
+				if !knownInitialPurchaseDiscount(row) && !knownOperationPurchaseDiscount(row) {
 					return nil, discountCheckoutError("历史优惠协议无法核验，不能按原价回退续费；请通过工单核实。")
 				}
 			}

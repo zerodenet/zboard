@@ -225,3 +225,14 @@ func refreshDiscountAcceptance(order *model.Order, accepted checkoutDiscount, no
 	order.PurchaseSnapshot = string(raw)
 	return nil
 }
+
+// A replacement's one-order reduction cannot become a recurring agreement or
+// overwrite the undiscounted base. Historical unknown offers still fail closed.
+func knownOperationPurchaseDiscount(order model.Order) bool {
+	policy, err := commerce.DecodePurchaseSnapshot(order.PurchaseSnapshot)
+	if err != nil || policy.Discount == nil || policy.Discount.Version != 3 || commerce.ValidateOperationPurchaseDiscount(commerce.Order(order), policy) != nil {
+		return false
+	}
+	_, err = applyPurchaseSnapshot(order, entitlements.GrantPolicy{})
+	return err == nil
+}

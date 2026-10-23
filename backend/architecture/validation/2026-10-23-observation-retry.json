@@ -1,0 +1,397 @@
+{
+  "source": "c19f6c3f9fcc62e23f805cdebc6521eae2396ef4",
+  "branch": "codex/core-convergence",
+  "pull_request": "https://github.com/zerodenet/zboard/pull/78",
+  "recorded_utc": "2026-10-23T11:17:32.887696+00:00",
+  "scope": "P4/P5 controlled inactive-node observation retry and physical attempt limit; overall convergence incomplete",
+  "latest_develop_merged": "658671e9f3978df1c79f4030fdb072a877f10bf5",
+  "changed_files_sha256": {
+    "backend/api/openapi.yaml": "834daf00101561d5e5bb59df548ec0e895f234066299722d8e1ab65898997281",
+    "backend/architecture/capability-ownership.json": "a7f7a4e123c0b076fca980a82d59541f791d725f8341569cd2d4116cd7c20fdd",
+    "backend/architecture/core-convergence-observation-retry.md": "889a1cd30e04311b0214335b8a04b0eb76a664ac17a97746bcfe71c034a9b50a",
+    "backend/architecture/core-convergence-plan.md": "b5bb082cab35c6574e013bcd11c8881f636b05d95961d9131b609c320ff122d4",
+    "backend/architecture/core-convergence-unpriced-zero-termination.md": "7589dd4756eeefdd244e8c777e075c63dc543ffdbb0cbd6381bb3aa05e52d85d",
+    "backend/architecture/validation/2026-10-23-unpriced-zero-termination.json": "69faf8b385de114671a8efabb625dd448f39dcf4c7d8f9ffc6266f5886b0d149",
+    "backend/internal/adapters/persistence/networkstore/node_observation_retry.go": "55cc05a1ea779ac1f1d182c4b625af9ffa86b61eda9bbb85723b23afbb2b1b27",
+    "backend/internal/adapters/persistence/observationstore/worker.go": "00738d66da0184310a95a2b815d135dab49eec0e88403b41577aedf22ada74a8",
+    "backend/internal/capabilities/network/node_observation_retry.go": "eb9bba28c599c423060ce52aa4c5a787c2700a32700c96034d60567ec6efdb22",
+    "backend/internal/capabilities/network/node_observation_retry_test.go": "90ad2e59fc226f0904aadcd03136d30c2a20d818342466f130f41613b2f4fd0a",
+    "backend/internal/handler/node_observation_retry.go": "49aeb1ca5751aa4cbd239976354792e850792f238d2e87c05d5c2d496aa748de",
+    "backend/internal/handler/node_observation_retry_test.go": "c346d600bdb35ca9bec51d0142738154572bf3f86aa7f3570423f2ce97f9e005",
+    "backend/internal/server/router.go": "a8104248a947c2f39da0a58ee2930942dccdbb8f1894d20e6a330ad5aa5b7645",
+    "backend/tools/capabilityinventory/main.go": "83a8aa8640078c1b4808d7281bce038c7da7ddcb1c446a9d74b0e30e2716c63a",
+    "backend/tools/capabilityinventory/main_test.go": "2c1f0e9b89e871916111b3b2a19a789ecb4f123a444980290d548fa9f2254448",
+    "frontend/src/api/nodeObservationIntents.test.ts": "07be355139db6202affcbca24bed84e3516cbadf1f5ad4784b9e6e758243f4d5",
+    "frontend/src/api/nodeObservationIntents.ts": "872346d7913e43da4b48faf97890033fb30b179087a8536f698e1c4b0e323b50",
+    "frontend/src/components/NodeObservationQueue.test.ts": "0459189613926f731c0ed96f3fa46a6ee3d0514b0f85b2ddc39dec8e3ea5b48f",
+    "frontend/src/components/NodeObservationQueue.vue": "8793f86f6b30b42dbcf95e305d4560ef9c41fb2b5bcf5b05a2a4ce9a83739ffa"
+  },
+  "sql_assets": {
+    "count": 154,
+    "changed_from_0f76": []
+  },
+  "backend": {
+    "source": "c19f6c3f9fcc62e23f805cdebc6521eae2396ef4",
+    "checkout": "/workspace/zboard",
+    "phase": "backend",
+    "started_utc": "2026-10-23T10:28:33.433894+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "2"
+    },
+    "checks": [
+      {
+        "name": "full-go",
+        "command": "go test -p 2 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 1.073,
+        "log": "full-go-c19f6c3-final.log"
+      },
+      {
+        "name": "vet",
+        "command": "go vet -p 2 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 11.311,
+        "log": "vet-c19f6c3-final.log"
+      },
+      {
+        "name": "build",
+        "command": "go build ./cmd/zboard",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 1.897,
+        "log": "build-c19f6c3-final.log"
+      },
+      {
+        "name": "pure-go-sqlite",
+        "command": "go test -p 2 ./internal/datastore -run SQLite -count=1",
+        "environment_additions": {
+          "CGO_ENABLED": "0"
+        },
+        "exit_code": 0,
+        "wall_seconds": 38.365,
+        "log": "pure-go-sqlite-c19f6c3-final.log"
+      }
+    ],
+    "pending": [],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-23T10:29:26.081587+00:00"
+  },
+  "mysql_recovered": {
+    "source": "c19f6c3f9fcc62e23f805cdebc6521eae2396ef4",
+    "original_partial_receipt_sha256": "accb5b469db2f44aac3d866dea5582d55c595bdeff4d5cf85fcd007ee8ec31d9",
+    "original_controller": "not running after restored availability; copy had no log and was never started",
+    "recovered_after": "exec-server transport disconnected / 25s resume timeout",
+    "checks": [
+      {
+        "name": "mysql-core",
+        "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore ./internal/application -run MySQL -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 861.93,
+        "log": "mysql-core-c19f6c3-final.log"
+      },
+      {
+        "name": "mysql-jobstore",
+        "command": "go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 126.176,
+        "log": "mysql-jobstore-c19f6c3-final.log"
+      },
+      {
+        "name": "mysql-copy",
+        "command": "go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+        "exit_code": 0,
+        "wall_seconds": 228.866,
+        "log": "mysql-copy-c19f6c3-resume1.log",
+        "started_utc": "2026-10-23T10:59:22.591105+00:00"
+      }
+    ],
+    "pending": [],
+    "finished_utc": "2026-10-23T11:03:11.457443+00:00",
+    "original_receipt_preserved": true,
+    "worktree_clean": true
+  },
+  "frontend": {
+    "source": "c19f6c3f9fcc62e23f805cdebc6521eae2396ef4",
+    "checks": [
+      {
+        "name": "install",
+        "command": [
+          "pnpm",
+          "install",
+          "--frozen-lockfile",
+          "--package-import-method=copy",
+          "--store-dir",
+          "/workspace/toolchains/pnpm-store"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.634
+      },
+      {
+        "name": "full",
+        "command": [
+          "pnpm",
+          "test",
+          "--no-file-parallelism",
+          "--exclude",
+          "src/theme/designTokens.test.ts",
+          "--exclude",
+          "src/views/commercePurchaseExperience.test.ts",
+          "--exclude",
+          "src/utils/adminRowActionsAudit.test.ts",
+          "--exclude",
+          "src/utils/catalogScalePolicy.test.ts",
+          "--exclude",
+          "src/utils/formPolicy.test.ts",
+          "--exclude",
+          "src/utils/frontendArchitecturePolicy.test.ts"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 149.077
+      },
+      {
+        "name": "build",
+        "command": [
+          "pnpm",
+          "build"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 33.492
+      }
+    ],
+    "source_unchanged": true
+  },
+  "races": {
+    "race-sqlite-c19-first1.json": {
+      "source": "c19f6c3f9fcc62e23f805cdebc6521eae2396ef4",
+      "mode": "sqlite",
+      "command": "go test -race -p 1 ./internal/capabilities/commerce ./internal/capabilities/network ./internal/adapters/persistence/observationstore ./internal/handler -run ^Test(AdministrativeUnpricedZero|AdministrativeWholeTermination|SubscriptionTerminationFailuresAndConcurrency|PerpetualFIFO|ObservationRetry|ObservationIntentControlledRetry|ObservationExpiredClaim|AdministrativeRefund|WholeUnsubscribeApproved) -count=3 -v -timeout 10m",
+      "started_utc": "2026-10-23T11:04:12.779918+00:00",
+      "finished_utc": "2026-10-23T11:10:59.108330+00:00",
+      "exit_code": 0,
+      "wall_seconds": 406.328,
+      "source_unchanged": true,
+      "log": "race-sqlite-c19-first1.log",
+      "log_bytes": 397496,
+      "log_sha256": "ed4e3d80c68790fa9a3fd7b59e6048dff9a83585b4e748d98b14f6cf1994d840",
+      "note": "One local workload window, -p1 to reduce compiler/link peak disk; original assertions, race instrumentation and count3 retained.",
+      "source_manifest_sha256": "4123d60a1458e4473ba283ab89dfc8ab7c5d03848e8228de153ea5dacda33d09",
+      "source_file_count": 2100
+    },
+    "race-mysql-c19-first1.json": {
+      "source": "c19f6c3f9fcc62e23f805cdebc6521eae2396ef4",
+      "mode": "mysql",
+      "command": "go test -race -p 1 ./internal/capabilities/commerce ./internal/capabilities/network ./internal/adapters/persistence/observationstore ./internal/handler -run ^TestMySQL(AdministrativeUnpricedZero|AdministrativeWholeTermination|SubscriptionTerminationFailuresAndConcurrency|PerpetualFIFO|ObservationIntentControlledRetry) -count=3 -v -timeout 10m",
+      "started_utc": "2026-10-23T11:14:01.159092+00:00",
+      "finished_utc": "2026-10-23T11:15:50.583469+00:00",
+      "exit_code": 0,
+      "wall_seconds": 109.424,
+      "source_unchanged": true,
+      "log": "race-mysql-c19-first1.log",
+      "log_bytes": 339174,
+      "log_sha256": "d9eb7eb0bb9a27813c1526092bd95db8e9f23ab7143d08f6a2e4127a3eb0a79b",
+      "note": "One local workload window, -p1 to reduce compiler/link peak disk; original assertions, race instrumentation and count3 retained.",
+      "source_manifest_sha256": "d5892c9d646adb9f6c3fcb6270301471c86d59a33573f4c8d6fba4b9bdce60f7",
+      "source_file_count": 2100
+    }
+  },
+  "cached_go_packages": 46,
+  "c46_failure_and_c19_fix": {
+    "initial_full_go_wall_seconds": 310.776,
+    "initial_full_go_exit_code": 1,
+    "initial_ci": 39938492857,
+    "failure": "cross_domain_transaction count=22 want=21",
+    "correction_files": [
+      "backend/architecture/core-convergence-observation-retry.md",
+      "backend/architecture/core-convergence-plan.md",
+      "backend/tools/capabilityinventory/main_test.go"
+    ],
+    "changed_production_go_in_correction": [],
+    "guards": "Exact count updated to22; added specific transaction and real HTTP-write source/owner assertions; original checks and negative tests retained"
+  },
+  "source_bound_ci": {
+    "run_id": 39939320037,
+    "expected_head_sha": "c19f6c3f9fcc62e23f805cdebc6521eae2396ef4",
+    "url": "https://github.com/zerodenet/zboard/actions/runs/39939320037",
+    "conclusion": "success",
+    "mysql_handler_seconds": 840.874,
+    "mysql_application_seconds": 23.355,
+    "mysql_jobstore_seconds": 116.692,
+    "mysql_copy_seconds": 215.195,
+    "frontend_passed": 1154,
+    "frontend_existing_environment_skips": 8,
+    "jobs": [
+      {
+        "id": 120366572774,
+        "name": "zrs-compiler",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120366572979,
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120366573014,
+        "name": "compose",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120366573018,
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120366573054,
+        "name": "mysql",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120366573148,
+        "name": "contract",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "cache_cleanup": {
+    "command": "go clean -cache",
+    "target": "/workspace/toolchains/cache/go-build",
+    "exit_code": 0,
+    "wall_seconds": 0.16573824299848638,
+    "free_before": 215126016,
+    "free_after": 1283985408
+  },
+  "cache_preflight": {
+    "utc": "2026-10-23T11:04:12.530062+00:00",
+    "actual_gocache": "/workspace/toolchains/cache/go-build",
+    "target": "/workspace/toolchains/cache/go-build",
+    "realpath": "/workspace/toolchains/cache/go-build",
+    "is_symlink": false,
+    "active_workloads": [],
+    "free_bytes": 215126016
+  },
+  "raw_log_receipts": {
+    "oct23-observation-retry-candidate/race-mysql-c19-first1.log": {
+      "bytes": 339174,
+      "sha256": "d9eb7eb0bb9a27813c1526092bd95db8e9f23ab7143d08f6a2e4127a3eb0a79b"
+    },
+    "oct23-observation-retry-candidate/frontend-final-install.log": {
+      "bytes": 588,
+      "sha256": "eee29e9ed8901619878aea6c85d11663d338bbfe6f80ff8013743972dd85792b"
+    },
+    "oct23-observation-retry-candidate/sqlite-final2.log": {
+      "bytes": 6840,
+      "sha256": "dc2a0097a499e7461641c8f84cf357e30eb1361e0f0edded3e9ed55c5332d844"
+    },
+    "oct23-observation-retry-candidate/targeted-sqlite-2.log": {
+      "bytes": 8272,
+      "sha256": "ca6644eae84ea69ce232db72aa551d5a6b8111dc8738f834ea65411371e33ef2"
+    },
+    "oct23-observation-retry-candidate/targeted-sqlite-1.log": {
+      "bytes": 8754,
+      "sha256": "de514cb68bea07e45040035b272c9895df5db7e72c1ddd3e741083ac451b9da8"
+    },
+    "oct23-observation-retry-candidate/frontend-focused-2.log": {
+      "bytes": 472,
+      "sha256": "d630b881f3cc82e01f3d24e3a7af853d040f84a4d9333287cf743a613c512497"
+    },
+    "oct23-observation-retry-candidate/frontend-build-1.log": {
+      "bytes": 26075,
+      "sha256": "635e2b377b51b7597962378c90da5271a3934b798463531d0cfec1bdb10896fa"
+    },
+    "oct23-observation-retry-candidate/cache-c19-race-clean.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "oct23-observation-retry-candidate/frontend-final-full.log": {
+      "bytes": 48114,
+      "sha256": "cd2af368f6721387dc4f4be10b87984c698f233b08d3c557b967e48b7aa9bbc5"
+    },
+    "oct23-observation-retry-candidate/race-sqlite-c19-first1.log": {
+      "bytes": 397496,
+      "sha256": "ed4e3d80c68790fa9a3fd7b59e6048dff9a83585b4e748d98b14f6cf1994d840"
+    },
+    "oct23-observation-retry-candidate/sqlite-final1.log": {
+      "bytes": 6840,
+      "sha256": "1580187a459a244d1c0dbf6e512e3654cc7e7bb6566cc5896ac8cf8538cb3c2c"
+    },
+    "oct23-observation-retry-candidate/inventory-correction.log": {
+      "bytes": 74,
+      "sha256": "33392efedcfe3566e738f9d105c9e530980d9eea58eec5a0a1fb51a8c8aab578"
+    },
+    "oct23-observation-retry-candidate/frontend-focused-1.log": {
+      "bytes": 472,
+      "sha256": "1f1e0031720b10d37336962e7056684fef7b91b65e91cb0d73c30c40d57126ff"
+    },
+    "oct23-observation-retry-candidate/mysql-final1.log": {
+      "bytes": 7120,
+      "sha256": "bf6ad1d3d07632f3daa976e9f5d0922b94f4888165c7c95048a6e9482733eee6"
+    },
+    "oct23-observation-retry-candidate/mysql-first1.log": {
+      "bytes": 5695,
+      "sha256": "8775a1b163091349ea59da41e7eea24ed1c0b3c4c79e1217e9be9e7fabc8805d"
+    },
+    "oct23-observation-retry-candidate/frontend-final-build.log": {
+      "bytes": 26075,
+      "sha256": "f1993e1c60be650d17c122235c0d5b49ebc0575578a7bf6cef8026c6cece7758"
+    },
+    "full-go-c19f6c3-final.log": {
+      "bytes": 4120,
+      "sha256": "92a02b801ffa7a053a488b23368f7df68985fb175485ec0f335e28a026b5dc47"
+    },
+    "vet-c19f6c3-final.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "build-c19f6c3-final.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "pure-go-sqlite-c19f6c3-final.log": {
+      "bytes": 68,
+      "sha256": "c3db20e15f3baa29074cf8b72aa2305120bfd28ef968c3175a407a5aa49b313f"
+    },
+    "mysql-core-c19f6c3-final.log": {
+      "bytes": 299,
+      "sha256": "a74f433cc67420f675757f8b2de8fe15ca4970db6fbdc0bc2fc0da2078adcbae"
+    },
+    "mysql-jobstore-c19f6c3-final.log": {
+      "bytes": 89,
+      "sha256": "0536419f0af7ca2ff0a957819c7c715f09e94d50b19d8bfb6804f91ec54299f2"
+    },
+    "mysql-copy-c19f6c3-resume1.log": {
+      "bytes": 94,
+      "sha256": "c346c9283beaa4718f9933358e13ddac5ce0493a4d39a72d13632cccb702cdce"
+    }
+  },
+  "recovery": {
+    "original_controller": "No original controller/Go process remained. Original core/jobstore results were retained. Original copy log absent before recovery. Only copy was started once.",
+    "original_partial_receipt_sha256": "accb5b469db2f44aac3d866dea5582d55c595bdeff4d5cf85fcd007ee8ec31d9",
+    "original_partial_receipt_retained": true,
+    "last_private_candidate_write": "Confirmed missing on restore; subsequently created privately with exclusive write. Not applied or executed."
+  },
+  "not_run": [
+    "new-head original capacity load (unchanged physical spool/disk gate not met)",
+    "real browser execution of new retry workflow",
+    "external kernel/production acceptance",
+    "OS process crash/SIGKILL validation of this new workflow"
+  ],
+  "remaining": [
+    "P4 complete safe retention/other held recovery/total growth bound",
+    "P2 other operations discounts and external finite-coupon contract",
+    "more than1000 source termination and legacy cancel entrance",
+    "P6 independent worker/local scaling and measured benefit",
+    "P7 comprehensive upgrade/fault/capacity/external acceptance"
+  ],
+  "next_candidate": "Private operation-discount read-compatibility/admission drafts; not applied, not validated, not delivered."
+}

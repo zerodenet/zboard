@@ -33,3 +33,9 @@
 新提交自己的完整后端四项、完整MySQL三组、race/count3、前端原CI范围、OpenAPI和精确CI仍待独立验收；0f76的通过仅是前批证据。容量仍缺原磁盘前置，无新负载或伸缩收益结论。
 
 c46fafa完整本地Go在310.776s以exit1结束，唯一失败为inventory的cross_domain_transaction固定计数仍为21，实际新增后为22；其backend CI也因此失败。原日志/提交保留。随后只更新该固定计数，并同时要求新事务的具体来源/资源owner、实际HTTP写调用的具体来源/owner均必须存在，保留原全部边界/计数/负面测试；完整inventory包count1实际通过。没有改生产行为或跳过检查，新提交须重新完成整套验收。
+
+c19f6c3f9fcc62e23f805cdebc6521eae2396ef4最终验收：完整本地后端四项1.073/11.311/1.897/38.365s通过，其中Go复用未变业务包缓存；完整前端204files/1154pass/8既有环境skip、build33.492s通过。自己的CI39939320037六项成功（实库handler840.874s/application23.355s/jobstore116.692s/copy215.195s），不使用0f76六绿替代。
+
+本地MySQL断连前core861.930s（handler860.282s）/jobstore126.176s已通过，原控制器退出且copy日志不存在。恢复后先核对HEAD/干净源码/原进程及部分回执，仅补copy228.866s通过，原部分回执与独立恢复回执均保留，未重复前两组。SQLite/MySQL专项race/count3分别406.328s/109.424s通过，源码哈希前后不变；-p1仅减少编译峰值，断言、count3、race及原超时保持。MySQL组只handler有匹配用例，其他包no tests to run不冒充实库执行。
+
+限定官方缓存清理再次在所有相关负载停止、GOCACHE/realpath匹配指定非链接目标后执行，exit0，215,126,016→1,283,985,408B；没有其他清理，也不计容量验收通过。[精确源、恢复过程、全部命令/原日志哈希、历史失败和未执行项](validation/2026-10-23-observation-retry.json)。本子批通过不等于完整归档、其他held修复、真实浏览器/OS崩溃/外部内核或整体P4/P6/P7通过。

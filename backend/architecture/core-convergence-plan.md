@@ -1648,3 +1648,9 @@ Docker数据盘仍不足原“物理512MiB缓冲后余1,677,721,600B”前置，
 实际应用后的专项SQLite1.790s/MySQL15.622s与前端22项、build通过；包含8路竞争、审批失败回滚、真实数字ID复用、删除/撤销/有效claim拒绝、原材料保持、后续损坏不假应用、存储计数上限、原worker对象重建恢复。首轮新fixture没有真正更改create-only标签的失败保留，仅改新fixture为实际ID复用。原计量/财务/发布规则和154份SQL不改。本提交自己的完整后端/MySQL/前端/CI仍待验收，0f76六绿不替代。没有归档parts或完成P4总增长/P6伸缩/P7综合验收。[行为、事务、回退和限制](core-convergence-observation-retry.md)。
 
 P4首个代码头c46fafa完整本地Go310.776s/自己的backend CI因inventory仍要求21项而实际22项失败，原结果保留；不是业务专项失败。修正固定数并强化新事务及实际HTTP写调用的来源/owner断言，完整inventory包count1通过，无生产逻辑变更。后续新提交完整检查单独重跑，不把c46的其他通过项挪为新头通过。
+
+c19最终完整本地后端四项/前端1154pass与8既有skip/build通过，自己的CI39939320037六项成功。本地MySQL原core/jobstore已通过，断连恢复先核对控制器不存在、copy从未启动，只补copy228.866s成功；三组结果和原中断记录独立保留。双库race/count3为406.328/109.424s，来源哈希不变。完整[回执](validation/2026-10-23-observation-retry.json)及[P4恢复范围](core-convergence-observation-retry.md)。其他held原因、归档/增长和P6/P7仍缺。
+
+### 2026-10-23 P2：本单优惠读取兼容前置
+
+新增严格version3/order_only读取，旧version1/2不改，复用原目标报价结构和实际资金写入路径；不开放新的优惠创建或有限券兑换。真实双库证明18元新权益/72元旧残值、重复履约防护、20元续费基础锁价与最终38元退订残值正确。其完整检查及新头CI仍待执行，c19仅是前批证据。[行为、回退基线与未完成项](core-convergence-operation-discount-reader.md)。

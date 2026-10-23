@@ -106,7 +106,7 @@ func DiscountTermsHash(terms string) (string, error) {
 
 func validateDiscountAgreement(a *DiscountAgreement) error {
 	if a == nil || strings.TrimSpace(a.ID) == "" || len(a.ID) > 128 || strings.TrimSpace(a.Version) == "" || len(a.Version) > 64 ||
-		(a.Scope != "initial_only" && a.Scope != "recurring") || !discountHashPattern.MatchString(a.TermsHash) {
+		(a.Scope != "initial_only" && a.Scope != "recurring" && a.Scope != OperationDiscountScope) || !discountHashPattern.MatchString(a.TermsHash) {
 		return ErrDiscountQuoteInvalid
 	}
 	hash, err := DiscountTermsHash(a.TermsJSON)
@@ -168,6 +168,9 @@ func ValidateDiscountOffer(in DiscountQuoteContext, out DiscountOffer, now time.
 	switch out.Status {
 	case "available", "requires_confirmation":
 		if out.ExpiresAt.IsZero() || !out.ExpiresAt.After(now) || validateDiscountAgreement(out.Agreement) != nil {
+			return ErrDiscountQuoteInvalid
+		}
+		if out.Agreement.Scope == OperationDiscountScope && (in.Operation != "upgrade" && in.Operation != "traffic_reset" && in.Operation != "traffic_pack") {
 			return ErrDiscountQuoteInvalid
 		}
 		if out.Agreement.Scope == "initial_only" && in.Operation != "new" {

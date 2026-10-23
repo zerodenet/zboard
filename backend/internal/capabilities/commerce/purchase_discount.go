@@ -54,6 +54,9 @@ func NewPurchaseDiscountContext(order Order, policy PurchaseSnapshot, selection 
 // Presence of an arbitrary discount field is never renewal authority.
 func ValidatePurchaseDiscount(order Order, policy PurchaseSnapshot) error {
 	saved := policy.Discount
+	if saved != nil && saved.Version == 3 {
+		return ValidateOperationPurchaseDiscount(order, policy)
+	}
 	if saved != nil && saved.Version == 2 {
 		return ValidateRecurringPurchaseDiscount(order, policy)
 	}
