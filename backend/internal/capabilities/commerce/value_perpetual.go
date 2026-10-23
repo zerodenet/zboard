@@ -67,13 +67,17 @@ func projectPerpetualQuotaValue(records []EntitlementValueSnapshot, current Enti
 		quota, remaining, paid int64
 	}
 	lots := []lot{{root.OrderID, root.After.FlowTotal - root.After.CycleStartUsed, root.After.FlowTotal - root.After.CycleStartUsed, root.ActualPaidMinor}}
+	firstUnspent := 0
 	consume := func(used int64) {
-		for i := range lots {
-			take := min(used, lots[i].remaining)
-			lots[i].remaining -= take
+		// Exhausted lots never regain quota. Keep their original paid facts for
+		// valuation/fingerprinting, but visit them only once while consuming.
+		for firstUnspent < len(lots) && used > 0 {
+			current := &lots[firstUnspent]
+			take := min(used, current.remaining)
+			current.remaining -= take
 			used -= take
-			if used == 0 {
-				return
+			if current.remaining == 0 {
+				firstUnspent++
 			}
 		}
 	}
