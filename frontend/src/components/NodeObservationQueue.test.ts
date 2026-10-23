@@ -1,10 +1,12 @@
-import { defineComponent } from 'vue'
+import { defineComponent, reactive } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import NodeObservationQueue from './NodeObservationQueue.vue'
 import type { ObservationIntentPage, ObservationIntentStatus } from '../api/nodeObservationIntents'
-const mocks = vi.hoisted(() => ({ read: vi.fn() }))
-vi.mock('../api/nodeObservationIntents', () => ({ fetchObservationIntents: mocks.read }))
+const mocks = vi.hoisted(() => ({ read: vi.fn(), retry: vi.fn(), app: null as any }))
+vi.mock('../api/nodeObservationIntents', () => ({ fetchObservationIntents: mocks.read, retryObservationIntent: mocks.retry }))
+vi.mock('../stores/app', () => ({ useAppStore: () => mocks.app }))
+beforeEach(() => { mocks.app = reactive({ user: { id: 1, isAdmin: true } }) })
 const drawer = defineComponent({ props: ['open'], template: '<aside v-if="open"><slot /></aside>' })
 const select = defineComponent({ props: ['modelValue', 'options'], emits: ['update:modelValue'], template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option v-for="option in options" :value="option.value">{{ option.label }}</option></select>' })
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: unknown) => void; const promise = new Promise<T>((ok, fail) => { resolve = ok; reject = fail }); return { promise, resolve, reject } }
@@ -99,4 +101,70 @@ describe('global observation queue', () => {
     expect(wrapper.findAll('button').some(button => /恢复|重排|删除|清租约/.test(button.text()))).toBe(false)
     wrapper.unmount()
   })
+})
+
+function retryablePage() {
+ const result = page('held', 'c'.repeat(64), false)
+ Object.assign(result.items[0], { reason: 'node_inactive', asset_relation: 'same_asset', attempts: '9007199254740993' })
+ return result
+}
+async function press(wrapper: ReturnType<typeof render>, label: string) {
+ await wrapper.findAll('button').find(button => button.text() === label)!.trigger('click'); await flushPromises()
+}
+it('requires a reason and explicit confirmation, preserving the exact candidate attempt string', async () => {
+ const candidate = retryablePage(), pending = { ...candidate, status: 'pending' as const, items: candidate.items.map(item => ({ ...item, status: 'pending' as const, reason: 'administrator_retry' })) }
+ mocks.read.mockResolvedValueOnce(candidate).mockResolvedValueOnce(pending)
+ mocks.retry.mockResolvedValueOnce({ id: candidate.items[0].id, expected_attempts: '9007199254740993', audit_id: '15', status: 'accepted' })
+ const wrapper = render(); await flushPromises()
+ expect(mocks.retry).not.toHaveBeenCalled()
+ await press(wrapper, '核对重试')
+ expect(wrapper.text()).toContain('不代表观察已更新或节点配置已应用')
+ const confirm = () => wrapper.findAll('button').find(button => button.text() === '确认重新排队原材料')!
+ expect(confirm().attributes('disabled')).toBeDefined()
+ await wrapper.get('input').setValue('中'.repeat(200))
+ expect(confirm().attributes('disabled')).toBeDefined()
+ await wrapper.get('input').setValue(' 原节点已经恢复，申请核验原材料 ')
+ await press(wrapper, '确认重新排队原材料')
+ expect(mocks.retry).toHaveBeenCalledOnce()
+ expect(mocks.retry).toHaveBeenCalledWith(candidate.items[0].id, { expected_attempts: '9007199254740993', reason: '原节点已经恢复，申请核验原材料' })
+ expect(wrapper.text()).toContain('已登记重试审计 #15')
+ expect(wrapper.text()).toContain('未确认观察已更新')
+ expect(wrapper.text()).toContain('管理员已申请重新核验')
+ expect(mocks.read).toHaveBeenCalledTimes(2)
+ wrapper.unmount()
+})
+it('a lost retry response requires an explicit read before another approval and never automatically replays', async () => {
+ mocks.read.mockResolvedValue(retryablePage()); mocks.retry.mockRejectedValue(new Error('private backend failure'))
+ let wrapper = render(); await flushPromises(); await press(wrapper, '核对重试'); await wrapper.get('input').setValue('明确核对原节点后重试')
+ await press(wrapper, '确认重新排队原材料')
+ expect(wrapper.text()).toContain('请刷新当前状态后再明确操作')
+ expect(wrapper.text()).not.toContain('private backend failure')
+ expect(wrapper.findAll('button').find(button => button.text() === '确认重新排队原材料')!.attributes('disabled')).toBeDefined()
+ await flushPromises(); expect(mocks.retry).toHaveBeenCalledOnce()
+ await press(wrapper, '刷新当前状态')
+ expect(mocks.retry).toHaveBeenCalledOnce()
+ await press(wrapper, '核对重试'); await wrapper.get('input').setValue('再次明确核对同一原候选')
+ await press(wrapper, '确认重新排队原材料')
+ expect(mocks.retry).toHaveBeenCalledTimes(2)
+ wrapper.unmount(); wrapper = render(); await flushPromises(); expect(mocks.retry).toHaveBeenCalledTimes(2); wrapper.unmount()
+})
+it('permission/account changes clear old context and discard a late retry receipt', async () => {
+ const reply = deferred<any>()
+ mocks.read.mockResolvedValueOnce(retryablePage()); mocks.retry.mockReturnValueOnce(reply.promise)
+ const wrapper = render(); await flushPromises(); await press(wrapper, '核对重试'); await wrapper.get('input').setValue('原管理员明确操作')
+ await wrapper.findAll('button').find(button => button.text() === '确认重新排队原材料')!.trigger('click')
+ mocks.app.user = { id: 2, isAdmin: false }; await flushPromises()
+ reply.resolve({ id: 'c'.repeat(64), expected_attempts: '9007199254740993', audit_id: '15', status: 'accepted' }); await flushPromises()
+ expect(wrapper.text()).not.toContain('已登记重试审计')
+ expect(wrapper.text()).not.toContain('c'.repeat(64))
+ expect(wrapper.find('input').exists()).toBe(false)
+ expect(mocks.retry).toHaveBeenCalledOnce()
+ wrapper.unmount()
+})
+it.each(['asset_mismatch', 'invalid_material', 'stats_position_conflict', 'unattributed_floor'])('does not offer an operational override for %s', async reason => {
+ const candidate = retryablePage(); candidate.items[0].reason = reason
+ mocks.read.mockResolvedValueOnce(candidate)
+ const wrapper = render(); await flushPromises()
+ expect(wrapper.findAll('button').some(button => button.text() === '核对重试')).toBe(false)
+ expect(mocks.retry).not.toHaveBeenCalled(); wrapper.unmount()
 })

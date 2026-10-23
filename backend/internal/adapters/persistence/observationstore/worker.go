@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -57,6 +58,24 @@ func (w Worker) claim(ctx context.Context) (h model.NodeObservationIntent, found
 		if q.Error != nil {
 			return q.Error
 		}
+		maxAttempts := uint64(math.MaxUint64)
+		if tx.Dialector.Name() == "sqlite" {
+			maxAttempts = math.MaxInt64
+		}
+		if h.Attempts >= maxAttempts {
+			// Preserve exhausted identities as held. Never wrap a claim generation
+			// through zero or let one terminal candidate block the rest of a round.
+			h.Status, h.Reason, h.Token, h.LeaseUntil = "held", "attempt_limit", "", epoch
+			r := tx.Model(&model.NodeObservationIntent{}).Where("id = ?", h.ID).Updates(map[string]any{"status": h.Status, "reason": h.Reason, "token": "", "lease_until": epoch, "updated_at": now})
+			if r.Error != nil {
+				return r.Error
+			}
+			if r.RowsAffected != 1 {
+				return ErrOwnership
+			}
+			found = true
+			return nil
+		}
 		h.Token = hex.EncodeToString(b[:])
 		h.Status = "claimed"
 		h.LeaseUntil = now.Add(claimLease)
@@ -83,6 +102,10 @@ func (w Worker) Drain(ctx context.Context, limit int, budget int64) (done int, e
 		}
 		if !found {
 			return done, err
+		}
+		if h.Status == "held" {
+			done++
+			continue
 		}
 		e = w.apply(ctx, h, &budget)
 		if e != nil {

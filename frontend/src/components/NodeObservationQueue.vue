@@ -4,10 +4,17 @@
       <p>这是辅助观察投影记录，不代表当前节点异常或计量失败；来源状态不用于判断在线、采样新鲜度或配置确认。</p>
       <p>待处理记录将自动领取或重试；已保留记录等待核对，不会自动重试。此处展示入队元数据，未重新验证保留材料。</p>
       <div class="queue-controls">
-        <label>处置状态 <UiSelect :model-value="status" :options="statusOptions" aria-label="观察队列状态" @update:model-value="changeStatus" /></label>
-        <UiButton variant="secondary" :loading="loading" @click="read(status)">刷新当前状态</UiButton>
+        <label>处置状态 <UiSelect :model-value="status" :options="statusOptions" :disabled="retryBusy" aria-label="观察队列状态" @update:model-value="changeStatus" /></label>
+        <UiButton variant="secondary" :loading="loading" :disabled="retryBusy" @click="read(status)">刷新当前状态</UiButton>
       </div>
       <p v-if="error" role="alert">{{ error }} 已加载记录仍保留，下方标明其状态。</p>
+      <p>仅先前因节点停用而保留的记录可申请重试；服务端会核对原资产已恢复，执行器重新验证原材料。资产不符、删除及材料冲突继续保留。</p>
+      <p v-if="retryMessage" role="status">{{ retryMessage }}</p>
+      <div v-if="selected" class="stack">
+        <p>核对原材料 {{ selected.id }}，领取次数 {{ selected.attempts }}。重新排队不代表观察已更新或节点配置已应用。</p>
+        <label>重试原因（3–400个UTF-8字节） <UiInput v-model="retryReason" aria-label="观察重试原因" maxlength="400" /></label>
+        <div><UiButton :disabled="retryBusy || !validRetry || submitted.has(candidateKey(selected))" @click="submitRetry">确认重新排队原材料</UiButton><UiButton variant="secondary" :disabled="retryBusy" @click="selected = null">取消重试</UiButton></div>
+      </div>
       <p v-if="loading" role="status">正在读取观察队列…</p>
       <template v-if="page">
         <p>已加载状态：{{ statusLabel(page.status) }}。以下时间为入队、调度和处置时间，不是事件采样时间。</p>
@@ -18,7 +25,7 @@
             <thead><tr><th>来源引用 / 节点编号</th><th>处置原因</th><th>资产关系</th><th>材料 / 尝试</th><th>队列时间</th></tr></thead>
             <tbody><tr v-for="item in page.items" :key="item.id">
               <td><code>{{ item.id }}</code><div>节点编号 {{ item.node_id }} · {{ statusLabel(item.status) }}</div></td>
-              <td>{{ reasonLabel(item.reason, item.status) }}</td>
+              <td>{{ reasonLabel(item.reason, item.status) }}<div v-if="canRetry(item)"><UiButton variant="secondary" :disabled="retryBusy || submitted.has(candidateKey(item))" @click="selectRetry(item)">核对重试</UiButton></div></td>
               <td>{{ assetLabel(item.asset_relation) }}</td>
               <td>{{ item.material_bytes }} 字节 / {{ item.part_count }} 段<div>领取尝试 {{ item.attempts }}</div></td>
               <td><div>入队 <TimeBadge :value="item.enqueued_at" /></div><div>调度可用 <TimeBadge :value="item.available_at" /></div><div>处置更新 <TimeBadge :value="item.disposition_updated_at" /></div><div v-if="item.status === 'claimed' && item.lease_until">租约截至 <TimeBadge :value="item.lease_until" /></div></td>
@@ -26,15 +33,18 @@
           </table>
         </div>
         <p v-else>此状态暂无记录。</p>
-        <UiButton v-if="page.has_more" variant="secondary" :disabled="loading || page.status !== status" @click="read(page.status, page.next_cursor)">下一页</UiButton>
+        <UiButton v-if="page.has_more" variant="secondary" :disabled="loading || retryBusy || page.status !== status" @click="read(page.status, page.next_cursor)">下一页</UiButton>
       </template>
     </div>
   </DetailDrawer>
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
-import { fetchObservationIntents, type ObservationIntentPage, type ObservationIntentStatus } from '../api/nodeObservationIntents'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { fetchObservationIntents, retryObservationIntent, type ObservationIntentItem, type ObservationIntentPage, type ObservationIntentStatus } from '../api/nodeObservationIntents'
+import { useAppStore } from '../stores/app'
+import { isUtf8LengthInRange } from '../utils/validation'
+import UiInput from './UiInput.vue'
 import DetailDrawer from './DetailDrawer.vue'
 import TimeBadge from './TimeBadge.vue'
 import UiButton from './UiButton.vue'
@@ -42,6 +52,11 @@ import UiSelect from './UiSelect.vue'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
+const app = useAppStore()
+const actor = computed(() => app.user?.id || 0)
+const selected = ref<ObservationIntentItem | null>(null), retryReason = ref(''), retryBusy = ref(false), retryMessage = ref('')
+const submitted = ref(new Set<string>())
+const validRetry = computed(() => !!selected.value && canRetry(selected.value) && isUtf8LengthInRange(retryReason.value.trim(), 3, 400))
 const status = ref<ObservationIntentStatus>('held')
 const page = ref<ObservationIntentPage | null>(null)
 const loading = ref(false)
@@ -57,6 +72,8 @@ function assetLabel(value: string) {
   return Object.prototype.hasOwnProperty.call(assetLabels, value) ? assetLabels[value] : '资产关系未知'
 }
 const reasons: Record<string, string> = {
+  attempt_limit: '领取次数已达到存储上限，保留原材料，停止重试。',
+  administrator_retry: '管理员已申请重新核验，等待执行器领取。',
   node_busy: '节点暂忙，等待自动重试。', projection_failed: '投影存储失败，等待自动重试。',
   node_inactive: '当时节点未启用或连接凭据已撤销，保留原材料。', node_deleted: '原节点已删除，保留历史材料。', asset_deleted: '原资产已有删除标记，保留历史材料。', asset_mismatch: '材料与当前资产不同，不借用新资产身份。',
   unknown_source: '原来源位置或资产材料不完整，保持未知。', unknown_stats_source: '统计事件来源不完整，保持未知。', unattributed_legacy_floor: '升级导入的无归属历史位置，仅作为边界保留。', unattributed_floor: '材料未越过无归属历史边界，保留待核对。',
@@ -70,15 +87,16 @@ function reasonLabel(reason: string, state: string) {
   if (state === 'applied') return '投影流程已处置，不表示重新验证来源或当前新鲜度。'
   return '未记录具体原因，保留待核对。'
 }
-async function read(selected: ObservationIntentStatus, cursor?: string) {
+async function read(selectedStatus: ObservationIntentStatus, cursor?: string) {
   if (!props.open) return
   const id = ++request
   loading.value = true
   error.value = ''
   try {
-    const result = await fetchObservationIntents(selected, cursor)
-    if (id !== request || !props.open || selected !== status.value) return
+    const result = await fetchObservationIntents(selectedStatus, cursor)
+    if (id !== request || !props.open || selectedStatus !== status.value) return
     page.value = result
+    submitted.value.clear(); selected.value = null; retryReason.value = ''
   } catch {
     if (id !== request || !props.open) return
     error.value = '观察队列读取失败，请刷新重试。'
@@ -86,14 +104,42 @@ async function read(selected: ObservationIntentStatus, cursor?: string) {
     if (id === request) loading.value = false
   }
 }
+function candidateKey(item: ObservationIntentItem) { return `${item.id}:${item.attempts}` }
+function canRetry(item: ObservationIntentItem) {
+  return !!actor.value && !!app.user?.isAdmin && item.status === 'held' && item.reason === 'node_inactive' && item.asset_relation === 'same_asset' && typeof item.attempts === 'string' && /^[1-9][0-9]{0,19}$/.test(item.attempts) && BigInt(item.attempts) < 18446744073709551615n && page.value?.status === status.value
+}
+function selectRetry(item: ObservationIntentItem) {
+  if (!canRetry(item) || retryBusy.value || submitted.value.has(candidateKey(item))) return
+  selected.value = item; retryReason.value = ''; retryMessage.value = ''
+}
+async function submitRetry() {
+  const item = selected.value
+  if (!item || retryBusy.value || !validRetry.value || submitted.value.has(candidateKey(item))) return
+  const version = request, originalActor = actor.value, input = { expected_attempts: item.attempts, reason: retryReason.value.trim() }
+  submitted.value.add(candidateKey(item)); retryBusy.value = true; retryMessage.value = ''
+  try {
+    const result = await retryObservationIntent(item.id, input)
+    if (version !== request || originalActor !== actor.value || !props.open) return
+    retryMessage.value = `已登记重试审计 #${result.audit_id}；等待执行器重新核对原材料，未确认观察已更新。`
+    selected.value = null
+    await read(status.value)
+  } catch {
+    if (version !== request || originalActor !== actor.value || !props.open) return
+    retryMessage.value = '原重试结果需要核对；请刷新当前状态后再明确操作，不会自动重放。'
+  } finally { retryBusy.value = false }
+}
+watch([actor, () => app.user?.isAdmin], () => {
+  ++request; loading.value = false; page.value = null; selected.value = null; retryReason.value = ''; retryMessage.value = ''; submitted.value.clear()
+})
 function changeStatus(value: unknown) {
   if (!statusOptions.some(item => item.value === value)) return
+  selected.value = null; retryReason.value = ''
   status.value = value as ObservationIntentStatus
   void read(status.value)
 }
 watch(() => props.open, open => {
   ++request
-  loading.value = false
+  loading.value = false; selected.value = null; retryReason.value = ''; retryMessage.value = ''
   if (open) void read(status.value)
 }, { immediate: true })
 onBeforeUnmount(() => { ++request })

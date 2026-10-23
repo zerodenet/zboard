@@ -34,7 +34,8 @@ paths:
         Single status only; keyset pages use available_at then opaque SHA256 id. No count,
         offset, node or reason filtering. Reads headers only, never parts or raw source identities.
         Queue timestamps are not sample times or freshness evidence. Metadata does not reverify
-        retained material. There is no retry, lease-reset, repair or deletion operation.
+        retained material. No repair, active-lease reset or deletion operation is offered.
+        Eligible inactive-node material has a separate inspected-candidate retry endpoint.
       parameters:
         - {in: query, name: status, schema: {type: string, enum: [held, pending, claimed, applied], default: held}}
         - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
@@ -55,6 +56,59 @@ paths:
         '401': {description: Authentication required or inactive session}
         '403': {description: Current administrator permission required}
         '500': {description: Database query failure; not an empty successful page}
+  /api/v1/admin/node-observation-intents/{id}/retry:
+    post:
+      tags: [admin, nodes]
+      operationId: retryNodeObservationIntent
+      summary: Request revalidation of one held inactive-node observation
+      description: |
+        Requires a current active administrator and an explicit reason. Only held node_inactive
+        material for the same restored, enabled, non-revoked asset is eligible. Deleted assets,
+        source conflicts, corrupt material and active claims cannot be overridden. The original
+        inspected attempt is admitted at most once; a lost response is resolved by reading queue
+        metadata before another explicit operation. Acceptance never means projection success,
+        observation freshness, business authorization or applied configuration. Material and the
+        worker's source, ownership and ordering validation remain unchanged.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, pattern: '^[a-f0-9]{64}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expected_attempts, reason]
+              properties:
+                expected_attempts: {type: string, pattern: '^[1-9][0-9]{0,19}$', description: Exact inspected uint64 decimal; must be below uint64 maximum. No Number conversion.}
+                reason: {type: string, minLength: 3, maxLength: 400, description: Server validates 3–400 UTF-8 bytes after trimming.}
+      responses:
+        '202':
+          description: Audited original material queued for worker revalidation; not an applied observation
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiResponse'}
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [id, expected_attempts, audit_id, status]
+                        properties:
+                          id: {type: string, pattern: '^[a-f0-9]{64}$'}
+                          expected_attempts: {type: string, pattern: '^[1-9][0-9]{0,19}$'}
+                          audit_id: {type: string, pattern: '^[1-9][0-9]*$'}
+                          status: {type: string, enum: [accepted]}
+        '400': {description: 'Invalid inspected candidate, reason or unsupported fields/query'}
+        '401': {description: 'Authentication required'}
+        '403': {description: 'Current administrator permission required'}
+        '404': {description: 'Original queue material does not exist'}
+        '409': {description: 'Candidate changed, already admitted or ineligible. A previous request may have been accepted; read current metadata before explicitly submitting a new candidate. No repeated requeue by this rejected request.'}
+        '500': {description: 'Durable source, state or audit failure; admission is rolled back'}
   /api/v1/files:
     post:
       tags: [files]

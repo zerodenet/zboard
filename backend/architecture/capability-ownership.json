@@ -91,6 +91,19 @@
   ],
   "cross_domain_transactions": [
     {
+      "id": "resources.node_observation_retry",
+      "owner": "resources",
+      "source": "internal/adapters/persistence/networkstore/node_observation_retry.go",
+      "symbol": "ObservationIntentOperations.RetryObservationIntent",
+      "participants": [
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Requeue one held inactive-node candidate and audit the inspected attempt/reason together. Current administrator and restored original asset are checked under locks; changed, already admitted or unsafe candidates never requeue again. No immutable material, financial fact, valid active lease or worker validation is replaced.",
+      "outbox": "Existing durable pending observation intent is consumed by the same exact-token/source/asset worker, with no direct node counter or configuration confirmation."
+    },
+    {
       "id": "commerce.plan_group_sync",
       "owner": "commerce",
       "source": "internal/adapters/persistence/commercestore/plan_group_sync.go",

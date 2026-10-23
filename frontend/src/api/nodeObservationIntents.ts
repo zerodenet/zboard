@@ -31,3 +31,12 @@ export async function fetchObservationIntents(status: ObservationIntentStatus, c
   }
   return page
 }
+
+export interface ObservationIntentRetryRequest { expected_attempts: string; reason: string }
+export interface ObservationIntentRetryReceipt { id: string; expected_attempts: string; audit_id: string; status: 'accepted' }
+export async function retryObservationIntent(id: string, request: ObservationIntentRetryRequest): Promise<ObservationIntentRetryReceipt> {
+  const response = await api.post(`/admin/node-observation-intents/${id}/retry`, request)
+  const receipt = response.data?.data as ObservationIntentRetryReceipt | undefined
+  if (!receipt || receipt.id !== id || receipt.expected_attempts !== request.expected_attempts || receipt.status !== 'accepted' || typeof receipt.audit_id !== 'string' || !/^[1-9][0-9]*$/.test(receipt.audit_id)) throw new Error('观察重试结果需要核对。')
+  return receipt
+}

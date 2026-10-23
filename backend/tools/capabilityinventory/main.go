@@ -27,6 +27,7 @@ type Entry struct {
 }
 
 var explicitWriteOwners = map[string]string{
+	"h.services.ObservationIntents.Retry":                                        "resources",
 	"h.services.SubscriptionTermination.Terminate":                               "commerce",
 	"h.services.SubscriptionTermination.TerminateForAdministrator":               "commerce",
 	"h.services.Files.Upload":                                                    "experience",

@@ -1,0 +1,379 @@
+{
+  "source": "0f76d7c9a5f30b0a6232d17458767310c05f57b1",
+  "branch": "codex/core-convergence",
+  "pull_request": "https://github.com/zerodenet/zboard/pull/78",
+  "time_utc": "2026-10-23T10:09:46.612711+00:00",
+  "stage": "P2/P5 bounded increment; P0-P7 overall incomplete",
+  "latest_develop_merged": "658671e9f3978df1c79f4030fdb072a877f10bf5",
+  "merge_commit": "344be89838a065020db290696fe857f57dc8eefb",
+  "source_audit": {
+    "source": "0f76d7c9a5f30b0a6232d17458767310c05f57b1",
+    "time_utc": "2026-10-23T09:57:36.824960+00:00",
+    "ancestors": {
+      "7c7283fb34840883fccaba1de6e0a98edb24dfb1": true,
+      "49b622e": true,
+      "d98b018": true,
+      "658671e9f3978df1c79f4030fdb072a877f10bf5": true
+    },
+    "sql_assets": 154,
+    "sql_assets_changed_from_688": [],
+    "tracked_worktree_clean": true
+  },
+  "changed_files_sha256": {
+    "backend/api/openapi.yaml": "4b92d6faebda30c203fcef49f16492ce582566f8bdfc3946d6d83052b874758c",
+    "backend/architecture/core-convergence-decisions.md": "4c2e81b453a9a4c4147e9533ee8980ebe5a75102738ad7636259b00ba7a6325b",
+    "backend/architecture/core-convergence-plan.md": "1488c1a5a998e7965f9055026fc92d6daa81001add91fe047610be5d20f946a0",
+    "backend/architecture/core-convergence-unpriced-zero-termination.md": "35d0bd6f427796d80dcb41e15178e6e7c59d67c9789f9d68854b03652e634b65",
+    "backend/internal/adapters/persistence/commercestore/administrative_termination.go": "fc3698f19befa3ef4f059c81c08e06330016563da697009b70800fed353ce2fc",
+    "backend/internal/adapters/persistence/commercestore/order_settlement_authority.go": "a707d59508275fc4b871a874da945db349db849ccf881f10aeb5980ddd8e880c",
+    "backend/internal/adapters/persistence/commercestore/subscription_termination.go": "69f444fc665ae689b887f922ded81f80a4ec7ca74585dd20b3e3743d11b73cc7",
+    "backend/internal/adapters/persistence/commercestore/unpriced_termination.go": "b804b6c93bfb733121481cf01982fe74fc5af89fcf04fc3d0034206240234ef9",
+    "backend/internal/adapters/persistence/entitlementstore/termination.go": "7fd1ad261ba8570deb1db316f06296ae0b5d7f6167ecd22331a8e89063f4c7e6",
+    "backend/internal/capabilities/commerce/subscription_termination.go": "a3917ca033bcc4e65176680a67c684febf68365464eacb7d228da9540da4d04e",
+    "backend/internal/capabilities/commerce/subscription_value.go": "1d4d57e23a62ae93b2f092eb8a1661d1922f6793d60f30f448f7177d691e7586",
+    "backend/internal/handler/administrative_termination_test.go": "681b6c47330b4a6c4337656ad95dfb76f3fa12388599c58586dbdacc36b4eb9f",
+    "backend/internal/handler/unpriced_termination_test.go": "968c7d73c8123c237e43648d8692de0fbd289445487d73e6f8c00766293dd566",
+    "frontend/src/api/subscriptionValue.ts": "76d3c42466102818f67244729558acc9f9370ef0dd29aacbf77c5b7ce2984b93",
+    "frontend/src/components/SubscriptionTermination.test.ts": "caac1d98c41c84c97e26d4c1fb7ed02cd9f3248a09dbac174460c336d6e4399a",
+    "frontend/src/components/SubscriptionTermination.vue": "18dff19aa8611414035af992c589957406ee76281fe7594076f72cb4cad036c5"
+  },
+  "backend": {
+    "source": "0f76d7c9a5f30b0a6232d17458767310c05f57b1",
+    "checkout": "/workspace/zboard",
+    "phase": "backend",
+    "started_utc": "2026-10-23T09:38:10.919259+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "2"
+    },
+    "checks": [
+      {
+        "name": "full-go",
+        "command": "go test -p 2 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 284.672,
+        "log": "full-go-0f76d7c-final.log"
+      },
+      {
+        "name": "vet",
+        "command": "go vet -p 2 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 11.443,
+        "log": "vet-0f76d7c-final.log"
+      },
+      {
+        "name": "build",
+        "command": "go build ./cmd/zboard",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 1.899,
+        "log": "build-0f76d7c-final.log"
+      },
+      {
+        "name": "pure-go-sqlite",
+        "command": "go test -p 2 ./internal/datastore -run SQLite -count=1",
+        "environment_additions": {
+          "CGO_ENABLED": "0"
+        },
+        "exit_code": 0,
+        "wall_seconds": 40.591,
+        "log": "pure-go-sqlite-0f76d7c-final.log"
+      }
+    ],
+    "pending": [],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-23T09:43:49.526495+00:00"
+  },
+  "mysql": {
+    "source": "0f76d7c9a5f30b0a6232d17458767310c05f57b1",
+    "checkout": "/workspace/zboard",
+    "phase": "mysql",
+    "started_utc": "2026-10-23T09:48:10.989969+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "2"
+    },
+    "checks": [
+      {
+        "name": "mysql-core",
+        "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore ./internal/application -run MySQL -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 933.079,
+        "log": "mysql-core-0f76d7c-final.log"
+      },
+      {
+        "name": "mysql-jobstore",
+        "command": "go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 126.893,
+        "log": "mysql-jobstore-0f76d7c-final.log"
+      },
+      {
+        "name": "mysql-copy",
+        "command": "go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 219.974,
+        "log": "mysql-copy-0f76d7c-final.log"
+      }
+    ],
+    "pending": [],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-23T10:09:30.940576+00:00"
+  },
+  "frontend": {
+    "source": "0f76d7c9a5f30b0a6232d17458767310c05f57b1",
+    "checks": [
+      {
+        "name": "install",
+        "command": [
+          "pnpm",
+          "install",
+          "--frozen-lockfile",
+          "--package-import-method=copy",
+          "--store-dir",
+          "/workspace/toolchains/pnpm-store"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.62
+      },
+      {
+        "name": "full",
+        "command": [
+          "pnpm",
+          "test",
+          "--no-file-parallelism",
+          "--exclude",
+          "src/theme/designTokens.test.ts",
+          "--exclude",
+          "src/views/commercePurchaseExperience.test.ts",
+          "--exclude",
+          "src/utils/adminRowActionsAudit.test.ts",
+          "--exclude",
+          "src/utils/catalogScalePolicy.test.ts",
+          "--exclude",
+          "src/utils/formPolicy.test.ts",
+          "--exclude",
+          "src/utils/frontendArchitecturePolicy.test.ts"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 151.441
+      },
+      {
+        "name": "build",
+        "command": [
+          "pnpm",
+          "build"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 31.228
+      }
+    ],
+    "source_unchanged": true
+  },
+  "targeted": {
+    "sqlite-final1.json": {
+      "command": "go test -p 2 ./internal/handler -run ^TestAdministrativeUnpricedZero -count=1 -v -timeout 10m",
+      "exit_code": 0,
+      "elapsed_seconds": 13.427417964001506,
+      "source_unchanged": true,
+      "source_manifest_sha256": "a2e750866a6f5183037cfe51aac1908169e4f9b297b503a34a76fdce17815454",
+      "source_file_count": 2092
+    },
+    "mysql-final1.json": {
+      "command": "go test -p 2 ./internal/handler -run ^TestMySQLAdministrativeUnpricedZero -count=1 -v -timeout 10m",
+      "exit_code": 0,
+      "elapsed_seconds": 12.195312114003173,
+      "source_unchanged": true,
+      "source_manifest_sha256": "ae2bc68e56732386ce0c4fa6d474c7d8ea8930dee65aefce7e0fbca95dafe0f6",
+      "source_file_count": 2092
+    }
+  },
+  "ci": {
+    "id": 39933274461,
+    "head_sha": "0f76d7c9a5f30b0a6232d17458767310c05f57b1",
+    "head_branch": "codex/core-convergence",
+    "status": "completed",
+    "conclusion": "success",
+    "html_url": "https://github.com/zerodenet/zboard/actions/runs/39933274461",
+    "run_attempt": 1,
+    "jobs": [
+      {
+        "id": 120346535152,
+        "name": "zrs-compiler",
+        "conclusion": "success"
+      },
+      {
+        "id": 120346535517,
+        "name": "backend",
+        "conclusion": "success"
+      },
+      {
+        "id": 120346535551,
+        "name": "compose",
+        "conclusion": "success"
+      },
+      {
+        "id": 120346535557,
+        "name": "frontend",
+        "conclusion": "success"
+      },
+      {
+        "id": 120346535618,
+        "name": "contract",
+        "conclusion": "success"
+      },
+      {
+        "id": 120346535908,
+        "name": "mysql",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "cache_cleanup": {
+    "command": "go clean -cache",
+    "target": "/workspace/toolchains/cache/go-build",
+    "exit_code": 0,
+    "elapsed_seconds": 0.2550168859997939,
+    "free_before": 0,
+    "free_after": 1514213376
+  },
+  "cache_preflight": {
+    "actual_gocache": "/workspace/toolchains/cache/go-build",
+    "target": "/workspace/toolchains/cache/go-build",
+    "realpath": "/workspace/toolchains/cache/go-build",
+    "is_symlink": false,
+    "active_workloads": [],
+    "free_bytes": 0,
+    "time_utc": "2026-10-23T09:44:03.545719+00:00"
+  },
+  "private_logs": {
+    "oct23-unpriced-zero/frontend-final-install.log": {
+      "bytes": 588,
+      "sha256": "308e7ec481297ed2e2f5ddf79753909f033ce18b8859d13ff8c5e5608f4c307c"
+    },
+    "oct23-unpriced-zero/ci-mysql.log": {
+      "bytes": 34482,
+      "sha256": "8cf0f356f012c13681f37d8f8765c3f1c9d9b9f9252d531c8443b0a0d14e945f"
+    },
+    "oct23-unpriced-zero/frontend-focused-2.log": {
+      "bytes": 380,
+      "sha256": "971da14fc9b2b99915a3aa970b103db0667212fee5ff292973f5b0062ce41170"
+    },
+    "oct23-unpriced-zero/new-behavior-1.log": {
+      "bytes": 14520,
+      "sha256": "9c8d4ddfa5ebbb86fdd43136cc6cd847d17db6116543908158944d00d72162a0"
+    },
+    "oct23-unpriced-zero/mysql-attempt2.log": {
+      "bytes": 15298,
+      "sha256": "9cb0c3f1c8e92888c9114fa18ea5cc70d1e9d8ebaa8184442aeb9209ac9cebc7"
+    },
+    "oct23-unpriced-zero/ci-frontend.log": {
+      "bytes": 148542,
+      "sha256": "6485ee9cc51af63febf5ad9e38069145af2f3822ddfb422f929a22b1fe9c5255"
+    },
+    "oct23-unpriced-zero/cache-clean.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "oct23-unpriced-zero/frontend-build-1.log": {
+      "bytes": 26075,
+      "sha256": "cdebc4086c7d769ef7d28d0b08f606dfa3d1d7743efea19cd9e2a3853a77d511"
+    },
+    "oct23-unpriced-zero/frontend-final-full.log": {
+      "bytes": 48240,
+      "sha256": "000628e8bc0236f11d7a0639a0d24f731623d97eb4f6dbe1feab645d6546e311"
+    },
+    "oct23-unpriced-zero/sqlite-final1.log": {
+      "bytes": 25243,
+      "sha256": "495b1c06fdb7a5918b9b95f86e41df243363cf0ede2f5e84a8d9fb7489487e31"
+    },
+    "oct23-unpriced-zero/frontend-focused-1.log": {
+      "bytes": 2089,
+      "sha256": "6cbfcc9a2f4c82abf7e7eb266592118e3339850e8de06cfaec38229b10cfade1"
+    },
+    "oct23-unpriced-zero/mysql-attempt3.log": {
+      "bytes": 14624,
+      "sha256": "a1695e4eed4bc85e0357971873ed7b86d05d438b42e15857ded9121605ed2c44"
+    },
+    "oct23-unpriced-zero/mysql-final1.log": {
+      "bytes": 25478,
+      "sha256": "d762bac9783862504e23d2e893821fcdb4c6679f6766dd7c8ed5770dcbf50451"
+    },
+    "oct23-unpriced-zero/known-value-regression-1.log": {
+      "bytes": 144,
+      "sha256": "4760ca0808aa56fe965742a260d919f2d633302bc7f40f105e6bbd64363d3a4c"
+    },
+    "oct23-unpriced-zero/frontend-final-build.log": {
+      "bytes": 26075,
+      "sha256": "5367f270517465b77f3db3d5b900940f467f315bd34af01ea4970b0aea0c1eb6"
+    },
+    "oct23-unpriced-zero/mysql-targeted-1.log": {
+      "bytes": 53884,
+      "sha256": "a24f9560b8708825abdc22279c192887f3a061bc8ffa918163ddc046a65ed80f"
+    },
+    "full-go-0f76d7c-final.log": {
+      "bytes": 4034,
+      "sha256": "6e6b2df336d1898f0b0e55b2ec8b462d49654fdec38af3c73e4f69fafe08f2bd"
+    },
+    "vet-0f76d7c-final.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "build-0f76d7c-final.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "pure-go-sqlite-0f76d7c-final.log": {
+      "bytes": 68,
+      "sha256": "92d43259b2cc71f35495e823721661dfdb91d44b4e01d23d5f68b8cf543f4c2a"
+    },
+    "mysql-core-0f76d7c-final.log": {
+      "bytes": 299,
+      "sha256": "e16074c9ea75482496a8c45b636f92f93c889c4d7dea18eed9d2467ef6af0eaa"
+    },
+    "mysql-jobstore-0f76d7c-final.log": {
+      "bytes": 89,
+      "sha256": "8f326184655a85b4022086c12ee49723f933f001be58f32f0cec1accb2e0b09d"
+    },
+    "mysql-copy-0f76d7c-final.log": {
+      "bytes": 94,
+      "sha256": "c2ce1f877c31b715085110e4189466edd5d113ab35405493f3adc3d5f27bb2b7"
+    }
+  },
+  "historical_failures": [
+    "mysql-targeted-1: invalid zero dates in new fixtures; production SQL/rules unchanged",
+    "mysql-attempt2: missing plan foreign keys in no-order new fixture; original constraints unchanged",
+    "frontend-focused-1: new assertion expected internal Error rather than existing normalized public error; rejection/no-write behavior retained",
+    "one backend-runner call rejected incorrect revision argument before executing checks; corrected exact clean revision then completed all four checks"
+  ],
+  "not_run": [
+    "new-head race/count3",
+    "new-head original capacity load: original physical spool/disk threshold not met",
+    "real external kernel revocation/offline lease",
+    "external payment/coupon end-to-end",
+    "production deployment or data migration"
+  ],
+  "remaining": [
+    "more than 1000 source-order independent termination",
+    "legacy cancel entrance convergence",
+    "other-operation discount and external finite-coupon contract",
+    "P4 complete safe retention/held recovery/growth",
+    "P6 independent worker/local scaling and measured benefit",
+    "P7 comprehensive upgrade/fault/capacity/external acceptance"
+  ],
+  "environment_interrupt": {
+    "transient_unavailable": true,
+    "connection_restored_original_process_retained": true,
+    "duplicate_mysql_start": false
+  },
+  "P4_candidate": {
+    "path": ".codex-local-artifacts/recovery-validation/oct23-observation-retry-candidate",
+    "applied": false,
+    "tested": false
+  }
+}
