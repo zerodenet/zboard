@@ -63,3 +63,6 @@ worker启动前完成，后续真实worker每次领取仍需维护门禁，不�
 见计划末节及各自validation收据。两类投影共享定义和默认入口接入另见
 [共享组合](core-convergence-shared-projection-composition.md)。独立worker/伸缩与收益
 仍未交付，376两次容量尝试被原磁盘预检拒绝，均未执行60秒负载。
+
+
+2026-10-23接续：上述12receipt为原版本的实际依赖。0061之后node-observation ACK已读退役标记/写复查时间，本轮预检已增为13receipt并复用只读列/默认值核对，不对retention扫描或无关commerce增加依赖。正常/丢回执/丢两列的SQLite及实际MySQL、原全部只读矩阵已通过；原失败和新提交待验项见[0061准备检查修复](core-convergence-prepared-observation-material.md)。这不表示worker/伸缩实现完成。

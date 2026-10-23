@@ -1706,3 +1706,12 @@ e1ae956完整本地后端/原MySQL三组及自身CI39969113021六项已结束通
 工作台新修复已实际应用并专项验证：当前+30天前主体快照不再冒充完整当前7连接/2活跃订阅；已观测汇总单独保留，当前完整计数和覆盖为unknown，观测0与缺失null分开。页面“已观测活跃订阅/已观测连接”解释覆盖/新鲜度未知，并兼容旧服务端布尔值和计数。原当前2查询、完整4聚合+2pending探针保持，未改业务/金融/授权或源数据。
 
 Go/HTTP13顶层105.761s、真实MySQL1顶层7.362s均零skip；最终前端1176pass/8既有skip、155.893s，冻结安装和build35.940s通过；OpenAPI1.34.3原282warning通过。旧HTTP反例104.280s和首轮时间内部表示比较失败104.584s保留。新提交CI、本地整包及原容量/race3尚未执行，不借6bd六绿。[行为/兼容/回退](core-convergence-dashboard-observation-coverage.md) · [各轮源码、原命令及所有结果](validation/2026-10-23-dashboard-observation-coverage.json)。另发现只读prepared预检还缺0061 ACK所需字段，下一小批实际修复。
+
+
+### P4/P6 0061实际worker依赖的只读预检（2026-10-23）
+
+已实际修复ACK依赖漂移：当前worker需读material_retired_at/写material_review_at，原12receipt预检仍错误放行旧0060/丢列数据库。新增第13个0061实际依赖，复用只读列/默认值检查；不改0060基础列清单、不执行reconcile/DDL/补默认、不扩大无关依赖。原维护权威和运行时每次领取暂停边界保持。
+
+最终Go7顶层116.117s及实际MySQL1顶层21.437s零skip全通过、来源一致，原全表/DDL哈希与只读门禁不变；SQLite实际main子进程核对不开HTTP/spool、不bootstrap/迁移凭据。首轮81.300s含两项真实错误放行及一项夹具连带错误，37.632s为Cleanup中已取消Context的正向检查错误，均保留并准确区分；未删除断言。无新SQL/迁移，原157份保持，前端/SDK未变。
+
+[行为/兼容/回退](core-convergence-prepared-observation-material.md) · [原命令、源码/日志及所有结果](validation/2026-10-23-prepared-observation-material.json)。新提交CI待验，原环境完整backend4/MySQL3/race3/容量未执行，不借8ae或6bd结果。独立worker/伸缩仍未实现，本机存储新增尚无实际结果；P4/P6/P7整体未完成。

@@ -80,7 +80,7 @@ func ValidatePreparedProjectionSchema(ctx context.Context, db *gorm.DB) error {
 	// unsafe. Extra history (including the retained development chain accepted
 	// by preparePreReleaseMigrationHistory) is not reinterpreted or rewritten.
 	// This validator does not certify whole-database or future-binary compatibility.
-	required := []string{"0001_init.up.sql", "0007_jobs.up.sql", "0008_job_timeouts.up.sql", "0014_job_attempt_retries.up.sql", "0015_job_schedule_planning.up.sql", "0016_protocol_endpoint_usage_daily.up.sql", "0024_traffic_usage_hourly.up.sql", "0025_traffic_hourly_application.up.sql", usageProjectionSchemaVersion, hourlyProjectionSchemaVersion, nodeAssetSchemaVersion, nodeObservationSchemaVersion}
+	required := []string{"0001_init.up.sql", "0007_jobs.up.sql", "0008_job_timeouts.up.sql", "0014_job_attempt_retries.up.sql", "0015_job_schedule_planning.up.sql", "0016_protocol_endpoint_usage_daily.up.sql", "0024_traffic_usage_hourly.up.sql", "0025_traffic_hourly_application.up.sql", usageProjectionSchemaVersion, hourlyProjectionSchemaVersion, nodeAssetSchemaVersion, nodeObservationSchemaVersion, nodeObservationMaterialVersion}
 	for _, v := range required {
 		if !seen[v] {
 			return projectionError("required migration receipt missing: "+v, nil)
@@ -223,6 +223,17 @@ func ValidatePreparedProjectionSchema(ctx context.Context, db *gorm.DB) error {
 		if e = validateObservationShape(db, table); e != nil {
 			return projectionError("observation shape: "+table, e)
 		}
+	}
+	// Current node-observation ACKs read retirement markers and write the
+	// review schedule. A prepared0060 database cannot run this binary's worker.
+	// Reuse inspection only: reconciliation/index repair would violate this
+	// admission boundary's strict read-only contract.
+	material, recorded, materialErr := inspectObservationMaterialSchema(db)
+	if materialErr != nil {
+		return projectionError("observation material evidence", materialErr)
+	}
+	if !recorded || len(material) != 2 {
+		return projectionError("observation material evidence incomplete", nil)
 	}
 	if err = projectionJobColumns(db, tables); err != nil {
 		return err

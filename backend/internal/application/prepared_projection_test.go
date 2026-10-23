@@ -127,6 +127,76 @@ func assertPreparedProjectionDatabase(t *testing.T, driver string) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("observation_material_receipt_required", func(t *testing.T) {
+		const version = "0061_node_observation_material_retention.up.sql"
+		var receipt map[string]any
+		if err := db.Table("schema_migrations").Where("version = ?", version).Take(&receipt).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Exec("DELETE FROM schema_migrations WHERE version = ?", version).Error; err != nil {
+			t.Fatal(err)
+		}
+		removed := true
+		restore := func() {
+			if removed {
+				if err := db.Table("schema_migrations").Create(receipt).Error; err != nil {
+					t.Fatal(err)
+				}
+				removed = false
+			}
+		}
+		t.Cleanup(restore)
+		check(t, datastore.ErrProjectionNotPrepared)
+		restore()
+		check(t, nil)
+	})
+	for _, column := range []string{"material_review_at", "material_retired_at"} {
+		t.Run("observation_material_"+column+"_required", func(t *testing.T) {
+			indexDropped, columnDropped := false, false
+			restore := func() {
+				// Fixture-only restoration, including after a failing assertion.
+				// Read-only inspection never repairs recorded evidence loss.
+				if columnDropped {
+					kind := "datetime"
+					if mysql {
+						kind = "datetime(3)"
+					}
+					definition := " NULL DEFAULT NULL"
+					if column == "material_review_at" {
+						definition = " NOT NULL DEFAULT '1970-01-01 00:00:00.000'"
+					}
+					if err := db.Exec("ALTER TABLE node_observation_intents ADD COLUMN " + column + " " + kind + definition).Error; err != nil {
+						t.Fatal(err)
+					}
+					columnDropped = false
+				}
+				if indexDropped {
+					if err := db.Exec("CREATE INDEX idx_observation_material_review ON node_observation_intents(status,material_retired_at,material_review_at,id)").Error; err != nil {
+						t.Fatal(err)
+					}
+					indexDropped = false
+				}
+			}
+			t.Cleanup(restore)
+			drop := "DROP INDEX idx_observation_material_review"
+			if mysql {
+				drop += " ON node_observation_intents"
+			}
+			if err := db.Exec(drop).Error; err != nil {
+				t.Fatal(err)
+			}
+			indexDropped = true
+			if err := db.Migrator().DropColumn("node_observation_intents", column); err != nil {
+				t.Fatal(err)
+			}
+			columnDropped = true
+			check(t, datastore.ErrProjectionNotPrepared)
+			restore()
+			// t.Context is canceled before Cleanup callbacks; validate while
+			// this subtest is still running, and reserve Cleanup for restoration.
+			check(t, nil)
+		})
+	}
 	t.Run("retained_development_history", func(t *testing.T) {
 		old := "0032_subscription_policy_group_targets.up.sql"
 		if err := db.Table("schema_migrations").Create(map[string]any{"version": old, "applied_at": time.Now().UTC()}).Error; err != nil {
