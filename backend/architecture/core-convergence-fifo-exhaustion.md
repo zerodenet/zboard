@@ -9,3 +9,5 @@
 本机约剩20MB，不能安全新增handler链接或整包实库；新增双库回归尚未本地执行，由提交后的精确新头CI独立执行。前批49dc backend/frontend/contract/compose/zrs成功只属于49dc；旧CI不用于本修复验收。原门槛、断言、前端六项排除及所有失败保留。无SQL/字段/迁移或生产操作，回退仅会重新拒绝多批正常耗尽的自动估值，既有账本和终止记录应保留。
 
 [冻结源码、真实反例、纯包结果与未执行列表](validation/2026-10-23-fifo-exhaustion.json)。其他无历史证据的独立0元终止、P4/P6/P7及外部能力缺口仍按当前计划保留。
+
+后续ad自己的CI39894136277六项及完整本地后端、原MySQL三命令、双库race/count3全部通过，真实耗尽回归已在SQLite/MySQL执行；初始本地未执行状态和旧反例不改写。[最终代码证据](validation/2026-10-23-core-convergence-final.json)。
