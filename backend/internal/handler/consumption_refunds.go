@@ -11,7 +11,7 @@ import (
 func consumptionRefundError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, commerce.ErrConsumptionRefundReview):
-		writeJSON(w, http.StatusConflict, "该订单权益尚未明确终止；部分退款对有效期和流量的处理需先核对，本次未退款或修改权益。", nil)
+		writeJSON(w, http.StatusConflict, "有效订阅不支持保留权益的部分退款。请在订阅页整份退订，按剩余价值退款并终止全部剩余权益；本次未退款或修改权益。", nil)
 	case errors.Is(err, commerce.ErrConsumptionRefundConflict):
 		writeJSON(w, http.StatusConflict, "该退款标识已用于不同内容，请先核对已有退款记录。", nil)
 	case errors.Is(err, commerce.ErrSubscriptionSettlementConflict):

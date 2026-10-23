@@ -1,6 +1,6 @@
 <template>
   <UiSection title="获批消费退款" description="消费退款统一进入站内余额；原资金来源保留，不发起渠道退款或提现。">
-    <PageAlert v-if="!eligible" tone="warning" title="当前订单不能执行消费退款">仅支持已有明确结束记录且已履约的历史消费订单。有效权益的部分退款需要先核对处理规则，本入口不会变更当前订阅。</PageAlert>
+    <PageAlert v-if="!eligible" tone="warning" title="当前订单不能执行消费退款">仅支持已有明确结束记录且已履约的历史消费订单。有效订阅请在订阅页整份退订，按剩余价值退款并终止全部剩余权益；不退原支付全款，也不保留部分套餐。</PageAlert>
     <template v-else>
       <p>来源订单 #{{ order.id }} · 用户 #{{ order.user_id }} · {{ order.currency }}。已退款、已换购或退订转换的价值不能再次退还；最终可退预算由服务器核对。</p>
       <p>原始渠道收款请核对本订单的“渠道收款归属”。本次退款不会终止、恢复或调整该用户当前的其他权益。</p>

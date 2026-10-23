@@ -125,6 +125,9 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 		sub.StartAt = now
 		sub.EndedAt, sub.EndReason = nil, ""
 	} else if fulfillment.AddQuota {
+		if request.TrafficBytes < 0 || sub.FlowTotal > math.MaxInt64-request.TrafficBytes {
+			return Grant{}, errors.New("invalid additional quota")
+		}
 		delta = request.TrafficBytes
 		sub.FlowTotal += delta
 	}

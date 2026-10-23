@@ -56,9 +56,9 @@ func (s ConsumptionRefunds) Approve(ctx context.Context, actor, orderID uint, in
 		if order.OrderType == "topup" {
 			return &commerce.ValidationError{Message: "充值不是消费订单，不能通过消费退款重复增加余额。"}
 		}
-		// Active-term partial refunds need an explicit entitlement policy. The
-		// safe supported slice is an already closed purchase; a newer term on
-		// the same subscription is never shortened or otherwise rewritten here.
+		// Active subscriptions use whole-subscription residual termination. This
+		// historical-order approval never keeps an active term after a partial
+		// refund or rewrites a newer term on the same subscription.
 		if order.SubscriptionEndedAt == nil || order.SubscriptionEndReason == "" {
 			return commerce.ErrConsumptionRefundReview
 		}

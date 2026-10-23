@@ -1,5 +1,5 @@
 <template>
-  <UiSection :title="`退订订阅 #${subscriptionId}`" description="终止本份订阅，按实际成交残值退入站内余额。">
+  <UiSection :title="`退订订阅 #${subscriptionId}`" description="终止本份订阅的全部剩余权益，按实际成交残值退入站内余额。">
     <div class="panel-body stack">
       <PageAlert v-if="error" tone="danger" title="退订需要核对">{{ error }}</PageAlert>
       <PageAlert v-if="receipt" tone="success" title="退订已结算">
@@ -7,7 +7,7 @@
         节点撤权等待核验；当前连接终止取决于节点的实际能力。其他订阅继续独立使用。
       </PageAlert>
       <template v-else>
-        <p>确认后不再保留续费恢复窗口。余额退款不提供提现；历史订单和计量记录保留。</p>
+        <p>退的是剩余价值，不是原支付全款；不保留部分套餐。确认后不再保留续费恢复窗口。余额退款不提供提现；历史订单和计量记录保留。</p>
         <p v-if="quote">本周期残值 {{ money(quote.current_minor, quote.currency) }}，后续已付周期 {{ money(quote.future_minor, quote.currency) }}，合计 {{ money(quote.total_minor, quote.currency) }}。确认时会重新校验用量和权益。</p>
         <p v-if="intent">已有一笔待核对请求。重新登录或刷新页面后，需要再次点击才能重试原请求。</p>
         <UiButton v-if="!intent || knownConflict" type="button" variant="secondary" :disabled="busy || blocked" @click="loadQuote">{{ quote ? '重新核对残值' : '核对退订残值' }}</UiButton>

@@ -146,6 +146,7 @@ describe('administrative consumption refunds', () => {
     const wrapper = render({ ...order, ...delta } as AdminOrderDetail)
     expect(wrapper.find('form').exists()).toBe(false)
     expect(wrapper.text()).toContain('当前订单不能执行消费退款')
+    expect(wrapper.text()).toContain('整份退订，按剩余价值退款并终止全部剩余权益')
     expect(approveConsumptionRefund).not.toHaveBeenCalled()
     wrapper.unmount()
   })

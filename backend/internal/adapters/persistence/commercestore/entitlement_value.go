@@ -83,6 +83,13 @@ func captureEntitlementValue(tx *gorm.DB, order *model.Order, sub model.Subscrip
 	if json.Unmarshal([]byte(order.PurchaseSnapshot), &purchase) != nil || purchase.ValueAllocationModel == "" {
 		snap.AllocationModel = "purchase_value_policy_unavailable"
 	}
+	if previous != nil && snap.AllocationModel != "purchase_value_policy_unavailable" && snap.PaymentVerified &&
+		entitlements.IsPerpetualEnd(previous.EndAt) && sub.EndAt.Equal(previous.EndAt) && sub.StartAt.Equal(previous.StartAt) &&
+		previous.FlowUsed == sub.FlowUsed && previous.CycleStartUsed == sub.CycleStartUsed && sub.FlowTotal > previous.FlowTotal &&
+		sub.FlowTotal-previous.FlowTotal == order.TrafficBytes && sub.NextResetAt == nil && (sub.ResetPolicy == 0 || sub.ResetPolicy == 5) &&
+		(order.OrderType == "traffic_pack" || order.OrderType == "renewal" && order.BillingUnit == "once") {
+		snap.Mode, snap.AllocationModel = "perpetual_quota_addition", commerce.PerpetualQuotaFIFOAllocation
+	}
 	if snap.AllocationModel == "uniform_paid_units_v1" && snap.PaymentVerified && (snap.Mode == "new_term" || snap.Mode == "extended_term" || snap.Mode == "recovery_term" || snap.Mode == "replacement_term") {
 		if snap.BillingUnit == "once" && snap.BillingValue == 1 && entitlements.IsPerpetualEnd(snap.TermEndAt) && (sub.ResetPolicy == 0 || sub.ResetPolicy == 5) && sub.NextResetAt == nil && snap.Mode != "extended_term" {
 			snap.AllocationModel = commerce.PerpetualQuotaAllocation

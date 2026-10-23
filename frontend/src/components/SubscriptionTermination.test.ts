@@ -13,7 +13,7 @@ async function click(wrapper: ReturnType<typeof open>, label: string) { await wr
 beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); state.app = reactive({ user: { id: 1 } }); vi.mocked(fetchSubscriptionValue).mockResolvedValue(quote); vi.mocked(terminateSubscription).mockResolvedValue(result) })
 it('requires explicit quote and confirmation; reload never replays the saved write', async () => {
  let wrapper = open(); await flushPromises(); expect(fetchSubscriptionValue).not.toHaveBeenCalled(); expect(terminateSubscription).not.toHaveBeenCalled()
- await click(wrapper, '核对退订残值'); expect(wrapper.text()).toContain('CNY 92.00')
+ await click(wrapper, '核对退订残值'); expect(wrapper.text()).toContain('CNY 92.00'); expect(wrapper.text()).toContain('终止本份订阅的全部剩余权益'); expect(wrapper.text()).toContain('退的是剩余价值，不是原支付全款')
  vi.mocked(terminateSubscription).mockRejectedValueOnce(new Error('lost response')); await click(wrapper, '确认终止订阅并退款至余额')
  const original = vi.mocked(terminateSubscription).mock.calls[0]![1]; wrapper.unmount(); wrapper = open(); await flushPromises(); expect(terminateSubscription).toHaveBeenCalledTimes(1)
  await click(wrapper, '核对并重试原退订请求'); expect(terminateSubscription).toHaveBeenLastCalledWith(7, original); expect(wrapper.text()).toContain('节点撤权等待核验'); expect(wrapper.emitted('settled')).toHaveLength(1); wrapper.unmount()
