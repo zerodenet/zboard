@@ -220,7 +220,7 @@ install -d -m 0700 "$backup"
 %s
 validate_event_state_plan
 had_bin=0; had_env=0; had_service=0; old_active=0; old_enabled=0
-old_link="$(readlink /etc/zerodenet/current.json 2>/dev/null || true)"
+backup_current_configuration
 if [ -f /usr/local/bin/zero ]; then cp -a /usr/local/bin/zero "$backup/zero"; had_bin=1; fi
 if [ -f /etc/zerodenet/zero.env ]; then cp -a /etc/zerodenet/zero.env "$backup/zero.env"; had_env=1; fi
 if [ -f /etc/systemd/system/zero.service ]; then cp -a /etc/systemd/system/zero.service "$backup/zero.service"; had_service=1; fi
@@ -231,7 +231,6 @@ printf '%%s\n' "$had_env" > "$backup/had_env"
 printf '%%s\n' "$had_service" > "$backup/had_service"
 printf '%%s\n' "$old_active" > "$backup/old_active"
 printf '%%s\n' "$old_enabled" > "$backup/old_enabled"
-printf '%%s\n' "$old_link" > "$backup/old_link"
 rollback() {
   if [ "${event_state_touched:-0}" = 1 ]; then restore_event_state || return 1; fi
   if [ "$had_bin" = "1" ]; then
@@ -240,7 +239,7 @@ rollback() {
   else
     rm -f /usr/local/bin/zero
   fi
-  if [ -n "$old_link" ]; then ln -sfn "$old_link" /etc/zerodenet/current.json; else rm -f /etc/zerodenet/current.json; fi
+  restore_current_configuration || return 1
   if [ "$had_env" = "1" ]; then cp -a "$backup/zero.env" /etc/zerodenet/zero.env; else rm -f /etc/zerodenet/zero.env; fi
   if [ "$had_service" = "1" ]; then cp -a "$backup/zero.service" /etc/systemd/system/zero.service; else rm -f /etc/systemd/system/zero.service; fi
   systemctl daemon-reload >/dev/null 2>&1 || true
@@ -264,7 +263,7 @@ install -m 0755 "$stage/cleanup-zero-node.sh" /usr/local/sbin/zboard-zero-cleanu
 trap - EXIT
 rm -rf "$stage"
 printf 'ZBOARD_KERNEL_ACTIVATED=1\n'
-`, shellQuote(stage), shellQuote(generation), shellQuote(backup), shellQuote(binarySHA), kernelEventStateShell)
+`, shellQuote(stage), shellQuote(generation), shellQuote(backup), shellQuote(binarySHA), kernelEventStateShell+kernelConfigurationShell)
 }
 
 func BuildKernelRollbackScript(operationID uint) string {
@@ -284,8 +283,8 @@ had_env="$(cat "$backup/had_env")"
 had_service="$(cat "$backup/had_service")"
 old_active="$(cat "$backup/old_active")"
 old_enabled="$(cat "$backup/old_enabled")"
-old_link="$(cat "$backup/old_link")"
 case "$had_bin$had_env$had_service$old_active$old_enabled" in *[!01]*) exit 1;; esac
+validate_configuration_backup
 restore_event_state
 if [ "$had_bin" = "1" ]; then
   install -m 0755 "$backup/zero" /usr/local/bin/zero.rollback
@@ -293,7 +292,7 @@ if [ "$had_bin" = "1" ]; then
 else
   rm -f /usr/local/bin/zero
 fi
-if [ -n "$old_link" ]; then ln -sfn "$old_link" /etc/zerodenet/current.json; else rm -f /etc/zerodenet/current.json; fi
+restore_current_configuration
 if [ "$had_env" = "1" ]; then cp -a "$backup/zero.env" /etc/zerodenet/zero.env; else rm -f /etc/zerodenet/zero.env; fi
 if [ "$had_service" = "1" ]; then cp -a "$backup/zero.service" /etc/systemd/system/zero.service; else rm -f /etc/systemd/system/zero.service; fi
 rm -f "$generation"
@@ -301,7 +300,7 @@ systemctl daemon-reload
 if [ "$old_enabled" = "1" ]; then systemctl enable zero >/dev/null; else systemctl disable zero >/dev/null 2>&1 || true; fi
 if [ "$old_active" = "1" ]; then systemctl restart zero; else systemctl stop zero >/dev/null 2>&1 || true; fi
 printf 'ZBOARD_KERNEL_ROLLED_BACK=1\n'
-`, shellQuote(backup), shellQuote(generation), kernelEventStateShell)
+`, shellQuote(backup), shellQuote(generation), kernelEventStateShell+kernelConfigurationShell)
 }
 
 func shellQuote(value string) string {
