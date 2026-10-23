@@ -31,6 +31,8 @@ export interface DashboardBusinessOverview {
 }
 
 export interface DashboardServiceOverview {
+  observed_active_subscriptions?: number | null
+  observed_active_flows?: number | null
   active_subscriptions: number | null
   active_flows: number | null
   previous_traffic_bytes?: number
@@ -81,6 +83,8 @@ export interface DashboardOverview {
   infrastructure: DashboardInfrastructureOverview
   coverage: {
     principal_flows: boolean
+    principal_flows_state?: string
+    principal_flows_reason?: string
   }
   trend: DashboardTrendPoint[]
   as_of: string

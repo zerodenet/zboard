@@ -1697,3 +1697,12 @@ e1ae956完整本地后端/原MySQL三组及自身CI39969113021六项已结束通
 真实钱包付款10000分并计量消耗20%后残值8000分，旧历史逐行摘要未变；新增真实预留竞争被整笔拒绝、显式重试才完成。旧代码目标3场景实际失败13.920s；修复后Go26顶层/111.654s和实际MySQL11顶层/53.631s全通过、零skip、来源一致。原折价夹具准备失败101.215s和首轮并发探针失败108.096s保留，不当作目标业务复现或删掉断言。157份SQL逐一核对未改。新提交完整检查/自身CI/race3尚待运行，不借6eb的完整成功。
 
 [行为、兼容/回退和边界](core-convergence-termination-closed-history.md) · [原命令/来源/日志与所有失败](validation/2026-10-23-termination-closed-history.json)。超过1000当前来源、其他历史读取器、P4总增长、原容量/P6/P7仍未完成；没有合并、发布或生产迁移。
+
+
+### P2历史范围精确CI与P4/P5工作台观察覆盖（2026-10-23）
+
+6bd9334669b6639ee0329f4399384f9423661c04自身CI39990119933现六项全部成功，经REST核对相同head；真实MySQL datastore209.604/handler841.293/networkstore220.770/application25.172/jobstore127.285/platformstore248.909s，原15m不变。本头本地完整后端4/MySQL3/race3未执行：限定空闲缓存清理后仅531,537,920B，低于前次完整后端实际恢复的630,730,752B编译缓存；没有推测性耗尽磁盘、扩大清理、换环境、拆分整包或拿6eb本地结果代替。[6bd自己的最终回执及未执行项](validation/2026-10-23-termination-closed-history-final.json)。
+
+工作台新修复已实际应用并专项验证：当前+30天前主体快照不再冒充完整当前7连接/2活跃订阅；已观测汇总单独保留，当前完整计数和覆盖为unknown，观测0与缺失null分开。页面“已观测活跃订阅/已观测连接”解释覆盖/新鲜度未知，并兼容旧服务端布尔值和计数。原当前2查询、完整4聚合+2pending探针保持，未改业务/金融/授权或源数据。
+
+Go/HTTP13顶层105.761s、真实MySQL1顶层7.362s均零skip；最终前端1176pass/8既有skip、155.893s，冻结安装和build35.940s通过；OpenAPI1.34.3原282warning通过。旧HTTP反例104.280s和首轮时间内部表示比较失败104.584s保留。新提交CI、本地整包及原容量/race3尚未执行，不借6bd六绿。[行为/兼容/回退](core-convergence-dashboard-observation-coverage.md) · [各轮源码、原命令及所有结果](validation/2026-10-23-dashboard-observation-coverage.json)。另发现只读prepared预检还缺0061 ACK所需字段，下一小批实际修复。

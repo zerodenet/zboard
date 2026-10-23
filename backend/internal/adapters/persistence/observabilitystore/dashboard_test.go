@@ -107,7 +107,7 @@ func TestDashboardProjectionPreservesFactsAndBoundedPendingChecks(t *testing.T) 
 	if result.Business.ActiveSubscriptions != 1 || result.Subscriptions.ExpiringWithin24Hours != 1 || result.Subscriptions.QuotaExhausted != 1 {
 		t.Fatalf("subscriptions = business:%+v health:%+v", result.Business, result.Subscriptions)
 	}
-	if result.Service.TrafficBytes != 321 || result.Service.EnabledNodes != 2 || result.Service.OnlineNodes != 1 || result.Service.ActiveSubscriptions == nil || *result.Service.ActiveSubscriptions != 1 || result.Service.ActiveFlows == nil || *result.Service.ActiveFlows != 3 {
+	if result.Service.TrafficBytes != 321 || result.Service.EnabledNodes != 2 || result.Service.OnlineNodes != 1 || result.Service.ObservedActiveSubscriptions == nil || *result.Service.ObservedActiveSubscriptions != 1 || result.Service.ObservedActiveFlows == nil || *result.Service.ObservedActiveFlows != 3 || result.Service.ActiveSubscriptions != nil || result.Service.ActiveFlows != nil || result.Coverage.PrincipalFlows || result.Coverage.PrincipalFlowsState != "unknown" {
 		t.Fatalf("service = %+v", result.Service)
 	}
 	if result.Attention.OfflineNodes != 1 || result.Attention.PendingTickets != 1 || result.Attention.UnresolvedDeployments != 1 || result.Infrastructure.SSHVerified != 1 || result.Infrastructure.TrafficReady != 1 || result.Infrastructure.ActiveProtocolEndpoints != 1 || result.Infrastructure.PublishedPlans != 1 {
@@ -125,7 +125,7 @@ func TestDashboardProjectionPreservesFactsAndBoundedPendingChecks(t *testing.T) 
 		}
 		switch view {
 		case "current":
-			if focused.Business.ActiveSubscriptions != result.Business.ActiveSubscriptions || !reflect.DeepEqual(focused.Service.ActiveFlows, result.Service.ActiveFlows) || focused.Attention != result.Attention || focused.Subscriptions != result.Subscriptions || focused.Infrastructure != result.Infrastructure {
+			if focused.Business.ActiveSubscriptions != result.Business.ActiveSubscriptions || (!reflect.DeepEqual(focused.Service.ObservedActiveFlows, result.Service.ObservedActiveFlows) || focused.Service.ActiveFlows != nil || focused.Coverage != result.Coverage) || focused.Attention != result.Attention || focused.Subscriptions != result.Subscriptions || focused.Infrastructure != result.Infrastructure {
 				t.Fatalf("current facts changed: %+v", focused)
 			}
 			if counter.queries.Load() != 2 {

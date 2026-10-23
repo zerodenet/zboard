@@ -8749,8 +8749,10 @@ components:
           properties:
             traffic_bytes: {type: integer, format: int64}
             previous_traffic_bytes: {type: integer, format: int64}
-            active_subscriptions: {type: integer, format: int64, nullable: true}
-            active_flows: {type: integer, format: int64, nullable: true}
+            active_subscriptions: {type: integer, format: int64, nullable: true, description: Complete current count; null while runtime snapshot coverage is unverified.}
+            active_flows: {type: integer, format: int64, nullable: true, description: Complete current count; null while runtime snapshot coverage is unverified.}
+            observed_active_subscriptions: {type: integer, format: int64, nullable: true, description: Persisted per-principal snapshot aggregate with unverified coverage and freshness; null if no snapshot exists.}
+            observed_active_flows: {type: integer, format: int64, nullable: true, description: Persisted per-principal snapshot aggregate with unverified coverage and freshness; an observed zero is not proof of zero current connections.}
             online_nodes: {type: integer, format: int64}
             enabled_nodes: {type: integer, format: int64}
         subscriptions:
@@ -8781,7 +8783,9 @@ components:
         coverage:
           type: object
           properties:
-            principal_flows: {type: boolean}
+            principal_flows: {type: boolean, description: Whether complete current runtime coverage has been verified; false for existing per-principal snapshots.}
+            principal_flows_state: {type: string, description: Coverage classification; unknown without a verified complete runtime snapshot.}
+            principal_flows_reason: {type: string, description: Explains missing observations or unverified snapshot coverage.}
         trend:
           type: array
           items:
@@ -8802,8 +8806,10 @@ components:
         service:
           type: object
           properties:
-            active_subscriptions: {type: integer, format: int64, nullable: true}
-            active_flows: {type: integer, format: int64, nullable: true}
+            active_subscriptions: {type: integer, format: int64, nullable: true, description: Complete current count; null while runtime snapshot coverage is unverified.}
+            active_flows: {type: integer, format: int64, nullable: true, description: Complete current count; null while runtime snapshot coverage is unverified.}
+            observed_active_subscriptions: {type: integer, format: int64, nullable: true, description: Persisted per-principal snapshot aggregate with unverified coverage and freshness; null if no snapshot exists.}
+            observed_active_flows: {type: integer, format: int64, nullable: true, description: Persisted per-principal snapshot aggregate with unverified coverage and freshness; an observed zero is not proof of zero current connections.}
             online_nodes: {type: integer, format: int64}
             enabled_nodes: {type: integer, format: int64}
         subscriptions: {$ref: '#/components/schemas/DashboardOverview/properties/subscriptions'}

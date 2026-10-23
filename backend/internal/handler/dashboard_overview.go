@@ -159,7 +159,7 @@ func (h *handlers) loadDashboardView(ctx context.Context, period dashboardPeriod
 	switch view {
 	case "current":
 		return map[string]any{"as_of": now, "active_subscriptions": snapshot.Business.ActiveSubscriptions,
-			"service":       map[string]any{"active_subscriptions": snapshot.Service.ActiveSubscriptions, "active_flows": snapshot.Service.ActiveFlows, "online_nodes": snapshot.Service.OnlineNodes, "enabled_nodes": snapshot.Service.EnabledNodes},
+			"service":       map[string]any{"active_subscriptions": snapshot.Service.ActiveSubscriptions, "active_flows": snapshot.Service.ActiveFlows, "observed_active_subscriptions": snapshot.Service.ObservedActiveSubscriptions, "observed_active_flows": snapshot.Service.ObservedActiveFlows, "online_nodes": snapshot.Service.OnlineNodes, "enabled_nodes": snapshot.Service.EnabledNodes},
 			"subscriptions": snapshot.Subscriptions, "attention": snapshot.Attention, "infrastructure": snapshot.Infrastructure, "coverage": snapshot.Coverage}, nil
 	case "statistics":
 		b := snapshot.Business

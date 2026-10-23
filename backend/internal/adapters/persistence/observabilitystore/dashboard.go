@@ -296,11 +296,15 @@ func (s Dashboard) loadDashboard(ctx context.Context, period observability.Dashb
 		Subscriptions:  observability.DashboardSubscriptionHealth{ExpiringWithin24Hours: subscriptions.ExpiringWithin24Hours, ExpiringWithin3Days: subscriptions.ExpiringWithin3Days, ExpiringWithin7Days: subscriptions.ExpiringWithin7Days, QuotaExhausted: subscriptions.QuotaExhausted},
 		Attention:      observability.DashboardAttention{OfflineNodes: offline, UnresolvedDeployments: operational.UnresolvedDeployments, PendingTickets: operational.PendingTickets},
 		Infrastructure: observability.DashboardInfrastructure{NodesTotal: operational.NodesTotal, NodesEnabled: operational.NodesEnabled, ConnectorOnline: operational.ConnectorOnline, SSHVerified: operational.SSHVerified, TrafficReady: operational.TrafficReady, ProtocolEndpoints: operational.ProtocolEndpoints, ActiveProtocolEndpoints: operational.ActiveProtocolEndpoints, PublishedPlans: operational.PublishedPlans, UnresolvedDeployments: operational.UnresolvedDeployments},
-		Coverage:       observability.DashboardCoverage{PrincipalFlows: operational.ObservedScopes > 0}, Trend: trend,
+		// Existing per-principal lifecycle snapshots do not certify a full
+		// registry snapshot, coverage of all nodes, or observation freshness.
+		// In particular a persisted zero is not proof of zero live connections.
+		Coverage: observability.DashboardCoverage{PrincipalFlows: false, PrincipalFlowsState: "unknown", PrincipalFlowsReason: "no_principal_observations"}, Trend: trend,
 	}
-	if result.Coverage.PrincipalFlows {
+	if operational.ObservedScopes > 0 {
 		activeSubscriptions, activeFlows := operational.ActiveSubscriptions, operational.ActiveFlows
-		result.Service.ActiveSubscriptions, result.Service.ActiveFlows = &activeSubscriptions, &activeFlows
+		result.Service.ObservedActiveSubscriptions, result.Service.ObservedActiveFlows = &activeSubscriptions, &activeFlows
+		result.Coverage.PrincipalFlowsReason = "snapshot_coverage_unverified"
 	}
 	return result, nil
 }
