@@ -278,7 +278,7 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.controlled_wallet_debit" && row.Owner == "commerce" {
 			controlledDebit = true
 		}
-		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.subscription_unsubscribe" && row.Owner == "commerce" {
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.subscription_unsubscribe" && row.Owner == "commerce" && row.File == "internal/adapters/persistence/commercestore/subscription_termination.go" {
 			unsubscribe = true
 		}
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.automatic_renewal" && row.Owner == "commerce" {

@@ -24,7 +24,7 @@ func terminationReceipt(row model.SubscriptionValueSettlement) commerce.Subscrip
 	return commerce.SubscriptionTerminationReceipt{ID: row.ID, SubscriptionID: row.SubscriptionID, Currency: row.Currency, AmountMinor: row.WalletMinor, WalletEntryID: row.EntryID, Status: "canceled", RevocationStatus: "pending_verification", CreatedAt: row.CreatedAt}
 }
 func (s SubscriptionTermination) Terminate(ctx context.Context, actor, id uint, in commerce.SubscriptionTerminationRequest) (out commerce.SubscriptionTerminationReceipt, err error) {
-	return s.terminate(ctx, actor, actor, id, in, nil)
+	return s.terminate(ctx, actor, actor, id, in, nil, nil)
 }
 
 func (s SubscriptionTermination) TerminateForAdministrator(ctx context.Context, actor, id uint, in commerce.AdministrativeSubscriptionTerminationRequest) (commerce.SubscriptionTerminationReceipt, error) {
@@ -37,10 +37,10 @@ func (s SubscriptionTermination) TerminateForAdministrator(ctx context.Context, 
 	if err := s.DB.WithContext(ctx).Select("id", "user_id").First(&sub, id).Error; err != nil {
 		return commerce.SubscriptionTerminationReceipt{}, resourceError(err)
 	}
-	return s.terminate(ctx, actor, sub.UserID, id, in.SubscriptionTerminationRequest, &in)
+	return s.terminate(ctx, actor, sub.UserID, id, in.SubscriptionTerminationRequest, &in, nil)
 }
 
-func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id uint, in commerce.SubscriptionTerminationRequest, administrative *commerce.AdministrativeSubscriptionTerminationRequest) (out commerce.SubscriptionTerminationReceipt, err error) {
+func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id uint, in commerce.SubscriptionTerminationRequest, administrative *commerce.AdministrativeSubscriptionTerminationRequest, legacy *legacyCancellationCommand) (out commerce.SubscriptionTerminationReceipt, err error) {
 	if !creationKeyPattern.MatchString(in.IdempotencyKey) {
 		return out, &commerce.ValidationError{Message: "退订请求标识无效。"}
 	}
@@ -82,35 +82,42 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 				return commerce.ErrOrderPermission
 			}
 		}
-		var old model.SubscriptionValueSettlement
-		lookupErr := tx.Where("request_key = ?", key).First(&old).Error
-		if administrative != nil {
-			var mutation model.SubscriptionMutation
-			mutationErr := tx.Where("idempotency_key = ?", key).First(&mutation).Error
-			if mutationErr == nil {
-				if lookupErr == nil {
-					return commerce.ErrSubscriptionSettlementConflict
-				}
-				if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
-					return lookupErr
-				}
-				var replayErr error
-				out, replayErr = unpricedTerminationReplay(tx, mutation, actor, owner, id, fingerprint)
+		if legacy != nil {
+			found, replayErr := lookupLegacyCancellation(tx, actor, legacy)
+			if replayErr != nil || found {
 				return replayErr
 			}
-			if !errors.Is(mutationErr, gorm.ErrRecordNotFound) {
-				return mutationErr
+		} else {
+			var old model.SubscriptionValueSettlement
+			lookupErr := tx.Where("request_key = ?", key).First(&old).Error
+			if administrative != nil {
+				var mutation model.SubscriptionMutation
+				mutationErr := tx.Where("idempotency_key = ?", key).First(&mutation).Error
+				if mutationErr == nil {
+					if lookupErr == nil {
+						return commerce.ErrSubscriptionSettlementConflict
+					}
+					if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+						return lookupErr
+					}
+					var replayErr error
+					out, replayErr = unpricedTerminationReplay(tx, mutation, actor, owner, id, fingerprint)
+					return replayErr
+				}
+				if !errors.Is(mutationErr, gorm.ErrRecordNotFound) {
+					return mutationErr
+				}
 			}
-		}
-		if lookupErr == nil {
-			if old.UserID != owner || old.ActorID != actor || old.SubscriptionID != id || old.RequestFingerprint != fingerprint {
-				return commerce.ErrSubscriptionSettlementConflict
+			if lookupErr == nil {
+				if old.UserID != owner || old.ActorID != actor || old.SubscriptionID != id || old.RequestFingerprint != fingerprint {
+					return commerce.ErrSubscriptionSettlementConflict
+				}
+				out = terminationReceipt(old)
+				return nil
 			}
-			out = terminationReceipt(old)
-			return nil
-		}
-		if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
-			return lookupErr
+			if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+				return lookupErr
+			}
 		}
 		var sub model.Subscription
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, owner).First(&sub).Error; err != nil {
@@ -138,6 +145,21 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 			}
 		}
 		now := commerceNow(s.Now)
+		if legacy != nil {
+			// The legacy operational command has never promised a refund. Preserve
+			// that explicit zero behavior, but close every remaining right through
+			// the same source/account/subscription transaction as full termination.
+			if sub.Status != "active" || !sub.EndAt.After(now) {
+				return entitlements.ErrSubscriptionMutationInvalid
+			}
+			quote, _, _, quoteErr := prepareAdministrativeValue(tx, sub, now)
+			if quoteErr != nil {
+				return quoteErr
+			}
+			var stopErr error
+			out, stopErr = settleLegacyCancellation(tx, sub, orders, user, actor, owner, legacy, quote, now)
+			return stopErr
+		}
 		var projection commerce.ValueProjection
 		var currency, quoteFingerprint string
 		var sources map[uint]int64

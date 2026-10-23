@@ -209,7 +209,7 @@
         "observability"
       ],
       "atomicity": "single_database_transaction",
-      "compensation": "Roll back cash-source budgets, refund ledger, pending-order reservation release, permanent subscription termination, credential/token revocation and audit together. Owner and administrator entrances share this sole transaction. Administrative approval verifies current permission, audits default/actual amounts and reason, and allows zero without a refund entry; source budgets cap all overrides at actual paid money. Repeated scoped identities return the original settlement; changed value quotes require explicit reconfirmation.",
+      "compensation": "Roll back cash-source budgets, refund ledger, pending-order reservation release, permanent subscription termination, credential/token revocation and audit together. Owner and administrator entrances share this sole transaction. Legacy subscriptions.status.cancel also enters this transaction as an explicit no-refund whole-termination command with its original mutation key/hash and immutable default-value/actual-zero evidence; it never invokes a second financial writer. Administrative approval verifies current permission, audits default/actual amounts and reason, and allows zero without a refund entry; source budgets cap all overrides at actual paid money. Repeated scoped identities return the original settlement; changed value quotes require explicit reconfirmation.",
       "outbox": "Credential revocation persists existing node publication intents in the same transaction; remote disconnection remains separately verified."
     },
     {
@@ -273,7 +273,7 @@
       "symbol": "SubscriptionMutations.Apply",
       "participants": ["entitlements", "resources", "observability"],
       "atomicity": "single_database_transaction",
-      "compensation": "Rollback subscription state, credential change, publication intent, mutation receipt and audit together; a unique idempotency key returns the same receipt for identical replay.",
+      "compensation": "Rollback term extension, credential change, publication intent, mutation receipt and audit together; a unique idempotency key returns the same receipt for identical replay. New status.cancel writes are unavailable here and enter commerce.subscription_unsubscribe; historical status-only receipts remain authorized immutable history.",
       "outbox": "NodeConfigPublish intents are committed with the subscription change."
     },
     {
