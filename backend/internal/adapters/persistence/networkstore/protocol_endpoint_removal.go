@@ -74,6 +74,12 @@ func (s ProtocolEndpointRemoval) RemoveProtocolEndpoint(ctx context.Context, act
 			Updates(map[string]any{"status": "revoked", "revoked_at": now}).Error; err != nil {
 			return err
 		}
+		// A deployment describes the whole node, even when this endpoint triggered
+		// it. Preserve frozen targets and unknown/confirmed results when removing
+		// the trigger; the nullable reference must not cascade-delete that evidence.
+		if err := tx.Model(&model.ProtocolDeployment{}).Where("protocol_endpoint_id = ?", endpoint.ID).Update("protocol_endpoint_id", nil).Error; err != nil {
+			return err
+		}
 		if err := tx.Delete(&endpoint).Error; err != nil {
 			return err
 		}

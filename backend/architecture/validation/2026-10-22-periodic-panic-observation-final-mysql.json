@@ -1,0 +1,53 @@
+{
+  "source": "a7ddc48171b249a17f116d424a2e4a0fbec95cde",
+  "checkout": "/workspace/zboard-periodic-panic-final-verify",
+  "phase": "mysql",
+  "started_utc": "2026-10-22T03:14:04.221896+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "mysql-core",
+      "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore ./internal/application -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 844.339,
+      "log": "mysql-core-a7ddc48-final.log"
+    },
+    {
+      "name": "mysql-jobstore",
+      "command": "go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 130.846,
+      "log": "mysql-jobstore-a7ddc48-final.log"
+    },
+    {
+      "name": "mysql-copy",
+      "command": "go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 221.452,
+      "log": "mysql-copy-a7ddc48-final.log"
+    }
+  ],
+  "pending": [],
+  "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+  "finished_utc": "2026-10-22T03:34:00.859497+00:00",
+  "raw_log_proofs": {
+    "mysql-core-a7ddc48-final.log": {
+      "bytes": 299,
+      "sha256": "2feaa56e00aba131109f9a1509c631a21cbd4392f5971cc749813d2d603e2e32"
+    },
+    "mysql-jobstore-a7ddc48-final.log": {
+      "bytes": 89,
+      "sha256": "a75d584c5e261c467b5d3a7bd45014f3c6938fc0ca6582b520ad27fc5d5302fd"
+    },
+    "mysql-copy-a7ddc48-final.log": {
+      "bytes": 94,
+      "sha256": "ab3fb0404bdc72bf6b1a801b55360eb652d310a397f72feb9497c2e9255eda10"
+    }
+  }
+}

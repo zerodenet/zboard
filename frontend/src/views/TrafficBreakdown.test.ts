@@ -1,5 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { createPinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Traffic from './Traffic.vue'
 import TrafficBreakdown from './TrafficBreakdown.vue'
@@ -32,7 +33,7 @@ describe('traffic dimension overview', () => {
     router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
     await router.push('/admin/traffic?from=2026-10-01&to=2026-10-16')
     await router.isReady()
-    wrapper = mount(Traffic, { global: { plugins: [router], stubs: { NodeTrafficChart: true, TrafficObservabilityChart: true } } })
+    wrapper = mount(Traffic, { global: { plugins: [router, createPinia()], stubs: { NodeTrafficChart: true, TrafficObservabilityChart: true } } })
     await flushPromises()
   }
   it('opens summary statistics without loading details or whole-ledger reconciliation', async () => {

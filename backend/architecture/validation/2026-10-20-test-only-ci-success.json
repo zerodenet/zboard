@@ -1,0 +1,108 @@
+{
+  "runs": {
+    "39507155305": [
+      {
+        "id": 118918838663,
+        "name": "compose",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 118918838958,
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 118918839009,
+        "name": "contract",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 118918839190,
+        "name": "zrs-compiler",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 118918839261,
+        "name": "mysql",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 118918839347,
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "39507652021": [
+      {
+        "id": 118920505362,
+        "name": "zrs-compiler",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 118920505487,
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 118920505530,
+        "name": "compose",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 118920505563,
+        "name": "mysql",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 118920505584,
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 118920505922,
+        "name": "contract",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "source_by_run": {
+    "39507155305": "5c8918acfc820a03f852fb1795de46ec925661bb",
+    "39507652021": "122f2278bf363bd7d9583c1abcbda7e5980c5d66"
+  },
+  "mysql_seconds": {
+    "5c8918a": {
+      "datastore": 150.119,
+      "handler": 881.409,
+      "networkstore": 95.828,
+      "jobstore": 120.005,
+      "copy": 105.497
+    },
+    "122f227": {
+      "datastore": 142.409,
+      "handler": 791.717,
+      "networkstore": 85.045,
+      "jobstore": 104.694,
+      "copy": 92
+    }
+  },
+  "raw_logs": {
+    "5c8918a-mysql-ci-success.log": "675542b6b940fada76815bd6ec2f5b4328bf2caf6a567947dad4bbf27e5f8572",
+    "122f227-mysql-ci-success.log": "80084f592956fb0fd4ccd21712c867f5e11c7e9fafe5d60dd505381ac59c0835"
+  },
+  "limits": [
+    "Both new commits passed all six actual CI jobs; not acceptance of cabce7c or later source",
+    "31e72db local/CI900s failures retained; same production source runtime varies, no proven stable fix or startup improvement"
+  ]
+}

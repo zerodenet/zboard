@@ -121,13 +121,151 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
+	if err := preflightObservationMaterialSchema(db); err != nil {
+		return err
+	}
+	if err := preflightNodeObservationSchema(db); err != nil {
+		return err
+	}
+	if err := preflightNodeAssetSchema(db); err != nil {
+		return err
+	}
+	if err := preflightTicketReferenceSchema(db); err != nil {
+		return err
+	}
+	if err := preflightAutomaticRecurringApprovalSchema(db); err != nil {
+		return err
+	}
+	if err := preflightDiscountSnapshotSchema(db); err != nil {
+		return err
+	}
+	if err := preflightHourlyProjectionSchema(db); err != nil {
+		return err
+	}
+	if err := preflightUsageProjectionSchema(db); err != nil {
+		return err
+	}
+	if err := preflightConsumptionRefundSchema(db); err != nil {
+		return err
+	}
+	if err := preflightAutomaticRenewalSchema(db); err != nil {
+		return err
+	}
+	if err := preflightSubscriptionRecoveryPolicy(db); err != nil {
+		return err
+	}
+	if err := preflightEntitlementFundingSchema(db); err != nil {
+		return err
+	}
+	if err := preflightEntitlementEpochSchema(db); err != nil {
+		return err
+	}
+	if err := preflightCredentialDeliverySchema(db); err != nil {
+		return err
+	}
+	if err := preflightRetiredPrincipalSchema(db); err != nil {
+		return err
+	}
+	if err := preflightSubscriptionValueSchema(db); err != nil {
+		return err
+	}
+	if err := preflightEntitlementValueSchema(db); err != nil {
+		return err
+	}
+	if err := preflightWalletAdjustmentSchema(db); err != nil {
+		return err
+	}
+	if err := preflightOrderFundingSchema(db); err != nil {
+		return err
+	}
+	if err := preflightPaymentReceiptSchema(db); err != nil {
+		return err
+	}
+	if err := preflightWalletSchema(db); err != nil {
+		return err
+	}
 	if err := runMigrations(db); err != nil {
+		return err
+	}
+	if err := reconcileEntitlementValueSchema(db); err != nil {
+		return err
+	}
+	if err := reconcilePurchaseSnapshotSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileDiscountSnapshotSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileWalletSchema(db); err != nil {
+		return err
+	}
+	if err := reconcilePaymentReceiptSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileOrderFundingSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileWalletAdjustmentSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileSubscriptionValueSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileRetiredPrincipalSchema(db); err != nil {
+		return err
+	}
+	if err := reconcilePublicationConnectionSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileCredentialDeliverySchema(db); err != nil {
+		return err
+	}
+	if err := reconcilePrincipalLookupSchema(db); err != nil {
 		return err
 	}
 	if err := reconcileNodeRetirementSchema(db); err != nil {
 		return err
 	}
 	if err := reconcilePluginOperationSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileEntitlementEpochSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileEntitlementFundingSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileSubscriptionRecoveryPolicy(db); err != nil {
+		return err
+	}
+	if err := reconcileAutomaticRenewalSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileAutomaticRecurringApprovalSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileNodeAssetSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileNodeObservationSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileObservationMaterialSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileTicketReferenceSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileConsumptionRefundSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileUsageProjectionSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileHourlyProjectionSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileObservationRetentionSchema(db); err != nil {
 		return err
 	}
 	return menustore.Seed(db)
@@ -162,7 +300,7 @@ func runMigrations(db *gorm.DB) error {
 	if err := validateMigrationInventory(versions); err != nil {
 		return err
 	}
-	if err := preparePreReleaseMigrationHistory(sqlDB, versions); err != nil {
+	if err := preparePreReleaseMigrationHistory(sqlDB, versions, ownedMigrationPreparationChecks(db)...); err != nil {
 		return err
 	}
 	if err := prepareNodePublicationMigrationTables(sqlDB); err != nil {
@@ -177,12 +315,162 @@ func runMigrations(db *gorm.DB) error {
 		if applied > 0 {
 			continue
 		}
+		if version == nodeObservationMaterialVersion {
+			if err := reconcileObservationMaterialSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == nodeObservationSchemaVersion {
+			if err := reconcileNodeObservationSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == nodeAssetSchemaVersion {
+			if err := reconcileNodeAssetSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == ticketReferenceSchemaVersion {
+			if err := reconcileTicketReferenceSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == automaticRecurringApprovalSchemaVersion {
+			if err := reconcileAutomaticRecurringApprovalSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == observationRetentionSchemaVersion {
+			if err := reconcileObservationRetentionSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == automaticRenewalSchemaVersion {
+			if err := reconcileAutomaticRenewalSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == consumptionRefundSchemaVersion {
+			if err := reconcileConsumptionRefundSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == usageProjectionSchemaVersion {
+			if err := reconcileUsageProjectionSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == hourlyProjectionSchemaVersion {
+			if err := reconcileHourlyProjectionSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
 		// Published 0024 used MySQL triggers requiring SUPER with binary logging.
 		// Its DDL may already be committed without a version row. The replacement
 		// reconciles both partial and completed installs without replaying that SQL.
 		if version == trafficHourlyVersion || version == trafficHourlyApplicationVersion {
 			if err := reconcileMySQLTrafficHourly(db); err != nil {
 				return fmt.Errorf("reconcile migration %s: %w", version, err)
+			}
+			continue
+		}
+		if version == subscriptionRecoveryPolicyVersion {
+			if err := reconcileSubscriptionRecoveryPolicy(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == entitlementFundingSchemaVersion {
+			if err := reconcileEntitlementFundingSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == entitlementEpochSchemaVersion {
+			if err := reconcileEntitlementEpochSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == credentialDeliverySchemaVersion {
+			if err := reconcileCredentialDeliverySchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == principalLookupSchemaVersion {
+			if err := reconcilePrincipalLookupSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == publicationConnectionSchemaVersion {
+			if err := reconcilePublicationConnectionSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == retiredPrincipalSchemaVersion {
+			if err := reconcileRetiredPrincipalSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == subscriptionValueSchemaVersion {
+			if err := reconcileSubscriptionValueSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == entitlementValueSchemaVersion {
+			if err := reconcileEntitlementValueSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == walletAdjustmentSchemaVersion {
+			if err := reconcileWalletAdjustmentSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == orderFundingSchemaVersion {
+			if err := reconcileOrderFundingSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == paymentReceiptSchemaVersion {
+			if err := reconcilePaymentReceiptSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == walletSchemaVersion {
+			if err := reconcileWalletSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == discountSnapshotSchemaVersion {
+			if err := reconcileDiscountSnapshotSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == purchaseSnapshotVersion {
+			if err := reconcilePurchaseSnapshotSchema(db); err != nil {
+				return err
 			}
 			continue
 		}
@@ -257,7 +545,7 @@ func isPreReleaseBaselineOnly(versions []string) bool {
 	return len(versions) == 1 && versions[0] == preReleaseBaselineVersion
 }
 
-func preparePreReleaseMigrationHistory(db *sql.DB, versions []string) error {
+func preparePreReleaseMigrationHistory(db *sql.DB, versions []string, preparationProof ...func() error) error {
 	if len(versions) == 0 || versions[0] != preReleaseBaselineVersion {
 		return nil
 	}
@@ -282,6 +570,15 @@ func preparePreReleaseMigrationHistory(db *sql.DB, versions []string) error {
 			return fmt.Errorf("inspect unversioned database: %w", err)
 		}
 		if applicationTables > 0 {
+			if applicationTables == 1 && len(preparationProof) == 1 && preparationProof[0] != nil {
+				var receiptTables int
+				if err := db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'zboard_migration_preparation'").Scan(&receiptTables); err != nil {
+					return fmt.Errorf("inspect owned migration preparation: %w", err)
+				}
+				if receiptTables == 1 {
+					return preparationProof[0]()
+				}
+			}
 			return fmt.Errorf("unversioned pre-release database cannot adopt the squashed %s baseline; migrate it through %s with the previous v0.0.1 build or recreate the database", preReleaseBaselineVersion, preSquashTerminalVersion)
 		}
 		return nil
@@ -522,33 +819,64 @@ func validatePreReleaseBaselineSchema(db *sql.DB) error {
 		return fmt.Errorf("pre-release baseline schema is incomplete: found %d of %d required tables", tableCount, len(preReleaseBaselineTables))
 	}
 
+	// These snapshots belong only to this validation phase. Keep the original
+	// ordered invariant checks; never reuse metadata across DDL or preparation.
+	conditions := make([]string, 0, len(preReleaseBaselineColumns))
+	args = make([]interface{}, 0, 2*len(preReleaseBaselineColumns))
 	for _, expected := range preReleaseBaselineColumns {
-		var columnType string
-		if err := db.QueryRow(
-			"SELECT column_type FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
-			expected.table,
-			expected.column,
-		).Scan(&columnType); err != nil {
-			if err == sql.ErrNoRows {
-				return fmt.Errorf("pre-release baseline schema is missing column %s.%s", expected.table, expected.column)
-			}
-			return fmt.Errorf("inspect pre-release baseline column %s.%s: %w", expected.table, expected.column, err)
+		conditions = append(conditions, "(table_name = ? AND column_name = ?)")
+		args = append(args, expected.table, expected.column)
+	}
+	columnRows, err := db.Query("SELECT table_name, column_name, column_type FROM information_schema.columns WHERE table_schema = DATABASE() AND ("+strings.Join(conditions, " OR ")+")", args...)
+	if err != nil {
+		return fmt.Errorf("inspect pre-release baseline columns: %w", err)
+	}
+	columnTypes := make(map[[2]string]string, len(preReleaseBaselineColumns))
+	for columnRows.Next() {
+		var table, column, columnType string
+		if err := columnRows.Scan(&table, &column, &columnType); err != nil {
+			columnRows.Close()
+			return fmt.Errorf("inspect pre-release baseline columns: %w", err)
+		}
+		columnTypes[[2]string{strings.ToLower(table), strings.ToLower(column)}] = columnType
+	}
+	if err := columnRows.Err(); err != nil {
+		return fmt.Errorf("inspect pre-release baseline columns: %w", err)
+	}
+	for _, expected := range preReleaseBaselineColumns {
+		columnType, present := columnTypes[[2]string{expected.table, expected.column}]
+		if !present {
+			return fmt.Errorf("pre-release baseline schema is missing column %s.%s", expected.table, expected.column)
 		}
 		if !strings.EqualFold(strings.TrimSpace(columnType), expected.columnType) {
 			return fmt.Errorf("pre-release baseline column %s.%s has type %s, want %s", expected.table, expected.column, columnType, expected.columnType)
 		}
 	}
 
+	conditions = make([]string, 0, len(preReleaseBaselineIndexes))
+	args = make([]interface{}, 0, 2*len(preReleaseBaselineIndexes))
 	for _, expected := range preReleaseBaselineIndexes {
-		var count int
-		if err := db.QueryRow(
-			"SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?",
-			expected.table,
-			expected.index,
-		).Scan(&count); err != nil {
-			return fmt.Errorf("inspect pre-release baseline index %s.%s: %w", expected.table, expected.index, err)
+		conditions = append(conditions, "(table_name = ? AND index_name = ?)")
+		args = append(args, expected.table, expected.index)
+	}
+	indexRows, err := db.Query("SELECT DISTINCT table_name, index_name FROM information_schema.statistics WHERE table_schema = DATABASE() AND ("+strings.Join(conditions, " OR ")+")", args...)
+	if err != nil {
+		return fmt.Errorf("inspect pre-release baseline indexes: %w", err)
+	}
+	indexes := make(map[[2]string]bool, len(preReleaseBaselineIndexes))
+	for indexRows.Next() {
+		var table, index string
+		if err := indexRows.Scan(&table, &index); err != nil {
+			indexRows.Close()
+			return fmt.Errorf("inspect pre-release baseline indexes: %w", err)
 		}
-		if count == 0 {
+		indexes[[2]string{strings.ToLower(table), strings.ToLower(index)}] = true
+	}
+	if err := indexRows.Err(); err != nil {
+		return fmt.Errorf("inspect pre-release baseline indexes: %w", err)
+	}
+	for _, expected := range preReleaseBaselineIndexes {
+		if !indexes[[2]string{expected.table, expected.index}] {
 			return fmt.Errorf("pre-release baseline schema is missing index %s.%s", expected.table, expected.index)
 		}
 	}

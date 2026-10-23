@@ -41,6 +41,37 @@ func Retry(err error) error {
 	return Retryable{Cause: err}
 }
 
+// IsContinuation identifies a successful bounded execution with more work left.
+// Every wrapped or joined cause must be ErrContinue. A retry declaration or any
+// other cause retains its failure/cancellation/uncertainty semantics.
+func IsContinuation(err error) bool {
+	var retryable Retryable
+	return err != nil && !errors.As(err, &retryable) && onlyContinuationCauses(err)
+}
+
+func onlyContinuationCauses(err error) bool {
+	switch cause := err.(type) {
+	case Retryable, *Retryable:
+		return false
+	case interface{ Unwrap() []error }:
+		found := false
+		for _, child := range cause.Unwrap() {
+			if child == nil {
+				continue
+			}
+			if !onlyContinuationCauses(child) {
+				return false
+			}
+			found = true
+		}
+		return found
+	case interface{ Unwrap() error }:
+		return onlyContinuationCauses(cause.Unwrap())
+	default:
+		return err == ErrContinue
+	}
+}
+
 // MaintenanceResource reserves the same global execution pool for host maintenance.
 const MaintenanceResource = "core:maintenance"
 
@@ -197,7 +228,7 @@ func (e Executor) runOne(ctx context.Context) (claimed Claim, err error) {
 	var retryable Retryable
 	if errors.As(err, &retryable) {
 		state = RetryWait
-	} else if errors.Is(err, ErrContinue) {
+	} else if IsContinuation(err) {
 		state = Yielded
 		err = nil
 	} else if err == nil {

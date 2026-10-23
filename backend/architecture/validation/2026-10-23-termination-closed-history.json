@@ -1,0 +1,374 @@
+{
+  "recorded_utc": "2026-10-23T16:49:16.255011+00:00",
+  "base_head": "6ebf4e6da4186b0e3a3194d743e4acb81fcc3c65",
+  "candidate_not_base_commit": true,
+  "pull_request": "https://github.com/zerodenet/zboard/pull/78",
+  "overall_complete": false,
+  "files": [
+    {
+      "path": "backend/internal/adapters/persistence/commercestore/subscription_termination.go",
+      "original_sha256": "a3b1ccce1d3d82cd54df0b85ebeb7de94821a37c3f2449da96669d8689fb0c13",
+      "candidate_sha256": "19a13654fcf5e94449ee4c85aba8ae2b26571b5aa9c564b367184d60a8085212"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/commercestore/administrative_termination.go",
+      "original_sha256": "fc3698f19befa3ef4f059c81c08e06330016563da697009b70800fed353ce2fc",
+      "candidate_sha256": "4dfab06a0fd78ef29bf07a8a546bbb9680d1085f941c9c4e99c3ebb7aa1d7c2f"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/commercestore/termination_order_scope.go",
+      "original_sha256": null,
+      "candidate_sha256": "338e3460a8fc41ebf2747bd41d57adb5fe5574c3d48373e17c0dac8a4ff91bb2"
+    },
+    {
+      "path": "backend/internal/handler/termination_history_test.go",
+      "original_sha256": null,
+      "candidate_sha256": "5a62d7fd9509d73402d71c0a992cb7f1b6539cdb4bfe7bca6acb153844843209"
+    }
+  ],
+  "checks": [
+    {
+      "name": "baseline-1",
+      "started_utc": "2026-10-23T16:36:41.854814+00:00",
+      "finished_utc": "2026-10-23T16:38:23.185157+00:00",
+      "base_head": "6ebf4e6da4186b0e3a3194d743e4acb81fcc3c65",
+      "source_before_sha256": "20971835e7c86ea0584788eed0442a89e896eae3beb004b5a369b70f4df1e8a5",
+      "source_after_sha256": "20971835e7c86ea0584788eed0442a89e896eae3beb004b5a369b70f4df1e8a5",
+      "source_stable": true,
+      "mysql_configured": false,
+      "checks": [
+        {
+          "name": "old-failure",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/handler",
+            "-run",
+            "^TestWholeTerminationPreservesLargeClosedHistory$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 1,
+          "wall_seconds": 101.215,
+          "log": "baseline-1-old-failure.log",
+          "log_sha256": "840c1f697465b11ca70793883ad0d71ff88862f8521e2f8f1e18a99171ddfafa"
+        }
+      ],
+      "top_level": {
+        "pass": [],
+        "fail": [
+          "TestWholeTerminationPreservesLargeClosedHistory"
+        ],
+        "skip": []
+      },
+      "failed_subcases": [
+        "TestWholeTerminationPreservesLargeClosedHistory/owner_refund",
+        "TestWholeTerminationPreservesLargeClosedHistory/admin_unknown_zero",
+        "TestWholeTerminationPreservesLargeClosedHistory/legacy_zero"
+      ],
+      "interpretation": "Fixture setup failed: a manual discounted purchase lacks a recurring-discount agreement; did not reach intended termination defect. Retained, not counted as reproduction."
+    },
+    {
+      "name": "baseline-2",
+      "started_utc": "2026-10-23T16:39:43.552540+00:00",
+      "finished_utc": "2026-10-23T16:39:57.597698+00:00",
+      "base_head": "6ebf4e6da4186b0e3a3194d743e4acb81fcc3c65",
+      "source_before_sha256": "344ade1f2fa4fddc7463425c70d8472f38205ad5bd9bbbd92168d1307e2f552f",
+      "source_after_sha256": "344ade1f2fa4fddc7463425c70d8472f38205ad5bd9bbbd92168d1307e2f552f",
+      "source_stable": true,
+      "mysql_configured": false,
+      "checks": [
+        {
+          "name": "old-failure",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/handler",
+            "-run",
+            "^TestWholeTerminationPreservesLargeClosedHistory$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 1,
+          "wall_seconds": 13.92,
+          "log": "baseline-2-old-failure.log",
+          "log_sha256": "d98e7309d0945d52346fa710c9fe62f6b29bf0d900bf283849b2fa1e428491a9"
+        }
+      ],
+      "top_level": {
+        "pass": [],
+        "fail": [
+          "TestWholeTerminationPreservesLargeClosedHistory"
+        ],
+        "skip": []
+      },
+      "failed_subcases": [
+        "TestWholeTerminationPreservesLargeClosedHistory/owner_refund",
+        "TestWholeTerminationPreservesLargeClosedHistory/admin_unknown_zero",
+        "TestWholeTerminationPreservesLargeClosedHistory/legacy_zero"
+      ],
+      "interpretation": "Corrected full-price actual-wallet fixture, old production code6eb; all three target subcases fail due closed history consuming authority/unknown-quote budget. Actual reproduction."
+    },
+    {
+      "name": "go-1",
+      "started_utc": "2026-10-23T16:40:24.784402+00:00",
+      "finished_utc": "2026-10-23T16:42:13.002689+00:00",
+      "base_head": "6ebf4e6da4186b0e3a3194d743e4acb81fcc3c65",
+      "source_before_sha256": "017945ca9c5113acffe7f378dd097d04b37c7286c062327b715e038896089d79",
+      "source_after_sha256": "017945ca9c5113acffe7f378dd097d04b37c7286c062327b715e038896089d79",
+      "source_stable": true,
+      "mysql_configured": false,
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/commercestore",
+            "./internal/handler",
+            "-run",
+            "^Test(WholeTermination.*|Administrative.*Termination.*|AdministrativeUnpriced.*|LegacyCancellation.*|Perpetual.*|FullReplacement.*)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 1,
+          "wall_seconds": 108.096,
+          "log": "go-1-target.log",
+          "log_sha256": "0fd086ab724c012cfdec55bdd9bbbb28064afbcf99ee72e2bb9c78ceea07f918"
+        }
+      ],
+      "top_level": {
+        "pass": [
+          "TestAdministrativeWholeTerminationApprovesDefaultCustomAndZero",
+          "TestAdministrativeTerminationHTTPSeparatesOrdinaryMoneyAndPermission",
+          "TestAdministrativeTerminationHTTPAcceptsExplicitZero",
+          "TestFullReplacementApprovedResidualExamples",
+          "TestFullReplacementCancellationAndExpiryPreserveOtherReservations",
+          "TestFullReplacementPublicationFailureRollsBackMoneyAndEpoch",
+          "TestFullReplacementOldFlowOnlyConsumesClosedQuota",
+          "TestFullReplacementMixedPaymentAndCanceledLatePayment",
+          "TestFullReplacementRejectsUnacceptedAndConsumedQuote",
+          "TestFullReplacementPaymentDelayPreservesAgreedTimeValue",
+          "TestFullReplacementAdministratorDiscountNeverBecomesBalance",
+          "TestLegacyCancellationPreservesHistoricalReceipt",
+          "TestLegacyCancellationRetainsLateMixedCashWithoutRevival",
+          "TestLegacyCancellationUsesWholeTerminationWithoutRefund",
+          "TestPerpetualFIFOMeteringExhaustionAllowsZeroUnsubscribe",
+          "TestPerpetualFIFOFundedPurchasesMeteringAndWholeUnsubscribe",
+          "TestPerpetualFIFOFundedPurchasesFullReplacement",
+          "TestPerpetualValuePurchaseMeteringAndIdempotentUnsubscribe",
+          "TestPerpetualValueTrustedHistoricalSnapshotCompatibility",
+          "TestPerpetualValueFullReplacementStartsCompleteNewTerm",
+          "TestWholeTerminationPreservesLargeClosedHistory",
+          "TestWholeTerminationKeepsCurrentSourceBudget",
+          "TestAdministrativeUnpricedZeroTermination",
+          "TestAdministrativeUnpricedZeroWithoutAnyOrder",
+          "TestAdministrativeUnpricedZeroPendingCycleAndMissingFulfillment"
+        ],
+        "fail": [
+          "TestWholeTerminationRechecksPreparedOrderMembership"
+        ],
+        "skip": []
+      },
+      "failed_subcases": [],
+      "interpretation": "New production code;25 top-level passed, one new concurrency probe failed to pause GORM Pluck. Three old-history scenarios passed. Probe match fixed without changing business assertions."
+    },
+    {
+      "name": "go-2",
+      "started_utc": "2026-10-23T16:43:19.211721+00:00",
+      "finished_utc": "2026-10-23T16:45:10.989136+00:00",
+      "base_head": "6ebf4e6da4186b0e3a3194d743e4acb81fcc3c65",
+      "source_before_sha256": "01faddfe495a4e32a223cf6226d7923ec885a37c9243b115a1a8f0fb19ace691",
+      "source_after_sha256": "01faddfe495a4e32a223cf6226d7923ec885a37c9243b115a1a8f0fb19ace691",
+      "source_stable": true,
+      "mysql_configured": false,
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/commercestore",
+            "./internal/handler",
+            "-run",
+            "^Test(WholeTermination.*|Administrative.*Termination.*|AdministrativeUnpriced.*|LegacyCancellation.*|Perpetual.*|FullReplacement.*)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 111.654,
+          "log": "go-2-target.log",
+          "log_sha256": "43eed8bfa5f267222691ee63d307fd6ede834923a0183862e14e5c98f3303d3a"
+        }
+      ],
+      "top_level": {
+        "pass": [
+          "TestAdministrativeWholeTerminationApprovesDefaultCustomAndZero",
+          "TestAdministrativeTerminationHTTPSeparatesOrdinaryMoneyAndPermission",
+          "TestAdministrativeTerminationHTTPAcceptsExplicitZero",
+          "TestFullReplacementApprovedResidualExamples",
+          "TestFullReplacementCancellationAndExpiryPreserveOtherReservations",
+          "TestFullReplacementPublicationFailureRollsBackMoneyAndEpoch",
+          "TestFullReplacementOldFlowOnlyConsumesClosedQuota",
+          "TestFullReplacementMixedPaymentAndCanceledLatePayment",
+          "TestFullReplacementRejectsUnacceptedAndConsumedQuote",
+          "TestFullReplacementPaymentDelayPreservesAgreedTimeValue",
+          "TestFullReplacementAdministratorDiscountNeverBecomesBalance",
+          "TestLegacyCancellationPreservesHistoricalReceipt",
+          "TestLegacyCancellationRetainsLateMixedCashWithoutRevival",
+          "TestLegacyCancellationUsesWholeTerminationWithoutRefund",
+          "TestPerpetualFIFOMeteringExhaustionAllowsZeroUnsubscribe",
+          "TestPerpetualFIFOFundedPurchasesMeteringAndWholeUnsubscribe",
+          "TestPerpetualFIFOFundedPurchasesFullReplacement",
+          "TestPerpetualValuePurchaseMeteringAndIdempotentUnsubscribe",
+          "TestPerpetualValueTrustedHistoricalSnapshotCompatibility",
+          "TestPerpetualValueFullReplacementStartsCompleteNewTerm",
+          "TestWholeTerminationPreservesLargeClosedHistory",
+          "TestWholeTerminationRechecksPreparedOrderMembership",
+          "TestWholeTerminationKeepsCurrentSourceBudget",
+          "TestAdministrativeUnpricedZeroTermination",
+          "TestAdministrativeUnpricedZeroWithoutAnyOrder",
+          "TestAdministrativeUnpricedZeroPendingCycleAndMissingFulfillment"
+        ],
+        "fail": [],
+        "skip": []
+      },
+      "failed_subcases": [],
+      "interpretation": "Final source, all26 top-level passed, zero skipped."
+    },
+    {
+      "name": "mysql-1",
+      "started_utc": "2026-10-23T16:45:56.015052+00:00",
+      "finished_utc": "2026-10-23T16:46:49.779108+00:00",
+      "base_head": "6ebf4e6da4186b0e3a3194d743e4acb81fcc3c65",
+      "source_before_sha256": "01faddfe495a4e32a223cf6226d7923ec885a37c9243b115a1a8f0fb19ace691",
+      "source_after_sha256": "01faddfe495a4e32a223cf6226d7923ec885a37c9243b115a1a8f0fb19ace691",
+      "source_stable": true,
+      "mysql_configured": true,
+      "checks": [
+        {
+          "name": "mysql",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/handler",
+            "-run",
+            "^TestMySQL(WholeTermination.*|AdministrativeWholeTermination.*|AdministrativeUnpriced.*|LegacyCancellation.*|PerpetualValuePurchaseMeteringAndIdempotentUnsubscribe)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 53.631,
+          "log": "mysql-1-mysql.log",
+          "log_sha256": "773e03b9b4f4551fb6b3e858e309bd3507e2fcc4c55de9846cc1064af6aa7c8e"
+        }
+      ],
+      "top_level": {
+        "pass": [
+          "TestMySQLAdministrativeWholeTerminationApprovesDefaultCustomAndZero",
+          "TestMySQLLegacyCancellationPreservesHistoricalReceipt",
+          "TestMySQLLegacyCancellationRetainsLateMixedCashWithoutRevival",
+          "TestMySQLLegacyCancellationUsesWholeTerminationWithoutRefund",
+          "TestMySQLPerpetualValuePurchaseMeteringAndIdempotentUnsubscribe",
+          "TestMySQLWholeTerminationPreservesLargeClosedHistory",
+          "TestMySQLWholeTerminationRechecksPreparedOrderMembership",
+          "TestMySQLWholeTerminationKeepsCurrentSourceBudget",
+          "TestMySQLAdministrativeUnpricedZeroTermination",
+          "TestMySQLAdministrativeUnpricedZeroWithoutAnyOrder",
+          "TestMySQLAdministrativeUnpricedZeroPendingCycleAndMissingFulfillment"
+        ],
+        "fail": [],
+        "skip": []
+      },
+      "failed_subcases": [],
+      "interpretation": "Same final source as go-2; real isolated MySQL8.4, all11 top-level passed, zero skipped."
+    }
+  ],
+  "final_source_sha256": "01faddfe495a4e32a223cf6226d7923ec885a37c9243b115a1a8f0fb19ace691",
+  "source_scope": "All tracked/untracked nonignored Go, frontend ts/vue, module manifests, OpenAPI and ownership JSON; SQL unchanged and audited separately; architecture prose/evidence and ignored local artifacts excluded.",
+  "cache_actions": [
+    {
+      "utc": "2026-10-23T16:36:41.713056+00:00",
+      "target": "/workspace/toolchains/cache/go-build",
+      "resolved": "/workspace/toolchains/cache/go-build",
+      "symlinks": false,
+      "workloads": [],
+      "free_before": 344350720,
+      "command": "go clean -cache",
+      "exit_code": 0,
+      "output": "",
+      "free_after": 543756288,
+      "receipt": "cache-before-baseline.json"
+    },
+    {
+      "utc": "2026-10-23T16:40:24.622544+00:00",
+      "target": "/workspace/toolchains/cache/go-build",
+      "resolved": "/workspace/toolchains/cache/go-build",
+      "symlinks": false,
+      "workloads": [],
+      "free_before": 32759808,
+      "command": "go clean -cache",
+      "exit_code": 0,
+      "output": "",
+      "free_after": 542187520,
+      "receipt": "cache-before-fixed-target.json"
+    },
+    {
+      "utc": "2026-10-23T16:43:19.084670+00:00",
+      "target": "/workspace/toolchains/cache/go-build",
+      "resolved": "/workspace/toolchains/cache/go-build",
+      "symlinks": false,
+      "workloads": null,
+      "free_before": 65048576,
+      "command": "go clean -cache",
+      "exit_code": 0,
+      "output": "",
+      "free_after": 540536832,
+      "process_scan_valid": false,
+      "process_scan_error": "Inline ps pid,state,comm scan incorrectly required four fields rather than three. Its empty result is not a valid full-process idle proof.",
+      "related_workload_idle_basis": {
+        "go_1_finished_utc": "2026-10-23T16:42:13.002689+00:00",
+        "go_1_session_reaped_exit_code": 1,
+        "original_6eb_mysql_finished_utc": "2026-10-23T16:35:56.975617+00:00",
+        "original_6eb_mysql_session_reaped_exit_code": 0,
+        "baseline_2_session_reaped_exit_code": 1,
+        "note": "All known task controllers were finished/reaped before this clear. No other task workload was launched. Do not use the invalid scan as broader idle evidence."
+      },
+      "correction_recorded_utc": "2026-10-23T16:44:03.045665+00:00",
+      "receipt": "cache-before-fixed-target-2.json"
+    }
+  ],
+  "unverified": [
+    "Exact new commit full local backend4 and MySQL3 not yet run at candidate recording",
+    "Exact new commit CI not yet created at candidate recording;6eb green does not certify this candidate",
+    "New candidate race/count3 not executed; original host storage pressure retained, prior6eb race does not certify changed scope",
+    "More than1000 currently relevant source orders, large current-paid valuation and other history readers remain bounded/refuse",
+    "Capacity/scaling and overall P4/P6/P7, external coupon/kernel/production acceptance incomplete"
+  ],
+  "transaction": "Unchanged single termination authority: outside-transaction immutable scope preparation; exact selected orders ascending FOR UPDATE, current owner/admin, subscription, current membership recheck; refund/source budgets/wallet entries or zero-money mutation + rights/token/credential/autorenew stop + holds + delivery/audit remain one transaction. No history deletion, no new schema/receipt/key/financial rounding."
+}

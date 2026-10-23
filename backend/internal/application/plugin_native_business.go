@@ -65,6 +65,9 @@ func (s *PluginHostServices) callBusinessCapability(ctx context.Context, pluginI
 			}
 			return nil, pluginHostError("temporary_unavailable")
 		}
+		if capability == plugins.CommercePaymentsWriteCapability && scoped.PaymentPermitted != nil && !*scoped.PaymentPermitted {
+			return nil, pluginHostError("conflict")
+		}
 		userID = scoped.AccountID
 		account = identity.PublicAccount{ID: userID}
 		field := "id"

@@ -1,0 +1,66 @@
+{
+  "source": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+  "checkout": "/workspace/zboard-node-asset-final-verify",
+  "phase": "backend",
+  "started_utc": "2026-10-21T02:09:05.288134+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "full-go",
+      "command": "go test -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 301.855,
+      "log": "full-go-6817667-final.log"
+    },
+    {
+      "name": "vet",
+      "command": "go vet -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 3.926,
+      "log": "vet-6817667-final.log"
+    },
+    {
+      "name": "build",
+      "command": "go build ./cmd/zboard",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 2.078,
+      "log": "build-6817667-final.log"
+    },
+    {
+      "name": "pure-go-sqlite",
+      "command": "go test -p 2 ./internal/datastore -run SQLite -count=1",
+      "environment_additions": {
+        "CGO_ENABLED": "0"
+      },
+      "exit_code": 0,
+      "wall_seconds": 22.346,
+      "log": "pure-go-sqlite-6817667-final.log"
+    }
+  ],
+  "pending": [],
+  "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+  "finished_utc": "2026-10-21T02:14:35.495266+00:00",
+  "status": "PASS",
+  "raw_logs_sha256": {
+    "full-go-6817667-final.log": "f0b843a124d1ae5995be52cc606289e6a8fbeb62ee3cadac5e70ca57042c3c2c",
+    "vet-6817667-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build-6817667-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pure-go-sqlite-6817667-final.log": "8b774c7159eda0e7aa13d110a375302160903d840948f01bffe78a1f1ae98276"
+  },
+  "initial_unexecuted_attempt": {
+    "reason": "Caller supplied abbreviated6817667; exact clean source check refused before tests",
+    "action": "Use independently read full68176675bd3b4f7c759ec266f563d350d44bfd3b; no reset or source modification",
+    "test_executions": 0
+  },
+  "separate_checks": {
+    "mysql": "Original local core failed:handler900.025s/datastore155.586s/network130.686s; independent jobstore125.359s/copy187.273s actually pass. See2026-10-21-node-asset-mysql-local.json.",
+    "capacity": "Original gates pass after isolated official build-cache recovery; first pre-load disk failure retained. 1274events/940businessreads zero HTTPerrors, hourly157/p95=20ms; original first10drain mismatches then5s retry exact9833472B. See2026-10-21-node-asset-original-capacity.json.",
+    "ci": "39531386103 completed: five jobs success; MySQL handler900.024s timeout, datastore184.150s/network143.669s pass; CI jobstore/copy not executed. See2026-10-21-node-asset-ci.json."
+  }
+}

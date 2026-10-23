@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"strings"
 )
@@ -19,6 +20,18 @@ func CopyApplicationData(source, target *gorm.DB) error {
 	if err != nil {
 		return fmt.Errorf("inspect source tables: %w", err)
 	}
+	// Reject recorded identity loss even when the source nodes table itself
+	// is absent and the legacy table loop would otherwise skip it.
+	if err := preflightObservationMaterialSchema(source); err != nil {
+		return err
+	}
+	_, observationReceipt, err := observationSchema(source)
+	if err != nil {
+		return err
+	}
+	if err := preflightNodeAssetSchema(source); err != nil {
+		return err
+	}
 	targetTables, err := migrationTableSet(target)
 	if err != nil {
 		return fmt.Errorf("inspect target tables: %w", err)
@@ -34,10 +47,29 @@ func CopyApplicationData(source, target *gorm.DB) error {
 			return err
 		}
 	}
+	// A prepared target has already recorded0060 before source data arrives.
+	// Only a genuinely legacy source imports its copied old cursor, in this same
+	// owned target transaction; never infer missing recorded source authority.
+	if !observationReceipt {
+		if err := importObservationFloors(target); err != nil {
+			return err
+		}
+	}
 	return RebuildMySQLTrafficHourly(target)
 }
 
 func copyTableRows(source, target *gorm.DB, table string) error {
+	// Classify before opening source Rows: migration sources can be pinned to a
+	// single connection. Never query a receipt while that connection streams.
+	legacyNodeAssets := false
+	if table == "nodes" {
+		state, err := inspectNodeAssetSchema(source)
+		if err != nil {
+			return fmt.Errorf("classify copied node assets: %w", err)
+		}
+		legacyNodeAssets = !state.column
+	}
+
 	rows, err := source.Table(table).Rows()
 	if err != nil {
 		return fmt.Errorf("read source table %s: %w", table, err)
@@ -50,6 +82,24 @@ func copyTableRows(source, target *gorm.DB, table string) error {
 	types, err := rows.ColumnTypes()
 	if err != nil {
 		return fmt.Errorf("read source column types %s: %w", table, err)
+	}
+	// Only known missing derived columns invalidate copied coverage. A complete
+	// source may legitimately contain empty digests; do not infer corruption
+	// from values or rewrite canonical credentials/source data.
+	resetPrincipalLookup := false
+	lookupVersionColumn := "principal_lookup_version"
+	if table == "protocol_credentials" {
+		present := make(map[string]bool, 3)
+		for _, column := range columns {
+			name := strings.ToLower(column)
+			present[name] = true
+			if name == "principal_lookup_version" {
+				// Reuse its actual map key, including case, to avoid inserting
+				// two case-equivalent destination columns.
+				lookupVersionColumn = column
+			}
+		}
+		resetPrincipalLookup = !present["principal_digest"] || !present["secret_principal_digest"] || !present["principal_lookup_version"]
 	}
 	batch := make([]map[string]interface{}, 0, 200)
 	for rows.Next() {
@@ -76,6 +126,20 @@ func copyTableRows(source, target *gorm.DB, table string) error {
 			} else {
 				record[column] = values[index]
 			}
+		}
+		if resetPrincipalLookup {
+			// Target INSERT belongs to the caller's existing copy transaction.
+			// A missing version uses the prepared target's standard column name.
+			record[lookupVersionColumn] = int64(0)
+		}
+		if legacyNodeAssets {
+			// No source column AND no0059receipt: establish target-only future labels,
+			// in the caller's owned target transaction. Never stamp old spool material.
+			tag, err := model.NewNodeAssetTag()
+			if err != nil {
+				return err
+			}
+			record["asset_tag"] = tag
 		}
 		batch = append(batch, record)
 		if len(batch) == cap(batch) {

@@ -4,6 +4,8 @@ import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Orders from './Orders.vue'
 import Nodes from './Nodes.vue'
+import NodeCounterObservation from '../components/NodeCounterObservation.vue'
+import NodeObservationQueue from '../components/NodeObservationQueue.vue'
 import OrderSubscriptionDialog from '../components/OrderSubscriptionDialog.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 vi.mock('../api/subscriptionAccess', () => ({ fetchOrderSubscriptionAccess: vi.fn() }))
@@ -60,7 +62,7 @@ async function render(testCase: typeof cases[number]) {
   wrapper = shallowMount(defineComponent({ components: { RouterView }, template: '<RouterView />' }), { global: {
     plugins: [router], renderStubDefaultSlot: true,
     stubs: {
-      RouterView: false, Orders: false, Users: false, Subscriptions: false, Nodes: false, RemoteReadStatus: false,
+      PageHeader: false, RouterView: false, Orders: false, Users: false, Subscriptions: false, Nodes: false, RemoteReadStatus: false,
       DetailDrawer: drawer, ModalDialog: hiddenModal, ConfirmDialog: hiddenModal,
       NodeRetirementDialog: hiddenModal, NodeRuntimeDiagnosticsModal: hiddenModal, UiButton: true, TimeBadge: true, PageRefreshButton: true,
       FormField: true, UiCheckbox: true, UiInput: true, UiTextarea: true, UiSelect: true,
@@ -69,6 +71,31 @@ async function render(testCase: typeof cases[number]) {
   await flushPromises()
   return { router, wrapper }
 }
+
+it('opens a global observation queue independently of the selected node', async () => {
+  const { router, wrapper } = await render(cases.find(testCase => testCase.name === 'nodes')!)
+  expect(wrapper.getComponent(NodeObservationQueue).props('open')).toBe(false)
+  const trigger = wrapper.findAll('ui-button-stub').find(button => button.text() === '观察队列')!
+  expect(trigger.exists()).toBe(true)
+  await trigger.trigger('click')
+  expect(wrapper.getComponent(NodeObservationQueue).props('open')).toBe(true)
+  await router.push({ query: {} }); await flushPromises()
+  expect(wrapper.getComponent(NodeObservationQueue).props('open')).toBe(true)
+  wrapper.getComponent(NodeObservationQueue).vm.$emit('close'); await flushPromises()
+  expect(wrapper.getComponent(NodeObservationQueue).props('open')).toBe(false)
+})
+
+it('passes only the selected node counter evidence to its detail view', async () => {
+  const observation = { known: true, latest_source_known: true, stats_source_known: true, source: 'buffered_stats', counter_received_at: '2026-10-01T10:20:30Z' }
+  mocks.detail.mockResolvedValueOnce({ ...detail(1), observation })
+  const { router, wrapper } = await render(cases.find(testCase => testCase.name === 'nodes')!)
+  expect(wrapper.getComponent(NodeCounterObservation).props('observation')).toEqual(observation)
+  await router.push({ query: { node: '2' } })
+  await flushPromises()
+  expect(wrapper.get('[data-detail] h2').text()).toBe('node-2')
+  expect(wrapper.getComponent(NodeCounterObservation).props('observation')).toBeUndefined()
+  expect(mocks.detail.mock.calls.map(call => call[0])).toEqual([1, 2])
+})
 
 describe.each(cases)('$name detail lifecycle', testCase => {
   it('opens linked details while the filtered list is still pending', async () => {

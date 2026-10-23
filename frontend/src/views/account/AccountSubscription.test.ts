@@ -1,15 +1,27 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchAccountProtocolLoads, fetchAccountSubscriptionsPage, fetchActiveSubscriptionTemplatesPage } from '../../api/client'
+import { createTicket, fetchTickets, fetchAccountProtocolLoads, fetchAccountSubscriptionsPage, fetchActiveSubscriptionTemplatesPage } from '../../api/client'
 import { fetchSubscriptionAccess, revokeSubscriptionAccess, rotateSubscriptionAccess, type SubscriptionAccess } from '../../api/subscriptionAccess'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
+import TicketCenter from '../../components/TicketCenter.vue'
+import UiButton from '../../components/UiButton.vue'
+import UiInput from '../../components/UiInput.vue'
+import UiSelect from '../../components/UiSelect.vue'
+import UiTextarea from '../../components/UiTextarea.vue'
+import TimeBadge from '../../components/TimeBadge.vue'
 import AccountSubscription from './AccountSubscription.vue'
 
 vi.mock('../../api/client', () => ({
   fetchAccountSubscriptionsPage: vi.fn(),
   fetchActiveSubscriptionTemplatesPage: vi.fn(),
   fetchAccountProtocolLoads: vi.fn(),
+  createTicket: vi.fn(),
+  fetchTickets: vi.fn(),
+  fetchTicket: vi.fn(),
+  closeTicket: vi.fn(),
+  replyTicket: vi.fn(),
+  updateTicketStatus: vi.fn(),
 }))
 vi.mock('../../api/subscriptionAccess', () => ({
   fetchSubscriptionAccess: vi.fn(),
@@ -47,17 +59,25 @@ describe('account subscription independent loading and access identity', () => {
     vi.mocked(fetchSubscriptionAccess).mockImplementation(async id => access(id))
     vi.mocked(rotateSubscriptionAccess).mockImplementation(async id => access(id))
     vi.mocked(revokeSubscriptionAccess).mockResolvedValue(undefined as any)
+    vi.mocked(fetchTickets).mockResolvedValue(page([]))
   })
   afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 
-  async function open(path = '/account/subscription') {
+  async function open(path = '/account/subscription', routed = false) {
     router = createRouter({ history: createMemoryHistory(), routes: [
-      { path: '/account/subscription', component: { template: '<div />' } },
+      { path: '/account/subscription', component: routed ? AccountSubscription : { template: '<div />' } },
       { path: '/account/plans', component: { template: '<div />' } },
+      { path: '/account/tickets', component: TicketCenter },
     ] })
     await router.push(path)
     await router.isReady()
-    wrapper = mount(AccountSubscription, { global: { plugins: [router], stubs: { ConfirmDialog: true } } })
+    wrapper = mount(routed ? RouterView : AccountSubscription, { global: {
+      plugins: [router], components: { UiButton, UiInput, UiSelect, UiTextarea, TimeBadge },
+      stubs: {
+        ConfirmDialog: true, TicketAttachmentEditor: true, PageRefreshButton: true,
+        ModalDialog: { props: ['open'], template: '<section v-if="open"><slot /></section>' },
+      },
+    } })
     await flushPromises()
     return wrapper
   }
@@ -66,6 +86,72 @@ describe('account subscription independent loading and access identity', () => {
     expect(match, `button ${text}`).toBeDefined()
     return match!
   }
+
+  it.each([1, 2])('prefills a ticket for row %i independently of the managed credential without submitting or rotating', async id => {
+    const selected = 3 - id
+    await open(`/account/subscription?subscription=${selected}`, true)
+    const rows = wrapper!.findAll('tbody tr')
+    expect(rows.map(row => row.find('a[href^="/account/tickets"]').attributes('href'))).toEqual([
+      '/account/tickets?new=1&subscription_id=1',
+      '/account/tickets?new=1&subscription_id=2',
+    ])
+    expect(wrapper!.text()).toContain(`fixture-${selected}`)
+    const accessReads = vi.mocked(fetchSubscriptionAccess).mock.calls.length
+    const support = rows[id - 1]!.get('a[href^="/account/tickets"]')
+    expect(support.text()).toBe('就此订阅提交工单')
+    await support.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/account/tickets')
+    expect(router.currentRoute.value.query).toEqual({ new: '1', subscription_id: String(id) })
+    expect((wrapper!.get('#ticket-subscription_id').element as HTMLInputElement).value).toBe(String(id))
+    expect((wrapper!.get('#ticket-order_id').element as HTMLInputElement).value).toBe('')
+    expect((wrapper!.get('#ticket-wallet_entry_id').element as HTMLInputElement).value).toBe('')
+    expect(wrapper!.text()).not.toContain(`fixture-${selected}`)
+    expect(createTicket).not.toHaveBeenCalled()
+    expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
+    expect(revokeSubscriptionAccess).not.toHaveBeenCalled()
+    expect(fetchSubscriptionAccess).toHaveBeenCalledTimes(accessReads)
+  })
+
+  it('offers support for expired and ended history independently of renewal or access eligibility', async () => {
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.status === 'active'
+      ? page([]) : page(subscriptions.map((sub, index) => ({ ...sub, status: index ? 'ended' : 'expired', can_renew: false }))))
+    await open()
+    expect(wrapper!.findAll('a[href^="/account/tickets"]').map(link => link.attributes('href'))).toEqual([
+      '/account/tickets?new=1&subscription_id=1',
+      '/account/tickets?new=1&subscription_id=2',
+    ])
+    expect(fetchSubscriptionAccess).not.toHaveBeenCalled()
+    expect(createTicket).not.toHaveBeenCalled()
+    expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
+    expect(revokeSubscriptionAccess).not.toHaveBeenCalled()
+  })
+
+  it('shows the support entry only for positive safe integer IDs', async () => {
+    const ids = [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '2', 'invalid', Number.MAX_SAFE_INTEGER]
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.status === 'active'
+      ? page([]) : page(ids.map(id => ({ ...subscriptions[0], id, status: 'ended', can_renew: false }))))
+    await open()
+    const links = wrapper!.findAll('a[href^="/account/tickets"]')
+    expect(links).toHaveLength(1)
+    expect(links[0]!.attributes('href')).toBe(`/account/tickets?new=1&subscription_id=${Number.MAX_SAFE_INTEGER}`)
+    expect(createTicket).not.toHaveBeenCalled()
+    expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
+    expect(revokeSubscriptionAccess).not.toHaveBeenCalled()
+  })
+
+  it('shows the last renewal notice in its own row without blocking access', async () => {
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([
+      { ...subscriptions[0], automatic_renewal_state: 'insufficient_balance', automatic_renewal_message: '余额不足，本次未扣款', automatic_renewal_checked_at: '2026-10-20T00:00:00Z' },
+      subscriptions[1],
+    ]))
+    await open()
+    const rows = wrapper!.findAll('tbody tr')
+    expect(rows[0]!.text()).toContain('上次自动续费余额不足')
+    expect(rows[0]!.text()).toContain('最近检查')
+    expect(rows[1]!.text()).not.toContain('余额不足')
+    expect(fetchSubscriptionAccess).toHaveBeenCalledWith(1, expect.anything())
+  })
 
   it('resolves a deep-linked subscription outside both the preview and current list page', async () => {
     vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId
@@ -255,7 +341,7 @@ describe('account subscription independent loading and access identity', () => {
   vi.mocked(fetchActiveSubscriptionTemplatesPage).mockResolvedValue(page([]))
   vi.mocked(fetchAccountProtocolLoads).mockResolvedValue({ items: [], sampled_at: '', activity_window_seconds: 120 })
   vi.mocked(fetchSubscriptionAccess).mockResolvedValue({ configured: false, subscription_id: exhausted.id })
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }, { path: '/account/tickets', component: { template: '<div />' } }] })
   await router.push('/account/subscription'); await router.isReady()
   const wrapper = mount(AccountSubscription, { global: { plugins: [router] } })
   await flushPromises()
@@ -273,7 +359,7 @@ it('offers renewal recovery on a stopped service without offering link managemen
   vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.status === 'active' ? page([]) : page([{ ...subscriptions[0], status: 'expired', ended_at: '2026-09-27T00:00:00Z', end_reason: 'expired', renewal_until: '2026-10-04T00:00:00Z', can_renew: true }]))
   vi.mocked(fetchActiveSubscriptionTemplatesPage).mockResolvedValue(page([]))
   vi.mocked(fetchAccountProtocolLoads).mockResolvedValue({ items: [], sampled_at: '', activity_window_seconds: 120 })
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }, { path: '/account/tickets', component: { template: '<div />' } }] })
   await router.push('/account/subscription'); await router.isReady()
   const wrapper = mount(AccountSubscription, { global: { plugins: [router] } })
   await flushPromises()
@@ -290,7 +376,7 @@ it('keeps an exhausted purchase-only record without promising a reset or renewal
   vi.mocked(fetchActiveSubscriptionTemplatesPage).mockResolvedValue(page([]))
   vi.mocked(fetchAccountProtocolLoads).mockResolvedValue({ items: [], sampled_at: '', activity_window_seconds: 120 })
   vi.mocked(fetchSubscriptionAccess).mockResolvedValue({ configured: false, subscription_id: exhausted.id })
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }, { path: '/account/tickets', component: { template: '<div />' } }] })
   await router.push('/account/subscription'); await router.isReady()
   const wrapper = mount(AccountSubscription, { global: { plugins: [router] } })
   await flushPromises()

@@ -76,7 +76,7 @@ function handleDismiss(event: Event) {
 function restoreFocus() {
   const replacement = returnFocusSelector ? document.querySelector<HTMLElement>(returnFocusSelector) : null
   const target = replacement || (previousFocus?.isConnected ? previousFocus : null)
-  target?.focus()
+  target?.focus({ preventScroll: true })
   previousFocus = null
   returnFocusSelector = ''
 }

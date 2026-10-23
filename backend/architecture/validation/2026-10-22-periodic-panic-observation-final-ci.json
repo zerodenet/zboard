@@ -1,0 +1,96 @@
+{
+  "source": "a7ddc48171b249a17f116d424a2e4a0fbec95cde",
+  "run_url": "https://github.com/zerodenet/zboard/actions/runs/39715596224",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 119616815428,
+      "name": "contract",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T03:12:52Z",
+      "completed_at": "2026-10-22T03:13:10Z",
+      "html_url": "https://github.com/zerodenet/zboard/actions/runs/39715596224/job/119616815428"
+    },
+    {
+      "id": 119616815513,
+      "name": "zrs-compiler",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T03:12:52Z",
+      "completed_at": "2026-10-22T03:13:37Z",
+      "html_url": "https://github.com/zerodenet/zboard/actions/runs/39715596224/job/119616815513"
+    },
+    {
+      "id": 119616815563,
+      "name": "compose",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T03:12:52Z",
+      "completed_at": "2026-10-22T03:12:59Z",
+      "html_url": "https://github.com/zerodenet/zboard/actions/runs/39715596224/job/119616815563"
+    },
+    {
+      "id": 119616815656,
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T03:12:52Z",
+      "completed_at": "2026-10-22T03:16:52Z",
+      "html_url": "https://github.com/zerodenet/zboard/actions/runs/39715596224/job/119616815656"
+    },
+    {
+      "id": 119616815660,
+      "name": "backend",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T03:12:52Z",
+      "completed_at": "2026-10-22T03:20:44Z",
+      "html_url": "https://github.com/zerodenet/zboard/actions/runs/39715596224/job/119616815660"
+    },
+    {
+      "id": 119616815669,
+      "name": "mysql",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T03:12:52Z",
+      "completed_at": "2026-10-22T03:28:34Z",
+      "html_url": "https://github.com/zerodenet/zboard/actions/runs/39715596224/job/119616815669"
+    }
+  ],
+  "frontend": {
+    "test_files_passed": 204,
+    "test_files_skipped": 2,
+    "tests_passed": 1140,
+    "tests_skipped": 8,
+    "skip_scope": "existing7 native HTTP +1 dedicated kernel test; original six exclusions unchanged",
+    "build_seconds": 12.59
+  },
+  "scope": "Exact a7ddc48 only; next queue-panic candidate not covered. No current capacity, standalone worker/scaling, external channel or production acceptance inferred.",
+  "raw_mysql_log": {
+    "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/mysql-ci-a7ddc48-success.log",
+    "bytes": 34886,
+    "sha256": "b2a38e6ae127a337488d686c0f68287f00e46b2f2916e4c3e19526a4871be33f"
+  },
+  "other_raw_log_proofs": {
+    "backend": {
+      "bytes": 27546,
+      "sha256": "6968264337e6698f5d1ea2c0bb4d73e2301b4c605159418160d582f270adba58",
+      "private_path": ".codex-local-artifacts/recovery-validation/ci-a7-backend-raw.log"
+    },
+    "frontend": {
+      "bytes": 147566,
+      "sha256": "2b3445398689d2be7d828bfb29837002e207847ceb85245573183aab0973ab09",
+      "private_path": ".codex-local-artifacts/recovery-validation/ci-a7-frontend-raw.log"
+    }
+  },
+  "actual_mysql_package_seconds": {
+    "datastore": 147.406,
+    "handler": 626.715,
+    "networkstore": 143.871,
+    "application": 15.718,
+    "jobstore": 87.947,
+    "platformstore": 161.401
+  }
+}

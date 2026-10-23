@@ -24,6 +24,91 @@ tags:
   - name: tickets
   - name: files
 paths:
+  /api/v1/admin/node-observation-intents:
+    get:
+      tags: [admin, nodes]
+      operationId: listNodeObservationIntents
+      summary: Read global node observation queue metadata
+      description: |
+        Requires a current active administrator. Includes retained history for deleted assets.
+        Single status only; keyset pages use available_at then opaque SHA256 id. No count,
+        offset, node or reason filtering. Reads headers only, never parts or raw source identities.
+        Queue timestamps are not sample times or freshness evidence. Metadata does not reverify
+        retained material. No repair, active-lease reset or deletion operation is offered.
+        Eligible inactive-node material has a separate inspected-candidate retry endpoint.
+      parameters:
+        - {in: query, name: status, schema: {type: string, enum: [held, pending, claimed, applied], default: held}}
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+        - in: query
+          name: cursor
+          schema: {type: string, minLength: 1, maxLength: 512}
+          description: Opaque canonical v1 cursor bound to the selected status and UTC millisecond position; duplicate or unsupported parameters are rejected.
+      responses:
+        '200':
+          description: A bounded metadata page, without a total count or material verification claim
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiResponse'}
+                  - {type: object, properties: {data: {$ref: '#/components/schemas/ObservationIntentPage'}}}
+        '400': {description: 'Invalid status, limit, cursor or unsupported/duplicate query parameter'}
+        '401': {description: Authentication required or inactive session}
+        '403': {description: Current administrator permission required}
+        '500': {description: Database query failure; not an empty successful page}
+  /api/v1/admin/node-observation-intents/{id}/retry:
+    post:
+      tags: [admin, nodes]
+      operationId: retryNodeObservationIntent
+      summary: Request revalidation of one held inactive-node observation
+      description: |
+        Requires a current active administrator and an explicit reason. Only held node_inactive
+        material for the same restored, enabled, non-revoked asset is eligible. Deleted assets,
+        source conflicts, corrupt material and active claims cannot be overridden. The original
+        inspected attempt is admitted at most once; a lost response is resolved by reading queue
+        metadata before another explicit operation. Acceptance never means projection success,
+        observation freshness, business authorization or applied configuration. Material and the
+        worker's source, ownership and ordering validation remain unchanged.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, pattern: '^[a-f0-9]{64}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expected_attempts, reason]
+              properties:
+                expected_attempts: {type: string, pattern: '^[1-9][0-9]{0,19}$', description: Exact inspected uint64 decimal; must be below uint64 maximum. No Number conversion.}
+                reason: {type: string, minLength: 3, maxLength: 400, description: Server validates 3–400 UTF-8 bytes after trimming.}
+      responses:
+        '202':
+          description: Audited original material queued for worker revalidation; not an applied observation
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiResponse'}
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [id, expected_attempts, audit_id, status]
+                        properties:
+                          id: {type: string, pattern: '^[a-f0-9]{64}$'}
+                          expected_attempts: {type: string, pattern: '^[1-9][0-9]{0,19}$'}
+                          audit_id: {type: string, pattern: '^[1-9][0-9]*$'}
+                          status: {type: string, enum: [accepted]}
+        '400': {description: 'Invalid inspected candidate, reason or unsupported fields/query'}
+        '401': {description: 'Authentication required'}
+        '403': {description: 'Current administrator permission required'}
+        '404': {description: 'Original queue material does not exist'}
+        '409': {description: 'Candidate changed, already admitted or ineligible. A previous request may have been accepted; read current metadata before explicitly submitting a new candidate. No repeated requeue by this rejected request.'}
+        '500': {description: 'Durable source, state or audit failure; admission is rolled back'}
   /api/v1/files:
     post:
       tags: [files]
@@ -3379,7 +3464,7 @@ paths:
       tags:
         - plans
       summary: Update plan fields and toggle active state
-      description: Requires a current active administrator and expected_revision. Field changes, revision and audit commit atomically. Publishing or changing the group of a published product validates enabled explicit protocol membership; published products retain a purchasable SKU.
+      description: Requires a current active administrator and expected_revision. Field changes, revision and audit commit atomically. Publishing or changing the group of a published product validates enabled explicit protocol membership; published products retain a purchasable SKU. Changing node_group_id also updates all eligible unended subscriptions independently of sync_traffic_quota; access revocations and publication intents share that transaction. Shared confirmed endpoints remain available and new endpoints require delivery verification. Updates affecting more than 1000 subscriptions are refused atomically.
       parameters:
         - name: id
           in: path
@@ -3410,6 +3495,489 @@ paths:
         "500": { description: "error.code=commerce_persistence_failed; changes and audit roll back together." }
         "409": { $ref: "#/components/responses/Error" }
         "428": { $ref: "#/components/responses/Error" }
+        "503":
+          description: "Current resources are being changed; error.code=unavailable and error.retryable=true. Retry-After is 1 second. The transaction rolls back; retain the original request and expected_revision for an explicit retry after checking current state."
+  /api/v1/admin/users/{id}/wallet:
+    get:
+      tags: [admin, orders]
+      operationId: readAdministrativeWallet
+      summary: Read a selected account wallet
+      description: Reads authoritative balances and a bounded ledger page. Every call rechecks the current administrator role. Missing financial evidence is not shown as zero.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: currency, in: query, required: true, schema: { type: string, pattern: '^[A-Z]{3}$' } }
+        - { name: after, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: Administrator-only result; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletPage' }
+        '400': { description: Invalid request or insufficient unreserved funds }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: User or adjustment not found }
+        '409': { description: Conflicting intent or incompatible confirmed payout result }
+        '500': { description: Financial facts unavailable; no partial ledger change acknowledged }
+  /api/v1/admin/orders/{id}/consumption-refunds:
+    post:
+      tags: [admin, orders]
+      operationId: approveConsumptionRefund
+      summary: Credit an approved consumption refund to the internal wallet
+      description: Requires a current active administrator and an account-owned ticket. Only clearly terminated purchase entitlements are supported. Consumes the original actual-paid budget less previous refunds and conversions; never refunds a top-up, discounts or another entitlement. Approval identity, wallet credit, source budget and audit commit atomically. No external payout occurs.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [idempotency_key, amount_minor, ticket_id, reason]
+              properties:
+                idempotency_key: { type: string, minLength: 8, maxLength: 80 }
+                amount_minor: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+                ticket_id: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 3, maxLength: 400 }
+      responses:
+        '200':
+          description: Persisted approval; identical replay returns the same result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/ConsumptionRefund' }
+        '400': { description: Invalid request or unsupported funding }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: Original order or owned ticket not found }
+        '409': { description: "Conflicting approval, unavailable historical evidence, insufficient refundable budget or active entitlement requiring review" }
+  /api/v1/admin/consumption-refunds/{id}:
+    get:
+      tags: [admin, orders]
+      operationId: readConsumptionRefund
+      summary: Read an approved consumption refund
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Administrator-only approval fact; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/ConsumptionRefund' }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: Approval not found }
+  /api/v1/admin/wallet-adjustments:
+    get:
+      tags: [admin, orders]
+      operationId: listWalletAdjustments
+      summary: List controlled wallet debits
+      description: Bounded reverse chronological page for one user and currency. External payout observations remain separate from wallet entries.
+      parameters:
+        - { name: user_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: currency, in: query, required: true, schema: { type: string, pattern: '^[A-Z]{3}$' } }
+        - { name: after, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: Administrator-only result; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletAdjustmentPage' }
+        '400': { description: Invalid request or insufficient unreserved funds }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: User or adjustment not found }
+        '409': { description: Conflicting intent or incompatible confirmed payout result }
+        '500': { description: Financial facts unavailable; no partial ledger change acknowledged }
+    post:
+      tags: [admin, orders]
+      operationId: debitAdministrativeWallet
+      summary: Create a ticketed controlled wallet debit
+      description: Atomically decreases only unreserved balance and records amount, reason, current administrator, same-user ticket, ledger identity and audit. Executes no external payout. Identical retries return the original adjustment; changed requests conflict.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WalletDebitRequest' }
+      responses:
+        '200':
+          description: Administrator-only result; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletAdjustment' }
+        '400': { description: Invalid request or insufficient unreserved funds }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: User or adjustment not found }
+        '409': { description: Conflicting intent or incompatible confirmed payout result }
+        '500': { description: Financial facts unavailable; no partial ledger change acknowledged }
+  /api/v1/admin/wallet-adjustments/{id}:
+    get:
+      tags: [admin, orders]
+      operationId: readWalletAdjustment
+      summary: Read a controlled debit and its payout observations
+      description: Includes at most the latest 50 private manual payout observations. No provider credentials or automatic transfer is involved.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Administrator-only result; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletAdjustment' }
+        '400': { description: Invalid request or insufficient unreserved funds }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: User or adjustment not found }
+        '409': { description: Conflicting intent or incompatible confirmed payout result }
+        '500': { description: Financial facts unavailable; no partial ledger change acknowledged }
+  /api/v1/admin/wallet-adjustments/{id}/payout-results:
+    post:
+      tags: [admin, orders]
+      operationId: recordWalletPayoutResult
+      summary: Record a manually verified external payout result
+      description: Records unknown or confirmed succeeded/failed observations without changing wallet balances. Confirmed outcomes require an external reference or supporting note. Conflicting final outcomes are rejected; repeated identical intents are idempotent.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WalletPayoutRequest' }
+      responses:
+        '200':
+          description: Administrator-only result; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletAdjustment' }
+        '400': { description: Invalid request or insufficient unreserved funds }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: User or adjustment not found }
+        '409': { description: Conflicting intent or incompatible confirmed payout result }
+        '500': { description: Financial facts unavailable; no partial ledger change acknowledged }
+  /api/v1/admin/wallet-adjustments/{id}/reverse:
+    post:
+      tags: [admin, orders]
+      operationId: reverseFailedWalletDebit
+      summary: Restore a debit after confirmed external payout failure
+      description: Explicit administrator action restores the exact original debit once. Pending, unknown or successful external outcomes cannot be reversed. Repeated reversals return the original result without new credit.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WalletReversalRequest' }
+      responses:
+        '200':
+          description: Administrator-only result; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletAdjustment' }
+        '400': { description: Invalid request or insufficient unreserved funds }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator role required }
+        '404': { description: User or adjustment not found }
+        '409': { description: Conflicting intent or incompatible confirmed payout result }
+        '500': { description: Financial facts unavailable; no partial ledger change acknowledged }
+  /api/v1/account/wallet:
+    get:
+      tags: [orders]
+      operationId: readAccountWallet
+      summary: Read the current account's wallet and bounded ledger page
+      description: Authoritative balances are separate for each currency. Monetary values are decimal integer strings in currency minor units, preserving int64 precision. No historical traffic or chart query is required.
+      parameters:
+        - { name: currency, in: query, required: true, schema: { type: string, pattern: '^[A-Z]{3}$' } }
+        - { name: after, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200':
+          description: Current account wallet; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletPage' }
+        '400': { description: Invalid currency or pagination }
+        '401': { description: Authentication required }
+        '403': { description: Current active account required }
+        '500': { description: Financial facts unavailable; balance is not reported as zero }
+  /api/v1/account/wallet/topups:
+    post:
+      tags: [orders]
+      operationId: createAccountWalletTopUp
+      summary: Create an idempotent unpaid wallet top-up order
+      description: Creates no balance or subscription. The admitted native payment plugin verifies its provider receipt and invokes the same trusted payment-fact capability. Ordinary browser sessions and unverified manual order transitions cannot credit a top-up.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amount_minor, currency, idempotency_key]
+              properties:
+                amount_minor: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+                currency: { type: string, pattern: '^[A-Z]{3}$' }
+                idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
+      responses:
+        '200':
+          description: Pending order, or the original order for an identical retry
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/Order' }
+        '400': { description: Invalid amount or a changed idempotent request }
+        '401': { description: Authentication required }
+        '403': { description: Current active account required }
+        '500': { description: Creation unavailable; retry with the same intent }
+  /api/v1/orders/{id}/funding:
+    get:
+      operationId: readOrderFunding
+      tags: [orders]
+      summary: Read owned order funding and available currency balance
+      description: Read-only. Does not reserve, release, deduct or fulfill. Unknown financial facts are errors, not zero balances. Monetary amounts are exact integer strings.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        '200':
+          description: Current immutable split or unconfigured quote
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/OrderFunding' }
+        '400': { description: Invalid or unsupported funding input }
+        '401': { description: Authentication required }
+        '403': { description: Current active owner required }
+        '404': { description: Unknown or foreign order }
+        '409': { description: "Funding split frozen, expired, or conflicting with an existing payment attempt" }
+        '500': { description: No partial financial commit; recover the same order after checking status }
+    post:
+      operationId: configureOrderFunding
+      tags: [orders]
+      summary: Explicitly freeze a channel-only or wallet-plus-channel funding split
+      description: Current owner only. One split per order, identical retries recover it without additional reservation. A new split reserves min(available balance, order payable) only when use_balance is true. Channel admission fixes its expected cash amount; a wallet split cannot change a prior channel attempt or recorded failure. Thirty-minute reservation expiry is persisted. Top-ups cannot consume wallet funds.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                use_balance: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Frozen split and durable reservation
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/OrderFunding' }
+        '400': { description: Invalid or unsupported funding input }
+        '401': { description: Authentication required }
+        '403': { description: Current active owner required }
+        '404': { description: Unknown or foreign order }
+        '409': { description: "Funding split frozen, expired, or conflicting with an existing payment attempt" }
+        '500': { description: No partial financial commit; recover the same order after checking status }
+  /api/v1/orders/{id}/wallet-pay:
+    post:
+      operationId: payOwnedOrderFromWallet
+      tags: [orders]
+      summary: Confirm an entirely wallet-funded or zero-amount owned order
+      description: Explicit current-owner command. Does not accept browser-supplied amounts, prices or paid status. Requires a live split with zero cash supplement. Wallet capture, order, entitlements, credentials, quota event, publication intent and audit commit atomically. Repeated successful calls do not charge or fulfill twice. Actual node configuration remains an independent recoverable delivery task.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200':
+          description: Authoritative business settlement result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletPaymentResult' }
+        '400': { description: Invalid or unsupported funding input }
+        '401': { description: Authentication required }
+        '403': { description: Current active owner required }
+        '404': { description: Unknown or foreign order }
+        '409': { description: "Funding split frozen, expired, or conflicting with an existing payment attempt" }
+        '500': { description: No partial financial commit; recover the same order after checking status }
+  /api/v1/orders/{id}/payment-receipts:
+    get:
+      operationId: readOwnedPaymentReceipts
+      tags: [orders]
+      summary: Read safe cash receipt ownership for an owned order
+      description: Bounded independent cash receipts; excludes raw provider responses and secrets. Administrator reads include normalized provider/trade references and ticketed resolution notes; account reads omit those private fields.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: after, in: query, schema: { type: integer, format: int64, minimum: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: Cash ownership facts, independently of order fulfillment status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/PaymentReceiptPage' }
+        '400': { description: Invalid pagination }
+        '401': { description: Authentication required }
+        '403': { description: Current account or administrator permission required }
+        '404': { description: Unknown or foreign order }
+        '500': { description: Receipt facts unavailable; never interpreted as zero cash }
+  /api/v1/admin/orders/{id}/payment-receipts:
+    get:
+      operationId: readAdminPaymentReceipts
+      tags: [orders]
+      summary: Read safe cash receipt ownership for an order as administrator
+      description: Bounded independent cash receipts; excludes raw provider responses and secrets. Administrator reads include normalized provider/trade references and ticketed resolution notes; account reads omit those private fields.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: after, in: query, schema: { type: integer, format: int64, minimum: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: Cash ownership facts, independently of order fulfillment status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/PaymentReceiptPage' }
+        '400': { description: Invalid pagination }
+        '401': { description: Authentication required }
+        '403': { description: Current account or administrator permission required }
+        '404': { description: Unknown or foreign order }
+        '500': { description: Receipt facts unavailable; never interpreted as zero cash }
+  /api/v1/admin/orders/{id}/payment-receipts/resolve:
+    post:
+      operationId: resolvePaymentReceipt
+      tags: [orders]
+      summary: Resolve a legacy cash receipt using a same-owner support ticket
+      description: Current administrator only. Exactly-once receipt disposition, ledger credit and audit share a transaction. Only review_required receipts can be resolved. Identical retries return the original result; changed decisions conflict. Does not revive or alter subscription entitlements, delete evidence, or send money outside the panel.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [receipt_id, ticket_id, decision, reason]
+              properties:
+                receipt_id: { type: integer, format: int64, minimum: 1 }
+                ticket_id: { type: integer, format: int64, minimum: 1 }
+                decision: { type: string, enum: [credit_wallet, already_applied] }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        '200':
+          description: Resolved receipt and optional immutable wallet entry reference
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/PaymentReceiptSummary' }
+        '400': { description: Invalid input or ticket ownership }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator required }
+        '404': { description: Unknown order or receipt }
+        '409': { description: Receipt already applied or conflicting resolution }
+        '500': { description: No partial receipt or ledger commit; retry the same decision }
+  /api/v1/commerce/discount-providers:
+    get:
+      operationId: listCommerceDiscountProviders
+      tags: [orders]
+      summary: List admitted discount quote providers
+      description: Authenticated, bounded choices from admitted signed active configured native installations. Names and descriptions are presentation only; selection is an optional provider-owned code, never a browser price or payment fact. No host or available provider returns an empty array. Discovery performs no evaluation and reports quote_required; operations lists host-admitted quote operations, not a promise that the provider offers a discount. The legacy operation remains new. The actual verified offer determines initial_only or recurring for new purchase, and must explicitly be order_only for upgrade, traffic_reset or traffic_pack. Those operations require an owned eligible target and confirmed final quote. A one-order offer never changes renewal consent or the undiscounted base, and replacement credit is computed against its discounted price. Manual recurring renewal inherits the strictly verified paid agreement and provider, including when the browser omits discount. Unavailable or unverified terms never silently revert to full price. Discovery never authorizes a charge.
+      responses:
+        "200":
+          description: Up to 200 current provider choices; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        type: array
+                        maxItems: 200
+                        items:
+                          type: object
+                          required: [provider_id, name, description, operation, operations, agreement_scope]
+                          properties:
+                            provider_id: { type: string }
+                            name: { type: string }
+                            description: { type: string }
+                            operation: { type: string, enum: [new] }
+                            operations:
+                              type: array
+                              minItems: 1
+                              maxItems: 4
+                              uniqueItems: true
+                              items: { type: string, enum: [new, upgrade, traffic_reset, traffic_pack] }
+                            agreement_scope: { type: string, enum: [quote_required] }
+        "401": { $ref: "#/components/responses/Error" }
+        "503": { description: "Provider catalog unavailable; ordinary undiscounted purchases remain independent." }
   /api/v1/orders:
     get:
       tags:
@@ -3540,7 +4108,7 @@ paths:
       parameters:
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Match customer email, order/provider trade number, plan, SKU, channel or a numeric order/user/subscription ID." }
         - { name: status, in: query, schema: { type: string, enum: [attention, pending, paid, failed, canceled, success] }, description: "Use attention for the administrator work queue containing pending and failed orders." }
-        - { name: order_type, in: query, schema: { type: string, enum: [new, renewal, upgrade, traffic_pack, traffic_reset] } }
+        - { name: order_type, in: query, schema: { type: string, enum: [new, renewal, upgrade, traffic_pack, traffic_reset, topup] } }
         - { name: user_id, in: query, schema: { type: integer, format: int64 } }
         - { name: created_from, in: query, schema: { type: string, format: date }, description: "Inclusive order creation start date. Must be paired with created_to; the window cannot exceed 366 days." }
         - { name: created_to, in: query, schema: { type: string, format: date }, description: "Inclusive order creation end date. Must be paired with created_from." }
@@ -3724,6 +4292,167 @@ paths:
       responses:
         "200": { description: Order canceled }
         "403": { $ref: "#/components/responses/Error" }
+  /api/v1/subscriptions/{id}/automatic-renewal:
+    get:
+      tags: [subscriptions]
+      operationId: getOwnedAutomaticRenewal
+      summary: Read per-subscription wallet renewal consent and an explicitly selected period quote
+      description: Default off. Only an owned subscription, a purchased locked period, verified purchase evidence, and a renewable SKU can produce an offer. V2 recurring offers include host-owned decimal-string base, reduction and payable amounts plus the verified ongoing agreement. Provider evaluation runs outside financial transactions. Unavailable or unverified terms return the readable current consent without an unsafe offer; they never become an undiscounted approval. No order or debit is created by this read. Insufficient balance remains a visible account notice. An over-bound historical item remains readable and its owner can always withdraw consent without a provider call or history settlement.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: plan_sku_id, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: Current consent, status and available server quote
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/AutomaticRenewalView' }
+        "401": { description: Authentication required }
+        "403": { description: Account unavailable }
+        "404": { description: Subscription unavailable to this owner }
+    put:
+      tags: [subscriptions]
+      operationId: setOwnedAutomaticRenewal
+      summary: Explicitly enable or disable wallet-only renewal for one owned subscription
+      description: No immediate charge. Enabling obtains a fresh quote outside the financial transaction, then rechecks consent revision, purchased price/period, paid source and offered terms. V2 stores the exact approved stable base, discount, payable, agreement and provider configuration identity; changed terms or identity pause debit until explicit approval. Transient provider failure never charges full price. The job evaluates providers outside the scan/financial transaction, then reselects the same due head under the existing guard before committing through ordinary wallet payment/fulfillment. Stable account, expiry and subscription-ID order is retained; RPC completion speed cannot choose who spends balance first. Insufficient funds or unavailable offers retry in five minutes within the recovery window. Window closure, unsubscribe or replacement stops old consent. No external payment channel is invoked. A known historical safety-bound failure rolls back finance, records a paused non-charge result and stable sequence separately, lets neighboring subscriptions proceed and retries in 30 minutes only within the recovery window. Disabling requires no provider call.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AutomaticRenewalRequest' }
+      responses:
+        "200":
+          description: Committed consent state
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/AutomaticRenewalView' }
+        "400": { description: Invalid input or unavailable purchased-period agreement }
+        "401": { description: Authentication required }
+        "403": { description: Account unavailable }
+        "404": { description: Subscription unavailable to this owner }
+        "409": { description: Consent revision or quote changed; read and confirm again }
+        "502": { description: Provider quote invalid; verify current consent before another explicit request }
+        "503": { description: Provider quote unavailable; no undiscounted approval fallback }
+  /api/v1/subscriptions/{id}/value:
+    get:
+      tags: [subscriptions]
+      operationId: quoteOwnedSubscriptionValue
+      summary: Quote cash-backed remaining value for an owned subscription
+      description: Only verified paid entitlement snapshots are valued. Extending renewal preserves the settled current remainder plus actual new cash without restoring quota. Missing legacy evidence, quota-changing legacy effects, or a pending quota-cycle reset returns an explanatory conflict. No remote disconnection is implied by business termination.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: Read-only quote with current and future paid value
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/SubscriptionValueQuote' }
+        "401": { description: Authentication required }
+        "403": { description: Current account is not active }
+        "404": { description: Subscription unavailable to this owner }
+        "409": { description: "Changed quote, conflicting settlement, or financial history requiring review" }
+  /api/v1/subscriptions/{id}/unsubscribe:
+    post:
+      tags: [subscriptions]
+      operationId: terminateOwnedSubscription
+      summary: Permanently terminate an owned subscription and refund remaining value to wallet
+      description: Only verified paid entitlement snapshots are valued. Extending renewal preserves the settled current remainder plus actual new cash without restoring quota. Missing legacy evidence, quota-changing legacy effects, or a pending quota-cycle reset returns an explanatory conflict. No remote disconnection is implied by business termination.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscriptionTerminationRequest' }
+      responses:
+        "200":
+          description: Idempotent committed settlement; authorization revoked and delivery pending verification
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/SubscriptionTerminationReceipt' }
+        "401": { description: Authentication required }
+        "403": { description: Current account is not active }
+        "404": { description: Subscription unavailable to this owner }
+        "409": { description: "Changed quote, conflicting settlement, or financial history requiring review" }
+  /api/v1/admin/subscriptions/{id}/value:
+    get:
+      tags: [subscriptions]
+      operationId: quoteAdministrativeSubscriptionValue
+      summary: Quote default remaining value and actual-paid refund limit for administrators
+      description: Administrators may approve a custom nonnegative refund, including zero, up to verified unrefunded and unconverted actual payment. Omission uses the default residual. Actor, reason, default residual and actual amount are audited atomically with permanent rights termination. Zero creates no refund entry or external funds operation. Only verified paid entitlement snapshots are valued. Extending renewal preserves the settled current remainder plus actual new cash without restoring quota. Missing legacy evidence, quota-changing legacy effects, or a pending quota-cycle reset returns an explanatory conflict. No remote disconnection is implied by business termination.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: Read-only quote with current and future paid value
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/AdministrativeSubscriptionValueQuote' }
+        "401": { description: Authentication required }
+        "403": { description: Current account must be an active administrator }
+        "404": { description: Subscription not found }
+        "409": { description: "Changed quote, conflicting settlement, or financial history requiring review" }
+  /api/v1/admin/subscriptions/{id}/unsubscribe:
+    post:
+      tags: [subscriptions]
+      operationId: terminateAdministrativeSubscription
+      summary: Administratively terminate all remaining rights with an approved wallet refund
+      description: Administrators may approve a custom nonnegative refund, including zero, up to verified unrefunded and unconverted actual payment. Omission uses the default residual. Actor, reason, default residual and actual amount are audited atomically with permanent rights termination. Zero creates no refund entry or external funds operation. Only verified paid entitlement snapshots are valued. Extending renewal preserves the settled current remainder plus actual new cash without restoring quota. Missing legacy evidence, quota-changing legacy effects, or a pending quota-cycle reset returns an explanatory conflict. No remote disconnection is implied by business termination.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdministrativeSubscriptionTerminationRequest' }
+      responses:
+        "200":
+          description: Idempotent committed settlement; authorization revoked and delivery pending verification
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/SubscriptionTerminationReceipt' }
+        "401": { description: Authentication required }
+        "403": { description: Current account must be an active administrator }
+        "404": { description: Subscription not found }
+        "409": { description: "Changed quote, conflicting settlement, or financial history requiring review" }
   /api/v1/subscriptions:
     get:
       tags:
@@ -3733,7 +4462,7 @@ paths:
       parameters:
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: Paged reads only. Search plan/SKU names or exact subscription ID before count and pagination; restricted to the authenticated owner. }
         - { name: subscription_id, in: query, schema: { type: integer, minimum: 1 }, description: Exact target lookup within the current user's subscriptions and all other filters; an unavailable target produces an empty result. }
-        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: "Read-only filter applied before count and pagination. Each operation requires a compatible active, unarchived SKU on a published product and an eligible subscription. manage requires at least one such operation. Renewable ended subscriptions remain renewal candidates strictly before the seven-day deadline; single-use nonrenewable instances are removed after their terminal summary is saved to orders. This filter does not replace order authorization." }
+        - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: "Read-only filter applied before count and pagination. Each operation requires a compatible active, unarchived SKU on a published product and an eligible subscription. manage requires at least one such operation. Renewable ended subscriptions remain renewal candidates strictly before the administrator-configured recovery deadline (default seven days); finalized instances retain business and metering identities outside the current-service list after their terminal summary is saved to orders. This filter does not replace order authorization." }
         - name: status
           in: query
           schema:
@@ -3762,7 +4491,7 @@ paths:
       parameters:
         - { name: eligible_for, in: query, schema: { type: string, enum: [manage, renew, change, addon, reset] }, description: Filter targets with a compatible saleable SKU before count and pagination. }
         - { name: q, in: query, schema: { type: string, maxLength: 128 }, description: "Match user email, plan, SKU or a numeric subscription/user/plan ID." }
-        - { name: status, in: query, schema: { type: string, enum: [active, expired, canceled] } }
+        - { name: status, in: query, schema: { type: string, enum: [active, expired, canceled, ended] } }
         - { name: quota, in: query, schema: { type: string, enum: [available, exhausted] } }
         - { name: user_id, in: query, schema: { type: integer, format: int64 } }
         - { name: expires_from, in: query, schema: { type: string, format: date }, description: "Inclusive subscription expiration start date. Must be paired with expires_to; the window cannot exceed 366 days." }
@@ -3889,7 +4618,7 @@ paths:
       tags:
         - subscriptions
       summary: Fetch a client-specific subscription response
-      description: When template is omitted or set to auto, the server selects the built-in ZNet Sink, Clash/Mihomo or sing-box template from User-Agent and falls back to the canonical zboard.subscription/v1 manifest. ZNet Sink and native JSON are delivered as Base64 text; Clash and sing-box retain their client-native representations. An explicit template slug or native always takes precedence over User-Agent.
+      description: When template is omitted or set to auto, the server selects the built-in ZNet Sink, Clash/Mihomo or sing-box template from User-Agent and falls back to the canonical zboard.subscription/v1 manifest. ZNet Sink and native JSON are delivered as Base64 text; Clash and sing-box retain their client-native representations. An explicit template slug or native always takes precedence over User-Agent. The canonical manifest may include delivery_status on a protocol endpoint, with confirmed, legacy_unknown or external_unverified values. Newly issued managed credentials and new managed forwarding listeners are excluded until their own frozen configuration bindings are confirmed. Missing runtime observations do not remove previously confirmed access; business revocation and explicit administrator stops still apply. External forwarding registration does not claim panel verification of external delivery.
       parameters:
         - in: path
           name: token
@@ -4223,7 +4952,7 @@ paths:
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol, in: query, schema: { type: string } }
         - { name: active, in: query, schema: { type: boolean } }
-        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, deferred, never] } }
+        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, deferred, reconciling, suspended, connections_pending, never] } }
       responses:
         "200":
           description: Stable ID-only selection snapshot
@@ -4251,7 +4980,7 @@ paths:
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: protocol, in: query, schema: { type: string } }
         - { name: active, in: query, schema: { type: boolean } }
-        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, deferred, never] } }
+        - { name: deployment_status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, deferred, reconciling, suspended, connections_pending, never] } }
         - { name: include_facets, in: query, schema: { type: boolean, default: false }, description: "Include current publication-state counts for the non-status filters in the paged response." }
         - { name: sort, in: query, schema: { type: string, enum: [sort_order, id, name, node_id, protocol, multiplier, updated_at] } }
         - { name: direction, in: query, schema: { type: string, enum: [asc, desc] } }
@@ -4726,6 +5455,12 @@ paths:
                         anyOf:
                           - $ref: "#/components/schemas/TrafficSummary"
                           - $ref: "#/components/schemas/TrafficQuota"
+        "503":
+          description: Hourly statistics are still updating; error.code is usage_projection_pending. Current quota remains available with view=quota.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
   /api/v1/admin/traffic/summary:
     get:
       tags: [traffic, admin]
@@ -4736,6 +5471,85 @@ paths:
       responses:
         "200": { description: Administrative traffic summary }
         "403": { $ref: "#/components/responses/Error" }
+        "503":
+          description: Hourly statistics are still updating; error.code is usage_projection_pending. Current quota remains available with view=quota.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+  /api/v1/traffic/trends:
+    get:
+      operationId: readCurrentUserTrafficTrends
+      tags: [traffic]
+      summary: Current user daily traffic trends
+      description: Dates use the configured system timezone, at most 366 inclusive days. A durable statistics backlog returns an explicit pending response with all measurements and as_of null; it does not change current quota. HTTP 200 alone does not mean complete statistics. Actual authorization, storage and cancellation failures remain errors. Self-service always uses the authenticated user.
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: subscription_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: node_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: protocol_endpoint_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: include_subscriptions, in: query, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Complete snapshot or explicitly unknown pending statistics
+          headers:
+            X-Zboard-Statistics-State:
+              schema: { type: string, enum: [pending, complete] }
+              description: Read state, independently of successful HTTP transport.
+            Cache-Control:
+              schema: { type: string }
+              description: Pending responses always use no-store.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        oneOf:
+                          - $ref: "#/components/schemas/TrafficTrendsComplete"
+                          - $ref: "#/components/schemas/TrafficTrendsPending"
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/traffic/trends:
+    get:
+      operationId: readAdministrativeTrafficTrends
+      tags: [traffic, admin]
+      summary: Administrative daily traffic trends
+      description: Dates use the configured system timezone, at most 366 inclusive days. A durable statistics backlog returns an explicit pending response with all measurements and as_of null; it does not change current quota. HTTP 200 alone does not mean complete statistics. Actual authorization, storage and cancellation failures remain errors. Self-service always uses the authenticated user.
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: subscription_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: node_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: protocol_endpoint_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: include_subscriptions, in: query, schema: { type: boolean, default: false } }
+        - { name: user_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        "200":
+          description: Complete snapshot or explicitly unknown pending statistics
+          headers:
+            X-Zboard-Statistics-State:
+              schema: { type: string, enum: [pending, complete] }
+              description: Read state, independently of successful HTTP transport.
+            Cache-Control:
+              schema: { type: string }
+              description: Pending responses always use no-store.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data:
+                        oneOf:
+                          - $ref: "#/components/schemas/TrafficTrendsComplete"
+                          - $ref: "#/components/schemas/TrafficTrendsPending"
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
   /api/v1/traffic/records:
     get:
       tags:
@@ -4780,6 +5594,12 @@ paths:
                           - $ref: "#/components/schemas/TrafficUsagePage"
                           - $ref: "#/components/schemas/TrafficUsageStatistics"
                           - $ref: "#/components/schemas/TrafficBreakdown"
+        "503":
+          description: Hourly statistics are still updating; error.code is usage_projection_pending. No complete statistics value is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
   /api/v1/admin/traffic/records:
     get:
       tags: [traffic, admin]
@@ -4818,6 +5638,12 @@ paths:
                           - $ref: "#/components/schemas/TrafficUsageStatistics"
                           - $ref: "#/components/schemas/TrafficBreakdown"
         "403": { $ref: "#/components/responses/Error" }
+        "503":
+          description: Hourly statistics are still updating; error.code is usage_projection_pending. No complete statistics value is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
   /api/v1/traffic/reconciliation:
     get:
       tags:
@@ -4898,6 +5724,10 @@ paths:
         - traffic
       summary: Submit a signed node traffic report
       description: |
+        This legacy user/endpoint contract returns 409 when ownership spans multiple
+        historical subscriptions or a recovered period; use authenticated principal
+        flow events for period-safe accounting.
+
         This endpoint is authenticated by a node report credential, not by a user bearer token.
         Compute SHA-256 over the exact request body, then sign the following UTF-8 canonical string
         with HMAC-SHA256 using the node secret:
@@ -4949,6 +5779,12 @@ paths:
             schema:
               $ref: "#/components/schemas/TrafficReportRequest"
       responses:
+        "409":
+          description: Legacy report cannot identify one subscription period
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
         "200":
           description: Traffic report result; duplicate is true when an earlier report was reused without another deduction.
           content:
@@ -4998,6 +5834,12 @@ paths:
         '401': {description: Authentication required}
         '403': {description: Administrator required}
         '504': {description: Read budget exceeded; error.code is deadline_exceeded}
+        "503":
+          description: Hourly statistics are still updating; error.code is usage_projection_pending. Current business state and revenue trend remain available through their independent views.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
   /api/v1/admin/dashboard/traffic-rankings:
     get:
       tags: [admin]
@@ -5018,6 +5860,12 @@ paths:
         '400': {description: Invalid range}
         '401': {description: Authentication required}
         '403': {description: Administrator required}
+        "503":
+          description: Hourly statistics are still updating; error.code is usage_projection_pending. No complete statistics value is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
   /api/v1/admin/audit-logs:
     get:
       tags:
@@ -5153,6 +6001,35 @@ components:
           schema:
             $ref: "#/components/schemas/ApiResponse"
   schemas:
+    ObservationIntentPage:
+      type: object
+      additionalProperties: false
+      required: [items, status, has_more]
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/ObservationIntentItem'}}
+        status: {type: string, enum: [held, pending, claimed, applied]}
+        has_more: {type: boolean}
+        next_cursor: {type: string, maxLength: 512, description: 'Present only when another page exists; pages reflect live queue metadata, not a historical snapshot'}
+    ObservationIntentItem:
+      type: object
+      additionalProperties: false
+      required: [id, node_id, status, reason, asset_relation, attempts, material_bytes, retained_bytes, part_count, enqueued_at, available_at, disposition_updated_at, material_verified]
+      properties:
+        id: {type: string, pattern: '^[0-9a-f]{64}$', description: Opaque complete-material reference; displaying it is not revalidation}
+        node_id: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Historical numeric node identifier; not a link or attribution to a current asset with a reused id}
+        status: {type: string, enum: [held, pending, claimed, applied]}
+        reason: {type: string, maxLength: 64, description: Disposition code; clients must use a safe fixed fallback for unknown codes}
+        asset_relation: {type: string, enum: [unknown, same_asset, different_asset, node_missing, asset_deleted], description: Current metadata relationship only; not credential or runtime attestation}
+        attempts: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Exact unsigned diagnostic count encoded as decimal text}
+        retained_bytes: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Declared retained logical material bytes from lifecycle metadata; not a physical disk or blob integrity measurement}
+        material_retired_at: {type: string, format: date-time, description: Present only after unreferenced auxiliary parts retire atomically; original digest and size remain as the replay receipt}
+        material_bytes: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Original immutable material byte count encoded as decimal text}
+        part_count: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Exact unsigned diagnostic count encoded as decimal text}
+        enqueued_at: {type: string, format: date-time, description: 'Queue insertion time, not event/sample time'}
+        available_at: {type: string, format: date-time, description: Scheduling availability time; pending may retry automatically}
+        disposition_updated_at: {type: string, format: date-time, description: 'Queue disposition update time, not event/sample time'}
+        lease_until: {type: string, format: date-time, description: Present only for claimed metadata; the endpoint cannot revoke or extend a lease}
+        material_verified: {type: boolean, enum: [false], description: This endpoint never reads or revalidates retained parts}
     NavigationSnapshot:
       allOf:
         - {$ref: '#/components/schemas/MenuSnapshot'}
@@ -5189,6 +6066,7 @@ components:
         name: { type: string, minLength: 1, maxLength: 120 }
         scopes:
           type: array
+          description: commerce.payments.record requires a currently active administrator at issuance and invocation. Ordinary accounts submit payments through admitted native payment plugins.
           minItems: 1
           maxItems: 32
           items: { type: string, enum: [metering.usage.query, commerce.orders.list, commerce.payments.record] }
@@ -5906,6 +6784,14 @@ components:
         priority: { type: integer, enum: [1, 2], default: 1 }
         body: { type: string, minLength: 1, maxLength: 5000 }
         attachments: {type: array, maxItems: 5, items: {$ref: "#/components/schemas/TicketAttachmentInput"}}
+        references: {$ref: "#/components/schemas/TicketReferences"}
+    TicketReferences:
+      type: object
+      description: Optional immutable support context. Every referenced record must belong to the ticket creator; references grant no additional access or financial authority.
+      properties:
+        order_id: {type: integer, format: int64, minimum: 1}
+        subscription_id: {type: integer, format: int64, minimum: 1}
+        wallet_entry_id: {type: integer, format: int64, minimum: 1}
     TicketReplyRequest:
       type: object
       required: [body]
@@ -5934,6 +6820,7 @@ components:
         closed_at: { type: string, format: date-time, nullable: true }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+        references: {$ref: "#/components/schemas/TicketReferences"}
     TicketPage:
       allOf:
         - $ref: "#/components/schemas/PageEnvelope"
@@ -5995,7 +6882,7 @@ components:
       required: [id, config_key, name, value_type, is_public, is_secret, configured, revision, input]
       properties:
         id: { type: integer, format: int64 }
-        config_key: { type: string }
+        config_key: { type: string, description: "Administrator setting identity. subscription_renewal_grace_days defaults to 7, accepts 0–3650 integer days, and controls renewal eligibility and final credential retirement. Zero disables post-expiry recovery. Shortening can finalize older subscriptions; extending never revives already-ended or canceled services. This policy is initialized by migration0050 and must be restored if its recorded source is lost." }
         name: { type: string }
         value:
           description: Omitted for secret configuration.
@@ -6234,7 +7121,7 @@ components:
         protocol: { type: string }
         egress_protocol: { type: string, enum: [direct, socks5, vless, vmess, trojan, shadowsocks, hysteria2, mieru], description: Omitted for default Direct auto egress. }
         active: { type: boolean }
-        deployment_status: { type: string, enum: [queued, running, succeeded, failed, deferred, never] }
+        deployment_status: { type: string, enum: [queued, running, succeeded, failed, deferred, reconciling, suspended, connections_pending, never] }
     ProtocolBatchScopeRequest:
       type: object
       properties:
@@ -6323,6 +7210,23 @@ components:
         active_flows: { type: integer, format: int64, minimum: 0 }
         bytes_up: { type: integer, format: int64, minimum: 0 }
         bytes_down: { type: integer, format: int64, minimum: 0 }
+        observation: { $ref: "#/components/schemas/NodeCounterEvidence" }
+    NodeCounterEvidence:
+      type: object
+      required: [known, latest_source_known, stats_source_known, source]
+      description: Receiver-side provenance of node counter values, separate from freshness, online status, authorization and applied configuration. Missing legacy attribution remains unknown. Cached times use millisecond precision; retained immutable source material preserves original nanoseconds.
+      properties:
+        known: { type: boolean, description: Current counters have a buffered Stats source consistent with the latest recorded runtime identity. This is not runtime attestation. }
+        latest_source_known: { type: boolean }
+        stats_source_known: { type: boolean }
+        source: { type: string, description: "Counter writer or disposition, such as unknown, buffered_stats, historical_stats, heartbeat, legacy_connector, invalid_reference or deleted." }
+        latest_reference: { type: string, description: Opaque retained source reference; not a credential. }
+        stats_reference: { type: string, description: Opaque retained source reference; not a credential. }
+        counter_received_at: { type: string, format: date-time, nullable: true, description: Recorded receiver time of the current counter writer; never projection execution time. }
+        latest_occurred_at: { type: string, format: date-time, nullable: true }
+        latest_received_at: { type: string, format: date-time, nullable: true }
+        stats_occurred_at: { type: string, format: date-time, nullable: true }
+        stats_received_at: { type: string, format: date-time, nullable: true }
     NodeSummary:
       type: object
       required: [id, name, lifecycle_status, is_enabled, connector_online, ssh_configured, enabled_protocol_count]
@@ -6336,6 +7240,7 @@ components:
         is_enabled: { type: boolean }
         connector_last_seen_at: { type: string, format: date-time, nullable: true }
         connector_online: { type: boolean }
+        observation: { $ref: "#/components/schemas/NodeCounterEvidence" }
         ssh_configured: { type: boolean }
         ssh_verified_at: { type: string, format: date-time, nullable: true }
         kernel_state: { type: object, nullable: true }
@@ -6696,9 +7601,9 @@ components:
         created_at: { type: string, format: date-time }
     PublicationQueueSummary:
       type: object
-      description: Current node publication request, if any. Takes precedence over latest_deployment when deciding the live state.
+      description: Current node publication request. connections_pending means configuration application is confirmed while existing managed connection revocation remains unverified; it is not a configuration application failure.
       properties:
-        status: { type: string, enum: [queued, running, failed, deferred] }
+        status: { type: string, enum: [queued, running, failed, deferred, reconciling, suspended, connections_pending] }
         attempts: { type: integer, minimum: 0 }
         next_attempt_at: { type: string, format: date-time }
         has_error: { type: boolean }
@@ -6770,8 +7675,9 @@ components:
             active_users: { type: integer, format: int64, minimum: 0, description: Distinct users with an active Zero flow seen during the two-minute activity window. }
             active_credentials: { type: integer, format: int64, minimum: 0 }
             last_used_at: { type: string, format: date-time, nullable: true }
-            used_bytes_today: { type: integer, format: int64, minimum: 0 }
-            used_bytes_total: { type: integer, format: int64, minimum: 0 }
+            used_bytes_today: { type: integer, format: int64, minimum: 0, nullable: true, description: Null while committed daily projection work is pending. }
+            used_bytes_total: { type: integer, format: int64, minimum: 0, nullable: true, description: Null while committed daily projection work is pending. }
+            traffic_projection_pending: { type: boolean, description: Committed traffic facts await daily projection; usage totals must be treated as unknown. }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     SubscriptionDeliveryOrderItem:
@@ -7161,7 +8067,7 @@ components:
           type: string
         order_type:
           type: string
-          enum: [new, renewal, upgrade, traffic_pack, traffic_reset]
+          enum: [new, renewal, upgrade, traffic_pack, traffic_reset, topup]
         target_subscription_id:
           type: integer
           format: int64
@@ -7298,6 +8204,9 @@ components:
         - type: object
           description: Bounded administration-list projection; subscription config is intentionally omitted.
           properties:
+            automatic_renewal_state: { type: string, readOnly: true, description: Last persisted per-subscription automatic renewal result; not a live balance or business authorization. }
+            automatic_renewal_message: { type: string, readOnly: true }
+            automatic_renewal_checked_at: { type: string, format: date-time, readOnly: true, description: Time of the last automatic-renewal attempt; absent when no attempt exists. }
             user_email: { type: string, format: email }
             plan_name: { type: string }
             sku_name: { type: string }
@@ -7348,6 +8257,7 @@ components:
           type: string
         meta:
           type: string
+          description: Source metadata. Oversized optional legacy report diagnostics may be represented by a diagnostic_meta_omitted v1 receipt. Native accounting evidence is preserved unchanged.
     TrafficRecordSummary:
       type: object
       description: Bounded list projection for administrator and self-service histories without report IDs, event payload or metadata.
@@ -7419,6 +8329,98 @@ components:
         recorded_bytes: { type: integer, format: int64 }
         missing_bytes: { type: integer, format: int64 }
         over_recorded_bytes: { type: integer, format: int64 }
+    TrafficTrendScope:
+      type: object
+      required: [administrative, user_id, subscription_id, node_id, protocol_endpoint_id, time_zone]
+      properties:
+        administrative: { type: boolean }
+        user_id: { type: integer, format: int64, description: "Effective owner; 0 means all users only for administrative scope." }
+        subscription_id: { type: integer, format: int64 }
+        node_id: { type: integer, format: int64 }
+        protocol_endpoint_id: { type: integer, format: int64 }
+        time_zone: { type: string, description: Actual server calendar timezone. }
+    TrafficTrendPoint:
+      type: object
+      required: [date, label, upload_bytes, download_bytes, used_bytes, record_count, peak_connections]
+      properties:
+        date: { type: string, format: date }
+        label: { type: string }
+        upload_bytes: { type: integer, format: int64 }
+        download_bytes: { type: integer, format: int64 }
+        used_bytes: { type: integer, format: int64 }
+        record_count: { type: integer, format: int64 }
+        peak_connections: { type: integer, format: int64, nullable: true }
+    TrafficTrendsComplete:
+      type: object
+      required: [projection_pending, scope, from, to, points, record_count, connection_sample_count, peak_connections, truncated, subscriptions, as_of]
+      properties:
+        projection_pending: { type: boolean, enum: [false] }
+        scope: { $ref: "#/components/schemas/TrafficTrendScope" }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        points:
+          type: array
+          items: { $ref: "#/components/schemas/TrafficTrendPoint" }
+        record_count:
+          type: integer
+          format: int64
+        connection_sample_count:
+          type: integer
+          format: int64
+        peak_connections:
+          type: integer
+          format: int64
+          nullable: true
+        truncated:
+          type: boolean
+        subscriptions:
+          type: array
+          items: { $ref: "#/components/schemas/TrafficEntityReference" }
+        as_of:
+          type: string
+          format: date-time
+    TrafficTrendsPending:
+      type: object
+      required: [projection_pending, scope, from, to, points, record_count, connection_sample_count, peak_connections, truncated, subscriptions, as_of]
+      properties:
+        projection_pending: { type: boolean, enum: [true] }
+        scope: { $ref: "#/components/schemas/TrafficTrendScope" }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        points:
+          type: array
+          items: { $ref: "#/components/schemas/TrafficTrendPoint" }
+          nullable: true
+          enum: [null]
+        record_count:
+          type: integer
+          format: int64
+          nullable: true
+          enum: [null]
+        connection_sample_count:
+          type: integer
+          format: int64
+          nullable: true
+          enum: [null]
+        peak_connections:
+          type: integer
+          format: int64
+          nullable: true
+          enum: [null]
+        truncated:
+          type: boolean
+          nullable: true
+          enum: [null]
+        subscriptions:
+          type: array
+          items: { $ref: "#/components/schemas/TrafficEntityReference" }
+          nullable: true
+          enum: [null]
+        as_of:
+          type: string
+          format: date-time
+          nullable: true
+          enum: [null]
     TrafficEntityReference:
       type: object
       required: [id, kind, display_name]
@@ -7748,8 +8750,10 @@ components:
           properties:
             traffic_bytes: {type: integer, format: int64}
             previous_traffic_bytes: {type: integer, format: int64}
-            active_subscriptions: {type: integer, format: int64, nullable: true}
-            active_flows: {type: integer, format: int64, nullable: true}
+            active_subscriptions: {type: integer, format: int64, nullable: true, description: Complete current count; null while runtime snapshot coverage is unverified.}
+            active_flows: {type: integer, format: int64, nullable: true, description: Complete current count; null while runtime snapshot coverage is unverified.}
+            observed_active_subscriptions: {type: integer, format: int64, nullable: true, description: Persisted per-principal snapshot aggregate with unverified coverage and freshness; null if no snapshot exists.}
+            observed_active_flows: {type: integer, format: int64, nullable: true, description: Persisted per-principal snapshot aggregate with unverified coverage and freshness; an observed zero is not proof of zero current connections.}
             online_nodes: {type: integer, format: int64}
             enabled_nodes: {type: integer, format: int64}
         subscriptions:
@@ -7780,7 +8784,9 @@ components:
         coverage:
           type: object
           properties:
-            principal_flows: {type: boolean}
+            principal_flows: {type: boolean, description: Whether complete current runtime coverage has been verified; false for existing per-principal snapshots.}
+            principal_flows_state: {type: string, description: Coverage classification; unknown without a verified complete runtime snapshot.}
+            principal_flows_reason: {type: string, description: Explains missing observations or unverified snapshot coverage.}
         trend:
           type: array
           items:
@@ -7801,8 +8807,10 @@ components:
         service:
           type: object
           properties:
-            active_subscriptions: {type: integer, format: int64, nullable: true}
-            active_flows: {type: integer, format: int64, nullable: true}
+            active_subscriptions: {type: integer, format: int64, nullable: true, description: Complete current count; null while runtime snapshot coverage is unverified.}
+            active_flows: {type: integer, format: int64, nullable: true, description: Complete current count; null while runtime snapshot coverage is unverified.}
+            observed_active_subscriptions: {type: integer, format: int64, nullable: true, description: Persisted per-principal snapshot aggregate with unverified coverage and freshness; null if no snapshot exists.}
+            observed_active_flows: {type: integer, format: int64, nullable: true, description: Persisted per-principal snapshot aggregate with unverified coverage and freshness; an observed zero is not proof of zero current connections.}
             online_nodes: {type: integer, format: int64}
             enabled_nodes: {type: integer, format: int64}
         subscriptions: {$ref: '#/components/schemas/DashboardOverview/properties/subscriptions'}
@@ -7982,6 +8990,20 @@ components:
             items:
               type: array
               items: { $ref: "#/components/schemas/OperationLog" }
+    ConsumptionRefund:
+      type: object
+      required: [id, order_id, user_id, currency, amount_minor, ticket_id, actor_id, reason, entry_id, created_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        order_id: { type: integer, minimum: 1 }
+        user_id: { type: integer, minimum: 1 }
+        currency: { type: string }
+        amount_minor: { type: string, pattern: '^[1-9][0-9]*$', description: Exact integer minor units encoded as a decimal string. }
+        ticket_id: { type: integer, minimum: 1 }
+        actor_id: { type: integer, minimum: 1 }
+        reason: { type: string }
+        entry_id: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
     TrafficSummary:
       type: object
       properties:
@@ -8064,6 +9086,14 @@ components:
         notice:
           type: string
     NodeConnectorHeartbeat:
+      description: >-
+        Canonical legacy heartbeat producers send all six required fields. For
+        compatibility with older senders, the heartbeat intake also accepts
+        omitted or null numeric observations without replacing stored values;
+        an explicitly provided zero remains a measured zero. This permissive
+        intake does not make partial or null payloads canonical schema instances.
+        Receipt time and reported build/counters do not prove an installed runtime,
+        applied configuration, or credential delivery.
       type: object
       required: [node_id, build_id, uptime_seconds, active_flows, bytes_up, bytes_down]
       properties:
@@ -8456,8 +9486,9 @@ components:
         sort_order: { type: integer }
         is_active:
           type: boolean
-        node_group_id: { type: integer, format: int64, description: Replaces the plan delivery boundary with another node group. }
+        node_group_id: { type: integer, format: int64, description: "Replaces current plan access scope for existing eligible subscriptions as well as future purchases. This automatic access update is independent of optional quota synchronization. Shared confirmed endpoints are retained; new endpoints await verified delivery. More than 1000 affected subscriptions reject the whole change." }
         traffic_bytes: { type: integer, format: int64, minimum: 1 }
+        sync_traffic_quota: { type: boolean, default: false, description: "Explicitly synchronize base quota to at most 1000 eligible unended subscriptions. Requires traffic_bytes. Preserves used traffic, end date, reset date, purchased prices and orders. Mixed add-on quota or unknown baselines reject the whole update for review." }
         speed_limit_mbps: { type: integer, minimum: 0 }
         max_active_subscriptions: { type: integer, minimum: 0 }
         is_renewable: { type: boolean }
@@ -8477,25 +9508,124 @@ components:
         note: { type: string, minLength: 1, maxLength: 500 }
         quote_fingerprint: { type: string, description: "Quote assertion from the administrator preview." }
         request_id: { type: string, format: uuid, description: "Nonzero UUID, unique per administrator operation. Reuse only to retry an identical payload." }
+    OrderFunding:
+      type: object
+      required: [order_id, configured, use_balance, currency, amount_minor, available_minor, wallet_minor, cash_minor, state, expired]
+      properties:
+        change_mode: { type: string, enum: [full_term] }
+        settlement_minor: { type: string, pattern: '^[0-9]+$', description: Gross old entitlement residual credited only at atomic fulfillment }
+        surplus_minor: { type: string, pattern: '^[0-9]+$', description: Old residual exceeding the full new price }
+        entitlement_minor: { type: string, pattern: '^[0-9]+$', description: Deferred old residual contribution; not existing wallet cash }
+        reserved_minor: { type: string, pattern: '^[0-9]+$', description: Existing wallet cash actually reserved before fulfillment }
+        order_id: { type: integer, format: int64 }
+        configured: { type: boolean }
+        use_balance: { type: boolean }
+        currency: { type: string }
+        amount_minor: { type: string, pattern: '^[0-9]+$', description: Full agreed order price }
+        available_minor: { type: string, pattern: '^[0-9]+$', description: Current wallet balance excluding every live reservation }
+        wallet_minor: { type: string, pattern: '^[0-9]+$', description: Frozen wallet contribution; historical value remains after capture or release }
+        cash_minor: { type: string, pattern: '^[0-9]+$', description: Frozen amount the channel may collect; wallet_minor plus cash_minor equals amount_minor }
+        state: { type: string, enum: [unconfigured, reserved, captured, released] }
+        expires_at: { type: string, format: date-time }
+        expired: { type: boolean, description: Expired reservations remain visible until transactionally released; expiry never invents available money }
+        release_reason: { type: string }
+    WalletPaymentResult:
+      type: object
+      required: [order_id, subscription_id, status, fulfilled]
+      properties:
+        order_id: { type: integer, format: int64 }
+        subscription_id: { type: integer, format: int64 }
+        status: { type: string }
+        fulfilled: { type: boolean, description: True only for this call performing business fulfillment }
+    PaymentReceiptSummary:
+      type: object
+      required: [id, amount_minor, currency, disposition, created_at]
+      properties:
+        provider: { type: string, maxLength: 32, description: Administrator-only stable channel authority identity }
+        provider_trade_no: { type: string, maxLength: 128, description: Administrator-only normalized trade reference for reconciliation; never a raw callback or credential }
+        id: { type: integer, format: int64 }
+        amount_minor: { type: string, pattern: '^[0-9]+$', description: Exact currency minor units }
+        currency: { type: string }
+        disposition: { type: string, enum: [fulfilled, wallet_topup, wallet_credit, legacy_applied, review_required] }
+        wallet_entry_id: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+        ticket_id: { type: integer, format: int64, description: Administrator-only resolution ticket }
+        resolution_reason: { type: string, description: Administrator-only reconciliation basis }
+    PaymentReceiptPage:
+      type: object
+      required: [items, has_more]
+      properties:
+        items: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/PaymentReceiptSummary' } }
+        has_more: { type: boolean }
     OrderPreview:
       type: object
       properties:
+        base_price_minor: { type: integer, format: int64, description: Locked base before discount and residual credit. }
+        discount_amount: { type: integer, format: int64, minimum: 0 }
+        discount: { $ref: "#/components/schemas/CommerceDiscountQuote" }
+        price_basis: { type: string, enum: [purchased_period, current_catalog], description: "Renewals use the first purchased base price for this currency and billing period within the current subscription purchase series. Unpurchased periods use an explicitly accepted current quote." }
+        requires_price_acceptance: { type: boolean, description: "True for full-term changes or when this currency/period has no historical agreement; creation must include the exact preview quote_fingerprint." }
         order_type: { type: string, enum: [new, renewal, upgrade, traffic_pack, traffic_reset] }
         amount_cents: { type: integer, format: int64 }
         payable_amount: { type: integer, format: int64 }
-        credit_amount: { type: integer, format: int64, description: "For plan changes, minimum of remaining time value, remaining base-quota value and the new SKU price, based on paid order history. No cash refund for excess credit." }
+        change_mode: { type: string, enum: [full_term] }
+        settlement_amount: { type: string, pattern: '^[0-9]+$', description: Total old residual from actual paid allocation }
+        current_residual: { type: string, pattern: '^[0-9]+$' }
+        future_residual: { type: string, pattern: '^[0-9]+$' }
+        surplus_amount: { type: string, pattern: '^[0-9]+$', description: Old residual exceeding the new full price enters wallet }
+        additional_amount: { type: string, pattern: '^[0-9]+$', description: Full new price minus old residual applied; existing wallet may fund this portion }
+        credit_amount: { type: integer, format: int64, description: Old residual applied to the full new purchase price; not a discount }
         time_credit: { type: integer, format: int64 }
         traffic_credit: { type: integer, format: int64 }
         currency: { type: string }
         traffic_bytes: { type: integer, format: int64, description: "Replacement cycle quota for changes or restored base quota for resets." }
         used_bytes: { type: integer, format: int64 }
-        end_at: { type: string, format: date-time, description: "Existing expiry retained by changes and resets." }
+        end_at: { type: string, format: date-time, description: "For full_term change, estimated expiry from a full new period; actual start is successful fulfillment. Resets and legacy pending changes retain existing expiry." }
         quote_fingerprint: { type: string, description: "Pass back when creating the order to reject a changed quote." }
+    CommerceDiscountQuote:
+      type: object
+      required: [provider, offer]
+      properties:
+        provider:
+          type: object
+          required: [plugin_id, signing_key_fingerprint, package_digest, generation, config_revision]
+          properties:
+            plugin_id: { type: string }
+            signing_key_fingerprint: { type: string }
+            package_digest: { type: string }
+            generation: { type: integer, format: int64 }
+            config_revision: { type: integer, format: int64 }
+        offer:
+          type: object
+          required: [status, input_fingerprint, currency, discount_minor, expires_at]
+          properties:
+            status: { type: string, enum: [available, unavailable, requires_confirmation] }
+            input_fingerprint: { type: string }
+            currency: { type: string }
+            discount_minor: { type: integer, format: int64, minimum: 0 }
+            expires_at: { type: string, format: date-time }
+            message: { type: string, maxLength: 512 }
+            agreement:
+              type: object
+              required: [id, version, scope, terms_hash, terms_json]
+              properties:
+                id: { type: string }
+                version: { type: string }
+                scope: { type: string, enum: [initial_only, recurring, order_only] }
+                terms_hash: { type: string }
+                terms_json: { type: string, description: "Opaque bounded plugin-owned rule evidence; never rendered as executable content or treated as payment authority." }
+    OrderDiscountSelection:
+      type: object
+      required: [provider_id]
+      properties:
+        provider_id: { type: string, maxLength: 160 }
+        selection: { type: string, maxLength: 256, description: Optional code interpreted by the explicitly selected provider. }
     OrderCreateRequest:
       type: object
       required:
         - plan_sku_id
       properties:
+        discount: { $ref: "#/components/schemas/OrderDiscountSelection" }
         idempotency_key:
           type: string
           minLength: 8
@@ -8513,7 +9643,7 @@ components:
           format: int64
         channel:
           type: string
-        quote_fingerprint: { type: string, description: "Optional optimistic assertion of the server quote. Never supplies or overrides price." }
+        quote_fingerprint: { type: string, description: "Optimistic assertion of the server quote. Required for discounted purchases. Never supplies or overrides price. Identical idempotent retries recover the original order before calling the provider." }
     OrderCallbackRequest:
       type: object
       properties:
@@ -8568,3 +9698,182 @@ components:
           minimum: 0
         meta:
           type: string
+          description: Optional diagnostic text. Existing HTTP request limits still apply. Up to 65535 UTF-8 bytes are retained unchanged. Within those request limits larger diagnostics are replaced by a bounded diagnostic_meta_omitted v1 receipt with original byte length and SHA-256 of the decoded meta string is stored instead. It is not billing or deduplication evidence.
+
+    SubscriptionValueQuote:
+      type: object
+      required: [subscription_id, root_order_id, currency, current_minor, future_minor, total_minor, quote_fingerprint]
+      properties:
+        subscription_id: { type: integer, minimum: 1 }
+        root_order_id: { type: integer, minimum: 1 }
+        currency: { type: string }
+        current_minor: { type: string, pattern: '^[0-9]+$' }
+        future_minor: { type: string, pattern: '^[0-9]+$' }
+        total_minor: { type: string, pattern: '^[0-9]+$' }
+        quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+    AutomaticRenewalOffer:
+      type: object
+      required: [agreement_version, plan_sku_id, currency, base_price_minor, discount_amount_minor, payable_amount_minor, billing_unit, billing_value, quote_fingerprint]
+      properties:
+        agreement_version: { type: integer, enum: [1, 2], description: V1 undiscounted renewal or V2 explicitly approved recurring discount. }
+        plan_sku_id: { type: integer, minimum: 1 }
+        currency: { type: string }
+        base_price_minor: { type: string, pattern: '^[0-9]+$' }
+        discount_amount_minor: { type: string, pattern: '^[0-9]+$', description: Host-owned exact reduction; zero for V1. }
+        payable_amount_minor: { type: string, pattern: '^[0-9]+$', description: Exact recurring debit amount approved separately from the locked base. }
+        discount: { $ref: '#/components/schemas/CommerceDiscountQuote' }
+        billing_unit: { type: string, enum: [day, month, year] }
+        billing_value: { type: integer, minimum: 1 }
+        quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+    AutomaticRenewalRequest:
+      type: object
+      additionalProperties: false
+      required: [enabled, plan_sku_id, quote_fingerprint, expected_revision]
+      properties:
+        enabled: { type: boolean }
+        plan_sku_id: { type: integer, minimum: 0 }
+        quote_fingerprint: { type: string, description: A current 64-character server quote is required when enabling; empty when disabling. }
+        expected_revision: { type: integer, minimum: 0 }
+    AutomaticRenewalView:
+      type: object
+      required: [subscription_id, enabled, plan_sku_id, revision, state, message]
+      properties:
+        subscription_id: { type: integer, minimum: 1 }
+        enabled: { type: boolean }
+        plan_sku_id: { type: integer, minimum: 0 }
+        revision: { type: integer, minimum: 0 }
+        state: { type: string }
+        message: { type: string }
+        last_order_id: { type: integer, minimum: 1 }
+        next_attempt_at: { type: string, format: date-time }
+        offer: { $ref: '#/components/schemas/AutomaticRenewalOffer' }
+    SubscriptionTerminationRequest:
+      type: object
+      additionalProperties: false
+      required: [quote_fingerprint, idempotency_key]
+      properties:
+        quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+        idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
+    AdministrativeSubscriptionValueQuote:
+      type: object
+      required: [subscription_id, user_id, currency, current_minor, future_minor, total_minor, quote_fingerprint, max_refund_minor, valuation_status]
+      properties:
+        subscription_id: { type: integer, minimum: 1 }
+        user_id: { type: integer, minimum: 1 }
+        currency: { type: string, description: Empty when historical payment currency is unknown. }
+        root_order_id: { type: integer, minimum: 1, description: Present only with a verified paid entitlement root. }
+        current_minor: { type: string, nullable: true, pattern: '^[0-9]+$' }
+        future_minor: { type: string, nullable: true, pattern: '^[0-9]+$' }
+        total_minor: { type: string, nullable: true, pattern: '^[0-9]+$' }
+        quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+        max_refund_minor: { type: string, pattern: '^[0-9]+$', description: Zero-only operational limit when valuation is unavailable; not evidence of zero actual payment. }
+        valuation_status: { type: string, enum: [verified, unavailable] }
+        message: { type: string }
+    AdministrativeSubscriptionTerminationRequest:
+      type: object
+      additionalProperties: false
+      required: [quote_fingerprint, idempotency_key, reason]
+      properties:
+        quote_fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+        idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
+        amount_minor: { type: integer, minimum: 0, maximum: 9007199254740991, description: Omit to use a verified default residual. An unavailable valuation requires explicit zero and never infers original payment. Zero terminates without a refund. The server also enforces the actual-paid source limit. }
+        reason: { type: string, minLength: 3, maxLength: 400, description: Server validates 3–400 UTF-8 bytes after trimming. }
+    SubscriptionTerminationReceipt:
+      type: object
+      required: [id, subscription_id, currency, amount_minor, status, revocation_status, created_at]
+      properties:
+        record_kind: { type: string, enum: [entitlement_mutation], description: Identifies the durable zero-money entitlement command instead of a financial settlement. Omitted for existing value-settlement receipts. }
+        id: { type: integer, minimum: 1 }
+        subscription_id: { type: integer, minimum: 1 }
+        currency: { type: string }
+        amount_minor: { type: string, pattern: '^[0-9]+$' }
+        wallet_entry_id: { type: integer, minimum: 1 }
+        status: { type: string, enum: [canceled] }
+        revocation_status: { type: string, enum: [pending_verification] }
+        created_at: { type: string, format: date-time }
+    WalletEntry:
+      type: object
+      required: [id, kind, balance_delta, reserved_delta, balance_after, reserved_after, reason, created_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        kind: { type: string }
+        balance_delta: { type: string, pattern: '^-?[0-9]+$' }
+        reserved_delta: { type: string, pattern: '^-?[0-9]+$' }
+        balance_after: { type: string, pattern: '^[0-9]+$' }
+        reserved_after: { type: string, pattern: '^[0-9]+$' }
+        source_order_id: { type: integer, minimum: 1 }
+        reason: { type: string }
+        created_at: { type: string, format: date-time }
+    WalletPage:
+      type: object
+      required: [currency, balance_minor, reserved_minor, available_minor, entries, has_more]
+      properties:
+        currency: { type: string }
+        balance_minor: { type: string, pattern: '^[0-9]+$' }
+        reserved_minor: { type: string, pattern: '^[0-9]+$' }
+        available_minor: { type: string, pattern: '^[0-9]+$' }
+        entries: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/WalletEntry' } }
+        has_more: { type: boolean }
+    WalletDebitRequest:
+      type: object
+      additionalProperties: false
+      required: [user_id, currency, amount_minor, ticket_id, reason, idempotency_key]
+      properties:
+        user_id: { type: integer, minimum: 1 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        amount_minor: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+        ticket_id: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 3, maxLength: 400 }
+        idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
+    WalletPayoutRequest:
+      type: object
+      additionalProperties: false
+      required: [outcome, occurred_at, idempotency_key]
+      properties:
+        outcome: { type: string, enum: [unknown, succeeded, failed] }
+        reference: { type: string, maxLength: 128 }
+        note: { type: string, maxLength: 500 }
+        occurred_at: { type: string, format: date-time }
+        idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
+    WalletReversalRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 400 }
+    WalletPayoutObservation:
+      type: object
+      required: [id, actor_id, outcome, reference, note, occurred_at, created_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        actor_id: { type: integer, minimum: 1 }
+        outcome: { type: string, enum: [unknown, succeeded, failed] }
+        reference: { type: string }
+        note: { type: string }
+        occurred_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+    WalletAdjustment:
+      type: object
+      required: [id, user_id, currency, amount_minor, reason, ticket_id, actor_id, entry_id, external_status, created_at, updated_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        user_id: { type: integer, minimum: 1 }
+        currency: { type: string }
+        amount_minor: { type: string, pattern: '^[0-9]+$' }
+        reason: { type: string }
+        ticket_id: { type: integer, minimum: 1 }
+        actor_id: { type: integer, minimum: 1 }
+        entry_id: { type: integer, minimum: 1 }
+        reversal_entry_id: { type: integer, minimum: 1 }
+        reversal_actor_id: { type: integer, minimum: 1 }
+        reversal_reason: { type: string }
+        external_status: { type: string, enum: [pending, unknown, succeeded, failed] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        results: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/WalletPayoutObservation' } }
+    WalletAdjustmentPage:
+      type: object
+      required: [items, has_more]
+      properties:
+        items: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/WalletAdjustment' } }
+        has_more: { type: boolean }

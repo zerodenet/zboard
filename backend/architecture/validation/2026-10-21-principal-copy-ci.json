@@ -1,0 +1,55 @@
+{
+  "source": "0f491e151079ca88b224d86baaeeae6a9211b120",
+  "run_id": 39525675188,
+  "run_url": "https://github.com/zerodenet/zboard/actions/runs/39525675188",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 118979624912,
+      "name": "backend",
+      "conclusion": "success"
+    },
+    {
+      "id": 118979624948,
+      "name": "frontend",
+      "conclusion": "success"
+    },
+    {
+      "id": 118979624994,
+      "name": "compose",
+      "conclusion": "success"
+    },
+    {
+      "id": 118979625052,
+      "name": "zrs-compiler",
+      "conclusion": "success"
+    },
+    {
+      "id": 118979625059,
+      "name": "contract",
+      "conclusion": "success"
+    },
+    {
+      "id": 118979625215,
+      "name": "mysql",
+      "conclusion": "success"
+    }
+  ],
+  "mysql": {
+    "datastore_seconds": 168.085,
+    "handler_seconds": 892.176,
+    "networkstore_seconds": 118.111,
+    "jobstore_seconds": 118.462,
+    "platformstore_copy_seconds": 146.051,
+    "original_timeout_minutes": 15,
+    "handler_margin_seconds": 7.824
+  },
+  "raw_log_sha256": "9b0334cd8db39b55b00c1c25e267d2dab7d43802f3135a8303aafbffb8b64f4c",
+  "limits": [
+    "Exact0f source all six jobs succeed; original commands, timeout and frontend exclusions unchanged.",
+    "Local same-source core fails at900.023s; independent jobstore124.763s/copy148.095s pass. See2026-10-21-principal-copy-mysql-local.json; local failure is not replaced by CI success.",
+    "A7.824s margin is not stable startup regression acceptance and does not resolve previous local/CI timeouts.",
+    "This run has no node-asset0059foundation candidate; that remains private/static and untested.",
+    "Original exact0f capacity has its own bound receipt; P4/P6/P7 comprehensive acceptance remain incomplete."
+  ]
+}

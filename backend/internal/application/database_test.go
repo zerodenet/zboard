@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
+	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 )
 
@@ -136,32 +137,47 @@ func TestDatabaseCopyPreservesProjectionRowsAndRejectsMissingDestination(t *test
 			if err := source.Create(&row).Error; err != nil {
 				t.Fatal(err)
 			}
-			// Schema preparation seeds the host budget; the real copy path clears
-			// the empty destination's schema defaults before copying source data.
-			clearDefaults := func() {
-				t.Helper()
-				if err := ClearDatabaseCopyDestination(target); err != nil {
-					t.Fatal(err)
-				}
+			if err := source.Model(&model.SystemConfig{}).Where("config_key = ?", "subscription_renewal_grace_days").Updates(map[string]any{"value": "14", "revision": uint64(9)}).Error; err != nil {
+				t.Fatal(err)
 			}
-			clearDefaults()
+			// Match the real pinned-copy path: default cleanup and copying share
+			// one transaction, so a failure cannot lose initialized source rows.
+			copyAtomically := func() error {
+				return target.Transaction(func(tx *gorm.DB) error {
+					tables, err := datastore.MigrationTables(tx)
+					if err != nil {
+						return err
+					}
+					if err := datastore.ClearCopyDestinationRows(tx, tables); err != nil {
+						return err
+					}
+					return CopyDatabaseData(source, tx)
+				})
+			}
 			// Remove a later table: failure must roll back already-copied history.
 			if err := target.Migrator().DropTable("principal_flow_scope_observations"); err != nil {
 				t.Fatal(err)
 			}
-			if err := target.Transaction(func(tx *gorm.DB) error { return CopyDatabaseData(source, tx) }); err == nil || !strings.Contains(err.Error(), "missing source table principal_flow_scope_observations") {
+			if err := copyAtomically(); err == nil || !strings.Contains(err.Error(), "missing source table principal_flow_scope_observations") {
 				t.Fatal("copy silently omitted missing destination", err)
 			}
 			var count int64
 			if err := target.Model(&meteringstore.PrincipalFlowObservation{}).Count(&count).Error; err != nil || count != 0 {
 				t.Fatal("partial copy committed", count, err)
 			}
+			var preserved model.SystemConfig
+			if err := target.Where("config_key = ?", "subscription_renewal_grace_days").First(&preserved).Error; err != nil || preserved.Value != "7" {
+				t.Fatal("failed copy lost target's initialized policy", preserved.Value, err)
+			}
 			if err := PrepareDatabaseSchema(target); err != nil {
 				t.Fatal(err)
 			}
-			clearDefaults()
-			if err := target.Transaction(func(tx *gorm.DB) error { return CopyDatabaseData(source, tx) }); err != nil {
+			if err := copyAtomically(); err != nil {
 				t.Fatal(err)
+			}
+			preserved = model.SystemConfig{}
+			if err := target.Where("config_key = ?", "subscription_renewal_grace_days").First(&preserved).Error; err != nil || preserved.Value != "14" || preserved.Revision != 9 {
+				t.Fatal("copy reset source's configured recovery window", preserved.Value, preserved.Revision, err)
 			}
 			var copied meteringstore.PrincipalFlowObservation
 			if err := target.First(&copied, row.ID).Error; err != nil || copied.EventID != row.EventID || copied.ActiveFlows != row.ActiveFlows || !copied.ObservedAt.Equal(row.ObservedAt) {

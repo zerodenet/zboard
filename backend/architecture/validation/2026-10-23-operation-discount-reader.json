@@ -1,0 +1,190 @@
+{
+  "source": "6bffb693ed6f7549e0e9e0aee2f62e2cdd17d2ed",
+  "scope": "reader-only compatibility, not live target-operation admission",
+  "branch": "codex/core-convergence",
+  "pull_request": "https://github.com/zerodenet/zboard/pull/78",
+  "develop": "658671e9f3978df1c79f4030fdb072a877f10bf5",
+  "local": {
+    "backend": {
+      "source": "6bffb693ed6f7549e0e9e0aee2f62e2cdd17d2ed",
+      "checkout": "/workspace/zboard",
+      "phase": "backend",
+      "started_utc": "2026-10-23T11:39:04.850428+00:00",
+      "environment": {
+        "GOMAXPROCS": "2",
+        "parallel_packages": "1"
+      },
+      "checks": [
+        {
+          "name": "full-go",
+          "command": "go test -p 1 ./...",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 484.95,
+          "log": "full-go-6bffb69-final.log",
+          "log_sha256": "fcf766db407af512f13bba941ac945dcffda0828d52f61743a15bd9611679989",
+          "cached_package_lines": 0
+        },
+        {
+          "name": "vet",
+          "command": "go vet -p 1 ./...",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 20.636,
+          "log": "vet-6bffb69-final.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "build",
+          "command": "go build ./cmd/zboard",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 2.014,
+          "log": "build-6bffb69-final.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "pure-go-sqlite",
+          "command": "go test -p 1 ./internal/datastore -run SQLite -count=1",
+          "environment_additions": {
+            "CGO_ENABLED": "0"
+          },
+          "exit_code": 0,
+          "wall_seconds": 58.458,
+          "log": "pure-go-sqlite-6bffb69-final.log",
+          "log_sha256": "90cf6938027bc03e157b0deaa0ac4071b760e730ae1af98bda66bf2a2a03583d"
+        }
+      ],
+      "pending": [],
+      "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+      "finished_utc": "2026-10-23T11:48:30.909165+00:00"
+    },
+    "mysql": {
+      "source": "6bffb693ed6f7549e0e9e0aee2f62e2cdd17d2ed",
+      "checkout": "/workspace/zboard",
+      "phase": "mysql",
+      "started_utc": "2026-10-23T11:49:41.719810+00:00",
+      "environment": {
+        "GOMAXPROCS": "2",
+        "parallel_packages": "1"
+      },
+      "checks": [
+        {
+          "name": "mysql-core",
+          "command": "go test -p 1 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore ./internal/application -run MySQL -count=1 -timeout 15m",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 1209.411,
+          "log": "mysql-core-6bffb69-final.log",
+          "log_sha256": "c72e34eb4548ed110809350d73bb1d5558f73e2da7b672bdf591801a39766dec"
+        },
+        {
+          "name": "mysql-jobstore",
+          "command": "go test -p 1 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 127.472,
+          "log": "mysql-jobstore-6bffb69-final.log",
+          "log_sha256": "c3329a19bf6f78ed1826a44bf8993488cfe9db6d8bf4f29b0db04ad6523777f7"
+        },
+        {
+          "name": "mysql-copy",
+          "command": "go test -p 1 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 247.15,
+          "log": "mysql-copy-6bffb69-final.log",
+          "log_sha256": "59603d1ce1b138b6fb514d4b7883d353a10e46a9cf0e294a4cc9e9f34e3002a5"
+        }
+      ],
+      "pending": [],
+      "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+      "finished_utc": "2026-10-23T12:16:05.754535+00:00"
+    }
+  },
+  "ci": {
+    "source": "6bffb693ed6f7549e0e9e0aee2f62e2cdd17d2ed",
+    "id": 39947488121,
+    "url": "https://github.com/zerodenet/zboard/actions/runs/39947488121",
+    "status": "completed",
+    "conclusion": "success",
+    "created_at": "2026-10-23T11:38:25Z",
+    "updated_at": "2026-10-23T11:55:05Z",
+    "jobs": [
+      {
+        "id": 120393593070,
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120393593204,
+        "name": "compose",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120393593260,
+        "name": "mysql",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120393593261,
+        "name": "contract",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120393593263,
+        "name": "zrs-compiler",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120393593272,
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "log_summaries": {
+      "mysql": [
+        "2026-10-23T11:41:32.3677952Z ok  \tgithub.com/zerodenet/zboard/backend/internal/datastore\t137.490s",
+        "2026-10-23T11:50:37.2077434Z ok  \tgithub.com/zerodenet/zboard/backend/internal/handler\t671.771s",
+        "2026-10-23T11:50:37.2078657Z ok  \tgithub.com/zerodenet/zboard/backend/internal/application\t16.578s",
+        "2026-10-23T11:52:12.1405221Z ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore\t94.324s",
+        "2026-10-23T11:55:01.6952714Z ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore\t168.923s"
+      ],
+      "frontend": [
+        "2026-10-23T11:40:43.2305655Z  Test Files  204 passed | 2 skipped (206)",
+        "2026-10-23T11:40:43.2308176Z       Tests  1154 passed | 8 skipped (1162)",
+        "2026-10-23T11:41:07.8826400Z ✓ built in 9.77s"
+      ]
+    }
+  },
+  "cache_cleanup": {
+    "started_utc": "2026-10-23T11:49:33.824538+00:00",
+    "target": "/workspace/toolchains/cache/go-build",
+    "command": "go clean -cache",
+    "workloads_stopped": true,
+    "symlinks": false,
+    "free_before": 0,
+    "exit_code": 0,
+    "output": "",
+    "free_after": 1271701504
+  },
+  "not_verified": [
+    "live native target-operation admission (next increment)",
+    "limited-use coupon reservation/commit/release",
+    "new-head original capacity and long-duration database growth",
+    "P4 comprehensive retention",
+    "P6 independent-worker scaling benefit",
+    "real external kernel/channel/coupon, production and OS crash acceptance"
+  ],
+  "historical_failures_preserved": [
+    "112/157 hourly trends HTTP503",
+    "earlier 900-second failures",
+    "all earlier fixture/source-inventory failures and interrupted sessions"
+  ]
+}

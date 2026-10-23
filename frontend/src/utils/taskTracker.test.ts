@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearTrackedTasks, dismissTrackedTask, trackAdminTask, trackedTaskIDs, trackedTaskSummaries } from './taskTracker'
 
 const task = (id: number) => ({ id, type: 'node_detect', scope: '{}', content: '{}', status: 1, errors: '', total: 10, current: 2, idempotency_key: String(id), priority: 0, attempts: 1, max_attempts: 3, created_at: '', updated_at: '' } as const)
@@ -15,5 +15,15 @@ describe('taskTracker', () => {
     dismissTrackedTask(1)
     expect(trackedTaskIDs.value).toEqual([2])
     expect(trackedTaskSummaries[1]).toBeUndefined()
+  })
+
+  it('clears account-specific task hints even when browser storage cannot be written', () => {
+    trackAdminTask(task(1))
+    const write = vi.spyOn(window.sessionStorage, 'setItem').mockImplementation(() => { throw new Error('storage unavailable') })
+    try {
+      expect(() => clearTrackedTasks()).not.toThrow()
+      expect(trackedTaskIDs.value).toEqual([])
+      expect(trackedTaskSummaries[1]).toBeUndefined()
+    } finally { write.mockRestore() }
   })
 })

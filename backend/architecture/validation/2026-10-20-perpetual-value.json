@@ -1,0 +1,35 @@
+{
+  "stage": "P2-12 perpetual single paid quota",
+  "status": "SQLite and isolated MySQL targeted pass; exact-commit full validation pending",
+  "approved_rule": "2026-10-20 03:18 UTC: actual paid 100, purchased quota 100, used 20 -> residual 80; no time decay",
+  "behavior": [
+    "Capture perpetual_paid_quota_v1 from verified once purchase evidence.",
+    "Use one total-quota period and existing integer proportional rounding/source budgets.",
+    "Allow full fresh-term replacement from eligible perpetual service while preserving legacy keep-term change restrictions.",
+    "Accept prior value_requires_review only with complete immutable verified once evidence; reject missing or multiple unallocated purchase sources."
+  ],
+  "tests": {
+    "command": "GOMAXPROCS=1 go test -p 1 ./internal/capabilities/commerce ./internal/capabilities/entitlements ./internal/handler -run 'Test(MySQL)?Perpetual|TestValueProjection|TestFullReplacementApproved' -count=1 -timeout 5m",
+    "database": "SQLite and isolated MySQL 8.4 random schemas",
+    "result": "pass",
+    "seconds": {
+      "commerce": 0.005,
+      "entitlements": 0.003,
+      "handler": 32.524
+    },
+    "coverage": [
+      "Actual discounted 120 list/100 paid purchase, wallet payment and authoritative completion accounting.",
+      "Unused, 20 percent used and exhausted residual; idempotent unsubscribe.",
+      "Full replacement into monthly or once service, subsequent unsubscribe and conservation.",
+      "Trusted prior snapshot compatibility and unknown evidence rejection.",
+      "Existing three timed annual residual examples."
+    ]
+  },
+  "migration": "none; JSON snapshot model discriminator only",
+  "rollback": "Stop jobs before binary rollback; older binaries may require review of new perpetual snapshots, never rewrite paid history.",
+  "limits": [
+    "Multiple once quota additions have no confirmed source-consumption allocation policy and remain requires-review.",
+    "No new public Zero, full frontend or performance claim.",
+    "Targeted run used shared integration checkout with staged daily projection schema; exact-commit checks tracked separately."
+  ]
+}

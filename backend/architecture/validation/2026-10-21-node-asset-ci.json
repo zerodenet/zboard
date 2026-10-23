@@ -1,0 +1,38 @@
+{
+  "source": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+  "run_id": 39531386103,
+  "url": "https://github.com/zerodenet/zboard/actions/runs/39531386103",
+  "status": "completed",
+  "conclusion": "failure",
+  "jobs": {
+    "backend": "success",
+    "frontend": "success",
+    "compose": "success",
+    "contract": "success",
+    "zrs-compiler": "success",
+    "mysql": "failure"
+  },
+  "mysql": {
+    "job_id": 118997839970,
+    "datastore_seconds": 184.15,
+    "networkstore_seconds": 143.669,
+    "handler_seconds": 900.024,
+    "handler": "Original15m timeout; package cumulative budget, not proof last test is cause",
+    "last_running_test": "TestMySQLBufferedReceiptRevalidatesCredentialAfterContention (3s)",
+    "stack": "Fixture setup: newMySQLPublishHandlers -> RunMigrations -> reconcileHourlyProjectionSchema.func1 hourly_projection_schema.go117; mysql Exec",
+    "jobstore": "NOT EXECUTED after failed core command",
+    "copy": "NOT EXECUTED after failed core command"
+  },
+  "raw_mysql_log_sha256": "9b3eaa7c618a1e583945aee71f63a808a9fd1dba856083599ad76c0d40403663",
+  "raw_mysql_log_bytes": 1132163,
+  "raw_log_export": {
+    "first_action": "OS rejected oversized argv before process creation; no file written",
+    "recovery": "Same exact fetched log saved in create-only then append-only chunks; no permission/settings change"
+  },
+  "limits": [
+    "Five passing jobs and earlier0f/a9 all-green runs do not accept current681 MySQL",
+    "No retry, timeout, exclusions or error checks changed",
+    "Targeted realMySQL schema/network/crosscopy pass separately; local original three-command run still in progress",
+    "P7 stable regression remains incomplete"
+  ]
+}

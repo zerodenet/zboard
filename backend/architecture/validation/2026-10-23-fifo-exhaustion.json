@@ -1,0 +1,36 @@
+{
+  "baseline": "49dc9f64d64195ad33308fdbd9bcb4389279c36c",
+  "branch": "codex/core-convergence",
+  "pr": 78,
+  "created_utc": "2026-10-23T03:16:29.711459+00:00",
+  "sources": {
+    "backend/internal/capabilities/commerce/value_perpetual.go": "cfe618ec7ff05a29cf696c934a09f263308e17522d28685ec7b96527c0c48c0e",
+    "backend/internal/capabilities/commerce/value_perpetual_exhaustion_test.go": "63e1fa89beb53b19eb056643d85f4513f33c967af32a711fa4f919c40661faa3",
+    "backend/internal/handler/perpetual_fifo_exhaustion_test.go": "1cbea6fcbc9619f9350cd051d9cc2ada2ca2271063463c5aab23093b6923f432"
+  },
+  "counterexample": {
+    "source": "49dc9f64d64195ad33308fdbd9bcb4389279c36c",
+    "production_sha256": "c706a77bef58eb968670e7cae0184273d4192b0c9cd349ab0bebabfba0849129",
+    "test_sha256": "63e1fa89beb53b19eb056643d85f4513f33c967af32a711fa4f919c40661faa3",
+    "command": "GOMAXPROCS=2 go test -p 1 ./internal/capabilities/commerce -run ^TestPerpetualFIFOExhaustedLifecycleHasZeroResidual$ -count=1",
+    "exit_code": 1,
+    "failure": "normally exhausted FIFO quota150 rejected"
+  },
+  "counterexample_log_sha256": "769862c600e6f5e77922ee13d3bfb43992faea5cda94bf5fe4ed3db63ceac60b",
+  "pure_commerce": {
+    "command": "GOMAXPROCS=2 go test -p 1 ./internal/capabilities/commerce -count=1",
+    "exit_code": 0,
+    "package_seconds": 0.008,
+    "log_sha256": "4a19dbfbaf47cdb19926eeef0c706cd7ad3cf03d2e6cf8a32f1acc8b236b9a7e"
+  },
+  "local_unexecuted": [
+    "new handler SQLite/MySQL exhaustion regression",
+    "whole backend test/vet/build/pure SQLite",
+    "whole local MySQL three commands",
+    "handler race/count3",
+    "capacity/worker/scaling"
+  ],
+  "resource": "About20MB host disk remains; pending cache-cleaning request not executed. Only small commerce package compiled locally. No original limit was weakened.",
+  "commit_ci": "Own exact commit CI must execute the added SQLite and real-MySQL handler tests before acceptance. Previous49dc/e4CI cannot prove this change.",
+  "migration": "No schema, SQL, accounting identity or financial rule change."
+}

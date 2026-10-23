@@ -1,4 +1,5 @@
 export const AUTH_SESSION_EXPIRED_EVENT = 'zboard:auth-session-expired'
+export const AUTH_SESSION_RESTORED_EVENT = 'zboard:auth-session-restored'
 
 let authSessionExpired = false
 

@@ -23,6 +23,10 @@ func TestApplicationOwnsWorkGateAndRuntimeShutdown(t *testing.T) {
 	}
 	app := New(db, "test-key")
 	defer app.Close()
+	// Production initializes these defaults before opening the work gate.
+	if err := app.SystemConfigDefaults.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	started, stopped := make(chan struct{}), make(chan struct{})
 	d := jobs.Definition{ID: "test", Handler: "test", Owner: "system", Revision: "1", Timeout: time.Minute}
 	if err := app.Jobs.Register(d, func(ctx context.Context, _ jobs.Run) error {

@@ -7,11 +7,13 @@ artifact=${ZERO_ARTIFACT_DIR:?Set ZERO_ARTIFACT_DIR to a verified Linux Zero art
 artifact=$(cd "$artifact" && pwd)
 scenario=${NODE_SCENARIO:-expiry}
 case "$scenario" in
+  renewal_epoch) test_name=TestRealZeroRecoveredPeriodRotatesAccessAndClosesOldFlow ;;
   expiry) test_name=TestRealZeroNodeExpiryRevokesDataPlane ;;
   exhaustion) test_name=TestRealZeroNodeExhaustionRevokesDataPlane ;;
   group_change) test_name=TestRealZeroNodeGroupChangeReplacesDataPlaneAccess ;;
   recovery) test_name=TestRealZeroNodeFailedPublicationSurvivesPublisherCrash ;;
-  *) echo 'NODE_SCENARIO must be expiry, exhaustion, group_change or recovery' >&2; exit 1 ;;
+  connection_recovery) test_name=TestRealZeroConnectionVerificationSurvivesPublisherCrash ;;
+  *) echo 'NODE_SCENARIO must be expiry, exhaustion, group_change, recovery, connection_recovery or renewal_epoch' >&2; exit 1 ;;
 esac
 mkdir -p "$root/.codex-local-artifacts/acceptance"
 output=$(mktemp -d "$root/.codex-local-artifacts/acceptance/zero-revocation-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")
@@ -33,6 +35,21 @@ sources() {
 }
 sources > "$output/source-sha256.txt"
 cp "$root/scripts/acceptance/zero-node/"* "$output/build/"
+# A cloud proxy may use an additional trusted CA. Keep TLS verification enabled
+# and accept certificates only, never copy a private key into a test image.
+python3 - "${NODE_PROXY_CA_FILE:-}" "$output/build/proxy-ca.crt" <<'CA_PY'
+import pathlib,ssl,sys
+source,target=sys.argv[1],pathlib.Path(sys.argv[2])
+if not source:
+    target.write_bytes(b'')
+else:
+    data=pathlib.Path(source).read_bytes()
+    if b'PRIVATE KEY' in data or b'-----BEGIN CERTIFICATE-----' not in data:
+        raise SystemExit('NODE_PROXY_CA_FILE must contain trusted public certificates only')
+    ssl.create_default_context(cafile=source)
+    target.write_bytes(data)
+CA_PY
+shasum -a 256 "$output/build/proxy-ca.crt" > "$output/proxy-ca-sha256.txt"
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "$go_bin" -C "$root/backend" test -c -o "$output/handler.test" ./internal/handler
 sources > "$output/source-after-build-sha256.txt"
 cmp "$output/source-sha256.txt" "$output/source-after-build-sha256.txt"
@@ -64,19 +81,25 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 # Proxy build args are optional and are not persisted as node environment.
-docker build -q --build-arg "BASE_IMAGE=${NODE_BASE_IMAGE:-debian:trixie-slim}" \
-  --build-arg http_proxy --build-arg https_proxy "$output/build" > "$output/image.txt" 2> "$output/build.log"
+docker build --progress=plain --iidfile "$output/image.txt" --build-arg "BASE_IMAGE=${NODE_BASE_IMAGE:-debian:trixie-slim}" \
+  --build-arg http_proxy --build-arg https_proxy "$output/build" > "$output/build.log" 2>&1
 image_id=$(cat "$output/image.txt")
 docker image inspect "$image_id" > "$output/image.json"
 network_id=$(docker network create --internal --label zboard.acceptance=zero-node "zboard-$(basename "$output")")
 # systemd gets a private cgroup namespace without bind-mounting host cgroup
 # paths. Explicit writable host mounts are confined to this run's evidence.
 node_id=$(docker create --privileged --cgroupns=private --cpus 1 --memory 512m --memory-swap 512m \
-  --tmpfs /run --tmpfs /run/lock --tmpfs /tmp --network "$network_id" --network-alias zero-acceptance-node \
+  --tmpfs /run --tmpfs /run/lock --tmpfs /tmp:rw,exec,nosuid,nodev,mode=1777 --network "$network_id" --network-alias zero-acceptance-node \
   --label zboard.acceptance=zero-node \
-  --mount "type=bind,source=$output/id_ed25519.pub,target=/root/.ssh/authorized_keys,readonly" \
   --mount "type=bind,source=$output/node-state,target=/var/lib/zerodenet" "$image_id")
+# docker cp installs the public key with container ownership. A host bind from
+# a non-root cloud account would fail OpenSSH StrictModes for root's key file.
+docker cp "$output/id_ed25519.pub" "$node_id:/root/.ssh/authorized_keys"
 docker start "$node_id" >/dev/null
+docker exec "$node_id" chown 0:0 /root/.ssh/authorized_keys
+docker exec "$node_id" chmod 0600 /root/.ssh/authorized_keys
+docker exec "$node_id" stat -c '%u:%g %a' /root/.ssh/authorized_keys > "$output/authorized-key-mode.txt"
+test "$(cat "$output/authorized-key-mode.txt")" = '0:0 600'
 docker exec "$node_id" dpkg-query -W systemd openssh-server > "$output/node-packages.txt"
 ready=false
 for attempt in $(seq 1 60); do
@@ -99,7 +122,8 @@ driver_id=$(docker create --network "$network_id" --cpus 2 --memory 768m --memor
   -e ZBOARD_TEST_ZERO_PROXY_ADDR=zero-acceptance-node:8443 -e ZBOARD_TEST_ZERO_SSH_KEY=/evidence/id_ed25519 \
   -e "ZBOARD_TEST_ZERO_HOST_KEY=$fingerprint" "$image_id" \
   /evidence/handler.test -test.run "^${test_name}$" -test.v -test.timeout 4m)
-docker start -a "$driver_id" > "$output/driver.log" 2>&1
+# Preserve a structured failed result too; the parser below still fails the run.
+docker start -a "$driver_id" > "$output/driver.log" 2>&1 || true
 driver_exit=$(docker inspect --format '{{.State.ExitCode}}' "$driver_id")
 python3 - "$output" "$driver_exit" "$scenario" <<'PY'
 import json,pathlib,sys

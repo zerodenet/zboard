@@ -48,6 +48,8 @@ func writeProtocolEndpointUsagePeriodError(w http.ResponseWriter, err error) boo
 		NotFound(w)
 	case errors.Is(err, networkcap.ErrProtocolEndpointUsagePermission):
 		Forbidden(w, "管理员权限已失效。")
+	case errors.Is(err, networkcap.ErrProtocolEndpointUsagePending):
+		BadRequest(w, err.Error())
 	default:
 		var validation *networkcap.ProtocolEndpointUsagePeriodValidation
 		if errors.As(err, &validation) {

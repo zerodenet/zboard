@@ -1,5 +1,5 @@
-import axios from 'axios'
-import { expireAuthSession, resetAuthSessionExpired } from '../utils/authSession'
+import axios, { AxiosError } from 'axios'
+import { expireAuthSession, isAuthSessionExpired, resetAuthSessionExpired } from '../utils/authSession'
 import { normalizeApiErrorPayload } from '../utils/apiError'
 import { appendQueryID, type QueryID } from './queryID'
 import { requirePageResponse } from './pageResponse'
@@ -16,6 +16,11 @@ export const api = axios.create({
 })
 
 api.interceptors.request.use((cfg) => {
+  const loginMethods = cfg.method === 'get' && cfg.url === '/plugin-ui/slots' && cfg.params?.surface === 'public' && cfg.params?.slot === 'auth.login.methods'
+  // Reauthentication only verifies identity. Never queue or replay business calls.
+  if (isAuthSessionExpired() && cfg.url !== '/auth/login' && cfg.url !== '/auth/me' && !loginMethods) {
+    throw new AxiosError('登录已过期，请重新登录后确认并重试操作。', 'AUTH_SESSION_EXPIRED', cfg)
+  }
   const token = localStorage.getItem(tokenKey)
   if (token) {
     cfg.headers = cfg.headers || {}
@@ -25,7 +30,13 @@ api.interceptors.request.use((cfg) => {
 })
 
 api.interceptors.response.use(
-  response => response,
+  response => {
+    const credential = response.config.headers?.Authorization
+    if (typeof credential === 'string' && credential.startsWith('Bearer ') && credential !== `Bearer ${getAuthToken()}`) {
+      throw new AxiosError('登录身份已变化，请刷新后核对操作结果。', 'AUTH_SESSION_CHANGED', response.config)
+    }
+    return response
+  },
   (cause) => {
     const pluginManagement = /^\/(?:api\/v1\/)?admin\/(?:plugins|plugin-market)(?:\/|\?|$)/.test(cause?.config?.url || '')
     if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data, pluginManagement ? 'plugin-management' : undefined)
@@ -60,8 +71,8 @@ export function getAuthToken() {
   return localStorage.getItem(tokenKey) || ''
 }
 
-export function setAuthToken(token: string) {
-  resetAuthSessionExpired()
+export function setAuthToken(token: string, resetExpiry = true) {
+  if (resetExpiry) resetAuthSessionExpired()
   localStorage.setItem(tokenKey, token)
 }
 
@@ -334,7 +345,22 @@ export async function fetchNodes() {
   return unwrap(response) || []
 }
 
+export interface NodeCounterEvidence {
+	known: boolean
+	source: string
+	latest_source_known: boolean
+	stats_source_known: boolean
+	latest_reference?: string
+	stats_reference?: string
+	counter_received_at?: string | null
+	latest_occurred_at?: string | null
+	latest_received_at?: string | null
+	stats_occurred_at?: string | null
+	stats_received_at?: string | null
+}
+
 export interface AdminNodeListItem {
+	observation?: NodeCounterEvidence
 	id: number
 	name: string
 	region: string
@@ -773,12 +799,13 @@ export interface ProtocolEndpointListItem {
 		active_users: number
 		active_credentials: number
 		last_used_at?: string
-		used_bytes_today: number
-		used_bytes_total: number
+		used_bytes_today: number | null
+		used_bytes_total: number | null
+		traffic_projection_pending?: boolean
 		reset_at?: string
 	}
 	latest_deployment?: Pick<ProtocolDeployment, 'id' | 'status' | 'started_at' | 'finished_at' | 'created_at'> & { has_error: boolean }
-	publication?: { status: 'queued' | 'running' | 'failed' | 'deferred' | 'reconciling' | 'suspended'; attempts: number; next_attempt_at: string; has_error: boolean }
+	publication?: { status: 'queued' | 'running' | 'failed' | 'deferred' | 'reconciling' | 'suspended' | 'connections_pending'; attempts: number; next_attempt_at: string; has_error: boolean }
 	created_at: string
 	updated_at: string
 }
@@ -1479,9 +1506,20 @@ export async function fetchAdminOrderPaymentEvents(orderId: number, params: { of
 }
 
 export interface OrderPreview {
+  base_price_minor?: number
+  discount_amount?: number
+  discount?: import('./commerceDiscounts').DiscountQuote
+  price_basis?: 'purchased_period' | 'current_catalog'
+  requires_price_acceptance?: boolean
   order_type: string
   amount_cents: number
   credit_amount: number
+  change_mode?: 'full_term'
+  settlement_amount?: string
+  current_residual?: string
+  future_residual?: string
+  surplus_amount?: string
+  additional_amount?: string
   payable_amount: number
   currency: string
   time_credit: number
@@ -1497,19 +1535,20 @@ export async function previewAdminOrder(userId: number, planSkuId: number, targe
   return unwrap(response)
 }
 
-export async function previewOrder(planSkuId: number, targetSubscriptionId: number, options: ApiRequestOptions = {}): Promise<OrderPreview> {
-  const response = await api.post('/orders/preview', { plan_sku_id: planSkuId, target_subscription_id: targetSubscriptionId }, { signal: options.signal })
+export async function previewOrder(planSkuId: number, targetSubscriptionId: number, options: ApiRequestOptions & { discount?: import('./commerceDiscounts').OrderDiscountSelection } = {}): Promise<OrderPreview> {
+  const response = await api.post('/orders/preview', { plan_sku_id: planSkuId, target_subscription_id: targetSubscriptionId, ...(options.discount ? { discount: options.discount } : {}) }, { signal: options.signal })
   return unwrap(response)
 }
 
-export async function createOrder(planSkuId: number, options: { channel?: string; orderType?: string; targetSubscriptionId?: number; quoteFingerprint?: string; idempotencyKey?: string } = {}) {
+export async function createOrder(planSkuId: number, options: { channel?: string; orderType?: string; targetSubscriptionId?: number; quoteFingerprint?: string; idempotencyKey?: string; discount?: import('./commerceDiscounts').OrderDiscountSelection } = {}) {
 	const response = await api.post('/orders', {
 		plan_sku_id: planSkuId,
 		channel: options.channel || 'manual',
 		order_type: options.orderType || 'new',
 		target_subscription_id: options.targetSubscriptionId || undefined,
     quote_fingerprint: options.quoteFingerprint || undefined,
-    idempotency_key: options.idempotencyKey || undefined
+    idempotency_key: options.idempotencyKey || undefined,
+    ...(options.discount ? { discount: options.discount } : {})
 	})
   return unwrap(response)
 }
@@ -1530,6 +1569,10 @@ export async function fetchSubscriptions(params: { userId?: number; status?: str
 }
 
 export interface AdminSubscriptionListItem {
+  /** Persisted per-subscription renewal notice; an absent row has no consent. */
+  automatic_renewal_state?: string
+  automatic_renewal_message?: string
+  automatic_renewal_checked_at?: string | null
   lifecycle?: 'renewable' | 'fixed'
   ends_on_quota_exhaustion?: boolean
   ended_at?: string | null
@@ -2310,6 +2353,12 @@ export async function updateProtocolEndpointsBatch(payload: {
 export type TicketStatus = 'open' | 'pending_admin' | 'pending_user' | 'resolved' | 'closed'
 export type TicketCategory = 'connection' | 'billing' | 'account' | 'other'
 
+export interface TicketReferences {
+	order_id?: number
+	subscription_id?: number
+	wallet_entry_id?: number
+}
+
 export interface Ticket {
 	id: number
 	ticket_no: string
@@ -2325,6 +2374,7 @@ export interface Ticket {
 	closed_at?: string | null
 	created_at: string
 	updated_at: string
+	references?: TicketReferences | null
 }
 
 export interface TicketMessage {
@@ -2373,7 +2423,7 @@ function attachmentInputs(items: TicketAttachment[] = []) {
  return items.map(item => item.file_id ? { file_id: item.file_id } : { name: item.name, url: item.url })
 }
 
-export async function createTicket(payload: { subject: string; category: TicketCategory; priority: 1 | 2; body: string; attachments?: TicketAttachment[] }): Promise<TicketDetail> {
+export async function createTicket(payload: { subject: string; category: TicketCategory; priority: 1 | 2; body: string; attachments?: TicketAttachment[]; references?: TicketReferences }): Promise<TicketDetail> {
 	const response = await api.post('/tickets', { ...payload, attachments: attachmentInputs(payload.attachments) })
 	return unwrap(response)
 }

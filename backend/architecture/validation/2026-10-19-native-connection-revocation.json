@@ -1,0 +1,282 @@
+{
+  "scope": "P3-01 isolated public Zero native connection control; not P2/P3 overall completion or production acceptance",
+  "passed": true,
+  "parent_head": "2efd38c97a075fab4cc62dada3123cec0fa5dcb1",
+  "develop_base": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+  "artifact": {
+    "release_url": "https://github.com/zerodenet/core/releases/tag/v0.0.3-dev.202610102233",
+    "source_commit": "71b3db1ff5b01dbb50576b36c6ba6d76922c67c7",
+    "archive_url": "https://github.com/zerodenet/core/releases/download/v0.0.3-dev.202610102233/zero-linux-x86_64-musl.tar.gz",
+    "archive_sha256": "bc25696355a09d9a1e9d96879689c8a8d01bf11372331bf51ba051d04389a1ea",
+    "archive_bytes": 22265565,
+    "binary_sha256": "1f75740f1f5c1fefb7cb3aae219c7cbfe3365bd2dce33f58216a1001dc47268b",
+    "tag_signature_verified": false
+  },
+  "toolchain": "Go 1.26.8, CGO_ENABLED=0, GOMAXPROCS=2, Docker 28.4.0",
+  "resources": {
+    "node_cpus": 1,
+    "node_memory_mib": 512,
+    "driver_cpus": 2,
+    "driver_memory_mib": 768,
+    "network": "Docker internal network, pinned test SSH host key"
+  },
+  "scenarios": [
+    {
+      "evidence_directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T203545Z-hVJJxH",
+      "result": {
+        "existing_connection_closed_confirmed": true,
+        "existing_connection_read_bytes": 0,
+        "existing_connection_read_error": "EOF",
+        "new_connection_rejection_ms": 22644.718287,
+        "passed": true,
+        "positive_control_passed": true,
+        "real_flow_accounted": true,
+        "rejected_probes": 3,
+        "scenario": "expiry",
+        "verified_at": "2026-10-19T20:39:31.413530738Z"
+      },
+      "source_manifest_sha256": "beabf001ea79201790266d678a894031b61fa926abdc0a105bc791a0e06457c2",
+      "source_file_count": 1607,
+      "test_binary_sha256": "abb813b74aad22889637931318e005a01ba2ae80be20ad8cd3fd7de75571788f",
+      "runtime_migration_script_files_compared": 1021,
+      "differences_from_current_runtime": [
+        "backend/internal/adapters/persistence/networkstore/connection_revocation.go",
+        "backend/internal/adapters/persistence/networkstore/publication_status.go",
+        "backend/internal/handler/node_publish_worker.go",
+        "scripts/acceptance-node.sh"
+      ]
+    },
+    {
+      "evidence_directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T203545Z-xwyDS9",
+      "result": {
+        "accounting_observed_after_denial_ms": 0.590865,
+        "first_denial_after_load_ms": 2594.381759,
+        "ledger_bytes": 1024,
+        "passed": true,
+        "positive_control_passed": true,
+        "publication_confirmed_after_accounting_observed_ms": 272.803525,
+        "quota_bytes": 1024,
+        "rejected_probes_after_publication": 3,
+        "scenario": "exhaustion",
+        "subscription_used_bytes": 1024,
+        "successful_echo_probes": 40,
+        "verified_at": "2026-10-19T20:39:11.733249913Z"
+      },
+      "source_manifest_sha256": "beabf001ea79201790266d678a894031b61fa926abdc0a105bc791a0e06457c2",
+      "source_file_count": 1607,
+      "test_binary_sha256": "abb813b74aad22889637931318e005a01ba2ae80be20ad8cd3fd7de75571788f",
+      "runtime_migration_script_files_compared": 1021,
+      "differences_from_current_runtime": [
+        "backend/internal/adapters/persistence/networkstore/connection_revocation.go",
+        "backend/internal/adapters/persistence/networkstore/publication_status.go",
+        "backend/internal/handler/node_publish_worker.go",
+        "scripts/acceptance-node.sh"
+      ]
+    },
+    {
+      "evidence_directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T203545Z-i1rOBL",
+      "result": {
+        "cross_group_credentials_rejected": true,
+        "disjoint_group_listeners": 2,
+        "existing_connection_read_bytes": 0,
+        "existing_connection_read_error": "EOF",
+        "new_group_echo_passed": true,
+        "old_credential_rejected_probes": 3,
+        "old_group_positive_control_passed": true,
+        "order_handler_return_to_verified_access_ms": 2301.761864,
+        "passed": true,
+        "physical_nodes": 1,
+        "scenario": "group_change",
+        "verified_at": "2026-10-19T20:39:11.642245598Z"
+      },
+      "source_manifest_sha256": "beabf001ea79201790266d678a894031b61fa926abdc0a105bc791a0e06457c2",
+      "source_file_count": 1607,
+      "test_binary_sha256": "abb813b74aad22889637931318e005a01ba2ae80be20ad8cd3fd7de75571788f",
+      "runtime_migration_script_files_compared": 1021,
+      "differences_from_current_runtime": [
+        "backend/internal/adapters/persistence/networkstore/connection_revocation.go",
+        "backend/internal/adapters/persistence/networkstore/publication_status.go",
+        "backend/internal/handler/node_publish_worker.go",
+        "scripts/acceptance-node.sh"
+      ]
+    },
+    {
+      "evidence_directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T203545Z-zDnocE",
+      "result": {
+        "crashed_component": "publisher_process",
+        "failed_attempts_persisted": 1,
+        "failed_generation_retained": 1,
+        "first_publisher_pid": 14,
+        "new_request_after_crash": false,
+        "old_credential_rejected_probes": 3,
+        "outage": "ssh_listener_only",
+        "passed": true,
+        "positive_control_passed": true,
+        "replacement_publisher_pid": 22,
+        "scenario": "recovery",
+        "ssh_restored_to_verified_revocation_ms": 17084.151789,
+        "stale_access_confirmed_before_recovery": true,
+        "verified_at": "2026-10-19T20:39:35.261228114Z"
+      },
+      "source_manifest_sha256": "beabf001ea79201790266d678a894031b61fa926abdc0a105bc791a0e06457c2",
+      "source_file_count": 1607,
+      "test_binary_sha256": "abb813b74aad22889637931318e005a01ba2ae80be20ad8cd3fd7de75571788f",
+      "runtime_migration_script_files_compared": 1021,
+      "differences_from_current_runtime": [
+        "backend/internal/adapters/persistence/networkstore/connection_revocation.go",
+        "backend/internal/adapters/persistence/networkstore/publication_status.go",
+        "backend/internal/handler/node_publish_worker.go",
+        "scripts/acceptance-node.sh"
+      ]
+    },
+    {
+      "evidence_directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T204358Z-RRn7bt",
+      "result": {
+        "configuration_deployments_after_recovery": 2,
+        "configuration_deployments_before_crash": 2,
+        "existing_connection_read_bytes": 0,
+        "existing_connection_read_error": "EOF",
+        "first_publisher_pid": 16,
+        "new_business_request_after_crash": false,
+        "old_flow_usable_during_native_control_denial": true,
+        "passed": true,
+        "phase": "connections",
+        "positive_control_passed": true,
+        "replacement_publisher_pid": 24,
+        "restored_to_verified_closure_ms": 30357.686769,
+        "scenario": "connection_recovery",
+        "verified_at": "2026-10-19T20:46:09.619437733Z"
+      },
+      "source_manifest_sha256": "02850ca6e865c64d437c61fbff24344b517da247aea2cc41e7c14363e7fe74b3",
+      "source_file_count": 1609,
+      "test_binary_sha256": "bc6fbca6997d010fa3a9b6279c8031b6b9843c9b3d6e2fae4524c342c20e14f0",
+      "runtime_migration_script_files_compared": 1021,
+      "differences_from_current_runtime": [
+        "backend/internal/adapters/persistence/networkstore/connection_revocation.go",
+        "backend/internal/adapters/persistence/networkstore/publication_status.go"
+      ]
+    },
+    {
+      "evidence_directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T205619Z-nbxJbs",
+      "result": {
+        "cross_group_credentials_rejected": true,
+        "disjoint_group_listeners": 2,
+        "existing_connection_read_bytes": 0,
+        "existing_connection_read_error": "EOF",
+        "new_group_echo_passed": true,
+        "old_credential_rejected_probes": 3,
+        "old_group_positive_control_passed": true,
+        "order_handler_return_to_verified_access_ms": 2530.918815,
+        "passed": true,
+        "physical_nodes": 1,
+        "scenario": "group_change",
+        "verified_at": "2026-10-19T20:57:54.179491632Z"
+      },
+      "source_manifest_sha256": "ed7216f78c8574278c3934934d0532ff55d6f22fc536b5fd6a2b49d4b6122153",
+      "source_file_count": 1610,
+      "test_binary_sha256": "cbeb741ebe45d9293087cd2f342168ee1f3184fbb8c5a97b3c2696a908bb4863",
+      "runtime_migration_script_files_compared": 1021,
+      "differences_from_current_runtime": []
+    },
+    {
+      "evidence_directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T210340Z-lkd2Gc",
+      "result": {
+        "configuration_deployments_after_recovery": 2,
+        "configuration_deployments_before_crash": 2,
+        "existing_connection_read_bytes": 0,
+        "existing_connection_read_error": "EOF",
+        "first_publisher_pid": 15,
+        "new_business_request_after_crash": false,
+        "old_flow_usable_during_native_control_denial": true,
+        "passed": true,
+        "phase": "connections",
+        "positive_control_passed": true,
+        "replacement_publisher_pid": 23,
+        "restored_to_verified_closure_ms": 30361.957785,
+        "scenario": "connection_recovery",
+        "verified_at": "2026-10-19T21:05:45.506389623Z"
+      },
+      "source_manifest_sha256": "6ec4c1e29830c9221d9dadd1b53d9eb03eab344c52d0085e83a8610b1c29d207",
+      "source_file_count": 1610,
+      "test_binary_sha256": "651d4af5335eda5b8354fd8d2ba2f8572c3b0e03d4ddbbb9aa2cd307c1ec9f2f",
+      "runtime_migration_script_files_compared": 1021,
+      "differences_from_current_runtime": []
+    }
+  ],
+  "source_note": "Five scenario classes are covered with per-run source/binary hashes. Latest group_change and connection_recovery reruns include the combined projection correction and the in-memory-only principal lookup; runtime/migrations/runner exactly match current code. Earlier differences are listed. Final connection_recovery also exercises the current stronger SSH injection/readiness fixture. Later edits are architecture evidence only. Raw artifacts contain test keys/configuration and remain untracked.",
+  "corrected_injection_failure": {
+    "evidence_directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T204024Z-u8veAc",
+    "passed": false,
+    "reason": "Isolated sshd_config does not Include sshd_config.d, so initial drop-in failed to deny forwarding. Corrected test edits actual isolated sshd_config and asserts an actual fresh stream-local open is denied before exercising recovery."
+  },
+  "checks": {
+    "backend": "go test -p 2 ./...: PASS; handler 148.840s; latest native opt-in fixture additionally exercised against verified binary",
+    "vet": "go vet -p 2 ./...: PASS",
+    "build": "go build -p 2 ./cmd/zboard: PASS",
+    "sqlite_pure_go": "CGO_ENABLED=0 go test -p 2 ./internal/datastore -run SQLite -count=1: PASS 13.237s",
+    "mysql_new_boundaries": "Actual MySQL8.4 networkstore + handler focused cases PASS 26.798s / 19.038s (random databases), including renewal fence, partial DDL, recorded missing column, generation fencing and audit rollback",
+    "mysql_full": "ZBOARD_TEST_MYSQL_DSN (isolated MySQL8.4, random DBs) go test -p 2 ./internal/datastore ./internal/handler -run MySQL -count=1 -timeout 15m: PASS datastore62.489s / handler339.455s",
+    "frontend": "Current CI exclusions unchanged: 896 passed, 8 existing skipped; pnpm build PASS (29.64s Vite build)",
+    "openapi": "redocly/cli:1.34.3 lint PASS; 282 existing warnings",
+    "native_primitive": "ZERO_NATIVE_TEST_BINARY verified binary: TestNativeFlowControlClosesOnlyRevokedPrincipal PASS; held EOF and other held principal still relays",
+    "previous_head_ci": "https://github.com/zerodenet/zboard/actions/runs/39317996365 success for 2efd38c; new head CI tracked on PR78",
+    "latest_pushed_head_ci": "014096e: all six jobs success https://github.com/zerodenet/zboard/actions/runs/39322844375 ; principal SQL follow-up exact-head CI to be tracked on PR78."
+  },
+  "limits": [
+    "Public-kernel end-to-end fixtures use VLESS on one physical node; other protocols, non-root socket access and other kernels are not declared verified. Secret/retired-hash attribution has focused tests.",
+    "Exhaustion verifies real metering settlement/new connection denial and positive control; it does not measure cross-node overuse or a held connection in that specific scenario.",
+    "Native command timeout/ACK loss remains pending; no atomic transaction spans the database and kernel. Fresh native observation and scoped retry recover uncertain effects.",
+    "Subscription/credential fence may hold a DB write/row lock for at most a 3-second command context. Cost under load has not been benchmarked.",
+    "End-to-end timings include scheduled polling and concurrent isolated workloads; these are individual observations, not latency or throughput guarantees.",
+    "Active principal/credential compatibility lookup, native frame, per-principal batch, total command and time budgets deliberately defer beyond coverage; unknown ownership does not close a connection.",
+    "Restore/swap entitlement epochs, per-credential delivery proof, full refund/autorenew/discount rules and P4-P7 remain incomplete.",
+    "No production database migration, real external payment/refund, release, deployment, merge or other repository modification performed.",
+    "The subscription/credential fence does not establish atomicity with independent node-group regrant edits. Those interleavings, deleted-resource ownership retention, and indexed attribution beyond 4096 retained credentials remain P3 work; no complete P3 claim is made."
+  ],
+  "capacity_validation": {
+    "complete": false,
+    "not_measured": [
+      "event rate at scale",
+      "active connections/subjects at scale",
+      "SQL count/write volume per batch",
+      "DB latency and core API p95",
+      "backlog/receive-to-settlement latency at scale",
+      "CPU/RSS/storage/index/buffer growth",
+      "quota-exhaustion-to-closure distribution and observable cross-node overuse"
+    ]
+  },
+  "combined_readmodel_followup": {
+    "behavior": "Connection-only errors on either node cannot turn the other queued configuration into failed; actual configuration errors remain failed; both connection phases remain connections_pending.",
+    "sqlite": "PASS 0.150s",
+    "mysql84_random_db": "PASS 3.454s",
+    "migration": "none",
+    "current_head_full_checks": "Full backend/vet/build running locally and exact-head CI tracked on PR78."
+  },
+  "original_native_runtime_commit": "da894e2f4f318f9b4201cfeec8728be5a1a3cf6f",
+  "principal_sql_boundary_followup": {
+    "behavior": "Read only by node ID; compare stable principals, decrypted secrets and retired digests only in memory. Raw protocol principal never becomes a SQL parameter or diagnostic SQL value. Ambiguous ownership remains pending.",
+    "sqlite_focused": "PASS 0.825s",
+    "mysql84_random_db_focused": "PASS 17.422s",
+    "full_backend": "go test -p 2 ./... PASS; networkstore50.284s / handler134.511s; vet/build PASS",
+    "scope": "This closes the new connection-revocation lookup boundary; it does not claim a system-wide diagnostic/log privacy audit. Per-principal bounded inventory reads still need capacity measurement/indexed alias design."
+  },
+  "additional_injection_failures": [
+    {
+      "evidence_directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T205619Z-siOihu",
+      "reason": "Transient SSH listener refusal immediately after reload; corrected fixture waits for a fresh authenticated channel."
+    },
+    {
+      "evidence_directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T205900Z-xRiIEV",
+      "reason": "Fixture incorrectly assumed PROHIBITED; actual OpenSSH10.0p1 returns CONNECT_FAILED for stream-local denial. Corrected fixture also checks effective AllowStreamLocalForwarding=no and local native socket availability."
+    },
+    {
+      "evidence_directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T210143Z-bl3nNl",
+      "reason": "Added verification command assumed Python3 on minimal node image; replaced with POSIX shell while preserving the full assertion."
+    }
+  ],
+  "ssh_injection_contract": {
+    "installed_version": "openssh-server 1:10.0p1-7+deb13u4",
+    "source": "https://github.com/openssh/openssh-portable/blob/V_10_0_P1/serverloop.c",
+    "proof": "Effective forwarding=no; local native UDS query succeeds; a fresh remote stream-local open returns a channel refusal. No new node dependency or product timeout changes."
+  }
+}

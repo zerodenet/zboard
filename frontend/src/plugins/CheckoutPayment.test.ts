@@ -17,6 +17,32 @@ const Frame = defineComponent({
 const Modal = defineComponent({ props: ['open', 'title'], emits: ['close'], template: '<section v-if="open" role="dialog"><h2>{{ title }}</h2><slot/><slot name="footer"/></section>' })
 const open = (props = {}) => mount(CheckoutPayment, { props: { name: 'account.checkout.payment', currency: 'CNY', ...props }, global: { stubs: { PluginFrame: Frame, ModalDialog: Modal } } })
 describe('payment contributions', () => {
+  it('hands a new order to funding selection without loading or preparing any channel', async () => {
+    const create = vi.fn().mockResolvedValue(71)
+    const wrapper = open({ handoffToFunding: true, actorId: 1, createOrder: create }); await flushPromises()
+    expect(mocks.slots).not.toHaveBeenCalled()
+    expect(mocks.action).not.toHaveBeenCalled()
+    expect(create).not.toHaveBeenCalled()
+    await wrapper.findAll('button').find(button => button.text() === '创建订单并选择付款方式')!.trigger('click'); await flushPromises()
+    expect(create).toHaveBeenCalledOnce()
+    expect(wrapper.emitted('created')).toEqual([[71]])
+    expect(mocks.action).not.toHaveBeenCalled()
+    await wrapper.findAll('button').find(button => button.text() === '继续选择付款方式')!.trigger('click'); await flushPromises()
+    expect(create).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+  it('discards an old-account handoff result and never creates automatically after identity changes', async () => {
+    let finish!: (id: number) => void
+    const create = vi.fn(() => new Promise<number>(resolve => { finish = resolve }))
+    const wrapper = open({ handoffToFunding: true, actorId: 1, createOrder: create }); await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === '创建订单并选择付款方式')!.trigger('click')
+    await wrapper.setProps({ actorId: 2 }); await flushPromises()
+    finish(71); await flushPromises()
+    expect(wrapper.emitted('created')).toBeUndefined()
+    expect(create).toHaveBeenCalledOnce()
+    expect(mocks.action).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('opens payment confirmation from a specific order detail only on user action', async () => {
     const wrapper = open({ orderId: 27, openOnLoad: false }); await flushPromises()
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)

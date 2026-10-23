@@ -1,0 +1,159 @@
+{
+  "recorded_utc": "2026-10-23T15:02:23.128193+00:00",
+  "source": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+  "backend": {
+    "source": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+    "checkout": "/workspace/zboard",
+    "phase": "backend",
+    "started_utc": "2026-10-23T14:23:11.763404+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "1"
+    },
+    "checks": [
+      {
+        "name": "full-go",
+        "command": "go test -p 1 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 587.312,
+        "log": "full-go-e1ae956-final.log",
+        "log_sha256": "8693c3ad1e8b0c2baa1ea3561dbdbf7eb3f382c6e66b9ed2387c315f71afe887"
+      },
+      {
+        "name": "vet",
+        "command": "go vet -p 1 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 22.866,
+        "log": "vet-e1ae956-final.log",
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "build",
+        "command": "go build ./cmd/zboard",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 2.07,
+        "log": "build-e1ae956-final.log",
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "pure-go-sqlite",
+        "command": "go test -p 1 ./internal/datastore -run SQLite -count=1",
+        "environment_additions": {
+          "CGO_ENABLED": "0"
+        },
+        "exit_code": 0,
+        "wall_seconds": 59.245,
+        "log": "pure-go-sqlite-e1ae956-final.log",
+        "log_sha256": "56508a6aeb5bf805dff027b44a339354e23f8ef3d52362edd843f061c448a209"
+      }
+    ],
+    "pending": [],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-23T14:34:23.259040+00:00"
+  },
+  "mysql": {
+    "source": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+    "checkout": "/workspace/zboard",
+    "phase": "mysql",
+    "started_utc": "2026-10-23T14:35:20.326638+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "1"
+    },
+    "checks": [
+      {
+        "name": "mysql-core",
+        "command": "go test -p 1 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore ./internal/application -run MySQL -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 1168.93,
+        "log": "mysql-core-e1ae956-final.log",
+        "log_sha256": "6ea10c20c1607e687a83bb3991f99a6bee2a6dc77110ff4725d35b82cd74b4fa"
+      },
+      {
+        "name": "mysql-jobstore",
+        "command": "go test -p 1 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 143.13,
+        "log": "mysql-jobstore-e1ae956-final.log",
+        "log_sha256": "4686f9023d3ee839949217ffa6ba993eca6fac7b2c6c8d54765710d8a3452e4c"
+      },
+      {
+        "name": "mysql-copy",
+        "command": "go test -p 1 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 248.589,
+        "log": "mysql-copy-e1ae956-final.log",
+        "log_sha256": "bde6100ecbe759bba5157ef998d6d1c2e01d453805f96d900929b40163c93d50"
+      }
+    ],
+    "pending": [],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-23T15:01:20.976479+00:00"
+  },
+  "ci": {
+    "source": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+    "id": 39969113021,
+    "status": "completed",
+    "conclusion": "success",
+    "updated_at": "2026-10-23T14:42:29Z",
+    "url": "https://github.com/zerodenet/zboard/actions/runs/39969113021",
+    "job_id": 120466750827,
+    "package_results": [
+      "2026-10-23T14:26:50.2705369Z ok  \tgithub.com/zerodenet/zboard/backend/internal/datastore\t186.469s",
+      "2026-10-23T14:36:49.2980057Z ok  \tgithub.com/zerodenet/zboard/backend/internal/handler\t767.665s",
+      "2026-10-23T14:36:49.2981904Z ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore\t184.634s",
+      "2026-10-23T14:36:49.2982981Z ok  \tgithub.com/zerodenet/zboard/backend/internal/application\t23.439s",
+      "2026-10-23T14:38:51.3425371Z ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore\t121.133s",
+      "2026-10-23T14:42:26.4672346Z ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore\t214.172s"
+    ],
+    "successful_jobs": [
+      {
+        "name": "backend",
+        "id": 120466750561,
+        "conclusion": "success"
+      },
+      {
+        "name": "contract",
+        "id": 120466750585,
+        "conclusion": "success"
+      },
+      {
+        "name": "zrs-compiler",
+        "id": 120466750712,
+        "conclusion": "success"
+      },
+      {
+        "name": "compose",
+        "id": 120466750779,
+        "conclusion": "success"
+      },
+      {
+        "name": "frontend",
+        "id": 120466750814,
+        "conclusion": "success"
+      },
+      {
+        "name": "mysql",
+        "id": 120466750827,
+        "conclusion": "success"
+      }
+    ],
+    "note": "Original commands, coverage and15m unchanged; local full MySQL still running separately.",
+    "saved_mysql_log_sha256": "e826a8b7c5ab3a48c52c38f659ddac276b7c95acf4cb35e0c25b3dbf1f638feb"
+  },
+  "p4_applied": false,
+  "overall_complete": false,
+  "not_verified": [
+    "original capacity gate",
+    "external coupon lifecycle/payment/kernel/browser/production acceptance",
+    "P4 full retention/growth and P6 scaling",
+    "historical status-only repair and1000source limit"
+  ],
+  "scope": "Exact e1ae956 full local backend and real MySQL3, plus own six-job CI. Does not validate the subsequently applied P4 candidate."
+}

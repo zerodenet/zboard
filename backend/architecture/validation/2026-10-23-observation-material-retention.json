@@ -1,0 +1,1517 @@
+{
+  "recorded_utc": "2026-10-23T15:41:42.877913+00:00",
+  "candidate_parent": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+  "final_candidate_source_sha256": "ae485227fc084a4de38ded14a2c89f9b50d77520e8e4cd2067fac21f56e4d36a",
+  "scope": "P4 partial auxiliary material retirement and exact replay; no total-growth, capacity or overall completion claim.",
+  "attempts": [
+    {
+      "phase": "go",
+      "head": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+      "started_utc": "2026-10-23T15:05:34.903365+00:00",
+      "finished_utc": "2026-10-23T15:07:49.477652+00:00",
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/observationstore",
+            "./internal/adapters/persistence/networkstore",
+            "./internal/datastore",
+            "./internal/adapters/persistence/platformstore",
+            "./internal/application",
+            "./internal/handler",
+            "./internal/server",
+            "./tools/capabilityinventory",
+            "-run",
+            "^(TestObservation.*|TestSQLiteObservationMaterial.*|TestSQLiteNodeObservationOwnedMigration|TestNodeObservation.*|TestMigrationCopierNodeObservationHandoff|TestProjection.*|TestRepositoryContractInventoryIsComplete)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 134.439,
+          "log": "go-first1-target.log",
+          "log_sha256": "e37ab4cfa841d437f6005c66bb8e9c2e1805ebf1a95d2ce1bd0f3f0e17616f2f"
+        }
+      ],
+      "source_stable": true,
+      "source_before_sha256": "c805abee33d6ef95099777863f19ac62cac533ba11bb6d33e4e7c12deece2bcd",
+      "source_after_sha256": "c805abee33d6ef95099777863f19ac62cac533ba11bb6d33e4e7c12deece2bcd",
+      "attempt": "go-first1",
+      "top_level_pass": [
+        {
+          "package": "observationstore",
+          "test": "TestObservationExpiredClaimCannotAcknowledgeReplacement"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationEmptyTagStateKeepsFloorDuringOverrideAndDeletion"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationCachedTimesKeepExactReceiverFenceAndMaterial"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationClaimExpirationRollsBackNodeAndPosition"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationForgedSmallHeaderDoesNotFetchLargePart"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationIndependentSources"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationOwnedAckRollback"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationUnknownAndByteBudget"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationUnknownAssetDoesNotBorrowFloor"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationIntentOperationsHeadersOnly"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationMaterialRetirementPreservesPinsAndReplay"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationMaterialRetirementRollbackAndCorruption"
+        },
+        {
+          "package": "datastore",
+          "test": "TestObservationMetadataErrorsNeverBecomeAbsence"
+        },
+        {
+          "package": "datastore",
+          "test": "TestProjectionCheckSQLiteConnectionParameters"
+        },
+        {
+          "package": "datastore",
+          "test": "TestProjectionCheckMissingSQLiteFileDoesNotCreate"
+        },
+        {
+          "package": "datastore",
+          "test": "TestSQLiteObservationMaterialMigrationAndRecovery"
+        },
+        {
+          "package": "datastore",
+          "test": "TestSQLiteNodeObservationOwnedMigration"
+        },
+        {
+          "package": "platformstore",
+          "test": "TestMigrationCopierNodeObservationHandoff"
+        },
+        {
+          "package": "application",
+          "test": "TestProjectionJobDefinitionsPreserveExistingContract"
+        },
+        {
+          "package": "application",
+          "test": "TestProjectionDefinitionsKeepLiveCapabilityAndErrorSemantics"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationFailureDoesNotRollBackSettlement"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationAppendFailureRollsBackSettlementAndSpoolAck"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationIntentOperationsHTTP"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationHTTPReadsKeepCounterSource"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationIntentControlledRetry"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionGenericReadinessDelegatesSharedDefinitions"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionFailedRegistrationDoesNotMarkLoopActive"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionFiltersCannotExpandSingleSubscriptionScope"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionWithUnknownStableCodeReturnsEmptySubset"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationPositionsKeepTheirOwnAssetAndUnknownMaterial"
+        },
+        {
+          "package": "capabilityinventory",
+          "test": "TestRepositoryContractInventoryIsComplete"
+        },
+        {
+          "package": "capabilityinventory",
+          "test": "TestObservationIntentOperationsRouteOwnership"
+        }
+      ],
+      "skips": [],
+      "fails": []
+    },
+    {
+      "phase": "go",
+      "head": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+      "started_utc": "2026-10-23T15:10:39.771559+00:00",
+      "finished_utc": "2026-10-23T15:11:11.276019+00:00",
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/observationstore",
+            "./internal/adapters/persistence/networkstore",
+            "./internal/datastore",
+            "./internal/adapters/persistence/platformstore",
+            "./internal/application",
+            "./internal/handler",
+            "./internal/server",
+            "./tools/capabilityinventory",
+            "-run",
+            "^(TestObservation.*|TestSQLiteObservationMaterial.*|TestSQLiteNodeObservationOwnedMigration|TestNodeObservation.*|TestMigrationCopierNodeObservationHandoff|TestProjection.*|TestRepositoryContractInventoryIsComplete)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 31.348,
+          "log": "go-executorbudget2-target.log",
+          "log_sha256": "83a35e4ca6eb3ca55b509245f7789b9f320f6bd9622dd7c16e6319b2dd80544b"
+        }
+      ],
+      "source_stable": true,
+      "source_before_sha256": "1196b16021dd5a1eaae53922c722a7f1ade41f183702e2b50df2123180375923",
+      "source_after_sha256": "1196b16021dd5a1eaae53922c722a7f1ade41f183702e2b50df2123180375923",
+      "attempt": "go-executorbudget2",
+      "top_level_pass": [
+        {
+          "package": "observationstore",
+          "test": "TestObservationExpiredClaimCannotAcknowledgeReplacement"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationEmptyTagStateKeepsFloorDuringOverrideAndDeletion"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationCachedTimesKeepExactReceiverFenceAndMaterial"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationClaimExpirationRollsBackNodeAndPosition"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationForgedSmallHeaderDoesNotFetchLargePart"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationIndependentSources"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationOwnedAckRollback"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationUnknownAndByteBudget"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationUnknownAssetDoesNotBorrowFloor"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationIntentOperationsHeadersOnly"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationMaterialRetirementBudgetAndConcurrentPools"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationMaterialRetirementPreservesPinsAndReplay"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationMaterialRetirementRollbackAndCorruption"
+        },
+        {
+          "package": "datastore",
+          "test": "TestObservationMetadataErrorsNeverBecomeAbsence"
+        },
+        {
+          "package": "datastore",
+          "test": "TestProjectionCheckSQLiteConnectionParameters"
+        },
+        {
+          "package": "datastore",
+          "test": "TestProjectionCheckMissingSQLiteFileDoesNotCreate"
+        },
+        {
+          "package": "datastore",
+          "test": "TestSQLiteObservationMaterialMigrationAndRecovery"
+        },
+        {
+          "package": "datastore",
+          "test": "TestSQLiteNodeObservationOwnedMigration"
+        },
+        {
+          "package": "platformstore",
+          "test": "TestMigrationCopierNodeObservationHandoff"
+        },
+        {
+          "package": "application",
+          "test": "TestObservationMaterialJobKeepsBoundedLiveCapability"
+        },
+        {
+          "package": "application",
+          "test": "TestProjectionJobDefinitionsPreserveExistingContract"
+        },
+        {
+          "package": "application",
+          "test": "TestProjectionDefinitionsKeepLiveCapabilityAndErrorSemantics"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationFailureDoesNotRollBackSettlement"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationAppendFailureRollsBackSettlementAndSpoolAck"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationIntentOperationsHTTP"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationHTTPReadsKeepCounterSource"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationIntentControlledRetry"
+        },
+        {
+          "package": "handler",
+          "test": "TestSQLiteObservationMaterialJobUsesSharedExecutor"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionGenericReadinessDelegatesSharedDefinitions"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionFailedRegistrationDoesNotMarkLoopActive"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionFiltersCannotExpandSingleSubscriptionScope"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionWithUnknownStableCodeReturnsEmptySubset"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationPositionsKeepTheirOwnAssetAndUnknownMaterial"
+        },
+        {
+          "package": "capabilityinventory",
+          "test": "TestRepositoryContractInventoryIsComplete"
+        },
+        {
+          "package": "capabilityinventory",
+          "test": "TestObservationIntentOperationsRouteOwnership"
+        }
+      ],
+      "skips": [],
+      "fails": []
+    },
+    {
+      "phase": "go",
+      "head": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+      "started_utc": "2026-10-23T15:18:11.221338+00:00",
+      "finished_utc": "2026-10-23T15:18:39.412163+00:00",
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/observationstore",
+            "./internal/adapters/persistence/networkstore",
+            "./internal/datastore",
+            "./internal/adapters/persistence/platformstore",
+            "./internal/application",
+            "./internal/handler",
+            "./internal/server",
+            "./tools/capabilityinventory",
+            "-run",
+            "^(TestObservation.*|TestSQLiteObservationMaterial.*|TestSQLiteNodeObservationOwnedMigration|TestNodeObservation.*|TestMigrationCopierNodeObservationHandoff|TestProjection.*|TestRepositoryContractInventoryIsComplete)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 28.061,
+          "log": "go-billingmetadata3-target.log",
+          "log_sha256": "6038989bda79af8d4a1a5498263ba3f028096796afd8d053fe698eb109cd15e7"
+        }
+      ],
+      "source_stable": true,
+      "source_before_sha256": "76dbe36276ea7c272ffc8fb9569f587adab7c146fa70df963444ffe0aa08377e",
+      "source_after_sha256": "76dbe36276ea7c272ffc8fb9569f587adab7c146fa70df963444ffe0aa08377e",
+      "attempt": "go-billingmetadata3",
+      "top_level_pass": [
+        {
+          "package": "observationstore",
+          "test": "TestObservationExpiredClaimCannotAcknowledgeReplacement"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationEmptyTagStateKeepsFloorDuringOverrideAndDeletion"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationCachedTimesKeepExactReceiverFenceAndMaterial"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationClaimExpirationRollsBackNodeAndPosition"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationForgedSmallHeaderDoesNotFetchLargePart"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationIndependentSources"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationOwnedAckRollback"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationUnknownAndByteBudget"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationUnknownAssetDoesNotBorrowFloor"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationIntentOperationsHeadersOnly"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationMaterialRetirementBudgetAndConcurrentPools"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationMaterialRetirementPreservesPinsAndReplay"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationMaterialRetirementRollbackAndCorruption"
+        },
+        {
+          "package": "datastore",
+          "test": "TestObservationMetadataErrorsNeverBecomeAbsence"
+        },
+        {
+          "package": "datastore",
+          "test": "TestProjectionCheckSQLiteConnectionParameters"
+        },
+        {
+          "package": "datastore",
+          "test": "TestProjectionCheckMissingSQLiteFileDoesNotCreate"
+        },
+        {
+          "package": "datastore",
+          "test": "TestSQLiteObservationMaterialMigrationAndRecovery"
+        },
+        {
+          "package": "datastore",
+          "test": "TestSQLiteNodeObservationOwnedMigration"
+        },
+        {
+          "package": "platformstore",
+          "test": "TestMigrationCopierNodeObservationHandoff"
+        },
+        {
+          "package": "application",
+          "test": "TestObservationMaterialJobKeepsBoundedLiveCapability"
+        },
+        {
+          "package": "application",
+          "test": "TestProjectionJobDefinitionsPreserveExistingContract"
+        },
+        {
+          "package": "application",
+          "test": "TestProjectionDefinitionsKeepLiveCapabilityAndErrorSemantics"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationFailureDoesNotRollBackSettlement"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationAppendFailureRollsBackSettlementAndSpoolAck"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationIntentOperationsHTTP"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationHTTPReadsKeepCounterSource"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationIntentControlledRetry"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationMaterialRetirementKeepsBillingAndCheckpointReplay"
+        },
+        {
+          "package": "handler",
+          "test": "TestSQLiteObservationMaterialJobUsesSharedExecutor"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionGenericReadinessDelegatesSharedDefinitions"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionFailedRegistrationDoesNotMarkLoopActive"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionFiltersCannotExpandSingleSubscriptionScope"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionWithUnknownStableCodeReturnsEmptySubset"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationPositionsKeepTheirOwnAssetAndUnknownMaterial"
+        },
+        {
+          "package": "capabilityinventory",
+          "test": "TestRepositoryContractInventoryIsComplete"
+        },
+        {
+          "package": "capabilityinventory",
+          "test": "TestObservationIntentOperationsRouteOwnership"
+        }
+      ],
+      "skips": [],
+      "fails": []
+    },
+    {
+      "phase": "go",
+      "head": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+      "started_utc": "2026-10-23T15:31:23.926685+00:00",
+      "finished_utc": "2026-10-23T15:33:33.795948+00:00",
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/observationstore",
+            "./internal/adapters/persistence/networkstore",
+            "./internal/datastore",
+            "./internal/adapters/persistence/platformstore",
+            "./internal/application",
+            "./internal/handler",
+            "./internal/server",
+            "./tools/capabilityinventory",
+            "-run",
+            "^(TestObservation.*|TestSQLiteObservationMaterial.*|TestSQLiteNodeObservationOwnedMigration|TestNodeObservation.*|TestMigrationCopierNodeObservationHandoff|TestProjection.*|TestRepositoryContractInventoryIsComplete)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 129.722,
+          "log": "go-lifecycle4-target.log",
+          "log_sha256": "af658ceee63ca91bbf25bb9a4ba42af60966a18da0da7feccddb4d13559498ee"
+        }
+      ],
+      "source_stable": true,
+      "source_before_sha256": "ae485227fc084a4de38ded14a2c89f9b50d77520e8e4cd2067fac21f56e4d36a",
+      "source_after_sha256": "ae485227fc084a4de38ded14a2c89f9b50d77520e8e4cd2067fac21f56e4d36a",
+      "attempt": "go-lifecycle4",
+      "top_level_pass": [
+        {
+          "package": "observationstore",
+          "test": "TestObservationExpiredClaimCannotAcknowledgeReplacement"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationEmptyTagStateKeepsFloorDuringOverrideAndDeletion"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationCachedTimesKeepExactReceiverFenceAndMaterial"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationClaimExpirationRollsBackNodeAndPosition"
+        },
+        {
+          "package": "observationstore",
+          "test": "TestObservationForgedSmallHeaderDoesNotFetchLargePart"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationIndependentSources"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationOwnedAckRollback"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationUnknownAndByteBudget"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestNodeObservationUnknownAssetDoesNotBorrowFloor"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationIntentOperationsHeadersOnly"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationMaterialRetirementBudgetAndConcurrentPools"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationMaterialRetirementPreservesPinsAndReplay"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationMaterialRetirementRollbackAndCorruption"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestObservationMaterialRetirementRetainsInconsistentTimes"
+        },
+        {
+          "package": "datastore",
+          "test": "TestObservationMetadataErrorsNeverBecomeAbsence"
+        },
+        {
+          "package": "datastore",
+          "test": "TestProjectionCheckSQLiteConnectionParameters"
+        },
+        {
+          "package": "datastore",
+          "test": "TestProjectionCheckMissingSQLiteFileDoesNotCreate"
+        },
+        {
+          "package": "datastore",
+          "test": "TestSQLiteObservationMaterialMigrationAndRecovery"
+        },
+        {
+          "package": "datastore",
+          "test": "TestSQLiteNodeObservationOwnedMigration"
+        },
+        {
+          "package": "platformstore",
+          "test": "TestMigrationCopierNodeObservationHandoff"
+        },
+        {
+          "package": "application",
+          "test": "TestObservationMaterialJobKeepsBoundedLiveCapability"
+        },
+        {
+          "package": "application",
+          "test": "TestProjectionJobDefinitionsPreserveExistingContract"
+        },
+        {
+          "package": "application",
+          "test": "TestProjectionDefinitionsKeepLiveCapabilityAndErrorSemantics"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationFailureDoesNotRollBackSettlement"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationAppendFailureRollsBackSettlementAndSpoolAck"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationIntentOperationsHTTP"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationHTTPReadsKeepCounterSource"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationIntentControlledRetry"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationMaterialRetirementKeepsBillingAndCheckpointReplay"
+        },
+        {
+          "package": "handler",
+          "test": "TestSQLiteObservationMaterialJobUsesSharedExecutor"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionGenericReadinessDelegatesSharedDefinitions"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionFailedRegistrationDoesNotMarkLoopActive"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionFiltersCannotExpandSingleSubscriptionScope"
+        },
+        {
+          "package": "handler",
+          "test": "TestProjectionWithUnknownStableCodeReturnsEmptySubset"
+        },
+        {
+          "package": "handler",
+          "test": "TestObservationPositionsKeepTheirOwnAssetAndUnknownMaterial"
+        },
+        {
+          "package": "capabilityinventory",
+          "test": "TestRepositoryContractInventoryIsComplete"
+        },
+        {
+          "package": "capabilityinventory",
+          "test": "TestObservationIntentOperationsRouteOwnership"
+        }
+      ],
+      "skips": [],
+      "fails": []
+    },
+    {
+      "phase": "mysql",
+      "head": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+      "started_utc": "2026-10-23T15:12:57.208979+00:00",
+      "finished_utc": "2026-10-23T15:14:48.009779+00:00",
+      "checks": [
+        {
+          "name": "mysql",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "./internal/adapters/persistence/networkstore",
+            "./internal/adapters/persistence/platformstore",
+            "./internal/handler",
+            "-run",
+            "^TestMySQL(ObservationMaterial.*|NodeObservationHandoff|MigrationCopierNodeObservationHandoff)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 110.673,
+          "log": "mysql-first1-mysql.log",
+          "log_sha256": "fd909de38a326fa8f87ca2ec06a7ca957bfb7481b09f342944db3c67e454a492"
+        }
+      ],
+      "source_stable": true,
+      "source_before_sha256": "1196b16021dd5a1eaae53922c722a7f1ade41f183702e2b50df2123180375923",
+      "source_after_sha256": "1196b16021dd5a1eaae53922c722a7f1ade41f183702e2b50df2123180375923",
+      "attempt": "mysql-first1",
+      "top_level_pass": [
+        {
+          "package": "datastore",
+          "test": "TestMySQLObservationMaterialMigrationAndRecovery"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestMySQLNodeObservationHandoff"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestMySQLObservationMaterialRetirementBudgetAndConcurrentPools"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestMySQLObservationMaterialRetirementPreservesPinsAndReplay"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestMySQLObservationMaterialRetirementRollbackAndCorruption"
+        },
+        {
+          "package": "platformstore",
+          "test": "TestMySQLMigrationCopierNodeObservationHandoff"
+        },
+        {
+          "package": "handler",
+          "test": "TestMySQLObservationMaterialJobUsesSharedExecutor"
+        }
+      ],
+      "skips": [],
+      "fails": []
+    },
+    {
+      "phase": "mysql",
+      "head": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+      "started_utc": "2026-10-23T15:20:19.070411+00:00",
+      "finished_utc": "2026-10-23T15:22:09.889072+00:00",
+      "checks": [
+        {
+          "name": "mysql",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "./internal/adapters/persistence/networkstore",
+            "./internal/adapters/persistence/platformstore",
+            "./internal/handler",
+            "-run",
+            "^TestMySQL(ObservationMaterial.*|NodeObservationHandoff|MigrationCopierNodeObservationHandoff)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 110.689,
+          "log": "mysql-billingmetadata2-mysql.log",
+          "log_sha256": "22de3a00a971f97fb2af9588a47daacfdb3c1436d15118adbb42d1d2f5f5c70c"
+        }
+      ],
+      "source_stable": true,
+      "source_before_sha256": "76dbe36276ea7c272ffc8fb9569f587adab7c146fa70df963444ffe0aa08377e",
+      "source_after_sha256": "76dbe36276ea7c272ffc8fb9569f587adab7c146fa70df963444ffe0aa08377e",
+      "attempt": "mysql-billingmetadata2",
+      "top_level_pass": [
+        {
+          "package": "datastore",
+          "test": "TestMySQLObservationMaterialMigrationAndRecovery"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestMySQLNodeObservationHandoff"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestMySQLObservationMaterialRetirementBudgetAndConcurrentPools"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestMySQLObservationMaterialRetirementPreservesPinsAndReplay"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestMySQLObservationMaterialRetirementRollbackAndCorruption"
+        },
+        {
+          "package": "platformstore",
+          "test": "TestMySQLMigrationCopierNodeObservationHandoff"
+        },
+        {
+          "package": "handler",
+          "test": "TestMySQLObservationMaterialRetirementKeepsBillingAndCheckpointReplay"
+        },
+        {
+          "package": "handler",
+          "test": "TestMySQLObservationMaterialJobUsesSharedExecutor"
+        }
+      ],
+      "skips": [],
+      "fails": []
+    },
+    {
+      "phase": "mysql",
+      "head": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+      "started_utc": "2026-10-23T15:34:15.006175+00:00",
+      "finished_utc": "2026-10-23T15:36:08.955249+00:00",
+      "checks": [
+        {
+          "name": "mysql",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "./internal/adapters/persistence/networkstore",
+            "./internal/adapters/persistence/platformstore",
+            "./internal/handler",
+            "-run",
+            "^TestMySQL(ObservationMaterial.*|NodeObservationHandoff|MigrationCopierNodeObservationHandoff)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 113.827,
+          "log": "mysql-lifecycle3-mysql.log",
+          "log_sha256": "2fd2f2786478cf79c3eba40097f4d740331e6b80a85feb665e681af183278c21"
+        }
+      ],
+      "source_stable": true,
+      "source_before_sha256": "ae485227fc084a4de38ded14a2c89f9b50d77520e8e4cd2067fac21f56e4d36a",
+      "source_after_sha256": "ae485227fc084a4de38ded14a2c89f9b50d77520e8e4cd2067fac21f56e4d36a",
+      "attempt": "mysql-lifecycle3",
+      "top_level_pass": [
+        {
+          "package": "datastore",
+          "test": "TestMySQLObservationMaterialMigrationAndRecovery"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestMySQLNodeObservationHandoff"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestMySQLObservationMaterialRetirementBudgetAndConcurrentPools"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestMySQLObservationMaterialRetirementPreservesPinsAndReplay"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestMySQLObservationMaterialRetirementRollbackAndCorruption"
+        },
+        {
+          "package": "networkstore",
+          "test": "TestMySQLObservationMaterialRetirementRetainsInconsistentTimes"
+        },
+        {
+          "package": "platformstore",
+          "test": "TestMySQLMigrationCopierNodeObservationHandoff"
+        },
+        {
+          "package": "handler",
+          "test": "TestMySQLObservationMaterialRetirementKeepsBillingAndCheckpointReplay"
+        },
+        {
+          "package": "handler",
+          "test": "TestMySQLObservationMaterialJobUsesSharedExecutor"
+        }
+      ],
+      "skips": [],
+      "fails": []
+    },
+    {
+      "phase": "frontend-target",
+      "head": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+      "started_utc": "2026-10-23T15:23:33.700666+00:00",
+      "finished_utc": "2026-10-23T15:23:36.720376+00:00",
+      "checks": [
+        {
+          "name": "test",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "test",
+            "--no-file-parallelism",
+            "src/api/nodeObservationIntents.test.ts",
+            "src/components/NodeObservationQueue.test.ts"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 2.898,
+          "log": "frontend-target-first1-test.log",
+          "log_sha256": "746d1a0a83461dc6cb67daa599eab4cc4df263e4726491f371f2cbd91816fe4c"
+        }
+      ],
+      "source_stable": true,
+      "source_before_sha256": "76dbe36276ea7c272ffc8fb9569f587adab7c146fa70df963444ffe0aa08377e",
+      "source_after_sha256": "76dbe36276ea7c272ffc8fb9569f587adab7c146fa70df963444ffe0aa08377e",
+      "attempt": "frontend-target-first1"
+    },
+    {
+      "phase": "frontend-full",
+      "head": "e1ae9561b615f0e54ab3fc75279a90d1ef5930bf",
+      "started_utc": "2026-10-23T15:24:34.289750+00:00",
+      "finished_utc": "2026-10-23T15:27:47.091607+00:00",
+      "checks": [
+        {
+          "name": "install",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "install",
+            "--frozen-lockfile",
+            "--package-import-method=copy"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.673,
+          "log": "frontend-full-first1-install.log",
+          "log_sha256": "858323010a1a3f1e54a4eefecddd9cdac8a3c76cf9c544c970c2ac14276f6e24"
+        },
+        {
+          "name": "test",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "test",
+            "--no-file-parallelism",
+            "--exclude",
+            "src/theme/designTokens.test.ts",
+            "--exclude",
+            "src/views/commercePurchaseExperience.test.ts",
+            "--exclude",
+            "src/utils/adminRowActionsAudit.test.ts",
+            "--exclude",
+            "src/utils/catalogScalePolicy.test.ts",
+            "--exclude",
+            "src/utils/formPolicy.test.ts",
+            "--exclude",
+            "src/utils/frontendArchitecturePolicy.test.ts"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 157.023,
+          "log": "frontend-full-first1-test.log",
+          "log_sha256": "becad86bc83ade4b64ea3cfb2ad19a49e8fd0845b12a004deec0136f9c36b06b"
+        },
+        {
+          "name": "build",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "build"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 34.965,
+          "log": "frontend-full-first1-build.log",
+          "log_sha256": "1a95074d82a931ba45dd7afe319cb369641d5bcf4b32ff30806ca7d1047d45e3"
+        }
+      ],
+      "source_stable": true,
+      "source_before_sha256": "76dbe36276ea7c272ffc8fb9569f587adab7c146fa70df963444ffe0aa08377e",
+      "source_after_sha256": "76dbe36276ea7c272ffc8fb9569f587adab7c146fa70df963444ffe0aa08377e",
+      "attempt": "frontend-full-first1"
+    }
+  ],
+  "frontend_scope": {
+    "sha256": "1135b3135940d8e59a1478e06136b60010075c506c7f9dbf1837f669ac543202",
+    "files": 511,
+    "unchanged_after_backend_lifecycle_guard": true,
+    "full_pass": 1172,
+    "existing_skipped_tests": 8,
+    "existing_skipped_files": 2,
+    "baseline_excludes_unchanged": true
+  },
+  "published_sql": {
+    "unchanged_count": 154,
+    "sha256": "e6738af35a84e62a918dd480bbf056ca44ef268e1a3307f701465b3c856a3e9b",
+    "new_assets": [
+      "0061_node_observation_material_retention.up.sql",
+      "0061_node_observation_material_retention.down.sql",
+      "sqlite/0061_node_observation_material_retention.sql"
+    ],
+    "new_asset_hashes": [
+      {
+        "path": "backend/migrations/0061_node_observation_material_retention.up.sql",
+        "sha256": "2722b9eb668f55972c25b31b94cd6c94f0a787d706bd049f8d86d96273960396",
+        "unchanged_from_applied_candidate": true
+      },
+      {
+        "path": "backend/migrations/0061_node_observation_material_retention.down.sql",
+        "sha256": "6c5f99a277292245f90c1afc0002f6aecb6b61605e520a42221083f89349b9b5",
+        "unchanged_from_applied_candidate": true
+      },
+      {
+        "path": "backend/migrations/sqlite/0061_node_observation_material_retention.sql",
+        "sha256": "5dd4c6e9c5ad02d416453d01783e5b809255b101e32a9ec51fb95772f86368f8",
+        "unchanged_from_applied_candidate": true
+      }
+    ]
+  },
+  "cache_cleans": [
+    {
+      "utc": "2026-10-23T15:05:34.736671+00:00",
+      "target": "/workspace/toolchains/cache/go-build",
+      "resolved": "/workspace/toolchains/cache/go-build",
+      "symlinks": false,
+      "workloads": [],
+      "free_before": 252772352,
+      "command": "go clean -cache",
+      "exit_code": 0,
+      "output": "",
+      "free_after": 775135232
+    },
+    {
+      "utc": "2026-10-23T15:23:33.578062+00:00",
+      "target": "/workspace/toolchains/cache/go-build",
+      "resolved": "/workspace/toolchains/cache/go-build",
+      "symlinks": false,
+      "workloads": [],
+      "free_before": 89477120,
+      "command": "go clean -cache",
+      "exit_code": 0,
+      "output": "",
+      "free_after": 735170560
+    },
+    {
+      "utc": "2026-10-23T15:38:27.234565+00:00",
+      "target": "/workspace/toolchains/cache/go-build",
+      "resolved": "/workspace/toolchains/cache/go-build",
+      "symlinks": false,
+      "workloads": [],
+      "free_before": 170434560,
+      "command": "go clean -cache",
+      "exit_code": 0,
+      "output": "",
+      "free_after": 713777152
+    }
+  ],
+  "behavior_evidence": [
+    "37 final Go top-level and9 real MySQL top-level, zero skipped; actual fixture functions recorded above.",
+    "Per-sample1.5 rounding: raw9 billed15 before and after material retirement/checkpoint failure/replay; source identities and current observation state preserved.",
+    "Fresh/old/interrupted/duplicate formal migration, recorded missing-field rejection and index recovery/shape checks; real SQLite/MySQL discovery plans.",
+    "Pins/pending/claimed/held kept; corrupt parts and invalid lifecycle times retained; marker failure rolls back deleted parts.",
+    "Raw read budget and two DB pools, real owned cross-driver copy including compacted replay, original completion rollback and source preservation.",
+    "Shared real executor registration, duplicate start/readiness/drain/completion verified on SQLite andMySQL."
+  ],
+  "pending": [
+    "Full local backend4/original MySQL3 and own exact-head CI not yet executed for P4.",
+    "Original capacity gate and external acceptance not performed."
+  ],
+  "limitations": [
+    "Headers/identities, held/pending and pinned material remain; no total database growth bound.",
+    "Financial/diagnostic retention and bounded replay horizon not completed.",
+    "Fixed seven-day material age and raw budgets have no administrator settings page.",
+    "No mixed-version rollout; quiesce old writers/consumers and keep compatible reader/markers on rollback.",
+    "Logical retired bytes are not proof of physical file/volume shrinkage.",
+    "Local fixtures do not verify external payment/coupon/kernel, browser, OS crash or production behavior."
+  ],
+  "race": [
+    {
+      "attempt": "race-first1",
+      "checks": [
+        {
+          "name": "race",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-race",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/observationstore",
+            "./internal/adapters/persistence/networkstore",
+            "./internal/application",
+            "./internal/handler",
+            "-run",
+            "^Test(Observation.*|NodeObservation.*|SQLiteObservationMaterialJob.*)$",
+            "-count=3",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 419.49,
+          "log": "race-first1-race.log",
+          "log_sha256": "78b26ae25fe725cfe9415b65257a70187ea152545ed4efc924948c113fd70693"
+        }
+      ],
+      "source_before_sha256": "ae485227fc084a4de38ded14a2c89f9b50d77520e8e4cd2067fac21f56e4d36a",
+      "source_after_sha256": "ae485227fc084a4de38ded14a2c89f9b50d77520e8e4cd2067fac21f56e4d36a",
+      "source_stable": true,
+      "top_level_pass_counts": [
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore",
+          "test": "TestObservationExpiredClaimCannotAcknowledgeReplacement",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore",
+          "test": "TestObservationEmptyTagStateKeepsFloorDuringOverrideAndDeletion",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore",
+          "test": "TestObservationCachedTimesKeepExactReceiverFenceAndMaterial",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore",
+          "test": "TestObservationClaimExpirationRollsBackNodeAndPosition",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore",
+          "test": "TestObservationForgedSmallHeaderDoesNotFetchLargePart",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestNodeObservationIndependentSources",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestNodeObservationOwnedAckRollback",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestNodeObservationUnknownAndByteBudget",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestNodeObservationUnknownAssetDoesNotBorrowFloor",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestObservationIntentOperationsHeadersOnly",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestObservationMaterialRetirementBudgetAndConcurrentPools",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestObservationMaterialRetirementPreservesPinsAndReplay",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestObservationMaterialRetirementRollbackAndCorruption",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestObservationMaterialRetirementRetainsInconsistentTimes",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/application",
+          "test": "TestObservationMaterialJobKeepsBoundedLiveCapability",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "test": "TestObservationFailureDoesNotRollBackSettlement",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "test": "TestObservationAppendFailureRollsBackSettlementAndSpoolAck",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "test": "TestObservationIntentOperationsHTTP",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "test": "TestObservationHTTPReadsKeepCounterSource",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "test": "TestObservationIntentControlledRetry",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "test": "TestObservationMaterialRetirementKeepsBillingAndCheckpointReplay",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "test": "TestSQLiteObservationMaterialJobUsesSharedExecutor",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "test": "TestObservationPositionsKeepTheirOwnAssetAndUnknownMaterial",
+          "passes": 3
+        }
+      ],
+      "skips": [],
+      "finished_utc": "2026-10-23T15:45:27.016783+00:00"
+    },
+    {
+      "attempt": "mysqlrace-first1",
+      "checks": [
+        {
+          "name": "race",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-race",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/observationstore",
+            "./internal/adapters/persistence/networkstore",
+            "./internal/application",
+            "./internal/handler",
+            "-run",
+            "^TestMySQL(ObservationMaterial.*|NodeObservationHandoff)$",
+            "-count=3",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 144.461,
+          "log": "mysqlrace-first1-race.log",
+          "log_sha256": "64c687f9b0aceb186551eb2e86c20c3d2e7df40eaf79be3fe51c03407deac991"
+        }
+      ],
+      "source_before_sha256": "ae485227fc084a4de38ded14a2c89f9b50d77520e8e4cd2067fac21f56e4d36a",
+      "source_after_sha256": "ae485227fc084a4de38ded14a2c89f9b50d77520e8e4cd2067fac21f56e4d36a",
+      "source_stable": true,
+      "top_level_pass_counts": [
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestMySQLNodeObservationHandoff",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestMySQLObservationMaterialRetirementBudgetAndConcurrentPools",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestMySQLObservationMaterialRetirementPreservesPinsAndReplay",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestMySQLObservationMaterialRetirementRollbackAndCorruption",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "test": "TestMySQLObservationMaterialRetirementRetainsInconsistentTimes",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "test": "TestMySQLObservationMaterialRetirementKeepsBillingAndCheckpointReplay",
+          "passes": 3
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "test": "TestMySQLObservationMaterialJobUsesSharedExecutor",
+          "passes": 3
+        }
+      ],
+      "skips": [],
+      "finished_utc": "2026-10-23T15:50:35.905627+00:00",
+      "note": "observationstore/application packages have no matching MySQL tests; actual named networkstore/handler functions provide the real DB coverage."
+    }
+  ],
+  "source_digest_scope": "Go files, frontend source, module/package manifests, OpenAPI and ownership ledger; new SQL is separately bound to the immutable applied-candidate manifest and hashes here.",
+  "current_candidate_file_manifest": [
+    {
+      "path": "backend/internal/model/node_observation_handoff.go",
+      "sha256": "b4469d69a41da4fcd0bd28f26f3243b29a3a87b505f2666c6bb50d3c31cf1d26"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/observationstore/material.go",
+      "sha256": "cfa7a8f6b02d798ce1da2eadbd893c0fb932834cdd55b828c6b38570e172598b"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/observationstore/worker.go",
+      "sha256": "7544c4cc99e88f91b3079d8483fd8faed77191b53f1f55577921bf1384305f63"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/observationstore/retention.go",
+      "sha256": "e98437afb87d1c3d188543d099ebf26ef84a2804048137147622895da92bfe2a"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/observationstore/ownership_test.go",
+      "sha256": "d10d6aae8ad4472f3a29837aa5e9828a184f6d731106f2725d942998ea74efd1"
+    },
+    {
+      "path": "backend/internal/datastore/node_observation_material_schema.go",
+      "sha256": "a22ce0aa9d21ab86ee633c88afb5e9e1f04d0f785accdab4676e86c1547cae51"
+    },
+    {
+      "path": "backend/internal/datastore/node_observation_material_schema_test.go",
+      "sha256": "53ba1294e9778a74ca94eee4262e72746c666b7a0c654da1c011d54ff4182ef7"
+    },
+    {
+      "path": "backend/internal/datastore/migrations.go",
+      "sha256": "7c00e2aea02b98b6b954d53ea33691dfb9e0e832ee9890bb9145f2f5d4ba3321"
+    },
+    {
+      "path": "backend/internal/datastore/migrations_test.go",
+      "sha256": "922b0f985ac66a0d1a4ca8573ab6b0eaf632dd6c456678fea1a000d2f70a61ce"
+    },
+    {
+      "path": "backend/internal/datastore/database_copy.go",
+      "sha256": "393e85b72d092a63a5e7477888ae41d06e1e2866e003d4472a27bde8c08c9649"
+    },
+    {
+      "path": "backend/migrations/0061_node_observation_material_retention.up.sql",
+      "sha256": "2722b9eb668f55972c25b31b94cd6c94f0a787d706bd049f8d86d96273960396"
+    },
+    {
+      "path": "backend/migrations/0061_node_observation_material_retention.down.sql",
+      "sha256": "6c5f99a277292245f90c1afc0002f6aecb6b61605e520a42221083f89349b9b5"
+    },
+    {
+      "path": "backend/migrations/sqlite/0061_node_observation_material_retention.sql",
+      "sha256": "5dd4c6e9c5ad02d416453d01783e5b809255b101e32a9ec51fb95772f86368f8"
+    },
+    {
+      "path": "backend/internal/capabilities/network/node_observation_operations.go",
+      "sha256": "1eac3a32dd1ba02049b3e1d278c67f9a12280dda9cf4998019be4623e9fbd526"
+    },
+    {
+      "path": "backend/internal/capabilities/network/observation_material_retention.go",
+      "sha256": "64c7016040b6cbeed4fdad6762bce45fd8683d81eb07fe5b83e0b08982efca6b"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/networkstore/node_observation_operations.go",
+      "sha256": "e137f64625e45d7b457a5167c608f49b647b46cba80df3cb06f1a48277816265"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/networkstore/observation_material_retention_test.go",
+      "sha256": "3d8222f2d5673750fb24221949ec99fe98d3d2f8901efabaec913f3c9ea486b6"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/platformstore/node_observation_copy_test.go",
+      "sha256": "da42125eb350e2e12399347755ddf67fae84b9168eee1de44d01b1e6d6f9aa4b"
+    },
+    {
+      "path": "backend/internal/application/services.go",
+      "sha256": "1dae0f1d6d8c684653390c47990037739292a4d7fc8069d528c099173400597b"
+    },
+    {
+      "path": "backend/internal/application/projection_jobs.go",
+      "sha256": "c7dcff17f97ff1b2863f57d0d3f888183c0a9844c3ab70b0c60a3935f088d69b"
+    },
+    {
+      "path": "backend/internal/handler/node_observation_material_retention_worker.go",
+      "sha256": "a044b457d15bda3c9a6ad21aac424a0bd24593c0595402ebd66959269d6fe288"
+    },
+    {
+      "path": "backend/internal/server/router.go",
+      "sha256": "de69cb7b80886988cad757e1fd474f7c3df0c15bc0b0392707ced82783cb0545"
+    },
+    {
+      "path": "backend/internal/handler/background_jobs.go",
+      "sha256": "08cc8feb310628ab1aae3888304db0b904770e3030cf81abd3e1109cb754ac0b"
+    },
+    {
+      "path": "backend/internal/handler/job_readiness.go",
+      "sha256": "f98a1a41dc18344d3d229496d528131096b25ee0d9cd703e77bb2cc4e5b72ab4"
+    },
+    {
+      "path": "backend/tools/capabilityinventory/main.go",
+      "sha256": "16afb3521663bf35ca69c09e7d6c73605e5c14439ee502cadb711fb419f659d9"
+    },
+    {
+      "path": "backend/tools/capabilityinventory/main_test.go",
+      "sha256": "9a11c10b5bc9bfa3eac77c045ae6fad84df30762e4776ad8358864b83b002bf3"
+    },
+    {
+      "path": "backend/architecture/capability-ownership.json",
+      "sha256": "79caa040321c15fd6a5678430d5492a48faa27bf7fb928d7eba8c6cd1fb3c3e1"
+    },
+    {
+      "path": "frontend/src/api/nodeObservationIntents.ts",
+      "sha256": "32108cafad55252f6d51c4b8e2e58ad781942eab9673a975c0e324df4bccdf18"
+    },
+    {
+      "path": "frontend/src/components/NodeObservationQueue.vue",
+      "sha256": "60784bd88c980e9d6e7df6b34b04ce6548ff03540155f0a7baa4a88af85fc101"
+    },
+    {
+      "path": "frontend/src/components/NodeObservationQueue.test.ts",
+      "sha256": "23040e6156b6684d706fcfe9b701c3ae6cea85d5b9af4e87f5f8d3388f9dd0bc"
+    },
+    {
+      "path": "backend/api/openapi.yaml",
+      "sha256": "8ca1c5a6c7212ead48f4d68770ee676b3cf094aab9306c81fcc5b06b7aa582be"
+    },
+    {
+      "path": "backend/internal/application/observation_material_job_test.go",
+      "sha256": "0bc759e3b09dae556e99a42c2a020aa84ea73886fb3ac27525bfe796c4c78387"
+    },
+    {
+      "path": "backend/internal/handler/observation_material_job_integration_test.go",
+      "sha256": "a657e7f5e5959d94bb0ac7af8cdcdd5c4074da68483e4a9c95b53b6a1eac8bc6"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/networkstore/observation_material_retention_budget_test.go",
+      "sha256": "c650c182af4c924e0d14503f428bfcfa7dae37d351709d261996169713d68d34"
+    },
+    {
+      "path": "backend/internal/handler/observation_material_billing_replay_test.go",
+      "sha256": "dbe57124e243a58790b8e695694ce32c3b0894b34ea24351d65d68f3d1eebe7b"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/networkstore/observation_material_retention_time_test.go",
+      "sha256": "d2e9cb286e8a9f636ff7d1c74504c9c87fb85670294f8b6bafa80457de0c4083"
+    }
+  ]
+}

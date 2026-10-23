@@ -2,6 +2,9 @@ package entitlements
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -67,4 +70,18 @@ func (s SubscriptionMutations) Apply(ctx context.Context, actor uint, input Subs
 		return SubscriptionMutationReceipt{}, ErrSubscriptionMutationUnavailable
 	}
 	return s.Repository.Apply(ctx, actor, input)
+}
+
+// SubscriptionMutationFingerprint preserves the original durable command JSON
+// identity across the legacy no-refund cancellation's core transaction bridge.
+func SubscriptionMutationFingerprint(in SubscriptionMutationInput) string {
+	data, _ := json.Marshal(struct {
+		SubscriptionID uint   `json:"subscription_id"`
+		Kind           string `json:"kind"`
+		Days           int    `json:"days"`
+		Reason         string `json:"reason"`
+		Origin         string `json:"origin"`
+	}{in.SubscriptionID, in.Kind, in.Days, in.Reason, in.Origin})
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }

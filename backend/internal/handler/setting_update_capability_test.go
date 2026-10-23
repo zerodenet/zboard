@@ -12,6 +12,7 @@ import (
 
 func TestPlatformSettingUpdateFencesAuthorityAndSecrets(t *testing.T) {
 	h, _ := newAnnouncementTestHandlers(t)
+	prepareTestMaintenanceSource(t, h)
 	ctx := context.Background()
 	actor := model.User{Email: "setting-writer@example.test", Password: "unused", IsAdmin: true, Status: "active"}
 	if err := h.db.Create(&actor).Error; err != nil {
@@ -59,6 +60,7 @@ func TestPlatformSettingUpdateFencesAuthorityAndSecrets(t *testing.T) {
 
 func TestPlatformSettingUpdateRollsBackIncompleteMailConfiguration(t *testing.T) {
 	h, _ := newAnnouncementTestHandlers(t)
+	prepareTestMaintenanceSource(t, h)
 	actor := model.User{Email: "mail-setting-writer@example.test", Password: "unused", IsAdmin: true, Status: "active"}
 	if err := h.db.Create(&actor).Error; err != nil {
 		t.Fatal(err)

@@ -1,0 +1,53 @@
+{
+  "source": "e9e582f90b7f8058b5215bab2f91385cd3f2c26b",
+  "checks": [
+    {
+      "name": "schema-legacy",
+      "command": "go test -p 2 ./internal/handler ./internal/datastore -run ^Test(SQLite|MySQL)(PurchaseSnapshotMigrationAndRecovery|DiscountSnapshotMigrationPreservesEvidence)$ -count=1 -timeout 5m",
+      "exit_code": 0,
+      "seconds": 38.747
+    },
+    {
+      "name": "backend-full",
+      "command": "go test -p 2 ./...",
+      "exit_code": 0,
+      "seconds": 233.701
+    },
+    {
+      "name": "backend-vet",
+      "command": "go vet -p 2 ./...",
+      "exit_code": 0,
+      "seconds": 3.61
+    },
+    {
+      "name": "backend-build",
+      "command": "go build -p 2 ./cmd/zboard",
+      "exit_code": 0,
+      "seconds": 2.249
+    },
+    {
+      "name": "sqlite-nocgo",
+      "command": "go test -p 2 ./internal/datastore -run SQLite -count=1",
+      "exit_code": 0,
+      "seconds": 15.562
+    },
+    {
+      "name": "mysql-core",
+      "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+      "exit_code": 0,
+      "seconds": 862.347
+    },
+    {
+      "name": "mysql-copy",
+      "command": "go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+      "exit_code": 0,
+      "seconds": 125.028
+    }
+  ],
+  "ci": {
+    "e9e582f": "https://github.com/zerodenet/zboard/actions/runs/39473740869",
+    "conclusion": "failure: native deadline classification, preserved",
+    "fixed_ddf9624": "https://github.com/zerodenet/zboard/actions/runs/39475083101",
+    "fixed_conclusion": "all six jobs success"
+  }
+}

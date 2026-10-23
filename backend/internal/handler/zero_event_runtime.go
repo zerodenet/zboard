@@ -55,7 +55,7 @@ type zeroNodeProjection struct {
 func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 	h.StartCredentialExpiryWorker()
 	if err := h.ReconcileHistoryRetentionDefaults(); err != nil {
-		h.CloseCredentialExpiryWorker()
+		h.detachScheduledJob("credential_expiry")
 		return err
 	}
 	h.StartHistoryRetentionWorker()
@@ -64,15 +64,15 @@ func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 	}
 	spool, err := zeroevent.NewFileSpool(cfg)
 	if err != nil {
-		h.CloseHistoryRetentionWorker()
-		h.CloseCredentialExpiryWorker()
+		h.detachScheduledJob("history_retention")
+		h.detachScheduledJob("credential_expiry")
 		return err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := spool.Start(ctx); err != nil {
 		cancel()
-		h.CloseHistoryRetentionWorker()
-		h.CloseCredentialExpiryWorker()
+		h.detachScheduledJob("history_retention")
+		h.detachScheduledJob("credential_expiry")
 		return err
 	}
 	runtime := &zeroEventRuntime{
@@ -84,8 +84,8 @@ func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 	if _, loaded := zeroEventRuntimeRegistry.LoadOrStore(h, runtime); loaded {
 		cancel()
 		_ = spool.Close()
-		h.CloseHistoryRetentionWorker()
-		h.CloseCredentialExpiryWorker()
+		h.detachScheduledJob("history_retention")
+		h.detachScheduledJob("credential_expiry")
 		return errors.New("Zero event spool is already configured")
 	}
 	h.backgroundJobs().observations.Register("event_consumer", jobNames["event_consumer"], "queue", cfg.Consumer.CommitInterval, 1)
@@ -95,14 +95,16 @@ func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 }
 
 func (h *handlers) CloseZeroEventSpool() error {
-	h.CloseHistoryRetentionWorker()
-	h.CloseCredentialExpiryWorker()
+	// File-spool configuration and ownership are local to this process. Closing
+	// it or failing startup must never revoke another process's durable tasks.
+	h.detachScheduledJob("history_retention")
+	h.detachScheduledJob("credential_expiry")
 	value, ok := zeroEventRuntimeRegistry.LoadAndDelete(h)
 	if !ok {
 		return nil
 	}
 	runtime := value.(*zeroEventRuntime)
-	h.closeScheduledJob("event_consumer")
+	h.detachScheduledJob("event_consumer")
 	runtime.cancel()
 	close(runtime.done)
 	if err := runtime.spool.Close(); err != nil {
@@ -165,6 +167,7 @@ func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node network.Eve
 	envelope := zeroevent.Envelope{
 		ID:             strings.TrimSpace(event.EventID),
 		NodeID:         uint64(node.ID),
+		AssetTag:       node.AssetTag,
 		SourceID:       strings.TrimSpace(event.SourceID),
 		PrincipalKey:   principal,
 		Type:           event.EventType,
@@ -304,19 +307,28 @@ func (h *handlers) consumeZeroEventBatchMeasured(ctx context.Context, spool zero
 		return 0, nil
 	}
 	finishObservation := h.observeJob("event_consumer", "queue", 0, 1)
+	observed := false
+	defer func() {
+		if !observed {
+			finishObservation(errors.New("job handler did not return; result requires verification"))
+		}
+	}()
 	projected, err := h.projectZeroNodeEventsBounded(ctx, batch.Events)
 	if errors.Is(err, metering.ErrFlowWindowNeedsIndividualReports) {
 		projected, err = h.projectZeroNodeEventsWithMerge(ctx, batch.Events, false)
 	}
 	if err != nil {
 		finishObservation(err)
+		observed = true
 		return 0, err
 	}
 	if err := spool.Commit(ctx, batch.Next); err != nil {
 		finishObservation(err)
+		observed = true
 		return 0, fmt.Errorf("commit Zero event checkpoint: %w", err)
 	}
 	finishObservation(nil)
+	observed = true
 	if metrics != nil {
 		metrics.committed(batch.Events, time.Since(started), time.Now().UTC())
 		metrics.projectedFlows.Add(uint64(projected))
@@ -363,7 +375,7 @@ func aggregateZeroNodeEvents(events []zeroevent.Envelope) map[uint]zeroNodeProje
 }
 
 func networkEventPosition(event zeroevent.Envelope) network.EventPosition {
-	return network.EventPosition{ID: event.ID, CoreInstanceID: event.CoreInstanceID, Sequence: event.Sequence, ConfigRevision: event.ConfigRevision, OccurredAt: event.OccurredAt}
+	return network.EventPosition{AssetTag: event.AssetTag, ID: event.ID, CoreInstanceID: event.CoreInstanceID, Sequence: event.Sequence, ConfigRevision: event.ConfigRevision, OccurredAt: event.OccurredAt, SourceID: event.SourceID, ReceivedAt: event.ReceivedAt}
 }
 func zeroNodeObservation(projection zeroNodeProjection) network.NodeObservation {
 	input := network.NodeObservation{NodeID: projection.NodeID, Latest: networkEventPosition(projection.Latest), Stats: network.NodeStats(projection.Stats)}

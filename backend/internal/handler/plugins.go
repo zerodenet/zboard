@@ -15,6 +15,13 @@ import (
 
 func (h *handlers) SetPluginManager(m *plugins.Manager) {
 	h.pluginManager = m
+	if m == nil {
+		h.services.ConfigureCommerceDiscountProvider(nil)
+		h.services.ConfigureCommerceDiscountChoices(nil)
+	} else {
+		h.services.ConfigureCommerceDiscountProvider(m)
+		h.services.ConfigureCommerceDiscountChoices(m)
+	}
 	h.identityProviders = nil
 	if m != nil {
 		h.identityProviders = m

@@ -50,6 +50,7 @@ func TestNodeReportCapabilityTransactionReplayAndRotation(t *testing.T) {
 		t.Fatalf("rotation: %v", err)
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, out.Record.UsedBytes, subStatusActive)
+	drainUsageProjections(t, h.db)
 	if err := h.db.Model(&model.ProtocolEndpointUsageDaily{}).Select("COALESCE(SUM(used_bytes),0)").Scan(&projected).Error; err != nil || projected != out.Record.UsedBytes {
 		t.Fatalf("node report usage projection: %d %v", projected, err)
 	}

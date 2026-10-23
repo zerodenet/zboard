@@ -4,9 +4,20 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/zerodenet/zboard/backend/internal/application"
 )
 
 func (h *handlers) jobReadiness(id string) func(context.Context) (bool, error) {
+	if id == "node_observation_material_retention" {
+		return h.services.NodeObservationMaterialRetentionJob().Ready
+	}
+	if id == application.NodeObservationJobID {
+		return h.services.NodeObservationJob().Ready
+	}
+	if id == application.UsageProjectionJobID {
+		return h.services.UsageProjectionJob().Ready
+	}
 	if id != "admin_tasks" && id != "event_consumer" && !strings.HasPrefix(id, "node_publish_") {
 		return nil
 	}

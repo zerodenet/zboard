@@ -47,6 +47,7 @@ type ticketCreateRequest struct {
 	Priority    int16                         `json:"priority"`
 	Body        string                        `json:"body"`
 	Attachments []experience.TicketAttachment `json:"attachments"`
+	References  *experience.TicketReferences  `json:"references,omitempty"`
 }
 
 type ticketReplyRequest struct {
@@ -136,6 +137,7 @@ func (h *handlers) TicketCreateHandler(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	ticketID, err := h.services.Tickets.Create(r.Context(), claims.UserID, experience.NewTicket{
 		TicketNo: newTicketNumber(now), Subject: body.Subject, Category: body.Category, Priority: body.Priority, Body: body.Body, Attachments: body.Attachments,
+		References: body.References,
 	}, now)
 	if errors.Is(err, experience.ErrPermission) {
 		Forbidden(w, err.Error())

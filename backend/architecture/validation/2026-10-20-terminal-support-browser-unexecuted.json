@@ -1,0 +1,39 @@
+{
+  "status": "cancelled by parent after read-only source audit; existing policy retained",
+  "target": "On fixed a82d673, open owner /account/subscription?status=ended, click finalized subscription row support link and inspect TicketCenter prefill using real Chromium/SQLite.",
+  "baseline_sha": "a82d6735247edc919b8a5ca4a522e205c0e99a0d",
+  "reason": "Owned subscription query unconditionally excludes status ended before applying requested status. status=ended therefore returns no rows. Existing fixture legitimately reaches ended through real ExpireDue. A selector/route-only change cannot expose that row.",
+  "source_evidence": [
+    {
+      "path": "backend/internal/adapters/persistence/entitlementstore/subscription_queries.go",
+      "line": 125,
+      "behavior": "For !admin, subscriptions.status <> ended is always applied; finalized fixed instances additionally excluded."
+    },
+    {
+      "path": "backend/internal/adapters/persistence/entitlementstore/subscription_queries.go",
+      "line": 198,
+      "behavior": "Other explicit statuses, including ended, apply subscriptions.status = requested status."
+    }
+  ],
+  "decision": "Preserve owned read visibility and all facts; cancel this browser subtask. New shortcut applies to rows actually visible in owned API, including active and expired in recovery window. Component ended DTO test is defensive rendering only, not an API visibility claim. Original order-to-ticket path remains validated.",
+  "execution": {
+    "source_reads_only": true,
+    "tracked_file_changes": false,
+    "script_changed": false,
+    "clone_created": false,
+    "go_compile_or_tests": false,
+    "node_or_build": false,
+    "browser": false,
+    "db_or_load": false,
+    "payment_or_lifecycle_changes": false,
+    "second_payment_created": false,
+    "original_32check_acceptance_unchanged": true
+  },
+  "frozen_harness_hashes": {
+    "scripts/acceptance-consumption-refund-browser.py": "ba7d6e987167853c75df2a128849ac707823b36ff5ee986892a87494dda1fc78",
+    "backend/internal/handler/consumption_refund_browser_test.go": "30dfdb182123e1a14ccbe2b26da60ebf9810294a5b11a298e2fde3e1451be24f"
+  },
+  "resource_window": "returned to root; no further workload authorized",
+  "remaining_blocker": "none for cancellation; terminal-row click intentionally not accepted and not claimed",
+  "private_receipt_sha256": "1f46919a11d4f34ef14f0a62806edd645660c13338435416adeeec018ed92c15"
+}

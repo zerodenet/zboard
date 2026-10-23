@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { me } from '../api/client'
 import { useAppStore } from './app'
+vi.mock('../api/identities', () => ({ fetchIdentityPasswordStatus: vi.fn(async () => ({ password_set: true })) }))
 vi.mock('../api/client', async original => ({ ...await original<typeof import('../api/client')>(), me: vi.fn() }))
 beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()) })
 describe('account identity refresh', () => {

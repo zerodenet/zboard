@@ -23,7 +23,7 @@ func (s NodeAdministration) LoadNodeAdministration(ctx context.Context, actor, i
 			return err
 		}
 		var row model.Node
-		if err := tx.First(&row, id).Error; err != nil {
+		if err := withObservationEvidence(tx.Model(&model.Node{})).Where("nodes.id = ?", id).First(&row).Error; err != nil {
 			return nodeAdministrationError(err)
 		}
 		out = nodeAdministrationSnapshot(row)
@@ -328,7 +328,8 @@ func nodeAdministrationRecord(row model.Node) network.NodeAdministrationRecord {
 		SSHHostKeyFingerprint: row.SSHHostKeyFingerprint, SSHVerifiedAt: row.SSHVerifiedAt,
 		ConnectorLastSeenAt: row.ConnectorLastSeenAt, ConnectorOnline: row.ConnectorOnline,
 		UptimeSeconds: row.UptimeSeconds, ActiveFlows: row.ActiveFlows,
-		BytesUp: row.BytesUp, BytesDown: row.BytesDown, TrafficSecretPrefix: row.TrafficSecretPrefix,
+		Observation: nodeCounterEvidence(row),
+		BytesUp:     row.BytesUp, BytesDown: row.BytesDown, TrafficSecretPrefix: row.TrafficSecretPrefix,
 		TrafficSecretRevokedAt: row.TrafficSecretRevokedAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 }

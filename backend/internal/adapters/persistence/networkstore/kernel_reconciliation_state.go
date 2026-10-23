@@ -164,19 +164,15 @@ func (s KernelReconciliationState) RestoreKernelConnectorCredential(ctx context.
 		if _, _, err := lockOwnedKernelOperation(tx, operation); err != nil {
 			return err
 		}
+		// Reverting an activation restores its credential identity only. Runtime
+		// observations may have arrived after the snapshot; rewinding their values
+		// without their event cursor would permanently disagree with replay state.
+		// A later observation, rather than the saved pre-install snapshot, describes
+		// the process that actually remains after a remote rollback.
 		return tx.Model(&model.Node{}).Where("id = ?", operation.NodeID).Updates(map[string]interface{}{
 			"node_credential":            snapshot.Credential.Ciphertext,
 			"node_credential_prefix":     snapshot.Credential.Prefix,
 			"node_credential_revoked_at": snapshot.RevokedAt,
-			"connector_last_seen_at":     snapshot.ConnectorLastSeenAt,
-			"last_seen_at":               snapshot.LastSeenAt,
-			"is_online":                  snapshot.IsOnline,
-			"status":                     snapshot.Status,
-			"version":                    snapshot.Version,
-			"uptime_seconds":             snapshot.UptimeSeconds,
-			"active_flows":               snapshot.ActiveFlows,
-			"bytes_up":                   snapshot.BytesUp,
-			"bytes_down":                 snapshot.BytesDown,
 		}).Error
 	})
 }
@@ -242,6 +238,9 @@ func (s KernelReconciliationState) CompleteKernelReconciliation(ctx context.Cont
 			}
 		}
 
+		if err := enqueueUnconfirmedCredentialPublication(tx, operation.NodeID); err != nil {
+			return err
+		}
 		if err := enqueueMieruReadinessPublication(tx, operation.NodeID); err != nil {
 			return err
 		}

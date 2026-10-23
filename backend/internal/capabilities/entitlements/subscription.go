@@ -3,6 +3,7 @@ package entitlements
 import "time"
 
 type Subscription struct {
+	EntitlementEpoch        uint64 `json:"-"`
 	KernelPolicyRevision    uint64 `json:"-"`
 	KernelPolicyFingerprint string `json:"-"`
 

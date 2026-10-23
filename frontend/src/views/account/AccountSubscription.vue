@@ -44,7 +44,14 @@
         <tbody>
           <tr v-for="sub in subscriptions" :key="sub.id" :class="{ 'selected-subscription-row': sub.id === selectedSubscriptionID }">
             <td class="table-primary-column"><strong class="mono">#{{ sub.id }}</strong></td>
-            <td><StatusBadge :tone="subTone(sub.status)">{{ sub.end_reason === 'exhausted' ? '已用完' : subLabel(sub.status) }}</StatusBadge></td>
+            <td>
+              <StatusBadge :tone="subTone(sub.status)">{{ sub.end_reason === 'exhausted' ? '已用完' : subLabel(sub.status) }}</StatusBadge>
+              <div v-if="automaticNeedsAttention(sub.automatic_renewal_state)">
+                <StatusBadge tone="warning">{{ sub.automatic_renewal_state === 'insufficient_balance' ? '上次自动续费余额不足' : '自动续费需要核对' }}</StatusBadge>
+                <small>上次结果：{{ sub.automatic_renewal_message || '请核对该订阅的余额自动续费状态。' }}</small>
+                <small v-if="sub.automatic_renewal_checked_at">最近检查 <TimeBadge :value="sub.automatic_renewal_checked_at" /></small>
+              </div>
+            </td>
             <td data-column-priority="2">
               <div class="cell-title cell-related">
                 <TableText :value="sub.plan_name || `套餐 #${sub.plan_id}`" />
@@ -72,7 +79,10 @@
                   {{ sub.id === selectedSubscriptionID ? '正在管理' : '管理链接' }}
                 </UiButton>
                 <RouterLink v-if="canReset(sub)" class="button button-secondary button-sm" :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink>
+                <UiButton v-if="['active', 'expired'].includes(sub.status)" variant="secondary" size="sm" type="button" @click="terminationTarget = sub.id">核对退订</UiButton>
+                <UiButton variant="secondary" size="sm" type="button" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }">余额自动续费</UiButton>
                 <RouterLink v-if="sub.can_renew" class="button button-secondary button-sm" :to="`/account/plans?operation=renew&subscription=${sub.id}`">{{ sub.renewal_until ? '续费恢复' : '续费' }}</RouterLink>
+                <RouterLink v-if="Number.isSafeInteger(sub.id) && sub.id > 0" class="button button-secondary button-sm" :to="{ path: '/account/tickets', query: { new: '1', subscription_id: String(sub.id) } }">就此订阅提交工单</RouterLink>
               </div>
             </td>
           </tr>
@@ -90,6 +100,9 @@
         />
       </template>
     </DataWorkbench>
+
+    <SubscriptionTermination v-if="terminationTarget" :subscription-id="terminationTarget" @settled="loadAll" />
+    <SubscriptionAutomaticRenewal v-if="automaticTarget" :subscription-id="automaticTarget.id" :plan-id="automaticTarget.planId" />
 
     <UiSection title="协议实时负载" description="显示当前有效套餐授权的协议，上报延迟不会移除协议。人数和连接数仅展示最近两分钟的负载数据。">
       <template #meta><TimeBadge :value="protocolLoads.sampled_at" /></template>
@@ -218,6 +231,8 @@
 </template>
 
 <script setup lang="ts">
+import SubscriptionTermination from '../../components/SubscriptionTermination.vue'
+import SubscriptionAutomaticRenewal from '../../components/SubscriptionAutomaticRenewal.vue'
 import PluginSlot from '../../plugins/PluginSlot.vue'
 import TableText from '../../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -265,6 +280,11 @@ import {
   subscriptionDeliveryNative,
 } from '../../utils/subscriptionDelivery'
 
+const terminationTarget = ref(0)
+const automaticTarget = ref<{ id: number; planId: number } | null>(null)
+function automaticNeedsAttention(state?: string) {
+  return Boolean(state && !['waiting', 'renewed', 'disabled', 'window_closed'].includes(state))
+}
 const route = useRoute()
 const router = useRouter()
 const allowedPageSizes = [25, 50, 100]

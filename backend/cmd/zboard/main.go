@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -24,18 +25,42 @@ import (
 
 var configFile = flag.String("f", "etc/zboard.yaml", "the config file")
 var migrateOnly = flag.Bool("migrate-only", false, "prepare the complete database schema and exit")
+var checkProjectionDatabaseOnly = flag.Bool("check-projection-database", false, "read-only validation of prepared projection database dependencies and exit; does not start a worker")
+var prepareHourlyRollback = flag.Bool("prepare-hourly-rollback", false, "after stopping all writers and draining usage projections, prepare hourly statistics for a pre-0054 binary and exit")
 
 func main() {
 	flag.Parse()
+	if err := validateDatabaseModes(*migrateOnly, *prepareHourlyRollback, *checkProjectionDatabaseOnly); err != nil {
+		log.Fatal(err)
+	}
 
 	var c cfgpkg.Config
-	conf.MustLoad(*configFile, &c)
+	if *checkProjectionDatabaseOnly {
+		if err := conf.Load(*configFile, &c); err != nil {
+			log.Fatal("projection database check failed: configuration load")
+		}
+	} else {
+		conf.MustLoad(*configFile, &c)
+	}
 	c.ApplyEnvironment(os.Getenv)
 	if err := c.Validate(); err != nil {
+		if *checkProjectionDatabaseOnly {
+			log.Fatal("projection database check failed: configuration validation")
+		}
 		log.Fatalf("config validation failed: %v", err)
 	}
 	if err := datastore.ValidateDataSource(c.DatabaseDriver, c.DataSource, c.Environment == cfgpkg.EnvironmentProduction); err != nil {
+		if *checkProjectionDatabaseOnly {
+			log.Fatal("projection database check failed: datasource validation")
+		}
 		log.Fatalf("config validation failed: %v", err)
+	}
+	if *checkProjectionDatabaseOnly {
+		if err := checkProjectionDatabase(context.Background(), c); err != nil {
+			log.Fatalf("projection database check failed: %v", err)
+		}
+		log.Printf("projection database dependencies verified (read-only); no worker started")
+		return
 	}
 	credentialCipher, err := security.NewCredentialCipher(c.CredentialEncryptionKey)
 	if err != nil {
@@ -52,6 +77,13 @@ func main() {
 	}
 	if err := datastore.Ping(db); err != nil {
 		log.Fatalf("database ping failed: %v", err)
+	}
+	if *prepareHourlyRollback {
+		if err := datastore.PrepareHourlyProjectionRollback(db); err != nil {
+			log.Fatalf("hourly projection rollback preparation failed: %v", err)
+		}
+		log.Printf("hourly projection rollback prepared; keep writers stopped until the pre-0054 binary is installed")
+		return
 	}
 	if err := application.PrepareDatabaseSchema(db); err != nil {
 		log.Fatalf("database migrate failed: %v", err)

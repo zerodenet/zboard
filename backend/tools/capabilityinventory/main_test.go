@@ -240,19 +240,96 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]int{
-		"plugin_rpc":               16,
-		"plugin_capability":        30,
+		"plugin_rpc":               17,
+		"plugin_capability":        31,
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 10,
+		"cross_domain_transaction": 23,
 	}
 	counts := map[string]int{}
+	controlledDebit, unsubscribe, retirement, replacement, automatic := false, false, false, false, false
+	consumptionRefund, planQuotaSync, planGroupSync := false, false, false
+	observationHandoff, observationApply := false, false
+	observationRetry, observationRetryWrite := false, false
+	materialRetirement := false
 	for _, row := range rows {
 		counts[row.Kind]++
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.observation_material_retirement" && row.Owner == "resources" && row.File == "internal/adapters/persistence/observationstore/retention.go" {
+			materialRetirement = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.node_observation_retry" && row.Owner == "resources" && row.File == "internal/adapters/persistence/networkstore/node_observation_retry.go" {
+			observationRetry = true
+		}
+		if row.Kind == "write_candidate" && row.Symbol == "h.services.ObservationIntents.Retry" && row.Owner == "resources" && row.File == "internal/handler/node_observation_retry.go" {
+			observationRetryWrite = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "metering.buffered_observation_handoff" && row.Owner == "metering" && row.File == "internal/application/zero_event_projection.go" {
+			observationHandoff = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.node_observation_projection" && row.Owner == "resources" && row.File == "internal/adapters/persistence/observationstore/worker.go" {
+			observationApply = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.plan_group_sync" && row.Owner == "commerce" {
+			planGroupSync = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.plan_quota_sync" && row.Owner == "commerce" {
+			planQuotaSync = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.consumption_refund" && row.Owner == "commerce" {
+			consumptionRefund = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.controlled_wallet_debit" && row.Owner == "commerce" {
+			controlledDebit = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.subscription_unsubscribe" && row.Owner == "commerce" && row.File == "internal/adapters/persistence/commercestore/subscription_termination.go" {
+			unsubscribe = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.automatic_renewal" && row.Owner == "commerce" {
+			automatic = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.full_term_replacement" && row.Owner == "commerce" {
+			replacement = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "entitlements.subscription_retirement" && row.Owner == "entitlements" {
+			retirement = true
+		}
 		if row.Owner == "unassigned" {
 			t.Errorf("unassigned inventory evidence: %+v", row)
 		}
+	}
+	if !materialRetirement {
+		t.Error("observation material retirement must retain explicit bounded source transaction ownership")
+	}
+	if !automatic {
+		t.Fatal("automatic renewal transaction must retain explicit ownership evidence")
+	}
+	if !observationRetry || !observationRetryWrite {
+		t.Error("controlled observation retry must retain explicit transaction and HTTP write ownership")
+	}
+	if !observationHandoff || !observationApply {
+		t.Error("financial handoff and auxiliary apply must retain distinct transaction ownership")
+	}
+	if !planGroupSync {
+		t.Fatal("plan group synchronization must retain its explicit transaction ownership")
+	}
+	if !planQuotaSync {
+		t.Fatal("plan quota synchronization must retain its explicit transaction ownership")
+	}
+	if !consumptionRefund {
+		t.Fatal("consumption refund must retain its explicit financial transaction ownership")
+	}
+	if !retirement {
+		t.Error("retirement lost its entitlement transaction ownership")
+	}
+	if !replacement {
+		t.Error("full replacement lost its commerce transaction ownership")
+	}
+	if !unsubscribe {
+		t.Error("unsubscribe settlement lost its commerce transaction ownership")
+	}
+	if !controlledDebit {
+		t.Error("controlled wallet debit lost its commerce transaction ownership")
 	}
 	for kind, expected := range want {
 		if counts[kind] != expected {
@@ -269,6 +346,15 @@ func TestNewContractEvidenceCannotBypassOwnershipLedger(t *testing.T) {
  rpc Future
  (Empty) returns (Empty);
 }`,
+		"pkg/pluginapi/v1/future.proto": `package example.service;
+option service = "description";
+// service Pretend { rpc Comment(Empty) returns (Empty); }
+option description = "rpc Fake(Empty) returns (Empty)";
+service Independent {
+ /* rpc Hidden(Empty) returns (Empty); */
+ rpc Added(Empty) returns (Empty) { option description = "rpc Nested()"; }
+}
+service Another { rpc Next(Empty) returns (Empty); }`,
 		"internal/plugins/capabilities.go": `package plugins
 const KnownCapability = "zboard.known.v1"
 const FutureCapability = "zboard.future.v1"
@@ -323,13 +409,23 @@ func Commit() {}`,
 		t.Fatal(err)
 	}
 	futureKinds := map[string]bool{}
+	independent := map[string]bool{}
 	for _, row := range rows {
+		if row.Kind == "plugin_rpc" && row.File == "pkg/pluginapi/v1/future.proto" {
+			if row.Owner != "unassigned" {
+				t.Fatalf("new service inherited ownership: %+v", row)
+			}
+			independent[row.Symbol] = true
+		}
 		if row.Symbol == "PluginControl.Future" || row.Symbol == "zboard.future.v1" || row.Symbol == "future.read" {
 			if row.Owner != "unassigned" {
 				t.Fatalf("future evidence inherited ownership: %+v", row)
 			}
 			futureKinds[row.Kind] = true
 		}
+	}
+	if len(independent) != 2 || !independent["Independent.Added"] || !independent["Another.Next"] {
+		t.Fatalf("independent services not inventoried exactly: %v", independent)
 	}
 	for _, kind := range []string{"plugin_rpc", "plugin_capability", "host_operation", "plugin_host_operation", "external_http_scope"} {
 		if !futureKinds[kind] {

@@ -1,4 +1,4 @@
-package entitlementstore
+package entitlementstore_test
 
 import (
 	"context"
@@ -7,13 +7,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/commercestore"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/internal/security"
 	"gorm.io/gorm"
 )
 
-func TestRetirementRetainsOnlyRenewableServicesForSevenDaysAndPreservesOrderHistory(t *testing.T) {
+func TestRetirementPreservesHistoricalIdentitiesAndRenewableWindow(t *testing.T) {
 	db, err := datastore.OpenWithDriver(datastore.DriverSQLite, filepath.Join(t.TempDir(), "retirement.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -21,6 +24,9 @@ func TestRetirementRetainsOnlyRenewableServicesForSevenDaysAndPreservesOrderHist
 	pool, _ := db.DB()
 	t.Cleanup(func() { pool.Close() })
 	if err := datastore.RunMigrations(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.User{ID: 1, Email: "retirement@example.test", Status: "active"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
@@ -43,12 +49,22 @@ func TestRetirementRetainsOnlyRenewableServicesForSevenDaysAndPreservesOrderHist
 	if err := db.Create(&pending).Error; err != nil {
 		t.Fatal(err)
 	}
-	credential := model.ProtocolCredential{SubscriptionID: 1, UserID: 1, NodeID: 1, ProtocolEndpointID: 1, CredentialID: "credential", PrincipalKey: "principal", Secret: "secret", Status: "active", ExpiresAt: entitlements.PerpetualEnd}
+	cipher, err := security.NewCredentialCipher("4242424242424242424242424242424242424242424242424242424242424242")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := cipher.Encrypt("secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential := model.ProtocolCredential{SubscriptionID: 1, UserID: 1, NodeID: 1, ProtocolEndpointID: 1, CredentialID: "credential", PrincipalKey: "principal", Secret: encrypted, Status: "active", ExpiresAt: entitlements.PerpetualEnd}
 	if err := db.Create(&credential).Error; err != nil {
 		t.Fatal(err)
 	}
 	failure := errors.New("publication failed")
-	service := CredentialExpiry{DB: db, Publish: func(tx *gorm.DB, node, endpoint, actor uint) error { return failure }}
+	service := entitlementstore.CredentialExpiry{DB: db, PrepareScope: func(ctx context.Context, candidates []model.Subscription) (entitlementstore.CredentialExpiryScope, error) {
+		return commercestore.PrepareLifecycleClosureScope(db.WithContext(ctx), candidates)
+	}, Cipher: cipher, BeforeRetire: commercestore.CancelRetiredSubscriptionOrders, Publish: func(tx *gorm.DB, node, endpoint, actor uint) error { return failure }}
 	if _, err := service.ExpireDueCredentials(context.Background(), now, 10); !errors.Is(err, failure) {
 		t.Fatal(err)
 	}
@@ -60,18 +76,22 @@ func TestRetirementRetainsOnlyRenewableServicesForSevenDaysAndPreservesOrderHist
 	if _, err := service.ExpireDueCredentials(context.Background(), now, 10); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.First(&model.Subscription{}, 1).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatal("single use retained", err)
+
+	first = model.Subscription{}
+	if err := db.First(&first, 1).Error; err != nil || first.Status != "ended" || first.EndedAt == nil || entitlements.CanRenewAt(entitlements.Subscription(first), now) {
+		t.Fatal("historical instance lost or renewable", first, err)
 	}
-	if err := db.First(&model.ProtocolCredential{}, credential.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatal("credential retained", err)
+	var retiredCredential model.ProtocolCredential
+	if err := db.First(&retiredCredential, credential.ID).Error; err != nil || retiredCredential.Status != "revoked" || retiredCredential.Secret != "" || retiredCredential.RevokedAt == nil || retiredCredential.CredentialID != "credential" || retiredCredential.PrincipalKey != "principal" {
+		t.Fatal("retirement lost identity or retained live secret", retiredCredential, err)
 	}
+
 	var historical model.Order
 	if err := db.First(&historical, 1).Error; err != nil || historical.SubscriptionEndReason != "exhausted" || historical.SubscriptionEndedAt == nil || historical.SubscriptionFinalFlowUsed != 100 || historical.PlanName != "Trial" || historical.PaidAmount != 500 {
 		t.Fatal("order history lost", historical, err)
 	}
 	historical = model.Order{}
-	if err := db.First(&historical, 2).Error; err != nil || historical.Status != "canceled" || historical.TargetSubscriptionID != nil || historical.SubscriptionEndedAt == nil {
+	if err := db.First(&historical, 2).Error; err != nil || historical.Status != "canceled" || historical.TargetSubscriptionID == nil || *historical.TargetSubscriptionID != subs[0].ID || historical.SubscriptionEndedAt == nil {
 		t.Fatal("pending target unsafe", historical, err)
 	}
 	var retained model.Subscription
@@ -91,9 +111,12 @@ func TestRetirementRetainsOnlyRenewableServicesForSevenDaysAndPreservesOrderHist
 	if _, err := service.ExpireDueCredentials(context.Background(), ended.Add(entitlements.RenewalGracePeriod), 10); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.First(&model.Subscription{}, 2).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatal("retained after seven days", err)
+
+	retained = model.Subscription{}
+	if err := db.First(&retained, 2).Error; err != nil || retained.Status != "ended" || entitlements.CanRenewAt(entitlements.Subscription(retained), now) {
+		t.Fatal("retired history lost or renewed", retained, err)
 	}
+
 	if due, err := service.HasDueCredentials(context.Background(), ended.Add(entitlements.RenewalGracePeriod)); err != nil || due {
 		t.Fatal("retirement did not converge", due, err)
 	}

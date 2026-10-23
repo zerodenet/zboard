@@ -3,6 +3,7 @@
     <PageHeader :title="order ? `订单 #${order.id}` : '订单详情'" description="查看这笔订单的商品、金额和付款状态。" eyebrow="ORDER">
       <template #actions>
         <RouterLink class="button button-secondary" to="/account/orders">返回我的订单</RouterLink>
+        <RouterLink v-if="orderSupportRoute" class="button button-secondary" :to="orderSupportRoute">就此订单提交工单</RouterLink>
         <UiButton variant="secondary" type="button" :disabled="loading" @click="load">刷新订单</UiButton>
       </template>
     </PageHeader>
@@ -28,12 +29,15 @@
           <p class="order-detail-amount">{{ formatCurrency(order.payable_amount ?? order.amount_cents, order.currency) }}</p>
           <StatusBadge :tone="order.status === 'paid' ? 'success' : order.status === 'pending' ? 'warning' : order.status === 'failed' ? 'danger' : 'neutral'">{{ statusLabel }}</StatusBadge>
           <p v-if="order.status === 'paid'">本站已确认这笔订单付款完成。</p>
+          <RouterLink v-if="order.status === 'paid' && order.order_type === 'topup'" :to="{ path: '/account/wallet', query: { currency: order.currency } }">充值已进入站内余额，查看余额与流水</RouterLink>
           <p v-else-if="order.status === 'canceled'">此订单已取消，不可继续支付。</p>
-          <CheckoutPayment v-if="payable && !error" :key="order.id" name="account.orders.payment" embedded :order-id="order.id" :currency="order.currency" :preferred-plugin="returnPlugin" :reconcile-on-load="Boolean(returnPlugin)" :open-on-load="Boolean(returnPlugin)" @paid="load" />
+          <OrderFundingPayment v-if="payable && !error && order.order_type !== 'topup'" :order-id="order.id" :currency="order.currency" :preferred-plugin="returnPlugin" @changed="load" />
+          <CheckoutPayment v-if="payable && !error && order.order_type === 'topup'" :key="order.id" name="account.orders.payment" embedded :order-id="order.id" :currency="order.currency" :preferred-plugin="returnPlugin" :reconcile-on-load="Boolean(returnPlugin)" :open-on-load="Boolean(returnPlugin)" @paid="load" />
           <p v-if="payable" class="order-detail-hint">付款结果以本站核对后的订单状态为准。</p>
         </div>
       </UiSection>
     </div>
+    <PaymentReceipts v-if="order" :order-id="order.id" @changed="load" />
   </section>
 </template>
 
@@ -49,6 +53,8 @@ import UiButton from '../../components/UiButton.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import TimeBadge from '../../components/TimeBadge.vue'
 import CheckoutPayment from '../../plugins/CheckoutPayment.vue'
+import OrderFundingPayment from '../../components/OrderFundingPayment.vue'
+import PaymentReceipts from '../../components/PaymentReceipts.vue'
 import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/format'
 
 const route = useRoute()
@@ -63,6 +69,8 @@ const { data: order, loading, error, load, reset } = useRemoteResource<AdminOrde
   errorMessage: '订单不存在、当前账户无权查看或暂时无法加载，请重试。',
 })
 const payable = computed(() => order.value && ['pending', 'failed'].includes(order.value.status))
+const orderSupportRoute = computed(() => order.value && !error.value && Number.isSafeInteger(order.value.id) && order.value.id > 0
+  ? { path: '/account/tickets', query: { new: '1', order_id: String(order.value.id) } } : null)
 const statusLabel = computed(() => {
   const status = order.value?.status || ''
   return ({ pending: '待支付', paid: '已支付', failed: '失败', canceled: '已取消' } as Record<string, string>)[status] || formatUnknownValue('状态', status)

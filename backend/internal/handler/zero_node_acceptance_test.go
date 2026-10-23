@@ -19,6 +19,7 @@ func TestRealZeroNodeExpiryRevokesDataPlane(t *testing.T) {
 	control := f.paid(t, f.create(t, 0).ID)
 	secret := realZeroSecret(t, f, paid.SubscriptionID)
 	controlSecret := realZeroSecret(t, f, control.SubscriptionID)
+	initializeRealZeroNode(t, f, endpoint)
 	f.h.StartNodePublishWorker()
 	t.Cleanup(f.h.CloseNodePublishWorker)
 	waitRealZero(t, 90*time.Second, "initial publication and authenticated echo", func() error {
@@ -83,22 +84,22 @@ func TestRealZeroNodeExpiryRevokesDataPlane(t *testing.T) {
 	var buffer [32]byte
 	count, readErr := held.Read(buffer[:])
 	t.Logf("existing connection after publication: wrote_error=%t read_bytes=%d read_error=%v", writeErr != nil, count, readErr)
-	if count > 0 {
-		t.Fatal("old connection still relayed payload after restart publication")
-	}
 	// Every request in this test is locally generated; do not emit credential
 	// material, headers, or runtime config contents into the acceptance log.
-	result, err := json.Marshal(map[string]any{"scenario": "expiry", "passed": true, "commit_to_rejection_ms": float64(elapsed.Nanoseconds()) / 1e6, "existing_connection_read_bytes": count, "existing_connection_read_error": fmt.Sprint(readErr), "verified_at": time.Now().UTC(), "real_flow_accounted": true, "positive_control_passed": true, "rejected_probes": 3})
+	result, err := json.Marshal(map[string]any{"scenario": "expiry", "passed": count == 0, "new_connection_rejection_ms": float64(elapsed.Nanoseconds()) / 1e6, "existing_connection_read_bytes": count, "existing_connection_closed_confirmed": count == 0, "existing_connection_read_error": fmt.Sprint(readErr), "verified_at": time.Now().UTC(), "real_flow_accounted": true, "positive_control_passed": true, "rejected_probes": 3})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("ZBOARD_ZERO_ACCEPTANCE_RESULT=%s", result)
+	if count > 0 {
+		t.Fatal("old connection still relayed payload after configuration publication")
+	}
 }
 
 func realZeroSecret(t *testing.T, f orderFixture, subscriptionID uint) string {
 	t.Helper()
 	var credential model.ProtocolCredential
-	if err := f.h.db.Where("subscription_id = ?", subscriptionID).First(&credential).Error; err != nil {
+	if err := f.h.db.Where("subscription_id = ? AND current_scope = ?", subscriptionID, 1).First(&credential).Error; err != nil {
 		t.Fatal(err)
 	}
 	secret, err := f.h.credentialCipher.Decrypt(credential.Secret)

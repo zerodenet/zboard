@@ -1,0 +1,51 @@
+{
+  "scope": "P3-05 indexed metering ownership; entitlement epoch isolation not implemented in this batch",
+  "parent_head": "abfe0aa02f1036a334dca79c8f593c0ef26755ee",
+  "migration": null,
+  "checks": {
+    "backend": {
+      "command": "go test -p 2 ./...",
+      "status": "passed",
+      "log": "/tmp/zboard-meter-index-backend.log",
+      "handler_seconds": 129.844,
+      "networkstore_seconds": 51.897
+    },
+    "vet_build": {
+      "command": "go vet -p 2 ./... && go build -p 2 ./cmd/zboard",
+      "status": "passed",
+      "log": "/tmp/zboard-meter-index-vet-build.log"
+    },
+    "pure_sqlite": {
+      "command": "CGO_ENABLED=0 go test -p 2 ./internal/datastore ./internal/handler -run SQLite|^TestMeteringPrincipalIndex -count=1",
+      "status": "passed",
+      "datastore_seconds": 5.301,
+      "handler_seconds": 7.054,
+      "log": "/tmp/zboard-meter-index-pure-sqlite.log"
+    },
+    "mysql": {
+      "command": "go test -p 2 ./internal/handler -run TestMySQL(MeteringPrincipalIndex|RetirementRetains|Accounting|NodeStatsFailure) -count=1 -v",
+      "status": "passed",
+      "seconds": 28.725,
+      "new_5001_ownership_seconds": 6.37,
+      "log": "/tmp/zboard-meter-index-mysql.log"
+    }
+  },
+  "benchmark": {
+    "command": "go test -p 2 ./internal/handler -run '^$' -bench '^BenchmarkZeroAccounting/FullBatch$' -benchtime=100x -count=1",
+    "gomaxprocs": 2,
+    "go": "1.26.8",
+    "SQL_per_32_flow_batch": 84,
+    "events_per_second": 2880,
+    "p95_ms_per_batch": 15.06,
+    "p99_ms_per_batch": 19.62,
+    "log": "/tmp/zboard-meter-index-benchmark.log",
+    "limitation": "one local microbenchmark during concurrent development checks; no throughput-improvement, capacity or production-SLO claim"
+  },
+  "limits": [
+    "current subscription quota still lacks entitlement-epoch isolation",
+    "node observations and auxiliary statistics still couple to core accounting transactions",
+    "raw diagnostic collection is not comprehensively separated or retention-bounded",
+    "no new native/protocol-wide acceptance claim",
+    "frontend, SDK, OpenAPI and Compose unchanged; exact-head CI tracked after push"
+  ]
+}

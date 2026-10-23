@@ -1,5 +1,6 @@
 import { computed, getCurrentScope, onScopeDispose, ref, shallowRef } from 'vue'
 import { createRequestGuard } from '../utils/request'
+import { AUTH_SESSION_RESTORED_EVENT, isAuthSessionExpired } from '../utils/authSession'
 
 export type ReadPhase = 'idle' | 'loading' | 'ready' | 'refreshing' | 'stale' | 'error' | 'unauthorized' | 'forbidden'
 export type ReadErrorKind = '' | 'timeout' | 'network' | 'unauthorized' | 'forbidden' | 'server' | 'unknown'
@@ -89,10 +90,10 @@ export function useRemoteResource<T>(options: {
       if (!requests.isCurrent(request) || (current.signal.aborted && !timedOut)) return false
       failureCount.value++
       const status = cause?.response?.status
-      errorKind.value = status === 401 ? 'unauthorized' : status === 403 ? 'forbidden'
+      errorKind.value = status === 401 || ['AUTH_SESSION_EXPIRED', 'AUTH_SESSION_CHANGED'].includes(cause?.code) ? 'unauthorized' : status === 403 ? 'forbidden'
         : timedOut || status === 408 || status === 504 || ['ECONNABORTED', 'ETIMEDOUT'].includes(cause?.code) ? 'timeout'
         : cause?.code === 'ERR_NETWORK' ? 'network' : status >= 500 ? 'server' : 'unknown'
-      if (status === 401 || status === 403) {
+      if (status === 403 || (status === 401 && !isAuthSessionExpired())) {
         data.value = options.initial()
         loaded.value = false
         lastSuccessAt.value = null
@@ -109,7 +110,19 @@ export function useRemoteResource<T>(options: {
     }
   }
 
-  if (getCurrentScope()) onScopeDispose(() => { disposed = true; invalidate() })
+  // Retry failed reads only. Retained editor data is not reapplied over drafts,
+  // and mutation callbacks never participate in session restoration.
+  function restoreSession() {
+    if (errorKind.value === 'unauthorized') void load()
+  }
+  if (getCurrentScope()) {
+    window.addEventListener(AUTH_SESSION_RESTORED_EVENT, restoreSession)
+    onScopeDispose(() => {
+      disposed = true
+      invalidate()
+      window.removeEventListener(AUTH_SESSION_RESTORED_EVENT, restoreSession)
+    })
+  }
 
   return { data, loading, loaded, error, errorKind, phase, refreshing, stale, failureCount, canAutoRefresh, lastSuccessAt, load, reset, replace, invalidate }
 }

@@ -1,9 +1,29 @@
 import { describe, expect, it, vi } from 'vitest'
 import { checkoutURL, paymentOptions, startPayment } from './checkout'
-import { ensureCheckoutOrder, newCheckoutIntent, restoreCheckoutIntent } from '../composables/checkoutOrder'
+import { ensureCheckoutOrder, isDefiniteOrderRejection, readCheckoutOrderDraft, newCheckoutIntent, restoreCheckoutIntent } from '../composables/checkoutOrder'
 
 const option = { id: 'one', title: '测试支付', prepare_action: 'provider.prepare', reconcile_action: 'provider.check' }
 describe('host checkout contract', () => {
+  it('releases only recognized versioned rollback errors and retains every idempotency conflict', () => {
+    const failure = (status: number, code: string, fields?: unknown, version = 1) => ({ response: { status, data: { error: { version, code, ...(fields === undefined ? {} : { fields }) } } } })
+    for (const cause of [failure(400, 'validation_failed'), failure(400, 'validation_failed', { discount: 'invalid' }), failure(503, 'discount_unavailable'), failure(502, 'discount_invalid')]) expect(isDefiniteOrderRejection(cause)).toBe(true)
+    for (const cause of [new Error('timeout'), {}, failure(400, 'validation_failed', { idempotency_key: '' }), failure(400, 'validation_failed', { idempotency_key: 'conflict' }), failure(400, 'validation_failed', []), failure(400, 'validation_failed', undefined, 2), failure(409, 'validation_failed'), failure(409, 'subscription_quote_changed'), failure(409, 'discount_confirmation_required'), failure(500, 'discount_unavailable'), failure(503, 'unavailable'), { response: { status: 400, data: { message: 'validation_failed' } } }]) expect(isDefiniteOrderRejection(cause)).toBe(false)
+  })
+  it('reads a stored attempt without replay and rejects malformed recovery records', () => {
+    localStorage.clear()
+    expect(readCheckoutOrderDraft(localStorage, 'read-only')).toBeNull()
+    const draft = { key: 'original-key', request: { skuId: 1, discount: { provider_id: 'native', selection: 'CODE' }, quoteFingerprint: 'original' } }
+    localStorage.setItem('read-only', JSON.stringify(draft))
+    expect(readCheckoutOrderDraft(localStorage, 'read-only')).toEqual(draft)
+    localStorage.setItem('read-only', '{')
+    expect(() => readCheckoutOrderDraft(localStorage, 'read-only')).toThrow('无法读取')
+    localStorage.setItem('read-only', JSON.stringify({ ...draft, orderId: -1 }))
+    expect(() => readCheckoutOrderDraft(localStorage, 'read-only')).toThrow('不完整')
+    for (const value of ['null', 'false', '0', '""', '[]', '{"key":"original-key","request":1}']) {
+      localStorage.setItem('read-only', value)
+      expect(() => readCheckoutOrderDraft(localStorage, 'read-only')).toThrow('不完整')
+    }
+  })
   it('retains a host checkout intent across reloads without requiring secure-context randomUUID', () => {
     localStorage.clear()
     const first = newCheckoutIntent()

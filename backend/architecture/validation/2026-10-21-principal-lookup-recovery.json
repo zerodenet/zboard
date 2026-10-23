@@ -1,0 +1,397 @@
+{
+  "status": "FROZEN_TARGETED_PASS",
+  "head": "c61df99a623b5a63c80a545685bbbf2013c9cdd4",
+  "clone": "/workspace/zboard-principal-recovery-verify",
+  "finished_utc": "2026-10-21T00:36:51.718065+00:00",
+  "checks": [
+    {
+      "name": "old-sqlite-critical",
+      "argv": [
+        "/workspace/toolchains/go/bin/go",
+        "test",
+        "-overlay",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/principal-lookup-recovery-candidate/old-overlay.json",
+        "-p",
+        "1",
+        "./internal/adapters/persistence/networkstore",
+        "-run",
+        "^TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/(update_failure_precedes_every_add|committed_add_failure_cannot_leave_old_coverage)$",
+        "-count=1",
+        "-json"
+      ],
+      "status": "EXPECTED_ASSERTION_FAIL_exact_two_leaves",
+      "started_utc": "2026-10-21T00:28:02.282470+00:00",
+      "dsn_present": false,
+      "pid": 701107,
+      "exit_code": 1,
+      "wall_seconds": 11.024948821999715,
+      "finished_utc": "2026-10-21T00:28:13.307642+00:00",
+      "log": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/principal-lookup-recovery-candidate/validation/old-sqlite-critical.jsonl",
+      "log_sha256": "235763411cd64b57762a20fefd027d1a36a2d272d042b8bedc61e06f458fdeca",
+      "failed_tests": [
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/update_failure_precedes_every_add",
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/committed_add_failure_cannot_leave_old_coverage",
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite"
+      ],
+      "passed_tests": {},
+      "package_results": [
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "action": "fail",
+          "elapsed": 1.151
+        }
+      ]
+    },
+    {
+      "name": "fixed-sqlite-matrix",
+      "argv": [
+        "/workspace/toolchains/go/bin/go",
+        "test",
+        "-p",
+        "1",
+        "./internal/adapters/persistence/networkstore",
+        "-run",
+        "^TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite$",
+        "-count=1",
+        "-json"
+      ],
+      "status": "PASS",
+      "started_utc": "2026-10-21T00:28:13.313652+00:00",
+      "dsn_present": false,
+      "pid": 701259,
+      "exit_code": 0,
+      "wall_seconds": 10.820967528001347,
+      "finished_utc": "2026-10-21T00:28:24.134816+00:00",
+      "log": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/principal-lookup-recovery-candidate/validation/fixed-sqlite-matrix.jsonl",
+      "log_sha256": "a9a9a50feed1287c1718109e971607e0b8ff04ea687388abd5bd35d01eeb846a",
+      "failed_tests": [],
+      "passed_tests": {
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/complete_v1_is_not_invalidated": 1,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/update_failure_precedes_every_add": 1,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/committed_add_failure_cannot_leave_old_coverage": 1,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/missing_version_defaults_to_unknown": 1,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/three_missing_columns_batch_and_index_repair": 1,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite": 1
+      },
+      "package_results": [
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "action": "pass",
+          "elapsed": 4.421
+        }
+      ]
+    },
+    {
+      "name": "fixed-metadata-and-principal-regressions",
+      "argv": [
+        "/workspace/toolchains/go/bin/go",
+        "test",
+        "-p",
+        "1",
+        "./internal/datastore",
+        "./internal/adapters/persistence/networkstore",
+        "-run",
+        "^(TestPrincipalLookupMetadataFailuresNeverInvalidateOrAlter|TestMySQLModelColumnBatch.*|TestPrincipalIndex(SchemaMySQLAndSQLiteRecoversProjectionLoss|MySQLAndSQLiteResumesBeyond4096AndBoundsHotReads))$",
+        "-count=1",
+        "-json"
+      ],
+      "status": "PASS",
+      "started_utc": "2026-10-21T00:28:24.140135+00:00",
+      "dsn_present": false,
+      "pid": 701328,
+      "exit_code": 0,
+      "wall_seconds": 17.608135047998076,
+      "finished_utc": "2026-10-21T00:28:41.748550+00:00",
+      "log": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/principal-lookup-recovery-candidate/validation/fixed-metadata-and-principal-regressions.jsonl",
+      "log_sha256": "a8f41858a3af3ea145a6d4c7e0eb5682c9d8d609ad6d713dc40b5c4cee07aeeb",
+      "failed_tests": [],
+      "passed_tests": {
+        "TestMySQLModelColumnBatchReadsOnceAndAddsOnlyMissing/all_missing": 1,
+        "TestMySQLModelColumnBatchReadsOnceAndAddsOnlyMissing/committed_prefix": 1,
+        "TestMySQLModelColumnBatchReadsOnceAndAddsOnlyMissing/complete": 1,
+        "TestMySQLModelColumnBatchReadsOnceAndAddsOnlyMissing": 1,
+        "TestMySQLModelColumnBatchMetadataErrorsNeverIssueDDL/query": 1,
+        "TestMySQLModelColumnBatchMetadataErrorsNeverIssueDDL/scan": 1,
+        "TestMySQLModelColumnBatchMetadataErrorsNeverIssueDDL/rows": 1,
+        "TestMySQLModelColumnBatchMetadataErrorsNeverIssueDDL/close": 1,
+        "TestMySQLModelColumnBatchMetadataErrorsNeverIssueDDL": 1,
+        "TestMySQLModelColumnBatchPreservesDataTypeVarsAndQuotedNaming": 1,
+        "TestMySQLModelColumnBatchPropagatesAlterFailure": 1,
+        "TestMySQLModelColumnBatchRejectsUnsupportedFieldsBeforeSQL/ID": 1,
+        "TestMySQLModelColumnBatchRejectsUnsupportedFieldsBeforeSQL/Counter": 1,
+        "TestMySQLModelColumnBatchRejectsUnsupportedFieldsBeforeSQL/Absent": 1,
+        "TestMySQLModelColumnBatchRejectsUnsupportedFieldsBeforeSQL": 1,
+        "TestPrincipalLookupMetadataFailuresNeverInvalidateOrAlter/query": 1,
+        "TestPrincipalLookupMetadataFailuresNeverInvalidateOrAlter/scan": 1,
+        "TestPrincipalLookupMetadataFailuresNeverInvalidateOrAlter/rows": 1,
+        "TestPrincipalLookupMetadataFailuresNeverInvalidateOrAlter/close": 1,
+        "TestPrincipalLookupMetadataFailuresNeverInvalidateOrAlter": 1,
+        "TestPrincipalIndexMySQLAndSQLiteResumesBeyond4096AndBoundsHotReads": 1,
+        "TestPrincipalIndexSchemaMySQLAndSQLiteRecoversProjectionLoss": 1
+      },
+      "package_results": [
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "action": "pass",
+          "elapsed": 0.012
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "action": "pass",
+          "elapsed": 3.926
+        }
+      ]
+    },
+    {
+      "name": "old-mysql-critical",
+      "argv": [
+        "/workspace/toolchains/go/bin/go",
+        "test",
+        "-overlay",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/principal-lookup-recovery-candidate/old-overlay.json",
+        "-p",
+        "1",
+        "./internal/adapters/persistence/networkstore",
+        "-run",
+        "^TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/(update_failure_precedes_every_add|committed_add_failure_cannot_leave_old_coverage)$",
+        "-count=1",
+        "-json"
+      ],
+      "status": "EXPECTED_ASSERTION_FAIL_exact_two_leaves",
+      "started_utc": "2026-10-21T00:28:41.755077+00:00",
+      "dsn_present": true,
+      "pid": 701532,
+      "exit_code": 1,
+      "wall_seconds": 4.909688116000325,
+      "finished_utc": "2026-10-21T00:28:46.665119+00:00",
+      "log": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/principal-lookup-recovery-candidate/validation/old-mysql-critical.jsonl",
+      "log_sha256": "b59f41700e08a13e939c52227307f28349f04aaa2021dacf0e6b736d43cf23b5",
+      "failed_tests": [
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/update_failure_precedes_every_add",
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/committed_add_failure_cannot_leave_old_coverage",
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite"
+      ],
+      "passed_tests": {},
+      "package_results": [
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "action": "fail",
+          "elapsed": 4.167
+        }
+      ]
+    },
+    {
+      "name": "fixed-mysql-matrix-and-principal",
+      "argv": [
+        "/workspace/toolchains/go/bin/go",
+        "test",
+        "-p",
+        "1",
+        "./internal/adapters/persistence/networkstore",
+        "-run",
+        "^(TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite|TestPrincipalIndexSchemaMySQLAndSQLiteRecoversProjectionLoss|TestPrincipalIndexMySQLAndSQLiteResumesBeyond4096AndBoundsHotReads)$",
+        "-count=1",
+        "-json"
+      ],
+      "status": "PASS",
+      "started_utc": "2026-10-21T00:28:46.670613+00:00",
+      "dsn_present": true,
+      "pid": 701780,
+      "exit_code": 0,
+      "wall_seconds": 19.932647693000035,
+      "finished_utc": "2026-10-21T00:29:06.603631+00:00",
+      "log": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/principal-lookup-recovery-candidate/validation/fixed-mysql-matrix-and-principal.jsonl",
+      "log_sha256": "db90eab45cf79d7f71e8b5760220dbfb2fbbf032bbb5b82a05f6344eb2ee46d1",
+      "failed_tests": [],
+      "passed_tests": {
+        "TestPrincipalIndexMySQLAndSQLiteResumesBeyond4096AndBoundsHotReads": 1,
+        "TestPrincipalIndexSchemaMySQLAndSQLiteRecoversProjectionLoss": 1,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/complete_v1_is_not_invalidated": 1,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/update_failure_precedes_every_add": 1,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/committed_add_failure_cannot_leave_old_coverage": 1,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/missing_version_defaults_to_unknown": 1,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/three_missing_columns_batch_and_index_repair": 1,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite": 1
+      },
+      "package_results": [
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "action": "pass",
+          "elapsed": 19.282
+        }
+      ]
+    },
+    {
+      "name": "fixed-sqlite-focused-race",
+      "argv": [
+        "/workspace/toolchains/go/bin/go",
+        "test",
+        "-race",
+        "-p",
+        "1",
+        "./internal/datastore",
+        "./internal/adapters/persistence/networkstore",
+        "-run",
+        "^(TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite|TestPrincipalLookupMetadataFailuresNeverInvalidateOrAlter|TestMySQLModelColumnBatch.*)$",
+        "-count=3",
+        "-json"
+      ],
+      "status": "PASS",
+      "started_utc": "2026-10-21T00:29:06.608770+00:00",
+      "dsn_present": false,
+      "pid": 702569,
+      "exit_code": 0,
+      "wall_seconds": 389.5465440449989,
+      "finished_utc": "2026-10-21T00:35:36.155578+00:00",
+      "log": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/principal-lookup-recovery-candidate/validation/fixed-sqlite-focused-race.jsonl",
+      "log_sha256": "1e54571d3d275227f6f1fe88063e8fb49c094fae712c92dcba01677f1e63944b",
+      "failed_tests": [],
+      "passed_tests": {
+        "TestMySQLModelColumnBatchReadsOnceAndAddsOnlyMissing/all_missing": 3,
+        "TestMySQLModelColumnBatchReadsOnceAndAddsOnlyMissing/committed_prefix": 3,
+        "TestMySQLModelColumnBatchReadsOnceAndAddsOnlyMissing/complete": 3,
+        "TestMySQLModelColumnBatchReadsOnceAndAddsOnlyMissing": 3,
+        "TestMySQLModelColumnBatchMetadataErrorsNeverIssueDDL/query": 3,
+        "TestMySQLModelColumnBatchMetadataErrorsNeverIssueDDL/scan": 3,
+        "TestMySQLModelColumnBatchMetadataErrorsNeverIssueDDL/rows": 3,
+        "TestMySQLModelColumnBatchMetadataErrorsNeverIssueDDL/close": 3,
+        "TestMySQLModelColumnBatchMetadataErrorsNeverIssueDDL": 3,
+        "TestMySQLModelColumnBatchPreservesDataTypeVarsAndQuotedNaming": 3,
+        "TestMySQLModelColumnBatchPropagatesAlterFailure": 3,
+        "TestMySQLModelColumnBatchRejectsUnsupportedFieldsBeforeSQL/ID": 3,
+        "TestMySQLModelColumnBatchRejectsUnsupportedFieldsBeforeSQL/Counter": 3,
+        "TestMySQLModelColumnBatchRejectsUnsupportedFieldsBeforeSQL/Absent": 3,
+        "TestMySQLModelColumnBatchRejectsUnsupportedFieldsBeforeSQL": 3,
+        "TestPrincipalLookupMetadataFailuresNeverInvalidateOrAlter/query": 3,
+        "TestPrincipalLookupMetadataFailuresNeverInvalidateOrAlter/scan": 3,
+        "TestPrincipalLookupMetadataFailuresNeverInvalidateOrAlter/rows": 3,
+        "TestPrincipalLookupMetadataFailuresNeverInvalidateOrAlter/close": 3,
+        "TestPrincipalLookupMetadataFailuresNeverInvalidateOrAlter": 3,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/complete_v1_is_not_invalidated": 3,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/update_failure_precedes_every_add": 3,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/committed_add_failure_cannot_leave_old_coverage": 3,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/missing_version_defaults_to_unknown": 3,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite/three_missing_columns_batch_and_index_repair": 3,
+        "TestPrincipalLookupInvalidationRecoveryMySQLAndSQLite": 3
+      },
+      "package_results": [
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/datastore",
+          "action": "pass",
+          "elapsed": 1.089
+        },
+        {
+          "package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore",
+          "action": "pass",
+          "elapsed": 363.37
+        }
+      ]
+    }
+  ],
+  "original_benchmark": {
+    "status": "PASS_one_original_count_check_not_performance_AB",
+    "started_utc": "2026-10-21T00:35:39.259518+00:00",
+    "command": [
+      "/workspace/toolchains/go/bin/go",
+      "test",
+      "-p",
+      "1",
+      "./internal/datastore",
+      "-run",
+      "^$",
+      "-bench",
+      "^BenchmarkMySQLSchemaPreparation$",
+      "-benchtime=1x",
+      "-count=1",
+      "-v"
+    ],
+    "source_sha256_before": {
+      "backend/internal/datastore/schema_preparation_mysql_benchmark_test.go": "defcd8320e5e36f9daa7eb3f32ab69c32843cd2ffef96f9e2dc457b2e8a9fa14",
+      "backend/internal/datastore/mysql_traffic_hourly_test.go": "ddcb062fc3184903ed3f49c2c2585d2724a0fbd284c7ef035fdb90be98d15252",
+      "backend/internal/application/database.go": "5162834327bdd1d89e9a06402392e84346cc671a90c404c86fb05afabc721416",
+      "backend/migrations/0046_principal_lookup_index.up.sql": "80a832f134546ebed3bb52d19d048862411746a8e14d09bea8be9761eab2f542",
+      "backend/internal/datastore/mysql_model_columns.go": "aafe0cc5129a8b07e216c0d3227d73167e2a9351265f91480db22fbc5781a8ec",
+      "backend/internal/datastore/principal_lookup_schema.go": "a6d22135b0f282d88c1d20d276024b222b9f9ae842200817dc2ef2632ec7c265",
+      "backend/internal/datastore/principal_lookup_metadata_test.go": "0f8ffbf7801f160e7d4a93abad1b7b4522b38f8693605c2ceea52a4d04675cea",
+      "backend/internal/adapters/persistence/networkstore/principal_lookup_recovery_test.go": "9890a36366cd3e87cc6219645ffd052a819e27d28396a83955a75c307969a7d2"
+    },
+    "original_benchmark_and_fixture": true,
+    "no_overlay": true,
+    "dsn_value_recorded": false,
+    "sample_limit": 1,
+    "runner_sha256": "27a225e5d33d900b87b3a1ba7ad167d60e05ae3fd288652669d38a4413eb6cc7",
+    "pid": 703091,
+    "exit_code": 0,
+    "wall_seconds": 5.131212749998667,
+    "finished_utc": "2026-10-21T00:35:44.391172+00:00",
+    "log": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/principal-lookup-recovery-candidate/validation/original-benchmark.log",
+    "log_sha256": "939d5a7b01f4d86a788197812a7f138b1cacbfe0ae74901f0a8d2ba1b55e857c",
+    "original_metrics": {
+      "ALTER/op": 69.0,
+      "CREATE_INDEX/op": 15.0,
+      "SELECT/op": 2031.0,
+      "s/prepare": 3.609
+    },
+    "same_session_id": 24554,
+    "alter_before": 0,
+    "alter_after": 69,
+    "source_sha256_after": {
+      "backend/internal/datastore/schema_preparation_mysql_benchmark_test.go": "defcd8320e5e36f9daa7eb3f32ab69c32843cd2ffef96f9e2dc457b2e8a9fa14",
+      "backend/internal/datastore/mysql_traffic_hourly_test.go": "ddcb062fc3184903ed3f49c2c2585d2724a0fbd284c7ef035fdb90be98d15252",
+      "backend/internal/application/database.go": "5162834327bdd1d89e9a06402392e84346cc671a90c404c86fb05afabc721416",
+      "backend/migrations/0046_principal_lookup_index.up.sql": "80a832f134546ebed3bb52d19d048862411746a8e14d09bea8be9761eab2f542",
+      "backend/internal/datastore/mysql_model_columns.go": "aafe0cc5129a8b07e216c0d3227d73167e2a9351265f91480db22fbc5781a8ec",
+      "backend/internal/datastore/principal_lookup_schema.go": "a6d22135b0f282d88c1d20d276024b222b9f9ae842200817dc2ef2632ec7c265",
+      "backend/internal/datastore/principal_lookup_metadata_test.go": "0f8ffbf7801f160e7d4a93abad1b7b4522b38f8693605c2ceea52a4d04675cea",
+      "backend/internal/adapters/persistence/networkstore/principal_lookup_recovery_test.go": "9890a36366cd3e87cc6219645ffd052a819e27d28396a83955a75c307969a7d2"
+    },
+    "source_hashes_unchanged": true
+  },
+  "candidate_sha256": {
+    "backend/internal/datastore/mysql_model_columns.go": "aafe0cc5129a8b07e216c0d3227d73167e2a9351265f91480db22fbc5781a8ec",
+    "backend/internal/datastore/principal_lookup_schema.go": "a6d22135b0f282d88c1d20d276024b222b9f9ae842200817dc2ef2632ec7c265",
+    "backend/internal/datastore/principal_lookup_metadata_test.go": "0f8ffbf7801f160e7d4a93abad1b7b4522b38f8693605c2ceea52a4d04675cea",
+    "backend/internal/adapters/persistence/networkstore/principal_lookup_recovery_test.go": "9890a36366cd3e87cc6219645ffd052a819e27d28396a83955a75c307969a7d2"
+  },
+  "candidate_matches_reviewed_freeze": true,
+  "patch_sha256": "7ce99f75a053c9220d875b538cfa543c9c8999a859da91d1871183b109de033e",
+  "published0046_unchanged_sha256": "80a832f134546ebed3bb52d19d048862411746a8e14d09bea8be9761eab2f542",
+  "no_unexpected_failures_or_retries": true,
+  "resource_window_released": true,
+  "not_executed": [
+    "full backend suite/vet/build of candidate",
+    "capacity",
+    "additional benchmark samples",
+    "OS crash/process-kill or simultaneous multi-host migration race"
+  ],
+  "limits": [
+    "Canonical snapshot compares all current ProtocolCredential model fields except3derived values; unknown extra SQL columns are not part of snapshot.",
+    "AfterRaw injection runs only after real ADD success; persisted state is read/re-entered from independent DB pool, not an OS crash test.",
+    "Already-complete incorrect version1 from old failures/copy is not inferred from valid empty digests or repaired.",
+    "No cross-host schema lock or online repair availability claim.",
+    "Original69-count benchmark is one sample, not performance A/B against instrumented71 or proof of900s CI causality."
+  ],
+  "evidence_sha256": {
+    "receipt.json": "1b32297159ca7a68a7f0359528ae5e40e710a0f8a28bbc6e0a852ef83a1fa3c8",
+    "old-mysql-critical.jsonl": "b59f41700e08a13e939c52227307f28349f04aaa2021dacf0e6b736d43cf23b5",
+    "fixed-metadata-and-principal-regressions.jsonl": "a8f41858a3af3ea145a6d4c7e0eb5682c9d8d609ad6d713dc40b5c4cee07aeeb",
+    "run-targeted.py": "306cbe5cd7a52e91b0981565989f99bb4b672d8171c71c8e304dc94dab4d7879",
+    "fixed-mysql-matrix-and-principal.jsonl": "db90eab45cf79d7f71e8b5760220dbfb2fbbf032bbb5b82a05f6344eb2ee46d1",
+    "old-sqlite-critical.jsonl": "235763411cd64b57762a20fefd027d1a36a2d272d042b8bedc61e06f458fdeca",
+    "original-benchmark.log": "939d5a7b01f4d86a788197812a7f138b1cacbfe0ae74901f0a8d2ba1b55e857c",
+    "fixed-sqlite-focused-race.jsonl": "1e54571d3d275227f6f1fe88063e8fb49c094fae712c92dcba01677f1e63944b",
+    "original-benchmark-receipt.json": "2bd027a5e86c73340758114686a8318e24fbd05607650f6470d968708daa64e5",
+    "fixed-sqlite-matrix.jsonl": "a9a9a50feed1287c1718109e971607e0b8ff04ea687388abd5bd35d01eeb846a",
+    "run-one-original-benchmark.py": "27a225e5d33d900b87b3a1ba7ad167d60e05ae3fd288652669d38a4413eb6cc7"
+  },
+  "candidate_validation_main_tree_modified": false,
+  "integration": {
+    "base": "c61df99a623b5a63c80a545685bbbf2013c9cdd4",
+    "reviewed_four_files_copied_to_main": true,
+    "before_after_backup": "/workspace/zboard-recovery-20261020T173121Z/principal-recovery-integrate-20261021T003637Z",
+    "same_frozen_hashes": true,
+    "full_backend_mysql_new_ci": "not yet run for this new production patch",
+    "original_capacity": "Exact01eb result remains separate; no new-source capacity run yet"
+  },
+  "private_final_receipt_sha256": "dc06fda0385f185a8541a5b9a1ddd2455e91b5c40a0fa306ff4e0a0290e61708"
+}

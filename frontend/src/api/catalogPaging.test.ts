@@ -88,6 +88,8 @@ describe('catalog paging API contract', () => {
   })
   it('does not request an unbounded subscription directory with chart data', async () => {
     const signal = new AbortController().signal
+    get.mockResolvedValueOnce({ data: { data: { points: [], subscriptions: [], record_count: 0,
+      connection_sample_count: 0, peak_connections: null, truncated: false, as_of: '2026-09-01T00:00:00Z' } } })
     await fetchTrafficTrends({ from: '2026-09-01', to: '2026-09-02', signal })
     expect(params().get('include_subscriptions')).toBe('false')
     expect(get.mock.calls.at(-1)![1].signal).toBe(signal)

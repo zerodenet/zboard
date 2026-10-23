@@ -16,7 +16,7 @@ func TestExternalForwardEntryGrantDeliveryAndRemoval(t *testing.T) {
 	verifyExternalForwardClosure(t, f, a, b)
 }
 func TestMySQLExternalForwardEntryGrantDeliveryAndRemoval(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	user := model.User{ID: 1, Email: "external-forward-admin@example.test", Password: "hash", Status: userStatusActive, IsAdmin: true}
 	if err := h.db.Create(&user).Error; err != nil {
 		t.Fatal(err)
@@ -85,6 +85,7 @@ func verifyExternalForwardClosure(t *testing.T, f trafficReadFixture, a model.No
 	if err := f.h.ensureCredentialsForSubscriptions([]model.Subscription{sub}); err != nil {
 		t.Fatal(err)
 	}
+	confirmTestCredentialConfiguration(t, f.h, b.NodeID)
 	if err := f.h.db.Where("1=1").Delete(&model.NodeConfigPublish{}).Error; err != nil {
 		t.Fatal(err)
 	}

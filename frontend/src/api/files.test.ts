@@ -23,4 +23,13 @@ describe('file transport and ticket attachment contracts', () => {
     await replyTicket(1, 'reply', true, attachments)
     expect(post.mock.calls[1]).toEqual(['/admin/tickets/1/messages', { body: 'reply', attachments: expected }])
   })
+  it('sends optional ticket references without an impersonated user or changing attachment identities', async () => {
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ data: { data: {} } })
+    const references = { order_id: 27, subscription_id: 4, wallet_entry_id: 8 }
+    await createTicket({ subject: '账单核对', category: 'billing', priority: 1, body: '请核对该笔记录', references, attachments: [{ file_id: 'private-file', name: '凭证', url: '/api/v1/files/private-file' }] })
+    expect(post).toHaveBeenCalledWith('/tickets', { subject: '账单核对', category: 'billing', priority: 1, body: '请核对该笔记录', references, attachments: [{ file_id: 'private-file' }] })
+    await createTicket({ subject: '普通问题', category: 'other', priority: 1, body: '没有关联记录' })
+    expect(post.mock.calls[1]![1]).not.toHaveProperty('references')
+    expect(post.mock.calls[0]![1]).not.toHaveProperty('user_id')
+  })
 })

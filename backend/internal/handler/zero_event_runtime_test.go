@@ -2,11 +2,83 @@ package handler
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/zeroevent"
 )
+
+func TestZeroNodeObservationPreservesIndependentSourceMaterial(t *testing.T) {
+	base := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name          string
+		latest, stats zeroevent.Envelope
+	}{
+		{
+			name:   "sequence wins despite reversed reception and occurrence",
+			latest: zeroevent.Envelope{ID: "flow-new", NodeID: 7, SourceID: " node-007-flow ", Type: "flow.updated", CoreInstanceID: "runtime-a", Sequence: 12, OccurredAt: base, ReceivedAt: base.Add(time.Second)},
+			stats:  zeroevent.Envelope{ID: "stats-earlier", NodeID: 7, SourceID: "node-7-stats", Type: "stats.sampled", CoreInstanceID: "runtime-a", Sequence: 11, OccurredAt: base.Add(time.Hour), ReceivedAt: base.Add(2 * time.Hour)},
+		},
+		{
+			name:   "different runtime sources stay independent",
+			latest: zeroevent.Envelope{ID: "flow-runtime-b", NodeID: 7, SourceID: "node-7-new", Type: "flow.updated", CoreInstanceID: "runtime-b", Sequence: 1, OccurredAt: base.Add(time.Second), ReceivedAt: base},
+			stats:  zeroevent.Envelope{ID: "stats-runtime-a", NodeID: 7, SourceID: "node-7-old", Type: "stats.sampled", CoreInstanceID: "runtime-a", Sequence: 100, OccurredAt: base, ReceivedAt: base.Add(time.Hour)},
+		},
+		{
+			name:   "legacy missing source and receipt remain unknown",
+			latest: zeroevent.Envelope{ID: "legacy-flow", NodeID: 7, Type: "flow.updated", Sequence: 12, OccurredAt: base.Add(time.Second)},
+			stats:  zeroevent.Envelope{ID: "legacy-stats", NodeID: 7, Type: "stats.sampled", Sequence: 11, OccurredAt: base},
+		},
+	}
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			item.stats.Payload = json.RawMessage(`{"active_sessions":3,"bytes_up":100,"bytes_down":200}`)
+			// A later iteration/receipt must not override the original comparator.
+			projection := aggregateZeroNodeEvents([]zeroevent.Envelope{item.latest, item.stats})[7]
+			observation := zeroNodeObservation(projection)
+			if observation.NodeID != 7 || observation.Latest.ID != item.latest.ID || observation.StatsEvent == nil || observation.StatsEvent.ID != item.stats.ID {
+				t.Fatal("aggregation changed the selected independent source events", observation)
+			}
+			if observation.Latest.SourceID != item.latest.SourceID || observation.Latest.ReceivedAt != item.latest.ReceivedAt || observation.Latest.OccurredAt != item.latest.OccurredAt {
+				t.Fatal("latest source material was normalized, replaced or lost", observation.Latest)
+			}
+			if observation.StatsEvent.SourceID != item.stats.SourceID || observation.StatsEvent.ReceivedAt != item.stats.ReceivedAt || observation.StatsEvent.OccurredAt != item.stats.OccurredAt {
+				t.Fatal("stats borrowed latest material or lost its own original source", observation.StatsEvent)
+			}
+			if observation.Stats.ActiveSessions != 3 || observation.Stats.BytesUp != 100 || observation.Stats.BytesDown != 200 {
+				t.Fatal("source metadata changed selected counters", observation.Stats)
+			}
+			if repeated := zeroNodeObservation(projection); !reflect.DeepEqual(repeated, observation) {
+				t.Fatal("repeated mapping regenerated source material")
+			}
+		})
+	}
+}
+
+func TestZeroNodeObservationDoesNotInventStatsSource(t *testing.T) {
+	base := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	event := zeroevent.Envelope{ID: "flow-only", NodeID: 7, SourceID: "node-7", Type: "flow.updated", CoreInstanceID: "runtime-a", Sequence: 12, OccurredAt: base, ReceivedAt: base.Add(time.Second)}
+	projection := aggregateZeroNodeEvents([]zeroevent.Envelope{event})[7]
+	observation := zeroNodeObservation(projection)
+	if observation.StatsEvent != nil || observation.Stats.ActiveSessions != 0 || observation.Stats.BytesUp != 0 || observation.Stats.BytesDown != 0 {
+		t.Fatal("flow-only latest material was promoted into a stats sample", observation)
+	}
+	if observation.Latest.SourceID != event.SourceID || observation.Latest.ReceivedAt != event.ReceivedAt {
+		t.Fatal("flow-only latest source material was lost", observation.Latest)
+	}
+}
+
+func TestNetworkEventPositionKeepsLegacyZeroMaterialStable(t *testing.T) {
+	event := zeroevent.Envelope{ID: "legacy-unknown", NodeID: 7, Type: "stats.sampled"}
+	position := networkEventPosition(event)
+	if position.SourceID != "" || !position.ReceivedAt.IsZero() || !position.OccurredAt.IsZero() {
+		t.Fatal("legacy unknown time/source was replaced by mapping-time metadata", position)
+	}
+	if repeated := networkEventPosition(event); repeated != position {
+		t.Fatal("legacy mapping was not stable across replay")
+	}
+}
 
 func TestAggregateZeroNodeEventsCoalescesNodeWrites(t *testing.T) {
 	base := time.Date(2026, 8, 10, 5, 0, 0, 0, time.UTC)

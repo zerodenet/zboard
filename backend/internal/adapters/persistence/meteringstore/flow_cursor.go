@@ -35,6 +35,10 @@ func LoadFlowUsage(tx *gorm.DB, node uint, instance, flow string, credential uin
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND flow_id IN ?", node, keys).Find(&candidates).Error; err != nil {
 		return model.FlowUsage{}, false, false, err
 	}
+	return selectFlowUsage(candidates, key, flow, credential, revision, current)
+}
+
+func selectFlowUsage(candidates []model.FlowUsage, key, flow string, credential uint, revision uint64, current metering.FlowCounters) (model.FlowUsage, bool, bool, error) {
 	row, found, legacy := PickFlowUsage(candidates, key, flow)
 	if !found {
 		return model.FlowUsage{}, false, false, nil

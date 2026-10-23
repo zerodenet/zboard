@@ -142,7 +142,7 @@ func (m Manifest) Validate() error {
 			PageCapability, ConfigCapability, ConfigReadCapability, ConfigWriteCapability,
 			IdentityCapability, StorageCapability, StorageReadCapability, StorageWriteCapability,
 			HTTPRouteCapability, AccountAssertionCapability, SubscriptionProjectionCapability, MessageProjectionCapability,
-			TaskCapability, MeteringReadCapability, CommerceOrdersReadCapability, CommercePaymentsWriteCapability, DNSProviderCapability, CertificateProviderCapability,
+			TaskCapability, MeteringReadCapability, CommerceOrdersReadCapability, CommercePaymentsWriteCapability, CommerceQuoteProviderCapability, DNSProviderCapability, CertificateProviderCapability,
 			AccountSelfReadCapability, AccountAdminReadCapability, SubscriptionReadCapability, SubscriptionConfigReadCapability, SubscriptionAdminReadCapability,
 			SubscriptionQuotaWriteCapability, SubscriptionTermWriteCapability, SubscriptionStatusWriteCapability,
 			MessageReadCapability, MessageAckCapability, UISlotCapability,
@@ -177,6 +177,9 @@ func (m Manifest) Validate() error {
 	}
 	if seen[CommercePaymentsWriteCapability] && (m.Components.Server == nil || !seen[CommerceOrdersReadCapability] || !hasPaymentContribution(m)) {
 		return errors.New("payment facts require a native runtime, order read grant and payment contribution")
+	}
+	if seen[CommerceQuoteProviderCapability] && m.Components.Server == nil {
+		return errors.New("commerce quote provider requires a native runtime")
 	}
 	if len(m.Surfaces) > 3 || len(m.Contributions.Pages) > 24 || len(m.Contributions.Slots) > 24 || len(m.Contributions.HTTPRoutes) > 8 || len(m.Files) == 0 || len(m.Files) > 512 {
 		return errors.New("plugin contribution limits exceeded")

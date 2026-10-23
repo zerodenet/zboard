@@ -28,7 +28,7 @@ func databaseModels() []interface{} {
 		&model.PluginAuthorization{}, &model.PluginData{}, &model.PluginMigration{},
 		&model.User{}, &model.ExternalIdentity{}, &model.Installation{}, &model.SystemConfig{}, &model.Announcement{}, &model.AnnouncementRead{},
 		&model.Plan{}, &model.PlanSKU{}, &model.PlanSKUOperation{}, &model.Node{}, &model.NodeGroup{}, &model.ProtocolEndpoint{},
-		&model.NodeGroupEndpoint{}, &model.Subscription{}, &model.SubscriptionMutation{}, &model.Order{}, &model.PaymentEvent{},
+		&model.NodeGroupEndpoint{}, &model.Subscription{}, &model.SubscriptionMutation{}, &model.Order{}, &model.PaymentEvent{}, &model.WalletAccount{}, &model.WalletEntry{}, &model.PaymentAttempt{}, &model.PaymentReceipt{}, &model.OrderFunding{}, &model.WalletAdjustment{}, &model.WalletPayoutResult{}, &model.OrderValueBudget{}, &model.SubscriptionValueSettlement{}, &model.SubscriptionValueSettlementSource{}, &model.SubscriptionAutomaticRenewal{}, &model.AutomaticRenewalScan{}, &model.ConsumptionRefund{},
 		&model.SubscriptionMember{}, &model.SubscriptionToken{}, &model.SubscriptionTemplate{},
 		&model.SubscriptionRuleSet{}, &model.SubscriptionTemplateRuleSetBinding{}, &model.ProtocolCredential{},
 		&model.FlowUsage{}, &model.TrafficRecord{}, &model.ProtocolEndpointUsageDaily{}, &model.ProtocolEndpointUsageReset{}, &model.AuditLog{}, &model.EmailTemplate{},
@@ -348,11 +348,13 @@ func MigrationTables(db *gorm.DB) ([]string, error) {
 		tables = append(tables, parsed.Schema.Table)
 	}
 	tables = append(tables,
+		"metering_usage_projection_pending", "credential_delivery_confirmations", "node_credential_delivery_states", "network_entry_delivery_confirmations", "closed_entitlements",
 		"menu_revisions", "menu_nodes",
 		"job_execution_budget", "job_execution_groups", "job_dispatch_lanes", "job_runs", "job_attempts", "job_schedules",
 		"plugin_installations", "plugin_versions", "plugin_operations", "plugin_host_leases",
 		"subscription_flow_start_events", "fair_use_node_coverage", "fair_use_policies",
 		"subscription_fair_use_states", "subscription_fair_use_events",
+		"node_observation_intents", "node_observation_parts", "node_observation_states",
 		"zero_event_node_cursors", "principal_flow_node_generations", "principal_flow_observations",
 		"principal_flow_currents", "principal_flow_scope_currents", "principal_flow_scope_observations",
 	)

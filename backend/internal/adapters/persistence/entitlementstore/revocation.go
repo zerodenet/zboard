@@ -45,10 +45,17 @@ func persistCredentialRevocation(tx *gorm.DB, query *gorm.DB, status string, now
 }
 
 func RevokeOutsideGroup(tx *gorm.DB, sub model.Subscription, now time.Time) error {
-	membership := tx.Table(networkstore.CredentialMembershipSQL+" AS node_group_endpoints").Select("protocol_endpoint_id").Where("node_group_id = ?", sub.NodeGroupID)
+	ids, err := networkstore.CurrentCredentialEndpointIDs(tx, sub.NodeGroupID)
+	if err != nil {
+		return err
+	}
 	query := tx.Model(&model.ProtocolCredential{}).
-		Where("subscription_id = ? AND status IN ? AND protocol_endpoint_id NOT IN (?)", sub.ID,
-			[]string{"active", "prepared"}, membership)
+		Where("subscription_id = ? AND status IN ?", sub.ID, []string{"active", "prepared"})
+	// An empty current scope revokes every old binding. NOT IN(NULL) would
+	// silently retain them, and a derived membership read can be stale under RR.
+	if len(ids) != 0 {
+		query = query.Where("protocol_endpoint_id NOT IN ?", ids)
+	}
 	return persistCredentialRevocation(tx, query, "revoked", now)
 }
 

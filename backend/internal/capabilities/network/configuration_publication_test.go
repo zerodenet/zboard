@@ -23,7 +23,7 @@ func (s *configurationPublicationRepositoryStub) BeginConfigurationPublication(_
 	s.beginRequest = request
 	return s.start, nil
 }
-func (s *configurationPublicationRepositoryStub) SetConfigurationPublicationDesired(_ context.Context, deployment ConfigurationDeployment, desired string) (ConfigurationDeployment, error) {
+func (s *configurationPublicationRepositoryStub) SetConfigurationPublicationDesired(_ context.Context, deployment ConfigurationDeployment, desired string, _ ...string) (ConfigurationDeployment, error) {
 	s.desired = desired
 	deployment.DesiredConfigSHA256 = desired
 	return deployment, nil

@@ -1,0 +1,96 @@
+{
+  "scope": "P3-02 credential ownership index only; not complete P3 or capacity acceptance",
+  "parent_head": "a2ed4e108267f09b0a9320363fbcb8238f0de06a",
+  "migration": "0046",
+  "retained_credentials": 5001,
+  "backfill": {
+    "batch": 256,
+    "maximum_batches_per_call": 4,
+    "independent_commits": true
+  },
+  "hot_lookup": {
+    "returned_rows": 3,
+    "digest_index_branches_explain": 3,
+    "actual_rows_examined_measured": false
+  },
+  "checks": {
+    "backend_full_vet_build": "passed /tmp/zboard-index-complete.log; handler126.749s",
+    "mysql_full": "passed /tmp/zboard-index-mysql-final-full.log; datastore80.365s handler393.721s; before SQL hints and pure dependency direction changes",
+    "latest_sqlite_and_mysql_actual_plans": "passed /tmp/zboard-index-plan-{sqlite,mysql}.log 4.209s/14.449s",
+    "cgo_disabled": "passed networkstore19.714s handler5.953s datastore4.076s; before pure dependency direction change",
+    "architecture_boundary": "passed after dependency correction; no test exception",
+    "previous_exact_ci": "https://github.com/zerodenet/zboard/actions/runs/39324962993"
+  },
+  "failures_preserved": [
+    {
+      "artifact": "zero-revocation-20261019T212525Z-6AiGGI",
+      "reason": "digest calculated before opaque-principal BeforeCreate normalization; fixed ordering plus actual purchase/issuer regression"
+    },
+    {
+      "artifact": "zero-revocation-20261019T212525Z-GDohwX",
+      "reason": "digest calculated before opaque-principal BeforeCreate normalization; fixed ordering plus actual purchase/issuer regression"
+    }
+  ],
+  "native_passes": [
+    {
+      "directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T213343Z-XVYC8n",
+      "result": {
+        "passed": true,
+        "scenarios": [
+          {
+            "configuration_deployments_after_recovery": 2,
+            "configuration_deployments_before_crash": 2,
+            "existing_connection_read_bytes": 0,
+            "existing_connection_read_error": "EOF",
+            "first_publisher_pid": 15,
+            "new_business_request_after_crash": false,
+            "old_flow_usable_during_native_control_denial": true,
+            "passed": true,
+            "phase": "connections",
+            "positive_control_passed": true,
+            "replacement_publisher_pid": 23,
+            "restored_to_verified_closure_ms": 31374.695402,
+            "scenario": "connection_recovery",
+            "verified_at": "2026-10-19T21:36:38.38879778Z"
+          }
+        ],
+        "driver_exit_code": 0,
+        "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+      },
+      "source_manifest_sha256": "172c9d94733ce082e9c52358ab4c76cf31aede3f97f3a868c32055b0dc6f24ab",
+      "source_before_after_equal": true
+    },
+    {
+      "directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T213343Z-mh6Dny",
+      "result": {
+        "passed": true,
+        "scenarios": [
+          {
+            "cross_group_credentials_rejected": true,
+            "disjoint_group_listeners": 2,
+            "existing_connection_read_bytes": 0,
+            "existing_connection_read_error": "EOF",
+            "new_group_echo_passed": true,
+            "old_credential_rejected_probes": 3,
+            "old_group_positive_control_passed": true,
+            "order_handler_return_to_verified_access_ms": 2549.522209,
+            "passed": true,
+            "physical_nodes": 1,
+            "scenario": "group_change",
+            "verified_at": "2026-10-19T21:35:47.776545826Z"
+          }
+        ],
+        "driver_exit_code": 0,
+        "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+      },
+      "source_manifest_sha256": "172c9d94733ce082e9c52358ab4c76cf31aede3f97f3a868c32055b0dc6f24ab",
+      "source_before_after_equal": true
+    }
+  ],
+  "limitations": [
+    "Native principal registry complete frame still limited to4096 active principals",
+    "Metering path not switched to digest lookup",
+    "Native passes precede SQL hints and pure dependency direction correction; latest source verified separately",
+    "Not production, all-protocol or capacity acceptance"
+  ]
+}

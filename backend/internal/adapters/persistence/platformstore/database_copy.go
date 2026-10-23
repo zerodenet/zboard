@@ -3,31 +3,40 @@ package platformstore
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/zerodenet/zboard/backend/internal/capabilities/platform"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
-	"time"
 )
 
 // CopyDatabaseSnapshot runs after the platform's maintenance and empty-target
 // guards. Source locking, destination defaults, data and copied-task completion
 // share the owned source session and one destination transaction.
 func CopyDatabaseSnapshot(ctx context.Context, source, target *gorm.DB, taskID uint) error {
-	return copySnapshot(ctx, source, target, taskID, "")
+	return copySnapshot(ctx, source, target, taskID, "", nil)
 }
 func CopyMaintenanceDatabaseSnapshot(ctx context.Context, source, target *gorm.DB, taskID uint, runID string) error {
 	if runID == "" {
 		return fmt.Errorf("maintenance execution is required")
 	}
-	return copySnapshot(ctx, source, target, taskID, runID)
+	return copySnapshot(ctx, source, target, taskID, runID, nil)
 }
-func copySnapshot(ctx context.Context, source, target *gorm.DB, taskID uint, runID string) error {
+func copyPreparedMigrationSnapshot(ctx context.Context, source, target *gorm.DB, taskID uint, runID string, receipt migrationPreparation) error {
+	return copySnapshot(ctx, source, target, taskID, runID, &receipt)
+}
+func copySnapshot(ctx context.Context, source, target *gorm.DB, taskID uint, runID string, receipt *migrationPreparation) error {
 	if err := NormalizeMigrationSecrets(source.WithContext(ctx)); err != nil {
 		return err
 	}
 	return datastore.WithMigrationSource(ctx, source, func(snapshot *gorm.DB) error {
 		return datastore.WithCopyDestination(ctx, target, func(tx *gorm.DB) error {
+			if receipt != nil {
+				if err := guardMigrationPreparation(tx, *receipt); err != nil {
+					return err
+				}
+			}
 			tables, err := datastore.MigrationTables(tx)
 			if err != nil {
 				return err
@@ -50,7 +59,12 @@ func copySnapshot(ctx context.Context, source, target *gorm.DB, taskID uint, run
 				return fmt.Errorf("finalize target migration task item: %w", err)
 			}
 			if runID != "" {
-				return finishCopiedMigrationRun(ctx, tx, taskID, runID)
+				if err := finishCopiedMigrationRun(ctx, tx, taskID, runID); err != nil {
+					return err
+				}
+			}
+			if receipt != nil {
+				return completeMigrationPreparation(tx, *receipt)
 			}
 			return nil
 		})

@@ -1,0 +1,24 @@
+{
+  "base": "7018e3e46698d5764a911ff79ab3c189e042c32b",
+  "scope": "Inline existing indexes only when creating projection tables; batch missing traffic indexes per table; keep existing repair and error contracts",
+  "tests": [
+    {"command": "GOMAXPROCS=1 go test -p 1 ./internal/datastore -run '^TestMySQLZeroEventFreshIndexesAvoidAlterAndRecoverOldTables$' -count=1 -timeout 3m -v", "result": "pass", "database": "actual isolated MySQL 8.4", "package_seconds": 0.594, "wall_seconds": 9.206},
+    {"scope": "SQLite fresh creation, missing/partial index recovery, repeat preparation, preserved rows and existing index contracts", "result": "pass", "package_seconds": 0.228}
+  ],
+  "sql_assertions": {"ledger_all_missing": 1, "ledger_complete": 0, "four_tables_all_missing": 4, "four_tables_complete": 0, "four_tables_partial_missing": 4, "repeated_after_repair": 0, "same_connection": true, "real_permission_error": 1142, "existing_rows_preserved": true},
+  "benchmark": {
+    "source": "Isolated standard clone7018e3e plus controlled preparation/benchmark/test-helper patch; old production two-file overlay from33b35d3",
+    "source_manifest_sha256": "a09a3dc5faf66bde11308e9b431f32a38d0e92232b996bfbb172ffad8cedba6c",
+    "source_unchanged_during_measurement": true,
+    "started_utc": "2026-10-20T19:54:09.212303+00:00",
+    "repetitions_per_source": 1,
+    "command": "GOMAXPROCS=1 go test -p 1 ./internal/datastore -run '^$' -bench '^BenchmarkMySQLSchemaPreparation$' -benchtime=1x -count=1 -v",
+    "before": {"session_alter_statements": 82, "prepare_seconds": 5.159188957, "wall_seconds_including_compile_and_fixture": 24.692},
+    "after": {"session_alter_statements": 78, "prepare_seconds": 4.578557414, "wall_seconds_including_compile_and_fixture": 14.753},
+    "limits": ["One pair only", "Not a CI15-minute success or sustained latency claim", "Other migration ALTER statements remain", "Host shared4CPU/16GiB differs from original1CPU/1GiB HTTP profile"]
+  },
+  "migration": "No published SQL edited; same index names and column order; existing/partially restored schemas repaired idempotently",
+  "rollback": "Source revert, retain all schema/data; old code uses more separate DDL",
+  "remaining": ["New-head full backend/vet/build/pure-Go SQLite", "Original real MySQL three-package15-minute suite", "Sequential MySQL copy suite", "New CI result"],
+  "production_migration_executed": false
+}

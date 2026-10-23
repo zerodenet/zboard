@@ -28,6 +28,9 @@ func (h *handlers) planUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	view, err := h.services.PlanUpdate.Update(r.Context(), claims.UserID, id, request)
 	if err != nil {
+		if writeResourceBusy(w, err) {
+			return
+		}
 		var revision *commerce.PlanRevisionError
 		var invalid *commerce.ValidationError
 		switch {

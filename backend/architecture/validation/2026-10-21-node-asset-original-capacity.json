@@ -1,0 +1,369 @@
+{
+  "status": "PASS_ORIGINAL_GATES_AFTER_RESTORED_DISK",
+  "source": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+  "binding": {
+    "passed": true,
+    "expected_revision": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+    "started_at": "2026-10-21T02:16:48.140823+00:00",
+    "finished_at": "2026-10-21T02:20:02.585804+00:00",
+    "parameters": {
+      "NODES": "2",
+      "SUBSCRIPTIONS": "20",
+      "HISTORY_RECORDS": "2000",
+      "DURATION_SECONDS": "60",
+      "EVENT_RATE": "20",
+      "READERS": "4"
+    },
+    "original_runner_exit": 0,
+    "original_acceptance_passed": true,
+    "hash_binding": {
+      "checkout_commit_unchanged": true,
+      "checkout_still_clean": true,
+      "source_before_after_equal": true,
+      "source-sha256.txt_matches_observer": true,
+      "source-after-build-sha256.txt_matches_observer": true,
+      "zboard_binary_before_after_equal": true,
+      "acceptance_binary_before_after_equal": true,
+      "acceptance-load.py_copy_matches_source": true,
+      "acceptance-report.py_copy_matches_source": true
+    },
+    "rss_observations": {
+      "container_id": "a2ac0ba45f404026d838d6f5a88902258c848c2dbfd1d4704dd55e0d0b002612",
+      "samples": 23,
+      "errors": [],
+      "available": true,
+      "first_rss_kib": 50480,
+      "last_rss_kib": 60628,
+      "sampled_peak_rss_kib": 63200
+    },
+    "sqlite_space": {
+      "available": true,
+      "scope": "stopped exported SQLite only; not a live SQL latency measurement",
+      "page_size": 4096,
+      "page_count": 1476,
+      "freelist_pages": 0,
+      "allocated_bytes": 6045696,
+      "objects": {
+        "index": {
+          "bytes": 3964928,
+          "pages": 968
+        },
+        "internal": {
+          "bytes": 126976,
+          "pages": 31
+        },
+        "table": {
+          "bytes": 1953792,
+          "pages": 477
+        }
+      }
+    },
+    "original_evidence_directory": "/workspace/zboard-node-asset-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T021648Z-vGIv0P",
+    "note": "Supplemental RSS/dbstat do not replace or relax any original gate. One short single-process run; no worker scaling or capacity ceiling claim."
+  },
+  "observer_preflight": {
+    "commit": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+    "expected_revision": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+    "source_manifest_sha256": "c24c0bcaf4698d360c1163b4dc82fc8e49a5980cdf817f8e6857c05d07da13d0",
+    "runner_sha256": {
+      "scripts/acceptance-mixed.sh": "e526b44d5a81e306f34a4b069e40fdd29b908c55f4bc45a070ef558722a259f6",
+      "scripts/acceptance-load.py": "3a8d946d14e96b3262f7ee831c4da0dcd96f31d31a1fe2ce2b8525a90e00af12",
+      "scripts/acceptance-report.py": "d8c9e0ab163a29a62fb296ddb30e5c22b6efe68cab3d1f94bfc7395082d06021"
+    },
+    "observer_sha256": "0e0efb9836f044d52073d5bceb576db59a8c66a0a46125e8fd42d511ad653234",
+    "go_version": "go version go1.26.8 linux/amd64",
+    "execute": true
+  },
+  "original_report": {
+    "passed": true,
+    "failures": [],
+    "latencies": [
+      {
+        "path": "/api/v1/admin/users?paged=true&limit=50&offset=0",
+        "budget_ms": 250,
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 20,
+        "p99_ms": 38,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/subscriptions?paged=true&limit=50&offset=0",
+        "budget_ms": 250,
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 3,
+        "p95_ms": 12,
+        "p99_ms": 35,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/subscriptions/1",
+        "budget_ms": 250,
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 2,
+        "p95_ms": 14,
+        "p99_ms": 25,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/traffic/records?paged=true&bucket=hour&limit=50&offset=0",
+        "budget_ms": 250,
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 10,
+        "p95_ms": 20,
+        "p99_ms": 32,
+        "passed": true
+      },
+      {
+        "path": "/api/zero/events",
+        "budget_ms": 250,
+        "count": 1274,
+        "errors": 0,
+        "p50_ms": 12,
+        "p95_ms": 20,
+        "p99_ms": 39,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/traffic/trends",
+        "budget_ms": 1000,
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 13,
+        "p99_ms": 28,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/traffic/reconciliation?paged=true&limit=50&offset=0",
+        "budget_ms": 1000,
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 3,
+        "p95_ms": 17,
+        "p99_ms": 38,
+        "passed": true
+      }
+    ],
+    "sampled_peak_working_set_mib": 37.96,
+    "resource_samples": 15,
+    "minimum_disk_free_bytes": 3308539904,
+    "spool_pressure_levels": [
+      "normal"
+    ],
+    "runtime_diagnostics": {
+      "samples": 7,
+      "last_consumer": {
+        "batches": 36,
+        "processed_envelopes": 1254,
+        "projected_flow_samples": 797,
+        "coalesced_flow_updates": 457,
+        "failures": 0,
+        "processing_seconds": 1.223818702,
+        "missing_receive_time": 0,
+        "latency_samples": 1254,
+        "latency_bucket_ms": 100,
+        "p95_upper_ms": 2000,
+        "maximum_ms": 2155
+      },
+      "maximum_sampled_pending_events": 23,
+      "database_wait_deltas": {
+        "accounting_db": {
+          "wait_count": 419,
+          "wait_seconds": 1.030969702
+        },
+        "traffic_read_db": {
+          "wait_count": 0,
+          "wait_seconds": 0
+        }
+      }
+    },
+    "drain_seconds": 5,
+    "note": "Client-observed HTTP latency includes Docker loopback transport; this short run does not prove 24h stability."
+  },
+  "load": {
+    "run_id": "88172553-19bd-4f4b-92b2-09576e2a56fc",
+    "started_at": "2026-10-21T02:18:54.493716+00:00",
+    "elapsed_seconds": 60.537786815999425,
+    "offered_unique_events": 1201,
+    "generator_dropped": 0,
+    "max_schedule_lag_seconds": 0.005681932998413686,
+    "rate": 20.0,
+    "readers": 4,
+    "think_seconds": 0.25,
+    "undelivered_jobs": 0,
+    "metrics": {
+      "/api/v1/auth/login": {
+        "count": 1,
+        "errors": 0,
+        "p50_ms": 66,
+        "p95_ms": 66,
+        "p99_ms": 66
+      },
+      "/api/v1/admin/users?paged=true&limit=50&offset=0": {
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 20,
+        "p99_ms": 38
+      },
+      "/api/v1/admin/subscriptions?paged=true&limit=50&offset=0": {
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 3,
+        "p95_ms": 12,
+        "p99_ms": 35
+      },
+      "/api/v1/admin/subscriptions/1": {
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 2,
+        "p95_ms": 14,
+        "p99_ms": 25
+      },
+      "/api/v1/admin/traffic/records?paged=true&bucket=hour&limit=50&offset=0": {
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 10,
+        "p95_ms": 20,
+        "p99_ms": 32
+      },
+      "/api/zero/events": {
+        "count": 1274,
+        "errors": 0,
+        "p50_ms": 12,
+        "p95_ms": 20,
+        "p99_ms": 39
+      },
+      "/api/v1/admin/traffic/trends": {
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 13,
+        "p99_ms": 28
+      },
+      "/api/v1/admin/traffic/reconciliation?paged=true&limit=50&offset=0": {
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 3,
+        "p95_ms": 17,
+        "p99_ms": 38
+      }
+    },
+    "failures": [],
+    "diagnostic_metrics": {
+      "/api/v1/admin/system-info?include_runtime=true": {
+        "count": 7,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 4,
+        "p99_ms": 4
+      }
+    },
+    "diagnostic_failures": []
+  },
+  "final_accounting": {
+    "accounting_passed": true,
+    "expected_total": 9833472,
+    "ledger_total": 9833472,
+    "mismatches": null,
+    "passed": true,
+    "pending_usage_projections": 0,
+    "run_id": "88172553-19bd-4f4b-92b2-09576e2a56fc",
+    "statistics_passed": true,
+    "subscription_total": 9833472,
+    "verified_at": "2026-10-21T02:20:00.188724Z"
+  },
+  "final_spool": {
+    "passed": true,
+    "status": {
+      "driver": "file",
+      "pending_events": 0,
+      "pending_bytes": 0,
+      "segments": 1,
+      "storage_bytes": 666809,
+      "disk_free_bytes": 3128246272,
+      "storage_usage_ratio": 0.0001242028549313545,
+      "pressure_level": "normal",
+      "warning": false,
+      "compact": false,
+      "emergency": false,
+      "emergency_reserve_available": true,
+      "compression_algorithm": "none",
+      "compressed_segments": 0,
+      "compressed_original_bytes": 0,
+      "compressed_stored_bytes": 0,
+      "compression_ratio": 0,
+      "compression_savings_ratio": 0,
+      "compaction_runs": 0,
+      "compacted_segments": 0,
+      "compacted_events": 0,
+      "compacted_flow_updates": 0,
+      "compacted_node_stats": 0,
+      "compaction_bytes_saved": 0,
+      "compaction_unsafe_skipped": 0
+    },
+    "unconsumed_event_found": false,
+    "verified_at": "2026-10-21T02:20:01.588766403Z"
+  },
+  "sampled_peak_cpu_percent": 16.01,
+  "binary_comparison": {
+    "zboard": {
+      "sha256": "99bab29824ab2ca7e4de51d5729b8ffcc4d16366392fcce98baa7f92f99e1663",
+      "same_as_preflight_failure": true
+    },
+    "acceptance": {
+      "sha256": "2b24c5136e687d9889572324142caef8ada81484b4790c8ca25e71f69e06d8cf",
+      "same_as_preflight_failure": true
+    }
+  },
+  "business_read_count": 940,
+  "initial_drain_failure": {
+    "subscription_mismatches": 10,
+    "original_retry_seconds": 5,
+    "preserved_verification_log_bytes": 636,
+    "result": "Original first check not reconciled; original retry then exact9,833,472B in all three totals",
+    "load_reruns": 0
+  },
+  "earlier_attempt": {
+    "status": "BLOCKED_BEFORE_LOAD",
+    "receipt": "2026-10-21-node-asset-capacity-preflight-failure.json",
+    "reason": "Original normal-pressure disk headroom759451648B; not HTTP503/load failure",
+    "recovery": "No Go tasks active; official go clean-cache only;4.1GiB restored; second preflight3311079424B; source and observer unchanged"
+  },
+  "raw_sha256": {
+    "baseline-controller-xi9bacbn/baseline-binding.json": "7798b1ec4e301454e3641a740ba1837d4cf7a4209d3c652a1a3da5ded5263e2f",
+    "baseline-controller-xi9bacbn/preflight.json": "16d3152cfce5aafc12ef043c27b39694e639e561c2a5d0edaf97406c11bc54b5",
+    "baseline-controller-xi9bacbn/binary-after.json": "e2a711d74e1cf8659ab9c97b03bdf942e5127c4ebc8a2f509ea57987c16ad2a1",
+    "baseline-controller-xi9bacbn/source-before.sha256": "c24c0bcaf4698d360c1163b4dc82fc8e49a5980cdf817f8e6857c05d07da13d0",
+    "baseline-controller-xi9bacbn/source-after.sha256": "c24c0bcaf4698d360c1163b4dc82fc8e49a5980cdf817f8e6857c05d07da13d0",
+    "baseline-controller-xi9bacbn/rss.jsonl": "e290ff44770d9d7d38ceb34291bd7e7f3f41572da1ed4d00fcc0328bcff6b0a7",
+    "baseline-controller-xi9bacbn/runner.log": "b5db53e774378b3a5bbc9d5185efacbc83ad5947b8cf6416549c79df9078c0b2",
+    "mixed-20261021T021648Z-vGIv0P/acceptance-result.json": "268ff119a4962c9834dde1d21725e59ff0ceb61cdeb167dfbec06ea7de4db2f4",
+    "mixed-20261021T021648Z-vGIv0P/storage-preflight.json": "2c72149ad34d50c00209bb907ef11e008a83a9d9a1761a9ce6e74d14f43f1cc4",
+    "mixed-20261021T021648Z-vGIv0P/container-stats.jsonl": "c26fc4866462add22c4d61d573268b758b7ad71b1cffe5ddd020a0d2751ecbcf",
+    "mixed-20261021T021648Z-vGIv0P/storage.jsonl": "50bfe6c08c76e7bd8886021743791c815d32e998239e6f7a5f47ebcf75e3c6ad",
+    "mixed-20261021T021648Z-vGIv0P/verification.log": "27ec00fa1fbc7c4062b33522a34fc4c1ef19c0feb3bf0c367c28de793308ebb9",
+    "mixed-20261021T021648Z-vGIv0P/spool-verification.log": "a50b7d459a2d81e887f6eb2d1720bb49ffa0c64b3177c1ef72964420084a3992",
+    "mixed-20261021T021648Z-vGIv0P/server.log": "69037420b6617a6cebfcfa990be6329fd0e7a4052d83080d3ca85ab08e9f52e9",
+    "mixed-20261021T021648Z-vGIv0P/data/load-result.json": "c7f531cc222cb0f33014e20ddb8d2690b08e14c4ebcbdcf321923b59106bbbd9",
+    "mixed-20261021T021648Z-vGIv0P/data/verification.json": "ad00ad2641b78900a98fc2942d3a40848cff98e08b3d68ccb905da1ca9404698",
+    "mixed-20261021T021648Z-vGIv0P/data/spool-verification.json": "831ade992d8b9f1dc43eae731c0860246b0092a2410c93ec899312c3583a70d1",
+    "mixed-20261021T021648Z-vGIv0P/data/runtime-samples.jsonl": "fa8e1ff848970fa12ec6de30710a882316134eceeea1dcd771f2cb7677a43005",
+    "mixed-20261021T021648Z-vGIv0P/source-sha256.txt": "c24c0bcaf4698d360c1163b4dc82fc8e49a5980cdf817f8e6857c05d07da13d0",
+    "mixed-20261021T021648Z-vGIv0P/source-after-build-sha256.txt": "c24c0bcaf4698d360c1163b4dc82fc8e49a5980cdf817f8e6857c05d07da13d0"
+  },
+  "limitations": [
+    "One constrained SQLite single-process60s profile; not capacity ceiling/24h/production/MySQL performance",
+    "HTTP200 pending/complete chart proportions are unknown; no claims of complete chart coverage throughout load",
+    "Core transaction+spool-checkpoint latency histogram excludes independently drained chart freshness; last diagnostics1254 envelopes precede final1274HTTP",
+    "Database pool waits are not SQL execution latency; per-batch SQL/writes not measured here",
+    "No quota-exhaustion-to-confirmed-stop/observable-overuse measurement",
+    "No plugin-busy/slow-DB/worker/scaling/long-term growth verification",
+    "Historical112/157 hourly503, prior-source failures and first disk-preflight failure retained; old CI not acceptance for this source"
+  ]
+}

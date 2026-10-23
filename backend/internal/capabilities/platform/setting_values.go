@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
 	"github.com/zerodenet/zboard/backend/internal/security"
 	"net/url"
@@ -54,6 +55,10 @@ func ValidateSettingValue(key, value string) error {
 		}
 	}
 	switch key {
+	case entitlements.RecoveryGraceDaysKey:
+		if _, err := entitlements.ParseRecoveryGraceDays(value); err != nil {
+			return err
+		}
 	case "subscription_alert_low_enabled", "subscription_alert_exhausted_enabled", "subscription_alert_expiring_enabled", "subscription_alert_expired_enabled":
 		if value != "true" && value != "false" {
 			return errors.New("subscription alert switch must be a boolean")

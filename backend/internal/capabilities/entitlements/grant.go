@@ -9,6 +9,8 @@ import (
 // GrantRequest is a commercial snapshot accepted by the entitlement owner.
 // Payment authorization and idempotent order settlement remain caller duties.
 type GrantRequest struct {
+	// ReplaceTerm is set only from the core-owned full-change checkout snapshot.
+	ReplaceTerm                           bool
 	ID                                    uint
 	TargetSubscriptionID                  *uint
 	UserID, PlanID, PlanSKUID             uint
@@ -18,6 +20,7 @@ type GrantRequest struct {
 	SpeedLimitMbps, DeviceLimit           int
 }
 type GrantPolicy struct {
+	RecoveryGracePeriod          *time.Duration
 	MaxActiveSubscriptions       int
 	NodeGroupID                  uint
 	IsRenewable                  bool
@@ -56,6 +59,9 @@ func NewGrant(request GrantRequest, policy GrantPolicy, now time.Time) (Grant, e
 }
 
 func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now time.Time) (Grant, error) {
+	if request.ReplaceTerm {
+		return replacementGrant(sub, request, policy, now)
+	}
 	fulfillment, err := RenewalForGrant(request)
 	if err != nil {
 		return Grant{}, err
@@ -63,8 +69,12 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 	if !policy.IsRenewable && request.OrderType == "renewal" {
 		return Grant{}, errors.New("plan does not support renewal")
 	}
+	grace := RenewalGracePeriod
+	if policy.RecoveryGracePeriod != nil {
+		grace = *policy.RecoveryGracePeriod
+	}
 	recovering := request.OrderType == "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now))
-	if request.OrderType == "renewal" && (!CanRenewAt(sub, now) || sub.PlanID != request.PlanID) {
+	if request.OrderType == "renewal" && (!CanRenewAt(sub, now, grace) || sub.PlanID != request.PlanID) {
 		return Grant{}, ErrRenewalWindow
 	}
 	if request.OrderType != "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now) || (sub.EndsOnQuotaExhaustion && sub.FlowUsed >= sub.FlowTotal)) {
@@ -115,6 +125,9 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 		sub.StartAt = now
 		sub.EndedAt, sub.EndReason = nil, ""
 	} else if fulfillment.AddQuota {
+		if request.TrafficBytes < 0 || sub.FlowTotal > math.MaxInt64-request.TrafficBytes {
+			return Grant{}, errors.New("invalid additional quota")
+		}
 		delta = request.TrafficBytes
 		sub.FlowTotal += delta
 	}

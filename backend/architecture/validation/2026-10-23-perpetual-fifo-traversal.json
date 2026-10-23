@@ -1,0 +1,274 @@
+{
+  "status": "implemented_narrow_package_verified_full_head_ci_pending",
+  "base_commit": "85a6d1a62cb901313441f7523b40cae71c2c37cd",
+  "scope": "pure perpetual FIFO consumption traversal; existing prices, rounding, quote fingerprint and 1000-source bound unchanged",
+  "toolchain": {
+    "go": "1.26.8",
+    "gomaxprocs": 2,
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "os": "linux",
+    "arch": "amd64"
+  },
+  "phases": [
+    {
+      "phase": "baseline",
+      "head": "85a6d1a62cb901313441f7523b40cae71c2c37cd",
+      "started_utc": "2026-10-23T18:18:00.661643+00:00",
+      "finished_utc": "2026-10-23T18:18:24.525236+00:00",
+      "source_sha256_before": "6b86233e2cf18830ef309f99ed9faaa26a73f1be2210325933d398efe9950491",
+      "source_sha256_after": "6b86233e2cf18830ef309f99ed9faaa26a73f1be2210325933d398efe9950491",
+      "source_stable": true,
+      "source_file_count": 2274,
+      "free_bytes_before": 515493888,
+      "free_bytes_after": 436371456,
+      "checks": [
+        {
+          "name": "all-commerce",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/capabilities/commerce",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 16.232,
+          "log": "baseline-all-commerce.log",
+          "log_sha256": "ea43b45bab5da934c1abf23d21f9b76b852892e28384e45936441374abffee4c"
+        },
+        {
+          "name": "benchmark",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/capabilities/commerce",
+            "-run",
+            "^$",
+            "-bench",
+            "^BenchmarkPerpetualFIFOSequentialPurchases$",
+            "-benchmem",
+            "-benchtime=1s",
+            "-count=3",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 7.504,
+          "log": "baseline-benchmark.log",
+          "log_sha256": "d022f2ab7d1f204266b851b2f659d17288ba6318411de3d2f9a3dd5ae2793a84"
+        }
+      ],
+      "top_level_pass": 56,
+      "skip_count": 0,
+      "benchmark_samples": [
+        {
+          "sources": 100,
+          "iterations": 3170,
+          "ns_per_op": 395945,
+          "bytes_per_op": 203505,
+          "allocations_per_op": 844
+        },
+        {
+          "sources": 100,
+          "iterations": 3224,
+          "ns_per_op": 400436,
+          "bytes_per_op": 203872,
+          "allocations_per_op": 844
+        },
+        {
+          "sources": 100,
+          "iterations": 2720,
+          "ns_per_op": 439087,
+          "bytes_per_op": 203351,
+          "allocations_per_op": 844
+        },
+        {
+          "sources": 1000,
+          "iterations": 236,
+          "ns_per_op": 5207452,
+          "bytes_per_op": 2212402,
+          "allocations_per_op": 8065
+        },
+        {
+          "sources": 1000,
+          "iterations": 220,
+          "ns_per_op": 5422081,
+          "bytes_per_op": 2222726,
+          "allocations_per_op": 8065
+        },
+        {
+          "sources": 1000,
+          "iterations": 205,
+          "ns_per_op": 5408594,
+          "bytes_per_op": 2221797,
+          "allocations_per_op": 8065
+        }
+      ]
+    },
+    {
+      "phase": "candidate",
+      "head": "85a6d1a62cb901313441f7523b40cae71c2c37cd",
+      "started_utc": "2026-10-23T18:19:01.285934+00:00",
+      "finished_utc": "2026-10-23T18:19:12.073109+00:00",
+      "source_sha256_before": "960ee5d57a133a4d0a27a4e76cba37a2c9d06e091212107dd83ff405e9e6c5e5",
+      "source_sha256_after": "960ee5d57a133a4d0a27a4e76cba37a2c9d06e091212107dd83ff405e9e6c5e5",
+      "source_stable": true,
+      "source_file_count": 2274,
+      "free_bytes_before": 436011008,
+      "free_bytes_after": 431529984,
+      "checks": [
+        {
+          "name": "all-commerce",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/capabilities/commerce",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.871,
+          "log": "candidate-all-commerce.log",
+          "log_sha256": "fbec584f0ad259c324df3923f8cfbd46bea30b4d4d5b877ed04e1049d5f54359"
+        },
+        {
+          "name": "benchmark",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/capabilities/commerce",
+            "-run",
+            "^$",
+            "-bench",
+            "^BenchmarkPerpetualFIFOSequentialPurchases$",
+            "-benchmem",
+            "-benchtime=1s",
+            "-count=3",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 7.646,
+          "log": "candidate-benchmark.log",
+          "log_sha256": "7d595f6a89eb3102db0e821ff6ea58d41f4169aac508d3050dc6e87aa814da9a"
+        },
+        {
+          "name": "vet",
+          "command": [
+            "go",
+            "vet",
+            "-p",
+            "1",
+            "./internal/capabilities/commerce"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 2.135,
+          "log": "candidate-vet.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "top_level_pass": 56,
+      "skip_count": 0,
+      "benchmark_samples": [
+        {
+          "sources": 100,
+          "iterations": 3082,
+          "ns_per_op": 394810,
+          "bytes_per_op": 204142,
+          "allocations_per_op": 844
+        },
+        {
+          "sources": 100,
+          "iterations": 3132,
+          "ns_per_op": 395423,
+          "bytes_per_op": 203759,
+          "allocations_per_op": 844
+        },
+        {
+          "sources": 100,
+          "iterations": 3290,
+          "ns_per_op": 403033,
+          "bytes_per_op": 204872,
+          "allocations_per_op": 844
+        },
+        {
+          "sources": 1000,
+          "iterations": 265,
+          "ns_per_op": 4533512,
+          "bytes_per_op": 2223924,
+          "allocations_per_op": 8066
+        },
+        {
+          "sources": 1000,
+          "iterations": 270,
+          "ns_per_op": 4491117,
+          "bytes_per_op": 2196590,
+          "allocations_per_op": 8065
+        },
+        {
+          "sources": 1000,
+          "iterations": 265,
+          "ns_per_op": 4547632,
+          "bytes_per_op": 2193224,
+          "allocations_per_op": 8065
+        }
+      ]
+    }
+  ],
+  "sample_medians": [
+    {
+      "sources": 100,
+      "baseline_ns": 400436,
+      "candidate_ns": 395423,
+      "observed_decrease_percent": 1.252
+    },
+    {
+      "sources": 1000,
+      "baseline_ns": 5408594,
+      "candidate_ns": 4533512,
+      "observed_decrease_percent": 16.179
+    }
+  ],
+  "changed_go": [
+    {
+      "path": "backend/internal/capabilities/commerce/value_perpetual.go",
+      "sha256": "dbe9bd7c31e0376ad6554c1a281df81f98a958127c3235905168fa7c3d76858c"
+    },
+    {
+      "path": "backend/internal/capabilities/commerce/value_perpetual_history_test.go",
+      "sha256": "95c926975f238eabc6565a333186ff24bc0a8900d71316c3c435050ef022520c"
+    }
+  ],
+  "limits": [
+    "baseline ran first, candidate second; not randomized or statistically significant",
+    "includes full sorting, serialization and quote fingerprint, not an isolated inner loop",
+    "no sustained capacity, HTTP p95, database, worker/autoscaling or production claim",
+    "1000 current evidence limit unchanged; other history readers unchanged"
+  ],
+  "not_executed": {
+    "local_full_backend_4": "host storage remains below measured original full-build cache recovery requirement",
+    "local_full_mysql_3": "host storage constraint; no new datastore code, do not infer MySQL from pure-function tests",
+    "local_race_count3": "host storage constraint",
+    "capacity": "original 1677721600B after physical 512MiB reserve gate not met; no threshold lowered",
+    "external_and_production": "not performed"
+  },
+  "migration": {
+    "new_sql": false,
+    "backfill": false,
+    "rollback": "binary revert only; no persistent facts or quote identities changed"
+  },
+  "full_head_ci": "pending after next normal commit/push; cannot borrow base CI",
+  "overall_p0_p7_complete": false
+}

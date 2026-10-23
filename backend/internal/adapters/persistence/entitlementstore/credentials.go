@@ -11,12 +11,27 @@ import (
 )
 
 func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer entitlements.CredentialIssuer) ([]model.ProtocolCredential, error) {
-	var endpoints []model.ProtocolEndpoint
-	if err := tx.Model(&model.ProtocolEndpoint{}).
-		Joins(networkstore.CredentialMembershipJoin("node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id")).
-		Where("node_group_endpoints.node_group_id = ? AND protocol_endpoints.is_active = ?", subscription.NodeGroupID, true).
-		Order("protocol_endpoints.sort_order asc, protocol_endpoints.id asc").
-		Find(&endpoints).Error; err != nil {
+	if _, transactional := tx.Statement.ConnPool.(gorm.TxCommitter); !transactional {
+		var result []model.ProtocolCredential
+		err := tx.Transaction(func(inner *gorm.DB) error {
+			var err error
+			result, err = EnsureCredentials(inner, subscription, issuer)
+			return err
+		})
+		return result, err
+	}
+	// Reconciliation jobs may carry a snapshot taken before retirement, renewal
+	// or plan change. Only the locked current business state can grant access.
+	var current model.Subscription
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, subscription.ID).Error; err != nil {
+		return nil, err
+	}
+	if current.Status != "active" || current.FlowUsed >= current.FlowTotal {
+		return nil, nil
+	}
+	subscription = current
+	endpoints, err := networkstore.CurrentCredentialEndpoints(tx, subscription.NodeGroupID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -28,9 +43,12 @@ func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer enti
 		targetStatus := issuer.Status(endpoint.Protocol, endpoint.MieruPrincipalReady)
 		var credential model.ProtocolCredential
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("subscription_id = ? AND protocol_endpoint_id = ?", subscription.ID, endpoint.ID).
+			Where("subscription_id = ? AND protocol_endpoint_id = ? AND current_scope = ?", subscription.ID, endpoint.ID, 1).
 			First(&credential).Error
 		if err == nil {
+			if credential.EntitlementEpoch != subscription.EntitlementEpoch {
+				return nil, errors.New("credential entitlement epoch mismatch")
+			}
 			updates := map[string]interface{}{
 				"user_id":     subscription.UserID,
 				"node_id":     endpoint.NodeID,
@@ -39,6 +57,11 @@ func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer enti
 				"status":      targetStatus,
 				"expires_at":  subscription.EndAt,
 				"revoked_at":  nil,
+			}
+			if credential.NodeID != endpoint.NodeID {
+				updates["principal_lookup_version"] = 0
+				updates["principal_digest"] = ""
+				updates["secret_principal_digest"] = ""
 			}
 			if err := tx.Model(&credential).Updates(updates).Error; err != nil {
 				return nil, err
@@ -66,12 +89,17 @@ func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer enti
 			return nil, err
 		}
 		listenPort, publicPort := endpoint.Port, endpoint.PublicPort
+		credentialID := fmt.Sprintf("subscription-%d-endpoint-%d", subscription.ID, endpoint.ID)
+		if subscription.EntitlementEpoch > 0 {
+			credentialID += fmt.Sprintf("-epoch-%d", subscription.EntitlementEpoch)
+		}
 		credential = model.ProtocolCredential{
+			EntitlementEpoch:   subscription.EntitlementEpoch,
 			SubscriptionID:     subscription.ID,
 			UserID:             subscription.UserID,
 			ProtocolEndpointID: endpoint.ID,
 			NodeID:             endpoint.NodeID,
-			CredentialID:       fmt.Sprintf("subscription-%d-endpoint-%d", subscription.ID, endpoint.ID),
+			CredentialID:       credentialID,
 			PrincipalKey:       fmt.Sprintf("subscription:%d:endpoint:%d", subscription.ID, endpoint.ID),
 			Secret:             encryptedSecret,
 			ListenPort:         listenPort,
@@ -79,6 +107,9 @@ func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer enti
 			Status:             targetStatus,
 			ExpiresAt:          subscription.EndAt,
 		}
+		credential.DeliveryRequired = true
+		credential.SecretPrincipalDigest = entitlements.RetiredPrincipalHash(endpoint.NodeID, secret)
+		credential.PrincipalLookupVersion = 1
 		if err := tx.Create(&credential).Error; err != nil {
 			return nil, err
 		}

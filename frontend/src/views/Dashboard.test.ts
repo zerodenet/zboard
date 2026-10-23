@@ -9,6 +9,7 @@ import UiMetricStrip from '../components/UiMetricStrip.vue'
 import UiSegmentedControl from '../components/UiSegmentedControl.vue'
 import DashboardTrafficRanking from '../components/DashboardTrafficRanking.vue'
 import PageRefreshButton from '../components/PageRefreshButton.vue'
+import MetricCard from '../components/MetricCard.vue'
 vi.mock('../api/dashboard', () => ({ fetchDashboardCurrent: vi.fn(), fetchDashboardStatistics: vi.fn(), fetchDashboardTrend: vi.fn(), fetchDashboardTrafficRankings: vi.fn() }))
 vi.mock('../api/client', () => ({ fetchProtocolDeployments: vi.fn() }))
 const facts: DashboardOverview = {
@@ -34,6 +35,46 @@ async function open() {
  view=mount(Dashboard,{global:{plugins:[router],components:{UiSection,UiMetricStrip,PageRefreshButton}}});await flushPromises();return view
 }
 describe('operations dashboard',()=>{
+ it('keeps partial snapshot counts separate from unknown complete current totals', async()=>{
+  vi.mocked(fetchDashboardCurrent).mockResolvedValue({...structuredClone(facts), active_subscriptions:3,
+   service:{...facts.service, observed_active_subscriptions:2, observed_active_flows:7},
+   coverage:{principal_flows:false,principal_flows_state:'unknown',principal_flows_reason:'snapshot_coverage_unverified'}})
+  const wrapper=await open()
+  const flows=wrapper.findAllComponents(MetricCard).find(card=>card.props('label')==='已观测连接')!
+  expect(flows.props('value')).toBe('7')
+  expect(flows.props('status')).toBe('覆盖未知')
+  expect(flows.props('meta')).toContain('新鲜度未确认')
+  const subscriptions=wrapper.findAllComponents(MetricCard).find(card=>card.props('label')==='已观测活跃订阅')!
+  expect(subscriptions.props('value')).toBe('2')
+  expect(subscriptions.props('meta')).toContain('有连接的订阅')
+  expect(wrapper.text()).not.toContain('实时')
+ })
+ it('treats old server counts as observations even when its old coverage boolean is true', async()=>{
+  vi.mocked(fetchDashboardCurrent).mockResolvedValue({...structuredClone(facts), active_subscriptions:3,
+   service:{...facts.service,active_subscriptions:2,active_flows:9},coverage:{principal_flows:true}})
+  const wrapper=await open()
+  const flows=wrapper.findAllComponents(MetricCard).find(card=>card.props('label')==='已观测连接')!
+  expect(flows.props('value')).toBe('9')
+  expect(flows.props('status')).toBe('覆盖未知')
+  expect(wrapper.text()).not.toContain('实时')
+ })
+ it('preserves an observed zero while keeping complete current coverage unknown', async()=>{
+  vi.mocked(fetchDashboardCurrent).mockResolvedValue({...structuredClone(facts), active_subscriptions:3,
+   service:{...facts.service,observed_active_subscriptions:0,observed_active_flows:0},coverage:{principal_flows:false}})
+  const wrapper=await open()
+  const flows=wrapper.findAllComponents(MetricCard).find(card=>card.props('label')==='已观测连接')!
+  expect(flows.props('value')).toBe('0')
+  expect(flows.props('status')).toBe('覆盖未知')
+ })
+ it('does not replace explicit missing observations with legacy current values', async()=>{
+  vi.mocked(fetchDashboardCurrent).mockResolvedValue({...structuredClone(facts), active_subscriptions:3,
+   service:{...facts.service,active_flows:999,observed_active_flows:null},coverage:{principal_flows:true}})
+  const wrapper=await open()
+  const flows=wrapper.findAllComponents(MetricCard).find(card=>card.props('label')==='已观测连接')!
+  expect(flows.props('value')).toBe('未采集')
+  expect(flows.props('status')).toBe('未采集')
+  expect(wrapper.text()).not.toContain('实时')
+ })
  it('shows successful metrics and comparisons while event loading fails',async()=>{
   vi.mocked(fetchProtocolDeployments).mockRejectedValue(new Error('events offline'))
   const wrapper=await open()

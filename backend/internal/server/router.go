@@ -145,6 +145,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPut, "/api/v1/admin/network-entries/:id", h.NetworkEntriesHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/network-entries/:id", h.NetworkEntriesHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/node-cleanup-script", h.NodeCleanupScriptHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/node-observation-intents", h.NodeObservationIntentsHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/node-observation-intents/:id/retry", h.NodeObservationIntentRetryHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/nodes/:id/retirement", h.NodeRetirementHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/nodes/:id/retirement", h.NodeRetirementHandler),
 		newRoute(http.MethodGet, "/api/v1/nodes", h.NodeListHandler),
@@ -234,21 +236,44 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/admin/plan-skus/:id", h.PlanSKUGetCommerceHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/plan-skus/:id", h.PlanSKUUpdateCommerceHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/plan-skus/:id", h.PlanSKUDeleteCommerceHandler),
+		newRoute(http.MethodGet, "/api/v1/account/wallet", h.WalletHandler),
+		newRoute(http.MethodPost, "/api/v1/account/wallet/topups", h.WalletTopUpHandler),
 		newRoute(http.MethodGet, "/api/v1/orders", h.OrderListHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/orders", h.OrderListHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/orders", h.AdminOrderAssignHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/orders/preview", h.AdminOrderPreviewHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/orders/:id", h.AdminOrderGetHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/orders/:id/consumption-refunds", h.AdminOrderConsumptionRefundsHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/consumption-refunds/:id", h.AdminConsumptionRefundHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/orders/:id/subscription-access", h.AdminOrderSubscriptionAccessHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/orders/:id/payment-events", h.AdminOrderPaymentEventsHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/users/:id/wallet", h.AdminUserWalletHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/wallet-adjustments", h.AdminWalletAdjustmentsHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/wallet-adjustments", h.AdminWalletAdjustmentsHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/wallet-adjustments/:id", h.AdminWalletAdjustmentHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/wallet-adjustments/:id/payout-results", h.AdminWalletAdjustmentHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/wallet-adjustments/:id/reverse", h.AdminWalletAdjustmentHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/orders/:id/payment-receipts", h.PaymentReceiptsHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/orders/:id/payment-receipts/resolve", h.ResolvePaymentReceiptHandler),
+		newRoute(http.MethodGet, "/api/v1/orders/:id/payment-receipts", h.PaymentReceiptsHandler),
+		newRoute(http.MethodGet, "/api/v1/orders/:id/funding", h.OrderFundingHandler),
+		newRoute(http.MethodPost, "/api/v1/orders/:id/funding", h.OrderFundingHandler),
+		newRoute(http.MethodPost, "/api/v1/orders/:id/wallet-pay", h.WalletPayOrderHandler),
 		newRoute(http.MethodPost, "/api/v1/orders", h.OrderCreateCommerceValidatedHandler),
 		newRoute(http.MethodPost, "/api/v1/orders/preview", h.OrderPreviewHandler),
+		newRoute(http.MethodGet, "/api/v1/commerce/discount-providers", h.CommerceDiscountProvidersHandler),
 		newRoute(http.MethodPost, "/api/v1/orders/:id/pay", h.OrderPayCommerceHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/orders/:id/pay", h.OrderPayCommerceHandler),
 		newRoute(http.MethodPost, "/api/v1/orders/:id/cancel", h.OrderCancelHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/orders/:id/cancel", h.OrderCancelHandler),
 		newRoute(http.MethodPost, "/api/v1/orders/:id/pay-callback", h.OrderPayCallbackCommerceHandler),
 		newRoute(http.MethodGet, "/api/v1/subscriptions", h.SubscriptionsHandler),
+		newRoute(http.MethodGet, "/api/v1/subscriptions/:id/value", h.SubscriptionValueHandler),
+		newRoute(http.MethodPost, "/api/v1/subscriptions/:id/unsubscribe", h.SubscriptionValueHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/value", h.AdminSubscriptionValueHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/subscriptions/:id/unsubscribe", h.AdminSubscriptionValueHandler),
+		newRoute(http.MethodGet, "/api/v1/subscriptions/:id/automatic-renewal", h.AutomaticRenewalHandler),
+		newRoute(http.MethodPut, "/api/v1/subscriptions/:id/automatic-renewal", h.AutomaticRenewalHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions", h.SubscriptionsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id", h.AdminSubscriptionGetHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/subscriptions/:id/quota", h.AdminSubscriptionQuotaHandler),
@@ -381,31 +406,35 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	h.StartAdminTaskWorker()
 	h.StartNodePublishWorker()
 	h.StartTrafficResetWorker()
+	h.StartWalletReservationWorker()
+	h.StartAutomaticRenewalWorker()
+	h.StartUsageProjectionWorker()
+	h.StartNodeObservationWorker()
+	h.StartNodeObservationMaterialRetentionWorker()
 	h.StartProxyPoolSubscriptionWorker()
 	h.StartFairUseEvaluationWorker()
 	h.StartCertificateRenewalWorker()
 	h.StartDNSPublicObservationWorker()
 	if err := services.RegisterDatabaseMigrationJobs(credentialCipher); err != nil {
+		h.CloseBackgroundJobs()
 		if pluginManager != nil {
 			pluginManager.Close()
 		}
 		_ = h.CloseZeroEventSpool()
-		h.CloseBackgroundJobs()
 		_ = closeTrafficReads()
 		return nil, err
 	}
 	services.StartWork()
 	initialized = true
 	return func() error {
+		// Leave room within the default30-second container grace period for local
+		// interruption/completion fences, plugin teardown and durable file flush.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err := h.Shutdown(ctx)
 		if pluginManager != nil {
 			pluginManager.Close()
 		}
-		h.CloseNodePublishWorker()
-		h.CloseTrafficResetWorker()
-		h.CloseProxyPoolSubscriptionWorker()
-		h.CloseFairUseEvaluationWorker()
-		err := h.CloseZeroEventSpool()
-		h.CloseBackgroundJobs()
 		return errors.Join(err, closeTrafficReads())
 	}, nil
 }

@@ -1,0 +1,26 @@
+{
+  "stage": "P5-02 administrator consumption refund entry",
+  "status": "behavior and complete frontend pass; exact-commit CI pending",
+  "behavior": [
+    "Order detail mounts a dedicated approved-refund form and explanatory active-entitlement restriction.",
+    "Safe integer minor units, owned ticket and reason; explicit confirmation before POST.",
+    "Persist actor/order/user/currency scoped intent before submitting; network and 401/403/409/500 uncertainty preserve immutable payload and idempotency key.",
+    "No automatic POST on reload. Only explicit retry of the same intent or GET of a known fact ID.",
+    "Reject mismatched server fact identity; wallet refresh failure remains separate and unknown.",
+    "An explicit server 400 validation rejection permits administrator correction followed by a new confirmation and key.",
+    "Shows actual source order, wallet entry, approval actor, ticket and existing audit link; never guesses remaining refundable budget or mutates new entitlement."
+  ],
+  "validation": {
+    "targeted": "6 files / 63 tests passed in 8.77s, including existing administrator detail and money tests",
+    "full_frontend": "197 files passed / 2 existing skipped; 959 tests passed / 8 existing skipped; original six exclusions unchanged",
+    "typecheck_build": "passed; vite12.45s",
+    "retained_failure": "Initial build caught possibly undefined data-to test attribute; corrected optional read and reran component20 tests, all passed.",
+    "runtime_scope": "UI behavior uses API mocks; API test uses Axios spy. Backend financial command has independent SQLite/MySQL evidence."
+  },
+  "migration": "none; browser local intent is bounded by actor/order identity and does not contain authentication credentials",
+  "unverified": [
+    "Real browser click through refund HTTP and both databases.",
+    "Actual browser persistent storage failures.",
+    "Active-term partial-refund entitlement policy still pending."
+  ]
+}

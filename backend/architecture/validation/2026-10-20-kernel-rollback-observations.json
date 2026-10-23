@@ -1,0 +1,105 @@
+{
+  "base_source": "122f2278bf363bd7d9583c1abcbda7e5980c5d66",
+  "source_scope": "base plus exactly three named production/test files; documentation excluded from runtime",
+  "files": {
+    "backend/internal/adapters/persistence/networkstore/kernel_reconciliation_state.go": "3c8fc7620f80c868be7f90e17fd38eb052f8943fa5da778a272de900b0dcdb88",
+    "backend/internal/adapters/persistence/networkstore/kernel_rollback_observation_test.go": "1697c3ef031f0d21a29bd50308854e2dbf153b4ee0899f188a78d1c4be7480a6",
+    "backend/internal/adapters/persistence/networkstore/kernel_detection_test.go": "90ea93e4b3d698402faa178e731313a486d26e8264093ac097c5472d7073920c"
+  },
+  "production_change": "Existing fenced kernel rollback restores only its existing three credential identity columns; nine runtime observation fields remain independent, with the observation cursor untouched. No credential value/rule/encryption/permission/API change.",
+  "checks": [
+    {
+      "label": "final-sqlite",
+      "exit_code": 0,
+      "wall_seconds": 7.061103087999072,
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "./internal/adapters/persistence/networkstore",
+        "-run",
+        "^Test(Kernel|ConfigurationPublication|CapabilityDeferral)",
+        "-count=1",
+        "-timeout",
+        "5m"
+      ]
+    },
+    {
+      "label": "final-race",
+      "exit_code": 0,
+      "wall_seconds": 20.525516246001644,
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-p",
+        "1",
+        "./internal/adapters/persistence/networkstore",
+        "-run",
+        "^TestKernelRollbackPreservesObservedRuntime$",
+        "-count=3",
+        "-timeout",
+        "5m"
+      ]
+    },
+    {
+      "label": "final-mysql",
+      "exit_code": 0,
+      "wall_seconds": 5.020818061999307,
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "./internal/adapters/persistence/networkstore",
+        "-run",
+        "^TestMySQLKernelRollbackPreservesObservedRuntime$",
+        "-count=1",
+        "-timeout",
+        "5m",
+        "-v"
+      ]
+    }
+  ],
+  "test_guards": [
+    "Actual migrated SQLite and isolated MySQL8.4 random schema",
+    "Actual ProjectObservation stats event and NodeActivity heartbeat after operation snapshot",
+    "Full persisted node map unchanged except three credential columns and updated_at",
+    "All persisted cursor fields unchanged",
+    "Injected restore persistence failure leaves full node/cursor unchanged",
+    "Equal and older event replay does not alter preserved observations",
+    "Lost operation fence cannot restore node/cursor"
+  ],
+  "retained_failures": [
+    {
+      "log": "old-source-expected-failure.log",
+      "exit_code": 1,
+      "reason": "Old122f227 production path fails observation preservation; initial test revision before additional older replay and cleanup guard."
+    },
+    {
+      "log": "fixed-mysql.log",
+      "exit_code": 1,
+      "reason": "Existing SQLite-only kernel node fixture inserted empty JSON config; fixed fixture to valid JSON without changing production/schema/database strictness."
+    }
+  ],
+  "raw_logs": {
+    "final-sqlite.log": "8a37f7601220178f8fc1d1e122179a0e4e8c78e3e64798b2308693638923eebf",
+    "fixed-mysql.log": "1d89bcab13f254c0c2a025132ee352cc0c9ee3ddabaff0f96adbc35278737cc5",
+    "fixed-sqlite.log": "29c950a6bdf782a961646ae38294ed99500063606670ee80e0c5685d5f7e0528",
+    "final-mysql.log": "82462a87f24a996f74752324148b078d0024df0592585e395bbeb9e14042558e",
+    "fixed-mysql-valid-json-fixture.log": "431f3bbf366b4451b419ff5ecd82cbbfc702595e5cb6cd0ed839e2607f3ef98d",
+    "final-race.log": "83184aa400fc7d466059b7acc5acc23046f0be324c24ae46f1ed65418c440d7b",
+    "old-source-expected-failure.log": "30efb88133cd516c0314c834cf32e6f9fdc637af46c3efe791b0bb57865d97c9",
+    "fixed-race.log": "fc317fd314393346551b5481bc7082b1805174d8a89e53cf22404c64e39a09a7"
+  },
+  "limits": [
+    "Sequential actual interleaving, not parallel MySQL contention proof",
+    "Race detector repeats three times, not cross-host or native runtime proof",
+    "No schema migration or history repair; older binary reintroduces race",
+    "No async observation handoff; node observation failure can still roll back accounting",
+    "Full backend checks and new commit CI pending, older CI never substitutes"
+  ],
+  "migration": "None; no persisted history rewritten",
+  "status": "specialized regressions PASS; whole checks pending"
+}

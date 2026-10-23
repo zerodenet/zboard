@@ -1,0 +1,37 @@
+{
+  "source": "a470764d7baac67cdc449f1cabc1eaf211223776",
+  "production_basis": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+  "backend_go_sql_unchanged": true,
+  "run_id": 39535404317,
+  "url": "https://github.com/zerodenet/zboard/actions/runs/39535404317",
+  "created_utc": "2026-10-21T02:52:16Z",
+  "updated_utc": "2026-10-21T03:08:40Z",
+  "status": "completed",
+  "conclusion": "failure",
+  "jobs": {
+    "backend": "success",
+    "frontend": "success",
+    "compose": "success",
+    "contract": "success",
+    "zrs-compiler": "success",
+    "mysql": "failure"
+  },
+  "mysql": {
+    "job_id": 119010788981,
+    "datastore_seconds": 196.158,
+    "networkstore_seconds": 160.567,
+    "handler_seconds": 900.018,
+    "last_running_test": "TestMySQLTicketReferencesEnforceOwnerAndCommitWithConversation (7s)",
+    "stack": "Fixture: newMySQLOrderFixture -> newMySQLPublishHandlers -> RunMigrations -> runMigrations -> reconcileAutomaticRecurringApprovalSchema at automatic_recurring_approval_schema.go:75; mysql Exec",
+    "jobstore": "NOT EXECUTED after failed core command",
+    "copy": "NOT EXECUTED after failed core command"
+  },
+  "raw_mysql_log_bytes": 1129968,
+  "raw_mysql_log_sha256": "22007ed866d9899863f24ff8b95e55ea91a324ce8b18bcadf4904be9f96ae249",
+  "limits": [
+    "This is the exact a470 run; prior681/0f/a9 acceptance is separate.",
+    "Original15m cumulative package timeout retained, no new skip or retry. Last running fixture does not prove the timeout root cause.",
+    "New0060 handoff and UI candidate are not in this commit and remain under independent validation.",
+    "No production database, deployment or release action."
+  ]
+}

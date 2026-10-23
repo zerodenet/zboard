@@ -61,6 +61,11 @@ func (s ConfigurationPublicationState) ResolveConfigurationPublication(ctx conte
 		if err := tx.Model(&row).Updates(updates).Error; err != nil {
 			return err
 		}
+		if applied {
+			if err := confirmCredentialDelivery(tx, row, now); err != nil {
+				return err
+			}
+		}
 		// A subsequent publication recompiles the latest intent and commits its
 		// readiness. An old acknowledgement must not enable newly added endpoints.
 		stateUpdates := map[string]interface{}{"phase": "queued", "last_error": ""}

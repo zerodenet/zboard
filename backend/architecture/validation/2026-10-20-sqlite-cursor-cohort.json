@@ -1,0 +1,16 @@
+{
+  "base": "fb139b06650f95a005bf4c03b69106a3e2deb17c",
+  "patch_sha256": "b194b7396fbfe892c834eabdfd2f4d26e1a927689bb4ae6407516046e4168b61",
+  "scope": "SQLite-only transaction-local cursor cohorts after existing ownership locks; sequential validation and individual cursor writes retained",
+  "validation": [
+    {"command": "GOMAXPROCS=1 go test -p 1 ./internal/adapters/persistence/meteringstore -run '^TestSQLiteCursorCohort' -count=1 -v", "result": "pass", "tests": 8, "subcases": 7, "isolated_package_seconds": 0.417, "main_integrated_package_seconds": 0.275},
+    {"command": "GOMAXPROCS=1 go test -p 1 ./internal/handler -run '^(TestAccountingBatchReplayOutOfOrderAndExhaustion|TestAccountingBatchDoesNotShareBalancesOrKeepOldMultiplier|TestAccountingBatchFinalWriteFailureRollsBackAndCanReplay|TestAccountingBatchDeduplicatesReportIDsAcrossInsertChunks|TestZeroEventWindowReducesLedgerWritesPreservingRoundingCoverageAndReplay|TestZeroEventWindowRetainsCheckpointAfterPartialAuthorityFailure|TestZeroEventWindowRejectsRegressedCountersWithoutCheckpointAdvance|TestRecoveredEntitlementKeepsLateUsageAndRevocationInOldEpoch|TestClosedEpochLateTrafficDoesNotPolluteCurrentScheduledReset)$' -count=1 -v", "result": "pass", "tests": 9, "package_seconds": 3.494}
+  ],
+  "functional_sql_assertions": {"scalar_cursor_selects": 32, "cohort_cursor_selects": 1, "accounting_only_dml": 37, "accounting_only_affected_rows": 99, "full_path_unchanged_additional_dml": 2, "full_path_unchanged_additional_rows": 2, "large_candidate_keys": 410, "large_selects": 3, "keys_per_select_max": 200},
+  "historical_failed_attempt": "Initial duplicated test-file path failed to write; NO TESTS RUN output is preserved and excluded from accepted validation",
+  "migration": "None; cursor, ledger, quota and projection intents retain their existing atomic transaction",
+  "rollback": "Source-only revert; no evidence deletion or data conversion",
+  "remaining": ["Fixed-source full-path SQL benchmark and quiet wall-time comparison", "Current full backend and real MySQL regressions", "Original constrained HTTP capacity rerun for latest source", "Retention growth and independent-worker evidence"],
+  "mysql_production_path_changed": false,
+  "production_migration_executed": false
+}

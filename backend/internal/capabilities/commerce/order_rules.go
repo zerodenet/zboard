@@ -2,13 +2,19 @@ package commerce
 
 import "strings"
 
+type OrderDiscountSelection struct {
+	ProviderID string `json:"provider_id"`
+	Selection  string `json:"selection,omitempty"`
+}
+
 type OrderCreateRequest struct {
-	IdempotencyKey       string `json:"idempotency_key,omitempty"`
-	PlanSKUID            uint   `json:"plan_sku_id"`
-	OrderType            string `json:"order_type"` // Deprecated assertion; never overrides the derived operation.
-	TargetSubscriptionID uint   `json:"target_subscription_id"`
-	Channel              string `json:"channel"`
-	QuoteFingerprint     string `json:"quote_fingerprint"`
+	Discount             *OrderDiscountSelection `json:"discount,omitempty"`
+	IdempotencyKey       string                  `json:"idempotency_key,omitempty"`
+	PlanSKUID            uint                    `json:"plan_sku_id"`
+	OrderType            string                  `json:"order_type"` // Deprecated assertion; never overrides the derived operation.
+	TargetSubscriptionID uint                    `json:"target_subscription_id"`
+	Channel              string                  `json:"channel"`
+	QuoteFingerprint     string                  `json:"quote_fingerprint"`
 }
 
 // OrderTarget contains only the subscription facts needed to select an operation.
@@ -75,6 +81,11 @@ func SnapshotOrderTerms(plan Plan, sku SKU, entitlementMode string, operations [
 		PlanName: plan.Name, SKUName: sku.Name, BillingUnit: sku.BillingUnit,
 		BillingValue: sku.BillingValue, RenewalEffect: sku.RenewalEffect,
 		TrafficBytes: plan.TrafficBytes, DeviceLimit: plan.DeviceLimit, SpeedLimitMbps: plan.SpeedLimitMbps,
+	}
+	if orderType == "renewal" && sku.BillingUnit != "once" {
+		// New timed renewals extend the term. Restoring quota early is a separate
+		// sale; legacy pending orders retain their already-snapshotted effect.
+		terms.RenewalEffect = "extend_only"
 	}
 	if terms.Channel == "" {
 		terms.Channel = "manual"

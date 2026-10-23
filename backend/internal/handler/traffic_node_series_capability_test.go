@@ -22,6 +22,7 @@ func TestTrafficNodeSeriesCapabilityBoundsScopeAndRevocation(t *testing.T) {
 	if err := f.h.db.Create(&model.TrafficRecord{NodeID: 99, UserID: 2, UsedBytes: 999, At: from, ReportID: "foreign", Nonce: "foreign"}).Error; err != nil {
 		t.Fatal(err)
 	}
+	rebuildFixtureHourly(t, f.h.db)
 	service := f.h.services.NodeSeries()
 	q := metering.NodeSeriesQuery{UserID: 2, Bucket: "hour", From: from, To: from.Add(24 * time.Hour)}
 	out, err := service.Read(context.Background(), 1, q)

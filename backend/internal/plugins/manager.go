@@ -181,13 +181,15 @@ func (m *Manager) maintain(ctx context.Context) {
 }
 func (m *Manager) Close() {
 	m.closeOnce.Do(func() {
+		m.lost.Store(true)
 		m.cancel()
 		<-m.done
 		<-m.supervisorDone
-		m.cancelPluginTasks()
+		m.tasks.reconcile.Lock()
+		m.detachPluginTasks()
+		m.tasks.reconcile.Unlock()
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		m.lost.Store(true)
 		m.stopProcesses()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

@@ -1,9 +1,13 @@
 import type { Router } from 'vue-router'
 import { AUTH_SESSION_EXPIRED_EVENT, resetAuthSessionExpired } from './authSession'
 
-export function installAuthSessionNavigation(router: Router, clearAuth: () => void) {
+export function installAuthSessionNavigation(router: Router, clearAuth: () => void, suspendAuth?: () => void) {
   function onExpired() {
     const current = router.currentRoute.value
+    if (current.meta.requiresAuth && suspendAuth) {
+      suspendAuth()
+      return
+    }
     clearAuth()
     if (!current.meta.requiresAuth) {
       resetAuthSessionExpired()

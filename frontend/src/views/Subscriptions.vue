@@ -34,10 +34,11 @@
           <template v-else>当前订阅已结束，历史权益与用量可在订单中追溯。</template>
         </PageAlert>
         <PageAlert v-else-if="selectedSubscription.status === 'active' && selectedSubscription.flow_used >= selectedSubscription.flow_total" tone="warning" title="本周期流量已用完">订阅仍在有效期内。可用的续费、流量包和重置操作以商品当前销售规格为准。</PageAlert>
-        <details class="quota-disclosure">
+        <details v-if="selectedSubscription.status !== 'ended'" class="quota-disclosure">
           <summary>调整流量参数</summary>
           <div class="quota-disclosure-content"><SubscriptionQuotaEditor :subscription="selectedSubscription" @saved="quotaSaved" /></div>
         </details>
+        <SubscriptionTermination v-if="['active', 'expired'].includes(selectedSubscription.status)" :subscription-id="selectedSubscription.id" administrative @settled="load(); detailResource.load()" />
         <section class="detail-facts" aria-label="订阅业务快照">
           <div><span>套餐规格</span><strong>{{ selectedSubscription.plan_name || `套餐 #${selectedSubscription.plan_id}` }} / {{ selectedSubscription.sku_name || `SKU #${selectedSubscription.plan_sku_id}` }}</strong></div>
           <div><span>节点组</span><strong class="mono">#{{ selectedSubscription.node_group_id }}</strong></div>
@@ -62,6 +63,7 @@
 <script setup lang="ts">
 import TableText from '../components/TableText.vue'
 import SubscriptionQuotaEditor from '../components/SubscriptionQuotaEditor.vue'
+import SubscriptionTermination from '../components/SubscriptionTermination.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchAdminSubscriptionDetail, fetchSubscriptionsPage, type AdminSubscriptionDetail, type AdminSubscriptionListItem } from '../api/client'
@@ -107,7 +109,7 @@ const detailResource = useRemoteResource<AdminSubscriptionDetail | null>({
 })
 const { data: selectedSubscription, loading: detailLoading, error: detailError } = detailResource
 const trafficLink = computed(() => adminContextLink('/admin/traffic', userFilter.value ? { user_id: userFilter.value } : {}))
-const statusOptions = [{ label: '全部状态', value: '' }, { label: '有效', value: 'active' }, { label: '已到期', value: 'expired' }, { label: '已取消', value: 'canceled' }]
+const statusOptions = [{ label: '全部状态', value: '' }, { label: '有效', value: 'active' }, { label: '已到期', value: 'expired' }, { label: '已取消', value: 'canceled' }, { label: '已结束', value: 'ended' }]
 const quotaOptions = [{ label: '全部配额', value: '' }, { label: '仍有余量', value: 'available' }, { label: '已经耗尽', value: 'exhausted' }]
 const advancedFilterCount = computed(() => [userFilter.value, expiresFrom.value || expiresTo.value].filter(Boolean).length)
 const activeFilterCount = computed(() => [queryFilter.value, statusFilter.value, quotaFilter.value].filter(Boolean).length + advancedFilterCount.value)
@@ -121,7 +123,7 @@ const { items: subscriptions, total, loading, refreshing, error, load } = useRem
 })
 async function quotaSaved() { quotaMessage.value = '流量参数已保存'; await Promise.all([detailResource.load(), load()]) }
 function usagePercent(sub: AdminSubscriptionListItem) { return sub.flow_total ? Math.min(100, Math.round(sub.flow_used / sub.flow_total * 100)) : 0 }
-function statusName(status: string) { return ({ active: '有效', expired: '已到期', canceled: '已取消' } as Record<string, string>)[status] || formatUnknownValue('状态', status) }
+function statusName(status: string) { return ({ active: '有效', expired: '已到期', canceled: '已取消', ended: '已结束' } as Record<string, string>)[status] || formatUnknownValue('状态', status) }
 function statusTone(status: string): 'success' | 'warning' | 'neutral' { return status === 'active' ? 'success' : status === 'expired' ? 'warning' : 'neutral' }
 function resetPolicyName(value: number) { return ({ 0: '未设置（不重置）', 1: '每月 1 日', 2: '按购买日每月', 3: '每年 1 月 1 日', 4: '按购买日每年', 5: '不重置' } as Record<number, string>)[value] || formatUnknownValue('重置策略', value) }
 function trafficModeName(value: number) { return ({ 0: '上行 + 下行', 1: '仅上行', 2: '仅下行' } as Record<number, string>)[value] || formatUnknownValue('流量口径', value) }

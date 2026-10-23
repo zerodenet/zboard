@@ -3,6 +3,7 @@ package datastore
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -106,32 +107,51 @@ func ReconcileTrafficReadSchema(db *gorm.DB) error {
 	if err != nil {
 		return fmt.Errorf("open traffic read schema database: %w", err)
 	}
+	// Keep inventory order deterministic while collecting each table's missing
+	// indexes into one DDL operation. Existing tables still receive the same
+	// per-index inspection and additive recovery as before.
+	var tables []string
+	byTable := make(map[string][]trafficReadIndexDefinition)
 	for _, index := range trafficReadIndexes {
-		exists, err := tableExists(sqlDB, index.table)
+		if _, seen := byTable[index.table]; !seen {
+			tables = append(tables, index.table)
+		}
+		byTable[index.table] = append(byTable[index.table], index)
+	}
+	for _, table := range tables {
+		exists, err := tableExists(sqlDB, table)
 		if err != nil {
 			return err
 		}
 		if !exists {
 			continue
 		}
-		if err := ensureTrafficReadIndex(sqlDB, index); err != nil {
+		if err := ensureTrafficReadIndexes(sqlDB, table, byTable[table]); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func ensureTrafficReadIndex(sqlDB *sql.DB, index trafficReadIndexDefinition) error {
-	var count int
-	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM information_schema.statistics
-		WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?`, index.table, index.name).Scan(&count); err != nil {
-		return fmt.Errorf("inspect traffic read index %s: %w", index.name, err)
+func ensureTrafficReadIndexes(sqlDB *sql.DB, table string, indexes []trafficReadIndexDefinition) error {
+	var additions, names []string
+	for _, index := range indexes {
+		var count int
+		if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM information_schema.statistics
+		WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?`, table, index.name).Scan(&count); err != nil {
+			return fmt.Errorf("inspect traffic read index %s: %w", index.name, err)
+		}
+		if count > 0 {
+			continue
+		}
+		additions = append(additions, fmt.Sprintf("ADD KEY %s %s", index.name, index.columns))
+		names = append(names, index.name)
 	}
-	if count > 0 {
+	if len(additions) == 0 {
 		return nil
 	}
-	if _, err := sqlDB.Exec(index.ddl); err != nil {
-		return fmt.Errorf("add traffic read index %s: %w", index.name, err)
+	if _, err := sqlDB.Exec("ALTER TABLE " + table + " " + strings.Join(additions, ", ")); err != nil {
+		return fmt.Errorf("add traffic read indexes %s.%s: %w", table, strings.Join(names, ","), err)
 	}
 	return nil
 }

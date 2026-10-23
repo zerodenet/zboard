@@ -683,13 +683,69 @@ func TestDecodeNodeConnectorHeartbeatUsesZeroContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decodeNodeConnectorHeartbeat() error = %v", err)
 	}
-	if heartbeat.NodeID != "7" || heartbeat.BuildID != "zero-1.0" || heartbeat.UptimeSeconds != 3600 || heartbeat.ActiveFlows != 42 || heartbeat.BytesUp != 1024 || heartbeat.BytesDown != 4096 {
+	if heartbeat.NodeID != "7" || heartbeat.BuildID != "zero-1.0" || heartbeat.UptimeSeconds == nil || *heartbeat.UptimeSeconds != 3600 || heartbeat.ActiveFlows == nil || *heartbeat.ActiveFlows != 42 || heartbeat.BytesUp == nil || *heartbeat.BytesUp != 1024 || heartbeat.BytesDown == nil || *heartbeat.BytesDown != 4096 {
 		t.Fatalf("heartbeat = %+v", heartbeat)
 	}
 
 	request = httptest.NewRequest("POST", "/api/v1/nodes/7/heartbeat", strings.NewReader(`{"build_id":"zero-1.0"}`))
 	if _, err := decodeNodeConnectorHeartbeat(request); err == nil {
 		t.Fatal("missing node_id should be rejected")
+	}
+}
+
+func TestDecodeNodeConnectorHeartbeatPreservesNumericPresence(t *testing.T) {
+	fields := []string{"uptime_seconds", "active_flows", "bytes_up", "bytes_down"}
+	requestBody := func(field, value string) string {
+		t.Helper()
+		body := map[string]json.RawMessage{
+			"node_id": json.RawMessage(`"7"`), "build_id": json.RawMessage(`"zero-1.0"`),
+			"uptime_seconds": json.RawMessage(`11`), "active_flows": json.RawMessage(`22`),
+			"bytes_up": json.RawMessage(`33`), "bytes_down": json.RawMessage(`44`),
+			"future_field": json.RawMessage(`true`),
+		}
+		if value == "missing" {
+			delete(body, field)
+		} else {
+			body[field] = json.RawMessage(value)
+		}
+		raw, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	for index, field := range fields {
+		for _, value := range []string{"missing", "null", "0"} {
+			t.Run(field+"/"+value, func(t *testing.T) {
+				heartbeat, err := decodeNodeConnectorHeartbeat(httptest.NewRequest("POST", "/api/v1/nodes/7/heartbeat", strings.NewReader(requestBody(field, value))))
+				if err != nil {
+					t.Fatal(err)
+				}
+				got := []*uint64{heartbeat.UptimeSeconds, heartbeat.ActiveFlows, heartbeat.BytesUp, heartbeat.BytesDown}
+				for position, pointer := range got {
+					if position == index && value != "0" {
+						if pointer != nil {
+							t.Fatal("missing/null observation acquired a numeric value", field)
+						}
+						continue
+					}
+					want := uint64((position + 1) * 11)
+					if position == index {
+						want = 0
+					}
+					if pointer == nil || *pointer != want {
+						t.Fatal("provided numeric value lost", fields[position])
+					}
+				}
+			})
+		}
+		for _, value := range []string{`-1`, `1.5`, `18446744073709551616`, `"4"`, `true`, `[0]`, `{"value":0}`} {
+			t.Run(field+"/reject/"+value, func(t *testing.T) {
+				if _, err := decodeNodeConnectorHeartbeat(httptest.NewRequest("POST", "/api/v1/nodes/7/heartbeat", strings.NewReader(requestBody(field, value)))); err == nil {
+					t.Fatal("invalid provided observation was accepted", field, value)
+				}
+			})
+		}
 	}
 }
 

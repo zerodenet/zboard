@@ -2,11 +2,13 @@
   <section class="standard-page">
     <PageHeader title="服务器管理" description="维护服务器资产、连通状态与 Zero 内核；客户端可用线路在节点协议中配置。" eyebrow="Infrastructure">
       <template #actions>
+        <UiButton variant="secondary" type="button" @click="observationQueueOpen = true">观察队列</UiButton>
         <PageRefreshButton label="刷新节点资产" :loading="loading" @click="refresh" />
         <UiButton  type="button" @click="openCreate"><UiIcon name="plus" />登记 VPS</UiButton>
       </template>
     </PageHeader>
     <NodeSetupGuide />
+    <NodeObservationQueue :open="observationQueueOpen" @close="observationQueueOpen = false" />
 
     <TransientFeedback :success="message" :error="error" success-title="节点操作已完成" error-title="节点操作失败" />
 
@@ -79,6 +81,7 @@
           <StatusOverviewItem icon="activity" label="Connector" :description="selectedNode.connector_last_seen_at ? '最近事件' : '尚未连接'" :tone="selectedNode.connector_online ? 'success' : selectedNode.connector_last_seen_at ? 'warning' : 'neutral'" :status="selectedNode.connector_online ? '在线' : selectedNode.connector_last_seen_at ? '离线' : '未连接'">
             <template #description><template v-if="selectedNode.connector_last_seen_at">最近事件 <TimeBadge :value="selectedNode.connector_last_seen_at" mode="relative" /></template><template v-else>尚未收到 Connector 事件</template></template>
           </StatusOverviewItem>
+          <NodeCounterObservation :observation="selectedNode.observation" />
           <StatusOverviewItem icon="key" label="SSH 通道" :description="sshDescription(selectedNode)" :tone="selectedNode.ssh_verified_at ? 'success' : 'warning'" :status="selectedNode.ssh_verified_at ? '已验证' : '待验证'" />
           <StatusOverviewItem icon="shield" label="可信计量" :description="selectedNode.traffic_secret_prefix ? `凭证 ${selectedNode.traffic_secret_prefix}…` : '尚未创建凭证'" :tone="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at ? 'success' : 'warning'" :status="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at ? '已配置' : '未配置'" />
           <StatusOverviewItem icon="nodes" label="资产状态" :description="selectedNode.is_enabled ? '允许承载服务' : '已停止交付'" :tone="selectedNode.is_enabled ? 'success' : 'neutral'" :status="selectedNode.is_enabled ? '启用' : '停用'" />
@@ -307,6 +310,8 @@ import SshTerminalDialog from '../components/SshTerminalDialog.vue'
 import SortableHeader from '../components/SortableHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import StatusOverviewItem from '../components/StatusOverviewItem.vue'
+import NodeCounterObservation from '../components/NodeCounterObservation.vue'
+import NodeObservationQueue from '../components/NodeObservationQueue.vue'
 import TablePager from '../components/TablePager.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiIcon from '../components/UiIcon.vue'
@@ -365,6 +370,7 @@ function openNodeDetail(id: number) {
 const loadResource = useRemoteResource<NodeLoadSnapshot | null>({ initial: () => null,
   fetch: ({ signal }) => fetchNodeLoad(selectedNodeID.value, { signal }), errorMessage: '节点负载读取失败。' })
 const { data: nodeLoad, loading: nodeLoadLoading, error: nodeLoadError } = loadResource
+const observationQueueOpen = ref(false)
 const diagnosticsOpen = ref(false)
 const detailSection = ref<'overview' | 'kernel' | 'pools' | 'protocols' | 'credentials'>('overview')
 const nodeDetailTabs = [

@@ -32,6 +32,7 @@ type RuntimeConfigurationCertificate struct {
 }
 
 type RuntimeConfigurationEndpoint struct {
+	ClientConfig            string
 	ID                      uint
 	NodeID                  uint
 	Protocol                string
@@ -66,6 +67,8 @@ type RuntimeConfigurationProxyPool struct {
 }
 
 type RuntimeConfigurationNetworkEntry struct {
+	Address       string
+	PublicPort    int
 	ListenAddress string
 	ID            uint
 	NodeID        uint

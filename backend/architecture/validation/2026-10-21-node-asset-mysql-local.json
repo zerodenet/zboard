@@ -1,0 +1,59 @@
+{
+  "source": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+  "checkout": "/workspace/zboard-node-asset-final-verify",
+  "phase": "mysql",
+  "started_utc": "2026-10-21T02:20:42.643167+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "mysql-core",
+      "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 1,
+      "wall_seconds": 955.653,
+      "log": "mysql-core-6817667-final.log"
+    },
+    {
+      "name": "mysql-jobstore",
+      "command": "go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 125.359,
+      "log": "mysql-jobstore-6817667-final.log"
+    },
+    {
+      "name": "mysql-copy",
+      "command": "go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 187.273,
+      "log": "mysql-copy-6817667-final.log"
+    }
+  ],
+  "pending": [],
+  "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+  "finished_utc": "2026-10-21T02:41:50.928538+00:00",
+  "status": "CORE_FAILED_INDEPENDENT_JOBSTORE_AND_COPY_PASSED",
+  "raw_logs_sha256": {
+    "mysql-core-6817667-final.log": "5410c6830a4fbad658d9aa7e24f9a4237be7f386884f9f46ac6eff3064ac1ee3",
+    "mysql-jobstore-6817667-final.log": "4ccfe6e3fc8bde75fac5be324790656ad1de5c5150162d7d827fada64f4d47f2",
+    "mysql-copy-6817667-final.log": "84712858a1150775738ae658c7bce6be96967f3d002774a222255a022974899f"
+  },
+  "package_results": {
+    "datastore_seconds": 155.586,
+    "networkstore_seconds": 130.686,
+    "handler_seconds": 900.025,
+    "handler_status": "Original15m timeout; last1s receipt fixture still in migration-version inspection; not root-cause proof",
+    "jobstore_wall_seconds": 125.359,
+    "copy_wall_seconds": 187.273
+  },
+  "limits": [
+    "Original commands/timeouts and source681 unchanged",
+    "Core failure retained; independent commands actually execute and pass, not skipped",
+    "CI source681 separately fails; earlier all-green CI does not substitute",
+    "No stable fullMySQL/P7 acceptance"
+  ]
+}
