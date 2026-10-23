@@ -1715,3 +1715,12 @@ Go/HTTP13顶层105.761s、真实MySQL1顶层7.362s均零skip；最终前端1176p
 最终Go7顶层116.117s及实际MySQL1顶层21.437s零skip全通过、来源一致，原全表/DDL哈希与只读门禁不变；SQLite实际main子进程核对不开HTTP/spool、不bootstrap/迁移凭据。首轮81.300s含两项真实错误放行及一项夹具连带错误，37.632s为Cleanup中已取消Context的正向检查错误，均保留并准确区分；未删除断言。无新SQL/迁移，原157份保持，前端/SDK未变。
 
 [行为/兼容/回退](core-convergence-prepared-observation-material.md) · [原命令、源码/日志及所有结果](validation/2026-10-23-prepared-observation-material.json)。新提交CI待验，原环境完整backend4/MySQL3/race3/容量未执行，不借8ae或6bd结果。独立worker/伸缩仍未实现，本机存储新增尚无实际结果；P4/P6/P7整体未完成。
+
+
+### P4/P5工作台精确CI与P1/P4诊断大小（2026-10-23）
+
+8ae692e2859da869f0d55c3fac0bb0a8ccc5b07a自身CI39993946459六项全成功，经REST核实同一head；真实MySQL datastore201.477/handler825.105/networkstore215.761/application22.645/jobstore128.219/platformstore248.995s，原15m不改。成功日志仍有100MiB redo等待，保留原现象，不推断历史唯一根因。本头本地完整4/3/race仍未执行，不能借6eb结果。[8ae自己的精确最终回执](validation/2026-10-23-dashboard-observation-coverage-final.json)。
+
+新窄修复：旧签名报告meta超过已发布MySQL TEXT65535字节，实际Error1406阻住整个有效计量事务。原代码真实MySQL失败134.280s保留；现最多原样保留65535字节，超限存原始长度/上限/SHA256的明确省略回执，保持签名/凭据、单订阅归属、report/nonce、原始/计费字节、倍率/逐笔舍入及可靠意图事务。原生计量Meta及历史记录不裁剪，无schema迁移。
+
+Go6顶层122.609s、实际MySQL2顶层13.776s零skip通过；65535边界、65536和多字节、重复、回滚/重试，3原始字节×1.5逐笔5字节、总20及投影20一致。OpenAPI原282warning通过9.637s。b5中间提交未独立触发CI，将以包含两小批的最终精确head跑完整CI，不把8ae认证后续源码。[行为/兼容/回退及未执行](core-convergence-node-report-diagnostic-meta.md) · [全部命令/来源/原失败](validation/2026-10-23-node-report-diagnostic-meta.json)。仅每报告容量边界完成，P4按需/总保留/有限重放/增长、P6伸缩及P7综合仍未完成。

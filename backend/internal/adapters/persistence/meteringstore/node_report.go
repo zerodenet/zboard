@@ -128,7 +128,7 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 			ProtocolMultiplierMilli: endpoint.MultiplierMilli,
 			UsedBytes:               used,
 			At:                      in.Timestamp,
-			Meta:                    in.Meta,
+			Meta:                    boundedNodeReportMetadata(in.Meta),
 		}
 		if err := tx.Create(&record).Error; err != nil {
 			return err

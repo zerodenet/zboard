@@ -8257,6 +8257,7 @@ components:
           type: string
         meta:
           type: string
+          description: Source metadata. Oversized optional legacy report diagnostics may be represented by a diagnostic_meta_omitted v1 receipt. Native accounting evidence is preserved unchanged.
     TrafficRecordSummary:
       type: object
       description: Bounded list projection for administrator and self-service histories without report IDs, event payload or metadata.
@@ -9697,6 +9698,7 @@ components:
           minimum: 0
         meta:
           type: string
+          description: Optional diagnostic text. Existing HTTP request limits still apply. Up to 65535 UTF-8 bytes are retained unchanged. Within those request limits larger diagnostics are replaced by a bounded diagnostic_meta_omitted v1 receipt with original byte length and SHA-256 of the decoded meta string is stored instead. It is not billing or deduplication evidence.
 
     SubscriptionValueQuote:
       type: object
