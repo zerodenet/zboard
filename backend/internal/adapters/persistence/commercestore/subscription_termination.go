@@ -57,15 +57,33 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 		}{id, *administrative})
 	}
 	fingerprint := walletKey(string(encoded))
+	// Prepare immutable IDs before the authority transaction. A consistent read
+	// inside it before waiting for the owner would leave funding release on a
+	// stale MySQL RR snapshot. Historical closed orders without holds need no
+	// authority lock; current paid sources and every pending/held source do.
+	var boundary model.Subscription
+	lookup := s.DB.WithContext(ctx).Select("id", "start_at").Where("id = ? AND user_id = ?", id, owner).First(&boundary).Error
+	if lookup != nil && !errors.Is(lookup, gorm.ErrRecordNotFound) {
+		return out, lookup
+	}
+	var prepared []uint
+	if err := terminationOrders(s.DB.WithContext(ctx), owner, id, boundary.StartAt).Pluck("id", &prepared).Error; err != nil {
+		return out, err
+	}
+	if len(prepared) > terminationOrderBudget {
+		return out, commerce.ErrSubscriptionValueUnavailable
+	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Match trusted payment order-before-account locking. A new concurrent order
-		// may force a retry; an aborted transaction cannot partially settle value.
+		// Match trusted payment order-before-account locking, using exact primary
+		// keys rather than holding a secondary-index history range while waiting.
 		var orders []model.Order
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND (subscription_id = ? OR target_subscription_id = ?)", owner, id, id).Order("id ASC").Limit(1001).Find(&orders).Error; err != nil {
-			return err
-		}
-		if len(orders) > 1000 {
-			return commerce.ErrSubscriptionValueUnavailable
+		if len(prepared) > 0 {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ? AND user_id = ?", prepared, owner).Order("id ASC").Find(&orders).Error; err != nil {
+				return err
+			}
+			if len(orders) != len(prepared) {
+				return commerce.ErrSubscriptionQuoteChanged
+			}
 		}
 		var user model.User
 		if administrative != nil {
@@ -133,7 +151,7 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 		// Detect insertions between the initial order locks and account lock;
 		// READ COMMITTED does not provide an InnoDB gap-lock guarantee.
 		var currentIDs []uint
-		if err := tx.Model(&model.Order{}).Where("user_id = ? AND (subscription_id = ? OR target_subscription_id = ?)", owner, id, id).Order("id ASC").Limit(1001).Pluck("id", &currentIDs).Error; err != nil {
+		if err := terminationOrders(tx, owner, id, sub.StartAt).Pluck("id", &currentIDs).Error; err != nil {
 			return err
 		}
 		if len(currentIDs) != len(orders) {
@@ -263,6 +281,14 @@ func finishSubscriptionTermination(tx *gorm.DB, sub model.Subscription, orders [
 	// and history; verified cash arriving after cancellation cannot revive it.
 	finalTotal, finalUsed := entitlements.CycleQuota(entitlements.Subscription(sub))
 	for _, order := range orders {
+		// Failed/canceled old attempts may still own a persisted reservation.
+		// Release it under the same order/account locks, while preserving their
+		// earlier end metadata and monetary history.
+		if order.Status == "failed" || order.Status == "canceled" {
+			if err := releaseOrderFunding(tx, order, "canceled", now); err != nil {
+				return err
+			}
+		}
 		if order.SubscriptionEndedAt != nil && order.Status != "pending" {
 			continue
 		} // Preserve earlier terminated-term history.

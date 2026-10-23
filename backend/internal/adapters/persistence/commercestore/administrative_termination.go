@@ -137,10 +137,10 @@ func prepareAdministrativeValue(tx *gorm.DB, sub model.Subscription, now time.Ti
 			return commerce.AdministrativeSubscriptionValueQuote{}, value, nil, err
 		}
 		var orders []model.Order
-		if err := tx.Where("user_id = ? AND (subscription_id = ? OR target_subscription_id = ?)", sub.UserID, sub.ID, sub.ID).Order("id ASC").Limit(1001).Find(&orders).Error; err != nil {
+		if err := terminationOrders(tx, sub.UserID, sub.ID, sub.StartAt).Find(&orders).Error; err != nil {
 			return commerce.AdministrativeSubscriptionValueQuote{}, value, nil, err
 		}
-		if len(orders) > 1000 {
+		if len(orders) > terminationOrderBudget {
 			return commerce.AdministrativeSubscriptionValueQuote{}, value, nil, commerce.ErrSubscriptionValueUnavailable
 		}
 		reason := "historical_value_unavailable"
