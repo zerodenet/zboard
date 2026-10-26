@@ -302,11 +302,14 @@ def main():
     receipt = {"revision": args.revision, "sources": sources(root), "profiles": PROFILES,
                "parameters": PARAMETERS, "original_post_reserve_gate_bytes": GATE, "prepared": False}
     if not args.prepare and not args.execute:
-        print(json.dumps(receipt))
+        print(json.dumps({key: value for key, value in receipt.items() if key != "sources"}
+                         | {"source_files": len(receipt["sources"]),
+                            "source_manifest_sha256": hashlib.sha256(json.dumps(receipt["sources"], sort_keys=True).encode()).hexdigest()}))
         return
     for row in command(["ps", "-eo", "state=,comm="]).splitlines():
         state, name = row.split(None, 1)
-        if state != "Z" and (name in ["go", "compile", "link", "node", "pnpm", "mysql"] or name.endswith(".test")):
+        if state != "Z" and (name in ["go", "compile", "link", "node", "pnpm", "mysql"]
+                             or name.endswith((".test", ".tes", ".te", ".t"))):
             parser.error("another local build/test workload is active")
     parent = root / ".codex-local-artifacts/acceptance"
     parent.mkdir(parents=True, exist_ok=True)
