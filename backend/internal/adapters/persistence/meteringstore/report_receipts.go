@@ -2,6 +2,7 @@ package meteringstore
 
 import (
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/datastore"
@@ -30,9 +31,52 @@ func persistReportReceipts(tx *gorm.DB, records []model.TrafficRecord) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	// Never ignore a new fact's conflict. Its quota and pending projection must
-	// roll back if a prior committed identity already owns this report ID.
-	return tx.CreateInBatches(&rows, 100).Error
+	// A database-equivalent report later in this same MySQL batch may already
+	// have registered this very ledger row through the compatibility lookup.
+	// Reusing that identity is safe; a different ledger ID or endpoint is not.
+	inserted := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&rows, 100)
+	if inserted.Error != nil {
+		return inserted.Error
+	}
+	if datastore.IsSQLite(tx) && inserted.RowsAffected == int64(len(rows)) {
+		return nil
+	}
+	byNode := make(map[uint][]model.MeteringReportReceipt)
+	for _, row := range rows {
+		byNode[row.NodeID] = append(byNode[row.NodeID], row)
+	}
+	nodes := make([]uint, 0, len(byNode))
+	for node := range byNode {
+		nodes = append(nodes, node)
+	}
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i] < nodes[j] })
+	for _, node := range nodes {
+		expected := byNode[node]
+		for start := 0; start < len(expected); start += 200 {
+			chunk := expected[start:min(start+200, len(expected))]
+			ids := make([]string, 0, len(chunk))
+			for _, row := range chunk {
+				ids = append(ids, row.ReportID)
+			}
+			var stored []model.MeteringReportReceipt
+			// MySQL CLIENT_FOUND_ROWS can count a no-op duplicate as an affected row.
+			// Always recheck under a current read instead of trusting RowsAffected.
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("node_id = ? AND report_id IN ?", node, ids).Order("report_id").Find(&stored).Error; err != nil {
+				return err
+			}
+			actual := make(map[uint]model.MeteringReportReceipt, len(stored))
+			for _, row := range stored {
+				actual[row.TrafficRecordID] = row
+			}
+			for _, row := range chunk {
+				found, ok := actual[row.TrafficRecordID]
+				if !ok || found.NodeID != row.NodeID || found.ReportID != row.ReportID || found.ProtocolEndpointID != row.ProtocolEndpointID {
+					return ErrReportReceiptConflict
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // A bounded compatibility read establishes only an existing committed ledger

@@ -1747,3 +1747,5 @@ ae2aadb追补：原后端四命令通过、新CI六项通过、原约束容量�
 P4 已应用 0063 独立报告收据、三条原计量入口的同事务持久化、原生去重/窗口碰撞检查及旧记录索引兼容。首轮双库/迁移/复制/故障专项 12 顶层和架构 73 项通过；完整回归、并发和该批新头 CI 尚待最终结果。见 [实际边界与回退](core-convergence-metering-report-receipts.md)。收据随报告增长，完整账务保留、有限回放及总增长边界仍未完成，不启用生产归档。
 
 690e55c 的独立 worker、全部本地后端/MySQL、race 和自身六项 CI 已通过，[精确代码树回执](validation/2026-10-26-projection-worker.json)。P7 已实际用 7c 旧源码生成隔离 SQLite/MySQL 旧库，升级到 690e55c，重复迁移及新进程重放通过；[执行证据与保留失败](validation/2026-10-26-baseline-upgrade.json)。仓库附可审查的演练入口 `scripts/acceptance-upgrade`；修改后的容器端口前置核验仍待清洁新头实跑，不以私有探针结果冒充该入口运行。P6 自动伸缩/收益及整体 P7 外部、容量和完整故障验收尚未完成。
+
+收据后续：5fc 本地原 MySQL 三命令已结束，jobs/copy 通过，core 因两个原有等价身份用例失败；其自身 CI 则为 handler 900.018 秒超时、其他五项成功，分别保留。现已实际修复同事务兼容登记与批量插入冲突，并增加 CLIENT_FOUND_ROWS 下外来身份必须回滚的真实 MySQL 测试；迁移复用仅限单次调用，不缓存跨次检查。修复专项 15 顶层/22 事件及架构 73 项通过，完整验证与新头 CI 仍待实际执行，详见[收据修复和失败边界](core-convergence-metering-report-receipts.md)。整体 P4/P6/P7 未完成。

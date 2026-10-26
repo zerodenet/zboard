@@ -121,7 +121,8 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
-	if err := preflightReportReceiptSchema(db); err != nil {
+	var reportReceiptsPrepared bool
+	if err := inspectReportReceiptSchema(db, &reportReceiptsPrepared); err != nil {
 		return err
 	}
 	if err := preflightDiagnosticMaterialSchema(db); err != nil {
@@ -262,8 +263,16 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileDiagnosticMaterialSchema(db); err != nil {
 		return err
 	}
-	if err := reconcileReportReceiptSchema(db); err != nil {
-		return err
+	if !reportReceiptsPrepared {
+		if IsSQLite(db) {
+			if err := reconcileReportReceiptSchema(db); err != nil {
+				return err
+			}
+		} else if err := preflightReportReceiptSchema(db); err != nil {
+			// The MySQL migration loop installs 0063. Also recheck empty
+			// partial-table recovery after its source schema is restored.
+			return err
+		}
 	}
 	if err := reconcileTicketReferenceSchema(db); err != nil {
 		return err

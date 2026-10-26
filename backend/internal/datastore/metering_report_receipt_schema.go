@@ -26,20 +26,30 @@ func reportIdentityCollation(db *gorm.DB) (string, error) {
 		}
 		return rows[0].Coll, nil
 	}
-	columns, _, err := projectionColumns(db, "traffic_records")
-	if err != nil {
-		return "", err
+	var column struct {
+		Kind      string `gorm:"column:COLUMN_TYPE"`
+		Collation string `gorm:"column:COLLATION_NAME"`
 	}
-	c, ok := columns["report_id"]
-	if !ok || c.kind != "varchar(191)" || !strings.HasPrefix(c.collation, "utf8mb4_") || !regexp.MustCompile(`^[A-Za-z0-9_]+$`).MatchString(c.collation) {
+	result := db.Raw("SELECT COLUMN_TYPE, COLLATION_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?", "traffic_records", "report_id").Scan(&column)
+	if result.Error != nil {
+		return "", result.Error
+	}
+	if result.RowsAffected != 1 || column.Kind != "varchar(191)" || !strings.HasPrefix(column.Collation, "utf8mb4_") || !regexp.MustCompile(`^[A-Za-z0-9_]+$`).MatchString(column.Collation) {
 		return "", errors.New("unsupported source report identity collation")
 	}
-	return c.collation, nil
+	return column.Collation, nil
 }
 
 // An installed receipt table is accounting recovery authority. Never recreate
 // a recorded lost table or silently adopt changed keys/collations as empty.
 func preflightReportReceiptSchema(db *gorm.DB) error {
+	return inspectReportReceiptSchema(db, nil)
+}
+
+// prepared belongs to one RunMigrations invocation. Every invocation inspects
+// physical recovery authority again; no successful check survives a restart or
+// another migration call.
+func inspectReportReceiptSchema(db *gorm.DB, prepared *bool) error {
 	if db == nil {
 		return errors.New("database is required")
 	}
@@ -133,6 +143,9 @@ func preflightReportReceiptSchema(db *gorm.DB) error {
 		if count != 0 {
 			return errors.New("metering report identities must not depend on fact foreign keys")
 		}
+	}
+	if prepared != nil {
+		*prepared = applied > 0
 	}
 	return nil
 }
