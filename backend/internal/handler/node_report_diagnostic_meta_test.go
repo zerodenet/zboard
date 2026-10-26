@@ -24,6 +24,7 @@ func TestMySQLNodeReportDiagnosticSizeDoesNotBlockAccounting(t *testing.T) {
 
 func assertNodeReportDiagnosticSize(t *testing.T, f orderFixture) {
 	t.Helper()
+	enableDiagnosticCollectionFixture(t, f.h)
 	h, credential := accountingFixtureFromOrder(t, f)
 	if err := h.db.Model(&model.Node{}).Where("id = ?", credential.NodeID).Update("traffic_secret", "diagnostic-fixture-key").Error; err != nil {
 		t.Fatal(err)

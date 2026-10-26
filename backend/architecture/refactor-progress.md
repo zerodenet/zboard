@@ -1728,3 +1728,10 @@ ae2aadb追补：原后端四命令通过、新CI六项通过、原约束容量�
 原环境实际完成95f完整backend4/MySQL3、双库race3、前端、自己的六项CI及原条件混合容量；原失败保留，物理储备256MiB与512MiB预算预扣已准确区分。[原始命令/日志摘要及缓存维护](validation/2026-10-26-resume-baseline.json)。
 
 新0062及来源收据/受限退役/共享执行器已实际应用，保留原生证明、历史未分类、财务字段及时间；真实迁移、双连接、回滚、重放和未完成投影专项双库通过，Go及实际MySQL race/count3已全部通过、零skip、源码一致，OpenAPI通过；新提交整包/CI及原容量另待终态。初轮真实自动更新时间戳变化已修复且保留完整字段断言，早期夹具/ownership失败证据未丢。[行为、兼容、回退和剩余边界](core-convergence-legacy-diagnostic-retention.md)。这不是P4/P6/P7整体完成。
+
+
+### 2026-10-26：0062精确终态与按需诊断容量
+
+7eb自己的完整本地backend4/MySQL3、六项CI40272050339、原60秒1CPU/1GiB混合容量均实际通过，[完整回执](validation/2026-10-26-legacy-diagnostic-retention-final.json)。旧4a清单遗漏与MySQL900.016s超时、112/157 HTTP503均保留，实际reserve256MiB及预算区分准确。
+
+新采集开关/24h窗口/原因审计/128份正文限制已实装；当前读保护在不同用户/节点/物理连接的旧快照竞争中生效，去锁反例真实失败后恢复。复用31处严格业务准备，迁移等原路径及全部断言保持。整组MySQL10项、准备37项、Go/架构/完整后端、原范围前端及CGO0/OpenAPI已通过；本批双库race3也已实际通过零skip；[闭包与所有失败/命令](validation/2026-10-26-diagnostic-collection.json)。新精确头完整检查和自身CI仍待。[行为和限制](core-convergence-diagnostic-collection.md) · [准备成本和范围](core-convergence-mysql-business-preparation-extension.md)。不以局部完成关闭P4/P6/P7。

@@ -128,18 +128,37 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 			ProtocolMultiplierMilli: endpoint.MultiplierMilli,
 			UsedBytes:               used,
 			At:                      in.Timestamp,
-			Meta:                    boundedNodeReportMetadata(in.Meta),
+			Meta:                    initialDiagnosticMetadata(in.Meta),
 		}
 		if err := tx.Create(&record).Error; err != nil {
-			return err
-		}
-		if err := enqueueDiagnosticMaterial(tx, record, in.Meta, now); err != nil {
 			return err
 		}
 		if err := RecordUsageProjections(tx, []model.TrafficRecord{record}); err != nil {
 			return err
 		}
-		return s.Expire(tx, in.UserID, now)
+		if err := s.Expire(tx, in.UserID, now); err != nil {
+			return err
+		}
+		// All financial, foreign-key parent and revocation intent writes precede
+		// the optional capture mutex. No new business locks may follow it.
+		metadata, captured, err := collectDiagnosticMaterial(tx, in.Meta)
+		if err != nil {
+			return err
+		}
+		if metadata != record.Meta {
+			changed := tx.Model(&model.TrafficRecord{}).Where("id = ?", record.ID).UpdateColumns(map[string]any{"meta": metadata, "updated_at": record.UpdatedAt})
+			if changed.Error != nil {
+				return changed.Error
+			}
+			if changed.RowsAffected != 1 {
+				return ErrDiagnosticMaterial
+			}
+			record.Meta = metadata
+		}
+		if captured {
+			return enqueueDiagnosticMaterial(tx, record, in.Meta, time.Now().UTC())
+		}
+		return nil
 	})
 	if err != nil {
 		return metering.NodeReportResult{}, err

@@ -9698,7 +9698,7 @@ components:
           minimum: 0
         meta:
           type: string
-          description: Optional diagnostic text. Existing HTTP request limits still apply. Up to 65535 UTF-8 bytes are retained unchanged. Within those request limits larger diagnostics are replaced by a bounded diagnostic_meta_omitted v1 receipt with original byte length and SHA-256 of the decoded meta string is stored instead. It is not billing or deduplication evidence.
+          description: Optional legacy diagnostic text, separate from billing and deduplication evidence. Collection defaults off. An administrator may open a reasoned window lasting at most24 hours; at most128 proven unretired bodies are retained globally, each at most65535 UTF-8 bytes. Disabled, expired, invalid or capacity-limited collection stores a diagnostic_meta_omitted v1 length/SHA-256 receipt while financial accounting proceeds. Oversized bodies keep the text_byte_limit omission reason. Captured bodies are eligible for bounded retirement after at least7 days; historical unclassified and native accounting evidence are not reclassified. Existing HTTP request limits still apply.
 
     SubscriptionValueQuote:
       type: object

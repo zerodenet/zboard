@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/security"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func NormalizeSettingValue(config Setting, raw json.RawMessage) (string, error) {
@@ -55,6 +57,8 @@ func ValidateSettingValue(key, value string) error {
 		}
 	}
 	switch key {
+	case metering.DiagnosticCollectionKey:
+		return metering.ValidateDiagnosticCollection(value, time.Now().UTC())
 	case entitlements.RecoveryGraceDaysKey:
 		if _, err := entitlements.ParseRecoveryGraceDays(value); err != nil {
 			return err

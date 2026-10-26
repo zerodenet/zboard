@@ -24,6 +24,7 @@ func TestMySQLDiagnosticRetirementCompetingConnections(t *testing.T) {
 
 func assertDiagnosticRetirementConnections(t *testing.T, f orderFixture) {
 	t.Helper()
+	enableDiagnosticCollectionFixture(t, f.h)
 	h, c := accountingFixtureFromOrder(t, f)
 	if err := h.db.Model(&model.Node{}).Where("id = ?", c.NodeID).Update("traffic_secret", "diagnostic-connections-key").Error; err != nil {
 		t.Fatal(err)

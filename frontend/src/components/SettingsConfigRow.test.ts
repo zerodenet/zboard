@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { SystemConfig } from '../api/client'
 import SettingsConfigRow from './SettingsConfigRow.vue'
 import UiNumberInput from './UiNumberInput.vue'
+import { formatSystemConfigDraft, normalizeSystemConfigDraft } from '../utils/systemConfig'
 
 function config(overrides: Partial<SystemConfig>): SystemConfig {
   return {
@@ -152,6 +153,32 @@ it('allows an explicit zero-day recovery window with its server-declared bounds 
   expect(wrapper.emitted('update:draft')?.at(-1)).toEqual([0])
   await wrapper.setProps({ draft: 0 })
   expect(wrapper.emitted('save')).toBeUndefined()
+  await wrapper.findAll('button').find(button => button.text().includes('保存'))!.trigger('click')
+  expect(wrapper.emitted('save')).toHaveLength(1)
+})
+
+
+it('keeps diagnostic capture opt-in with explicit save, bounded JSON and actionable server validation', async () => {
+  const row = config({ config_key: 'traffic_report_diagnostics', name: '旧签名报告诊断采集', value: null, value_type: 'json', description: '默认关闭，最多24小时、128份正文，至少7天后退役；计量继续可靠接收。', input: { control: 'json', max_bytes: 1024 } })
+  expect(formatSystemConfigDraft(row)).toBe('null')
+  expect(normalizeSystemConfigDraft(row, 'null')).toEqual({ value: null })
+  const wrapper = mount(SettingsConfigRow, { props: { config: row, draft: 'null', dirty: true } })
+  expect(wrapper.text()).toContain('默认关闭')
+  expect(wrapper.text()).toContain('128份正文')
+  const policy = JSON.stringify({ until: '2026-10-26T12:00:00Z', reason: 'support case' })
+  await wrapper.get('textarea').setValue(policy)
+  expect(wrapper.emitted('update:draft')?.at(-1)).toEqual([policy])
+  expect(wrapper.emitted('save')).toBeUndefined()
+  expect(normalizeSystemConfigDraft(row, policy)).toEqual({ value: JSON.parse(policy) })
+  await wrapper.setProps({ draft: policy, error: '到期时间必须在未来24小时内。' })
+  expect(wrapper.get('textarea').element.value).toBe(policy)
+  expect(wrapper.get('[role="alert"]').text()).toContain('24小时')
+  expect(wrapper.get('textarea').attributes('aria-invalid')).toBe('true')
+  expect(normalizeSystemConfigDraft(row, JSON.stringify({ reason: '诊'.repeat(400) })).error).toContain('1024')
+  await wrapper.get('textarea').setValue('null')
+  expect(wrapper.emitted('update:draft')?.at(-1)).toEqual(['null'])
+  expect(wrapper.emitted('save')).toBeUndefined()
+  await wrapper.setProps({ draft: 'null', error: undefined })
   await wrapper.findAll('button').find(button => button.text().includes('保存'))!.trigger('click')
   expect(wrapper.emitted('save')).toHaveLength(1)
 })
