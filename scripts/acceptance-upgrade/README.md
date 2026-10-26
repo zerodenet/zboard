@@ -24,3 +24,5 @@ python3 scripts/acceptance-upgrade/run.py --checkout "$PWD" --revision "$(git re
 后台执行器和远端节点均未启动，发布队列中的未知结果是明确的故障夹具。持久撤权意图不代表远端已经撤权。这个演练不等于完整 P7、浏览器/真实支付/内核集成、原二进制回退或生产验收。已执行的精确版本、探针 SHA、早期控制器错误及未执行项见 [2026-10-26 记录](../../backend/architecture/validation/2026-10-26-baseline-upgrade.json)。
 
 新增备份恢复及旧报告身份路径必须以本次模板的实际执行结果为准；旧的 690e55c 私有探针成功不能作为此入口或新模板已经通过的证据。控制器不增加原 5 分钟单探针门槛，失败不自动重试。
+
+本次公开入口已实际执行：精确 `edfd36e7a5159a37fa2694628507366c20eb93a6` 使用 `--driver both --execute`，两库升级、进程重启核对及旧备份独立恢复全部通过。原备份摘要保持不变；探针、二进制、逐命令终态与未执行范围见 [公开入口验证记录](../../backend/architecture/validation/2026-10-26-public-baseline-upgrade.json)。该提交自己的 CI [40325636377](https://github.com/zerodenet/zboard/actions/runs/40325636377) 六项成功。

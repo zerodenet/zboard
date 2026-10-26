@@ -55,6 +55,7 @@ type Runtime struct {
 	done        sync.WaitGroup
 	start       sync.Once
 	wake        chan struct{}
+	workWake    chan struct{}
 	claimMu     sync.Mutex
 	draining    atomic.Bool
 	drainOnce   sync.Once
@@ -73,7 +74,7 @@ func NewRuntime(store SchedulingStore, worker string, paused func() bool, report
 // ordinary nor maintenance executions may bypass the startup gate.
 func NewGatedRuntime(store SchedulingStore, worker string, ready, paused func() bool, report func(error)) *Runtime {
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Runtime{store: store, worker: worker, paused: paused, ready: ready, report: report, entries: map[string]*registration{}, active: map[string]activeExecution{}, ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1), drainSignal: make(chan struct{}), drained: make(chan struct{})}
+	r := &Runtime{store: store, worker: worker, paused: paused, ready: ready, report: report, entries: map[string]*registration{}, active: map[string]activeExecution{}, ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1), workWake: make(chan struct{}), drainSignal: make(chan struct{}), drained: make(chan struct{})}
 
 	return r
 }
@@ -326,12 +327,23 @@ func (r *Runtime) loop() {
 				}
 				d.SuppressDispatch = !ready
 			}
-			err := r.store.Schedule(ctx, d)
+			var dispatched ScheduleDispatch
+			var err error
+			if store, ok := r.store.(DispatchSchedulingStore); ok {
+				dispatched, err = store.ScheduleDispatch(ctx, d)
+			} else {
+				err = r.store.Schedule(ctx, d)
+			}
 			cancel()
 			if err != nil {
 				e.nextCheck = now.Add(time.Second)
+			} else if dispatched.NextAt.After(now) && dispatched.NextAt.Before(e.nextCheck) {
+				e.nextCheck = dispatched.NextAt
 			}
 			e.scheduling.Unlock()
+			if err == nil && dispatched.Runnable {
+				r.wakeWorkers()
+			}
 			// A full queue leaves the due plan intact for the next check.
 			if !errors.Is(err, ErrBackpressure) {
 				r.error(err)
@@ -357,6 +369,23 @@ func (r *Runtime) wakeScheduler() {
 	}
 }
 
+func (r *Runtime) wakeWorkers() {
+	if r.draining.Load() {
+		return
+	}
+	// A committed ready intent invalidates an earlier empty probe. Keep the
+	// established Claim -> mu lock order; no database or scheduling lock is held.
+	r.claimMu.Lock()
+	r.emptyUntil = time.Time{}
+	r.claimMu.Unlock()
+	r.mu.Lock()
+	if r.workWake != nil {
+		close(r.workWake)
+	}
+	r.workWake = make(chan struct{})
+	r.mu.Unlock()
+}
+
 func (r *Runtime) reconcileSchedule(id string) {
 	r.mu.Lock()
 	entry := r.entries[id]
@@ -376,11 +405,16 @@ func (r *Runtime) work() {
 		if r.draining.Load() {
 			return
 		}
+		r.mu.Lock()
+		notification := r.workWake
+		r.mu.Unlock()
 		select {
 		case <-r.ctx.Done():
 			return
 		case <-r.drainSignal:
 			return
+		case <-notification:
+			wake.Reset(0)
 		case <-wake.C:
 			wake.Reset(time.Second)
 			if r.ready != nil && !r.ready() {

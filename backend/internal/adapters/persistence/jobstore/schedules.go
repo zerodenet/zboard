@@ -16,6 +16,18 @@ import (
 // intent for a planned slot. The next slot advances from planned time, never
 // from completion time, so execution duration cannot drift the cadence.
 func (s *Store) Schedule(ctx context.Context, d jobs.Definition) error {
+	return s.schedule(ctx, d, nil)
+}
+
+func (s *Store) ScheduleDispatch(ctx context.Context, d jobs.Definition) (jobs.ScheduleDispatch, error) {
+	var result jobs.ScheduleDispatch
+	if err := s.schedule(ctx, d, &result); err != nil {
+		return jobs.ScheduleDispatch{}, err
+	}
+	return result, nil
+}
+
+func (s *Store) schedule(ctx context.Context, d jobs.Definition, result *jobs.ScheduleDispatch) error {
 	if d.Resource == jobs.MaintenanceResource {
 		return jobs.ErrInvalid
 	}
@@ -48,6 +60,9 @@ func (s *Store) Schedule(ctx context.Context, d jobs.Definition) error {
 	}
 	if probe.RowsAffected == 1 && scheduleDefinitionMatches(current, d) {
 		if current.RunID == "" && (d.SuppressDispatch || current.NextAt.After(s.now())) {
+			if result != nil {
+				result.NextAt = current.NextAt
+			}
 			return nil
 		}
 		if current.RunID != "" {
@@ -56,6 +71,10 @@ func (s *Store) Schedule(ctx context.Context, d jobs.Definition) error {
 				return err
 			}
 			if r.State == string(jobs.Queued) || r.State == string(jobs.RetryWait) || r.State == string(jobs.Running) || r.State == string(jobs.CancelRequested) || (r.State == string(jobs.Unknown) && !d.ReconcileAfterLoss) {
+				if result != nil {
+					result.NextAt = current.NextAt
+					result.Runnable = !d.SuppressDispatch && !r.NotBefore.After(s.now()) && (r.State == string(jobs.Queued) || r.State == string(jobs.RetryWait))
+				}
 				return nil
 			}
 		}
@@ -93,6 +112,10 @@ func (s *Store) Schedule(ctx context.Context, d jobs.Definition) error {
 				run.State = string(jobs.Interrupted)
 			}
 			if run.State == string(jobs.Running) || run.State == string(jobs.CancelRequested) || run.State == string(jobs.Queued) || run.State == string(jobs.RetryWait) || run.State == string(jobs.Unknown) {
+				if result != nil {
+					result.NextAt = row.NextAt
+					result.Runnable = !d.SuppressDispatch && !run.NotBefore.After(now) && (run.State == string(jobs.Queued) || run.State == string(jobs.RetryWait))
+				}
 				return nil
 			}
 			row.State = run.State
@@ -126,6 +149,9 @@ func (s *Store) Schedule(ctx context.Context, d jobs.Definition) error {
 			row.NextAt = nextAt
 			row.MissedRuns += missed
 			if !dispatch {
+				if result != nil {
+					result.NextAt = row.NextAt
+				}
 				return tx.Save(&row).Error
 			}
 			row.Sequence++
@@ -140,6 +166,10 @@ func (s *Store) Schedule(ctx context.Context, d jobs.Definition) error {
 			}
 			row.RunID = run.ID
 			row.State = string(jobs.Queued)
+		}
+		if result != nil {
+			result.NextAt = row.NextAt
+			result.Runnable = row.RunID != "" && row.State == string(jobs.Queued) && !d.SuppressDispatch
 		}
 		return tx.Save(&row).Error
 	})

@@ -1,0 +1,272 @@
+{
+  "version": 1,
+  "phase": "P4 bounded report identity backfill",
+  "source_commit": "fb7c885b36b83c52626c14cbed8a5aaec2112750",
+  "backend_manifest_sha256": "6fdd29d6921c7303538c4dcfadf9f7620450e78f1b6c8a28e843c90647decbdf",
+  "backend_files": 2215,
+  "local_checks": {
+    "target": {
+      "source_unchanged": true,
+      "finished_utc": "2026-10-26T12:27:12.865619+00:00",
+      "commands": [
+        {
+          "name": "receipts",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "./internal/adapters/persistence/meteringstore",
+            "./internal/handler",
+            "./cmd/zboard",
+            "-run",
+            "MeteringReportReceipt|ReportReceiptBackfill|SQLiteCursorCohort|AccountingPreservesReportCollationIdempotency|ZeroWindowFallsBackForDatabaseEquivalentReportIDs",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 62.681,
+          "log_sha256": "092e07499fffa0c413001fdf837be130717fa5a5d5159f002befbaefa27a2f2c",
+          "events": {
+            "pass": 28
+          },
+          "top_events": {
+            "pass": 21
+          },
+          "failures": []
+        },
+        {
+          "name": "inventory",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./tools/capabilityinventory",
+            "./architecture",
+            "-count=1"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 1.089,
+          "log_sha256": "d5586700fa59f506fe26c9f3cc787d5ff519189b66ae96c01cc511bce0958cc4",
+          "events": {
+            "pass": 73
+          },
+          "top_events": {
+            "pass": 73
+          },
+          "failures": []
+        }
+      ]
+    },
+    "race": {
+      "source_unchanged": true,
+      "finished_utc": "2026-10-26T12:37:23.857262+00:00",
+      "commands": [
+        {
+          "name": "receipt-race",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "./internal/adapters/persistence/meteringstore",
+            "./internal/handler",
+            "./cmd/zboard",
+            "-run",
+            "MeteringReportReceipt|ReportReceiptBackfill|SQLiteCursorCohort|AccountingPreservesReportCollationIdempotency|ZeroWindowFallsBackForDatabaseEquivalentReportIDs",
+            "-count=3",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 475.356,
+          "log_sha256": "10163934fced2e5dc6fc1f6dcc2a51bc56b84bafd42503e3896f39c56db1151b",
+          "events": {
+            "pass": 84
+          },
+          "top_events": {
+            "pass": 63
+          },
+          "failures": []
+        }
+      ]
+    },
+    "backend": {
+      "source_unchanged": true,
+      "finished_utc": "2026-10-26T12:49:56.713847+00:00",
+      "commands": [
+        {
+          "name": "full-go",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./..."
+          ],
+          "exit_code": 0,
+          "wall_seconds": 656.505,
+          "log_sha256": "09ceb12846f2bb6bf756d828eb624acdc6b467a357be2e1a093f9a7cd279c66c",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "vet",
+          "command": [
+            "go",
+            "vet",
+            "-p",
+            "1",
+            "./..."
+          ],
+          "exit_code": 0,
+          "wall_seconds": 23.636,
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "build",
+          "command": [
+            "go",
+            "build",
+            "./cmd/zboard"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 2.326,
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "pure-sqlite",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "-run",
+            "SQLite",
+            "-count=1"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 69.883,
+          "log_sha256": "cd70331af4e8ff8da2fb3831740a1b8f0ddc06f5e61920f611c89f996e305159",
+          "events": {},
+          "top_events": {},
+          "failures": [],
+          "environment": {
+            "CGO_ENABLED": "0"
+          }
+        }
+      ]
+    },
+    "full-mysql": {
+      "source_unchanged": true,
+      "finished_utc": "2026-10-26T13:16:54.615915+00:00",
+      "commands": [
+        {
+          "name": "core",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "./internal/handler",
+            "./internal/adapters/persistence/networkstore",
+            "./internal/application",
+            "-run",
+            "MySQL",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 1197.821,
+          "log_sha256": "ace429e247807c499f59c56dfe1a199f331c78c7054b7ce1d7e0e81cbacedee3",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "jobs",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/jobstore",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 142.747,
+          "log_sha256": "e41d76f7e94289a9618171b3caacf45c7f71ff18b70bbad1fea745b3bb792af3",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "copy",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/platformstore",
+            "-run",
+            "MySQL",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 276.99,
+          "log_sha256": "0e2b3f8e7d34d2071deedf0a92bdd0112446d0f18ea75a289ee1d326a74d6875",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        }
+      ]
+    }
+  },
+  "ci": {
+    "run_id": 40322858846,
+    "url": "https://github.com/zerodenet/zboard/actions/runs/40322858846",
+    "conclusion": "success",
+    "jobs": [
+      "backend",
+      "frontend",
+      "mysql",
+      "contract",
+      "compose",
+      "zrs-compiler"
+    ]
+  },
+  "scope": [
+    "No new migration; physical preparation is revalidated before each bounded transaction",
+    "No financial fact, quota, nonce, rounding evidence or projection checkpoint rewritten",
+    "No archive or deletion enabled; an exhausted ID range is not archival permission",
+    "Per-package MySQL timeout retained at 15m"
+  ],
+  "not_complete": [
+    "P4 total data growth and safe archival",
+    "P6 autoscaling and measured benefit",
+    "P2 large current purchase source sets",
+    "P7 full fault, capacity and external acceptance"
+  ]
+}

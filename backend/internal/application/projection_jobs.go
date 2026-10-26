@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"time"
 )
 
@@ -21,7 +22,10 @@ func (s *Services) UsageProjectionJob() PeriodicJob {
 		Interval: time.Second, Timeout: 30 * time.Minute, Immediate: true,
 		ReconcileAfterLoss: true, RetryFailures: true,
 		Ready: func(ctx context.Context) (bool, error) { return s.UsageProjections.HasPending(ctx) },
-		Run:   func(ctx context.Context) error { _, err := s.UsageProjections.Drain(ctx, 200); return err },
+		Run: func(ctx context.Context) error {
+			n, err := s.UsageProjections.Drain(ctx, 200)
+			return projectionBatchOutcome(n, 200, err)
+		},
 	}
 }
 
@@ -33,7 +37,10 @@ func (s *Services) NodeObservationJob() PeriodicJob {
 		Interval: time.Second, Timeout: 30 * time.Minute, Immediate: true,
 		ReconcileAfterLoss: true, RetryFailures: true,
 		Ready: func(ctx context.Context) (bool, error) { return s.NodeObservations.HasPending(ctx) },
-		Run:   func(ctx context.Context) error { _, err := s.NodeObservations.Drain(ctx, 32, 8*1024*1024); return err },
+		Run: func(ctx context.Context) error {
+			n, err := s.NodeObservations.Drain(ctx, 32, 8*1024*1024)
+			return projectionBatchOutcome(n, 32, err)
+		},
 	}
 }
 
@@ -43,7 +50,22 @@ func (s *Services) NodeObservationMaterialRetentionJob() PeriodicJob {
 	return PeriodicJob{ID: "node_observation_material_retention", Name: "节点观察材料保留", Interval: time.Second, Timeout: time.Minute, Immediate: true, ReconcileAfterLoss: true, RetryFailures: true,
 		Ready: func(ctx context.Context) (bool, error) { return s.NodeObservationMaterialRetention.HasPending(ctx) },
 		Run: func(ctx context.Context) error {
-			_, err := s.NodeObservationMaterialRetention.Retire(ctx, 32, 8*1024*1024)
-			return err
+			result, err := s.NodeObservationMaterialRetention.Retire(ctx, 32, 8*1024*1024)
+			return projectionBatchOutcome(result.Inspected, 32, err)
 		}}
+}
+
+// A full committed batch yields through the existing durable scheduler. The
+// original Ready check still decides whether another claim is eligible; a final
+// exactly-full batch does not create an empty execution or a busy retry loop.
+// Partial/empty batches keep the original interval, and failures retain their
+// original identity instead of being masked as successful continuation.
+func projectionBatchOutcome(processed, limit int, err error) error {
+	if err != nil {
+		return err
+	}
+	if processed >= limit {
+		return jobs.ErrContinue
+	}
+	return nil
 }
