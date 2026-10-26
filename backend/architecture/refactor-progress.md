@@ -1735,3 +1735,8 @@ ae2aadb追补：原后端四命令通过、新CI六项通过、原约束容量�
 7eb自己的完整本地backend4/MySQL3、六项CI40272050339、原60秒1CPU/1GiB混合容量均实际通过，[完整回执](validation/2026-10-26-legacy-diagnostic-retention-final.json)。旧4a清单遗漏与MySQL900.016s超时、112/157 HTTP503均保留，实际reserve256MiB及预算区分准确。
 
 新采集开关/24h窗口/原因审计/128份正文限制已实装；当前读保护在不同用户/节点/物理连接的旧快照竞争中生效，去锁反例真实失败后恢复。复用31处严格业务准备，迁移等原路径及全部断言保持。整组MySQL10项、准备37项、Go/架构/完整后端、原范围前端及CGO0/OpenAPI已通过；本批双库race3也已实际通过零skip；[闭包与所有失败/命令](validation/2026-10-26-diagnostic-collection.json)。新精确头完整检查和自身CI仍待。[行为和限制](core-convergence-diagnostic-collection.md) · [准备成本和范围](core-convergence-mysql-business-preparation-extension.md)。不以局部完成关闭P4/P6/P7。
+
+
+## 2026-10-26：独立投影 worker 实施批次
+
+新增同一程序的 `-projection-worker` 实际入口；复用两类投影与公共 Runtime，不提高原预算，启动只读检查，退出仅本地 drain。双库及实际子进程专项通过；完整回归/并发/新头 CI 仍须以本批最终回执为准。详见 [行为、回退与未完成边界](core-convergence-projection-worker.md)。8ea 本身原三组 MySQL 已结束，原条件容量也已通过，见 [精确旧头最终验证](validation/2026-10-26-diagnostic-collection-final.json)。P6 自动伸缩与收益、P4 总增长/有限回放、P7 综合升级及外部验收尚未完成，不把该入口或旧头通过当整体完成。

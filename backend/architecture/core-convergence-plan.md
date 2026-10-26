@@ -1751,3 +1751,8 @@ Go6顶层122.609s、实际MySQL2顶层13.776s零skip通过；65535边界、65536
 同时31处纯业务准备复用原严格物理同构夹具，原迁移/数据库权限/缺失恢复/复制准备保持，198个原字面MySQL测试名不删，采集另新增2项。6份交替配对物理等价，准备中位数3.521/1.046s，但不宣称历史超时唯一根因或整包净收益。[准备范围/完整样本/回退](core-convergence-mysql-business-preparation-extension.md)。
 
 当前整组MySQL10顶层93.721s、准备/严格契约37顶层93.511s、Go纯能力12/SQLite应用16/架构归属73全通过零skip；完整Go478.998s、1969顶层通过，409条原环境skip事件按未配置MySQL/RealZero/助手等如实保留，不当作实库或外部验收。前端1177pass/原8skip及build通过，原6排除不增加；OpenAPI8.788s原282warning、CGO0SQLite9项37.294s通过。固定100批×32流的3样本原计量微基准每批118条GORM可观测SQL/164逻辑写行，SQL错0，只是无HTTP/持久缓冲接收的SQLite投影微基准，不是端到端或生产吞吐。Go/SQLite race16项各3遍389.958s及实际MySQL race47项各3遍587.606s随后均零skip通过；[完整闭包证据](validation/2026-10-26-diagnostic-collection.json)。新提交完整后端/原MySQL3/自身CI/容量另待，不借7eb认证后续源码。P4总增长/有限回放、P6/P7其余范围继续，整体未完成。
+
+
+## 2026-10-26：独立投影 worker 实施批次
+
+新增同一程序的 `-projection-worker` 实际入口；复用两类投影与公共 Runtime，不提高原预算，启动只读检查，退出仅本地 drain。双库及实际子进程专项通过；完整回归/并发/新头 CI 仍须以本批最终回执为准。详见 [行为、回退与未完成边界](core-convergence-projection-worker.md)。8ea 本身原三组 MySQL 已结束，原条件容量也已通过，见 [精确旧头最终验证](validation/2026-10-26-diagnostic-collection-final.json)。P6 自动伸缩与收益、P4 总增长/有限回放、P7 综合升级及外部验收尚未完成，不把该入口或旧头通过当整体完成。

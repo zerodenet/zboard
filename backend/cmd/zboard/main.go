@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/zeromicro/go-zero/core/conf"
@@ -26,10 +28,16 @@ import (
 var configFile = flag.String("f", "etc/zboard.yaml", "the config file")
 var migrateOnly = flag.Bool("migrate-only", false, "prepare the complete database schema and exit")
 var checkProjectionDatabaseOnly = flag.Bool("check-projection-database", false, "read-only validation of prepared projection database dependencies and exit; does not start a worker")
+var projectionWorker = flag.Bool("projection-worker", false, "run prepared usage and node observation projections without HTTP, plugins or a file spool")
+var projectionWorkerDrainTimeout = flag.Duration("projection-worker-drain-timeout", 30*time.Second, "projection worker graceful drain budget (1s–5m)")
+
 var prepareHourlyRollback = flag.Bool("prepare-hourly-rollback", false, "after stopping all writers and draining usage projections, prepare hourly statistics for a pre-0054 binary and exit")
 
 func main() {
 	flag.Parse()
+	if err := validateProjectionWorkerMode(*projectionWorker, *migrateOnly, *prepareHourlyRollback, *checkProjectionDatabaseOnly, *projectionWorkerDrainTimeout); err != nil {
+		log.Fatal(err)
+	}
 	if err := validateDatabaseModes(*migrateOnly, *prepareHourlyRollback, *checkProjectionDatabaseOnly); err != nil {
 		log.Fatal(err)
 	}
@@ -60,6 +68,16 @@ func main() {
 			log.Fatalf("projection database check failed: %v", err)
 		}
 		log.Printf("projection database dependencies verified (read-only); no worker started")
+		return
+	}
+	if *projectionWorker {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		log.Printf("starting projection worker (prepared database; no HTTP, plugins or spool)")
+		if err := runProjectionWorker(ctx, c, *projectionWorkerDrainTimeout); err != nil {
+			log.Fatalf("projection worker stopped: %v", err)
+		}
+		log.Printf("projection worker drained")
 		return
 	}
 	credentialCipher, err := security.NewCredentialCipher(c.CredentialEncryptionKey)
