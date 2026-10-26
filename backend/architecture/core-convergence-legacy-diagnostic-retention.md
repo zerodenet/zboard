@@ -31,3 +31,5 @@ P4增量，基于已完整验收的95fb16cb3f01bb4fb48f1d803d70ff91592c6927。�
 目前最终Go/SQLite18顶层、inventory9顶层、实际MySQL8顶层和CGO0SQLite4顶层均零skip通过；双物理连接、真实原生raw9/billed15舍入证明、正文NUL/多字节、回滚、归档后重放、投影、迁移/复制均由行为测试覆盖。最终Go/SQLite race/count3为54次顶层执行（18项各3次）、658.733s，实际MySQL race/count3为24次（8项各3次）、234.823s，全部通过且零skip；源码哈希431f31085763a86c0ecddd5055277a55ae57104ffaef6949350f2e3ebfd3ee42前后一致。OpenAPI Redocly1.34.3为12.363s通过，保留原282warning。完整新提交检查和自己的CI另待实际回执，不借95f六绿。[全部原命令、源码、失败与日志摘要](validation/2026-10-26-legacy-diagnostic-retention.json)。
 
 本批不是完整P4：默认按需管理员开关、历史未分类正文、原生财务材料/游标、永久身份/header增长、有限回放和全局容量上限仍未完成。无独立worker/伸缩收益、插件繁忙、全协议、真实浏览器、外部支付/券或生产验收承诺。
+
+完整首提交4a04db1的本地full-go实际471.600s失败，原迁移清单测试的up/down显式列表遗漏0062；handler及其他包通过，但整轮不能计通过，原控制器未执行后续vet/build/CGO0。只补清单两条确切0062名称，全部原顺序/全等/基线内容检查保留；原失败用例专项6.083s通过。自身CI40271277686的backend也实际failure，其他4项已成功、MySQL仍在途，修复后的新头整轮/CI另验；无运行时代码或SQL变化。

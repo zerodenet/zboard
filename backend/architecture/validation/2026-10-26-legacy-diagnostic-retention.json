@@ -686,7 +686,8 @@
   "failure_history": [
     "Initial target18 passed; inventory failed because exact new model and worker lifecycle owners were missing. Explicit owners and unknown-neighbor boundary tests added.",
     "First MySQL: eight migration fixture FK failures and real ON UPDATE CURRENT_TIMESTAMP chronology mutation. Explicit locked original updated_at now preserved; field assertions retained.",
-    "Second MySQL: migration fixture omitted required node.region. Replaced with valid typed parent models; original FK/constraints unchanged."
+    "Second MySQL: migration fixture omitted required node.region. Replaced with valid typed parent models; original FK/constraints unchanged.",
+    "Exact4a04db1 full-go exit1/471.600s: explicit original up/down test inventories omitted0062. Two exact list entries added, original equality/order/baseline assertions retained; no runtime/SQL change. Targeted original failing test exit0/6.083s. Full corrected-head checks pending."
   ],
   "verified_scope": [
     "Trusted new legacy writer provenance and core accounting/diagnostic classification atomicity",
@@ -741,5 +742,55 @@
     "backend/tools/capabilityinventory/main.go": "2fe305ed03f8ef7da254804266fb752fd55a44ca35ffb4c27849e3accbb6e294",
     "backend/tools/capabilityinventory/main_test.go": "496425a13f3f2b0853814716976c9e7e6003d8c7b48c81b892b1ab82b8871a5d"
   },
-  "full_source_manifest_receipt": "private recovery-validation/oct26-diagnostic-retention-candidate/go-final3.json (hash in stages)"
+  "full_source_manifest_receipt": "private recovery-validation/oct26-diagnostic-retention-candidate/go-final3.json (hash in stages)",
+  "first_exact_commit_full_backend_failure": {
+    "source": "4a04db1d3b1f93afed64b356a3ab8e06cae3e33f",
+    "checkout": "/workspace/zboard",
+    "phase": "backend",
+    "started_utc": "2026-10-26T04:52:26.432675+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "1"
+    },
+    "checks": [
+      {
+        "name": "full-go",
+        "command": "go test -p 1 ./...",
+        "environment_additions": {},
+        "exit_code": 1,
+        "wall_seconds": 471.6,
+        "log": "full-go-4a04db1-final.log"
+      }
+    ],
+    "pending": [
+      "vet",
+      "build",
+      "pure-go-sqlite"
+    ],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-26T05:00:18.032759+00:00",
+    "log_sha256": "a231c61559f5e7147690d5ffdc644a5265d231010d7c83dfd1d2eb957bab9d63",
+    "failure": "TestMigrationInventoryRetainsBaselineAndAddsPlugins exact inventory missing0062 up/down",
+    "handler_pass_seconds": "208.464s"
+  },
+  "inventory_correction": {
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-p",
+      "1",
+      "./internal/datastore",
+      "-run",
+      "^TestMigrationInventoryRetainsBaselineAndAddsPlugins$",
+      "-count=1"
+    ],
+    "exit_code": 0,
+    "wall_seconds": 6.083,
+    "finished_utc": "2026-10-26T05:00:38.850094+00:00",
+    "log": "inventory-fix-target.log",
+    "log_sha256": "581090c975dc166e7d5d040bee922c154e481fd403cea8fa16543ccf64b5ea3b",
+    "runtime_and_sql_changes": false,
+    "test_change": "Only append exact0062 up/down entries; all existing order/equality/baseline assertions retained"
+  }
 }
