@@ -174,7 +174,7 @@ func TestConsumptionRefundRejectsActiveAndUnknownSources(t *testing.T) {
 	assertConsumptionRefundRejections(t, newOrderFixture(t))
 }
 func TestMySQLConsumptionRefundRejectsActiveAndUnknownSources(t *testing.T) {
-	assertConsumptionRefundRejections(t, newMySQLOrderFixture(t))
+	assertConsumptionRefundRejections(t, newMySQLBusinessOrderFixture(t))
 }
 func assertConsumptionRefundRejections(t *testing.T, f orderFixture) {
 	order := refundPaidOrder(t, f, 0)

@@ -20,7 +20,7 @@ func TestTrafficSummaryReadsLiveAccountingProjection(t *testing.T) {
 }
 
 func TestMySQLTrafficSummaryReadsLiveAccountingProjection(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	checkTrafficSummaryProjection(t, h, credential)
 }
 

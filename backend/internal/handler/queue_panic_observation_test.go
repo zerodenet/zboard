@@ -38,7 +38,7 @@ func TestSQLitePublicationPanicRetainsLeaseAndFinishesObservation(t *testing.T) 
 }
 
 func TestMySQLPublicationPanicRetainsLeaseAndFinishesObservation(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	if err := h.db.Create(&model.Node{ID: 1, Name: "panic-publish", Config: "{}"}).Error; err != nil {
 		t.Fatal(err)
 	}

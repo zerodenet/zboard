@@ -18,7 +18,7 @@ func TestEndpointUsageBatchesKeepPerKeyDeltasAndRollback(t *testing.T) {
 }
 
 func TestMySQLEndpointUsageBatchesKeepPerKeyDeltasAndRollback(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	checkEndpointUsageBatches(t, h.db)
 }
 

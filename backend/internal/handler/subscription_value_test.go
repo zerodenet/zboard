@@ -206,7 +206,7 @@ func TestSubscriptionTerminationFailuresAndConcurrency(t *testing.T) {
 	assertTerminationFailures(t, newOrderFixture(t))
 }
 func TestMySQLSubscriptionTerminationFailuresAndConcurrency(t *testing.T) {
-	assertTerminationFailures(t, newMySQLOrderFixture(t))
+	assertTerminationFailures(t, newMySQLBusinessOrderFixture(t))
 }
 func assertTerminationFailures(t *testing.T, f orderFixture) {
 	attachOrderPublishEndpoint(t, f)
@@ -404,7 +404,7 @@ func TestSubscriptionTerminationRacesVerifiedRenewal(t *testing.T) {
 	assertTerminationRenewalRace(t, newOrderFixture(t))
 }
 func TestMySQLSubscriptionTerminationRacesVerifiedRenewal(t *testing.T) {
-	assertTerminationRenewalRace(t, newMySQLOrderFixture(t))
+	assertTerminationRenewalRace(t, newMySQLBusinessOrderFixture(t))
 }
 func assertTerminationRenewalRace(t *testing.T, f orderFixture) {
 	if err := f.h.db.Model(&f.planRecord).Updates(map[string]any{"traffic_bytes": 100, "reset_policy": 2}).Error; err != nil {
@@ -474,7 +474,7 @@ func assertTerminationRenewalRace(t *testing.T, f orderFixture) {
 }
 
 func TestMySQLSubscriptionTerminationFencesCheckoutInsertionAtReadCommitted(t *testing.T) {
-	f := newMySQLOrderFixture(t)
+	f := newMySQLBusinessOrderFixture(t)
 	if err := f.h.db.Model(&f.planRecord).Updates(map[string]any{"traffic_bytes": 100, "reset_policy": 2}).Error; err != nil {
 		t.Fatal(err)
 	}

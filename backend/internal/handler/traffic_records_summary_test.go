@@ -25,7 +25,7 @@ func TestTrafficRecordsSummaryKeepsFullEvidenceAndRawPageContract(t *testing.T) 
 }
 
 func TestMySQLTrafficRecordsSummaryKeepsFullEvidenceAndRawPageContract(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	checkTrafficRecordsSummary(t, h)
 }
 

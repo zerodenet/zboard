@@ -21,7 +21,7 @@ func TestSQLitePeriodicContinuationPreservesExecutionOutcome(t *testing.T) {
 }
 
 func TestMySQLPeriodicContinuationPreservesExecutionOutcome(t *testing.T) {
-	assertPeriodicContinuationPreservesExecutionOutcome(t, newMySQLOrderFixture(t).h)
+	assertPeriodicContinuationPreservesExecutionOutcome(t, newMySQLBusinessOrderFixture(t).h)
 }
 
 func assertPeriodicContinuationPreservesExecutionOutcome(t *testing.T, h *handlers) {

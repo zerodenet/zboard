@@ -24,7 +24,7 @@ func TestObservationIntentControlledRetry(t *testing.T) {
 	assertObservationControlledRetry(t, h)
 }
 func TestMySQLObservationIntentControlledRetry(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	assertObservationControlledRetry(t, h)
 }
 func assertObservationControlledRetry(t *testing.T, h *handlers) {

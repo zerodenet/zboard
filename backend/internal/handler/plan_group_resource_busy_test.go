@@ -57,7 +57,7 @@ func planGroupFinancialSnapshot(t *testing.T, db *gorm.DB) planGroupFinancialSta
 func TestMySQLPlanGroupResourceBusyKeepsPaymentIntentAndRetriesExactlyOnce(t *testing.T) {
 	for _, channel := range []string{"wallet", "payment_fact"} {
 		t.Run(channel, func(t *testing.T) {
-			base := newMySQLOrderFixture(t)
+			base := newMySQLBusinessOrderFixture(t)
 			f := newPlanGroupFixture(t, base)
 			*f.at = time.Now().UTC()
 			admin := planQuotaRaceAdmin(t, f.fullReplacementFixture)
@@ -167,7 +167,7 @@ func TestMySQLPlanGroupResourceBusyKeepsPaymentIntentAndRetriesExactlyOnce(t *te
 }
 
 func TestMySQLPlanGroupResourceBusyDoesNotAdvanceBufferedCheckpoint(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	if err := h.db.Model(&model.Subscription{}).Where("id = ?", credential.SubscriptionID).Updates(map[string]any{"flow_total": 30, "reset_quota_bytes": 30}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestMySQLPlanGroupResourceBusyDoesNotAdvanceBufferedCheckpoint(t *testing.T
 }
 
 func TestMySQLPlanGroupResourceBusyOnCredentialNodeForeignKey(t *testing.T) {
-	base := newMySQLOrderFixture(t)
+	base := newMySQLBusinessOrderFixture(t)
 	f := newFullReplacementFixture(t, base, false, 0, 0)
 	pending, err := f.orders.Create(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: base.skuRecord.ID, IdempotencyKey: "busy-node-fk"})
 	if err != nil {

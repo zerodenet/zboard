@@ -16,7 +16,7 @@ func TestClosedEpochLateTrafficDoesNotPolluteCurrentScheduledReset(t *testing.T)
 	assertEpochReset(t, newOrderFixture(t))
 }
 func TestMySQLClosedEpochLateTrafficDoesNotPolluteCurrentScheduledReset(t *testing.T) {
-	assertEpochReset(t, newMySQLOrderFixture(t))
+	assertEpochReset(t, newMySQLBusinessOrderFixture(t))
 }
 func assertEpochReset(t *testing.T, base orderFixture) {
 	attachOrderPublishEndpoint(t, base)

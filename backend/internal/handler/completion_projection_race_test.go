@@ -18,13 +18,13 @@ func TestCompletionResumesPrincipalProjectionRaceBeforeAccounting(t *testing.T) 
 	assertCompletionProjectionRace(t, newOrderFixture(t), false)
 }
 func TestMySQLCompletionResumesPrincipalProjectionRaceBeforeAccounting(t *testing.T) {
-	assertCompletionProjectionRace(t, newMySQLOrderFixture(t), false)
+	assertCompletionProjectionRace(t, newMySQLBusinessOrderFixture(t), false)
 }
 func TestCompletionResumesInvalidationDuringPreparation(t *testing.T) {
 	assertCompletionProjectionRace(t, newOrderFixture(t), true)
 }
 func TestMySQLCompletionResumesInvalidationDuringPreparation(t *testing.T) {
-	assertCompletionProjectionRace(t, newMySQLOrderFixture(t), true)
+	assertCompletionProjectionRace(t, newMySQLBusinessOrderFixture(t), true)
 }
 func assertCompletionProjectionRace(t *testing.T, f orderFixture, before bool) {
 	h, credential := accountingFixtureFromOrder(t, f)

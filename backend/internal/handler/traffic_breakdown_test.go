@@ -111,7 +111,7 @@ func TestTrafficBreakdownRetainsMissingAndUnattributedObjectsAndExactEdges(t *te
 }
 
 func TestMySQLTrafficBreakdownReadsCommittedAccountingInEveryDimension(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	if err := h.projectZeroNodeEvents(context.Background(), accountingBenchmarkEvents(credential, 0, 16)); err != nil {
 		t.Fatal(err)
 	}

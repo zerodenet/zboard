@@ -90,7 +90,7 @@ func TestPaymentFactRollsBackAndReplaysWithDurablePublication(t *testing.T) {
 	assertPaymentFactRecovery(t, newOrderFixture(t), false)
 }
 func TestMySQLPaymentFactRollsBackAndReplaysWithDurablePublication(t *testing.T) {
-	assertPaymentFactRecovery(t, newMySQLOrderFixture(t), true)
+	assertPaymentFactRecovery(t, newMySQLBusinessOrderFixture(t), true)
 }
 func assertPaymentFactRecovery(t *testing.T, f orderFixture, mysql bool) {
 	t.Helper()
@@ -173,7 +173,7 @@ func assertPaymentFactRecovery(t *testing.T, f orderFixture, mysql bool) {
 }
 
 func TestMySQLPaymentFactRacesAdministratorConfirmation(t *testing.T) {
-	f := newMySQLOrderFixture(t)
+	f := newMySQLBusinessOrderFixture(t)
 	endpoint := attachOrderPublishEndpoint(t, f)
 	order := f.create(t, 0)
 	issued, err := f.h.services.Integrations().Issue(t.Context(), 1, identity.IntegrationIssue{Name: "race", Scopes: []string{"commerce.payments.record"}, ExpiresAt: time.Now().UTC().Add(time.Hour)})

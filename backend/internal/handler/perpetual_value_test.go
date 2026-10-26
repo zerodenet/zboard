@@ -113,7 +113,7 @@ func TestPerpetualValueTrustedHistoricalSnapshotCompatibility(t *testing.T) {
 }
 
 func TestMySQLPerpetualValueTrustedHistoricalSnapshotCompatibility(t *testing.T) {
-	assertPerpetualValueHistoricalSnapshot(t, newMySQLOrderFixture(t))
+	assertPerpetualValueHistoricalSnapshot(t, newMySQLBusinessOrderFixture(t))
 }
 
 func assertPerpetualValueHistoricalSnapshot(t *testing.T, base orderFixture) {
@@ -151,7 +151,7 @@ func TestPerpetualValueFullReplacementStartsCompleteNewTerm(t *testing.T) {
 
 func TestMySQLPerpetualValueFullReplacementStartsCompleteNewTerm(t *testing.T) {
 	for _, unit := range []string{"month", "once"} {
-		t.Run(unit, func(t *testing.T) { assertPerpetualValueFullReplacement(t, newMySQLOrderFixture(t), unit) })
+		t.Run(unit, func(t *testing.T) { assertPerpetualValueFullReplacement(t, newMySQLBusinessOrderFixture(t), unit) })
 	}
 }
 

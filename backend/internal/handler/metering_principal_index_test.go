@@ -135,7 +135,7 @@ func TestLegacyTrafficReportCannotMixIndependentSubscriptions(t *testing.T) {
 	assertLegacyTrafficOwnership(t, newOrderFixture(t))
 }
 func TestMySQLLegacyTrafficReportCannotMixIndependentSubscriptions(t *testing.T) {
-	assertLegacyTrafficOwnership(t, newMySQLOrderFixture(t))
+	assertLegacyTrafficOwnership(t, newMySQLBusinessOrderFixture(t))
 }
 func assertLegacyTrafficOwnership(t *testing.T, f orderFixture) {
 	h, first := accountingFixtureFromOrder(t, f)

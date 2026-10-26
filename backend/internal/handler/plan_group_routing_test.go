@@ -19,7 +19,7 @@ func TestPlanGroupNodeWidePublicationRetainsEveryForwardRoute(t *testing.T) {
 	assertPlanGroupNodeWideRoutes(t, newOrderFixture(t))
 }
 func TestMySQLPlanGroupNodeWidePublicationRetainsEveryForwardRoute(t *testing.T) {
-	assertPlanGroupNodeWideRoutes(t, newMySQLOrderFixture(t))
+	assertPlanGroupNodeWideRoutes(t, newMySQLBusinessOrderFixture(t))
 }
 func assertPlanGroupNodeWideRoutes(t *testing.T, base orderFixture) {
 	t.Helper()
@@ -58,7 +58,7 @@ func assertPlanGroupNodeWideRoutes(t *testing.T, base orderFixture) {
 // removal retains its credential/parent locks. Complete revocation and routing
 // before releasing those locks; the waiting edit must not revive removed scope.
 func TestMySQLPlanGroupRemovalRacesEndpointMutationWithoutReverseLocks(t *testing.T) {
-	base := newMySQLOrderFixture(t)
+	base := newMySQLBusinessOrderFixture(t)
 	f := newPlanGroupFixture(t, base)
 	admin := planQuotaRaceAdmin(t, f.fullReplacementFixture)
 	service := network.ProtocolEndpointMutations{Repository: networkstore.ProtocolEndpointMutations{DB: f.db}, Cipher: base.h.credentialCipher, NewRuntimeKey: uuid.NewString}
@@ -158,7 +158,7 @@ func TestMySQLPlanGroupSharedEndpointMutationRacesRecoveryPayment(t *testing.T) 
 	assertPlanGroupSharedEndpointPayment(t, true)
 }
 func assertPlanGroupSharedEndpointPayment(t *testing.T, recovering bool) {
-	base := newMySQLOrderFixture(t)
+	base := newMySQLBusinessOrderFixture(t)
 	f := newPlanGroupFixture(t, base)
 	admin := planQuotaRaceAdmin(t, f.fullReplacementFixture)
 	request := commerce.OrderCreateRequest{PlanSKUID: f.target, TargetSubscriptionID: f.subscription, IdempotencyKey: "replacement-vs-endpoint-placement"}

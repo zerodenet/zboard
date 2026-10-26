@@ -26,7 +26,7 @@ func TestMySQLObservationIntentOperationsHTTP(t *testing.T) {
 	if os.Getenv("ZBOARD_TEST_MYSQL_DSN") == "" {
 		t.Skip("actual MySQL DSN required")
 	}
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	observationIntentOperationsHTTP(t, h)
 }
 func observationIntentOperationsHTTP(t *testing.T, h *handlers) {

@@ -20,7 +20,7 @@ func TestRetirementRetainsLateMeteringIdentityAndReleasesReservations(t *testing
 	assertRetirementMetering(t, newOrderFixture(t))
 }
 func TestMySQLRetirementRetainsLateMeteringIdentityAndReleasesReservations(t *testing.T) {
-	assertRetirementMetering(t, newMySQLOrderFixture(t))
+	assertRetirementMetering(t, newMySQLBusinessOrderFixture(t))
 }
 func assertRetirementMetering(t *testing.T, f orderFixture) {
 	priceForFunding(t, f, 1000)

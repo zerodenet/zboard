@@ -23,7 +23,7 @@ func TestSQLiteTicketReferencesEnforceOwnerAndCommitWithConversation(t *testing.
 }
 
 func TestMySQLTicketReferenceOrderWaitDoesNotHoldOwner(t *testing.T) {
-	f := newMySQLOrderFixture(t)
+	f := newMySQLBusinessOrderFixture(t)
 	order := f.create(t, 0)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
@@ -97,7 +97,7 @@ func TestMySQLTicketReferenceOrderWaitDoesNotHoldOwner(t *testing.T) {
 }
 
 func TestMySQLTicketReferencesEnforceOwnerAndCommitWithConversation(t *testing.T) {
-	assertTicketReferencesEnforceOwnerAndCommitWithConversation(t, newMySQLOrderFixture(t))
+	assertTicketReferencesEnforceOwnerAndCommitWithConversation(t, newMySQLBusinessOrderFixture(t))
 }
 
 func assertTicketReferencesEnforceOwnerAndCommitWithConversation(t *testing.T, f orderFixture) {
