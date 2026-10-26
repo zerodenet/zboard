@@ -22,6 +22,9 @@ func CopyApplicationData(source, target *gorm.DB) error {
 	}
 	// Reject recorded identity loss even when the source nodes table itself
 	// is absent and the legacy table loop would otherwise skip it.
+	if err := preflightReportReceiptSchema(source); err != nil {
+		return err
+	}
 	if err := preflightDiagnosticMaterialSchema(source); err != nil {
 		return err
 	}

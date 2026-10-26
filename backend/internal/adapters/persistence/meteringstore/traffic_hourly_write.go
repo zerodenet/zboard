@@ -19,10 +19,14 @@ type hourlyUsageKey struct {
 }
 
 // RecordUsageProjections runs only after successful ledger insertion, in the
-// same accounting transaction. Daily and hourly charts consume durable pending
-// intents in a separate transaction, after the 0054 trigger/writer cutover.
+// same authority transaction. Durable report identity and projection recovery
+// intents commit with quota; chart deltas are applied in a later transaction.
+// A caller must propagate any failure to its enclosing authority transaction.
 func RecordUsageProjections(tx *gorm.DB, records []model.TrafficRecord) error {
-	return EnqueueUsageProjections(tx, records)
+	if err := EnqueueUsageProjections(tx, records); err != nil {
+		return err
+	}
+	return persistReportReceipts(tx, records)
 }
 
 func addTrafficHourly(tx *gorm.DB, records []model.TrafficRecord) error {

@@ -26,7 +26,7 @@ func usageProjectionDB(t testing.TB, path string) *gorm.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = pool.Close() })
-	if err := db.AutoMigrate(&model.TrafficRecord{}, &model.ProtocolEndpointUsageDaily{}, &model.MeteringUsageProjectionPending{}); err != nil {
+	if err := db.AutoMigrate(&model.TrafficRecord{}, &model.MeteringReportReceipt{}, &model.ProtocolEndpointUsageDaily{}, &model.MeteringUsageProjectionPending{}); err != nil {
 		t.Fatal(err)
 	}
 	if !db.Migrator().HasColumn("traffic_records", "entitlement_epoch") {

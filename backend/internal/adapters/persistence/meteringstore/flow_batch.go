@@ -97,9 +97,8 @@ func (s *flowBatch) loadReports(tx *gorm.DB, events []metering.FlowSample) error
 	for _, nodeID := range nodes {
 		ids := byNode[nodeID]
 		for start := 0; start < len(ids); start += 200 {
-			var records []model.TrafficRecord
-			if err := tx.Select("node_id", "report_id", "protocol_endpoint_id").
-				Where("node_id = ? AND report_id IN ?", nodeID, ids[start:min(start+200, len(ids))]).Find(&records).Error; err != nil {
+			records, err := readReportReceipts(tx, nodeID, ids[start:min(start+200, len(ids))])
+			if err != nil {
 				return err
 			}
 			for _, record := range records {
@@ -119,9 +118,11 @@ func (s *flowBatch) recordedEndpoint(tx *gorm.DB, key zeroFlowReportKey) (uint, 
 	}
 	// MySQL report IDs follow the column collation (including case/accent and
 	// padding rules), not Go string equality. Let the database resolve identity.
-	var record model.TrafficRecord
-	read := tx.Select("protocol_endpoint_id").Where("node_id = ? AND report_id = ?", key.nodeID, key.reportID).Limit(1).Find(&record)
-	return record.ProtocolEndpointID, read.RowsAffected != 0, read.Error
+	records, err := readReportReceipts(tx, key.nodeID, []string{key.reportID})
+	if err != nil || len(records) == 0 {
+		return 0, false, err
+	}
+	return records[0].ProtocolEndpointID, true, nil
 }
 
 func (s *flowBatch) appendRecord(tx *gorm.DB, record model.TrafficRecord) error {

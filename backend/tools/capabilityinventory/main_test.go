@@ -181,6 +181,8 @@ type User struct{}
 type PaymentEvent struct{}
 type TrafficDiagnosticMaterial struct{}
 type TrafficDiagnosticMaterialOther struct{}
+type MeteringReportReceipt struct{}
+type MeteringReportReceiptOther struct{}
 type InventedFutureModel struct{}
 `
 	if err := os.WriteFile(filepath.Join(dir, "models.go"), []byte(source), 0600); err != nil {
@@ -201,6 +203,9 @@ type InventedFutureModel struct{}
 	}
 	if owners["InventedFutureModel"] != "unassigned" {
 		t.Fatalf("new model was silently assigned: %v", owners)
+	}
+	if owners["MeteringReportReceipt"] != "metering" || owners["MeteringReportReceiptOther"] != "unassigned" {
+		t.Fatal("report identity owner must be exact")
 	}
 	if owners["TrafficDiagnosticMaterial"] != "metering" || owners["TrafficDiagnosticMaterialOther"] != "unassigned" {
 		t.Fatalf("diagnostic provenance ownership must remain exact: %v", owners)

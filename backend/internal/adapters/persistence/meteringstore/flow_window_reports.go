@@ -39,11 +39,11 @@ func validateFlowWindowReports(tx *gorm.DB, samples []metering.FlowSample) error
 		ids := byNode[node]
 		intersects := false
 		for start := 0; start < len(ids); start += 200 {
-			var count int64
-			if err := tx.Model(&model.TrafficRecord{}).Where("node_id = ? AND report_id IN ?", node, ids[start:min(start+200, len(ids))]).Count(&count).Error; err != nil {
+			receipts, err := readReportReceipts(tx, node, ids[start:min(start+200, len(ids))])
+			if err != nil {
 				return err
 			}
-			if count > 0 {
+			if len(receipts) > 0 {
 				intersects = true
 			}
 		}
@@ -66,7 +66,7 @@ func validateFlowWindowReports(tx *gorm.DB, samples []metering.FlowSample) error
 			// The table column lends its collation to the UNION result, even when
 			// there are no existing rows. Go equality cannot emulate this contract.
 			var query strings.Builder
-			query.WriteString("SELECT COUNT(DISTINCT report_id) FROM (SELECT report_id FROM traffic_records WHERE 1 = 0")
+			query.WriteString("SELECT COUNT(DISTINCT report_id) FROM (SELECT report_id FROM metering_report_receipts WHERE 1 = 0")
 			args := make([]any, 0, len(ids))
 			for _, id := range ids {
 				query.WriteString(" UNION ALL SELECT ?")

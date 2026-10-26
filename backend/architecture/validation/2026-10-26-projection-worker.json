@@ -1,0 +1,272 @@
+{
+  "source": "690e55c96214e75cf34e02582bb7d2f4fc998d85",
+  "scope": "Optional standalone projections; not autoscaling or overall completion",
+  "frozen_backend_source_sha256": "2a74a4b4c2a2a4674f52f8532e62a63ea31d0320ab2f75dce8e2f6b94f66fd83",
+  "frozen_source_matches_committed_tree": true,
+  "phases": {
+    "target": {
+      "checks": [
+        {
+          "name": "worker",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/application",
+            "./cmd/zboard",
+            "-run",
+            "ProjectionWorker",
+            "-count=1",
+            "-timeout",
+            "5m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 22.813,
+          "log_sha256": "60c72e63636b37a293f56db8b0feb9746c0b3199a5f7ef074a1ec97951e993a1",
+          "events": {
+            "pass": 7
+          },
+          "top_events": {
+            "pass": 7
+          },
+          "failures": []
+        },
+        {
+          "name": "inventory",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./tools/capabilityinventory",
+            "./architecture",
+            "-count=1"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 1.149,
+          "log_sha256": "8bb65b829fd104fac674f4dfe8fd88f7352a0431f140ca495e595f9993ddd78a",
+          "events": {
+            "pass": 73
+          },
+          "top_events": {
+            "pass": 73
+          },
+          "failures": []
+        }
+      ],
+      "source_unchanged": true,
+      "pending": [],
+      "finished_utc": "2026-10-26T09:05:16.643078+00:00"
+    },
+    "race": {
+      "checks": [
+        {
+          "name": "worker-race",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-p",
+            "1",
+            "./internal/application",
+            "./cmd/zboard",
+            "-run",
+            "ProjectionWorker",
+            "-count=3",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 272.388,
+          "log_sha256": "d9f7c5286c46136142139f8b62d4882ff0a86804d2ebc0f83c669bc14b80f232",
+          "events": {
+            "pass": 21
+          },
+          "top_events": {
+            "pass": 21
+          },
+          "failures": []
+        }
+      ],
+      "source_unchanged": true,
+      "pending": [],
+      "finished_utc": "2026-10-26T09:09:49.216769+00:00"
+    },
+    "backend": {
+      "checks": [
+        {
+          "name": "full-go",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./..."
+          ],
+          "exit_code": 0,
+          "wall_seconds": 524.021,
+          "log_sha256": "b752b2b5799d5e46519fb8664e2a13c993f937979b916e8725072352bb17d069",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "vet",
+          "command": [
+            "go",
+            "vet",
+            "-p",
+            "1",
+            "./..."
+          ],
+          "exit_code": 0,
+          "wall_seconds": 21.029,
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "build",
+          "command": [
+            "go",
+            "build",
+            "./cmd/zboard"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 2.064,
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "pure-sqlite",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "-run",
+            "SQLite",
+            "-count=1"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 36.841,
+          "log_sha256": "2c29a0d7c099c39c2378d6c44e9152b85e96ab71c2111bbe098d255ae1e60668",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        }
+      ],
+      "source_unchanged": true,
+      "pending": [],
+      "finished_utc": "2026-10-26T09:19:33.504383+00:00"
+    },
+    "full-mysql": {
+      "checks": [
+        {
+          "name": "core",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "./internal/handler",
+            "./internal/adapters/persistence/networkstore",
+            "./internal/application",
+            "-run",
+            "MySQL",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 1067.923,
+          "log_sha256": "b8f1b36b45b4aa2a54e7636547492fc3715b91c68920f2f84653871c3dcd0c1a",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "jobs",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/jobstore",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 136.143,
+          "log_sha256": "511961395bdb173d2e563434d7ad953103af9fc46be03da1f347c7fcd15a1ef4",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "copy",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/platformstore",
+            "-run",
+            "MySQL",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 258.967,
+          "log_sha256": "555828c305c90044976bb8b66d872312aacba02023268033e7674d74db3cb244",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        }
+      ],
+      "source_unchanged": true,
+      "pending": [],
+      "finished_utc": "2026-10-26T09:43:56.821719+00:00"
+    }
+  },
+  "ci": {
+    "id": 40298889873,
+    "url": "https://github.com/zerodenet/zboard/actions/runs/40298889873",
+    "exact_head_verified": true,
+    "six_success": true,
+    "mysql_package_seconds": {
+      "datastore": 259.039,
+      "handler": 718.767,
+      "networkstore": 196.635,
+      "application": 38.463,
+      "jobstore": 110.828,
+      "platformstore": 217.257
+    },
+    "mysql_log_sha256": "ef21da35e172a239202e8dd4fc4ff2d646f90af3b53b025a49ad7cf7424293a9"
+  },
+  "tests_scope": [
+    "SQLite and actual MySQL maintenance pause, competition and drain",
+    "CLI process keeps occupied HTTP port unused, preserves plaintext fixture credentials, does not bootstrap or open spool",
+    "Checkpoint delete failure rolls back entire derived transaction; a second actual process applies exactly 201 records/603 raw bytes/1005 billed bytes",
+    "Foreign process lease and original financial facts survive local exit"
+  ],
+  "not_verified": [
+    "Independent process performance benefit",
+    "Automatic scaling",
+    "Plugin busy capacity",
+    "Worker SIGKILL during live DB commit",
+    "Full source retention and archive replay",
+    "Production acceptance"
+  ]
+}

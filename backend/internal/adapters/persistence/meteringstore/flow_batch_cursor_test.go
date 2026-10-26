@@ -17,6 +17,8 @@ import (
 type cohortSQL struct {
 	logger.Interface
 	usageReads, writes int
+	receiptWrites      int
+	receiptRows        int64
 	affected           int64
 }
 
@@ -29,6 +31,10 @@ func (c *cohortSQL) Trace(_ context.Context, _ time.Time, sql func() (string, in
 	if strings.HasPrefix(upper, "INSERT") || strings.HasPrefix(upper, "UPDATE") || strings.HasPrefix(upper, "DELETE") {
 		c.writes++
 		c.affected += rows
+		if strings.HasPrefix(upper, "INSERT") && strings.Contains(text, "metering_report_receipts") {
+			c.receiptWrites++
+			c.receiptRows += rows
+		}
 	}
 }
 func cohortDB(t *testing.T) (*gorm.DB, model.ProtocolCredential) {
@@ -115,8 +121,10 @@ func TestSQLiteCursorCohort32ReadsOnceWithoutAdditionalWrites(t *testing.T) {
 		if err := applyCohort(db.Session(&gorm.Session{Logger: count}), samples); err != nil {
 			t.Fatal(err)
 		}
-		if count.usageReads != 1 || count.writes != 37 || count.affected != 99 {
-			t.Fatalf("batch%d reads=%d writes=%d rows=%d want1/37/99", batch, count.usageReads, count.writes, count.affected)
+		// Keep the original cohort's 37 writes/99 affected rows exactly. The
+		// separate identity authority adds one bounded insert of 32 receipts.
+		if count.usageReads != 1 || count.writes-count.receiptWrites != 37 || count.affected-count.receiptRows != 99 || count.receiptWrites != 1 || count.receiptRows != 32 {
+			t.Fatalf("batch%d reads=%d original-writes=%d original-rows=%d receipt-writes=%d receipt-rows=%d want1/37/99/1/32", batch, count.usageReads, count.writes-count.receiptWrites, count.affected-count.receiptRows, count.receiptWrites, count.receiptRows)
 		}
 		cohortTotal(t, db, int64(batch+1)*960)
 	}

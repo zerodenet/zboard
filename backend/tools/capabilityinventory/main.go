@@ -171,6 +171,7 @@ var explicitModelOwners = map[string]string{
 	"TicketAttachment":                   "experience",
 	"TrafficRecord":                      "metering",
 	"TrafficDiagnosticMaterial":          "metering",
+	"MeteringReportReceipt":              "metering",
 	"User":                               "identity",
 	"UserAPIToken":                       "identity",
 	"siteLegalItem":                      "experience",

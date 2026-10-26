@@ -1740,3 +1740,10 @@ ae2aadb追补：原后端四命令通过、新CI六项通过、原约束容量�
 ## 2026-10-26：独立投影 worker 实施批次
 
 新增同一程序的 `-projection-worker` 实际入口；复用两类投影与公共 Runtime，不提高原预算，启动只读检查，退出仅本地 drain。双库及实际子进程专项通过；完整回归/并发/新头 CI 仍须以本批最终回执为准。详见 [行为、回退与未完成边界](core-convergence-projection-worker.md)。8ea 本身原三组 MySQL 已结束，原条件容量也已通过，见 [精确旧头最终验证](validation/2026-10-26-diagnostic-collection-final.json)。P6 自动伸缩与收益、P4 总增长/有限回放、P7 综合升级及外部验收尚未完成，不把该入口或旧头通过当整体完成。
+
+
+## 2026-10-26：P4 报告收据与 P7 双库旧版本演练
+
+P4 已应用 0063 独立报告收据、三条原计量入口的同事务持久化、原生去重/窗口碰撞检查及旧记录索引兼容。首轮双库/迁移/复制/故障专项 12 顶层和架构 73 项通过；完整回归、并发和该批新头 CI 尚待最终结果。见 [实际边界与回退](core-convergence-metering-report-receipts.md)。收据随报告增长，完整账务保留、有限回放及总增长边界仍未完成，不启用生产归档。
+
+690e55c 的独立 worker、全部本地后端/MySQL、race 和自身六项 CI 已通过，[精确代码树回执](validation/2026-10-26-projection-worker.json)。P7 已实际用 7c 旧源码生成隔离 SQLite/MySQL 旧库，升级到 690e55c，重复迁移及新进程重放通过；[执行证据与保留失败](validation/2026-10-26-baseline-upgrade.json)。仓库附可审查的演练入口 `scripts/acceptance-upgrade`；修改后的容器端口前置核验仍待清洁新头实跑，不以私有探针结果冒充该入口运行。P6 自动伸缩/收益及整体 P7 外部、容量和完整故障验收尚未完成。
