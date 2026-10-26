@@ -242,11 +242,17 @@ func (s *Store) Claim(ctx context.Context, worker string, handlers []string, tim
 		// No candidate limit before resource filtering: a busy resource must not
 		// starve unrelated work behind it. Eligible lanes are selected with
 		// persisted weighted virtual time before FIFO is applied within a lane.
+		// Derive available groups independently of queued candidates. Correlating
+		// the active count with every queued row repeats the same group scan for
+		// the entire backlog (and again for the selected lane). The budget lock
+		// still owns admission; missing, zero and full groups remain ineligible.
+		availableGroups := tx.Model(&ExecutionGroup{}).Select("id").
+			Where("capacity > (SELECT COUNT(*) FROM job_runs AS active_group WHERE active_group.execution_group = job_execution_groups.id AND active_group.state IN ('running','cancel_requested'))")
 		eligible := tx.Model(&Record{}).
 			Where("? = 0 OR (resource = ? AND owner = ?)", maintenance, jobs.MaintenanceResource, "system").
 			Where("state IN ? AND not_before <= ? AND handler IN ?", []jobs.State{jobs.Queued, jobs.RetryWait}, now, handlers).
 			Where("resource = '' OR resource NOT IN (?)", tx.Model(&Record{}).Select("resource").Where("state IN ? AND resource <> ''", []jobs.State{jobs.Running, jobs.CancelRequested, jobs.Unknown})).
-			Where("execution_group = '' OR (SELECT COUNT(*) FROM job_runs AS active_group WHERE active_group.execution_group = job_runs.execution_group AND active_group.state IN ('running','cancel_requested')) < (SELECT capacity FROM job_execution_groups WHERE id = job_runs.execution_group)")
+			Where("execution_group = '' OR execution_group IN (?)", availableGroups)
 		lane, start, finish, err := selectDispatchLane(eligible, budget.DispatchVirtualTime)
 		if err != nil {
 			return err

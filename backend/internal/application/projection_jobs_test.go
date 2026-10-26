@@ -76,8 +76,8 @@ func TestProjectionJobDefinitionsPreserveExistingContract(t *testing.T) {
 			if pending, err := job.Ready(ctx); err != nil || !pending {
 				t.Fatal(pending, err)
 			}
-			if err := job.Run(ctx); err != nil {
-				t.Fatal("a full bounded batch must retain the original nil outcome", err)
+			if err := job.Run(ctx); !errors.Is(err, jobs.ErrContinue) {
+				t.Fatal("a committed full bounded batch must yield through the durable scheduler", err)
 			}
 			if tc.id == "usage_projection" {
 				if usage.count != 200 || usage.readyContext != ctx || usage.runContext != ctx {
@@ -104,8 +104,12 @@ func TestProjectionDefinitionsKeepLiveCapabilityAndErrorSemantics(t *testing.T) 
 			if _, got := job.Ready(t.Context()); got != readyErr {
 				t.Fatal("readiness error was hidden", got)
 			}
-			if got := job.Run(t.Context()); got != err {
-				t.Fatal("projection outcome changed before the existing application retry wrapper", got)
+			want := err
+			if want == nil {
+				want = jobs.ErrContinue // The probe reports a committed full batch.
+			}
+			if got := job.Run(t.Context()); got != want {
+				t.Fatal("projection failure was masked or full-batch continuation lost", got)
 			}
 		}
 	}

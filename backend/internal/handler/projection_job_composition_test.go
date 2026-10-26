@@ -133,7 +133,7 @@ func assertDefaultProjectionJobsUseSharedComposition(t *testing.T, h *handlers) 
 		}
 		found[row.ID] = true
 		wantName := "计量统计投影"
-		wantState := jobs.Succeeded
+		wantState := jobs.Yielded // The successful probe committed one full batch.
 		if row.ID == "node_observation" {
 			wantName = "节点观察投影"
 			wantState = jobs.RetryWait
@@ -145,7 +145,7 @@ func assertDefaultProjectionJobsUseSharedComposition(t *testing.T, h *handlers) 
 			t.Fatal("durable defaults drifted", row)
 		}
 		if row.State != wantState || row.LastState != wantState || row.Runs != 1 {
-			t.Fatal("existing retry/outcome policy changed", row)
+			t.Fatal("durable continuation or retry outcome changed", row)
 		}
 	}
 	if !found["usage_projection"] || !found["node_observation"] {

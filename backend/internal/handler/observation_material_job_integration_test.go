@@ -73,7 +73,7 @@ func assertMaterialJobExecutor(t *testing.T, h *handlers) {
 			continue
 		}
 		found = true
-		if r.Name != "节点观察材料保留" || r.Owner != "system" || r.Resource != "core:"+r.ID || r.Handler != r.ID || r.Timeout != time.Minute || r.Interval != time.Second || r.Runs != 1 || r.State != jobs.Succeeded {
+		if r.Name != "节点观察材料保留" || r.Owner != "system" || r.Resource != "core:"+r.ID || r.Handler != r.ID || r.Timeout != time.Minute || r.Interval != time.Second || r.Runs != 1 || r.State != jobs.Yielded || r.LastState != jobs.Yielded || r.Failures != 0 {
 			t.Fatal("durable retirement policy", r)
 		}
 	}

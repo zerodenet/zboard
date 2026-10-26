@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 )
 
@@ -37,7 +38,7 @@ func TestObservationMaterialJobKeepsBoundedLiveCapability(t *testing.T) {
 	if ready, err := j.Ready(ctx); err != nil || !ready || p.ctx != ctx {
 		t.Fatal("retention readiness", ready, err)
 	}
-	if err := j.Run(ctx); err != nil || p.limit != 32 || p.bytes != 8*1024*1024 || p.ctx != ctx {
+	if err := j.Run(ctx); !errors.Is(err, jobs.ErrContinue) || p.limit != 32 || p.bytes != 8*1024*1024 || p.ctx != ctx {
 		t.Fatal("retention bounds/context", p, err)
 	}
 	failure := errors.New("retention transaction failed")
