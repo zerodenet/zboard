@@ -6,7 +6,7 @@ import pathlib
 import re
 
 
-def evaluate(directory):
+def evaluate(directory, *, expected_nanocpus=1000000000, expected_memory=1073741824):
     load = json.loads((directory / "data/load-result.json").read_text())
     ledger = json.loads((directory / "data/verification.json").read_text())
     spool = json.loads((directory / "data/spool-verification.json").read_text())
@@ -33,8 +33,8 @@ def evaluate(directory):
     if not samples or peak > 700:
         failures.append(f"sampled peak working set {peak:.2f}MiB; budget=700MiB")
     settings, state = container["HostConfig"], container["State"]
-    if settings["NanoCpus"] != 1000000000 or settings["Memory"] != 1073741824 or settings["MemorySwap"] != 1073741824:
-        failures.append("container did not use the exact 1CPU/1GiB/no-extra-swap profile")
+    if settings["NanoCpus"] != expected_nanocpus or settings["Memory"] != expected_memory or settings["MemorySwap"] != expected_memory:
+        failures.append("container did not use the exact required CPU/memory/no-extra-swap profile")
     if state["OOMKilled"] or state["ExitCode"] != 0:
         failures.append(f'container exit={state["ExitCode"]}, OOM={state["OOMKilled"]}')
     if not ledger["passed"] or not spool["passed"]:
