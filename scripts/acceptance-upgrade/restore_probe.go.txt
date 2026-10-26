@@ -1,0 +1,155 @@
+package handler
+
+import (
+	"database/sql"
+	"encoding/json"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	mysqlconfig "github.com/go-sql-driver/mysql"
+	"github.com/google/uuid"
+	"github.com/zerodenet/zboard/backend/internal/datastore"
+	"gorm.io/gorm"
+)
+
+// This probe is compiled with the exact old baseline, then restores only its
+// isolated immutable backup into a new destination. It never downgrades the
+// upgraded database or discards business writes made by the current binary.
+func TestConvergenceRestoreOldBackup(t *testing.T) {
+	dir, driver := os.Getenv("ZBOARD_UPGRADE_FIXTURE_DIR"), os.Getenv("ZBOARD_UPGRADE_FIXTURE_DRIVER")
+	if dir == "" || driver != "sqlite" && driver != "mysql" {
+		t.Skip("explicit isolated upgrade controller required")
+	}
+	var old struct {
+		Frozen []upgradeFrozenTable `json:"frozen_rows"`
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "old-ready.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &old); err != nil || len(old.Frozen) != 6 {
+		t.Fatal("old frozen evidence unavailable", err)
+	}
+	var restored *gorm.DB
+	schema := ""
+	var administrative *sql.DB
+	complete := false
+	if driver == "mysql" {
+		validateOldUpgradeMySQLTarget(t)
+		cfg, err := mysqlconfig.ParseDSN(os.Getenv("ZBOARD_TEST_MYSQL_DSN"))
+		if err != nil {
+			t.Fatal("invalid isolated test DSN")
+		}
+		cfg.DBName = ""
+		administrative, err = sql.Open("mysql", cfg.FormatDSN())
+		if err != nil {
+			t.Fatal("isolated restore admin connection failed")
+		}
+		defer administrative.Close()
+		schema = "zboard_upgrade_restore_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+		// Publish the exact intended test destination before CREATE. An uncertain
+		// CREATE/import outcome is retained for inspection and never blindly retried.
+		planned, err := os.OpenFile(filepath.Join(dir, "restore-destination.json"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.NewEncoder(planned).Encode(map[string]any{"schema": schema, "production_data": false}); err != nil {
+			t.Fatal(err)
+		}
+		planned.Close()
+		if _, err := administrative.ExecContext(t.Context(), "CREATE DATABASE `"+schema+"` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"); err != nil {
+			t.Fatal("isolated restore CREATE not confirmed; inspect planned destination")
+		}
+		defer func() {
+			if complete {
+				if _, err := administrative.Exec("DROP DATABASE `" + schema + "`"); err != nil {
+					t.Error("owned restore fixture cleanup failed")
+				}
+			}
+		}()
+		source, err := os.Open(filepath.Join(dir, "old-source.sql"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer source.Close()
+		log, err := os.OpenFile(filepath.Join(dir, "restore-import.log"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer log.Close()
+		cmd := exec.CommandContext(t.Context(), "docker", "exec", "-i", "-e", "MYSQL_PWD", os.Getenv("ZBOARD_UPGRADE_MYSQL_CONTAINER"), "mysql", "--user="+cfg.User, schema)
+		cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.Passwd)
+		cmd.Stdin = source
+		cmd.Stdout, cmd.Stderr = log, log
+		if err := cmd.Run(); err != nil {
+			t.Fatal("owned restore import failed; destination retained")
+		}
+		cfg.DBName = schema
+		restored, err = datastore.OpenWithDriver(driver, cfg.FormatDSN())
+		if err != nil {
+			t.Fatal("owned restored connection failed")
+		}
+	} else {
+		source, err := os.Open(filepath.Join(dir, "old-source.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer source.Close()
+		path := filepath.Join(dir, "restored-old.db")
+		target, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, copyErr := io.Copy(target, source)
+		closeErr := target.Close()
+		if copyErr != nil || closeErr != nil {
+			t.Fatal("old SQLite backup copy failed")
+		}
+		restored, err = datastore.OpenWithDriver(driver, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	pool, err := restored.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep an actual restored database on any assertion failure. The immutable
+	// source backup and complete selected-column evidence always remain on disk.
+	defer pool.Close()
+	actual := freezeUpgradeRows(t, restored, old.Frozen)
+	observed, err := json.Marshal(actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "restore-observed.json"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(observed); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := json.Marshal(old.Frozen)
+	if err != nil || string(expected) != string(observed) {
+		t.Fatal("restored old financial, entitlement, credential or publication columns differ")
+	}
+	if err := pool.Close(); err != nil {
+		t.Fatal(err)
+	}
+	complete = true
+	receipt, err := os.OpenFile(filepath.Join(dir, "restore-result.json"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewEncoder(receipt).Encode(map[string]any{"passed": true, "driver": driver, "old_columns_match": true, "old_binary_reads_restored_backup": true, "downgraded_current_database": false}); err != nil {
+		t.Fatal(err)
+	}
+	receipt.Close()
+}

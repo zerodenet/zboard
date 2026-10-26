@@ -80,6 +80,10 @@ func TestConvergenceUpgradeFromOldVersion(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = pool.Close() })
 	if os.Getenv("ZBOARD_UPGRADE_RECOVERY") == "1" {
+		var identity model.MeteringReportReceipt
+		if err := db.Where("node_id = ? AND report_id = ?", old.NodeID, old.ReportID).First(&identity).Error; err != nil || identity.TrafficRecordID != old.RecordID || identity.ProtocolEndpointID != old.EndpointID {
+			t.Fatal("registered old report identity did not survive restart", err)
+		}
 		assertUpgradeRecovery(t, db, dir)
 		return
 	}
@@ -100,6 +104,10 @@ func TestConvergenceUpgradeFromOldVersion(t *testing.T) {
 			}
 			t.FailNow()
 		}
+	}
+	backfill, err := application.BackfillMeteringReportReceipts(t.Context(), db, 0, old.RecordID, 200)
+	if err != nil || backfill.Scanned != 1 || backfill.IdentitiesVerified != 1 || !backfill.RangeExhausted {
+		t.Fatalf("old committed metering identity could not be registered: %+v %v", backfill, err)
 	}
 	var n int64
 	if err := db.Model(&model.Order{}).Where("entitlement_value_snapshot <> ''").Count(&n).Error; err != nil || n != 0 {
