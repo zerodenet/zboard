@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -35,6 +36,12 @@ var prepareHourlyRollback = flag.Bool("prepare-hourly-rollback", false, "after s
 
 func main() {
 	flag.Parse()
+	if err := validateReportBackfillFlags(*backfillReportReceipts, flag.CommandLine); err != nil {
+		log.Fatal(err)
+	}
+	if err := validateReportBackfillMode(*backfillReportReceipts, *migrateOnly, *prepareHourlyRollback, *checkProjectionDatabaseOnly, *projectionWorker, *backfillReportAfter, *backfillReportThrough, *backfillReportBatch); err != nil {
+		log.Fatal(err)
+	}
 	if err := validateProjectionWorkerMode(*projectionWorker, *migrateOnly, *prepareHourlyRollback, *checkProjectionDatabaseOnly, *projectionWorkerDrainTimeout); err != nil {
 		log.Fatal(err)
 	}
@@ -68,6 +75,18 @@ func main() {
 			log.Fatalf("projection database check failed: %v", err)
 		}
 		log.Printf("projection database dependencies verified (read-only); no worker started")
+		return
+	}
+	if *backfillReportReceipts {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		result, err := runReportReceiptBackfill(ctx, c, *backfillReportAfter, *backfillReportThrough, *backfillReportBatch)
+		if err != nil {
+			log.Fatalf("report receipt backfill failed: %v", err)
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+			log.Fatal("backfill committed but command receipt output failed; the same range can be safely inspected/replayed")
+		}
 		return
 	}
 	if *projectionWorker {
