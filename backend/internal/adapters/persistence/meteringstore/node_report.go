@@ -133,6 +133,9 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
+		if err := enqueueDiagnosticMaterial(tx, record, in.Meta, now); err != nil {
+			return err
+		}
 		if err := RecordUsageProjections(tx, []model.TrafficRecord{record}); err != nil {
 			return err
 		}

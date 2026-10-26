@@ -8257,7 +8257,7 @@ components:
           type: string
         meta:
           type: string
-          description: Source metadata. Oversized optional legacy report diagnostics may be represented by a diagnostic_meta_omitted v1 receipt. Native accounting evidence is preserved unchanged.
+          description: Source metadata. Oversized optional legacy report diagnostics may be represented by a diagnostic_meta_omitted v1 receipt. Proven legacy optional diagnostic bodies may later be replaced by a diagnostic_meta_retired v1 receipt containing original byte length, SHA-256 and retirement time; financial fields, replay identities and native accounting evidence are preserved unchanged.
     TrafficRecordSummary:
       type: object
       description: Bounded list projection for administrator and self-service histories without report IDs, event payload or metadata.

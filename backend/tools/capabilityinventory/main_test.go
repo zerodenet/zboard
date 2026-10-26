@@ -179,6 +179,8 @@ func TestModelsRequireExactReviewedOwnership(t *testing.T) {
 	source := `package model
 type User struct{}
 type PaymentEvent struct{}
+type TrafficDiagnosticMaterial struct{}
+type TrafficDiagnosticMaterialOther struct{}
 type InventedFutureModel struct{}
 `
 	if err := os.WriteFile(filepath.Join(dir, "models.go"), []byte(source), 0600); err != nil {
@@ -199,6 +201,40 @@ type InventedFutureModel struct{}
 	}
 	if owners["InventedFutureModel"] != "unassigned" {
 		t.Fatalf("new model was silently assigned: %v", owners)
+	}
+	if owners["TrafficDiagnosticMaterial"] != "metering" || owners["TrafficDiagnosticMaterialOther"] != "unassigned" {
+		t.Fatalf("diagnostic provenance ownership must remain exact: %v", owners)
+	}
+}
+
+func TestDiagnosticRetentionLifecycleKeepsExactOwnership(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "internal", "handler")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	source := `package handler
+func Example() {
+ h.StartTrafficDiagnosticRetentionWorker()
+ h.CloseTrafficDiagnosticRetentionWorker()
+ h.StartTrafficDiagnosticRetentionOtherWorker()
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "example.go"), []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := inventory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners := map[string]string{}
+	for _, row := range rows {
+		if row.Kind == "lifecycle" {
+			owners[row.Symbol] = row.Owner
+		}
+	}
+	if owners["h.StartTrafficDiagnosticRetentionWorker"] != "metering" || owners["h.CloseTrafficDiagnosticRetentionWorker"] != "metering" || owners["h.StartTrafficDiagnosticRetentionOtherWorker"] != "unassigned" {
+		t.Fatal("diagnostic lifecycle ownership broadened or missing", owners)
 	}
 }
 
@@ -245,7 +281,7 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 23,
+		"cross_domain_transaction": 24,
 	}
 	counts := map[string]int{}
 	controlledDebit, unsubscribe, retirement, replacement, automatic := false, false, false, false, false
@@ -253,8 +289,12 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 	observationHandoff, observationApply := false, false
 	observationRetry, observationRetryWrite := false, false
 	materialRetirement := false
+	diagnosticRetirement := false
 	for _, row := range rows {
 		counts[row.Kind]++
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "metering.diagnostic_material_retirement" && row.Owner == "metering" && row.File == "internal/adapters/persistence/meteringstore/diagnostic_material_retention.go" {
+			diagnosticRetirement = true
+		}
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.observation_material_retirement" && row.Owner == "resources" && row.File == "internal/adapters/persistence/observationstore/retention.go" {
 			materialRetirement = true
 		}
@@ -297,6 +337,9 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		if row.Owner == "unassigned" {
 			t.Errorf("unassigned inventory evidence: %+v", row)
 		}
+	}
+	if !diagnosticRetirement {
+		t.Error("diagnostic material retirement must retain exact source transaction ownership")
 	}
 	if !materialRetirement {
 		t.Error("observation material retirement must retain explicit bounded source transaction ownership")

@@ -19,12 +19,12 @@ type observationMaterialColumn struct {
 	Nullable bool
 	Default  sql.NullString
 }
-type observationMaterialIndex struct {
+type retentionMaterialIndex struct {
 	Table, Name string
 	Columns     []string
 }
 
-var observationMaterialIndexes = []observationMaterialIndex{
+var observationMaterialIndexes = []retentionMaterialIndex{
 	{"node_observation_intents", "idx_observation_material_review", []string{"status", "material_retired_at", "material_review_at", "id"}},
 	{"node_observation_states", "idx_observation_latest_reference", []string{"latest_reference"}},
 	{"node_observation_states", "idx_observation_stats_reference", []string{"stats_reference"}},
@@ -161,22 +161,22 @@ func reconcileObservationMaterialSchema(db *gorm.DB) error {
 		return err
 	}
 	for _, spec := range observationMaterialIndexes {
-		if err := ensureObservationMaterialIndex(db, spec); err != nil {
+		if err := ensureRetentionMaterialIndex(db, spec); err != nil {
 			return err
 		}
 	}
 	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: nodeObservationMaterialVersion, AppliedAt: time.Now().UTC()}).Error
 }
 
-func ensureObservationMaterialIndex(db *gorm.DB, spec observationMaterialIndex) (err error) {
+func ensureRetentionMaterialIndex(db *gorm.DB, spec retentionMaterialIndex) (err error) {
 	allowed := false
-	for _, known := range observationMaterialIndexes {
+	for _, known := range append(append([]retentionMaterialIndex(nil), observationMaterialIndexes...), diagnosticMaterialIndexes...) {
 		if spec.Table == known.Table && spec.Name == known.Name && strings.Join(spec.Columns, ",") == strings.Join(known.Columns, ",") {
 			allowed = true
 		}
 	}
 	if !allowed {
-		return errors.New("unknown observation material index")
+		return errors.New("unknown retention material index")
 	}
 	var columns []string
 	if IsSQLite(db) {
@@ -190,7 +190,7 @@ func ensureObservationMaterialIndex(db *gorm.DB, spec observationMaterialIndex) 
 				break
 			}
 			if owner != spec.Table {
-				e = errors.New("observation material index belongs to another table")
+				e = errors.New("retention material index belongs to another table")
 				break
 			}
 		}
@@ -210,7 +210,7 @@ func ensureObservationMaterialIndex(db *gorm.DB, spec observationMaterialIndex) 
 				break
 			}
 			if name == spec.Name && (unique != 0 || partial != 0 || origin != "c") {
-				e = errors.New("observation material index must be nonunique and complete")
+				e = errors.New("retention material index must be nonunique and complete")
 				break
 			}
 		}
@@ -232,7 +232,7 @@ func ensureObservationMaterialIndex(db *gorm.DB, spec observationMaterialIndex) 
 				continue
 			}
 			if descending != 0 || cid < 0 || !name.Valid || !collation.Valid || collation.String != "BINARY" {
-				e = errors.New("observation material index order/expression/collation differs")
+				e = errors.New("retention material index order/expression/collation differs")
 				break
 			}
 			columns = append(columns, strings.ToLower(name.String))
@@ -251,7 +251,7 @@ func ensureObservationMaterialIndex(db *gorm.DB, spec observationMaterialIndex) 
 				break
 			}
 			if unique != 1 || prefix.Valid || kind != "BTREE" || direction != "A" {
-				e = errors.New("observation material index shape differs")
+				e = errors.New("retention material index shape differs")
 				break
 			}
 			columns = append(columns, strings.ToLower(name))
@@ -265,7 +265,7 @@ func ensureObservationMaterialIndex(db *gorm.DB, spec observationMaterialIndex) 
 		return db.Exec("CREATE INDEX " + spec.Name + " ON " + spec.Table + "(" + strings.Join(spec.Columns, ",") + ")").Error
 	}
 	if strings.Join(columns, ",") != strings.Join(spec.Columns, ",") {
-		return errors.New("observation material index shape differs")
+		return errors.New("retention material index shape differs")
 	}
 	return nil
 }

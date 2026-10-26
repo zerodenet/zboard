@@ -41,6 +41,7 @@ type Services struct {
 	Navigation                       navigation.Service
 	MessageTemplates                 messaging.Templates
 	PrincipalCollection              metering.PrincipalCollection
+	DiagnosticMaterialRetention      metering.DiagnosticMaterialRetention
 	NodeObservationMaterialRetention network.ObservationMaterialRetention
 	NodeObservations                 network.ObservationProjections
 	ObservationIntents               network.ObservationIntentOperations
@@ -140,6 +141,7 @@ func New(db *gorm.DB, secret string) *Services {
 	s.PrincipalCollection = metering.PrincipalCollection{Repository: meteringstore.PrincipalCollection{DB: db}}
 	s.NodeObservations = network.ObservationProjections{Repository: observationstore.Worker{DB: db}}
 	s.NodeObservationMaterialRetention = network.ObservationMaterialRetention{Repository: observationstore.MaterialRetention{DB: db}}
+	s.DiagnosticMaterialRetention = metering.DiagnosticMaterialRetention{Repository: meteringstore.DiagnosticMaterialRetention{DB: db}}
 	s.ObservationIntents = network.ObservationIntentOperations{Repository: networkstore.ObservationIntentOperations{DB: db}}
 	s.UsageProjections = metering.UsageProjections{Repository: meteringstore.UsageProjectionWorker{DB: db}}
 	s.FairUseObservationSeries = metering.ObservationSeriesService{Repository: meteringstore.ObservationSeries{DB: db}}

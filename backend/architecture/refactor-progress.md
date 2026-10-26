@@ -1721,3 +1721,10 @@ ae2aadb追补：原后端四命令通过、新CI六项通过、原约束容量�
 2026-10-21：P7业务fixture由40显式扩展至70顶层/75独立业务schema；原业务/锁/迁移断言不变，实际74用例及新增7入口race3通过。907本地完整backend/原MySQL全通过但同头CI900.021s失败并存，当前整包待验；见[新范围及证据](validation/2026-10-21-mysql-business-fixtures-expanded.json)。
 
 2026-10-21：P4/P5只读观察队列capability/API/节点页drawer实装，真实双库/race3及原前端完整套件/构建/合同通过；保留3类新候选失败，无parts删除/新迁移/新财务写，完整集成验收待完成。见[行为和限制](core-convergence-node-observation-operations.md)。
+
+
+### 2026-10-26：精确95f完整本地验收及P4来源明确的可选诊断退役
+
+原环境实际完成95f完整backend4/MySQL3、双库race3、前端、自己的六项CI及原条件混合容量；原失败保留，物理储备256MiB与512MiB预算预扣已准确区分。[原始命令/日志摘要及缓存维护](validation/2026-10-26-resume-baseline.json)。
+
+新0062及来源收据/受限退役/共享执行器已实际应用，保留原生证明、历史未分类、财务字段及时间；真实迁移、双连接、回滚、重放和未完成投影专项双库通过，Go及实际MySQL race/count3已全部通过、零skip、源码一致，OpenAPI通过；新提交整包/CI及原容量另待终态。初轮真实自动更新时间戳变化已修复且保留完整字段断言，早期夹具/ownership失败证据未丢。[行为、兼容、回退和剩余边界](core-convergence-legacy-diagnostic-retention.md)。这不是P4/P6/P7整体完成。

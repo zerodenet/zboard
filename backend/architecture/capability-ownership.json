@@ -91,6 +91,19 @@
   ],
   "cross_domain_transactions": [
     {
+      "id": "metering.diagnostic_material_retirement",
+      "owner": "metering",
+      "source": "internal/adapters/persistence/meteringstore/diagnostic_material_retention.go",
+      "symbol": "DiagnosticMaterialRetention.Retire",
+      "participants": [
+        "metering",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction_per_diagnostic_source",
+      "compensation": "Lock the durable legacy-only material receipt and exact source row; verify original hash/byte count and minimum age before replacing only optional Meta and committing retired_at. Rollback preserves the complete body and provenance. Corrupt, busy, native and unclassified historical sources are retained; no amount, quota, nonce, cursor, identity or native rounding proof is deleted.",
+      "outbox": "Newly received legacy optional bodies and their exact original-material receipt commit with accounting; the shared executor owns later retirement. Replayed reports reuse the original financial row and never recreate an archived body."
+    },
+    {
       "id": "resources.node_observation_retry",
       "owner": "resources",
       "source": "internal/adapters/persistence/networkstore/node_observation_retry.go",
