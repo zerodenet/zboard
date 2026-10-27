@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -31,6 +32,52 @@ def write(path, data):
         output.write("\n")
     path.chmod(0o600)
 
+def existing_parent(path):
+    value = path.resolve()
+    while not value.exists():
+        if value.parent == value: raise RuntimeError("no existing filesystem parent")
+        value = value.parent
+    return value
+
+def disk_budget(repo, artifacts, args, git):
+    mib = 1024 * 1024
+    source = {}
+    for revision in (BASELINE, args.revision):
+        total = 0
+        for line in git("ls-tree", "-r", "-l", revision, "backend").splitlines():
+            fields = line.partition("\t")[0].split()
+            if len(fields) != 4 or fields[1] != "blob" or not fields[3].isdigit():
+                raise RuntimeError("unexpected archived backend tree entry")
+            total += int(fields[3])
+        source[revision] = total
+    goenv = subprocess.check_output([args.go_bin, "env", "GOCACHE", "GOTMPDIR"], cwd=repo, text=True).splitlines()
+    cache = goenv[0] if goenv else ""
+    buildtmp = goenv[1] if len(goenv) > 1 and goenv[1] else tempfile.gettempdir()
+    drivers = 2 if args.driver == "both" else 1
+    categories = [("new_artifacts", artifacts, sum(source[r] for r in (BASELINE,args.revision)) + 16*mib + 2*args.binary_budget_mib*mib + drivers*128*mib + 32*mib),
+                  ("compiler_temporary", Path(buildtmp), args.build_temp_budget_mib*mib)]
+    if cache and cache != "off": categories.append(("cache_growth_estimate", Path(cache), args.cache_budget_mib*mib))
+    if args.driver in ("mysql", "both"):
+        # Conservatively reserve here too: a container overlay/data directory
+        # may share the checkout/cache host filesystem despite another namespace.
+        categories.append(("mysql_possible_host_colocation",repo,args.mysql_growth_budget_mib*mib))
+    groups = {}
+    for label,path,needed in categories:
+        parent = existing_parent(path); device = str(parent.stat().st_dev)
+        group = groups.setdefault(device, {"paths":[], "categories":{}, "free_bytes":shutil.disk_usage(parent).free, "required_bytes":args.reserve_mib*mib})
+        group["paths"].append(str(path)); group["categories"][label] = needed; group["required_bytes"] += needed
+    for group in groups.values(): group["sufficient"] = group["free_bytes"] >= group["required_bytes"]
+    mysql = None
+    if args.driver in ("mysql", "both") and args.mysql_container:
+        # Read the explicit test data filesystem, not an unrelated host path.
+        lines = subprocess.check_output(["docker", "exec", args.mysql_container, "df", "-Pk", "/var/lib/mysql"], text=True).splitlines()
+        fields = lines[-1].split()
+        available = int(fields[3])*1024
+        required = (args.mysql_growth_budget_mib+args.reserve_mib)*mib
+        mysql = {"path":"explicit isolated container:/var/lib/mysql", "free_bytes":available, "required_bytes":required, "sufficient":available>=required}
+    return {"backend_blob_bytes":source, "filesystems":list(groups.values()), "mysql_data_filesystem":mysql,
+            "scope":"Planning estimates for two new source exports/binaries, new fixture backups, compiler temporary/cache growth and test data. Not a hard write quota, throughput/capacity gate, physical shrink or production guarantee. No existing data/cache/backup is moved or cleaned."}
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkout", type=Path, required=True)
@@ -39,7 +86,17 @@ def main():
     parser.add_argument("--go-bin", default="go")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--mysql-container", help="explicit existing test container; its loopback port must match the opt-in test DSN")
+    parser.add_argument("--artifact-root", type=Path, help="new random run children only; default is the existing ignored evidence root")
+    parser.add_argument("--binary-budget-mib", type=int, default=256)
+    parser.add_argument("--build-temp-budget-mib", type=int, default=512)
+    parser.add_argument("--cache-budget-mib", type=int, default=256)
+    parser.add_argument("--mysql-growth-budget-mib", type=int, default=128)
+    parser.add_argument("--reserve-mib", type=int, default=256)
     args = parser.parse_args()
+    if args.mysql_container and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}",args.mysql_container):
+        parser.error("an explicit existing container name is required")
+    if min(args.binary_budget_mib,args.build_temp_budget_mib,args.cache_budget_mib,args.mysql_growth_budget_mib,args.reserve_mib)<1:
+        parser.error("positive explicit planning budgets required")
     os.umask(0o077)
     repo = args.checkout.resolve()
     templates = Path(__file__).resolve().parent
@@ -48,19 +105,25 @@ def main():
     if git("rev-parse", "HEAD") != args.revision or git("status", "--porcelain"):
         parser.error("exact clean revision required; no existing source is reset")
     subprocess.run(["git", "merge-base", "--is-ancestor", BASELINE, args.revision], cwd=repo, check=True)
-    names = ("old_seed_probe.go.txt", "current_upgrade_probe.go.txt", "snapshot_probe.go.txt", "restore_probe.go.txt")
+    names = ("old_seed_probe.go.txt", "current_upgrade_probe.go.txt", "snapshot_probe.go.txt", "restore_probe.go.txt", "current_authority_probe.go.txt")
     metadata = {"baseline": BASELINE, "current": args.revision, "driver": args.driver,
                 "templates": {name: digest(templates / name) for name in names},
                 "controller_sha256": digest(Path(__file__).resolve()), "execute": args.execute}
+    root = (args.artifact_root or repo/".codex-local-artifacts"/"acceptance").resolve()
+    plan = disk_budget(repo,root,args,git)
+    metadata["disk_budget"] = plan
+    metadata["artifact_root"] = str(root)
     if not args.execute:
         print(json.dumps(metadata)); return 0
+    if any(not item["sufficient"] for item in plan["filesystems"]) or (plan["mysql_data_filesystem"] and not plan["mysql_data_filesystem"]["sufficient"]):
+        print(json.dumps({"status":"not_started", "reason":"insufficient planned free space", "disk_budget":plan}))
+        return 2
     for line in subprocess.check_output(["ps", "-eo", "state,comm"], text=True).splitlines()[1:]:
         parts = line.split()
-        if len(parts) == 2 and parts[0] != "Z" and (parts[1] in ("go", "compile", "link", "node", "pnpm") or parts[1].endswith(".test")):
+        if len(parts) == 2 and parts[0] != "Z" and (parts[1] in ("go", "compile", "link", "node", "pnpm", "zboard") or parts[1].endswith(".test")):
             parser.error("another local workload is active; no duplicate run")
     if args.driver in ("mysql", "both") and (not os.environ.get("ZBOARD_TEST_MYSQL_DSN") or not args.mysql_container):
         parser.error("explicit isolated loopback test DSN required")
-    root = repo / ".codex-local-artifacts" / "acceptance"
     root.mkdir(parents=True, exist_ok=True)
     out = Path(tempfile.mkdtemp(prefix="upgrade-" + args.driver + "-", dir=root))
     metadata.update(started_utc=now(), output=str(out), commands=[], status="pending")
@@ -98,12 +161,16 @@ def main():
             for name, target in ((template, "convergence_version_probe_test.go"), (names[2], "convergence_snapshot_probe_test.go")):
                 path = base / "internal" / "handler" / target
                 with path.open("xb") as stream: stream.write((templates/name).read_bytes())
+            if label == "current":
+                path = base/"internal"/"handler"/"convergence_current_authority_probe_test.go"
+                with path.open("xb") as stream: stream.write((templates/names[4]).read_bytes())
             if label == "old":
                 path = base / "internal" / "handler" / "convergence_restore_probe_test.go"
                 with path.open("xb") as stream:
                     stream.write((templates / names[3]).read_bytes())
             run(label+"-build", [args.go_bin, "test", "-c", "-p", "1", "-mod=readonly", "-buildvcs=false", "-o", str(out/(label+".test")), "./internal/handler"], base)
             metadata[label + "_binary_sha256"] = digest(out/(label+".test"))
+            metadata[label + "_binary_bytes"] = (out/(label+".test")).stat().st_size
         metadata["driver_results"] = {}
         mysql_dsn = env.get("ZBOARD_TEST_MYSQL_DSN")
         drivers = ("sqlite", "mysql") if args.driver == "both" else (args.driver,)
@@ -141,6 +208,18 @@ def main():
             run(prefix+"current-upgrade", [str(out/"current.test"), "-test.run", "^TestConvergenceUpgradeFromOldVersion$", "-test.v", "-test.timeout", "5m"], fixture)
             env["ZBOARD_UPGRADE_RECOVERY"] = "1"
             run(prefix+"current-recovery", [str(out/"current.test"), "-test.run", "^TestConvergenceUpgradeFromOldVersion$", "-test.v", "-test.timeout", "5m"], fixture)
+            for phase,test in (("current-authority-seed","TestConvergenceCurrentAuthoritySeed"),
+                               ("current-authority-reopen","TestConvergenceCurrentAuthorityReopen"),
+                               ("current-authority-backup-restore","TestConvergenceCurrentAuthorityBackupRestore")):
+                run(prefix+phase,[str(out/"current.test"),"-test.run","^"+test+"$","-test.v","-test.timeout","5m"],fixture)
+                if phase == "current-authority-seed":
+                    current_backup = fixture/("current-source.db" if driver == "sqlite" else "current-source.sql")
+                    result["current_backup_sha256"] = digest(current_backup)
+                    result["current_authority_snapshot_sha256"] = digest(fixture/"current-authority.json")
+            result["current_authority_restore"] = json.loads((fixture/"authority-restore-result.json").read_text())
+            if digest(current_backup) != result["current_backup_sha256"]:
+                raise RuntimeError("immutable current backup changed")
+            result["current_backup_unchanged"] = True
             run(prefix+"old-backup-restore", [str(out/"old.test"), "-test.run", "^TestConvergenceRestoreOldBackup$", "-test.v", "-test.timeout", "5m"], fixture)
             result["old_backup_restore"] = json.loads((fixture / "restore-result.json").read_text())
             if digest(backup) != result["old_backup_sha256"]:
@@ -175,6 +254,15 @@ def main():
             metadata["old_seed_exit_code"] = result
             metadata["old_seed_log_sha256"] = digest(Path(log.name))
             if result != 0: metadata["status"] = "failed"
+        try:
+            metadata["final_disk_budget_observation"] = disk_budget(repo,root,args,git)
+        except Exception as error:
+            metadata["final_disk_observation_error"] = type(error).__name__ + ": " + str(error)
+            metadata["status"] = "failed"
+        # Inspect only this newly-created run tree, never previous evidence roots.
+        owned_files = [p.stat() for p in out.rglob("*") if p.is_file()]
+        metadata["new_artifact_regular_file_bytes"] = sum(item.st_size for item in owned_files)
+        metadata["new_artifact_allocated_bytes"] = sum(item.st_blocks*512 for item in owned_files)
         metadata["finished_utc"] = now()
         metadata["primary_worktree_clean"] = not git("status", "--porcelain")
         write(out/"final.json", metadata)

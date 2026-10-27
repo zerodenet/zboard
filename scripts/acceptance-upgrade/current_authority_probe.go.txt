@@ -1,0 +1,763 @@
+package handler
+
+import (
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+
+	mysqlconfig "github.com/go-sql-driver/mysql"
+	"github.com/google/uuid"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/commercestore"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore"
+	zeroadapter "github.com/zerodenet/zboard/backend/internal/adapters/zero"
+	"github.com/zerodenet/zboard/backend/internal/application"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/datastore"
+	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/internal/zeroevent"
+	"gorm.io/gorm"
+)
+
+type currentAuthorityReceipt struct {
+	Driver                string                                       `json:"driver"`
+	Frozen                []upgradeFrozenTable                         `json:"frozen"`
+	CommitID              uint                                         `json:"commit_order_id"`
+	ReleaseID             uint                                         `json:"release_order_id"`
+	UnknownID             uint                                         `json:"unknown_reserve_order_id"`
+	Automatic             model.SubscriptionAutomaticRenewal           `json:"automatic_pending"`
+	Clock                 time.Time                                    `json:"clock"`
+	ProviderStates        map[string]commerce.DiscountRedemptionResult `json:"isolated_provider_fixture_states"`
+	ProviderReserves      int                                          `json:"isolated_provider_fixture_reserves"`
+	ProofID               uint                                         `json:"proof_id"`
+	ProofMeta             string                                       `json:"proof_meta"`
+	ProofFactHash         string                                       `json:"proof_fact_hash"`
+	Events                []zeroevent.Envelope                         `json:"native_events"`
+	GapEvent              zeroevent.Envelope                           `json:"gap_fixture_event"`
+	ObservationCheckpoint string                                       `json:"observation_checkpoint"`
+	ObservationClock      time.Time                                    `json:"observation_clock"`
+	RuntimeFlow           metering.FlowStart                           `json:"runtime_flow_start"`
+	RuntimeBoundaries     []metering.PrincipalEvent                    `json:"runtime_boundaries"`
+	RuntimeEvents         []metering.PrincipalEvent                    `json:"runtime_observation_events"`
+	RuntimeObservations   []metering.PrincipalObservation              `json:"runtime_observations"`
+	WalletBefore          int64                                        `json:"wallet_before"`
+}
+
+// This runs only after the old fixture was upgraded and its original restart
+// checks passed. New writes use real core paths in that SAME isolated database.
+func TestConvergenceCurrentAuthoritySeed(t *testing.T) {
+	dir, driver, db := openCurrentAuthoritySource(t)
+	for _, table := range []string{"traffic_record_meta_archives", "order_discount_redemptions", "subscription_automatic_renewals"} {
+		var n int64
+		if err := db.Table(table).Count(&n).Error; err != nil || n != 0 {
+			t.Fatal("old upgrade invented new business authority", table, n, err)
+		}
+	}
+	for _, required := range []string{"0066_automatic_renewal_pending_orders.up.sql", "0067_node_observation_retirement_budget.up.sql", "0068_coverage_runtime_identity.up.sql", "0069_principal_runtime_identity.up.sql"} {
+		var version int64
+		if err := db.Table("schema_migrations").Where("version = ?", required).Count(&version).Error; err != nil || version != 1 {
+			t.Fatal("real current authority migration required", required, version, err)
+		}
+	}
+	services := application.New(db, "0123456789abcdef0123456789abcdef")
+	t.Cleanup(services.Close)
+	h, err := NewHandlers(services, db, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sku model.PlanSKU
+	if err := db.Order("id").First(&sku).Error; err != nil {
+		t.Fatal(err)
+	}
+	var plan model.Plan
+	if err := db.First(&plan, sku.PlanID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var group model.NodeGroup
+	if err := db.First(&group, plan.NodeGroupID).Error; err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := h.issueToken(authClaims{UserID: 1, Email: "reader@example.test", IsAdmin: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := orderFixture{catalogFixture: catalogFixture{h: h, token: token, group: group}, planRecord: plan, skuRecord: sku}
+	// A genuine wallet-paid recurring root, not synthesized historical payment.
+	f, p := newAutomaticFiniteFixture(t, base, 50000)
+	var credential model.ProtocolCredential
+	if err := db.Where("subscription_id = ?", f.sub.ID).First(&credential).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.ProtocolEndpoint{}).Where("id = ?", credential.ProtocolEndpointID).Update("multiplier_milli", 1500).Error; err != nil {
+		t.Fatal(err)
+	}
+	credential.CredentialID = strings.Repeat("p", 96)
+	if err := db.Model(&model.ProtocolCredential{}).Where("id = ?", credential.ID).Update("credential_id", credential.CredentialID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var node model.Node
+	if err := db.First(&node, credential.NodeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	events := repeatedFlowEvents(credential, 3)
+	for i := range events {
+		events[i].ID = fmt.Sprintf("upgrade-native-proof-%d", i)
+		events[i].SourceID, events[i].CoreInstanceID, events[i].AssetTag = strings.Repeat("s", 190), strings.Repeat("c", 190), node.AssetTag
+		events[i].Sequence = 12345678901234560 + uint64(i)
+	}
+	if err := h.projectZeroNodeEvents(t.Context(), events); err != nil {
+		t.Fatal("upgraded native accounting", err)
+	}
+	var proof model.TrafficRecord
+	if err := db.Where("subscription_id = ?", f.sub.ID).First(&proof).Error; err != nil || proof.RawBytes != 9 || proof.UsedBytes != 15 {
+		t.Fatal("upgraded rounding proof", err)
+	}
+	if n, err := (meteringstore.UsageProjectionWorker{DB: db}).Drain(t.Context(), 200); err != nil || n != 1 {
+		t.Fatal("upgraded projection checkpoint", n, err)
+	}
+	runtimeFlow, runtimeBoundaries, runtimeEvents, runtimeObservations := seedCurrentRuntimeAuthority(t, h, credential, events[0].CoreInstanceID)
+	archiveClock := time.Now().UTC().Truncate(time.Millisecond).Add(8 * 24 * time.Hour)
+	out, err := (meteringstore.ProofArchives{DB: db, Now: func() time.Time { return archiveClock }}).Archive(t.Context(), metering.ProofArchiveRequest{AfterID: proof.ID - 1, ThroughID: proof.ID, Before: archiveClock.Add(-7 * 24 * time.Hour), Limit: 3})
+	if err != nil || out.Archived != 1 {
+		t.Fatal("actual upgraded proof not sealed", out, err)
+	}
+	// Exercise the new internal observation size admission boundary. This is an
+	// application/adapter fixture, not a claim that a >2MiB HTTP event is admitted.
+	// Its explicit gap receipt must survive backup; no raw oversized part is kept.
+	warning := events[len(events)-1]
+	warning.ID, warning.Type, warning.FlowID = "upgrade-oversize-observation", "engine.warning", ""
+	warning.Sequence++
+	warning.Payload = json.RawMessage(`{"diagnostic":"` + strings.Repeat("r", 2*1024*1024) + `"}`)
+	if err := h.projectZeroNodeEvents(t.Context(), []zeroevent.Envelope{warning}); err != nil {
+		t.Fatal("observation size/gap admission", err)
+	}
+	var retired int64
+	if err := db.Table("node_observation_retirements").Count(&retired).Error; err != nil || retired < 1 {
+		t.Fatal("actual compact retirement receipt missing", retired, err)
+	}
+	assertCurrentObservationBudget(t, db)
+	// Stop a real old, unreferenced source after verification, before deletion.
+	// Clock injection never edits the immutable source timestamps or source body.
+	retention := observationstore.MaterialRetention{DB: db, Now: func() time.Time { return archiveClock }}
+	checkpoint := ""
+	for attempt := 0; attempt < 16; attempt++ {
+		if _, err := retention.Retire(t.Context(), 1, observationstore.MaxDrainBytes); err != nil {
+			t.Fatal("real observation retirement checkpoint", err)
+		}
+		var head struct{ IntentID string }
+		found := db.Table("node_observation_retirements").Select("intent_id").Where("state = ?", "deleting").Order("intent_id").Limit(1).Scan(&head)
+		if found.Error != nil {
+			t.Fatal(found.Error)
+		}
+		if found.RowsAffected > 0 {
+			checkpoint = head.IntentID
+			break
+		}
+	}
+	if checkpoint == "" {
+		t.Fatal("no actual interrupted deletion checkpoint")
+	}
+	var proofParts int64
+	if err := db.Table("node_observation_retirement_parts").Where("intent_id = ?", checkpoint).Count(&proofParts).Error; err != nil || proofParts < 1 {
+		t.Fatal("retirement checkpoint lacks real per-part proof", proofParts, err)
+	}
+	assertCurrentObservationBudget(t, db)
+	commit := f.buy(t, 0, "upgrade-new-finite-commit")
+	create := func(key string) commerce.Order {
+		r := commerce.OrderCreateRequest{PlanSKUID: sku.ID, IdempotencyKey: key, Discount: &commerce.OrderDiscountSelection{ProviderID: "example.quote", Selection: "recurring"}}
+		q, err := f.orders.Preview(t.Context(), 1, r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.QuoteFingerprint = q.QuoteFingerprint
+		o, err := f.orders.Create(t.Context(), 1, r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return o
+	}
+	release := create("upgrade-new-finite-release")
+	if _, err := h.services.OrderCancellation.Owned(t.Context(), 1, release.ID); err != nil {
+		t.Fatal(err)
+	}
+	staged := stageFiniteOrder(t, f)
+	p.loseACK = true
+	unknown := create("upgrade-new-finite-unknown")
+	var reserve model.OrderDiscountRedemption
+	if err := db.First(&reserve, "order_id = ?", unknown.ID).Error; err != nil || reserve.Desired != "reserve" || reserve.Observed != "unknown" || reserve.Token != "" {
+		t.Fatal("lost ACK did not remain unknown", err)
+	}
+	var wallet model.WalletAccount
+	if err := db.First(&wallet, "user_id = ? AND currency = ?", 1, "CNY").Error; err != nil || wallet.BalanceMinor != 30000 || wallet.ReservedMinor != 0 {
+		t.Fatal("staging charged wallet", err)
+	}
+	receipt := currentAuthorityReceipt{Driver: driver, CommitID: commit.ID, ReleaseID: release.ID, UnknownID: unknown.ID, Automatic: staged, Clock: *f.at, ProviderStates: p.states, ProviderReserves: p.reserves, ProofID: proof.ID, ProofMeta: proof.Meta, ProofFactHash: metering.ProofFactDigest(metering.TrafficRecord(proof)), Events: events, GapEvent: warning, WalletBefore: wallet.BalanceMinor}
+	receipt.RuntimeFlow, receipt.RuntimeBoundaries, receipt.RuntimeEvents, receipt.RuntimeObservations = runtimeFlow, runtimeBoundaries, runtimeEvents, runtimeObservations
+	assertCurrentRuntimeAuthority(t, db, receipt)
+	receipt.ObservationCheckpoint, receipt.ObservationClock = checkpoint, archiveClock
+	receipt.Frozen = freezeCurrentAuthority(t, db)
+	writeCurrentAuthorityJSON(t, filepath.Join(dir, "current-authority.json"), receipt)
+	h.CloseBackgroundJobs()
+	if driver == "sqlite" {
+		if _, err := os.Stat(filepath.Join(dir, "current-source.db")); !os.IsNotExist(err) {
+			t.Fatal("preserve prior current backup")
+		}
+		if err := db.Exec("VACUUM INTO ?", filepath.Join(dir, "current-source.db")).Error; err != nil {
+			t.Fatal("isolated current snapshot failed", err)
+		}
+	} else {
+		cfg := currentAuthorityMySQL(t, dir)
+		pool, _ := db.DB()
+		if err := pool.Close(); err != nil {
+			t.Fatal(err)
+		}
+		currentAuthorityCLI(t, cfg, "current-source.sql", false, dir)
+	}
+}
+
+func TestConvergenceCurrentAuthorityReopen(t *testing.T) {
+	dir, _, db := openCurrentAuthoritySource(t)
+	r := readCurrentAuthority(t, dir)
+	if err := datastore.RunMigrations(db); err != nil {
+		t.Fatal(err)
+	}
+	assertCurrentAuthorityFrozen(t, db, r.Frozen)
+	assertCurrentProof(t, db, r)
+	assertCurrentRuntimeAuthority(t, db, r)
+	if err := datastore.PrepareHourlyProjectionRollback(db); err == nil {
+		t.Fatal("older binary rollback admitted new sealed/financial authority")
+	}
+	assertCurrentAuthorityFrozen(t, db, r.Frozen)
+	writeCurrentAuthorityJSON(t, filepath.Join(dir, "authority-reopen-result.json"), map[string]any{"passed": true, "separate_process": true, "all_selected_columns_unchanged": true, "new_business_authority_not_downgraded": true})
+}
+
+// Restore the NEW backup using the NEW binary in a new owned destination.
+// Old-binary restoration of the separate OLD backup remains another step.
+func TestConvergenceCurrentAuthorityBackupRestore(t *testing.T) {
+	dir, driver := currentAuthorityEnvironment(t)
+	r := readCurrentAuthority(t, dir)
+	var db *gorm.DB
+	complete := false
+	if driver == "sqlite" {
+		source, err := os.Open(filepath.Join(dir, "current-source.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer source.Close()
+		path := filepath.Join(dir, "restored-current.db")
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, copyErr := io.Copy(file, source)
+		closeErr := file.Close()
+		if copyErr != nil || closeErr != nil {
+			t.Fatal("current copy failed", copyErr, closeErr)
+		}
+		db, err = datastore.OpenWithDriver(driver, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		cfg := currentAuthorityMySQL(t, dir)
+		cfg.DBName = ""
+		admin, err := sql.Open("mysql", cfg.FormatDSN())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer admin.Close()
+		schema := "zboard_upgrade_authority_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+		writeCurrentAuthorityJSON(t, filepath.Join(dir, "authority-restore-destination.json"), map[string]any{"schema": schema, "production_data": false})
+		if _, err := admin.ExecContext(t.Context(), "CREATE DATABASE `"+schema+"` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"); err != nil {
+			t.Fatal("CREATE outcome must be inspected, never blindly retried", err)
+		}
+		defer func() {
+			if complete {
+				if _, err := admin.Exec("DROP DATABASE `" + schema + "`"); err != nil {
+					t.Error("owned completed restore cleanup", err)
+				}
+			}
+		}()
+		cfg.DBName = schema
+		currentAuthorityCLI(t, cfg, "current-source.sql", true, dir)
+		db, err = datastore.OpenWithDriver(driver, cfg.FormatDSN())
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	for range 2 {
+		if err := datastore.RunMigrations(db); err != nil {
+			t.Fatal("restored migration", err)
+		}
+	}
+	assertCurrentAuthorityFrozen(t, db, r.Frozen)
+	assertCurrentProof(t, db, r)
+	assertCurrentRuntimeAuthority(t, db, r)
+	// The restored nonempty SHA checkpoint must continue through the production
+	// retention state machine. Only this new restored target is advanced.
+	retirementClock := r.ObservationClock.Add(time.Minute)
+	retention := observationstore.MaterialRetention{DB: db, Now: func() time.Time { return retirementClock }}
+	completed := false
+	for attempt := 0; attempt < 16; attempt++ {
+		var head struct{ State string }
+		if err := db.Table("node_observation_retirements").Select("state").Where("intent_id = ?", r.ObservationCheckpoint).Take(&head).Error; err != nil {
+			t.Fatal(err)
+		}
+		if head.State == "complete" {
+			completed = true
+			break
+		}
+		if _, err := retention.Retire(t.Context(), 1, observationstore.MaxDrainBytes); err != nil {
+			t.Fatal("resume restored verified deletion", err)
+		}
+	}
+	if !completed {
+		t.Fatal("restored retirement checkpoint did not finish within finite bound")
+	}
+	assertCurrentObservationBudget(t, db)
+	assertCurrentFinancialAuthority(t, db, r.Frozen)
+	beforeReplay := freezeCurrentAuthority(t, db)
+	services := application.New(db, "0123456789abcdef0123456789abcdef")
+	defer services.Close()
+	h, err := NewHandlers(services, db, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	spool := &checkpointTestSpool{events: r.Events, commitErr: errors.New("restored checkpoint unavailable")}
+	if _, err := h.consumeZeroEventBatch(t.Context(), spool, 3); err == nil || spool.position != 0 {
+		t.Fatal("restored failed checkpoint acknowledged", err)
+	}
+	spool.commitErr = nil
+	if n, err := h.consumeZeroEventBatch(t.Context(), spool, 3); err != nil || n != 3 || spool.position != 3 {
+		t.Fatal("restored archived replay", n, err)
+	}
+	if err := h.projectZeroNodeEvents(t.Context(), []zeroevent.Envelope{r.GapEvent}); err != nil {
+		t.Fatal("restored compact-gap replay", err)
+	}
+	replayCurrentRuntimeAuthority(t, h, r)
+	assertCurrentRuntimeAuthority(t, db, r)
+	assertCurrentObservationBudget(t, db)
+	assertCurrentAuthorityFrozen(t, db, beforeReplay)
+	// Only the fixture's memory map was explicitly serialized into evidence.
+	// Loading it supplies Host outbox branches; it does not prove provider-side
+	// durable storage, crash recovery, inventory correctness or a real sandbox.
+	p := &stagedFiniteProvider{db: db, states: r.ProviderStates, reserves: r.ProviderReserves, offline: true, finite: true}
+	at := r.Clock.Add(2 * time.Minute)
+	issuer := zeroadapter.Issuer{Cipher: h.credentialCipher, Mieru: h.zeroMieruAccess}
+	auto := commerce.AutomaticRenewals{Repository: commercestore.AutomaticRenewals{DB: db, Issuer: issuer, Now: func() time.Time { return at }, Discounts: p}}
+	if n, err := auto.Process(t.Context(), 1); err != nil || n != 1 {
+		t.Fatal("restored confirmed pending consent did not fulfill offline once", n, err)
+	}
+	if n, err := auto.Process(t.Context(), 1); err != nil || n != 0 {
+		t.Fatal("restored consent debited twice", n, err)
+	}
+	var renewed model.SubscriptionAutomaticRenewal
+	if err := db.First(&renewed, "subscription_id = ?", r.Automatic.SubscriptionID).Error; err != nil || renewed.PendingOrderID != nil || renewed.LastOrderID == nil || *renewed.LastOrderID != *r.Automatic.PendingOrderID || renewed.PendingAttempt != r.Automatic.PendingAttempt {
+		t.Fatal("restored staged identity was replaced", err)
+	}
+	var wallet model.WalletAccount
+	if err := db.First(&wallet, "user_id = ? AND currency = ?", 1, "CNY").Error; err != nil || wallet.BalanceMinor != r.WalletBefore-10000 || wallet.ReservedMinor != 0 {
+		t.Fatal("restored one-order wallet conservation", err)
+	}
+	p.offline = false
+	jobs := commercestore.DiscountRedemptionJobs{DB: db, Provider: p, Now: func() time.Time { return at }}
+	for _, id := range []uint{r.CommitID, r.ReleaseID, r.UnknownID, *r.Automatic.PendingOrderID} {
+		if err := jobs.Step(t.Context(), id); err != nil {
+			t.Fatal("restored outbox reconcile", id, err)
+		}
+	}
+	for _, expected := range []struct {
+		id                uint
+		desired, observed string
+	}{{r.CommitID, "commit", "committed"}, {r.ReleaseID, "release", "released"}, {r.UnknownID, "reserve", "reserved"}, {*r.Automatic.PendingOrderID, "commit", "committed"}} {
+		var row model.OrderDiscountRedemption
+		if err := db.First(&row, "order_id = ?", expected.id).Error; err != nil || row.Desired != expected.desired || row.Observed != expected.observed {
+			t.Fatal("restored outbox lost original disposition", expected.id, err)
+		}
+	}
+	if p.reserves != r.ProviderReserves {
+		t.Fatal("unknown ACK was retried as a fresh reserve")
+	}
+	assertCurrentProof(t, db, r)
+	assertCurrentRuntimeAuthority(t, db, r)
+	writeCurrentAuthorityJSON(t, filepath.Join(dir, "authority-restore-observed.json"), freezeCurrentAuthority(t, db))
+	writeCurrentAuthorityJSON(t, filepath.Join(dir, "authority-restore-result.json"), map[string]any{"passed": true, "driver": driver, "current_backup_restored_with_current_binary": true, "full_selected_columns_preserved": true, "binary_archive_payload_exact": true, "nonempty_retirement_checkpoint_restored_and_completed": true, "native_replay_did_not_recharge": true, "full_long_runtime_ids_restored": true, "long_runtime_replay_did_not_reset_windows": true, "unknown_ack_queried_without_reserve": true, "pending_consent_paid_once": true, "commit_release_outbox_reconciled": true, "provider_memory_map_fixture_only": true, "provider_durability_or_real_sandbox_verified": false, "production_data": false, "downgraded_current_database": false})
+	if err := pool.Close(); err != nil {
+		t.Fatal(err)
+	}
+	complete = true
+}
+
+func assertCurrentObservationBudget(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var budget struct{ RetainedBytes uint64 }
+	if err := db.Table("node_observation_material_budget").Select("retained_bytes").Where("id = ?", 1).Take(&budget).Error; err != nil {
+		t.Fatal("authoritative observation byte budget missing", err)
+	}
+	var actual uint64
+	if err := db.Raw("SELECT COALESCE(SUM(octet_length(data)),0) FROM node_observation_parts").Scan(&actual).Error; err != nil || actual != budget.RetainedBytes {
+		t.Fatal("restored observation byte authority disagrees with actual retained binary parts", actual, budget.RetainedBytes, err)
+	}
+}
+
+func currentAuthorityEnvironment(t *testing.T) (string, string) {
+	t.Helper()
+	dir, driver := os.Getenv("ZBOARD_UPGRADE_FIXTURE_DIR"), os.Getenv("ZBOARD_UPGRADE_FIXTURE_DRIVER")
+	if dir == "" || (driver != "sqlite" && driver != "mysql") {
+		t.Skip("explicit isolated upgrade controller required")
+	}
+	return dir, driver
+}
+func openCurrentAuthoritySource(t *testing.T) (string, string, *gorm.DB) {
+	t.Helper()
+	dir, driver := currentAuthorityEnvironment(t)
+	source := filepath.Join(dir, "current.db")
+	if driver == "mysql" {
+		source = currentAuthorityMySQL(t, dir).FormatDSN()
+	} else if info, err := os.Stat(source); err != nil || !info.Mode().IsRegular() {
+		t.Fatal("existing owned upgraded source required")
+	}
+	db, err := datastore.OpenWithDriver(driver, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	return dir, driver, db
+}
+func currentAuthorityMySQL(t *testing.T, dir string) *mysqlconfig.Config {
+	t.Helper()
+	cfg, err := mysqlconfig.ParseDSN(os.Getenv("ZBOARD_TEST_MYSQL_DSN"))
+	if err != nil {
+		t.Fatal("invalid isolated DSN")
+	}
+	container := os.Getenv("ZBOARD_UPGRADE_MYSQL_CONTAINER")
+	if cfg.Net != "tcp" || !regexp.MustCompile(`^127\.0\.0\.1:[0-9]+$`).MatchString(cfg.Addr) || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`).MatchString(container) {
+		t.Fatal("explicit original loopback test container required")
+	}
+	mapping, err := exec.CommandContext(t.Context(), "docker", "port", container, "3306/tcp").Output()
+	if err != nil {
+		t.Fatal("cannot verify test container port")
+	}
+	matched := false
+	for _, line := range strings.Split(string(mapping), "\n") {
+		if strings.TrimSpace(line) == cfg.Addr {
+			matched = true
+		}
+	}
+	if !matched {
+		t.Fatal("DSN differs from explicit test container")
+	}
+	var old struct {
+		Source string `json:"source"`
+		Schema string `json:"schema"`
+	}
+	readCurrentAuthorityJSON(t, filepath.Join(dir, "old-ready.json"), &old)
+	if old.Source != "7c7283fb34840883fccaba1de6e0a98edb24dfb1" || !regexp.MustCompile(`^zboard_test_[a-f0-9]{32}$`).MatchString(old.Schema) {
+		t.Fatal("only original owned old-version schema permitted")
+	}
+	cfg.DBName, cfg.ParseTime, cfg.Loc = old.Schema, true, time.UTC
+	return cfg
+}
+func currentAuthorityCLI(t *testing.T, cfg *mysqlconfig.Config, name string, restore bool, dir string) {
+	t.Helper()
+	args := []string{"exec", "-e", "MYSQL_PWD", os.Getenv("ZBOARD_UPGRADE_MYSQL_CONTAINER"), "mysqldump", "--user=" + cfg.User, "--single-transaction", "--hex-blob", "--set-gtid-purged=OFF", "--no-tablespaces", cfg.DBName}
+	if restore {
+		args = []string{"exec", "-i", "-e", "MYSQL_PWD", os.Getenv("ZBOARD_UPGRADE_MYSQL_CONTAINER"), "mysql", "--user=" + cfg.User, cfg.DBName}
+	}
+	cmd := exec.CommandContext(t.Context(), "docker", args...)
+	cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.Passwd)
+	logName := "current-dump.stderr"
+	if restore {
+		logName = "authority-restore-import.log"
+	}
+	log, err := os.OpenFile(filepath.Join(dir, logName), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer log.Close()
+	cmd.Stderr = log
+	if restore {
+		f, err := os.Open(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		cmd.Stdin = f
+		cmd.Stdout = log
+		if err := cmd.Run(); err != nil {
+			t.Fatal("owned current restore failed; destination preserved", err)
+		}
+	} else {
+		f, err := os.OpenFile(filepath.Join(dir, name), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd.Stdout = f
+		runErr := cmd.Run()
+		closeErr := f.Close()
+		if runErr != nil || closeErr != nil {
+			t.Fatal("owned current dump failed", runErr, closeErr)
+		}
+	}
+}
+func writeCurrentAuthorityJSON(t *testing.T, path string, value any) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = json.NewEncoder(f).Encode(value)
+	closeErr := f.Close()
+	if err != nil || closeErr != nil {
+		t.Fatal(err, closeErr)
+	}
+}
+func readCurrentAuthorityJSON(t *testing.T, path string, value any) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > 16*1024*1024 {
+		t.Fatal("bounded owned evidence file required", err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	decoder := json.NewDecoder(io.LimitReader(f, 16*1024*1024+1))
+	if err := decoder.Decode(value); err != nil {
+		t.Fatal(err)
+	}
+	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		t.Fatal("trailing evidence")
+	}
+}
+func readCurrentAuthority(t *testing.T, dir string) currentAuthorityReceipt {
+	t.Helper()
+	var r currentAuthorityReceipt
+	readCurrentAuthorityJSON(t, filepath.Join(dir, "current-authority.json"), &r)
+	if len(r.Frozen) == 0 || r.Automatic.PendingOrderID == nil || r.ProofID == 0 || r.ProofFactHash == "" || r.ObservationCheckpoint == "" || r.ObservationClock.IsZero() {
+		t.Fatal("incomplete current authority evidence")
+	}
+	return r
+}
+func assertCurrentProof(t *testing.T, db *gorm.DB, r currentAuthorityReceipt) {
+	t.Helper()
+	var proof model.TrafficRecord
+	if err := db.First(&proof, r.ProofID).Error; err != nil {
+		t.Fatal(err)
+	}
+	q := metering.RecordsQuery{Paged: true, Limit: 20, From: proof.At.Add(-time.Hour), To: proof.At.Add(time.Hour), SubscriptionID: proof.SubscriptionID}
+	out, err := (meteringstore.Records{DB: db}).Read(t.Context(), proof.UserID, q)
+	if err != nil {
+		t.Fatal("restored complete proof unreadable", err)
+	}
+	for _, record := range out.Records {
+		if record.ID == r.ProofID {
+			if record.Meta != r.ProofMeta || metering.ProofFactDigest(record) != r.ProofFactHash {
+				t.Fatal("restored proof amount/nonce/epoch/body changed")
+			}
+			return
+		}
+	}
+	t.Fatal("restored proof missing")
+}
+func assertCurrentAuthorityFrozen(t *testing.T, db *gorm.DB, expected []upgradeFrozenTable) {
+	t.Helper()
+	a, err := json.Marshal(freezeCurrentAuthority(t, db))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(expected)
+	if err != nil || string(a) != string(b) {
+		t.Fatal("current backup/restart altered selected authority columns", err)
+	}
+}
+
+func assertCurrentFinancialAuthority(t *testing.T, db *gorm.DB, expected []upgradeFrozenTable) {
+	t.Helper()
+	current := freezeCurrentAuthority(t, db)
+	if len(current) != len(expected) {
+		t.Fatal("authority inventory changed after retirement")
+	}
+	for i, table := range expected {
+		if current[i].Name != table.Name {
+			t.Fatal("authority order changed")
+		}
+		if strings.HasPrefix(table.Name, "node_observation_") {
+			continue
+		}
+		actual := current[i]
+		if table.Name == "audit_logs" {
+			// Existing operator/reason records are immutable. New retirement audit
+			// entries may be appended by the real production state machine.
+			if len(actual.Rows) < len(table.Rows) {
+				t.Fatal("retirement deleted prior audit")
+			}
+			actual.Rows = actual.Rows[:len(table.Rows)]
+		}
+		a, err := json.Marshal(actual)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := json.Marshal(table)
+		if err != nil || string(a) != string(b) {
+			t.Fatal("observation retirement changed financial/cursor/credential/history authority", table.Name, err)
+		}
+	}
+}
+func freezeCurrentAuthority(t *testing.T, db *gorm.DB) []upgradeFrozenTable {
+	t.Helper()
+	tables := []struct{ name, key string }{{"orders", "id"}, {"subscriptions", "id"}, {"protocol_credentials", "id"}, {"traffic_records", "id"}, {"quota_events", "id"}, {"node_config_publishes", "node_id"}, {"subscription_mutations", "id"}, {"wallet_entries", "id"}, {"wallet_accounts", "user_id,currency"}, {"order_value_budgets", "order_id"}, {"subscription_value_settlements", "id"}, {"subscription_value_settlement_sources", "settlement_id,order_id"}, {"closed_entitlements", "subscription_id,epoch"}, {"consumption_refunds", "id"}, {"order_fundings", "order_id"}, {"payment_attempts", "id"}, {"payment_receipts", "id"}, {"order_discount_redemptions", "order_id"}, {"subscription_automatic_renewals", "subscription_id"}, {"traffic_record_meta_archives", "traffic_record_id"}, {"metering_report_receipts", "node_id,report_id"}, {"flow_usages", "id"}, {"metering_usage_projection_pending", "traffic_record_id"}, {"node_observation_intents", "id"}, {"node_observation_parts", "intent_id,ordinal"}, {"node_observation_states", "node_id,asset_tag"}, {"node_observation_material_budget", "id"}, {"node_observation_retirements", "intent_id"}, {"node_observation_retirement_parts", "intent_id,ordinal"}, {"subscription_flow_start_events", "id"}, {"fair_use_node_coverage", "node_id"}, {"principal_flow_node_generations", "node_id"}, {"principal_flow_observations", "id"}, {"principal_flow_currents", "node_id,principal_key"}, {"principal_flow_scope_observations", "id"}, {"principal_flow_scope_currents", "scope_type,scope_id"}, {"audit_logs", "id"}, {"schema_migrations", "version"}}
+	var out []upgradeFrozenTable
+	for _, table := range tables {
+		keys := strings.Split(table.key, ",")
+		for i := range keys {
+			keys[i] = "`" + keys[i] + "`"
+		}
+		rows, err := db.Raw("SELECT * FROM `" + table.name + "` ORDER BY " + strings.Join(keys, ",") + " LIMIT 2001").Rows()
+		if err != nil {
+			t.Fatal(err)
+		}
+		columns, err := rows.Columns()
+		if err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		frozen := upgradeFrozenTable{Name: table.name, Columns: columns}
+		for rows.Next() {
+			if len(frozen.Rows) >= 2000 {
+				rows.Close()
+				t.Fatal("isolated authority row budget exceeded", table.name)
+			}
+			values := make([]any, len(columns))
+			targets := make([]any, len(values))
+			for i := range values {
+				targets[i] = &values[i]
+			}
+			if err := rows.Scan(targets...); err != nil {
+				rows.Close()
+				t.Fatal(err)
+			}
+			for i, value := range values {
+				switch value := value.(type) {
+				case nil:
+					values[i] = nil
+				case []byte:
+					values[i] = "bytes-hex:" + hex.EncodeToString(value)
+				case time.Time:
+					values[i] = "time:" + value.UTC().Format(time.RFC3339Nano)
+				case string:
+					values[i] = "string:" + value
+				default:
+					values[i] = fmt.Sprint(value)
+				}
+			}
+			frozen.Rows = append(frozen.Rows, values)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		if err := rows.Close(); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, frozen)
+	}
+	return out
+}
+
+// These are real auxiliary capability writes to the same old->current upgraded
+// database. They do not pretend a real node/provider was contacted.
+func seedCurrentRuntimeAuthority(t *testing.T, h *handlers, c model.ProtocolCredential, coverageCore string) (metering.FlowStart, []metering.PrincipalEvent, []metering.PrincipalEvent, []metering.PrincipalObservation) {
+	t.Helper()
+	at := time.Now().UTC().Truncate(time.Millisecond)
+	flow := metering.FlowStart{NodeID: c.NodeID, CoreInstanceID: coverageCore, EventID: "upgrade-long-runtime-flow-start", Sequence: 1, PrincipalKey: c.PrincipalKey, OccurredAt: at, ReceivedAt: at}
+	if err := h.services.FairUseFlowCollection.Record(t.Context(), flow); err != nil {
+		t.Fatal("real long flow-start collection", err)
+	}
+	a := strings.Repeat("principal-runtime-", 16) + "A"
+	b := strings.Repeat("principal-runtime-", 16) + "B"
+	boundaries := []metering.PrincipalEvent{{CoreInstanceID: a, EventID: "upgrade-runtime-generation-a", Sequence: 1, ObservedAt: at}, {CoreInstanceID: b, EventID: "upgrade-runtime-generation-b", Sequence: 1, ObservedAt: at.Add(time.Second)}}
+	events := []metering.PrincipalEvent{{CoreInstanceID: a, EventID: "upgrade-runtime-observation-a", Sequence: 2, ObservedAt: at}, {CoreInstanceID: b, EventID: "upgrade-runtime-observation-b", Sequence: 2, ObservedAt: at.Add(time.Second)}, {CoreInstanceID: a, EventID: "upgrade-runtime-late-a", Sequence: 3, ObservedAt: at}}
+	observations := []metering.PrincipalObservation{{PrincipalKey: c.PrincipalKey, ActiveFlows: 7, SessionRegistryRevision: 1, ObservedAt: at}, {PrincipalKey: c.PrincipalKey, ActiveFlows: 3, SessionRegistryRevision: 1, ObservedAt: at.Add(time.Second)}, {PrincipalKey: c.PrincipalKey, ActiveFlows: 99, SessionRegistryRevision: 2, ObservedAt: at}}
+	for i := range boundaries {
+		if err := h.services.PrincipalCollection.Boundary(t.Context(), c.NodeID, boundaries[i], false); err != nil {
+			t.Fatal("real long runtime generation", err)
+		}
+		if err := h.services.PrincipalCollection.Observe(t.Context(), c.NodeID, events[i], observations[i]); err != nil {
+			t.Fatal("real long runtime observation", err)
+		}
+	}
+	if err := h.services.PrincipalCollection.Observe(t.Context(), c.NodeID, events[2], observations[2]); err != nil {
+		t.Fatal("real late previous runtime observation", err)
+	}
+	return flow, boundaries, events, observations
+}
+func assertCurrentRuntimeAuthority(t *testing.T, db *gorm.DB, r currentAuthorityReceipt) {
+	t.Helper()
+	if len(r.RuntimeBoundaries) != 2 || len(r.RuntimeEvents) != 3 || len(r.RuntimeObservations) != 3 {
+		t.Fatal("incomplete runtime identity evidence")
+	}
+	var coverage meteringstore.CoverageRecord
+	if err := db.First(&coverage, "node_id = ?", r.RuntimeFlow.NodeID).Error; err != nil || coverage.CoreInstanceID != r.RuntimeFlow.CoreInstanceID || len(coverage.CoreInstanceID) <= 128 {
+		t.Fatal("coverage lost accepted complete runtime original", err)
+	}
+	var flow meteringstore.FlowStartRecord
+	if err := db.First(&flow, "node_id = ? AND event_id = ?", r.RuntimeFlow.NodeID, r.RuntimeFlow.EventID).Error; err != nil || flow.CoreInstanceID != r.RuntimeFlow.CoreInstanceID {
+		t.Fatal("flow-start runtime original was truncated", err)
+	}
+	var generation meteringstore.PrincipalFlowNodeGeneration
+	if err := db.First(&generation, "node_id = ?", r.RuntimeFlow.NodeID).Error; err != nil || generation.CoreInstanceID != r.RuntimeBoundaries[1].CoreInstanceID || !generation.StartedAt.Equal(r.RuntimeBoundaries[1].ObservedAt) {
+		t.Fatal("long runtime generation/start changed", err)
+	}
+	var current meteringstore.PrincipalFlowCurrent
+	if err := db.First(&current, "node_id = ? AND principal_key = ?", r.RuntimeFlow.NodeID, r.RuntimeFlow.PrincipalKey).Error; err != nil || current.CoreInstanceID != r.RuntimeBoundaries[1].CoreInstanceID || current.ActiveFlows != 3 {
+		t.Fatal("late prior runtime replaced current observation", err)
+	}
+	var scope meteringstore.PrincipalFlowScopeCurrent
+	if err := db.First(&scope, "scope_type = ? AND scope_id = ?", "subscription", current.SubscriptionID).Error; err != nil || scope.ActiveFlows != 3 {
+		t.Fatal("runtime aggregate did not preserve current value", err)
+	}
+	for i, event := range r.RuntimeEvents {
+		var observation meteringstore.PrincipalFlowObservation
+		if err := db.First(&observation, "node_id = ? AND event_id = ?", r.RuntimeFlow.NodeID, event.EventID).Error; err != nil || observation.CoreInstanceID != event.CoreInstanceID || observation.CoreInstanceSHA256 != metering.RuntimeIdentityDigest(event.CoreInstanceID) || observation.ActiveFlows != r.RuntimeObservations[i].ActiveFlows {
+			t.Fatal("runtime full raw/digest/history differs", event.EventID, err)
+		}
+	}
+}
+func replayCurrentRuntimeAuthority(t *testing.T, h *handlers, r currentAuthorityReceipt) {
+	t.Helper()
+	if err := h.services.FairUseFlowCollection.Record(t.Context(), r.RuntimeFlow); err != nil {
+		t.Fatal("restored long flow-start replay", err)
+	}
+	for _, event := range r.RuntimeBoundaries {
+		if err := h.services.PrincipalCollection.Boundary(t.Context(), r.RuntimeFlow.NodeID, event, false); err != nil {
+			t.Fatal("restored long generation replay", err)
+		}
+	}
+	for i, event := range r.RuntimeEvents {
+		if err := h.services.PrincipalCollection.Observe(t.Context(), r.RuntimeFlow.NodeID, event, r.RuntimeObservations[i]); err != nil {
+			t.Fatal("restored long observation replay", err)
+		}
+	}
+}
