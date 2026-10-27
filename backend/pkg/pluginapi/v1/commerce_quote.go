@@ -43,6 +43,9 @@ type CommerceDiscountAgreement struct {
 }
 
 type CommerceDiscountOffer struct {
+	// Optional core-owned admission obligation, never opaque marketing terms.
+	// An old strict snapshot reader rejects this field instead of losing the hold.
+	Redemption       string                     `json:"redemption,omitempty"`
 	Status           string                     `json:"status"` // available, unavailable, requires_confirmation
 	InputFingerprint string                     `json:"input_fingerprint"`
 	Currency         string                     `json:"currency"`

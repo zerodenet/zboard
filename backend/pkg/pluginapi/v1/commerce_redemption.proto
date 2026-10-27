@@ -1,0 +1,11 @@
+syntax = "proto3";
+package zboard.plugin.v1;
+option go_package = "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1;pluginv1";
+import "v1/commerce_quote.proto";
+
+// Independently signed native capability. Existing bounded byte envelopes are
+// reused; context_json contains DiscountRedemptionRequest, offer_json contains
+// DiscountRedemptionResult. This RPC never grants a core mutation permission.
+service CommerceRedemptionProvider {
+  rpc ExecuteCommerceRedemption(CommerceQuoteRequest) returns (CommerceQuoteResult);
+}

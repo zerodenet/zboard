@@ -1,6 +1,7 @@
 {
   "version": 1,
   "plugin_rpcs": [
+    {"name": "CommerceRedemptionProvider.ExecuteCommerceRedemption", "owner": "commerce", "source": "pkg/pluginapi/v1/commerce_redemption.proto"},
     {"name": "CommerceQuoteProvider.EvaluateCommerceQuote", "owner": "commerce", "source": "pkg/pluginapi/v1/commerce_quote.proto"},
     {"name": "PluginControl.GetInfo", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"},
     {"name": "PluginControl.Health", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"},

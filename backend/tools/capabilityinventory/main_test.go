@@ -286,7 +286,7 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]int{
-		"plugin_rpc":               17,
+		"plugin_rpc":               18,
 		"plugin_capability":        31,
 		"host_operation":           16,
 		"plugin_host_operation":    16,
