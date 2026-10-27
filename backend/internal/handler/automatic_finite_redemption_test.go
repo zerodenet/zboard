@@ -215,7 +215,12 @@ func assertAutomaticFiniteRevoke(t *testing.T, base orderFixture) {
 	}
 	// Even this pending order's oversized nonfinancial material is retained; its
 	// cancel-only path uses order header+65 binding, never all source snapshots.
-	huge := strings.Repeat("retained-unpaid-material", commerce.MaxPurchaseSnapshotBytes/4)
+	// MySQL0055 is TEXT (65535 bytes), while the strict core snapshot limit is
+	// 60KiB. Exercise a real stored-but-undecodable body without violating DDL.
+	huge := strings.Repeat("x", commerce.MaxPurchaseSnapshotBytes+1024)
+	if len(huge) <= commerce.MaxPurchaseSnapshotBytes || len(huge) > 65535 {
+		t.Fatal("fixture must exceed the decoder budget while fitting actual TEXT")
+	}
 	if err := f.db.Model(&model.Order{}).Where("id = ?", *revoked.PendingOrderID).Update("purchase_snapshot", huge).Error; err != nil {
 		t.Fatal(err)
 	}

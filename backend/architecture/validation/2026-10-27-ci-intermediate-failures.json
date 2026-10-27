@@ -102,6 +102,18 @@
         "copy_seconds": 238.861
       },
       "fix_status": "call-local metadata roundtrip optimization under review; no timeout/parallelism/coverage changes"
+    },
+    {
+      "head": "8fbcb1ddbe4e0f825419a7938a3e632b11674dcc",
+      "run": 40457547026,
+      "job": 122034293738,
+      "job_name": "mysql",
+      "conclusion": "failure",
+      "independent_assertion_failure": "TestMySQLAutomaticFiniteRevokeDuringReserveWithoutHistoricalValuation: fixture purchase_snapshot exceeds actual MySQL TEXT (Error1406)",
+      "fix": "UseUse the strict core limit60KiB+1024=62464 ASCII bytes, greater than decoder limit and within TEXT65535; keep1200 unpaid rows, revoke/cancel/release/balance/retained body assertions and exact real schema. No widening or exclusion.",
+      "fix_status": "Applied; real MySQL rerun must bind new exact head.",
+      "later_package_timeout_seconds": 900.02,
+      "separate_auxiliary_issue": "Repeated fair-use coverage core_instance_id Error1406 for previously accepted190-byte runtime IDs;0068/0069 adapter/schema compatibility fix is separately prepared. It is not blamed as the sole timeout cause."
     }
   ],
   "later_verified_checkpoint": {
