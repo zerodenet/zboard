@@ -29,6 +29,7 @@ type AutomaticRenewalOffer struct {
 }
 
 type AutomaticRenewalView struct {
+	PendingOrderID *uint                  `json:"pending_order_id,omitempty"`
 	SubscriptionID uint                   `json:"subscription_id"`
 	Enabled        bool                   `json:"enabled"`
 	PlanSKUID      uint                   `json:"plan_sku_id"`

@@ -52,7 +52,7 @@ func prepareAutomaticRenewalScope(db *gorm.DB, owner, subscription uint) (subscr
 }
 
 func automaticRenewalView(row model.SubscriptionAutomaticRenewal, subscription uint) commerce.AutomaticRenewalView {
-	out := commerce.AutomaticRenewalView{SubscriptionID: subscription, Enabled: row.Enabled, PlanSKUID: row.PlanSKUID, Revision: row.Revision, State: row.State, Message: row.Message, LastOrderID: row.LastOrderID}
+	out := commerce.AutomaticRenewalView{PendingOrderID: row.PendingOrderID, SubscriptionID: subscription, Enabled: row.Enabled, PlanSKUID: row.PlanSKUID, Revision: row.Revision, State: row.State, Message: row.Message, LastOrderID: row.LastOrderID}
 	if out.State == "" {
 		out.State = "disabled"
 		out.Message = "余额自动续费默认关闭；开启后仅使用该账户的可用站内余额。"
@@ -134,6 +134,9 @@ func automaticRenewalQuote(tx *gorm.DB, owner uint, sub model.Subscription, sku 
 }
 
 func (s AutomaticRenewals) Read(ctx context.Context, owner, subscription, sku uint) (out commerce.AutomaticRenewalView, err error) {
+	if view, present, err := s.readAutomaticPendingView(ctx, owner, subscription, sku); err != nil || present {
+		return view, err
+	}
 	prepared, prepErr := s.evaluateAutomaticDiscount(ctx, owner, subscription, sku)
 	if prepErr != nil {
 		return s.readAutomaticWithoutOffer(ctx, owner, subscription, prepErr)
@@ -249,6 +252,11 @@ func (s AutomaticRenewals) Set(ctx context.Context, owner, subscription uint, in
 		}
 		row.State, row.Message = "waiting", "到期后使用站内可用余额续费；余额不足时保留提醒并在恢复窗口内重试。"
 		row.NextAttemptAt = maxTime(sub.EndAt, now)
+		if row.PendingOrderID != nil {
+			// A replacement consent invalidates the old staged order immediately,
+			// even when a manual renewal has advanced the next due date.
+			row.NextAttemptAt = now
+		}
 		row.SubscriptionID, row.UserID, row.Enabled = subscription, owner, true
 		row.Revision++
 		row.UpdatedAt = now
@@ -278,7 +286,7 @@ func ownedAutomaticConsent(tx *gorm.DB, owner, subscription uint, lock bool) (mo
 		return model.SubscriptionAutomaticRenewal{}, resourceError(err)
 	}
 	var row model.SubscriptionAutomaticRenewal
-	query := tx.Where("subscription_id = ? AND user_id = ?", subscription, owner)
+	query := tx.Select("subscription_id,user_id,enabled,plan_sku_id,root_order_id,agreement_digest,agreement_version,revision,state,message,last_order_id,next_attempt_at,pending_order_id,pending_consent_revision,pending_end_at,pending_epoch,pending_attempt").Where("subscription_id = ? AND user_id = ?", subscription, owner)
 	if lock {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
@@ -329,7 +337,7 @@ func (s AutomaticRenewals) disableAutomaticConsent(ctx context.Context, owner, s
 			return nil
 		}
 		now := commerceNow(s.Now)
-		if err := tx.Model(&row).Updates(map[string]any{"enabled": false, "state": "disabled", "message": "已关闭余额自动续费。", "revision": gorm.Expr("revision + 1"), "updated_at": now}).Error; err != nil {
+		if err := tx.Model(&row).Updates(map[string]any{"enabled": false, "state": "disabled", "message": "已关闭余额自动续费。", "revision": gorm.Expr("revision + 1"), "updated_at": now, "next_attempt_at": gorm.Expr("CASE WHEN pending_order_id IS NOT NULL THEN ? ELSE next_attempt_at END", now)}).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(&model.AuditLog{UserID: &owner, Actor: fmt.Sprintf("user:%d", owner), Action: "commerce.auto_renew.consent", Target: fmt.Sprintf("subscription:%d", subscription), Detail: fmt.Sprintf("enabled=false sku=%d revision=%d", row.PlanSKUID, revision+1)}).Error; err != nil {
@@ -352,5 +360,5 @@ func maxTime(a, b time.Time) time.Time {
 // The caller owns the terminal/change transaction and its subscription lock.
 func stopAutomaticRenewal(tx *gorm.DB, subscription uint, state, message string, now time.Time) error {
 	return tx.Model(&model.SubscriptionAutomaticRenewal{}).Where("subscription_id = ? AND enabled = ?", subscription, true).
-		Updates(map[string]any{"enabled": false, "revision": gorm.Expr("revision + 1"), "state": state, "message": message, "updated_at": now}).Error
+		Updates(map[string]any{"enabled": false, "revision": gorm.Expr("revision + 1"), "state": state, "message": message, "updated_at": now, "next_attempt_at": gorm.Expr("CASE WHEN pending_order_id IS NOT NULL THEN ? ELSE next_attempt_at END", now)}).Error
 }

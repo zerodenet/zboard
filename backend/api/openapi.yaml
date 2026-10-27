@@ -9757,6 +9757,7 @@ components:
         revision: { type: integer, minimum: 0 }
         state: { type: string }
         message: { type: string }
+        pending_order_id: { type: integer, minimum: 1, description: "Owned queued renewal order; does not mean funds reserved or payment succeeded. Revocation remains effective while cleanup is pending." }
         last_order_id: { type: integer, minimum: 1 }
         next_attempt_at: { type: string, format: date-time }
         offer: { $ref: '#/components/schemas/AutomaticRenewalOffer' }

@@ -24,7 +24,7 @@ func automaticRenewalHead(db *gorm.DB, now time.Time) (model.SubscriptionAutomat
 	var head model.SubscriptionAutomaticRenewal
 	err := db.Table("subscription_automatic_renewals AS a").Select("a.*").
 		Joins("JOIN subscriptions AS s ON s.id = a.subscription_id AND s.user_id = a.user_id").
-		Where("a.enabled = ? AND a.next_attempt_at <= ? AND s.end_at <= ?", true, now, now).
+		Where("a.next_attempt_at <= ? AND ((a.enabled = ? AND s.end_at <= ?) OR a.pending_order_id IS NOT NULL)", now, true, now).
 		Order("a.user_id ASC, s.end_at ASC, a.subscription_id ASC").Take(&head).Error
 	return head, err
 }
@@ -37,13 +37,31 @@ func (s AutomaticRenewals) Process(ctx context.Context, limit int) (processed in
 	if limit < 1 || limit > 200 {
 		return 0, &commerce.ValidationError{Message: "自动续费批次必须在1至200之间。"}
 	}
+	var stageFailures error
 	for attempts := 0; attempts < limit*4 && processed < limit; attempts++ {
 		prepared, err := automaticRenewalHead(s.DB.WithContext(ctx), commerceNow(s.Now))
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return processed, nil
+			return processed, stageFailures
 		}
 		if err != nil {
 			return processed, err
+		}
+		if prepared.PendingOrderID != nil {
+			err = s.processAutomaticStaged(ctx, prepared)
+			if errors.Is(err, errAutomaticRenewalHeadChanged) {
+				continue
+			}
+			if err != nil {
+				return processed, err
+			}
+			if err := s.reconcileAutomaticStageOutsideTransaction(ctx, prepared); err != nil {
+				if ctx.Err() != nil {
+					return processed, ctx.Err()
+				}
+				stageFailures = errors.Join(stageFailures, err)
+			}
+			processed++
+			continue
 		}
 		var evaluated *automaticDiscountEvaluation
 		var evaluationErr error
@@ -66,9 +84,15 @@ func (s AutomaticRenewals) Process(ctx context.Context, limit int) (processed in
 		if err != nil {
 			return processed, err
 		}
+		if err := s.reconcileAutomaticStageOutsideTransaction(ctx, prepared); err != nil {
+			if ctx.Err() != nil {
+				return processed, ctx.Err()
+			}
+			stageFailures = errors.Join(stageFailures, err)
+		}
 		processed++
 	}
-	return processed, nil
+	return processed, stageFailures
 }
 
 func (s AutomaticRenewals) pauseAutomaticHistoryItem(ctx context.Context, prepared model.SubscriptionAutomaticRenewal) error {
@@ -283,6 +307,22 @@ func (s AutomaticRenewals) processAutomaticRenewalPrepared(ctx context.Context, 
 		}
 		if root != agreement.RootOrderID || digest != agreement.AgreementDigest {
 			return finish("conditions_changed", "购买系列、续费规格或权益条件已变化，请重新核对并开启自动续费。", true)
+		}
+		if hasCheckoutOffer(accepted) && accepted.Quote.Offer.Redemption != "" {
+			if err := tx.SavePoint("automatic_stage_prepare").Error; err != nil {
+				return err
+			}
+			if err := s.stageAutomaticDiscountOrder(tx, &agreement, sub, offer, *accepted, now); err != nil {
+				var invalid *commerce.ValidationError
+				if !errors.As(err, &invalid) && !errors.Is(err, commerce.ErrDiscountQuoteInvalid) && !errors.Is(err, commerce.ErrSubscriptionQuoteChanged) {
+					return err
+				}
+				if rollback := tx.RollbackTo("automatic_stage_prepare").Error; rollback != nil {
+					return rollback
+				}
+				return finish("retry_pending", "创建待处理续费前报价条件变化，尚未扣款；恢复窗口内重新核对。", false)
+			}
+			return finish("discount_reserving", "已创建独立待处理续费订单，正在确认优惠预留；尚未预留或扣除余额。", false)
 		}
 		available, err := walletAvailable(tx, agreement.UserID, order.Currency, true)
 		if err != nil {

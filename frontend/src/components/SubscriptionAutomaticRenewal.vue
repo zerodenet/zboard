@@ -2,9 +2,10 @@
   <UiSection :title="`订阅 #${subscriptionId} 的余额自动续费`" description="每份订阅独立开启，默认关闭；仅扣站内可用余额，不调用外部支付渠道。">
     <div class="panel-body stack">
       <PageAlert v-if="error" tone="danger" title="自动续费需要核对">{{ error }}</PageAlert>
-      <PageAlert v-if="view" :tone="['insufficient_balance', 'history_review_required', 'conditions_changed', 'agreement_unavailable', 'discount_unavailable', 'confirmation_required'].includes(view.state) ? 'warning' : 'info'" :title="['history_review_required', 'conditions_changed', 'confirmation_required'].includes(view.state) ? '本项自动扣款已暂停' : view.enabled ? '已开启' : '已关闭'">
+      <PageAlert v-if="view" :tone="['insufficient_balance', 'history_review_required', 'stage_review_required', 'conditions_changed', 'agreement_unavailable', 'discount_unavailable', 'confirmation_required'].includes(view.state) ? 'warning' : 'info'" :title="['history_review_required', 'stage_review_required', 'conditions_changed', 'confirmation_required'].includes(view.state) ? '本项自动扣款已暂停' : view.enabled ? '已开启' : '已关闭'">
         {{ view.message }}
-        <span v-if="view.last_order_id">最近订单 #{{ view.last_order_id }}。</span>
+        <span v-if="view.pending_order_id">待处理续费订单 <RouterLink :to="`/account/orders/${view.pending_order_id}`">#{{ view.pending_order_id }}</RouterLink>；此关联不表示已扣款，刷新只核对状态。</span>
+        <span v-if="view.last_order_id">最近成功自动续费订单 #{{ view.last_order_id }}。</span>
         <span v-if="view.enabled && view.next_attempt_at">下次检查 <TimeBadge :value="view.next_attempt_at" />。</span>
       </PageAlert>
       <p>到期后按已购周期锁价续费；余额不足会在此显示提醒，并在恢复窗口内继续检查。主动退订或窗口结束后停止；换购或续费条件变化时需要重新确认。</p>
@@ -21,6 +22,7 @@
         <template v-if="offer.agreement_version === 2">
           <p>沿用原订阅的长期优惠约定，本次核对优惠 {{ formatWalletMoney(offer.discount_amount_minor!, offer.currency) }}，每次仅从可用站内余额扣除 {{ formatWalletMoney(offer.payable_amount_minor!, offer.currency) }}。</p>
           <p>扣款金额、协议或优惠提供方配置变化时暂停扣款，需要您重新确认；提供方暂不可用时不会按基础价扣款。</p>
+          <p v-if="offer.discount?.offer.redemption">本优惠先创建待处理订单并确认排他预留，再重新核对许可和余额；未确认时不扣款。关闭许可会阻止旧待处理订单自动扣款。</p>
           <p v-if="offer.discount?.offer.message">{{ offer.discount.offer.message }}</p>
           <p>本次报价有效至 <TimeBadge :value="offer.discount!.offer.expires_at" />，开启前会重新核对。</p>
         </template>

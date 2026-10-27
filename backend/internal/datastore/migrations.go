@@ -121,6 +121,9 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
+	if err := preflightAutomaticPendingOrders(db); err != nil {
+		return err
+	}
 	if err := preflightDiscountRedemptionSchema(db); err != nil {
 		return err
 	}
@@ -293,6 +296,9 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileDiscountRedemptionSchema(db); err != nil {
 		return err
 	}
+	if err := reconcileAutomaticPendingOrders(db); err != nil {
+		return err
+	}
 	if err := reconcileTicketReferenceSchema(db); err != nil {
 		return err
 	}
@@ -357,6 +363,12 @@ func runMigrations(db *gorm.DB) error {
 		}
 		if version == reportReceiptVersion {
 			if err := reconcileReportReceiptSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == automaticPendingOrderVersion {
+			if err := reconcileAutomaticPendingOrders(db); err != nil {
 				return err
 			}
 			continue

@@ -71,6 +71,37 @@
       "reason": "An unquoted comma in the new YAML flow-map description parsed as an unintended schema property. YAML syntax parsing alone did not reject the shape.",
       "fix": "Quote the description. Keep the structural lint, all existing warnings and failure policy unchanged. New exact head CI must verify the fix.",
       "full_job_log": "Retained privately with SHA; no ignored errors added."
+    },
+    {
+      "head": "ff3b14751bad44acb4e02ab3c82fbbf9883250f7",
+      "run": 40453759289,
+      "job": 122022208235,
+      "job_name": "mysql",
+      "conclusion": "failure",
+      "other_jobs": "five succeeded, including the quoted OpenAPI contract fix",
+      "test": "complete handler package timeout after original15m",
+      "handler_seconds": 900.016,
+      "last_running_test": "TestMySQLBufferedReceiptsDoNotWaitForExhaustedPool (1s)",
+      "interpretation": "The last test had only run1s and is not established as root cause. Full job log retained.",
+      "other_core_package_seconds": {
+        "datastore": 346.08,
+        "networkstore": 225.686,
+        "application": 43.583
+      },
+      "not_executed": [
+        "complete jobstore",
+        "complete platformstore copy"
+      ],
+      "baseline_exact_ci_34": {
+        "run": 40447992632,
+        "handler_seconds": 824.707,
+        "datastore_seconds": 305.859,
+        "networkstore_seconds": 211.07,
+        "application_seconds": 45.87,
+        "jobstore_seconds": 141.114,
+        "copy_seconds": 238.861
+      },
+      "fix_status": "call-local metadata roundtrip optimization under review; no timeout/parallelism/coverage changes"
     }
   ],
   "later_verified_checkpoint": {

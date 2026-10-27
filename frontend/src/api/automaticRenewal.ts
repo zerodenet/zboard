@@ -20,6 +20,7 @@ export interface AutomaticRenewalView {
   revision: number
   state: string
   message: string
+  pending_order_id?: number
   last_order_id?: number
   next_attempt_at?: string
   offer?: AutomaticRenewalOffer

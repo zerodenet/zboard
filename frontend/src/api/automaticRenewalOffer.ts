@@ -28,7 +28,7 @@ export function checkedAutomaticRenewalOffer(value: AutomaticRenewalOffer): Auto
   if (value.agreement_version !== 2) throw new AutomaticRenewalOfferError('优惠授权版本无法核对。')
   const reduction = minor(value.discount_amount_minor), payable = minor(value.payable_amount_minor)
   const quote = value.discount, offer = quote?.offer
-  if (reduction > base || payable !== base - reduction || !offer || offer.status !== 'available' || offer.agreement?.scope !== 'recurring'
+  if (reduction > base || payable !== base - reduction || !offer || (offer.redemption !== undefined && offer.redemption !== 'exclusive_until_core_finalization_v1') || offer.status !== 'available' || offer.agreement?.scope !== 'recurring'
     || typeof quote?.provider?.plugin_id !== 'string' || !quote.provider.plugin_id.trim() || offer.currency !== value.currency
     || !Number.isFinite(Date.parse(offer.expires_at)) || Date.parse(offer.expires_at) <= Date.now()) {
     throw new AutomaticRenewalOfferError('长期优惠自动续费报价无法确认，请重新核对原优惠约定。')

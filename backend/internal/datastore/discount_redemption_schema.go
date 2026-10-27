@@ -1,6 +1,7 @@
 package datastore
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,7 +21,7 @@ const discountRedemptionTable = "order_discount_redemptions"
 // table is lost external-financial authority: recreating it would invent absence
 // and could strand/reuse provider stock. Require restoration, preserving all data.
 func preflightDiscountRedemptionSchema(db *gorm.DB) error {
-	tables, err := migrationTableSet(db)
+	tables, err := discountRedemptionTableSet(db)
 	if err != nil {
 		return err
 	}
@@ -36,7 +37,19 @@ func preflightDiscountRedemptionSchema(db *gorm.DB) error {
 		}
 		// A newly introduced accepted obligation without its table cannot safely be
 		// reconstructed from a quote: Reserve may already have executed remotely.
-		if tables["orders"] && db.Migrator().HasColumn("orders", "purchase_snapshot") {
+		snapshotColumn := false
+		if tables["orders"] {
+			if IsSQLite(db) {
+				snapshotColumn = db.Migrator().HasColumn("orders", "purchase_snapshot")
+			} else {
+				columns, e := mysqlColumnNames(db, "orders")
+				if e != nil {
+					return e
+				}
+				snapshotColumn = columns["purchase_snapshot"]
+			}
+		}
+		if snapshotColumn {
 			present, err := hasAcceptedDiscountReservationObligation(db)
 			if err != nil {
 				return err
@@ -287,6 +300,9 @@ func validateSQLiteDiscountRedemptionIndexes(db *gorm.DB) error {
 // rollback certificate for all other PR schema/business changes. Even terminal
 // intent does not make its new accepted snapshot readable by an old strict binary.
 func ValidateDiscountRedemptionBinaryRollback(db *gorm.DB) error {
+	if err := ValidateAutomaticPendingBinaryRollback(db); err != nil {
+		return err
+	}
 	if err := preflightDiscountRedemptionSchema(db); err != nil {
 		return err
 	}
@@ -310,4 +326,42 @@ func ValidateDiscountRedemptionBinaryRollback(db *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+// This preflight uses only these three inventory entries. Keep the snapshot
+// local to one inspection; consume/Close before any subsequent query or DDL.
+// A fresh empty namespace still produces a selected-database proof row.
+func discountRedemptionTableSet(db *gorm.DB) (tables map[string]bool, err error) {
+	if IsSQLite(db) {
+		return migrationTableSet(db)
+	}
+	rows, err := db.Raw(`SELECT DATABASE(),t.TABLE_NAME FROM (SELECT 1 AS present) AS metadata_scope
+LEFT JOIN INFORMATION_SCHEMA.TABLES AS t ON t.TABLE_SCHEMA=DATABASE()
+AND t.TABLE_NAME IN ('schema_migrations','orders','order_discount_redemptions')`).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	tables = map[string]bool{}
+	sawNamespace := false
+	for rows.Next() {
+		var selected, table sql.NullString
+		if err = rows.Scan(&selected, &table); err != nil {
+			return nil, err
+		}
+		if !selected.Valid || selected.String == "" {
+			return nil, errors.New("discount reservation schema requires a selected database")
+		}
+		sawNamespace = true
+		if table.Valid {
+			tables[table.String] = true
+		}
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	if !sawNamespace {
+		return nil, errors.New("discount reservation namespace metadata missing")
+	}
+	return tables, nil
 }

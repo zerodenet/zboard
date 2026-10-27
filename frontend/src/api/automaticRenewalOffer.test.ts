@@ -32,6 +32,12 @@ describe('automatic renewal approval quotes', () => {
     if (field === 'fingerprint') value.quote_fingerprint = 'not-an-approval'
     expect(() => checkedAutomaticRenewalOffer(value)).toThrow()
   })
+  it('requires a recognized explicit reservation obligation before displaying debit consent', () => {
+    const value = recurring(); value.discount!.offer.redemption = 'exclusive_until_core_finalization_v1'
+    expect(checkedAutomaticRenewalOffer(value)).toBe(value)
+    ;(value.discount!.offer as any).redemption = 'provider_expires_hold_without_core'
+    expect(() => checkedAutomaticRenewalOffer(value)).toThrow('无法确认')
+  })
   it('never relabels discounted evidence as a legacy full-price offer', () => {
     const value = recurring(); delete value.agreement_version
     expect(() => checkedAutomaticRenewalOffer(value)).toThrow('不会按基础价')

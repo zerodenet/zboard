@@ -13,7 +13,7 @@ vi.mock('../api/client', () => ({ fetchPlanCatalogSKUs: vi.fn() }))
 const offer = { plan_sku_id: 3, currency: 'CNY', base_price_minor: '12000', billing_unit: 'year', billing_value: 1, quote_fingerprint: 'a'.repeat(64) }
 const initial = { subscription_id: 7, enabled: false, plan_sku_id: 0, revision: 0, state: 'disabled', message: '默认关闭', offer }
 const enabled = { ...initial, enabled: true, plan_sku_id: 3, revision: 1, state: 'waiting', message: '已保存，仅使用站内余额', offer: undefined }
-function open() { return mount(SubscriptionAutomaticRenewal, { props: { subscriptionId: 7, planId: 2 } }) }
+function open() { return mount(SubscriptionAutomaticRenewal, { props: { subscriptionId: 7, planId: 2 }, global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } } }) }
 async function click(wrapper: ReturnType<typeof open>, label: string) {
   const button = wrapper.findAll('button').find(button => button.text() === label)
   expect(button, label).toBeDefined()
@@ -126,4 +126,33 @@ it('expires a recurring approval without replaying a write or disabling current 
     expect(wrapper.text()).toContain('关闭余额自动续费')
     expect(setAutomaticRenewal).not.toHaveBeenCalled()
   } finally { wrapper.unmount(); vi.useRealTimers() }
+})
+
+
+it('shows a queued order as uncharged and refresh only reads its state', async () => {
+ vi.mocked(fetchAutomaticRenewal).mockResolvedValue({ ...enabled, state: 'discount_reserved', message: '原订单优惠已确认，尚未自动扣款。', pending_order_id: 91, offer: undefined })
+ const wrapper = open(); await flushPromises()
+ expect(wrapper.text()).toContain('待处理续费订单 #91')
+ expect(wrapper.get('a[href="/account/orders/91"]').text()).toBe('#91')
+ expect(wrapper.text()).toContain('不表示已扣款')
+ expect(wrapper.text()).not.toContain('最近成功自动续费订单 #91')
+ expect(setAutomaticRenewal).not.toHaveBeenCalled()
+ await click(wrapper, '核对当前状态')
+ expect(fetchAutomaticRenewal).toHaveBeenCalledTimes(2)
+ expect(setAutomaticRenewal).not.toHaveBeenCalled()
+ wrapper.unmount()
+})
+it('keeps disabled pending cleanup distinct from another debit and isolates account changes', async () => {
+ vi.mocked(fetchAutomaticRenewal).mockResolvedValue({ ...enabled, enabled: false, state: 'disabled', message: '当前许可已关闭，旧待处理订单不会自动扣款，正在关闭旧预留。', pending_order_id: 92, offer: undefined })
+ const wrapper = open(); await flushPromises()
+ expect(wrapper.text()).toContain('已关闭')
+ expect(wrapper.text()).toContain('不会自动扣款')
+ expect(wrapper.text()).toContain('正在关闭旧预留')
+ expect(wrapper.text()).toContain('待处理续费订单 #92')
+ expect(setAutomaticRenewal).not.toHaveBeenCalled()
+ vi.mocked(fetchAutomaticRenewal).mockRejectedValue(new Error('foreign pending order'))
+ state.app.user.id = 2; await flushPromises()
+ expect(wrapper.text()).not.toContain('待处理续费订单 #92')
+ expect(setAutomaticRenewal).not.toHaveBeenCalled()
+ wrapper.unmount()
 })

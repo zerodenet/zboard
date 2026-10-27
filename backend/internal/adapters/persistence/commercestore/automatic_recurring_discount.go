@@ -19,6 +19,7 @@ import (
 // explicitly enumerated stable terms enter it; dates, source head/epoch, quote
 // fingerprints and provider response clocks never become continuing consent.
 type automaticRecurringApprovalSnapshot struct {
+	Redemption           string                            `json:"redemption,omitempty"`
 	Version              int                               `json:"version"`
 	OwnerID              uint                              `json:"owner_id"`
 	SubscriptionID       uint                              `json:"subscription_id"`
@@ -55,7 +56,7 @@ func automaticRecurringApproval(order model.Order, accepted checkoutDiscount) (s
 		return "", "", err
 	}
 	out := automaticRecurringApprovalSnapshot{
-		Version: 2, OwnerID: order.UserID, SubscriptionID: *order.TargetSubscriptionID, RootOrderID: accepted.Source.RootOrderID, BaseOrderID: accepted.Source.BaseOrderID,
+		Redemption: accepted.Quote.Offer.Redemption, Version: 2, OwnerID: order.UserID, SubscriptionID: *order.TargetSubscriptionID, RootOrderID: accepted.Source.RootOrderID, BaseOrderID: accepted.Source.BaseOrderID,
 		PlanID: order.PlanID, PlanSKUID: order.PlanSKUID, Currency: order.Currency, BillingUnit: order.BillingUnit, BillingValue: order.BillingValue, RenewalEffect: order.RenewalEffect,
 		BasePriceMinor: order.AmountCents, DiscountMinor: accepted.Quote.Offer.DiscountMinor, PayableMinor: order.AmountCents - accepted.Quote.Offer.DiscountMinor,
 		Renewable: policy.Renewable, ResetPolicy: policy.ResetPolicy, TrafficCalcMode: policy.TrafficCalcMode, FamilyLimit: policy.FamilyLimit, ValueAllocationModel: policy.ValueAllocationModel,
@@ -84,7 +85,7 @@ func validateAutomaticRecurringApproval(raw string, owner, sub, sku, root uint) 
 		return err == nil && len(b) == 32 && value == hex.EncodeToString(b)
 	}
 	terms, err := commerce.DiscountTermsHash(in.Agreement.TermsJSON)
-	if in.Version != 2 || owner == 0 || sub == 0 || sku == 0 || root == 0 || in.OwnerID != owner || in.SubscriptionID != sub || in.PlanSKUID != sku || in.RootOrderID != root || in.BaseOrderID != root || in.PlanID == 0 ||
+	if (in.Redemption != "" && in.Redemption != commerce.DiscountRedemptionGuarantee) || in.Version != 2 || owner == 0 || sub == 0 || sku == 0 || root == 0 || in.OwnerID != owner || in.SubscriptionID != sub || in.PlanSKUID != sku || in.RootOrderID != root || in.BaseOrderID != root || in.PlanID == 0 ||
 		in.BasePriceMinor < 0 || in.DiscountMinor < 0 || in.DiscountMinor > in.BasePriceMinor || in.PayableMinor != in.BasePriceMinor-in.DiscountMinor || len(in.Currency) != 3 || in.BillingValue <= 0 || in.RenewalEffect != "extend_only" || !in.Renewable ||
 		in.ResetPolicy < 0 || in.ResetPolicy > 5 || in.TrafficCalcMode < 0 || in.TrafficCalcMode > 2 || in.FamilyLimit < 0 || in.TrafficBytes < 0 || in.SpeedLimitMbps < 0 || in.DeviceLimit < 0 || in.ValueAllocationModel != "uniform_paid_units_v1" ||
 		in.Provider.PluginID == "" || len(in.Provider.PluginID) > 160 || !validHash(in.Provider.SigningKeyFingerprint) || !validHash(in.Provider.PackageDigest) || in.Provider.Generation == 0 || in.Provider.ConfigRevision == 0 || len(in.Selection) > 256 ||
@@ -184,9 +185,7 @@ func (s AutomaticRenewals) evaluateAutomaticDiscount(ctx context.Context, owner,
 	if err == nil {
 		err = validateCheckoutOffer(in, accepted.Quote, marker.Source.ProviderID, commerceNow(s.Now))
 	}
-	if err == nil && accepted.Quote.Offer.Redemption != "" {
-		err = errors.Join(commerce.ErrDiscountQuoteUnavailable, commerce.ErrDiscountRedemptionUnsupported, quoteError("当前优惠要求订单级排他预留，自动续费尚不能确认该义务；未创建订单或扣款，请手动续费。"))
-	}
+
 	if err == nil && accepted.Quote.Provider.SigningKeyFingerprint != marker.Source.SigningKeyFingerprint {
 		err = errAutomaticConditionsChanged
 	}
@@ -228,5 +227,5 @@ func (s AutomaticRenewals) readAutomaticWithoutOffer(ctx context.Context, owner,
 // provider or source is unavailable. Neither execution nor a status read
 // manufactures a replacement approval snapshot.
 func sameAutomaticPreparation(current, prepared model.SubscriptionAutomaticRenewal) bool {
-	return current.SubscriptionID == prepared.SubscriptionID && current.UserID == prepared.UserID && current.Enabled && current.Revision == prepared.Revision && current.PlanSKUID == prepared.PlanSKUID && current.RootOrderID == prepared.RootOrderID && current.AgreementVersion == prepared.AgreementVersion && current.AgreementDigest == prepared.AgreementDigest && current.ApprovalSnapshot == prepared.ApprovalSnapshot && current.NextAttemptAt.Equal(prepared.NextAttemptAt) && current.AttemptSequence == prepared.AttemptSequence
+	return sameAutomaticPendingLink(current, prepared) && current.SubscriptionID == prepared.SubscriptionID && current.UserID == prepared.UserID && current.Enabled && current.Revision == prepared.Revision && current.PlanSKUID == prepared.PlanSKUID && current.RootOrderID == prepared.RootOrderID && current.AgreementVersion == prepared.AgreementVersion && current.AgreementDigest == prepared.AgreementDigest && current.ApprovalSnapshot == prepared.ApprovalSnapshot && current.NextAttemptAt.Equal(prepared.NextAttemptAt) && current.AttemptSequence == prepared.AttemptSequence
 }

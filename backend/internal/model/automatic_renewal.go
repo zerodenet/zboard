@@ -5,6 +5,13 @@ import "time"
 // No row means no automatic-debit consent. The agreement is never inferred
 // from a paid order, an administrator assignment, or another subscription.
 type SubscriptionAutomaticRenewal struct {
+	// Pending link is durable debit/revocation intent, not a successful renewal.
+	PendingOrderID         *uint      `gorm:"-:migration"`
+	PendingConsentRevision uint64     `gorm:"not null;default:0;-:migration"`
+	PendingEndAt           *time.Time `gorm:"-:migration"`
+	PendingEpoch           uint64     `gorm:"not null;default:0;-:migration"`
+	PendingAttempt         uint64     `gorm:"not null;default:0;-:migration"`
+
 	SubscriptionID   uint   `gorm:"primaryKey;autoIncrement:false;not null"`
 	UserID           uint   `gorm:"not null;index:idx_automatic_renewal_due,priority:3"`
 	Enabled          bool   `gorm:"not null;default:false;index:idx_automatic_renewal_due,priority:1"`
