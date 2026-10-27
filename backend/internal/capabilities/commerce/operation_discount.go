@@ -28,7 +28,10 @@ func operationDiscountTarget(order Order) (*SubscriptionChangeSnapshot, error) {
 		return nil, ErrDiscountQuoteInvalid
 	}
 	if order.OrderType == "upgrade" {
-		if value.Version != 2 || !value.FullTerm || value.Residual < 0 || value.Applied != min(value.Residual, order.PayableAmount) || value.Surplus != value.Residual-value.Applied || value.Credit != value.Applied || len(value.Sources) > 1000 {
+		// The serialized target is already bounded above. Source cardinality
+		// must not reject an otherwise valid paid history; the core binds every
+		// exact source in its fingerprint and rechecks values at fulfillment.
+		if value.Version != 2 || !value.FullTerm || value.Residual < 0 || value.Applied != min(value.Residual, order.PayableAmount) || value.Surplus != value.Residual-value.Applied || value.Credit != value.Applied {
 			return nil, ErrDiscountQuoteInvalid
 		}
 	} else if order.OrderType == "traffic_reset" {

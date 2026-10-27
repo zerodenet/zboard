@@ -1,0 +1,55 @@
+{
+  "scope": "large-source order_only quote; full pure commerce and vet only",
+  "tests": {
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-p",
+      "1",
+      "./internal/capabilities/commerce",
+      "-count=1",
+      "-timeout",
+      "15m"
+    ],
+    "go_cache": "/tmp/zboard-oct27-build-cache",
+    "go_module_cache": "/tmp/zboard-oct27-module-cache",
+    "started_utc": "2026-10-27T08:59:42.896755+00:00",
+    "source_before": "2644d3701faa41cb60c47b8cd675035a3ed9e584be459500b9d1c5085d4c569c",
+    "source_scope": "all backend Go/SQL/module/ownership sources",
+    "status": "completed",
+    "exit_code": 0,
+    "wall_seconds": 4.302,
+    "source_after": "2644d3701faa41cb60c47b8cd675035a3ed9e584be459500b9d1c5085d4c569c",
+    "log_sha256": "d04f92d677a1160e8d5b3bd26971608082c166c613cc5057e20c87083438a85a",
+    "finished_utc": "2026-10-27T08:59:47.296052+00:00",
+    "source_unchanged": true,
+    "events": {
+      "pass": 237
+    },
+    "failures": [],
+    "build_failures": []
+  },
+  "vet": {
+    "started_utc": "2026-10-27T09:00:17.563176+00:00",
+    "command": [
+      "go",
+      "vet",
+      "-p",
+      "1",
+      "./internal/capabilities/commerce"
+    ],
+    "source_before": "76294095732e016f75def1b519aff243d74599b993bceeaf5357de4c5e0a2606",
+    "exit_code": 0,
+    "wall_seconds": 0.238,
+    "source_after": "76294095732e016f75def1b519aff243d74599b993bceeaf5357de4c5e0a2606",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_unchanged": true
+  },
+  "handler_sqlite": "not_executed: dependency download403",
+  "handler_mysql": "not_executed: dependency download403",
+  "full_backend": "not_executed",
+  "new_ci_terminal": "not_verified",
+  "external_provider": "not_executed",
+  "overall_complete": false
+}
