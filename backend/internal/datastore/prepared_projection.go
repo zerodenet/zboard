@@ -80,7 +80,7 @@ func ValidatePreparedProjectionSchema(ctx context.Context, db *gorm.DB) error {
 	// unsafe. Extra history (including the retained development chain accepted
 	// by preparePreReleaseMigrationHistory) is not reinterpreted or rewritten.
 	// This validator does not certify whole-database or future-binary compatibility.
-	required := []string{"0001_init.up.sql", "0007_jobs.up.sql", "0008_job_timeouts.up.sql", "0014_job_attempt_retries.up.sql", "0015_job_schedule_planning.up.sql", "0016_protocol_endpoint_usage_daily.up.sql", "0024_traffic_usage_hourly.up.sql", "0025_traffic_hourly_application.up.sql", usageProjectionSchemaVersion, hourlyProjectionSchemaVersion, nodeAssetSchemaVersion, nodeObservationSchemaVersion, nodeObservationMaterialVersion}
+	required := []string{"0001_init.up.sql", "0007_jobs.up.sql", "0008_job_timeouts.up.sql", "0014_job_attempt_retries.up.sql", "0015_job_schedule_planning.up.sql", "0016_protocol_endpoint_usage_daily.up.sql", "0024_traffic_usage_hourly.up.sql", "0025_traffic_hourly_application.up.sql", usageProjectionSchemaVersion, hourlyProjectionSchemaVersion, nodeAssetSchemaVersion, nodeObservationSchemaVersion, nodeObservationMaterialVersion, observationRetirementVersion}
 	for _, v := range required {
 		if !seen[v] {
 			return projectionError("required migration receipt missing: "+v, nil)
@@ -235,6 +235,13 @@ func ValidatePreparedProjectionSchema(ctx context.Context, db *gorm.DB) error {
 	if !recorded || len(material) != 2 {
 		return projectionError("observation material evidence incomplete", nil)
 	}
+	// readSource validates expired/retired receipt authority even though this
+	// worker does not register the separate material-retention job. A recorded
+	// but missing budget/receipt cannot be repaired or invented by admission.
+	// This preflight performs only metadata, bounded singleton and source reads.
+	if err = preflightObservationRetirementSchema(db); err != nil {
+		return projectionError("observation retirement authority", err)
+	}
 	if err = projectionJobColumns(db, tables); err != nil {
 		return err
 	}
@@ -288,7 +295,7 @@ func ValidatePreparedProjectionSchema(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 func projectionDependencyTables() []string {
-	return []string{"job_execution_budget", "job_execution_groups", "job_dispatch_lanes", "job_runs", "job_attempts", "job_schedules", "metering_usage_projection_pending", "protocol_endpoint_usage_daily", "system_configs", "node_observation_intents", "node_observation_parts", "node_observation_states"}
+	return []string{"job_execution_budget", "job_execution_groups", "job_dispatch_lanes", "job_runs", "job_attempts", "job_schedules", "metering_usage_projection_pending", "protocol_endpoint_usage_daily", "system_configs", "node_observation_intents", "node_observation_parts", "node_observation_states", "node_observation_material_budget", "node_observation_retirements", "node_observation_retirement_parts"}
 }
 
 type projectionColumn struct {

@@ -25,10 +25,11 @@ var projectionRequiredIndexes = map[string][]projectionIndex{
 	"system_configs":                    {{"config_key", true}},
 	"metering_usage_projection_pending": {{"protocol_endpoint_id,traffic_record_id", false}, {"hourly_pending,record_at", false}, {"hourly_pending,user_id,record_at", false}, {"hourly_pending,subscription_id,record_at", false}, {"hourly_pending,node_id,record_at", false}, {"hourly_pending,protocol_endpoint_id,record_at", false}},
 	"node_observation_intents":          {{"status,available_at,id", false}},
+	"node_observation_retirements":      {{"state,review_at,intent_id", false}},
 }
 
 func projectionIndexes(db *gorm.DB) error {
-	for _, table := range []string{"job_execution_groups", "job_dispatch_lanes", "job_schedules", "job_runs", "job_attempts", "system_configs", "metering_usage_projection_pending", "protocol_endpoint_usage_daily", "traffic_usage_hourly", "node_observation_intents"} {
+	for _, table := range []string{"job_execution_groups", "job_dispatch_lanes", "job_schedules", "job_runs", "job_attempts", "system_configs", "metering_usage_projection_pending", "protocol_endpoint_usage_daily", "traffic_usage_hourly", "node_observation_intents", "node_observation_retirements"} {
 		actual, err := projectionTableIndexes(db, table)
 		if err != nil {
 			return projectionError("index metadata: "+table, err)

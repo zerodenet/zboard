@@ -21,3 +21,11 @@ Go范围包含实际SQLite main/flag/config/open/只读验证子进程，核对�
 [全部命令、来源、用例、日志哈希和原失败](validation/2026-10-23-prepared-observation-material.json)。最终Go/MySQL源码哈希相同；无前端/SDK改动。新提交CI仍待推送后核验；8ae结果不认证本修改。本头完整本地backend4/MySQL3/race3受原环境存储限制未执行，不降低门槛或扩大清理。
 
 这只修复准备检查，尚无独立worker/自动伸缩或收益证明。P4总增长/有限重放、P6容量/伸缩及P7综合、外部/生产验收继续未完成。
+
+## Actual retirement dependency (2026-10-27)
+
+The standalone node-observation projection also reads0067 retirement receipts after the main process retires optional source material. Admission now requires that exact receipt, all three retirement authorities, the bounded budget singleton, the ordered retirement-ready index and actual zero-row SELECT access. Reused inspection performs metadata and at most two budget-row reads. It does not seed, reconcile, acquire work, load historical bodies or recalculate all retained material.
+
+Only the actual0067 worker dependency was added. The current worker does not call collector principal/coverage updates or material retention, so0068/0069 are not required merely because newer migrations exist. Unrelated commerce receipt behavior stays unchanged. Missing recorded authority returns the existing typed not-prepared error; the main process must finish valid preparation/recovery before a separate worker starts.
+
+SQLite physical read-only and isolated MySQL read-only REPEATABLE READ negative matrices were added: missing receipt/table/column/budget row, invalid revision/portable budget bounds, missing/wrong-order index and injected SELECT denial (not a restricted-account GRANT test). Whole fixture rows and physical DDL are compared before/after, with write callbacks rejected. These tests are not yet executed: local dependency downloads previously returned403 and were not retried through alternate sources. Actual inventory/architecture checks passed75 tests in1.235s with unchanged backend sources; this is not SQL or compile evidence for the datastore package. Exact-head CI and dual-database execution remain pending. No migration or business write changed; rollback the binary change only after stopping workers and reviewing compatible dependencies.
