@@ -12,7 +12,7 @@ import time
 
 JOBSTORE = './internal/adapters/persistence/jobstore'
 COPYSTORE = './internal/adapters/persistence/platformstore'
-TEST_NAME = re.compile(r'Test[A-Za-z0-9_]+\Z')
+TEST_NAME = re.compile(r'Test\w+\Z')
 
 
 def read_events(path):
@@ -44,6 +44,21 @@ def listed_tests(events, module):
         if event.get('Action') == 'output' and TEST_NAME.fullmatch(line):
             found.add((canonical_package(event['Package'], module), line))
     return found
+
+
+def inventory_compiler_diagnostics(events):
+    # Compilation happens before test execution. Expose its bounded structured
+    # errors in the job log while retaining the complete original artifact.
+    lines = []
+    for event in events:
+        if event.get('Action') != 'build-output':
+            continue
+        for line in event.get('Output', '').splitlines():
+            if line.strip():
+                lines.append(line[:400])
+                if len(lines) == 20:
+                    return lines
+    return lines
 
 
 def partition(inventory, profile):
@@ -190,6 +205,11 @@ def main(argv=None):
             log = output / f'inventory-{label}.jsonl'
             command = ['go', 'test', '-json', '-p', '2', '-count=1', '-timeout', '15m', '-list', expression, *packages]
             if run_command(command, backend, log, receipt['commands']):
+                try:
+                    for line in inventory_compiler_diagnostics(read_events(log)):
+                        print(f'Inventory compiler: {line}', flush=True)
+                except ValueError:
+                    print('Inventory stdout is not valid Go JSON; original output is preserved.', flush=True)
                 raise ValueError(f'{label} inventory failed; see preserved JSONL')
             inventory |= listed_tests(read_events(log), module)
         required = {'./internal/datastore', './internal/handler', './internal/application',

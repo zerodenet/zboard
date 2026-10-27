@@ -30,6 +30,13 @@ class MySQLProfilesTest(unittest.TestCase):
         self.assertEqual(parts['core'] | parts['extended'], inventory)
         self.assertFalse(parts['core'] & parts['extended'])
 
+    def test_compiled_unicode_test_identifiers_are_not_silently_omitted(self):
+        event = {'Action': 'output', 'Package': 'example/backend/handler', 'Output': 'TestMySQL余额一致\n'}
+        found = profiles.listed_tests([event], 'example/backend')
+        self.assertEqual(found, {('./handler', 'TestMySQL余额一致')})
+        self.assertTrue(re.fullmatch(profiles.positive_regex({'TestMySQL余额一致'}), 'TestMySQL余额一致'))
+        self.assertIn(('./handler', 'TestMySQL余额一致'), profiles.partition(self.inventory() | found, self.policy())['core'])
+
     def test_stale_duplicate_and_unreasoned_entries_fail_closed(self):
         for mode in ('stale', 'duplicate', 'reason', 'scale'):
             with self.subTest(mode=mode):
@@ -69,6 +76,15 @@ class MySQLProfilesTest(unittest.TestCase):
                   {'Action': 'output', 'Package': 'example/backend/internal/a', 'Output': 'ok example/backend/internal/a\n'},
                   {'Action': 'output', 'Package': 'example/backend/internal/a', 'Output': 'BenchmarkMySQL\n'}]
         self.assertEqual(profiles.listed_tests(events, 'example/backend'), {('./internal/a', 'TestMySQLMoney')})
+
+    def test_inventory_failure_exposes_bounded_compiler_output_only(self):
+        events = [{'Action': 'output', 'Output': 'ordinary test body output'},
+                  {'Action': 'build-output', 'Output': 'handler_test.go:12: undefined: missing\n'},
+                  {'Action': 'build-fail', 'ImportPath': 'example/backend/handler'}]
+        self.assertEqual(profiles.inventory_compiler_diagnostics(events), ['handler_test.go:12: undefined: missing'])
+        bounded = profiles.inventory_compiler_diagnostics([{'Action': 'build-output', 'Output': ('x' * 500 + '\n') * 30}])
+        self.assertEqual(len(bounded), 20)
+        self.assertTrue(all(len(line) == 400 for line in bounded))
 
     def test_missing_skipped_failed_and_unexpected_results_are_incomplete(self):
         expected = {('./handler', 'TestMySQLMoney')}
