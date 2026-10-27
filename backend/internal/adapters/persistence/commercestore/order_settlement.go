@@ -24,14 +24,7 @@ type settlementRecord struct {
 
 func (s OrderSettlement) Apply(ctx context.Context, actor uint, command commerce.SettlementCommand) (commerce.SettlementResult, error) {
 	var result settlementRecord
-	identity, err := readSubscriptionSettlementIdentity(s.DB.WithContext(ctx), command.OrderID, 0)
-	if err != nil {
-		return commerce.SettlementResult{}, err
-	}
-	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockSubscriptionSettlementScope(tx, identity, actor, true); err != nil {
-			return err
-		}
+	err := withSubscriptionSettlementScope(s.DB.WithContext(ctx), command.OrderID, 0, actor, true, func(tx *gorm.DB, identity *subscriptionSettlementIdentity) error {
 		order := &result.Order
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(order, command.OrderID).Error; err != nil {
 			return resourceError(err)

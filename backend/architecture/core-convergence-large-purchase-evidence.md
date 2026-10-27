@@ -31,3 +31,13 @@
 160c2a5的MySQL CI40442694217失败是旧同步hook依赖target_subscription_id范围SQL，新流程改为精确主键分页。新hook观察实际返回的root+renewal主键锁，并确认尚未取得owner，原performance_schema真实等待、NOWAIT账户探针、旧报价拒绝、订单和钱包断言及超时全部保留。源预算/真实屏障/双路径统计snapshot专项在SQLite及实际MySQL共15个测试事件通过、无跳过、28.879秒，源码哈希一致。首次新增测试factory签名编译错误已修正，失败回执保留。
 
 完整后端首轮d00478f为3369通过/421既有skip/1失败、496.742秒，源码不变，失败仅为全文增加有界预检后的旧SQL数量断言；vet/build/pureSQLite未继续运行，不能当四项通过。摘要和全文现分别严格验证扫描、窄列、先metadata后body、分页及并发snapshot；单次基准仅用于验证正式SELECT形状（full4、summary3，含auth；DML0），不据单次计时声称性能收益。完整后端四项与修复精确CI需重新执行。
+
+## 自动/手动现金竞态与已关闭系列的迟到款
+
+保留d004 MySQL CI40444640340的真实失败：自动续费先推进来源/StartAt后，手动真实收款在创建event/receipt前即因前置范围陈旧被拒绝。现三个原入口只对canonical scope在账户锁后重验失败的私有标记，回滚无副作用事务后最多重新准备一次。金融callback未进入，既不重放支付入账，也不重试实际报价、金额、余额或immutable checkout冲突。当前order ID与当前source ID仅在锁集合合并并整体升序分页；canonical核对集合不变，已关闭旧系列的canceled订单仍可按原迟到款规则进入余额，failed仍按原履约校验，不能复活已结束权益。
+
+owner-only支付事实权限完全保留：RequireAdministrator不授予跨账户订单收款权，当前管理员撤销仍拒绝。金融和持久意图继续原事务，无迁移/历史修补或新资金入口。
+
+实际专项：SQLite及MySQL确定性两胜序、关闭且实际被当前source predicate排除的旧订单迟到cash及三次重放、权限边界、有限重准备/真实业务冲突不重试、实际MySQL钱包来源变动共14个测试事件通过、无跳过、19.988秒，源码哈希一致；原CI竞态`TestMySQLAutomaticRenewalVersusManualVerifiedCash`单独`-count=10 -timeout 15m`连续10次通过、22.967秒、源码不变。早期两个轻量unit fixture缺order_fundings而失败，已补正式0040空表DDL，未修改生产或真实MySQL覆盖，失败回执保留。
+
+修复前精确a4c4a5b完整后端四项已实际通过：test3380事件/424既有skip、630.617秒，vet21.647秒、build2.332秒、CGO_ENABLED=0 SQLite55事件67.148秒，哈希一致；不沿用它证明本次新金融源码完整通过。本次完整MySQL三组与完整后端/精确CI仍待独立记录。历史来源预算也不声称覆盖当前checkout单行原有raw_callback或所有API总RSS。

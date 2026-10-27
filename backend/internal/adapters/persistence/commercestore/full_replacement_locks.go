@@ -2,10 +2,12 @@ package commercestore
 
 import (
 	"errors"
+	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"sort"
 	"time"
 )
 
@@ -79,18 +81,23 @@ func lockSubscriptionSettlementScope(tx *gorm.DB, identity *subscriptionSettleme
 	if identity == nil {
 		return nil
 	}
-	if err := lockSubscriptionOrderIDs(tx, identity.Scope); err != nil {
-		return err
-	}
-	found := false
-	for _, id := range identity.Scope.IDs {
-		if id == identity.ID {
-			found = true
-			break
+	// A closed/canceled historical attempt can fall outside the current
+	// entitlement source set. It must still be locked before owner so verified
+	// late cash can reach its existing credit-only path. Preserve the source
+	// set for revalidation; union only the actual lock set in global PK order.
+	locking := identity.Scope
+	locking.IDs = append([]uint(nil), identity.Scope.IDs...)
+	i := sort.Search(len(locking.IDs), func(i int) bool { return locking.IDs[i] >= identity.ID })
+	if i == len(locking.IDs) || locking.IDs[i] != identity.ID {
+		if len(locking.IDs) >= orderIdentityByteLimit/8 {
+			return commerce.ErrSubscriptionEvidenceBudget
 		}
+		locking.IDs = append(locking.IDs, 0)
+		copy(locking.IDs[i+1:], locking.IDs[i:])
+		locking.IDs[i] = identity.ID
 	}
-	if !found {
-		return commerce.ErrSubscriptionQuoteChanged
+	if err := lockSubscriptionOrderIDs(tx, locking); err != nil {
+		return err
 	}
 	var current model.Order
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, identity.ID).Error; err != nil {
@@ -115,5 +122,35 @@ func lockSubscriptionSettlementScope(tx *gorm.DB, identity *subscriptionSettleme
 			return commerce.ErrOrderPermission
 		}
 	}
-	return verifySubscriptionOrderScope(tx, identity.Scope)
+	err := verifySubscriptionOrderScope(tx, identity.Scope)
+	if errors.Is(err, commerce.ErrSubscriptionQuoteChanged) {
+		return errSubscriptionSettlementScopeChanged
+	}
+	return err
+}
+
+// This identity denotes only an unlocked preparation that became stale before
+// entering financial logic. Immutable checkout changes and quote/funding errors
+// from apply are intentionally not converted to this retryable condition.
+var errSubscriptionSettlementScopeChanged = fmt.Errorf("subscription settlement source scope changed before financial work: %w", commerce.ErrSubscriptionQuoteChanged)
+
+func withSubscriptionSettlementScope(db *gorm.DB, id, expectedBuyer, actor uint, admin bool, apply func(*gorm.DB, *subscriptionSettlementIdentity) error) error {
+	for attempt := 0; attempt < 2; attempt++ {
+		identity, err := readSubscriptionSettlementIdentity(db, id, expectedBuyer)
+		if err != nil {
+			return err
+		}
+		err = db.Transaction(func(tx *gorm.DB) error {
+			if err := lockSubscriptionSettlementScope(tx, identity, actor, admin); err != nil {
+				return err
+			}
+			return apply(tx, identity)
+		})
+		if !errors.Is(err, errSubscriptionSettlementScopeChanged) {
+			return err
+		}
+		// The callback never ran: no event, receipt, wallet or entitlement write
+		// occurred. Transaction has rolled back its locks before rediscovery.
+	}
+	return errSubscriptionSettlementScopeChanged
 }

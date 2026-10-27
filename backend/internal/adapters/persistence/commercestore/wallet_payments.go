@@ -239,14 +239,7 @@ func captureOrderFunding(tx *gorm.DB, order model.Order, now time.Time) error {
 	return tx.Model(&fund).Updates(map[string]any{"state": "captured", "captured_at": now, "updated_at": now}).Error
 }
 func (s WalletPayments) Pay(ctx context.Context, actor, id uint) (out commerce.WalletPaymentResult, err error) {
-	identity, err := readSubscriptionSettlementIdentity(s.DB.WithContext(ctx), id, actor)
-	if err != nil {
-		return out, err
-	}
-	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockSubscriptionSettlementScope(tx, identity, actor, false); err != nil {
-			return err
-		}
+	err = withSubscriptionSettlementScope(s.DB.WithContext(ctx), id, actor, actor, false, func(tx *gorm.DB, identity *subscriptionSettlementIdentity) error {
 		var order model.Order
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, actor).First(&order).Error; err != nil {
 			return resourceError(err)

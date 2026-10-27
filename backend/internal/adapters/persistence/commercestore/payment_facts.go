@@ -28,14 +28,7 @@ func (s PaymentFacts) Record(ctx context.Context, authority commerce.PaymentFact
 	if err != nil {
 		return out, err
 	}
-	identity, err := readSubscriptionSettlementIdentity(s.DB.WithContext(ctx), fact.OrderID, authority.AccountID)
-	if err != nil {
-		return out, err
-	}
-	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockSubscriptionSettlementScope(tx, identity, authority.AccountID, authority.RequireAdministrator); err != nil {
-			return err
-		}
+	err = withSubscriptionSettlementScope(s.DB.WithContext(ctx), fact.OrderID, authority.AccountID, authority.AccountID, authority.RequireAdministrator, func(tx *gorm.DB, identity *subscriptionSettlementIdentity) error {
 		var order model.Order
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", fact.OrderID, authority.AccountID).First(&order).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
