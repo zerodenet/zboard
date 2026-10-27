@@ -64,6 +64,7 @@ type Runtime struct {
 	// emptyUntil coalesces empty-queue probes from the fixed worker pool. A
 	// successful claim clears it so backlog still fills all execution slots.
 	emptyUntil time.Time
+	pressure   runtimePressure
 }
 
 func NewRuntime(store SchedulingStore, worker string, paused func() bool, report func(error)) *Runtime {
@@ -536,6 +537,7 @@ func (s runtimeExecutionStore) Claim(ctx context.Context, worker string, handler
 		return Claim{}, ErrEmpty
 	}
 	claim, err := s.Store.Claim(ctx, worker, handlers, timeout)
+	s.runtime.observeClaim(now, claim, err)
 	if errors.Is(err, ErrEmpty) {
 		s.runtime.emptyUntil = now.Add(time.Second)
 	} else {
