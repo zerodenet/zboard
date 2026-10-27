@@ -50,6 +50,9 @@ type DiscountAgreement struct {
 }
 
 type DiscountOffer struct {
+	// Optional core-owned admission obligation, never opaque marketing terms.
+	// An old strict snapshot reader rejects this field instead of losing the hold.
+	Redemption       string             `json:"redemption,omitempty"`
 	Status           string             `json:"status"` // available, unavailable, requires_confirmation
 	InputFingerprint string             `json:"input_fingerprint"`
 	Currency         string             `json:"currency"`
@@ -161,6 +164,9 @@ func ValidateDiscountQuoteContext(in DiscountQuoteContext) error {
 func ValidateDiscountOffer(in DiscountQuoteContext, out DiscountOffer, now time.Time) error {
 	if err := ValidateDiscountQuoteContext(in); err != nil {
 		return err
+	}
+	if out.Redemption != "" && out.Redemption != DiscountRedemptionGuarantee {
+		return ErrDiscountRedemptionUnsupported
 	}
 	if out.InputFingerprint != in.InputFingerprint || out.Currency != in.Currency || out.DiscountMinor < 0 || out.DiscountMinor > in.BasePriceMinor || len(out.Message) > 512 {
 		return ErrDiscountQuoteInvalid

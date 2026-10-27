@@ -154,6 +154,9 @@ func reconcileHourlyProjectionSchema(db *gorm.DB) error {
 // binary. Re-upgrade removes these restored SQLite triggers again without
 // replaying existing buckets or dropping pending evidence.
 func PrepareHourlyProjectionRollback(db *gorm.DB) error {
+	if err := ValidateDiscountRedemptionBinaryRollback(db); err != nil {
+		return err
+	}
 	if err := requireNoLiveTrafficMetaArchiveReferences(db); err != nil {
 		return err
 	}

@@ -167,6 +167,9 @@ func acceptPaymentReceipt(tx *gorm.DB, order model.Order, authority commerce.Pay
 }
 
 func (s PaymentFacts) applyReceipt(tx *gorm.DB, order *model.Order, receipt *model.PaymentReceipt, now time.Time, unplannedWhole bool) error {
+	if reviewed, err := preserveReceiptWithDamagedDiscountAuthority(tx, *order, receipt); reviewed || err != nil {
+		return err
+	}
 	if order.PaidAmount > 0 && order.ProviderTradeNo == nil && order.Channel != "wallet" && order.OrderType != "topup" {
 		// Legacy/manual payment has no verifiable channel receipt identity. Keep
 		// collected money visible for reconciliation; never invent a second value.

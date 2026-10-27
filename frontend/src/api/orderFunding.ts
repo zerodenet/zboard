@@ -1,5 +1,7 @@
 import { authenticatedAPI as api } from './client'
+export interface DiscountReservation { required: true; state: 'pending' | 'confirmed' | 'settled' | 'closed' | 'unavailable'; can_pay: boolean; can_cancel: boolean; can_reconcile: boolean; message: string }
 export interface OrderFunding {
+  discount_reservation?: DiscountReservation
   change_mode?: 'full_term'; settlement_minor?: string; surplus_minor?: string
   entitlement_minor?: string; reserved_minor?: string
   order_id: number; configured: boolean; use_balance: boolean; currency: string

@@ -38,6 +38,9 @@ func (h *handlers) orderPayCallbackHandler(w http.ResponseWriter, r *http.Reques
 	h.writeOrderSettlement(w, out, err, true)
 }
 func (h *handlers) writeOrderSettlement(w http.ResponseWriter, out commerce.SettlementResult, err error, callback bool) {
+	if writeDiscountReservationError(w, err) {
+		return
+	}
 	if writeResourceBusy(w, err) {
 		return
 	}

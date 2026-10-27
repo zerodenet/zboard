@@ -1,9 +1,9 @@
 <template>
   <section class="checkout-payment" :class="{ 'checkout-payment--embedded': embedded }" :data-plugin-slot="name" aria-label="支付方式">
-    <header><h3>支付方式</h3></header>
+    <header><h3>{{ reconcileOnly ? '核对既有渠道付款' : '支付方式' }}</h3></header>
     <p v-if="loading" role="status">正在加载支付方式，订单内容可继续查看。</p>
     <PageAlert v-if="error" tone="danger">{{ error }}</PageAlert>
-    <p v-if="!loading && !contributions.length && !error && !paid && !canceled && !handoffToFunding">暂无在线支付方式，可创建订单后联系管理员确认收款。</p>
+    <p v-if="!loading && !contributions.length && !error && !paid && !canceled && !handoffToFunding">{{ reconcileOnly ? '原付款渠道暂不可用，请核对本站订单与余额流水。' : '暂无在线支付方式，可创建订单后联系管理员确认收款。' }}</p>
     <p v-if="handoffToFunding">先创建待付款订单，再核对余额与渠道补差。</p>
     <PageAlert v-if="handoffToFunding && paymentError" tone="danger">{{ paymentError }}</PageAlert>
     <div v-for="contribution in contributions" :key="key(contribution)" class="checkout-payment__provider">
@@ -26,14 +26,14 @@
     </div>
     <UiButton v-if="canRetry" type="button" variant="secondary" size="sm" :disabled="busy || loading" @click="load">重新加载支付方式</UiButton>
     <div class="checkout-payment__actions">
-      <UiButton v-if="handoffToFunding" type="button" :loading="busy" :disabled="busy || disabled" @click="handoff">{{ currentOrder ? '继续选择付款方式' : '创建订单并选择付款方式' }}</UiButton>
-      <UiButton v-else-if="currentOrder" :id="paymentTriggerId" type="button" @click="paymentDialogOpen = true">{{ paid ? '查看支付结果' : '查看支付状态' }}</UiButton>
-      <UiButton v-else-if="contributions.length || loading || error" :id="paymentTriggerId" type="button" :loading="busy" :disabled="busy || disabled || !choice || choice.option.disabled" @click="pay">确认并支付</UiButton>
-      <UiButton v-else-if="createOnly && !currentOrder" type="button" :loading="busy" :disabled="busy || disabled" @click="orderOnly">确认创建订单</UiButton>
+      <UiButton v-if="handoffToFunding && !reconcileOnly" type="button" :loading="busy" :disabled="busy || disabled" @click="handoff">{{ currentOrder ? '继续选择付款方式' : '创建订单并选择付款方式' }}</UiButton>
+      <UiButton v-else-if="currentOrder" :id="paymentTriggerId" type="button" @click="paymentDialogOpen = true">{{ reconcileOnly ? '查看原付款核对' : paid ? '查看支付结果' : '查看支付状态' }}</UiButton>
+      <UiButton v-else-if="!reconcileOnly && (contributions.length || loading || error)" :id="paymentTriggerId" type="button" :loading="busy" :disabled="busy || disabled || !choice || choice.option.disabled" @click="pay">确认并支付</UiButton>
+      <UiButton v-else-if="!reconcileOnly && createOnly && !currentOrder" type="button" :loading="busy" :disabled="busy || disabled" @click="orderOnly">确认创建订单</UiButton>
     </div>
-    <ModalDialog :open="paymentDialogOpen" :title="paid ? '支付已完成' : canceled ? '订单已取消' : '确认支付结果'" size="sm" :description="paid ? '付款结果已核对。' : canceled ? '此订单不可继续支付，请重新下单。' : '请在支付窗口完成付款，返回后核对订单结果。'" :return-focus-selector="`#${paymentTriggerId}`" @close="paymentDialogOpen = false">
+    <ModalDialog :open="paymentDialogOpen" :title="reconcileOnly ? '核对原渠道付款' : paid ? '支付已完成' : canceled ? '订单已取消' : '确认支付结果'" size="sm" :description="reconcileOnly ? '仅核对已存在的原渠道付款，不会重新收款。迟到款可能进入余额，请同时核对本站订单和流水。' : paid ? '付款结果已核对。' : canceled ? '此订单不可继续支付，请重新下单。' : '请在支付窗口完成付款，返回后核对订单结果。'" :return-focus-selector="`#${paymentTriggerId}`" @close="paymentDialogOpen = false">
       <div class="checkout-payment__dialog">
-        <p v-if="currentOrder" class="checkout-payment__state" role="status">订单 #{{ currentOrder }} · {{ paid ? '已完成付款' : canceled ? '已取消，请重新下单。' : waiting ? '等待付款；完成后请核对结果。' : busy ? '正在准备支付或核对结果…' : '支付重试将使用此订单。' }}</p>
+        <p v-if="currentOrder" class="checkout-payment__state" role="status">订单 #{{ currentOrder }} · {{ paid ? '已完成付款' : reconcileOnly ? '仅核对原付款；此操作不会恢复权益或重新收款。' : canceled ? '已取消，请重新下单。' : waiting ? '等待付款；完成后请核对结果。' : busy ? '正在准备支付或核对结果…' : '支付重试将使用此订单。' }}</p>
         <p v-else role="status">{{ busy ? '正在创建订单并打开支付窗口…' : '订单尚未创建，可重新确认并支付。' }}</p>
         <p v-if="confirmedOrder">订单应付 {{ formatCurrency(confirmedOrder.amount, confirmedOrder.currency) }}</p>
         <p v-if="channelAmountMinor !== undefined">本次渠道补差 {{ formatWalletMoney(channelAmountMinor, currency) }}</p>
@@ -41,11 +41,11 @@
         <PageAlert v-if="paymentError" tone="danger">{{ paymentError }}</PageAlert>
         <p v-if="actionFailure && !actionFailure.retryable" class="checkout-payment__hint">此插件动作不支持直接重试，可更换支付方式或核对本站订单状态。</p>
         <p v-if="paid">ZBoard 已确认订单完成。</p>
-        <p v-else-if="!canceled" class="checkout-payment__hint">关闭弹窗不会取消订单，可稍后在“我的订单”继续支付。</p>
+        <p v-else-if="!canceled && !reconcileOnly" class="checkout-payment__hint">关闭弹窗不会取消订单，可稍后在“我的订单”继续支付。</p>
       </div>
       <template #footer>
-        <UiButton v-if="!paid && !canceled" type="button" variant="secondary" :loading="busy && !checking" :disabled="busy || disabled || !choice || choice.option.disabled || !canRepeat(choice.option.prepare_action)" @click="pay">{{ waiting ? '重新打开支付窗口' : currentOrder ? '继续支付' : '确认并支付' }}</UiButton>
-        <UiButton v-if="currentOrder && !paid && !canceled" type="button" :loading="checking" :disabled="busy" @click="reconcile">{{ choice && !canRepeat(choice.option.reconcile_action) ? '刷新订单状态' : '已支付，确认' }}</UiButton>
+        <UiButton v-if="!reconcileOnly && !paid && !canceled" type="button" variant="secondary" :loading="busy && !checking" :disabled="busy || disabled || !choice || choice.option.disabled || !canRepeat(choice.option.prepare_action)" @click="pay">{{ waiting ? '重新打开支付窗口' : currentOrder ? '继续支付' : '确认并支付' }}</UiButton>
+        <UiButton v-if="currentOrder && !paid && (!canceled || reconcileOnly)" type="button" :loading="checking" :disabled="busy" @click="reconcile">{{ reconcileOnly ? '核对原渠道付款' : choice && !canRepeat(choice.option.reconcile_action) ? '刷新订单状态' : '已支付，确认' }}</UiButton>
         <UiButton type="button" variant="ghost" @click="paymentDialogOpen = false">{{ paid || canceled ? '关闭' : '稍后处理' }}</UiButton>
       </template>
     </ModalDialog>
@@ -64,8 +64,8 @@ import { formatCurrency } from '../utils/format'
 import { formatWalletMoney } from '../utils/walletMoney'
 import { startPayment, paymentStatusMessage, type PaymentOption, type PaymentStatus } from './checkout'
 
-const props = withDefaults(defineProps<{ name: string; currency: string; orderId?: number; actorId?: number; handoffToFunding?: boolean; channelAmountMinor?: string; createOrder?: () => Promise<number>; createOnly?: () => Promise<void>; embedded?: boolean; preferredPlugin?: string; reconcileOnLoad?: boolean; openOnLoad?: boolean; disabled?: boolean }>(), { openOnLoad: true })
-const emit = defineEmits<{ paid: [id: number]; created: [id: number] }>()
+const props = withDefaults(defineProps<{ name: string; currency: string; orderId?: number; actorId?: number; handoffToFunding?: boolean; channelAmountMinor?: string; createOrder?: () => Promise<number>; createOnly?: () => Promise<void>; embedded?: boolean; preferredPlugin?: string; reconcileOnLoad?: boolean; reconcileOnly?: boolean; openOnLoad?: boolean; disabled?: boolean }>(), { openOnLoad: true, reconcileOnly: false })
+const emit = defineEmits<{ paid: [id: number]; created: [id: number]; reconciled: [id: number] }>()
 const paymentTriggerId = `checkout-payment-${useId()}`
 type Frame = { checkoutAction(id: number, action: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> }
 const frames = shallowReactive(new Map<string, Frame>())
@@ -112,7 +112,7 @@ function receiveStatus(id: string, status: PaymentStatus) {
   if (status.state === 'error' || status.state === 'loading') delete options[id]
 }
 async function orderOnly() {
-  if (busy.value || props.disabled || loading.value || error.value || contributions.value.length || !props.createOnly) return
+  if (props.reconcileOnly || busy.value || props.disabled || loading.value || error.value || contributions.value.length || !props.createOnly) return
   busy.value = true
   try { await props.createOnly() }
   finally { busy.value = false }
@@ -128,13 +128,13 @@ function receiveOptions(id: string, values: PaymentOption[]) {
     const option = values.find(item => item.id === saved?.option && (currentOrder.value || !item.disabled)) || values.find(item => !item.disabled)
     if (option) selected.value = `${id}:${option.id}`
   }
-  if (props.reconcileOnLoad && props.orderId && !restored && !paid.value && choice.value?.contribution.plugin_id === props.preferredPlugin) {
+  if (!props.reconcileOnly && props.reconcileOnLoad && props.orderId && !restored && !paid.value && choice.value?.contribution.plugin_id === props.preferredPlugin) {
     restored = true
     void reconcile()
   }
 }
 async function handoff() {
-  if (busy.value || props.disabled) return
+  if (props.reconcileOnly || busy.value || props.disabled) return
   const current = generation
   busy.value = true; paymentError.value = ''
   try {
@@ -147,7 +147,7 @@ async function handoff() {
 }
 async function load() {
   if (busy.value) return
-  if (props.handoffToFunding) { generation++; controller.abort(); clearOptionTimers(); contributions.value = []; loading.value = false; return }
+  if (props.handoffToFunding && !props.reconcileOnly) { generation++; controller.abort(); clearOptionTimers(); contributions.value = []; loading.value = false; return }
   clearOptionTimers()
   controller.abort(); controller = new AbortController(); const current = ++generation
   restored = false
@@ -183,7 +183,7 @@ async function refreshOrder(id: number, current: number) {
 }
 function pay() {
   const value = choice.value
-  if (busy.value || props.disabled || !value?.frame || value.option.disabled || paid.value || canceled.value || !canRepeat(value.option.prepare_action)) return
+  if (props.reconcileOnly || busy.value || props.disabled || !value?.frame || value.option.disabled || paid.value || canceled.value || !canRepeat(value.option.prepare_action)) return
   actionFailure.value = undefined; rejectedAction.value = ''
   paymentError.value = ''; busy.value = true; paymentDialogOpen.value = true
   const current = generation
@@ -218,7 +218,7 @@ async function reconcile() {
   try {
     const before = await refreshOrder(orderId, current)
     if (current !== generation || before?.status === 'paid') return
-    if (before?.status === 'canceled') { paymentError.value = '此订单已取消，请重新下单。'; return }
+    if (before?.status === 'canceled' && !props.reconcileOnly) { paymentError.value = '此订单已取消，请重新下单。'; return }
     let failure: any
     // A callback may have committed even if the plugin response is lost.
     // Host status remains readable after the extension's authorization expires.
@@ -230,13 +230,15 @@ async function reconcile() {
     } else { failure = new Error('支付扩展暂不可用，本站尚未确认到账。') }
     if (current !== generation) return
     const after = await refreshOrder(orderId, current)
-    if (current !== generation || after?.status === 'paid') return
+    if (current !== generation) return
+    if (props.reconcileOnly) emit('reconciled', orderId)
+    if (after?.status === 'paid') return
     waiting.value = true
-    paymentError.value = after?.status === 'canceled' ? '此订单已取消，请重新下单。' : failure?.response?.data?.message || failure?.message || '尚未确认到账，请稍后再核对。'
+    paymentError.value = props.reconcileOnly && !failure ? '已核对原渠道付款，请在本站订单与余额流水核对最终入账；此结果不表示权益已履约。' : after?.status === 'canceled' && !props.reconcileOnly ? '此订单已取消，请重新下单。' : failure?.response?.data?.message || failure?.message || '尚未确认到账，请稍后再核对。'
   } catch (cause: any) { if (current === generation) paymentError.value = cause?.response?.data?.message || cause?.message || '核对暂时不可用，请稍后重试。' }
   finally { if (current === generation) { busy.value = false; checking.value = false } }
 }
-watch(() => [props.name, props.orderId, props.preferredPlugin, props.actorId], () => {
+watch(() => [props.name, props.orderId, props.preferredPlugin, props.actorId, props.reconcileOnly], () => {
   generation++; controller.abort(); busy.value = false; confirmedOrder.value = undefined
   paymentDialogOpen.value = !props.handoffToFunding && Boolean(props.orderId) && props.openOnLoad !== false; paymentError.value = ''; checking.value = false
   actionFailure.value = undefined; rejectedAction.value = ''

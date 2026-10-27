@@ -141,6 +141,9 @@ func callCommerceQuoteProvider(ctx context.Context, before Installation, client 
 	if err := DecodeStrict(result.OfferJson, &offer); err != nil {
 		return commerce.DiscountQuote{}, commerce.ErrDiscountQuoteInvalid
 	}
+	if offer.Redemption != "" && !hasCapability(before, CommerceDiscountRedemptionCapability) {
+		return commerce.DiscountQuote{}, commerce.ErrDiscountRedemptionUnsupported
+	}
 	if err := commerce.ValidateDiscountOffer(in, offer, time.Now().UTC()); err != nil {
 		return commerce.DiscountQuote{}, err
 	}

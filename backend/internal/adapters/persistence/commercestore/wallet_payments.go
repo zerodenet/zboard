@@ -102,6 +102,10 @@ func fundingView(tx *gorm.DB, order model.Order, now time.Time) (out commerce.Or
 		out.Expired = fund.State == "reserved" && !fund.ExpiresAt.After(now)
 		out.ReleaseReason = fund.ReleaseReason
 	}
+	out.DiscountReservation, err = orderDiscountReservationView(tx, order, now, out.CashMinor)
+	if err != nil {
+		return out, err
+	}
 	return out, nil
 }
 func (s WalletPayments) Read(ctx context.Context, actor, id uint) (out commerce.OrderFundingView, err error) {
@@ -120,6 +124,11 @@ func (s WalletPayments) Read(ctx context.Context, actor, id uint) (out commerce.
 	return
 }
 func configureOrderFunding(tx *gorm.DB, order model.Order, in commerce.FundingRequest, now time.Time) error {
+	if order.Status == "pending" || order.Status == "failed" {
+		if err := RequireOrderDiscountReservation(tx, order, now); err != nil {
+			return err
+		}
+	}
 	if order.OrderType == "topup" {
 		return quoteError("充值不能使用余额付款或预留，请选择支付渠道。")
 	}
@@ -202,6 +211,9 @@ func (s WalletPayments) Configure(ctx context.Context, actor, id uint, in commer
 	return
 }
 func releaseOrderFunding(tx *gorm.DB, order model.Order, reason string, now time.Time) error {
+	if err := ReleaseClosingOrderDiscountIntent(tx, order, now); err != nil {
+		return err
+	}
 	fund, exists, err := findOrderFunding(tx, order)
 	if err != nil || !exists {
 		return err

@@ -19,6 +19,9 @@ func (h *handlers) OrderCreateCommerceValidatedHandler(w http.ResponseWriter, r 
 	}
 	order, err := h.services.OrderCreation.Create(r.Context(), claims.UserID, request)
 	if err != nil {
+		if writeDiscountReservationError(w, err) {
+			return
+		}
 		var invalid *commerce.ValidationError
 		switch {
 		case errors.Is(err, commerce.ErrSubscriptionEvidenceBudget):
@@ -58,6 +61,9 @@ func (h *handlers) OrderPreviewHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	preview, err := h.services.OrderCreation.Preview(r.Context(), claims.UserID, request)
 	if err != nil {
+		if writeDiscountReservationError(w, err) {
+			return
+		}
 		var invalid *commerce.ValidationError
 		switch {
 		case errors.Is(err, commerce.ErrSubscriptionEvidenceBudget):

@@ -20,7 +20,7 @@ type OrderCreation struct {
 	Discounts commerce.DiscountQuoter
 }
 
-func (s OrderCreation) Create(ctx context.Context, buyer uint, request commerce.OrderCreateRequest) (commerce.Order, error) {
+func (s OrderCreation) createWithoutRedemptionConfirmation(ctx context.Context, buyer uint, request commerce.OrderCreateRequest) (commerce.Order, error) {
 	if request.TargetSubscriptionID != 0 {
 		return s.createRenewalAwareOrder(ctx, buyer, request)
 	}
@@ -69,6 +69,9 @@ func createOrderWithDiscountInTransaction(tx *gorm.DB, buyer uint, request comme
 		}
 	}
 	if err := tx.Create(&order).Error; err != nil {
+		return model.Order{}, err
+	}
+	if err := CreateOrderDiscountRedemptionIntent(tx, order, commerceNow(clock)); err != nil {
 		return model.Order{}, err
 	}
 	return order, nil

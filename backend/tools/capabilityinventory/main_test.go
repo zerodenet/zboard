@@ -185,6 +185,8 @@ type MeteringReportReceipt struct{}
 type MeteringReportReceiptOther struct{}
 type TrafficMetaArchive struct{}
 type TrafficMetaArchiveOther struct{}
+type OrderDiscountRedemption struct{}
+type OrderDiscountRedemptionOther struct{}
 type InventedFutureModel struct{}
 `
 	if err := os.WriteFile(filepath.Join(dir, "models.go"), []byte(source), 0600); err != nil {
@@ -208,6 +210,9 @@ type InventedFutureModel struct{}
 	}
 	if owners["MeteringReportReceipt"] != "metering" || owners["MeteringReportReceiptOther"] != "unassigned" {
 		t.Fatal("report identity owner must be exact")
+	}
+	if owners["OrderDiscountRedemption"] != "commerce" || owners["OrderDiscountRedemptionOther"] != "unassigned" {
+		t.Fatal("discount recovery ownership must be exact", owners)
 	}
 	if owners["TrafficMetaArchive"] != "metering" || owners["TrafficMetaArchiveOther"] != "unassigned" {
 		t.Fatal("native proof archive ownership must be exact", owners)
@@ -287,7 +292,7 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 	}
 	want := map[string]int{
 		"plugin_rpc":               18,
-		"plugin_capability":        31,
+		"plugin_capability":        32,
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
@@ -550,5 +555,29 @@ func TestLocalWorkerRuntimeSitesKeepExactJobsOwnership(t *testing.T) {
 		if counts[name] != 2 {
 			t.Fatalf("missing runtime evidence %s: %v", name, counts)
 		}
+	}
+}
+
+func TestDiscountRedemptionLifecycleKeepsExactOwnership(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "internal", "handler")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "example.go"), []byte("package example\nfunc Example(){ h.StartDiscountRedemptionWorker(); h.StartDiscountRedemptionOtherWorker() }\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := inventory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, row := range rows {
+		if row.Kind == "lifecycle" {
+			seen[row.Symbol] = row.Owner
+		}
+	}
+	if seen["h.StartDiscountRedemptionWorker"] != "commerce" || seen["h.StartDiscountRedemptionOtherWorker"] != "unassigned" {
+		t.Fatal("discount lifecycle ownership broadened or missing", seen)
 	}
 }

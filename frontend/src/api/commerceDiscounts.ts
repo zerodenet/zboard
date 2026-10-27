@@ -20,6 +20,7 @@ export interface OrderDiscountSelection {
 export interface DiscountQuote {
   provider: { plugin_id: string; signing_key_fingerprint: string; package_digest: string; generation: number; config_revision: number }
   offer: {
+    redemption?: 'exclusive_until_core_finalization_v1'
     status: 'available' | 'unavailable' | 'requires_confirmation'
     input_fingerprint: string
     currency: string
@@ -60,7 +61,7 @@ export async function previewOperationDiscountOrder(skuId: number, targetSubscri
 export function validateDiscountOrderQuote(quote: OrderPreview, expected: { orderType: SelectedDiscountOperation | 'renewal'; currency?: string; providerId?: string }): OrderPreview {
   const offer = quote?.discount?.offer
   const scope = offer?.agreement?.scope
-  if (!offer || quote.order_type !== expected.orderType || typeof quote.discount?.provider?.plugin_id !== 'string' || !quote.discount.provider.plugin_id.trim()
+  if (!offer || (offer.redemption !== undefined && offer.redemption !== 'exclusive_until_core_finalization_v1') || quote.order_type !== expected.orderType || typeof quote.discount?.provider?.plugin_id !== 'string' || !quote.discount.provider.plugin_id.trim()
     || (expected.providerId !== undefined && quote.discount.provider.plugin_id !== expected.providerId)
     || offer.status !== 'available' || !scope || !['initial_only', 'recurring', 'order_only'].includes(scope)
     || (expected.orderType === 'new' && scope === 'order_only')

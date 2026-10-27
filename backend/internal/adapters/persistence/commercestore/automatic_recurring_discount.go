@@ -184,6 +184,9 @@ func (s AutomaticRenewals) evaluateAutomaticDiscount(ctx context.Context, owner,
 	if err == nil {
 		err = validateCheckoutOffer(in, accepted.Quote, marker.Source.ProviderID, commerceNow(s.Now))
 	}
+	if err == nil && accepted.Quote.Offer.Redemption != "" {
+		err = errors.Join(commerce.ErrDiscountQuoteUnavailable, commerce.ErrDiscountRedemptionUnsupported, quoteError("当前优惠要求订单级排他预留，自动续费尚不能确认该义务；未创建订单或扣款，请手动续费。"))
+	}
 	if err == nil && accepted.Quote.Provider.SigningKeyFingerprint != marker.Source.SigningKeyFingerprint {
 		err = errAutomaticConditionsChanged
 	}

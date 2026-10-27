@@ -413,6 +413,7 @@ func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSe
 	h.StartAdminTaskWorker()
 	h.StartNodePublishWorker()
 	h.StartTrafficResetWorker()
+	h.StartDiscountRedemptionWorker()
 	h.StartWalletReservationWorker()
 	h.StartAutomaticRenewalWorker()
 	h.StartUsageProjectionWorker()

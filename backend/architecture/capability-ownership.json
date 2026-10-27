@@ -21,6 +21,7 @@
     {"name": "PluginControl.HandlePageAction", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"}
   ],
   "plugin_capabilities": [
+    {"name": "zboard.commerce.discount.redemption.v1", "owner": "commerce", "source": "internal/plugins/commerce_redemption_provider.go"},
     {"name": "zboard.commerce.quote.provider.v1", "owner": "commerce", "source": "internal/plugins/commerce_quote_provider.go"},
     {"name": "zboard.ui.page.v1", "owner": "extensions", "source": "internal/plugins/admission.go"},
     {"name": "zboard.config.v1", "owner": "extensions", "source": "internal/plugins/admission.go"},

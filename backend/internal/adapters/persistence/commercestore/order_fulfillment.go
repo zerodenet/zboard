@@ -21,6 +21,9 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 	if order.Status == "paid" {
 		return nil
 	}
+	if err := RequireOrderDiscountReservation(tx, *order, now); err != nil {
+		return err
+	}
 	if order.OrderType != "new" && order.TargetSubscriptionID == nil {
 		return quoteError(entitlements.ErrGrantTargetRequired.Error())
 	}
@@ -80,6 +83,9 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 	// Locks or configuration changes may have delayed this decision. Evaluate
 	// eligibility and reservation expiry with a fresh trusted clock after them.
 	now = commerceNow(s.Now)
+	if err := RequireOrderDiscountReservation(tx, *order, now); err != nil {
+		return err
+	}
 	if configured && fund.State == "reserved" && !fund.ExpiresAt.After(now) {
 		return quoteError("付款资金预留已失效，请核对余额并重新确认订单。")
 	}
@@ -152,6 +158,9 @@ func (s OrderSettlement) setVerifiedPaid(tx *gorm.DB, order *model.Order, now ti
 }
 
 func markOrderPaid(tx *gorm.DB, order *model.Order, subscriptionID uint, now time.Time) error {
+	if err := CommitOrderDiscountRedemptionIntent(tx, *order, now); err != nil {
+		return err
+	}
 	var subscriptionValue any
 	if subscriptionID != 0 {
 		subscriptionValue = subscriptionID

@@ -14,8 +14,8 @@ type NativeCommerceDiscountProvider interface {
 	EvaluateCommerceDiscount(context.Context, string, commerce.DiscountQuoteContext) (commerce.DiscountQuote, error)
 }
 
-// CommerceDiscountProvider adapts only the native quote contract. No payment,
-// order, balance or entitlement mutation is reachable through this adapter.
+// CommerceDiscountProvider adapts native quotes and optional exclusive discount
+// reservations. It grants no payment, order, wallet or entitlement mutation.
 type CommerceDiscountProvider struct {
 	Native NativeCommerceDiscountProvider
 }

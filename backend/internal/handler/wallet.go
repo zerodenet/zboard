@@ -10,6 +10,9 @@ import (
 )
 
 func walletError(w http.ResponseWriter, err error) {
+	if writeDiscountReservationError(w, err) {
+		return
+	}
 	if writeResourceBusy(w, err) {
 		return
 	}

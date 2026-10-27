@@ -7,7 +7,11 @@
         <p>旧权益结算 {{ money(funding.settlement_minor ?? '0') }} · 用于本单 {{ money(funding.entitlement_minor ?? '0') }} · 结余入余额 {{ money(funding.surplus_minor ?? '0') }}</p>
         <p>旧权益在本次付款履约成功后结算；新套餐从履约成功时获得完整新期间和流量。</p>
       </template>
-      <template v-if="!funding.configured">
+      <template v-if="funding.discount_reservation && !funding.discount_reservation.can_pay">
+        <PageAlert tone="warning">{{ funding.discount_reservation.message }} <UiButton v-if="funding.discount_reservation.can_cancel" type="button" variant="secondary" :loading="canceling" @click="cancel">取消本次优惠订单</UiButton></PageAlert>
+        <CheckoutPayment v-if="funding.discount_reservation.can_reconcile" :key="'reconcile:' + orderId + ':' + app.user.id" name="account.orders.payment" embedded reconcile-only :actor-id="app.user.id" :order-id="orderId" :currency="currency" :channel-amount-minor="funding.cash_minor" :preferred-plugin="preferredPlugin" :reconcile-on-load="false" :open-on-load="false" @paid="changed" @reconciled="reconciled" />
+      </template>
+      <template v-else-if="!funding.configured">
         <p>当前可用余额 {{ money(funding.available_minor) }}。请选择本次付款方式。</p>
         <template v-if="pendingChoice === null">
           <UiButton type="button" :loading="configuring" @click="configure(true)">先使用余额，不足部分通过渠道支付</UiButton>
@@ -22,9 +26,9 @@
         <PageAlert v-if="funding.expired || funding.state === 'released'" tone="warning">本次资金分配已失效，请核对余额并重新创建订单。已有渠道扣款会单独核对归属。</PageAlert>
         <template v-if="funding.state === 'reserved' && !funding.expired">
           <UiButton v-if="funding.cash_minor === '0'" type="button" :loading="paying" @click="pay">{{ funding.change_mode === 'full_term' ? '确认结算旧权益并购买新套餐' : funding.amount_minor === '0' ? '确认完成零金额订单' : `确认使用余额支付 ${money(funding.wallet_minor)}` }}</UiButton>
-          <CheckoutPayment v-else :key="orderId" name="account.orders.payment" embedded :order-id="orderId" :currency="currency" :channel-amount-minor="funding.cash_minor" :preferred-plugin="preferredPlugin" :reconcile-on-load="Boolean(preferredPlugin)" :open-on-load="Boolean(preferredPlugin)" @paid="changed" />
+          <CheckoutPayment v-else :key="orderId" name="account.orders.payment" embedded :actor-id="app.user.id" :order-id="orderId" :currency="currency" :channel-amount-minor="funding.cash_minor" :preferred-plugin="preferredPlugin" :reconcile-on-load="Boolean(preferredPlugin)" :open-on-load="Boolean(preferredPlugin)" @paid="changed" />
         </template>
-        <UiButton v-if="funding.state === 'reserved'" type="button" variant="secondary" :disabled="paying || canceling" @click="cancel">取消订单并释放预留</UiButton>
+        <UiButton v-if="funding.state === 'reserved' && (!funding.discount_reservation || funding.discount_reservation.can_cancel)" type="button" variant="secondary" :disabled="paying || canceling" @click="cancel">取消订单并释放预留</UiButton>
         <RouterLink v-if="funding.state === 'released' || funding.state === 'captured'" :to="{ path: '/account/wallet', query: { currency } }">核对余额与流水</RouterLink>
       </template>
     </template>
@@ -52,8 +56,9 @@ const resource = useRemoteResource<OrderFunding | null>({ initial: () => null, f
 const { data: funding, loading, error, load } = resource
 function money(value: string) { return formatWalletMoney(value, props.currency) }
 function changed() { emit('changed') }
+async function reconciled() { changed(); await load() }
 async function configure(useBalance: boolean) {
-  if (configuring.value || paying.value || canceling.value) return
+  if (configuring.value || paying.value || canceling.value || (funding.value?.discount_reservation && !funding.value.discount_reservation.can_pay)) return
   const actor = app.user.id, order = props.orderId
   pendingChoice.value = useBalance; configuring.value = true; writeError.value = ''
   try {
@@ -63,7 +68,7 @@ async function configure(useBalance: boolean) {
   finally { configuring.value = false }
 }
 async function pay() {
-  if (paying.value || configuring.value || canceling.value) return
+  if (paying.value || configuring.value || canceling.value || (funding.value?.discount_reservation && !funding.value.discount_reservation.can_pay)) return
   const actor = app.user.id, order = props.orderId
   paying.value = true; writeError.value = ''
   try {
@@ -73,7 +78,7 @@ async function pay() {
   finally { paying.value = false }
 }
 async function cancel() {
-  if (paying.value || canceling.value || configuring.value) return
+  if (paying.value || canceling.value || configuring.value || (funding.value?.discount_reservation && !funding.value.discount_reservation.can_cancel)) return
   const actor = app.user.id, order = props.orderId
   canceling.value = true; writeError.value = ''
   try { await cancelOrder(order); if (actor === app.user.id && order === props.orderId) { changed(); await load() } }

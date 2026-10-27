@@ -3793,7 +3793,7 @@ paths:
         '401': { description: Authentication required }
         '403': { description: Current active owner required }
         '404': { description: Unknown or foreign order }
-        '409': { description: "Funding split frozen, expired, or conflicting with an existing payment attempt" }
+        '409': { description: "Funding split frozen, expired, conflicting with an existing payment attempt, or required discount reservation pending/unsupported" }
         '500': { description: No partial financial commit; recover the same order after checking status }
     post:
       operationId: configureOrderFunding
@@ -3825,7 +3825,7 @@ paths:
         '401': { description: Authentication required }
         '403': { description: Current active owner required }
         '404': { description: Unknown or foreign order }
-        '409': { description: "Funding split frozen, expired, or conflicting with an existing payment attempt" }
+        '409': { description: "Funding split frozen, expired, conflicting with an existing payment attempt, or required discount reservation pending/unsupported" }
         '500': { description: No partial financial commit; recover the same order after checking status }
   /api/v1/orders/{id}/wallet-pay:
     post:
@@ -3854,7 +3854,7 @@ paths:
         '401': { description: Authentication required }
         '403': { description: Current active owner required }
         '404': { description: Unknown or foreign order }
-        '409': { description: "Funding split frozen, expired, or conflicting with an existing payment attempt" }
+        '409': { description: "Funding split frozen, expired, conflicting with an existing payment attempt, or required discount reservation pending/unsupported" }
         '500': { description: No partial financial commit; recover the same order after checking status }
   /api/v1/orders/{id}/payment-receipts:
     get:
@@ -9508,10 +9508,22 @@ components:
         note: { type: string, minLength: 1, maxLength: 500 }
         quote_fingerprint: { type: string, description: "Quote assertion from the administrator preview." }
         request_id: { type: string, format: uuid, description: "Nonzero UUID, unique per administrator operation. Reuse only to retry an identical payload." }
+    DiscountReservation:
+      type: object
+      additionalProperties: false
+      required: [required, state, can_pay, can_cancel, can_reconcile, message]
+      properties:
+        required: { type: boolean, enum: [true] }
+        state: { type: string, enum: [pending, confirmed, settled, closed, unavailable] }
+        can_pay: { type: boolean, description: True only for an order-bound durably confirmed exclusive reservation; never a runtime health signal }
+        can_cancel: { type: boolean, description: True only while the owned order remains pending and supports the existing cancellation action }
+        can_reconcile: { type: boolean, description: An existing attempt matches this order's currency and current cash amount. Authorizes no new collection or provider; host still verifies the exact existing provider binding }
+        message: { type: string, maxLength: 512 }
     OrderFunding:
       type: object
       required: [order_id, configured, use_balance, currency, amount_minor, available_minor, wallet_minor, cash_minor, state, expired]
       properties:
+        discount_reservation: { $ref: '#/components/schemas/DiscountReservation' }
         change_mode: { type: string, enum: [full_term] }
         settlement_minor: { type: string, pattern: '^[0-9]+$', description: Gross old entitlement residual credited only at atomic fulfillment }
         surplus_minor: { type: string, pattern: '^[0-9]+$', description: Old residual exceeding the full new price }
@@ -9599,6 +9611,7 @@ components:
           type: object
           required: [status, input_fingerprint, currency, discount_minor, expires_at]
           properties:
+            redemption: { type: string, enum: [exclusive_until_core_finalization_v1], description: Optional explicit core reservation obligation; no inventory reservation occurs at preview, payment is blocked until confirmed }
             status: { type: string, enum: [available, unavailable, requires_confirmation] }
             input_fingerprint: { type: string }
             currency: { type: string }
