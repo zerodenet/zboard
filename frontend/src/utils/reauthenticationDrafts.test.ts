@@ -61,3 +61,10 @@ it('handles storage denial without losing the mounted source form', () => {
   expect(source.body).toBe('尚未发送的普通问题描述')
   expect(sessionStorage.getItem(REAUTH_DRAFT_MANIFEST)).toBeNull()
 })
+
+it('preserves template editor position only for a safe ID or new on its own page', () => {
+  expect(safeReauthenticationRoute('/admin/subscription-templates?template=new&token=secret')).toBe('/admin/subscription-templates?template=new')
+  expect(safeReauthenticationRoute('/admin/subscription-templates?template=19')).toBe('/admin/subscription-templates?template=19')
+  for (const value of ['-1', '0', '9007199254740992', 'abc', 'new&template=19']) expect(safeReauthenticationRoute('/admin/subscription-templates?template=' + value)).toBe('/admin/subscription-templates')
+  expect(safeReauthenticationRoute('/account/tickets?template=19')).toBe('/account/tickets')
+})

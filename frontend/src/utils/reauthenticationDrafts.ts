@@ -34,12 +34,13 @@ export function safeReauthenticationRoute(value: string) {
     if (url.origin !== 'https://draft.invalid' || !/^\/(admin|account)(\/|$)/.test(url.pathname)) return ''
     const pageKeys = url.pathname === '/admin/nodes'
       ? new Set(['lifecycle', 'connector', 'sort', 'direction', 'density', 'protocol_page', 'protocol_limit'])
-      : url.pathname === '/admin/node-groups' ? new Set(['enabled']) : new Set<string>()
+      : url.pathname === '/admin/node-groups' ? new Set(['enabled'])
+        : url.pathname === '/admin/subscription-templates' ? new Set(['template']) : new Set<string>()
     const enumValues: Record<string, readonly string[]> = { lifecycle: ['active', 'maintenance', 'retired'], connector: ['online', 'offline'], sort: ['id', 'name', 'region', 'last_seen_at'], direction: ['asc', 'desc'], density: ['compact', 'comfortable'], enabled: ['true', 'false'] }
     for (const key of [...url.searchParams.keys()]) {
       if (queryKeys.has(key)) continue
       const values = url.searchParams.getAll(key)
-      const allowed = pageKeys.has(key) && values.length === 1 && (enumValues[key]
+      const allowed = pageKeys.has(key) && values.length === 1 && (key === 'template' ? values[0] === 'new' || (/^[1-9]\d{0,15}$/.test(values[0]!) && validID(Number(values[0]))) : enumValues[key]
         ? enumValues[key]!.includes(values[0]!)
         : /^\d{1,6}$/.test(values[0]!) && Number(values[0]) > 0 && (key !== 'protocol_limit' || ['25', '50', '100'].includes(values[0]!)))
       if (!allowed) url.searchParams.delete(key)
@@ -114,7 +115,7 @@ export function captureReauthenticationDrafts(actorID: number, path: string): { 
     return { ok: true, count: payloads.length, message: '' }
   } catch {
     clearReauthenticationDrafts()
-    return { ok: false, count: 0, message: '当前草稿过大或浏览器无法暂存，尚未离开此页。请缩短内容或自行另存后重试；也可继续使用本页密码认证。' }
+    return { ok: false, count: 0, message: '当前草稿过大、含无法暂存的配置或浏览器无法保存，尚未离开此页。请核对页面提示或自行另存后重试；也可继续使用本页密码认证。' }
   }
 }
 // Call only after /auth/me returned for the exact token being installed.

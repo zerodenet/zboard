@@ -1,3 +1,4 @@
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ token: '', user: { id: 0 }, reauthRequired: false, sessionEpoch: 0 }) }))
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { flushPromises, shallowMount } from '@vue/test-utils'

@@ -70,8 +70,11 @@
       </main>
     </DetailDrawer>
 
+    <PageAlert v-if="accountRecovery.message.value" tone="info" title="登录后草稿恢复">{{ accountRecovery.message.value }}</PageAlert>
+    <PageAlert v-if="accountRecoveryConflict" tone="warning" title="草稿需要人工核对">原账户已变化，草稿仍保留；不能直接覆盖服务器的新内容。请另存普通字段后重新打开编辑器。</PageAlert>
     <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="创建平台用户" description="邮箱是唯一账户标识，创建后即可登录。" size="lg" :busy="saving" @close="closeCreate">
       <form id="create-user-form" ref="createFormElement" class="form-grid" novalidate @submit.prevent="create">
+        <PageAlert v-if="form.password" tone="warning" title="密码草稿仅留在本页">未保存的密码不会暂存；请留在本页完成认证后再继续。</PageAlert>
         <PageAlert v-if="createErrors.formError.value" class="field-full" tone="danger" title="无法创建用户">{{ createErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="邮箱地址" name="create-user-email" :error="createErrors.fields.email" required full><UiInput v-model.trim="form.email" v-bind="controlAttrs" type="email" autocomplete="email" placeholder="user@example.com" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="初始密码" name="create-user-password" hint="长度为 12–72 个 UTF-8 字节。" :error="createErrors.fields.password" required full><UiInput v-model="form.password" v-bind="controlAttrs" type="password" minlength="12" maxlength="72" autocomplete="new-password" /></FormField>
@@ -83,6 +86,7 @@
 
     <ModalDialog :open="editOpen" :dirty="editState.dirty.value" title="管理用户账户" :description="selectedUser ? selectedUser.email : ''" size="lg" :busy="saving" @close="closeEdit">
       <form id="edit-user-form" ref="editFormElement" class="stack" novalidate @submit.prevent="saveUser">
+        <PageAlert v-if="editDraft.password" tone="warning" title="密码草稿仅留在本页">未保存的密码不会暂存；请留在本页完成认证后再继续。</PageAlert>
         <PageAlert v-if="editErrors.formError.value" tone="danger" title="无法保存账户">{{ editErrors.formError.value }}</PageAlert>
         <div class="form-grid">
           <FormField v-slot="{ controlAttrs }" label="邮箱身份" full><UiInput :value="selectedUser?.email" v-bind="controlAttrs" disabled /></FormField>
@@ -92,13 +96,15 @@
         <div class="password-section"><div><strong>重置密码</strong><p>如不需要修改密码，请保持为空。</p></div><FormField v-slot="{ controlAttrs }" label="新密码" name="edit-user-password" hint="长度为 12–72 个 UTF-8 字节；留空则不修改。" :error="editErrors.fields.password"><UiInput v-model="editDraft.password" v-bind="controlAttrs" type="password" minlength="12" maxlength="72" autocomplete="new-password" placeholder="留空则不修改" /></FormField></div>
         <PageAlert v-if="selectedUser?.id === currentUserId" tone="warning" title="当前登录用户">请谨慎变更管理员权限或账户状态。</PageAlert>
       </form>
-      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="edit-user-form" type="submit" :loading="saving">保存账户</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="edit-user-form" type="submit" :disabled="accountRecoveryConflict" :loading="saving">保存账户</UiButton></template>
     </ModalDialog>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { sameRecoveryBaseline, userAccountBaseline, userAccountRecovery } from '../utils/adminAssetRecovery'
 import { useRoute, useRouter } from 'vue-router'
 import { createAdminUser, fetchAdminUserDetail, fetchUsersPage, updateAdminUser, type AdminUserDetail, type AdminUserListItem } from '../api/client'
 import AdminWalletPanel from '../components/AdminWalletPanel.vue'
@@ -170,6 +176,38 @@ const { data: selectedUserDetail, loading: detailLoading, error: detailError } =
 const currentUserId = computed(() => app.user.id)
 const form = reactive({ email: '', password: '', isAdmin: false, status: 'active' })
 const editDraft = reactive({ is_admin: false, status: 'active', password: '' })
+let accountEditorGeneration = 0
+const accountRecoveryConflict = ref(false)
+const accountOriginal = ref<ReturnType<typeof userAccountBaseline>>()
+const accountRecovered = ref(false)
+const accountRecovery = useReauthenticationDraft({
+  scope: 'admin.users.editor', permission: 'admin', ready: () => !saving.value,
+  read: () => {
+    if (!createOpen.value && !editOpen.value) return null
+    if (form.password && createOpen.value || editDraft.password && editOpen.value) throw new Error('密码草稿不能安全暂存；请留在原页完成认证。')
+    return createOpen.value
+      ? { id: 0, baseline: null, fields: { email: form.email, status: form.status, is_admin: form.isAdmin } }
+      : { id: selectedUser.value?.id, baseline: accountOriginal.value, fields: { email: accountOriginal.value?.email || selectedUser.value?.email, status: editDraft.status, is_admin: editDraft.is_admin } }
+  },
+  sanitize: userAccountRecovery,
+  restore: async (draft, { isCurrent }) => {
+    const generation = accountEditorGeneration
+    const fresh = draft.id ? await fetchAdminUserDetail(draft.id) : null
+    if (!isCurrent()) return false
+    if (generation !== accountEditorGeneration || createOpen.value || editOpen.value) throw new Error('已有新的本地编辑，原草稿保留待恢复。')
+    accountRecoveryConflict.value = Boolean(draft.id && !sameRecoveryBaseline(draft.baseline, userAccountBaseline(fresh)))
+    accountRecovered.value = Boolean(draft.id)
+    accountOriginal.value = draft.baseline || undefined
+    if (fresh) {
+      selectedUser.value = fresh
+      Object.assign(editDraft, { status: fresh.status, is_admin: fresh.is_admin, password: '' }); editState.markClean()
+      Object.assign(editDraft, { status: draft.fields.status, is_admin: draft.fields.is_admin, password: '' }); editOpen.value = true
+    } else {
+      Object.assign(form, { email: '', status: 'active', isAdmin: false, password: '' }); createState.markClean()
+      Object.assign(form, { email: draft.fields.email, status: draft.fields.status, isAdmin: draft.fields.is_admin }); createOpen.value = true
+    }
+  },
+})
 const createState = useDirtyForm(() => form)
 const editState = useDirtyForm(() => editDraft)
 useUnsavedChangesGuard(
@@ -260,12 +298,29 @@ async function create() {
   finally { saving.value = false }
 }
 
-function openCreate() { Object.assign(form, { email: '', password: '', isAdmin: false, status: 'active' }); createState.markClean(); createErrors.clear(); createOpen.value = true }
-function closeCreate() { if (!saving.value) { createErrors.clear(); createOpen.value = false } }
-function openEdit(user: UserItem) { selectedUser.value = user; editErrors.clear(); Object.assign(editDraft, { is_admin: user.is_admin, status: user.status, password: '' }); editState.markClean(); editOpen.value = true }
-function closeEdit() { if (!saving.value) { editErrors.clear(); editOpen.value = false } }
+function openCreate() { accountEditorGeneration++; accountRecoveryConflict.value = false; accountRecovered.value = false; Object.assign(form, { email: '', password: '', isAdmin: false, status: 'active' }); createState.markClean(); createErrors.clear(); createOpen.value = true }
+function closeCreate() { if (!saving.value) { accountEditorGeneration++; createErrors.clear(); createOpen.value = false } }
+async function openEdit(user: UserItem) {
+  const generation = ++accountEditorGeneration, actor = app.user.id, token = app.token
+  try {
+    const fresh = await fetchAdminUserDetail(user.id)
+    if (generation !== accountEditorGeneration || actor !== app.user.id || token !== app.token || app.reauthRequired) return
+    selectedUser.value = fresh; accountOriginal.value = userAccountBaseline(fresh)
+    accountRecoveryConflict.value = false; accountRecovered.value = false; editErrors.clear()
+    Object.assign(editDraft, { is_admin: fresh.is_admin, status: fresh.status, password: '' }); editState.markClean(); editOpen.value = true
+  } catch (cause: any) { message.value = cause?.response?.data?.message || '账户详情暂时无法核对，未打开编辑器。' }
+}
+function closeEdit() { if (!saving.value) { accountEditorGeneration++; editErrors.clear(); editOpen.value = false } }
 async function saveUser() {
-  if (!selectedUser.value) return
+  if (!selectedUser.value || accountRecoveryConflict.value) return
+  if (accountRecovered.value) {
+    const actor = app.user.id, token = app.token, generation = accountEditorGeneration
+    try {
+      const fresh = await fetchAdminUserDetail(selectedUser.value.id)
+      if (actor !== app.user.id || token !== app.token || app.reauthRequired || generation !== accountEditorGeneration) return
+      if (!sameRecoveryBaseline(accountOriginal.value, userAccountBaseline(fresh))) { accountRecoveryConflict.value = true; return }
+    } catch { editErrors.formError.value = '无法核对原账户，保留草稿且未保存。'; return }
+  }
   const valid = await editErrors.applyValidation(collectFieldErrors({
     status: !isOneOf(editDraft.status, validUserStatuses) && '请选择有效的账户状态。',
     password: Boolean(editDraft.password) && !isUtf8LengthInRange(editDraft.password, 12, 72) && '密码必须为 12–72 个 UTF-8 字节；留空则不修改。',
