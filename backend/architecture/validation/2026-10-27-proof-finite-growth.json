@@ -1,0 +1,483 @@
+{
+  "scope": "Finite synthetic minute windows with actual collector, SQLite and MySQL 8.4. Not elapsed long-duration or original capacity acceptance.",
+  "implementation_parent": "2271760",
+  "test_source_sha256": "1b6695cf47a16a862636ea6f6d5d64650dc5f5fec00d2d0944e15a508560b62d",
+  "command": [
+    "go",
+    "test",
+    "-json",
+    "-p",
+    "1",
+    "./internal/adapters/persistence/meteringstore",
+    "./internal/datastore",
+    "./internal/handler",
+    "./cmd/zboard",
+    "-run",
+    "NativeProofArchive|MeteringProofMaintenance|NativeProofFiniteWindow",
+    "-count=1",
+    "-timeout",
+    "15m"
+  ],
+  "source_unchanged": true,
+  "wall_seconds": 37.082,
+  "events": {
+    "pass": 29
+  },
+  "experiments": [
+    {
+      "driver": "sqlite",
+      "windows": 16,
+      "reports_per_window": 64,
+      "archive_batch_limit": 3,
+      "replay_batch_limit": 64,
+      "measurement_scope": "Finite synthetic minute windows; not elapsed long-duration/capacity acceptance. Ledger/receipt/archive authority grows linearly; no fact deletion. Byte fields cover named variable bodies, not total encoded row/index cost. SQLite pages/files cover whole isolated fixture including observation intents; MySQL information_schema bytes are estimates and can remain stale. No VACUUM, ANALYZE, TRUNCATE or physical shrink is requested.",
+      "snapshots": [
+        {
+          "phase": "baseline",
+          "windows": 0,
+          "rows": {
+            "flow_usages": 0,
+            "metering_report_receipts": 0,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 0,
+            "node_observation_parts": 0,
+            "traffic_record_meta_archives": 0,
+            "traffic_records": 0
+          },
+          "live_meta_bytes": 0,
+          "archive_payload_bytes": 0,
+          "archive_original_bytes": 0,
+          "observation_part_bytes": 0,
+          "raw_bytes": 0,
+          "used_bytes": 0,
+          "sqlite_allocated_page_bytes": 1847296,
+          "sqlite_database_file_bytes": 1355776,
+          "sqlite_wal_file_bytes": 4128272
+        },
+        {
+          "phase": "before_archive",
+          "windows": 4,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 4,
+            "metering_usage_projection_pending": 4,
+            "node_observation_intents": 256,
+            "node_observation_parts": 256,
+            "traffic_record_meta_archives": 0,
+            "traffic_records": 4
+          },
+          "live_meta_bytes": 2656,
+          "archive_payload_bytes": 0,
+          "archive_original_bytes": 0,
+          "observation_part_bytes": 187743,
+          "raw_bytes": 768,
+          "used_bytes": 1280,
+          "sqlite_allocated_page_bytes": 2232320,
+          "sqlite_database_file_bytes": 1355776,
+          "sqlite_wal_file_bytes": 4128272
+        },
+        {
+          "phase": "after_archive",
+          "windows": 4,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 4,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 256,
+            "node_observation_parts": 256,
+            "traffic_record_meta_archives": 4,
+            "traffic_records": 4
+          },
+          "live_meta_bytes": 512,
+          "archive_payload_bytes": 660,
+          "archive_original_bytes": 2656,
+          "observation_part_bytes": 187743,
+          "raw_bytes": 768,
+          "used_bytes": 1280,
+          "sqlite_allocated_page_bytes": 2232320,
+          "sqlite_database_file_bytes": 1355776,
+          "sqlite_wal_file_bytes": 4128272
+        },
+        {
+          "phase": "before_archive",
+          "windows": 8,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 8,
+            "metering_usage_projection_pending": 4,
+            "node_observation_intents": 512,
+            "node_observation_parts": 512,
+            "traffic_record_meta_archives": 4,
+            "traffic_records": 8
+          },
+          "live_meta_bytes": 3168,
+          "archive_payload_bytes": 660,
+          "archive_original_bytes": 2656,
+          "observation_part_bytes": 375660,
+          "raw_bytes": 1536,
+          "used_bytes": 2560,
+          "sqlite_allocated_page_bytes": 2617344,
+          "sqlite_database_file_bytes": 2326528,
+          "sqlite_wal_file_bytes": 4140632
+        },
+        {
+          "phase": "after_archive",
+          "windows": 8,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 8,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 512,
+            "node_observation_parts": 512,
+            "traffic_record_meta_archives": 8,
+            "traffic_records": 8
+          },
+          "live_meta_bytes": 1024,
+          "archive_payload_bytes": 1317,
+          "archive_original_bytes": 5312,
+          "observation_part_bytes": 375660,
+          "raw_bytes": 1536,
+          "used_bytes": 2560,
+          "sqlite_allocated_page_bytes": 2617344,
+          "sqlite_database_file_bytes": 2326528,
+          "sqlite_wal_file_bytes": 4140632
+        },
+        {
+          "phase": "before_archive",
+          "windows": 12,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 12,
+            "metering_usage_projection_pending": 4,
+            "node_observation_intents": 768,
+            "node_observation_parts": 768,
+            "traffic_record_meta_archives": 8,
+            "traffic_records": 12
+          },
+          "live_meta_bytes": 3680,
+          "archive_payload_bytes": 1317,
+          "archive_original_bytes": 5312,
+          "observation_part_bytes": 563820,
+          "raw_bytes": 2304,
+          "used_bytes": 3840,
+          "sqlite_allocated_page_bytes": 2985984,
+          "sqlite_database_file_bytes": 2326528,
+          "sqlite_wal_file_bytes": 4140632
+        },
+        {
+          "phase": "after_archive",
+          "windows": 12,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 12,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 768,
+            "node_observation_parts": 768,
+            "traffic_record_meta_archives": 12,
+            "traffic_records": 12
+          },
+          "live_meta_bytes": 1536,
+          "archive_payload_bytes": 1978,
+          "archive_original_bytes": 7968,
+          "observation_part_bytes": 563820,
+          "raw_bytes": 2304,
+          "used_bytes": 3840,
+          "sqlite_allocated_page_bytes": 2994176,
+          "sqlite_database_file_bytes": 2326528,
+          "sqlite_wal_file_bytes": 4140632
+        },
+        {
+          "phase": "before_archive",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 4,
+            "node_observation_intents": 1024,
+            "node_observation_parts": 1024,
+            "traffic_record_meta_archives": 12,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 4192,
+          "archive_payload_bytes": 1978,
+          "archive_original_bytes": 7968,
+          "observation_part_bytes": 751941,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "sqlite_allocated_page_bytes": 3379200,
+          "sqlite_database_file_bytes": 3186688,
+          "sqlite_wal_file_bytes": 4577352
+        },
+        {
+          "phase": "after_archive",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1024,
+            "node_observation_parts": 1024,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 751941,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "sqlite_allocated_page_bytes": 3379200,
+          "sqlite_database_file_bytes": 3186688,
+          "sqlite_wal_file_bytes": 4577352
+        },
+        {
+          "phase": "after_reverse_replay_and_unseen_late",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1025,
+            "node_observation_parts": 1025,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 752683,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "sqlite_allocated_page_bytes": 3379200,
+          "sqlite_database_file_bytes": 3186688,
+          "sqlite_wal_file_bytes": 4577352
+        }
+      ]
+    },
+    {
+      "driver": "mysql",
+      "windows": 16,
+      "reports_per_window": 64,
+      "archive_batch_limit": 3,
+      "replay_batch_limit": 64,
+      "measurement_scope": "Finite synthetic minute windows; not elapsed long-duration/capacity acceptance. Ledger/receipt/archive authority grows linearly; no fact deletion. Byte fields cover named variable bodies, not total encoded row/index cost. SQLite pages/files cover whole isolated fixture including observation intents; MySQL information_schema bytes are estimates and can remain stale. No VACUUM, ANALYZE, TRUNCATE or physical shrink is requested.",
+      "snapshots": [
+        {
+          "phase": "baseline",
+          "windows": 0,
+          "rows": {
+            "flow_usages": 0,
+            "metering_report_receipts": 0,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 0,
+            "node_observation_parts": 0,
+            "traffic_record_meta_archives": 0,
+            "traffic_records": 0
+          },
+          "live_meta_bytes": 0,
+          "archive_payload_bytes": 0,
+          "archive_original_bytes": 0,
+          "observation_part_bytes": 0,
+          "raw_bytes": 0,
+          "used_bytes": 0,
+          "mysql_table_data_bytes_estimate": 1769472,
+          "mysql_table_index_bytes_estimate": 4587520
+        },
+        {
+          "phase": "before_archive",
+          "windows": 4,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 4,
+            "metering_usage_projection_pending": 4,
+            "node_observation_intents": 256,
+            "node_observation_parts": 256,
+            "traffic_record_meta_archives": 0,
+            "traffic_records": 4
+          },
+          "live_meta_bytes": 2656,
+          "archive_payload_bytes": 0,
+          "archive_original_bytes": 0,
+          "observation_part_bytes": 187615,
+          "raw_bytes": 768,
+          "used_bytes": 1280,
+          "mysql_table_data_bytes_estimate": 1769472,
+          "mysql_table_index_bytes_estimate": 4587520
+        },
+        {
+          "phase": "after_archive",
+          "windows": 4,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 4,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 256,
+            "node_observation_parts": 256,
+            "traffic_record_meta_archives": 4,
+            "traffic_records": 4
+          },
+          "live_meta_bytes": 512,
+          "archive_payload_bytes": 660,
+          "archive_original_bytes": 2656,
+          "observation_part_bytes": 187615,
+          "raw_bytes": 768,
+          "used_bytes": 1280,
+          "mysql_table_data_bytes_estimate": 1769472,
+          "mysql_table_index_bytes_estimate": 4587520
+        },
+        {
+          "phase": "before_archive",
+          "windows": 8,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 8,
+            "metering_usage_projection_pending": 4,
+            "node_observation_intents": 512,
+            "node_observation_parts": 512,
+            "traffic_record_meta_archives": 4,
+            "traffic_records": 8
+          },
+          "live_meta_bytes": 3168,
+          "archive_payload_bytes": 660,
+          "archive_original_bytes": 2656,
+          "observation_part_bytes": 375532,
+          "raw_bytes": 1536,
+          "used_bytes": 2560,
+          "mysql_table_data_bytes_estimate": 1769472,
+          "mysql_table_index_bytes_estimate": 4587520
+        },
+        {
+          "phase": "after_archive",
+          "windows": 8,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 8,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 512,
+            "node_observation_parts": 512,
+            "traffic_record_meta_archives": 8,
+            "traffic_records": 8
+          },
+          "live_meta_bytes": 1024,
+          "archive_payload_bytes": 1317,
+          "archive_original_bytes": 5312,
+          "observation_part_bytes": 375532,
+          "raw_bytes": 1536,
+          "used_bytes": 2560,
+          "mysql_table_data_bytes_estimate": 1769472,
+          "mysql_table_index_bytes_estimate": 4587520
+        },
+        {
+          "phase": "before_archive",
+          "windows": 12,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 12,
+            "metering_usage_projection_pending": 4,
+            "node_observation_intents": 768,
+            "node_observation_parts": 768,
+            "traffic_record_meta_archives": 8,
+            "traffic_records": 12
+          },
+          "live_meta_bytes": 3680,
+          "archive_payload_bytes": 1317,
+          "archive_original_bytes": 5312,
+          "observation_part_bytes": 563692,
+          "raw_bytes": 2304,
+          "used_bytes": 3840,
+          "mysql_table_data_bytes_estimate": 1769472,
+          "mysql_table_index_bytes_estimate": 4587520
+        },
+        {
+          "phase": "after_archive",
+          "windows": 12,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 12,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 768,
+            "node_observation_parts": 768,
+            "traffic_record_meta_archives": 12,
+            "traffic_records": 12
+          },
+          "live_meta_bytes": 1536,
+          "archive_payload_bytes": 1978,
+          "archive_original_bytes": 7968,
+          "observation_part_bytes": 563692,
+          "raw_bytes": 2304,
+          "used_bytes": 3840,
+          "mysql_table_data_bytes_estimate": 1769472,
+          "mysql_table_index_bytes_estimate": 4587520
+        },
+        {
+          "phase": "before_archive",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 4,
+            "node_observation_intents": 1024,
+            "node_observation_parts": 1024,
+            "traffic_record_meta_archives": 12,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 4192,
+          "archive_payload_bytes": 1978,
+          "archive_original_bytes": 7968,
+          "observation_part_bytes": 751813,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "mysql_table_data_bytes_estimate": 1769472,
+          "mysql_table_index_bytes_estimate": 4587520
+        },
+        {
+          "phase": "after_archive",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1024,
+            "node_observation_parts": 1024,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 751813,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "mysql_table_data_bytes_estimate": 1769472,
+          "mysql_table_index_bytes_estimate": 4587520
+        },
+        {
+          "phase": "after_reverse_replay_and_unseen_late",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1025,
+            "node_observation_parts": 1025,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 752555,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "mysql_table_data_bytes_estimate": 1769472,
+          "mysql_table_index_bytes_estimate": 4587520
+        }
+      ]
+    }
+  ],
+  "remaining": [
+    "Observation projection/material retirement integration still pending: 1025 intent and part rows remain in this first experiment.",
+    "Financial ledger/receipts/archive authority retains linear growth; no fact deletion or fixed database size claim.",
+    "Original capacity storage gate remains unmet; no worker benefit or production result is inferred."
+  ]
+}
