@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/testsupport/localworkerlock"
 	"net"
 	"os"
 	"path/filepath"
@@ -58,6 +59,7 @@ func TestProjectionSupervisorRejectsOrphanOptionsAndMaintenanceBeforeConfigurati
 }
 
 func TestProjectionSupervisorManagedChildEntrypointAndDrain(t *testing.T) {
+	localworkerlock.Hold(t)
 	if runtime.GOOS != "linux" {
 		t.Skip("managed process ownership requires Linux deployment")
 	}

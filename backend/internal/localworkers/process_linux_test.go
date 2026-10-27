@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"github.com/zerodenet/zboard/backend/internal/testsupport/localworkerlock"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -180,6 +181,7 @@ func TestLocalWorkerCommandLaunchUsesRealProcessLimitsAndGracefulDrain(t *testin
 }
 
 func TestLocalWorkerOwnerCrashDoesNotReleaseAnAliveChildOwnershipLock(t *testing.T) {
+	localworkerlock.Hold(t)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "config"), []byte("owned fixture"), 0600); err != nil {
 		t.Fatal(err)
@@ -220,7 +222,7 @@ func TestLocalWorkerOwnerCrashDoesNotReleaseAnAliveChildOwnershipLock(t *testing
 	if !signaled {
 		t.Fatal("parent death did not signal its child")
 	}
-	if second, err := AcquireLock(filepath.Join(dir, "owner.lock")); err == nil {
+	if second, err := AcquireLock(filepath.Join(dir, "different-owner.lock")); err == nil {
 		second.Close()
 		t.Fatal("new supervisor bypassed an alive orphan's ownership")
 	}
@@ -232,7 +234,7 @@ func TestLocalWorkerOwnerCrashDoesNotReleaseAnAliveChildOwnershipLock(t *testing
 	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		if next, err := AcquireLock(filepath.Join(dir, "owner.lock")); err == nil {
+		if next, err := AcquireLock(filepath.Join(dir, "different-owner.lock")); err == nil {
 			next.Close()
 			break
 		}
@@ -244,7 +246,37 @@ func TestLocalWorkerOwnerCrashDoesNotReleaseAnAliveChildOwnershipLock(t *testing
 	}
 }
 
+// Different private paths must not multiply the namespace process budget.
+func TestLocalWorkerNamespaceOwnershipRejectsDifferentPathsAndReleasesNormally(t *testing.T) {
+	localworkerlock.Hold(t)
+	dir := t.TempDir()
+	first, err := AcquireLock(filepath.Join(dir, "first.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	if second, err := AcquireLock(filepath.Join(dir, "second.lock")); err == nil {
+		second.Close()
+		t.Fatal("different private path bypassed namespace ownership")
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	next, err := AcquireLock(filepath.Join(dir, "second.lock"))
+	if err != nil {
+		t.Fatal("normal close did not release namespace ownership", err)
+	}
+	if err := next.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Repeated Close must not close a later owner's reused descriptor.
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLocalWorkerOwnershipRefusesSymlinksAndExecutableReplacement(t *testing.T) {
+	localworkerlock.Hold(t)
 	dir := t.TempDir()
 	file := filepath.Join(dir, "preserved")
 	if err := os.WriteFile(file, []byte("preserve ownership evidence"), 0600); err != nil {

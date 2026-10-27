@@ -5,6 +5,7 @@ package application
 import (
 	"context"
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/testsupport/localworkerlock"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -61,6 +62,7 @@ func (neverLaunchProjectionChild) Start(context.Context) (localworkers.Process, 
 }
 
 func TestProjectionSupervisorCloseBudgetPreservesUnconfirmedOwnership(t *testing.T) {
+	localworkerlock.Hold(t)
 	dir := t.TempDir()
 	db, err := datastore.OpenWithDriver("sqlite", filepath.Join(dir, "unprepared.db"))
 	if err != nil {
@@ -119,11 +121,19 @@ func TestProjectionSupervisorCloseBudgetPreservesUnconfirmedOwnership(t *testing
 }
 
 func TestProjectionSupervisorDefaultAddsNoResourcesOrProcesses(t *testing.T) {
+	localworkerlock.Hold(t)
 	app := &Services{}
 	if close, err := app.StartProjectionSupervisor(nil); close != nil || err != nil {
 		t.Fatal("disabled supervision created resources", close != nil, err)
 	}
 	if close, err := app.StartProjectionSupervisor(&ProjectionSupervisorOptions{Policy: localworkers.DefaultPolicy(), LockPath: "/unavailable/default-must-not-open"}); close != nil || err != nil {
 		t.Fatal("default policy opened a resource", close != nil, err)
+	}
+	owner, err := localworkers.AcquireLock(filepath.Join(t.TempDir(), "after-default.lock"))
+	if err != nil {
+		t.Fatal("disabled supervisor retained namespace ownership", err)
+	}
+	if err := owner.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

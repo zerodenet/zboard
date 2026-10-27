@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"encoding/base64"
+	"github.com/zerodenet/zboard/backend/internal/testsupport/localworkerlock"
 	"path/filepath"
 	"testing"
 	"time"
@@ -31,6 +32,7 @@ func (forbiddenCapacityStart) Sample(time.Time) localworkers.Resources {
 }
 
 func TestProjectionSupervisorBusyOwnerDoesNotBanSingleProcessCore(t *testing.T) {
+	localworkerlock.Hold(t)
 	dir := t.TempDir()
 	db, err := datastore.OpenWithDriver("sqlite", filepath.Join(dir, "routes.db"))
 	if err != nil {
@@ -72,7 +74,7 @@ func TestProjectionSupervisorBusyOwnerDoesNotBanSingleProcessCore(t *testing.T) 
 	defer srv.Stop()
 	policy := localworkers.DefaultPolicy()
 	policy.MaxWorkers = 1
-	options := &application.ProjectionSupervisorOptions{Policy: policy, Interval: time.Second, DrainTimeout: time.Second, LockPath: lock, Launcher: forbiddenCapacityStart{}, Resources: forbiddenCapacityStart{}}
+	options := &application.ProjectionSupervisorOptions{Policy: policy, Interval: time.Second, DrainTimeout: time.Second, LockPath: filepath.Join(dir, "different-projection.lock"), Launcher: forbiddenCapacityStart{}, Resources: forbiddenCapacityStart{}}
 	closeCore, err := RegisterRoutesWithProjectionSupervisor(srv, db, "0123456789abcdef0123456789abcdef", cipher, t.TempDir(), "legacy", "", zeroevent.Config{Enabled: false}, plugins.Options{Directory: t.TempDir()}, options)
 	if err != nil || closeCore == nil {
 		t.Fatal("optional capacity ownership banned the complete core", err)

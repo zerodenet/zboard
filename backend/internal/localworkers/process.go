@@ -76,9 +76,9 @@ func (l *CommandLauncher) Start(ctx context.Context) (Process, error) {
 	cmd := exec.Command(l.Executable, "-f", l.ConfigFile, "-projection-worker", "-projection-worker-background", "-projection-worker-database-connections", "2", "-projection-worker-drain-timeout", l.DrainTimeout.String())
 	cmd.Stdout, cmd.Stderr = l.Stdout, l.Stderr
 	if l.Ownership != nil {
-		// The flock remains owned until the last supervised descendant exits,
+		// Both namespace anchor and flock remain owned until the last child exits,
 		// even if the parent crashes before it can drain those processes.
-		cmd.ExtraFiles = []*os.File{l.Ownership.file}
+		cmd.ExtraFiles = []*os.File{l.Ownership.file, l.Ownership.anchor}
 	}
 	for _, value := range os.Environ() {
 		if !strings.HasPrefix(value, "GOMAXPROCS=") && !strings.HasPrefix(value, "GOMEMLIMIT=") {

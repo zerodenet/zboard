@@ -25,13 +25,14 @@ func BackgroundPriority() error {
 }
 
 type Ownership struct {
-	file *os.File
-	once sync.Once
-	err  error
+	file   *os.File
+	anchor *os.File
+	once   sync.Once
+	err    error
 }
 
 func (o *Ownership) Close() error {
-	o.once.Do(func() { o.err = o.file.Close() })
+	o.once.Do(func() { o.err = errors.Join(o.file.Close(), o.anchor.Close()) })
 	return o.err
 }
 
@@ -55,6 +56,24 @@ func AcquireLock(path string) (*Ownership, error) {
 		file.Close()
 		return nil, errors.New("another local projection supervisor owns this lock")
 	}
+	// A private lock path alone is administrator-controlled and cannot bound
+	// two controllers configured with different paths. This fixed abstract
+	// socket permits only one optional supervisor in this Linux network
+	// namespace, conservatively even when the databases differ. No listener,
+	// filesystem socket, security setting, or external process is modified.
+	anchorFD, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+	if err != nil {
+		file.Close()
+		return nil, errors.New("local projection supervisor namespace ownership unavailable")
+	}
+	anchor := os.NewFile(uintptr(anchorFD), "zboard-projection-supervisor-namespace")
+	if err := syscall.Bind(anchorFD, &syscall.SockaddrUnix{Name: "\x00zboard.projection-supervisor.v1"}); err != nil {
+		anchor.Close()
+		file.Close()
+		return nil, errors.New("local projection supervisor namespace ownership unavailable or already held")
+	}
+	// Both descriptors are inherited by managed children. Neither ownership
+	// boundary is released by parent death while an old child remains alive.
 	// Do not truncate, rewrite, remove or steal an existing ownership file.
-	return &Ownership{file: file}, nil
+	return &Ownership{file: file, anchor: anchor}, nil
 }
