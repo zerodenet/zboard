@@ -121,6 +121,10 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
+	var trafficMetaArchivesPrepared bool
+	if err := inspectTrafficMetaArchiveSchema(db, &trafficMetaArchivesPrepared); err != nil {
+		return err
+	}
 	var reportReceiptsPrepared bool
 	if err := inspectReportReceiptSchema(db, &reportReceiptsPrepared); err != nil {
 		return err
@@ -274,6 +278,15 @@ func RunMigrations(db *gorm.DB) error {
 			return err
 		}
 	}
+	if !trafficMetaArchivesPrepared {
+		if IsSQLite(db) {
+			if err := reconcileTrafficMetaArchiveSchema(db); err != nil {
+				return err
+			}
+		} else if err := inspectTrafficMetaArchiveSchema(db, nil); err != nil {
+			return err
+		}
+	}
 	if err := reconcileTicketReferenceSchema(db); err != nil {
 		return err
 	}
@@ -338,6 +351,12 @@ func runMigrations(db *gorm.DB) error {
 		}
 		if version == reportReceiptVersion {
 			if err := reconcileReportReceiptSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == trafficMetaArchiveVersion {
+			if err := reconcileTrafficMetaArchiveSchema(db); err != nil {
 				return err
 			}
 			continue

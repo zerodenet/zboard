@@ -49,6 +49,15 @@ func (s Records) read(ctx context.Context, actor uint, q metering.RecordsQuery, 
 		read = s.DB
 	}
 	err := read.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		proofBudget := fullProofReadMaterialBytes
+		checkFull := func(query *gorm.DB) error {
+			if len(columns) > 0 {
+				return nil
+			}
+			var err error
+			proofBudget, err = preflightFullProofRead(tx, query)
+			return err
+		}
 		base := func() *gorm.DB {
 			query := tx.Model(&model.TrafficRecord{})
 			if q.UserID > 0 {
@@ -85,7 +94,11 @@ func (s Records) read(ctx context.Context, actor uint, q metering.RecordsQuery, 
 				query = query.Select(columns)
 			}
 			if q.Cursor == nil && q.Offset > 0 {
-				if err := query.Order("record_at desc, id desc").Offset(q.Offset).Limit(q.Limit).Find(&records).Error; err != nil {
+				query = query.Order("record_at desc, id desc").Offset(q.Offset).Limit(q.Limit)
+				if err := checkFull(query); err != nil {
+					return err
+				}
+				if err := query.Find(&records).Error; err != nil {
 					return err
 				}
 			} else {
@@ -98,7 +111,11 @@ func (s Records) read(ctx context.Context, actor uint, q metering.RecordsQuery, 
 						order = "record_at asc, id asc"
 					}
 				}
-				if err := query.Order(order).Limit(q.Limit + 1).Find(&records).Error; err != nil {
+				query = query.Order(order).Limit(q.Limit + 1)
+				if err := checkFull(query); err != nil {
+					return err
+				}
+				if err := query.Find(&records).Error; err != nil {
 					return err
 				}
 				out.HasMore = len(records) > q.Limit
@@ -112,11 +129,22 @@ func (s Records) read(ctx context.Context, actor uint, q metering.RecordsQuery, 
 				}
 			}
 		} else {
-			if err := base().Order("id desc").Find(&records).Error; err != nil {
+			query := base().Order("id desc").Limit(fullProofReadRows + 1)
+			if err := checkFull(query); err != nil {
+				return err
+			}
+			if err := query.Find(&records).Error; err != nil {
 				return err
 			}
 		}
 		for _, record := range records {
+			if len(columns) == 0 {
+				var err error
+				record, err = hydrateProof(tx, record, &proofBudget)
+				if err != nil {
+					return err
+				}
+			}
 			out.Records = append(out.Records, metering.TrafficRecord(record))
 		}
 		return nil
