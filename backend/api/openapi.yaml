@@ -8669,6 +8669,8 @@ components:
         as_of: { type: string, format: date-time }
         started_at: { type: string, format: date-time }
         shared_pool: { type: boolean }
+        job_store: { $ref: "#/components/schemas/JobStoreDiagnostics" }
+        native_batch_sql: { $ref: "#/components/schemas/NativeBatchSQLDiagnostics" }
         accounting_db: { $ref: "#/components/schemas/DatabasePoolDiagnostics" }
         traffic_read_db: { $ref: "#/components/schemas/DatabasePoolDiagnostics" }
         event_consumer:
@@ -8691,6 +8693,81 @@ components:
           type: object
           nullable: true
           description: Current file-buffer status, including pending events, bytes, oldest event time and storage pressure. Null when disabled.
+    DurableCallDiagnostics:
+      type: object
+      description: Actual durable Store calls in the shared64 sample ring; excludes handler and local admission wait, includes adapter logic and SQL. No fresh samples gives known=false and null timings; stale observed_at is retained when still in the ring.
+      properties:
+        known: {type: boolean}
+        sample_count: {type: integer, minimum: 0, maximum: 64}
+        successful_writes: {type: integer, minimum: 0}
+        error_count: {type: integer, minimum: 0}
+        empty_probes: {type: integer, minimum: 0}
+        observed_at: {type: string, format: date-time, nullable: true}
+        maximum_ms: {type: number, nullable: true}
+        mean_ms: {type: number, nullable: true}
+        p95_ms: {type: number, nullable: true}
+    JobStoreDiagnostics:
+      type: object
+      properties:
+        scope: {type: string, enum: [this_process]}
+        timing: {type: string, enum: [durable_store_call]}
+        freshness_seconds: {type: number}
+        sample_capacity: {type: integer, enum: [64]}
+        claim: {$ref: '#/components/schemas/DurableCallDiagnostics'}
+        finish: {$ref: '#/components/schemas/DurableCallDiagnostics'}
+    NativeBatchSQLCounts:
+      type: object
+      description: Attempted GORM statement callbacks inside native authority transactions only; excludes driver BEGIN/COMMIT, preparation, auxiliary coverage/projection and other processes. No SQL or parameter values retained. Text/BLOB raw argument bytes exclude numeric/time values, driver encoding, indexes and WAL.
+      properties:
+        statement_count: {type: integer, minimum: 0}
+        read_count: {type: integer, minimum: 0}
+        write_count: {type: integer, minimum: 0}
+        unknown_statement_count: {type: integer, minimum: 0}
+        statement_errors: {type: integer, minimum: 0, description: Observed callback errors only; deferred Row results may be unavailable}
+        expected_read_misses: {type: integer, minimum: 0}
+        unknown_statement_results: {type: integer, minimum: 0}
+        observed_affected_write_rows: {type: integer, minimum: 0, description: Driver affected rows of observed statements; still attempted if the transaction later rolls back}
+        unknown_write_rows: {type: integer, minimum: 0}
+        text_blob_bound_argument_bytes: {type: integer, minimum: 0}
+        non_text_blob_argument_count: {type: integer, minimum: 0}
+        source_payload_bytes: {type: integer, minimum: 0}
+        callback_nanoseconds: {type: integer, minimum: 0, description: "Sum of GORM callback elapsed time; includes SQL build/driver work and Query scanning, excludes deferred Row consumption and driver transaction control. Not server-only SQL time"}
+    NativeBatchSQLSample:
+      allOf:
+        - {$ref: '#/components/schemas/NativeBatchSQLCounts'}
+        - type: object
+          properties:
+            sequence: {type: integer, minimum: 1, description: This metrics-instance sequence; not a financial identity}
+            started_at: {type: string, format: date-time}
+            finished_at: {type: string, format: date-time}
+            outcome: {type: string, enum: [commit_confirmed, transaction_error_or_commit_unknown, panic_or_unfinished]}
+            commit_confirmed: {type: boolean, nullable: true, description: True only after Transaction returned nil following Commit. Null means commit not confirmed; it does not assert rollback}
+            statistics_complete: {type: boolean}
+            affected_write_rows: {type: integer, minimum: 0, nullable: true, description: Null if any write row result was unavailable}
+    NativeBatchSQLDiagnostics:
+      type: object
+      description: This application instance in this process only. Fixed64 ring plus cumulative counters; metrics reset at reset_at and process restart. Missing/stale/incomplete instrumentation is unknown, never zero database load.
+      properties:
+        scope: {type: string, enum: [this_process]}
+        phase: {type: string, enum: [native_authority_transaction]}
+        known: {type: boolean}
+        instrumentation_installed: {type: boolean}
+        reset_at: {type: string, format: date-time}
+        observed_at: {type: string, format: date-time, nullable: true}
+        freshness_seconds: {type: number}
+        sample_capacity: {type: integer, enum: [64]}
+        fresh_batch_count: {type: integer, minimum: 0, maximum: 64}
+        retained_batch_count: {type: integer, minimum: 0, maximum: 64}
+        driver_begin_commit_included: {type: boolean, enum: [false]}
+        physical_bytes_measured: {type: boolean, enum: [false]}
+        batches: {type: integer, minimum: 0}
+        commit_confirmed_batches: {type: integer, minimum: 0}
+        error_or_unknown_batches: {type: integer, minimum: 0}
+        incomplete_batches: {type: integer, minimum: 0}
+        callback_failures: {type: integer, minimum: 0}
+        totals_complete: {type: boolean}
+        totals: {$ref: '#/components/schemas/NativeBatchSQLCounts'}
+        samples: {type: array, maxItems: 64, items: {$ref: '#/components/schemas/NativeBatchSQLSample'}}
     DatabasePoolDiagnostics:
       type: object
       properties:

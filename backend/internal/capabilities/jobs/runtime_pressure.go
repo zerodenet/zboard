@@ -26,11 +26,12 @@ type DatabasePressure struct {
 }
 
 type pressureSample struct {
-	at      time.Time
-	latency time.Duration
-	write   bool
-	failed  bool
-	storage bool
+	operation uint8
+	at        time.Time
+	latency   time.Duration
+	write     bool
+	failed    bool
+	storage   bool
 }
 
 type runtimePressure struct {
@@ -48,11 +49,14 @@ func (p *runtimePressure) record(start, finish time.Time, write bool, err error)
 }
 
 func (p *runtimePressure) recordKind(start, finish time.Time, write bool, err error, storage bool) {
+	p.recordOperation(start, finish, write, err, storage, 0)
+}
+func (p *runtimePressure) recordOperation(start, finish time.Time, write bool, err error, storage bool, operation uint8) {
 	if finish.Before(start) {
 		return
 	}
 	p.mu.Lock()
-	p.samples[p.next] = pressureSample{at: finish, latency: finish.Sub(start), write: write && err == nil, failed: err != nil, storage: storage}
+	p.samples[p.next] = pressureSample{operation: operation, at: finish, latency: finish.Sub(start), write: write && err == nil, failed: err != nil, storage: storage}
 	if err != nil {
 		if storage {
 			p.storageFailedAt = finish
@@ -163,7 +167,7 @@ func (s runtimeExecutionStore) Finish(ctx context.Context, claim Claim, state St
 	start := time.Now()
 	err := s.Store.Finish(ctx, claim, state)
 	if s.runtime != nil {
-		s.runtime.pressure.record(start, time.Now(), true, err)
+		s.runtime.pressure.recordOperation(start, time.Now(), true, err, false, pressureFinish)
 	}
 	return err
 }
@@ -172,8 +176,8 @@ func (r *Runtime) observeClaim(start time.Time, claim Claim, err error) {
 	// ErrEmpty can include a fast read-only probe and cannot demonstrate spare
 	// write capacity. Slow empty probes remain useful pressure observations.
 	if errors.Is(err, ErrEmpty) {
-		r.pressure.record(start, time.Now(), false, nil)
+		r.pressure.recordOperation(start, time.Now(), false, nil, false, pressureEmptyClaim)
 		return
 	}
-	r.pressure.record(start, time.Now(), claim.Token != "", err)
+	r.pressure.recordOperation(start, time.Now(), claim.Token != "", err, false, pressureClaim)
 }

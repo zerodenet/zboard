@@ -11,6 +11,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/messagingstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	zeroadapter "github.com/zerodenet/zboard/backend/internal/adapters/zero"
+	"github.com/zerodenet/zboard/backend/internal/batchsql"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/experience"
@@ -36,6 +37,7 @@ import (
 )
 
 type Services struct {
+	nativeBatchSQL                   batchsql.Metrics
 	commerceDiscountQuoter           commerce.DiscountQuoter
 	DiscountProviders                commerce.DiscountProviderChoices
 	Navigation                       navigation.Service
@@ -135,6 +137,7 @@ type Services struct {
 
 func New(db *gorm.DB, secret string) *Services {
 	s := &Services{Identity: NewIdentity(db, secret), JobReviews: jobs.ReviewService{Repository: networkstore.JobReviews{DB: db}}}
+	s.nativeBatchSQL.Configure(batchsql.Install(db))
 	s.trafficReadDB = db
 	s.Navigation = navigation.Service{Repository: menustore.Store{DB: db}}
 	s.MessageTemplates = messaging.Templates{Repository: messagingstore.Templates{DB: db}}

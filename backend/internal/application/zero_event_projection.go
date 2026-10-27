@@ -46,7 +46,7 @@ func (s *Services) ProjectBufferedEvents(ctx context.Context, input BufferedEven
 	}
 	var err error
 	if len(input.Flows) > 0 || len(input.Nodes) > 0 || len(input.Sources) > 0 {
-		err = s.Identity.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		err = s.nativeAuthorityTransaction(ctx, input, func(tx *gorm.DB) error {
 			// No node or observation-state locks are acquired in this transaction.
 			var err error
 			result.Exhausted, err = ApplyFlowBatch(tx, input.Flows, cipher)
