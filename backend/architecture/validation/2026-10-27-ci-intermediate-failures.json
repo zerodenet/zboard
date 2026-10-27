@@ -1,0 +1,53 @@
+{
+  "scope": "Intermediate failures are retained; later results must bind their own exact source.",
+  "failures": [
+    {
+      "head": "c023ffde0834b27103fb4c80c6a4d37a5bea3239",
+      "run": 40440210245,
+      "job": 121978488117,
+      "job_name": "backend",
+      "conclusion": "failure",
+      "other_jobs": "five succeeded",
+      "test": "TestRepositoryContractInventoryIsComplete",
+      "reason": "New worker goroutine/timers had no exact capability owner.",
+      "fix": "160c2a5b1ded72e4862111388867e239b8f95f29 adds exact jobs ownership and retains rejection of unknown future paths.",
+      "fix_target_result": "74 inventory/architecture test events passed, source unchanged."
+    },
+    {
+      "head": "160c2a5b1ded72e4862111388867e239b8f95f29",
+      "run": 40442694217,
+      "job": 121986518911,
+      "job_name": "mysql",
+      "conclusion": "failure",
+      "other_jobs": "five succeeded",
+      "test": "TestMySQLRecurringDiscountPreviewWaitsBeforeOwnerAndRejectsStaleQuote",
+      "assertion": "commerce_recurring_discount_mysql_test.go:88: payment missed canonical source lock hook: <nil>",
+      "handler_seconds": 808.349,
+      "datastore_seconds": 303.196,
+      "networkstore_seconds": 218.531,
+      "application_seconds": 47.356,
+      "timeout": "Original 15 minute per-package threshold retained; this was an assertion failure, not a timeout.",
+      "diagnosis": "The old synchronization hook expected target_subscription_id in a range-lock query; source locks now use bounded exact primary-key queries.",
+      "fix_status": "Actual primary-key source-lock barrier adapted. Original wait/NOWAIT/stale quote/funds assertions and 5s/2s limits retained; real MySQL targeted suite 15 passed, no skips, 28.879s, unchanged source. Exact fix CI still pending."
+    },
+    {
+      "head": "d00478f9cfbf7a5950fc3d8ca6a4c68ed477f418",
+      "source": "local complete backend first",
+      "test": "TestTrafficRecordsCountsAndSumsInOneScan",
+      "test_result": {
+        "pass": 3369,
+        "skip": 421,
+        "fail": 1,
+        "wall_seconds": 496.742,
+        "source_unchanged": true
+      },
+      "reason": "Old full-read SQL count omitted the newly required bounded byte preflight.",
+      "fix": "Separate exact summary/full SQL shape, owner/time scope, pagination, metadata-before-body and concurrent snapshot tests. Target suite passed.",
+      "not_executed_after_failure": [
+        "go vet ./...",
+        "go build ./cmd/zboard",
+        "CGO_ENABLED=0 SQLite"
+      ]
+    }
+  ]
+}

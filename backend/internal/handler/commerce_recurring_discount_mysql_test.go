@@ -42,18 +42,40 @@ func TestMySQLRecurringDiscountPreviewWaitsBeforeOwnerAndRejectsStaleQuote(t *te
 	defer cancel()
 	type paymentContextKey struct{}
 	locked, release := make(chan struct{}), make(chan struct{})
-	var reached atomic.Bool
+	var reached, ownerLocked atomic.Bool
+	lockedSources := map[uint]bool{}
 	var releaseOnce sync.Once
 	unblock := func() { releaseOnce.Do(func() { close(release) }) }
 	const callback = "test:recurring-payment-source-locks"
 	if err := f.h.db.Callback().Query().After("gorm:query").Register(callback, func(tx *gorm.DB) {
 		locking, ok := tx.Statement.Clauses["FOR"].Expression.(clause.Locking)
-		if tx.Error != nil || tx.Statement.Context.Value(paymentContextKey{}) != true || tx.Statement.Table != "orders" || !ok || locking.Strength != "UPDATE" || !strings.Contains(tx.Statement.SQL.String(), "target_subscription_id") || !reached.CompareAndSwap(false, true) {
+		if tx.Error != nil || tx.Statement.Context.Value(paymentContextKey{}) != true || !ok || locking.Strength != "UPDATE" {
 			return
 		}
-		// Actual WalletPayments.Pay has just acquired its canonical related
-		// source-order locks; its next step acquires the owner. No SQL mutation
-		// or synthetic snapshot is substituted for the production payment.
+		if tx.Statement.Table == "users" {
+			ownerLocked.Store(true)
+			return
+		}
+		rows, sourcePage := tx.Statement.Dest.(*[]model.Order)
+		if tx.Statement.Table != "orders" || !sourcePage || strings.Join(tx.Statement.Selects, ",") != "id" {
+			return
+		}
+		// Canonical financial scope now locks exact primary keys in bounded
+		// pages. Observe returned identities, not the removed secondary-index
+		// discovery predicate. Both real root and renewal must be held first.
+		for _, row := range *rows {
+			lockedSources[row.ID] = true
+		}
+		if !lockedSources[root.ID] || !lockedSources[renewal.ID] || !reached.CompareAndSwap(false, true) {
+			return
+		}
+		if ownerLocked.Load() {
+			tx.AddError(errors.New("payment acquired owner before canonical source scope"))
+			return
+		}
+		// Actual WalletPayments.Pay has just acquired the root and renewal
+		// source-order locks, before owner. No SQL mutation or synthetic
+		// snapshot is substituted for the production payment.
 		close(locked)
 		select {
 		case <-release:

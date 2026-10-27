@@ -19,10 +19,15 @@ import (
 type rawSummaryBenchLog struct {
 	logger.Interface
 	selects, dml int64
+	capture      bool
+	queries      []string
 }
 
 func (l *rawSummaryBenchLog) Trace(_ context.Context, _ time.Time, query func() (string, int64), _ error) {
 	sql, _ := query()
+	if l.capture {
+		l.queries = append(l.queries, sql)
+	}
 	switch {
 	case strings.HasPrefix(sql, "SELECT"):
 		l.selects++
@@ -84,14 +89,40 @@ func BenchmarkTrafficRecordsRawSummaryLargeMeta(b *testing.B) {
 		page, err := s.ReadSummaryPage(ctx, 1, q)
 		return rawSummaryBenchPage{Items: page.Records, Total: page.Total, Aggregates: page.Aggregates, HasMore: page.HasMore}, err
 	}
+	// Capture structural assertions outside timed benchmark loops. Full reads
+	// require their bounded thin preflight; summaries must continue to avoid it.
+	checkReadShape := func(full bool) {
+		b.Helper()
+		var records []string
+		auth := 0
+		for _, query := range trace.queries {
+			if strings.Contains(query, "FROM `users`") {
+				auth++
+				continue
+			}
+			records = append(records, query)
+		}
+		if auth != 1 {
+			b.Fatal("record read must authorize exactly once", trace.queries)
+		}
+		// Validate the actual SQL with this benchmark's limit; do not rewrite
+		// queries or hide extra reads to fit the smaller regression fixture.
+		assertTrafficRecordScanContract(b, records, full, q.Limit)
+	}
+	trace.capture = true
 	before, err := old()
 	if err != nil || before.Total != 201 || before.Aggregates.UsedBytes != 2211 || !before.HasMore || len(before.Items.([]trafficRecordListItem)) != 200 {
 		b.Fatalf("old output check: %+v %v", before, err)
 	}
+	checkReadShape(true)
+	trace.queries = nil
 	after, err := current()
 	if err != nil {
 		b.Fatal(err)
 	}
+	checkReadShape(false)
+	trace.capture = false
+	trace.queries = nil
 	a, err := json.Marshal(before)
 	if err != nil {
 		b.Fatal(err)
@@ -109,9 +140,10 @@ func BenchmarkTrafficRecordsRawSummaryLargeMeta(b *testing.B) {
 	}
 	checkFacts()
 	for _, sample := range []struct {
-		name string
-		run  func() (rawSummaryBenchPage, error)
-	}{{"old_full_read_and_http_summary", old}, {"new_explicit_summary_page", current}} {
+		name    string
+		run     func() (rawSummaryBenchPage, error)
+		selects int64
+	}{{"old_full_read_and_http_summary", old, 4}, {"new_explicit_summary_page", current, 3}} {
 		b.Run(sample.name, func(b *testing.B) {
 			trace.selects, trace.dml = 0, 0
 			b.ReportAllocs()
@@ -124,7 +156,7 @@ func BenchmarkTrafficRecordsRawSummaryLargeMeta(b *testing.B) {
 				rawSummaryBenchSink = out
 			}
 			b.StopTimer()
-			if trace.selects != int64(3*b.N) || trace.dml != 0 {
+			if trace.selects != sample.selects*int64(b.N) || trace.dml != 0 {
 				b.Fatalf("read SQL contract changed: selects=%d dml=%d", trace.selects, trace.dml)
 			}
 			b.ReportMetric(float64(trace.selects)/float64(b.N), "SELECT/op")

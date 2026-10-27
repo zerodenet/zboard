@@ -86,9 +86,14 @@ func automaticRenewalQuote(tx *gorm.DB, owner uint, sub model.Subscription, sku 
 	if err != nil {
 		return order, commerce.AutomaticRenewalOffer{}, 0, "", err
 	}
-	if err := tx.First(&root, root.ID).Error; err != nil {
+	roots, err := readOrderEvidence(tx.Model(&model.Order{}).Where("id = ?", root.ID))
+	if err != nil {
 		return order, commerce.AutomaticRenewalOffer{}, 0, "", err
 	}
+	if len(roots) != 1 {
+		return order, commerce.AutomaticRenewalOffer{}, 0, "", gorm.ErrRecordNotFound
+	}
+	root = roots[0]
 	var evidence commerce.EntitlementValueSnapshot
 	if json.Unmarshal([]byte(root.EntitlementValueSnapshot), &evidence) != nil || evidence.Version != 1 || !evidence.PaymentVerified || evidence.LegacyTransferUnproven || evidence.OrderID != root.ID || evidence.SubscriptionID != sub.ID {
 		return order, commerce.AutomaticRenewalOffer{}, 0, "", quoteError("原购买缺少可核对的实付与权益快照，请通过工单核实后再开启自动续费。")

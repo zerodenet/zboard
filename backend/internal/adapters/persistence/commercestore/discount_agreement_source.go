@@ -72,11 +72,17 @@ func prepareDiscountSourceScope(db *gorm.DB, buyer uint, request commerce.OrderC
 	if err != nil || len(ids) == 0 {
 		return scope, err
 	}
-	var root model.Order
-	if err := db.Select("purchase_snapshot").First(&root, ids[0]).Error; err != nil {
+	// Scope discovery is outside the financial transaction, but still must
+	// measure legacy text before decoding it. Only the root policy is needed;
+	// channel diagnostics never participate in a purchased agreement.
+	roots, err := readOrderEvidence(db.Model(&model.Order{}).Where("id = ?", ids[0]), "id", "purchase_snapshot")
+	if err != nil {
 		return nil, err
 	}
-	policy, err := commerce.DecodePurchaseSnapshot(root.PurchaseSnapshot)
+	if len(roots) != 1 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	policy, err := commerce.DecodePurchaseSnapshot(roots[0].PurchaseSnapshot)
 	scope.Recurring = err == nil && policy.Discount != nil && policy.Discount.Version == 2 && policy.Discount.Quote.Offer.Agreement != nil && policy.Discount.Quote.Offer.Agreement.Scope == "recurring"
 	return scope, nil
 }
@@ -139,14 +145,20 @@ func readDiscountAgreementSource(tx *gorm.DB, order model.Order, sub model.Subsc
 	// and need to detect the newly inserted checkout after their owner wait.
 	// Its first consistent snapshot is after owner, and all supported commercial
 	// writers acquire that owner before changing paid evidence.
-	var selected []model.Order
-	read := tx
+	read := tx.Model(&model.Order{})
 	if scope != nil && scope.Recurring {
 		// Reentrant current read of the exact PKs acquired before owner.
 		read = read.Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"})
 	}
-	if err := read.Where("id IN ?", ids).Order("id ASC").Find(&selected).Error; err != nil {
+	// Keep the exact-key current SHARE/NOWAIT read for recurring sources,
+	// including its byte preflight. A later bounded series scan cannot undo a
+	// selected root/base/latest row that was already materialized unbounded.
+	selected, err := readOrderEvidence(read.Where("id IN ?", ids))
+	if err != nil {
 		return nil, discountSourceReadError(err)
+	}
+	if len(selected) != len(ids) {
+		return nil, commerce.ErrSubscriptionQuoteChanged
 	}
 	var root model.Order
 	for _, row := range selected {

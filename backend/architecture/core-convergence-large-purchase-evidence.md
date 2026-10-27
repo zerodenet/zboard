@@ -23,3 +23,11 @@
 实库终态追加：恢复同一个原MySQL8.4隔离实例后，`go test -json -p 1 ./internal/adapters/persistence/commercestore ./internal/handler -run 'LargePurchase|OversizedEvidence|WholeTermination|ReplacementQuote|AutomaticRenewal' -count=1 -timeout 15m`，GOMAXPROCS=2，98.438秒，71个SQLite/MySQL测试事件通过，无跳过、无失败，源码哈希一致。1200来源中的首购走真实站内钱包与计量，附加规模来源是明确标记的已捕获测试收据/FIFO快照，不代表真实外部渠道1199次付款。前次连接失败不抹除。
 
 独立控制器提交c023ffde的CI40440210245中backend失败，其余五项成功；失败原因是worker进程/定时器缺少明确能力归属。本批一并补精确jobs归属及未来未知路径仍拒绝的回归，不扩大到整个目录默认放行。纯引擎0e1516de的CI40436037294成功不代替本批精确提交验收。完整后端与本批CI仍待后续记录。
+
+## 历史优惠读取边界与真实锁屏障修复
+
+继续审计发现优惠scope预选、root/base/latest重读及自动续费根订单读仍会在series预检前加载正文，现三处均复用metadata先行的有界读取，保持当前SHARE/NOWAIT锁序，并完全排除渠道raw_callback。MySQL正式purchase_snapshot/raw_callback是TEXT，测试使用正常60KiB回调证明其不被读取；超1MiB边界用原LONGTEXT change/entitlement字段，未临时改schema。资源上限是每次reader32MiB/单件1MiB，并非整条事务总RSS恰好32MiB；重复selected/root读取仍各有小的独立上界。
+
+160c2a5的MySQL CI40442694217失败是旧同步hook依赖target_subscription_id范围SQL，新流程改为精确主键分页。新hook观察实际返回的root+renewal主键锁，并确认尚未取得owner，原performance_schema真实等待、NOWAIT账户探针、旧报价拒绝、订单和钱包断言及超时全部保留。源预算/真实屏障/双路径统计snapshot专项在SQLite及实际MySQL共15个测试事件通过、无跳过、28.879秒，源码哈希一致。首次新增测试factory签名编译错误已修正，失败回执保留。
+
+完整后端首轮d00478f为3369通过/421既有skip/1失败、496.742秒，源码不变，失败仅为全文增加有界预检后的旧SQL数量断言；vet/build/pureSQLite未继续运行，不能当四项通过。摘要和全文现分别严格验证扫描、窄列、先metadata后body、分页及并发snapshot；单次基准仅用于验证正式SELECT形状（full4、summary3，含auth；DML0），不据单次计时声称性能收益。完整后端四项与修复精确CI需重新执行。
