@@ -1,6 +1,7 @@
 package commerce
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -37,11 +38,22 @@ type valueBasisEvidence struct {
 	Sources               map[uint]int64
 }
 type valueFrame struct {
+	ctx     context.Context
 	periods []PaidValuePeriod
 	owners  []uint
 	anchor  time.Time
 	end     time.Time
 	basis   *valueBasisEvidence
+	cache   *valueFrameCycles
+}
+
+// One projection owns this cache. Frames only append immutable paid units;
+// copying a pre-extension frame retains its earlier immutable partition.
+type valueFrameCycles struct {
+	periods int
+	policy  int16
+	cycles  []ValueCycle
+	sources []map[uint]int64
 }
 
 func addValueAmounts(target map[uint]int64, source map[uint]int64) error {
@@ -85,8 +97,14 @@ func proportionValueSources(total int64, sources map[uint]int64) (map[uint]int64
 	}
 	return out, nil
 }
-func (f valueFrame) cycles(policy int16) ([]ValueCycle, []map[uint]int64, error) {
-	cycles, err := SplitPaidValue(f.periods, f.anchor, policy)
+func (f *valueFrame) cycles(policy int16) ([]ValueCycle, []map[uint]int64, error) {
+	if err := f.ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if f.cache != nil && f.cache.periods == len(f.periods) && f.cache.policy == policy {
+		return f.cache.cycles, f.cache.sources, nil
+	}
+	cycles, err := splitPaidValueContext(f.ctx, f.periods, f.anchor, policy)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -94,28 +112,20 @@ func (f valueFrame) cycles(policy int16) ([]ValueCycle, []map[uint]int64, error)
 	for i := range sources {
 		sources[i] = map[uint]int64{}
 	}
-	for n, p := range f.periods {
-		if f.owners[n] == 0 {
+	if len(f.owners) != len(f.periods) {
+		return nil, nil, ErrValueEvidence
+	}
+	for _, owner := range f.owners {
+		if owner == 0 {
 			return nil, nil, ErrValueEvidence
 		}
-		duration := exactTimeSpan(p.StartAt, p.EndAt)
-		for i, c := range cycles {
-			left, right := c.StartAt, c.EndAt
-			if left.Before(p.StartAt) {
-				left = p.StartAt
-			}
-			if right.After(p.EndAt) {
-				right = p.EndAt
-			}
-			if !right.After(left) {
-				continue
-			}
-			delta := cumulativeHalfUp(p.AmountMinor, exactTimeSpan(p.StartAt, right), duration) - cumulativeHalfUp(p.AmountMinor, exactTimeSpan(p.StartAt, left), duration)
-			if err := addValueAmounts(sources[i], map[uint]int64{f.owners[n]: delta}); err != nil {
-				return nil, nil, err
-			}
-		}
 	}
+	if err := walkValueAllocations(f.ctx, f.periods, cycles, func(n, i int, delta int64) error {
+		return addValueAmounts(sources[i], map[uint]int64{f.owners[n]: delta})
+	}); err != nil {
+		return nil, nil, err
+	}
+	f.cache = &valueFrameCycles{periods: len(f.periods), policy: policy, cycles: cycles, sources: sources}
 	return cycles, sources, nil
 }
 func quotaForValue(s EntitlementValueState) (int64, error) {
@@ -124,7 +134,7 @@ func quotaForValue(s EntitlementValueState) (int64, error) {
 	}
 	return s.FlowTotal - s.CycleStartUsed, nil
 }
-func (f valueFrame) project(s EntitlementValueState, at time.Time) (ValueProjection, error) {
+func (f *valueFrame) project(s EntitlementValueState, at time.Time) (ValueProjection, error) {
 	var out ValueProjection
 	out.Sources = map[uint]int64{}
 	cycles, sources, err := f.cycles(s.ResetPolicy)
@@ -136,6 +146,9 @@ func (f valueFrame) project(s EntitlementValueState, at time.Time) (ValueProject
 		return out, err
 	}
 	for i, c := range cycles {
+		if err := f.ctx.Err(); err != nil {
+			return out, err
+		}
 		if !at.Before(c.EndAt) {
 			continue
 		}
@@ -222,15 +235,31 @@ func appendValuePeriods(f *valueFrame, s EntitlementValueSnapshot) error {
 
 // ProjectEntitlementValue replays serialized paid facts, then values only the
 // current quota cycle and future paid cycles. It never scans traffic history.
+// Persistence bounds and pages the serialized evidence before calling this
+// pure calculation; the number of purchases is not a monetary eligibility rule.
 func ProjectEntitlementValue(records []EntitlementValueSnapshot, current EntitlementValueState, currency string, at time.Time) (ValueProjection, error) {
+	return ProjectEntitlementValueContext(context.Background(), records, current, currency, at)
+}
+
+// ProjectEntitlementValueContext keeps cancellation inside replay and interval
+// allocation, so a canceled request cannot continue CPU work after database
+// evidence has been read. It has the same monetary and fingerprint rules as the
+// compatibility entrypoint; cancellation never returns a usable quote.
+func ProjectEntitlementValueContext(ctx context.Context, records []EntitlementValueSnapshot, current EntitlementValueState, currency string, at time.Time) (ValueProjection, error) {
 	empty := ValueProjection{Sources: map[uint]int64{}}
-	if len(records) == 0 || len(records) > 1000 || at.IsZero() {
+	if ctx == nil || len(records) == 0 || at.IsZero() {
 		return empty, ErrValueEvidence
+	}
+	if err := ctx.Err(); err != nil {
+		return empty, err
 	}
 	records = append([]EntitlementValueSnapshot(nil), records...)
 	sort.Slice(records, func(i, j int) bool { return records[i].QuotaEventID < records[j].QuotaEventID })
 	root := -1
 	for i, s := range records {
+		if err := ctx.Err(); err != nil {
+			return empty, err
+		}
 		if (s.Mode == "new_term" || s.Mode == "recovery_term" || s.Mode == "replacement_term") && s.After.StartAt.Equal(current.StartAt) {
 			root = i
 		}
@@ -240,11 +269,14 @@ func ProjectEntitlementValue(records []EntitlementValueSnapshot, current Entitle
 	}
 	records = records[root:]
 	if entitlements.IsPerpetualEnd(current.EndAt) {
-		return projectPerpetualQuotaValue(records, current, currency, at)
+		return projectPerpetualQuotaValue(ctx, records, current, currency, at)
 	}
-	frame := valueFrame{anchor: records[0].After.StartAt, end: records[0].After.EndAt}
+	frame := valueFrame{ctx: ctx, anchor: records[0].After.StartAt, end: records[0].After.EndAt}
 	var last EntitlementValueSnapshot
 	for i, s := range records {
+		if err := ctx.Err(); err != nil {
+			return empty, err
+		}
 		if s.Version != 1 || s.OrderID == 0 || s.QuotaEventID == 0 || s.QuotaEventAt.IsZero() || s.Currency != currency || !s.PaymentVerified || s.LegacyTransferUnproven || s.SubscriptionID != records[0].SubscriptionID || s.ActualPaidMinor < 0 || s.CapturedAt.IsZero() {
 			return empty, ErrValueEvidence
 		}
@@ -372,16 +404,22 @@ func ProjectEntitlementValue(records []EntitlementValueSnapshot, current Entitle
 	}
 	out.ValuationModel = "remaining_value_basis_v1"
 	out.RootOrderID = records[0].OrderID
-	return fingerprintValueProjection(records, current, out)
+	return fingerprintValueProjection(ctx, records, current, out)
 }
 
-func fingerprintValueProjection(records []EntitlementValueSnapshot, current EntitlementValueState, out ValueProjection) (ValueProjection, error) {
+func fingerprintValueProjection(ctx context.Context, records []EntitlementValueSnapshot, current EntitlementValueState, out ValueProjection) (ValueProjection, error) {
+	if err := ctx.Err(); err != nil {
+		return ValueProjection{}, err
+	}
 	payload, err := json.Marshal(struct {
 		Records []EntitlementValueSnapshot
 		State   EntitlementValueState
 		Quote   ValueProjection
 	}{records, current, out})
 	if err != nil {
+		return ValueProjection{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return ValueProjection{}, err
 	}
 	sum := sha256.Sum256(payload)
@@ -401,6 +439,9 @@ func currentProjectionSources(quote ValueProjection, frame valueFrame, state Ent
 		return nil, err
 	}
 	for i, c := range cycles {
+		if err := frame.ctx.Err(); err != nil {
+			return nil, err
+		}
 		if at.Before(c.StartAt) {
 			for id, amount := range sources[i] {
 				if out[id] < amount {

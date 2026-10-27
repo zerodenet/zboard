@@ -1,6 +1,7 @@
 package commerce
 
 import (
+	"context"
 	"math"
 	"time"
 
@@ -14,7 +15,7 @@ const PerpetualQuotaFIFOAllocation = "perpetual_paid_quota_fifo_v1"
 // periods ending at the storage sentinel. Its time proportion is always one.
 // Unproven legacy grants and resets still require reconciliation; neither
 // today's catalog nor current counters can establish their cash ancestry.
-func projectSinglePerpetualQuotaValue(records []EntitlementValueSnapshot, current EntitlementValueState, currency string, at time.Time) (ValueProjection, error) {
+func projectSinglePerpetualQuotaValue(ctx context.Context, records []EntitlementValueSnapshot, current EntitlementValueState, currency string, at time.Time) (ValueProjection, error) {
 	empty := ValueProjection{Sources: map[uint]int64{}}
 	if len(records) != 1 {
 		return empty, ErrValueEvidence
@@ -48,18 +49,18 @@ func projectSinglePerpetualQuotaValue(records []EntitlementValueSnapshot, curren
 	if remaining > 0 {
 		out.Sources[s.OrderID] = remaining
 	}
-	return fingerprintValueProjection(records, current, out)
+	return fingerprintValueProjection(ctx, records, current, out)
 }
 
 // Each fulfilled grant is a separate paid lot. Consume cumulative increments
 // before adding the next lot: an earlier overrun cannot spend a later purchase.
-func projectPerpetualQuotaValue(records []EntitlementValueSnapshot, current EntitlementValueState, currency string, at time.Time) (ValueProjection, error) {
+func projectPerpetualQuotaValue(ctx context.Context, records []EntitlementValueSnapshot, current EntitlementValueState, currency string, at time.Time) (ValueProjection, error) {
 	if len(records) == 1 {
-		return projectSinglePerpetualQuotaValue(records, current, currency, at)
+		return projectSinglePerpetualQuotaValue(ctx, records, current, currency, at)
 	}
 	empty := ValueProjection{Sources: map[uint]int64{}}
 	root := records[0]
-	if _, err := projectSinglePerpetualQuotaValue(records[:1], root.After, currency, at); err != nil {
+	if _, err := projectSinglePerpetualQuotaValue(ctx, records[:1], root.After, currency, at); err != nil {
 		return empty, err
 	}
 	type lot struct {
@@ -68,10 +69,13 @@ func projectPerpetualQuotaValue(records []EntitlementValueSnapshot, current Enti
 	}
 	lots := []lot{{root.OrderID, root.After.FlowTotal - root.After.CycleStartUsed, root.After.FlowTotal - root.After.CycleStartUsed, root.ActualPaidMinor}}
 	firstUnspent := 0
-	consume := func(used int64) {
+	consume := func(used int64) error {
 		// Exhausted lots never regain quota. Keep their original paid facts for
 		// valuation/fingerprinting, but visit them only once while consuming.
 		for firstUnspent < len(lots) && used > 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			current := &lots[firstUnspent]
 			take := min(used, current.remaining)
 			current.remaining -= take
@@ -80,11 +84,15 @@ func projectPerpetualQuotaValue(records []EntitlementValueSnapshot, current Enti
 				firstUnspent++
 			}
 		}
+		return nil
 	}
 	ids := map[uint]bool{root.OrderID: true}
 	last := root
 	totalPaid := root.ActualPaidMinor
 	for i, s := range records[1:] {
+		if err := ctx.Err(); err != nil {
+			return empty, err
+		}
 		if ids[s.OrderID] || s.OrderID == 0 || s.Version != 1 || s.SubscriptionID != root.SubscriptionID || s.Currency != currency || !s.PaymentVerified || s.LegacyTransferUnproven || s.ActualPaidMinor < 0 || s.CapturedAt.IsZero() || s.QuotaEventAt.IsZero() || s.QuotaEventID <= last.QuotaEventID || len(s.PaidPeriods) != 0 || s.Before == nil {
 			return empty, ErrValueEvidence
 		}
@@ -111,7 +119,9 @@ func projectPerpetualQuotaValue(records []EntitlementValueSnapshot, current Enti
 			lots[0].quota = before.FlowTotal - before.CycleStartUsed
 			lots[0].remaining = lots[0].quota
 		}
-		consume(before.FlowUsed - last.After.FlowUsed)
+		if err := consume(before.FlowUsed - last.After.FlowUsed); err != nil {
+			return empty, err
+		}
 		delta := after.FlowTotal - before.FlowTotal
 		lots = append(lots, lot{s.OrderID, delta, delta, s.ActualPaidMinor})
 		if totalPaid > math.MaxInt64-s.ActualPaidMinor {
@@ -133,9 +143,14 @@ func projectPerpetualQuotaValue(records []EntitlementValueSnapshot, current Enti
 	if !samePerpetualStateIdentity(finalIdentity, last.After) || current.FlowUsed < last.After.FlowUsed || current.FlowTotal != last.After.FlowTotal {
 		return empty, ErrValueEvidence
 	}
-	consume(current.FlowUsed - last.After.FlowUsed)
+	if err := consume(current.FlowUsed - last.After.FlowUsed); err != nil {
+		return empty, err
+	}
 	out := ValueProjection{ValuationModel: PerpetualQuotaFIFOAllocation, RootOrderID: root.OrderID, Sources: map[uint]int64{}, CurrentCycle: ValueCycle{StartAt: root.TermStartAt, EndAt: root.TermEndAt, AmountMinor: totalPaid}}
 	for _, l := range lots {
+		if err := ctx.Err(); err != nil {
+			return empty, err
+		}
 		amount := int64(0)
 		if l.quota > 0 {
 			amount = proportionalValue(l.paid, l.remaining, l.quota)
@@ -152,7 +167,7 @@ func projectPerpetualQuotaValue(records []EntitlementValueSnapshot, current Enti
 	if current.EndedAt != nil && out.TotalMinor != 0 {
 		return empty, ErrValueEvidence
 	}
-	return fingerprintValueProjection(records, current, out)
+	return fingerprintValueProjection(ctx, records, current, out)
 }
 
 func samePerpetualStateIdentity(left, right EntitlementValueState) bool {

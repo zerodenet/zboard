@@ -1,6 +1,7 @@
 package commerce
 
 import (
+	"context"
 	"errors"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"math"
@@ -91,6 +92,13 @@ func UniformPaidPeriods(start, end time.Time, unit string, count int, total int6
 // boundaries. Each source unit rounds cumulative proportions, so adjacent
 // differences preserve every cent and never invent a thirteenth paid month.
 func SplitPaidValue(periods []PaidValuePeriod, anchor time.Time, resetPolicy int16) ([]ValueCycle, error) {
+	return splitPaidValueContext(context.Background(), periods, anchor, resetPolicy)
+}
+
+func splitPaidValueContext(ctx context.Context, periods []PaidValuePeriod, anchor time.Time, resetPolicy int16) ([]ValueCycle, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(periods) == 0 || len(periods) > maxValuePeriods || anchor.IsZero() || resetPolicy < 0 || resetPolicy > 5 {
 		return nil, ErrValueEvidence
 	}
@@ -100,6 +108,9 @@ func SplitPaidValue(periods []PaidValuePeriod, anchor time.Time, resetPolicy int
 	}
 	var sum int64
 	for i, p := range periods {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if p.AmountMinor < 0 || !p.EndAt.After(p.StartAt) || p.EndAt.Unix() <= p.StartAt.Unix() || (i > 0 && !p.StartAt.Equal(periods[i-1].EndAt)) || sum > math.MaxInt64-p.AmountMinor {
 			return nil, ErrValueEvidence
 		}
@@ -108,6 +119,9 @@ func SplitPaidValue(periods []PaidValuePeriod, anchor time.Time, resetPolicy int
 	cycles := []ValueCycle{}
 	cursor := start
 	for cursor.Before(end) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if len(cycles) >= maxValuePeriods {
 			return nil, ErrValueEvidence
 		}
@@ -122,11 +136,41 @@ func SplitPaidValue(periods []PaidValuePeriod, anchor time.Time, resetPolicy int
 		cursor = cut
 	}
 	var allocated int64
-	for _, p := range periods {
+	if err := walkValueAllocations(ctx, periods, cycles, func(_, i int, delta int64) error {
+		if cycles[i].AmountMinor > math.MaxInt64-delta || allocated > math.MaxInt64-delta {
+			return ErrValueEvidence
+		}
+		cycles[i].AmountMinor += delta
+		allocated += delta
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if allocated != sum {
+		return nil, ErrValueEvidence
+	}
+	return cycles, nil
+}
+
+// Both inputs have already been validated as contiguous ordered partitions.
+// Visit only actual intersections, in the original period-then-cycle order.
+// Cumulative half-up remains local to each original paid unit; skipping pairs
+// with no overlap cannot combine separate rounding decisions or cash sources.
+func walkValueAllocations(ctx context.Context, periods []PaidValuePeriod, cycles []ValueCycle, visit func(int, int, int64) error) error {
+	firstCycle := 0
+	for n, p := range periods {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		for firstCycle < len(cycles) && !cycles[firstCycle].EndAt.After(p.StartAt) {
+			firstCycle++
+		}
 		duration := exactTimeSpan(p.StartAt, p.EndAt)
-		for i := range cycles {
-			cycle := &cycles[i]
-			left, right := cycle.StartAt, cycle.EndAt
+		for i := firstCycle; i < len(cycles) && cycles[i].StartAt.Before(p.EndAt); i++ {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			left, right := cycles[i].StartAt, cycles[i].EndAt
 			if left.Before(p.StartAt) {
 				left = p.StartAt
 			}
@@ -136,20 +180,16 @@ func SplitPaidValue(periods []PaidValuePeriod, anchor time.Time, resetPolicy int
 			if !right.After(left) {
 				continue
 			}
-			before := cumulativeHalfUp(p.AmountMinor, exactTimeSpan(p.StartAt, left), duration)
-			after := cumulativeHalfUp(p.AmountMinor, exactTimeSpan(p.StartAt, right), duration)
-			delta := after - before
-			if delta < 0 || cycle.AmountMinor > math.MaxInt64-delta || allocated > math.MaxInt64-delta {
-				return nil, ErrValueEvidence
+			delta := cumulativeHalfUp(p.AmountMinor, exactTimeSpan(p.StartAt, right), duration) - cumulativeHalfUp(p.AmountMinor, exactTimeSpan(p.StartAt, left), duration)
+			if delta < 0 {
+				return ErrValueEvidence
 			}
-			cycle.AmountMinor += delta
-			allocated += delta
+			if err := visit(n, i, delta); err != nil {
+				return err
+			}
 		}
 	}
-	if allocated != sum {
-		return nil, ErrValueEvidence
-	}
-	return cycles, nil
+	return nil
 }
 
 // RemainingValueBasis uses cumulative accounting usage as its monotonic source.

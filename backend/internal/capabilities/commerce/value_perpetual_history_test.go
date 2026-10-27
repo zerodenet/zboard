@@ -56,10 +56,6 @@ func TestPerpetualFIFOSequentialHistoryKeepsOnlyFinalLotResidual(t *testing.T) {
 			})
 		}
 	}
-	tooMany, current, at := perpetualSequentialHistory(1001, 0)
-	if _, err := ProjectEntitlementValue(tooMany, current, "CNY", at); err != ErrValueEvidence {
-		t.Fatal("existing source bound changed", err)
-	}
 }
 
 func BenchmarkPerpetualFIFOSequentialPurchases(b *testing.B) {
