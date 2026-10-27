@@ -421,14 +421,14 @@ func assertMigrationCompletionRollback(t *testing.T, f migrationCopyFixture) {
 }
 
 func TestMigrationCopierDoesNotClaimBusinessWritesAsInitialization(t *testing.T) {
-	for _, change := range []string{"custom_config", "changed_menu", "changed_default", "changed_budget", "changed_ledger"} {
+	for _, change := range []string{"custom_config", "changed_menu", "changed_default", "changed_budget", "changed_observation_budget", "changed_ledger"} {
 		t.Run(change, func(t *testing.T) {
 			assertMigrationDDLWindowProtection(t, newMigrationCopyFixture(t, false, false), change)
 		})
 	}
 }
 func TestMySQLMigrationCopierDoesNotClaimBusinessWritesAsInitialization(t *testing.T) {
-	for _, change := range []string{"custom_config", "changed_menu", "changed_default", "changed_budget", "changed_email", "changed_subscription"} {
+	for _, change := range []string{"custom_config", "changed_menu", "changed_default", "changed_budget", "changed_observation_budget", "changed_email", "changed_subscription"} {
 		t.Run(change, func(t *testing.T) {
 			assertMigrationDDLWindowProtection(t, newMigrationCopyFixture(t, false, true), change)
 		})
@@ -454,6 +454,8 @@ func assertMigrationDDLWindowProtection(t *testing.T, f migrationCopyFixture, ch
 			return db.Table("subscription_templates").Where("slug = ?", "clash").Update("description", "operator evidence").Error
 		case "changed_budget":
 			return db.Model(&jobstore.Budget{}).Where("id = 1").Update("capacity", 10).Error
+		case "changed_observation_budget":
+			return db.Model(&model.NodeObservationMaterialBudget{}).Where("id = ?", 1).Updates(map[string]any{"retained_bytes": uint64(1), "revision": uint64(2)}).Error
 		}
 		return nil
 	}}
@@ -466,6 +468,11 @@ func assertMigrationDDLWindowProtection(t *testing.T, f migrationCopyFixture, ch
 		t.Fatal("unproven initialization received a reusable receipt", receipt.State, err)
 	}
 	switch change {
+	case "changed_observation_budget":
+		var budget model.NodeObservationMaterialBudget
+		if err := destination.First(&budget, "id = ?", 1).Error; err != nil || budget.RetainedBytes != 1 || budget.Revision != 2 {
+			t.Fatal("changed observation seed was overwritten", budget, err)
+		}
 	case "changed_ledger":
 		var revision int
 		if err := destination.Table("traffic_ledger_revision").Select("revision").Where("id = 1").Scan(&revision).Error; err != nil || revision != 1 {

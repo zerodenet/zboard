@@ -62,6 +62,13 @@ func validateInitialMigrationSeeds(db *gorm.DB) error {
 			return reject()
 		}
 	}
+	var observationBudget []model.NodeObservationMaterialBudget
+	if err := db.Clauses(clause.Locking{Strength: "SHARE"}).Limit(2).Find(&observationBudget).Error; err != nil {
+		return err
+	}
+	if len(observationBudget) != 1 || observationBudget[0].ID != 1 || observationBudget[0].RetainedBytes != 0 || observationBudget[0].Revision != 1 {
+		return reject()
+	}
 	var budgets []jobstore.Budget
 	if err := db.Clauses(clause.Locking{Strength: "SHARE"}).Limit(2).Find(&budgets).Error; err != nil {
 		return err

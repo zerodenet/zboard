@@ -15,13 +15,7 @@ func CopyApplicationData(source, target *gorm.DB) error {
 	if err := preflightPrincipalRuntimeCopy(source); err != nil {
 		return err
 	}
-	if err := requirePrincipalRuntimeDestination(target); err != nil {
-		return err
-	}
 	if err := preflightCoverageRuntimeCopy(source); err != nil {
-		return err
-	}
-	if err := requireCoverageRuntimeDestination(target); err != nil {
 		return err
 	}
 	if err := preflightObservationRetirementSchema(source); err != nil {
@@ -66,6 +60,20 @@ func CopyApplicationData(source, target *gorm.DB) error {
 	if err != nil {
 		return fmt.Errorf("inspect target tables: %w", err)
 	}
+	// Validate the complete actual source inventory before writing any rows.
+	// Truly legacy sources may have no auxiliary tables; recorded authority was
+	// already checked above and cannot pass as an absent legacy table.
+	for _, table := range tables {
+		if sourceTables[table] && !targetTables[table] {
+			return fmt.Errorf("migration destination is missing source table %s", table)
+		}
+	}
+	if err := requirePrincipalRuntimeDestination(target, sourceTables); err != nil {
+		return err
+	}
+	if err := requireCoverageRuntimeDestination(target, sourceTables); err != nil {
+		return err
+	}
 	for _, table := range tables {
 		if !sourceTables[table] {
 			continue
@@ -77,7 +85,7 @@ func CopyApplicationData(source, target *gorm.DB) error {
 			return err
 		}
 	}
-	if err := initializeCopiedObservationBudget(target, sourceTables["node_observation_material_budget"]); err != nil {
+	if err := initializeCopiedObservationBudget(target, sourceTables["node_observation_material_budget"], sourceTables["node_observation_parts"] || sourceTables["node_observation_intents"]); err != nil {
 		return err
 	}
 	// A prepared target has already recorded0060 before source data arrives.

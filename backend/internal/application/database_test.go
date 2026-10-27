@@ -11,6 +11,7 @@ import (
 	mysqlconfig "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -80,7 +81,7 @@ func TestPrepareDatabaseSchemaFreshAndRepeatPreserveProjectionData(t *testing.T)
 				t.Fatal("job timeout migration missing")
 			}
 			now := time.Now().UTC().Truncate(time.Millisecond)
-			observation := meteringstore.PrincipalFlowObservation{NodeID: 1, PrincipalKey: "principal", CoreInstanceID: "core", EventID: "historical", UserID: 1, ActiveFlows: 7, ObservedAt: now, CreatedAt: now}
+			observation := meteringstore.PrincipalFlowObservation{NodeID: 1, PrincipalKey: "principal", CoreInstanceID: "core", CoreInstanceSHA256: metering.RuntimeIdentityDigest("core"), EventID: "historical", UserID: 1, ActiveFlows: 7, ObservedAt: now, CreatedAt: now}
 			if err := db.Create(&observation).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -133,7 +134,7 @@ func TestDatabaseCopyPreservesProjectionRowsAndRejectsMissingDestination(t *test
 				}
 			}
 			now := time.Now().UTC().Truncate(time.Millisecond)
-			row := meteringstore.PrincipalFlowObservation{NodeID: 1, PrincipalKey: "copied", CoreInstanceID: "core", EventID: "history", UserID: 1, ActiveFlows: 9, ObservedAt: now, CreatedAt: now}
+			row := meteringstore.PrincipalFlowObservation{NodeID: 1, PrincipalKey: "copied", CoreInstanceID: "core", CoreInstanceSHA256: metering.RuntimeIdentityDigest("core"), EventID: "history", UserID: 1, ActiveFlows: 9, ObservedAt: now, CreatedAt: now}
 			if err := source.Create(&row).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -154,6 +155,30 @@ func TestDatabaseCopyPreservesProjectionRowsAndRejectsMissingDestination(t *test
 					return CopyDatabaseData(source, tx)
 				})
 			}
+			// Preserve this owned EMPTY destination's actual schema before
+			// deliberate damage. A recorded missing authority table is restored
+			// explicitly, never recreated implicitly by normal startup.
+			var restoreScopeDDL string
+			if datastore.IsSQLite(target) {
+				if err := target.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", "principal_flow_scope_observations").Scan(&restoreScopeDDL).Error; err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				rows, err := target.Raw("SHOW CREATE TABLE principal_flow_scope_observations").Rows()
+				if err != nil {
+					t.Fatal(err)
+				}
+				var name string
+				if !rows.Next() {
+					rows.Close()
+					t.Fatal("missing owned table definition")
+				}
+				err = rows.Scan(&name, &restoreScopeDDL)
+				rows.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
 			// Remove a later table: failure must roll back already-copied history.
 			if err := target.Migrator().DropTable("principal_flow_scope_observations"); err != nil {
 				t.Fatal(err)
@@ -169,6 +194,12 @@ func TestDatabaseCopyPreservesProjectionRowsAndRejectsMissingDestination(t *test
 			if err := target.Where("config_key = ?", "subscription_renewal_grace_days").First(&preserved).Error; err != nil || preserved.Value != "7" {
 				t.Fatal("failed copy lost target's initialized policy", preserved.Value, err)
 			}
+			if restoreScopeDDL == "" {
+				t.Fatal("missing explicit owned restore DDL")
+			}
+			if err := target.Exec(restoreScopeDDL).Error; err != nil {
+				t.Fatal(err)
+			}
 			if err := PrepareDatabaseSchema(target); err != nil {
 				t.Fatal(err)
 			}
@@ -183,6 +214,19 @@ func TestDatabaseCopyPreservesProjectionRowsAndRejectsMissingDestination(t *test
 			if err := target.First(&copied, row.ID).Error; err != nil || copied.EventID != row.EventID || copied.ActiveFlows != row.ActiveFlows || !copied.ObservedAt.Equal(row.ObservedAt) {
 				t.Fatal("projection history changed", copied, err)
 			}
+			// This is genuinely damaged RECORDED0069 evidence, not legacy
+			// data. Refusal must roll back destination cleanup and copied rows.
+			if err := source.Model(&row).Update("core_instance_sha256", "").Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := copyAtomically(); err == nil || !strings.Contains(err.Error(), "digest is empty") {
+				t.Fatal("recorded empty digest was fabricated during copy", err)
+			}
+			var kept meteringstore.PrincipalFlowObservation
+			if err := target.First(&kept, row.ID).Error; err != nil || kept.CoreInstanceSHA256 != metering.RuntimeIdentityDigest("core") || kept.ActiveFlows != 9 {
+				t.Fatal("rejected copy lost prior destination history", kept, err)
+			}
+
 		})
 	}
 }

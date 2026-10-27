@@ -22,6 +22,13 @@ func assertCoverageRuntimeSchema(t *testing.T, mysql bool) {
 	if err := db.Create(&short).Error; err != nil {
 		t.Fatal(err)
 	}
+	// Compare actual persisted snapshots, while independently checking the
+	// absolute instants. Driver time.Location internals are not stored facts.
+	var storedShort meteringstore.CoverageRecord
+	if err := db.First(&storedShort, "node_id = ?", short.NodeID).Error; err != nil || !storedShort.ContinuousSinceAt.Equal(short.ContinuousSinceAt) || !storedShort.LastReceivedAt.Equal(short.LastReceivedAt) || !storedShort.LastEventOccurredAt.Equal(short.LastEventOccurredAt) || !storedShort.UpdatedAt.Equal(short.UpdatedAt) {
+		t.Fatal("initial coverage window was not persisted exactly", err)
+	}
+	short = storedShort
 	if err := db.Exec("DELETE FROM schema_migrations WHERE version = ?", coverageRuntimeVersion).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -47,6 +54,11 @@ func assertCoverageRuntimeSchema(t *testing.T, mysql bool) {
 	if err := db.Create(&long).Error; err != nil {
 		t.Fatal(err)
 	}
+	var storedLong meteringstore.CoverageRecord
+	if err := db.First(&storedLong, "node_id = ?", long.NodeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	long = storedLong
 	target := diagnosticSchemaDB(t, mysql)
 	if err := datastore.WithCopyDestination(t.Context(), target, func(tx *gorm.DB) error {
 		tables, err := datastore.MigrationTables(tx)

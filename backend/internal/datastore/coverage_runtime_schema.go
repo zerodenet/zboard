@@ -139,8 +139,11 @@ func preflightCoverageRuntimeCopy(db *gorm.DB) error {
 	return nil
 }
 
-func requireCoverageRuntimeDestination(db *gorm.DB) error {
+func requireCoverageRuntimeDestination(db *gorm.DB, sourceTables map[string]bool) error {
 	for _, table := range coverageRuntimeTables {
+		if !sourceTables[table] {
+			continue
+		}
 		kind, err := coverageRuntimeColumn(db, table)
 		if err != nil {
 			return err

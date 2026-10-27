@@ -248,9 +248,19 @@ func ensureObservationRetirementIndex(db *gorm.DB) error {
 
 // Only the existing owned destination-copy transaction may seed a truly legacy
 // source into a prepared target. Source0067 budgets/progress are copied exactly.
-func initializeCopiedObservationBudget(target *gorm.DB, sourceHasBudget bool) error {
+func initializeCopiedObservationBudget(target *gorm.DB, sourceHasBudget, sourceHasMaterial bool) error {
 	if sourceHasBudget {
 		return preflightObservationRetirementSchema(target)
+	}
+	if !target.Migrator().HasTable("node_observation_material_budget") {
+		if sourceHasMaterial {
+			return errors.New("legacy observation material requires a prepared current budget destination")
+		}
+		return nil // Truly pre-observation narrow source/destination contract.
+	}
+	proof, err := requireCopiedObservationBudgetProof(target)
+	if err != nil {
+		return err
 	}
 	var n int64
 	if e := target.Model(&model.NodeObservationMaterialBudget{}).Count(&n).Error; e != nil {
@@ -269,7 +279,11 @@ func initializeCopiedObservationBudget(target *gorm.DB, sourceHasBudget bool) er
 	if e != nil {
 		return e
 	}
-	return target.Create(&model.NodeObservationMaterialBudget{ID: 1, RetainedBytes: bytes, Revision: 1}).Error
+	if err := target.Create(&model.NodeObservationMaterialBudget{ID: 1, RetainedBytes: bytes, Revision: 1}).Error; err != nil {
+		return err
+	}
+	proof.Consumed = true
+	return nil
 }
 
 // Empty is known only from an actual aggregate row whose COUNT is zero and

@@ -361,7 +361,7 @@ func migrationPreparationManifest(db *gorm.DB, lock bool) (string, string, error
 	sort.Strings(tables)
 	schema := []any{}
 	seeds := []any{}
-	allowed := map[string]bool{"schema_migrations": true, "email_templates": true, "subscription_templates": true, "system_configs": true, "automatic_renewal_scans": true, "menu_revisions": true, "menu_nodes": true, "job_execution_budget": true, "job_execution_groups": true}
+	allowed := map[string]bool{"node_observation_material_budget": true, "schema_migrations": true, "email_templates": true, "subscription_templates": true, "system_configs": true, "automatic_renewal_scans": true, "menu_revisions": true, "menu_nodes": true, "job_execution_budget": true, "job_execution_groups": true}
 	if datastore.IsSQLite(db) {
 		allowed["traffic_ledger_revision"] = true
 	}

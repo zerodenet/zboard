@@ -440,8 +440,11 @@ func preflightPrincipalRuntimeCopy(db *gorm.DB) error {
 // The two historical nonunique indexes are only performance aids. Their raw
 // prefix must never be used as a generation/authorization equality test.
 
-func requirePrincipalRuntimeDestination(db *gorm.DB) error {
+func requirePrincipalRuntimeDestination(db *gorm.DB, sourceTables map[string]bool) error {
 	for _, table := range principalRuntimeTables {
+		if !sourceTables[table] {
+			continue
+		}
 		columns, _, err := projectionColumns(db, table)
 		if err != nil {
 			return err
@@ -454,6 +457,9 @@ func requirePrincipalRuntimeDestination(db *gorm.DB) error {
 		if !ok || c.nullable || c.kind != expected {
 			return fmt.Errorf("principal runtime destination %s not prepared", table)
 		}
+	}
+	if !sourceTables[principalRuntimeTable] {
+		return nil
 	}
 	if err := verifyPrincipalDigestColumn(db); err != nil {
 		return err

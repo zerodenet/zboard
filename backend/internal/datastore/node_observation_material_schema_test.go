@@ -74,7 +74,7 @@ func assertObservationMaterialMigration(t *testing.T, db *gorm.DB) {
 		t.Fatal(err)
 	}
 	var initial model.NodeObservationIntent
-	if err := db.First(&initial, "id = ?", id).Error; err != nil || initial.MaterialRetiredAt != nil || !initial.MaterialReviewAt.Equal(time.Unix(0, 0).UTC()) {
+	if err := db.First(&initial, "id = ?", id).Error; err != nil || initial.MaterialRetiredAt != nil || !initial.MaterialReviewAt.Equal(initial.CreatedAt.Add(observationstore.MaterialMinimumAge)) {
 		t.Fatal("new lifecycle defaults", initial, err)
 	}
 	preserve := func() {
