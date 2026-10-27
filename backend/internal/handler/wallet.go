@@ -15,6 +15,8 @@ func walletError(w http.ResponseWriter, err error) {
 	}
 	var invalid *commerce.ValidationError
 	switch {
+	case errors.Is(err, commerce.ErrSubscriptionEvidenceBudget):
+		writeJSON(w, http.StatusConflict, "成交依据超出单次处理预算，未扣款；请通过工单核对。", nil)
 	case errors.Is(err, commerce.ErrOrderPermission):
 		Forbidden(w, "无权访问该余额。")
 	case errors.As(err, &invalid):

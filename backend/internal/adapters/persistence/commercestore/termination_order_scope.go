@@ -7,8 +7,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const terminationOrderBudget = 1000
-
 // Current valuation includes paid sources ending after the current term began.
 // Pending attempts and surviving holds must also close atomically. Earlier
 // completed history remains immutable and cannot consume this authority budget.
@@ -18,5 +16,5 @@ func terminationOrders(db *gorm.DB, owner, subscription uint, start time.Time) *
 	return db.Model(&model.Order{}).
 		Where("user_id = ? AND (subscription_id = ? OR target_subscription_id = ?)", owner, subscription, subscription).
 		Where("subscription_ended_at IS NULL OR subscription_ended_at > ? OR status = ? OR (status IN ? AND EXISTS (?))", start, "pending", []string{"canceled", "failed"}, held).
-		Order("id ASC").Limit(terminationOrderBudget + 1)
+		Order("id ASC")
 }

@@ -6,16 +6,22 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"time"
 )
 
-func relatedSubscriptionOrders(tx *gorm.DB, user, subscription uint) *gorm.DB {
-	return tx.Where("user_id = ? AND (subscription_id = ? OR target_subscription_id = ?)", user, subscription, subscription).Order("id ASC").Limit(1001)
+func relatedSubscriptionOrders(tx *gorm.DB, user, subscription uint, start time.Time) *gorm.DB {
+	return terminationOrders(tx, user, subscription, start)
+}
+
+type subscriptionSettlementIdentity struct {
+	model.Order
+	Scope subscriptionOrderScope
 }
 
 // Read immutable checkout identity before beginning the authority transaction.
 // A non-locking read inside MySQL's transaction would establish a stale repeatable
 // read snapshot before waiting on the order, breaking ordinary payment replay.
-func readSubscriptionSettlementIdentity(db *gorm.DB, id, expectedBuyer uint) (*model.Order, error) {
+func readSubscriptionSettlementIdentity(db *gorm.DB, id, expectedBuyer uint) (*subscriptionSettlementIdentity, error) {
 	var identity model.Order
 	query := db.Where("id = ?", id)
 	if expectedBuyer != 0 {
@@ -31,9 +37,13 @@ func readSubscriptionSettlementIdentity(db *gorm.DB, id, expectedBuyer uint) (*m
 	if err != nil || (full == nil && (identity.OrderType != "renewal" || identity.TargetSubscriptionID == nil || identity.Status == "paid")) {
 		return nil, err
 	}
-	return &identity, nil
+	scope, err := prepareSubscriptionOrderScope(db, identity.UserID, *identity.TargetSubscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	return &subscriptionSettlementIdentity{Order: identity, Scope: scope}, nil
 }
-func validateSubscriptionSettlementIdentity(current model.Order, prepared *model.Order) error {
+func validateSubscriptionSettlementIdentity(current model.Order, prepared *subscriptionSettlementIdentity) error {
 	// A paid renewal replay has no old-term mutation. Keep its original
 	// idempotent path independent of the number of historical target orders.
 	// If its state changed since the outside read, require the full identity.
@@ -65,29 +75,29 @@ func validateSubscriptionSettlementIdentity(current model.Order, prepared *model
 // historical orders. Both acquire all related orders in the same order as
 // unsubscribe and automatic renewal, before user/subscription locks. Verify
 // the pre-read immutable target against the current locked order.
-func lockSubscriptionSettlementScope(tx *gorm.DB, identity *model.Order, actor uint, admin bool) error {
+func lockSubscriptionSettlementScope(tx *gorm.DB, identity *subscriptionSettlementIdentity, actor uint, admin bool) error {
 	if identity == nil {
 		return nil
 	}
-	var orders []model.Order
-	if err := relatedSubscriptionOrders(tx, identity.UserID, *identity.TargetSubscriptionID).Clauses(clause.Locking{Strength: "UPDATE"}).Find(&orders).Error; err != nil {
+	if err := lockSubscriptionOrderIDs(tx, identity.Scope); err != nil {
 		return err
 	}
-	if len(orders) > 1000 {
-		return commerce.ErrSubscriptionValueUnavailable
-	}
 	found := false
-	for _, locked := range orders {
-		if locked.ID == identity.ID {
+	for _, id := range identity.Scope.IDs {
+		if id == identity.ID {
 			found = true
-			if err := validateSubscriptionSettlementIdentity(locked, identity); err != nil {
-				return err
-			}
 			break
 		}
 	}
 	if !found {
 		return commerce.ErrSubscriptionQuoteChanged
+	}
+	var current model.Order
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, identity.ID).Error; err != nil {
+		return err
+	}
+	if err := validateSubscriptionSettlementIdentity(current, identity); err != nil {
+		return err
 	}
 	if admin {
 		if _, err := lockSettlementUsers(tx, identity.UserID, actor); err != nil {
@@ -105,17 +115,5 @@ func lockSubscriptionSettlementScope(tx *gorm.DB, identity *model.Order, actor u
 			return commerce.ErrOrderPermission
 		}
 	}
-	var current []uint
-	if err := relatedSubscriptionOrders(tx, identity.UserID, *identity.TargetSubscriptionID).Model(&model.Order{}).Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"}).Pluck("id", &current).Error; err != nil {
-		return err
-	}
-	if len(current) != len(orders) {
-		return commerce.ErrSubscriptionQuoteChanged
-	}
-	for i, id := range current {
-		if orders[i].ID != id {
-			return commerce.ErrSubscriptionQuoteChanged
-		}
-	}
-	return nil
+	return verifySubscriptionOrderScope(tx, identity.Scope)
 }

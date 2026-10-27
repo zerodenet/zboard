@@ -21,6 +21,8 @@ func (h *handlers) OrderCreateCommerceValidatedHandler(w http.ResponseWriter, r 
 	if err != nil {
 		var invalid *commerce.ValidationError
 		switch {
+		case errors.Is(err, commerce.ErrSubscriptionEvidenceBudget):
+			writeCapabilityError(w, http.StatusConflict, "成交依据超出单次处理预算，未报价或扣款；请通过工单核对。", "subscription_evidence_budget")
 		case errors.Is(err, commerce.ErrSubscriptionQuoteChanged):
 			writeCapabilityError(w, http.StatusConflict, "订阅权益或优惠依据已变化，请核对原订单后重新确认报价。", "subscription_quote_changed")
 		case errors.Is(err, commerce.ErrDiscountConfirmationRequired):
@@ -58,6 +60,8 @@ func (h *handlers) OrderPreviewHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var invalid *commerce.ValidationError
 		switch {
+		case errors.Is(err, commerce.ErrSubscriptionEvidenceBudget):
+			writeCapabilityError(w, http.StatusConflict, "成交依据超出单次处理预算，未报价或扣款；请通过工单核对。", "subscription_evidence_budget")
 		case errors.Is(err, commerce.ErrSubscriptionQuoteChanged):
 			writeCapabilityError(w, http.StatusConflict, "订阅权益或优惠依据已变化，请核对原订单后重新确认报价。", "subscription_quote_changed")
 		case errors.Is(err, commerce.ErrDiscountConfirmationRequired):

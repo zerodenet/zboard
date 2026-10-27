@@ -9,6 +9,8 @@ import (
 
 func subscriptionValueError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, commerce.ErrSubscriptionEvidenceBudget):
+		writeJSON(w, http.StatusConflict, "成交依据超出单次处理的字节或待处理订单预算，未报价或扣款；请通过工单核对。", nil)
 	case errors.Is(err, commerce.ErrNotFound):
 		NotFound(w)
 	case errors.Is(err, commerce.ErrSubscriptionQuoteChanged):

@@ -47,12 +47,9 @@ func settleFullReplacement(tx *gorm.DB, order model.Order, snapshot changeSnapsh
 	if err := validateFullReplacementQuote(tx, order, snapshot, now); err != nil {
 		return err
 	}
-	var orders []model.Order
-	if err := relatedSubscriptionOrders(tx, order.UserID, sub.ID).Clauses(clause.Locking{Strength: "UPDATE"}).Find(&orders).Error; err != nil {
+	orders, err := readOrderEvidence(relatedSubscriptionOrders(tx, order.UserID, sub.ID, sub.StartAt))
+	if err != nil {
 		return err
-	}
-	if len(orders) > 1000 {
-		return commerce.ErrSubscriptionValueUnavailable
 	}
 	payload, err := json.Marshal(snapshot)
 	if err != nil {

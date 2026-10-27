@@ -37,11 +37,11 @@ func (s SubscriptionValues) ReadForAdministrator(ctx context.Context, actor, id 
 // Read only: a quote never creates an opening budget. Every surviving budget
 // must agree with the immutable actual-paid source; unknown cash is not a limit.
 func administrativeRefundLimits(tx *gorm.DB, sub model.Subscription, value commerce.ValueProjection, currency string) (map[uint]int64, int64, error) {
-	var orders []model.Order
-	if err := tx.Select("id", "user_id", "subscription_id", "status", "order_type", "paid_amount", "refund_amount", "currency", "fulfilled_at", "entitlement_value_snapshot").Where("subscription_id = ? AND status = ? AND (subscription_ended_at IS NULL OR subscription_ended_at > ?)", sub.ID, "paid", sub.StartAt).Order("id ASC").Limit(1001).Find(&orders).Error; err != nil {
+	orders, err := readOrderEvidence(tx.Model(&model.Order{}).Where("subscription_id = ? AND status = ? AND (subscription_ended_at IS NULL OR subscription_ended_at > ?)", sub.ID, "paid", sub.StartAt), "id", "user_id", "subscription_id", "status", "order_type", "paid_amount", "refund_amount", "currency", "fulfilled_at", "entitlement_value_snapshot")
+	if err != nil {
 		return nil, 0, err
 	}
-	if len(orders) == 0 || len(orders) > 1000 {
+	if len(orders) == 0 {
 		return nil, 0, commerce.ErrSubscriptionValueUnavailable
 	}
 	var rootEvent uint
@@ -62,8 +62,12 @@ func administrativeRefundLimits(tx *gorm.DB, sub model.Subscription, value comme
 		ids = append(ids, order.ID)
 	}
 	var budgetRows []model.OrderValueBudget
-	if err := tx.Where("order_id IN ?", ids).Find(&budgetRows).Error; err != nil {
-		return nil, 0, err
+	for first := 0; first < len(ids); first += orderEvidencePageSize {
+		var page []model.OrderValueBudget
+		if err := tx.Where("order_id IN ?", ids[first:min(first+orderEvidencePageSize, len(ids))]).Find(&page).Error; err != nil {
+			return nil, 0, err
+		}
+		budgetRows = append(budgetRows, page...)
 	}
 	budgets := map[uint]model.OrderValueBudget{}
 	for _, row := range budgetRows {
@@ -75,9 +79,9 @@ func administrativeRefundLimits(tx *gorm.DB, sub model.Subscription, value comme
 			missing = append(missing, id)
 		}
 	}
-	if len(missing) > 0 {
+	for first := 0; first < len(missing); first += orderEvidencePageSize {
 		var surviving int64
-		if err := tx.Model(&model.SubscriptionValueSettlementSource{}).Where("order_id IN ?", missing).Count(&surviving).Error; err != nil {
+		if err := tx.Model(&model.SubscriptionValueSettlementSource{}).Where("order_id IN ?", missing[first:min(first+orderEvidencePageSize, len(missing))]).Count(&surviving).Error; err != nil {
 			return nil, 0, err
 		}
 		if surviving > 0 {
@@ -133,15 +137,16 @@ func prepareAdministrativeValue(tx *gorm.DB, sub model.Subscription, now time.Ti
 		limits, maximum, err = administrativeRefundLimits(tx, sub, value, currency)
 	}
 	if err != nil {
+		if errors.Is(err, commerce.ErrSubscriptionEvidenceBudget) {
+			quote, budgetErr := unpricedBudgetQuote(tx, sub)
+			return quote, value, nil, budgetErr
+		}
 		if !errors.Is(err, commerce.ErrSubscriptionValueUnavailable) && !errors.Is(err, commerce.ErrSubscriptionValueCyclePending) {
 			return commerce.AdministrativeSubscriptionValueQuote{}, value, nil, err
 		}
-		var orders []model.Order
-		if err := terminationOrders(tx, sub.UserID, sub.ID, sub.StartAt).Find(&orders).Error; err != nil {
-			return commerce.AdministrativeSubscriptionValueQuote{}, value, nil, err
-		}
-		if len(orders) > terminationOrderBudget {
-			return commerce.AdministrativeSubscriptionValueQuote{}, value, nil, commerce.ErrSubscriptionValueUnavailable
+		orders, loadErr := readOrderEvidence(terminationOrders(tx, sub.UserID, sub.ID, sub.StartAt))
+		if loadErr != nil {
+			return commerce.AdministrativeSubscriptionValueQuote{}, value, nil, loadErr
 		}
 		reason := "historical_value_unavailable"
 		if errors.Is(err, commerce.ErrSubscriptionValueCyclePending) {

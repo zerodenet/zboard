@@ -183,6 +183,8 @@ type TrafficDiagnosticMaterial struct{}
 type TrafficDiagnosticMaterialOther struct{}
 type MeteringReportReceipt struct{}
 type MeteringReportReceiptOther struct{}
+type TrafficMetaArchive struct{}
+type TrafficMetaArchiveOther struct{}
 type InventedFutureModel struct{}
 `
 	if err := os.WriteFile(filepath.Join(dir, "models.go"), []byte(source), 0600); err != nil {
@@ -206,6 +208,9 @@ type InventedFutureModel struct{}
 	}
 	if owners["MeteringReportReceipt"] != "metering" || owners["MeteringReportReceiptOther"] != "unassigned" {
 		t.Fatal("report identity owner must be exact")
+	}
+	if owners["TrafficMetaArchive"] != "metering" || owners["TrafficMetaArchiveOther"] != "unassigned" {
+		t.Fatal("native proof archive ownership must be exact", owners)
 	}
 	if owners["TrafficDiagnosticMaterial"] != "metering" || owners["TrafficDiagnosticMaterialOther"] != "unassigned" {
 		t.Fatalf("diagnostic provenance ownership must remain exact: %v", owners)
@@ -509,4 +514,41 @@ func TestStaleLedgerEvidenceIsUnassigned(t *testing.T) {
 		}
 	}
 	t.Fatal("stale RPC ledger entry was not rejected")
+}
+
+func TestLocalWorkerRuntimeSitesKeepExactJobsOwnership(t *testing.T) {
+	root := t.TempDir()
+	files := []string{"internal/localworkers/process.go", "internal/localworkers/supervisor.go", "internal/application/projection_supervisor.go", "internal/localworkers/future.go"}
+	for _, name := range files {
+		target := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, []byte("package example\nfunc run(){ go work(); time.NewTicker(time.Second) }\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := inventory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{}
+	for _, row := range rows {
+		if row.Kind != "goroutine" && row.Kind != "timer" {
+			continue
+		}
+		want := "jobs"
+		if row.File == "internal/localworkers/future.go" {
+			want = "unassigned"
+		}
+		if row.Owner != want {
+			t.Fatalf("runtime owner for %s: got=%s want=%s", row.File, row.Owner, want)
+		}
+		counts[row.File]++
+	}
+	for _, name := range files {
+		if counts[name] != 2 {
+			t.Fatalf("missing runtime evidence %s: %v", name, counts)
+		}
+	}
 }

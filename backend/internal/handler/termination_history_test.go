@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -175,7 +176,7 @@ func assertTerminationScopeChange(t *testing.T, f orderFixture) {
 		if tx.Statement.Table != "orders" {
 			return
 		}
-		if _, ok := tx.Statement.Dest.(*[]uint); !ok || !paused.CompareAndSwap(false, true) {
+		if !strings.Contains(strings.Join(tx.Statement.Selects, ","), "AS evidence_bytes") || !paused.CompareAndSwap(false, true) {
 			return
 		}
 		close(prepared)

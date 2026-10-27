@@ -41,6 +41,9 @@ func quoteFullReplacement(tx *gorm.DB, order *model.Order, sub model.Subscriptio
 	}
 	value, currency, err := readSubscriptionValue(tx, sub, creditAt)
 	if err != nil {
+		if errors.Is(err, commerce.ErrSubscriptionEvidenceBudget) {
+			return empty, err
+		}
 		if errors.Is(err, commerce.ErrSubscriptionValueUnavailable) || errors.Is(err, commerce.ErrSubscriptionValueCyclePending) {
 			return empty, quoteError("原订阅的实付、周期或权益依据待核对，暂不能自动换购。")
 		}
@@ -55,9 +58,14 @@ func quoteFullReplacement(tx *gorm.DB, order *model.Order, sub model.Subscriptio
 	}
 	applied := min(value.TotalMinor, order.PayableAmount)
 	snapshot := changeSnapshot{Version: 2, FullTerm: true, EntitlementEpoch: sub.EntitlementEpoch, PlanID: sub.PlanID, PlanSKUID: sub.PlanSKUID, EndAt: sub.EndAt, CycleStartUsed: sub.CycleStartUsed, ResetQuota: sub.ResetQuotaBytes, SourceOrderID: value.RootOrderID, QuotedAt: creditAt, Credit: applied, Residual: value.TotalMinor, Applied: applied, Surplus: value.TotalMinor - applied, ValueFingerprint: value.Fingerprint, Sources: value.Sources}
-	if err := tx.Model(&model.QuotaEvent{}).Where("subscription_id = ?", sub.ID).Select("COALESCE(MAX(id),0)").Scan(&snapshot.QuotaEventID).Error; err != nil {
+	var latest model.QuotaEvent
+	// A prior owner/evidence read may already have established an InnoDB RR
+	// snapshot. Entitlement writers can commit under their subscription lock;
+	// the final quote must observe their current event rather than snapshot MAX.
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Select("id").Where("subscription_id = ?", sub.ID).Order("id DESC").Limit(1).Find(&latest).Error; err != nil {
 		return empty, err
 	}
+	snapshot.QuotaEventID = latest.ID
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {
 		return empty, err

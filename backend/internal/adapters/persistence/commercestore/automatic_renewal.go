@@ -23,37 +23,32 @@ type AutomaticRenewals struct {
 	Discounts commerce.DiscountQuoter
 }
 
-var errAutomaticHistoryBound = fmt.Errorf("automatic renewal related-order limit exceeded: %w", commerce.ErrSubscriptionValueUnavailable)
+var errAutomaticHistoryBound = fmt.Errorf("automatic renewal evidence budget exceeded: %w", errors.Join(commerce.ErrSubscriptionValueUnavailable, commerce.ErrSubscriptionEvidenceBudget))
 
 // Existing payment and unsubscribe writers lock orders before their owner.
 // Consent changes and automatic debits follow that order too. A newly inserted
 // target order requires a fresh attempt, rather than being missed by an old RR
 // snapshot or introducing an inverse account/order wait.
-func automaticRenewalScope(tx *gorm.DB, owner, subscription uint) (model.User, error) {
-	var orders []model.Order
-	if err := relatedSubscriptionOrders(tx, owner, subscription).Select("id").Clauses(clause.Locking{Strength: "UPDATE"}).Find(&orders).Error; err != nil {
+func automaticRenewalScope(tx *gorm.DB, scope subscriptionOrderScope) (model.User, error) {
+	if err := lockSubscriptionOrderIDs(tx, scope); err != nil {
 		return model.User{}, err
 	}
-	if len(orders) > 1000 {
-		return model.User{}, errAutomaticHistoryBound
-	}
 	var user model.User
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status").First(&user, owner).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id,status").First(&user, scope.Owner).Error; err != nil {
 		return user, resourceError(err)
 	}
-	var current []uint
-	if err := relatedSubscriptionOrders(tx, owner, subscription).Model(&model.Order{}).Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"}).Pluck("id", &current).Error; err != nil {
+	if err := verifySubscriptionOrderScope(tx, scope); err != nil {
 		return user, err
 	}
-	if len(current) != len(orders) {
-		return user, commerce.ErrSubscriptionQuoteChanged
-	}
-	for i, id := range current {
-		if orders[i].ID != id {
-			return user, commerce.ErrSubscriptionQuoteChanged
-		}
-	}
 	return user, nil
+}
+
+func prepareAutomaticRenewalScope(db *gorm.DB, owner, subscription uint) (subscriptionOrderScope, error) {
+	scope, err := prepareSubscriptionOrderScope(db, owner, subscription)
+	if errors.Is(err, commerce.ErrSubscriptionEvidenceBudget) {
+		return scope, errAutomaticHistoryBound
+	}
+	return scope, err
 }
 
 func automaticRenewalView(row model.SubscriptionAutomaticRenewal, subscription uint) commerce.AutomaticRenewalView {
@@ -105,9 +100,9 @@ func automaticRenewalQuote(tx *gorm.DB, owner uint, sub model.Subscription, sku 
 	}
 	// A verified first-purchase reduction explicitly ends after that purchase.
 	// Unknown or recurring reductions continue to pause automatic charging.
-	var discounted []model.Order
-	if err := tx.Where("subscription_id = ? AND user_id = ? AND id >= ? AND status = ? AND order_type IN ? AND (discount_amount <> 0 OR payable_amount <> amount_cents)", sub.ID, owner, root.ID, "paid", []string{"new", "renewal", "upgrade"}).Find(&discounted).Error; err != nil {
-		return order, commerce.AutomaticRenewalOffer{}, 0, "", err
+	discounted, discountEvidenceErr := readOrderEvidence(tx.Model(&model.Order{}).Where("subscription_id = ? AND user_id = ? AND id >= ? AND status = ? AND order_type IN ? AND (discount_amount <> 0 OR payable_amount <> amount_cents)", sub.ID, owner, root.ID, "paid", []string{"new", "renewal", "upgrade"}))
+	if discountEvidenceErr != nil {
+		return order, commerce.AutomaticRenewalOffer{}, 0, "", discountEvidenceErr
 	}
 	for _, historical := range discounted {
 		if !knownInitialPurchaseDiscount(historical) {
@@ -141,8 +136,15 @@ func (s AutomaticRenewals) Read(ctx context.Context, owner, subscription, sku ui
 	if prepared != nil {
 		sku = prepared.SKU
 	}
+	scope, scopeErr := prepareAutomaticRenewalScope(s.DB.WithContext(ctx), owner, subscription)
+	if errors.Is(scopeErr, errAutomaticHistoryBound) {
+		return s.readAutomaticConsentWithoutHistory(ctx, owner, subscription)
+	}
+	if scopeErr != nil {
+		return out, scopeErr
+	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		user, err := automaticRenewalScope(tx, owner, subscription)
+		user, err := automaticRenewalScope(tx, scope)
 		if err != nil {
 			return err
 		}
@@ -176,7 +178,7 @@ func (s AutomaticRenewals) Read(ctx context.Context, owner, subscription, sku ui
 		out.Offer = &offer
 		return nil
 	})
-	if errors.Is(err, errAutomaticHistoryBound) {
+	if errors.Is(err, errAutomaticHistoryBound) || errors.Is(err, commerce.ErrSubscriptionEvidenceBudget) {
 		// The failed transaction has released its bounded order locks. A
 		// consent/status read needs no financial history or new debit quote.
 		return s.readAutomaticConsentWithoutHistory(ctx, owner, subscription)
@@ -192,8 +194,12 @@ func (s AutomaticRenewals) Set(ctx context.Context, owner, subscription uint, in
 	if err != nil {
 		return out, err
 	}
+	scope, scopeErr := prepareAutomaticRenewalScope(s.DB.WithContext(ctx), owner, subscription)
+	if scopeErr != nil {
+		return out, scopeErr
+	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		user, err := automaticRenewalScope(tx, owner, subscription)
+		user, err := automaticRenewalScope(tx, scope)
 		if err != nil {
 			return err
 		}

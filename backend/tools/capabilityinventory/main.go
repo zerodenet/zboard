@@ -172,6 +172,7 @@ var explicitModelOwners = map[string]string{
 	"TrafficRecord":                      "metering",
 	"TrafficDiagnosticMaterial":          "metering",
 	"MeteringReportReceipt":              "metering",
+	"TrafficMetaArchive":                 "metering",
 	"User":                               "identity",
 	"UserAPIToken":                       "identity",
 	"siteLegalItem":                      "experience",
@@ -184,6 +185,9 @@ var ignoredInMemoryMutations = map[string]bool{
 }
 
 var explicitRuntimeSiteOwners = map[string]string{
+	"internal/localworkers/process.go":                        "jobs",
+	"internal/localworkers/supervisor.go":                     "jobs",
+	"internal/application/projection_supervisor.go":           "jobs",
 	"internal/adapters/ssh/remote_session.go":                 "network",
 	"internal/adapters/zero/flow_control.go":                  "network",
 	"internal/adapters/ssh/remote_lifetime.go":                "network",

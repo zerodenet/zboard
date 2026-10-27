@@ -163,12 +163,12 @@ func readDiscountAgreementSource(tx *gorm.DB, order model.Order, sub model.Subsc
 	// evidence: settlement/funding, consumption refund, full replacement and
 	// lifecycle closure. The first consistent snapshot is established only after
 	// owner acquisition, so this bounded nonlocking evidence scan is stable.
-	var series []model.Order
-	if err := tx.Where("user_id = ? AND subscription_id = ? AND plan_id = ? AND status = ? AND id >= ? AND order_type IN ?", order.UserID, sub.ID, order.PlanID, "paid", root.ID, []string{"new", "upgrade", "renewal"}).Order("id ASC").Limit(1001).Find(&series).Error; err != nil {
-		return nil, err
+	series, seriesErr := readOrderEvidence(tx.Model(&model.Order{}).Where("user_id = ? AND subscription_id = ? AND plan_id = ? AND status = ? AND id >= ? AND order_type IN ?", order.UserID, sub.ID, order.PlanID, "paid", root.ID, []string{"new", "upgrade", "renewal"}))
+	if seriesErr != nil {
+		return nil, seriesErr
 	}
-	if len(series) == 0 || len(series) > 1000 {
-		return nil, discountCheckoutError("购买协议系列超出可安全核对范围，请通过工单核实。")
+	if len(series) == 0 {
+		return nil, discountCheckoutError("购买协议系列无法核对，请通过工单核实。")
 	}
 	rootPolicy, rootErr := commerce.DecodePurchaseSnapshot(root.PurchaseSnapshot)
 	recurring := rootErr == nil && rootPolicy.Discount != nil && rootPolicy.Discount.Version == 2 && rootPolicy.Discount.Quote.Offer.Agreement != nil && rootPolicy.Discount.Quote.Offer.Agreement.Scope == "recurring"

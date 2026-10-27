@@ -18,7 +18,7 @@ import (
 
 var errAutomaticRenewalHeadChanged = errors.New("automatic renewal queue changed before owner lock")
 
-const automaticHistoryReviewMessage = "关联订单超过安全核对上限，本项自动扣款已暂停且未扣款；仍可关闭授权。请通过工单核对历史，系统仅在恢复窗口内每30分钟重新检查。"
+const automaticHistoryReviewMessage = "待处理订单或成交证据超过单次处理预算，本项自动扣款已暂停且未扣款；仍可关闭授权。请通过工单核对历史，系统仅在恢复窗口内每30分钟重新检查。"
 
 func automaticRenewalHead(db *gorm.DB, now time.Time) (model.SubscriptionAutomaticRenewal, error) {
 	var head model.SubscriptionAutomaticRenewal
@@ -54,7 +54,7 @@ func (s AutomaticRenewals) Process(ctx context.Context, limit int) (processed in
 			}
 		}
 		err = s.processAutomaticRenewalPrepared(ctx, prepared, evaluated, evaluationErr)
-		if errors.Is(err, errAutomaticHistoryBound) {
+		if errors.Is(err, errAutomaticHistoryBound) || errors.Is(err, commerce.ErrSubscriptionEvidenceBudget) {
 			// The financial transaction has rolled back and released its order
 			// locks. Isolate a known bounded-history item without pretending its
 			// money or entitlement has been reconciled.
@@ -128,6 +128,10 @@ func (s AutomaticRenewals) pauseAutomaticHistoryItem(ctx context.Context, prepar
 }
 
 func (s AutomaticRenewals) processAutomaticRenewalPrepared(ctx context.Context, prepared model.SubscriptionAutomaticRenewal, evaluated *automaticDiscountEvaluation, evaluationErr error) error {
+	scope, scopeErr := prepareAutomaticRenewalScope(s.DB.WithContext(ctx), prepared.UserID, prepared.SubscriptionID)
+	if scopeErr != nil {
+		return scopeErr
+	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// SQLite has no SELECT FOR UPDATE; acquire its writer lock before any
 		// read. MySQL acquires the singleton row's current exclusive read.
@@ -140,7 +144,13 @@ func (s AutomaticRenewals) processAutomaticRenewalPrepared(ctx context.Context, 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&guard, 1).Error; err != nil {
 			return fmt.Errorf("automatic renewal ordering source missing; restore before charging: %w", err)
 		}
-		user, err := automaticRenewalScope(tx, prepared.UserID, prepared.SubscriptionID)
+		user, err := automaticRenewalScope(tx, scope)
+		if errors.Is(err, commerce.ErrSubscriptionQuoteChanged) {
+			// A competing manual/automatic action may have advanced this head
+			// after unlocked preparation. Roll back and reselect under the
+			// existing bounded attempts loop; never reuse its old source set.
+			return errAutomaticRenewalHeadChanged
+		}
 		if err != nil {
 			return err
 		}

@@ -43,6 +43,8 @@ func (h *handlers) writeOrderSettlement(w http.ResponseWriter, out commerce.Sett
 	}
 	var invalid *commerce.ValidationError
 	switch {
+	case errors.Is(err, commerce.ErrSubscriptionEvidenceBudget):
+		writeCapabilityError(w, http.StatusConflict, "成交依据超出单次处理预算，未报价或扣款；请通过工单核对。", "subscription_evidence_budget")
 	case errors.Is(err, commerce.ErrNotFound):
 		BadRequest(w, "order not found")
 	case errors.Is(err, commerce.ErrOrderPermission):

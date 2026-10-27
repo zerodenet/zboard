@@ -61,29 +61,15 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 	// inside it before waiting for the owner would leave funding release on a
 	// stale MySQL RR snapshot. Historical closed orders without holds need no
 	// authority lock; current paid sources and every pending/held source do.
-	var boundary model.Subscription
-	lookup := s.DB.WithContext(ctx).Select("id", "start_at").Where("id = ? AND user_id = ?", id, owner).First(&boundary).Error
-	if lookup != nil && !errors.Is(lookup, gorm.ErrRecordNotFound) {
-		return out, lookup
-	}
-	var prepared []uint
-	if err := terminationOrders(s.DB.WithContext(ctx), owner, id, boundary.StartAt).Pluck("id", &prepared).Error; err != nil {
-		return out, err
-	}
-	if len(prepared) > terminationOrderBudget {
-		return out, commerce.ErrSubscriptionValueUnavailable
+	prepared, prepareErr := prepareSubscriptionOrderScope(s.DB.WithContext(ctx), owner, id)
+	if prepareErr != nil {
+		return out, prepareErr
 	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Match trusted payment order-before-account locking, using exact primary
 		// keys rather than holding a secondary-index history range while waiting.
-		var orders []model.Order
-		if len(prepared) > 0 {
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ? AND user_id = ?", prepared, owner).Order("id ASC").Find(&orders).Error; err != nil {
-				return err
-			}
-			if len(orders) != len(prepared) {
-				return commerce.ErrSubscriptionQuoteChanged
-			}
+		if err := lockSubscriptionOrderIDs(tx, prepared); err != nil {
+			return err
 		}
 		var user model.User
 		if administrative != nil {
@@ -150,17 +136,8 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 		// Once the account is locked, checkout cannot add another target order.
 		// Detect insertions between the initial order locks and account lock;
 		// READ COMMITTED does not provide an InnoDB gap-lock guarantee.
-		var currentIDs []uint
-		if err := terminationOrders(tx, owner, id, sub.StartAt).Pluck("id", &currentIDs).Error; err != nil {
+		if err := verifySubscriptionOrderScope(tx, prepared); err != nil {
 			return err
-		}
-		if len(currentIDs) != len(orders) {
-			return commerce.ErrSubscriptionQuoteChanged
-		}
-		for i, orderID := range currentIDs {
-			if orders[i].ID != orderID {
-				return commerce.ErrSubscriptionQuoteChanged
-			}
 		}
 		now := commerceNow(s.Now)
 		if legacy != nil {
@@ -173,6 +150,10 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 			quote, _, _, quoteErr := prepareAdministrativeValue(tx, sub, now)
 			if quoteErr != nil {
 				return quoteErr
+			}
+			orders, loadErr := readZeroTerminationOrders(tx, sub)
+			if loadErr != nil {
+				return loadErr
 			}
 			var stopErr error
 			out, stopErr = settleLegacyCancellation(tx, sub, orders, user, actor, owner, legacy, quote, now)
@@ -192,6 +173,10 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 			if quote.ValuationStatus == "unavailable" {
 				if administrative.AmountMinor == nil || *administrative.AmountMinor != 0 {
 					return commerce.ErrSubscriptionValueUnavailable
+				}
+				orders, loadErr := readZeroTerminationOrders(tx, sub)
+				if loadErr != nil {
+					return loadErr
 				}
 				var zeroErr error
 				out, zeroErr = settleUnpricedTermination(tx, sub, orders, user, actor, owner, key, fingerprint, *administrative, quote, now)
@@ -233,6 +218,16 @@ func (s SubscriptionTermination) terminate(ctx context.Context, actor, owner, id
 		reason := "用户确认自助退订，残值退入站内余额"
 		if administrative != nil {
 			reason = administrative.Reason
+		}
+		var orders []model.Order
+		var loadErr error
+		if amount == 0 {
+			orders, loadErr = readZeroTerminationOrders(tx, sub)
+		} else {
+			orders, loadErr = readOrderEvidence(terminationOrders(tx, owner, id, sub.StartAt))
+		}
+		if loadErr != nil {
+			return loadErr
 		}
 		row := model.SubscriptionValueSettlement{UserID: owner, SubscriptionID: id, RootOrderID: projection.RootOrderID, RequestKey: key, RequestFingerprint: fingerprint, Currency: currency, Kind: "unsubscribe", AmountMinor: amount, WalletMinor: amount, ActorID: actor, Reason: reason, QuoteSnapshot: string(payload), CreatedAt: now}
 		if err := tx.Create(&row).Error; err != nil {
