@@ -60,6 +60,7 @@ class WorkerComparisonTests(unittest.TestCase):
             binary.write_bytes(b"first")
             receipt = root / "build.json"
             receipt.write_text(json.dumps({"prepared": True, "sources": {"source": "hash"},
+                                          "profiles": {key: [list(row) for row in rows] for key, rows in comparison.PROFILES.items()},
                                           "revision": "commit", "binaries": {"zboard": comparison.sha(binary)}}))
             with patch.object(comparison, "sources", return_value={"source": "hash"}), patch.object(comparison, "command", return_value="commit"):
                 comparison.prepared(root, receipt)

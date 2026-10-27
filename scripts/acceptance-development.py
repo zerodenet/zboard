@@ -211,6 +211,8 @@ def main(argv=None):
     parser.add_argument('--mysql-container', help='existing isolated container; P7 verifies the loopback mapping')
     parser.add_argument('--execute-capacity', action='store_true')
     parser.add_argument('--execute-worker-comparison', action='store_true')
+    parser.add_argument('--worker-budget-profile', choices=('original-1.5cpu', 'autoscale-4cpu'), default='original-1.5cpu')
+    parser.add_argument('--worker-benefit-metric', choices=('core_p95_ms', 'drain_seconds', 'received_to_settlement_p95_ms'))
     parser.add_argument('--execute-autoscale', action='store_true')
     parser.add_argument('--confirmed-benefit-receipt', type=Path)
     parser.add_argument('--quiet-window', action='store_true', help='explicit quiet window for manual P7/load/worker stages')
@@ -420,9 +422,12 @@ def main(argv=None):
                             measured = last_json(Path(stages['capacity-original']['stdout']))
                             if measured.get('status') != 'baseline_passed':
                                 stages['capacity-original'].update(status='failed', reason='new exact-head original-budget baseline gates not observed passing')
+        generated_benefit_receipt = None
         if manual_ready('worker-comparison', args.execute_worker_comparison):
             script = root / 'scripts/acceptance-worker-comparison.py'
-            common = [sys.executable, script, '--checkout', root, '--revision', before['head'], '--go-bin', shutil.which('go')]
+            common = [sys.executable, script, '--checkout', root, '--revision', before['head'], '--go-bin', shutil.which('go'), '--budget-profile', args.worker_budget_profile]
+            if args.worker_benefit_metric:
+                common += ['--confirm-benefit-metric', args.worker_benefit_metric]
             if run('worker-prepare', common + ['--prepare']):
                 built = last_json(Path(stages['worker-prepare']['stdout'])).get('build_receipt')
                 if not built:
@@ -430,11 +435,14 @@ def main(argv=None):
                 elif run('worker-comparison', common + ['--execute', built]):
                     measured = last_json(Path(stages['worker-comparison']['stdout']))
                     stages['worker-comparison']['benefit_verified'] = measured.get('benefit_verified', False)
+                    generated_benefit_receipt = measured.get('benefit_receipt')
+                    stages['worker-comparison']['benefit_verdict'] = measured.get('benefit_verdict')
                     if not measured.get('complete') or not measured.get('source_unchanged'):
                         stages['worker-comparison'].update(status='failed', reason='three-pair measurement not complete/source bound')
         if manual_ready('autoscale', args.execute_autoscale):
             script = root / 'scripts/acceptance-autoscale-manual.py'
-            if not script.is_file() or not args.confirmed_benefit_receipt:
+            selected_benefit_receipt = args.confirmed_benefit_receipt or generated_benefit_receipt
+            if not script.is_file() or not selected_benefit_receipt:
                 skip('autoscale', 'integrated harness and same-revision confirmed measurement receipt are required')
             else:
                 common = [sys.executable, script, '--checkout', root, '--revision', before['head']]
@@ -443,7 +451,7 @@ def main(argv=None):
                     if not built:
                         skip('autoscale', 'prepare returned no build receipt; inspect authoritative harness output')
                     else:
-                        if run('autoscale', common + ['--execute', built, '--confirmed-benefit-receipt', args.confirmed_benefit_receipt.resolve()]):
+                        if run('autoscale', common + ['--execute', built, '--confirmed-benefit-receipt', Path(selected_benefit_receipt).resolve()]):
                             measured = last_json(Path(stages['autoscale']['stdout']))
                             stages['autoscale']['child_summary'] = measured
                             if measured.get('status') == 'measurements_preserved' and measured.get('benefit_verified') is False:

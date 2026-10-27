@@ -63,3 +63,22 @@ The pure orchestration-policy tests are runnable without Go/Node/MySQL/Docker:
 ```sh
 python3 -m unittest discover -s scripts -p 'test_acceptance_development.py'
 ```
+
+## Same-budget autoscale prerequisite (manual only)
+
+`--execute-worker-comparison --worker-budget-profile autoscale-4cpu
+--worker-benefit-metric core_p95_ms --execute-autoscale --quiet-window`
+selects the additional 4CPU/4GiB three-pair comparison before autoscaling. Single
+uses 4CPU/4GiB/GOMAXPROCS4; split uses main2CPU/2GiB/GOMAXPROCS4 plus
+worker2CPU/2GiB/GOMAXPROCS2. The default original-1.5cpu profile, original
+1CPU/1GiB capacity baseline and every existing HTTP/accounting/drain/disk/700MiB
+combined gate remain unchanged. This extra budget is not the original baseline.
+
+The explicit metric selects a real median to compare, not worker-count success.
+Only three complete raw source-bound pairs with a positive selected difference
+produce a hashed benefit receipt. No gain or unknown data produces no receipt,
+so autoscale remains not_executed. The autoscale child independently rechecks raw
+artifacts and source/budget before admission; receipt creation is no overall P6
+pass or statistical/production guarantee. All newly created comparison resources
+and DB/log exports are retained; this mode performs no container/volume cleanup.
+No capacity/load execution is implied by adding this interface.

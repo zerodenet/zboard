@@ -25,6 +25,13 @@ PROFILES = {
     "single": [(1500000000, 1610612736)],
     "split": [(1000000000, 1073741824), (500000000, 536870912)],
 }
+BUDGET_PROFILES = {
+    "original-1.5cpu": PROFILES,
+    "autoscale-4cpu": {"single": [(4000000000, 4294967296)],
+                       "split": [(2000000000, 2147483648), (2000000000, 2147483648)]},
+}
+GOMAXPROCS_PROFILES = {"original-1.5cpu": ("2", "1"), "autoscale-4cpu": ("4", "2")}
+BENEFIT_METRICS = ("core_p95_ms", "drain_seconds", "received_to_settlement_p95_ms")
 GATE = 1677721600  # Same post-reserve gate as acceptance-mixed.sh.
 PARAMETERS = {"nodes": 2, "subscriptions": 20, "history_records": 2000,
               "seconds": 60, "rate": 20, "readers": 4}
@@ -53,14 +60,19 @@ def sources(root):
             if "__pycache__" not in Path(name).parts and (root / name).is_file()}
 
 
-def validate_profiles():
-    expected = (1500000000, 1610612736)
-    if any(tuple(map(sum, zip(*rows))) != expected for rows in PROFILES.values()):
+def validate_profiles(profiles=None):
+    profiles = PROFILES if profiles is None else profiles
+    expected = tuple(map(sum, zip(*profiles["single"])))
+    if any(tuple(map(sum, zip(*rows))) != expected for rows in profiles.values()):
         raise ValueError("comparison profiles must have identical total CPU and memory")
 
 
-def prepared(root, receipt):
+def prepared(root, receipt, budget_profile="original-1.5cpu"):
+    expected_profiles = BUDGET_PROFILES[budget_profile]
     record = json.loads(receipt.read_text())
+    if (record.get("budget_profile", "original-1.5cpu") != budget_profile
+            or record.get("profiles") != {k: [list(v) for v in rows] for k, rows in expected_profiles.items()}):
+        raise ValueError("prepared budget profile differs")
     if not record.get("prepared") or record["sources"] != sources(root):
         raise ValueError("prepared binaries do not match the current source tree")
     if record["revision"] != command(["git", "rev-parse", "HEAD"], cwd=root):
@@ -90,11 +102,11 @@ def mib(value):
     return float(match[1]) * factors[match[2]]
 
 
-def evaluate(root, output, profile):
+def evaluate(root, output, profile, budget_profile="original-1.5cpu"):
     spec = importlib.util.spec_from_file_location("comparison_report", root / "scripts/acceptance-report.py")
     report = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(report)
-    expected = PROFILES[profile]
+    expected = BUDGET_PROFILES[budget_profile][profile]
     result = report.evaluate(output, expected_nanocpus=expected[0][0], expected_memory=expected[0][1])
     failures = result["failures"]
     for index, budget in enumerate(expected):
@@ -109,12 +121,16 @@ def evaluate(root, output, profile):
         if result["combined_peak_working_set_mib"] > 700:
             failures.append("combined working set exceeded the unchanged 700MiB budget")
     result["profile"] = profile
-    result["total_resource_budget"] = {"nanocpus": 1500000000, "memory_bytes": 1610612736}
+    result["total_resource_budget"] = dict(zip(("nanocpus", "memory_bytes"), map(sum, zip(*expected))))
+    result["budget_profile"] = budget_profile
+    core = [r["p95_ms"] for r in result["latencies"] if "/traffic/trends" not in r["path"] and "/traffic/reconciliation" not in r["path"]]
+    result["core_p95_ms"] = max(core) if core else None
+    result["received_to_settlement_p95_ms"] = result["runtime_diagnostics"]["last_consumer"].get("p95_upper_ms")
     result["passed"] = not failures
     return result
 
 
-def run_profile(root, parent, image, profile):
+def run_profile(root, parent, image, profile, budget_profile="original-1.5cpu"):
     output = Path(tempfile.mkdtemp(prefix=profile + "-", dir=parent))
     (output / "data").mkdir()
     label = "zboard.worker-comparison=" + uuid.uuid4().hex
@@ -125,6 +141,14 @@ def run_profile(root, parent, image, profile):
     result = {"profile": profile, "started_at": now(), "passed": False}
 
     def docker(*args):
+        if args and args[0] in ("start", "stop", "exec"):
+            identities = [str(a) for a in args[1:] if str(a) in created]
+            if len(identities) != 1:
+                raise RuntimeError("mutation target is not this invocation's owned container")
+            meta = json.loads(command(["docker", "inspect", identities[0]]))[0]
+            key, value = label.split("=", 1)
+            if meta["Config"]["Labels"].get(key) != value or meta["Image"] != image:
+                raise RuntimeError("owned container identity changed before mutation")
         return command(["docker", *map(str, args)])
 
     def create(*args):
@@ -153,9 +177,9 @@ def run_profile(root, parent, image, profile):
                       "-subscriptions", PARAMETERS["subscriptions"], "-records", PARAMETERS["history_records"])
         attached(seed, "seed.log")
         docker("cp", seed + ":/data/fixture.json", output / "data/fixture.json")
-        for index, (cpu, memory) in enumerate(PROFILES[profile]):
+        for index, (cpu, memory) in enumerate(BUDGET_PROFILES[budget_profile][profile]):
             args = ["--cpus", str(cpu / 1000000000), "--memory", str(memory), "--memory-swap", str(memory),
-                    "-e", "GOMAXPROCS=" + ("2" if index == 0 else "1"), "-v", volume + ":/data"]
+                    "-e", "GOMAXPROCS=" + GOMAXPROCS_PROFILES[budget_profile][index], "-v", volume + ":/data"]
             args += ["--network", "bridge", "-p", "127.0.0.1::8080"] if index == 0 else ["--network", "none"]
             args += [image, "-f", "/data/zboard.json"]
             if index:
@@ -235,7 +259,7 @@ def run_profile(root, parent, image, profile):
         attached(check, "spool-verification.log")
         docker("cp", main + ":/data/.", output / "data")
         exported = True
-        result = evaluate(root, output, profile)
+        result = evaluate(root, output, profile, budget_profile)
         if load.returncode or not verified:
             result["failures"].append("load or final accounting verification failed")
             result["passed"] = False
@@ -253,27 +277,23 @@ def run_profile(root, parent, image, profile):
                 exported = True
             except (OSError, subprocess.CalledProcessError):
                 pass
-        # Only this invocation's positively identified fixtures are disposable,
-        # and only after preserving their database. Unknown outcomes remain.
-        cleaned = False
-        if exported:
-            try:
-                key, value = label.split("=", 1)
-                for identity in created:
-                    meta = json.loads(docker("inspect", identity))[0]
-                    if meta["Config"]["Labels"].get(key) != value:
-                        raise RuntimeError("owned container label changed")
-                    docker("stop", "-t", "35", identity)
-                    docker("rm", identity)
-                meta = json.loads(docker("volume", "inspect", volume))[0]
-                if meta["Labels"].get(key) != value:
-                    raise RuntimeError("owned volume label changed")
-                docker("volume", "rm", volume)
-                cleaned = True
-            except (OSError, subprocess.CalledProcessError, ValueError, KeyError, RuntimeError) as error:
-                result["cleanup_error"] = type(error).__name__
-        result.update(finished_at=now(), database_exported=exported, owned_resources_cleaned=cleaned)
-        if not cleaned:
+        # Retain all newly-created containers/volumes and every DB/log artifact.
+        # Ownership labels are evidence, never permission to remove prior state.
+        ownership_verified = True
+        try:
+            key, value = label.split("=", 1)
+            for identity in created:
+                meta = json.loads(docker("inspect", identity))[0]
+                if meta["Config"]["Labels"].get(key) != value or meta["Image"] != image:
+                    raise RuntimeError("owned container label/image changed")
+            if json.loads(docker("volume", "inspect", volume))[0]["Labels"].get(key) != value:
+                raise RuntimeError("owned volume label changed")
+        except (OSError, subprocess.CalledProcessError, ValueError, KeyError, RuntimeError) as error:
+            ownership_verified = False
+            result["retention_error"] = type(error).__name__
+        result.update(finished_at=now(), database_exported=exported, owned_resources_cleaned=False,
+                      owned_resources_retained=True, ownership_verified=ownership_verified)
+        if not exported or not ownership_verified:
             result["passed"] = False
         save(output / "result.json", result)
     return output, result
@@ -287,10 +307,15 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--prepare", action="store_true")
     mode.add_argument("--execute", type=Path, metavar="BUILD_RECEIPT")
+    parser.add_argument("--budget-profile", choices=tuple(BUDGET_PROFILES), default="original-1.5cpu")
+    parser.add_argument("--confirm-benefit-metric", choices=BENEFIT_METRICS,
+                        help="explicitly admit a positive three-pair measured metric only; no gain creates no receipt")
     parser.add_argument("--pairs", type=int, default=3, choices=range(1, 4))
     args = parser.parse_args()
     os.umask(0o077)
-    validate_profiles()
+    validate_profiles(BUDGET_PROFILES[args.budget_profile])
+    if args.confirm_benefit_metric and (args.budget_profile != "autoscale-4cpu" or args.pairs != 3):
+        parser.error("benefit confirmation requires separate 4CPU profile and three pairs")
     root = args.checkout.resolve()
     if command(["git", "rev-parse", "HEAD"], cwd=root) != args.revision:
         parser.error("exact requested revision required")
@@ -299,7 +324,7 @@ def main():
     unknown = command(["git", "ls-files", "--others", "--exclude-standard", "backend", "scripts"], cwd=root).splitlines()
     if any("__pycache__" not in Path(name).parts for name in unknown):
         parser.error("uncommitted application or acceptance sources cannot be bound to a revision")
-    receipt = {"revision": args.revision, "sources": sources(root), "profiles": PROFILES,
+    receipt = {"revision": args.revision, "sources": sources(root), "profiles": BUDGET_PROFILES[args.budget_profile], "budget_profile": args.budget_profile,
                "parameters": PARAMETERS, "original_post_reserve_gate_bytes": GATE, "prepared": False}
     if not args.prepare and not args.execute:
         print(json.dumps({key: value for key, value in receipt.items() if key != "sources"}
@@ -329,7 +354,7 @@ def main():
         save(output / "build.json", receipt)
         print(json.dumps({"prepared": True, "build_receipt": str(output / "build.json")}))
         return
-    bound = prepared(root, args.execute.resolve())
+    bound = prepared(root, args.execute.resolve(), args.budget_profile)
     for name in bound["binaries"]:
         os.link(args.execute.resolve().parent / name, output / name)
     (output / "Dockerfile").write_text("FROM scratch\nWORKDIR /tmp\nCOPY zboard /zboard\nCOPY acceptance /acceptance\nENTRYPOINT [\"/zboard\"]\n")
@@ -341,7 +366,7 @@ def main():
     runs = []
     for pair in range(args.pairs):
         for profile in (["single", "split"] if pair % 2 == 0 else ["split", "single"]):
-            directory, result = run_profile(root, output, image, profile)
+            directory, result = run_profile(root, output, image, profile, args.budget_profile)
             runs.append({"directory": str(directory), "profile": profile, "result": result})
             save(output / "comparison.json", {"revision": args.revision, "parameters": PARAMETERS, "runs": runs, "complete": False})
             if not result["passed"]:
@@ -351,10 +376,32 @@ def main():
     # Report measurements; starting another process is never a benefit verdict.
     metrics = {profile: {"median_drain_seconds": statistics.median(r["result"]["drain_seconds"] for r in runs if r["profile"] == profile),
                          "median_combined_peak_working_set_mib": statistics.median(r["result"]["combined_peak_working_set_mib"] for r in runs if r["profile"] == profile)} for profile in PROFILES}
-    save(output / "comparison.json", {"revision": args.revision, "parameters": PARAMETERS, "runs": runs, "complete": True,
+    save(output / "comparison.json", {"revision": args.revision, "budget_profile": args.budget_profile, "profiles": BUDGET_PROFILES[args.budget_profile],
+                                      "source_manifest_sha256": hashlib.sha256(json.dumps(bound["sources"], sort_keys=True).encode()).hexdigest(),
+                                      "parameters": PARAMETERS, "runs": runs, "complete": True,
                                       "source_unchanged": unchanged, "measurements": metrics, "benefit_verified": False,
                                       "note": "Inspect request latency, DB waits, RSS, CPU and settling costs together. No autoscaling permission is inferred."})
-    print(json.dumps({"complete": True, "source_unchanged": unchanged, "comparison": str(output / "comparison.json"), "benefit_verified": False}))
+    benefit_path = None
+    benefit_verdict = "not_requested"
+    if args.confirm_benefit_metric:
+        metric = args.confirm_benefit_metric
+        values = {p: [r["result"].get(metric) for r in runs if r["profile"] == p] for p in ("single", "split")}
+        if unchanged and all(len(v) == 3 and all(isinstance(n, (int, float)) and n >= 0 for n in v) for v in values.values()):
+            single, split = (statistics.median(values[p]) for p in ("single", "split"))
+            benefit_verdict = "no_positive_measured_gain"
+            if split < single:
+                benefit_path = output / "benefit-receipt.json"
+                save(benefit_path, dict(revision=args.revision, comparison_report=str(output / "comparison.json"),
+                    report_sha256=sha(output / "comparison.json"), measured_metric=metric,
+                    confirmed_by="explicit_cli:--confirm-benefit-metric", confirmed_at=now()))
+                # The consuming harness re-evaluates original raw artifacts and
+                # totals; a favorable declared median alone never grants entry.
+                benefit_verdict = "positive_measurement_receipt_created"
+        else:
+            benefit_verdict = "unknown_metric_or_changed_source"
+    print(json.dumps({"complete": True, "source_unchanged": unchanged, "comparison": str(output / "comparison.json"),
+                      "budget_profile": args.budget_profile, "benefit_verified": False, "benefit_verdict": benefit_verdict,
+                      "benefit_receipt": str(benefit_path) if benefit_path else None}))
     if not unchanged:
         raise SystemExit(1)
 
