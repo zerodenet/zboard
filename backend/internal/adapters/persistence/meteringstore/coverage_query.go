@@ -1,6 +1,7 @@
 package meteringstore
 
 import (
+	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -28,8 +29,11 @@ func loadCoverage(db *gorm.DB, subscriptionID uint, windowSeconds int, now time.
 		Joins("JOIN nodes ON nodes.id = protocol_credentials.node_id AND nodes.is_enabled = ?", true).
 		Joins("JOIN protocol_endpoints ON protocol_endpoints.id = protocol_credentials.protocol_endpoint_id AND protocol_endpoints.is_active = ?", true).
 		Where("protocol_credentials.subscription_id = ? AND protocol_credentials.status = ? AND protocol_credentials.revoked_at IS NULL AND protocol_credentials.expires_at > ?", subscriptionID, "active", now).
-		Distinct("protocol_credentials.node_id").Pluck("protocol_credentials.node_id", &nodeIDs).Error; err != nil {
+		Distinct("protocol_credentials.node_id").Limit(coverageRuntimeReadRows+1).Pluck("protocol_credentials.node_id", &nodeIDs).Error; err != nil {
 		return summary, err
+	}
+	if len(nodeIDs) > coverageRuntimeReadRows {
+		return summary, fmt.Errorf("coverage node scope exceeds bounded read; narrow the scope without inferring zero")
 	}
 	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
 	summary.RequiredNodes = len(nodeIDs)
@@ -37,8 +41,8 @@ func loadCoverage(db *gorm.DB, subscriptionID uint, windowSeconds int, now time.
 		return summary, nil
 	}
 
-	var rows []CoverageRecord
-	if err := db.Where("node_id IN ?", nodeIDs).Find(&rows).Error; err != nil {
+	rows, err := readCoverageRecords(db.Model(&CoverageRecord{}).Where("node_id IN ?", nodeIDs))
+	if err != nil {
 		return summary, err
 	}
 	byNode := make(map[uint]CoverageRecord, len(rows))

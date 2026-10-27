@@ -104,7 +104,7 @@ func loadTelemetry(db *gorm.DB, subscriptionID uint, connectionWindow, workingNo
 	}
 
 	var latest FlowStartRecord
-	latestErr := db.Where("subscription_id = ?", subscription.ID).Order("occurred_at desc, id desc").First(&latest).Error
+	latestErr := db.Select("id,occurred_at,received_at").Where("subscription_id = ?", subscription.ID).Order("occurred_at desc, id desc").First(&latest).Error
 	switch {
 	case latestErr == nil:
 		occurred := latest.OccurredAt.UTC()

@@ -2,6 +2,7 @@ package meteringstore
 
 import (
 	"context"
+	"errors"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -31,6 +32,9 @@ func persistCoverage(tx *gorm.DB, row CoverageRecord, exists bool) error {
 func ProjectCoverageBatch(tx *gorm.DB, events []metering.NodeCoverageEvent) error {
 	nodeSet := make(map[uint]struct{})
 	for _, buffered := range events {
+		if len(strings.TrimSpace(buffered.Event.CoreInstanceID)) > coverageRuntimeMaxBytes {
+			return errors.New("coverage runtime identity exceeds existing event body bound")
+		}
 		if buffered.NodeID > 0 && strings.TrimSpace(buffered.Event.CoreInstanceID) != "" && buffered.Event.Sequence > 0 {
 			nodeSet[uint(buffered.NodeID)] = struct{}{}
 		}
@@ -44,8 +48,8 @@ func ProjectCoverageBatch(tx *gorm.DB, events []metering.NodeCoverageEvent) erro
 	}
 	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
 
-	var rows []CoverageRecord
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id IN ?", nodeIDs).Order("node_id asc").Find(&rows).Error; err != nil {
+	rows, err := readCoverageRecords(tx.Model(&CoverageRecord{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id IN ?", nodeIDs).Order("node_id asc"))
+	if err != nil {
 		return err
 	}
 	byNode := make(map[uint]CoverageRecord, len(rows))

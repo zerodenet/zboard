@@ -12,6 +12,12 @@ import (
 // and foreign-key ordering. Missing legacy source tables may be absent; an
 // existing source table must never be silently dropped from the destination.
 func CopyApplicationData(source, target *gorm.DB) error {
+	if err := preflightCoverageRuntimeCopy(source); err != nil {
+		return err
+	}
+	if err := requireCoverageRuntimeDestination(target); err != nil {
+		return err
+	}
 	if err := preflightObservationRetirementSchema(source); err != nil {
 		return err
 	}
@@ -123,6 +129,7 @@ func copyTableRows(source, target *gorm.DB, table string) error {
 		resetPrincipalLookup = !present["principal_digest"] || !present["secret_principal_digest"] || !present["principal_lookup_version"]
 	}
 	batch := make([]map[string]interface{}, 0, 200)
+	var runtimeBatchBytes int64
 	for rows.Next() {
 		values := make([]interface{}, len(columns))
 		pointers := make([]interface{}, len(columns))
@@ -162,12 +169,25 @@ func copyTableRows(source, target *gorm.DB, table string) error {
 			}
 			record["asset_tag"] = tag
 		}
+		runtimeBytes, err := coverageRuntimeCopyRecord(table, record)
+		if err != nil {
+			return err
+		}
+		if runtimeBatchBytes+runtimeBytes > auxiliaryRuntimeCopyBatchBytes && len(batch) > 0 {
+			if err := target.Table(table).Create(&batch).Error; err != nil {
+				return fmt.Errorf("write bounded runtime target table %s: %w", table, err)
+			}
+			batch = make([]map[string]interface{}, 0, 200)
+			runtimeBatchBytes = 0
+		}
+		runtimeBatchBytes += runtimeBytes
 		batch = append(batch, record)
 		if len(batch) == cap(batch) {
 			if err := target.Table(table).Create(&batch).Error; err != nil {
 				return fmt.Errorf("write target table %s: %w", table, err)
 			}
 			batch = make([]map[string]interface{}, 0, 200)
+			runtimeBatchBytes = 0
 		}
 	}
 	if err := rows.Err(); err != nil {
