@@ -24,7 +24,9 @@ func TestSQLiteObservationBudgetMeasurementNeverInventsZeroForInvalidParts(t *te
 			}
 			switch variant {
 			case "valid":
-				if e := db.Exec("INSERT INTO node_observation_parts(data) VALUES(?),(?)", []byte("abc"), []byte("12345")).Error; e != nil {
+				// Bind real BLOB values through database/sql. GORM's Raw expression
+				// expands slices directly following '(' into multiple placeholders.
+				if _, e := pool.ExecContext(t.Context(), "INSERT INTO node_observation_parts(data) VALUES(?),(?)", []byte("abc"), []byte("12345")); e != nil {
 					t.Fatal(e)
 				}
 			case "null":
@@ -32,7 +34,7 @@ func TestSQLiteObservationBudgetMeasurementNeverInventsZeroForInvalidParts(t *te
 					t.Fatal(e)
 				}
 			case "empty-part":
-				if e := db.Exec("INSERT INTO node_observation_parts(data) VALUES(?)", []byte{}).Error; e != nil {
+				if _, e := pool.ExecContext(t.Context(), "INSERT INTO node_observation_parts(data) VALUES(?)", []byte{}); e != nil {
 					t.Fatal(e)
 				}
 			case "oversized-part":
