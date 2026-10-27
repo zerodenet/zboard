@@ -25,6 +25,13 @@ func newRoute(method, path string, fn func(http.ResponseWriter, *http.Request)) 
 // RegisterRoutes binds transports and starts application services after
 // application.PrepareDatabaseSchema has completed. It never changes the schema.
 func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string, zeroEventSpoolConfig zeroevent.Config, pluginOptions plugins.Options, fileStorageDir ...string) (func() error, error) {
+	return RegisterRoutesWithProjectionSupervisor(srv, db, jwtSecret, credentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion, zeroEventSpoolConfig, pluginOptions, nil, fileStorageDir...)
+}
+
+// RegisterRoutesWithProjectionSupervisor keeps optional same-host capacity
+// assistance in the server composition root. All existing callers retain the
+// complete single-process behavior through RegisterRoutes above.
+func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string, zeroEventSpoolConfig zeroevent.Config, pluginOptions plugins.Options, supervisor *application.ProjectionSupervisorOptions, fileStorageDir ...string) (func() error, error) {
 	services := application.New(db, jwtSecret)
 	directory := ""
 	if len(fileStorageDir) > 0 {
@@ -426,8 +433,18 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		return nil, err
 	}
 	services.StartWork()
+	closeSupervisor, supervisorErr := services.StartProjectionSupervisor(supervisor)
+	if supervisorErr != nil {
+		// This is an optional capacity failure, not a reason to revoke business
+		// authorization or prevent the complete built-in executor from running.
+		logx.Errorf("local projection supervisor unavailable; single-process core continues: %v", supervisorErr)
+	}
 	initialized = true
 	return func() error {
+		var supervisorCloseErr error
+		if closeSupervisor != nil {
+			supervisorCloseErr = closeSupervisor()
+		}
 		// Leave room within the default30-second container grace period for local
 		// interruption/completion fences, plugin teardown and durable file flush.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -436,6 +453,6 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		if pluginManager != nil {
 			pluginManager.Close()
 		}
-		return errors.Join(err, closeTrafficReads())
+		return errors.Join(supervisorCloseErr, err, closeTrafficReads())
 	}, nil
 }

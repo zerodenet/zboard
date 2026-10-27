@@ -23,7 +23,7 @@ func (s *Services) UsageProjectionJob() PeriodicJob {
 		ReconcileAfterLoss: true, RetryFailures: true,
 		Ready: func(ctx context.Context) (bool, error) { return s.UsageProjections.HasPending(ctx) },
 		Run: func(ctx context.Context) error {
-			n, err := s.UsageProjections.Drain(ctx, 200)
+			n, err := s.observeProjectionStorage(func() (int, error) { return s.UsageProjections.Drain(ctx, 200) })
 			return projectionBatchOutcome(n, 200, err)
 		},
 	}
@@ -38,10 +38,24 @@ func (s *Services) NodeObservationJob() PeriodicJob {
 		ReconcileAfterLoss: true, RetryFailures: true,
 		Ready: func(ctx context.Context) (bool, error) { return s.NodeObservations.HasPending(ctx) },
 		Run: func(ctx context.Context) error {
-			n, err := s.NodeObservations.Drain(ctx, 32, 8*1024*1024)
+			n, err := s.observeProjectionStorage(func() (int, error) { return s.NodeObservations.Drain(ctx, 32, 8*1024*1024) })
 			return projectionBatchOutcome(n, 32, err)
 		},
 	}
+}
+
+func (s *Services) observeProjectionStorage(run func() (int, error)) (int, error) {
+	finish := s.Jobs.BeginStorageObservation()
+	completed := false
+	defer func() {
+		if !completed {
+			finish(false, jobs.ErrUncertain)
+		}
+	}()
+	n, err := run()
+	finish(n > 0, err)
+	completed = true
+	return n, err
 }
 
 // Material retention is independent of apply and authority. Readiness and every

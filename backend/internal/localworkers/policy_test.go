@@ -8,7 +8,7 @@ import (
 func healthyCapacity(now time.Time) Observation {
 	return Observation{At: now, QueueKnown: true, Pending: true, OldestAge: time.Minute,
 		Resources:  Resources{At: now, Known: true, CPUFraction: .1, CPUCapacity: 4, AvailableMemoryBytes: 4 << 30, MinFreeDiskBytes: 4 << 30},
-		DatabaseAt: now, DatabaseWrites: 8, DatabaseLatency: time.Millisecond, DatabaseCapacityKnown: true, DatabaseCapacityAvailable: true}
+		DatabaseAt: now, DatabaseWrites: 8, DatabaseLatency: time.Millisecond, DatabaseCapacityKnown: true, DatabaseCapacityAvailable: true, ProjectionActivityKnown: true}
 }
 
 func TestLocalWorkerPolicyRequiresAdministratorDeclarationAndRealHeadroom(t *testing.T) {
@@ -21,6 +21,11 @@ func TestLocalWorkerPolicyRequiresAdministratorDeclarationAndRealHeadroom(t *tes
 		{"plugin_CPU_busy", func(_ *Policy, o *Observation) { o.Resources.CPUFraction = .9 }},
 		{"database_slow_writes", func(_ *Policy, o *Observation) { o.DatabaseLatency = time.Second }},
 		{"database_error", func(_ *Policy, o *Observation) { o.DatabaseFailed = true }},
+		{"storage_in_flight_too_long", func(_ *Policy, o *Observation) { o.StorageLatency = time.Minute }},
+		{"child_projection_too_long", func(_ *Policy, o *Observation) { o.ProjectionRuntime = time.Minute }},
+		{"projection_activity_unknown", func(_ *Policy, o *Observation) { o.ProjectionActivityKnown = false }},
+		{"storage_slots_exhausted", func(_ *Policy, o *Observation) { o.StorageUnknown = true }},
+		{"storage_panic_or_cancellation", func(_ *Policy, o *Observation) { o.StorageFailed = true }},
 		{"database_pool_full", func(_ *Policy, o *Observation) { o.DatabaseCapacityAvailable = false }},
 		{"database_budget_unknown", func(_ *Policy, o *Observation) { o.DatabaseCapacityKnown = false }},
 		{"no_recent_actual_writes", func(_ *Policy, o *Observation) { o.DatabaseWrites = 0 }},
@@ -90,5 +95,25 @@ func TestLocalWorkerPolicyCooldownDrainAndIdleHysteresis(t *testing.T) {
 	decision, _ = p.Decide(decision.State, o, 1)
 	if decision.Desired != 0 || decision.Reason != "idle_queue" {
 		t.Fatal("sustained idle did not drain", decision)
+	}
+}
+
+func TestLocalWorkerStorageUnknownCannotMaskHardResourceReduction(t *testing.T) {
+	p := DefaultPolicy()
+	p.MaxWorkers, p.AdministratorConfirmedBenefit = 2, true
+	now := time.Now()
+	for _, change := range []func(*Observation){
+		func(o *Observation) { o.Resources.CPUFraction = .99 },
+		func(o *Observation) { o.Resources.AvailableMemoryBytes = 0 },
+		func(o *Observation) { o.Resources.MinFreeDiskBytes = 0 },
+		func(o *Observation) { o.Resources.IOWaitFraction = .9 },
+	} {
+		o := healthyCapacity(now)
+		o.StorageUnknown, o.ProjectionActivityKnown = true, false
+		change(&o)
+		d, err := p.Decide(PolicyState{}, o, 1)
+		if err != nil || d.Desired != 0 {
+			t.Fatal("unknown storage suppressed mandatory resource reduction", d, err)
+		}
 	}
 }

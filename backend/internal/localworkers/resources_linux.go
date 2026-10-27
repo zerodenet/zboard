@@ -5,6 +5,7 @@ package localworkers
 import (
 	"bufio"
 	"errors"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -47,7 +48,15 @@ func (s *HostResources) Sample(now time.Time) Resources {
 	}
 	// A missing v2 view is intentionally unknown: host totals alone could hide
 	// a container's quota. An unsupported layout never silently grants capacity.
-	const group = "/sys/fs/cgroup"
+	group, mount, err := currentCgroupDirectory()
+	if err != nil {
+		out.Reason = "current_cgroup_unverifiable"
+		return out
+	}
+	if err := verifyUnlimitedVisibleAncestors(group, mount); err != nil {
+		out.Reason = "ancestor_cgroup_budget_unverifiable"
+		return out
+	}
 	usage, cpus, memory, err := cgroupResources(group)
 	if err != nil {
 		out.Reason = "cgroup_resource_observation_unknown"
@@ -184,12 +193,28 @@ func cgroupResources(path string) (usage uint64, cpus float64, memory uint64, er
 	if e != nil {
 		return 0, 0, 0, e
 	}
-	memory = math.MaxUint64
+	maximum := uint64(math.MaxUint64)
 	if strings.TrimSpace(string(limit)) != "max" {
-		maximum, e := strconv.ParseUint(strings.TrimSpace(string(limit)), 10, 64)
+		maximum, e = strconv.ParseUint(strings.TrimSpace(string(limit)), 10, 64)
 		if e != nil || maximum == 0 {
 			return 0, 0, 0, errors.New("invalid cgroup memory quota")
 		}
+	}
+	// memory.high can throttle the group before memory.max. Respect that
+	// smaller actual budget instead of interpreting its reclaim stalls as spare.
+	high, highErr := os.ReadFile(filepath.Join(path, "memory.high"))
+	if highErr != nil && !os.IsNotExist(highErr) {
+		return 0, 0, 0, highErr
+	}
+	if highErr == nil && strings.TrimSpace(string(high)) != "max" {
+		value, e := strconv.ParseUint(strings.TrimSpace(string(high)), 10, 64)
+		if e != nil {
+			return 0, 0, 0, errors.New("invalid cgroup memory high budget")
+		}
+		maximum = min(maximum, value)
+	}
+	memory = math.MaxUint64
+	if maximum != math.MaxUint64 {
 		current, e := os.ReadFile(filepath.Join(path, "memory.current"))
 		if e != nil {
 			return 0, 0, 0, e
@@ -200,6 +225,7 @@ func cgroupResources(path string) (usage uint64, cpus float64, memory uint64, er
 		}
 		memory = maximum - min(maximum, used)
 	}
+
 	return usage, cpus, memory, nil
 }
 
@@ -225,4 +251,118 @@ func cpuSetCount(value string) (int, error) {
 		previous = z
 	}
 	return count, nil
+}
+
+// Resolve membership instead of assuming the mount root is the service group.
+// cgroup namespaces may expose an absolute hierarchy path or a namespace-relative
+// path; accept a candidate only if its direct cgroup.procs contains this PID.
+func currentCgroupDirectory() (string, string, error) {
+	membership, err := boundedResourceFile("/proc/self/cgroup")
+	if err != nil {
+		return "", "", err
+	}
+	mounts, err := boundedResourceFile("/proc/self/mountinfo")
+	if err != nil {
+		return "", "", err
+	}
+	return resolveCurrentCgroup(string(membership), string(mounts), os.Getpid())
+}
+
+func boundedResourceFile(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
+	if err != nil || len(data) > 1<<20 {
+		return nil, errors.New("resource metadata exceeds observation bound")
+	}
+	return data, nil
+}
+
+func resolveCurrentCgroup(membership, mounts string, pid int) (string, string, error) {
+	group := ""
+	for _, line := range strings.Split(membership, "\n") {
+		if strings.HasPrefix(line, "0::") {
+			group = strings.TrimPrefix(line, "0::")
+		}
+	}
+	if !filepath.IsAbs(group) || filepath.Clean(group) != group || pid <= 0 {
+		return "", "", errors.New("invalid current cgroup membership")
+	}
+	unescape := strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`)
+	for _, line := range strings.Split(mounts, "\n") {
+		fields := strings.Fields(line)
+		separator := -1
+		for i, value := range fields {
+			if value == "-" {
+				separator = i
+				break
+			}
+		}
+		if len(fields) < 7 || separator < 6 || separator+1 >= len(fields) || fields[separator+1] != "cgroup2" {
+			continue
+		}
+		root, mount := unescape.Replace(fields[3]), unescape.Replace(fields[4])
+		if !filepath.IsAbs(root) || !filepath.IsAbs(mount) || filepath.Clean(root) != root || filepath.Clean(mount) != mount {
+			continue
+		}
+		candidates := []string{}
+		relative, err := filepath.Rel(root, group)
+		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+			candidates = append(candidates, filepath.Join(mount, relative))
+		}
+		candidates = append(candidates, filepath.Join(mount, strings.TrimPrefix(group, "/")))
+		for _, candidate := range candidates {
+			relative, err := filepath.Rel(mount, candidate)
+			if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+				continue
+			}
+			data, err := boundedResourceFile(filepath.Join(candidate, "cgroup.procs"))
+			if err != nil {
+				continue
+			}
+			for _, value := range strings.Fields(string(data)) {
+				current, err := strconv.Atoi(value)
+				if err == nil && current == pid {
+					return candidate, mount, nil
+				}
+			}
+		}
+	}
+	return "", "", errors.New("current cgroup cannot be verified in the mounted hierarchy")
+}
+
+// The current group's own counters cover its descendants. A separate finite
+// visible parent budget can also constrain sibling load; without observing that
+// parent's full time series, do not invent spare capacity from the leaf alone.
+// Standard root/unlimited ancestors remain supported. Unsupported nested finite
+// budgets leave the optional supervisor unavailable, never the core service.
+func verifyUnlimitedVisibleAncestors(group, mount string) error {
+	current := group
+	for depth := 0; current != mount && depth < 64; depth++ {
+		current = filepath.Dir(current)
+		relative, err := filepath.Rel(mount, current)
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+			return errors.New("cgroup parent outside mounted hierarchy")
+		}
+		for _, name := range []string{"cpu.max", "memory.max", "memory.high"} {
+			data, err := boundedResourceFile(filepath.Join(current, name))
+			if os.IsNotExist(err) && current == mount {
+				continue
+			} // real hierarchy root has no local limit interface
+			if err != nil {
+				return err
+			}
+			values := strings.Fields(string(data))
+			if len(values) == 0 || values[0] != "max" {
+				return errors.New("finite parent cgroup budget needs additional observation")
+			}
+		}
+	}
+	if current != mount {
+		return errors.New("cgroup hierarchy exceeds observation bound")
+	}
+	return nil
 }

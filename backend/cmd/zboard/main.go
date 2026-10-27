@@ -36,6 +36,12 @@ var prepareHourlyRollback = flag.Bool("prepare-hourly-rollback", false, "after s
 
 func main() {
 	flag.Parse()
+	if err := validateMeteringProofFlags(flag.CommandLine, *migrateOnly || *prepareHourlyRollback || *checkProjectionDatabaseOnly || *projectionWorker || *backfillReportReceipts || *projectionWorkersMax != 0); err != nil {
+		log.Fatal(err)
+	}
+	if err := validateProjectionSupervisorFlags(flag.CommandLine, *migrateOnly || *prepareHourlyRollback || *checkProjectionDatabaseOnly || *projectionWorker || *backfillReportReceipts || *archiveMeteringProof || *restoreMeteringProof != 0); err != nil {
+		log.Fatal(err)
+	}
 	if err := validateReportBackfillFlags(*backfillReportReceipts, flag.CommandLine); err != nil {
 		log.Fatal(err)
 	}
@@ -70,6 +76,21 @@ func main() {
 		}
 		log.Fatalf("config validation failed: %v", err)
 	}
+	if err := applyManagedProjectionWorkerLimits(&c); err != nil {
+		log.Fatal(err)
+	}
+	if *archiveMeteringProof || *restoreMeteringProof != 0 {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		result, err := runMeteringProofMaintenance(ctx, c)
+		if err != nil {
+			log.Fatalf("metering proof maintenance was not confirmed: %v", err)
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+			log.Fatal("metering proof maintenance may have committed but output failed; inspect the bounded operation before continuing")
+		}
+		return
+	}
 	if *checkProjectionDatabaseOnly {
 		if err := checkProjectionDatabase(context.Background(), c); err != nil {
 			log.Fatalf("projection database check failed: %v", err)
@@ -98,6 +119,10 @@ func main() {
 		}
 		log.Printf("projection worker drained")
 		return
+	}
+	projectionSupervisor, err := configuredProjectionSupervisor(c)
+	if err != nil {
+		log.Fatalf("local projection supervisor configuration failed: %v", err)
 	}
 	credentialCipher, err := security.NewCredentialCipher(c.CredentialEncryptionKey)
 	if err != nil {
@@ -165,7 +190,7 @@ func main() {
 	log.Printf("config database driver: %s", c.DatabaseDriver)
 	log.Printf("config datasource: %s", datastore.QuoteDataSource(c.DatabaseDriver, c.DataSource))
 
-	closeZeroEventSpool, err := server.RegisterRoutes(
+	closeZeroEventSpool, err := server.RegisterRoutesWithProjectionSupervisor(
 		srv,
 		db,
 		c.JwtSecret,
@@ -175,6 +200,7 @@ func main() {
 		c.ZeroLocalVersion,
 		c.ZeroEventSpoolConfig(),
 		c.Plugins,
+		projectionSupervisor,
 		c.FileStorageDir,
 	)
 	if err != nil {

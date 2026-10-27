@@ -18,6 +18,7 @@ type Policy struct {
 	MinHealthySamples             int
 	MinDatabaseWrites             int
 	MaxDatabaseLatency            time.Duration
+	MaxProjectionRuntime          time.Duration
 	MaxCPUFraction                float64
 	MaxIOWaitFraction             float64
 	WorkerCPUReserve              float64
@@ -28,11 +29,14 @@ type Policy struct {
 
 func DefaultPolicy() Policy {
 	return Policy{MaxWorkers: 0, Cooldown: time.Minute, IdleFor: 2 * time.Minute, BacklogDelay: 10 * time.Second,
-		Freshness: 30 * time.Second, MinHealthySamples: 3, MinDatabaseWrites: 4, MaxDatabaseLatency: 100 * time.Millisecond,
+		Freshness: 30 * time.Second, MinHealthySamples: 3, MinDatabaseWrites: 4, MaxDatabaseLatency: 100 * time.Millisecond, MaxProjectionRuntime: 2 * time.Second,
 		MaxCPUFraction: .75, MaxIOWaitFraction: .1, WorkerCPUReserve: 1, ReserveMemoryBytes: 1024 << 20, WorkerMemoryBytes: 512 << 20, ReserveDiskBytes: 512 << 20}
 }
 
 func (p Policy) Validate() error {
+	if p.MaxProjectionRuntime < time.Millisecond || p.MaxProjectionRuntime > 5*time.Minute {
+		return errors.New("invalid local projection runtime pressure limit")
+	}
 	if p.MaxWorkers < 0 || p.MaxWorkers > 4 || p.Cooldown < 10*time.Second || p.Cooldown > time.Hour || p.IdleFor < p.Cooldown || p.IdleFor > 24*time.Hour || p.BacklogDelay < time.Second || p.BacklogDelay > time.Hour || p.Freshness < time.Second || p.Freshness > 5*time.Minute || p.MinHealthySamples < 2 || p.MinHealthySamples > 60 || p.MinDatabaseWrites < 1 || p.MinDatabaseWrites > 64 || p.MaxDatabaseLatency < time.Millisecond || p.MaxDatabaseLatency > 5*time.Second || math.IsNaN(p.MaxCPUFraction) || p.MaxCPUFraction <= 0 || p.MaxCPUFraction >= 1 || math.IsNaN(p.MaxIOWaitFraction) || p.MaxIOWaitFraction <= 0 || p.MaxIOWaitFraction >= 1 || math.IsNaN(p.WorkerCPUReserve) || p.WorkerCPUReserve <= 0 || p.WorkerCPUReserve > 64 || p.ReserveMemoryBytes < 64<<20 || p.WorkerMemoryBytes < 64<<20 || p.ReserveDiskBytes < 256<<20 {
 		return errors.New("invalid local projection worker policy")
 	}
@@ -63,6 +67,11 @@ type Observation struct {
 	DatabaseFailed            bool
 	DatabaseCapacityKnown     bool
 	DatabaseCapacityAvailable bool
+	ProjectionActivityKnown   bool
+	ProjectionRuntime         time.Duration
+	StorageLatency            time.Duration
+	StorageUnknown            bool
+	StorageFailed             bool
 }
 
 type PolicyState struct {
@@ -136,6 +145,12 @@ func (p Policy) Decide(s PolicyState, o Observation, active int) (Decision, erro
 	}
 	if r.MinFreeDiskBytes < p.ReserveDiskBytes {
 		return decrease("disk_reserve")
+	}
+	if !o.ProjectionActivityKnown || o.StorageUnknown || o.StorageFailed {
+		return hold("projection_storage_observation_unknown")
+	}
+	if o.ProjectionRuntime >= p.MaxProjectionRuntime || o.StorageLatency >= p.MaxProjectionRuntime {
+		return hold("projection_storage_work_too_long")
 	}
 	if !o.QueueKnown {
 		return hold("queue_observation_unknown")
