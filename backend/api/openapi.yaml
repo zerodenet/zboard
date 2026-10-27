@@ -9611,7 +9611,7 @@ components:
           type: object
           required: [status, input_fingerprint, currency, discount_minor, expires_at]
           properties:
-            redemption: { type: string, enum: [exclusive_until_core_finalization_v1], description: Optional explicit core reservation obligation; no inventory reservation occurs at preview, payment is blocked until confirmed }
+            redemption: { type: string, enum: [exclusive_until_core_finalization_v1], description: "Optional explicit core reservation obligation; no inventory reservation occurs at preview, payment is blocked until confirmed" }
             status: { type: string, enum: [available, unavailable, requires_confirmation] }
             input_fingerprint: { type: string }
             currency: { type: string }

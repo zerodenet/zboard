@@ -59,6 +59,50 @@
       "assertion": "automatic_renewal_test.go:312: concurrent renewal failed subscription value quote changed",
       "diagnosis_status": "Prepared source scope can become stale before trusted-cash persistence; bounded retry before any financial callback and exact order/source lock union are being prepared. Real quote failures must remain errors.",
       "fix_status": "Canonical scope retry before financial callback and sorted current/source lock union applied. Target 14 passed/noSkip/19.988s; original MySQL cash-race count10 passed/22.967s; unchanged source. Full MySQL/new exact CI still pending."
+    },
+    {
+      "head": "7eee8e3f3efa1d9a42fccbe70893ad89ecee3c3f",
+      "run": 40453489740,
+      "job": 122021353355,
+      "job_name": "contract",
+      "conclusion": "failure",
+      "test": "Redocly 1.34.3 OpenAPI structural validation",
+      "assertion": "CommerceDiscountQuote.offer.redemption: property payment is blocked until confirmed is not expected",
+      "reason": "An unquoted comma in the new YAML flow-map description parsed as an unintended schema property. YAML syntax parsing alone did not reject the shape.",
+      "fix": "Quote the description. Keep the structural lint, all existing warnings and failure policy unchanged. New exact head CI must verify the fix.",
+      "full_job_log": "Retained privately with SHA; no ignored errors added."
     }
-  ]
+  ],
+  "later_verified_checkpoint": {
+    "head": "34cec8d91173477a260b4f8925ad7de186b7bba6",
+    "ci_run": 40447992632,
+    "ci_all_six": "success",
+    "original_cash_race_count10": {
+      "passed": true,
+      "wall_seconds": 22.967,
+      "skipped": 0
+    },
+    "local_full_mysql": {
+      "core_packages": {
+        "datastore_seconds": 223.673,
+        "handler_seconds": 669.72,
+        "networkstore_seconds": 158.643,
+        "application_seconds": 37.799,
+        "test_pass_events": 495,
+        "skip_events": 0,
+        "wall_seconds_including_cold_compile": 1199.927
+      },
+      "jobstore": {
+        "test_pass_events": 40,
+        "skip_events": 0,
+        "wall_seconds": 149.776
+      },
+      "copy": {
+        "test_pass_events": 78,
+        "skip_events": 0,
+        "wall_seconds": 244.666
+      }
+    },
+    "scope": "This resolves the original source-scope race only for 34cec8d. It does not certify new 0065/0066 sources."
+  }
 }
