@@ -62,15 +62,35 @@ func sourceSummary(s network.ObservationSource) string {
 	}{1, project(s.Observation.Latest), stats, hash(s.Kind), s.LegacyFloor})
 	return string(raw)
 }
-func reserveMaterialBudget(tx *gorm.DB, size uint64, legacyFloor bool) (bool, error) {
-	// A true legacy floor can be imported before0067 exists only by the owned
-	// migration. Live producers never set LegacyFloor. Initial0067 sums its parts.
+
+// Every path that may admit/delete parts first owns all required headers,
+// then this singleton, before touching retirement/parts index records or gaps.
+func lockMaterialBudget(tx *gorm.DB, legacyFloor bool) (*model.NodeObservationMaterialBudget, error) {
 	if legacyFloor && !tx.Migrator().HasTable(&model.NodeObservationMaterialBudget{}) {
-		return true, nil
+		return nil, nil
 	}
 	var b model.NodeObservationMaterialBudget
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&b, "id = ?", 1).Error; err != nil {
-		return false, errors.Join(ErrMaterialBudget, err)
+		return nil, errors.Join(ErrMaterialBudget, err)
+	}
+	if b.ID != 1 || b.Revision == 0 || b.Revision >= math.MaxInt64 || b.RetainedBytes > math.MaxInt64 {
+		return nil, ErrMaterialBudget
+	}
+	return &b, nil
+}
+func reserveMaterialBudget(tx *gorm.DB, size uint64, legacyFloor bool) (bool, error) {
+	b, e := lockMaterialBudget(tx, legacyFloor)
+	if e != nil {
+		return false, e
+	}
+	return reserveMaterialBudgetLocked(tx, b, size, legacyFloor)
+}
+func reserveMaterialBudgetLocked(tx *gorm.DB, b *model.NodeObservationMaterialBudget, size uint64, legacyFloor bool) (bool, error) {
+	if b == nil {
+		if legacyFloor && !tx.Migrator().HasTable(&model.NodeObservationMaterialBudget{}) {
+			return true, nil
+		}
+		return false, ErrMaterialBudget
 	}
 	if b.ID != 1 || b.Revision == 0 || b.Revision >= math.MaxInt64 || b.RetainedBytes > math.MaxInt64 || size > math.MaxInt64-b.RetainedBytes {
 		return false, ErrMaterialBudget
@@ -78,30 +98,37 @@ func reserveMaterialBudget(tx *gorm.DB, size uint64, legacyFloor bool) (bool, er
 	if !legacyFloor && (size > uint64(MaxApplyBytes) || size > MaterialCapacityBytes || b.RetainedBytes > MaterialCapacityBytes-size) {
 		return false, nil
 	}
-	r := tx.Model(&b).Where("id = ? AND revision = ?", 1, b.Revision).UpdateColumns(map[string]any{"retained_bytes": b.RetainedBytes + size, "revision": b.Revision + 1})
+	nextBytes, nextRevision := b.RetainedBytes+size, b.Revision+1
+	r := tx.Model(b).Where("id = ? AND revision = ?", 1, b.Revision).UpdateColumns(map[string]any{"retained_bytes": nextBytes, "revision": nextRevision})
 	if r.Error != nil {
 		return false, r.Error
 	}
 	if r.RowsAffected != 1 {
 		return false, ErrMaterialBudget
 	}
+	b.RetainedBytes, b.Revision = nextBytes, nextRevision
 	return true, nil
 }
 func releaseMaterialBudget(tx *gorm.DB, bytes uint64) error {
-	var b model.NodeObservationMaterialBudget
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&b, "id = ?", 1).Error; err != nil {
-		return errors.Join(ErrMaterialBudget, err)
+	b, e := lockMaterialBudget(tx, false)
+	if e != nil {
+		return e
 	}
-	if b.ID != 1 || b.Revision == 0 || b.Revision >= math.MaxInt64 || bytes > b.RetainedBytes {
+	return releaseMaterialBudgetLocked(tx, b, bytes)
+}
+func releaseMaterialBudgetLocked(tx *gorm.DB, b *model.NodeObservationMaterialBudget, bytes uint64) error {
+	if b == nil || b.ID != 1 || b.Revision == 0 || b.Revision >= math.MaxInt64 || b.RetainedBytes > math.MaxInt64 || bytes > b.RetainedBytes {
 		return ErrMaterialBudget
 	}
-	r := tx.Model(&b).Where("revision = ?", b.Revision).UpdateColumns(map[string]any{"retained_bytes": b.RetainedBytes - bytes, "revision": b.Revision + 1})
+	nextBytes, nextRevision := b.RetainedBytes-bytes, b.Revision+1
+	r := tx.Model(b).Where("id = ? AND revision = ?", 1, b.Revision).UpdateColumns(map[string]any{"retained_bytes": nextBytes, "revision": nextRevision})
 	if r.Error != nil {
 		return r.Error
 	}
 	if r.RowsAffected != 1 {
 		return ErrMaterialBudget
 	}
+	b.RetainedBytes, b.Revision = nextBytes, nextRevision
 	return nil
 }
 func registerMaterialSource(tx *gorm.DB, h model.NodeObservationIntent, s network.ObservationSource, keep bool, now time.Time) error {
@@ -125,12 +152,25 @@ func registerMaterialSource(tx *gorm.DB, h model.NodeObservationIntent, s networ
 	// incoming source hash and original receiver positions remain in the receipt.
 	return tx.Model(&model.NodeObservationIntent{}).Where("id = ? AND status = ? AND material_retired_at IS NULL", h.ID, "pending").UpdateColumns(map[string]any{"status": "retired", "material_retired_at": now}).Error
 }
-func releaseAppliedMaterialBudget(tx *gorm.DB, h model.NodeObservationIntent, now time.Time) error {
+func releaseAppliedMaterialBudget(tx *gorm.DB, h model.NodeObservationIntent, now time.Time, owned ...*model.NodeObservationMaterialBudget) error {
+	var shared *model.NodeObservationMaterialBudget
+	if len(owned) > 0 {
+		shared = owned[0]
+		if shared == nil {
+			return ErrMaterialBudget
+		}
+	} else {
+		var e error
+		shared, e = lockMaterialBudget(tx, false)
+		if e != nil {
+			return e
+		}
+	}
 	r, err := readRetirement(tx, h.ID, true)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	if e := releaseMaterialBudget(tx, h.MaterialBytes); e != nil {
+	if e := releaseMaterialBudgetLocked(tx, shared, h.MaterialBytes); e != nil {
 		return e
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -156,10 +196,17 @@ func releaseAppliedMaterialBudget(tx *gorm.DB, h model.NodeObservationIntent, no
 	return tx.Model(&r).UpdateColumns(map[string]any{"state": "complete", "cause": "applied_unreferenced", "remaining_bytes": 0, "content_verified": true, "updated_at": now}).Error
 }
 func validateExpiredReceipt(tx *gorm.DB, h model.NodeObservationIntent) error {
+	return validateExpiredReceiptMode(tx, h, false)
+}
+func validateExpiredReceiptMode(tx *gorm.DB, h model.NodeObservationIntent, current bool) error {
 	if h.MaterialRetiredAt == nil || h.Status != "retired" || h.Token != "" || !h.LeaseUntil.Equal(epoch) || h.MaterialRetiredAt.Before(h.CreatedAt) {
 		return invalid("invalid expired observation receipt")
 	}
-	r, err := readRetirement(tx, h.ID, false)
+	mode := ""
+	if current {
+		mode = "SHARE"
+	}
+	r, err := readRetirementMode(tx, h.ID, mode)
 	if err != nil {
 		return err
 	}
@@ -183,7 +230,7 @@ func validateExpiredReceipt(tx *gorm.DB, h model.NodeObservationIntent) error {
 	}
 	// At most one indexed metadata row; no unbounded COUNT/blob read on replay.
 	var extra struct{ Ordinal uint64 }
-	q := tx.Model(&model.NodeObservationPart{}).Select("ordinal").Where("intent_id = ? AND ordinal < ?", h.ID, r.DeletePart).Limit(1).Scan(&extra)
+	q := currentObservationRead(tx, current).Model(&model.NodeObservationPart{}).Select("ordinal").Where("intent_id = ? AND ordinal < ?", h.ID, r.DeletePart).Limit(1).Scan(&extra)
 	if q.Error != nil {
 		return q.Error
 	}
@@ -193,7 +240,7 @@ func validateExpiredReceipt(tx *gorm.DB, h model.NodeObservationIntent) error {
 
 	if r.State == "complete" {
 		var extra model.NodeObservationRetirementPart
-		proof := tx.Select("ordinal").Where("intent_id = ?", h.ID).Limit(1).Find(&extra)
+		proof := currentObservationRead(tx, current).Select("ordinal").Where("intent_id = ?", h.ID).Limit(1).Find(&extra)
 		if proof.Error != nil {
 			return proof.Error
 		}
@@ -202,7 +249,7 @@ func validateExpiredReceipt(tx *gorm.DB, h model.NodeObservationIntent) error {
 		}
 	}
 	if r.State == "complete" {
-		q = tx.Model(&model.NodeObservationPart{}).Select("ordinal").Where("intent_id = ?", h.ID).Limit(1).Scan(&extra)
+		q = currentObservationRead(tx, current).Model(&model.NodeObservationPart{}).Select("ordinal").Where("intent_id = ?", h.ID).Limit(1).Scan(&extra)
 		if q.Error != nil {
 			return q.Error
 		}

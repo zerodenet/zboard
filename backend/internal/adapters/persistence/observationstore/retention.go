@@ -76,6 +76,10 @@ func (s MaterialRetention) retireApplied(ctx context.Context, limit int, budget 
 			if e != nil {
 				return e
 			}
+			sharedBudget, e := lockMaterialBudget(tx, false)
+			if e != nil {
+				return e
+			}
 			// A busy concurrent visitor may defer scheduling after discovery.
 			// Review time is scheduling only; node/state/header facts decide safety.
 			if h.Status != "applied" || h.MaterialRetiredAt != nil {
@@ -140,7 +144,7 @@ func (s MaterialRetention) retireApplied(ctx context.Context, limit int, budget 
 			if r.RowsAffected != 1 {
 				return ErrOwnership
 			}
-			if e := releaseAppliedMaterialBudget(tx, h, now); e != nil {
+			if e := releaseAppliedMaterialBudget(tx, h, now, sharedBudget); e != nil {
 				return e
 			}
 			retired, size = true, h.MaterialBytes

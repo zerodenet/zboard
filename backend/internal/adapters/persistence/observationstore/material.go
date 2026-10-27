@@ -12,6 +12,7 @@ import (
 	"sort"
 	"time"
 
+	mysqlconfig "github.com/go-sql-driver/mysql"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -78,9 +79,10 @@ func (w *partWriter) Write(b []byte) (n int, err error) {
 // Sorting optional source persistence never changes ApplyFlowBatch accounting.
 func EnqueueBatch(tx *gorm.DB, sources []network.ObservationSource) ([]string, error) {
 	type prepared struct {
-		h      model.NodeObservationIntent
-		source network.ObservationSource
-		fresh  bool
+		h        model.NodeObservationIntent
+		source   network.ObservationSource
+		fresh    bool
+		existing *model.NodeObservationIntent
 	}
 	items := make([]prepared, 0, len(sources))
 	ids := make([]string, 0, len(sources))
@@ -116,14 +118,28 @@ func EnqueueBatch(tx *gorm.DB, sources []network.ObservationSource) ([]string, e
 		if item.source.LegacyFloor && !tx.Migrator().HasColumn(&model.NodeObservationIntent{}, "material_review_at") {
 			insert = tx.Omit("MaterialRetiredAt", "MaterialReviewAt")
 		}
-		result := insert.Clauses(clause.OnConflict{DoNothing: true}).Create(&item.h)
-		if result.Error != nil {
-			return nil, result.Error
+		fresh := false
+		if tx.Dialector.Name() == "mysql" {
+			// Plain INSERT success, not found-row count, proves this exact new header.
+			// Never use INSERT IGNORE: truncation/constraint errors must still abort.
+			result := insert.Create(&item.h)
+			if result.Error == nil {
+				fresh = true
+			} else if !observationHeaderDuplicate(tx, result.Error) {
+				return nil, result.Error
+			}
+		} else {
+			result := insert.Clauses(clause.OnConflict{DoNothing: true}).Create(&item.h)
+			if result.Error != nil {
+				return nil, result.Error
+			}
+			fresh = result.RowsAffected != 0
 		}
-		if result.RowsAffected != 0 {
+		if fresh {
 			item.fresh = true
 			continue
 		}
+
 		var old model.NodeObservationIntent
 		if e := tx.Clauses(clause.Locking{Strength: "SHARE"}).First(&old, "id = ?", item.h.ID).Error; e != nil {
 			return nil, e
@@ -131,19 +147,38 @@ func EnqueueBatch(tx *gorm.DB, sources []network.ObservationSource) ([]string, e
 		if old.MaterialBytes != item.h.MaterialBytes || old.PartCount != item.h.PartCount || old.NodeID != item.h.NodeID || old.AssetTag != item.h.AssetTag {
 			return nil, errors.New("observation source header conflict")
 		}
-		if old.MaterialRetiredAt != nil {
-			if e := validateRetiredReceipt(tx, old); e != nil {
+		item.existing = &old
+	}
+
+	if len(items) == 0 {
+		return ids, nil
+	}
+	legacyOnly := true
+	for _, item := range items {
+		legacyOnly = legacyOnly && item.source.LegacyFloor
+	}
+	sharedBudget, e := lockMaterialBudget(tx, legacyOnly)
+	if e != nil {
+		return nil, e
+	}
+	// R/parts current reads and all gap/index locks happen only after budget.
+	// No other header, node or state lock is acquired in this second phase.
+	for _, item := range items {
+		if item.existing != nil {
+			old := *item.existing
+			if old.MaterialRetiredAt != nil {
+				if e := validateRetiredReceiptMode(tx, old, true); e != nil {
+					return nil, e
+				}
+			} else if e := walkPartsMode(tx, old, func([]byte) error { return nil }, true); e != nil {
 				return nil, e
 			}
-		} else if e := walkParts(tx, old, func([]byte) error { return nil }); e != nil {
-			return nil, e
+			continue
 		}
-	}
-	for _, item := range items {
 		if !item.fresh {
 			continue
 		}
-		keep, e := reserveMaterialBudget(tx, item.h.MaterialBytes, item.source.LegacyFloor)
+		keep, e := reserveMaterialBudgetLocked(tx, sharedBudget, item.h.MaterialBytes, item.source.LegacyFloor)
 		if e != nil {
 			return nil, e
 		}
@@ -179,6 +214,15 @@ func Enqueue(tx *gorm.DB, source network.ObservationSource) (string, error) {
 // Each size is checked BEFORE fetching a blob; a forged cached total/ordinal
 // cannot trigger a huge driver allocation. No LIMIT alone is a byte budget.
 func walkParts(tx *gorm.DB, h model.NodeObservationIntent, accept func([]byte) error) error {
+	return walkPartsMode(tx, h, accept, false)
+}
+func currentObservationRead(tx *gorm.DB, current bool) *gorm.DB {
+	if current {
+		return tx.Clauses(clause.Locking{Strength: "SHARE"})
+	}
+	return tx
+}
+func walkPartsMode(tx *gorm.DB, h model.NodeObservationIntent, accept func([]byte) error, current bool) error {
 	if h.MaterialRetiredAt != nil {
 		return invalid("observation material explicitly retired")
 	}
@@ -190,7 +234,7 @@ func walkParts(tx *gorm.DB, h model.NodeObservationIntent, accept func([]byte) e
 	var size uint64
 	for i := uint64(0); i < h.PartCount; i++ {
 		var length int64
-		q := tx.Model(&model.NodeObservationPart{}).Select("length(data)").Where("intent_id = ? AND ordinal = ?", h.ID, i).Scan(&length)
+		q := currentObservationRead(tx, current).Model(&model.NodeObservationPart{}).Select("length(data)").Where("intent_id = ? AND ordinal = ?", h.ID, i).Scan(&length)
 		if q.Error != nil {
 			return q.Error
 		}
@@ -203,7 +247,7 @@ func walkParts(tx *gorm.DB, h model.NodeObservationIntent, accept func([]byte) e
 			return invalid("part exceeds remaining declared material")
 		}
 		var p model.NodeObservationPart
-		if err := tx.Select("intent_id, ordinal, substr(data,1,?) AS data", PartBytes+1).First(&p, "intent_id = ? AND ordinal = ?", h.ID, i).Error; err != nil {
+		if err := currentObservationRead(tx, current).Select("intent_id, ordinal, substr(data,1,?) AS data", PartBytes+1).First(&p, "intent_id = ? AND ordinal = ?", h.ID, i).Error; err != nil {
 			return err
 		}
 		if int64(len(p.Data)) != length {
@@ -221,11 +265,12 @@ func walkParts(tx *gorm.DB, h model.NodeObservationIntent, accept func([]byte) e
 	if size != h.MaterialBytes || hex.EncodeToString(digest.Sum(nil)) != h.ID {
 		return invalid("observation material digest mismatch")
 	}
-	var count int64
-	if err := tx.Model(&model.NodeObservationPart{}).Where("intent_id = ?", h.ID).Count(&count).Error; err != nil {
-		return err
+	var extra struct{ Ordinal uint64 }
+	q := currentObservationRead(tx, current).Model(&model.NodeObservationPart{}).Select("ordinal").Where("intent_id = ? AND (ordinal < 0 OR ordinal >= ?)", h.ID, h.PartCount).Limit(1).Scan(&extra)
+	if q.Error != nil {
+		return q.Error
 	}
-	if uint64(count) != h.PartCount {
+	if q.RowsAffected != 0 {
 		return invalid("unexpected observation material parts")
 	}
 	return nil
@@ -266,18 +311,33 @@ func readReference(tx *gorm.DB, id string) (network.ObservationSource, error) {
 // auxiliary parts retire. Caller has locked the header and matched the incoming
 // complete canonical hash/node/asset/size/count; no freshness or cursor changes.
 func validateRetiredReceipt(tx *gorm.DB, h model.NodeObservationIntent) error {
+	return validateRetiredReceiptMode(tx, h, false)
+}
+func validateRetiredReceiptMode(tx *gorm.DB, h model.NodeObservationIntent, current bool) error {
 	if h.Status == "retired" {
-		return validateExpiredReceipt(tx, h)
+		return validateExpiredReceiptMode(tx, h, current)
 	}
 	if h.MaterialRetiredAt == nil || h.Status != "applied" || h.Token != "" || !h.LeaseUntil.Equal(epoch) || h.MaterialBytes == 0 || h.MaterialBytes > uint64(MaxApplyBytes) || h.PartCount != (h.MaterialBytes+PartBytes-1)/PartBytes || h.MaterialRetiredAt.Before(h.CreatedAt) || h.MaterialRetiredAt.Before(h.UpdatedAt) {
 		return invalid("invalid compact observation receipt")
 	}
-	var count int64
-	if err := tx.Model(&model.NodeObservationPart{}).Where("intent_id = ?", h.ID).Count(&count).Error; err != nil {
-		return err
+	var extra struct{ Ordinal uint64 }
+	q := currentObservationRead(tx, current).Model(&model.NodeObservationPart{}).Select("ordinal").Where("intent_id = ?", h.ID).Limit(1).Scan(&extra)
+	if q.Error != nil {
+		return q.Error
 	}
-	if count != 0 {
+	if q.RowsAffected != 0 {
 		return invalid("compact receipt still has material parts")
 	}
 	return nil
+}
+
+// The migration-owned header has only its exact ID primary-key uniqueness.
+// Even a1062 for an unexpected/manual index must subsequently resolve that
+// exact current PK and verify complete original identity/material, or fail.
+func observationHeaderDuplicate(tx *gorm.DB, err error) bool {
+	var duplicate *mysqlconfig.MySQLError
+	if errors.As(err, &duplicate) {
+		return duplicate.Number == 1062
+	}
+	return tx.Config.TranslateError && errors.Is(err, gorm.ErrDuplicatedKey)
 }

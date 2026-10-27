@@ -17,6 +17,13 @@ const retirementSummaryLimit = 8192
 // load a hostile checkpoint before testing its byte length. The complete fetch
 // repeats exact lengths and upper bounds to cover an unlocked concurrent change.
 func readRetirement(tx *gorm.DB, id string, lock bool) (out model.NodeObservationRetirement, err error) {
+	mode := ""
+	if lock {
+		mode = "UPDATE"
+	}
+	return readRetirementMode(tx, id, mode)
+}
+func readRetirementMode(tx *gorm.DB, id, mode string) (out model.NodeObservationRetirement, err error) {
 	hashLength, summaryLength := "OCTET_LENGTH(hash_state)", "OCTET_LENGTH(source_summary)"
 	if tx.Dialector.Name() == "sqlite" {
 		hashLength = "length(CAST(hash_state AS BLOB))"
@@ -24,8 +31,8 @@ func readRetirement(tx *gorm.DB, id string, lock bool) (out model.NodeObservatio
 	}
 	var size struct{ HashBytes, SummaryBytes sql.NullInt64 }
 	q := tx.Model(&model.NodeObservationRetirement{}).Select(hashLength+" AS hash_bytes,"+summaryLength+" AS summary_bytes").Where("intent_id = ?", id)
-	if lock {
-		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+	if mode != "" {
+		q = q.Clauses(clause.Locking{Strength: mode})
 	}
 	if e := q.Take(&size).Error; e != nil {
 		return out, e
@@ -37,8 +44,8 @@ func readRetirement(tx *gorm.DB, id string, lock bool) (out model.NodeObservatio
 	// semantic identity/state checks must reject their over-limit truncations.
 	fields := "intent_id,substr(header_sha256,1,65) AS header_sha256,substr(state,1,25) AS state,substr(cause,1,65) AS cause,source_summary,next_part,verified_bytes,hash_state,delete_part,remaining_bytes,content_verified,review_at,created_at,updated_at"
 	full := tx.Model(&model.NodeObservationRetirement{}).Select(fields).Where("intent_id = ? AND "+hashLength+" = ? AND "+summaryLength+" = ? AND "+hashLength+" <= ? AND "+summaryLength+" <= ?", id, size.HashBytes.Int64, size.SummaryBytes.Int64, retirementHashStateLimit, retirementSummaryLimit)
-	if lock {
-		full = full.Clauses(clause.Locking{Strength: "UPDATE"})
+	if mode != "" {
+		full = full.Clauses(clause.Locking{Strength: mode})
 	}
 	if e := full.Take(&out).Error; e != nil {
 		if errors.Is(e, gorm.ErrRecordNotFound) {

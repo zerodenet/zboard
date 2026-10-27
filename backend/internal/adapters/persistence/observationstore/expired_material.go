@@ -72,7 +72,7 @@ func (s MaterialRetention) Retire(ctx context.Context, limit int, budget int64) 
 	return out, err
 }
 
-// One step locks node -> exact state -> header -> retirement -> budget.
+// One step locks node -> exact state -> header -> budget -> retirement/parts.
 // It reads at most32 parts and the caller's remaining raw-byte budget, even for
 // a huge historical source. Progress is durable and never a financial cursor.
 func (s MaterialRetention) expireStep(ctx context.Context, now time.Time, budget *int64) (retired bool, freed uint64, found bool, failure error) {
@@ -134,6 +134,10 @@ func (s MaterialRetention) expireStep(ctx context.Context, now time.Time, budget
 		}
 		var h model.NodeObservationIntent
 		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&h, "id = ?", candidateID).Error; e != nil {
+			return e
+		}
+		sharedBudget, e := lockMaterialBudget(tx, false)
+		if e != nil {
 			return e
 		}
 		r, e := readRetirement(tx, h.ID, true)
@@ -220,7 +224,7 @@ func (s MaterialRetention) expireStep(ctx context.Context, now time.Time, budget
 			if e := validateExpiredReceipt(tx, h); e != nil {
 				return quarantine("invalid compact deletion receipt")
 			}
-			e := deleteExpiredPartBatch(tx, h, &r, now, budget, &freed)
+			e := deleteExpiredPartBatch(tx, h, &r, now, budget, &freed, sharedBudget)
 			if errors.Is(e, ErrMaterial) {
 				return quarantine(e.Error())
 			}
@@ -256,6 +260,15 @@ func (s MaterialRetention) expireStep(ctx context.Context, now time.Time, budget
 			}
 			if int64(len(p.Data)) != length {
 				return quarantine("part changed during verification")
+			}
+
+			// Compare the fixed version-one identity prefix before recording any
+			// proof for old large sources, whose original header predates0067.
+			// The first part is already charged to this round's byte budget.
+			if r.NextPart == 0 {
+				if e := verifyObservationPrefix(h, p.Data); e != nil {
+					return quarantine(e.Error())
+				}
 			}
 
 			digest := sha256.Sum256(p.Data)
@@ -318,7 +331,7 @@ func (s MaterialRetention) deferExpired(tx *gorm.DB, h model.NodeObservationInte
 	}
 	return tx.Model(&model.NodeObservationRetirement{}).Where("intent_id = ? AND state IN ?", h.ID, []string{"verifying", "deleting"}).UpdateColumns(map[string]any{"review_at": next}).Error
 }
-func deleteExpiredPartBatch(tx *gorm.DB, h model.NodeObservationIntent, r *model.NodeObservationRetirement, now time.Time, budget *int64, freed *uint64) error {
+func deleteExpiredPartBatch(tx *gorm.DB, h model.NodeObservationIntent, r *model.NodeObservationRetirement, now time.Time, budget *int64, freed *uint64, sharedBudget *model.NodeObservationMaterialBudget) error {
 	ordinals := []uint64{}
 	var bytes uint64
 	for n := 0; n < retirementPartBatch && r.DeletePart < h.PartCount; n++ {
@@ -336,8 +349,11 @@ func deleteExpiredPartBatch(tx *gorm.DB, h model.NodeObservationIntent, r *model
 		*budget -= length
 
 		var proof model.NodeObservationRetirementPart
-		if e := tx.First(&proof, "intent_id = ? AND ordinal = ?", h.ID, r.DeletePart).Error; e != nil {
+		if e := tx.Select("intent_id,ordinal,substr(sha256,1,65) AS sha256").First(&proof, "intent_id = ? AND ordinal = ?", h.ID, r.DeletePart).Error; e != nil {
 			return invalid("verified part checksum authority missing")
+		}
+		if proof.IntentID != h.ID || proof.Ordinal != r.DeletePart {
+			return invalid("verified part checksum ordinal differs")
 		}
 		var part model.NodeObservationPart
 		if e := tx.Select("ordinal,substr(data,1,?) AS data", PartBytes+1).First(&part, "intent_id = ? AND ordinal = ?", h.ID, r.DeletePart).Error; e != nil {
@@ -377,7 +393,7 @@ func deleteExpiredPartBatch(tx *gorm.DB, h model.NodeObservationIntent, r *model
 	if checks.RowsAffected != int64(len(ordinals)) {
 		return ErrOwnership
 	}
-	if e := releaseMaterialBudget(tx, bytes); e != nil {
+	if e := releaseMaterialBudgetLocked(tx, sharedBudget, bytes); e != nil {
 		return e
 	}
 	r.RemainingBytes -= bytes
