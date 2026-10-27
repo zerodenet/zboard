@@ -1,5 +1,6 @@
 // A short-lived navigation hint for the existing full-page identity flow.
 // Never store credentials or drafts here, and never restore another account's context.
+import { safeReauthenticationRoute } from './reauthenticationDrafts'
 const key = 'zboard.auth.return-path'
 const maxAgeMs = 10 * 60_000
 
@@ -14,8 +15,13 @@ export function clearAuthReturnPath() {
 
 export function rememberAuthReturnPath(path: string, accountID: number) {
   clearAuthReturnPath()
+  path = safeReauthenticationRoute(path)
   if (!allowed(path, true) || !Number.isSafeInteger(accountID) || accountID < 1) return
   try { sessionStorage.setItem(key, JSON.stringify({ path, accountID, createdAt: Date.now() })) } catch { /* No cross-page restoration promise when storage is unavailable. */ }
+}
+
+export function hasAuthReturnPath() {
+  try { return sessionStorage.getItem(key) !== null } catch { return false }
 }
 
 export function consumeAuthReturnPath(accountID: number, isAdmin: boolean) {

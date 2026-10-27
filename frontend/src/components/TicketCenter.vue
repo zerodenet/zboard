@@ -10,6 +10,10 @@
         <UiButton v-if="!admin" type="button" @click="openCreate"><UiIcon name="plus" />新建工单</UiButton>
       </template>
     </PageHeader>
+    <PageAlert v-if="createDraftRecovery.message.value || replyDraftRecovery.message.value" tone="info" title="重新认证后的草稿">
+      {{ createDraftRecovery.message.value || replyDraftRecovery.message.value }}
+      <UiButton variant="ghost" size="sm" type="button" @click="createDraftRecovery.restore(); replyDraftRecovery.restore()">重新检查草稿恢复</UiButton>
+    </PageAlert>
 
     <TransientFeedback :success="message" :error="error" success-title="工单操作已完成" error-title="工单操作失败" />
     <PageAlert v-if="createContextNotice && !createOpen" tone="info">{{ createContextNotice }}</PageAlert>
@@ -102,7 +106,8 @@
             <TicketAttachmentEditor v-model="replyAttachments" v-model:busy="replyUploading" :disabled="saving" />
             <footer><small>{{ replyBody.length }} / 5000</small><UiButton type="submit" :loading="saving" :disabled="!replyBody.trim() || replyUploading">发送回复</UiButton></footer>
           </form>
-          <div v-else class="closed-notice"><UiIcon name="check" /><div><strong>工单已关闭</strong><p>时间线保持只读。如有新问题，请创建新的工单。</p></div></div>
+          <UiTextarea v-if="detail.ticket.status === 'closed' && replyBody" :model-value="replyBody" readonly aria-label="已关闭工单的未发送草稿" />
+          <div v-if="detail.ticket.status === 'closed'" class="closed-notice"><UiIcon name="check" /><div><strong>工单已关闭</strong><p>时间线保持只读。如有新问题，请创建新的工单。</p></div></div>
         </template>
         <div v-else class="ticket-detail-empty"><span><UiIcon name="ticket" /></span><h2>选择一条工单</h2><p>这里会按需展示问题详情、回复和状态流转记录。</p></div>
       </article>
@@ -133,6 +138,8 @@ import { closeTicket, createTicket, fetchTicket, fetchTickets, replyTicket, upda
 import { confirmAction } from '../utils/feedback'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import { useRemoteTable } from '../composables/useRemoteTable'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { ticketRecoveryDraft, ticketReplyRecoveryDraft } from '../utils/reauthenticationDraftSchemas'
 import { formatUnknownValue } from '../utils/format'
 import { preserveAdminReturnTo } from '../utils/navigation'
 import { collectFieldErrors, isCharacterLengthInRange, isOneOf } from '../utils/validation'
@@ -191,6 +198,25 @@ const ticketReferenceRows = computed(() => referenceFields.flatMap(field => {
   return Number.isSafeInteger(id) && id! > 0 ? [{ ...field, id: id! }] : []
 }))
 const replyState = useDirtyForm(() => ({ body: replyBody.value, attachments: replyAttachments.value }))
+const recoveryReady = ref(false)
+const createDraftRecovery = useReauthenticationDraft({
+  scope: 'account.tickets.create', permission: 'account', ready: () => recoveryReady.value && !admin.value,
+  read: () => !admin.value && createOpen.value ? { subject: draft.subject, category: draft.category, priority: draft.priority, body: draft.body, references: { ...referenceDraft } } : null,
+  sanitize: ticketRecoveryDraft,
+  restore: value => {
+    Object.assign(draft, { subject: value.subject, category: value.category, priority: value.priority, body: value.body, attachments: [] })
+    Object.assign(referenceDraft, value.references)
+    createOpen.value = true
+  },
+})
+const replyDraftRecovery = useReauthenticationDraft({
+  scope: admin.value ? 'admin.tickets.reply' : 'account.tickets.reply', permission: admin.value ? 'admin' : 'account',
+  ready: () => recoveryReady.value && Boolean(detail.value && detail.value.ticket.id === selectedTicketID.value),
+  read: () => !createOpen.value && selectedTicketID.value && replyBody.value ? { ticketID: selectedTicketID.value, body: replyBody.value } : null,
+  sanitize: ticketReplyRecoveryDraft,
+  restore: value => { if (value.ticketID !== detail.value?.ticket.id) return false; replyBody.value = value.body; replyAttachments.value = [] },
+})
+
 useUnsavedChangesGuard(
   () => (createOpen.value && createState.dirty.value) || replyState.dirty.value,
   async () => {
@@ -470,7 +496,7 @@ async function submitTicket() {
 }
 
 async function sendReply() {
-  if (!detail.value || saving.value || replyUploading.value) return
+  if (!detail.value || detail.value.ticket.status === 'closed' || saving.value || replyUploading.value) return
   replyBody.value = replyBody.value.trim()
   const valid = await replyErrors.applyValidation(collectFieldErrors({
     body: !isCharacterLengthInRange(replyBody.value, 1, 5000, true) && '回复需包含 1 到 5000 个字符。',
@@ -587,6 +613,7 @@ onMounted(async () => {
   await loadTickets()
   const initialTicket = validTicketID(route.query.ticket)
   if (initialTicket) await loadTicketDetail(initialTicket)
+  recoveryReady.value = true
 })
 onBeforeUnmount(() => detailController?.abort())
 </script>

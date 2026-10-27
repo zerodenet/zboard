@@ -34,10 +34,10 @@ async function accept(result: IdentityLoginResult) {
   if (result.registration_required) { registering.value = true; email.value = result.email || ''; statusText.value = '第三方未提供已验证邮箱。请在五分钟内完成邮箱验证，由 ZBoard 创建账户。'; return }
   if (result.linked) { await router.replace({path:'/account/security',query:{linked:'1'}}); return }
   if (!result.auth?.token || !result.user) throw new Error('missing login result')
-  store.setToken(result.auth.token); store.setUser(result.user)
+  await store.acceptAuthenticatedSession(result.auth.token)
   await store.loadSystemStatus(true).catch(() => undefined)
-  const requested = consumeAuthReturnPath(result.user.id, result.user.is_admin)
-  await router.replace(requested || (result.user.is_admin ? '/admin/dashboard' : '/account'))
+  const requested = consumeAuthReturnPath(store.user.id, store.isAdmin)
+  await router.replace(requested || (store.isAdmin ? '/admin/dashboard' : '/account'))
 }
 const callbackErrors: Record<string, string> = {
   invalid_response: '授权服务返回的信息不完整，请重新发起登录。',

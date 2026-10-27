@@ -5,9 +5,9 @@ import { expect, it, vi } from 'vitest'
 import Login from './Login.vue'
 import UiButton from '../components/UiButton.vue'
 import UiInput from '../components/UiInput.vue'
-import { login, fetchSystemStatus } from '../api/client'
+import { login, fetchSystemStatus, me } from '../api/client'
 import { useAppStore } from '../stores/app'
-vi.mock('../api/client', async original => ({ ...await original<typeof import('../api/client')>(), login: vi.fn(), fetchSystemStatus: vi.fn() }))
+vi.mock('../api/client', async original => ({ ...await original<typeof import('../api/client')>(), login: vi.fn(), fetchSystemStatus: vi.fn(), me: vi.fn() }))
 vi.mock('../api/identities', () => ({ fetchIdentityPasswordStatus: vi.fn(async () => ({ password_set: true })) }))
 it('explains expiry and returns to the original page after signing in', async () => {
   localStorage.clear()
@@ -20,6 +20,7 @@ it('explains expiry and returns to the original page after signing in', async ()
   ] })
   await router.push({ path: '/login', query: { redirect: '/admin/nodes?page=3#details', reason: 'session-expired' } })
   vi.mocked(login).mockResolvedValueOnce({ auth: { token: 'new-login' }, user: { id: 1, email: 'admin@example.test', is_admin: true } })
+  vi.mocked(me).mockResolvedValueOnce({ id: 1, email: 'admin@example.test', is_admin: true } as any)
   vi.mocked(fetchSystemStatus).mockRejectedValueOnce(new Error('offline'))
   const wrapper = mount(Login, { global: { plugins: [pinia, router], components: { UiButton, UiInput }, stubs: { PluginSlot: true, AuthLegalLinks: true } } })
   try {

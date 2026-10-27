@@ -10,9 +10,12 @@ import UiInput from './UiInput.vue'
 import UiSelect from './UiSelect.vue'
 import UiTextarea from './UiTextarea.vue'
 import TimeBadge from './TimeBadge.vue'
+import { captureReauthenticationDrafts, clearReauthenticationDrafts, confirmReauthenticationDraftIdentity } from '../utils/reauthenticationDrafts'
 
 vi.mock('../api/client', () => ({ createTicket: vi.fn(), fetchTicket: vi.fn(), fetchTickets: vi.fn(), closeTicket: vi.fn(), replyTicket: vi.fn(), updateTicketStatus: vi.fn() }))
 vi.mock('../utils/feedback', () => ({ confirmAction: vi.fn(async () => true), notify: vi.fn() }))
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ token: 'verified', reauthRequired: false, sessionEpoch: 0, user: { id: 1 }, isAdmin: false }) }))
+vi.mock('../api/menus', () => ({ fetchNavigation: vi.fn(async () => ({ revision: 1, page_available: true, nodes: [] })) }))
 const modal = defineComponent({
   props: { open: Boolean }, emits: ['close'],
   setup(props, { slots, emit }) {
@@ -31,14 +34,14 @@ describe('ticket references and account context', () => {
   let wrapper: VueWrapper | undefined
   let router: Router
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.clearAllMocks(); sessionStorage.clear(); clearReauthenticationDrafts()
     vi.mocked(fetchTickets).mockResolvedValue({ items: [], total: 0, offset: 0, limit: 25, page: { total: 0, offset: 0, limit: 25 } } as any)
     vi.mocked(fetchTicket).mockResolvedValue(detail())
     vi.mocked(createTicket).mockResolvedValue(detail())
     vi.mocked(replyTicket).mockResolvedValue(detail())
     vi.mocked(confirmAction).mockResolvedValue(true)
   })
-  afterEach(() => { wrapper?.unmount(); wrapper = undefined })
+  afterEach(() => { wrapper?.unmount(); wrapper = undefined; clearReauthenticationDrafts() })
   async function open(path = '/account/tickets', admin = false) {
     router = createRouter({ history: createMemoryHistory(), routes: [
       { path: '/account/tickets', component: TicketCenter, props: { admin } },
@@ -58,6 +61,43 @@ describe('ticket references and account context', () => {
   async function submit() { await wrapper!.get('#create-ticket-form').trigger('submit'); await flushPromises() }
   async function create() { await wrapper!.findAll('button').find(button => button.text().includes('新建工单'))!.trigger('click'); await flushPromises() }
 
+  it('restores ordinary ticket body as text without submitting or reuploading attachments', async () => {
+    await open('/account/tickets?new=1&order_id=27'); await content()
+    const body = '<img src=x onerror="alert(1)"> plain support draft'
+    await wrapper!.get('#ticket-body').setValue(body)
+    expect(captureReauthenticationDrafts(1, router.currentRoute.value.fullPath).ok).toBe(true)
+    wrapper!.unmount(); wrapper = undefined
+    confirmReauthenticationDraftIdentity(1, false)
+    await open('/account/tickets?new=1&order_id=27')
+    expect((wrapper!.get('#ticket-subject').element as HTMLInputElement).value).toBe('需要核对账单')
+    expect((wrapper!.get('#ticket-body').element as HTMLTextAreaElement).value).toBe(body)
+    expect(wrapper!.find('img').exists()).toBe(false)
+    expect(createTicket).not.toHaveBeenCalled(); expect(replyTicket).not.toHaveBeenCalled()
+  })
+  it('restores an unsent reply only after its current ticket detail is fetched', async () => {
+    await open('/account/tickets?ticket=71')
+    await wrapper!.get('#ticket-reply-body').setValue('尚未发送的补充信息')
+    expect(captureReauthenticationDrafts(1, router.currentRoute.value.fullPath).ok).toBe(true)
+    wrapper!.unmount(); wrapper = undefined
+    confirmReauthenticationDraftIdentity(1, false)
+    await open('/account/tickets?ticket=71')
+    expect(fetchTicket).toHaveBeenCalledWith(71, false, expect.any(Object))
+    expect((wrapper!.get('#ticket-reply-body').element as HTMLTextAreaElement).value).toBe('尚未发送的补充信息')
+    expect(replyTicket).not.toHaveBeenCalled(); expect(createTicket).not.toHaveBeenCalled()
+  })
+  it('keeps a recovered reply read-only if the fresh ticket was closed during OAuth', async () => {
+    await open('/account/tickets?ticket=71'); await wrapper!.get('#ticket-reply-body').setValue('待核对的旧回复')
+    expect(captureReauthenticationDrafts(1, router.currentRoute.value.fullPath).ok).toBe(true)
+    wrapper!.unmount(); wrapper = undefined
+    const closed = detail(); closed.ticket.status = 'closed'; vi.mocked(fetchTicket).mockResolvedValue(closed)
+    confirmReauthenticationDraftIdentity(1, false)
+    await open('/account/tickets?ticket=71')
+    const recovered = wrapper!.get('[aria-label="已关闭工单的未发送草稿"]')
+    expect((recovered.element as HTMLTextAreaElement).value).toBe('待核对的旧回复')
+    expect(recovered.attributes()).toHaveProperty('readonly')
+    expect(wrapper!.find('.ticket-reply').exists()).toBe(false)
+    expect(replyTicket).not.toHaveBeenCalled()
+  })
   it('prefills only context and requires explicit submission; sends one positive number per reference without impersonation', async () => {
     vi.mocked(createTicket).mockResolvedValue(detail({ order_id: 27, subscription_id: 4, wallet_entry_id: 8 }))
     await open('/account/tickets?new=1&order_id=27&subscription_id=4&wallet_entry_id=8&user_id=999')

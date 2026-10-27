@@ -4,6 +4,8 @@ import { AUTH_SESSION_RESTORED_EVENT, resetAuthSessionExpired } from '../utils/a
 import { clearTrackedTasks } from '../utils/taskTracker'
 import { fetchIdentityPasswordStatus } from '../api/identities'
 import { clearAuthReturnPath } from '../utils/authReturnPath'
+import { approveReauthenticationDraftPage, clearReauthenticationDrafts, confirmReauthenticationDraftIdentity, invalidateReauthenticationDraftIdentity, pendingReauthenticationDraftPage } from '../utils/reauthenticationDrafts'
+import { fetchNavigation } from '../api/menus'
 import { applySiteMetadata, buildSiteProfile } from '../utils/siteProfile'
 import { DEFAULT_SYSTEM_TIME_ZONE, setDisplayTimeZone } from '../utils/timeZone'
 
@@ -111,6 +113,7 @@ export const useAppStore = defineStore('app', {
       }
     },
     setToken(token: string) {
+      if (token !== this.token) invalidateReauthenticationDraftIdentity()
       this.token = token
       setAuthToken(token)
       void this.loadIdentityPasswordStatus()
@@ -126,6 +129,7 @@ export const useAppStore = defineStore('app', {
     setUser(user: any) {
       const isAdmin = Boolean(user.is_admin ?? user.isAdmin)
       if (this.user.id && (this.user.id !== user.id || this.user.isAdmin !== isAdmin)) {
+        clearReauthenticationDrafts()
         this.sessionEpoch++
         clearTrackedTasks()
         this.announcements = []
@@ -140,31 +144,52 @@ export const useAppStore = defineStore('app', {
       }
     },
     suspendSession() {
+      invalidateReauthenticationDraftIdentity()
       this.reauthRequired = true
       this.token = ''
       clearAuthToken()
     },
     async reauthenticate(email: string, password: string) {
       const result = await login(email, password)
-      // The main identity endpoint, rather than the form or login response,
-      // determines which account and permissions can resume this page.
-      setAuthToken(result.auth.token, false)
-      let user
-      try {
-        user = await fetchMe()
-        if (!user?.id) throw new Error('无法确认登录身份，请重新登录。')
-        if (getAuthToken() !== result.auth.token) throw new Error('登录状态已变化，请重新认证。')
-      } catch (cause) {
-        if (getAuthToken() === result.auth.token) clearAuthToken()
-        throw cause
-      }
-      this.setUser(user)
-      this.setToken(result.auth.token)
+      await this.acceptAuthenticatedSession(result.auth.token)
       this.reauthRequired = false
       void this.loadIdentityPasswordStatus()
       clearAuthReturnPath()
       void this.loadSystemStatus(true).catch(() => undefined)
       window.dispatchEvent(new Event(AUTH_SESSION_RESTORED_EVENT))
+    },
+    async acceptAuthenticatedSession(token: string) {
+      invalidateReauthenticationDraftIdentity()
+      if (typeof token !== 'string' || !token) throw new Error('无法确认登录会话，请重新登录。')
+      // The main identity endpoint, rather than the form or login response,
+      // determines which account and permissions can resume this page.
+      setAuthToken(token, false)
+      let user
+      try {
+        user = await fetchMe()
+        if (!Number.isSafeInteger(user?.id) || user.id <= 0) throw new Error('无法确认登录身份，请重新登录。')
+        if (getAuthToken() !== token) throw new Error('登录状态已变化，请重新认证。')
+      } catch (cause) {
+        if (getAuthToken() === token) clearAuthToken()
+        throw cause
+      }
+      this.setUser(user)
+      this.setToken(token)
+      this.reauthRequired = false
+      confirmReauthenticationDraftIdentity(this.user.id, this.isAdmin)
+      const recoveryPage = pendingReauthenticationDraftPage(this.user.id)
+      if (recoveryPage) {
+        try {
+          const access = await fetchNavigation(recoveryPage.startsWith('/admin') ? 'admin' : 'account', undefined, recoveryPage)
+          if (getAuthToken() === token) approveReauthenticationDraftPage(this.user.id, recoveryPage, access.page_available === true)
+        } catch (cause: any) {
+          if (getAuthToken() === token && cause?.response?.status === 403) clearReauthenticationDrafts()
+          // A failed permission read is not failed authentication. No draft
+          // payload has been read; the mounted module can retry its read later.
+        }
+      }
+      if (getAuthToken() !== token) throw new Error('登录状态已变化，请重新认证。')
+      return user
     },
     async loadMe() {
       if (!this.token) {
@@ -177,11 +202,14 @@ export const useAppStore = defineStore('app', {
       if (this.token !== token) return
       if (user) {
         this.setUser(user)
+        confirmReauthenticationDraftIdentity(this.user.id, this.isAdmin)
         void this.loadIdentityPasswordStatus()
       }
       else this.clear()
     },
-    clear() {
+    clear(options: { preserveReauthenticationDrafts?: boolean } = {}) {
+      if (options.preserveReauthenticationDrafts) invalidateReauthenticationDraftIdentity()
+      else clearReauthenticationDrafts()
       clearAuthReturnPath()
       this.reauthRequired = false
       this.passwordLoginAvailable = null

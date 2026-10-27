@@ -1,5 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
+import { createPinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTicket, fetchTickets, fetchAccountProtocolLoads, fetchAccountSubscriptionsPage, fetchActiveSubscriptionTemplatesPage } from '../../api/client'
 import { fetchSubscriptionAccess, revokeSubscriptionAccess, rotateSubscriptionAccess, type SubscriptionAccess } from '../../api/subscriptionAccess'
@@ -13,6 +14,7 @@ import TimeBadge from '../../components/TimeBadge.vue'
 import AccountSubscription from './AccountSubscription.vue'
 
 vi.mock('../../api/client', () => ({
+  getAuthToken: vi.fn(() => ''),
   fetchAccountSubscriptionsPage: vi.fn(),
   fetchActiveSubscriptionTemplatesPage: vi.fn(),
   fetchAccountProtocolLoads: vi.fn(),
@@ -72,7 +74,7 @@ describe('account subscription independent loading and access identity', () => {
     await router.push(path)
     await router.isReady()
     wrapper = mount(routed ? RouterView : AccountSubscription, { global: {
-      plugins: [router], components: { UiButton, UiInput, UiSelect, UiTextarea, TimeBadge },
+      plugins: [createPinia(), router], components: { UiButton, UiInput, UiSelect, UiTextarea, TimeBadge },
       stubs: {
         ConfirmDialog: true, TicketAttachmentEditor: true, PageRefreshButton: true,
         ModalDialog: { props: ['open'], template: '<section v-if="open"><slot /></section>' },

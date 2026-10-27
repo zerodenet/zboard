@@ -14,7 +14,8 @@
     </form>
     <UiButton v-else type="button" variant="secondary" @click="showPassword = true">{{ app.passwordLoginAvailable === false ? '使用其他账户的邮箱密码' : '我已设置邮箱密码' }}</UiButton>
     <div v-if="methods.length || methodsError" class="stack">
-      <p v-if="methods.length">可用第三方登录：{{ methods.map(method => method.slot.title).join('、') }}。打开登录页后使用原有入口；离开当前页面会清除未提交内容。</p>
+      <p v-if="methods.length">可用第三方登录：{{ methods.map(method => method.slot.title).join('、') }}。打开登录页后使用原有入口；已支持的商品、销售规格和工单文字会在本标签页暂存 10 分钟，仅同一账户重新核对身份与权限后恢复。附件、敏感字段和付款确认需要重新填写或确认。</p>
+      <PageAlert v-if="externalRecoveryError" tone="warning" title="尚未离开当前页面">{{ externalRecoveryError }}</PageAlert>
       <PageAlert v-if="methodsError" tone="warning" title="其他登录方式暂不可用">{{ methodsError }}</PageAlert>
       <UiButton v-if="methods.length" type="button" variant="secondary" :disabled="loading" @click="externalLogin">打开第三方登录入口</UiButton>
       <UiButton v-else type="button" variant="secondary" @click="loadMethods">重新检查登录方式</UiButton>
@@ -37,6 +38,7 @@ import UiButton from './UiButton.vue'
 import PageAlert from './PageAlert.vue'
 import { fetchPluginSlots, type CatalogSlot } from '../api/plugins'
 import { rememberAuthReturnPath } from '../utils/authReturnPath'
+import { captureReauthenticationDrafts, safeReauthenticationRoute } from '../utils/reauthenticationDrafts'
 
 const app = useAppStore()
 const router = useRouter()
@@ -49,6 +51,7 @@ const errors = useFormErrors()
 const showPassword = ref(app.passwordLoginAvailable === true)
 const methods = ref<CatalogSlot[]>([])
 const methodsError = ref('')
+const externalRecoveryError = ref('')
 const methodsLoading = ref(true)
 async function loadMethods() {
   methodsLoading.value = true
@@ -83,11 +86,18 @@ async function logout() {
   await router.replace('/')
 }
 async function externalLogin() {
-  const redirect = route.fullPath
+  if (loading.value) return
+  loading.value = true
+  const redirect = safeReauthenticationRoute(route.fullPath)
   const accountID = app.user.id
-  app.clear()
+  const recovery = captureReauthenticationDrafts(accountID, redirect)
+  if (!recovery.ok) { externalRecoveryError.value = recovery.message; loading.value = false; return }
+  externalRecoveryError.value = ''
+  app.clear({ preserveReauthenticationDrafts: true })
   rememberAuthReturnPath(redirect, accountID)
-  await nextTick()
-  await router.replace({ path: '/login', query: { redirect, reason: 'session-expired' } })
+  try {
+    await nextTick()
+    await router.replace({ path: '/login', query: { redirect, reason: 'session-expired' } })
+  } finally { loading.value = false }
 }
 </script>

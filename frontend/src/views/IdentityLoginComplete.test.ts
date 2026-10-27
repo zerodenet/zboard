@@ -2,23 +2,24 @@ import {flushPromises,mount} from '@vue/test-utils'
 import {beforeEach,expect,it,vi} from 'vitest'
 import IdentityLoginComplete from './IdentityLoginComplete.vue'
 import {rememberAuthReturnPath} from '../utils/authReturnPath'
-const mocks=vi.hoisted(()=>({finish:vi.fn(),sendCode:vi.fn(),replace:vi.fn(),setToken:vi.fn(),setUser:vi.fn(),load:vi.fn(),query:{} as Record<string,string>}))
+const mocks=vi.hoisted(()=>({finish:vi.fn(),sendCode:vi.fn(),replace:vi.fn(),setToken:vi.fn(),setUser:vi.fn(),load:vi.fn(),accept:vi.fn(),verified:{id:1,email:'a@example.com',is_admin:false},query:{} as Record<string,string>}))
 vi.mock('../api/identities',()=>({finishIdentityLogin:mocks.finish,requestIdentityRegistrationCode:mocks.sendCode}))
 vi.mock('vue-router',()=>({useRoute:()=>({query:mocks.query}),useRouter:()=>({replace:mocks.replace})}))
-vi.mock('../stores/app',()=>({useAppStore:()=>({setToken:mocks.setToken,setUser:mocks.setUser,loadSystemStatus:mocks.load})}))
+vi.mock('../stores/app',()=>({useAppStore:()=>({setToken:mocks.setToken,setUser:mocks.setUser,loadSystemStatus:mocks.load,acceptAuthenticatedSession:mocks.accept,user:{get id(){return mocks.verified.id}},get isAdmin(){return mocks.verified.is_admin}})}))
 const render=()=>mount(IdentityLoginComplete,{global:{stubs:{AuthLegalLinks:true,UiInput:true,UiButton:{template:'<button><slot /></button>'},RouterLink:{template:'<a><slot /></a>'}}}})
-beforeEach(()=>{vi.resetAllMocks();sessionStorage.clear();mocks.query={};mocks.load.mockResolvedValue({})})
+beforeEach(()=>{vi.resetAllMocks();sessionStorage.clear();mocks.query={};mocks.load.mockResolvedValue({});mocks.verified={id:1,email:'a@example.com',is_admin:false};mocks.accept.mockImplementation(async(token:string)=>{mocks.setToken(token);mocks.setUser(mocks.verified)})})
 it('accepts only the core completion response as a login session',async()=>{
  mocks.finish.mockResolvedValue({auth:{token:'core-token'},user:{id:1,email:'a@example.com',is_admin:false,status:'active'}})
  const wrapper=render();await flushPromises();expect(mocks.setToken).toHaveBeenCalledWith('core-token');expect(mocks.replace).toHaveBeenCalledWith('/account');wrapper.unmount()
 })
-it('returns an explicitly redirected external login to the same account page without restoring drafts',async()=>{
+it('returns an external login using the verified account context',async()=>{
  rememberAuthReturnPath('/account/tickets?page=2#reply',1)
  mocks.finish.mockResolvedValue({auth:{token:'core-token'},user:{id:1,email:'a@example.com',is_admin:false,status:'active'}})
  const wrapper=render();await flushPromises();expect(mocks.replace).toHaveBeenCalledWith('/account/tickets?page=2#reply');wrapper.unmount()
 })
 it('does not restore another account page or an admin page after privileges are revoked',async()=>{
  rememberAuthReturnPath('/admin/nodes',1)
+ mocks.verified={id:2,email:'b@example.com',is_admin:false}
  mocks.finish.mockResolvedValue({auth:{token:'core-token'},user:{id:2,email:'b@example.com',is_admin:false,status:'active'}})
  const wrapper=render();await flushPromises();expect(mocks.replace).toHaveBeenCalledWith('/account');wrapper.unmount()
 })
