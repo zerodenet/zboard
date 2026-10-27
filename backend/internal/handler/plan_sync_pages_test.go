@@ -265,7 +265,15 @@ func assertPlanSyncPagesRollback(t *testing.T, base orderFixture, group, unknown
 		if err := f.db.Model(&model.Subscription{}).Where("id = ?", late.ID).Update("flow_total", late.FlowTotal+17).Error; err != nil {
 			t.Fatal(err)
 		}
-		f.rows[1000].FlowTotal += 17
+		// Update also writes UpdatedAt. Capture the complete persisted baseline
+		// after the deliberate corruption, before entering PlanUpdate's TX;
+		// retaining the old in-memory timestamp would falsely report a leak.
+		if err := f.db.Where("plan_id = ?", f.plan.ID).Order("id ASC").Find(&f.rows).Error; err != nil || len(f.rows) != planSyncPagePopulation {
+			t.Fatal("capture unknown-history rollback baseline", len(f.rows), err)
+		}
+		if f.rows[1000].ID != late.ID || f.rows[1000].FlowTotal != late.FlowTotal+17 {
+			t.Fatal("unknown-history corruption was not persisted on the intended row")
+		}
 	}
 	beforeMoney := planSyncFinancialSnapshot(t, f.db)
 	var beforeIntents []model.NodeConfigPublish
@@ -326,8 +334,29 @@ func assertPlanSyncPagesRollback(t *testing.T, base orderFixture, group, unknown
 	if err := f.db.Order("id").Find(&credentials).Error; err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(plan, f.plan) || !reflect.DeepEqual(rows, f.rows) || !reflect.DeepEqual(intents, beforeIntents) || !reflect.DeepEqual(credentials, beforeCredentials) || !reflect.DeepEqual(beforeMoney, planSyncFinancialSnapshot(t, f.db)) {
-		t.Fatal("late page failure committed partial revision/rights/revocation/publication/money")
+	// Keep every field, including UpdatedAt, in the rollback assertion. Report
+	// the failing domain and row instead of conflating a fixture mismatch with
+	// a committed partial transaction.
+	if !reflect.DeepEqual(plan, f.plan) {
+		t.Errorf("late page failure changed plan: got=%+v want=%+v", plan, f.plan)
+	}
+	if !reflect.DeepEqual(rows, f.rows) {
+		t.Errorf("late page failure changed subscription count/state: got=%d want=%d", len(rows), len(f.rows))
+		for i := 0; i < len(rows) && i < len(f.rows); i++ {
+			if !reflect.DeepEqual(rows[i], f.rows[i]) {
+				t.Errorf("first changed subscription: got=%+v want=%+v", rows[i], f.rows[i])
+				break
+			}
+		}
+	}
+	if !reflect.DeepEqual(intents, beforeIntents) {
+		t.Errorf("late page failure changed publication intents: got=%+v want=%+v", intents, beforeIntents)
+	}
+	if !reflect.DeepEqual(credentials, beforeCredentials) {
+		t.Errorf("late page failure changed credentials: got=%+v want=%+v", credentials, beforeCredentials)
+	}
+	if !reflect.DeepEqual(beforeMoney, planSyncFinancialSnapshot(t, f.db)) {
+		t.Error("late page failure changed immutable order/payment/wallet facts")
 	}
 	var facts int64
 	if err := f.db.Model(&model.QuotaEvent{}).Where("event_type = ?", "plan_quota_sync").Count(&facts).Error; err != nil || facts != 0 {

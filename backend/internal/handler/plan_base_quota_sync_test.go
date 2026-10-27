@@ -432,7 +432,10 @@ func TestMySQLPlanBaseQuotaSyncLaterRenewalDoesNotBecomeBase(t *testing.T) {
 	assertPlanBaseQuotaLaterRenewal(t, newMySQLBusinessOrderFixture(t))
 }
 func assertPlanBaseQuotaLaterRenewal(t *testing.T, base orderFixture) {
-	f, root := perpetualValueFixtureWithBase(t, base, 60)
+	// Renewal verifies the original purchase agreement before accepting a new
+	// order. Use an actual accepted initial-only quote, not the separate admin
+	// assignment fixture whose manual price has no provider agreement.
+	f, root := planBaseQuotaInitialDiscountFixture(t, base, 60)
 	planBaseSyncAddon(t, f, root.SubscriptionID, 100, 6000)
 	var plan model.Plan
 	if err := f.h.db.First(&plan, f.planRecord.ID).Error; err != nil {
@@ -442,6 +445,10 @@ func assertPlanBaseQuotaLaterRenewal(t *testing.T, base orderFixture) {
 	updated, err := f.h.services.PlanUpdate.Update(t.Context(), 1, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, SyncTrafficQuota: true, ExpectedRevision: &plan.Revision})
 	if err != nil {
 		t.Fatal(err)
+	}
+	var baseAndAddon model.Subscription
+	if err := f.h.db.First(&baseAndAddon, root.SubscriptionID).Error; err != nil || baseAndAddon.FlowTotal != 300 || baseAndAddon.FlowUsed != 60 || baseAndAddon.ResetQuotaBytes != 200 {
+		t.Fatal("base100 + addon100 did not become base200 + unchanged addon100", err)
 	}
 	// Change only today's catalog. A real once renewal buys a separate 50-byte
 	// lot and may store 50 as RQB; it cannot redefine the original 200-byte base.
@@ -457,14 +464,17 @@ func assertPlanBaseQuotaLaterRenewal(t *testing.T, base orderFixture) {
 	paid := int64(3000)
 	assigned, err := f.h.services.OrderAssignment.Assign(t.Context(), 1, commerce.OrderAssignmentRequest{UserID: 1, PlanSKUID: sku.ID, TargetSubscriptionID: root.SubscriptionID, PayableAmount: &paid, RequestID: uuid.NewString(), Note: "actual separate once renewal after base synchronization"})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("create separate renewal from verified initial-only purchase", err)
+	}
+	if assigned.OrderType != "renewal" || assigned.AmountCents != 12000 || assigned.PayableAmount != 3000 {
+		t.Fatalf("renewal changed the locked base or explicit payable: %+v", assigned)
 	}
 	payments := fundingService(f)
 	if _, err := payments.Configure(t.Context(), 1, assigned.ID, commerce.FundingRequest{UseBalance: true}); err != nil {
-		t.Fatal(err)
+		t.Fatal("allocate separate renewal wallet funding", err)
 	}
 	if _, err := payments.Pay(t.Context(), 1, assigned.ID); err != nil {
-		t.Fatal(err)
+		t.Fatal("fulfill separate renewal from wallet", err)
 	}
 	var before model.Subscription
 	if err := f.h.db.First(&before, root.SubscriptionID).Error; err != nil || before.FlowTotal != 350 || before.ResetQuotaBytes != 50 || before.FlowUsed != 60 {

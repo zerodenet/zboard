@@ -43,7 +43,7 @@ func assertLegacyObservationBudgetCopy(t *testing.T, mysql bool) {
 	if actual == 0 {
 		t.Fatal("missing real retained bytes")
 	}
-	if err := source.Exec("DELETE FROM schema_migrations WHERE version = ?", "0067_node_observation_retirement_budget.up.sql").Error; err != nil {
+	if err := source.Exec("DELETE FROM schema_migrations WHERE version IN ?", []string{"0067_node_observation_retirement_budget.up.sql", "0068_coverage_runtime_identity.up.sql", "0069_principal_runtime_identity.up.sql"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range []string{"node_observation_retirement_parts", "node_observation_retirements", "node_observation_material_budget"} {
@@ -147,6 +147,15 @@ func assertLegacyObservationBudgetCopy(t *testing.T, mysql bool) {
 				if err := datastore.RunMigrations(target); err != nil {
 					t.Fatal("reopen of imported authority failed", err)
 				}
+			}
+			if err := target.Transaction(func(tx *gorm.DB) error {
+				got, err := observationstore.Enqueue(tx, input)
+				if err == nil && got != id {
+					return errors.New("legacy replay changed original identity")
+				}
+				return err
+			}); err != nil {
+				t.Fatal("imported legacy material could not be verified on replay", err)
 			}
 			var reopened model.NodeObservationMaterialBudget
 			if err := target.First(&reopened, "id = ?", 1).Error; err != nil || reopened != budget {

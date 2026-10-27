@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 )
@@ -21,7 +23,7 @@ func TestMySQLMigrationCopierNodeObservationHandoff(t *testing.T) {
 	}
 }
 func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
-	for _, mode := range []string{"current_pending_held_tombstone", "retired_receipt", "legacy_unattributed_floor", "recorded_material_loss", "recorded_marker_loss", "owned_completion_rollback"} {
+	for _, mode := range []string{"current_pending_held_tombstone", "retired_receipt", "legacy_unattributed_floor", "recorded_material_loss", "recorded_marker_loss", "recorded_retirement_header_loss", "owned_completion_rollback"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newMigrationCopyFixture(t, sourceMySQL, targetMySQL)
 			node := model.Node{Name: "handoff-copy", Config: "{}", IsEnabled: true}
@@ -83,16 +85,32 @@ func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
 			if err := f.source.Transaction(func(tx *gorm.DB) error { _, err := observationstore.Enqueue(tx, source); return err }); err != nil {
 				t.Fatal(err)
 			}
-			if mode == "legacy_unattributed_floor" {
-				if err := f.source.Exec("DELETE FROM schema_migrations WHERE version IN ?", []string{"0060_node_observation_handoff.up.sql", "0061_node_observation_material_retention.up.sql"}).Error; err != nil {
+			var damagedBudgetBefore model.NodeObservationMaterialBudget
+			var damagedPartsBefore int64
+			if mode == "recorded_retirement_header_loss" {
+				if err := f.source.First(&damagedBudgetBefore, "id = ?", 1).Error; err != nil {
 					t.Fatal(err)
 				}
-				for _, table := range []string{"node_observation_states", "node_observation_parts", "node_observation_intents"} {
+				if err := f.source.Model(&model.NodeObservationPart{}).Count(&damagedPartsBefore).Error; err != nil || damagedPartsBefore == 0 {
+					t.Fatal("recorded loss fixture lacks surviving material", err)
+				}
+			}
+			if mode == "legacy_unattributed_floor" {
+				if err := f.source.Exec("DELETE FROM schema_migrations WHERE version IN ?", []string{"0060_node_observation_handoff.up.sql", "0061_node_observation_material_retention.up.sql", "0067_node_observation_retirement_budget.up.sql"}).Error; err != nil {
+					t.Fatal(err)
+				}
+				for _, table := range []string{"node_observation_retirement_parts", "node_observation_retirements", "node_observation_material_budget", "node_observation_states", "node_observation_parts", "node_observation_intents"} {
 					if err := f.source.Migrator().DropTable(table); err != nil {
 						t.Fatal(err)
 					}
 				}
 				if err := f.source.Table("zero_event_node_cursors").Create(map[string]any{"node_id": node.ID, "core_instance_id": "unattributed", "sequence": 88, "config_revision": 1, "occurred_at": at, "updated_at": at}).Error; err != nil {
+					t.Fatal(err)
+				}
+			} else if mode == "recorded_retirement_header_loss" {
+				// A recorded0067 source really lost its headers. This remains
+				// refusal, never the genuinely pre0060 fixture branch above.
+				if err := f.source.Migrator().DropTable("node_observation_intents"); err != nil {
 					t.Fatal(err)
 				}
 			} else if mode == "recorded_marker_loss" {
@@ -147,7 +165,7 @@ func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
 				return []any{h, p, s}
 			}
 			var before any
-			if mode != "legacy_unattributed_floor" && mode != "recorded_material_loss" && mode != "recorded_marker_loss" {
+			if mode != "legacy_unattributed_floor" && mode != "recorded_material_loss" && mode != "recorded_marker_loss" && mode != "recorded_retirement_header_loss" {
 				before = snapshot(f.source)
 			}
 			injected := errors.New("owned handoff completion failure")
@@ -175,9 +193,25 @@ func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
 			}
 			err := copier.Copy(context.Background(), f.target, f.task.ID, f.claim.Run.ID)
 			target := f.destination(t)
-			if mode == "recorded_material_loss" || mode == "recorded_marker_loss" || mode == "owned_completion_rollback" {
+			if mode == "recorded_material_loss" || mode == "recorded_marker_loss" || mode == "recorded_retirement_header_loss" || mode == "owned_completion_rollback" {
 				if err == nil {
 					t.Fatal("lost material/owned completion accepted")
+				}
+				if mode == "recorded_retirement_header_loss" && !strings.Contains(err.Error(), "source headers missing") {
+					t.Fatal("recorded header loss was not classified as lost authority", err)
+				}
+				if mode == "recorded_retirement_header_loss" {
+					var sourceBudget, targetBudget model.NodeObservationMaterialBudget
+					var surviving int64
+					if err := f.source.First(&sourceBudget, "id = ?", 1).Error; err != nil || sourceBudget != damagedBudgetBefore {
+						t.Fatal("copy refusal rewrote source budget", sourceBudget, err)
+					}
+					if err := f.source.Model(&model.NodeObservationPart{}).Count(&surviving).Error; err != nil || surviving != damagedPartsBefore {
+						t.Fatal("copy refusal discarded surviving source material", surviving, err)
+					}
+					if err := target.First(&targetBudget, "id = ?", 1).Error; err != nil || targetBudget.RetainedBytes != 0 || targetBudget.Revision != 1 {
+						t.Fatal("copy refusal changed owned target seed", targetBudget, err)
+					}
 				}
 				if mode == "owned_completion_rollback" && !errors.Is(err, injected) {
 					t.Fatal("missing intended same-TX failure", err)
@@ -206,6 +240,19 @@ func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
 					if err := target.First(&floor, "node_id = ? AND asset_tag = ?", node.ID, "").Error; err != nil || floor.FloorReference == "" || floor.StatsReference != "" || floor.LatestReference != "" || floor.CurrentKnown {
 						t.Fatal("legacy copy forged attributed position", floor, err)
 					}
+					var budget model.NodeObservationMaterialBudget
+					var retained struct{ Bytes uint64 }
+					expression := "OCTET_LENGTH(data)"
+					if datastore.IsSQLite(target) {
+						expression = "length(CAST(data AS BLOB))"
+					}
+					if err := target.Model(&model.NodeObservationPart{}).Select("COALESCE(SUM(" + expression + "),0) AS bytes").Scan(&retained).Error; err != nil {
+						t.Fatal(err)
+					}
+					if err := target.First(&budget, "id = ?", 1).Error; err != nil || retained.Bytes == 0 || budget.RetainedBytes != retained.Bytes {
+						t.Fatal("owned imported legacy floor was given a false zero budget", budget, retained, err)
+					}
+
 				} else if !reflect.DeepEqual(before, snapshot(target)) {
 					t.Fatal("copy changed material/position/ownership/disposition")
 				}

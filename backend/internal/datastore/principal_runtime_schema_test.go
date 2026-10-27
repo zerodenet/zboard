@@ -38,9 +38,10 @@ func assertPrincipalRuntimeUpgrade(t *testing.T, mysql bool) {
 	target := diagnosticSchemaDB(t, mysql)
 	principalRuntimeCopy(t, db, target)
 	var copied meteringstore.PrincipalFlowObservation
-	if err := target.First(&copied, old.ID).Error; err != nil || !reflect.DeepEqual(old, copied) {
+	if err := target.First(&copied, old.ID).Error; err != nil {
 		t.Fatal("legacy copy changed historical observation", copied, err)
 	}
+	assertPrincipalObservationSnapshot(t, old, copied)
 	if db.Migrator().HasColumn("principal_flow_observations", "core_instance_sha256") {
 		t.Fatal("legacy copy mutated source schema")
 	}
@@ -62,17 +63,20 @@ func assertPrincipalRuntimeUpgrade(t *testing.T, mysql bool) {
 		}
 	}
 	var retained meteringstore.PrincipalFlowObservation
-	if err := db.First(&retained, old.ID).Error; err != nil || !reflect.DeepEqual(old, retained) {
+	if err := db.First(&retained, old.ID).Error; err != nil {
 		t.Fatal("upgrade changed existing short identity or activity", retained, err)
 	}
+	assertPrincipalObservationSnapshot(t, old, retained)
 	var gotGeneration meteringstore.PrincipalFlowNodeGeneration
 	var gotCurrent meteringstore.PrincipalFlowCurrent
-	if err := db.First(&gotGeneration, "node_id = ?", generation.NodeID).Error; err != nil || !reflect.DeepEqual(generation, gotGeneration) {
+	if err := db.First(&gotGeneration, "node_id = ?", generation.NodeID).Error; err != nil {
 		t.Fatal("upgrade reset generation start", err)
 	}
-	if err := db.First(&gotCurrent, "node_id = ? AND principal_key = ?", current.NodeID, current.PrincipalKey).Error; err != nil || !reflect.DeepEqual(current, gotCurrent) {
+	assertPrincipalGenerationSnapshot(t, generation, gotGeneration)
+	if err := db.First(&gotCurrent, "node_id = ? AND principal_key = ?", current.NodeID, current.PrincipalKey).Error; err != nil {
 		t.Fatal("upgrade rewrote current window", err)
 	}
+	assertPrincipalCurrentSnapshot(t, current, gotCurrent)
 	long := old
 	long.ID = 0
 	long.CoreInstanceID = strings.Repeat("same-prefix-", 25) + "A"
@@ -91,9 +95,10 @@ func assertPrincipalRuntimeUpgrade(t *testing.T, mysql bool) {
 	}
 	principalRuntimeCopy(t, db, target)
 	var gotLong meteringstore.PrincipalFlowObservation
-	if err := target.First(&gotLong, long.ID).Error; err != nil || !reflect.DeepEqual(long, gotLong) {
+	if err := target.First(&gotLong, long.ID).Error; err != nil {
 		t.Fatal("prepared copy lost complete raw/digest pair", err)
 	}
+	assertPrincipalObservationSnapshot(t, long, gotLong)
 }
 
 func principalRuntimeLegacyDDL(t *testing.T, db *gorm.DB, mysql bool) {
@@ -217,5 +222,45 @@ func assertPrincipalRuntimePartialMismatch(t *testing.T, mysql bool) {
 	var receipts int64
 	if err := db.Table("schema_migrations").Where("version = ?", principalRuntimeVersion).Count(&receipts).Error; err != nil || receipts != 0 {
 		t.Fatal("failed validation recorded as completed", receipts, err)
+	}
+}
+
+// Verify absolute instants independently, then compare EVERY original field.
+// Only Go's nonpersisted time.Location/monotonic representation is aligned;
+// no ID, scope, revision, amount, original raw string or digest is omitted.
+func assertPrincipalObservationSnapshot(t *testing.T, want, got meteringstore.PrincipalFlowObservation) {
+	t.Helper()
+	if !want.ObservedAt.Equal(got.ObservedAt) || !want.CreatedAt.Equal(got.CreatedAt) {
+		t.Fatal("observation timestamp instant or precision changed", want, got)
+	}
+	if got.CoreInstanceSHA256 != metering.RuntimeIdentityDigest(got.CoreInstanceID) {
+		t.Fatal("new digest does not bind preserved complete raw identity")
+	}
+	got.ObservedAt, got.CreatedAt = want.ObservedAt, want.CreatedAt
+	if !reflect.DeepEqual(want, got) {
+		t.Fatal("original observation column changed", want, got)
+	}
+}
+func assertPrincipalGenerationSnapshot(t *testing.T, want, got meteringstore.PrincipalFlowNodeGeneration) {
+	t.Helper()
+	if !want.StartedAt.Equal(got.StartedAt) || !want.UpdatedAt.Equal(got.UpdatedAt) || (want.ClosedAt == nil) != (got.ClosedAt == nil) {
+		t.Fatal("generation window changed", want, got)
+	}
+	if want.ClosedAt != nil && !want.ClosedAt.Equal(*got.ClosedAt) {
+		t.Fatal("generation closing instant changed")
+	}
+	got.StartedAt, got.UpdatedAt, got.ClosedAt = want.StartedAt, want.UpdatedAt, want.ClosedAt
+	if !reflect.DeepEqual(want, got) {
+		t.Fatal("original generation column changed", want, got)
+	}
+}
+func assertPrincipalCurrentSnapshot(t *testing.T, want, got meteringstore.PrincipalFlowCurrent) {
+	t.Helper()
+	if !want.ObservedAt.Equal(got.ObservedAt) || !want.UpdatedAt.Equal(got.UpdatedAt) {
+		t.Fatal("current observation instant or precision changed", want, got)
+	}
+	got.ObservedAt, got.UpdatedAt = want.ObservedAt, want.UpdatedAt
+	if !reflect.DeepEqual(want, got) {
+		t.Fatal("original current observation column changed", want, got)
 	}
 }
