@@ -1,0 +1,257 @@
+#!/usr/bin/env python3
+"""Fail-closed MySQL test partition; no test is omitted by default."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+
+JOBSTORE = './internal/adapters/persistence/jobstore'
+COPYSTORE = './internal/adapters/persistence/platformstore'
+TEST_NAME = re.compile(r'Test[A-Za-z0-9_]+\Z')
+
+
+def read_events(path):
+    events = []
+    for number, line in enumerate(Path(path).read_text().splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError as exc:
+            raise ValueError(f'{path}:{number}: non-JSON go output') from exc
+        if not isinstance(event, dict):
+            raise ValueError(f'{path}:{number}: invalid go event')
+        events.append(event)
+    return events
+
+
+def canonical_package(package, module):
+    if not package.startswith(module + '/'):
+        raise ValueError(f'package outside backend module: {package}')
+    return './' + package[len(module) + 1:]
+
+
+def listed_tests(events, module):
+    found = set()
+    for event in events:
+        # go test -json -list emits one output event per listed top-level test.
+        line = event.get('Output', '').strip()
+        if event.get('Action') == 'output' and TEST_NAME.fullmatch(line):
+            found.add((canonical_package(event['Package'], module), line))
+    return found
+
+
+def partition(inventory, profile):
+    if profile.get('version') != 1 or set(profile) != {'version', 'extended'}:
+        raise ValueError('unsupported profile format')
+    if not inventory:
+        raise ValueError('empty MySQL inventory')
+    extended = set()
+    for entry in profile['extended']:
+        if set(entry) != {'package', 'test', 'reason', 'scale'}:
+            raise ValueError('extended entry must identify package/test/reason/scale')
+        key = entry['package'], entry['test']
+        if not key[0].startswith('./') or not TEST_NAME.fullmatch(key[1]):
+            raise ValueError(f'invalid exact test identity: {key}')
+        if not entry['reason'].strip() or not entry['scale'].strip():
+            raise ValueError(f'missing reviewable classification reason: {key}')
+        if key in extended:
+            raise ValueError(f'duplicate extended entry: {key}')
+        if key not in inventory:
+            raise ValueError(f'stale or unknown extended entry: {key}')
+        extended.add(key)
+    core = inventory - extended
+    if not core or not extended or core & extended or core | extended != inventory:
+        raise ValueError('partition is empty, overlapping or incomplete')
+    return {'core': core, 'extended': extended}
+
+
+def positive_regex(tests):
+    if not tests or any(not TEST_NAME.fullmatch(test) for test in tests):
+        raise ValueError('cannot run empty or non-exact test selection')
+    return '^(' + '|'.join(sorted(tests)) + ')$'
+
+
+def groups(selection, inventory):
+    # Copy's server-wide source lock must never overlap financial race tests.
+    business = {package for package, _ in selection} - {JOBSTORE, COPYSTORE}
+    result = []
+    for label, packages in [('business', sorted(business)), ('jobs', [JOBSTORE]), ('copy', [COPYSTORE])]:
+        packages = [p for p in packages if any(item[0] == p for item in selection)]
+        if not packages:
+            continue
+        names = {name for package, name in selection if package in packages}
+        actual = {(package, name) for package, name in inventory if package in packages and name in names}
+        wanted = {(package, name) for package, name in selection if package in packages}
+        if actual != wanted:
+            # A shared test name must not silently re-add an extended test in
+            # another package when a group uses one positive -run expression.
+            raise ValueError(f'cross-package selection collision in {label}: {sorted(actual ^ wanted)}')
+        result.append((label, packages, positive_regex(names), wanted))
+    covered = set().union(*(item[3] for item in result))
+    if covered != selection:
+        raise ValueError('execution groups do not cover selected profile')
+    return result
+
+
+def result_summary(events, expected, module):
+    terminal = {}
+    skipped = []
+    failed = []
+    for event in events:
+        action, name = event.get('Action'), event.get('Test', '')
+        if action in ('skip', 'fail'):
+            detail = {'package': event.get('Package'), 'test': name}
+            (skipped if action == 'skip' else failed).append(detail)
+        if action not in ('pass', 'skip', 'fail') or not name or '/' in name:
+            continue
+        key = canonical_package(event['Package'], module), name
+        if key in terminal:
+            raise ValueError(f'duplicate terminal result: {key}')
+        terminal[key] = action
+    missing, extra = expected - terminal.keys(), terminal.keys() - expected
+    passed = sum(action == 'pass' for action in terminal.values())
+    return {'passed': passed, 'skipped': skipped, 'failed': failed,
+            'missing': sorted(missing), 'unexpected': sorted(extra),
+            'complete': not (skipped or failed or missing or extra) and passed == len(expected)}
+
+
+def write_json(path, value):
+    Path(path).write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
+
+
+def run_command(command, cwd, log, commands):
+    started = time.time()
+    print(f'Starting {log.name}: {len(command)} arguments; output {log}', flush=True)
+    stderr = log.with_suffix(log.suffix + '.stderr')
+    with log.open('xb') as output, stderr.open('xb') as errors:
+        code = subprocess.run(command, cwd=cwd, stdout=output, stderr=errors, check=False).returncode
+    record = {'command': command, 'log': str(log), 'stderr': str(stderr), 'exit_code': code,
+              'stdout_sha256': hashlib.sha256(log.read_bytes()).hexdigest(),
+              'stderr_sha256': hashlib.sha256(stderr.read_bytes()).hexdigest(),
+              'elapsed_seconds': round(time.time() - started, 3)}
+    commands.append(record)
+    print(f'Finished {log.name}: exit={code}, elapsed={record["elapsed_seconds"]}s', flush=True)
+    return code
+
+
+def source_fingerprints(root):
+    selected = {'scripts/mysql_profiles.py', 'scripts/mysql_extended_tests.json',
+                'scripts/test_mysql_profiles.py', '.github/workflows/ci.yml',
+                '.github/workflows/mysql-extended.yml'}
+    result = subprocess.run(['git', 'ls-files', '--cached', '--others', '--exclude-standard',
+                             'backend', *sorted(selected)], cwd=root, capture_output=True, text=True, check=True)
+    found = {}
+    for name in sorted(set(result.stdout.splitlines())):
+        path = root / name
+        relevant = name in selected or (name.startswith('backend/') and
+                    (path.suffix in ('.go', '.sql') or path.name in ('go.mod', 'go.sum') or
+                     name in ('backend/api/openapi.yaml', 'backend/architecture/capability-ownership.json')))
+        if not relevant:
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f'ordinary source file required: {name}')
+        found[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return found
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--profile', required=True, choices=('core', 'extended', 'full'))
+    parser.add_argument('--output-dir', required=True, type=Path, help='new directory preserving all JSON and receipts')
+    parser.add_argument('--plan-only', action='store_true', help='compile/list actual tests; do not run test bodies')
+    args = parser.parse_args(argv)
+    root = Path(__file__).resolve().parents[1]
+    backend = root / 'backend'
+    output = args.output_dir.resolve()
+    # Never overwrite evidence from a previous invocation.
+    output.mkdir(parents=True, exist_ok=False)
+    receipt = {'profile': args.profile, 'plan_only': args.plan_only, 'status': 'failed', 'commands': [], 'results': []}
+    fingerprints = None
+    try:
+        if not args.plan_only and not os.environ.get('ZBOARD_TEST_MYSQL_DSN', '').strip():
+            raise ValueError('ZBOARD_TEST_MYSQL_DSN is required; skipped SQLite fallback is not MySQL acceptance')
+        module = re.search(r'^module\s+(\S+)', (backend / 'go.mod').read_text(), re.M).group(1)
+        profile_path = root / 'scripts' / 'mysql_extended_tests.json'
+        profile = json.loads(profile_path.read_text())
+        # Anchor exact test sources as well as HEAD: new uncommitted tests must
+        # also be included in local development evidence.
+        fingerprints = source_fingerprints(root)
+        write_json(output / 'source-sha256.json', fingerprints)
+        head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
+        receipt['head'] = head
+        inventory = set()
+        for label, expression, packages in [('mysql', 'MySQL', ['./...']), ('jobs', '^Test', [JOBSTORE])]:
+            log = output / f'inventory-{label}.jsonl'
+            command = ['go', 'test', '-json', '-p', '2', '-count=1', '-timeout', '15m', '-list', expression, *packages]
+            if run_command(command, backend, log, receipt['commands']):
+                raise ValueError(f'{label} inventory failed; see preserved JSONL')
+            inventory |= listed_tests(read_events(log), module)
+        required = {'./internal/datastore', './internal/handler', './internal/application',
+                    './internal/adapters/persistence/networkstore', JOBSTORE, COPYSTORE}
+        if not required <= {p for p, _ in inventory}:
+            raise ValueError('inventory lost an existing mandatory MySQL package')
+        # Every name with MySQL anywhere is included across ./..., plus the
+        # complete generic jobstore suite whose fixtures select DB by DSN.
+        partitions = partition(inventory, profile)
+        write_json(output / 'inventory.json', sorted(inventory))
+        write_json(output / 'partition.json', {k: sorted(v) for k, v in partitions.items()})
+        plan = []
+        selected_profiles = ['core', 'extended'] if args.profile == 'full' else [args.profile]
+        for chosen in selected_profiles:
+            for label, packages, expression, expected in groups(partitions[chosen], inventory):
+                command = ['go', 'test', '-json', '-p', '2', *packages, '-run', expression, '-count=1', '-timeout', '15m']
+                plan.append({'profile': chosen, 'group': label, 'command': command, 'expected': sorted(expected)})
+        write_json(output / 'plan.json', plan)
+        receipt['counts'] = {k: len(v) for k, v in partitions.items()}
+        if args.plan_only:
+            receipt['status'] = 'planned_not_executed'
+            return 0
+        complete = True
+        # Keep running independent groups/profiles after a failed package, and
+        # preserve failure. No retries, skips or timeout changes manufacture green.
+        for item in plan:
+            log = output / f'{item["profile"]}-{item["group"]}.jsonl'
+            code = run_command(item['command'], backend, log, receipt['commands'])
+            try:
+                summary = result_summary(read_events(log), {tuple(v) for v in item['expected']}, module)
+            except ValueError as exc:
+                summary = {'complete': False, 'error': str(exc)}
+            receipt['results'].append({'profile': item['profile'], 'group': item['group'], 'exit_code': code, **summary})
+            complete = complete and code == 0 and summary['complete']
+            write_json(output / 'receipt.json', receipt)
+        receipt['status'] = 'passed' if complete else 'failed_or_incomplete'
+        return 0 if complete else 1
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        receipt['error'] = str(exc)
+        print(str(exc), file=sys.stderr)
+        return 1
+    finally:
+        changed = False
+        if fingerprints is not None:
+            try:
+                after = source_fingerprints(root)
+                write_json(output / 'source-sha256-after.json', after)
+                head_after = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
+                receipt['head_after'] = head_after
+                receipt['source_unchanged'] = after == fingerprints and head_after == receipt.get('head')
+                changed = not receipt['source_unchanged']
+                if changed:
+                    receipt['changed_sources'] = sorted(n for n in set(after) | set(fingerprints) if after.get(n) != fingerprints.get(n))
+            except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+                receipt['source_after_error'] = str(exc)
+                changed = True
+            if changed:
+                receipt['status'] = 'failed_source_changed_or_unverifiable'
+        write_json(output / 'receipt.json', receipt)
+        if changed:
+            return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

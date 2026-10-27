@@ -1,0 +1,39 @@
+name: mysql-full-acceptance
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mysql-full:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: zboard-ci-root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pzboard-ci-root"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      ZBOARD_TEST_MYSQL_DSN: root:zboard-ci-root@tcp(127.0.0.1:3306)/?parseTime=true&loc=UTC
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Verify MySQL profile policy
+        run: python3 -m unittest discover -s scripts -p 'test_mysql_profiles.py'
+      - name: Full actual MySQL acceptance (core and extended)
+        run: python3 scripts/mysql_profiles.py --profile full --output-dir artifacts/mysql-full
+      - name: Preserve full inventory, exact commands and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mysql-full-${{ github.sha }}-${{ github.run_attempt }}
+          path: artifacts/mysql-full
+          if-no-files-found: error
