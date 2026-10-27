@@ -6,6 +6,12 @@
 
     <TransientFeedback :success="message" :error="error" success-title="证书操作已提交" error-title="证书操作失败" />
 
+    <PageAlert v-if="createDraftRecovery.message.value || editDraftRecovery.message.value || renewalDraftRecovery.message.value" tone="info" title="重新认证后的草稿">
+      {{ createDraftRecovery.message.value || editDraftRecovery.message.value || renewalDraftRecovery.message.value }}
+      <UiButton type="button" variant="ghost" @click="createDraftRecovery.restore(); editDraftRecovery.restore(); renewalDraftRecovery.restore()">重新检查草稿恢复</UiButton>
+    </PageAlert>
+    <PageAlert v-if="createRecoveryBlocked || editRecoveryBlocked || renewalRecoveryBlocked" tone="warning" title="草稿需要重新核对">已保留普通输入和原版本；当前资源已变化、缺失或有正在执行的操作，不能直接提交。请关闭后重新打开核对。恢复不会自动申请、续签或部署。</PageAlert>
+
     <details class="certificate-help"><summary>验证方式与私钥存放</summary><p>默认通过内置 Cloudflare DNS 或证书供应商插件完成 DNS-01 验证；已有 Web 服务时也可选择 HTTP-01 Webroot。证书私钥始终在目标节点生成和保存，不会交给插件。</p></details>
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
@@ -48,7 +54,7 @@
         <FormField v-slot="{ controlAttrs }" label="提前续期天数" name="certificate-renew-days" :error="createErrors.fields.renew_before_days"><UiNumberInput v-model="createForm.renew_before_days" v-bind="controlAttrs" :min="1" :max="60" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="自动续期" name="certificate-auto-renew"><label class="check-field"><UiCheckbox v-model="createForm.auto_renew" v-bind="controlAttrs" /><span>到达续期窗口后由面板自动执行</span></label></FormField>
       </form>
-      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="certificate-create-form" type="submit" :loading="saving">创建并申请</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="certificate-create-form" type="submit" :loading="saving" :disabled="createRecoveryBlocked || !draftWritable">创建并申请</UiButton></template>
     </ModalDialog>
 
     <ModalDialog :open="editOpen" title="编辑证书" description="可修改名称、联系邮箱和续期设置；节点、域名、签发环境与验证方式保持不变。" :busy="savingEdit" :dirty="editState.dirty.value" @close="editOpen = false">
@@ -60,7 +66,7 @@
         <FormField v-slot="{ controlAttrs }" label="自动续期" name="edit-certificate-renew"><label class="check-field"><UiCheckbox v-model="editForm.auto_renew" v-bind="controlAttrs" /><span>启用到期前自动续期</span></label></FormField>
         <FormField v-slot="{ controlAttrs }" label="提前续期天数" name="edit-certificate-days" :error="editErrors.fields.renew_before_days"><UiNumberInput v-model="editForm.renew_before_days" v-bind="controlAttrs" :min="1" :max="60" /></FormField>
       </form>
-      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="savingEdit" @click="requestClose">取消</UiButton><UiButton form="certificate-edit-form" type="submit" :loading="savingEdit">保存</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="savingEdit" @click="requestClose">取消</UiButton><UiButton form="certificate-edit-form" type="submit" :loading="savingEdit" :disabled="editRecoveryBlocked || !draftWritable">保存</UiButton></template>
     </ModalDialog>
 
     <ModalDialog :open="renewalOpen" title="续期策略" description="修改自动续期窗口；运行中的操作不会中断。" :busy="savingPolicy" :dirty="renewalState.dirty.value" @close="renewalOpen = false">
@@ -69,7 +75,7 @@
         <FormField v-slot="{ controlAttrs }" label="自动续期" name="renewal-enabled"><label class="check-field"><UiCheckbox v-model="renewalForm.auto_renew" v-bind="controlAttrs" /><span>启用到期前自动续期</span></label></FormField>
         <FormField v-slot="{ controlAttrs }" label="提前续期天数" name="renewal-days" :error="renewalErrors.fields.renew_before_days"><UiNumberInput v-model="renewalForm.renew_before_days" v-bind="controlAttrs" :min="1" :max="60" /></FormField>
       </form>
-      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="savingPolicy" @click="requestClose">取消</UiButton><UiButton form="certificate-renewal-form" type="submit" :loading="savingPolicy">保存策略</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="savingPolicy" @click="requestClose">取消</UiButton><UiButton form="certificate-renewal-form" type="submit" :loading="savingPolicy" :disabled="renewalRecoveryBlocked || !draftWritable">保存策略</UiButton></template>
     </ModalDialog>
   </section>
 </template>
@@ -78,7 +84,7 @@
 import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createManagedCertificate, deleteManagedCertificate, fetchManagedCertificatesPage, fetchProviderAccounts, issueManagedCertificate, renewManagedCertificate, updateManagedCertificate, updateManagedCertificateRenewal, type CertificateOperation, type ManagedCertificate, type ProviderAccount } from '../api/client'
+import { createManagedCertificate, deleteManagedCertificate, fetchManagedCertificatesPage, fetchProviderAccounts, fetchNodesPage, issueManagedCertificate, renewManagedCertificate, updateManagedCertificate, updateManagedCertificateRenewal, type CertificateOperation, type ManagedCertificate, type ProviderAccount } from '../api/client'
 import DataTable from '../components/DataTable.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
@@ -109,6 +115,10 @@ import { useRemoteTable } from '../composables/useRemoteTable'
 import { confirmAction } from '../utils/feedback'
 import { preserveAdminReturnTo } from '../utils/navigation'
 import { collectFieldErrors, isIntegerInRange, isUtf8LengthInRange } from '../utils/validation'
+
+import { useAppStore } from '../stores/app'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { certificateCreateRecoveryDraft, certificateEditRecoveryDraft, certificateRenewalRecoveryDraft, certificateDraftBaseline, providerDraftBaseline, sameProviderDraftBaseline, type CertificateDraftBaseline, type ProviderDraftBaseline } from '../utils/managedAssetsReauthenticationDraftSchemas'
 
 const route = useRoute()
 const router = useRouter()
@@ -153,6 +163,85 @@ const { items: certificates, total, loading, refreshing, error, load: refresh } 
   errorMessage: (cause: any) => cause?.response?.data?.message || '证书列表加载失败。',
   onOffsetCorrected: () => syncURL(true),
 })
+const draftApp = useAppStore()
+const draftOwner = draftApp.user.id
+const draftWritable = computed(() => Boolean(draftApp.token) && !draftApp.reauthRequired && draftApp.isAdmin && draftApp.user.id === draftOwner)
+const recoveryReady = ref(false)
+const createRecoveryBlocked = ref(false), editRecoveryBlocked = ref(false), renewalRecoveryBlocked = ref(false)
+const createProviderBaseline = ref<ProviderDraftBaseline | null | undefined>(undefined)
+const editDraftBaseline = ref<CertificateDraftBaseline | null>(null), renewalDraftBaseline = ref<CertificateDraftBaseline | null>(null)
+let draftGeneration = 0
+watch(() => [createOpen.value, editOpen.value, renewalOpen.value, JSON.stringify(createForm), JSON.stringify(editForm), JSON.stringify(renewalForm)], () => { draftGeneration++ }, { flush: 'sync' })
+watch(() => createForm.provider_account_id, value => { createProviderBaseline.value = providerDraftBaseline(providerAccounts.value.find(item => item.id === value)) || null }, { flush: 'sync' })
+function certificateBaselineMatches(value: { revision: number; baseline: CertificateDraftBaseline }, fresh?: ManagedCertificate) {
+  return Boolean(fresh && fresh.revision === value.revision && JSON.stringify(certificateDraftBaseline(fresh)) === JSON.stringify(value.baseline) && fresh.status !== 'deleting' && !operationRunning(fresh))
+}
+async function freshRecoveredCertificate(id: number, baseline: CertificateDraftBaseline) {
+  const page = await fetchManagedCertificatesPage({ q: baseline.fields.name, nodeId: baseline.node_id, limit: 200 })
+  return page.items.find(item => item.id === id)
+}
+const createDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.certificates.create', permission: 'admin', ready: () => recoveryReady.value && !saving.value && !savingEdit.value && !savingPolicy.value,
+  read: () => createOpen.value && !saving.value ? { fields: createForm, provider: createProviderBaseline.value === undefined ? providerDraftBaseline(providerAccounts.value.find(item => item.id === createForm.provider_account_id)) || null : createProviderBaseline.value } : null,
+  sanitize: certificateCreateRecoveryDraft,
+  restore: async (value, { isCurrent }) => {
+    const generation = draftGeneration
+    createRecoveryBlocked.value = true
+    const [providers, nodes] = await Promise.all([fetchProviderAccounts(), value.fields.node_id ? fetchNodesPage({ nodeId: value.fields.node_id, limit: 1 }) : Promise.resolve({ items: [] })])
+    if (!isCurrent() || generation !== draftGeneration) throw new Error('Certificate editor changed during recovery')
+    const provider = providers.find(item => item.id === value.fields.provider_account_id)
+    const providerValid = value.fields.challenge_type !== 'dns-01' || value.fields.provider_account_id === 0 || Boolean(provider?.status === 'active' && ((provider.provider_key === 'cloudflare' && provider.capabilities.includes('dns.records')) || provider.capabilities.includes('certificate.issue')) && sameProviderDraftBaseline(value.provider, provider))
+    createRecoveryBlocked.value = !providerValid || value.fields.node_id !== 0 && !nodes.items.some(item => item.id === value.fields.node_id && item.lifecycle_status !== 'deleting')
+    providerAccounts.value = providers
+    Object.assign(createForm, value.fields)
+    createProviderBaseline.value = value.provider
+    createOpen.value = true
+    createErrors.clear()
+  },
+})
+const editDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.certificates.edit', permission: 'admin', ready: () => recoveryReady.value && !saving.value && !savingEdit.value && !savingPolicy.value,
+  read: () => editOpen.value && !savingEdit.value && editDraftBaseline.value ? { id: editForm.id, revision: editForm.revision, baseline: editDraftBaseline.value, fields: editForm } : null,
+  sanitize: certificateEditRecoveryDraft,
+  restore: async (value, { isCurrent }) => {
+    const generation = draftGeneration
+    editRecoveryBlocked.value = true
+    const fresh = await freshRecoveredCertificate(value.id, value.baseline)
+    if (!isCurrent() || generation !== draftGeneration) throw new Error('Certificate editor changed during recovery')
+    editRecoveryBlocked.value = !certificateBaselineMatches(value, fresh)
+    editDraftBaseline.value = value.baseline
+    Object.assign(editForm, value.fields, { id: value.id, revision: value.revision })
+    editOpen.value = true
+    editErrors.clear()
+  },
+})
+const renewalDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.certificates.policy', permission: 'admin', ready: () => recoveryReady.value && !saving.value && !savingEdit.value && !savingPolicy.value,
+  read: () => renewalOpen.value && !savingPolicy.value && renewalDraftBaseline.value ? { id: renewalForm.id, revision: renewalForm.revision, baseline: renewalDraftBaseline.value, fields: renewalForm } : null,
+  sanitize: certificateRenewalRecoveryDraft,
+  restore: async (value, { isCurrent }) => {
+    const generation = draftGeneration
+    renewalRecoveryBlocked.value = true
+    const fresh = await freshRecoveredCertificate(value.id, value.baseline)
+    if (!isCurrent() || generation !== draftGeneration) throw new Error('Certificate policy changed during recovery')
+    renewalRecoveryBlocked.value = !certificateBaselineMatches(value, fresh)
+    renewalDraftBaseline.value = value.baseline
+    Object.assign(renewalForm, value.fields, { id: value.id, revision: value.revision })
+    renewalOpen.value = true
+    renewalErrors.clear()
+  },
+})
+watch(() => draftApp.user.id, actor => {
+  if (actor === draftOwner) return
+  createOpen.value = false; editOpen.value = false; renewalOpen.value = false
+  createRecoveryBlocked.value = false; editRecoveryBlocked.value = false; renewalRecoveryBlocked.value = false
+  createProviderBaseline.value = undefined; editDraftBaseline.value = null; renewalDraftBaseline.value = null
+  Object.assign(createForm, emptyCreateForm())
+  Object.assign(editForm, { id: 0, name: '', contact_email: '', webroot_path: '', auto_renew: false, renew_before_days: 30, revision: 0 })
+  Object.assign(renewalForm, { id: 0, auto_renew: false, renew_before_days: 30, revision: 0 })
+  providerAccounts.value = []; certificates.value = []; total.value = 0; error.value = ''; message.value = ''
+}, { flush: 'sync' })
+
 const hasRunningOperation = computed(() => certificates.value.some(operationRunning))
 let pollTimer: ReturnType<typeof setInterval> | undefined
 
@@ -162,7 +251,6 @@ useUnsavedChangesGuard(
 )
 for (const field of ['node_id', 'provider_account_id', 'name', 'domains', 'contact_email', 'environment', 'renew_before_days', 'challenge_type', 'webroot_path']) watch(() => (createForm as any)[field], () => createErrors.clear(field))
 watch(() => renewalForm.renew_before_days, () => renewalErrors.clear('renew_before_days'))
-watch(renewalOpen, open => { if (open) renewalState.markClean() })
 useUnsavedChangesGuard(
   () => renewalOpen.value && renewalState.dirty.value,
   () => renewalState.confirmDiscard({ title: '放弃续期策略修改？', message: '尚未保存的续期设置将丢失。' }),
@@ -191,9 +279,11 @@ async function syncURL(replace = false) {
 async function applyFilters() { offset.value = 0; await syncURL(); await refresh() }
 async function clearFilters() { search.value = ''; statusFilter.value = ''; await applyFilters() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await refresh() }
-function openCreate() { Object.assign(createForm, emptyCreateForm()); createErrors.clear(); createState.markClean(); createOpen.value = true }
+function openCreate() { createRecoveryBlocked.value = false; createProviderBaseline.value = undefined; Object.assign(createForm, emptyCreateForm()); createErrors.clear(); createState.markClean(); createOpen.value = true }
 function closeCreate() { if (!saving.value) createOpen.value = false }
 async function create() {
+  if (!draftWritable.value || createRecoveryBlocked.value) { createErrors.set({}, '草稿资源尚未核对，不能创建或申请证书。请关闭后重新选择资源。'); return }
+  draftGeneration++
   const domains = parseDomains(createForm.domains)
   const valid = await createErrors.applyValidation(collectFieldErrors({
     node_id: !createForm.node_id && '请选择目标节点。',
@@ -204,7 +294,7 @@ async function create() {
     provider_account_id: createForm.challenge_type === 'dns-01' && !createForm.provider_account_id && '请选择已验证且支持证书签发的供应商账户。',
     webroot_path: createForm.challenge_type === 'http-01-webroot' && !createForm.webroot_path.startsWith('/') && '请输入节点上的绝对 Webroot 路径。',
   }), createFormElement, '')
-  if (!valid) return
+  if (!valid || !draftWritable.value || createRecoveryBlocked.value) return
   saving.value = true; message.value = ''; error.value = ''
   try {
     const certificate = await createManagedCertificate({ node_id: createForm.node_id, provider_account_id: createForm.challenge_type === 'dns-01' ? createForm.provider_account_id : 0, name: createForm.name.trim(), domains, contact_email: createForm.contact_email.trim(), environment: createForm.environment, auto_renew: createForm.auto_renew, renew_before_days: createForm.renew_before_days, challenge_type: createForm.challenge_type, webroot_path: createForm.challenge_type === 'http-01-webroot' ? createForm.webroot_path : '' })
@@ -250,21 +340,25 @@ async function removeCertificate(certificate: ManagedCertificate) {
     deletingID.value = 0
   }
 }
-function openRenewal(certificate: ManagedCertificate) { Object.assign(renewalForm, { id: certificate.id, auto_renew: certificate.auto_renew, renew_before_days: certificate.renew_before_days, revision: certificate.revision }); renewalOpen.value = true }
+function openRenewal(certificate: ManagedCertificate) { renewalRecoveryBlocked.value = false; renewalDraftBaseline.value = certificateDraftBaseline(certificate) || null; Object.assign(renewalForm, { id: certificate.id, auto_renew: certificate.auto_renew, renew_before_days: certificate.renew_before_days, revision: certificate.revision }); renewalState.markClean(); renewalOpen.value = true }
 function openEdit(certificate: ManagedCertificate) {
+  editRecoveryBlocked.value = false
+  editDraftBaseline.value = certificateDraftBaseline(certificate) || null
   editErrors.clear()
   Object.assign(editForm, { id: certificate.id, name: certificate.name, contact_email: certificate.contact_email, challenge_type: certificate.challenge_type, webroot_path: certificate.webroot_path || '', auto_renew: certificate.auto_renew, renew_before_days: certificate.renew_before_days, revision: certificate.revision })
   editState.markClean()
   editOpen.value = true
 }
 async function saveEdit() {
+  if (!draftWritable.value || editRecoveryBlocked.value) { editErrors.set({}, '当前草稿基于旧版本，不能直接覆盖服务器的新内容。请关闭后重新打开核对。'); return }
+  draftGeneration++
   const valid = await editErrors.applyValidation(collectFieldErrors({
     name: !isUtf8LengthInRange(editForm.name.trim(), 1, 80, true) && '证书名称需包含 1 到 80 个 UTF-8 字节。',
     contact_email: !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(editForm.contact_email.trim()) && '请输入有效的 ACME 联系邮箱。',
     webroot_path: editForm.challenge_type === 'http-01-webroot' && !editForm.webroot_path.startsWith('/') && '请输入节点上的绝对 Webroot 路径。',
     renew_before_days: !isIntegerInRange(editForm.renew_before_days, 1, 60) && '提前续期天数必须为 1–60 之间的整数。',
   }), editFormElement, '')
-  if (!valid) return
+  if (!valid || !draftWritable.value || editRecoveryBlocked.value) return
   savingEdit.value = true
   error.value = ''
   message.value = ''
@@ -280,11 +374,13 @@ async function saveEdit() {
   }
 }
 async function saveRenewal() {
+  if (!draftWritable.value || renewalRecoveryBlocked.value) { renewalErrors.set({}, '当前策略草稿基于旧版本，不能直接保存。请关闭后重新打开核对。'); return }
+  draftGeneration++
   renewalErrors.clear()
   const valid = await renewalErrors.applyValidation(collectFieldErrors({
     renew_before_days: !isIntegerInRange(renewalForm.renew_before_days, 1, 60) && '提前续期天数必须为 1–60 之间的整数。',
   }), renewalFormElement, '')
-  if (!valid) return
+  if (!valid || !draftWritable.value || renewalRecoveryBlocked.value) return
   savingPolicy.value = true; error.value = ''
   try {
     await updateManagedCertificateRenewal(renewalForm.id, { auto_renew: renewalForm.auto_renew, renew_before_days: renewalForm.renew_before_days, expected_revision: renewalForm.revision })
@@ -302,21 +398,31 @@ watch(() => route.fullPath, async () => {
   if (nextSearch !== search.value || nextStatus !== statusFilter.value || nextOffset !== offset.value) { search.value = nextSearch; statusFilter.value = nextStatus; offset.value = nextOffset; await refresh() }
 })
 onMounted(async () => {
-  const [accounts] = await Promise.all([fetchProviderAccounts(), refresh()])
-  providerAccounts.value = accounts
-  updatePolling()
-  const dnsDomain = String(route.query.dns_domain || '').trim()
-  const dnsNode = Number(route.query.dns_node || 0)
-  const dnsProvider = Number(route.query.dns_provider || 0)
-  if (dnsDomain && dnsNode > 0) {
-    openCreate()
-    createForm.node_id = dnsNode
-    createForm.name = `${dnsDomain} 证书`
-    createForm.domains = dnsDomain
-    createForm.provider_account_id = dnsProvider
-    createState.markClean()
+  const token = draftApp.token, actor = draftApp.user.id, epoch = draftApp.sessionEpoch
+  const current = () => token === draftApp.token && actor === draftApp.user.id && epoch === draftApp.sessionEpoch && actor === draftOwner
+  try {
+    const [accounts] = await Promise.all([fetchProviderAccounts(), refresh()])
+    if (!current()) return
+    providerAccounts.value = accounts
+    updatePolling()
+    const dnsDomain = String(route.query.dns_domain || '').trim()
+    const dnsNode = Number(route.query.dns_node || 0)
+    const dnsProvider = Number(route.query.dns_provider || 0)
+    if (dnsDomain && dnsNode > 0) {
+      openCreate()
+      createForm.node_id = dnsNode
+      createForm.name = `${dnsDomain} 证书`
+      createForm.domains = dnsDomain
+      createForm.provider_account_id = dnsProvider
+      createState.markClean()
+    }
+  } catch (cause: any) {
+    if (current()) error.value = cause?.response?.data?.message || '证书或供应商读取失败；可重新核对草稿。'
+  } finally {
+    if (current()) recoveryReady.value = true
   }
 })
+
 onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
 </script>
 

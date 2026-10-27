@@ -8,6 +8,12 @@
     </PageHeader>
     <TransientFeedback :success="message" :error="error" success-title="操作已提交" error-title="操作失败" />
 
+    <PageAlert v-if="createDraftRecovery.message.value || editDraftRecovery.message.value" tone="info" title="重新认证后的草稿">
+      {{ createDraftRecovery.message.value || editDraftRecovery.message.value }}
+      <UiButton type="button" variant="ghost" @click="createDraftRecovery.restore(); editDraftRecovery.restore()">重新检查草稿恢复</UiButton>
+    </PageAlert>
+    <PageAlert v-if="createRecoveryBlocked || editRecoveryBlocked" tone="warning" title="草稿需要重新核对">已保留普通输入和原版本，但当前资源已变化或不可用，不能直接保存或同步。请关闭后重新打开并核对服务器内容；接管已有记录需重新确认。</PageAlert>
+
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
         <WorkbenchFilterBar :active="Boolean(search || statusFilter)" @clear="clearFilters">
@@ -80,7 +86,7 @@
         <FormField label="Cloudflare 代理"><label class="check-field"><UiCheckbox v-model="dnsForm.proxied" /><span>启用橙云代理</span></label></FormField>
         <FormField label="已有记录处理" full><label class="check-field"><UiCheckbox v-model="dnsForm.takeover_existing" /><span>若远端已有同名记录，明确接管并更新</span></label></FormField>
       </form>
-      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" @click="requestClose">取消</UiButton><UiButton type="submit" form="dns-create-form" :loading="savingDNS">创建并同步</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" @click="requestClose">取消</UiButton><UiButton type="submit" form="dns-create-form" :loading="savingDNS" :disabled="createRecoveryBlocked || !draftWritable">创建并同步</UiButton></template>
     </ModalDialog>
 
     <ModalDialog :open="editOpen" title="编辑 DNS 解析" description="现有记录值不会被自动覆盖；可按需读取节点候选并明确选择替换。" :busy="savingEdit" :dirty="editState.dirty.value" @close="closeEditDNS">
@@ -112,7 +118,7 @@
         <FormField v-slot="{ controlAttrs }" label="TTL" name="edit-dns-ttl" hint="1 为自动；手动设置需为 60–86400 秒。" :error="editErrors.fields.ttl"><UiNumberInput v-model="editForm.ttl" v-bind="controlAttrs" :min="1" :max="86400" /></FormField>
         <FormField label="Cloudflare 代理"><label class="check-field"><UiCheckbox v-model="editForm.proxied" /><span>启用橙云代理</span></label></FormField>
       </form>
-      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" @click="requestClose">取消</UiButton><UiButton type="submit" form="dns-edit-form" :loading="savingEdit">保存并同步</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" @click="requestClose">取消</UiButton><UiButton type="submit" form="dns-edit-form" :loading="savingEdit" :disabled="editRecoveryBlocked || !draftWritable">保存并同步</UiButton></template>
     </ModalDialog>
   </section>
 </template>
@@ -120,13 +126,14 @@
 <script setup lang="ts">
 import EndpointAddress from '../components/EndpointAddress.vue'
 import TableText from '../components/TableText.vue'
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   createManagedDNSRecord,
   deleteManagedDNSRecord,
   fetchManagedDNSRecordsPage,
   fetchNodeAddressCandidates,
+  fetchNodesPage,
   fetchProviderAccounts,
   syncManagedDNSRecord,
   updateManagedDNSRecord,
@@ -168,6 +175,10 @@ import {
   clearPreviousSuggestedAddress,
   nodeAddressCandidateSourceLabel,
 } from '../utils/managedDNSAddressSuggestions'
+
+import { useAppStore } from '../stores/app'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { dnsCreateRecoveryDraft, dnsEditRecoveryDraft, dnsEditDraftFields, providerDraftBaseline, sameProviderDraftBaseline, type DNSEditDraftFields, type ProviderDraftBaseline } from '../utils/managedAssetsReauthenticationDraftSchemas'
 
 const route = useRoute()
 const router = useRouter()
@@ -229,13 +240,94 @@ let editAddressController: AbortController | null = null
 let createAddressRequest = 0
 let editAddressRequest = 0
 
+const draftApp = useAppStore()
+const draftOwner = draftApp.user.id
+const draftWritable = computed(() => Boolean(draftApp.token) && !draftApp.reauthRequired && draftApp.isAdmin && draftApp.user.id === draftOwner)
+const recoveryReady = ref(false)
+const recoveringDNS = ref(false)
+const createRecoveryBlocked = ref(false), editRecoveryBlocked = ref(false)
+const createProviderBaseline = ref<ProviderDraftBaseline | null | undefined>(undefined)
+const editProviderBaseline = ref<ProviderDraftBaseline | null>(null)
+const editDraftBaseline = ref<DNSEditDraftFields | null>(null)
+let draftGeneration = 0
+watch(() => [dnsOpen.value, editOpen.value, JSON.stringify(dnsForm), JSON.stringify(editForm)], () => { draftGeneration++ }, { flush: 'sync' })
+watch(() => dnsForm.provider_account_id, value => {
+  if (!recoveringDNS.value) createProviderBaseline.value = providerDraftBaseline(accounts.value.find(item => item.id === value)) || null
+}, { flush: 'sync' })
+async function recoveredDNSResources(nodeID: number) {
+  const [providers, nodes] = await Promise.all([fetchProviderAccounts(), nodeID ? fetchNodesPage({ nodeId: nodeID, limit: 1 }) : Promise.resolve({ items: [] })])
+  return { providers, nodeExists: nodeID === 0 || nodes.items.some(item => item.id === nodeID && item.lifecycle_status !== 'deleting') }
+}
+function recoveredDNSProvider(original: ProviderDraftBaseline | null, providers: ProviderAccount[], id: number) {
+  if (!id) return true
+  const fresh = providers.find(item => item.id === id)
+  return fresh?.status === 'active' && fresh.capabilities.includes('dns.records') && sameProviderDraftBaseline(original, fresh)
+}
+const createDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.dns.create', permission: 'admin', ready: () => recoveryReady.value && !savingDNS.value && !savingEdit.value,
+  read: () => dnsOpen.value && !savingDNS.value ? { fields: dnsForm, provider: createProviderBaseline.value === undefined ? providerDraftBaseline(accounts.value.find(item => item.id === dnsForm.provider_account_id)) || null : createProviderBaseline.value } : null,
+  sanitize: dnsCreateRecoveryDraft,
+  restore: async (value, { isCurrent }) => {
+    const generation = draftGeneration
+    createRecoveryBlocked.value = true
+    const fresh = await recoveredDNSResources(value.fields.node_id)
+    if (!isCurrent() || generation !== draftGeneration) throw new Error('DNS editor changed during recovery')
+    recoveringDNS.value = true
+    createRecoveryBlocked.value = !fresh.nodeExists || !recoveredDNSProvider(value.provider, fresh.providers, value.fields.provider_account_id)
+    accounts.value = fresh.providers
+    resetCreateAddressState()
+    Object.assign(dnsForm, value.fields, { takeover_existing: false })
+    // Recovered addresses are intentional text, never replace them by an SSH
+    // discovery/read triggered by the node watcher.
+    Object.assign(createAddressState, { ipv4Manual: true, ipv6Manual: true })
+    createProviderBaseline.value = value.provider
+    dnsOpen.value = true
+    createErrors.clear()
+    await nextTick()
+    recoveringDNS.value = false
+  },
+})
+const editDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.dns.edit', permission: 'admin', ready: () => recoveryReady.value && !savingDNS.value && !savingEdit.value,
+  read: () => editOpen.value && !savingEdit.value && editDraftBaseline.value ? { id: editForm.id, revision: editForm.revision, baseline: editDraftBaseline.value, fields: editForm, provider: editProviderBaseline.value } : null,
+  sanitize: dnsEditRecoveryDraft,
+  restore: async (value, { isCurrent }) => {
+    const generation = draftGeneration
+    editRecoveryBlocked.value = true
+    const [fresh, page] = await Promise.all([recoveredDNSResources(value.fields.node_id), fetchManagedDNSRecordsPage({ q: value.baseline.domain_name, limit: 200 })])
+    if (!isCurrent() || generation !== draftGeneration) throw new Error('DNS editor changed during recovery')
+    const current = page.items.find(item => item.id === value.id)
+    editRecoveryBlocked.value = !current || current.revision !== value.revision || JSON.stringify(dnsEditDraftFields(current)) !== JSON.stringify(value.baseline) || ['syncing', 'deleting'].includes(current.status) || !fresh.nodeExists || !recoveredDNSProvider(value.provider, fresh.providers, value.fields.provider_account_id)
+    editAddressController?.abort(); editAddressRequest++
+    accounts.value = fresh.providers
+    editDraftBaseline.value = value.baseline
+    editProviderBaseline.value = value.provider
+    Object.assign(editForm, value.fields, { id: value.id, revision: value.revision })
+    editAddressCandidates.value = null
+    editAddressError.value = ''
+    editOpen.value = true
+    editErrors.clear()
+  },
+})
+watch(() => draftApp.user.id, actor => {
+  if (actor === draftOwner) return
+  createAddressController?.abort(); editAddressController?.abort(); createAddressRequest++; editAddressRequest++
+  dnsOpen.value = false; editOpen.value = false
+  createRecoveryBlocked.value = false; editRecoveryBlocked.value = false
+  createProviderBaseline.value = undefined; editProviderBaseline.value = null; editDraftBaseline.value = null
+  Object.assign(dnsForm, { provider_account_id: 0, node_id: 0, domain_name: '', ipv4_value: '', ipv6_value: '', ttl: 1, proxied: false, takeover_existing: false })
+  Object.assign(editForm, { id: 0, provider_account_id: 0, node_id: 0, domain_name: '', record_type: 'A', record_value: '', ttl: 1, proxied: false, revision: 0 })
+  records.value = []; accounts.value = []; total.value = 0; error.value = ''; message.value = ''
+}, { flush: 'sync' })
+
 function dnsStatus(status: string) { return ({ pending: '待同步', syncing: '同步中', active: '已同步', drifted: '存在漂移', failed: '同步失败', deleting: '待完成删除' } as Record<string, string>)[status] || status }
 function dnsTone(status: string): 'success' | 'warning' | 'danger' | 'neutral' { return status === 'active' ? 'success' : status === 'failed' ? 'danger' : status === 'syncing' || status === 'drifted' ? 'warning' : 'neutral' }
-function openCreateDNS() { createErrors.clear(); createState.markClean(); dnsOpen.value = true; if (dnsForm.node_id) void loadCreateAddressCandidates() }
-function closeCreateDNS() { createAddressController?.abort(); dnsOpen.value = false; Object.assign(dnsForm, { provider_account_id: 0, node_id: 0, domain_name: '', ipv4_value: '', ipv6_value: '', ttl: 1, proxied: false, takeover_existing: false }); resetCreateAddressState(); createErrors.clear() }
-function closeEditDNS() { editAddressController?.abort(); editOpen.value = false; editErrors.clear() }
+function openCreateDNS() { createRecoveryBlocked.value = false; createProviderBaseline.value = undefined; createErrors.clear(); createState.markClean(); dnsOpen.value = true; if (dnsForm.node_id) void loadCreateAddressCandidates() }
+function closeCreateDNS() { createRecoveryBlocked.value = false; createProviderBaseline.value = undefined; createAddressController?.abort(); dnsOpen.value = false; Object.assign(dnsForm, { provider_account_id: 0, node_id: 0, domain_name: '', ipv4_value: '', ipv6_value: '', ttl: 1, proxied: false, takeover_existing: false }); resetCreateAddressState(); createErrors.clear() }
+function closeEditDNS() { editAddressController?.abort(); editAddressRequest++; editOpen.value = false; editErrors.clear() }
 function resetCreateAddressState() {
   createAddressController?.abort()
+  createAddressRequest++
   createAddressCandidates.value = null
   createAddressError.value = ''
   Object.assign(createAddressState, { ipv4Manual: false, ipv6Manual: false, ipv4Suggested: '', ipv6Suggested: '' })
@@ -272,7 +364,9 @@ async function refreshAll() {
   refreshing.value = true
   error.value = ''
   try {
+    const token = draftApp.token, actor = draftApp.user.id, epoch = draftApp.sessionEpoch
     const [providerAccounts, page] = await Promise.all([fetchProviderAccounts(), fetchManagedDNSRecordsPage({ offset: offset.value, limit: limit.value, q: search.value || undefined, status: statusFilter.value || undefined })])
+    if (token !== draftApp.token || actor !== draftApp.user.id || epoch !== draftApp.sessionEpoch || actor !== draftOwner) return
     accounts.value = providerAccounts
     records.value = page.items
     total.value = page.total
@@ -337,6 +431,8 @@ async function loadEditAddressCandidates() {
   }
 }
 async function createDNS() {
+  if (!draftWritable.value || createRecoveryBlocked.value) { createErrors.set({}, '草稿尚未通过当前资源核对，不能创建或同步。请关闭后重新选择资源。'); return }
+  draftGeneration++
   const valid = await createErrors.applyValidation(collectFieldErrors({
     provider_account_id: !dnsForm.provider_account_id && '请选择供应商账户。',
     node_id: !dnsForm.node_id && '请选择目标节点。',
@@ -344,7 +440,7 @@ async function createDNS() {
     ipv4_value: !dnsForm.ipv4_value.trim() && !dnsForm.ipv6_value.trim() && '请至少填写一个 IPv4 或 IPv6 地址。',
     ttl: dnsForm.ttl !== 1 && !isIntegerInRange(dnsForm.ttl, 60, 86400) && 'TTL 应为自动（1）或 60–86400 秒。',
   }), createFormElement, '')
-  if (!valid) return
+  if (!valid || !draftWritable.value || createRecoveryBlocked.value) return
   savingDNS.value = true
   error.value = ''
   message.value = ''
@@ -384,6 +480,9 @@ async function syncRecord(record: ManagedDNSRecord) {
   }
 }
 function openEdit(record: ManagedDNSRecord) {
+  editRecoveryBlocked.value = false
+  editDraftBaseline.value = dnsEditDraftFields(record) || null
+  editProviderBaseline.value = providerDraftBaseline(accounts.value.find(item => item.id === record.provider_account_id)) || null
   editAddressController?.abort()
   editAddressCandidates.value = null
   editAddressError.value = ''
@@ -393,12 +492,14 @@ function openEdit(record: ManagedDNSRecord) {
   editOpen.value = true
 }
 async function saveEdit() {
+  if (!draftWritable.value || editRecoveryBlocked.value) { editErrors.set({}, '当前草稿基于旧版本或资源不可用，不能直接覆盖。请关闭后重新打开核对。'); return }
+  draftGeneration++
   const valid = await editErrors.applyValidation(collectFieldErrors({
     node_id: !editForm.node_id && '请选择目标节点。',
     record_value: !editForm.record_value.trim() && '请输入解析地址。',
     ttl: editForm.ttl !== 1 && !isIntegerInRange(editForm.ttl, 60, 86400) && 'TTL 应为自动（1）或 60–86400 秒。',
   }), editFormElement, '')
-  if (!valid) return
+  if (!valid || !draftWritable.value || editRecoveryBlocked.value) return
   savingEdit.value = true
   error.value = ''
   message.value = ''
@@ -451,7 +552,7 @@ watch(() => route.fullPath, async () => {
 })
 
 watch(() => dnsForm.node_id, (nodeID, previousNodeID) => {
-  if (nodeID === previousNodeID) return
+  if (nodeID === previousNodeID || recoveringDNS.value) return
   createAddressCandidates.value = null
   createAddressError.value = ''
   dnsForm.ipv4_value = clearPreviousSuggestedAddress(dnsForm.ipv4_value, createAddressState.ipv4Suggested, createAddressState.ipv4Manual)
@@ -470,6 +571,7 @@ watch(() => editForm.node_id, (nodeID, previousNodeID) => {
 onMounted(async () => {
   loading.value = true
   await refreshAll()
+  recoveryReady.value = true
   pollTimer = setInterval(() => { if (records.value.some(item => item.status === 'syncing' || !item.public_resolved)) void refreshAll() }, 5000)
 })
 onBeforeUnmount(() => {

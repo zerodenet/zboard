@@ -8,6 +8,8 @@
       </template>
     </PageHeader>
     <NodeSetupGuide />
+    <p class="field-hint">整页重新登录仅暂存普通资产草稿。SSH 密码、私钥和提权凭据需重新输入；一次性凭据不暂存，安装、升级和 BBR 操作不会自动继续，请核对任务记录后自行操作。</p>
+    <PageAlert v-if="assetDraftRecovery.message.value" tone="info" title="登录后草稿恢复">{{ assetDraftRecovery.message.value }}<template #actions><UiButton variant="ghost" type="button" @click="assetDraftRecovery.restore()">重新检查草稿恢复</UiButton></template></PageAlert>
     <NodeObservationQueue :open="observationQueueOpen" @close="observationQueueOpen = false" />
 
     <TransientFeedback :success="message" :error="error" success-title="节点操作已完成" error-title="节点操作失败" />
@@ -228,6 +230,7 @@
     </ModalDialog>
 
     <ModalDialog :open="editOpen" :dirty="editState.dirty.value" title="编辑 VPS" description="维护资产元数据和生命周期；维护或退役会自动停止对外交付。" :busy="saving" @close="editOpen = false">
+      <PageAlert v-if="assetDraftConflict" tone="warning" title="资产已在其他会话更新">已保留旧草稿，不能直接覆盖服务器的新内容。<template #actions><UiButton variant="secondary" type="button" @click="reloadAssetEditor">重新加载最新资产</UiButton></template></PageAlert>
       <form id="node-edit-form" ref="editFormElement" class="form-grid" novalidate @submit.prevent="saveNode">
         <PageAlert v-if="editErrors.formError.value" class="field-full" tone="danger" title="无法保存 VPS">{{ editErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="主机名称" name="edit-node-name" :error="editErrors.fields.name" required><UiInput v-model.trim="editForm.name" v-bind="controlAttrs" /></FormField>
@@ -237,7 +240,7 @@
         <FormField v-slot="{ controlAttrs }" label="承载状态" name="edit-node-enabled" :error="editErrors.fields.is_enabled"><div class="check-field"><UiCheckbox v-model="editForm.is_enabled" v-bind="controlAttrs" :disabled="editForm.lifecycle_status !== 'active'" /><span>允许承载对外服务</span></div></FormField>
         <FormField v-slot="{ controlAttrs }" label="备注" full><UiTextarea v-model.trim="editForm.remark" v-bind="controlAttrs" rows="3"></UiTextarea></FormField>
       </form>
-      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="node-edit-form" type="submit" :loading="saving">保存</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="node-edit-form" type="submit" :loading="saving" :disabled="assetDraftConflict">保存</UiButton></template>
     </ModalDialog>
 
     <ModalDialog :open="batchKernelOpen" title="批量升级 Zero" description="为所选 VPS 固定一个目标版本，并由 ZBoard 后台任务并发执行；关闭或刷新浏览器不会取消已接受的升级。" :busy="bulkBusy === 'reconcile'" @close="batchKernelOpen = false">
@@ -323,6 +326,8 @@ import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composab
 import RemoteReadStatus from '../components/RemoteReadStatus.vue'
 import { useRemoteResource } from '../composables/useRemoteResource'
 import { useRemoteTable } from '../composables/useRemoteTable'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { nodeAssetBaseline, nodeAssetRecovery } from '../utils/nodeAssetRecovery'
 import { useSelectionScope } from '../composables/useSelectionScope'
 import { nextSortDirection, resolveSortDirection, resolveSortField, resolveTableDensity } from '../composables/tableState'
 import { confirmAction } from '../utils/feedback'
@@ -480,6 +485,9 @@ const sshFieldMap: Record<string, string> = {
 }
 const createState = useDirtyForm(() => createForm)
 const editState = useDirtyForm(() => editForm)
+const originalAssetBaseline = ref('')
+const assetDraftConflict = ref(false)
+let assetEditorGeneration = 0
 const sshState = useDirtyForm(() => sshForm)
 useUnsavedChangesGuard(
   () => (createOpen.value && createState.dirty.value)
@@ -805,7 +813,7 @@ async function retirementCompleted() {
   await refresh()
 }
 async function changeNodeProtocolPage(value: { offset: number; limit: number }) { nodeProtocolOffset.value = value.offset; nodeProtocolLimit.value = value.limit; await syncURL() }
-function openCreate() { pendingBBRNodeID.value = 0; Object.assign(createForm, { name: '', region: '', address: '', remark: '', enable_bbr: false }); createErrors.clear(); createState.markClean(); createOpen.value = true }
+function openCreate() { assetEditorGeneration++; pendingBBRNodeID.value = 0; Object.assign(createForm, { name: '', region: '', address: '', remark: '', enable_bbr: false }); createErrors.clear(); createState.markClean(); createOpen.value = true }
 async function create() {
   createForm.name = createForm.name.trim()
   const valid = await createErrors.applyValidation(collectFieldErrors({
@@ -825,8 +833,9 @@ async function create() {
     openSSH(selectedNode.value)
   } catch (e: any) { await createErrors.applyApiError(e, '节点登记失败，请检查表单内容。', createFormElement, nodeCreateFieldMap) } finally { saving.value = false }
 }
-function openEdit(node: any) { Object.assign(editForm, { id: node.id, name: node.name, region: node.region || '', address: node.address || '', remark: node.remark || '', lifecycle_status: node.lifecycle_status || 'active', is_enabled: Boolean(node.is_enabled) }); editErrors.clear(); editState.markClean(); editOpen.value = true }
+function openEdit(node: any) { assetEditorGeneration++; originalAssetBaseline.value = nodeAssetBaseline(node); assetDraftConflict.value = false; Object.assign(editForm, { id: node.id, name: node.name, region: node.region || '', address: node.address || '', remark: node.remark || '', lifecycle_status: node.lifecycle_status || 'active', is_enabled: Boolean(node.is_enabled) }); editErrors.clear(); editState.markClean(); editOpen.value = true }
 async function saveNode() {
+  if (assetDraftConflict.value) { editErrors.formError.value = '资产已在其他会话更新，请重新加载后再编辑。'; return }
   editForm.name = editForm.name.trim()
   const valid = await editErrors.applyValidation(collectFieldErrors({
     name: isBlank(editForm.name) && '请输入主机名称。',
@@ -836,7 +845,40 @@ async function saveNode() {
   saving.value = true
   try { await updateNode(editForm.id, { name: editForm.name, region: editForm.region, address: editForm.address, remark: editForm.remark, lifecycle_status: editForm.lifecycle_status, is_enabled: editForm.lifecycle_status === 'active' && editForm.is_enabled }); editOpen.value = false; message.value = '节点资产已更新。'; await refresh() } catch (e: any) { await editErrors.applyApiError(e, '节点更新失败，请检查表单内容。', editFormElement, nodeEditFieldMap) } finally { saving.value = false }
 }
-function openSSH(node: any) { const privilegeMode = node.ssh_privilege_mode || 'none'; const authMethod = node.ssh_auth_method || 'password'; Object.assign(sshForm, { node_id: node.id, ssh_host: node.ssh_host || '', ssh_port: node.ssh_port || 22, ssh_user: node.ssh_user || 'root', ssh_auth_method: authMethod, original_auth_method: authMethod, ssh_password: '', ssh_private_key: '', ssh_private_key_passphrase: '', clearPassphrase: false, hasCredential: Boolean(node.ssh_configured), ssh_privilege_mode: privilegeMode, ssh_privilege_password: '', hasPrivilegePassword: Boolean(node.ssh_privilege_password_configured), passwordlessSudo: privilegeMode === 'sudo' && !node.ssh_privilege_password_configured }); sshErrors.clear(); sshState.markClean(); sshOpen.value = true }
+async function reloadAssetEditor() {
+  const id = editForm.id
+  if (!id || saving.value) return
+  const baseline = originalAssetBaseline.value
+  try {
+    const fresh = await fetchNode(id)
+    if (editOpen.value && editForm.id === id && originalAssetBaseline.value === baseline) openEdit(fresh)
+  } catch (cause: any) { editErrors.formError.value = cause?.response?.data?.message || '无法加载最新资产，请稍后重试。' }
+}
+const assetDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.nodes.asset', permission: 'admin', ready: () => !saving.value,
+  read: () => editOpen.value ? { entityID: editForm.id, baseline: originalAssetBaseline.value, fields: editForm }
+    : createOpen.value ? { entityID: 0, baseline: '', fields: { name: createForm.name, region: createForm.region, address: createForm.address, remark: createForm.remark, lifecycle_status: 'active', is_enabled: true } } : null,
+  sanitize: nodeAssetRecovery,
+  async restore(draft, context) {
+    if (createOpen.value || editOpen.value || sshOpen.value) return false
+    const generation = assetEditorGeneration
+    const fresh = draft.entityID ? await fetchNode(draft.entityID) : undefined
+    if (!context.isCurrent() || generation !== assetEditorGeneration || createOpen.value || editOpen.value || sshOpen.value || (draft.entityID > 0 && fresh?.id !== draft.entityID)) return false
+    if (draft.entityID) {
+      Object.assign(editForm, { id: draft.entityID }, draft.fields)
+      originalAssetBaseline.value = draft.baseline
+      assetDraftConflict.value = nodeAssetBaseline(fresh) !== draft.baseline
+      editErrors.clear()
+      if (assetDraftConflict.value) editErrors.formError.value = '服务器资产已变化。已保留旧草稿，不能直接覆盖最新内容。'
+      editOpen.value = true
+    } else {
+      Object.assign(createForm, { name: draft.fields.name, region: draft.fields.region, address: draft.fields.address, remark: draft.fields.remark, enable_bbr: false })
+      createErrors.clear(); createOpen.value = true
+    }
+    // Recovery neither submits nor restarts any pending system action.
+  },
+})
+function openSSH(node: any) { assetEditorGeneration++; const privilegeMode = node.ssh_privilege_mode || 'none'; const authMethod = node.ssh_auth_method || 'password'; Object.assign(sshForm, { node_id: node.id, ssh_host: node.ssh_host || '', ssh_port: node.ssh_port || 22, ssh_user: node.ssh_user || 'root', ssh_auth_method: authMethod, original_auth_method: authMethod, ssh_password: '', ssh_private_key: '', ssh_private_key_passphrase: '', clearPassphrase: false, hasCredential: Boolean(node.ssh_configured), ssh_privilege_mode: privilegeMode, ssh_privilege_password: '', hasPrivilegePassword: Boolean(node.ssh_privilege_password_configured), passwordlessSudo: privilegeMode === 'sudo' && !node.ssh_privilege_password_configured }); sshErrors.clear(); sshState.markClean(); sshOpen.value = true }
 function openTerminal(node: any) { terminalNode.value = node; terminalOpen.value = true }
 async function runOptionalBBRInitialization(nodeID: number) {
   bbrBusy.value = true

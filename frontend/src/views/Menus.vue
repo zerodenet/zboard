@@ -4,16 +4,18 @@
       <template #actions><PageRefreshButton label="刷新菜单" :loading="loading" :disabled="saving" @click="reload" /></template>
     </PageHeader>
     <TransientFeedback :success="notice" />
+    <PageAlert v-if="menuDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ menuDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="menuDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
+    <PageAlert v-if="menuRecoveryConflict" tone="warning" title="菜单版本已变化">原菜单草稿仍可查看，不能直接保存。请另存需要的内容，再撤销修改以使用当前菜单。</PageAlert>
     <SettingsPageLayout>
       <div class="menu-toolbar">
-        <div class="menu-surface"><UiSelect v-model="surface" :options="surfaces" :disabled="dirty || saving" aria-label="菜单范围" /></div>
+        <div class="menu-surface"><UiSelect v-model="surface" :options="surfaces" :disabled="dirty || saving || menuRecoveryConflict" aria-label="菜单范围" /></div>
         <div class="menu-toolbar-actions">
           <UiButton variant="secondary" :disabled="saving || loading || !snapshot" @click="addGroup">新增分组</UiButton>
           <UiButton variant="secondary" :disabled="saving || loading || !snapshot" @click="addLink">新增入口</UiButton>
         </div>
         <div class="menu-save-actions">
-          <UiButton variant="ghost" :disabled="!dirty || saving" @click="discard">撤销修改</UiButton>
-          <UiButton :disabled="!dirty || saving" :loading="saving" @click="save">保存菜单</UiButton>
+          <UiButton variant="ghost" :disabled="(!dirty && !menuRecoveryConflict) || saving" @click="discard">撤销修改</UiButton>
+          <UiButton :disabled="!dirty || saving || menuRecoveryConflict" :loading="saving" @click="save">保存菜单</UiButton>
         </div>
       </div>
       <PageAlert v-if="error" tone="danger" title="菜单未更新">
@@ -59,6 +61,8 @@ import type { Surface } from '../api/plugins'
 import { NAVIGATION_CHANGED } from '../utils/navigationEvents'
 import { useUnsavedChangesGuard } from '../composables/useFormState'
 import { confirmAction } from '../utils/feedback'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { menuDraftTree, menuRecoveryDraft, type MenuDraftTree } from '../utils/communicationsReauthenticationDraftSchemas'
 import PageHeader from '../components/PageHeader.vue'
 import UiButton from '../components/UiButton.vue'
 import UiInput from '../components/UiInput.vue'
@@ -79,6 +83,10 @@ const surfaces = [{ value: 'admin', label: '管理后台' }, { value: 'account',
 const surface = ref<Surface>('admin')
 const snapshot = ref<MenuSnapshot | null>(null)
 const baseline = ref('')
+const menuRecoveryBaseline = ref<MenuDraftTree | null>(null)
+const menuRecoveryConflict = ref(false)
+const menusReady = ref(false)
+let restoringMenuSurface = false
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
@@ -99,26 +107,51 @@ const ordered = computed(() => {
   for (const node of snapshot.value?.nodes || []) if (!seen.has(node.id)) result.push({ node, depth: 0 })
   return result
 })
-useUnsavedChangesGuard(() => dirty.value, () => confirmAction({ title: '放弃菜单修改？', message: '当前菜单包含未保存的修改。', confirmText: '放弃修改', tone: 'danger' }))
+useUnsavedChangesGuard(() => dirty.value || menuRecoveryConflict.value, () => confirmAction({ title: '放弃菜单修改？', message: '当前菜单包含未保存的修改。', confirmText: '放弃修改', tone: 'danger' }))
 let request = 0
 let controller: AbortController | undefined
-function accept(value: MenuSnapshot) { snapshot.value = value; baseline.value = JSON.stringify(value) }
+function accept(value: MenuSnapshot) { snapshot.value = value; baseline.value = JSON.stringify(value); menuRecoveryBaseline.value = menuDraftTree(value) || null; menuRecoveryConflict.value = false }
+const menuDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.menus.editor', permission: 'admin', ready: () => menusReady.value && !loading.value,
+  read: () => snapshot.value && (dirty.value || menuRecoveryConflict.value) ? { surface: surface.value, tree: snapshot.value, baseline: menuRecoveryBaseline.value } : null,
+  sanitize: menuRecoveryDraft,
+  restore: async (value, context) => {
+    const fresh = await fetchMenus(value.surface)
+    if (!context.isCurrent()) return false
+    // Restore presentation only. Plugin/core identity, ownership, conditions and
+    // page authority always come from the fresh server tree, never the draft.
+    const freshNodes = new Map(fresh.nodes.map(node => [node.id, node]))
+    const nodes: MenuNode[] = value.tree.nodes.map(node => ({
+      ...(freshNodes.get(node.id) || { id: node.id, surface: value.surface, owner: 'custom' as const, plugin_id: '', page_id: '', condition: '' }),
+      ...node,
+    }))
+    const conflict = JSON.stringify(menuDraftTree(fresh)) !== JSON.stringify(value.baseline)
+      || value.tree.nodes.some(node => !freshNodes.has(node.id) && !node.id.startsWith('custom:'))
+    ++request; controller?.abort()
+    restoringMenuSurface = true; surface.value = value.surface; restoringMenuSurface = false
+    accept(fresh)
+    snapshot.value = { revision: value.tree.revision, nodes }
+    menuRecoveryBaseline.value = value.baseline
+    menuRecoveryConflict.value = conflict
+    editing.value = ''
+  },
+})
 async function load() {
   const sequence = ++request
   controller?.abort()
   controller = new AbortController()
   loading.value = true
   error.value = ''; notice.value = ''
-  try { const value = await fetchMenus(surface.value, controller.signal); if (sequence === request) accept(value) }
+  try { const value = await fetchMenus(surface.value, controller.signal); if (sequence === request) { accept(value); menusReady.value = true } }
   catch (cause: any) { if (sequence === request && !controller.signal.aborted) error.value = cause?.response?.data?.message || '菜单加载失败' }
   finally { if (sequence === request) loading.value = false }
 }
 async function reload() {
-  if (dirty.value && !await confirmAction({ title: '重新加载菜单？', message: '重新加载会丢弃当前未保存的修改。', confirmText: '重新加载', tone: 'danger' })) return
+  if ((dirty.value || menuRecoveryConflict.value) && !await confirmAction({ title: '重新加载菜单？', message: '重新加载会丢弃当前未保存的修改。', confirmText: '重新加载', tone: 'danger' })) return
   await load()
 }
 async function save() {
-  if (!snapshot.value || saving.value) return
+  if (!snapshot.value || saving.value || menuRecoveryConflict.value) return
   saving.value = true; error.value = ''; notice.value = ''
   try {
     accept(await saveMenus(surface.value, snapshot.value))
@@ -139,8 +172,8 @@ function add(path: string) {
 function addGroup() { add('') }
 function addLink() { add(surface.value === 'public' ? '/' : `/${surface.value}`) }
 function remove(id: string) { if (snapshot.value) snapshot.value.nodes = snapshot.value.nodes.filter(node => node.id !== id) }
-function discard() { if (baseline.value) snapshot.value = JSON.parse(baseline.value) }
-watch(surface, () => { snapshot.value = null; void load() })
+function discard() { if (baseline.value) { snapshot.value = JSON.parse(baseline.value); menuRecoveryBaseline.value = menuDraftTree(snapshot.value) || null; menuRecoveryConflict.value = false } }
+watch(surface, () => { if (!restoringMenuSurface) { snapshot.value = null; menusReady.value = false; void load() } }, { flush: 'sync' })
 onMounted(load)
 onBeforeUnmount(() => { ++request; controller?.abort() })
 </script>

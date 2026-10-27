@@ -32,7 +32,18 @@ export function safeReauthenticationRoute(value: string) {
   try {
     const url = new URL(value, 'https://draft.invalid')
     if (url.origin !== 'https://draft.invalid' || !/^\/(admin|account)(\/|$)/.test(url.pathname)) return ''
-    for (const key of [...url.searchParams.keys()]) if (!queryKeys.has(key)) url.searchParams.delete(key)
+    const pageKeys = url.pathname === '/admin/nodes'
+      ? new Set(['lifecycle', 'connector', 'sort', 'direction', 'density', 'protocol_page', 'protocol_limit'])
+      : url.pathname === '/admin/node-groups' ? new Set(['enabled']) : new Set<string>()
+    const enumValues: Record<string, readonly string[]> = { lifecycle: ['active', 'maintenance', 'retired'], connector: ['online', 'offline'], sort: ['id', 'name', 'region', 'last_seen_at'], direction: ['asc', 'desc'], density: ['compact', 'comfortable'], enabled: ['true', 'false'] }
+    for (const key of [...url.searchParams.keys()]) {
+      if (queryKeys.has(key)) continue
+      const values = url.searchParams.getAll(key)
+      const allowed = pageKeys.has(key) && values.length === 1 && (enumValues[key]
+        ? enumValues[key]!.includes(values[0]!)
+        : /^\d{1,6}$/.test(values[0]!) && Number(values[0]) > 0 && (key !== 'protocol_limit' || ['25', '50', '100'].includes(values[0]!)))
+      if (!allowed) url.searchParams.delete(key)
+    }
     if (!/^#[a-zA-Z0-9._-]{0,80}$/.test(url.hash)) url.hash = ''
     return url.pathname + url.search + url.hash
   } catch { return '' }
@@ -131,7 +142,7 @@ export function approveReauthenticationDraftPage(actorID: number, route: string,
   if (!allowed) { clearReauthenticationDrafts(); return }
   verifiedPages.add(pagePath(route))
 }
-export function takeReauthenticationDraft<T>(actorID: number, scope: string, route: string, permission: Permission, sanitize: (value: unknown) => T | undefined): T | undefined {
+export function takeReauthenticationDraft<T>(actorID: number, scope: string, route: string, permission: Permission, sanitize: (value: unknown) => T | undefined, consume = true): T | undefined {
   if (!verifiedPages.has(pagePath(route)) || !hasReauthenticationDraft(actorID, scope, route, permission)) return
   const m = readManifest()
   if (!m) { clearReauthenticationDrafts(); return }
@@ -142,10 +153,12 @@ export function takeReauthenticationDraft<T>(actorID: number, scope: string, rou
     const p = JSON.parse(raw)
     if (p?.version !== 1 || p.actorID !== actorID || p.scope !== scope || p.route !== m.route || p.createdAt !== m.createdAt || p.expiresAt !== m.expiresAt) throw new Error('invalid draft binding')
     const data = sanitize(p.data)
-    sessionStorage.removeItem(entry.key)
-    m.entries = m.entries.filter(e => e.scope !== scope)
-    if (m.entries.length) sessionStorage.setItem(REAUTH_DRAFT_MANIFEST, JSON.stringify(m))
-    else sessionStorage.removeItem(REAUTH_DRAFT_MANIFEST)
+    if (consume || data === undefined) {
+      sessionStorage.removeItem(entry.key)
+      m.entries = m.entries.filter(e => e.scope !== scope)
+      if (m.entries.length) sessionStorage.setItem(REAUTH_DRAFT_MANIFEST, JSON.stringify(m))
+      else sessionStorage.removeItem(REAUTH_DRAFT_MANIFEST)
+    }
     return data
   } catch { clearReauthenticationDrafts(); return }
 }

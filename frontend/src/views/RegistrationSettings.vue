@@ -6,6 +6,8 @@
 
     <TransientFeedback :success="message" :error="error" success-title="注册设置已保存" error-title="注册设置操作失败" />
 
+    <PageAlert v-if="registrationDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ registrationDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="registrationDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
+    <PageAlert v-if="registrationRecoveryConflict || verificationRecoveryConflict" tone="warning" title="注册设置已变化">原开关草稿已保留；存在冲突的开关不能保存，请刷新当前值后重新编辑。</PageAlert>
     <SettingsPageLayout>
       <UiMetricStrip>
         <MetricCard label="公开注册" :value="registrationEnabled ? '开放' : '关闭'" icon="users" :tone="registrationEnabled ? 'success' : 'neutral'" status="入口控制" meta="决定访客能否创建账户" />
@@ -19,7 +21,7 @@
             <div><strong>允许访客注册</strong><p>管理员创建用户、已有用户登录和账户数据不受影响。</p></div>
             <UiSwitch v-model="registrationEnabled" aria-label="允许访客注册" />
           </div>
-          <div class="section-actions"><UiButton type="button" :loading="savingRegistration" :disabled="!registrationDirty" @click="saveRegistration">保存注册入口</UiButton></div>
+          <div class="section-actions"><UiButton type="button" :loading="savingRegistration" :disabled="registrationRecoveryConflict || !registrationDirty" @click="saveRegistration">保存注册入口</UiButton></div>
         </UiSection>
 
         <UiSection title="邮箱验证码" description="启用后，注册表单要求先向目标邮箱发送并填写六位验证码。">
@@ -28,7 +30,7 @@
             <UiSwitch v-model="verificationEnabled" aria-label="注册时验证邮箱" />
           </div>
           <PageAlert v-if="verificationEnabled && !smtpReady" tone="warning" title="SMTP 通道尚未就绪">请先在“邮件与运营模板”完成 SMTP 主机、发件人、TLS 和凭证配置，再启用邮箱验证。</PageAlert>
-          <div class="section-actions"><RouterLink class="settings-link" to="/admin/settings/email">配置邮件通道</RouterLink><UiButton type="button" :loading="savingVerification" :disabled="!verificationDirty || (verificationEnabled && !smtpReady)" @click="saveVerification">保存邮箱验证</UiButton></div>
+          <div class="section-actions"><RouterLink class="settings-link" to="/admin/settings/email">配置邮件通道</RouterLink><UiButton type="button" :loading="savingVerification" :disabled="verificationRecoveryConflict || !verificationDirty || (verificationEnabled && !smtpReady)" @click="saveVerification">保存邮箱验证</UiButton></div>
         </UiSection>
 
         <UiSection title="页面图形验证码" description="为后续人机验证保留的独立模块，不与邮箱验证码或 SMTP 配置混在一起。">
@@ -76,6 +78,8 @@ import UiIcon from '../components/UiIcon.vue'
 import UiMetricStrip from '../components/UiMetricStrip.vue'
 import UiSection from '../components/UiSection.vue'
 import { useUnsavedChangesGuard } from '../composables/useFormState'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { registrationRecoveryDraft, type SiteBaseline } from '../utils/settingsReauthenticationDraftSchemas'
 import { useAppStore } from '../stores/app'
 import { normalizeApiErrorMessage } from '../utils/apiError'
 import { confirmAction } from '../utils/feedback'
@@ -92,6 +96,30 @@ const configs = ref<SystemConfig[]>([])
 const templateDirty = ref(false)
 const message = ref('')
 const error = ref('')
+const recoveryReady = ref(false)
+const registrationRecoveryConflict = ref(false)
+const verificationRecoveryConflict = ref(false)
+const registrationBaseline = ref<SiteBaseline | null>(null)
+const verificationOrigin = ref<{ baseline: boolean; revision: number } | null>(null)
+const registrationDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.settings.registration', permission: 'admin', ready: () => recoveryReady.value,
+  read: () => registrationDirty.value || verificationDirty.value || verificationRecoveryConflict.value ? {
+    registration: registrationDirty.value ? { value: registrationEnabled.value, baseline: registrationBaseline.value } : null,
+    verification: verificationDirty.value || verificationRecoveryConflict.value ? { value: verificationEnabled.value, ...(verificationOrigin.value || { baseline: initialVerificationEnabled.value, revision: registrationConfig.value?.revision }) } : null,
+  } : null,
+  sanitize: registrationRecoveryDraft,
+  restore: value => {
+    if (value.registration) {
+      registrationRecoveryConflict.value = JSON.stringify(value.registration.baseline) !== JSON.stringify(registrationBaseline.value)
+      registrationEnabled.value = value.registration.value; registrationBaseline.value = value.registration.baseline
+    }
+    if (value.verification) {
+      verificationRecoveryConflict.value = !registrationConfig.value || registrationConfig.value.revision !== value.verification.revision || initialVerificationEnabled.value !== value.verification.baseline
+      verificationOrigin.value = { baseline: value.verification.baseline, revision: value.verification.revision }
+      verificationEnabled.value = value.verification.value
+    }
+  },
+})
 
 const registrationConfig = computed(() => configs.value.find(item => item.config_key === 'register_email_verification'))
 const registrationDirty = computed(() => registrationEnabled.value !== initialRegistrationEnabled.value)
@@ -115,6 +143,7 @@ useUnsavedChangesGuard(
 )
 
 async function load() {
+  recoveryReady.value = false
   loading.value = true; error.value = ''
   try {
     const [setup, nextConfigs] = await Promise.all([app.loadSetupStatus(true), fetchSystemConfigs()])
@@ -124,6 +153,10 @@ async function load() {
     const verification = nextConfigs.find(item => item.config_key === 'register_email_verification')
     verificationEnabled.value = verification?.value === true
     initialVerificationEnabled.value = verificationEnabled.value
+    if (!setup) throw new Error('站点安装信息尚未加载。')
+    registrationBaseline.value = { site_name: setup.site_name || app.siteName || 'zboard', site_url: setup.site_url || window.location.origin, allow_registration: Boolean(setup.allow_registration) }
+    registrationRecoveryConflict.value = false; verificationRecoveryConflict.value = false; verificationOrigin.value = null
+    recoveryReady.value = true
   } catch (cause: any) { error.value = normalizeApiErrorMessage(cause, '注册设置加载失败。') }
   finally { loading.value = false }
 }
@@ -134,6 +167,7 @@ async function reload() {
 }
 
 async function saveRegistration() {
+  if (registrationRecoveryConflict.value) return
   const setup = app.installation
   if (!setup) { error.value = '站点安装信息尚未加载。'; return }
   savingRegistration.value = true; message.value = ''; error.value = ''
@@ -141,12 +175,14 @@ async function saveRegistration() {
     await updateSiteSettings({ site_name: setup.site_name || app.siteName || 'zboard', site_url: setup.site_url || window.location.origin, allow_registration: registrationEnabled.value })
     await app.loadSetupStatus(true)
     initialRegistrationEnabled.value = registrationEnabled.value
+    registrationBaseline.value = { site_name: setup.site_name || app.siteName || 'zboard', site_url: setup.site_url || window.location.origin, allow_registration: registrationEnabled.value }
     message.value = registrationEnabled.value ? '公开注册入口已开放。' : '公开注册入口已关闭。'
   } catch (cause: any) { error.value = normalizeApiErrorMessage(cause, '注册入口保存失败。') }
   finally { savingRegistration.value = false }
 }
 
 async function saveVerification() {
+  if (verificationRecoveryConflict.value) return
   const config = registrationConfig.value
   if (!config) { error.value = '系统未返回注册邮箱验证码配置。'; return }
   savingVerification.value = true; message.value = ''; error.value = ''
@@ -155,6 +191,7 @@ async function saveVerification() {
     const index = configs.value.findIndex(item => item.config_key === updated.config_key)
     if (index >= 0) configs.value[index] = updated
     initialVerificationEnabled.value = verificationEnabled.value
+    verificationOrigin.value = null
     await app.loadPublicConfigs()
     message.value = verificationEnabled.value ? '注册邮箱验证码已启用。' : '注册邮箱验证码已停用。'
   } catch (cause: any) { error.value = normalizeApiErrorMessage(cause, '邮箱验证设置保存失败。') }
